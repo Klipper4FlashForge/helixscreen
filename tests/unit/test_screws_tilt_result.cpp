@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "calibration_types.h"
+#include "moonraker_api_mock.h"
 #include "screws_tilt_parser.h"
 
+#include <cstdlib>
+#include <string>
 #include <vector>
 
 #include "../catch_amalgamated.hpp"
@@ -156,6 +159,13 @@ TEST_CASE("ScrewTiltResult::signed_adjustment_minutes keeps CW/CCW sign",
 
     SECTION("Turns carry the sign too") {
         REQUIRE(make_screw("a", "CCW 01:30").signed_adjustment_minutes() == -90);
+    }
+
+    SECTION("Klipper's uncarried 00:60 reads as a full turn") {
+        // screws_tilt_adjust.py rounds decimal_part*60 without carrying into
+        // full_turns, so a near-full turn really is printed as "00:60".
+        REQUIRE(make_screw("a", "CW 00:60").signed_adjustment_minutes() == 60);
+        REQUIRE(make_screw("a", "CCW 00:60").signed_adjustment_minutes() == -60);
     }
 
     SECTION("Base screw is exactly zero") {
@@ -417,5 +427,151 @@ TEST_CASE("ScrewTiltResult::friendly_adjustment maps direction to verb",
     SECTION("Multi-turn magnitudes are described") {
         r.adjustment = "CW 02:30";
         REQUIRE(r.friendly_adjustment(false) == "Tighten 3 turns");
+    }
+}
+
+// ============================================================================
+// Mock fidelity — what --test prints must be what Klipper really prints
+// ============================================================================
+
+namespace {
+
+/// The "z=" field of a Klipper screw line, as text (so its precision survives).
+std::string z_field(const std::string& line) {
+    size_t pos = line.find("z=");
+    if (pos == std::string::npos) {
+        return "";
+    }
+    pos += 2;
+    size_t end = line.find_first_of(", ", pos);
+    if (end == std::string::npos) {
+        end = line.length();
+    }
+    return line.substr(pos, end - pos);
+}
+
+size_t decimals_in(const std::string& number) {
+    size_t dot = number.find('.');
+    return dot == std::string::npos ? 0 : number.length() - dot - 1;
+}
+
+} // namespace
+
+TEST_CASE("Mock SCREWS_TILT_CALCULATE output matches Klipper's console format",
+          "[calibration][screws_tilt][mock][1225]") {
+    MockScrewsTiltState bed;
+    const std::vector<std::string> lines = bed.probe_lines();
+
+    SECTION("The turn legend leads, and is not mistaken for a screw") {
+        REQUIRE(lines.size() == 5);
+        REQUIRE(lines[0] ==
+                "// 01:20 means 1 full turn and 20 minutes, CW=clockwise, CCW=counter-clockwise");
+
+        ScrewTiltResult phantom;
+        REQUIRE_FALSE(helix::parse_screws_tilt_line(lines[0], phantom));
+        REQUIRE(parse_lines(lines).size() == 4);
+    }
+
+    SECTION("Z carries Klipper's 5 decimal places, not 6") {
+        for (size_t i = 1; i < lines.size(); i++) {
+            INFO(lines[i]);
+            REQUIRE(decimals_in(z_field(lines[i])) == 5);
+        }
+    }
+
+    SECTION("The initial bed is the #1225 mid-range-base shape") {
+        // Asserted on the RAW emitted text, before parse_screws_tilt_line()
+        // applies any printer-database CW/CCW override — this is Klipper's
+        // output, not the display string.
+        REQUIRE(lines[1].rfind("// front_left (base) : x=30.0, y=30.0, z=2.5", 0) == 0);
+        // 0.5 mm M3 pitch: +0.15 mm above the base is 0.3 turns, and a screw
+        // above the base gives a negative z_base - z, hence CCW.
+        REQUIRE(lines[2].find("// front_right : x=200.0, y=30.0, z=2.6") == 0);
+        REQUIRE(lines[2].find(" : adjust CCW 00:18") != std::string::npos);
+        REQUIRE(lines[3].find(" : adjust CW 00:10") != std::string::npos);
+        REQUIRE(lines[4].find(" : adjust CCW 00:14") != std::string::npos);
+
+        // Every screw is inside a 20-minute magnitude window, yet the corners
+        // are 28 minutes apart — the exact trap from #1225. The spread survives
+        // a wholesale CW<->CCW flip, so this holds under any direction override.
+        auto results = parse_lines(lines);
+        REQUIRE(results.size() == 4);
+        REQUIRE(results[0].screw_name == "front_left");
+        REQUIRE(results[0].is_reference);
+
+        auto report = evaluate_screw_level(results, SCREW_PITCH_M3_MM);
+        REQUIRE(report.spread_minutes == 28);
+        REQUIRE(report.verdict == ScrewLevelVerdict::NEEDS_ADJUSTMENT);
+    }
+}
+
+TEST_CASE("MockScrewsTiltState::diff_to_adjustment mirrors Klipper's arithmetic",
+          "[calibration][screws_tilt][mock][1225]") {
+    // The mock advertises a CW-M3 thread — 0.5 mm per turn.
+    SECTION("Positive diff is CW, negative is CCW") {
+        REQUIRE(MockScrewsTiltState::diff_to_adjustment(0.75f) == "CW 01:30");
+        REQUIRE(MockScrewsTiltState::diff_to_adjustment(-0.75f) == "CCW 01:30");
+    }
+
+    SECTION("Sub-micron diffs are deadbanded before the pitch divide") {
+        REQUIRE(MockScrewsTiltState::diff_to_adjustment(0.0005f) == "CW 00:00");
+        // Klipper zeroes the value before taking the sign, so a negative diff
+        // inside the deadband still prints CW.
+        REQUIRE(MockScrewsTiltState::diff_to_adjustment(-0.0005f) == "CW 00:00");
+    }
+
+    SECTION("A diff just outside the deadband keeps its sign") {
+        REQUIRE(MockScrewsTiltState::diff_to_adjustment(-0.0015f) == "CCW 00:00");
+    }
+
+    SECTION("A rounded-up 60 minutes is not carried into the turn count") {
+        // 0.4995 mm is 0.999 turns; round(0.999 * 60) is 60. Klipper prints
+        // "00:60", never "01:00", so the mock must not carry either.
+        REQUIRE(MockScrewsTiltState::diff_to_adjustment(0.4995f) == "CW 00:60");
+        REQUIRE(MockScrewsTiltState::diff_to_adjustment(-0.4995f) == "CCW 00:60");
+    }
+
+    SECTION("The emitted 00:60 round-trips through the parser as a full turn") {
+        ScrewTiltResult r;
+        const std::string line = "// rear_left : x=30.0, y=200.0, z=2.00000 : adjust " +
+                                 MockScrewsTiltState::diff_to_adjustment(0.4995f);
+        REQUIRE(helix::parse_screws_tilt_line(line, r));
+        // Magnitude, so a printer-database CW<->CCW override cannot flip it.
+        REQUIRE(r.signed_adjustment_minutes().has_value());
+        REQUIRE(std::abs(*r.signed_adjustment_minutes()) == 60);
+    }
+}
+
+TEST_CASE("MockScrewsTiltState judges its simulated bed on the spread",
+          "[calibration][screws_tilt][mock][1225]") {
+    MockScrewsTiltState bed;
+
+    SECTION("Spread is highest minus lowest, base included") {
+        REQUIRE(bed.spread_mm() == Catch::Approx(0.23f)); // +0.15 down to -0.08
+        REQUIRE_FALSE(bed.is_level());
+    }
+
+    SECTION("A mid-range base does not disguise the corner-to-corner error") {
+        // Every screw is within 0.16 mm of the base, but the two extremes are
+        // 0.23 mm apart — a per-screw magnitude test would call this level.
+        REQUIRE_FALSE(bed.is_level(0.16f));
+        REQUIRE(bed.is_level(0.25f));
+    }
+
+    SECTION("Simulated user adjustments converge the bed") {
+        for (int i = 0; i < 12; i++) {
+            bed.simulate_user_adjustments();
+        }
+        INFO("spread after 12 rounds: " << bed.spread_mm());
+        REQUIRE(bed.is_level(0.03f));
+    }
+
+    SECTION("Reset restores the out-of-level starting bed") {
+        for (int i = 0; i < 12; i++) {
+            bed.simulate_user_adjustments();
+        }
+        bed.reset();
+        REQUIRE(bed.spread_mm() == Catch::Approx(0.23f));
+        REQUIRE(bed.get_probe_count() == 0);
     }
 }
