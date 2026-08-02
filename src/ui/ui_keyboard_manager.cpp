@@ -232,7 +232,8 @@ void KeyboardManager::promote_alternative(char base_char, char chosen) {
         lv_obj_invalidate(keyboard_);
     }
 
-    spdlog::info("[KeyboardManager] '{}' default alternate is now '{}'", base_char, chosen);
+    spdlog::info("[KeyboardManager] '{}' default alternate is now '{}'", log_char(base_char),
+                 log_char(chosen));
 }
 
 bool KeyboardManager::point_in_area(const lv_area_t* area, const lv_point_t* point) const {
@@ -461,7 +462,12 @@ void KeyboardManager::longpress_event_handler(lv_event_t* e) {
         return;
     }
 
-    spdlog::debug("[KeyboardManager] EVENT RECEIVED: code={}", (int)code);
+    // Per-keystroke chatter stays at trace: the ring buffer that backs the debug
+    // bundle's log_tail keeps everything from debug up, so anything logged here
+    // at debug evicts the diagnostic window one keypress at a time. Bundle
+    // 5HLV7EAJ arrived with 1776 of its 2000 lines spent on this handler and a
+    // total span of 3m50s — the reported fault had long since scrolled out.
+    spdlog::trace("[KeyboardManager] EVENT RECEIVED: code={}", (int)code);
 
     if (code == LV_EVENT_PRESSED) {
         uint32_t btn_id = lv_buttonmatrix_get_selected_button(keyboard);
@@ -498,8 +504,8 @@ void KeyboardManager::longpress_event_handler(lv_event_t* e) {
         if (btn_text && btn_text[0] && !btn_text[1]) {
             mgr.alternatives_ = mgr.find_alternatives(btn_text[0]);
             if (mgr.alternatives_) {
-                spdlog::debug("[KeyboardManager] PRESSED '{}' - has alternatives: '{}'",
-                              btn_text[0], mgr.alternatives_);
+                spdlog::trace("[KeyboardManager] PRESSED '{}' - has alternatives: '{}'",
+                              mgr.log_char(btn_text[0]), mgr.alternatives_);
             }
         }
 
@@ -539,7 +545,7 @@ void KeyboardManager::longpress_event_handler(lv_event_t* e) {
             // the character was already committed before the user could aim at it,
             // and sliding away to cancel still left it in the field.
             spdlog::info("[KeyboardManager] LONG_PRESSED '{}' - overlay shown, awaiting release",
-                         mgr.pressed_char_ ? mgr.pressed_char_ : '?');
+                         mgr.pressed_char_ ? mgr.log_char(mgr.pressed_char_) : '?');
         }
 
     } else if (code == LV_EVENT_RELEASED) {
@@ -597,14 +603,14 @@ void KeyboardManager::longpress_event_handler(lv_event_t* e) {
                         }
                     }
                     spdlog::info("[KeyboardManager] Selected nearest label '{}' (dist={})",
-                                 selected_char, min_dist);
+                                 mgr.log_char(selected_char), min_dist);
                 }
 
                 if (selected_char != 0 && mgr.context_textarea_ != nullptr) {
                     char str[2] = {selected_char, '\0'};
                     lv_textarea_add_text(mgr.context_textarea_, str);
                     spdlog::info("[KeyboardManager] Inserted alternative character: '{}'",
-                                 selected_char);
+                                 mgr.log_char(selected_char));
                     // Deliberately picked off the popover, so make it this key's new
                     // default. Must come after every read of mgr.alternatives_ above:
                     // promoting rewrites the backing string and invalidates the
@@ -623,7 +629,7 @@ void KeyboardManager::longpress_event_handler(lv_event_t* e) {
                         char str[2] = {in_place_char, '\0'};
                         lv_textarea_add_text(mgr.context_textarea_, str);
                         spdlog::info("[KeyboardManager] Release on key - inserted '{}'",
-                                     in_place_char);
+                                     mgr.log_char(in_place_char));
                     }
                 } else {
                     spdlog::info("[KeyboardManager] Released outside - cancelled");
@@ -634,7 +640,7 @@ void KeyboardManager::longpress_event_handler(lv_event_t* e) {
                 char str[2] = {in_place_char, '\0'};
                 lv_textarea_add_text(mgr.context_textarea_, str);
                 spdlog::warn("[KeyboardManager] No indev at release - inserted '{}' in place",
-                             in_place_char);
+                             mgr.log_char(in_place_char));
             }
 
             spdlog::info("[KeyboardManager] Cleaning up overlay");
@@ -642,7 +648,7 @@ void KeyboardManager::longpress_event_handler(lv_event_t* e) {
             mgr.longpress_state_ = LP_IDLE;
 
         } else if (mgr.longpress_state_ == LP_PRESSED) {
-            spdlog::debug("[KeyboardManager] Short press - normal input");
+            spdlog::trace("[KeyboardManager] Short press - normal input");
             mgr.longpress_reset();
             mgr.longpress_state_ = LP_IDLE;
         }
@@ -670,7 +676,7 @@ void KeyboardManager::keyboard_event_cb(lv_event_t* e) {
         mgr.hide();
     } else if (code == LV_EVENT_VALUE_CHANGED) {
         if (mgr.longpress_state_ == LP_LONG_DETECTED || mgr.longpress_state_ == LP_ALT_SELECTED) {
-            spdlog::debug("[KeyboardManager] Ignoring VALUE_CHANGED during long-press mode");
+            spdlog::trace("[KeyboardManager] Ignoring VALUE_CHANGED during long-press mode");
             return;
         }
 
@@ -763,14 +769,14 @@ void KeyboardManager::keyboard_event_cb(lv_event_t* e) {
                 if (mgr.context_textarea_) {
                     lv_textarea_delete_char(mgr.context_textarea_);
                 }
-                spdlog::debug("[KeyboardManager] Backspace");
+                spdlog::trace("[KeyboardManager] Backspace");
             }
         } else {
             // Regular printing key — insert text into textarea
             if (mgr.context_textarea_ && btn_text) {
                 if (strcmp(btn_text, keyboard_layout_get_spacebar_text()) == 0) {
                     lv_textarea_add_char(mgr.context_textarea_, ' ');
-                    spdlog::debug("[KeyboardManager] Space");
+                    spdlog::trace("[KeyboardManager] Space");
                 } else {
                     lv_textarea_add_text(mgr.context_textarea_, btn_text);
                 }
@@ -803,8 +809,7 @@ constexpr float HINT_MAX_KEY_FRACTION = 0.32f;
 /// when even the smallest is too big, in which case the caller draws no hint rather
 /// than one that overlaps the key's letter.
 const lv_font_t* pick_hint_font(int32_t btn_h, int32_t btn_w) {
-    static const char* const kCandidates[] = {"font_xs", "font_small", "font_body",
-                                              "font_heading"};
+    static const char* const kCandidates[] = {"font_xs", "font_small", "font_body", "font_heading"};
 
     const int32_t max_h = static_cast<int32_t>(static_cast<float>(btn_h) * HINT_MAX_KEY_FRACTION);
     const lv_font_t* chosen = nullptr;
@@ -1110,6 +1115,15 @@ void KeyboardManager::register_textarea_ex(lv_obj_t* textarea, bool is_password)
     spdlog::debug("[KeyboardManager] Registering textarea: {} (password: {})", (void*)textarea,
                   is_password);
 
+    // Assert the masking rather than merely recording it. is_password_context()
+    // reads the widget's live state, so a caller declaring a password field this
+    // way is guaranteed to get log redaction — previously this flag was logged
+    // and then dropped, which made the whole overload look protective when it
+    // did nothing at all.
+    if (is_password) {
+        lv_textarea_set_password_mode(textarea, true);
+    }
+
     register_textarea(textarea);
 }
 
@@ -1323,6 +1337,17 @@ bool KeyboardManager::is_visible() const {
         return false;
     }
     return !lv_obj_has_flag(keyboard_, LV_OBJ_FLAG_HIDDEN);
+}
+
+bool KeyboardManager::is_password_context() const {
+    if (context_textarea_ == nullptr || !lv_obj_is_valid(context_textarea_)) {
+        return false;
+    }
+    return lv_textarea_get_password_mode(context_textarea_);
+}
+
+char KeyboardManager::log_char(char c) const {
+    return is_password_context() ? '*' : c;
 }
 
 lv_obj_t* KeyboardManager::get_instance() const {

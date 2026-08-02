@@ -84,6 +84,22 @@ class KeyboardManager {
     bool is_visible() const;
 
     /**
+     * @brief Whether the textarea the keyboard is driving is masked
+     *
+     * Password fields must never contribute their content to a log line.
+     * tail_ring_buffer() ships verbatim as the debug bundle's log_tail, and the
+     * ring retains DEBUG whatever verbosity the user configured, so a logged
+     * keypress leaves the device inside an artifact shared in public channels.
+     *
+     * Reads the widget's live state rather than a flag latched at registration:
+     * a "show password" control can toggle it afterwards, and register_textarea()
+     * runs before XML attributes have been applied.
+     *
+     * @return true if the active textarea is in password mode
+     */
+    bool is_password_context() const;
+
+    /**
      * @brief Get the global keyboard instance
      * @return Pointer to the keyboard widget, or NULL if not initialized
      */
@@ -194,6 +210,16 @@ class KeyboardManager {
     void promote_alternative(char base_char, char chosen);
 
   private:
+    /**
+     * @brief The character to put in a log line for @p c.
+     *
+     * Returns @p c normally and '*' while the active textarea is masked. Every
+     * log site that would otherwise name a typed character routes through this,
+     * so keyboard debugging stays useful on ordinary fields without a passphrase
+     * ever reaching the log. See is_password_context().
+     */
+    char log_char(char c) const;
+
     // Event callbacks (static to work with LVGL API)
     static void textarea_focus_event_cb(lv_event_t* e);
     static void textarea_delete_event_cb(lv_event_t* e);

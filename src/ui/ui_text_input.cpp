@@ -243,7 +243,13 @@ static void* ui_text_input_create(lv_xml_parser_state_t* state, const char** att
         textarea,
         reinterpret_cast<void*>(TEXT_INPUT_MAGIC | static_cast<uintptr_t>(KeyboardHint::TEXT)));
 
-    // Auto-register with keyboard manager for software keyboard support
+    // Auto-register with keyboard manager for software keyboard support.
+    //
+    // Deliberately the plain overload: this runs before lv_xml_textarea_apply()
+    // has processed password_mode, so any flag passed here would be read too
+    // early and always be false. KeyboardManager::is_password_context() instead
+    // reads the textarea's live state at the moment it logs, which also tracks a
+    // "show password" control toggling it later.
     KeyboardManager::instance().register_textarea(textarea);
 
     return textarea;
