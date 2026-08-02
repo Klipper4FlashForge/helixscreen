@@ -65,6 +65,7 @@ LVGL_PATCHED_FILES := \
 	src/widgets/label/lv_label.c \
 	src/widgets/label/lv_label.h \
 	src/widgets/label/lv_label_private.h \
+	src/libs/lodepng/lodepng.c \
 	lv_conf_template.h
 # NOTE: src/misc/lv_check_arg.h is deliberately absent — the backport patch
 # CREATES it, so it is untracked upstream and `git checkout` cannot restore it.
@@ -472,6 +473,13 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 		echo "$(GREEN)✓ draw_sw_img buf_h guard patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL draw_sw_img buf_h guard patch already applied$(RESET)"; \
+	fi
+	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_lodepng_bpp_guard.patch 2>/dev/null; then \
+		echo "$(YELLOW)→ Applying LVGL lodepng bit-depth guard (16-bit PNG heap overflow)...$(RESET)"; \
+		git -C $(LVGL_DIR) apply ../../patches/lvgl_lodepng_bpp_guard.patch && \
+		echo "$(GREEN)✓ lodepng bit-depth guard patch applied$(RESET)"; \
+	else \
+		echo "$(GREEN)✓ LVGL lodepng bit-depth guard patch already applied$(RESET)"; \
 	fi
 	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_drm_egl_render_mode_fix.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL DRM EGL render mode fix (upstream ce112eb)...$(RESET)"; \
