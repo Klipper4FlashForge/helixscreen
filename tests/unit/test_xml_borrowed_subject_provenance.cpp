@@ -216,6 +216,77 @@ TEST_CASE_METHOD(LVGLTestFixture,
 }
 
 // ============================================================================
+// 3b. lv_xml_unregister_subject() honours the same ownership split
+// ============================================================================
+//
+// Removing ONE subject by name has to make the same distinction scope teardown
+// does. Freeing unconditionally would abort on C++ storage — that is exactly
+// what IndexedSubjectPool::reclaim() (src/util/indexed_subject_pool.cpp:71)
+// does to its unique_ptr-owned subjects on every rebuild. Freeing nothing (the
+// original behaviour) leaked every parser-allocated subject removed by name.
+
+TEST_CASE_METHOD(LVGLTestFixture, "lv_xml_unregister_subject leaves a borrowed subject intact",
+                 "[xml][hotreload]") {
+    const char* comp = "<component><view><lv_obj name='box'/></view></component>";
+    REQUIRE(lv_xml_register_component_from_data("t_unreg_borrowed", comp) == LV_RESULT_OK);
+    lv_xml_component_scope_t* scope = lv_xml_component_get_scope("t_unreg_borrowed");
+    REQUIRE(scope != nullptr);
+
+    // Mirrors IndexedSubjectPool: C++ owns the storage, the scope borrows it.
+    lv_subject_t owned_by_cpp;
+    lv_subject_init_int(&owned_by_cpp, 5);
+    REQUIRE(lv_xml_register_subject(scope, "pool_slot_0", &owned_by_cpp) == LV_RESULT_OK);
+
+    REQUIRE(lv_xml_unregister_subject(scope, "pool_slot_0") == LV_RESULT_OK);
+    // The name is gone from the registry...
+    REQUIRE(lv_xml_get_subject(scope, "pool_slot_0") == nullptr);
+    // ...but the subject itself is untouched and still drives observers, which
+    // is what lets the caller deinit it afterwards on its own terms.
+    REQUIRE(lv_subject_get_int(&owned_by_cpp) == 5);
+    ObserverProbe probe;
+    REQUIRE(lv_subject_add_observer(&owned_by_cpp, probe_cb, &probe) != nullptr);
+    lv_subject_set_int(&owned_by_cpp, 6);
+    REQUIRE(probe.fired == 2);
+    REQUIRE(probe.last_value == 6);
+
+    lv_subject_deinit(&owned_by_cpp); // as IndexedSubjectPool::reclaim() does
+    REQUIRE(lv_xml_component_unregister("t_unreg_borrowed") == LV_RESULT_OK);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "lv_xml_unregister_subject frees an owned subject",
+                 "[xml][hotreload]") {
+    const char* comp = "<component>"
+                       "  <subjects>"
+                       "    <subject name='owned_int' type='int' value='7'/>"
+                       "    <subject name='owned_str' type='string' value='hello'/>"
+                       "  </subjects>"
+                       "  <view><lv_obj name='box'/></view>"
+                       "</component>";
+
+    // Each cycle removes both parser-allocated subjects BY NAME rather than by
+    // tearing the scope down, so the leak this pins is only reachable through
+    // lv_xml_unregister_subject. 200 cycles leaks 200 * (2 lv_subject_t + 2
+    // 256-byte string buffers) — LeakSanitizer flags it under `make test-asan`.
+    // In a plain build the assertions below still pin the removal semantics.
+    for (int i = 0; i < 200; i++) {
+        REQUIRE(lv_xml_register_component_from_data("t_unreg_owned", comp) == LV_RESULT_OK);
+        lv_xml_component_scope_t* scope = lv_xml_component_get_scope("t_unreg_owned");
+        REQUIRE(scope != nullptr);
+        REQUIRE(lv_xml_get_subject(scope, "owned_int") != nullptr);
+
+        REQUIRE(lv_xml_unregister_subject(scope, "owned_int") == LV_RESULT_OK);
+        REQUIRE(lv_xml_unregister_subject(scope, "owned_str") == LV_RESULT_OK);
+        REQUIRE(lv_xml_get_subject(scope, "owned_int") == nullptr);
+        REQUIRE(lv_xml_get_subject(scope, "owned_str") == nullptr);
+        // Removing the same name twice must not double-free.
+        REQUIRE(lv_xml_unregister_subject(scope, "owned_int") == LV_RESULT_INVALID);
+
+        // Teardown now has no subjects left to release — it must not re-free.
+        REQUIRE(lv_xml_component_unregister("t_unreg_owned") == LV_RESULT_OK);
+    }
+}
+
+// ============================================================================
 // 4. Hot-reload round trip: borrowed subjects are carried into the new scope
 // ============================================================================
 
