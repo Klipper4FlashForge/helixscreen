@@ -31,7 +31,7 @@ HelixScreen works with any Klipper-based printer running Moonraker. Tested and s
 | FlashForge AD5M / 5M Pro | **Tested** | Requires Forge-X or Klipper Mod firmware |
 | QIDI Q2, Max 4 | **Supported** | Stock firmware works (runs standard Moonraker); community firmware like FreeDi or FreeQIDI also supported. Plus 4 uses a TJC serial display and is not supported for on-device install — only remote control via Moonraker. |
 | Creality K1 / K1C / K1 Max / K1 SE | **Supported** | Requires rooting or Guilouz firmware |
-| Creality K2 Pro / K2 Plus | **Tested** | Runs natively with CFS support |
+| Creality K2 Pro / K2 Plus | **Tested** | Runs natively with CFS support, on stock firmware and on community builds with a rewritten CFS module — see [Filament → CFS](guide/filament.md#creality-filament-system-cfs) |
 | Creality Sonic Pad | **Supported** | 32-bit ARM, dedicated build. Tested only on [SonicPad-Debian](https://github.com/Jpe230/SonicPad-Debian); stock Creality firmware untested |
 | Creality Hi | **Preliminary** | Auto-detected; Cartesian bedslinger with optional CFS. Untested on our hardware. |
 | Anycubic Kobra 2 Pro / Kobra 3 / 3 V2 / 3 Max / S1 / S1 Max | **Community** | Auto-detected on [Rinkhals](https://github.com/jbatonnet/Rinkhals) firmware; native ACE (`filament_hub`) supported. Untested on our hardware. |

@@ -2046,12 +2046,28 @@ Existing beta testers upgrading to a version with IFS support will see the filam
 
 ## CFS (Creality Filament System)
 
-Two distinct firmware dialects share the `box` Klipper object. HelixScreen routes between them at backend construction:
+The `box` Klipper object is shared by several firmwares that agree on almost nothing. CFS support therefore has **two independent axes** — do not infer one from the other:
+
+**Axis 1 — macro dialect** (`CfsMacroVariant`), latched at backend construction:
 
 | Printer family | Stock firmware path | Macro dialect | Detection signal |
 |----------------|--------------------|---------------|-----------------|
 | K2, K2 Pro, K2 Plus (built-in CFS) | Creality K2 firmware | `CR_BOX_*` primitives + `BOX_SAVE_FAN`/`BOX_MODE_WAIT` envelope | `PrinterDetector::is_creality_k1() == false` |
 | K1, K1C, K1 Max (official CFS upgrade ≥ v2.3.5.33) | Creality K1 CFS upgrade firmware | Plain `BOX_*` primitives, no fan-save/mode-wait | `PrinterDetector::is_creality_k1() == true` |
+| K2 Plus on a community Kalico port | `Jacob10383/kalico` + a reimplemented `box.py` | High-level `BOX_LOAD SLOT=` / `BOX_UNLOAD` / `T<n> FLUSH=` | `fluidd_widget_version` in the box payload (the module's own identity marker) |
+
+**Axis 2 — box schema** (`CfsSchema`), detected per-payload by `AmsBackendCfs::detect_schema()`:
+
+| Schema | Shape | Parser |
+|--------|-------|--------|
+| `Stock` | `T1`–`T4` nested units, four parallel arrays each, material **codes** | `parse_stock_box_status()` |
+| `Flat` | One `slots[]` array of self-describing objects, plain material names, `#RRGGBB` colors | `parse_flat_box_status()` |
+
+Both axes are decided **from the payload, never from `PrinterDetector`** — a community port reports as stock K2 Plus hardware by every model signal, so model detection cannot see the firmware swap. `Stock` is the default for anything ambiguous.
+
+The dialect signal is deliberately *module identity* (`fluidd_widget_version`) rather than schema shape, so a future flat-schema firmware parses correctly without inheriting this one's command set. It also cannot be `has_macro("BOX_LOAD")`: the Fork commands are registered in Python, so they are not gcode_macros and never appear in `printer.objects.list`.
+
+A `Flat` box whose module we cannot identify still has its control paths refused by `reject_if_flat_schema()`. Full field mapping, command signatures and remaining gaps: `printers/CREALITY_K2_SUPPORT.md` § "Community Kalico port".
 
 ### Firmware requirements
 
