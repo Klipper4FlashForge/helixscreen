@@ -98,6 +98,21 @@ class DisplaySettingsManager {
     /** @brief Get display brightness (10-100) */
     int get_brightness() const;
 
+    /**
+     * @brief Apply brightness live WITHOUT persisting (clamped 10-100)
+     *
+     * Updates the subject and the backlight, and nothing else. Use this for the
+     * per-tick handler of a slider drag: set_brightness() writes settings.json,
+     * which fsyncs the file, fsyncs the directory and copies a rolling backup —
+     * per drag tick that is a real stall on flash-backed hardware, and on some
+     * platforms the backlight backend also forks a shell.
+     *
+     * Pair it with set_brightness() on release so the final value is durable.
+     *
+     * @return the clamped value actually applied
+     */
+    int preview_brightness(int percent);
+
     /** @brief Set display brightness (clamped 10-100, updates subject + hardware + persists) */
     void set_brightness(int percent);
 

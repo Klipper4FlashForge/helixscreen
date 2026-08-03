@@ -239,6 +239,12 @@ TEST_CASE("GCodeStreamingController prefetch", "[gcode][streaming]") {
     GCodeStreamingController controller;
     REQUIRE(controller.open_file(temp_file.path()));
 
+    // Prefetch runs on a worker thread — it used to run inline, which is exactly
+    // what put up to 2*radius+1 seek-and-parses on the LVGL main thread. The
+    // requested layer is still loaded synchronously; only the NEIGHBOURS are
+    // asynchronous, so these sections sync on wait_for_prefetch_idle() before
+    // asserting on them.
+
     SECTION("prefetch loads nearby layers") {
         // Clear any auto-prefetched layers
         controller.clear_cache();
@@ -246,8 +252,12 @@ TEST_CASE("GCodeStreamingController prefetch", "[gcode][streaming]") {
         // Access layer 10, which should prefetch layers 7-13
         controller.get_layer_segments(10);
 
-        // Nearby layers should be cached
+        // The requested layer is loaded before the call returns.
         REQUIRE(controller.is_layer_cached(10));
+
+        controller.wait_for_prefetch_idle();
+
+        // Nearby layers should be cached
         REQUIRE(controller.is_layer_cached(9));
         REQUIRE(controller.is_layer_cached(11));
 
@@ -259,6 +269,7 @@ TEST_CASE("GCodeStreamingController prefetch", "[gcode][streaming]") {
     SECTION("explicit prefetch works") {
         controller.clear_cache();
         controller.prefetch_around(5, 2);
+        controller.wait_for_prefetch_idle();
 
         // Layers 3-7 should be cached
         for (size_t i = 3; i <= 7; ++i) {

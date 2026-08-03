@@ -222,13 +222,43 @@ size_t ThumbnailCache::get_max_size() const {
 }
 
 size_t ThumbnailCache::get_available_disk_space() const {
+    // Rate-limited: statfs is a syscall against the backing store, and this is
+    // reached twice per fetch_optimized() — once via is_caching_allowed() and
+    // once inside evict_locked() — on the main thread while a file listing
+    // populates. Free space does not move fast enough to justify probing it per
+    // thumbnail; DISK_PROBE_INTERVAL_MS bounds how stale the answer can be.
+    const auto now = std::chrono::steady_clock::now();
+
+    {
+        std::lock_guard<std::mutex> lock(disk_probe_mutex_);
+        if (disk_probe_valid_) {
+            const auto age =
+                std::chrono::duration_cast<std::chrono::milliseconds>(now - last_disk_probe_);
+            if (age.count() < DISK_PROBE_INTERVAL_MS) {
+                return cached_available_bytes_;
+            }
+        }
+    }
+
+    size_t available = 0;
     try {
         std::filesystem::space_info space = std::filesystem::space(cache_dir_);
-        return space.available;
+        available = space.available;
     } catch (const std::filesystem::filesystem_error& e) {
         spdlog::warn("[ThumbnailCache] Failed to query disk space: {}", e.what());
-        return 0;
+        available = 0;
     }
+
+    std::lock_guard<std::mutex> lock(disk_probe_mutex_);
+    cached_available_bytes_ = available;
+    last_disk_probe_ = now;
+    disk_probe_valid_ = true;
+    return available;
+}
+
+void ThumbnailCache::invalidate_disk_probe() {
+    std::lock_guard<std::mutex> lock(disk_probe_mutex_);
+    disk_probe_valid_ = false;
 }
 
 ThumbnailCache::DiskPressure ThumbnailCache::get_disk_pressure() const {
@@ -900,39 +930,19 @@ void ThumbnailCache::process_and_callback(const std::string& png_lvgl_path,
     // the PNG path instead of calling on_error. The PNG still works, just slower.
     (void)on_error;
 
-    // Read PNG file into memory
     std::string local_path = png_lvgl_path;
     if (is_lvgl_path(local_path)) {
         local_path = local_path.substr(2); // Remove "A:" prefix
     }
 
-    std::ifstream file(local_path, std::ios::binary | std::ios::ate);
-    if (!file) {
-        spdlog::warn("[ThumbnailCache] Cannot read PNG for processing: {}", local_path);
-        // Fallback: return PNG path (still works, just not optimized)
-        if (on_success) {
-            on_success(png_lvgl_path);
-        }
-        return;
-    }
-
-    size_t size = file.tellg();
-    file.seekg(0, std::ios::beg);
-
-    std::vector<uint8_t> png_data(size);
-    if (!file.read(reinterpret_cast<char*>(png_data.data()), size)) {
-        spdlog::warn("[ThumbnailCache] Failed to read PNG data: {}", local_path);
-        // Fallback: return PNG path
-        if (on_success) {
-            on_success(png_lvgl_path);
-        }
-        return;
-    }
-    file.close();
-
-    // Queue for background processing
-    helix::ThumbnailProcessor::instance().process_async(
-        png_data, source_path, target,
+    // Hand the PATH to the processor, not the bytes. This runs on the main
+    // thread once per file while a listing populates; reading the whole PNG here
+    // only to pass it straight to the pool put a synchronous file read on the
+    // LVGL loop for every card. process_file_async() does the read on the worker
+    // and reports a read failure through on_error, which the lambda below turns
+    // back into the same PNG fallback this code always used.
+    helix::ThumbnailProcessor::instance().process_file_async(
+        local_path, source_path, target,
         // Success - return optimized path
         [on_success](const std::string& lvbin_path) {
             spdlog::debug("[ThumbnailCache] Pre-scaling complete: {}", lvbin_path);

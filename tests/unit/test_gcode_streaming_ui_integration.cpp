@@ -268,8 +268,12 @@ TEST_CASE("Streaming controller prefetch integration", "[gcode][streaming]") {
         renderer.set_current_layer(10);
         info = renderer.get_layer_info();
 
-        // Nearby layers should be cached
+        // The accessed layer is loaded synchronously...
         REQUIRE(controller.is_layer_cached(10));
+
+        // ...its neighbours on the prefetch worker, so sync before asserting.
+        controller.wait_for_prefetch_idle();
+
         REQUIRE(controller.is_layer_cached(9));
         REQUIRE(controller.is_layer_cached(11));
     }

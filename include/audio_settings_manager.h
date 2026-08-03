@@ -61,6 +61,18 @@ class AudioSettingsManager {
     /** @brief Get perceptually-scaled volume as 0.0–1.0 float (quadratic curve) */
     float get_volume_scaled() const;
 
+    /**
+     * @brief Apply volume live WITHOUT persisting (clamped 0-100)
+     *
+     * Updates the subject only. Use for the per-tick handler of a slider drag;
+     * set_volume() writes settings.json (double fsync + rolling backup), which
+     * has no business running once per drag tick. Pair with set_volume() on
+     * release so the final value is durable.
+     *
+     * @return the clamped value actually applied
+     */
+    int preview_volume(int volume);
+
     /** @brief Set master volume (clamped 0-100, updates subject + persists) */
     void set_volume(int volume);
 

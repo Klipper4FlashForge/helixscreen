@@ -1378,8 +1378,12 @@ std::optional<std::string> GCodeLayerRenderer::pick_object_at(int screen_x, int 
     const std::vector<ToolpathSegment>* segments = nullptr;
 
     if (streaming_controller_) {
+        // Cache-only: a hit-test must never seek and parse. We are picking
+        // against the layer already on screen, which render() has faulted in, so
+        // this is a hit in practice; a miss costs one unrecognised tap, whereas
+        // loading here froze the UI for seconds on a 2-core board (C2CP6ZAW).
         segments_holder =
-            streaming_controller_->get_layer_segments(static_cast<size_t>(current_layer_));
+            streaming_controller_->try_get_layer_segments(static_cast<size_t>(current_layer_));
         segments = segments_holder.get();
     } else if (gcode_) {
         segments = &gcode_->layers[static_cast<size_t>(current_layer_)].segments;
