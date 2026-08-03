@@ -1127,9 +1127,11 @@ void PrintStatusPanel::on_ui_destroyed() {
     error_badge_ = nullptr;
     overlay_header_ = nullptr;
 
-    // Heater icon animators — the widget tree (and thus the icons) is already
-    // gone, so the binder's own LV_EVENT_DELETE has likely already fired; this
-    // is an idempotent safety net.
+    // Heater icon animators — at this point the widget tree is only hidden
+    // and reparented to the top layer (destroy_overlay_ui() defers the actual
+    // deletion to the next tick, see overlay_base.h), so the icons are still
+    // valid and the binders are still bound. Unbind explicitly here rather
+    // than relying on the eventual deferred LV_EVENT_DELETE.
     nozzle_icon_binder_.unbind();
     bed_icon_binder_.unbind();
     chamber_icon_binder_.unbind();

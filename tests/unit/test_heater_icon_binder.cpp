@@ -303,50 +303,77 @@ TEST_CASE_METHOD(XMLTestFixture,
     REQUIRE_FALSE(chamber_binder.is_bound());
 }
 
-// The panel manager rebuilds dashboard widgets by doing attach A -> detach A ->
-// attach B, and A's deferred LV_EVENT_DELETE fires AFTER B has taken over. Each
-// binder owns its own animator whose delete callback carries its own `this`, so
-// A's teardown must not disturb B. This is the same clobber guarded against for
-// the progress arc in print_status_widget.cpp:2035-2062.
+// The hazard these tests exist to catch is NOT a single PrintStatusWidget
+// instance's sequential attach -> detach -> attach recycle. That path is
+// already safe: PrintStatusWidget::detach() always runs synchronously on the
+// SAME instance before its own re-attach(), and each of its three
+// HeaterIconBinder members is a plain by-value member of that instance (never
+// on the shared/refcounted DetailedFormatter/s_formatter_, per
+// print_status_widget.h) — so there is nothing for a "handover" to race
+// against.
+//
+// The real hazard is MULTIPLE CONCURRENT PrintStatusWidget instances: the
+// panel manager keeps up to one live instance per breakpoint variant, and all
+// of them share a single DetailedFormatter (s_formatter_) via refcounting. If
+// the three binders were ever moved onto that shared formatter instead of
+// staying per-instance members, two live instances calling
+// bind()/bind_subjects() would be racing to rebind the SAME HeaterIconBinder.
+// bind()/bind_subjects() unconditionally call unbind() first
+// (ui_heater_icon_binder.cpp:29-30, 63-65), so this would never crash — it
+// would go silent: the second instance's bind() steals the animator away from
+// the first, and the first instance's icon simply freezes and stops tracking
+// temperature changes. The test below reproduces exactly that steal with one
+// binder shared across two roots, and asserts the frozen-not-crashed outcome.
 
-TEST_CASE("HeaterIconBinder: A's teardown does not disturb B after handover",
-          "[heater_binder][rebuild]") {
-    LVGLTestFixture fixture;
+TEST_CASE_METHOD(
+    XMLTestFixture,
+    "HeaterIconBinder: a binder shared across two roots silently steals from the first on rebind",
+    "[heater_binder][rebuild]") {
+    const char* name = HeaterIconBinder::default_icon_name(HeaterType::Bed);
+    lv_obj_t* root_a = create_icon_root(test_screen(), name); // stand-in for instance A's DOM
+    lv_obj_t* icon_a = lv_obj_find_by_name(root_a, name);
+    lv_obj_t* root_b = create_icon_root(test_screen(), name); // stand-in for instance B's DOM
+    lv_obj_t* icon_b = lv_obj_find_by_name(root_b, name);
+    REQUIRE(icon_a != nullptr);
+    REQUIRE(icon_b != nullptr);
 
-    lv_subject_t current;
-    lv_subject_t target;
-    lv_subject_init_int(&current, 250);
-    lv_subject_init_int(&target, 2000);
+    lv_subject_t* current = state().get_bed_temp_subject();
+    lv_subject_t* target = state().get_bed_target_subject();
+    lv_subject_set_int(current, 250);
+    lv_subject_set_int(target, 0); // Off
 
-    lv_obj_t* root_a = lv_obj_create(lv_screen_active());
-    lv_obj_t* icon_a = lv_label_create(root_a);
-    lv_obj_set_name(icon_a, "bed_icon_glyph");
+    // One binder standing in for a mistakenly-shared member (e.g. living on
+    // s_formatter_ instead of on each PrintStatusWidget instance).
+    HeaterIconBinder shared_binder;
+    REQUIRE(shared_binder.bind(root_a, state(), HeaterType::Bed));
+    REQUIRE(lv_color_eq(icon_text_color(icon_a), expected_color(250, 0)));
+    lv_color_t icon_a_color_at_steal = icon_text_color(icon_a);
 
-    lv_obj_t* root_b = lv_obj_create(lv_screen_active());
-    lv_obj_t* icon_b = lv_label_create(root_b);
-    lv_obj_set_name(icon_b, "bed_icon_glyph");
+    // Instance B attaches "concurrently" — in the real bug this is a second
+    // live PrintStatusWidget's attach() calling bind() on the same shared
+    // binder, not a sequential detach/re-attach of one instance.
+    REQUIRE(shared_binder.bind(root_b, state(), HeaterType::Bed));
+    REQUIRE(shared_binder.is_bound());
 
-    HeaterIconBinder binder_a;
-    HeaterIconBinder binder_b;
+    // A temperature change now reaches icon_b only. icon_a is not crashed and
+    // not use-after-freed — it is just silently frozen at whatever it last
+    // showed, because the one animator that used to watch it now watches
+    // icon_b instead.
+    lv_subject_set_int(target, 2000); // Heating
+    UpdateQueue::instance().drain();
 
-    REQUIRE(binder_a.bind_subjects(root_a, "bed_icon_glyph", &current, &target));
-    // Handover: B takes over before A is torn down.
-    REQUIRE(binder_b.bind_subjects(root_b, "bed_icon_glyph", &current, &target));
-    REQUIRE(binder_b.is_bound());
+    REQUIRE(lv_color_eq(icon_text_color(icon_b), expected_color(250, 2000)));
+    REQUIRE(lv_color_eq(icon_text_color(icon_a), icon_a_color_at_steal));
+    REQUIRE_FALSE(lv_color_eq(icon_text_color(icon_a), expected_color(250, 2000)));
 
-    // A goes away, including its widget tree — this fires A's deferred delete cb.
-    binder_a.unbind();
-    lv_obj_delete(root_a);
-
-    // B must survive intact and still respond to subject changes.
-    REQUIRE(binder_b.is_bound());
-    lv_subject_set_int(&current, 1990);
-    REQUIRE(binder_b.is_bound());
-
-    binder_b.unbind();
-    REQUIRE_FALSE(binder_b.is_bound());
+    shared_binder.unbind();
 }
 
+// General widget-teardown safety, independent of the sharing hazard above:
+// deleting the icon widget out from under a bound HeaterIconBinder — without
+// ever calling unbind() — must not leave a dangling observer. The animator's
+// own LV_EVENT_DELETE handler has to auto-detach so a later subject change
+// cannot touch freed memory.
 TEST_CASE("HeaterIconBinder: observers survive widget deletion without unbind",
           "[heater_binder][rebuild]") {
     LVGLTestFixture fixture;
