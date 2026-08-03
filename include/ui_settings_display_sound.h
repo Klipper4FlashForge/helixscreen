@@ -89,6 +89,7 @@ class DisplaySoundSettingsOverlay : public OverlayBase {
     void handle_dark_mode_changed(bool enabled);
     void handle_theme_settings_clicked();
     void handle_brightness_changed(int value);
+    void handle_brightness_commit(int value);
     void handle_widget_labels_changed(bool enabled);
     void handle_page_scroll_buttons_changed(bool enabled);
     void handle_bed_mesh_mode_changed(int mode);
@@ -107,6 +108,7 @@ class DisplaySoundSettingsOverlay : public OverlayBase {
     // Sound handlers
     void handle_sounds_changed(bool enabled);
     void handle_volume_changed(int value);
+    void handle_volume_commit(int value);
     void handle_ui_sounds_changed(bool enabled);
     void handle_sound_theme_changed(int index);
     void handle_audio_device_changed(int index);
@@ -198,6 +200,7 @@ class DisplaySoundSettingsOverlay : public OverlayBase {
     // Display
     static void on_dark_mode_changed(lv_event_t* e);
     static void on_brightness_changed(lv_event_t* e);
+    static void on_brightness_commit(lv_event_t* e);
     static void on_widget_labels_changed(lv_event_t* e);
     static void on_page_scroll_buttons_changed(lv_event_t* e);
     static void on_bed_mesh_mode_changed(lv_event_t* e);
@@ -220,6 +223,7 @@ class DisplaySoundSettingsOverlay : public OverlayBase {
     // Sound
     static void on_sounds_changed(lv_event_t* e);
     static void on_volume_changed(lv_event_t* e);
+    static void on_volume_commit(lv_event_t* e);
     static void on_volume_released(lv_event_t* e);
     static void on_ui_sounds_changed(lv_event_t* e);
     static void on_sound_theme_changed(lv_event_t* e);

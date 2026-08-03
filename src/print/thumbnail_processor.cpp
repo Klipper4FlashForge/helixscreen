@@ -20,6 +20,7 @@
 #include <atomic>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 
 // stb headers - single-file libraries for image processing
@@ -98,6 +99,96 @@ void ThumbnailProcessor::shutdown() {
 // Public API
 // ============================================================================
 
+void ThumbnailProcessor::deliver_result(const ProcessResult& result, const std::string& source,
+                                        ProcessSuccessCallback on_success,
+                                        ProcessErrorCallback on_error) {
+    if (result.success) {
+        spdlog::debug("[ThumbnailProcessor] Processed {} -> {} ({}x{})", source, result.output_path,
+                      result.output_width, result.output_height);
+        if (on_success) {
+            // CRITICAL: Defer callback to main UI thread to avoid LVGL threading
+            // issues. Without this, callbacks can trigger widget operations from
+            // worker thread, causing "lv_inv_area() rendering_in_progress"
+            // assertion on slow devices.
+            struct SuccessCtx {
+                ProcessSuccessCallback callback;
+                std::string path;
+            };
+            auto ctx = std::make_unique<SuccessCtx>(SuccessCtx{on_success, result.output_path});
+            helix::ui::queue_update<SuccessCtx>(std::move(ctx),
+                                                [](SuccessCtx* c) { c->callback(c->path); });
+        }
+    } else {
+        spdlog::warn("[ThumbnailProcessor] Failed to process {}: {}", source, result.error);
+        if (on_error) {
+            // CRITICAL: Defer callback to main UI thread (same reason as on_success)
+            struct ErrorCtx {
+                ProcessErrorCallback callback;
+                std::string error;
+            };
+            auto ctx = std::make_unique<ErrorCtx>(ErrorCtx{on_error, result.error});
+            helix::ui::queue_update<ErrorCtx>(std::move(ctx),
+                                              [](ErrorCtx* c) { c->callback(c->error); });
+        }
+    }
+}
+
+void ThumbnailProcessor::process_file_async(const std::string& png_path,
+                                            const std::string& source_path,
+                                            const ThumbnailTarget& target,
+                                            ProcessSuccessCallback on_success,
+                                            ProcessErrorCallback on_error) {
+    auto path_copy = png_path;
+    auto source_copy = source_path;
+
+    // Same locked-commit structure as process_async() — see the #1202 commentary
+    // there for why commit() must happen under mutex_.
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!shutdown_ && thread_pool_) {
+            std::string cache_dir_copy = cache_dir_;
+            std::shared_ptr<ThumbnailWriteJournal> journal_copy = write_journal_.lock();
+
+            thread_pool_->commit([this, path_copy = std::move(path_copy),
+                                  source_copy = std::move(source_copy),
+                                  cache_dir_copy = std::move(cache_dir_copy),
+                                  journal_copy = std::move(journal_copy), target, on_success,
+                                  on_error]() {
+                // The read happens HERE, on the worker. Callers used to slurp the
+                // PNG on the main thread purely to hand the bytes straight back
+                // to this pool - once per file while a listing populated.
+                std::ifstream file(path_copy, std::ios::binary | std::ios::ate);
+                if (!file) {
+                    deliver_result(ProcessResult{false, "", "Cannot read PNG: " + path_copy, 0, 0},
+                                   source_copy, on_success, on_error);
+                    return;
+                }
+
+                const std::streamsize size = file.tellg();
+                file.seekg(0, std::ios::beg);
+
+                std::vector<uint8_t> png_data(static_cast<size_t>(size));
+                if (!file.read(reinterpret_cast<char*>(png_data.data()), size)) {
+                    deliver_result(
+                        ProcessResult{false, "", "Failed to read PNG data: " + path_copy, 0, 0},
+                        source_copy, on_success, on_error);
+                    return;
+                }
+                file.close();
+
+                ProcessResult result =
+                    do_process(png_data, source_copy, target, cache_dir_copy, journal_copy);
+                deliver_result(result, source_copy, on_success, on_error);
+            });
+            return;
+        }
+    }
+
+    if (on_error) {
+        on_error("Thumbnail processor is shut down");
+    }
+}
+
 void ThumbnailProcessor::process_async(const std::vector<uint8_t>& png_data,
                                        const std::string& source_path,
                                        const ThumbnailTarget& target,
@@ -143,40 +234,7 @@ void ThumbnailProcessor::process_async(const std::vector<uint8_t>& png_data,
                  target, on_success, on_error]() {
                     ProcessResult result =
                         do_process(png_copy, source_copy, target, cache_dir_copy, journal_copy);
-
-                    if (result.success) {
-                        spdlog::debug("[ThumbnailProcessor] Processed {} -> {} ({}x{})",
-                                      source_copy, result.output_path, result.output_width,
-                                      result.output_height);
-                        if (on_success) {
-                            // CRITICAL: Defer callback to main UI thread to avoid LVGL threading
-                            // issues. Without this, callbacks can trigger widget operations from
-                            // worker thread, causing "lv_inv_area() rendering_in_progress"
-                            // assertion on slow devices.
-                            struct SuccessCtx {
-                                ProcessSuccessCallback callback;
-                                std::string path;
-                            };
-                            auto ctx = std::make_unique<SuccessCtx>(
-                                SuccessCtx{on_success, result.output_path});
-                            helix::ui::queue_update<SuccessCtx>(
-                                std::move(ctx), [](SuccessCtx* c) { c->callback(c->path); });
-                        }
-                    } else {
-                        spdlog::warn("[ThumbnailProcessor] Failed to process {}: {}", source_copy,
-                                     result.error);
-                        if (on_error) {
-                            // CRITICAL: Defer callback to main UI thread (same reason as
-                            // on_success)
-                            struct ErrorCtx {
-                                ProcessErrorCallback callback;
-                                std::string error;
-                            };
-                            auto ctx = std::make_unique<ErrorCtx>(ErrorCtx{on_error, result.error});
-                            helix::ui::queue_update<ErrorCtx>(
-                                std::move(ctx), [](ErrorCtx* c) { c->callback(c->error); });
-                        }
-                    }
+                    deliver_result(result, source_copy, on_success, on_error);
                 });
             return;
         }

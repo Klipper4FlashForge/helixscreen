@@ -138,6 +138,25 @@ class ThumbnailProcessor {
                        ProcessErrorCallback on_error);
 
     /**
+     * @brief Process a PNG file asynchronously, reading it on the worker thread
+     *
+     * Same contract as process_async(), but takes a path instead of bytes and
+     * performs the read inside the pool task. Prefer this from the main thread:
+     * the caller would otherwise slurp the whole PNG synchronously only to hand
+     * the bytes straight back to this pool, once per file while a file listing
+     * populates.
+     *
+     * @param png_path    Filesystem path to the PNG (no "A:" LVGL prefix)
+     * @param source_path Original thumbnail path (used for cache key generation)
+     * @param target      Target dimensions and format
+     * @param on_success  Called with path to .bin file on success (main thread)
+     * @param on_error    Called with error message on failure (main thread)
+     */
+    void process_file_async(const std::string& png_path, const std::string& source_path,
+                            const ThumbnailTarget& target, ProcessSuccessCallback on_success,
+                            ProcessErrorCallback on_error);
+
+    /**
      * @brief Process PNG data synchronously
      *
      * Blocks until processing is complete. Prefer process_async() for UI code.
@@ -333,6 +352,12 @@ class ThumbnailProcessor {
     ProcessResult do_process(const std::vector<uint8_t>& png_data, const std::string& source_path,
                              const ThumbnailTarget& target, const std::string& cache_dir,
                              const std::shared_ptr<ThumbnailWriteJournal>& journal);
+
+    /// Marshal a finished ProcessResult back to the main thread and fire the
+    /// caller's callback. Shared by process_async() and process_file_async() so
+    /// both keep identical main-thread-dispatch semantics.
+    static void deliver_result(const ProcessResult& result, const std::string& source,
+                               ProcessSuccessCallback on_success, ProcessErrorCallback on_error);
 
     /**
      * @brief Write LVGL binary file

@@ -43,6 +43,14 @@ struct UiButtonData {
     lv_obj_t* label;    // Label widget (always present)
     bool icon_on_right; // true if icon is after text
 
+    // Declared icon placement, recorded at create time. The icon itself may not
+    // exist yet: a button with bind_icon but no static icon= attribute has its
+    // icon created later, during the apply pass, and that pass has no access to
+    // the XML attributes. Without these, a late-created icon always ends up in a
+    // row and icon_position="top"/"bottom" is silently ignored.
+    bool icon_vertical{false};  // icon_position top/bottom, or layout="column"
+    bool icon_on_bottom{false}; // icon comes after the label in a vertical stack
+
     // op-state (bind_op_state): 0=idle, 1=busy (spinner), 2=done (check glyph).
     // op_spinner is an lv_arc lazily created in the icon slot the first time the
     // button goes busy; it is shown/hidden as state changes so the button width
@@ -448,7 +456,8 @@ lv_obj_t* create_button_icon(lv_obj_t* btn, const char* icon_name,
  * - variant: Button style (primary/secondary/danger/success/tertiary/warning/ghost/outline)
  * - text: Button label text
  * - icon: Optional icon name (e.g., "settings", "heat_wave")
- * - icon_position: "left" (default) or "right"
+ * - icon_position: "left" (default), "right", "top" or "bottom". Honoured whether
+ *   the icon comes from the static icon= attribute or from a bind_icon subject.
  *
  * @param state XML parser state
  * @param attrs XML attributes
@@ -551,7 +560,9 @@ void* ui_button_create(lv_xml_parser_state_t* state, const char** attrs) {
                                           .id = next_button_id(),
                                           .icon = nullptr,
                                           .label = nullptr,
-                                          .icon_on_right = icon_on_right};
+                                          .icon_on_right = icon_on_right,
+                                          .icon_vertical = vertical_layout,
+                                          .icon_on_bottom = icon_on_bottom};
 
     bool has_icon = (icon_name && strlen(icon_name) > 0);
     const char* bind_text_create = lv_xml_get_value_of(attrs, "bind_text");
@@ -954,17 +965,33 @@ void ui_button_apply(lv_xml_parser_state_t* state, const char** attrs) {
 
                 // Position icon appropriately
                 if (data->label) {
-                    // Icon + text: set up flex layout
-                    lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_ROW);
-                    lv_obj_set_flex_align(btn, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
-                                          LV_FLEX_ALIGN_CENTER);
-                    lv_obj_set_style_pad_column(btn, theme_manager_get_spacing("space_xs"),
-                                                LV_PART_MAIN);
+                    // Icon + text: set up flex layout matching the position the
+                    // button declared at create time. Mirrors the static-icon
+                    // layout in ui_button_create().
                     // Clear any centering on the label (it was centered when text-only)
                     lv_obj_set_align(data->label, LV_ALIGN_DEFAULT);
-                    // Position icon before or after text based on icon_on_right
-                    lv_obj_move_to_index(data->icon, data->icon_on_right ? -1 : 0);
-                    spdlog::trace("[ui_button] bind_icon: created icon with flex layout");
+                    lv_obj_set_flex_align(btn, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+                                          LV_FLEX_ALIGN_CENTER);
+
+                    if (data->icon_vertical) {
+                        lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_COLUMN);
+                        // No pad_row - the label carries pad_top instead
+                        lv_obj_set_style_pad_row(btn, 0, LV_PART_MAIN);
+                        lv_obj_move_to_index(data->icon, data->icon_on_bottom ? -1 : 0);
+                        // Small font for vertical layout labels (matches text_small)
+                        lv_obj_set_style_text_font(
+                            data->label, theme_manager_get_font("font_small"), LV_PART_MAIN);
+                        lv_obj_set_style_pad_top(
+                            data->label, theme_manager_get_spacing("space_xxs"), LV_PART_MAIN);
+                    } else {
+                        lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_ROW);
+                        lv_obj_set_style_pad_column(btn, theme_manager_get_spacing("space_xs"),
+                                                    LV_PART_MAIN);
+                        // Position icon before or after text based on icon_on_right
+                        lv_obj_move_to_index(data->icon, data->icon_on_right ? -1 : 0);
+                    }
+                    spdlog::trace("[ui_button] bind_icon: created icon with {} flex layout",
+                                  data->icon_vertical ? "column" : "row");
                 } else {
                     // Icon only: center it
                     lv_obj_center(data->icon);

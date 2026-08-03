@@ -117,6 +117,13 @@ void PreheatWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
     if (bed_row)
         lv_obj_set_user_data(bed_row, this);
 
+    // Tint the two heater glyphs. The numbers beside them already carry the
+    // 4-state thermal color, so leaving the icons flat made them disagree
+    // inside a single row. Bound from widget_obj_ — the tile holds exactly one
+    // of each glyph name.
+    nozzle_icon_binder_.bind(widget_obj_, printer_state_, helix::HeaterType::Nozzle);
+    bed_icon_binder_.bind(widget_obj_, printer_state_, helix::HeaterType::Bed);
+
     // Observe heater targets to toggle preheat/cooldown mode
     using helix::ui::observe_int_sync;
     extruder_target_obs_ =
@@ -141,6 +148,9 @@ void PreheatWidget::detach() {
     if (s_active_instance == this) {
         s_active_instance = nullptr;
     }
+
+    nozzle_icon_binder_.unbind();
+    bed_icon_binder_.unbind();
 
     // Applying [L073]: subjects are alive during detach, use reset()
     extruder_target_obs_.reset();

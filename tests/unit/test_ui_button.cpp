@@ -83,6 +83,28 @@ class UiButtonTestFixture : public XMLTestFixture {
     }
 
     /**
+     * @brief Index of the first lv_label child whose text equals @p text
+     * @return Child index, or -1 if no such child exists
+     */
+    int32_t find_child_index_with_text(lv_obj_t* btn, const char* text) {
+        if (!text) {
+            return -1;
+        }
+        uint32_t count = lv_obj_get_child_count(btn);
+        for (uint32_t i = 0; i < count; i++) {
+            lv_obj_t* child = lv_obj_get_child(btn, i);
+            if (!lv_obj_check_type(child, &lv_label_class)) {
+                continue;
+            }
+            const char* child_text = lv_label_get_text(child);
+            if (child_text && strcmp(child_text, text) == 0) {
+                return static_cast<int32_t>(i);
+            }
+        }
+        return -1;
+    }
+
+    /**
      * @brief Create a ui_button via XML with given attributes
      * @param attrs NULL-terminated array of key-value attribute pairs
      * @return Created button, or nullptr on failure
@@ -479,4 +501,98 @@ TEST_CASE_METHOD(UiButtonTestFixture,
     // Must not crash; the captured (now invalid) widget pointer is skipped.
     REQUIRE_NOTHROW(
         helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance()));
+}
+
+// ============================================================================
+// icon_position + bind_icon Tests
+// ============================================================================
+//
+// A button that declares icon_position="top"/"bottom" but has no static icon=
+// attribute gets its icon created later, by the bind_icon apply pass. That pass
+// must honour the declared position rather than forcing a row.
+
+TEST_CASE_METHOD(UiButtonTestFixture,
+                 "ui_button bind_icon honours icon_position=top without a static icon",
+                 "[ui_button][xml][quick]") {
+    const char* attrs[] = {"text",          "Light", "bind_icon", "test_icon_subject",
+                           "icon_position", "top",   nullptr};
+
+    lv_obj_t* btn = create_button(attrs);
+    REQUIRE(btn != nullptr);
+    process_lvgl(10);
+
+    // Icon must exist and the button must stack its children vertically.
+    const int32_t icon_idx = find_child_index_with_text(btn, ui_icon::lookup_codepoint("light"));
+    const int32_t label_idx = find_child_index_with_text(btn, "Light");
+    INFO("icon child index=" << icon_idx << " label child index=" << label_idx);
+    REQUIRE(icon_idx >= 0);
+    REQUIRE(label_idx >= 0);
+
+    INFO("icon_position=top must produce a COLUMN flex flow, not a ROW");
+    REQUIRE(lv_obj_get_style_flex_flow(btn, LV_PART_MAIN) == LV_FLEX_FLOW_COLUMN);
+
+    INFO("icon must be stacked above the label");
+    REQUIRE(icon_idx < label_idx);
+}
+
+TEST_CASE_METHOD(UiButtonTestFixture,
+                 "ui_button bind_icon honours icon_position=bottom without a static icon",
+                 "[ui_button][xml][quick]") {
+    const char* attrs[] = {"text",          "Light",  "bind_icon", "test_icon_subject",
+                           "icon_position", "bottom", nullptr};
+
+    lv_obj_t* btn = create_button(attrs);
+    REQUIRE(btn != nullptr);
+    process_lvgl(10);
+
+    const int32_t icon_idx = find_child_index_with_text(btn, ui_icon::lookup_codepoint("light"));
+    const int32_t label_idx = find_child_index_with_text(btn, "Light");
+    REQUIRE(icon_idx >= 0);
+    REQUIRE(label_idx >= 0);
+
+    REQUIRE(lv_obj_get_style_flex_flow(btn, LV_PART_MAIN) == LV_FLEX_FLOW_COLUMN);
+
+    INFO("icon must be stacked below the label");
+    REQUIRE(icon_idx > label_idx);
+}
+
+// Regression guard: the default (no icon_position) must keep producing a row
+// with the icon to the LEFT of the label, exactly as before.
+TEST_CASE_METHOD(UiButtonTestFixture,
+                 "ui_button bind_icon without icon_position still lays out as a row",
+                 "[ui_button][xml][quick]") {
+    const char* attrs[] = {"text", "Light", "bind_icon", "test_icon_subject", nullptr};
+
+    lv_obj_t* btn = create_button(attrs);
+    REQUIRE(btn != nullptr);
+    process_lvgl(10);
+
+    const int32_t icon_idx = find_child_index_with_text(btn, ui_icon::lookup_codepoint("light"));
+    const int32_t label_idx = find_child_index_with_text(btn, "Light");
+    REQUIRE(icon_idx >= 0);
+    REQUIRE(label_idx >= 0);
+
+    REQUIRE(lv_obj_get_style_flex_flow(btn, LV_PART_MAIN) == LV_FLEX_FLOW_ROW);
+    REQUIRE(icon_idx < label_idx);
+}
+
+// icon_position="right" with bind_icon must keep the row flow and place the
+// icon after the label — the one position the pre-existing code already honoured.
+TEST_CASE_METHOD(UiButtonTestFixture,
+                 "ui_button bind_icon honours icon_position=right without a static icon",
+                 "[ui_button][xml][quick]") {
+    const char* attrs[] = {"text",          "Light", "bind_icon", "test_icon_subject",
+                           "icon_position", "right", nullptr};
+
+    lv_obj_t* btn = create_button(attrs);
+    REQUIRE(btn != nullptr);
+    process_lvgl(10);
+
+    const int32_t icon_idx = find_child_index_with_text(btn, ui_icon::lookup_codepoint("light"));
+    const int32_t label_idx = find_child_index_with_text(btn, "Light");
+    REQUIRE(icon_idx >= 0);
+    REQUIRE(label_idx >= 0);
+
+    REQUIRE(lv_obj_get_style_flex_flow(btn, LV_PART_MAIN) == LV_FLEX_FLOW_ROW);
+    REQUIRE(icon_idx > label_idx);
 }

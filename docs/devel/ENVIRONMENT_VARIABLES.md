@@ -846,6 +846,44 @@ it makes the print-start emit `SKIP_LEVELING=0 ADAPTIVE=1` on the `START_PRINT`
 invocation. On a non-adaptive printer the same row reads "Auto Bed Mesh" and
 behaves exactly as before.
 
+### `HELIX_MOCK_EXCLUDE_OBJECTS`
+
+Publish a synthetic multi-object plate at mock print start, so the exclude-object
+map and side list are reachable under `--test`.
+
+| Property | Value |
+|----------|-------|
+| **Values** | `1` (5 objects), `2`–`12` (that many objects), `0` / `off` / unset to disable |
+| **Default** | unset (only what the G-code declares) |
+| **File** | `src/api/moonraker_client_mock.cpp` (read in the constructor, applied in `start_print_internal()`) |
+
+The stock test G-codes each declare exactly one `EXCLUDE_OBJECT_DEFINE`, and the
+print-status **objects** button is gated on two or more (`defined_objects.size() >= 2`),
+so by default `exclude_objects_available` never becomes 1 and the feature cannot be
+driven in the mock at all. When set, the mock **replaces** the parsed object list with
+`n` slicer-style named objects laid out on a grid across the mock bed
+(0–250 mm in X and Y, 20 mm inset), published through the same
+`exclude_object.objects` status update Klipper sends — `PrinterState`,
+`ExcludeObjectMapView` and `ExcludeObjectSideList` see nothing special about it.
+`1` is treated as "give me a plausible plate" (5 objects) rather than one object,
+since a single object would leave the button hidden.
+
+Excluding still works exactly as in production: tapping a row or a map rect sends
+`EXCLUDE_OBJECT NAME=...`, the mock's G-code handler adds it to
+`exclude_object.excluded_objects`, and the row/rect re-renders as excluded.
+
+```bash
+# Boot into a printing job with 5 objects, objects button visible
+HELIX_MOCK_AUTO_PRINT=1 HELIX_MOCK_EXCLUDE_OBJECTS=1 \
+  ./build/bin/helix-screen --test --sim-speed 6 -vv
+
+# 9 objects — enough to overflow the side list and force scrolling
+HELIX_MOCK_AUTO_PRINT=1 HELIX_MOCK_EXCLUDE_OBJECTS=9 \
+  ./build/bin/helix-screen --test --sim-speed 6 -vv
+```
+
+Confirm via the log: `Published <n> synthetic exclude_object entries`.
+
 ### `HELIX_MOCK_AMS`
 
 Select the mock AMS topology/type.

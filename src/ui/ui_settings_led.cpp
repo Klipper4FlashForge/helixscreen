@@ -74,6 +74,7 @@ void LedSettingsOverlay::register_callbacks() {
     register_xml_callbacks({
         {"on_led_on_at_start_changed", on_led_on_at_start_changed},
         {"on_startup_brightness_changed", on_startup_brightness_changed},
+        {"on_startup_brightness_commit", on_startup_brightness_commit},
         {"on_auto_state_changed", on_auto_state_changed},
         {"on_add_macro_device", on_add_macro_device},
     });
@@ -1114,10 +1115,18 @@ void LedSettingsOverlay::handle_led_on_at_start_changed(bool enabled) {
     lv_subject_set_int(&led_on_at_start_subject_, enabled ? 1 : 0);
 }
 
-void LedSettingsOverlay::handle_startup_brightness_changed(int value) {
-    spdlog::info("[{}] Startup brightness changed: {}%", get_name(), value);
+void LedSettingsOverlay::handle_startup_brightness_commit(int value) {
+    spdlog::info("[{}] Startup brightness committed: {}%", get_name(), value);
     helix::led::LedController::instance().set_startup_brightness(value);
     helix::led::LedController::instance().save_config();
+}
+
+void LedSettingsOverlay::handle_startup_brightness_changed(int value) {
+    // Per drag tick: in-memory value + readout only. save_config() writes
+    // settings.json (double fsync + rolling backup) and belongs on release,
+    // which handle_startup_brightness_commit() handles.
+    spdlog::debug("[{}] Startup brightness preview: {}%", get_name(), value);
+    helix::led::LedController::instance().set_startup_brightness(value);
 
     // Update the value label
     if (overlay_root_) {
@@ -1763,6 +1772,14 @@ void LedSettingsOverlay::on_startup_brightness_changed(lv_event_t* e) {
     auto* slider = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
     int value = lv_slider_get_value(slider);
     get_led_settings_overlay().handle_startup_brightness_changed(value);
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+void LedSettingsOverlay::on_startup_brightness_commit(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[LedSettingsOverlay] on_startup_brightness_commit");
+    auto* slider = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
+    int value = lv_slider_get_value(slider);
+    get_led_settings_overlay().handle_startup_brightness_commit(value);
     LVGL_SAFE_EVENT_CB_END();
 }
 

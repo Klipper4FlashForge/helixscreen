@@ -98,32 +98,66 @@ char* format_temperature_range(int min_temp, int max_temp, char* buffer, size_t 
 // Display Color Functions
 // ============================================================================
 
-lv_color_t get_heating_state_color(int current_deg, int target_deg, int tolerance) {
-    if (target_deg == 0) {
-        // OFF: Heater is disabled - GRAY
-        return theme_manager_get_color("text_muted");
-    } else if (current_deg < target_deg - tolerance) {
-        // HEATING: Actively heating up - RED
-        return theme_manager_get_color("danger");
-    } else if (current_deg > target_deg + tolerance) {
-        // COOLING: Cooling down to target - BLUE
-        return theme_manager_get_color("info");
-    } else {
-        // AT_TEMP: Within tolerance of target - GREEN
-        return theme_manager_get_color("success");
+HeatState classify_heat_state(int current, int target, int tolerance) {
+    if (target <= 0) {
+        return HeatState::Off;
+    } else if (current < target - tolerance) {
+        return HeatState::Heating;
+    } else if (current > target + tolerance) {
+        return HeatState::Cooling;
     }
+    return HeatState::AtTemp;
+}
+
+HeatState classify_heat_state_with_mode(int current, int target, helix::ChamberMode mode,
+                                        int tolerance) {
+    if (mode == helix::ChamberMode::Maintaining) {
+        // Target is a cooling ceiling, not a heat goal — Heating never applies.
+        if (current > target + tolerance) {
+            return HeatState::Cooling;
+        }
+        return HeatState::Neutral;
+    }
+    // Off / Heating: target is a genuine heat goal, so the plain classifier applies.
+    return classify_heat_state(current, target, tolerance);
+}
+
+lv_color_t get_heating_state_color(HeatState state) {
+    switch (state) {
+    case HeatState::Off:
+        return theme_manager_get_color("text_muted");
+    case HeatState::Heating:
+        return theme_manager_get_color("danger");
+    case HeatState::Cooling:
+        return theme_manager_get_color("info");
+    case HeatState::Neutral:
+        return theme_manager_get_color("text");
+    case HeatState::AtTemp:
+        break;
+    }
+    return theme_manager_get_color("success");
+}
+
+lv_color_t get_heating_state_color(int current_deg, int target_deg, int tolerance) {
+    return get_heating_state_color(classify_heat_state(current_deg, target_deg, tolerance));
 }
 
 const char* get_heating_state_variant(int current_deg, int target_deg, int tolerance) {
-    if (target_deg <= 0) {
-        return "muted"; // OFF: heater disabled - GRAY
-    } else if (current_deg < target_deg - tolerance) {
-        return "danger"; // HEATING: actively heating up - RED
-    } else if (current_deg > target_deg + tolerance) {
-        return "info"; // COOLING: cooling down to target - BLUE
-    } else {
-        return "success"; // AT_TEMP: within tolerance of target - GREEN
+    switch (classify_heat_state(current_deg, target_deg, tolerance)) {
+    case HeatState::Off:
+        return "muted";
+    case HeatState::Heating:
+        return "danger";
+    case HeatState::Cooling:
+        return "info";
+    case HeatState::Neutral:
+        // classify_heat_state() (mode-unaware) never returns Neutral — only
+        // classify_heat_state_with_mode() does. Kept for switch exhaustiveness.
+        return "text";
+    case HeatState::AtTemp:
+        break;
     }
+    return "success";
 }
 
 // ============================================================================
