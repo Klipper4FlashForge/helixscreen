@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include <spdlog/pattern_formatter.h>
 #include <spdlog/spdlog.h>
 
+#include <memory>
 #include <string>
 
 namespace helix {
@@ -37,13 +39,66 @@ enum class SinkKind {
  *
  * Invariants enforced by tests/unit/test_log_pattern.cpp:
  *   - every pattern contains %t (thread id)
+ *   - every pattern contains %* (the monotonic column — see make_formatter())
  *   - Console and File contain a time token; the system sinks do not
+ *   - File carries a full date, so a session crossing midnight is unambiguous
  *   - Console keeps the colored-level tokens %^ / %$
+ *
+ * Patterns using %* must be installed with make_formatter(), NOT set_pattern():
+ * a plain set_pattern() has no handler for the custom flag and emits it
+ * literally.
  *
  * @param kind Which sink the pattern is for
  * @return A static pattern string (valid for process lifetime)
  */
 const char* pattern_for_sink(SinkKind kind);
+
+/**
+ * @brief Seconds elapsed since process start, from CLOCK_MONOTONIC
+ *
+ * Immune to clock steps and timezone changes, which the wall-clock timestamp is
+ * not. Anchored on first call; init_early() forces that to happen at the top of
+ * main() so the offset really is since-start. Returns 0.0 where CLOCK_MONOTONIC
+ * is unavailable.
+ */
+double monotonic_seconds();
+
+/**
+ * @brief Render a monotonic offset as the fixed-width log column
+ *
+ * `+00057.398` — zero-padded to 5 integer digits (27 hours) so the column stays
+ * aligned and a real gap is visible by eye, growing rather than truncating past
+ * that. Pure; unit-tested.
+ */
+std::string format_monotonic(double seconds);
+
+/**
+ * @brief Did the wall clock step between two log lines?
+ *
+ * Compares how far CLOCK_REALTIME moved against how far CLOCK_MONOTONIC moved
+ * over the same interval. NTP slew is bounded at ~500 ppm by adjtime(), so a
+ * divergence of a full second cannot be slew — it is a step (or a suspend).
+ * Catches backward steps too, which are worse: they interleave lines out of
+ * chronological order with nothing to show for it.
+ *
+ * Pure; unit-tested. See issue #1218 — bundle XRK8KPTF showed a fabricated
+ * 14m37s "reconnect stall" that was a +874 s clock step on an RTC-less printer.
+ */
+bool is_clock_step(double wall_delta_s, double mono_delta_s);
+
+/**
+ * @brief Build the formatter for a sink kind
+ *
+ * pattern_for_sink() plus the `%*` custom flag that renders the monotonic
+ * column and annotates any line across which the wall clock stepped
+ * (`CLOCK_STEP+874.000s`). Each call returns an independent formatter with its
+ * own step-detection state, which is what sinks need: they format the same
+ * message independently, each under its own mutex.
+ *
+ * Use this everywhere a log sink is configured. sink->set_pattern() is not
+ * equivalent — it cannot resolve the custom flag.
+ */
+std::unique_ptr<spdlog::formatter> make_formatter(SinkKind kind);
 
 /**
  * @brief Log destination targets

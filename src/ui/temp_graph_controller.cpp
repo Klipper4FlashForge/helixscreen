@@ -193,8 +193,7 @@ void TempGraphController::refresh_all_from_history() {
             c->refresh_from_history();
         }
     }
-    spdlog::debug("[TempGraphController] Refreshed {} live graph(s) from history",
-                  snapshot.size());
+    spdlog::debug("[TempGraphController] Refreshed {} live graph(s) from history", snapshot.size());
 }
 
 void TempGraphController::rebuild() {
@@ -412,7 +411,12 @@ void TempGraphController::setup_observers() {
                     si.last_update_ms = now_ms;
 
                     float temp_deg = deci_to_degrees_f(temp_deci);
-                    spdlog::debug("[TempGraphController] live push series_id={} '{}' {:.1f}°C",
+                    // trace, not debug: one line per series per sample interval with
+                    // no decision content — the value is already in the subject and on
+                    // the chart. The bundle's ring buffer captures DEBUG by default
+                    // (ring_captures_debug()), so at debug this single line evicts
+                    // every other line: bundle ED2YC336 was 2000/2000 of these.
+                    spdlog::trace("[TempGraphController] live push series_id={} '{}' {:.1f}°C",
                                   si.series_id, si.klipper_name, temp_deg);
                     ui_temp_graph_update_series_with_time(self->graph_, si.series_id, temp_deg,
                                                           now_ms);
@@ -470,7 +474,7 @@ void TempGraphController::setup_observers() {
         connection_observer_ = observe_int_sync<TempGraphController>(
             conn_subj, this,
             [conn_token, conn_gen, prev_state, was_disconnected](TempGraphController* self,
-                                                                  int state) {
+                                                                 int state) {
                 if (conn_token.expired())
                     return;
                 // Don't deref `self` until after the token check passes — the
