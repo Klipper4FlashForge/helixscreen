@@ -4496,6 +4496,18 @@ AmsError AmsBackendAfc::enable_bypass() {
             return AmsError(AmsResult::WRONG_STATE, "Bypass not supported",
                             "This AFC system does not support bypass mode", "");
         }
+
+        // Explicit precondition, not a redundant guard. AmsSubscriptionBackend::
+        // execute_gcode() is fire-and-forget — it returns success before Klipper
+        // answers and passes silent=true — so a bypass request with filament at
+        // the toolhead would report success and change nothing. Refusing here is
+        // what makes allows_implicit_chaining() == false safe: the sidebar no
+        // longer unloads on AFC's behalf, so AFC has to give the answer (#1229).
+        if (system_info_.filament_loaded) {
+            return AmsError(AmsResult::WRONG_STATE, "Unload filament first",
+                            "Filament is loaded at the toolhead. Unload it before enabling bypass.",
+                            "");
+        }
     }
 
     // AFC enables bypass via filament sensor control.

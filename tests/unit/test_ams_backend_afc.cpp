@@ -134,6 +134,10 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         system_info_.current_slot = slot;
     }
 
+    void set_supports_bypass(bool state) {
+        system_info_.supports_bypass = state;
+    }
+
     // Backdate the drain arm's deadline so tests can simulate "the window has
     // expired" without a real sleep. Pass a negative offset to expire it.
     void set_message_drain_deadline_offset(std::chrono::seconds offset) {
@@ -714,8 +718,7 @@ TEST_CASE("AFC segment ignores the latched loaded_to_hub field", "[ams][afc][seg
     REQUIRE(helper.test_compute_filament_segment() == PathSegment::LANE);
 }
 
-TEST_CASE("AFC segment reports OUTPUT when the hub sensor is triggered",
-          "[ams][afc][segment]") {
+TEST_CASE("AFC segment reports OUTPUT when the hub sensor is triggered", "[ams][afc][segment]") {
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes_with_slots(4);
     helper.set_lane_loaded_to_hub(0, false);
@@ -781,8 +784,7 @@ TEST_CASE("AFC segment: multiple lanes with sensors uses first match in order",
     REQUIRE(helper.test_compute_filament_segment() == PathSegment::PREP);
 }
 
-TEST_CASE("AFC segment: fallback prioritizes load over prep per-lane",
-          "[ams][afc][segment]") {
+TEST_CASE("AFC segment: fallback prioritizes load over prep per-lane", "[ams][afc][segment]") {
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes(4);
     // Lane 0 has both load and prep triggered. load is checked before prep for
@@ -2162,8 +2164,7 @@ TEST_CASE("AFC lane reset is offered only when that lane's hub sensor is trigger
     REQUIRE(helper.can_recover_lane_position(0));
 }
 
-TEST_CASE("AFC lane reset is refused while the toolhead holds filament",
-          "[ams][afc][recovery]") {
+TEST_CASE("AFC lane reset is refused while the toolhead holds filament", "[ams][afc][recovery]") {
     // Upstream's own toolhead guard logs and then falls through — it is missing
     // its `return` (AFCProject/AFC-Klipper-Add-On#803), so cmd_AFC_LANE_RESET
     // retracts the lane while the extruder still grips the filament. Ours is the
@@ -2213,8 +2214,7 @@ TEST_CASE("AFC lane reset is refused while the toolhead holds filament",
     }
 }
 
-TEST_CASE("AFC attribution survives the filament_loaded derivation",
-          "[ams][afc][recovery]") {
+TEST_CASE("AFC attribution survives the filament_loaded derivation", "[ams][afc][recovery]") {
     // The bug this pins: parse_afc_state() derives filament_loaded from
     // `loaded_lane`, which PREFERS current_lane (= AFC.current_loading). No
     // shipped AFC build publishes an explicit filament_loaded key, so naming a
@@ -2245,8 +2245,7 @@ TEST_CASE("AFC attribution survives the filament_loaded derivation",
     REQUIRE(helper.can_recover_lane_position(0));      // and recovery still offered
 }
 
-TEST_CASE("AFC lane reset is refused for a lane routed direct (no hub)",
-          "[ams][afc][recovery]") {
+TEST_CASE("AFC lane reset is refused for a lane routed direct (no hub)", "[ams][afc][recovery]") {
     // "direct" routing means the lane bypasses the hub entirely, so there is no
     // hub sensor to consult and no hub-retract to perform.
     AmsBackendAfcTestHelper helper;
@@ -2296,8 +2295,7 @@ TEST_CASE("AFC attributes a triggered hub to the lane AFC names as active",
     REQUIRE_FALSE(helper.can_recover_lane_position(3));
 }
 
-TEST_CASE("AFC offers recovery on no lane at all when it names none",
-          "[ams][afc][recovery]") {
+TEST_CASE("AFC offers recovery on no lane at all when it names none", "[ams][afc][recovery]") {
     // This inverts the previous all-lanes fallback (prestonbrown/helixscreen#1182).
     //
     // The fallback rested on "a wrong guess costs one harmless refusal from the
@@ -2479,8 +2477,7 @@ TEST_CASE("AFC error message surfaces in EVENT_ERROR data", "[ams][afc][recovery
     REQUIRE(error_data.find("filament jam detected") != std::string::npos);
 }
 
-TEST_CASE("AFC clear_fault sends RESET_FAILURE and AFC_CLEAR_MESSAGE",
-          "[ams][afc][recovery]") {
+TEST_CASE("AFC clear_fault sends RESET_FAILURE and AFC_CLEAR_MESSAGE", "[ams][afc][recovery]") {
     // Measured 2026-07-27: AFC_RESET leaves printer.AFC.message untouched. Only
     // AFC_CLEAR_MESSAGE pops it, and RESET_FAILURE clears the failure flag.
     // Both must fire, and unlike cancel() this must work from IDLE — that is
@@ -2496,8 +2493,7 @@ TEST_CASE("AFC clear_fault sends RESET_FAILURE and AFC_CLEAR_MESSAGE",
     REQUIRE(helper.has_gcode("AFC_CLEAR_MESSAGE"));
 }
 
-TEST_CASE("AFC clear_fault is scope-independent of the slot argument",
-          "[ams][afc][recovery]") {
+TEST_CASE("AFC clear_fault is scope-independent of the slot argument", "[ams][afc][recovery]") {
     // AFC has no per-lane fault clear; both commands are system-scoped. Passing a
     // slot must neither fail nor change the gcode emitted.
     AmsBackendAfcTestHelper helper;
@@ -2522,14 +2518,13 @@ TEST_CASE("AFC drains the message queue until it empties", "[ams][afc][recovery]
 
     // Delta still carries a message: the next queue entry surfaced. Drain again.
     helper.test_parse_afc_state(nlohmann::json{
-        {"message", {{"message", "Hub is already clear while trying to reset 'lane2'"},
-                     {"type", "error"}}}});
+        {"message",
+         {{"message", "Hub is already clear while trying to reset 'lane2'"}, {"type", "error"}}}});
     helper.test_maybe_drain_message_queue();
     REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") == 2);
 
     // Queue now empty: stop. No further clears.
-    helper.test_parse_afc_state(nlohmann::json{
-        {"message", {{"message", ""}, {"type", ""}}}});
+    helper.test_parse_afc_state(nlohmann::json{{"message", {{"message", ""}, {"type", ""}}}});
     helper.test_maybe_drain_message_queue();
     REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") == 2);
 }
@@ -2562,15 +2557,14 @@ TEST_CASE("AFC drains a session's worth of accumulated messages", "[ams][afc][re
 
     // Each pop exposes the next head. Four deltas, four more clears.
     for (size_t i = 1; i < queued.size(); ++i) {
-        helper.test_parse_afc_state(nlohmann::json{
-            {"message", {{"message", queued[i]}, {"type", "error"}}}});
+        helper.test_parse_afc_state(
+            nlohmann::json{{"message", {{"message", queued[i]}, {"type", "error"}}}});
         helper.test_maybe_drain_message_queue();
     }
     REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") == static_cast<int>(queued.size()));
 
     // Queue empty: stop, and stay stopped.
-    helper.test_parse_afc_state(nlohmann::json{
-        {"message", {{"message", ""}, {"type", ""}}}});
+    helper.test_parse_afc_state(nlohmann::json{{"message", {{"message", ""}, {"type", ""}}}});
     helper.test_maybe_drain_message_queue();
     REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") == static_cast<int>(queued.size()));
 }
@@ -2585,8 +2579,8 @@ TEST_CASE("AFC message drain is bounded", "[ams][afc][recovery]") {
 
     helper.clear_fault(0);
     for (int i = 0; i < 50; ++i) {
-        helper.test_parse_afc_state(nlohmann::json{
-            {"message", {{"message", "still failing"}, {"type", "error"}}}});
+        helper.test_parse_afc_state(
+            nlohmann::json{{"message", {{"message", "still failing"}, {"type", "error"}}}});
         helper.test_maybe_drain_message_queue();
     }
 
@@ -2611,16 +2605,15 @@ TEST_CASE("AFC clear_fault discards queued lane ejects", "[ams][afc][recovery]")
     REQUIRE(helper.test_pending_eject_count() == 0);
 }
 
-TEST_CASE("AFC drain does not fire without a preceding clear_fault",
-          "[ams][afc][recovery]") {
+TEST_CASE("AFC drain does not fire without a preceding clear_fault", "[ams][afc][recovery]") {
     // Messages arrive constantly in normal operation. Only an explicit
     // clear_fault() arms the drain; otherwise the UI just displays them.
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes_with_slots(4);
     helper.set_running(true);
 
-    helper.test_parse_afc_state(nlohmann::json{
-        {"message", {{"message", "Lane 1 loaded"}, {"type", ""}}}});
+    helper.test_parse_afc_state(
+        nlohmann::json{{"message", {{"message", "Lane 1 loaded"}, {"type", ""}}}});
     helper.test_maybe_drain_message_queue();
 
     REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") == 0);
@@ -2647,8 +2640,8 @@ TEST_CASE("AFC drain arm expires so a stale budget cannot eat a later unrelated 
 
     // A brand-new, unrelated error arrives. It must surface to the user, not be
     // silently popped by the stale residual budget.
-    helper.test_parse_afc_state(nlohmann::json{
-        {"message", {{"message", "filament jam detected"}, {"type", "error"}}}});
+    helper.test_parse_afc_state(
+        nlohmann::json{{"message", {{"message", "filament jam detected"}, {"type", "error"}}}});
     helper.test_maybe_drain_message_queue();
 
     REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") == 1);
@@ -4637,12 +4630,8 @@ TEST_CASE("AFC tool changer reconciliation preserves current_load slot",
     // All 4 lanes report as loaded (tool changer direct-feed)
     for (int i = 0; i < 4; ++i) {
         std::string key = "AFC_stepper lane" + std::to_string(i);
-        params[key] = {{"status", "Tooled"},
-                       {"tool_loaded", true},
-                       {"color", "FF0000"},
-                       {"material", "PLA"},
-                       {"spool_id", 100 + i},
-                       {"weight", 750}};
+        params[key] = {{"status", "Tooled"}, {"tool_loaded", true}, {"color", "FF0000"},
+                       {"material", "PLA"},  {"spool_id", 100 + i}, {"weight", 750}};
     }
 
     helper.feed_status_update(params);
@@ -4802,10 +4791,8 @@ TEST_CASE("AFC 4-unit ordering by lane number not unit name", "[ams][afc][mixed]
     // Feed stepper data for all 16 lanes
     for (int i = 0; i < 16; ++i) {
         std::string lane = "lane" + std::to_string(i);
-        helper.feed_afc_stepper(lane, {{"color", "FF0000"},
-                                       {"material", "PLA"},
-                                       {"spool_id", i},
-                                       {"weight", 800}});
+        helper.feed_afc_stepper(
+            lane, {{"color", "FF0000"}, {"material", "PLA"}, {"spool_id", i}, {"weight", 800}});
     }
 
     // Feed unit objects mapping lanes to units (deliberately out of physical order).
@@ -4868,7 +4855,7 @@ TEST_CASE("AFC stepper-only updates do not overwrite current_slot set by AFC sta
         params["AFC"] = {{"current_load", "lane9"}, {"filament_loaded", true}};
         params["AFC_stepper lane9"] = {{"status", "Tooled"}, {"tool_loaded", true},
                                        {"color", "00AEFF"},  {"material", "ASA"},
-                                       {"spool_id", 42},   {"weight", 800}};
+                                       {"spool_id", 42},     {"weight", 800}};
         helper.feed_status_update(params);
     }
     REQUIRE(helper.get_system_info().current_slot == 9);
@@ -5598,10 +5585,11 @@ TEST_CASE("AFC lane_data reads vendor_name for the brand, with brand as fallback
     // when the lane count changes, so feeding lanes piecemeal would collapse it
     // to a single slot and make these assertions read default-constructed slots.
     nlohmann::json lanes;
-    lanes["lane0"] = {{"brand", "Prusament"}};                              // legacy spelling
-    lanes["lane1"] = {{"vendor_name", "Polymaker"}, {"brand", "Prusament"}}; // both -> upstream wins
-    lanes["lane2"] = {{"vendor_name", "Polymaker"}};                        // upstream spelling
-    lanes["lane3"] = {{"material", "PLA"}};                                 // neither
+    lanes["lane0"] = {{"brand", "Prusament"}}; // legacy spelling
+    lanes["lane1"] = {{"vendor_name", "Polymaker"},
+                      {"brand", "Prusament"}};       // both -> upstream wins
+    lanes["lane2"] = {{"vendor_name", "Polymaker"}}; // upstream spelling
+    lanes["lane3"] = {{"material", "PLA"}};          // neither
     helper.feed_afc_state({{"lanes", lanes}});
 
     CHECK(helper.get_slot_info(0).brand == "Prusament");
@@ -5716,8 +5704,7 @@ TEST_CASE("AFC takes no weight from lane_data on any version (#805)", "[ams][afc
     CHECK(helper.get_slot_info(0).remaining_weight_g == Catch::Approx(750.0f));
 }
 
-TEST_CASE("AFC clears the operation detail when its message empties",
-          "[ams][afc][recovery]") {
+TEST_CASE("AFC clears the operation detail when its message empties", "[ams][afc][recovery]") {
     // operation_detail outranks the action- and print-state-derived strings in
     // AmsState::recompute_action_detail(), so a value left behind here pins the
     // AMS sidebar status label to a stale error for the rest of the session.
@@ -5726,14 +5713,13 @@ TEST_CASE("AFC clears the operation detail when its message empties",
     helper.set_running(true);
 
     helper.test_parse_afc_state(nlohmann::json{
-        {"message", {{"message", "Hub is already clear while trying to reset 'lane1'"},
-                     {"type", "error"}}}});
+        {"message",
+         {{"message", "Hub is already clear while trying to reset 'lane1'"}, {"type", "error"}}}});
     REQUIRE(helper.get_system_info().operation_detail ==
             "Hub is already clear while trying to reset 'lane1'");
 
     // AFC_CLEAR_MESSAGE lands: the message object empties.
-    helper.test_parse_afc_state(nlohmann::json{
-        {"message", {{"message", ""}, {"type", ""}}}});
+    helper.test_parse_afc_state(nlohmann::json{{"message", {{"message", ""}, {"type", ""}}}});
     REQUIRE(helper.get_system_info().operation_detail.empty());
 }
 
@@ -5749,34 +5735,34 @@ TEST_CASE("AFC clears the operation detail when its message empties",
 
 // Observed: AFC_stepper lane1, AFC v1.1.0, unlinked lane.
 static nlohmann::json observed_lane1_v110() {
-    return nlohmann::json{{"name", "lane1"},
-                          {"unit", "Turtle_1"},
-                          {"hub", "Turtle_1"},
-                          {"extruder", "extruder"},
-                          {"buffer", "Turtle_1"},
-                          {"buffer_status", "Advancing"},
-                          {"lane", 1},
-                          {"map", "T0"},
-                          {"load", true},
-                          {"prep", true},
-                          {"tool_loaded", false},
-                          {"loaded_to_hub", true},
-                          {"material", "PLA"},
-                          {"remember_spool", false},
-                          {"spool_id", nullptr},
-                          {"color", "#E53935"},
-                          {"weight", 505.8077510382372},
-                          {"extruder_temp", nullptr},
-                          {"runout_lane", nullptr},
-                          {"filament_status", "Ready"},
-                          {"filament_status_led", "#00cc00"},
-                          {"status", "None"},
-                          {"dist_hub", 194.57},
-                          {"td1_td", ""},
-                          {"td1_color", ""},
-                          {"td1_scan_time", ""},
-                          {"endstops",
-                           "load,hub,tool_start,tool_end,buffer_advance,buffer_trailing"}};
+    return nlohmann::json{
+        {"name", "lane1"},
+        {"unit", "Turtle_1"},
+        {"hub", "Turtle_1"},
+        {"extruder", "extruder"},
+        {"buffer", "Turtle_1"},
+        {"buffer_status", "Advancing"},
+        {"lane", 1},
+        {"map", "T0"},
+        {"load", true},
+        {"prep", true},
+        {"tool_loaded", false},
+        {"loaded_to_hub", true},
+        {"material", "PLA"},
+        {"remember_spool", false},
+        {"spool_id", nullptr},
+        {"color", "#E53935"},
+        {"weight", 505.8077510382372},
+        {"extruder_temp", nullptr},
+        {"runout_lane", nullptr},
+        {"filament_status", "Ready"},
+        {"filament_status_led", "#00cc00"},
+        {"status", "None"},
+        {"dist_hub", 194.57},
+        {"td1_td", ""},
+        {"td1_color", ""},
+        {"td1_scan_time", ""},
+        {"endstops", "load,hub,tool_start,tool_end,buffer_advance,buffer_trailing"}};
 }
 
 TEST_CASE("AFC lane parses the v1.1.0 fields we used to drop", "[ams][afc][status_fields][1149]") {
@@ -5899,9 +5885,9 @@ TEST_CASE("AFC lane clears filament identity when firmware clears it",
     helper.feed_afc_stepper("lane1", lane);
 
     helper.feed_afc_stepper("lane1", nlohmann::json{{"filament_name", ""},
-                                                   {"bed_temp", nullptr},
-                                                   {"multi_color_hexes", nlohmann::json::array()},
-                                                   {"spool_id", nullptr}});
+                                                    {"bed_temp", nullptr},
+                                                    {"multi_color_hexes", nlohmann::json::array()},
+                                                    {"spool_id", nullptr}});
 
     auto info = helper.get_system_info();
     const auto& slot = info.units[0].slots[0];
@@ -6319,8 +6305,7 @@ TEST_CASE("AFC no-op load resolves on the macro ack", "[ams][afc][dispatch][1183
     REQUIRE(h.trace().back() == AmsAction::IDLE);
 }
 
-TEST_CASE("AFC unload and tool change dispatch their own actions",
-          "[ams][afc][dispatch][1183]") {
+TEST_CASE("AFC unload and tool change dispatch their own actions", "[ams][afc][dispatch][1183]") {
     SECTION("unload") {
         AfcDispatchAckHelper h;
         h.mark_filament_loaded(true);
@@ -6460,4 +6445,54 @@ TEST_CASE("AFC stuck-action timeout still fires for an op AFC took over",
     REQUIRE(h.latched());
     h.feed_state("Loading");
     REQUIRE(h.action() == AmsAction::ERROR);
+}
+
+// ============================================================================
+// Bypass: AFC answers for itself once the sidebar stops chaining (#1229 defect 6)
+// ============================================================================
+//
+// allows_implicit_chaining() == false means the sidebar sends exactly one
+// command and lets AFC refuse. That only helps if AFC actually refuses:
+// execute_gcode() is fire-and-forget (returns success before Klipper answers,
+// silent=true), so without the precondition in enable_bypass() the pass-through
+// would report success and change nothing — a silent lie in place of an
+// unrequested unload. These pin the refusal that makes the policy safe.
+// The policy half is covered in test_ams_bypass_no_chaining.cpp.
+
+TEST_CASE("AFC enable_bypass refuses while filament is at the toolhead",
+          "[ams][afc][bypass][1229]") {
+    AmsBackendAfcTestHelper helper;
+    helper.set_running(true);
+    helper.initialize_test_lanes(4);
+    helper.set_supports_bypass(true);
+    helper.set_current_slot(1);
+    helper.set_filament_loaded(true);
+    helper.clear_captured_gcodes();
+
+    AmsError err = helper.enable_bypass();
+
+    REQUIRE(err.result == AmsResult::WRONG_STATE);
+    REQUIRE_FALSE(err.user_msg.empty());
+
+    // Nothing may be sent at all — a SET_FILAMENT_SENSOR that Klipper later
+    // rejected would still have returned SUCCESS to the caller.
+    REQUIRE_FALSE(helper.has_gcode_starting_with("SET_FILAMENT_SENSOR"));
+}
+
+TEST_CASE("AFC enable_bypass sends the sensor enable when nothing is loaded",
+          "[ams][afc][bypass][1229]") {
+    AmsBackendAfcTestHelper helper;
+    helper.set_running(true);
+    helper.initialize_test_lanes(4);
+    helper.set_supports_bypass(true);
+    helper.set_current_slot(-1);
+    helper.set_filament_loaded(false);
+    helper.clear_captured_gcodes();
+
+    AmsError err = helper.enable_bypass();
+
+    REQUIRE(err.result == AmsResult::SUCCESS);
+    // The AFC ctor defaults has_hardware_bypass_sensor to true; discovery
+    // downgrades it to "virtual_bypass" only when Klipper publishes that object.
+    REQUIRE(helper.has_gcode("SET_FILAMENT_SENSOR SENSOR=bypass ENABLE=1"));
 }

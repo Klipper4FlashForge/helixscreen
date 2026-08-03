@@ -232,12 +232,18 @@ void AmsOperationSidebar::init_observers() {
                 self->handle_load_complete();
             }
 
-            // Detect UNLOADING -> IDLE: if bypass is pending, enable it now
-            if (self->pending_bypass_enable_ && action == AmsAction::IDLE &&
-                self->prev_ams_action_ == AmsAction::UNLOADING) {
+            // Detect UNLOADING -> IDLE or UNLOADING -> ERROR: the pending-bypass
+            // flag is armed by the unload we started, so it must be disarmed by
+            // whichever way that unload ends. Clearing it only on IDLE left a
+            // failed unload's flag set, and the next unrelated unload completion
+            // then enabled bypass out of nowhere. Only IDLE actually chains.
+            if (self->pending_bypass_enable_ && self->prev_ams_action_ == AmsAction::UNLOADING &&
+                (action == AmsAction::IDLE || action == AmsAction::ERROR)) {
                 self->pending_bypass_enable_ = false;
                 AmsBackend* backend = AmsState::instance().get_backend();
-                if (backend) {
+                if (action == AmsAction::ERROR) {
+                    spdlog::warn("[AmsSidebar] Unload failed — cancelling pending bypass enable");
+                } else if (backend) {
                     spdlog::info("[AmsSidebar] Unload complete — enabling bypass");
                     AmsError err = backend->enable_bypass();
                     if (err.result == AmsResult::SUCCESS) {
@@ -1045,8 +1051,12 @@ void AmsOperationSidebar::handle_bypass_toggle() {
         }
     } else {
         // If filament is loaded from an AMS slot, unload first (full animation),
-        // then enable bypass after unload completes via action observer
-        if (info.current_slot >= 0 && info.filament_loaded) {
+        // then enable bypass after unload completes via action observer. Only
+        // backends that permit implicit chaining get that courtesy — on AFC and
+        // Happy Hare the toggle sends exactly one command and lets the firmware
+        // refuse it, rather than ejecting filament the user never asked to eject
+        // (#1229).
+        if (should_unload_before_bypass(info, backend->allows_implicit_chaining())) {
             spdlog::info("[AmsSidebar] Unloading slot {} before enabling bypass",
                          info.current_slot);
             pending_bypass_enable_ = true;

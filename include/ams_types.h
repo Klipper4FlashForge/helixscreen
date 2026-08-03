@@ -1316,6 +1316,33 @@ struct AmsSystemInfo {
     }
 };
 
+namespace helix {
+
+/**
+ * @brief Decide whether enabling bypass must be preceded by an implicit unload.
+ *
+ * The AMS sidebar's bypass toggle used to unload whenever a slot was loaded,
+ * then enable bypass once the unload finished. On backends whose users have a
+ * console (AFC, Happy Hare) that ejects filament the user never asked to eject,
+ * so those backends report @p allows_implicit_chaining false and the UI sends
+ * only the bypass command, letting the firmware refuse it if it wants to
+ * (prestonbrown/helixscreen#1229). Backends with no console fallback keep the
+ * chaining.
+ *
+ * Pure so the policy is testable without LVGL; the sidebar calls this rather
+ * than restating the condition.
+ *
+ * @param info Current AMS system state
+ * @param allows_implicit_chaining AmsBackend::allows_implicit_chaining() for the active backend
+ * @return true if the UI should unload the active slot before enabling bypass
+ */
+[[nodiscard]] inline bool should_unload_before_bypass(const AmsSystemInfo& info,
+                                                      bool allows_implicit_chaining) {
+    return allows_implicit_chaining && info.current_slot >= 0 && info.filament_loaded;
+}
+
+} // namespace helix
+
 /**
  * @brief Filament requirement from G-code analysis
  *
