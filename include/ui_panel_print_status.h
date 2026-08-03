@@ -22,6 +22,9 @@
 
 // Forward declaration
 class MoonrakerAPI;
+namespace helix {
+class TempGraphController;
+}
 
 #include "filament_mapper.h" // helix::GcodeToolInfo
 
@@ -344,6 +347,18 @@ class PrintStatusPanel : public OverlayBase {
     // Fan row adaptive-fit subject (1=row fits in the column, 0=hidden).
     // Set by recompute_fans_fit() after every breakpoint/layout change.
     lv_subject_t fans_fit_subject_{};
+
+    // Temperature mini-graph fit subject (1=the portrait slack band is tall
+    // enough to hold a readable graph, 0=hidden). Set by recompute_graph_fits()
+    // from the slack the preview aspect cap just computed. 0 in landscape and at
+    // every size where the cap does not bind.
+    lv_subject_t graph_fits_subject_{};
+
+    // Height apply_preview_height_cap() last parked in the preview_slack
+    // absorber, in px. The single input to recompute_graph_fits(), cached rather
+    // than re-measured so the fit decision cannot disagree with the layout that
+    // produced it.
+    int32_t preview_slack_h_ = 0;
     // Aux fan present subject (1=aux cluster visible, 0=hidden).
     // Set by bind_fan_speeds() when an aux fan is discovered.
     lv_subject_t aux_fan_present_subject_{};
@@ -534,6 +549,27 @@ class PrintStatusPanel : public OverlayBase {
                            const char* icon_widget_name);
     void update_fan_speed_display(const char* label_name, const char* icon_name, int speed);
     void refresh_fan_animations();
+    /// Portrait: cap thumbnail_section's aspect and park the leftover in the
+    /// preview_slack absorber between the card and the controls. No-op in
+    /// landscape and at every size where the cap does not bind.
+    void apply_preview_height_cap();
+    /// Record the absorber height the cap just applied and re-decide whether the
+    /// temperature mini-graph fits in it. Called from every exit path of
+    /// apply_preview_height_cap(), including the ones that leave the layout alone.
+    void note_preview_slack(int32_t slack_h);
+    void recompute_graph_fits(); ///< Slack-based graph visibility (graph_fits_subject_)
+    /// Build the mini-graph controller into temp_graph_container if it is not
+    /// already live. Idempotent; no-op when the widget tree is gone.
+    void ensure_temp_graph();
+    /// Detach the mini-graph's observers synchronously, then release the
+    /// controller. Must run BEFORE the container is freed.
+    /// @param defer_delete Hand the deallocation to lv_async_call instead of
+    ///        running it here. True on the on_ui_destroyed() path, which is a
+    ///        close callback and may be inside an UpdateQueue batch (#696).
+    ///        False from the destructor, where nothing will ever drain the async
+    ///        queue again and a deferred delete would leak the observers along
+    ///        with the object.
+    void destroy_temp_graph(bool defer_delete = true);
     void recompute_fans_fit();       ///< Height-based row visibility (fans_fit_subject_)
     void recompute_fans_density();   ///< Width-based content tier (fan_row_density_subject_)
     void recompute_aux_composites(); ///< Compute 3 aux_*_visible from aux_present + density
@@ -613,6 +649,7 @@ class PrintStatusPanel : public OverlayBase {
     //
 
     static void on_temp_card_clicked(lv_event_t* e);
+    static void on_temp_graph_clicked(lv_event_t* e);
     static void on_dismiss_overlay_clicked(lv_event_t* e);
     static void on_tune_clicked(lv_event_t* e);
     static void on_reprint_clicked(lv_event_t* e);
@@ -723,6 +760,19 @@ class PrintStatusPanel : public OverlayBase {
 
     /// Manages filament runout guidance (extracted from PrintStatusPanel)
     std::unique_ptr<helix::ui::FilamentRunoutHandler> runout_handler_;
+
+    //
+    // === Portrait Temperature Mini-Graph ===
+    //
+
+    /// Owns the graph widget, its series observers and history backfill. Built
+    /// on demand once the slack band is big enough, then kept alive across
+    /// show/hide — recreating it would discard the backfilled trace.
+    std::unique_ptr<helix::TempGraphController> temp_graph_controller_;
+
+    /// The XML container the controller drew into. Nulled by on_ui_destroyed()
+    /// so a rebuilt tree is never populated through a stale pointer.
+    lv_obj_t* temp_graph_container_ = nullptr;
 };
 
 // Global instance accessor (needed by main.cpp)

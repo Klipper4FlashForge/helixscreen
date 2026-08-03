@@ -51,6 +51,7 @@
 #include "settings_manager.h"
 #include "static_panel_registry.h"
 #include "system/crash_handler.h"
+#include "temp_graph_controller.h"
 #include "theme_manager.h"
 #include "thumbnail_cache.h"
 #include "thumbnail_processor.h"
@@ -318,6 +319,12 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, MoonrakerAPI* ap
 }
 
 PrintStatusPanel::~PrintStatusPanel() {
+    // Before deinit_subjects(): the mini-graph's observers are attached to
+    // PrinterState subjects, and detaching them after those are freed is the
+    // exact use-after-free ObserverGuard exists to prevent. Synchronous delete —
+    // nothing will drain the async queue on the way out.
+    destroy_temp_graph(/*defer_delete=*/false);
+
     deinit_subjects();
 
     // Expire all outstanding async callback tokens before destroying resources
@@ -417,6 +424,12 @@ void PrintStatusPanel::init_subjects() {
     // and bind_fan_speeds respectively; default to 0 so the row stays hidden
     // until the first recompute fires after attach).
     UI_MANAGED_SUBJECT_INT(fans_fit_subject_, 0, "print_status_fans_fit", subjects_);
+
+    // Portrait temperature mini-graph fit (set by recompute_graph_fits from the
+    // slack the preview aspect cap parks in the absorber). Defaults to 0 so the
+    // graph stays hidden until the first measured recompute after attach —
+    // landscape and every non-capped portrait size never leave that state.
+    UI_MANAGED_SUBJECT_INT(graph_fits_subject_, 0, "print_status_graph_fits", subjects_);
     UI_MANAGED_SUBJECT_INT(aux_fan_present_subject_, 0, "print_status_aux_fan_present", subjects_);
 
     // Density + composite subjects for 3-tier adaptive content.
@@ -609,6 +622,7 @@ void PrintStatusPanel::init_subjects() {
         {"on_print_status_tune", on_tune_clicked},
         {"on_print_status_reprint", on_reprint_clicked},
         {"on_temp_card_clicked", on_temp_card_clicked},
+        {"on_print_status_graph_clicked", on_temp_graph_clicked},
         {"on_print_status_objects", on_objects_clicked},
         {"on_view_toggle", on_view_toggle_clicked},
         {"on_print_status_dismiss_overlay", on_dismiss_overlay_clicked},
@@ -1019,6 +1033,13 @@ void PrintStatusPanel::on_activate() {
         });
     }
 
+    // Resume the mini-graph and pull in whatever landed while we were off-screen.
+    // resume() backfills, so the trace is continuous rather than starting a fresh
+    // segment at re-entry.
+    if (temp_graph_controller_) {
+        temp_graph_controller_->resume();
+    }
+
     crash_handler::breadcrumb::note("pstat_act", "exit");
 }
 
@@ -1067,6 +1088,13 @@ void PrintStatusPanel::on_deactivate() {
     if (runout_handler_) {
         runout_handler_->hide_modal();
     }
+
+    // Stop feeding the mini-graph while it is off-screen — same reasoning as
+    // pausing the G-code viewer above. History keeps accumulating in the manager,
+    // so on_activate()'s resume() backfills the gap.
+    if (temp_graph_controller_) {
+        temp_graph_controller_->pause();
+    }
 }
 
 void PrintStatusPanel::cleanup() {
@@ -1102,6 +1130,16 @@ void PrintStatusPanel::on_ui_destroyed() {
     if (exclude_manager_) {
         exclude_manager_->deinit();
         exclude_manager_.reset();
+    }
+
+    // Tear the mini-graph down while its container is still addressable, and
+    // drop the fit decision with it: a rebuilt tree starts with no controller,
+    // so leaving the subject at 1 would un-hide an empty container until the
+    // first post-activate recompute.
+    destroy_temp_graph();
+    preview_slack_h_ = 0;
+    if (subjects_initialized_) {
+        lv_subject_set_int(&graph_fits_subject_, 0);
     }
 
     // Null all child widget pointers (widget tree is already deleted by base class)
@@ -1747,6 +1785,16 @@ void PrintStatusPanel::on_temp_card_clicked(lv_event_t* e) {
     LVGL_SAFE_EVENT_CB_END();
 }
 
+// The mini-graph is a summary; the full overlay is the detail view. Tapping it
+// opens exactly what tapping the temp chips opens, so both entry points land on
+// one code path rather than two that can drift.
+void PrintStatusPanel::on_temp_graph_clicked(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[PrintStatusPanel] on_temp_graph_clicked");
+    (void)e;
+    get_global_print_status_panel().handle_temp_card_click();
+    LVGL_SAFE_EVENT_CB_END();
+}
+
 void PrintStatusPanel::on_dismiss_overlay_clicked(lv_event_t* e) {
     LVGL_SAFE_EVENT_CB_BEGIN("[PrintStatusPanel] on_dismiss_overlay_clicked");
     (void)e;
@@ -2130,12 +2178,222 @@ void PrintStatusPanel::recompute_fans_density() {
     }
 }
 
+// DECLARATIVE_OK: the ceiling is a function of the card's MEASURED width, which
+// no style attribute can express — the measured-layout structural exception.
+void PrintStatusPanel::apply_preview_height_cap() {
+    if (!overlay_root_) {
+        return;
+    }
+    // Portrait only. The landscape card sits in a row at roughly 380x392
+    // (aspect ~1.03), so it could never reach a 1.30 ceiling anyway — but the
+    // landscape XML has no absorber to size either, so bail before touching it.
+    // There is no slack in landscape by construction, which is exactly what the
+    // graph gate needs to hear: report zero rather than leaving a portrait
+    // reading latched after a rotation.
+    if (!helix::is_portrait_layout(helix::LayoutManager::instance().type())) {
+        note_preview_slack(0);
+        return;
+    }
+    lv_obj_t* card = lv_obj_find_by_name(overlay_root_, "thumbnail_section");
+    lv_obj_t* strip = lv_obj_find_by_name(overlay_root_, "metadata_clip");
+    lv_obj_t* slack = lv_obj_find_by_name(overlay_root_, "preview_slack");
+    if (!card || !strip || !slack) {
+        return;
+    }
+
+    lv_obj_t* content = lv_obj_find_by_name(overlay_root_, "overlay_content");
+    lv_obj_update_layout(content ? content : card);
+
+    // The band is the card's CONTENT width; the card's own border/padding is
+    // chrome and rides along with the strip in the ceiling.
+    const int32_t band_w = lv_obj_get_content_width(card);
+    const int32_t chrome_h =
+        lv_obj_get_height(strip) + (lv_obj_get_height(card) - lv_obj_get_content_height(card));
+    const int32_t max_h = helix::ui::portrait_preview_card_max_height(band_w, chrome_h);
+    if (max_h <= 0) {
+        return; // not measurable yet; leave the layout alone
+    }
+
+    const char* space_md_str = lv_xml_get_const(nullptr, "space_md");
+    const int32_t gap = space_md_str ? std::atoi(space_md_str) : 8;
+
+    // Space the card and the absorber share. Invariant under the absorber's own
+    // state, which is what makes re-running this a fixed point: when the
+    // absorber is visible it costs its height plus one gap, and both come back.
+    const bool shown = !lv_obj_has_flag(slack, LV_OBJ_FLAG_HIDDEN);
+    const int32_t avail = lv_obj_get_height(card) + (shown ? lv_obj_get_height(slack) + gap : 0);
+
+    const int32_t want = helix::ui::portrait_preview_slack(max_h, avail, gap);
+
+    // The absorber's visibility is not application state, it is the same measured
+    // layout decision as its height: hidden is how a fixed-size flex child costs
+    // ZERO, because LVGL's flex pass skips hidden children's size AND their gap.
+    // A subject here would be a second name for `want > 0` with no other reader.
+    if (want != (shown ? lv_obj_get_height(slack) : 0)) {
+        if (want > 0) {
+            lv_obj_set_height(slack, want);
+            // DECLARATIVE_OK: measured-layout absorber; visibility is `want > 0`.
+            lv_obj_remove_flag(slack, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_set_height(slack, 0);
+            // DECLARATIVE_OK: measured-layout absorber; hidden is how it costs zero.
+            lv_obj_add_flag(slack, LV_OBJ_FLAG_HIDDEN);
+        }
+        // Settle the absorber before measuring its content width below — the
+        // graph's ceiling is a function of that width, and a just-unhidden child
+        // has no resolved percentage size until the layout pass runs.
+        lv_obj_update_layout(content ? content : slack);
+    }
+
+    // Cap the graph, not the absorber. The absorber must keep the WHOLE slack or
+    // the preview card grows straight back into it; the leftover under the graph
+    // is transparent and reads as background between the graph and the controls.
+    // Sized BEFORE note_preview_slack() publishes the fit subject, so the
+    // container is never un-hidden at a height nobody chose.
+    const int32_t graph_h = helix::ui::portrait_graph_height(lv_obj_get_content_width(slack), want);
+    if (graph_h > 0) {
+        if (lv_obj_t* graph = lv_obj_find_by_name(slack, "temp_graph_container")) {
+            // DECLARATIVE_OK: measured-layout ceiling, same reason as the absorber.
+            lv_obj_set_height(graph, graph_h);
+        }
+    }
+
+    note_preview_slack(want);
+    spdlog::debug("[{}] preview cap: band_w={} chrome_h={} max_h={} avail={} slack={} graph_h={}",
+                  get_name(), band_w, chrome_h, max_h, avail, want, graph_h);
+}
+
+void PrintStatusPanel::note_preview_slack(int32_t slack_h) {
+    preview_slack_h_ = slack_h;
+    recompute_graph_fits();
+}
+
+void PrintStatusPanel::recompute_graph_fits() {
+    if (!subjects_initialized_) {
+        return;
+    }
+    const int current = lv_subject_get_int(&graph_fits_subject_);
+    const bool next = helix::ui::portrait_graph_fits(preview_slack_h_, current == 1);
+
+    // Build BEFORE publishing, never after: the subject is what un-hides the
+    // container, so flipping it first would show an empty box for however many
+    // frames the controller takes to draw its first trace.
+    if (next) {
+        ensure_temp_graph();
+    }
+
+    if (static_cast<int>(next) != current) {
+        spdlog::debug("[{}] graph_fits {} -> {} (slack={}, needed={})", get_name(), current,
+                      static_cast<int>(next), preview_slack_h_, helix::ui::kMinTempGraphHeightPx);
+        lv_subject_set_int(&graph_fits_subject_, next ? 1 : 0);
+    }
+}
+
+void PrintStatusPanel::ensure_temp_graph() {
+    if (temp_graph_controller_) {
+        return; // already live — keep the backfilled trace
+    }
+    if (!overlay_root_) {
+        return;
+    }
+    lv_obj_t* container = lv_obj_find_by_name(overlay_root_, "temp_graph_container");
+    if (!container) {
+        return; // landscape variant has no absorber, so no container either
+    }
+
+    helix::TempGraphControllerConfig cfg;
+    // 180 points, not the 1200-point default. This graph is on screen DURING a
+    // print, which is the worst moment to spend redraw time — 1200 points across
+    // N series is what froze the K2 Plus touch UI in #979. At 1 Hz sampling 180
+    // points is still three minutes of trace, more than the band can resolve.
+    cfg.point_count = 180;
+    cfg.axis_size = "xs";
+    // Lines and target lines only. The band is ~300px wide: axis labels would eat
+    // most of the plot, a legend would eat the rest, and gradients are pure fill
+    // cost for a strip this short.
+    cfg.initial_features = TEMP_GRAPH_FEATURE_LINES | TEMP_GRAPH_FEATURE_TARGET_LINES;
+
+    helix::TempGraphSeriesSpec nozzle;
+    nozzle.klipper_name = printer_state_.temperature_state().active_extruder_name();
+    nozzle.display_name = lv_tr("Nozzle");
+    nozzle.color = helix::TEMP_GRAPH_SERIES_COLORS[0];
+    nozzle.show_target = true;
+
+    helix::TempGraphSeriesSpec bed;
+    bed.klipper_name = "heater_bed";
+    bed.display_name = lv_tr("Bed");
+    bed.color = helix::TEMP_GRAPH_SERIES_COLORS[1];
+    bed.show_target = true;
+
+    cfg.series = {std::move(nozzle), std::move(bed)};
+
+    // Chamber only when the printer actually has one. printer_has_chamber is the
+    // union of heater and sensor.
+    //
+    // The name must be the DISCOVERED Klipper object ("heater_generic chamber"),
+    // not the literal "chamber": TempGraphController::setup_observers() routes to
+    // the chamber subjects on the `heater_generic` / `temperature_fan` prefix, and
+    // anything else falls through to a TemperatureSensorManager lookup that finds
+    // nothing — a series that resolves to no subject renders as a blank line with
+    // no error. Prefer the heater (it has a target to draw); fall back to the
+    // sensor so sensor-only chambers still graph.
+    lv_subject_t* chamber_gate = lv_xml_get_subject(nullptr, "printer_has_chamber");
+    if (chamber_gate && lv_subject_get_int(chamber_gate) != 0) {
+        const auto& temp_state = printer_state_.temperature_state();
+        const std::string& heater = temp_state.chamber_heater_name();
+        const std::string& sensor = temp_state.chamber_sensor_name();
+        const std::string& klipper = !heater.empty() ? heater : sensor;
+        if (!klipper.empty()) {
+            helix::TempGraphSeriesSpec chamber;
+            chamber.klipper_name = klipper;
+            chamber.display_name = lv_tr("Chamber");
+            chamber.color = helix::TEMP_GRAPH_SERIES_COLORS[2];
+            chamber.show_target = !heater.empty();
+            cfg.series.push_back(std::move(chamber));
+        }
+    }
+
+    temp_graph_container_ = container;
+    temp_graph_controller_ = std::make_unique<helix::TempGraphController>(container, cfg);
+    // The controller backfills from TemperatureHistoryManager in its constructor,
+    // so the trace is populated the moment the container un-hides rather than
+    // growing from blank at the next sample.
+    spdlog::debug("[{}] Temperature mini-graph created ({} series, {} points)", get_name(),
+                  cfg.series.size(), cfg.point_count);
+}
+
+void PrintStatusPanel::destroy_temp_graph(bool defer_delete) {
+    temp_graph_container_ = nullptr;
+    if (!temp_graph_controller_) {
+        return;
+    }
+
+    // Detach observers SYNCHRONOUSLY, then defer only the deallocation. The
+    // widget tree is already queued for async deletion by the time this runs, so
+    // the controller's destructor will find its chart gone (chart_delete_cb nulls
+    // it) — but its observers still point at live subjects and must come off
+    // before anything else can fire them (#726). Deferring the delete itself
+    // keeps it out of the current UpdateQueue batch (#696).
+    temp_graph_controller_->detach();
+    auto* old = temp_graph_controller_.release();
+    if (defer_delete && lv_is_initialized()) {
+        lv_async_call([](void* p) { delete static_cast<helix::TempGraphController*>(p); }, old);
+    } else {
+        delete old;
+    }
+    spdlog::debug("[{}] Temperature mini-graph torn down", get_name());
+}
+
 void PrintStatusPanel::recompute_fans_fit() {
     spdlog::debug("[{}] recompute_fans_fit: entry", get_name());
     if (!overlay_root_) {
         spdlog::debug("[{}] recompute_fans_fit: overlay_root_ is null", get_name());
         return;
     }
+    // Cap the preview before measuring: the fan-row budget reads overlay_content
+    // and the controls, and both must be measured against the settled column.
+    apply_preview_height_cap();
+
     lv_obj_t* controls = lv_obj_find_by_name(overlay_root_, "controls_section");
     lv_obj_t* fan_row = lv_obj_find_by_name(overlay_root_, "print_status_fan_row");
     if (!controls || !fan_row) {
@@ -2185,8 +2443,9 @@ void PrintStatusPanel::recompute_fans_fit() {
         ++visible_count;
     };
     add_child_height("temp_card");
+    // Portrait merged the filament/AMS cluster INTO speed_flow_row, so the next
+    // line already counts it; landscape never had it as a controls child at all.
     add_child_height("speed_flow_row");
-    add_child_height("filament_ams_status_row");
 
     // button_grid is flex_grow=1 so its OWN height is stretched. Sum the
     // visible button-row children directly to get the natural content height.
@@ -2842,9 +3101,12 @@ void PrintStatusPanel::on_preprint_elapsed_changed(int seconds) {
 }
 
 void PrintStatusPanel::update_view_toggle_position(bool objects_visible) {
-    if (!gcode_viewer_)
+    if (!overlay_root_)
         return;
-    lv_obj_t* card = lv_obj_get_parent(gcode_viewer_);
+    // Resolve the card by name, not by walking up from the viewer: the previews
+    // live one level down inside preview_clear_area, while both corner buttons
+    // are direct children of thumbnail_section.
+    lv_obj_t* card = lv_obj_find_by_name(overlay_root_, "thumbnail_section");
     if (!card)
         return;
     lv_obj_t* btn = lv_obj_find_by_name(card, "btn_view_toggle");

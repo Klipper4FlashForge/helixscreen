@@ -1,7 +1,11 @@
 <component>
+  <!-- ignore_layout: the only parent is print_status_panel's thumbnail_section,
+       which is a flex column (preview above, metadata strip below). The map
+       covers the whole card instead of taking a slot in that column. -->
   <view name="exclude_object_map"
         style_width="100%"
         style_height="100%"
+        ignore_layout="true"
         style_bg_color="#screen_bg"
         style_bg_opa="255"
         style_pad_all="#space_sm"
