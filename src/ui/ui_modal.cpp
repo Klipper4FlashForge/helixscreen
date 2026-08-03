@@ -106,8 +106,9 @@ ModalStack& ModalStack::instance() {
     return instance;
 }
 
-void ModalStack::push(lv_obj_t* backdrop, lv_obj_t* dialog, const std::string& component_name) {
-    stack_.push_back({backdrop, dialog, component_name, false /* exiting */});
+void ModalStack::push(lv_obj_t* backdrop, lv_obj_t* dialog, const std::string& component_name,
+                      Modal* owner) {
+    stack_.push_back({backdrop, dialog, component_name, false /* exiting */, owner});
     spdlog::debug("[ModalStack] Pushed modal '{}' (stack depth: {})", component_name,
                   stack_.size());
     crash_handler::breadcrumb::note("modal+", component_name.c_str(),
@@ -152,6 +153,24 @@ lv_obj_t* ModalStack::backdrop_for(lv_obj_t* dialog) const {
         }
     }
     return nullptr;
+}
+
+Modal* ModalStack::owner_for(lv_obj_t* dialog) const {
+    for (const auto& entry : stack_) {
+        if (entry.dialog == dialog) {
+            return entry.owner;
+        }
+    }
+    return nullptr;
+}
+
+void ModalStack::reassign_owner(lv_obj_t* backdrop, Modal* new_owner) {
+    for (auto& entry : stack_) {
+        if (entry.backdrop == backdrop) {
+            entry.owner = new_owner;
+            return;
+        }
+    }
 }
 
 bool ModalStack::backdrop_for_backdrop(lv_obj_t* backdrop) const {
@@ -506,6 +525,12 @@ Modal::Modal(Modal&& other) noexcept
     other.backdrop_ = nullptr;
     other.dialog_ = nullptr;
     other.parent_ = nullptr;
+
+    // The stack entry still names the moved-from object as its owner. Retarget
+    // it so an owner-aware hide reaches the instance that now holds the widgets.
+    if (backdrop_) {
+        ModalStack::instance().reassign_owner(backdrop_, this);
+    }
 }
 
 Modal& Modal::operator=(Modal&& other) noexcept {
@@ -536,6 +561,13 @@ Modal& Modal::operator=(Modal&& other) noexcept {
         other.backdrop_ = nullptr;
         other.dialog_ = nullptr;
         other.parent_ = nullptr;
+
+        // The stack entry still names the moved-from object as its owner.
+        // Retarget it so an owner-aware hide reaches the instance that now
+        // holds the widgets.
+        if (backdrop_) {
+            ModalStack::instance().reassign_owner(backdrop_, this);
+        }
     }
     return *this;
 }
@@ -604,6 +636,19 @@ lv_obj_t* Modal::show(const char* component_name, const char** attrs) {
     return dialog;
 }
 
+// If any visible (non-exiting) modal remains, bring the new topmost one to the
+// foreground so it isn't left buried behind a backdrop that is on its way out.
+static void raise_top_modal_to_foreground(ModalStack& stack) {
+    lv_obj_t* top = stack.top_dialog();
+    if (!top) {
+        return;
+    }
+    lv_obj_t* top_backdrop = stack.backdrop_for(top);
+    if (top_backdrop && !stack.is_exiting(top_backdrop)) {
+        lv_obj_move_foreground(top_backdrop);
+    }
+}
+
 void Modal::hide(lv_obj_t* dialog) {
     if (!dialog) {
         spdlog::error("[Modal] hide() called with null dialog");
@@ -630,6 +675,18 @@ void Modal::hide(lv_obj_t* dialog) {
         return;
     }
 
+    // A dialog shown through the instance API needs the instance teardown:
+    // on_hide(), async-lifetime invalidation, and button user_data clearing.
+    // Callers reaching for the static overload (typically as
+    // Modal::hide(Modal::get_top())) can't know which kind they hold, so
+    // delegate. The owner is cleared when the entry is marked exiting, so the
+    // is_exiting guard above guarantees this pointer is still live.
+    if (Modal* owner = stack.owner_for(dialog)) {
+        owner->hide();
+        raise_top_modal_to_foreground(stack);
+        return;
+    }
+
     spdlog::info("[Modal] Hiding modal");
 
     // Remove entire tree from focus group to prevent scroll-on-focus during exit animation
@@ -641,14 +698,7 @@ void Modal::hide(lv_obj_t* dialog) {
     // Animate exit (animation callback will remove from stack when done)
     stack.animate_exit(backdrop, dialog);
 
-    // If there are more visible (non-exiting) modals, bring the new topmost to foreground
-    lv_obj_t* top = stack.top_dialog();
-    if (top) {
-        lv_obj_t* top_backdrop = stack.backdrop_for(top);
-        if (top_backdrop && !stack.is_exiting(top_backdrop)) {
-            lv_obj_move_foreground(top_backdrop);
-        }
-    }
+    raise_top_modal_to_foreground(stack);
 }
 
 lv_obj_t* Modal::get_top() {
@@ -668,6 +718,18 @@ bool Modal::rebuild_top() {
     std::string name = stack.top_component_name();
     if (name.empty()) {
         spdlog::warn("[Modal::rebuild_top] top dialog has no component name — skipping");
+        return false;
+    }
+
+    // An instance-backed modal cannot be rebuilt from XML alone: re-showing it
+    // through the static factory produces a bare copy with no on_show()
+    // population and no button wiring, i.e. a dialog whose buttons do nothing.
+    // Hide it instead and let the owner re-show it when it needs to.
+    if (Modal* owner = stack.owner_for(dialog)) {
+        spdlog::info("[Modal::rebuild_top] Modal '{}' is instance-backed - hiding instead of "
+                     "rebuilding",
+                     name);
+        owner->hide();
         return false;
     }
 
@@ -759,6 +821,14 @@ void Modal::hide() {
     // schedules self-deletion, these callbacks would dispatch to freed memory.
     lv_obj_remove_event_cb(backdrop_, backdrop_click_cb);
     lv_obj_remove_event_cb(backdrop_, esc_key_cb);
+
+    // Drop the stack's owner pointer before the hook runs. Two reasons: a
+    // subclass that self-deletes from on_hide() via async_call(delete this) is
+    // freed on the next LVGL tick while the entry lives until the exit
+    // animation completes, and an on_hide() that reaches back into the static
+    // Modal::hide(dialog) overload would otherwise be delegated straight back
+    // into this function. Nothing may read the owner after this point.
+    ModalStack::instance().reassign_owner(backdrop_, nullptr);
 
     // Call hook before destruction
     on_hide();
@@ -866,8 +936,9 @@ bool Modal::create_and_show(lv_obj_t* parent, const char* comp_name, const char*
     // Bring to foreground
     lv_obj_move_foreground(backdrop_);
 
-    // Add to stack
-    ModalStack::instance().push(backdrop_, dialog_, comp_name);
+    // Add to stack, recording this instance as the owner so the static
+    // Modal::hide(dialog) overload can delegate back to instance teardown
+    ModalStack::instance().push(backdrop_, dialog_, comp_name, this);
 
     // Animate entrance
     ModalStack::instance().animate_entrance(dialog_);
@@ -1167,11 +1238,10 @@ lv_obj_t* helix::ui::show_low_ram_resonance_warning(size_t total_mb, lv_event_cb
                                                     lv_event_cb_t on_cancel, void* user_data) {
     std::string msg;
     try {
-        msg = fmt::format(
-            lv_tr("This device has only {} MB of RAM. Resonance calibration is "
-                  "memory-intensive and can make the printer firmware report a "
-                  "\"Timer Too Close\" error or restart mid-test. Continue anyway?"),
-            total_mb);
+        msg = fmt::format(lv_tr("This device has only {} MB of RAM. Resonance calibration is "
+                                "memory-intensive and can make the printer firmware report a "
+                                "\"Timer Too Close\" error or restart mid-test. Continue anyway?"),
+                          total_mb);
     } catch (const std::exception& e) {
         // A mistranslated {} must never abort through the LVGL C dispatch frame.
         spdlog::warn("[Modal] low-RAM warning format failed: {}", e.what());

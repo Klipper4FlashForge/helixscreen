@@ -122,7 +122,12 @@ class Modal {
      *
      * Dev-only hook for XML hot-reload. Does nothing if no modal is visible.
      *
-     * @return true if a modal was rebuilt, false if no modal to rebuild
+     * An instance-backed modal (shown through a Modal subclass) is only hidden,
+     * never rebuilt: re-creating it from XML alone would skip on_show() and the
+     * subclass's button wiring, leaving a dialog whose buttons do nothing.
+     *
+     * @return true if a modal was rebuilt, false if there was nothing to rebuild
+     *         or the top modal is instance-backed and was hidden instead
      */
     static bool rebuild_top();
 
@@ -294,11 +299,22 @@ class ModalStack {
   public:
     static ModalStack& instance();
 
-    // Track a modal (called by Modal::create_and_show)
-    void push(lv_obj_t* backdrop, lv_obj_t* dialog, const std::string& component_name);
+    // Track a modal (called by Modal::create_and_show).
+    // `owner` is the Modal instance that shows and tears the dialog down, or
+    // nullptr for modals created through the static Modal::show() factory.
+    void push(lv_obj_t* backdrop, lv_obj_t* dialog, const std::string& component_name,
+              Modal* owner = nullptr);
 
     // Untrack a modal (called by Modal::destroy)
     void remove(lv_obj_t* backdrop);
+
+    /// Return the Modal instance that owns this dialog, or nullptr when the
+    /// dialog is untracked or was created through the static factory.
+    Modal* owner_for(lv_obj_t* dialog) const;
+
+    /// Point an existing entry at a different owner (nullptr = no owner).
+    /// No-op if the backdrop is not tracked.
+    void reassign_owner(lv_obj_t* backdrop, Modal* new_owner);
 
     // Get topmost dialog
     lv_obj_t* top_dialog() const;
@@ -365,6 +381,7 @@ class ModalStack {
         lv_obj_t* dialog;
         std::string component_name;
         bool exiting; /**< true = exit animation in progress, ignore hide() calls */
+        Modal* owner; /**< owning instance, or nullptr for static Modal::show() modals */
     };
 
     std::vector<ModalEntry> stack_;
