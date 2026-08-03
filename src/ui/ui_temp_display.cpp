@@ -148,23 +148,22 @@ static void update_heating_color(TempDisplayData* data) {
         return;
     }
 
-    // Maintaining: target is a cooling CEILING, not a heat goal — never show
-    // heating-red. Above the ceiling means actively cooling (blue); at/below the
-    // ceiling is idle/ok (neutral).
-    if (data->has_mode_binding && data->current_mode == helix::ChamberMode::Maintaining) {
-        lv_color_t color;
-        if (data->current_temp >
-            data->target_temp + helix::ui::temperature::DEFAULT_AT_TEMP_TOLERANCE) {
-            color = theme_manager_get_color("info"); // above ceiling → actively cooling (blue)
-        } else {
-            color = theme_manager_get_color("text"); // at/below ceiling → idle/ok (neutral)
-        }
+    // Chamber mode-aware path: in Maintaining mode the target is a cooling
+    // CEILING, not a heat goal, so classify_heat_state_with_mode() resolves
+    // Cooling (above ceiling) or Neutral (at/below ceiling) instead of the
+    // plain 4-state Off/Heating/AtTemp/Cooling. Same function HeaterIconBinder's
+    // chamber icon uses, so the label and the icon can never disagree.
+    if (data->has_mode_binding) {
+        auto mode = static_cast<helix::ChamberMode>(data->current_mode);
+        auto state = helix::ui::temperature::classify_heat_state_with_mode(data->current_temp,
+                                                                           data->target_temp, mode);
+        lv_color_t color = helix::ui::temperature::get_heating_state_color(state);
         lv_obj_set_style_text_color(data->current_label, color, LV_PART_MAIN);
         return;
     }
 
-    // Heating (or no mode binding): existing 4-state behavior. In Off mode the
-    // effective target is 0, so get_heating_state_color(current, 0) → muted/gray.
+    // No mode binding (nozzle/bed): plain 4-state behavior. A heater at target=0
+    // resolves to Off (muted/gray) via get_heating_state_color(current, 0).
     lv_color_t color = get_heating_state_color(data->current_temp, data->target_temp);
     lv_obj_set_style_text_color(data->current_label, color, LV_PART_MAIN);
 }

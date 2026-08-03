@@ -7,6 +7,7 @@
 #include "ui_temperature_utils.h"
 
 #include "lvgl/lvgl.h"
+#include "printer_temperature_state.h" // helix::ChamberMode
 
 /**
  * @brief Tints heating icons with the shared 4-state thermal color and pulse effect
@@ -65,14 +66,20 @@ class HeatingIconAnimator {
      * @brief Update heating state based on current and target temperatures
      *
      * Call this whenever temperature readings change. The animator will:
-     * - Classify the new thermal state via classify_heat_state()
+     * - Classify the new thermal state via classify_heat_state_with_mode()
      * - Update the icon's tint color for that state
      * - Start/stop pulse animation based on state transitions
      *
      * @param current_temp Current temperature in decidegrees (31.5°C = 315)
      * @param target_temp Target temperature in decidegrees (0 = heater off)
+     * @param mode Chamber control mode. Defaults to Heating, which makes
+     *             classify_heat_state_with_mode() a pure passthrough to
+     *             classify_heat_state() — the correct behavior for nozzle/bed,
+     *             which have no mode concept. Only the chamber ever passes
+     *             Off/Maintaining.
      */
-    void update(int current_temp, int target_temp);
+    void update(int current_temp, int target_temp,
+                helix::ChamberMode mode = helix::ChamberMode::Heating);
 
     /**
      * @brief Refresh colors from theme (call after theme toggle)

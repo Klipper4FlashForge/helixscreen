@@ -44,6 +44,43 @@ TEST_CASE("HeaterIconBinder: unbind on an unbound binder is safe", "[heater_bind
     REQUIRE_FALSE(binder.is_bound());
 }
 
+// Before this, bind_subjects() returned true whenever the icon was found, even
+// if BOTH subject pointers were null — the icon would then freeze forever at
+// classify(250, 0) with no observers and no diagnostic. It must now refuse to
+// bind and report false so a caller can notice the icon never tints.
+TEST_CASE("HeaterIconBinder: bind_subjects refuses to bind when both subjects are null",
+          "[heater_binder]") {
+    LVGLTestFixture fixture;
+
+    lv_obj_t* root = lv_obj_create(lv_screen_active());
+    lv_obj_t* icon = lv_label_create(root);
+    lv_obj_set_name(icon, "bed_icon_glyph");
+
+    HeaterIconBinder binder;
+    REQUIRE_FALSE(binder.bind_subjects(root, "bed_icon_glyph", nullptr, nullptr));
+    REQUIRE_FALSE(binder.is_bound());
+}
+
+// One real subject is enough to be useful (e.g. a sensor-only display with no
+// controllable target) — only the BOTH-null case is refused.
+TEST_CASE("HeaterIconBinder: bind_subjects still binds when only one subject is non-null",
+          "[heater_binder]") {
+    LVGLTestFixture fixture;
+
+    lv_obj_t* root = lv_obj_create(lv_screen_active());
+    lv_obj_t* icon = lv_label_create(root);
+    lv_obj_set_name(icon, "bed_icon_glyph");
+
+    lv_subject_t current;
+    lv_subject_init_int(&current, 250);
+
+    HeaterIconBinder binder;
+    REQUIRE(binder.bind_subjects(root, "bed_icon_glyph", &current, nullptr));
+    REQUIRE(binder.is_bound());
+
+    binder.unbind();
+}
+
 // ============================================================================
 // Coverage below exercises a real bind() against a real icon widget and a real
 // PrinterState — the path every Task 5-7 call site depends on. The four cases

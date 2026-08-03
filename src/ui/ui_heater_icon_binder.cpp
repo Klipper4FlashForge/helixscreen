@@ -52,8 +52,12 @@ bool HeaterIconBinder::bind(lv_obj_t* root, PrinterState& state, HeaterType heat
     case HeaterType::Chamber:
         // Effective target, not the raw heater target: in Maintaining mode the
         // real setpoint lives on the cooling fan and the heater target is 0.
+        // Mode subject makes Maintaining resolve to Cooling/Neutral instead of
+        // the plain classifier's Off/Heating/AtTemp — same as the temp_display
+        // label chamber binds (see classify_heat_state_with_mode()).
         current_subject_ = state.get_chamber_temp_subject(current_lifetime_);
         target_subject_ = state.get_chamber_effective_target_subject(target_lifetime_);
+        mode_subject_ = state.get_chamber_mode_subject(mode_lifetime_);
         break;
     }
 
@@ -73,6 +77,15 @@ bool HeaterIconBinder::bind_subjects(lv_obj_t* root, const char* icon_name,
         return false;
     }
 
+    if (!current_subject && !target_subject) {
+        // Both null means classify(250, 0) forever — the animator never moves
+        // off its Off-state default and nothing downstream will ever say why.
+        spdlog::warn("[HeaterIconBinder] Icon '{}' found but both current and target subjects "
+                     "are null — refusing to bind (icon would freeze at the off-state color)",
+                     icon_name);
+        return false;
+    }
+
     current_subject_ = current_subject;
     target_subject_ = target_subject;
     return attach_and_observe(icon);
@@ -87,7 +100,11 @@ bool HeaterIconBinder::attach_and_observe(lv_obj_t* icon) {
     if (target_subject_) {
         cached_target_ = lv_subject_get_int(target_subject_);
     }
-    animator_.update(cached_current_, cached_target_);
+    if (mode_subject_) {
+        cached_mode_ = lv_subject_get_int(mode_subject_);
+    }
+    animator_.update(cached_current_, cached_target_,
+                     static_cast<helix::ChamberMode>(cached_mode_));
 
     auto token = lifetime_.token();
 
@@ -113,12 +130,24 @@ bool HeaterIconBinder::attach_and_observe(lv_obj_t* icon) {
             },
             target_lifetime_);
     }
+    if (mode_subject_) {
+        mode_observer_ = observe_int_sync<HeaterIconBinder>(
+            mode_subject_, this,
+            [token](HeaterIconBinder* self, int value) {
+                if (token.expired())
+                    return;
+                self->cached_mode_ = value;
+                self->refresh();
+            },
+            mode_lifetime_);
+    }
 
     return true;
 }
 
 void HeaterIconBinder::refresh() {
-    animator_.update(cached_current_, cached_target_);
+    animator_.update(cached_current_, cached_target_,
+                     static_cast<helix::ChamberMode>(cached_mode_));
 }
 
 void HeaterIconBinder::unbind() {
@@ -126,12 +155,16 @@ void HeaterIconBinder::unbind() {
     animator_.detach();
     current_observer_.reset();
     target_observer_.reset();
+    mode_observer_.reset();
     current_lifetime_.reset();
     target_lifetime_.reset();
+    mode_lifetime_.reset();
     current_subject_ = nullptr;
     target_subject_ = nullptr;
+    mode_subject_ = nullptr;
     cached_current_ = 250;
     cached_target_ = 0;
+    cached_mode_ = helix::ChamberMode::Heating;
 }
 
 } // namespace helix::ui

@@ -4,12 +4,14 @@
 #include "ui_heating_animator.h"
 #include "ui_temperature_utils.h"
 
+#include "lvgl_test_fixture.h"
 #include "theme_manager.h"
 
 #include <type_traits>
 
 #include "../catch_amalgamated.hpp"
 
+using helix::ChamberMode;
 using helix::ui::temperature::HeatState;
 
 // The animator's state must be the same function of (current, target) that the
@@ -44,4 +46,91 @@ TEST_CASE("HeatingIconAnimator: decidegree tolerance matches the label's degrees
     // 197.0 vs 200.0 -> heating in both
     REQUIRE(classify_heat_state(1970, 2000, 20) == HeatState::Heating);
     REQUIRE(classify_heat_state(197, 200, 2) == HeatState::Heating);
+}
+
+// ============================================================================
+// update(current, target, mode) — chamber Maintaining-mode awareness.
+//
+// These need a real attached icon: update() early-returns when icon_ is null
+// (see the "unattached update does not change state" case above), so state_
+// and the pulse animation only move once attach() has run.
+// ============================================================================
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "HeatingIconAnimator: default mode is a passthrough (nozzle/bed unaffected)",
+                 "[animator][heat_state][chamber_mode]") {
+    lv_obj_t* icon = lv_obj_create(test_screen());
+    HeatingIconAnimator animator;
+    animator.attach(icon);
+
+    // No mode argument — must classify identically to the plain classifier,
+    // which is what every nozzle/bed call site (no ChamberMode concept) relies on.
+    animator.update(1500, 2000);
+    REQUIRE(animator.get_state() == HeatState::Heating);
+
+    animator.detach();
+}
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "HeatingIconAnimator: Maintaining mode classifies Neutral even when cold, "
+                 "never Heating",
+                 "[animator][heat_state][chamber_mode]") {
+    lv_obj_t* icon = lv_obj_create(test_screen());
+    HeatingIconAnimator animator;
+    animator.attach(icon);
+
+    // Regression case: stone cold (current=0) and far below the Maintaining
+    // ceiling (target=2000 = 200C). The plain classifier would call this
+    // Heating; classify_heat_state_with_mode() must not.
+    animator.update(0, 2000, ChamberMode::Maintaining);
+    REQUIRE(animator.get_state() == HeatState::Neutral);
+    REQUIRE_FALSE(animator.get_state() == HeatState::Heating);
+
+    animator.detach();
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "HeatingIconAnimator: Maintaining above ceiling is Cooling",
+                 "[animator][heat_state][chamber_mode]") {
+    lv_obj_t* icon = lv_obj_create(test_screen());
+    HeatingIconAnimator animator;
+    animator.attach(icon);
+
+    animator.update(2500, 2000, ChamberMode::Maintaining);
+    REQUIRE(animator.get_state() == HeatState::Cooling);
+
+    animator.detach();
+}
+
+// Pulse means "working toward a setpoint from below" — Maintaining never has a
+// setpoint to work toward (the target is a cooling ceiling), so it must never
+// pulse, even for the coldest possible input. lv_anim_get(&animator, nullptr)
+// finds any animation registered against this animator instance as its `var`
+// regardless of which exec callback it uses (NULL exec_cb matches any).
+TEST_CASE_METHOD(LVGLTestFixture, "HeatingIconAnimator: Maintaining mode never pulses",
+                 "[animator][heat_state][chamber_mode]") {
+    lv_obj_t* icon = lv_obj_create(test_screen());
+    HeatingIconAnimator animator;
+    animator.attach(icon);
+
+    animator.update(0, 2000, ChamberMode::Maintaining); // coldest possible input
+    REQUIRE(animator.get_state() == HeatState::Neutral);
+    REQUIRE(lv_anim_get(&animator, nullptr) == nullptr);
+
+    animator.detach();
+}
+
+// Regression guard on the sibling behavior: real Heating must still pulse.
+// Without this, a change that accidentally stopped ALL pulsing (not just
+// Maintaining's) would pass the test above and go unnoticed.
+TEST_CASE_METHOD(LVGLTestFixture, "HeatingIconAnimator: Heating mode still pulses",
+                 "[animator][heat_state][chamber_mode]") {
+    lv_obj_t* icon = lv_obj_create(test_screen());
+    HeatingIconAnimator animator;
+    animator.attach(icon);
+
+    animator.update(1500, 2000, ChamberMode::Heating);
+    REQUIRE(animator.get_state() == HeatState::Heating);
+    REQUIRE(lv_anim_get(&animator, nullptr) != nullptr);
+
+    animator.detach();
 }

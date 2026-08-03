@@ -149,6 +149,13 @@ void TempGraphOverlay::on_activate() {
     temp_control_panel_ =
         helix::PanelWidgetManager::instance().shared_resource<TemperatureService>();
 
+    // Thermal tint for the three size="xl" heater glyphs (one per control
+    // strip). Each binder owns its own observers, so this needs no hook into
+    // the graph/series machinery below.
+    nozzle_icon_binder_.bind(overlay_root_, *printer_state_, helix::HeaterType::Nozzle);
+    bed_icon_binder_.bind(overlay_root_, *printer_state_, helix::HeaterType::Bed);
+    chamber_icon_binder_.bind(overlay_root_, *printer_state_, helix::HeaterType::Chamber);
+
     // Discover series metadata (populates series_ with display info)
     discover_series();
 
@@ -204,6 +211,13 @@ void TempGraphOverlay::on_activate() {
 
 void TempGraphOverlay::on_deactivate() {
     OverlayBase::on_deactivate();
+
+    // Mirror the bind() calls in on_activate() — the icon widgets themselves
+    // survive (cached_overlay_ persists across pushes), but printer_state_ and
+    // the underlying subject lifetimes are only guaranteed valid while active.
+    nozzle_icon_binder_.unbind();
+    bed_icon_binder_.unbind();
+    chamber_icon_binder_.unbind();
 
     // Destroy controller (tears down observers, destroys graph)
     controller_.reset();

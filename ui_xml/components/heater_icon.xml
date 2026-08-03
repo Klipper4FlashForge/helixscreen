@@ -5,7 +5,10 @@
   <api>
     <prop name="size" type="string" default="#icon_size"/>
     <prop name="src" type="string" default="radiator"/>
-    <prop name="glyph_name" type="string" default="bed_icon_glyph"/>
+    <!-- No sensible default: every instance MUST pass glyph_name explicitly
+         (see note below on why it stays empty rather than defaulting to
+         "bed_icon_glyph"). -->
+    <prop name="glyph_name" type="string" default=""/>
   </api>
   <!--
     Heater Icon (heatbed / chamber)
@@ -14,9 +17,12 @@
     component because it also carries a tool badge.
 
     glyph_name MUST be the name HeaterIconBinder::default_icon_name() expects for
-    that heater — "bed_icon_glyph" or "chamber_icon_glyph". A wrong name fails
-    silently: the binder simply does not find the icon and the thermal tint never
-    appears. Task 4's verification step checks all three names resolve.
+    that heater — "bed_icon_glyph" or "chamber_icon_glyph". A wrong or missing
+    name fails silently: the binder simply does not find the icon under that
+    name and the thermal tint never appears — nothing crashes, nothing warns
+    louder than a debug log. glyph_name has no default (deliberately empty)
+    so a caller that forgets it gets an icon named "" instead of a second,
+    silently-colliding "bed_icon_glyph" that steals the tint from the real one.
 
     Colour is owned by HeatingIconAnimator once bound (4-state thermal tint); the
     variant here is only the pre-bind resting appearance.

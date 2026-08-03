@@ -94,7 +94,7 @@ void HeatingIconAnimator::detach() {
     spdlog::debug("[HeatingIconAnimator] Detached");
 }
 
-void HeatingIconAnimator::update(int current_temp, int target_temp) {
+void HeatingIconAnimator::update(int current_temp, int target_temp, helix::ChamberMode mode) {
     if (icon_ == nullptr) {
         return;
     }
@@ -102,15 +102,19 @@ void HeatingIconAnimator::update(int current_temp, int target_temp) {
     current_temp_ = current_temp;
     target_temp_ = target_temp;
 
-    // Same classifier the temperature label uses, in decidegrees.
-    State new_state =
-        helix::ui::temperature::classify_heat_state(current_temp, target_temp, TEMP_TOLERANCE);
+    // Same classifier the temperature label uses, in decidegrees. mode defaults
+    // to Heating, which classify_heat_state_with_mode() passes straight through
+    // to classify_heat_state() — a no-op for nozzle/bed. Only the chamber ever
+    // passes Off/Maintaining.
+    State new_state = helix::ui::temperature::classify_heat_state_with_mode(
+        current_temp, target_temp, mode, TEMP_TOLERANCE);
 
     if (new_state != state_) {
         state_ = new_state;
 
         // Pulse means "working toward a setpoint from below". Cooling is a
-        // transient step-down and off is idle; neither should pulse.
+        // transient step-down; Off and Neutral (chamber Maintaining, at/below
+        // its cooling ceiling) are idle — none of them should pulse.
         if (new_state == State::Heating) {
             if (!pulse_active_) {
                 start_pulse();
@@ -121,8 +125,7 @@ void HeatingIconAnimator::update(int current_temp, int target_temp) {
         spdlog::trace("[HeatingIconAnimator] State: {}", static_cast<int>(new_state));
     }
 
-    current_color_ = helix::ui::temperature::get_heating_state_color(current_temp_, target_temp_,
-                                                                     TEMP_TOLERANCE);
+    current_color_ = helix::ui::temperature::get_heating_state_color(state_);
     apply_color();
 }
 
@@ -189,9 +192,11 @@ void HeatingIconAnimator::refresh_theme() {
         return;
     }
 
-    // Colors are theme tokens — re-resolve them for the current state.
-    current_color_ = helix::ui::temperature::get_heating_state_color(current_temp_, target_temp_,
-                                                                     TEMP_TOLERANCE);
+    // Colors are theme tokens — re-resolve for the already-classified state_
+    // (not by re-deriving it from current_temp_/target_temp_, which would lose
+    // mode-awareness: a chamber in Maintaining below its ceiling would
+    // misclassify back to Off/AtTemp under the plain int-based classifier).
+    current_color_ = helix::ui::temperature::get_heating_state_color(state_);
     apply_color();
 }
 

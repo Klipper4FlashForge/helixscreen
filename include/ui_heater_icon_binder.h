@@ -9,6 +9,7 @@
 
 #include "async_lifetime_guard.h"
 #include "lvgl/lvgl.h"
+#include "printer_temperature_state.h" // helix::ChamberMode
 
 namespace helix {
 class PrinterState;
@@ -49,8 +50,10 @@ class HeaterIconBinder {
      * @brief Bind the conventional icon under `root` to `heater`'s subjects.
      *
      * Nozzle reads the active-extruder subjects; bed reads the bed subjects;
-     * chamber reads chamber current + *effective* target (the same subject the
-     * chamber temp_display binds to, so icon and number track one setpoint).
+     * chamber reads chamber current + *effective* target (the same subjects the
+     * chamber temp_display binds to) plus the chamber_mode subject, so icon and
+     * number track one setpoint AND agree on Maintaining-mode semantics (see
+     * classify_heat_state_with_mode()). Nozzle/bed have no mode concept.
      *
      * @return true if the icon was found and bound.
      */
@@ -87,13 +90,21 @@ class HeaterIconBinder {
 
     lv_subject_t* current_subject_ = nullptr;
     lv_subject_t* target_subject_ = nullptr;
+    // Chamber only — stays nullptr for Nozzle/Bed and for bind_subjects() callers.
+    lv_subject_t* mode_subject_ = nullptr;
     int cached_current_ = 250;
     int cached_target_ = 0;
+    // Defaults to Heating: HeatingIconAnimator::update()'s mode-unaware passthrough,
+    // so a never-bound mode_subject_ (Nozzle/Bed) behaves exactly like before mode
+    // support existed.
+    int cached_mode_ = helix::ChamberMode::Heating;
 
     ObserverGuard current_observer_;
     ObserverGuard target_observer_;
+    ObserverGuard mode_observer_;
     SubjectLifetime current_lifetime_;
     SubjectLifetime target_lifetime_;
+    SubjectLifetime mode_lifetime_;
 
     // MUST stay declared LAST: reverse-declaration destruction makes this the
     // first member torn down, invalidating every captured token before any
