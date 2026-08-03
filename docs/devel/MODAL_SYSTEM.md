@@ -412,8 +412,31 @@ class ControlsPanel {
 - **Top-modal queries**: `Modal::get_top()` returns the topmost dialog
 - **Animation state**: `mark_exiting()` prevents double-hide during exit animation
 - **Backdrop-to-dialog mapping**: Links each backdrop to its dialog
+- **Owner tracking**: Records the `Modal*` that shows each dialog, so a dialog can be traced back to the C++ instance behind it
 
 You should not interact with `ModalStack` directly. Use the `Modal` class API instead.
+
+### Why the stack records an owner
+
+The two `hide` overloads do different amounts of work. Instance `Modal::hide()` runs the
+full teardown — `lifetime_.invalidate()`, `user_data` clearing, `on_hide()`. Static
+`Modal::hide(lv_obj_t*)` only animates the widgets away.
+
+Most callers reach for the static one as `Modal::hide(Modal::get_top())` and cannot know
+whether the dialog on top belongs to a `Modal` subclass. Without the owner, hiding a
+subclass that way skipped `on_hide()`: the instance leaked, any `active_instance_` static
+stayed non-null, and `backdrop_`/`dialog_` dangled. The static overload now looks the
+owner up and delegates, so both spellings tear a modal down identically.
+
+`Modal::rebuild_top()` (the `HELIX_HOT_RELOAD=1` path) uses the owner differently — an
+instance-backed modal is hidden rather than rebuilt, because re-creating it from XML alone
+would skip `on_show()` and the subclass's button wiring and leave a dialog whose buttons do
+nothing.
+
+Instance `hide()` clears the owner before invoking `on_hide()`. A subclass that self-deletes
+from the hook is freed on the next LVGL tick while the stack entry lives until the exit
+animation finishes, and a hook that itself calls the static overload would otherwise be
+delegated straight back into the same `hide()`.
 
 ### Animations
 
