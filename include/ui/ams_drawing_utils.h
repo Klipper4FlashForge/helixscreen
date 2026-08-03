@@ -225,7 +225,57 @@ struct SystemToolLayout {
 
     /// Map physical nozzle index -> virtual tool label number (for badge labels)
     std::vector<int> physical_to_virtual_label;
+
+    /// Map physical nozzle index -> Klipper extruder object name ("extruder",
+    /// "extruder5", …). Empty string means "this nozzle's extruder is unknown".
+    ///
+    /// Deliberately the NAME and not a number. The name is the identity AFC and
+    /// Klipper both publish; the number is a rendering detail derived at the
+    /// badge edge via helix::tool_number_for_extruder(). Keeping the string here
+    /// means a future change to the badge format touches only the renderer, and
+    /// the derivation plus its tests survive untouched.
+    std::vector<std::string> physical_to_extruder_name;
 };
+
+/**
+ * @brief True when @p layout carries a usable extruder identity for every nozzle
+ *
+ * The gate for rendering `E<n>` toolhead badges instead of the legacy `T<n>`
+ * lane-alias labels. Requires one entry per physical tool, every entry
+ * non-empty, and every entry parseable by helix::tool_number_for_extruder().
+ * Anything less falls back to the legacy labels — a partial answer would badge
+ * some toolheads with an extruder number and others with a lane alias, which is
+ * worse than being uniformly wrong.
+ */
+[[nodiscard]] bool layout_has_extruder_identity(const SystemToolLayout& layout);
+
+/// Badge text for the overview's toolhead nodes: one number per physical nozzle
+/// plus the letter that says which numbering system those numbers belong to.
+struct ToolBadgeLabels {
+    std::vector<int> numbers; ///< Indexed by physical nozzle; empty = no badges
+    char prefix = 'T';        ///< 'T' = AFC lane alias, 'E' = Klipper extruder
+};
+
+/**
+ * @brief Decide the toolhead badge numbers + prefix for a system layout
+ *
+ * With full extruder identity every toolhead is badged `E<n>` straight from its
+ * extruder name. Otherwise the legacy `T<n>` lane-alias labels are used, with
+ * the active slot's own alias substituted onto the active nozzle.
+ *
+ * That substitution is deliberately confined to the legacy path (#1229): a lane
+ * alias written onto a toolhead is exactly the collision this exists to end, and
+ * it stays only because removing it would change long-standing behaviour on the
+ * backends that have no extruder names to offer.
+ *
+ * @param layout               Layout from compute_system_tool_layout()
+ * @param info                 System info, for the active slot's mapped_tool
+ * @param current_slot         Globally-indexed active slot, or <0 for none
+ * @param active_physical_tool Physical nozzle the active slot feeds, or <0
+ */
+[[nodiscard]] ToolBadgeLabels compute_tool_badge_labels(const SystemToolLayout& layout,
+                                                        const AmsSystemInfo& info, int current_slot,
+                                                        int active_physical_tool);
 
 /**
  * @brief Compute physical tool layout from AMS system info

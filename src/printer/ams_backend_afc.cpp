@@ -2955,14 +2955,12 @@ void AmsBackendAfc::rebuild_unit_map_from_klipper() {
                     if (sys_unit.name == display_name) {
                         sys_unit.topology = ui.topology;
                         sys_unit.lane_is_hub_routed = ui.lane_is_hub_routed;
-                        // For HUB units, derive physical tool label from extruder name
+                        // For HUB units, derive physical tool label from extruder
+                        // name. An unrecognisable name leaves hub_tool_label at its
+                        // -1 "absent" default rather than inventing a number.
                         if (ui.topology == PathTopology::HUB && ui.extruders.size() == 1) {
-                            const auto& ext_name = ui.extruders[0];
-                            size_t pos = ext_name.find_last_not_of("0123456789");
-                            if (pos != std::string::npos && pos + 1 < ext_name.size()) {
-                                sys_unit.hub_tool_label = std::stoi(ext_name.substr(pos + 1));
-                            } else if (ext_name == "extruder") {
-                                sys_unit.hub_tool_label = 0;
+                            if (const auto n = helix::tool_number_for_extruder(ui.extruders[0])) {
+                                sys_unit.hub_tool_label = *n;
                             }
                         }
                         break;
@@ -3367,25 +3365,6 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
     }
 }
 
-/// Tool number implied by an AFC extruder name: "extruder" = 0, "extruderN" = N.
-///
-/// A positional convention, and a third numbering system alongside Klipper's
-/// `tool T<n>` objects and AFC's per-lane `map` aliases — all three of which can
-/// disagree (#1229: AFC maps T0 to the extruder5 lane while Klipper's tool T0 is
-/// `extruder`). Used only where a tool *number* is required by an existing
-/// consumer; prefer the extruder name as identity wherever possible.
-static int tool_number_for_extruder(const std::string& ext_name) {
-    if (ext_name.size() <= 8) { // "extruder"
-        return 0;
-    }
-    try {
-        return std::stoi(ext_name.substr(8));
-    } catch (const std::exception& e) {
-        spdlog::warn("[AMS AFC] Failed to parse tool number from '{}': {}", ext_name, e.what());
-        return 0;
-    }
-}
-
 void AmsBackendAfc::apply_mount_state(bool extruder_set_active_slot) {
     // --- AFC's own carriage signal, preferred where it exists ---
     //
@@ -3428,7 +3407,9 @@ void AmsBackendAfc::apply_mount_state(bool extruder_set_active_slot) {
             }
 
             system_info_.mount_state = MountState::MOUNTED;
-            system_info_.mounted_tool = tool_number_for_extruder(mounted_name);
+            // mounted_tool is an int for consumers that predate extruder-name
+            // identity; an unparseable name keeps the historical 0 fallback.
+            system_info_.mounted_tool = helix::tool_number_for_extruder(mounted_name).value_or(0);
 
             // The mounted extruder names its own seated lane. Precise even where
             // several lanes feed one extruder, which a lane→tool map cannot be.

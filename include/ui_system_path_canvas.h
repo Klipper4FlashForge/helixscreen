@@ -220,6 +220,18 @@ void ui_system_path_canvas_set_current_tool(lv_obj_t* obj, int tool_index);
 void ui_system_path_canvas_set_tool_virtual_numbers(lv_obj_t* obj, const int* numbers, int count);
 
 /**
+ * @brief Set the letter prefixed to every toolhead badge number
+ *
+ * 'T' (the default) means the numbers are AFC per-lane `map` aliases; 'E' means
+ * they are Klipper extruder identities. The two disagree on tool changers
+ * (#1229), so the letter is what tells the user which one is on screen.
+ *
+ * @param obj The system_path_canvas widget
+ * @param prefix Badge letter; ignored when '\0'
+ */
+void ui_system_path_canvas_set_tool_label_prefix(lv_obj_t* obj, char prefix);
+
+/**
  * @brief Force redraw of the path visualization
  *
  * @param obj The system_path_canvas widget

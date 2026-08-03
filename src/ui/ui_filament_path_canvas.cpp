@@ -698,6 +698,49 @@ void ui_filament_path_canvas_set_slot_mapped_tool(lv_obj_t* obj, int slot, int t
     }
 }
 
+// Declared in ui_filament_path_internal.h inside helix::ui::fpath; the
+// ui_filament_path_canvas_* entry points around it are deliberately global.
+namespace helix::ui::fpath {
+
+void format_tool_badge_label(const FilamentPathData* data, int lane, int fallback_tool, char* out,
+                             size_t out_size) {
+    if (data && data->use_extruder_identity && lane >= 0 && lane < FilamentPathData::MAX_SLOTS &&
+        data->extruder_tool[lane] >= 0) {
+        snprintf(out, out_size, "E%d", data->extruder_tool[lane]);
+        return;
+    }
+    snprintf(out, out_size, "T%d", fallback_tool);
+}
+
+} // namespace helix::ui::fpath
+
+void ui_filament_path_canvas_set_extruder_tools(lv_obj_t* obj, const int* tools, int count) {
+    auto* data = get_data(obj);
+    if (!data)
+        return;
+
+    const int n = LV_MIN(count, FilamentPathData::MAX_SLOTS);
+    // Identity is all-or-nothing per unit: badging some toolheads by extruder
+    // and the rest by lane alias would be worse than being uniformly legacy.
+    bool complete = (n > 0 && n >= data->slot_count);
+    for (int i = 0; i < n && complete; ++i) {
+        complete = (tools[i] >= 0);
+    }
+
+    bool changed = (data->use_extruder_identity != complete);
+    for (int i = 0; i < FilamentPathData::MAX_SLOTS; ++i) {
+        const int v = (i < n) ? tools[i] : -1;
+        if (data->extruder_tool[i] != v) {
+            data->extruder_tool[i] = v;
+            changed = true;
+        }
+    }
+    data->use_extruder_identity = complete;
+    if (changed) {
+        layered_mark_dirty(obj, true, true);
+    }
+}
+
 void ui_filament_path_canvas_set_slot_hub_routed(lv_obj_t* obj, int slot, bool is_hub) {
     auto* data = get_data(obj);
     if (!data || slot < 0 || slot >= FilamentPathData::MAX_SLOTS)

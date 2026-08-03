@@ -259,6 +259,12 @@ struct FilamentPathData {
     int mapped_tool[MAX_SLOTS];              // -1 = use slot index as fallback
     bool slot_is_hub_routed[MAX_SLOTS] = {}; // true = lane routes through hub (MIXED topology)
 
+    // Per-lane Klipper extruder identity, derived from the lane's extruder name
+    // (#1229). Toolhead badges read "E<n>" from this when every lane resolved;
+    // otherwise they fall back to the AFC lane aliases in mapped_tool.
+    int extruder_tool[MAX_SLOTS];       // -1 = this lane's extruder is unknown
+    bool use_extruder_identity = false; // true = badge toolheads "E<n>"
+
     // Bypass mode state
     bool bypass_active = false;       // External spool bypass mode
     uint32_t bypass_color = 0x888888; // Default gray for bypass filament
@@ -294,8 +300,23 @@ struct FilamentPathData {
 
     FilamentPathData() {
         std::fill(std::begin(mapped_tool), std::end(mapped_tool), -1);
+        std::fill(std::begin(extruder_tool), std::end(extruder_tool), -1);
     }
 };
+
+/**
+ * @brief Write a toolhead badge string ("E5" or "T0") for one lane
+ *
+ * Prefers the lane's Klipper extruder identity; falls back to @p fallback_tool,
+ * the AFC lane alias, when identity is unavailable. #1229: the two disagree on
+ * tool changers, so the letter tells the user which number they are reading.
+ *
+ * @param data          Canvas data block
+ * @param lane          Lane index owning the toolhead, or <0 when unknown
+ * @param fallback_tool Legacy T-label number to use without extruder identity
+ */
+void format_tool_badge_label(const FilamentPathData* data, int lane, int fallback_tool, char* out,
+                             size_t out_size);
 
 // ============================================================================
 // Registry + geometry helpers (ui_filament_path_canvas.cpp)

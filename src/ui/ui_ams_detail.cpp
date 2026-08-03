@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 // ============================================================================
 // 3D Tray Box Drawing
@@ -537,17 +538,24 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
         ui_filament_path_canvas_set_slot_prep_sensor(canvas, i, has_prep);
     }
 
-    // Plumb per-slot metadata (mapped_tool, hub routing) to path canvas
+    // Plumb per-slot metadata (mapped_tool, extruder identity, hub routing) to
+    // path canvas. The extruder name is what actually names a toolhead; the
+    // mapped_tool alias stays as the fallback for backends that publish neither.
     if (unit_index >= 0 && unit_index < static_cast<int>(info.units.size())) {
         const auto& unit = info.units[unit_index];
+        std::vector<int> extruder_tools(static_cast<size_t>(slot_count), -1);
         for (int i = 0; i < slot_count; ++i) {
             int gi = slot_offset + i;
             SlotInfo slot = backend->get_slot_info(gi);
             ui_filament_path_canvas_set_slot_mapped_tool(canvas, i, slot.mapped_tool);
+            if (const auto n = helix::tool_number_for_extruder(slot.extruder_name)) {
+                extruder_tools[static_cast<size_t>(i)] = *n;
+            }
             if (i < static_cast<int>(unit.lane_is_hub_routed.size())) {
                 ui_filament_path_canvas_set_slot_hub_routed(canvas, i, unit.lane_is_hub_routed[i]);
             }
         }
+        ui_filament_path_canvas_set_extruder_tools(canvas, extruder_tools.data(), slot_count);
     }
 
     // Set per-slot filament states (using local indices for unit-scoped views)
