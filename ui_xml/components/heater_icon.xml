@@ -21,10 +21,8 @@
     Colour is owned by HeatingIconAnimator once bound (4-state thermal tint); the
     variant here is only the pre-bind resting appearance.
   -->
-  <view name="heater_icon" width="content" height="content"
-        style_pad_all="0" scrollable="false"
-        clickable="false" event_bubble="true">
-    <icon name="$glyph_name" src="$src" size="$size" variant="secondary"
-          clickable="false" event_bubble="true"/>
+  <view name="heater_icon"
+        width="content" height="content" style_pad_all="0" scrollable="false" clickable="false" event_bubble="true">
+    <icon name="$glyph_name" src="$src" size="$size" variant="secondary" clickable="false" event_bubble="true"/>
   </view>
 </component>

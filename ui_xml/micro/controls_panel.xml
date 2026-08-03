@@ -98,7 +98,8 @@
         </lv_obj>
         <!-- Motion panel navigation button -->
         <ui_button name="btn_motion"
-                   width="100%" height="#button_height_sm" icon="cursor_move" text="Motion" translation_tag="Motion" style_text_font="#font_small">
+                   width="100%" height="#button_height_sm" icon="cursor_move" text="Motion" translation_tag="Motion"
+                   style_text_font="#font_small">
           <event_cb trigger="clicked" callback="on_controls_quick_actions"/>
         </ui_button>
       </ui_card>
@@ -148,13 +149,12 @@
               <!-- Right side: temp display + edit icon -->
               <lv_obj name="nozzle_temp_edit_container"
                       width="content" height="content" flex_flow="row" style_pad_all="0" scrollable="false"
-                      style_flex_cross_place="center" style_pad_gap="#space_xs" clickable="true"
-                      ext_click_area="12">
+                      style_flex_cross_place="center" style_pad_gap="#space_xs" clickable="true" ext_click_area="12">
                 <event_cb trigger="clicked" callback="on_nozzle_target_edit"/>
                 <icon src="pencil" size="xs" variant="tertiary" clickable="false" event_bubble="true"/>
               </lv_obj>
             </lv_obj>
-          
+
             <!-- Bed section (clickable) -->
             <lv_obj name="btn_bed_temp"
                     width="100%" flex_flow="row" style_flex_main_place="space_between" style_flex_cross_place="center"
@@ -172,8 +172,7 @@
               <!-- Right side: temp display + edit icon -->
               <lv_obj name="bed_temp_edit_container"
                       width="content" height="content" flex_flow="row" style_pad_all="0" scrollable="false"
-                      style_flex_cross_place="center" style_pad_gap="#space_xs" clickable="true"
-                      ext_click_area="12">
+                      style_flex_cross_place="center" style_pad_gap="#space_xs" clickable="true" ext_click_area="12">
                 <event_cb trigger="clicked" callback="on_bed_target_edit"/>
                 <icon src="pencil" size="xs" variant="tertiary" clickable="false" event_bubble="true"/>
               </lv_obj>
@@ -190,14 +189,14 @@
                       style_flex_cross_place="center" style_pad_gap="#space_xs" clickable="false" event_bubble="true">
                 <heater_icon src="fridge_industrial" glyph_name="chamber_icon_glyph" size="xs"/>
                 <temp_display name="chamber_temp_display"
-                              size="md" show_target="true" bind_current="chamber_temp" bind_target="chamber_effective_target" bind_mode="chamber_mode"
-                              clickable="false" event_bubble="true"/>
+                              size="md" show_target="true" bind_current="chamber_temp"
+                              bind_target="chamber_effective_target" bind_mode="chamber_mode" clickable="false"
+                              event_bubble="true"/>
               </lv_obj>
               <!-- Right side: edit icon -->
               <lv_obj name="chamber_temp_edit_container"
                       width="content" height="content" flex_flow="row" style_pad_all="0" scrollable="false"
-                      style_flex_cross_place="center" style_pad_gap="#space_xs" clickable="true"
-                      ext_click_area="12">
+                      style_flex_cross_place="center" style_pad_gap="#space_xs" clickable="true" ext_click_area="12">
                 <event_cb trigger="clicked" callback="on_chamber_target_edit"/>
                 <icon src="pencil" size="xs" variant="tertiary" clickable="false" event_bubble="true"/>
               </lv_obj>
@@ -320,14 +319,13 @@
                  Reuses LedWidget: bulb icon reflects on/off + brightness + LED
                  color, tap toggles. C++ finds light_button/light_icon by name. -->
             <lv_obj name="controls_led_cell"
-                    height="100%" flex_grow="1" style_bg_opa="0" style_pad_all="0" style_pad_gap="0"
-                    scrollable="false" hidden="true">
+                    height="100%" flex_grow="1" style_bg_opa="0" style_pad_all="0" style_pad_gap="0" scrollable="false"
+                    hidden="true">
               <bind_flag_if_eq subject="led_controllable" flag="hidden" ref_value="0"/>
               <ui_button name="light_button"
-                         width="100%" height="100%" variant="ghost" flex_flow="column"
-                         style_flex_main_place="center" style_flex_cross_place="center"
-                         style_flex_track_place="center" style_bg_opa="0" style_border_width="0"
-                         focusable="false">
+                         width="100%" height="100%" variant="ghost" flex_flow="column" style_flex_main_place="center"
+                         style_flex_cross_place="center" style_flex_track_place="center" style_bg_opa="0"
+                         style_border_width="0" focusable="false">
                 <bind_state_if_not_eq subject="printer_connection_state" state="disabled" ref_value="2"/>
                 <bind_state_if_eq subject="led_command_in_flight" state="disabled" ref_value="1"/>
                 <icon name="light_icon" src="lightbulb_outline" size="sm" variant="muted"/>
@@ -356,54 +354,50 @@
                 style_pad_gap="#space_xs">
           <text_small text="Home" translation_tag="Home"/>
           <!-- Segmented homing button bar -->
-          <lv_obj flex_grow="1" height="#button_height_sm"
-                  style_radius="#border_radius" style_clip_corner="true" style_pad_all="0" style_pad_gap="0"
-                  flex_flow="row" scrollable="false"
-                  style_border_width="1" style_border_color="#text_muted" style_border_opa="60">
-          <ui_button name="btn_home_all"
-                     width="0" height="100%" text="All" translation_tag="All" flex_grow="1"
-                     style_radius="0" style_border_width="1" style_border_side="right"
-                     style_border_color="#text_muted" style_border_opa="60">
-            <bind_style name="home_btn_homed" subject="all_homed" ref_value="1"/>
-            <bind_style name="home_btn_unhomed" subject="all_homed" ref_value="0"/>
-            <bind_state_if_eq subject="controls_operation_in_progress" state="disabled" ref_value="1"/>
-            <event_cb trigger="clicked" callback="on_controls_home_all"/>
-          </ui_button>
-          <ui_button name="btn_home_x"
-                     width="0" height="100%" text="X" flex_grow="1"
-                     style_radius="0" style_border_width="1" style_border_side="right"
-                     style_border_color="#text_muted" style_border_opa="60">
-            <bind_style name="home_btn_homed" subject="x_homed" ref_value="1"/>
-            <bind_style name="home_btn_unhomed" subject="x_homed" ref_value="0"/>
-            <bind_state_if_eq subject="controls_operation_in_progress" state="disabled" ref_value="1"/>
-            <event_cb trigger="clicked" callback="on_controls_home_x"/>
-          </ui_button>
-          <ui_button name="btn_home_y"
-                     width="0" height="100%" text="Y" flex_grow="1"
-                     style_radius="0" style_border_width="1" style_border_side="right"
-                     style_border_color="#text_muted" style_border_opa="60">
-            <bind_style name="home_btn_homed" subject="y_homed" ref_value="1"/>
-            <bind_style name="home_btn_unhomed" subject="y_homed" ref_value="0"/>
-            <bind_state_if_eq subject="controls_operation_in_progress" state="disabled" ref_value="1"/>
-            <event_cb trigger="clicked" callback="on_controls_home_y"/>
-          </ui_button>
-          <ui_button name="btn_home_xy"
-                     width="0" height="100%" text="XY" flex_grow="1"
-                     style_radius="0" style_border_width="1" style_border_side="right"
-                     style_border_color="#text_muted" style_border_opa="60">
-            <bind_style name="home_btn_homed" subject="xy_homed" ref_value="1"/>
-            <bind_style name="home_btn_unhomed" subject="xy_homed" ref_value="0"/>
-            <bind_state_if_eq subject="controls_operation_in_progress" state="disabled" ref_value="1"/>
-            <event_cb trigger="clicked" callback="on_controls_home_xy"/>
-          </ui_button>
-          <ui_button name="btn_home_z"
-                     width="0" height="100%" text="Z" flex_grow="1"
-                     style_radius="0" style_border_width="0">
-            <bind_style name="home_btn_homed" subject="z_homed" ref_value="1"/>
-            <bind_style name="home_btn_unhomed" subject="z_homed" ref_value="0"/>
-            <bind_state_if_eq subject="controls_operation_in_progress" state="disabled" ref_value="1"/>
-            <event_cb trigger="clicked" callback="on_controls_home_z"/>
-          </ui_button>
+          <lv_obj height="#button_height_sm"
+                  flex_grow="1" style_radius="#border_radius" style_clip_corner="true" style_pad_all="0"
+                  style_pad_gap="0" flex_flow="row" scrollable="false" style_border_width="1"
+                  style_border_color="#text_muted" style_border_opa="60">
+            <ui_button name="btn_home_all"
+                       width="0" height="100%" text="All" translation_tag="All" flex_grow="1" style_radius="0"
+                       style_border_width="1" style_border_side="right" style_border_color="#text_muted"
+                       style_border_opa="60">
+              <bind_style name="home_btn_homed" subject="all_homed" ref_value="1"/>
+              <bind_style name="home_btn_unhomed" subject="all_homed" ref_value="0"/>
+              <bind_state_if_eq subject="controls_operation_in_progress" state="disabled" ref_value="1"/>
+              <event_cb trigger="clicked" callback="on_controls_home_all"/>
+            </ui_button>
+            <ui_button name="btn_home_x"
+                       width="0" height="100%" text="X" flex_grow="1" style_radius="0" style_border_width="1"
+                       style_border_side="right" style_border_color="#text_muted" style_border_opa="60">
+              <bind_style name="home_btn_homed" subject="x_homed" ref_value="1"/>
+              <bind_style name="home_btn_unhomed" subject="x_homed" ref_value="0"/>
+              <bind_state_if_eq subject="controls_operation_in_progress" state="disabled" ref_value="1"/>
+              <event_cb trigger="clicked" callback="on_controls_home_x"/>
+            </ui_button>
+            <ui_button name="btn_home_y"
+                       width="0" height="100%" text="Y" flex_grow="1" style_radius="0" style_border_width="1"
+                       style_border_side="right" style_border_color="#text_muted" style_border_opa="60">
+              <bind_style name="home_btn_homed" subject="y_homed" ref_value="1"/>
+              <bind_style name="home_btn_unhomed" subject="y_homed" ref_value="0"/>
+              <bind_state_if_eq subject="controls_operation_in_progress" state="disabled" ref_value="1"/>
+              <event_cb trigger="clicked" callback="on_controls_home_y"/>
+            </ui_button>
+            <ui_button name="btn_home_xy"
+                       width="0" height="100%" text="XY" flex_grow="1" style_radius="0" style_border_width="1"
+                       style_border_side="right" style_border_color="#text_muted" style_border_opa="60">
+              <bind_style name="home_btn_homed" subject="xy_homed" ref_value="1"/>
+              <bind_style name="home_btn_unhomed" subject="xy_homed" ref_value="0"/>
+              <bind_state_if_eq subject="controls_operation_in_progress" state="disabled" ref_value="1"/>
+              <event_cb trigger="clicked" callback="on_controls_home_xy"/>
+            </ui_button>
+            <ui_button name="btn_home_z"
+                       width="0" height="100%" text="Z" flex_grow="1" style_radius="0" style_border_width="0">
+              <bind_style name="home_btn_homed" subject="z_homed" ref_value="1"/>
+              <bind_style name="home_btn_unhomed" subject="z_homed" ref_value="0"/>
+              <bind_state_if_eq subject="controls_operation_in_progress" state="disabled" ref_value="1"/>
+              <event_cb trigger="clicked" callback="on_controls_home_z"/>
+            </ui_button>
           </lv_obj>
         </lv_obj>
         <!-- Macro buttons grid with QGL/Z-Tilt -->
