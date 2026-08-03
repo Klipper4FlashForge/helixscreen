@@ -1236,6 +1236,36 @@ void AmsBackendAfc::handle_status_update(const nlohmann::json& notification) {
                     state_changed = true;
                 }
             }
+
+            // Record what is on the carriage as a fact. The derivation that acts
+            // on it runs once, after every parser has had its say (#1229).
+            // `status` gates the read: mid-change Klipper sets tool_number to the
+            // incoming tool before it is physically picked up, so a raw read
+            // would report MOUNTED during the swap.
+            const MountState previous_mount = system_info_.mount_state;
+            std::string tc_status;
+            if (tc_data.contains("status") && tc_data["status"].is_string()) {
+                tc_status = tc_data["status"].get<std::string>();
+            }
+
+            if (!tc_status.empty() && tc_status != "ready") {
+                system_info_.mount_state = MountState::CHANGING;
+                system_info_.mounted_tool = -1;
+            } else if (system_info_.current_tool >= 0) {
+                system_info_.mount_state = MountState::MOUNTED;
+                system_info_.mounted_tool = system_info_.current_tool;
+            } else {
+                system_info_.mount_state = MountState::NONE;
+                system_info_.mounted_tool = -1;
+            }
+
+            if (system_info_.mount_state != previous_mount) {
+                spdlog::debug("[AMS AFC] Mount state: {} -> {} (tool T{})",
+                              mount_state_to_string(previous_mount),
+                              mount_state_to_string(system_info_.mount_state),
+                              system_info_.mounted_tool);
+                state_changed = true;
+            }
         }
 
         // Tool changer reconciliation: when we have a live tool-to-slot
@@ -1259,6 +1289,11 @@ void AmsBackendAfc::handle_status_update(const nlohmann::json& notification) {
                 system_info_.filament_loaded = true;
             }
         }
+
+        // Single authority for machines that have a carriage. Runs last, so it
+        // overrides whatever the individual parsers negotiated among themselves
+        // (#1229). No-op on every backend without a toolchanger.
+        apply_mount_state(extruder_set_active_slot);
 
         // Backstop for a frame that never terminates the operation. Runs with
         // mutex_ held; the emit happens below, outside it. A flip to ERROR is
@@ -2699,6 +2734,14 @@ void AmsBackendAfc::parse_afc_extruder(const std::string& ext_name, const nlohma
         sensors.tool_end = tool_end_sensor_;
     }
 
+    // AFC's own carriage signal. Absent on older AFC, so has_on_shuttle records
+    // whether we may draw any conclusion at all — "not reported" and "reported
+    // false" mean very different things when deciding whether a slot is current.
+    if (data.contains("on_shuttle") && data["on_shuttle"].is_boolean()) {
+        sensors.on_shuttle = data["on_shuttle"].get<bool>();
+        sensors.has_on_shuttle = true;
+    }
+
     // Explicit null is AFC saying "nothing seated here" (set_unloaded assigns
     // ""), which is information — clear the attribution. Absent is silence.
     if (data.contains("lane_loaded")) {
@@ -3312,6 +3355,164 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
     // first tool_loaded lane is not necessarily the active one.
     if (any_tool_loaded && system_info_.current_slot < 0) {
         system_info_.current_slot = tool_loaded_slot;
+    }
+}
+
+/// Tool number implied by an AFC extruder name: "extruder" = 0, "extruderN" = N.
+///
+/// A positional convention, and a third numbering system alongside Klipper's
+/// `tool T<n>` objects and AFC's per-lane `map` aliases — all three of which can
+/// disagree (#1229: AFC maps T0 to the extruder5 lane while Klipper's tool T0 is
+/// `extruder`). Used only where a tool *number* is required by an existing
+/// consumer; prefer the extruder name as identity wherever possible.
+static int tool_number_for_extruder(const std::string& ext_name) {
+    if (ext_name.size() <= 8) { // "extruder"
+        return 0;
+    }
+    try {
+        return std::stoi(ext_name.substr(8));
+    } catch (const std::exception& e) {
+        spdlog::warn("[AMS AFC] Failed to parse tool number from '{}': {}", ext_name, e.what());
+        return 0;
+    }
+}
+
+void AmsBackendAfc::apply_mount_state(bool extruder_set_active_slot) {
+    // --- AFC's own carriage signal, preferred where it exists ---
+    //
+    // Gated on more than one extruder. A Box Turtle has a single extruder and no
+    // carriage at all; if AFC publishes on_shuttle:false there, reading it would
+    // clear current_slot forever on every single-extruder machine. "No carriage"
+    // and "carriage empty" are not the same claim.
+    //
+    // num_extruders_ rather than extruder_sensors_.size(): it comes from
+    // AFC.extruders, which arrives complete in a single field and is what the
+    // AFC maintainers point to for "how many toolheads does this machine have".
+    // The sensor map is filled in one AFC_extruder object at a time, so early in
+    // a frame it can transiently hold 1 on a six-extruder machine.
+    //
+    // Not consulted mid-change: toolchanger.status is the only source that knows
+    // a swap is under way, and on_shuttle is momentarily false for both the
+    // outgoing and incoming tool.
+    if (num_extruders_ > 1 && system_info_.mount_state != MountState::CHANGING) {
+        int reporters = 0;
+        const AfcExtruderSensors* mounted = nullptr;
+        std::string mounted_name;
+        for (const auto& entry : extruder_sensors_) {
+            if (!entry.second.has_on_shuttle) {
+                continue;
+            }
+            ++reporters;
+            if (entry.second.on_shuttle && mounted == nullptr) {
+                mounted = &entry.second;
+                mounted_name = entry.first;
+            }
+        }
+
+        if (reporters > 0) {
+            if (mounted == nullptr) {
+                system_info_.mount_state = MountState::NONE;
+                system_info_.mounted_tool = -1;
+                system_info_.current_slot = -1;
+                system_info_.filament_loaded = false;
+                return;
+            }
+
+            system_info_.mount_state = MountState::MOUNTED;
+            system_info_.mounted_tool = tool_number_for_extruder(mounted_name);
+
+            // The mounted extruder names its own seated lane. Precise even where
+            // several lanes feed one extruder, which a lane→tool map cannot be.
+            if (!mounted->lane_loaded.empty()) {
+                const int slot = slots_.index_of(mounted->lane_loaded);
+                if (slot >= 0) {
+                    system_info_.current_slot = slot;
+                    const helix::printer::SlotEntry* entry = slots_.get(slot);
+                    if (entry != nullptr && entry->info.status != SlotStatus::UNKNOWN) {
+                        system_info_.filament_loaded = (entry->info.status == SlotStatus::LOADED);
+                    }
+                    return;
+                }
+            }
+
+            // Mounted but holding nothing: a real state, not a reason to keep a
+            // stale slot from whoever was mounted before.
+            system_info_.current_slot = -1;
+            system_info_.filament_loaded = false;
+            return;
+        }
+    }
+
+    // UNKNOWN means no carriage exists (every non-toolchanger machine) or no
+    // signal has arrived yet. Either way there is nothing to assert, and the
+    // negotiated value stands — this is what keeps single-extruder AFC, Box
+    // Turtle and friends behaving exactly as before.
+    if (system_info_.mount_state == MountState::UNKNOWN) {
+        return;
+    }
+
+    // Mid-change the sources legitimately disagree: Klipper has already advanced
+    // tool_number while the tool is still in flight. Elect nothing rather than
+    // flicker through a wrong slot.
+    if (system_info_.mount_state == MountState::CHANGING) {
+        return;
+    }
+
+    if (system_info_.mount_state == MountState::NONE) {
+        // Parked toolheads may well hold filament — that is normal on a
+        // toolchanger and does NOT make any of them current. Before #1229 the
+        // first such lane was elected and then latched, because the other
+        // writers are all guarded by `current_slot < 0`.
+        if (system_info_.current_slot != -1 || system_info_.filament_loaded) {
+            spdlog::debug("[AMS AFC] Carriage empty — clearing elected slot {} (filament_loaded "
+                          "was {})",
+                          system_info_.current_slot, system_info_.filament_loaded);
+        }
+        system_info_.current_slot = -1;
+        system_info_.filament_loaded = false;
+        return;
+    }
+
+    // MOUNTED: the tool on the carriage decides, every frame.
+    //
+    // One thing outranks the lane→tool map: an attribution made from the mounted
+    // extruder's own `lane_loaded` this frame. Several lanes can feed one
+    // extruder (extruder2 and extruder3 on #1229's machine take two and four),
+    // so the map cannot say which of them is seated — but the extruder can, and
+    // does. Overriding it with slot_for_tool() reintroduces exactly the
+    // wrong-lane selection #379 fixed.
+    //
+    // This is not the old latch returning: extruder_set_active_slot is recomputed
+    // per frame, so it cannot pin a stale value the way `current_slot < 0` did.
+    if (extruder_set_active_slot) {
+        return;
+    }
+
+    if (!slots_.is_initialized() || system_info_.mounted_tool < 0) {
+        return;
+    }
+    const int slot = slots_.slot_for_tool(system_info_.mounted_tool);
+    if (slot < 0 || slot >= slots_.slot_count()) {
+        // Tool is mounted but maps to no lane we know about. Say "unknown"
+        // rather than keeping a stale slot from a previous mount.
+        system_info_.current_slot = -1;
+        system_info_.filament_loaded = false;
+        return;
+    }
+    if (system_info_.current_slot != slot) {
+        spdlog::debug("[AMS AFC] Mounted T{} -> slot {} (was {})", system_info_.mounted_tool, slot,
+                      system_info_.current_slot);
+    }
+    system_info_.current_slot = slot;
+
+    // Only the mounted tool's own lane can put filament in the active path — but
+    // say so only when the lane's status is actually known. Deriving "not loaded"
+    // from UNKNOWN would be the same error as electing a slot from no
+    // information, and would clobber a value the parsers legitimately established
+    // on frames that carry no per-lane data.
+    const helix::printer::SlotEntry* entry = slots_.get(slot);
+    if (entry != nullptr && entry->info.status != SlotStatus::UNKNOWN) {
+        system_info_.filament_loaded = (entry->info.status == SlotStatus::LOADED);
     }
 }
 
