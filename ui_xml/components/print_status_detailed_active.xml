@@ -69,9 +69,7 @@
           <text_tiny bind_text="print_status_nozzle_tool_label" clickable="false" event_bubble="true">
             <bind_flag_if_eq subject="print_status_multi_tool" flag="hidden" ref_value="0"/>
           </text_tiny>
-          <nozzle_icon size="sm" badge_subject="" clickable="false" event_bubble="true">
-            <bind_flag_if_lt subject="ui_breakpoint" flag="hidden" ref_value="2"/>
-          </nozzle_icon>
+          <nozzle_icon size="sm" badge_subject="" clickable="false" event_bubble="true"/>
           <icon src="chevron_down" size="sm" clickable="false" event_bubble="true">
             <bind_flag_if_eq subject="print_status_multi_tool" flag="hidden" ref_value="0"/>
           </icon>
@@ -87,9 +85,7 @@
       <lv_obj width="content"
               height="content" style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs"
               style_flex_cross_place="center" scrollable="false" clickable="false" event_bubble="true">
-        <heater_icon src="radiator" glyph_name="bed_icon_glyph" size="sm">
-          <bind_flag_if_lt subject="ui_breakpoint" flag="hidden" ref_value="2"/>
-        </heater_icon>
+        <heater_icon src="radiator" glyph_name="bed_icon_glyph" size="sm"/>
         <temp_display size="xs"
                       show_target="true" bind_current="bed_temp" bind_target="bed_target" hide_target_below_bp="small"
                       event_cb="on_print_status_bed_temp_clicked"/>
@@ -98,9 +94,7 @@
               height="content" style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs"
               style_flex_cross_place="center" scrollable="false" clickable="false" event_bubble="true">
         <bind_flag_if_eq subject="printer_has_chamber" flag="hidden" ref_value="0"/>
-        <heater_icon src="fridge_industrial" glyph_name="chamber_icon_glyph" size="sm">
-          <bind_flag_if_lt subject="ui_breakpoint" flag="hidden" ref_value="2"/>
-        </heater_icon>
+        <heater_icon src="fridge_industrial" glyph_name="chamber_icon_glyph" size="sm"/>
         <!-- Two variants: with target when a chamber heater exists, current-only
              for sensor-only chambers (passive enclosure). Mutually exclusive on
              printer_has_chamber_heater. -->

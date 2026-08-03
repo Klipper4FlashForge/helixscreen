@@ -15,9 +15,8 @@
     <style name="slider_compact" pad_left="#space_md" pad_right="#space_md"/>
     <style name="slider_container_compact" pad_top="6" pad_bottom="6"/>
     <style name="slider_container_standard" pad_top="#space_xs" pad_bottom="#space_xs"/>
-    <!-- Icon-to-temp gap: wider on tiny breakpoint (labels hidden, icons too close) -->
-    <style name="temp_row_gap_standard" pad_column="#space_xs"/>
-    <style name="temp_row_gap_tiny" pad_column="#space_md"/>
+    <!-- temp_row_gap_standard / temp_row_gap_tiny now live in globals.xml (shared
+         with temp_card_unified.xml) -->
     <!-- Homing indicator styles for Position card -->
     <style name="indicator_homed" bg_color="#success"/>
     <style name="indicator_unhomed" bg_color="#text_muted"/>

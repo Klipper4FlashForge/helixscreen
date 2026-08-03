@@ -371,3 +371,48 @@ TEST_CASE("HeaterIconBinder: observers survive widget deletion without unbind",
     lv_subject_set_int(&target, 0);
     REQUIRE_FALSE(binder.is_bound());
 }
+
+// The icon carries the thermal state; the "Nozzle"/"Bed"/"Chamber" label next to
+// it must stay in normal text color. They are siblings today, so nothing tints
+// the label — this pins that. It breaks if someone later puts the icon and the
+// label in a shared container and binds the animator to that container, because
+// style_text_color would then inherit down onto the label.
+//
+// Uses XMLTestFixture (not LVGLTestFixture) so the theme is initialized —
+// otherwise theme_manager_get_color() falls back to the same value for every
+// token and a color-equality assertion would pass vacuously.
+
+TEST_CASE_METHOD(XMLTestFixture,
+                 "HeaterIconBinder: tinting an icon leaves a sibling label untouched",
+                 "[heater_binder][label_neutrality]") {
+    lv_obj_t* row = lv_obj_create(test_screen());
+    lv_obj_t* icon = lv_label_create(row);
+    lv_obj_set_name(icon, "bed_icon_glyph");
+    lv_obj_t* label = lv_label_create(row);
+    lv_obj_set_name(label, "bed_text_label");
+    lv_label_set_text(label, "Bed");
+
+    lv_color_t label_before = lv_obj_get_style_text_color(label, LV_PART_MAIN);
+
+    lv_subject_t current;
+    lv_subject_t target;
+    lv_subject_init_int(&current, 250);
+    lv_subject_init_int(&target, 0);
+
+    HeaterIconBinder binder;
+    REQUIRE(binder.bind_subjects(row, "bed_icon_glyph", &current, &target));
+
+    // Drive through every thermal state; the label must never move.
+    const int states[][2] = {{250, 0}, {250, 600}, {600, 600}, {900, 600}};
+    for (const auto& s : states) {
+        lv_subject_set_int(&current, s[0]);
+        lv_subject_set_int(&target, s[1]);
+        UpdateQueue::instance().drain();
+        lv_color_t label_now = lv_obj_get_style_text_color(label, LV_PART_MAIN);
+        REQUIRE(label_now.red == label_before.red);
+        REQUIRE(label_now.green == label_before.green);
+        REQUIRE(label_now.blue == label_before.blue);
+    }
+
+    binder.unbind();
+}
