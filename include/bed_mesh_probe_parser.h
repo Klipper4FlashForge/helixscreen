@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <cmath>
 #include <optional>
 #include <regex>
 #include <string>
@@ -128,5 +129,95 @@ inline std::optional<ProbePosition> parse_probe_position(const std::string& line
     }
     return std::nullopt;
 }
+
+/// Two probe samples are the same mesh point if they land this close (mm).
+/// Repeated samples report byte-identical coordinates, and real grid spacing is
+/// orders of magnitude larger, so the exact value is not delicate.
+inline constexpr double PROBE_POSITION_TOLERANCE_MM = 0.05;
+
+/**
+ * @brief Counts distinct mesh points from Klipper's per-sample probe output
+ *
+ * Klipper logs one "probe at X,Y is z=Z" line per SAMPLE, not per mesh point.
+ * A printer configured with `samples: 2` therefore emits two lines per point —
+ * as does any `samples_tolerance_retries` retry — so counting lines over-reports.
+ * The Qidi Q2 touches the bed twice per point and showed a 36-point mesh running
+ * past 36 (#1224).
+ *
+ * Primary strategy is positional: consecutive lines at the same (x,y) are
+ * samples of one point. That needs no configuration, so it works on any firmware
+ * and also absorbs tolerance retries, which a fixed divisor cannot.
+ *
+ * The configured sample count remains a fallback for lines whose coordinates do
+ * not parse. It is only as good as our knowledge of the printer's probe section
+ * name, which is what failed here — deriving `samples` requires recognising the
+ * section, and that list is open-ended across firmware forks.
+ *
+ * Stateful and single-threaded: feed lines in arrival order.
+ */
+class ProbePointCounter {
+  public:
+    /// @param probe_samples Configured samples per point; only used when a
+    ///                      line's coordinates cannot be parsed. Values < 1
+    ///                      are treated as 1.
+    explicit ProbePointCounter(int probe_samples = 1)
+        : samples_(probe_samples > 1 ? probe_samples : 1) {}
+
+    /**
+     * @brief Feed one G-code response line
+     * @return 1-based mesh-point index, or std::nullopt if the line is not a
+     *         probe result line (caller should ignore it).
+     */
+    std::optional<int> feed(const std::string& line) {
+        if (!is_probe_result_line(line)) {
+            return std::nullopt;
+        }
+        ++sample_lines_;
+
+        if (auto pos = parse_probe_position(line)) {
+            if (!has_last_ || std::fabs(pos->x - last_x_) > PROBE_POSITION_TOLERANCE_MM ||
+                std::fabs(pos->y - last_y_) > PROBE_POSITION_TOLERANCE_MM) {
+                ++points_;
+                last_x_ = pos->x;
+                last_y_ = pos->y;
+                has_last_ = true;
+            }
+            return points_;
+        }
+
+        // Coordinates unparseable — ceiling-divide the raw line count. Clamped
+        // upward only: a progress readout must never count backwards if a
+        // malformed line lands in the middle of a positional run.
+        const int divided = (sample_lines_ + samples_ - 1) / samples_;
+        points_ = divided > points_ ? divided : points_;
+        return points_;
+    }
+
+    /// Mesh points seen so far.
+    int points() const {
+        return points_;
+    }
+
+    /// Raw "probe at" lines seen so far, samples included.
+    int sample_lines() const {
+        return sample_lines_;
+    }
+
+    void reset() {
+        points_ = 0;
+        sample_lines_ = 0;
+        has_last_ = false;
+        last_x_ = 0.0;
+        last_y_ = 0.0;
+    }
+
+  private:
+    int samples_;
+    int points_ = 0;
+    int sample_lines_ = 0;
+    bool has_last_ = false;
+    double last_x_ = 0.0;
+    double last_y_ = 0.0;
+};
 
 } // namespace helix

@@ -1409,7 +1409,7 @@ class BedMeshProgressCollector : public std::enable_shared_from_this<BedMeshProg
                              int probe_samples = 1)
         : client_(client), on_progress_(std::move(on_progress)),
           on_complete_(std::move(on_complete)), on_error_(std::move(on_error)),
-          expected_probes_(expected_probes), probe_samples_(std::max(probe_samples, 1)) {}
+          expected_probes_(expected_probes), point_counter_(probe_samples) {}
 
     ~BedMeshProgressCollector() {
         unregister();
@@ -1502,16 +1502,18 @@ class BedMeshProgressCollector : public std::enable_shared_from_this<BedMeshProg
         // Fallback: count "probe at X,Y is z=Z" lines (standard Klipper probe
         // output).  Some firmware variants don't emit the "Probing point X/Y"
         // progress line but do emit per-probe result lines.
-        // When probe samples > 1, each mesh point generates multiple "probe at"
-        // lines.  Divide to report mesh-point progress, not raw sample count.
-        if (helix::is_probe_result_line(line)) {
-            probe_at_count_++;
-            int mesh_point = (probe_at_count_ + probe_samples_ - 1) / probe_samples_;
-            spdlog::debug("[BedMeshProgressCollector] Probe result line #{} → point {}/{} "
-                          "(samples={})",
-                          probe_at_count_, mesh_point, expected_probes_, probe_samples_);
+        //
+        // These lines are per SAMPLE, not per mesh point, so they are deduped by
+        // position rather than divided by the configured sample count — the
+        // divisor only works when we recognise the printer's probe section name,
+        // and the Qidi Q2's is not one we enumerate, so a 36-point mesh counted
+        // to 72 (#1224). ProbePointCounter keeps the divisor as a fallback for
+        // lines whose coordinates do not parse.
+        if (auto mesh_point = point_counter_.feed(line)) {
+            spdlog::debug("[BedMeshProgressCollector] Probe sample line #{} → point {}/{}",
+                          point_counter_.sample_lines(), *mesh_point, expected_probes_);
             if (on_progress_) {
-                on_progress_(mesh_point, expected_probes_);
+                on_progress_(*mesh_point, expected_probes_);
             }
         }
     }
@@ -1554,9 +1556,11 @@ class BedMeshProgressCollector : public std::enable_shared_from_this<BedMeshProg
 
     int current_probe_ = 0;
     int total_probes_ = 0;
-    int probe_at_count_ = 0;  // fallback counter for "probe at X,Y is z=Z" lines
     int expected_probes_ = 0; // hint from configfile (0 = unknown)
-    int probe_samples_ = 1;   // samples per mesh point (from [probe]/[bltouch] config)
+    // Dedupes "probe at X,Y is z=Z" samples into mesh points. Seeded with the
+    // configured sample count, which it uses only when a line's coordinates
+    // cannot be parsed.
+    helix::ProbePointCounter point_counter_;
 };
 
 void MoonrakerAdvancedAPI::start_bed_mesh_calibrate(BedMeshProgressCallback on_progress,
