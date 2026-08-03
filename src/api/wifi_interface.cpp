@@ -32,13 +32,12 @@ std::string parse_wpa_state(const std::string& status_reply) {
     return {};
 }
 
-pid_t find_daemon_for_interface(const std::string& proc_root, const std::string& netdev,
-                                std::string& conf_path_out) {
-    conf_path_out.clear();
+std::vector<DaemonInfo> list_wpa_daemons(const std::string& proc_root) {
+    std::vector<DaemonInfo> daemons;
 
     std::error_code ec;
     if (proc_root.empty() || !fs::is_directory(proc_root, ec) || ec)
-        return -1;
+        return daemons;
 
     for (const auto& entry : fs::directory_iterator(proc_root, ec)) {
         if (ec)
@@ -68,15 +67,12 @@ pid_t find_daemon_for_interface(const std::string& proc_root, const std::string&
         // Collect -i/-iVALUE (interface) and -c/-cVALUE (config path). Both
         // accept a separate "-X value" or a joined "-Xvalue" form.
         std::string i_val, c_val;
-        bool has_i = false;
         for (size_t i = 1; i < argv.size(); ++i) {
             const std::string& a = argv[i];
             if (a == "-i" && i + 1 < argv.size()) {
                 i_val = argv[++i];
-                has_i = true;
             } else if (a.rfind("-i", 0) == 0 && a.size() > 2) {
                 i_val = a.substr(2);
-                has_i = true;
             } else if (a == "-c" && i + 1 < argv.size()) {
                 c_val = argv[++i];
             } else if (a.rfind("-c", 0) == 0 && a.size() > 2) {
@@ -84,14 +80,28 @@ pid_t find_daemon_for_interface(const std::string& proc_root, const std::string&
             }
         }
 
-        // Not the daemon that owns the interface we care about — keep
-        // scanning. This is the fix: the code this replaces returned on the
-        // first wpa_supplicant found, regardless of which interface it owned.
-        if (!has_i || i_val != netdev)
+        DaemonInfo d;
+        d.pid = static_cast<pid_t>(std::strtol(name.c_str(), nullptr, 10));
+        d.iface = std::move(i_val);
+        d.conf_path = std::move(c_val);
+        daemons.push_back(std::move(d));
+    }
+    return daemons;
+}
+
+pid_t find_daemon_for_interface(const std::string& proc_root, const std::string& netdev,
+                                std::string& conf_path_out) {
+    conf_path_out.clear();
+
+    // Not the daemon that owns the interface we care about — keep scanning.
+    // This is the fix: the code this replaces returned on the first
+    // wpa_supplicant found, regardless of which interface it owned.
+    for (const auto& d : list_wpa_daemons(proc_root)) {
+        if (d.iface.empty() || d.iface != netdev)
             continue;
 
-        conf_path_out = c_val;
-        return static_cast<pid_t>(std::strtol(name.c_str(), nullptr, 10));
+        conf_path_out = d.conf_path;
+        return d.pid;
     }
     return -1;
 }

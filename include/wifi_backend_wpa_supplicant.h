@@ -4,6 +4,7 @@
 #pragma once
 
 #include "wifi_backend.h" // Base class
+#include "wifi_interface.h"
 
 #include <functional>
 #include <map>
@@ -22,6 +23,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
+#include <optional>
 
 // Forward declaration - avoid including wpa_ctrl.h in header
 struct wpa_ctrl;
@@ -321,6 +323,23 @@ class WifiBackendWpaSupplicant : public WifiBackend, private hv::EventLoopThread
     // isn't up yet) does not read as "running" and does not block a later retry.
     std::atomic<bool> init_succeeded_{false};
 
+    // Resolved WiFi interface identity (netdev, ctrl socket, conf path, daemon
+    // pid, rfkill node) — computed once in init_wpa() via
+    // resolve_and_store_interface(). std::nullopt means resolution was
+    // inconclusive; callers fall back to legacy first-match detection.
+    mutable std::mutex iface_mutex_;
+    std::optional<helix::wifi::WifiInterface> iface_;
+
+    /// Resolve the managed interface and store it. Runs on the event loop
+    /// thread during init_wpa(), after the control connection is live.
+    void resolve_and_store_interface();
+
+  public:
+    /// The resolved interface, or nullopt when resolution was inconclusive and
+    /// callers must fall back to legacy first-match behaviour.
+    std::optional<helix::wifi::WifiInterface> resolved_interface() const;
+
+  private:
     // Shutdown coordination - prevents use-after-free when start() times out
     // (GitHub issue #8: thread still in wpa_ctrl_attach when destructor runs)
     std::atomic<bool> shutdown_requested_{false};

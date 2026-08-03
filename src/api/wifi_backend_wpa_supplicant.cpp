@@ -26,6 +26,7 @@
 #include <fstream>
 #include <future>
 #include <sstream>
+#include <unistd.h>
 #include <unordered_map>
 
 namespace fs = std::filesystem;
@@ -281,6 +282,29 @@ static std::vector<std::string> wpa_socket_dirs() {
     return dirs;
 }
 
+/// Return the wpa_supplicant control-socket directory actually in use — the
+/// first entry of wpa_socket_dirs() that exists and contains at least one
+/// non-p2p control socket. Mirrors init_wpa()'s own socket search exactly (same
+/// order, same is_socket + "p2p" filter) so resolve_and_store_interface()
+/// probes candidates from the same directory init_wpa() just connected into.
+static std::string resolve_wpa_ctrl_directory() {
+    for (const auto& base_path : wpa_socket_dirs()) {
+        std::error_code ec;
+        if (!fs::is_directory(base_path, ec) || ec)
+            continue;
+
+        for (const auto& entry : fs::directory_iterator(base_path, ec)) {
+            if (ec)
+                break;
+            if (fs::is_socket(entry.path()) &&
+                entry.path().string().find("p2p") == std::string::npos) {
+                return base_path;
+            }
+        }
+    }
+    return {};
+}
+
 WifiBackendWpaSupplicant::WifiBackendWpaSupplicant()
     : hv::EventLoopThread(nullptr), conn(nullptr),
       mon_conn(nullptr) // Initialize monitor connection
@@ -387,7 +411,13 @@ WiFiError WifiBackendWpaSupplicant::start() {
     }
 
     spdlog::info("[WifiBackend] Backend initialized successfully");
-    helix::wifi::remember_persistent_target(detect_wpa_conf_path_from_proc());
+    {
+        const auto iface = resolved_interface();
+        const std::string conf_path = (iface && !iface->conf_path.empty())
+                                          ? iface->conf_path
+                                          : detect_wpa_conf_path_from_proc();
+        helix::wifi::remember_persistent_target(conf_path);
+    }
     return WiFiErrorHelper::success();
 }
 
@@ -633,7 +663,7 @@ WiFiError WifiBackendWpaSupplicant::check_wifi_hardware() {
                     if (fs::exists(wireless_path)) {
                         wifi_found = true;
                         interface_name = iface;
-                        spdlog::debug("[WifiBackend] Found WiFi interface: {}", iface);
+                        spdlog::debug("[WifiBackend] WiFi-capable interface present: {}", iface);
                         break;
                     }
                 }
@@ -838,6 +868,7 @@ void WifiBackendWpaSupplicant::init_wpa() {
     hio_setcb_read(mon_io_, WifiBackendWpaSupplicant::_handle_wpa_events); // Static trampoline
     hio_read_start(mon_io_); // Start monitoring socket for events
 
+    resolve_and_store_interface();
     resolve_5ghz_support();
 
     // Reached only with live control + monitor connections registered — the
@@ -846,6 +877,73 @@ void WifiBackendWpaSupplicant::init_wpa() {
 
     spdlog::debug("[WifiBackend] wpa_supplicant backend initialized successfully");
     signal_init_complete();
+}
+
+void WifiBackendWpaSupplicant::resolve_and_store_interface() {
+    helix::wifi::Roots roots;
+    roots.ctrl = resolve_wpa_ctrl_directory();
+
+    if (roots.ctrl.empty()) {
+        spdlog::warn(
+            "[WifiBackend] Interface resolution: no wpa_supplicant control directory found");
+        std::lock_guard<std::mutex> lock(iface_mutex_);
+        iface_.reset();
+        return;
+    }
+
+    // Each candidate gets its OWN short-lived wpa_ctrl handle, opened, probed
+    // with STATUS and closed here. This deliberately does NOT touch `conn` —
+    // conn stays attached to whichever socket init_wpa() already picked, and
+    // resolution needs to probe the OTHER candidates too. Reusing conn would
+    // make every candidate report conn's own status and silently defeat the
+    // resolver.
+    const char* cli_dir = resolve_wpa_client_dir();
+    helix::wifi::StatusProbe probe = [cli_dir](const std::string& socket_path) -> std::string {
+        struct wpa_ctrl* probe_conn = wpa_ctrl_open2(socket_path.c_str(), cli_dir);
+        if (probe_conn == nullptr)
+            return {};
+
+        char resp[4096];
+        size_t len = sizeof(resp) - 1;
+        const std::string cmd = "STATUS";
+        int result = wpa_ctrl_request(probe_conn, cmd.c_str(), cmd.length(), resp, &len, nullptr);
+        wpa_ctrl_close(probe_conn);
+
+        if (result != 0 || len >= sizeof(resp))
+            return {};
+        resp[len] = '\0';
+        return std::string(resp, len);
+    };
+
+    auto resolved = helix::wifi::resolve_interface(roots, probe);
+
+    {
+        std::lock_guard<std::mutex> lock(iface_mutex_);
+        iface_ = resolved;
+    }
+
+    // The reporter's AD5X is unreachable for the duration, and the bundles
+    // carry no process list — so log enough for the NEXT bundle to decide
+    // whether a second wpa_supplicant was the reason SAVE_CONFIG "failed".
+    // Interface names and paths are not secrets; SSIDs and PSKs never appear.
+    for (const auto& d : helix::wifi::detail::list_wpa_daemons(roots.proc)) {
+        spdlog::info("[WifiBackend] wpa_supplicant pid={} -i='{}' -c='{}'", d.pid, d.iface,
+                     d.conf_path);
+    }
+    if (resolved) {
+        const bool writable =
+            !resolved->conf_path.empty() && ::access(resolved->conf_path.c_str(), W_OK) == 0;
+        spdlog::info("[WifiBackend] Managing {} via {} (conf='{}' writable={}, rfkill='{}')",
+                     resolved->netdev, resolved->ctrl_socket, resolved->conf_path, writable,
+                     resolved->rfkill_node.empty() ? "none" : resolved->rfkill_node);
+    } else {
+        spdlog::warn("[WifiBackend] Interface resolution inconclusive — using legacy detection");
+    }
+}
+
+std::optional<helix::wifi::WifiInterface> WifiBackendWpaSupplicant::resolved_interface() const {
+    std::lock_guard<std::mutex> lock(iface_mutex_);
+    return iface_;
 }
 
 void WifiBackendWpaSupplicant::cleanup_wpa() {
@@ -1261,7 +1359,9 @@ WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
     // "saved to disk" while the credentials existed only in daemon memory and
     // died at the next power-off. Re-read the config and look for the SSID.
     const std::string save_result = send_command("SAVE_CONFIG");
-    const std::string conf_path = detect_wpa_conf_path_from_proc();
+    const auto iface = resolved_interface();
+    const std::string conf_path =
+        (iface && !iface->conf_path.empty()) ? iface->conf_path : detect_wpa_conf_path_from_proc();
     std::string conf_contents;
     if (!conf_path.empty()) {
         std::ifstream conf(conf_path, std::ios::binary);

@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <sys/types.h>
+#include <vector>
 
 namespace helix::wifi {
 
@@ -64,6 +65,19 @@ namespace detail {
 
 /// Extract `wpa_state=` from a raw STATUS reply ("" when absent).
 std::string parse_wpa_state(const std::string& status_reply);
+
+/// One running wpa_supplicant process, as seen in /proc.
+struct DaemonInfo {
+    pid_t pid;
+    std::string iface;     ///< The -i value ("" when the daemon was launched without one).
+    std::string conf_path; ///< The -c value ("" when the daemon was launched without one).
+};
+
+/// Walk @p proc_root once and return every running wpa_supplicant process
+/// along with the -i/-c values from its cmdline. Used both to resolve a
+/// specific interface's daemon (find_daemon_for_interface) and to log every
+/// daemon present for diagnostics — one /proc walk serves both.
+std::vector<DaemonInfo> list_wpa_daemons(const std::string& proc_root);
 
 /// Find the wpa_supplicant PID whose argv names @p netdev via -i, and return
 /// its -c value through @p conf_path_out. Returns -1 when no daemon matches.
