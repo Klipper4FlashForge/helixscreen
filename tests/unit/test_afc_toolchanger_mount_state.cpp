@@ -405,6 +405,45 @@ TEST_CASE("AFC toolchanger: bypass reads inactive when the firmware says so",
 }
 
 // ============================================================================
+// A lane whose routing is not yet known must not be treated as direct-routed
+// ============================================================================
+
+TEST_CASE("AFC toolchanger: a lane with unknown routing does not split its unit",
+          "[ams][afc][1229][toolchanger][topology]") {
+    auto fixture = load_fixture("afc_toolchanger_multiunit.json");
+
+    AfcToolchangerHelper afc;
+    afc.discover(fixture["object_list"]);
+
+    // Moonraker sends deltas, and nlohmann orders object keys so that unit
+    // objects ("AFC_OpenAMS AMS_1") sort before per-lane ones ("AFC_lane …") —
+    // uppercase precedes lowercase. A frame can therefore describe a unit while
+    // some of its lanes have never been parsed. Dropping lane8 reproduces that
+    // window deterministically.
+    nlohmann::json partial = fixture["status"];
+    partial.erase("AFC_lane lane8");
+    REQUIRE_FALSE(partial.contains("AFC_lane lane8"));
+    afc.feed_until_settled(partial);
+
+    const AmsSystemInfo info = afc.get_system_info();
+    dump_state(info, afc.discovered_lanes());
+
+    int ams_index = -1;
+    for (size_t i = 0; i < info.units.size(); ++i) {
+        if (info.units[i].name.find("AMS_1") != std::string::npos) {
+            ams_index = static_cast<int>(i);
+        }
+    }
+    REQUIRE(ams_index >= 0);
+
+    // Every AMS_1 lane is hub-routed in the capture. Three are known here and one
+    // is unknown; counting the unknown as `direct` is what tipped this unit into
+    // MIXED and drew a lane straight into a toolhead of its own.
+    INFO("unknown lane routing was counted as direct and split the unit");
+    CHECK(afc.get_unit_topology(ams_index) == PathTopology::HUB);
+}
+
+// ============================================================================
 // Routing — every AMS_1 lane goes through the hub, so the unit is not MIXED
 // ============================================================================
 

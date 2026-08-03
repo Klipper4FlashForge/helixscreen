@@ -2859,18 +2859,27 @@ void AmsBackendAfc::parse_afc_unit_object(AfcUnitInfo& unit_info, const nlohmann
 
     for (const auto& lane : unit_info.lanes) {
         auto it = lane_hub_routing_.find(lane);
-        bool is_hub = false;
-        if (it != lane_hub_routing_.end()) {
-            // AFC reports "direct" or "direct_load" for lanes that go straight
-            // to an extruder (no hub/merger). Any other value (e.g., "HTLF_1")
-            // indicates the lane is routed through a hub.
-            is_hub = (it->second.rfind("direct", 0) != 0);
+        if (it == lane_hub_routing_.end()) {
+            // Routing not known yet. Moonraker sends deltas and unit objects sort
+            // before AFC_lane ones, so a frame can carry a unit while some of its
+            // lanes have never been parsed. Counting that as `direct` is what
+            // flipped a pure-hub unit to MIXED and drew one lane straight into a
+            // toolhead of its own (#1229 defect 4) — a single unknown lane was
+            // enough. Unknown is not direct; it contributes to neither side.
+            unit_info.lane_is_hub_routed.push_back(false);
+            continue;
         }
+
+        // AFC reports "direct" or "direct_load" for lanes that go straight
+        // to an extruder (no hub/merger). Any other value (e.g., "HTLF_1")
+        // indicates the lane is routed through a hub.
+        const bool is_hub = (it->second.rfind("direct", 0) != 0);
         unit_info.lane_is_hub_routed.push_back(is_hub);
-        if (is_hub)
+        if (is_hub) {
             has_hub_routed = true;
-        else
+        } else {
             has_direct = true;
+        }
     }
 
     if (has_direct && has_hub_routed) {
