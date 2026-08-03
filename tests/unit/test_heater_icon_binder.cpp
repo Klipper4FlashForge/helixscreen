@@ -302,3 +302,72 @@ TEST_CASE_METHOD(XMLTestFixture,
     REQUIRE_FALSE(bed_binder.is_bound());
     REQUIRE_FALSE(chamber_binder.is_bound());
 }
+
+// The panel manager rebuilds dashboard widgets by doing attach A -> detach A ->
+// attach B, and A's deferred LV_EVENT_DELETE fires AFTER B has taken over. Each
+// binder owns its own animator whose delete callback carries its own `this`, so
+// A's teardown must not disturb B. This is the same clobber guarded against for
+// the progress arc in print_status_widget.cpp:2035-2062.
+
+TEST_CASE("HeaterIconBinder: A's teardown does not disturb B after handover",
+          "[heater_binder][rebuild]") {
+    LVGLTestFixture fixture;
+
+    lv_subject_t current;
+    lv_subject_t target;
+    lv_subject_init_int(&current, 250);
+    lv_subject_init_int(&target, 2000);
+
+    lv_obj_t* root_a = lv_obj_create(lv_screen_active());
+    lv_obj_t* icon_a = lv_label_create(root_a);
+    lv_obj_set_name(icon_a, "bed_icon_glyph");
+
+    lv_obj_t* root_b = lv_obj_create(lv_screen_active());
+    lv_obj_t* icon_b = lv_label_create(root_b);
+    lv_obj_set_name(icon_b, "bed_icon_glyph");
+
+    HeaterIconBinder binder_a;
+    HeaterIconBinder binder_b;
+
+    REQUIRE(binder_a.bind_subjects(root_a, "bed_icon_glyph", &current, &target));
+    // Handover: B takes over before A is torn down.
+    REQUIRE(binder_b.bind_subjects(root_b, "bed_icon_glyph", &current, &target));
+    REQUIRE(binder_b.is_bound());
+
+    // A goes away, including its widget tree — this fires A's deferred delete cb.
+    binder_a.unbind();
+    lv_obj_delete(root_a);
+
+    // B must survive intact and still respond to subject changes.
+    REQUIRE(binder_b.is_bound());
+    lv_subject_set_int(&current, 1990);
+    REQUIRE(binder_b.is_bound());
+
+    binder_b.unbind();
+    REQUIRE_FALSE(binder_b.is_bound());
+}
+
+TEST_CASE("HeaterIconBinder: observers survive widget deletion without unbind",
+          "[heater_binder][rebuild]") {
+    LVGLTestFixture fixture;
+
+    lv_subject_t current;
+    lv_subject_t target;
+    lv_subject_init_int(&current, 250);
+    lv_subject_init_int(&target, 2000);
+
+    lv_obj_t* root = lv_obj_create(lv_screen_active());
+    lv_obj_t* icon = lv_label_create(root);
+    lv_obj_set_name(icon, "bed_icon_glyph");
+
+    HeaterIconBinder binder;
+    REQUIRE(binder.bind_subjects(root, "bed_icon_glyph", &current, &target));
+
+    // Deleting the widget without calling unbind() must auto-detach the animator
+    // via LV_EVENT_DELETE. A later subject change must not touch freed memory.
+    lv_obj_delete(root);
+    REQUIRE_FALSE(binder.is_bound());
+    lv_subject_set_int(&current, 1990);
+    lv_subject_set_int(&target, 0);
+    REQUIRE_FALSE(binder.is_bound());
+}

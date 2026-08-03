@@ -6,6 +6,7 @@
 #include "ui_exclude_object_map_view.h"
 #include "ui_exclude_object_side_list.h"
 #include "ui_filament_runout_handler.h"
+#include "ui_heater_icon_binder.h"
 #include "ui_modal.h"
 #include "ui_observer_guard.h"
 #include "ui_print_exclude_object_manager.h"
@@ -688,6 +689,13 @@ class PrintStatusPanel : public OverlayBase {
     SubjectLifetime hotend_speed_lifetime_;
     ObserverGuard aux_speed_observer_;
     SubjectLifetime aux_speed_lifetime_;
+
+    // Thermal tint for the temp-card heater icons. Bound from overlay_root_ so
+    // lv_obj_find_by_name() cannot pick up a same-named icon from another
+    // panel. Each binder owns its own temperature observers.
+    helix::ui::HeaterIconBinder nozzle_icon_binder_;
+    helix::ui::HeaterIconBinder bed_icon_binder_;
+    helix::ui::HeaterIconBinder chamber_icon_binder_;
 
     // Static-subject observers (singleton lifetime — no SubjectLifetime token needed).
     ObserverGuard fans_version_observer_;
