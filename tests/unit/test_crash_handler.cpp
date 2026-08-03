@@ -715,6 +715,50 @@ TEST_CASE_METHOD(CrashTestFixture, "Crash: heap_snapshot_age_ms is an age, not a
     REQUIRE(age >= 0);
     REQUIRE(age < 1000);
 }
+
+// The age alone is undiagnosable when it comes out wrong (bundle ED2YC336
+// reported an age exceeding the process uptime, which is impossible). Both raw
+// stamps now ship with it, and they must agree with the age exactly — they are
+// derived from a single clock read, so any drift means the handler took two.
+TEST_CASE_METHOD(CrashTestFixture, "Crash: heap snapshot emits self-consistent raw clock stamps",
+                 "[telemetry][crash][subprocess]") {
+    pid_t pid = fork();
+    REQUIRE(pid >= 0);
+
+    if (pid == 0) {
+        crash_handler::install(crash_path());
+        crash_handler::refresh_heap_snapshot();
+        raise(SIGABRT);
+        _exit(99);
+    }
+
+    int status = 0;
+    REQUIRE(waitpid(pid, &status, 0) == pid);
+    REQUIRE(WIFEXITED(status));
+    REQUIRE(WEXITSTATUS(status) == 128 + SIGABRT);
+
+    auto result = crash_handler::read_crash_file(crash_path());
+    REQUIRE_FALSE(result.is_null());
+    REQUIRE(result.contains("heap_snapshot_age_ms"));
+    REQUIRE(result.contains("heap_snapshot_ts_ms"));
+    REQUIRE(result.contains("heap_mono_ms_now"));
+
+    const long age = result["heap_snapshot_age_ms"];
+    const long ts = result["heap_snapshot_ts_ms"];
+    const long now = result["heap_mono_ms_now"];
+    INFO("age=" << age << " ts=" << ts << " now=" << now);
+
+    // Both stamps are the low 32 bits of CLOCK_MONOTONIC, so the age is their
+    // unsigned difference. Reproduce that arithmetic rather than asserting a
+    // constant we also hardcoded.
+    const uint32_t expected =
+        static_cast<uint32_t>(now) - static_cast<uint32_t>(ts); // wraps by design
+    REQUIRE(age == static_cast<long>(expected));
+
+    // And the snapshot is not in the future relative to the crash clock here:
+    // this process has been up for milliseconds, nowhere near the 49.7-day fold.
+    REQUIRE(ts <= now);
+}
 #endif // __linux__
 
 // End-to-end (#987 last-ditch capture): ERROR log lines flow through

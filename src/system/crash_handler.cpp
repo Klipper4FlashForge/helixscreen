@@ -960,10 +960,25 @@ static void crash_signal_handler(int sig, siginfo_t* info, void* ucontext) {
         // 144712ms" (bundle VP623KVU) — it was the monotonic-since-boot stamp,
         // and every consumer (crash_reporter's `age_ms`, the issue body, the
         // text summary) renders it as an age.
-        write_kv_long(
-            fd, "heap_snapshot_age_ms:",
-            static_cast<long>(crash_handler::detail::elapsed_ms(h.ts_ms, monotonic_ms_now())),
-            num_buf, sizeof(num_buf));
+        //
+        // Both raw stamps go out alongside the derived age, because the age
+        // alone cannot be diagnosed when it comes out wrong: bundle ED2YC336
+        // reported 120036989ms (33h) against a 9.8h uptime, which is impossible
+        // — the snapshot cannot predate the process. Two causes produce that,
+        // and only the raw pair distinguishes them: ts > now means the 32-bit
+        // monotonic counter folded (49.7 days of uptime), ts << now means the
+        // 10s refresh from the main loop genuinely stalled.
+        //
+        // One clock read, shared by the age and the emitted value, so the three
+        // numbers are always mutually consistent.
+        const uint32_t mono_now = monotonic_ms_now();
+        write_kv_long(fd, "heap_snapshot_age_ms:",
+                      static_cast<long>(crash_handler::detail::elapsed_ms(h.ts_ms, mono_now)),
+                      num_buf, sizeof(num_buf));
+        write_kv_long(fd, "heap_snapshot_ts_ms:", static_cast<long>(h.ts_ms), num_buf,
+                      sizeof(num_buf));
+        write_kv_long(fd, "heap_mono_ms_now:", static_cast<long>(mono_now), num_buf,
+                      sizeof(num_buf));
         write_kv_long(fd, "heap_rss_kb:", static_cast<long>(h.rss_kb), num_buf, sizeof(num_buf));
         write_kv_long(fd, "heap_vsz_kb:", static_cast<long>(h.vsz_kb), num_buf, sizeof(num_buf));
         if (h.arena_kb != 0) {

@@ -120,6 +120,19 @@ std::string filter_lines_before(const std::string& content, int64_t cutoff_epoch
 // Singleton
 // =============================================================================
 
+bool heap_snapshot_age_is_plausible(long age_ms, int uptime_sec) {
+    if (age_ms < 0) {
+        return false;
+    }
+    if (uptime_sec <= 0) {
+        return true; // nothing to check against
+    }
+    // uptime is truncated to whole seconds, so allow a couple of seconds of
+    // slack before calling an age impossible.
+    constexpr long kSlackMs = 2000;
+    return age_ms <= static_cast<long>(uptime_sec) * 1000 + kSlackMs;
+}
+
 CrashReporter& CrashReporter::instance() {
     static CrashReporter instance;
     return instance;
@@ -264,6 +277,8 @@ CrashReporter::CrashReport CrashReporter::collect_report() {
         }
     };
     copy_heap("heap_snapshot_age_ms", report.heap.age_ms);
+    copy_heap("heap_snapshot_ts_ms", report.heap.snapshot_ts_ms);
+    copy_heap("heap_mono_ms_now", report.heap.mono_ms_now);
     copy_heap("heap_rss_kb", report.heap.rss_kb);
     copy_heap("heap_vsz_kb", report.heap.vsz_kb);
     copy_heap("heap_arena_kb", report.heap.arena_kb);
@@ -467,6 +482,11 @@ nlohmann::json CrashReporter::report_to_json(const CrashReport& report) {
     if (report.heap.present) {
         json h;
         h["age_ms"] = report.heap.age_ms;
+        // Raw stamps the age came from, so a reader can tell a 32-bit monotonic
+        // wrap from a stalled refresh when the age looks wrong.
+        h["snapshot_ts_ms"] = report.heap.snapshot_ts_ms;
+        h["mono_ms_now"] = report.heap.mono_ms_now;
+        h["age_plausible"] = heap_snapshot_age_is_plausible(report.heap.age_ms, report.uptime_sec);
         h["rss_kb"] = report.heap.rss_kb;
         h["vsz_kb"] = report.heap.vsz_kb;
         if (report.heap.arena_kb) {
@@ -593,6 +613,15 @@ std::string CrashReporter::report_to_text(const CrashReport& report) {
                << "kB free=" << report.heap.free_kb << "kB";
         }
         ss << "\n";
+        if (!heap_snapshot_age_is_plausible(report.heap.age_ms, report.uptime_sec)) {
+            ss << "  WARNING: snapshot age exceeds process uptime (" << report.uptime_sec
+               << "s) — heap figures above are NOT trustworthy. ts=" << report.heap.snapshot_ts_ms
+               << "ms now=" << report.heap.mono_ms_now << "ms ("
+               << (report.heap.snapshot_ts_ms > report.heap.mono_ms_now
+                       ? "ts > now: 32-bit monotonic wrap"
+                       : "refresh stalled")
+               << ")\n";
+        }
         if (report.heap.lv_total_kb) {
             ss << "LVGL heap: total=" << report.heap.lv_total_kb
                << "kB used=" << report.heap.lv_used_pct << "% frag=" << report.heap.lv_frag_pct
@@ -730,6 +759,19 @@ std::string CrashReporter::generate_github_url(const CrashReport& report) {
                  << "% frag";
         }
         body << " (age " << report.heap.age_ms << "ms)\n";
+        if (!heap_snapshot_age_is_plausible(report.heap.age_ms, report.uptime_sec)) {
+            // Say so in the issue itself — this figure was chased as a real
+            // signal once already (bundle ED2YC336).
+            body << "  - ⚠️ Snapshot age exceeds the process uptime of " << report.uptime_sec
+                 << "s, so the heap figures above are not trustworthy. Raw stamps: ts "
+                 << report.heap.snapshot_ts_ms << "ms, crash clock " << report.heap.mono_ms_now
+                 << "ms — "
+                 << (report.heap.snapshot_ts_ms > report.heap.mono_ms_now
+                         ? "ts is ahead of the crash clock, i.e. the 32-bit monotonic counter "
+                           "wrapped (~49.7 days of uptime)."
+                         : "the main loop's 10s snapshot refresh stalled.")
+                 << "\n";
+        }
     }
     if (!report.load_base.empty()) {
         body << "- **Load Base:** " << report.load_base << "\n";
