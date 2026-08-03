@@ -170,6 +170,10 @@ manufacturers.
 - **Elegoo CC1:** OpenCentauri (COSMOS = full Klipper/Kalico replacement;
   Patched = overlay on stock) is the path to a sane Moonraker. The C++ transpile
   itself isn't something we integrate against directly.
+- **Community forks of a stock printer are the sharper problem** — they keep the
+  hardware identity while swapping a vendor module underneath, so model
+  detection cannot see them and a stock-schema parser fails silently rather than
+  loudly. See §8.
 
 ---
 
@@ -265,6 +269,74 @@ shared across Elegoo's whole line, no auth) as the proof-of-concept for a
 non-Moonraker backend, and centralize `notify_gcode_response` handling as
 prerequisite cleanup. Gate the whole thing on real demand (Elegoo-owner
 interest in the field), not speculation.
+
+---
+
+## 8. The inverse case: community reimplementations of a *vendor's* closed module
+
+Everything above is a **vendor** reimplementing Klipper. The inverse also
+happens, and it hits us harder: the **community** reimplementing a *vendor's
+closed Klipper module* on top of an otherwise-mainline fork.
+
+**Worked example — Creality K2 Plus CFS.** [`Jacob10383/kalico`](https://github.com/Jacob10383/kalico)
+is a fork of KalicoCrew's Kalico for the K2 Plus. Stock Klipper is replaced
+wholesale, and Creality's closed CFS module (`box_wrapper.cpython-39.so`) is
+replaced by a clean-room `box.py` + friends. The printer keeps its hardware
+identity; only the software module changes.
+
+Consequences, in rough order of how much they cost us:
+
+1. **Model detection is useless for this.** Every K2 heuristic still trips —
+   `box`, `motor_control`, `fan_feedback`, the hostname. `PrinterDetector`
+   reports a stock K2 Plus, correctly, because that *is* the hardware. Anything
+   that varies with **firmware** rather than hardware has to be detected from
+   the payload or the macro list.
+2. **The vendor object keeps its name and changes its entire shape.** The
+   reimplemented `box` object shares **zero keys** with Creality's. A parser
+   written against the stock schema doesn't error — it finds none of its keys
+   and reports an empty system, which surfaces as a working UI showing nothing.
+   Silent, not loud.
+3. **Schema and command dialect vary independently.** We had been treating
+   "which macro dialect" as implied by the printer model (K1 vs K2). The fork
+   broke that: new schema *and* new dialect, neither inferable from the model,
+   and in principle mix-and-matchable. That forced `CfsSchema` and
+   `CfsMacroVariant` apart into two axes.
+4. **"Not on GitHub" is not "not published."** The `box.py` here is untracked in
+   the Klipper repo and in no public repo, and GitHub code search finds nothing.
+   It is nonetheless fetchable: the firmware installs from a content-addressed
+   object store (`firmware.jacobean.xyz`) whose index lists every Klipper extra
+   by SHA, so one module can be pulled without the 300 MB rootfs. The lesson is
+   to **follow the install path**, not the source-hosting convention — and to
+   distrust a zero-hit code search, which here reflected a legacy search API
+   that simply had not indexed the repo.
+   Inferring the command surface from user macros instead got one command
+   materially wrong: those macros aliased a `BOX_CHANGE` the module does not
+   define, while the real tool change is a registered `T<n>`.
+
+**Design rules this produced:**
+
+- Detect **capabilities from payloads**, model from hardware. Never let a model
+  string stand in for a firmware feature.
+- When a parser finds none of its expected keys, that is a **signal**, not an
+  empty result — log it loudly enough to diagnose from a bundle.
+- Keep "what shape is the data" and "what commands does it take" as separate
+  axes from the start; they correlate until they don't.
+- Read-only support is a legitimate shipping state. Displaying a community
+  port's filament system while refusing to drive it beats both extremes — and
+  it is the correct state to sit in *while* you go find the module, rather than
+  shipping a guessed command set.
+- Prefer a **module-identity marker** over a shape heuristic when deciding what
+  commands a firmware speaks. This module publishes its own widget-version
+  constant in its status object; keying on that keeps "what shape is the data"
+  and "what commands does it take" genuinely independent.
+
+**Footnote worth knowing:** this firmware ships **HelixScreen as its stock
+display**, pinned by version and SHA in its installer. Community ports are not
+only a compatibility burden — some of them are downstream distributors, and a
+parser gap here surfaced as an empty panel on every one of their installs.
+
+Details and the full field mapping: `../printers/CREALITY_K2_SUPPORT.md`
+§ "Community Kalico port".
 
 ---
 

@@ -15,6 +15,10 @@
 
 #include <spdlog/spdlog.h>
 
+#include <cctype>
+#include <string>
+#include <unordered_map>
+
 #include "hv/json.hpp"
 
 namespace helix::printer {
@@ -465,7 +469,34 @@ void AmsBackendCfs::on_started() {
 
 // --- Static parser ---
 
+CfsSchema AmsBackendCfs::detect_schema(const nlohmann::json& box_json) {
+    if (!box_json.is_object()) {
+        return CfsSchema::Stock;
+    }
+    // A `T{n}` key is decisive for Stock: no flat payload carries one, and if a
+    // future firmware ever carried both, the stock parser has the richer decode
+    // (material codes, RFID UIDs, tool map) so it should win.
+    for (int n = 1; n <= 4; ++n) {
+        if (box_json.contains("T" + std::to_string(n))) {
+            return CfsSchema::Stock;
+        }
+    }
+    // is_array(), not contains(): a disconnected-unit sentinel could put a
+    // scalar "-1" here, and a string json has size() == 1, which would let a
+    // bounds-checked loop index into it and throw type_error.305.
+    auto it = box_json.find("slots");
+    if (it != box_json.end() && it->is_array()) {
+        return CfsSchema::Flat;
+    }
+    return CfsSchema::Stock;
+}
+
 AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
+    return detect_schema(box_json) == CfsSchema::Flat ? parse_flat_box_status(box_json)
+                                                      : parse_stock_box_status(box_json);
+}
+
+AmsSystemInfo AmsBackendCfs::parse_stock_box_status(const nlohmann::json& box_json) {
     AmsSystemInfo info;
     info.type = AmsType::CFS;
     info.type_name = "CFS";
@@ -796,6 +827,215 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
     return info;
 }
 
+// --- Flat schema (community Kalico box.py reimplementations) ---------------
+
+// Parse a conventional "#RRGGBB" (or bare "RRGGBB") into 0xRRGGBB.
+//
+// NOT CfsMaterialDb::parse_color: that one owns Creality's leading-zero
+// "0RRGGBB" form and its "-1"/"None" sentinels. The flat schema uses the
+// ordinary web spelling, and marks "no color" with an empty string (the
+// external-spool entry). Anything unparseable — wrong length, non-hex digits,
+// empty — yields the default slot color rather than a partial read, so a
+// malformed field renders as "unknown color" instead of a plausible wrong one.
+static uint32_t parse_flat_slot_color(const std::string& raw) {
+    std::string s = raw;
+    if (!s.empty() && s[0] == '#') {
+        s.erase(0, 1);
+    }
+    if (s.size() != 6) {
+        return AMS_DEFAULT_SLOT_COLOR;
+    }
+    for (char c : s) {
+        if (std::isxdigit(static_cast<unsigned char>(c)) == 0) {
+            return AMS_DEFAULT_SLOT_COLOR;
+        }
+    }
+    return static_cast<uint32_t>(std::stoul(s, nullptr, 16));
+}
+
+AmsSystemInfo AmsBackendCfs::parse_flat_box_status(const nlohmann::json& box_json) {
+    AmsSystemInfo info;
+    info.type = AmsType::CFS;
+    info.type_name = "CFS";
+    info.tip_method = TipMethod::CUT;
+    info.supports_purge = true;
+
+    // Bypass stays unsupported even though slots[] carries an `external: true`
+    // entry for the spool holder. The entry is observable, but the port's
+    // box.py is unpublished, so no verified command drives a load from it —
+    // advertising bypass would put a button on screen that cannot work.
+    info.supports_bypass = false;
+
+    // runout_swap_enabled is the fork's endless-spool flag. safe_bool rather
+    // than .value(): every scalar in this object is nullable (`runout` itself
+    // ships as JSON null when idle).
+    info.supports_endless_spool =
+        helix::json_util::safe_bool(box_json, "runout_swap_enabled", false);
+    info.supports_tool_mapping = true;
+
+    // `runout` is null while idle and carries a slot descriptor once tripped;
+    // presence of any non-null value is the runout signal. filament_loaded is
+    // left false here for the same reason as the stock parse — the toolhead
+    // sensor branch in handle_status_update is its sole writer.
+    auto runout_it = box_json.find("runout");
+    info.filament_runout = runout_it != box_json.end() && !runout_it->is_null();
+    info.filament_loaded = false;
+
+    // Per-material recommended temps. The fork publishes a materials table the
+    // stock firmware has no equivalent for; it is keyed by the same material
+    // string each slot reports, so it resolves without a code table.
+    // A single target_temp is all the firmware gives, so min == max: a
+    // degenerate range is truthful, whereas leaving min at 0 would render as
+    // "0-300°C".
+    std::unordered_map<std::string, int> material_temps;
+    auto materials_it = box_json.find("materials");
+    if (materials_it != box_json.end() && materials_it->is_object()) {
+        for (const auto& [name, spec] : materials_it->items()) {
+            if (!spec.is_object()) {
+                continue;
+            }
+            int t = helix::json_util::safe_int(spec, "target_temp", 0);
+            if (t > 0) {
+                material_temps[name] = t;
+            }
+        }
+    }
+
+    AmsUnit unit;
+    unit.unit_index = 0;
+    unit.name = "CFS";
+    unit.display_name = "CFS Unit 1";
+    unit.first_slot_global_index = 0;
+    unit.connected = helix::json_util::safe_bool(box_json, "driver_ready", true);
+    unit.topology = PathTopology::HUB;
+
+    // Environment. Unlike the stock schema these are JSON numbers, not strings,
+    // but safe_float accepts either — so a firmware revision that switches
+    // spelling will not silently drop the readings.
+    float temp_c = helix::json_util::safe_float(box_json, "temp_c", -1.0f);
+    float humidity = helix::json_util::safe_float(box_json, "humidity_pct", -1.0f);
+    if (temp_c >= 0.0f || humidity >= 0.0f) {
+        EnvironmentData env;
+        env.temperature_c = temp_c >= 0.0f ? temp_c : 0.0f;
+        env.humidity_pct = humidity >= 0.0f ? humidity : 0.0f;
+        env.has_humidity = humidity >= 0.0f;
+        unit.environment = env;
+    }
+
+    // load_path describes the shared feed path: an encoder, a buffer, and a
+    // printhead sensor. Stock CFS reports none of these, so these flags light
+    // up path visualization that the stock backend cannot drive.
+    auto path_it = box_json.find("load_path");
+    if (path_it != box_json.end() && path_it->is_object()) {
+        const auto& path = *path_it;
+
+        auto encoder_it = path.find("encoder");
+        unit.has_encoder = encoder_it != path.end() && encoder_it->is_object();
+
+        auto sensor_it = path.find("printhead_sensor");
+        unit.has_toolhead_sensor = sensor_it != path.end() && sensor_it->is_object();
+
+        auto buffer_it = path.find("buffer");
+        if (buffer_it != path.end() && buffer_it->is_object()) {
+            BufferHealth buffer;
+            // `active` is the fork's enable flag. state_code/status_code are
+            // small enums whose meanings are NOT documented anywhere we can
+            // read (box.py is unpublished), so they are deliberately NOT
+            // decoded into a state string — an invented mapping would surface
+            // confident nonsense in the UI. Only the enable flag is trusted.
+            buffer.fault_detection_enabled =
+                helix::json_util::safe_bool(*buffer_it, "active", false);
+            unit.buffer_health = buffer;
+        }
+    }
+
+    // Slots. Each entry is self-describing — no parallel arrays, no material
+    // code table, no TNN letter math.
+    auto slots_it = box_json.find("slots");
+    if (slots_it != box_json.end() && slots_it->is_array()) {
+        for (const auto& slot_json : *slots_it) {
+            // A non-object entry (a "-1" sentinel, say) is skipped rather than
+            // aborting the frame — same discipline as the stock array_field
+            // guard. Skipping keeps later slots parseable.
+            if (!slot_json.is_object()) {
+                continue;
+            }
+            // The external-spool holder is not a CFS bay. Counting it renders a
+            // phantom extra slot on a 4-bay unit.
+            if (helix::json_util::safe_bool(slot_json, "external", false)) {
+                continue;
+            }
+
+            SlotInfo slot;
+            // Index by VECTOR POSITION, not the payload's `index`. Downstream
+            // slot-widget creation walks this vector and treats position as the
+            // bay, so a sparse or out-of-order payload must not leave holes. On
+            // every payload seen so far the two agree; warn if they ever stop,
+            // because a silent relabel would put a spool on the wrong bay.
+            slot.slot_index = static_cast<int>(unit.slots.size());
+            slot.global_index = slot.slot_index;
+            if (int reported = helix::json_util::safe_int(slot_json, "index", slot.slot_index);
+                reported != slot.slot_index) {
+                spdlog::warn("[AMS CFS] Flat slot reports index {} at position {} — "
+                             "using position; check for sparse or reordered slots",
+                             reported, slot.slot_index);
+            }
+            // CFS slots map 1:1 to tools, as in the stock parse.
+            slot.mapped_tool = slot.global_index;
+
+            // The literal string "None" means ABSENT on every one of these
+            // fields, and it is not a chosen value: the module builds each
+            // profile entry with `str(value.get(key, ""))`, so a key that is
+            // present but JSON null stringifies to Python's "None" rather than
+            // falling back to the "" default. Every text field can therefore
+            // arrive as "None", not just brand — surfacing it would put a spool
+            // named "None" made of "None" on screen.
+            auto text_field = [&slot_json](const char* key) -> std::string {
+                std::string v = helix::json_util::safe_string(slot_json, key);
+                return v == "None" ? std::string{} : v;
+            };
+            slot.material = text_field("material");
+            slot.brand = text_field("brand");
+            slot.spool_name = text_field("name");
+            // Colors need no such guard: "None" is not six hex digits, so
+            // parse_flat_slot_color already falls back to the default.
+            slot.color_rgb =
+                parse_flat_slot_color(helix::json_util::safe_string(slot_json, "color"));
+
+            if (auto temp_it = material_temps.find(slot.material);
+                temp_it != material_temps.end()) {
+                slot.nozzle_temp_min = temp_it->second;
+                slot.nozzle_temp_max = temp_it->second;
+            }
+
+            // Spoolman handles ship as null until the user links a spool.
+            slot.spoolman_id = helix::json_util::safe_int(slot_json, "spoolman_id", 0);
+
+            const bool present = helix::json_util::safe_bool(slot_json, "present", false);
+            const bool loaded = helix::json_util::safe_bool(slot_json, "loaded", false);
+            slot.status =
+                loaded ? SlotStatus::LOADED : (present ? SlotStatus::AVAILABLE : SlotStatus::EMPTY);
+
+            unit.slots.push_back(std::move(slot));
+        }
+    }
+
+    unit.slot_count = static_cast<int>(unit.slots.size());
+    info.total_slots = unit.slot_count;
+
+    // loaded_slot is -1 when nothing is loaded. It indexes the same slots[]
+    // array, so it needs no translation — but it can name the external entry,
+    // which is not in our vector, hence the bounds check.
+    int loaded_slot = helix::json_util::safe_int(box_json, "loaded_slot", -1);
+    if (loaded_slot >= 0 && loaded_slot < unit.slot_count) {
+        info.current_slot = loaded_slot;
+        info.current_tool = loaded_slot;
+    }
+
+    info.units.push_back(std::move(unit));
+    return info;
+}
+
 // Canonicalize per-slot RFID data into a fingerprint string used by
 // check_hardware_event_clear. CFS exposes material_type and color_value as
 // per-slot arrays; combining the raw strings (before strip_code / parse_color
@@ -900,7 +1140,30 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
         bool has_top_level = box.contains("filament") || box.contains("map");
         bool has_unit_data =
             box.contains("T1") || box.contains("T2") || box.contains("T3") || box.contains("T4");
-        bool is_full_update = has_top_level || has_unit_data;
+        // Flat schema: a `slots` array is the payload that carries everything —
+        // there is no top-level/per-unit split to reason about, so its presence
+        // alone marks a full update.
+        const bool is_flat = detect_schema(box) == CfsSchema::Flat;
+        bool is_full_update = has_top_level || has_unit_data || is_flat;
+
+        if (is_flat && schema_ != CfsSchema::Flat) {
+            schema_ = CfsSchema::Flat;
+            // Dialect is latched from the same payload but on a SEPARATE
+            // signal — the module's own identity marker, not the schema shape
+            // (see detect_fork_dialect). A flat payload without that marker
+            // keeps the stock dialect and stays gated, because we would have no
+            // verified command set for it.
+            if (detect_fork_dialect(box)) {
+                macro_variant_ = CfsMacroVariant::Fork;
+                spdlog::info("[AMS CFS] Flat box schema + fork dialect detected "
+                             "(community box.py, widget v{}) — full control enabled",
+                             helix::json_util::safe_int(box, "fluidd_widget_version", 0));
+            } else {
+                spdlog::warn("[AMS CFS] Flat box schema without a known module marker — "
+                             "slot display active, control paths disabled (no verified "
+                             "command dialect)");
+            }
+        }
 
         if (is_full_update) {
             auto new_info = parse_box_status(box);
@@ -944,8 +1207,10 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
             // filament_loaded — a box update lacking the sensor param must not
             // clobber the sensor-derived value.
 
-            // Update runout flag only when the field was actually present
-            if (box.contains("filament_useup")) {
+            // Update runout flag only when the field was actually present.
+            // Stock spells it filament_useup; the flat schema spells it runout
+            // (JSON null while idle, a descriptor once tripped).
+            if (box.contains("filament_useup") || (is_flat && box.contains("runout"))) {
                 system_info_.filament_runout = new_info.filament_runout;
             }
 
@@ -960,7 +1225,7 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
             if (new_info.current_slot >= 0) {
                 system_info_.current_slot = new_info.current_slot;
                 system_info_.current_tool = new_info.current_tool;
-            } else if (has_unit_data && system_info_.action != AmsAction::LOADING) {
+            } else if ((has_unit_data || is_flat) && system_info_.action != AmsAction::LOADING) {
                 system_info_.current_slot = -1;
                 system_info_.current_tool = -1;
             }
@@ -1201,8 +1466,24 @@ PathSegment AmsBackendCfs::infer_error_segment() const {
 
 // --- Operations ---
 
+AmsError AmsBackendCfs::reject_if_flat_schema(const char* operation) const {
+    // A flat box paired with the Fork dialect is fully driveable — the command
+    // set is verified against the module's own registration table. Only a flat
+    // box we cannot identify stays gated: emitting the stock CR_BOX_*/BOX_*
+    // sequences at an unknown module sends commands it may not define.
+    if (schema_ != CfsSchema::Flat || macro_variant_ == CfsMacroVariant::Fork) {
+        return AmsErrorHelper::success();
+    }
+    spdlog::warn("[AMS CFS] {} refused — unrecognized flat box module, no verified dialect",
+                 operation);
+    return AmsErrorHelper::not_supported(std::string(operation) + " on this firmware's CFS module");
+}
+
 AmsError AmsBackendCfs::load_filament(int slot_index) {
-    auto err = check_preconditions(true);
+    auto err = reject_if_flat_schema("Load");
+    if (err.result != AmsResult::SUCCESS)
+        return err;
+    err = check_preconditions(true);
     if (err.result != AmsResult::SUCCESS)
         return err;
     auto gcode = load_gcode(slot_index, macro_variant_);
@@ -1223,7 +1504,10 @@ AmsError AmsBackendCfs::load_filament(int slot_index) {
 }
 
 AmsError AmsBackendCfs::unload_filament(int) {
-    auto err = check_preconditions(true);
+    auto err = reject_if_flat_schema("Unload");
+    if (err.result != AmsResult::SUCCESS)
+        return err;
+    err = check_preconditions(true);
     if (err.result != AmsResult::SUCCESS)
         return err;
     {
@@ -1240,7 +1524,10 @@ AmsError AmsBackendCfs::select_slot(int) {
 }
 
 AmsError AmsBackendCfs::change_tool(int tool) {
-    auto err = check_preconditions(true);
+    auto err = reject_if_flat_schema("Tool change");
+    if (err.result != AmsResult::SUCCESS)
+        return err;
+    err = check_preconditions(true);
     if (err.result != AmsResult::SUCCESS)
         return err;
 
@@ -1428,6 +1715,40 @@ void AmsBackendCfs::push_slot_color_to_firmware(int global_index, uint32_t color
     if (global_index < 0 || global_index >= kCfsMaxSlots) {
         spdlog::debug("{} push_slot_color_to_firmware: skipping invalid slot {}", backend_log_tag(),
                       global_index);
+        return;
+    }
+
+    // The Fork module defines no BOX_MODIFY_TN_DATA; its equivalent is
+    // _BOX_SLOT_SET, which writes the whole slot profile at once and REQUIRES a
+    // material alongside the color. Read the slot's current material to satisfy
+    // that — a slot with no material yet yields no command, and the local
+    // override still holds the user's color either way.
+    if (macro_variant_ == CfsMacroVariant::Fork) {
+        std::string material;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (const auto& unit : system_info_.units) {
+                for (const auto& slot : unit.slots) {
+                    if (slot.global_index == global_index) {
+                        material = slot.material;
+                    }
+                }
+            }
+        }
+        std::string gcode = slot_set_gcode(global_index, material, color_rgb);
+        if (gcode.empty()) {
+            spdlog::debug("{} slot-set skipped for slot {} (no material) — local override only",
+                          backend_log_tag(), global_index);
+            return;
+        }
+        execute_gcode(gcode);
+        return;
+    }
+
+    // A flat box we could not identify: no verified write command at all.
+    if (schema_ == CfsSchema::Flat) {
+        spdlog::debug("{} push_slot_color_to_firmware: unknown flat module — local override only",
+                      backend_log_tag());
         return;
     }
 
@@ -1641,7 +1962,50 @@ std::string wrap_with_park(CfsMacroVariant variant, const std::string& body, boo
 
 } // namespace
 
+bool AmsBackendCfs::detect_fork_dialect(const nlohmann::json& box_json) {
+    return box_json.is_object() && box_json.contains("fluidd_widget_version");
+}
+
+std::string AmsBackendCfs::slot_set_gcode(int global_slot_index, const std::string& material,
+                                          uint32_t color_rgb) {
+    constexpr int kCfsMaxSlots = 16; // 4 units × 4 slots
+    if (global_slot_index < 0 || global_slot_index >= kCfsMaxSlots) {
+        spdlog::error("[AMS CFS] Invalid slot index for slot-set: {}", global_slot_index);
+        return "";
+    }
+    // MATERIAL is required by cmd_slot_set — an empty one is a hard command
+    // error, so emit nothing rather than a rejected write.
+    if (material.empty()) {
+        spdlog::debug("[AMS CFS] slot_set: no material for slot {} — skipping write",
+                      global_slot_index);
+        return "";
+    }
+    std::string upper = material;
+    for (char& c : upper) {
+        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    }
+    // snprintf to match the stock BOX_MODIFY_TN_DATA builder below, which uses
+    // the same idiom for the same reason: a fixed-shape gcode line.
+    char gcode[160];
+    std::snprintf(gcode, sizeof(gcode), "_BOX_SLOT_SET SLOT=%d MATERIAL=%s COLOR=#%06X",
+                  global_slot_index, upper.c_str(), color_rgb & 0xFFFFFFu);
+    return gcode;
+}
+
 std::string AmsBackendCfs::load_gcode(int idx, CfsMacroVariant variant) {
+    if (variant == CfsMacroVariant::Fork) {
+        // BOX_LOAD SLOT=<n>. The module owns the entire feed sequence — park,
+        // purge, prime and clean all happen inside it — so there is no envelope
+        // to assemble. It is a FRESH load only: box.py raises "T%d is already
+        // loaded; unload it before loading T%d" when another bay is seated,
+        // which is why a swap routes to T<n> instead.
+        constexpr int kCfsMaxSlots = 16;
+        if (idx < 0 || idx >= kCfsMaxSlots) {
+            spdlog::error("[AMS CFS] Invalid slot index for load: {}", idx);
+            return "";
+        }
+        return "BOX_LOAD SLOT=" + std::to_string(idx);
+    }
     std::string tnn = CfsMaterialDb::slot_to_tnn(idx);
     if (tnn.empty()) {
         spdlog::error("[AMS CFS] Invalid slot index for load: {}", idx);
@@ -1677,6 +2041,13 @@ std::string AmsBackendCfs::load_gcode(int idx, CfsMacroVariant variant) {
 }
 
 std::string AmsBackendCfs::unload_gcode(CfsMacroVariant variant) {
+    if (variant == CfsMacroVariant::Fork) {
+        // Bare BOX_UNLOAD. It takes an optional MANUAL=0|1 (a user-driven
+        // unload that skips the automated path) and explicitly REJECTS SLOT —
+        // cmd_unload raises "BOX_UNLOAD no longer accepts SLOT". We always want
+        // the automated path, so no parameters at all.
+        return "BOX_UNLOAD";
+    }
     if (variant == CfsMacroVariant::K1) {
         // K1: mirror the firmware BOX_QUIT_MATERIAL step list:
         //   ERROR_CLEAR → CHECK_MATERIAL → CUT → RETRUDE → safe park.
@@ -1700,6 +2071,22 @@ std::string AmsBackendCfs::unload_gcode(CfsMacroVariant variant) {
 }
 
 std::string AmsBackendCfs::swap_gcode(int idx, CfsMacroVariant variant) {
+    if (variant == CfsMacroVariant::Fork) {
+        // T<n> — box.py registers one per physical slot plus the external bay
+        // (_register_t_commands) and routes it through its change engine, which
+        // cuts, retracts, loads and flushes as one operation. There is no
+        // BOX_CHANGE; that name appears only in a user-written alias macro that
+        // this firmware does not define.
+        //
+        // FLUSH=1 is the module's own default and keeps slicer flush volumes
+        // honored; spelled explicitly so the intent survives a default change.
+        constexpr int kCfsMaxSlots = 16;
+        if (idx < 0 || idx >= kCfsMaxSlots) {
+            spdlog::error("[AMS CFS] Invalid slot index for swap: {}", idx);
+            return "";
+        }
+        return "T" + std::to_string(idx) + " FLUSH=1";
+    }
     std::string tnn = CfsMaterialDb::slot_to_tnn(idx);
     if (tnn.empty()) {
         spdlog::error("[AMS CFS] Invalid slot index for swap: {}", idx);

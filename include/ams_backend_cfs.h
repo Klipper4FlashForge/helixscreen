@@ -79,9 +79,48 @@ class CfsErrorDecoder {
 /// BOX_GO_TO_EXTRUDE_POS, BOX_MOVE_TO_SAFE_POS. The K2-only fan-save and
 /// mode-wait helpers are absent. Selected when PrinterDetector reports a
 /// K1-series printer. Issue #968.
+///
+/// Fork — community Kalico ports of the K2 whose reimplemented `box` module
+/// replaces Creality's closed one. High-level and self-contained: BOX_LOAD,
+/// BOX_UNLOAD, BOX_CHANGE, BOX_CUT, BOX_RESET, BOX_RESUME, BOX_RECOVERY,
+/// BOX_GO_TO_WASTEBIN, BOX_EMERGENCY_STOP — the port's box.py owns the whole
+/// feed/purge/park sequence, so there is no envelope for HelixScreen to
+/// assemble. `BOX_LOAD` in the macro list is the discriminator; neither stock
+/// dialect defines it.
+///
+/// RESERVED — nothing assigns this value yet. The port's box.py is unpublished,
+/// so BOX_LOAD's parameter name is unverified and no builder emits it; the
+/// control paths are refused up front by reject_if_flat_schema() instead. The
+/// value exists so the dialect axis is expressible independently of CfsSchema,
+/// which is the mistake that made this firmware hard to support in the first
+/// place. See docs/devel/printers/CREALITY_K2_SUPPORT.md § "Community Kalico
+/// port".
 enum class CfsMacroVariant {
     K2,
     K1,
+    Fork,
+};
+
+/// Shape of the `box` Moonraker object, which varies INDEPENDENTLY of the macro
+/// dialect above.
+///
+/// Stock — Creality's own module (K1 and K2 both): per-unit `T1`..`T4` objects,
+/// each holding four parallel arrays (`color_value`, `material_type`, `vender`,
+/// `remain_len`), plus top-level `filament` / `map` / `same_material` /
+/// `auto_refill`. Material codes need the CfsMaterialDb/FilamentCatalog decode.
+///
+/// Flat — community Kalico ports carrying a reimplemented box.py: a single
+/// `slots[]` array of self-describing objects, plus `loaded_slot`,
+/// `slot_filament_mask`, `load_path`, `materials`, `temp_c`, `humidity_pct`.
+/// Zero key overlap with Stock. Materials and colors are already resolved, so
+/// no code table is involved.
+///
+/// Detected from the PAYLOAD, never from PrinterDetector: the affected printers
+/// report as stock K2 Plus hardware by every model signal, so the firmware swap
+/// is invisible to model detection. Bundle QJKZEMTS.
+enum class CfsSchema {
+    Stock,
+    Flat,
 };
 
 /// CFS (Creality Filament System) backend — K1 + K2 series printers with RS-485 CFS units
@@ -199,8 +238,46 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     AmsError execute_device_action(const std::string& action_id,
                                    const std::any& value = {}) override;
 
-    // Static parser (public for testing)
+    // Static parsers (public for testing)
+
+    /// Decide which `box` shape this payload is. Stock is the default for
+    /// anything ambiguous — every shipped CFS is stock, and misrouting one to
+    /// the flat parser would report zero slots.
+    [[nodiscard]] static CfsSchema detect_schema(const nlohmann::json& box_json);
+
+    /// Parse a `box` object, dispatching on detect_schema().
     static AmsSystemInfo parse_box_status(const nlohmann::json& box_json);
+
+    /// Stock (`T1`..`T4`) parse. Split out of parse_box_status when the flat
+    /// schema arrived; behavior unchanged.
+    static AmsSystemInfo parse_stock_box_status(const nlohmann::json& box_json);
+
+    /// Flat (`slots[]`) parse — community Kalico box.py reimplementations.
+    static AmsSystemInfo parse_flat_box_status(const nlohmann::json& box_json);
+
+    /// True when this `box` payload comes from the community box.py, i.e. the
+    /// firmware speaks CfsMacroVariant::Fork.
+    ///
+    /// Keys on `fluidd_widget_version`, which is that module's own
+    /// WIDGET_VERSION constant — a MODULE-identity marker, not a schema shape.
+    /// That distinction matters twice over: it keeps the dialect axis separate
+    /// from CfsSchema (a different flat-schema firmware must not inherit this
+    /// one's command set), and it is the only signal available. The Fork
+    /// commands are registered in Python via gcode.register_command, so they
+    /// are NOT gcode_macros and never appear in printer.objects.list —
+    /// PrinterDiscovery::has_macro("BOX_LOAD") can never see them.
+    [[nodiscard]] static bool detect_fork_dialect(const nlohmann::json& box_json);
+
+    /// `_BOX_SLOT_SET` — the Fork counterpart to the stock BOX_MODIFY_TN_DATA
+    /// color write. Returns "" when the module would reject the command.
+    ///
+    /// SLOT, MATERIAL and COLOR are all required by box.py's cmd_slot_set, so
+    /// unlike the stock path this cannot be a color-only write; the caller must
+    /// supply the slot's material. Material is uppercased here to match the
+    /// module's own `str(material).strip().upper()` normalization, so a later
+    /// status frame echoes back exactly what we sent.
+    static std::string slot_set_gcode(int global_slot_index, const std::string& material,
+                                      uint32_t color_rgb);
 
     // GCode helpers (public for testing)
     static std::string load_gcode(int global_slot_index,
@@ -252,6 +329,26 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     // from the static helpers (load_gcode/unload_gcode/swap_gcode), so this
     // is read on the script-build side, not in hot paths.
     CfsMacroVariant macro_variant_ = CfsMacroVariant::K2;
+
+    /// Box schema last seen on the wire, latched by handle_status_update.
+    ///
+    /// Separate axis from macro_variant_ above: the dialect is latched once in
+    /// the constructor from the printer model, but the schema cannot be — the
+    /// affected printers report as stock K2 hardware, so it is only knowable
+    /// from a payload. Stock until a payload says otherwise.
+    ///
+    /// Also the guard on the control paths. A Flat box means the firmware's
+    /// box module is a community reimplementation whose command surface we have
+    /// not verified; emitting the stock CR_BOX_*/BOX_* sequences at it sends
+    /// commands it does not define (confirmed on bundle QJKZEMTS: zero
+    /// CR_BOX_*, zero BOX_MODIFY_TN_DATA, zero M8200 in its config). Refusing
+    /// with a clear error beats a half-executed feed sequence.
+    CfsSchema schema_ = CfsSchema::Stock;
+
+    /// SUCCESS on stock firmware; a not_supported error naming @p operation
+    /// when the box is a flat-schema reimplementation. Called at the top of
+    /// every path that emits a stock gcode sequence.
+    [[nodiscard]] AmsError reject_if_flat_schema(const char* operation) const;
 
     // Callback lifetime management
     helix::AsyncLifetimeGuard lifetime_;

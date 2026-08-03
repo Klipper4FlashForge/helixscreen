@@ -1317,6 +1317,27 @@ sudo systemctl restart moonraker
 sudo systemctl restart helixscreen
 ```
 
+### CFS shows no slots (Creality K2)
+
+**Symptoms:**
+- The filament panel opens but the CFS is empty — no bays, no spools
+- Your CFS is populated and works fine in Fluidd or Mainsail
+- The home screen's multi-filament widget is greyed out or missing
+
+**Cause:** you're most likely running **community firmware** whose CFS module was rewritten from scratch. It reports the CFS in a completely different format than Creality's, and HelixScreen 0.99.106 and earlier only understood Creality's.
+
+**Check which one you have:**
+```bash
+curl -s 'http://localhost:7125/printer/objects/query?box' | grep -o 'slots\|T1'
+```
+
+- Prints `T1` → stock Creality format. This isn't your problem; work through *AMS slots not detected* above.
+- Prints `slots` → community format. **Update HelixScreen to any release newer than 0.99.106** and your slots will appear.
+
+Once updated, the community format is fully supported — display, loading, unloading and filament changes all work, with nothing to configure.
+
+> **If your firmware installed HelixScreen for you**, its installer may pin an older version than the one that added this support. Updating HelixScreen through Fluidd or Mainsail (rather than reinstalling the firmware) picks up the newer release.
+
 ### Load/Unload fails
 
 **Symptoms:**
