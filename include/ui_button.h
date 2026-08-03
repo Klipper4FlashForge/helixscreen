@@ -48,8 +48,12 @@ typedef struct _lv_obj_t lv_obj_t;
  *   When the subject changes, the icon updates automatically.
  *
  * - icon_position: Where to place icon relative to text (default: "left")
- *   - "left": Icon before text
- *   - "right": Icon after text
+ *   - "left": Icon before text (horizontal flex)
+ *   - "right": Icon after text (horizontal flex)
+ *   - "top": Icon stacked above text (vertical flex)
+ *   - "bottom": Icon stacked below text (vertical flex)
+ *   Applies to icons from the static icon= attribute and to icons created later
+ *   by a bind_icon subject alike.
  *
  * Layout:
  * - Icon + text: Horizontal flex layout with small gap between

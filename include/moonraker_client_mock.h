@@ -1256,6 +1256,10 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     std::vector<std::string> object_names_;  // Defined object names from gcode (local fallback)
     mutable std::mutex excluded_objects_mutex_; // Protects excluded_objects_ and object_names_
 
+    /// How many synthetic exclude_object entries to publish at print start, or 0
+    /// to publish only what the G-code declares. Set by HELIX_MOCK_EXCLUDE_OBJECTS.
+    int mock_exclude_object_count_{0};
+
     // Shared mock state for coordination with MoonrakerAPIMock
     // When set, state changes are propagated to this shared object
     std::shared_ptr<MockPrinterState> mock_state_;
