@@ -2,8 +2,9 @@
 
 #include "xml_hot_reloader.h"
 
-#include "layout_manager.h"
 #include "ui_update_queue.h"
+
+#include "layout_manager.h"
 
 #include <spdlog/spdlog.h>
 
@@ -26,9 +27,11 @@ namespace {
 ///
 /// - globals: not a UI component at all. It owns every XML subject in the app
 ///   (~1000 of them, most backed by C++-owned storage) plus the runtime theme
-///   constants ThemeManager injects. lv_xml_component_unregister("globals")
-///   deinits all of them and frees storage LVGL does not own — an immediate
-///   heap abort (munmap_chunk: invalid pointer).
+///   constants ThemeManager injects. Those constants are pushed in from C++
+///   after registration, so a fresh registration from globals.xml resolves every
+///   theme token to nothing across the entire UI. (Scope teardown itself is now
+///   safe — `lv_xml_component_unregister` skips borrowed subjects instead of
+///   free()ing C++ storage — but the constants are not recoverable.)
 /// - color_picker / color_swatch_grid: register_xml_components() pushes
 ///   breakpoint-computed constants into their scopes after registration. A
 ///   fresh registration would resolve those tokens to nothing.
@@ -86,23 +89,67 @@ bool xml_is_well_formed(const std::string& xml_def, std::string& err_out) {
     return ok;
 }
 
-} // anonymous namespace
-
-static size_t count_xml_subjects(const char* component_name) {
+/// Count a scope's subjects split by provenance: `owned` ones were allocated by
+/// the XML parser for a <subject>/<subject_expr> element and die with the scope;
+/// `borrowed` ones point at C++-owned storage and outlive it.
+void count_scope_subjects(const char* component_name, size_t& owned_out, size_t& borrowed_out) {
+    owned_out = 0;
+    borrowed_out = 0;
     lv_xml_component_scope_t* scope = lv_xml_component_get_scope(component_name);
     if (!scope)
-        return 0;
-    size_t n = 0;
+        return;
     // LV_LL_READ is a C macro that relies on implicit void* conversion — expand it manually
     // for C++ so we can cast explicitly.
-    for (void* s = lv_ll_get_head(&scope->subjects_ll); s != nullptr;
-         s = lv_ll_get_next(&scope->subjects_ll, s)) {
-        ++n;
+    for (void* node = lv_ll_get_head(&scope->subjects_ll); node != nullptr;
+         node = lv_ll_get_next(&scope->subjects_ll, node)) {
+        if (static_cast<lv_xml_subject_t*>(node)->owned)
+            ++owned_out;
+        else
+            ++borrowed_out;
     }
-    return n;
 }
 
+} // anonymous namespace
+
 namespace helix {
+
+std::vector<BorrowedSubject> snapshot_borrowed_subjects(const char* component_name) {
+    std::vector<BorrowedSubject> borrowed;
+    lv_xml_component_scope_t* scope = lv_xml_component_get_scope(component_name);
+    if (!scope)
+        return borrowed;
+    for (void* node = lv_ll_get_head(&scope->subjects_ll); node != nullptr;
+         node = lv_ll_get_next(&scope->subjects_ll, node)) {
+        auto* rec = static_cast<lv_xml_subject_t*>(node);
+        if (rec->owned || rec->name == nullptr || rec->subject == nullptr)
+            continue;
+        borrowed.emplace_back(rec->name, rec->subject);
+    }
+    return borrowed;
+}
+
+size_t restore_borrowed_subjects(const char* component_name,
+                                 const std::vector<BorrowedSubject>& borrowed) {
+    if (borrowed.empty())
+        return 0;
+    lv_xml_component_scope_t* scope = lv_xml_component_get_scope(component_name);
+    if (!scope) {
+        spdlog::warn("[HotReload] '{}' has no scope — {} C++-registered subject(s) lost",
+                     component_name, borrowed.size());
+        return 0;
+    }
+    size_t restored = 0;
+    for (const auto& [name, subject] : borrowed) {
+        // Re-registers as borrowed (the public entry point never claims
+        // ownership), so the next reload can snapshot it again.
+        if (lv_xml_register_subject(scope, name.c_str(), subject) == LV_RESULT_OK)
+            ++restored;
+        else
+            spdlog::warn("[HotReload] '{}': failed to re-register subject '{}'", component_name,
+                         name);
+    }
+    return restored;
+}
 
 XmlHotReloader::~XmlHotReloader() {
     stop();
@@ -284,8 +331,8 @@ void XmlHotReloader::scan_and_reload() {
         // Editing a shadowed copy still takes effect on the next launch at that
         // breakpoint. Committing the mtime keeps it from re-checking each poll.
         const auto& variant = file_to_variant_[abs_path];
-        if (helix::LayoutManager::instance().active_variant_dir(
-                file_to_logical_path_[abs_path]) != variant) {
+        if (helix::LayoutManager::instance().active_variant_dir(file_to_logical_path_[abs_path]) !=
+            variant) {
             cached_mtime = current_mtime;
             spdlog::debug("[HotReload] '{}' changed in {} layout, but the active layout uses a "
                           "different copy — not reloading",
@@ -327,18 +374,28 @@ void XmlHotReloader::scan_and_reload() {
             auto reload_name = comp_name;
             auto reload_buf = std::move(xml_buf);
             auto after_cb = after_reload_callback_;
-            helix::ui::queue_update([reload_name, reload_buf = std::move(reload_buf),
-                                     after_cb]() {
+            helix::ui::queue_update([reload_name, reload_buf = std::move(reload_buf), after_cb]() {
                 auto start = std::chrono::steady_clock::now();
 
-                size_t subject_count = count_xml_subjects(reload_name.c_str());
-                if (subject_count > 0) {
-                    spdlog::debug(
-                        "[HotReload] '{}' defines {} XML subject(s); unregister deinits them "
-                        "(observers detached), so live widgets bound to them become inert until "
-                        "rebuilt below",
-                        reload_name, subject_count);
+                size_t owned_subjects = 0;
+                size_t borrowed_subjects = 0;
+                count_scope_subjects(reload_name.c_str(), owned_subjects, borrowed_subjects);
+                if (owned_subjects > 0 || borrowed_subjects > 0) {
+                    spdlog::debug("[HotReload] '{}' scope holds {} XML-declared subject(s) "
+                                  "(freed and re-parsed; observers detached, so live widgets "
+                                  "bound to them go inert until rebuilt below) and {} "
+                                  "C++-registered subject(s) (kept alive by C++ and carried "
+                                  "across into the new scope)",
+                                  reload_name, owned_subjects, borrowed_subjects);
                 }
+
+                // Subjects the scope only borrows are registered from C++ once at
+                // startup. Unregister destroys the scope and with it those
+                // registrations, and re-parsing the XML cannot recreate them — so
+                // snapshot them here and put them back below, or the component
+                // comes back live but with every bind_* naming one resolving to
+                // nothing.
+                auto borrowed = snapshot_borrowed_subjects(reload_name.c_str());
 
                 // Unregister old component definition
                 auto result = lv_xml_component_unregister(reload_name.c_str());
@@ -349,8 +406,8 @@ void XmlHotReloader::scan_and_reload() {
 
                 // Re-register from the pre-validated buffer (NOT from file —
                 // file could change again between pre-flight and now).
-                result = lv_xml_register_component_from_data(reload_name.c_str(),
-                                                             reload_buf.c_str());
+                result =
+                    lv_xml_register_component_from_data(reload_name.c_str(), reload_buf.c_str());
                 if (result != LV_RESULT_OK) {
                     // Shouldn't happen — pre-flight already parsed this exact
                     // buffer successfully. If we ever get here, the component
@@ -359,6 +416,13 @@ void XmlHotReloader::scan_and_reload() {
                                   "component is now unregistered; fix and save again",
                                   reload_name);
                     return;
+                }
+
+                size_t restored = restore_borrowed_subjects(reload_name.c_str(), borrowed);
+                if (restored > 0) {
+                    spdlog::debug("[HotReload] '{}': carried {} C++-registered subject(s) into "
+                                  "the new scope",
+                                  reload_name, restored);
                 }
 
                 auto elapsed = std::chrono::steady_clock::now() - start;
