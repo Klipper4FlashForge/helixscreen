@@ -407,6 +407,24 @@ bool ui_filament_path_canvas_get_bypass_merge_pos(lv_obj_t* obj, int32_t* cx_out
 void ui_filament_path_canvas_set_slot_mapped_tool(lv_obj_t* obj, int slot, int tool);
 
 /**
+ * @brief Set per-lane Klipper extruder identity for toolhead badges
+ *
+ * Each entry is the tool number implied by that lane's extruder name
+ * ("extruder" -> 0, "extruder5" -> 5), or -1 when unknown. When the array
+ * covers every lane and no entry is -1, toolhead badges switch from the AFC
+ * lane alias ("T0") to the extruder identity ("E5"). The two numbering systems
+ * disagree on tool changers (#1229) and only the latter names a toolhead.
+ *
+ * Call after ui_filament_path_canvas_set_slot_count(); the completeness check
+ * compares @p count against the canvas's current slot count.
+ *
+ * @param obj The filament_path_canvas widget
+ * @param tools Array of extruder-derived tool numbers, -1 for unknown
+ * @param count Number of entries in the array
+ */
+void ui_filament_path_canvas_set_extruder_tools(lv_obj_t* obj, const int* tools, int count);
+
+/**
  * @brief Set whether a slot's lane routes through the hub (MIXED topology)
  *
  * In MIXED topology (e.g., Box Turtle + OpenAMS), some lanes go through the

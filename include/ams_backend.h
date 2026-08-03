@@ -1496,6 +1496,28 @@ class AmsBackend {
     }
 
     /**
+     * @brief Whether the UI may synthesise a prerequisite operation on the
+     *        user's behalf to make a requested action succeed.
+     *
+     * When false, the UI issues exactly ONE command per user action and lets
+     * the backend refuse if the machine is not in a state to accept it. When
+     * true, the UI may chain — e.g. unload the loaded slot first, then enable
+     * bypass once the unload completes.
+     *
+     * AFC and Happy Hare users have a console and expect the screen to pass
+     * their commands straight through; a bypass toggle that quietly ejects the
+     * filament in the toolhead is a command they never issued
+     * (prestonbrown/helixscreen#1229). OEM backends (CFS, ACE, AD5X IFS,
+     * Snapmaker, QIDI) have no console fallback, so the chaining is the only
+     * way their users can reach the desired state and it stays enabled.
+     *
+     * @return true if the UI may issue an implicit prerequisite command
+     */
+    [[nodiscard]] virtual bool allows_implicit_chaining() const {
+        return true;
+    }
+
+    /**
      * @brief Whether each slot has a physical tray/housing to draw in the AMS detail view.
      *
      * Selector/hub and box systems have a physical tray; tool changers give each

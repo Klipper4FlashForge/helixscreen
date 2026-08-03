@@ -88,8 +88,12 @@ struct SystemPathData {
     int current_tool = -1;                   // Virtual tool number (slot-based, for label)
     int tool_virtual_number[MAX_TOOLS] = {}; // Virtual tool labels per physical nozzle
     bool has_virtual_numbers = false;        // When false, raw physical index is used for labels
-    char tool_labels[MAX_TOOLS][8] = {};     // Pre-formatted "Tn" strings for deferred draw
-    char current_tool_label[8] = {};         // Pre-formatted label for single-nozzle mode
+    // Letter in front of every toolhead badge number. 'T' = AFC lane alias (the
+    // legacy default), 'E' = Klipper extruder identity. See #1229: the two
+    // numbering systems disagree, so the letter says which one is on screen.
+    char tool_label_prefix = 'T';
+    char tool_labels[MAX_TOOLS][8] = {}; // Pre-formatted "<P>n" strings for deferred draw
+    char current_tool_label[8] = {};     // Pre-formatted label for single-nozzle mode
 
     // Theme-derived colors (cached)
     lv_color_t color_idle;
@@ -1372,7 +1376,8 @@ void ui_system_path_canvas_set_total_tools(lv_obj_t* obj, int total_tools) {
     data->total_tools = clamped;
     if (!data->has_virtual_numbers) {
         for (int i = 0; i < data->total_tools; ++i) {
-            snprintf(data->tool_labels[i], sizeof(data->tool_labels[i]), "T%d", i);
+            snprintf(data->tool_labels[i], sizeof(data->tool_labels[i]), "%c%d",
+                     data->tool_label_prefix, i);
         }
     }
     lv_obj_invalidate(obj);
@@ -1392,9 +1397,28 @@ void ui_system_path_canvas_set_current_tool(lv_obj_t* obj, int tool_index) {
         return;
     data->current_tool = tool_index;
     if (tool_index >= 0) {
+        // Single-nozzle mode keeps the AFC lane alias on purpose, and so ignores
+        // tool_label_prefix. With one extruder the three numbering systems cannot
+        // disagree about *which* toolhead is meant (#1229), so the alias is the
+        // only informative number available — an extruder identity here would be
+        // a constant "E0". Multi-nozzle badges go through tool_labels[] instead.
         snprintf(data->current_tool_label, sizeof(data->current_tool_label), "T%d", tool_index);
     } else {
         data->current_tool_label[0] = '\0';
+    }
+    lv_obj_invalidate(obj);
+}
+
+void ui_system_path_canvas_set_tool_label_prefix(lv_obj_t* obj, char prefix) {
+    auto* data = get_data(obj);
+    if (!data || prefix == '\0' || data->tool_label_prefix == prefix)
+        return;
+    data->tool_label_prefix = prefix;
+    // Reformat in place: the numbers can be unchanged while the letter flips,
+    // and set_tool_virtual_numbers() short-circuits on unchanged numbers.
+    for (int i = 0; i < SystemPathData::MAX_TOOLS; ++i) {
+        const int n = data->has_virtual_numbers ? data->tool_virtual_number[i] : i;
+        snprintf(data->tool_labels[i], sizeof(data->tool_labels[i]), "%c%d", prefix, n);
     }
     lv_obj_invalidate(obj);
 }
@@ -1413,14 +1437,15 @@ void ui_system_path_canvas_set_tool_virtual_numbers(lv_obj_t* obj, const int* nu
     }
     if (!changed)
         return;
+    const char prefix = data->tool_label_prefix;
     for (int i = 0; i < n; ++i) {
         data->tool_virtual_number[i] = numbers[i];
-        snprintf(data->tool_labels[i], sizeof(data->tool_labels[i]), "T%d", numbers[i]);
+        snprintf(data->tool_labels[i], sizeof(data->tool_labels[i]), "%c%d", prefix, numbers[i]);
     }
     // Clear remaining entries
     for (int i = n; i < SystemPathData::MAX_TOOLS; ++i) {
         data->tool_virtual_number[i] = i;
-        snprintf(data->tool_labels[i], sizeof(data->tool_labels[i]), "T%d", i);
+        snprintf(data->tool_labels[i], sizeof(data->tool_labels[i]), "%c%d", prefix, i);
     }
     data->has_virtual_numbers = (n > 0);
     lv_obj_invalidate(obj);
