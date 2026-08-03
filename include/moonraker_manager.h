@@ -5,7 +5,9 @@
 
 #include "ui_observer_guard.h"
 
+#include "async_lifetime_guard.h"
 #include "json_fwd.h"
+#include "moonraker_events.h"
 #include "runtime_config.h"
 
 #include <atomic>
@@ -313,6 +315,12 @@ class MoonrakerManager {
     void register_callbacks();
     void create_api(const RuntimeConfig& runtime_config);
 
+    /// Present one Moonraker event. MAIN THREAD ONLY — the registered event
+    /// handler marshals here through lifetime_.bg_cb(), because everything this
+    /// touches (lv_tr, toasts, modals) is LVGL-facing while the handler itself
+    /// runs on whatever thread raised the event (#1219).
+    void present_event(const MoonrakerEvent& evt);
+
     // Owned resources
     std::unique_ptr<helix::MoonrakerClient> m_client;
     std::unique_ptr<MoonrakerAPI> m_api;
@@ -344,6 +352,12 @@ class MoonrakerManager {
 
     // Destruction flag for async callback safety [L012]
     std::shared_ptr<std::atomic<bool>> m_alive = std::make_shared<std::atomic<bool>>(true);
+
+    // Generation guard for callbacks that must run on the main thread. Used by
+    // the Moonraker event handler, whose body is LVGL-facing but is raised on the
+    // libhv event-loop thread (#1219). Invalidated in shutdown() alongside
+    // m_alive.
+    helix::AsyncLifetimeGuard lifetime_;
 
     // Startup time for suppressing initial notifications (Klipper ready toast)
     std::chrono::steady_clock::time_point m_startup_time;

@@ -26,6 +26,7 @@
 #include "macro_modification_manager.h"
 #include "moonraker_api.h"
 #include "moonraker_client.h"
+#include "moonraker_event_routing.h"
 #include "power_device_state.h"
 #include "sensor_state.h"
 #ifdef HELIX_ENABLE_MOCKS
@@ -108,6 +109,10 @@ void MoonrakerManager::shutdown() {
     // Signal to async callbacks that we're being destroyed [L012]
     // Must happen FIRST before any cleanup
     m_alive->store(false);
+    // Same signal for the generation-guarded event handler: any bg_cb already
+    // queued for the main thread sees the bumped generation and skips instead of
+    // running present_event() against a half-torn-down manager.
+    lifetime_.invalidate();
 
     if (!m_initialized) {
         return;
@@ -409,76 +414,93 @@ void MoonrakerManager::configure_timeouts(Config* config) {
                   connection_timeout, request_timeout, keepalive_interval);
 }
 
+void MoonrakerManager::present_event(const MoonrakerEvent& evt) {
+    // MAIN THREAD ONLY — reached through lifetime_.bg_cb() in register_callbacks().
+    // Every lv_tr() below depends on that.
+    const bool within_grace_period = (std::chrono::steady_clock::now() - m_startup_time) <
+                                     AppConstants::Startup::NOTIFICATION_GRACE_PERIOD;
+
+    const auto decision = helix::decide_moonraker_event(evt.type, evt.is_error, within_grace_period,
+                                                        is_wizard_active());
+
+    switch (decision.route) {
+    case helix::MoonrakerEventRoute::Ignore:
+        switch (decision.suppressed_because) {
+        case helix::MoonrakerEventSuppression::DiscoveryDeferred:
+            spdlog::info("[MoonrakerManager] Suppressing deferred discovery: {}", evt.message);
+            break;
+        case helix::MoonrakerEventSuppression::Wizard:
+            spdlog::debug("[MoonrakerManager] Suppressing '{}' toast during wizard", evt.message);
+            break;
+        case helix::MoonrakerEventSuppression::StartupGrace:
+            spdlog::info("[MoonrakerManager] Suppressing startup Klipper ready notification");
+            break;
+        case helix::MoonrakerEventSuppression::None:
+            break;
+        }
+        return;
+
+    case helix::MoonrakerEventRoute::RecoveryDisconnected:
+        // Unified recovery dialog (same dialog as SHUTDOWN state).
+        EmergencyStopOverlay::instance().show_recovery_for(RecoveryReason::DISCONNECTED);
+        return;
+
+    case helix::MoonrakerEventRoute::RecoveryShutdown:
+        EmergencyStopOverlay::instance().show_recovery_for(RecoveryReason::SHUTDOWN);
+        return;
+
+    case helix::MoonrakerEventRoute::ConnectionFailedModal: {
+        // Not NOTIFY_ERROR_MODAL: that builds an OK-only alert, and OK on an
+        // unreachable-address error returns the user to the same dead end. This
+        // prompt carries a "Change Address" action straight to the host setting.
+        const char* title = lv_tr(decision.title_tag);
+        spdlog::error("[CRITICAL] {}: {}", title, evt.message);
+        helix::ui::show_connection_failed_modal(title, evt.message);
+        return;
+    }
+
+    case helix::MoonrakerEventRoute::ErrorToast: {
+        const char* title = lv_tr(decision.title_tag);
+        NOTIFY_ERROR_T(title, "{}", evt.message);
+        return;
+    }
+
+    case helix::MoonrakerEventRoute::WarningToast:
+        NOTIFY_WARNING("{}", evt.message);
+        return;
+    }
+}
+
 void MoonrakerManager::register_callbacks() {
     if (!m_client) {
         return;
     }
 
-    // Register event handler for UI notifications
-    m_client->register_event_handler([this](const MoonrakerEvent& evt) {
-        const char* title = lv_tr("Printer Error"); // Default title (never nullptr!)
-        if (evt.type == MoonrakerEventType::CONNECTION_FAILED) {
-            title = lv_tr("Connection Failed");
-        } else if (evt.type == MoonrakerEventType::KLIPPY_DISCONNECTED) {
-            // Route through unified recovery dialog (same dialog as SHUTDOWN state).
-            // Suppression checks and the hop to the main thread both happen inside
-            // show_recovery_for() — we are on the libhv event-loop thread here.
-            EmergencyStopOverlay::instance().show_recovery_for(RecoveryReason::DISCONNECTED);
-            return;
-        } else if (evt.type == MoonrakerEventType::KLIPPY_SHUTDOWN) {
-            // Route through unified recovery dialog with actual error message
-            EmergencyStopOverlay::instance().show_recovery_for(RecoveryReason::SHUTDOWN);
-            return;
-        } else if (evt.type == MoonrakerEventType::RPC_ERROR) {
-            title = lv_tr("Request Failed");
-        }
-
-        // Suppress expected transient events during startup grace period
-        auto now = std::chrono::steady_clock::now();
-        bool within_grace_period =
-            (now - m_startup_time) < AppConstants::Startup::NOTIFICATION_GRACE_PERIOD;
-
-        if (evt.is_error) {
-            // Deferred discovery = Klippy not yet in a gate-acceptable state.
-            // Always transient: notify_klippy_ready/shutdown will retry. The
-            // UI surfaces connection state through PrinterStatusIcon, so the
-            // toast is redundant noise. Log only.
-            if (evt.type == MoonrakerEventType::DISCOVERY_DEFERRED) {
-                spdlog::info("[MoonrakerManager] Suppressing deferred discovery: {}", evt.message);
-                return;
-            }
-
-            bool is_critical = (evt.type == MoonrakerEventType::CONNECTION_FAILED);
-            if (is_critical) {
-                // Not NOTIFY_ERROR_MODAL: that builds an OK-only alert, and OK on
-                // an unreachable-address error returns the user to the same dead
-                // end. This prompt carries a "Change Address" action straight to
-                // the host setting. It marshals to the main thread itself, which
-                // matters because we are on the libhv event-loop thread here.
-                spdlog::error("[CRITICAL] {}: {}", title, evt.message);
-                helix::ui::show_connection_failed_modal(title, evt.message);
-            } else {
-                NOTIFY_ERROR_T(title, "{}", evt.message);
-            }
-        } else {
-            // Suppress non-error toasts during wizard (first connection, not a "reconnection")
-            if (is_wizard_active()) {
-                spdlog::debug("[MoonrakerManager] Suppressing '{}' toast during wizard",
-                              evt.message);
-                return;
-            }
-
-            // Suppress "Klipper ready" toast during startup (expected at boot)
-            if (evt.type == MoonrakerEventType::KLIPPY_READY && within_grace_period) {
-                spdlog::info("[MoonrakerManager] Suppressing startup Klipper ready notification");
-                return;
-            }
-            NOTIFY_WARNING("{}", evt.message);
-        }
-    });
-
     // Capture alive flag for destruction detection [L012]
     auto alive = m_alive;
+
+    // Register event handler for UI notifications.
+    //
+    // This fires on whatever thread raised the event: MoonrakerClient::emit_event()
+    // invokes it synchronously from on_ws_close, the health-check timer, and
+    // set_connection_state — i.e. the libhv event-loop thread. Everything the
+    // handler goes on to do is LVGL-facing (translation lookup, toasts, modals),
+    // so the entire body is marshalled to the main thread in ONE hop here rather
+    // than each sink marshalling itself. Doing it per-sink is what left lv_tr()
+    // running off-thread: lv_translation_get() reads the file-scope selected_lang
+    // that lv_translation_set_language() frees and replaces, so a language change
+    // overlapping an error event was a read of freed memory (#1219).
+    // bg_cb() defers the WHOLE call to the main thread behind a generation guard,
+    // which is what makes present_event()'s lv_tr() safe. It also decays the
+    // MoonrakerEvent& into a value, so the body never sees a reference that died
+    // with the raising thread's stack frame.
+    //
+    // The startup grace period is therefore evaluated one tick later than it used
+    // to be. NOTIFICATION_GRACE_PERIOD is 10 s and a tick is <= ~33 ms, so the
+    // only events this can reclassify are ones landing within a frame of the
+    // boundary, where either answer is equally correct.
+    m_client->register_event_handler(lifetime_.bg_cb(
+        "MoonrakerManager::event", [this](const MoonrakerEvent& evt) { present_event(evt); }));
 
     // Set up state change callback to queue updates for main thread
     // CRITICAL: This runs on Moonraker thread, NOT main thread

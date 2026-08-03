@@ -1,0 +1,49 @@
+// Copyright (C) 2025-2026 356C LLC
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#include "moonraker_event_routing.h"
+
+namespace helix {
+
+MoonrakerEventDecision decide_moonraker_event(MoonrakerEventType type, bool is_error,
+                                              bool within_grace_period, bool wizard_active) {
+    // Recovery-dialog events are routed regardless of is_error, the grace
+    // period, or the wizard — a disconnected or shut-down Klippy is not a toast
+    // that can be suppressed as startup noise.
+    if (type == MoonrakerEventType::KLIPPY_DISCONNECTED) {
+        return {MoonrakerEventRoute::RecoveryDisconnected, nullptr,
+                MoonrakerEventSuppression::None};
+    }
+    if (type == MoonrakerEventType::KLIPPY_SHUTDOWN) {
+        return {MoonrakerEventRoute::RecoveryShutdown, nullptr, MoonrakerEventSuppression::None};
+    }
+
+    if (is_error) {
+        // Deferred discovery = Klippy not yet in a gate-acceptable state. Always
+        // transient: notify_klippy_ready/shutdown will retry, and the UI already
+        // surfaces connection state through PrinterStatusIcon.
+        if (type == MoonrakerEventType::DISCOVERY_DEFERRED) {
+            return {MoonrakerEventRoute::Ignore, nullptr,
+                    MoonrakerEventSuppression::DiscoveryDeferred};
+        }
+        if (type == MoonrakerEventType::CONNECTION_FAILED) {
+            return {MoonrakerEventRoute::ConnectionFailedModal, "Connection Failed",
+                    MoonrakerEventSuppression::None};
+        }
+        return {MoonrakerEventRoute::ErrorToast,
+                type == MoonrakerEventType::RPC_ERROR ? "Request Failed" : "Printer Error",
+                MoonrakerEventSuppression::None};
+    }
+
+    // Non-error: the wizard owns the screen during first connection, so a
+    // "reconnected" toast there is wrong, not merely noisy.
+    if (wizard_active) {
+        return {MoonrakerEventRoute::Ignore, nullptr, MoonrakerEventSuppression::Wizard};
+    }
+    if (type == MoonrakerEventType::KLIPPY_READY && within_grace_period) {
+        return {MoonrakerEventRoute::Ignore, nullptr, MoonrakerEventSuppression::StartupGrace};
+    }
+    return {MoonrakerEventRoute::WarningToast, nullptr, MoonrakerEventSuppression::None};
+}
+
+} // namespace helix
