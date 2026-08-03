@@ -1423,8 +1423,20 @@ WiFiError WifiBackendWpaSupplicant::set_radio_enabled(bool on) {
 
     if (on) {
         // Unblock first: ENABLE_NETWORK on a soft-blocked radio associates with
-        // nothing and the user sees a toggle that flips back.
-        set_rfkill_soft_block(false);
+        // nothing and the user sees a toggle that flips back. When a real
+        // rfkill node exists but the unblock write fails, do NOT report
+        // success — that would let the UI claim "on" over a radio that still
+        // can't associate, exactly the bug this backend exists to fix. When
+        // there is no rfkill node at all, this is an intentional quiet
+        // degrade (association-only on/off) — leave that path alone.
+        const auto iface = resolved_interface();
+        const bool has_rfkill_node = iface && !iface->rfkill_node.empty();
+        if (has_rfkill_node && !set_rfkill_soft_block(false)) {
+            LOG_WARN_INTERNAL("Failed to clear rfkill soft-block on {}", iface->rfkill_node);
+            return WiFiError(WiFiResult::RF_KILL_BLOCKED,
+                             "Failed to clear rfkill soft-block on " + iface->rfkill_node,
+                             "Could not turn WiFi radio on");
+        }
         const std::string enabled = send_command("ENABLE_NETWORK all");
         if (enabled.compare(0, 2, "OK") != 0)
             LOG_WARN_INTERNAL("ENABLE_NETWORK all returned: {}", enabled);
@@ -1464,6 +1476,12 @@ bool WifiBackendWpaSupplicant::set_rfkill_soft_block(bool blocked) {
         return false;
     }
     f << (blocked ? "1" : "0");
+    // operator<< only formats into the stream's userspace buffer — it does
+    // not by itself trigger the write(2) into the sysfs node. Force that now
+    // and check the state AFTER the flush, or a real write failure (denied
+    // permission, driver quirk) reads as success because formatting always
+    // succeeds.
+    f.flush();
     if (!f.good()) {
         spdlog::debug("[WifiBackend] Write to {} failed", path);
         return false;
