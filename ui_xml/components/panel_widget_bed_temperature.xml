@@ -11,8 +11,7 @@
                focusable="false">
       <bind_state_if_not_eq subject="printer_connection_state" state="disabled" ref_value="2"/>
       <event_cb trigger="clicked" callback="bed_temp_clicked_cb"/>
-      <icon name="bed_icon_glyph" src="radiator" size="#icon_size" variant="secondary"
-            clickable="false" event_bubble="true"/>
+      <heater_icon src="radiator" glyph_name="bed_icon_glyph" size="#icon_size"/>
       <temp_display name="bed_temp_text_label"
                     size="sm" show_target="false" bind_current="bed_temp"
                     bind_target="bed_target" align="center"/>

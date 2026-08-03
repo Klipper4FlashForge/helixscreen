@@ -11,8 +11,7 @@
                focusable="false">
       <bind_state_if_not_eq subject="printer_connection_state" state="disabled" ref_value="2"/>
       <event_cb trigger="clicked" callback="chamber_temp_clicked_cb"/>
-      <icon name="chamber_icon_glyph" src="fridge_industrial" size="#icon_size" variant="secondary"
-            clickable="false" event_bubble="true"/>
+      <heater_icon src="fridge_industrial" glyph_name="chamber_icon_glyph" size="#icon_size"/>
       <temp_display name="chamber_temp_text_label"
                     size="sm" show_target="false" bind_current="chamber_temp"
                     bind_target="chamber_effective_target" bind_mode="chamber_mode" align="center"/>

@@ -186,8 +186,7 @@
                       style_flex_cross_place="center" clickable="false" event_bubble="true">
                 <bind_style_if_eq name="temp_row_gap_tiny" subject="ui_breakpoint" ref_value="1"/>
                 <bind_style_if_ge name="temp_row_gap_standard" subject="ui_breakpoint" ref_value="2"/>
-                <icon name="bed_heater_icon"
-                      src="radiator" size="xs" variant="secondary" clickable="false" event_bubble="true"/>
+                <heater_icon src="radiator" glyph_name="bed_icon_glyph" size="xs"/>
                 <text_small text="Bed" translation_tag="Bed">
                   <bind_flag_if_eq subject="ui_breakpoint" flag="hidden" ref_value="1"/>
                 </text_small>
@@ -220,7 +219,7 @@
                       style_flex_cross_place="center" clickable="false" event_bubble="true">
                 <bind_style_if_eq name="temp_row_gap_tiny" subject="ui_breakpoint" ref_value="1"/>
                 <bind_style_if_ge name="temp_row_gap_standard" subject="ui_breakpoint" ref_value="2"/>
-                <icon src="fridge_industrial" size="xs" variant="secondary" clickable="false" event_bubble="true"/>
+                <heater_icon src="fridge_industrial" glyph_name="chamber_icon_glyph" size="xs"/>
                 <text_small text="Chamb:" translation_tag="Chamb:" clickable="false" event_bubble="true">
                   <bind_flag_if_eq subject="ui_breakpoint" flag="hidden" ref_value="1"/>
                 </text_small>

@@ -365,6 +365,7 @@ void register_xml_components() {
     register_xml("filament_sensor_row.xml");
     register_xml("temp_display.xml");
     register_xml("components/nozzle_icon.xml");
+    register_xml("components/heater_icon.xml");
     // Shared progress arc widget — diameter-driven stroke thickness, see
     // include/ui_progress_arc.h for the C++ companion (attach_progress_arc).
     register_xml("components/helix_progress_arc.xml");
