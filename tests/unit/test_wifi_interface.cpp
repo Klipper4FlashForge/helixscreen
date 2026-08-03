@@ -3,6 +3,7 @@
 
 #include "wifi_interface.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <sys/stat.h>
@@ -198,4 +199,136 @@ TEST_CASE("find_rfkill_node returns empty when the driver exposes none", "[wifi]
     FakeRoot fr;
     fr.mkdirs("sys/class/net/wlan0/wireless");
     CHECK(helix::wifi::detail::find_rfkill_node(fr.base + "/sys", "wlan0").empty());
+}
+
+TEST_CASE("list_wpa_daemons returns all running daemons with correct data", "[wifi][interface]") {
+    // Test that list_wpa_daemons walks the entire /proc tree and returns ALL
+    // wpa_supplicant processes, not just the first one. This is the key
+    // regression case: the old code would return on first match.
+    FakeRoot fr;
+    fr.mkdirs("proc");
+
+    // First daemon: wlan0, with separate -i and -c arguments
+    fr.write_cmdline(100, {"/usr/sbin/wpa_supplicant", "-i", "wlan0", "-c", "/data/station.conf"});
+
+    // Second daemon: wlan1, with separate -i and -c arguments
+    fr.write_cmdline(200, {"/usr/sbin/wpa_supplicant", "-i", "wlan1", "-c", "/etc/ap-mode.conf"});
+
+    const auto daemons = helix::wifi::detail::list_wpa_daemons(fr.base + "/proc");
+
+    // Should find exactly two daemons
+    REQUIRE(daemons.size() == 2);
+
+    // Search for the wlan0 daemon (order not guaranteed from /proc walk)
+    auto it0 = std::find_if(daemons.begin(), daemons.end(),
+                            [](const auto& d) { return d.iface == "wlan0"; });
+    REQUIRE(it0 != daemons.end());
+    CHECK(it0->pid == 100);
+    CHECK(it0->conf_path == "/data/station.conf");
+
+    // Search for the wlan1 daemon
+    auto it1 = std::find_if(daemons.begin(), daemons.end(),
+                            [](const auto& d) { return d.iface == "wlan1"; });
+    REQUIRE(it1 != daemons.end());
+    CHECK(it1->pid == 200);
+    CHECK(it1->conf_path == "/etc/ap-mode.conf");
+}
+
+TEST_CASE("list_wpa_daemons excludes non-wpa_supplicant processes", "[wifi][interface]") {
+    // Non-wpa_supplicant processes (like /usr/bin/klipper) should be filtered out
+    FakeRoot fr;
+    fr.mkdirs("proc");
+
+    // Valid wpa_supplicant daemon
+    fr.write_cmdline(100, {"/usr/sbin/wpa_supplicant", "-i", "wlan0", "-c", "/data/wpa.conf"});
+
+    // Decoy klipper process (should be excluded)
+    fr.write_cmdline(150, {"/usr/bin/klipper"});
+
+    // Another decoy process (should be excluded)
+    fr.write_cmdline(160, {"/sbin/sh", "-c", "sleep 1000"});
+
+    const auto daemons = helix::wifi::detail::list_wpa_daemons(fr.base + "/proc");
+
+    // Should find only the wpa_supplicant, not the klipper or shell
+    REQUIRE(daemons.size() == 1);
+    CHECK(daemons[0].pid == 100);
+    CHECK(daemons[0].iface == "wlan0");
+}
+
+TEST_CASE("list_wpa_daemons handles both separate and joined argument forms", "[wifi][interface]") {
+    // Both "-i wlan0" and "-iwlan0" (joined) forms should be parsed correctly
+    FakeRoot fr;
+    fr.mkdirs("proc");
+
+    // Separate form: -i wlan0
+    fr.write_cmdline(100, {"/usr/sbin/wpa_supplicant", "-i", "wlan0", "-c", "/data/conf1.conf"});
+
+    // Joined form: -iwlan1
+    fr.write_cmdline(200, {"/usr/sbin/wpa_supplicant", "-iwlan1", "-c/data/conf2.conf"});
+
+    const auto daemons = helix::wifi::detail::list_wpa_daemons(fr.base + "/proc");
+
+    REQUIRE(daemons.size() == 2);
+
+    auto it0 = std::find_if(daemons.begin(), daemons.end(),
+                            [](const auto& d) { return d.iface == "wlan0"; });
+    REQUIRE(it0 != daemons.end());
+    CHECK(it0->conf_path == "/data/conf1.conf");
+
+    auto it1 = std::find_if(daemons.begin(), daemons.end(),
+                            [](const auto& d) { return d.iface == "wlan1"; });
+    REQUIRE(it1 != daemons.end());
+    CHECK(it1->conf_path == "/data/conf2.conf");
+}
+
+TEST_CASE("list_wpa_daemons handles missing interface argument", "[wifi][interface]") {
+    // A daemon launched without -i should be captured with empty iface
+    FakeRoot fr;
+    fr.mkdirs("proc");
+
+    fr.write_cmdline(100, {"/usr/sbin/wpa_supplicant", "-c", "/etc/wpa.conf"});
+
+    const auto daemons = helix::wifi::detail::list_wpa_daemons(fr.base + "/proc");
+
+    REQUIRE(daemons.size() == 1);
+    CHECK(daemons[0].pid == 100);
+    CHECK(daemons[0].iface.empty());
+    CHECK(daemons[0].conf_path == "/etc/wpa.conf");
+}
+
+TEST_CASE("list_wpa_daemons handles missing config path argument", "[wifi][interface]") {
+    // A daemon launched with -i but without -c should be captured with empty conf_path
+    FakeRoot fr;
+    fr.mkdirs("proc");
+
+    fr.write_cmdline(100, {"/usr/sbin/wpa_supplicant", "-i", "wlan0", "-C", "/run/wpa_supplicant"});
+
+    const auto daemons = helix::wifi::detail::list_wpa_daemons(fr.base + "/proc");
+
+    REQUIRE(daemons.size() == 1);
+    CHECK(daemons[0].pid == 100);
+    CHECK(daemons[0].iface == "wlan0");
+    CHECK(daemons[0].conf_path.empty());
+}
+
+TEST_CASE("list_wpa_daemons returns empty vector for missing proc root", "[wifi][interface]") {
+    // When proc_root doesn't exist or is unreadable, return empty vector (not error)
+    const auto daemons = helix::wifi::detail::list_wpa_daemons("/nonexistent/proc");
+    CHECK(daemons.empty());
+}
+
+TEST_CASE("list_wpa_daemons returns empty vector for empty proc root", "[wifi][interface]") {
+    // When proc_root is an empty string, return empty vector
+    const auto daemons = helix::wifi::detail::list_wpa_daemons("");
+    CHECK(daemons.empty());
+}
+
+TEST_CASE("list_wpa_daemons handles empty proc directory", "[wifi][interface]") {
+    // When /proc exists but has no wpa_supplicant processes, return empty vector
+    FakeRoot fr;
+    fr.mkdirs("proc");
+
+    const auto daemons = helix::wifi::detail::list_wpa_daemons(fr.base + "/proc");
+    CHECK(daemons.empty());
 }
