@@ -23,6 +23,8 @@
  * reproduce a slot-numbering defect.
  */
 
+#include "ui_bypass_spool_widget.h"
+
 #include "ams_backend_afc.h"
 #include "ams_types.h"
 
@@ -407,6 +409,64 @@ TEST_CASE("AFC toolchanger: bypass reads inactive when the firmware says so",
 // ============================================================================
 // A lane whose routing is not yet known must not be treated as direct-routed
 // ============================================================================
+
+TEST_CASE("Bypass node visibility rule", "[ams][afc][1229][toolchanger][bypass]") {
+    using helix::ui::bypass_node_visible;
+
+    SECTION("no bypass support means no node, whatever else is true") {
+        CHECK_FALSE(bypass_node_visible(false, true, true, true));
+        CHECK_FALSE(bypass_node_visible(false, false, false, false));
+    }
+
+    SECTION("AFC hides the node while bypass is disengaged") {
+        // The #1229 case: AFC publishes a virtual bypass whether or not one is
+        // wired, so an always-visible node advertised hardware the machine does
+        // not have — and got painted with the loaded lane's filament.
+        CHECK_FALSE(bypass_node_visible(true, /*active=*/false, /*is_afc=*/true,
+                                        /*always_show=*/false));
+    }
+
+    SECTION("the opt-in setting brings it back") {
+        CHECK(bypass_node_visible(true, /*active=*/false, /*is_afc=*/true, /*always_show=*/true));
+    }
+
+    SECTION("an engaged bypass is always shown, setting or not") {
+        CHECK(bypass_node_visible(true, /*active=*/true, /*is_afc=*/true, /*always_show=*/false));
+        CHECK(bypass_node_visible(true, /*active=*/true, /*is_afc=*/true, /*always_show=*/true));
+    }
+
+    SECTION("non-AFC backends are unaffected — their bypass is a real position") {
+        CHECK(bypass_node_visible(true, /*active=*/false, /*is_afc=*/false, /*always_show=*/false));
+    }
+}
+
+TEST_CASE("AFC toolchanger: the captured machine hides its bypass node",
+          "[ams][afc][1229][toolchanger][bypass]") {
+    auto fixture = load_fixture("afc_toolchanger_multiunit.json");
+    AfcToolchangerHelper afc;
+    afc.discover(fixture["object_list"]);
+    afc.feed_until_settled(fixture["status"]);
+
+    // Bypass is off in the capture, and the backend still advertises support
+    // because AFC's virtual_bypass sensor exists. That combination is exactly
+    // what put a green "ASA / Bypass" spool on the reporter's screen.
+    REQUIRE_FALSE(afc.is_bypass_active());
+    REQUIRE(afc.get_system_info().supports_bypass);
+    REQUIRE(afc.is_afc_system());
+
+    INFO("the bypass node was drawn on a machine with bypass disengaged");
+    CHECK_FALSE(helix::ui::bypass_node_visible_for(&afc));
+
+    // Engaging bypass brings it back with no setting change.
+    nlohmann::json engaged = fixture["status"];
+    engaged["AFC"]["bypass_state"] = true;
+    afc.feed(engaged);
+    REQUIRE(afc.is_bypass_active());
+    CHECK(helix::ui::bypass_node_visible_for(&afc));
+
+    // No backend attached: nothing to draw.
+    CHECK_FALSE(helix::ui::bypass_node_visible_for(nullptr));
+}
 
 TEST_CASE("AFC toolchanger: a lane with unknown routing does not split its unit",
           "[ams][afc][1229][toolchanger][topology]") {

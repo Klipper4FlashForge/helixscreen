@@ -136,6 +136,8 @@ void AmsDeviceOperationsOverlay::register_callbacks() {
     lv_xml_register_event_cb(nullptr, "on_ams_device_ops_bypass_toggled", on_bypass_toggled);
     lv_xml_register_event_cb(nullptr, "on_ams_afc_unload_after_print_toggled",
                              on_afc_unload_after_print_toggled);
+    lv_xml_register_event_cb(nullptr, "on_ams_always_show_bypass_spool_toggled",
+                             on_always_show_bypass_spool_toggled);
     lv_xml_register_event_cb(nullptr, "on_ams_qidi_eject_distance_changed",
                              on_qidi_eject_distance_changed);
     lv_xml_register_event_cb(nullptr, "on_ams_qidi_eject_velocity_changed",
@@ -570,6 +572,22 @@ void AmsDeviceOperationsOverlay::on_afc_unload_after_print_toggled(lv_event_t* e
         spdlog::info("[AmsDeviceOperationsOverlay] AFC unload-after-print toggle: {}",
                      is_checked ? "enabled" : "disabled");
         SettingsManager::instance().set_afc_unload_after_print(is_checked);
+    }
+
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+void AmsDeviceOperationsOverlay::on_always_show_bypass_spool_toggled(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[AmsDeviceOperationsOverlay] on_always_show_bypass_spool_toggled");
+
+    auto* toggle = static_cast<lv_obj_t*>(lv_event_get_target(e));
+    if (!toggle || !lv_obj_is_valid(toggle)) {
+        spdlog::warn("[AmsDeviceOperationsOverlay] Stale callback - toggle no longer valid");
+    } else {
+        bool is_checked = lv_obj_has_state(toggle, LV_STATE_CHECKED);
+        spdlog::info("[AmsDeviceOperationsOverlay] Always-show-bypass-spool toggle: {}",
+                     is_checked ? "enabled" : "disabled");
+        SettingsManager::instance().set_ams_always_show_bypass_spool(is_checked);
     }
 
     LVGL_SAFE_EVENT_CB_END();

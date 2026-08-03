@@ -4,6 +4,7 @@
 #include "ui_ams_detail.h"
 
 #include "ui_ams_slot.h"
+#include "ui_bypass_spool_widget.h"
 #include "ui_effects.h"
 #include "ui_filament_path_canvas.h"
 #include "ui_utils.h"
@@ -469,8 +470,10 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
     // Hub-only mode: only draw slots -> hub, skip downstream
     ui_filament_path_canvas_set_hub_only(canvas, hub_only);
 
-    // Hide bypass path for backends that don't support it (e.g. tool changers)
-    ui_filament_path_canvas_set_show_bypass(canvas, info.supports_bypass);
+    // Hide the bypass path for backends that don't support it (e.g. tool
+    // changers) — and on AFC while bypass is disengaged, since AFC reports a
+    // virtual bypass whether or not one is wired (#1229).
+    ui_filament_path_canvas_set_show_bypass(canvas, helix::ui::bypass_node_visible_for(backend));
 
     // Determine slot count and offset for this unit
     int slot_count = info.total_slots;
@@ -625,10 +628,15 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
         ui_filament_path_canvas_set_buffer_bias(canvas, -2.0f); // discrete mode
     }
 
-    // Set external spool color and assignment state
+    // Set external spool color and assignment state. Only while bypass is
+    // actually engaged: an assigned external spool is not in the filament path
+    // until it is selected, and drawing it anyway put a loaded lane's material
+    // on the bypass node (#1229 defect 5).
     auto ext_spool = AmsState::instance().get_external_spool_info();
-    ui_filament_path_canvas_set_bypass_has_spool(canvas, ext_spool.has_value());
-    if (ext_spool.has_value()) {
+    const bool show_bypass_spool =
+        ext_spool.has_value() && helix::ui::bypass_node_visible_for(backend);
+    ui_filament_path_canvas_set_bypass_has_spool(canvas, show_bypass_spool);
+    if (show_bypass_spool) {
         ui_filament_path_canvas_set_bypass_color(canvas, ext_spool->color_rgb);
     }
 

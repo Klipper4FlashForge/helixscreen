@@ -343,7 +343,9 @@ void AmsPanel::init_subjects() {
             if (self->path_canvas_) {
                 // Use full spool info check (not just color != 0) to handle black spools correctly
                 auto ext_spool = AmsState::instance().get_external_spool_info();
-                bool has_spool = ext_spool.has_value();
+                // …and only while the bypass node is on the path at all (#1229).
+                bool has_spool = ext_spool.has_value() && helix::ui::bypass_node_visible_for(
+                                                              AmsState::instance().get_backend());
                 ui_filament_path_canvas_set_bypass_has_spool(self->path_canvas_, has_spool);
                 if (has_spool) {
                     ui_filament_path_canvas_set_bypass_color(
@@ -918,6 +920,13 @@ void AmsPanel::update_bypass_spool_position() {
 
 void AmsPanel::update_bypass_spool_from_state() {
     if (!bypass_widgets_.valid()) {
+        return;
+    }
+
+    // On AFC the node is removed entirely while bypass is disengaged (#1229).
+    const bool show_bypass = helix::ui::bypass_node_visible_for(AmsState::instance().get_backend());
+    helix::ui::bypass_spool_set_visible(bypass_widgets_, show_bypass);
+    if (!show_bypass) {
         return;
     }
 

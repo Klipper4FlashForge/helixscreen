@@ -317,6 +317,25 @@ class SettingsManager {
         return &afc_unload_after_print_subject_;
     }
 
+    /**
+     * @brief Whether to show the bypass spool even when bypass is disengaged.
+     *
+     * AFC publishes a virtual bypass whether or not the user has one wired, so
+     * the bypass node was drawn permanently — and painted with whatever the
+     * external spool slot held, which read as "a spool is on bypass" on machines
+     * that have no bypass at all (#1229). The node is now hidden on AFC while
+     * bypass is off; enable this to keep it visible anyway. Default false.
+     */
+    bool get_ams_always_show_bypass_spool() const;
+
+    /** @brief Set whether the bypass spool stays visible with bypass disengaged */
+    void set_ams_always_show_bypass_spool(bool enabled);
+
+    /** @brief Always-show-bypass-spool subject (integer: 0=off, 1=on) */
+    lv_subject_t* subject_ams_always_show_bypass_spool() {
+        return &ams_always_show_bypass_spool_subject_;
+    }
+
     // =========================================================================
     // POST-OP COOLDOWN (owned by SettingsManager — per-printer filament behavior)
     // =========================================================================
@@ -501,6 +520,7 @@ class SettingsManager {
     lv_subject_t show_widget_labels_subject_;
     lv_subject_t auto_color_map_subject_;
     lv_subject_t afc_unload_after_print_subject_;
+    lv_subject_t ams_always_show_bypass_spool_subject_;
     lv_subject_t filament_auto_cooldown_subject_;
     lv_subject_t console_filter_temps_subject_;
     lv_subject_t console_filter_firmware_noise_subject_;

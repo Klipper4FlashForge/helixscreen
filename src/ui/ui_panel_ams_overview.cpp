@@ -528,17 +528,25 @@ void AmsOverviewPanel::refresh_system_path(const AmsSystemInfo& info, int curren
     if (ext_spool) {
         bypass_color = ext_spool->color_rgb;
     }
-    ui_system_path_canvas_set_bypass(system_path_, info.supports_bypass, bypass_active,
-                                     bypass_color);
+    ui_system_path_canvas_set_bypass(
+        system_path_, helix::ui::bypass_node_visible_for(AmsState::instance().get_backend()),
+        bypass_active, bypass_color);
 
-    // Drive the shared BypassSpoolWidgets overlay from current state.
+    // Drive the shared BypassSpoolWidgets overlay from current state. On AFC the
+    // whole node disappears while bypass is disengaged — AFC reports a virtual
+    // bypass whether or not one exists, so leaving it on the path advertised a
+    // bypass the machine does not have (#1229).
+    const bool show_bypass = helix::ui::bypass_node_visible_for(AmsState::instance().get_backend());
     if (bypass_widgets_.valid()) {
-        bypass_spool_set_has_spool(bypass_widgets_, ext_spool.has_value());
-        bypass_spool_set_color(bypass_widgets_, bypass_color);
-        bypass_spool_set_material(bypass_widgets_, (ext_spool && !ext_spool->material.empty())
-                                                       ? ext_spool->material.c_str()
-                                                       : "");
-        update_bypass_widgets_position();
+        helix::ui::bypass_spool_set_visible(bypass_widgets_, show_bypass);
+        if (show_bypass) {
+            bypass_spool_set_has_spool(bypass_widgets_, ext_spool.has_value());
+            bypass_spool_set_color(bypass_widgets_, bypass_color);
+            bypass_spool_set_material(bypass_widgets_, (ext_spool && !ext_spool->material.empty())
+                                                           ? ext_spool->material.c_str()
+                                                           : "");
+            update_bypass_widgets_position();
+        }
     }
 
     // Compute physical tool layout (handles HUB units with unique per-lane mapped_tools)
@@ -1304,21 +1312,27 @@ void AmsOverviewPanel::refresh_bypass_display() {
             AmsSystemInfo info = backend->get_system_info();
             int current_slot = lv_subject_get_int(AmsState::instance().get_current_slot_subject());
             bool bypass_active = info.supports_bypass && (current_slot == -2);
-            ui_system_path_canvas_set_bypass(system_path_, info.supports_bypass, bypass_active,
-                                             ext_spool->color_rgb);
+            ui_system_path_canvas_set_bypass(system_path_,
+                                             helix::ui::bypass_node_visible_for(backend),
+                                             bypass_active, ext_spool->color_rgb);
         }
     }
 
+    // Same rule as the refresh path above (#1229).
+    const bool show_bypass2 =
+        helix::ui::bypass_node_visible_for(AmsState::instance().get_backend());
     if (bypass_widgets_.valid()) {
-        bypass_spool_set_has_spool(bypass_widgets_, ext_spool.has_value());
-        if (ext_spool) {
+        helix::ui::bypass_spool_set_visible(bypass_widgets_, show_bypass2);
+        bypass_spool_set_has_spool(bypass_widgets_, show_bypass2 && ext_spool.has_value());
+        if (show_bypass2 && ext_spool) {
             bypass_spool_set_color(bypass_widgets_, ext_spool->color_rgb);
         } else {
             bypass_spool_set_color(bypass_widgets_, 0x888888);
         }
-        bypass_spool_set_material(bypass_widgets_, (ext_spool && !ext_spool->material.empty())
-                                                       ? ext_spool->material.c_str()
-                                                       : "");
+        bypass_spool_set_material(bypass_widgets_,
+                                  (show_bypass2 && ext_spool && !ext_spool->material.empty())
+                                      ? ext_spool->material.c_str()
+                                      : "");
         update_bypass_widgets_position();
     }
 

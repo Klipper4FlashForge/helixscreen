@@ -139,6 +139,7 @@ class AmsDeviceOperationsOverlay : public OverlayBase {
 
     /// Callback for the AFC unload-after-print toggle (AFC backends only)
     static void on_afc_unload_after_print_toggled(lv_event_t* e);
+    static void on_always_show_bypass_spool_toggled(lv_event_t* e);
 
     /// Callback for the QIDI eject distance slider (QIDI Box backends only)
     static void on_qidi_eject_distance_changed(lv_event_t* e);

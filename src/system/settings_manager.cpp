@@ -166,6 +166,17 @@ void SettingsManager::init_subjects() {
     UI_MANAGED_SUBJECT_INT(afc_unload_after_print_subject_, afc_unload_after_print ? 1 : 0,
                            "afc_unload_after_print", subjects_);
 
+    // Always show the bypass spool on the Multi-Filament panel, even with bypass
+    // disengaged (default: off). AFC exposes a virtual bypass whether or not the
+    // user has one wired, so the node was drawn permanently — and painted with
+    // the loaded lane's filament, which read as "there is a spool on bypass" on
+    // machines that have none (#1229). Per-printer setting.
+    bool ams_always_show_bypass_spool =
+        config->get<bool>(config->df() + "ams/always_show_bypass_spool", false);
+    UI_MANAGED_SUBJECT_INT(ams_always_show_bypass_spool_subject_,
+                           ams_always_show_bypass_spool ? 1 : 0, "ams_always_show_bypass_spool",
+                           subjects_);
+
     // Post-filament-operation nozzle cooldown (default: on). Filament systems that
     // run their own cooldown (AFC) want ours out of the way. Per-printer setting.
     bool filament_auto_cooldown = config->get<bool>(config->df() + "filament/auto_cooldown", true);
@@ -514,6 +525,19 @@ void SettingsManager::set_afc_unload_after_print(bool enabled) {
     lv_subject_set_int(&afc_unload_after_print_subject_, enabled ? 1 : 0);
     Config* config = Config::get_instance();
     config->set<bool>(config->df() + "ams/afc_unload_after_print", enabled);
+    config->save();
+}
+
+bool SettingsManager::get_ams_always_show_bypass_spool() const {
+    return lv_subject_get_int(const_cast<lv_subject_t*>(&ams_always_show_bypass_spool_subject_)) !=
+           0;
+}
+
+void SettingsManager::set_ams_always_show_bypass_spool(bool enabled) {
+    spdlog::info("[SettingsManager] set_ams_always_show_bypass_spool({})", enabled);
+    lv_subject_set_int(&ams_always_show_bypass_spool_subject_, enabled ? 1 : 0);
+    Config* config = Config::get_instance();
+    config->set<bool>(config->df() + "ams/always_show_bypass_spool", enabled);
     config->save();
 }
 
