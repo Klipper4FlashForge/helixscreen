@@ -209,6 +209,11 @@ void GCodeStreamingController::register_memory_responder() {
 }
 
 GCodeStreamingController::~GCodeStreamingController() {
+    // Join the prefetch worker first: it dereferences `this` on every iteration,
+    // so it must be gone before any member starts being destroyed. close() also
+    // stops it, but the destructor cannot rely on close() having been called.
+    stop_prefetch_worker(/*permanent=*/true);
+
     // Move sentinel into local — weak.lock() in the callback now returns
     // nullptr for NEW calls, but an already-in-flight lock() still holds
     // a strong reference via the same control block.
@@ -385,6 +390,10 @@ bool GCodeStreamingController::open_source(std::unique_ptr<GCodeDataSource> sour
 }
 
 void GCodeStreamingController::close() {
+    // Join the prefetch worker before anything it touches is torn down - it
+    // holds `this` and reaches into cache_, index_ and data_source_.
+    stop_prefetch_worker();
+
     // Wait for async operations
     if (index_future_.valid()) {
         indexing_.store(false);
@@ -460,11 +469,22 @@ GCodeStreamingController::get_layer_segments(size_t layer_index) {
         return nullptr;
     }
 
-    // Trigger prefetch for nearby layers
-    prefetch_around(layer_index, prefetch_radius_);
+    // Warm the neighbours on the worker. Doing this inline meant a main-thread
+    // caller paid for up to 2*radius+1 extra seek-and-parses before returning.
+    schedule_prefetch(layer_index);
 
     // Return shared_ptr - data stays valid as long as caller holds the pointer
     return result.segments;
+}
+
+std::shared_ptr<const std::vector<ToolpathSegment>>
+GCodeStreamingController::try_get_layer_segments(size_t layer_index) {
+    if (!is_open() || layer_index >= index_.get_layer_count()) {
+        return nullptr;
+    }
+
+    // Deliberately no prefetch: this exists for callers that must not do work.
+    return cache_.try_get(layer_index);
 }
 
 void GCodeStreamingController::request_layer(size_t layer_index) {
@@ -472,8 +492,118 @@ void GCodeStreamingController::request_layer(size_t layer_index) {
         return;
     }
 
-    // Just trigger the load (get_or_load handles caching)
-    cache_.get_or_load(layer_index, make_loader());
+    schedule_prefetch(layer_index);
+}
+
+void GCodeStreamingController::schedule_prefetch(size_t center_layer) {
+    start_prefetch_worker();
+
+    {
+        std::lock_guard<std::mutex> lock(prefetch_mutex_);
+        if (stop_prefetch_) {
+            return;
+        }
+        // Overwrite rather than queue: only the newest centre is worth loading,
+        // so dragging through layers cannot build a backlog of stale work.
+        pending_prefetch_center_ = center_layer;
+    }
+    prefetch_cv_.notify_one();
+}
+
+void GCodeStreamingController::start_prefetch_worker() {
+    std::lock_guard<std::mutex> lock(prefetch_mutex_);
+    if (prefetch_thread_.joinable() || stop_prefetch_) {
+        return;
+    }
+    prefetch_thread_ = std::thread(&GCodeStreamingController::prefetch_worker, this);
+}
+
+void GCodeStreamingController::stop_prefetch_worker(bool permanent) {
+    {
+        std::lock_guard<std::mutex> lock(prefetch_mutex_);
+        stop_prefetch_ = true;
+        pending_prefetch_center_.reset();
+    }
+    prefetch_cv_.notify_all();
+
+    if (prefetch_thread_.joinable()) {
+        prefetch_thread_.join();
+    }
+
+    // close() rearms so the next open() gets a worker again. The destructor does
+    // not: leaving the flag set means a concurrent schedule_prefetch() cannot
+    // spawn a thread onto a half-destroyed `this`.
+    if (!permanent) {
+        std::lock_guard<std::mutex> lock(prefetch_mutex_);
+        stop_prefetch_ = false;
+    }
+}
+
+void GCodeStreamingController::wait_for_prefetch_idle() {
+    std::unique_lock<std::mutex> lock(prefetch_mutex_);
+    if (!prefetch_thread_.joinable()) {
+        return; // never started - nothing can be pending
+    }
+    prefetch_idle_cv_.wait(lock,
+                           [this] { return !prefetch_running_ && !pending_prefetch_center_; });
+}
+
+void GCodeStreamingController::prefetch_worker() {
+    spdlog::debug("[StreamingController] Prefetch worker started");
+
+    for (;;) {
+        size_t center = 0;
+        {
+            std::unique_lock<std::mutex> lock(prefetch_mutex_);
+            prefetch_cv_.wait(lock, [this] { return stop_prefetch_ || pending_prefetch_center_; });
+            if (stop_prefetch_) {
+                break;
+            }
+            center = *pending_prefetch_center_;
+            pending_prefetch_center_.reset();
+            prefetch_running_ = true;
+        }
+
+        // Marks this batch finished and wakes wait_for_prefetch_idle() on every
+        // exit path below, including the `continue`s.
+        struct BatchGuard {
+            GCodeStreamingController* self;
+            ~BatchGuard() {
+                {
+                    std::lock_guard<std::mutex> lock(self->prefetch_mutex_);
+                    self->prefetch_running_ = false;
+                }
+                self->prefetch_idle_cv_.notify_all();
+            }
+        } batch_guard{this};
+
+        if (!is_open()) {
+            continue;
+        }
+
+        const size_t layer_count = index_.get_layer_count();
+        if (layer_count == 0) {
+            continue;
+        }
+
+        const size_t radius = prefetch_radius_;
+        const size_t start = (center > radius) ? (center - radius) : 0;
+        const size_t end = std::min(center + radius, layer_count - 1);
+
+        for (size_t i = start; i <= end; ++i) {
+            // Bail out the moment a newer centre lands or we are shutting down -
+            // finishing a stale range wastes I/O the constrained devices need.
+            {
+                std::lock_guard<std::mutex> lock(prefetch_mutex_);
+                if (stop_prefetch_ || pending_prefetch_center_) {
+                    break;
+                }
+            }
+            cache_.get_or_load(i, make_loader());
+        }
+    }
+
+    spdlog::debug("[StreamingController] Prefetch worker stopped");
 }
 
 bool GCodeStreamingController::is_layer_cached(size_t layer_index) const {
@@ -485,12 +615,16 @@ void GCodeStreamingController::prefetch_around(size_t center_layer, size_t radiu
         return;
     }
 
-    size_t layer_count = index_.get_layer_count();
-    if (layer_count == 0) {
+    if (index_.get_layer_count() == 0) {
         return; // Nothing to prefetch
     }
 
-    cache_.prefetch(center_layer, radius, make_loader(), layer_count - 1);
+    // Delegates to the worker rather than loading inline. The radius argument is
+    // honoured by setting the worker's radius for subsequent runs; callers that
+    // want a one-shot synchronous load should use get_layer_segments() per layer
+    // and accept the cost explicitly.
+    prefetch_radius_ = radius;
+    schedule_prefetch(center_layer);
 }
 
 // =============================================================================

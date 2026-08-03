@@ -339,3 +339,193 @@ TEST_CASE("GCodeLayerCache thread safety", "[gcode][cache][thread][slow]") {
         }
     }
 }
+
+// =============================================================================
+// Main-thread stall regression (bundle C2CP6ZAW)
+//
+// get_or_load() used to hold mutex_ across the loader() call, which does a file
+// seek plus a G-code parse. The background ghost builder walks every layer
+// through that same path with only a 1ms yield, so the LVGL main thread — which
+// reaches the cache from render() AND from the touch hit-test pick_object_at() —
+// serialised behind an unrelated layer's disk read. On a 2-core armv7 K2 that
+// showed up as multi-second touch latency until the reporter forced
+// thumbnail-only rendering.
+//
+// The contract these pin: work on layer A must never delay work on layer B.
+// =============================================================================
+
+namespace {
+
+// Loader that blocks for a fixed duration, simulating a slow seek + parse.
+auto slow_loader(std::chrono::milliseconds delay, size_t segments_per_layer,
+                 std::atomic<bool>* entered = nullptr) {
+    return [delay, segments_per_layer, entered](size_t /*layer_index*/) {
+        if (entered) {
+            entered->store(true);
+        }
+        std::this_thread::sleep_for(delay);
+        return make_test_segments(segments_per_layer);
+    };
+}
+
+constexpr auto SLOW_LOAD = std::chrono::milliseconds(400);
+
+// Generous enough to absorb CI scheduling noise while still being far below
+// SLOW_LOAD — the bug produces ~SLOW_LOAD, the fix produces ~0.
+constexpr auto MUST_NOT_BLOCK = std::chrono::milliseconds(150);
+
+} // namespace
+
+TEST_CASE("GCodeLayerCache does not serialise independent layers",
+          "[gcode][cache][threading][slow]") {
+    GCodeLayerCache cache(1024 * 1024);
+
+    SECTION("a cached layer stays reachable while another layer is loading") {
+        // Layer 1 is already resident, so this lookup does zero I/O and its only
+        // possible source of delay is lock contention.
+        REQUIRE(cache.insert(1, make_test_segments(10)));
+
+        std::atomic<bool> slow_started{false};
+        std::thread loader_thread(
+            [&] { cache.get_or_load(0, slow_loader(SLOW_LOAD, 10, &slow_started)); });
+
+        while (!slow_started.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        const auto start = std::chrono::steady_clock::now();
+        auto hit = cache.get_or_load(1, test_loader(10));
+        const auto elapsed = std::chrono::steady_clock::now() - start;
+
+        loader_thread.join();
+
+        REQUIRE(hit.was_hit);
+        REQUIRE(hit.segments != nullptr);
+        CHECK(elapsed < MUST_NOT_BLOCK);
+    }
+
+    SECTION("two different layers load concurrently, not back to back") {
+        std::atomic<bool> first_started{false};
+
+        const auto start = std::chrono::steady_clock::now();
+        std::thread a([&] { cache.get_or_load(0, slow_loader(SLOW_LOAD, 10, &first_started)); });
+
+        while (!first_started.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        std::thread b([&] { cache.get_or_load(1, slow_loader(SLOW_LOAD, 10)); });
+        a.join();
+        b.join();
+        const auto elapsed = std::chrono::steady_clock::now() - start;
+
+        // Serialised: ~2x SLOW_LOAD. Overlapped: ~1x. Anything under 1.5x proves
+        // the second load was not waiting on the first one's lock.
+        CHECK(elapsed < SLOW_LOAD * 3 / 2);
+        REQUIRE(cache.is_cached(0));
+        REQUIRE(cache.is_cached(1));
+    }
+}
+
+TEST_CASE("GCodeLayerCache try_get never loads", "[gcode][cache][threading][slow]") {
+    GCodeLayerCache cache(1024 * 1024);
+
+    SECTION("miss returns null without invoking a loader") {
+        // try_get takes no loader at all, so a miss cannot do I/O by construction.
+        // The assertion is that a miss is reported rather than filled.
+        REQUIRE(cache.try_get(7) == nullptr);
+        REQUIRE_FALSE(cache.is_cached(7));
+    }
+
+    SECTION("hit returns the cached segments") {
+        REQUIRE(cache.insert(3, make_test_segments(12)));
+
+        auto segments = cache.try_get(3);
+        REQUIRE(segments != nullptr);
+        CHECK(segments->size() == 12);
+    }
+
+    SECTION("does not block behind an in-flight load of another layer") {
+        REQUIRE(cache.insert(1, make_test_segments(10)));
+
+        std::atomic<bool> slow_started{false};
+        std::thread loader_thread(
+            [&] { cache.get_or_load(0, slow_loader(SLOW_LOAD, 10, &slow_started)); });
+
+        while (!slow_started.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        const auto start = std::chrono::steady_clock::now();
+        auto segments = cache.try_get(1);
+        const auto elapsed = std::chrono::steady_clock::now() - start;
+
+        loader_thread.join();
+
+        REQUIRE(segments != nullptr);
+        CHECK(elapsed < MUST_NOT_BLOCK);
+    }
+}
+
+TEST_CASE("GCodeLayerCache clear waits for in-flight loads", "[gcode][cache][threading][slow]") {
+    // Callers destroy the data source right after clear() (see
+    // GCodeStreamingController::close()). A loader closure captures that source,
+    // so clear() returning while a load is still running would leave the loader
+    // reading a freed file. Dropping the lock around loader() removed the
+    // implicit barrier that used to guarantee this; the explicit drain replaces
+    // it, and this pins it.
+    GCodeLayerCache cache(1024 * 1024);
+
+    std::atomic<bool> load_running{false};
+    std::atomic<bool> load_finished{false};
+
+    std::thread loader_thread([&] {
+        cache.get_or_load(0, [&](size_t) {
+            load_running.store(true);
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            load_finished.store(true);
+            return make_test_segments(10);
+        });
+    });
+
+    while (!load_running.load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    cache.clear();
+
+    // The load must have completed before clear() returned.
+    CHECK(load_finished.load());
+
+    loader_thread.join();
+}
+
+TEST_CASE("GCodeLayerCache coalesces concurrent loads of one layer",
+          "[gcode][cache][threading][slow]") {
+    GCodeLayerCache cache(1024 * 1024);
+
+    // Dropping the lock around loader() must not turn N concurrent requests for
+    // the same layer into N duplicate parses — that would trade a stall for
+    // wasted I/O on exactly the devices this is meant to help.
+    std::atomic<int> load_count{0};
+    auto counting_slow_loader = [&load_count](size_t /*layer_index*/) {
+        load_count.fetch_add(1);
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        return make_test_segments(10);
+    };
+
+    std::vector<std::thread> threads;
+    threads.reserve(4);
+    for (int i = 0; i < 4; ++i) {
+        threads.emplace_back([&] {
+            auto result = cache.get_or_load(0, counting_slow_loader);
+            REQUIRE(result.segments != nullptr);
+        });
+    }
+    for (auto& t : threads) {
+        t.join();
+    }
+
+    CHECK(load_count.load() == 1);
+    REQUIRE(cache.is_cached(0));
+}
