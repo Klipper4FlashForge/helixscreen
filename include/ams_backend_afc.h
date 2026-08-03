@@ -101,6 +101,18 @@ struct AfcExtruderSensors {
     bool tool_start = false; ///< Toolhead entry sensor (tool_start_status)
     bool tool_end = false;   ///< Toolhead exit/nozzle sensor (tool_end_status)
     std::string lane_loaded; ///< Lane seated at this extruder; empty when none
+
+    /// Whether this toolhead is on the carriage right now.
+    ///
+    /// AFC's own answer to "what is mounted", published per extruder. Preferred
+    /// over Klipper's `toolchanger` object for two reasons: it is plural, so it
+    /// can express an IDEX machine carrying two toolheads at once (#1201), and it
+    /// does not depend on the Klipper toolchanger modules that AFC intends to
+    /// absorb. Nothing read this field before #1229.
+    bool on_shuttle = false;
+    /// Whether AFC ever reported on_shuttle for this extruder. Older AFC omits
+    /// it entirely, and "absent" must not be read as "not mounted".
+    bool has_on_shuttle = false;
 };
 
 /**
@@ -750,6 +762,24 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
      * @param lane_names Vector of lane name strings (from AFC discovery)
      */
     void initialize_slots(const std::vector<std::string>& lane_names);
+
+    /**
+     * @brief Derive current_slot / filament_loaded from carriage mount state.
+     *
+     * The single authority for machines that have a carriage, run once at the
+     * end of a status frame so it settles whatever the individual parsers
+     * negotiated among themselves. No-op when mount_state is UNKNOWN, which is
+     * every backend without a toolchanger.
+     *
+     * Exists because the per-parser writes are each guarded by
+     * `current_slot < 0`, which made the FIRST writer permanent: on a
+     * toolchanger a parked toolhead's lane was elected and then never released,
+     * so the UI named a slot no source claimed (#1229). Deliberately
+     * unconditional — a guard here would reintroduce the latch.
+     *
+     * Caller must hold mutex_.
+     */
+    void apply_mount_state(bool extruder_set_active_slot);
 
     /**
      * @brief Reorganize slots into multi-unit structure using unit_lane_map_

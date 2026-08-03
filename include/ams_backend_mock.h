@@ -351,6 +351,19 @@ class AmsBackendMock : public AmsBackend {
     [[nodiscard]] bool is_afc_mode() const;
 
     /**
+     * @brief Report as an AFC system while AFC mode is on.
+     *
+     * The mock claimed to be a Box Turtle in every other respect but left this
+     * at the base-class default, so `HELIX_MOCK_AMS=afc` produced a system that
+     * looked like AFC to the panels and not-AFC to anything asking this. The
+     * AFC-only rows in the device-operations overlay were therefore invisible in
+     * the mock, and #1229's bypass rule could not be exercised there at all.
+     */
+    [[nodiscard]] bool is_afc_system() const override {
+        return is_afc_mode();
+    }
+
+    /**
      * @brief Enable multi-unit mode for testing overview panel
      *
      * Creates a Box Turtle (4 slots) + Night Owl (2 slots) = 6 total slots.

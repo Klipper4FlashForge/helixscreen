@@ -497,6 +497,40 @@ enum class PathTopology {
 };
 
 /**
+ * @brief Whether a toolhead is currently on the carriage.
+ *
+ * Distinct from "is any filament loaded". On a toolchanger every parked toolhead
+ * may hold filament while the shuttle carries none — a state `current_slot = -1`
+ * ("nothing loaded anywhere") cannot express. Without it, something is always
+ * elected current, and on #1229's machine the election latched onto a parked
+ * lane and never moved again.
+ *
+ * Only meaningful for backends that actually have a carriage. Single-extruder
+ * systems leave this UNKNOWN and are unaffected.
+ */
+enum class MountState {
+    UNKNOWN = 0,  ///< No carriage, or no signal yet — do not draw conclusions
+    NONE = 1,     ///< Carriage is empty. Parked filament does not make a slot current
+    CHANGING = 2, ///< Mid-toolchange; sources legitimately disagree, elect nothing
+    MOUNTED = 3   ///< A tool is on the carriage; see AmsSystemInfo::mounted_tool
+};
+
+/// Human-readable name for a MountState, for logs and diagnostics.
+inline const char* mount_state_to_string(MountState state) {
+    switch (state) {
+    case MountState::NONE:
+        return "none";
+    case MountState::CHANGING:
+        return "changing";
+    case MountState::MOUNTED:
+        return "mounted";
+    case MountState::UNKNOWN:
+    default:
+        return "unknown";
+    }
+}
+
+/**
  * @brief Get string name for path topology
  * @param topology The topology enum value
  * @return Human-readable string for the topology
@@ -1061,8 +1095,16 @@ struct AmsSystemInfo {
     std::string version;   ///< System version string
 
     // Current state
-    int current_tool = -1;         ///< Active tool (-1=none, -2=bypass for HH)
-    int current_slot = -1;         ///< Active slot (-1=none, -2=bypass for HH)
+    int current_tool = -1; ///< Active tool (-1=none, -2=bypass for HH)
+    int current_slot = -1; ///< Active slot (-1=none, -2=bypass for HH)
+
+    /// Whether a toolhead is on the carriage. UNKNOWN on machines without one,
+    /// which is every backend except the toolchanger-capable ones — they are
+    /// unaffected by this field. See MountState (#1229).
+    MountState mount_state = MountState::UNKNOWN;
+    /// Tool number on the carriage when mount_state == MOUNTED, else -1.
+    int mounted_tool = -1;
+
     int pending_target_slot = -1;  ///< Target slot during tool change (-1=none)
     int current_toolchange = -1;   ///< Current tool change number (-1=none yet, 0-based)
     int number_of_toolchanges = 0; ///< Total expected tool changes this print
@@ -1127,7 +1169,7 @@ struct AmsSystemInfo {
     /// `AFC.position_saved`). Set while an error interrupted a print mid-move.
     bool position_saved = false;
 
-    std::string espooler_state;                     ///< eSpooler state: "rewind"/"assist"/""
+    std::string espooler_state;      ///< eSpooler state: "rewind"/"assist"/""
     std::string sync_feedback_state; ///< Sync feedback: "compressed"/"tension"/"neutral"/"disabled"
     bool sync_drive = false;         ///< Gear synced to extruder motor
     int clog_detection = 0;          ///< Clog detection: 0=off, 1=manual, 2=auto

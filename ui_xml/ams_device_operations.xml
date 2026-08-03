@@ -124,6 +124,17 @@
           <bind_flag_if_eq subject="ams_device_ops_is_afc" flag="hidden" ref_value="0"/>
         </setting_toggle_row>
 
+        <!-- Keep the bypass spool on the Multi-Filament panel even when bypass
+             is disengaged. AFC publishes a virtual bypass whether or not one is
+             wired, so the node is hidden by default (AFC backends only). -->
+        <setting_toggle_row name="row_ams_always_show_bypass_spool"
+                            label="Always Show Bypass Spool" label_tag="Always Show Bypass Spool" icon="filament"
+                            description="Keep the bypass spool visible when bypass is off"
+                            description_tag="Keep the bypass spool visible when bypass is off"
+                            subject="ams_always_show_bypass_spool" callback="on_ams_always_show_bypass_spool_toggled">
+          <bind_flag_if_eq subject="ams_device_ops_is_afc" flag="hidden" ref_value="0"/>
+        </setting_toggle_row>
+
         <!-- QIDI Box eject distance (QIDI backends only) -->
         <lv_obj name="row_qidi_eject_distance"
                 width="100%" height="content" style_pad_all="0" flex_flow="column"
