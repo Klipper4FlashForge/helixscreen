@@ -44,13 +44,14 @@
             <lv_obj height="content"
                     flex_flow="column" style_flex_cross_place="start" style_pad_all="0" style_pad_gap="#space_xs"
                     scrollable="false">
-              <icon name="chamber_icon" src="fridge_industrial" size="xl" variant="secondary"/>
+              <heater_icon src="fridge_industrial" glyph_name="chamber_icon_glyph" size="xl"/>
               <lv_obj style_pad_all="0"
                       scrollable="false" flex_flow="column" style_flex_main_place="center"
                       style_flex_cross_place="start" style_pad_gap="#space_xxs">
                 <text_small text="Current / Target" translation_tag="Current / Target"/>
                 <temp_display name="chamber_temp_display"
-                              size="lg" show_target="true" bind_current="chamber_temp" bind_target="chamber_effective_target" bind_mode="chamber_mode"/>
+                              size="lg" show_target="true" bind_current="chamber_temp"
+                              bind_target="chamber_effective_target" bind_mode="chamber_mode"/>
               </lv_obj>
               <!-- Status Message -->
               <text_small name="status_message" bind_text="chamber_status" style_text_align="left"/>

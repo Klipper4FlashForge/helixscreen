@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "ui_heater_icon_binder.h"
 #include "ui_observer_guard.h"
 
 #include "panel_widget.h"
@@ -56,6 +57,11 @@ class PreheatWidget : public PanelWidget {
 
     int selected_material_ = 0; // index into helix::presets slots, not a fixed material
     bool heaters_active_ = false;
+
+    // Thermal tint for the two heater glyphs. Each binder owns its own animator
+    // and temperature observers, so the tile's numbers and icons agree.
+    helix::ui::HeaterIconBinder nozzle_icon_binder_;
+    helix::ui::HeaterIconBinder bed_icon_binder_;
 
     // Observers for heater target temperatures
     ObserverGuard extruder_target_obs_;

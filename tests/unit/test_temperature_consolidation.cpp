@@ -223,3 +223,188 @@ TEST_CASE("get_heating_state_variant: agrees with get_heating_state_color across
     REQUIRE(std::string(get_heating_state_variant(210, 200)) == "info");
     REQUIRE(same(210, 200, "info"));
 }
+
+// ============================================================================
+// classify_heat_state() - the single source of truth all three consumers share
+// ============================================================================
+
+TEST_CASE("classify_heat_state: off when target is zero", "[temperature][heat_state]") {
+    REQUIRE(classify_heat_state(25, 0) == HeatState::Off);
+}
+
+TEST_CASE("classify_heat_state: off when target is negative", "[temperature][heat_state]") {
+    // Previously get_heating_state_color() treated a negative target as "cooling"
+    // (blue) while get_heating_state_variant() treated it as off (muted).
+    REQUIRE(classify_heat_state(25, -5) == HeatState::Off);
+}
+
+TEST_CASE("classify_heat_state: heating below tolerance", "[temperature][heat_state]") {
+    REQUIRE(classify_heat_state(150, 200) == HeatState::Heating);
+}
+
+TEST_CASE("classify_heat_state: cooling above tolerance", "[temperature][heat_state]") {
+    REQUIRE(classify_heat_state(210, 200) == HeatState::Cooling);
+}
+
+TEST_CASE("classify_heat_state: tolerance boundaries are at-temp", "[temperature][heat_state]") {
+    REQUIRE(classify_heat_state(198, 200) == HeatState::AtTemp);
+    REQUIRE(classify_heat_state(200, 200) == HeatState::AtTemp);
+    REQUIRE(classify_heat_state(202, 200) == HeatState::AtTemp);
+    REQUIRE(classify_heat_state(197, 200) == HeatState::Heating);
+    REQUIRE(classify_heat_state(203, 200) == HeatState::Cooling);
+}
+
+TEST_CASE("classify_heat_state: honors a custom tolerance", "[temperature][heat_state]") {
+    // Decidegree callers pass tolerance=20 for the same 2 degrees.
+    REQUIRE(classify_heat_state(1980, 2000, 20) == HeatState::AtTemp);
+    REQUIRE(classify_heat_state(1970, 2000, 20) == HeatState::Heating);
+    REQUIRE(classify_heat_state(2030, 2000, 20) == HeatState::Cooling);
+}
+
+TEST_CASE("get_heating_state_color: negative target is off, not cooling",
+          "[temperature][heat_state]") {
+    // Regression: the color function used `target == 0`, so a negative target fell
+    // through to the cooling branch and rendered blue.
+    auto color = get_heating_state_color(25, -5);
+    auto expected = theme_manager_get_color("text_muted");
+    REQUIRE(color.red == expected.red);
+    REQUIRE(color.green == expected.green);
+    REQUIRE(color.blue == expected.blue);
+}
+
+TEST_CASE("classify_heat_state: color and variant both agree with it",
+          "[temperature][heat_state]") {
+    struct Case {
+        int current;
+        int target;
+        HeatState state;
+        const char* variant;
+        const char* token;
+    };
+    const Case cases[] = {
+        {25, 0, HeatState::Off, "muted", "text_muted"},
+        {150, 200, HeatState::Heating, "danger", "danger"},
+        {199, 200, HeatState::AtTemp, "success", "success"},
+        {210, 200, HeatState::Cooling, "info", "info"},
+    };
+    for (const auto& c : cases) {
+        REQUIRE(classify_heat_state(c.current, c.target) == c.state);
+        REQUIRE(std::string(get_heating_state_variant(c.current, c.target)) == c.variant);
+        auto color = get_heating_state_color(c.current, c.target);
+        auto expected = theme_manager_get_color(c.token);
+        REQUIRE(color.red == expected.red);
+        REQUIRE(color.green == expected.green);
+        REQUIRE(color.blue == expected.blue);
+    }
+}
+
+// ============================================================================
+// classify_heat_state_with_mode() — chamber-only mode-aware classifier.
+//
+// Off/Heating must be an exact passthrough to classify_heat_state() (target is
+// a genuine heat goal there). Maintaining is the whole point of this function:
+// target is a cooling CEILING, so Heating must never come out of it — only
+// Cooling (above ceiling) or Neutral (at/below ceiling, including "current is
+// nowhere near the ceiling", which the old bug rendered as heating-red).
+// ============================================================================
+
+TEST_CASE("classify_heat_state_with_mode: Off/Heating are an exact passthrough",
+          "[temperature][heat_state][chamber_mode]") {
+    // Off: target<=0 either way.
+    REQUIRE(classify_heat_state_with_mode(25, 0, helix::ChamberMode::Off) == HeatState::Off);
+    REQUIRE(classify_heat_state(25, 0) == HeatState::Off);
+
+    // Heating: target is a real heat goal, full 4-state logic applies.
+    struct Case {
+        int current;
+        int target;
+    };
+    const Case cases[] = {{150, 200}, {199, 200}, {200, 200}, {210, 200}};
+    for (const auto& c : cases) {
+        REQUIRE(classify_heat_state_with_mode(c.current, c.target, helix::ChamberMode::Heating) ==
+                classify_heat_state(c.current, c.target));
+    }
+}
+
+TEST_CASE("classify_heat_state_with_mode: Maintaining never returns Heating",
+          "[temperature][heat_state][chamber_mode]") {
+    // Regression for the bug this function exists to fix: a chamber cold and
+    // far below its Maintaining ceiling must NOT classify as Heating (which
+    // rendered heating-red and pulsed, contradicting the neutral-colored
+    // label). 0 current, 200 ceiling — as far below as it gets.
+    REQUIRE(classify_heat_state_with_mode(0, 200, helix::ChamberMode::Maintaining) ==
+            HeatState::Neutral);
+    REQUIRE(classify_heat_state_with_mode(150, 200, helix::ChamberMode::Maintaining) ==
+            HeatState::Neutral);
+}
+
+TEST_CASE("classify_heat_state_with_mode: Maintaining at/below ceiling is Neutral, "
+          "above is Cooling",
+          "[temperature][heat_state][chamber_mode]") {
+    // Below ceiling.
+    REQUIRE(classify_heat_state_with_mode(150, 200, helix::ChamberMode::Maintaining) ==
+            HeatState::Neutral);
+    // Exactly at ceiling.
+    REQUIRE(classify_heat_state_with_mode(200, 200, helix::ChamberMode::Maintaining) ==
+            HeatState::Neutral);
+    // At the tolerance boundary — still Neutral (matches AtTemp's inclusive bound).
+    REQUIRE(classify_heat_state_with_mode(202, 200, helix::ChamberMode::Maintaining) ==
+            HeatState::Neutral);
+    // Just past the tolerance boundary — Cooling.
+    REQUIRE(classify_heat_state_with_mode(203, 200, helix::ChamberMode::Maintaining) ==
+            HeatState::Cooling);
+    // Well above ceiling.
+    REQUIRE(classify_heat_state_with_mode(300, 200, helix::ChamberMode::Maintaining) ==
+            HeatState::Cooling);
+}
+
+TEST_CASE("classify_heat_state_with_mode: honors a custom tolerance in Maintaining mode",
+          "[temperature][heat_state][chamber_mode]") {
+    // Decidegree-scale tolerance (20 = 2 degrees), mirroring HeatingIconAnimator's
+    // TEMP_TOLERANCE usage.
+    REQUIRE(classify_heat_state_with_mode(2015, 2000, helix::ChamberMode::Maintaining, 20) ==
+            HeatState::Neutral);
+    REQUIRE(classify_heat_state_with_mode(2025, 2000, helix::ChamberMode::Maintaining, 20) ==
+            HeatState::Cooling);
+}
+
+TEST_CASE("get_heating_state_color(HeatState): Neutral resolves to the text token",
+          "[temperature][heat_state][chamber_mode]") {
+    auto color = get_heating_state_color(HeatState::Neutral);
+    auto expected = theme_manager_get_color("text");
+    REQUIRE(color.red == expected.red);
+    REQUIRE(color.green == expected.green);
+    REQUIRE(color.blue == expected.blue);
+
+    // Distinct from Off's text_muted — Neutral is NOT the same token as Off,
+    // which is exactly the design subtlety this function exists to preserve.
+    auto off_color = get_heating_state_color(HeatState::Off);
+    auto muted = theme_manager_get_color("text_muted");
+    REQUIRE(off_color.red == muted.red);
+    REQUIRE(off_color.green == muted.green);
+    REQUIRE(off_color.blue == muted.blue);
+    bool colors_match = (color.red == off_color.red) && (color.green == off_color.green) &&
+                        (color.blue == off_color.blue);
+    REQUIRE_FALSE(colors_match);
+}
+
+TEST_CASE("get_heating_state_color(HeatState) overload agrees with the int overload for every "
+          "mode-unaware state",
+          "[temperature][heat_state][chamber_mode]") {
+    // get_heating_state_color(int,int,int) is defined as
+    // get_heating_state_color(classify_heat_state(...)) — pin that equivalence
+    // so the two overloads can never drift apart.
+    struct Case {
+        int current;
+        int target;
+    };
+    const Case cases[] = {{25, 0}, {150, 200}, {199, 200}, {210, 200}};
+    for (const auto& c : cases) {
+        auto state = classify_heat_state(c.current, c.target);
+        auto via_state = get_heating_state_color(state);
+        auto via_ints = get_heating_state_color(c.current, c.target);
+        REQUIRE(via_state.red == via_ints.red);
+        REQUIRE(via_state.green == via_ints.green);
+        REQUIRE(via_state.blue == via_ints.blue);
+    }
+}

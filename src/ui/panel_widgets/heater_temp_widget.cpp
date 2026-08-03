@@ -10,7 +10,6 @@
 #include "ui_utils.h"
 
 #include "app_globals.h"
-#include "observer_factory.h"
 #include "panel_widget_manager.h"
 #include "panel_widget_registry.h"
 #include "printer_state.h"
@@ -19,7 +18,6 @@
 #include <spdlog/spdlog.h>
 
 using namespace helix;
-using helix::ui::temperature::deci_to_degrees;
 
 namespace helix {
 
@@ -31,7 +29,8 @@ const HeaterTempWidget::Config& nozzle_temp_config() {
         "[NozzleTempWidget]",
         TempGraphOverlay::Mode::Nozzle,
         [](PrinterState& p) { return p.get_active_extruder_temp_subject(); },
-        [](PrinterState& p) { return p.get_active_extruder_target_subject(); }};
+        [](PrinterState& p) { return p.get_active_extruder_target_subject(); },
+        HeaterType::Nozzle};
     return cfg;
 }
 
@@ -43,7 +42,8 @@ const HeaterTempWidget::Config& bed_temp_config() {
         "[BedTempWidget]",
         TempGraphOverlay::Mode::Bed,
         [](PrinterState& p) { return p.get_bed_temp_subject(); },
-        [](PrinterState& p) { return p.get_bed_target_subject(); }};
+        [](PrinterState& p) { return p.get_bed_target_subject(); },
+        HeaterType::Bed};
     return cfg;
 }
 
@@ -55,7 +55,8 @@ const HeaterTempWidget::Config& chamber_temp_config() {
         "[ChamberTempWidget]",
         TempGraphOverlay::Mode::Chamber,
         [](PrinterState& p) { return p.get_chamber_temp_subject(); },
-        [](PrinterState& p) { return p.get_chamber_target_subject(); }};
+        [](PrinterState& p) { return p.get_chamber_target_subject(); },
+        HeaterType::Chamber};
     return cfg;
 }
 
@@ -108,41 +109,17 @@ void HeaterTempWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
         lv_obj_add_event_cb(temp_btn_, clicked_cb, LV_EVENT_CLICKED, this);
     }
 
-    // Set up temperature observers with lifetime guard
-    using helix::ui::observe_int_sync;
-    auto token = lifetime_.token();
-
-    temp_observer_ = observe_int_sync<HeaterTempWidget>(cfg_.temp_getter(printer_state_), this,
-                                                        [token](HeaterTempWidget* self, int temp) {
-                                                            if (token.expired())
-                                                                return;
-                                                            self->on_temp_changed(temp);
-                                                        });
-    target_observer_ = observe_int_sync<HeaterTempWidget>(
-        cfg_.target_getter(printer_state_), this, [token](HeaterTempWidget* self, int target) {
-            if (token.expired())
-                return;
-            self->on_target_changed(target);
-        });
-
-    // Attach heating icon animator
-    lv_obj_t* temp_icon = lv_obj_find_by_name(widget_obj_, cfg_.icon_name);
-    if (temp_icon) {
-        temp_icon_animator_.attach(temp_icon);
-        cached_temp_ = lv_subject_get_int(cfg_.temp_getter(printer_state_));
-        cached_target_ = lv_subject_get_int(cfg_.target_getter(printer_state_));
-        temp_icon_animator_.update(cached_temp_, cached_target_);
-        spdlog::debug("{} Heating icon animator attached", cfg_.log_tag);
-    }
+    // Bind the heating icon animator. The binder owns its own temperature
+    // observers, so this widget no longer needs temp_observer_/target_observer_
+    // just to feed an icon tint.
+    icon_binder_.bind(widget_obj_, printer_state_, cfg_.heater);
 
     spdlog::debug("{} Attached", cfg_.log_tag);
 }
 
 void HeaterTempWidget::detach() {
     lifetime_.invalidate();
-    temp_icon_animator_.detach();
-    temp_observer_.reset();
-    target_observer_.reset();
+    icon_binder_.unbind();
 
     if (widget_obj_) {
         lv_obj_set_user_data(widget_obj_, nullptr);
@@ -152,22 +129,6 @@ void HeaterTempWidget::detach() {
     parent_screen_ = nullptr;
 
     spdlog::debug("{} Detached", cfg_.log_tag);
-}
-
-void HeaterTempWidget::on_temp_changed(int temp_deci) {
-    cached_temp_ = temp_deci;
-    update_temp_icon_animation();
-    spdlog::trace("{} Temp: {}°C", cfg_.log_tag, deci_to_degrees(temp_deci));
-}
-
-void HeaterTempWidget::on_target_changed(int target_deci) {
-    cached_target_ = target_deci;
-    update_temp_icon_animation();
-    spdlog::trace("{} Target: {}°C", cfg_.log_tag, deci_to_degrees(target_deci));
-}
-
-void HeaterTempWidget::update_temp_icon_animation() {
-    temp_icon_animator_.update(cached_temp_, cached_target_);
 }
 
 void HeaterTempWidget::handle_temp_clicked() {

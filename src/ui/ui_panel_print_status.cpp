@@ -951,6 +951,12 @@ lv_obj_t* PrintStatusPanel::create(lv_obj_t* parent) {
         spdlog::warn("[{}] controls_section not found — SIZE_CHANGED not wired", get_name());
     }
 
+    // Thermal tint for the temp-card heater icons. The binder owns its own
+    // observers, so this needs no hook into on_temperature_changed().
+    nozzle_icon_binder_.bind(overlay_root_, printer_state_, helix::HeaterType::Nozzle);
+    bed_icon_binder_.bind(overlay_root_, printer_state_, helix::HeaterType::Bed);
+    chamber_icon_binder_.bind(overlay_root_, printer_state_, helix::HeaterType::Chamber);
+
     // Initial density + fit recompute is scheduled from on_activate() — running
     // it here is futile because overlay_root_ is HIDDEN until activation, and a
     // hidden subtree has 0-width layout in LVGL (so measurement returns 0).
@@ -1158,6 +1164,15 @@ void PrintStatusPanel::on_ui_destroyed() {
     cancel_badge_ = nullptr;
     error_badge_ = nullptr;
     overlay_header_ = nullptr;
+
+    // Heater icon animators — at this point the widget tree is only hidden
+    // and reparented to the top layer (destroy_overlay_ui() defers the actual
+    // deletion to the next tick, see overlay_base.h), so the icons are still
+    // valid and the binders are still bound. Unbind explicitly here rather
+    // than relying on the eventual deferred LV_EVENT_DELETE.
+    nozzle_icon_binder_.unbind();
+    bed_icon_binder_.unbind();
+    chamber_icon_binder_.unbind();
 
     // Reset widget-dependent state
     resize_registered_ = false;

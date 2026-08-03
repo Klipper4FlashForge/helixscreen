@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<!-- Copyright (C) 2025-2026 356C LLC -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<component>
+  <api>
+    <prop name="size" type="string" default="#icon_size"/>
+    <prop name="src" type="string" default="radiator"/>
+    <!-- No sensible default: every instance MUST pass glyph_name explicitly
+         (see note below on why it stays empty rather than defaulting to
+         "bed_icon_glyph"). -->
+    <prop name="glyph_name" type="string" default=""/>
+  </api>
+  <!--
+    Heater Icon (heatbed / chamber)
+
+    One component for every non-nozzle heater glyph. The nozzle has its own
+    component because it also carries a tool badge.
+
+    glyph_name MUST be the name HeaterIconBinder::default_icon_name() expects for
+    that heater — "bed_icon_glyph" or "chamber_icon_glyph". A wrong or missing
+    name fails silently: the binder simply does not find the icon under that
+    name and the thermal tint never appears — nothing crashes, nothing warns
+    louder than a debug log. glyph_name has no default (deliberately empty)
+    so a caller that forgets it gets an icon named "" instead of a second,
+    silently-colliding "bed_icon_glyph" that steals the tint from the real one.
+
+    Colour is owned by HeatingIconAnimator once bound (4-state thermal tint); the
+    variant here is only the pre-bind resting appearance.
+  -->
+  <view name="heater_icon"
+        width="content" height="content" style_pad_all="0" scrollable="false" clickable="false" event_bubble="true">
+    <icon name="$glyph_name" src="$src" size="$size" variant="secondary" clickable="false" event_bubble="true"/>
+  </view>
+</component>

@@ -4,7 +4,7 @@
 #pragma once
 
 #include "ui_component_keypad.h"
-#include "ui_heating_animator.h"
+#include "ui_heater_icon_binder.h"
 #include "ui_observer_guard.h"
 #include "ui_panel_base.h"
 #include "ui_print_tune_overlay.h"
@@ -185,7 +185,6 @@ class ControlsPanel : public PanelBase {
     lv_subject_t nozzle_pct_subject_{};
     lv_subject_t nozzle_status_subject_{};
     char nozzle_status_buf_[16] = {};
-    HeatingIconAnimator nozzle_heater_animator_;
 
     // Bed temperature display
     lv_subject_t bed_temp_subject_{};
@@ -193,11 +192,17 @@ class ControlsPanel : public PanelBase {
     lv_subject_t bed_pct_subject_{};
     lv_subject_t bed_status_subject_{};
     char bed_status_buf_[16] = {};
-    HeatingIconAnimator bed_heater_animator_;
 
     // Chamber temperature display
     lv_subject_t chamber_status_subject_{};
     char chamber_status_buf_[16] = {};
+
+    // Heating icon animators (nozzle/bed/chamber), bound from the panel's own
+    // container so lv_obj_find_by_name() cannot pick up another panel's
+    // same-named icon. Each binder owns its own temperature observers.
+    helix::ui::HeaterIconBinder nozzle_icon_binder_;
+    helix::ui::HeaterIconBinder bed_icon_binder_;
+    helix::ui::HeaterIconBinder chamber_icon_binder_;
 
     // Fan speed display
     lv_subject_t fan_speed_subject_{};
