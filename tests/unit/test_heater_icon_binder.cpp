@@ -3,13 +3,20 @@
 
 #include "ui_heater_config.h"
 #include "ui_heater_icon_binder.h"
+#include "ui_temperature_utils.h"
+#include "ui_update_queue.h"
+
+#include "../test_fixtures.h"
+#include "printer_state.h"
 
 #include <string>
 
 #include "../catch_amalgamated.hpp"
 
 using helix::HeaterType;
+using helix::PrinterState;
 using helix::ui::HeaterIconBinder;
+using helix::ui::UpdateQueue;
 
 TEST_CASE("HeaterIconBinder: conventional glyph names per heater", "[heater_binder]") {
     REQUIRE(std::string(HeaterIconBinder::default_icon_name(HeaterType::Nozzle)) ==
@@ -35,4 +42,263 @@ TEST_CASE("HeaterIconBinder: unbind on an unbound binder is safe", "[heater_bind
     binder.unbind();
     binder.unbind();
     REQUIRE_FALSE(binder.is_bound());
+}
+
+// ============================================================================
+// Coverage below exercises a real bind() against a real icon widget and a real
+// PrinterState — the path every Task 5-7 call site depends on. The four cases
+// above would all still pass against a binder whose bind() silently did
+// nothing: none of them ever calls bind() itself.
+// ============================================================================
+
+namespace {
+
+// Mirrors the shape bind() looks for: a container with a single child named
+// after the heater's conventional icon glyph.
+lv_obj_t* create_icon_root(lv_obj_t* parent, const char* icon_name) {
+    lv_obj_t* root = lv_obj_create(parent);
+    lv_obj_t* icon = lv_obj_create(root);
+    lv_obj_set_name(icon, icon_name);
+    return root;
+}
+
+// The animator applies its thermal-state color via ui_icon_set_color(), which
+// is plain lv_obj_set_style_text_color(). Reading it back is a black-box way
+// to observe whether HeaterIconBinder actually reached animator_.update(),
+// without reaching into its private animator_ member.
+lv_color_t icon_text_color(lv_obj_t* icon) {
+    return lv_obj_get_style_text_color(icon, LV_PART_MAIN);
+}
+
+// The animator's own tolerance (TEMP_TOLERANCE in ui_heating_animator.cpp) is
+// 20 decidegrees = 2 degrees. Hardcoded here (matching the convention already
+// used in test_heating_animator_state.cpp) so the expected color is derived
+// independently rather than importing the private constant.
+constexpr int kToleranceDeci = 20;
+
+lv_color_t expected_color(int current_deci, int target_deci) {
+    return helix::ui::temperature::get_heating_state_color(current_deci, target_deci,
+                                                           kToleranceDeci);
+}
+
+} // namespace
+
+// Uses XMLTestFixture (not the lighter LVGLTestFixture) specifically because
+// its one-time global setup initializes the theme (globals.xml color
+// tokens) — without it, theme_manager_get_color() falls back to black for
+// every token, and Off vs Heating colors would be indistinguishable, making
+// the color assertions below vacuous.
+
+TEST_CASE_METHOD(XMLTestFixture,
+                 "HeaterIconBinder: bind() succeeds against a real icon, per heater type",
+                 "[heater_binder]") {
+    SECTION("nozzle") {
+        const char* name = HeaterIconBinder::default_icon_name(HeaterType::Nozzle);
+        lv_obj_t* root = create_icon_root(test_screen(), name);
+        lv_obj_t* icon = lv_obj_find_by_name(root, name);
+        REQUIRE(icon != nullptr);
+
+        lv_subject_set_int(state().get_active_extruder_temp_subject(), 250);
+        lv_subject_set_int(state().get_active_extruder_target_subject(), 2000);
+
+        HeaterIconBinder binder;
+        REQUIRE(binder.bind(root, state(), HeaterType::Nozzle));
+        REQUIRE(binder.is_bound());
+        REQUIRE(lv_color_eq(icon_text_color(icon), expected_color(250, 2000)));
+
+        binder.unbind();
+    }
+
+    SECTION("bed") {
+        const char* name = HeaterIconBinder::default_icon_name(HeaterType::Bed);
+        lv_obj_t* root = create_icon_root(test_screen(), name);
+        lv_obj_t* icon = lv_obj_find_by_name(root, name);
+        REQUIRE(icon != nullptr);
+
+        lv_subject_set_int(state().get_bed_temp_subject(), 250);
+        lv_subject_set_int(state().get_bed_target_subject(), 2000);
+
+        HeaterIconBinder binder;
+        REQUIRE(binder.bind(root, state(), HeaterType::Bed));
+        REQUIRE(binder.is_bound());
+        REQUIRE(lv_color_eq(icon_text_color(icon), expected_color(250, 2000)));
+
+        binder.unbind();
+    }
+
+    SECTION("chamber") {
+        const char* name = HeaterIconBinder::default_icon_name(HeaterType::Chamber);
+        lv_obj_t* root = create_icon_root(test_screen(), name);
+        lv_obj_t* icon = lv_obj_find_by_name(root, name);
+        REQUIRE(icon != nullptr);
+
+        lv_subject_set_int(state().get_chamber_temp_subject(), 250);
+        lv_subject_set_int(state().get_chamber_effective_target_subject(), 2000);
+
+        HeaterIconBinder binder;
+        REQUIRE(binder.bind(root, state(), HeaterType::Chamber));
+        REQUIRE(binder.is_bound());
+        REQUIRE(lv_color_eq(icon_text_color(icon), expected_color(250, 2000)));
+
+        binder.unbind();
+    }
+}
+
+TEST_CASE_METHOD(XMLTestFixture, "HeaterIconBinder: is_bound() toggles around a real bind/unbind",
+                 "[heater_binder]") {
+    const char* name = HeaterIconBinder::default_icon_name(HeaterType::Bed);
+    lv_obj_t* root = create_icon_root(test_screen(), name);
+
+    HeaterIconBinder binder;
+    REQUIRE_FALSE(binder.is_bound());
+
+    REQUIRE(binder.bind(root, state(), HeaterType::Bed));
+    REQUIRE(binder.is_bound());
+
+    binder.unbind();
+    REQUIRE_FALSE(binder.is_bound());
+}
+
+TEST_CASE_METHOD(
+    XMLTestFixture,
+    "HeaterIconBinder: a subject change after bind() reaches the icon through refresh()",
+    "[heater_binder]") {
+    const char* name = HeaterIconBinder::default_icon_name(HeaterType::Nozzle);
+    lv_obj_t* root = create_icon_root(test_screen(), name);
+    lv_obj_t* icon = lv_obj_find_by_name(root, name);
+    REQUIRE(icon != nullptr);
+
+    lv_subject_t* current = state().get_active_extruder_temp_subject();
+    lv_subject_t* target = state().get_active_extruder_target_subject();
+    lv_subject_set_int(current, 250);
+    lv_subject_set_int(target, 0); // Off
+
+    HeaterIconBinder binder;
+    REQUIRE(binder.bind(root, state(), HeaterType::Nozzle));
+    REQUIRE(lv_color_eq(icon_text_color(icon), expected_color(250, 0)));
+
+    // observe_int_sync() defers its handler through queue_update() — the icon
+    // must NOT change before a drain.
+    lv_subject_set_int(target, 2000); // Heating
+    REQUIRE(lv_color_eq(icon_text_color(icon), expected_color(250, 0)));
+
+    UpdateQueue::instance().drain();
+    REQUIRE(lv_color_eq(icon_text_color(icon), expected_color(250, 2000)));
+    REQUIRE_FALSE(lv_color_eq(icon_text_color(icon), expected_color(250, 0)));
+
+    binder.unbind();
+}
+
+TEST_CASE_METHOD(XMLTestFixture,
+                 "HeaterIconBinder: bind() on an already-bound binder rebinds to the new icon",
+                 "[heater_binder]") {
+    const char* name = HeaterIconBinder::default_icon_name(HeaterType::Bed);
+    lv_obj_t* root_a = create_icon_root(test_screen(), name);
+    lv_obj_t* icon_a = lv_obj_find_by_name(root_a, name);
+    lv_obj_t* root_b = create_icon_root(test_screen(), name);
+    lv_obj_t* icon_b = lv_obj_find_by_name(root_b, name);
+    REQUIRE(icon_a != nullptr);
+    REQUIRE(icon_b != nullptr);
+
+    lv_subject_t* current = state().get_bed_temp_subject();
+    lv_subject_t* target = state().get_bed_target_subject();
+    lv_subject_set_int(current, 250);
+    lv_subject_set_int(target, 0); // Off
+
+    HeaterIconBinder binder;
+    REQUIRE(binder.bind(root_a, state(), HeaterType::Bed));
+    REQUIRE(lv_color_eq(icon_text_color(icon_a), expected_color(250, 0)));
+    lv_color_t icon_a_color_before_rebind = icon_text_color(icon_a);
+
+    // Re-bind to a different icon without an explicit unbind() in between —
+    // bind() must detach from icon_a and attach to icon_b cleanly (it calls
+    // unbind() itself first; this proves that path works end to end, not just
+    // double-unbind()).
+    REQUIRE(binder.bind(root_b, state(), HeaterType::Bed));
+    REQUIRE(binder.is_bound());
+    REQUIRE(lv_color_eq(icon_text_color(icon_b), expected_color(250, 0)));
+
+    // A subject change now must reach icon_b only — icon_a is detached and
+    // must be left exactly as bind() left it, not still tracking.
+    lv_subject_set_int(target, 2000); // Heating
+    UpdateQueue::instance().drain();
+
+    REQUIRE(lv_color_eq(icon_text_color(icon_b), expected_color(250, 2000)));
+    REQUIRE(lv_color_eq(icon_text_color(icon_a), icon_a_color_before_rebind));
+    REQUIRE_FALSE(lv_color_eq(icon_text_color(icon_a), expected_color(250, 2000)));
+
+    binder.unbind();
+}
+
+TEST_CASE_METHOD(XMLTestFixture,
+                 "HeaterIconBinder: chamber binds the effective target, not the raw heater target",
+                 "[heater_binder]") {
+    const char* name = HeaterIconBinder::default_icon_name(HeaterType::Chamber);
+    lv_obj_t* root = create_icon_root(test_screen(), name);
+    lv_obj_t* icon = lv_obj_find_by_name(root, name);
+    REQUIRE(icon != nullptr);
+
+    lv_subject_set_int(state().get_chamber_temp_subject(), 250);
+    lv_subject_set_int(state().get_chamber_target_subject(), 0);
+    lv_subject_set_int(state().get_chamber_effective_target_subject(), 0);
+
+    HeaterIconBinder binder;
+    REQUIRE(binder.bind(root, state(), HeaterType::Chamber));
+    REQUIRE(lv_color_eq(icon_text_color(icon), expected_color(250, 0))); // Off
+
+    // Maintaining mode: the heater target stays 0 (the real setpoint is
+    // parked on the cooling fan), so the raw chamber_target subject is a red
+    // herring here. If bind() ever observed get_chamber_target_subject()
+    // instead of get_chamber_effective_target_subject(), this change would
+    // (wrongly) leave the icon looking Off.
+    lv_subject_set_int(state().get_chamber_target_subject(), 2000);
+    UpdateQueue::instance().drain();
+    REQUIRE(lv_color_eq(icon_text_color(icon), expected_color(250, 0))); // still Off — unobserved
+
+    // The effective target is the one that must actually drive the icon.
+    lv_subject_set_int(state().get_chamber_effective_target_subject(), 2000);
+    UpdateQueue::instance().drain();
+    REQUIRE(lv_color_eq(icon_text_color(icon), expected_color(250, 2000))); // Heating
+
+    binder.unbind();
+}
+
+TEST_CASE_METHOD(XMLTestFixture,
+                 "HeaterIconBinder: bed/chamber SubjectLifetime tokens survive subject teardown",
+                 "[heater_binder]") {
+    // bind() on Bed/Chamber must pass its SubjectLifetime token into
+    // observe_int_sync() (CLAUDE.md invariant #4, issue #705): if it doesn't,
+    // the ObserverGuard has no way to know the subject died, and reset()
+    // below would call lv_observer_remove() on memory that
+    // PrinterTemperatureState::deinit_subjects() already freed via
+    // lv_subject_deinit(). This is the same bool-token path covered for a
+    // synthetic subject in test_observer_cleanup_ordering.cpp's #816 tests —
+    // here it runs against the real PrinterState accessors bind() uses.
+    //
+    // ObserverGuard::invalidate_all() is NOT involved: that is a separate,
+    // Application-only teardown signal (see application.cpp), never called by
+    // PrinterState::deinit_subjects() or any test fixture. So this exercises
+    // the SubjectLifetime bool path specifically, not the invalidation-epoch
+    // shortcut that would mask a missing lifetime token.
+    lv_obj_t* bed_root =
+        create_icon_root(test_screen(), HeaterIconBinder::default_icon_name(HeaterType::Bed));
+    lv_obj_t* chamber_root =
+        create_icon_root(test_screen(), HeaterIconBinder::default_icon_name(HeaterType::Chamber));
+
+    HeaterIconBinder bed_binder;
+    HeaterIconBinder chamber_binder;
+    REQUIRE(bed_binder.bind(bed_root, state(), HeaterType::Bed));
+    REQUIRE(chamber_binder.bind(chamber_root, state(), HeaterType::Chamber));
+    REQUIRE(bed_binder.is_bound());
+    REQUIRE(chamber_binder.is_bound());
+
+    // Simulate a printer-state reinit cycle: signals subject death (each
+    // lifetime bool -> false) then frees the subjects via lv_subject_deinit().
+    state().deinit_subjects();
+
+    // Must not crash.
+    bed_binder.unbind();
+    chamber_binder.unbind();
+    REQUIRE_FALSE(bed_binder.is_bound());
+    REQUIRE_FALSE(chamber_binder.is_bound());
 }

@@ -130,6 +130,8 @@ void HeaterIconBinder::unbind() {
     target_lifetime_.reset();
     current_subject_ = nullptr;
     target_subject_ = nullptr;
+    cached_current_ = 250;
+    cached_target_ = 0;
 }
 
 } // namespace helix::ui
