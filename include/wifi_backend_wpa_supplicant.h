@@ -177,6 +177,8 @@ class WifiBackendWpaSupplicant : public WifiBackend, private hv::EventLoopThread
     WiFiError disconnect_network() override;
     ConnectionStatus get_status() override;
     bool supports_5ghz() const override;
+    WiFiError set_radio_enabled(bool on) override;
+    bool is_radio_enabled() const override;
 
   private:
     // ========================================================================
@@ -340,6 +342,14 @@ class WifiBackendWpaSupplicant : public WifiBackend, private hv::EventLoopThread
     std::optional<helix::wifi::WifiInterface> resolved_interface() const;
 
   private:
+    // Last state requested via set_radio_enabled(). Defaults to true (radio on).
+    std::atomic<bool> radio_enabled_{true};
+
+    /// Write "0"/"1" to the resolved rfkill node's `soft` attribute.
+    /// @return false when there is no node or the write failed (not fatal —
+    ///         DISCONNECT + DISABLE_NETWORK already stopped association).
+    bool set_rfkill_soft_block(bool blocked);
+
     // Shutdown coordination - prevents use-after-free when start() times out
     // (GitHub issue #8: thread still in wpa_ctrl_attach when destructor runs)
     std::atomic<bool> shutdown_requested_{false};

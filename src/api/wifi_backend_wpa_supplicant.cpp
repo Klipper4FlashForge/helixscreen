@@ -1416,6 +1416,61 @@ WiFiError WifiBackendWpaSupplicant::disconnect_network() {
     }
 }
 
+WiFiError WifiBackendWpaSupplicant::set_radio_enabled(bool on) {
+    if (!is_running())
+        return WiFiError(WiFiResult::NOT_INITIALIZED, "Backend not started",
+                         "WiFi system not ready");
+
+    if (on) {
+        // Unblock first: ENABLE_NETWORK on a soft-blocked radio associates with
+        // nothing and the user sees a toggle that flips back.
+        set_rfkill_soft_block(false);
+        const std::string enabled = send_command("ENABLE_NETWORK all");
+        if (enabled.compare(0, 2, "OK") != 0)
+            LOG_WARN_INTERNAL("ENABLE_NETWORK all returned: {}", enabled);
+        send_command("RECONNECT");
+        spdlog::info("[WifiBackend] Radio enabled");
+    } else {
+        // Order matters: stop association while we can still talk to the
+        // daemon, then block the radio. Reversed, the DISCONNECT may never
+        // reach a blocked interface.
+        send_command("DISCONNECT");
+        const std::string disabled = send_command("DISABLE_NETWORK all");
+        if (disabled.compare(0, 2, "OK") != 0)
+            LOG_WARN_INTERNAL("DISABLE_NETWORK all returned: {}", disabled);
+        if (!set_rfkill_soft_block(true)) {
+            spdlog::info("[WifiBackend] No rfkill switch — radio off is association-only");
+        }
+        spdlog::info("[WifiBackend] Radio disabled");
+    }
+
+    radio_enabled_ = on;
+    return WiFiErrorHelper::success();
+}
+
+bool WifiBackendWpaSupplicant::is_radio_enabled() const {
+    return radio_enabled_.load();
+}
+
+bool WifiBackendWpaSupplicant::set_rfkill_soft_block(bool blocked) {
+    const auto iface = resolved_interface();
+    if (!iface || iface->rfkill_node.empty())
+        return false;
+
+    const std::string path = iface->rfkill_node + "/soft";
+    std::ofstream f(path);
+    if (!f.is_open()) {
+        spdlog::debug("[WifiBackend] Cannot open {} — no rfkill control", path);
+        return false;
+    }
+    f << (blocked ? "1" : "0");
+    if (!f.good()) {
+        spdlog::debug("[WifiBackend] Write to {} failed", path);
+        return false;
+    }
+    return true;
+}
+
 WifiBackend::ConnectionStatus WifiBackendWpaSupplicant::get_status() {
     ConnectionStatus status = {};
     status.connected = false;
