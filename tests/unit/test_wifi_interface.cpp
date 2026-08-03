@@ -171,3 +171,31 @@ TEST_CASE("resolve_interface tolerates a missing conf path", "[wifi][interface]"
     CHECK(iface->netdev == "wlan0");
     CHECK(iface->conf_path.empty());
 }
+
+TEST_CASE("find_rfkill_node prefers the netdev's own phy link", "[wifi][interface]") {
+    FakeRoot fr;
+    fr.mkdirs("sys/class/net/wlan0/phy80211/rfkill2");
+    fr.mkdirs("sys/class/rfkill/rfkill0");
+    fr.write("sys/class/rfkill/rfkill0/type", "bluetooth\n");
+
+    const auto node = helix::wifi::detail::find_rfkill_node(fr.base + "/sys", "wlan0");
+    CHECK(node == fr.base + "/sys/class/rfkill/rfkill2");
+}
+
+TEST_CASE("find_rfkill_node falls back to a wlan-typed switch", "[wifi][interface]") {
+    FakeRoot fr;
+    fr.mkdirs("sys/class/net/wlan0/wireless");
+    fr.mkdirs("sys/class/rfkill/rfkill0");
+    fr.write("sys/class/rfkill/rfkill0/type", "bluetooth\n");
+    fr.mkdirs("sys/class/rfkill/rfkill1");
+    fr.write("sys/class/rfkill/rfkill1/type", "wlan\n");
+
+    const auto node = helix::wifi::detail::find_rfkill_node(fr.base + "/sys", "wlan0");
+    CHECK(node == fr.base + "/sys/class/rfkill/rfkill1");
+}
+
+TEST_CASE("find_rfkill_node returns empty when the driver exposes none", "[wifi][interface]") {
+    FakeRoot fr;
+    fr.mkdirs("sys/class/net/wlan0/wireless");
+    CHECK(helix::wifi::detail::find_rfkill_node(fr.base + "/sys", "wlan0").empty());
+}

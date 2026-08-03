@@ -72,6 +72,11 @@ std::string parse_wpa_state(const std::string& status_reply);
 pid_t find_daemon_for_interface(const std::string& proc_root, const std::string& netdev,
                                 std::string& conf_path_out);
 
+/// Find the rfkill switch controlling @p netdev's radio.
+/// Prefers the device's own PHY rfkill entry (phy80211/rfkill*/), and falls back
+/// to the first "wlan" typed switch in /sys/class/rfkill/. Returns "" if none.
+std::string find_rfkill_node(const std::string& sys_root, const std::string& netdev);
+
 } // namespace detail
 
 } // namespace helix::wifi

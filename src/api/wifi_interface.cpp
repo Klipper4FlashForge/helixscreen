@@ -96,6 +96,52 @@ pid_t find_daemon_for_interface(const std::string& proc_root, const std::string&
     return -1;
 }
 
+std::string find_rfkill_node(const std::string& sys_root, const std::string& netdev) {
+    std::error_code ec;
+
+    // Try to find an rfkill entry in the netdev's phy80211 directory.
+    const std::string phy_dir = sys_root + "/class/net/" + netdev + "/phy80211";
+    if (fs::is_directory(phy_dir, ec) && !ec) {
+        for (const auto& entry : fs::directory_iterator(phy_dir, ec)) {
+            if (ec)
+                break;
+            const std::string name = entry.path().filename().string();
+            if (name.compare(0, 6, "rfkill") == 0) {
+                return sys_root + "/class/rfkill/" + name;
+            }
+        }
+    }
+
+    // Fall back to the first "wlan" typed switch in /sys/class/rfkill/.
+    const std::string rfkill_dir = sys_root + "/class/rfkill";
+    if (fs::is_directory(rfkill_dir, ec) && !ec) {
+        for (const auto& entry : fs::directory_iterator(rfkill_dir, ec)) {
+            if (ec)
+                break;
+
+            const std::string rfkill_name = entry.path().filename().string();
+            const std::string type_file = entry.path() / "type";
+
+            std::ifstream f(type_file);
+            if (!f.is_open())
+                continue;
+
+            std::string type_value;
+            std::getline(f, type_value);
+            // Trim trailing whitespace.
+            while (!type_value.empty() && (type_value.back() == '\r' || type_value.back() == '\n' ||
+                                           type_value.back() == ' ' || type_value.back() == '\t'))
+                type_value.pop_back();
+
+            if (type_value == "wlan") {
+                return rfkill_dir + "/" + rfkill_name;
+            }
+        }
+    }
+
+    return "";
+}
+
 } // namespace detail
 
 std::optional<WifiInterface> resolve_interface(const Roots& roots, const StatusProbe& probe) {
@@ -149,7 +195,7 @@ std::optional<WifiInterface> resolve_interface(const Roots& roots, const StatusP
     result.associated = have_completed;
     result.daemon_pid =
         detail::find_daemon_for_interface(roots.proc, result.netdev, result.conf_path);
-    // rfkill_node intentionally left empty here — filled in by a later task.
+    result.rfkill_node = detail::find_rfkill_node(roots.sys, result.netdev);
 
     return result;
 }
