@@ -42,6 +42,23 @@ class WiFiManager {
     explicit WiFiManager(bool silent = false);
 
     /**
+     * @brief Initialize WiFi manager with an injected backend (test seam)
+     *
+     * Bypasses WifiBackend::create() platform selection and runs the same
+     * callback-registration + start_async() bringup as the default
+     * constructor against the given backend. Lets tests exercise
+     * WiFiManager against a WifiBackendMock instance they retain a raw
+     * pointer to, instead of going through RuntimeConfig's mock-selection
+     * plumbing.
+     *
+     * @param backend Backend to own and drive; must be non-null
+     * @param silent  If true, suppress error modals (defaults to true here —
+     *                tests are the only caller and generally don't want
+     *                modal side effects)
+     */
+    explicit WiFiManager(std::unique_ptr<WifiBackend> backend, bool silent = true);
+
+    /**
      * @brief Destructor - ensures clean shutdown
      */
     ~WiFiManager();
@@ -247,14 +264,15 @@ class WiFiManager {
 
     // Scanning state
     lv_timer_t* scan_timer_;
-    std::function<void(const std::vector<WiFiNetwork>&)> scan_callback_; // guarded by callback_mutex_
+    std::function<void(const std::vector<WiFiNetwork>&)>
+        scan_callback_; // guarded by callback_mutex_
     bool scan_pending_; // guarded by callback_mutex_; true when scan triggered, cleared after first
                         // SCAN_COMPLETE processed
 
     // Connection state
     std::function<void(bool, const std::string&)> connect_callback_; // guarded by callback_mutex_
-    bool connecting_in_progress_ = false; // guarded by callback_mutex_; true during connect attempt,
-                                          // prevents false failure on DISCONNECTED
+    bool connecting_in_progress_ = false; // guarded by callback_mutex_; true during connect
+                                          // attempt, prevents false failure on DISCONNECTED
 
     // Auth-failure debounce (helixscreen#1050). Some adapters' wpa_supplicant emit a
     // transient CTRL-EVENT-SSID-TEMP-DISABLED/WRONG_KEY mid-handshake on a connect that

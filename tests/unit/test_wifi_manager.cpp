@@ -4,6 +4,7 @@
 #include "../../include/async_lifetime_guard.h"
 #include "../../include/runtime_config.h"
 #include "../../include/ui_update_queue.h"
+#include "../../include/wifi_backend_mock.h"
 #include "../../include/wifi_manager.h"
 #include "../../lvgl/lvgl.h"
 #include "../ui_test_utils.h"
@@ -786,4 +787,29 @@ TEST_CASE_METHOD(WiFiManagerTestFixture,
 #else
     SUCCEED("Mocks disabled in this build — observer test skipped");
 #endif
+}
+
+// helixscreen: set_enabled(false) used to call backend_->stop(), which tore
+// down the control connection to wpa_supplicant entirely — the radio stayed
+// associated and routed (UI reported "off" while the printer was still on
+// WiFi), and every later STATUS logged "send_command called but not
+// connected to wpa_supplicant" because there was nothing left to query.
+// set_enabled must now drive the radio directly and leave the backend
+// running so the connection survives a toggle.
+TEST_CASE("set_enabled(false) turns the radio off without stopping the backend",
+          "[wifi][manager][radio]") {
+    auto backend = std::make_unique<WifiBackendMock>();
+    WifiBackendMock* raw = backend.get();
+    WiFiManager manager(std::move(backend));
+
+    REQUIRE(manager.set_enabled(false));
+    CHECK_FALSE(raw->is_radio_enabled());
+    // The old implementation called stop() here, after which no command could
+    // be sent and every STATUS logged "not connected to wpa_supplicant".
+    CHECK(raw->is_running());
+    CHECK_FALSE(manager.is_enabled());
+
+    REQUIRE(manager.set_enabled(true));
+    CHECK(raw->is_radio_enabled());
+    CHECK(manager.is_enabled());
 }

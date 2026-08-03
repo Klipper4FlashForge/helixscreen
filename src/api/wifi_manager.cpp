@@ -75,6 +75,29 @@ WiFiManager::WiFiManager(bool silent) : scan_timer_(nullptr), scan_pending_(fals
     backend_->start_async();
 }
 
+WiFiManager::WiFiManager(std::unique_ptr<WifiBackend> backend, bool silent)
+    : scan_timer_(nullptr), scan_pending_(false) {
+    spdlog::debug("[WiFiManager] Initializing with injected backend{}",
+                  silent ? " (silent mode)" : "");
+
+    backend_ = std::move(backend);
+    if (!backend_) {
+        if (!silent) {
+            NOTIFY_ERROR_MODAL("WiFi Unavailable",
+                               "Could not initialize WiFi hardware. Check system configuration.");
+        } else {
+            spdlog::debug("[WiFiManager] WiFi unavailable (silent mode - no modal)");
+        }
+        return;
+    }
+
+    // Same bringup sequence as the platform-selecting constructor: register
+    // handlers before kicking off async init so no READY / INIT_FAILED event
+    // is missed.
+    register_backend_callbacks(silent);
+    backend_->start_async();
+}
+
 void WiFiManager::register_backend_callbacks(bool silent) {
     backend_->register_event_callback(
         "SCAN_COMPLETE", [this](const std::string& data) { handle_scan_complete(data); });
@@ -419,7 +442,7 @@ bool WiFiManager::has_hardware() {
 bool WiFiManager::is_enabled() {
     if (!backend_)
         return false;
-    return backend_->is_running();
+    return backend_->is_running() && backend_->is_radio_enabled();
 }
 
 bool WiFiManager::set_enabled(bool enabled) {
@@ -428,34 +451,38 @@ bool WiFiManager::set_enabled(bool enabled) {
 
     spdlog::debug("[WiFiManager] set_enabled({})", enabled);
 
-    if (enabled) {
-        // Explicit user toggle — synchronous start() is acceptable here
-        // (user already gated on the click; brief subprocess probing is OK).
-        // The non-blocking path lives in the constructor so first-paint
-        // isn't stalled.
-        WiFiError result = backend_->start();
-        if (!result.success()) {
-            // A live system-managed link (printer reachable by IP) means the
-            // backend just can't reach wpa_supplicant's control socket; the
-            // radio is not actually off. Don't surface a hard error toast for
-            // an unmanageable-but-up link (helixscreen#1059).
-            if (os_link_up()) {
-                spdlog::debug("[WiFiManager] Backend start failed but OS link is up "
-                              "(system-managed) — suppressing user error: {}",
-                              result.user_msg.empty() ? result.technical_msg : result.user_msg);
-            } else {
-                NOTIFY_ERROR("Failed to enable WiFi: {}",
-                             result.user_msg.empty() ? result.technical_msg : result.user_msg);
-            }
-        } else {
-            spdlog::debug("[WiFiManager] WiFi backend started successfully");
-        }
-        return result.success();
-    } else {
-        backend_->stop();
-        spdlog::debug("[WiFiManager] WiFi backend stopped");
-        return true;
+    if (!enabled) {
+        // Stop scanning — the timer must not keep firing trigger_scan()
+        // against a radio we just turned off.
+        stop_scan();
     }
+
+    // Radio on/off, NOT backend start()/stop(). stop() tears down the control
+    // connection to wpa_supplicant entirely, so a subsequent STATUS has
+    // nothing to query — every later call logs "send_command called but not
+    // connected to wpa_supplicant" and the UI can't even report the radio is
+    // off, let alone turn it back on. set_radio_enabled() actually asserts
+    // the interface down (or blocks it via rfkill) while keeping the control
+    // socket alive.
+    WiFiError result = backend_->set_radio_enabled(enabled);
+    if (!result.success()) {
+        // A live system-managed link (printer reachable by IP) means the
+        // backend just can't reach wpa_supplicant's control socket; the
+        // radio is not actually off. Don't surface a hard error toast for
+        // an unmanageable-but-up link (helixscreen#1059).
+        if (os_link_up()) {
+            spdlog::debug("[WiFiManager] Radio {} failed but OS link is up "
+                          "(system-managed) — suppressing user error: {}",
+                          enabled ? "enable" : "disable",
+                          result.user_msg.empty() ? result.technical_msg : result.user_msg);
+        } else {
+            NOTIFY_ERROR("Failed to {} WiFi: {}", enabled ? "enable" : "disable",
+                         result.user_msg.empty() ? result.technical_msg : result.user_msg);
+        }
+    } else {
+        spdlog::debug("[WiFiManager] WiFi radio {}", enabled ? "enabled" : "disabled");
+    }
+    return result.success();
 }
 
 void WiFiManager::retry_async() {
