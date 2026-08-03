@@ -255,7 +255,7 @@ HeatState classify_heat_state(int current, int target, int tolerance = DEFAULT_A
  * @brief Get theme color for temperature display based on 4-state heating logic
  *
  * Returns a color indicating the thermal state of a heater:
- * - **Off** (target=0): text_muted (gray) - heater disabled
+ * - **Off** (target<=0): text_muted (gray) - heater disabled
  * - **Heating** (current < target - tolerance): primary_color (red) - actively heating
  * - **At-temp** (within ±tolerance): success_color (green) - stable at target
  * - **Cooling** (current > target + tolerance): info_color (blue) - cooling down

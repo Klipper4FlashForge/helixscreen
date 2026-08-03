@@ -10,12 +10,6 @@
 
 #include <spdlog/spdlog.h>
 
-#include <algorithm>
-
-using helix::ui::temperature::deci_to_degrees_f;
-
-// Gradient colors now use theme tokens: temp_gradient_cold, temp_gradient_warm, temp_gradient_hot
-
 HeatingIconAnimator::~HeatingIconAnimator() {
     if (lv_is_initialized()) {
         detach();
@@ -27,10 +21,10 @@ HeatingIconAnimator::~HeatingIconAnimator() {
 }
 
 HeatingIconAnimator::HeatingIconAnimator(HeatingIconAnimator&& other) noexcept
-    : icon_(other.icon_), state_(other.state_), ambient_temp_(other.ambient_temp_),
-      current_temp_(other.current_temp_), target_temp_(other.target_temp_),
-      current_color_(other.current_color_), current_opacity_(other.current_opacity_),
-      pulse_active_(other.pulse_active_), theme_observer_(std::move(other.theme_observer_)) {
+    : icon_(other.icon_), state_(other.state_), current_temp_(other.current_temp_),
+      target_temp_(other.target_temp_), current_color_(other.current_color_),
+      current_opacity_(other.current_opacity_), pulse_active_(other.pulse_active_),
+      theme_observer_(std::move(other.theme_observer_)) {
     other.icon_ = nullptr;
     other.pulse_active_ = false;
 }
@@ -40,7 +34,6 @@ HeatingIconAnimator& HeatingIconAnimator::operator=(HeatingIconAnimator&& other)
         detach();
         icon_ = other.icon_;
         state_ = other.state_;
-        ambient_temp_ = other.ambient_temp_;
         current_temp_ = other.current_temp_;
         target_temp_ = other.target_temp_;
         current_color_ = other.current_color_;
@@ -58,7 +51,7 @@ void HeatingIconAnimator::attach(lv_obj_t* icon) {
         detach();
     }
     icon_ = icon;
-    state_ = State::OFF;
+    state_ = State::Off;
     current_color_ = get_secondary_color();
     current_opacity_ = LV_OPA_COVER;
     apply_color();
@@ -109,91 +102,28 @@ void HeatingIconAnimator::update(int current_temp, int target_temp) {
     current_temp_ = current_temp;
     target_temp_ = target_temp;
 
-    // Determine new state based on temperatures
-    State new_state;
-    if (target_temp <= 0) {
-        new_state = State::OFF;
-    } else if (current_temp >= target_temp - TEMP_TOLERANCE) {
-        new_state = State::AT_TARGET;
-    } else {
-        new_state = State::HEATING;
-    }
+    // Same classifier the temperature label uses, in decidegrees.
+    State new_state =
+        helix::ui::temperature::classify_heat_state(current_temp, target_temp, TEMP_TOLERANCE);
 
-    // Handle state transitions
     if (new_state != state_) {
-        State old_state = state_;
         state_ = new_state;
 
-        switch (new_state) {
-        case State::OFF:
-            // Heater turned off - stop pulse, show secondary color
-            stop_pulse();
-            current_color_ = get_secondary_color();
-            current_opacity_ = LV_OPA_COVER;
-            apply_color();
-            spdlog::trace("[HeatingIconAnimator] State: OFF");
-            break;
-
-        case State::HEATING:
-            // Starting to heat - capture ambient and start pulse
-            if (old_state == State::OFF) {
-                // Fresh heating start - capture current temp as ambient
-                ambient_temp_ = current_temp;
-                spdlog::debug("[HeatingIconAnimator] Captured ambient: {:.1f}°C, target: {:.1f}°C",
-                              deci_to_degrees_f(ambient_temp_), deci_to_degrees_f(target_temp));
-            }
-            // Start or continue pulse animation
+        // Pulse means "working toward a setpoint from below". Cooling is a
+        // transient step-down and off is idle; neither should pulse.
+        if (new_state == State::Heating) {
             if (!pulse_active_) {
                 start_pulse();
             }
-            spdlog::trace("[HeatingIconAnimator] State: HEATING");
-            break;
-
-        case State::AT_TARGET:
-            // Reached target - stop pulse, solid hot color
+        } else {
             stop_pulse();
-            current_color_ = theme_manager_get_color("temp_gradient_hot");
-            current_opacity_ = LV_OPA_COVER;
-            spdlog::trace("[HeatingIconAnimator] State: AT_TARGET");
-            break;
         }
+        spdlog::trace("[HeatingIconAnimator] State: {}", static_cast<int>(new_state));
     }
 
-    // Update gradient color if heating
-    if (state_ == State::HEATING) {
-        // Calculate progress: (current - ambient) / (target - ambient)
-        float progress = 0.0f;
-        int range = target_temp_ - ambient_temp_;
-        if (range > 0) {
-            progress =
-                static_cast<float>(current_temp_ - ambient_temp_) / static_cast<float>(range);
-            progress = std::clamp(progress, 0.0f, 1.0f);
-        }
-        current_color_ = calculate_gradient_color(progress);
-    }
-
+    current_color_ = helix::ui::temperature::get_heating_state_color(current_temp_, target_temp_,
+                                                                     TEMP_TOLERANCE);
     apply_color();
-}
-
-lv_color_t HeatingIconAnimator::calculate_gradient_color(float progress) {
-    // Two-segment gradient:
-    // 0.0 - 0.5: cold (blue) → warm (amber)
-    // 0.5 - 1.0: warm (amber) → hot (red)
-
-    lv_color_t cold = theme_manager_get_color("temp_gradient_cold");
-    lv_color_t warm = theme_manager_get_color("temp_gradient_warm");
-    lv_color_t hot = theme_manager_get_color("temp_gradient_hot");
-
-    if (progress < 0.5f) {
-        // Cold → Warm
-        // lv_color_mix: mix ratio is how much of c1 to use (0=c2, 255=c1)
-        uint8_t ratio = static_cast<uint8_t>(progress * 2.0f * 255.0f);
-        return lv_color_mix(warm, cold, ratio);
-    } else {
-        // Warm → Hot
-        uint8_t ratio = static_cast<uint8_t>((progress - 0.5f) * 2.0f * 255.0f);
-        return lv_color_mix(hot, warm, ratio);
-    }
 }
 
 void HeatingIconAnimator::start_pulse() {
@@ -237,7 +167,9 @@ void HeatingIconAnimator::apply_color() {
     // Try to set color on the attached widget directly (for single icons)
     ui_icon_set_color(icon_, current_color_, current_opacity_);
 
-    // Also iterate through children (for composite icons like bed's heat_wave + train_flatbed)
+    // Also recolor direct children. Dead code for every current call site — they
+    // all attach to a leaf <icon> label — but kept so attaching to a wrapper
+    // component (e.g. nozzle_icon.xml) tints its glyph rather than nothing.
     uint32_t child_count = lv_obj_get_child_count(icon_);
     for (uint32_t i = 0; i < child_count; i++) {
         lv_obj_t* child = lv_obj_get_child(icon_, static_cast<int32_t>(i));
@@ -248,8 +180,8 @@ void HeatingIconAnimator::apply_color() {
 }
 
 lv_color_t HeatingIconAnimator::get_secondary_color() {
-    // Use theme's secondary color for "off" state (matches other icons)
-    return theme_manager_get_color("secondary");
+    // Off-state color, shared with the temperature label (text_muted, not secondary).
+    return helix::ui::temperature::get_heating_state_color(0, 0, TEMP_TOLERANCE);
 }
 
 void HeatingIconAnimator::refresh_theme() {
@@ -257,27 +189,10 @@ void HeatingIconAnimator::refresh_theme() {
         return;
     }
 
-    // Re-fetch colors from theme and re-apply based on current state
-    switch (state_) {
-    case State::OFF:
-        current_color_ = get_secondary_color();
-        apply_color();
-        break;
-    case State::HEATING:
-        // Recalculate gradient color (gradient colors are theme tokens)
-        if (target_temp_ > ambient_temp_) {
-            float progress = static_cast<float>(current_temp_ - ambient_temp_) /
-                             static_cast<float>(target_temp_ - ambient_temp_);
-            progress = std::clamp(progress, 0.0f, 1.0f);
-            current_color_ = calculate_gradient_color(progress);
-        }
-        apply_color();
-        break;
-    case State::AT_TARGET:
-        current_color_ = theme_manager_get_color("temp_gradient_hot");
-        apply_color();
-        break;
-    }
+    // Colors are theme tokens — re-resolve them for the current state.
+    current_color_ = helix::ui::temperature::get_heating_state_color(current_temp_, target_temp_,
+                                                                     TEMP_TOLERANCE);
+    apply_color();
 }
 
 void HeatingIconAnimator::pulse_anim_cb(void* var, int32_t value) {
