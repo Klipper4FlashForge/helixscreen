@@ -115,6 +115,63 @@ TEST_CASE_METHOD(ThumbnailRaceFixture,
     CHECK(proc->pending_tasks() == 0);
 }
 
+// ---------------------------------------------------------------------------
+// process_file_async: the read belongs to the worker, not the caller.
+//
+// ThumbnailCache::process_and_callback() used to slurp the whole PNG on the
+// MAIN thread and hand the bytes to process_async() — once per file while a
+// file listing populated, so scrolling a gcode folder put a synchronous
+// whole-file read on the LVGL loop per card. process_file_async() takes the
+// path instead and opens it inside the pool task.
+// ---------------------------------------------------------------------------
+
+TEST_CASE_METHOD(ThumbnailRaceFixture, "process_file_async opens the file on the worker thread",
+                 "[thumbnail][threading][slow]") {
+    ProcHandle proc;
+
+    std::atomic<int> errors{0};
+    std::atomic<int> successes{0};
+
+    // A path that cannot possibly open. If the read happened on THIS thread the
+    // failure would be known by the time the call returns.
+    proc->process_file_async(
+        "/nonexistent/definitely/not/here.png", "missing.png", target_120(),
+        [&successes](const std::string&) { ++successes; },
+        [&errors](const std::string&) { ++errors; });
+
+    // Nothing reported yet: the open() has not run on the calling thread. This
+    // is the assertion that fails if the read is ever moved back inline.
+    CHECK(errors.load() == 0);
+    CHECK(successes.load() == 0);
+
+    // The worker runs, fails the open, and reports through the UpdateQueue.
+    proc->wait_for_completion();
+    helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+
+    CHECK(errors.load() == 1);
+    CHECK(successes.load() == 0);
+}
+
+TEST_CASE_METHOD(ThumbnailRaceFixture, "process_file_async after shutdown reports an error",
+                 "[thumbnail][threading][slow]") {
+    ProcHandle proc;
+
+    proc->shutdown();
+
+    std::atomic<int> errors{0};
+    std::atomic<int> successes{0};
+    proc->process_file_async(
+        "/tmp/whatever.png", "after_shutdown.png", target_120(),
+        [&successes](const std::string&) { ++successes; },
+        [&errors](const std::string&) { ++errors; });
+
+    // Same contract as process_async(): with no pool the error is synchronous,
+    // and nothing may be enqueued (a commit would restart the stopped pool).
+    CHECK(errors.load() == 1);
+    CHECK(successes.load() == 0);
+    CHECK(proc->pending_tasks() == 0);
+}
+
 TEST_CASE_METHOD(ThumbnailRaceFixture, "shutdown is idempotent and keeps refusing work",
                  "[thumbnail][threading][1202]") {
     ProcHandle proc;
