@@ -105,8 +105,8 @@ TEST_CASE("MoonrakerClient destructor clears callbacks (UAF prevention)",
     SECTION("Destroy client before connection completes") {
         auto client = std::make_unique<MoonrakerClient>();
 
-        bool connected_called = false;
-        bool disconnected_called = false;
+        std::atomic<bool> connected_called{false};
+        std::atomic<bool> disconnected_called{false};
 
         // Start connection to non-existent server (will fail)
         client->connect(
@@ -127,7 +127,7 @@ TEST_CASE("MoonrakerClient destructor clears callbacks (UAF prevention)",
     SECTION("Destroy client with pending requests") {
         auto client = std::make_unique<MoonrakerClient>();
 
-        bool error_callback_invoked = false;
+        std::atomic<bool> error_callback_invoked{false};
 
         // Send request that will never complete (no connection)
         client->send_jsonrpc(
@@ -141,7 +141,7 @@ TEST_CASE("MoonrakerClient destructor clears callbacks (UAF prevention)",
         client.reset();
 
         // Error callback should have been invoked during cleanup
-        REQUIRE(error_callback_invoked);
+        REQUIRE(error_callback_invoked.load());
     }
 
     SECTION("Multiple rapid create/destroy cycles (stress test)") {
@@ -171,7 +171,7 @@ TEST_CASE("MoonrakerClient destructor clears callbacks (UAF prevention)",
     SECTION("Destroy client with registered persistent callbacks") {
         auto client = std::make_unique<MoonrakerClient>();
 
-        bool notify_callback_invoked = false;
+        std::atomic<bool> notify_callback_invoked{false};
 
         // Register persistent status update callback
         client->register_notify_update(
@@ -318,7 +318,7 @@ TEST_CASE_METHOD(MoonrakerClientSecurityFixture,
                  "MoonrakerClient state change callback is exception safe",
                  "[connection][security][exception][issue9][eventloop][slow]") {
     SECTION("State change callback that throws doesn't crash") {
-        bool callback_invoked = false;
+        std::atomic<bool> callback_invoked{false};
 
         // Register callback that throws
         client->set_state_change_callback(
@@ -332,7 +332,7 @@ TEST_CASE_METHOD(MoonrakerClientSecurityFixture,
         REQUIRE_NOTHROW(client->connect("ws://127.0.0.1:19999/websocket", []() {}, []() {}));
 
         // Verify callback was invoked (and threw)
-        REQUIRE(callback_invoked);
+        REQUIRE(callback_invoked.load());
     }
 }
 
@@ -342,7 +342,7 @@ TEST_CASE_METHOD(MoonrakerClientSecurityFixture,
     SECTION("Success callback throwing doesn't crash client") {
         // Register request with throwing callback
         // Note: Since not connected, request will timeout and error callback invoked
-        bool error_callback_invoked = false;
+        std::atomic<bool> error_callback_invoked{false};
 
         client->send_jsonrpc(
             "printer.info", json(),
@@ -421,7 +421,7 @@ TEST_CASE_METHOD(MoonrakerClientSecurityFixture,
                  "MoonrakerClient notify callbacks are exception safe",
                  "[connection][security][exception][issue9][eventloop][slow]") {
     SECTION("Notify callback throwing doesn't crash") {
-        bool callback_invoked = false;
+        std::atomic<bool> callback_invoked{false};
 
         // Register notify callback that throws
         client->register_notify_update([&callback_invoked](const json& notification) {
@@ -431,11 +431,11 @@ TEST_CASE_METHOD(MoonrakerClientSecurityFixture,
 
         // Verify notify callback registration itself doesn't throw
         // (actual notification dispatch requires a server connection)
-        REQUIRE(callback_invoked == false);
+        REQUIRE(callback_invoked.load() == false);
     }
 
     SECTION("Method callback throwing doesn't crash") {
-        bool callback_invoked = false;
+        std::atomic<bool> callback_invoked{false};
 
         // Register method callback that throws
         client->register_method_callback(
@@ -446,7 +446,7 @@ TEST_CASE_METHOD(MoonrakerClientSecurityFixture,
 
         // Verify method callback registration itself doesn't throw
         // (actual method dispatch requires a server connection)
-        REQUIRE(callback_invoked == false);
+        REQUIRE(callback_invoked.load() == false);
     }
 }
 
