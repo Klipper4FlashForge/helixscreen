@@ -376,8 +376,6 @@ void TemperatureService::update_status(HeaterType type) {
     int heating_state = (h.target > 0) ? 1 : 0;
     lv_subject_set_int(&h.heating_subject, heating_state);
 
-    h.animator.update(h.current, h.target);
-
     spdlog::trace("[TempPanel] {} status: '{}' (heating={})", heater_label(type),
                   h.status_buf.data(), heating_state);
 }
@@ -764,23 +762,12 @@ void TemperatureService::setup_panel(HeaterType type, lv_obj_t* panel, lv_obj_t*
 
     replay_history_to_graph(type);
 
-    // Attach heating icon animator
-    const char* icon_name = nullptr;
-    if (type == HeaterType::Nozzle) {
-        icon_name = "nozzle_icon_glyph";
-    } else if (type == HeaterType::Bed) {
-        icon_name = "bed_icon";
-    } else if (type == HeaterType::Chamber) {
-        icon_name = "chamber_icon";
-    }
-
-    if (icon_name) {
-        lv_obj_t* heater_icon = lv_obj_find_by_name(panel, icon_name);
-        if (heater_icon) {
-            h.animator.attach(heater_icon);
-            h.animator.update(h.current, h.target);
-            spdlog::debug("[TempPanel] {} heating animator attached", heater_label(type));
-        }
+    // Bind heating icon animator. The binder owns its own temperature
+    // observers and finds the icon by the conventional glyph name under this
+    // heater's own overlay panel root, so it cannot pick up another heater's
+    // same-named icon.
+    if (h.icon_binder.bind(panel, printer_state_, type)) {
+        spdlog::debug("[TempPanel] {} heating icon binder attached", heater_label(type));
     }
 
     // Nozzle-specific: multi-extruder support

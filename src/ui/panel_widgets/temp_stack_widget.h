@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "ui_heating_animator.h"
-#include "ui_observer_guard.h"
+#include "ui_heater_config.h"
+#include "ui_heater_icon_binder.h"
 
 #include "async_lifetime_guard.h"
 #include "panel_widget.h"
@@ -42,45 +42,28 @@ class TempStackWidget : public PanelWidget {
     lv_obj_t* widget_obj_ = nullptr;
     lv_obj_t* parent_screen_ = nullptr;
 
-    // Heating icon animators
-    HeatingIconAnimator nozzle_animator_;
-    HeatingIconAnimator bed_animator_;
-
-    // Cached temps (decidegrees)
-    int cached_nozzle_temp_ = 25;
-    int cached_nozzle_target_ = 0;
-    int cached_bed_temp_ = 25;
-    int cached_bed_target_ = 0;
+    // Heating icon binders (nozzle/bed/chamber). Each owns its own temperature
+    // observers, bound from the narrowest applicable root: widget_obj_ for the
+    // stack layout (one row per heater), or the carousel page's own root for
+    // carousel mode (stack and carousel are mutually exclusive subtrees under
+    // widget_obj_ — see is_carousel_mode() / attach()).
+    helix::ui::HeaterIconBinder nozzle_icon_binder_;
+    helix::ui::HeaterIconBinder bed_icon_binder_;
+    helix::ui::HeaterIconBinder chamber_icon_binder_;
 
     bool long_pressed_ = false;
 
-    // Observers. The explicit detach() in ~TempStackWidget invalidates
-    // lifetime_ before resetting these — that is the primary defense. The
-    // member ordering below (lifetime_ declared LAST so it destructs FIRST)
-    // is a safety net for future refactors: it guarantees that even if a
-    // path destroys this widget without going through detach(), pending
-    // queued observer callbacks see token.expired() == true and short-circuit
-    // before touching the half-destroyed `self`. Bundle AX3CKAKB (k1 v0.99.52).
-    ObserverGuard nozzle_temp_observer_;
-    ObserverGuard nozzle_target_observer_;
-    SubjectLifetime bed_temp_lifetime_;
-    SubjectLifetime bed_target_lifetime_;
-    ObserverGuard bed_temp_observer_;
-    ObserverGuard bed_target_observer_;
-
     // MUST stay declared LAST: reverse-declaration destruction makes this the
     // first member torn down, invalidating every captured token before any
-    // observer destructs. See comment above.
+    // observer destructs. Kept for future deferred-callback use (e.g.
+    // long-press handling); no longer feeds icon-animator observers directly —
+    // those now live inside the HeaterIconBinder members above. Bundle
+    // AX3CKAKB (k1 v0.99.52).
     helix::AsyncLifetimeGuard lifetime_;
 
     bool is_carousel_mode() const;
     void attach_stack(lv_obj_t* widget_obj);
     void attach_carousel(lv_obj_t* widget_obj);
-
-    void on_nozzle_temp_changed(int temp_deci);
-    void on_nozzle_target_changed(int target_deci);
-    void on_bed_temp_changed(int temp_deci);
-    void on_bed_target_changed(int target_deci);
 
     void handle_nozzle_clicked();
     void handle_bed_clicked();

@@ -151,7 +151,7 @@
                       style_flex_cross_place="center" clickable="false" event_bubble="true">
                 <bind_style_if_eq name="temp_row_gap_tiny" subject="ui_breakpoint" ref_value="1"/>
                 <bind_style_if_ge name="temp_row_gap_standard" subject="ui_breakpoint" ref_value="2"/>
-                <icon name="nozzle_heater_icon"
+                <icon name="nozzle_icon_glyph"
                       src="heater" size="xs" variant="secondary" clickable="false" event_bubble="true"/>
                 <text_small bind_text="controls_nozzle_label">
                   <bind_flag_if_eq subject="ui_breakpoint" flag="hidden" ref_value="1"/>
