@@ -99,6 +99,10 @@ void PrinterPrintState::init_subjects(bool register_xml) {
     // Default 0; stays 0 forever on mainline Klipper (field absent).
     INIT_SUBJECT_INT(pl_env_valid, 0, subjects_, register_xml);
 
+    // print_stats.power_loss — Creality-fork Power-Loss-Recovery capability
+    // marker. Default 0; set to 1 by presence of the key (see update_from_status).
+    INIT_SUBJECT_INT(creality_plr_capable, 0, subjects_, register_xml);
+
     // Pre-populate per-extruder filament_used map. Freezing the map structure
     // here eliminates the BG-thread emplace vs UI-thread read rehash race
     // (see header). update_from_status and the accessor both do direct
@@ -239,6 +243,27 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
     if (status.contains("print_stats")) {
         const auto& stats = status["print_stats"];
 
+        // print_stats.power_loss — Creality-Klipper-fork Power-Loss-Recovery
+        // capability marker. The key exists ONLY in that fork, so PRESENCE (not
+        // value) is the signal: it normally reads 0 and only becomes 1 after the
+        // side-effectful detect probe. Two subtleties:
+        //   - "Present" must mean present AND numeric. We subscribe to a
+        //     narrowed field list, and Moonraker answers a subscribed-but-
+        //     unpopulated field with an explicit null, so on mainline Klipper the
+        //     key IS in the payload as null. is_number() is what discriminates.
+        //   - Latch UP only. Status arrives as deltas, so a later print_stats
+        //     notification carrying just print_duration has no power_loss key at
+        //     all; clearing on absence would manufacture a spurious 1->0->1 edge
+        //     and re-fire the probe. PlrOfferController resets this on the
+        //     disconnect edge instead.
+        if (auto plw_it = stats.find("power_loss"); plw_it != stats.end() && plw_it->is_number()) {
+            if (lv_subject_get_int(&creality_plr_capable_) != 1) {
+                spdlog::info("[PrinterPrintState] print_stats.power_loss present — Creality "
+                             "power-loss-recovery backend available");
+                lv_subject_set_int(&creality_plr_capable_, 1);
+            }
+        }
+
         // Seed print_duration_ BEFORE updating print_state_enum_. The state-change
         // observer in MoonrakerManager fires synchronously when print_state_enum_
         // changes and uses print_duration as a mid-print-attach signal: at a normal
@@ -324,8 +349,7 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
                 // PRINTING/PAUSED, so it's excluded here and the END_PRINT
                 // macro's farewell message (set after the COMPLETE clear above)
                 // survives.
-                if (new_state == PrintJobState::COMPLETE ||
-                    new_state == PrintJobState::CANCELLED ||
+                if (new_state == PrintJobState::COMPLETE || new_state == PrintJobState::CANCELLED ||
                     new_state == PrintJobState::ERROR ||
                     (new_state == PrintJobState::STANDBY &&
                      (current_state == PrintJobState::PRINTING ||

@@ -125,6 +125,18 @@ void EmergencyStopOverlay::deinit_subjects() {
     }
     subjects_.deinit_all();
     subjects_initialized_ = false;
+
+    // Both dialogs live on the active screen and are owned by ModalStack; neither
+    // survives the display teardown this runs ahead of (shutdown, or the soft
+    // restart after Add Printer). Deleting them here is not our job — the screen
+    // and the stack are torn down right after — but keeping the raw pointers is a
+    // dangling-reference hazard: show_recovery_for_main() and
+    // show_confirmation_dialog() both branch on non-null, so a stale pointer
+    // suppresses the next dialog on the rebuilt display.
+    recovery_dialog_ = nullptr;
+    confirmation_dialog_ = nullptr;
+    recovery_reason_ = RecoveryReason::NONE;
+
     spdlog::debug("[EmergencyStop] Subjects deinitialized");
 }
 
@@ -373,16 +385,23 @@ void EmergencyStopOverlay::show_recovery_for_main(RecoveryReason reason) {
         return;
     }
 
-    // If dialog is already showing, update reason if it's worse (SHUTDOWN -> DISCONNECTED means
+    // A backdrop tap dismisses the dialog through Modal::hide() without going
+    // through dismiss_recovery_dialog(), so recovery_dialog_ can still point at a
+    // modal that already left the stack. Drop the stale pointer first and let the
+    // rest of this function build a fresh dialog — the next SHUTDOWN or
+    // DISCONNECTED after a manual dismiss must still reach the user.
+    if (recovery_dialog_ && !ModalStack::instance().backdrop_for(recovery_dialog_)) {
+        spdlog::debug("[KlipperRecovery] Previous dialog was dismissed externally, "
+                      "clearing stale reference");
+        recovery_dialog_ = nullptr;
+        recovery_reason_ = RecoveryReason::NONE;
+    }
+
+    // If dialog is still showing, update reason if it's worse (SHUTDOWN -> DISCONNECTED means
     // can't restart)
     if (recovery_dialog_) {
-        // Check if dialog was dismissed externally (backdrop click, etc.)
-        if (!ModalStack::instance().backdrop_for(recovery_dialog_)) {
-            recovery_dialog_ = nullptr;
-            recovery_reason_ = RecoveryReason::NONE;
-            // Fall through to show new dialog
-        } else if (reason == RecoveryReason::DISCONNECTED &&
-                   recovery_reason_ == RecoveryReason::SHUTDOWN) {
+        if (reason == RecoveryReason::DISCONNECTED &&
+            recovery_reason_ == RecoveryReason::SHUTDOWN) {
             spdlog::info("[KlipperRecovery] Connection dropped while SHUTDOWN dialog showing, "
                          "updating buttons");
             recovery_reason_ = RecoveryReason::DISCONNECTED;

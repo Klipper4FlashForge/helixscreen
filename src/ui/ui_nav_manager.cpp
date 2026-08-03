@@ -2084,6 +2084,13 @@ bool NavigationManager::is_panel_in_stack(lv_obj_t* panel) const {
     return std::find(panel_stack_.begin(), panel_stack_.end(), panel) != panel_stack_.end();
 }
 
+bool NavigationManager::is_panel_on_top(lv_obj_t* panel) const {
+    if (!panel || panel_stack_.empty()) {
+        return false;
+    }
+    return panel_stack_.back() == panel;
+}
+
 bool NavigationManager::has_open_overlays() const {
     // Only check the panel stack — it tracks what's actually open/visible.
     // overlay_instances_ is a registration map (persistent overlays survive

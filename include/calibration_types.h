@@ -3,13 +3,88 @@
 
 #pragma once
 
+#include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
-/// Minutes of arc under which a screw is considered in-spec and shown as level.
-constexpr int SCREW_LEVEL_TOLERANCE_MINUTES = 5;
+// ============================================================================
+// Bed Screw Thread Geometry
+// ============================================================================
+
+/// Z travel per full turn (mm) for every thread Klipper's `screw_thread` accepts.
+/// Mirrors the `threads_factor` table in Klipper's screws_tilt_adjust.py.
+constexpr float SCREW_PITCH_M3_MM = 0.5f;
+constexpr float SCREW_PITCH_M4_MM = 0.7f;
+constexpr float SCREW_PITCH_M5_MM = 0.8f;
+constexpr float SCREW_PITCH_M6_MM = 1.0f;
+
+/// Pitch assumed when `screw_thread` is unreadable — Klipper's own default (CW-M3).
+constexpr float SCREW_PITCH_DEFAULT_MM = SCREW_PITCH_M3_MM;
+
+/// Corner-to-corner bed spread at or below which the bed counts as level.
+/// Expressed in mm because a clock-minute is a different physical distance on
+/// every thread pitch (5 min is 0.042 mm on M3 but 0.083 mm on M6).
+constexpr float SCREW_LEVEL_TOLERANCE_MM = 0.05f;
+
+/// Adjustment magnitude above which a screw is drawn as severe rather than warned.
+constexpr float SCREW_SEVERE_ADJUSTMENT_MM = 0.25f;
+
+/**
+ * @brief Z travel per full turn for a Klipper `screw_thread` value
+ *
+ * Accepts the full config token ("CW-M4", "CCW-M6") or a bare thread ("M5").
+ * Falls back to SCREW_PITCH_DEFAULT_MM when the value is missing or unparseable.
+ */
+[[nodiscard]] inline float screw_thread_pitch_mm(const std::string& screw_thread) {
+    size_t m = screw_thread.find_last_of("mM");
+    if (m != std::string::npos && m + 1 < screw_thread.length()) {
+        switch (screw_thread[m + 1]) {
+        case '3':
+            return SCREW_PITCH_M3_MM;
+        case '4':
+            return SCREW_PITCH_M4_MM;
+        case '5':
+            return SCREW_PITCH_M5_MM;
+        case '6':
+            return SCREW_PITCH_M6_MM;
+        default:
+            break;
+        }
+    }
+    return SCREW_PITCH_DEFAULT_MM;
+}
+
+/**
+ * @brief Convert a bed-height distance to clock-minutes of screw rotation
+ *
+ * One "minute" is 1/60 of a full turn, matching Klipper's TT:MM output.
+ * Never returns less than 1 so a tolerance can't collapse to an exact-match test.
+ */
+[[nodiscard]] inline int screw_minutes_for_mm(float distance_mm, float pitch_mm) {
+    if (!(pitch_mm > 0.0f)) {
+        pitch_mm = SCREW_PITCH_DEFAULT_MM;
+    }
+    int minutes = static_cast<int>(std::lround(distance_mm / pitch_mm * 60.0f));
+    return minutes > 0 ? minutes : 1;
+}
+
+/// Level tolerance in clock-minutes for a given thread pitch (the single source
+/// of truth — every threshold in the screws-tilt UI derives from this).
+[[nodiscard]] inline int screw_level_tolerance_minutes(float pitch_mm = SCREW_PITCH_DEFAULT_MM) {
+    return screw_minutes_for_mm(SCREW_LEVEL_TOLERANCE_MM, pitch_mm);
+}
+
+/// Magnitude in clock-minutes above which an adjustment is drawn as severe.
+[[nodiscard]] inline int screw_severe_adjustment_minutes(float pitch_mm = SCREW_PITCH_DEFAULT_MM) {
+    return screw_minutes_for_mm(SCREW_SEVERE_ADJUSTMENT_MM, pitch_mm);
+}
 
 /**
  * @brief Flip the leading CW↔CCW direction token in an adjustment string
@@ -55,40 +130,49 @@ struct ScrewTiltResult {
     bool is_reference = false; ///< True if this is the reference screw (no adjustment needed)
 
     /**
-     * @brief Check if adjustment is needed
-     * @return true if this screw needs turning
-     */
-    [[nodiscard]] bool needs_adjustment() const {
-        return !is_reference && !adjustment.empty() && adjustment != "00:00";
-    }
-
-    /**
-     * @brief Parsed arc-minute magnitude of this screw's adjustment
+     * @brief Signed arc-minutes of this screw's adjustment, CW positive
      *
-     * Parses "CW 01:30" / "CCW 00:15" into total minutes (turns*60 + minutes).
-     * Returns 0 for reference screws or unparseable strings.
+     * Klipper picks the first screw in config order as the base and reports
+     * every other screw as `diff = z_base - z`, emitting CW for a positive
+     * diff and CCW for a negative one (inverted for a CCW-M* thread). So the
+     * signed minutes are a monotonic stand-in for the screw's bed height, and
+     * the difference between two of them is the real error between those two
+     * corners — which the magnitude alone is not.
+     *
+     * @return signed minutes, 0 for the base screw, or nullopt when the
+     *         adjustment string can't be parsed (a malformed line must surface
+     *         as an error, never as a screw that happens to read as level).
      */
-    [[nodiscard]] int adjustment_minutes() const {
-        if (is_reference || adjustment.empty()) {
+    [[nodiscard]] std::optional<int> signed_adjustment_minutes() const {
+        if (is_reference) {
             return 0;
         }
+        char direction[8] = {};
         int turns = 0;
         int minutes = 0;
-        if (std::sscanf(adjustment.c_str(), "%*s %d:%d", &turns, &minutes) == 2) {
-            return turns * 60 + minutes;
+        if (std::sscanf(adjustment.c_str(), "%7s %d:%d", direction, &turns, &minutes) != 3) {
+            return std::nullopt;
         }
-        return 0;
+        int magnitude = turns * 60 + minutes;
+        if (std::strcmp(direction, "CW") == 0) {
+            return magnitude;
+        }
+        if (std::strcmp(direction, "CCW") == 0) {
+            return -magnitude;
+        }
+        return std::nullopt;
     }
 
     /**
-     * @brief True if this screw is within the level tolerance (≤5 min or base)
+     * @brief Unsigned arc-minute magnitude of this screw's adjustment
      *
-     * Use this — not `!needs_adjustment()` — when deciding whether to show
-     * a "done" affordance: a screw reporting `CW 00:03` still has a non-empty
-     * adjustment but is effectively level.
+     * Parses "CW 01:30" / "CCW 00:15" into total minutes (turns*60 + minutes).
+     * Returns 0 for reference screws or unparseable strings — only use this for
+     * describing *how far* to turn. Level verdicts must go through
+     * evaluate_screw_level(), which is sign-aware and fails loudly.
      */
-    [[nodiscard]] bool is_within_tolerance() const {
-        return is_reference || adjustment_minutes() <= SCREW_LEVEL_TOLERANCE_MINUTES;
+    [[nodiscard]] int adjustment_minutes() const {
+        return std::abs(signed_adjustment_minutes().value_or(0));
     }
 
     /**
@@ -121,14 +205,18 @@ struct ScrewTiltResult {
      * Mapping is CW→Tighten, CCW→Loosen. This assumes the adjustment string
      * already reflects what the user should physically do — printer-specific
      * corrections (e.g. Flashforge AD5M's inverted SCREWS_TILT output) are
-     * applied at parse time in moonraker_advanced_api.cpp, not here.
+     * applied at parse time in screws_tilt_parser.cpp, not here.
+     *
+     * @param in_spec Whether this screw is inside the level window, as decided
+     *                by evaluate_screw_level() — a per-screw magnitude test is
+     *                not enough to answer that (see ScrewLevelReport::in_spec).
      * @return Human-friendly adjustment string
      */
-    [[nodiscard]] std::string friendly_adjustment() const {
+    [[nodiscard]] std::string friendly_adjustment(bool in_spec) const {
         if (is_reference) {
             return "Reference";
         }
-        if (is_within_tolerance()) {
+        if (in_spec) {
             return "Level";
         }
 
@@ -160,6 +248,101 @@ struct ScrewTiltResult {
         return adjustment;
     }
 };
+
+/**
+ * @brief Outcome of judging a full set of screw results
+ */
+enum class ScrewLevelVerdict {
+    LEVEL,            ///< Bed spread is within tolerance
+    NEEDS_ADJUSTMENT, ///< At least one corner is outside the level window
+    PARSE_ERROR       ///< A result could not be read — verdict is unknowable
+};
+
+/**
+ * @brief Verdict plus per-screw detail for one set of screw results
+ */
+struct ScrewLevelReport {
+    ScrewLevelVerdict verdict = ScrewLevelVerdict::PARSE_ERROR;
+    int tolerance_minutes = 0; ///< Level window in clock-minutes for this thread pitch
+    int spread_minutes = 0;    ///< Highest screw minus lowest, in clock-minutes
+    std::vector<bool> in_spec; ///< Parallel to the input: screw is inside the window
+    size_t worst_index = 0;    ///< Non-reference screw furthest from the level plane
+    std::string parse_error;   ///< Offending screw/adjustment when verdict is PARSE_ERROR
+
+    [[nodiscard]] bool is_level() const {
+        return verdict == ScrewLevelVerdict::LEVEL;
+    }
+};
+
+/**
+ * @brief Judge whether a bed is level from a set of screw results
+ *
+ * Klipper reports every screw relative to the *base* screw, which it picks as
+ * the first one in config order — not the highest or lowest. When the base sits
+ * mid-range, two corners can each be within tolerance in opposite directions
+ * while the real corner-to-corner error is their sum, so a per-screw magnitude
+ * test calls a visibly tilted bed level (prestonbrown/helixscreen#1225).
+ *
+ * The verdict is therefore taken on the signed spread across all screws
+ * (the base included, at 0): `max - min <= tolerance`.
+ *
+ * @param results   Screw results as parsed from SCREWS_TILT_CALCULATE
+ * @param pitch_mm  Thread pitch from `configfile.settings.screws_tilt_adjust.screw_thread`
+ */
+[[nodiscard]] inline ScrewLevelReport
+evaluate_screw_level(const std::vector<ScrewTiltResult>& results,
+                     float pitch_mm = SCREW_PITCH_DEFAULT_MM) {
+    ScrewLevelReport report;
+    report.tolerance_minutes = screw_level_tolerance_minutes(pitch_mm);
+    report.in_spec.assign(results.size(), false);
+
+    if (results.empty()) {
+        report.parse_error = "no screw results";
+        return report;
+    }
+
+    std::vector<int> signed_minutes;
+    signed_minutes.reserve(results.size());
+    for (const auto& screw : results) {
+        std::optional<int> minutes = screw.signed_adjustment_minutes();
+        if (!minutes) {
+            report.verdict = ScrewLevelVerdict::PARSE_ERROR;
+            report.parse_error = screw.screw_name + ": '" + screw.adjustment + "'";
+            return report;
+        }
+        signed_minutes.push_back(*minutes);
+    }
+
+    const int highest = *std::max_element(signed_minutes.begin(), signed_minutes.end());
+    const int lowest = *std::min_element(signed_minutes.begin(), signed_minutes.end());
+    report.spread_minutes = highest - lowest;
+
+    report.verdict = report.spread_minutes <= report.tolerance_minutes
+                         ? ScrewLevelVerdict::LEVEL
+                         : ScrewLevelVerdict::NEEDS_ADJUSTMENT;
+
+    // A screw is in spec when it sits within half the tolerance window of the
+    // spread's midpoint. Doubled so the midpoint stays in integer arithmetic:
+    // |2s - (highest + lowest)| <= tolerance. The two extremes both attain
+    // (highest - lowest), so every screw is in spec exactly when the bed is
+    // level — the green checkmarks can never disagree with the banner.
+    int worst_magnitude = -1;
+    for (size_t i = 0; i < results.size(); i++) {
+        report.in_spec[i] =
+            std::abs(2 * signed_minutes[i] - (highest + lowest)) <= report.tolerance_minutes;
+
+        // The screw to highlight is the one with the biggest turn to make, which
+        // is the magnitude Klipper printed. The base carries no adjustment, so
+        // it is never a candidate.
+        int magnitude = std::abs(signed_minutes[i]);
+        if (!results[i].is_reference && magnitude > worst_magnitude) {
+            worst_magnitude = magnitude;
+            report.worst_index = i;
+        }
+    }
+
+    return report;
+}
 
 /**
  * @brief Bed leveling method selection

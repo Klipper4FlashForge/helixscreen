@@ -247,6 +247,7 @@ translations:
   Back to Results: Volver a resultados
   'Backtrace: {} frames': 'Traza inversa: {} marcos'
   Barcode Scanner: Escáner de Código de Barras
+  Base: Referencia
   Beacon auto-calibrate sent: Beacon auto-calibración enviada
   Beacon calibrate sent: Beacon calibración enviada
   Bed: Cama
@@ -258,6 +259,7 @@ translations:
   Bed Mesh...: Malla de Cama...
   Bed Moves: Cama se mueve
   Bed Screw Adjustment: Ajuste de Tornillos de Cama
+  Bed Screw Results: Resultados de Tornillos de Cama
   Bed Screws: Tornillos de Cama
   Bed Temp: Temp. Cama
   Bed Temp (°C): Temp. cama (°C)
@@ -419,6 +421,7 @@ translations:
   Chamber heating to %d°C...: Calentando cámara a %d°C...
   Chamber target set to {}°C: Objetivo de cámara establecido en {}°C
   Change: Cambiar
+  Change Address: ''
   Change Filament: Cambiar Filamento
   Change LED color based on printer state: Cambiar color de LED según el estado de
     la impresora
@@ -2072,6 +2075,7 @@ translations:
   Scan and select a Bluetooth printer first: Escanee y seleccione una impresora Bluetooth
     primero
   Scan for Printers: Buscar Impresoras
+  Scan with your phone to save these values: Escanee con su teléfono para guardar estos valores
   Scanner: Escáner
   ? Scanner bonded but didn't attach as a keyboard. Try turning the scanner off and
     on, then tap Pair again. If that fails, add ClassicBondedOnly=false to /etc/bluetooth/input.conf.
@@ -2413,8 +2417,10 @@ translations:
     impresora detuvo esta impresión y no puede reanudarla. ¿Reiniciar desde el principio?
   The printer lost power during a print. It can resume where it left off.: La impresora
     perdió corriente durante una impresión. Puede reanudar donde se quedó.
+  The printer lost power during a print. The resumed layer may not line up exactly.: ''
   The printer lost power while printing {}. Resume where it left off?: La impresora
     perdió corriente mientras imprimía {}. ¿Reanudar donde se quedó?
+  The printer lost power while printing {}. The resumed layer may not line up exactly.: ''
   The printer rejected the filament configuration. The print was not started.: La
     impresora rechazó la configuración de filamento. La impresión no se inició.
   The runout sensor indicates no filament is loaded. Start print anyway?: El sensor

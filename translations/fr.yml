@@ -253,6 +253,7 @@ translations:
   Back to Results: Retour aux résultats
   'Backtrace: {} frames': 'Trace : {} frames'
   Barcode Scanner: Scanner de codes-barres
+  Base: Référence
   Beacon auto-calibrate sent: Beacon auto-calibrage envoyé
   Beacon calibrate sent: Beacon calibrage envoyé
   Bed: Plateau
@@ -264,6 +265,7 @@ translations:
   Bed Mesh...: Maillage du plateau...
   Bed Moves: Le lit bouge
   Bed Screw Adjustment: Ajustement des vis du plateau
+  Bed Screw Results: Résultats des vis du plateau
   Bed Screws: Vis du plateau
   Bed Temp: Temp. du plateau
   Bed Temp (°C): Temp. plateau (°C)
@@ -427,6 +429,7 @@ translations:
   Chamber heating to %d°C...: Chauffe de la chambre à %d°C...
   Chamber target set to {}°C: Cible de chambre définie à {}°C
   Change: Modifier
+  Change Address: ''
   Change Filament: Changer le filament
   Change LED color based on printer state: Changer la couleur LED selon l'état de
     l'imprimante
@@ -2095,6 +2098,7 @@ translations:
   Scan and select a Bluetooth printer first: Scannez et sélectionnez d'abord une imprimante
     Bluetooth
   Scan for Printers: Rechercher des imprimantes
+  Scan with your phone to save these values: Scannez avec votre téléphone pour enregistrer ces valeurs
   Scanner: Scanner
   ? Scanner bonded but didn't attach as a keyboard. Try turning the scanner off and
     on, then tap Pair again. If that fails, add ClassicBondedOnly=false to /etc/bluetooth/input.conf.
@@ -2444,9 +2448,11 @@ translations:
   The printer lost power during a print. It can resume where it left off.: 'L''imprimante
     a été mise hors tension pendant une impression. Elle peut reprendre là où elle
     s''est arrêtée.'
+  The printer lost power during a print. The resumed layer may not line up exactly.: ''
   The printer lost power while printing {}. Resume where it left off?: 'L''imprimante
     a été mise hors tension pendant l''impression de {}. Reprendre là où elle s''est
     arrêtée ?'
+  The printer lost power while printing {}. The resumed layer may not line up exactly.: ''
   The printer rejected the filament configuration. The print was not started.: L'imprimante
     a rejeté la configuration du filament. L'impression n'a pas été démarrée.
   The runout sensor indicates no filament is loaded. Start print anyway?: Le capteur

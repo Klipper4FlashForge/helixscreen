@@ -65,6 +65,7 @@ LVGL_PATCHED_FILES := \
 	src/widgets/label/lv_label.c \
 	src/widgets/label/lv_label.h \
 	src/widgets/label/lv_label_private.h \
+	src/libs/lodepng/lodepng.c \
 	lv_conf_template.h
 # NOTE: src/misc/lv_check_arg.h is deliberately absent — the backport patch
 # CREATES it, so it is untracked upstream and `git checkout` cannot restore it.
@@ -89,6 +90,21 @@ LIBHV_PATCHED_FILES := \
 # Re-check only when: patch files change, submodule HEAD changes, or stamp missing.
 PATCHES_STAMP := $(BUILD_DIR)/.patches-applied
 PATCH_FILES := $(wildcard patches/*.patch)
+
+# Absolute path to this repo's patches/. It MUST be absolute. The apply rules
+# below run as `git -C $(LVGL_DIR) apply <path>`, and git resolves that path
+# after chdir'ing into the submodule. scripts/setup-worktree.sh symlinks lib/
+# into the main tree, so from a worktree `lib/lvgl` really is the main tree's
+# lib/lvgl, and the old relative `../../patches/` landed on the MAIN tree's
+# patches/ — a patch that existed only in the worktree was invisible.
+PATCH_DIR := $(abspath patches)
+
+# Patches applied outside this file. Keep this list empty if you can; an entry
+# here means something applies the patch by hand, so nothing verifies it.
+# libnl-socket-time-include.patch (65d0ba93a, GCC 14+ libnl build fix) has no
+# applier anywhere in the tree — it is dead, kept only pending a decision to
+# either wire it up or delete it.
+PATCH_EXEMPT := libnl-socket-time-include.patch
 
 # Submodule HEAD files - changes when submodule is updated
 # Note: In regular repos, submodules use .git/modules/<name>/HEAD
@@ -134,11 +150,32 @@ force-apply-patches:
 # The actual stamp file - only rebuilt when patches or submodules change
 $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	@mkdir -p $(BUILD_DIR)
+	$(ECHO) "$(CYAN)Verifying patch wiring...$(RESET)"
+	@# Both directions, because every failure mode here is silent. The apply
+	@# blocks are hand-written, so a new patches/*.patch with no block is simply
+	@# never applied; and `git apply --check` also fails when the patch file is
+	@# unreadable, which the blocks' else-branch reports as "already applied".
+	@# Either way the build links unpatched submodule code and says nothing.
+	@fail=0; \
+	for p in $(PATCH_FILES); do \
+		b=$$(basename $$p); \
+		case " $(PATCH_EXEMPT) " in *" $$b "*) continue;; esac; \
+		grep -q "$$b" mk/patches.mk || { \
+			echo "$(RED)✗ $$b has no apply block in mk/patches.mk — it would never be applied$(RESET)"; \
+			fail=1; }; \
+	done; \
+	for r in $$(grep -o '$$(PATCH_DIR)/[a-zA-Z0-9_.-]*\.patch' mk/patches.mk | sed 's|.*/||' | sort -u); do \
+		[ -f "$(PATCH_DIR)/$$r" ] || { \
+			echo "$(RED)✗ mk/patches.mk applies $$r but $(PATCH_DIR)/$$r does not exist$(RESET)"; \
+			fail=1; }; \
+	done; \
+	[ $$fail -eq 0 ] || { echo "$(RED)Refusing to build against unpatched submodules.$(RESET)"; exit 1; }
+	$(ECHO) "$(GREEN)✓ Patch wiring consistent$(RESET)"
 	$(ECHO) "$(CYAN)Checking LVGL patches...$(RESET)"
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/drivers/sdl/lv_sdl_window.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL SDL window patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_sdl_window.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_sdl_window.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_sdl_window.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_sdl_window.patch && \
 			echo "$(GREEN)✓ SDL window patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -148,8 +185,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/drivers/sdl/lv_sdl_sw.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL SDL SW android debug + blendmode fix patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_sdl_sw_android_debug.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_sdl_sw_android_debug.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_sdl_sw_android_debug.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_sdl_sw_android_debug.patch && \
 			echo "$(GREEN)✓ SDL SW android debug + blendmode fix patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -159,8 +196,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/themes/default/lv_theme_default.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL theme breakpoints patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_theme_breakpoints.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_theme_breakpoints.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_theme_breakpoints.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_theme_breakpoints.patch && \
 			echo "$(GREEN)✓ Theme breakpoints patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -170,8 +207,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/drivers/display/fb/lv_linux_fbdev.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL fbdev stride bpp detection patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_fbdev_stride_bpp.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_fbdev_stride_bpp.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_fbdev_stride_bpp.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_fbdev_stride_bpp.patch && \
 			echo "$(GREEN)✓ Fbdev stride bpp detection patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -181,8 +218,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/drivers/display/fb/lv_linux_fbdev.h 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL fbdev skip-unblank patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_fbdev_skip_unblank.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_fbdev_skip_unblank.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_fbdev_skip_unblank.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_fbdev_skip_unblank.patch && \
 			echo "$(GREEN)✓ Fbdev skip-unblank patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -192,8 +229,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if ! grep -q 'swap_rb' $(LVGL_DIR)/src/drivers/display/fb/lv_linux_fbdev.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL fbdev BGR swap patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl-fbdev-bgr-swap.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl-fbdev-bgr-swap.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl-fbdev-bgr-swap.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl-fbdev-bgr-swap.patch && \
 			echo "$(GREEN)✓ Fbdev BGR swap patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -203,8 +240,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if ! grep -q 'LV_DRAW_BUF_ALIGN' $(LVGL_DIR)/src/drivers/display/fb/lv_linux_fbdev.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL fbdev buffer alignment patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl-fbdev-buffer-align.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl-fbdev-buffer-align.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl-fbdev-buffer-align.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl-fbdev-buffer-align.patch && \
 			echo "$(GREEN)✓ Fbdev buffer alignment patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -214,8 +251,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/core/lv_observer.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL observer debug info patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_observer_debug.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_observer_debug.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_observer_debug.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_observer_debug.patch && \
 			echo "$(GREEN)✓ Observer debug info patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -223,17 +260,17 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	else \
 		echo "$(GREEN)✓ LVGL observer debug info patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_observer_remove_null_guard.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_observer_remove_null_guard.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL observer remove NULL guard patch...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_observer_remove_null_guard.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_observer_remove_null_guard.patch && \
 		echo "$(GREEN)✓ Observer remove NULL guard patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL observer remove NULL guard patch already applied$(RESET)"; \
 	fi
 	$(Q)if ! grep -q 'lv_subject_set_int: subject is NULL' $(LVGL_DIR)/src/core/lv_observer.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL observer subject NULL guards patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_observer_null_guards.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_observer_null_guards.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_observer_null_guards.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_observer_null_guards.patch && \
 			echo "$(GREEN)✓ Observer subject NULL guards patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -243,8 +280,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/widgets/slider/lv_slider.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL slider scroll chain patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_slider_scroll_chain.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_slider_scroll_chain.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_slider_scroll_chain.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_slider_scroll_chain.patch && \
 			echo "$(GREEN)✓ Slider scroll chain patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -254,8 +291,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/stdlib/clib/lv_string_clib.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL strdup NULL guard patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl-strdup-null-guard.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl-strdup-null-guard.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl-strdup-null-guard.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl-strdup-null-guard.patch && \
 			echo "$(GREEN)✓ strdup NULL guard patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -265,8 +302,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/draw/sw/blend/lv_draw_sw_blend.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL blend NULL guard patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_blend_null_guard.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_blend_null_guard.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_blend_null_guard.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_blend_null_guard.patch && \
 			echo "$(GREEN)✓ Blend NULL guard patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -276,8 +313,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if ! grep -q 'Clip blend_area to the layer' $(LVGL_DIR)/src/draw/sw/blend/lv_draw_sw_blend.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL blend buffer bounds clip patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_blend_buf_bounds_clip.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_blend_buf_bounds_clip.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_blend_buf_bounds_clip.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_blend_buf_bounds_clip.patch && \
 			echo "$(GREEN)✓ Blend buffer bounds clip patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -287,8 +324,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/draw/sw/blend/lv_draw_sw_blend_to_rgb888.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL blend color NULL guard patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_blend_color_null_guard.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_blend_color_null_guard.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_blend_color_null_guard.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_blend_color_null_guard.patch && \
 			echo "$(GREEN)✓ Blend color NULL guard patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -299,24 +336,24 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	# Sentinel is `apply --check` rather than "is lv_draw.c dirty?": this patch no
 	# longer touches lv_draw.c (see patches/README.md), and lvgl_draw_render_thread_acquire
 	# does, so a file-dirty test here would report "already applied" when it is not.
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl-fix-signed-unsigned-draw-coords.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl-fix-signed-unsigned-draw-coords.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL draw-area clip patch...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl-fix-signed-unsigned-draw-coords.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl-fix-signed-unsigned-draw-coords.patch && \
 		echo "$(GREEN)✓ Draw-area clip patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL draw-area clip patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_draw_render_thread_acquire.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_draw_render_thread_acquire.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL render-thread acquire/release barrier patch (ARM64 layer-buffer UAF)...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_draw_render_thread_acquire.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_draw_render_thread_acquire.patch && \
 		echo "$(GREEN)✓ Render-thread acquire/release barrier patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL render-thread acquire/release barrier patch already applied$(RESET)"; \
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/draw/sw/lv_draw_sw_letter.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL label draw NULL font guard patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_draw_sw_label_null_guard.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_draw_sw_label_null_guard.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_draw_sw_label_null_guard.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_draw_sw_label_null_guard.patch && \
 			echo "$(GREEN)✓ Label draw NULL font guard patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -326,8 +363,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/drivers/display/drm/lv_linux_drm.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL DRM flush rotation patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl-drm-flush-rotation.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl-drm-flush-rotation.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl-drm-flush-rotation.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl-drm-flush-rotation.patch && \
 			echo "$(GREEN)✓ DRM flush rotation patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -337,8 +374,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/drivers/display/drm/lv_linux_drm_egl.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL DRM EGL getters patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl-drm-egl-getters.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl-drm-egl-getters.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl-drm-egl-getters.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl-drm-egl-getters.patch && \
 			echo "$(GREEN)✓ DRM EGL getters patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -348,8 +385,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if ! grep -q 'lv_linux_drm_set_preferred_mode' $(LVGL_DIR)/src/drivers/display/drm/lv_linux_drm.h 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL DRM preferred mode patch (#766)...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl-drm-preferred-mode.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl-drm-preferred-mode.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl-drm-preferred-mode.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl-drm-preferred-mode.patch && \
 			echo "$(GREEN)✓ DRM preferred mode patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -359,8 +396,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if ! grep -q 'drmSetMaster' $(LVGL_DIR)/src/drivers/display/drm/lv_linux_drm.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL DRM set-master patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl-drm-set-master.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl-drm-set-master.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl-drm-set-master.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl-drm-set-master.patch && \
 			echo "$(GREEN)✓ DRM set-master patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -370,8 +407,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/core/lv_refr.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL refr reshape NULL guard patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_refr_reshape_null_guard.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_refr_reshape_null_guard.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_refr_reshape_null_guard.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_refr_reshape_null_guard.patch && \
 			echo "$(GREEN)✓ Refr reshape NULL guard patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -381,8 +418,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/draw/sw/lv_draw_sw_img.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL img goto_xy NULL guard patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_img_null_guard.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_img_null_guard.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_img_null_guard.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_img_null_guard.patch && \
 			echo "$(GREEN)✓ Img goto_xy NULL guard patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -392,8 +429,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/widgets/image/lv_image.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL image-warn obj-name patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_img_warn_obj_name.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_img_warn_obj_name.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_img_warn_obj_name.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_img_warn_obj_name.patch && \
 			echo "$(GREEN)✓ Image-warn obj-name patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -403,8 +440,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/draw/sw/lv_draw_sw_blur.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL blur goto_xy NULL guard patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_blur_null_guard.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_blur_null_guard.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_blur_null_guard.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_blur_null_guard.patch && \
 			echo "$(GREEN)✓ Blur goto_xy NULL guard patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -412,24 +449,24 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	else \
 		echo "$(GREEN)✓ LVGL blur goto_xy NULL guard patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_obj_pos_null_guards.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_obj_pos_null_guards.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL obj_pos NULL guards patch (blur_walk_cb + layout_update_core)...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_obj_pos_null_guards.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_obj_pos_null_guards.patch && \
 		echo "$(GREEN)✓ obj_pos NULL guards patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL obj_pos NULL guards patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_grid_update_guard.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_grid_update_guard.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL grid_update freed-container guard patch (#973)...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_grid_update_guard.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_grid_update_guard.patch && \
 		echo "$(GREEN)✓ grid_update guard patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL grid_update guard patch already applied$(RESET)"; \
 	fi
 	$(Q)if grep -q 'LV_ASSERT_MALLOC(draw_buf)' $(LVGL_DIR)/src/draw/lv_draw_buf.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL draw_buf OOM guard patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_draw_buf_oom_guard.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_draw_buf_oom_guard.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_draw_buf_oom_guard.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_draw_buf_oom_guard.patch && \
 			echo "$(GREEN)✓ Draw_buf OOM guard patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -439,8 +476,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/drivers/evdev/lv_evdev.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL evdev Protocol-A touch release patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl-evdev-protocol-a.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl-evdev-protocol-a.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl-evdev-protocol-a.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl-evdev-protocol-a.patch && \
 			echo "$(GREEN)✓ Evdev Protocol-A touch release patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -450,8 +487,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/draw/lv_draw_arc.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL arc draw guard patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_arc_draw_guard.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_arc_draw_guard.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_arc_draw_guard.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_arc_draw_guard.patch && \
 			echo "$(GREEN)✓ Arc draw guard patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -459,80 +496,87 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	else \
 		echo "$(GREEN)✓ LVGL arc draw guard patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_arc_subject_null_guard.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_arc_subject_null_guard.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL arc subject NULL guard patch...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_arc_subject_null_guard.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_arc_subject_null_guard.patch && \
 		echo "$(GREEN)✓ Arc subject NULL guard patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL arc subject NULL guard patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_draw_sw_img_buf_height_guard.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_draw_sw_img_buf_height_guard.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL draw_sw_img buf_h guard patch (upstream ca18403)...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_draw_sw_img_buf_height_guard.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_draw_sw_img_buf_height_guard.patch && \
 		echo "$(GREEN)✓ draw_sw_img buf_h guard patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL draw_sw_img buf_h guard patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_drm_egl_render_mode_fix.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_lodepng_bpp_guard.patch 2>/dev/null; then \
+		echo "$(YELLOW)→ Applying LVGL lodepng bit-depth guard (16-bit PNG heap overflow)...$(RESET)"; \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_lodepng_bpp_guard.patch && \
+		echo "$(GREEN)✓ lodepng bit-depth guard patch applied$(RESET)"; \
+	else \
+		echo "$(GREEN)✓ LVGL lodepng bit-depth guard patch already applied$(RESET)"; \
+	fi
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_drm_egl_render_mode_fix.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL DRM EGL render mode fix (upstream ce112eb)...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_drm_egl_render_mode_fix.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_drm_egl_render_mode_fix.patch && \
 		echo "$(GREEN)✓ DRM EGL render mode fix applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL DRM EGL render mode fix already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_texture_cache_null_guard.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_texture_cache_null_guard.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL texture cache NULL guard patch (upstream ec053a0)...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_texture_cache_null_guard.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_texture_cache_null_guard.patch && \
 		echo "$(GREEN)✓ Texture cache NULL guard patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL texture cache NULL guard patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_draw_sdl_stride_fix.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_draw_sdl_stride_fix.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL draw_sdl aligned stride fix...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_draw_sdl_stride_fix.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_draw_sdl_stride_fix.patch && \
 		echo "$(GREEN)✓ draw_sdl stride fix applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL draw_sdl stride fix already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_display_sync_cb.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_display_sync_cb.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL display sync callback patch (upstream 4170bcb)...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_display_sync_cb.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_display_sync_cb.patch && \
 		echo "$(GREEN)✓ Display sync callback patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL display sync callback patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_obj_delete_null_guards.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_obj_delete_null_guards.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL obj delete NULL guards patch (event depth guard + mark_deleted + obj_destructor + obj_delete_core)...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_obj_delete_null_guards.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_obj_delete_null_guards.patch && \
 		echo "$(GREEN)✓ obj delete NULL guards patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL obj delete NULL guards patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_obj_delete_async_dedup.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_obj_delete_async_dedup.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL obj delete async dedup patch (dedup + UAF guard + diagnostics)...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_obj_delete_async_dedup.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_obj_delete_async_dedup.patch && \
 		echo "$(GREEN)✓ obj delete async dedup patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL obj delete async dedup patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_obj_get_screen_cycle_guard.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_obj_get_screen_cycle_guard.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL obj_get_screen cycle guard patch (cap parent-walk depth to 128)...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_obj_get_screen_cycle_guard.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_obj_get_screen_cycle_guard.patch && \
 		echo "$(GREEN)✓ obj_get_screen cycle guard patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL obj_get_screen cycle guard patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_async_del_crumb.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_async_del_crumb.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL async-delete breadcrumb patch (#840/#906 sync+async diagnostic)...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_async_del_crumb.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_async_del_crumb.patch && \
 		echo "$(GREEN)✓ async-delete breadcrumb patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL async-delete breadcrumb patch already applied$(RESET)"; \
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/widgets/label/lv_label.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL label text transform patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_label_text_transform.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_label_text_transform.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_label_text_transform.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_label_text_transform.patch && \
 			echo "$(GREEN)✓ Label text transform patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -540,17 +584,17 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	else \
 		echo "$(GREEN)✓ LVGL label text transform patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl-sw-draw-wait-for-finish.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl-sw-draw-wait-for-finish.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL SW draw wait_for_finish + NULL guard patch (#739)...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl-sw-draw-wait-for-finish.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl-sw-draw-wait-for-finish.patch && \
 		echo "$(GREEN)✓ SW draw wait_for_finish patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL SW draw wait_for_finish patch already applied$(RESET)"; \
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/core/lv_obj_event.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL event crash-diagnostic hook patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_event_crash_hook.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_event_crash_hook.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_event_crash_hook.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_event_crash_hook.patch && \
 			echo "$(GREEN)✓ Event crash-diagnostic hook patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -558,59 +602,59 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	else \
 		echo "$(GREEN)✓ LVGL event crash-diagnostic hook patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_event_mark_deleted_defensive.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_event_mark_deleted_defensive.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL lv_event_mark_deleted defensive bail patch...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_event_mark_deleted_defensive.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_event_mark_deleted_defensive.patch && \
 		echo "$(GREEN)✓ lv_event_mark_deleted defensive bail patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL lv_event_mark_deleted defensive bail patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_event_pop_unwind_safe.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_event_pop_unwind_safe.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL event-pop unwind-safe patch (RPHAV9T7 / L081 root cause)...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_event_pop_unwind_safe.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_event_pop_unwind_safe.patch && \
 		echo "$(GREEN)✓ event-pop unwind-safe patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL event-pop unwind-safe patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_event_dispatch_depth_guard.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_event_dispatch_depth_guard.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL event-dispatch-depth guard (cluster:pstat-async-delete / #906)...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_event_dispatch_depth_guard.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_event_dispatch_depth_guard.patch && \
 		echo "$(GREEN)✓ event-dispatch-depth guard patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL event-dispatch-depth guard patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_event_stack_array.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_event_stack_array.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL #907 array-backed event stack (replaces e->prev linked list)...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_event_stack_array.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_event_stack_array.patch && \
 		echo "$(GREEN)✓ #907 array-backed event stack patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL #907 array-backed event stack patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_event_dispatch_cb_guard.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_event_dispatch_cb_guard.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL dispatch-cb bounds gate + widget identity (3XNZQB2R)...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_event_dispatch_cb_guard.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_event_dispatch_cb_guard.patch && \
 		echo "$(GREEN)✓ dispatch-cb guard + widget identity patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL dispatch-cb guard patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_obj_event_null_guards.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_obj_event_null_guards.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL obj-event NULL guards (VHTR49QJ — recoverable bail + telemetry)...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_obj_event_null_guards.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_obj_event_null_guards.patch && \
 		echo "$(GREEN)✓ obj-event NULL guards patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL obj-event NULL guards patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_style_null_guards.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_style_null_guards.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL style NULL guards patch (null style pointers in transitions/cache)...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_style_null_guards.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_style_null_guards.patch && \
 		echo "$(GREEN)✓ Style NULL guards patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL style NULL guards patch already applied$(RESET)"; \
 	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/layouts/flex/lv_flex.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL flex hidden+grow gap fix (upstream #9897 backport)...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_flex_hidden_grow_gap.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl_flex_hidden_grow_gap.patch && \
+		if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_flex_hidden_grow_gap.patch 2>/dev/null; then \
+			git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_flex_hidden_grow_gap.patch && \
 			echo "$(GREEN)✓ Flex hidden+grow gap fix applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -618,16 +662,16 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	else \
 		echo "$(GREEN)✓ LVGL flex hidden+grow gap fix already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_check_arg_backport.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_check_arg_backport.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL LV_CHECK_ARG backport patch (master macro for v9.5.0; drop at upgrade)...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_check_arg_backport.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_check_arg_backport.patch && \
 		echo "$(GREEN)✓ LV_CHECK_ARG backport patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL LV_CHECK_ARG backport patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_fbdev_arg_guards.patch 2>/dev/null; then \
+	$(Q)if git -C $(LVGL_DIR) apply --check $(PATCH_DIR)/lvgl_fbdev_arg_guards.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL fbdev arg-guard + log-order patch (uses backported LV_CHECK_ARG)...$(RESET)"; \
-		git -C $(LVGL_DIR) apply ../../patches/lvgl_fbdev_arg_guards.patch && \
+		git -C $(LVGL_DIR) apply $(PATCH_DIR)/lvgl_fbdev_arg_guards.patch && \
 		echo "$(GREEN)✓ Fbdev arg-guard patch applied$(RESET)"; \
 	else \
 		echo "$(GREEN)✓ LVGL fbdev arg-guard patch already applied$(RESET)"; \
@@ -635,8 +679,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	$(ECHO) "$(CYAN)Checking libhv patches...$(RESET)"
 	$(Q)if git -C $(LIBHV_DIR) diff --quiet Makefile.in 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying libhv OpenSSL/static build hook patch...$(RESET)"; \
-		if git -C $(LIBHV_DIR) apply --check ../../patches/libhv-openssl-static-link.patch 2>/dev/null; then \
-			git -C $(LIBHV_DIR) apply ../../patches/libhv-openssl-static-link.patch && \
+		if git -C $(LIBHV_DIR) apply --check $(PATCH_DIR)/libhv-openssl-static-link.patch 2>/dev/null; then \
+			git -C $(LIBHV_DIR) apply $(PATCH_DIR)/libhv-openssl-static-link.patch && \
 			echo "$(GREEN)✓ libhv OpenSSL/static build hook patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -646,8 +690,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if git -C $(LIBHV_DIR) diff --quiet http/client/requests.h 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying libhv streaming upload patch...$(RESET)"; \
-		if git -C $(LIBHV_DIR) apply --check ../../patches/libhv-streaming-upload.patch 2>/dev/null; then \
-			git -C $(LIBHV_DIR) apply ../../patches/libhv-streaming-upload.patch && \
+		if git -C $(LIBHV_DIR) apply --check $(PATCH_DIR)/libhv-streaming-upload.patch 2>/dev/null; then \
+			git -C $(LIBHV_DIR) apply $(PATCH_DIR)/libhv-streaming-upload.patch && \
 			echo "$(GREEN)✓ libhv streaming upload patch applied$(RESET)"; \
 		else \
 			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
@@ -666,8 +710,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 		echo "$(YELLOW)→ Applying libhv DNS resolver fallback patch...$(RESET)"; \
 		rm -f "$(LIBHV_DIR)/base/dns_resolv.c" "$(LIBHV_DIR)/base/dns_resolv.h"; \
 		git -C $(LIBHV_DIR) checkout -- base/hsocket.c 2>/dev/null || true; \
-		if git -C $(LIBHV_DIR) apply --check ../../patches/libhv-dns-resolver-fallback.patch 2>/dev/null; then \
-			git -C $(LIBHV_DIR) apply ../../patches/libhv-dns-resolver-fallback.patch && \
+		if git -C $(LIBHV_DIR) apply --check $(PATCH_DIR)/libhv-dns-resolver-fallback.patch 2>/dev/null; then \
+			git -C $(LIBHV_DIR) apply $(PATCH_DIR)/libhv-dns-resolver-fallback.patch && \
 			echo "$(GREEN)✓ DNS resolver fallback patch applied$(RESET)"; \
 		else \
 			echo "$(RED)✗ Cannot apply DNS resolver fallback patch (conflicts) — embedded DNS will be BROKEN$(RESET)"; \
@@ -677,8 +721,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if ! grep -q "Reschedule instead of dropping the chain" "$(LIBHV_DIR)/evpp/TcpClient.h" 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying libhv TcpClient reconnect resilience patch...$(RESET)"; \
-		if git -C $(LIBHV_DIR) apply --check ../../patches/libhv-tcpclient-reconnect-resilience.patch 2>/dev/null; then \
-			git -C $(LIBHV_DIR) apply ../../patches/libhv-tcpclient-reconnect-resilience.patch && \
+		if git -C $(LIBHV_DIR) apply --check $(PATCH_DIR)/libhv-tcpclient-reconnect-resilience.patch 2>/dev/null; then \
+			git -C $(LIBHV_DIR) apply $(PATCH_DIR)/libhv-tcpclient-reconnect-resilience.patch && \
 			echo "$(GREEN)✓ libhv TcpClient reconnect resilience patch applied$(RESET)"; \
 		else \
 			echo "$(RED)✗ Cannot apply TcpClient reconnect patch (conflicts) — a transient socket() failure will kill auto-reconnect$(RESET)"; \
@@ -688,8 +732,8 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	fi
 	$(Q)if ! grep -q "saved_reconn_valid_" "$(LIBHV_DIR)/http/client/WebSocketClient.cpp" 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying libhv WebSocket backoff patch...$(RESET)"; \
-		if git -C $(LIBHV_DIR) apply --check ../../patches/libhv-websocket-backoff-on-upgrade.patch 2>/dev/null; then \
-			git -C $(LIBHV_DIR) apply ../../patches/libhv-websocket-backoff-on-upgrade.patch && \
+		if git -C $(LIBHV_DIR) apply --check $(PATCH_DIR)/libhv-websocket-backoff-on-upgrade.patch 2>/dev/null; then \
+			git -C $(LIBHV_DIR) apply $(PATCH_DIR)/libhv-websocket-backoff-on-upgrade.patch && \
 			echo "$(GREEN)✓ libhv WebSocket backoff patch applied$(RESET)"; \
 		else \
 			echo "$(RED)✗ Cannot apply WebSocket backoff patch (conflicts) — a failed WS upgrade will reconnect at 5Hz$(RESET)"; \

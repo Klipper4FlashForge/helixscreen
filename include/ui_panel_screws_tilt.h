@@ -157,6 +157,9 @@ class ScrewsTiltPanel : public OverlayBase {
     void handle_done_clicked();
     void handle_retry_clicked();
 
+    /// Open the share modal: full result set as text + QR for a phone.
+    void handle_share_clicked();
+
   private:
     // State management
     State state_ = State::IDLE;
@@ -174,17 +177,19 @@ class ScrewsTiltPanel : public OverlayBase {
     void populate_results(const std::vector<ScrewTiltResult>& results);
     void clear_results();
     void update_screw_diagram();
-    void create_screw_indicator(size_t index, const ScrewTiltResult& screw, bool is_worst = false);
-    [[nodiscard]] lv_color_t get_adjustment_color(const ScrewTiltResult& screw,
-                                                  bool is_worst_screw = false) const;
-    [[nodiscard]] size_t find_worst_screw_index() const;
+    void create_screw_indicator(size_t index, const ScrewTiltResult& screw, bool in_spec,
+                                bool is_worst);
+    [[nodiscard]] lv_color_t get_adjustment_color(const ScrewTiltResult& screw, bool in_spec,
+                                                  bool is_worst_screw) const;
 
     /**
-     * @brief Check if all screws are within tolerance
-     * @param tolerance_minutes Maximum adjustment in minutes (default 5 = ~0.04mm)
-     * @return true if all screws are level
+     * @brief Ask Klipper for the bed screw thread so the tolerance is pitch-aware
+     *
+     * Reads `configfile.settings.screws_tilt_adjust.screw_thread`. There is no
+     * cached configfile, so this issues its own printer.objects.query. Falls
+     * back to Klipper's own M3 default when the section is absent.
      */
-    [[nodiscard]] bool check_all_level(int tolerance_minutes = 5) const;
+    void query_screw_thread();
 
     // Widget references
     // Note: overlay_root_ inherited from OverlayBase
@@ -226,6 +231,12 @@ class ScrewsTiltPanel : public OverlayBase {
 
     // Screw data
     std::vector<ScrewTiltResult> screw_results_;
+
+    /// Level verdict for screw_results_, recomputed on every probe.
+    ScrewLevelReport level_report_;
+
+    /// Bed screw pitch from configfile; Klipper's M3 default until the query lands.
+    float screw_pitch_mm_ = SCREW_PITCH_DEFAULT_MM;
 
     // Tracking
     int probe_count_ = 0;

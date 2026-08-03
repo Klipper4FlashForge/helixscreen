@@ -414,6 +414,20 @@ class NavigationManager {
     bool is_panel_in_stack(lv_obj_t* panel) const;
 
     /**
+     * @brief Check if a panel is the top of the overlay stack
+     *
+     * Stronger than is_panel_in_stack(): answers "will go_back() pop THIS
+     * panel?". Any deferred callback that navigates on behalf of a screen it
+     * pushed earlier must ask this first — by the time it runs, the user may
+     * have navigated on, and a blind go_back() would pop whatever they are
+     * looking at now (#1221).
+     *
+     * @param panel Panel widget to check for
+     * @return true if panel is the topmost entry in the overlay stack
+     */
+    bool is_panel_on_top(lv_obj_t* panel) const;
+
+    /**
      * @brief Check if any overlays are currently open
      * @return true if there are overlay panels on the stack
      */

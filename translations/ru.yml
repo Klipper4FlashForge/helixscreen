@@ -242,6 +242,7 @@ translations:
   Back to Results: Назад к результатам
   'Backtrace: {} frames': 'Трассировка: {} кадров'
   Barcode Scanner: Сканер штрих-кодов
+  Base: Опорный
   Beacon auto-calibrate sent: Beacon автокалибровка отправлена
   Beacon calibrate sent: Beacon калибровка отправлена
   Bed: Стол
@@ -253,6 +254,7 @@ translations:
   Bed Mesh...: Сетка стола...
   Bed Moves: Стол движется
   Bed Screw Adjustment: Регулировка винтов стола
+  Bed Screw Results: Результаты по винтам стола
   Bed Screws: Винты стола
   Bed Temp: Темп. стола
   Bed Temp (°C): Температура стола (°C)
@@ -411,6 +413,7 @@ translations:
   Chamber heating to %d°C...: Нагрев камеры до %d°C...
   Chamber target set to {}°C: Целевая температура камеры установлена на {}°C
   Change: Изменить
+  Change Address: ''
   Change Filament: Сменить филамент
   Change LED color based on printer state: Менять цвет LED в зависимости от состояния
     принтера
@@ -2042,6 +2045,7 @@ translations:
   Scan Spool QR Code: Сканировать QR-код катушки
   Scan and select a Bluetooth printer first: Сначала найдите и выберите Bluetooth-принтер
   Scan for Printers: Поиск принтеров
+  Scan with your phone to save these values: Отсканируйте телефоном, чтобы сохранить эти значения
   Scanner: Сканер
   ? Scanner bonded but didn't attach as a keyboard. Try turning the scanner off and
     on, then tap Pair again. If that fails, add ClassicBondedOnly=false to /etc/bluetooth/input.conf.
@@ -2380,7 +2384,9 @@ translations:
   The printer halted this print and cannot resume it. Restart from the beginning?: Принтер
     остановил эту печать и не может её возобновить. Начать с начала?
   The printer lost power during a print. It can resume where it left off.: Принтер потерял питание во время печати. Он может продолжить с места остановки.
+  The printer lost power during a print. The resumed layer may not line up exactly.: ''
   The printer lost power while printing {}. Resume where it left off?: Принтер потерял питание при печати {}. Продолжить с места остановки?
+  The printer lost power while printing {}. The resumed layer may not line up exactly.: ''
   The printer rejected the filament configuration. The print was not started.: Принтер
     отклонил конфигурацию филамента. Печать не была запущена.
   The runout sensor indicates no filament is loaded. Start print anyway?: Датчик окончания

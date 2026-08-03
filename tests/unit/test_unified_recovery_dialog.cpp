@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "ui_emergency_stop.h"
+#include "ui_modal.h"
 
 #include "../lvgl_test_fixture.h"
 #include "../lvgl_ui_test_fixture.h"
+#include "../test_helpers/emergency_stop_test_access.h"
 #include "app_globals.h"
 #include "printer_state.h"
 
@@ -202,11 +204,66 @@ TEST_CASE_METHOD(LVGLUITestFixture, "Unified recovery dialog - deduplication",
     REQUIRE(count == 1);
 }
 
+TEST_CASE_METHOD(LVGLUITestFixture, "Unified recovery dialog - returns after a backdrop dismiss",
+                 "[recovery][integration]") {
+    // helix::ui::modal_show() unconditionally wires Modal::backdrop_click_cb, so
+    // a tap outside the card dismisses the recovery dialog without ever reaching
+    // dismiss_recovery_dialog(). EmergencyStopOverlay is then holding a pointer to
+    // a modal that has left the ModalStack, and the NEXT shutdown must still
+    // reach the user rather than being spent clearing that stale pointer.
+    auto& estop = EmergencyStopOverlay::instance();
+
+    estop.show_recovery_for(RecoveryReason::SHUTDOWN);
+    process_lvgl(50);
+
+    lv_obj_t* dialog = lv_obj_find_by_name(lv_screen_active(), "klipper_recovery_card");
+    REQUIRE(dialog != nullptr);
+
+    lv_obj_t* backdrop = ModalStack::instance().backdrop_for(dialog);
+    REQUIRE(backdrop != nullptr);
+
+    // Drive the real dismissal: the click handler lives on the backdrop and only
+    // acts when the event target IS the backdrop, which is exactly what
+    // lv_obj_send_event() on the backdrop produces.
+    lv_obj_send_event(backdrop, LV_EVENT_CLICKED, nullptr);
+
+    // The 150ms exit animation plus the deferred backdrop deletion that its
+    // completion callback schedules.
+    process_lvgl(400);
+
+    REQUIRE(lv_obj_find_by_name(lv_screen_active(), "klipper_recovery_card") == nullptr);
+    // Pointer comparison only — the stack entry is gone, so no dereference.
+    REQUIRE(ModalStack::instance().backdrop_for(dialog) == nullptr);
+
+    // Klipper shuts down again. A second dialog must appear on THIS event, not
+    // on the one after it.
+    estop.show_recovery_for(RecoveryReason::SHUTDOWN);
+    process_lvgl(50);
+
+    REQUIRE(lv_obj_find_by_name(lv_screen_active(), "klipper_recovery_card") != nullptr);
+}
+
+namespace {
+/// Clears the suppression deadline on scope exit.
+///
+/// EmergencyStopOverlay is a process-wide singleton and Catch2 runs the whole
+/// suite in one process, so a suppression window left armed leaks into every
+/// later test in this file — the fixture only advances the tick ~50ms per test,
+/// nowhere near a multi-second window. A trailing cleanup call is not enough
+/// either: a failed REQUIRE throws and unwinds straight past it.
+struct SuppressionScope {
+    ~SuppressionScope() {
+        EmergencyStopOverlayTestAccess::reset_suppression(EmergencyStopOverlay::instance());
+    }
+};
+} // namespace
+
 TEST_CASE_METHOD(LVGLUITestFixture, "Unified recovery dialog - suppression prevents showing",
                  "[recovery][integration]") {
     auto& estop = EmergencyStopOverlay::instance();
 
-    // Suppress for 5 seconds
+    // Suppress for 5 seconds — cleared on scope exit, see SuppressionScope
+    SuppressionScope suppression_cleanup;
     estop.suppress_recovery_dialog(5000);
 
     // Try both reasons - neither should show

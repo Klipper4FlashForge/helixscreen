@@ -95,10 +95,7 @@ void MoonrakerClient::start_health_timer() {
         // Check for stalled reconnection
         ConnectionState state = connection_state_.load();
         if (state == ConnectionState::RECONNECTING) {
-            auto now = std::chrono::steady_clock::now();
-            auto elapsed =
-                std::chrono::duration_cast<std::chrono::milliseconds>(now - reconnect_started_at_)
-                    .count();
+            auto elapsed = steady_ms_since(reconnect_started_at_.load(std::memory_order_relaxed));
             if (elapsed > MAX_RECONNECT_STALL_MS) {
                 spdlog::error("[Moonraker Client] Reconnection stalled for {}ms, giving up",
                               elapsed);
@@ -155,8 +152,16 @@ MoonrakerClient::~MoonrakerClient() {
     // reset above (before the base hv::WebSocketClient destructor runs), so any callback
     // firing during teardown sees dg.expired() and bails before touching `this`.
 
-    // Clear state change callback without locking (destructor context)
-    state_change_callback_ = nullptr;
+    // Under state_callback_mutex_ like every other write. Being in the destructor
+    // is not an excuse to skip it: set_connection_state() copies this member on
+    // the libhv event loop thread, and that thread is still alive here — the base
+    // hv::WebSocketClient destructor, which stops the loop, has not run yet.
+    // Holding the lock cannot deadlock, since the reader only copies under it and
+    // invokes the callback after releasing.
+    {
+        std::lock_guard<std::mutex> lock(state_callback_mutex_);
+        state_change_callback_ = nullptr;
+    }
 
     // Pending requests are dropped without invoking error callbacks.
     // During destruction, callback targets (UI panels, file providers, etc.) may
@@ -191,7 +196,7 @@ void MoonrakerClient::set_connection_state(ConnectionState new_state) {
         // Handle state-specific logic
         if (new_state == ConnectionState::RECONNECTING) {
             if (old_state != ConnectionState::RECONNECTING) {
-                reconnect_started_at_ = std::chrono::steady_clock::now();
+                reconnect_started_at_.store(steady_ticks_now(), std::memory_order_relaxed);
             }
             reconnect_attempts_++;
             if (max_reconnect_attempts_ > 0 && reconnect_attempts_ >= max_reconnect_attempts_) {
@@ -358,7 +363,7 @@ int MoonrakerClient::connect(const char* url, std::function<void()> on_connected
     // own startConnect(), never this function, so this timestamp stays put for
     // the whole never-connected streak — which is exactly what we want to
     // measure. A fresh connect() (new host, wizard, force_reconnect) re-arms it.
-    connect_started_at_ = std::chrono::steady_clock::now();
+    connect_started_at_.store(steady_ticks_now(), std::memory_order_relaxed);
     initial_failure_notified_.store(false, std::memory_order_relaxed);
 
     // Install the inherited libhv callbacks exactly ONCE. Reassigning onopen/onmessage/
@@ -774,11 +779,9 @@ void MoonrakerClient::on_ws_close() {
             // Latched: libhv retries roughly every 3s and re-opening the modal
             // on each one would be unusable. Retries continue regardless, so
             // the app still heals itself if the printer comes up later.
-            if (!initial_failure_notified_.load(std::memory_order_relaxed) &&
-                connect_started_at_.time_since_epoch().count() != 0) {
-                const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                         std::chrono::steady_clock::now() - connect_started_at_)
-                                         .count();
+            const auto connect_anchor = connect_started_at_.load(std::memory_order_relaxed);
+            if (!initial_failure_notified_.load(std::memory_order_relaxed) && connect_anchor != 0) {
+                const auto elapsed = steady_ms_since(connect_anchor);
                 if (elapsed > static_cast<long long>(initial_connect_failure_ms_)) {
                     initial_failure_notified_.store(true, std::memory_order_relaxed);
 

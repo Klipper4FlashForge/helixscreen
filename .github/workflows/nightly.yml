@@ -159,7 +159,10 @@ jobs:
         echo "Running $NPROCS test shards in parallel (excluding slow)..."
         pids=""
         for i in $(seq 0 $((NPROCS-1))); do
-          (timeout 300 ./build/bin/helix-tests "~[.] ~[slow]" --shard-count $NPROCS --shard-index $i --durations yes 2>&1 | sed "s/^/[shard $i] /") &
+          # pipefail is required: without it the subshell reports sed's status, not
+          # the test binary's, and a failing shard silently exits 0. timeout's 124
+          # still propagates — pipefail yields the rightmost non-zero status.
+          (set -o pipefail; timeout 300 ./build/bin/helix-tests "~[.] ~[slow]" --shard-count $NPROCS --shard-index $i --durations yes 2>&1 | sed "s/^/[shard $i] /") &
           pids="$pids $!"
         done
         failed=0

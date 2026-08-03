@@ -108,6 +108,37 @@ class MoonrakerClientLifecycleFixture {
     }
 };
 
+/**
+ * @brief Disconnect a client and stop+join its borrowed EventLoopThread.
+ *
+ * Declare this AFTER the client it guards: reverse declaration order then runs
+ * the disconnect and the join while both the client and the loop are still
+ * alive, which is the ordering these tests need.
+ *
+ * The point of doing it in a destructor rather than inline is that a failing
+ * REQUIRE throws. Teardown written at the end of the test body only runs when
+ * every assertion above it passed, so one local failure leaves the loop thread
+ * running with a reconnect timer armed on a client that is about to be
+ * destroyed — and the SIGSEGV then lands in hio_get during some unrelated test
+ * later in the run. RAII keeps a failure local to the test that caused it.
+ *
+ * Note this cannot help a fatal signal: SIGSEGV does not unwind, so a crash
+ * inside the body still skips teardown. It bounds the assertion-failure case.
+ */
+struct BorrowedEventLoopGuard {
+    MoonrakerClient* client;
+    std::shared_ptr<hv::EventLoopThread> loop_thread;
+
+    ~BorrowedEventLoopGuard() {
+        if (client != nullptr) {
+            client->disconnect();
+        }
+        if (loop_thread) {
+            loop_thread->stop(true);
+        }
+    }
+};
+
 // ============================================================================
 // Subscription ID / Unsubscribe API Tests
 // ============================================================================
@@ -416,6 +447,7 @@ TEST_CASE_METHOD(MoonrakerClientLifecycleFixture,
     loop_thread->start();
 
     MoonrakerClient client(loop_thread->loop());
+    BorrowedEventLoopGuard guard{&client, loop_thread};
 
     SECTION("Cancelled request does not invoke success callback on response") {
         // This test requires actual message handling which needs a real connection
@@ -432,12 +464,8 @@ TEST_CASE_METHOD(MoonrakerClientLifecycleFixture,
         REQUIRE(client.cancel_request(99999) == false);
     }
 
-    // Disable reconnect + close on the live loop, then JOIN, before `client`
-    // destructs. Otherwise the loop thread keeps a reconnect timer alive and
-    // fires startConnect() on the freed io after the client is gone (SIGSEGV in
-    // hio_get on the EventLoop thread, surfacing in a later test).
-    client.disconnect();
-    loop_thread->stop(true);
+    // Teardown is BorrowedEventLoopGuard's job -- see its comment for why it
+    // must not be written inline here.
 }
 
 // ============================================================================
@@ -550,6 +578,7 @@ TEST_CASE_METHOD(MoonrakerClientLifecycleFixture,
     loop_thread->start();
 
     MoonrakerClient client(loop_thread->loop());
+    BorrowedEventLoopGuard guard{&client, loop_thread};
 
     SECTION("force_reconnect transitions through DISCONNECTED state") {
         std::vector<ConnectionState> state_history;
@@ -593,12 +622,8 @@ TEST_CASE_METHOD(MoonrakerClientLifecycleFixture,
         }
     }
 
-    // force_reconnect() above scheduled a reconnect timer. Disable reconnect +
-    // close on the live loop, then JOIN, before `client` destructs — otherwise
-    // the timer fires startConnect() on the freed io on the EventLoop thread
-    // after the client is gone (SIGSEGV in hio_get, surfacing in a later test).
-    client.disconnect();
-    loop_thread->stop(true);
+    // force_reconnect() above scheduled a reconnect timer; BorrowedEventLoopGuard
+    // disarms it and joins the loop before `client` destructs.
 }
 
 // ============================================================================

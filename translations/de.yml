@@ -254,6 +254,7 @@ translations:
   Back to Results: Zurück zu Ergebnissen
   'Backtrace: {} frames': 'Backtrace: {} Frames'
   Barcode Scanner: Barcode-Scanner
+  Base: Referenz
   Beacon auto-calibrate sent: Beacon Auto-Kalibrierung gesendet
   Beacon calibrate sent: Beacon Kalibrierung gesendet
   Bed: Heizbett
@@ -265,6 +266,7 @@ translations:
   Bed Mesh...: Bettnetz...
   Bed Moves: Bett bewegt sich
   Bed Screw Adjustment: Bettschrauben-Einstellung
+  Bed Screw Results: Bettschrauben-Ergebnisse
   Bed Screws: Bettschrauben
   Bed Temp: Betttemperatur
   Bed Temp (°C): Betttemperatur (°C)
@@ -426,6 +428,7 @@ translations:
   Chamber heating to %d°C...: Kammer heizt auf %d°C auf...
   Chamber target set to {}°C: Kammer-Ziel auf {}°C gesetzt
   Change: Ändern
+  Change Address: ''
   Change Filament: Filament wechseln
   Change LED color based on printer state: LED-Farbe basierend auf Druckerstatus ändern
   Change PIN: PIN ändern
@@ -2080,6 +2083,7 @@ translations:
   Scan Spool QR Code: Spulen-QR-Code scannen
   Scan and select a Bluetooth printer first: Zuerst Bluetooth-Drucker suchen und auswählen
   Scan for Printers: Nach Druckern suchen
+  Scan with your phone to save these values: Mit dem Handy scannen, um diese Werte zu speichern
   Scanner: Scanner
   ? Scanner bonded but didn't attach as a keyboard. Try turning the scanner off and
     on, then tap Pair again. If that fails, add ClassicBondedOnly=false to /etc/bluetooth/input.conf.
@@ -2422,8 +2426,10 @@ translations:
   The printer lost power during a print. It can resume where it left off.: Der Drucker
     hatte während eines Drucks einen Stromausfall. Er kann dort fortsetzen, wo er aufgehört
     hat.
+  The printer lost power during a print. The resumed layer may not line up exactly.: ''
   The printer lost power while printing {}. Resume where it left off?: Der Drucker hatte
     einen Stromausfall während des Drucks von {}. Dort fortsetzen, wo er aufgehört hat?
+  The printer lost power while printing {}. The resumed layer may not line up exactly.: ''
   The printer rejected the filament configuration. The print was not started.: Der
     Drucker hat die Filamentkonfiguration abgelehnt. Der Druck wurde nicht gestartet.
   The runout sensor indicates no filament is loaded. Start print anyway?: Der Auslaufsensor
