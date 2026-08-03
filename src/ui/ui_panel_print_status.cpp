@@ -1380,10 +1380,25 @@ void PrintStatusPanel::show_exclude_map_view() {
     }
 
     // Which edge the list covers depends on where the controls are: the right
-    // column in landscape, the bottom of the stack in portrait. See
+    // column in landscape, the bottom of the stack in portrait. Landscape is
+    // exact from the flex_grow ratio and needs no measurement; portrait sizes
+    // the list to the control stack it has to cover, so measure it here — the
+    // panel is already laid out by the time the map view opens. See
     // helix::ui::exclude_side_list_geometry().
-    const auto list_geom = helix::ui::exclude_side_list_geometry(
-        helix::is_portrait_layout(helix::LayoutManager::instance().type()));
+    const bool portrait = helix::is_portrait_layout(helix::LayoutManager::instance().type());
+    int32_t controls_h = 0;
+    int32_t content_h = 0;
+    int32_t list_gap = 0;
+    if (portrait) {
+        lv_obj_update_layout(overlay_content);
+        if (lv_obj_t* controls = lv_obj_find_by_name(overlay_content, "controls_section")) {
+            controls_h = lv_obj_get_height(controls);
+        }
+        content_h = lv_obj_get_content_height(overlay_content);
+        list_gap = lv_obj_get_style_pad_row(overlay_content, LV_PART_MAIN);
+    }
+    const auto list_geom =
+        helix::ui::exclude_side_list_geometry(portrait, controls_h, content_h, list_gap);
 
     side_list_ = std::make_unique<helix::ui::ExcludeObjectSideList>();
     side_list_->set_close_callback([this]() { hide_exclude_map_view(); });
