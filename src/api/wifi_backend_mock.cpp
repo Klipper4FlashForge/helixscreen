@@ -242,6 +242,22 @@ WiFiError WifiBackendMock::disconnect_network() {
     return WiFiErrorHelper::success();
 }
 
+WiFiError WifiBackendMock::set_radio_enabled(bool on) {
+    radio_enabled_ = on;
+    if (!on) {
+        connected_ = false;
+        connected_ssid_.clear();
+        connected_ip_.clear();
+        connected_signal_ = 0;
+        fire_event("DISCONNECTED", "");
+    }
+    return WiFiErrorHelper::success();
+}
+
+bool WifiBackendMock::is_radio_enabled() const {
+    return radio_enabled_;
+}
+
 void WifiBackendMock::connect_thread_func() {
     // Simulate connection delay (2-3 seconds)
     int delay_ms = 2000 + (rng_() % 1000);

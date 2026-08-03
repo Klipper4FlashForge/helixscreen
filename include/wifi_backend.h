@@ -375,6 +375,32 @@ class WifiBackend {
      */
     virtual WiFiError disconnect_network() = 0;
 
+    /**
+     * @brief Enable or disable the WiFi radio itself
+     *
+     * Distinct from stop(), which only detaches this process from the WiFi
+     * subsystem. Before this existed the UI toggle called stop() and the
+     * station stayed associated and routed — a debug bundle uploaded over a
+     * connection the UI was reporting as off (9GQXV5VN, v0.99.106).
+     *
+     * Implementations should stop association and, where the platform exposes
+     * an rfkill switch, soft-block the radio. They must NOT take the network
+     * interface down: that is the one step a user cannot undo without a root
+     * shell, and it strands a WiFi-only printer whose UI is not running.
+     *
+     * Default implementation is a successful no-op, for platforms where this
+     * toggle is not reachable.
+     */
+    virtual WiFiError set_radio_enabled(bool on) {
+        (void)on;
+        return WiFiErrorHelper::success();
+    }
+
+    /// Last state requested via set_radio_enabled(). Defaults to true.
+    virtual bool is_radio_enabled() const {
+        return true;
+    }
+
     // ========================================================================
     // Status Queries
     // ========================================================================
