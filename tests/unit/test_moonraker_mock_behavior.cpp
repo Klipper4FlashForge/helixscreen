@@ -2126,8 +2126,7 @@ TEST_CASE("MoonrakerClientMock print progress increments during printing",
     }
 }
 
-TEST_CASE("MoonrakerClientMock print completion triggers complete state",
-          "[print][complete]") {
+TEST_CASE("MoonrakerClientMock print completion triggers complete state", "[print][complete]") {
     MockBehaviorTestFixture fixture;
 
     SECTION("print state transitions through phases correctly") {
@@ -2401,8 +2400,7 @@ TEST_CASE("MoonrakerClientMock BED_MESH_PROFILE LOAD changes active profile",
     }
 }
 
-TEST_CASE("MoonrakerClientMock BED_MESH_CLEAR clears active mesh",
-          "[mock][calibration][gcode]") {
+TEST_CASE("MoonrakerClientMock BED_MESH_CLEAR clears active mesh", "[mock][calibration][gcode]") {
     MockBehaviorTestFixture fixture;
 
     SECTION("BED_MESH_CLEAR clears active mesh and sends notification") {
@@ -2582,6 +2580,34 @@ TEST_CASE("MoonrakerClientMock - file metadata with success/error callbacks",
 // Fan Control Tests
 // ============================================================================
 
+namespace {
+
+/**
+ * @brief True when a status notification reports @p fan_key at @p expected speed.
+ *
+ * The simulation loop emits full-status notifications, and those always carry a
+ * "fan" entry (moonraker_client_mock.cpp builds it unconditionally) plus every
+ * fan already present in fan_speeds_. So the FIRST notification mentioning a fan
+ * is not necessarily the one the gcode under test produced — it is just as
+ * likely a periodic update carrying the pre-command value. Matching on the
+ * value rather than on the key's presence is what makes these sections
+ * deterministic.
+ */
+bool reports_fan_speed(const json& n, const char* fan_key, double expected) {
+    if (!n.contains("params") || !n["params"].is_array() || n["params"].empty()) {
+        return false;
+    }
+    const json& status = n["params"][0];
+    if (!status.is_object() || !status.contains(fan_key)) {
+        return false;
+    }
+    const json& fan = status[fan_key];
+    return fan.contains("speed") &&
+           fan["speed"].get<double>() == Catch::Approx(expected).margin(0.01);
+}
+
+} // namespace
+
 TEST_CASE("MoonrakerClientMock fan control", "[slow][mock][fan]") {
     // fixture must be declared BEFORE mock for correct destruction order
     MockBehaviorTestFixture fixture;
@@ -2593,60 +2619,30 @@ TEST_CASE("MoonrakerClientMock fan control", "[slow][mock][fan]") {
 
     SECTION("M106 sets part cooling fan speed") {
         mock.gcode_script("M106 S127"); // ~50%
-        fixture.wait_for_callback();
 
-        auto notifications = fixture.get_notifications();
-        REQUIRE(!notifications.empty());
-
-        // Find notification with fan data
-        bool found = false;
-        for (const auto& n : notifications) {
-            if (n.contains("params") && n["params"][0].contains("fan")) {
-                double speed = n["params"][0]["fan"]["speed"].get<double>();
-                REQUIRE(speed == Catch::Approx(0.498).margin(0.01));
-                found = true;
-                break;
-            }
-        }
-        REQUIRE(found);
+        REQUIRE(fixture.wait_for_matching(
+            [](const json& n) { return reports_fan_speed(n, "fan", 0.498); }));
     }
 
     SECTION("M106 with P parameter sets specific fan index") {
         mock.gcode_script("M106 P1 S255"); // Fan 1 at 100%
-        fixture.wait_for_callback();
 
-        auto notifications = fixture.get_notifications();
-        bool found = false;
-        for (const auto& n : notifications) {
-            if (n.contains("params") && n["params"][0].contains("fan1")) {
-                double speed = n["params"][0]["fan1"]["speed"].get<double>();
-                REQUIRE(speed == Catch::Approx(1.0));
-                found = true;
-                break;
-            }
-        }
-        REQUIRE(found);
+        REQUIRE(fixture.wait_for_matching(
+            [](const json& n) { return reports_fan_speed(n, "fan1", 1.0); }));
     }
 
     SECTION("M107 turns off fan") {
         mock.gcode_script("M106 S255");
-        fixture.wait_for_callback();
+        REQUIRE(fixture.wait_for_matching(
+            [](const json& n) { return reports_fan_speed(n, "fan", 1.0); }));
+
+        // Reset AFTER the fan is confirmed at full speed, so the zero below can
+        // only have come from M107 — nothing captured before it reports zero.
         fixture.reset();
 
         mock.gcode_script("M107");
-        fixture.wait_for_callback();
-
-        auto notifications = fixture.get_notifications();
-        bool found = false;
-        for (const auto& n : notifications) {
-            if (n.contains("params") && n["params"][0].contains("fan")) {
-                double speed = n["params"][0]["fan"]["speed"].get<double>();
-                REQUIRE(speed == 0.0);
-                found = true;
-                break;
-            }
-        }
-        REQUIRE(found);
+        REQUIRE(fixture.wait_for_matching(
+            [](const json& n) { return reports_fan_speed(n, "fan", 0.0); }));
     }
 
     SECTION("SET_FAN_SPEED with normalized speed") {
@@ -3275,8 +3271,8 @@ TEST_CASE("MoonrakerClientMock: M117 sets display_status.message", "[mock][displ
 
     json captured;
     mock.register_notify_update([&captured](const json& notif) {
-        if (notif.contains("params") && notif["params"].is_array() &&
-            !notif["params"].empty() && notif["params"][0].contains("display_status")) {
+        if (notif.contains("params") && notif["params"].is_array() && !notif["params"].empty() &&
+            notif["params"][0].contains("display_status")) {
             captured = notif["params"][0]["display_status"];
         }
     });
