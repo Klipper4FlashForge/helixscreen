@@ -25,6 +25,22 @@ namespace helix::wifi::detail {
 /// all-enabled entries give wpa_supplicant more candidates to roam between
 /// after a reboot. Exposed for unit testing.
 std::string find_network_id(const std::string& list_networks_reply, const std::string& ssid);
+
+/// Character/length rules for a value that will be spliced into a
+/// wpa_supplicant SET_NETWORK command (SSID or PSK): no double quote,
+/// backslash, control character, and non-empty within 255 bytes. Pure
+/// predicate, no logging — this is the injection barrier between untrusted
+/// input and a command protocol, so it is the single rule set both
+/// validate_wpa_string() (below) and any PSK-only caller must share rather
+/// than reimplement. Exposed for unit testing.
+bool wpa_string_is_valid(const std::string& input);
+
+/// Validate @p input against wpa_string_is_valid() and additionally log the
+/// specific violation on failure — so this must only be called with values
+/// safe to echo into a log line (an SSID, never a PSK or other secret).
+/// Returns @p input unchanged on success, "" on failure. Exposed for unit
+/// testing.
+std::string validate_wpa_string(const std::string& input, const std::string& field_name);
 } // namespace helix::wifi::detail
 
 #ifndef __APPLE__

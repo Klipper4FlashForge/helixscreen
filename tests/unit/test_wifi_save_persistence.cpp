@@ -25,6 +25,7 @@
 using helix::wifi::detail::classify_save_result;
 using helix::wifi::detail::SavePersistence;
 using helix::wifi::detail::wpa_config_has_network;
+using helix::wifi::detail::wpa_string_is_valid;
 
 namespace {
 
@@ -48,8 +49,7 @@ TEST_CASE("SAVE_CONFIG OK with an unwritten config is not persistence",
           "[network][wpa][persistence][regression]") {
     // THE U1 REGRESSION. If this ever returns Persisted again, HelixScreen is
     // back to telling users their WiFi is saved when it is not.
-    REQUIRE(classify_save_result("OK\n", kEmptyConfig, "HomeNet") ==
-            SavePersistence::NotPersisted);
+    REQUIRE(classify_save_result("OK\n", kEmptyConfig, "HomeNet") == SavePersistence::NotPersisted);
 }
 
 TEST_CASE("SAVE_CONFIG persistence classification", "[network][wpa][persistence]") {
@@ -119,6 +119,63 @@ TEST_CASE("wpa_config_has_network matches whole SSID tokens", "[network][wpa][pe
     SECTION("SSID containing spaces") {
         const std::string cfg = "network={\n\tssid=\"My Home Net\"\n}\n";
         REQUIRE(wpa_config_has_network(cfg, "My Home Net"));
+    }
+}
+
+// wpa_string_is_valid() is the injection barrier between untrusted SSID/PSK
+// input and wpa_supplicant's quoted `SET_NETWORK <id> ssid "<value>"` command
+// protocol. It and validate_wpa_string() used to be byte-identical, separately
+// maintained rule sets with static (file-only) linkage — never reachable from
+// a test. validate_wpa_string() is now a thin wrapper over this predicate, so
+// pinning the predicate here covers both.
+TEST_CASE("wpa_string_is_valid rejects command-injection characters",
+          "[network][wpa][validation]") {
+    SECTION("an ordinary SSID is valid") {
+        REQUIRE(wpa_string_is_valid("HomeNetwork"));
+    }
+
+    SECTION("empty is invalid") {
+        REQUIRE_FALSE(wpa_string_is_valid(""));
+    }
+
+    SECTION("a double quote would close the command's quoted value early") {
+        REQUIRE_FALSE(wpa_string_is_valid("Evil\" psk \"x"));
+    }
+
+    SECTION("a backslash is rejected") {
+        REQUIRE_FALSE(wpa_string_is_valid("back\\slash"));
+    }
+
+    SECTION("embedded newline is rejected") {
+        REQUIRE_FALSE(wpa_string_is_valid("line\nbreak"));
+    }
+
+    SECTION("embedded carriage return is rejected") {
+        REQUIRE_FALSE(wpa_string_is_valid("line\rbreak"));
+    }
+
+    SECTION("embedded tab is rejected") {
+        REQUIRE_FALSE(wpa_string_is_valid("a\tb"));
+    }
+
+    SECTION("other control characters are rejected") {
+        REQUIRE_FALSE(wpa_string_is_valid(std::string("a") + '\x01' + "b"));
+    }
+
+    SECTION("DEL (127) is rejected") {
+        REQUIRE_FALSE(wpa_string_is_valid(std::string("a") + '\x7f' + "b"));
+    }
+
+    SECTION("exactly 255 bytes is valid (the boundary)") {
+        REQUIRE(wpa_string_is_valid(std::string(255, 'x')));
+    }
+
+    SECTION("256 bytes exceeds the limit") {
+        REQUIRE_FALSE(wpa_string_is_valid(std::string(256, 'x')));
+    }
+
+    SECTION("spaces are allowed — SSIDs may contain them") {
+        REQUIRE(wpa_string_is_valid("My Home Net"));
     }
 }
 
