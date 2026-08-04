@@ -202,7 +202,9 @@ class WiFiManager {
     /**
      * @brief Check if WiFi is currently enabled
      *
-     * @return true if backend is running
+     * @return true if the backend is running AND the radio is on (not
+     *         rfkill-blocked / soft-disabled) — see WifiBackend::is_running()
+     *         and WifiBackend::is_radio_enabled().
      */
     bool is_enabled();
 
@@ -253,6 +255,20 @@ class WiFiManager {
      * @param self Shared pointer to this WiFiManager instance
      */
     void init_self_reference(std::shared_ptr<WiFiManager> self);
+
+    /**
+     * @brief True when this device has a working non-WiFi network path (wired
+     *        or otherwise) it could fall back to if the radio were turned off.
+     *
+     * The same safety check the backend's READY handler uses to decide
+     * whether a stored "off" is safe to reassert at startup (see
+     * register_backend_callbacks()) — exposed here so UI callers can gate a
+     * *live* radio-off toggle the same way and warn the user instead of
+     * silently stranding a WiFi-only device (the CC1 incident, Task 15).
+     * Returns false whenever interface resolution is inconclusive: fail
+     * safe, same as the startup path.
+     */
+    bool has_non_wifi_fallback();
 
   private:
     // Grants the auth-failure-debounce regression test direct access to the

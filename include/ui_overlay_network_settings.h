@@ -252,11 +252,21 @@ class NetworkSettingsOverlay : public OverlayBase {
     // the dialog resolves (confirm or cancel).
     std::string pending_forget_ssid_;
 
+    // WLAN toggle switch awaiting confirmation before actually turning WiFi
+    // off (Task 15/I2: no-strand gate on a live toggle, not just startup).
+    // nullptr except while that confirmation dialog is up.
+    lv_obj_t* pending_wlan_toggle_switch_ = nullptr;
+
     // Cached networks for async UI update
     std::vector<WiFiNetwork> cached_networks_;
 
     // Event handler implementations
     void handle_wlan_toggle_changed(lv_event_t* e);
+    // Actually applies the radio on/off request (post no-strand confirmation,
+    // if one was needed) and syncs manager/settings/subjects to the result.
+    void apply_wlan_toggle(bool enabled);
+    void handle_wlan_toggle_off_confirm();
+    void handle_wlan_toggle_off_cancel();
     void handle_refresh_clicked();
     void handle_test_network_clicked();
     void handle_add_other_clicked();
@@ -291,6 +301,8 @@ class NetworkSettingsOverlay : public OverlayBase {
     static void on_network_settings_forget(lv_event_t* e);
     static void on_network_forget_confirm(lv_event_t* e);
     static void on_network_forget_cancel(lv_event_t* e);
+    static void on_wlan_toggle_off_confirm(lv_event_t* e);
+    static void on_wlan_toggle_off_cancel(lv_event_t* e);
 
     // Network test modal callbacks
     static void on_network_test_close(lv_event_t* e);

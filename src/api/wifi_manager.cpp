@@ -217,6 +217,15 @@ void WiFiManager::init_self_reference(std::shared_ptr<WiFiManager> self) {
     spdlog::debug("[WiFiManager] Self-reference initialized for async callback safety");
 }
 
+bool WiFiManager::has_non_wifi_fallback() {
+    if (!backend_) {
+        return false;
+    }
+    const auto iface = backend_->resolved_interface();
+    return iface.has_value() &&
+           helix::wifi::detail::has_non_wifi_network_path(sys_root_, iface->netdev);
+}
+
 WiFiManager::~WiFiManager() {
     // Use fprintf - spdlog may be destroyed during static cleanup
     fprintf(stderr, "[WiFiManager] Destructor called\n");
@@ -440,7 +449,7 @@ void WiFiManager::connect(const std::string& ssid, const std::string& password,
     // Use backend's connect method
     WiFiError result = backend_->connect_network(ssid, password);
     if (!result.success()) {
-        NOTIFY_ERROR("Failed to connect to WiFi network '{}'", ssid);
+        NOTIFY_ERROR("Failed to connect to WiFi network '{}'", helix::redact::ssid(ssid));
         // Clear in-progress + take the callback under the lock, then invoke the
         // local copy OUTSIDE the lock (the callback may re-enter WiFiManager).
         std::function<void(bool, const std::string&)> cb;

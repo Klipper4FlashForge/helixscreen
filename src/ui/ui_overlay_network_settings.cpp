@@ -805,11 +805,71 @@ void NetworkSettingsOverlay::handle_wlan_toggle_changed(lv_event_t* e) {
         return;
     }
 
-    wifi_manager_->set_enabled(enabled);
-    SystemSettingsManager::instance().set_wifi_enabled(enabled);
-    lv_subject_set_int(&wifi_enabled_, enabled ? 1 : 0);
+    // Turning WiFi off on a device with no other network path is a one-way
+    // door FROM THIS SCREEN — once the radio is off there is no wired
+    // fallback to reach it and re-enable it remotely. This is the live-toggle
+    // twin of the startup no-strand guard (Task 15/CC1 incident): that guard
+    // only covers the backend reasserting a stored "off" on boot, not the
+    // user flipping the switch right here. Warn and let the user back out
+    // before actually applying it.
+    if (!enabled && !wifi_manager_->has_non_wifi_fallback()) {
+        spdlog::info("[NetworkSettingsOverlay] WiFi-off toggle with no non-WiFi network path — "
+                     "confirming before applying");
+        pending_wlan_toggle_switch_ = sw;
+        std::string msg =
+            lv_tr("This device has no wired network connection. If you turn WiFi off, it can "
+                  "only be turned back on from this screen.");
+        helix::ui::modal_show_confirmation(
+            lv_tr("Turn Off WiFi?"), msg.c_str(), ModalSeverity::Warning, lv_tr("Turn Off"),
+            on_wlan_toggle_off_confirm, on_wlan_toggle_off_cancel, nullptr);
+        return;
+    }
 
-    if (enabled) {
+    apply_wlan_toggle(enabled);
+}
+
+void NetworkSettingsOverlay::handle_wlan_toggle_off_confirm() {
+    helix::ui::modal_hide(helix::ui::modal_get_top());
+
+    lv_obj_t* sw = pending_wlan_toggle_switch_;
+    pending_wlan_toggle_switch_ = nullptr;
+    if (!sw)
+        return;
+
+    spdlog::info("[NetworkSettingsOverlay] WiFi-off confirmed despite no wired fallback");
+    apply_wlan_toggle(false);
+}
+
+void NetworkSettingsOverlay::handle_wlan_toggle_off_cancel() {
+    helix::ui::modal_hide(helix::ui::modal_get_top());
+
+    lv_obj_t* sw = pending_wlan_toggle_switch_;
+    pending_wlan_toggle_switch_ = nullptr;
+    if (sw) {
+        // Nothing was ever applied to the backend — put the switch back to
+        // reflect the radio's actual (still-on) state.
+        lv_obj_add_state(sw, LV_STATE_CHECKED);
+    }
+}
+
+void NetworkSettingsOverlay::apply_wlan_toggle(bool enabled) {
+    if (!wifi_manager_) {
+        spdlog::error("[NetworkSettingsOverlay] WiFiManager not initialized");
+        return;
+    }
+
+    wifi_manager_->set_enabled(enabled);
+
+    // Persist and reflect what actually happened, not what was requested —
+    // set_enabled() can fail (e.g. rfkill write denied), and persisting the
+    // requested value regardless would feed a false "off" (or "on") back into
+    // the startup reassert and the UI, the exact class of state lie this
+    // whole branch exists to eliminate.
+    bool actual_enabled = wifi_manager_->is_enabled();
+    SystemSettingsManager::instance().set_wifi_enabled(actual_enabled);
+    lv_subject_set_int(&wifi_enabled_, actual_enabled ? 1 : 0);
+
+    if (actual_enabled) {
         // Start scanning
         lv_subject_set_int(&wifi_scanning_, 1);
 
@@ -844,7 +904,7 @@ void NetworkSettingsOverlay::handle_wlan_toggle_changed(lv_event_t* e) {
 
     // Persist WiFi expectation
     if (auto* config = Config::get_instance()) {
-        config->set_wifi_expected(enabled);
+        config->set_wifi_expected(actual_enabled);
         config->save();
     }
 
@@ -1356,6 +1416,18 @@ void NetworkSettingsOverlay::on_network_forget_cancel(lv_event_t* e) {
     (void)e;
     auto& self = get_network_settings_overlay();
     self.handle_network_forget_cancel();
+}
+
+void NetworkSettingsOverlay::on_wlan_toggle_off_confirm(lv_event_t* e) {
+    (void)e;
+    auto& self = get_network_settings_overlay();
+    self.handle_wlan_toggle_off_confirm();
+}
+
+void NetworkSettingsOverlay::on_wlan_toggle_off_cancel(lv_event_t* e) {
+    (void)e;
+    auto& self = get_network_settings_overlay();
+    self.handle_wlan_toggle_off_cancel();
 }
 
 void NetworkSettingsOverlay::on_network_test_close(lv_event_t* e) {
