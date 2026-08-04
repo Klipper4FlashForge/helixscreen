@@ -95,65 +95,74 @@
           <text_heading name="z_offset_display" bind_text="tune_z_offset_display"/>
         </lv_obj>
 
-        <!-- Indicator (left) + Controls (right) side-by-side -->
+        <!-- Indicator (left) + direction buttons (right).
+             Portrait splits what landscape keeps in one row: four step buttons
+             beside a fixed-width indicator leaves them ~14px each at 272x480,
+             so they get their own full-width row below instead. The indicator
+             loses the height that row costs via #z_tune_indicator_h, which
+             keeps the section the same height it was. -->
         <lv_obj width="100%"
                 height="content" style_pad_all="0" flex_flow="row" style_pad_gap="#space_sm" scrollable="false">
           <!-- Nozzle-over-bed visual indicator -->
-          <z_offset_indicator name="z_offset_indicator" width="170"/>
-          <!-- Controls column: amount buttons row with direction buttons stacked on the right -->
-          <lv_obj height="content"
-                  flex_grow="1" style_pad_all="0" flex_flow="column" style_pad_gap="#space_xxs" scrollable="false">
-            <!-- Amount selectors (left) + direction buttons (right) -->
-            <lv_obj width="100%"
-                    height="content" style_pad_all="0" flex_flow="row" style_pad_gap="#space_sm"
-                    style_flex_cross_place="center" scrollable="false">
-              <!-- Amount selector buttons (radio-style: one active at a time) -->
-              <lv_obj height="content"
-                      flex_grow="1" style_pad_all="0" flex_flow="row" style_pad_gap="#space_xxs" scrollable="false">
-                <ui_button height="#button_height_sm" flex_grow="1" text="0.05">
-                  <bind_style name="z_step_selected" subject="z_step_0_active" ref_value="1"/>
-                  <bind_style name="z_step_unselected" subject="z_step_0_active" ref_value="0"/>
-                  <event_cb trigger="clicked" callback="on_tune_z_step" user_data="0"/>
-                </ui_button>
-                <ui_button height="#button_height_sm" flex_grow="1" text="0.025">
-                  <bind_style name="z_step_selected" subject="z_step_1_active" ref_value="1"/>
-                  <bind_style name="z_step_unselected" subject="z_step_1_active" ref_value="0"/>
-                  <event_cb trigger="clicked" callback="on_tune_z_step" user_data="1"/>
-                </ui_button>
-                <ui_button height="#button_height_sm" flex_grow="1" text="0.01">
-                  <bind_style name="z_step_selected" subject="z_step_2_active" ref_value="1"/>
-                  <bind_style name="z_step_unselected" subject="z_step_2_active" ref_value="0"/>
-                  <event_cb trigger="clicked" callback="on_tune_z_step" user_data="2"/>
-                </ui_button>
-                <ui_button height="#button_height_sm" flex_grow="1" text="0.005">
-                  <bind_style name="z_step_selected" subject="z_step_3_active" ref_value="1"/>
-                  <bind_style name="z_step_unselected" subject="z_step_3_active" ref_value="0"/>
-                  <event_cb trigger="clicked" callback="on_tune_z_step" user_data="3"/>
-                </ui_button>
-              </lv_obj>
-              <!-- Direction buttons stacked vertically -->
-              <lv_obj width="90"
-                      height="content" style_pad_all="0" flex_flow="column" style_pad_gap="#space_xxs"
-                      scrollable="false">
-                <ui_button width="100%" icon="arrow_up" bind_icon="tune_z_farther_icon">
-                  <event_cb trigger="clicked" callback="on_tune_z_adjust" user_data="1"/>
-                </ui_button>
-                <ui_button width="100%" icon="arrow_down" bind_icon="tune_z_closer_icon">
-                  <event_cb trigger="clicked" callback="on_tune_z_adjust" user_data="-1"/>
-                </ui_button>
-              </lv_obj>
-            </lv_obj>
-            <!-- Help text -->
-            <text_small text="Closer = more squish | Farther = less squish"
-                        translation_tag="Closer = more squish | Farther = less squish"/>
+          <z_offset_indicator name="z_offset_indicator" width="#z_tune_indicator_w"
+                              height="#z_tune_indicator_h"/>
+          <!-- Direction buttons stacked vertically, filling the width the
+               indicator leaves rather than a fixed column. -->
+          <lv_obj flex_grow="1"
+                  height="content" style_pad_all="0" flex_flow="column" style_pad_gap="#space_xxs"
+                  scrollable="false">
+            <!-- Same height as the step buttons below. Landscape can afford the
+                 taller default; in portrait the pair is what sets this row's
+                 height, so the default costs more than the indicator does. The
+                 buttons stay wide (they flex), so the touch target does not. -->
+            <ui_button width="100%" height="#button_height_sm" icon="arrow_up"
+                       bind_icon="tune_z_farther_icon">
+              <event_cb trigger="clicked" callback="on_tune_z_adjust" user_data="1"/>
+            </ui_button>
+            <ui_button width="100%" height="#button_height_sm" icon="arrow_down"
+                       bind_icon="tune_z_closer_icon">
+              <event_cb trigger="clicked" callback="on_tune_z_adjust" user_data="-1"/>
+            </ui_button>
           </lv_obj>
         </lv_obj>
-        <text_small name="z_offset_help_text_manual"
+        <!-- Amount selector buttons (radio-style: one active at a time), full
+             width so all four stay legible on a narrow display. -->
+        <lv_obj width="100%"
+                height="content" style_pad_all="0" flex_flow="row" style_pad_gap="#space_xxs"
+                scrollable="false">
+          <ui_button height="#button_height_sm" flex_grow="1" text="0.05">
+            <bind_style name="z_step_selected" subject="z_step_0_active" ref_value="1"/>
+            <bind_style name="z_step_unselected" subject="z_step_0_active" ref_value="0"/>
+            <event_cb trigger="clicked" callback="on_tune_z_step" user_data="0"/>
+          </ui_button>
+          <ui_button height="#button_height_sm" flex_grow="1" text="0.025">
+            <bind_style name="z_step_selected" subject="z_step_1_active" ref_value="1"/>
+            <bind_style name="z_step_unselected" subject="z_step_1_active" ref_value="0"/>
+            <event_cb trigger="clicked" callback="on_tune_z_step" user_data="1"/>
+          </ui_button>
+          <ui_button height="#button_height_sm" flex_grow="1" text="0.01">
+            <bind_style name="z_step_selected" subject="z_step_2_active" ref_value="1"/>
+            <bind_style name="z_step_unselected" subject="z_step_2_active" ref_value="0"/>
+            <event_cb trigger="clicked" callback="on_tune_z_step" user_data="2"/>
+          </ui_button>
+          <ui_button height="#button_height_sm" flex_grow="1" text="0.005">
+            <bind_style name="z_step_selected" subject="z_step_3_active" ref_value="1"/>
+            <bind_style name="z_step_unselected" subject="z_step_3_active" ref_value="0"/>
+            <event_cb trigger="clicked" callback="on_tune_z_step" user_data="3"/>
+          </ui_button>
+        </lv_obj>
+        <!-- Help text. Wraps: the portrait content box is narrower than the
+             single-line width, and an unwrapped label sets its row's minimum
+             width, pushing the whole z-offset row past the screen edge. -->
+        <text_small width="100%" long_mode="wrap"
+                    text="Closer = more squish | Farther = less squish"
+                    translation_tag="Closer = more squish | Farther = less squish"/>
+        <text_small name="z_offset_help_text_manual" width="100%" long_mode="wrap"
                     text="Temporary adjustment for this print, unless saved on Controls panel"
                     translation_tag="Temporary adjustment for this print, unless saved on Controls panel" hidden="true">
           <bind_flag_if_eq subject="z_offset_can_save" flag="hidden" ref_value="0"/>
         </text_small>
-        <text_small name="z_offset_help_text_auto"
+        <text_small name="z_offset_help_text_auto" width="100%" long_mode="wrap"
                     text="Z-offset is auto-saved by firmware" translation_tag="Z-offset is auto-saved by firmware">
           <bind_flag_if_eq subject="z_offset_can_save" flag="hidden" ref_value="1"/>
         </text_small>

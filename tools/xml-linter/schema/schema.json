@@ -3538,6 +3538,27 @@
     "tray_border",
     "tray_default_height",
     "warning",
-    "wizard_button_width"
+    "wizard_button_width",
+    "z_tune_dir_col_w",
+    "z_tune_dir_col_w_large",
+    "z_tune_dir_col_w_medium",
+    "z_tune_dir_col_w_micro",
+    "z_tune_dir_col_w_small",
+    "z_tune_dir_col_w_tiny",
+    "z_tune_dir_col_w_xlarge",
+    "z_tune_indicator_h",
+    "z_tune_indicator_h_large",
+    "z_tune_indicator_h_medium",
+    "z_tune_indicator_h_micro",
+    "z_tune_indicator_h_small",
+    "z_tune_indicator_h_tiny",
+    "z_tune_indicator_h_xlarge",
+    "z_tune_indicator_w",
+    "z_tune_indicator_w_large",
+    "z_tune_indicator_w_medium",
+    "z_tune_indicator_w_micro",
+    "z_tune_indicator_w_small",
+    "z_tune_indicator_w_tiny",
+    "z_tune_indicator_w_xlarge"
   ]
 }
