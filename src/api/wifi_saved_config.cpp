@@ -3,16 +3,23 @@
 
 #include "wifi_saved_config.h"
 
+#include "data_root_resolver.h"
+#include "log_redact.h"
+
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
+#include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <sstream>
 #include <sys/stat.h>
 #include <unistd.h>
+
+#include "hv/json.hpp"
 
 // Filesystem-type probing is not portable. Linux reports a numeric magic in
 // statfs::f_type and declares statfs in <sys/vfs.h>; the BSDs (macOS included,
@@ -205,5 +212,129 @@ bool mirror_to_persistent(const std::string& conf_path) {
                  conf_path, target);
     return true;
 }
+
+namespace store {
+
+namespace {
+
+/// Parse the store's on-disk JSON. Any failure — missing file, empty file,
+/// malformed JSON, wrong top-level shape — yields an empty vector rather than
+/// throwing or propagating an exception to the caller. Fields are read and
+/// written manually (rather than via nlohmann's to_json/from_json ADL hooks)
+/// so field names stay an explicit, greppable on-disk format.
+std::vector<SavedNetwork> parse_store(const std::string& contents) {
+    if (contents.empty())
+        return {};
+
+    try {
+        const auto j = nlohmann::json::parse(contents);
+        if (!j.is_array())
+            return {};
+
+        std::vector<SavedNetwork> nets;
+        nets.reserve(j.size());
+        for (const auto& entry : j) {
+            if (!entry.is_object())
+                continue;
+            SavedNetwork net;
+            net.ssid = entry.value("ssid", std::string());
+            net.psk = entry.value("psk", std::string());
+            if (!net.ssid.empty())
+                nets.push_back(std::move(net));
+        }
+        return nets;
+    } catch (const nlohmann::json::exception& e) {
+        spdlog::warn("[WifiSavedConfig] Store at {} is corrupt, treating as empty: {}",
+                     store_path(), e.what());
+        return {};
+    }
+}
+
+/// Write @p nets to the store atomically at mode 0600. This file is ours
+/// alone — unlike write_mirrored()'s usual caller (mirror_to_persistent(),
+/// which must preserve a vendor file's existing mode/ownership), there is no
+/// inherited identity to respect here, so the mode is forced rather than
+/// derived from identity_to_mirror().
+bool write_store(const std::vector<SavedNetwork>& nets) {
+    const std::string path = store_path();
+
+    const size_t slash = path.find_last_of('/');
+    if (slash != std::string::npos) {
+        std::error_code ec;
+        std::filesystem::create_directories(path.substr(0, slash), ec);
+        if (ec) {
+            spdlog::error("[WifiSavedConfig] Cannot create directory for {}: {}", path,
+                          ec.message());
+            return false;
+        }
+    }
+
+    nlohmann::json j = nlohmann::json::array();
+    for (const auto& net : nets)
+        j.push_back(nlohmann::json{{"ssid", net.ssid}, {"psk", net.psk}});
+
+    FileIdentity id;
+    id.mode = 0600; // forced — see write_store() doc comment above
+    return write_mirrored(path, j.dump(2), id);
+}
+
+} // namespace
+
+std::string store_path() {
+    return helix::writable_path("wifi_networks.json");
+}
+
+bool save(const SavedNetwork& net) {
+    if (net.ssid.empty())
+        return false;
+
+    auto nets = load();
+    auto it = std::find_if(nets.begin(), nets.end(),
+                           [&](const SavedNetwork& n) { return n.ssid == net.ssid; });
+    if (it != nets.end())
+        *it = net;
+    else
+        nets.push_back(net);
+
+    const bool ok = write_store(nets);
+    // Counts and a redacted SSID only — net.psk must never reach a log line.
+    if (ok)
+        spdlog::info("[WifiSavedConfig] Saved '{}' to {} ({} network(s) stored)",
+                     helix::redact::ssid(net.ssid), store_path(), nets.size());
+    else
+        spdlog::error("[WifiSavedConfig] Failed to save '{}' to {}", helix::redact::ssid(net.ssid),
+                      store_path());
+    return ok;
+}
+
+bool remove(const std::string& ssid) {
+    auto nets = load();
+    const size_t before = nets.size();
+    nets.erase(std::remove_if(nets.begin(), nets.end(),
+                              [&](const SavedNetwork& n) { return n.ssid == ssid; }),
+               nets.end());
+    if (nets.size() == before)
+        return true; // nothing to remove; store already reflects the desired state
+
+    const bool ok = write_store(nets);
+    if (ok)
+        spdlog::info("[WifiSavedConfig] Removed '{}' from {} ({} network(s) remain)",
+                     helix::redact::ssid(ssid), store_path(), nets.size());
+    else
+        spdlog::error("[WifiSavedConfig] Failed to remove '{}' from {}", helix::redact::ssid(ssid),
+                      store_path());
+    return ok;
+}
+
+std::vector<SavedNetwork> load() {
+    std::ifstream in(store_path(), std::ios::binary);
+    if (!in.is_open())
+        return {};
+
+    std::string contents((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    return parse_store(contents);
+}
+
+} // namespace store
 
 } // namespace helix::wifi

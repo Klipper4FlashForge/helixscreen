@@ -352,6 +352,21 @@ class WifiBackendWpaSupplicant : public WifiBackend, private hv::EventLoopThread
     /// thread during init_wpa(), after the control connection is live.
     void resolve_and_store_interface();
 
+    /// Re-add any network in HelixScreen's own store (helix::wifi::store)
+    /// that is missing from wpa_supplicant's LIST_NETWORKS, then re-issue
+    /// SAVE_CONFIG. Runs on the event loop thread during init_wpa(), after
+    /// interface resolution — the same thread connect_network() already does
+    /// blocking send_command() I/O on.
+    ///
+    /// This is the other half of the fix for credentials that SAVE_CONFIG
+    /// claims to persist but does not: connect_network() records every
+    /// successful connect in the store regardless of what happened to the
+    /// vendor's own config file, and this reconciliation restores them into
+    /// wpa_supplicant on the next boot even when the underlying persistence
+    /// problem (wrong daemon verified, or a write that lands somewhere
+    /// non-durable) was never diagnosed.
+    void reconcile_saved_networks();
+
   public:
     /// The resolved interface, or nullopt when resolution was inconclusive and
     /// callers must fall back to legacy first-match behaviour.

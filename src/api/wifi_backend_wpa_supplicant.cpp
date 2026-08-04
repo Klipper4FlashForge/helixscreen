@@ -909,6 +909,7 @@ void WifiBackendWpaSupplicant::init_wpa() {
 
     resolve_and_store_interface();
     resolve_5ghz_support();
+    reconcile_saved_networks();
 
     // Reached only with live control + monitor connections registered — the
     // backend is genuinely up. This is the one place init_succeeded_ goes true.
@@ -1282,6 +1283,103 @@ static std::string validate_wpa_string(const std::string& input, const std::stri
     return input;
 }
 
+void WifiBackendWpaSupplicant::reconcile_saved_networks() {
+    const auto saved = helix::wifi::store::load();
+    if (saved.empty())
+        return;
+
+    const std::string list_reply = send_command("LIST_NETWORKS");
+
+    size_t restored = 0;
+    size_t already_present = 0;
+    size_t skipped = 0;
+
+    for (const auto& net : saved) {
+        if (!helix::wifi::detail::find_network_id(list_reply, net.ssid).empty()) {
+            ++already_present;
+            continue;
+        }
+
+        // Defence in depth: connect_network() already validated these
+        // characters before anything was written to the store, but the store
+        // is a plain file on disk and this loop is about to splice both
+        // fields into wpa_supplicant's quoted command protocol.
+        const std::string clean_ssid = validate_wpa_string(net.ssid, "stored SSID");
+        if (clean_ssid.empty()) {
+            spdlog::warn("[WifiBackend] Reconcile: skipping a stored network with an invalid SSID");
+            ++skipped;
+            continue;
+        }
+        // validate_wpa_string() rejects empty input too (it doubles as a
+        // length check), so an open network's empty PSK needs the same
+        // "empty is fine, invalid-but-nonempty is not" handling
+        // connect_network() applies to the live password argument.
+        std::string clean_psk;
+        if (!net.psk.empty()) {
+            clean_psk = validate_wpa_string(net.psk, "stored PSK");
+            if (clean_psk.empty()) {
+                spdlog::warn("[WifiBackend] Reconcile: skipping '{}' — stored PSK is invalid",
+                             helix::redact::ssid(net.ssid));
+                ++skipped;
+                continue;
+            }
+        }
+
+        std::string add_result = send_command("ADD_NETWORK");
+        if (add_result.empty() || add_result == "FAIL\n") {
+            spdlog::warn("[WifiBackend] Reconcile: ADD_NETWORK failed for a stored network");
+            ++skipped;
+            continue;
+        }
+        std::string network_id = add_result;
+        if (!network_id.empty() && network_id.back() == '\n')
+            network_id.pop_back();
+        if (network_id.empty() || !std::all_of(network_id.begin(), network_id.end(),
+                                               [](unsigned char c) { return std::isdigit(c); })) {
+            spdlog::warn("[WifiBackend] Reconcile: unexpected ADD_NETWORK reply for a stored "
+                         "network");
+            ++skipped;
+            continue;
+        }
+
+        bool ok =
+            send_command("SET_NETWORK " + network_id + " ssid \"" + clean_ssid + "\"") == "OK\n";
+        if (ok) {
+            ok = clean_psk.empty()
+                     ? send_command("SET_NETWORK " + network_id + " key_mgmt NONE") == "OK\n"
+                     : send_command("SET_NETWORK " + network_id + " psk \"" + clean_psk + "\"") ==
+                           "OK\n";
+        }
+        if (ok)
+            ok = send_command("ENABLE_NETWORK " + network_id) == "OK\n";
+
+        if (!ok) {
+            spdlog::warn("[WifiBackend] Reconcile: failed to restore a stored network — removing "
+                         "the partial entry");
+            send_command("REMOVE_NETWORK " + network_id);
+            ++skipped;
+            continue;
+        }
+
+        ++restored;
+    }
+
+    if (restored > 0) {
+        send_command("SAVE_CONFIG");
+        spdlog::info("[WifiBackend] Reconcile: restored {} network(s) from HelixScreen's store "
+                     "into wpa_supplicant ({} already present, {} skipped, {} total stored)",
+                     restored, already_present, skipped, saved.size());
+    } else if (skipped > 0) {
+        spdlog::warn("[WifiBackend] Reconcile: {} stored network(s) already present, {} could not "
+                     "be restored ({} total stored)",
+                     already_present, skipped, saved.size());
+    } else {
+        spdlog::debug("[WifiBackend] Reconcile: {} stored network(s), all already present in "
+                      "wpa_supplicant",
+                      saved.size());
+    }
+}
+
 WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
                                                     const std::string& password) {
     if (!is_running()) {
@@ -1461,9 +1559,10 @@ WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
                      "found for the running wpa_supplicant (SAVE_CONFIG replied '{}')",
                      save_result);
     } else {
-        spdlog::error("[WifiBackend] Credentials did NOT reach {} (SAVE_CONFIG replied '{}'). "
-                      "This network will be lost on reboot.",
-                      conf_path, save_result);
+        spdlog::warn("[WifiBackend] {} did not record this network (SAVE_CONFIG replied '{}') — "
+                     "saved to HelixScreen's own store instead",
+                     conf_path.empty() ? "wpa_supplicant" : conf_path, save_result);
+        helix::wifi::store::save({clean_ssid, password});
     }
 
     spdlog::info("[WifiBackend] Network configuration complete, connecting to '{}'",
