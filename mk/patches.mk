@@ -719,13 +719,18 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	else \
 		echo "$(GREEN)✓ libhv DNS resolver fallback patch already applied$(RESET)"; \
 	fi
-	$(Q)if ! grep -q "Reschedule instead of dropping the chain" "$(LIBHV_DIR)/evpp/TcpClient.h" 2>/dev/null; then \
+	@# Sentinel is the NEWEST marker in this patch, not the oldest. A tree that
+	@# already carries an earlier revision of the patch must fail loudly here —
+	@# matching an old marker would report "already applied" and silently drop
+	@# the newer hunks, and libhv headers are -isystem so nothing rebuilds to
+	@# reveal it. The fix for that red line is `make reapply-patches`.
+	$(Q)if ! grep -q "reconn_timer_id" "$(LIBHV_DIR)/evpp/TcpClient.h" 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying libhv TcpClient reconnect resilience patch...$(RESET)"; \
 		if git -C $(LIBHV_DIR) apply --check $(PATCH_DIR)/libhv-tcpclient-reconnect-resilience.patch 2>/dev/null; then \
 			git -C $(LIBHV_DIR) apply $(PATCH_DIR)/libhv-tcpclient-reconnect-resilience.patch && \
 			echo "$(GREEN)✓ libhv TcpClient reconnect resilience patch applied$(RESET)"; \
 		else \
-			echo "$(RED)✗ Cannot apply TcpClient reconnect patch (conflicts) — a transient socket() failure will kill auto-reconnect$(RESET)"; \
+			echo "$(RED)✗ Cannot apply TcpClient reconnect patch — run 'make reapply-patches'. Until then a pending auto-reconnect can fault in createsocket() during teardown (#1212)$(RESET)"; \
 		fi \
 	else \
 		echo "$(GREEN)✓ libhv TcpClient reconnect resilience patch already applied$(RESET)"; \
