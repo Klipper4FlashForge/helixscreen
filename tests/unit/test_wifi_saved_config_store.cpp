@@ -315,10 +315,12 @@ TEST_CASE("Non-ASCII and invalid-UTF-8 SSID bytes do not crash save()/load()",
     //      `char` is signed (not guaranteed — GCC on ARM defaults it
     //      unsigned), so such bytes CAN reach store::save(). nlohmann's
     //      dump() defaults to throwing on this, which would unwind out of
-    //      connect_network() and permanently hang the connect UI. It must
-    //      not throw; exact byte preservation is not required (JSON strings
-    //      cannot represent invalid UTF-8 at all), only that save()/load()
-    //      complete normally.
+    //      connect_network() and permanently hang the connect UI. It must not
+    //      throw — and write_store()'s escape_bytes() encoding means exact
+    //      byte preservation IS required (and achieved) even for invalid
+    //      UTF-8: see the M12 regression test below for why silently mangling
+    //      it (the old U+FFFD-substitution behaviour) is itself a bug, not an
+    //      acceptable fallback.
     ConfigDirGuard guard(make_temp_dir("helix_store_utf8"));
 
     const std::string valid_non_ascii_ssid =
@@ -355,10 +357,46 @@ TEST_CASE("Non-ASCII and invalid-UTF-8 SSID bytes do not crash save()/load()",
 
     // The valid-UTF-8 network from the first save must still be intact —
     // sanitising the invalid entry must not corrupt the rest of the file.
-    bool found_valid = false;
+    bool found_valid = false, found_invalid = false;
     for (const auto& n : nets) {
         if (n.ssid == valid_non_ascii_ssid)
             found_valid = true;
+        // Exact byte preservation, not just "some entry with a non-empty
+        // ssid": escape_bytes()/unescape_bytes() round-trip the raw bytes
+        // losslessly, so the invalid-UTF-8 SSID must come back byte-for-byte
+        // identical, not mangled.
+        if (n.ssid == invalid_utf8_ssid)
+            found_invalid = true;
     }
     CHECK(found_valid);
+    CHECK(found_invalid);
+}
+
+TEST_CASE("Reconnecting to a non-UTF-8 SSID does not grow the store unbounded",
+          "[network][wifi][savedconfig][store][1229]") {
+    // M12 regression. Before escape_bytes()/unescape_bytes(), write_store()
+    // asked nlohmann's dump() to substitute U+FFFD for any invalid-UTF-8 byte
+    // in an SSID (real routers broadcast arbitrary octets; see the test
+    // above for why such SSIDs reach here at all). That mangled text, once
+    // read back by parse_store(), never string-equals the RAW SSID
+    // save() is called with on every subsequent connect — so the dedup-by-
+    // SSID check in save() silently stopped matching and appended a fresh
+    // duplicate cleartext-PSK record on every single reconnect attempt,
+    // forever. Simulating "reconnect N times" as N sequential save() calls
+    // with the same raw, invalid-UTF-8 SSID — exactly what connect_network()
+    // does on each successful connection — the store must still hold exactly
+    // one entry for it, the same guarantee save()'s dedup already gives every
+    // ordinary (valid-UTF-8) SSID.
+    ConfigDirGuard guard(make_temp_dir("helix_store_utf8_dedup"));
+
+    const std::string invalid_utf8_ssid = std::string("Router") + "\xff" + "\xc0" + "Net";
+
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        REQUIRE(helix::wifi::store::save({invalid_utf8_ssid, "pass" + std::to_string(attempt)}));
+    }
+
+    auto nets = helix::wifi::store::load();
+    REQUIRE(nets.size() == 1);
+    CHECK(nets[0].ssid == invalid_utf8_ssid);
+    CHECK(nets[0].psk == "pass4"); // last write replaced, rather than duplicated
 }

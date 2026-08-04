@@ -217,6 +217,71 @@ namespace store {
 
 namespace {
 
+/// Encode an arbitrary byte string into a representation guaranteed to be
+/// valid UTF-8: printable ASCII passes through untouched, every other byte
+/// becomes a literal `\xNN` escape (and a literal backslash becomes `\x5c`,
+/// so decoding is unambiguous). Round-trips losslessly through unescape_bytes().
+///
+/// An SSID is a raw 802.11 octet string with no guarantee of being valid
+/// UTF-8 at all — real routers broadcast arbitrary bytes, and
+/// wpa_string_is_valid()'s `c < 32` control-character check only rejects them
+/// when `char` is signed (GCC on ARM, i.e. every real target, defaults it
+/// unsigned), so such SSIDs reach here unfiltered. Without this encoding,
+/// write_store()'s dump() would substitute U+FFFD for the invalid bytes, and
+/// that mangled text would never again string-equal the real SSID — dedup in
+/// save() would silently stop matching and append a fresh duplicate
+/// cleartext-PSK record on every single connect to that network, forever.
+std::string escape_bytes(const std::string& raw) {
+    static const char* hex = "0123456789abcdef";
+    std::string out;
+    out.reserve(raw.size());
+    for (unsigned char c : raw) {
+        if (c == '\\') {
+            out += "\\x5c";
+        } else if (c >= 0x20 && c < 0x7f) {
+            out += static_cast<char>(c);
+        } else {
+            out += '\\';
+            out += 'x';
+            out += hex[(c >> 4) & 0xf];
+            out += hex[c & 0xf];
+        }
+    }
+    return out;
+}
+
+/// Inverse of escape_bytes(). Text with no `\xNN` escapes (every entry
+/// written before this fix existed, plus any hand-edited/legacy file) passes
+/// through unchanged, so this is safe to apply unconditionally to whatever
+/// parse_store() reads back.
+std::string unescape_bytes(const std::string& escaped) {
+    std::string out;
+    out.reserve(escaped.size());
+    auto hex_val = [](char c) -> int {
+        if (c >= '0' && c <= '9')
+            return c - '0';
+        if (c >= 'a' && c <= 'f')
+            return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F')
+            return c - 'A' + 10;
+        return -1;
+    };
+    for (size_t i = 0; i < escaped.size();) {
+        if (escaped[i] == '\\' && i + 3 < escaped.size() && escaped[i + 1] == 'x') {
+            const int hi = hex_val(escaped[i + 2]);
+            const int lo = hex_val(escaped[i + 3]);
+            if (hi >= 0 && lo >= 0) {
+                out += static_cast<char>((hi << 4) | lo);
+                i += 4;
+                continue;
+            }
+        }
+        out += escaped[i];
+        ++i;
+    }
+    return out;
+}
+
 /// Parse the store's on-disk JSON. Any failure — missing file, empty file,
 /// malformed JSON, wrong top-level shape — yields an empty vector rather than
 /// throwing or propagating an exception to the caller. Fields are read and
@@ -237,8 +302,8 @@ std::vector<SavedNetwork> parse_store(const std::string& contents) {
             if (!entry.is_object())
                 continue;
             SavedNetwork net;
-            net.ssid = entry.value("ssid", std::string());
-            net.psk = entry.value("psk", std::string());
+            net.ssid = unescape_bytes(entry.value("ssid", std::string()));
+            net.psk = unescape_bytes(entry.value("psk", std::string()));
             if (!net.ssid.empty())
                 nets.push_back(std::move(net));
         }
@@ -277,22 +342,25 @@ bool write_store(const std::vector<SavedNetwork>& nets) {
 
     nlohmann::json j = nlohmann::json::array();
     for (const auto& net : nets)
-        j.push_back(nlohmann::json{{"ssid", net.ssid}, {"psk", net.psk}});
+        j.push_back(
+            nlohmann::json{{"ssid", escape_bytes(net.ssid)}, {"psk", escape_bytes(net.psk)}});
 
     FileIdentity id;
     id.mode = 0600; // forced — see write_store() doc comment above
 
-    // error_handler_t::replace, not the default ::strict: dump() throws
-    // type_error on invalid UTF-8, and an SSID is an arbitrary 802.11 octet
-    // string with no guarantee of being valid UTF-8 — real routers broadcast
-    // non-UTF-8 bytes, and validate_wpa_string()'s `c < 32` control-character
-    // check only rejects them when `char` is signed (GCC on ARM defaults it
-    // unsigned). An uncaught throw here would unwind out of connect_network()
-    // past the point where connecting_in_progress_ gets reset, permanently
-    // hanging the connect UI. ::replace substitutes U+FFFD for the invalid
-    // byte(s) and keeps writing — every OTHER stored network in the same
-    // write survives intact, which a try/catch around the whole dump() would
-    // not guarantee (the whole write would be lost instead of one field).
+    // escape_bytes() above already guarantees every field is pure ASCII, so
+    // dump() should never hit invalid UTF-8 here. error_handler_t::replace is
+    // kept as a last-resort safety net rather than the default ::strict
+    // anyway: dump() throws type_error on invalid UTF-8, and an uncaught
+    // throw here would unwind out of connect_network() past the point where
+    // connecting_in_progress_ gets reset, permanently hanging the connect UI.
+    // Before escape_bytes() existed, ::replace's U+FFFD substitution was the
+    // ONLY thing standing between a non-UTF-8 SSID and that hang — but it
+    // also meant the stored text could never string-equal the real SSID
+    // again, so save()'s dedup silently stopped matching and appended a fresh
+    // duplicate cleartext-PSK record on every connect to that network,
+    // forever. escape_bytes()/unescape_bytes() round-trip the exact bytes
+    // instead, so dedup keeps working and this is now purely defensive.
     return write_mirrored(path, j.dump(2, ' ', false, nlohmann::json::error_handler_t::replace),
                           id);
 }
