@@ -2533,29 +2533,54 @@ int32_t theme_manager_get_font_height(const lv_font_t* font) {
     return lv_font_get_line_height(font);
 }
 
-void ui_set_overlay_width(lv_obj_t* obj, bool is_destination) {
+// DECLARATIVE_OK: overlay placement is navigation chrome, resolved at push time
+// from the live stack — there is no XML expression for "the class this overlay
+// got depends on what pushed it". check_imperative_ui.py deliberately excludes
+// geometry and layout properties for exactly this reason; see its
+// APPEARANCE_PROPS comment. This is the single site that writes overlay
+// geometry, which is why 17 overlay XML roots need no portrait variant.
+void ui_set_overlay_geometry(lv_obj_t* obj, bool is_destination) {
     if (!obj) {
-        spdlog::warn("[Theme] ui_set_overlay_width: NULL pointer");
+        spdlog::warn("[Theme] ui_set_overlay_geometry: NULL pointer");
         return;
     }
+
+    lv_obj_t* screen = lv_obj_get_screen(obj);
+    const lv_coord_t screen_width = screen ? lv_obj_get_width(screen) : 800;
+    const lv_coord_t screen_height = screen ? lv_obj_get_height(screen) : 480;
+    const bool portrait =
+        helix::is_portrait_layout(helix::detect_layout_type(screen_width, screen_height));
 
     const char* name = is_destination ? "overlay_width_destination" : "overlay_width_transient";
     const char* width_str = lv_xml_get_const(nullptr, name);
     if (width_str) {
         lv_obj_set_width(obj, std::atoi(width_str));
+    } else {
+        // Theme not initialized yet — estimate from the screen. Same derivation
+        // as theme_manager_register_responsive_spacing(), with medium-breakpoint
+        // fallbacks for nav_width and the gap.
+        const helix::OverlayWidths widths =
+            helix::compute_overlay_widths(screen_width, screen_height, 94, 16);
+        lv_obj_set_width(obj, is_destination ? widths.destination : widths.transient);
+        spdlog::warn("[Theme] {} not registered, using fallback", name);
+    }
+
+    // Landscape leaves height and alignment to XML (height="100%"
+    // align="right_mid"). Only portrait overrides them, because there the nav
+    // bar is a bottom strip and a full-height overlay would cover it.
+    if (!portrait) {
         return;
     }
 
-    // Theme not initialized yet — estimate from the screen. Same derivation as
-    // theme_manager_register_responsive_spacing(), with medium-breakpoint
-    // fallbacks for nav_width and the gap.
-    lv_obj_t* screen = lv_obj_get_screen(obj);
-    lv_coord_t screen_width = screen ? lv_obj_get_width(screen) : 800;
-    lv_coord_t screen_height = screen ? lv_obj_get_height(screen) : 480;
-    const helix::OverlayWidths widths =
-        helix::compute_overlay_widths(screen_width, screen_height, 94, 16);
-    lv_obj_set_width(obj, is_destination ? widths.destination : widths.transient);
-    spdlog::warn("[Theme] {} not registered, using fallback", name);
+    const char* nav_h_str = lv_xml_get_const(nullptr, "button_height_lg");
+    const char* gap_str = lv_xml_get_const(nullptr, "space_lg");
+    const int32_t nav_height = nav_h_str ? std::atoi(nav_h_str) : 70;
+    const int32_t gap = gap_str ? std::atoi(gap_str) : 16;
+
+    const helix::OverlayHeights heights =
+        helix::compute_overlay_heights(screen_width, screen_height, nav_height, gap);
+    lv_obj_set_height(obj, is_destination ? heights.destination : heights.transient);
+    lv_obj_set_align(obj, LV_ALIGN_TOP_MID);
 }
 
 /**

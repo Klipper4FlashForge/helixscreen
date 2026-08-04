@@ -1409,7 +1409,7 @@ bool NavigationManager::apply_overlay_width(lv_obj_t* overlay, bool is_first_ove
     // root widget across show/hide cycles, and the same cached widget can be
     // reached from a transient parent one time and a destination parent the
     // next.
-    ui_set_overlay_width(overlay, is_destination);
+    ui_set_overlay_geometry(overlay, is_destination);
 
     // LV_STATE_USER_1 == "this is a transient layer". overlay_panel.xml hangs a
     // leading-edge treatment off it so the panel reads as something sitting ON
@@ -1433,7 +1433,7 @@ void NavigationManager::reapply_overlay_widths() {
         // anyway — this runs from a display resize callback, outside the normal
         // push/pop ordering.
         if (lv_obj_is_valid(overlay)) {
-            ui_set_overlay_width(overlay, is_destination);
+            ui_set_overlay_geometry(overlay, is_destination);
         }
     }
     spdlog::debug("[NavigationManager] Re-applied width to {} overlay(s)",

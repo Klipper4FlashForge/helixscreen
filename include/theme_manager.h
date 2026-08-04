@@ -733,21 +733,16 @@ void theme_manager_apply_bg_color(lv_obj_t* obj, const char* base_name,
 int32_t theme_manager_get_font_height(const lv_font_t* font);
 
 /**
- * @brief Set an overlay's width from its resolved class
+ * @brief Apply an overlay's navigation geometry at push time.
  *
- * Destinations fill the space beside the nav dock (screen - nav); transient
- * layers leave a space_lg gap so the dimmed backdrop shows at the leading edge.
- * See include/overlay_class.h for what the two mean and
- * prestonbrown/helixscreen#1178 for why the choice is not an XML attribute.
+ * Sets width always. In portrait also sets height and top alignment, because
+ * ui_xml/portrait/navigation_bar.xml is a bottom strip that a full-height
+ * overlay would cover. Landscape leaves height and alignment to the XML.
  *
- * NavigationManager::apply_overlay_width() is the normal caller — it resolves
- * the class on every push. Call this directly only for overlays created outside
- * the push path.
- *
- * @param obj Widget to resize (typically an overlay panel or detail view)
- * @param is_destination true for destination width, false for transient
+ * The sole writer of overlay geometry — see OverlayClass for why the class is
+ * resolved at push time rather than baked into XML.
  */
-void ui_set_overlay_width(lv_obj_t* obj, bool is_destination);
+void ui_set_overlay_geometry(lv_obj_t* obj, bool is_destination);
 
 /**
  * @brief Get spacing value from unified space_* system
