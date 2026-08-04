@@ -131,6 +131,12 @@ struct OverlayWidths {
  * horizontally — reserving nav_width there strands a column of dead backdrop
  * beside every overlay, 54px of 320 on the Waveshare 11.9".
  *
+ * The transient class's "you will return from this" gap follows the same
+ * rule: it is spent on whichever axis the nav bar occupies. In landscape
+ * that is here (gap subtracted from the leading edge, alongside nav_width).
+ * In portrait the nav bar is vertical, so the gap moves to
+ * compute_overlay_heights() instead and both widths here are full-width.
+ *
  * Pure so the formula can be tested without the XML const registry, which
  * ignores duplicate registrations and therefore cannot be re-registered at a
  * second resolution within one process.
@@ -138,7 +144,8 @@ struct OverlayWidths {
  * @param hor_res   Display width in px
  * @param ver_res   Display height in px
  * @param nav_width Registered nav_width const for this breakpoint
- * @param gap       Leading-edge gap for the transient class (space_lg)
+ * @param gap       Leading-edge gap for the transient class (space_lg).
+ *                  Landscape only — see above.
  */
 OverlayWidths compute_overlay_widths(int32_t hor_res, int32_t ver_res, int32_t nav_width,
                                      int32_t gap);

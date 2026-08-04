@@ -137,9 +137,13 @@ TEST_CASE("Portrait overlays claim the full screen width", "[theme][overlay-widt
         INFO(c.label);
         auto w = compute_overlay_widths(c.w, c.h, kNavWidth, kGap);
         CHECK(w.destination == c.w);
-        // Transient keeps the leading-edge sliver — that gap is what signals
-        // "you will return from this" (#1178) and is orientation-independent.
-        CHECK(w.transient == c.w - kGap);
+        // Transient is ALSO full width in portrait. The "you will return from
+        // this" gap (#1178) is spent on whichever axis the nav bar occupies —
+        // in portrait that is vertical (compute_overlay_heights carries it,
+        // above the bottom nav strip), not horizontal. A horizontal sliver
+        // here would land as an 8px inset on BOTH edges under
+        // LV_ALIGN_TOP_MID, which is not what the gap means.
+        CHECK(w.transient == c.w);
     }
 }
 

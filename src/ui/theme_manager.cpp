@@ -941,8 +941,17 @@ OverlayWidths compute_overlay_widths(int32_t hor_res, int32_t ver_res, int32_t n
     // onto landscape hardware is deliberately not honoured here — the physical
     // nav bar geometry is what the arithmetic is about.
     const bool portrait = is_portrait_layout(detect_layout_type(hor_res, ver_res));
-    const int32_t nav_reserve = portrait ? 0 : nav_width;
-    return {hor_res - nav_reserve - gap, hor_res - nav_reserve};
+    if (portrait) {
+        // Portrait's nav bar is a bottom strip (compute_overlay_heights), not a
+        // side rail, so it costs an overlay nothing horizontally — and neither
+        // does the "you will return from this" gap: that gap belongs on the
+        // axis the nav bar occupies. Both classes are full width; the gap is
+        // carried by compute_overlay_heights instead. An override in
+        // ui_set_overlay_geometry would leave this function stating something
+        // false, so the rule lives here, not downstream.
+        return {hor_res, hor_res};
+    }
+    return {hor_res - nav_width - gap, hor_res - nav_width};
 }
 
 OverlayHeights compute_overlay_heights(int32_t hor_res, int32_t ver_res, int32_t nav_height,
