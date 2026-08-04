@@ -17,6 +17,7 @@
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "network_tester.h"
 #include "static_panel_registry.h"
+#include "system_settings_manager.h"
 #include "wifi_manager.h"
 #include "wifi_ui_utils.h"
 
@@ -802,6 +803,7 @@ void NetworkSettingsOverlay::handle_wlan_toggle_changed(lv_event_t* e) {
     }
 
     wifi_manager_->set_enabled(enabled);
+    SystemSettingsManager::instance().set_wifi_enabled(enabled);
     lv_subject_set_int(&wifi_enabled_, enabled ? 1 : 0);
 
     if (enabled) {

@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "../../include/async_lifetime_guard.h"
+#include "../../include/config.h"
 #include "../../include/runtime_config.h"
+#include "../../include/system_settings_manager.h"
 #include "../../include/ui_update_queue.h"
 #include "../../include/wifi_backend_mock.h"
 #include "../../include/wifi_manager.h"
@@ -812,4 +814,34 @@ TEST_CASE("set_enabled(false) turns the radio off without stopping the backend",
     REQUIRE(manager.set_enabled(true));
     CHECK(raw->is_radio_enabled());
     CHECK(manager.is_enabled());
+}
+
+// helixscreen: a radio the user switched off must not come back on just
+// because the process restarted. WiFiManager's READY handler reasserts the
+// stored SystemSettingsManager choice onto the backend the first time it can
+// act on it. The reassert is deferred through AsyncLifetimeGuard (READY can
+// fire on a background thread), so the test must drain UpdateQueue before
+// asserting — see tests/CLAUDE.md "Deferred work needs an explicit drain".
+TEST_CASE("READY reasserts a stored WiFi-off setting onto the backend",
+          "[wifi][manager][radio][persistence]") {
+    Config::get_instance();
+    SystemSettingsManager::instance().init_subjects();
+    SystemSettingsManager::instance().set_wifi_enabled(false);
+
+    auto backend = std::make_unique<WifiBackendMock>();
+    WifiBackendMock* raw = backend.get();
+    // Radio starts enabled by default; only the READY reassert should flip it.
+    REQUIRE(raw->is_radio_enabled());
+
+    WiFiManager manager(std::move(backend));
+
+    // start_async() (called from the constructor) fires READY synchronously
+    // for the mock backend, but the reassert itself is only queued, not run —
+    // drain to let it land.
+    helix::ui::UpdateQueue::instance().drain();
+
+    CHECK_FALSE(raw->is_radio_enabled());
+
+    SystemSettingsManager::instance().set_wifi_enabled(true);
+    SystemSettingsManager::instance().deinit_subjects();
 }

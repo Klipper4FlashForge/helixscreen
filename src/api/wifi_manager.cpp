@@ -20,6 +20,7 @@
 #include "lvgl/lvgl.h"
 #include "safe_log.h"
 #include "spdlog/spdlog.h"
+#include "system_settings_manager.h"
 #include "wifi_ui_utils.h"
 
 #if !defined(__APPLE__) && !defined(__ANDROID__)
@@ -116,6 +117,21 @@ void WiFiManager::register_backend_callbacks(bool silent) {
         // load, races the backend's worker thread, and gets an empty STATUS
         // response that pins it on 'Disconnected' until this event lands.
         notify_state_observers();
+
+        // A radio the user switched off must not come back on because the
+        // process restarted. Reassert the stored choice once the backend can
+        // act on it. READY fires on a background thread (the backend's init
+        // worker — see the INIT_FAILED handling above), and both
+        // get_wifi_enabled() (reads an lv_subject_t) and set_radio_enabled()
+        // must not run there, so defer through async_lifetime_ the same way
+        // the NetworkManager fallback above does.
+        async_lifetime_.defer("WiFiManager::reassert_stored_radio_state", [this]() {
+            const bool want_on = SystemSettingsManager::instance().get_wifi_enabled();
+            if (!want_on && backend_) {
+                spdlog::info("[WiFiManager] Stored setting is WiFi off — reasserting");
+                backend_->set_radio_enabled(false);
+            }
+        });
     });
 }
 

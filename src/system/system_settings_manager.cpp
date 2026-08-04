@@ -88,6 +88,13 @@ void SystemSettingsManager::init_subjects() {
                            "settings_telemetry_enabled", subjects_);
     spdlog::debug("[SystemSettingsManager] telemetry_enabled: {}", telemetry_enabled);
 
+    // WiFi radio on/off choice (default ON — a device that has never seen
+    // this setting must come up with WiFi enabled)
+    bool wifi_enabled = config->get<bool>("/wifi_enabled", true);
+    UI_MANAGED_SUBJECT_INT(wifi_enabled_subject_, wifi_enabled ? 1 : 0, "settings_wifi_enabled",
+                           subjects_);
+    spdlog::debug("[SystemSettingsManager] wifi_enabled: {}", wifi_enabled);
+
     // Log level (default from current spdlog level)
     std::string config_log_level = config->get<std::string>("/log_level", "");
     int log_level_index;
@@ -108,8 +115,8 @@ void SystemSettingsManager::init_subjects() {
         "SystemSettingsManager", []() { SystemSettingsManager::instance().deinit_subjects(); });
 
     spdlog::debug("[SystemSettingsManager] Subjects initialized: language={}, update_channel={}, "
-                  "telemetry={}",
-                  lang_code, update_channel, telemetry_enabled);
+                  "telemetry={}, wifi_enabled={}",
+                  lang_code, update_channel, telemetry_enabled, wifi_enabled);
 }
 
 void SystemSettingsManager::deinit_subjects() {
@@ -238,6 +245,30 @@ void SystemSettingsManager::set_telemetry_enabled(bool enabled) {
 
     // Apply to TelemetryManager
     TelemetryManager::instance().set_enabled(enabled);
+}
+
+// =============================================================================
+// WIFI SETTINGS
+// =============================================================================
+
+bool SystemSettingsManager::get_wifi_enabled() const {
+    return lv_subject_get_int(const_cast<lv_subject_t*>(&wifi_enabled_subject_)) != 0;
+}
+
+void SystemSettingsManager::set_wifi_enabled(bool enabled) {
+    spdlog::info("[SystemSettingsManager] set_wifi_enabled({})", enabled);
+
+    // Update subject (UI reacts)
+    lv_subject_set_int(&wifi_enabled_subject_, enabled ? 1 : 0);
+
+    // Persist to config
+    Config* config = Config::get_instance();
+    config->set<bool>("/wifi_enabled", enabled);
+    config->save();
+
+    // Deliberately does NOT call into WiFiManager. WiFiManager reasserts this
+    // stored value against the radio itself once its backend is ready; a call
+    // back into it from here would create a feedback loop.
 }
 
 // =============================================================================
