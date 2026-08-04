@@ -11,6 +11,22 @@
 #include <string>
 #include <vector>
 
+namespace helix::wifi::detail {
+/// Locate an existing network id for @p ssid in a raw LIST_NETWORKS reply
+/// ("network id / ssid / bssid / flags\n" header, then tab-separated
+/// "id\tssid\tbssid\tflags" per line). Returns "" when @p ssid has no saved
+/// entry (including when @p list_networks_reply is empty, e.g. the control
+/// connection is down). Splitting is tab-only — SSIDs may contain spaces, and
+/// splitting on generic whitespace would break "my home net" apart.
+///
+/// Used by connect_network() to reuse a saved entry instead of stacking a
+/// fresh ADD_NETWORK on every connect attempt: a real user's wpa_supplicant
+/// had reached network id 7 for a handful of networks, and duplicate
+/// all-enabled entries give wpa_supplicant more candidates to roam between
+/// after a reboot. Exposed for unit testing.
+std::string find_network_id(const std::string& list_networks_reply, const std::string& ssid);
+} // namespace helix::wifi::detail
+
 #ifndef __APPLE__
 // ============================================================================
 // Linux Implementation: Full wpa_supplicant integration

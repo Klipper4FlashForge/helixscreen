@@ -10,6 +10,45 @@
 #include "wifi_5ghz_detection.h"
 #include "wifi_saved_config.h"
 
+// find_network_id() is pure string parsing with no OS dependency, and its
+// declaration in the header sits outside the __APPLE__ guard so it can be
+// unit-tested on macOS — so its definition lives outside the guard too,
+// unlike the wpa_ctrl-dependent implementation below.
+namespace helix::wifi::detail {
+std::string find_network_id(const std::string& list_networks_reply, const std::string& ssid) {
+    if (list_networks_reply.empty() || ssid.empty())
+        return {};
+
+    // Skip the header line ("network id / ssid / bssid / flags").
+    size_t line_start = list_networks_reply.find('\n');
+    if (line_start == std::string::npos)
+        return {};
+    line_start += 1;
+
+    while (line_start < list_networks_reply.size()) {
+        const size_t line_end = list_networks_reply.find('\n', line_start);
+        const size_t line_len =
+            (line_end == std::string::npos) ? std::string::npos : line_end - line_start;
+        const std::string line = list_networks_reply.substr(line_start, line_len);
+
+        const size_t tab1 = line.find('\t');
+        if (tab1 != std::string::npos) {
+            const size_t tab2 = line.find('\t', tab1 + 1);
+            const std::string this_ssid = (tab2 == std::string::npos)
+                                              ? line.substr(tab1 + 1)
+                                              : line.substr(tab1 + 1, tab2 - tab1 - 1);
+            if (this_ssid == ssid)
+                return line.substr(0, tab1);
+        }
+
+        if (line_end == std::string::npos)
+            break;
+        line_start = line_end + 1;
+    }
+    return {};
+}
+} // namespace helix::wifi::detail
+
 #if !defined(__APPLE__) && !defined(__ANDROID__)
 // ============================================================================
 // Linux Implementation: Full wpa_supplicant integration
@@ -1266,38 +1305,61 @@ WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
 
     spdlog::info("[WifiBackend] Connecting to network '{}'", helix::redact::ssid(clean_ssid));
 
-    // Step 1: Add new network (get network ID)
-    std::string add_result = send_command("ADD_NETWORK");
-    if (add_result.empty() || add_result == "FAIL\n") {
-        NOTIFY_ERROR("Failed to save WiFi network");
-        return WiFiErrorHelper::connection_failed("Failed to add network to wpa_supplicant");
-    }
-
-    // Parse network ID (should be a number)
-    std::string network_id = add_result;
-    // Remove trailing newline
-    if (!network_id.empty() && network_id.back() == '\n') {
-        network_id.pop_back();
-    }
-
-    // SECURITY: Validate network ID is actually a number
-    for (char c : network_id) {
-        if (!std::isdigit(c)) {
-            return WiFiError(WiFiResult::BACKEND_ERROR,
-                             "wpa_supplicant returned invalid network ID: " + network_id,
-                             "Internal WiFi error", "Try restarting WiFi services");
+    // Step 1: Reuse an existing saved entry for this SSID when one exists,
+    // otherwise add a new one. Every connect used to ADD_NETWORK
+    // unconditionally — a real user's wpa_supplicant had reached network id 7
+    // for a handful of networks, and duplicate all-enabled entries give
+    // wpa_supplicant more candidates to roam between after a reboot (a
+    // plausible contributor to an unwanted 5GHz reassociation after the user
+    // had explicitly forgotten that network).
+    //
+    // reused_existing tracks whether network_id was newly ADD_NETWORK'd by
+    // THIS call. The failure-cleanup REMOVE_NETWORK calls below must only
+    // fire when it was — removing a reused id would delete a network the
+    // user already had saved, which is worse than the duplicate-entry bug
+    // this reuse is fixing.
+    std::string network_id =
+        helix::wifi::detail::find_network_id(send_command("LIST_NETWORKS"), clean_ssid);
+    const bool reused_existing = !network_id.empty();
+    if (reused_existing) {
+        spdlog::debug("[WifiBackend] Reusing network id {} for '{}'", network_id,
+                      helix::redact::ssid(clean_ssid));
+    } else {
+        std::string add_result = send_command("ADD_NETWORK");
+        if (add_result.empty() || add_result == "FAIL\n") {
+            NOTIFY_ERROR("Failed to save WiFi network");
+            return WiFiErrorHelper::connection_failed("Failed to add network to wpa_supplicant");
         }
-    }
 
-    spdlog::debug("[WifiBackend] Added network with ID: {}", network_id);
+        // Parse network ID (should be a number)
+        network_id = add_result;
+        // Remove trailing newline
+        if (!network_id.empty() && network_id.back() == '\n') {
+            network_id.pop_back();
+        }
+
+        // SECURITY: Validate network ID is actually a number
+        for (char c : network_id) {
+            if (!std::isdigit(c)) {
+                return WiFiError(WiFiResult::BACKEND_ERROR,
+                                 "wpa_supplicant returned invalid network ID: " + network_id,
+                                 "Internal WiFi error", "Try restarting WiFi services");
+            }
+        }
+
+        spdlog::debug("[WifiBackend] Added network with ID: {}", network_id);
+    }
 
     // Step 2: Set SSID
     std::string set_ssid_cmd = "SET_NETWORK " + network_id + " ssid \"" + clean_ssid + "\"";
     std::string ssid_result = send_command(set_ssid_cmd);
     if (ssid_result != "OK\n") {
         LOG_ERROR_INTERNAL("Failed to set SSID: {}", ssid_result);
-        // Clean up: remove the network
-        send_command("REMOVE_NETWORK " + network_id);
+        // Clean up: remove the network we just added. Never remove a reused
+        // id — that would delete credentials the user already had saved.
+        if (!reused_existing) {
+            send_command("REMOVE_NETWORK " + network_id);
+        }
         NOTIFY_ERROR("Failed to save WiFi network");
         return WiFiErrorHelper::connection_failed("Failed to configure network SSID");
     }
@@ -1309,7 +1371,10 @@ WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
         std::string open_result = send_command(set_open_cmd);
         if (open_result != "OK\n") {
             LOG_ERROR_INTERNAL("Failed to set open security: {}", open_result);
-            send_command("REMOVE_NETWORK " + network_id);
+            // Never remove a reused id — see the Step 1 comment.
+            if (!reused_existing) {
+                send_command("REMOVE_NETWORK " + network_id);
+            }
             NOTIFY_ERROR("Failed to save WiFi network");
             return WiFiErrorHelper::connection_failed("Failed to configure open network security");
         }
@@ -1321,7 +1386,10 @@ WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
         if (psk_result != "OK\n") {
             LOG_ERROR_INTERNAL(
                 "Failed to set PSK"); // Don't log the actual result (may contain password)
-            send_command("REMOVE_NETWORK " + network_id);
+            // Never remove a reused id — see the Step 1 comment.
+            if (!reused_existing) {
+                send_command("REMOVE_NETWORK " + network_id);
+            }
             NOTIFY_ERROR("Failed to connect to '{}'. Check password.", clean_ssid);
             return WiFiErrorHelper::authentication_failed(ssid);
         }
@@ -1333,7 +1401,10 @@ WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
     std::string enable_result = send_command(enable_cmd);
     if (enable_result != "OK\n") {
         LOG_ERROR_INTERNAL("Failed to enable network: {}", enable_result);
-        send_command("REMOVE_NETWORK " + network_id);
+        // Never remove a reused id — see the Step 1 comment.
+        if (!reused_existing) {
+            send_command("REMOVE_NETWORK " + network_id);
+        }
         NOTIFY_ERROR("Failed to save WiFi network");
         return WiFiErrorHelper::connection_failed("Failed to enable network configuration");
     }
@@ -1344,7 +1415,10 @@ WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
     std::string select_result = send_command(select_cmd);
     if (select_result != "OK\n") {
         LOG_ERROR_INTERNAL("Failed to select network: {}", select_result);
-        send_command("REMOVE_NETWORK " + network_id);
+        // Never remove a reused id — see the Step 1 comment.
+        if (!reused_existing) {
+            send_command("REMOVE_NETWORK " + network_id);
+        }
         NOTIFY_ERROR("Failed to connect to '{}'", clean_ssid);
         return WiFiErrorHelper::connection_failed("Failed to select network for connection");
     }
