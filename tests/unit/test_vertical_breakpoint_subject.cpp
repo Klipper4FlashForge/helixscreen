@@ -41,10 +41,31 @@ int subject_value(const char* name) {
     return lv_subject_get_int(s);
 }
 
+/// Puts the fixture's display geometry back on the way out.
+///
+/// theme_manager writes the responsive px consts into a SHARED XML scope, and
+/// the fixture does not re-register them per test, so anything here that points
+/// the theme manager at another display leaks into every later test in the
+/// binary. Observed: button_height latched at the xxlarge 96 while
+/// test_vertical_breakpoint_tokens.cpp asked for the medium 52 — a failure in a
+/// file this one never touches. RAII so no section can forget it.
+struct RestoreDisplayConsts {
+    lv_display_t* prev = lv_display_get_default();
+
+    ~RestoreDisplayConsts() {
+        if (prev != nullptr) {
+            lv_display_set_default(prev);
+            theme_manager_refresh_layout_constants(prev);
+        }
+    }
+};
+
 } // namespace
 
 TEST_CASE_METHOD(XMLTestFixture, "ui_breakpoint_v reads the vertical axis",
                  "[theme][breakpoints][1209][vertical-subject]") {
+    RestoreDisplayConsts restore;
+
     SECTION("ultratall portrait — the two ladders diverge, which is the whole point") {
         lv_display_t* d = make_test_display(320, 1480);
         theme_manager_refresh_layout_constants(d);
@@ -75,8 +96,15 @@ TEST_CASE_METHOD(XMLTestFixture, "ui_breakpoint_v reads the vertical axis",
         // breaking the axis in theme_manager_init() left all of them green. A
         // display that is never rotated would have carried the cramped tier for
         // its whole session.
+        //
+        // theme_manager_init() writes the responsive px consts into the SHARED
+        // XML scope and the fixture does not re-init an already-initialised
+        // theme manager, so calling it here leaks this section's tier into every
+        // later test in the binary (seen once: button_height stuck at the
+        // xxlarge 96 while test_vertical_breakpoint_tokens.cpp asked for the
+        // medium 52). Restore the fixture's own geometry before leaving.
         lv_display_t* d = make_test_display(320, 1480);
-        theme_manager_init(d, /*use_dark_mode_param=*/true);
+        theme_manager_init(d, theme_manager_is_dark_mode());
 
         CHECK(subject_value("ui_breakpoint_v") == to_int(UiBreakpoint::XXLarge));
         CHECK(subject_value("ui_breakpoint") == to_int(UiBreakpoint::Tiny));
@@ -102,6 +130,8 @@ TEST_CASE_METHOD(XMLTestFixture, "ui_breakpoint_v reads the vertical axis",
 
 TEST_CASE_METHOD(XMLTestFixture, "the preparing-overlay reserve threshold matches the measurements",
                  "[theme][breakpoints][1209][vertical-subject]") {
+    RestoreDisplayConsts restore;
+
     // Measured (ctl geom, preparing_visible == 1, strip's extra line present —
     // the conservative case): reserving #metadata_clip_height leaves 50px at
     // 240x320 and 114px at 480x272 against a 112px stack, but 166px or more from
