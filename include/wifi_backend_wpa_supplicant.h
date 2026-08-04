@@ -40,6 +40,7 @@ std::string find_network_id(const std::string& list_networks_reply, const std::s
 #include <condition_variable>
 #include <mutex>
 #include <optional>
+#include <utility>
 
 // Forward declaration - avoid including wpa_ctrl.h in header
 struct wpa_ctrl;
@@ -288,6 +289,31 @@ class WifiBackendWpaSupplicant : public WifiBackend, private hv::EventLoopThread
     std::vector<std::string> split_by_tabs(const std::string& str);
     int dbm_to_percentage(int dbm);
     std::string detect_security_type(const std::string& flags, bool& is_secured);
+
+    /**
+     * @brief Re-read the wpa_supplicant config file after a SAVE_CONFIG
+     *
+     * Shared by connect_network() and forget_network() — both issue
+     * SAVE_CONFIG and then need the config path plus its just-written
+     * contents to judge whether the write actually reached disk (a reply of
+     * "OK" is not proof; see classify_save_result()).
+     *
+     * @return {conf_path, conf_contents}; conf_path is "" when it could not
+     *         be resolved, in which case conf_contents is also empty.
+     */
+    std::pair<std::string, std::string> read_wpa_conf_after_save();
+
+    /**
+     * @brief Mirror @p conf_path onto its remembered persistent target, if any
+     *
+     * A no-op unless @p conf_path lives on volatile storage AND
+     * remember_persistent_target() captured a durable target for it at
+     * startup (see wifi_saved_config.h). Shared by connect_network() (mirrors
+     * a newly-written credential) and forget_network() (mirrors a removal) —
+     * whichever side just confirmed the on-disk config matches what it
+     * expected calls this to propagate that state onto the durable copy.
+     */
+    void mirror_if_volatile(const std::string& conf_path);
 
     /**
      * @brief Check if the libhv event loop thread is active

@@ -1303,6 +1303,32 @@ static std::string validate_wpa_string(const std::string& input, const std::stri
     return input;
 }
 
+std::pair<std::string, std::string> WifiBackendWpaSupplicant::read_wpa_conf_after_save() {
+    const auto iface = resolved_interface();
+    const std::string conf_path =
+        (iface && !iface->conf_path.empty()) ? iface->conf_path : detect_wpa_conf_path_from_proc();
+    std::string conf_contents;
+    if (!conf_path.empty()) {
+        std::ifstream conf(conf_path, std::ios::binary);
+        if (conf.is_open())
+            conf_contents.assign(std::istreambuf_iterator<char>(conf),
+                                 std::istreambuf_iterator<char>());
+    }
+    return {conf_path, conf_contents};
+}
+
+void WifiBackendWpaSupplicant::mirror_if_volatile(const std::string& conf_path) {
+    // Verified present (or verified absent) is not the same as verified
+    // durable: wpa_supplicant writes its config with a temp file + rename(),
+    // and that rename replaces a persistence symlink with a regular file. On
+    // such a platform the state we just confirmed on the volatile path is
+    // sitting in RAM, not on the storage the printer actually boots from.
+    if (helix::wifi::detail::is_volatile_path(conf_path) &&
+        !helix::wifi::persistent_target().empty()) {
+        helix::wifi::mirror_to_persistent(conf_path);
+    }
+}
+
 void WifiBackendWpaSupplicant::reconcile_saved_networks() {
     const auto saved = helix::wifi::store::load();
     if (saved.empty())
@@ -1554,29 +1580,12 @@ WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
     // "saved to disk" while the credentials existed only in daemon memory and
     // died at the next power-off. Re-read the config and look for the SSID.
     const std::string save_result = send_command("SAVE_CONFIG");
-    const auto iface = resolved_interface();
-    const std::string conf_path =
-        (iface && !iface->conf_path.empty()) ? iface->conf_path : detect_wpa_conf_path_from_proc();
-    std::string conf_contents;
-    if (!conf_path.empty()) {
-        std::ifstream conf(conf_path, std::ios::binary);
-        if (conf.is_open())
-            conf_contents.assign(std::istreambuf_iterator<char>(conf),
-                                 std::istreambuf_iterator<char>());
-    }
+    const auto [conf_path, conf_contents] = read_wpa_conf_after_save();
 
     if (helix::wifi::detail::classify_save_result(save_result, conf_contents, clean_ssid) ==
         helix::wifi::detail::SavePersistence::Persisted) {
         spdlog::debug("[WifiBackend] Credentials verified on disk at {}", conf_path);
-
-        // Verified present is not the same as verified durable: wpa_supplicant
-        // writes its config with a temp file + rename(), and that rename
-        // replaces a persistence symlink with a regular file. On such a
-        // platform the credentials we just confirmed are sitting in RAM.
-        if (helix::wifi::detail::is_volatile_path(conf_path) &&
-            !helix::wifi::persistent_target().empty()) {
-            helix::wifi::mirror_to_persistent(conf_path);
-        }
+        mirror_if_volatile(conf_path);
     } else if (conf_path.empty()) {
         spdlog::warn("[WifiBackend] Cannot verify credential persistence: no -c config path "
                      "found for the running wpa_supplicant (SAVE_CONFIG replied '{}')",
@@ -1697,7 +1706,42 @@ WiFiError WifiBackendWpaSupplicant::forget_network(const std::string& ssid) {
                              "wpa_supplicant REMOVE_NETWORK failed: " + remove_result,
                              "Failed to forget network");
         }
-        send_command("SAVE_CONFIG");
+
+        // Same persistence problem connect_network() works around: SAVE_CONFIG's
+        // reply is not proof of anything, and even a genuine write can land on
+        // a volatile path whose persistence symlink a PRIOR SAVE_CONFIG already
+        // replaced (see wifi_saved_config.h — device-verified on a Snapmaker
+        // U1). Without re-checking and mirroring here, a forget on such a
+        // device clears the daemon's live state and the volatile file, while
+        // the persistent file the boot process actually reads still lists the
+        // network — it comes back at the next power cycle, the exact
+        // resurrection bug this whole feature exists to eliminate, reached by
+        // a different route.
+        //
+        // Opposite polarity from connect_network()'s classify_save_result():
+        // there, "OK" means the SSID should now be PRESENT on disk.
+        // classify_save_result() is built around that direction (its
+        // Persisted/NotPersisted pair both describe "is the SSID present"),
+        // so it is the wrong shape to reuse here — a successful forget wants
+        // the SSID ABSENT. wpa_config_has_network() is called directly
+        // instead, on the same re-read config content read_wpa_conf_after_save()
+        // fetches for connect_network() too.
+        const std::string save_result = send_command("SAVE_CONFIG");
+        const auto [conf_path, conf_contents] = read_wpa_conf_after_save();
+
+        if (conf_path.empty()) {
+            spdlog::warn("[WifiBackend] Cannot verify removal persisted: no -c config path "
+                         "found for the running wpa_supplicant (SAVE_CONFIG replied '{}')",
+                         save_result);
+        } else if (!helix::wifi::detail::wpa_config_has_network(conf_contents, clean_ssid)) {
+            spdlog::debug("[WifiBackend] Removal verified on disk at {}", conf_path);
+            mirror_if_volatile(conf_path);
+        } else {
+            spdlog::warn("[WifiBackend] {} still lists '{}' after REMOVE_NETWORK + SAVE_CONFIG "
+                         "(reply '{}') — the daemon dropped it from memory but the on-disk "
+                         "config was not updated; it may reappear at the next boot",
+                         conf_path, helix::redact::ssid(clean_ssid), save_result);
+        }
     }
 
     // Drop from HelixScreen's own store too, regardless of whether wpa_supplicant

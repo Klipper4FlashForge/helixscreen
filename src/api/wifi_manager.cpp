@@ -454,7 +454,10 @@ void WiFiManager::forget(const std::string& ssid,
         // there to forget, so it does not warrant an error toast the way a
         // genuine backend failure does.
         if (result.result != WiFiResult::NETWORK_NOT_FOUND) {
-            NOTIFY_ERROR("Failed to forget WiFi network '{}'", ssid);
+            // NOTIFY_ERROR ultimately reaches spdlog::error, which is persisted
+            // and swept into debug bundles — redact the SSID the same as every
+            // other log line in this file.
+            NOTIFY_ERROR("Failed to forget WiFi network '{}'", helix::redact::ssid(ssid));
         }
         if (on_complete) {
             on_complete(false, result.user_msg.empty() ? result.technical_msg : result.user_msg);

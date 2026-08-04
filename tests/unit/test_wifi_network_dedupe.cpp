@@ -186,6 +186,38 @@ TEST_CASE("forget_network on the mock backend removes a connected SSID", "[wifi]
     CHECK(second.result == WiFiResult::NETWORK_NOT_FOUND);
 }
 
+TEST_CASE("forget_network on the currently-connected SSID fires DISCONNECTED", "[wifi][forget]") {
+    // connect_network() only starts the simulated async connect — it does not
+    // by itself put the mock into connected_ == true, so a test that never
+    // waits out that delay (as the case above deliberately doesn't) can only
+    // prove removal from saved_networks_. set_connected_state() drives the
+    // mock into a genuinely connected state directly, so this test actually
+    // reaches the DISCONNECTED branch in WifiBackendMock::forget_network()
+    // instead of merely exercising the "not connected" path by accident.
+    ConfigDirGuard guard(make_temp_dir("helix_forget_mock_disconnect_event"));
+
+    WifiBackendMock backend;
+    REQUIRE(backend.start().success());
+    REQUIRE(backend.connect_network("HomeNetwork-5G", "12345678").success());
+    backend.set_connected_state(true, "HomeNetwork-5G", "192.168.1.50", 80);
+
+    bool disconnected_fired = false;
+    std::string disconnect_reason;
+    backend.register_event_callback("DISCONNECTED", [&](const std::string& data) {
+        disconnected_fired = true;
+        disconnect_reason = data;
+    });
+
+    WiFiError forgotten = backend.forget_network("HomeNetwork-5G");
+    CHECK(forgotten.success());
+
+    CHECK(disconnected_fired);
+    CHECK(disconnect_reason == "reason=forgotten");
+
+    WifiBackend::ConnectionStatus status = backend.get_status();
+    CHECK_FALSE(status.connected);
+}
+
 TEST_CASE("forget_network on an unknown SSID returns NETWORK_NOT_FOUND", "[wifi][forget]") {
     ConfigDirGuard guard(make_temp_dir("helix_forget_mock_unknown"));
 
