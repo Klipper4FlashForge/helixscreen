@@ -83,41 +83,92 @@ TEST_CASE("exclude_side_list_geometry: landscape covers the right-hand column",
 TEST_CASE("exclude_side_list_geometry: portrait covers the bottom of the stack",
           "[print-status][portrait][layout-decision]") {
     // A 44%-wide list anchored right covers 44% of *everything* in a stack and
-    // none of the controls fully — the bug. Full width, bottom-anchored, taking
-    // the complement of the preview reserve so the object map stays visible.
-    const auto g = exclude_side_list_geometry(/*portrait=*/true);
+    // none of the controls fully — the bug. Full width, bottom-anchored, sized
+    // in px from the measured control stack so the object map stays visible.
+    const auto g = exclude_side_list_geometry(/*portrait=*/true, /*controls_h=*/300,
+                                              /*content_h=*/1000, /*gap=*/12);
     CHECK(g.width_pct == 100);
     CHECK(g.anchor_bottom);
-    CHECK(g.height_pct == 100 - kPortraitPreviewReservePct);
+    CHECK(g.height_px == 312); // the controls plus the column's own gap
 }
 
-TEST_CASE("exclude_side_list_geometry: the list never hides the whole preview",
+TEST_CASE("exclude_side_list_geometry: landscape ignores the portrait measurements",
           "[print-status][portrait][layout-decision]") {
-    // Whatever the reserve is tuned to, the map has to remain visible — the list
-    // exists to accompany it, not replace it.
-    for (bool portrait : {false, true}) {
-        INFO("portrait=" << portrait);
-        const auto g = exclude_side_list_geometry(portrait);
-        CHECK(g.height_pct > 0);
-        CHECK(g.height_pct <= 100);
-        CHECK(g.width_pct > 0);
-        CHECK(g.width_pct <= 100);
-        if (portrait) {
-            CHECK(g.height_pct < 100); // leaves room for the map above it
-        }
-    }
+    // The 44%/100% rule is derived from flex_grow="4" against "5" and measured
+    // pixel-exact. Feeding it measurements must not perturb it.
+    const auto bare = exclude_side_list_geometry(/*portrait=*/false);
+    const auto measured = exclude_side_list_geometry(/*portrait=*/false, /*controls_h=*/300,
+                                                     /*content_h=*/1000, /*gap=*/12);
+    CHECK(measured.width_pct == bare.width_pct);
+    CHECK(measured.height_pct == bare.height_pct);
+    CHECK(measured.anchor_bottom == bare.anchor_bottom);
+    CHECK(measured.height_px == 0); // percentage path, never a measured height
 }
 
-TEST_CASE("both rules derive from one reserve constant",
+TEST_CASE("portrait_side_list_height: unmeasured yields 0, not a collapsed list",
           "[print-status][portrait][layout-decision]") {
-    // "How much of a portrait print-status screen is preview" is one decision.
-    // If someone retunes it, both consumers must move together.
-    const auto g = exclude_side_list_geometry(true);
-    const int32_t stack = 1000;
-    const int32_t preview_floor = stack * kPortraitPreviewReservePct / 100;
+    // 0 means "fall back to height_pct". A caller that treated it as a height
+    // would slide in a zero-tall list and the objects would be unreachable.
+    CHECK(portrait_side_list_height(0, 1000, 12) == 0);
+    CHECK(portrait_side_list_height(300, 0, 12) == 0);
+    CHECK(portrait_side_list_height(-5, 1000, 12) == 0);
 
-    CHECK(g.height_pct * stack / 100 == stack - preview_floor);
-    CHECK(fan_row_budget(true, 0, stack, 0) == stack - preview_floor);
+    const auto g = exclude_side_list_geometry(/*portrait=*/true, 0, 0, 0);
+    CHECK(g.height_px == 0);
+    CHECK(g.height_pct == kPortraitSideListFallbackPct);
+}
+
+TEST_CASE("portrait_side_list_height: a short control stack still gets a usable list",
+          "[print-status][portrait][layout-decision]") {
+    // 320x1480: controls are ~14% of the column. Sized naively that is a list
+    // too short to show a row; the floor catches it.
+    CHECK(portrait_side_list_height(/*controls_h=*/60, /*content_h=*/1300, /*gap=*/12) ==
+          kMinSideListHeightPx);
+}
+
+TEST_CASE("portrait_side_list_height: a tall control stack never buries the map",
+          "[print-status][portrait][layout-decision]") {
+    // The list accompanies the object map; it must not become the reason the
+    // map cannot be tapped.
+    const int32_t content_h = 1000;
+    const int32_t ceiling = content_h * kMaxSideListCoveragePct / 100;
+    CHECK(portrait_side_list_height(/*controls_h=*/900, content_h, /*gap=*/12) == ceiling);
+    CHECK(ceiling < content_h); // something is always left for the map
+}
+
+TEST_CASE("portrait_side_list_height: an extremely short column prefers a list over a sliver",
+          "[print-status][portrait][layout-decision]") {
+    // When the ceiling is below the floor the two clamps disagree. The ceiling
+    // wins: covering more of a tiny map beats a list that cannot show a row.
+    const int32_t content_h = 200; // ceiling = 110, below kMinSideListHeightPx
+    const int32_t ceiling = content_h * kMaxSideListCoveragePct / 100;
+    REQUIRE(ceiling < kMinSideListHeightPx);
+    CHECK(portrait_side_list_height(/*controls_h=*/10, content_h, /*gap=*/0) == ceiling);
+}
+
+TEST_CASE("the side list does not move when the preview reserve is retuned",
+          "[print-status][portrait][layout-decision]") {
+    // The inverse of the rule this file used to assert. kPortraitPreviewReservePct
+    // answers "how much of the column is preview" — it says nothing about how tall
+    // a list of objects should be. Borrowing it coupled the list to a number that
+    // meant "the controls are ~55% of the column"; when the controls fell to
+    // 14-34% the list kept covering 60% and ate the live, tappable object map.
+    // Sizing from the measured controls is what makes the list immune.
+    const int32_t controls_h = 300;
+    const int32_t content_h = 1000;
+    const int32_t gap = 12;
+    const int32_t h = portrait_side_list_height(controls_h, content_h, gap);
+
+    // Derived from the controls, independently of the reserve constant.
+    CHECK(h == controls_h + gap);
+
+    // And it is NOT the old complement-of-the-reserve answer.
+    const int32_t old_rule = content_h * (100 - kPortraitPreviewReservePct) / 100;
+    CHECK(h != old_rule);
+
+    // The reserve still drives the fan-row budget — that consumer is unchanged.
+    const int32_t preview_floor = content_h * kPortraitPreviewReservePct / 100;
+    CHECK(fan_row_budget(true, 0, content_h, 0) == content_h - preview_floor);
 }
 
 // ============================================================================

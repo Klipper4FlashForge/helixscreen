@@ -231,19 +231,99 @@ inline constexpr int32_t portrait_graph_height(int32_t graph_w, int32_t slack_h)
  *
  * PORTRAIT — controls are the bottom of a stack, so a 44%-wide list anchored
  * right covers the right 44% of *everything* and none of the controls fully.
- * The list goes full width, anchored to the bottom, taking the complement of the
- * preview reserve so it lands on the controls and leaves the map visible.
+ * The list goes full width, anchored to the bottom, and is sized in px from the
+ * MEASURED control stack. It deliberately does not read kPortraitPreviewReservePct:
+ * that constant answers "how much of the column is preview", which says nothing
+ * about how tall a list of objects should be, and borrowing it once already cost
+ * the map 40%+ of its tappable area when the controls shrank underneath it.
  */
 struct SideListGeometry {
     int32_t width_pct;
-    int32_t height_pct;
+    int32_t height_pct; ///< Used only when height_px == 0.
+    int32_t height_px;  ///< Measured height; 0 = "not measurable, use height_pct".
     bool anchor_bottom; ///< false = right edge (landscape), true = bottom (portrait)
 };
 
-inline constexpr SideListGeometry exclude_side_list_geometry(bool portrait) {
-    // 44% ~= 4/9, the controls column's share of the landscape row.
-    return portrait ? SideListGeometry{100, 100 - kPortraitPreviewReservePct, true}
-                    : SideListGeometry{44, 100, false};
+/**
+ * @brief Shortest side list worth sliding in, in px.
+ *
+ * Below roughly this the header row plus one object row no longer both fit, and
+ * a list that cannot show a single tappable entry is worse than no list — the
+ * user gave up the map for nothing.
+ */
+inline constexpr int32_t kMinSideListHeightPx = 160;
+
+/**
+ * @brief Most of the stacked column the list may ever cover, in %.
+ *
+ * The list accompanies the object map; it must never become the reason the map
+ * cannot be tapped. This is a backstop on pathological control stacks, not the
+ * normal sizing path — in portrait the controls come in far under it.
+ */
+inline constexpr int32_t kMaxSideListCoveragePct = 55;
+
+/**
+ * @brief Height used when the portrait column has not been measured yet, in %.
+ *
+ * Deliberately NOT derived from kPortraitPreviewReservePct. Nothing about "how
+ * much of the screen is preview" tells you how tall a list of objects is; the
+ * old coupling is exactly the bug this file now avoids. A caller that reaches
+ * this has no measurements at all, so any number is a guess — this one is just
+ * a middling guess that leaves the map visible.
+ */
+inline constexpr int32_t kPortraitSideListFallbackPct = 50;
+
+/**
+ * @brief Portrait side-list height in px, or 0 when nothing is measurable yet.
+ *
+ * The list's job is to cover the controls, so it is sized from the CONTROLS —
+ * measured, every time — rather than from a share of the column. A percentage
+ * cannot notice that the control stack shrank, which is how a rule written when
+ * the controls were ~55% survived them falling to 14-34% and started eating a
+ * live tappable object map instead.
+ *
+ * @param controls_h Measured height of `controls_section`. <= 0 means unmeasured.
+ * @param content_h  Measured CONTENT height of `overlay_content` — what a
+ *                   percentage would have resolved against. <= 0 means unmeasured.
+ * @param gap        The column's `pad_gap`, so the list clears the control stack
+ *                   by the same rhythm the rest of the column uses.
+ * @return Height in px, clamped to [floor, ceiling]; 0 when unmeasurable, which
+ *         callers must treat as "fall back to height_pct", never as "collapse".
+ */
+inline constexpr int32_t portrait_side_list_height(int32_t controls_h, int32_t content_h,
+                                                   int32_t gap) {
+    if (controls_h <= 0 || content_h <= 0) {
+        return 0;
+    }
+    const int32_t ceiling = content_h * kMaxSideListCoveragePct / 100;
+    // A column too short to honour the floor gets the ceiling: covering the map
+    // is still better than a list with nothing in it.
+    const int32_t floor_h = kMinSideListHeightPx < ceiling ? kMinSideListHeightPx : ceiling;
+    const int32_t want = controls_h + (gap > 0 ? gap : 0);
+    if (want < floor_h) {
+        return floor_h;
+    }
+    return want > ceiling ? ceiling : want;
+}
+
+/**
+ * @param portrait   True when overlay_content is stacked.
+ * @param controls_h Measured `controls_section` height. Portrait only; ignored
+ *                   in landscape, where the 44%/100% rule is already exact.
+ * @param content_h  Measured `overlay_content` content height. Portrait only.
+ * @param gap        The column's `pad_gap`. Portrait only.
+ */
+inline constexpr SideListGeometry exclude_side_list_geometry(bool portrait, int32_t controls_h = 0,
+                                                             int32_t content_h = 0,
+                                                             int32_t gap = 0) {
+    if (!portrait) {
+        // 44% ~= 4/9, the controls column's share of the landscape row — it is
+        // flex_grow="4" against thumbnail_section's flex_grow="5", so this is
+        // derived, not tuned, and needs no measurement.
+        return SideListGeometry{44, 100, 0, false};
+    }
+    return SideListGeometry{100, kPortraitSideListFallbackPct,
+                            portrait_side_list_height(controls_h, content_h, gap), true};
 }
 
 } // namespace helix::ui

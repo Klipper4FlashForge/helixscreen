@@ -69,7 +69,23 @@ void ExcludeObjectSideList::create(lv_obj_t* parent, PrinterState* printer_state
     }
 
     lv_obj_set_width(root_, lv_pct(geom.width_pct));
-    lv_obj_set_height(root_, lv_pct(geom.height_pct));
+    // Bottom-anchored means portrait, which is supposed to arrive measured. The
+    // percentage fallback is a guess that cannot track the control stack — the
+    // exact failure this sizing replaced — so say so rather than silently
+    // shipping a list that eats the object map.
+    if (geom.anchor_bottom && geom.height_px <= 0) {
+        spdlog::warn("[ExcludeObjectSideList] Portrait list created without measurements; "
+                     "falling back to {}% of the column",
+                     geom.height_pct);
+    }
+    // A measured px height wins over the percentage. Portrait sizes the list to
+    // the control stack it covers; a percentage there cannot notice the stack
+    // shrinking and would keep eating the object map.
+    if (geom.height_px > 0) {
+        lv_obj_set_height(root_, geom.height_px);
+    } else {
+        lv_obj_set_height(root_, lv_pct(geom.height_pct));
+    }
     lv_obj_set_align(root_, geom.anchor_bottom ? LV_ALIGN_BOTTOM_MID : LV_ALIGN_RIGHT_MID);
     // FLOATING removes us from the parent's flex/layout calculations so we
     // sit on top of sibling columns rather than displacing them.
@@ -121,9 +137,18 @@ void ExcludeObjectSideList::create(lv_obj_t* parent, PrinterState* printer_state
     lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
     lv_anim_start(&a);
 
-    spdlog::debug("[ExcludeObjectSideList] Created ({}x{}%, anchor={}, slide_distance={}px)",
-                  geom.width_pct, geom.height_pct, geom.anchor_bottom ? "bottom" : "right",
-                  slide_distance);
+    // Report the height that was actually applied, not both candidates — a line
+    // that always prints the percentage reads as "the percentage was used".
+    if (geom.height_px > 0) {
+        spdlog::debug("[ExcludeObjectSideList] Created ({}%x{}px measured, anchor={}, "
+                      "slide_distance={}px)",
+                      geom.width_pct, geom.height_px, geom.anchor_bottom ? "bottom" : "right",
+                      slide_distance);
+    } else {
+        spdlog::debug("[ExcludeObjectSideList] Created ({}x{}%, anchor={}, slide_distance={}px)",
+                      geom.width_pct, geom.height_pct, geom.anchor_bottom ? "bottom" : "right",
+                      slide_distance);
+    }
 }
 
 void ExcludeObjectSideList::destroy() {
