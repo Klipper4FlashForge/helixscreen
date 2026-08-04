@@ -43,6 +43,11 @@ constexpr float ROTATION_DEGREES_PER_PIXEL = 0.5f;  // Camera rotation sensitivi
 constexpr uint32_t DRAG_THROTTLE_MIN_FRAME_MS = 33; // ~30fps throttle during drag
 constexpr int CLICK_DISTANCE_THRESHOLD = 10;        // Pixels: distinguish click from drag
 
+// Lines parsed between cancellation polls in the background load. Small enough
+// that cancel_build()'s join returns promptly, large enough that the atomic load
+// is noise next to parsing that many lines.
+constexpr size_t CANCEL_POLL_LINES = 2048;
+
 #include <spdlog/spdlog.h>
 
 #include <helix-xml/src/xml/lv_xml_parser.h>
@@ -1655,11 +1660,33 @@ static void ui_gcode_viewer_load_file_async(lv_obj_t* obj, const char* file_path
                 helix::gcode::GCodeParser parser;
                 std::string line;
 
+                // Poll cancellation while parsing, not just after it.
+                // cancel_build() joins this thread FROM THE MAIN THREAD, so with
+                // the check only at the end, switching files blocked the LVGL
+                // loop for an entire parse — seconds for a multi-megabyte file
+                // on a 2-core board. Checked every CANCEL_POLL_LINES lines so the
+                // atomic load costs nothing next to the parse itself.
+                bool cancelled_mid_parse = false;
+                size_t lines_since_cancel_check = 0;
+
                 while (std::getline(file, line)) {
                     parser.parse_line(line);
+
+                    if (++lines_since_cancel_check >= CANCEL_POLL_LINES) {
+                        lines_since_cancel_check = 0;
+                        if (st->is_cancelled()) {
+                            cancelled_mid_parse = true;
+                            break;
+                        }
+                    }
                 }
 
                 file.close();
+
+                if (cancelled_mid_parse) {
+                    spdlog::debug("[GCode Viewer] Build cancelled mid-parse, discarding");
+                    return;
+                }
 
                 result->gcode_file =
                     std::make_unique<helix::gcode::ParsedGCodeFile>(parser.finalize());

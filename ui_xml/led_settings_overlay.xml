@@ -37,7 +37,8 @@
                           description_tag="Brightness level when LEDs turn on at startup"
                           min="1" max="100" value="80"
                           min_icon="lightbulb_on_10" max_icon="lightbulb_on"
-                          callback="on_startup_brightness_changed">
+                          callback="on_startup_brightness_changed"
+                          commit_callback="on_startup_brightness_commit">
         <bind_flag_if_eq subject="led_on_at_start_enabled" flag="hidden" ref_value="0"/>
       </setting_slider_row>
       </setting_group>

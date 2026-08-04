@@ -365,6 +365,23 @@ SystemToolLayout compute_system_tool_layout(const AmsSystemInfo& info, const Ams
     // physical position here and apply after the default label-building loop.
     std::map<int, int> physical_label_overrides;
 
+    // Physical nozzle -> Klipper extruder name, recorded wherever the branch that
+    // assigns the position actually knows which extruder it belongs to. Positions
+    // never recorded here stay unknown (empty) — see physical_to_extruder_name.
+    std::map<int, std::string> physical_extruder_names;
+
+    // Record the extruder that owns a physical nozzle, ignoring empty names and
+    // refusing to overwrite a differing earlier answer (shared HUB nozzles).
+    auto record_extruder = [&physical_extruder_names](int phys, const std::string& name) {
+        if (name.empty()) {
+            return;
+        }
+        auto [it, inserted] = physical_extruder_names.emplace(phys, name);
+        if (!inserted && it->second != name) {
+            it->second.clear(); // conflicting claims -> unknown, never a guess
+        }
+    };
+
     for (int i = 0; i < static_cast<int>(info.units.size()); ++i) {
         const auto& unit = info.units[i];
 
@@ -398,8 +415,12 @@ SystemToolLayout compute_system_tool_layout(const AmsSystemInfo& info, const Ams
             // Count = number of direct lanes + 1 per hub group.
             int direct_count = 0;
             bool has_hub_group = false;
-            int hub_tool = -1;             // lowest mapped_tool among hub lanes (for label)
-            std::vector<int> direct_tools; // mapped_tools for direct lanes
+            int hub_tool = -1; // lowest mapped_tool among hub lanes (for label)
+            // mapped_tool + owning extruder name for each direct lane. The name
+            // rides along so the physical position it lands on can be labelled by
+            // extruder identity, not by the lane's AFC map alias.
+            std::vector<std::pair<int, std::string>> direct_tools;
+            std::vector<std::string> hub_extruders;
 
             for (int s = 0; s < unit.slot_count; s++) {
                 bool is_hub = (s < static_cast<int>(unit.lane_is_hub_routed.size()))
@@ -413,9 +434,10 @@ SystemToolLayout compute_system_tool_layout(const AmsSystemInfo& info, const Ams
                     has_hub_group = true;
                     if (hub_tool < 0 || tool < hub_tool)
                         hub_tool = tool;
+                    hub_extruders.push_back(slot.extruder_name);
                 } else {
                     direct_count++;
-                    direct_tools.push_back(tool);
+                    direct_tools.emplace_back(tool, slot.extruder_name);
                 }
             }
             utl.tool_count = direct_count + (has_hub_group ? 1 : 0);
@@ -424,15 +446,19 @@ SystemToolLayout compute_system_tool_layout(const AmsSystemInfo& info, const Ams
             // Map direct lane tools to physical positions first (sorted)
             std::sort(direct_tools.begin(), direct_tools.end());
             int idx = 0;
-            for (int t : direct_tools) {
+            for (const auto& [t, ext_name] : direct_tools) {
                 result.virtual_to_physical[t] = total_physical + idx;
                 physical_label_overrides[total_physical + idx] = t;
+                record_extruder(total_physical + idx, ext_name);
                 ++idx;
             }
             // Hub group gets last physical position
             if (has_hub_group && hub_tool >= 0) {
                 result.virtual_to_physical[hub_tool] = total_physical + idx;
                 physical_label_overrides[total_physical + idx] = hub_tool;
+                for (const auto& ext_name : hub_extruders) {
+                    record_extruder(total_physical + idx, ext_name);
+                }
             }
 
             total_physical += utl.tool_count;
@@ -466,6 +492,10 @@ SystemToolLayout compute_system_tool_layout(const AmsSystemInfo& info, const Ams
                 if (slot.mapped_tool >= 0) {
                     result.virtual_to_physical[slot.mapped_tool] = phys;
                 }
+                // Every lane on a HUB unit converges on the same extruder, so any
+                // lane names the nozzle. record_extruder() clears the entry if two
+                // lanes disagree, which would mean this is not really one nozzle.
+                record_extruder(phys, slot.extruder_name);
             }
         } else if (min_tool >= 0) {
             // PARALLEL: each lane maps to its own physical nozzle.
@@ -509,6 +539,12 @@ SystemToolLayout compute_system_tool_layout(const AmsSystemInfo& info, const Ams
                         result.virtual_to_physical[t] = physical_first + idx;
                     }
                     physical_label_overrides[physical_first + idx] = min_in_group;
+                    // The group key IS the extruder identity for this nozzle. The
+                    // synthetic "__tool_N" key used for nameless lanes is not an
+                    // extruder name and is deliberately not recorded.
+                    if (ext_name.rfind("__tool_", 0) != 0) {
+                        record_extruder(physical_first + idx, ext_name);
+                    }
                     ++idx;
                 }
 
@@ -576,7 +612,58 @@ SystemToolLayout compute_system_tool_layout(const AmsSystemInfo& info, const Ams
         }
     }
 
+    // Physical→extruder-name map. Positions no branch could identify stay empty.
+    result.physical_to_extruder_name.assign(total_physical, std::string());
+    for (const auto& [phys, name] : physical_extruder_names) {
+        if (phys >= 0 && phys < total_physical) {
+            result.physical_to_extruder_name[phys] = name;
+        }
+    }
+
     return result;
+}
+
+bool layout_has_extruder_identity(const SystemToolLayout& layout) {
+    if (layout.total_physical_tools <= 0 ||
+        static_cast<int>(layout.physical_to_extruder_name.size()) != layout.total_physical_tools) {
+        return false;
+    }
+    return std::all_of(
+        layout.physical_to_extruder_name.begin(), layout.physical_to_extruder_name.end(),
+        [](const std::string& name) { return helix::tool_number_for_extruder(name).has_value(); });
+}
+
+ToolBadgeLabels compute_tool_badge_labels(const SystemToolLayout& layout, const AmsSystemInfo& info,
+                                          int current_slot, int active_physical_tool) {
+    ToolBadgeLabels out;
+
+    if (layout_has_extruder_identity(layout)) {
+        out.prefix = 'E';
+        out.numbers.reserve(layout.physical_to_extruder_name.size());
+        for (const auto& name : layout.physical_to_extruder_name) {
+            out.numbers.push_back(*helix::tool_number_for_extruder(name));
+        }
+        return out;
+    }
+
+    if (layout.physical_to_virtual_label.empty()) {
+        return out;
+    }
+
+    out.prefix = 'T';
+    out.numbers = layout.physical_to_virtual_label;
+
+    // Legacy behaviour: for HUB units the static hub label is replaced by the
+    // loaded lane's own virtual tool number (show "T6" when AMS_1 lane 3 is
+    // loaded, not "T4").
+    if (active_physical_tool >= 0 && active_physical_tool < static_cast<int>(out.numbers.size()) &&
+        current_slot >= 0) {
+        const SlotInfo* active_slot_info = info.get_slot_global(current_slot);
+        if (active_slot_info && active_slot_info->mapped_tool >= 0) {
+            out.numbers[active_physical_tool] = active_slot_info->mapped_tool;
+        }
+    }
+    return out;
 }
 
 // ============================================================================

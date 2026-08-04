@@ -129,8 +129,8 @@ TEST_CASE("responsive_pick + breakpoint_for reproduce the public suffix ladder",
     // implemented — assert it end-to-end and against the public API it backs, so a
     // regression in either primitive fails here.
     auto suffix = [](int32_t res) {
-        return responsive_pick(breakpoint_for(res), "_micro", "_tiny", "_small", "_medium", "_large",
-                               "_xlarge", "_xxlarge");
+        return responsive_pick(breakpoint_for(res), "_micro", "_tiny", "_small", "_medium",
+                               "_large", "_xlarge", "_xxlarge");
     };
     REQUIRE(std::string(suffix(272)) == "_micro");
     REQUIRE(std::string(suffix(480)) == "_medium");
@@ -230,5 +230,58 @@ TEST_CASE("Validation does not require _micro for complete sets", "[theme][break
     for (const auto& warning : warnings) {
         // No warning should complain about missing _micro
         REQUIRE(warning.find("_micro") == std::string::npos);
+    }
+}
+
+// ============================================================================
+// print_tune z-offset tokens (ui_xml/print_tune_tokens.xml)
+// ============================================================================
+//
+// These three size the z-offset row in both ui_xml/print_tune_panel.xml and
+// ui_xml/portrait/print_tune_panel.xml. They were flat 170/90/160 literals, and
+// at 272x480 that left the four z-step buttons 0px wide — present, bound, and
+// impossible to tap.
+//
+// The failure mode being pinned is silent in both directions:
+//   - Drop one of the required _small/_medium/_large tiers and
+//     theme_manager_resolve_px_tokens() skips the token entirely (it `continue`s
+//     on an incomplete triplet). `#z_tune_indicator_w` then resolves to nothing
+//     and the widget lands at width 0. Nothing warns.
+//   - Flatten the ladder to one value at every tier and the tokens still
+//     resolve, the gates still pass, and the panel is back to hardcoded sizing
+//     wearing a token's name.
+
+TEST_CASE("print_tune z-offset tokens declare the required triplet", "[theme][breakpoints]") {
+    auto small = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_small");
+    auto medium = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_medium");
+    auto large = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_large");
+
+    for (const char* base : {"z_tune_indicator_w", "z_tune_indicator_h", "z_tune_dir_col_w"}) {
+        INFO("token: " << base);
+        REQUIRE(small.count(base) > 0);
+        REQUIRE(medium.count(base) > 0);
+        REQUIRE(large.count(base) > 0);
+    }
+}
+
+TEST_CASE("print_tune z-offset tokens actually shrink on narrow displays", "[theme][breakpoints]") {
+    auto micro = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_micro");
+    auto tiny = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_tiny");
+    auto medium = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_medium");
+
+    for (const char* base : {"z_tune_indicator_w", "z_tune_indicator_h", "z_tune_dir_col_w"}) {
+        INFO("token: " << base);
+        REQUIRE(micro.count(base) > 0);
+        REQUIRE(tiny.count(base) > 0);
+
+        const int micro_v = std::stoi(micro.at(base));
+        const int tiny_v = std::stoi(tiny.at(base));
+        const int medium_v = std::stoi(medium.at(base));
+
+        // Monotonic, and micro strictly smaller than medium — a flat ladder is
+        // the regression this catches.
+        REQUIRE(micro_v <= tiny_v);
+        REQUIRE(tiny_v <= medium_v);
+        REQUIRE(micro_v < medium_v);
     }
 }

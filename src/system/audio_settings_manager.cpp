@@ -114,11 +114,18 @@ float AudioSettingsManager::get_volume_scaled() const {
     return normalized * normalized; // Quadratic curve for perceptual loudness
 }
 
-void AudioSettingsManager::set_volume(int volume) {
+int AudioSettingsManager::preview_volume(int volume) {
     volume = std::clamp(volume, 0, 100);
-    spdlog::info("[AudioSettingsManager] set_volume({})", volume);
+    // Debug, not info: a drag emits one of these per tick.
+    spdlog::debug("[AudioSettingsManager] preview_volume({})", volume);
 
     lv_subject_set_int(&volume_subject_, volume);
+    return volume;
+}
+
+void AudioSettingsManager::set_volume(int volume) {
+    volume = preview_volume(volume);
+    spdlog::info("[AudioSettingsManager] set_volume({})", volume);
 
     Config* config = Config::get_instance();
     if (config) {

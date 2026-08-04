@@ -235,6 +235,17 @@ void PrintStatusWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
             s_formatter_->attach_arc(arc);
     }
 
+    // Nozzle reads the tool-pin-aware proxy subjects rather than the raw
+    // active-extruder ones, so the icon tracks whichever tool the card is
+    // showing. Bed and chamber use the PrinterState defaults. The proxy
+    // subjects live on s_formatter_, which production code never resets once
+    // created (see ~PrintStatusWidget), so they genuinely outlive this binder.
+    nozzle_icon_binder_.bind_subjects(widget_obj_, "nozzle_icon_glyph",
+                                      lv_xml_get_subject(nullptr, "print_status_nozzle_current"),
+                                      lv_xml_get_subject(nullptr, "print_status_nozzle_target"));
+    bed_icon_binder_.bind(widget_obj_, printer_state_, helix::HeaterType::Bed);
+    chamber_icon_binder_.bind(widget_obj_, printer_state_, helix::HeaterType::Chamber);
+
     // Set up observers (after widget references are cached and widget_obj_ is set)
     print_state_observer_ =
         observe_print_state<PrintStatusWidget>(printer_state_.get_print_state_enum_subject(), this,
@@ -391,6 +402,12 @@ void PrintStatusWidget::detach() {
     job_queue_count_observer_.reset();
     connection_observer_.reset();
     breakpoint_observer_.reset();
+
+    // Heater icon animators — per-instance, so unbinding here cannot disturb
+    // a recycled successor widget's binders.
+    nozzle_icon_binder_.unbind();
+    bed_icon_binder_.unbind();
+    chamber_icon_binder_.unbind();
 
     // Clear widget references
     print_card_thumb_ = nullptr;

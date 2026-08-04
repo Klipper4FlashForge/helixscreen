@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "ui_heating_animator.h"
-#include "ui_observer_guard.h"
+#include "ui_heater_config.h"
+#include "ui_heater_icon_binder.h"
 #include "ui_overlay_temp_graph.h"
 
 #include "async_lifetime_guard.h"
@@ -36,11 +36,14 @@ class HeaterTempWidget : public PanelWidget {
     struct Config {
         const char* widget_id;   // PanelWidget id() (e.g. "bed_temperature")
         const char* button_name; // ui_button name in the XML component
-        const char* icon_name;   // icon glyph name to animate
+        const char* icon_name;   // icon glyph name (exercised by tests; icon lookup
+                                 // itself now goes through HeaterIconBinder's own
+                                 // default_icon_name(heater))
         const char* log_tag;     // spdlog prefix, e.g. "[BedTemperatureWidget]"
         TempGraphOverlay::Mode mode;
-        SubjectGetter temp_getter;   // current temperature subject
-        SubjectGetter target_getter; // target temperature subject
+        SubjectGetter temp_getter;   // current temperature subject (exercised by tests)
+        SubjectGetter target_getter; // target temperature subject (exercised by tests)
+        HeaterType heater;           // which heater's subjects the icon binder observes
     };
 
     HeaterTempWidget(PrinterState& printer_state, TemperatureService* temp_panel,
@@ -68,12 +71,7 @@ class HeaterTempWidget : public PanelWidget {
     lv_obj_t* temp_btn_ = nullptr;
     lv_obj_t* parent_screen_ = nullptr;
 
-    HeatingIconAnimator temp_icon_animator_;
-    int cached_temp_ = 25;
-    int cached_target_ = 0;
-
-    ObserverGuard temp_observer_;
-    ObserverGuard target_observer_;
+    helix::ui::HeaterIconBinder icon_binder_;
 
     // MUST stay declared LAST: reverse-declaration destruction makes this the
     // first member torn down, invalidating every captured token before any
@@ -83,9 +81,6 @@ class HeaterTempWidget : public PanelWidget {
     // (commit 45abc8c2a, bundle AX3CKAKB).
     helix::AsyncLifetimeGuard lifetime_;
 
-    void on_temp_changed(int temp_deci);
-    void on_target_changed(int target_deci);
-    void update_temp_icon_animation();
     void handle_temp_clicked();
 };
 

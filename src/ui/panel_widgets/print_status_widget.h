@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "ui_heater_icon_binder.h"
 #include "ui_job_queue_modal.h"
 #include "ui_observer_guard.h"
 #include "ui_runout_guidance_modal.h"
@@ -234,6 +235,17 @@ class PrintStatusWidget : public PanelWidget {
 
     // Guards async thumbnail callbacks and history observer from use-after-free
     helix::AsyncLifetimeGuard lifetime_;
+
+    // Thermal tint for the detailed-active heater icons. Plain by-value members
+    // of THIS instance — never on the shared/refcounted s_formatter_ below.
+    // Dashboard widget instances are recycled by the panel manager: attach A ->
+    // detach A -> attach B, and A's deferred LV_EVENT_DELETE fires after B has
+    // taken over. Per-instance ownership is what keeps that safe, since each
+    // animator's delete callback carries its own `this` (see the equivalent
+    // guard for the progress arc in attach_arc(), below).
+    helix::ui::HeaterIconBinder nozzle_icon_binder_;
+    helix::ui::HeaterIconBinder bed_icon_binder_;
+    helix::ui::HeaterIconBinder chamber_icon_binder_;
 
     // History observer for updating idle thumbnail when history loads
     helix::HistoryChangedCallback history_changed_cb_;

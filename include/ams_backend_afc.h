@@ -172,6 +172,11 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     [[nodiscard]] bool is_afc_system() const override {
         return true;
     }
+    /// AFC users have a console; the screen passes their command through rather
+    /// than synthesising a prerequisite operation they never asked for (#1229).
+    [[nodiscard]] bool allows_implicit_chaining() const override {
+        return false;
+    }
     [[nodiscard]] const char* get_klipper_object_name() const override {
         return "AFC"; // Matches the Klipper object name (uppercase)
     }

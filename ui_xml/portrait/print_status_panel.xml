@@ -4,20 +4,15 @@
 <component>
   <!-- overlay_bg and overlay_text are theme-aware pairs defined in globals.xml -->
   <consts>
-    <!-- metadata_clip_height: pad_bottom reservation used by the terminal-state -->
-    <!-- overlays (preparing/complete/cancelled/error/paused) so their badges don't -->
-    <!-- collide with the metadata strip. The clip/overlay themselves are now -->
-    <!-- height="content" and grow/shrink with display_message visibility. -->
-    <!-- Thumbnail vertical offset to clear metadata overlay at bottom -->
-    <percentage name="thumbnail_offset_y" value="-15%"/>
+    <!-- metadata_clip_height is declared at top level in ui_xml/print_status_panel.xml, -->
+    <!-- where token discovery registers it globally; referenced here. -->
   </consts>
   <styles>
     <!-- Fully transparent but still takes up layout space -->
     <style name="invisible" opa="0"/>
   </styles>
   <!-- Print Status Panel - Active print monitoring with G-code 3D viewer -->
-  <!-- Portrait variant: same widgets and bindings as the base panel, stacked in a column. -->
-  <!-- Width is resolved by NavigationManager at push time; not set here. -->
+  <!-- Portrait: preview on top, controls stacked below. Width is re-applied by NavigationManager at push time (ui_set_overlay_width). -->
   <view name="print_status_panel"
         extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_bg_opa="255"
         style_bg_color="#card_bg" style_pad_all="0" style_border_width="0" flex_flow="column" clickable="true">
@@ -31,68 +26,66 @@
     <!-- Content Area (portrait: stacked column, viewer on top, controls below) -->
     <lv_obj name="overlay_content"
             width="100%" flex_grow="1" style_pad_left="#space_lg" style_pad_right="#space_lg" style_pad_top="0"
-            style_pad_bottom="#space_md" flex_flow="column" style_pad_gap="#space_md" scrollable="false">
+            flex_flow="column" style_pad_gap="#space_md" scrollable="false">
       <!-- Disable content when printer not connected or klippy not ready -->
       <bind_state_if_not_eq subject="nav_buttons_enabled" state="disabled" ref_value="1"/>
       <!-- ================================================================== -->
       <!-- TOP SECTION: G-code Viewer / Thumbnail (fills remaining height)    -->
       <!-- ================================================================== -->
+      <!-- flex column: preview_clear_area (flex_grow) above, metadata_clip (content)
+           below. The split is COMPUTED, not reserved — the strip has two stable
+           heights (it gains a text_small line + space_xs when Klipper publishes an
+           M117), so no constant is correct. pad_gap=0 keeps the strip flush against
+           the art; ui_card's create handler defaults pad_gap to space_md.
+           Every other child is absolutely aligned over the card and carries
+           ignore_layout="true" so the column does not reflow it. -->
       <ui_card name="thumbnail_section"
-               width="100%" flex_grow="1" style_pad_all="0" style_margin_bottom="#space_md"
-               style_radius="#border_radius" style_clip_corner="true">
-        <!-- All children overlap as direct children of the card (matching print_file_detail pattern) -->
+               width="100%" flex_grow="1" style_pad_all="0"
+               style_radius="#border_radius" style_clip_corner="true" flex_flow="column"
+               style_pad_gap="0">
 
-        <!-- Pre-rendered gradient background (shown in thumbnail[0] and 2D[2] modes, hidden in 3D[1]) -->
-        <!-- Also hidden while the exclude-object overhead map covers the thumbnail section. -->
-        <ui_gradient_canvas name="gradient_background" width="100%" height="100%">
-          <bind_flag_if_eq subject="gcode_viewer_mode" flag="hidden" ref_value="1"/>
-          <bind_flag_if_eq subject="exclude_map_active" flag="hidden" ref_value="1"/>
-        </ui_gradient_canvas>
+        <!-- Clear area for the preview: whatever the column leaves above the strip.
+             Percentage sizes resolve against a parent's CONTENT box, so the three
+             100%-sized previews below fill exactly that area and inner_align scales
+             the image into what is actually visible. -->
+        <lv_obj name="preview_clear_area"
+                width="100%" flex_grow="1" style_pad_all="0"
+                style_bg_opa="0" style_border_width="0" scrollable="false">
 
-        <!-- G-code Viewer (shown in 3D[1] and 2D[2] modes, hidden in thumbnail[0]) -->
-        <!-- Default hidden="true" prevents race during binding initialization -->
-        <gcode_viewer name="print_gcode_viewer" width="100%" height="100%" hidden="true">
-          <bind_flag_if_eq subject="gcode_viewer_mode" flag="hidden" ref_value="0"/>
-        </gcode_viewer>
+          <!-- Pre-rendered gradient background (shown in thumbnail[0] and 2D[2] modes, hidden in 3D[1]) -->
+          <!-- Also hidden while the exclude-object overhead map covers the thumbnail section. -->
+          <ui_gradient_canvas name="gradient_background" width="100%" height="100%">
+            <bind_flag_if_eq subject="gcode_viewer_mode" flag="hidden" ref_value="1"/>
+            <bind_flag_if_eq subject="exclude_map_active" flag="hidden" ref_value="1"/>
+          </ui_gradient_canvas>
 
-        <!-- Thumbnail image (shown in thumbnail[0] mode only, hidden in 3D[1] and 2D[2]) -->
-        <!-- Image source set programmatically via lv_image_set_src() when thumbnail available -->
-        <!-- Also hidden while the exclude-object overhead map covers the thumbnail section. -->
-        <lv_image name="print_thumbnail"
-                  width="100%" height="100%" align="center" inner_align="contain"
-                  style_translate_y="#thumbnail_offset_y">
-          <bind_flag_if_gt subject="gcode_viewer_mode" flag="hidden" ref_value="0"/>
-          <bind_flag_if_eq subject="exclude_map_active" flag="hidden" ref_value="1"/>
-        </lv_image>
+          <!-- G-code Viewer (shown in 3D[1] and 2D[2] modes, hidden in thumbnail[0]) -->
+          <!-- Default hidden="true" prevents race during binding initialization -->
+          <gcode_viewer name="print_gcode_viewer" width="100%" height="100%" hidden="true">
+            <bind_flag_if_eq subject="gcode_viewer_mode" flag="hidden" ref_value="0"/>
+          </gcode_viewer>
+
+          <!-- Thumbnail image (shown in thumbnail[0] mode only, hidden in 3D[1] and 2D[2]) -->
+          <!-- Image source set programmatically via lv_image_set_src() when thumbnail available -->
+          <!-- Also hidden while the exclude-object overhead map covers the thumbnail section. -->
+          <lv_image name="print_thumbnail" width="100%" height="100%" align="center" inner_align="contain">
+            <bind_flag_if_gt subject="gcode_viewer_mode" flag="hidden" ref_value="0"/>
+            <bind_flag_if_eq subject="exclude_map_active" flag="hidden" ref_value="1"/>
+          </lv_image>
+        </lv_obj>
 
         <!-- Rotate hint icon (shown in 3D[1] mode only, hidden in thumbnail[0] and 2D[2]) -->
         <lv_label name="rotate_hint"
                   text="#icon_rotate_3d" style_text_font="mdi_icons_24" style_text_color="#text_muted"
-                  style_text_opa="180" align="top_right" style_translate_x="-12" style_translate_y="#space_md">
+                  style_text_opa="180" ignore_layout="true" align="top_right" style_translate_x="-12"
+                  style_translate_y="#space_md">
           <bind_flag_if_not_eq subject="gcode_viewer_mode" flag="hidden" ref_value="1"/>
         </lv_label>
 
-        <!-- PREPARING OVERLAY: Shown during pre-print operations (homing, etc) -->
-        <!-- pad_bottom reserves the metadata strip so spinner/heading/progress don't collide -->
-        <!-- with the Layer/Filename/ETA rows that metadata_overlay draws on top. -->
-        <lv_obj name="preparing_overlay"
-                width="100%" height="100%" align="center" style_bg_color="#overlay_bg" style_bg_opa="220"
-                style_radius="0" style_pad_all="#space_lg" style_pad_bottom="#metadata_clip_height" flex_flow="column"
-                style_flex_main_place="center" style_flex_cross_place="center" style_pad_gap="#space_md"
-                scrollable="false">
-          <bind_flag_if_eq subject="preparing_visible" flag="hidden" ref_value="0"/>
-          <spinner name="preparing_spinner" size="lg"/>
-          <text_heading name="preparing_operation_label"
-                        width="100%" bind_text="print_start_message" text="Preparing..." translation_tag="Preparing..."
-                        style_text_color="#text" style_text_align="center"/>
-          <progress_bar name="preparing_progress_bar" width="80%" bind_value="preparing_progress"/>
-          <text_small name="preparing_eta"
-                      bind_text="print_start_time_left" style_text_color="#text" style_text_opa="180"/>
-        </lv_obj>
-
         <!-- Objects list button: top-left corner, visible only when multi-object print -->
         <lv_obj name="btn_objects"
-                width="36" height="36" align="top_left" style_translate_x="#space_md" style_translate_y="#space_md"
+                width="36" height="36" ignore_layout="true" align="top_left" style_translate_x="#space_md"
+                style_translate_y="#space_md"
                 style_bg_color="#card_bg" style_bg_opa="180" style_radius="18" clickable="true" style_pad_all="0"
                 scrollable="false">
           <bind_flag_if_eq subject="exclude_objects_available" flag="hidden" ref_value="0"/>
@@ -103,7 +96,8 @@
         <!-- View mode toggle: switches between progress (ghost layers) and complete view -->
         <!-- Position shifts right when objects button is visible (managed in C++) -->
         <lv_obj name="btn_view_toggle"
-                width="36" height="36" align="top_left" style_translate_x="#space_md" style_translate_y="#space_md"
+                width="36" height="36" ignore_layout="true" align="top_left" style_translate_x="#space_md"
+                style_translate_y="#space_md"
                 style_bg_color="#card_bg" style_bg_opa="180" style_radius="18" clickable="true" style_pad_all="0"
                 scrollable="false">
           <bind_flag_if_eq subject="gcode_viewer_mode" flag="hidden" ref_value="0"/>
@@ -117,7 +111,7 @@
         <!-- Single derived subject show_complete_overlay = (outcome==COMPLETE && !dismissed). -->
         <!-- Two independent bind_flag observers on hidden raced at startup (L042). -->
         <lv_obj name="print_complete_overlay"
-                width="100%" height="100%" align="top_mid" style_radius="0" style_pad_all="#space_lg"
+                width="100%" height="100%" ignore_layout="true" align="top_mid" style_radius="0" style_pad_all="#space_lg"
                 style_pad_bottom="#metadata_clip_height" flex_flow="column" style_flex_main_place="center"
                 style_flex_cross_place="center" style_flex_track_place="center" style_pad_gap="#space_sm"
                 scrollable="false" clickable="true" hidden="true">
@@ -134,7 +128,7 @@
 
         <!-- PRINT CANCELLED OVERLAY: shown via show_cancelled_overlay (see COMPLETE above). -->
         <lv_obj name="print_cancelled_overlay"
-                width="100%" height="100%" align="top_mid" style_radius="0" style_pad_all="#space_lg"
+                width="100%" height="100%" ignore_layout="true" align="top_mid" style_radius="0" style_pad_all="#space_lg"
                 style_pad_bottom="#metadata_clip_height" flex_flow="column" style_flex_main_place="center"
                 style_flex_cross_place="center" style_flex_track_place="center" style_pad_gap="#space_sm"
                 scrollable="false" clickable="true" hidden="true">
@@ -151,7 +145,7 @@
 
         <!-- PRINT ERROR OVERLAY: shown via show_error_overlay (see COMPLETE above). -->
         <lv_obj name="print_error_overlay"
-                width="100%" height="100%" align="top_mid" style_radius="0" style_pad_all="#space_lg"
+                width="100%" height="100%" ignore_layout="true" align="top_mid" style_radius="0" style_pad_all="#space_lg"
                 style_pad_bottom="#metadata_clip_height" flex_flow="column" style_flex_main_place="center"
                 style_flex_cross_place="center" style_flex_track_place="center" style_pad_gap="#space_sm"
                 scrollable="false" clickable="true" hidden="true">
@@ -170,11 +164,12 @@
         <!-- show_paused_overlay (1 when print_state_enum==PAUSED). Unlike the three -->
         <!-- terminal overlays above, this is NOT dismissible — the badge stays up  -->
         <!-- until the print resumes or terminates, so the paused condition is      -->
-        <!-- always visually obvious. Resume/Cancel controls live in the right pane.-->
+        <!-- always visually obvious. Resume/Cancel controls live in the controls  -->
+        <!-- section below.                                                        -->
         <!-- Title is static; reason is an optional second label hidden when         -->
         <!-- print_pause_reason_visible == 0 (set by recompute_paused_overlay_*).    -->
         <lv_obj name="print_paused_overlay"
-                width="100%" height="100%" align="top_mid" style_radius="0" style_pad_all="#space_lg"
+                width="100%" height="100%" ignore_layout="true" align="top_mid" style_radius="0" style_pad_all="#space_lg"
                 style_pad_bottom="#metadata_clip_height" flex_flow="column" style_flex_main_place="center"
                 style_flex_cross_place="center" style_flex_track_place="center" scrollable="false" clickable="false"
                 hidden="true">
@@ -202,10 +197,12 @@
           </ui_button>
         </lv_obj>
 
-        <!-- Metadata container - content-sized at bottom, overlaying thumbnail. -->
-        <!-- Grows when the optional M117 (display_message) row becomes visible. -->
+        <!-- Metadata strip - the second (content-sized) child of thumbnail_section's
+             flex column, sitting flush under preview_clear_area. Grows when the
+             optional M117 (display_message) row becomes visible; the column hands
+             the difference straight back to the preview above. -->
         <lv_obj name="metadata_clip"
-                width="100%" height="content" style_radius="0" style_pad_all="0" align="bottom_mid" scrollable="false">
+                width="100%" height="content" style_radius="0" style_pad_all="0" scrollable="false">
           <!-- Inner overlay with semi-transparent background and rounded corners -->
           <lv_obj name="metadata_overlay"
                   width="100%" height="content" align="bottom_mid" style_bg_opa="160" style_radius="#border_radius"
@@ -249,7 +246,7 @@
             <!-- Klipper display_status.message (M117) — collapses to zero height -->
             <!-- when empty. Shown during pre-print too: the collector's phase -->
             <!-- label is a separate subject (print_start_message) rendered by -->
-            <!-- preparing_overlay above, so the two do not duplicate. -->
+            <!-- preparing_overlay, so the two do not duplicate. -->
             <text_small name="display_message"
                         width="100%" bind_text="display_message" style_text_align="left" long_mode="scroll_circular"
                         style_text_color="#text_muted" hidden="true">
@@ -260,7 +257,112 @@
         </lv_obj>
         <!-- metadata_clip -->
 
+        <!-- PREPARING OVERLAY: Shown during pre-print operations (homing, etc).
+             Declared AFTER metadata_clip so it draws over the strip. Whether it
+             RESERVES the strip depends on how much height there is to stack into:
+             its stack (spinner + phase heading + progress + ETA) needs 112px, and
+             at 240x320 the strip is 94px of a 154px card, so reserving would leave
+             50px and clip everything below the spinner. From 272x480 up there is
+             166px or more, and reserving is what centres the stack on the ART
+             rather than on the dimmed strip 47-71px too low.
+             The cut is the VERTICAL tier, not the cramped one - a 320x1480 panel
+             reads TINY on min(w,h) and would be misjudged as having no room.
+             The background still covers the whole card either way (height 100% +
+             bg_opa 220); padding insets only the content, so the strip stays
+             covered and its own progress bar keeps its layout space. -->
+        <lv_obj name="preparing_overlay"
+                width="100%" height="100%" ignore_layout="true" align="center" style_bg_color="#overlay_bg"
+                style_bg_opa="220"
+                style_radius="0" style_pad_all="#space_lg" flex_flow="column"
+                style_flex_main_place="center" style_flex_cross_place="center" style_pad_gap="#space_md"
+                scrollable="false">
+          <bind_flag_if_eq subject="preparing_visible" flag="hidden" ref_value="0"/>
+          <spinner name="preparing_spinner" size="lg"/>
+          <text_heading name="preparing_operation_label"
+                        width="100%" bind_text="print_start_message" text="Preparing..." translation_tag="Preparing..."
+                        style_text_color="#text" style_text_align="center"/>
+          <!-- Costs 12px + a gap even at 0, and its track is #overlay_bg - the same
+               colour as the overlay behind it - so an empty bar reads as void. Hidden
+               children leave the flex pass entirely, size AND gap, which is what keeps
+               240x320 comfortable while it is NOT reserving the strip. -->
+          <progress_bar name="preparing_progress_bar" width="80%" bind_value="preparing_progress">
+            <bind_flag_if cond="preparing_progress le 0" flag="hidden"/>
+          </progress_bar>
+          <text_small name="preparing_eta"
+                      bind_text="print_start_time_left" style_text_color="#text" style_text_opa="180"/>
+          <!-- Stands in for the metadata strip so the stack centres on the ART, not
+               on the whole card. A trailing child in a centre-placed column shifts
+               everything above it up by (its height + one gap) / 2, which is the
+               ~47-71px the stack was sitting too low.
+               NOT pad_bottom: the overlay carries an inline style_pad_all, and inline
+               attributes beat bind_style (CLAUDE.md rule 6), so a bound pad is
+               silently ignored - verified with a literal, which also did nothing.
+               Hidden below the vertical tier where the card cannot spare the height
+               (at 240x320 the strip is 94px of a 154px card), and a hidden child
+               leaves the flex pass entirely, size AND gap, so those sizes are
+               unchanged. -->
+          <lv_obj name="preparing_strip_spacer"
+                  width="1" height="#metadata_clip_height" style_bg_opa="0" style_border_width="0"
+                  style_pad_all="0" scrollable="false">
+            <bind_flag_if_lt subject="ui_breakpoint_v" flag="hidden" ref_value="3"/>
+          </lv_obj>
+        </lv_obj>
+
       </ui_card>
+
+      <!-- SLACK ABSORBER between the preview block and the controls block.
+           thumbnail_section is the column's only flex_grow child, so on an
+           ultratall panel it swallows everything the controls decline and the
+           model ends up adrift in a 302x1090 band. C++ caps the card at
+           helix::ui::portrait_preview_card_max_height() (measured width, so it
+           cannot be a style attribute here) and sizes this child to the
+           remainder, which is the only way to land the leftover BETWEEN the two
+           blocks: LVGL treats a flex track containing any grow item as full, so
+           a capped card on its own strands the slack below the controls and
+           style_flex_main_place="space_between" cannot see it either.
+
+           No bg of its own — transparent, so the gap is whatever the panel
+           background is (#card_bg on the view root) and follows the theme.
+           Starts hidden with height 0, and stays that way at every size where
+           the cap does not bind; a hidden child is skipped by the flex pass
+           entirely, size AND gap, so those sizes lay out exactly as they did
+           before the cap existed. -->
+      <lv_obj name="preview_slack"
+              width="100%" height="0" style_pad_all="0" style_bg_opa="0" style_border_width="0"
+              scrollable="false" hidden="true">
+
+        <!-- The temperature mini-graph sits at the TOP of the absorber, full
+             width, capped square by C++ (helix::ui::portrait_graph_height() —
+             measured width, so it cannot be a style attribute here). Filling the
+             whole absorber was the first cut and it read badly: at 320x1480 that
+             is a 302x709 plot where a reheat is a vertical wall and steady state
+             is three flat lines in half a screen of void. Whatever the graph does
+             not take stays transparent, so the remainder reads as background
+             between the graph and the controls.
+
+             height="0" because the height is C++'s to decide and the absorber is
+             the same: the cap runs before print_status_graph_fits is published,
+             so the container is never shown at a size nobody chose.
+
+             It is a CHILD of the absorber rather than the absorber itself so that
+             each hidden flag has exactly ONE owner. preview_slack's visibility is
+             imperative by necessity — it is the same measured-layout decision as
+             its height, and hidden is how a flex child costs zero. The graph's
+             visibility is a declarative binding on print_status_graph_fits.
+             Collapsing the two onto one object would leave C++ writing the flag
+             directly while the observer writes it on subject change, and whichever
+             ran last would win at an arbitrary time.
+
+             Populated from C++ (PrintStatusPanel::ensure_temp_graph) — the graph
+             is a procedural chart widget, so there is no XML beneath it to bind. -->
+        <lv_obj name="temp_graph_container"
+                width="100%" height="0" style_pad_all="0" style_bg_opa="0"
+                style_border_width="0" scrollable="false" clickable="true">
+          <bind_flag_if_eq subject="print_status_graph_fits" flag="hidden" ref_value="0"/>
+          <event_cb trigger="clicked" callback="on_print_status_graph_clicked"/>
+        </lv_obj>
+
+      </lv_obj>
 
       <!-- ================================================================== -->
       <!-- BOTTOM SECTION: Controls (content height, full width)          -->
@@ -269,112 +371,141 @@
               width="100%" height="content" style_pad_all="0" scrollable="false" flex_flow="column"
               style_pad_gap="#space_md">
 
-        <!-- Unified Temperature Card (nozzle + bed + optional chamber) -->
-        <temp_card_unified name="temp_card"/>
+        <!-- Compact Temperature Strip: nozzle / bed / chamber as one row of icon chips -->
+        <ui_card name="temp_card"
+                 width="100%" height="content" style_radius="#border_radius" flex_flow="row"
+                 style_pad_top="#space_sm" style_pad_bottom="#space_sm" style_pad_left="#space_md"
+                 style_pad_right="#space_md" style_pad_gap="#space_sm" style_flex_cross_place="center"
+                 scrollable="false" clickable="true">
+          <event_cb trigger="clicked" callback="on_temp_card_clicked"/>
 
-        <!-- Speed / Flow indicators (hidden on TINY and SMALL breakpoints) -->
+          <lv_obj name="nozzle_row"
+                  width="content" height="content" flex_grow="1" style_pad_all="0" flex_flow="row"
+                  style_flex_cross_place="center" style_pad_gap="#space_xs" scrollable="false"
+                  clickable="false" event_bubble="true">
+            <icon src="heater" size="sm" variant="muted" clickable="false" event_bubble="true"/>
+            <temp_display name="nozzle_temp" size="md" show_target="true"
+                          bind_current="extruder_temp" bind_target="extruder_target" flex_grow="1"
+                          clickable="false" event_bubble="true"/>
+          </lv_obj>
+
+          <lv_obj name="bed_row"
+                  width="content" height="content" flex_grow="1" style_pad_all="0" flex_flow="row"
+                  style_flex_cross_place="center" style_pad_gap="#space_xs" scrollable="false"
+                  clickable="false" event_bubble="true">
+            <icon src="radiator" size="sm" variant="muted" clickable="false" event_bubble="true"/>
+            <temp_display name="bed_temp" size="md" show_target="true"
+                          bind_current="bed_temp" bind_target="bed_target" flex_grow="1"
+                          clickable="false" event_bubble="true"/>
+          </lv_obj>
+
+          <lv_obj name="chamber_row"
+                  width="content" height="content" flex_grow="1" style_pad_all="0" flex_flow="row"
+                  style_flex_cross_place="center" style_pad_gap="#space_xs" scrollable="false"
+                  clickable="false" event_bubble="true" hidden="true">
+            <bind_flag_if_eq subject="printer_has_chamber" flag="hidden" ref_value="0"/>
+            <icon src="fridge_industrial" size="sm" variant="muted" clickable="false" event_bubble="true"/>
+            <temp_display name="chamber_temp_display" size="md" show_target="true"
+                          bind_current="chamber_temp" bind_target="chamber_effective_target"
+                          bind_mode="chamber_mode" flex_grow="1" clickable="false" event_bubble="true"/>
+          </lv_obj>
+        </ui_card>
+
+        <!-- Merged status row: Speed/Flow on the left, filament + AMS on the right. -->
         <!-- Tap opens Tune overlay (same as Tune button) -->
         <lv_obj name="speed_flow_row"
-                width="100%" height="content" style_pad_left="#space_md" style_pad_right="#space_md" style_pad_top="0"
-                flex_flow="row" style_flex_cross_place="center" style_pad_gap="#space_sm" scrollable="false"
-                clickable="true">
-          <bind_flag_if_eq subject="ui_breakpoint" flag="hidden" ref_value="1"/>
-          <bind_flag_if_eq subject="ui_breakpoint" flag="hidden" ref_value="2"/>
-          <event_cb trigger="clicked" callback="on_print_status_tune"/>
-          <text_small text="Speed" clickable="false" event_bubble="true"/>
-          <text_small name="speed_value" bind_text="print_speed_text" clickable="false" event_bubble="true"/>
-          <text_small text=" · " clickable="false" event_bubble="true"/>
-          <text_small text="Flow" clickable="false" event_bubble="true"/>
-          <text_small name="flow_value" bind_text="print_flow_text" clickable="false" event_bubble="true"/>
-        </lv_obj>
-
-        <!-- Filament & AMS Status Row (side-by-side) -->
-        <lv_obj name="filament_ams_status_row"
                 width="100%" height="content" style_pad_left="#space_md" style_pad_right="#space_md"
-                style_pad_top="#space_xs" flex_flow="row" style_flex_main_place="space_between"
-                style_flex_cross_place="center" scrollable="false">
-          <!-- Filament Sensor Status (hidden if no sensors) -->
-          <lv_obj name="filament_status_row"
-                  width="content" height="content" style_pad_all="0" flex_flow="row" style_flex_cross_place="center"
-                  style_pad_gap="#space_sm">
-            <bind_flag_if_eq subject="filament_sensor_count" flag="hidden" ref_value="0"/>
-            <!-- Scoped to the active print's tools (lane truth) — see FIX B. -->
-            <filament_sensor_indicator subject="filament_runout_scoped"/>
+                style_pad_top="0" flex_flow="row" style_flex_main_place="space_between"
+                style_flex_cross_place="center" style_pad_gap="#space_sm" scrollable="false"
+                clickable="true">
+          <event_cb trigger="clicked" callback="on_print_status_tune"/>
+          <lv_obj width="content"
+                  height="content" style_pad_all="0" flex_flow="row" style_flex_cross_place="center"
+                  style_pad_gap="#space_xs" scrollable="false" clickable="false" event_bubble="true">
+            <text_small text="Speed" translation_tag="Speed" clickable="false" event_bubble="true"/>
+            <text_small name="speed_value" bind_text="print_speed_text" clickable="false" event_bubble="true"/>
+            <text_small text=" · " clickable="false" event_bubble="true"/>
+            <text_small text="Flow" translation_tag="Flow" clickable="false" event_bubble="true"/>
+            <text_small name="flow_value" bind_text="print_flow_text" clickable="false" event_bubble="true"/>
           </lv_obj>
-          <!-- Tool Change Progress (hidden when no multi-color swaps expected) -->
-          <lv_obj name="toolchange_status"
-                  width="content" height="content" style_pad_all="0" flex_flow="row" style_flex_cross_place="center"
-                  style_pad_gap="#space_xs">
-            <bind_flag_if_eq subject="toolchange_visible" flag="hidden" ref_value="0"/>
-            <icon src="swap_vertical" size="sm" variant="muted"/>
-            <text_small bind_text="toolchange_text"/>
-          </lv_obj>
-          <!-- AMS Current Tool Status (hidden if no AMS) -->
-          <lv_obj name="ams_status_row"
-                  width="content" height="content" style_pad_all="0" flex_flow="row" style_flex_cross_place="center"
-                  style_pad_gap="#space_sm">
-            <bind_flag_if_eq subject="ams_slot_count" flag="hidden" ref_value="0"/>
-            <ams_current_tool name="ams_current_tool_indicator"/>
+
+          <!-- Filament + AMS cluster (was its own row in the baseline) -->
+          <lv_obj name="filament_ams_status_row"
+                  width="content" height="content" style_pad_all="0" flex_flow="row"
+                  style_flex_cross_place="center" style_pad_gap="#space_sm" scrollable="false">
+            <!-- Filament Sensor Status (hidden if no sensors) -->
+            <lv_obj name="filament_status_row"
+                    width="content" height="content" style_pad_all="0" flex_flow="row"
+                    style_flex_cross_place="center" style_pad_gap="#space_sm">
+              <bind_flag_if_eq subject="filament_sensor_count" flag="hidden" ref_value="0"/>
+              <filament_sensor_indicator subject="filament_runout_scoped"/>
+            </lv_obj>
+            <!-- Tool Change Progress (hidden when no multi-color swaps expected) -->
+            <lv_obj name="toolchange_status"
+                    width="content" height="content" style_pad_all="0" flex_flow="row"
+                    style_flex_cross_place="center" style_pad_gap="#space_xs">
+              <bind_flag_if_eq subject="toolchange_visible" flag="hidden" ref_value="0"/>
+              <icon src="swap_vertical" size="sm" variant="muted"/>
+              <text_small bind_text="toolchange_text"/>
+            </lv_obj>
+            <!-- AMS Current Tool Status (hidden if no AMS) -->
+            <lv_obj name="ams_status_row"
+                    width="content" height="content" style_pad_all="0" flex_flow="row"
+                    style_flex_cross_place="center" style_pad_gap="#space_sm">
+              <bind_flag_if_eq subject="ams_slot_count" flag="hidden" ref_value="0"/>
+              <ams_current_tool name="ams_current_tool_indicator"/>
+            </lv_obj>
           </lv_obj>
         </lv_obj>
 
         <!-- Fan info row: part / hotend / aux speeds, click → fan control overlay. -->
-        <!-- Visibility driven by print_status_fans_fit subject (computed in C++). -->
         <print_status_fan_row name="print_status_fan_row"/>
 
-        <!-- Control Buttons (flex_grow pushes to bottom via main_place=end) -->
+        <!-- Control buttons: ONE row of five, each flex_grow=1, icon stacked over label. -->
         <lv_obj name="button_grid"
                 width="100%" height="content" style_pad_all="0" scrollable="false" flex_flow="column"
-                style_flex_main_place="end" style_flex_cross_place="center" style_pad_gap="#space_sm">
-          <!-- Row 1: Light, Timelapse (conditional), Pause -->
+                style_flex_cross_place="center" style_pad_gap="#space_sm">
           <lv_obj width="100%"
-                  height="content" style_pad_all="0" scrollable="false" flex_flow="row" style_flex_main_place="center"
-                  style_flex_cross_place="center" style_pad_gap="#space_sm">
+                  height="content" style_pad_all="0" scrollable="false" flex_flow="row"
+                  style_flex_main_place="center" style_flex_cross_place="center" style_pad_gap="#space_sm">
             <ui_button name="btn_light"
-                       height="#button_height_lg" flex_grow="1" text="Light" translation_tag="Light"
-                       bind_icon="light_button_icon" label_hidden_if_bp_eq="1">
+                       height="#button_height" flex_grow="1" text="Light" translation_tag="Light"
+                       icon="lightbulb_outline" bind_icon="light_button_icon" icon_position="top">
               <event_cb trigger="clicked" callback="on_print_status_light"/>
               <bind_flag_if_eq subject="led_controllable" flag="hidden" ref_value="0"/>
               <bind_state_if_eq subject="led_command_in_flight" state="disabled" ref_value="1"/>
             </ui_button>
-            <!-- Timelapse button: only visible when Moonraker-Timelapse plugin installed -->
             <ui_button name="btn_timelapse"
-                       height="#button_height_lg" flex_grow="1" bind_icon="timelapse_button_icon"
-                       bind_text="timelapse_button_label" label_hidden_if_bp_eq="1">
+                       height="#button_height" flex_grow="1" icon="video_off"
+                       bind_icon="timelapse_button_icon" text="Off"
+                       bind_text="timelapse_button_label" icon_position="top">
               <event_cb trigger="clicked" callback="on_print_status_timelapse"/>
               <bind_flag_if_eq subject="printer_has_timelapse" flag="hidden" ref_value="0"/>
               <bind_state_if_eq subject="print_controls_enabled" state="disabled" ref_value="0"/>
             </ui_button>
             <ui_button name="btn_pause"
-                       height="#button_height_lg" flex_grow="1" style_max_width="50%"
-                       bind_icon="print_control_primary_icon" bind_text="print_control_primary_label"
-                       label_hidden_if_bp_eq="1">
+                       height="#button_height" flex_grow="1" icon="pause"
+                       bind_icon="print_control_primary_icon" text="Pause"
+                       bind_text="print_control_primary_label" icon_position="top">
               <event_cb trigger="clicked" callback="on_print_control_primary"/>
               <bind_state_if_eq subject="print_control_primary_enabled" state="disabled" ref_value="0"/>
             </ui_button>
-          </lv_obj>
-
-          <!-- Row 2: Tune, Cancel -->
-          <lv_obj width="100%"
-                  height="content" style_pad_all="0" scrollable="false" flex_flow="row" style_flex_main_place="center"
-                  style_flex_cross_place="center" style_pad_gap="#space_sm">
             <ui_button name="btn_tune"
-                       height="#button_height_lg" flex_grow="1" icon="tune" text="Tune" translation_tag="Tune">
+                       height="#button_height" flex_grow="1" icon="tune" text="Tune" translation_tag="Tune"
+                       icon_position="top">
               <event_cb trigger="clicked" callback="on_print_status_tune"/>
               <bind_state_if_eq subject="print_controls_enabled" state="disabled" ref_value="0"/>
             </ui_button>
-            <!-- Cancel button: visible only during active print (outcome == NONE/0) -->
             <ui_button name="btn_cancel"
-                       height="#button_height_lg" flex_grow="1" variant="danger" icon="stop" text="Cancel"
-                       translation_tag="Cancel">
+                       height="#button_height" flex_grow="1" variant="danger" icon="stop" text="Cancel"
+                       translation_tag="Cancel" icon_position="top">
               <bind_flag_if_not_eq subject="print_outcome" flag="hidden" ref_value="0"/>
               <bind_state_if_eq subject="print_control_stop_enabled" state="disabled" ref_value="0"/>
               <event_cb trigger="clicked" callback="on_print_control_stop"/>
             </ui_button>
-            <!-- Reprint button: shown for any terminal state (complete/cancelled/error) -->
             <ui_button name="btn_reprint"
-                       height="#button_height_lg" flex_grow="1" icon="refresh" text="Reprint" translation_tag="Reprint"
-                       hidden="true">
+                       height="#button_height" flex_grow="1" icon="refresh" text="Reprint"
+                       translation_tag="Reprint" icon_position="top" hidden="true">
               <bind_flag_if_eq subject="print_outcome" flag="hidden" ref_value="0"/>
               <event_cb trigger="clicked" callback="on_print_status_reprint"/>
             </ui_button>

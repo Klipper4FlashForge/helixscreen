@@ -330,3 +330,49 @@ TEST_CASE_METHOD(LVGLTestFixture, "DisplaySettingsManager subject values match g
 
     DisplaySettingsManager::instance().deinit_subjects();
 }
+
+// ============================================================================
+// Slider preview vs commit (drag-tick persistence)
+//
+// set_brightness() writes settings.json — serialize, fsync the file, fsync the
+// directory, then copy a rolling backup — and on some platforms the backlight
+// backend additionally forks a shell. Running that per drag tick is what made
+// the brightness slider stutter on flash-backed hardware. preview_brightness()
+// is the per-tick half: it must apply everything the user can SEE and persist
+// nothing. The slider's `released` handler calls set_brightness() once.
+// ============================================================================
+
+TEST_CASE_METHOD(LVGLTestFixture, "DisplaySettingsManager preview_brightness does not persist",
+                 "[display_settings]") {
+    Config* config = Config::get_instance();
+    config->set<int>("/brightness", 55);
+    DisplaySettingsManager::instance().deinit_subjects();
+    DisplaySettingsManager::instance().init_subjects();
+
+    SECTION("preview applies to the subject but leaves config untouched") {
+        const int applied = DisplaySettingsManager::instance().preview_brightness(73);
+
+        CHECK(applied == 73);
+        // Visible to the UI immediately...
+        CHECK(DisplaySettingsManager::instance().get_brightness() == 73);
+        // ...but nothing was written.
+        CHECK(config->get<int>("/brightness", -1) == 55);
+    }
+
+    SECTION("a whole drag persists exactly once, on commit") {
+        // Simulate the per-tick handler firing repeatedly, then release.
+        for (int v = 60; v <= 70; ++v) {
+            DisplaySettingsManager::instance().preview_brightness(v);
+        }
+        CHECK(config->get<int>("/brightness", -1) == 55); // still the old value
+
+        DisplaySettingsManager::instance().set_brightness(70);
+        CHECK(config->get<int>("/brightness", -1) == 70);
+    }
+
+    SECTION("preview clamps the same way set_brightness does") {
+        CHECK(DisplaySettingsManager::instance().preview_brightness(0) == 10);
+        CHECK(DisplaySettingsManager::instance().preview_brightness(500) == 100);
+        CHECK(config->get<int>("/brightness", -1) == 55);
+    }
+}

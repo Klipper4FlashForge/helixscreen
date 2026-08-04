@@ -9,6 +9,7 @@
 #include "thumbnail_write_journal.h"
 
 #include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -364,6 +365,10 @@ class ThumbnailCache {
      */
     [[nodiscard]] size_t get_available_disk_space() const;
 
+    /// Drop the cached free-space reading so the next query re-probes.
+    /// Call after any operation that materially changes cache size on disk.
+    void invalidate_disk_probe();
+
     /**
      * @brief Check if caching is currently allowed
      *
@@ -406,6 +411,18 @@ class ThumbnailCache {
     size_t max_size_;       ///< Maximum cache size before LRU eviction — guarded by mutex_
     size_t disk_critical_;  ///< Stop caching below this available space (const after construction)
     size_t disk_low_;       ///< Evict aggressively below this available space (const after ctor)
+
+    /// Rate limit for the free-space syscall. Reached twice per fetch_optimized()
+    /// on the main thread; free space does not change fast enough to warrant a
+    /// statfs per thumbnail.
+    static constexpr int64_t DISK_PROBE_INTERVAL_MS = 2000;
+
+    /// Guards the disk-probe cache only. Deliberately NOT mutex_: get_disk_pressure()
+    /// is called from inside evict_locked(), which already holds mutex_.
+    mutable std::mutex disk_probe_mutex_;
+    mutable size_t cached_available_bytes_{0};
+    mutable std::chrono::steady_clock::time_point last_disk_probe_;
+    mutable bool disk_probe_valid_{false};
     size_t configured_max_; ///< Max size from config, before dynamic sizing (const after ctor)
 
     /// Serializes cache accounting: the directory scan, the eviction pass, and

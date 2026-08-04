@@ -148,6 +148,12 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     AmsError enable_bypass() override;
     AmsError disable_bypass() override;
     [[nodiscard]] bool is_bypass_active() const override;
+    /// Happy Hare users have a console; the screen passes their command through
+    /// rather than synthesising a prerequisite operation they never asked for
+    /// (#1229).
+    [[nodiscard]] bool allows_implicit_chaining() const override {
+        return false;
+    }
 
     // Endless Spool support (read-only - configured in Happy Hare config)
     [[nodiscard]] helix::printer::EndlessSpoolCapabilities

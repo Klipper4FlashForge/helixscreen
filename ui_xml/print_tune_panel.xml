@@ -100,7 +100,8 @@
                 height="content" style_pad_all="0" flex_flow="row" style_pad_gap="#space_sm"
                 scrollable="false">
           <!-- Nozzle-over-bed visual indicator -->
-          <z_offset_indicator name="z_offset_indicator" width="170"/>
+          <z_offset_indicator name="z_offset_indicator" width="#z_tune_indicator_w"
+                              height="#z_tune_indicator_h"/>
           <!-- Controls column: amount buttons row with direction buttons stacked on the right -->
           <lv_obj height="content"
                   flex_grow="1" style_pad_all="0" flex_flow="column" style_pad_gap="#space_xxs" scrollable="false">
@@ -133,7 +134,7 @@
                 </ui_button>
               </lv_obj>
               <!-- Direction buttons stacked vertically -->
-              <lv_obj width="90"
+              <lv_obj width="#z_tune_dir_col_w"
                       height="content" style_pad_all="0" flex_flow="column" style_pad_gap="#space_xxs"
                       scrollable="false">
                 <ui_button width="100%" icon="arrow_up" bind_icon="tune_z_farther_icon">
@@ -144,18 +145,22 @@
                 </ui_button>
               </lv_obj>
             </lv_obj>
-            <!-- Help text -->
-            <text_small text="Closer = more squish | Farther = less squish"
+            <!-- Help text. Wraps rather than setting the row's minimum width:
+                 an unwrapped label here is what pushes the whole z-offset row
+                 past the screen edge once the string is longer than the box,
+                 which English fits on one line but translations need not. -->
+            <text_small width="100%" long_mode="wrap"
+                        text="Closer = more squish | Farther = less squish"
                         translation_tag="Closer = more squish | Farther = less squish"/>
           </lv_obj>
         </lv_obj>
-        <text_small name="z_offset_help_text_manual"
+        <text_small name="z_offset_help_text_manual" width="100%" long_mode="wrap"
                     text="Temporary adjustment for this print, unless saved on Controls panel"
                     translation_tag="Temporary adjustment for this print, unless saved on Controls panel"
                     hidden="true">
           <bind_flag_if_eq subject="z_offset_can_save" flag="hidden" ref_value="0"/>
         </text_small>
-        <text_small name="z_offset_help_text_auto"
+        <text_small name="z_offset_help_text_auto" width="100%" long_mode="wrap"
                     text="Z-offset is auto-saved by firmware"
                     translation_tag="Z-offset is auto-saved by firmware">
           <bind_flag_if_eq subject="z_offset_can_save" flag="hidden" ref_value="1"/>

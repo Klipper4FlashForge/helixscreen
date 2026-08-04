@@ -225,16 +225,84 @@ char* format_temperature_range(int min_temp, int max_temp, char* buffer, size_t 
 constexpr int DEFAULT_AT_TEMP_TOLERANCE = 2;
 
 /**
+ * @brief Thermal state of a heater, shared by every consumer of the 4-state logic.
+ *
+ * One classifier feeds three renderers: the temp-label color
+ * (get_heating_state_color), the icon variant string (get_heating_state_variant),
+ * and HeatingIconAnimator's icon tint + pulse. They must never disagree, so they
+ * all switch on this rather than re-deriving the thresholds.
+ */
+enum class HeatState {
+    Off,     ///< target <= 0 — heater disabled (text_muted / gray)
+    Heating, ///< current < target - tolerance (danger / red)
+    AtTemp,  ///< within +/- tolerance of target (success / green)
+    Cooling, ///< current > target + tolerance (info / blue)
+    Neutral  ///< chamber Maintaining, at/below the cooling ceiling (text / gray-ish neutral,
+             ///< NOT the same token as Off — see classify_heat_state_with_mode())
+};
+
+/**
+ * @brief Classify a heater's thermal state.
+ *
+ * Unit-agnostic: current, target and tolerance need only share a unit. Degree
+ * callers use the default tolerance of 2; decidegree callers pass 20.
+ *
+ * @param current Current temperature
+ * @param target Target temperature (<= 0 = heater off)
+ * @param tolerance Tolerance for the at-temp band (default: 2)
+ */
+HeatState classify_heat_state(int current, int target, int tolerance = DEFAULT_AT_TEMP_TOLERANCE);
+
+/**
+ * @brief Classify a chamber heater's thermal state, mode-aware.
+ *
+ * Delegates to classify_heat_state() for Off/Heating — there, target is a genuine
+ * heat goal and the plain 4-state logic already applies. In Maintaining mode the
+ * target is a cooling CEILING instead: there is nothing to heat toward, so
+ * Heating never applies. Above the ceiling + tolerance is Cooling (actively
+ * shedding heat); at or below the ceiling is Neutral (idle/ok, not Off — the
+ * heater/fan combo is still under active control, just not doing anything right
+ * now).
+ *
+ * Both the chamber temp-label color (ui_temp_display.cpp) and the chamber icon
+ * (HeatingIconAnimator, via HeaterIconBinder) call this SAME function, so they
+ * can never disagree about what Maintaining means.
+ *
+ * @param current Current temperature
+ * @param target Effective target: heat goal when Heating, cooling ceiling when Maintaining
+ * @param mode Chamber control mode (Off / Heating / Maintaining)
+ * @param tolerance Tolerance for the at-temp/neutral band (default: 2)
+ */
+HeatState classify_heat_state_with_mode(int current, int target, helix::ChamberMode mode,
+                                        int tolerance = DEFAULT_AT_TEMP_TOLERANCE);
+
+/**
+ * @brief Get the theme color for an already-classified thermal state.
+ *
+ * The int-taking overload below is classify_heat_state() + this in one call;
+ * exposed separately so a caller that classified via
+ * classify_heat_state_with_mode() (chamber) can still share the same color
+ * mapping instead of re-deriving it.
+ *
+ * @param state Already-classified thermal state
+ * @return lv_color_t Theme color for that state
+ */
+lv_color_t get_heating_state_color(HeatState state);
+
+/**
  * @brief Get theme color for temperature display based on 4-state heating logic
  *
  * Returns a color indicating the thermal state of a heater:
- * - **Off** (target=0): text_muted (gray) - heater disabled
+ * - **Off** (target<=0): text_muted (gray) - heater disabled
  * - **Heating** (current < target - tolerance): primary_color (red) - actively heating
  * - **At-temp** (within ±tolerance): success_color (green) - stable at target
  * - **Cooling** (current > target + tolerance): info_color (blue) - cooling down
  *
  * This function provides consistent color-coding across all temperature displays
- * (temp_display widget, filament panel, etc.).
+ * (temp_display widget, filament panel, etc.). It classifies via the plain
+ * (mode-unaware) classify_heat_state() — chamber callers in Maintaining mode
+ * must go through classify_heat_state_with_mode() + get_heating_state_color(HeatState)
+ * instead, since Maintaining can never be expressed as a single (current,target) pair.
  *
  * @param current_deg Current temperature in degrees
  * @param target_deg Target temperature in degrees (0 = heater off)

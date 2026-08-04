@@ -53,6 +53,10 @@ constexpr HeightToken kHeightTokens[] = {
     {"input_height", "48", "52", "56", "64"},
     {"temp_card_height", "48", "72", "80", "112"},
     {"dialog_content_max", "200", "320", "440", "800"},
+    // spinner_lg has no _micro/_tiny variant, so TINY falls back inward to
+    // spinner_lg_small = 48 — which is exactly why the two tight portrait sizes
+    // (240x320, 480x272) are unchanged by putting it on this ladder.
+    {"spinner_lg", "48", "56", "64", "96"},
 };
 
 /// Bufferless display: the axis accessors only read the resolution.

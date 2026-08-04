@@ -3,12 +3,12 @@
 
 #pragma once
 
-#include "async_lifetime_guard.h"
 #include "ui_heater_config.h"
-#include "ui_heating_animator.h"
+#include "ui_heater_icon_binder.h"
 #include "ui_observer_guard.h"
 #include "ui_temp_graph.h"
 
+#include "async_lifetime_guard.h"
 #include "lvgl/lvgl.h"
 #include "panel_lifecycle.h"
 #include "subject_managed_panel.h"
@@ -68,8 +68,10 @@ struct HeaterState {
     // Panel widget (the overlay lv_obj)
     lv_obj_t* panel = nullptr;
 
-    // Heating icon animator (gradient color + pulse while heating)
-    HeatingIconAnimator animator;
+    // Heating icon binder (gradient color + pulse while heating). Bound from
+    // this heater's own overlay panel root, so it cannot pick up another
+    // heater's same-named icon. Owns its own temperature observers.
+    helix::ui::HeaterIconBinder icon_binder;
 
     // Graph widget
     ui_temp_graph_t* graph = nullptr;

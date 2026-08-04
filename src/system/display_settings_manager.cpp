@@ -560,16 +560,25 @@ int DisplaySettingsManager::get_brightness() const {
     return lv_subject_get_int(const_cast<lv_subject_t*>(&brightness_subject_));
 }
 
-void DisplaySettingsManager::set_brightness(int percent) {
+int DisplaySettingsManager::preview_brightness(int percent) {
     // Clamp to valid range (10-100, minimum 10% to prevent black screen)
     int clamped = std::clamp(percent, 10, 100);
-    spdlog::info("[DisplaySettingsManager] set_brightness({})", clamped);
 
     lv_subject_set_int(&brightness_subject_, clamped);
 
     if (auto* dm = DisplayManager::instance()) {
         dm->set_backlight_brightness(clamped);
     }
+
+    // Deliberately no Config::save() — see the header. Logged at debug because a
+    // drag emits one of these per tick.
+    spdlog::debug("[DisplaySettingsManager] preview_brightness({})", clamped);
+    return clamped;
+}
+
+void DisplaySettingsManager::set_brightness(int percent) {
+    int clamped = preview_brightness(percent);
+    spdlog::info("[DisplaySettingsManager] set_brightness({})", clamped);
 
     Config* config = Config::get_instance();
     config->set<int>("/brightness", clamped);
