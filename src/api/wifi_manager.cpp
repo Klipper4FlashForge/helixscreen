@@ -289,10 +289,16 @@ void WiFiManager::start_scan(
             scan_pending_ = false;
         }
         // trigger_scan() failed synchronously — no SCAN_COMPLETE event will
-        // ever arrive for this attempt, so resolve the scheduler now (as a
-        // zero-result scan) instead of leaving scan_outstanding_ stuck true
-        // forever, which would permanently block should_trigger().
-        scan_scheduler_.on_scan_complete(0, is_connected());
+        // ever arrive for this attempt, so resolve the scheduler now instead
+        // of leaving scan_outstanding_ stuck true forever, which would
+        // permanently block should_trigger(). Deliberately on_scan_failed(),
+        // NOT on_scan_complete(0, ...): a failed trigger is not evidence the
+        // network stopped changing, and feeding it through on_scan_complete
+        // would let repeated failures (e.g. a wedged control socket while
+        // still associated) drive unchanged_streak_ to 2 and suppress
+        // scanning permanently — exactly backwards for the case this exists
+        // to diagnose.
+        scan_scheduler_.on_scan_failed();
         // If the OS reports the wireless link is actually up, the managed
         // backend simply can't reach its control socket (the link is system-
         // managed and live). Nagging the user with a failure toast is wrong —
@@ -348,9 +354,10 @@ void WiFiManager::scan_timer_callback(lv_timer_t* timer) {
                 manager->scan_pending_ = false;
             }
             // As in start_scan(): a synchronous trigger failure gets no
-            // SCAN_COMPLETE, so resolve the scheduler now or should_trigger()
-            // stays false forever.
-            manager->scan_scheduler_.on_scan_complete(0, manager->is_connected());
+            // SCAN_COMPLETE, so resolve the scheduler now (on_scan_failed(),
+            // not on_scan_complete(0, ...) — see start_scan()'s comment) or
+            // should_trigger() stays false forever.
+            manager->scan_scheduler_.on_scan_failed();
             if (manager->scan_timer_) {
                 lv_timer_set_period(manager->scan_timer_,
                                     manager->scan_scheduler_.next_interval_ms());
@@ -634,10 +641,13 @@ void WiFiManager::handle_scan_complete(const std::string& event_data) {
             [](ScanCallbackData* data) {
                 LOG_WARN_INTERNAL("async_call: calling callback with empty results");
                 if (auto manager = data->manager.lock()) {
-                    // Treat "couldn't fetch results" as a zero-result scan for
-                    // scheduling purposes — it still resolves scan_outstanding_
-                    // and lets the timer's period stay in sync.
-                    manager->scan_scheduler_.on_scan_complete(0, manager->is_connected());
+                    // Couldn't fetch results even though the trigger/scan
+                    // itself succeeded — still an unresolved attempt, not
+                    // evidence the network is stable. on_scan_failed(), not
+                    // on_scan_complete(0, ...) — see start_scan()'s comment
+                    // for why folding this into a zero-result complete would
+                    // corrupt the suppression state machine.
+                    manager->scan_scheduler_.on_scan_failed();
                     if (manager->scan_timer_) {
                         lv_timer_set_period(manager->scan_timer_,
                                             manager->scan_scheduler_.next_interval_ms());
