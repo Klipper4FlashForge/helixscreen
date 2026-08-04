@@ -272,13 +272,23 @@ bool send_key(uint32_t key) {
     return false;
 }
 
+// The test binary creates its display with a bare lv_display_create() — no
+// driver, so nothing ever calls lv_tick_set_cb() and lv_tick_get() returns only
+// what lv_tick_inc() has been fed. A wait that sleeps on the real clock without
+// advancing the tick leaves LVGL frozen: lv_timer_handler_safe() compares
+// `now - last_run >= period`, so zero-period one-shots (lv_async_call) still
+// fire, but any timer with a real period never comes due, however long you wait.
+// Both waits below therefore advance the virtual clock in step with the sleep.
+static constexpr uint32_t WAIT_POLL_MS = 5;
+
 void wait_ms(uint32_t ms) {
     auto start = std::chrono::steady_clock::now();
     auto end = start + std::chrono::milliseconds(ms);
 
     while (std::chrono::steady_clock::now() < end) {
+        lv_tick_inc(WAIT_POLL_MS);
         lv_timer_handler_safe(); // Process LVGL tasks
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        std::this_thread::sleep_for(std::chrono::milliseconds(WAIT_POLL_MS));
     }
 }
 
@@ -287,13 +297,14 @@ bool wait_until(std::function<bool()> condition, uint32_t timeout_ms) {
     auto end = start + std::chrono::milliseconds(timeout_ms);
 
     while (std::chrono::steady_clock::now() < end) {
+        lv_tick_inc(WAIT_POLL_MS);
         lv_timer_handler_safe(); // Process LVGL tasks
 
         if (condition()) {
             return true; // Condition met
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        std::this_thread::sleep_for(std::chrono::milliseconds(WAIT_POLL_MS));
     }
 
     spdlog::warn("[UITest] wait_until() timed out after {}ms", timeout_ms);

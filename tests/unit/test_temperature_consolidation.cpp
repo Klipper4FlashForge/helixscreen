@@ -3,6 +3,7 @@
 
 #include "ui_temperature_utils.h"
 
+#include "../test_fixtures.h"
 #include "theme_manager.h"
 
 #include <string>
@@ -126,42 +127,69 @@ TEST_CASE("heater_display: percentage clamps to 0 for negative temps",
 
 // ============================================================================
 // heater_display() - Color field matches get_heating_state_color()
+//
+// These need XMLTestFixture. theme_manager_get_color() resolves tokens through
+// lv_xml consts registered by theme_manager_init(); with no theme loaded every
+// token returns black, so `result.color == get_heating_state_color(...)` holds
+// no matter what either side returns. Each case therefore pins the state's own
+// theme token too, and the distinctness case below fails loudly if the fixture
+// ever stops supplying a real palette.
 // ============================================================================
 
-TEST_CASE("heater_display: color matches get_heating_state_color for off state",
-          "[temperature][heater_display]") {
+namespace {
+bool same_color(lv_color_t a, lv_color_t b) {
+    return a.red == b.red && a.green == b.green && a.blue == b.blue;
+}
+} // namespace
+
+TEST_CASE_METHOD(XMLTestFixture,
+                 "heater_display: color matches get_heating_state_color for off state",
+                 "[temperature][heater_display]") {
     auto result = heater_display(250, 0);
-    auto expected_color = get_heating_state_color(25, 0);
-    REQUIRE(result.color.red == expected_color.red);
-    REQUIRE(result.color.green == expected_color.green);
-    REQUIRE(result.color.blue == expected_color.blue);
+    REQUIRE(same_color(result.color, get_heating_state_color(25, 0)));
+    REQUIRE(same_color(result.color, theme_manager_get_color("text_muted")));
 }
 
-TEST_CASE("heater_display: color matches get_heating_state_color for heating state",
-          "[temperature][heater_display]") {
+TEST_CASE_METHOD(XMLTestFixture,
+                 "heater_display: color matches get_heating_state_color for heating state",
+                 "[temperature][heater_display]") {
     auto result = heater_display(1500, 2000);
-    auto expected_color = get_heating_state_color(150, 200);
-    REQUIRE(result.color.red == expected_color.red);
-    REQUIRE(result.color.green == expected_color.green);
-    REQUIRE(result.color.blue == expected_color.blue);
+    REQUIRE(same_color(result.color, get_heating_state_color(150, 200)));
+    REQUIRE(same_color(result.color, theme_manager_get_color("danger")));
 }
 
-TEST_CASE("heater_display: color matches get_heating_state_color for ready state",
-          "[temperature][heater_display]") {
+TEST_CASE_METHOD(XMLTestFixture,
+                 "heater_display: color matches get_heating_state_color for ready state",
+                 "[temperature][heater_display]") {
     auto result = heater_display(1990, 2000);
-    auto expected_color = get_heating_state_color(199, 200);
-    REQUIRE(result.color.red == expected_color.red);
-    REQUIRE(result.color.green == expected_color.green);
-    REQUIRE(result.color.blue == expected_color.blue);
+    REQUIRE(same_color(result.color, get_heating_state_color(199, 200)));
+    REQUIRE(same_color(result.color, theme_manager_get_color("success")));
 }
 
-TEST_CASE("heater_display: color matches get_heating_state_color for cooling state",
-          "[temperature][heater_display]") {
+TEST_CASE_METHOD(XMLTestFixture,
+                 "heater_display: color matches get_heating_state_color for cooling state",
+                 "[temperature][heater_display]") {
     auto result = heater_display(2100, 2000);
-    auto expected_color = get_heating_state_color(210, 200);
-    REQUIRE(result.color.red == expected_color.red);
-    REQUIRE(result.color.green == expected_color.green);
-    REQUIRE(result.color.blue == expected_color.blue);
+    REQUIRE(same_color(result.color, get_heating_state_color(210, 200)));
+    REQUIRE(same_color(result.color, theme_manager_get_color("info")));
+}
+
+TEST_CASE_METHOD(XMLTestFixture, "heater_display: the four thermal states are visually distinct",
+                 "[temperature][heater_display]") {
+    // Guards the cases above: each of them would still pass against a palette
+    // that collapsed every token to one value (which is exactly what an
+    // uninitialized theme does — everything resolves to black).
+    const lv_color_t off = heater_display(250, 0).color;
+    const lv_color_t heating = heater_display(1500, 2000).color;
+    const lv_color_t at_temp = heater_display(1990, 2000).color;
+    const lv_color_t cooling = heater_display(2100, 2000).color;
+
+    REQUIRE_FALSE(same_color(off, heating));
+    REQUIRE_FALSE(same_color(off, at_temp));
+    REQUIRE_FALSE(same_color(off, cooling));
+    REQUIRE_FALSE(same_color(heating, at_temp));
+    REQUIRE_FALSE(same_color(heating, cooling));
+    REQUIRE_FALSE(same_color(at_temp, cooling));
 }
 
 // ============================================================================
@@ -368,8 +396,14 @@ TEST_CASE("classify_heat_state_with_mode: honors a custom tolerance in Maintaini
             HeatState::Cooling);
 }
 
-TEST_CASE("get_heating_state_color(HeatState): Neutral resolves to the text token",
-          "[temperature][heat_state][chamber_mode]") {
+// Needs XMLTestFixture: theme_manager_get_color() resolves tokens through
+// lv_xml consts registered by theme_manager_init(). With no theme loaded every
+// token — "text" and "text_muted" alike — falls through to black, which makes
+// the Neutral-vs-Off distinction unassertable (and every other color comparison
+// in this file vacuously true).
+TEST_CASE_METHOD(XMLTestFixture,
+                 "get_heating_state_color(HeatState): Neutral resolves to the text token",
+                 "[temperature][heat_state][chamber_mode]") {
     auto color = get_heating_state_color(HeatState::Neutral);
     auto expected = theme_manager_get_color("text");
     REQUIRE(color.red == expected.red);
