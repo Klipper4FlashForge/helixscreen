@@ -3,9 +3,11 @@
 
 #include "ui_component_header_bar.h"
 
+#include "ui_icon.h"
 #include "ui_utils.h"
 
 #include "display_manager.h"
+#include "layout_manager.h"
 #include "spdlog/spdlog.h"
 #include "theme_manager.h"
 
@@ -147,6 +149,16 @@ void ui_component_header_bar_setup(lv_obj_t* header, lv_obj_t* screen) {
             inited = true;
         }
         lv_obj_add_style(back_btn, &back_pressed, LV_PART_MAIN | LV_STATE_PRESSED);
+
+        // Portrait overlays drop from the top, so a left-pointing chevron would
+        // point the wrong way out. chevron_up is the exact mirror of `back`.
+        if (helix::is_portrait_layout(
+                helix::detect_layout_type(lv_obj_get_width(screen), lv_obj_get_height(screen)))) {
+            lv_obj_t* icon = lv_obj_get_child(back_btn, 0);
+            if (icon) {
+                ui_icon_set_source(icon, "chevron_up");
+            }
+        }
     }
 
     spdlog::trace("[HeaderBar] Setup complete: height={}px", header_height);

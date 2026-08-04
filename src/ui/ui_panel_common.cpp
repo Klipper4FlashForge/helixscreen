@@ -4,10 +4,12 @@
 #include "ui_panel_common.h"
 
 #include "ui_component_header_bar.h"
+#include "ui_icon.h"
 #include "ui_nav_manager.h"
 #include "ui_utils.h"
 
 #include "display_manager.h"
+#include "layout_manager.h"
 #include "theme_manager.h"
 
 #include <spdlog/spdlog.h>
@@ -174,6 +176,22 @@ void ui_overlay_panel_setup_standard(lv_obj_t* panel, lv_obj_t* parent_screen,
             inited = true;
         }
         lv_obj_add_style(back_btn, &back_pressed, LV_PART_MAIN | LV_STATE_PRESSED);
+
+        // Portrait overlays drop from the top (ui_set_overlay_geometry +
+        // overlay_animate_slide_in), so a left-pointing chevron would point the
+        // wrong way out. chevron_up is the exact mirror of `back`. This is the
+        // path real overlay panels (bed mesh, AMS, motion, power, ...) go
+        // through via OverlayBase/ui_overlay_panel_setup_standard.
+        // ui_component_header_bar.cpp's ui_component_header_bar_setup() carries
+        // the same swap, reached via ui_panel_setup_header() above — currently
+        // unused by any panel, kept for parity should a caller appear.
+        if (helix::is_portrait_layout(helix::detect_layout_type(
+                lv_obj_get_width(parent_screen), lv_obj_get_height(parent_screen)))) {
+            lv_obj_t* icon = lv_obj_get_child(back_btn, 0);
+            if (icon) {
+                ui_icon_set_source(icon, "chevron_up");
+            }
+        }
     }
 
     // 2. Setup content padding (responsive vertical, fixed horizontal)
