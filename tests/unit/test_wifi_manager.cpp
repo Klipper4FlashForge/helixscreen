@@ -988,3 +988,104 @@ TEST_CASE("READY refuses to disable the radio when interface resolution is incon
     SystemSettingsManager::instance().deinit_subjects();
     WiFiManagerTestAccess::reset_sys_root();
 }
+
+// The mirror-image gap this task closes: a device whose stored preference is
+// WiFi ON but whose radio carries a stale soft rfkill block (e.g. one this
+// app itself applied before commit 8aaac4e78 made a soft block non-fatal at
+// startup) previously stayed radio-dead until a human tapped the touchscreen
+// to toggle it back on. CC1 was stranded exactly this way for days. The READY
+// reassert must now clear a stale soft block automatically so the device
+// heals itself on its next launch, with no tap required.
+TEST_CASE("READY clears a stale soft radio block when the stored setting is WiFi on",
+          "[wifi][manager][radio][persistence]") {
+    Config::get_instance();
+    SystemSettingsManager::instance().init_subjects();
+    SystemSettingsManager::instance().set_wifi_enabled(true);
+
+    auto backend = std::make_unique<WifiBackendMock>();
+    WifiBackendMock* raw = backend.get();
+    helix::wifi::WifiInterface iface;
+    iface.netdev = "wlan0";
+    raw->set_resolved_interface_for_test(iface);
+
+    // Simulate is_radio_enabled() having been seeded from a stale hardware
+    // soft-block during resolve_and_store_interface(), ahead of the mock
+    // backend's own construction/start sequence.
+    raw->set_radio_enabled(false);
+    REQUIRE_FALSE(raw->is_radio_enabled());
+
+    WiFiManager manager(std::move(backend));
+
+    // start_async() (called from the constructor) fires READY synchronously
+    // for the mock backend, but the reassert itself is only queued, not run —
+    // drain to let it land.
+    helix::ui::UpdateQueue::instance().drain();
+
+    CHECK(raw->is_radio_enabled());
+    CHECK(SystemSettingsManager::instance().get_wifi_enabled());
+
+    SystemSettingsManager::instance().deinit_subjects();
+}
+
+// Steady-state case: stored setting is on and the radio already agrees. The
+// reassert must be a no-op here — no toggling a radio that was never
+// disabled in the first place.
+TEST_CASE("READY leaves an already-enabled radio alone when the stored setting is WiFi on",
+          "[wifi][manager][radio][persistence]") {
+    Config::get_instance();
+    SystemSettingsManager::instance().init_subjects();
+    SystemSettingsManager::instance().set_wifi_enabled(true);
+
+    auto backend = std::make_unique<WifiBackendMock>();
+    WifiBackendMock* raw = backend.get();
+    helix::wifi::WifiInterface iface;
+    iface.netdev = "wlan0";
+    raw->set_resolved_interface_for_test(iface);
+    REQUIRE(raw->is_radio_enabled());
+
+    WiFiManager manager(std::move(backend));
+    helix::ui::UpdateQueue::instance().drain();
+
+    CHECK(raw->is_radio_enabled());
+    CHECK(SystemSettingsManager::instance().get_wifi_enabled());
+
+    SystemSettingsManager::instance().deinit_subjects();
+}
+
+// The Task-15 refusal path (stored off, no wired fallback) corrects the
+// stored setting back to on — but a device that had already accumulated a
+// stale soft block before this fix would end up with wifi_enabled=true while
+// the radio itself stayed off, the same class of state lie the correction
+// exists to eliminate. The refusal path must also clear the block so the
+// radio is actually on, not merely recorded as on.
+TEST_CASE("READY refusal path also clears a stale radio block, not just the stored setting",
+          "[wifi][manager][radio][persistence]") {
+    Config::get_instance();
+    SystemSettingsManager::instance().init_subjects();
+    SystemSettingsManager::instance().set_wifi_enabled(false);
+
+    // Empty fixture tree — class/net exists but has no interfaces at all, so
+    // there is no non-WiFi path.
+    SysFixture sys;
+    WiFiManagerTestAccess::set_sys_root(sys.sys_root());
+
+    auto backend = std::make_unique<WifiBackendMock>();
+    WifiBackendMock* raw = backend.get();
+    helix::wifi::WifiInterface iface;
+    iface.netdev = "wlan0";
+    raw->set_resolved_interface_for_test(iface);
+
+    // Radio already carries a stale soft block, mirroring is_radio_enabled()
+    // having been seeded from hardware ahead of this READY firing.
+    raw->set_radio_enabled(false);
+    REQUIRE_FALSE(raw->is_radio_enabled());
+
+    WiFiManager manager(std::move(backend));
+    helix::ui::UpdateQueue::instance().drain();
+
+    CHECK(raw->is_radio_enabled());
+    CHECK(SystemSettingsManager::instance().get_wifi_enabled());
+
+    SystemSettingsManager::instance().deinit_subjects();
+    WiFiManagerTestAccess::reset_sys_root();
+}
