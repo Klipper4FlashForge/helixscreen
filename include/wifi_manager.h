@@ -6,6 +6,7 @@
 #include "async_lifetime_guard.h"
 #include "lvgl/lvgl.h"
 #include "wifi_backend.h"
+#include "wifi_scan_scheduler.h"
 
 #include <functional>
 #include <memory>
@@ -81,7 +82,10 @@ class WiFiManager {
      * @brief Start periodic network scanning
      *
      * Scans for available networks and invokes callback with results.
-     * Scanning continues automatically every 7 seconds until stop_scan() called.
+     * Scanning continues automatically, on an interval that backs off from
+     * ScanScheduler::kBaseIntervalMs up to ScanScheduler::kMaxIntervalMs as
+     * results stay unchanged (and suppresses entirely once connected and
+     * stable), until stop_scan() is called. See ScanScheduler.
      *
      * @param on_networks_updated Callback invoked with scan results
      */
@@ -267,7 +271,19 @@ class WiFiManager {
     std::function<void(const std::vector<WiFiNetwork>&)>
         scan_callback_; // guarded by callback_mutex_
     bool scan_pending_; // guarded by callback_mutex_; true when scan triggered, cleared after first
-                        // SCAN_COMPLETE processed
+                        // SCAN_COMPLETE processed — dedupes duplicate SCAN_COMPLETE events for
+                        // the same trigger. Distinct concern from scan_scheduler_ below (which
+                        // decides whether to START a new scan); the two cannot disagree because
+                        // scan_pending_ is only ever read/written on the backend thread while
+                        // scan_scheduler_ is only ever touched on the main/LVGL thread.
+
+    // Scan cadence policy (no-overlap / backoff / suppression). Pure state
+    // machine — see wifi_scan_scheduler.h. Touched ONLY on the main/LVGL
+    // thread: from start_scan()/scan_timer_callback() directly (already
+    // main-thread), and from handle_scan_complete()/handle_disconnected()
+    // indirectly via helix::ui::queue_update() dispatch, since those two
+    // fire on the backend thread and scan_scheduler_ is not mutex-guarded.
+    helix::wifi::ScanScheduler scan_scheduler_;
 
     // Connection state
     std::function<void(bool, const std::string&)> connect_callback_; // guarded by callback_mutex_

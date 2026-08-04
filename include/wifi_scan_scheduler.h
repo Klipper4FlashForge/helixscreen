@@ -1,0 +1,72 @@
+// Copyright (C) 2026 356C LLC
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+
+namespace helix::wifi {
+
+/**
+ * @brief Pure state machine deciding when a periodic WiFi scan should fire.
+ *
+ * Owns no timer, does no I/O, and never touches LVGL — it only answers
+ * "should the next tick actually trigger a scan?" and "how long should the
+ * next tick wait?". The caller (WiFiManager) owns the lv_timer_t and is the
+ * only thing that calls trigger_scan() / lv_timer_set_period().
+ *
+ * Policy:
+ * - No overlap: a scan already in flight suppresses should_trigger() until
+ *   on_scan_complete() reports it done.
+ * - Backoff: each time a scan reports the same result count as the previous
+ *   scan, the interval grows by kBaseIntervalMs (capped at kMaxIntervalMs).
+ *   A changed count snaps the interval back to kBaseIntervalMs.
+ * - Suppression: once the result count has been unchanged for two
+ *   consecutive scans while connected, scanning is suppressed entirely
+ *   (should_trigger() stays false) until a manual refresh or a disconnect.
+ *   This is the case that matters most: a single-radio station sitting on
+ *   the network settings page, already connected, whose scan results have
+ *   stopped changing — there is nothing left to learn by continuing to
+ *   knock the radio off-channel every few seconds.
+ */
+class ScanScheduler {
+  public:
+    static constexpr uint32_t kBaseIntervalMs = 10000;
+    static constexpr uint32_t kMaxIntervalMs = 30000;
+
+    /// Call immediately before triggering a scan. Marks a scan outstanding.
+    void on_scan_started();
+
+    /// Call once a scan's results are known (or the attempt is considered
+    /// resolved, e.g. a failed trigger treated as a zero-result scan).
+    /// Updates backoff/suppression state and clears the outstanding flag.
+    void on_scan_complete(size_t result_count, bool connected);
+
+    /// Call when the user explicitly asks for a fresh scan (e.g. opening the
+    /// network settings page). Clears suppression and resets the interval.
+    void on_user_refresh();
+
+    /// Call on a genuine disconnect. Clears suppression and resets the
+    /// interval — a new network is a new environment worth re-learning.
+    void on_disconnected();
+
+    /// False while a scan is outstanding or scanning is suppressed.
+    bool should_trigger() const;
+
+    /// Interval the caller should use for its next timer tick.
+    uint32_t next_interval_ms() const;
+
+    /// True once scan results have gone stable while connected.
+    bool suppressed() const;
+
+  private:
+    bool scan_outstanding_ = false;
+    uint32_t interval_ms_ = kBaseIntervalMs;
+    size_t last_count_ = 0;
+    bool has_last_count_ = false;
+    int unchanged_streak_ = 0;
+    bool suppressed_ = false;
+};
+
+} // namespace helix::wifi

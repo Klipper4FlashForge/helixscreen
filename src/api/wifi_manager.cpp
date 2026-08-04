@@ -260,14 +260,24 @@ void WiFiManager::start_scan(
     }
     spdlog::debug("[WiFiManager] Scan callback registered");
 
-    spdlog::info("[WiFiManager] Starting periodic network scan (every 7 seconds)");
+    spdlog::info("[WiFiManager] Starting periodic network scan (interval backs off {}ms-{}ms)",
+                 helix::wifi::ScanScheduler::kBaseIntervalMs,
+                 helix::wifi::ScanScheduler::kMaxIntervalMs);
+
+    // A fresh scan session (e.g. the user opening network settings) is a
+    // manual refresh: clear any suppression/backoff left over from a prior
+    // session and start this one's timer at the base interval. Safe to call
+    // directly — start_scan() runs on the main/LVGL thread.
+    scan_scheduler_.on_user_refresh();
 
     // Create timer for periodic scanning
-    scan_timer_ = lv_timer_create(scan_timer_callback, 7000, this);
+    scan_timer_ =
+        lv_timer_create(scan_timer_callback, helix::wifi::ScanScheduler::kBaseIntervalMs, this);
     spdlog::debug("[WiFiManager] Timer created: {}", (void*)scan_timer_);
 
     // Trigger immediate scan
     spdlog::debug("[WiFiManager] About to trigger initial scan");
+    scan_scheduler_.on_scan_started();
     {
         std::lock_guard<std::mutex> lock(callback_mutex_);
         scan_pending_ = true; // Mark scan as pending - cleared after first SCAN_COMPLETE processed
@@ -278,6 +288,11 @@ void WiFiManager::start_scan(
             std::lock_guard<std::mutex> lock(callback_mutex_);
             scan_pending_ = false;
         }
+        // trigger_scan() failed synchronously — no SCAN_COMPLETE event will
+        // ever arrive for this attempt, so resolve the scheduler now (as a
+        // zero-result scan) instead of leaving scan_outstanding_ stuck true
+        // forever, which would permanently block should_trigger().
+        scan_scheduler_.on_scan_complete(0, is_connected());
         // If the OS reports the wireless link is actually up, the managed
         // backend simply can't reach its control socket (the link is system-
         // managed and live). Nagging the user with a failure toast is wrong —
@@ -310,6 +325,17 @@ void WiFiManager::stop_scan() {
 void WiFiManager::scan_timer_callback(lv_timer_t* timer) {
     WiFiManager* manager = static_cast<WiFiManager*>(lv_timer_get_user_data(timer));
     if (manager && manager->backend_) {
+        // Ask the scheduler whether this tick should actually scan: a scan
+        // already in flight, or the results having gone stable while
+        // connected, both mean "not yet". This runs on the main/LVGL
+        // thread (the lv_timer callback), same as scan_scheduler_'s owner.
+        if (!manager->scan_scheduler_.should_trigger()) {
+            spdlog::trace("[WiFiManager] Periodic scan tick skipped (suppressed={})",
+                          manager->scan_scheduler_.suppressed());
+            return;
+        }
+        manager->scan_scheduler_.on_scan_started();
+
         // Trigger scan - results will arrive via SCAN_COMPLETE event
         {
             std::lock_guard<std::mutex> lock(manager->callback_mutex_);
@@ -320,6 +346,14 @@ void WiFiManager::scan_timer_callback(lv_timer_t* timer) {
             {
                 std::lock_guard<std::mutex> lock(manager->callback_mutex_);
                 manager->scan_pending_ = false;
+            }
+            // As in start_scan(): a synchronous trigger failure gets no
+            // SCAN_COMPLETE, so resolve the scheduler now or should_trigger()
+            // stays false forever.
+            manager->scan_scheduler_.on_scan_complete(0, manager->is_connected());
+            if (manager->scan_timer_) {
+                lv_timer_set_period(manager->scan_timer_,
+                                    manager->scan_scheduler_.next_interval_ms());
             }
             LOG_WARN_INTERNAL("Periodic scan failed: {}", result.technical_msg);
             // Self-heal: a NOT_INITIALIZED scan means the backend never came up
@@ -561,6 +595,18 @@ void WiFiManager::handle_scan_complete(const std::string& event_data) {
 
                 // Safely check if manager still exists
                 if (auto manager = data->manager.lock()) {
+                    // ScanScheduler is main/LVGL-thread-only state; this lambda
+                    // runs there (dispatched via queue_update), so touching it
+                    // directly is safe. Feed the scan cadence policy the result
+                    // count and current connection state, then apply whatever
+                    // interval it decides on to the live timer.
+                    manager->scan_scheduler_.on_scan_complete(data->networks.size(),
+                                                              manager->is_connected());
+                    if (manager->scan_timer_) {
+                        lv_timer_set_period(manager->scan_timer_,
+                                            manager->scan_scheduler_.next_interval_ms());
+                    }
+
                     std::function<void(const std::vector<WiFiNetwork>&)> cb;
                     {
                         std::lock_guard<std::mutex> lock(manager->callback_mutex_);
@@ -588,6 +634,15 @@ void WiFiManager::handle_scan_complete(const std::string& event_data) {
             [](ScanCallbackData* data) {
                 LOG_WARN_INTERNAL("async_call: calling callback with empty results");
                 if (auto manager = data->manager.lock()) {
+                    // Treat "couldn't fetch results" as a zero-result scan for
+                    // scheduling purposes — it still resolves scan_outstanding_
+                    // and lets the timer's period stay in sync.
+                    manager->scan_scheduler_.on_scan_complete(0, manager->is_connected());
+                    if (manager->scan_timer_) {
+                        lv_timer_set_period(manager->scan_timer_,
+                                            manager->scan_scheduler_.next_interval_ms());
+                    }
+
                     std::function<void(const std::vector<WiFiNetwork>&)> cb;
                     {
                         std::lock_guard<std::mutex> lock(manager->callback_mutex_);
@@ -685,6 +740,34 @@ void WiFiManager::handle_disconnected(const std::string& event_data) {
 
     // Genuine disconnect — wake passive observers so they can refresh UI state.
     notify_state_observers();
+
+    // A new network (or no network) is a new environment worth re-learning,
+    // so drop any backoff/suppression from the last one. ScanScheduler is
+    // main/LVGL-thread-only state and handle_disconnected() runs on the
+    // backend thread, so dispatch rather than touching it here.
+    //
+    // Only bother if self_ is wired (set once by init_self_reference() and
+    // never mutated again, so reading it here unsynchronized is the same
+    // established pattern ScanCallbackData/ConnectCallbackData already rely
+    // on). Without it the queued lambda can never resolve to a live manager
+    // anyway — and skipping the enqueue matters concretely: backend_->stop()
+    // in the destructor fires this same DISCONNECTED path synchronously,
+    // with scan_timer_ already torn down and self_ never set in tests that
+    // construct WiFiManager directly (self_ is singleton-only), so an
+    // unconditional enqueue there outlives the test with nothing left to
+    // drain it — an UpdateQueue isolation leak.
+    if (self_) {
+        std::weak_ptr<WiFiManager> weak_self = self_;
+        helix::ui::queue_update("WiFiManager::handle_disconnected(scan_scheduler)", [weak_self]() {
+            if (auto manager = weak_self.lock()) {
+                manager->scan_scheduler_.on_disconnected();
+                if (manager->scan_timer_) {
+                    lv_timer_set_period(manager->scan_timer_,
+                                        manager->scan_scheduler_.next_interval_ms());
+                }
+            }
+        });
+    }
 
     bool has_callback;
     {
