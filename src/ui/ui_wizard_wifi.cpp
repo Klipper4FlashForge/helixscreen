@@ -669,8 +669,8 @@ void WizardWifiStep::handle_network_item_clicked(lv_event_t* e) {
                                      error.c_str());
                             update_wifi_status(msg);
                             update_wifi_ip(""); // Clear IP on failure
-                            NOTIFY_ERROR(lv_tr("Failed to connect to '{}': {}"), current_ssid_,
-                                         error);
+                            NOTIFY_ERROR(lv_tr("Failed to connect to '{}': {}"),
+                                         helix::redact::ssid(current_ssid_), error);
                         }
                     });
                 });
@@ -775,7 +775,8 @@ void WizardWifiStep::handle_modal_connect_clicked() {
                         }
 
                         update_wifi_status(lv_tr("Connection failed"));
-                        NOTIFY_ERROR(lv_tr("Failed to connect to '{}': {}"), current_ssid_, error);
+                        NOTIFY_ERROR(lv_tr("Failed to connect to '{}': {}"),
+                                     helix::redact::ssid(current_ssid_), error);
                     }
                 });
             });

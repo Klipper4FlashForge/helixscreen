@@ -983,6 +983,8 @@ translations:
   Follow active tool: Follow active tool
   Follow graph screen: Follow graph screen
   Forget: Forget
+  Forget Network?: Forget Network?
+  Forget network '{}'? You will need the password to reconnect.: Forget network '{}'? You will need the password to reconnect.
   Forming Tip: Forming Tip
   Forming tip...: Forming tip...
   Found %zu printers: Found %zu printers
@@ -1425,6 +1427,7 @@ translations:
   Network Name (SSID): Network Name (SSID)
   Network Settings: Network Settings
   Network Test: Network Test
+  Network forgotten: Network forgotten
   Network name cannot be empty: Network name cannot be empty
   Never: Never
   'New Spool: Step 1 of 3': 'New Spool: Step 1 of 3'

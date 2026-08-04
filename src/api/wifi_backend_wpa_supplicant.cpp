@@ -10,6 +10,78 @@
 #include "wifi_5ghz_detection.h"
 #include "wifi_saved_config.h"
 
+// find_network_id() is pure string parsing with no OS dependency, and its
+// declaration in the header sits outside the __APPLE__ guard so it can be
+// unit-tested on macOS — so its definition lives outside the guard too,
+// unlike the wpa_ctrl-dependent implementation below.
+namespace helix::wifi::detail {
+std::string find_network_id(const std::string& list_networks_reply, const std::string& ssid) {
+    if (list_networks_reply.empty() || ssid.empty())
+        return {};
+
+    // Skip the header line ("network id / ssid / bssid / flags").
+    size_t line_start = list_networks_reply.find('\n');
+    if (line_start == std::string::npos)
+        return {};
+    line_start += 1;
+
+    while (line_start < list_networks_reply.size()) {
+        const size_t line_end = list_networks_reply.find('\n', line_start);
+        const size_t line_len =
+            (line_end == std::string::npos) ? std::string::npos : line_end - line_start;
+        const std::string line = list_networks_reply.substr(line_start, line_len);
+
+        const size_t tab1 = line.find('\t');
+        if (tab1 != std::string::npos) {
+            const size_t tab2 = line.find('\t', tab1 + 1);
+            const std::string this_ssid = (tab2 == std::string::npos)
+                                              ? line.substr(tab1 + 1)
+                                              : line.substr(tab1 + 1, tab2 - tab1 - 1);
+            if (this_ssid == ssid)
+                return line.substr(0, tab1);
+        }
+
+        if (line_end == std::string::npos)
+            break;
+        line_start = line_end + 1;
+    }
+    return {};
+}
+
+// Character/length rules for a value that will be spliced into a
+// wpa_supplicant SET_NETWORK command. Pure predicate, no logging — shared by
+// validate_wpa_string() below (which additionally logs *what* failed, for
+// non-secret fields like an SSID) and reconcile_saved_networks() (which must
+// validate a stored PSK without ever routing it through a diagnostic that
+// echoes the offending byte). Declared in the header outside the __APPLE__
+// guard, like find_network_id, so it can be unit-tested directly instead of
+// only indirectly through platform-specific backend behaviour.
+bool wpa_string_is_valid(const std::string& input) {
+    for (char c : input) {
+        if (c == '"' || c == '\\' || c == '\n' || c == '\r' || c == '\t' || c < 32 || c == 127)
+            return false;
+    }
+    return !input.empty() && input.length() <= 255;
+}
+
+// Thin wrapper over wpa_string_is_valid(): one rule set, two behaviours. Logs
+// the specific violation on failure, so this must only be called with values
+// safe to echo into a log line — an SSID, never a PSK or other secret.
+// reconcile_saved_networks() validates a stored PSK via wpa_string_is_valid()
+// directly instead of this function, for exactly that reason.
+std::string validate_wpa_string(const std::string& input, const std::string& field_name) {
+    if (wpa_string_is_valid(input))
+        return input;
+
+    if (input.empty() || input.length() > 255) {
+        LOG_ERROR_INTERNAL("Invalid {} length: {}", field_name, input.length());
+    } else {
+        LOG_ERROR_INTERNAL("Invalid character in {}", field_name);
+    }
+    return "";
+}
+} // namespace helix::wifi::detail
+
 #if !defined(__APPLE__) && !defined(__ANDROID__)
 // ============================================================================
 // Linux Implementation: Full wpa_supplicant integration
@@ -26,6 +98,7 @@
 #include <fstream>
 #include <future>
 #include <sstream>
+#include <unistd.h>
 #include <unordered_map>
 
 namespace fs = std::filesystem;
@@ -281,6 +354,29 @@ static std::vector<std::string> wpa_socket_dirs() {
     return dirs;
 }
 
+/// Return the wpa_supplicant control-socket directory actually in use — the
+/// first entry of wpa_socket_dirs() that exists and contains at least one
+/// non-p2p control socket. Mirrors init_wpa()'s own socket search exactly (same
+/// order, same is_socket + "p2p" filter) so resolve_and_store_interface()
+/// probes candidates from the same directory init_wpa() just connected into.
+static std::string resolve_wpa_ctrl_directory() {
+    for (const auto& base_path : wpa_socket_dirs()) {
+        std::error_code ec;
+        if (!fs::is_directory(base_path, ec) || ec)
+            continue;
+
+        for (const auto& entry : fs::directory_iterator(base_path, ec)) {
+            if (ec)
+                break;
+            if (fs::is_socket(entry.path()) &&
+                entry.path().string().find("p2p") == std::string::npos) {
+                return base_path;
+            }
+        }
+    }
+    return {};
+}
+
 WifiBackendWpaSupplicant::WifiBackendWpaSupplicant()
     : hv::EventLoopThread(nullptr), conn(nullptr),
       mon_conn(nullptr) // Initialize monitor connection
@@ -387,7 +483,13 @@ WiFiError WifiBackendWpaSupplicant::start() {
     }
 
     spdlog::info("[WifiBackend] Backend initialized successfully");
-    helix::wifi::remember_persistent_target(detect_wpa_conf_path_from_proc());
+    {
+        const auto iface = resolved_interface();
+        const std::string conf_path = (iface && !iface->conf_path.empty())
+                                          ? iface->conf_path
+                                          : detect_wpa_conf_path_from_proc();
+        helix::wifi::remember_persistent_target(conf_path);
+    }
     return WiFiErrorHelper::success();
 }
 
@@ -633,7 +735,7 @@ WiFiError WifiBackendWpaSupplicant::check_wifi_hardware() {
                     if (fs::exists(wireless_path)) {
                         wifi_found = true;
                         interface_name = iface;
-                        spdlog::debug("[WifiBackend] Found WiFi interface: {}", iface);
+                        spdlog::debug("[WifiBackend] WiFi-capable interface present: {}", iface);
                         break;
                     }
                 }
@@ -658,13 +760,35 @@ WiFiError WifiBackendWpaSupplicant::check_wifi_hardware() {
                     std::ifstream type_stream(type_file);
                     std::string type;
                     if (type_stream >> type && type == "wlan") {
-                        // Check if soft-blocked
+                        // A HARD block is a physical switch — we genuinely
+                        // cannot clear it from software, so it stays fatal.
+                        std::string hard_file = entry.path().string() + "/hard";
+                        if (fs::exists(hard_file)) {
+                            std::ifstream hard_stream(hard_file);
+                            int hard_blocked;
+                            if (hard_stream >> hard_blocked && hard_blocked == 1) {
+                                return WiFiErrorHelper::rf_kill_blocked();
+                            }
+                        }
+
+                        // A SOFT block is state OUR OWN application can set
+                        // (set_radio_enabled(false)) — treating it as a fatal
+                        // preflight failure means init_wpa() never runs, READY
+                        // never fires, and set_radio_enabled(true) is never
+                        // reachable to clear it: a permanent self-inflicted
+                        // lockout that even survives a reboot, since
+                        // systemd-rfkill.service persists and restores the
+                        // soft block. Demote to a warning and let startup
+                        // proceed so the normal unblock paths can run.
                         std::string soft_file = entry.path().string() + "/soft";
                         if (fs::exists(soft_file)) {
                             std::ifstream soft_stream(soft_file);
                             int soft_blocked;
                             if (soft_stream >> soft_blocked && soft_blocked == 1) {
-                                return WiFiErrorHelper::rf_kill_blocked();
+                                spdlog::warn(
+                                    "[WifiBackend] WiFi radio is soft rfkill-blocked ({}) — "
+                                    "starting anyway so it can be cleared via set_radio_enabled",
+                                    soft_file);
                             }
                         }
                         break;
@@ -838,7 +962,9 @@ void WifiBackendWpaSupplicant::init_wpa() {
     hio_setcb_read(mon_io_, WifiBackendWpaSupplicant::_handle_wpa_events); // Static trampoline
     hio_read_start(mon_io_); // Start monitoring socket for events
 
+    resolve_and_store_interface();
     resolve_5ghz_support();
+    reconcile_saved_networks();
 
     // Reached only with live control + monitor connections registered — the
     // backend is genuinely up. This is the one place init_succeeded_ goes true.
@@ -846,6 +972,94 @@ void WifiBackendWpaSupplicant::init_wpa() {
 
     spdlog::debug("[WifiBackend] wpa_supplicant backend initialized successfully");
     signal_init_complete();
+}
+
+void WifiBackendWpaSupplicant::resolve_and_store_interface() {
+    helix::wifi::Roots roots;
+    roots.ctrl = resolve_wpa_ctrl_directory();
+
+    if (roots.ctrl.empty()) {
+        spdlog::warn(
+            "[WifiBackend] Interface resolution: no wpa_supplicant control directory found");
+        std::lock_guard<std::mutex> lock(iface_mutex_);
+        iface_.reset();
+        return;
+    }
+
+    // Each candidate gets its OWN short-lived wpa_ctrl handle, opened, probed
+    // with STATUS and closed here. This deliberately does NOT touch `conn` —
+    // conn stays attached to whichever socket init_wpa() already picked, and
+    // resolution needs to probe the OTHER candidates too. Reusing conn would
+    // make every candidate report conn's own status and silently defeat the
+    // resolver.
+    const char* cli_dir = resolve_wpa_client_dir();
+    helix::wifi::StatusProbe probe = [cli_dir](const std::string& socket_path) -> std::string {
+        struct wpa_ctrl* probe_conn = wpa_ctrl_open2(socket_path.c_str(), cli_dir);
+        if (probe_conn == nullptr)
+            return {};
+
+        char resp[4096];
+        size_t len = sizeof(resp) - 1;
+        const std::string cmd = "STATUS";
+        int result = wpa_ctrl_request(probe_conn, cmd.c_str(), cmd.length(), resp, &len, nullptr);
+        wpa_ctrl_close(probe_conn);
+
+        if (result != 0 || len >= sizeof(resp))
+            return {};
+        resp[len] = '\0';
+        return std::string(resp, len);
+    };
+
+    auto resolved = helix::wifi::resolve_interface(roots, probe);
+
+    {
+        std::lock_guard<std::mutex> lock(iface_mutex_);
+        iface_ = resolved;
+    }
+
+    // Seed radio_enabled_ from the actual hardware state. The atomic
+    // defaults to true and, until now, nothing ever corrected it from a real
+    // rfkill read — so a radio already soft-blocked when the process starts
+    // (the block survives a reboot; see check_wifi_hardware()) showed the UI
+    // toggle ON over a radio that cannot associate, the same class of state
+    // lie this branch exists to eliminate. No rfkill node at all means there
+    // is nothing to query; default to enabled rather than reporting a false
+    // "off".
+    {
+        bool hw_radio_enabled = true;
+        if (resolved && !resolved->rfkill_node.empty()) {
+            std::ifstream soft_stream(resolved->rfkill_node + "/soft");
+            int soft_blocked = 0;
+            if (soft_stream >> soft_blocked) {
+                hw_radio_enabled = (soft_blocked != 1);
+            }
+        }
+        radio_enabled_ = hw_radio_enabled;
+        spdlog::debug("[WifiBackend] radio_enabled_ seeded from hardware: {}", hw_radio_enabled);
+    }
+
+    // The reporter's AD5X is unreachable for the duration, and the bundles
+    // carry no process list — so log enough for the NEXT bundle to decide
+    // whether a second wpa_supplicant was the reason SAVE_CONFIG "failed".
+    // Interface names and paths are not secrets; SSIDs and PSKs never appear.
+    for (const auto& d : helix::wifi::detail::list_wpa_daemons(roots.proc)) {
+        spdlog::info("[WifiBackend] wpa_supplicant pid={} -i='{}' -c='{}'", d.pid, d.iface,
+                     d.conf_path);
+    }
+    if (resolved) {
+        const bool writable =
+            !resolved->conf_path.empty() && ::access(resolved->conf_path.c_str(), W_OK) == 0;
+        spdlog::info("[WifiBackend] Managing {} via {} (conf='{}' writable={}, rfkill='{}')",
+                     resolved->netdev, resolved->ctrl_socket, resolved->conf_path, writable,
+                     resolved->rfkill_node.empty() ? "none" : resolved->rfkill_node);
+    } else {
+        spdlog::warn("[WifiBackend] Interface resolution inconclusive — using legacy detection");
+    }
+}
+
+std::optional<helix::wifi::WifiInterface> WifiBackendWpaSupplicant::resolved_interface() const {
+    std::lock_guard<std::mutex> lock(iface_mutex_);
+    return iface_;
 }
 
 void WifiBackendWpaSupplicant::cleanup_wpa() {
@@ -1126,23 +1340,131 @@ WiFiError WifiBackendWpaSupplicant::get_scan_results(std::vector<WiFiNetwork>& n
     }
 }
 
-// Helper function to validate and escape wpa_supplicant strings
-static std::string validate_wpa_string(const std::string& input, const std::string& field_name) {
-    // Check for dangerous characters that could enable command injection
-    for (char c : input) {
-        if (c == '"' || c == '\\' || c == '\n' || c == '\r' || c == '\t' || c < 32 || c == 127) {
-            LOG_ERROR_INTERNAL("Invalid character in {}: ASCII {}", field_name, (int)c);
-            return "";
+std::pair<std::string, std::string> WifiBackendWpaSupplicant::read_wpa_conf_after_save() {
+    const auto iface = resolved_interface();
+    const std::string conf_path =
+        (iface && !iface->conf_path.empty()) ? iface->conf_path : detect_wpa_conf_path_from_proc();
+    std::string conf_contents;
+    if (!conf_path.empty()) {
+        std::ifstream conf(conf_path, std::ios::binary);
+        if (conf.is_open())
+            conf_contents.assign(std::istreambuf_iterator<char>(conf),
+                                 std::istreambuf_iterator<char>());
+    }
+    return {conf_path, conf_contents};
+}
+
+void WifiBackendWpaSupplicant::mirror_if_volatile(const std::string& conf_path) {
+    // Verified present (or verified absent) is not the same as verified
+    // durable: wpa_supplicant writes its config with a temp file + rename(),
+    // and that rename replaces a persistence symlink with a regular file. On
+    // such a platform the state we just confirmed on the volatile path is
+    // sitting in RAM, not on the storage the printer actually boots from.
+    if (helix::wifi::detail::is_volatile_path(conf_path) &&
+        !helix::wifi::persistent_target().empty()) {
+        helix::wifi::mirror_to_persistent(conf_path);
+    }
+}
+
+void WifiBackendWpaSupplicant::reconcile_saved_networks() {
+    const auto saved = helix::wifi::store::load();
+    if (saved.empty())
+        return;
+
+    const std::string list_reply = send_command("LIST_NETWORKS");
+
+    size_t restored = 0;
+    size_t already_present = 0;
+    size_t skipped = 0;
+
+    for (const auto& net : saved) {
+        if (!helix::wifi::detail::find_network_id(list_reply, net.ssid).empty()) {
+            ++already_present;
+            continue;
         }
+
+        // Defence in depth: connect_network() already validated these
+        // characters before anything was written to the store, but the store
+        // is a plain file on disk and this loop is about to splice both
+        // fields into wpa_supplicant's quoted command protocol.
+        const std::string clean_ssid =
+            helix::wifi::detail::validate_wpa_string(net.ssid, "stored SSID");
+        if (clean_ssid.empty()) {
+            spdlog::warn("[WifiBackend] Reconcile: skipping a stored network with an invalid SSID");
+            ++skipped;
+            continue;
+        }
+        // An open network's empty PSK is fine; a non-empty-but-invalid one is
+        // not — same distinction connect_network() applies to the live
+        // password argument. Validated via the non-logging predicate, never
+        // validate_wpa_string(): that function logs the offending byte on
+        // failure, and this value is a secret read back from disk, not a
+        // fresh value the user just typed.
+        std::string clean_psk;
+        if (!net.psk.empty()) {
+            if (!helix::wifi::detail::wpa_string_is_valid(net.psk)) {
+                spdlog::warn("[WifiBackend] Reconcile: skipping '{}' — stored PSK failed "
+                             "validation",
+                             helix::redact::ssid(net.ssid));
+                ++skipped;
+                continue;
+            }
+            clean_psk = net.psk;
+        }
+
+        std::string add_result = send_command("ADD_NETWORK");
+        if (add_result.empty() || add_result == "FAIL\n") {
+            spdlog::warn("[WifiBackend] Reconcile: ADD_NETWORK failed for a stored network");
+            ++skipped;
+            continue;
+        }
+        std::string network_id = add_result;
+        if (!network_id.empty() && network_id.back() == '\n')
+            network_id.pop_back();
+        if (network_id.empty() || !std::all_of(network_id.begin(), network_id.end(),
+                                               [](unsigned char c) { return std::isdigit(c); })) {
+            spdlog::warn("[WifiBackend] Reconcile: unexpected ADD_NETWORK reply for a stored "
+                         "network");
+            ++skipped;
+            continue;
+        }
+
+        bool ok =
+            send_command("SET_NETWORK " + network_id + " ssid \"" + clean_ssid + "\"") == "OK\n";
+        if (ok) {
+            ok = clean_psk.empty()
+                     ? send_command("SET_NETWORK " + network_id + " key_mgmt NONE") == "OK\n"
+                     : send_command("SET_NETWORK " + network_id + " psk \"" + clean_psk + "\"") ==
+                           "OK\n";
+        }
+        if (ok)
+            ok = send_command("ENABLE_NETWORK " + network_id) == "OK\n";
+
+        if (!ok) {
+            spdlog::warn("[WifiBackend] Reconcile: failed to restore a stored network — removing "
+                         "the partial entry");
+            send_command("REMOVE_NETWORK " + network_id);
+            ++skipped;
+            continue;
+        }
+
+        ++restored;
     }
 
-    // Additional checks for reasonable limits
-    if (input.empty() || input.length() > 255) {
-        LOG_ERROR_INTERNAL("Invalid {} length: {}", field_name, input.length());
-        return "";
+    if (restored > 0) {
+        send_command("SAVE_CONFIG");
+        spdlog::info("[WifiBackend] Reconcile: restored {} network(s) from HelixScreen's store "
+                     "into wpa_supplicant ({} already present, {} skipped, {} total stored)",
+                     restored, already_present, skipped, saved.size());
+    } else if (skipped > 0) {
+        spdlog::warn("[WifiBackend] Reconcile: {} stored network(s) already present, {} could not "
+                     "be restored ({} total stored)",
+                     already_present, skipped, saved.size());
+    } else {
+        spdlog::debug("[WifiBackend] Reconcile: {} stored network(s), all already present in "
+                      "wpa_supplicant",
+                      saved.size());
     }
-
-    return input;
 }
 
 WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
@@ -1153,14 +1475,14 @@ WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
     }
 
     // SECURITY: Validate inputs to prevent command injection
-    std::string clean_ssid = validate_wpa_string(ssid, "SSID");
+    std::string clean_ssid = helix::wifi::detail::validate_wpa_string(ssid, "SSID");
     if (clean_ssid.empty()) {
         return WiFiError(WiFiResult::INVALID_PARAMETERS,
                          "SSID contains invalid characters (quotes, control chars, etc.)",
                          "Invalid network name", "Check that the network name is correct");
     }
 
-    std::string clean_password = validate_wpa_string(password, "password");
+    std::string clean_password = helix::wifi::detail::validate_wpa_string(password, "password");
     if (!password.empty() && clean_password.empty()) {
         return WiFiErrorHelper::authentication_failed(ssid +
                                                       " (password contains invalid characters)");
@@ -1168,38 +1490,61 @@ WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
 
     spdlog::info("[WifiBackend] Connecting to network '{}'", helix::redact::ssid(clean_ssid));
 
-    // Step 1: Add new network (get network ID)
-    std::string add_result = send_command("ADD_NETWORK");
-    if (add_result.empty() || add_result == "FAIL\n") {
-        NOTIFY_ERROR("Failed to save WiFi network");
-        return WiFiErrorHelper::connection_failed("Failed to add network to wpa_supplicant");
-    }
-
-    // Parse network ID (should be a number)
-    std::string network_id = add_result;
-    // Remove trailing newline
-    if (!network_id.empty() && network_id.back() == '\n') {
-        network_id.pop_back();
-    }
-
-    // SECURITY: Validate network ID is actually a number
-    for (char c : network_id) {
-        if (!std::isdigit(c)) {
-            return WiFiError(WiFiResult::BACKEND_ERROR,
-                             "wpa_supplicant returned invalid network ID: " + network_id,
-                             "Internal WiFi error", "Try restarting WiFi services");
+    // Step 1: Reuse an existing saved entry for this SSID when one exists,
+    // otherwise add a new one. Every connect used to ADD_NETWORK
+    // unconditionally — a real user's wpa_supplicant had reached network id 7
+    // for a handful of networks, and duplicate all-enabled entries give
+    // wpa_supplicant more candidates to roam between after a reboot (a
+    // plausible contributor to an unwanted 5GHz reassociation after the user
+    // had explicitly forgotten that network).
+    //
+    // reused_existing tracks whether network_id was newly ADD_NETWORK'd by
+    // THIS call. The failure-cleanup REMOVE_NETWORK calls below must only
+    // fire when it was — removing a reused id would delete a network the
+    // user already had saved, which is worse than the duplicate-entry bug
+    // this reuse is fixing.
+    std::string network_id =
+        helix::wifi::detail::find_network_id(send_command("LIST_NETWORKS"), clean_ssid);
+    const bool reused_existing = !network_id.empty();
+    if (reused_existing) {
+        spdlog::debug("[WifiBackend] Reusing network id {} for '{}'", network_id,
+                      helix::redact::ssid(clean_ssid));
+    } else {
+        std::string add_result = send_command("ADD_NETWORK");
+        if (add_result.empty() || add_result == "FAIL\n") {
+            NOTIFY_ERROR("Failed to save WiFi network");
+            return WiFiErrorHelper::connection_failed("Failed to add network to wpa_supplicant");
         }
-    }
 
-    spdlog::debug("[WifiBackend] Added network with ID: {}", network_id);
+        // Parse network ID (should be a number)
+        network_id = add_result;
+        // Remove trailing newline
+        if (!network_id.empty() && network_id.back() == '\n') {
+            network_id.pop_back();
+        }
+
+        // SECURITY: Validate network ID is actually a number
+        for (char c : network_id) {
+            if (!std::isdigit(c)) {
+                return WiFiError(WiFiResult::BACKEND_ERROR,
+                                 "wpa_supplicant returned invalid network ID: " + network_id,
+                                 "Internal WiFi error", "Try restarting WiFi services");
+            }
+        }
+
+        spdlog::debug("[WifiBackend] Added network with ID: {}", network_id);
+    }
 
     // Step 2: Set SSID
     std::string set_ssid_cmd = "SET_NETWORK " + network_id + " ssid \"" + clean_ssid + "\"";
     std::string ssid_result = send_command(set_ssid_cmd);
     if (ssid_result != "OK\n") {
         LOG_ERROR_INTERNAL("Failed to set SSID: {}", ssid_result);
-        // Clean up: remove the network
-        send_command("REMOVE_NETWORK " + network_id);
+        // Clean up: remove the network we just added. Never remove a reused
+        // id — that would delete credentials the user already had saved.
+        if (!reused_existing) {
+            send_command("REMOVE_NETWORK " + network_id);
+        }
         NOTIFY_ERROR("Failed to save WiFi network");
         return WiFiErrorHelper::connection_failed("Failed to configure network SSID");
     }
@@ -1211,7 +1556,10 @@ WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
         std::string open_result = send_command(set_open_cmd);
         if (open_result != "OK\n") {
             LOG_ERROR_INTERNAL("Failed to set open security: {}", open_result);
-            send_command("REMOVE_NETWORK " + network_id);
+            // Never remove a reused id — see the Step 1 comment.
+            if (!reused_existing) {
+                send_command("REMOVE_NETWORK " + network_id);
+            }
             NOTIFY_ERROR("Failed to save WiFi network");
             return WiFiErrorHelper::connection_failed("Failed to configure open network security");
         }
@@ -1223,8 +1571,12 @@ WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
         if (psk_result != "OK\n") {
             LOG_ERROR_INTERNAL(
                 "Failed to set PSK"); // Don't log the actual result (may contain password)
-            send_command("REMOVE_NETWORK " + network_id);
-            NOTIFY_ERROR("Failed to connect to '{}'. Check password.", clean_ssid);
+            // Never remove a reused id — see the Step 1 comment.
+            if (!reused_existing) {
+                send_command("REMOVE_NETWORK " + network_id);
+            }
+            NOTIFY_ERROR("Failed to connect to '{}'. Check password.",
+                         helix::redact::ssid(clean_ssid));
             return WiFiErrorHelper::authentication_failed(ssid);
         }
         spdlog::debug("[WifiBackend] Configured with PSK");
@@ -1235,7 +1587,10 @@ WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
     std::string enable_result = send_command(enable_cmd);
     if (enable_result != "OK\n") {
         LOG_ERROR_INTERNAL("Failed to enable network: {}", enable_result);
-        send_command("REMOVE_NETWORK " + network_id);
+        // Never remove a reused id — see the Step 1 comment.
+        if (!reused_existing) {
+            send_command("REMOVE_NETWORK " + network_id);
+        }
         NOTIFY_ERROR("Failed to save WiFi network");
         return WiFiErrorHelper::connection_failed("Failed to enable network configuration");
     }
@@ -1246,8 +1601,11 @@ WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
     std::string select_result = send_command(select_cmd);
     if (select_result != "OK\n") {
         LOG_ERROR_INTERNAL("Failed to select network: {}", select_result);
-        send_command("REMOVE_NETWORK " + network_id);
-        NOTIFY_ERROR("Failed to connect to '{}'", clean_ssid);
+        // Never remove a reused id — see the Step 1 comment.
+        if (!reused_existing) {
+            send_command("REMOVE_NETWORK " + network_id);
+        }
+        NOTIFY_ERROR("Failed to connect to '{}'", helix::redact::ssid(clean_ssid));
         return WiFiErrorHelper::connection_failed("Failed to select network for connection");
     }
 
@@ -1261,35 +1619,21 @@ WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
     // "saved to disk" while the credentials existed only in daemon memory and
     // died at the next power-off. Re-read the config and look for the SSID.
     const std::string save_result = send_command("SAVE_CONFIG");
-    const std::string conf_path = detect_wpa_conf_path_from_proc();
-    std::string conf_contents;
-    if (!conf_path.empty()) {
-        std::ifstream conf(conf_path, std::ios::binary);
-        if (conf.is_open())
-            conf_contents.assign(std::istreambuf_iterator<char>(conf),
-                                 std::istreambuf_iterator<char>());
-    }
+    const auto [conf_path, conf_contents] = read_wpa_conf_after_save();
 
     if (helix::wifi::detail::classify_save_result(save_result, conf_contents, clean_ssid) ==
         helix::wifi::detail::SavePersistence::Persisted) {
         spdlog::debug("[WifiBackend] Credentials verified on disk at {}", conf_path);
-
-        // Verified present is not the same as verified durable: wpa_supplicant
-        // writes its config with a temp file + rename(), and that rename
-        // replaces a persistence symlink with a regular file. On such a
-        // platform the credentials we just confirmed are sitting in RAM.
-        if (helix::wifi::detail::is_volatile_path(conf_path) &&
-            !helix::wifi::persistent_target().empty()) {
-            helix::wifi::mirror_to_persistent(conf_path);
-        }
+        mirror_if_volatile(conf_path);
     } else if (conf_path.empty()) {
         spdlog::warn("[WifiBackend] Cannot verify credential persistence: no -c config path "
                      "found for the running wpa_supplicant (SAVE_CONFIG replied '{}')",
                      save_result);
     } else {
-        spdlog::error("[WifiBackend] Credentials did NOT reach {} (SAVE_CONFIG replied '{}'). "
-                      "This network will be lost on reboot.",
-                      conf_path, save_result);
+        spdlog::warn("[WifiBackend] {} did not record this network (SAVE_CONFIG replied '{}') — "
+                     "saved to HelixScreen's own store instead",
+                     conf_path.empty() ? "wpa_supplicant" : conf_path, save_result);
+        helix::wifi::store::save({clean_ssid, password});
     }
 
     spdlog::info("[WifiBackend] Network configuration complete, connecting to '{}'",
@@ -1314,6 +1658,164 @@ WiFiError WifiBackendWpaSupplicant::disconnect_network() {
         return WiFiError(WiFiResult::BACKEND_ERROR, "wpa_supplicant DISCONNECT failed: " + result,
                          "Failed to disconnect from network");
     }
+}
+
+WiFiError WifiBackendWpaSupplicant::set_radio_enabled(bool on) {
+    if (!is_running())
+        return WiFiError(WiFiResult::NOT_INITIALIZED, "Backend not started",
+                         "WiFi system not ready");
+
+    if (on) {
+        // Unblock first: ENABLE_NETWORK on a soft-blocked radio associates with
+        // nothing and the user sees a toggle that flips back. When a real
+        // rfkill node exists but the unblock write fails, do NOT report
+        // success — that would let the UI claim "on" over a radio that still
+        // can't associate, exactly the bug this backend exists to fix. When
+        // there is no rfkill node at all, this is an intentional quiet
+        // degrade (association-only on/off) — leave that path alone.
+        const auto iface = resolved_interface();
+        const bool has_rfkill_node = iface && !iface->rfkill_node.empty();
+        if (has_rfkill_node && !set_rfkill_soft_block(false)) {
+            LOG_WARN_INTERNAL("Failed to clear rfkill soft-block on {}", iface->rfkill_node);
+            return WiFiError(WiFiResult::RF_KILL_BLOCKED,
+                             "Failed to clear rfkill soft-block on " + iface->rfkill_node,
+                             "Could not turn WiFi radio on");
+        }
+        const std::string enabled = send_command("ENABLE_NETWORK all");
+        if (enabled.compare(0, 2, "OK") != 0)
+            LOG_WARN_INTERNAL("ENABLE_NETWORK all returned: {}", enabled);
+        send_command("RECONNECT");
+        spdlog::info("[WifiBackend] Radio enabled");
+    } else {
+        // Order matters: stop association while we can still talk to the
+        // daemon, then block the radio. Reversed, the DISCONNECT may never
+        // reach a blocked interface.
+        send_command("DISCONNECT");
+        const std::string disabled = send_command("DISABLE_NETWORK all");
+        if (disabled.compare(0, 2, "OK") != 0)
+            LOG_WARN_INTERNAL("DISABLE_NETWORK all returned: {}", disabled);
+        if (!set_rfkill_soft_block(true)) {
+            spdlog::info("[WifiBackend] No rfkill switch — radio off is association-only");
+        }
+        spdlog::info("[WifiBackend] Radio disabled");
+    }
+
+    radio_enabled_ = on;
+    return WiFiErrorHelper::success();
+}
+
+bool WifiBackendWpaSupplicant::is_radio_enabled() const {
+    return radio_enabled_.load();
+}
+
+WiFiError WifiBackendWpaSupplicant::forget_network(const std::string& ssid) {
+    if (!is_running()) {
+        return WiFiError(WiFiResult::NOT_INITIALIZED, "Backend not started",
+                         "WiFi system not ready");
+    }
+
+    std::string clean_ssid = helix::wifi::detail::validate_wpa_string(ssid, "SSID");
+    if (clean_ssid.empty()) {
+        return WiFiError(WiFiResult::INVALID_PARAMETERS,
+                         "SSID contains invalid characters (quotes, control chars, etc.)",
+                         "Invalid network name", "Check that the network name is correct");
+    }
+
+    const std::string network_id =
+        helix::wifi::detail::find_network_id(send_command("LIST_NETWORKS"), clean_ssid);
+
+    // A credential can live ONLY in HelixScreen's own store when SAVE_CONFIG
+    // never reached the vendor's config (see wifi_saved_config.h) — check
+    // both places before declaring "nothing to forget".
+    const auto stored = helix::wifi::store::load();
+    const bool had_store_entry = std::any_of(stored.begin(), stored.end(),
+                                             [&](const auto& n) { return n.ssid == clean_ssid; });
+
+    if (network_id.empty() && !had_store_entry) {
+        spdlog::debug("[WifiBackend] forget_network: no saved entry for '{}'",
+                      helix::redact::ssid(clean_ssid));
+        return WiFiErrorHelper::network_not_found(ssid);
+    }
+
+    if (!network_id.empty()) {
+        const std::string remove_result = send_command("REMOVE_NETWORK " + network_id);
+        if (remove_result != "OK\n") {
+            LOG_ERROR_INTERNAL("Failed to remove network {}: {}", network_id, remove_result);
+            return WiFiError(WiFiResult::BACKEND_ERROR,
+                             "wpa_supplicant REMOVE_NETWORK failed: " + remove_result,
+                             "Failed to forget network");
+        }
+
+        // Same persistence problem connect_network() works around: SAVE_CONFIG's
+        // reply is not proof of anything, and even a genuine write can land on
+        // a volatile path whose persistence symlink a PRIOR SAVE_CONFIG already
+        // replaced (see wifi_saved_config.h — device-verified on a Snapmaker
+        // U1). Without re-checking and mirroring here, a forget on such a
+        // device clears the daemon's live state and the volatile file, while
+        // the persistent file the boot process actually reads still lists the
+        // network — it comes back at the next power cycle, the exact
+        // resurrection bug this whole feature exists to eliminate, reached by
+        // a different route.
+        //
+        // Opposite polarity from connect_network()'s classify_save_result():
+        // there, "OK" means the SSID should now be PRESENT on disk.
+        // classify_save_result() is built around that direction (its
+        // Persisted/NotPersisted pair both describe "is the SSID present"),
+        // so it is the wrong shape to reuse here — a successful forget wants
+        // the SSID ABSENT. wpa_config_has_network() is called directly
+        // instead, on the same re-read config content read_wpa_conf_after_save()
+        // fetches for connect_network() too.
+        const std::string save_result = send_command("SAVE_CONFIG");
+        const auto [conf_path, conf_contents] = read_wpa_conf_after_save();
+
+        if (conf_path.empty()) {
+            spdlog::warn("[WifiBackend] Cannot verify removal persisted: no -c config path "
+                         "found for the running wpa_supplicant (SAVE_CONFIG replied '{}')",
+                         save_result);
+        } else if (!helix::wifi::detail::wpa_config_has_network(conf_contents, clean_ssid)) {
+            spdlog::debug("[WifiBackend] Removal verified on disk at {}", conf_path);
+            mirror_if_volatile(conf_path);
+        } else {
+            spdlog::warn("[WifiBackend] {} still lists '{}' after REMOVE_NETWORK + SAVE_CONFIG "
+                         "(reply '{}') — the daemon dropped it from memory but the on-disk "
+                         "config was not updated; it may reappear at the next boot",
+                         conf_path, helix::redact::ssid(clean_ssid), save_result);
+        }
+    }
+
+    // Drop from HelixScreen's own store too, regardless of whether wpa_supplicant
+    // had an entry — reconcile_saved_networks() re-adds anything left in the
+    // store at the next backend init (every boot), which would silently undo
+    // this forget the moment the printer power-cycles.
+    helix::wifi::store::remove(clean_ssid);
+
+    spdlog::info("[WifiBackend] Forgot network '{}'", helix::redact::ssid(clean_ssid));
+    return WiFiErrorHelper::success();
+}
+
+bool WifiBackendWpaSupplicant::set_rfkill_soft_block(bool blocked) {
+    const auto iface = resolved_interface();
+    if (!iface || iface->rfkill_node.empty())
+        return false;
+
+    const std::string path = iface->rfkill_node + "/soft";
+    std::ofstream f(path);
+    if (!f.is_open()) {
+        spdlog::debug("[WifiBackend] Cannot open {} — no rfkill control", path);
+        return false;
+    }
+    f << (blocked ? "1" : "0");
+    // operator<< only formats into the stream's userspace buffer — it does
+    // not by itself trigger the write(2) into the sysfs node. Force that now
+    // and check the state AFTER the flush, or a real write failure (denied
+    // permission, driver quirk) reads as success because formatting always
+    // succeeds.
+    f.flush();
+    if (!f.good()) {
+        spdlog::debug("[WifiBackend] Write to {} failed", path);
+        return false;
+    }
+    return true;
 }
 
 WifiBackend::ConnectionStatus WifiBackendWpaSupplicant::get_status() {

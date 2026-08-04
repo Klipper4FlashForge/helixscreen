@@ -75,6 +75,11 @@
                 <text_body name="ssid_label" bind_text="connected_ssid"/>
                 <lv_obj height="1" flex_grow="1" scrollable="false"/>
                 <icon src="wifi_strength_4" size="sm" variant="primary"/>
+                <!-- Forget the currently connected network (with confirmation) -->
+                <icon name="forget_network_icon"
+                      src="trash_can_outline" size="sm" variant="danger" clickable="true" style_pad_all="#space_xs">
+                  <event_cb trigger="clicked" callback="on_network_settings_forget"/>
+                </icon>
               </lv_obj>
               <!-- IP Address -->
               <lv_obj width="100%"

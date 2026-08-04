@@ -7,7 +7,9 @@
 
 #include <atomic>
 #include <map>
+#include <optional>
 #include <random>
+#include <set>
 #include <thread>
 
 /**
@@ -63,13 +65,25 @@ class WifiBackendMock : public WifiBackend {
     WiFiError get_scan_results(std::vector<WiFiNetwork>& networks) override;
     WiFiError connect_network(const std::string& ssid, const std::string& password) override;
     WiFiError disconnect_network() override;
+    WiFiError set_radio_enabled(bool on) override;
+    bool is_radio_enabled() const override;
     ConnectionStatus get_status() override;
     bool supports_5ghz() const override;
+    WiFiError forget_network(const std::string& ssid) override;
+    std::optional<helix::wifi::WifiInterface> resolved_interface() const override;
 
     // Test helpers — allow test code to drive state directly without going
     // through the simulated async connect/disconnect flow.
     void set_connected_state(bool connected, const std::string& ssid = "",
                              const std::string& ip = "", int signal = 0);
+
+    /// Test helper — stands in for real interface resolution (which this
+    /// backend never performs on its own) so tests can exercise callers that
+    /// branch on resolved_interface(), e.g. WiFiManager's stranding-prevention
+    /// gate (Task 15). Defaults to nullopt, same as the base class.
+    void set_resolved_interface_for_test(std::optional<helix::wifi::WifiInterface> iface) {
+        resolved_interface_ = std::move(iface);
+    }
 
   private:
     // ========================================================================
@@ -81,6 +95,8 @@ class WifiBackendMock : public WifiBackend {
     std::string connected_ssid_;
     std::string connected_ip_;
     int connected_signal_;
+    bool radio_enabled_{true};
+    std::optional<helix::wifi::WifiInterface> resolved_interface_;
 
     // Event system
     std::map<std::string, std::function<void(const std::string&)>> callbacks_;
@@ -94,6 +110,14 @@ class WifiBackendMock : public WifiBackend {
     // Mock networks (realistic variety with passwords)
     std::vector<MockWiFiNetwork> mock_networks_;
     std::mt19937 rng_; // Random number generator for signal variations
+
+    // SSIDs "saved" by a connect_network() call, standing in for wpa_supplicant's
+    // own network list — forget_network() checks and clears this set the same
+    // way the real backend checks LIST_NETWORKS. Recorded synchronously in
+    // connect_network() rather than only after the simulated connect delay
+    // completes, mirroring how the real backend's SAVE_CONFIG happens before
+    // the CONNECTED event.
+    std::set<std::string> saved_networks_;
 
     // ========================================================================
     // Internal Helpers

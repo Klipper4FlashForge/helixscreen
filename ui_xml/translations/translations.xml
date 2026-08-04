@@ -898,6 +898,8 @@
   <translation tag="Follow active tool" de="Aktivem Werkzeug folgen" en="Follow active tool" es="Seguir herramienta activa" fr="Suivre l&apos;outil actif" it="Segui strumento attivo" ja="アクティブツールに追従" pt="Seguir ferramenta ativa" ru="Следовать активному инструменту" zh="跟随当前工具"/>
   <translation tag="Follow graph screen" de="Diagrammbildschirm folgen" en="Follow graph screen" es="Seguir pantalla del gráfico" fr="Suivre l&apos;écran du graphique" it="Segui schermata grafico" ja="グラフ画面に追従" pt="Acompanhar tela do gráfico" ru="Следовать экрану графика" zh="跟随图表屏幕"/>
   <translation tag="Forget" de="Vergessen" en="Forget" es="Olvidar" fr="Oublier" it="Dimentica" ja="登録解除" pt="Esquecer" ru="Забыть" zh="忘记"/>
+  <translation tag="Forget Network?" en="Forget Network?"/>
+  <translation tag="Forget network &apos;{}&apos;? You will need the password to reconnect." en="Forget network &apos;{}&apos;? You will need the password to reconnect."/>
   <translation tag="Forming Tip" de="Spitze formen" en="Forming Tip" es="Formando punta" fr="Formage de pointe" it="Formazione punta" ja="チップ形成中" pt="Formando ponta" ru="Формирование кончика" zh="形成尖端"/>
   <translation tag="Forming tip..." de="Spitze wird geformt..." en="Forming tip..." es="Formando punta..." fr="Formation de la pointe..." it="Formazione punta..." ja="チップを形成中..." pt="Formando ponta..." ru="Формирование кончика..." zh="正在成型尖端..."/>
   <translation tag="Found %zu printers" de="%zu Drucker gefunden" en="Found %zu printers" es="%zu impresoras encontradas" fr="%zu imprimantes trouvées" it="%zu stampanti trovate" ja="%zu台のプリンターを検出" pt="%zu impressoras encontradas" ru="Найдено %zu принтеров" zh="找到 %zu 台打印机"/>
@@ -1279,6 +1281,7 @@
   <translation tag="Network Name (SSID)" de="Netzwerkname (SSID)" en="Network Name (SSID)" es="Nombre de Red (SSID)" fr="Nom du réseau (SSID)" it="Nome rete (SSID)" ja="ネットワーク名 (SSID)" pt="Nome da Rede (SSID)" ru="Название сети (SSID)" zh="网络名称 (SSID)"/>
   <translation tag="Network Settings" de="Netzwerkeinstellungen" en="Network Settings" es="Configuración de Red" fr="Paramètres réseau" it="Impostazioni rete" ja="ネットワーク設定" pt="Configurações de Rede" ru="Сетевые настройки" zh="网络设置"/>
   <translation tag="Network Test" de="Netzwerktest" en="Network Test" es="Prueba de Red" fr="Test réseau" it="Test rete" ja="ネットワークテスト" pt="Teste de Rede" ru="Тест сети" zh="网络测试"/>
+  <translation tag="Network forgotten" en="Network forgotten"/>
   <translation tag="Network name cannot be empty" de="Netzwerkname darf nicht leer sein" en="Network name cannot be empty" es="El nombre de red no puede estar vacío" fr="Le nom du réseau ne peut pas être vide" it="Il nome della rete non può essere vuoto" ja="ネットワーク名は空にできません" pt="O nome da rede não pode estar vazio" ru="Имя сети не может быть пустым" zh="网络名称不能为空"/>
   <translation tag="Never" de="Nie" en="Never" es="Nunca" fr="Jamais" it="Mai" ja="なし" pt="Nunca" ru="Никогда" zh="从不"/>
   <translation tag="New Spool: Step 1 of 3" de="Neue Spule: Schritt 1 von 3" en="New Spool: Step 1 of 3" es="Nueva Bobina: Paso 1 de 3" fr="Nouvelle bobine : Étape 1 sur 3" it="Nuova bobina: Passo 1 di 3" ja="新しいスプール: ステップ 1 / 3" pt="Nova Bobina: Etapa 1 de 3" ru="Новая катушка: Шаг 1 из 3" zh="新料盘：步骤 1 / 3"/>

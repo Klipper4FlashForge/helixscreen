@@ -52,6 +52,16 @@ class WiFiManagerTestAccess {
     static bool os_link_up() {
         return WiFiManager::os_link_up();
     }
+    // Stops the backend directly, bypassing set_enabled()'s radio-only
+    // semantics (helixscreen wifi-interface-identity task 6: set_enabled(false)
+    // now disables the radio and keeps the backend/control-connection alive,
+    // so it no longer forces trigger_scan() into a NOT_INITIALIZED failure).
+    // Tests that need that specific failure path reach in here instead.
+    static void stop_backend(WiFiManager& wm) {
+        if (wm.backend_) {
+            wm.backend_->stop();
+        }
+    }
 };
 } // namespace helix
 
@@ -219,6 +229,13 @@ struct OsLinkBehaviorFixture {
     }
 
     ~OsLinkBehaviorFixture() {
+        // A WiFiManager built by make_manager() fires READY synchronously
+        // (mock backend), which now always queues a
+        // WiFiManager::reassert_stored_radio_state closure via
+        // async_lifetime_.defer(). Drain here — before UpdateQueue's state
+        // outlives this fixture — so it can't leak into the next test.
+        // See scripts/check_update_queue_leaks.py.
+        helix::ui::UpdateQueue::instance().drain();
         rc->test_mode = prev_test_mode;
         rc->use_real_wifi = prev_use_real_wifi;
         helix::WiFiManagerTestAccess::reset_os_link_probe();
@@ -264,8 +281,11 @@ TEST_CASE("start_scan with OS link up suppresses the scan-failed user warning",
     // Stop the backend so trigger_scan() fails synchronously with
     // NOT_INITIALIZED — exactly the boot-race path that emits "WiFi scan
     // failed. Try again." (the constructor's start_async() leaves the mock
-    // running, which would otherwise let the scan succeed).
-    wm->set_enabled(false);
+    // running, which would otherwise let the scan succeed). set_enabled(false)
+    // no longer does this itself — it now only toggles the radio and leaves
+    // the backend/control-connection running (helixscreen wifi-interface-identity
+    // task 6) — so reach past it directly for this specific failure path.
+    helix::WiFiManagerTestAccess::stop_backend(*wm);
     REQUIRE_FALSE(wm->is_enabled());
 
     // With the OS link reported up, the scan-failed warning MUST be suppressed.

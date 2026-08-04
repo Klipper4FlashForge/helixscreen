@@ -54,7 +54,8 @@ from typing import Iterable
 # never leave the machine.
 LOG_CALL_RE = re.compile(
     r"\b(?:spdlog::(?:debug|info|warn|warning|error|critical)"
-    r"|LOG_(?:ERROR|WARN)_INTERNAL)\s*\(",
+    r"|LOG_(?:ERROR|WARN)_INTERNAL"
+    r"|NOTIFY_(?:ERROR|WARNING|INFO|SUCCESS)(?:_T|_MODAL)?)\s*\(",
 )
 
 # Identifiers whose value is network-identifying. Matched against the argument

@@ -20,6 +20,8 @@
 #include "lvgl/lvgl.h"
 #include "safe_log.h"
 #include "spdlog/spdlog.h"
+#include "system_settings_manager.h"
+#include "wifi_interface.h"
 #include "wifi_ui_utils.h"
 
 #if !defined(__APPLE__) && !defined(__ANDROID__)
@@ -43,6 +45,10 @@ std::function<bool()> WiFiManager::os_link_probe_ = []() {
 bool WiFiManager::os_link_up() {
     return os_link_probe_ && os_link_probe_();
 }
+
+// Overridable in tests via WiFiManagerTestAccess so has_non_wifi_network_path()
+// can be pointed at a fixture tree instead of the real /sys.
+std::string WiFiManager::sys_root_ = "/sys";
 
 // ============================================================================
 // Constructor / Destructor
@@ -75,6 +81,29 @@ WiFiManager::WiFiManager(bool silent) : scan_timer_(nullptr), scan_pending_(fals
     backend_->start_async();
 }
 
+WiFiManager::WiFiManager(std::unique_ptr<WifiBackend> backend, bool silent)
+    : scan_timer_(nullptr), scan_pending_(false) {
+    spdlog::debug("[WiFiManager] Initializing with injected backend{}",
+                  silent ? " (silent mode)" : "");
+
+    backend_ = std::move(backend);
+    if (!backend_) {
+        if (!silent) {
+            NOTIFY_ERROR_MODAL("WiFi Unavailable",
+                               "Could not initialize WiFi hardware. Check system configuration.");
+        } else {
+            spdlog::debug("[WiFiManager] WiFi unavailable (silent mode - no modal)");
+        }
+        return;
+    }
+
+    // Same bringup sequence as the platform-selecting constructor: register
+    // handlers before kicking off async init so no READY / INIT_FAILED event
+    // is missed.
+    register_backend_callbacks(silent);
+    backend_->start_async();
+}
+
 void WiFiManager::register_backend_callbacks(bool silent) {
     backend_->register_event_callback(
         "SCAN_COMPLETE", [this](const std::string& data) { handle_scan_complete(data); });
@@ -93,6 +122,69 @@ void WiFiManager::register_backend_callbacks(bool silent) {
         // load, races the backend's worker thread, and gets an empty STATUS
         // response that pins it on 'Disconnected' until this event lands.
         notify_state_observers();
+
+        // A radio the user switched off must not come back on because the
+        // process restarted. Reassert the stored choice once the backend can
+        // act on it. READY fires on a background thread (the backend's init
+        // worker — see the INIT_FAILED handling above), and both
+        // get_wifi_enabled() (reads an lv_subject_t) and set_radio_enabled()
+        // must not run there, so defer through async_lifetime_ the same way
+        // the NetworkManager fallback above does.
+        //
+        // CC1 incident (Task 15): on a device whose only network path is this
+        // radio, reasserting "off" is a one-way door — a reboot clears the
+        // rfkill soft-block, but the watchdog restarts HelixScreen, which reads
+        // the stored setting and blocks the radio again. The device can never
+        // be reached remotely again. Only reassert "off" when a non-WiFi
+        // network path (wired or otherwise) is actually up. When resolution of
+        // the WiFi interface itself is inconclusive, fail safe: treat it the
+        // same as "no known wired fallback" and do not disable the radio.
+        async_lifetime_.defer("WiFiManager::reassert_stored_radio_state", [this]() {
+            const bool want_on = SystemSettingsManager::instance().get_wifi_enabled();
+            if (!want_on && backend_) {
+                const auto iface = backend_->resolved_interface();
+                const bool safe_to_disable =
+                    iface.has_value() &&
+                    helix::wifi::detail::has_non_wifi_network_path(sys_root_, iface->netdev);
+
+                if (safe_to_disable) {
+                    spdlog::info("[WiFiManager] Stored setting is WiFi off — reasserting");
+                    backend_->set_radio_enabled(false);
+                } else {
+                    // Radio stays on. Leaving wifi_enabled at its stored
+                    // false would show "off" in the UI over a working
+                    // connection — exactly the class of state lie this whole
+                    // branch exists to eliminate. Correct the stored value to
+                    // match reality rather than silently preserving a choice
+                    // we have deliberately declined to apply.
+                    spdlog::warn(
+                        "[WiFiManager] Stored setting is WiFi off, but no non-WiFi network "
+                        "path was found (interface resolution {}) — refusing to disable the "
+                        "radio to avoid stranding the device. Correcting stored setting to on.",
+                        iface.has_value() ? "succeeded" : "inconclusive");
+                    SystemSettingsManager::instance().set_wifi_enabled(true);
+                    if (!backend_->is_radio_enabled()) {
+                        backend_->set_radio_enabled(true);
+                    }
+                }
+            } else if (want_on && backend_ && !backend_->is_radio_enabled()) {
+                // Mirror image of the off-reassert above: the stored setting
+                // is on, but the radio itself is soft-blocked — e.g. a stale
+                // rfkill soft-block from a previous run, or one this same
+                // process created before commit 8aaac4e78 made a soft block
+                // non-fatal at startup instead of aborting init entirely.
+                // is_radio_enabled() is now seeded from hardware
+                // (<rfkill>/soft) during resolve_and_store_interface(), so it
+                // reflects reality here rather than a hopeful default. A
+                // device left in this state before that fix stays radio-dead
+                // until someone physically taps the touchscreen (Task 15,
+                // CC1) — clear the stale block automatically instead.
+                spdlog::info("[WiFiManager] Stored setting is WiFi on, but the radio was "
+                             "soft-blocked — clearing the stale block to match the stored "
+                             "preference");
+                backend_->set_radio_enabled(true);
+            }
+        });
     });
 }
 
@@ -142,6 +234,15 @@ void WiFiManager::handle_init_failed(bool silent, const std::string& msg) {
 void WiFiManager::init_self_reference(std::shared_ptr<WiFiManager> self) {
     self_ = self;
     spdlog::debug("[WiFiManager] Self-reference initialized for async callback safety");
+}
+
+bool WiFiManager::has_non_wifi_fallback() {
+    if (!backend_) {
+        return false;
+    }
+    const auto iface = backend_->resolved_interface();
+    return iface.has_value() &&
+           helix::wifi::detail::has_non_wifi_network_path(sys_root_, iface->netdev);
 }
 
 WiFiManager::~WiFiManager() {
@@ -221,14 +322,24 @@ void WiFiManager::start_scan(
     }
     spdlog::debug("[WiFiManager] Scan callback registered");
 
-    spdlog::info("[WiFiManager] Starting periodic network scan (every 7 seconds)");
+    spdlog::info("[WiFiManager] Starting periodic network scan (interval backs off {}ms-{}ms)",
+                 helix::wifi::ScanScheduler::kBaseIntervalMs,
+                 helix::wifi::ScanScheduler::kMaxIntervalMs);
+
+    // A fresh scan session (e.g. the user opening network settings) is a
+    // manual refresh: clear any suppression/backoff left over from a prior
+    // session and start this one's timer at the base interval. Safe to call
+    // directly — start_scan() runs on the main/LVGL thread.
+    scan_scheduler_.on_user_refresh();
 
     // Create timer for periodic scanning
-    scan_timer_ = lv_timer_create(scan_timer_callback, 7000, this);
+    scan_timer_ =
+        lv_timer_create(scan_timer_callback, helix::wifi::ScanScheduler::kBaseIntervalMs, this);
     spdlog::debug("[WiFiManager] Timer created: {}", (void*)scan_timer_);
 
     // Trigger immediate scan
     spdlog::debug("[WiFiManager] About to trigger initial scan");
+    scan_scheduler_.on_scan_started();
     {
         std::lock_guard<std::mutex> lock(callback_mutex_);
         scan_pending_ = true; // Mark scan as pending - cleared after first SCAN_COMPLETE processed
@@ -239,6 +350,17 @@ void WiFiManager::start_scan(
             std::lock_guard<std::mutex> lock(callback_mutex_);
             scan_pending_ = false;
         }
+        // trigger_scan() failed synchronously — no SCAN_COMPLETE event will
+        // ever arrive for this attempt, so resolve the scheduler now instead
+        // of leaving scan_outstanding_ stuck true forever, which would
+        // permanently block should_trigger(). Deliberately on_scan_failed(),
+        // NOT on_scan_complete(0, ...): a failed trigger is not evidence the
+        // network stopped changing, and feeding it through on_scan_complete
+        // would let repeated failures (e.g. a wedged control socket while
+        // still associated) drive unchanged_streak_ to 2 and suppress
+        // scanning permanently — exactly backwards for the case this exists
+        // to diagnose.
+        scan_scheduler_.on_scan_failed();
         // If the OS reports the wireless link is actually up, the managed
         // backend simply can't reach its control socket (the link is system-
         // managed and live). Nagging the user with a failure toast is wrong —
@@ -271,6 +393,17 @@ void WiFiManager::stop_scan() {
 void WiFiManager::scan_timer_callback(lv_timer_t* timer) {
     WiFiManager* manager = static_cast<WiFiManager*>(lv_timer_get_user_data(timer));
     if (manager && manager->backend_) {
+        // Ask the scheduler whether this tick should actually scan: a scan
+        // already in flight, or the results having gone stable while
+        // connected, both mean "not yet". This runs on the main/LVGL
+        // thread (the lv_timer callback), same as scan_scheduler_'s owner.
+        if (!manager->scan_scheduler_.should_trigger()) {
+            spdlog::trace("[WiFiManager] Periodic scan tick skipped (suppressed={})",
+                          manager->scan_scheduler_.suppressed());
+            return;
+        }
+        manager->scan_scheduler_.on_scan_started();
+
         // Trigger scan - results will arrive via SCAN_COMPLETE event
         {
             std::lock_guard<std::mutex> lock(manager->callback_mutex_);
@@ -281,6 +414,15 @@ void WiFiManager::scan_timer_callback(lv_timer_t* timer) {
             {
                 std::lock_guard<std::mutex> lock(manager->callback_mutex_);
                 manager->scan_pending_ = false;
+            }
+            // As in start_scan(): a synchronous trigger failure gets no
+            // SCAN_COMPLETE, so resolve the scheduler now (on_scan_failed(),
+            // not on_scan_complete(0, ...) — see start_scan()'s comment) or
+            // should_trigger() stays false forever.
+            manager->scan_scheduler_.on_scan_failed();
+            if (manager->scan_timer_) {
+                lv_timer_set_period(manager->scan_timer_,
+                                    manager->scan_scheduler_.next_interval_ms());
             }
             LOG_WARN_INTERNAL("Periodic scan failed: {}", result.technical_msg);
             // Self-heal: a NOT_INITIALIZED scan means the backend never came up
@@ -326,7 +468,7 @@ void WiFiManager::connect(const std::string& ssid, const std::string& password,
     // Use backend's connect method
     WiFiError result = backend_->connect_network(ssid, password);
     if (!result.success()) {
-        NOTIFY_ERROR("Failed to connect to WiFi network '{}'", ssid);
+        NOTIFY_ERROR("Failed to connect to WiFi network '{}'", helix::redact::ssid(ssid));
         // Clear in-progress + take the callback under the lock, then invoke the
         // local copy OUTSIDE the lock (the callback may re-enter WiFiManager).
         std::function<void(bool, const std::string&)> cb;
@@ -353,6 +495,40 @@ void WiFiManager::disconnect() {
     WiFiError result = backend_->disconnect_network();
     if (!result.success()) {
         NOTIFY_WARNING("Could not disconnect from WiFi");
+    }
+}
+
+void WiFiManager::forget(const std::string& ssid,
+                         std::function<void(bool success, const std::string& error)> on_complete) {
+    if (!backend_) {
+        NOTIFY_ERROR("WiFi unavailable. Cannot forget network.");
+        if (on_complete) {
+            on_complete(false, "No WiFi backend available");
+        }
+        return;
+    }
+
+    spdlog::info("[WiFiManager] Forgetting '{}'", helix::redact::ssid(ssid));
+
+    WiFiError result = backend_->forget_network(ssid);
+    if (!result.success()) {
+        // NETWORK_NOT_FOUND is not a failure the user caused — nothing was
+        // there to forget, so it does not warrant an error toast the way a
+        // genuine backend failure does.
+        if (result.result != WiFiResult::NETWORK_NOT_FOUND) {
+            // NOTIFY_ERROR ultimately reaches spdlog::error, which is persisted
+            // and swept into debug bundles — redact the SSID the same as every
+            // other log line in this file.
+            NOTIFY_ERROR("Failed to forget WiFi network '{}'", helix::redact::ssid(ssid));
+        }
+        if (on_complete) {
+            on_complete(false, result.user_msg.empty() ? result.technical_msg : result.user_msg);
+        }
+        return;
+    }
+
+    if (on_complete) {
+        on_complete(true, "");
     }
 }
 
@@ -419,7 +595,7 @@ bool WiFiManager::has_hardware() {
 bool WiFiManager::is_enabled() {
     if (!backend_)
         return false;
-    return backend_->is_running();
+    return backend_->is_running() && backend_->is_radio_enabled();
 }
 
 bool WiFiManager::set_enabled(bool enabled) {
@@ -428,34 +604,38 @@ bool WiFiManager::set_enabled(bool enabled) {
 
     spdlog::debug("[WiFiManager] set_enabled({})", enabled);
 
-    if (enabled) {
-        // Explicit user toggle — synchronous start() is acceptable here
-        // (user already gated on the click; brief subprocess probing is OK).
-        // The non-blocking path lives in the constructor so first-paint
-        // isn't stalled.
-        WiFiError result = backend_->start();
-        if (!result.success()) {
-            // A live system-managed link (printer reachable by IP) means the
-            // backend just can't reach wpa_supplicant's control socket; the
-            // radio is not actually off. Don't surface a hard error toast for
-            // an unmanageable-but-up link (helixscreen#1059).
-            if (os_link_up()) {
-                spdlog::debug("[WiFiManager] Backend start failed but OS link is up "
-                              "(system-managed) — suppressing user error: {}",
-                              result.user_msg.empty() ? result.technical_msg : result.user_msg);
-            } else {
-                NOTIFY_ERROR("Failed to enable WiFi: {}",
-                             result.user_msg.empty() ? result.technical_msg : result.user_msg);
-            }
-        } else {
-            spdlog::debug("[WiFiManager] WiFi backend started successfully");
-        }
-        return result.success();
-    } else {
-        backend_->stop();
-        spdlog::debug("[WiFiManager] WiFi backend stopped");
-        return true;
+    if (!enabled) {
+        // Stop scanning — the timer must not keep firing trigger_scan()
+        // against a radio we just turned off.
+        stop_scan();
     }
+
+    // Radio on/off, NOT backend start()/stop(). stop() tears down the control
+    // connection to wpa_supplicant entirely, so a subsequent STATUS has
+    // nothing to query — every later call logs "send_command called but not
+    // connected to wpa_supplicant" and the UI can't even report the radio is
+    // off, let alone turn it back on. set_radio_enabled() actually asserts
+    // the interface down (or blocks it via rfkill) while keeping the control
+    // socket alive.
+    WiFiError result = backend_->set_radio_enabled(enabled);
+    if (!result.success()) {
+        // A live system-managed link (printer reachable by IP) means the
+        // backend just can't reach wpa_supplicant's control socket; the
+        // radio is not actually off. Don't surface a hard error toast for
+        // an unmanageable-but-up link (helixscreen#1059).
+        if (os_link_up()) {
+            spdlog::debug("[WiFiManager] Radio {} failed but OS link is up "
+                          "(system-managed) — suppressing user error: {}",
+                          enabled ? "enable" : "disable",
+                          result.user_msg.empty() ? result.technical_msg : result.user_msg);
+        } else {
+            NOTIFY_ERROR("Failed to {} WiFi: {}", enabled ? "enable" : "disable",
+                         result.user_msg.empty() ? result.technical_msg : result.user_msg);
+        }
+    } else {
+        spdlog::debug("[WiFiManager] WiFi radio {}", enabled ? "enabled" : "disabled");
+    }
+    return result.success();
 }
 
 void WiFiManager::retry_async() {
@@ -518,6 +698,18 @@ void WiFiManager::handle_scan_complete(const std::string& event_data) {
 
                 // Safely check if manager still exists
                 if (auto manager = data->manager.lock()) {
+                    // ScanScheduler is main/LVGL-thread-only state; this lambda
+                    // runs there (dispatched via queue_update), so touching it
+                    // directly is safe. Feed the scan cadence policy the result
+                    // count and current connection state, then apply whatever
+                    // interval it decides on to the live timer.
+                    manager->scan_scheduler_.on_scan_complete(data->networks.size(),
+                                                              manager->is_connected());
+                    if (manager->scan_timer_) {
+                        lv_timer_set_period(manager->scan_timer_,
+                                            manager->scan_scheduler_.next_interval_ms());
+                    }
+
                     std::function<void(const std::vector<WiFiNetwork>&)> cb;
                     {
                         std::lock_guard<std::mutex> lock(manager->callback_mutex_);
@@ -545,6 +737,18 @@ void WiFiManager::handle_scan_complete(const std::string& event_data) {
             [](ScanCallbackData* data) {
                 LOG_WARN_INTERNAL("async_call: calling callback with empty results");
                 if (auto manager = data->manager.lock()) {
+                    // Couldn't fetch results even though the trigger/scan
+                    // itself succeeded — still an unresolved attempt, not
+                    // evidence the network is stable. on_scan_failed(), not
+                    // on_scan_complete(0, ...) — see start_scan()'s comment
+                    // for why folding this into a zero-result complete would
+                    // corrupt the suppression state machine.
+                    manager->scan_scheduler_.on_scan_failed();
+                    if (manager->scan_timer_) {
+                        lv_timer_set_period(manager->scan_timer_,
+                                            manager->scan_scheduler_.next_interval_ms());
+                    }
+
                     std::function<void(const std::vector<WiFiNetwork>&)> cb;
                     {
                         std::lock_guard<std::mutex> lock(manager->callback_mutex_);
@@ -642,6 +846,34 @@ void WiFiManager::handle_disconnected(const std::string& event_data) {
 
     // Genuine disconnect — wake passive observers so they can refresh UI state.
     notify_state_observers();
+
+    // A new network (or no network) is a new environment worth re-learning,
+    // so drop any backoff/suppression from the last one. ScanScheduler is
+    // main/LVGL-thread-only state and handle_disconnected() runs on the
+    // backend thread, so dispatch rather than touching it here.
+    //
+    // Only bother if self_ is wired (set once by init_self_reference() and
+    // never mutated again, so reading it here unsynchronized is the same
+    // established pattern ScanCallbackData/ConnectCallbackData already rely
+    // on). Without it the queued lambda can never resolve to a live manager
+    // anyway — and skipping the enqueue matters concretely: backend_->stop()
+    // in the destructor fires this same DISCONNECTED path synchronously,
+    // with scan_timer_ already torn down and self_ never set in tests that
+    // construct WiFiManager directly (self_ is singleton-only), so an
+    // unconditional enqueue there outlives the test with nothing left to
+    // drain it — an UpdateQueue isolation leak.
+    if (self_) {
+        std::weak_ptr<WiFiManager> weak_self = self_;
+        helix::ui::queue_update("WiFiManager::handle_disconnected(scan_scheduler)", [weak_self]() {
+            if (auto manager = weak_self.lock()) {
+                manager->scan_scheduler_.on_disconnected();
+                if (manager->scan_timer_) {
+                    lv_timer_set_period(manager->scan_timer_,
+                                        manager->scan_scheduler_.next_interval_ms());
+                }
+            }
+        });
+    }
 
     bool has_callback;
     {

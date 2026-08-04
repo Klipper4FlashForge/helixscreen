@@ -6,6 +6,7 @@
 #include "async_lifetime_guard.h"
 #include "lvgl/lvgl.h"
 #include "wifi_backend.h"
+#include "wifi_scan_scheduler.h"
 
 #include <functional>
 #include <memory>
@@ -42,6 +43,23 @@ class WiFiManager {
     explicit WiFiManager(bool silent = false);
 
     /**
+     * @brief Initialize WiFi manager with an injected backend (test seam)
+     *
+     * Bypasses WifiBackend::create() platform selection and runs the same
+     * callback-registration + start_async() bringup as the default
+     * constructor against the given backend. Lets tests exercise
+     * WiFiManager against a WifiBackendMock instance they retain a raw
+     * pointer to, instead of going through RuntimeConfig's mock-selection
+     * plumbing.
+     *
+     * @param backend Backend to own and drive; must be non-null
+     * @param silent  If true, suppress error modals (defaults to true here —
+     *                tests are the only caller and generally don't want
+     *                modal side effects)
+     */
+    explicit WiFiManager(std::unique_ptr<WifiBackend> backend, bool silent = true);
+
+    /**
      * @brief Destructor - ensures clean shutdown
      */
     ~WiFiManager();
@@ -64,7 +82,10 @@ class WiFiManager {
      * @brief Start periodic network scanning
      *
      * Scans for available networks and invokes callback with results.
-     * Scanning continues automatically every 7 seconds until stop_scan() called.
+     * Scanning continues automatically, on an interval that backs off from
+     * ScanScheduler::kBaseIntervalMs up to ScanScheduler::kMaxIntervalMs as
+     * results stay unchanged (and suppresses entirely once connected and
+     * stable), until stop_scan() is called. See ScanScheduler.
      *
      * @param on_networks_updated Callback invoked with scan results
      */
@@ -98,6 +119,22 @@ class WiFiManager {
      * @brief Disconnect from current network
      */
     void disconnect();
+
+    /**
+     * @brief Forget (permanently remove) a saved network
+     *
+     * Unlike the REMOVE_NETWORK cleanup issued internally elsewhere as a
+     * connect-failure rollback, this is a real, user-initiated forget:
+     * removes the credential from wherever the backend persists it (vendor
+     * config, HelixScreen's own credential store, or both), synchronously,
+     * then reports the outcome.
+     *
+     * @param ssid Network name to forget
+     * @param on_complete Callback with (success, error). error is empty on
+     *                     success.
+     */
+    void forget(const std::string& ssid,
+                std::function<void(bool success, const std::string& error)> on_complete);
 
     // ========================================================================
     // Status Queries
@@ -165,7 +202,9 @@ class WiFiManager {
     /**
      * @brief Check if WiFi is currently enabled
      *
-     * @return true if backend is running
+     * @return true if the backend is running AND the radio is on (not
+     *         rfkill-blocked / soft-disabled) — see WifiBackend::is_running()
+     *         and WifiBackend::is_radio_enabled().
      */
     bool is_enabled();
 
@@ -217,6 +256,20 @@ class WiFiManager {
      */
     void init_self_reference(std::shared_ptr<WiFiManager> self);
 
+    /**
+     * @brief True when this device has a working non-WiFi network path (wired
+     *        or otherwise) it could fall back to if the radio were turned off.
+     *
+     * The same safety check the backend's READY handler uses to decide
+     * whether a stored "off" is safe to reassert at startup (see
+     * register_backend_callbacks()) — exposed here so UI callers can gate a
+     * *live* radio-off toggle the same way and warn the user instead of
+     * silently stranding a WiFi-only device (the CC1 incident, Task 15).
+     * Returns false whenever interface resolution is inconclusive: fail
+     * safe, same as the startup path.
+     */
+    bool has_non_wifi_fallback();
+
   private:
     // Grants the auth-failure-debounce regression test direct access to the
     // connection handlers and grace-timer state (helixscreen#1050).
@@ -247,14 +300,27 @@ class WiFiManager {
 
     // Scanning state
     lv_timer_t* scan_timer_;
-    std::function<void(const std::vector<WiFiNetwork>&)> scan_callback_; // guarded by callback_mutex_
+    std::function<void(const std::vector<WiFiNetwork>&)>
+        scan_callback_; // guarded by callback_mutex_
     bool scan_pending_; // guarded by callback_mutex_; true when scan triggered, cleared after first
-                        // SCAN_COMPLETE processed
+                        // SCAN_COMPLETE processed — dedupes duplicate SCAN_COMPLETE events for
+                        // the same trigger. Distinct concern from scan_scheduler_ below (which
+                        // decides whether to START a new scan); the two cannot disagree because
+                        // scan_pending_ is only ever read/written on the backend thread while
+                        // scan_scheduler_ is only ever touched on the main/LVGL thread.
+
+    // Scan cadence policy (no-overlap / backoff / suppression). Pure state
+    // machine — see wifi_scan_scheduler.h. Touched ONLY on the main/LVGL
+    // thread: from start_scan()/scan_timer_callback() directly (already
+    // main-thread), and from handle_scan_complete()/handle_disconnected()
+    // indirectly via helix::ui::queue_update() dispatch, since those two
+    // fire on the backend thread and scan_scheduler_ is not mutex-guarded.
+    helix::wifi::ScanScheduler scan_scheduler_;
 
     // Connection state
     std::function<void(bool, const std::string&)> connect_callback_; // guarded by callback_mutex_
-    bool connecting_in_progress_ = false; // guarded by callback_mutex_; true during connect attempt,
-                                          // prevents false failure on DISCONNECTED
+    bool connecting_in_progress_ = false; // guarded by callback_mutex_; true during connect
+                                          // attempt, prevents false failure on DISCONNECTED
 
     // Auth-failure debounce (helixscreen#1050). Some adapters' wpa_supplicant emit a
     // transient CTRL-EVENT-SSID-TEMP-DISABLED/WRONG_KEY mid-handshake on a connect that
@@ -309,6 +375,12 @@ class WiFiManager {
     // real sysfs/proc probe; tests inject a stub via WiFiManagerTestAccess.
     static std::function<bool()> os_link_probe_;
     static bool os_link_up();
+
+    // Sysfs root used by has_non_wifi_network_path() to gate the stored-radio
+    // -state reassert (Task 15: never disable the radio on a device whose
+    // only network path is that radio). Defaults to "/sys"; tests point it at
+    // a fixture tree via WiFiManagerTestAccess.
+    static std::string sys_root_;
 };
 
 /**

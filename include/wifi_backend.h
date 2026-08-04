@@ -13,9 +13,12 @@
 
 #pragma once
 
+#include "wifi_interface.h"
+
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -374,6 +377,74 @@ class WifiBackend {
      * @return WiFiError with detailed status information
      */
     virtual WiFiError disconnect_network() = 0;
+
+    /**
+     * @brief Enable or disable the WiFi radio itself
+     *
+     * Distinct from stop(), which only detaches this process from the WiFi
+     * subsystem. Before this existed the UI toggle called stop() and the
+     * station stayed associated and routed — a debug bundle uploaded over a
+     * connection the UI was reporting as off (9GQXV5VN, v0.99.106).
+     *
+     * Implementations should stop association and, where the platform exposes
+     * an rfkill switch, soft-block the radio. They must NOT take the network
+     * interface down: that is the one step a user cannot undo without a root
+     * shell, and it strands a WiFi-only printer whose UI is not running.
+     *
+     * Default implementation is a successful no-op, for platforms where this
+     * toggle is not reachable.
+     */
+    virtual WiFiError set_radio_enabled(bool on) {
+        (void)on;
+        return WiFiErrorHelper::success();
+    }
+
+    /// Last state requested via set_radio_enabled(). Defaults to true.
+    virtual bool is_radio_enabled() const {
+        return true;
+    }
+
+    /// The interface identity this backend resolved (netdev, control socket,
+    /// rfkill node — see wifi_interface.h), when resolution succeeded.
+    ///
+    /// Default returns nullopt — "inconclusive" — so a backend that has not
+    /// implemented interface resolution behaves the same as one that tried
+    /// and failed. Callers that gate a potentially device-stranding decision
+    /// on this (WiFiManager's stored-radio-state reassert, Task 15) MUST
+    /// treat nullopt as "unknown, fail safe", never as "definitely no wired
+    /// fallback".
+    virtual std::optional<helix::wifi::WifiInterface> resolved_interface() const {
+        return std::nullopt;
+    }
+
+    /**
+     * @brief Forget (permanently remove) a saved network
+     *
+     * Unlike the REMOVE_NETWORK calls issued internally as connect-failure
+     * cleanup elsewhere in this codebase, this is a real, user-initiated
+     * forget: it must remove the credential from every place this backend
+     * persists it (vendor config, HelixScreen's own credential store, or
+     * both), so the network does not reappear on its own.
+     *
+     * Default implementation returns BACKEND_ERROR, NOT a silent success.
+     * This is deliberately the opposite choice from set_radio_enabled()'s
+     * no-op default: a silent success here would tell the user a network
+     * was forgotten when nothing happened — the exact class of lie this
+     * feature exists to eliminate. Platforms that can forget a network must
+     * override.
+     *
+     * @param ssid Network name to forget
+     * @return WiFiResult::SUCCESS on success; WiFiResult::NETWORK_NOT_FOUND
+     *         when @p ssid has no saved entry anywhere this backend looks
+     *         (so callers can distinguish "nothing to forget" from "forget
+     *         failed"); WiFiResult::BACKEND_ERROR when this backend does not
+     *         support forgetting a network at all.
+     */
+    virtual WiFiError forget_network(const std::string& ssid) {
+        (void)ssid;
+        return WiFiError(WiFiResult::BACKEND_ERROR, "forget_network not supported by this backend",
+                         "Cannot forget this network on this platform");
+    }
 
     // ========================================================================
     // Status Queries

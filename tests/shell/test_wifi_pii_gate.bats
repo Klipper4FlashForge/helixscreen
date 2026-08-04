@@ -92,6 +92,38 @@ run_gate() {
     [ "$status" -eq 1 ]
 }
 
+@test "flags a raw SSID in a NOTIFY_ERROR toast (also reaches spdlog::error)" {
+    # NOTIFY_ERROR/_T/_MODAL and NOTIFY_WARNING/INFO/SUCCESS all expand to a
+    # spdlog call under the hood (see ui_error_reporting.h), so an unredacted
+    # SSID passed to any of them leaks the same way a bare spdlog::error()
+    # call would.
+    run_gate 'void f() {
+    spdlog::trace("init");
+    NOTIFY_ERROR("Failed to connect to @@", ssid);
+}'
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"SSID"* ]]
+}
+
+@test "flags every NOTIFY_* variant that carries a raw SSID" {
+    for macro in NOTIFY_ERROR NOTIFY_WARNING NOTIFY_INFO NOTIFY_SUCCESS NOTIFY_ERROR_T \
+                 NOTIFY_WARNING_T NOTIFY_INFO_T NOTIFY_SUCCESS_T NOTIFY_ERROR_MODAL; do
+        run_gate "void f() {
+    spdlog::trace(\"init\");
+    ${macro}(\"title\", \"Failed: @@\", ssid);
+}"
+        [ "$status" -eq 1 ]
+    done
+}
+
+@test "allows a redacted SSID in NOTIFY_ERROR" {
+    run_gate 'void f() {
+    spdlog::trace("init");
+    NOTIFY_ERROR("Failed to connect to @@", helix::redact::ssid(ssid));
+}'
+    [ "$status" -eq 0 ]
+}
+
 @test "flags a call whose arguments wrap onto later lines" {
     # wifi_backend_wpa_supplicant.cpp:1304 is a two-line call; a per-line
     # scanner misses the argument entirely.
