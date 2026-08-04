@@ -3,6 +3,7 @@
 
 #include "ui_temperature_utils.h"
 
+#include "../test_fixtures.h"
 #include "theme_manager.h"
 
 #include <string>
@@ -368,8 +369,14 @@ TEST_CASE("classify_heat_state_with_mode: honors a custom tolerance in Maintaini
             HeatState::Cooling);
 }
 
-TEST_CASE("get_heating_state_color(HeatState): Neutral resolves to the text token",
-          "[temperature][heat_state][chamber_mode]") {
+// Needs XMLTestFixture: theme_manager_get_color() resolves tokens through
+// lv_xml consts registered by theme_manager_init(). With no theme loaded every
+// token — "text" and "text_muted" alike — falls through to black, which makes
+// the Neutral-vs-Off distinction unassertable (and every other color comparison
+// in this file vacuously true).
+TEST_CASE_METHOD(XMLTestFixture,
+                 "get_heating_state_color(HeatState): Neutral resolves to the text token",
+                 "[temperature][heat_state][chamber_mode]") {
     auto color = get_heating_state_color(HeatState::Neutral);
     auto expected = theme_manager_get_color("text");
     REQUIRE(color.red == expected.red);
