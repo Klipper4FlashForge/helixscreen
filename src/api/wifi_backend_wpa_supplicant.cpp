@@ -1264,7 +1264,27 @@ WiFiError WifiBackendWpaSupplicant::get_scan_results(std::vector<WiFiNetwork>& n
     }
 }
 
-// Helper function to validate and escape wpa_supplicant strings
+// Character/length rules for a value that will be spliced into a
+// wpa_supplicant SET_NETWORK command. Pure predicate, no logging — shared by
+// validate_wpa_string() below (which additionally logs *what* failed, for
+// non-secret fields like an SSID) and reconcile_saved_networks() (which must
+// validate a stored PSK without ever routing it through a diagnostic that
+// echoes the offending byte).
+static bool wpa_string_is_valid(const std::string& input) {
+    for (char c : input) {
+        if (c == '"' || c == '\\' || c == '\n' || c == '\r' || c == '\t' || c < 32 || c == 127)
+            return false;
+    }
+    return !input.empty() && input.length() <= 255;
+}
+
+// Helper function to validate and escape wpa_supplicant strings.
+//
+// Logs the specific violation (including the offending byte) on failure, so
+// this must only be called with values safe to echo into a log line — an
+// SSID, never a PSK or other secret. reconcile_saved_networks() validates a
+// stored PSK via wpa_string_is_valid() directly instead of this function, for
+// exactly that reason.
 static std::string validate_wpa_string(const std::string& input, const std::string& field_name) {
     // Check for dangerous characters that could enable command injection
     for (char c : input) {
@@ -1310,19 +1330,22 @@ void WifiBackendWpaSupplicant::reconcile_saved_networks() {
             ++skipped;
             continue;
         }
-        // validate_wpa_string() rejects empty input too (it doubles as a
-        // length check), so an open network's empty PSK needs the same
-        // "empty is fine, invalid-but-nonempty is not" handling
-        // connect_network() applies to the live password argument.
+        // An open network's empty PSK is fine; a non-empty-but-invalid one is
+        // not — same distinction connect_network() applies to the live
+        // password argument. Validated via the non-logging predicate, never
+        // validate_wpa_string(): that function logs the offending byte on
+        // failure, and this value is a secret read back from disk, not a
+        // fresh value the user just typed.
         std::string clean_psk;
         if (!net.psk.empty()) {
-            clean_psk = validate_wpa_string(net.psk, "stored PSK");
-            if (clean_psk.empty()) {
-                spdlog::warn("[WifiBackend] Reconcile: skipping '{}' — stored PSK is invalid",
+            if (!wpa_string_is_valid(net.psk)) {
+                spdlog::warn("[WifiBackend] Reconcile: skipping '{}' — stored PSK failed "
+                             "validation",
                              helix::redact::ssid(net.ssid));
                 ++skipped;
                 continue;
             }
+            clean_psk = net.psk;
         }
 
         std::string add_result = send_command("ADD_NETWORK");

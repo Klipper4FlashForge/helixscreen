@@ -243,9 +243,15 @@ std::vector<SavedNetwork> parse_store(const std::string& contents) {
                 nets.push_back(std::move(net));
         }
         return nets;
-    } catch (const nlohmann::json::exception& e) {
-        spdlog::warn("[WifiSavedConfig] Store at {} is corrupt, treating as empty: {}",
-                     store_path(), e.what());
+    } catch (const nlohmann::json::exception&) {
+        // Deliberately not logging e.what(): nlohmann embeds a "last read:
+        // '<token>'" fragment of the buffered lexer state in parse_error
+        // messages. If the file was corrupted or truncated partway through a
+        // psk string value, that token is a chunk of a real cleartext
+        // password — exactly the secret this store exists to protect. A
+        // fixed message plus the path is all any caller needs; the content
+        // of a corrupt store is not diagnosable from a log line anyway.
+        spdlog::warn("[WifiSavedConfig] Store at {} is corrupt, treating as empty", store_path());
         return {};
     }
 }
@@ -275,7 +281,20 @@ bool write_store(const std::vector<SavedNetwork>& nets) {
 
     FileIdentity id;
     id.mode = 0600; // forced — see write_store() doc comment above
-    return write_mirrored(path, j.dump(2), id);
+
+    // error_handler_t::replace, not the default ::strict: dump() throws
+    // type_error on invalid UTF-8, and an SSID is an arbitrary 802.11 octet
+    // string with no guarantee of being valid UTF-8 — real routers broadcast
+    // non-UTF-8 bytes, and validate_wpa_string()'s `c < 32` control-character
+    // check only rejects them when `char` is signed (GCC on ARM defaults it
+    // unsigned). An uncaught throw here would unwind out of connect_network()
+    // past the point where connecting_in_progress_ gets reset, permanently
+    // hanging the connect UI. ::replace substitutes U+FFFD for the invalid
+    // byte(s) and keeps writing — every OTHER stored network in the same
+    // write survives intact, which a try/catch around the whole dump() would
+    // not guarantee (the whole write would be lost instead of one field).
+    return write_mirrored(path, j.dump(2, ' ', false, nlohmann::json::error_handler_t::replace),
+                          id);
 }
 
 } // namespace
