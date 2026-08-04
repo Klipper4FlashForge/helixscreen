@@ -61,6 +61,39 @@ helix::ui::UpdateQueue::instance().drain();
 
 `process_lvgl(ms)` (on `LVGLTestFixture`) additionally pumps timers and animations.
 
+### `process_lvgl()` moves *virtual* time — it is not a wall-clock wait
+
+The test binary builds its display with a bare `lv_display_create()`. No driver, so nothing
+ever calls `lv_tick_set_cb()` and `lv_tick_get()` returns exactly what `lv_tick_inc()` has
+been fed. `process_lvgl()` is the thing feeding it, and it barely sleeps: 1ms of real time per
+5ms step, and **zero** below `ms <= 50`, which skips the sleep entirely.
+
+So a loop that counts nominal milliseconds toward a timeout is not waiting for anything:
+
+```cpp
+int waited = 0;
+while (!done && waited < 120000) { process_lvgl(100); waited += 100; }   // ← 24s, at best
+```
+
+That burns a two-minute budget in seconds and never meaningfully yields to the thread it is
+watching. The symptom is baffling rather than obvious: the test runs on past the assertion,
+the fixture destructor tears down the screen, and teardown effects appear to happen mid-test.
+
+Two correct answers, in order of preference:
+
+1. **Join the worker, then drain.** Deterministic, no timeout, no flake under CI load.
+   `ActivePrintMediaAsyncFixture::drain()` in `test_active_print_media_manager.cpp` is the
+   model — `ThumbnailProcessor::wait_for_completion()` then drain, repeated, since a drained
+   callback can commit more pool work.
+2. **`wait_until(pred, timeout_ms)`** on `LVGLTestFixture` when there is no joinable handle.
+   Real `steady_clock` deadline, real sleeps, and it advances the tick each pass so timers and
+   animations still come due.
+
+The frozen-clock trap has a mirror image, which is why `wait_until` lives on the fixture: a
+wait that sleeps on the real clock *without* `lv_tick_inc()` leaves LVGL's clock stopped.
+`lv_async_call` one-shots (period 0) still fire, but no timer with a real period ever comes
+due, however long you wait.
+
 ---
 
 ## LVGL traps in tests

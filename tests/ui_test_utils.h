@@ -116,20 +116,24 @@ bool type_text(lv_obj_t* textarea, const std::string& text);
 bool send_key(uint32_t key);
 
 /**
- * @brief Wait for specified milliseconds while processing LVGL tasks
- * @param ms Milliseconds to wait
+ * @brief Wait @p ms of REAL time, pumping LVGL and advancing its clock in step
  *
- * Processes lv_timer_handler() every 5ms during wait period
+ * Sleeps in 5ms slices, advancing the virtual tick by 5ms per slice and running
+ * lv_timer_handler_safe(). Real and virtual time therefore track each other —
+ * unlike LVGLTestFixture::process_lvgl(), which advances virtual time only and
+ * returns in a fraction of the nominal duration.
  */
 void wait_ms(uint32_t ms);
 
 /**
  * @brief Wait until condition becomes true or timeout expires
  * @param condition Function returning true when wait should end
- * @param timeout_ms Maximum time to wait in milliseconds
+ * @param timeout_ms Maximum time to wait in milliseconds, on the real clock
  * @return true if condition became true, false if timeout
  *
- * Checks condition every 10ms, processing LVGL tasks between checks
+ * Checks the condition every 5ms, advancing the virtual tick and pumping LVGL
+ * between checks. Prefer LVGLTestFixture::wait_until() when you are already in
+ * a fixture — same semantics, and it evaluates the condition at least once.
  */
 bool wait_until(std::function<bool()> condition, uint32_t timeout_ms = 5000);
 
