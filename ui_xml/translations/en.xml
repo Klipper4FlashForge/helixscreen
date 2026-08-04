@@ -898,6 +898,8 @@
   <translation tag="Follow active tool" en="Follow active tool"/>
   <translation tag="Follow graph screen" en="Follow graph screen"/>
   <translation tag="Forget" en="Forget"/>
+  <translation tag="Forget Network?" en="Forget Network?"/>
+  <translation tag="Forget network &apos;{}&apos;? You will need the password to reconnect." en="Forget network &apos;{}&apos;? You will need the password to reconnect."/>
   <translation tag="Forming Tip" en="Forming Tip"/>
   <translation tag="Forming tip..." en="Forming tip..."/>
   <translation tag="Found %zu printers" en="Found %zu printers"/>
@@ -1279,6 +1281,7 @@
   <translation tag="Network Name (SSID)" en="Network Name (SSID)"/>
   <translation tag="Network Settings" en="Network Settings"/>
   <translation tag="Network Test" en="Network Test"/>
+  <translation tag="Network forgotten" en="Network forgotten"/>
   <translation tag="Network name cannot be empty" en="Network name cannot be empty"/>
   <translation tag="Never" en="Never"/>
   <translation tag="New Spool: Step 1 of 3" en="New Spool: Step 1 of 3"/>

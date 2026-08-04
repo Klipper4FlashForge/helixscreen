@@ -9,6 +9,7 @@
 #include "ui_nav_manager.h"
 #include "ui_step_progress.h"
 #include "ui_subject_registry.h"
+#include "ui_toast_manager.h"
 #include "ui_utils.h"
 
 #include "config.h"
@@ -22,6 +23,7 @@
 #include "wifi_ui_utils.h"
 
 #include <lvgl/lvgl.h>
+#include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -215,6 +217,7 @@ void NetworkSettingsOverlay::register_callbacks() {
         {"on_test_network_clicked", on_test_network_clicked},
         {"on_add_other_clicked", on_add_other_clicked},
         {"on_network_item_clicked", on_network_item_clicked},
+        {"on_network_settings_forget", on_network_settings_forget},
         // Network test modal
         {"on_network_test_close", on_network_test_close},
         // Hidden network modal
@@ -1228,6 +1231,83 @@ void NetworkSettingsOverlay::handle_network_item_clicked(lv_event_t* e) {
     }
 }
 
+void NetworkSettingsOverlay::handle_network_settings_forget() {
+    if (!wifi_manager_) {
+        spdlog::error("[NetworkSettingsOverlay] WiFiManager not initialized");
+        return;
+    }
+
+    // Fresh read, not the cached connected_ssid_ subject — the confirmation
+    // dialog acts on whatever is actually associated right now.
+    std::string ssid = wifi_manager_->get_connected_ssid();
+    if (ssid.empty()) {
+        spdlog::debug("[NetworkSettingsOverlay] Forget clicked with no connected network");
+        return;
+    }
+
+    pending_forget_ssid_ = ssid;
+
+    spdlog::debug("[NetworkSettingsOverlay] Confirming forget for: {}", helix::redact::ssid(ssid));
+
+    std::string msg =
+        fmt::format(lv_tr("Forget network '{}'? You will need the password to reconnect."), ssid);
+    helix::ui::modal_show_confirmation(
+        lv_tr("Forget Network?"), msg.c_str(), ModalSeverity::Warning, lv_tr("Forget"),
+        on_network_forget_confirm, on_network_forget_cancel, nullptr);
+}
+
+void NetworkSettingsOverlay::handle_network_forget_confirm() {
+    helix::ui::modal_hide(helix::ui::modal_get_top());
+
+    std::string ssid = pending_forget_ssid_;
+    pending_forget_ssid_.clear();
+
+    if (ssid.empty() || !wifi_manager_) {
+        return;
+    }
+
+    spdlog::info("[NetworkSettingsOverlay] Forgetting network: {}", helix::redact::ssid(ssid));
+
+    auto token = lifetime_.token();
+    wifi_manager_->forget(ssid, [this, token, ssid](bool success, const std::string& error) {
+        if (token.expired())
+            return;
+        token.defer([this, success, ssid, error]() {
+            if (success) {
+                spdlog::info("[NetworkSettingsOverlay] Forgot network: {}",
+                             helix::redact::ssid(ssid));
+                ToastManager::instance().show(ToastSeverity::SUCCESS, lv_tr("Network forgotten"),
+                                              2000);
+                update_wifi_status();
+                update_any_network_connected();
+
+                // Refresh the scan list so a stale "connected" checkmark clears.
+                if (wifi_manager_ && wifi_manager_->is_enabled()) {
+                    auto scan_token = lifetime_.token();
+                    wifi_manager_->start_scan([this, scan_token](
+                                                  const std::vector<WiFiNetwork>& networks) {
+                        if (scan_token.expired())
+                            return;
+                        scan_token.defer([this, networks]() { populate_network_list(networks); });
+                    });
+                }
+            } else if (!error.empty()) {
+                // WiFiManager::forget() already toasts a genuine failure itself
+                // (NOTIFY_ERROR) and stays silent for NETWORK_NOT_FOUND — nothing
+                // was there to forget isn't a user-facing error either way, so
+                // there's nothing left to surface here.
+                spdlog::debug("[NetworkSettingsOverlay] Forget did not remove a saved entry: {}",
+                              error);
+            }
+        });
+    });
+}
+
+void NetworkSettingsOverlay::handle_network_forget_cancel() {
+    helix::ui::modal_hide(helix::ui::modal_get_top());
+    pending_forget_ssid_.clear();
+}
+
 // ============================================================================
 // Static Trampolines for LVGL Callbacks
 // ============================================================================
@@ -1258,6 +1338,24 @@ void NetworkSettingsOverlay::on_add_other_clicked(lv_event_t* e) {
 void NetworkSettingsOverlay::on_network_item_clicked(lv_event_t* e) {
     auto& self = get_network_settings_overlay();
     self.handle_network_item_clicked(e);
+}
+
+void NetworkSettingsOverlay::on_network_settings_forget(lv_event_t* e) {
+    (void)e;
+    auto& self = get_network_settings_overlay();
+    self.handle_network_settings_forget();
+}
+
+void NetworkSettingsOverlay::on_network_forget_confirm(lv_event_t* e) {
+    (void)e;
+    auto& self = get_network_settings_overlay();
+    self.handle_network_forget_confirm();
+}
+
+void NetworkSettingsOverlay::on_network_forget_cancel(lv_event_t* e) {
+    (void)e;
+    auto& self = get_network_settings_overlay();
+    self.handle_network_forget_cancel();
 }
 
 void NetworkSettingsOverlay::on_network_test_close(lv_event_t* e) {

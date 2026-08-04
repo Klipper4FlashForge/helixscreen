@@ -111,6 +111,7 @@ class NetworkSettingsOverlay : public OverlayBase {
      * - on_test_network_clicked
      * - on_add_other_clicked
      * - on_network_item_clicked
+     * - on_network_settings_forget
      */
     void register_callbacks() override;
 
@@ -247,6 +248,10 @@ class NetworkSettingsOverlay : public OverlayBase {
     char current_ssid_[64];
     bool current_network_is_secured_ = false;
 
+    // SSID awaiting confirmation in the forget-network dialog; cleared once
+    // the dialog resolves (confirm or cancel).
+    std::string pending_forget_ssid_;
+
     // Cached networks for async UI update
     std::vector<WiFiNetwork> cached_networks_;
 
@@ -256,6 +261,9 @@ class NetworkSettingsOverlay : public OverlayBase {
     void handle_test_network_clicked();
     void handle_add_other_clicked();
     void handle_network_item_clicked(lv_event_t* e);
+    void handle_network_settings_forget();
+    void handle_network_forget_confirm();
+    void handle_network_forget_cancel();
 
     // Helper functions
     void update_wifi_status();
@@ -278,6 +286,11 @@ class NetworkSettingsOverlay : public OverlayBase {
     static void on_test_network_clicked(lv_event_t* e);
     static void on_add_other_clicked(lv_event_t* e);
     static void on_network_item_clicked(lv_event_t* e);
+    // Scoped per [L039] to avoid colliding with other overlays' forget flows
+    // (barcode scanner, label printer) in the flat XML callback namespace.
+    static void on_network_settings_forget(lv_event_t* e);
+    static void on_network_forget_confirm(lv_event_t* e);
+    static void on_network_forget_cancel(lv_event_t* e);
 
     // Network test modal callbacks
     static void on_network_test_close(lv_event_t* e);
