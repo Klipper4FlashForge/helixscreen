@@ -139,6 +139,11 @@ static bool theme_subject_initialized = false;
 // Breakpoint index subject for reactive responsive visibility (0=MICRO..6=XXLARGE)
 static lv_subject_t ui_breakpoint_subject;
 static bool breakpoint_subject_initialized = false;
+// Second ladder, exposed as a subject. #1209 put min(w,h) vs height behind an
+// allow-list of px tokens only, so every bind_* in ui_xml/ still saw the cramped
+// axis and no declarative binding could reach a tall panel's height.
+static lv_subject_t ui_breakpoint_v_subject;
+static bool breakpoint_v_subject_initialized = false;
 
 // Swatch description subjects for theme editor (file-scope for deinit access)
 static constexpr size_t SWATCH_DESC_COUNT = 16;
@@ -1172,6 +1177,15 @@ void theme_manager_refresh_layout_constants(lv_display_t* display) {
         lv_subject_set_int(bp_subject, to_int(bp));
     }
 
+    // Rotation swaps the axes, so the vertical tier has to be recomputed too --
+    // updating only ui_breakpoint would leave a panel rotated out of portrait
+    // still claiming the height it no longer has.
+    lv_subject_t* bp_v_subject = lv_xml_get_subject(nullptr, "ui_breakpoint_v");
+    if (bp_v_subject) {
+        lv_subject_set_int(bp_v_subject,
+                           to_int(breakpoint_for(responsive_vertical_dimension(display))));
+    }
+
     // Type has to follow the breakpoint too. The px tokens above moved the
     // boxes; without the two calls below the fonts stayed sized for the startup
     // breakpoint, so a resize rescaled layout but not type (#1210).
@@ -1650,6 +1664,24 @@ void theme_manager_init(lv_display_t* display, bool use_dark_mode_param) {
                       resp_res);
     }
 
+    // Vertical companion. ui_breakpoint deliberately keeps the cramped tier --
+    // every ref_value in ui_xml/ is written against it -- so height-aware layout
+    // binds to this instead of changing what the old subject means.
+    {
+        int32_t vert_res = responsive_vertical_dimension(display);
+        UiBreakpoint vbp = breakpoint_for(vert_res);
+
+        if (!breakpoint_v_subject_initialized) {
+            lv_subject_init_int(&ui_breakpoint_v_subject, to_int(vbp));
+            breakpoint_v_subject_initialized = true;
+        } else {
+            lv_subject_set_int(&ui_breakpoint_v_subject, to_int(vbp));
+        }
+        lv_xml_register_subject(nullptr, "ui_breakpoint_v", &ui_breakpoint_v_subject);
+        spdlog::debug("[Theme] Registered ui_breakpoint_v subject: {} (vert_dim={})", to_int(vbp),
+                      vert_res);
+    }
+
     // Validate critical color pairs were registered (fail-fast if missing)
     static const char* required_colors[] = {"screen_bg", "text", "text_muted", nullptr};
     for (const char** name = required_colors; *name != nullptr; ++name) {
@@ -1736,6 +1768,10 @@ void theme_manager_deinit() {
     if (breakpoint_subject_initialized) {
         lv_subject_deinit(&ui_breakpoint_subject);
         breakpoint_subject_initialized = false;
+    }
+    if (breakpoint_v_subject_initialized) {
+        lv_subject_deinit(&ui_breakpoint_v_subject);
+        breakpoint_v_subject_initialized = false;
     }
     if (swatch_descs_initialized) {
         for (size_t i = 0; i < SWATCH_DESC_COUNT; ++i) {
