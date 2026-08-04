@@ -91,6 +91,24 @@ pid_t find_daemon_for_interface(const std::string& proc_root, const std::string&
 /// to the first "wlan" typed switch in /sys/class/rfkill/. Returns "" if none.
 std::string find_rfkill_node(const std::string& sys_root, const std::string& netdev);
 
+/// True when @p sys_root has at least one non-WiFi network interface that is
+/// UP — i.e. a wired (or otherwise non-radio) path this device could still be
+/// reached through if @p wifi_netdev's radio were disabled.
+///
+/// Iterates `<sys_root>/class/net/*`, skipping `lo`, skipping @p wifi_netdev,
+/// and skipping any entry with a `wireless/` subdirectory (a second wireless
+/// interface shares the same failure domain as the primary radio, so it is
+/// never counted as a fallback). Every remaining entry must report
+/// `operstate` == "up" to count.
+///
+/// Used to gate WiFiManager's stored-radio-state reassert: reasserting "off"
+/// on a device whose only network path is the radio just disabled would
+/// strand it (helixscreen wifi-interface-identity Task 15, CC1 incident).
+///
+/// Guards every filesystem walk with std::error_code; a missing or unreadable
+/// `<sys_root>/class/net` returns false rather than throwing.
+bool has_non_wifi_network_path(const std::string& sys_root, const std::string& wifi_netdev);
+
 } // namespace detail
 
 } // namespace helix::wifi

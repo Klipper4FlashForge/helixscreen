@@ -152,6 +152,41 @@ std::string find_rfkill_node(const std::string& sys_root, const std::string& net
     return "";
 }
 
+bool has_non_wifi_network_path(const std::string& sys_root, const std::string& wifi_netdev) {
+    std::error_code ec;
+    const std::string net_dir = sys_root + "/class/net";
+    if (!fs::is_directory(net_dir, ec) || ec)
+        return false;
+
+    for (const auto& entry : fs::directory_iterator(net_dir, ec)) {
+        if (ec)
+            break;
+
+        const std::string name = entry.path().filename().string();
+        if (name == "lo" || name == wifi_netdev)
+            continue;
+
+        // A second wireless interface is not a fallback — it shares the same
+        // failure domain (radio) as the primary WiFi interface.
+        std::error_code wec;
+        if (fs::is_directory(entry.path() / "wireless", wec) && !wec)
+            continue;
+
+        std::ifstream f(entry.path() / "operstate");
+        if (!f.is_open())
+            continue;
+        std::string operstate;
+        std::getline(f, operstate);
+        while (!operstate.empty() &&
+               (operstate.back() == '\r' || operstate.back() == '\n' || operstate.back() == ' '))
+            operstate.pop_back();
+
+        if (operstate == "up")
+            return true;
+    }
+    return false;
+}
+
 } // namespace detail
 
 std::optional<WifiInterface> resolve_interface(const Roots& roots, const StatusProbe& probe) {

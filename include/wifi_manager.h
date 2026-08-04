@@ -359,6 +359,12 @@ class WiFiManager {
     // real sysfs/proc probe; tests inject a stub via WiFiManagerTestAccess.
     static std::function<bool()> os_link_probe_;
     static bool os_link_up();
+
+    // Sysfs root used by has_non_wifi_network_path() to gate the stored-radio
+    // -state reassert (Task 15: never disable the radio on a device whose
+    // only network path is that radio). Defaults to "/sys"; tests point it at
+    // a fixture tree via WiFiManagerTestAccess.
+    static std::string sys_root_;
 };
 
 /**

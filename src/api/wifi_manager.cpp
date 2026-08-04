@@ -21,6 +21,7 @@
 #include "safe_log.h"
 #include "spdlog/spdlog.h"
 #include "system_settings_manager.h"
+#include "wifi_interface.h"
 #include "wifi_ui_utils.h"
 
 #if !defined(__APPLE__) && !defined(__ANDROID__)
@@ -44,6 +45,10 @@ std::function<bool()> WiFiManager::os_link_probe_ = []() {
 bool WiFiManager::os_link_up() {
     return os_link_probe_ && os_link_probe_();
 }
+
+// Overridable in tests via WiFiManagerTestAccess so has_non_wifi_network_path()
+// can be pointed at a fixture tree instead of the real /sys.
+std::string WiFiManager::sys_root_ = "/sys";
 
 // ============================================================================
 // Constructor / Destructor
@@ -125,11 +130,40 @@ void WiFiManager::register_backend_callbacks(bool silent) {
         // get_wifi_enabled() (reads an lv_subject_t) and set_radio_enabled()
         // must not run there, so defer through async_lifetime_ the same way
         // the NetworkManager fallback above does.
+        //
+        // CC1 incident (Task 15): on a device whose only network path is this
+        // radio, reasserting "off" is a one-way door — a reboot clears the
+        // rfkill soft-block, but the watchdog restarts HelixScreen, which reads
+        // the stored setting and blocks the radio again. The device can never
+        // be reached remotely again. Only reassert "off" when a non-WiFi
+        // network path (wired or otherwise) is actually up. When resolution of
+        // the WiFi interface itself is inconclusive, fail safe: treat it the
+        // same as "no known wired fallback" and do not disable the radio.
         async_lifetime_.defer("WiFiManager::reassert_stored_radio_state", [this]() {
             const bool want_on = SystemSettingsManager::instance().get_wifi_enabled();
             if (!want_on && backend_) {
-                spdlog::info("[WiFiManager] Stored setting is WiFi off — reasserting");
-                backend_->set_radio_enabled(false);
+                const auto iface = backend_->resolved_interface();
+                const bool safe_to_disable =
+                    iface.has_value() &&
+                    helix::wifi::detail::has_non_wifi_network_path(sys_root_, iface->netdev);
+
+                if (safe_to_disable) {
+                    spdlog::info("[WiFiManager] Stored setting is WiFi off — reasserting");
+                    backend_->set_radio_enabled(false);
+                } else {
+                    // Radio stays on. Leaving wifi_enabled at its stored
+                    // false would show "off" in the UI over a working
+                    // connection — exactly the class of state lie this whole
+                    // branch exists to eliminate. Correct the stored value to
+                    // match reality rather than silently preserving a choice
+                    // we have deliberately declined to apply.
+                    spdlog::warn(
+                        "[WiFiManager] Stored setting is WiFi off, but no non-WiFi network "
+                        "path was found (interface resolution {}) — refusing to disable the "
+                        "radio to avoid stranding the device. Correcting stored setting to on.",
+                        iface.has_value() ? "succeeded" : "inconclusive");
+                    SystemSettingsManager::instance().set_wifi_enabled(true);
+                }
             }
         });
     });

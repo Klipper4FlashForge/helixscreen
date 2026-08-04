@@ -413,6 +413,10 @@ bool WifiBackendMock::supports_5ghz() const {
     return true;
 }
 
+std::optional<helix::wifi::WifiInterface> WifiBackendMock::resolved_interface() const {
+    return resolved_interface_;
+}
+
 // ============================================================================
 // Internal Helpers
 // ============================================================================

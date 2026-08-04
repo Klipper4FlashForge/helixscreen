@@ -397,7 +397,7 @@ class WifiBackendWpaSupplicant : public WifiBackend, private hv::EventLoopThread
   public:
     /// The resolved interface, or nullopt when resolution was inconclusive and
     /// callers must fall back to legacy first-match behaviour.
-    std::optional<helix::wifi::WifiInterface> resolved_interface() const;
+    std::optional<helix::wifi::WifiInterface> resolved_interface() const override;
 
   private:
     // Last state requested via set_radio_enabled(). Defaults to true (radio on).

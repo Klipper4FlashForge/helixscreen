@@ -13,9 +13,12 @@
 
 #pragma once
 
+#include "wifi_interface.h"
+
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -399,6 +402,19 @@ class WifiBackend {
     /// Last state requested via set_radio_enabled(). Defaults to true.
     virtual bool is_radio_enabled() const {
         return true;
+    }
+
+    /// The interface identity this backend resolved (netdev, control socket,
+    /// rfkill node — see wifi_interface.h), when resolution succeeded.
+    ///
+    /// Default returns nullopt — "inconclusive" — so a backend that has not
+    /// implemented interface resolution behaves the same as one that tried
+    /// and failed. Callers that gate a potentially device-stranding decision
+    /// on this (WiFiManager's stored-radio-state reassert, Task 15) MUST
+    /// treat nullopt as "unknown, fail safe", never as "definitely no wired
+    /// fallback".
+    virtual std::optional<helix::wifi::WifiInterface> resolved_interface() const {
+        return std::nullopt;
     }
 
     /**

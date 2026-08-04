@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <map>
+#include <optional>
 #include <random>
 #include <set>
 #include <thread>
@@ -69,11 +70,20 @@ class WifiBackendMock : public WifiBackend {
     ConnectionStatus get_status() override;
     bool supports_5ghz() const override;
     WiFiError forget_network(const std::string& ssid) override;
+    std::optional<helix::wifi::WifiInterface> resolved_interface() const override;
 
     // Test helpers — allow test code to drive state directly without going
     // through the simulated async connect/disconnect flow.
     void set_connected_state(bool connected, const std::string& ssid = "",
                              const std::string& ip = "", int signal = 0);
+
+    /// Test helper — stands in for real interface resolution (which this
+    /// backend never performs on its own) so tests can exercise callers that
+    /// branch on resolved_interface(), e.g. WiFiManager's stranding-prevention
+    /// gate (Task 15). Defaults to nullopt, same as the base class.
+    void set_resolved_interface_for_test(std::optional<helix::wifi::WifiInterface> iface) {
+        resolved_interface_ = std::move(iface);
+    }
 
   private:
     // ========================================================================
@@ -86,6 +96,7 @@ class WifiBackendMock : public WifiBackend {
     std::string connected_ip_;
     int connected_signal_;
     bool radio_enabled_{true};
+    std::optional<helix::wifi::WifiInterface> resolved_interface_;
 
     // Event system
     std::map<std::string, std::function<void(const std::string&)>> callbacks_;

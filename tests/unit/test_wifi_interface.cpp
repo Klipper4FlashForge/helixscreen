@@ -201,6 +201,70 @@ TEST_CASE("find_rfkill_node returns empty when the driver exposes none", "[wifi]
     CHECK(helix::wifi::detail::find_rfkill_node(fr.base + "/sys", "wlan0").empty());
 }
 
+TEST_CASE("has_non_wifi_network_path finds an up eth0", "[wifi][interface]") {
+    FakeRoot fr;
+    fr.mkdirs("sys/class/net/wlan0/wireless");
+    fr.write("sys/class/net/wlan0/operstate", "up\n");
+    fr.write("sys/class/net/eth0/operstate", "up\n");
+
+    CHECK(helix::wifi::detail::has_non_wifi_network_path(fr.base + "/sys", "wlan0"));
+}
+
+TEST_CASE("has_non_wifi_network_path returns false with only lo", "[wifi][interface]") {
+    FakeRoot fr;
+    fr.write("sys/class/net/lo/operstate", "unknown\n");
+
+    CHECK_FALSE(helix::wifi::detail::has_non_wifi_network_path(fr.base + "/sys", "wlan0"));
+}
+
+TEST_CASE("has_non_wifi_network_path returns false with only the wifi netdev",
+          "[wifi][interface]") {
+    FakeRoot fr;
+    fr.mkdirs("sys/class/net/wlan0/wireless");
+    fr.write("sys/class/net/wlan0/operstate", "up\n");
+    fr.write("sys/class/net/lo/operstate", "unknown\n");
+
+    CHECK_FALSE(helix::wifi::detail::has_non_wifi_network_path(fr.base + "/sys", "wlan0"));
+}
+
+TEST_CASE("has_non_wifi_network_path rejects a second wireless interface as a fallback",
+          "[wifi][interface]") {
+    FakeRoot fr;
+    fr.mkdirs("sys/class/net/wlan0/wireless");
+    fr.write("sys/class/net/wlan0/operstate", "up\n");
+    // Second radio — up, but still WiFi, so it shares wlan0's failure domain.
+    fr.mkdirs("sys/class/net/wlan1/wireless");
+    fr.write("sys/class/net/wlan1/operstate", "up\n");
+
+    CHECK_FALSE(helix::wifi::detail::has_non_wifi_network_path(fr.base + "/sys", "wlan0"));
+}
+
+TEST_CASE("has_non_wifi_network_path returns false when eth0 is down", "[wifi][interface]") {
+    FakeRoot fr;
+    fr.mkdirs("sys/class/net/wlan0/wireless");
+    fr.write("sys/class/net/wlan0/operstate", "up\n");
+    fr.write("sys/class/net/eth0/operstate", "down\n");
+
+    CHECK_FALSE(helix::wifi::detail::has_non_wifi_network_path(fr.base + "/sys", "wlan0"));
+}
+
+TEST_CASE("has_non_wifi_network_path excludes a down sit0 tunnel interface", "[wifi][interface]") {
+    // sit0 (IPv6-in-IPv4 tunnel) exists on these devices and is DOWN — must
+    // not be mistaken for a live fallback path.
+    FakeRoot fr;
+    fr.mkdirs("sys/class/net/wlan0/wireless");
+    fr.write("sys/class/net/wlan0/operstate", "up\n");
+    fr.write("sys/class/net/sit0/operstate", "down\n");
+
+    CHECK_FALSE(helix::wifi::detail::has_non_wifi_network_path(fr.base + "/sys", "wlan0"));
+}
+
+TEST_CASE("has_non_wifi_network_path returns false when /sys/class/net is missing",
+          "[wifi][interface]") {
+    FakeRoot fr;
+    CHECK_FALSE(helix::wifi::detail::has_non_wifi_network_path(fr.base + "/sys", "wlan0"));
+}
+
 TEST_CASE("list_wpa_daemons returns all running daemons with correct data", "[wifi][interface]") {
     // Test that list_wpa_daemons walks the entire /proc tree and returns ALL
     // wpa_supplicant processes, not just the first one. This is the key
