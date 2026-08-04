@@ -436,6 +436,37 @@ void WiFiManager::disconnect() {
     }
 }
 
+void WiFiManager::forget(const std::string& ssid,
+                         std::function<void(bool success, const std::string& error)> on_complete) {
+    if (!backend_) {
+        NOTIFY_ERROR("WiFi unavailable. Cannot forget network.");
+        if (on_complete) {
+            on_complete(false, "No WiFi backend available");
+        }
+        return;
+    }
+
+    spdlog::info("[WiFiManager] Forgetting '{}'", helix::redact::ssid(ssid));
+
+    WiFiError result = backend_->forget_network(ssid);
+    if (!result.success()) {
+        // NETWORK_NOT_FOUND is not a failure the user caused — nothing was
+        // there to forget, so it does not warrant an error toast the way a
+        // genuine backend failure does.
+        if (result.result != WiFiResult::NETWORK_NOT_FOUND) {
+            NOTIFY_ERROR("Failed to forget WiFi network '{}'", ssid);
+        }
+        if (on_complete) {
+            on_complete(false, result.user_msg.empty() ? result.technical_msg : result.user_msg);
+        }
+        return;
+    }
+
+    if (on_complete) {
+        on_complete(true, "");
+    }
+}
+
 // ============================================================================
 // Status Queries
 // ============================================================================

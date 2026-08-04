@@ -7,6 +7,7 @@
 
 #include "safe_log.h"
 #include "spdlog/spdlog.h"
+#include "wifi_saved_config.h"
 
 #include <algorithm>
 #include <chrono>
@@ -209,6 +210,12 @@ WiFiError WifiBackendMock::connect_network(const std::string& ssid, const std::s
     connecting_ssid_ = ssid;
     connecting_password_ = password;
 
+    // Record the network as saved immediately, mirroring the real backend's
+    // SAVE_CONFIG happening before the CONNECTED event fires — a test does not
+    // have to wait out the simulated connect delay to see forget_network()
+    // find this SSID.
+    saved_networks_.insert(ssid);
+
     // Cancel and wait for any existing connect thread
     // IMPORTANT: Must join, not detach - detached threads cause use-after-free during destruction
     connect_active_ = false;
@@ -256,6 +263,45 @@ WiFiError WifiBackendMock::set_radio_enabled(bool on) {
 
 bool WifiBackendMock::is_radio_enabled() const {
     return radio_enabled_;
+}
+
+WiFiError WifiBackendMock::forget_network(const std::string& ssid) {
+    if (!running_) {
+        LOG_WARN_INTERNAL("[WifiBackend] Mock: forget_network called but not running");
+        return WiFiError(WiFiResult::NOT_INITIALIZED, "Mock backend not running",
+                         "WiFi system not ready", "Initialize the WiFi system first");
+    }
+
+    const bool had_local = saved_networks_.erase(ssid) > 0;
+
+    // Also check HelixScreen's own credential store — real devices can have a
+    // credential ONLY there (SAVE_CONFIG never reached the vendor's config,
+    // see wifi_saved_config.h), so a real forget must clear it too, not just
+    // whatever this mock happens to track locally.
+    const auto stored = helix::wifi::store::load();
+    const bool had_store =
+        std::any_of(stored.begin(), stored.end(), [&](const auto& n) { return n.ssid == ssid; });
+
+    if (!had_local && !had_store) {
+        LOG_WARN_INTERNAL("[WifiBackend] Mock: forget_network — no saved entry for '{}'",
+                          ssid); // PII_OK: mock backend, fixture SSIDs
+        return WiFiErrorHelper::network_not_found(ssid);
+    }
+
+    if (had_store)
+        helix::wifi::store::remove(ssid);
+
+    if (connected_ && connected_ssid_ == ssid) {
+        connected_ = false;
+        connected_ssid_.clear();
+        connected_ip_.clear();
+        connected_signal_ = 0;
+        fire_event("DISCONNECTED", "reason=forgotten");
+    }
+
+    spdlog::info("[WifiBackend] Mock: Forgot network '{}'",
+                 ssid); // PII_OK: mock backend, fixture SSIDs
+    return WiFiErrorHelper::success();
 }
 
 void WifiBackendMock::connect_thread_func() {

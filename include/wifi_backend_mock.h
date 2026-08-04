@@ -8,6 +8,7 @@
 #include <atomic>
 #include <map>
 #include <random>
+#include <set>
 #include <thread>
 
 /**
@@ -67,6 +68,7 @@ class WifiBackendMock : public WifiBackend {
     bool is_radio_enabled() const override;
     ConnectionStatus get_status() override;
     bool supports_5ghz() const override;
+    WiFiError forget_network(const std::string& ssid) override;
 
     // Test helpers — allow test code to drive state directly without going
     // through the simulated async connect/disconnect flow.
@@ -97,6 +99,14 @@ class WifiBackendMock : public WifiBackend {
     // Mock networks (realistic variety with passwords)
     std::vector<MockWiFiNetwork> mock_networks_;
     std::mt19937 rng_; // Random number generator for signal variations
+
+    // SSIDs "saved" by a connect_network() call, standing in for wpa_supplicant's
+    // own network list — forget_network() checks and clears this set the same
+    // way the real backend checks LIST_NETWORKS. Recorded synchronously in
+    // connect_network() rather than only after the simulated connect delay
+    // completes, mirroring how the real backend's SAVE_CONFIG happens before
+    // the CONNECTED event.
+    std::set<std::string> saved_networks_;
 
     // ========================================================================
     // Internal Helpers

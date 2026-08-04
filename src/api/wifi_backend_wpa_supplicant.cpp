@@ -1660,6 +1660,56 @@ bool WifiBackendWpaSupplicant::is_radio_enabled() const {
     return radio_enabled_.load();
 }
 
+WiFiError WifiBackendWpaSupplicant::forget_network(const std::string& ssid) {
+    if (!is_running()) {
+        return WiFiError(WiFiResult::NOT_INITIALIZED, "Backend not started",
+                         "WiFi system not ready");
+    }
+
+    std::string clean_ssid = validate_wpa_string(ssid, "SSID");
+    if (clean_ssid.empty()) {
+        return WiFiError(WiFiResult::INVALID_PARAMETERS,
+                         "SSID contains invalid characters (quotes, control chars, etc.)",
+                         "Invalid network name", "Check that the network name is correct");
+    }
+
+    const std::string network_id =
+        helix::wifi::detail::find_network_id(send_command("LIST_NETWORKS"), clean_ssid);
+
+    // A credential can live ONLY in HelixScreen's own store when SAVE_CONFIG
+    // never reached the vendor's config (see wifi_saved_config.h) — check
+    // both places before declaring "nothing to forget".
+    const auto stored = helix::wifi::store::load();
+    const bool had_store_entry = std::any_of(stored.begin(), stored.end(),
+                                             [&](const auto& n) { return n.ssid == clean_ssid; });
+
+    if (network_id.empty() && !had_store_entry) {
+        spdlog::debug("[WifiBackend] forget_network: no saved entry for '{}'",
+                      helix::redact::ssid(clean_ssid));
+        return WiFiErrorHelper::network_not_found(ssid);
+    }
+
+    if (!network_id.empty()) {
+        const std::string remove_result = send_command("REMOVE_NETWORK " + network_id);
+        if (remove_result != "OK\n") {
+            LOG_ERROR_INTERNAL("Failed to remove network {}: {}", network_id, remove_result);
+            return WiFiError(WiFiResult::BACKEND_ERROR,
+                             "wpa_supplicant REMOVE_NETWORK failed: " + remove_result,
+                             "Failed to forget network");
+        }
+        send_command("SAVE_CONFIG");
+    }
+
+    // Drop from HelixScreen's own store too, regardless of whether wpa_supplicant
+    // had an entry — reconcile_saved_networks() re-adds anything left in the
+    // store at the next backend init (every boot), which would silently undo
+    // this forget the moment the printer power-cycles.
+    helix::wifi::store::remove(clean_ssid);
+
+    spdlog::info("[WifiBackend] Forgot network '{}'", helix::redact::ssid(clean_ssid));
+    return WiFiErrorHelper::success();
+}
+
 bool WifiBackendWpaSupplicant::set_rfkill_soft_block(bool blocked) {
     const auto iface = resolved_interface();
     if (!iface || iface->rfkill_node.empty())

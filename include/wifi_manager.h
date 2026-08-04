@@ -120,6 +120,22 @@ class WiFiManager {
      */
     void disconnect();
 
+    /**
+     * @brief Forget (permanently remove) a saved network
+     *
+     * Unlike the REMOVE_NETWORK cleanup issued internally elsewhere as a
+     * connect-failure rollback, this is a real, user-initiated forget:
+     * removes the credential from wherever the backend persists it (vendor
+     * config, HelixScreen's own credential store, or both), synchronously,
+     * then reports the outcome.
+     *
+     * @param ssid Network name to forget
+     * @param on_complete Callback with (success, error). error is empty on
+     *                     success.
+     */
+    void forget(const std::string& ssid,
+                std::function<void(bool success, const std::string& error)> on_complete);
+
     // ========================================================================
     // Status Queries
     // ========================================================================

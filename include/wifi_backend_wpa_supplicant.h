@@ -195,6 +195,7 @@ class WifiBackendWpaSupplicant : public WifiBackend, private hv::EventLoopThread
     bool supports_5ghz() const override;
     WiFiError set_radio_enabled(bool on) override;
     bool is_radio_enabled() const override;
+    WiFiError forget_network(const std::string& ssid) override;
 
   private:
     // ========================================================================

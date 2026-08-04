@@ -401,6 +401,35 @@ class WifiBackend {
         return true;
     }
 
+    /**
+     * @brief Forget (permanently remove) a saved network
+     *
+     * Unlike the REMOVE_NETWORK calls issued internally as connect-failure
+     * cleanup elsewhere in this codebase, this is a real, user-initiated
+     * forget: it must remove the credential from every place this backend
+     * persists it (vendor config, HelixScreen's own credential store, or
+     * both), so the network does not reappear on its own.
+     *
+     * Default implementation returns BACKEND_ERROR, NOT a silent success.
+     * This is deliberately the opposite choice from set_radio_enabled()'s
+     * no-op default: a silent success here would tell the user a network
+     * was forgotten when nothing happened — the exact class of lie this
+     * feature exists to eliminate. Platforms that can forget a network must
+     * override.
+     *
+     * @param ssid Network name to forget
+     * @return WiFiResult::SUCCESS on success; WiFiResult::NETWORK_NOT_FOUND
+     *         when @p ssid has no saved entry anywhere this backend looks
+     *         (so callers can distinguish "nothing to forget" from "forget
+     *         failed"); WiFiResult::BACKEND_ERROR when this backend does not
+     *         support forgetting a network at all.
+     */
+    virtual WiFiError forget_network(const std::string& ssid) {
+        (void)ssid;
+        return WiFiError(WiFiResult::BACKEND_ERROR, "forget_network not supported by this backend",
+                         "Cannot forget this network on this platform");
+    }
+
     // ========================================================================
     // Status Queries
     // ========================================================================
