@@ -945,6 +945,22 @@ OverlayWidths compute_overlay_widths(int32_t hor_res, int32_t ver_res, int32_t n
     return {hor_res - nav_reserve - gap, hor_res - nav_reserve};
 }
 
+OverlayHeights compute_overlay_heights(int32_t hor_res, int32_t ver_res, int32_t nav_height,
+                                       int32_t gap) {
+    // Same classification as compute_overlay_widths, and for the same reason:
+    // this can run before LayoutManager::init(), and the threshold that picks
+    // ui_xml/portrait/ must never disagree with the one that sizes overlays.
+    //
+    // Landscape reserves nothing vertically — its nav bar is a full-HEIGHT
+    // strip at the leading edge, so overlays span the whole display and the
+    // gap is spent horizontally instead.
+    const bool portrait = is_portrait_layout(detect_layout_type(hor_res, ver_res));
+    if (!portrait) {
+        return {ver_res, ver_res};
+    }
+    return {ver_res - nav_height - gap, ver_res - nav_height};
+}
+
 } // namespace helix
 
 // ============================================================================

@@ -142,6 +142,33 @@ struct OverlayWidths {
  */
 OverlayWidths compute_overlay_widths(int32_t hor_res, int32_t ver_res, int32_t nav_width,
                                      int32_t gap);
+
+/**
+ * @brief Overlay heights for a screen geometry.
+ *
+ * The vertical twin of OverlayWidths. In landscape the navigation bar is a
+ * full-height vertical strip, so it consumes no vertical extent and both
+ * classes span the whole display. In portrait it is a full-width bottom strip
+ * (ui_xml/portrait/navigation_bar.xml), so both classes must stop short of it.
+ */
+struct OverlayHeights {
+    int32_t transient;   ///< A layer you will return from — leaves the gap above the nav bar.
+    int32_t destination; ///< A place you park — flush to the nav bar.
+};
+
+/**
+ * @brief Compute overlay heights for a screen geometry.
+ *
+ * Shares detect_layout_type() with compute_overlay_widths() so the two can
+ * never disagree about which axis the navigation bar occupies.
+ *
+ * @param hor_res    Display horizontal resolution.
+ * @param ver_res    Display vertical resolution.
+ * @param nav_height Height of the portrait bottom nav strip (#button_height_lg).
+ * @param gap        Leading-edge gap for transient overlays (#space_lg).
+ */
+OverlayHeights compute_overlay_heights(int32_t hor_res, int32_t ver_res, int32_t nav_height,
+                                       int32_t gap);
 } // namespace helix
 
 /// Style entry - binds a role to its style and configure function.
