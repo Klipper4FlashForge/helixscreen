@@ -144,6 +144,13 @@ static bool breakpoint_subject_initialized = false;
 // axis and no declarative binding could reach a tall panel's height.
 static lv_subject_t ui_breakpoint_v_subject;
 static bool breakpoint_v_subject_initialized = false;
+// Orientation subject: 1 for any portrait class, 0 otherwise. ui_breakpoint
+// classifies the cramped-axis tier and cannot answer "is this portrait" --
+// 480x800 and 800x480 can land on the same tier. Lets ui_xml/*.xml branch
+// layout inline with <if cond="ui_is_portrait eq 1"> instead of maintaining
+// ui_xml/portrait/* variant files.
+static lv_subject_t ui_is_portrait_subject;
+static bool is_portrait_subject_initialized = false;
 
 // Swatch description subjects for theme editor (file-scope for deinit access)
 static constexpr size_t SWATCH_DESC_COUNT = 16;
@@ -1211,6 +1218,15 @@ void theme_manager_refresh_layout_constants(lv_display_t* display) {
                            to_int(breakpoint_for(responsive_vertical_dimension(display))));
     }
 
+    // Portrait subject follows the same axis swap -- update it alongside
+    // ui_breakpoint/ui_breakpoint_v so a rotation can never leave ui_is_portrait
+    // disagreeing with the axes it just repointed.
+    lv_subject_t* portrait_subject = lv_xml_get_subject(nullptr, "ui_is_portrait");
+    if (portrait_subject) {
+        lv_subject_set_int(portrait_subject,
+                           is_portrait_layout(detect_layout_type(hor_res, ver_res)) ? 1 : 0);
+    }
+
     // Type has to follow the breakpoint too. The px tokens above moved the
     // boxes; without the two calls below the fonts stayed sized for the startup
     // breakpoint, so a resize rescaled layout but not type (#1210).
@@ -1707,6 +1723,28 @@ void theme_manager_init(lv_display_t* display, bool use_dark_mode_param) {
                       vert_res);
     }
 
+    // Registered alongside ui_breakpoint/ui_breakpoint_v so the three can never
+    // disagree about what orientation the app believes it is in. Derived from
+    // the same detect_layout_type()/is_portrait_layout() pair
+    // compute_overlay_widths()/compute_overlay_heights() already use in this
+    // file -- not LayoutManager::instance(), which has not been init()'d yet
+    // this early in startup.
+    {
+        int32_t hor_res = lv_display_get_horizontal_resolution(display);
+        int32_t ver_res = lv_display_get_vertical_resolution(display);
+        int is_portrait = is_portrait_layout(detect_layout_type(hor_res, ver_res)) ? 1 : 0;
+
+        if (!is_portrait_subject_initialized) {
+            lv_subject_init_int(&ui_is_portrait_subject, is_portrait);
+            is_portrait_subject_initialized = true;
+        } else {
+            lv_subject_set_int(&ui_is_portrait_subject, is_portrait);
+        }
+        lv_xml_register_subject(nullptr, "ui_is_portrait", &ui_is_portrait_subject);
+        spdlog::debug("[Theme] Registered ui_is_portrait subject: {} ({}x{})", is_portrait, hor_res,
+                      ver_res);
+    }
+
     // Validate critical color pairs were registered (fail-fast if missing)
     static const char* required_colors[] = {"screen_bg", "text", "text_muted", nullptr};
     for (const char** name = required_colors; *name != nullptr; ++name) {
@@ -1797,6 +1835,10 @@ void theme_manager_deinit() {
     if (breakpoint_v_subject_initialized) {
         lv_subject_deinit(&ui_breakpoint_v_subject);
         breakpoint_v_subject_initialized = false;
+    }
+    if (is_portrait_subject_initialized) {
+        lv_subject_deinit(&ui_is_portrait_subject);
+        is_portrait_subject_initialized = false;
     }
     if (swatch_descs_initialized) {
         for (size_t i = 0; i < SWATCH_DESC_COUNT; ++i) {
