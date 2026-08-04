@@ -277,13 +277,17 @@
         <!-- metadata_clip -->
 
         <!-- PREPARING OVERLAY: Shown during pre-print operations (homing, etc).
-             Declared AFTER metadata_clip so it draws over the strip, and takes the
-             WHOLE card with no strip reservation. Its stack (spinner + phase
-             heading + progress + ETA) needs 112px at MICRO; reserving the strip
-             left only 78px, so at 272x480 the heading, bar and ETA fell outside
-             the box and behind the strip and only a top-clipped spinner arc drew.
-             While preparing, the strip has nothing to say anyway - its progress
-             bar is styled invisible and Layer/elapsed are still zero. -->
+             Declared AFTER metadata_clip so it draws over the strip. Whether it
+             RESERVES the strip depends on how much height there is to stack into:
+             its stack (spinner + phase heading + progress + ETA) needs 112px, and
+             at 480x272 reserving leaves 114px - a 2px margin, so this layout stays
+             on the non-reserving side of the cut and is unchanged. The taller
+             portrait sizes share this component's rule via the portrait file.
+             The cut is the VERTICAL tier, not the cramped one, so a tall panel is
+             not misjudged by its narrow width.
+             The background still covers the whole card either way (height 100% +
+             bg_opa 220); padding insets only the content, so the strip stays
+             covered and its own progress bar keeps its layout space. -->
         <lv_obj name="preparing_overlay"
                 width="100%" height="100%" ignore_layout="true" align="center" style_bg_color="#overlay_bg"
                 style_bg_opa="220"
@@ -295,9 +299,29 @@
           <text_heading name="preparing_operation_label"
                         width="100%" bind_text="print_start_message" text="Preparing..." translation_tag="Preparing..."
                         style_text_color="#text" style_text_align="center"/>
-          <progress_bar name="preparing_progress_bar" width="80%" bind_value="preparing_progress"/>
+          <!-- Costs 12px + a gap even at 0, and its track is #overlay_bg - the same
+               colour as the overlay behind it - so an empty bar reads as void. Hidden
+               children leave the flex pass entirely, size AND gap. -->
+          <progress_bar name="preparing_progress_bar" width="80%" bind_value="preparing_progress">
+            <bind_flag_if cond="preparing_progress le 0" flag="hidden"/>
+          </progress_bar>
           <text_small name="preparing_eta"
                       bind_text="print_start_time_left" style_text_color="#text" style_text_opa="180"/>
+          <!-- Stands in for the metadata strip so the stack centres on the ART, not
+               on the whole card. A trailing child in a centre-placed column shifts
+               everything above it up by (its height + one gap) / 2.
+               NOT pad_bottom: the overlay carries an inline style_pad_all, and inline
+               attributes beat bind_style (CLAUDE.md rule 6), so a bound pad is
+               silently ignored - verified with a literal, which also did nothing.
+               Hidden below the vertical tier where the card cannot spare the height;
+               480x272 reserves with only a 2px margin, so it stays on the hidden
+               side and is unchanged. A hidden child leaves the flex pass entirely,
+               size AND gap. -->
+          <lv_obj name="preparing_strip_spacer"
+                  width="1" height="#metadata_clip_height" style_bg_opa="0" style_border_width="0"
+                  style_pad_all="0" scrollable="false">
+            <bind_flag_if_lt subject="ui_breakpoint_v" flag="hidden" ref_value="3"/>
+          </lv_obj>
         </lv_obj>
 
       </ui_card>
