@@ -229,6 +229,13 @@ struct OsLinkBehaviorFixture {
     }
 
     ~OsLinkBehaviorFixture() {
+        // A WiFiManager built by make_manager() fires READY synchronously
+        // (mock backend), which now always queues a
+        // WiFiManager::reassert_stored_radio_state closure via
+        // async_lifetime_.defer(). Drain here — before UpdateQueue's state
+        // outlives this fixture — so it can't leak into the next test.
+        // See scripts/check_update_queue_leaks.py.
+        helix::ui::UpdateQueue::instance().drain();
         rc->test_mode = prev_test_mode;
         rc->use_real_wifi = prev_use_real_wifi;
         helix::WiFiManagerTestAccess::reset_os_link_probe();

@@ -814,6 +814,13 @@ TEST_CASE("set_enabled(false) turns the radio off without stopping the backend",
     REQUIRE(manager.set_enabled(true));
     CHECK(raw->is_radio_enabled());
     CHECK(manager.is_enabled());
+
+    // READY (fired synchronously by the mock backend during construction
+    // above) queued a WiFiManager::reassert_stored_radio_state closure via
+    // async_lifetime_.defer(). Drain it here, while `manager` (and its
+    // subjects) are still alive, so it doesn't leak into the next test —
+    // see scripts/check_update_queue_leaks.py.
+    helix::ui::UpdateQueue::instance().drain();
 }
 
 // helixscreen: a radio the user switched off must not come back on just

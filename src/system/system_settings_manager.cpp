@@ -252,6 +252,16 @@ void SystemSettingsManager::set_telemetry_enabled(bool enabled) {
 // =============================================================================
 
 bool SystemSettingsManager::get_wifi_enabled() const {
+    // CAUTION: if called before init_subjects() has run, wifi_enabled_subject_
+    // is still zero-initialized (LV_SUBJECT_TYPE_INVALID). lv_subject_get_int()
+    // on that returns 0, which reads as "off" — the INVERSE of this setting's
+    // documented true/on default. WiFiManager's READY handler calls this to
+    // decide whether to force the radio off, so correctness here depends on
+    // init_subjects() always running before any WiFiManager is constructed.
+    // That ordering is structural today (Application::run() initializes
+    // subjects at Phase 9c, constructs WiFiManager no earlier than Phase 14b),
+    // not incidental — but a future phase reorder that breaks it would
+    // silently switch WiFi off on a remote printer with no physical access.
     return lv_subject_get_int(const_cast<lv_subject_t*>(&wifi_enabled_subject_)) != 0;
 }
 

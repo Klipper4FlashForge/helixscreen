@@ -100,7 +100,12 @@ class SystemSettingsManager {
     // WIFI SETTINGS
     // =========================================================================
 
-    /** @brief Get stored WiFi radio on/off choice (default true — WiFi on) */
+    /**
+     * @brief Get stored WiFi radio on/off choice (default true — WiFi on)
+     *
+     * Requires init_subjects() to have run first — see the caveat on the
+     * definition in system_settings_manager.cpp.
+     */
     bool get_wifi_enabled() const;
 
     /**
