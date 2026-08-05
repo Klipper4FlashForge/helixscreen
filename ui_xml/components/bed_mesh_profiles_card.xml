@@ -63,9 +63,9 @@
              sets both attributes together for the same reason. -->
         <ui_card name="profile_row_${i}"
                  width="100%" height="#bed_mesh_profile_row_height" flex_flow="row" style_flex_cross_place="center"
-                 style_flex_track_place="center"
-                 style_border_width="0" style_pad_left="#space_sm" style_pad_right="#space_sm" style_pad_top="0"
-                 style_pad_bottom="0" style_pad_gap="#space_xs" clickable="true" scrollable="false">
+                 style_flex_track_place="center" style_border_width="0" style_pad_left="#space_sm"
+                 style_pad_right="#space_sm" style_pad_top="0" style_pad_bottom="0" style_pad_gap="#space_xs"
+                 clickable="true" scrollable="false">
           <bind_flag_if_lt subject="bed_mesh_profile_count" flag="hidden" ref_value="${i + 1}"/>
           <bind_style_if_eq name="profile_row_active" subject="bed_mesh_profile_${i}_active" ref_value="1"/>
           <event_cb trigger="clicked" callback="on_profile_${i}_clicked"/>

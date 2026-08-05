@@ -94,8 +94,7 @@
         <bind_flag_if_eq subject="bed_mesh_hide_stat_rows" flag="hidden" ref_value="1"/>
         <lv_obj width="100%" flex_flow="row" style_pad_all="0" scrollable="false">
           <text_small name="mesh_max_label" bind_text="bed_mesh_max_label"/>
-          <text_small name="mesh_max_coord_inline"
-                      bind_text="bed_mesh_max_coord" style_pad_left="#space_xxs">
+          <text_small name="mesh_max_coord_inline" bind_text="bed_mesh_max_coord" style_pad_left="#space_xxs">
             <bind_flag_if_eq subject="ui_is_portrait" flag="hidden" ref_value="1"/>
           </text_small>
           <text_small name="mesh_max_value"
@@ -113,8 +112,7 @@
         <bind_flag_if_eq subject="bed_mesh_hide_stat_rows" flag="hidden" ref_value="1"/>
         <lv_obj width="100%" flex_flow="row" style_pad_all="0" scrollable="false">
           <text_small name="mesh_min_label" bind_text="bed_mesh_min_label"/>
-          <text_small name="mesh_min_coord_inline"
-                      bind_text="bed_mesh_min_coord" style_pad_left="#space_xxs">
+          <text_small name="mesh_min_coord_inline" bind_text="bed_mesh_min_coord" style_pad_left="#space_xxs">
             <bind_flag_if_eq subject="ui_is_portrait" flag="hidden" ref_value="1"/>
           </text_small>
           <text_small name="mesh_min_value"
