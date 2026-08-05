@@ -611,6 +611,12 @@ void register_xml_components() {
     register_xml("bed_mesh_calibrate_modal.xml");
     register_xml("bed_mesh_rename_modal.xml");
     register_xml("bed_mesh_save_config_modal.xml");
+    // The stats/profiles cards are shared between bed_mesh_panel's landscape
+    // and portrait arrangements (see the <if>/<else> in bed_mesh_panel.xml),
+    // so they are their own components rather than inline markup duplicated
+    // per branch. Must be registered before bed_mesh_panel which uses them.
+    register_xml("components/bed_mesh_current_mesh_card.xml");
+    register_xml("components/bed_mesh_profiles_card.xml");
     register_xml("bed_mesh_panel.xml");
 
     // Settings overlay panels

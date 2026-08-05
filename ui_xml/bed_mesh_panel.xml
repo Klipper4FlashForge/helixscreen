@@ -15,13 +15,23 @@
     <color name="mesh_high" value="#bf616a"/>
     <!-- nord11 - hot -->
 
-    <!-- Info column width per breakpoint -->
+    <!-- Info column width per breakpoint. Landscape only — portrait has no
+         side column (see the <if> in the view below), so this const is
+         unused in that arrangement's branch. -->
     <px name="bed_mesh_info_column_width_tiny" value="180"/>
     <px name="bed_mesh_info_column_width_small" value="280"/>
     <px name="bed_mesh_info_column_width_medium" value="280"/>
     <px name="bed_mesh_info_column_width_large" value="280"/>
 
-    <!-- Profile row height per breakpoint.
+    <!-- Profile row height per breakpoint. Declared here (not in
+         ui_xml/components/bed_mesh_profiles_card.xml, which is where it is
+         actually used) because theme_manager_find_xml_files() only scans
+         top-level ui_xml/*.xml for the "_micro"/"_tiny"/... auto-discovery
+         that produces the responsive #bed_mesh_profile_row_height token
+         (check_responsive_token_scope.py, prestonbrown/helixscreen#1211) — a
+         components/ subdirectory declaration is invisible to it. Once
+         declared here the token resolves globally, including from the
+         profiles card component.
 
          This was a hardcoded 44 at all five row sites. At MICRO the info column
          is 212px, the current-mesh card takes 134 of it, and the profiles list
@@ -29,22 +39,15 @@
          the list was a slit you could not read (prestonbrown/helixscreen#1204).
          44 is kept from SMALL up, where it is a comfortable touch target; the
          smaller tiers trade some target size for actually being able to see a
-         row. Paired with hiding the Max/Min stat rows at MICRO (below), which
-         is what frees the vertical room for two rows instead of none. -->
+         row. Paired with hiding the Max/Min stat rows at MICRO and TINY (in
+         bed_mesh_current_mesh_card.xml), which is what frees the vertical room
+         for two rows instead of none. -->
     <px name="bed_mesh_profile_row_height_micro" value="28"/>
     <px name="bed_mesh_profile_row_height_tiny" value="32"/>
     <px name="bed_mesh_profile_row_height_small" value="44"/>
     <px name="bed_mesh_profile_row_height_medium" value="44"/>
     <px name="bed_mesh_profile_row_height_large" value="44"/>
   </consts>
-  <styles>
-    <!-- Highlight for the currently loaded/active profile row. Applied via
-         bind_style_if_eq on each row's bed_mesh_profile_N_active subject so the
-         loaded profile reads as "selected" (raised surface + subtle accent
-         border), matching the elevated-surface convention used elsewhere. -->
-    <style name="profile_row_active"
-           bg_opa="255" bg_color="#elevated_bg" border_width="1" border_color="#primary" border_opa="180"/>
-  </styles>
   <view name="bed_mesh_panel"
         extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_bg_opa="255"
         style_bg_color="#card_bg" style_pad_all="0" style_border_width="0" scrollable="false" flex_flow="column">
@@ -54,163 +57,84 @@
                 action_button_height="#button_height" action_button_pad="#space_md" hide_action_button="false"
                 action_button_callback="on_bed_mesh_calibrate_clicked"
                 action_button_disabled_cond="nav_buttons_enabled eq 0"/>
-    <!-- Content Area: Horizontal split (Left=Canvas, Right=Cards) -->
-    <lv_obj name="overlay_content"
-            width="100%" flex_grow="1" style_pad_all="#space_md" scrollable="false" flex_flow="row"
-            style_pad_gap="#space_md">
-      <!-- Disable content when printer not connected or klippy not ready -->
-      <bind_state_if_not_eq subject="nav_buttons_enabled" state="disabled" ref_value="1"/>
-      <!-- Left: 3D Mesh Canvas wrapper (fills remaining space) -->
-      <lv_obj name="canvas_wrapper" height="100%" flex_grow="1" style_pad_all="0" scrollable="false">
-        <bed_mesh name="bed_mesh_canvas" width="100%" height="100%" clickable="true" style_border_width="0"/>
-        <!-- Empty state overlay - absolutely positioned centered over canvas -->
-        <centered_column name="no_mesh_overlay" width="content" height="content" align="center">
-          <bind_flag_if_eq subject="bed_mesh_available" flag="hidden" ref_value="1"/>
-          <icon src="grid_off" size="lg" variant="muted"/>
-          <text_muted text="No mesh loaded" translation_tag="No mesh loaded" style_pad_top="#space_md"/>
-        </centered_column>
+    <!-- Content Area: landscape is a row (canvas left, cards in a fixed-width
+         side column); portrait is a column — canvas on top, mesh info below
+         it, list of profiles at the bottom. Three blocks, stacked, each full
+         width. ui_is_portrait is reactive, so a rotation rebuilds this <if>
+         in place — see docs/devel/LVGL9_XML_GUIDE.md "Structural
+         conditionals with <if> / <else>".
+
+         current_mesh_card and profiles_card are IDENTICAL in both
+         arrangements (docs/devel/LVGL9_XML_GUIDE.md and this task's brief both
+         call this out as the trap: pasting their ~150 lines into both
+         branches would duplicate them in a way no gate can see, since they'd
+         coexist in one file). They are therefore their own components
+         (ui_xml/components/bed_mesh_current_mesh_card.xml,
+         bed_mesh_profiles_card.xml) and each branch below just instantiates
+         them — the markup itself exists exactly once. What genuinely differs
+         between the two arrangements is structural (a fixed-width side
+         column holding both cards, vs. both cards stacked full-width below
+         the canvas) rather than a simple attribute swap, which is why this
+         needs <if> rather than a cheaper bind_style_if/cond= toggle:
+         profiles_card's flex_grow="1" must reach whatever height the
+         STACKED COLUMN leaves over in portrait, which only happens if it is
+         overlay_content's direct child there, not nested one level down
+         inside a side column. -->
+    <if cond="ui_is_portrait eq 1">
+      <lv_obj name="overlay_content"
+              width="100%" flex_grow="1" style_pad_all="#space_md" scrollable="false" flex_flow="column"
+              style_pad_gap="#space_md">
+        <!-- Disable content when printer not connected or klippy not ready -->
+        <bind_state_if_not_eq subject="nav_buttons_enabled" state="disabled" ref_value="1"/>
+        <!-- Top: 3D Mesh Canvas. 45% is the pre-measurement default;
+             BedMeshPanel::apply_portrait_canvas_height() (wired on
+             overlay_content's SIZE_CHANGED) refines it once the column has
+             been laid out, reserving room for BOTH current_mesh_card and a
+             profiles_card minimum so neither is squeezed to nothing — see
+             that function for the reservation math. If the measurement
+             returns 0 (not laid out yet), this value stands on its own. -->
+        <lv_obj name="canvas_wrapper" width="100%" height="45%" style_pad_all="0" scrollable="false">
+          <bed_mesh name="bed_mesh_canvas" width="100%" height="100%" clickable="true" style_border_width="0"/>
+          <!-- Empty state overlay - absolutely positioned centered over canvas -->
+          <centered_column name="no_mesh_overlay" width="content" height="content" align="center">
+            <bind_flag_if_eq subject="bed_mesh_available" flag="hidden" ref_value="1"/>
+            <icon src="grid_off" size="lg" variant="muted"/>
+            <text_muted text="No mesh loaded" translation_tag="No mesh loaded" style_pad_top="#space_md"/>
+          </centered_column>
+        </lv_obj>
+        <!-- Middle: mesh info, full width, fixed content height. -->
+        <bed_mesh_current_mesh_card name="current_mesh_card"/>
+        <!-- Bottom: list of profiles, full width, absorbs whatever height
+             the canvas and current_mesh_card do not use (flex_grow="1",
+             declared in the component). apply_portrait_canvas_height()
+             reserves this card a measured minimum before sizing the canvas,
+             so this is never squeezed to zero — see that function. -->
+        <bed_mesh_profiles_card name="profiles_card"/>
       </lv_obj>
-      <!-- Right: Info column with two cards -->
-      <lv_obj name="info_column"
-              width="#bed_mesh_info_column_width" height="100%" flex_flow="column" style_pad_all="0"
-              style_pad_gap="#space_md" scrollable="false">
-        <!-- ============================================================ -->
-        <!-- CURRENT MESH CARD -->
-        <!-- ============================================================ -->
-        <ui_card name="current_mesh_card"
-                 width="100%" height="content" style_border_width="0" style_pad_all="0" flex_flow="column"
-                 scrollable="false">
-          <!-- Card Header -->
-          <lv_obj width="100%"
-                  height="content" flex_flow="row" style_flex_cross_place="center" style_pad_left="#space_md"
-                  style_pad_right="#space_md" style_pad_top="#space_sm" style_pad_bottom="#space_sm"
-                  style_pad_gap="#space_sm" scrollable="false">
-            <icon src="info" size="sm" variant="success"/>
-            <text_body text="Current Mesh" translation_tag="Current Mesh" flex_grow="1"/>
-          </lv_obj>
-          <!-- Divider -->
-          <divider_horizontal/>
-          <!-- Card Content -->
-          <lv_obj width="100%"
-                  height="content" flex_flow="column" style_pad_all="#space_md" style_pad_gap="#space_xs"
-                  scrollable="false">
-            <!-- Name row -->
-            <lv_obj width="100%" flex_flow="row" style_pad_all="0" scrollable="false">
-              <text_small text="Name" translation_tag="Name"/>
-              <text_small name="mesh_name_value"
-                          bind_text="bed_mesh_profile_name" flex_grow="1" style_text_align="right"
-                          style_pad_left="#space_sm" style_text_color="#success"/>
-            </lv_obj>
-            <!-- Size row -->
-            <lv_obj width="100%" flex_flow="row" style_pad_all="0" scrollable="false">
-              <text_small text="Size" translation_tag="Size"/>
-              <text_small name="mesh_size_value"
-                          bind_text="bed_mesh_dimensions" flex_grow="1" style_text_align="right"
-                          style_pad_left="#space_sm" style_text_color="#text"/>
-            </lv_obj>
-            <!-- Max row. Hidden at MICRO: Z Range already conveys the spread, and
-                 the 212px info column cannot afford five stat rows and a readable
-                 profiles list at the same time (prestonbrown/helixscreen#1204). -->
-            <lv_obj width="100%" flex_flow="row" style_pad_all="0" scrollable="false">
-              <bind_flag_if_eq subject="ui_breakpoint" flag="hidden" ref_value="0"/>
-              <text_small name="mesh_max_label" bind_text="bed_mesh_max_label"/>
-              <text_small name="mesh_max_value"
-                          bind_text="bed_mesh_max_value" flex_grow="1" style_text_align="right"
-                          style_pad_left="#space_sm" style_text_color="#text"/>
-            </lv_obj>
-            <!-- Min row. Hidden at MICRO: Z Range already conveys the spread, and
-                 the 212px info column cannot afford five stat rows and a readable
-                 profiles list at the same time (prestonbrown/helixscreen#1204). -->
-            <lv_obj width="100%" flex_flow="row" style_pad_all="0" scrollable="false">
-              <bind_flag_if_eq subject="ui_breakpoint" flag="hidden" ref_value="0"/>
-              <text_small name="mesh_min_label" bind_text="bed_mesh_min_label"/>
-              <text_small name="mesh_min_value"
-                          bind_text="bed_mesh_min_value" flex_grow="1" style_text_align="right"
-                          style_pad_left="#space_sm" style_text_color="#text"/>
-            </lv_obj>
-            <!-- Z Range row -->
-            <lv_obj width="100%" flex_flow="row" style_pad_all="0" scrollable="false">
-              <text_small text="Z Range" translation_tag="Z Range"/>
-              <text_small name="mesh_range_value"
-                          bind_text="bed_mesh_variance" flex_grow="1" style_text_align="right"
-                          style_pad_left="#space_sm" style_text_color="#text"/>
-            </lv_obj>
-          </lv_obj>
-        </ui_card>
-        <!-- ============================================================ -->
-        <!-- PROFILES CARD -->
-        <!-- ============================================================ -->
-        <ui_card name="profiles_card"
-                 width="100%" flex_grow="1" style_border_width="0" style_pad_all="0" flex_flow="column"
-                 scrollable="false">
-          <!-- Card Header -->
-          <lv_obj width="100%"
-                  height="content" flex_flow="row" style_flex_cross_place="center" style_pad_left="#space_md"
-                  style_pad_right="#space_md" style_pad_top="#space_sm" style_pad_bottom="#space_sm"
-                  style_pad_gap="#space_sm" scrollable="false">
-            <icon src="layers" size="sm" variant="success"/>
-            <text_body text="Profiles" translation_tag="Profiles" flex_grow="1"/>
-          </lv_obj>
-          <!-- Divider -->
-          <divider_horizontal/>
-          <!-- Profiles List (scrollable) -->
-          <lv_obj name="profiles_list"
-                  width="100%" flex_grow="1" flex_flow="column" style_pad_all="#space_sm" style_pad_gap="#space_xs"
-                  scrollable="true">
-            <!-- Profile rows 0-4. count="5" is a literal (matches
-                 BED_MESH_MAX_PROFILES in ui_panel_bed_mesh.h) so this expands
-                 once at load time and never rebuilds — the ordering
-                 constraint for subject-bound <repeat> does not apply here,
-                 and no_profiles_message may safely follow as a static
-                 sibling. ${i + 1} composes the 1-based "hide until the count
-                 reaches this row" threshold each row needs; a literal
-                 ref_value per row was the unroll this repeat replaces. -->
-            <repeat count="5">
-              <ui_card name="profile_row_${i}"
-                       width="100%" height="#bed_mesh_profile_row_height" flex_flow="row"
-                       style_flex_cross_place="center" style_border_width="0" style_pad_left="#space_sm"
-                       style_pad_right="#space_sm" style_pad_top="0" style_pad_bottom="0"
-                       style_pad_gap="#space_xs" clickable="true" scrollable="false">
-                <bind_flag_if_lt subject="bed_mesh_profile_count" flag="hidden" ref_value="${i + 1}"/>
-                <bind_style_if_eq name="profile_row_active" subject="bed_mesh_profile_${i}_active" ref_value="1"/>
-                <event_cb trigger="clicked" callback="on_profile_${i}_clicked"/>
-                <!-- Name -->
-                <text_small name="profile_${i}_name"
-                            bind_text="bed_mesh_profile_${i}_name" flex_grow="1" style_text_color="#text"
-                            clickable="false" event_bubble="true"/>
-                <!-- Range -->
-                <text_small name="profile_${i}_range"
-                            width="50" bind_text="bed_mesh_profile_${i}_range" style_text_align="right"
-                            clickable="false" event_bubble="true"/>
-                <!-- Rename icon (only when active) -->
-                <icon name="profile_${i}_rename"
-                      src="pencil" size="sm" color="#success" clickable="true" style_pad_all="#space_xs">
-                  <bind_flag_if_eq subject="bed_mesh_profile_${i}_active" flag="hidden" ref_value="0"/>
-                  <event_cb trigger="clicked" callback="on_profile_${i}_rename"/>
-                </icon>
-                <!-- Load icon (only when NOT active) -->
-                <icon name="profile_${i}_load"
-                      src="arrow_up_circle" size="sm" variant="muted" clickable="true" style_pad_all="#space_xs">
-                  <bind_flag_if_eq subject="bed_mesh_profile_${i}_active" flag="hidden" ref_value="1"/>
-                  <event_cb trigger="clicked" callback="on_profile_${i}_clicked"/>
-                </icon>
-                <!-- Delete icon (always visible) -->
-                <icon name="profile_${i}_delete"
-                      src="trash_can_outline" size="sm" variant="danger" clickable="true" style_pad_all="#space_xs">
-                  <event_cb trigger="clicked" callback="on_profile_${i}_delete"/>
-                </icon>
-              </ui_card>
-            </repeat>
-            <!-- Empty state message (shown when no profiles) -->
-            <lv_obj name="no_profiles_message"
-                    width="100%" height="content" style_pad_all="#space_md" scrollable="false">
-              <bind_flag_if_gt subject="bed_mesh_profile_count" flag="hidden" ref_value="0"/>
-              <text_small width="100%"
-                          text="No profiles available" translation_tag="No profiles available" style_text_align="center"/>
-            </lv_obj>
-          </lv_obj>
-        </ui_card>
+      <else/>
+      <lv_obj name="overlay_content"
+              width="100%" flex_grow="1" style_pad_all="#space_md" scrollable="false" flex_flow="row"
+              style_pad_gap="#space_md">
+        <!-- Disable content when printer not connected or klippy not ready -->
+        <bind_state_if_not_eq subject="nav_buttons_enabled" state="disabled" ref_value="1"/>
+        <!-- Left: 3D Mesh Canvas wrapper (fills remaining space) -->
+        <lv_obj name="canvas_wrapper" height="100%" flex_grow="1" style_pad_all="0" scrollable="false">
+          <bed_mesh name="bed_mesh_canvas" width="100%" height="100%" clickable="true" style_border_width="0"/>
+          <!-- Empty state overlay - absolutely positioned centered over canvas -->
+          <centered_column name="no_mesh_overlay" width="content" height="content" align="center">
+            <bind_flag_if_eq subject="bed_mesh_available" flag="hidden" ref_value="1"/>
+            <icon src="grid_off" size="lg" variant="muted"/>
+            <text_muted text="No mesh loaded" translation_tag="No mesh loaded" style_pad_top="#space_md"/>
+          </centered_column>
+        </lv_obj>
+        <!-- Right: fixed-width side column holding the two cards -->
+        <lv_obj name="info_column"
+                width="#bed_mesh_info_column_width" height="100%" flex_flow="column" style_pad_all="0"
+                style_pad_gap="#space_md" scrollable="false">
+          <bed_mesh_current_mesh_card name="current_mesh_card"/>
+          <bed_mesh_profiles_card name="profiles_card"/>
+        </lv_obj>
       </lv_obj>
-    </lv_obj>
+    </if>
   </view>
 </component>

@@ -228,6 +228,20 @@ class BedMeshPanel : public OverlayBase {
     void execute_save_config();
 
     static void on_profile_dropdown_changed(lv_event_t* e);
+
+    // Portrait canvas sizing — see apply_portrait_canvas_height() in the .cpp
+    // and include/bed_mesh_portrait_layout.h for the decision itself. Wired
+    // on overlay_content's LV_EVENT_SIZE_CHANGED; direct lv_obj_add_event_cb
+    // is correct here (SIZE_CHANGED has no XML binding equivalent, same
+    // rationale as ui_panel_print_status.cpp:941).
+    static void on_content_size_changed(lv_event_t* e);
+    void apply_portrait_canvas_height();
+    // Re-entrancy guard: apply_portrait_canvas_height() calls
+    // lv_obj_set_height() on canvas_wrapper, which can itself emit another
+    // SIZE_CHANGED on overlay_content. Set for the duration of the call so a
+    // nested invocation bails instead of recursing indefinitely (#1173-style
+    // layout loop presents as a hung UI, not a crash).
+    bool applying_portrait_canvas_height_ = false;
 };
 
 // Global instance accessor (needed by main.cpp)

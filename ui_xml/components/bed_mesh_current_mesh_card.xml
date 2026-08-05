@@ -1,0 +1,85 @@
+<?xml version="1.0"?>
+<!-- Copyright (C) 2025-2026 356C LLC -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<component>
+  <subjects>
+    <!-- Hide the Max/Min stat rows when EITHER:
+           - the cramped-axis tier is MICRO/TINY (ui_breakpoint lt 2) — the
+             original #1204 rule, still needed for a narrow screen in ANY
+             orientation (e.g. a narrow portrait phone, or a short landscape
+             strip where the narrow axis is height), or
+           - the screen is portrait AND vertically short (ui_breakpoint_v lt 5,
+             i.e. LARGE or below on the vertical-resolution ladder).
+         The second clause is gated on ui_is_portrait specifically because
+         ui_breakpoint_v is keyed on raw vertical resolution regardless of
+         orientation: 1024x600 landscape and a 480x640 portrait column both
+         land on LARGE (breakpoint_for(600) and breakpoint_for(640) are both
+         551-700). Without the ui_is_portrait guard this would also hide
+         Max/Min on 1024x600 landscape, which has never been cramped — its
+         info column is a fixed 280px wide with plenty of headroom; only the
+         portrait STACK is short on space at that height. This is a
+         subject_expr (declarative rule 7) rather than a hand-rolled C++
+         observer because the condition is reused at both the Max and the Min
+         row below. -->
+    <subject_expr name="bed_mesh_hide_stat_rows"
+                  expr="ui_breakpoint lt 2 or (ui_is_portrait eq 1 and ui_breakpoint_v lt 5)"/>
+  </subjects>
+  <view name="current_mesh_card"
+        extends="ui_card" width="100%" height="content" style_border_width="0" style_pad_all="0" flex_flow="column"
+        scrollable="false">
+    <!-- Card Header -->
+    <lv_obj width="100%"
+            height="content" flex_flow="row" style_flex_cross_place="center" style_pad_left="#space_md"
+            style_pad_right="#space_md" style_pad_top="#space_sm" style_pad_bottom="#space_sm" style_pad_gap="#space_sm"
+            scrollable="false">
+      <icon src="info" size="sm" variant="success"/>
+      <text_body text="Current Mesh" translation_tag="Current Mesh" flex_grow="1"/>
+    </lv_obj>
+    <!-- Divider -->
+    <divider_horizontal/>
+    <!-- Card Content -->
+    <lv_obj width="100%"
+            height="content" flex_flow="column" style_pad_all="#space_md" style_pad_gap="#space_xs" scrollable="false">
+      <!-- Name row -->
+      <lv_obj width="100%" flex_flow="row" style_pad_all="0" scrollable="false">
+        <text_small text="Name" translation_tag="Name"/>
+        <text_small name="mesh_name_value"
+                    bind_text="bed_mesh_profile_name" flex_grow="1" style_text_align="right" style_pad_left="#space_sm"
+                    style_text_color="#success"/>
+      </lv_obj>
+      <!-- Size row -->
+      <lv_obj width="100%" flex_flow="row" style_pad_all="0" scrollable="false">
+        <text_small text="Size" translation_tag="Size"/>
+        <text_small name="mesh_size_value"
+                    bind_text="bed_mesh_dimensions" flex_grow="1" style_text_align="right" style_pad_left="#space_sm"
+                    style_text_color="#text"/>
+      </lv_obj>
+      <!-- Max row. Hidden per bed_mesh_hide_stat_rows (see <subjects> above):
+           Z Range already conveys the spread, and a narrow OR vertically
+           short column cannot afford five stat rows and a readable profiles
+           list at once (prestonbrown/helixscreen#1204). -->
+      <lv_obj width="100%" flex_flow="row" style_pad_all="0" scrollable="false">
+        <bind_flag_if_eq subject="bed_mesh_hide_stat_rows" flag="hidden" ref_value="1"/>
+        <text_small name="mesh_max_label" bind_text="bed_mesh_max_label"/>
+        <text_small name="mesh_max_value"
+                    bind_text="bed_mesh_max_value" flex_grow="1" style_text_align="right" style_pad_left="#space_sm"
+                    style_text_color="#text"/>
+      </lv_obj>
+      <!-- Min row. Hidden per bed_mesh_hide_stat_rows — see Max row above. -->
+      <lv_obj width="100%" flex_flow="row" style_pad_all="0" scrollable="false">
+        <bind_flag_if_eq subject="bed_mesh_hide_stat_rows" flag="hidden" ref_value="1"/>
+        <text_small name="mesh_min_label" bind_text="bed_mesh_min_label"/>
+        <text_small name="mesh_min_value"
+                    bind_text="bed_mesh_min_value" flex_grow="1" style_text_align="right" style_pad_left="#space_sm"
+                    style_text_color="#text"/>
+      </lv_obj>
+      <!-- Z Range row -->
+      <lv_obj width="100%" flex_flow="row" style_pad_all="0" scrollable="false">
+        <text_small text="Z Range" translation_tag="Z Range"/>
+        <text_small name="mesh_range_value"
+                    bind_text="bed_mesh_variance" flex_grow="1" style_text_align="right" style_pad_left="#space_sm"
+                    style_text_color="#text"/>
+      </lv_obj>
+    </lv_obj>
+  </view>
+</component>

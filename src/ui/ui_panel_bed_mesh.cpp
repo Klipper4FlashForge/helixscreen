@@ -27,8 +27,10 @@
 #include "ui_update_queue.h"
 
 #include "app_globals.h"
+#include "bed_mesh_portrait_layout.h"
 #include "display_settings_manager.h"
 #include "format_utils.h"
+#include "layout_manager.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
 #include "observer_factory.h"
@@ -37,6 +39,7 @@
 #include "standard_macros.h"
 #include "static_panel_registry.h"
 #include "temperature_controller.h"
+#include "theme_manager.h"
 
 #include <spdlog/spdlog.h>
 
@@ -250,6 +253,14 @@ lv_obj_t* BedMeshPanel::create(lv_obj_t* parent) {
     }
     spdlog::debug("[{}] Found canvas widget - rotation controlled by touch drag", get_name());
 
+    // Wire LV_EVENT_SIZE_CHANGED on overlay_content so the portrait canvas
+    // height recomputes whenever the column resizes (rotation, or the
+    // initial layout pass). Direct lv_obj_add_event_cb is correct here —
+    // SIZE_CHANGED has no XML binding equivalent (same rationale as
+    // ui_panel_print_status.cpp:941).
+    lv_obj_add_event_cb(overlay_content, on_content_size_changed, LV_EVENT_SIZE_CHANGED, this);
+    spdlog::debug("[{}] Registered SIZE_CHANGED on overlay_content", get_name());
+
     // Setup Moonraker subscription for mesh updates
     setup_moonraker_subscription();
 
@@ -295,6 +306,139 @@ lv_obj_t* BedMeshPanel::create(lv_obj_t* parent) {
 
     spdlog::info("[{}] Overlay created successfully", get_name());
     return overlay_root_;
+}
+
+// ============================================================================
+// Portrait canvas sizing
+// ============================================================================
+
+void BedMeshPanel::on_content_size_changed(lv_event_t* e) {
+    auto* self = static_cast<BedMeshPanel*>(lv_event_get_user_data(e));
+    if (self) {
+        self->apply_portrait_canvas_height();
+    }
+}
+
+// Portrait sizes the canvas explicitly rather than flexing it — see
+// include/bed_mesh_portrait_layout.h. The three blocks are stacked full
+// width in overlay_content: canvas, current_mesh_card, profiles_card
+// (flex_grow="1", declared in its own component) absorbing whatever height
+// is left. avail_h below reserves BOTH current_mesh_card's content height
+// AND a measured minimum for profiles_card before the canvas is sized, so
+// that "whatever is left" for profiles_card is never zero — see the
+// avail_h comment for how the earlier version of this function got that
+// wrong.
+void BedMeshPanel::apply_portrait_canvas_height() {
+    // Re-entrancy guard: lv_obj_set_height() below can itself emit another
+    // SIZE_CHANGED on overlay_content before this call returns. Bail rather
+    // than recurse — an unguarded loop here presents as a hung UI, not a
+    // crash, since nothing throws or asserts.
+    if (!overlay_root_ || applying_portrait_canvas_height_) {
+        return;
+    }
+
+    lv_obj_t* screen = lv_obj_get_screen(overlay_root_);
+    if (!helix::is_portrait_layout(
+            helix::detect_layout_type(lv_obj_get_width(screen), lv_obj_get_height(screen)))) {
+        return;
+    }
+
+    lv_obj_t* wrapper = lv_obj_find_by_name(overlay_root_, "canvas_wrapper");
+    lv_obj_t* content = lv_obj_find_by_name(overlay_root_, "overlay_content");
+    lv_obj_t* info = lv_obj_find_by_name(overlay_root_, "current_mesh_card");
+    lv_obj_t* profiles_header = lv_obj_find_by_name(overlay_root_, "profiles_card_header");
+    lv_obj_t* row0 = lv_obj_find_by_name(overlay_root_, "profile_row_0");
+    if (!wrapper || !content || !info || !profiles_header || !row0) {
+        return;
+    }
+
+    // lv_obj_get_height(info) reads the COMPUTED coord, so the info card must
+    // already have been laid out — force it rather than trust the pass that
+    // triggered this SIZE_CHANGED, since a resize can fire before the info
+    // card's own layout settles. Also settles profiles_header/row0 below,
+    // which are read the same way.
+    lv_obj_update_layout(content);
+
+    // profiles_min_h: the smallest height that still shows profiles_card's
+    // header plus two rows of its list, derived from the SAME live-rendered
+    // pieces rather than a guessed constant — profiles_card_header and
+    // profile_row_0 are measured directly (both vary by breakpoint: icon
+    // size, padding, and #bed_mesh_profile_row_height all change per tier),
+    // and the fixed pieces around them are named tokens:
+    //   - kDividerHeight: divider_horizontal.xml hardcodes height="1".
+    //   - space_sm * 2: profiles_list's own style_pad_all top+bottom.
+    //   - space_xs: profiles_list's style_pad_gap between the two rows shown
+    //     (one gap for two rows).
+    // This is the "#1204" viewport rule restated as arithmetic instead of a
+    // magic 128: that bug was a 33px viewport showing zero 44px rows; two
+    // rows plus the header/divider/padding around them is the smallest
+    // viewport that isn't that bug.
+    constexpr int32_t kDividerHeight = 1;
+    const int32_t header_h = lv_obj_get_height(profiles_header);
+    const int32_t row_h = lv_obj_get_height(row0);
+    const int32_t list_pad = theme_manager_get_spacing("space_sm");
+    const int32_t row_gap = theme_manager_get_spacing("space_xs");
+    const int32_t profiles_min_h =
+        header_h + kDividerHeight + (list_pad * 2) + (row_h * 2) + row_gap;
+
+    // avail_h is what is left for the canvas AFTER current_mesh_card's own
+    // content height, profiles_card's measured minimum, and the two
+    // inter-block gaps (canvas-to-info, info-to-profiles) — NOT the
+    // column's whole content height, which still includes the canvas and
+    // would make this circular. column_h IS the whole content height, and
+    // the two are deliberately kept distinct: bed_mesh_portrait_canvas_height's
+    // floor is a share of column_h, and passing avail_h for both silently
+    // zeroes that floor out (see the kBedMeshPortraitCanvasMinPct comment in
+    // bed_mesh_portrait_layout.h).
+    //
+    // Both current_mesh_card AND profiles_min_h must be subtracted here.
+    // Subtracting only current_mesh_card (an earlier version of this
+    // function did exactly that) hands the canvas 100% of what's left after
+    // the info card, and since the canvas is willing to consume all of
+    // avail_h when it cannot fit a full square, that leaves EXACTLY 0 for
+    // profiles_card: on a 480x800 screen with the mock's data,
+    // current_mesh_card is 209px, so avail_h = 574-209-20 = 345, fitted =
+    // min(460,345) = 345, and 345+209+20 sums to exactly column_h (574).
+    // Seeing that empty "Profiles" section is what caught the bug.
+    const int32_t gap = theme_manager_get_spacing("space_md");
+    const int32_t band_w = lv_obj_get_width(wrapper);
+    const int32_t column_h = lv_obj_get_content_height(content);
+    const int32_t avail_h = column_h - lv_obj_get_height(info) - profiles_min_h - (gap * 2);
+
+    const int32_t fitted = helix::bed_mesh_portrait_canvas_height(band_w, avail_h, column_h);
+
+    // Arbitrate the two floors. bed_mesh_portrait_canvas_height's 35%-of-column_h
+    // floor is a PREFERENCE for a taller, more readable canvas; it knows
+    // nothing about current_mesh_card or profiles_card and will happily
+    // return more than avail_h when the column is short enough for the floor
+    // to exceed it (verified at 480x640 with the mock's data: floor =
+    // 438*0.35 = 153, avail_h = 63, and the function returns 153). Handing
+    // the wrapper that 153 overflows the column by however much 153 exceeds
+    // avail_h, and that overflow lands on profiles_card, not the canvas —
+    // profiles_card is the last child, so it is what gets pushed off past
+    // overlay_content's bottom edge. Not overflowing IS the invariant here
+    // (checked below via overlay_content's scroll.bottom, which must stay
+    // 0); a flatter-than-preferred canvas is degraded but usable, so the
+    // canvas floor is what yields. This is done here rather than by
+    // weakening bed_mesh_portrait_canvas_height itself — that function's
+    // floor/ceiling contract is correct and independently unit-tested; only
+    // this caller knows about the OTHER blocks sharing the column.
+    const int32_t h = (avail_h > 0 && fitted > avail_h) ? avail_h : fitted;
+
+    spdlog::debug("[{}] apply_portrait_canvas_height: band_w={} column_h={} info_h={} "
+                  "profiles_min_h={} (header={} row={} list_pad={} row_gap={}) gap={} avail_h={} "
+                  "fitted={} -> h={} (wrapper currently {})",
+                  get_name(), band_w, column_h, lv_obj_get_height(info), profiles_min_h, header_h,
+                  row_h, list_pad, row_gap, gap, avail_h, fitted, h, lv_obj_get_height(wrapper));
+    // Skip when the computed height already matches — besides being a no-op,
+    // lv_obj_set_height() short-circuits internally when the value is
+    // unchanged and would not re-fire SIZE_CHANGED anyway, but checking here
+    // keeps the guard explicit rather than relying on that LVGL behavior.
+    if (h > 0 && h != lv_obj_get_height(wrapper)) {
+        applying_portrait_canvas_height_ = true;
+        lv_obj_set_height(wrapper, h);
+        applying_portrait_canvas_height_ = false;
+    }
 }
 
 // ============================================================================
