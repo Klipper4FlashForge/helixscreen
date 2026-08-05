@@ -19,6 +19,12 @@
 
 class MoonrakerAPI;
 
+namespace helix {
+namespace ui {
+struct BedMeshPanelTestAccess; // test-only friend (tests/test_helpers/)
+} // namespace ui
+} // namespace helix
+
 /**
  * @brief Bed mesh visualization panel with 3D renderer
  *
@@ -45,6 +51,8 @@ enum class BedMeshCalibrationState {
 };
 
 class BedMeshPanel : public OverlayBase {
+    friend struct helix::ui::BedMeshPanelTestAccess;
+
   public:
     BedMeshPanel();
     ~BedMeshPanel() override;
@@ -109,18 +117,21 @@ class BedMeshPanel : public OverlayBase {
     lv_subject_t bed_mesh_available_;
     lv_subject_t bed_mesh_profile_name_;
     lv_subject_t bed_mesh_dimensions_;
-    lv_subject_t bed_mesh_max_label_; // "Max [x, y]"
+    // "Max"/"Min" labels are plain static text="Max" translation_tag="Max" in
+    // bed_mesh_current_mesh_card.xml (like Name/Size/Z Range) - they never
+    // change at runtime, so no subject needed. Only the coordinates change.
     lv_subject_t bed_mesh_max_value_; // "z mm"
-    lv_subject_t bed_mesh_min_label_; // "Min [x, y]"
+    lv_subject_t bed_mesh_max_coord_; // "[x, y]" muted sub-line, empty when no mesh
     lv_subject_t bed_mesh_min_value_; // "z mm"
+    lv_subject_t bed_mesh_min_coord_; // "[x, y]" muted sub-line, empty when no mesh
     lv_subject_t bed_mesh_variance_;
 
     char profile_name_buf_[64];
     char dimensions_buf_[64];
-    char max_label_buf_[48];
     char max_value_buf_[32];
-    char min_label_buf_[48];
+    char max_coord_buf_[24];
     char min_value_buf_[32];
+    char min_coord_buf_[24];
     char variance_buf_[64];
 
     // ========== Profile List Subjects (5 profiles max) ==========
@@ -187,6 +198,11 @@ class BedMeshPanel : public OverlayBase {
     // Observer for build_volume changes to refresh bed bounds
     ObserverGuard build_volume_observer_;
 
+    // Observer that re-wires canvas_/SIZE_CHANGED after bed_mesh_panel.xml's
+    // top-level <if cond="ui_is_portrait ..."> rebuilds overlay_content in
+    // place (rotation). See rewire_after_orientation_flip() in the .cpp.
+    ObserverGuard portrait_rewire_observer_;
+
     // Cached mesh bounds for refreshing when build_volume changes
     double cached_mesh_min_x_ = 0.0;
     double cached_mesh_max_x_ = 0.0;
@@ -213,6 +229,35 @@ class BedMeshPanel : public OverlayBase {
     void setup_moonraker_subscription();
     void setup_build_volume_observer();
     void refresh_bed_bounds();
+
+    // ========== Canvas / content wiring (create(), and rebuild survival) ==========
+    // Finds bed_mesh_canvas under overlay_content, guards canvas_ against
+    // dangling by nulling it on the widget's own LV_EVENT_DELETE (fires
+    // whether the deletion is full panel teardown or an XML <if> rebuild
+    // condemning the old overlay_content — see the fix note on
+    // portrait_rewire_observer_ above), and (re-)registers SIZE_CHANGED on
+    // overlay_content. Returns false (canvas_ left null) if the widget isn't
+    // found. Shared by create() (initial) and rewire_after_orientation_flip()
+    // (post-rebuild) so the two paths cannot silently diverge.
+    bool wire_canvas_and_content(lv_obj_t* overlay_content);
+    static void on_canvas_deleted_cb(lv_event_t* e);
+    // Re-applies the render-mode/zero-plane/auto-evaluate settings create()
+    // applies once at startup — split out so rewire_after_orientation_flip()
+    // can re-run it against the brand-new custom widget instance a rebuild
+    // creates, which starts from ui_bed_mesh's own defaults.
+    void apply_canvas_render_settings();
+    // Registers the ui_is_portrait observer that drives
+    // rewire_after_orientation_flip(). Must be called AFTER lv_xml_create()
+    // in create() so this observer is added to the subject's list strictly
+    // after bed_mesh_panel.xml's own <if> observer — see the .cpp for why
+    // that ordering (not deferred, not coincidental) is what makes the
+    // rewire safe.
+    void setup_orientation_rewire_observer();
+    // Runs when ui_is_portrait changes while this panel's tree exists:
+    // re-finds canvas_/overlay_content, re-wires them, reloads the current
+    // mesh into the fresh canvas, and re-applies the portrait sizing. See
+    // the .cpp for the full rationale (the CRITICAL fix this exists for).
+    void rewire_after_orientation_flip();
     void on_mesh_update_internal(const BedMeshProfile& mesh);
     void update_profile_list_subjects();
     void update_info_subjects(const std::vector<std::vector<float>>& mesh_data, int cols, int rows);
@@ -228,6 +273,20 @@ class BedMeshPanel : public OverlayBase {
     void execute_save_config();
 
     static void on_profile_dropdown_changed(lv_event_t* e);
+
+    // Portrait canvas sizing — see apply_portrait_canvas_height() in the .cpp
+    // and include/bed_mesh_portrait_layout.h for the decision itself. Wired
+    // on overlay_content's LV_EVENT_SIZE_CHANGED; direct lv_obj_add_event_cb
+    // is correct here (SIZE_CHANGED has no XML binding equivalent, same
+    // rationale as ui_panel_print_status.cpp:941).
+    static void on_content_size_changed(lv_event_t* e);
+    void apply_portrait_canvas_height();
+    // Re-entrancy guard: apply_portrait_canvas_height() calls
+    // lv_obj_set_height() on canvas_wrapper, which can itself emit another
+    // SIZE_CHANGED on overlay_content. Set for the duration of the call so a
+    // nested invocation bails instead of recursing indefinitely (#1173-style
+    // layout loop presents as a hung UI, not a crash).
+    bool applying_portrait_canvas_height_ = false;
 };
 
 // Global instance accessor (needed by main.cpp)

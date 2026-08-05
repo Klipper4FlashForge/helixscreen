@@ -27,8 +27,10 @@
 #include "ui_update_queue.h"
 
 #include "app_globals.h"
+#include "bed_mesh_portrait_layout.h"
 #include "display_settings_manager.h"
 #include "format_utils.h"
+#include "layout_manager.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
 #include "observer_factory.h"
@@ -37,6 +39,7 @@
 #include "standard_macros.h"
 #include "static_panel_registry.h"
 #include "temperature_controller.h"
+#include "theme_manager.h"
 
 #include <spdlog/spdlog.h>
 
@@ -72,9 +75,7 @@ BedMeshPanel::BedMeshPanel() {
     // Initialize buffer contents
     std::memset(profile_name_buf_, 0, sizeof(profile_name_buf_));
     std::strncpy(dimensions_buf_, "No mesh data", sizeof(dimensions_buf_) - 1);
-    std::memset(max_label_buf_, 0, sizeof(max_label_buf_));
     std::memset(max_value_buf_, 0, sizeof(max_value_buf_));
-    std::memset(min_label_buf_, 0, sizeof(min_label_buf_));
     std::memset(min_value_buf_, 0, sizeof(min_value_buf_));
     std::memset(variance_buf_, 0, sizeof(variance_buf_));
     std::memset(rename_old_name_buf_, 0, sizeof(rename_old_name_buf_));
@@ -118,6 +119,30 @@ BedMeshPanel::~BedMeshPanel() {
             helix::ui::modal_hide(delete_modal_widget_);
             delete_modal_widget_ = nullptr;
         }
+
+        // wire_canvas_and_content() registers on_canvas_deleted_cb (canvas_)
+        // and on_content_size_changed (overlay_content) with user_data=this.
+        // StaticPanelRegistry::destroy_all() runs BEFORE lv_deinit() and
+        // before a soft restart's explicit widget-tree deletion — in both
+        // paths `this` is about to be freed while canvas_/overlay_content
+        // are still live widgets. Without removing these here, the later
+        // real deletion would fire on_canvas_deleted_cb with user_data
+        // pointing at freed memory (rule 5's hazard class, DELETE variant —
+        // worse than the analogous SIZE_CHANGED case because DELETE is
+        // GUARANTEED to fire during teardown). lv_obj_remove_event_cb()
+        // removes every registration of the given callback function
+        // regardless of how many accumulated, so this is correct even if
+        // wire_canvas_and_content() were ever called more than once against
+        // the same still-live widget.
+        if (canvas_) {
+            lv_obj_remove_event_cb(canvas_, on_canvas_deleted_cb);
+        }
+        if (overlay_root_) {
+            lv_obj_t* overlay_content = lv_obj_find_by_name(overlay_root_, "overlay_content");
+            if (overlay_content) {
+                lv_obj_remove_event_cb(overlay_content, on_content_size_changed);
+            }
+        }
     }
 
     // Clear widget pointers (LVGL owns the objects)
@@ -138,13 +163,13 @@ void BedMeshPanel::init_subjects() {
                                   "bed_mesh_profile_name", subjects_);
         UI_MANAGED_SUBJECT_STRING(bed_mesh_dimensions_, dimensions_buf_, "No mesh data",
                                   "bed_mesh_dimensions", subjects_);
-        UI_MANAGED_SUBJECT_STRING(bed_mesh_max_label_, max_label_buf_, "Max", "bed_mesh_max_label",
-                                  subjects_);
         UI_MANAGED_SUBJECT_STRING(bed_mesh_max_value_, max_value_buf_, "--", "bed_mesh_max_value",
                                   subjects_);
-        UI_MANAGED_SUBJECT_STRING(bed_mesh_min_label_, min_label_buf_, "Min", "bed_mesh_min_label",
+        UI_MANAGED_SUBJECT_STRING(bed_mesh_max_coord_, max_coord_buf_, "", "bed_mesh_max_coord",
                                   subjects_);
         UI_MANAGED_SUBJECT_STRING(bed_mesh_min_value_, min_value_buf_, "--", "bed_mesh_min_value",
+                                  subjects_);
+        UI_MANAGED_SUBJECT_STRING(bed_mesh_min_coord_, min_coord_buf_, "", "bed_mesh_min_coord",
                                   subjects_);
         UI_MANAGED_SUBJECT_STRING(bed_mesh_variance_, variance_buf_, "", "bed_mesh_variance",
                                   subjects_);
@@ -242,13 +267,21 @@ lv_obj_t* BedMeshPanel::create(lv_obj_t* parent) {
         return overlay_root_;
     }
 
-    // Find canvas widget
-    canvas_ = lv_obj_find_by_name(overlay_content, "bed_mesh_canvas");
-    if (!canvas_) {
-        spdlog::error("[{}] Canvas widget 'bed_mesh_canvas' not found in XML", get_name());
+    // Find canvas widget, guard it against dangling, and wire SIZE_CHANGED —
+    // see wire_canvas_and_content() for what this covers and why.
+    if (!wire_canvas_and_content(overlay_content)) {
         return overlay_root_;
     }
     spdlog::debug("[{}] Found canvas widget - rotation controlled by touch drag", get_name());
+    spdlog::debug("[{}] Registered SIZE_CHANGED on overlay_content", get_name());
+
+    // bed_mesh_panel.xml's top-level <if cond="ui_is_portrait ..."> rebuilds
+    // overlay_content (and therefore bed_mesh_canvas) in place whenever the
+    // display rotates across the portrait/landscape boundary — real hardware
+    // never does this, but the SDL dev window does on a resize. Must be
+    // registered AFTER lv_xml_create() above so it observes ui_is_portrait
+    // strictly after that <if>'s own observer — see the method for why.
+    setup_orientation_rewire_observer();
 
     // Setup Moonraker subscription for mesh updates
     setup_moonraker_subscription();
@@ -274,6 +307,107 @@ lv_obj_t* BedMeshPanel::create(lv_obj_t* parent) {
         update_profile_list_subjects();
     }
 
+    apply_canvas_render_settings();
+
+    // Initially hidden
+    lv_obj_add_flag(overlay_root_, LV_OBJ_FLAG_HIDDEN);
+
+    spdlog::info("[{}] Overlay created successfully", get_name());
+    return overlay_root_;
+}
+
+// ============================================================================
+// Canvas / content wiring — initial create(), and surviving a rebuild
+// ============================================================================
+//
+// bed_mesh_panel.xml's top-level view branches on <if cond="ui_is_portrait eq
+// 1"> to pick between the portrait and landscape arrangements. Because that
+// cond references a subject, LVGL's XML engine treats it as REACTIVE: it
+// binds an observer to ui_is_portrait and, on every change, tears down the
+// current expansion and rebuilds the other branch in place
+// (xml_frag_rebuild -> xml_frag_teardown, lib/helix-xml/src/xml/lv_xml.c).
+// overlay_content — and therefore bed_mesh_canvas underneath it — IS that
+// expansion's root: teardown reparents it into an off-tree, hidden,
+// zero-size "condemned" sink and lv_obj_delete_async()s the sink, so the old
+// widgets are gone (or about to be) the moment the rebuild runs.
+//
+// Nothing else in this file ever learned that canvas_ or the SIZE_CHANGED
+// registration on the old overlay_content had gone stale — on_ui_destroyed()
+// (which nulls canvas_) is only called on full panel teardown, never on an
+// in-place XML rebuild. Every canvas_ dereference between a rotation and the
+// panel's eventual destruction — including ensure_async_rendering()'s
+// ui_bed_mesh_request_async_render(canvas_) reachable from the resize path
+// in src/application/application.cpp — was a potential use-after-free.
+//
+// Real hardware never resizes or rotates at runtime, so this only matters
+// for the SDL dev window — but "don't crash" applies there too. The fix is
+// two independent, minimal pieces:
+//   1. wire_canvas_and_content() installs an LV_EVENT_DELETE guard directly
+//      on canvas_ that nulls it the instant the widget is actually deleted,
+//      from WHICHEVER path deletes it. canvas_ can therefore never dangle —
+//      every existing call site already checks `if (canvas_)` first.
+//   2. setup_orientation_rewire_observer() + rewire_after_orientation_flip()
+//      re-run the same wiring against the freshly rebuilt tree, so a flip
+//      leaves the panel fully functional instead of merely non-crashing.
+
+bool BedMeshPanel::wire_canvas_and_content(lv_obj_t* overlay_content) {
+    if (!overlay_content) {
+        canvas_ = nullptr;
+        return false;
+    }
+
+    canvas_ = lv_obj_find_by_name(overlay_content, "bed_mesh_canvas");
+    if (!canvas_) {
+        spdlog::error("[{}] Canvas widget 'bed_mesh_canvas' not found in XML", get_name());
+        return false;
+    }
+
+    // Belt-and-suspenders against on_ui_destroyed() (full teardown) AND the
+    // <if> rebuild path above — whichever deletes this widget, canvas_ ends
+    // up null rather than dangling.
+    // Remove first for the same reason as the SIZE_CHANGED registration below:
+    // create()'s immediate observer fire re-enters against the same canvas.
+    lv_obj_remove_event_cb(canvas_, on_canvas_deleted_cb);
+    lv_obj_add_event_cb(canvas_, on_canvas_deleted_cb, LV_EVENT_DELETE, this);
+
+    // Wire LV_EVENT_SIZE_CHANGED on overlay_content so the portrait canvas
+    // height recomputes whenever the column resizes (rotation, or the
+    // initial layout pass). Direct lv_obj_add_event_cb is correct here —
+    // SIZE_CHANGED has no XML binding equivalent (same rationale as
+    // ui_panel_print_status.cpp:941).
+    //
+    // Usually overlay_content is fresh — from lv_xml_create() the first time,
+    // from the <if> rebuild after each orientation flip. The exception is
+    // create(): observe_int_immediate fires at registration, so
+    // rewire_after_orientation_flip() runs once against the SAME
+    // overlay_content that was just wired here. Remove before adding so that
+    // path leaves one registration rather than two.
+    lv_obj_remove_event_cb(overlay_content, on_content_size_changed);
+    lv_obj_add_event_cb(overlay_content, on_content_size_changed, LV_EVENT_SIZE_CHANGED, this);
+
+    return true;
+}
+
+void BedMeshPanel::on_canvas_deleted_cb(lv_event_t* e) {
+    auto* self = static_cast<BedMeshPanel*>(lv_event_get_user_data(e));
+    if (!self) {
+        return;
+    }
+    // Guard against a STALE canvas's delete clobbering a already-rewired
+    // canvas_: xml_frag_teardown reparents the old canvas into an off-tree
+    // sink and lv_obj_delete_async()s it, so its LV_EVENT_DELETE fires on a
+    // LATER tick — by which time rewire_after_orientation_flip() has
+    // already, synchronously, pointed canvas_ at the brand-new widget from
+    // the rebuild. Without this check, that late DELETE would null out the
+    // CURRENT valid canvas_ instead of the dead one that actually triggered
+    // it, since every canvas this panel has ever owned shares the same
+    // user_data (`this`) on this same callback.
+    if (lv_event_get_target(e) == self->canvas_) {
+        self->canvas_ = nullptr;
+    }
+}
+
+void BedMeshPanel::apply_canvas_render_settings() {
     // Apply saved render mode preference from settings
     int saved_mode = DisplaySettingsManager::instance().get_bed_mesh_render_mode();
     auto render_mode = static_cast<BedMeshRenderMode>(saved_mode);
@@ -289,12 +423,179 @@ lv_obj_t* BedMeshPanel::create(lv_obj_t* parent) {
     // Evaluate render mode based on FPS history from previous sessions
     // This decides whether to use 3D or 2D fallback mode for AUTO mode
     ui_bed_mesh_evaluate_render_mode(canvas_);
+}
 
-    // Initially hidden
-    lv_obj_add_flag(overlay_root_, LV_OBJ_FLAG_HIDDEN);
+void BedMeshPanel::setup_orientation_rewire_observer() {
+    lv_subject_t* portrait_subject = lv_xml_get_subject(nullptr, "ui_is_portrait");
+    if (!portrait_subject) {
+        spdlog::warn("[{}] ui_is_portrait subject not found; portrait <if> rebuild rewiring "
+                     "disabled (canvas_ would dangle after a real orientation flip)",
+                     get_name());
+        return;
+    }
 
-    spdlog::info("[{}] Overlay created successfully", get_name());
-    return overlay_root_;
+    // observe_int_IMMEDIATE, deliberately not the usual observe_int_sync:
+    // bed_mesh_panel.xml's own <if cond="ui_is_portrait eq 1"> is ALSO bound
+    // to this subject, and its rebuild (xml_frag_rebuild) runs SYNCHRONOUSLY
+    // inside lv_subject_set_int() — not deferred. LVGL appends observers to
+    // a subject's list with lv_ll_ins_tail and notifies head-to-tail
+    // (lv_subject_notify, lv_observer.c), so registration order is
+    // notification order: the <if>'s observer was added during the
+    // lv_xml_create() call in create(), strictly before this one, so it
+    // always fires — and finishes its rebuild — first. observe_int_sync's
+    // deferral (helix::ui::queue_update()) would be exactly wrong here: it
+    // would leave this rewire running on a LATER tick, after the old
+    // overlay_content/canvas_ were already condemned and possibly freed.
+    // observe_int_immediate's stated precondition (no observer-lifecycle
+    // mutation inside the callback) holds — rewire_after_orientation_flip()
+    // only re-finds widgets and adds plain lv_obj_add_event_cb hooks, it
+    // never touches an ObserverGuard or a ui_is_portrait subscription.
+    portrait_rewire_observer_ = helix::ui::observe_int_immediate<BedMeshPanel>(
+        portrait_subject, this,
+        [](BedMeshPanel* self, int /*is_portrait*/) { self->rewire_after_orientation_flip(); });
+}
+
+void BedMeshPanel::rewire_after_orientation_flip() {
+    if (!overlay_root_) {
+        return;
+    }
+
+    lv_obj_t* overlay_content = lv_obj_find_by_name(overlay_root_, "overlay_content");
+    if (!wire_canvas_and_content(overlay_content)) {
+        spdlog::warn("[{}] Orientation flip: could not re-wire canvas/content", get_name());
+        return;
+    }
+    spdlog::debug("[{}] Orientation flip: re-wired canvas + SIZE_CHANGED on rebuilt content",
+                  get_name());
+
+    apply_canvas_render_settings();
+
+    // The rebuild replaced bed_mesh_canvas with a brand-new custom widget
+    // instance carrying no mesh data — reload the current one so the panel
+    // does not go blank after a flip. Mirrors on_activate()'s deferred
+    // reload lambda.
+    MoonrakerAPI* api = get_moonraker_api();
+    if (api && api->advanced().has_bed_mesh()) {
+        const BedMeshProfile* mesh = api->advanced().get_active_bed_mesh();
+        if (mesh) {
+            on_mesh_update_internal(*mesh);
+        }
+    }
+
+    ensure_async_rendering();
+
+    // The rebuilt tree's canvas_wrapper starts at its XML default height
+    // (45%); re-run the portrait sizing decision immediately rather than
+    // waiting for a SIZE_CHANGED that may or may not still fire on this
+    // exact transition.
+    apply_portrait_canvas_height();
+}
+
+// ============================================================================
+// Portrait canvas sizing
+// ============================================================================
+
+void BedMeshPanel::on_content_size_changed(lv_event_t* e) {
+    auto* self = static_cast<BedMeshPanel*>(lv_event_get_user_data(e));
+    if (self) {
+        self->apply_portrait_canvas_height();
+    }
+}
+
+// Portrait sizes the canvas explicitly rather than flexing it — see
+// include/bed_mesh_portrait_layout.h. Below the canvas, current_mesh_card
+// and profiles_card sit SIDE BY SIDE in portrait_cards_row (see
+// bed_mesh_panel.xml), sharing that row's height — profiles_card fills it
+// via height="100%" rather than being a separate stacked block competing
+// for its own slice of the column, so only current_mesh_card's own content
+// height needs to be reserved here, not a second, independent minimum for
+// profiles_card.
+void BedMeshPanel::apply_portrait_canvas_height() {
+    // Re-entrancy guard: lv_obj_set_height() below can itself emit another
+    // SIZE_CHANGED on overlay_content before this call returns. Bail rather
+    // than recurse — an unguarded loop here presents as a hung UI, not a
+    // crash, since nothing throws or asserts.
+    if (!overlay_root_ || applying_portrait_canvas_height_) {
+        return;
+    }
+
+    lv_obj_t* screen = lv_obj_get_screen(overlay_root_);
+    if (!helix::is_portrait_layout(
+            helix::detect_layout_type(lv_obj_get_width(screen), lv_obj_get_height(screen)))) {
+        return;
+    }
+
+    lv_obj_t* wrapper = lv_obj_find_by_name(overlay_root_, "canvas_wrapper");
+    lv_obj_t* content = lv_obj_find_by_name(overlay_root_, "overlay_content");
+    lv_obj_t* info = lv_obj_find_by_name(overlay_root_, "current_mesh_card");
+    if (!wrapper || !content || !info) {
+        return;
+    }
+
+    // lv_obj_get_height(info) below reads the COMPUTED coord. This call does
+    // NOT force that computation here: lv_obj_update_layout() early-returns
+    // via its own re-entrancy guard (update_layout_mutex, lv_obj_pos.c:387)
+    // whenever a layout pass is already running — and SIZE_CHANGED fires
+    // from exactly inside one, so this is always a no-op in this handler's
+    // own context. It is harmless rather than wrong: the read below settles
+    // correctly on a later pass regardless (LVGL fires SIZE_CHANGED again
+    // once the triggering pass finishes propagating), so nothing here
+    // depends on this call actually doing anything. current_mesh_card is
+    // "content"-sized (not flexed) in portrait_cards_row specifically so
+    // that eventual read reflects its true minimum regardless of the row's
+    // assigned height — the Max/Min stat rows hide themselves at cramped
+    // tiers (bed_mesh_hide_stat_rows in bed_mesh_current_mesh_card.xml), so
+    // this height already accounts for that.
+    lv_obj_update_layout(content);
+
+    // avail_h is what is left for the canvas AFTER current_mesh_card's own
+    // content height and the one gap between the canvas and the row below it
+    // — NOT the column's whole content height, which still includes the
+    // canvas and would make this circular. column_h IS the whole content
+    // height, and the two are deliberately kept distinct:
+    // bed_mesh_portrait_canvas_height's floor is a share of column_h, and
+    // passing avail_h for both silently zeroes that floor out (see the
+    // kBedMeshPortraitCanvasMinPct comment in bed_mesh_portrait_layout.h).
+    //
+    // Only current_mesh_card is subtracted, not a separate profiles_card
+    // minimum: profiles_card shares this ROW's height (height="100%" at the
+    // instantiation site in bed_mesh_panel.xml) rather than stacking below
+    // current_mesh_card as its own block, so it never competes for a
+    // separate slice of the column — it gets exactly what the row gets,
+    // which is never less than current_mesh_card's own content need.
+    const int32_t gap = theme_manager_get_spacing("space_md");
+    const int32_t band_w = lv_obj_get_width(wrapper);
+    const int32_t column_h = lv_obj_get_content_height(content);
+    const int32_t avail_h = column_h - lv_obj_get_height(info) - gap;
+
+    const int32_t fitted = helix::bed_mesh_portrait_canvas_height(band_w, avail_h, column_h);
+
+    // Arbitrate against bed_mesh_portrait_canvas_height's own 35%-of-column_h
+    // floor, which is a PREFERENCE for a taller, more readable canvas and
+    // knows nothing about current_mesh_card/profiles_card sharing the
+    // column — on a short enough column it can return more than avail_h,
+    // and handing the wrapper that overflows the column by however much it
+    // exceeds avail_h. Not overflowing overlay_content (checked via its
+    // scroll.bottom, which must stay 0) is the invariant; a flatter canvas
+    // is merely degraded. Done here, not by weakening
+    // bed_mesh_portrait_canvas_height itself — that function's floor/ceiling
+    // contract is correct and independently unit-tested; only this caller
+    // knows about the other block sharing the column.
+    const int32_t h = (avail_h > 0 && fitted > avail_h) ? avail_h : fitted;
+
+    spdlog::debug("[{}] apply_portrait_canvas_height: band_w={} column_h={} info_h={} gap={} "
+                  "avail_h={} fitted={} -> h={} (wrapper currently {})",
+                  get_name(), band_w, column_h, lv_obj_get_height(info), gap, avail_h, fitted, h,
+                  lv_obj_get_height(wrapper));
+    // Skip when the computed height already matches — besides being a no-op,
+    // lv_obj_set_height() short-circuits internally when the value is
+    // unchanged and would not re-fire SIZE_CHANGED anyway, but checking here
+    // keeps the guard explicit rather than relying on that LVGL behavior.
+    if (h > 0 && h != lv_obj_get_height(wrapper)) {
+        applying_portrait_canvas_height_ = true;
+        lv_obj_set_height(wrapper, h);
+        applying_portrait_canvas_height_ = false;
+    }
 }
 
 // ============================================================================
@@ -435,6 +736,7 @@ void BedMeshPanel::on_ui_destroyed() {
     save_config_modal_widget_ = nullptr;
     delete_modal_widget_ = nullptr;
     build_volume_observer_.reset();
+    portrait_rewire_observer_.reset();
 }
 
 // ============================================================================
@@ -650,10 +952,11 @@ void BedMeshPanel::on_mesh_update_internal(const BedMeshProfile& mesh) {
     if (mesh.probed_matrix.empty()) {
         lv_subject_set_int(&bed_mesh_available_, 0);
         lv_subject_copy_string(&bed_mesh_dimensions_, lv_tr("No mesh data"));
-        lv_subject_copy_string(&bed_mesh_max_label_, lv_tr("Max"));
         lv_subject_copy_string(&bed_mesh_max_value_, "--");
-        lv_subject_copy_string(&bed_mesh_min_label_, lv_tr("Min"));
+        // Empty, not "[]" - no coordinates exist without a probed mesh.
+        lv_subject_copy_string(&bed_mesh_max_coord_, "");
         lv_subject_copy_string(&bed_mesh_min_value_, "--");
+        lv_subject_copy_string(&bed_mesh_min_coord_, "");
         lv_subject_copy_string(&bed_mesh_variance_, "");
         spdlog::warn("[{}] No mesh data available", get_name());
         return;
@@ -724,14 +1027,23 @@ void BedMeshPanel::on_mesh_update_internal(const BedMeshProfile& mesh) {
     float max_x = mesh.mesh_min[0] + max_col * x_step;
     float max_y = mesh.mesh_min[1] + max_row * y_step;
 
-    // Display raw Z values in stats (what Klipper actually measured)
-    std::snprintf(max_label_buf_, sizeof(max_label_buf_), "Max [%.1f, %.1f]", max_x, max_y);
-    lv_subject_copy_string(&bed_mesh_max_label_, max_label_buf_);
+    // Display raw Z values in stats (what Klipper actually measured). The
+    // label itself stays a static "Max"/"Min" (set at init and in the
+    // no-mesh fallback above) - only the coordinate sub-line and the
+    // measured value change per update.
+    //
+    // Coordinates are rounded to whole mm (%.0f, not %.1f): with a 7x7 mesh
+    // over a ~110mm span, probe points land on fractional coordinates like
+    // [33.3, 51.7], and 0.1mm precision on WHERE the high/low spot sits is
+    // not actionable for a human looking at a bed. The measured Z VALUE
+    // keeps its 3-decimal precision below - only the location rounds.
+    std::snprintf(max_coord_buf_, sizeof(max_coord_buf_), "[%.0f, %.0f]", max_x, max_y);
+    lv_subject_copy_string(&bed_mesh_max_coord_, max_coord_buf_);
     helix::format::format_distance_mm(max_z, 3, max_value_buf_, sizeof(max_value_buf_));
     lv_subject_copy_string(&bed_mesh_max_value_, max_value_buf_);
 
-    std::snprintf(min_label_buf_, sizeof(min_label_buf_), "Min [%.1f, %.1f]", min_x, min_y);
-    lv_subject_copy_string(&bed_mesh_min_label_, min_label_buf_);
+    std::snprintf(min_coord_buf_, sizeof(min_coord_buf_), "[%.0f, %.0f]", min_x, min_y);
+    lv_subject_copy_string(&bed_mesh_min_coord_, min_coord_buf_);
     helix::format::format_distance_mm(min_z, 3, min_value_buf_, sizeof(min_value_buf_));
     lv_subject_copy_string(&bed_mesh_min_value_, min_value_buf_);
 
