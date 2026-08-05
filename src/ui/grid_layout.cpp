@@ -4,6 +4,7 @@
 #include "grid_layout.h"
 
 #include "layout_manager.h"
+#include "theme_manager.h"
 
 #include <spdlog/spdlog.h>
 
@@ -340,6 +341,27 @@ GridLayout::filter_for_breakpoint(UiBreakpoint bp, const std::vector<GridPlaceme
 
 void GridLayout::clear() {
     placements_.clear();
+}
+
+int GridLayout::gutter_px() {
+    return theme_manager_get_spacing("space_xs");
+}
+
+CellMetrics grid_cell_metrics(int content_w, int content_h, int cols, int rows, int gutter) {
+    CellMetrics m{};
+    m.cols = cols;
+    m.rows = rows;
+    m.gutter = std::max(0, gutter);
+
+    if (cols > 0 && content_w > 0) {
+        float usable = static_cast<float>(content_w) - static_cast<float>(cols - 1) * m.gutter;
+        m.cell_w = (usable > 0.0f) ? usable / static_cast<float>(cols) : 0.0f;
+    }
+    if (rows > 0 && content_h > 0) {
+        float usable = static_cast<float>(content_h) - static_cast<float>(rows - 1) * m.gutter;
+        m.cell_h = (usable > 0.0f) ? usable / static_cast<float>(rows) : 0.0f;
+    }
+    return m;
 }
 
 } // namespace helix

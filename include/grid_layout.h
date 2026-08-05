@@ -21,6 +21,40 @@ struct GridDimensions {
     int rows;
 };
 
+/// Pixel geometry of one grid track pair, gutters accounted for.
+struct CellMetrics {
+    float cell_w; ///< Width of a single column track, gutters excluded
+    float cell_h; ///< Height of a single row track, gutters excluded
+    int gutter;   ///< Inter-track gap in px, same on both axes
+    int cols;
+    int rows;
+};
+
+/// Track geometry for a cols x rows grid inside a content rectangle.
+///
+/// LVGL distributes LV_GRID_FR(1) tracks as (content - (n-1)*gutter) / n. The
+/// content rectangle from lv_obj_get_content_coords() excludes padding and
+/// border but NOT these inter-track gaps, so dividing content by the track
+/// count overstates every track and the error compounds across the axis.
+///
+/// Degenerate inputs (zero or negative counts, gutters wider than the content)
+/// yield zero-size tracks rather than negative or infinite ones.
+CellMetrics grid_cell_metrics(int content_w, int content_h, int cols, int rows, int gutter);
+
+/// Offset of track `index` from the start of the content area, in px.
+inline float grid_track_origin(float cell, int gutter, int index) {
+    return static_cast<float>(index) * (cell + static_cast<float>(gutter));
+}
+
+/// Pixel extent of `span` consecutive tracks, including the gutters between
+/// them but not the ones on either outside edge.
+inline float grid_track_extent(float cell, int gutter, int span) {
+    if (span <= 0) {
+        return 0.0f;
+    }
+    return static_cast<float>(span) * cell + static_cast<float>(span - 1) * gutter;
+}
+
 /// A widget placement on the grid
 struct GridPlacement {
     std::string widget_id;
@@ -85,6 +119,15 @@ class GridLayout {
 
     /// Get the number of rows for a breakpoint
     static int get_rows(UiBreakpoint bp);
+
+    /// Inter-track gap the home grid is built with, in px.
+    ///
+    /// Single source of truth for the spacing token: PanelWidgetManager sets the
+    /// container's pad_column/pad_row from this, and every consumer that
+    /// converts pixels to cells reads the same value. Returns 0 when the theme
+    /// is not initialized, which is also the correct answer for a grid that has
+    /// not been styled yet.
+    static int gutter_px();
 
     /// Generate LVGL column descriptor array for a breakpoint.
     /// Returns vector of int32_t values terminated by LV_GRID_TEMPLATE_LAST.
