@@ -4,7 +4,7 @@
 <component>
   <subjects>
     <!-- Hide the Max/Min stat rows when EITHER:
-           - the cramped-axis tier is MICRO/TINY (ui_breakpoint lt 2) — the
+           - the cramped-axis tier is MICRO (ui_breakpoint eq 0) — the
              original #1204 rule, still needed for a narrow screen in ANY
              orientation (e.g. a narrow portrait phone, or a short landscape
              strip where the narrow axis is height), or
@@ -17,12 +17,20 @@
          551-700). Without the ui_is_portrait guard this would also hide
          Max/Min on 1024x600 landscape, which has never been cramped — its
          info column is a fixed 280px wide with plenty of headroom; only the
-         portrait STACK is short on space at that height. This is a
-         subject_expr (declarative rule 7) rather than a hand-rolled C++
-         observer because the condition is reused at both the Max and the Min
-         row below. -->
+         portrait STACK is short on space at that height.
+
+         The first clause is deliberately eq 0 (MICRO only), NOT lt 2
+         (MICRO+TINY): the portrait cramping this task addresses is carried
+         entirely by the second clause, and widening the orientation-
+         independent clause to TINY would also hide Max/Min on a 480x320
+         LANDSCAPE panel (273-390 narrow-axis), which was never asked for and
+         was never cramped by this task's changes — its landscape info
+         column has the same headroom question as the 1024x600 case above.
+         This is a subject_expr (declarative rule 7) rather than a
+         hand-rolled C++ observer because the condition is reused at both the
+         Max and the Min row below. -->
     <subject_expr name="bed_mesh_hide_stat_rows"
-                  expr="ui_breakpoint lt 2 or (ui_is_portrait eq 1 and ui_breakpoint_v lt 5)"/>
+                  expr="ui_breakpoint eq 0 or (ui_is_portrait eq 1 and ui_breakpoint_v lt 5)"/>
   </subjects>
   <view name="current_mesh_card"
         extends="ui_card" width="100%" height="content" style_border_width="0" style_pad_all="0" flex_flow="column"
@@ -93,7 +101,7 @@
       <lv_obj width="100%" flex_flow="column" style_pad_all="0" scrollable="false">
         <bind_flag_if_eq subject="bed_mesh_hide_stat_rows" flag="hidden" ref_value="1"/>
         <lv_obj width="100%" flex_flow="row" style_pad_all="0" scrollable="false">
-          <text_small name="mesh_max_label" bind_text="bed_mesh_max_label"/>
+          <text_small name="mesh_max_label" text="Max" translation_tag="Max"/>
           <text_small name="mesh_max_coord_inline" bind_text="bed_mesh_max_coord" style_pad_left="#space_xxs">
             <bind_flag_if_eq subject="ui_is_portrait" flag="hidden" ref_value="1"/>
           </text_small>
@@ -111,7 +119,7 @@
       <lv_obj width="100%" flex_flow="column" style_pad_all="0" scrollable="false">
         <bind_flag_if_eq subject="bed_mesh_hide_stat_rows" flag="hidden" ref_value="1"/>
         <lv_obj width="100%" flex_flow="row" style_pad_all="0" scrollable="false">
-          <text_small name="mesh_min_label" bind_text="bed_mesh_min_label"/>
+          <text_small name="mesh_min_label" text="Min" translation_tag="Min"/>
           <text_small name="mesh_min_coord_inline" bind_text="bed_mesh_min_coord" style_pad_left="#space_xxs">
             <bind_flag_if_eq subject="ui_is_portrait" flag="hidden" ref_value="1"/>
           </text_small>
