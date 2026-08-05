@@ -145,9 +145,13 @@ void BedMeshPanel::init_subjects() {
                                   subjects_);
         UI_MANAGED_SUBJECT_STRING(bed_mesh_max_value_, max_value_buf_, "--", "bed_mesh_max_value",
                                   subjects_);
+        UI_MANAGED_SUBJECT_STRING(bed_mesh_max_coord_, max_coord_buf_, "", "bed_mesh_max_coord",
+                                  subjects_);
         UI_MANAGED_SUBJECT_STRING(bed_mesh_min_label_, min_label_buf_, "Min", "bed_mesh_min_label",
                                   subjects_);
         UI_MANAGED_SUBJECT_STRING(bed_mesh_min_value_, min_value_buf_, "--", "bed_mesh_min_value",
+                                  subjects_);
+        UI_MANAGED_SUBJECT_STRING(bed_mesh_min_coord_, min_coord_buf_, "", "bed_mesh_min_coord",
                                   subjects_);
         UI_MANAGED_SUBJECT_STRING(bed_mesh_variance_, variance_buf_, "", "bed_mesh_variance",
                                   subjects_);
@@ -765,8 +769,11 @@ void BedMeshPanel::on_mesh_update_internal(const BedMeshProfile& mesh) {
         lv_subject_copy_string(&bed_mesh_dimensions_, lv_tr("No mesh data"));
         lv_subject_copy_string(&bed_mesh_max_label_, lv_tr("Max"));
         lv_subject_copy_string(&bed_mesh_max_value_, "--");
+        // Empty, not "[]" - no coordinates exist without a probed mesh.
+        lv_subject_copy_string(&bed_mesh_max_coord_, "");
         lv_subject_copy_string(&bed_mesh_min_label_, lv_tr("Min"));
         lv_subject_copy_string(&bed_mesh_min_value_, "--");
+        lv_subject_copy_string(&bed_mesh_min_coord_, "");
         lv_subject_copy_string(&bed_mesh_variance_, "");
         spdlog::warn("[{}] No mesh data available", get_name());
         return;
@@ -837,14 +844,23 @@ void BedMeshPanel::on_mesh_update_internal(const BedMeshProfile& mesh) {
     float max_x = mesh.mesh_min[0] + max_col * x_step;
     float max_y = mesh.mesh_min[1] + max_row * y_step;
 
-    // Display raw Z values in stats (what Klipper actually measured)
-    std::snprintf(max_label_buf_, sizeof(max_label_buf_), "Max [%.1f, %.1f]", max_x, max_y);
-    lv_subject_copy_string(&bed_mesh_max_label_, max_label_buf_);
+    // Display raw Z values in stats (what Klipper actually measured). The
+    // label itself stays a static "Max"/"Min" (set at init and in the
+    // no-mesh fallback above) - only the coordinate sub-line and the
+    // measured value change per update.
+    //
+    // Coordinates are rounded to whole mm (%.0f, not %.1f): with a 7x7 mesh
+    // over a ~110mm span, probe points land on fractional coordinates like
+    // [33.3, 51.7], and 0.1mm precision on WHERE the high/low spot sits is
+    // not actionable for a human looking at a bed. The measured Z VALUE
+    // keeps its 3-decimal precision below - only the location rounds.
+    std::snprintf(max_coord_buf_, sizeof(max_coord_buf_), "[%.0f, %.0f]", max_x, max_y);
+    lv_subject_copy_string(&bed_mesh_max_coord_, max_coord_buf_);
     helix::format::format_distance_mm(max_z, 3, max_value_buf_, sizeof(max_value_buf_));
     lv_subject_copy_string(&bed_mesh_max_value_, max_value_buf_);
 
-    std::snprintf(min_label_buf_, sizeof(min_label_buf_), "Min [%.1f, %.1f]", min_x, min_y);
-    lv_subject_copy_string(&bed_mesh_min_label_, min_label_buf_);
+    std::snprintf(min_coord_buf_, sizeof(min_coord_buf_), "[%.0f, %.0f]", min_x, min_y);
+    lv_subject_copy_string(&bed_mesh_min_coord_, min_coord_buf_);
     helix::format::format_distance_mm(min_z, 3, min_value_buf_, sizeof(min_value_buf_));
     lv_subject_copy_string(&bed_mesh_min_value_, min_value_buf_);
 

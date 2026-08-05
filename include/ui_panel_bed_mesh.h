@@ -109,18 +109,22 @@ class BedMeshPanel : public OverlayBase {
     lv_subject_t bed_mesh_available_;
     lv_subject_t bed_mesh_profile_name_;
     lv_subject_t bed_mesh_dimensions_;
-    lv_subject_t bed_mesh_max_label_; // "Max [x, y]"
+    lv_subject_t bed_mesh_max_label_; // "Max" (static; coordinates live in bed_mesh_max_coord_)
     lv_subject_t bed_mesh_max_value_; // "z mm"
-    lv_subject_t bed_mesh_min_label_; // "Min [x, y]"
+    lv_subject_t bed_mesh_max_coord_; // "[x, y]" muted sub-line, empty when no mesh
+    lv_subject_t bed_mesh_min_label_; // "Min" (static; coordinates live in bed_mesh_min_coord_)
     lv_subject_t bed_mesh_min_value_; // "z mm"
+    lv_subject_t bed_mesh_min_coord_; // "[x, y]" muted sub-line, empty when no mesh
     lv_subject_t bed_mesh_variance_;
 
     char profile_name_buf_[64];
     char dimensions_buf_[64];
     char max_label_buf_[48];
     char max_value_buf_[32];
+    char max_coord_buf_[24];
     char min_label_buf_[48];
     char min_value_buf_[32];
+    char min_coord_buf_[24];
     char variance_buf_[64];
 
     // ========== Profile List Subjects (5 profiles max) ==========

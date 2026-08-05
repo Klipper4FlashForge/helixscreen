@@ -54,8 +54,16 @@
            needs; a literal ref_value per row was the unroll this repeat
            replaces. -->
       <repeat count="5">
+        <!-- style_flex_track_place="center" is the fix for #1229 (name/range/
+             delete icon not vertically centered): style_flex_cross_place
+             only centers items WITHIN the flex track, not the track itself
+             within this fixed-height row. Without it, any slack between the
+             row height and the tallest child's content collects below the
+             track instead of splitting evenly. ui_xml/header_bar.xml's root
+             sets both attributes together for the same reason. -->
         <ui_card name="profile_row_${i}"
                  width="100%" height="#bed_mesh_profile_row_height" flex_flow="row" style_flex_cross_place="center"
+                 style_flex_track_place="center"
                  style_border_width="0" style_pad_left="#space_sm" style_pad_right="#space_sm" style_pad_top="0"
                  style_pad_bottom="0" style_pad_gap="#space_xs" clickable="true" scrollable="false">
           <bind_flag_if_lt subject="bed_mesh_profile_count" flag="hidden" ref_value="${i + 1}"/>
