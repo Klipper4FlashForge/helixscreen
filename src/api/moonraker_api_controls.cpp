@@ -221,9 +221,31 @@ void MoonrakerAPI::get_power_devices(PowerDevicesCallback on_success, ErrorCallb
 
 void MoonrakerAPI::set_device_power(const std::string& device, const std::string& action,
                                     SuccessCallback on_success, ErrorCallback on_error) {
-    // Validate device name
-    if (!is_safe_identifier(device)) {
-        spdlog::error("[Moonraker API] Invalid device name: {}", device);
+    // Validate device name. Power devices are named by their Moonraker config section
+    // (`[power -Power-]`, `[power Printer PSU]`), so the identifier allowlist is far too
+    // narrow here — it rejected every hyphenated name (prestonbrown/helixscreen#1241).
+    // The name is percent-encoded into the query string below and never reaches G-code,
+    // so only control characters need rejecting.
+    if (!is_safe_url_param(device)) {
+        // Escape before logging: the rejected class is exactly the bytes that would
+        // otherwise forge extra log lines.
+        std::string escaped;
+        for (char c : device) {
+            auto byte = static_cast<unsigned char>(c);
+            if (byte < 0x20 || byte == 0x7F) {
+                char buf[5];
+                std::snprintf(buf, sizeof(buf), "\\x%02X", byte);
+                escaped += buf;
+            } else {
+                escaped += c;
+            }
+        }
+        // No NOTIFY_ERROR here: every caller already surfaces the failure through
+        // on_error (a toast in PowerDeviceWidget, a status line in PowerPanel), and
+        // toasting from the API layer too would double-report the same rejection.
+        spdlog::warn("[Moonraker API] Rejected power device name '{}' — contains control "
+                     "characters",
+                     escaped);
         if (on_error) {
             MoonrakerError err =
                 MoonrakerError::validation_error("set_device_power", "Invalid device name");
