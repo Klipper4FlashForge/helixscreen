@@ -963,6 +963,35 @@ fi
 
 echo ""
 
+SECTION_START=$(date +%s)
+echo -n "⏱️  Checking grid cell-metrics single source..."
+
+if [ -f "scripts/check_grid_metrics_single_source.py" ]; then
+  # grid_edit_mode.cpp used to recompute cols/rows/cell size in nine separate
+  # drag/resize/preview/lattice paths, each free to drift from the others on
+  # gutter handling or int-vs-float rounding. GridEditMode::current_metrics()
+  # is now the one place allowed to ask GridLayout for the grid's dimensions;
+  # this caps GridLayout::get_cols/get_rows call sites at 2 (the pair inside
+  # current_metrics() itself) so a new call site cannot grow a second copy.
+  if python3 scripts/check_grid_metrics_single_source.py >/tmp/grid_metrics.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    tail -1 /tmp/grid_metrics.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/grid_metrics.out
+    echo "   Take a helix::CellMetrics from GridEditMode::current_metrics() instead."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_grid_metrics_single_source.py not found — skipping"
+fi
+
+echo ""
+
 # ====================================================================
 # spdlog only: no printf/cout/cerr/LV_LOG_ outside CLI subcommands
 # ====================================================================

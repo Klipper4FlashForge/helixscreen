@@ -3,6 +3,7 @@
 #pragma once
 
 #include "async_lifetime_guard.h"
+#include "grid_layout.h"
 #include "lvgl/lvgl.h"
 
 #include <functional>
@@ -122,6 +123,17 @@ class GridEditMode {
     ResizeEdge detect_resize_edge(int px, int py, const lv_area_t& widget_area) const;
 
   private:
+    /// Track geometry of the live grid container.
+    ///
+    /// The nine drag, resize, preview and lattice paths all need the same four
+    /// numbers. Deriving them in one place keeps the int-vs-float rounding and
+    /// the gutter handling consistent between the cell a drop is computed
+    /// against and the pixels the preview is drawn at.
+    ///
+    /// @param out_content  Optional; receives the container's content area.
+    /// @return Zeroed metrics when there is no container or it has no extent.
+    helix::CellMetrics current_metrics(lv_area_t* out_content = nullptr) const;
+
     void create_dots_overlay();
     void destroy_dots_overlay();
     void create_selection_chrome(lv_obj_t* widget);
@@ -145,7 +157,6 @@ class GridEditMode {
     // Drag helpers
     void handle_drag_move(lv_event_t* e);
     void handle_drag_end(lv_event_t* e);
-    void create_drag_ghost(int col, int row, int colspan, int rowspan);
     void destroy_drag_ghost();
     void update_snap_preview(int col, int row, int colspan, int rowspan, bool valid);
     void destroy_snap_preview();

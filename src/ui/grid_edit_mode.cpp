@@ -39,12 +39,7 @@ static void safe_deferred_delete(lv_obj_t* obj) {
 }
 
 // Drag visual constants
-static constexpr int GHOST_BORDER_WIDTH = 2;
-static constexpr lv_opa_t GHOST_BORDER_OPA = LV_OPA_50;
 static constexpr int PREVIEW_BORDER_WIDTH = 3;
-static constexpr lv_opa_t DRAG_SHADOW_OPA = LV_OPA_40;
-static constexpr int DRAG_SHADOW_WIDTH = 12;
-static constexpr int DRAG_SHADOW_OFS = 4;
 
 // Resize edge detection: 18px inside + 18px outside the widget edge = 36px total
 static constexpr int EDGE_HIT_INWARD = 18;
@@ -571,6 +566,29 @@ int GridEditMode::find_config_index_for_widget(lv_obj_t* widget) const {
     return -1;
 }
 
+helix::CellMetrics GridEditMode::current_metrics(lv_area_t* out_content) const {
+    lv_area_t content{};
+    if (!container_) {
+        if (out_content) {
+            *out_content = content;
+        }
+        return {};
+    }
+    lv_obj_get_content_coords(container_, &content);
+    if (out_content) {
+        *out_content = content;
+    }
+
+    lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
+    UiBreakpoint breakpoint =
+        bp_subj ? as_breakpoint(lv_subject_get_int(bp_subj)) : UiBreakpoint::Medium;
+
+    int cols = GridLayout::get_cols(breakpoint);
+    int rows = GridLayout::get_rows(breakpoint);
+    return grid_cell_metrics(content.x2 - content.x1, content.y2 - content.y1, cols, rows,
+                             GridLayout::gutter_px());
+}
+
 void GridEditMode::sync_config_from_screen() {
     if (!container_ || !config_) {
         return;
@@ -579,15 +597,11 @@ void GridEditMode::sync_config_from_screen() {
     lv_obj_update_layout(container_);
 
     lv_area_t content_area;
-    lv_obj_get_content_coords(container_, &content_area);
+    helix::CellMetrics m = current_metrics(&content_area);
+    int ncols = m.cols;
+    int nrows = m.rows;
     int cw = content_area.x2 - content_area.x1;
     int ch = content_area.y2 - content_area.y1;
-
-    lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
-    UiBreakpoint breakpoint =
-        bp_subj ? as_breakpoint(lv_subject_get_int(bp_subj)) : UiBreakpoint::Medium;
-    int ncols = GridLayout::get_cols(breakpoint);
-    int nrows = GridLayout::get_rows(breakpoint);
 
     if (cw <= 0 || ch <= 0) {
         return;
@@ -624,13 +638,13 @@ void GridEditMode::sync_config_from_screen() {
         lv_obj_get_coords(child, &widget_area);
 
         // Compute which cell the top-left corner falls in
-        int cell_w = cw / ncols;
-        int cell_h = ch / nrows;
+        int cell_w = static_cast<int>(m.cell_w);
+        int cell_h = static_cast<int>(m.cell_h);
         int cx = widget_area.x1 + cell_w / 2; // center of first cell
         int cy = widget_area.y1 + cell_h / 2;
 
         auto [col, row] = screen_to_grid_cell(cx, cy, content_area.x1, content_area.y1, cw, ch,
-                                              ncols, nrows, GridLayout::gutter_px());
+                                              ncols, nrows, m.gutter);
 
         if (it->col != col || it->row != row) {
             spdlog::debug("[GridEditMode] sync_config: '{}' config ({},{}) -> screen ({},{})",
@@ -995,18 +1009,14 @@ void GridEditMode::handle_long_press(lv_event_t* e) {
 
         // Long-press on empty area — open the widget catalog
         lv_area_t content_area;
-        lv_obj_get_content_coords(container_, &content_area);
+        helix::CellMetrics m = current_metrics(&content_area);
+        int ncols = m.cols;
+        int nrows = m.rows;
         int cw = content_area.x2 - content_area.x1;
         int ch = content_area.y2 - content_area.y1;
 
-        lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
-        UiBreakpoint breakpoint =
-            bp_subj ? as_breakpoint(lv_subject_get_int(bp_subj)) : UiBreakpoint::Medium;
-        int ncols = GridLayout::get_cols(breakpoint);
-        int nrows = GridLayout::get_rows(breakpoint);
-
         auto [col, row] = screen_to_grid_cell(point.x, point.y, content_area.x1, content_area.y1,
-                                              cw, ch, ncols, nrows, GridLayout::gutter_px());
+                                              cw, ch, ncols, nrows, m.gutter);
         catalog_origin_col_ = col;
         catalog_origin_row_ = row;
 
@@ -1161,19 +1171,12 @@ void GridEditMode::handle_drag_start(lv_event_t* /*e*/) {
 
         // Show initial resize preview at current widget size
         {
-            lv_area_t content_area;
-            lv_obj_get_content_coords(container_, &content_area);
-            int cw = content_area.x2 - content_area.x1;
-            int ch = content_area.y2 - content_area.y1;
-            lv_subject_t* bp = theme_manager_get_breakpoint_subject();
-            UiBreakpoint bp_val =
-                bp ? as_breakpoint(lv_subject_get_int(bp)) : UiBreakpoint::Medium; /* MEDIUM */
-            float cell_w = static_cast<float>(cw) / GridLayout::get_cols(bp_val);
-            float cell_h = static_cast<float>(ch) / GridLayout::get_rows(bp_val);
-            update_resize_preview_px(static_cast<int>(drag_orig_col_ * cell_w),
-                                     static_cast<int>(drag_orig_row_ * cell_h),
-                                     static_cast<int>(drag_orig_colspan_ * cell_w),
-                                     static_cast<int>(drag_orig_rowspan_ * cell_h), true);
+            helix::CellMetrics m = current_metrics();
+            update_resize_preview_px(
+                static_cast<int>(grid_track_origin(m.cell_w, m.gutter, drag_orig_col_)),
+                static_cast<int>(grid_track_origin(m.cell_h, m.gutter, drag_orig_row_)),
+                static_cast<int>(grid_track_extent(m.cell_w, m.gutter, drag_orig_colspan_)),
+                static_cast<int>(grid_track_extent(m.cell_h, m.gutter, drag_orig_rowspan_)), true);
         }
 
         spdlog::info("[GridEditMode] Resize started: widget '{}' at ({},{}) span {}x{} edge={}",
@@ -1251,25 +1254,23 @@ void GridEditMode::handle_drag_move(lv_event_t* /*e*/) {
     // so using top-left gives natural anchored behavior — the widget stays under
     // the finger exactly where grabbed, and the snap target reflects that.
     lv_area_t content_area;
-    lv_obj_get_content_coords(container_, &content_area);
+    helix::CellMetrics m = current_metrics(&content_area);
+    int ncols = m.cols;
+    int nrows = m.rows;
     int cw = content_area.x2 - content_area.x1;
     int ch = content_area.y2 - content_area.y1;
 
     lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
     UiBreakpoint breakpoint =
         bp_subj ? as_breakpoint(lv_subject_get_int(bp_subj)) : UiBreakpoint::Medium;
-    int ncols = GridLayout::get_cols(breakpoint);
-    int nrows = GridLayout::get_rows(breakpoint);
 
     // Widget top-left in screen coords (pointer minus grab offset)
     int widget_left = point.x - drag_offset_.x;
     int widget_top = point.y - drag_offset_.y;
 
     // Round the top-left to the nearest grid cell for snap target
-    int target_col =
-        round_to_grid_cell(widget_left, content_area.x1, cw, ncols, GridLayout::gutter_px());
-    int target_row =
-        round_to_grid_cell(widget_top, content_area.y1, ch, nrows, GridLayout::gutter_px());
+    int target_col = round_to_grid_cell(widget_left, content_area.x1, cw, ncols, m.gutter);
+    int target_row = round_to_grid_cell(widget_top, content_area.y1, ch, nrows, m.gutter);
 
     // Clamp so the widget span doesn't extend past the grid
     target_col = std::min(target_col, ncols - drag_orig_colspan_);
@@ -1550,26 +1551,25 @@ void GridEditMode::handle_resize_move(lv_event_t* /*e*/) {
 
     // Get container content area for coordinate mapping
     lv_area_t content_area;
-    lv_obj_get_content_coords(container_, &content_area);
+    helix::CellMetrics m = current_metrics(&content_area);
+    int ncols = m.cols;
+    int nrows = m.rows;
     int cw = content_area.x2 - content_area.x1;
     int ch = content_area.y2 - content_area.y1;
 
     lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
     UiBreakpoint breakpoint =
         bp_subj ? as_breakpoint(lv_subject_get_int(bp_subj)) : UiBreakpoint::Medium;
-    int ncols = GridLayout::get_cols(breakpoint);
-    int nrows = GridLayout::get_rows(breakpoint);
-
-    float cell_w = static_cast<float>(cw) / ncols;
-    float cell_h = static_cast<float>(ch) / nrows;
 
     // Original widget pixel bounds (from grid config)
-    int orig_x1 = content_area.x1 + static_cast<int>(drag_orig_col_ * cell_w);
-    int orig_y1 = content_area.y1 + static_cast<int>(drag_orig_row_ * cell_h);
+    int orig_x1 =
+        content_area.x1 + static_cast<int>(grid_track_origin(m.cell_w, m.gutter, drag_orig_col_));
+    int orig_y1 =
+        content_area.y1 + static_cast<int>(grid_track_origin(m.cell_h, m.gutter, drag_orig_row_));
     int orig_x2 =
-        content_area.x1 + static_cast<int>((drag_orig_col_ + drag_orig_colspan_) * cell_w);
+        orig_x1 + static_cast<int>(grid_track_extent(m.cell_w, m.gutter, drag_orig_colspan_));
     int orig_y2 =
-        content_area.y1 + static_cast<int>((drag_orig_row_ + drag_orig_rowspan_) * cell_h);
+        orig_y1 + static_cast<int>(grid_track_extent(m.cell_h, m.gutter, drag_orig_rowspan_));
 
     // Compute pixel preview bounds based on which edge is being dragged.
     // The dragged edge follows the pointer; the opposite edge stays fixed.
@@ -1579,8 +1579,8 @@ void GridEditMode::handle_resize_move(lv_event_t* /*e*/) {
     int preview_y2 = orig_y2;
 
     // Minimum size in pixels (1 cell)
-    int min_w = static_cast<int>(cell_w);
-    int min_h = static_cast<int>(cell_h);
+    int min_w = static_cast<int>(m.cell_w);
+    int min_h = static_cast<int>(m.cell_h);
 
     switch (resize_edge_) {
     case ResizeEdge::Right:
@@ -1603,15 +1603,14 @@ void GridEditMode::handle_resize_move(lv_event_t* /*e*/) {
     int ncells_axis =
         (resize_edge_ == ResizeEdge::Left || resize_edge_ == ResizeEdge::Right) ? ncols : nrows;
     int edge_cell;
-    int gutter = GridLayout::gutter_px();
     if (resize_edge_ == ResizeEdge::Right) {
-        edge_cell = round_to_grid_cell(preview_x2, content_area.x1, cw, ncols, gutter);
+        edge_cell = round_to_grid_cell(preview_x2, content_area.x1, cw, ncols, m.gutter);
     } else if (resize_edge_ == ResizeEdge::Left) {
-        edge_cell = round_to_grid_cell(preview_x1, content_area.x1, cw, ncols, gutter);
+        edge_cell = round_to_grid_cell(preview_x1, content_area.x1, cw, ncols, m.gutter);
     } else if (resize_edge_ == ResizeEdge::Bottom) {
-        edge_cell = round_to_grid_cell(preview_y2, content_area.y1, ch, nrows, gutter);
+        edge_cell = round_to_grid_cell(preview_y2, content_area.y1, ch, nrows, m.gutter);
     } else {
-        edge_cell = round_to_grid_cell(preview_y1, content_area.y1, ch, nrows, gutter);
+        edge_cell = round_to_grid_cell(preview_y1, content_area.y1, ch, nrows, m.gutter);
     }
 
     auto result =
@@ -1695,31 +1694,30 @@ void GridEditMode::handle_resize_end(lv_event_t* /*e*/) {
     }
 
     lv_area_t content_area;
-    lv_obj_get_content_coords(container_, &content_area);
+    helix::CellMetrics m = current_metrics(&content_area);
+    int ncols = m.cols;
+    int nrows = m.rows;
     int cw = content_area.x2 - content_area.x1;
     int ch = content_area.y2 - content_area.y1;
 
     lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
     UiBreakpoint breakpoint =
         bp_subj ? as_breakpoint(lv_subject_get_int(bp_subj)) : UiBreakpoint::Medium;
-    int ncols = GridLayout::get_cols(breakpoint);
-    int nrows = GridLayout::get_rows(breakpoint);
 
     // Round the dragged edge to the nearest grid cell boundary
     int edge_cell;
     int ncells_axis;
-    int gutter = GridLayout::gutter_px();
     if (resize_edge_ == ResizeEdge::Right) {
-        edge_cell = round_to_grid_cell(point.x, content_area.x1, cw, ncols, gutter);
+        edge_cell = round_to_grid_cell(point.x, content_area.x1, cw, ncols, m.gutter);
         ncells_axis = ncols;
     } else if (resize_edge_ == ResizeEdge::Left) {
-        edge_cell = round_to_grid_cell(point.x, content_area.x1, cw, ncols, gutter);
+        edge_cell = round_to_grid_cell(point.x, content_area.x1, cw, ncols, m.gutter);
         ncells_axis = ncols;
     } else if (resize_edge_ == ResizeEdge::Bottom) {
-        edge_cell = round_to_grid_cell(point.y, content_area.y1, ch, nrows, gutter);
+        edge_cell = round_to_grid_cell(point.y, content_area.y1, ch, nrows, m.gutter);
         ncells_axis = nrows;
     } else {
-        edge_cell = round_to_grid_cell(point.y, content_area.y1, ch, nrows, gutter);
+        edge_cell = round_to_grid_cell(point.y, content_area.y1, ch, nrows, m.gutter);
         ncells_axis = nrows;
     }
 
@@ -1847,22 +1845,12 @@ void GridEditMode::commit_resize_with_snap(const ResizeResult& result) {
     }
 
     // Compute the final pixel position for the snap animation target
-    lv_area_t content_area;
-    lv_obj_get_content_coords(container_, &content_area);
-    int cw = content_area.x2 - content_area.x1;
-    int ch = content_area.y2 - content_area.y1;
-    lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
-    UiBreakpoint breakpoint =
-        bp_subj ? as_breakpoint(lv_subject_get_int(bp_subj)) : UiBreakpoint::Medium;
-    int ncols = GridLayout::get_cols(breakpoint);
-    int nrows = GridLayout::get_rows(breakpoint);
-    float cell_w = static_cast<float>(cw) / ncols;
-    float cell_h = static_cast<float>(ch) / nrows;
+    helix::CellMetrics m = current_metrics();
 
-    int target_x = static_cast<int>(result.col * cell_w);
-    int target_y = static_cast<int>(result.row * cell_h);
-    int target_w = static_cast<int>(result.colspan * cell_w);
-    int target_h = static_cast<int>(result.rowspan * cell_h);
+    int target_x = static_cast<int>(grid_track_origin(m.cell_w, m.gutter, result.col));
+    int target_y = static_cast<int>(grid_track_origin(m.cell_h, m.gutter, result.row));
+    int target_w = static_cast<int>(grid_track_extent(m.cell_w, m.gutter, result.colspan));
+    int target_h = static_cast<int>(grid_track_extent(m.cell_h, m.gutter, result.rowspan));
 
     // Update config
     auto& entries = config_->page_entries_mut(static_cast<size_t>(page_index_));
@@ -2013,47 +2001,6 @@ void GridEditMode::commit_resize_with_snap(const ResizeResult& result) {
 // Drag visual helpers
 // ---------------------------------------------------------------------------
 
-void GridEditMode::create_drag_ghost(int col, int row, int colspan, int rowspan) {
-    if (!container_) {
-        return;
-    }
-
-    // Compute cell pixel positions from container content area
-    lv_area_t content_area;
-    lv_obj_get_content_coords(container_, &content_area);
-    int cw = content_area.x2 - content_area.x1;
-    int ch = content_area.y2 - content_area.y1;
-
-    lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
-    UiBreakpoint breakpoint =
-        bp_subj ? as_breakpoint(lv_subject_get_int(bp_subj)) : UiBreakpoint::Medium;
-    int ncols = GridLayout::get_cols(breakpoint);
-    int nrows = GridLayout::get_rows(breakpoint);
-
-    int cell_w = cw / ncols;
-    int cell_h = ch / nrows;
-
-    int ghost_x = col * cell_w;
-    int ghost_y = row * cell_h;
-    int ghost_w = colspan * cell_w;
-    int ghost_h = rowspan * cell_h;
-
-    drag_ghost_ = lv_obj_create(container_);
-    lv_obj_set_pos(drag_ghost_, ghost_x, ghost_y);
-    lv_obj_set_size(drag_ghost_, ghost_w, ghost_h);
-    lv_obj_add_flag(drag_ghost_, LV_OBJ_FLAG_FLOATING);
-    lv_obj_remove_flag(drag_ghost_, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_remove_flag(drag_ghost_, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_opa(drag_ghost_, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(drag_ghost_, GHOST_BORDER_WIDTH, 0);
-    lv_obj_set_style_border_color(drag_ghost_, theme_manager_get_color("text_muted"), 0);
-    lv_obj_set_style_border_opa(drag_ghost_, GHOST_BORDER_OPA, 0);
-    lv_obj_set_style_radius(drag_ghost_, 8, 0);
-    lv_obj_set_style_pad_all(drag_ghost_, 0, 0);
-
-    spdlog::debug("[GridEditMode] Created drag ghost at ({},{}) {}x{}", col, row, colspan, rowspan);
-}
-
 void GridEditMode::destroy_drag_ghost() {
     if (drag_ghost_) {
         auto freeze = helix::ui::UpdateQueue::instance().scoped_freeze();
@@ -2069,24 +2016,12 @@ void GridEditMode::update_snap_preview(int col, int row, int colspan, int rowspa
         return;
     }
 
-    lv_area_t content_area;
-    lv_obj_get_content_coords(container_, &content_area);
-    int cw = content_area.x2 - content_area.x1;
-    int ch = content_area.y2 - content_area.y1;
+    helix::CellMetrics m = current_metrics();
 
-    lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
-    UiBreakpoint breakpoint =
-        bp_subj ? as_breakpoint(lv_subject_get_int(bp_subj)) : UiBreakpoint::Medium;
-    int ncols = GridLayout::get_cols(breakpoint);
-    int nrows = GridLayout::get_rows(breakpoint);
-
-    int cell_w = cw / ncols;
-    int cell_h = ch / nrows;
-
-    int px = col * cell_w;
-    int py = row * cell_h;
-    int pw = colspan * cell_w;
-    int ph = rowspan * cell_h;
+    int px = static_cast<int>(grid_track_origin(m.cell_w, m.gutter, col));
+    int py = static_cast<int>(grid_track_origin(m.cell_h, m.gutter, row));
+    int pw = static_cast<int>(grid_track_extent(m.cell_w, m.gutter, colspan));
+    int ph = static_cast<int>(grid_track_extent(m.cell_h, m.gutter, rowspan));
 
     snap_preview_ = lv_obj_create(container_);
     lv_obj_set_pos(snap_preview_, px, py);
@@ -2134,7 +2069,6 @@ void GridEditMode::cleanup_drag_state() {
         lv_obj_remove_flag(selected_, LV_OBJ_FLAG_FLOATING);
     }
 
-    destroy_drag_ghost();
     destroy_snap_preview();
 
     dragging_ = false;
@@ -2155,12 +2089,10 @@ void GridEditMode::create_dots_overlay() {
     if (!container_)
         return;
 
-    // Get current breakpoint for grid dimensions
-    lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
-    UiBreakpoint breakpoint = bp_subj ? as_breakpoint(lv_subject_get_int(bp_subj))
-                                      : UiBreakpoint::Medium; // Default MEDIUM
-    int ncols = GridLayout::get_cols(breakpoint);
-    int nrows = GridLayout::get_rows(breakpoint);
+    lv_area_t content_area;
+    helix::CellMetrics m = current_metrics(&content_area);
+    int ncols = m.cols;
+    int nrows = m.rows;
 
     // Create transparent overlay that floats above grid children.
     // This overlay serves two purposes:
@@ -2186,11 +2118,8 @@ void GridEditMode::create_dots_overlay() {
     lv_obj_set_style_border_width(dots_overlay_, 0, 0);
     lv_obj_set_style_pad_all(dots_overlay_, 0, 0);
 
-    // Get container content area dimensions
-    lv_area_t area;
-    lv_obj_get_content_coords(container_, &area);
-    int w = area.x2 - area.x1;
-    int h = area.y2 - area.y1;
+    int w = content_area.x2 - content_area.x1;
+    int h = content_area.y2 - content_area.y1;
 
     if (w <= 0 || h <= 0) {
         spdlog::warn("[GridEditMode] Container content area {}x{}, skipping dots", w, h);
@@ -2215,8 +2144,8 @@ void GridEditMode::create_dots_overlay() {
             lv_obj_remove_flag(dot, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_remove_flag(dot, LV_OBJ_FLAG_SCROLLABLE);
 
-            int x = (c * w / ncols) - DOT_HALF;
-            int y = (r * h / nrows) - DOT_HALF;
+            int x = static_cast<int>(grid_track_origin(m.cell_w, m.gutter, c)) - DOT_HALF;
+            int y = static_cast<int>(grid_track_origin(m.cell_h, m.gutter, r)) - DOT_HALF;
             lv_obj_set_pos(dot, x, y);
         }
     }
