@@ -403,8 +403,10 @@ class UpdateQueue {
                 current_tag_ = entry.tag;
                 entry.callback();
             } catch (const std::exception& e) {
+                callback_exception_count_.fetch_add(1, std::memory_order_relaxed);
                 spdlog::error("[UpdateQueue] Exception in queued callback: {}", e.what());
             } catch (...) {
+                callback_exception_count_.fetch_add(1, std::memory_order_relaxed);
                 spdlog::error("[UpdateQueue] Unknown exception in queued callback");
             }
             // Retain the N most-recently-completed tags so a post-callback
@@ -463,6 +465,14 @@ class UpdateQueue {
     static inline volatile const char* previous_tag_ring_[kPreviousTagRingSize] = {};
     static inline volatile uint32_t previous_tag_count_ring_[kPreviousTagRingSize] = {};
     static inline volatile unsigned int previous_tag_next_ = 0;
+
+    /// Count of queued callbacks that threw. Swallowing the exception is
+    /// deliberate — one bad callback must not take down the whole batch — but
+    /// that also makes the failure invisible to every caller, including a test
+    /// asserting that the callback it queued ran cleanly. Counting it here is
+    /// the observable that lets a test tell "ran" from "threw and was
+    /// swallowed" (prestonbrown/helixscreen#1212).
+    static inline std::atomic<uint32_t> callback_exception_count_{0};
 
   public:
     /**

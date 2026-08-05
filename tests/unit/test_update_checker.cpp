@@ -19,6 +19,8 @@
  * - Status enum transitions
  */
 
+#include "../test_helpers/live_thread_count.h"
+#include "../test_helpers/update_queue_test_access.h"
 #include "config.h"
 #include "lvgl.h"
 #include "version.h"
@@ -513,18 +515,65 @@ TEST_CASE("UpdateChecker lifecycle", "[update_checker][lifecycle]") {
 }
 
 TEST_CASE("UpdateChecker callback is optional", "[update_checker][callback]") {
+    // Hermetic by construction: no real network. The dev channel already reads
+    // its endpoint from config (/update/dev_url) and is exempt from the rate
+    // limiter, so pointing it at a closed loopback port drives the full
+    // check_for_updates -> do_check -> fetch_dev_release -> report_result cycle
+    // on a fast, local, deterministic connection refusal. Hitting api.github.com
+    // instead made this test slow, network-dependent, and — because libhv's
+    // requests:: client spins event-loop threads on a successful TLS connection
+    // that outlive the call — the one test in the suite that leaked threads
+    // (prestonbrown/helixscreen#1212). The isolation listener's per-TEST_CASE
+    // reset_config_singleton() wipes these keys again for the next test.
+    auto* config = Config::get_instance();
+    REQUIRE(config != nullptr);
+    config->set<int>("/update/channel", 2); // Dev
+    config->set<std::string>("/update/dev_url", "http://127.0.0.1:1/");
+
     auto& checker = UpdateChecker::instance();
     checker.init();
     checker.clear_cache();
 
-    SECTION("nullptr callback is accepted") {
-        // This should not throw, even though it will try to make a network request
-        // The test may fail due to rate limiting or network issues, but shouldn't crash
+    const int threads_before = helix::test::live_thread_count();
+    REQUIRE(threads_before > 0);
+
+    SECTION("nullptr callback survives the whole check cycle") {
         REQUIRE_NOTHROW(checker.check_for_updates(nullptr));
 
-        // Give a tiny bit of time for thread to start, then shutdown cleanly
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        // Wait for the worker to publish a terminal status. report_result()
+        // stores status_ under the mutex BEFORE deferring to the LVGL thread,
+        // so this flips as soon as the check body has run. A refused loopback
+        // connect lands in ~10ms; the budget only has to exceed the request's
+        // own 30s timeout so a host that silently drops (rather than refuses)
+        // port 1 still reaches Error instead of flaking here.
+        constexpr int kPollIterations = 8000; // 8000 * 5ms = 40s
+        for (int i = 0;
+             i < kPollIterations && checker.get_status() == UpdateChecker::Status::Checking; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        // Pin that the check really ran end-to-end rather than short-circuiting
+        // (a future early-return in check_for_updates would otherwise silently
+        // gut this test): a refused connection lands on Status::Error.
+        REQUIRE(checker.get_status() == UpdateChecker::Status::Error);
+
+        // Run the deferred completion lambda on this (main) thread. That lambda
+        // is where `if (callback) callback(...)` lives — draining it is what
+        // actually exercises the nullptr-callback contract. Drop that guard and
+        // invoking the empty std::function throws std::bad_function_call, which
+        // process_pending() swallows by design; the exception counter is what
+        // makes it visible here.
+        const uint32_t exceptions_before =
+            helix::ui::UpdateQueueTestAccess::callback_exception_count();
+        helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+        CHECK(helix::ui::UpdateQueueTestAccess::callback_exception_count() == exceptions_before);
+
         checker.shutdown();
+
+        // The check must be thread-neutral. A synchronous HTTPS request through
+        // libhv's requests:: client spins up event-loop threads that outlive the
+        // call, and an unjoined loop later fires on freed state and crashes an
+        // unrelated test (prestonbrown/helixscreen#1212).
+        CHECK(helix::test::live_thread_count() == threads_before);
     }
 }
 

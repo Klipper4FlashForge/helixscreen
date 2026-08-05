@@ -19,12 +19,13 @@
 // "[ISOLATION-LEAK]".
 
 #include "ui_observer_guard.h"
+#include "ui_update_queue.h"
 
 #include "../helix_test_fixture.h"
+#include "../test_helpers/live_thread_count.h"
 #include "../test_helpers/update_queue_test_access.h"
 #include "http_executor.h"
 #include "thumbnail_processor.h"
-#include "ui_update_queue.h"
 
 #include <algorithm>
 #include <array>
@@ -62,30 +63,10 @@ std::string env_or(const char* name) {
 // safely kill a thread), but naming the leaking test makes the otherwise-
 // nondeterministic crash diagnosable in one run.
 //
-// macOS has no /proc, so the Linux path returned -1 there and the `threads_ >= 0`
-// guard in testCaseEnded silently disabled the tripwire on the primary dev
-// machine — exactly where the leak class it was written to catch was biting
-// (prestonbrown/helixscreen#1146). proc_pidinfo/PROC_PIDTASKINFO is the
-// equivalent: pti_threadnum is the live Mach thread count for the task.
-int live_thread_count() {
-#if defined(__APPLE__)
-    struct proc_taskinfo ti;
-    const int rc = proc_pidinfo(getpid(), PROC_PIDTASKINFO, 0, &ti, sizeof(ti));
-    if (rc == static_cast<int>(sizeof(ti))) {
-        return static_cast<int>(ti.pti_threadnum);
-    }
-    return -1;
-#else
-    std::ifstream st("/proc/self/status");
-    std::string line;
-    while (std::getline(st, line)) {
-        if (line.rfind("Threads:", 0) == 0) {
-            return std::atoi(line.c_str() + 8);
-        }
-    }
-    return -1;
-#endif
-}
+// Implementation lives in tests/test_helpers/live_thread_count.h so individual
+// tests can assert thread-neutrality of a specific operation with the same
+// measure this listener uses (prestonbrown/helixscreen#1146, #1212).
+using helix::test::live_thread_count;
 
 class IsolationListener : public Catch::EventListenerBase {
   public:
