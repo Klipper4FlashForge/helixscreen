@@ -9,12 +9,17 @@ namespace ui {
 
 // Test-only access to BedMeshPanel's private canvas pointer.
 //
-// Exists specifically for test_bed_mesh_orientation_flip.cpp, which drives a
-// real ui_is_portrait flip through a live BedMeshPanel to prove
-// canvas_/SIZE_CHANGED survive bed_mesh_panel.xml's reactive <if> rebuilding
-// overlay_content in place — the fix for the canvas_ use-after-free
-// (reactive <if> teardown condemns the old overlay_content/bed_mesh_canvas;
-// nothing else nulled the cached raw pointer).
+// Used by test_bed_mesh_canvas_wiring.cpp to reach wire_canvas_and_content()
+// and the cached canvas_ pointer directly. That is the fix for the canvas_
+// use-after-free: bed_mesh_panel.xml's reactive <if> teardown condemns the old
+// overlay_content/bed_mesh_canvas on every ui_is_portrait flip, and nothing
+// else nulled the cached raw pointer.
+//
+// The rewire path itself (setup_orientation_rewire_observer ->
+// rewire_after_orientation_flip, which relies on LVGL notifying observers in
+// registration order so ours runs after the XML's own <if> observer) has no
+// automated coverage — driving a real flip needs the whole app's XML registry.
+// It was verified by hand instead, over repeated live flips via `ctl set`.
 struct BedMeshPanelTestAccess {
     static lv_obj_t* canvas(const BedMeshPanel& p) {
         return p.canvas_;

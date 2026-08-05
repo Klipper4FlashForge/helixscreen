@@ -119,6 +119,30 @@ BedMeshPanel::~BedMeshPanel() {
             helix::ui::modal_hide(delete_modal_widget_);
             delete_modal_widget_ = nullptr;
         }
+
+        // wire_canvas_and_content() registers on_canvas_deleted_cb (canvas_)
+        // and on_content_size_changed (overlay_content) with user_data=this.
+        // StaticPanelRegistry::destroy_all() runs BEFORE lv_deinit() and
+        // before a soft restart's explicit widget-tree deletion — in both
+        // paths `this` is about to be freed while canvas_/overlay_content
+        // are still live widgets. Without removing these here, the later
+        // real deletion would fire on_canvas_deleted_cb with user_data
+        // pointing at freed memory (rule 5's hazard class, DELETE variant —
+        // worse than the analogous SIZE_CHANGED case because DELETE is
+        // GUARANTEED to fire during teardown). lv_obj_remove_event_cb()
+        // removes every registration of the given callback function
+        // regardless of how many accumulated, so this is correct even if
+        // wire_canvas_and_content() were ever called more than once against
+        // the same still-live widget.
+        if (canvas_) {
+            lv_obj_remove_event_cb(canvas_, on_canvas_deleted_cb);
+        }
+        if (overlay_root_) {
+            lv_obj_t* overlay_content = lv_obj_find_by_name(overlay_root_, "overlay_content");
+            if (overlay_content) {
+                lv_obj_remove_event_cb(overlay_content, on_content_size_changed);
+            }
+        }
     }
 
     // Clear widget pointers (LVGL owns the objects)
@@ -341,16 +365,24 @@ bool BedMeshPanel::wire_canvas_and_content(lv_obj_t* overlay_content) {
     // Belt-and-suspenders against on_ui_destroyed() (full teardown) AND the
     // <if> rebuild path above — whichever deletes this widget, canvas_ ends
     // up null rather than dangling.
+    // Remove first for the same reason as the SIZE_CHANGED registration below:
+    // create()'s immediate observer fire re-enters against the same canvas.
+    lv_obj_remove_event_cb(canvas_, on_canvas_deleted_cb);
     lv_obj_add_event_cb(canvas_, on_canvas_deleted_cb, LV_EVENT_DELETE, this);
 
     // Wire LV_EVENT_SIZE_CHANGED on overlay_content so the portrait canvas
     // height recomputes whenever the column resizes (rotation, or the
     // initial layout pass). Direct lv_obj_add_event_cb is correct here —
     // SIZE_CHANGED has no XML binding equivalent (same rationale as
-    // ui_panel_print_status.cpp:941). overlay_content is always a widget
-    // this method has not seen before (fresh from lv_xml_create() the first
-    // time; fresh from the <if> rebuild every time after), so there is never
-    // a stale registration on it to remove first.
+    // ui_panel_print_status.cpp:941).
+    //
+    // Usually overlay_content is fresh — from lv_xml_create() the first time,
+    // from the <if> rebuild after each orientation flip. The exception is
+    // create(): observe_int_immediate fires at registration, so
+    // rewire_after_orientation_flip() runs once against the SAME
+    // overlay_content that was just wired here. Remove before adding so that
+    // path leaves one registration rather than two.
+    lv_obj_remove_event_cb(overlay_content, on_content_size_changed);
     lv_obj_add_event_cb(overlay_content, on_content_size_changed, LV_EVENT_SIZE_CHANGED, this);
 
     return true;
