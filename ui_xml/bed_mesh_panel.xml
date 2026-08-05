@@ -23,6 +23,25 @@
     <px name="bed_mesh_info_column_width_medium" value="280"/>
     <px name="bed_mesh_info_column_width_large" value="280"/>
 
+    <!-- current_mesh_card's width in portrait_cards_row (portrait only).
+         NOT the same value as bed_mesh_info_column_width: in landscape that
+         token sizes a column that current_mesh_card has ENTIRELY to itself
+         (profiles_card sits below it, not beside it, so it also gets the
+         full 280). In portrait the two cards split ONE row's width, so
+         giving current_mesh_card landscape's 280 leaves profiles_card only
+         ~170px at a 480px screen — not enough room for its range column,
+         rename/load icon, delete icon, AND a readable profile name, and
+         "adaptive"/"default" wrapped character-by-character
+         (prestonbrown/helixscreen#1204-adjacent). These values were sized
+         empirically against the profiles list's actual per-row chrome
+         (range width 50, two icon columns, inter-item gaps) rather than
+         reused from the landscape side column, which was never sized for a
+         second card to share its width with. -->
+    <px name="bed_mesh_portrait_info_width_tiny" value="130"/>
+    <px name="bed_mesh_portrait_info_width_small" value="170"/>
+    <px name="bed_mesh_portrait_info_width_medium" value="200"/>
+    <px name="bed_mesh_portrait_info_width_large" value="205"/>
+
     <!-- Profile row height per breakpoint. Declared here (not in
          ui_xml/components/bed_mesh_profiles_card.xml, which is where it is
          actually used) because theme_manager_find_xml_files() only scans
@@ -58,10 +77,10 @@
                 action_button_callback="on_bed_mesh_calibrate_clicked"
                 action_button_disabled_cond="nav_buttons_enabled eq 0"/>
     <!-- Content Area: landscape is a row (canvas left, cards in a fixed-width
-         side column); portrait is a column — canvas on top, mesh info below
-         it, list of profiles at the bottom. Three blocks, stacked, each full
-         width. ui_is_portrait is reactive, so a rotation rebuilds this <if>
-         in place — see docs/devel/LVGL9_XML_GUIDE.md "Structural
+         side column); portrait is a column — canvas on top, then mesh info
+         and the profiles list SIDE BY SIDE in one row below it (not
+         stacked). ui_is_portrait is reactive, so a rotation rebuilds this
+         <if> in place — see docs/devel/LVGL9_XML_GUIDE.md "Structural
          conditionals with <if> / <else>".
 
          current_mesh_card and profiles_card are IDENTICAL in both
@@ -73,13 +92,10 @@
          bed_mesh_profiles_card.xml) and each branch below just instantiates
          them — the markup itself exists exactly once. What genuinely differs
          between the two arrangements is structural (a fixed-width side
-         column holding both cards, vs. both cards stacked full-width below
-         the canvas) rather than a simple attribute swap, which is why this
-         needs <if> rather than a cheaper bind_style_if/cond= toggle:
-         profiles_card's flex_grow="1" must reach whatever height the
-         STACKED COLUMN leaves over in portrait, which only happens if it is
-         overlay_content's direct child there, not nested one level down
-         inside a side column. -->
+         column holding both cards stacked, vs. a full-width row below the
+         canvas holding both cards side by side) rather than a simple
+         attribute swap, which is why this needs <if> rather than a cheaper
+         bind_style_if/cond= toggle. -->
     <if cond="ui_is_portrait eq 1">
       <lv_obj name="overlay_content"
               width="100%" flex_grow="1" style_pad_all="#space_md" scrollable="false" flex_flow="column"
@@ -89,10 +105,10 @@
         <!-- Top: 3D Mesh Canvas. 45% is the pre-measurement default;
              BedMeshPanel::apply_portrait_canvas_height() (wired on
              overlay_content's SIZE_CHANGED) refines it once the column has
-             been laid out, reserving room for BOTH current_mesh_card and a
-             profiles_card minimum so neither is squeezed to nothing — see
-             that function for the reservation math. If the measurement
-             returns 0 (not laid out yet), this value stands on its own. -->
+             been laid out, reserving room for the info/profiles row below
+             so it is never squeezed to nothing — see that function for the
+             reservation math. If the measurement returns 0 (not laid out
+             yet), this value stands on its own. -->
         <lv_obj name="canvas_wrapper" width="100%" height="45%" style_pad_all="0" scrollable="false">
           <bed_mesh name="bed_mesh_canvas" width="100%" height="100%" clickable="true" style_border_width="0"/>
           <!-- Empty state overlay - absolutely positioned centered over canvas -->
@@ -102,14 +118,24 @@
             <text_muted text="No mesh loaded" translation_tag="No mesh loaded" style_pad_top="#space_md"/>
           </centered_column>
         </lv_obj>
-        <!-- Middle: mesh info, full width, fixed content height. -->
-        <bed_mesh_current_mesh_card name="current_mesh_card"/>
-        <!-- Bottom: list of profiles, full width, absorbs whatever height
-             the canvas and current_mesh_card do not use (flex_grow="1",
-             declared in the component). apply_portrait_canvas_height()
-             reserves this card a measured minimum before sizing the canvas,
-             so this is never squeezed to zero — see that function. -->
-        <bed_mesh_profiles_card name="profiles_card"/>
+        <!-- Bottom: mesh info and the profiles list side by side in one
+             row, sharing this row's height. The split favors profiles_card
+             (flex_grow="1", takes the remainder) over current_mesh_card
+             (fixed #bed_mesh_portrait_info_width — see that const's comment
+             for why this is NOT landscape's info_column width): the
+             profiles list has more per-row chrome fighting for space (a
+             range column, two icon columns) than current_mesh_card's simple
+             label/value rows, and its name field now truncates with
+             long_mode="dots" (bed_mesh_profiles_card.xml) as a second line
+             of defense rather than wrapping character-by-character.
+             profiles_card fills the row's full height via height="100%"
+             rather than shrinking to current_mesh_card's own content size. -->
+        <lv_obj name="portrait_cards_row"
+                width="100%" flex_grow="1" flex_flow="row" style_pad_all="0" style_pad_gap="#space_md"
+                scrollable="false">
+          <bed_mesh_current_mesh_card name="current_mesh_card" width="#bed_mesh_portrait_info_width"/>
+          <bed_mesh_profiles_card name="profiles_card" height="100%" flex_grow="1"/>
+        </lv_obj>
       </lv_obj>
       <else/>
       <lv_obj name="overlay_content"

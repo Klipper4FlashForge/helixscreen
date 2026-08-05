@@ -61,10 +61,23 @@
           <bind_flag_if_lt subject="bed_mesh_profile_count" flag="hidden" ref_value="${i + 1}"/>
           <bind_style_if_eq name="profile_row_active" subject="bed_mesh_profile_${i}_active" ref_value="1"/>
           <event_cb trigger="clicked" callback="on_profile_${i}_clicked"/>
-          <!-- Name -->
+          <!-- Name. long_mode="dots" so a name too long for whatever width
+               this row ends up with (e.g. portrait_cards_row splitting the
+               row with current_mesh_card, or a genuinely long saved profile
+               name) truncates on one line with an ellipsis instead of
+               wrapping — flex_grow="1" makes this the field that absorbs
+               the squeeze, so it is the one that should truncate; the fixed-
+               width range value next to it should not. width="1" alongside
+               flex_grow="1" is required for dots to actually engage: LVGL's
+               theme default width is "content" (size-to-fit), and dot
+               truncation needs a definite width to truncate against — a
+               content-sized label just grows/wraps instead, even when flex
+               allocates it real pixels (verified: without width="1" this
+               wrapped a long name across 5 lines rather than truncating).
+               Same idiom as the flex column in ams_loaded_card.xml. -->
           <text_small name="profile_${i}_name"
-                      bind_text="bed_mesh_profile_${i}_name" flex_grow="1" style_text_color="#text" clickable="false"
-                      event_bubble="true"/>
+                      width="1" height="100%" bind_text="bed_mesh_profile_${i}_name" flex_grow="1"
+                      style_text_color="#text" clickable="false" long_mode="dots" scrollable="false" event_bubble="true"/>
           <!-- Range -->
           <text_small name="profile_${i}_range"
                       width="50" bind_text="bed_mesh_profile_${i}_range" style_text_align="right" clickable="false"
