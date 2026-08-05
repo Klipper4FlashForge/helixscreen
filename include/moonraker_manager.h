@@ -7,6 +7,7 @@
 
 #include "async_lifetime_guard.h"
 #include "json_fwd.h"
+#include "mock_http_file_server.h"
 #include "moonraker_events.h"
 #include "runtime_config.h"
 
@@ -349,6 +350,13 @@ class MoonrakerManager {
 
     // Macro modification manager (PRINT_START wizard integration)
     std::unique_ptr<helix::MacroModificationManager> m_macro_analysis;
+
+#ifdef HELIX_ENABLE_MOCKS
+    /// Loopback HTTP server backing thumbnail/gcode downloads under --test.
+    /// Owned here because its lifetime must match the mock client's, and the
+    /// HTTP base URL it publishes is consumed by connect().
+    std::unique_ptr<helix::MockHttpFileServer> m_mock_http;
+#endif
 
     // Destruction flag for async callback safety [L012]
     std::shared_ptr<std::atomic<bool>> m_alive = std::make_shared<std::atomic<bool>>(true);
