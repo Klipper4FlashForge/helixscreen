@@ -584,7 +584,7 @@ helix::CellMetrics GridEditMode::current_metrics(lv_area_t* out_content) const {
 
     int cols = GridLayout::get_cols(breakpoint);
     int rows = GridLayout::get_rows(breakpoint);
-    return grid_cell_metrics(content.x2 - content.x1, content.y2 - content.y1, cols, rows,
+    return grid_cell_metrics(lv_area_get_width(&content), lv_area_get_height(&content), cols, rows,
                              GridLayout::gutter_px());
 }
 

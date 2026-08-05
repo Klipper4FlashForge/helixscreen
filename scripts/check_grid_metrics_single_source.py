@@ -7,6 +7,18 @@ GridEditMode::current_metrics() is the one place allowed to ask GridLayout for
 the grid's dimensions; every other path takes a CellMetrics from it instead of
 calling GridLayout directly, so gutter handling and int-vs-float rounding can't
 drift between call sites.
+
+Counting is per LINE, not per call: two matches on one source line register as
+one hit. This is exactly why current_metrics() puts get_cols() and get_rows()
+on separate lines — folding them onto one line would consume only one of
+LIMIT's two slots and leave a free slot for a future duplicate elsewhere in
+the file. Keep them on separate lines.
+
+The pattern matches static `GridLayout::get_*` calls only. It does not see the
+instance accessors (`GridLayout temp_grid(bp); temp_grid.cols();`) — five
+`GridLayout temp_grid(...)` sites already exist in this file and are outside
+this gate's reach. That's a known gap, not a bug; widening the pattern to
+cover instance calls is future work, not this gate's job today.
 """
 
 import re

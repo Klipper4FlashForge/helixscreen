@@ -67,7 +67,9 @@ TEST_CASE("grid_track_origin: track i starts after i tracks and i gutters",
     REQUIRE(grid_track_origin(m.cell_w, m.gutter, 0) == Catch::Approx(0.0f));
     REQUIRE(grid_track_origin(m.cell_w, m.gutter, 1) == Catch::Approx(m.cell_w + 4.0f));
     REQUIRE(grid_track_origin(m.cell_w, m.gutter, 3) == Catch::Approx(3.0f * (m.cell_w + 4.0f)));
-    // The last boundary lands exactly on the content edge.
+    // grid_track_origin(n) is the origin of the track AFTER the last one (n ==
+    // cols), which is one gutter beyond the content edge — not the edge itself.
+    // The content edge is grid_track_origin(n - 1) + cell_w.
     REQUIRE(grid_track_origin(m.cell_w, m.gutter, 6) == Catch::Approx(480.0f + 4.0f));
 }
 
