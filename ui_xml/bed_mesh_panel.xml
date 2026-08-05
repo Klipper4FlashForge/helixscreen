@@ -157,156 +157,50 @@
           <lv_obj name="profiles_list"
                   width="100%" flex_grow="1" flex_flow="column" style_pad_all="#space_sm" style_pad_gap="#space_xs"
                   scrollable="true">
-            <!-- Profile Row 0 -->
-            <ui_card name="profile_row_0"
-                     width="100%" height="#bed_mesh_profile_row_height" flex_flow="row" style_flex_cross_place="center"
-                     style_border_width="0" style_pad_left="#space_sm" style_pad_right="#space_sm" style_pad_top="0"
-                     style_pad_bottom="0" style_pad_gap="#space_xs" clickable="true" scrollable="false">
-              <bind_flag_if_lt subject="bed_mesh_profile_count" flag="hidden" ref_value="1"/>
-              <bind_style_if_eq name="profile_row_active" subject="bed_mesh_profile_0_active" ref_value="1"/>
-              <event_cb trigger="clicked" callback="on_profile_0_clicked"/>
-              <!-- Name -->
-              <text_small name="profile_0_name"
-                          bind_text="bed_mesh_profile_0_name" flex_grow="1" style_text_color="#text" clickable="false"
-                          event_bubble="true"/>
-              <!-- Range -->
-              <text_small name="profile_0_range"
-                          width="50" bind_text="bed_mesh_profile_0_range" style_text_align="right" clickable="false"
-                          event_bubble="true"/>
-              <!-- Rename icon (only when active) -->
-              <icon name="profile_0_rename"
-                    src="pencil" size="sm" color="#success" clickable="true" style_pad_all="#space_xs">
-                <bind_flag_if_eq subject="bed_mesh_profile_0_active" flag="hidden" ref_value="0"/>
-                <event_cb trigger="clicked" callback="on_profile_0_rename"/>
-              </icon>
-              <!-- Load icon (only when NOT active) -->
-              <icon name="profile_0_load"
-                    src="arrow_up_circle" size="sm" variant="muted" clickable="true" style_pad_all="#space_xs">
-                <bind_flag_if_eq subject="bed_mesh_profile_0_active" flag="hidden" ref_value="1"/>
-                <event_cb trigger="clicked" callback="on_profile_0_clicked"/>
-              </icon>
-              <!-- Delete icon (always visible) -->
-              <icon name="profile_0_delete"
-                    src="trash_can_outline" size="sm" variant="danger" clickable="true" style_pad_all="#space_xs">
-                <event_cb trigger="clicked" callback="on_profile_0_delete"/>
-              </icon>
-            </ui_card>
-            <!-- Profile Row 1 -->
-            <ui_card name="profile_row_1"
-                     width="100%" height="#bed_mesh_profile_row_height" flex_flow="row" style_flex_cross_place="center"
-                     style_border_width="0" style_pad_left="#space_sm" style_pad_right="#space_sm" style_pad_top="0"
-                     style_pad_bottom="0" style_pad_gap="#space_xs" clickable="true" scrollable="false">
-              <bind_flag_if_lt subject="bed_mesh_profile_count" flag="hidden" ref_value="2"/>
-              <bind_style_if_eq name="profile_row_active" subject="bed_mesh_profile_1_active" ref_value="1"/>
-              <event_cb trigger="clicked" callback="on_profile_1_clicked"/>
-              <text_small name="profile_1_name"
-                          bind_text="bed_mesh_profile_1_name" flex_grow="1" style_text_color="#text" clickable="false"
-                          event_bubble="true"/>
-              <text_small name="profile_1_range"
-                          width="50" bind_text="bed_mesh_profile_1_range" style_text_align="right" clickable="false"
-                          event_bubble="true"/>
-              <icon name="profile_1_rename"
-                    src="pencil" size="sm" color="#success" clickable="true" style_pad_all="#space_xs">
-                <bind_flag_if_eq subject="bed_mesh_profile_1_active" flag="hidden" ref_value="0"/>
-                <event_cb trigger="clicked" callback="on_profile_1_rename"/>
-              </icon>
-              <icon name="profile_1_load"
-                    src="arrow_up_circle" size="sm" variant="muted" clickable="true" style_pad_all="#space_xs">
-                <bind_flag_if_eq subject="bed_mesh_profile_1_active" flag="hidden" ref_value="1"/>
-                <event_cb trigger="clicked" callback="on_profile_1_clicked"/>
-              </icon>
-              <icon name="profile_1_delete"
-                    src="trash_can_outline" size="sm" variant="danger" clickable="true" style_pad_all="#space_xs">
-                <event_cb trigger="clicked" callback="on_profile_1_delete"/>
-              </icon>
-            </ui_card>
-            <!-- Profile Row 2 -->
-            <ui_card name="profile_row_2"
-                     width="100%" height="#bed_mesh_profile_row_height" flex_flow="row" style_flex_cross_place="center"
-                     style_border_width="0" style_pad_left="#space_sm" style_pad_right="#space_sm" style_pad_top="0"
-                     style_pad_bottom="0" style_pad_gap="#space_xs" clickable="true" scrollable="false">
-              <bind_flag_if_lt subject="bed_mesh_profile_count" flag="hidden" ref_value="3"/>
-              <bind_style_if_eq name="profile_row_active" subject="bed_mesh_profile_2_active" ref_value="1"/>
-              <event_cb trigger="clicked" callback="on_profile_2_clicked"/>
-              <text_small name="profile_2_name"
-                          bind_text="bed_mesh_profile_2_name" flex_grow="1" style_text_color="#text" clickable="false"
-                          event_bubble="true"/>
-              <text_small name="profile_2_range"
-                          width="50" bind_text="bed_mesh_profile_2_range" style_text_align="right" clickable="false"
-                          event_bubble="true"/>
-              <icon name="profile_2_rename"
-                    src="pencil" size="sm" color="#success" clickable="true" style_pad_all="#space_xs">
-                <bind_flag_if_eq subject="bed_mesh_profile_2_active" flag="hidden" ref_value="0"/>
-                <event_cb trigger="clicked" callback="on_profile_2_rename"/>
-              </icon>
-              <icon name="profile_2_load"
-                    src="arrow_up_circle" size="sm" variant="muted" clickable="true" style_pad_all="#space_xs">
-                <bind_flag_if_eq subject="bed_mesh_profile_2_active" flag="hidden" ref_value="1"/>
-                <event_cb trigger="clicked" callback="on_profile_2_clicked"/>
-              </icon>
-              <icon name="profile_2_delete"
-                    src="trash_can_outline" size="sm" variant="danger" clickable="true" style_pad_all="#space_xs">
-                <event_cb trigger="clicked" callback="on_profile_2_delete"/>
-              </icon>
-            </ui_card>
-            <!-- Profile Row 3 -->
-            <ui_card name="profile_row_3"
-                     width="100%" height="#bed_mesh_profile_row_height" flex_flow="row" style_flex_cross_place="center"
-                     style_border_width="0" style_pad_left="#space_sm" style_pad_right="#space_sm" style_pad_top="0"
-                     style_pad_bottom="0" style_pad_gap="#space_xs" clickable="true" scrollable="false">
-              <bind_flag_if_lt subject="bed_mesh_profile_count" flag="hidden" ref_value="4"/>
-              <bind_style_if_eq name="profile_row_active" subject="bed_mesh_profile_3_active" ref_value="1"/>
-              <event_cb trigger="clicked" callback="on_profile_3_clicked"/>
-              <text_small name="profile_3_name"
-                          bind_text="bed_mesh_profile_3_name" flex_grow="1" style_text_color="#text" clickable="false"
-                          event_bubble="true"/>
-              <text_small name="profile_3_range"
-                          width="50" bind_text="bed_mesh_profile_3_range" style_text_align="right" clickable="false"
-                          event_bubble="true"/>
-              <icon name="profile_3_rename"
-                    src="pencil" size="sm" color="#success" clickable="true" style_pad_all="#space_xs">
-                <bind_flag_if_eq subject="bed_mesh_profile_3_active" flag="hidden" ref_value="0"/>
-                <event_cb trigger="clicked" callback="on_profile_3_rename"/>
-              </icon>
-              <icon name="profile_3_load"
-                    src="arrow_up_circle" size="sm" variant="muted" clickable="true" style_pad_all="#space_xs">
-                <bind_flag_if_eq subject="bed_mesh_profile_3_active" flag="hidden" ref_value="1"/>
-                <event_cb trigger="clicked" callback="on_profile_3_clicked"/>
-              </icon>
-              <icon name="profile_3_delete"
-                    src="trash_can_outline" size="sm" variant="danger" clickable="true" style_pad_all="#space_xs">
-                <event_cb trigger="clicked" callback="on_profile_3_delete"/>
-              </icon>
-            </ui_card>
-            <!-- Profile Row 4 -->
-            <ui_card name="profile_row_4"
-                     width="100%" height="#bed_mesh_profile_row_height" flex_flow="row" style_flex_cross_place="center"
-                     style_border_width="0" style_pad_left="#space_sm" style_pad_right="#space_sm" style_pad_top="0"
-                     style_pad_bottom="0" style_pad_gap="#space_xs" clickable="true" scrollable="false">
-              <bind_flag_if_lt subject="bed_mesh_profile_count" flag="hidden" ref_value="5"/>
-              <bind_style_if_eq name="profile_row_active" subject="bed_mesh_profile_4_active" ref_value="1"/>
-              <event_cb trigger="clicked" callback="on_profile_4_clicked"/>
-              <text_small name="profile_4_name"
-                          bind_text="bed_mesh_profile_4_name" flex_grow="1" style_text_color="#text" clickable="false"
-                          event_bubble="true"/>
-              <text_small name="profile_4_range"
-                          width="50" bind_text="bed_mesh_profile_4_range" style_text_align="right" clickable="false"
-                          event_bubble="true"/>
-              <icon name="profile_4_rename"
-                    src="pencil" size="sm" color="#success" clickable="true" style_pad_all="#space_xs">
-                <bind_flag_if_eq subject="bed_mesh_profile_4_active" flag="hidden" ref_value="0"/>
-                <event_cb trigger="clicked" callback="on_profile_4_rename"/>
-              </icon>
-              <icon name="profile_4_load"
-                    src="arrow_up_circle" size="sm" variant="muted" clickable="true" style_pad_all="#space_xs">
-                <bind_flag_if_eq subject="bed_mesh_profile_4_active" flag="hidden" ref_value="1"/>
-                <event_cb trigger="clicked" callback="on_profile_4_clicked"/>
-              </icon>
-              <icon name="profile_4_delete"
-                    src="trash_can_outline" size="sm" variant="danger" clickable="true" style_pad_all="#space_xs">
-                <event_cb trigger="clicked" callback="on_profile_4_delete"/>
-              </icon>
-            </ui_card>
+            <!-- Profile rows 0-4. count="5" is a literal (matches
+                 BED_MESH_MAX_PROFILES in ui_panel_bed_mesh.h) so this expands
+                 once at load time and never rebuilds — the ordering
+                 constraint for subject-bound <repeat> does not apply here,
+                 and no_profiles_message may safely follow as a static
+                 sibling. ${i + 1} composes the 1-based "hide until the count
+                 reaches this row" threshold each row needs; a literal
+                 ref_value per row was the unroll this repeat replaces. -->
+            <repeat count="5">
+              <ui_card name="profile_row_${i}"
+                       width="100%" height="#bed_mesh_profile_row_height" flex_flow="row"
+                       style_flex_cross_place="center" style_border_width="0" style_pad_left="#space_sm"
+                       style_pad_right="#space_sm" style_pad_top="0" style_pad_bottom="0"
+                       style_pad_gap="#space_xs" clickable="true" scrollable="false">
+                <bind_flag_if_lt subject="bed_mesh_profile_count" flag="hidden" ref_value="${i + 1}"/>
+                <bind_style_if_eq name="profile_row_active" subject="bed_mesh_profile_${i}_active" ref_value="1"/>
+                <event_cb trigger="clicked" callback="on_profile_${i}_clicked"/>
+                <!-- Name -->
+                <text_small name="profile_${i}_name"
+                            bind_text="bed_mesh_profile_${i}_name" flex_grow="1" style_text_color="#text"
+                            clickable="false" event_bubble="true"/>
+                <!-- Range -->
+                <text_small name="profile_${i}_range"
+                            width="50" bind_text="bed_mesh_profile_${i}_range" style_text_align="right"
+                            clickable="false" event_bubble="true"/>
+                <!-- Rename icon (only when active) -->
+                <icon name="profile_${i}_rename"
+                      src="pencil" size="sm" color="#success" clickable="true" style_pad_all="#space_xs">
+                  <bind_flag_if_eq subject="bed_mesh_profile_${i}_active" flag="hidden" ref_value="0"/>
+                  <event_cb trigger="clicked" callback="on_profile_${i}_rename"/>
+                </icon>
+                <!-- Load icon (only when NOT active) -->
+                <icon name="profile_${i}_load"
+                      src="arrow_up_circle" size="sm" variant="muted" clickable="true" style_pad_all="#space_xs">
+                  <bind_flag_if_eq subject="bed_mesh_profile_${i}_active" flag="hidden" ref_value="1"/>
+                  <event_cb trigger="clicked" callback="on_profile_${i}_clicked"/>
+                </icon>
+                <!-- Delete icon (always visible) -->
+                <icon name="profile_${i}_delete"
+                      src="trash_can_outline" size="sm" variant="danger" clickable="true" style_pad_all="#space_xs">
+                  <event_cb trigger="clicked" callback="on_profile_${i}_delete"/>
+                </icon>
+              </ui_card>
+            </repeat>
             <!-- Empty state message (shown when no profiles) -->
             <lv_obj name="no_profiles_message"
                     width="100%" height="content" style_pad_all="#space_md" scrollable="false">
