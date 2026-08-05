@@ -26,6 +26,7 @@ import {
   crashFingerprint,
   findExistingIssue,
   addDuplicateComment,
+  isKnownRelease,
 } from "./github-app";
 import { resolveBacktrace } from "./symbol-resolver";
 import type { CrashReport, ResolvedBacktrace } from "./symbol-resolver";
@@ -58,6 +59,8 @@ interface IssueResult {
   number: number;
   html_url: string;
   is_duplicate: boolean;
+  /** Set when the report was accepted but deliberately not filed. */
+  ignored?: boolean;
 }
 
 /** Metadata extracted from a debug bundle's gzipped JSON body. */
@@ -172,9 +175,21 @@ async function handleCrashReport(request: Request, env: Env): Promise<Response> 
     });
   }
 
+  // The version is the R2 symbol-file lookup key and goes straight into the
+  // issue title, so anything that isn't semver-shaped is refused outright.
+  if (!isVersionShapeValid(String(body.app_version))) {
+    return jsonResponse(400, { error: "Invalid app_version" });
+  }
+
   // --- Create GitHub issue (or add comment to existing) ---
   try {
     const issue = await createGitHubIssue(env, body);
+    if (issue.ignored) {
+      return jsonResponse(202, {
+        status: "ignored",
+        reason: "app_version does not match a published release",
+      });
+    }
     return jsonResponse(issue.is_duplicate ? 200 : 201, {
       status: issue.is_duplicate ? "duplicate" : "created",
       issue_number: issue.number,
@@ -198,6 +213,39 @@ function validateRequiredFields(body: Record<string, unknown>, fields: string[])
 }
 
 /**
+ * Semver shape a HelixScreen build can actually stamp (HELIX_VERSION comes from
+ * VERSION.txt at compile time). The bounded digit counts also keep a hostile
+ * app_version from turning into a 4 kB issue title or an R2 key with newlines.
+ */
+const VERSION_SHAPE = /^\d{1,4}\.\d{1,4}\.\d{1,5}([-+][0-9A-Za-z.-]{1,32})?$/;
+
+export function isVersionShapeValid(version: string): boolean {
+  return VERSION_SHAPE.test(version);
+}
+
+/** Trim and escape a client-supplied string destined for the issue title. */
+function titleField(value: string): string {
+  return mdEscape(value).slice(0, 48);
+}
+
+/**
+ * Build the issue title. Everything interpolated here comes from the device, so
+ * each field is escaped and length-capped; app_version has already passed
+ * {@link isVersionShapeValid}.
+ */
+export function crashIssueTitle(report: CrashReport): string {
+  const signal = titleField(report.signal_name || `SIG${report.signal}`);
+  const version = titleField(report.app_version || "unknown");
+
+  if (report.fault_code_name && report.fault_addr) {
+    const code = titleField(report.fault_code_name);
+    const addr = titleField(report.fault_addr);
+    return `Crash: ${signal} (${code} at ${addr}) in v${version}`;
+  }
+  return `Crash: ${signal} in v${version}`;
+}
+
+/**
  * Build a markdown issue body from the crash report and create it via GitHub API.
  * Uses GitHub App authentication (issues appear as "HelixScreen Crash Reporter [bot]").
  * Deduplicates by fingerprint — adds a comment to existing issues instead of creating new ones.
@@ -212,6 +260,18 @@ async function createGitHubIssue(env: Env, report: CrashReport): Promise<IssueRe
     owner,
     repo
   );
+
+  // Reports from builds we never published can't be symbolicated — no symbol
+  // file for them exists in R2 or on a release, and none ever will (#1240 came
+  // from a v0.1.4 binary; VERSION.txt has never held that value). Accept the
+  // POST so the device stops retrying, but don't file an issue.
+  if (!(await isKnownRelease(token, owner, repo, report.app_version ?? ""))) {
+    console.warn(
+      `Ignoring crash from unpublished build: v${report.app_version} ` +
+        `(${report.signal_name}, platform ${report.platform || "unknown"})`
+    );
+    return { number: 0, html_url: "", is_duplicate: false, ignored: true };
+  }
 
   const fingerprint = crashFingerprint(report);
 
@@ -232,11 +292,8 @@ async function createGitHubIssue(env: Env, report: CrashReport): Promise<IssueRe
     }
   }
 
-  // Include fault type in title when available (e.g., "SEGV_MAPERR at 0x00000000")
-  let title = `Crash: ${report.signal_name} in v${report.app_version}`;
-  if (report.fault_code_name && report.fault_addr) {
-    title = `Crash: ${report.signal_name} (${report.fault_code_name} at ${report.fault_addr}) in v${report.app_version}`;
-  }
+  // Includes the fault type when available (e.g., "SEGV_MAPERR at 0x00000000")
+  const title = crashIssueTitle(report);
 
   const body = formatIssueBody(report, fingerprint, resolved);
 
