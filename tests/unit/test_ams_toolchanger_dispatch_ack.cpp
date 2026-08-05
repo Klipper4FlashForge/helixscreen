@@ -1,0 +1,232 @@
+// Copyright (C) 2025-2026 356C LLC
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/**
+ * @file test_ams_toolchanger_dispatch_ack.cpp
+ * @brief klipper-toolchanger optimistic dispatch + macro-ack resolution (#1183).
+ *
+ * The AFC half of #1183 was fixed by resolving the operation on the macro's
+ * gcode ack instead of waiting for a status transition that a no-op never
+ * produces. klipper-toolchanger was never given the same treatment, and it has
+ * the same hole for the same reason.
+ *
+ * change_tool() stamps AmsAction::SELECTING optimistically and sends
+ * `SELECT_TOOL T=<n>` through the ack-discarding 1-arg execute_gcode(). The
+ * only code that can move the action off SELECTING is parse_toolchanger_state()
+ * receiving a frame carrying `toolchanger.status`. Moonraker only pushes fields
+ * whose VALUE CHANGED, and klipper-toolchanger short-circuits a SELECT_TOOL on
+ * the tool already on the carriage ("Tool tool T4 already selected") without
+ * touching `status`. No frame is sent, the action never leaves SELECTING, and
+ * two things follow:
+ *
+ *   - The filament panel's completion observer only fires on IDLE/ERROR, so the
+ *     Load button spins until OperationTimeoutGuard expires at 120 s.
+ *   - is_busy() is `action != IDLE && action != ERROR`, and
+ *     check_preconditions() refuses on it, so EVERY subsequent AMS operation
+ *     returns busy("Selecting") until the app is restarted.
+ *
+ * Observed on a 5-tool toolchanger, v0.99.106, debug bundle 9KRXZ62P: T4 was
+ * already the mounted tool, `[AMS ToolChanger] G-code executed successfully`
+ * came back in 1 ms, and the action never changed again across the following
+ * four minutes of log.
+ *
+ * The ack is the only completion signal that exists for a no-op, which is
+ * exactly what AmsBackendAfc::finalize_dispatch_after_macro() concluded.
+ */
+
+#include "ui_update_queue.h"
+
+#include "ams_backend_toolchanger.h"
+#include "ams_types.h"
+
+#include <algorithm>
+#include <functional>
+#include <string>
+#include <vector>
+
+#include "../catch_amalgamated.hpp"
+#include "hv/json.hpp"
+
+using json = nlohmann::json;
+
+namespace {
+
+/// Real backend with the gcode ack held so the test decides when the macro
+/// "completes". client_ is null, so ensure_homed_then() routes straight to
+/// execute_gcode() and these overrides capture everything.
+class ToolChangerDispatchHelper : public AmsBackendToolChanger {
+  public:
+    explicit ToolChangerDispatchHelper(int tool_count) : AmsBackendToolChanger(nullptr, nullptr) {
+        std::vector<std::string> names;
+        names.reserve(static_cast<size_t>(tool_count));
+        for (int i = 0; i < tool_count; ++i) {
+            names.push_back("T" + std::to_string(i));
+        }
+        set_discovered_tools(std::move(names));
+
+        // check_preconditions() refuses everything while the backend is stopped.
+        running_ = true;
+
+        set_event_callback([this](const std::string& event, const std::string&) {
+            if (event == EVENT_STATE_CHANGED) {
+                // Safe only because change_tool() emits OUTSIDE mutex_.
+                trace_.push_back(get_current_action());
+            }
+        });
+    }
+
+    ~ToolChangerDispatchHelper() override {
+        // Any dispatch left un-acked still queued work; draining keeps
+        // scripts/check_update_queue_leaks.py quiet.
+        helix::ui::UpdateQueue::instance().drain();
+    }
+
+    AmsError execute_gcode(const std::string& gcode) override {
+        sent_.push_back(gcode);
+        pending_acks_.emplace_back(nullptr); // keep indices aligned with sent_
+        return AmsErrorHelper::success();
+    }
+
+    AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+        sent_.push_back(gcode);
+        pending_acks_.push_back(std::move(on_complete));
+        return AmsErrorHelper::success();
+    }
+
+    /// Fire the ack for the Nth dispatched gcode, then drain — the production
+    /// callback arrives on a background thread and hops to the main thread via
+    /// LifetimeToken::defer, so the work lands in the queue, not inline.
+    void ack(size_t index) {
+        REQUIRE(index < pending_acks_.size());
+        REQUIRE(pending_acks_[index] != nullptr);
+        pending_acks_[index]();
+        helix::ui::UpdateQueue::instance().drain();
+    }
+
+    /// True when the Nth dispatch went out through the completion-callback form.
+    [[nodiscard]] bool ack_available(size_t index) const {
+        return index < pending_acks_.size() && pending_acks_[index] != nullptr;
+    }
+
+    /// Feed one notify_status_update params object.
+    void feed(const json& status) {
+        handle_status_update(
+            json{{"method", "notify_status_update"}, {"params", json::array({status, 0.0})}});
+    }
+
+    /// Put tool `n` on the carriage with the toolchanger idle.
+    void seat_tool(int n) {
+        feed(json{{"toolchanger", {{"status", "ready"}, {"tool_number", n}}}});
+        trace_.clear(); // seeding is not part of the assertion
+    }
+
+    [[nodiscard]] const std::vector<std::string>& sent() const {
+        return sent_;
+    }
+    [[nodiscard]] const std::vector<AmsAction>& trace() const {
+        return trace_;
+    }
+    [[nodiscard]] AmsAction action() const {
+        return get_current_action();
+    }
+
+  private:
+    std::vector<std::string> sent_;
+    std::vector<std::function<void()>> pending_acks_;
+    std::vector<AmsAction> trace_;
+};
+
+bool trace_contains(const std::vector<AmsAction>& trace, AmsAction a) {
+    return std::find(trace.begin(), trace.end(), a) != trace.end();
+}
+
+} // namespace
+
+// =============================================================================
+// The reported defect: a no-op SELECT_TOOL must still end the operation
+// =============================================================================
+
+TEST_CASE("Toolchanger load on the already-mounted tool resolves on the macro ack",
+          "[ams][toolchanger][dispatch][1183]") {
+    ToolChangerDispatchHelper h(5);
+    h.seat_tool(4); // T4 already on the carriage — SELECT_TOOL T=4 is a firmware no-op
+
+    REQUIRE(h.load_filament(4).success());
+    REQUIRE(h.sent().size() == 1);
+    CHECK(h.sent()[0] == "SELECT_TOOL T=4");
+
+    // The optimistic busy leg is what the filament panel's completion observer
+    // needs to see START before it can ever see one end.
+    CHECK(trace_contains(h.trace(), AmsAction::SELECTING));
+
+    // The dispatch must go out through the completion-callback form. Today it
+    // uses the 1-arg overload and discards the ack, so there is nothing to fire.
+    REQUIRE(h.ack_available(0));
+
+    h.ack(0);
+
+    // Asserting the end value alone would pass without the fix — IDLE is where
+    // this started. The busy leg above is the load-bearing half of the pair.
+    CHECK(h.trace().back() == AmsAction::IDLE);
+    CHECK(h.action() == AmsAction::IDLE);
+}
+
+TEST_CASE("Toolchanger no-op load does not lock out the next operation",
+          "[ams][toolchanger][dispatch][1183]") {
+    ToolChangerDispatchHelper h(5);
+    h.seat_tool(4);
+
+    REQUIRE(h.load_filament(4).success());
+    REQUIRE(h.ack_available(0));
+    h.ack(0);
+
+    // is_busy() is `action != IDLE && action != ERROR`, and check_preconditions()
+    // refuses on it. Leaving the action at SELECTING makes every later op fail
+    // with busy("Selecting") until restart — the half of this bug that outlives
+    // the 120 s UI guard.
+    REQUIRE_FALSE(h.get_system_info().is_busy());
+
+    AmsError second = h.load_filament(2);
+    CHECK(second.success());
+    CHECK(h.sent().size() == 2);
+}
+
+// =============================================================================
+// Guard rails on the fix itself
+// =============================================================================
+
+TEST_CASE("Toolchanger macro ack does not truncate a real tool change",
+          "[ams][toolchanger][dispatch][1183]") {
+    ToolChangerDispatchHelper h(5);
+    h.seat_tool(0);
+
+    REQUIRE(h.load_filament(3).success());
+    REQUIRE(h.ack_available(0));
+
+    // Firmware picked the change up and is mid-swap. SELECT_TOOL's ack lands
+    // when the macro returns, which for a real change is BEFORE the carriage
+    // finishes; resolving on it here would report done while the tool is still
+    // moving.
+    h.feed(json{{"toolchanger", {{"status", "changing"}}}});
+    REQUIRE(h.action() == AmsAction::SELECTING);
+
+    h.ack(0);
+    CHECK(h.action() == AmsAction::SELECTING);
+
+    // Only the firmware's own terminal frame ends it.
+    h.feed(json{{"toolchanger", {{"status", "ready"}, {"tool_number", 3}}}});
+    CHECK(h.action() == AmsAction::IDLE);
+}
+
+TEST_CASE("Toolchanger dispatch failure reverts the optimistic action",
+          "[ams][toolchanger][dispatch][1183]") {
+    ToolChangerDispatchHelper h(5);
+    h.seat_tool(1);
+
+    // An out-of-range tool never reaches the wire.
+    AmsError err = h.load_filament(99);
+    CHECK_FALSE(err.success());
+    CHECK(h.sent().empty());
+    CHECK(h.action() == AmsAction::IDLE);
+    CHECK_FALSE(h.get_system_info().is_busy());
+}
