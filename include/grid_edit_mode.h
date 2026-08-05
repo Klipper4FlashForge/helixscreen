@@ -85,7 +85,8 @@ class GridEditMode {
     /// Map screen coordinates to grid cell (col, row). Clamps to valid range.
     static std::pair<int, int> screen_to_grid_cell(int screen_x, int screen_y, int container_x,
                                                    int container_y, int container_w,
-                                                   int container_h, int ncols, int nrows);
+                                                   int container_h, int ncols, int nrows,
+                                                   int gutter);
 
     /// Clamp desired colspan/rowspan to the min/max allowed by the widget registry.
     /// Returns {clamped_colspan, clamped_rowspan}.
@@ -105,7 +106,8 @@ class GridEditMode {
 
     /// Round a pixel position to the nearest grid cell boundary.
     /// Returns a cell boundary index (0 to ncells inclusive).
-    static int round_to_grid_cell(int px, int content_origin, int content_size, int ncells);
+    static int round_to_grid_cell(int px, int content_origin, int content_size, int ncells,
+                                  int gutter);
 
     /// Compute new widget position/span for a resize operation.
     /// @param edge Which edge is being dragged

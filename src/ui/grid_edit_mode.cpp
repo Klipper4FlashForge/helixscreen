@@ -629,8 +629,8 @@ void GridEditMode::sync_config_from_screen() {
         int cx = widget_area.x1 + cell_w / 2; // center of first cell
         int cy = widget_area.y1 + cell_h / 2;
 
-        auto [col, row] =
-            screen_to_grid_cell(cx, cy, content_area.x1, content_area.y1, cw, ch, ncols, nrows);
+        auto [col, row] = screen_to_grid_cell(cx, cy, content_area.x1, content_area.y1, cw, ch,
+                                              ncols, nrows, GridLayout::gutter_px());
 
         if (it->col != col || it->row != row) {
             spdlog::debug("[GridEditMode] sync_config: '{}' config ({},{}) -> screen ({},{})",
@@ -791,16 +791,21 @@ void GridEditMode::configure_selected_widget() {
 
 std::pair<int, int> GridEditMode::screen_to_grid_cell(int screen_x, int screen_y, int container_x,
                                                       int container_y, int container_w,
-                                                      int container_h, int ncols, int nrows) {
-    // Convert screen coordinates to container-relative
-    int rel_x = screen_x - container_x;
-    int rel_y = screen_y - container_y;
+                                                      int container_h, int ncols, int nrows,
+                                                      int gutter) {
+    CellMetrics m = grid_cell_metrics(container_w, container_h, ncols, nrows, gutter);
 
-    // Compute cell indices
-    int col = (rel_x * ncols) / container_w;
-    int row = (rel_y * nrows) / container_h;
+    // Convert to container-relative, then divide by the track pitch (track plus
+    // one gutter). A point landing in a gutter belongs to the track before it.
+    float rel_x = static_cast<float>(screen_x - container_x);
+    float rel_y = static_cast<float>(screen_y - container_y);
 
-    // Clamp to valid range
+    float pitch_x = m.cell_w + static_cast<float>(m.gutter);
+    float pitch_y = m.cell_h + static_cast<float>(m.gutter);
+
+    int col = (pitch_x > 0.0f) ? static_cast<int>(rel_x / pitch_x) : 0;
+    int row = (pitch_y > 0.0f) ? static_cast<int>(rel_y / pitch_y) : 0;
+
     col = std::clamp(col, 0, ncols - 1);
     row = std::clamp(row, 0, nrows - 1);
 
@@ -887,9 +892,14 @@ GridEditMode::ResizeEdge GridEditMode::detect_resize_edge(int px, int py,
     return candidates[best].edge;
 }
 
-int GridEditMode::round_to_grid_cell(int px, int content_origin, int content_size, int ncells) {
-    float cell_size = static_cast<float>(content_size) / ncells;
-    float fractional = (px - content_origin) / cell_size;
+int GridEditMode::round_to_grid_cell(int px, int content_origin, int content_size, int ncells,
+                                     int gutter) {
+    CellMetrics m = grid_cell_metrics(content_size, content_size, ncells, ncells, gutter);
+    float pitch = m.cell_w + static_cast<float>(m.gutter);
+    if (pitch <= 0.0f) {
+        return 0;
+    }
+    float fractional = static_cast<float>(px - content_origin) / pitch;
     return std::clamp(static_cast<int>(std::round(fractional)), 0, ncells);
 }
 
@@ -996,7 +1006,7 @@ void GridEditMode::handle_long_press(lv_event_t* e) {
         int nrows = GridLayout::get_rows(breakpoint);
 
         auto [col, row] = screen_to_grid_cell(point.x, point.y, content_area.x1, content_area.y1,
-                                              cw, ch, ncols, nrows);
+                                              cw, ch, ncols, nrows, GridLayout::gutter_px());
         catalog_origin_col_ = col;
         catalog_origin_row_ = row;
 
@@ -1256,8 +1266,10 @@ void GridEditMode::handle_drag_move(lv_event_t* /*e*/) {
     int widget_top = point.y - drag_offset_.y;
 
     // Round the top-left to the nearest grid cell for snap target
-    int target_col = round_to_grid_cell(widget_left, content_area.x1, cw, ncols);
-    int target_row = round_to_grid_cell(widget_top, content_area.y1, ch, nrows);
+    int target_col =
+        round_to_grid_cell(widget_left, content_area.x1, cw, ncols, GridLayout::gutter_px());
+    int target_row =
+        round_to_grid_cell(widget_top, content_area.y1, ch, nrows, GridLayout::gutter_px());
 
     // Clamp so the widget span doesn't extend past the grid
     target_col = std::min(target_col, ncols - drag_orig_colspan_);
@@ -1591,14 +1603,15 @@ void GridEditMode::handle_resize_move(lv_event_t* /*e*/) {
     int ncells_axis =
         (resize_edge_ == ResizeEdge::Left || resize_edge_ == ResizeEdge::Right) ? ncols : nrows;
     int edge_cell;
+    int gutter = GridLayout::gutter_px();
     if (resize_edge_ == ResizeEdge::Right) {
-        edge_cell = round_to_grid_cell(preview_x2, content_area.x1, cw, ncols);
+        edge_cell = round_to_grid_cell(preview_x2, content_area.x1, cw, ncols, gutter);
     } else if (resize_edge_ == ResizeEdge::Left) {
-        edge_cell = round_to_grid_cell(preview_x1, content_area.x1, cw, ncols);
+        edge_cell = round_to_grid_cell(preview_x1, content_area.x1, cw, ncols, gutter);
     } else if (resize_edge_ == ResizeEdge::Bottom) {
-        edge_cell = round_to_grid_cell(preview_y2, content_area.y1, ch, nrows);
+        edge_cell = round_to_grid_cell(preview_y2, content_area.y1, ch, nrows, gutter);
     } else {
-        edge_cell = round_to_grid_cell(preview_y1, content_area.y1, ch, nrows);
+        edge_cell = round_to_grid_cell(preview_y1, content_area.y1, ch, nrows, gutter);
     }
 
     auto result =
@@ -1695,17 +1708,18 @@ void GridEditMode::handle_resize_end(lv_event_t* /*e*/) {
     // Round the dragged edge to the nearest grid cell boundary
     int edge_cell;
     int ncells_axis;
+    int gutter = GridLayout::gutter_px();
     if (resize_edge_ == ResizeEdge::Right) {
-        edge_cell = round_to_grid_cell(point.x, content_area.x1, cw, ncols);
+        edge_cell = round_to_grid_cell(point.x, content_area.x1, cw, ncols, gutter);
         ncells_axis = ncols;
     } else if (resize_edge_ == ResizeEdge::Left) {
-        edge_cell = round_to_grid_cell(point.x, content_area.x1, cw, ncols);
+        edge_cell = round_to_grid_cell(point.x, content_area.x1, cw, ncols, gutter);
         ncells_axis = ncols;
     } else if (resize_edge_ == ResizeEdge::Bottom) {
-        edge_cell = round_to_grid_cell(point.y, content_area.y1, ch, nrows);
+        edge_cell = round_to_grid_cell(point.y, content_area.y1, ch, nrows, gutter);
         ncells_axis = nrows;
     } else {
-        edge_cell = round_to_grid_cell(point.y, content_area.y1, ch, nrows);
+        edge_cell = round_to_grid_cell(point.y, content_area.y1, ch, nrows, gutter);
         ncells_axis = nrows;
     }
 
