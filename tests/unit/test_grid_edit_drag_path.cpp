@@ -283,3 +283,141 @@ TEST_CASE_METHOD(XMLTestFixture, "GridEditMode: real drag lands on the gutter-aw
     em.exit();
     mgr.clear_panel_config(panel_id);
 }
+
+TEST_CASE_METHOD(XMLTestFixture,
+                 "GridEditMode: snap target reflects the container's actual row count, "
+                 "not the breakpoint's",
+                 "[grid_edit][grid_edit_drag]") {
+    // PanelWidgetManager sizes the row axis from rows actually IN USE
+    // (max_row_used, floored by a cached count), not from the breakpoint
+    // table (panel_widget_manager.cpp:585-608). A page holding one widget at
+    // row 0 gets a container built with a single row track even though the
+    // Medium breakpoint's table says 4. current_metrics() must read that
+    // single-row descriptor back off the container rather than asking
+    // GridLayout for the breakpoint's row count, or the snap target it
+    // computes describes a lattice the live grid does not have.
+    const int gutter = theme_manager_get_spacing("space_xs");
+    REQUIRE(gutter > 0);
+
+    lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
+    REQUIRE(bp_subj != nullptr);
+    REQUIRE(as_breakpoint(lv_subject_get_int(bp_subj)) == UiBreakpoint::Medium);
+    const int ncols = GridLayout::get_cols(UiBreakpoint::Medium);
+    const int breakpoint_rows = GridLayout::get_rows(UiBreakpoint::Medium);
+    REQUIRE(ncols > 0);
+    // The whole point of this test: the container we are about to build has
+    // fewer rows than the breakpoint table, so a fix that still reads
+    // GridLayout::get_rows() would not diverge from this test's expectation.
+    REQUIRE(breakpoint_rows > 1);
+
+    // Widget spans 2 columns so its width (2*cell+gutter) clears
+    // 2*EDGE_HIT_INWARD (36px) — otherwise the center-press in frame 1 would
+    // land inside the resize-edge zone on every side at once and
+    // handle_drag_start() would enter resize mode instead of a plain drag.
+    // Height uses the same generous cell size for the same reason: the
+    // container's single row is this height, so it must clear the edge zone
+    // on its own with no gutter to help.
+    constexpr int kCellPx = 80;
+    constexpr int kColspan = 2;
+    constexpr int kRowspan = 1;
+    const int content_w = ncols * kCellPx + (ncols - 1) * gutter;
+    // Exactly one row's worth of content — no interior gutter since there is
+    // only one track.
+    const int content_h = kCellPx;
+
+    lv_obj_t* container = lv_obj_create(test_screen());
+    lv_obj_remove_flag(container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_all(container, 0, 0);
+    lv_obj_set_style_border_width(container, 0, 0);
+    lv_obj_set_size(container, content_w, content_h);
+
+    // Column descriptor matches the breakpoint (unaffected by this bug — only
+    // the row axis diverges, per PanelWidgetManager's std::max(max_row_used,
+    // cached_rows) — cols always come from GridLayout::get_cols()). Row
+    // descriptor is deliberately a single track, standing in for a page whose
+    // widgets only occupy row 0.
+    auto col_dsc = GridLayout::make_col_dsc(UiBreakpoint::Medium);
+    std::vector<int32_t> row_dsc = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+    lv_obj_set_grid_dsc_array(container, col_dsc.data(), row_dsc.data());
+    lv_obj_set_style_pad_column(container, gutter, 0);
+    lv_obj_set_style_pad_row(container, gutter, 0);
+
+    lv_obj_t* widget = lv_obj_create(container);
+    lv_obj_set_name(widget, "temperature");
+    lv_obj_remove_flag(widget, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_grid_cell(widget, LV_GRID_ALIGN_STRETCH, 0, kColspan, LV_GRID_ALIGN_STRETCH, 0,
+                         kRowspan);
+    lv_obj_update_layout(container);
+
+    const std::string panel_id = "test_grid_edit_drag_path_row_divergence";
+    auto* cfg = Config::get_instance();
+    cfg->set<nlohmann::json>(
+        cfg->df() + "panel_widgets/" + panel_id,
+        nlohmann::json{{"main_page_index", 0},
+                       {"next_page_id", 2},
+                       {"pages",
+                        {{{"id", "main"}, {"widgets", nlohmann::json::array()}},
+                         {{"id", "spy"},
+                          {"widgets",
+                           {{{"id", "temperature"},
+                             {"enabled", true},
+                             {"col", 0},
+                             {"row", 0},
+                             {"colspan", kColspan},
+                             {"rowspan", kRowspan}}}}}}}});
+
+    auto& mgr = PanelWidgetManager::instance();
+    mgr.get_widget_config(panel_id).mark_dirty();
+    mgr.clear_panel_config(panel_id);
+    auto& config = mgr.get_widget_config(panel_id);
+    constexpr int kPageIndex = 1;
+
+    const auto& spy_entries = config.page_entries(static_cast<size_t>(kPageIndex));
+    REQUIRE(spy_entries.size() == 1);
+    REQUIRE(spy_entries[0].id == "temperature");
+
+    GridEditMode em;
+    em.enter(container, &config, kPageIndex);
+    em.select_widget(widget);
+    REQUIRE(em.selected_widget() == widget);
+
+    lv_obj_add_event_cb(container, forward_pressing, LV_EVENT_PRESSING, &em);
+
+    lv_area_t content_area;
+    lv_obj_get_content_coords(container, &content_area);
+
+    ScopedTestIndev indev;
+
+    lv_area_t sel_area;
+    lv_obj_get_coords(widget, &sel_area);
+    const lv_point_t center{(sel_area.x1 + sel_area.x2) / 2, (sel_area.y1 + sel_area.y2) / 2};
+
+    // Frame 1: press at the widget's center.
+    indev.send(center.x, center.y, LV_INDEV_STATE_PRESSED);
+    REQUIRE_FALSE(em.is_catalog_open());
+
+    // Frame 2: move to the widget's top-left corner — crosses DRAG_THRESHOLD_PX
+    // and starts the real drag, drag_offset_ becomes (0,0).
+    indev.send(sel_area.x1, sel_area.y1, LV_INDEV_STATE_PRESSED);
+
+    // Frame 3: drag far below the container's single row — hundreds of px past
+    // its bottom edge. round_to_grid_cell() clamps to [0, ncells] before the
+    // final std::min(target_row, nrows - rowspan) clamp, so this lands
+    // squarely at whatever the LAST valid row index is. With the container's
+    // real row count (1), that final clamp is min(_, 1 - 1) == 0: the snap
+    // target can only ever be row 0. Reading the breakpoint's row count (4)
+    // instead would clamp to min(_, 4 - 1) == 3 — a row this grid does not
+    // have.
+    const int target_x = sel_area.x1;
+    const int target_y = content_area.y1 + content_h + 500;
+    indev.send(target_x, target_y, LV_INDEV_STATE_PRESSED);
+
+    const int snap_row = GridEditModeTestAccess::snap_row(em);
+
+    // A drag that never reached handle_drag_move() also reports -1.
+    REQUIRE(snap_row >= 0);
+    CHECK(snap_row == 0);
+
+    em.exit();
+    mgr.clear_panel_config(panel_id);
+}

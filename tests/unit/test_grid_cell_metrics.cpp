@@ -12,6 +12,8 @@
 
 #include "grid_layout.h"
 
+#include <vector>
+
 #include "../catch_amalgamated.hpp"
 
 using namespace helix;
@@ -80,4 +82,25 @@ TEST_CASE("grid_track_extent: a span swallows its interior gutters", "[grid_metr
     REQUIRE(grid_track_extent(m.cell_w, m.gutter, 2) == Catch::Approx(2 * m.cell_w + 4.0f));
     // A full-width span is the whole content area.
     REQUIRE(grid_track_extent(m.cell_w, m.gutter, 6) == Catch::Approx(480.0f));
+}
+
+TEST_CASE("grid_count_tracks: counts to the terminator", "[grid_metrics][grid]") {
+    const int32_t four[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1),
+                            LV_GRID_TEMPLATE_LAST};
+    REQUIRE(grid_count_tracks(four) == 4);
+
+    const int32_t one[] = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+    REQUIRE(grid_count_tracks(one) == 1);
+
+    const int32_t none[] = {LV_GRID_TEMPLATE_LAST};
+    REQUIRE(grid_count_tracks(none) == 0);
+}
+
+TEST_CASE("grid_count_tracks: null and unterminated are invalid, not crashes",
+          "[grid_metrics][grid]") {
+    REQUIRE(grid_count_tracks(nullptr) == 0);
+
+    // No terminator within the cap: report invalid rather than walking off the heap.
+    std::vector<int32_t> runaway(300, LV_GRID_FR(1));
+    REQUIRE(grid_count_tracks(runaway.data()) == 0);
 }

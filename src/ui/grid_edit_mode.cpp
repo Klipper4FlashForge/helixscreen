@@ -582,8 +582,24 @@ helix::CellMetrics GridEditMode::current_metrics(lv_area_t* out_content) const {
     UiBreakpoint breakpoint =
         bp_subj ? as_breakpoint(lv_subject_get_int(bp_subj)) : UiBreakpoint::Medium;
 
-    int cols = GridLayout::get_cols(breakpoint);
-    int rows = GridLayout::get_rows(breakpoint);
+    // Prefer the descriptor the container is actually laid out with. The manager
+    // sizes the row axis from the rows in use (max_row_used, floored by a cached
+    // count), not from the breakpoint table, so asking GridLayout for rows can
+    // yield a track count this grid does not have — a whole-track error on any
+    // page that does not fill the grid.
+    //
+    // Safe here because GridEditMode is only ever entered from a user long-press,
+    // long after populate_widgets() installed the descriptor. During a rebuild the
+    // manager drops LV_LAYOUT_GRID while these style properties still point at
+    // buffers it is about to reallocate; nothing in this class runs then.
+    int cols = grid_count_tracks(lv_obj_get_style_grid_column_dsc_array(container_, LV_PART_MAIN));
+    int rows = grid_count_tracks(lv_obj_get_style_grid_row_dsc_array(container_, LV_PART_MAIN));
+    if (cols <= 0) {
+        cols = GridLayout::get_cols(breakpoint);
+    }
+    if (rows <= 0) {
+        rows = GridLayout::get_rows(breakpoint);
+    }
     return grid_cell_metrics(lv_area_get_width(&content), lv_area_get_height(&content), cols, rows,
                              GridLayout::gutter_px());
 }

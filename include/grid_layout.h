@@ -55,6 +55,15 @@ inline float grid_track_extent(float cell, int gutter, int span) {
     return static_cast<float>(span) * cell + static_cast<float>(span - 1) * gutter;
 }
 
+/// Number of tracks in an LVGL grid descriptor array.
+///
+/// The array is terminated by LV_GRID_TEMPLATE_LAST. LVGL's own counter is
+/// file-local, so callers reading a descriptor back off a container need this.
+/// Returns 0 for a null array, for an empty one, and for an array with no
+/// terminator within GRID_TRACK_SCAN_MAX — a missing terminator means the
+/// pointer is stale or not a descriptor, and walking further reads off the end.
+int grid_count_tracks(const int32_t* dsc);
+
 /// A widget placement on the grid
 struct GridPlacement {
     std::string widget_id;

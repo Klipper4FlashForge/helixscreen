@@ -13,6 +13,10 @@
 
 namespace helix {
 
+namespace {
+constexpr int GRID_TRACK_SCAN_MAX = 256;
+} // namespace
+
 // Grid dimensions per breakpoint: {cols, rows}
 // MICRO (≤272px height):  6x4 (same as TINY/SMALL/MEDIUM — cells are smaller)
 // TINY (273-390px):       6x4
@@ -345,6 +349,18 @@ void GridLayout::clear() {
 
 int GridLayout::gutter_px() {
     return theme_manager_get_spacing("space_xs");
+}
+
+int grid_count_tracks(const int32_t* dsc) {
+    if (dsc == nullptr) {
+        return 0;
+    }
+    for (int i = 0; i < GRID_TRACK_SCAN_MAX; ++i) {
+        if (dsc[i] == LV_GRID_TEMPLATE_LAST) {
+            return i;
+        }
+    }
+    return 0;
 }
 
 CellMetrics grid_cell_metrics(int content_w, int content_h, int cols, int rows, int gutter) {
