@@ -39,16 +39,16 @@
  *     lands on 2/done, not 0/idle)
  */
 
+#include "ui_panel_filament.h"
+#include "ui_update_queue.h"
+
 #include "../lvgl_ui_test_fixture.h"
 #include "../test_helpers/filament_panel_test_access.h"
 #include "../ui_test_utils.h"
-
 #include "ams_backend_mock.h"
 #include "ams_state.h"
 #include "ams_types.h"
 #include "tool_state.h"
-#include "ui_panel_filament.h"
-#include "ui_update_queue.h"
 
 #include <lvgl.h>
 #include <memory>
@@ -200,7 +200,8 @@ TEST_CASE_METHOD(LVGLUITestFixture, "#1183: a timed-out backend load stops the s
     CHECK_FALSE(TA::operation_active(*h.panel));
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture, "#1183: a timed-out backend op clears the in-flight bookkeeping",
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "#1183: a timed-out backend op clears the in-flight bookkeeping",
                  "[ui_integration][filament][regression][1183]") {
     // backend_op_active_ / op_in_flight_ gate the AMS completion observer. Left set
     // after a stall they mis-attribute the NEXT operation's completion, so the
@@ -299,7 +300,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "#1183: a timed-out gcode op stops its spinn
 // Captured verbatim from a live BoxTurtle rig; see test_afc_console_corpus.cpp
 // and docs/devel/FILAMENT_MANAGEMENT.md § "AFC console response contract".
 //
-//     PURGE_FILAMENT ; from helixscreen
+//     PURGE_FILAMENT
 //     // Unknown command:"STATUS_PURGING"
 //
 // The user's purge_filament macro aborts on line 4 of its own body because their

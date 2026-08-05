@@ -143,9 +143,9 @@ TEST_CASE_METHOD(BusyGuardApiFixture,
     auto note_queued = [&queued_calls]() { queued_calls++; };
 
     SECTION("raw SET_LED through execute_gcode") {
-        api->execute_gcode("SET_LED LED=my_leds RED=1.00 GREEN=1.00 BLUE=1.00 SYNC=0 TRANSMIT=1",
-                           note_success, [this](const MoonrakerError& err) { error_cb(err); }, 0,
-                           false, MoonrakerAPI::GcodeSource::Internal, note_queued);
+        api->execute_gcode(
+            "SET_LED LED=my_leds RED=1.00 GREEN=1.00 BLUE=1.00 SYNC=0 TRANSMIT=1", note_success,
+            [this](const MoonrakerError& err) { error_cb(err); }, 0, false, note_queued);
 
         // Still queued fire-and-forget — the fix must not un-queue the command.
         REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
@@ -157,8 +157,9 @@ TEST_CASE_METHOD(BusyGuardApiFixture,
     }
 
     SECTION("set_led() — the real LedController route") {
-        api->set_led("my_leds", 1.0, 0.5, 0.25, 0.0, note_success,
-                     [this](const MoonrakerError& err) { error_cb(err); }, note_queued);
+        api->set_led(
+            "my_leds", 1.0, 0.5, 0.25, 0.0, note_success,
+            [this](const MoonrakerError& err) { error_cb(err); }, note_queued);
 
         REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
         CHECK(queued_calls == 1);
@@ -197,9 +198,10 @@ TEST_CASE_METHOD(BusyGuardApiFixture, "on_queued does not fire when the command 
     set_print_state(PrintJobState::STANDBY);
 
     int queued_calls = 0;
-    api->execute_gcode("SET_LED LED=my_leds RED=1.00 GREEN=1.00 BLUE=1.00 SYNC=0 TRANSMIT=1",
-                       nullptr, [this](const MoonrakerError& err) { error_cb(err); }, 0, false,
-                       MoonrakerAPI::GcodeSource::Internal, [&queued_calls]() { queued_calls++; });
+    api->execute_gcode(
+        "SET_LED LED=my_leds RED=1.00 GREEN=1.00 BLUE=1.00 SYNC=0 TRANSMIT=1", nullptr,
+        [this](const MoonrakerError& err) { error_cb(err); }, 0, false,
+        [&queued_calls]() { queued_calls++; });
 
     REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
     CHECK(queued_calls == 0);
@@ -213,9 +215,9 @@ TEST_CASE_METHOD(BusyGuardApiFixture, "a refused move never fires on_queued",
     set_print_state(PrintJobState::STANDBY);
 
     int queued_calls = 0;
-    api->execute_gcode("G0 X10 F3000", nullptr,
-                       [this](const MoonrakerError& err) { error_cb(err); }, 0, false,
-                       MoonrakerAPI::GcodeSource::Internal, [&queued_calls]() { queued_calls++; });
+    api->execute_gcode(
+        "G0 X10 F3000", nullptr, [this](const MoonrakerError& err) { error_cb(err); }, 0, false,
+        [&queued_calls]() { queued_calls++; });
 
     CHECK(error_called);
     CHECK(queued_calls == 0);
@@ -226,8 +228,7 @@ TEST_CASE_METHOD(BusyGuardApiFixture, "a refused move never fires on_queued",
 // A physical MOVE is still REFUSED while a blocking op is active
 // ============================================================================
 
-TEST_CASE_METHOD(BusyGuardApiFixture,
-                 "execute_gcode refuses a raw move while homing/leveling",
+TEST_CASE_METHOD(BusyGuardApiFixture, "execute_gcode refuses a raw move while homing/leveling",
                  "[busy_guard][mock]") {
     // Even through the controls API, a G0/G1 must not queue — late-firing motion is
     // the genuinely dangerous case the guard exists to prevent. #1108.
@@ -253,8 +254,7 @@ TEST_CASE_METHOD(BusyGuardApiFixture, "execute_gcode allows discretionary gcode 
     set_manual_probe(false);
     set_print_state(PrintJobState::STANDBY);
 
-    api->execute_gcode("M106 S128", nullptr,
-                       [this](const MoonrakerError& err) { error_cb(err); });
+    api->execute_gcode("M106 S128", nullptr, [this](const MoonrakerError& err) { error_cb(err); });
 
     CHECK_FALSE(error_called);
     REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
@@ -300,16 +300,14 @@ TEST_CASE_METHOD(BusyGuardApiFixture,
     set_print_state(PrintJobState::STANDBY);
 
     SECTION("emergency stop passes") {
-        api->execute_gcode("M112", nullptr,
-                           [this](const MoonrakerError& err) { error_cb(err); });
+        api->execute_gcode("M112", nullptr, [this](const MoonrakerError& err) { error_cb(err); });
         CHECK_FALSE(error_called);
         REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
     }
 
     SECTION("manual-probe control (ACCEPT) passes so the user can finish/abort") {
         set_manual_probe(true);
-        api->execute_gcode("ACCEPT", nullptr,
-                           [this](const MoonrakerError& err) { error_cb(err); });
+        api->execute_gcode("ACCEPT", nullptr, [this](const MoonrakerError& err) { error_cb(err); });
         CHECK_FALSE(error_called);
         REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
     }
@@ -329,8 +327,7 @@ TEST_CASE_METHOD(BusyGuardApiFixture,
     set_print_state(PrintJobState::STANDBY);
     state.app_motion_activity().note_sent();
 
-    api->execute_gcode("M106 S255", nullptr,
-                       [this](const MoonrakerError& err) { error_cb(err); });
+    api->execute_gcode("M106 S255", nullptr, [this](const MoonrakerError& err) { error_cb(err); });
 
     CHECK_FALSE(error_called);
     REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
@@ -392,8 +389,7 @@ TEST_CASE_METHOD(BusyGuardApiFixture, "busy refusal reaches the user as the busy
 // Motion API routes through the same guard
 // ============================================================================
 
-TEST_CASE_METHOD(BusyGuardApiFixture,
-                 "motion execute_gcode refuses discretionary move while busy",
+TEST_CASE_METHOD(BusyGuardApiFixture, "motion execute_gcode refuses discretionary move while busy",
                  "[busy_guard][mock][motion]") {
     set_idle_printing(true);
     set_print_state(PrintJobState::STANDBY);

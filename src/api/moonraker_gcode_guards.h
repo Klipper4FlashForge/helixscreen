@@ -1,0 +1,44 @@
+// Copyright (C) 2025-2026 356C LLC
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/**
+ * @file moonraker_gcode_guards.h
+ * @brief Shared send-layer guards for outgoing G-code.
+ *
+ * Three send paths need the same refusal logic (moonraker_client.cpp,
+ * moonraker_api_controls.cpp, moonraker_motion_api.cpp); this header is the
+ * single source of truth.
+ *
+ * NOTE: outgoing G-code is transmitted VERBATIM — HelixScreen adds nothing to
+ * it, not even a trailing comment. An earlier " ; from helixscreen" provenance
+ * tag lived here and broke three separate things (M117/M118 payloads, the AD5X
+ * quoted-RESPOND echo, and Kalico/Klipper macros that branch on `rawparams`).
+ * tests/unit/test_gcode_verbatim.cpp is the regression gate; read its header
+ * before considering any outgoing-G-code rewriting.
+ */
+
+#pragma once
+
+#include "moonraker_error.h"
+
+#include <functional>
+#include <string>
+
+namespace helix {
+class PrinterState;
+}
+
+namespace helix::api {
+
+/// Reject app-initiated homing while a print is active (PRINTING or PAUSED).
+/// On a loadcell-Z printer (e.g. AD5X) a mid-print G28 drives the nozzle into
+/// the part. Returns true when it rejected the command (the caller must then
+/// return immediately); logs a warning prefixed with @p log_tag (unless
+/// @p silent) and invokes @p on_error with a NOT_READY error. Returns false to
+/// let the command through.
+bool reject_homing_during_active_print(const std::string& gcode, helix::PrinterState& state,
+                                       bool silent,
+                                       const std::function<void(const MoonrakerError&)>& on_error,
+                                       const char* log_tag);
+
+} // namespace helix::api

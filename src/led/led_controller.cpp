@@ -1020,8 +1020,7 @@ void LedEffectBackend::activate_effect(const std::string& effect_name,
                 on_error(err.message);
             }
         },
-        /*timeout_ms=*/0, /*silent=*/false, MoonrakerAPI::GcodeSource::Internal,
-        std::move(on_queued));
+        /*timeout_ms=*/0, /*silent=*/false, std::move(on_queued));
 }
 
 void LedEffectBackend::stop_all_effects(NativeBackend::SuccessCallback on_success,
@@ -1044,8 +1043,7 @@ void LedEffectBackend::stop_all_effects(NativeBackend::SuccessCallback on_succes
                 on_error(err.message);
             }
         },
-        /*timeout_ms=*/0, /*silent=*/false, MoonrakerAPI::GcodeSource::Internal,
-        std::move(on_queued));
+        /*timeout_ms=*/0, /*silent=*/false, std::move(on_queued));
 }
 
 void LedEffectBackend::stop_effect(const std::string& effect_name,
@@ -1077,8 +1075,7 @@ void LedEffectBackend::stop_effect(const std::string& effect_name,
                 on_error(err.message);
             }
         },
-        /*timeout_ms=*/0, /*silent=*/false, MoonrakerAPI::GcodeSource::Internal,
-        std::move(on_queued));
+        /*timeout_ms=*/0, /*silent=*/false, std::move(on_queued));
 }
 
 std::string LedEffectBackend::icon_hint_for_effect(const std::string& effect_name) {
@@ -1578,8 +1575,7 @@ void OutputPinBackend::set_value(const std::string& pin_id, double value,
                 on_error(err.message);
             }
         },
-        /*timeout_ms=*/0, /*silent=*/false, MoonrakerAPI::GcodeSource::Internal,
-        std::move(on_queued));
+        /*timeout_ms=*/0, /*silent=*/false, std::move(on_queued));
 }
 
 void OutputPinBackend::turn_on(const std::string& pin_id, NativeBackend::SuccessCallback on_success,

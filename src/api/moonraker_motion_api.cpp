@@ -10,7 +10,7 @@
 #include "gcode_homing.h"
 #include "jog_coalescer.h"
 #include "moonraker_client.h"
-#include "moonraker_gcode_annotate.h"
+#include "moonraker_gcode_guards.h"
 #include "moonraker_types.h"
 #include "printer_state.h"
 #include "spdlog/spdlog.h"
@@ -79,8 +79,8 @@ bool reject_non_finite(std::initializer_list<double> values, const char* method,
                          "invalid value (NaN/Inf)",
                          method);
             if (on_error) {
-                on_error(MoonrakerError::validation_error(
-                    method, "Parameter contains NaN or Inf value"));
+                on_error(MoonrakerError::validation_error(method,
+                                                          "Parameter contains NaN or Inf value"));
             }
             return true;
         }
@@ -149,10 +149,9 @@ void MoonrakerMotionAPI::move_axis(char axis, double distance, double feedrate,
                      safety_limits_.max_relative_distance_mm);
         if (on_error) {
             MoonrakerError err = MoonrakerError::validation_error(
-                "move_axis",
-                "Distance " + std::to_string(distance) + "mm exceeds safety limits (" +
-                    std::to_string(safety_limits_.min_relative_distance_mm) + "-" +
-                    std::to_string(safety_limits_.max_relative_distance_mm) + "mm)");
+                "move_axis", "Distance " + std::to_string(distance) + "mm exceeds safety limits (" +
+                                 std::to_string(safety_limits_.min_relative_distance_mm) + "-" +
+                                 std::to_string(safety_limits_.max_relative_distance_mm) + "mm)");
             on_error(err);
         }
         return;
@@ -164,10 +163,10 @@ void MoonrakerMotionAPI::move_axis(char axis, double distance, double feedrate,
                      safety_limits_.max_feedrate_mm_min);
         if (on_error) {
             MoonrakerError err = MoonrakerError::validation_error(
-                "move_axis",
-                "Feedrate " + std::to_string(feedrate) + "mm/min exceeds safety limits (" +
-                    std::to_string(safety_limits_.min_feedrate_mm_min) + "-" +
-                    std::to_string(safety_limits_.max_feedrate_mm_min) + "mm/min)");
+                "move_axis", "Feedrate " + std::to_string(feedrate) +
+                                 "mm/min exceeds safety limits (" +
+                                 std::to_string(safety_limits_.min_feedrate_mm_min) + "-" +
+                                 std::to_string(safety_limits_.max_feedrate_mm_min) + "mm/min)");
             on_error(err);
         }
         return;
@@ -449,14 +448,10 @@ void MoonrakerMotionAPI::execute_gcode(const std::string& gcode, SuccessCallback
         return;
     }
 
-    // Motion API commands are always HelixScreen-initiated (jog/home/move the
-    // API itself generates), so tag them — except when the firmware re-echoes
-    // received G-code and would mis-parse the trailing comment (e.g. AD5X).
-    const bool add_comment = !state_.firmware_echoes_gcode();
-    std::string annotated = helix::api::annotate_gcode(gcode, add_comment);
-    json params = {{"script", annotated}};
+    // Transmitted VERBATIM — see moonraker_gcode_guards.h.
+    json params = {{"script", gcode}};
 
-    spdlog::trace("[Motion API] Executing G-code: {}", annotated);
+    spdlog::trace("[Motion API] Executing G-code: {}", gcode);
 
     // Stamp app-initiated motion activity for discretionary (jog) gcode so the
     // busy guard can attribute the resulting idle_timeout "Printing" to us.

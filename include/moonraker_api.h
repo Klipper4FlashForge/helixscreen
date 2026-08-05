@@ -204,20 +204,17 @@ class MoonrakerAPI : public IMoonrakerAPI {
     // System Control Operations
     // ========================================================================
 
-    /// Origin of a G-code command routed through execute_gcode(). Internal
-    /// (HelixScreen-initiated) commands carry the "; from helixscreen"
-    /// provenance comment; UserConsole (user-typed console input) never does.
-    enum class GcodeSource { Internal, UserConsole };
-
     /**
      * @brief Execute custom G-code command
+     *
+     * The command is sent VERBATIM — HelixScreen appends nothing to it. See
+     * src/api/moonraker_gcode_guards.h and tests/unit/test_gcode_verbatim.cpp.
      *
      * @param gcode G-code command string
      * @param on_success Success callback
      * @param on_error Error callback
      * @param timeout_ms Request timeout (0 = default)
      * @param silent Suppress warning logs / error toasts on refusal
-     * @param source Command origin; UserConsole drops the provenance comment
      * @param on_queued Optional THIRD disposition, distinct from success and error.
      *        Fires when a benign discretionary command (fan/temp/LED) was handed to
      *        Klipper to run behind a blocking op and its RPC response was
@@ -235,7 +232,6 @@ class MoonrakerAPI : public IMoonrakerAPI {
      */
     void execute_gcode(const std::string& gcode, SuccessCallback on_success, ErrorCallback on_error,
                        uint32_t timeout_ms = 0, bool silent = false,
-                       GcodeSource source = GcodeSource::Internal,
                        SuccessCallback on_queued = nullptr);
 
     /**

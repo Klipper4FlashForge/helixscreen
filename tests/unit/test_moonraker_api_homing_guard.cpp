@@ -19,7 +19,7 @@
 #include "../../include/moonraker_api.h"
 #include "../../include/moonraker_client_mock.h"
 #include "../../include/printer_state.h"
-#include "../../src/api/moonraker_gcode_annotate.h"
+#include "../../src/api/moonraker_gcode_guards.h"
 #include "../lvgl_test_fixture.h"
 
 #include "../catch_amalgamated.hpp"
@@ -30,15 +30,14 @@ using namespace helix;
 // Case 1: is_homing_gcode() token matcher
 // ============================================================================
 
-TEST_CASE("is_homing_gcode matches G28 as first token, case-insensitive",
-          "[homing_guard][gcode]") {
+TEST_CASE("is_homing_gcode matches G28 as first token, case-insensitive", "[homing_guard][gcode]") {
     // Positive: G28 is the first whitespace-delimited token on some line.
     CHECK(is_homing_gcode("G28"));
     CHECK(is_homing_gcode("g28"));
     CHECK(is_homing_gcode("G28 X"));
     CHECK(is_homing_gcode("G28 X Y"));
     CHECK(is_homing_gcode("G28 Z\nG1 X10"));
-    CHECK(is_homing_gcode("  G28")); // leading whitespace trimmed
+    CHECK(is_homing_gcode("  G28"));       // leading whitespace trimmed
     CHECK(is_homing_gcode("G1 X10\nG28")); // homing on a later line
     CHECK(is_homing_gcode("G28 ; comment"));
 
@@ -97,13 +96,11 @@ class HomingGuardApiFixture : public LVGLTestFixture {
 // Case 2: MoonrakerAPI::execute_gcode(G28) blocked while PRINTING / PAUSED
 // ============================================================================
 
-TEST_CASE_METHOD(HomingGuardApiFixture,
-                 "execute_gcode refuses G28 while a print is active",
+TEST_CASE_METHOD(HomingGuardApiFixture, "execute_gcode refuses G28 while a print is active",
                  "[homing_guard][mock]") {
     SECTION("PRINTING blocks G28 - no gcode sent, on_error fired") {
         set_print_state(PrintJobState::PRINTING);
-        api->execute_gcode(
-            "G28", nullptr, [this](const MoonrakerError& err) { error_cb(err); });
+        api->execute_gcode("G28", nullptr, [this](const MoonrakerError& err) { error_cb(err); });
 
         CHECK(error_called);
         CHECK(captured_error.type == MoonrakerErrorType::NOT_READY);
@@ -113,8 +110,8 @@ TEST_CASE_METHOD(HomingGuardApiFixture,
 
     SECTION("PAUSED blocks G28 - head parked over the print") {
         set_print_state(PrintJobState::PAUSED);
-        api->execute_gcode(
-            "G28 X Y", nullptr, [this](const MoonrakerError& err) { error_cb(err); });
+        api->execute_gcode("G28 X Y", nullptr,
+                           [this](const MoonrakerError& err) { error_cb(err); });
 
         CHECK(error_called);
         CHECK(captured_error.type == MoonrakerErrorType::NOT_READY);
@@ -130,8 +127,7 @@ TEST_CASE_METHOD(HomingGuardApiFixture, "execute_gcode allows G28 when idle",
                  "[homing_guard][mock]") {
     SECTION("STANDBY sends G28") {
         set_print_state(PrintJobState::STANDBY);
-        api->execute_gcode("G28", nullptr,
-                           [this](const MoonrakerError& err) { error_cb(err); });
+        api->execute_gcode("G28", nullptr, [this](const MoonrakerError& err) { error_cb(err); });
 
         CHECK_FALSE(error_called);
         REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
@@ -140,8 +136,7 @@ TEST_CASE_METHOD(HomingGuardApiFixture, "execute_gcode allows G28 when idle",
 
     SECTION("COMPLETE sends G28") {
         set_print_state(PrintJobState::COMPLETE);
-        api->execute_gcode("G28", nullptr,
-                           [this](const MoonrakerError& err) { error_cb(err); });
+        api->execute_gcode("G28", nullptr, [this](const MoonrakerError& err) { error_cb(err); });
 
         CHECK_FALSE(error_called);
         REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
@@ -152,8 +147,7 @@ TEST_CASE_METHOD(HomingGuardApiFixture, "execute_gcode allows G28 when idle",
 // Case 4: non-homing gcode is never blocked
 // ============================================================================
 
-TEST_CASE_METHOD(HomingGuardApiFixture,
-                 "execute_gcode sends non-homing gcode even while printing",
+TEST_CASE_METHOD(HomingGuardApiFixture, "execute_gcode sends non-homing gcode even while printing",
                  "[homing_guard][mock]") {
     set_print_state(PrintJobState::PRINTING);
     api->execute_gcode("G1 X10 F3000", nullptr,
@@ -172,8 +166,7 @@ TEST_CASE_METHOD(HomingGuardApiFixture, "motion home_axes blocked while printing
                  "[homing_guard][mock][motion]") {
     SECTION("PRINTING blocks home_axes - no gcode sent") {
         set_print_state(PrintJobState::PRINTING);
-        api->motion().home_axes("", nullptr,
-                                [this](const MoonrakerError& err) { error_cb(err); });
+        api->motion().home_axes("", nullptr, [this](const MoonrakerError& err) { error_cb(err); });
 
         CHECK(error_called);
         CHECK(captured_error.type == MoonrakerErrorType::NOT_READY);
@@ -215,7 +208,8 @@ TEST_CASE_METHOD(HomingGuardApiFixture,
 
     SECTION("G28 while STANDBY passes through (returns false, no error)") {
         set_print_state(PrintJobState::STANDBY);
-        CHECK_FALSE(helix::api::reject_homing_during_active_print("G28", state, false, cb, "[Test]"));
+        CHECK_FALSE(
+            helix::api::reject_homing_during_active_print("G28", state, false, cb, "[Test]"));
         CHECK_FALSE(error_called);
     }
 
