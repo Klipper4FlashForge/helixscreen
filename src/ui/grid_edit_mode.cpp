@@ -205,7 +205,7 @@ void GridEditMode::handle_click(lv_event_t* /*e*/) {
             "[GridEditMode] Hit widget '{}': screen=({},{})→({},{}) size={}x{} click=({},{}) "
             "state=0x{:x} clickable={} pressed={} floating={}",
             wname ? wname : "?", hit_area.x1, hit_area.y1, hit_area.x2, hit_area.y2,
-            hit_area.x2 - hit_area.x1, hit_area.y2 - hit_area.y1, point.x, point.y,
+            lv_area_get_width(&hit_area), lv_area_get_height(&hit_area), point.x, point.y,
             static_cast<uint32_t>(lv_obj_get_state(hit)),
             lv_obj_has_flag(hit, LV_OBJ_FLAG_CLICKABLE),
             (lv_obj_get_state(hit) & LV_STATE_PRESSED) != 0,
@@ -275,8 +275,8 @@ void GridEditMode::create_selection_chrome(lv_obj_t* widget) {
     int pad_top = lv_obj_get_style_space_top(container_, LV_PART_MAIN);
     int rel_x1 = widget_area.x1 - container_area.x1 - pad_left;
     int rel_y1 = widget_area.y1 - container_area.y1 - pad_top;
-    int widget_w = widget_area.x2 - widget_area.x1;
-    int widget_h = widget_area.y2 - widget_area.y1;
+    int widget_w = lv_area_get_width(&widget_area);
+    int widget_h = lv_area_get_height(&widget_area);
 
     spdlog::debug("[GridEditMode] Chrome coords: widget_screen=({},{})→({},{}) "
                   "container_screen=({},{}) pad=({},{}) rel=({},{}) size={}x{}",
@@ -599,8 +599,8 @@ void GridEditMode::sync_config_from_screen() {
     helix::CellMetrics m = current_metrics(&content_area);
     int ncols = m.cols;
     int nrows = m.rows;
-    int cw = content_area.x2 - content_area.x1;
-    int ch = content_area.y2 - content_area.y1;
+    int cw = lv_area_get_width(&content_area);
+    int ch = lv_area_get_height(&content_area);
 
     if (cw <= 0 || ch <= 0) {
         return;
@@ -1011,8 +1011,8 @@ void GridEditMode::handle_long_press(lv_event_t* e) {
         helix::CellMetrics m = current_metrics(&content_area);
         int ncols = m.cols;
         int nrows = m.rows;
-        int cw = content_area.x2 - content_area.x1;
-        int ch = content_area.y2 - content_area.y1;
+        int cw = lv_area_get_width(&content_area);
+        int ch = lv_area_get_height(&content_area);
 
         auto [col, row] = screen_to_grid_cell(point.x, point.y, content_area.x1, content_area.y1,
                                               cw, ch, ncols, nrows, m.gutter);
@@ -1256,8 +1256,8 @@ void GridEditMode::handle_drag_move(lv_event_t* /*e*/) {
     helix::CellMetrics m = current_metrics(&content_area);
     int ncols = m.cols;
     int nrows = m.rows;
-    int cw = content_area.x2 - content_area.x1;
-    int ch = content_area.y2 - content_area.y1;
+    int cw = lv_area_get_width(&content_area);
+    int ch = lv_area_get_height(&content_area);
 
     lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
     UiBreakpoint breakpoint =
@@ -1553,8 +1553,8 @@ void GridEditMode::handle_resize_move(lv_event_t* /*e*/) {
     helix::CellMetrics m = current_metrics(&content_area);
     int ncols = m.cols;
     int nrows = m.rows;
-    int cw = content_area.x2 - content_area.x1;
-    int ch = content_area.y2 - content_area.y1;
+    int cw = lv_area_get_width(&content_area);
+    int ch = lv_area_get_height(&content_area);
 
     lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
     UiBreakpoint breakpoint =
@@ -1696,8 +1696,8 @@ void GridEditMode::handle_resize_end(lv_event_t* /*e*/) {
     helix::CellMetrics m = current_metrics(&content_area);
     int ncols = m.cols;
     int nrows = m.rows;
-    int cw = content_area.x2 - content_area.x1;
-    int ch = content_area.y2 - content_area.y1;
+    int cw = lv_area_get_width(&content_area);
+    int ch = lv_area_get_height(&content_area);
 
     lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
     UiBreakpoint breakpoint =
@@ -2108,8 +2108,8 @@ void GridEditMode::create_dots_overlay() {
     lv_obj_set_style_border_width(dots_overlay_, 0, 0);
     lv_obj_set_style_pad_all(dots_overlay_, 0, 0);
 
-    int w = content_area.x2 - content_area.x1;
-    int h = content_area.y2 - content_area.y1;
+    int w = lv_area_get_width(&content_area);
+    int h = lv_area_get_height(&content_area);
 
     if (w <= 0 || h <= 0) {
         spdlog::warn("[GridEditMode] Container content area {}x{}, skipping dots", w, h);
