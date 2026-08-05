@@ -909,17 +909,21 @@ void MoonrakerRestAPIMock::wled_get_strips(RestCallback on_success, ErrorCallbac
         RestResponse resp;
         resp.success = true;
         resp.status_code = 200;
+        // Moonraker nests the strip map under result.strips — reproduce that envelope
+        // exactly, or parser bugs that read the wrapper key as a strip name go
+        // undetected (prestonbrown/helixscreen#1241).
         resp.data = {{"result",
-                      {{"printer_led",
-                        {{"strip", "printer_led"},
-                         {"status", mock_wled_states_["printer_led"] ? "on" : "off"},
-                         {"brightness", mock_wled_brightness_["printer_led"]},
-                         {"preset", mock_wled_presets_["printer_led"]}}},
-                       {"enclosure_led",
-                        {{"strip", "enclosure_led"},
-                         {"status", mock_wled_states_["enclosure_led"] ? "on" : "off"},
-                         {"brightness", mock_wled_brightness_["enclosure_led"]},
-                         {"preset", mock_wled_presets_["enclosure_led"]}}}}}};
+                      {{"strips",
+                        {{"printer_led",
+                          {{"strip", "printer_led"},
+                           {"status", mock_wled_states_["printer_led"] ? "on" : "off"},
+                           {"brightness", mock_wled_brightness_["printer_led"]},
+                           {"preset", mock_wled_presets_["printer_led"]}}},
+                         {"enclosure_led",
+                          {{"strip", "enclosure_led"},
+                           {"status", mock_wled_states_["enclosure_led"] ? "on" : "off"},
+                           {"brightness", mock_wled_brightness_["enclosure_led"]},
+                           {"preset", mock_wled_presets_["enclosure_led"]}}}}}}}};
         on_success(resp);
     }
 }
@@ -984,25 +988,27 @@ void MoonrakerRestAPIMock::wled_get_status(RestCallback on_success, ErrorCallbac
         RestResponse resp;
         resp.success = true;
         resp.status_code = 200;
+        // Same endpoint as wled_get_strips(), same result.strips envelope.
         resp.data = {{"result",
-                      {{"printer_led",
-                        {{"strip", "printer_led"},
-                         {"status", mock_wled_states_["printer_led"] ? "on" : "off"},
-                         {"chain_count", 30},
-                         {"preset", mock_wled_presets_["printer_led"]},
-                         {"brightness", mock_wled_brightness_["printer_led"]},
-                         {"intensity", -1},
-                         {"speed", -1},
-                         {"error", nullptr}}},
-                       {"enclosure_led",
-                        {{"strip", "enclosure_led"},
-                         {"status", mock_wled_states_["enclosure_led"] ? "on" : "off"},
-                         {"chain_count", 60},
-                         {"preset", mock_wled_presets_["enclosure_led"]},
-                         {"brightness", mock_wled_brightness_["enclosure_led"]},
-                         {"intensity", -1},
-                         {"speed", -1},
-                         {"error", nullptr}}}}}};
+                      {{"strips",
+                        {{"printer_led",
+                          {{"strip", "printer_led"},
+                           {"status", mock_wled_states_["printer_led"] ? "on" : "off"},
+                           {"chain_count", 30},
+                           {"preset", mock_wled_presets_["printer_led"]},
+                           {"brightness", mock_wled_brightness_["printer_led"]},
+                           {"intensity", -1},
+                           {"speed", -1},
+                           {"error", nullptr}}},
+                         {"enclosure_led",
+                          {{"strip", "enclosure_led"},
+                           {"status", mock_wled_states_["enclosure_led"] ? "on" : "off"},
+                           {"chain_count", 60},
+                           {"preset", mock_wled_presets_["enclosure_led"]},
+                           {"brightness", mock_wled_brightness_["enclosure_led"]},
+                           {"intensity", -1},
+                           {"speed", -1},
+                           {"error", nullptr}}}}}}}};
         on_success(resp);
     }
 }
