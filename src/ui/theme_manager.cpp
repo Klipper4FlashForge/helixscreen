@@ -144,6 +144,13 @@ static bool breakpoint_subject_initialized = false;
 // axis and no declarative binding could reach a tall panel's height.
 static lv_subject_t ui_breakpoint_v_subject;
 static bool breakpoint_v_subject_initialized = false;
+// Orientation subject: 1 for any portrait class, 0 otherwise. ui_breakpoint
+// classifies the cramped-axis tier and cannot answer "is this portrait" --
+// 480x800 and 800x480 can land on the same tier. Lets ui_xml/*.xml branch
+// layout inline with <if cond="ui_is_portrait eq 1"> instead of maintaining
+// ui_xml/portrait/* variant files.
+static lv_subject_t ui_is_portrait_subject;
+static bool is_portrait_subject_initialized = false;
 
 // Swatch description subjects for theme editor (file-scope for deinit access)
 static constexpr size_t SWATCH_DESC_COUNT = 16;
@@ -941,8 +948,33 @@ OverlayWidths compute_overlay_widths(int32_t hor_res, int32_t ver_res, int32_t n
     // onto landscape hardware is deliberately not honoured here — the physical
     // nav bar geometry is what the arithmetic is about.
     const bool portrait = is_portrait_layout(detect_layout_type(hor_res, ver_res));
-    const int32_t nav_reserve = portrait ? 0 : nav_width;
-    return {hor_res - nav_reserve - gap, hor_res - nav_reserve};
+    if (portrait) {
+        // Portrait's nav bar is a bottom strip (compute_overlay_heights), not a
+        // side rail, so it costs an overlay nothing horizontally — and neither
+        // does the "you will return from this" gap: that gap belongs on the
+        // axis the nav bar occupies. Both classes are full width; the gap is
+        // carried by compute_overlay_heights instead. An override in
+        // ui_set_overlay_geometry would leave this function stating something
+        // false, so the rule lives here, not downstream.
+        return {hor_res, hor_res};
+    }
+    return {hor_res - nav_width - gap, hor_res - nav_width};
+}
+
+OverlayHeights compute_overlay_heights(int32_t hor_res, int32_t ver_res, int32_t nav_height,
+                                       int32_t gap) {
+    // Same classification as compute_overlay_widths, and for the same reason:
+    // this can run before LayoutManager::init(), and the threshold that picks
+    // ui_xml/portrait/ must never disagree with the one that sizes overlays.
+    //
+    // Landscape reserves nothing vertically — its nav bar is a full-HEIGHT
+    // strip at the leading edge, so overlays span the whole display and the
+    // gap is spent horizontally instead.
+    const bool portrait = is_portrait_layout(detect_layout_type(hor_res, ver_res));
+    if (!portrait) {
+        return {ver_res, ver_res};
+    }
+    return {ver_res - nav_height - gap, ver_res - nav_height};
 }
 
 } // namespace helix
@@ -1185,6 +1217,15 @@ void theme_manager_refresh_layout_constants(lv_display_t* display) {
     if (bp_v_subject) {
         lv_subject_set_int(bp_v_subject,
                            to_int(breakpoint_for(responsive_vertical_dimension(display))));
+    }
+
+    // Portrait subject follows the same axis swap -- update it alongside
+    // ui_breakpoint/ui_breakpoint_v so a rotation can never leave ui_is_portrait
+    // disagreeing with the axes it just repointed.
+    lv_subject_t* portrait_subject = lv_xml_get_subject(nullptr, "ui_is_portrait");
+    if (portrait_subject) {
+        lv_subject_set_int(portrait_subject,
+                           is_portrait_layout(detect_layout_type(hor_res, ver_res)) ? 1 : 0);
     }
 
     // Type has to follow the breakpoint too. The px tokens above moved the
@@ -1683,6 +1724,28 @@ void theme_manager_init(lv_display_t* display, bool use_dark_mode_param) {
                       vert_res);
     }
 
+    // Registered alongside ui_breakpoint/ui_breakpoint_v so the three can never
+    // disagree about what orientation the app believes it is in. Derived from
+    // the same detect_layout_type()/is_portrait_layout() pair
+    // compute_overlay_widths()/compute_overlay_heights() already use in this
+    // file -- not LayoutManager::instance(), which has not been init()'d yet
+    // this early in startup.
+    {
+        int32_t hor_res = lv_display_get_horizontal_resolution(display);
+        int32_t ver_res = lv_display_get_vertical_resolution(display);
+        int is_portrait = is_portrait_layout(detect_layout_type(hor_res, ver_res)) ? 1 : 0;
+
+        if (!is_portrait_subject_initialized) {
+            lv_subject_init_int(&ui_is_portrait_subject, is_portrait);
+            is_portrait_subject_initialized = true;
+        } else {
+            lv_subject_set_int(&ui_is_portrait_subject, is_portrait);
+        }
+        lv_xml_register_subject(nullptr, "ui_is_portrait", &ui_is_portrait_subject);
+        spdlog::debug("[Theme] Registered ui_is_portrait subject: {} ({}x{})", is_portrait, hor_res,
+                      ver_res);
+    }
+
     // Validate critical color pairs were registered (fail-fast if missing)
     static const char* required_colors[] = {"screen_bg", "text", "text_muted", nullptr};
     for (const char** name = required_colors; *name != nullptr; ++name) {
@@ -1773,6 +1836,10 @@ void theme_manager_deinit() {
     if (breakpoint_v_subject_initialized) {
         lv_subject_deinit(&ui_breakpoint_v_subject);
         breakpoint_v_subject_initialized = false;
+    }
+    if (is_portrait_subject_initialized) {
+        lv_subject_deinit(&ui_is_portrait_subject);
+        is_portrait_subject_initialized = false;
     }
     if (swatch_descs_initialized) {
         for (size_t i = 0; i < SWATCH_DESC_COUNT; ++i) {
@@ -2518,29 +2585,54 @@ int32_t theme_manager_get_font_height(const lv_font_t* font) {
     return lv_font_get_line_height(font);
 }
 
-void ui_set_overlay_width(lv_obj_t* obj, bool is_destination) {
+// DECLARATIVE_OK: overlay placement is navigation chrome, resolved at push time
+// from the live stack — there is no XML expression for "the class this overlay
+// got depends on what pushed it". check_imperative_ui.py deliberately excludes
+// geometry and layout properties for exactly this reason; see its
+// APPEARANCE_PROPS comment. This is the single site that writes overlay
+// geometry, which is why 17 overlay XML roots need no portrait variant.
+void ui_set_overlay_geometry(lv_obj_t* obj, bool is_destination) {
     if (!obj) {
-        spdlog::warn("[Theme] ui_set_overlay_width: NULL pointer");
+        spdlog::warn("[Theme] ui_set_overlay_geometry: NULL pointer");
         return;
     }
+
+    lv_obj_t* screen = lv_obj_get_screen(obj);
+    const lv_coord_t screen_width = screen ? lv_obj_get_width(screen) : 800;
+    const lv_coord_t screen_height = screen ? lv_obj_get_height(screen) : 480;
+    const bool portrait =
+        helix::is_portrait_layout(helix::detect_layout_type(screen_width, screen_height));
 
     const char* name = is_destination ? "overlay_width_destination" : "overlay_width_transient";
     const char* width_str = lv_xml_get_const(nullptr, name);
     if (width_str) {
         lv_obj_set_width(obj, std::atoi(width_str));
+    } else {
+        // Theme not initialized yet — estimate from the screen. Same derivation
+        // as theme_manager_register_responsive_spacing(), with medium-breakpoint
+        // fallbacks for nav_width and the gap.
+        const helix::OverlayWidths widths =
+            helix::compute_overlay_widths(screen_width, screen_height, 94, 16);
+        lv_obj_set_width(obj, is_destination ? widths.destination : widths.transient);
+        spdlog::warn("[Theme] {} not registered, using fallback", name);
+    }
+
+    // Landscape leaves height and alignment to XML (height="100%"
+    // align="right_mid"). Only portrait overrides them, because there the nav
+    // bar is a bottom strip and a full-height overlay would cover it.
+    if (!portrait) {
         return;
     }
 
-    // Theme not initialized yet — estimate from the screen. Same derivation as
-    // theme_manager_register_responsive_spacing(), with medium-breakpoint
-    // fallbacks for nav_width and the gap.
-    lv_obj_t* screen = lv_obj_get_screen(obj);
-    lv_coord_t screen_width = screen ? lv_obj_get_width(screen) : 800;
-    lv_coord_t screen_height = screen ? lv_obj_get_height(screen) : 480;
-    const helix::OverlayWidths widths =
-        helix::compute_overlay_widths(screen_width, screen_height, 94, 16);
-    lv_obj_set_width(obj, is_destination ? widths.destination : widths.transient);
-    spdlog::warn("[Theme] {} not registered, using fallback", name);
+    const char* nav_h_str = lv_xml_get_const(nullptr, "button_height_lg");
+    const char* gap_str = lv_xml_get_const(nullptr, "space_lg");
+    const int32_t nav_height = nav_h_str ? std::atoi(nav_h_str) : 70;
+    const int32_t gap = gap_str ? std::atoi(gap_str) : 16;
+
+    const helix::OverlayHeights heights =
+        helix::compute_overlay_heights(screen_width, screen_height, nav_height, gap);
+    lv_obj_set_height(obj, is_destination ? heights.destination : heights.transient);
+    lv_obj_set_align(obj, LV_ALIGN_TOP_MID);
 }
 
 /**

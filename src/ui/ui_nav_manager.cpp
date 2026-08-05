@@ -16,6 +16,7 @@
 #include "app_globals.h"
 #include "backdrop_blur.h"
 #include "display_settings_manager.h"
+#include "layout_manager.h"
 #include "moonraker_client.h" // For ConnectionState enum
 #include "observer_factory.h"
 #include "overlay_base.h"
@@ -261,35 +262,53 @@ void NavigationManager::overlay_slide_out_complete_cb(lv_anim_t* anim) {
 }
 
 void NavigationManager::overlay_animate_slide_in(lv_obj_t* panel) {
-    int32_t panel_width = lv_obj_get_width(panel);
-    if (panel_width <= 0) {
-        panel_width = OVERLAY_SLIDE_OFFSET;
+    // Portrait overlays are top-anchored (ui_set_overlay_geometry), so they
+    // enter from ABOVE the screen on the Y axis. Landscape enters from the
+    // right on X. Everything else about the animation is identical.
+    lv_obj_t* screen = lv_obj_get_screen(panel);
+    const bool portrait = helix::is_portrait_layout(helix::detect_layout_type(
+        screen ? lv_obj_get_width(screen) : 800, screen ? lv_obj_get_height(screen) : 480));
+
+    int32_t offset = portrait ? -lv_obj_get_height(panel) : lv_obj_get_width(panel);
+    if (offset == 0) {
+        offset = portrait ? -OVERLAY_SLIDE_OFFSET : OVERLAY_SLIDE_OFFSET;
     }
+
+    // Two captureless lambdas decay to the same function-pointer type, which is
+    // also lv_anim_exec_xcb_t — so one variable serves both the immediate
+    // "animations disabled" write and the animation's exec callback.
+    using TranslateFn = void (*)(void*, int32_t);
+    static const TranslateFn kTranslateY = [](void* obj, int32_t v) {
+        if (!lv_obj_is_valid(static_cast<lv_obj_t*>(obj)))
+            return;
+        lv_obj_set_style_translate_y(static_cast<lv_obj_t*>(obj), v, LV_PART_MAIN);
+    };
+    static const TranslateFn kTranslateX = [](void* obj, int32_t v) {
+        if (!lv_obj_is_valid(static_cast<lv_obj_t*>(obj)))
+            return;
+        lv_obj_set_style_translate_x(static_cast<lv_obj_t*>(obj), v, LV_PART_MAIN);
+    };
+    const TranslateFn set_translate = portrait ? kTranslateY : kTranslateX;
 
     // Skip animation if disabled - show panel in final state
     if (!DisplaySettingsManager::instance().get_animations_enabled()) {
-        lv_obj_set_style_translate_x(panel, 0, LV_PART_MAIN);
+        set_translate(panel, 0);
         lv_obj_set_style_opa(panel, LV_OPA_COVER, LV_PART_MAIN);
         spdlog::trace("[NavigationManager] Animations disabled - showing overlay instantly");
         return;
     }
 
     // Set initial state: off-screen and transparent
-    lv_obj_set_style_translate_x(panel, panel_width, LV_PART_MAIN);
+    set_translate(panel, offset);
     lv_obj_set_style_opa(panel, LV_OPA_TRANSP, LV_PART_MAIN);
 
-    // Slide animation: translate from right to final position
     lv_anim_t slide_anim;
     lv_anim_init(&slide_anim);
     lv_anim_set_var(&slide_anim, panel);
-    lv_anim_set_values(&slide_anim, panel_width, 0);
+    lv_anim_set_values(&slide_anim, offset, 0);
     lv_anim_set_duration(&slide_anim, OVERLAY_ANIM_DURATION_MS);
     lv_anim_set_path_cb(&slide_anim, lv_anim_path_ease_out);
-    lv_anim_set_exec_cb(&slide_anim, [](void* obj, int32_t value) {
-        if (!lv_obj_is_valid(static_cast<lv_obj_t*>(obj)))
-            return;
-        lv_obj_set_style_translate_x(static_cast<lv_obj_t*>(obj), value, LV_PART_MAIN);
-    });
+    lv_anim_set_exec_cb(&slide_anim, set_translate);
     lv_anim_start(&slide_anim);
 
     // Fade animation: opacity from transparent to opaque (runs simultaneously)
@@ -306,8 +325,8 @@ void NavigationManager::overlay_animate_slide_in(lv_obj_t* panel) {
     });
     lv_anim_start(&fade_anim);
 
-    spdlog::trace("[NavigationManager] Started slide+fade-in animation for panel {} (width={})",
-                  (void*)panel, panel_width);
+    spdlog::trace("[NavigationManager] Started slide+fade-in for panel {} (offset={}, {})",
+                  (void*)panel, offset, portrait ? "portrait/Y" : "landscape/X");
 }
 
 void NavigationManager::overlay_animate_slide_out(lv_obj_t* panel) {
@@ -355,23 +374,38 @@ void NavigationManager::overlay_animate_slide_out(lv_obj_t* panel) {
         return;
     }
 
-    int32_t panel_width = lv_obj_get_width(panel);
-    if (panel_width <= 0) {
-        panel_width = OVERLAY_SLIDE_OFFSET;
+    // Portrait overlays are top-anchored, so they exit back off the TOP on the
+    // Y axis. Landscape exits back off the right on X. Mirrors
+    // overlay_animate_slide_in()'s axis selection.
+    lv_obj_t* screen = lv_obj_get_screen(panel);
+    const bool portrait = helix::is_portrait_layout(helix::detect_layout_type(
+        screen ? lv_obj_get_width(screen) : 800, screen ? lv_obj_get_height(screen) : 480));
+
+    int32_t offset = portrait ? -lv_obj_get_height(panel) : lv_obj_get_width(panel);
+    if (offset == 0) {
+        offset = portrait ? -OVERLAY_SLIDE_OFFSET : OVERLAY_SLIDE_OFFSET;
     }
 
-    // Slide animation: translate to off-screen right
+    using TranslateFn = void (*)(void*, int32_t);
+    static const TranslateFn kTranslateY = [](void* obj, int32_t v) {
+        if (!lv_obj_is_valid(static_cast<lv_obj_t*>(obj)))
+            return;
+        lv_obj_set_style_translate_y(static_cast<lv_obj_t*>(obj), v, LV_PART_MAIN);
+    };
+    static const TranslateFn kTranslateX = [](void* obj, int32_t v) {
+        if (!lv_obj_is_valid(static_cast<lv_obj_t*>(obj)))
+            return;
+        lv_obj_set_style_translate_x(static_cast<lv_obj_t*>(obj), v, LV_PART_MAIN);
+    };
+    const TranslateFn set_translate = portrait ? kTranslateY : kTranslateX;
+
     lv_anim_t slide_anim;
     lv_anim_init(&slide_anim);
     lv_anim_set_var(&slide_anim, panel);
-    lv_anim_set_values(&slide_anim, 0, panel_width);
+    lv_anim_set_values(&slide_anim, 0, offset);
     lv_anim_set_duration(&slide_anim, OVERLAY_ANIM_DURATION_MS);
     lv_anim_set_path_cb(&slide_anim, lv_anim_path_ease_in);
-    lv_anim_set_exec_cb(&slide_anim, [](void* obj, int32_t value) {
-        if (!lv_obj_is_valid(static_cast<lv_obj_t*>(obj)))
-            return;
-        lv_obj_set_style_translate_x(static_cast<lv_obj_t*>(obj), value, LV_PART_MAIN);
-    });
+    lv_anim_set_exec_cb(&slide_anim, set_translate);
     lv_anim_set_completed_cb(&slide_anim, overlay_slide_out_complete_cb);
     lv_anim_start(&slide_anim);
 
@@ -389,8 +423,8 @@ void NavigationManager::overlay_animate_slide_out(lv_obj_t* panel) {
     });
     lv_anim_start(&fade_anim);
 
-    spdlog::trace("[NavigationManager] Started slide+fade-out animation for panel {} (width={})",
-                  (void*)panel, panel_width);
+    spdlog::trace("[NavigationManager] Started slide+fade-out for panel {} (offset={}, {})",
+                  (void*)panel, offset, portrait ? "portrait/Y" : "landscape/X");
 }
 
 void NavigationManager::overlay_animate_zoom_in(lv_obj_t* panel, lv_area_t source_rect) {
@@ -1409,7 +1443,7 @@ bool NavigationManager::apply_overlay_width(lv_obj_t* overlay, bool is_first_ove
     // root widget across show/hide cycles, and the same cached widget can be
     // reached from a transient parent one time and a destination parent the
     // next.
-    ui_set_overlay_width(overlay, is_destination);
+    ui_set_overlay_geometry(overlay, is_destination);
 
     // LV_STATE_USER_1 == "this is a transient layer". overlay_panel.xml hangs a
     // leading-edge treatment off it so the panel reads as something sitting ON
@@ -1433,7 +1467,7 @@ void NavigationManager::reapply_overlay_widths() {
         // anyway — this runs from a display resize callback, outside the normal
         // push/pop ordering.
         if (lv_obj_is_valid(overlay)) {
-            ui_set_overlay_width(overlay, is_destination);
+            ui_set_overlay_geometry(overlay, is_destination);
         }
     }
     spdlog::debug("[NavigationManager] Re-applied width to {} overlay(s)",
