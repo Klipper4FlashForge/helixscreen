@@ -32,54 +32,112 @@
       <!-- Left Column: Position readout beside jog pad, toggle below -->
       <lv_obj name="left_column" width="0" height="100%" flex_grow="3" style_pad_all="0" scrollable="false" style_border_opa="0"
               flex_flow="column" style_pad_gap="#space_sm">
-        <!-- Top row: Position display (vertical) + Jog pad side by side -->
-        <lv_obj name="jog_row" width="100%" flex_grow="1" style_pad_all="0" style_border_opa="0" scrollable="false"
-                flex_flow="row" style_pad_gap="#space_sm" style_flex_cross_place="center">
-          <!-- Position Display - vertical stack left of jog pad -->
-          <lv_obj name="position_card"
-                  width="content" height="content" style_min_width="115" style_pad_all="#space_sm" flex_flow="column"
-                  style_pad_gap="#space_xs" style_flex_main_place="center"
-                  style_bg_color="#elevated_bg" style_bg_opa="255" style_radius="#border_radius">
-            <lv_obj style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs" style_flex_cross_place="center">
-              <text_small text="X:"/>
-              <text_small name="pos_x" bind_text="motion_pos_x"/>
-              <lv_obj width="8" height="8" style_radius="9999">
-                <bind_style name="indicator_homed" subject="motion_x_homed" ref_value="1"/>
-                <bind_style name="indicator_unhomed" subject="motion_x_homed" ref_value="0"/>
-              </lv_obj>
-            </lv_obj>
-            <lv_obj style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs" style_flex_cross_place="center">
-              <text_small text="Y:"/>
-              <text_small name="pos_y" bind_text="motion_pos_y"/>
-              <lv_obj width="8" height="8" style_radius="9999">
-                <bind_style name="indicator_homed" subject="motion_y_homed" ref_value="1"/>
-                <bind_style name="indicator_unhomed" subject="motion_y_homed" ref_value="0"/>
-              </lv_obj>
-            </lv_obj>
-            <lv_obj style_pad_all="0" flex_flow="column" style_pad_gap="0">
+        <!-- Top row (landscape) / column (portrait): Position display + Jog pad.
+             Portrait stacks coordinates above the wheel instead of squeezing it
+             into the leftover width of a row (#1229-family). Only the container
+             flex direction and position_card's basis differ between branches;
+             the inner position rows and jog_pad_container are identical, so they
+             are NOT duplicated into both branches (see jog_pad_wrapper note below). -->
+        <if cond="ui_is_portrait eq 1">
+          <lv_obj name="jog_row" width="100%" flex_grow="1" style_pad_all="0" style_border_opa="0" scrollable="false"
+                  flex_flow="column" style_pad_gap="#space_sm" style_flex_cross_place="center">
+            <!-- Position Display - full-width readout above the jog pad -->
+            <lv_obj name="position_card"
+                    width="100%" height="content" style_pad_all="#space_sm" flex_flow="column"
+                    style_pad_gap="#space_xs" style_flex_main_place="center"
+                    style_bg_color="#elevated_bg" style_bg_opa="255" style_radius="#border_radius">
               <lv_obj style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs" style_flex_cross_place="center">
-                <text_small text="Z:"/>
-                <text_small name="pos_z" bind_text="motion_pos_z"/>
+                <text_small text="X:"/>
+                <text_small name="pos_x" bind_text="motion_pos_x"/>
                 <lv_obj width="8" height="8" style_radius="9999">
-                  <bind_style name="indicator_homed" subject="motion_z_homed" ref_value="1"/>
-                  <bind_style name="indicator_unhomed" subject="motion_z_homed" ref_value="0"/>
+                  <bind_style name="indicator_homed" subject="motion_x_homed" ref_value="1"/>
+                  <bind_style name="indicator_unhomed" subject="motion_x_homed" ref_value="0"/>
                 </lv_obj>
               </lv_obj>
-              <lv_obj style_pad_all="0" style_pad_left="#space_md" flex_flow="row" style_pad_gap="#space_xs" style_flex_cross_place="center">
-                <bind_flag_if_eq subject="motion_z_actual_visible" flag="hidden" ref_value="0"/>
-                <text_small text="Act:" style_text_color="#text_muted"/>
-                <text_small name="pos_z_actual" bind_text="motion_pos_z_actual" style_text_color="#text_muted"/>
+              <lv_obj style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs" style_flex_cross_place="center">
+                <text_small text="Y:"/>
+                <text_small name="pos_y" bind_text="motion_pos_y"/>
+                <lv_obj width="8" height="8" style_radius="9999">
+                  <bind_style name="indicator_homed" subject="motion_y_homed" ref_value="1"/>
+                  <bind_style name="indicator_unhomed" subject="motion_y_homed" ref_value="0"/>
+                </lv_obj>
+              </lv_obj>
+              <lv_obj style_pad_all="0" flex_flow="column" style_pad_gap="0">
+                <lv_obj style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs" style_flex_cross_place="center">
+                  <text_small text="Z:"/>
+                  <text_small name="pos_z" bind_text="motion_pos_z"/>
+                  <lv_obj width="8" height="8" style_radius="9999">
+                    <bind_style name="indicator_homed" subject="motion_z_homed" ref_value="1"/>
+                    <bind_style name="indicator_unhomed" subject="motion_z_homed" ref_value="0"/>
+                  </lv_obj>
+                </lv_obj>
+                <lv_obj style_pad_all="0" style_pad_left="#space_md" flex_flow="row" style_pad_gap="#space_xs" style_flex_cross_place="center">
+                  <bind_flag_if_eq subject="motion_z_actual_visible" flag="hidden" ref_value="0"/>
+                  <text_small text="Act:" style_text_color="#text_muted"/>
+                  <text_small name="pos_z_actual" bind_text="motion_pos_z_actual" style_text_color="#text_muted"/>
+                </lv_obj>
+              </lv_obj>
+            </lv_obj>
+            <!-- Circular Jog Pad: Custom-Drawn Two-Zone Design (Bambu Lab Style).
+                 In a column, flex_grow drives HEIGHT, so height="0" is the basis
+                 here and width="100%" claims the full stacked width instead of
+                 collapsing to zero (see brief: the flex-axis trap). -->
+            <lv_obj name="jog_pad_wrapper" width="100%" height="0" flex_grow="1" style_pad_all="0" style_border_opa="0" scrollable="false">
+              <lv_obj name="jog_pad_container"
+                      width="content" height="content" style_pad_all="0" style_border_opa="0" scrollable="false"
+                      clickable="true" align="center">
               </lv_obj>
             </lv_obj>
           </lv_obj>
-          <!-- Circular Jog Pad: Custom-Drawn Two-Zone Design (Bambu Lab Style) -->
-          <lv_obj name="jog_pad_wrapper" width="0" height="100%" flex_grow="1" style_pad_all="0" style_border_opa="0" scrollable="false">
-            <lv_obj name="jog_pad_container"
-                    width="content" height="content" style_pad_all="0" style_border_opa="0" scrollable="false"
-                    clickable="true" align="center">
+          <else/>
+          <lv_obj name="jog_row" width="100%" flex_grow="1" style_pad_all="0" style_border_opa="0" scrollable="false"
+                  flex_flow="row" style_pad_gap="#space_sm" style_flex_cross_place="center">
+            <!-- Position Display - vertical stack left of jog pad -->
+            <lv_obj name="position_card"
+                    width="content" height="content" style_min_width="115" style_pad_all="#space_sm" flex_flow="column"
+                    style_pad_gap="#space_xs" style_flex_main_place="center"
+                    style_bg_color="#elevated_bg" style_bg_opa="255" style_radius="#border_radius">
+              <lv_obj style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs" style_flex_cross_place="center">
+                <text_small text="X:"/>
+                <text_small name="pos_x" bind_text="motion_pos_x"/>
+                <lv_obj width="8" height="8" style_radius="9999">
+                  <bind_style name="indicator_homed" subject="motion_x_homed" ref_value="1"/>
+                  <bind_style name="indicator_unhomed" subject="motion_x_homed" ref_value="0"/>
+                </lv_obj>
+              </lv_obj>
+              <lv_obj style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs" style_flex_cross_place="center">
+                <text_small text="Y:"/>
+                <text_small name="pos_y" bind_text="motion_pos_y"/>
+                <lv_obj width="8" height="8" style_radius="9999">
+                  <bind_style name="indicator_homed" subject="motion_y_homed" ref_value="1"/>
+                  <bind_style name="indicator_unhomed" subject="motion_y_homed" ref_value="0"/>
+                </lv_obj>
+              </lv_obj>
+              <lv_obj style_pad_all="0" flex_flow="column" style_pad_gap="0">
+                <lv_obj style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs" style_flex_cross_place="center">
+                  <text_small text="Z:"/>
+                  <text_small name="pos_z" bind_text="motion_pos_z"/>
+                  <lv_obj width="8" height="8" style_radius="9999">
+                    <bind_style name="indicator_homed" subject="motion_z_homed" ref_value="1"/>
+                    <bind_style name="indicator_unhomed" subject="motion_z_homed" ref_value="0"/>
+                  </lv_obj>
+                </lv_obj>
+                <lv_obj style_pad_all="0" style_pad_left="#space_md" flex_flow="row" style_pad_gap="#space_xs" style_flex_cross_place="center">
+                  <bind_flag_if_eq subject="motion_z_actual_visible" flag="hidden" ref_value="0"/>
+                  <text_small text="Act:" style_text_color="#text_muted"/>
+                  <text_small name="pos_z_actual" bind_text="motion_pos_z_actual" style_text_color="#text_muted"/>
+                </lv_obj>
+              </lv_obj>
+            </lv_obj>
+            <!-- Circular Jog Pad: Custom-Drawn Two-Zone Design (Bambu Lab Style) -->
+            <lv_obj name="jog_pad_wrapper" width="0" height="100%" flex_grow="1" style_pad_all="0" style_border_opa="0" scrollable="false">
+              <lv_obj name="jog_pad_container"
+                      width="content" height="content" style_pad_all="0" style_border_opa="0" scrollable="false"
+                      clickable="true" align="center">
+              </lv_obj>
             </lv_obj>
           </lv_obj>
-        </lv_obj>
+        </if>
         <!-- Fine/Coarse/Turbo jog mode toggle -->
         <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs"
                 scrollable="false" style_flex_main_place="center">
