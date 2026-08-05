@@ -967,12 +967,12 @@ SECTION_START=$(date +%s)
 echo -n "⏱️  Checking grid cell-metrics single source..."
 
 if [ -f "scripts/check_grid_metrics_single_source.py" ]; then
-  # grid_edit_mode.cpp used to recompute cols/rows/cell size in nine separate
-  # drag/resize/preview/lattice paths, each free to drift from the others on
+  # Every drag/resize/preview/lattice path needs the same cols/rows/cell size,
+  # and each independent computation is free to drift from the others on
   # gutter handling or int-vs-float rounding. GridEditMode::current_metrics()
-  # is now the one place allowed to ask GridLayout for the grid's dimensions;
-  # this caps GridLayout::get_cols/get_rows call sites at 2 (the pair inside
-  # current_metrics() itself) so a new call site cannot grow a second copy.
+  # is the one place allowed to ask GridLayout for the grid's dimensions; this
+  # caps GridLayout::get_cols/get_rows/get_dimensions call sites at 2 (the pair
+  # inside current_metrics() itself) so a new call site cannot grow a second copy.
   if python3 scripts/check_grid_metrics_single_source.py >/tmp/grid_metrics.out 2>&1; then
     section_time $SECTION_START
     echo ""

@@ -157,7 +157,6 @@ class GridEditMode {
     // Drag helpers
     void handle_drag_move(lv_event_t* e);
     void handle_drag_end(lv_event_t* e);
-    void destroy_drag_ghost();
     void update_snap_preview(int col, int row, int colspan, int rowspan, bool valid);
     void destroy_snap_preview();
     void cleanup_drag_state();
@@ -201,7 +200,6 @@ class GridEditMode {
     int drag_orig_colspan_ = 1;
     int drag_orig_rowspan_ = 1;
     lv_point_t drag_offset_ = {0, 0};
-    lv_obj_t* drag_ghost_ = nullptr;
     lv_obj_t* snap_preview_ = nullptr;
     int snap_preview_col_ = -1;
     int snap_preview_row_ = -1;

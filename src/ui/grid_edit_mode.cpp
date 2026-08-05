@@ -107,7 +107,6 @@ void GridEditMode::exit() {
     drag_orig_row_ = -1;
     drag_orig_colspan_ = 1;
     drag_orig_rowspan_ = 1;
-    drag_ghost_ = nullptr;
     snap_preview_ = nullptr;
     snap_preview_col_ = -1;
     snap_preview_row_ = -1;
@@ -2001,15 +2000,6 @@ void GridEditMode::commit_resize_with_snap(const ResizeResult& result) {
 // Drag visual helpers
 // ---------------------------------------------------------------------------
 
-void GridEditMode::destroy_drag_ghost() {
-    if (drag_ghost_) {
-        auto freeze = helix::ui::UpdateQueue::instance().scoped_freeze();
-        helix::ui::UpdateQueue::instance().drain();
-        safe_deferred_delete(drag_ghost_);
-        drag_ghost_ = nullptr;
-    }
-}
-
 void GridEditMode::update_snap_preview(int col, int row, int colspan, int rowspan, bool valid) {
     destroy_snap_preview();
     if (!container_) {
@@ -2144,8 +2134,20 @@ void GridEditMode::create_dots_overlay() {
             lv_obj_remove_flag(dot, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_remove_flag(dot, LV_OBJ_FLAG_SCROLLABLE);
 
-            int x = static_cast<int>(grid_track_origin(m.cell_w, m.gutter, c)) - DOT_HALF;
-            int y = static_cast<int>(grid_track_origin(m.cell_h, m.gutter, r)) - DOT_HALF;
+            // c/r run 0..ncols/0..nrows inclusive to draw both edges of the lattice.
+            // grid_track_origin() only knows track starts (0..n-1); the final
+            // boundary is the right/bottom edge of the last track, not a further
+            // track start (which would land one gutter past the content edge).
+            int x = static_cast<int>(
+                        c < ncols ? grid_track_origin(m.cell_w, m.gutter, c)
+                                  : grid_track_origin(m.cell_w, m.gutter, std::max(ncols - 1, 0)) +
+                                        m.cell_w) -
+                    DOT_HALF;
+            int y = static_cast<int>(
+                        r < nrows ? grid_track_origin(m.cell_h, m.gutter, r)
+                                  : grid_track_origin(m.cell_h, m.gutter, std::max(nrows - 1, 0)) +
+                                        m.cell_h) -
+                    DOT_HALF;
             lv_obj_set_pos(dot, x, y);
         }
     }
@@ -2220,7 +2222,7 @@ bool GridEditMode::hit_test_any_widget(int screen_x, int screen_y) const {
         if (child == dots_overlay_ || child == selection_overlay_) {
             continue;
         }
-        if (child == drag_ghost_ || child == snap_preview_) {
+        if (child == snap_preview_) {
             continue;
         }
         if (lv_obj_has_flag(child, LV_OBJ_FLAG_FLOATING)) {

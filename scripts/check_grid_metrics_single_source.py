@@ -3,9 +3,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Fail if grid_edit_mode.cpp grows a second cell-geometry computation.
 
-Nine duplicated blocks accumulated because nothing prevented copy number two.
 GridEditMode::current_metrics() is the one place allowed to ask GridLayout for
-the grid's dimensions; every other path takes a CellMetrics from it.
+the grid's dimensions; every other path takes a CellMetrics from it instead of
+calling GridLayout directly, so gutter handling and int-vs-float rounding can't
+drift between call sites.
 """
 
 import re
@@ -13,7 +14,7 @@ import sys
 from pathlib import Path
 
 TARGET = Path("src/ui/grid_edit_mode.cpp")
-PATTERN = re.compile(r"GridLayout::get_(cols|rows)\b")
+PATTERN = re.compile(r"GridLayout::get_(cols|rows|dimensions)\b")
 LIMIT = 2  # one get_cols + one get_rows, both inside current_metrics()
 
 
