@@ -15,6 +15,7 @@
 namespace helix {
 
 class PanelWidgetConfig;
+struct GridEditModeTestAccess; // test-only friend (tests/test_helpers/)
 
 /// Manages in-panel grid editing for the home dashboard.
 /// Handles enter/exit transitions, grid intersection dot overlay,
@@ -123,6 +124,8 @@ class GridEditMode {
     ResizeEdge detect_resize_edge(int px, int py, const lv_area_t& widget_area) const;
 
   private:
+    friend struct helix::GridEditModeTestAccess;
+
     /// Track geometry of the live grid container.
     ///
     /// The nine drag, resize, preview and lattice paths all need the same four
