@@ -10,14 +10,18 @@
 # line, idempotently and reversibly.
 #
 # Bundled snippets live at: config/klipper_includes/<printer_id>.cfg
-# Installed to:             ~/printer_data/config/helixscreen/<printer_id>.cfg
+# Installed to:             <klipper config dir>/helixscreen/<printer_id>.cfg
+#                           (~/printer_data/config on most firmwares;
+#                            /etc/klipper/config on COSMOS -- see
+#                            klipper_config_dir() in common.sh)
 # printer.cfg gets:         [include helixscreen/<printer_id>.cfg]
 #
 # Both the copied cfg and the printer.cfg edit are recorded to
 # ${INSTALL_DIR}/config/.klipper_includes so uninstall can undo them.
 #
-# Reads: KLIPPER_HOME, INSTALL_DIR, SUDO (and HELIX_KLIPPER_CFG_DIR for tests)
-# Calls: file_sudo() from common.sh
+# Reads: KLIPPER_HOME / KLIPPER_CONFIG_DIR, INSTALL_DIR, SUDO
+#        (and HELIX_KLIPPER_CFG_DIR for tests)
+# Calls: file_sudo(), klipper_config_dir() from common.sh
 
 # Source guard
 [ -n "${_HELIX_KLIPPER_INCLUDE_SOURCED:-}" ] && return 0
@@ -83,14 +87,15 @@ install_klipper_include_for_printer() {
         return 0
     fi
 
-    if [ -z "${KLIPPER_HOME:-}" ]; then
-        log_warn "KLIPPER_HOME not set; skipping Klipper include for ${printer_id}"
+    local pd_config
+    pd_config="$(klipper_config_dir)"
+    if [ -z "$pd_config" ]; then
+        log_warn "Klipper config dir unknown; skipping Klipper include for ${printer_id}"
         return 0
     fi
 
-    local pd_config="${KLIPPER_HOME}/printer_data/config"
     if [ ! -d "$pd_config" ]; then
-        log_warn "No printer_data/config found; skipping Klipper include for ${printer_id}"
+        log_warn "No Klipper config dir at ${pd_config}; skipping Klipper include for ${printer_id}"
         return 0
     fi
 

@@ -111,6 +111,35 @@ file_sudo() {
     fi
 }
 
+# Resolve the directory holding the user's Klipper/Moonraker config files.
+#
+# Almost every Klipper install puts them in <klipper home>/printer_data/config,
+# so that is the derived default and no platform needs to say anything. Vendor
+# firmwares that do not use printer_data AT ALL set KLIPPER_CONFIG_DIR in
+# set_install_paths() instead:
+#
+#   Elegoo Centauri Carbon / COSMOS (OpenCentauri) keeps everything in
+#   /etc/klipper/config — moonraker.conf, printer.cfg, the *-readonly/ vendor
+#   include dirs — and has no printer_data directory anywhere on the device
+#   (verified over SSH; Moonraker's /server/files/roots reports the `config`
+#   root as /etc/klipper/config, rw). Deriving from KLIPPER_HOME=/root there
+#   yields /root/printer_data/config, which does not exist, so moonraker.conf
+#   discovery, the config symlinks and the Klipper include all silently
+#   skipped.
+#
+# Echoes the directory, or an empty string when neither is known.
+klipper_config_dir() {
+    if [ -n "${KLIPPER_CONFIG_DIR:-}" ]; then
+        echo "$KLIPPER_CONFIG_DIR"
+        return 0
+    fi
+    if [ -n "${KLIPPER_HOME:-}" ]; then
+        echo "${KLIPPER_HOME}/printer_data/config"
+        return 0
+    fi
+    echo ""
+}
+
 # Track what we've done for cleanup
 CLEANUP_TMP=false
 CLEANUP_SERVICE=false
@@ -498,6 +527,9 @@ K1_FIRMWARE=""
 KLIPPER_USER=""
 KLIPPER_GROUP=""
 KLIPPER_HOME=""
+# Empty means "derive <KLIPPER_HOME>/printer_data/config". Only firmwares with
+# no printer_data at all (CC1/COSMOS) set it. Read via klipper_config_dir().
+KLIPPER_CONFIG_DIR=""
 
 # Friendly description of the underlying SBC for the user-facing log line.
 # Returns free-text (NOT used for routing). Pi/pi32 covers a long tail of
@@ -1149,10 +1181,15 @@ detect_tmp_dir() {
 }
 
 # Set installation paths based on platform and firmware
-# Sets: INSTALL_DIR, INIT_SCRIPT_DEST, PREVIOUS_UI_SCRIPT, TMP_DIR
+# Sets: INSTALL_DIR, INIT_SCRIPT_DEST, PREVIOUS_UI_SCRIPT, TMP_DIR, KLIPPER_CONFIG_DIR
 set_install_paths() {
     local platform=$1
     local firmware=${2:-}
+
+    # Start from "derive it from KLIPPER_HOME" every time; only the branches
+    # below opt out. Without the reset a stale value from the environment (or
+    # from an earlier call in the same shell) would leak into another platform.
+    KLIPPER_CONFIG_DIR=""
 
     if [ "$platform" = "ad5m" ]; then
         # AD5M runs the helix-screen service as root on all three firmwares
@@ -1248,12 +1285,17 @@ set_install_paths() {
         # - /user-resource is the 6.3 GB ext4 partition where user installs go.
         # - COSMOS provides gui-switcher: drop /etc/init.d/<name>, then
         #   `config-manager ui screen_ui <name>` + restart gui-switcher.
+        # - There is NO printer_data directory anywhere on the device. Klipper
+        #   and Moonraker config live in /etc/klipper/config (moonraker.conf,
+        #   printer.cfg, and the vendor *-readonly/ include dirs), which is
+        #   also the `config` root Moonraker advertises over /server/files/roots.
         INSTALL_DIR="/user-resource/helixscreen"
         INIT_SCRIPT_DEST="/etc/init.d/helixscreen"
         PREVIOUS_UI_SCRIPT=""
         KLIPPER_USER="root"
         KLIPPER_GROUP="root"
         KLIPPER_HOME="/root"
+        KLIPPER_CONFIG_DIR="/etc/klipper/config"
         INIT_SYSTEM="sysv"
         log_info "Platform: Elegoo Centauri Carbon (COSMOS)"
         log_info "Install directory: ${INSTALL_DIR}"
@@ -1468,20 +1510,21 @@ _safe_remove_migrated_config_dir() {
 #   ~/helixscreen/config/settings.json → above          (symlink)
 #
 # On upgrade from old layout, migrates files from install dir to printer_data.
-# Reads: KLIPPER_HOME, INSTALL_DIR
+# Reads: KLIPPER_HOME / KLIPPER_CONFIG_DIR (via klipper_config_dir), INSTALL_DIR
 setup_config_symlink() {
-    # Only proceed if we have a Klipper home and install directory
-    if [ -z "${KLIPPER_HOME:-}" ] || [ -z "${INSTALL_DIR:-}" ]; then
+    # Only proceed if we have a Klipper config dir and an install directory
+    local pd_config
+    pd_config="$(klipper_config_dir)"
+    if [ -z "$pd_config" ] || [ -z "${INSTALL_DIR:-}" ]; then
         return 0
     fi
 
-    local pd_config="${KLIPPER_HOME}/printer_data/config"
     local pd_helix="${pd_config}/helixscreen"
     local install_config="${INSTALL_DIR}/config"
 
-    # Skip if printer_data/config doesn't exist
+    # Skip if the Klipper config dir doesn't exist
     if [ ! -d "$pd_config" ]; then
-        log_info "No printer_data/config found, skipping config symlink"
+        log_info "No Klipper config dir at $pd_config, skipping config symlink"
         return 0
     fi
 
@@ -1647,13 +1690,15 @@ setup_config_symlink() {
 
 # Remove config symlinks and optionally the printer_data directory.
 # Called during uninstall. Preserves user files in printer_data.
-# Reads: KLIPPER_HOME, INSTALL_DIR
+# Reads: KLIPPER_HOME / KLIPPER_CONFIG_DIR (via klipper_config_dir), INSTALL_DIR
 remove_config_symlink() {
-    if [ -z "${KLIPPER_HOME:-}" ] || [ -z "${INSTALL_DIR:-}" ]; then
+    local pd_config
+    pd_config="$(klipper_config_dir)"
+    if [ -z "$pd_config" ] || [ -z "${INSTALL_DIR:-}" ]; then
         return 0
     fi
 
-    local pd_helix="${KLIPPER_HOME}/printer_data/config/helixscreen"
+    local pd_helix="${pd_config}/helixscreen"
     local install_config="${INSTALL_DIR}/config"
 
     # Remove per-file symlinks from install dir
@@ -3382,6 +3427,11 @@ stop_service_snapmaker_u1() {
 # ZMOD-on-AD5X notes:
 #   /opt/config is a symlink to /usr/data/config; printer_data lives under both.
 #   We list both forms so symlink-aware and -unaware path resolutions both hit.
+# COSMOS (OpenCentauri, Elegoo Centauri Carbon) note:
+#   /etc/klipper/config has no printer_data component at all. set_install_paths
+#   points KLIPPER_CONFIG_DIR there for platform=cc1, so the dynamic probe below
+#   normally wins; the static entry is the safety net for a COSMOS box that was
+#   not detected as cc1 (forced --platform, future Elegoo model, etc.).
 MOONRAKER_CONF_PATHS="
 /home/pi/printer_data/config/moonraker.conf
 /home/biqu/printer_data/config/moonraker.conf
@@ -3392,6 +3442,7 @@ MOONRAKER_CONF_PATHS="
 /opt/config/moonraker.conf
 /usr/data/config/printer_data/config/moonraker.conf
 /usr/data/printer_data/config/moonraker.conf
+/etc/klipper/config/moonraker.conf
 "
 
 # Common Moonraker SOURCE roots (the checkout/package that holds the Python
@@ -3505,9 +3556,12 @@ moonraker_asset_name_support() {
 # Find moonraker.conf
 # Returns: path to moonraker.conf or empty string
 find_moonraker_conf() {
-    # Dynamic: check detected user's home first
-    if [ -n "${KLIPPER_HOME:-}" ]; then
-        local user_conf="${KLIPPER_HOME}/printer_data/config/moonraker.conf"
+    # Dynamic: the platform's own config dir first -- KLIPPER_CONFIG_DIR when a
+    # firmware declared one (COSMOS), else <KLIPPER_HOME>/printer_data/config.
+    local config_dir
+    config_dir="$(klipper_config_dir)"
+    if [ -n "$config_dir" ]; then
+        local user_conf="${config_dir}/moonraker.conf"
         if [ -f "$user_conf" ]; then
             echo "$user_conf"
             return 0
@@ -3800,14 +3854,21 @@ EOF
 
 # Ensure helixscreen is in moonraker.asvc (service allowlist)
 # Moonraker requires services to be listed here before it can manage them.
-# The asvc file lives in printer_data/, one level up from config/moonraker.conf.
-# Args: $1 = moonraker.conf path (used to derive printer_data path)
+#
+# The allowlist lives one directory above the config dir, so it is derived from
+# moonraker.conf rather than from any printer_data assumption. That derivation
+# holds on the non-printer_data layouts too:
+#   /home/pi/printer_data/config/moonraker.conf -> /home/pi/printer_data/moonraker.asvc
+#   /etc/klipper/config/moonraker.conf          -> /etc/klipper/moonraker.asvc  (COSMOS)
+# The COSMOS path was verified on a real CC1 -- that IS where its asvc file is.
+#
+# Args: $1 = moonraker.conf path (used to derive the data dir holding the asvc)
 ensure_moonraker_asvc() {
     local conf="$1"
-    # printer_data is two levels up from config/moonraker.conf
-    local printer_data
-    printer_data="$(dirname "$(dirname "$conf")")"
-    local asvc="${printer_data}/moonraker.asvc"
+    # The data dir is two levels up from <config dir>/moonraker.conf
+    local data_dir
+    data_dir="$(dirname "$(dirname "$conf")")"
+    local asvc="${data_dir}/moonraker.asvc"
 
     if [ ! -f "$asvc" ]; then
         log_info "No moonraker.asvc found at $asvc, skipping"
@@ -3866,8 +3927,10 @@ configure_moonraker_updates() {
 
     if [ -z "$conf" ]; then
         log_warn "Could not find moonraker.conf in any known location:"
-        if [ -n "${KLIPPER_HOME:-}" ]; then
-            log_warn "  ${KLIPPER_HOME}/printer_data/config/moonraker.conf"
+        local probed_dir
+        probed_dir="$(klipper_config_dir)"
+        if [ -n "$probed_dir" ]; then
+            log_warn "  ${probed_dir}/moonraker.conf"
         fi
         for tried in $MOONRAKER_CONF_PATHS; do
             log_warn "  $tried"
@@ -5284,9 +5347,11 @@ clean_old_installation() {
     $SUDO rm -f /etc/polkit-1/rules.d/50-helixscreen-network.rules
     $SUDO systemctl daemon-reload 2>/dev/null || true
 
-    # Remove printer_data/config/helixscreen/ (user config) in clean mode
-    if [ -n "${KLIPPER_HOME:-}" ]; then
-        local pd_helix="${KLIPPER_HOME}/printer_data/config/helixscreen"
+    # Remove <klipper config dir>/helixscreen/ (user config) in clean mode
+    local pd_config
+    pd_config="$(klipper_config_dir)"
+    if [ -n "$pd_config" ]; then
+        local pd_helix="${pd_config}/helixscreen"
         if [ -d "$pd_helix" ] || [ -L "$pd_helix" ]; then
             log_info "Removing user config: $pd_helix"
             $SUDO rm -rf "$pd_helix"
