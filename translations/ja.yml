@@ -38,7 +38,7 @@ translations:
   -- kWh: -- kWh
   --°C: --°C
   -0.5 Hz: -0.5 Hz
-  '...': ''
+  '...': '...'
   0 = computed: 0 = 自動計算
   0 events queued: 待機中のイベントなし
   0 slots: '{0} スロット'
@@ -370,7 +370,7 @@ translations:
   Chamber heating to %d°C...: チャンバーを%d°Cに加熱中...
   Chamber target set to {}°C: チャンバー目標温度を{}°C に設定
   Change: 変更
-  Change Address: ''
+  Change Address: アドレスを変更
   Change Filament: フィラメント交換
   Change LED color based on printer state: プリンターの状態に応じて LED の色を変更
   Change PIN: PIN を変更
@@ -474,9 +474,9 @@ translations:
   Connected to: 接続先
   'Connected to ': '接続先: '
   ? Connected to Moonraker, but Klipper is not running. You can continue — HelixScreen will show the Klipper error, and hardware detection stays limited until Klipper starts.
-  : ''
+  : Moonraker に接続しましたが、Klipper が実行されていません。続行できます — HelixScreen は Klipper のエラーを表示し、Klipper が起動するまでハードウェア検出は制限されます。
   ? Connected to Moonraker, but printer discovery did not finish. You can continue — hardware detection stays limited until the printer responds.
-  : ''
+  : Moonraker に接続しましたが、プリンターの検出が完了しませんでした。続行できます — プリンターが応答するまでハードウェア検出は制限されます。
   Connected to {}: '{} に接続しました'
   Connected! Discovering printer...: 接続完了！プリンターを検出中...
   Connected, discovering...: 接続済み、検出中...
@@ -507,7 +507,7 @@ translations:
   Controlled by hardware sensor: ハードウェアセンサーで制御
   Controller: コントローラー
   Cool Down: 冷却
-  Cool nozzle after filament ops: ''
+  Cool nozzle after filament ops: フィラメント操作後にノズルを冷却
   Cooling: 冷却中
   Copied to clipboard!: クリップボードにコピーしました！
   Copy Command: コマンドをコピー
@@ -630,7 +630,7 @@ translations:
   Do not power off your printer.: プリンターの電源を切らないでください。
   Do not touch the printer during calibration: キャリブレーション中はプリンターに触れないでください
   Dock: ドック
-  Docking tool: ''
+  Docking tool: ツールを格納中
   Documentation: ドキュメント
   Don't Save: 保存しない
   Don't ask again: 今後表示しない
@@ -669,7 +669,7 @@ translations:
   'Eject failed: {}': 'イジェクトに失敗しました: {}'
   Eject needs [force_move] enabled in printer config: 取り出しにはプリンター設定で [force_move]
     を有効にする必要があります
-  Ejecting: ''
+  Ejecting: 排出中
   Elegoo Centauri Carbon: Elegoo Centauri Carbon
   Emergency Stop: 緊急停止
   Emergency Stop?: 緊急停止しますか？
@@ -916,6 +916,8 @@ translations:
   Follow active tool: アクティブツールに追従
   Follow graph screen: グラフ画面に追従
   Forget: 登録解除
+  Forget Network?: ネットワークを登録解除しますか？
+  Forget network '{}'? You will need the password to reconnect.: ネットワーク '{}' を登録解除しますか？再接続にはパスワードが必要です。
   Forming Tip: チップ形成中
   Forming tip...: チップを形成中...
   Found %zu printers: '%zu台のプリンターを検出'
@@ -981,7 +983,7 @@ translations:
   Heating Bed...: ベッド加熱中...
   Heating Nozzle...: ノズル加熱中...
   Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: '%d\xC2\xB0Cに加熱中... %.0f\xC2\xB0C'
-  Heating to {}°C before {}...: ''
+  Heating to {}°C before {}...: '{}°Cに加熱中（{}の前）...'
   Heating to {}°C for {}...: '{}°Cに加熱中（{}）...'
   Heating to {}°C...: '{}°Cに加熱中...'
   Heating...: 加熱中...
@@ -1026,7 +1028,7 @@ translations:
     (mm)
   How many labels to print: 印刷するラベル枚数
   How the toolhead icon appears: ツールヘッドアイコンの表示スタイル
-  Hub: ''
+  Hub: ハブ
   Humidity: 湿度
   Hyperlapse: ハイパーラプス
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: ハイパーラプスは一定の時間間隔でフレームを撮影します。非常に長い印刷に適しています。
@@ -1049,7 +1051,7 @@ translations:
   'Incompatible materials: {} cannot use {} as backup': '非対応の素材: {} は {} をバックアップとして使用できません'
   Indexing G-code...: G-codeをインデックス中...
   Info: 情報
-  Initialized: ''
+  Initialized: 初期化済み
   Initializing...: 初期化中...
   Input: 入力
   Input Shaper: インプットシェーパー
@@ -1090,8 +1092,8 @@ translations:
   'Invalid sheet template index: {} (have {})': '無効なシートテンプレートインデックス: {} (現在 {})'
   Invalid status response from printer: プリンターからの無効なステータス応答
   Issue description: 問題の説明
-  It's a new spool: ''
-  Jammed at the Toolhead: ''
+  It's a new spool: 新しいスプールです
+  Jammed at the Toolhead: ツールヘッドで詰まり
   Job Queue: ジョブキュー
   'Jog failed: {}': 'ジョグに失敗しました: {}'
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: Discord
@@ -1217,7 +1219,7 @@ translations:
   Macro for physical bed leveling (QGL/Z-Tilt): 物理的ベッドレベリング用マクロ (QGL/Z-Tilt)
   Macro handles heating: マクロが加熱を制御
   Macro may still be running — response timed out: マクロがまだ実行中の可能性があります — 応答タイムアウト
-  "Macro stopped: printer has no '{}' command": ''
+  "Macro stopped: printer has no '{}' command": "マクロを停止しました: プリンターに '{}' コマンドがありません"
   Macro to cancel an active print: アクティブな印刷をキャンセルするマクロ
   Macro to clean/wipe the nozzle: ノズルを清掃/ワイプするマクロ
   Macro to load filament into extruder: フィラメントをエクストルーダーに装填するマクロ
@@ -1293,7 +1295,7 @@ translations:
   ? Moves the print head to measure vibration frequencies on each axis. Takes 2-3
     minutes. The printer will make noise — this is normal.
   : プリントヘッドを移動させて各軸の振動周波数を測定します。2〜3分かかります。プリンターから音がしますが、これは正常です。
-  Moving lane: ''
+  Moving lane: レーンを移動中
   Multi-Filament: マルチフィラメント
   Multi-Filament Overview: マルチフィラメント概要
   Multi-Filament System: マルチフィラメントシステム
@@ -1317,6 +1319,7 @@ translations:
   Network Name (SSID): ネットワーク名 (SSID)
   Network Settings: ネットワーク設定
   Network Test: ネットワークテスト
+  Network forgotten: ネットワークを登録解除しました
   Network name cannot be empty: ネットワーク名は空にできません
   Never: なし
   'New Spool: Step 1 of 3': '新しいスプール: ステップ 1 / 3'
@@ -1408,7 +1411,7 @@ translations:
   Not found (strobe only): 見つかりません (ストロボのみ)
   Not found (use phone app): 見つかりません (スマホアプリを使用)
   Not in your spools? Set it up: スプールにない？登録する
-  Not now: ''
+  Not now: 後で
   Not yet calibrated: 未キャリブレーション
   Notes: メモ
   Notes (optional): メモ（オプション）
@@ -1429,7 +1432,7 @@ translations:
   Nozzle Temp: ノズル温度
   Nozzle Temperature: ノズル温度
   Nozzle Temps: ノズル温度
-  Nozzle did not reach {}°C — {} cancelled: ''
+  Nozzle did not reach {}°C — {} cancelled: ノズルが{}°Cに達しませんでした — {}を中止しました
   Nozzle min cannot exceed max: ノズル温度の最小値は最大値を超えられません
   Nozzle target set to {}°C: ノズル目標温度を {}°C に設定しました
   Nozzle temp must be 100-500°C: ノズル温度は 100〜500°C にしてください
@@ -1525,7 +1528,7 @@ translations:
   Phomemo M110: Phomemo M110
   Pick: 選択
   Pick Color: 色を選択
-  Picking up tool: ''
+  Picking up tool: ツールを取得中
   Pill: ピル
   Pixels before a press becomes a scroll (lower = scrolls engage sooner): 押下がスクロールに変わるまでのピクセル数
     (低いほどスクロールが早く開始)
@@ -1638,7 +1641,7 @@ translations:
   Printer didn't respond — make sure it's on and in range: プリンターが応答しません — 電源が入っており通信範囲内にあることを確認してください
   Printer doesn't expose the expected service — wrong device?: プリンターが想定されるサービスを公開していません
     — デバイスが違う可能性があります
-  Printer hardware detected: ''
+  Printer hardware detected: プリンターのハードウェアを検出
   Printer image set to auto-detect: プリンター画像を自動検出に設定しました
   Printer is not paired — pair it first: プリンターがペアリングされていません — 先にペアリングしてください
   Printer name: プリンター名
@@ -1790,7 +1793,7 @@ translations:
   Restarting with the new version...: 新しいバージョンで再起動中...
   Restarting...: 再起動中...
   Restore Defaults: デフォルトに戻す
-  Restoring position: ''
+  Restoring position: 位置を復元中
   Resume: 再開
   Resume Print: 印刷を再開
   Resume interrupted print?: 中断した印刷を再開しますか？
@@ -1951,7 +1954,7 @@ translations:
     Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope'
   Set local timezone for time display: 時刻表示用のローカルタイムゾーンを設定
   Set logging verbosity for troubleshooting: トラブルシューティング用のログの詳細レベルを設定
-  Set up: ''
+  Set up: セットアップ
   Set up your label printer in Settings: 設定でラベルプリンターをセットアップしてください
   Settings: 設定
   Settings Snapshot: 設定スナップショット
@@ -2075,9 +2078,9 @@ translations:
   Stop Print?: 印刷を停止しますか？
   Stop failed: 停止に失敗
   Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds.: '\"{}\" の印刷を停止しますか？\n\n5秒後は取り消せません。'
-  Stopped between Hub and Toolhead: ''
-  Stopped between Lane and Hub: ''
-  Stopped between Spool and Lane: ''
+  Stopped between Hub and Toolhead: ハブとツールヘッドの間で停止
+  Stopped between Lane and Hub: レーンとハブの間で停止
+  Stopped between Spool and Lane: スプールとレーンの間で停止
   Stops all motion. Requires firmware restart.: すべての動作を停止します。ファームウェアの再起動が必要です。
   Stow: 格納
   Strobe LED: ストロボLED
@@ -2158,7 +2161,7 @@ translations:
   ? The animated screensaver has been turned off on this device to prevent it from
     interfering with prints. You can re-enable it in Settings > Display.
   : アニメーション付きスクリーンセーバーが印刷に干渉しないよう、このデバイスではオフになっています。設定 > ディスプレイで再度有効にできます。
-  The filament system reported an error: ''
+  The filament system reported an error: フィラメントシステムがエラーを報告しました
   The heater will cycle on and off several times.: ヒーターは数回オン/オフを繰り返します。
   ? The motor vibrates the belt while a strobe light flashes at the same frequency.
     When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse
@@ -2167,9 +2170,9 @@ translations:
   : モーターがベルトを振動させ、ストロボライトが同じ周波数で点滅します。ベルトが静止して(止まって)見えたとき、共振周波数を見つけたことになります。\n\n周波数ボタンで値を変化させ、ベルトが静止して見えたらその値を固定してください。
   The printer halted this print and cannot resume it. Restart from the beginning?: プリンターはこの印刷を停止し、再開できません。最初からやり直しますか？
   The printer lost power during a print. It can resume where it left off.: 印刷中にプリンターの電源が失われました。中断した箇所から再開できます。
-  The printer lost power during a print. The resumed layer may not line up exactly.: ''
+  The printer lost power during a print. The resumed layer may not line up exactly.: 印刷中にプリンターの電源が失われました。再開したレイヤーがわずかにずれる可能性があります。
   The printer lost power while printing {}. Resume where it left off?: '{} の印刷中にプリンターの電源が失われました。中断した箇所から再開しますか？'
-  The printer lost power while printing {}. The resumed layer may not line up exactly.: ''
+  The printer lost power while printing {}. The resumed layer may not line up exactly.: '{} の印刷中にプリンターの電源が失われました。再開したレイヤーがわずかにずれる可能性があります。'
   The printer rejected the filament configuration. The print was not started.: プリンターがフィラメント設定を拒否しました。印刷は開始されませんでした。
   The runout sensor indicates no filament is loaded. Start print anyway?: フィラメント切れセンサーがフィラメント未装填を検出しました。それでも印刷を開始しますか？
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: ツールヘッドセンサーがフィラメント装填済みを検出しました。それでも装填を続行しますか？
@@ -2190,7 +2193,7 @@ translations:
   : このデバイスの RAM は {} MB しかありません。共振キャリブレーションはメモリを大量に消費し、プリンターのファームウェアが \"Timer Too Close\" エラーを報告したり、テスト中に再起動したりする可能性があります。それでも続行しますか？
   ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
   : このデバイスの RAM は非常に少ないです。共振キャリブレーションはメモリを大量に消費し、\"Timer Too Close\" エラーを引き起こす可能性があります。それでも続行しますか？
-  This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: ''
+  This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: リンクされた Spoolman のスプールと一致しません。新しいスプールとして追加しますか、それともリンク先を一致するよう更新しますか？
   This file was sliced for {} but {} is loaded.: このファイルは {} 用にスライスされていますが、{} がロードされています。
   This is exactly the data that will be sent: これが送信されるデータです
   This is what data would be sent if enabled: これは有効にした場合に送信されるデータです
@@ -2251,7 +2254,7 @@ translations:
   Tool: ツール
   Tool Changer: ツールチェンジャー
   'Tool change failed: {}': 'ツール変更に失敗しました: {}'
-  Tool swap: ''
+  Tool swap: ツール交換
   'Tool {} → Lane {}: no filament loaded.': 'ツール {} → レーン {}: フィラメントが装填されていません。'
   Toolhead: 'ツールヘッド'
   Toolhead Style: ツールヘッドスタイル
@@ -2280,7 +2283,7 @@ translations:
   Turn Off: オフにする
   Turn On: オンにする
   Turn on LEDs when printer starts: プリンター起動時に LED を点灯
-  Turn the extruder heater off after a load or unload finishes: ''
+  Turn the extruder heater off after a load or unload finishes: 装填または排出の完了後にエクストルーダーヒーターをオフにします
   Type: タイプ
   Type to preview input field...: 入力フィールドをプレビューするには入力してください...
   'Type:': 'タイプ:'
@@ -2450,7 +2453,7 @@ translations:
   Your completed prints will appear here: 完了した印刷がここに表示されます
   Your print start is already fully configured!: 印刷開始設定はすでに完全に構成されています！
   Your printer has an automatic filament changer: プリンターに自動フィラメントチェンジャーが搭載されています
-  Your printer was offline during setup, so hardware options were skipped. Set them up now?: ''
+  Your printer was offline during setup, so hardware options were skipped. Set them up now?: セットアップ中にプリンターがオフラインだったため、ハードウェアオプションはスキップされました。今すぐ設定しますか？
   Z: Z
   Z Calibration: Z キャリブレーション
   Z Movement: Z移動

@@ -39,7 +39,7 @@ translations:
   -- kWh: -- кВт·ч
   --°C: --°C
   -0.5 Hz: -0,5 Гц
-  '...': ''
+  '...': '...'
   0 = computed: 0 = вычислено
   0 events queued: 0 событий в очереди
   0 slots: '{0} Слотов'
@@ -413,7 +413,7 @@ translations:
   Chamber heating to %d°C...: Нагрев камеры до %d°C...
   Chamber target set to {}°C: Целевая температура камеры установлена на {}°C
   Change: Изменить
-  Change Address: ''
+  Change Address: Изменить адрес
   Change Filament: Сменить филамент
   Change LED color based on printer state: Менять цвет LED в зависимости от состояния
     принтера
@@ -533,9 +533,9 @@ translations:
   Connected to: Подключен к
   'Connected to ': 'Подключен к '
   ? Connected to Moonraker, but Klipper is not running. You can continue — HelixScreen will show the Klipper error, and hardware detection stays limited until Klipper starts.
-  : ''
+  : Подключено к Moonraker, но Klipper не запущен. Можно продолжить — HelixScreen покажет ошибку Klipper, а определение оборудования будет ограничено до запуска Klipper.
   ? Connected to Moonraker, but printer discovery did not finish. You can continue — hardware detection stays limited until the printer responds.
-  : ''
+  : Подключено к Moonraker, но поиск принтера не завершён. Можно продолжить — определение оборудования будет ограничено, пока принтер не ответит.
   Connected to {}: Подключен к {}
   Connected! Discovering printer...: Подключен! Обнаружение принтера...
   Connected, discovering...: Подключен, обнаружение...
@@ -569,7 +569,7 @@ translations:
   Controlled by hardware sensor: Управляется аппаратным датчиком
   Controller: Контроллер
   Cool Down: Охладить
-  Cool nozzle after filament ops: ''
+  Cool nozzle after filament ops: Остужать сопло после операций с филаментом
   Cooling: Охлаждение
   Copied to clipboard!: Скопировано в буфер обмена!
   Copy Command: Копировать команду
@@ -695,7 +695,7 @@ translations:
   Do not power off your printer.: Не выключайте принтер.
   Do not touch the printer during calibration: Не трогайте принтер во время калибровки
   Dock: Парковать
-  Docking tool: ''
+  Docking tool: Парковка инструмента
   Documentation: Документация
   Don't Save: Не сохранять
   Don't ask again: Больше не спрашивать
@@ -736,7 +736,7 @@ translations:
   'Eject failed: {}': 'Ошибка извлечения: {}'
   Eject needs [force_move] enabled in printer config: Для извлечения нужно включить
     [force_move] в конфигурации принтера
-  Ejecting: ''
+  Ejecting: Извлечение
   Elegoo Centauri Carbon: Elegoo Centauri Carbon
   Emergency Stop: Аварийная остановка
   Emergency Stop?: Аварийная остановка?
@@ -1003,6 +1003,8 @@ translations:
   Follow active tool: Следовать активному инструменту
   Follow graph screen: Следовать экрану графика
   Forget: Забыть
+  Forget Network?: Забыть сеть?
+  Forget network '{}'? You will need the password to reconnect.: Забыть сеть «{}»? Для повторного подключения потребуется пароль.
   Forming Tip: Формирование кончика
   Forming tip...: Формирование кончика...
   Found %zu printers: Найдено %zu принтеров
@@ -1073,7 +1075,7 @@ translations:
   Heating Bed...: Нагрев стола...
   Heating Nozzle...: Нагрев сопла...
   Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: Нагрев до %d\xC2\xB0C... %.0f\xC2\xB0C
-  Heating to {}°C before {}...: ''
+  Heating to {}°C before {}...: Нагрев до {}°C перед «{}»...
   Heating to {}°C for {}...: Нагрев до {}°C в течение {}...
   Heating to {}°C...: Нагрев до {}°C...
   Heating...: Нагрев...
@@ -1121,7 +1123,7 @@ translations:
     задвигается обратно в коробку при извлечении (мм)
   How many labels to print: Сколько этикеток напечатать
   How the toolhead icon appears: Как отображается значок печатающей головки
-  Hub: ''
+  Hub: Хаб
   Humidity: Влажность
   Hyperlapse: Гиперлапс
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: Гиперлапс
@@ -1149,7 +1151,7 @@ translations:
     {} не может использовать {} в качестве резерва'
   Indexing G-code...: Индексация G-code...
   Info: Инфо
-  Initialized: ''
+  Initialized: Инициализировано
   Initializing...: Инициализация...
   Input: Ввод
   Input Shaper: Input Shaper
@@ -1201,8 +1203,8 @@ translations:
     {} (имеется {})'
   Invalid status response from printer: Недопустимый ответ статуса от принтера
   Issue description: Описание проблемы
-  It's a new spool: ''
-  Jammed at the Toolhead: ''
+  It's a new spool: Это новая катушка
+  Jammed at the Toolhead: Замятие в печатающей головке
   Job Queue: Очередь заданий
   'Jog failed: {}': 'Перемещение не удалось: {}'
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: Присоединяйтесь
@@ -1344,7 +1346,7 @@ translations:
   Macro handles heating: Макрос управляет нагревом
   Macro may still be running — response timed out: Макрос может ещё выполняться —
     время ожидания истекло
-  "Macro stopped: printer has no '{}' command": ''
+  "Macro stopped: printer has no '{}' command": 'Макрос остановлен: у принтера нет команды «{}»'
   Macro to cancel an active print: Макрос для отмены текущей печати
   Macro to clean/wipe the nozzle: Макрос для очистки/протирки сопла
   Macro to load filament into extruder: Макрос для загрузки филамента в экструдер
@@ -1425,7 +1427,7 @@ translations:
     minutes. The printer will make noise — this is normal.
   : Перемещает печатающую головку для измерения частот вибрации по каждой оси. Занимает
     2-3 минуты. Принтер будет шуметь — это нормально.
-  Moving lane: ''
+  Moving lane: Перемещение слота
   Multi-Filament: Мульти-филамент
   Multi-Filament Overview: Обзор мульти-филамента
   Multi-Filament System: Мультифиламентная система
@@ -1450,6 +1452,7 @@ translations:
   Network Name (SSID): Название сети (SSID)
   Network Settings: Сетевые настройки
   Network Test: Тест сети
+  Network forgotten: Сеть забыта
   Network name cannot be empty: Имя сети не может быть пустым
   Never: Никогда
   'New Spool: Step 1 of 3': 'Новая катушка: Шаг 1 из 3'
@@ -1548,7 +1551,7 @@ translations:
   Not found (strobe only): Не найдено (только стробоскоп)
   Not found (use phone app): Не найдено (используйте приложение на телефоне)
   Not in your spools? Set it up: Нет в ваших катушках? Настроить
-  Not now: ''
+  Not now: Не сейчас
   Not yet calibrated: Ещё не откалибровано
   Notes: Заметки
   Notes (optional): Заметки (необязательно)
@@ -1569,7 +1572,7 @@ translations:
   Nozzle Temp: Темп. сопла
   Nozzle Temperature: Температура сопла
   Nozzle Temps: Темп. сопел
-  Nozzle did not reach {}°C — {} cancelled: ''
+  Nozzle did not reach {}°C — {} cancelled: Сопло не нагрелось до {}°C — «{}» отменено
   Nozzle min cannot exceed max: Минимум сопла не может превышать максимум
   Nozzle target set to {}°C: Целевая температура сопла {}°C
   Nozzle temp must be 100-500°C: Температура сопла должна быть 100-500°C
@@ -1667,7 +1670,7 @@ translations:
   Phomemo M110: Phomemo M110
   Pick: Выбрать
   Pick Color: Выбрать цвет
-  Picking up tool: ''
+  Picking up tool: Захват инструмента
   Pill: Овал
   Pixels before a press becomes a scroll (lower = scrolls engage sooner): Пикселей
     до того, как нажатие станет прокруткой (меньше = прокрутка начинается раньше)
@@ -1791,7 +1794,7 @@ translations:
     что он включён и в зоне доступа
   Printer doesn't expose the expected service — wrong device?: Принтер не предоставляет
     ожидаемый сервис — не то устройство?
-  Printer hardware detected: ''
+  Printer hardware detected: Обнаружено оборудование принтера
   Printer image set to auto-detect: Изображение принтера — автоопределение
   Printer is not paired — pair it first: Принтер не сопряжён — сначала выполните сопряжение
   Printer name: Название принтера
@@ -1955,7 +1958,7 @@ translations:
   Restarting with the new version...: Перезапуск с новой версией...
   Restarting...: Перезапуск...
   Restore Defaults: Восстановить по умолчанию
-  Restoring position: ''
+  Restoring position: Восстановление позиции
   Resume: Продолжить
   Resume Print: Продолжить печать
   Resume interrupted print?: Продолжить прерванную печать?
@@ -2138,7 +2141,7 @@ translations:
   Set local timezone for time display: Установить часовой пояс для отображения времени
   Set logging verbosity for troubleshooting: Установить уровень детализации журнала
     для устранения неполадок
-  Set up: ''
+  Set up: Настроить
   Set up your label printer in Settings: Настройте принтер этикеток в Настройках
   Settings: Настройки
   Settings Snapshot: Снимок настроек
@@ -2275,9 +2278,9 @@ translations:
   Stop Print?: Остановить печать?
   Stop failed: Ошибка остановки
   Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds.: 'Остановить печать \"{}\"?\n\nЭто нельзя будет отменить через 5 секунд.'
-  Stopped between Hub and Toolhead: ''
-  Stopped between Lane and Hub: ''
-  Stopped between Spool and Lane: ''
+  Stopped between Hub and Toolhead: Остановка между хабом и печатающей головкой
+  Stopped between Lane and Hub: Остановка между слотом и хабом
+  Stopped between Spool and Lane: Остановка между катушкой и слотом
   Stops all motion. Requires firmware restart.: Останавливает всё движение. Требуется
     перезапуск прошивки.
   Stow: Убрать
@@ -2370,7 +2373,7 @@ translations:
     interfering with prints. You can re-enable it in Settings > Display.
   : Анимированная заставка была отключена на данном устройстве, чтобы она не мешала
     печати. Вы можете снова включить её в Настройки > Дисплей.
-  The filament system reported an error: ''
+  The filament system reported an error: Система филамента сообщила об ошибке
   The heater will cycle on and off several times.: Нагреватель будет несколько раз
     включаться и выключаться.
   ? The motor vibrates the belt while a strobe light flashes at the same frequency.
@@ -2384,9 +2387,9 @@ translations:
   The printer halted this print and cannot resume it. Restart from the beginning?: Принтер
     остановил эту печать и не может её возобновить. Начать с начала?
   The printer lost power during a print. It can resume where it left off.: Принтер потерял питание во время печати. Он может продолжить с места остановки.
-  The printer lost power during a print. The resumed layer may not line up exactly.: ''
+  The printer lost power during a print. The resumed layer may not line up exactly.: Принтер потерял питание во время печати. Возобновлённый слой может не совпасть точно.
   The printer lost power while printing {}. Resume where it left off?: Принтер потерял питание при печати {}. Продолжить с места остановки?
-  The printer lost power while printing {}. The resumed layer may not line up exactly.: ''
+  The printer lost power while printing {}. The resumed layer may not line up exactly.: Принтер потерял питание при печати {}. Возобновлённый слой может не совпасть точно.
   The printer rejected the filament configuration. The print was not started.: Принтер
     отклонил конфигурацию филамента. Печать не была запущена.
   The runout sensor indicates no filament is loaded. Start print anyway?: Датчик окончания
@@ -2418,7 +2421,7 @@ translations:
   ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
   : На этом устройстве очень мало ОЗУ. Калибровка резонансов требует много памяти и может
     вызвать ошибку \"Timer Too Close\". Всё равно продолжить?
-  This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: ''
+  This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: Это не совпадает с привязанной катушкой Spoolman. Добавить как новую катушку или обновить привязанную?
   This file was sliced for {} but {} is loaded.: Файл нарезан для {}, но загружен
     {}.
   This is exactly the data that will be sent: Это именно те данные, которые будут
@@ -2493,7 +2496,7 @@ translations:
   Tool: Инструмент
   Tool Changer: Сменщик инструментов
   'Tool change failed: {}': 'Ошибка смены инструмента: {}'
-  Tool swap: ''
+  Tool swap: Смена инструмента
   'Tool {} → Lane {}: no filament loaded.': 'Инструмент {} → Слот {}: филамент не
     загружен.'
   Toolhead: 'Печатающая головка'
@@ -2524,7 +2527,7 @@ translations:
   Turn Off: Выключить
   Turn On: Включить
   Turn on LEDs when printer starts: Включать LED при запуске принтера
-  Turn the extruder heater off after a load or unload finishes: ''
+  Turn the extruder heater off after a load or unload finishes: Выключать нагреватель экструдера после загрузки или выгрузки
   Type: Тип
   Type to preview input field...: Введите для предпросмотра поля ввода...
   'Type:': 'Тип:'
@@ -2713,7 +2716,7 @@ translations:
   Your print start is already fully configured!: Ваш старт печати уже полностью настроен!
   Your printer has an automatic filament changer: Ваш принтер оснащён автоматическим
     сменщиком филамента
-  Your printer was offline during setup, so hardware options were skipped. Set them up now?: ''
+  Your printer was offline during setup, so hardware options were skipped. Set them up now?: Принтер был не в сети во время настройки, поэтому параметры оборудования пропущены. Настроить их сейчас?
   Z: Z
   Z Calibration: Калибровка Z
   Z Movement: Движение Z

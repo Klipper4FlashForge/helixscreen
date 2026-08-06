@@ -37,7 +37,7 @@
   <translation tag="-- kWh" ru="-- кВт·ч"/>
   <translation tag="--°C" ru="--°C"/>
   <translation tag="-0.5 Hz" ru="-0,5 Гц"/>
-  <translation tag="..."/>
+  <translation tag="..." ru="..."/>
   <translation tag="0 = computed" ru="0 = вычислено"/>
   <translation tag="0 events queued" ru="0 событий в очереди"/>
   <translation tag="0 slots" ru="{0} Слотов"/>
@@ -362,7 +362,7 @@
   <translation tag="Chamber heating to %d°C..." ru="Нагрев камеры до %d°C..."/>
   <translation tag="Chamber target set to {}°C" ru="Целевая температура камеры установлена на {}°C"/>
   <translation tag="Change" ru="Изменить"/>
-  <translation tag="Change Address"/>
+  <translation tag="Change Address" ru="Изменить адрес"/>
   <translation tag="Change Filament" ru="Сменить филамент"/>
   <translation tag="Change LED color based on printer state" ru="Менять цвет LED в зависимости от состояния принтера"/>
   <translation tag="Change PIN" ru="Изменить PIN"/>
@@ -464,8 +464,8 @@
   <translation tag="Connected Time" ru="Время подключения"/>
   <translation tag="Connected to" ru="Подключен к"/>
   <translation tag="Connected to " ru="Подключен к "/>
-  <translation tag="Connected to Moonraker, but Klipper is not running. You can continue — HelixScreen will show the Klipper error, and hardware detection stays limited until Klipper starts."/>
-  <translation tag="Connected to Moonraker, but printer discovery did not finish. You can continue — hardware detection stays limited until the printer responds."/>
+  <translation tag="Connected to Moonraker, but Klipper is not running. You can continue — HelixScreen will show the Klipper error, and hardware detection stays limited until Klipper starts." ru="Подключено к Moonraker, но Klipper не запущен. Можно продолжить — HelixScreen покажет ошибку Klipper, а определение оборудования будет ограничено до запуска Klipper."/>
+  <translation tag="Connected to Moonraker, but printer discovery did not finish. You can continue — hardware detection stays limited until the printer responds." ru="Подключено к Moonraker, но поиск принтера не завершён. Можно продолжить — определение оборудования будет ограничено, пока принтер не ответит."/>
   <translation tag="Connected to {}" ru="Подключен к {}"/>
   <translation tag="Connected! Discovering printer..." ru="Подключен! Обнаружение принтера..."/>
   <translation tag="Connected, discovering..." ru="Подключен, обнаружение..."/>
@@ -496,7 +496,7 @@
   <translation tag="Controlled by hardware sensor" ru="Управляется аппаратным датчиком"/>
   <translation tag="Controller" ru="Контроллер"/>
   <translation tag="Cool Down" ru="Охладить"/>
-  <translation tag="Cool nozzle after filament ops"/>
+  <translation tag="Cool nozzle after filament ops" ru="Остужать сопло после операций с филаментом"/>
   <translation tag="Cooling" ru="Охлаждение"/>
   <translation tag="Copied to clipboard!" ru="Скопировано в буфер обмена!"/>
   <translation tag="Copy Command" ru="Копировать команду"/>
@@ -613,7 +613,7 @@
   <translation tag="Do not power off your printer." ru="Не выключайте принтер."/>
   <translation tag="Do not touch the printer during calibration" ru="Не трогайте принтер во время калибровки"/>
   <translation tag="Dock" ru="Парковать"/>
-  <translation tag="Docking tool"/>
+  <translation tag="Docking tool" ru="Парковка инструмента"/>
   <translation tag="Documentation" ru="Документация"/>
   <translation tag="Don&apos;t Save" ru="Не сохранять"/>
   <translation tag="Don&apos;t ask again" ru="Больше не спрашивать"/>
@@ -651,7 +651,7 @@
   <translation tag="Eject Velocity" ru="Скорость извлечения"/>
   <translation tag="Eject failed: {}" ru="Ошибка извлечения: {}"/>
   <translation tag="Eject needs [force_move] enabled in printer config" ru="Для извлечения нужно включить [force_move] в конфигурации принтера"/>
-  <translation tag="Ejecting"/>
+  <translation tag="Ejecting" ru="Извлечение"/>
   <translation tag="Elegoo Centauri Carbon" ru="Elegoo Centauri Carbon"/>
   <translation tag="Emergency Stop" ru="Аварийная остановка"/>
   <translation tag="Emergency Stop?" ru="Аварийная остановка?"/>
@@ -898,6 +898,8 @@
   <translation tag="Follow active tool" ru="Следовать активному инструменту"/>
   <translation tag="Follow graph screen" ru="Следовать экрану графика"/>
   <translation tag="Forget" ru="Забыть"/>
+  <translation tag="Forget Network?" ru="Забыть сеть?"/>
+  <translation tag="Forget network &apos;{}&apos;? You will need the password to reconnect." ru="Забыть сеть «{}»? Для повторного подключения потребуется пароль."/>
   <translation tag="Forming Tip" ru="Формирование кончика"/>
   <translation tag="Forming tip..." ru="Формирование кончика..."/>
   <translation tag="Found %zu printers" ru="Найдено %zu принтеров"/>
@@ -956,7 +958,7 @@
   <translation tag="Heating Bed..." ru="Нагрев стола..."/>
   <translation tag="Heating Nozzle..." ru="Нагрев сопла..."/>
   <translation tag="Heating to %d\xC2\xB0C... %.0f\xC2\xB0C" ru="Нагрев до %d\xC2\xB0C... %.0f\xC2\xB0C"/>
-  <translation tag="Heating to {}°C before {}..."/>
+  <translation tag="Heating to {}°C before {}..." ru="Нагрев до {}°C перед «{}»..."/>
   <translation tag="Heating to {}°C for {}..." ru="Нагрев до {}°C в течение {}..."/>
   <translation tag="Heating to {}°C..." ru="Нагрев до {}°C..."/>
   <translation tag="Heating..." ru="Нагрев..."/>
@@ -999,7 +1001,7 @@
   <translation tag="How far filament is pushed back into the box on eject (mm)" ru="Насколько глубоко филамент задвигается обратно в коробку при извлечении (мм)"/>
   <translation tag="How many labels to print" ru="Сколько этикеток напечатать"/>
   <translation tag="How the toolhead icon appears" ru="Как отображается значок печатающей головки"/>
-  <translation tag="Hub"/>
+  <translation tag="Hub" ru="Хаб"/>
   <translation tag="Humidity" ru="Влажность"/>
   <translation tag="Hyperlapse" ru="Гиперлапс"/>
   <translation tag="Hyperlapse captures frames at fixed time intervals. Good for very long prints." ru="Гиперлапс захватывает кадры через фиксированные интервалы времени. Подходит для очень долгих печатей."/>
@@ -1021,7 +1023,7 @@
   <translation tag="Incompatible materials: {} cannot use {} as backup" ru="Несовместимые материалы: {} не может использовать {} в качестве резерва"/>
   <translation tag="Indexing G-code..." ru="Индексация G-code..."/>
   <translation tag="Info" ru="Инфо"/>
-  <translation tag="Initialized"/>
+  <translation tag="Initialized" ru="Инициализировано"/>
   <translation tag="Initializing..." ru="Инициализация..."/>
   <translation tag="Input" ru="Ввод"/>
   <translation tag="Input Shaper" ru="Input Shaper"/>
@@ -1061,8 +1063,8 @@
   <translation tag="Invalid sheet template index: {} (have {})" ru="Недопустимый индекс шаблона листа: {} (имеется {})"/>
   <translation tag="Invalid status response from printer" ru="Недопустимый ответ статуса от принтера"/>
   <translation tag="Issue description" ru="Описание проблемы"/>
-  <translation tag="It&apos;s a new spool"/>
-  <translation tag="Jammed at the Toolhead"/>
+  <translation tag="It&apos;s a new spool" ru="Это новая катушка"/>
+  <translation tag="Jammed at the Toolhead" ru="Замятие в печатающей головке"/>
   <translation tag="Job Queue" ru="Очередь заданий"/>
   <translation tag="Jog failed: {}" ru="Перемещение не удалось: {}"/>
   <translation tag="Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests." ru="Присоединяйтесь к сообществу HelixScreen в Discord для обсуждений, советов, помощи в устранении неполадок и предложений новых функций."/>
@@ -1182,7 +1184,7 @@
   <translation tag="Macro for physical bed leveling (QGL/Z-Tilt)" ru="Макрос для механического выравнивания стола (QGL/Z-Tilt)"/>
   <translation tag="Macro handles heating" ru="Макрос управляет нагревом"/>
   <translation tag="Macro may still be running — response timed out" ru="Макрос может ещё выполняться — время ожидания истекло"/>
-  <translation tag="Macro stopped: printer has no &apos;{}&apos; command"/>
+  <translation tag="Macro stopped: printer has no &apos;{}&apos; command" ru="Макрос остановлен: у принтера нет команды «{}»"/>
   <translation tag="Macro to cancel an active print" ru="Макрос для отмены текущей печати"/>
   <translation tag="Macro to clean/wipe the nozzle" ru="Макрос для очистки/протирки сопла"/>
   <translation tag="Macro to load filament into extruder" ru="Макрос для загрузки филамента в экструдер"/>
@@ -1255,7 +1257,7 @@
   <translation tag="Move paper back and forth while adjusting. Stop when paper catches slightly but still slides." ru="Перемещайте бумагу вперёд-назад во время регулировки. Остановитесь, когда бумага слегка цепляется, но ещё скользит."/>
   <translation tag="Move selector" ru="Двигать селектор"/>
   <translation tag="Moves the print head to measure vibration frequencies on each axis. Takes 2-3 minutes. The printer will make noise — this is normal." ru="Перемещает печатающую головку для измерения частот вибрации по каждой оси. Занимает 2-3 минуты. Принтер будет шуметь — это нормально."/>
-  <translation tag="Moving lane"/>
+  <translation tag="Moving lane" ru="Перемещение слота"/>
   <translation tag="Multi-Filament" ru="Мульти-филамент"/>
   <translation tag="Multi-Filament Overview" ru="Обзор мульти-филамента"/>
   <translation tag="Multi-Filament System" ru="Мультифиламентная система"/>
@@ -1279,6 +1281,7 @@
   <translation tag="Network Name (SSID)" ru="Название сети (SSID)"/>
   <translation tag="Network Settings" ru="Сетевые настройки"/>
   <translation tag="Network Test" ru="Тест сети"/>
+  <translation tag="Network forgotten" ru="Сеть забыта"/>
   <translation tag="Network name cannot be empty" ru="Имя сети не может быть пустым"/>
   <translation tag="Never" ru="Никогда"/>
   <translation tag="New Spool: Step 1 of 3" ru="Новая катушка: Шаг 1 из 3"/>
@@ -1368,7 +1371,7 @@
   <translation tag="Not found (strobe only)" ru="Не найдено (только стробоскоп)"/>
   <translation tag="Not found (use phone app)" ru="Не найдено (используйте приложение на телефоне)"/>
   <translation tag="Not in your spools? Set it up" ru="Нет в ваших катушках? Настроить"/>
-  <translation tag="Not now"/>
+  <translation tag="Not now" ru="Не сейчас"/>
   <translation tag="Not yet calibrated" ru="Ещё не откалибровано"/>
   <translation tag="Notes" ru="Заметки"/>
   <translation tag="Notes (optional)" ru="Заметки (необязательно)"/>
@@ -1389,7 +1392,7 @@
   <translation tag="Nozzle Temp" ru="Темп. сопла"/>
   <translation tag="Nozzle Temperature" ru="Температура сопла"/>
   <translation tag="Nozzle Temps" ru="Темп. сопел"/>
-  <translation tag="Nozzle did not reach {}°C — {} cancelled"/>
+  <translation tag="Nozzle did not reach {}°C — {} cancelled" ru="Сопло не нагрелось до {}°C — «{}» отменено"/>
   <translation tag="Nozzle min cannot exceed max" ru="Минимум сопла не может превышать максимум"/>
   <translation tag="Nozzle target set to {}°C" ru="Целевая температура сопла {}°C"/>
   <translation tag="Nozzle temp must be 100-500°C" ru="Температура сопла должна быть 100-500°C"/>
@@ -1482,7 +1485,7 @@
   <translation tag="Phomemo M110" ru="Phomemo M110"/>
   <translation tag="Pick" ru="Выбрать"/>
   <translation tag="Pick Color" ru="Выбрать цвет"/>
-  <translation tag="Picking up tool"/>
+  <translation tag="Picking up tool" ru="Захват инструмента"/>
   <translation tag="Pill" ru="Овал"/>
   <translation tag="Pixels before a press becomes a scroll (lower = scrolls engage sooner)" ru="Пикселей до того, как нажатие станет прокруткой (меньше = прокрутка начинается раньше)"/>
   <translation tag="Place image files (PNG, JPEG, BMP, GIF) in config/custom_images/. Max size: 2048×2048 pixels." ru="Поместите файлы изображений (PNG, JPEG, BMP, GIF) в config/custom_images/. Макс. размер: 2048×2048 пикселей."/>
@@ -1589,7 +1592,7 @@
   <translation tag="Printer database is corrupt" ru="База данных принтеров повреждена"/>
   <translation tag="Printer didn&apos;t respond — make sure it&apos;s on and in range" ru="Принтер не ответил — убедитесь, что он включён и в зоне доступа"/>
   <translation tag="Printer doesn&apos;t expose the expected service — wrong device?" ru="Принтер не предоставляет ожидаемый сервис — не то устройство?"/>
-  <translation tag="Printer hardware detected"/>
+  <translation tag="Printer hardware detected" ru="Обнаружено оборудование принтера"/>
   <translation tag="Printer image set to auto-detect" ru="Изображение принтера — автоопределение"/>
   <translation tag="Printer is not paired — pair it first" ru="Принтер не сопряжён — сначала выполните сопряжение"/>
   <translation tag="Printer name" ru="Название принтера"/>
@@ -1740,7 +1743,7 @@
   <translation tag="Restarting with the new version..." ru="Перезапуск с новой версией..."/>
   <translation tag="Restarting..." ru="Перезапуск..."/>
   <translation tag="Restore Defaults" ru="Восстановить по умолчанию"/>
-  <translation tag="Restoring position"/>
+  <translation tag="Restoring position" ru="Восстановление позиции"/>
   <translation tag="Resume" ru="Продолжить"/>
   <translation tag="Resume Print" ru="Продолжить печать"/>
   <translation tag="Resume interrupted print?" ru="Продолжить прерванную печать?"/>
@@ -1891,7 +1894,7 @@
   <translation tag="Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope" ru="Установите приложение-стробоскоп на телефоне на %.1f Гц и направьте на ремень. Регулируйте, пока ремень не будет казаться неподвижным.\n\nРекомендуемые приложения:\n  Android: Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope"/>
   <translation tag="Set local timezone for time display" ru="Установить часовой пояс для отображения времени"/>
   <translation tag="Set logging verbosity for troubleshooting" ru="Установить уровень детализации журнала для устранения неполадок"/>
-  <translation tag="Set up"/>
+  <translation tag="Set up" ru="Настроить"/>
   <translation tag="Set up your label printer in Settings" ru="Настройте принтер этикеток в Настройках"/>
   <translation tag="Settings" ru="Настройки"/>
   <translation tag="Settings Snapshot" ru="Снимок настроек"/>
@@ -2013,9 +2016,9 @@
   <translation tag="Stop Print?" ru="Остановить печать?"/>
   <translation tag="Stop failed" ru="Ошибка остановки"/>
   <translation tag="Stop printing \&quot;{}\&quot;?\n\nThis cannot be undone after 5 seconds." ru="Остановить печать \&quot;{}\&quot;?\n\nЭто нельзя будет отменить через 5 секунд."/>
-  <translation tag="Stopped between Hub and Toolhead"/>
-  <translation tag="Stopped between Lane and Hub"/>
-  <translation tag="Stopped between Spool and Lane"/>
+  <translation tag="Stopped between Hub and Toolhead" ru="Остановка между хабом и печатающей головкой"/>
+  <translation tag="Stopped between Lane and Hub" ru="Остановка между слотом и хабом"/>
+  <translation tag="Stopped between Spool and Lane" ru="Остановка между катушкой и слотом"/>
   <translation tag="Stops all motion. Requires firmware restart." ru="Останавливает всё движение. Требуется перезапуск прошивки."/>
   <translation tag="Stow" ru="Убрать"/>
   <translation tag="Strobe LED" ru="Стробоскоп"/>
@@ -2087,14 +2090,14 @@
   <translation tag="Thanks! TOTALLY anonymous usage data helps improve HelixScreen." ru="Спасибо! ПОЛНОСТЬЮ анонимные данные использования помогают улучшить HelixScreen."/>
   <translation tag="The HelixPrint plugin enables fast G-code modifications directly on your printer—like skipping bed mesh for quick reprints." ru="Плагин HelixPrint позволяет быстро модифицировать G-code прямо на принтере — например, пропускать сетку стола для быстрых перепечаток."/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." ru="Анимированная заставка была отключена на данном устройстве, чтобы она не мешала печати. Вы можете снова включить её в Настройки &gt; Дисплей."/>
-  <translation tag="The filament system reported an error"/>
+  <translation tag="The filament system reported an error" ru="Система филамента сообщила об ошибке"/>
   <translation tag="The heater will cycle on and off several times." ru="Нагреватель будет несколько раз включаться и выключаться."/>
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." ru="Мотор вибрирует ремень, пока стробоскоп мигает с той же частотой. Когда ремень кажется неподвижным (застывшим), вы нашли резонансную частоту.\n\nИспользуйте кнопки частоты для перебора значений, пока ремень не будет выглядеть неподвижным, затем зафиксируйте показание."/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" ru="Принтер остановил эту печать и не может её возобновить. Начать с начала?"/>
   <translation tag="The printer lost power during a print. It can resume where it left off." ru="Принтер потерял питание во время печати. Он может продолжить с места остановки."/>
-  <translation tag="The printer lost power during a print. The resumed layer may not line up exactly."/>
+  <translation tag="The printer lost power during a print. The resumed layer may not line up exactly." ru="Принтер потерял питание во время печати. Возобновлённый слой может не совпасть точно."/>
   <translation tag="The printer lost power while printing {}. Resume where it left off?" ru="Принтер потерял питание при печати {}. Продолжить с места остановки?"/>
-  <translation tag="The printer lost power while printing {}. The resumed layer may not line up exactly."/>
+  <translation tag="The printer lost power while printing {}. The resumed layer may not line up exactly." ru="Принтер потерял питание при печати {}. Возобновлённый слой может не совпасть точно."/>
   <translation tag="The printer rejected the filament configuration. The print was not started." ru="Принтер отклонил конфигурацию филамента. Печать не была запущена."/>
   <translation tag="The runout sensor indicates no filament is loaded. Start print anyway?" ru="Датчик окончания филамента показывает, что филамент не загружен. Всё равно начать печать?"/>
   <translation tag="The toolhead sensor indicates filament is already loaded. Proceed with load anyway?" ru="Датчик печатающей головки показывает, что филамент уже загружен. Всё равно продолжить загрузку?"/>
@@ -2112,7 +2115,7 @@
   <translation tag="This cannot be undone." ru="Это действие нельзя отменить."/>
   <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?" ru="На этом устройстве всего {} МБ ОЗУ. Калибровка резонансов требует много памяти и может привести к тому, что прошивка принтера сообщит об ошибке \&quot;Timer Too Close\&quot; или перезапустится во время теста. Всё равно продолжить?"/>
   <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a \&quot;Timer Too Close\&quot; error. Continue anyway?" ru="На этом устройстве очень мало ОЗУ. Калибровка резонансов требует много памяти и может вызвать ошибку \&quot;Timer Too Close\&quot;. Всё равно продолжить?"/>
-  <translation tag="This doesn&apos;t match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?"/>
+  <translation tag="This doesn&apos;t match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?" ru="Это не совпадает с привязанной катушкой Spoolman. Добавить как новую катушку или обновить привязанную?"/>
   <translation tag="This file was sliced for {} but {} is loaded." ru="Файл нарезан для {}, но загружен {}."/>
   <translation tag="This is exactly the data that will be sent" ru="Это именно те данные, которые будут отправлены"/>
   <translation tag="This is what data would be sent if enabled" ru="Эти данные были бы отправлены при включении"/>
@@ -2162,7 +2165,7 @@
   <translation tag="Tool" ru="Инструмент"/>
   <translation tag="Tool Changer" ru="Сменщик инструментов"/>
   <translation tag="Tool change failed: {}" ru="Ошибка смены инструмента: {}"/>
-  <translation tag="Tool swap"/>
+  <translation tag="Tool swap" ru="Смена инструмента"/>
   <translation tag="Tool {} → Lane {}: no filament loaded." ru="Инструмент {} → Слот {}: филамент не загружен."/>
   <translation tag="Toolhead" ru="Печатающая головка"/>
   <translation tag="Toolhead Style" ru="Стиль печатающей головки"/>
@@ -2190,7 +2193,7 @@
   <translation tag="Turn Off" ru="Выключить"/>
   <translation tag="Turn On" ru="Включить"/>
   <translation tag="Turn on LEDs when printer starts" ru="Включать LED при запуске принтера"/>
-  <translation tag="Turn the extruder heater off after a load or unload finishes"/>
+  <translation tag="Turn the extruder heater off after a load or unload finishes" ru="Выключать нагреватель экструдера после загрузки или выгрузки"/>
   <translation tag="Type" ru="Тип"/>
   <translation tag="Type to preview input field..." ru="Введите для предпросмотра поля ввода..."/>
   <translation tag="Type:" ru="Тип:"/>
@@ -2344,7 +2347,7 @@
   <translation tag="Your completed prints will appear here" ru="Ваши завершённые печати появятся здесь"/>
   <translation tag="Your print start is already fully configured!" ru="Ваш старт печати уже полностью настроен!"/>
   <translation tag="Your printer has an automatic filament changer" ru="Ваш принтер оснащён автоматическим сменщиком филамента"/>
-  <translation tag="Your printer was offline during setup, so hardware options were skipped. Set them up now?"/>
+  <translation tag="Your printer was offline during setup, so hardware options were skipped. Set them up now?" ru="Принтер был не в сети во время настройки, поэтому параметры оборудования пропущены. Настроить их сейчас?"/>
   <translation tag="Z" ru="Z"/>
   <translation tag="Z Calibration" ru="Калибровка Z"/>
   <translation tag="Z Movement" ru="Движение Z"/>
