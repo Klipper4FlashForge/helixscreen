@@ -7,7 +7,7 @@
         style_flex_main_place="center" style_flex_cross_place="center"
         style_flex_track_place="center" scrollable="false">
     <!-- Hardware gate (humidity_sensor_count) checked in C++ populate_widgets() -->
-    <humidity_indicator/>
+    <humidity_indicator name="humidity_indicator"/>
     <text_tiny text="Humidity" translation_tag="Humidity" style_text_align="center"/>
   </view>
 </component>
