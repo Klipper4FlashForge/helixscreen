@@ -17,6 +17,8 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
+#include <unistd.h>
 #include <vector>
 
 #include "../catch_amalgamated.hpp"
@@ -170,6 +172,80 @@ TEST_CASE("write_lvgl_bin round-trip: write then read back and verify header",
     // Verify pixel data matches what we wrote
     const uint8_t* read_pixels = data.data() + sizeof(lv_image_header_t);
     REQUIRE(std::memcmp(read_pixels, pixels.data(), pixel_bytes) == 0);
+
+    std::filesystem::remove_all(tmp_dir);
+}
+
+TEST_CASE("Concurrent writers to one path do not interleave into a shared temp file",
+          "[assets][image_writer][threading][960]") {
+    // The staging name must be unique per WRITER, not per destination. The
+    // thumbnail pool runs two workers over one cache directory, and two
+    // requests for the same source at the same target size resolve to the same
+    // output path — with a fixed "<path>.tmp" both wrote into one file before
+    // both renamed it. Identical payloads made that benign in production, so
+    // the writers here deliberately carry DIFFERENT bytes: the final file must
+    // be exactly one of them, never a blend.
+    //
+    // Detection is PROBABILISTIC, as any race test is. Measured against the
+    // known-bad shared-".tmp" build it caught the tear in roughly 1 run in 3,
+    // and only once the payload was large enough (1 MB) to span many write(2)
+    // calls — at 64x64 it never reproduced at all, which is why the dimensions
+    // below look excessive. It is reliable in the direction CI cares about:
+    // with per-writer staging it passed 5/5, because each writer owns its temp
+    // file and rename(2) is atomic. A regression net, not a proof.
+    const auto tmp_dir = std::filesystem::temp_directory_path() /
+                         ("helix_writer_race_" + std::to_string(::getpid()));
+    std::filesystem::remove_all(tmp_dir);
+    std::filesystem::create_directories(tmp_dir);
+    const std::string out_path = (tmp_dir / "contended.bin").string();
+
+    constexpr int kWidth = 512;
+    constexpr int kHeight = 512;
+    constexpr size_t kPixelBytes = kWidth * kHeight * 4;
+    constexpr int kWriters = 8;
+
+    std::vector<std::thread> writers;
+    writers.reserve(kWriters);
+    for (int w = 0; w < kWriters; ++w) {
+        writers.emplace_back([&, w] {
+            // Each writer fills with its own distinct byte.
+            std::vector<uint8_t> pixels(kPixelBytes, static_cast<uint8_t>(0x10 + w));
+            for (int rep = 0; rep < 30; ++rep) {
+                write_lvgl_bin(out_path, kWidth, kHeight,
+                               static_cast<uint8_t>(LV_COLOR_FORMAT_ARGB8888), pixels.data(),
+                               pixels.size());
+            }
+        });
+    }
+    for (auto& t : writers) {
+        t.join();
+    }
+
+    auto data = read_file_bytes(out_path);
+    REQUIRE(data.size() == sizeof(lv_image_header_t) + kPixelBytes);
+
+    // Every pixel byte must come from ONE writer. A torn file mixes fills.
+    const uint8_t* px = data.data() + sizeof(lv_image_header_t);
+    const uint8_t first = px[0];
+    bool uniform = true;
+    for (size_t i = 0; i < kPixelBytes; ++i) {
+        if (px[i] != first) {
+            uniform = false;
+            break;
+        }
+    }
+    CHECK(uniform);
+    CHECK(first >= 0x10);
+    CHECK(first < static_cast<uint8_t>(0x10 + kWriters));
+
+    // No staging files left behind.
+    int leftovers = 0;
+    for (const auto& e : std::filesystem::directory_iterator(tmp_dir)) {
+        if (e.path().string().find(".tmp") != std::string::npos) {
+            ++leftovers;
+        }
+    }
+    CHECK(leftovers == 0);
 
     std::filesystem::remove_all(tmp_dir);
 }

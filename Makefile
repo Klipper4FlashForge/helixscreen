@@ -269,6 +269,27 @@ INC_DIR := include
 # BUILD_DIR, BIN_DIR, OBJ_DIR may be set by cross.mk for cross-compilation
 # Only set defaults if not already defined
 BUILD_DIR ?= build
+
+# Native sanitizer builds need their own object tree, the same way cross.mk
+# suffixes BUILD_SUBDIR with -asan/-tsan. Without this, `make SANITIZE=address`
+# on an already-built tree finds every object up to date and only RELINKS them:
+# the result is a binary with zero __asan symbols that passes everything,
+# because it was never instrumented. That silently cost a full debugging pass
+# on prestonbrown/helixscreen#960.
+#
+# BIN_DIR is deliberately NOT suffixed. mk/tests.mk computes TEST_ASAN_BIN from
+# BIN_DIR in the PARENT make (where SANITIZE is unset) and passes only
+# OBJ_DIR/PCH down, so moving BIN_DIR here would have the sub-make build into a
+# directory the parent is not looking in. The app binary is therefore still
+# replaced in place — but it is genuinely instrumented, which is the part that
+# matters. Pass BIN_DIR=... explicitly to keep both.
+ifeq ($(SANITIZE),address)
+    OBJ_DIR ?= $(BUILD_DIR)/obj-asan
+endif
+ifeq ($(SANITIZE),thread)
+    OBJ_DIR ?= $(BUILD_DIR)/obj-tsan
+endif
+
 BIN_DIR ?= $(BUILD_DIR)/bin
 OBJ_DIR ?= $(BUILD_DIR)/obj
 
@@ -648,7 +669,17 @@ WPA_INC := -isystem $(WPA_DIR)/src/common -isystem $(WPA_DIR)/src/utils
 # Precompiled header for LVGL (30-50% faster clean builds)
 # Only supported by gcc and clang (not MSVC)
 PCH_HEADER := $(INC_DIR)/lvgl_pch.h
+# Sanitizer builds get their own PCH for the same reason they get their own
+# OBJ_DIR: a PCH compiled without -fsanitize cannot be reused by an
+# instrumented compile, and sharing one silently poisons the whole tree.
+# `:=` is fine — a command-line PCH=... still overrides it.
+ifeq ($(SANITIZE),address)
+PCH := $(BUILD_DIR)/asan-lvgl_pch.h.gch
+else ifeq ($(SANITIZE),thread)
+PCH := $(BUILD_DIR)/tsan-lvgl_pch.h.gch
+else
 PCH := $(BUILD_DIR)/lvgl_pch.h.gch
+endif
 PCH_FLAGS := -include $(PCH_HEADER)
 
 # Include paths
