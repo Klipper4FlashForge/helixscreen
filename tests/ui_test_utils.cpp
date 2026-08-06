@@ -831,12 +831,17 @@ void set_test_temperature_history_manager(TemperatureHistoryManager* mgr) {
     g_test_history_manager = mgr;
 }
 
-// Stub for get_job_queue_state (tests don't have state manager)
+// get_job_queue_state defaults to nullptr (no state manager in most tests),
+// but is a real settable global — same pattern as get/set_print_history_manager
+// above — so a widget test can install one to exercise the rebuild path.
 class JobQueueState;
+static JobQueueState* g_test_job_queue_state = nullptr;
 JobQueueState* get_job_queue_state() {
-    return nullptr;
+    return g_test_job_queue_state;
 }
-void set_job_queue_state(JobQueueState*) {}
+void set_job_queue_state(JobQueueState* state) {
+    g_test_job_queue_state = state;
+}
 
 // Restart/quit plumbing from app_globals.h. main.o owns the real implementations and
 // stays out of the test link, so tests get an in-process equivalent: the quit flag is

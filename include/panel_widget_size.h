@@ -18,5 +18,6 @@ namespace helix::widget_size {
 inline constexpr int W_NORMAL = 134; ///< was colspan >= 2 (smallest measured: 135)
 inline constexpr int W_WIDE = 204;   ///< was colspan >= 3 (smallest measured: 205)
 inline constexpr int H_TALL = 130;   ///< was rowspan >= 2 (smallest measured: 131)
+inline constexpr int H_TALLER = 197; ///< was rowspan >= 3 (smallest measured: 197.5)
 
 } // namespace helix::widget_size
