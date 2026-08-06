@@ -834,6 +834,196 @@ Per-slot error indicators and per-unit error badges, driven by `SlotInfo.error` 
 
 ---
 
+## Filament Op Dispatch: Which Surface Owns What
+
+More than one screen can start a Load. Every time one of them grew its own answer to
+"what do I do when there is no AMS backend?", the answers diverged: a full three-tier
+fallback on the Filament panel, a silent return in the AMS sidebar, and a navigate-away in
+both runout dialogs. The already-mounted guard existed only in the sidebar, so the same
+firmware no-op that the sidebar refused left the Filament panel's Load button spinning for
+the full 120 s guard timeout (bundle 9KRXZ62P). On Snapmaker U1 the two surfaces sent
+*different G-code for the same button label* — `T{n}`, which seats the carriage and feeds
+nothing, versus `AUTO_FEEDING EXTRUDER={n} LOAD=1`.
+
+The decision is now one shared, display-free layer; the surfaces own only how the answer is
+presented.
+
+| Header | Owns |
+|--------|------|
+| `include/filament_op_dispatch.h` | `plan_load()` / `plan_unload()` — which tier, which backend call, or which refusal. Also `unload_target_is_loaded()`. Header-only, takes plain values (`AmsSystemInfo` + `BackendCaps`), no `AmsBackend*` |
+| `include/filament_op_slot_resolver.h` | `resolve_op_button_slot()` — which slot a tool's buttons act on; `compute_op_button_gating()` — whether Load/Unload are enabled |
+| `src/ui/filament_op_router.{h,cpp}` | Tiers 2 and 3: `dispatch_filament_macro()` with its `ParamPolicy`, the shared `MacroParamModal`, and `filament_load_fallback_gcode()` / `filament_unload_fallback_gcode()` |
+
+Tier 1 deliberately stays with the callers — the backend call is inseparable from each
+surface's own guard, stepper, and spinner bookkeeping.
+
+### The four dispatch surfaces
+
+| Surface | Entry point | Raised by | Dispatches? |
+|---------|-------------|-----------|-------------|
+| Filament panel | `FilamentPanel::execute_load()` / `execute_unload()` | The Load / Unload buttons on the Filament nav panel | Yes — full ladder, `ParamPolicy::Prompt` |
+| AMS operation sidebar | `AmsOperationSidebar::handle_load_with_preheat(slot)` / `handle_unload(slot)` | Slot grid + context menu on the AMS panel and the AMS Overview panel (both own a `unique_ptr` to one) | Yes — full ladder, `ParamPolicy::Prompt` |
+| Mid-print runout dialog | `FilamentRunoutHandler::dispatch_load()` | `RunoutGuidanceModal`'s Load button during a print or runout pause | Yes — full ladder, `ParamPolicy::Suppress` |
+| Idle runout dialog | `PrintStatusWidget::show_idle_runout_modal()` | A real runout detected while STANDBY / COMPLETE / CANCELLED | **No** — hands off to the Filament panel |
+
+The idle dialog is the one surviving "navigate away", and it is correct *because* it never
+dispatches: with the printer idle the Filament panel is reachable, so `set_active(PanelId::
+Filament)` inherits that panel's routing instead of forking a fourth answer. That is only
+true while it stays a pure hand-off. The moment it wants to load without leaving the modal,
+it goes through `plan_load()` like the other three.
+
+### The three-tier ladder
+
+| Tier | What runs | Chosen when |
+|------|-----------|-------------|
+| 1 `FilamentTier::AmsBackend` | `load_filament()`, `unload_filament()`, or `change_tool()` — carried in `FilamentOpPlan::ams_call` / `ams_arg` | A backend owns the operation (see the two asymmetries below) |
+| 2 `FilamentTier::Macro` | The user's configured `StandardMacroSlot::LoadFilament` / `UnloadFilament`, via `dispatch_filament_macro()` | No tier 1, and the slot is non-empty |
+| 3 `FilamentTier::RawGcode` | `filament_load_fallback_gcode()` (fast bowden move, then a slow push into the melt zone) or `filament_unload_fallback_gcode()` (tip-shape, then a long retract) | Nothing else is configured |
+| — `FilamentTier::Refused` | Nothing. `FilamentOpPlan::refusal` says why | See the refusal table |
+
+`AmsCall::ChangeTool` carries a **tool number**, not a slot index — it comes from the target
+slot's `mapped_tool`. Every other call takes the slot.
+
+| Refusal | Meaning | Reached from |
+|---------|---------|--------------|
+| `SelectSlot` | The backend wants a slot and none resolved | Load only |
+| `AlreadyMounted` | The requested tool is already on the carriage. `SELECT_TOOL` on it is a firmware no-op (9KRXZ62P) | Load only, tool changers only |
+| `NothingLoaded` | No slot resolved, or nothing at that slot worth pulling | Unload only — its *only* refusal |
+
+### Two deliberate asymmetries between load and unload
+
+These are not oversights, and symmetrising them breaks real printers.
+
+**1. Bypass falls through on load and stays on the backend for unload.**
+
+`plan_load()` gates tier 1 on `caps.present && caps.requires_slot_selection_for_load`, not on
+the backend merely existing. `AmsBackend::requires_slot_selection_for_load()` defaults to
+`!is_bypass_active()`, so an active bypass drops straight to the user's `LOAD_FILAMENT`
+macro — that is how a bypass spool loads at all.
+
+`plan_unload()` gates tier 1 on `caps.present` alone. AFC runs the user's unload macro
+itself as part of its own unload, so routing a bypass unload to tier 2 would run that macro
+twice.
+
+**2. Load-vs-swap and already-mounted exist only on the load side.**
+
+A machine with filament already seated cannot simply feed another lane, so when
+`needs_unload_before_load(info)` is true and the target slot has a `mapped_tool`, `plan_load()`
+rewrites the call to `change_tool(mapped_tool)`. Centralized so the UI and the backend agree
+(#968). A target with **no** tool mapping falls through to a plain `load_filament()` rather
+than synthesising an unload: every backend that arm could reach already chains the unload
+inside its own load (ACE's `change_tool()` *is* `load_filament()`; QIDI prepends the unload
+itself; AFC's `CHANGE_TOOL` is the toolchange verb), and Happy Hare — the one backend whose
+`load_filament()` is a bare `MMU_LOAD GATE={n}` — is precisely the backend the UI is
+forbidden to help (`allows_implicit_chaining()` is false, #1229). Unload asks none of this.
+
+Neither asymmetry is visible in `plan_unload()`'s signature, which is why both call sites
+carry a comment saying so. Read `include/filament_op_dispatch.h` before "fixing" either.
+
+### Shared policy vs per-surface presentation
+
+**Shared — one answer, in the planner.** A second answer here is a user-visible bug.
+
+| Question | Answered by |
+|----------|-------------|
+| Which tier does this operation take? | `plan_load()` / `plan_unload()` |
+| Is this a fresh load or a swap? | `plan_load()` via `needs_unload_before_load()` -> `AmsCall::ChangeTool` |
+| Is the requested tool already mounted? | `plan_load()` -> `FilamentRefusal::AlreadyMounted` |
+| Is there anything at this slot to unload? | `unload_target_is_loaded()` — actively loaded, **or** filament at the toolhead, **or** it is the current slot (the runout-recovery case, #995 / #1199) |
+| Which slot do this tool's buttons act on? | `resolve_op_button_slot()` |
+| Are Load / Unload enabled right now? | `compute_op_button_gating()` — load state *and* print state |
+
+**Per-surface — presentation, and correctly different.**
+
+| Surface | Owns |
+|---------|------|
+| `FilamentPanel` | `begin_operation_guard()` / `operation_guard_`, the `backend_op_active_` gate on `ams_action_observer_`, the on-button spinner (`op_started` / `op_succeeded` / `op_failed`), and `navigate_to_ams_panel()` on `SelectSlot` |
+| `AmsOperationSidebar` | The step model (`start_operation(StepOperationType::LOAD_FRESH / LOAD_SWAP / UNLOAD)`) and the preheat state machine (`get_load_temp_for_slot()`, `pending_load_slot_`, `check_pending_load()`, `ui_initiated_heat_`) |
+| `FilamentRunoutHandler` | Staying put. Every outcome is a toast; navigating would tear down the dialog the user is standing in |
+| All three | Toast copy, and whether to toast at all |
+
+Two consequences worth naming, because they look like bugs and are not:
+
+- **The sidebar is silent on a refusal; the panel toasts.** The AMS grid already highlights
+  the mounted slot and greys the unpickable ones, so a toast there narrates what the user
+  can see. On the Filament panel the button is the only feedback there is.
+- **Tool changers skip the sidebar's preheat entirely.** `SELECT_TOOL` owns its own heat
+  sequence and the backend sets `SELECTING` at dispatch, resolving on the macro ack (#1183);
+  an optimistic `HEATING` stepper would fight it. Only the *decision* is shared.
+
+Two more where the surface deliberately does **not** use the plan's value:
+
+- The sidebar **re-plans after preheat** (`check_pending_load()`) instead of replaying the
+  plan it computed before heating — the firmware may have picked up or dropped a tool while
+  the nozzle came up, which flips load-vs-swap.
+- The sidebar passes its caller's raw `slot_index` to `unload_filament()`, **not**
+  `plan.ams_arg`: its own Unload button means "whatever is active" and passes `-1`, which the
+  AD5X IFS backend keys on to send `IFS_REMOVE_CURRENT_PRUTOK`. The Filament panel does the
+  opposite and passes its resolved slot explicitly, because re-resolving `current_slot` inside
+  the backend was the U1 wrong-tool unload bug.
+
+### The lifetime hazard in tier 2
+
+`get_filament_param_modal()` returns a **function-local static** — one `MacroParamModal` for
+the whole process. `MacroParamModal` stores its `on_execute_` callback and **does not clear it
+on dismiss**; only the next `show_for_*()` overwrites it. A callback handed to that modal can
+therefore fire arbitrarily later, long after the object that built it is gone.
+
+| Surface | Lifetime | What tier 2 must capture |
+|---------|----------|--------------------------|
+| `FilamentPanel` | Immortal singleton | Bare `[this]` is safe, annotated `[L012]` |
+| `AmsOperationSidebar` | `unique_ptr` on the AMS / AMS Overview panel — destroyed when the panel closes | **Must** capture `lifetime_.token()` and re-enter through `token.defer(tag, ...)`, which re-checks the generation on the main thread. A bare `this` here is a live use-after-free |
+| `FilamentRunoutHandler` | Owned by the print-status panel | Uses `ParamPolicy::Suppress`, so `run` fires synchronously inside `dispatch_filament_macro()` and is never retained |
+
+`ParamPolicy::Suppress` is not only a lifetime dodge — it is required for any surface that
+already owns a dialog. A `MacroParamModal` raised from the runout dialog would stack on top of
+a live modal whose observers keep firing underneath it.
+
+`dispatch_filament_macro()` returns **true when a prompt was raised**, which is exactly the
+"your callback outlived this call" signal: `false` means `run` already executed with an empty
+`MacroParamResult`. Tests reach the prompt branch without a screen via
+`set_filament_param_prompter()`; pass a default-constructed `ParamPrompter` to restore the
+shared modal.
+
+### Rules for contributors
+
+**Adding a fifth dispatch surface.** Do not write another ladder.
+
+1. Read the backend's answers into a `BackendCaps` (`present`,
+   `requires_slot_selection_for_load()`, `needs_unload_before_load(info)`, `get_type() ==
+   AmsType::TOOL_CHANGER`) — the existing surfaces do this in three or four lines each.
+2. Call `plan_load()` / `plan_unload()` and `switch` on `plan.tier`. Handle all four arms,
+   including `Refused`.
+3. Tier 1 is yours (the backend call sits inside your own guard/stepper bookkeeping). Tiers 2
+   and 3 come from `dispatch_filament_macro()` and the two fallback-G-code helpers — do not
+   re-derive either.
+4. Pick a `ParamPolicy`: `Suppress` if your surface already owns a dialog, `Prompt`
+   otherwise. If you pick `Prompt` and you are not immortal, capture a lifetime token.
+5. Add a case to `tests/unit/test_filament_dispatch_surfaces.cpp` — its whole point is that
+   all surfaces answer the same question the same way.
+
+**Adding a new backend.** Do not add a UI branch for it. The plan is driven entirely by
+`requires_slot_selection_for_load()`, `needs_unload_before_load()`, `is_bypass_active()`,
+`get_type()`, `slot_is_actively_loaded()`, and `slot_has_filament_at_toolhead()`. If the plan
+is wrong for your hardware, the fix is in one of those predicates or in
+`filament_op_dispatch.h` — never in a surface. See also "Per-Slot Load Authority" and
+"Developer Guide: Adding a New Backend".
+
+**Deciding whether a new question is shared policy or presentation.** In order:
+
+1. *Would two surfaces answering it differently be a bug the user could see?* Yes -> shared.
+   The four divergences above all failed this test.
+2. *Does the answer depend on the printer, the firmware, or the backend — or on which screen
+   the user is standing on?* Printer -> shared. Screen -> presentation.
+3. *Does answering it need a widget, a timer, a stepper, or `this`?* If yes it cannot live in
+   the planner, which takes plain values by design so the whole decision compiles and runs in
+   a binary with no printer and no display (`tests/unit/test_filament_op_dispatch.cpp`,
+   `test_filament_op_slot_resolver.cpp`). If a question fails 3 but passes 1, split it: the
+   *rule* goes in the planner, the *effect* stays in the surface. That split is exactly what
+   `plan.ams_call` is.
+
+---
+
 ## Swap Preheat: Hold Previous Filament Temp
 
 When a user switches filament, the nozzle must stay hot enough to purge the material already in the melt zone. Dropping straight to the new material's temperature (e.g. ABS 250 → TPU 230) leaves un-purged high-temp filament clogging the path.
