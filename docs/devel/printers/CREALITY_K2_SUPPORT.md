@@ -316,7 +316,7 @@ Units that are not connected report all fields as `"None"` or `"-1"`.
 
 ### Community Kalico port
 
-Some K2 Plus owners run a community Kalico (Danger-Klipper) port instead of Creality's firmware — [`Jacob10383/kalico`](https://github.com/Jacob10383/kalico), a fork of `KalicoCrew/kalico`, with Creality's closed CFS module replaced by a clean-room `box.py`. Moonraker reports the replacement modules as **untracked** files (`box.py`, `box_addr.py`, `box_catalog.py`, `box_change.py`, `box_protocol.py`): they are dropped in by an installer, not committed, and are **not published in any public repo** as of 2026-08. First seen in debug bundle QJKZEMTS on v0.99.106.
+Some K2 Plus owners run a community Kalico (Danger-Klipper) port instead of Creality's firmware — [`Jacob10383/kalico`](https://github.com/Jacob10383/kalico), a fork of `KalicoCrew/kalico`, with Creality's closed CFS module replaced by a clean-room `box.py`. Moonraker reports the replacement modules as **untracked** files (`box.py`, `box_addr.py`, `box_catalog.py`, `box_change.py`, `box_protocol.py`): they are dropped in by the port's installer and are not committed to the kalico fork — searching GitHub for them finds nothing. They are, however, **downloadable**: see [Getting the module source](#getting-the-module-source). First seen in debug bundle QJKZEMTS on v0.99.106.
 
 **Identifying it.** The printer looks like stock K2 Plus hardware in every model signal, so identify it from the firmware:
 
@@ -328,6 +328,27 @@ Some K2 Plus owners run a community Kalico (Danger-Klipper) port instead of Crea
 | Config | `printer.cfg` | `[box]` with `box_count = N` |
 
 Stock CFS macros are **entirely absent**: zero `CR_BOX_*`, zero `BOX_MODIFY_TN_DATA`, zero `M8200`.
+
+#### Getting the module source
+
+The port ships from `https://firmware.jacobean.xyz`, and every artifact is content-addressed, so the box modules can be read **without flashing anything and without pulling the 300 MB rootfs**. Do this before reviewing any Fork change — the command surface is not guessable and the modules are the only authority.
+
+```bash
+curl -sS -o install.py https://firmware.jacobean.xyz/install.py   # READ it, never run it
+grep -E '^(FIRMWARE_VERSION|HELIX_VERSION)' install.py           # pinned release + HelixScreen build
+curl -sS https://firmware.jacobean.xyz/<FIRMWARE_VERSION>/index  # rootfs/kernel/swap/bootstrap/extras digests
+```
+
+The index's `extras.manifest_sha256` points at a manifest listing every Klipper module with its own `sha256`. Objects live at `/<FIRMWARE_VERSION>/o/<sha256>`, so fetching one module is:
+
+```bash
+curl -sS -o box.py https://firmware.jacobean.xyz/<FIRMWARE_VERSION>/o/<box.py sha256 from the manifest>
+shasum -a 256 box.py   # must match the manifest digest
+```
+
+`install.py` is a **kernel and rootfs flasher**. Downloading and reading it is safe; executing it is not. Nothing in this workflow needs it to run.
+
+Verified 2026-08-06 against `FIRMWARE_VERSION = 6.18` (which pins HelixScreen `v0.99.87`): `box.py` 2754 lines, `WIDGET_VERSION = 2`. Note that `WIDGET_VERSION` has **not** moved across the releases seen so far, so it identifies the module but does *not* version its command set — a command added in a later firmware cannot be feature-detected from the payload. `_register_commands` in `box.py` plus `_register_t_commands` (the per-slot `T<n>` handlers, registered only after bus enumeration) are the full command surface.
 
 #### Flat schema fields
 
