@@ -82,6 +82,34 @@ ThumbnailCache::ThumbnailCache()
     // Now that directory exists and config is loaded, calculate dynamic size
     max_size_ = calculate_dynamic_max_size(cache_dir_, configured_max_);
 
+    // HELIX_THUMB_CACHE_MAX_MB — force a hard cache ceiling for testing.
+    //
+    // Applied AFTER the dynamic sizing and deliberately not through it:
+    // calculate_dynamic_max_size() clamps its result up to MIN_CACHE_SIZE
+    // (5 MB), so feeding a small value in through configured_max_ gets raised
+    // straight back and eviction still never fires. Making eviction reachable
+    // is the entire point here — without it the decode-vs-evict interaction
+    // that debug bundle 6F3QJLFG implicates cannot be exercised under a
+    // sanitizer, only in the standalone stress test (#960).
+    //
+    // Env rather than config so it composes with HELIX_CACHE_DIR in a one-line
+    // launch, matching how the rest of the test surface is driven.
+    if (const char* env_max = std::getenv("HELIX_THUMB_CACHE_MAX_MB")) {
+        char* end = nullptr;
+        const long mb = std::strtol(env_max, &end, 10);
+        if (end != env_max && mb > 0) {
+            configured_max_ = static_cast<size_t>(mb) * 1024 * 1024;
+            max_size_ = configured_max_;
+            spdlog::info("[ThumbnailCache] HELIX_THUMB_CACHE_MAX_MB={} — cache ceiling forced "
+                         "to {} MB (dynamic sizing and the {} MB floor bypassed)",
+                         mb, mb, MIN_CACHE_SIZE / (1024 * 1024));
+        } else {
+            spdlog::warn("[ThumbnailCache] HELIX_THUMB_CACHE_MAX_MB='{}' is not a positive "
+                         "integer — ignoring",
+                         env_max);
+        }
+    }
+
     // Sync ThumbnailProcessor's cache dir with ours, and subscribe to the
     // .bin writes it will make there. Directory first: the journal is only
     // meaningful for writes aimed at cache_dir_, and index_file_locked()
