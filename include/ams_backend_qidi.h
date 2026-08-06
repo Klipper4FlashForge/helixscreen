@@ -73,6 +73,14 @@ class AmsBackendQidi : public AmsSubscriptionBackend {
     [[nodiscard]] AmsSystemInfo get_system_info() const override;
     [[nodiscard]] helix::printer::ToolMappingCapabilities
     get_tool_mapping_capabilities() const override;
+
+    /// Forward map (index = tool, value = global slot), derived from the
+    /// per-slot mapped_tool the save_variables read-path writes. The base
+    /// default returns {}, which — on a backend that advertises tool mapping —
+    /// silently disables the print-start remap snapshot/restore and the AMS
+    /// context menu's mapping read, and makes AmsState fall back to a 1:1
+    /// topology that contradicts a user remap.
+    [[nodiscard]] std::vector<int> get_tool_mapping() const override;
     // QIDI Box reassigns a logical tool to a physical slot by rewriting the
     // save_variables entry (value_t<N>="slot<M>") that the stock T<N> macros
     // read at load time — applied via set_tool_mapping(). Same shape as CFS, so
@@ -159,6 +167,23 @@ class AmsBackendQidi : public AmsSubscriptionBackend {
     /// Input is the inner `variables` object (already unwrapped from the
     /// `save_variables.variables` envelope).
     void parse_save_variables(const nlohmann::json& variables);
+
+    /// Re-derive system_info_.tool_to_slot_map from the per-slot mapped_tool
+    /// values, and write the normalised result back onto the slots.
+    ///
+    /// The Box states its mapping one way only — save_variables value_t<N>
+    /// names the slot tool N prints from — so the read-path naturally writes
+    /// only SlotInfo::mapped_tool. AmsSystemInfo carries the forward map as
+    /// well, and consumers split across the two: the AMS panel badges a lane
+    /// from mapped_tool, while the filament panel resolves which lane the
+    /// Load/Unload buttons act on through tool_to_slot_map. Publishing one
+    /// without the other gated the buttons on the wrong lane after a remap.
+    ///
+    /// Both directions are produced by a single SlotRegistry pass rather than
+    /// by two hand-written writers, so they cannot drift.
+    ///
+    /// Caller must hold mutex_.
+    void rebuild_tool_map_locked();
 
     /// Scan notification for `heater_generic heater_box<N>` and
     /// `aht20_f heater_box<N>` entries; update unit environment with the
