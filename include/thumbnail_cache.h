@@ -407,6 +407,26 @@ class ThumbnailCache {
     }
 
   private:
+    /**
+     * @brief Wrap a caller callback so it always fires on the LVGL main thread
+     *
+     * Callers hand us callbacks that end up setting LVGL image sources, but the
+     * thread a result arrives on depends on which internal path produced it:
+     * a pre-scaled hit answers inline on the caller's thread, a download error
+     * answers on an HttpExecutor worker, and a processor-shutdown error answers
+     * on whichever thread reached the processor — which, on the download-success
+     * path, is a worker. `process_and_callback` then converts that error into a
+     * *success* via the PNG fallback, so even fetch_optimized's success could be
+     * delivered off-thread.
+     *
+     * Rather than ask each of those paths to remember, both public entry points
+     * wrap the caller's callbacks once, here. run_on_main() runs inline when
+     * already on the main thread, so the synchronous cache-hit behaviour callers
+     * have today is unchanged. See prestonbrown/helixscreen#960, #1202.
+     */
+    static SuccessCallback on_main(SuccessCallback cb);
+    static ErrorCallback on_main_err(ErrorCallback cb);
+
     std::string cache_dir_; ///< Absolute path to cache directory (const after construction)
     size_t max_size_;       ///< Maximum cache size before LRU eviction — guarded by mutex_
     size_t disk_critical_;  ///< Stop caching below this available space (const after construction)

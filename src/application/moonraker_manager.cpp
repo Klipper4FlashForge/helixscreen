@@ -169,7 +169,18 @@ int MoonrakerManager::connect(const std::string& websocket_url, const std::strin
 
     // Set HTTP base URL for API
     if (m_api) {
-        m_api->set_http_base_url(http_base_url);
+        std::string effective_http_base = http_base_url;
+#ifdef HELIX_ENABLE_MOCKS
+        // Under --test the configured host is a real printer address the mock
+        // never talks to, so file downloads would hang or fail. Point them at
+        // the loopback mock instead.
+        if (m_mock_http && m_mock_http->running()) {
+            effective_http_base = m_mock_http->base_url();
+            spdlog::info("[MoonrakerManager] Mock mode — HTTP file base URL redirected to {}",
+                         effective_http_base);
+        }
+#endif
+        m_api->set_http_base_url(effective_http_base);
     }
 
     // Connect client - on_connected triggers printer discovery which subscribes to status updates
@@ -356,6 +367,17 @@ void MoonrakerManager::create_client(const RuntimeConfig& runtime_config) {
             mock->set_mmu_enabled(false);
         }
         m_client = std::move(mock);
+
+        // Thumbnails do not travel over the WebSocket the mock client answers —
+        // download_thumbnail() issues a real HTTP GET on an HttpExecutor worker.
+        // Without something listening, --test never exercises the cold-fetch
+        // pipeline at all (download → decode → prescale → evict). Stand up a
+        // loopback server so it does. Best-effort: a failure here just leaves
+        // the configured host in place, exactly as before.
+        m_mock_http = std::make_unique<helix::MockHttpFileServer>();
+        if (!m_mock_http->start()) {
+            m_mock_http.reset();
+        }
     } else {
 #endif
         spdlog::debug("[MoonrakerManager] Creating REAL client");

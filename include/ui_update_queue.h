@@ -49,6 +49,7 @@
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <thread>
 
 namespace helix::ui {
 
@@ -125,8 +126,29 @@ class UpdateQueue {
         crash_handler::register_previous_tag_ring(previous_tag_ring_, previous_tag_count_ring_,
                                                   kPreviousTagRingSize, &previous_tag_next_);
 
+        // init() runs on the LVGL thread by construction — it creates an LVGL
+        // timer. Record that identity so callers can ask whether they are
+        // already on the main thread instead of marshalling unconditionally
+        // (see helix::ui::is_main_thread).
+        main_thread_id_ = std::this_thread::get_id();
+        main_thread_known_.store(true, std::memory_order_release);
+
         initialized_ = true;
         spdlog::debug("[UpdateQueue] Initialized - timer created for queue drain");
+    }
+
+    /**
+     * @brief Whether the calling thread is the LVGL main thread
+     *
+     * Before init() this answers true: the only code running that early is
+     * startup on the main thread, and answering false there would push work
+     * onto a queue that cannot drain yet.
+     */
+    static bool is_main_thread() {
+        if (!main_thread_known_.load(std::memory_order_acquire)) {
+            return true;
+        }
+        return std::this_thread::get_id() == main_thread_id_;
     }
 
     /**
@@ -466,6 +488,13 @@ class UpdateQueue {
     static inline volatile uint32_t previous_tag_count_ring_[kPreviousTagRingSize] = {};
     static inline volatile unsigned int previous_tag_next_ = 0;
 
+    /// Identity of the LVGL main thread, captured in init(). Read from any
+    /// thread via is_main_thread(); `main_thread_known_` orders the write so a
+    /// racing reader either sees "not yet known" (and assumes main, which is
+    /// correct that early) or a fully-published id.
+    static inline std::thread::id main_thread_id_{};
+    static inline std::atomic<bool> main_thread_known_{false};
+
     /// Count of queued callbacks that threw. Swallowing the exception is
     /// deliberate — one bad callback must not take down the whole batch — but
     /// that also makes the failure invisible to every caller, including a test
@@ -510,6 +539,38 @@ class UpdateQueue {
  *
  * @param callback Function to execute on the main thread
  */
+/**
+ * @brief Whether the caller is already on the LVGL main thread
+ */
+inline bool is_main_thread() {
+    return UpdateQueue::is_main_thread();
+}
+
+/**
+ * @brief Run @p fn on the main thread — now if already there, else queued
+ *
+ * For code that can be reached from either side of a thread boundary and must
+ * not care which. Running inline when already on the main thread preserves
+ * synchronous semantics for callers that have them today (a cache hit that
+ * applied in the same tick keeps applying in the same tick), while a background
+ * caller is marshalled instead of touching LVGL directly.
+ *
+ * Use this at a subsystem's PUBLIC boundary, so the guarantee holds for every
+ * internal path at once. Wrapping individual call sites is what let the
+ * ThumbnailCache download-error and processor-shutdown paths keep delivering on
+ * an HttpExecutor worker after the obvious ones were fixed (#960).
+ *
+ * @param tag String literal for crash diagnostics (see queue()).
+ * @param fn  Work to run on the main thread.
+ */
+inline void run_on_main(const char* tag, UpdateCallback fn) {
+    if (is_main_thread()) {
+        fn();
+        return;
+    }
+    UpdateQueue::instance().queue(tag, std::move(fn));
+}
+
 inline void queue_update(UpdateCallback callback) {
     UpdateQueue::instance().queue(std::move(callback));
 }

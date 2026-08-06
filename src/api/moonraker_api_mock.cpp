@@ -669,10 +669,26 @@ void MoonrakerFileTransferAPIMock::download_thumbnail(const std::string& thumbna
                                                       const std::string& cache_path,
                                                       StringCallback on_success,
                                                       ErrorCallback on_error) {
-    (void)on_error; // Unused - mock falls back to placeholder on failure
-
     spdlog::debug("[MoonrakerAPIMock] download_thumbnail: path='{}' -> cache='{}'", thumbnail_path,
                   cache_path);
+
+    // HELIX_MOCK_REMOTE_THUMBS=1 — go through the REAL transfer implementation
+    // so the request actually crosses HTTP to MockHttpFileServer. Resolving the
+    // file locally here is faster and is the right default, but it means the
+    // download → HttpExecutor worker → decode → prescale → evict pipeline is
+    // never executed under --test, which is the pipeline bundle 6F3QJLFG
+    // implicates (#960). This is the only way to reach it without a printer.
+    static const bool remote_thumbs = [] {
+        const char* v = std::getenv("HELIX_MOCK_REMOTE_THUMBS");
+        return v && v[0] && std::string(v) != "0";
+    }();
+    if (remote_thumbs) {
+        MoonrakerFileTransferAPI::download_thumbnail(thumbnail_path, cache_path,
+                                                     std::move(on_success), std::move(on_error));
+        return;
+    }
+
+    (void)on_error; // Unused below - mock falls back to placeholder on failure
 
     namespace fs = std::filesystem;
 

@@ -3,6 +3,8 @@
 
 #include "thumbnail_cache.h"
 
+#include "ui_update_queue.h"
+
 #include "app_globals.h"
 #include "config.h"
 #include "system/helix_paths.h"
@@ -555,8 +557,35 @@ void ThumbnailCache::evict_locked() {
     }
 }
 
+// ============================================================================
+// Main-thread callback marshalling
+// ============================================================================
+
+ThumbnailCache::SuccessCallback ThumbnailCache::on_main(SuccessCallback cb) {
+    if (!cb) {
+        return cb;
+    }
+    return [cb = std::move(cb)](const std::string& path) {
+        helix::ui::run_on_main("ThumbnailCache::on_success", [cb, path]() { cb(path); });
+    };
+}
+
+ThumbnailCache::ErrorCallback ThumbnailCache::on_main_err(ErrorCallback cb) {
+    if (!cb) {
+        return cb;
+    }
+    return [cb = std::move(cb)](const std::string& error) {
+        helix::ui::run_on_main("ThumbnailCache::on_error", [cb, error]() { cb(error); });
+    };
+}
+
 void ThumbnailCache::fetch(MoonrakerAPI* api, const std::string& relative_path,
                            SuccessCallback on_success, ErrorCallback on_error) {
+    // Marshal once, at the boundary — see on_main() for why per-path wrapping
+    // does not hold. Everything below may now deliver from any thread.
+    on_success = on_main(std::move(on_success));
+    on_error = on_main_err(std::move(on_error));
+
     if (relative_path.empty()) {
         if (on_error) {
             on_error("Empty thumbnail path");
@@ -848,6 +877,12 @@ void ThumbnailCache::fetch_optimized(MoonrakerAPI* api, const std::string& relat
                                      const helix::ThumbnailTarget& target,
                                      SuccessCallback on_success, ErrorCallback on_error,
                                      time_t source_modified) {
+    // Marshal once, at the boundary — see on_main(). This covers the download
+    // error path, and the processor-shutdown error that process_and_callback
+    // turns back into a success, neither of which is obvious at the call sites.
+    on_success = on_main(std::move(on_success));
+    on_error = on_main_err(std::move(on_error));
+
     if (relative_path.empty()) {
         if (on_error) {
             on_error("Empty thumbnail path");
