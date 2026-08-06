@@ -291,14 +291,13 @@ void NozzleTempsWidget::on_size_changed(int colspan, int rowspan, int width_px, 
     if (!container)
         return;
 
-    current_colspan_ = colspan;
-
     const int pad_x = theme_manager_get_spacing("space_xs"); // root style_pad_all per side
     const int avail_px = width_px - 2 * pad_x;
 
     // Pre-layout / degenerate width: fall back to single full-width column with
     // long labels rather than dividing by an unknown width.
     if (width_px <= 0 || avail_px <= 0) {
+        use_long_label_ = true;
         lv_obj_set_style_flex_flow(container, LV_FLEX_FLOW_COLUMN, 0);
         lv_obj_set_style_pad_column(container, 0, 0);
         lv_obj_set_style_flex_main_place(container, LV_FLEX_ALIGN_START, 0);
@@ -346,6 +345,7 @@ void NozzleTempsWidget::on_size_changed(int colspan, int rowspan, int width_px, 
 
     const NozzleLayoutDecision decision = decide_nozzle_layout(
         avail_px, gap_px, long_row_px, short_row_px, static_cast<int>(extruder_rows_.size()));
+    use_long_label_ = decision.use_long_label;
 
     if (decision.columns == 2) {
         lv_obj_set_style_flex_flow(container, LV_FLEX_FLOW_ROW_WRAP, 0);
@@ -433,7 +433,12 @@ void NozzleTempsWidget::create_extruder_row(lv_obj_t* container, ExtruderRow& ro
     row.short_name = std::move(short_name);
     row.long_name = std::move(long_name);
 
-    const std::string& initial_label = (current_colspan_ >= 2) ? row.long_name : row.short_name;
+    // A row built by a rebuild that happens after the widget already knows its
+    // real pixel width (e.g. late tool discovery) reuses that width's label
+    // decision (use_long_label_, last set by decide_nozzle_layout() in
+    // on_size_changed) rather than a span, so it never disagrees with the
+    // rows already on screen.
+    const std::string& initial_label = use_long_label_ ? row.long_name : row.short_name;
 
     // Create row from XML template — layout, fonts, colors are all declarative
     const char* attrs[] = {"tool_name", initial_label.c_str(), nullptr};

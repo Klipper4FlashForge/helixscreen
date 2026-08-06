@@ -85,8 +85,15 @@ class NozzleTempsWidget : public PanelWidget {
     int rebuild_gen_ = 0;     // Generation counter to break infinite rebuild cycles (L074)
     bool rebuilding_ = false; // Re-entrancy guard: drain() inside clear_rows() can fire
                               // version_observer_ which calls rebuild_rows() again (#723)
-    int current_colspan_ =
-        1; // Last colspan from on_size_changed; rows pick short/long label off this
+    // decide_nozzle_layout()'s last verdict on whether the long label form
+    // ("Nozzle 1") fits, as opposed to the short one ("T0"). A row built by a
+    // *later* rebuild_rows() (e.g. late tool discovery bumping the extruder
+    // version after the widget already knows its real pixel width) picks its
+    // initial label off this instead of re-deriving from colspan, so it never
+    // disagrees with the pixel-based decision already applied to existing
+    // rows. Defaults true to match decide_nozzle_layout()'s own degenerate-
+    // width default and the pre-layout fallback branch below.
+    bool use_long_label_ = true;
 
     // MUST stay declared LAST: reverse-declaration destruction makes this the
     // first member torn down, invalidating every captured token before any
