@@ -1,6 +1,7 @@
 // Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "../lvgl_test_fixture.h"
 #include "ams_backend_ad5x_ifs.h"
 #include "ams_backend_afc.h"
 #include "ams_state.h"
@@ -11,8 +12,6 @@
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
 #include "printer_state.h"
-
-#include "../lvgl_test_fixture.h"
 
 #include <chrono>
 #include <filesystem>
@@ -1352,8 +1351,9 @@ TEST_CASE("AD5X IFS indeterminate: a fresh progress signal clears the flag (#106
 // run_action_timeout(): that is the only signal available when the WebSocket feed
 // has stalled (#1065 row 14). If this regresses, the "Working…" state never
 // appears on a real hang even though the flag logic is correct.
-TEST_CASE("AD5X IFS indeterminate: get_system_info() trips the flag on its own (#1065 watchdog path)",
-          "[ams][ad5x_ifs][1065]") {
+TEST_CASE(
+    "AD5X IFS indeterminate: get_system_info() trips the flag on its own (#1065 watchdog path)",
+    "[ams][ad5x_ifs][1065]") {
     AmsBackendAd5xIfs backend(nullptr, nullptr);
     Ad5xIfsTestAccess::set_head_filament(backend, false);
     Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/false);
@@ -1560,8 +1560,9 @@ TEST_CASE("AD5X IFS phase: load sequence (temp + head sensor)", "[ams][ad5x_ifs]
     REQUIRE_FALSE(Ad5xIfsTestAccess::operation_detail(backend).empty());
 }
 
-TEST_CASE("AD5X IFS get_system_info surfaces the phase machine's operation_phase/detail (#1065 Bug 2)",
-          "[ams][ad5x_ifs][1065]") {
+TEST_CASE(
+    "AD5X IFS get_system_info surfaces the phase machine's operation_phase/detail (#1065 Bug 2)",
+    "[ams][ad5x_ifs][1065]") {
     // The phase machine writes operation_phase (0/1/2) + operation_detail into
     // system_info_, but AmsState::sync_from_backend reads them off the
     // AmsSystemInfo that get_system_info() returns to drive the ams_operation_phase
@@ -1573,7 +1574,7 @@ TEST_CASE("AD5X IFS get_system_info surfaces the phase machine's operation_phase
     Ad5xIfsTestAccess::set_head_filament(backend, false);
     Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/false); // load -> HEATING, phase 0
 
-    REQUIRE(Ad5xIfsTestAccess::operation_phase(backend) == 0);    // internal phase-machine state
+    REQUIRE(Ad5xIfsTestAccess::operation_phase(backend) == 0); // internal phase-machine state
     REQUIRE_FALSE(Ad5xIfsTestAccess::operation_detail(backend).empty());
 
     // get_system_info() is the UI-facing view — it MUST carry the same values.
@@ -2711,7 +2712,7 @@ TEST_CASE("AD5X IFS stale FFMInfo.channel at an empty lane is not adopted as sea
         AmsBackendAd5xIfs::ZColorSilentResult r;
         r.saw_valid_response = true;
         r.ifs_active = true;
-        r.ifs_chan = 3;                                          // real seated lane = 3
+        r.ifs_chan = 3;                                             // real seated lane = 3
         r.ifs_ports = std::array<bool, 4>{true, true, true, false}; // lane 4 empty
         r.slots[0] = AmsBackendAd5xIfs::ZColorSlot{"PLA", "111111"};
         r.slots[1] = AmsBackendAd5xIfs::ZColorSlot{"PETG", "222222"};
@@ -2722,7 +2723,7 @@ TEST_CASE("AD5X IFS stale FFMInfo.channel at an empty lane is not adopted as sea
     // Seated follows the present lane (Chan=3), NOT the stale FFMInfo.channel=4.
     REQUIRE(Ad5xIfsTestAccess::seated_chan(backend) == 3);
     REQUIRE(Ad5xIfsTestAccess::current_slot(backend) == 2); // lane 3 == slot index 2
-    REQUIRE_FALSE(backend.get_slot_info(3).is_present());    // lane 4 does not flash loaded
+    REQUIRE_FALSE(backend.get_slot_info(3).is_present());   // lane 4 does not flash loaded
     REQUIRE(backend.get_slot_info(3).status == SlotStatus::EMPTY);
     REQUIRE(backend.get_slot_info(2).is_present());
 }
@@ -3497,7 +3498,8 @@ TEST_CASE("AD5X IFS dialog slot-select does not steal the seated channel (#1065 
     dialog_select.saw_valid_response = true;
     dialog_select.ifs_active = true;
     dialog_select.ifs_chan = 3; // dialog-tracked, NOT a physical seating
-    dialog_select.ifs_ports = std::array<bool, AmsBackendAd5xIfs::NUM_PORTS>{true, true, true, true};
+    dialog_select.ifs_ports =
+        std::array<bool, AmsBackendAd5xIfs::NUM_PORTS>{true, true, true, true};
     Ad5xIfsTestAccess::apply_zcolor_result(backend, dialog_select);
 
     // Seated lane must still be channel 2. Lane 2 offers Unload; lane 3 stays cold.
@@ -3565,10 +3567,11 @@ TEST_CASE("AD5X IFS parse_adventurer_json reads FFMInfo.channel as the seated la
 
     // Minimal Adventurer5M.json: FFMInfo with the seated channel + per-port
     // colour/type (firmware writes channel 2 as seated).
-    const std::string json = R"({"FFMInfo":{"channel":2,)"
-                             R"("ffmColor1":"#161616","ffmColor2":"#FFFFFF",)"
-                             R"("ffmColor3":"#F72224","ffmColor4":"#898989",)"
-                             R"("ffmType1":"PETG","ffmType2":"PETG","ffmType3":"PETG","ffmType4":"PETG"}})";
+    const std::string json =
+        R"({"FFMInfo":{"channel":2,)"
+        R"("ffmColor1":"#161616","ffmColor2":"#FFFFFF",)"
+        R"("ffmColor3":"#F72224","ffmColor4":"#898989",)"
+        R"("ffmType1":"PETG","ffmType2":"PETG","ffmType3":"PETG","ffmType4":"PETG"}})";
     Ad5xIfsTestAccess::parse_adventurer_json(backend, json);
 
     CHECK(Ad5xIfsTestAccess::ffm_channel(backend) == 2);
@@ -3641,10 +3644,11 @@ TEST_CASE("AD5X IFS FFMInfo.channel poll is not adopted while the head switch is
     Ad5xIfsTestAccess::handle_status(backend, make_head_sensor(false));
     REQUIRE(Ad5xIfsTestAccess::head_switch_seen(backend));
 
-    const std::string json = R"({"FFMInfo":{"channel":3,)"
-                             R"("ffmColor1":"#161616","ffmColor2":"#FFFFFF",)"
-                             R"("ffmColor3":"#F72224","ffmColor4":"#898989",)"
-                             R"("ffmType1":"PETG","ffmType2":"PETG","ffmType3":"PETG","ffmType4":"PETG"}})";
+    const std::string json =
+        R"({"FFMInfo":{"channel":3,)"
+        R"("ffmColor1":"#161616","ffmColor2":"#FFFFFF",)"
+        R"("ffmColor3":"#F72224","ffmColor4":"#898989",)"
+        R"("ffmType1":"PETG","ffmType2":"PETG","ffmType3":"PETG","ffmType4":"PETG"}})";
     Ad5xIfsTestAccess::parse_adventurer_json(backend, json);
 
     // ffm_channel_ reflects the file (3), but it is NOT adopted as seated.
@@ -3682,8 +3686,8 @@ TEST_CASE("AD5X IFS loaded-idle lane stays seated when the head switch is presen
     // Idle motion frame reads empty and clobbers head_filament_ to false — but the
     // switch's own last reading (present) is untouched.
     Ad5xIfsTestAccess::handle_status(backend, make_motion_sensor(false));
-    REQUIRE_FALSE(Ad5xIfsTestAccess::head_filament(backend));      // motion clobbered it
-    REQUIRE(Ad5xIfsTestAccess::head_switch_present(backend));      // switch still present
+    REQUIRE_FALSE(Ad5xIfsTestAccess::head_filament(backend)); // motion clobbered it
+    REQUIRE(Ad5xIfsTestAccess::head_switch_present(backend)); // switch still present
 
     // A follow-up IFS_STATUS poll while motion says empty must keep lane 2 seated.
     Ad5xIfsTestAccess::apply_zcolor_result(backend, loaded);
@@ -7252,8 +7256,9 @@ TEST_CASE("AD5X IFS load_filament does NOT set swap_expected for a plain load (#
     REQUIRE(Ad5xIfsTestAccess::phase_active(backend));
 }
 
-TEST_CASE("AD5X IFS load_filament does NOT set swap_expected when same slot is already seated (#1065)",
-          "[ams][ad5x_ifs][phase][1065]") {
+TEST_CASE(
+    "AD5X IFS load_filament does NOT set swap_expected when same slot is already seated (#1065)",
+    "[ams][ad5x_ifs][phase][1065]") {
     // Edge case: load the SAME slot that's already seated (a re-load / resume).
     // Firmware doesn't run an implicit unload in that case, so swap_expected
     // must NOT flip — otherwise we'd mask a real failure on a same-slot reload.
@@ -7312,11 +7317,11 @@ TEST_CASE("AD5X IFS load-vs-swap: INSERT_PRUTOK_IFS self-swaps, so no helix unlo
     AmsSystemInfo info;
     info.filament_loaded = true;
     info.current_slot = 0;
-    REQUIRE_FALSE(backend.needs_unload_before_load(info));
+    REQUIRE_FALSE(backend.needs_unload_before_load(info, /*target_slot=*/1));
 
     info.filament_loaded = false;
     info.current_slot = -1;
-    REQUIRE_FALSE(backend.needs_unload_before_load(info));
+    REQUIRE_FALSE(backend.needs_unload_before_load(info, /*target_slot=*/1));
 }
 
 TEST_CASE("AD5X IFS load: INSERT_PRUTOK_IFS self-heats, so backend reports auto-heat",
@@ -7704,8 +7709,8 @@ TEST_CASE("AD5X IFS external CHANGE_ZCOLOR preserves the user brand override (#9
 
     // AD5X native LCD load/insert: a bare CHANGE_ZCOLOR with the material only,
     // NO brand. SLOT is 1-based -> slot 0.
-    REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(
-        backend, "CHANGE_ZCOLOR SLOT=1 TYPE=PLA"));
+    REQUIRE_FALSE(
+        Ad5xIfsTestAccess::on_gcode_response_line(backend, "CHANGE_ZCOLOR SLOT=1 TYPE=PLA"));
 
     // REGRESSION: the firmware-can't-carry brand must survive the external
     // edit. Before the fix, clear_override_locked() wiped the whole override, so
@@ -7748,8 +7753,9 @@ TEST_CASE("AD5X IFS external CHANGE_ZCOLOR preserves the user brand override (#9
 // macros" glitch from mkleersn's 07-18 + 07-20 sheets.
 // ==========================================================================
 
-TEST_CASE("AD5X IFS CHANGE_ZCOLOR TYPE= updates material visible in get_slot_info immediately (#1065)",
-          "[ams][ad5x_ifs][1065]") {
+TEST_CASE(
+    "AD5X IFS CHANGE_ZCOLOR TYPE= updates material visible in get_slot_info immediately (#1065)",
+    "[ams][ad5x_ifs][1065]") {
     // The user's exact scenario: a slot showing PETG, COLOR macro changes
     // TYPE to ABS. Before the fix, materials_[3] only refreshed when the
     // follow-up GET_ZCOLOR returned — which can lag minutes behind a queued
@@ -7764,8 +7770,8 @@ TEST_CASE("AD5X IFS CHANGE_ZCOLOR TYPE= updates material visible in get_slot_inf
     Ad5xIfsTestAccess::set_color(backend, 3, "FEF043");
     Ad5xIfsTestAccess::set_material(backend, 3, "PETG");
 
-    REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(
-        backend, "CHANGE_ZCOLOR SLOT=4 TYPE=ABS"));
+    REQUIRE_FALSE(
+        Ad5xIfsTestAccess::on_gcode_response_line(backend, "CHANGE_ZCOLOR SLOT=4 TYPE=ABS"));
 
     // The UI-visible material changed synchronously — no GET_ZCOLOR roundtrip.
     SlotInfo info = backend.get_slot_info(3);
@@ -7783,8 +7789,8 @@ TEST_CASE("AD5X IFS CHANGE_ZCOLOR HEX= updates color visible in get_slot_info im
     Ad5xIfsTestAccess::set_color(backend, 1, "FFFFFF");
     Ad5xIfsTestAccess::set_material(backend, 1, "PETG");
 
-    REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(
-        backend, "CHANGE_ZCOLOR SLOT=2 HEX=2750E0"));
+    REQUIRE_FALSE(
+        Ad5xIfsTestAccess::on_gcode_response_line(backend, "CHANGE_ZCOLOR SLOT=2 HEX=2750E0"));
 
     SlotInfo info = backend.get_slot_info(1);
     REQUIRE(info.color_rgb == 0x2750E0);
@@ -7810,8 +7816,9 @@ TEST_CASE("AD5X IFS CHANGE_ZCOLOR TYPE= and HEX= together update both fields (#1
     REQUIRE(info.color_rgb == 0xF95D73);
 }
 
-TEST_CASE("AD5X IFS CHANGE_ZCOLOR lower-case HEX= is upper-cased to match parse_adventurer_json (#1065)",
-          "[ams][ad5x_ifs][1065]") {
+TEST_CASE(
+    "AD5X IFS CHANGE_ZCOLOR lower-case HEX= is upper-cased to match parse_adventurer_json (#1065)",
+    "[ams][ad5x_ifs][1065]") {
     // parse_adventurer_json upper-cases hex from Adventurer5M.json (line ~4042);
     // GET_ZCOLOR's parse_zcolor_silent also receives upper-case. The gcode path
     // must produce the same canonical form so the follow-up GET_ZCOLOR response
@@ -7830,7 +7837,8 @@ TEST_CASE("AD5X IFS CHANGE_ZCOLOR lower-case HEX= is upper-cased to match parse_
     REQUIRE(info.color_rgb == 0xFEF043);
 }
 
-TEST_CASE("AD5X IFS CHANGE_ZCOLOR TYPE= updates baseline so the eventual GET_ZCOLOR response is a no-op (#1065)",
+TEST_CASE("AD5X IFS CHANGE_ZCOLOR TYPE= updates baseline so the eventual GET_ZCOLOR response is a "
+          "no-op (#1065)",
           "[ams][ad5x_ifs][1065]") {
     // The whole point of the gcode-path extraction: when GET_ZCOLOR eventually
     // returns (potentially minutes later, queued behind an IFS op), its
@@ -7870,8 +7878,8 @@ TEST_CASE("AD5X IFS successive CHANGE_ZCOLOR TYPE= macros each refresh the displ
     Ad5xIfsTestAccess::set_material(backend, 1, "PETG");
 
     // First macro: change color (HEX=) only.
-    REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(
-        backend, "CHANGE_ZCOLOR SLOT=2 HEX=2750E0"));
+    REQUIRE_FALSE(
+        Ad5xIfsTestAccess::on_gcode_response_line(backend, "CHANGE_ZCOLOR SLOT=2 HEX=2750E0"));
     {
         SlotInfo info = backend.get_slot_info(1);
         REQUIRE(info.color_rgb == 0x2750E0);
@@ -7879,11 +7887,11 @@ TEST_CASE("AD5X IFS successive CHANGE_ZCOLOR TYPE= macros each refresh the displ
     }
 
     // Second macro: change type (TYPE=) only — the previously-failing case.
-    REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(
-        backend, "CHANGE_ZCOLOR SLOT=2 TYPE=PLA"));
+    REQUIRE_FALSE(
+        Ad5xIfsTestAccess::on_gcode_response_line(backend, "CHANGE_ZCOLOR SLOT=2 TYPE=PLA"));
     {
         SlotInfo info = backend.get_slot_info(1);
-        REQUIRE(info.material == "PLA"); // <-- this used to stay "PETG"
+        REQUIRE(info.material == "PLA");     // <-- this used to stay "PETG"
         REQUIRE(info.color_rgb == 0x2750E0); // color retained
     }
 }
@@ -7968,7 +7976,7 @@ TEST_CASE("AD5X IFS CHANGE_ZCOLOR with malformed TYPE= value doesn't crash (#106
         backend, "CHANGE_ZCOLOR SLOT=1 HEX=NOTHEX TYPE=PETG"));
 
     SlotInfo info = backend.get_slot_info(0);
-    REQUIRE(info.material == "PETG"); // valid TYPE= still applies
+    REQUIRE(info.material == "PETG");    // valid TYPE= still applies
     REQUIRE(info.color_rgb == 0xFF0000); // invalid HEX= left color unchanged
 }
 
@@ -7988,8 +7996,7 @@ TEST_CASE("AD5X IFS CHANGE_ZCOLOR with no TYPE= or HEX= preserves prior behavior
     // Re-run update_slot_from_state so apply_overrides bakes the override.
     Ad5xIfsTestAccess::set_color(backend, 0, "FEF043");
 
-    REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(
-        backend, "CHANGE_ZCOLOR SLOT=1"));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(backend, "CHANGE_ZCOLOR SLOT=1"));
 
     // Override cleared, firmware truth (yellow PLA) shows. No TYPE=/HEX=
     // meant no synchronous material/color write — but the next GET_ZCOLOR
@@ -8182,8 +8189,8 @@ const std::vector<std::string> kZmodPalette = {
 
 // zmod's stock material whitelist, in render order (17:34:35.849-35.886).
 // PETG-CF is last, so that is the type the slot ended up displaying.
-const std::vector<std::string> kZmodMaterials = {"PLA", "PLA-CF",  "SILK",   "TPU",
-                                                 "ABS", "PETG",    "PETG-CF"};
+const std::vector<std::string> kZmodMaterials = {"PLA", "PLA-CF", "SILK",   "TPU",
+                                                 "ABS", "PETG",   "PETG-CF"};
 
 std::string palette_button(int slot1, const std::string& type, const std::string& hex) {
     return "// action:prompt_button _ |CHANGE_ZCOLOR SLOT=" + std::to_string(slot1) +
@@ -8227,8 +8234,8 @@ TEST_CASE("AD5X IFS regression: COLOR palette render never moves the slot (#1065
     }
 
     for (const auto& type : kZmodMaterials) {
-        REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(
-            backend, material_button(1, type, "898989")));
+        REQUIRE_FALSE(
+            Ad5xIfsTestAccess::on_gcode_response_line(backend, material_button(1, type, "898989")));
         REQUIRE(backend.get_slot_info(0).material == "PETG");
     }
 
@@ -8265,8 +8272,8 @@ TEST_CASE("AD5X IFS regression: type change surfaces on the menu re-render, not 
 
     // "Select material type" renders; every entry is a candidate, PETG-CF last.
     for (const auto& type : kZmodMaterials) {
-        REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(
-            backend, material_button(1, type, "F330F9")));
+        REQUIRE_FALSE(
+            Ad5xIfsTestAccess::on_gcode_response_line(backend, material_button(1, type, "F330F9")));
     }
     REQUIRE(backend.get_slot_info(0).material == "PETG"); // no phantom PETG-CF
 
@@ -9099,8 +9106,7 @@ TEST_CASE_METHOD(Ad5xHomingGuardFixture,
     }
 }
 
-TEST_CASE_METHOD(Ad5xHomingGuardFixture,
-                 "eject_lane is not blocked by an active print",
+TEST_CASE_METHOD(Ad5xHomingGuardFixture, "eject_lane is not blocked by an active print",
                  "[ams][ad5x_ifs][homing_guard]") {
     // eject_lane is a cold, lane-only op (no toolhead motion) — it must remain
     // available during a print. Whatever its outcome, it must NOT be refused

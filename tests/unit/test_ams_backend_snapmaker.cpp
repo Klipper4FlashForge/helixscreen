@@ -389,7 +389,7 @@ TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker never routes a load through a tool
     AmsSystemInfo seated = backend.get_system_info();
     seated.filament_loaded = true;
     seated.current_slot = 0;
-    CHECK_FALSE(backend.needs_unload_before_load(seated));
+    CHECK_FALSE(backend.needs_unload_before_load(seated, /*target_slot=*/1));
 
     // And the command that would have been sent instead is the known-bad one,
     // so this stays a real distinction rather than two spellings of one thing.

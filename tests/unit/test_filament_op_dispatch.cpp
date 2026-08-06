@@ -135,14 +135,38 @@ TEST_CASE("plan_load: a seated machine swaps via change_tool on the MAPPED tool"
     CHECK(plan.ams_arg == 3); // slot 1's mapped_tool, NOT slot 1
 }
 
-TEST_CASE("plan_load: a seated machine with no tool mapping unloads first",
+TEST_CASE("plan_load: a seated machine with no tool mapping loads the slot anyway",
           "[filament][dispatch][swap]") {
+    // There is no tool number to change to, so the swap arm cannot fire. This
+    // used to emit unload_active_filament() and stop — filament came out, the
+    // stepper showed a swap, and nothing ever loaded. One command now goes to
+    // the backend and the firmware decides: ACE's change_tool() IS
+    // load_filament(), QIDI's load_filament() retracts the seated slot itself,
+    // and AFC's is `CHANGE_TOOL LANE={n}`. Happy Hare's `MMU_LOAD GATE={n}` will
+    // refuse, which is what allows_implicit_chaining()==false asks for (#1229).
     AmsSystemInfo sys = make_sys(4, /*current_slot=*/0, /*mapped_tools=*/{0, -1, -1, -1});
     BackendCaps seated = fresh_ams();
     seated.needs_unload_before_load = true;
 
     auto plan = plan_load(sys, seated, /*target_slot=*/1, /*macro_available=*/true);
-    CHECK(plan.ams_call == AmsCall::UnloadActive);
+    CHECK(plan.tier == FilamentTier::AmsBackend);
+    CHECK(plan.ams_call == AmsCall::Load);
+    CHECK(plan.ams_arg == 1); // the SLOT the user tapped, not a tool number
+}
+
+TEST_CASE("plan_load: an unresolvable target slot still dispatches a plain load",
+          "[filament][dispatch][swap]") {
+    // get_slot_global() returns nullptr for an index no unit covers. The old
+    // code treated that as "unload whatever is active"; the backend's own
+    // validate_slot_index() is the right place to refuse it.
+    AmsSystemInfo sys = make_sys(4, /*current_slot=*/0);
+    BackendCaps seated = fresh_ams();
+    seated.needs_unload_before_load = true;
+
+    auto plan = plan_load(sys, seated, /*target_slot=*/9, /*macro_available=*/true);
+    CHECK(plan.tier == FilamentTier::AmsBackend);
+    CHECK(plan.ams_call == AmsCall::Load);
+    CHECK(plan.ams_arg == 9);
 }
 
 TEST_CASE("plan_load: reloading the seated slot itself is a plain load, not a swap",

@@ -1539,7 +1539,11 @@ AmsError AmsBackendCfs::change_tool(int tool) {
         // nozzle still empty, so the K1 override keys on filament_loaded only
         // (avoids the "hallucinated cut on an empty nozzle" the reporter saw,
         // #968). K2 retains the filament_loaded || current_slot >= 0 behavior.
-        needs_unload = needs_unload_before_load(system_info_);
+        //
+        // `tool` doubles as the target slot: CFS bays map 1:1 to tools. Safe
+        // under mutex_ — CFS does not override get_unit_topology(), so the
+        // base's per-lane arm reaches only the inline get_topology() constant.
+        needs_unload = needs_unload_before_load(system_info_, tool);
     }
 
     // Validate gcode before mutating state
