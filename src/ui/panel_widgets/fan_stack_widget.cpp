@@ -22,6 +22,7 @@
 #include "moonraker_api.h"
 #include "observer_factory.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 #include "printer_fan_state.h"
 #include "printer_state.h"
 #include "theme_manager.h"
@@ -225,16 +226,16 @@ void FanStackWidget::detach() {
     spdlog::debug("[FanStackWidget] Detached");
 }
 
-void FanStackWidget::on_size_changed(int colspan, int rowspan, int /*width_px*/,
-                                     int /*height_px*/) {
+void FanStackWidget::on_size_changed(int colspan, int rowspan, int width_px, int height_px) {
     // Size adaptation only applies to stack mode
     if (!widget_obj_ || is_carousel_mode())
         return;
 
-    // Size tiers:
-    //   1x1 (compact):  xs fonts, single-letter labels (P, H, C)
-    //   2x1+ (bigger):  sm fonts, resolved display names from PrinterFanState
-    bool bigger = (colspan >= 2 || rowspan >= 2);
+    // Size tiers, decided from physical pixels rather than grid span so the
+    // same authored layout reads correctly on every panel:
+    //   compact: xs fonts, single-letter labels (P, H, C)
+    //   bigger:  sm fonts, resolved display names from PrinterFanState
+    bool bigger = (width_px >= widget_size::W_NORMAL || height_px >= widget_size::H_TALL);
 
     const char* font_token = bigger ? "font_small" : "font_xs";
     const lv_font_t* text_font = theme_manager_get_font(font_token);
