@@ -251,13 +251,12 @@ void FanStackWidget::on_size_changed(int colspan, int rowspan, int width_px, int
             lv_obj_set_style_text_font(label, text_font, 0);
     }
 
-    // Apply icon font to fan icons
+    // Apply icon font to fan icons. The icon widget (ui_icon_xml_create,
+    // ui_icon.cpp) is itself an lv_label — there is no child glyph object to
+    // reach through.
     for (auto* icon : {part_icon_, hotend_icon_, aux_icon_}) {
-        if (icon) {
-            lv_obj_t* glyph = lv_obj_get_child(icon, 0);
-            if (glyph)
-                lv_obj_set_style_text_font(glyph, icon_font, 0);
-        }
+        if (icon)
+            lv_obj_set_style_text_font(icon, icon_font, 0);
     }
 
     // Name labels: 1x1 = single letter, 2x1+ = resolved display name
