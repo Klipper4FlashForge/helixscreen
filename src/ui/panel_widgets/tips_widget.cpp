@@ -10,6 +10,7 @@
 
 #include "display_settings_manager.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 #include "static_subject_registry.h"
 #include "subject_debug_registry.h"
 #include "theme_manager.h"
@@ -156,13 +157,13 @@ void TipsWidget::on_deactivate() {
     }
 }
 
-void TipsWidget::on_size_changed(int colspan, int /*rowspan*/, int /*width_px*/,
+void TipsWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_px,
                                  int /*height_px*/) {
     if (!widget_obj_)
         return;
 
-    // At 2x width or smaller, use smaller text and icon
-    bool compact = (colspan <= 2);
+    // Below wide-tier width, use smaller text and icon
+    bool compact = (width_px < widget_size::W_WIDE);
     const char* font_token = compact ? "font_body" : "font_heading";
     const lv_font_t* text_font = theme_manager_get_font(font_token);
     if (!text_font)
