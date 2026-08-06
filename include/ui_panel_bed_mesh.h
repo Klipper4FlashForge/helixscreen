@@ -171,6 +171,13 @@ class BedMeshPanel : public OverlayBase {
 
     // ========== UI Widget Pointers ==========
     lv_obj_t* canvas_ = nullptr;
+    // The overlay_content wire_canvas_and_content() last registered
+    // on_content_size_changed on. Tracked rather than re-derived from
+    // overlay_root_ at destruction: overlay_root_ is null on every path that
+    // wires without create(), so a lookup through it removes nothing and the
+    // registration outlives `this` with user_data pointing at freed memory.
+    // Nulled by on_content_deleted_cb, same dangling guard as canvas_.
+    lv_obj_t* content_ = nullptr;
     lv_obj_t* profile_dropdown_ = nullptr;
     lv_obj_t* calibrate_name_input_ = nullptr;
     lv_obj_t* rename_name_input_ = nullptr;
@@ -241,6 +248,7 @@ class BedMeshPanel : public OverlayBase {
     // (post-rebuild) so the two paths cannot silently diverge.
     bool wire_canvas_and_content(lv_obj_t* overlay_content);
     static void on_canvas_deleted_cb(lv_event_t* e);
+    static void on_content_deleted_cb(lv_event_t* e);
     // Re-applies the render-mode/zero-plane/auto-evaluate settings create()
     // applies once at startup — split out so rewire_after_orientation_flip()
     // can re-run it against the brand-new custom widget instance a rebuild

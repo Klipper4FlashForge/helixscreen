@@ -121,7 +121,8 @@ BedMeshPanel::~BedMeshPanel() {
         }
 
         // wire_canvas_and_content() registers on_canvas_deleted_cb (canvas_)
-        // and on_content_size_changed (overlay_content) with user_data=this.
+        // plus on_content_size_changed and on_content_deleted_cb (content_),
+        // all with user_data=this.
         // StaticPanelRegistry::destroy_all() runs BEFORE lv_deinit() and
         // before a soft restart's explicit widget-tree deletion — in both
         // paths `this` is about to be freed while canvas_/overlay_content
@@ -137,16 +138,15 @@ BedMeshPanel::~BedMeshPanel() {
         if (canvas_) {
             lv_obj_remove_event_cb(canvas_, on_canvas_deleted_cb);
         }
-        if (overlay_root_) {
-            lv_obj_t* overlay_content = lv_obj_find_by_name(overlay_root_, "overlay_content");
-            if (overlay_content) {
-                lv_obj_remove_event_cb(overlay_content, on_content_size_changed);
-            }
+        if (content_) {
+            lv_obj_remove_event_cb(content_, on_content_size_changed);
+            lv_obj_remove_event_cb(content_, on_content_deleted_cb);
         }
     }
 
     // Clear widget pointers (LVGL owns the objects)
     canvas_ = nullptr;
+    content_ = nullptr;
     calibrate_name_input_ = nullptr;
     rename_name_input_ = nullptr;
 }
@@ -383,7 +383,10 @@ bool BedMeshPanel::wire_canvas_and_content(lv_obj_t* overlay_content) {
     // overlay_content that was just wired here. Remove before adding so that
     // path leaves one registration rather than two.
     lv_obj_remove_event_cb(overlay_content, on_content_size_changed);
+    lv_obj_remove_event_cb(overlay_content, on_content_deleted_cb);
     lv_obj_add_event_cb(overlay_content, on_content_size_changed, LV_EVENT_SIZE_CHANGED, this);
+    lv_obj_add_event_cb(overlay_content, on_content_deleted_cb, LV_EVENT_DELETE, this);
+    content_ = overlay_content;
 
     return true;
 }
@@ -404,6 +407,21 @@ void BedMeshPanel::on_canvas_deleted_cb(lv_event_t* e) {
     // user_data (`this`) on this same callback.
     if (lv_event_get_target(e) == self->canvas_) {
         self->canvas_ = nullptr;
+    }
+}
+
+void BedMeshPanel::on_content_deleted_cb(lv_event_t* e) {
+    auto* self = static_cast<BedMeshPanel*>(lv_event_get_user_data(e));
+    if (!self) {
+        return;
+    }
+    // Same stale-widget check as on_canvas_deleted_cb, for the same reason:
+    // the condemned overlay_content's async delete lands after
+    // rewire_after_orientation_flip() has already pointed content_ at the
+    // rebuilt one, and every overlay_content this panel has ever wired shares
+    // user_data (`this`) on this callback.
+    if (lv_event_get_target(e) == self->content_) {
+        self->content_ = nullptr;
     }
 }
 

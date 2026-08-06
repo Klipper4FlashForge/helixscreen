@@ -30,6 +30,14 @@ struct BedMeshPanelTestAccess {
     static bool wire(BedMeshPanel& p, lv_obj_t* overlay_content) {
         return p.wire_canvas_and_content(overlay_content);
     }
+
+    /// The SIZE_CHANGED handler wire_canvas_and_content() installs on
+    /// overlay_content, so a test can assert whether it is still registered.
+    /// Its user_data is the panel, so a registration outliving the panel is a
+    /// use-after-free waiting for the next layout pass.
+    static lv_event_cb_t content_size_changed_cb() {
+        return &BedMeshPanel::on_content_size_changed;
+    }
 };
 
 } // namespace ui

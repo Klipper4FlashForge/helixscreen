@@ -54,6 +54,15 @@ lv_obj_t* make_named(lv_obj_t* parent, const char* name) {
     return obj;
 }
 
+bool has_event_cb(lv_obj_t* obj, lv_event_cb_t cb) {
+    for (uint32_t i = 0; i < lv_obj_get_event_count(obj); ++i) {
+        if (lv_event_dsc_get_cb(lv_obj_get_event_dsc(obj, i)) == cb) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 TEST_CASE_METHOD(LVGLTestFixture, "wire_canvas_and_content finds and tracks the named canvas",
@@ -134,4 +143,29 @@ TEST_CASE_METHOD(LVGLTestFixture,
 
     lv_obj_delete(content_a);
     lv_obj_delete(content_b);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "a wired overlay_content outliving the panel keeps no callback into it",
+                 "[bed_mesh][canvas][1229]") {
+    // wire_canvas_and_content() registers on_content_size_changed with
+    // user_data=this. Whenever overlay_content outlives the panel, that
+    // registration is a dangling `this`: the next layout pass to resize the
+    // widget calls apply_portrait_canvas_height() on freed memory, reads
+    // overlay_root_ out of it, and writes through whatever that garbage
+    // resolves to — heap corruption that detonates far from here.
+    //
+    // The destructor used to reach the registration only via overlay_root_,
+    // which is null on every path that wires without create() and on any
+    // teardown that clears the root first, so it silently removed nothing.
+    lv_obj_t* content = make_named(test_screen(), "overlay_content");
+    make_named(content, "bed_mesh_canvas");
+
+    {
+        BedMeshPanel panel;
+        REQUIRE(BedMeshPanelTestAccess::wire(panel, content));
+        REQUIRE(has_event_cb(content, BedMeshPanelTestAccess::content_size_changed_cb()));
+    } // panel destroyed; content deliberately outlives it
+
+    CHECK_FALSE(has_event_cb(content, BedMeshPanelTestAccess::content_size_changed_cb()));
 }
