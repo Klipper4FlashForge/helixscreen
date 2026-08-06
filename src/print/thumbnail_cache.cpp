@@ -7,6 +7,7 @@
 
 #include "app_globals.h"
 #include "config.h"
+#include "system/crash_handler.h"
 #include "system/helix_paths.h"
 
 #include <spdlog/spdlog.h>
@@ -573,6 +574,9 @@ void ThumbnailCache::evict_locked() {
     if (evicted_count > 0) {
         spdlog::info("[ThumbnailCache] Evicted {} files ({} KB) to stay under limit", evicted_count,
                      evicted_bytes / 1024);
+        // Reached from the main thread AND from HttpExecutor workers, so a
+        // crumb here also witnesses eviction overlapping an in-flight decode.
+        crash_handler::breadcrumb::note("thumb", "evict", static_cast<long>(evicted_count));
     }
 
     if (saw_ghost) {
@@ -960,6 +964,8 @@ void ThumbnailCache::fetch_optimized(MoonrakerAPI* api, const std::string& relat
     std::string cache_path = get_cache_path(relative_path);
     spdlog::debug("[ThumbnailCache] Downloading for optimization: {} -> {}", relative_path,
                   cache_path);
+    // Cold fetch — the state the reporter's device was in when it aborted.
+    crash_handler::breadcrumb::note("thumb", "fetch_cold", 0);
 
     // Capture target and callbacks for the download completion handler
     api->transfers().download_thumbnail(

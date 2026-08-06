@@ -28,6 +28,7 @@
 
 #include "../../include/thumbnail_cache.h"
 #include "../../include/thumbnail_processor.h"
+#include "system/crash_handler.h"
 
 #include <atomic>
 #include <cstdlib>
@@ -177,4 +178,71 @@ TEST_CASE("Concurrent thumbnail decode survives eviction unlinking beneath it",
     // The pipeline must actually have run — a run where every decode failed
     // would pass ASAN trivially and prove nothing.
     REQUIRE(decodes.load() > 0);
+}
+
+namespace {
+
+/// dump_to_fd() writes with write(2); a pipe is the simplest readable sink.
+std::vector<std::string> capture_crumbs() {
+    int fds[2];
+    REQUIRE(::pipe(fds) == 0);
+    crash_handler::breadcrumb::dump_to_fd(fds[1]);
+    ::close(fds[1]);
+
+    std::string buf;
+    char chunk[256];
+    ssize_t n;
+    while ((n = ::read(fds[0], chunk, sizeof(chunk))) > 0) {
+        buf.append(chunk, static_cast<size_t>(n));
+    }
+    ::close(fds[0]);
+
+    std::vector<std::string> lines;
+    size_t start = 0;
+    for (size_t i = 0; i < buf.size(); ++i) {
+        if (buf[i] == '\n') {
+            lines.emplace_back(buf.substr(start, i - start));
+            start = i + 1;
+        }
+    }
+    return lines;
+}
+
+} // namespace
+
+TEST_CASE("Thumbnail decode brackets itself with crumbs", "[assets][processor][crash][960]") {
+    // The #960 hypothesis rests on inferring what was in flight at the abort
+    // from a POST-RESTART log, which is far too weak to fix against. These
+    // crumbs make the next bundle say it outright. Asserted through the real
+    // process_sync() path — a hand-rolled note() call would pass even if
+    // do_process() had never been instrumented.
+    const auto png =
+        read_file_bytes(std::filesystem::path("assets/images/benchy_thumbnail_white.png"));
+    if (png.empty()) {
+        WARN("benchy_thumbnail_white.png not readable from CWD - skipping");
+        return;
+    }
+
+    ScopedCacheDir scoped("decode_crumbs");
+    auto& processor = helix::ThumbnailProcessor::instance();
+    processor.set_cache_dir(scoped.path().string());
+
+    for (int i = 0; i < 256; ++i) {
+        crash_handler::breadcrumb::note("drain", "drain");
+    }
+
+    helix::ThumbnailTarget target{164, 164, 0x10};
+    auto result = processor.process_sync(png, "crumbcheck.png", target);
+    REQUIRE(result.success);
+
+    auto lines = capture_crumbs();
+    bool saw_begin = false, saw_end = false;
+    for (const auto& l : lines) {
+        if (l.find("thumb decode_begin") != std::string::npos)
+            saw_begin = true;
+        if (l.find("thumb decode_end") != std::string::npos)
+            saw_end = true;
+    }
+    CHECK(saw_begin);
+    CHECK(saw_end);
 }
