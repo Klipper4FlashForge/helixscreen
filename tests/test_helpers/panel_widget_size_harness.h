@@ -10,8 +10,19 @@
 #include <utility>
 
 #include "../catch_amalgamated.hpp"
+#include "hv/json.hpp"
 
 namespace helix {
+
+/// Per-widget config applied before the component name is resolved.
+///
+/// PanelWidgetManager's order is: construct, set_config(), get_component_name(),
+/// attach(). Widgets whose component name depends on config — fan_stack picks
+/// between its stack and carousel layouts — resolve to the wrong component
+/// without this.
+struct HarnessConfig {
+    nlohmann::json value;
+};
 
 /// Creates a widget's real XML component, attaches the widget to it, and
 /// drives on_size_changed().
@@ -24,13 +35,18 @@ template <typename W> class PanelWidgetHarness {
     template <typename... Args>
     explicit PanelWidgetHarness(lv_obj_t* screen, Args&&... args)
         : widget_(std::forward<Args>(args)...) {
-        // From the widget, not "panel_widget_" + id(): fan_stack selects between
-        // stack and carousel components, and favorite_macro's id carries an
-        // instance suffix that would produce an unregistered component name.
-        const std::string component = widget_.get_component_name();
-        obj_ = static_cast<lv_obj_t*>(lv_xml_create(screen, component.c_str(), nullptr));
-        REQUIRE(obj_ != nullptr);
-        widget_.attach(obj_, screen);
+        create_and_attach(screen);
+    }
+
+    /// Overload for widgets whose get_component_name() depends on config
+    /// (e.g. fan_stack's stack/carousel choice). Calls set_config() before
+    /// the component name is resolved, matching PanelWidgetManager's real
+    /// construction order.
+    template <typename... Args>
+    PanelWidgetHarness(lv_obj_t* screen, HarnessConfig config, Args&&... args)
+        : widget_(std::forward<Args>(args)...) {
+        widget_.set_config(config.value);
+        create_and_attach(screen);
     }
 
     ~PanelWidgetHarness() {
@@ -58,6 +74,19 @@ template <typename W> class PanelWidgetHarness {
     }
 
   private:
+    /// Shared tail of both constructors: resolve the component name, build
+    /// it from XML, and attach the widget. Kept as one method so the two
+    /// constructors cannot drift apart.
+    void create_and_attach(lv_obj_t* screen) {
+        // From the widget, not "panel_widget_" + id(): fan_stack selects between
+        // stack and carousel components, and favorite_macro's id carries an
+        // instance suffix that would produce an unregistered component name.
+        const std::string component = widget_.get_component_name();
+        obj_ = static_cast<lv_obj_t*>(lv_xml_create(screen, component.c_str(), nullptr));
+        REQUIRE(obj_ != nullptr);
+        widget_.attach(obj_, screen);
+    }
+
     W widget_;
     lv_obj_t* obj_ = nullptr;
 };
