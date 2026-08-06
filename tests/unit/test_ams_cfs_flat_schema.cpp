@@ -35,7 +35,7 @@ json make_flat_box_json() {
         "driver_ready": true,
         "filament_detected": false,
         "filament_sensor_error": null,
-        "fluidd_widget_version": 2,
+        "api_version": 1,
         "humidity_pct": 22,
         "loaded_mask": 0,
         "loaded_slot": -1,
@@ -440,13 +440,13 @@ TEST_CASE("CFS Fork dialect: gcode builders", "[ams][cfs][flat][fork]") {
 
 // --- Fork dialect detection ------------------------------------------------
 
-TEST_CASE("CFS Fork dialect: detected from the module's own identity marker",
+TEST_CASE("CFS Fork dialect: detected from the supported Box API version",
           "[ams][cfs][flat][fork]") {
-    // `fluidd_widget_version` is box.py's own WIDGET_VERSION constant. It is a
-    // MODULE-identity marker, which is a stronger signal than schema shape:
+    // `api_version` explicitly identifies box.py's command dialect; `slots[]`
+    // alone only identifies which status parser to use:
     // the Fork commands are registered in Python, so they never appear in
     // printer.objects.list and has_macro("BOX_LOAD") can never see them.
-    SECTION("payload carrying the marker is the fork") {
+    SECTION("payload carrying the supported version is the fork") {
         REQUIRE(AmsBackendCfs::detect_fork_dialect(make_flat_box_json()) == true);
     }
 
@@ -454,12 +454,18 @@ TEST_CASE("CFS Fork dialect: detected from the module's own identity marker",
         REQUIRE(AmsBackendCfs::detect_fork_dialect(make_stock_box_json()) == false);
     }
 
-    SECTION("a flat payload without the marker is not assumed to be the fork") {
+    SECTION("a flat payload without api_version is not assumed to be the fork") {
         // Schema and dialect are separate axes. Another flat-schema firmware
         // would parse fine but must not inherit this one's command set.
         json box = make_flat_box_json();
-        box.erase("fluidd_widget_version");
+        box.erase("api_version");
         REQUIRE(AmsBackendCfs::detect_schema(box) == CfsSchema::Flat);
+        REQUIRE(AmsBackendCfs::detect_fork_dialect(box) == false);
+    }
+
+    SECTION("an unsupported API version is not assumed compatible") {
+        json box = make_flat_box_json();
+        box["api_version"] = 2;
         REQUIRE(AmsBackendCfs::detect_fork_dialect(box) == false);
     }
 }

@@ -83,8 +83,8 @@ class CfsErrorDecoder {
 /// Fork — community Kalico ports of the K2 whose reimplemented `box` module
 /// replaces Creality's closed one. `T<n>` and `BOX_UNLOAD` are high-level and
 /// self-contained: box.py owns the whole feed/purge/park sequence, so
-/// HelixScreen sends no stock envelope. Detected by `fluidd_widget_version` in
-/// the box payload. See docs/devel/printers/CREALITY_K2_SUPPORT.md §
+/// HelixScreen sends no stock envelope. Detected by `api_version` in the box
+/// payload. See docs/devel/printers/CREALITY_K2_SUPPORT.md §
 /// "Community Kalico port".
 enum class CfsMacroVariant {
     K2,
@@ -251,14 +251,10 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     /// True when this `box` payload comes from the community box.py, i.e. the
     /// firmware speaks CfsMacroVariant::Fork.
     ///
-    /// Keys on `fluidd_widget_version`, which is that module's own
-    /// WIDGET_VERSION constant — a MODULE-identity marker, not a schema shape.
-    /// That distinction matters twice over: it keeps the dialect axis separate
-    /// from CfsSchema (a different flat-schema firmware must not inherit this
-    /// one's command set), and it is the only signal available. The Fork
-    /// commands are registered in Python via gcode.register_command, so they
-    /// are NOT gcode_macros and never appear in printer.objects.list —
-    /// PrinterDiscovery::has_macro("BOX_LOAD") can never see them.
+    /// Requires `api_version == 1`, the explicit version for this command
+    /// dialect. Do not infer commands from the `slots[]` status layout alone;
+    /// another firmware may expose the same flat layout. The Fork commands are
+    /// registered in Python, so PrinterDiscovery::has_macro() cannot see them.
     [[nodiscard]] static bool detect_fork_dialect(const nlohmann::json& box_json);
 
     /// `_BOX_SLOT_SET` — the Fork counterpart to the stock BOX_MODIFY_TN_DATA
@@ -331,17 +327,13 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     /// affected printers report as stock K2 hardware, so it is only knowable
     /// from a payload. Stock until a payload says otherwise.
     ///
-    /// Also the guard on the control paths. A Flat box means the firmware's
-    /// box module is a community reimplementation whose command surface we have
-    /// not verified; emitting the stock CR_BOX_*/BOX_* sequences at it sends
-    /// commands it does not define (confirmed on bundle QJKZEMTS: zero
-    /// CR_BOX_*, zero BOX_MODIFY_TN_DATA, zero M8200 in its config). Refusing
-    /// with a clear error beats a half-executed feed sequence.
+    /// Payload layout only. The command dialect is selected independently;
+    /// Flat + Fork is supported, while an unidentified Flat implementation is
+    /// kept off stock command paths.
     CfsSchema schema_ = CfsSchema::Stock;
 
-    /// SUCCESS on stock firmware; a not_supported error naming @p operation
-    /// when the box is a flat-schema reimplementation. Called at the top of
-    /// every path that emits a stock gcode sequence.
+    /// SUCCESS for stock schemas and the identified Fork dialect; returns
+    /// not_supported for an unidentified Flat implementation.
     [[nodiscard]] AmsError reject_if_flat_schema(const char* operation) const;
 
     // Callback lifetime management

@@ -1165,18 +1165,15 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
 
         if (is_flat && schema_ != CfsSchema::Flat) {
             schema_ = CfsSchema::Flat;
-            // Dialect is latched from the same payload but on a SEPARATE
-            // signal — the module's own identity marker, not the schema shape
-            // (see detect_fork_dialect). A flat payload without that marker
-            // keeps the stock dialect and stays gated, because we would have no
-            // verified command set for it.
+            // Select the command dialect from the explicit API version, not by
+            // assuming every `slots[]` payload implements the same commands.
             if (detect_fork_dialect(box)) {
                 macro_variant_ = CfsMacroVariant::Fork;
                 spdlog::info("[AMS CFS] Flat box schema + fork dialect detected "
-                             "(community box.py, widget v{}) — full control enabled",
-                             helix::json_util::safe_int(box, "fluidd_widget_version", 0));
+                             "(community box.py, API v{}) — Fork control enabled",
+                             helix::json_util::safe_int(box, "api_version", 0));
             } else {
-                spdlog::warn("[AMS CFS] Flat box schema without a known module marker — "
+                spdlog::warn("[AMS CFS] Flat box schema without a supported API version — "
                              "slot display active, control paths disabled (no verified "
                              "command dialect)");
             }
@@ -1984,7 +1981,7 @@ std::string wrap_with_park(CfsMacroVariant variant, const std::string& body, boo
 } // namespace
 
 bool AmsBackendCfs::detect_fork_dialect(const nlohmann::json& box_json) {
-    return box_json.is_object() && box_json.contains("fluidd_widget_version");
+    return box_json.is_object() && helix::json_util::safe_int(box_json, "api_version", 0) == 1;
 }
 
 std::string AmsBackendCfs::slot_set_gcode(int global_slot_index, const std::string& material,

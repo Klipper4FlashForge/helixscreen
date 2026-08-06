@@ -347,7 +347,7 @@ Top-level:
 | `materials` | dict | `{"PLA": {"target_temp": 220}, ...}` — per-material recommended temps, keyed by the same string each slot reports. Stock has no equivalent. |
 | `load_path` | object | Shared feed path: `encoder`, `buffer`, `printhead_sensor`, `clog_detection` |
 | `data_ready` / `driver_ready` | bool | Module readiness |
-| `fluidd_widget_version` | int | Marker for the port's own Fluidd widget |
+| `api_version` | int | Box command/status contract version; HelixScreen supports version 1 |
 
 Per-slot (`slots[i]`):
 
@@ -389,13 +389,13 @@ Signatures below are read from the module's own `_register_commands` / `cmd_*` h
 Two independent signals, both from the payload:
 
 - **Schema** → `detect_schema()`: a `T{n}` key means Stock; otherwise a `slots` array means Flat.
-- **Dialect** → `detect_fork_dialect()`: the presence of `fluidd_widget_version`, which is the module's own `WIDGET_VERSION` constant — a *module-identity* marker rather than a schema shape.
+- **Dialect** → `detect_fork_dialect()`: `api_version == 1` explicitly selects this Box command set; do not infer commands from the `slots[]` layout.
 
-The dialect signal deliberately is not `has_macro("BOX_LOAD")`: these commands are registered in Python via `gcode.register_command`, so they are **not** gcode_macros and never appear in `printer.objects.list`. A flat payload *without* the marker parses fine but keeps the stock dialect and stays gated — a different flat-schema firmware must not inherit this one's command set.
+The dialect signal deliberately is not `has_macro("BOX_LOAD")`: these commands are registered in Python via `gcode.register_command`, so they are **not** gcode_macros and never appear in `printer.objects.list`. A flat payload *without* a supported `api_version` parses fine but keeps the stock dialect and stays gated — a different flat-schema firmware must not inherit this one's command set.
 
 #### Current support status
 
-**Full read and control.** Slot display, materials, colors, environment and path sensors parse; load / unload / tool-change / slot-metadata writes all emit verified commands. `reject_if_flat_schema()` now gates only a flat box whose module we cannot identify.
+**Fork command paths enabled.** Slot display, materials, colors, environment and path sensors parse; load / unload / tool-change / slot-metadata writes all emit verified commands. `reject_if_flat_schema()` gates only a flat box whose API version we cannot identify.
 
 Remaining gaps, degraded rather than broken:
 
@@ -663,7 +663,7 @@ Note that `chamber_temp` is **not** universal on K2 hardware either: the Kalico 
 ### CFS
 - **Closed-source protocol** — CFS communication relies on `box_wrapper.cpython-39.so` binary blob. Protocol has been reverse-engineered from strings but full reimplementation is not yet available.
 - **Material database is cloud-fetched** — The material database at `/mnt/UDISK/creality/userdata/box/material_database.json` is downloaded from Creality's cloud. HelixScreen should include a fallback mapping for common material type codes.
-- **Community Kalico ports are read-only** — a port with a reimplemented `box.py` publishes the flat schema and a third macro dialect. Slots display; load/unload/tool-change are refused pending a verified command signature. See [Community Kalico port](#community-kalico-port).
+- **Community Kalico ports require Box API v1 for control** — the flat status layout still parses without it, but load/unload/tool-change stay gated until `api_version == 1` identifies the supported command dialect. See [Community Kalico port](#community-kalico-port).
 
 ### Platform
 - **Low CPU** — Dual Cortex-A7 at ~57 BogoMIPS. Performance-sensitive features (bed mesh 3D, animations) may need throttling.
