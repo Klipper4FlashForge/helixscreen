@@ -371,10 +371,11 @@ Signatures below are read from the module's own `_register_commands` / `cmd_*` h
 
 | Command | Signature | Notes |
 |---------|-----------|-------|
-| `BOX_LOAD` | `SLOT=<0..15>` | **Fresh load only.** Raises "T*n* is already loaded; unload it before loading T*m*" if another bay is seated — a swap must use `T<n>`. |
+| `BOX_LOAD` | `SLOT=<0..15>` | Low-level feed primitive. HelixScreen does not call it. |
 | `BOX_UNLOAD` | `[MANUAL=0\|1]` | **Rejects `SLOT`** outright: "BOX_UNLOAD no longer accepts SLOT". |
-| `T<n>` | `[FLUSH=0\|1]`, default 1 | Tool change. Registered per physical slot + the external bay by `_register_t_commands`; routes through the change engine (cut → retract → load → flush). |
-| `_BOX_SLOT_SET` | `SLOT=<n> MATERIAL=<str> COLOR=#RRGGBB [BRAND=] [NAME=] [SPOOLMAN_ID=]` | All three of SLOT/MATERIAL/COLOR **required**. Material is uppercased by the module. |
+| `T<n>` | `[FLUSH=0\|1]`, default 1 | Load/tool change. HelixScreen emits bare `T<n>`; the registered command owns the change engine (cut → retract → load → flush). |
+| `_BOX_SLOT_SET` | `SLOT=<n> MATERIAL=<str> COLOR="#RRGGBB" BRAND="..." NAME="..." SPOOLMAN_ID=<id\|-1>` | SLOT, MATERIAL, and COLOR are **required**. Helix always sends the optional fields; `-1` clears the Spoolman link. Material is uppercased by the module. |
+| `_BOX_SLOT_CLEAR` | `SLOT=<n>` | Removes the persisted Box profile for the slot. |
 | `_BOX_MATERIAL_SET` | `MATERIAL=<str> TARGET_TEMP=<170..350>` | Edits the `materials` table. |
 | `_BOX_SET_RUNOUT_SWAP` | `ENABLE=0\|1` | Endless-spool equivalent. |
 | `BOX_CUT`, `NOZZLE_CLEAN`, `BOX_GO_TO_WASTEBIN`, `BOX_RUNOUT_CHECK`, `BOX_DEBUG`, `BOX_BUFFER_RETRACT` | no parameters | |
@@ -404,7 +405,7 @@ Remaining gaps, degraded rather than broken:
 | `set_tool_mapping` via TNN + `box.map` | No equivalent — the module maps tools to slots 1:1 |
 | Bypass / external spool load | The `external: true` entry is observable and `T<external>` exists, but the flow is untested here |
 
-Note `push_slot_color_to_firmware` is **not** a gap: its Fork counterpart is `_BOX_SLOT_SET`. Because that command requires a material alongside the color, the backend reads the slot's current material to build the write, and skips only when the slot has none.
+Note `push_slot_color_to_firmware` is **not** a gap: its Fork counterpart is `_BOX_SLOT_SET`, which writes color, brand, name, and Spoolman link together. Because it requires a material, the backend reads the current slot profile to build the write; an empty material instead emits `_BOX_SLOT_CLEAR`. No temperature is sent to Box.
 
 Parse: `AmsBackendCfs::parse_flat_box_status()`. Builders: `load_gcode` / `unload_gcode` / `swap_gcode` / `slot_set_gcode`. Tests: `tests/unit/test_ams_cfs_flat_schema.cpp` (`[flat]`, `[fork]`), built on the real QJKZEMTS payload.
 

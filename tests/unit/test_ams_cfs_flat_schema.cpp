@@ -385,10 +385,10 @@ TEST_CASE("CFS flat schema: malformed payloads degrade, never throw", "[ams][cfs
 // so none of these carry the stock envelope.
 
 TEST_CASE("CFS Fork dialect: gcode builders", "[ams][cfs][flat][fork]") {
-    SECTION("load emits BOX_LOAD with a SLOT parameter") {
-        REQUIRE(AmsBackendCfs::load_gcode(0, CfsMacroVariant::Fork) == "BOX_LOAD SLOT=0");
-        REQUIRE(AmsBackendCfs::load_gcode(7, CfsMacroVariant::Fork) == "BOX_LOAD SLOT=7");
-        REQUIRE(AmsBackendCfs::load_gcode(15, CfsMacroVariant::Fork) == "BOX_LOAD SLOT=15");
+    SECTION("load emits the Box-owned T command") {
+        REQUIRE(AmsBackendCfs::load_gcode(0, CfsMacroVariant::Fork) == "T0");
+        REQUIRE(AmsBackendCfs::load_gcode(7, CfsMacroVariant::Fork) == "T7");
+        REQUIRE(AmsBackendCfs::load_gcode(15, CfsMacroVariant::Fork) == "T15");
     }
 
     SECTION("unload emits a bare BOX_UNLOAD — never with SLOT") {
@@ -400,8 +400,8 @@ TEST_CASE("CFS Fork dialect: gcode builders", "[ams][cfs][flat][fork]") {
     }
 
     SECTION("swap emits the T<n> toolchange, not BOX_CHANGE") {
-        REQUIRE(AmsBackendCfs::swap_gcode(0, CfsMacroVariant::Fork) == "T0 FLUSH=1");
-        REQUIRE(AmsBackendCfs::swap_gcode(3, CfsMacroVariant::Fork) == "T3 FLUSH=1");
+        REQUIRE(AmsBackendCfs::swap_gcode(0, CfsMacroVariant::Fork) == "T0");
+        REQUIRE(AmsBackendCfs::swap_gcode(3, CfsMacroVariant::Fork) == "T3");
         REQUIRE(AmsBackendCfs::swap_gcode(3, CfsMacroVariant::Fork).find("BOX_CHANGE") ==
                 std::string::npos);
     }
@@ -467,34 +467,36 @@ TEST_CASE("CFS Fork dialect: detected from the module's own identity marker",
 // --- Fork slot metadata write ----------------------------------------------
 
 TEST_CASE("CFS Fork dialect: slot metadata write", "[ams][cfs][flat][fork]") {
-    // _BOX_SLOT_SET SLOT=<n> MATERIAL=<str> COLOR=#RRGGBB [BRAND=] [NAME=]
+    // _BOX_SLOT_SET SLOT=<n> MATERIAL=<str> COLOR="#RRGGBB" BRAND="..." NAME="..."
     // All three of SLOT/MATERIAL/COLOR are REQUIRED — box.py raises on any
     // missing one, so a color-only write (the stock BOX_MODIFY_TN_DATA shape)
     // is not expressible and must carry the material along.
-    SECTION("emits all three required parameters") {
-        const std::string g = AmsBackendCfs::slot_set_gcode(2, "PETG", 0x0A2989);
-        REQUIRE(g == "_BOX_SLOT_SET SLOT=2 MATERIAL=PETG COLOR=#0A2989");
+    SECTION("emits the full Box profile with quoted values") {
+        const std::string g =
+            AmsBackendCfs::slot_set_gcode(2, "PETG", 0x0A2989, "eSUN", "Ocean Blue", 42);
+        REQUIRE(g == "_BOX_SLOT_SET SLOT=2 MATERIAL=PETG COLOR=\"#0A2989\" BRAND=\"eSUN\" "
+                     "NAME=\"Ocean Blue\" SPOOLMAN_ID=42");
     }
 
-    SECTION("color is zero-padded to six hex digits") {
-        REQUIRE(AmsBackendCfs::slot_set_gcode(0, "PLA", 0x000000) ==
-                "_BOX_SLOT_SET SLOT=0 MATERIAL=PLA COLOR=#000000");
-        REQUIRE(AmsBackendCfs::slot_set_gcode(1, "ABS", 0x0000FF) ==
-                "_BOX_SLOT_SET SLOT=1 MATERIAL=ABS COLOR=#0000FF");
+    SECTION("clears optional Box profile fields") {
+        REQUIRE(AmsBackendCfs::slot_set_gcode(0, "PLA", 0x000000, "", "", 0) ==
+                "_BOX_SLOT_SET SLOT=0 MATERIAL=PLA COLOR=\"#000000\" BRAND=\"\" NAME=\"\" "
+                "SPOOLMAN_ID=-1");
     }
 
-    SECTION("material is uppercased to match the module's own normalization") {
-        REQUIRE(AmsBackendCfs::slot_set_gcode(0, "petg", 0xFFFFFF) ==
-                "_BOX_SLOT_SET SLOT=0 MATERIAL=PETG COLOR=#FFFFFF");
+    SECTION("escapes quoted profile fields") {
+        REQUIRE(AmsBackendCfs::slot_set_gcode(0, "petg", 0xFFFFFF, "A\\B", "Bob \"Blue\"", 7) ==
+                "_BOX_SLOT_SET SLOT=0 MATERIAL=PETG COLOR=\"#FFFFFF\" BRAND=\"A\\\\B\" "
+                "NAME=\"Bob \\\"Blue\\\"\" SPOOLMAN_ID=7");
     }
 
     SECTION("no command without a material — the module would reject it") {
-        REQUIRE(AmsBackendCfs::slot_set_gcode(0, "", 0xFFFFFF).empty());
+        REQUIRE(AmsBackendCfs::slot_set_gcode(0, "", 0xFFFFFF, "", "", 0).empty());
     }
 
     SECTION("out-of-range slot yields no command") {
-        REQUIRE(AmsBackendCfs::slot_set_gcode(-1, "PLA", 0xFFFFFF).empty());
-        REQUIRE(AmsBackendCfs::slot_set_gcode(16, "PLA", 0xFFFFFF).empty());
+        REQUIRE(AmsBackendCfs::slot_set_gcode(-1, "PLA", 0xFFFFFF, "", "", 0).empty());
+        REQUIRE(AmsBackendCfs::slot_set_gcode(16, "PLA", 0xFFFFFF, "", "", 0).empty());
     }
 }
 

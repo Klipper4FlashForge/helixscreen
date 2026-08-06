@@ -81,20 +81,11 @@ class CfsErrorDecoder {
 /// K1-series printer. Issue #968.
 ///
 /// Fork — community Kalico ports of the K2 whose reimplemented `box` module
-/// replaces Creality's closed one. High-level and self-contained: BOX_LOAD,
-/// BOX_UNLOAD, BOX_CHANGE, BOX_CUT, BOX_RESET, BOX_RESUME, BOX_RECOVERY,
-/// BOX_GO_TO_WASTEBIN, BOX_EMERGENCY_STOP — the port's box.py owns the whole
-/// feed/purge/park sequence, so there is no envelope for HelixScreen to
-/// assemble. `BOX_LOAD` in the macro list is the discriminator; neither stock
-/// dialect defines it.
-///
-/// RESERVED — nothing assigns this value yet. The port's box.py is unpublished,
-/// so BOX_LOAD's parameter name is unverified and no builder emits it; the
-/// control paths are refused up front by reject_if_flat_schema() instead. The
-/// value exists so the dialect axis is expressible independently of CfsSchema,
-/// which is the mistake that made this firmware hard to support in the first
-/// place. See docs/devel/printers/CREALITY_K2_SUPPORT.md § "Community Kalico
-/// port".
+/// replaces Creality's closed one. `T<n>` and `BOX_UNLOAD` are high-level and
+/// self-contained: box.py owns the whole feed/purge/park sequence, so
+/// HelixScreen sends no stock envelope. Detected by `fluidd_widget_version` in
+/// the box payload. See docs/devel/printers/CREALITY_K2_SUPPORT.md §
+/// "Community Kalico port".
 enum class CfsMacroVariant {
     K2,
     K1,
@@ -269,7 +260,8 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     [[nodiscard]] static bool detect_fork_dialect(const nlohmann::json& box_json);
 
     /// `_BOX_SLOT_SET` — the Fork counterpart to the stock BOX_MODIFY_TN_DATA
-    /// color write. Returns "" when the module would reject the command.
+    /// color write. Returns "" when the module would reject the command; an
+    /// empty material is handled by `_BOX_SLOT_CLEAR` before this builder.
     ///
     /// SLOT, MATERIAL and COLOR are all required by box.py's cmd_slot_set, so
     /// unlike the stock path this cannot be a color-only write; the caller must
@@ -277,7 +269,8 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     /// module's own `str(material).strip().upper()` normalization, so a later
     /// status frame echoes back exactly what we sent.
     static std::string slot_set_gcode(int global_slot_index, const std::string& material,
-                                      uint32_t color_rgb);
+                                      uint32_t color_rgb, const std::string& brand,
+                                      const std::string& name, int spoolman_id);
 
     // GCode helpers (public for testing)
     static std::string load_gcode(int global_slot_index,

@@ -2054,7 +2054,7 @@ The `box` Klipper object is shared by several firmwares that agree on almost not
 |----------------|--------------------|---------------|-----------------|
 | K2, K2 Pro, K2 Plus (built-in CFS) | Creality K2 firmware | `CR_BOX_*` primitives + `BOX_SAVE_FAN`/`BOX_MODE_WAIT` envelope | `PrinterDetector::is_creality_k1() == false` |
 | K1, K1C, K1 Max (official CFS upgrade ≥ v2.3.5.33) | Creality K1 CFS upgrade firmware | Plain `BOX_*` primitives, no fan-save/mode-wait | `PrinterDetector::is_creality_k1() == true` |
-| K2 Plus on a community Kalico port | `Jacob10383/kalico` + a reimplemented `box.py` | High-level `BOX_LOAD SLOT=` / `BOX_UNLOAD` / `T<n> FLUSH=` | `fluidd_widget_version` in the box payload (the module's own identity marker) |
+| K2 Plus on a community Kalico port | `Jacob10383/kalico` + a reimplemented `box.py` | High-level bare `T<n>` / `BOX_UNLOAD` | `fluidd_widget_version` in the box payload (the module's own identity marker) |
 
 **Axis 2 — box schema** (`CfsSchema`), detected per-payload by `AmsBackendCfs::detect_schema()`:
 
