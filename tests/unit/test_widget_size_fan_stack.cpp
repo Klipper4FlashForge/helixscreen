@@ -16,14 +16,12 @@
  *     style, but the text string cannot.
  *
  * `on_size_changed` also loops over `fan_stack_{part,hotend,aux}_icon` and
- * restyles the icon's font directly. The `icon` XML widget
- * (`ui_icon_xml_create`, `ui_icon.cpp`) is itself an `lv_label` — there is
- * no child glyph object beneath it. This branch used to go through
- * `lv_obj_get_child(icon, 0)`, which is always null for a childless label,
- * so the restyle silently never applied; fixed to style the icon object
- * itself. That makes fan_stack icons scale with the widget for the first
- * time (16px xs / 24px sm, same tiers as the text), a real visible change
- * covered by the font assertions below.
+ * restyles the icon object's own font. The `icon` XML widget
+ * (`ui_icon_xml_create`, `ui_icon.cpp`) is itself an `lv_label` with no
+ * child beneath it, so the glyph font lives on the icon object directly —
+ * styling it (rather than a nonexistent child) is what makes fan_stack
+ * icons scale with the widget, covered by the font assertions below (16px
+ * xs / 24px sm, the same size tiers the text already used).
  *
  * `bigger = (width_px >= W_NORMAL || height_px >= H_TALL)`. Three cases
  * isolate the two independent terms of that OR: neither term true (large
@@ -31,21 +29,31 @@
  * and height alone. A predicate that dropped either term would still pass
  * the "neither" case but fail exactly one of the other two.
  *
- * Row geometry (`fan_stack_{part,hotend,aux}_row` width/flex alignment) is
- * also driven by this predicate: compact rows are pinned to `LV_PCT(100)`
- * of the parent's content box; bigger rows are measured at
- * `LV_SIZE_CONTENT` and then widened to the widest row's measured content
- * width so all rows share a left edge. Empirically (`style_min_width="80"`
- * on the widget's own view, no explicit width, under the 800x480 test
- * display) the *parent* itself is content-sized and floors out at that
- * 80px minimum while the row is still compact (single-letter names, xs
- * icon/font) — so `LV_PCT(100)` measures smaller than what the same row's
- * content needs once it carries the full display name and the larger
- * sm icon/font. Net effect: the bigger row is measured *wider* than the
- * compact one, not narrower — content growth outpaces the fixed-vs-fluid
- * width mechanism. That is the actual, verified behavior; do not assume
- * the opposite from the "shrink to content" description above without
- * re-measuring against the real display size in use.
+ * Row geometry (`fan_stack_{part,hotend,aux}_row` width/flex alignment,
+ * `fan_stack_widget.cpp` ~:294-331) is also driven by this predicate, but
+ * its *width* is not a reliable cross-threshold observable and this file
+ * does not assert one as such. Compact rows are pinned to `LV_PCT(100)` of
+ * the widget's own granted width — which itself ranges anywhere up to
+ * `W_NORMAL - 1` px, since that is the whole compact domain — while bigger
+ * rows are sized to `LV_SIZE_CONTENT` (icon + display-name text + speed
+ * value), a fixed size that does not scale with the grant at all. Measured
+ * at a realistic near-threshold compact grant (harness now applies
+ * width_px/height_px to the widget's own `lv_obj_t`, matching
+ * `PanelWidgetManager`'s real `grid_track_extent()` allocation —
+ * `panel_widget_size_harness.h`'s `resize()`): compact width 123px
+ * (`W_NORMAL - 1 = 133`, minus `#space_xs` padding both sides) versus
+ * bigger width 111px — compact is *wider* here, the opposite of what an
+ * unconstrained harness object (which floors out at `style_min_width="80"`
+ * with nothing to widen it) had shown before that fix. Neither direction
+ * generalizes: a longer resolved fan name pushes the bigger row's fixed
+ * content width up, and a wider compact grant pushes the compact row's
+ * width up too, independently. So this file asserts the one part of that
+ * relationship that IS architecturally guaranteed rather than data/grant
+ * dependent — `LV_PCT(100)` resolving to the container's actual content
+ * width in the compact case — plus the `flex_main_place` style
+ * (`LV_FLEX_ALIGN_CENTER` compact / `LV_FLEX_ALIGN_START` bigger), which
+ * `on_size_changed` sets unconditionally per branch and is true regardless
+ * of any pixel measurement.
  */
 
 #include "ui_fonts.h"
@@ -119,9 +127,12 @@ TEST_CASE_METHOD(LVGLUITestFixture, "fan_stack labels/names follow pixels, not s
     CHECK(lv_obj_get_style_text_font(hotend_icon, LV_PART_MAIN) == &mdi_icons_16);
     CHECK(lv_obj_get_style_text_font(aux_icon, LV_PART_MAIN) == &mdi_icons_16);
 
-    // Compact: row fills the full column width (LV_PCT(100)), content centered.
-    int compact_row_w = lv_obj_get_width(part_row);
-    CHECK(compact_row_w == lv_obj_get_content_width(h.root()));
+    // Compact: row fills the full column width (LV_PCT(100)) — an
+    // architectural guarantee regardless of how wide "compact" happens to be
+    // granted here, unlike a raw pixel comparison against the bigger form
+    // (see file header) — and content is centered within it.
+    CHECK(lv_obj_get_width(part_row) == lv_obj_get_content_width(h.root()));
+    CHECK(lv_obj_get_style_flex_main_place(part_row, LV_PART_MAIN) == LV_FLEX_ALIGN_CENTER);
 
     // --- Width alone: at the width threshold, height still sub-threshold. ---
     h.resize(1, 1, W_NORMAL, H_TALL - 1);
@@ -144,13 +155,12 @@ TEST_CASE_METHOD(LVGLUITestFixture, "fan_stack labels/names follow pixels, not s
     CHECK(lv_obj_get_style_text_font(hotend_icon, LV_PART_MAIN) == &mdi_icons_24);
     CHECK(lv_obj_get_style_text_font(aux_icon, LV_PART_MAIN) == &mdi_icons_24);
 
-    // Bigger: row is measured at its own content width (icon 24px, full
-    // display-name text, sm font) rather than pinned to the parent's
-    // LV_PCT(100). That content is wider than the compact form measured
-    // above (see file header) — this is width GROWING with "bigger", not
-    // shrinking; a row that stayed pinned to the compact width would fail
-    // this the same way a row that failed to grow at all would.
-    CHECK(lv_obj_get_width(part_row) > compact_row_w);
+    // Bigger: row switches to LV_FLEX_ALIGN_START (left-aligned content,
+    // widened to the widest row) instead of compact's CENTER. Unlike a row
+    // width comparison this does not depend on how wide the grant is or how
+    // long the resolved fan name is — it is set unconditionally per branch
+    // (see file header for why a width-based assertion was dropped).
+    CHECK(lv_obj_get_style_flex_main_place(part_row, LV_PART_MAIN) == LV_FLEX_ALIGN_START);
 
     // --- Height alone: at the height threshold, width still sub-threshold. ---
     h.resize(1, 1, W_NORMAL - 1, H_TALL);
@@ -173,7 +183,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "fan_stack labels/names follow pixels, not s
     CHECK(lv_obj_get_style_text_font(hotend_icon, LV_PART_MAIN) == &mdi_icons_24);
     CHECK(lv_obj_get_style_text_font(aux_icon, LV_PART_MAIN) == &mdi_icons_24);
 
-    CHECK(lv_obj_get_width(part_row) > compact_row_w);
+    CHECK(lv_obj_get_style_flex_main_place(part_row, LV_PART_MAIN) == LV_FLEX_ALIGN_START);
 }
 
 /**

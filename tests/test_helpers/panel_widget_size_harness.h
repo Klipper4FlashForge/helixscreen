@@ -58,7 +58,27 @@ template <typename W> class PanelWidgetHarness {
 
     /// Drive a size change and settle the layout. Does not pump timers; a test
     /// that needs those calls process_lvgl() itself.
+    ///
+    /// width_px/height_px are the widget's real granted cell size in production
+    /// (PanelWidgetManager computes them via grid_track_extent() and the widget
+    /// sits in that grid cell — panel_widget_manager.cpp). Apply them to obj_
+    /// here too, or any assertion about geometry measures an unconstrained
+    /// object rather than a sized one — LV_PCT()-based children resolve
+    /// against whatever obj_'s last real size happened to be, not the size
+    /// this call claims to represent.
+    ///
+    /// Order matters: obj_ must already report its new size (via an
+    /// intervening layout pass) *before* on_size_changed() runs, because a
+    /// widget's own on_size_changed can read that geometry — e.g.
+    /// ToolSwitcherWidget::rebuild_pills() measures a child container's
+    /// height, which depends on obj_'s width already having settled.
+    /// lv_obj_get_width()-style getters read the last computed coord, not
+    /// what was just lv_obj_set_size()'d (see tests/CLAUDE.md's "LVGL traps"
+    /// section) — so set + update_layout has to happen first, not just
+    /// first-in-program-order.
     void resize(int colspan, int rowspan, int width_px, int height_px) {
+        lv_obj_set_size(obj_, width_px, height_px);
+        lv_obj_update_layout(obj_);
         widget_.on_size_changed(colspan, rowspan, width_px, height_px);
         lv_obj_update_layout(obj_);
     }
