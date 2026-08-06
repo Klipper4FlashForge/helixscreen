@@ -19,14 +19,16 @@
  * selected lane 0. Both executors now call the private selected_op_slot() — the
  * same resolution the button gating uses — so the op can never diverge.
  *
- * Mutation check: reverting execute_load() to load_filament(sys.current_slot)
- * makes "BoxTurtle: Load follows the selected tool" FAIL (load_filament gets 3,
- * not 0). If it still passes, the test does not reach the callsite.
+ * Mutation check: reverting execute_load() to dispatching on sys.current_slot
+ * makes "BoxTurtle: Load follows the selected tool" FAIL (the backend is asked
+ * for 3, not 0). If it still passes, the test does not reach the callsite.
  */
+
+#include "ui_panel_filament.h"
+#include "ui_update_queue.h"
 
 #include "../lvgl_ui_test_fixture.h"
 #include "../test_helpers/filament_panel_test_access.h"
-
 #include "ams_backend_mock.h"
 #include "ams_state.h"
 #include "ams_types.h"
@@ -34,8 +36,6 @@
 #include "post_op_cooldown_manager.h"
 #include "printer_state.h"
 #include "tool_state.h"
-#include "ui_panel_filament.h"
-#include "ui_update_queue.h"
 
 #include <lvgl.h>
 #include <memory>
@@ -58,7 +58,7 @@ class RecordingBackend : public AmsBackendMock {
   public:
     RecordingBackend() : AmsBackendMock(4) {}
 
-    AmsSystemInfo sys_{}; ///< Snapshot returned to the panel (test sets fields)
+    AmsSystemInfo sys_{};  ///< Snapshot returned to the panel (test sets fields)
     int loaded_slot_ = -1; ///< Which slot reports "loaded at toolhead"
     PathTopology topology_ = PathTopology::HUB; ///< Simulated path topology (test sets)
 
@@ -169,7 +169,9 @@ struct OpSlotHarness {
 };
 
 // Identity BoxTurtle/AFC snapshot: 4 lanes, tool i -> slot i, lane 4 (slot 3)
-// loaded to the toolhead, aggregate current_slot == 3.
+// loaded to the toolhead, aggregate current_slot == 3. The unit is populated
+// because the load-vs-swap rule reads per-slot mapped_tool off it — a real AFC
+// snapshot always carries its lanes.
 AmsSystemInfo boxturtle_sys() {
     AmsSystemInfo sys;
     sys.type = AmsType::AFC;
@@ -177,6 +179,17 @@ AmsSystemInfo boxturtle_sys() {
     sys.current_slot = 3;
     sys.filament_loaded = true;
     sys.tool_to_slot_map = {0, 1, 2, 3};
+
+    AmsUnit unit;
+    unit.slot_count = 4;
+    unit.connected = true;
+    for (int i = 0; i < 4; ++i) {
+        SlotInfo slot;
+        slot.slot_index = i;
+        slot.mapped_tool = i;
+        unit.slots.push_back(slot);
+    }
+    sys.units.push_back(std::move(unit));
     return sys;
 }
 
@@ -193,9 +206,11 @@ ToolTopology identity_topo() {
 TEST_CASE_METHOD(LVGLUITestFixture,
                  "BoxTurtle: execute_load targets the SELECTED tool, not current_slot",
                  "[filament][op_slot][panel]") {
-    // Dropdown = T0 while lane 4 (slot 3) is loaded. execute_load() must dispatch
-    // load_filament(0) — the selected lane — never load_filament(3). This is the
-    // exact single-source-of-truth bug the fix closes, and the mutation target.
+    // Dropdown = T0 while lane 4 (slot 3) is loaded. Filament is seated, so this
+    // is a swap, not a fresh load (plan_load's load-vs-swap rule) — but the
+    // argument must still come from the SELECTED lane: change_tool(0), never a
+    // dispatch derived from current_slot 3. That is the single-source-of-truth
+    // bug this guards, and the mutation target.
     OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
     h.select_tool(0);
 
@@ -204,12 +219,12 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
     TA::execute_load(*h.panel);
 
-    REQUIRE(h.mock->load_calls == 1);
-    CHECK(h.mock->last_load_slot == 0); // NOT 3 (the loaded current_slot)
+    REQUIRE(h.mock->change_tool_calls == 1);
+    CHECK(h.mock->last_change_tool == 0); // slot 0's mapped tool, NOT 3
+    CHECK(h.mock->load_calls == 0);       // seated machine swaps, never feeds
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture,
-                 "BoxTurtle: execute_unload targets the selected loaded slot",
+TEST_CASE_METHOD(LVGLUITestFixture, "BoxTurtle: execute_unload targets the selected loaded slot",
                  "[filament][op_slot][panel]") {
     // Dropdown = T3 and slot 3 is loaded -> unload_filament(3).
     OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
@@ -391,8 +406,10 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     process_lvgl(10);
     REQUIRE_FALSE(cd.has_pending_timer());
 
-    TA::execute_load(*h.panel); // fire-and-forget backend load; op guard now active
-    REQUIRE(h.mock->load_calls == 1);
+    // Fire-and-forget backend op; op guard now active. Lane 3 is seated, so the
+    // dispatch is the swap arm — the completion path is the same either way.
+    TA::execute_load(*h.panel);
+    REQUIRE(h.mock->change_tool_calls == 1);
 
     // Backend signals progress, then completion, via the shared AMS action subject.
     lv_subject_t* action = AmsState::instance().get_ams_action_subject();
@@ -440,8 +457,7 @@ template <typename T> class ScopedConfigValue {
 
 } // namespace
 
-TEST_CASE_METHOD(LVGLUITestFixture,
-                 "Post-op cooldown: disabled in settings schedules nothing",
+TEST_CASE_METHOD(LVGLUITestFixture, "Post-op cooldown: disabled in settings schedules nothing",
                  "[filament][op_slot][panel]") {
     OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
 
