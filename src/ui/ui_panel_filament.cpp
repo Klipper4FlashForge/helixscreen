@@ -24,6 +24,7 @@
 #include "app_globals.h"
 #include "config.h"
 #include "filament_database.h"
+#include "filament_op_dispatch.h"
 #include "filament_op_slot_resolver.h"
 #include "filament_sensor_manager.h"
 #include "lvgl/src/others/translation/lv_translation.h"
@@ -2491,46 +2492,88 @@ void FilamentPanel::set_limits(int min_temp, int max_temp, int min_extrude_temp)
 // ============================================================================
 
 void FilamentPanel::execute_load() {
-    // When an AMS backend is active and requires slot selection, prefer loading
-    // the currently-active slot directly — the filament panel's AMS card already
-    // shows which slot is active, asking the user to pick again in the AMS panel
-    // is redundant and confusing. Only fall through to the AMS-panel redirect
-    // when no slot is currently active (e.g. cold start, no tool selected).
+    // The three-tier routing (AMS backend → configured macro → raw gcode) lives
+    // in plan_load(), the shared answer for every dispatch surface — it also
+    // carries the already-mounted guard and the load-vs-swap rule that only
+    // AmsOperationSidebar used to apply. Everything the planner needs is read off
+    // the backend here; the panel only owns what to *do* with the answer.
     AmsBackend* backend = AmsState::instance().get_backend();
-    if (backend && backend->requires_slot_selection_for_load()) {
-        // Single source of truth: act on the dropdown-selected tool's slot, the
-        // same one the button gating uses — never a divergent current_slot read.
-        int slot = selected_op_slot();
-        if (slot >= 0) {
-            spdlog::info("[{}] Loading filament directly into selected slot {} (no redirect)",
-                         get_name(), slot);
-            // Backend load is fire-and-forget: completion is signaled by
-            // ams_action_observer_ when AmsAction reaches IDLE or ERROR. Start the
-            // guard + on-button spinner here; backend_op_active_ gates the observer
-            // so it only completes backend ops (never gcode/macro ops).
-            begin_operation_guard();
-            backend_op_active_ = true;
-            op_in_flight_ = FilamentOp::Load;
-            op_started(FilamentOp::Load);
-            AmsError err = backend->load_filament(slot);
-            if (!err.success()) {
-                operation_guard_.end();
-                backend_op_active_ = false;
-                op_in_flight_.reset();
-                op_failed(FilamentOp::Load);
-                NOTIFY_ERROR("{}", err.user_msg);
-            }
-            return;
-        }
-        spdlog::info("[{}] AMS backend active ({}), no active slot — redirecting to AMS panel",
-                     get_name(), ams_type_to_string(backend->get_type()));
-        NOTIFY_INFO(lv_tr("Select a filament slot to load"));
-        navigate_to_ams_panel();
-        return;
+    AmsSystemInfo sys;
+    helix::ui::BackendCaps caps;
+    if (backend) {
+        sys = backend->get_system_info();
+        caps.present = true;
+        caps.requires_slot_selection_for_load = backend->requires_slot_selection_for_load();
+        caps.needs_unload_before_load = backend->needs_unload_before_load(sys);
+        caps.is_tool_changer = backend->get_type() == AmsType::TOOL_CHANGER;
     }
 
     const auto& info = StandardMacros::instance().get(StandardMacroSlot::LoadFilament);
-    if (!info.is_empty()) {
+    // Single source of truth: act on the dropdown-selected tool's slot, the same
+    // one the button gating uses — never a divergent current_slot read.
+    const helix::ui::FilamentOpPlan plan =
+        helix::ui::plan_load(sys, caps, selected_op_slot(), !info.is_empty());
+
+    switch (plan.tier) {
+    case helix::ui::FilamentTier::AmsBackend: {
+        // Backend load is fire-and-forget: completion is signaled by
+        // ams_action_observer_ when AmsAction reaches IDLE or ERROR. Start the
+        // guard + on-button spinner here; backend_op_active_ gates the observer
+        // so it only completes backend ops (never gcode/macro ops).
+        begin_operation_guard();
+        backend_op_active_ = true;
+        op_in_flight_ = FilamentOp::Load;
+        op_started(FilamentOp::Load);
+        AmsError err;
+        switch (plan.ams_call) {
+        case helix::ui::AmsCall::ChangeTool:
+            spdlog::info("[{}] Filament seated — swapping to selected slot via tool change T{}",
+                         get_name(), plan.ams_arg);
+            err = backend->change_tool(plan.ams_arg);
+            break;
+        case helix::ui::AmsCall::UnloadActive:
+            spdlog::info("[{}] Filament seated with no tool mapping — unloading active slot first",
+                         get_name());
+            err = backend->unload_active_filament();
+            break;
+        case helix::ui::AmsCall::Load:
+        default: // plan_load yields no other tier-1 call
+            spdlog::info("[{}] Loading filament directly into selected slot {} (no redirect)",
+                         get_name(), plan.ams_arg);
+            err = backend->load_filament(plan.ams_arg);
+            break;
+        }
+        if (!err.success()) {
+            operation_guard_.end();
+            backend_op_active_ = false;
+            op_in_flight_.reset();
+            op_failed(FilamentOp::Load);
+            NOTIFY_ERROR("{}", err.user_msg);
+        }
+        return;
+    }
+
+    case helix::ui::FilamentTier::Refused:
+        switch (plan.refusal) {
+        case helix::ui::FilamentRefusal::AlreadyMounted:
+            // SELECT_TOOL on the tool already on the carriage is a firmware no-op;
+            // dispatching it left the Load button spinning for the full guard
+            // timeout (bundle 9KRXZ62P). Refuse without arming guard or spinner —
+            // but say so, the user did press the button.
+            spdlog::info("[{}] Selected tool is already mounted — refusing load", get_name());
+            NOTIFY_INFO(lv_tr("That tool is already loaded"));
+            break;
+        case helix::ui::FilamentRefusal::SelectSlot:
+        default:
+            spdlog::info("[{}] AMS backend active ({}), no active slot — redirecting to AMS panel",
+                         get_name(), ams_type_to_string(backend->get_type()));
+            NOTIFY_INFO(lv_tr("Select a filament slot to load"));
+            navigate_to_ams_panel();
+            break;
+        }
+        return;
+
+    case helix::ui::FilamentTier::Macro: {
         std::string macro_name = info.get_macro();
         auto cached = MacroParamCache::instance().get(macro_name);
 
@@ -2557,6 +2600,10 @@ void FilamentPanel::execute_load() {
         // KNOWN_NO_PARAMS — execute directly
         run_filament_macro(macro_name, "Load", {});
         return;
+    }
+
+    case helix::ui::FilamentTier::RawGcode:
+        break;
     }
 
     // Fallback: fast move through bowden (56mm at 20mm/s) then slow push into
@@ -2609,23 +2656,32 @@ void FilamentPanel::execute_unload() {
 
     // When an AMS backend is active, route unload through it so the backend's
     // tool change sequence runs (retract, cut, purge) instead of raw extrusion.
-    // Note: bypass unload stays routed through the backend — AFC calls the user's
-    // unload_filament macro itself when bypass is enabled.
+    // plan_unload() gates tier 1 on the backend merely existing — deliberately
+    // asymmetric with plan_load(), because bypass unload stays on the backend:
+    // AFC calls the user's unload_filament macro itself when bypass is enabled.
     AmsBackend* backend = AmsState::instance().get_backend();
+    // Single source of truth: act on the dropdown-selected tool's slot, the same
+    // one the button gating uses — never a divergent current_slot read.
+    const int slot = selected_op_slot();
+    helix::ui::BackendCaps caps;
+    bool loaded = false;
     if (backend) {
-        // Single source of truth: act on the dropdown-selected tool's slot, the
-        // same one the button gating uses — never a divergent current_slot read.
-        int slot = selected_op_slot();
-        bool loaded = slot >= 0 && (backend->slot_is_actively_loaded(slot) ||
-                                    backend->slot_has_filament_at_toolhead(slot));
-        if (!loaded) {
-            NOTIFY_WARNING(lv_tr("No filament loaded to unload"));
-            return;
-        }
+        // Only `present` matters to plan_unload; the remaining caps answer the
+        // load-vs-swap question, which unload does not ask.
+        caps.present = true;
+        loaded = slot >= 0 && (backend->slot_is_actively_loaded(slot) ||
+                               backend->slot_has_filament_at_toolhead(slot));
+    }
 
+    const auto& info = StandardMacros::instance().get(StandardMacroSlot::UnloadFilament);
+    const helix::ui::FilamentOpPlan plan =
+        helix::ui::plan_unload(caps, slot, loaded, !info.is_empty());
+
+    switch (plan.tier) {
+    case helix::ui::FilamentTier::AmsBackend: {
         begin_operation_guard();
         spdlog::info("[{}] Unloading filament from selected slot {} via AMS backend ({})",
-                     get_name(), slot, ams_type_to_string(backend->get_type()));
+                     get_name(), plan.ams_arg, ams_type_to_string(backend->get_type()));
         // On-button spinner replaces the start toast. Completion is signaled by
         // ams_action_observer_ when AmsAction reaches IDLE or ERROR;
         // backend_op_active_ gates that observer to backend ops only.
@@ -2637,7 +2693,7 @@ void FilamentPanel::execute_unload() {
         // is authoritative, so the unload can never diverge from the gating or the
         // "is anything loaded?" guard above. Re-reading current_slot in the backend
         // was the U1 Filament-panel-unload wrong-tool bug.
-        AmsError err = backend->unload_filament(slot);
+        AmsError err = backend->unload_filament(plan.ams_arg);
         if (!err.success()) {
             operation_guard_.end();
             backend_op_active_ = false;
@@ -2649,8 +2705,12 @@ void FilamentPanel::execute_unload() {
         return;
     }
 
-    const auto& info = StandardMacros::instance().get(StandardMacroSlot::UnloadFilament);
-    if (!info.is_empty()) {
+    case helix::ui::FilamentTier::Refused:
+        // NothingLoaded is plan_unload's only refusal.
+        NOTIFY_WARNING(lv_tr("No filament loaded to unload"));
+        return;
+
+    case helix::ui::FilamentTier::Macro: {
         std::string macro_name = info.get_macro();
         auto cached = MacroParamCache::instance().get(macro_name);
 
@@ -2678,6 +2738,10 @@ void FilamentPanel::execute_unload() {
         // KNOWN_NO_PARAMS — execute directly
         run_filament_macro(macro_name, "Unload", {});
         return;
+    }
+
+    case helix::ui::FilamentTier::RawGcode:
+        break;
     }
 
     // Fallback: tip-shape (push 3mm, quick pull 5mm, dwell) then retract 80mm.

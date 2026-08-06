@@ -355,6 +355,50 @@ TEST_CASE_METHOD(SnapmakerFixture,
 // Filament Operation Command Tests
 // ============================================================================
 
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker load routes through AUTO_FEEDING LOAD=1",
+                 "[ams][snapmaker][load]") {
+    // The mirror of the unload contract below, and previously unasserted — the
+    // gap that let a UI-layer change silently swap this command for `T{n}`.
+    //
+    // FEED_AUTO silent-returns when passed no LOAD/UNLOAD parameter, and `T{n}`
+    // only seats the carriage without feeding, so both wrong answers look like
+    // "the button did nothing". See load_filament()'s trail-of-bad-guesses note.
+    SECTION("explicit slot emits AUTO_FEEDING EXTRUDER=n LOAD=1") {
+        CapturingSnapmakerBackend backend;
+        auto err = backend.load_filament(2);
+        REQUIRE(err.success());
+        REQUIRE(backend.captured_gcodes.size() == 1);
+        REQUIRE(backend.captured_gcodes[0] == "AUTO_FEEDING EXTRUDER=2 LOAD=1");
+    }
+}
+
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker never routes a load through a tool change",
+                 "[ams][snapmaker][load][dispatch]") {
+    // PARALLEL topology: four toolheads, each with its own extruder, sharing no
+    // path to a nozzle. The base needs_unload_before_load() rule is SERIAL —
+    // "clear the shared path first" — and is true here essentially always,
+    // because current_slot is assigned from toolhead.extruder and a tool is
+    // always picked up.
+    //
+    // Answering true routes a load through change_tool() -> `T{n}`, which seats
+    // the carriage and feeds nothing. That is what AmsOperationSidebar has been
+    // dispatching, and what plan_load() would make the filament panel dispatch
+    // too. AUTO_FEEDING already targets an arbitrary extruder directly.
+    CapturingSnapmakerBackend backend;
+
+    AmsSystemInfo seated = backend.get_system_info();
+    seated.filament_loaded = true;
+    seated.current_slot = 0;
+    CHECK_FALSE(backend.needs_unload_before_load(seated));
+
+    // And the command that would have been sent instead is the known-bad one,
+    // so this stays a real distinction rather than two spellings of one thing.
+    backend.captured_gcodes.clear();
+    REQUIRE(backend.change_tool(1).success());
+    REQUIRE(backend.captured_gcodes.size() == 1);
+    CHECK(backend.captured_gcodes[0] == "T1");
+}
+
 TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker unload routes through AUTO_FEEDING UNLOAD=1",
                  "[ams][snapmaker][unload]") {
     // INNER_FILAMENT_UNLOAD is the leaf macro the firmware's feed state machine

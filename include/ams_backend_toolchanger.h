@@ -5,6 +5,8 @@
 
 #include "ams_subscription_backend.h"
 
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -243,6 +245,45 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
      * @return AmsError (SUCCESS if valid, INVALID_SLOT otherwise)
      */
     AmsError validate_slot_index(int slot_index) const;
+
+    // === Optimistic dispatch + macro-ack resolution =========================
+    //
+    // The only thing that can move the action off the value a dispatch sets is
+    // a `toolchanger.status` frame, and Moonraker only pushes fields whose value
+    // CHANGED. klipper-toolchanger short-circuits SELECT_TOOL on the tool already
+    // on the carriage ("Tool tool T4 already selected") without touching
+    // `status`, so a no-op produces no frame at all and the action never leaves
+    // SELECTING — the filament panel spins and is_busy() locks out every later
+    // operation until restart. Same defect and same fix as AFC (#1183): set the
+    // action optimistically so there is a transition to complete, and resolve it
+    // on the macro's own gcode ack when the toolchanger never claimed the op.
+
+    /// Action the most recent dispatch set optimistically, cleared once that
+    /// dispatch has been resolved — by its ack, by klipper-toolchanger taking
+    /// the operation over, or by a newer dispatch superseding it.
+    std::optional<AmsAction> pending_dispatch_action_;
+
+    /// Monotonic dispatch counter. The ack carries the generation it was issued
+    /// under, so an ack that lands after a newer dispatch resolves nothing.
+    uint64_t dispatch_generation_{0};
+
+    /// Set @p action optimistically for a dispatch that is about to go out and
+    /// return the generation its ack must present. Caller holds mutex_.
+    uint64_t begin_dispatch_locked(AmsAction action);
+
+    /// Undo an optimistic set whose gcode never left the building. Caller must
+    /// NOT hold mutex_.
+    void abandon_dispatch(uint64_t generation);
+
+    /// Resolve a dispatch to IDLE on its macro's gcode ack, but only when the
+    /// toolchanger never took the operation over. Main thread; must NOT hold
+    /// mutex_.
+    void finalize_dispatch_after_macro(uint64_t generation);
+
+    /// Send a tool operation: set @p action optimistically, dispatch @p gcode
+    /// through ensure_homed_then(), and resolve on the macro's ack. Caller must
+    /// NOT hold mutex_ and must have passed check_preconditions().
+    AmsError dispatch_operation(std::string gcode, AmsAction action);
 
     // Tool changer specific state
     std::vector<std::string> tool_names_; ///< Tool names from discovery
