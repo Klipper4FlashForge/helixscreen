@@ -55,6 +55,10 @@ namespace helix::ui {
  * @endcode
  */
 class FilamentRunoutHandler {
+    // Reaches dispatch_load() without a live modal — see
+    // tests/test_helpers/filament_runout_handler_test_access.h.
+    friend class FilamentRunoutHandlerTestAccess;
+
   public:
     /**
      * @brief Construct handler with dependencies
@@ -197,6 +201,22 @@ class FilamentRunoutHandler {
      * @brief Hide and cleanup the runout guidance modal
      */
     void hide_runout_guidance_modal();
+
+    /**
+     * @brief Dispatch the dialog's "Load filament" action.
+     *
+     * Routes through the shared plan_load() ladder — AMS backend, then the
+     * configured LOAD_FILAMENT macro, then raw gcode — so this dialog agrees
+     * with the Filament panel and the AMS sidebar. Two constraints are specific
+     * to this surface: parameters are never prompted for (ParamPolicy::Suppress,
+     * because a param modal would stack on top of this live dialog), and a
+     * refusal never navigates away (the dialog the user is standing in would be
+     * torn down beneath them).
+     *
+     * Main thread only — called from the modal's button callback after its
+     * LifetimeToken check.
+     */
+    void dispatch_load();
 };
 
 } // namespace helix::ui

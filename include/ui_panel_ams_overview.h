@@ -126,8 +126,10 @@ class AmsOverviewPanel : public PanelBase {
 
     // === Setup Helpers ===
     void create_unit_cards(const AmsSystemInfo& info);
-    void update_unit_card(UnitCard& card, const AmsUnit& unit, int current_slot);
-    void create_mini_bars(UnitCard& card, const AmsUnit& unit, int current_slot);
+    // The mini bars take no current_slot: the active-lane outline comes from the
+    // per-slot active-loaded subject, not from comparing against current_slot.
+    void update_unit_card(UnitCard& card, const AmsUnit& unit);
+    void create_mini_bars(UnitCard& card, const AmsUnit& unit);
     void refresh_system_path(const AmsSystemInfo& info, int current_slot);
 
     // === Detail View Helpers ===

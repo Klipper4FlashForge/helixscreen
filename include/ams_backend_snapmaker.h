@@ -102,25 +102,10 @@ class AmsBackendSnapmaker : public AmsSubscriptionBackend {
         return PathTopology::PARALLEL;
     }
 
-    /**
-     * @brief Loading one tool never requires unloading another.
-     *
-     * The base rule (`filament_loaded || current_slot >= 0`) encodes a SERIAL
-     * assumption: one shared path to the nozzle, so it must be cleared before
-     * another lane can feed. This backend is PARALLEL — four toolheads, each
-     * with its own extruder, sharing nothing. The base rule is true here
-     * essentially always, because current_slot is assigned from
-     * toolhead.extruder and a tool is always picked up.
-     *
-     * Answering true routes a load through change_tool(), which sends `T{n}` —
-     * a tool change that seats the carriage and feeds no filament. load_filament()
-     * documents that command as its first wrong answer ("no-op when target tool
-     * already active ... so loads did nothing"). AUTO_FEEDING already targets an
-     * arbitrary extruder directly, so no prior unload is needed.
-     */
-    [[nodiscard]] bool needs_unload_before_load(const AmsSystemInfo& /*info*/) const override {
-        return false;
-    }
+    // needs_unload_before_load() is answered by the base class: every lane here
+    // is PARALLEL, so slot_has_independent_path() is true for all of them and the
+    // serial rule never applies. See AmsBackend for why, including the `T{n}`
+    // load this backend used to dispatch.
     [[nodiscard]] PathSegment get_filament_segment() const override;
     [[nodiscard]] PathSegment get_slot_filament_segment(int slot_index) const override;
     [[nodiscard]] PathSegment infer_error_segment() const override;

@@ -218,6 +218,32 @@ TEST_CASE("Toolchanger macro ack does not truncate a real tool change",
     CHECK(h.action() == AmsAction::IDLE);
 }
 
+TEST_CASE("Toolchanger never takes the swap arm, so a remap cannot mount the wrong tool",
+          "[ams][toolchanger][dispatch][1199]") {
+    // PARALLEL topology: every tool is its own independent path, so loading one
+    // never requires unloading another. The base needs_unload_before_load() rule
+    // is SERIAL and, because current_slot tracks the mounted tool, answered true
+    // permanently here.
+    //
+    // That matters because the swap arm dispatches change_tool(mapped_tool),
+    // while change_tool() validates its argument as a SLOT and emits
+    // `SELECT_TOOL T={n}` specifically to bypass ASSIGN_TOOL remapping — its own
+    // comment: "mount the physical tool the user tapped, not whatever the
+    // slicer's T{n} command was remapped to." Feeding it a remapped number would
+    // mount the wrong toolhead. Answering false keeps loads on the plain arm,
+    // where the argument is the slot the user actually tapped.
+    ToolChangerDispatchHelper h(5);
+    h.seat_tool(0);
+
+    AmsSystemInfo seated = h.get_system_info();
+    REQUIRE(seated.current_slot == 0); // a tool is always on the carriage
+    CHECK_FALSE(h.needs_unload_before_load(seated, /*target_slot=*/3));
+
+    REQUIRE(h.load_filament(3).success());
+    REQUIRE(h.sent().size() == 1);
+    CHECK(h.sent()[0] == "SELECT_TOOL T=3"); // the tapped tool, whatever the map says
+}
+
 TEST_CASE("Toolchanger dispatch failure reverts the optimistic action",
           "[ams][toolchanger][dispatch][1183]") {
     ToolChangerDispatchHelper h(5);

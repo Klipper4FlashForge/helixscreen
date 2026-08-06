@@ -5,6 +5,7 @@
 #include "ams_error.h"
 #include "macro_param_cache.h"
 #include "settings_manager.h"
+#include "slot_registry.h"
 
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
@@ -188,6 +189,11 @@ AmsBackendQidi::AmsBackendQidi(MoonrakerAPI* api, helix::MoonrakerClient* client
     system_info_.tip_method = TipMethod::CUT;
 
     system_info_.units.push_back(make_qidi_unit(0));
+    // make_qidi_unit() seeds the identity mapping on the slots; publish the
+    // matching forward map so a pre-first-status snapshot is already
+    // self-consistent in both directions. No lock: nothing else can observe
+    // this instance until the constructor returns.
+    rebuild_tool_map_locked();
     slot_rfid_.resize(NUM_SLOTS);
 
     // Box PTC dryer capabilities (issue #1019). max_temp_c is the settable ceiling
@@ -523,6 +529,43 @@ void AmsBackendQidi::apply_heater_status(const nlohmann::json& notification) {
     }
 }
 
+void AmsBackendQidi::rebuild_tool_map_locked() {
+    // SlotRegistry::set_tool_mapping() is the canonical implementation of the
+    // "a tool maps to exactly one slot" bookkeeping — it maintains both
+    // directions in lockstep and evicts whichever side lost a contested tool
+    // number. QIDI keeps its slot state on system_info_ rather than in a
+    // registry, so run the mapping through a throwaway registry and read both
+    // directions back out of it instead of hand-writing the reverse map here.
+    const int slot_count = std::max(0, system_info_.total_slots);
+
+    helix::printer::SlotRegistry ledger;
+    std::vector<std::string> names;
+    names.reserve(static_cast<size_t>(slot_count));
+    for (int i = 0; i < slot_count; ++i) {
+        names.push_back("slot" + std::to_string(i));
+    }
+    ledger.initialize("QIDI Box", names);
+
+    for (int i = 0; i < slot_count; ++i) {
+        const auto* slot = system_info_.get_slot_global(i);
+        if (slot && slot->mapped_tool >= 0) {
+            ledger.set_tool_mapping(i, slot->mapped_tool);
+        }
+    }
+
+    // Write the registry's normalised view back onto the slots: if two slots
+    // claimed the same tool number, set_tool_mapping() already dropped the
+    // loser, and the badge must not keep showing a tool that no longer routes
+    // through that lane.
+    for (int i = 0; i < slot_count; ++i) {
+        if (auto* slot = system_info_.get_slot_global(i)) {
+            slot->mapped_tool = ledger.tool_for_slot(i);
+        }
+    }
+
+    system_info_.tool_to_slot_map = ledger.tool_map();
+}
+
 void AmsBackendQidi::parse_save_variables(const nlohmann::json& variables) {
     if (!variables.is_object()) {
         return;
@@ -574,6 +617,12 @@ void AmsBackendQidi::parse_save_variables(const nlohmann::json& variables) {
             }
         }
     }
+
+    // Publish the forward map alongside the reverse mapped_tool the loop above
+    // just wrote — same pass, same source, so the two cannot disagree. Runs
+    // unconditionally because a box_count change earlier in this function
+    // resizes the slot vector and the map has to follow it.
+    rebuild_tool_map_locked();
 
     for (int i = 0; i < slot_count; ++i) {
         auto* slot = system_info_.get_slot_global(i);
@@ -905,6 +954,11 @@ AmsSystemInfo AmsBackendQidi::get_system_info() const {
 helix::printer::ToolMappingCapabilities AmsBackendQidi::get_tool_mapping_capabilities() const {
     // QIDI Box maps tools to slots via save_variables value_t<N> assignment.
     return {true, true, "Tool-to-slot mapping via save_variables"};
+}
+
+std::vector<int> AmsBackendQidi::get_tool_mapping() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return system_info_.tool_to_slot_map;
 }
 
 SlotInfo AmsBackendQidi::get_slot_info(int slot_index) const {

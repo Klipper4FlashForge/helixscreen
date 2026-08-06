@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "../lvgl_test_fixture.h"
+#include "../test_helpers/print_status_widget_test_access.h"
 #include "panel_widget_manager.h"
 #include "panel_widget_registry.h"
 #include "src/ui/panel_widgets/print_status_widget.h"
@@ -8,17 +9,6 @@
 #include "../catch_amalgamated.hpp"
 
 using namespace helix;
-
-// Friend access to private static subjects (header forward-declares this class
-// inside namespace helix; the definition must live in the same namespace).
-namespace helix {
-class PrintStatusWidgetTestAccess {
-  public:
-    static lv_subject_t* idle_thumb_path_subject() {
-        return &PrintStatusWidget::idle_thumb_path_subject_;
-    }
-};
-} // namespace helix
 
 static bool s_widget_registered = false;
 

@@ -384,6 +384,22 @@ class PrintStatusWidget : public PanelWidget {
     void check_and_show_idle_runout_modal();
     void show_idle_runout_modal();
 
+    /**
+     * @brief Dispatch the idle runout dialog's "Load filament" action.
+     *
+     * The fourth surface on the shared plan_load() ladder — AMS backend, then
+     * the configured LOAD_FILAMENT macro, then raw gcode. It used to
+     * set_active(PanelId::Filament) instead, which navigated out from under the
+     * dialog and left the user to find the Load button themselves.
+     *
+     * Same two constraints as FilamentRunoutHandler, and for the same reasons:
+     * ParamPolicy::Suppress (a parameter modal would stack on top of this live
+     * dialog, whose observers keep firing underneath it), and a refusal never
+     * navigates. Main thread only — reached from the modal's button callback
+     * after its LifetimeToken check.
+     */
+    void dispatch_load();
+
     // Configuration state
     nlohmann::json config_;
     std::string layout_style_ = "library";      // "library" | "detailed"

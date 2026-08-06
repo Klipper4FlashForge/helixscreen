@@ -246,16 +246,21 @@ TEST_CASE("Load with filament seated calls change_tool on the mapped tool",
     CHECK(out.guard_armed);
 }
 
-TEST_CASE("Load with filament seated and no tool mapping calls unload_active_filament",
+TEST_CASE("Load with filament seated and no tool mapping still calls load_filament",
           "[filament][dispatch][wiring][swap]") {
+    // The panel used to dispatch unload_active_filament() here and arm the
+    // operation guard for a load that never came: the unload finished, the
+    // observer resolved the op, and the slot the user tapped was never fed.
+    // The backend now gets one command with the tapped slot.
     AmsSystemInfo sys = make_sys(4, /*current_slot=*/0, /*mapped_tools=*/{0, -1, -1, -1});
     BackendCaps seated = fresh_ams();
     seated.needs_unload_before_load = true;
 
     PanelOutcome out = panel_execute_load(sys, seated, /*target_slot=*/1,
                                           /*macro_available=*/true);
-    CHECK(out.call == AmsCall::UnloadActive);
-    CHECK(out.arg == -1); // unload_active_filament() takes no slot
+    CHECK(out.arm == Arm::Backend);
+    CHECK(out.call == AmsCall::Load);
+    CHECK(out.arg == 1);
     CHECK(out.guard_armed);
 }
 

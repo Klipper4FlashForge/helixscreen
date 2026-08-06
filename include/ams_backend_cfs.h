@@ -179,10 +179,16 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     // *preloaded* (cassette-staged) slot via current_slot with the nozzle still
     // empty, so on K1 only filament_loaded implies a cut-before-load is needed.
     // K2 keeps the base behavior (filament_loaded OR current_slot >= 0). (#968)
-    [[nodiscard]] bool needs_unload_before_load(const AmsSystemInfo& info) const override {
-        return macro_variant_ == CfsMacroVariant::K1
-                   ? info.filament_loaded
-                   : (info.filament_loaded || info.current_slot >= 0);
+    //
+    // Every CFS bay merges into one extruder, so the base class's per-lane
+    // independence arm can never fire here — deferring to it on K2 keeps that
+    // path in one place without changing the answer.
+    [[nodiscard]] bool needs_unload_before_load(const AmsSystemInfo& info,
+                                                int target_slot) const override {
+        if (macro_variant_ != CfsMacroVariant::K1) {
+            return AmsBackend::needs_unload_before_load(info, target_slot);
+        }
+        return info.filament_loaded;
     }
 
     // Slot management (user overrides persisted via shared FilamentSlotOverrideStore)
