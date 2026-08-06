@@ -16,6 +16,7 @@
 #include "observer_factory.h"
 #include "panel_widget_manager.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 #include "theme_manager.h"
 
 #include <spdlog/spdlog.h>
@@ -130,9 +131,9 @@ void ActiveSpoolWidget::detach() {
     spdlog::debug("[ActiveSpoolWidget] Detached");
 }
 
-void ActiveSpoolWidget::on_size_changed(int colspan, int /*rowspan*/, int /*width_px*/,
+void ActiveSpoolWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_px,
                                         int /*height_px*/) {
-    bool wide = (colspan >= 2);
+    bool wide = (width_px >= widget_size::W_NORMAL);
     if (wide == is_wide_)
         return;
     is_wide_ = wide;
@@ -145,7 +146,7 @@ void ActiveSpoolWidget::on_size_changed(int colspan, int /*rowspan*/, int /*widt
     // Refresh display for the now-visible elements
     update_spool_display();
 
-    spdlog::debug("[ActiveSpoolWidget] on_size_changed colspan={} -> {}", colspan,
+    spdlog::debug("[ActiveSpoolWidget] on_size_changed width_px={} -> {}", width_px,
                   wide ? "wide" : "compact");
 }
 
