@@ -87,7 +87,16 @@ void TempGraphWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
 
     // Seed features from the measured 800x480 two-span (colspan=2/rowspan=2)
     // extents — a stand-in until the first real on_size_changed() call
-    // supplies this instance's actual pixel size.
+    // supplies this instance's actual pixel size. At 233x230 both width and
+    // height clear every threshold in features_for_size(), so this seed
+    // yields the full feature mask (LINES | TARGET_LINES | LEGEND | Y_AXIS |
+    // X_AXIS | GRADIENTS | READOUTS | TARGET_HISTORY, i.e. TEMP_GRAPH_ALL_FEATURES),
+    // where the old colspan=2/rowspan=2 default withheld READOUTS (needed
+    // colspan>=3). The difference never reaches the screen: PanelWidgetManager
+    // calls on_size_changed() with this instance's real pixel extents
+    // immediately after attach() returns, in the same synchronous loop
+    // iteration and before any paint (panel_widget_manager.cpp:862-868), so
+    // this seed only lives for the width of that one function call.
     constexpr int kSeedWidthPx = 233;
     constexpr int kSeedHeightPx = 230;
 

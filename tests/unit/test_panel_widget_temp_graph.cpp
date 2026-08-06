@@ -504,6 +504,36 @@ TEST_CASE("TempGraphWidget::features_for_size edge cases", "[temp_graph][panel_w
 }
 
 // ============================================================================
+// attach() initial_features seed — pins the feature mask that
+// TempGraphWidget::attach() hands the controller before the first real
+// on_size_changed() call arrives.
+// ============================================================================
+
+TEST_CASE("TempGraphWidget::attach() seed extents yield the full feature mask",
+          "[temp_graph][panel_widget][features]") {
+    // Mirrors the constexpr kSeedWidthPx/kSeedHeightPx in
+    // TempGraphWidget::attach() (temp_graph_widget.cpp) — the measured
+    // 800x480 two-span (colspan=2/rowspan=2) extents used to seed
+    // initial_features. Both dimensions clear every threshold in
+    // features_for_size(), so the seed yields TEMP_GRAPH_ALL_FEATURES —
+    // unlike the old colspan=2/rowspan=2 default, which withheld READOUTS
+    // (needed colspan>=3). A change to features_for_size() or to these seed
+    // values that narrows the mask should fail this test rather than
+    // silently changing the widget's pre-resize state.
+    constexpr int kSeedWidthPx = 233;
+    constexpr int kSeedHeightPx = 230;
+
+    uint32_t f = TempGraphWidget::features_for_size(kSeedWidthPx, kSeedHeightPx);
+
+    uint32_t expected = TEMP_GRAPH_FEATURE_LINES | TEMP_GRAPH_FEATURE_TARGET_LINES |
+                        TEMP_GRAPH_FEATURE_LEGEND | TEMP_GRAPH_FEATURE_Y_AXIS |
+                        TEMP_GRAPH_FEATURE_X_AXIS | TEMP_GRAPH_FEATURE_GRADIENTS |
+                        TEMP_GRAPH_FEATURE_READOUTS | TEMP_GRAPH_FEATURE_TARGET_HISTORY;
+    REQUIRE(f == expected);
+    REQUIRE(f == TEMP_GRAPH_ALL_FEATURES); // sanity: equals the module's own "everything" mask
+}
+
+// ============================================================================
 // Config with custom colors persists
 // ============================================================================
 
