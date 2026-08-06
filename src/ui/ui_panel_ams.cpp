@@ -26,6 +26,9 @@
 #include "ui_utils.h"
 
 #include "ams_backend.h"
+#if HELIX_HAS_CFS
+#include "ams_backend_cfs.h"
+#endif
 #include "ams_state.h"
 #include "ams_types.h"
 #include "app_globals.h"
@@ -1555,6 +1558,12 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
                 cleared.total_weight_g = -1;
                 auto error = backend->set_slot_info(slot, cleared);
                 if (error.success()) {
+#if HELIX_HAS_CFS
+                    if (backend->get_type() == AmsType::CFS) {
+                        static_cast<helix::printer::AmsBackendCfs*>(backend)
+                            ->clear_box_slot_profile(slot);
+                    }
+#endif
                     AmsState::instance().sync_from_backend();
                     NOTIFY_INFO(lv_tr("Slot {} spool cleared"), slot + 1);
                 } else {

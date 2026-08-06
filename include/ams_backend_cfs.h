@@ -186,9 +186,11 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     // override_store_->clear_async. CFS firmware populates brand / color_name /
     // total_weight_g from its RFID material database, so those fields are
     // preserved. Only spool_name / spoolman_* / remaining_weight_g are zeroed.
-    // The hardware-event detector calls this internally once an RFID
-    // fingerprint change confirms a physical swap.
     void clear_slot_override(int slot_index) override;
+
+    // Explicit Clear Spool action. Fork firmware owns the persisted profile;
+    // stock CFS dialects have no equivalent command.
+    void clear_box_slot_profile(int slot_index);
 
     // Bypass (not supported)
     AmsError enable_bypass() override;
@@ -260,8 +262,7 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     [[nodiscard]] static bool detect_fork_dialect(const nlohmann::json& box_json);
 
     /// `_BOX_SLOT_SET` — the Fork counterpart to the stock BOX_MODIFY_TN_DATA
-    /// color write. Returns "" when the module would reject the command; an
-    /// empty material is handled by `_BOX_SLOT_CLEAR` before this builder.
+    /// color write. Returns "" when the module would reject the command.
     ///
     /// SLOT, MATERIAL and COLOR are all required by box.py's cmd_slot_set, so
     /// unlike the stock path this cannot be a color-only write; the caller must

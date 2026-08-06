@@ -1736,7 +1736,7 @@ void AmsBackendCfs::push_slot_color_to_firmware(int global_index, uint32_t color
     }
 
     // The Fork module defines no BOX_MODIFY_TN_DATA. `_BOX_SLOT_SET` requires
-    // a material; an empty material selects Box's separate `_BOX_SLOT_CLEAR`.
+    // a material; explicit clears route through clear_box_slot_profile().
     if (macro_variant_ == CfsMacroVariant::Fork) {
         std::string material;
         std::string brand;
@@ -1755,10 +1755,6 @@ void AmsBackendCfs::push_slot_color_to_firmware(int global_index, uint32_t color
                     }
                 }
             }
-        }
-        if (material.empty()) {
-            execute_gcode("_BOX_SLOT_CLEAR SLOT=" + std::to_string(global_index));
-            return;
         }
         std::string gcode =
             slot_set_gcode(global_index, material, color_rgb, brand, name, spoolman_id);
@@ -2012,7 +2008,8 @@ std::string AmsBackendCfs::slot_set_gcode(int global_slot_index, const std::stri
     }
     char color[10];
     std::snprintf(color, sizeof(color), "#%06X", color_rgb & 0xFFFFFFu);
-    return "_BOX_SLOT_SET SLOT=" + std::to_string(global_slot_index) + " MATERIAL=" + upper +
+    return "_BOX_SLOT_SET SLOT=" + std::to_string(global_slot_index) +
+           " MATERIAL=" + quote_gcode_param(upper) +
            " COLOR=" + quote_gcode_param(color) + " BRAND=" + quote_gcode_param(brand) +
            " NAME=" + quote_gcode_param(name) +
            " SPOOLMAN_ID=" + std::to_string(spoolman_id > 0 ? spoolman_id : -1);
@@ -2703,6 +2700,12 @@ void AmsBackendCfs::clear_slot_override(int slot_index) {
     }
 
     emit_event(EVENT_SLOT_CHANGED, std::to_string(slot_index));
+}
+
+void AmsBackendCfs::clear_box_slot_profile(int slot_index) {
+    if (macro_variant_ == CfsMacroVariant::Fork) {
+        execute_gcode("_BOX_SLOT_CLEAR SLOT=" + std::to_string(slot_index));
+    }
 }
 
 } // namespace helix::printer

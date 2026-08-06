@@ -374,7 +374,7 @@ Signatures below are read from the module's own `_register_commands` / `cmd_*` h
 | `BOX_LOAD` | `SLOT=<0..15>` | Low-level feed primitive. HelixScreen does not call it. |
 | `BOX_UNLOAD` | `[MANUAL=0\|1]` | **Rejects `SLOT`** outright: "BOX_UNLOAD no longer accepts SLOT". |
 | `T<n>` | `[FLUSH=0\|1]`, default 1 | Load/tool change. HelixScreen emits bare `T<n>`; the registered command owns the change engine (cut → retract → load → flush). |
-| `_BOX_SLOT_SET` | `SLOT=<n> MATERIAL=<str> COLOR="#RRGGBB" BRAND="..." NAME="..." SPOOLMAN_ID=<id\|-1>` | SLOT, MATERIAL, and COLOR are **required**. Helix always sends the optional fields; `-1` clears the Spoolman link. Material is uppercased by the module. |
+| `_BOX_SLOT_SET` | `SLOT=<n> MATERIAL="<str>" COLOR="#RRGGBB" BRAND="..." NAME="..." SPOOLMAN_ID=<id\|-1>` | SLOT, MATERIAL, and COLOR are **required**. The COLOR quotes are required because Kalico treats a bare `#` as a comment. Helix always sends the optional fields; `-1` clears the Spoolman link. Material is uppercased by the module. |
 | `_BOX_SLOT_CLEAR` | `SLOT=<n>` | Removes the persisted Box profile for the slot. |
 | `_BOX_MATERIAL_SET` | `MATERIAL=<str> TARGET_TEMP=<170..350>` | Edits the `materials` table. |
 | `_BOX_SET_RUNOUT_SWAP` | `ENABLE=0\|1` | Endless-spool equivalent. |
@@ -405,7 +405,7 @@ Remaining gaps, degraded rather than broken:
 | `set_tool_mapping` via TNN + `box.map` | No equivalent — the module maps tools to slots 1:1 |
 | Bypass / external spool load | The `external: true` entry is observable and `T<external>` exists, but the flow is untested here |
 
-Note `push_slot_color_to_firmware` is **not** a gap: its Fork counterpart is `_BOX_SLOT_SET`, which writes color, brand, name, and Spoolman link together. Because it requires a material, the backend reads the current slot profile to build the write; an empty material instead emits `_BOX_SLOT_CLEAR`. No temperature is sent to Box.
+Note `push_slot_color_to_firmware` is **not** a gap: its Fork counterpart is `_BOX_SLOT_SET`, which writes color, brand, name, and Spoolman link together. Because it requires a material, the backend reads the current slot profile to build the write. The explicit Clear Spool action emits `_BOX_SLOT_CLEAR`.
 
 Parse: `AmsBackendCfs::parse_flat_box_status()`. Builders: `load_gcode` / `unload_gcode` / `swap_gcode` / `slot_set_gcode`. Tests: `tests/unit/test_ams_cfs_flat_schema.cpp` (`[flat]`, `[fork]`), built on the real QJKZEMTS payload.
 
@@ -475,7 +475,7 @@ Because the heater target reads 0 while maintaining, HelixScreen synthesizes a c
 
 ### GCode Commands (from `box_wrapper.so` decompilation)
 
-These are the **stock K2** commands (`CfsMacroVariant::K2`). Two other dialects exist: the K1 official CFS upgrade's non-prefixed `BOX_*_MATERIAL` set (`CfsMacroVariant::K1`, see `CREALITY_K1_SUPPORT.md`), and the community Kalico port's high-level `BOX_LOAD` / `BOX_UNLOAD` / `BOX_CHANGE` set (`CfsMacroVariant::Fork`, see [Community Kalico port](#community-kalico-port)). Dialect and box schema vary **independently** — do not infer one from the other.
+These are the **stock K2** commands (`CfsMacroVariant::K2`). Two other dialects exist: the K1 official CFS upgrade's non-prefixed `BOX_*_MATERIAL` set (`CfsMacroVariant::K1`, see `CREALITY_K1_SUPPORT.md`), and the community Kalico port's high-level `T<n>` / `BOX_UNLOAD` set (`CfsMacroVariant::Fork`, see [Community Kalico port](#community-kalico-port)). Dialect and box schema vary **independently** — do not infer one from the other.
 
 #### Filament Operations
 | Command | Description |

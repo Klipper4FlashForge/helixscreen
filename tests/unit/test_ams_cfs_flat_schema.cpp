@@ -467,27 +467,33 @@ TEST_CASE("CFS Fork dialect: detected from the module's own identity marker",
 // --- Fork slot metadata write ----------------------------------------------
 
 TEST_CASE("CFS Fork dialect: slot metadata write", "[ams][cfs][flat][fork]") {
-    // _BOX_SLOT_SET SLOT=<n> MATERIAL=<str> COLOR="#RRGGBB" BRAND="..." NAME="..."
+    // _BOX_SLOT_SET SLOT=<n> MATERIAL="<str>" COLOR="#RRGGBB" BRAND="..." NAME="..."
     // All three of SLOT/MATERIAL/COLOR are REQUIRED — box.py raises on any
     // missing one, so a color-only write (the stock BOX_MODIFY_TN_DATA shape)
     // is not expressible and must carry the material along.
     SECTION("emits the full Box profile with quoted values") {
         const std::string g =
             AmsBackendCfs::slot_set_gcode(2, "PETG", 0x0A2989, "eSUN", "Ocean Blue", 42);
-        REQUIRE(g == "_BOX_SLOT_SET SLOT=2 MATERIAL=PETG COLOR=\"#0A2989\" BRAND=\"eSUN\" "
+        REQUIRE(g == "_BOX_SLOT_SET SLOT=2 MATERIAL=\"PETG\" COLOR=\"#0A2989\" BRAND=\"eSUN\" "
                      "NAME=\"Ocean Blue\" SPOOLMAN_ID=42");
     }
 
     SECTION("clears optional Box profile fields") {
         REQUIRE(AmsBackendCfs::slot_set_gcode(0, "PLA", 0x000000, "", "", 0) ==
-                "_BOX_SLOT_SET SLOT=0 MATERIAL=PLA COLOR=\"#000000\" BRAND=\"\" NAME=\"\" "
+                "_BOX_SLOT_SET SLOT=0 MATERIAL=\"PLA\" COLOR=\"#000000\" BRAND=\"\" NAME=\"\" "
                 "SPOOLMAN_ID=-1");
     }
 
     SECTION("escapes quoted profile fields") {
         REQUIRE(AmsBackendCfs::slot_set_gcode(0, "petg", 0xFFFFFF, "A\\B", "Bob \"Blue\"", 7) ==
-                "_BOX_SLOT_SET SLOT=0 MATERIAL=PETG COLOR=\"#FFFFFF\" BRAND=\"A\\\\B\" "
+                "_BOX_SLOT_SET SLOT=0 MATERIAL=\"PETG\" COLOR=\"#FFFFFF\" BRAND=\"A\\\\B\" "
                 "NAME=\"Bob \\\"Blue\\\"\" SPOOLMAN_ID=7");
+    }
+
+    SECTION("quotes free-text material names") {
+        REQUIRE(AmsBackendCfs::slot_set_gcode(0, "PLA Matte", 0xFFFFFF, "", "", 0) ==
+                "_BOX_SLOT_SET SLOT=0 MATERIAL=\"PLA MATTE\" COLOR=\"#FFFFFF\" BRAND=\"\" "
+                "NAME=\"\" SPOOLMAN_ID=-1");
     }
 
     SECTION("no command without a material — the module would reject it") {

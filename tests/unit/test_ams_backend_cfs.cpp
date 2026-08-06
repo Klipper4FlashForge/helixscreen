@@ -86,6 +86,9 @@ class CfsTestAccess {
     static void set_macro_variant_k1(AmsBackendCfs& b) {
         b.macro_variant_ = helix::printer::CfsMacroVariant::K1;
     }
+    static void set_macro_variant_fork(AmsBackendCfs& b) {
+        b.macro_variant_ = helix::printer::CfsMacroVariant::Fork;
+    }
     // Seed N connected CFS units (unit_index 0..N-1) so device-action code that
     // iterates system_info_.units (e.g. refresh_rfid → BOX_INFO_REFRESH) has
     // addressable units without a live Moonraker parse.
@@ -168,6 +171,19 @@ class CfsK1RemapHelper : public CfsRemapHelper {
     }
 };
 } // namespace
+
+TEST_CASE("CFS Box profile clear is Fork-only", "[ams][cfs][fork]") {
+    CfsRemapHelper backend;
+
+    backend.clear_box_slot_profile(2);
+    REQUIRE(backend.captured.empty());
+
+    CfsTestAccess::set_macro_variant_fork(backend);
+
+    backend.clear_box_slot_profile(2);
+
+    REQUIRE(backend.captured == std::vector<std::string>{"_BOX_SLOT_CLEAR SLOT=2"});
+}
 
 TEST_CASE("CFS type enum", "[ams][cfs]") {
     SECTION("CFS is a valid AmsType") {
