@@ -7,6 +7,7 @@
 #include "../ui_test_utils.h"
 #include "lvgl/lvgl.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 
 #include <algorithm>
 
@@ -209,14 +210,29 @@ TEST_CASE("TempGraphWidget: registered in widget registry", "[temp_graph][panel_
 
 // ============================================================================
 // features_for_size tests
+//
+// features_for_size(width_px, height_px) — each SECTION below is chosen to
+// pin one predicate term at a time rather than a threshold in general:
+//   TARGET_LINES | TARGET_HISTORY  is an OR — width-alone and height-alone
+//                                   cases each independently trigger it.
+//   LEGEND | Y_AXIS | X_AXIS       is height-only.
+//   READOUTS                       is an AND — a case with width satisfied
+//                                   and height not (and vice versa) must both
+//                                   leave it off; only the case satisfying
+//                                   both turns it on.
 // ============================================================================
 
-TEST_CASE("TempGraphWidget::features_for_size maps grid size to feature flags",
+using helix::widget_size::H_TALL;
+using helix::widget_size::W_NORMAL;
+using helix::widget_size::W_WIDE;
+
+TEST_CASE("TempGraphWidget::features_for_size maps pixel size to feature flags",
           "[temp_graph][panel_widget][features]") {
-    SECTION("1x1: lines + gradients only") {
-        uint32_t f = TempGraphWidget::features_for_size(1, 1);
+    SECTION("below both thresholds: lines + gradients only") {
+        uint32_t f = TempGraphWidget::features_for_size(W_NORMAL - 1, H_TALL - 1);
         REQUIRE((f & TEMP_GRAPH_FEATURE_LINES) != 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_TARGET_LINES) == 0);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_TARGET_HISTORY) == 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_LEGEND) == 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_X_AXIS) == 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_Y_AXIS) == 0);
@@ -225,45 +241,53 @@ TEST_CASE("TempGraphWidget::features_for_size maps grid size to feature flags",
         REQUIRE((f & TEMP_GRAPH_FEATURE_READOUTS) == 0);
     }
 
-    SECTION("2x1 (wide): + target lines, no legend (needs rowspan>=2), no X-axis") {
-        uint32_t f = TempGraphWidget::features_for_size(2, 1);
+    SECTION("width alone at W_NORMAL, short: target lines/history via width, no legend/axes") {
+        uint32_t f = TempGraphWidget::features_for_size(W_NORMAL, H_TALL - 1);
         REQUIRE((f & TEMP_GRAPH_FEATURE_LINES) != 0);
-        REQUIRE((f & TEMP_GRAPH_FEATURE_TARGET_LINES) != 0);
-        REQUIRE((f & TEMP_GRAPH_FEATURE_LEGEND) == 0); // Legend needs rowspan>=2
-        REQUIRE((f & TEMP_GRAPH_FEATURE_X_AXIS) == 0); // X-axis needs rowspan>=2
+        REQUIRE((f & TEMP_GRAPH_FEATURE_TARGET_LINES) != 0);   // OR satisfied by width
+        REQUIRE((f & TEMP_GRAPH_FEATURE_TARGET_HISTORY) != 0); // OR satisfied by width
+        REQUIRE((f & TEMP_GRAPH_FEATURE_LEGEND) == 0);         // height-only, height short
+        REQUIRE((f & TEMP_GRAPH_FEATURE_X_AXIS) == 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_Y_AXIS) == 0);
-        REQUIRE((f & TEMP_GRAPH_FEATURE_GRADIENTS) !=
-                0); // always on; draw callback auto-disables when >3 series
-        REQUIRE((f & TEMP_GRAPH_FEATURE_READOUTS) == 0);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_GRADIENTS) != 0);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_READOUTS) == 0); // AND: width < W_WIDE
     }
 
-    SECTION("1x2 (tall): + target lines, legend, both axes") {
-        uint32_t f = TempGraphWidget::features_for_size(1, 2);
+    SECTION("height alone at H_TALL, narrow: target lines/history + legend/axes via height") {
+        uint32_t f = TempGraphWidget::features_for_size(W_NORMAL - 1, H_TALL);
         REQUIRE((f & TEMP_GRAPH_FEATURE_LINES) != 0);
-        REQUIRE((f & TEMP_GRAPH_FEATURE_TARGET_LINES) != 0);
-        REQUIRE((f & TEMP_GRAPH_FEATURE_LEGEND) != 0);
-        REQUIRE((f & TEMP_GRAPH_FEATURE_X_AXIS) != 0);
-        REQUIRE((f & TEMP_GRAPH_FEATURE_Y_AXIS) != 0);
-        REQUIRE((f & TEMP_GRAPH_FEATURE_GRADIENTS) !=
-                0); // always on; draw callback auto-disables when >3 series
-        REQUIRE((f & TEMP_GRAPH_FEATURE_READOUTS) == 0);
-    }
-
-    SECTION("2x2: both axes + gradients") {
-        uint32_t f = TempGraphWidget::features_for_size(2, 2);
-        REQUIRE((f & TEMP_GRAPH_FEATURE_LINES) != 0);
-        REQUIRE((f & TEMP_GRAPH_FEATURE_TARGET_LINES) != 0);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_TARGET_LINES) != 0);   // OR satisfied by height
+        REQUIRE((f & TEMP_GRAPH_FEATURE_TARGET_HISTORY) != 0); // OR satisfied by height
         REQUIRE((f & TEMP_GRAPH_FEATURE_LEGEND) != 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_X_AXIS) != 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_Y_AXIS) != 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_GRADIENTS) != 0);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_READOUTS) == 0); // AND: width < W_WIDE
+    }
+
+    SECTION("tall but below W_WIDE: readouts stay off (AND — width term false)") {
+        uint32_t f = TempGraphWidget::features_for_size(W_WIDE - 1, H_TALL);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_TARGET_LINES) != 0);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_LEGEND) != 0);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_X_AXIS) != 0);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_Y_AXIS) != 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_READOUTS) == 0);
     }
 
-    SECTION("3x2: all features including readouts") {
-        uint32_t f = TempGraphWidget::features_for_size(3, 2);
+    SECTION("wide at W_WIDE but short: readouts stay off (AND — height term false)") {
+        uint32_t f = TempGraphWidget::features_for_size(W_WIDE, H_TALL - 1);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_TARGET_LINES) != 0); // width alone satisfies the OR
+        REQUIRE((f & TEMP_GRAPH_FEATURE_LEGEND) == 0);       // height short
+        REQUIRE((f & TEMP_GRAPH_FEATURE_X_AXIS) == 0);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_Y_AXIS) == 0);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_READOUTS) == 0);
+    }
+
+    SECTION("wide + tall at W_WIDE/H_TALL: all features including readouts") {
+        uint32_t f = TempGraphWidget::features_for_size(W_WIDE, H_TALL);
         REQUIRE((f & TEMP_GRAPH_FEATURE_LINES) != 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_TARGET_LINES) != 0);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_TARGET_HISTORY) != 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_LEGEND) != 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_X_AXIS) != 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_Y_AXIS) != 0);
@@ -271,8 +295,8 @@ TEST_CASE("TempGraphWidget::features_for_size maps grid size to feature flags",
         REQUIRE((f & TEMP_GRAPH_FEATURE_READOUTS) != 0);
     }
 
-    SECTION("4x3: all features (larger than max)") {
-        uint32_t f = TempGraphWidget::features_for_size(4, 3);
+    SECTION("larger than any measured tier: all features") {
+        uint32_t f = TempGraphWidget::features_for_size(W_WIDE + 200, H_TALL + 200);
         REQUIRE((f & TEMP_GRAPH_FEATURE_LINES) != 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_READOUTS) != 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_GRADIENTS) != 0);
@@ -450,8 +474,8 @@ TEST_CASE("TempGraphWidget: generation counter increments on config save path",
 // ============================================================================
 
 TEST_CASE("TempGraphWidget::features_for_size edge cases", "[temp_graph][panel_widget][features]") {
-    SECTION("4x3 (larger than max defined): includes READOUTS") {
-        uint32_t f = TempGraphWidget::features_for_size(4, 3);
+    SECTION("far larger than any defined tier: includes READOUTS") {
+        uint32_t f = TempGraphWidget::features_for_size(W_WIDE * 3, H_TALL * 3);
         REQUIRE((f & TEMP_GRAPH_FEATURE_LINES) != 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_READOUTS) != 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_GRADIENTS) != 0);
@@ -459,18 +483,19 @@ TEST_CASE("TempGraphWidget::features_for_size edge cases", "[temp_graph][panel_w
         REQUIRE((f & TEMP_GRAPH_FEATURE_Y_AXIS) != 0);
     }
 
-    SECTION("1x3 (tall): both axes, no READOUTS") {
-        uint32_t f = TempGraphWidget::features_for_size(1, 3);
+    SECTION("tall, narrow: both axes via height, no READOUTS (width term false)") {
+        uint32_t f = TempGraphWidget::features_for_size(W_NORMAL - 1, H_TALL * 2);
         REQUIRE((f & TEMP_GRAPH_FEATURE_LINES) != 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_Y_AXIS) != 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_X_AXIS) != 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_READOUTS) == 0);
     }
 
-    SECTION("3x1 (wide, short): no axes (both need vertical room), no READOUTS") {
-        // X_AXIS now gated on rowspan>=2 (vertical room below chart), so a
-        // wide-but-short card gets neither axis. READOUTS still needs both.
-        uint32_t f = TempGraphWidget::features_for_size(3, 1);
+    SECTION("wide, short: no axes (height-only), no READOUTS (height term false)") {
+        // LEGEND/Y_AXIS/X_AXIS are gated on height_px >= H_TALL alone, so a
+        // wide-but-short card gets neither axis even though it is very wide.
+        // READOUTS still needs both terms.
+        uint32_t f = TempGraphWidget::features_for_size(W_WIDE * 2, H_TALL - 1);
         REQUIRE((f & TEMP_GRAPH_FEATURE_LINES) != 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_X_AXIS) == 0);
         REQUIRE((f & TEMP_GRAPH_FEATURE_Y_AXIS) == 0);

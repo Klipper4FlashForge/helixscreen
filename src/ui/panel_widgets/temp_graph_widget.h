@@ -49,8 +49,8 @@ class TempGraphWidget : public PanelWidget {
         return true;
     }
 
-    /// Map grid size to appropriate feature flags
-    static uint32_t features_for_size(int colspan, int rowspan);
+    /// Map physical widget size (gutter-correct pixels) to feature flags
+    static uint32_t features_for_size(int width_px, int height_px);
 
     /// Static click callback (XML-registered)
     static void on_temp_graph_widget_clicked(lv_event_t* e);
