@@ -9,6 +9,7 @@
 #include "app_globals.h"
 #include "observer_factory.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 #include "printer_state.h"
 #include "theme_manager.h"
 #include "tool_state.h"
@@ -46,6 +47,19 @@ ToolSwitcherWidget::~ToolSwitcherWidget() {
     }
 }
 
+// Compact mode: too small on both axes for pills (was colspan==1 &&
+// rowspan==1). W_NORMAL/H_TALL are the pixel floors below which the old
+// predicate's colspan/rowspan==1 held.
+bool ToolSwitcherWidget::is_compact_size() const {
+    return current_width_px_ < widget_size::W_NORMAL && current_height_px_ < widget_size::H_TALL;
+}
+
+// Narrow but tall: single vertical column of pills (was colspan==1 &&
+// rowspan>=2) — the legacy 1x2 layout.
+bool ToolSwitcherWidget::is_narrow_tall_size() const {
+    return current_width_px_ < widget_size::W_NORMAL && current_height_px_ >= widget_size::H_TALL;
+}
+
 void ToolSwitcherWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
     widget_obj_ = widget_obj;
     parent_screen_ = parent_screen;
@@ -68,7 +82,7 @@ void ToolSwitcherWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
         [token](ToolSwitcherWidget* self, int /*count*/) {
             if (token.expired())
                 return;
-            if (self->current_colspan_ == 1 && self->current_rowspan_ == 1) {
+            if (self->is_compact_size()) {
                 self->rebuild_compact();
             } else {
                 self->rebuild_pills();
@@ -93,15 +107,15 @@ void ToolSwitcherWidget::detach() {
     parent_screen_ = nullptr;
 }
 
-void ToolSwitcherWidget::on_size_changed(int colspan, int rowspan, int /*width_px*/,
-                                         int /*height_px*/) {
-    current_colspan_ = colspan;
-    current_rowspan_ = rowspan;
+void ToolSwitcherWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_px,
+                                         int height_px) {
+    current_width_px_ = width_px;
+    current_height_px_ = height_px;
 
     if (!widget_obj_)
         return;
 
-    if (colspan == 1 && rowspan == 1) {
+    if (is_compact_size()) {
         rebuild_compact();
     } else {
         rebuild_pills();
@@ -159,7 +173,7 @@ void ToolSwitcherWidget::rebuild_pills() {
     int cols = total;
     bool use_grid = false;
 
-    if (current_colspan_ == 1 && current_rowspan_ >= 2) {
+    if (is_narrow_tall_size()) {
         // Tall narrow widget — vertical pill column (legacy behavior).
         lv_obj_set_flex_flow(container, LV_FLEX_FLOW_COLUMN);
     } else {
@@ -265,7 +279,7 @@ void ToolSwitcherWidget::rebuild_pills() {
 }
 
 void ToolSwitcherWidget::on_active_tool_changed(int tool_index) {
-    if (current_colspan_ == 1 && current_rowspan_ == 1) {
+    if (is_compact_size()) {
         // Compact mode — rebuild to update the label
         if (widget_obj_) {
             rebuild_compact();

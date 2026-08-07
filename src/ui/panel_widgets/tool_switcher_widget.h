@@ -38,8 +38,11 @@ class ToolSwitcherWidget : public PanelWidget {
     lv_obj_t* parent_screen_ = nullptr;
     lv_obj_t* picker_backdrop_ = nullptr;
 
-    int current_colspan_ = 1;
-    int current_rowspan_ = 1;
+    // Physical size the widget was last granted, cached for observer paths
+    // (tool_count_observer_, on_active_tool_changed()) that fire later and
+    // need to know which layout is currently built without a size to read.
+    int current_width_px_ = 0;
+    int current_height_px_ = 0;
 
     ObserverGuard active_tool_observer_;
     ObserverGuard tool_count_observer_;
@@ -64,6 +67,12 @@ class ToolSwitcherWidget : public PanelWidget {
     void show_tool_picker();
     void dismiss_tool_picker();
     void handle_tool_selected(int tool_index);
+
+    // Layout predicates over the cached granted size — shared by the readers
+    // that fire from on_size_changed() itself and the ones that fire later
+    // from observers (tool_count_observer_, on_active_tool_changed()).
+    bool is_compact_size() const;
+    bool is_narrow_tall_size() const;
     void on_active_tool_changed(int tool_index);
 
   public:

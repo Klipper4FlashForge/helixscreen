@@ -1,0 +1,211 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/**
+ * @file test_widget_size_tool_switcher.cpp
+ * @brief tool_switcher picks compact vs. pill layout — and, within pills, the
+ * single-column-vs-row shape — from physical pixels, not colspan/rowspan.
+ *
+ * Unlike widgets whose on_size_changed() reads spans once and returns, three
+ * separate sites read the granted size: on_size_changed() itself picks
+ * compact vs. pills; rebuild_pills() (called again later from two different
+ * observers) picks the vertical-column shape from the same size; and
+ * on_active_tool_changed() re-derives which rebuild function to call, again
+ * from the same cached size. The last two never receive a size argument —
+ * they only see whatever on_size_changed() cached last time it ran. Each
+ * test below drives one of the three consumers and pairs its target pixels
+ * with a colspan/rowspan the *old* span-based predicate would resolve
+ * differently, so an implementation that still reads spans fails here
+ * instead of passing by coincidence.
+ *
+ * Tool data is seeded directly on the ToolState singleton via
+ * ToolTopology/set_ams_topology() (mirrors nozzle_temps's use of
+ * PrinterDiscovery+init_tools) — the mock `--test` printer backend never
+ * exposes more than one tool, so multi-pill scenarios are unreachable by
+ * driving the real app.
+ */
+
+#include "../lvgl_ui_test_fixture.h"
+#include "../test_helpers/panel_widget_size_harness.h"
+#include "../test_helpers/update_queue_test_access.h"
+#include "panel_widget_size.h"
+#include "src/ui/panel_widgets/tool_switcher_widget.h"
+#include "tool_state.h"
+
+#include "../catch_amalgamated.hpp"
+
+using namespace helix;
+using namespace helix::widget_size;
+
+namespace {
+
+/// ToolState is a singleton outside LVGLUITestFixture's own init/deinit
+/// chain, so a test that seeds it must clear it on the way out or later
+/// test files in the same binary inherit stale tools (see
+/// test_widget_size_nozzle_temps.cpp's NozzleTempsFixture, same trap).
+struct ToolSwitcherFixture : public LVGLUITestFixture {
+    ~ToolSwitcherFixture() override {
+        ToolState::instance().deinit_subjects();
+        helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+    }
+};
+
+/// Seeds ToolState with `count` generated tools ("T0".."Tn-1") and the given
+/// active index via the AMS-topology path — the simplest way to get an
+/// arbitrary tool count without going through PrinterDiscovery/JSON.
+void configure_tools(int count, int active_index = 0) {
+    ToolState& ts = ToolState::instance();
+    ts.deinit_subjects();
+    ts.init_subjects(false);
+
+    ToolTopology topo;
+    topo.tool_count = count;
+    topo.active_tool = active_index;
+    topo.tool_name_prefix = "T";
+    ts.set_ams_topology(topo);
+}
+
+/// Re-applies the topology with a new tool_count/active_tool so a later
+/// call only flips the ONE subject the test cares about (tool_count_ or
+/// active_tool_), isolating which observer fires.
+void update_tools(int count, int active_index) {
+    ToolTopology topo;
+    topo.tool_count = count;
+    topo.active_tool = active_index;
+    topo.tool_name_prefix = "T";
+    ToolState::instance().set_ams_topology(topo);
+}
+
+} // namespace
+
+TEST_CASE_METHOD(ToolSwitcherFixture,
+                 "tool_switcher: compact, pill-row and pill-column forms follow pixels, "
+                 "not spans",
+                 "[widget_size][tool_switcher]") {
+    configure_tools(3);
+
+    PanelWidgetHarness<ToolSwitcherWidget> h(test_screen(), state());
+    lv_obj_t* container = h.child("tool_switcher_container");
+    REQUIRE(container != nullptr);
+
+    // LVGL fires a freshly-added observer once immediately on subscribe
+    // (lv_subject_add_observer_obj), so attach() — via observe_int_sync —
+    // queues ONE deferred rebuild from each of tool_count_observer_ and
+    // active_tool_observer_ before any resize() ever runs, using whatever
+    // current_width_px_/current_height_px_ hold at that point (still the
+    // 0,0 default — compact). Drain that now, while it is a no-op (compact
+    // in, compact out). Left undrained, it would instead fire on the FIRST
+    // process_lvgl() below — by which point on_size_changed() has already
+    // cached the real resize() pixels — and silently re-derive the correct
+    // layout from those, masking a broken on_size_changed() for exactly one
+    // case: whichever resize happens to land first.
+    process_lvgl(30);
+
+    // --- Compact: both axes below floor. Contradicting span: 2x2 (old rule:
+    // colspan==1 && rowspan==1 is false -> pills).
+    h.resize(2, 2, W_NORMAL - 1, H_TALL - 1);
+    process_lvgl(30);
+
+    CHECK(lv_obj_get_child_count(container) == 2); // icon + label
+    CHECK(lv_obj_has_flag(container, LV_OBJ_FLAG_CLICKABLE));
+    CHECK(lv_obj_get_style_flex_flow(container, LV_PART_MAIN) == LV_FLEX_FLOW_COLUMN);
+
+    // --- Pill row: width at/over the floor. Height is deliberately short
+    // (well under two pill rows' worth of content height) so rebuild_pills()'s
+    // own row-count measurement — a real-geometry heuristic independent of
+    // the colspan/rowspan migration this test targets — keeps a single flex
+    // row instead of switching to its 2-row grid. Contradicting span: 1x1
+    // (old rule -> compact).
+    h.resize(1, 1, W_NORMAL, 60);
+    process_lvgl(30);
+
+    REQUIRE(lv_obj_get_child_count(container) == 3); // one ui_button per tool
+    CHECK(lv_obj_get_style_flex_flow(container, LV_PART_MAIN) == LV_FLEX_FLOW_ROW);
+
+    // --- Pill column: narrow but tall — the legacy 1x2 vertical-stack shape
+    // (tool_switcher_widget.cpp's rebuild_pills(), the current_rowspan_>=2
+    // branch). Contradicting span: 1x1 (old rule -> compact, not even pills).
+    h.resize(1, 2, W_NORMAL - 1, H_TALL);
+    process_lvgl(30);
+
+    REQUIRE(lv_obj_get_child_count(container) == 3);
+    CHECK(lv_obj_get_style_flex_flow(container, LV_PART_MAIN) == LV_FLEX_FLOW_COLUMN);
+}
+
+TEST_CASE_METHOD(ToolSwitcherFixture,
+                 "tool_switcher: on_active_tool_changed rebuilds in pill form using the "
+                 "cached size, not a fresh span",
+                 "[widget_size][tool_switcher]") {
+    configure_tools(3, /*active_index=*/0);
+
+    PanelWidgetHarness<ToolSwitcherWidget> h(test_screen(), state());
+    lv_obj_t* container = h.child("tool_switcher_container");
+    REQUIRE(container != nullptr);
+
+    // Drain attach()'s immediate-on-subscribe observer notifications (see
+    // the longer comment in the compact/pill-row/pill-column test above)
+    // before the first resize(), so it can't fire on a later process_lvgl()
+    // and mask a broken on_size_changed().
+    process_lvgl(30);
+
+    // Grant wide pixels (pills, either row or grid sub-shape — that choice
+    // is a separate real-geometry heuristic this test doesn't target).
+    // on_active_tool_changed() never receives a size — it only ever sees
+    // whatever this resize cached.
+    h.resize(1, 1, W_WIDE, H_TALL - 1);
+    process_lvgl(30);
+    REQUIRE(lv_obj_get_child_count(container) == 3);
+
+    // T0 active: pill 0 opaque (ButtonPrimary), pill 1 transparent (ButtonGhost).
+    CHECK(lv_obj_get_style_bg_opa(lv_obj_get_child(container, 0), LV_PART_MAIN) == LV_OPA_COVER);
+    CHECK(lv_obj_get_style_bg_opa(lv_obj_get_child(container, 1), LV_PART_MAIN) == LV_OPA_0);
+
+    // Change the active tool WITHOUT any further on_size_changed() call —
+    // exactly what a real touchscreen does (screens don't resize at
+    // runtime). Only active_tool_ changes; tool_count_ stays at 3.
+    update_tools(3, /*active_index=*/1);
+    process_lvgl(30);
+
+    // Still pill form (3 buttons) — on_active_tool_changed read the cached
+    // wide/short size and picked rebuild_pills(), not rebuild_compact(). A
+    // stale-span implementation (colspan/rowspan defaulting to 1x1) would
+    // instead collapse this to the 2-child compact form.
+    REQUIRE(lv_obj_get_child_count(container) == 3);
+    CHECK(lv_obj_get_style_bg_opa(lv_obj_get_child(container, 0), LV_PART_MAIN) == LV_OPA_0);
+    CHECK(lv_obj_get_style_bg_opa(lv_obj_get_child(container, 1), LV_PART_MAIN) == LV_OPA_COVER);
+}
+
+TEST_CASE_METHOD(ToolSwitcherFixture,
+                 "tool_switcher: tool_count observer rebuilds in pill form using the "
+                 "cached size, not a fresh span",
+                 "[widget_size][tool_switcher]") {
+    configure_tools(1);
+
+    PanelWidgetHarness<ToolSwitcherWidget> h(test_screen(), state());
+    lv_obj_t* container = h.child("tool_switcher_container");
+    REQUIRE(container != nullptr);
+
+    // Drain attach()'s immediate-on-subscribe observer notifications (see
+    // the longer comment in the compact/pill-row/pill-column test above)
+    // before the first resize().
+    process_lvgl(30);
+
+    // Grant pill-row pixels with a single tool present.
+    h.resize(1, 1, W_WIDE, H_TALL - 1);
+    process_lvgl(30);
+    REQUIRE(lv_obj_get_child_count(container) == 1);
+
+    // Tool count jumps 1 -> 3 with no further on_size_changed() call. The
+    // tool_count_ observer (tool_switcher_widget.cpp:66-76) fires and must
+    // read the cached wide/short size to pick rebuild_pills(). A
+    // stale-span implementation defaults to rebuild_compact(), which would
+    // produce 2 children (icon + label) regardless of tool count — a
+    // different, distinguishable number from the 3 pills expected here.
+    update_tools(3, /*active_index=*/0);
+    process_lvgl(30);
+
+    REQUIRE(lv_obj_get_child_count(container) == 3);
+    CHECK(lv_obj_get_style_flex_flow(container, LV_PART_MAIN) == LV_FLEX_FLOW_ROW);
+    CHECK(lv_obj_get_style_bg_opa(lv_obj_get_child(container, 0), LV_PART_MAIN) == LV_OPA_COVER);
+    CHECK(lv_obj_get_style_bg_opa(lv_obj_get_child(container, 1), LV_PART_MAIN) == LV_OPA_0);
+    CHECK(lv_obj_get_style_bg_opa(lv_obj_get_child(container, 2), LV_PART_MAIN) == LV_OPA_0);
+}
