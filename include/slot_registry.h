@@ -103,6 +103,11 @@ class SlotRegistry {
     /// tool numbers, so this is the primitive for resetting to unmapped.
     void clear_tool_mapping(int global_index);
     void set_tool_map(const std::vector<int>& tool_to_slot);
+    /// Forward map: tool_map()[tool] = global slot index, -1 for an unmapped
+    /// tool. This is the exact vector build_system_info() copies into
+    /// AmsSystemInfo::tool_to_slot_map; exposed on its own so a caller that only
+    /// needs the mapping doesn't have to build (and copy) a whole snapshot.
+    const std::vector<int>& tool_map() const;
 
     // === Endless spool ===
     int backup_for_slot(int global_index) const;

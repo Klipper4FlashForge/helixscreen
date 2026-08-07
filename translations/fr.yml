@@ -39,7 +39,7 @@ translations:
   -- kWh: -- kWh
   --°C: --°C
   -0.5 Hz: -0,5 Hz
-  '...': ''
+  '...': '...'
   0 = computed: 0 = calculé
   0 events queued: 0 événement en file
   0 slots: 0 emplacements
@@ -429,7 +429,7 @@ translations:
   Chamber heating to %d°C...: Chauffe de la chambre à %d°C...
   Chamber target set to {}°C: Cible de chambre définie à {}°C
   Change: Modifier
-  Change Address: ''
+  Change Address: Changer l'adresse
   Change Filament: Changer le filament
   Change LED color based on printer state: Changer la couleur LED selon l'état de
     l'imprimante
@@ -552,9 +552,9 @@ translations:
   Connected to: Connecté à
   'Connected to ': 'Connecté à '
   ? Connected to Moonraker, but Klipper is not running. You can continue — HelixScreen will show the Klipper error, and hardware detection stays limited until Klipper starts.
-  : ''
+  : Connecté à Moonraker, mais Klipper ne fonctionne pas. Vous pouvez continuer — HelixScreen affichera l'erreur Klipper, et la détection du matériel restera limitée jusqu'au démarrage de Klipper.
   ? Connected to Moonraker, but printer discovery did not finish. You can continue — hardware detection stays limited until the printer responds.
-  : ''
+  : Connecté à Moonraker, mais la découverte de l'imprimante n'est pas terminée. Vous pouvez continuer — la détection du matériel restera limitée jusqu'à ce que l'imprimante réponde.
   Connected to {}: Connecté à {}
   Connected! Discovering printer...: Connecté ! Découverte de l'imprimante...
   Connected, discovering...: Connecté, découverte...
@@ -588,7 +588,7 @@ translations:
   Controlled by hardware sensor: Contrôlé par capteur matériel
   Controller: Contrôleur
   Cool Down: Refroidir
-  Cool nozzle after filament ops: ''
+  Cool nozzle after filament ops: Refroidir la buse après opérations filament
   Cooling: Refroidissement
   Copied to clipboard!: Copié dans le presse-papiers !
   Copy Command: Copier la commande
@@ -717,7 +717,7 @@ translations:
   Do not touch the printer during calibration: Ne touchez pas l'imprimante pendant
     la calibration
   Dock: Ranger
-  Docking tool: ''
+  Docking tool: Rangement de l'outil
   Documentation: Documentation
   Don't Save: Ne pas enregistrer
   Don't ask again: Ne plus demander
@@ -758,7 +758,7 @@ translations:
   'Eject failed: {}': 'Échec de l''éjection : {}'
   Eject needs [force_move] enabled in printer config: L'éjection nécessite l'activation
     de [force_move] dans la configuration de l'imprimante
-  Ejecting: ''
+  Ejecting: Éjection
   Elegoo Centauri Carbon: Elegoo Centauri Carbon
   Emergency Stop: Arrêt d'urgence
   Emergency Stop?: Arrêt d'urgence ?
@@ -1035,6 +1035,8 @@ translations:
   Follow active tool: Suivre l'outil actif
   Follow graph screen: Suivre l'écran du graphique
   Forget: Oublier
+  Forget Network?: Oublier le réseau ?
+  Forget network '{}'? You will need the password to reconnect.: Oublier le réseau '{}' ? Vous aurez besoin du mot de passe pour vous reconnecter.
   Forming Tip: Formage de pointe
   Forming tip...: Formation de la pointe...
   Found %zu printers: '%zu imprimantes trouvées'
@@ -1106,7 +1108,7 @@ translations:
   Heating Bed...: Chauffe du plateau...
   Heating Nozzle...: Chauffe de la buse...
   Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: Chauffe à %d\xC2\xB0C... %.0f\xC2\xB0C
-  Heating to {}°C before {}...: ''
+  Heating to {}°C before {}...: Chauffe à {}°C avant {}...
   Heating to {}°C for {}...: Chauffe à {}°C pendant {}...
   Heating to {}°C...: Chauffe à {}°C...
   Heating...: Chauffage...
@@ -1156,7 +1158,7 @@ translations:
     filament est repoussé dans la boîte lors de l'éjection (mm)
   How many labels to print: Combien d'étiquettes imprimer
   How the toolhead icon appears: Apparence de l'icône de tête d'outil
-  Hub: ''
+  Hub: Hub
   Humidity: Humidité
   Hyperlapse: Hyperlapse
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: Lhyperlapse
@@ -1184,7 +1186,7 @@ translations:
     {} ne peut pas utiliser {} comme secours'
   Indexing G-code...: Indexation du G-code...
   Info: Info
-  Initialized: ''
+  Initialized: Initialisé
   Initializing...: Initialisation...
   Input: Entrée
   Input Shaper: Input Shaper
@@ -1236,8 +1238,8 @@ translations:
     : {} (sur {})'
   Invalid status response from printer: Réponse détat invalide de limprimante
   Issue description: Description du problème
-  It's a new spool: ''
-  Jammed at the Toolhead: ''
+  It's a new spool: C'est une nouvelle bobine
+  Jammed at the Toolhead: Bourrage à la tête d'outil
   Job Queue: File d'impression
   'Jog failed: {}': 'Échec du déplacement : {}'
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: Rejoignez
@@ -1379,7 +1381,7 @@ translations:
   Macro handles heating: La macro gère le chauffage
   Macro may still be running — response timed out: La macro est peut-être encore en
     cours — délai dépassé
-  "Macro stopped: printer has no '{}' command": ''
+  "Macro stopped: printer has no '{}' command": "Macro arrêtée : l'imprimante n'a pas la commande '{}'"
   Macro to cancel an active print: Macro pour annuler une impression active
   Macro to clean/wipe the nozzle: Macro pour nettoyer/essuyer la buse
   Macro to load filament into extruder: Macro pour charger le filament dans l'extrudeur
@@ -1463,7 +1465,7 @@ translations:
     minutes. The printer will make noise — this is normal.
   : Déplace la tête d'impression pour mesurer les fréquences de vibration sur chaque
     axe. Prend 2-3 minutes. L'imprimante fera du bruit — c'est normal.
-  Moving lane: ''
+  Moving lane: Déplacement de la voie
   Multi-Filament: Multi-filament
   Multi-Filament Overview: Vue d'ensemble multi-filament
   Multi-Filament System: Système multi-filament
@@ -1488,6 +1490,7 @@ translations:
   Network Name (SSID): Nom du réseau (SSID)
   Network Settings: Paramètres réseau
   Network Test: Test réseau
+  Network forgotten: Réseau oublié
   Network name cannot be empty: Le nom du réseau ne peut pas être vide
   Never: Jamais
   'New Spool: Step 1 of 3': 'Nouvelle bobine : Étape 1 sur 3'
@@ -1587,7 +1590,7 @@ translations:
   Not found (strobe only): Introuvable (stroboscope uniquement)
   Not found (use phone app): Introuvable (utilisez lapplication mobile)
   Not in your spools? Set it up: Pas dans vos bobines ? Configurez-la
-  Not now: ''
+  Not now: Pas maintenant
   Not yet calibrated: Pas encore calibré
   Notes: Notes
   Notes (optional): Notes (facultatif)
@@ -1608,7 +1611,7 @@ translations:
   Nozzle Temp: Temp. de la buse
   Nozzle Temperature: Température de la buse
   Nozzle Temps: Temp. des buses
-  Nozzle did not reach {}°C — {} cancelled: ''
+  Nozzle did not reach {}°C — {} cancelled: La buse n'a pas atteint {}°C — {} annulé
   Nozzle min cannot exceed max: Le minimum de la buse ne peut pas dépasser le maximum
   Nozzle target set to {}°C: Cible buse réglée à {}°C
   Nozzle temp must be 100-500°C: La température de la buse doit être entre 100 et
@@ -1709,7 +1712,7 @@ translations:
   Phomemo M110: Phomemo M110
   Pick: Choisir
   Pick Color: Choisir la couleur
-  Picking up tool: ''
+  Picking up tool: Prise de l'outil
   Pill: Pilule
   Pixels before a press becomes a scroll (lower = scrolls engage sooner): Pixels avant
     qu'un appui ne devienne un défilement (plus bas = défilement plus rapide)
@@ -1837,7 +1840,7 @@ translations:
     — vérifiez qu'elle est allumée et à portée
   Printer doesn't expose the expected service — wrong device?: L'imprimante n'expose
     pas le service attendu — mauvais appareil ?
-  Printer hardware detected: ''
+  Printer hardware detected: Matériel d'imprimante détecté
   Printer image set to auto-detect: Image de l'imprimante en auto-détection
   Printer is not paired — pair it first: L'imprimante n'est pas appairée — appairez-la
     d'abord
@@ -2006,7 +2009,7 @@ translations:
   Restarting with the new version...: Redémarrage avec la nouvelle version...
   Restarting...: Redémarrage...
   Restore Defaults: Restaurer les valeurs par défaut
-  Restoring position: ''
+  Restoring position: Restauration de la position
   Resume: Reprendre
   Resume Print: Reprendre l'impression
   Resume interrupted print?: 'Reprendre l''impression interrompue ?'
@@ -2192,7 +2195,7 @@ translations:
   Set local timezone for time display: Définir le fuseau horaire local pour l'affichage
   Set logging verbosity for troubleshooting: Définir le niveau de détail des logs
     pour le dépannage
-  Set up: ''
+  Set up: Configurer
   Set up your label printer in Settings: Configurez votre imprimante d'étiquettes
     dans les Paramètres
   Settings: Paramètres
@@ -2336,9 +2339,9 @@ translations:
   Stop Print?: Arrêter l'impression ?
   Stop failed: Échec de l'arrêt
   Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds.: 'Arrêter l''impression de \"{}\" ?\n\nCette action sera irréversible après 5 secondes.'
-  Stopped between Hub and Toolhead: ''
-  Stopped between Lane and Hub: ''
-  Stopped between Spool and Lane: ''
+  Stopped between Hub and Toolhead: Arrêté entre le Hub et la tête d'outil
+  Stopped between Lane and Hub: Arrêté entre la voie et le Hub
+  Stopped between Spool and Lane: Arrêté entre la bobine et la voie
   Stops all motion. Requires firmware restart.: Arrête tout mouvement. Nécessite un
     redémarrage du firmware.
   Stow: Ranger
@@ -2431,7 +2434,7 @@ translations:
   : L'économiseur d'écran animé a été désactivé sur cet appareil pour éviter qu'il
     n'interfère avec les impressions. Vous pouvez le réactiver dans Paramètres > Affichage
     et son.
-  The filament system reported an error: ''
+  The filament system reported an error: Le système de filament a signalé une erreur
   The heater will cycle on and off several times.: Le chauffage s'allumera et s'éteindra
     plusieurs fois.
   ? The motor vibrates the belt while a strobe light flashes at the same frequency.
@@ -2448,11 +2451,11 @@ translations:
   The printer lost power during a print. It can resume where it left off.: 'L''imprimante
     a été mise hors tension pendant une impression. Elle peut reprendre là où elle
     s''est arrêtée.'
-  The printer lost power during a print. The resumed layer may not line up exactly.: ''
+  The printer lost power during a print. The resumed layer may not line up exactly.: L'imprimante a été mise hors tension pendant une impression. La couche reprise peut ne pas s'aligner exactement.
   The printer lost power while printing {}. Resume where it left off?: 'L''imprimante
     a été mise hors tension pendant l''impression de {}. Reprendre là où elle s''est
     arrêtée ?'
-  The printer lost power while printing {}. The resumed layer may not line up exactly.: ''
+  The printer lost power while printing {}. The resumed layer may not line up exactly.: L'imprimante a été mise hors tension pendant l'impression de {}. La couche reprise peut ne pas s'aligner exactement.
   The printer rejected the filament configuration. The print was not started.: L'imprimante
     a rejeté la configuration du filament. L'impression n'a pas été démarrée.
   The runout sensor indicates no filament is loaded. Start print anyway?: Le capteur
@@ -2487,7 +2490,7 @@ translations:
   ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
   : Cet appareil dispose de très peu de RAM. La calibration de résonance est gourmande
     en mémoire et peut provoquer une erreur \"Timer Too Close\". Continuer quand même ?
-  This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: ''
+  This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: Cela ne correspond pas à la bobine Spoolman liée. L'ajouter comme nouvelle bobine, ou mettre à jour la bobine liée pour correspondre ?
   This file was sliced for {} but {} is loaded.: Ce fichier a été tranché pour {}
     mais {} est chargé.
   This is exactly the data that will be sent: Voici exactement les données qui seront
@@ -2570,7 +2573,7 @@ translations:
   Tool: Outil
   Tool Changer: Changeur d'outils
   'Tool change failed: {}': 'Échec du changement d''outil : {}'
-  Tool swap: ''
+  Tool swap: Changement d'outil
   'Tool {} → Lane {}: no filament loaded.': 'Outil {} → Voie {} : aucun filament chargé.'
   Toolhead: 'Tête d''outil'
   Toolhead Style: Style de tête d'outil
@@ -2600,7 +2603,7 @@ translations:
   Turn Off: Éteindre
   Turn On: Allumer
   Turn on LEDs when printer starts: Allumer les LED au démarrage de l'imprimante
-  Turn the extruder heater off after a load or unload finishes: ''
+  Turn the extruder heater off after a load or unload finishes: Éteindre le chauffage de l'extrudeur après un chargement ou un déchargement
   Type: Type
   Type to preview input field...: Tapez pour prévisualiser le champ de saisie...
   'Type:': 'Type :'
@@ -2796,7 +2799,7 @@ translations:
     déjà entièrement configuré !
   Your printer has an automatic filament changer: Votre imprimante dispose d'un changeur
     de filament automatique
-  Your printer was offline during setup, so hardware options were skipped. Set them up now?: ''
+  Your printer was offline during setup, so hardware options were skipped. Set them up now?: Votre imprimante était hors ligne lors de la configuration, les options matérielles ont donc été ignorées. Les configurer maintenant ?
   Z: Z
   Z Calibration: Calibration Z
   Z Movement: Mouvement Z

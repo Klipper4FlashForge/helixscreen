@@ -102,6 +102,76 @@ run_gate() {
     [ "$status" -eq 0 ]
 }
 
+# --- the ThumbnailLoadContext spelling of the same race ---------------------
+#
+# `ctx.is_valid()` calls `lifetime_token->expired()` (thumbnail_load_context.h),
+# so it is the same TOCTOU. Matching only `expired()` let five instances build up
+# in ui_panel_print_select.cpp, each dereferencing `self` on an HttpExecutor
+# worker — found while triaging bundle 6F3QJLFG (#960).
+
+@test "flags a bg ctx.is_valid() check followed by a member access" {
+    run_gate 'void A::f() {
+    get_thumbnail_cache().fetch_for_card_view(api_, path, ctx,
+        [self, ctx](const std::string& p) { use(p); },
+        [self, filename_copy, ctx](const std::string& error) {
+            if (!ctx.is_valid())
+                return;
+            spdlog::warn("[{}] failed for {}: {}",
+                         self->get_name(), filename_copy, error);
+        });
+}'
+    [ "$status" -eq 1 ]
+    [[ "$output" == *'uaf'* || "$output" == *'member access'* ]]
+    # The report must quote the guard the author wrote. Calling this a bare
+    # `tok.expired()` reads as a false positive and gets dismissed.
+    [[ "$output" == *'ctx.is_valid()'* ]]
+}
+
+@test "an is_valid() that is not a lifetime context is not a violation" {
+    # ~25 unrelated is_valid() predicates live in this tree (themes, calibration
+    # results, gcode index entries, stream sources). Matching on the method name
+    # alone would flag every one of them; the receiver name is the discriminator.
+    run_gate 'void A::f() {
+    auto theme = load();
+    if (!theme.is_valid())
+        return;
+    theme_manager_apply(theme);
+    editing_theme_ = theme;
+}'
+    [ "$status" -eq 0 ]
+}
+
+@test "L081_OK on the line suppresses a ctx.is_valid() hit" {
+    run_gate 'void A::f() {
+    fetch(api_, path, ctx,
+        [self, ctx](const std::string& error) {
+            if (!ctx.is_valid()) // L081_OK: locals only below, see fetch contract
+                return;
+            spdlog::warn("[{}] {}", self->get_name(), error);
+        });
+}'
+    [ "$status" -eq 0 ]
+}
+
+@test "src/ui is scanned for the ctx.is_valid() spelling" {
+    # src/ui/ is excluded from the generic expired() scan on purpose: observer
+    # callbacks there run on the main thread, where the check is legitimate. That
+    # rationale does not extend to ThumbnailLoadContext, which only ever reaches
+    # ThumbnailCache::fetch_*, whose callbacks are always background. Excluding
+    # src/ui/ from BOTH spellings is what kept the five real sites unlinted, so
+    # pin the narrower scope rather than the directory list as a whole.
+    run python3 -c "
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location('gate', 'scripts/check_l081_anti_pattern.py')
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+assert 'src/ui' in m.CTX_ONLY_SCAN_DIRS, m.CTX_ONLY_SCAN_DIRS
+assert 'src/ui' not in m.DEFAULT_SCAN_DIRS, m.DEFAULT_SCAN_DIRS
+print('ok')
+"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'ok'* ]]
+}
+
 # --- the tree itself --------------------------------------------------------
 
 @test "the default scan of the real tree is clean" {

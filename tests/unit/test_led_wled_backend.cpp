@@ -1,6 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "../../src/led/led_wled_json.h"
+#include "../helix_test_fixture.h"
+#include "../test_helpers/update_queue_test_access.h"
 #include "led/led_controller.h"
+#include "moonraker_api_mock.h"
+#include "moonraker_client_mock.h"
+#include "printer_state.h"
+
+#include <algorithm>
+#include <memory>
+#include <string>
+#include <vector>
 
 #include "../catch_amalgamated.hpp"
 
@@ -320,4 +331,193 @@ TEST_CASE("WledBackend: poll_status with no API calls on_complete", "[led][wled]
     bool completed = false;
     backend.poll_status([&]() { completed = true; });
     REQUIRE(completed);
+}
+
+// ============================================================================
+// wled_strip_map() — /machine/wled/strips envelope unwrapping (#1241)
+// ============================================================================
+
+TEST_CASE("wled_strip_map: unwraps the real Moonraker result.strips envelope",
+          "[led][wled][1241]") {
+    const nlohmann::json payload = {
+        {"result",
+         {{"strips",
+           {{"TopLight",
+             {{"strip", "TopLight"}, {"status", "off"}, {"brightness", 255}, {"preset", -1}}}}}}}};
+
+    const auto& map = helix::led::detail::wled_strip_map(payload);
+    REQUIRE(map.is_object());
+    REQUIRE(map.size() == 1);
+    REQUIRE(map.contains("TopLight"));
+    REQUIRE(map.begin().key() == "TopLight");
+    // The bug: iterating result directly yielded the wrapper key.
+    REQUIRE(!map.contains("strips"));
+}
+
+TEST_CASE("wled_strip_map: handles a flat result map with no strips wrapper", "[led][wled][1241]") {
+    const nlohmann::json payload = {
+        {"result", {{"printer_led", {{"strip", "printer_led"}, {"status", "on"}}}}}};
+
+    const auto& map = helix::led::detail::wled_strip_map(payload);
+    REQUIRE(map.size() == 1);
+    REQUIRE(map.contains("printer_led"));
+}
+
+TEST_CASE("wled_strip_map: handles a payload with no result wrapper", "[led][wled][1241]") {
+    const nlohmann::json payload = {
+        {"strips", {{"TopLight", {{"strip", "TopLight"}, {"status", "on"}}}}}};
+
+    const auto& map = helix::led::detail::wled_strip_map(payload);
+    REQUIRE(map.size() == 1);
+    REQUIRE(map.contains("TopLight"));
+}
+
+TEST_CASE("wled_strip_map: a strip legitimately named 'strips' resolves once",
+          "[led][wled][1241]") {
+    SECTION("inside the real envelope") {
+        const nlohmann::json payload = {
+            {"result",
+             {{"strips",
+               {{"strips", {{"strip", "strips"}, {"status", "on"}, {"brightness", 128}}}}}}}};
+
+        const auto& map = helix::led::detail::wled_strip_map(payload);
+        REQUIRE(map.size() == 1);
+        REQUIRE(map.contains("strips"));
+        // Must be the strip DETAIL under that key, not the wrapper again.
+        REQUIRE(map["strips"].is_object());
+        REQUIRE(map["strips"].value("status", "") == "on");
+    }
+
+    SECTION("alongside another strip") {
+        const nlohmann::json payload = {
+            {"result",
+             {{"strips",
+               {{"strips", {{"strip", "strips"}, {"status", "on"}}},
+                {"TopLight", {{"strip", "TopLight"}, {"status", "off"}}}}}}}};
+
+        const auto& map = helix::led::detail::wled_strip_map(payload);
+        REQUIRE(map.size() == 2);
+        REQUIRE(map.contains("strips"));
+        REQUIRE(map.contains("TopLight"));
+    }
+
+    SECTION("flat shape where result.strips IS the strip detail") {
+        // No wrapper level at all: the "strip" member marks it as a detail object.
+        const nlohmann::json payload = {
+            {"result", {{"strips", {{"strip", "strips"}, {"status", "off"}}}}}};
+
+        const auto& map = helix::led::detail::wled_strip_map(payload);
+        REQUIRE(map.size() == 1);
+        REQUIRE(map.contains("strips"));
+        REQUIRE(map["strips"].value("strip", "") == "strips");
+    }
+}
+
+TEST_CASE("wled_strip_map: unusable input yields an empty object, not a crash",
+          "[led][wled][1241]") {
+    SECTION("null") {
+        REQUIRE(helix::led::detail::wled_strip_map(nlohmann::json()).empty());
+    }
+
+    SECTION("array") {
+        REQUIRE(helix::led::detail::wled_strip_map(nlohmann::json::array({1, 2})).empty());
+    }
+
+    SECTION("string") {
+        REQUIRE(helix::led::detail::wled_strip_map(nlohmann::json("nope")).empty());
+    }
+
+    SECTION("result is not an object") {
+        const nlohmann::json payload = {{"result", nullptr}};
+        // Falls back to the outer object, which has no usable strip entries.
+        const auto& map = helix::led::detail::wled_strip_map(payload);
+        REQUIRE(map.is_object());
+        REQUIRE(!map.contains("strips"));
+    }
+
+    SECTION("empty object") {
+        REQUIRE(helix::led::detail::wled_strip_map(nlohmann::json::object()).empty());
+    }
+
+    SECTION("returned reference outlives a temporary sub-object") {
+        const nlohmann::json empty_in = nlohmann::json::array();
+        const auto& map = helix::led::detail::wled_strip_map(empty_in);
+        REQUIRE(map.is_object()); // static empty, still readable
+        REQUIRE(map.empty());
+    }
+}
+
+// ============================================================================
+// poll_status / discovery against the mock's real-shaped envelope (#1241)
+// ============================================================================
+
+/// LED tests that drive the controller leak a deferred connection-state
+/// notification into the UpdateQueue; drain it here rather than in whichever
+/// test runs next (same pattern as LedDiscoveryFixture).
+struct WledMockFixture : public HelixTestFixture {
+    MoonrakerClientMock mock_client{MoonrakerClientMock::PrinterType::VORON_24};
+    helix::PrinterState state;
+    std::unique_ptr<MoonrakerAPIMock> mock_api;
+
+    WledMockFixture() {
+        state.init_subjects(false);
+        state.set_klippy_state_sync(helix::KlippyState::READY);
+        mock_api = std::make_unique<MoonrakerAPIMock>(mock_client, state);
+    }
+
+    ~WledMockFixture() override {
+        helix::led::LedController::instance().deinit();
+        helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+    }
+};
+
+TEST_CASE_METHOD(WledMockFixture, "WledBackend: poll_status keys state by strip name, not wrapper",
+                 "[led][wled][1241]") {
+    WledBackend backend;
+    backend.set_api(mock_api.get());
+
+    // Mock defaults: printer_led on / brightness 200 / preset 2,
+    //                enclosure_led off / brightness 128 / preset -1.
+    bool completed = false;
+    backend.poll_status([&]() { completed = true; });
+    REQUIRE(completed);
+
+    auto printer = backend.get_strip_state("printer_led");
+    REQUIRE(printer.is_on);
+    REQUIRE(printer.brightness == 200);
+    REQUIRE(printer.active_preset == 2);
+
+    auto enclosure = backend.get_strip_state("enclosure_led");
+    REQUIRE(!enclosure.is_on);
+    REQUIRE(enclosure.brightness == 128);
+    REQUIRE(enclosure.active_preset == -1);
+
+    // The regression: everything used to land under the literal key "strips",
+    // which then defaulted to off/255/-1 for every real strip id.
+    auto bogus = backend.get_strip_state("strips");
+    REQUIRE(!bogus.is_on);
+    REQUIRE(bogus.brightness == 255);
+    REQUIRE(bogus.active_preset == -1);
+}
+
+TEST_CASE_METHOD(WledMockFixture, "LedController: WLED discovery uses real strip ids",
+                 "[led][wled][discovery][1241]") {
+    auto& ctrl = helix::led::LedController::instance();
+    ctrl.deinit();
+    ctrl.init(mock_api.get(), &mock_client);
+
+    ctrl.discover_wled_strips();
+    helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+
+    const auto& strips = ctrl.wled().strips();
+    REQUIRE(strips.size() == 2);
+
+    std::vector<std::string> ids;
+    for (const auto& s : strips) {
+        ids.push_back(s.id);
+        REQUIRE(s.id != "strips"); // the wrapper key must never become a strip id
+    }
+    std::sort(ids.begin(), ids.end());
+    REQUIRE(ids[0] == "enclosure_led");
+    REQUIRE(ids[1] == "printer_led");
 }

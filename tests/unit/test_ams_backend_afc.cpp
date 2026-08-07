@@ -2869,6 +2869,112 @@ TEST_CASE("AFC HTLF mixed topology classification from per-lane hub routing",
     REQUIRE(found);
 }
 
+TEST_CASE("AFC MIXED unit: a direct-fed lane and a hub-routed lane disagree on unload-before-load",
+          "[ams][afc][topology][mixed][dispatch]") {
+    // needs_unload_before_load() is a PER-LANE question and this is the machine
+    // that proves it: one HTLF unit, lanes 0/1 wired straight to their own
+    // extruders and lanes 2/3 merged through HTLF_1 into a shared one. Feeding
+    // lane 1 disturbs nothing that lane 2 owns; feeding lane 3 must first clear
+    // the shared path. A backend-wide answer cannot say both.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_zero_based(4);
+    helper.initialize_slots_from_discovery();
+    helper.setup_toolchanger(3);
+
+    helper.feed_afc_stepper(
+        "lane0", {{"map", "T0"}, {"extruder", "extruder"}, {"hub", "direct"}, {"status", "Ready"}});
+    helper.feed_afc_stepper(
+        "lane1",
+        {{"map", "T2"}, {"extruder", "extruder1"}, {"hub", "direct"}, {"status", "Ready"}});
+    helper.feed_afc_stepper(
+        "lane2",
+        {{"map", "T1"}, {"extruder", "extruder2"}, {"hub", "HTLF_1"}, {"status", "Ready"}});
+    helper.feed_afc_stepper(
+        "lane3",
+        {{"map", "T3"}, {"extruder", "extruder2"}, {"hub", "HTLF_1"}, {"status", "Ready"}});
+
+    nlohmann::json afc_state;
+    afc_state["units"] = nlohmann::json::array({"HTLF HTLF_1"});
+    helper.feed_afc_state(afc_state);
+
+    nlohmann::json unit_data;
+    unit_data["lanes"] = nlohmann::json::array({"lane0", "lane1", "lane2", "lane3"});
+    unit_data["extruders"] = nlohmann::json::array({"extruder", "extruder1", "extruder2"});
+    unit_data["hubs"] = nlohmann::json::array({"HTLF_1"});
+    unit_data["buffers"] = nlohmann::json::array();
+    nlohmann::json params;
+    params["AFC_HTLF HTLF_1"] = unit_data;
+    helper.feed_status_update(params);
+
+    // Seat lane 2 (hub-routed) so the serial rule has something to want cleared.
+    helper.set_filament_loaded(true);
+    helper.set_current_slot(2);
+
+    AmsSystemInfo info = helper.get_system_info();
+    REQUIRE(info.units.size() == 1);
+    const AmsUnit& unit = info.units[0];
+    REQUIRE(unit.topology == PathTopology::MIXED);
+    REQUIRE(unit.lane_is_hub_routed.size() == 4);
+    REQUIRE_FALSE(unit.lane_is_hub_routed[1]); // direct
+    REQUIRE(unit.lane_is_hub_routed[3]);       // through HTLF_1
+
+    const int direct_slot = unit.first_slot_global_index + 1;
+    const int hub_slot = unit.first_slot_global_index + 3;
+
+    // The whole point: same backend, same snapshot, two different answers.
+    CHECK_FALSE(helper.needs_unload_before_load(info, direct_slot));
+    CHECK(helper.needs_unload_before_load(info, hub_slot));
+
+    // Guard rail — the backend-wide topology says HUB, so a get_topology()-keyed
+    // rule would have answered "swap" for the direct lane too. That is the bug.
+    REQUIRE(helper.get_topology() == PathTopology::HUB);
+}
+
+TEST_CASE("AFC uniform HUB unit: an unparsed lane does not masquerade as direct-fed",
+          "[ams][afc][topology][mixed][dispatch]") {
+    // lane_is_hub_routed stores `false` for lanes whose routing has not arrived
+    // yet — Moonraker sorts unit objects before AFC_lane ones, so a frame can
+    // carry a unit while some of its lanes have never been parsed (#1229 defect
+    // 4). On a uniform unit that placeholder is indistinguishable from "direct",
+    // which is why the per-lane vector is consulted ONLY on a MIXED unit. Pin it:
+    // every lane of a pure-hub unit still needs the shared path cleared.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_zero_based(4);
+    helper.initialize_slots_from_discovery();
+
+    // lane3's routing is deliberately never fed.
+    for (const char* lane : {"lane0", "lane1", "lane2"}) {
+        helper.feed_afc_stepper(
+            lane,
+            {{"map", "T0"}, {"extruder", "extruder"}, {"hub", "Turtle_1"}, {"status", "Ready"}});
+    }
+
+    nlohmann::json afc_state;
+    afc_state["units"] = nlohmann::json::array({"Box_Turtle Turtle_1"});
+    helper.feed_afc_state(afc_state);
+
+    nlohmann::json unit_data;
+    unit_data["lanes"] = nlohmann::json::array({"lane0", "lane1", "lane2", "lane3"});
+    unit_data["extruders"] = nlohmann::json::array({"extruder"});
+    unit_data["hubs"] = nlohmann::json::array({"Turtle_1"});
+    unit_data["buffers"] = nlohmann::json::array();
+    nlohmann::json params;
+    params["AFC_BoxTurtle Turtle_1"] = unit_data;
+    helper.feed_status_update(params);
+
+    helper.set_filament_loaded(true);
+    helper.set_current_slot(0);
+
+    AmsSystemInfo info = helper.get_system_info();
+    REQUIRE(info.units.size() == 1);
+    const AmsUnit& unit = info.units[0];
+    REQUIRE(unit.topology == PathTopology::HUB);
+    REQUIRE(unit.lane_is_hub_routed.size() == 4);
+    REQUIRE_FALSE(unit.lane_is_hub_routed[3]); // the placeholder, not a real "direct"
+
+    CHECK(helper.needs_unload_before_load(info, unit.first_slot_global_index + 3));
+}
+
 TEST_CASE("AFC all-hub lanes classified as HUB topology", "[ams][afc][topology]") {
     // When all lanes route through a hub, topology should be HUB (not MIXED)
     AmsBackendAfcTestHelper helper;

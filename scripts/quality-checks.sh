@@ -434,6 +434,26 @@ fi
 
 echo ""
 
+echo "🎭 Checking layout-variant content drift (warning only)..."
+
+# Wiring parity (above) doesn't catch a font bump, an icon src= swap, or an
+# edited translation_tag= in a base file whose ui_xml/<variant>/ sibling
+# didn't get the same edit -- check_variant_parity.py deliberately does not
+# compare attributes. WARNING ONLY, never fails: additive divergence (e.g.
+# portrait's temperature section, absent from the landscape base) is
+# legitimate, and this gate cannot tell that apart from rot -- only a human
+# glancing at the named file/attribute can. Staged-diff scoped by design: a
+# base+variant pair staged TOGETHER is the human already keeping them in sync.
+if [ -f "scripts/check_variant_content_drift.py" ]; then
+  python3 scripts/check_variant_content_drift.py
+  # NOTE: intentionally not gating -- see docstring in the script.
+  # EXIT_CODE=1
+else
+  echo "⚠️  check_variant_content_drift.py not found — skipping"
+fi
+
+echo ""
+
 echo "📏 Checking responsive token placement..."
 
 # theme_manager_find_xml_files() skips subdirectories, so a responsive token

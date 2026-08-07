@@ -9,8 +9,12 @@
 #include "ams_backend.h"
 #include "ams_step_operation.h"
 #include "ams_types.h"
+#include "async_lifetime_guard.h"
+#include "filament_op_dispatch.h"
 
+#include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 // Forward declarations
@@ -133,6 +137,17 @@ class AmsOperationSidebar {
     // Dependencies
     PrinterState& printer_state_;
 
+    // Expires every outstanding callback the moment this sidebar dies.
+    //
+    // Load for you: AmsPanel::clear_panel_reference() destroys the sidebar when
+    // the AMS panel closes, but the shared MacroParamModal keeps the callback it
+    // was handed until the NEXT show_for_*() overwrites it — dismissing the
+    // modal does not clear it. So "open the param modal from the AMS panel,
+    // close the panel, press Run" reaches a freed `this` without this guard.
+    // Every callback handed to the modal goes through token().defer(), which
+    // re-checks the generation on the main thread before touching members.
+    helix::AsyncLifetimeGuard lifetime_;
+
     // Widget references
     lv_obj_t* sidebar_root_ = nullptr;
     lv_obj_t* step_progress_ = nullptr;
@@ -245,6 +260,33 @@ class AmsOperationSidebar {
     void check_pending_load();
     void handle_load_complete();
     void show_preheat_feedback(int slot_index, int target_temp);
+
+    // ---- Shared dispatch plan (filament_op_dispatch.h) ----------------------
+    // Read the live backend's capabilities into the planner's plain-value form.
+    // `info_out` receives the system info the caps were derived from so callers
+    // that need current_slot / slot mapping don't re-fetch it.
+    //
+    // `target_slot` is the slot a Load is aimed at: needs_unload_before_load()
+    // is a per-lane question, so the same backend answers differently for a
+    // direct-fed lane and a hub-routed one on a MIXED unit. Unload callers pass
+    // -1 — plan_unload() never reads the field.
+    [[nodiscard]] helix::ui::BackendCaps read_backend_caps(AmsSystemInfo& info_out,
+                                                           int target_slot) const;
+
+    // Execute a tier-1 (AmsBackend) plan. Reports a failed dispatch through
+    // fail_started_operation() so a start_operation() that never took never
+    // leaves the sidebar frozen in a phantom "Heating".
+    void dispatch_backend_load(const helix::ui::FilamentOpPlan& plan, int slot_index);
+
+    // ---- Tiers 2 and 3 (configured macro, then raw gcode) ------------------
+    // Reached when there is no AMS backend, or when bypass hands the load to the
+    // user's LOAD_FILAMENT macro. Neither tier has an AMS operation to narrate,
+    // so they run without the stepper / pending-target-slot bookkeeping.
+    void dispatch_load_outside_backend(const helix::ui::FilamentOpPlan& plan);
+    void dispatch_unload_outside_backend(const helix::ui::FilamentOpPlan& plan);
+    void send_standard_filament_macro(bool is_load,
+                                      const std::map<std::string, std::string>& params);
+    void send_filament_fallback_gcode(bool is_load);
 
     // Action handlers
     void handle_unload();

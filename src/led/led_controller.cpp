@@ -9,6 +9,7 @@
 #include "config.h"
 #include "helix/xml/scoped_subject_registry.h"
 #include "led/led_color_utils.h"
+#include "led_wled_json.h"
 #include "moonraker_api.h"
 #include "moonraker_client.h"
 #include "moonraker_error.h"
@@ -399,15 +400,13 @@ void LedController::discover_wled_strips() {
     api_->rest().wled_get_strips(
         [this, token](const RestResponse& resp) {
             // === BG THREAD: parse, validate, build local strip list ===
-            // Response format: {"result": {strip_name: {details...}, ...}}
+            // Response format: {"result": {"strips": {strip_name: {details...}, ...}}}
             if (!resp.data.is_object()) {
                 spdlog::warn("[LedController] WLED strips response is not a JSON object");
                 return;
             }
 
-            // Moonraker wraps response in "result" key
-            const json& strips_data =
-                resp.data.contains("result") ? resp.data["result"] : resp.data;
+            const json& strips_data = detail::wled_strip_map(resp.data);
 
             std::vector<LedStripInfo> discovered;
             if (strips_data.is_object()) {
@@ -1310,8 +1309,7 @@ void WledBackend::poll_status(std::function<void()> on_complete) {
 
     api_->rest().wled_get_strips(
         [this, on_complete](const RestResponse& resp) {
-            const json& strips_data =
-                resp.data.contains("result") ? resp.data["result"] : resp.data;
+            const json& strips_data = detail::wled_strip_map(resp.data);
 
             if (strips_data.is_object()) {
                 for (auto it = strips_data.begin(); it != strips_data.end(); ++it) {

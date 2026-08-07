@@ -1261,18 +1261,36 @@ struct AmsSystemInfo {
     }
 
     /**
+     * @brief Position in `units` of the unit that contains a global slot index
+     *
+     * Deliberately the POSITION, not AmsUnit::unit_index. Backends index
+     * get_unit_topology() by position — AFC sorts `units` alphabetically and
+     * matches by name inside that accessor — and several backends never assign
+     * unit_index at all, leaving it at its 0 default. Every existing caller
+     * (ams_drawing_utils, ui_panel_ams_overview) already passes a loop position.
+     *
+     * @param global_index Global slot index (0 to total_slots-1)
+     * @return Index into `units`, or -1 if no unit covers the slot
+     */
+    [[nodiscard]] int get_unit_position_for_slot(int global_index) const {
+        for (size_t i = 0; i < units.size(); ++i) {
+            const AmsUnit& unit = units[i];
+            if (global_index >= unit.first_slot_global_index &&
+                global_index < unit.first_slot_global_index + unit.slot_count) {
+                return static_cast<int>(i);
+            }
+        }
+        return -1;
+    }
+
+    /**
      * @brief Get the unit that contains a given global slot index
      * @param global_index Global slot index (0 to total_slots-1)
      * @return Pointer to containing AmsUnit or nullptr if out of range
      */
     [[nodiscard]] const AmsUnit* get_unit_for_slot(int global_index) const {
-        for (const auto& unit : units) {
-            if (global_index >= unit.first_slot_global_index &&
-                global_index < unit.first_slot_global_index + unit.slot_count) {
-                return &unit;
-            }
-        }
-        return nullptr;
+        const int pos = get_unit_position_for_slot(global_index);
+        return pos < 0 ? nullptr : &units[static_cast<size_t>(pos)];
     }
 
     /**
@@ -1281,13 +1299,8 @@ struct AmsSystemInfo {
      * @return Pointer to containing AmsUnit or nullptr if out of range
      */
     [[nodiscard]] AmsUnit* get_unit_for_slot(int global_index) {
-        for (auto& unit : units) {
-            if (global_index >= unit.first_slot_global_index &&
-                global_index < unit.first_slot_global_index + unit.slot_count) {
-                return &unit;
-            }
-        }
-        return nullptr;
+        const int pos = get_unit_position_for_slot(global_index);
+        return pos < 0 ? nullptr : &units[static_cast<size_t>(pos)];
     }
 
     /**

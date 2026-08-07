@@ -4,6 +4,7 @@
 
 #include "ui_carousel.h"
 #include "ui_emergency_stop.h"
+#include "ui_error_reporting.h"
 #include "ui_event_safety.h"
 #include "ui_fonts.h"
 #include "ui_icon.h"
@@ -362,14 +363,20 @@ void PowerDeviceWidget::handle_clicked() {
     }
 
     spdlog::info("[PowerDeviceWidget] {} toggling device '{}'", instance_id_, device_name_);
+    auto token = lifetime_.token();
     api->set_device_power(
         device_name_, "toggle",
         [name = device_name_]() {
             spdlog::debug("[PowerDeviceWidget] Device '{}' toggled successfully", name);
         },
-        [name = device_name_](const MoonrakerError& err) {
+        [token, name = device_name_](const MoonrakerError& err) {
+            // Invoked on the calling thread for validation rejects and on an
+            // HttpExecutor worker for transport failures, so the notification —
+            // which touches LVGL — has to go through the lifetime token.
             spdlog::error("[PowerDeviceWidget] Failed to toggle device '{}': {}", name,
                           err.message);
+            token.defer("PowerDeviceWidget::toggle_error",
+                        [name]() { NOTIFY_ERROR("Failed to toggle {}", name); });
         });
 }
 
@@ -971,15 +978,21 @@ void PowerDeviceWidget::handle_all_devices_toggle() {
     }
 
     spdlog::info("[PowerDeviceWidget] {} toggling all selected devices {}", instance_id_, action);
+    auto token = lifetime_.token();
     for (const auto& device : selected) {
         api->set_device_power(
             device, action,
             [device]() {
                 spdlog::debug("[PowerDeviceWidget] Power device '{}' set successfully", device);
             },
-            [device](const MoonrakerError& err) {
+            [token, device](const MoonrakerError& err) {
+                // See handle_clicked(): this callback runs on either the calling
+                // thread or an HttpExecutor worker, so defer the LVGL-touching
+                // notification through the token.
                 spdlog::error("[PowerDeviceWidget] Failed to set power device '{}': {}", device,
                               err.message);
+                token.defer("PowerDeviceWidget::all_toggle_error",
+                            [device]() { NOTIFY_ERROR("Failed to toggle {}", device); });
             });
     }
 

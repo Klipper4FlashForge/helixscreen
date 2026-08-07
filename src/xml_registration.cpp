@@ -518,6 +518,11 @@ void register_xml_components() {
     register_xml("navigation_bar.xml");
     register_xml("home_panel.xml");
     register_xml("controls_panel.xml");
+    // The X/Y/Z position card is shared between motion_panel.xml's landscape
+    // and portrait arrangements (see the <if>/<else> there), so it is its own
+    // component rather than markup duplicated per branch. Must be registered
+    // before motion_panel.xml, which uses it.
+    register_xml("components/motion_position_card.xml");
     register_xml("motion_panel.xml");
     // TODO: Remove these old per-heater overlays once application.cpp's
     // --overlays command-line paths and TemperatureService::xml_component_name()
@@ -611,6 +616,14 @@ void register_xml_components() {
     register_xml("bed_mesh_calibrate_modal.xml");
     register_xml("bed_mesh_rename_modal.xml");
     register_xml("bed_mesh_save_config_modal.xml");
+    // The canvas band, and the stats/profiles cards, are shared between
+    // bed_mesh_panel's landscape and portrait arrangements (see the
+    // <if>/<else> in bed_mesh_panel.xml), so they are their own components
+    // rather than inline markup duplicated per branch. Must be registered
+    // before bed_mesh_panel which uses them.
+    register_xml("components/bed_mesh_canvas_band.xml");
+    register_xml("components/bed_mesh_current_mesh_card.xml");
+    register_xml("components/bed_mesh_profiles_card.xml");
     register_xml("bed_mesh_panel.xml");
 
     // Settings overlay panels

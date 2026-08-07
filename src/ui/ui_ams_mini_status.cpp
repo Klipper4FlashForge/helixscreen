@@ -64,15 +64,59 @@ struct SpoolCellData {
     int remaining_pct = -1;  // actual % remaining; -1 = unknown (blank label)
     std::string material;    // "" => render "--"
     bool present = false;
-    int lane_number = 1; // 1-based, for the badge
-    bool active = false; // currently-loaded lane (success-colored badge)
+    int lane_number = 1;   // 1-based, for the badge
+    bool active = false;   // actively-loaded lane (success-colored badge)
+    bool assigned = false; // lane still carries identity while ejected (#1071)
 
     bool operator==(const SpoolCellData& o) const {
         return color_rgb == o.color_rgb && fill_level == o.fill_level &&
                remaining_pct == o.remaining_pct && material == o.material && present == o.present &&
-               lane_number == o.lane_number && active == o.active;
+               lane_number == o.lane_number && active == o.active && assigned == o.assigned;
     }
 };
+
+/**
+ * @brief Is this lane the one firmware considers seated and loaded?
+ *
+ * SINGLE SOURCE OF TRUTH for the active-lane highlight: the per-slot
+ * active-loaded subject (AmsBackend::slot_is_actively_loaded(i)) — the same read
+ * apply_current_slot_highlight() makes in ui_ams_slot.cpp. Deriving it here from
+ * `i == current_slot` instead diverged from the AMS panel: after an idle unload
+ * the strip kept the lane badged while the panel's glow had already cleared, and
+ * on AFC/CFS — where firmware's current_slot can name a lane the per-slot parse
+ * disagrees with (#1194) — the two surfaces could light DIFFERENT lanes.
+ *
+ * Unlike the ams_slot widget (one lane, per-slot observer) this widget needs no
+ * per-slot observer: AmsState bumps slots_version on every slot_active_loaded
+ * delta (sync_from_backend and update_slot both do), and the slots_version
+ * observer re-reads every lane. A per-slot observer would race the wholesale
+ * rebuild — the same reasoning that keeps fill on the snapshot (#705/#776).
+ *
+ * Out-of-range lanes (beyond AmsState::MAX_SLOTS) have no subject and report
+ * inactive, matching ams_slot's fallback.
+ */
+static bool slot_is_active_loaded(int slot_index) {
+    lv_subject_t* subject = AmsState::instance().get_slot_active_loaded_subject(slot_index);
+    return subject && lv_subject_get_int(subject) != 0;
+}
+
+/**
+ * @brief Dim a spool visual to the "assigned but ejected" ghost strength.
+ *
+ * Mirrors apply_slot_status() in ui_ams_slot.cpp: an empty lane that still
+ * carries identity (Spoolman link, material, brand, or spool name — deliberately
+ * NOT cleared on eject, #1071) renders its retained spool at LV_OPA_20 so it
+ * reads as "assigned, not present" rather than "still loaded" (#1065). Call
+ * AFTER spool_visual_set_color(), which resets bg_opa to COVER.
+ */
+static void spool_visual_set_ghost_opa(const ams_draw::SpoolVisual& sv, lv_opa_t opa) {
+    if (sv.color_swatch)
+        lv_obj_set_style_bg_opa(sv.color_swatch, opa, LV_PART_MAIN);
+    if (sv.spool_outer)
+        lv_obj_set_style_bg_opa(sv.spool_outer, opa, LV_PART_MAIN);
+    if (sv.canvas)
+        lv_obj_set_style_opa(sv.canvas, opa, LV_PART_MAIN);
+}
 
 /** Map an integer fill percent (0-100) to the spool graphic's 0.0-1.0 level. */
 static inline float fill_level_from_pct(int fill_pct) {
@@ -652,10 +696,18 @@ static void rebuild_spools(AmsMiniStatusData* data) {
         lv_obj_set_style_border_width(wrap, 0, LV_PART_MAIN);
         lv_obj_remove_flag(wrap, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_add_flag(wrap, LV_OBJ_FLAG_EVENT_BUBBLE);
+        // Empty-lane presentation, ported from apply_slot_status() in
+        // ui_ams_slot.cpp so a lane reads the same on both surfaces:
+        //   present              -> full-strength spool, material text
+        //   ejected + assigned   -> spool KEPT, ghosted at LV_OPA_20, label
+        //                           ghosted with it ("assigned, not present")
+        //   ejected + unassigned -> spool hidden, dashed placeholder, "Empty"
+        const bool ghosted = !cd.present && cd.assigned;
         ams_draw::SpoolVisual sv = ams_draw::create_spool_visual(wrap, spool_size);
         ams_draw::spool_visual_set_color(sv, lv_color_hex(cd.color_rgb));
         ams_draw::spool_visual_set_fill(sv, cd.fill_level);
-        ams_draw::spool_visual_set_empty(sv, !cd.present);
+        ams_draw::spool_visual_set_empty(sv, !cd.present && !cd.assigned);
+        spool_visual_set_ghost_opa(sv, ghosted ? LV_OPA_20 : LV_OPA_COVER);
         lv_obj_t* badge =
             ams_draw::create_lane_badge(wrap, cd.lane_number, spool_size * 2 / 5, cd.active);
         if (badge) {
@@ -682,12 +734,21 @@ static void rebuild_spools(AmsMiniStatusData* data) {
         lv_label_set_long_mode(mat, LV_LABEL_LONG_WRAP);
         lv_obj_set_style_text_align(mat, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
         lv_obj_add_flag(mat, LV_OBJ_FLAG_EVENT_BUBBLE);
-        lv_label_set_text(mat,
-                          cd.material.empty() ? "--" : cd.material.c_str()); // material: no i18n
+        if (!cd.present && !cd.assigned) {
+            // Unassigned empty lane: name its purpose instead of showing "--",
+            // matching the ams_slot material label (translated; "Empty" is UI
+            // copy, not a material name).
+            lv_label_set_text(mat, lv_tr("Empty"));
+        } else {
+            lv_label_set_text(mat,
+                              cd.material.empty() ? "--"
+                                                  : cd.material.c_str()); // material: no i18n
+        }
         const lv_font_t* fs = theme_manager_get_font("font_small");
         if (fs)
             lv_obj_set_style_text_font(mat, fs, LV_PART_MAIN);
         lv_obj_set_style_text_color(mat, theme_manager_get_color("text"), LV_PART_MAIN);
+        lv_obj_set_style_text_opa(mat, ghosted ? LV_OPA_20 : LV_OPA_COVER, LV_PART_MAIN);
 
         lv_obj_t* pct = lv_label_create(col);
         snprintf(nm, sizeof(nm), "spool_pct_%d", i);
@@ -706,6 +767,9 @@ static void rebuild_spools(AmsMiniStatusData* data) {
         if (fxs)
             lv_obj_set_style_text_font(pct, fxs, LV_PART_MAIN);
         lv_obj_set_style_text_color(pct, theme_manager_get_color("text_muted"), LV_PART_MAIN);
+        // Ghost the whole text group together — a full-strength percent beside a
+        // dimmed material would read as two different lanes.
+        lv_obj_set_style_text_opa(pct, ghosted ? LV_OPA_20 : LV_OPA_COVER, LV_PART_MAIN);
     }
 
     // Record the rendered signature so an identical subsequent sync can be skipped.
@@ -871,7 +935,11 @@ lv_obj_t* ui_ams_mini_status_create(lv_obj_t* parent, int32_t height) {
         spdlog::debug("[AmsMiniStatus] Auto-bound to AmsState slots_version subject");
     }
 
-    // Observe current_slot to reactively update lane highlights
+    // Observe current_slot as a re-sync trigger. The highlight itself now comes
+    // from the per-slot active-loaded subject (slot_is_active_loaded above), and
+    // every delta on that subject bumps slots_version, so the observer above is
+    // what keeps the strip live; this one covers a current_slot move that leaves
+    // the active-loaded flags untouched.
     lv_subject_t* current_slot_subject = AmsState::instance().get_current_slot_subject();
     if (current_slot_subject) {
         data->current_slot_observer = observe_int_sync<lv_obj_t>(current_slot_subject, container,
@@ -941,6 +1009,10 @@ void ui_ams_mini_status_set_slot_full(lv_obj_t* obj, int slot_index, uint32_t co
     c.remaining_pct = remaining_pct;
     c.material = material ? material : "";
     c.present = present;
+    // This programmatic path carries no Spoolman/brand handles, so a retained
+    // material is the only "assigned" evidence it can offer (the AmsState path
+    // in sync_from_ams_state() sees the full predicate).
+    c.assigned = !c.material.empty();
     c.lane_number = slot_index + 1;
 }
 
@@ -1053,17 +1125,19 @@ static void sync_from_ams_state(AmsMiniStatusData* data) {
     // capped at AMS_MINI_STATUS_MAX_VISIBLE; the spool cache is uncapped (sized to
     // slot_count) so the wide spool view sees every lane on multi-unit systems.
     data->spool_cells.assign(slot_count, SpoolCellData{});
-    int current = lv_subject_get_int(AmsState::instance().get_current_slot_subject());
     for (int i = 0; i < slot_count; ++i) {
         SlotInfo slot = backend->get_slot_info(i);
         // Fill is read from this slots_version snapshot on purpose. This widget
         // rebuilds all bars/cells wholesale on every sync; a per-slot fill
         // subject observer (as in the ams_slot widget) would race that rebuild
         // and touch just-recreated objects — the #705/#776 family. Semantics are
-        // still unified: fill_percent_from_slot uses SlotInfo::display_fill_pct.
-        // -1 = "no data" → treat as empty (0) so the bar/spool renders empty
+        // still unified: fill_percent_from_slot uses SlotInfo::display_fill_pct,
+        // with the SHARED default min_pct so a present-but-spent lane keeps the
+        // same visible sliver the overview's mini bars give it (passing 0 here
+        // made the identical lane render empty on one surface and not the
+        // other). -1 = "no data" → floored to 0 so the bar/spool renders empty
         // rather than a phantom fill (was 100/full for weightless slots).
-        int fill_pct = ams_draw::fill_percent_from_slot(slot, 0);
+        int fill_pct = ams_draw::fill_percent_from_slot(slot);
         if (fill_pct < 0)
             fill_pct = 0;
         int rem = -1;
@@ -1071,13 +1145,21 @@ static void sync_from_ams_state(AmsMiniStatusData* data) {
         if (p >= 0.0f)
             rem = static_cast<int>(p + 0.5f);
 
+        const bool active = slot_is_active_loaded(i);
+        // "Assigned" = the lane still carries identity after an eject — the
+        // override is deliberately NOT cleared (#1071). Same predicate as
+        // apply_slot_status() in ui_ams_slot.cpp; brand/spool_name cover
+        // IFS-style backends with a user override but no Spoolman id.
+        const bool assigned = slot.spoolman_id > 0 || !slot.material.empty() ||
+                              !slot.brand.empty() || !slot.spool_name.empty();
+
         // Bar-mode cache (capped at MAX_VISIBLE).
         if (i < AMS_MINI_STATUS_MAX_VISIBLE) {
             SlotBarData* slot_bar = &data->slots[i];
             slot_bar->color_rgb = slot.color_rgb;
             slot_bar->fill_pct = fill_pct;
             slot_bar->present = slot.is_present();
-            slot_bar->loaded = (i == current);
+            slot_bar->loaded = active;
             slot_bar->has_error = (slot.status == SlotStatus::BLOCKED || slot.error.has_value());
             slot_bar->severity = slot.error.has_value() ? slot.error->severity : SlotError::INFO;
         }
@@ -1090,7 +1172,8 @@ static void sync_from_ams_state(AmsMiniStatusData* data) {
         c.material = slot.material;
         c.present = slot.is_present();
         c.lane_number = i + 1;
-        c.active = (i == current);
+        c.active = active;
+        c.assigned = assigned;
     }
 
     rebuild(data);
@@ -1200,7 +1283,11 @@ static void* ui_ams_mini_status_xml_create(lv_xml_parser_state_t* state, const c
         }
     }
 
-    // Observe current_slot to reactively update lane highlights
+    // Observe current_slot as a re-sync trigger. The highlight itself now comes
+    // from the per-slot active-loaded subject (slot_is_active_loaded above), and
+    // every delta on that subject bumps slots_version, so the observer above is
+    // what keeps the strip live; this one covers a current_slot move that leaves
+    // the active-loaded flags untouched.
     lv_subject_t* current_slot_subject = AmsState::instance().get_current_slot_subject();
     if (current_slot_subject) {
         data->current_slot_observer = observe_int_sync<lv_obj_t>(current_slot_subject, container,

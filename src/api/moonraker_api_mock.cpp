@@ -669,10 +669,26 @@ void MoonrakerFileTransferAPIMock::download_thumbnail(const std::string& thumbna
                                                       const std::string& cache_path,
                                                       StringCallback on_success,
                                                       ErrorCallback on_error) {
-    (void)on_error; // Unused - mock falls back to placeholder on failure
-
     spdlog::debug("[MoonrakerAPIMock] download_thumbnail: path='{}' -> cache='{}'", thumbnail_path,
                   cache_path);
+
+    // HELIX_MOCK_REMOTE_THUMBS=1 — go through the REAL transfer implementation
+    // so the request actually crosses HTTP to MockHttpFileServer. Resolving the
+    // file locally here is faster and is the right default, but it means the
+    // download → HttpExecutor worker → decode → prescale → evict pipeline is
+    // never executed under --test, which is the pipeline bundle 6F3QJLFG
+    // implicates (#960). This is the only way to reach it without a printer.
+    static const bool remote_thumbs = [] {
+        const char* v = std::getenv("HELIX_MOCK_REMOTE_THUMBS");
+        return v && v[0] && std::string(v) != "0";
+    }();
+    if (remote_thumbs) {
+        MoonrakerFileTransferAPI::download_thumbnail(thumbnail_path, cache_path,
+                                                     std::move(on_success), std::move(on_error));
+        return;
+    }
+
+    (void)on_error; // Unused below - mock falls back to placeholder on failure
 
     namespace fs = std::filesystem;
 
@@ -909,17 +925,21 @@ void MoonrakerRestAPIMock::wled_get_strips(RestCallback on_success, ErrorCallbac
         RestResponse resp;
         resp.success = true;
         resp.status_code = 200;
+        // Moonraker nests the strip map under result.strips — reproduce that envelope
+        // exactly, or parser bugs that read the wrapper key as a strip name go
+        // undetected (prestonbrown/helixscreen#1241).
         resp.data = {{"result",
-                      {{"printer_led",
-                        {{"strip", "printer_led"},
-                         {"status", mock_wled_states_["printer_led"] ? "on" : "off"},
-                         {"brightness", mock_wled_brightness_["printer_led"]},
-                         {"preset", mock_wled_presets_["printer_led"]}}},
-                       {"enclosure_led",
-                        {{"strip", "enclosure_led"},
-                         {"status", mock_wled_states_["enclosure_led"] ? "on" : "off"},
-                         {"brightness", mock_wled_brightness_["enclosure_led"]},
-                         {"preset", mock_wled_presets_["enclosure_led"]}}}}}};
+                      {{"strips",
+                        {{"printer_led",
+                          {{"strip", "printer_led"},
+                           {"status", mock_wled_states_["printer_led"] ? "on" : "off"},
+                           {"brightness", mock_wled_brightness_["printer_led"]},
+                           {"preset", mock_wled_presets_["printer_led"]}}},
+                         {"enclosure_led",
+                          {{"strip", "enclosure_led"},
+                           {"status", mock_wled_states_["enclosure_led"] ? "on" : "off"},
+                           {"brightness", mock_wled_brightness_["enclosure_led"]},
+                           {"preset", mock_wled_presets_["enclosure_led"]}}}}}}}};
         on_success(resp);
     }
 }
@@ -984,25 +1004,27 @@ void MoonrakerRestAPIMock::wled_get_status(RestCallback on_success, ErrorCallbac
         RestResponse resp;
         resp.success = true;
         resp.status_code = 200;
+        // Same endpoint as wled_get_strips(), same result.strips envelope.
         resp.data = {{"result",
-                      {{"printer_led",
-                        {{"strip", "printer_led"},
-                         {"status", mock_wled_states_["printer_led"] ? "on" : "off"},
-                         {"chain_count", 30},
-                         {"preset", mock_wled_presets_["printer_led"]},
-                         {"brightness", mock_wled_brightness_["printer_led"]},
-                         {"intensity", -1},
-                         {"speed", -1},
-                         {"error", nullptr}}},
-                       {"enclosure_led",
-                        {{"strip", "enclosure_led"},
-                         {"status", mock_wled_states_["enclosure_led"] ? "on" : "off"},
-                         {"chain_count", 60},
-                         {"preset", mock_wled_presets_["enclosure_led"]},
-                         {"brightness", mock_wled_brightness_["enclosure_led"]},
-                         {"intensity", -1},
-                         {"speed", -1},
-                         {"error", nullptr}}}}}};
+                      {{"strips",
+                        {{"printer_led",
+                          {{"strip", "printer_led"},
+                           {"status", mock_wled_states_["printer_led"] ? "on" : "off"},
+                           {"chain_count", 30},
+                           {"preset", mock_wled_presets_["printer_led"]},
+                           {"brightness", mock_wled_brightness_["printer_led"]},
+                           {"intensity", -1},
+                           {"speed", -1},
+                           {"error", nullptr}}},
+                         {"enclosure_led",
+                          {{"strip", "enclosure_led"},
+                           {"status", mock_wled_states_["enclosure_led"] ? "on" : "off"},
+                           {"chain_count", 60},
+                           {"preset", mock_wled_presets_["enclosure_led"]},
+                           {"brightness", mock_wled_brightness_["enclosure_led"]},
+                           {"intensity", -1},
+                           {"speed", -1},
+                           {"error", nullptr}}}}}}}};
         on_success(resp);
     }
 }

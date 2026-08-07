@@ -73,6 +73,27 @@ static constexpr int32_t DETAIL_ZOOM_SCALE_MAX = 256;
 // Global instance pointer for XML callback access (used by back button and animation callbacks)
 static std::atomic<AmsOverviewPanel*> g_overview_panel_instance{nullptr};
 
+/**
+ * @brief Is this lane the one firmware considers seated and loaded?
+ *
+ * SINGLE SOURCE OF TRUTH for the active-lane highlight: the per-slot
+ * active-loaded subject (AmsBackend::slot_is_actively_loaded(i)) — the same read
+ * apply_current_slot_highlight() makes in ui_ams_slot.cpp. The mini bars used to
+ * ask `global_idx == current_slot`, which disagreed with the slot widgets on the
+ * very same panel: an idle unload left the bar outlined after the detail view's
+ * glow had cleared, and on AFC/CFS a current_slot that names a lane the per-slot
+ * parse disagrees with (#1194) put the highlight on two different lanes.
+ *
+ * The bars are rebuilt wholesale on every refresh (see create_mini_bars), and
+ * AmsState bumps slots_version on every slot_active_loaded delta, so the panel's
+ * existing slots_version observer is what keeps this live — no per-slot observer,
+ * which would race the rebuild (#705/#776).
+ */
+static bool slot_is_active_loaded(int global_slot_index) {
+    lv_subject_t* subject = AmsState::instance().get_slot_active_loaded_subject(global_slot_index);
+    return subject && lv_subject_get_int(subject) != 0;
+}
+
 /// Set a label to "N slots" text, with null-safety
 static void set_slot_count_label(lv_obj_t* label, int slot_count) {
     if (!label) {
@@ -289,7 +310,7 @@ void AmsOverviewPanel::refresh_units() {
     } else {
         // Same number of units - update existing cards in place
         for (int i = 0; i < new_unit_count; ++i) {
-            update_unit_card(unit_cards_[i], info.units[i], current_slot);
+            update_unit_card(unit_cards_[i], info.units[i]);
         }
     }
 
@@ -310,8 +331,6 @@ void AmsOverviewPanel::create_unit_cards(const AmsSystemInfo& info) {
     lv_obj_update_layout(cards_row_);
     helix::ui::safe_clean_children(cards_row_);
     unit_cards_.clear();
-
-    int current_slot = lv_subject_get_int(AmsState::instance().get_current_slot_subject());
 
     for (int i = 0; i < static_cast<int>(info.units.size()); ++i) {
         const AmsUnit& unit = info.units[i];
@@ -371,7 +390,7 @@ void AmsOverviewPanel::create_unit_cards(const AmsSystemInfo& info) {
         set_slot_count_label(uc.slot_count_label, unit.slot_count);
 
         // Create the mini bars for this unit (dynamic — slot count varies)
-        create_mini_bars(uc, unit, current_slot);
+        create_mini_bars(uc, unit);
 
         // Create error badge (top-right of card, initially hidden)
         uc.error_badge = ams_draw::create_error_badge(uc.card, 12);
@@ -392,7 +411,7 @@ void AmsOverviewPanel::create_unit_cards(const AmsSystemInfo& info) {
                   static_cast<int>(unit_cards_.size()), info.supports_bypass);
 }
 
-void AmsOverviewPanel::update_unit_card(UnitCard& card, const AmsUnit& unit, int current_slot) {
+void AmsOverviewPanel::update_unit_card(UnitCard& card, const AmsUnit& unit) {
     if (!card.card) {
         return;
     }
@@ -413,7 +432,7 @@ void AmsOverviewPanel::update_unit_card(UnitCard& card, const AmsUnit& unit, int
     if (card.bars_container) {
         lv_obj_update_layout(card.bars_container);
         helix::ui::safe_clean_children(card.bars_container);
-        create_mini_bars(card, unit, current_slot);
+        create_mini_bars(card, unit);
     }
 
     // Update slot count
@@ -427,7 +446,7 @@ void AmsOverviewPanel::update_unit_card(UnitCard& card, const AmsUnit& unit, int
     }
 }
 
-void AmsOverviewPanel::create_mini_bars(UnitCard& card, const AmsUnit& unit, int current_slot) {
+void AmsOverviewPanel::create_mini_bars(UnitCard& card, const AmsUnit& unit) {
     if (!card.bars_container) {
         return;
     }
@@ -450,7 +469,7 @@ void AmsOverviewPanel::create_mini_bars(UnitCard& card, const AmsUnit& unit, int
     for (int s = 0; s < slot_count; ++s) {
         const SlotInfo& slot = unit.slots[s];
         int global_idx = unit.first_slot_global_index + s;
-        bool is_loaded = (global_idx == current_slot);
+        bool is_loaded = slot_is_active_loaded(global_idx);
 
         auto col = ams_draw::create_slot_column(card.bars_container, bar_width, MINI_BAR_HEIGHT_PX,
                                                 MINI_BAR_RADIUS_PX);

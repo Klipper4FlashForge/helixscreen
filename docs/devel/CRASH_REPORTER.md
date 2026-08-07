@@ -207,6 +207,31 @@ Set via `wrangler secret put`:
 
 `GITHUB_REPO` is set as a plain var in `wrangler.toml` (not a secret).
 
+### Release-Version Gate
+
+`INGEST_API_KEY` is compiled into every binary and the repo is public, so anything
+built from source — a fork, a local build, a private branch — posts to the same
+endpoint. Those reports can never be symbolicated: no `.sym` for that build exists
+in R2 or on a GitHub release, and none ever will.
+
+Two checks run before an issue is filed:
+
+1. **Shape** — `app_version` must be semver-shaped (`isVersionShapeValid`). Failures
+   get `400`. This also bounds the string that lands in the issue title.
+2. **Published release** — `isKnownRelease()` asks GitHub whether tag `v<version>`
+   exists. If it definitively does not, the report is accepted with `202
+   {"status": "ignored"}` and logged, but no issue is created.
+
+The tag check uses `git/matching-refs` (not a direct ref lookup) because "no such
+tag" comes back as `200` + an empty array, which is distinguishable from a
+permission or transport failure. Every other outcome **fails open** and files the
+issue — a GitHub outage must never silently drop a real crash.
+
+Prompted by #1240: a `v0.1.4` report from a Pi. `VERSION.txt` has never held that
+value (history runs 1.1.0 → 0.9.0 … 0.13.x → 0.95.x … 0.99.x), and the reported
+27 MB text segment doesn't match any release build, so it came from an
+independently compiled binary.
+
 ### GitHub Issue Format
 
 The worker creates issues with:

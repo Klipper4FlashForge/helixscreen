@@ -165,8 +165,10 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // routed it to eject_lane(-1) when the head read empty, silently dropping
     // the load (Vger1700, bundle Z5V4K3NL). Load straight through the macro,
     // exactly like the stock screen (zmod_color.py).
-    [[nodiscard]] bool needs_unload_before_load(const AmsSystemInfo& info) const override {
+    [[nodiscard]] bool needs_unload_before_load(const AmsSystemInfo& info,
+                                                int target_slot) const override {
         (void)info;
+        (void)target_slot;
         return false;
     }
 

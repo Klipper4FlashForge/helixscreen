@@ -3,8 +3,11 @@
 
 #include "thumbnail_cache.h"
 
+#include "ui_update_queue.h"
+
 #include "app_globals.h"
 #include "config.h"
+#include "system/crash_handler.h"
 #include "system/helix_paths.h"
 
 #include <spdlog/spdlog.h>
@@ -79,6 +82,34 @@ ThumbnailCache::ThumbnailCache()
     load_config();
     // Now that directory exists and config is loaded, calculate dynamic size
     max_size_ = calculate_dynamic_max_size(cache_dir_, configured_max_);
+
+    // HELIX_THUMB_CACHE_MAX_MB — force a hard cache ceiling for testing.
+    //
+    // Applied AFTER the dynamic sizing and deliberately not through it:
+    // calculate_dynamic_max_size() clamps its result up to MIN_CACHE_SIZE
+    // (5 MB), so feeding a small value in through configured_max_ gets raised
+    // straight back and eviction still never fires. Making eviction reachable
+    // is the entire point here — without it the decode-vs-evict interaction
+    // that debug bundle 6F3QJLFG implicates cannot be exercised under a
+    // sanitizer, only in the standalone stress test (#960).
+    //
+    // Env rather than config so it composes with HELIX_CACHE_DIR in a one-line
+    // launch, matching how the rest of the test surface is driven.
+    if (const char* env_max = std::getenv("HELIX_THUMB_CACHE_MAX_MB")) {
+        char* end = nullptr;
+        const long mb = std::strtol(env_max, &end, 10);
+        if (end != env_max && mb > 0) {
+            configured_max_ = static_cast<size_t>(mb) * 1024 * 1024;
+            max_size_ = configured_max_;
+            spdlog::info("[ThumbnailCache] HELIX_THUMB_CACHE_MAX_MB={} — cache ceiling forced "
+                         "to {} MB (dynamic sizing and the {} MB floor bypassed)",
+                         mb, mb, MIN_CACHE_SIZE / (1024 * 1024));
+        } else {
+            spdlog::warn("[ThumbnailCache] HELIX_THUMB_CACHE_MAX_MB='{}' is not a positive "
+                         "integer — ignoring",
+                         env_max);
+        }
+    }
 
     // Sync ThumbnailProcessor's cache dir with ours, and subscribe to the
     // .bin writes it will make there. Directory first: the journal is only
@@ -543,6 +574,9 @@ void ThumbnailCache::evict_locked() {
     if (evicted_count > 0) {
         spdlog::info("[ThumbnailCache] Evicted {} files ({} KB) to stay under limit", evicted_count,
                      evicted_bytes / 1024);
+        // Reached from the main thread AND from HttpExecutor workers, so a
+        // crumb here also witnesses eviction overlapping an in-flight decode.
+        crash_handler::breadcrumb::note("thumb", "evict", static_cast<long>(evicted_count));
     }
 
     if (saw_ghost) {
@@ -555,8 +589,35 @@ void ThumbnailCache::evict_locked() {
     }
 }
 
+// ============================================================================
+// Main-thread callback marshalling
+// ============================================================================
+
+ThumbnailCache::SuccessCallback ThumbnailCache::on_main(SuccessCallback cb) {
+    if (!cb) {
+        return cb;
+    }
+    return [cb = std::move(cb)](const std::string& path) {
+        helix::ui::run_on_main("ThumbnailCache::on_success", [cb, path]() { cb(path); });
+    };
+}
+
+ThumbnailCache::ErrorCallback ThumbnailCache::on_main_err(ErrorCallback cb) {
+    if (!cb) {
+        return cb;
+    }
+    return [cb = std::move(cb)](const std::string& error) {
+        helix::ui::run_on_main("ThumbnailCache::on_error", [cb, error]() { cb(error); });
+    };
+}
+
 void ThumbnailCache::fetch(MoonrakerAPI* api, const std::string& relative_path,
                            SuccessCallback on_success, ErrorCallback on_error) {
+    // Marshal once, at the boundary — see on_main() for why per-path wrapping
+    // does not hold. Everything below may now deliver from any thread.
+    on_success = on_main(std::move(on_success));
+    on_error = on_main_err(std::move(on_error));
+
     if (relative_path.empty()) {
         if (on_error) {
             on_error("Empty thumbnail path");
@@ -848,6 +909,12 @@ void ThumbnailCache::fetch_optimized(MoonrakerAPI* api, const std::string& relat
                                      const helix::ThumbnailTarget& target,
                                      SuccessCallback on_success, ErrorCallback on_error,
                                      time_t source_modified) {
+    // Marshal once, at the boundary — see on_main(). This covers the download
+    // error path, and the processor-shutdown error that process_and_callback
+    // turns back into a success, neither of which is obvious at the call sites.
+    on_success = on_main(std::move(on_success));
+    on_error = on_main_err(std::move(on_error));
+
     if (relative_path.empty()) {
         if (on_error) {
             on_error("Empty thumbnail path");
@@ -897,6 +964,8 @@ void ThumbnailCache::fetch_optimized(MoonrakerAPI* api, const std::string& relat
     std::string cache_path = get_cache_path(relative_path);
     spdlog::debug("[ThumbnailCache] Downloading for optimization: {} -> {}", relative_path,
                   cache_path);
+    // Cold fetch — the state the reporter's device was in when it aborted.
+    crash_handler::breadcrumb::note("thumb", "fetch_cold", 0);
 
     // Capture target and callbacks for the download completion handler
     api->transfers().download_thumbnail(
