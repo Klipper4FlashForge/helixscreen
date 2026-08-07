@@ -3658,29 +3658,40 @@ void AmsBackendAfc::apply_mount_state(bool extruder_set_active_slot, bool afc_st
     // empty melt zone, and current_slot = -1 is how that state is expressed
     // (#1229). Frame-scoped, so the next frame elects normally.
     //
-    // Deliberately BELOW the on_shuttle arm, which returns before reaching here:
-    // when the mounted extruder names its own lane_loaded, that beats AFC's
-    // aggregate. Several lanes can feed one extruder, so the extruder knows which
-    // is seated and the global current_load does not — overriding it is the
-    // wrong-lane selection #379 fixed. This check governs only the map-based
-    // election, which has no such per-extruder evidence behind it.
+    // Deliberately BELOW the on_shuttle arm, which returns before reaching here.
+    // That arm already prefers the mounted extruder's own lane_loaded over the
+    // lane→tool map — several lanes can feed one extruder, so the extruder knows
+    // which is seated and a map cannot; overriding it is the wrong-lane selection
+    // #379 fixed. This check applies the SAME precedence one branch lower, where
+    // on_shuttle is absent and the map is otherwise the only voice.
     if (afc_stated_unloaded) {
-        // ...unless a per-extruder lane_loaded contradicts the aggregate. AFC.current
-        // is one global slot for a machine that has one melt zone PER TOOLHEAD, so on
-        // a toolchanger it goes null whenever the carriage is parked even though a
-        // docked toolhead still grips filament. Suppressing on that would clear the
-        // slot Klipper's toolchanger just elected, which is exactly what the
-        // on_shuttle-absent fallback exists to establish (#1229). The per-extruder
-        // answer is evidence about a specific toolhead; the aggregate is not.
-        bool an_extruder_holds_filament = false;
+        // ...unless the MOUNTED extruder names a lane of its own.
+        //
+        // These are not two signals. AFC.current_load is a property, not a stored
+        // field: AFC.py's `current` returns AFC_functions.get_current_lane(), which
+        // is `tools[get_current_extruder()].lane_loaded`. So the aggregate IS the
+        // mounted toolhead's lane_loaded, resolved through Klipper's active
+        // extruder. When the two disagree the specific one wins, because it is the
+        // same fact at a finer resolution — and a disagreement means Klipper's
+        // active extruder and the toolchanger's mounted tool have not converged yet.
+        //
+        // Asking instead whether ANY extruder holds filament answers a different
+        // question, wrongly: parked toolheads routinely grip filament on a
+        // toolchanger (the premise of #1229's own "parked toolheads may well hold
+        // filament" note), so that is true on essentially every real multi-tool
+        // machine. The suppression would never fire in production and only look
+        // fixed in a fixture with no per-extruder data.
+        const AfcExtruderSensors* mounted_sensors = nullptr;
         for (const auto& entry : extruder_sensors_) {
-            if (!entry.second.lane_loaded.empty()) {
-                an_extruder_holds_filament = true;
+            const auto tool_num = helix::tool_number_for_extruder(entry.first);
+            if (tool_num && *tool_num == system_info_.mounted_tool) {
+                mounted_sensors = &entry.second;
                 break;
             }
         }
 
-        if (!an_extruder_holds_filament) {
+        // No per-extruder evidence at all: nothing contradicts AFC, so believe it.
+        if (mounted_sensors == nullptr || mounted_sensors->lane_loaded.empty()) {
             if (system_info_.current_slot != -1 || system_info_.filament_loaded) {
                 spdlog::debug("[AMS AFC] AFC reports nothing at the toolhead — mounted T{} elects "
                               "no slot (was {})",
