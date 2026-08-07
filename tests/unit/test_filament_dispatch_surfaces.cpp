@@ -350,3 +350,89 @@ TEST_CASE_METHOD(DispatchSurfaceFixture,
     CHECK(prompt_count == 0);
     CHECK(gcode_sent_containing(kLoadFallbackMarker));
 }
+
+// -----------------------------------------------------------------------------
+// Runout Unload / Purge — the two buttons the ladder conversion missed
+// -----------------------------------------------------------------------------
+//
+// Only Load was converted. set_on_unload_filament and set_on_purge still called
+// StandardMacros::execute() straight: no backend tier, no raw-gcode fallback,
+// and a "Unload macro not configured" warning on a printer whose AMS backend
+// would have handled it — or whose bowden a plain retract would have cleared.
+//
+// Mutation check: point dispatch_unload() back at StandardMacros::execute() and
+// the raw-gcode case fails (nothing is sent at all); do the same for
+// dispatch_purge() and its fallback case fails.
+
+TEST_CASE_METHOD(DispatchSurfaceFixture, "Runout unload with no backend dispatches the macro",
+                 "[filament][dispatch][wiring][runout]") {
+    configure_filament_macros();
+    REQUIRE(AmsState::instance().get_backend() == nullptr);
+    REQUIRE_FALSE(StandardMacros::instance().get(StandardMacroSlot::UnloadFilament).is_empty());
+
+    FilamentRunoutHandler handler(api.get());
+    FilamentRunoutHandlerTestAccess::dispatch_unload(handler);
+    helix::ui::UpdateQueue::instance().drain();
+
+    CHECK(gcode_sent_containing("UNLOAD_FILAMENT"));
+}
+
+TEST_CASE_METHOD(DispatchSurfaceFixture, "Runout unload never prompts for macro parameters",
+                 "[filament][dispatch][wiring][runout][params]") {
+    // Same ParamPolicy::Suppress contract as Load: a MacroParamModal raised from
+    // the runout dialog would stack on a live modal whose observers keep firing.
+    configure_filament_macros();
+
+    FilamentRunoutHandler handler(api.get());
+    FilamentRunoutHandlerTestAccess::dispatch_unload(handler);
+    helix::ui::UpdateQueue::instance().drain();
+
+    CHECK(prompt_count == 0);
+    CHECK(gcode_sent_containing("UNLOAD_FILAMENT"));
+}
+
+TEST_CASE_METHOD(DispatchSurfaceFixture,
+                 "Runout unload with no backend and no macro falls back to raw gcode",
+                 "[filament][dispatch][wiring][runout]") {
+    // The old code warned "Unload macro not configured" and did nothing. The
+    // tier-3 unload fallback is tip-shape then an 80mm retract.
+    clear_filament_macros();
+
+    FilamentRunoutHandler handler(api.get());
+    FilamentRunoutHandlerTestAccess::dispatch_unload(handler);
+    helix::ui::UpdateQueue::instance().drain();
+
+    CHECK(prompt_count == 0);
+    CHECK(gcode_sent_containing("G1 E-80"));
+}
+
+TEST_CASE_METHOD(DispatchSurfaceFixture, "Runout purge routes through the shared macro tier",
+                 "[filament][dispatch][wiring][runout]") {
+    helix::PrinterDiscovery hardware;
+    nlohmann::json objects = {"extruder", "gcode_macro PURGE"};
+    hardware.parse_objects(objects);
+    StandardMacros::instance().reset();
+    StandardMacros::instance().init(hardware);
+    REQUIRE_FALSE(StandardMacros::instance().get(StandardMacroSlot::Purge).is_empty());
+
+    FilamentRunoutHandler handler(api.get());
+    FilamentRunoutHandlerTestAccess::dispatch_purge(handler);
+    helix::ui::UpdateQueue::instance().drain();
+
+    CHECK(prompt_count == 0); // ParamPolicy::Suppress, even though params are UNKNOWN
+    CHECK(gcode_sent_containing("PURGE"));
+}
+
+TEST_CASE_METHOD(DispatchSurfaceFixture, "Runout purge with no macro falls back to raw gcode",
+                 "[filament][dispatch][wiring][runout]") {
+    // There is no plan_purge() — no backend exposes a purge entry point — so the
+    // ladder here is macro then raw extrude. The old code warned and did nothing.
+    clear_filament_macros();
+
+    FilamentRunoutHandler handler(api.get());
+    FilamentRunoutHandlerTestAccess::dispatch_purge(handler);
+    helix::ui::UpdateQueue::instance().drain();
+
+    CHECK(prompt_count == 0);
+    CHECK(gcode_sent_containing("G1 E50"));
+}

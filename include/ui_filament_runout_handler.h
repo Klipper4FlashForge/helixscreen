@@ -217,6 +217,33 @@ class FilamentRunoutHandler {
      * LifetimeToken check.
      */
     void dispatch_load();
+
+    /**
+     * @brief Dispatch the dialog's "Unload filament" action.
+     *
+     * The plan_unload() counterpart of dispatch_load(). This button used to call
+     * StandardMacros::execute() directly: no backend tier at all, no raw-gcode
+     * fallback, and a "Unload macro not configured" warning on a printer whose
+     * AMS backend would have handled it perfectly well.
+     *
+     * The unload target is the current lane, and unload_target_is_loaded()'s
+     * is_current_slot arm is what keeps it reachable here — a runout clears the
+     * lane's own sensor while filament is still at the head (#995 / #1199).
+     *
+     * Main thread only.
+     */
+    void dispatch_unload();
+
+    /**
+     * @brief Dispatch the dialog's "Purge" action.
+     *
+     * Tiers 2 and 3 only — there is no backend purge entry point, so there is no
+     * plan_purge() to route through. Same ParamPolicy::Suppress and the same
+     * never-navigate rule as the other two buttons.
+     *
+     * Main thread only.
+     */
+    void dispatch_purge();
 };
 
 } // namespace helix::ui

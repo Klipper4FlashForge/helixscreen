@@ -303,7 +303,7 @@ class FilamentPanel : public PanelBase {
     /// fail_op_on_unknown_command().
     std::optional<FilamentOp> op_aborted_;
     uint32_t op_busy_started_tick_ = 0; ///< lv_tick when busy began (min-spinner floor)
-    bool backend_op_active_ = false; ///< true while an AMS-backend op awaits ams_action IDLE
+    bool backend_op_active_ = false;    ///< true while an AMS-backend op awaits ams_action IDLE
 
     lv_subject_t* op_state_subject(FilamentOp op);
     void set_op_state(FilamentOp op, int state); ///< main-thread: set state subject
@@ -313,8 +313,8 @@ class FilamentPanel : public PanelBase {
     void enter_op_done_state(FilamentOp op);     ///< main-thread: → done + arm revert timer
     void schedule_op_timer(uint32_t delay_ms, lv_timer_cb_t cb); ///< (re)arm shared op timer
     void cancel_op_revert_timer();
-    void begin_operation_guard();     ///< arm operation_guard_ with the shared timeout handler
-    void handle_operation_timeout();  ///< main-thread: toast + tear down the stalled op
+    void begin_operation_guard();    ///< arm operation_guard_ with the shared timeout handler
+    void handle_operation_timeout(); ///< main-thread: toast + tear down the stalled op
 
     // Purge amount state
     int purge_amount_ = 10; // Default 10mm
@@ -459,8 +459,15 @@ class FilamentPanel : public PanelBase {
         int temp = 0;
         std::string material_name;
     };
-    PreheatTempResult
-    resolve_preheat_temp() const; ///< Priority: ext spool > AMS slot > preset > fallback
+    /// Nozzle preheat target for an op acting on @p target_slot.
+    /// Priority: that slot > external spool (only when the slot names nothing) >
+    /// the panel's material preset > min_extrude_temp_. The first two tiers are
+    /// helix::ui::resolve_load_preheat_material(), shared with the AMS sidebar.
+    PreheatTempResult resolve_preheat_temp(int target_slot) const;
+    /// Which slot's material a given op should heat for. Load/Unload follow the
+    /// dropdown selection (selected_op_slot); Extrude/Retract/Purge follow the
+    /// LOADED lane, since they push what is already in the melt zone.
+    int preheat_slot_for_op(PreheatOp op) const;
     bool
     has_active_spool_material() const; ///< True if external spool or AMS slot has known material
     void start_preheat_for_op(PreheatOp op); ///< Resolve temp, heat, set pending state

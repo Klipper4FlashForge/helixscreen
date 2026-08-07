@@ -790,10 +790,18 @@ TEST_CASE_METHOD(ToolStateFixture,
 
         CHECK(success_called);
 
-        // Backend's change_tool is async (schedule_completion), so we verify
-        // the action was initiated rather than checking current_slot
-        auto action = mock_ptr->get_current_action();
-        CHECK(action != AmsAction::IDLE); // Should be UNLOADING or LOADING
+        // change_tool() runs on a real std::thread, so the action sampled right
+        // here is a race against it — and at set_operation_delay(0) that thread
+        // usually finishes first, leaving IDLE. Sampling the transient made this
+        // pass alone and fail under parallel load. Join, then assert the RESULT,
+        // which is both deterministic and a stronger claim: it proves the backend
+        // performed the change rather than merely starting something.
+        mock_ptr->wait_for_operation_thread();
+
+        const AmsSystemInfo info = mock_ptr->get_system_info();
+        CHECK(info.action == AmsAction::IDLE);
+        CHECK(info.current_slot == 1);
+        CHECK(info.filament_loaded);
     }
 
     SECTION("tool change to T2 via backend works") {

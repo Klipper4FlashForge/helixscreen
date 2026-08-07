@@ -378,6 +378,7 @@ translations:
   'Cannot remap: internal error': 'Cannot remap: internal error'
   'Cannot reprint: not connected to printer': 'Cannot reprint: not connected to printer'
   Cannot restart — no filename: Cannot restart — no filename
+  Cannot unload while a print is active: Cannot unload while a print is active
   'Cannot start print: internal error': 'Cannot start print: internal error'
   'Cannot start print: not connected to printer': 'Cannot start print: not connected
     to printer'
@@ -1629,6 +1630,8 @@ translations:
   Path Similarity: Path Similarity
   Pause: Pause
   Pause macro not configured: Pause macro not configured
+  Pause the print first, then load, unload, or change filament: Pause the print first,
+    then load, unload, or change filament
   Paused: Paused
   Paused (attention needed): Paused (attention needed)
   Pausing...: Pausing...
@@ -2595,6 +2598,8 @@ translations:
   WLED Preset: WLED Preset
   WPA/WPA2: WPA/WPA2
   WPA3: WPA3
+  Wait for the current filament operation to finish: Wait for the current filament
+    operation to finish
   Waiting for Moonraker...: Waiting for Moonraker...
   Waiting for bed to reach temperature for accurate calibration.: Waiting for bed
     to reach temperature for accurate calibration.

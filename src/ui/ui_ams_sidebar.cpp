@@ -20,12 +20,14 @@
 #include "filament_database.h"
 #include "filament_op_dispatch.h"
 #include "filament_op_router.h"
+#include "filament_op_slot_resolver.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
 #include "observer_factory.h"
 #include "post_op_cooldown_manager.h"
 #include "printer_state.h"
 #include "standard_macros.h"
+#include "static_subject_registry.h"
 #include "temperature_controller.h"
 #include "ui/ui_cleanup_helpers.h"
 
@@ -35,6 +37,41 @@
 #include <cmath>
 
 namespace helix::ui {
+
+namespace {
+
+/**
+ * @brief Drives the sidebar Unload button's disabled state (1 = disabled).
+ *
+ * Process-wide rather than an AmsOperationSidebar member: the sidebar is a
+ * unique_ptr on the AMS / AMS Overview panel and is destroyed every time that
+ * panel closes, while the XML tree bound to this subject is torn down
+ * asynchronously. An instance-owned subject would be deinit'd out from under a
+ * live binding. Registered once, deinit'd via StaticSubjectRegistry (which runs
+ * before lv_deinit()), same shape as ScrewsTiltShareModal's row subjects.
+ */
+lv_subject_t s_unload_disabled;
+bool s_unload_disabled_initialized = false;
+
+void init_unload_gating_subject() {
+    if (s_unload_disabled_initialized) {
+        return;
+    }
+    // Start disabled: nothing is known to be loaded until the first refresh.
+    lv_subject_init_int(&s_unload_disabled, 1);
+    lv_xml_register_subject(nullptr, "ams_sidebar_unload_disabled", &s_unload_disabled);
+    s_unload_disabled_initialized = true;
+
+    StaticSubjectRegistry::instance().register_deinit("AmsSidebarUnloadGating", []() {
+        if (s_unload_disabled_initialized && lv_is_initialized()) {
+            lv_subject_deinit(&s_unload_disabled);
+            s_unload_disabled_initialized = false;
+            spdlog::trace("[AmsSidebar] Unload gating subject deinitialized");
+        }
+    });
+}
+
+} // namespace
 
 // ============================================================================
 // Construction / Destruction
@@ -54,6 +91,11 @@ AmsOperationSidebar::~AmsOperationSidebar() {
 // ============================================================================
 
 void AmsOperationSidebar::register_callbacks_static() {
+    // Must exist before ams_sidebar.xml is parsed — btn_unload binds it. Same
+    // "before the parser sees it" contract as the callbacks below, so it is
+    // registered from the same hook.
+    init_unload_gating_subject();
+
     register_xml_callbacks({
         {"ams_sidebar_bypass_toggled", on_bypass_toggled_cb},
         {"ams_sidebar_unload_clicked", on_unload_clicked_cb},
@@ -177,6 +219,7 @@ bool AmsOperationSidebar::setup(lv_obj_t* panel) {
 
     sync_reset_button_label();
     update_check_gates_visibility();
+    refresh_unload_gating();
     spdlog::debug("[AmsSidebar] Setup complete");
     return true;
 }
@@ -261,6 +304,10 @@ void AmsOperationSidebar::init_observers() {
             // Update step progress (BEFORE updating prev_ams_action_)
             self->update_action_display(action);
 
+            // AmsSystemInfo::is_busy() is "action is neither IDLE nor ERROR", so
+            // every edge here changes the Unload button's gating.
+            self->refresh_unload_gating();
+
             self->prev_ams_action_ = action;
         });
 
@@ -273,7 +320,25 @@ void AmsOperationSidebar::init_observers() {
                                                   self->update_current_loaded_display();
                                                   self->sync_reset_button_label();
                                                   self->update_check_gates_visibility();
+                                                  self->refresh_unload_gating();
                                               });
+
+    // The two terms the sidebar never had. ams_filament_loaded is what the XML
+    // used to bind on its own; print state is the one whose absence let Unload
+    // dispatch mid-print and eat a backend refusal.
+    //
+    // print_state_enum, not print_active: PRINTING -> PAUSED is a gating edge
+    // (a pause UNGATES Unload on every backend but AD5X) and print_active reads
+    // 1 across both, so it never fires on that transition. PrinterState is a
+    // separate singleton whose subjects tests deinit between cases, so its
+    // observer takes the lifetime token (#705); AmsState's does not.
+    filament_loaded_observer_ = observe_int_sync<AmsOperationSidebar>(
+        AmsState::instance().get_filament_loaded_subject(), this,
+        [](AmsOperationSidebar* self, int) { self->refresh_unload_gating(); });
+    print_state_observer_ = observe_int_sync<AmsOperationSidebar>(
+        printer_state_.get_print_state_enum_subject(), this,
+        [](AmsOperationSidebar* self, int) { self->refresh_unload_gating(); },
+        printer_state_.get_static_print_subjects_lifetime());
 
     // Active backend observer: re-syncs reset button label when the user switches backend tabs
     active_backend_observer_ = observe_int_sync<AmsOperationSidebar>(
@@ -384,6 +449,8 @@ void AmsOperationSidebar::cleanup() {
     extruder_temp_observer_.reset();
     extruder_target_observer_.reset();
     indeterminate_observer_.reset();
+    filament_loaded_observer_.reset();
+    print_state_observer_.reset();
 
     // Reset extracted modules AFTER observers — they may have their own observers
     // that reference widget pointers; resetting before our observers could
@@ -429,6 +496,7 @@ void AmsOperationSidebar::sync_from_state() {
     update_settings_visibility();
     update_check_gates_visibility();
     sync_reset_button_label();
+    refresh_unload_gating();
 }
 
 // ============================================================================
@@ -956,6 +1024,49 @@ void AmsOperationSidebar::refresh_heat_step_display() {
 // Action Handlers
 // ============================================================================
 
+helix::ui::OpButtonState AmsOperationSidebar::read_unload_gating_state() const {
+    helix::ui::OpButtonState state;
+
+    AmsBackend* backend = AmsState::instance().get_backend();
+
+    // print_blocks_filament_op(), not the raw print_active subject: PRINTING
+    // always refuses, but a PAUSED print now ALLOWS the unload on every backend
+    // whose filament macro does not home itself (only AD5X IFS does). Gating on
+    // print_active would keep this button greyed through the pause that is the
+    // entire recovery workflow — and the sidebar had no print term at all
+    // before, so it went straight from "always tappable" to "correct" only if
+    // this asks the same question the backend does.
+    const auto job_state = static_cast<helix::PrintJobState>(
+        lv_subject_get_int(printer_state_.get_print_state_enum_subject()));
+    state.print_blocks_op = helix::ui::print_blocks_filament_op(
+        job_state == helix::PrintJobState::PRINTING, job_state == helix::PrintJobState::PAUSED,
+        backend && backend->filament_ops_self_home());
+
+    if (backend) {
+        // AmsSystemInfo::is_busy() — the same predicate check_preconditions()
+        // refuses on, instead of a fourth open-coded `action != IDLE && != ERROR`.
+        state.system_busy = backend->get_system_info().is_busy();
+    }
+
+    // This button means "unload whatever is active", so the aggregate loaded flag
+    // is its availability — the same signal the XML used to bind directly.
+    lv_subject_t* loaded = AmsState::instance().get_filament_loaded_subject();
+    state.unload_available = loaded && lv_subject_get_int(loaded) == 1;
+
+    // Always the heated toolhead unload. The cold lane ops (Eject / Recover),
+    // which stay reachable mid-print, live on the AMS context menu.
+    state.unload_is_cold_lane_op = false;
+    return state;
+}
+
+void AmsOperationSidebar::refresh_unload_gating() {
+    if (!s_unload_disabled_initialized) {
+        return;
+    }
+    const auto gating = helix::ui::compute_op_button_gating(read_unload_gating_state());
+    lv_subject_set_int(&s_unload_disabled, gating.unload_disabled ? 1 : 0);
+}
+
 void AmsOperationSidebar::handle_unload() {
     // Active-slot unload (sidebar Unload button). Delegate to the slot overload
     // with slot_index = -1 so the stepper-build + backend-call path lives in one
@@ -966,6 +1077,36 @@ void AmsOperationSidebar::handle_unload() {
 
 void AmsOperationSidebar::handle_unload(int slot_index) {
     spdlog::info("[AmsSidebar] Unload requested (slot={})", slot_index);
+
+    // The button is bound to ams_sidebar_unload_disabled, but a tap can still
+    // land in the window between a print starting and the subject settling, and
+    // handle_unload(slot) is also the context menu's dispatch entry. Refuse here
+    // with copy the user can act on rather than forwarding a guaranteed backend
+    // rejection ("Cannot run filament operation while printing" raised while
+    // merely PAUSED was a live field report).
+    const auto gating_state = read_unload_gating_state();
+    if (gating_state.system_busy) {
+        spdlog::info("[AmsSidebar] Unload refused — an AMS operation is already running");
+        NOTIFY_WARNING(lv_tr("Wait for the current filament operation to finish"));
+        return;
+    }
+    if (gating_state.print_blocks_op) {
+        AmsBackend* gating_backend = AmsState::instance().get_backend();
+        const bool self_homes = gating_backend && gating_backend->filament_ops_self_home();
+        spdlog::info("[AmsSidebar] Unload refused — a print owns the toolhead (self_homes={})",
+                     self_homes);
+        if (self_homes) {
+            // AD5X IFS: the unload macro homes itself, so pausing does not help
+            // — recommending it would send the user into the exact loadcell-Z
+            // collision the backend guard exists to prevent.
+            NOTIFY_WARNING(lv_tr("Cannot unload while a print is active"));
+        } else {
+            // PRINTING on every other backend. A PAUSED print here would not
+            // have reached this branch at all, so pausing IS the recovery.
+            NOTIFY_WARNING(lv_tr("Pause the print first, then load, unload, or change filament"));
+        }
+        return;
+    }
 
     AmsSystemInfo info;
     // -1: plan_unload() never reads caps.needs_unload_before_load, and the slot
@@ -1127,24 +1268,26 @@ void AmsOperationSidebar::handle_bypass_toggle() {
 // ============================================================================
 
 int AmsOperationSidebar::get_load_temp_for_slot(int slot_index) {
-    // External spool (bypass/direct)
-    if (slot_index == -2) {
-        auto info = AmsState::instance().get_external_spool_info();
-        if (info.has_value()) {
-            auto active = helix::build_active_material(*info);
-            return active.material_info.nozzle_min;
-        }
-        return AppConstants::Ams::DEFAULT_LOAD_PREHEAT_TEMP;
-    }
-
+    // The slot-vs-external-spool precedence and the nozzle_recommended() choice
+    // both come from resolve_load_preheat_material(), shared with
+    // FilamentPanel::resolve_preheat_temp(). The two surfaces preheating the
+    // same lane to two different temperatures is the bug that rule exists to end.
     AmsBackend* backend = AmsState::instance().get_backend();
-    if (!backend) {
-        return AppConstants::Ams::DEFAULT_LOAD_PREHEAT_TEMP;
+    SlotInfo slot;
+    const SlotInfo* slot_ptr = nullptr;
+    if (backend && slot_index >= 0) {
+        slot = backend->get_slot_info(slot_index);
+        slot_ptr = &slot;
     }
 
-    SlotInfo info = backend->get_slot_info(slot_index);
-    auto active = helix::build_active_material(info);
-    return active.material_info.nozzle_min;
+    auto ext = AmsState::instance().get_external_spool_info();
+    const auto resolved = helix::ui::resolve_load_preheat_material(
+        slot_index, slot_ptr, ext.has_value() ? &ext.value() : nullptr);
+
+    if (resolved) {
+        return resolved->temp_c;
+    }
+    return AppConstants::Ams::DEFAULT_LOAD_PREHEAT_TEMP;
 }
 
 void AmsOperationSidebar::handle_load_with_preheat(int slot_index) {

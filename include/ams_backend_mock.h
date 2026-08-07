@@ -137,6 +137,16 @@ class AmsBackendMock : public AmsBackend {
     }
 
     // Configuration
+
+    /**
+     * @brief Edit a lane's FILAMENT metadata. SlotInfo::status is IGNORED.
+     *
+     * Same contract as the real backends: status is firmware-derived, so this
+     * path copies color / material / brand / Spoolman / weights / temps and the
+     * tool mapping, and nothing else. Passing a status other than UNKNOWN that
+     * differs from the slot's current one logs a warning rather than silently
+     * doing nothing — use force_slot_status() to stage a mock slot state.
+     */
     AmsError set_slot_info(int slot_index, const SlotInfo& info, bool persist = true) override;
     AmsError set_tool_mapping(int tool_number, int slot_index) override;
 
@@ -207,6 +217,21 @@ class AmsBackendMock : public AmsBackend {
      * @param delay_ms Delay in milliseconds (0 for instant)
      */
     void set_operation_delay(int delay_ms);
+
+    /**
+     * @brief Block until the current simulated operation has finished
+     *
+     * Every load / unload / tool change runs on a real std::thread spawned by
+     * schedule_completion(), so the transient AmsAction a caller sees right after
+     * issuing one is a race against that thread — and at set_operation_delay(0)
+     * the thread routinely wins, ending back at IDLE before the caller looks.
+     *
+     * Tests that want to assert on the RESULT of an operation must join here
+     * first and then read the settled state, rather than sampling the action mid
+     * flight. Public because the whole class is test infrastructure; joining is
+     * the only way to make those assertions deterministic under parallel load.
+     */
+    void wait_for_operation_thread();
 
     /**
      * @brief Force a specific slot status (for testing)
@@ -558,11 +583,6 @@ class AmsBackendMock : public AmsBackend {
      *         the backend is already mid-operation
      */
     AmsError simulate_transient_action(AmsAction action, const std::string& detail);
-
-    /**
-     * @brief Wait for any active operation thread to complete
-     */
-    void wait_for_operation_thread();
 
     // Realistic mode helpers (multi-phase operations)
     using InterruptibleSleep = std::function<bool(int)>;
