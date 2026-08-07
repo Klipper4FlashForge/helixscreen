@@ -326,7 +326,14 @@ AmsSystemInfo AmsBackendMock::get_system_info() const {
         return system_info_;
     }
 
-    // Build slot data from registry, then overlay non-slot metadata
+    // Build slot data from registry, then overlay non-slot metadata.
+    //
+    // BOTH tool-map directions come from build_system_info() — SlotInfo::mapped_tool
+    // per slot and AmsSystemInfo::tool_to_slot_map — and nothing below overwrites
+    // either. system_info_.tool_to_slot_map is therefore NOT a field of this
+    // struct that the mock maintains: any mode setup that writes it is writing to
+    // a value no reader ever sees. Route mapping through slots_.set_tool_map() /
+    // slots_.set_tool_mapping() instead, which keeps the two directions in step.
     auto info = slots_.build_system_info();
 
     // Copy system-level fields not managed by registry
@@ -897,6 +904,26 @@ AmsError AmsBackendMock::set_slot_info(int slot_index, const SlotInfo& info, boo
 
         int old_mapped_tool = entry->info.mapped_tool;
 
+        // SlotStatus is deliberately NOT copied, matching every real backend's
+        // set_slot_info (CFS, ToolChanger, AD5X IFS): status is firmware-derived
+        // — who is seated, which bay is empty — and this call is the user
+        // editing a lane's FILAMENT metadata. Honouring it here would make the
+        // mock accept a write no real backend accepts, and a test built on that
+        // would pass against behaviour that cannot ship.
+        //
+        // But dropping it silently cost a full debugging cycle: a test helper
+        // set status through here, nothing happened, and three failures read as
+        // implementation bugs. So say so, loudly, and name the path that works.
+        // UNKNOWN is the default-constructed value, i.e. "caller expressed no
+        // opinion" — not a request.
+        if (info.status != SlotStatus::UNKNOWN && info.status != entry->info.status) {
+            spdlog::warn("[AmsBackendMock] set_slot_info(slot {}) IGNORED status {} "
+                         "(slot stays {}) — status is not user-settable on any backend; "
+                         "use force_slot_status() to stage a mock slot state",
+                         slot_index, slot_status_to_string(info.status),
+                         slot_status_to_string(entry->info.status));
+        }
+
         // Update filament info
         entry->info.color_name = info.color_name;
         entry->info.color_rgb = info.color_rgb;
@@ -947,12 +974,19 @@ AmsError AmsBackendMock::set_tool_mapping(int tool_number, int slot_index) {
         current_info.tool_to_slot_map.resize(tool_number + 1, -1);
     }
 
-    // Update the tool map entry and re-apply
-    // Mock allows multiple tools to map to same slot (lenient behavior)
+    // Update the tool map entry and re-apply.
+    //
+    // Mock allows multiple tools to map to the same slot (lenient behavior) —
+    // pinned by test_ams_tool_mapping.cpp, and the one place this backend does
+    // NOT go through slots_.set_tool_mapping(), which enforces one tool per lane
+    // and would evict the other claimant. The reverse direction cannot express
+    // sharing (a lane has a single mapped_tool), so the tie is broken
+    // explicitly below in favour of the tool just assigned, instead of falling
+    // out of set_tool_map()'s ascending iteration order.
     current_info.tool_to_slot_map[tool_number] = slot_index;
     slots_.set_tool_map(current_info.tool_to_slot_map);
 
-    // Also update the target slot's mapped_tool
+    // Also update the target slot's mapped_tool — see the sharing note above.
     auto* entry = slots_.get_mut(slot_index);
     if (entry) {
         entry->info.mapped_tool = tool_number;
@@ -2268,12 +2302,6 @@ void AmsBackendMock::set_ifs_mode(bool enabled) {
         system_info_.supports_endless_spool = false;
         system_info_.supports_purge = false;
 
-        // IFS tool mapping: T0→port1, T1→port2, T2→port3, T3→port4
-        system_info_.tool_to_slot_map.resize(16, -1);
-        for (int i = 0; i < 4; ++i) {
-            system_info_.tool_to_slot_map[static_cast<size_t>(i)] = i;
-        }
-
         // Reinitialize registry as single IFS unit with 4 ports
         slots_.clear();
         slots_.initialize("IFS", {"1", "2", "3", "4"});
@@ -2290,7 +2318,6 @@ void AmsBackendMock::set_ifs_mode(bool enabled) {
             entry->info.color_rgb = color;
             entry->info.color_name = color_name;
             entry->info.status = status;
-            entry->info.mapped_tool = gi;
             auto mat_info = filament::find_material(material);
             if (mat_info) {
                 entry->info.nozzle_temp_min = mat_info->nozzle_min;
@@ -2302,6 +2329,20 @@ void AmsBackendMock::set_ifs_mode(bool enabled) {
         populate_slot(1, "PETG", 0xFFFFFF, "White", SlotStatus::AVAILABLE);
         populate_slot(2, "PLA", 0x8000FF, "Purple", SlotStatus::AVAILABLE);
         populate_slot(3, "ABS", 0x804000, "Brown", SlotStatus::AVAILABLE);
+
+        // IFS tool mapping: T0→port1, T1→port2, T2→port3, T3→port4, T4..T15
+        // unmapped — the 16-wide shape the real AmsBackendAd5xIfs publishes.
+        //
+        // set_tool_map() writes BOTH directions from this one vector. Stamping
+        // mapped_tool inside populate_slot() (and the forward map onto
+        // system_info_, which get_system_info() does not read) left the mock
+        // shipping a reverse map with no forward map at all — the exact
+        // asymmetry a test using this mode exists to catch.
+        std::vector<int> ifs_tool_map(16, -1);
+        for (int i = 0; i < 4; ++i) {
+            ifs_tool_map[static_cast<size_t>(i)] = i;
+        }
+        slots_.set_tool_map(ifs_tool_map);
 
         system_info_.current_tool = 0;
         system_info_.current_slot = 0;
@@ -2356,9 +2397,6 @@ void AmsBackendMock::set_snapmaker_mode(bool enabled) {
         entry->info.color_rgb = color;
         entry->info.color_name = color_name;
         entry->info.status = status;
-        // Fixed 1:1 tool↔slot identity, like the real U1 (overridable via
-        // HELIX_MOCK_REMAP / apply_remap_overrides()).
-        entry->info.mapped_tool = gi;
         auto mat_info = filament::find_material(material);
         if (mat_info) {
             entry->info.nozzle_temp_min = mat_info->nozzle_min;
@@ -2370,6 +2408,12 @@ void AmsBackendMock::set_snapmaker_mode(bool enabled) {
     populate_slot(1, "PLA", 0xC71585, "Magenta", SlotStatus::AVAILABLE);
     populate_slot(2, "PLA", 0x19C3D6, "Cyan", SlotStatus::AVAILABLE);
     populate_slot(3, "PLA", 0xF08000, "Orange", SlotStatus::AVAILABLE);
+
+    // Fixed 1:1 tool<->slot identity, like the real U1 (overridable via
+    // HELIX_MOCK_REMAP / apply_remap_overrides()). set_tool_map() writes both
+    // directions; the per-slot stamp this replaces published mapped_tool with
+    // an empty forward map beside it.
+    slots_.set_tool_map({0, 1, 2, 3});
 
     // Set PARALLEL topology on the registry-built unit metadata so
     // get_system_info() reports it (registry units default to LINEAR).
@@ -2391,17 +2435,18 @@ void AmsBackendMock::apply_remap_overrides(const std::string& csv) {
         return;
     }
 
-    // First clear any existing firmware mapping so a partial CSV produces a
-    // deterministic result (unlisted tools fall back to color/positional).
-    const int total = system_info_.total_slots;
-    for (int gi = 0; gi < total; ++gi) {
-        if (auto* entry = slots_.get_mut(gi)) {
-            entry->info.mapped_tool = -1;
-        }
-    }
-
-    // Parse "tool:slot" pairs separated by commas. Slot numbers are 0-based
-    // global indices, matching SlotInfo::global_index.
+    // Parse "tool:slot" pairs separated by commas into a FORWARD map. Slot
+    // numbers are 0-based global indices, matching SlotInfo::global_index.
+    //
+    // Collected first and applied in one slots_.set_tool_map() call at the end,
+    // for two reasons. It clears every prior mapping as a side effect, so a
+    // partial CSV still lands deterministically (unlisted tools fall back to
+    // color/positional) — what the old per-slot clear loop was for. And it
+    // writes BOTH directions: the old code stamped mapped_tool straight onto
+    // the registry entries and never touched the registry's forward map, so
+    // HELIX_MOCK_REMAP handed the UI two mappings that disagreed, and any test
+    // written against it was testing a state no backend can produce.
+    std::vector<int> forward;
     std::stringstream ss(csv);
     std::string pair;
     while (std::getline(ss, pair, ',')) {
@@ -2412,16 +2457,34 @@ void AmsBackendMock::apply_remap_overrides(const std::string& csv) {
         try {
             int tool = std::stoi(pair.substr(0, colon));
             int slot = std::stoi(pair.substr(colon + 1));
-            if (auto* entry = slots_.get_mut(slot)) {
-                entry->info.mapped_tool = tool;
-                spdlog::info("[AmsBackendMock] Remap: T{} -> slot {}", tool, slot);
-            } else {
-                spdlog::warn("[AmsBackendMock] Remap: slot {} out of range", slot);
+            if (tool < 0) {
+                spdlog::warn("[AmsBackendMock] Remap: negative tool in '{}'", pair);
+                continue;
             }
+            if (!slots_.is_valid_index(slot)) {
+                spdlog::warn("[AmsBackendMock] Remap: slot {} out of range", slot);
+                continue;
+            }
+            if (tool >= static_cast<int>(forward.size())) {
+                forward.resize(static_cast<size_t>(tool) + 1, -1);
+            }
+            // A slot claimed twice cannot be expressed in the reverse direction
+            // (one mapped_tool per lane), so say so rather than silently letting
+            // the later pair win the badge while both keep their forward entry.
+            auto dup = std::find(forward.begin(), forward.end(), slot);
+            if (dup != forward.end()) {
+                spdlog::warn("[AmsBackendMock] Remap: slot {} already claimed by T{}; "
+                             "T{} will share the forward entry but not the lane badge",
+                             slot, std::distance(forward.begin(), dup), tool);
+            }
+            forward[static_cast<size_t>(tool)] = slot;
+            spdlog::info("[AmsBackendMock] Remap: T{} -> slot {}", tool, slot);
         } catch (const std::exception&) {
             spdlog::warn("[AmsBackendMock] Remap: bad pair '{}'", pair);
         }
     }
+
+    slots_.set_tool_map(forward);
 }
 
 void AmsBackendMock::set_htlf_toolchanger_mode(bool enabled) {

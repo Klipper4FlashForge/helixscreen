@@ -9,6 +9,7 @@
 
 #include <functional>
 #include <lvgl.h>
+#include <optional>
 #include <string>
 
 // Forward declaration
@@ -49,17 +50,17 @@ class AmsContextMenu : public ContextMenu {
 
   public:
     enum class MenuAction {
-        CANCELLED,   ///< User dismissed menu without action
-        LOAD,        ///< Load filament from this slot
-        UNLOAD,      ///< Unload filament from toolhead
-        EJECT,       ///< Eject filament from lane (release spool)
+        CANCELLED,        ///< User dismissed menu without action
+        LOAD,             ///< Load filament from this slot
+        UNLOAD,           ///< Unload filament from toolhead
+        EJECT,            ///< Eject filament from lane (release spool)
         RECOVER_POSITION, ///< Retract filament stranded past the hub back into the lane
-        SELECT_GATE, ///< Select this gate as the active gate (Happy Hare)
-        CHECK_GATE,  ///< Check filament state of this gate (Happy Hare)
-        EDIT,        ///< Edit slot properties
-        CLEAR_SPOOL, ///< Clear assigned spool from empty slot
-        SPOOLMAN,    ///< Assign Spoolman spool
-        SCAN_QR      ///< Scan QR code to assign spool
+        SELECT_GATE,      ///< Select this gate as the active gate (Happy Hare)
+        CHECK_GATE,       ///< Check filament state of this gate (Happy Hare)
+        EDIT,             ///< Edit slot properties
+        CLEAR_SPOOL,      ///< Clear assigned spool from empty slot
+        SPOOLMAN,         ///< Assign Spoolman spool
+        SCAN_QR           ///< Scan QR code to assign spool
     };
 
     using ActionCallback = std::function<void(MenuAction action, int slot_index)>;
@@ -215,22 +216,43 @@ class AmsContextMenu : public ContextMenu {
 
     // Pure: whether the Load button is offered for the open slot.
     //
-    // `print_active` mirrors AmsSubscriptionBackend::refuse_if_printing() — the
-    // load path runs a firmware macro that homes (AD5X INSERT_PRUTOK_IFS: home →
-    // heat → feed → purge), so the backend refuses it while PRINTING or PAUSED.
-    // Without this term the menu offers a button that is guaranteed to fail, and
-    // a runout-paused user taps it expecting the recovery Klipper just told them
-    // to perform (bundle JX2FVRB9).
-    static bool decide_can_load(bool system_busy, bool toolhead_unload, bool slot_has_filament,
-                                bool print_active);
+    // A thin adapter over helix::ui::compute_op_button_gating() — the one rule
+    // the filament panel and the AMS sidebar answer from too. Kept as a named
+    // predicate because the menu's inputs need translating: `toolhead_unload` is
+    // the narrowed loaded signal (not the broadened recovery one), and presence
+    // arrives as a tri-state so an UNKNOWN lane is not read as empty.
+    //
+    // `print_blocks_op` is helix::ui::print_blocks_filament_op(), the mirror of
+    // AmsSubscriptionBackend::refuse_if_printing(). Do NOT pass the raw
+    // print_active subject: PRINTING always refuses, but a PAUSED print now
+    // ALLOWS the op on every backend whose filament macro does not home itself
+    // (only AD5X IFS does). Greying the paused case is the bug in both
+    // directions — offering what will be refused strands a runout-paused user
+    // (bundle JX2FVRB9), and refusing what the backend accepts hides the
+    // pause-then-swap recovery Klipper just told them to perform.
+    static bool decide_can_load(bool system_busy, bool toolhead_unload,
+                                std::optional<bool> slot_has_filament, bool print_blocks_op);
 
     // Pure: whether the Unload button is offered for the open slot.
     //
-    // Only the heated toolhead unload is blocked mid-print; the cold lane ops
-    // (Eject / RecoverPosition / ForceEject) do not move the toolhead and the
-    // backend permits them via check_preconditions(false). Blocking the whole
-    // button would over-refuse and strand filament the user could have ejected.
-    static bool decide_unload_enabled(bool system_busy, UnloadMode mode, bool print_active);
+    // Only the heated toolhead unload is subject to the print gate; the cold lane
+    // ops (Eject / RecoverPosition / ForceEject) do not move the toolhead and the
+    // backend permits them via check_preconditions(false), which never consults
+    // print state at all. Blocking the whole button would over-refuse and strand
+    // filament the user could have ejected. That asymmetry is expressed to the
+    // shared rule as OpButtonState::unload_is_cold_lane_op.
+    //
+    // `print_blocks_op`: see decide_can_load above — the computed predicate, not
+    // the raw print_active subject.
+    //
+    // `cold_ops_print_gated` is AmsBackend::cold_lane_ops_refused_during_print():
+    // true on a backend whose firmware refuses the cold ops mid-print too (AFC's
+    // cmd_LANE_UNLOAD has its own is_printing() guard), which withdraws the
+    // exemption above rather than offering a button into a certain refusal.
+    // Required, not defaulted — a silently omitted `false` re-offers exactly the
+    // dead-end button this parameter exists to remove.
+    static bool decide_unload_enabled(bool system_busy, UnloadMode mode, bool print_blocks_op,
+                                      bool cold_ops_print_gated);
 
     static bool callbacks_registered_;
 

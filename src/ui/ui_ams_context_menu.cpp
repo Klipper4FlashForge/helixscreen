@@ -12,6 +12,7 @@
 #include "ams_types.h"
 #include "app_globals.h"
 #include "filament_database.h"
+#include "filament_op_slot_resolver.h"
 #include "printer_state.h"
 
 #include <spdlog/fmt/fmt.h>
@@ -230,32 +231,42 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
         return;
     }
 
-    // A print job still owns the toolhead while PRINTING *or* PAUSED, and the
-    // backend refuses toolhead-motion filament ops in both. Read the same signal
-    // here so the menu never offers an action that is certain to be refused.
-    auto* print_active_subj = get_printer_state().get_print_active_subject();
-    const bool print_active = print_active_subj && lv_subject_get_int(print_active_subj) == 1;
+    // Whether a print blocks these ops is print_blocks_filament_op(), the mirror
+    // of AmsSubscriptionBackend::refuse_if_printing(): PRINTING always, PAUSED
+    // only on a backend whose filament macro homes itself (AD5X IFS). Reading
+    // the raw print_active subject here — which is 1 for both — would keep the
+    // menu greyed through the runout pause that is the whole recovery workflow.
+    const auto job_state = static_cast<helix::PrintJobState>(
+        lv_subject_get_int(get_printer_state().get_print_state_enum_subject()));
+    const bool print_blocks_op = helix::ui::print_blocks_filament_op(
+        job_state == helix::PrintJobState::PRINTING, job_state == helix::PrintJobState::PAUSED,
+        backend_ && backend_->filament_ops_self_home());
 
-    // Check if system is busy (operation in progress)
+    // Check if system is busy (operation in progress). AmsSystemInfo::is_busy()
+    // is the same predicate AmsSubscriptionBackend::check_preconditions() uses to
+    // refuse — this used to open-code it, which is how the filament panel came to
+    // have no busy term at all.
     bool system_busy = false;
     if (backend_) {
         AmsSystemInfo info = backend_->get_system_info();
-        system_busy = (info.action != AmsAction::IDLE && info.action != AmsAction::ERROR);
+        system_busy = info.is_busy();
         if (system_busy) {
             spdlog::debug("[AmsContextMenu] System busy ({}), disabling Load/Unload",
                           ams_action_to_string(info.action));
         }
     }
 
-    // Get slot info for filament presence check
-    bool slot_has_filament = false;
+    // Get slot info for filament presence check. Tri-state: slot_presence()
+    // reports SlotStatus::UNKNOWN as "unanswerable" rather than "empty", so a
+    // backend that publishes no per-lane presence does not grey Load.
+    std::optional<bool> slot_has_filament;
     // LIVE load state (Task 3): firmware seated+loaded OR filament at this slot's
     // toolhead sensor — drives Load/Unload availability instead of static RFID
     // presence so the menu matches real load state the moment a sensor flips.
     bool slot_is_loaded_live = false;
     if (backend_) {
         SlotInfo slot_info = backend_->get_slot_info(slot_index);
-        slot_has_filament = slot_info.is_present();
+        slot_has_filament = helix::ui::slot_presence(slot_info);
         slot_is_loaded_live = backend_->slot_is_actively_loaded(slot_index) ||
                               backend_->slot_has_filament_at_toolhead(slot_index);
     }
@@ -277,17 +288,25 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
 
     // Select the Unload button's operation, most specific first. Each mode has a
     // distinct label and a distinct dispatch; see UnloadMode and decide_unload_mode().
-    const bool slot_empty = !slot_has_filament;
+    //
+    // The unload-mode decision keeps the strict reading of presence — "is there
+    // something to eject" has no useful third answer, and an unknown lane must
+    // not grow an Eject button out of nowhere. Only the Load gate treats UNKNOWN
+    // as unanswerable.
+    const bool slot_filament_present = slot_has_filament.value_or(false);
+    const bool slot_empty = !slot_filament_present;
     const bool supports_eject = backend_ && backend_->supports_lane_eject();
     const bool can_recover = backend_ && backend_->can_recover_lane_position(slot_index);
     const bool recovery_attributed = backend_ && backend_->lane_recovery_is_attributed();
     const bool supports_force_eject = backend_ && backend_->supports_force_eject();
 
-    unload_mode_ = decide_unload_mode(toolhead_unload, can_recover, recovery_attributed,
-                                      supports_eject, slot_has_filament, supports_force_eject,
-                                      slot_empty);
+    unload_mode_ =
+        decide_unload_mode(toolhead_unload, can_recover, recovery_attributed, supports_eject,
+                           slot_filament_present, supports_force_eject, slot_empty);
 
-    const bool unload_enabled = decide_unload_enabled(system_busy, unload_mode_, print_active);
+    const bool unload_enabled =
+        decide_unload_enabled(system_busy, unload_mode_, print_blocks_op,
+                              backend_ && backend_->cold_lane_ops_refused_during_print());
     lv_subject_set_int(&slot_is_loaded_subject_, unload_enabled ? 1 : 0);
 
     lv_obj_t* btn_unload = lv_obj_find_by_name(menu_obj, "btn_unload");
@@ -314,7 +333,7 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
     // action — for QIDI, !supports_eject here can only mean force_move is off
     // (the box always supports eject otherwise). See #1041.
     if (backend_ && backend_->get_type() == AmsType::QIDI_BOX && !supports_eject &&
-        !pending_is_loaded_ && slot_has_filament) {
+        !pending_is_loaded_ && slot_filament_present) {
         lv_obj_t* hint = lv_obj_find_by_name(menu_obj, "eject_force_move_hint");
         if (hint) {
             lv_obj_remove_flag(hint, LV_OBJ_FLAG_HIDDEN);
@@ -330,13 +349,15 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
     // enabled. For non-AD5X backends slot_unloads_to_toolhead() returns the hint
     // unchanged, so !toolhead_unload == !is_loaded and behavior is unaffected.
     // Disable Load if: system busy, slot empty, OR filament is already at the head.
-    bool can_load = decide_can_load(system_busy, toolhead_unload, slot_has_filament, print_active);
+    bool can_load =
+        decide_can_load(system_busy, toolhead_unload, slot_has_filament, print_blocks_op);
     lv_subject_set_int(&slot_can_load_subject_, can_load ? 1 : 0);
     if (!can_load) {
         spdlog::debug("[AmsContextMenu] Load disabled for slot {}: busy={}, loaded={} "
-                      "(live={}), has_filament={}, print_active={}",
-                      slot_index, system_busy, is_loaded, slot_is_loaded_live, slot_has_filament,
-                      print_active);
+                      "(live={}), has_filament={}, print_blocks_op={}",
+                      slot_index, system_busy, is_loaded, slot_is_loaded_live,
+                      slot_has_filament ? (*slot_has_filament ? "yes" : "no") : "unknown",
+                      print_blocks_op);
     }
 
     // Show Select Gate button if backend supports it (e.g. Happy Hare)
@@ -429,8 +450,7 @@ void AmsContextMenu::handle_load() {
 void AmsContextMenu::handle_unload() {
     switch (unload_mode_) {
     case UnloadMode::RecoverPosition:
-        spdlog::info("[AmsContextMenu] Position recovery requested for slot {}",
-                     get_item_index());
+        spdlog::info("[AmsContextMenu] Position recovery requested for slot {}", get_item_index());
         dispatch_ams_action(MenuAction::RECOVER_POSITION);
         break;
     case UnloadMode::Eject:
@@ -469,9 +489,10 @@ bool AmsContextMenu::should_show_clear_spool(const SlotInfo& slot) {
     return slot.spoolman_id > 0 || !slot.material.empty();
 }
 
-AmsContextMenu::UnloadMode AmsContextMenu::decide_unload_mode(
-    bool toolhead_unload, bool can_recover, bool recovery_attributed, bool supports_eject,
-    bool slot_has_filament, bool supports_force_eject, bool slot_empty) {
+AmsContextMenu::UnloadMode
+AmsContextMenu::decide_unload_mode(bool toolhead_unload, bool can_recover, bool recovery_attributed,
+                                   bool supports_eject, bool slot_has_filament,
+                                   bool supports_force_eject, bool slot_empty) {
     if (toolhead_unload) {
         return UnloadMode::Unload;
     }
@@ -502,20 +523,34 @@ AmsContextMenu::UnloadMode AmsContextMenu::decide_unload_mode(
     return UnloadMode::Unavailable;
 }
 
-bool AmsContextMenu::decide_can_load(bool system_busy, bool toolhead_unload, bool slot_has_filament,
-                                     bool print_active) {
-    return !system_busy && !print_active && !toolhead_unload && slot_has_filament;
+bool AmsContextMenu::decide_can_load(bool system_busy, bool toolhead_unload,
+                                     std::optional<bool> slot_has_filament, bool print_blocks_op) {
+    helix::ui::OpButtonState state;
+    state.system_busy = system_busy;
+    state.print_blocks_op = print_blocks_op;
+    state.slot_is_loaded = toolhead_unload;
+    state.slot_has_filament = slot_has_filament;
+    return !helix::ui::compute_op_button_gating(state).load_disabled;
 }
 
-bool AmsContextMenu::decide_unload_enabled(bool system_busy, UnloadMode mode, bool print_active) {
-    if (system_busy || mode == UnloadMode::Unavailable) {
-        return false;
-    }
+bool AmsContextMenu::decide_unload_enabled(bool system_busy, UnloadMode mode, bool print_blocks_op,
+                                           bool cold_ops_print_gated) {
+    helix::ui::OpButtonState state;
+    state.system_busy = system_busy;
+    state.print_blocks_op = print_blocks_op;
+    state.unload_available = (mode != UnloadMode::Unavailable);
     // Unload is the only mode that runs the heated toolhead path (and, on AD5X,
     // a self-homing firmware macro). Eject / RecoverPosition / ForceEject are
     // cold lane-side retracts that leave the toolhead where the print left it,
     // so they stay available for clearing a snapped strand mid-pause.
-    return !(print_active && mode == UnloadMode::Unload);
+    //
+    // Unless the firmware refuses them anyway: AFC's cmd_LANE_UNLOAD opens with
+    // its own is_printing() check, so on that backend the exemption would offer a
+    // button into a guaranteed refusal. cold_ops_print_gated is
+    // AmsBackend::cold_lane_ops_refused_during_print() — see it for why this is
+    // per-backend rather than a blanket rule.
+    state.unload_is_cold_lane_op = (mode != UnloadMode::Unload) && !cold_ops_print_gated;
+    return !helix::ui::compute_op_button_gating(state).unload_disabled;
 }
 
 void AmsContextMenu::handle_clear_spool() {

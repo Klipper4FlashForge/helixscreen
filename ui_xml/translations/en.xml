@@ -344,6 +344,7 @@
   <translation tag="Cannot start print: internal error" en="Cannot start print: internal error"/>
   <translation tag="Cannot start print: not connected to printer" en="Cannot start print: not connected to printer"/>
   <translation tag="Cannot start print: printer is {}" en="Cannot start print: printer is {}"/>
+  <translation tag="Cannot unload while a print is active" en="Cannot unload while a print is active"/>
   <translation tag="Capabilities: " en="Capabilities: "/>
   <translation tag="Cartographer scan calibrate sent — use Z-Offset panel to adjust" en="Cartographer scan calibrate sent — use Z-Offset panel to adjust"/>
   <translation tag="Cartographer touch calibrate sent" en="Cartographer touch calibrate sent"/>
@@ -1471,6 +1472,7 @@
   <translation tag="Path Similarity" en="Path Similarity"/>
   <translation tag="Pause" en="Pause"/>
   <translation tag="Pause macro not configured" en="Pause macro not configured"/>
+  <translation tag="Pause the print first, then load, unload, or change filament" en="Pause the print first, then load, unload, or change filament"/>
   <translation tag="Paused" en="Paused"/>
   <translation tag="Paused (attention needed)" en="Paused (attention needed)"/>
   <translation tag="Pausing..." en="Pausing..."/>
@@ -2291,6 +2293,7 @@
   <translation tag="WLED Preset" en="WLED Preset"/>
   <translation tag="WPA/WPA2" en="WPA/WPA2"/>
   <translation tag="WPA3" en="WPA3"/>
+  <translation tag="Wait for the current filament operation to finish" en="Wait for the current filament operation to finish"/>
   <translation tag="Waiting for Moonraker..." en="Waiting for Moonraker..."/>
   <translation tag="Waiting for bed to reach temperature for accurate calibration." en="Waiting for bed to reach temperature for accurate calibration."/>
   <translation tag="Warm Bed" en="Warm Bed"/>

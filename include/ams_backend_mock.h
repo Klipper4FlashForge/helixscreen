@@ -137,6 +137,16 @@ class AmsBackendMock : public AmsBackend {
     }
 
     // Configuration
+
+    /**
+     * @brief Edit a lane's FILAMENT metadata. SlotInfo::status is IGNORED.
+     *
+     * Same contract as the real backends: status is firmware-derived, so this
+     * path copies color / material / brand / Spoolman / weights / temps and the
+     * tool mapping, and nothing else. Passing a status other than UNKNOWN that
+     * differs from the slot's current one logs a warning rather than silently
+     * doing nothing — use force_slot_status() to stage a mock slot state.
+     */
     AmsError set_slot_info(int slot_index, const SlotInfo& info, bool persist = true) override;
     AmsError set_tool_mapping(int tool_number, int slot_index) override;
 

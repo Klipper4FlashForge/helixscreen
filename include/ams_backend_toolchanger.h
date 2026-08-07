@@ -112,6 +112,21 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
     AmsError load_filament(int slot_index) override;
     AmsError unload_filament(int slot_index) override;
     AmsError select_slot(int slot_index) override;
+
+    /**
+     * @brief Mount a physical toolhead. The argument is a SLOT INDEX.
+     *
+     * Named `tool_number` only because the base signature is, and validated as a
+     * slot: the implementation emits `SELECT_TOOL T={n}`, which resolves through
+     * the toolchanger's own list and therefore BYPASSES ASSIGN_TOOL remapping.
+     * That is deliberate — a tap on lane 2 must mount the toolhead the user
+     * tapped, not whichever physical tool the slicer's T2 was reassigned to.
+     *
+     * So on this backend a tool number and a slot index are NOT
+     * interchangeable, and anything that has to cross between them goes through
+     * the tool map (AmsSystemInfo::tool_to_slot_map / SlotInfo::mapped_tool),
+     * never by assuming they are equal.
+     */
     AmsError change_tool(int tool_number) override;
 
     /**
@@ -137,8 +152,10 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
     // no per-tool switch is read, and is_filament_loaded() is just
     // `tool_number >= 0`. The only fact the parse can state is which tool is on
     // the carriage — single-valued, which is exactly what the aggregate
-    // current_slot + filament_loaded pair encodes, assigned verbatim from
-    // klipper-toolchanger's own toolchanger.tool_number. The per-slot LOADED
+    // current_slot + filament_loaded pair encodes, derived from
+    // klipper-toolchanger's own toolchanger.tool_number — through the forward
+    // tool map, since that number is the ASSIGNED one and ASSIGN_TOOL can point
+    // it at any physical tool. The per-slot LOADED
     // stamp is derived FROM that pair (refresh_slot_statuses_locked), so
     // believing it back would only add staleness — the same argument that keeps
     // Happy Hare on the aggregate rule (prestonbrown/helixscreen#1199).

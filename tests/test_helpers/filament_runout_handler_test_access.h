@@ -6,15 +6,22 @@
 
 namespace helix::ui {
 
-// Reaches FilamentRunoutHandler's private dispatch_load(), which production
-// code only enters through the guidance modal's "Load filament" button — a
-// widget that needs a live modal, a screen, and a paused print to press.
-// Declared a friend of FilamentRunoutHandler; follows the tests/test_helpers/
-// TestAccess pattern ([L088]) rather than adding a _for_testing() accessor.
+// Reaches FilamentRunoutHandler's private dispatch_load() / dispatch_unload() /
+// dispatch_purge(), which production code only enters through the guidance
+// modal's buttons — widgets that need a live modal, a screen, and a paused print
+// to press. Declared a friend of FilamentRunoutHandler; follows the
+// tests/test_helpers/ TestAccess pattern ([L088]) rather than adding
+// _for_testing() accessors.
 class FilamentRunoutHandlerTestAccess {
   public:
     static void dispatch_load(FilamentRunoutHandler& handler) {
         handler.dispatch_load();
+    }
+    static void dispatch_unload(FilamentRunoutHandler& handler) {
+        handler.dispatch_unload();
+    }
+    static void dispatch_purge(FilamentRunoutHandler& handler) {
+        handler.dispatch_purge();
     }
 };
 

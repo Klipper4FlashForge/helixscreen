@@ -3,6 +3,9 @@
 #include "ui_ams_context_menu.h"
 
 #include "ams_types.h"
+#include "filament_op_slot_resolver.h"
+
+#include <optional>
 
 #include "../catch_amalgamated.hpp"
 
@@ -22,20 +25,21 @@ class AmsContextMenuTestAccess {
                                          bool recovery_attributed, bool supports_eject,
                                          bool slot_has_filament, bool supports_force_eject,
                                          bool slot_empty) {
-        return AmsContextMenu::decide_unload_mode(toolhead_unload, can_recover,
-                                                  recovery_attributed, supports_eject,
-                                                  slot_has_filament, supports_force_eject,
-                                                  slot_empty);
+        return AmsContextMenu::decide_unload_mode(toolhead_unload, can_recover, recovery_attributed,
+                                                  supports_eject, slot_has_filament,
+                                                  supports_force_eject, slot_empty);
     }
 
-    static bool decide_can_load(bool system_busy, bool toolhead_unload, bool slot_has_filament,
-                                bool print_active) {
+    static bool decide_can_load(bool system_busy, bool toolhead_unload,
+                                std::optional<bool> slot_has_filament, bool print_active) {
         return AmsContextMenu::decide_can_load(system_busy, toolhead_unload, slot_has_filament,
                                                print_active);
     }
 
-    static bool decide_unload_enabled(bool system_busy, UnloadMode mode, bool print_active) {
-        return AmsContextMenu::decide_unload_enabled(system_busy, mode, print_active);
+    static bool decide_unload_enabled(bool system_busy, UnloadMode mode, bool print_active,
+                                      bool cold_ops_print_gated = false) {
+        return AmsContextMenu::decide_unload_enabled(system_busy, mode, print_active,
+                                                     cold_ops_print_gated);
     }
 };
 
@@ -144,9 +148,9 @@ TEST_CASE(
     CHECK(mode == UnloadMode::Eject);
 }
 
-TEST_CASE(
-    "AmsContextMenu::decide_unload_mode unattributed lane with nothing ejectable still gets Recover",
-    "[ams][context_menu]") {
+TEST_CASE("AmsContextMenu::decide_unload_mode unattributed lane with nothing ejectable still gets "
+          "Recover",
+          "[ams][context_menu]") {
     // No filament present to eject (slot_has_filament=false), so Eject is not an
     // option regardless of attribution — the unattributed Recover arm is the
     // last resort that still offers a way out for a lane with no other option.
@@ -175,26 +179,58 @@ TEST_CASE("AmsContextMenu::decide_unload_mode falls through to ForceEject and Un
     CHECK(unavailable == UnloadMode::Unavailable);
 }
 
-// AmsSubscriptionBackend::refuse_if_printing() rejects load/unload while a print
-// is PRINTING *or* PAUSED, because the macros home the toolhead. The menu offered
-// Load anyway, so a runout-paused AD5X user tapped it — following Klipper's own
-// "load it and press RESUME" instruction — and got "Cannot run filament operation
-// while printing" (bundle JX2FVRB9). The affordance has to agree with the guard.
+// decide_can_load() must agree with AmsSubscriptionBackend::refuse_if_printing()
+// in BOTH directions.
 //
-// Mutation check: drop the `!print_active` term from decide_can_load() and
-// "Load is refused while a print owns the toolhead" fails.
+// Offering what the backend refuses is bundle JX2FVRB9: a runout-paused AD5X user
+// tapped Load, following Klipper's own "load it and press RESUME" instruction,
+// and got "Cannot run filament operation while printing".
+//
+// Refusing what the backend now ACCEPTS is the other half, and the reason this
+// test changed shape: refuse_if_printing() no longer blocks a PAUSED print on a
+// backend whose filament macro does not home itself. Pause-then-swap is the
+// runout / colour-change recovery workflow on AFC, Happy Hare, CFS, ACE, QIDI,
+// toolchangers and Snapmaker; only AD5X IFS still refuses it, because
+// `_IFS_REMOVE_CURRENT_PRUTOK` runs a buried `_G28` that probes a loadcell-Z
+// nozzle into the part (bundle XWPBR2DX).
+//
+// The parameter carries print_blocks_filament_op()'s answer, not the raw
+// print_active subject — the tests below drive it through that predicate rather
+// than hand-writing booleans, so a change to the rule shows up here.
+//
+// Mutation check: drop the `!print_blocks_op` term from decide_can_load() and
+// "Load is refused while PRINTING" fails; make print_blocks_filament_op() ignore
+// backend_self_homes and both PAUSED sections fail.
 TEST_CASE("AmsContextMenu::decide_can_load agrees with the backend print guard",
           "[ams][context_menu][print_guard]") {
-    SECTION("Load is offered for a filled, non-seated lane when no print is running") {
-        CHECK(AmsContextMenuTestAccess::decide_can_load(
+    using helix::ui::print_blocks_filament_op;
+
+    auto can_load = [](bool printing, bool paused, bool self_homes) {
+        return AmsContextMenuTestAccess::decide_can_load(
             /*system_busy=*/false, /*toolhead_unload=*/false, /*slot_has_filament=*/true,
-            /*print_active=*/false));
+            print_blocks_filament_op(printing, paused, self_homes));
+    };
+
+    SECTION("Load is offered for a filled, non-seated lane when no print is running") {
+        CHECK(can_load(/*printing=*/false, /*paused=*/false, /*self_homes=*/false));
+        CHECK(can_load(/*printing=*/false, /*paused=*/false, /*self_homes=*/true));
     }
 
-    SECTION("Load is refused while a print owns the toolhead") {
-        CHECK_FALSE(AmsContextMenuTestAccess::decide_can_load(
-            /*system_busy=*/false, /*toolhead_unload=*/false, /*slot_has_filament=*/true,
-            /*print_active=*/true));
+    SECTION("Load is refused while PRINTING, on every backend") {
+        CHECK_FALSE(can_load(/*printing=*/true, /*paused=*/false, /*self_homes=*/false));
+        CHECK_FALSE(can_load(/*printing=*/true, /*paused=*/false, /*self_homes=*/true));
+    }
+
+    SECTION("Load is OFFERED on a paused print when the backend does not self-home") {
+        // AFC / Happy Hare / CFS / ACE / QIDI / toolchanger / Snapmaker. This is
+        // the recovery Klipper asks for; greying it made HelixScreen the only
+        // surface that could not perform it.
+        CHECK(can_load(/*printing=*/false, /*paused=*/true, /*self_homes=*/false));
+    }
+
+    SECTION("Load is still refused on a paused print when the backend self-homes") {
+        // AD5X IFS only.
+        CHECK_FALSE(can_load(/*printing=*/false, /*paused=*/true, /*self_homes=*/true));
     }
 
     SECTION("The pre-existing terms still hold") {
@@ -202,25 +238,78 @@ TEST_CASE("AmsContextMenu::decide_can_load agrees with the backend print guard",
         CHECK_FALSE(AmsContextMenuTestAccess::decide_can_load(false, true, true, false)); // seated
         CHECK_FALSE(AmsContextMenuTestAccess::decide_can_load(false, false, false, false)); // empty
     }
+
+    SECTION("An UNKNOWN-presence lane is not treated as empty") {
+        // SlotStatus::UNKNOWN means the backend publishes no per-lane presence,
+        // not "the lane is empty" — slot_presence() reports it unanswerable and
+        // Load stays reachable so the backend gets to refuse if it really is.
+        CHECK(AmsContextMenuTestAccess::decide_can_load(false, false, std::nullopt, false));
+    }
 }
 
-// Only the heated toolhead unload is blocked mid-print. The cold lane ops leave
-// the toolhead parked where the print left it and the backend permits them via
-// check_preconditions(false), so blocking the whole button would strand filament
-// a paused user could legitimately eject.
+// Only the heated toolhead unload is subject to the print gate at all. The cold
+// lane ops leave the toolhead parked where the print left it and the backend
+// permits them via check_preconditions(false) — which never consults print state
+// — so blocking the whole button would strand filament a paused user could
+// legitimately eject.
+//
+// The print term itself is print_blocks_filament_op()'s answer, so PAUSED now
+// also stops blocking the heated Unload on every backend but AD5X. That is the
+// live Discord report: "Unload failed: Cannot run filament operation while
+// printing", raised while merely PAUSED.
+//
+// Mutation check: delete the cold-lane arm and "Cold lane ops stay available"
+// fails; make print_blocks_filament_op() ignore backend_self_homes and the
+// paused sections fail.
 TEST_CASE("AmsContextMenu::decide_unload_enabled blocks only the toolhead unload mid-print",
           "[ams][context_menu][print_guard]") {
-    SECTION("Toolhead unload is refused while a print owns the toolhead") {
-        CHECK(AmsContextMenuTestAccess::decide_unload_enabled(false, UnloadMode::Unload, false));
-        CHECK_FALSE(
-            AmsContextMenuTestAccess::decide_unload_enabled(false, UnloadMode::Unload, true));
+    using helix::ui::print_blocks_filament_op;
+
+    auto unload_enabled = [](UnloadMode mode, bool printing, bool paused, bool self_homes,
+                             bool cold_ops_print_gated = false) {
+        return AmsContextMenuTestAccess::decide_unload_enabled(
+            /*system_busy=*/false, mode, print_blocks_filament_op(printing, paused, self_homes),
+            cold_ops_print_gated);
+    };
+
+    SECTION("Toolhead unload is refused while PRINTING, on every backend") {
+        CHECK(unload_enabled(UnloadMode::Unload, false, false, false));
+        CHECK_FALSE(unload_enabled(UnloadMode::Unload, /*printing=*/true, false, false));
+        CHECK_FALSE(unload_enabled(UnloadMode::Unload, /*printing=*/true, false, true));
     }
 
-    SECTION("Cold lane ops stay available mid-print") {
-        CHECK(AmsContextMenuTestAccess::decide_unload_enabled(false, UnloadMode::Eject, true));
-        CHECK(AmsContextMenuTestAccess::decide_unload_enabled(false, UnloadMode::RecoverPosition,
-                                                              true));
-        CHECK(AmsContextMenuTestAccess::decide_unload_enabled(false, UnloadMode::ForceEject, true));
+    SECTION("Toolhead unload is OFFERED on a paused print unless the backend self-homes") {
+        CHECK(unload_enabled(UnloadMode::Unload, false, /*paused=*/true, /*self_homes=*/false));
+        CHECK_FALSE(
+            unload_enabled(UnloadMode::Unload, false, /*paused=*/true, /*self_homes=*/true));
+    }
+
+    SECTION("Cold lane ops stay available mid-print, even on a self-homing backend") {
+        for (auto mode : {UnloadMode::Eject, UnloadMode::RecoverPosition, UnloadMode::ForceEject}) {
+            CHECK(unload_enabled(mode, /*printing=*/true, false, /*self_homes=*/false));
+            CHECK(unload_enabled(mode, /*printing=*/true, false, /*self_homes=*/true));
+        }
+    }
+
+    // AFC's cmd_LANE_UNLOAD opens with its own is_printing() check, so the cold
+    // exemption above would offer a button the firmware discards without moving
+    // anything. The exemption is withdrawn per backend, not globally: the section
+    // above must keep passing for everyone else.
+    SECTION("Cold lane ops grey out while PRINTING when the firmware refuses them too") {
+        for (auto mode : {UnloadMode::Eject, UnloadMode::RecoverPosition, UnloadMode::ForceEject}) {
+            CHECK_FALSE(unload_enabled(mode, /*printing=*/true, false, /*self_homes=*/false,
+                                       /*cold_ops_print_gated=*/true));
+        }
+    }
+
+    // AFC's is_printing() is `state == "printing"` exactly, so a PAUSED job still
+    // reaches the firmware. Greying it would break the pause-then-clear-a-strand
+    // recovery this whole gate was narrowed to preserve.
+    SECTION("A gated backend still offers cold lane ops while PAUSED") {
+        for (auto mode : {UnloadMode::Eject, UnloadMode::RecoverPosition, UnloadMode::ForceEject}) {
+            CHECK(unload_enabled(mode, false, /*paused=*/true, /*self_homes=*/false,
+                                 /*cold_ops_print_gated=*/true));
+        }
     }
 
     SECTION("Busy and Unavailable still win over everything") {
