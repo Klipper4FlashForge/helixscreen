@@ -52,6 +52,16 @@ class UpdateQueueTestAccess {
         return UpdateQueue::callback_exception_count_.load(std::memory_order_relaxed);
     }
 
+    /// True when nothing is queued.
+    ///
+    /// A settle loop that waits on a worker pool needs this: the pool reports
+    /// idle the moment its task finishes, but the task's result is still sitting
+    /// in this queue, so pool-idle alone is not "everything has landed".
+    static bool queue_empty(UpdateQueue& q) {
+        std::lock_guard<std::mutex> lock(q.mutex_);
+        return q.pending_.empty();
+    }
+
     /// Drain repeatedly until the queue is fully empty (handles nested queue_update calls)
     static void drain_all(UpdateQueue& q, int max_iterations = 10) {
         for (int i = 0; i < max_iterations; ++i) {
