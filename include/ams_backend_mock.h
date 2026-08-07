@@ -219,6 +219,21 @@ class AmsBackendMock : public AmsBackend {
     void set_operation_delay(int delay_ms);
 
     /**
+     * @brief Block until the current simulated operation has finished
+     *
+     * Every load / unload / tool change runs on a real std::thread spawned by
+     * schedule_completion(), so the transient AmsAction a caller sees right after
+     * issuing one is a race against that thread — and at set_operation_delay(0)
+     * the thread routinely wins, ending back at IDLE before the caller looks.
+     *
+     * Tests that want to assert on the RESULT of an operation must join here
+     * first and then read the settled state, rather than sampling the action mid
+     * flight. Public because the whole class is test infrastructure; joining is
+     * the only way to make those assertions deterministic under parallel load.
+     */
+    void wait_for_operation_thread();
+
+    /**
      * @brief Force a specific slot status (for testing)
      * @param slot_index Slot to modify
      * @param status New status
@@ -568,11 +583,6 @@ class AmsBackendMock : public AmsBackend {
      *         the backend is already mid-operation
      */
     AmsError simulate_transient_action(AmsAction action, const std::string& detail);
-
-    /**
-     * @brief Wait for any active operation thread to complete
-     */
-    void wait_for_operation_thread();
 
     // Realistic mode helpers (multi-phase operations)
     using InterruptibleSleep = std::function<bool(int)>;
