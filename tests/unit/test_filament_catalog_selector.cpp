@@ -4,9 +4,9 @@
 
 #include "../test_fixtures.h"
 
-#include "../catch_amalgamated.hpp"
-
 #include <sstream>
+
+#include "../catch_amalgamated.hpp"
 
 using helix::printer::EffectiveFilament;
 using helix::ui::FilamentCatalogSelector;
@@ -271,8 +271,8 @@ TEST_CASE_METHOD(XMLTestFixture,
     auto names = sel.product_names_for_test();
     REQUIRE(names == std::vector<std::string>{"PLA", "PLA High Speed", "PLA Matte", "PLA Silk",
                                               "Support for PLA", "Glow PLA", "Marble PLA",
-                                              "Matte PLA", "Metal PLA", "PLA+", "PLA-CF",
-                                              "PLA-GF", "Silk PLA", "Wood PLA"});
+                                              "Matte PLA", "Metal PLA", "PLA+", "PLA-CF", "PLA-GF",
+                                              "Silk PLA", "Wood PLA"});
 
     sel.detach();
 }
@@ -329,4 +329,103 @@ TEST_CASE_METHOD(XMLTestFixture, "preselect_first checks the first product but k
     CHECK(sel.highlighted()->id == kept_id);
 
     sel.detach();
+}
+
+// preselect_first() can only ever pick ordered_products_for().front(). Every
+// SUNLU PLA product shares variant_key "" and rank 1, so the tiebreak is
+// lowercased-name alphabetical and "PLA Marble" always wins — which is exactly
+// how a saved "PLA+ 2.0" came back as "PLA Marble" (bundle TDQCCQB3). Seeding
+// by the stored catalog id is the only thing that can land on the right row.
+TEST_CASE_METHOD(XMLTestFixture, "preselect_product_id lands on the exact product, not the first",
+                 "[filament_picker][catalog_selector][preselect]") {
+    lv_obj_t* root = make_fragment();
+    REQUIRE(root != nullptr);
+
+    FilamentCatalogSelector sel;
+    sel.attach(root);
+    sel.configure(std::nullopt, std::nullopt);
+    sel.populate();
+
+    // Baseline: navigating to SUNLU/PLA by hand and taking the first row gives
+    // the WRONG product. This is the failure mode the id seed has to beat.
+    sel.change_vendor_for_test(0); // reset to Generic so the seed does real work
+    REQUIRE(sel.preselect_product_id("sunlu-pla-marble"));
+    REQUIRE(sel.highlighted() != nullptr);
+    REQUIRE(sel.current_vendor() == "SUNLU");
+    REQUIRE(sel.current_type() == "PLA");
+    CHECK(sel.product_names_for_test().front() == "PLA Marble");
+
+    // Now the real assertion: the id seed must reach a NON-first product.
+    CHECK(sel.preselect_product_id("sunlu-pla-plus-2-0"));
+    REQUIRE(sel.highlighted() != nullptr);
+    CHECK(sel.highlighted()->id == "sunlu-pla-plus-2-0");
+    CHECK(sel.highlighted()->name == "PLA+ 2.0");
+    // The dropdowns were navigated to the product's own vendor + family, not
+    // left wherever they happened to be.
+    CHECK(sel.current_vendor() == "SUNLU");
+    CHECK(sel.current_type() == "PLA");
+
+    sel.detach();
+    helix::ui::UpdateQueue::instance().drain();
+}
+
+TEST_CASE_METHOD(XMLTestFixture, "preselect_product_id reports failure for an unresolvable id",
+                 "[filament_picker][catalog_selector][preselect]") {
+    lv_obj_t* root = make_fragment();
+    REQUIRE(root != nullptr);
+
+    FilamentCatalogSelector sel;
+    sel.attach(root);
+    sel.configure(std::string("PLA"), std::nullopt);
+    sel.populate();
+    sel.select_first_product_for_test();
+    REQUIRE(sel.highlighted() != nullptr);
+    const std::string kept = sel.highlighted()->id;
+    const std::string kept_vendor = sel.current_vendor();
+
+    // A product the user deleted from their overlay, or an id retired by an app
+    // update. The host needs a false so it can fall back to preselect_first();
+    // silently doing nothing and returning true would strand it.
+    CHECK_FALSE(sel.preselect_product_id("no-such-product-id"));
+    CHECK_FALSE(sel.preselect_product_id("")); // empty id is never a resolve
+
+    // A failed seed must not disturb what is already selected.
+    REQUIRE(sel.highlighted() != nullptr);
+    CHECK(sel.highlighted()->id == kept);
+    CHECK(sel.current_vendor() == kept_vendor);
+
+    sel.detach();
+    helix::ui::UpdateQueue::instance().drain();
+}
+
+// preselect_first() records its pick as the preselect anchor so a dropdown
+// round-trip restores it. An id seed is a stronger statement of the same
+// intent, so it must set the anchor too — otherwise a user who switches type
+// away and back loses the variant they had saved.
+TEST_CASE_METHOD(XMLTestFixture, "preselect_product_id survives a dropdown round-trip",
+                 "[filament_picker][catalog_selector][preselect]") {
+    lv_obj_t* root = make_fragment();
+    REQUIRE(root != nullptr);
+
+    FilamentCatalogSelector sel;
+    sel.attach(root);
+    sel.set_preselect_on_change(true);
+    sel.configure(std::nullopt, std::vector<std::string>{"PLA", "PETG"});
+    sel.populate();
+
+    REQUIRE(sel.preselect_product_id("sunlu-pla-plus-2-0"));
+    REQUIRE(sel.type_options() == "PETG\nPLA");
+    REQUIRE(sel.current_type() == "PLA");
+
+    // Away to PETG and back: the anchor restores the saved variant, not the
+    // alphabetically-first "PLA Marble".
+    sel.change_type_for_test(0);
+    CHECK(sel.current_type() == "PETG");
+    sel.change_type_for_test(1);
+    CHECK(sel.current_type() == "PLA");
+    REQUIRE(sel.highlighted() != nullptr);
+    CHECK(sel.highlighted()->id == "sunlu-pla-plus-2-0");
+
+    sel.detach();
+    helix::ui::UpdateQueue::instance().drain();
 }

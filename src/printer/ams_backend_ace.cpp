@@ -478,6 +478,11 @@ AmsError AmsBackendAce::set_slot_info(int slot_index, const SlotInfo& info, bool
         slot.color_name = info.color_name;
         slot.material = info.material;
         slot.brand = info.brand;
+        // Carry the catalog product identity through preview writes too — a
+        // persist=false preview that dropped it would make the editor snap
+        // back to a different variant on the next get_slot_info().
+        slot.catalog_id = info.catalog_id;
+        slot.product_name = info.product_name;
         slot.spool_name = info.spool_name;
         slot.spoolman_id = info.spoolman_id;
         slot.spoolman_vendor_id = info.spoolman_vendor_id;
@@ -501,6 +506,13 @@ AmsError AmsBackendAce::set_slot_info(int slot_index, const SlotInfo& info, bool
             ovr.color_set = true; // a user-edit always records a color, even pure black (#000000)
             ovr.color_name = info.color_name;
             ovr.material = info.material;
+            // Catalog product identity. Persisted so a reopen can restore the
+            // EXACT product rather than the alphabetically-first variant of the
+            // same vendor+material. Never auto-mirrored (firmware has no notion
+            // of a catalog product), so no user-lock flag is needed: a non-empty
+            // value can only have come from a user pick.
+            ovr.catalog_id = info.catalog_id;
+            ovr.product_name = info.product_name;
             // SlotInfo carries the user's edit OR the bound Spoolman spool's
             // filament profile; the material-DB fallback for fields left at 0
             // is applied at emit time inside resolved_temps(). Centralized in
@@ -1648,6 +1660,14 @@ void AmsBackendAce::apply_overrides(SlotInfo& slot, int slot_index) {
         slot.color_name = o.color_name;
     if (!o.material.empty())
         slot.material = o.material;
+    // Catalog product identity — same "override wins only when it carries a
+    // real value" rule as the strings above. Firmware never populates these
+    // (no AMS protocol has a notion of a branded product id), so a non-empty
+    // value here is always a user pick and always wins.
+    if (!o.catalog_id.empty())
+        slot.catalog_id = o.catalog_id;
+    if (!o.product_name.empty())
+        slot.product_name = o.product_name;
 }
 
 void AmsBackendAce::check_hardware_event_clear(SlotInfo& slot, int slot_index, SlotStatus prev,
@@ -1697,6 +1717,12 @@ void AmsBackendAce::clear_override_locked(int slot_index, SlotInfo& slot) {
     slot.remaining_weight_g = -1.0f;
     slot.total_weight_g = -1.0f;
     slot.color_name.clear();
+    // The catalog pick is override-exclusive on every backend — no AMS
+    // firmware carries a branded product id — so a clear always drops it.
+    // Leaving it would re-navigate the editor to the removed spool's
+    // product on the next open.
+    slot.catalog_id.clear();
+    slot.product_name.clear();
 
     if (override_store_) {
         // Capture by value — clear_async's Moonraker callback can fire after

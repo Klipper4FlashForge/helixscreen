@@ -2003,3 +2003,144 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     UpdateQueue::instance().drain();
     process_lvgl(10);
 }
+
+// =============================================================================
+// Catalog product identity round-trip (bundle TDQCCQB3, AD5X v0.99.107)
+// =============================================================================
+//
+// The user edits an AMS slot, picks SUNLU "PLA+ 2.0", and Save reports success.
+// Reopening the editor shows "PLA Marble". Brand and material family DO persist,
+// which is what made it look like a reload bug — it is not. The catalog product
+// identity was never captured at SAVE:
+//
+//   - handle_spool_edit_save() read the highlighted EffectiveFilament but copied
+//     only type / brand / the three temps into working_info_. ef->name and
+//     ef->id were read nowhere.
+//   - clear_catalog() then wiped the selector-local highlighted_id_.
+//   - On reopen, setup_details_selector() seeded vendor + material family only,
+//     and preselect_first() took ordered_products_for().front(). All six SUNLU
+//     PLA products share variant_key "" and rank 1, so the tiebreak is
+//     lowercased-name alphabetical and "pla marble" always sorts first.
+//
+// Deterministic, which is why this test can assert an exact product id.
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "spool-edit Save persists the picked catalog product across a reopen",
+                 "[ams_edit_overlay][spool_edit][catalog_identity]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    SlotInfo slot;
+    slot.slot_index = 0;
+    slot.spoolman_id = 0;
+    slot.brand = "SUNLU";
+    slot.material = "PLA";
+    slot.color_rgb = 0xFEF043;
+    slot.color_name = "Yellow";
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Sanity: the vendor seed resolved, and the list really does put the wrong
+    // product first — so a passing assertion below cannot be an accident of
+    // ordering.
+    REQUIRE(access.details_selector().current_vendor() == "SUNLU");
+    REQUIRE(access.details_selector().current_type() == "PLA");
+    REQUIRE(access.details_selector().product_names_for_test().front() == "PLA Marble");
+
+    // The user taps the "PLA+ 2.0" row.
+    access.details_selector().select_product_for_test("sunlu-pla-plus-2-0");
+    REQUIRE(access.details_selector().highlighted() != nullptr);
+    REQUIRE(access.details_selector().highlighted()->name == "PLA+ 2.0");
+
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Save must capture the product identity, not just the material family.
+    const SlotInfo saved = access.working_info();
+    CHECK(saved.catalog_id == "sunlu-pla-plus-2-0");
+    CHECK(saved.product_name == "PLA+ 2.0");
+    CHECK(saved.material == "PLA"); // family still the firmware-facing string
+    CHECK(saved.brand == "SUNLU");
+
+    close_editor_overlay();
+
+    // --- Reopen with exactly what was persisted -------------------------------
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, saved, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // THE regression assertion: the same product is checked, not the
+    // alphabetically-first one.
+    REQUIRE(access.details_selector().highlighted() != nullptr);
+    CHECK(access.details_selector().highlighted()->id == "sunlu-pla-plus-2-0");
+    CHECK(access.details_selector().highlighted()->name == "PLA+ 2.0");
+    CHECK(access.details_selector().current_vendor() == "SUNLU");
+
+    // And an untouched Save round-trips it rather than re-collapsing to first.
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    CHECK(access.working_info().catalog_id == "sunlu-pla-plus-2-0");
+    CHECK(access.working_info().product_name == "PLA+ 2.0");
+
+    close_editor_overlay();
+}
+
+// A stored id that no longer resolves (a custom overlay product the user
+// deleted, or an id retired by an app update) must not strand the editor: the
+// selector falls back to preselect_first() so the list still shows a checked
+// row, and the SAVE overwrites the dead id with whatever the user confirms.
+// The old product_name is not preserved through such a save — the user is
+// looking at, and confirming, a different product.
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "spool-edit tolerates a stored catalog id that no longer resolves",
+                 "[ams_edit_overlay][spool_edit][catalog_identity]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    SlotInfo slot;
+    slot.slot_index = 0;
+    slot.spoolman_id = 0;
+    slot.brand = "SUNLU";
+    slot.material = "PLA";
+    slot.color_rgb = 0xFEF043;
+    slot.catalog_id = "sunlu-pla-plus-9-9-retired";
+    slot.product_name = "PLA+ 9.9";
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Fallback path: a checked row (the preselect_on_change invariant) on the
+    // right vendor+family, just not the dead id.
+    REQUIRE(access.details_selector().highlighted() != nullptr);
+    CHECK(access.details_selector().current_vendor() == "SUNLU");
+    CHECK(access.details_selector().highlighted()->id != "sunlu-pla-plus-9-9-retired");
+
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // The dead id is replaced by the product the user actually confirmed —
+    // never carried forward, or the lane would advertise an id nothing resolves
+    // for the rest of its life.
+    CHECK(access.working_info().catalog_id != "sunlu-pla-plus-9-9-retired");
+    CHECK_FALSE(access.working_info().catalog_id.empty());
+    CHECK(access.working_info().product_name != "PLA+ 9.9");
+
+    close_editor_overlay();
+}

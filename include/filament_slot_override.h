@@ -39,6 +39,24 @@ struct FilamentSlotOverride {
     bool color_set = false;
     std::string color_name;
     std::string material;
+    // Catalog product identity, mirroring SlotInfo::catalog_id / product_name
+    // (see ams_types.h for why both are stored rather than one derived from the
+    // other). `material` alone cannot tell SUNLU "PLA+ 2.0" from SUNLU "PLA
+    // Marble", so without these the editor re-opens on whichever variant sorts
+    // first and silently relabels the lane.
+    //
+    // Persistence: emitted as `helix_catalog_id` / `helix_product_name` in the
+    // lane_data record. The helix_ prefix is required there — lane_data is a
+    // SHARED Moonraker namespace (AFC, Happy Hare, Mainsail and Orca all read
+    // and write it), same rule as helix_material / helix_locked_*. Both keys are
+    // omitted when empty so a lane with no catalog pick does not squat names in
+    // that namespace. The local cache (to_json / from_json) is HelixScreen-
+    // private and uses the bare names, matching user_locked_color.
+    //
+    // Auto-mirror never populates these: firmware has no concept of a catalog
+    // product, so a non-empty value always means a user pick.
+    std::string catalog_id;
+    std::string product_name;
     // User-lock flags — set true when a user explicitly edits a field via
     // set_slot_info(persist=true). The OverwriteAlways auto-mirror policy
     // skips fields whose lock is true so a subsequent firmware report (post-

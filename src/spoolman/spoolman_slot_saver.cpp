@@ -35,9 +35,22 @@ bool SpoolmanSlotSaver::is_filament_complete(const SlotInfo& slot) {
 ChangeSet SpoolmanSlotSaver::detect_changes(const SlotInfo& original, const SlotInfo& edited) {
     ChangeSet changes;
 
-    // Filament-level: brand, material, color_rgb
+    // Filament-level: brand, material, color_rgb, catalog product identity.
+    //
+    // The product fields matter on their own: a variant swap within one vendor
+    // and material (SUNLU "PLA Marble" -> "PLA+ 2.0") leaves brand, material and
+    // color identical, so without them detect_changes() reports no change at all
+    // and commit_and_close() treats the edit as a no-op.
+    //
+    // This does NOT make such a swap prompt "Different filament?" —
+    // needs_identity_confirmation() additionally requires
+    // is_material_identity_change(), which compares materials and colors only.
+    // On a linked spool it routes through find_or_create_filament(), which
+    // matches on material + color and therefore resolves back to the same
+    // filament record: a repoint that is a no-op by construction.
     if (original.brand != edited.brand || original.material != edited.material ||
-        original.color_rgb != edited.color_rgb) {
+        original.color_rgb != edited.color_rgb || original.catalog_id != edited.catalog_id ||
+        original.product_name != edited.product_name) {
         changes.filament_level = true;
     }
 

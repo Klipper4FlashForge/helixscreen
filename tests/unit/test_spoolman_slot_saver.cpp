@@ -82,6 +82,43 @@ TEST_CASE("SpoolmanSlotSaver detect_changes: color changed sets filament_level",
     REQUIRE(changes.any());
 }
 
+// A variant swap within one vendor+material — SUNLU "PLA Marble" -> "PLA+ 2.0"
+// — leaves brand, material and color identical, so without the product-identity
+// fields detect_changes() reports NO change at all and the edit reads as a
+// no-op everywhere downstream.
+TEST_CASE("SpoolmanSlotSaver detect_changes: catalog product changed sets filament_level",
+          "[spoolman][slot_saver]") {
+    SlotInfo original = make_test_slot();
+    original.catalog_id = "sunlu-pla-marble";
+    original.product_name = "PLA Marble";
+
+    SECTION("catalog id alone") {
+        SlotInfo edited = original;
+        edited.catalog_id = "sunlu-pla-plus-2-0";
+        edited.product_name = "PLA+ 2.0";
+
+        auto changes = SpoolmanSlotSaver::detect_changes(original, edited);
+        REQUIRE(changes.filament_level);
+        REQUIRE_FALSE(changes.spool_level);
+    }
+
+    SECTION("display name alone — an id-less pick still counts") {
+        SlotInfo edited = original;
+        edited.catalog_id.clear();
+        SlotInfo base = original;
+        base.catalog_id.clear();
+        edited.product_name = "PLA+ 2.0";
+
+        auto changes = SpoolmanSlotSaver::detect_changes(base, edited);
+        REQUIRE(changes.filament_level);
+    }
+
+    SECTION("identical product is not a change") {
+        auto changes = SpoolmanSlotSaver::detect_changes(original, original);
+        REQUIRE_FALSE(changes.any());
+    }
+}
+
 TEST_CASE("SpoolmanSlotSaver detect_changes: remaining weight changed sets spool_level only",
           "[spoolman][slot_saver]") {
     SlotInfo original = make_test_slot();

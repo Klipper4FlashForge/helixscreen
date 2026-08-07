@@ -442,6 +442,8 @@ TEST_CASE("SlotInfo::clear_spoolman_link clears the whole Spoolman identity",
     slot.material = "ASA";
     slot.color_rgb = 0x1A1A1A;
     slot.remaining_weight_g = 509.0f;
+    slot.catalog_id = "sunlu-pla-plus-2-0";
+    slot.product_name = "PLA+ 2.0";
 
     slot.clear_spoolman_link();
 
@@ -456,6 +458,13 @@ TEST_CASE("SlotInfo::clear_spoolman_link clears the whole Spoolman identity",
     CHECK(slot.material == "ASA");
     CHECK(slot.color_rgb == 0x1A1A1A);
     CHECK(slot.remaining_weight_g == Catch::Approx(509.0f));
+
+    // The catalog pick is local identity, not a Spoolman handle — the product
+    // came from assets/filaments.json and has no Spoolman record behind it.
+    // Clearing it on unlink would drop the user back to the alphabetically-first
+    // variant on the next open, which is the bug this field exists to fix.
+    CHECK(slot.catalog_id == "sunlu-pla-plus-2-0");
+    CHECK(slot.product_name == "PLA+ 2.0");
 }
 
 TEST_CASE("AmsEditOverlay::needs_identity_confirmation applies to ALL Spoolman backends (§6)",
