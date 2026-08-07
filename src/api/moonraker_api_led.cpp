@@ -66,5 +66,5 @@ void MoonrakerAPI::set_led(const std::string& led, double red, double green, dou
                  red, green, blue, white);
 
     execute_gcode(gcode.str(), std::move(on_success), std::move(on_error), 0, false,
-                  GcodeSource::Internal, std::move(on_queued));
+                  std::move(on_queued));
 }

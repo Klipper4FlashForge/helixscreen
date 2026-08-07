@@ -665,8 +665,8 @@ void ConsolePanel::create_entry_widget(const GcodeEntry& entry) {
     }
 }
 
-const ConsolePanel::GcodeEntry* ConsolePanel::find_entry_by_id(const std::deque<GcodeEntry>& entries,
-                                                               uint64_t id) {
+const ConsolePanel::GcodeEntry*
+ConsolePanel::find_entry_by_id(const std::deque<GcodeEntry>& entries, uint64_t id) {
     if (id == 0) {
         return nullptr; // Reserved for "never stamped" — must never match.
     }
@@ -965,11 +965,7 @@ void ConsolePanel::send_gcode_command() {
                                if (token.expired())
                                    return;
                                NOTIFY_ERROR(lv_tr("Failed to send command: {}"), err.message);
-                           },
-                           // User-typed console G-code must never carry the
-                           // "; from helixscreen" provenance comment.
-                           /*timeout_ms=*/0, /*silent=*/false,
-                           MoonrakerAPI::GcodeSource::UserConsole);
+                           });
     } else {
         spdlog::warn("[{}] No MoonrakerAPI available", get_name());
     }

@@ -20,7 +20,6 @@
 #include "abort_manager.h"
 #include "app_globals.h"
 #include "helix_version.h"
-#include "moonraker_gcode_annotate.h"
 #include "printer_state.h"
 #include "system/telemetry_manager.h"
 
@@ -1086,12 +1085,8 @@ RequestId MoonrakerClient::send_jsonrpc(const std::string& method, const json& p
 }
 
 int MoonrakerClient::gcode_script(const std::string& gcode) {
-    // Always HelixScreen-initiated; tag for traceability unless the connected
-    // printer's firmware re-echoes received G-code (AD5X mis-parses the trailing
-    // comment). Reads the lock-free atomic — this runs on the WS/background thread.
-    std::string annotated =
-        helix::api::annotate_gcode(gcode, !get_printer_state().firmware_echoes_gcode());
-    json params = {{"script", annotated}};
+    // Transmitted VERBATIM — see moonraker_gcode_guards.h.
+    json params = {{"script", gcode}};
     int result = send_jsonrpc("printer.gcode.script", params);
     // send() returns bytes sent (positive) on success, negative on error.
     // Normalize to match API contract: 0 = success, negative = error.

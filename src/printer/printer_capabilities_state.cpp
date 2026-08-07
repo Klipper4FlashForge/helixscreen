@@ -41,7 +41,6 @@ void PrinterCapabilitiesState::init_subjects(bool register_xml) {
     INIT_SUBJECT_INT(printer_has_speaker, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_timelapse, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_purge_line, 0, subjects_, register_xml);
-    INIT_SUBJECT_INT(printer_firmware_echoes_gcode, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_has_firmware_retraction, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(printer_bed_moves, 0, subjects_, register_xml); // 0=gantry moves, 1=bed moves
     INIT_SUBJECT_INT(printer_has_chamber_sensor, 0, subjects_, register_xml);
@@ -191,11 +190,6 @@ void PrinterCapabilitiesState::set_timelapse_available(bool available) {
 void PrinterCapabilitiesState::set_purge_line(bool has_purge_line) {
     lv_subject_set_int(&printer_has_purge_line_, has_purge_line ? 1 : 0);
     spdlog::debug("[PrinterCapabilitiesState] Purge line capability set: {}", has_purge_line);
-}
-
-void PrinterCapabilitiesState::set_firmware_echoes_gcode(bool echoes) {
-    lv_subject_set_int(&printer_firmware_echoes_gcode_, echoes ? 1 : 0);
-    spdlog::debug("[PrinterCapabilitiesState] Firmware echoes G-code: {}", echoes);
 }
 
 void PrinterCapabilitiesState::set_bed_moves(bool bed_moves) {

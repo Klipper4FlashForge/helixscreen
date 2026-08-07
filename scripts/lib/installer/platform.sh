@@ -26,6 +26,9 @@ K1_FIRMWARE=""
 KLIPPER_USER=""
 KLIPPER_GROUP=""
 KLIPPER_HOME=""
+# Empty means "derive <KLIPPER_HOME>/printer_data/config". Only firmwares with
+# no printer_data at all (CC1/COSMOS) set it. Read via klipper_config_dir().
+KLIPPER_CONFIG_DIR=""
 
 # Friendly description of the underlying SBC for the user-facing log line.
 # Returns free-text (NOT used for routing). Pi/pi32 covers a long tail of
@@ -677,10 +680,15 @@ detect_tmp_dir() {
 }
 
 # Set installation paths based on platform and firmware
-# Sets: INSTALL_DIR, INIT_SCRIPT_DEST, PREVIOUS_UI_SCRIPT, TMP_DIR
+# Sets: INSTALL_DIR, INIT_SCRIPT_DEST, PREVIOUS_UI_SCRIPT, TMP_DIR, KLIPPER_CONFIG_DIR
 set_install_paths() {
     local platform=$1
     local firmware=${2:-}
+
+    # Start from "derive it from KLIPPER_HOME" every time; only the branches
+    # below opt out. Without the reset a stale value from the environment (or
+    # from an earlier call in the same shell) would leak into another platform.
+    KLIPPER_CONFIG_DIR=""
 
     if [ "$platform" = "ad5m" ]; then
         # AD5M runs the helix-screen service as root on all three firmwares
@@ -776,12 +784,17 @@ set_install_paths() {
         # - /user-resource is the 6.3 GB ext4 partition where user installs go.
         # - COSMOS provides gui-switcher: drop /etc/init.d/<name>, then
         #   `config-manager ui screen_ui <name>` + restart gui-switcher.
+        # - There is NO printer_data directory anywhere on the device. Klipper
+        #   and Moonraker config live in /etc/klipper/config (moonraker.conf,
+        #   printer.cfg, and the vendor *-readonly/ include dirs), which is
+        #   also the `config` root Moonraker advertises over /server/files/roots.
         INSTALL_DIR="/user-resource/helixscreen"
         INIT_SCRIPT_DEST="/etc/init.d/helixscreen"
         PREVIOUS_UI_SCRIPT=""
         KLIPPER_USER="root"
         KLIPPER_GROUP="root"
         KLIPPER_HOME="/root"
+        KLIPPER_CONFIG_DIR="/etc/klipper/config"
         INIT_SYSTEM="sysv"
         log_info "Platform: Elegoo Centauri Carbon (COSMOS)"
         log_info "Install directory: ${INSTALL_DIR}"
@@ -996,20 +1009,21 @@ _safe_remove_migrated_config_dir() {
 #   ~/helixscreen/config/settings.json → above          (symlink)
 #
 # On upgrade from old layout, migrates files from install dir to printer_data.
-# Reads: KLIPPER_HOME, INSTALL_DIR
+# Reads: KLIPPER_HOME / KLIPPER_CONFIG_DIR (via klipper_config_dir), INSTALL_DIR
 setup_config_symlink() {
-    # Only proceed if we have a Klipper home and install directory
-    if [ -z "${KLIPPER_HOME:-}" ] || [ -z "${INSTALL_DIR:-}" ]; then
+    # Only proceed if we have a Klipper config dir and an install directory
+    local pd_config
+    pd_config="$(klipper_config_dir)"
+    if [ -z "$pd_config" ] || [ -z "${INSTALL_DIR:-}" ]; then
         return 0
     fi
 
-    local pd_config="${KLIPPER_HOME}/printer_data/config"
     local pd_helix="${pd_config}/helixscreen"
     local install_config="${INSTALL_DIR}/config"
 
-    # Skip if printer_data/config doesn't exist
+    # Skip if the Klipper config dir doesn't exist
     if [ ! -d "$pd_config" ]; then
-        log_info "No printer_data/config found, skipping config symlink"
+        log_info "No Klipper config dir at $pd_config, skipping config symlink"
         return 0
     fi
 
@@ -1175,13 +1189,15 @@ setup_config_symlink() {
 
 # Remove config symlinks and optionally the printer_data directory.
 # Called during uninstall. Preserves user files in printer_data.
-# Reads: KLIPPER_HOME, INSTALL_DIR
+# Reads: KLIPPER_HOME / KLIPPER_CONFIG_DIR (via klipper_config_dir), INSTALL_DIR
 remove_config_symlink() {
-    if [ -z "${KLIPPER_HOME:-}" ] || [ -z "${INSTALL_DIR:-}" ]; then
+    local pd_config
+    pd_config="$(klipper_config_dir)"
+    if [ -z "$pd_config" ] || [ -z "${INSTALL_DIR:-}" ]; then
         return 0
     fi
 
-    local pd_helix="${KLIPPER_HOME}/printer_data/config/helixscreen"
+    local pd_helix="${pd_config}/helixscreen"
     local install_config="${INSTALL_DIR}/config"
 
     # Remove per-file symlinks from install dir

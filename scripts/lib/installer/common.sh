@@ -89,6 +89,35 @@ file_sudo() {
     fi
 }
 
+# Resolve the directory holding the user's Klipper/Moonraker config files.
+#
+# Almost every Klipper install puts them in <klipper home>/printer_data/config,
+# so that is the derived default and no platform needs to say anything. Vendor
+# firmwares that do not use printer_data AT ALL set KLIPPER_CONFIG_DIR in
+# set_install_paths() instead:
+#
+#   Elegoo Centauri Carbon / COSMOS (OpenCentauri) keeps everything in
+#   /etc/klipper/config — moonraker.conf, printer.cfg, the *-readonly/ vendor
+#   include dirs — and has no printer_data directory anywhere on the device
+#   (verified over SSH; Moonraker's /server/files/roots reports the `config`
+#   root as /etc/klipper/config, rw). Deriving from KLIPPER_HOME=/root there
+#   yields /root/printer_data/config, which does not exist, so moonraker.conf
+#   discovery, the config symlinks and the Klipper include all silently
+#   skipped.
+#
+# Echoes the directory, or an empty string when neither is known.
+klipper_config_dir() {
+    if [ -n "${KLIPPER_CONFIG_DIR:-}" ]; then
+        echo "$KLIPPER_CONFIG_DIR"
+        return 0
+    fi
+    if [ -n "${KLIPPER_HOME:-}" ]; then
+        echo "${KLIPPER_HOME}/printer_data/config"
+        return 0
+    fi
+    echo ""
+}
+
 # Track what we've done for cleanup
 CLEANUP_TMP=false
 CLEANUP_SERVICE=false
