@@ -325,10 +325,9 @@ Consequences, in rough order of how much they cost us:
   port's filament system while refusing to drive it beats both extremes — and
   it is the correct state to sit in *while* you go find the module, rather than
   shipping a guessed command set.
-- Prefer a **module-identity marker** over a shape heuristic when deciding what
-  commands a firmware speaks. This module publishes its own widget-version
-  constant in its status object; keying on that keeps "what shape is the data"
-  and "what commands does it take" genuinely independent.
+- Prefer an **explicit API version** over inferring commands from the status
+  layout. This module publishes `api_version`; the `slots[]` structure selects
+  the parser, while the version selects the command dialect.
 
 **Footnote worth knowing:** this firmware ships **HelixScreen as its stock
 display**, pinned by version and SHA in its installer. Community ports are not

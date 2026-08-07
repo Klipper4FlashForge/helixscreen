@@ -136,6 +136,23 @@ bool is_material_code_sentinel(const std::string& v) {
     return v.empty() || v == "none" || v == "None" || v == "-1" || v == "unknown";
 }
 
+std::string quote_gcode_param(const std::string& value) {
+    std::string quoted;
+    quoted.reserve(value.size() + 2);
+    quoted += '"';
+    for (char c : value) {
+        if (c == '\n' || c == '\r') {
+            quoted += ' ';
+        } else {
+            if (c == '\\' || c == '"')
+                quoted += '\\';
+            quoted += c;
+        }
+    }
+    quoted += '"';
+    return quoted;
+}
+
 } // namespace
 
 struct CfsErrorEntry {
@@ -1148,18 +1165,15 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
 
         if (is_flat && schema_ != CfsSchema::Flat) {
             schema_ = CfsSchema::Flat;
-            // Dialect is latched from the same payload but on a SEPARATE
-            // signal — the module's own identity marker, not the schema shape
-            // (see detect_fork_dialect). A flat payload without that marker
-            // keeps the stock dialect and stays gated, because we would have no
-            // verified command set for it.
+            // Select the command dialect from the explicit API version, not by
+            // assuming every `slots[]` payload implements the same commands.
             if (detect_fork_dialect(box)) {
                 macro_variant_ = CfsMacroVariant::Fork;
                 spdlog::info("[AMS CFS] Flat box schema + fork dialect detected "
-                             "(community box.py, widget v{}) — full control enabled",
-                             helix::json_util::safe_int(box, "fluidd_widget_version", 0));
+                             "(community box.py, API v{}) — Fork control enabled",
+                             helix::json_util::safe_int(box, "api_version", 0));
             } else {
-                spdlog::warn("[AMS CFS] Flat box schema without a known module marker — "
+                spdlog::warn("[AMS CFS] Flat box schema without a supported API version — "
                              "slot display active, control paths disabled (no verified "
                              "command dialect)");
             }
@@ -1722,27 +1736,31 @@ void AmsBackendCfs::push_slot_color_to_firmware(int global_index, uint32_t color
         return;
     }
 
-    // The Fork module defines no BOX_MODIFY_TN_DATA; its equivalent is
-    // _BOX_SLOT_SET, which writes the whole slot profile at once and REQUIRES a
-    // material alongside the color. Read the slot's current material to satisfy
-    // that — a slot with no material yet yields no command, and the local
-    // override still holds the user's color either way.
+    // The Fork module defines no BOX_MODIFY_TN_DATA. `_BOX_SLOT_SET` requires
+    // a material; explicit clears route through clear_box_slot_profile().
     if (macro_variant_ == CfsMacroVariant::Fork) {
         std::string material;
+        std::string brand;
+        std::string name;
+        int spoolman_id = 0;
         {
             std::lock_guard<std::mutex> lock(mutex_);
             for (const auto& unit : system_info_.units) {
                 for (const auto& slot : unit.slots) {
                     if (slot.global_index == global_index) {
                         material = slot.material;
+                        brand = slot.brand;
+                        name = slot.spool_name;
+                        spoolman_id = slot.spoolman_id;
+                        break;
                     }
                 }
             }
         }
-        std::string gcode = slot_set_gcode(global_index, material, color_rgb);
+        std::string gcode =
+            slot_set_gcode(global_index, material, color_rgb, brand, name, spoolman_id);
         if (gcode.empty()) {
-            spdlog::debug("{} slot-set skipped for slot {} (no material) — local override only",
-                          backend_log_tag(), global_index);
+            spdlog::debug("{} slot-set skipped for slot {}", backend_log_tag(), global_index);
             return;
         }
         execute_gcode(gcode);
@@ -1967,11 +1985,12 @@ std::string wrap_with_park(CfsMacroVariant variant, const std::string& body, boo
 } // namespace
 
 bool AmsBackendCfs::detect_fork_dialect(const nlohmann::json& box_json) {
-    return box_json.is_object() && box_json.contains("fluidd_widget_version");
+    return box_json.is_object() && helix::json_util::safe_int(box_json, "api_version", 0) == 1;
 }
 
 std::string AmsBackendCfs::slot_set_gcode(int global_slot_index, const std::string& material,
-                                          uint32_t color_rgb) {
+                                          uint32_t color_rgb, const std::string& brand,
+                                          const std::string& name, int spoolman_id) {
     constexpr int kCfsMaxSlots = 16; // 4 units × 4 slots
     if (global_slot_index < 0 || global_slot_index >= kCfsMaxSlots) {
         spdlog::error("[AMS CFS] Invalid slot index for slot-set: {}", global_slot_index);
@@ -1988,27 +2007,24 @@ std::string AmsBackendCfs::slot_set_gcode(int global_slot_index, const std::stri
     for (char& c : upper) {
         c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     }
-    // snprintf to match the stock BOX_MODIFY_TN_DATA builder below, which uses
-    // the same idiom for the same reason: a fixed-shape gcode line.
-    char gcode[160];
-    std::snprintf(gcode, sizeof(gcode), "_BOX_SLOT_SET SLOT=%d MATERIAL=%s COLOR=#%06X",
-                  global_slot_index, upper.c_str(), color_rgb & 0xFFFFFFu);
-    return gcode;
+    char color[10];
+    std::snprintf(color, sizeof(color), "#%06X", color_rgb & 0xFFFFFFu);
+    return "_BOX_SLOT_SET SLOT=" + std::to_string(global_slot_index) +
+           " MATERIAL=" + quote_gcode_param(upper) +
+           " COLOR=" + quote_gcode_param(color) + " BRAND=" + quote_gcode_param(brand) +
+           " NAME=" + quote_gcode_param(name) +
+           " SPOOLMAN_ID=" + std::to_string(spoolman_id > 0 ? spoolman_id : -1);
 }
 
 std::string AmsBackendCfs::load_gcode(int idx, CfsMacroVariant variant) {
     if (variant == CfsMacroVariant::Fork) {
-        // BOX_LOAD SLOT=<n>. The module owns the entire feed sequence — park,
-        // purge, prime and clean all happen inside it — so there is no envelope
-        // to assemble. It is a FRESH load only: box.py raises "T%d is already
-        // loaded; unload it before loading T%d" when another bay is seated,
-        // which is why a swap routes to T<n> instead.
+        // The Box T command owns the complete load or change operation.
         constexpr int kCfsMaxSlots = 16;
         if (idx < 0 || idx >= kCfsMaxSlots) {
             spdlog::error("[AMS CFS] Invalid slot index for load: {}", idx);
             return "";
         }
-        return "BOX_LOAD SLOT=" + std::to_string(idx);
+        return "T" + std::to_string(idx);
     }
     std::string tnn = CfsMaterialDb::slot_to_tnn(idx);
     if (tnn.empty()) {
@@ -2082,14 +2098,12 @@ std::string AmsBackendCfs::swap_gcode(int idx, CfsMacroVariant variant) {
         // BOX_CHANGE; that name appears only in a user-written alias macro that
         // this firmware does not define.
         //
-        // FLUSH=1 is the module's own default and keeps slicer flush volumes
-        // honored; spelled explicitly so the intent survives a default change.
         constexpr int kCfsMaxSlots = 16;
         if (idx < 0 || idx >= kCfsMaxSlots) {
             spdlog::error("[AMS CFS] Invalid slot index for swap: {}", idx);
             return "";
         }
-        return "T" + std::to_string(idx) + " FLUSH=1";
+        return "T" + std::to_string(idx);
     }
     std::string tnn = CfsMaterialDb::slot_to_tnn(idx);
     if (tnn.empty()) {
@@ -2169,17 +2183,25 @@ AmsError AmsBackendCfs::dispatch_action_script(std::string gcode) {
                 // envelope ran BOX_SAVE_FAN). The K1 official CFS upgrade
                 // firmware lacks the macro and never saved fan state, so emitting
                 // it there just returns key61 — skip it on K1. (#968)
-                if (macro_variant_ != CfsMacroVariant::K1) {
+                if (macro_variant_ == CfsMacroVariant::K2) {
                     api_->execute_gcode(
                         "BOX_RESTORE_FAN", []() {}, [](const MoonrakerError&) {},
                         MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
                 }
-                api_->execute_gcode(
-                    "RESTORE_GCODE_STATE NAME=helix_cfs_load", []() {},
-                    [](const MoonrakerError&) {}, MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+                if (macro_variant_ != CfsMacroVariant::Fork) {
+                    api_->execute_gcode(
+                        "RESTORE_GCODE_STATE NAME=helix_cfs_load", []() {},
+                        [](const MoonrakerError&) {}, MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+                }
             }
         });
     };
+
+    if (macro_variant_ == CfsMacroVariant::Fork) {
+        api_->execute_gcode(gcode, std::move(on_complete), std::move(on_error),
+                            MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+        return AmsErrorHelper::success();
+    }
 
     // Homing-then-execute — same pattern as ensure_homed_then but with our
     // own completion callbacks that propagate to action-state cleanup.
@@ -2679,6 +2701,12 @@ void AmsBackendCfs::clear_slot_override(int slot_index) {
     }
 
     emit_event(EVENT_SLOT_CHANGED, std::to_string(slot_index));
+}
+
+void AmsBackendCfs::clear_box_slot_profile(int slot_index) {
+    if (macro_variant_ == CfsMacroVariant::Fork) {
+        execute_gcode("_BOX_SLOT_CLEAR SLOT=" + std::to_string(slot_index));
+    }
 }
 
 } // namespace helix::printer
