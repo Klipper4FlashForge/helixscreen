@@ -1661,11 +1661,22 @@ int MoonrakerClientMock::gcode_script(const std::string& raw_gcode) {
     if (gcode.find("SDCARD_PRINT_FILE") != std::string::npos) {
         size_t filename_pos = gcode.find("FILENAME=");
         if (filename_pos != std::string::npos) {
-            // Extract filename (ends at space or end of string)
             size_t start = filename_pos + 9;
-            size_t end = gcode.find(' ', start);
-            std::string filename =
-                (end != std::string::npos) ? gcode.substr(start, end - start) : gcode.substr(start);
+            std::string filename;
+            if (start < gcode.size() && gcode[start] == '"') {
+                // Quoted value, as Klipper's shlex tokenizer expects whenever
+                // the name contains spaces (Moonraker and the PLR resume path
+                // both always quote). Runs to the closing quote; the quotes
+                // themselves are not part of the name.
+                size_t end = gcode.find('"', start + 1);
+                filename = (end != std::string::npos) ? gcode.substr(start + 1, end - start - 1)
+                                                      : gcode.substr(start + 1);
+            } else {
+                // Bare value: ends at the next whitespace.
+                size_t end = gcode.find(' ', start);
+                filename = (end != std::string::npos) ? gcode.substr(start, end - start)
+                                                      : gcode.substr(start);
+            }
 
             // Use unified internal handler
             start_print_internal(filename);

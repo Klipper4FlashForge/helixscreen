@@ -201,7 +201,7 @@ TEST_CASE("plr_build_plan: CREALITY builds SDCARD_PRINT_FILE with ISCONTINUEPRIN
     PlrRecoveryPlan plan =
         helix::plr_build_plan(PlrBackendType::CREALITY, "benchy.gcode", confirmed_detect());
     REQUIRE(plan.backend == PlrBackendType::CREALITY);
-    REQUIRE(plan.resume_gcode == "SDCARD_PRINT_FILE FILENAME=benchy.gcode ISCONTINUEPRINT=1");
+    REQUIRE(plan.resume_gcode == "SDCARD_PRINT_FILE FILENAME=\"benchy.gcode\" ISCONTINUEPRINT=1");
     REQUIRE(plan.discard_rpc_method == "printer.pause_resume.cancel_continue_print");
     REQUIRE(plan.discard_gcode.empty());
     REQUIRE(plan.resume_allowed() == true);
@@ -251,14 +251,71 @@ TEST_CASE("plr_build_plan: CREALITY refuses an injection-shaped filename",
     REQUIRE(plan.resume_allowed() == false);
 }
 
-TEST_CASE("plr_build_plan: CREALITY accepts a filename containing spaces",
+TEST_CASE("plr_build_plan: CREALITY quotes a filename containing spaces",
           "[plr][backend][creality]") {
-    // Klipper's extended-command parser runs a parameter value up to the next
-    // KEY= or end of line, so spaces are legal and common in gcode filenames.
+    // Klipper tokenizes extended parameters with shlex in POSIX mode, so an
+    // unquoted "my part v2.gcode" splits into three tokens, two of which carry
+    // no '=' — Klipper answers "Malformed command args ... not enough values to
+    // unpack". Spaces are the common case, not the exotic one: slicers put the
+    // model name and filament name in the filename.
     PlrRecoveryPlan plan =
         helix::plr_build_plan(PlrBackendType::CREALITY, "my part v2.gcode", confirmed_detect());
     REQUIRE(plan.resume_allowed() == true);
-    REQUIRE(plan.resume_gcode == "SDCARD_PRINT_FILE FILENAME=my part v2.gcode ISCONTINUEPRINT=1");
+    REQUIRE(plan.resume_gcode ==
+            "SDCARD_PRINT_FILE FILENAME=\"my part v2.gcode\" ISCONTINUEPRINT=1");
+}
+
+TEST_CASE("plr_build_plan: CREALITY sends the sidecar path relative and quoted",
+          "[plr][backend][creality]") {
+    // Verbatim shape of the field report: the sidecar hands back an absolute
+    // path and the model name contains spaces. Both have to be handled — the
+    // quoting so Klipper's shlex tokenizer keeps the name in one piece, the
+    // root stripping so virtual_sdcard's relative file list actually matches.
+    const std::string path =
+        "/usr/data/printer_data/gcodes/PTOP Phone Stand_Elegoo PLA Matte Slate Grey_1h55m.gcode";
+    PlrRecoveryPlan plan =
+        helix::plr_build_plan(PlrBackendType::CREALITY, path, confirmed_detect());
+    REQUIRE(plan.resume_allowed() == true);
+    REQUIRE(plan.resume_gcode ==
+            "SDCARD_PRINT_FILE FILENAME=\"PTOP Phone Stand_Elegoo PLA Matte Slate "
+            "Grey_1h55m.gcode\" ISCONTINUEPRINT=1");
+    // The prompt body still shows what the sidecar actually said.
+    REQUIRE(plan.recovery_file == path);
+}
+
+// ===========================================================================
+// Sidecar path -> SDCARD_PRINT_FILE name
+// ===========================================================================
+
+TEST_CASE("plr_creality_sdcard_relative_name: strips the known data roots", "[plr][backend]") {
+    REQUIRE(helix::plr_creality_sdcard_relative_name("/usr/data/printer_data/gcodes/a.gcode") ==
+            "a.gcode");
+    REQUIRE(helix::plr_creality_sdcard_relative_name("/mnt/UDISK/printer_data/gcodes/a.gcode") ==
+            "a.gcode");
+}
+
+TEST_CASE("plr_creality_sdcard_relative_name: keeps subdirectories", "[plr][backend]") {
+    // check_subdirs=True, and the file list stores "sub/a.gcode" — dropping the
+    // subdirectory would miss just as badly as leaving the root on.
+    REQUIRE(helix::plr_creality_sdcard_relative_name(
+                "/usr/data/printer_data/gcodes/sub dir/a.gcode") == "sub dir/a.gcode");
+    // A job genuinely stored in a folder called "gcodes" keeps it: the marker
+    // search takes the FIRST segment, not the last.
+    REQUIRE(helix::plr_creality_sdcard_relative_name("/opt/printer_data/gcodes/gcodes/a.gcode") ==
+            "gcodes/a.gcode");
+}
+
+TEST_CASE("plr_creality_sdcard_relative_name: relative input passes through", "[plr][backend]") {
+    REQUIRE(helix::plr_creality_sdcard_relative_name("a.gcode") == "a.gcode");
+    REQUIRE(helix::plr_creality_sdcard_relative_name("sub/a.gcode") == "sub/a.gcode");
+    REQUIRE(helix::plr_creality_sdcard_relative_name("").empty());
+}
+
+TEST_CASE("plr_creality_sdcard_relative_name: unrecognizable root left alone", "[plr][backend]") {
+    // Nothing safe to strip. Sending it unchanged fails loudly with "Unable to
+    // open file" rather than silently addressing the wrong job.
+    REQUIRE(helix::plr_creality_sdcard_relative_name("/somewhere/else/a.gcode") ==
+            "/somewhere/else/a.gcode");
 }
 
 TEST_CASE("plr_build_plan: NONE backend yields no actions at all", "[plr][backend]") {
@@ -287,6 +344,13 @@ TEST_CASE("plr_is_safe_recovery_filename: gcode terminators rejected", "[plr][ba
     REQUIRE(helix::plr_is_safe_recovery_filename("a#hash") == false);
     // '=' would start a new extended parameter, truncating the filename.
     REQUIRE(helix::plr_is_safe_recovery_filename("a=b.gcode") == false);
+}
+
+TEST_CASE("plr_is_safe_recovery_filename: shlex quoting characters rejected", "[plr][backend]") {
+    // The value is emitted inside double quotes, so a '"' closes it early and
+    // everything after becomes fresh parameters; '\' is shlex's POSIX escape.
+    REQUIRE(helix::plr_is_safe_recovery_filename("a\" ISCONTINUEPRINT=0 X=\"b") == false);
+    REQUIRE(helix::plr_is_safe_recovery_filename("a\\b.gcode") == false);
 }
 
 // ===========================================================================

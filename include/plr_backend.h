@@ -93,11 +93,19 @@ struct PlrRecoveryPlan {
 PlrRecoveryPlan plr_build_plan(PlrBackendType backend, const std::string& recovery_file,
                                const PlrDetectResult& detect);
 
-/// Reject filenames that could break out of `SDCARD_PRINT_FILE FILENAME=<f>`.
-/// Klipper's extended-command parser runs a parameter value up to the next
-/// `KEY=` or end of line, so spaces are fine; comment/terminator characters and
-/// `=` are not.
+/// Reject filenames that could break out of `SDCARD_PRINT_FILE FILENAME="<f>"`.
+/// The value is emitted double-quoted, so spaces are fine; `"` and `\` (shlex's
+/// quote and escape characters), comment/terminator characters and `=` are not.
 bool plr_is_safe_recovery_filename(const std::string& name);
+
+/// Convert the sidecar's ABSOLUTE `file_path` into the name
+/// `SDCARD_PRINT_FILE` expects: relative to the virtual_sdcard root. Klipper
+/// matches FILENAME against a file list built relative to that root (an
+/// absolute path merely loses its leading `/` and then misses), and on the
+/// resume path the reopened file's absolute name is compared back against the
+/// sidecar's `file_path` — a mismatch discards the recovery data and restarts
+/// the print. An already-relative name is returned unchanged.
+std::string plr_creality_sdcard_relative_name(const std::string& path);
 
 /// Extract `file_path` from the Creality recovery sidecar JSON. Returns an
 /// empty string for malformed input or a missing/non-string key.
