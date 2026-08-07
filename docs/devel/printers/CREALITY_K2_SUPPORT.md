@@ -348,7 +348,11 @@ shasum -a 256 box.py   # must match the manifest digest
 
 `install.py` is a **kernel and rootfs flasher**. Downloading and reading it is safe; executing it is not. Nothing in this workflow needs it to run.
 
-Verified 2026-08-06 against `FIRMWARE_VERSION = 6.18` (which pins HelixScreen `v0.99.87`): `box.py` 2754 lines, `WIDGET_VERSION = 2`. Note that `WIDGET_VERSION` has **not** moved across the releases seen so far, so it identifies the module but does *not* version its command set — a command added in a later firmware cannot be feature-detected from the payload. `_register_commands` in `box.py` plus `_register_t_commands` (the per-slot `T<n>` handlers, registered only after bus enumeration) are the full command surface.
+Re-verified 2026-08-07 against `FIRMWARE_VERSION = 6.18`: `box.py` 2776 lines, sha256 `4cf85e6d…2d28695a`, now declaring `API_VERSION = 1` and `LEGACY_WIDGET_VERSION = 2`, with `_BOX_SLOT_CLEAR` registered in `_register_commands`. The payload emits **both** `api_version` and `fluidd_widget_version`, so a module carrying the new field is still readable by a HelixScreen that keys on the old one.
+
+> **`FIRMWARE_VERSION` does not identify the module.** The 2026-08-06 fetch of the *same* `6.18` pin returned a 2754-line `box.py` with `WIDGET_VERSION = 2` and no `_BOX_SLOT_CLEAR`. The artifacts were republished in place without a version bump, so two printers can both report `6.18` and run different command surfaces. Trust the manifest digest, not the version string — and re-fetch before relying on any earlier reading here.
+
+`_register_commands` in `box.py` plus `_register_t_commands` (the per-slot `T<n>` handlers, registered only after bus enumeration) are the full command surface.
 
 #### Flat schema fields
 
@@ -368,7 +372,8 @@ Top-level:
 | `materials` | dict | `{"PLA": {"target_temp": 220}, ...}` — per-material recommended temps, keyed by the same string each slot reports. Stock has no equivalent. |
 | `load_path` | object | Shared feed path: `encoder`, `buffer`, `printhead_sensor`, `clog_detection` |
 | `data_ready` / `driver_ready` | bool | Module readiness |
-| `api_version` | int | Box command/status contract version; HelixScreen supports version 1 |
+| `api_version` | int | Box command/status contract version; HelixScreen supports version 1. This is the dialect signal. |
+| `fluidd_widget_version` | int | The module's `LEGACY_WIDGET_VERSION`, still emitted alongside `api_version` for the port's own Fluidd widget. Not a command-set version — it stayed at 2 across a release that added commands. |
 
 Per-slot (`slots[i]`):
 

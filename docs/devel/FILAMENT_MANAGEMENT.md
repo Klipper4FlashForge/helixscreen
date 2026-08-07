@@ -2244,7 +2244,7 @@ The `box` Klipper object is shared by several firmwares that agree on almost not
 |----------------|--------------------|---------------|-----------------|
 | K2, K2 Pro, K2 Plus (built-in CFS) | Creality K2 firmware | `CR_BOX_*` primitives + `BOX_SAVE_FAN`/`BOX_MODE_WAIT` envelope | `PrinterDetector::is_creality_k1() == false` |
 | K1, K1C, K1 Max (official CFS upgrade ≥ v2.3.5.33) | Creality K1 CFS upgrade firmware | Plain `BOX_*` primitives, no fan-save/mode-wait | `PrinterDetector::is_creality_k1() == true` |
-| K2 Plus on a community Kalico port | `Jacob10383/kalico` + a reimplemented `box.py` | High-level bare `T<n>` / `BOX_UNLOAD` | `api_version == 1` in the box payload |
+| K2 Plus on a community Kalico port | [`Jacob10383/kalico`](https://github.com/Jacob10383/kalico) + a reimplemented `box.py` | High-level bare `T<n>` / `BOX_UNLOAD` | `api_version == 1` in the box payload |
 
 **Axis 2 — box schema** (`CfsSchema`), detected per-payload by `AmsBackendCfs::detect_schema()`:
 
@@ -2258,6 +2258,8 @@ Both axes are decided **from the payload, never from `PrinterDetector`** — a c
 The command dialect is selected by the explicit `api_version == 1` field rather than inferred from the `Flat` status layout, so another firmware can use the same layout without inheriting this one's commands. It also cannot be detected with `has_macro("BOX_LOAD")`: the Fork commands are registered in Python, so they are not gcode_macros and never appear in `printer.objects.list`.
 
 A `Flat` box whose module we cannot identify still has its control paths refused by `reject_if_flat_schema()`. Full field mapping, command signatures and remaining gaps: `printers/CREALITY_K2_SUPPORT.md` § "Community Kalico port".
+
+[`Jacob10383/kalico`](https://github.com/Jacob10383/kalico) is the Kalico (Danger-Klipper) fork the port builds on — it is the firmware *base*, and it does **not** contain the CFS modules. `box.py` and its siblings are dropped in by the port's installer and are not committed to any public repo, so the repo link is context rather than a source for the command surface. To read the modules themselves, fetch them from the port's content-addressed firmware store: `printers/CREALITY_K2_SUPPORT.md` § "Getting the module source".
 
 ### Firmware requirements
 
