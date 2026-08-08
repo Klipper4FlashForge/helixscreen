@@ -129,6 +129,10 @@ class GridEditMode {
     /// @return {col_step, row_step}
     static std::pair<int, int> snap_step_for(const std::string& widget_id);
 
+    /// Number of lattice intersections drawn for a selection with these snap
+    /// steps. Public so the object cost can be pinned without a live grid.
+    static int dot_count(int ncols, int nrows, int col_step, int row_step);
+
     /// Detect which resize edge the pointer is near, or None if not near any edge.
     ResizeEdge detect_resize_edge(int px, int py, const lv_area_t& widget_area) const;
 
@@ -148,6 +152,11 @@ class GridEditMode {
 
     void create_dots_overlay();
     void destroy_dots_overlay();
+    /// Redraw the lattice for the current selection. The visible dots are the
+    /// boundaries the selected widget can actually snap to, so they change when
+    /// the selection does.
+    void refresh_dots_overlay();
+    std::string selected_widget_id() const;
     void create_selection_chrome(lv_obj_t* widget);
     void destroy_selection_chrome();
     void remove_selected_widget();

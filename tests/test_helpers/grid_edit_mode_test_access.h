@@ -18,6 +18,13 @@ struct GridEditModeTestAccess {
     static int snap_row(const GridEditMode& em) {
         return em.snap_preview_row_;
     }
+
+    /// The lattice overlay, so a test can confirm it is actually rebuilt (a
+    /// new lv_obj_t*, not the one from before the selection changed) and that
+    /// its child count matches the dot lattice the current selection should draw.
+    static lv_obj_t* dots_overlay(const GridEditMode& em) {
+        return em.dots_overlay_;
+    }
 };
 
 } // namespace helix

@@ -1,9 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "ui_breakpoint.h"
+
+#include "../lvgl_test_fixture.h"
+#include "../test_fixtures.h"
+#include "../test_helpers/grid_edit_mode_test_access.h"
+#include "config.h"
 #include "grid_edit_mode.h"
 #include "grid_layout.h"
 #include "panel_widget_config.h"
+#include "panel_widget_manager.h"
 #include "panel_widget_registry.h"
+#include "theme_manager.h"
 
 #include <unordered_set>
 
@@ -1692,6 +1700,121 @@ TEST_CASE("snap_step_for: whole-cell widgets step by a full cell",
     auto [uc, ur] = GridEditMode::snap_step_for("not_a_widget");
     CHECK(uc == helix::GridLayout::TRACKS_PER_CELL);
     CHECK(ur == helix::GridLayout::TRACKS_PER_CELL);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "dots overlay: minor dots appear only for a half-capable selection",
+                 "[grid_edit][half_cell][dots]") {
+    // The lattice is (cols/step + 1) x (rows/step + 1) intersections. With
+    // TRACKS_PER_CELL == 2 on a 12x8 track grid a whole-cell selection draws
+    // 7x5 = 35 dots and a half-col selection draws 13x5 = 65.
+    const int cols = 12;
+    const int rows = 8;
+    const int cell = helix::GridLayout::TRACKS_PER_CELL;
+
+    CHECK(GridEditMode::dot_count(cols, rows, cell, cell) == (cols / cell + 1) * (rows / cell + 1));
+    CHECK(GridEditMode::dot_count(cols, rows, 1, cell) == (cols + 1) * (rows / cell + 1));
+    CHECK(GridEditMode::dot_count(cols, rows, 1, 1) == (cols + 1) * (rows + 1));
+}
+
+TEST_CASE_METHOD(XMLTestFixture, "dots overlay: rebuilds to match the selected widget's snap step",
+                 "[grid_edit][half_cell][dots]") {
+    // dot_count() above proves the counting formula; this proves GridEditMode
+    // actually calls it on every selection change. "camera" has no half-cell
+    // support (snap_step_for returns {cell, cell}); "shutdown" supports half
+    // columns (snap_step_for returns {1, cell}) — see the registry entries
+    // this reads from (panel_widget_registry.cpp) and the equivalent
+    // snap_step_for() assertions above.
+    lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
+    REQUIRE(bp_subj != nullptr);
+    REQUIRE(as_breakpoint(lv_subject_get_int(bp_subj)) == UiBreakpoint::Medium);
+    const int ncols = GridLayout::get_cols(UiBreakpoint::Medium);
+    const int nrows = GridLayout::get_rows(UiBreakpoint::Medium);
+    REQUIRE(ncols > 0);
+    REQUIRE(nrows > 0);
+    const int cell = GridLayout::TRACKS_PER_CELL;
+
+    lv_obj_t* container = lv_obj_create(test_screen());
+    lv_obj_remove_flag(container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_all(container, 0, 0);
+    lv_obj_set_style_border_width(container, 0, 0);
+    lv_obj_set_size(container, 640, 400);
+
+    auto col_dsc = GridLayout::make_col_dsc(UiBreakpoint::Medium);
+    auto row_dsc = GridLayout::make_row_dsc(UiBreakpoint::Medium);
+    lv_obj_set_grid_dsc_array(container, col_dsc.data(), row_dsc.data());
+
+    lv_obj_t* camera_widget = lv_obj_create(container);
+    lv_obj_set_name(camera_widget, "camera");
+    lv_obj_remove_flag(camera_widget, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_grid_cell(camera_widget, LV_GRID_ALIGN_STRETCH, 0, 2, LV_GRID_ALIGN_STRETCH, 0, 2);
+
+    lv_obj_t* shutdown_widget = lv_obj_create(container);
+    lv_obj_set_name(shutdown_widget, "shutdown");
+    lv_obj_remove_flag(shutdown_widget, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_grid_cell(shutdown_widget, LV_GRID_ALIGN_STRETCH, 2, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
+    lv_obj_update_layout(container);
+
+    // PanelWidgetConfig::load() appends registry defaults onto the FIRST page
+    // parsed (parse_widget_array's append_registry_defaults, gated on
+    // pages_.empty() in src/system/panel_widget_config.cpp), so the test's
+    // two widgets live on a second page — same trick test_grid_edit_drag_path
+    // uses. main_page_index points AT that second page so create_dots_overlay()
+    // does not also add a delete_page_btn_ child, which would throw off the
+    // exact child-count checks below.
+    const std::string panel_id = "test_grid_edit_mode_dots";
+    constexpr int kPageIndex = 1;
+    auto* cfg = Config::get_instance();
+    cfg->set<nlohmann::json>(
+        cfg->df() + "panel_widgets/" + panel_id,
+        nlohmann::json{{"main_page_index", kPageIndex},
+                       {"next_page_id", 2},
+                       {"pages",
+                        {{{"id", "main"}, {"widgets", nlohmann::json::array()}},
+                         {{"id", "test"},
+                          {"widgets",
+                           {{{"id", "camera"},
+                             {"enabled", true},
+                             {"col", 0},
+                             {"row", 0},
+                             {"colspan", 2},
+                             {"rowspan", 2}},
+                            {{"id", "shutdown"},
+                             {"enabled", true},
+                             {"col", 2},
+                             {"row", 0},
+                             {"colspan", 1},
+                             {"rowspan", 1}}}}}}}});
+
+    auto& mgr = PanelWidgetManager::instance();
+    mgr.get_widget_config(panel_id).mark_dirty();
+    mgr.clear_panel_config(panel_id);
+    auto& config = mgr.get_widget_config(panel_id);
+    REQUIRE(config.page_entries(static_cast<size_t>(kPageIndex)).size() == 2);
+
+    GridEditMode em;
+    em.enter(container, &config, kPageIndex);
+    lv_obj_t* dots_at_enter = GridEditModeTestAccess::dots_overlay(em);
+    REQUIRE(dots_at_enter != nullptr);
+
+    em.select_widget(camera_widget);
+    lv_obj_t* dots_for_camera = GridEditModeTestAccess::dots_overlay(em);
+    REQUIRE(dots_for_camera != nullptr);
+    // A new lattice object, not the one enter() built — the selection changed
+    // what is a legal drop target, so the overlay must be rebuilt, not reused.
+    CHECK(dots_for_camera != dots_at_enter);
+    CHECK(lv_obj_get_child_count(dots_for_camera) ==
+          static_cast<uint32_t>(GridEditMode::dot_count(ncols, nrows, cell, cell)));
+
+    em.select_widget(shutdown_widget);
+    lv_obj_t* dots_for_shutdown = GridEditModeTestAccess::dots_overlay(em);
+    REQUIRE(dots_for_shutdown != nullptr);
+    CHECK(dots_for_shutdown != dots_for_camera);
+    CHECK(lv_obj_get_child_count(dots_for_shutdown) ==
+          static_cast<uint32_t>(GridEditMode::dot_count(ncols, nrows, 1, cell)));
+
+    em.exit();
+    mgr.clear_panel_config(panel_id);
 }
 
 TEST_CASE("compute_resize_result: a stepped span never lands on an odd count",

@@ -150,6 +150,13 @@ void GridEditMode::select_widget(lv_obj_t* widget) {
     }
     destroy_selection_chrome();
     selected_ = widget;
+    // The lattice shows the boundaries this selection can snap to, so it is
+    // rebuilt for every selection change. Refresh before create_selection_chrome()
+    // — dots_overlay_ is a full-grid clickable event shield, so it must be the
+    // older sibling for the chrome buttons created below to receive clicks at
+    // all (lv_indev_search_obj walks a parent's children newest-first and
+    // returns the first clickable hit, per create_dots_overlay()'s ordering note).
+    refresh_dots_overlay();
     if (widget && container_) {
         create_selection_chrome(widget);
     }
@@ -570,6 +577,14 @@ int GridEditMode::find_config_index_for_widget(lv_obj_t* widget) const {
     return -1;
 }
 
+std::string GridEditMode::selected_widget_id() const {
+    const int idx = find_config_index_for_widget(selected_);
+    if (idx < 0 || !config_) {
+        return {};
+    }
+    return config_->page_entries(static_cast<size_t>(page_index_))[static_cast<size_t>(idx)].id;
+}
+
 helix::CellMetrics GridEditMode::current_metrics(lv_area_t* out_content) const {
     lv_area_t content{};
     if (!container_) {
@@ -943,6 +958,13 @@ int GridEditMode::round_to_grid_cell(int px, int content_origin, int content_siz
     const float tracks = static_cast<float>(px - content_origin) / pitch;
     const int snapped = static_cast<int>(std::round(tracks / static_cast<float>(step))) * step;
     return std::clamp(snapped, 0, (ncells / step) * step);
+}
+
+int GridEditMode::dot_count(int ncols, int nrows, int col_step, int row_step) {
+    if (ncols <= 0 || nrows <= 0 || col_step <= 0 || row_step <= 0) {
+        return 0;
+    }
+    return (ncols / col_step + 1) * (nrows / row_step + 1);
 }
 
 std::pair<int, int> GridEditMode::snap_step_for(const std::string& widget_id) {
@@ -2184,39 +2206,49 @@ void GridEditMode::create_dots_overlay() {
         return;
     }
 
-    constexpr int DOT_SIZE = 4;
-    constexpr int DOT_HALF = DOT_SIZE / 2;
+    constexpr int DOT_SIZE_MAJOR = 4;
+    constexpr int DOT_SIZE_MINOR = 3;
     // Use contrast text color so dots are visible on both light and dark backgrounds
     lv_color_t screen_bg = ThemeManager::instance().current_palette().screen_bg;
     lv_color_t dot_color = theme_manager_get_contrast_color(screen_bg);
 
-    // Place a dot at each grid intersection (ncols+1 x nrows+1 points)
-    for (int r = 0; r <= nrows; ++r) {
-        for (int c = 0; c <= ncols; ++c) {
+    const int cell = GridLayout::TRACKS_PER_CELL;
+    auto [col_step, row_step] =
+        selected_ ? snap_step_for(selected_widget_id()) : std::pair<int, int>{cell, cell};
+
+    // c/r run 0..ncols/0..nrows inclusive to draw both edges of the lattice.
+    // grid_track_origin() only knows track starts (0..n-1); the final boundary
+    // is the right/bottom edge of the last track, not a further track start
+    // (which would land one gutter past the content edge).
+    auto track_x = [&](int c) {
+        return static_cast<int>(
+            c < ncols ? grid_track_origin(m.cell_w, m.gutter, c)
+                      : grid_track_origin(m.cell_w, m.gutter, std::max(ncols - 1, 0)) + m.cell_w);
+    };
+    auto track_y = [&](int r) {
+        return static_cast<int>(
+            r < nrows ? grid_track_origin(m.cell_h, m.gutter, r)
+                      : grid_track_origin(m.cell_h, m.gutter, std::max(nrows - 1, 0)) + m.cell_h);
+    };
+
+    // Whole-cell intersections are always legal drop targets; the half-cell
+    // intersections between them are legal only for a widget selected on an
+    // axis it supports, so they are drawn smaller and fainter to read as a
+    // finer, secondary lattice rather than a change to the base grid.
+    for (int r = 0; r <= nrows; r += row_step) {
+        for (int c = 0; c <= ncols; c += col_step) {
+            const bool major = (c % cell == 0) && (r % cell == 0);
+            const int size = major ? DOT_SIZE_MAJOR : DOT_SIZE_MINOR;
+
             lv_obj_t* dot = lv_obj_create(dots_overlay_);
-            lv_obj_set_size(dot, DOT_SIZE, DOT_SIZE);
+            lv_obj_set_size(dot, size, size);
             lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
             lv_obj_set_style_bg_color(dot, dot_color, 0);
-            lv_obj_set_style_bg_opa(dot, LV_OPA_30, 0);
+            lv_obj_set_style_bg_opa(dot, major ? LV_OPA_30 : LV_OPA_10, 0);
             lv_obj_set_style_border_width(dot, 0, 0);
             lv_obj_remove_flag(dot, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_remove_flag(dot, LV_OBJ_FLAG_SCROLLABLE);
-
-            // c/r run 0..ncols/0..nrows inclusive to draw both edges of the lattice.
-            // grid_track_origin() only knows track starts (0..n-1); the final
-            // boundary is the right/bottom edge of the last track, not a further
-            // track start (which would land one gutter past the content edge).
-            int x = static_cast<int>(
-                        c < ncols ? grid_track_origin(m.cell_w, m.gutter, c)
-                                  : grid_track_origin(m.cell_w, m.gutter, std::max(ncols - 1, 0)) +
-                                        m.cell_w) -
-                    DOT_HALF;
-            int y = static_cast<int>(
-                        r < nrows ? grid_track_origin(m.cell_h, m.gutter, r)
-                                  : grid_track_origin(m.cell_h, m.gutter, std::max(nrows - 1, 0)) +
-                                        m.cell_h) -
-                    DOT_HALF;
-            lv_obj_set_pos(dot, x, y);
+            lv_obj_set_pos(dot, track_x(c) - size / 2, track_y(r) - size / 2);
         }
     }
 
@@ -2271,6 +2303,11 @@ void GridEditMode::destroy_dots_overlay() {
         safe_deferred_delete(dots_overlay_);
         dots_overlay_ = nullptr;
     }
+}
+
+void GridEditMode::refresh_dots_overlay() {
+    destroy_dots_overlay();
+    create_dots_overlay();
 }
 
 // ---------------------------------------------------------------------------
