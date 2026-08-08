@@ -414,15 +414,28 @@ class PrinterState {
     }
 
     /**
-     * @brief Set the current print's thumbnail path
+     * @brief Gcode filename the current thumbnail path was produced for
      *
-     * Called by PrintStatusPanel after successfully loading a thumbnail.
-     * This allows other UI components (e.g., HomePanel) to display the
-     * same thumbnail without duplicating the loading logic.
+     * Set before the path subject is published, so an observer of
+     * get_print_thumbnail_path_subject() can trust it describes the path it sees.
      *
-     * @param path LVGL-compatible path (e.g., "A:/tmp/thumbnail_xxx.bin")
+     * @return Filename, or "" when no thumbnail identity has been set
      */
-    void set_print_thumbnail_path(const std::string& path);
+    [[nodiscard]] const std::string& get_print_thumbnail_file() const {
+        return print_domain_.get_print_thumbnail_file();
+    }
+
+    /**
+     * @brief Set the current print's thumbnail, tagged with the file it is for
+     *
+     * The path alone carries no identity, so consumers cannot tell a fresh
+     * thumbnail from a previous job's. Pairing it with @p for_file makes
+     * staleness decidable. Main thread only — publishing fires observers.
+     *
+     * @param for_file Gcode filename this path was produced for ("" to clear identity)
+     * @param path LVGL-compatible path (e.g., "A:/tmp/thumbnail_xxx.bin"), "" to clear
+     */
+    void set_print_thumbnail(const std::string& for_file, const std::string& path);
 
     /**
      * @brief Get print job state enum subject

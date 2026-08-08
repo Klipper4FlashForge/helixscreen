@@ -247,7 +247,7 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, MoonrakerAPI* ap
 
     // Subscribe to shared print thumbnail path set by ActivePrintMediaManager.
     // Use observe_string_immediate: the handler only calls lv_image_set_src
-    // (no observer lifecycle changes), and set_print_thumbnail_path is always called
+    // (no observer lifecycle changes), and set_print_thumbnail is always called
     // from the UI thread via queue_update.
     print_thumbnail_path_observer_ = ui::observe_string_immediate<PrintStatusPanel>(
         printer_state_.get_print_thumbnail_path_subject(), this,
@@ -3318,12 +3318,13 @@ void PrintStatusPanel::load_thumbnail_for_file(const std::string& filename) {
     auto token = lifetime_.token();
     api_->files().get_file_metadata(
         metadata_filename,
-        [this, token, ctx](const FileMetadata& metadata) {
+        [this, token, ctx, filename](const FileMetadata& metadata) {
             // L081 Mechanism C: defer the entire body — it touches member state
             // (the load context, get_name(), api_, cached_thumbnail_path_ via
             // the inner cb) and dispatches to LVGL-touching code paths. Run it
             // on the main thread.
-            token.defer("PrintStatusPanel::metadata_apply", [this, token, ctx, metadata]() {
+            token.defer("PrintStatusPanel::metadata_apply", [this, token, ctx, filename,
+                                                             metadata]() {
                 // Superseded by a newer load — drop it.
                 if (!ctx.is_valid()) {
                     spdlog::trace("[PrintStatusPanel] Stale metadata callback, ignoring");
@@ -3370,12 +3371,13 @@ void PrintStatusPanel::load_thumbnail_for_file(const std::string& filename) {
 
                 get_thumbnail_cache().fetch(
                     req, ctx,
-                    [this, ctx, token](const std::string& lvgl_path, bool /*degraded*/) {
+                    [this, ctx, token, filename](const std::string& lvgl_path, bool /*degraded*/) {
                         // L081 Mechanism C: defer everything. The inner cb
                         // mutates cached_thumbnail_path_ and calls get_name();
                         // fetch may invoke us off the main thread depending on
                         // cache state. Marshal the whole body.
-                        token.defer("PrintStatusPanel::thumbnail_apply", [this, ctx, lvgl_path]() {
+                        token.defer("PrintStatusPanel::thumbnail_apply", [this, ctx, filename,
+                                                                          lvgl_path]() {
                             if (!ctx.is_valid()) {
                                 return;
                             }
@@ -3383,7 +3385,7 @@ void PrintStatusPanel::load_thumbnail_for_file(const std::string& filename) {
                             // Store the cached path (without "A:" prefix for internal use)
                             cached_thumbnail_path_ = lvgl_path;
 
-                            get_printer_state().set_print_thumbnail_path(lvgl_path);
+                            get_printer_state().set_print_thumbnail(filename, lvgl_path);
 
                             if (print_thumbnail_) {
                                 lv_image_set_src(print_thumbnail_, lvgl_path.c_str());

@@ -238,7 +238,7 @@ TEST_CASE_METHOD(ActivePrintMediaManagerTestFixture,
     set_print_filename("test.gcode");
 
     // Manually set a thumbnail path (simulating a loaded thumbnail)
-    state().set_print_thumbnail_path("A:/tmp/thumbnail_abc123.bin");
+    state().set_print_thumbnail("test.gcode", "A:/tmp/thumbnail_abc123.bin");
     REQUIRE(get_thumbnail_path() == "A:/tmp/thumbnail_abc123.bin");
 
     // When filename is cleared, thumbnail is PRESERVED (not cleared)
@@ -256,7 +256,7 @@ TEST_CASE_METHOD(ActivePrintMediaManagerTestFixture,
     REQUIRE(get_display_filename() == "first_print");
 
     // Manually set thumbnail (simulating loaded thumbnail)
-    state().set_print_thumbnail_path("A:/tmp/first_thumb.bin");
+    state().set_print_thumbnail("first_print.gcode", "A:/tmp/first_thumb.bin");
     REQUIRE(get_thumbnail_path() == "A:/tmp/first_thumb.bin");
 
     // Start a NEW print - this should replace display name
@@ -573,16 +573,16 @@ TEST_CASE_METHOD(ActivePrintMediaManagerTestFixture,
     REQUIRE(last_observed_path.empty());
 
     // Setting a thumbnail path should fire the observer
-    state().set_print_thumbnail_path("A:/cache/thumb.bin");
+    state().set_print_thumbnail("model.gcode", "A:/cache/thumb.bin");
     REQUIRE(observer_fire_count == 2);
     REQUIRE(last_observed_path == "A:/cache/thumb.bin");
 
-    // Setting same path should NOT fire (de-duplication in set_print_thumbnail_path)
-    state().set_print_thumbnail_path("A:/cache/thumb.bin");
+    // Setting same path should NOT fire (de-duplication in set_print_thumbnail)
+    state().set_print_thumbnail("model.gcode", "A:/cache/thumb.bin");
     REQUIRE(observer_fire_count == 2);
 
     // Clearing path should fire
-    state().set_print_thumbnail_path("");
+    state().set_print_thumbnail("model.gcode", "");
     REQUIRE(observer_fire_count == 3);
     REQUIRE(last_observed_path.empty());
 
@@ -610,9 +610,9 @@ TEST_CASE_METHOD(
     REQUIRE(observed_values[0].empty());
 
     // Rapid updates - observer should see each distinct value
-    state().set_print_thumbnail_path("A:/cache/first.bin");
-    state().set_print_thumbnail_path("A:/cache/second.bin");
-    state().set_print_thumbnail_path("A:/cache/third.bin");
+    state().set_print_thumbnail("first.gcode", "A:/cache/first.bin");
+    state().set_print_thumbnail("second.gcode", "A:/cache/second.bin");
+    state().set_print_thumbnail("third.gcode", "A:/cache/third.bin");
 
     REQUIRE(observed_values.size() == 4); // initial + 3 changes
     REQUIRE(observed_values[1] == "A:/cache/first.bin");
@@ -628,7 +628,7 @@ TEST_CASE_METHOD(ActivePrintMediaManagerTestFixture,
     SECTION("different file after idle clears old thumbnail") {
         // Print A starts and gets a thumbnail
         set_print_filename("print_a.gcode");
-        state().set_print_thumbnail_path("A:/cache/print_a_thumb.bin");
+        state().set_print_thumbnail("print_a.gcode", "A:/cache/print_a_thumb.bin");
         REQUIRE(get_thumbnail_path() == "A:/cache/print_a_thumb.bin");
 
         // Print A ends - Moonraker sends empty filename
@@ -646,7 +646,7 @@ TEST_CASE_METHOD(ActivePrintMediaManagerTestFixture,
     SECTION("direct switch between prints clears old thumbnail") {
         // Print A with thumbnail
         set_print_filename("first.gcode");
-        state().set_print_thumbnail_path("A:/cache/first_thumb.bin");
+        state().set_print_thumbnail("first.gcode", "A:/cache/first_thumb.bin");
         REQUIRE(get_thumbnail_path() == "A:/cache/first_thumb.bin");
 
         // Print B starts immediately (no empty filename in between)
@@ -658,7 +658,7 @@ TEST_CASE_METHOD(ActivePrintMediaManagerTestFixture,
     SECTION("same filename reprint preserves thumbnail") {
         // Print A with thumbnail
         set_print_filename("benchy.gcode");
-        state().set_print_thumbnail_path("A:/cache/benchy_thumb.bin");
+        state().set_print_thumbnail("benchy.gcode", "A:/cache/benchy_thumb.bin");
         REQUIRE(get_thumbnail_path() == "A:/cache/benchy_thumb.bin");
 
         // Same file reprinted - idempotent guard means no change, which is correct

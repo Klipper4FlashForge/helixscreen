@@ -112,8 +112,14 @@ void ActivePrintMediaManager::clear_thumbnail_source() {
 }
 
 void ActivePrintMediaManager::set_thumbnail_path(const std::string& path) {
-    // Set the thumbnail path directly (bypasses Moonraker API lookup)
-    printer_state_.set_print_thumbnail_path(path);
+    // Set the thumbnail path directly (bypasses Moonraker API lookup).
+    // The file it belongs to is the effective filename this manager is tracking:
+    // the source override when one is set (PrintStartController sets it just
+    // before handing us the pre-extracted path), otherwise the file the last
+    // process_filename() load was for. Same precedence as process_filename().
+    const std::string& for_file =
+        thumbnail_source_filename_.empty() ? last_effective_filename_ : thumbnail_source_filename_;
+    printer_state_.set_print_thumbnail(for_file, path);
     // A pre-extracted thumbnail (USB / embedded G-code) counts as loaded for
     // retry purposes; an empty path clears that state.
     thumbnail_loaded_ = !path.empty();
@@ -175,7 +181,9 @@ void ActivePrintMediaManager::process_filename(const char* raw_filename) {
         // last_loaded_thumbnail_filename_ is empty, this is the first print and any
         // existing thumbnail was intentionally pre-set (e.g., USB/PrintStartController).
         if (!last_loaded_thumbnail_filename_.empty()) {
-            printer_state_.set_print_thumbnail_path("");
+            // The clear belongs to the file we are about to load for: "nothing
+            // yet for effective_filename", not "nothing for the previous print".
+            printer_state_.set_print_thumbnail(effective_filename, "");
         }
         // New file: drop any pending retry for the previous file and reset
         // the per-filename retry budget.
@@ -362,17 +370,18 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
 
                 get_thumbnail_cache().fetch(
                     req, ctx,
-                    [this, tok = lifetime_.token(), ctx](const std::string& lvgl_path,
-                                                         bool /*degraded*/) {
+                    [this, tok = lifetime_.token(), ctx, filename](const std::string& lvgl_path,
+                                                                   bool /*degraded*/) {
                         // bg thread (thumbnail prescale worker): no member access here.
                         std::string path = lvgl_path;
-                        tok.defer("ActivePrintMediaManager::on_thumbnail", [this, ctx, path]() {
+                        tok.defer("ActivePrintMediaManager::on_thumbnail", [this, ctx, filename,
+                                                                            path]() {
                             if (!ctx.is_valid()) {
                                 spdlog::trace("[ActivePrintMediaManager] Stale thumbnail "
                                               "callback, ignoring");
                                 return;
                             }
-                            printer_state_.set_print_thumbnail_path(path);
+                            printer_state_.set_print_thumbnail(filename, path);
                             if (thumbnail_retry_count_ > 0) {
                                 spdlog::info("[ActivePrintMediaManager] Thumbnail loaded after "
                                              "{} retries: {}",
@@ -679,7 +688,9 @@ void ActivePrintMediaManager::clear_print_info() {
     // Thread-safe clear of shared subjects (capture printer_state_ for testability)
     PrinterState* state = &printer_state_;
     helix::ui::queue_update([state]() {
-        state->set_print_thumbnail_path("");
+        // Everything for the previous print is being dropped, including the
+        // identity — there is no file this clear is "for".
+        state->set_print_thumbnail("", "");
         state->set_print_display_filename("");
         spdlog::debug("[ActivePrintMediaManager] Cleared print info subjects");
     });

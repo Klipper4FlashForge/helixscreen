@@ -263,7 +263,7 @@ void PrintStatusWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
                                                });
 
     // Use observe_string_immediate: the thumbnail handler only calls lv_image_set_src
-    // (no observer lifecycle changes), and set_print_thumbnail_path is always called
+    // (no observer lifecycle changes), and set_print_thumbnail is always called
     // from the UI thread via queue_update. Immediate avoids the double-deferral that
     // caused stale reads when the subject changed between notification and handler.
     print_thumbnail_path_observer_ = observe_string_immediate<PrintStatusWidget>(

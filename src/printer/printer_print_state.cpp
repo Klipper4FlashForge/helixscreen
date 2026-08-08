@@ -932,14 +932,18 @@ void PrinterPrintState::set_print_outcome(PrintOutcome outcome) {
     }
 }
 
-void PrinterPrintState::set_print_thumbnail_path(const std::string& path) {
-    // Thumbnail path is set from PrintStatusPanel via ui_queue_update(),
-    // so this runs on the main thread and can update the subject directly.
+void PrinterPrintState::set_print_thumbnail(const std::string& for_file, const std::string& path) {
+    // Callers marshal to the main thread (ui_queue_update / token.defer) before
+    // reaching here, so the subject can be updated directly.
     if (path.empty()) {
-        spdlog::debug("[PrinterPrintState] Clearing print thumbnail path");
+        spdlog::debug("[PrinterPrintState] Clearing print thumbnail path for '{}'", for_file);
     } else {
-        spdlog::debug("[PrinterPrintState] Setting print thumbnail path: {}", path);
+        spdlog::debug("[PrinterPrintState] Setting print thumbnail path for '{}': {}", for_file,
+                      path);
     }
+    // Order matters: for_file must be visible BEFORE any observer of the path
+    // subject runs, so observers can trust it describes the path they see.
+    print_thumbnail_file_ = for_file;
     if (strcmp(lv_subject_get_string(&print_thumbnail_path_), path.c_str()) != 0) {
         lv_subject_copy_string(&print_thumbnail_path_, path.c_str());
     }
