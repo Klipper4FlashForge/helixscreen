@@ -20,6 +20,10 @@
 //    null silently skips the code it means to exercise.
 //  - displayed_file() / cached_thumbnail_path(): the two markers the panel uses
 //    to decide whether the preview is current.
+//  - thumbnail_widget(): the image itself, so a test can read the src actually
+//    on screen rather than the panel's belief about it. The two diverge — the
+//    panel clears its markers on a filename change without touching the widget,
+//    so only the widget says what a user would see.
 //
 // Follows the tests/test_helpers/ TestAccess pattern ([L088]) rather than
 // adding _for_testing() accessors to the production API.
@@ -39,5 +43,23 @@ class PrintStatusPanelTestAccess {
 
     static const std::string& cached_thumbnail_path(const PrintStatusPanel& panel) {
         return panel.cached_thumbnail_path_;
+    }
+
+    static lv_obj_t* thumbnail_widget(const PrintStatusPanel& panel) {
+        return panel.print_thumbnail_;
+    }
+
+    /// The image source actually set on the panel's thumbnail widget, or "" when
+    /// no widget is attached or nothing has been set on it yet.
+    static std::string displayed_src(const PrintStatusPanel& panel) {
+        lv_obj_t* image = thumbnail_widget(panel);
+        if (!image) {
+            return {};
+        }
+        const void* src = lv_image_get_src(image);
+        if (!src || lv_image_src_get_type(src) != LV_IMAGE_SRC_FILE) {
+            return {};
+        }
+        return static_cast<const char*>(src);
     }
 };
