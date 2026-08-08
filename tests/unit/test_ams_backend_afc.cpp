@@ -2500,7 +2500,13 @@ TEST_CASE("AFC treats a stale active_load_lane_ as unattributed rather than "
 
     // Attribute to a real lane first, to prove the stale case is what changes
     // behavior here (not simply an always-empty active_load_lane_).
-    helper.set_active_load_lane("lane2");
+    //
+    // Driven through parse_afc_state rather than poking active_load_lane_ alone:
+    // the name only ever reaches us on a frame that also carries current_state,
+    // and lane_recovery_is_attributed() now reads the action too, so setting the
+    // name by itself models a state AFC cannot produce.
+    helper.test_parse_afc_state({{"current_lane", "lane2"}, {"current_state", "Loading"}});
+    REQUIRE(helper.get_active_load_lane() == "lane2");
     REQUIRE(helper.lane_recovery_is_attributed());
     REQUIRE(helper.can_recover_lane_position(1));
 
@@ -2514,6 +2520,88 @@ TEST_CASE("AFC treats a stale active_load_lane_ as unattributed rather than "
     // unattributed rather than disagree with each other.
     REQUIRE_FALSE(helper.lane_recovery_is_attributed());
     REQUIRE_FALSE(helper.can_recover_lane_position(0));
+}
+
+TEST_CASE("AFC: a current_loading latched by a FAILED toolchange is not attribution",
+          "[ams][afc][recovery][eject]") {
+    // AFC.current_loading is set at the top of TOOL_LOAD (AFC.py v1.2.0:1523) and
+    // TOOL_UNLOAD (:1948). It is cleared in exactly two places, set_tool_loaded()
+    // and set_tool_unloaded(), and BOTH clears sit under `if normal_toolchange:`
+    // (AFC_lane.py:1526, :1545) — the success path. A toolchange that fails
+    // therefore pins current_loading to that lane until the next SUCCESSFUL one,
+    // which a user with a jammed lane cannot perform.
+    //
+    // AFC publishes it as `current_lane`, which active_load_lane_ prefers over
+    // current_load precisely because attribution wants "the lane being worked".
+    // That is right while a toolchange is running and wrong once it has stopped:
+    // a latched name is the residue of a failure, not a live diagnosis.
+    //
+    // It matters because can_recover && recovery_attributed OUTRANKS Eject in
+    // decide_unload_mode(). Treating the latch as attribution means the failure
+    // that makes a user want Eject is the very thing that takes Eject away,
+    // replacing it with Recover — a lane reset that retracts toward the hub and
+    // never returns filament to the spool.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+    for (const char* lane : {"lane1", "lane2", "lane3", "lane4"}) {
+        helper.set_lane_hub_routing(lane, "Turtle_1");
+    }
+    helper.set_hub_sensor("Turtle_1", true);
+    for (int i = 0; i < 4; ++i) {
+        helper.set_lane_load_sensor(i, true);
+    }
+
+    SECTION("mid-toolchange, the named lane IS the one being worked") {
+        helper.test_parse_afc_state({{"current_lane", "lane2"}, {"current_state", "Loading"}});
+
+        REQUIRE(helper.get_active_load_lane() == "lane2");
+        CHECK(helper.lane_recovery_is_attributed());
+        CHECK(helper.can_recover_lane_position(1));
+    }
+
+    SECTION("an AFC error state is still a live diagnosis") {
+        // The lane genuinely needs recovery here and AFC is still saying so, so
+        // the attribution stands. Narrowing must not cost the case recovery
+        // ranking exists to serve.
+        helper.test_parse_afc_state({{"current_lane", "lane2"}, {"current_state", "Error"}});
+
+        CHECK(helper.lane_recovery_is_attributed());
+        CHECK(helper.can_recover_lane_position(1));
+    }
+
+    SECTION("back at Idle with the name still latched, it is NOT attribution") {
+        // The failure path: TOOL_LOAD set current_loading, failed, and nothing
+        // ever cleared it. AFC is idle, so no lane is being worked — the name is
+        // stale by construction.
+        helper.test_parse_afc_state({{"current_lane", "lane2"}, {"current_state", "Loading"}});
+        REQUIRE(helper.lane_recovery_is_attributed());
+
+        helper.test_parse_afc_state({{"current_state", "Idle"}});
+
+        // The name is still there; AFC never clears it on failure.
+        REQUIRE(helper.get_active_load_lane() == "lane2");
+        // It no longer outranks Eject...
+        CHECK_FALSE(helper.lane_recovery_is_attributed());
+        // ...but Recover itself must REMAIN offered. can_recover_lane_position()
+        // reads the same name as a safety gate — "only retract a lane AFC itself
+        // names", so a blind opening retract cannot land on the wrong one
+        // (#1182). A latched name still identifies the right lane, and the lane
+        // really may be stranded. Withdrawing the ranking must not withdraw the
+        // recovery; that would strand exactly the user it exists for.
+        CHECK(helper.can_recover_lane_position(1));
+    }
+
+    SECTION("the whole point: Recover stays available but stops displacing Eject") {
+        // decide_unload_mode() ranks `can_recover && attributed` above Eject and
+        // plain `can_recover` below it. With attribution withdrawn and the gate
+        // still open, the jammed lane gets Eject back AND keeps Recover as the
+        // last-resort arm — which is the outcome this whole change is for.
+        helper.test_parse_afc_state({{"current_lane", "lane2"}, {"current_state", "Idle"}});
+
+        CHECK_FALSE(helper.lane_recovery_is_attributed());
+        CHECK(helper.can_recover_lane_position(1));
+    }
 }
 
 TEST_CASE("AFC active_load_lane_ is populated from a current_load delta and "
@@ -5967,7 +6055,11 @@ TEST_CASE("AFC parse: absent fields are retained (deltas, not snapshots)", "[ams
     // A weight-only delta must not disturb identity.
     helper.feed_afc_stepper("lane1", {{"weight", 500.0}});
 
-    const auto* slot = helper.get_system_info().get_slot_global(0);
+    // get_system_info() returns by value; hold the snapshot in a named local.
+    // Binding the pointer to the temporary let it die at the end of the
+    // statement, so every check below read freed memory (ASAN: heap-use-after-free).
+    const AmsSystemInfo info = helper.get_system_info();
+    const auto* slot = info.get_slot_global(0);
     REQUIRE(slot->spoolman_id == 86);
     REQUIRE(slot->material == "ASA");
     REQUIRE(slot->color_rgb == 0xE53935);

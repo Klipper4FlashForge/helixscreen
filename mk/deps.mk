@@ -438,7 +438,16 @@ ifneq ($(CROSS_COMPILE),)
 			--disable-debug
 	@# Build only the libraries we need (libnl-3 and libnl-genl-3)
 	@# Skip xfrm/idiag/nf/route to avoid build errors and reduce size
-	$(Q)$(MAKE) -C $(LIBNL_DIR) -j$$(nproc) lib/libnl-3.la lib/libnl-genl-3.la
+	@#
+	@# SERIAL ON PURPOSE — do not "optimize" this back to -j$(nproc).
+	@# libnl's generated Makefile does not fully order its libtool objects
+	@# against the .la link, so with enough jobs `CCLD lib/libnl-3.la` starts
+	@# before every lib/libnl_3_la-*.lo exists and ar dies with
+	@#   ar: lib/libnl_3_la-hash.o: No such file or directory
+	@# It is load-dependent, so it passes on small builders and fails on big
+	@# ones (seen on a 32-core host, never on 8). libnl is a couple of dozen
+	@# small C files; serializing costs seconds and removes the flake.
+	$(Q)$(MAKE) -C $(LIBNL_DIR) -j1 lib/libnl-3.la lib/libnl-genl-3.la
 	@# Install just what we need - libs, pkgconfig, and headers
 	$(Q)mkdir -p $(LIBNL_PREFIX)/lib $(LIBNL_PREFIX)/lib/pkgconfig $(LIBNL_PREFIX)/include/libnl3
 	$(Q)cp $(LIBNL_DIR)/lib/.libs/libnl-3.a $(LIBNL_DIR)/lib/.libs/libnl-genl-3.a $(LIBNL_PREFIX)/lib/
@@ -462,7 +471,8 @@ else ifeq ($(UNAME_S),Linux)
 		--enable-static \
 		--disable-shared \
 		--disable-cli
-	$(Q)$(MAKE) -C $(LIBNL_DIR) -j$$(nproc)
+	@# Serial for the same reason as the cross-compile path above.
+	$(Q)$(MAKE) -C $(LIBNL_DIR) -j1
 	$(Q)$(MAKE) -C $(LIBNL_DIR) install
 	$(Q)cp $(LIBNL_PREFIX)/lib/libnl-3.a $(BUILD_DIR)/lib/
 	$(Q)cp $(LIBNL_PREFIX)/lib/libnl-genl-3.a $(BUILD_DIR)/lib/

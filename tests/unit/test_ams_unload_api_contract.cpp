@@ -51,7 +51,13 @@ namespace {
 
 class CapturingSnapmaker : public AmsBackendSnapmaker {
   public:
-    CapturingSnapmaker() : AmsBackendSnapmaker(nullptr, nullptr) {}
+    // running_ has to be set: unload_filament() gates on check_preconditions(),
+    // which answers not_connected on a backend that never started. api_ stays
+    // null so the print-active half of that gate passes; it is covered on its
+    // own in test_ams_paused_filament_ops.cpp.
+    CapturingSnapmaker() : AmsBackendSnapmaker(nullptr, nullptr) {
+        running_.store(true);
+    }
 
     vector<string> captured_gcodes;
 
@@ -117,8 +123,7 @@ TEST_CASE("unload_active_filament forwards current_slot from system_info_",
 // 2. Per-backend unload_filament(N) is slot-explicit (regression suite)
 // =============================================================================
 
-TEST_CASE("Per-backend unload_filament(N) sends slot-specific gcode",
-          "[ams][unload][contract]") {
+TEST_CASE("Per-backend unload_filament(N) sends slot-specific gcode", "[ams][unload][contract]") {
     SECTION("Snapmaker unload_filament(3) sends EXTRUDER=3, never EXTRUDER=0") {
         // Regression for the U1 field bug: with T3 loaded, the Filament panel
         // used to dispatch EXTRUDER=0 because the backend re-resolved -1 →

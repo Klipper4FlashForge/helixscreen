@@ -129,6 +129,15 @@ class DisplayBackendFbdev : public DisplayBackend {
     void enable_affine_calibration() override;
 
     /**
+     * @brief Discard the stored calibration, leaving the device uncalibrated
+     *
+     * Clears both calibration_ and the live context, so a later
+     * enable_affine_calibration() cannot reinstate a matrix the user never
+     * accepted.
+     */
+    void clear_calibration() override;
+
+    /**
      * @brief Get current touch calibration
      * @return Current calibration coefficients (may be invalid if not calibrated)
      */

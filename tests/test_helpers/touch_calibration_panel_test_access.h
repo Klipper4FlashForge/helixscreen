@@ -56,6 +56,40 @@ class TouchCalibrationPanelTestAccess {
     static int samples_required() {
         return TouchCalibrationPanel::SAMPLES_REQUIRED;
     }
+
+    /// Fire the VERIFY countdown-expiry callback directly. The production path
+    /// runs it off a 1s-period lv_timer, which a test would have to pump
+    /// `verify_timeout_seconds_` worth of virtual ticks to reach — once per
+    /// round. Driving the callback keeps the multi-round tests deterministic.
+    static void fire_verify_timeout(TouchCalibrationPanel& p) {
+        p.stop_countdown_timer();
+        if (p.timeout_callback_) {
+            p.timeout_callback_();
+        }
+    }
+
+    /// Fire the fast-revert callback directly (the 3s one-shot timer's payload).
+    static void fire_fast_revert(TouchCalibrationPanel& p) {
+        if (p.fast_revert_callback_) {
+            p.fast_revert_callback_();
+        }
+    }
+
+    /// Run the real fast-revert decision (the timer callback's body) against the
+    /// counters accumulated so far, so a test can assert whether the broken-matrix
+    /// heuristic would have fired.
+    static bool fast_revert_would_fire(const TouchCalibrationPanel& p) {
+        return p.state_ == TouchCalibrationPanel::State::VERIFY && p.verify_raw_touch_count_ > 0 &&
+               p.verify_onscreen_touch_count_ == 0;
+    }
+
+    static int verify_raw_touch_count(const TouchCalibrationPanel& p) {
+        return p.verify_raw_touch_count_;
+    }
+
+    static int verify_onscreen_touch_count(const TouchCalibrationPanel& p) {
+        return p.verify_onscreen_touch_count_;
+    }
 };
 
 } // namespace helix

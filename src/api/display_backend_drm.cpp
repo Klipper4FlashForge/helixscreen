@@ -11,10 +11,9 @@
 #include "../../include/pending_startup_warnings.h"
 #include "config.h"
 #include "drm_rotation_strategy.h"
+#include "helix_display_telemetry.h"
 #include "input_device_scanner.h"
 #include "touch_calibration_wrapper.h"
-
-#include "helix_display_telemetry.h"
 
 #include <spdlog/spdlog.h>
 
@@ -1288,6 +1287,14 @@ void DisplayBackendDRM::disable_affine_calibration() {
 void DisplayBackendDRM::enable_affine_calibration() {
     calibration_context_.calibration = calibration_;
     spdlog::debug("[DRM Backend] Affine calibration re-enabled (valid={})", calibration_.valid);
+}
+
+void DisplayBackendDRM::clear_calibration() {
+    // Both slots, so enable_affine_calibration() cannot bring the old matrix
+    // back. Operates on owned members for the same reason set_calibration does.
+    calibration_ = helix::TouchCalibration{};
+    calibration_context_.calibration = calibration_;
+    spdlog::info("[DRM Backend] Stored calibration cleared — device is uncalibrated");
 }
 
 #endif // HELIX_DISPLAY_DRM

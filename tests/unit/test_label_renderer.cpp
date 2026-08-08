@@ -4,18 +4,18 @@
 #include "label_renderer.h"
 #include "spoolman_types.h"
 
-#include "../catch_amalgamated.hpp"
-
 #include <algorithm>
 #include <utility>
 #include <vector>
+
+#include "../catch_amalgamated.hpp"
 
 static SpoolInfo make_test_spool() {
     SpoolInfo spool;
     spool.id = 42;
     spool.vendor = "Hatchbox";
     spool.material = "PLA";
-    spool.color_name = "Red";
+    spool.filament_name = "Red";
     spool.remaining_weight_g = 800;
     spool.initial_weight_g = 1000;
     spool.lot_nr = "LOT-2026-001";
@@ -181,7 +181,7 @@ static SpoolInfo make_untracked_spool() {
     spool.id = 0; // untracked
     spool.vendor = "Hatchbox";
     spool.material = "PLA";
-    spool.color_name = "Red";
+    spool.filament_name = "Red";
     spool.remaining_weight_g = 800;
     return spool;
 }
@@ -273,8 +273,8 @@ TEST_CASE("LabelRenderer untracked spool omits the QR code", "[label][untracked]
 TEST_CASE("LabelRenderer untracked COMPACT drops the spool-ID line", "[label][untracked]") {
     // COMPACT is vendor / material+color / "#n". Without an ID the third line
     // is omitted entirely rather than printing "#0", leaving exactly 2 lines.
-    auto label = helix::LabelRenderer::render(make_untracked_spool(),
-                                              helix::LabelPreset::COMPACT, diecut_62x29());
+    auto label = helix::LabelRenderer::render(make_untracked_spool(), helix::LabelPreset::COMPACT,
+                                              diecut_62x29());
     REQUIRE(row_bands(label).size() == 2);
 }
 
@@ -283,8 +283,8 @@ TEST_CASE("LabelRenderer untracked STANDARD weight line carries no ID", "[label]
     // weight remains — measure the line's width in character cells to prove the
     // "  #0" suffix is gone. Font metrics: 5x7 glyphs, 1px inter-char gap,
     // uniformly scaled, so band height == 7 * scale.
-    auto label = helix::LabelRenderer::render(make_untracked_spool(),
-                                              helix::LabelPreset::STANDARD, diecut_62x29());
+    auto label = helix::LabelRenderer::render(make_untracked_spool(), helix::LabelPreset::STANDARD,
+                                              diecut_62x29());
 
     auto bands = row_bands(label);
     // vendor / material+color / weight — no QR, no temps, no lot, no comment.
@@ -314,16 +314,15 @@ TEST_CASE("LabelRenderer test label (negative id) keeps its QR", "[label][untrac
     REQUIRE(tallest_band(label) > 100); // QR block present
 
     // MINIMAL (QR-only) must also still work for the test label.
-    auto minimal =
-        helix::LabelRenderer::render(spool, helix::LabelPreset::MINIMAL, diecut_62x29());
+    auto minimal = helix::LabelRenderer::render(spool, helix::LabelPreset::MINIMAL, diecut_62x29());
     REQUIRE(tallest_band(minimal) > 100);
 }
 
 TEST_CASE("LabelRenderer untracked MINIMAL falls back to text", "[label][untracked]") {
     // MINIMAL is QR-only; with no QR payload it would print a blank label, so
     // untracked spools render the COMPACT text layout instead.
-    auto label = helix::LabelRenderer::render(make_untracked_spool(),
-                                              helix::LabelPreset::MINIMAL, diecut_62x29());
+    auto label = helix::LabelRenderer::render(make_untracked_spool(), helix::LabelPreset::MINIMAL,
+                                              diecut_62x29());
 
     REQUIRE_FALSE(label.empty());
     REQUIRE(has_black_pixels(label));

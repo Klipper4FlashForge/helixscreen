@@ -110,7 +110,11 @@ AmsBackendMock::AmsBackendMock(int slot_count) {
         // Mock Spoolman link — weights mirror init_mock_spools() so the slot
         // editor and Spoolman views agree (spec §9 drift fix).
         entry->info.spoolman_id = i + 1;
-        entry->info.spool_name = std::string(sample.brand) + " " + sample.material;
+        // Shaped like the real thing: apply_spool_to_slot() puts the Spoolman
+        // filament name in spool_name, with the vendor and material in their
+        // own fields. Seeding "Polymaker PLA" here made mock mode render a
+        // label real hardware never produces.
+        entry->info.spool_name = sample.color_name;
         entry->info.total_weight_g = sample.total_g;
         entry->info.remaining_weight_g = sample.remaining_g;
 
@@ -1596,7 +1600,6 @@ void AmsBackendMock::set_afc_mode(bool enabled) {
             const char* color_name;
             SlotStatus status;
             int spoolman_id;
-            const char* spool_name;
             float remaining;
         };
         // Mirrors MoonrakerSpoolmanAPIMock::init_mock_spools() spools 1-7 so a
@@ -1606,20 +1609,14 @@ void AmsBackendMock::set_afc_mode(bool enabled) {
         // no known weight (remaining=-1 sentinel below), so it's the one mock
         // lane that exercises the weightless "—"/no-bar display path.
         const SlotData sample_data[] = {
-            {"PLA", "Polymaker", 0x1A1A2E, "Jet Black", SlotStatus::LOADED, 1, "Polymaker PLA",
-             850.0f},
-            {"Silk PLA", "eSUN", 0x26DCD9, "Silk Blue", SlotStatus::AVAILABLE, 2, "eSUN Silk PLA",
-             750.0f},
-            {"ASA", "Elegoo", 0x00AEFF, "Pop Blue", SlotStatus::AVAILABLE, 3, "Elegoo ASA", 500.0f},
-            {"PETG", "Generic", 0xFF6600, "Orange", SlotStatus::AVAILABLE, 0, "", -1.0f},
-            {"ABS", "Flashforge", 0xD20000, "Fire Engine Red", SlotStatus::AVAILABLE, 4,
-             "Flashforge ABS", 100.0f},
-            {"PETG", "Kingroon", 0xF4E111, "Signal Yellow", SlotStatus::AVAILABLE, 5,
-             "Kingroon PETG", 1000.0f},
-            {"TPU", "Overture", 0xE8E8E8, "Clear", SlotStatus::AVAILABLE, 6, "Overture TPU",
-             600.0f},
-            {"ASA", "Bambu Lab", 0x8A949E, "Gray ASA", SlotStatus::AVAILABLE, 7, "Bambu Lab ASA",
-             1000.0f},
+            {"PLA", "Polymaker", 0x1A1A2E, "Jet Black", SlotStatus::LOADED, 1, 850.0f},
+            {"Silk PLA", "eSUN", 0x26DCD9, "Silk Blue", SlotStatus::AVAILABLE, 2, 750.0f},
+            {"ASA", "Elegoo", 0x00AEFF, "Pop Blue", SlotStatus::AVAILABLE, 3, 500.0f},
+            {"PETG", "Generic", 0xFF6600, "Orange", SlotStatus::AVAILABLE, 0, -1.0f},
+            {"ABS", "Flashforge", 0xD20000, "Fire Engine Red", SlotStatus::AVAILABLE, 4, 100.0f},
+            {"PETG", "Kingroon", 0xF4E111, "Signal Yellow", SlotStatus::AVAILABLE, 5, 1000.0f},
+            {"TPU", "Overture", 0xE8E8E8, "Clear", SlotStatus::AVAILABLE, 6, 600.0f},
+            {"ASA", "Bambu Lab", 0x8A949E, "Gray ASA", SlotStatus::AVAILABLE, 7, 1000.0f},
         };
         constexpr int sample_count = sizeof(sample_data) / sizeof(sample_data[0]);
 
@@ -1636,7 +1633,10 @@ void AmsBackendMock::set_afc_mode(bool enabled) {
             entry->info.color_name = d.color_name;
             entry->info.status = (i == 0) ? SlotStatus::LOADED : d.status;
             entry->info.spoolman_id = d.spoolman_id;
-            entry->info.spool_name = d.spool_name;
+            // Only a Spoolman-linked lane carries a spool name, and it is the
+            // filament name apply_spool_to_slot() would have written — never a
+            // synthesized "vendor material". Lane 3 stays unlinked and unnamed.
+            entry->info.spool_name = (d.spoolman_id > 0) ? d.color_name : "";
             // Sample data's -1 sentinel (lane 3) means "no known weight" — keep
             // total unknown too rather than fabricating a 1000g spool (matches
             // the "unknown weight data renders '—'" contract in AmsEditOverlay).

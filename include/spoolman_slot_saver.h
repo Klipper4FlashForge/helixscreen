@@ -180,12 +180,19 @@ class SpoolmanSlotSaver {
      * Match is: vendor_id exact; material exact (case-sensitive);
      * color_hex case-insensitive via normalize_color_hex() on both sides.
      *
-     * On create, POSTs `{vendor_id, material, color_hex, name=material}`.
+     * On create, POSTs `{vendor_id, material, color_hex, name}`, where `name`
+     * is `filament_name` when the slot carries one and falls back to `material`
+     * otherwise. Naming a new filament after its material alone produced
+     * Spoolman records literally called "PLA", which then round-trip back as
+     * SlotInfo::spool_name and get deduped straight back out of the card label.
      * On invalid color_hex, calls on_error immediately without API calls.
+     *
+     * @param filament_name The slot's filament name (SlotInfo::spool_name); may
+     *                      be empty. Never used for matching — only for create.
      */
     void find_or_create_filament(int vendor_id, const std::string& material,
-                                 const std::string& color_hex, FilamentCallback on_found,
-                                 ErrorCallback on_error);
+                                 const std::string& color_hex, const std::string& filament_name,
+                                 FilamentCallback on_found, ErrorCallback on_error);
 
     /**
      * @brief PATCH the spool's filament_id. Used for repointing a linked spool

@@ -43,6 +43,7 @@
 #include "ams_backend_afc.h"
 #include "ams_backend_happy_hare.h"
 #include "ams_backend_qidi.h"
+#include "ams_backend_snapmaker.h"
 #include "ams_error.h"
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
@@ -50,15 +51,18 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "../catch_amalgamated.hpp"
 
 namespace {
 
 /// Doubles exist only to (a) flip running_ so check_preconditions() reaches the
-/// print-active gate without a live Moonraker, and (b) reach the protected
-/// refuse_if_printing() that QIDI-style backends call directly. Nothing else is
-/// overridden: the production filament_ops_self_home() answer is what is tested.
+/// print-active gate without a live Moonraker, (b) reach the protected
+/// refuse_if_printing() that QIDI-style backends call directly, and (c) capture
+/// the G-code a filament op would dispatch, so a refusal can be checked for
+/// leakage and not just for its return value. Nothing else is overridden: the
+/// production filament_ops_self_home() answer is what is tested.
 template <typename Backend> class PausedGateDouble : public Backend {
   public:
     PausedGateDouble(MoonrakerAPI* api, helix::MoonrakerClient* client) : Backend(api, client) {
@@ -66,6 +70,13 @@ template <typename Backend> class PausedGateDouble : public Backend {
     }
     AmsError call_refuse_if_printing() const {
         return this->refuse_if_printing();
+    }
+
+    std::vector<std::string> dispatched;
+
+    AmsError execute_gcode(const std::string& gcode) override {
+        dispatched.push_back(gcode);
+        return AmsErrorHelper::success();
     }
 };
 
@@ -106,6 +117,12 @@ TEST_CASE_METHOD(PausedGateFixture,
     CHECK_FALSE(make<AmsBackendAfc>()->filament_ops_self_home());
     CHECK_FALSE(make<AmsBackendHappyHare>()->filament_ops_self_home());
     CHECK_FALSE(make<AmsBackendQidi>()->filament_ops_self_home());
+    // Snapmaker's AUTO_FEEDING does home, but prepare_for_resume() drives
+    // `AUTO_FEEDING ... PRINTING=1` on a PAUSED job and was live-verified on
+    // physical U1 hardware (#991) — the firmware exposes PRINTING=1 for exactly
+    // that recovery. No evidence the home is unsafe, so this stays false and the
+    // runout-recovery workflow keeps working.
+    CHECK_FALSE(make<AmsBackendSnapmaker>()->filament_ops_self_home());
 }
 
 // ============================================================================
@@ -214,6 +231,114 @@ TEST_CASE_METHOD(PausedGateFixture,
     SECTION("QIDI, via its direct refuse_if_printing() call site") {
         auto backend = make<AmsBackendQidi>();
         CHECK(backend->call_refuse_if_printing().success());
+    }
+}
+
+// ============================================================================
+// Snapmaker U1 — the backend 329e731e9 missed
+//
+// Every op below drives the toolhead: AUTO_FEEDING forwards to FEED_AUTO, which
+// homes and then switches tools before feeding, and `T{n}` moves the carriage.
+// The UI only greys the buttons; ui_panel_ams.cpp's `sidebar_ == nullptr`
+// fallback and ui_ams_sidebar.cpp's dispatch_backend_load both reach the backend
+// directly, so the refusal has to live in the backend.
+//
+// Asserting `dispatched` (not just the AmsError) is the point: a guard placed
+// after the command is built returns the refusal AND still sends the G-code.
+// ============================================================================
+
+TEST_CASE_METHOD(PausedGateFixture, "Snapmaker refuses toolhead-motion filament ops while PRINTING",
+                 "[ams][snapmaker][safety][paused]") {
+    set_print_state(helix::PrintJobState::PRINTING);
+    auto backend = make<AmsBackendSnapmaker>();
+
+    auto expect_refused = [&](AmsError err) {
+        REQUIRE_FALSE(err.success());
+        CHECK(err.result == AmsResult::WRONG_STATE);
+        CHECK(err.user_msg == "Cannot run filament operation while printing");
+        // Snapmaker can do these paused, so the copy names pausing as the way out.
+        CHECK(err.suggestion.find("Pause the print") != std::string::npos);
+        CHECK(backend->dispatched.empty());
+    };
+
+    SECTION("load_filament") {
+        expect_refused(backend->load_filament(2));
+    }
+
+    SECTION("unload_filament with an explicit slot") {
+        expect_refused(backend->unload_filament(2));
+    }
+
+    SECTION("unload_filament with an unknown current slot — the INNER_FILAMENT_UNLOAD fallback") {
+        // current_slot defaults to -1, so this is the branch that skips
+        // AUTO_FEEDING and emits the firmware's bare leaf macro. It moves the
+        // toolhead too, and the guard sits ahead of the fork so it is covered.
+        expect_refused(backend->unload_filament(-1));
+    }
+
+    SECTION("change_tool") {
+        expect_refused(backend->change_tool(1));
+    }
+
+    SECTION("select_slot — on the U1 a slot select IS a physical tool change") {
+        expect_refused(backend->select_slot(1));
+    }
+}
+
+TEST_CASE_METHOD(PausedGateFixture, "Snapmaker still allows filament ops while PAUSED",
+                 "[ams][snapmaker][safety][paused]") {
+    // Runout recovery on a U1 is pause -> feed -> resume, and prepare_for_resume()
+    // drives AUTO_FEEDING against a paused job on real hardware (#991). Refusing
+    // here would break the workflow the gate exists to protect.
+    set_print_state(helix::PrintJobState::PAUSED);
+    auto backend = make<AmsBackendSnapmaker>();
+
+    SECTION("load_filament") {
+        REQUIRE(backend->load_filament(2).success());
+        REQUIRE(backend->dispatched.size() == 1);
+        CHECK(backend->dispatched[0] == "AUTO_FEEDING EXTRUDER=2 LOAD=1");
+    }
+
+    SECTION("unload_filament") {
+        REQUIRE(backend->unload_filament(2).success());
+        REQUIRE(backend->dispatched.size() == 1);
+        CHECK(backend->dispatched[0] == "AUTO_FEEDING EXTRUDER=2 UNLOAD=1");
+    }
+
+    SECTION("unload_filament falls back to INNER_FILAMENT_UNLOAD") {
+        REQUIRE(backend->unload_filament(-1).success());
+        REQUIRE(backend->dispatched.size() == 1);
+        CHECK(backend->dispatched[0] == "INNER_FILAMENT_UNLOAD");
+    }
+
+    SECTION("change_tool") {
+        REQUIRE(backend->change_tool(1).success());
+        REQUIRE(backend->dispatched.size() == 1);
+        CHECK(backend->dispatched[0] == "T1");
+    }
+
+    SECTION("select_slot") {
+        REQUIRE(backend->select_slot(3).success());
+        REQUIRE(backend->dispatched.size() == 1);
+        CHECK(backend->dispatched[0] == "T3");
+    }
+}
+
+TEST_CASE_METHOD(PausedGateFixture, "Snapmaker filament ops are untouched with no print running",
+                 "[ams][snapmaker][safety][paused]") {
+    auto backend = make<AmsBackendSnapmaker>();
+
+    for (helix::PrintJobState s : {helix::PrintJobState::STANDBY, helix::PrintJobState::COMPLETE,
+                                   helix::PrintJobState::CANCELLED, helix::PrintJobState::ERROR}) {
+        set_print_state(s);
+        CAPTURE(static_cast<int>(s));
+
+        backend->dispatched.clear();
+        REQUIRE(backend->load_filament(0).success());
+        REQUIRE(backend->unload_filament(0).success());
+        REQUIRE(backend->change_tool(0).success());
+        REQUIRE(backend->select_slot(0).success());
+        CHECK(backend->dispatched.size() == 4);
     }
 }
 

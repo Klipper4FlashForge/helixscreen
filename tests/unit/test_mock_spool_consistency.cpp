@@ -48,7 +48,11 @@ void check_backend_against_spoolman(AmsBackendMock& mock, int slot_count) {
 
         CHECK(slot.material == spool.material);
         CHECK(slot.brand == spool.vendor);
-        CHECK(slot.color_name == spool.color_name);
+        // Spoolman's filament.name is a filament name, not a colour word, so it
+        // lands on spool_name. SlotInfo::color_name stays a colour label and is
+        // left unset by apply_spool_to_slot — the label resolver derives one
+        // from color_hex when nothing better exists.
+        CHECK(slot.spool_name == spool.filament_name);
 
         uint32_t spool_rgb = 0;
         REQUIRE(helix::parse_hex_color(spool.color_hex.c_str(), spool_rgb));

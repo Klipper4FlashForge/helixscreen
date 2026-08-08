@@ -796,7 +796,7 @@ TEST_CASE("SpoolmanSlotSaver find_or_create_filament: matches on vendor+material
     int got_id = -1;
     bool error_called = false;
     saver.find_or_create_filament(
-        7, "PLA", "FF0000", // upper-case input vs lower-case seed
+        7, "PLA", "FF0000", /*filament_name*/ "", // upper-case input vs lower-case seed
         [&](int id) { got_id = id; }, [&](const MoonrakerError&) { error_called = true; });
 
     REQUIRE(got_id == 100);
@@ -816,7 +816,7 @@ TEST_CASE("SpoolmanSlotSaver find_or_create_filament: mismatched material -> cre
     SpoolmanSlotSaver saver(&api);
     int got_id = -1;
     saver.find_or_create_filament(
-        7, "PETG", "FF0000", [&](int id) { got_id = id; },
+        7, "PETG", "FF0000", /*filament_name*/ "", [&](int id) { got_id = id; },
         [&](const MoonrakerError&) { got_id = -99; });
 
     REQUIRE(got_id == 101);
@@ -840,7 +840,7 @@ TEST_CASE("SpoolmanSlotSaver find_or_create_filament: mismatched color -> create
     SpoolmanSlotSaver saver(&api);
     int got_id = -1;
     saver.find_or_create_filament(
-        7, "PLA", "00FF00", [&](int id) { got_id = id; },
+        7, "PLA", "00FF00", /*filament_name*/ "", [&](int id) { got_id = id; },
         [&](const MoonrakerError&) { got_id = -99; });
 
     REQUIRE(got_id == 101);
@@ -860,7 +860,7 @@ TEST_CASE("SpoolmanSlotSaver find_or_create_filament: invalid color hex triggers
     int got_id = -1;
     bool error_called = false;
     saver.find_or_create_filament(
-        7, "PLA", "XYZ", // invalid
+        7, "PLA", "XYZ", /*filament_name*/ "", // invalid
         [&](int id) { got_id = id; }, [&](const MoonrakerError&) { error_called = true; });
 
     REQUIRE(got_id == -1);
@@ -880,7 +880,7 @@ TEST_CASE("SpoolmanSlotSaver find_or_create_filament: accepts leading # and stri
     SpoolmanSlotSaver saver(&api);
     int got_id = -1;
     saver.find_or_create_filament(
-        7, "PLA", "#ff0000", [&](int id) { got_id = id; },
+        7, "PLA", "#ff0000", /*filament_name*/ "", [&](int id) { got_id = id; },
         [&](const MoonrakerError&) { got_id = -99; });
 
     REQUIRE(got_id == 100);

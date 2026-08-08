@@ -16,6 +16,7 @@
 #include "app_globals.h"
 #include "color_utils.h"
 #include "filament_database.h"
+#include "filament_display_name.h"
 #include "filament_mapper.h"
 #include "format_utils.h"
 #include "static_panel_registry.h"
@@ -580,9 +581,11 @@ void AmsEditOverlay::render_spool_list(const std::string& filter) {
             lv_label_set_text(name_label, name.c_str());
         }
 
+        // The XML widget kept its "spool_color" name; the string is Spoolman's
+        // filament.name, which is the only per-spool label Spoolman stores.
         lv_obj_t* color_label = lv_obj_find_by_name(item, "spool_color");
-        if (color_label && !spool.color_name.empty()) {
-            lv_label_set_text(color_label, spool.color_name.c_str());
+        if (color_label && !spool.filament_name.empty()) {
+            lv_label_set_text(color_label, spool.filament_name.c_str());
         }
 
         lv_obj_t* weight_label = lv_obj_find_by_name(item, "spool_weight");
@@ -635,31 +638,12 @@ void AmsEditOverlay::handle_spool_selected(int spool_id) {
     // Look up SpoolInfo from cached spools
     for (const auto& spool : cached_spools_) {
         if (spool.id == spool_id) {
-            // Auto-fill working_info_ from the selected spool
-            working_info_.spoolman_id = spool.id;
-            working_info_.spoolman_filament_id = spool.filament_id;
-            working_info_.spoolman_vendor_id = spool.vendor_id;
-            working_info_.color_name = spool.color_name;
-            working_info_.multi_color_hexes = spool.multi_color_hexes;
-            working_info_.material = spool.material;
-            working_info_.brand = spool.vendor;
-            working_info_.spool_name = spool.vendor + " " + spool.material;
-            working_info_.remaining_weight_g = static_cast<float>(spool.remaining_weight_g);
-            working_info_.total_weight_g = static_cast<float>(spool.initial_weight_g);
-            working_info_.nozzle_temp_min = spool.nozzle_temp_min;
-            working_info_.nozzle_temp_max = spool.nozzle_temp_max;
-            working_info_.bed_temp = spool.bed_temp_recommended;
-
-            // Parse color hex to RGB
-            if (!spool.color_hex.empty()) {
-                uint32_t rgb = 0;
-                if (helix::parse_hex_color(spool.color_hex.c_str(), rgb)) {
-                    working_info_.color_rgb = rgb;
-                } else {
-                    spdlog::warn("[AmsEditOverlay] Failed to parse color hex: {}", spool.color_hex);
-                }
-            }
-
+            // Auto-fill working_info_ from the selected spool. The field-by-
+            // field copy this replaced had drifted from apply_spool_to_slot()
+            // — it synthesized its own spool_name — so the same spool labelled
+            // differently depending on whether it arrived here or through the
+            // external-spool sync.
+            apply_spool_to_slot(working_info_, spool);
             break;
         }
     }
@@ -777,7 +761,7 @@ void AmsEditOverlay::enter_spool_edit() {
     detail_original_.filament_id = working_info_.spoolman_filament_id;
     detail_original_.vendor = working_info_.brand;
     detail_original_.material = working_info_.material;
-    detail_original_.color_name = working_info_.color_name;
+    detail_original_.filament_name = working_info_.spool_name;
     detail_original_.remaining_weight_g = working_info_.remaining_weight_g;
     detail_original_.initial_weight_g = working_info_.total_weight_g;
     // The untracked "Spool weight" field maps to working_info_.total_weight_g on
@@ -1244,24 +1228,7 @@ void AmsEditOverlay::handle_scan_qr() {
             // direct backend write anymore: the live form repopulates and the
             // user confirms with Save.
             SlotInfo scanned;
-            scanned.spoolman_id = spool.id;
-            scanned.spoolman_filament_id = spool.filament_id;
-            scanned.spoolman_vendor_id = spool.vendor_id;
-            scanned.color_name = spool.color_name;
-            scanned.material = spool.material;
-            scanned.brand = spool.vendor;
-            scanned.spool_name = spool.vendor + " " + spool.material;
-            scanned.remaining_weight_g = static_cast<float>(spool.remaining_weight_g);
-            scanned.total_weight_g = static_cast<float>(spool.initial_weight_g);
-            scanned.nozzle_temp_min = spool.nozzle_temp_min;
-            scanned.nozzle_temp_max = spool.nozzle_temp_max;
-            scanned.bed_temp = spool.bed_temp_recommended;
-            if (!spool.color_hex.empty()) {
-                uint32_t rgb = 0;
-                if (helix::parse_hex_color(spool.color_hex.c_str(), rgb)) {
-                    scanned.color_rgb = rgb;
-                }
-            }
+            apply_spool_to_slot(scanned, spool);
             helix::ui::queue_update([scanned = std::move(scanned)]() {
                 auto& editor = get_ams_edit_overlay();
                 if (!editor.get_root()) {
@@ -1314,7 +1281,7 @@ void AmsEditOverlay::handle_print_label() {
         spool_info.id = working_info_.spoolman_id;
         spool_info.vendor = working_info_.brand;
         spool_info.material = working_info_.material;
-        spool_info.color_name = working_info_.color_name;
+        spool_info.filament_name = working_info_.spool_name;
         spool_info.remaining_weight_g = working_info_.remaining_weight_g;
         spool_info.initial_weight_g = working_info_.total_weight_g;
     }
@@ -1391,8 +1358,17 @@ void AmsEditOverlay::update_ui() {
 
     // Identity chip: tracked = spool name (+ mark via binding);
     // untracked = "Brand · Material" (spec §3.8 locked format).
+    //
+    // spool_name carries the filament name alone ("Ambrosia Pink"), so printing
+    // it verbatim would drop the vendor and the material and say less than the
+    // untracked branch does. compose_filament_label() joins the three the same
+    // way the AMS card does, and drops a brand or material the name already
+    // contains — so a Spoolman name that reads "Bambu Lab ASA" still prints
+    // once, not three times.
     if (managed && !working_info_.spool_name.empty()) {
-        snprintf(chip_text_buf_, sizeof(chip_text_buf_), "%s", working_info_.spool_name.c_str());
+        const std::string chip = helix::compose_filament_label(
+            working_info_.brand, working_info_.spool_name, working_info_.material);
+        snprintf(chip_text_buf_, sizeof(chip_text_buf_), "%s", chip.c_str());
     } else {
         const char* brand = working_info_.brand.empty() ? "Generic" : working_info_.brand.c_str();
         const char* material =

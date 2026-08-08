@@ -5,6 +5,7 @@
 
 #include "ams_types.h"
 #include "color_utils.h"
+#include "filament_display_name.h"
 
 #include <cstdint>
 #include <functional>
@@ -51,7 +52,11 @@ struct FilamentInfo {
     int vendor_id = 0;       ///< Associated vendor ID
     std::string vendor_name; ///< Vendor name (denormalized for display)
     std::string material;    ///< Material type (PLA, PETG, ABS, TPU, ASA, etc.)
-    std::string color_name;  ///< Color name (e.g., "Jet Black")
+    /// Spoolman's `filament.name` — the filament's own display name
+    /// ("PLA Matte Charcoal", "PolyTerra Ambrosia Pink"). NOT a colour word:
+    /// Spoolman has no colour-name field, only `color_hex`. Anything needing a
+    /// human colour label derives it from the hex (`helix::describe_color`).
+    std::string filament_name;
     std::string color_hex;   ///< Hex color code (e.g., "#1A1A2E")
     float density = 0;       ///< Material density (g/cm³)
     float diameter = 1.75f;  ///< Filament diameter in mm
@@ -63,16 +68,16 @@ struct FilamentInfo {
     int bed_temp_max = 0;    ///< Maximum bed temperature
 
     /**
-     * @brief Get display name combining vendor, material, and color
+     * @brief Get display name combining vendor, filament name, and material
+     *
+     * Shares helix::compose_filament_label() with the AMS card so both surfaces
+     * name the same filament the same way, and so neither repeats a vendor or
+     * material the name already carries — "PLA Matte Charcoal" under vendor
+     * Polymaker, material PLA renders "Polymaker PLA Matte Charcoal", not
+     * "Polymaker PLA - PLA Matte Charcoal".
      */
     [[nodiscard]] std::string display_name() const {
-        std::string result;
-        if (!vendor_name.empty())
-            result += vendor_name + " ";
-        if (!material.empty())
-            result += material;
-        if (!color_name.empty())
-            result += " - " + color_name;
+        std::string result = helix::compose_filament_label(vendor_name, filament_name, material);
         return result.empty() ? "Unknown Filament" : result;
     }
 };
@@ -81,12 +86,16 @@ struct FilamentInfo {
  * @brief Filament spool information from Spoolman
  */
 struct SpoolInfo {
-    int id = 0;                    ///< Spoolman spool ID
-    int filament_id = 0;           ///< Spoolman filament definition ID (for filament-level edits)
-    int vendor_id = 0;             ///< Spoolman vendor ID (for vendor updates)
-    std::string vendor;            ///< Filament vendor (e.g., "Hatchbox", "Prusament")
-    std::string material;          ///< Material type (e.g., "PLA", "PETG", "ABS", "TPU")
-    std::string color_name;        ///< Color name (e.g., "Galaxy Black", "Jet Black")
+    int id = 0;           ///< Spoolman spool ID
+    int filament_id = 0;  ///< Spoolman filament definition ID (for filament-level edits)
+    int vendor_id = 0;    ///< Spoolman vendor ID (for vendor updates)
+    std::string vendor;   ///< Filament vendor (e.g., "Hatchbox", "Prusament")
+    std::string material; ///< Material type (e.g., "PLA", "PETG", "ABS", "TPU")
+    /// Spoolman's `filament.name` — the filament's own display name
+    /// ("PLA Matte Charcoal", "Ambrosia Pink"). NOT a colour word: a Spoolman
+    /// spool record has no colour-name field, only `color_hex`. This is the
+    /// field that maps onto SlotInfo::spool_name, never SlotInfo::color_name.
+    std::string filament_name;
     std::string color_hex;         ///< Hex color code (e.g., "#1A1A2E")
     std::string multi_color_hexes; ///< Comma-separated hex codes for multi-color filaments
                                    ///< (e.g., "#D4AF37,#C0C0C0,#B87333" for gold/silver/copper)
@@ -138,16 +147,15 @@ struct SpoolInfo {
     }
 
     /**
-     * @brief Get display name combining vendor, material, and color
+     * @brief Get display name combining vendor, filament name, and material
+     *
+     * Same composer as the AMS card (helix::compose_filament_label), so the
+     * Spoolman list and the loaded-filament card agree on how a spool is named
+     * and neither repeats a vendor or material that the filament name already
+     * contains.
      */
     [[nodiscard]] std::string display_name() const {
-        std::string name;
-        if (!vendor.empty())
-            name += vendor + " ";
-        if (!material.empty())
-            name += material;
-        if (!color_name.empty())
-            name += " - " + color_name;
+        std::string name = helix::compose_filament_label(vendor, filament_name, material);
         return name.empty() ? "Unknown Spool" : name;
     }
 };
@@ -232,9 +240,14 @@ void sort_spools_by_recency(std::vector<SpoolInfo>& spools);
 /**
  * @brief Apply SpoolInfo fields onto a SlotInfo
  *
- * Copies Spoolman spool data (material, color, weight, temps) into a SlotInfo.
+ * Copies Spoolman spool data (identity, color, weight, temps) into a SlotInfo.
  * The caller provides the base SlotInfo (either a fresh one for external spool,
  * or an existing slot's info to merge into).
+ *
+ * This is the single writer for the "user linked a Spoolman spool" path — the
+ * AMS picker, the QR scanner, the external-spool sync and the Spoolman panel
+ * all route through it, so the label a linked slot renders does not depend on
+ * which surface did the linking.
  *
  * @param info Target SlotInfo to populate
  * @param spool Source SpoolInfo from Spoolman
@@ -243,20 +256,42 @@ inline void apply_spool_to_slot(SlotInfo& info, const SpoolInfo& spool) {
     info.spoolman_id = spool.id;
     info.spoolman_filament_id = spool.filament_id;
     info.spoolman_vendor_id = spool.vendor_id;
-    info.color_name = spool.color_name;
     info.material = spool.material;
     info.brand = spool.vendor;
-    info.spool_name = spool.vendor + " " + spool.material;
+    // Spoolman's filament name goes to spool_name, never to color_name.
+    // spool_name means "a filament name" on every other writer (AFC's
+    // filament_name, CFS's `name`, Snapmaker's RFID SUB_TYPE), and
+    // docs/specs/filament_slots.md pins the lane_data field OrcaSlicer and
+    // Happy Hare read as "distinct from vendor + material". Synthesizing
+    // "vendor material" here also destroyed the name outright at the card:
+    // compose_filament_label() dedups the brand and the material back out,
+    // leaving nothing behind.
+    info.spool_name = spool.filament_name;
+    info.multi_color_hexes = spool.multi_color_hexes;
     info.remaining_weight_g = static_cast<float>(spool.remaining_weight_g);
     info.total_weight_g = static_cast<float>(spool.initial_weight_g);
     info.nozzle_temp_min = spool.nozzle_temp_min;
     info.nozzle_temp_max = spool.nozzle_temp_max;
     info.bed_temp = spool.bed_temp_recommended;
 
+    // A Spoolman spool record has no colour-name field, so there is nothing
+    // truthful to put in SlotInfo::color_name — the field docs/specs/filament_slots.md
+    // defines as "human-readable COLOUR label, distinct from the `color` hex" and
+    // publishes to the lane_data namespace that OrcaSlicer and Happy Hare read.
+    // Deriving one from the hex would freeze a value that is recomputable for
+    // free from the `color` we already publish, and that goes stale the moment
+    // an override changes the hex; the display path already calls
+    // helix::get_color_name_from_hex() as its own fallback.
+    //
+    // Blank is therefore the answer, but only when Spoolman actually replaces
+    // the colour: an existing user-entered colour label describes the colour it
+    // was entered against, so it survives a link that carries no colour and is
+    // dropped by one that does.
     if (!spool.color_hex.empty()) {
         uint32_t rgb = 0;
         if (helix::parse_hex_color(spool.color_hex.c_str(), rgb)) {
             info.color_rgb = rgb;
+            info.color_name.clear();
         }
     }
 }

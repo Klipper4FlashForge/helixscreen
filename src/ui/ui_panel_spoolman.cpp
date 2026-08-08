@@ -25,6 +25,7 @@
 #include "moonraker_api.h"
 #include "printer_state.h"
 #include "spoolman_manager.h"
+#include "spoolman_types.h" // apply_spool_to_slot
 #include "theme_manager.h"
 #include "ui/ui_lazy_panel_helper.h"
 
@@ -523,28 +524,15 @@ void SpoolmanPanel::set_active_spool(int spool_id) {
 
                 // Update external spool info so filament panel stays in sync
                 if (found) {
+                    // Third copy of the same identity transfer, retired in
+                    // favour of the shared writer — it was the one that wrote
+                    // display_name() ("Polymaker PLA - Jet Black") into
+                    // spool_name, which every other surface reads as the bare
+                    // filament name.
                     SlotInfo slot;
                     slot.slot_index = -2;
                     slot.global_index = -2;
-                    slot.spoolman_id = found->id;
-                    slot.spoolman_filament_id = found->filament_id;
-                    slot.spoolman_vendor_id = found->vendor_id;
-                    slot.material = found->material;
-                    slot.brand = found->vendor;
-                    slot.color_name = found->color_name;
-                    slot.spool_name = found->display_name();
-                    slot.multi_color_hexes = found->multi_color_hexes;
-                    slot.nozzle_temp_min = found->nozzle_temp_min;
-                    slot.nozzle_temp_max = found->nozzle_temp_max;
-                    slot.bed_temp = found->bed_temp_recommended;
-                    slot.remaining_weight_g = static_cast<float>(found->remaining_weight_g);
-                    slot.total_weight_g = static_cast<float>(found->initial_weight_g);
-                    if (!found->color_hex.empty()) {
-                        const char* hex = found->color_hex.c_str();
-                        if (hex[0] == '#')
-                            hex++;
-                        slot.color_rgb = std::strtoul(hex, nullptr, 16);
-                    }
+                    apply_spool_to_slot(slot, *found);
                     AmsState::instance().set_external_spool_info(slot);
                 }
 

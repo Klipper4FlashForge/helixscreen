@@ -1004,7 +1004,7 @@ void LabelPrinterSettingsOverlay::handle_test_print() {
     mock_spool.id = -1;
     mock_spool.vendor = "Hatchbox";
     mock_spool.material = "PLA";
-    mock_spool.color_name = "Red";
+    mock_spool.filament_name = "Red";
     mock_spool.color_hex = "#FF0000";
     mock_spool.remaining_weight_g = 800;
     mock_spool.initial_weight_g = 1000;

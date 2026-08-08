@@ -186,6 +186,21 @@ class TouchCalibrationOverlay : public OverlayBase {
      */
     void handle_cancel_clicked();
 
+    /**
+     * @brief Handle one LV_EVENT_LONG_PRESSED_REPEAT tick of a press-and-hold
+     *
+     * Aborts the session once HOLD_ABORT_REPEATS consecutive repeats have
+     * arrived. Counting repeats rather than acting on the first one keeps a
+     * deliberate hold distinct from the taps calibration is made of; the counter
+     * resets on every fresh press and release.
+     *
+     * This is the escape that does not depend on where a touch lands. Under a
+     * mapping that compresses every tap toward one corner, no fixed rectangle
+     * works: the reachable region and the rays that mis-mapped crosshair taps
+     * travel both start at that same corner.
+     */
+    void handle_hold_abort();
+
     //
     // === Accessors ===
     //
@@ -206,7 +221,25 @@ class TouchCalibrationOverlay : public OverlayBase {
         return panel_.get();
     }
 
+    /**
+     * @brief Route this overlay's calibration handoffs to an injected sink.
+     *
+     * DisplayManager is the production sink (it implements ICalibrationSink), but
+     * it has no backend in a unit test, which makes every apply/revert/restore a
+     * silent no-op. Injecting a fake sink lets a test assert WHICH matrix each
+     * phase installs. Pass nullptr to go back to DisplayManager.
+     */
+    void set_calibration_sink(helix::ICalibrationSink* sink) {
+        calibration_sink_override_ = sink;
+    }
+
   private:
+    /**
+     * @brief The sink that receives this session's calibration operations.
+     * @return The injected sink if one is set, else DisplayManager (may be null).
+     */
+    helix::ICalibrationSink* calibration_sink();
+
     /** @brief Update state subject from panel state */
     void update_state_subject();
 
@@ -232,6 +265,18 @@ class TouchCalibrationOverlay : public OverlayBase {
      * @param cal Calibration data if successful, nullptr if cancelled
      */
     void on_calibration_complete(const TouchCalibration* cal);
+
+    /**
+     * @brief Give up on this session: restore the pre-session calibration, tell
+     *        the user why, and leave the overlay.
+     *
+     * Used by the bounded-retry guard and the press-and-hold escape. Takes the
+     * same exit as handle_back_clicked() so the completion callback still reports
+     * "cancelled" exactly once.
+     *
+     * @param reason Toast text explaining what happened.
+     */
+    void abort_session(const char* reason);
 
     //
     // === State Machine ===
@@ -263,6 +308,9 @@ class TouchCalibrationOverlay : public OverlayBase {
     // first-run wizard; guarantees the affine transform is re-enabled however
     // the session ends (#943).
     helix::TouchCalibrationSession session_;
+
+    // Test seam for the above: nullptr means "use DisplayManager".
+    helix::ICalibrationSink* calibration_sink_override_ = nullptr;
 
     //
     // === Widget References ===
@@ -300,6 +348,29 @@ class TouchCalibrationOverlay : public OverlayBase {
 
     static constexpr int CROSSHAIR_SIZE = 48;
     static constexpr int CROSSHAIR_HALF_SIZE = CROSSHAIR_SIZE / 2;
+
+    //
+    // === Unattended-loop Guards ===
+    //
+
+    /// VERIFY rounds this session has left on its own — a countdown expiry or a
+    /// fast-revert, neither of which the user asked for. Cleared by an Accept, a
+    /// user-pressed Retry, and each show().
+    int unattended_verify_rounds_ = 0;
+
+    /// Restarting capture after this many unattended VERIFY rounds is a loop, not
+    /// a retry: a user who cannot reach Accept will never reach it on the next
+    /// pass either. Abort instead so the screen is escapable.
+    static constexpr int MAX_UNATTENDED_VERIFY_ROUNDS = 2;
+
+    /// Consecutive LV_EVENT_LONG_PRESSED_REPEAT ticks seen on the current press.
+    int hold_repeat_count_ = 0;
+
+    /// Repeats required to abort. LVGL emits LONG_PRESSED after the indev's
+    /// long-press time (400ms by default) and LONG_PRESSED_REPEAT every 100ms
+    /// after that, so this is roughly a 1.4s hold — far longer than the taps
+    /// calibration collects, and short enough to find by leaning on the screen.
+    static constexpr int HOLD_ABORT_REPEATS = 10;
 };
 
 // ============================================================================

@@ -107,50 +107,50 @@ TEST_CASE("SpoolInfo - display_name formatting", "[filament]") {
     SECTION("Full info formats correctly") {
         spool.vendor = "Polymaker";
         spool.material = "PLA";
-        spool.color_name = "Jet Black";
-        REQUIRE(spool.display_name() == "Polymaker PLA - Jet Black");
+        spool.filament_name = "Jet Black";
+        REQUIRE(spool.display_name() == "Polymaker Jet Black PLA");
     }
 
-    SECTION("No color_name omits dash") {
+    SECTION("Empty filament name is simply absent") {
         spool.vendor = "eSUN";
         spool.material = "PETG";
-        spool.color_name = "";
+        spool.filament_name = "";
         REQUIRE(spool.display_name() == "eSUN PETG");
     }
 
     SECTION("No vendor omits vendor") {
         spool.vendor = "";
         spool.material = "ABS";
-        spool.color_name = "Red";
-        REQUIRE(spool.display_name() == "ABS - Red");
+        spool.filament_name = "Red";
+        REQUIRE(spool.display_name() == "Red ABS");
     }
 
     SECTION("Only material") {
         spool.vendor = "";
         spool.material = "TPU";
-        spool.color_name = "";
+        spool.filament_name = "";
         REQUIRE(spool.display_name() == "TPU");
     }
 
     SECTION("Empty info returns 'Unknown Spool'") {
         spool.vendor = "";
         spool.material = "";
-        spool.color_name = "";
+        spool.filament_name = "";
         REQUIRE(spool.display_name() == "Unknown Spool");
     }
 
-    SECTION("Only color returns color with dash") {
+    SECTION("Only a filament name") {
         spool.vendor = "";
         spool.material = "";
-        spool.color_name = "Blue";
-        REQUIRE(spool.display_name() == " - Blue");
+        spool.filament_name = "Blue";
+        REQUIRE(spool.display_name() == "Blue");
     }
 
     SECTION("Complex color names preserved") {
         spool.vendor = "Eryone";
         spool.material = "Silk PLA";
-        spool.color_name = "Gold/Silver/Copper Tri-Color";
-        REQUIRE(spool.display_name() == "Eryone Silk PLA - Gold/Silver/Copper Tri-Color");
+        spool.filament_name = "Gold/Silver/Copper Tri-Color";
+        REQUIRE(spool.display_name() == "Eryone Gold/Silver/Copper Tri-Color Silk PLA");
     }
 }
 
@@ -174,7 +174,7 @@ TEST_CASE("SpoolInfo - default initialization", "[filament]") {
     SECTION("Strings default to empty") {
         REQUIRE(spool.vendor.empty());
         REQUIRE(spool.material.empty());
-        REQUIRE(spool.color_name.empty());
+        REQUIRE(spool.filament_name.empty());
         REQUIRE(spool.color_hex.empty());
     }
 
@@ -249,7 +249,7 @@ TEST_CASE("FilamentInfo - default initialization", "[filament]") {
     SECTION("Strings default to empty") {
         REQUIRE(filament.vendor_name.empty());
         REQUIRE(filament.material.empty());
-        REQUIRE(filament.color_name.empty());
+        REQUIRE(filament.filament_name.empty());
         REQUIRE(filament.color_hex.empty());
     }
 
@@ -264,11 +264,11 @@ TEST_CASE("FilamentInfo - display_name formatting", "[filament]") {
     SECTION("Full info formats correctly") {
         filament.vendor_name = "Polymaker";
         filament.material = "PLA";
-        filament.color_name = "Jet Black";
-        REQUIRE(filament.display_name() == "Polymaker PLA - Jet Black");
+        filament.filament_name = "Jet Black";
+        REQUIRE(filament.display_name() == "Polymaker Jet Black PLA");
     }
 
-    SECTION("No color omits dash") {
+    SECTION("Empty filament name is simply absent") {
         filament.vendor_name = "eSUN";
         filament.material = "PETG";
         REQUIRE(filament.display_name() == "eSUN PETG");
@@ -276,8 +276,8 @@ TEST_CASE("FilamentInfo - display_name formatting", "[filament]") {
 
     SECTION("No vendor omits vendor") {
         filament.material = "ABS";
-        filament.color_name = "Red";
-        REQUIRE(filament.display_name() == "ABS - Red");
+        filament.filament_name = "Red";
+        REQUIRE(filament.display_name() == "Red ABS");
     }
 
     SECTION("Only material") {
@@ -543,7 +543,7 @@ TEST_CASE("MoonrakerAPIMock - create_spoolman_filament", "[filament][mock]") {
                 callback_called = true;
                 REQUIRE(filament.id > 0);
                 REQUIRE(filament.material == "PETG");
-                REQUIRE(filament.color_name == "Ocean Blue");
+                REQUIRE(filament.filament_name == "Ocean Blue PETG");
                 REQUIRE(filament.color_hex == "#0077B6");
             },
             [](const MoonrakerError&) { FAIL("Error callback should not be called"); });
@@ -1072,6 +1072,156 @@ TEST_CASE("parse_spool_info - null recommended temps do not throw (#1087)",
 }
 
 // ============================================================================
+// parse_spool_info — nozzle/bed temperature RANGES
+//
+// apply_spool_to_slot() copies spool.nozzle_temp_min/max straight onto the
+// slot, so a parser that never reads settings_extruder_temp_min/max hands every
+// Spoolman-sourced slot a 0/0 nozzle range while the bed temperature is real.
+// parse_filament_info() already reads all four keys; the spool path must agree.
+// ============================================================================
+
+TEST_CASE("parse_spool_info parses nozzle and bed temperature ranges",
+          "[filament][parsing][spoolman]") {
+    using helix::spoolman_detail::parse_spool_info;
+
+    SECTION("min/max populate the range alongside the recommended value") {
+        auto j = nlohmann::json::parse(R"({
+            "id": 21,
+            "filament": {
+                "id": 4,
+                "material": "PETG",
+                "settings_extruder_temp": 240,
+                "settings_extruder_temp_min": 230,
+                "settings_extruder_temp_max": 250,
+                "settings_bed_temp": 80,
+                "settings_bed_temp_min": 70,
+                "settings_bed_temp_max": 90
+            }
+        })");
+
+        auto info = parse_spool_info(j);
+        CHECK(info.nozzle_temp_recommended == 240);
+        CHECK(info.nozzle_temp_min == 230);
+        CHECK(info.nozzle_temp_max == 250);
+        CHECK(info.bed_temp_recommended == 80);
+        CHECK(info.bed_temp_min == 70);
+        CHECK(info.bed_temp_max == 90);
+    }
+
+    SECTION("present-but-null min/max do not throw and read as 0") {
+        // Spoolman serializes every optional numeric as null rather than
+        // omitting it — a raw .value() on these throws type_error.302 and
+        // aborts the whole spool-list parse (#1087).
+        auto j = nlohmann::json::parse(R"({
+            "id": 22,
+            "filament": {
+                "material": "PLA",
+                "settings_extruder_temp_min": null,
+                "settings_extruder_temp_max": null,
+                "settings_bed_temp_min": null,
+                "settings_bed_temp_max": null
+            }
+        })");
+
+        SpoolInfo info;
+        REQUIRE_NOTHROW(info = parse_spool_info(j));
+        CHECK(info.nozzle_temp_min == 0);
+        CHECK(info.nozzle_temp_max == 0);
+        CHECK(info.bed_temp_min == 0);
+        CHECK(info.bed_temp_max == 0);
+    }
+
+    SECTION("the range reaches the slot through apply_spool_to_slot") {
+        // The consumer that made the omission user-visible: a slot linked to a
+        // Spoolman spool showed a real bed temperature next to a 0/0 nozzle
+        // range, because only the bed value was ever parsed.
+        auto j = nlohmann::json::parse(R"({
+            "id": 23,
+            "filament": {
+                "material": "PETG",
+                "settings_extruder_temp": 240,
+                "settings_extruder_temp_min": 230,
+                "settings_extruder_temp_max": 250,
+                "settings_bed_temp": 80,
+                "settings_bed_temp_min": 70,
+                "settings_bed_temp_max": 90
+            }
+        })");
+
+        SlotInfo slot;
+        apply_spool_to_slot(slot, parse_spool_info(j));
+        CHECK(slot.nozzle_temp_min == 230);
+        CHECK(slot.nozzle_temp_max == 250);
+        CHECK(slot.bed_temp == 80);
+    }
+}
+
+// ============================================================================
+// apply_spool_to_slot — what it puts in spool_name
+//
+// spool_name means "a filament name" on every other writer: AFC parses it from
+// filament_name, CFS from the flat schema's `name`, Snapmaker from the RFID
+// SUB_TYPE. docs/specs/filament_slots.md requires the lane_data field to be
+// "distinct from vendor + material", and OrcaSlicer / Happy Hare read it under
+// that meaning. Spoolman's real filament name arrives in SpoolInfo::color_name
+// — parse_spool_info() maps filament.name there, so the field is misnamed
+// rather than miscarrying.
+// ============================================================================
+
+TEST_CASE("apply_spool_to_slot hands the slot the real filament name",
+          "[filament][spoolman][regression]") {
+    using helix::spoolman_detail::parse_spool_info;
+
+    auto j = nlohmann::json::parse(R"({
+        "id": 42,
+        "filament": {
+            "id": 12,
+            "name": "Ambrosia Pink",
+            "material": "PLA",
+            "multi_color_hexes": "#D4AF37,#C0C0C0",
+            "vendor": {"id": 4, "name": "Polymaker"}
+        }
+    })");
+
+    const SpoolInfo spool = parse_spool_info(j);
+    REQUIRE(spool.filament_name == "Ambrosia Pink"); // filament.name lands here
+    REQUIRE(spool.vendor == "Polymaker");
+
+    SlotInfo slot;
+    apply_spool_to_slot(slot, spool);
+
+    CHECK(slot.spool_name == "Ambrosia Pink");
+    // The synthesis this replaced. "Polymaker PLA" is not a name: it repeats
+    // brand and material, which compose_filament_label() then dedups away, so
+    // the colour identity of the spool never reaches the card.
+    CHECK(slot.spool_name != "Polymaker PLA");
+    CHECK(slot.brand == "Polymaker");
+    CHECK(slot.material == "PLA");
+    CHECK(slot.spoolman_id == 42);
+
+    SECTION("multi-colour hexes reach the slot rather than being dropped") {
+        CHECK(slot.multi_color_hexes == "#D4AF37,#C0C0C0");
+    }
+
+    SECTION("a spool with no filament name leaves the name blank, not fabricated") {
+        // Blank is the unset sentinel the slot/override merge policy expects.
+        // Fabricating "eSUN PETG" here would make the field indistinguishable
+        // from a user-entered label on the wire.
+        SpoolInfo bare;
+        bare.id = 7;
+        bare.vendor = "eSUN";
+        bare.material = "PETG";
+
+        SlotInfo bare_slot;
+        apply_spool_to_slot(bare_slot, bare);
+
+        CHECK(bare_slot.spool_name.empty());
+        CHECK(bare_slot.brand == "eSUN");
+        CHECK(bare_slot.material == "PETG");
+    }
+}
+
+// ============================================================================
 // filter_spools Tests
 // ============================================================================
 
@@ -1082,7 +1232,7 @@ static std::vector<SpoolInfo> make_filter_test_spools() {
     s1.id = 1;
     s1.vendor = "Polymaker";
     s1.material = "PLA";
-    s1.color_name = "Jet Black";
+    s1.filament_name = "Jet Black";
     s1.location = "Shelf A";
     spools.push_back(s1);
 
@@ -1090,14 +1240,14 @@ static std::vector<SpoolInfo> make_filter_test_spools() {
     s2.id = 2;
     s2.vendor = "eSUN";
     s2.material = "PETG";
-    s2.color_name = "Blue";
+    s2.filament_name = "Blue";
     spools.push_back(s2);
 
     SpoolInfo s3;
     s3.id = 3;
     s3.vendor = "Polymaker";
     s3.material = "ASA";
-    s3.color_name = "Red";
+    s3.filament_name = "Red";
     s3.location = "Shelf A";
     spools.push_back(s3);
 
@@ -1105,7 +1255,7 @@ static std::vector<SpoolInfo> make_filter_test_spools() {
     s4.id = 42;
     s4.vendor = "Hatchbox";
     s4.material = "PLA";
-    s4.color_name = "White";
+    s4.filament_name = "White";
     spools.push_back(s4);
 
     return spools;
@@ -1353,7 +1503,7 @@ TEST_CASE("Mock persists created filaments", "[spoolman][mock]") {
         if (f.id == created.id) {
             found = true;
             REQUIRE(f.material == "PETG");
-            REQUIRE(f.color_name == "Blue");
+            REQUIRE(f.filament_name == "Blue PETG");
         }
     }
     REQUIRE(found);
@@ -1504,7 +1654,7 @@ TEST_CASE("SpoolInfo - realistic spool scenarios", "[filament][integration]") {
         SpoolInfo spool;
         spool.vendor = "Polymaker";
         spool.material = "PLA";
-        spool.color_name = "Jet Black";
+        spool.filament_name = "Jet Black";
         spool.color_hex = "1A1A2E";
         spool.initial_weight_g = 1000.0;
         spool.remaining_weight_g = 850.0;
@@ -1514,14 +1664,14 @@ TEST_CASE("SpoolInfo - realistic spool scenarios", "[filament][integration]") {
         REQUIRE(spool.remaining_percent() == Catch::Approx(85.0));
         REQUIRE(spool.is_low() == false);
         REQUIRE(spool.is_low(900.0) == true); // Custom threshold
-        REQUIRE(spool.display_name() == "Polymaker PLA - Jet Black");
+        REQUIRE(spool.display_name() == "Polymaker Jet Black PLA");
     }
 
     SECTION("Nearly empty ASA spool") {
         SpoolInfo spool;
         spool.vendor = "Flashforge";
         spool.material = "ASA";
-        spool.color_name = "Fire Engine Red";
+        spool.filament_name = "Fire Engine Red";
         spool.initial_weight_g = 1000.0;
         spool.remaining_weight_g = 50.0;
 
@@ -1534,7 +1684,7 @@ TEST_CASE("SpoolInfo - realistic spool scenarios", "[filament][integration]") {
         SpoolInfo spool;
         spool.vendor = "Polymaker";
         spool.material = "PC";
-        spool.color_name = "PolyMax PC Grey";
+        spool.filament_name = "PolyMax PC Grey";
         spool.initial_weight_g = 750.0;
         spool.remaining_weight_g = 500.0;
         spool.nozzle_temp_recommended = 270;

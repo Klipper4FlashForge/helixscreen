@@ -3429,6 +3429,18 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
             slot.material = lane["material"].get<std::string>();
         }
 
+        // Filament name, as AFC copied it out of Spoolman's filament record.
+        // Mirrors parse_afc_stepper(): an EMPTY value is a deliberate clear —
+        // clear_lane_data()/clear_values() write filament_name="" on eject — so
+        // it is adopted as-is rather than treated as "keep existing". Without
+        // this a lane whose data only ever arrived through the DB path had no
+        // name at all, and the loaded card fell back to the algorithmic colour
+        // description. apply_overrides() runs below, so a user-entered name
+        // still wins.
+        if (lane.contains("filament_name") && lane["filament_name"].is_string()) {
+            slot.spool_name = lane["filament_name"].get<std::string>();
+        }
+
         // Parse loaded state.
         // AFC "loaded" means hub-loaded, not toolhead-loaded — only
         // tool_loaded == true means filament is at the extruder.
@@ -4390,15 +4402,62 @@ bool AmsBackendAfc::toolhead_is_free_unlocked() const {
 bool AmsBackendAfc::recovery_attribution_valid_unlocked() const {
     // Callers hold mutex_.
     //
-    // A lane rename or unit re-init can leave active_load_lane_ naming a lane
-    // that no longer exists — initialize_slots() never touches it. A stale name
-    // is not attribution, and both the recovery gate and the UI-facing flag must
-    // read it that way or they disagree about the same lane.
+    // Attribution means "AFC is telling us, right now, which lane needs help".
+    // Two different things can leave a name behind that is not that.
+    //
+    // 1. A toolchange that FAILED. active_load_lane_ prefers AFC.current_lane
+    //    (= AFC.current_loading), which upstream sets at the top of TOOL_LOAD
+    //    (AFC.py v1.2.0:1523) and TOOL_UNLOAD (:1948) and clears in exactly two
+    //    places — set_tool_loaded() and set_tool_unloaded() — both under
+    //    `if normal_toolchange:` (AFC_lane.py:1526, :1545). That is the SUCCESS
+    //    path only, so a failed toolchange pins the name until the next
+    //    successful one, which a user with a jammed lane cannot perform.
+    //
+    //    Left standing, that latch outranks Eject in decide_unload_mode(), where
+    //    can_recover && attributed wins. The failure that makes someone want to
+    //    eject is then the exact thing that removes the Eject button, swapping it
+    //    for a lane reset that retracts toward the hub and never returns the
+    //    filament to the spool.
+    //
+    //    The IDLE discrimination that follows from this lives in
+    //    lane_recovery_is_attributed(), NOT here — see the note below.
+    //
+    // 2. A lane rename or unit re-init can leave active_load_lane_ naming a lane
+    //    that no longer exists — initialize_slots() never touches it. A stale name
+    //    is not attribution, and both the recovery gate and the UI-facing flag must
+    //    read it that way or they disagree about the same lane.
     return !active_load_lane_.empty() && slots_.index_of(active_load_lane_) >= 0;
 }
 
 bool AmsBackendAfc::lane_recovery_is_attributed() const {
     std::lock_guard<std::mutex> lock(mutex_);
+
+    // Narrower than can_recover_lane_position()'s use of the same name, because
+    // the two ask different questions of it.
+    //
+    //   can_recover_lane_position() asks MAY WE OFFER Recover for this lane. It
+    //   needs a name so a blind opening retract cannot land on the wrong lane
+    //   (#1182) — a safety gate, and a latched name still identifies the right
+    //   lane, so it must keep answering true here or a genuinely stranded lane
+    //   loses its recovery entirely.
+    //
+    //   This function asks SHOULD Recover OUTRANK Eject in decide_unload_mode().
+    //   That needs the diagnosis to be live, not residue. AFC.current_loading is
+    //   cleared only on the success path of a toolchange (AFC_lane.py:1526,
+    //   :1545), so a FAILED one pins the name until the next successful
+    //   toolchange — which a user with a jammed lane cannot perform. Treating
+    //   that as a confident diagnosis means the failure that makes someone want
+    //   Eject is the very thing that removes the Eject button, swapping it for a
+    //   lane reset that retracts toward the hub and never returns filament to
+    //   the spool.
+    //
+    // AFC's action discriminates: a toolchange genuinely under way (or faulted
+    // into ERROR) is non-IDLE and its name describes live work. Back at IDLE the
+    // name is residue, so the lane drops to the unattributed arm of the ranking —
+    // Recover stays available as a last resort, it just no longer displaces Eject.
+    if (system_info_.action == AmsAction::IDLE) {
+        return false;
+    }
     return recovery_attribution_valid_unlocked();
 }
 

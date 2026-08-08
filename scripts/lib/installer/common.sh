@@ -470,9 +470,12 @@ clean_helix_state_dirs() {
 print_post_install_commands() {
     echo "Useful commands:"
     if [ "$INIT_SYSTEM" = "systemd" ]; then
-        echo "  systemctl status ${SERVICE_NAME}    # Check status"
-        echo "  journalctl -u ${SERVICE_NAME} -f    # View logs"
-        echo "  systemctl restart ${SERVICE_NAME}   # Restart"
+        # journalctl and restart need privilege: a service user outside adm/
+        # systemd-journal gets "No journal files were found" on stderr and an
+        # empty stdout, which reads as "there are no logs" when redirected.
+        echo "  systemctl status ${SERVICE_NAME}         # Check status"
+        echo "  sudo journalctl -u ${SERVICE_NAME} -f    # View logs"
+        echo "  sudo systemctl restart ${SERVICE_NAME}   # Restart"
     else
         # helixscreen.init writes to /var/log/helixscreen/launcher.log when /var/log
         # is persistent, else ${INSTALL_DIR}/logs/launcher.log — show whichever exists.

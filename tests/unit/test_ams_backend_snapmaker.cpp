@@ -15,6 +15,7 @@
 #include "moonraker_client_mock.h"
 #include "printer_discovery.h"
 #include "printer_state.h"
+#include "spoolman_types.h" // SpoolInfo + apply_spool_to_slot (the picker-side writer)
 
 #include <chrono>
 #include <filesystem>
@@ -175,7 +176,14 @@ json make_filament_detect_status(int slot_index, const std::string& main_type, u
 // without a live Moonraker connection — same idiom as test_ams_backend_afc.cpp.
 class CapturingSnapmakerBackend : public AmsBackendSnapmaker {
   public:
-    CapturingSnapmakerBackend() : AmsBackendSnapmaker(nullptr, nullptr) {}
+    // running_ has to be set: the filament ops gate on check_preconditions(),
+    // which answers not_connected on a backend that never started. api_ stays
+    // null, so the print-active half of that gate passes (unknown print state is
+    // not blocked) and these tests keep asserting the command, not the gate —
+    // the gate itself is covered in test_ams_paused_filament_ops.cpp.
+    CapturingSnapmakerBackend() : AmsBackendSnapmaker(nullptr, nullptr) {
+        running_.store(true);
+    }
 
     std::vector<std::string> captured_gcodes;
 
@@ -1680,6 +1688,50 @@ TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker firmware POST omits unknown SUB_TY
     const auto& info_obj = history[0].body["info"];
     CHECK(info_obj["VENDOR"].get<std::string>() == "Generic");
     CHECK(info_obj["MAIN_TYPE"].get<std::string>() == "PETG");
+    CHECK_FALSE(info_obj.contains("SUB_TYPE"));
+}
+
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker firmware POST omits a Spoolman filament name as SUB_TYPE",
+                 "[ams][snapmaker][firmware_writeback][spoolman]") {
+    // Snapmaker is the one consumer that puts spool_name back on the wire to
+    // firmware. It is the same free-form guard as the test above, reached
+    // through the Spoolman picker's writer instead of a hand-typed string: a
+    // real filament name ("Ambrosia Pink") is not one of the eight known
+    // product lines, so SUB_TYPE is omitted and firmware keeps what it had.
+    SnapmakerTmpCacheDir tmp("firmware_writeback_spoolman_name");
+    MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
+    helix::PrinterState state;
+    state.init_subjects(false);
+    MoonrakerAPIMock api(client, state);
+
+    AmsBackendSnapmaker backend(&api, nullptr);
+    auto store = std::make_unique<helix::ams::FilamentSlotOverrideStore>(
+        &api, "snapmaker", helix::ams::LaneKeyStyle::Tool);
+    FilamentSlotOverrideStoreTestAccess::set_cache_directory(*store, tmp.path);
+    SnapmakerTestAccess::inject_override_store(backend, std::move(store));
+
+    api.rest_mock().mock_clear_post_history();
+
+    SpoolInfo spool;
+    spool.id = 42;
+    spool.vendor = "Polymaker";
+    spool.material = "PLA";
+    spool.filament_name = "Ambrosia Pink"; // parse_spool_info maps filament.name here
+    spool.color_hex = "FFB6C1";
+
+    SlotInfo edit;
+    apply_spool_to_slot(edit, spool);
+    REQUIRE(edit.spool_name == "Ambrosia Pink");
+
+    auto err = backend.set_slot_info(0, edit, /*persist=*/true);
+    REQUIRE(err.success());
+
+    auto history = api.rest_mock().mock_get_post_history();
+    REQUIRE(history.size() == 1);
+    const auto& info_obj = history[0].body["info"];
+    CHECK(info_obj["VENDOR"].get<std::string>() == "Polymaker");
+    CHECK(info_obj["MAIN_TYPE"].get<std::string>() == "PLA");
     CHECK_FALSE(info_obj.contains("SUB_TYPE"));
 }
 

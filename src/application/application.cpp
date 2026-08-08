@@ -58,6 +58,7 @@
 #include "screenshot.h"
 #include "sensor_state.h"
 #include "sound_manager.h"
+#include "spoolman_manager.h"
 #include "static_panel_registry.h"
 #include "static_subject_registry.h"
 #include "streaming_policy.h"
@@ -2967,12 +2968,23 @@ void Application::setup_discovery_callbacks() {
                                                                          std::string log_context) {
                 helix::ui::queue_update([spool, try_assign_active_spool_to_tool,
                                          log_context = std::move(log_context)]() {
+                    // This record is the freshest view of the spool we will get
+                    // — it arrives from the startup sync and from every
+                    // notify_active_spool_set. Refresh the identity side
+                    // channel from it (invalidate first: cache_identity() is
+                    // insert-if-absent, so a stale entry would win otherwise).
+                    SpoolmanManager::invalidate_identity(spool.id);
+                    SpoolmanManager::cache_identity(spool);
+
                     SlotInfo slot;
                     slot.slot_index = -2;
                     slot.global_index = -2;
+                    // apply_spool_to_slot() owns the whole identity copy,
+                    // multi-colour included. Overwriting spool_name with
+                    // display_name() here used to put "Polymaker PLA - Jet
+                    // Black" on a field the lane_data schema, AFC and Happy
+                    // Hare all read as the bare filament name.
                     apply_spool_to_slot(slot, spool);
-                    slot.spool_name = spool.display_name();
-                    slot.multi_color_hexes = spool.multi_color_hexes;
                     AmsState::instance().set_external_spool_info(slot);
                     try_assign_active_spool_to_tool(spool);
                     spdlog::info("[Application] External spool {}: {} (id={})", log_context,

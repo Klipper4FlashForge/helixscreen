@@ -996,6 +996,7 @@ translations:
   Hide Firmware Noise: 隐藏固件噪声
   Hide Temperature Reports: 隐藏温度报告
   High Water Mark: 峰值标记
+  Hold anywhere to cancel: ''
   Holding nozzle at {}°C to purge previous filament.: 将喷嘴保持在 {}°C 以清洗之前的耗材。
   Home: 归位
   Home failed: 归位失败

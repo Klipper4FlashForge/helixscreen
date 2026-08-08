@@ -411,6 +411,11 @@ class DisplayManager : public helix::ICalibrationSink {
     void enable_affine() override {
         enable_affine_calibration();
     }
+    void clear_calibration() override {
+        if (m_backend) {
+            m_backend->clear_calibration();
+        }
+    }
 
     /**
      * @brief Mark whether a touch-calibration UI (overlay or wizard) is on screen
