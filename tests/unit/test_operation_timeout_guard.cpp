@@ -3,18 +3,48 @@
 /**
  * @file test_operation_timeout_guard.cpp
  * @brief Unit tests for OperationTimeoutGuard utility
- *
- * NOTE: Timer callback tests (timeout fires, timer cleanup) are not included
- * because the UpdateQueue's 1ms LVGL timer causes process_lvgl() to spin
- * indefinitely in the test harness. The timer mechanism is identical to
- * FilamentPanel's existing production-tested timeout pattern.
  */
 
 #include "../lvgl_test_fixture.h"
 #include "operation_timeout_guard.h"
 #include "subject_managed_panel.h"
 
+#include <memory>
+
 #include "../catch_amalgamated.hpp"
+
+namespace {
+
+/// Number of timers currently linked into LVGL's timer list.
+int count_lvgl_timers() {
+    int n = 0;
+    for (lv_timer_t* t = lv_timer_get_next(nullptr); t != nullptr; t = lv_timer_get_next(t)) {
+        n++;
+    }
+    return n;
+}
+
+/// How many live LVGL timers carry @p p as their user_data. Compares pointers
+/// only - never dereferences, so it is safe to ask about an object that has
+/// already been destroyed.
+///
+/// Counted rather than tested as a boolean on purpose. lv_timer_cancel_safe()
+/// (used widely elsewhere) neuters a timer without unlinking it or clearing its
+/// user_data, and the linked-but-dead entry survives until the next
+/// lv_timer_handler pass. Earlier tests therefore leave timers pointing at their
+/// own dead stack frames, and those addresses get reused. Only the *delta*
+/// across a destructor is meaningful.
+int lvgl_timers_pointing_at(const void* p) {
+    int n = 0;
+    for (lv_timer_t* t = lv_timer_get_next(nullptr); t != nullptr; t = lv_timer_get_next(t)) {
+        if (lv_timer_get_user_data(t) == p) {
+            n++;
+        }
+    }
+    return n;
+}
+
+} // namespace
 
 // ============================================================================
 // Basic State Tests
@@ -133,33 +163,75 @@ TEST_CASE_METHOD(LVGLTestFixture, "OperationTimeoutGuard: without subject begin/
     REQUIRE(guard.subject() == nullptr);
 }
 
-TEST_CASE_METHOD(LVGLTestFixture, "OperationTimeoutGuard: destructor cleans up",
+// A destructor that leaks its lv_timer is a live main-thread crash source: the
+// timer stays linked, comes due, and timer_callback() dereferences the freed
+// guard through lv_timer_get_user_data(). Nothing in a plain build notices unless
+// a test pumps LVGL past the deadline afterwards, which is what these two do.
+//
+// The dangling-user_data check runs first and deliberately before any pumping: it
+// is a pointer comparison, so it fails cleanly on a leak instead of failing by
+// running the leaked callback into freed memory.
+
+TEST_CASE_METHOD(LVGLTestFixture, "OperationTimeoutGuard: destructor cancels the pending timer",
                  "[operation_timeout_guard]") {
-    // Verify no crash when destroying guard with active timer
+    auto fired = std::make_shared<bool>(false);
+    const int timers_before = count_lvgl_timers();
+    const void* guard_addr = nullptr;
+    int pointing_before = 0;
+
     {
         OperationTimeoutGuard guard;
-        guard.begin(30000, [] {});
-        // guard destroyed here with active timer
+        guard_addr = &guard;
+        guard.begin(20, [fired] { *fired = true; });
+
+        REQUIRE(guard.is_active());
+        REQUIRE(count_lvgl_timers() == timers_before + 1);
+        pointing_before = lvgl_timers_pointing_at(guard_addr);
+        REQUIRE(pointing_before >= 1);
+        // guard destroyed here with the timer still armed
     }
-    // If we get here, destructor handled cleanup
-    REQUIRE(true);
+
+    // cancel_timer() uses lv_timer_delete(), so both are exact immediately.
+    REQUIRE(lvgl_timers_pointing_at(guard_addr) == pointing_before - 1);
+    REQUIRE(count_lvgl_timers() == timers_before);
+
+    // Well past the 20ms deadline.
+    process_lvgl(200);
+    REQUIRE_FALSE(*fired);
 }
 
-TEST_CASE_METHOD(LVGLTestFixture, "OperationTimeoutGuard: destructor with subject cleans up",
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "OperationTimeoutGuard: destructor cancels the timer when a subject is bound",
                  "[operation_timeout_guard]") {
-    // SubjectManager must outlive the guard, and the guard's subject_ lives
-    // inside the guard. So subjects must be destroyed AFTER guard (declared first).
-    // In practice, panels own both and they're destroyed together.
-    SubjectManager subjects;
-    OperationTimeoutGuard guard;
-    guard.init_subject("test_guard_dtor_subject", subjects);
-    guard.begin(30000, [] {});
-    // Both destroyed at end of scope: guard first, then subjects deinits the subject.
-    // Wait — guard.subject_ is inside guard, destroyed before subjects.deinit_all().
-    // This is fine because subjects_ must deinit BEFORE guard is destroyed.
-    // In panels, deinit_subjects() is called explicitly before destruction.
-    // Here, we call subjects.deinit_all() manually to match real usage.
-    guard.end();
-    subjects.deinit_all();
-    REQUIRE(true);
+    auto fired = std::make_shared<bool>(false);
+    const int timers_before = count_lvgl_timers();
+    const void* guard_addr = nullptr;
+    int pointing_before = 0;
+
+    {
+        // Declaration order matters and is the reverse of what reads naturally:
+        // subject_ lives inside the guard, so SubjectManager must deinit while the
+        // guard is still alive. Declaring guard first destroys subjects first.
+        //
+        // Nothing is torn down explicitly - no end(), no deinit_all(). The
+        // destructor is the thing under test, so it has to be left something to
+        // get wrong.
+        OperationTimeoutGuard guard;
+        SubjectManager subjects;
+        guard.init_subject("test_guard_dtor_subject", subjects);
+        guard.begin(20, [fired] { *fired = true; });
+        guard_addr = &guard;
+
+        REQUIRE(guard.is_active());
+        REQUIRE(lv_subject_get_int(guard.subject()) == 1);
+        REQUIRE(count_lvgl_timers() == timers_before + 1);
+        pointing_before = lvgl_timers_pointing_at(guard_addr);
+        REQUIRE(pointing_before >= 1);
+    }
+
+    REQUIRE(lvgl_timers_pointing_at(guard_addr) == pointing_before - 1);
+    REQUIRE(count_lvgl_timers() == timers_before);
+
+    process_lvgl(200);
+    REQUIRE_FALSE(*fired);
 }

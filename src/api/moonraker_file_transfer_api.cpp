@@ -232,8 +232,23 @@ void MoonrakerFileTransferAPI::upload_file(const std::string& root, const std::s
 void MoonrakerFileTransferAPI::upload_file_with_name(
     const std::string& root, const std::string& path, const std::string& filename,
     const std::string& content, SuccessCallback on_success, ErrorCallback on_error) {
-    // Validate inputs
-    if (reject_invalid_path(path, "upload_file", on_error))
+    // `path` only supplies the destination DIRECTORY here - the name written on
+    // the printer comes from the separate `filename` parameter, and the form
+    // field below is only set when `path` actually contains a directory
+    // component. An empty `path` therefore means "the root of `root`", which is
+    // a legitimate destination: Moonraker treats an omitted `path` form field as
+    // the root of the selected root. Guarding with `!path.empty()` is the same
+    // empty-means-root convention list_files() and get_directory() already use
+    // in moonraker_file_api.cpp. is_safe_path("") stays false - an empty name is
+    // never a valid file, which is what every other caller is asking about.
+    if (!path.empty() && reject_invalid_path(path, "upload_file", on_error))
+        return;
+
+    // The filename is the part that reaches the multipart form verbatim, and it
+    // is never legitimately empty. Validating it here is what keeps
+    // upload_file(root, "", content) - which forwards path as the filename -
+    // rejected now that an empty `path` no longer is.
+    if (reject_invalid_path(filename, "upload_file", on_error))
         return;
 
     if (http_base_url_.empty()) {

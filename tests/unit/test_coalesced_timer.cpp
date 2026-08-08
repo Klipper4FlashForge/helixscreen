@@ -4,9 +4,35 @@
 
 #include "../lvgl_test_fixture.h"
 
+#include <memory>
+
 #include "../catch_amalgamated.hpp"
 
 using namespace helix::ui;
+
+namespace {
+
+/// How many live LVGL timers carry @p p as their user_data. Compares pointers
+/// only - never dereferences, so it is safe to ask about an object that has
+/// already been destroyed.
+///
+/// Counted rather than tested as a boolean on purpose. lv_timer_cancel_safe()
+/// neuters a timer without unlinking it or clearing its user_data, and the
+/// linked-but-dead entry survives until the next lv_timer_handler pass. Earlier
+/// tests therefore leave timers pointing at their own dead stack frames, and
+/// those addresses get reused. Only the *delta* across a destructor is
+/// meaningful; an absolute "nothing points here" is a coin flip on stack reuse.
+int lvgl_timers_pointing_at(const void* p) {
+    int n = 0;
+    for (lv_timer_t* t = lv_timer_get_next(nullptr); t != nullptr; t = lv_timer_get_next(t)) {
+        if (lv_timer_get_user_data(t) == p) {
+            n++;
+        }
+    }
+    return n;
+}
+
+} // namespace
 
 TEST_CASE_METHOD(LVGLTestFixture, "CoalescedTimer: single schedule fires callback once",
                  "[coalesced_timer]") {
@@ -55,14 +81,35 @@ TEST_CASE_METHOD(LVGLTestFixture, "CoalescedTimer: cancel prevents callback from
 
 TEST_CASE_METHOD(LVGLTestFixture, "CoalescedTimer: destructor cancels pending timer",
                  "[coalesced_timer]") {
-    // Verify destructor properly cleans up (doesn't crash or leak).
-    // The cancel test above verifies callback suppression; this tests RAII cleanup.
+    // A destructor that leaves the timer armed fires timer_cb() into a callback
+    // whose storage is gone - a live main-thread crash source. The flag below is
+    // held in a shared_ptr so it outlives the timer and can be read afterwards.
+    auto fired = std::make_shared<bool>(false);
+    const void* timer_addr = nullptr;
+    int pointing_before = 0;
+
     {
-        CoalescedTimer timer(1000);
-        timer.schedule([]() {});
+        CoalescedTimer timer(20);
+        timer.schedule([fired]() { *fired = true; });
         REQUIRE(timer.pending());
-    } // destructor calls cancel() — timer deleted via lv_timer_delete
-    SUCCEED("Destructor completed without crash");
+
+        timer_addr = &timer;
+        pointing_before = lvgl_timers_pointing_at(timer_addr);
+        REQUIRE(pointing_before >= 1); // our own armed timer, at least
+    } // destructor must cancel()
+
+    // Checked before pumping, and by pointer comparison only: cancel() nulls the
+    // timer's user_data, so a destructor that skips it shows up here cleanly
+    // instead of by running the leaked callback into freed memory.
+    //
+    // There is no timer-count check to pair with this. cancel() routes through
+    // lv_timer_cancel_safe(), which neuters the timer and leaves lv_timer_handler
+    // to reap it, so the timer is still linked at this point either way.
+    REQUIRE(lvgl_timers_pointing_at(timer_addr) == pointing_before - 1);
+
+    // Well past the 20ms period.
+    process_lvgl(200);
+    REQUIRE_FALSE(*fired);
 }
 
 TEST_CASE_METHOD(LVGLTestFixture, "CoalescedTimer: re-schedule after fire works",

@@ -249,17 +249,21 @@ TEST_CASE("DisplayManager destructor is safe when not initialized", "[applicatio
     // Create and immediately destroy - should not crash
     {
         DisplayManager mgr;
-        // Destructor calls shutdown()
+        // A default-constructed manager owns no display, so its destructor's
+        // shutdown() must take the uninitialized path.
+        REQUIRE_FALSE(mgr.is_initialized());
     }
 
     // Multiple instances
     {
         DisplayManager mgr1;
         DisplayManager mgr2;
+        // Neither may claim initialization off the back of the other - the
+        // display handle is per-instance, not process-global state.
+        REQUIRE_FALSE(mgr1.is_initialized());
+        REQUIRE_FALSE(mgr2.is_initialized());
         // Both destructors call shutdown()
     }
-
-    REQUIRE(true); // If we got here, no crash
 }
 
 TEST_CASE("DisplayManager scroll configuration applies to pointer", "[application][display]") {

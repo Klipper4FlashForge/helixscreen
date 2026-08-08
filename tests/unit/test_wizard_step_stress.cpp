@@ -23,6 +23,8 @@
 #include "ui_wizard.h"
 
 #include "../lvgl_ui_test_fixture.h"
+#include "helix-xml/src/xml/lv_xml.h"
+#include "wizard_step.h"
 
 #include <spdlog/spdlog.h>
 
@@ -67,6 +69,32 @@ class WizardStressFixture : public LVGLUITestFixture {
             SKIP("Wizard XML components not available");
     }
 
+    /// The wizard's internal step index, published by ui_wizard_navigate_to_step().
+    /// This is the only external evidence that a navigation actually landed;
+    /// the wizard_content container itself outlives every step, so its mere
+    /// presence proves nothing.
+    int current_step() const {
+        lv_subject_t* s = lv_xml_get_subject(nullptr, "current_step");
+        REQUIRE(s != nullptr);
+        return lv_subject_get_int(s);
+    }
+
+    /// Children currently parented under the step container. Steady-state
+    /// after a settled navigation; a climbing value means a rebuild leaked.
+    uint32_t content_child_count() const {
+        lv_obj_t* content = lv_obj_find_by_name(wizard_, "wizard_content");
+        REQUIRE(content != nullptr);
+        return lv_obj_get_child_count(content);
+    }
+
+    /// Navigate and assert the wizard reports the step we asked for.
+    void navigate_and_verify(helix::wizard::StepId step, int settle_ms) {
+        ui_wizard_navigate_to_step(step);
+        process_lvgl(settle_ms);
+        INFO("requested step " << static_cast<int>(step));
+        REQUIRE(current_step() == static_cast<int>(step));
+    }
+
     lv_obj_t* wizard_ = nullptr;
     bool ready_ = false;
 };
@@ -80,59 +108,70 @@ TEST_CASE_METHOD(WizardStressFixture, "Wizard stress: bounce step 2 <-> 3",
     const int iterations = env_iterations(50);
     spdlog::info("[wizard-stress] bouncing 2<->3 for {} iterations", iterations);
 
-    // Settle one full nav before the loop so we start from a known state.
-    ui_wizard_navigate_to_step(helix::wizard::StepId::Wifi);
-    process_lvgl(120);
+    // Settle one full nav before the loop so we start from a known state, and
+    // record the settled child count as the steady-state baseline.
+    navigate_and_verify(helix::wizard::StepId::Wifi, 120);
+    const uint32_t baseline_children = content_child_count();
 
     for (int i = 0; i < iterations; ++i) {
-        ui_wizard_navigate_to_step(helix::wizard::StepId::Connection);
         // Long enough to let the slide-out animation start, the async delete
         // pipeline drain, and any observer-driven rebuild fire.
-        process_lvgl(80);
+        navigate_and_verify(helix::wizard::StepId::Connection, 80);
+        navigate_and_verify(helix::wizard::StepId::Wifi, 80);
 
-        ui_wizard_navigate_to_step(helix::wizard::StepId::Wifi);
-        process_lvgl(80);
+        // Back at the same step as the baseline with everything settled, so
+        // the container must hold the same number of children. A rebuild that
+        // forgot to drop the outgoing step shows up here as monotonic growth
+        // long before it shows up as a crash.
+        INFO("iteration " << i);
+        REQUIRE(content_child_count() == baseline_children);
 
         if ((i + 1) % 10 == 0) {
             spdlog::info("[wizard-stress] iteration {}/{}", i + 1, iterations);
         }
     }
 
-    // If we reach here without the process aborting, ASAN didn't trip on the
-    // bounce path. That doesn't mean the code is clean — only that this
-    // specific traversal didn't hit a freed pointer.
-    SUCCEED("Completed " << iterations << " bounces without crash");
+    // Surviving without aborting is the ASAN half of this test; the assertions
+    // above are the half that fails on a merely-wrong (non-crashing) wizard.
 }
 
 TEST_CASE_METHOD(WizardStressFixture, "Wizard stress: full sweep 1..N",
                  "[wizard][stress][.ui_integration]") {
     require_ready();
 
-    // Probe how many steps the wizard exposes by walking forward until
-    // navigate_to_step refuses (current_step subject won't update).
-    // Wizards historically have 7 steps but we don't hard-code that.
-    constexpr int max_probe = 12;
-    int last_valid = 1;
-    for (int s = 1; s <= max_probe; ++s) {
-        ui_wizard_navigate_to_step(static_cast<helix::wizard::StepId>(s));
-        process_lvgl(40);
-        if (lv_obj_find_by_name(wizard_, "wizard_content") == nullptr)
-            break;
-        last_valid = s;
-    }
+    // The sweep range is the wizard's own declared step count, not a probe.
+    //
+    // The old probe walked forward and broke out when
+    // `lv_obj_find_by_name(wizard_, "wizard_content")` came back null. That is
+    // the wrong signal twice over: the container is created once by
+    // ui_wizard_create() and outlives every step, so it is never null while
+    // navigation merely misbehaves - and on the one path where it *could* be
+    // null the loop fell out with last_valid == 1, collapsing the whole sweep
+    // to a single step that still reported success. Nothing about the probe
+    // could fail. kStepCount is the honest bound and it comes from
+    // wizard_step.h, not from this test.
+    //
+    // Step 0 (TouchCalibration) is excluded on purpose: navigate_to_step
+    // forwards past it when it is skipped, so it is the one id that legitimately
+    // does not land where it was asked to.
+    const int last_valid = helix::wizard::kStepCount - 1;
+    REQUIRE(last_valid >= 3); // Wifi + Connection at minimum, or the sweep is meaningless
     spdlog::info("[wizard-stress] sweep range: 1..{}", last_valid);
+
+    // Settle on the sweep's start point and take the steady-state baseline.
+    navigate_and_verify(static_cast<helix::wizard::StepId>(1), 120);
+    const uint32_t baseline_children = content_child_count();
 
     const int iterations = env_iterations(20);
     for (int i = 0; i < iterations; ++i) {
         for (int s = 1; s <= last_valid; ++s) {
-            ui_wizard_navigate_to_step(static_cast<helix::wizard::StepId>(s));
-            process_lvgl(60);
+            navigate_and_verify(static_cast<helix::wizard::StepId>(s), 60);
         }
         for (int s = last_valid; s >= 1; --s) {
-            ui_wizard_navigate_to_step(static_cast<helix::wizard::StepId>(s));
-            process_lvgl(60);
+            navigate_and_verify(static_cast<helix::wizard::StepId>(s), 60);
         }
+        // Ends where it started, fully settled - same child count as before.
+        INFO("sweep " << i);
+        REQUIRE(content_child_count() == baseline_children);
     }
-
-    SUCCEED("Completed " << iterations << " full sweeps without crash");
 }
