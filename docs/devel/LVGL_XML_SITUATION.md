@@ -1,6 +1,6 @@
 # LVGL XML: Fork Origin, Licensing, and Divergence
 
-**Date:** 2026-02-05 | **Updated:** 2026-07-31
+**Date:** 2026-02-05 | **Updated:** 2026-08-08
 **Status:** SETTLED — `lib/helix-xml/` is a permanent hard fork. There is no upstream to track.
 
 **Key paths:** `lib/helix-xml/` (engine) · `lib/helix-xml/src/xml/parsers/` (widget parsers) · `ui_xml/` (300+ layouts)
@@ -124,6 +124,15 @@ Practical consequences:
   `lib/helix-xml/`, then commit the bumped pointer here. Never write a `patches/*.patch` for it.
   It is also excluded from clang-format, so match surrounding style by hand.
 - It is pure C and must not include or call app-layer C++.
+- Being its own repo, it has its own tests and its own CI - neither of which the parent's
+  `make test` touches. `lib/helix-xml/tests/` is a standalone CMake + Unity suite that builds
+  the engine against a *pinned upstream* LVGL v9.5.0, not our patched `lib/lvgl`, so it stands
+  up from a bare clone: `cmake -S tests -B build`, `cmake --build build`,
+  `ctest --test-dir build --output-on-failure`. From this repo, `make test-xml`. Its CI
+  (`.github/workflows/ci.yml` inside the submodule) runs a gcc + clang matrix, ASAN/UBSAN, and
+  a conf-guards job that proves the `#if LV_USE_XML` / `LV_USE_TRANSLATION` / `LV_USE_OBJ_NAME`
+  guards still hold. Details and the here-vs-there test split: `TESTING.md` § "helix-xml Engine
+  Tests".
 - In a worktree, `lib/` is symlinked to the main tree — so editing `lib/helix-xml/` from a
   worktree edits the main checkout, exactly as for `lib/lvgl/`. Make engine changes in the main
   tree, or unlink first (`scripts/setup-worktree.sh --unlink`).
