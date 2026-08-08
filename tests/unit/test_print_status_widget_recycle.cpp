@@ -25,15 +25,16 @@
  * the whole suite in teardown.
  */
 
-#include "src/ui/panel_widgets/print_status_widget.h"
-
+#include "../lvgl_ui_test_fixture.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "lvgl/lvgl.h"
+#include "panel_widget_size.h"
+#include "src/ui/panel_widgets/print_status_widget.h"
 
 #include "../catch_amalgamated.hpp"
-#include "../lvgl_ui_test_fixture.h"
 
 using namespace helix;
+using namespace helix::widget_size;
 
 namespace {
 
@@ -63,9 +64,9 @@ TEST_CASE_METHOD(LVGLUITestFixture, "print_status card keeps row layout after at
         REQUIRE(comp != nullptr);
         widget.attach(comp, test_screen());
 
-        // 3x2 -> row layout. is_column_ starts false, so on_size_changed(3,2)
+        // Wide band -> row layout. is_column_ starts false, so on_size_changed
         // early-returns; attach() must have already applied the row layout.
-        widget.on_size_changed(3, 2, 600, 400);
+        widget.on_size_changed(3, 2, W_WIDE, 400);
         process_lvgl(30);
         flow = card_flow(comp);
     }
@@ -82,32 +83,32 @@ TEST_CASE_METHOD(LVGLUITestFixture, "print_status card layout survives instance 
         PrintStatusWidget widget;
         widget.set_config({{"layout_style", "library"}});
 
-        // First placement at 3x2 -> row layout, is_column_ stays false.
+        // First placement at the wide band -> row layout, is_column_ stays false.
         lv_obj_t* comp1 = make_print_status(test_screen());
         REQUIRE(comp1 != nullptr);
         widget.attach(comp1, test_screen());
-        widget.on_size_changed(3, 2, 600, 400);
+        widget.on_size_changed(3, 2, W_WIDE, 400);
         process_lvgl(30);
         flow_first = card_flow(comp1);
 
         // Recycle: destroy the old component, re-attach the SAME widget to a fresh
-        // one at the SAME 3x2. on_size_changed(3,2) sees use_column == is_column_
+        // one at the SAME wide band. on_size_changed sees use_column == is_column_
         // (both false) and early-returns; without an attach()-time apply the fresh
         // component would keep its default COLUMN flow. This is the core repro.
         lv_obj_delete(comp1);
         lv_obj_t* comp2 = make_print_status(test_screen());
         REQUIRE(comp2 != nullptr);
         widget.attach(comp2, test_screen());
-        widget.on_size_changed(3, 2, 600, 400);
+        widget.on_size_changed(3, 2, W_WIDE, 400);
         process_lvgl(30);
         flow_recycled = card_flow(comp2);
 
-        // A recycle that transitions to a column size applies column.
+        // A recycle that transitions to a normal-band, tall-enough size applies column.
         lv_obj_delete(comp2);
         lv_obj_t* comp3 = make_print_status(test_screen());
         REQUIRE(comp3 != nullptr);
         widget.attach(comp3, test_screen());
-        widget.on_size_changed(2, 2, 400, 400);
+        widget.on_size_changed(2, 2, W_NORMAL, H_TALL);
         process_lvgl(30);
         flow_transitioned = card_flow(comp3);
     }
