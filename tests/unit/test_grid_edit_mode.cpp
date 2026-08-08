@@ -1454,6 +1454,36 @@ TEST_CASE("detect_resize_edge: 18+18 hit zone boundaries", "[grid_edit][resize]"
     CHECK(em.detect_resize_edge(200, 81, area) == GridEditMode::ResizeEdge::None);
 }
 
+TEST_CASE("detect_resize_edge: the inward band is a fraction of a narrow widget",
+          "[grid_edit][resize][1126]") {
+    GridEditMode em;
+    // 30px wide, 90px tall — a half-cell-wide widget on a micro panel. Two flat
+    // 18px inward bands would overlap and leave no interior at all, so every
+    // pixel would report an edge and the widget could never be dragged.
+    lv_area_t narrow = {100, 100, 130, 190};
+
+    // Horizontal centre is 10px from each vertical edge: inward_x = 30/3 = 10,
+    // so x=115 is outside both the left and the right inward band.
+    CHECK(em.detect_resize_edge(115, 145, narrow) == GridEditMode::ResizeEdge::None);
+
+    // The edges themselves still resize.
+    CHECK(em.detect_resize_edge(101, 145, narrow) == GridEditMode::ResizeEdge::Left);
+    CHECK(em.detect_resize_edge(129, 145, narrow) == GridEditMode::ResizeEdge::Right);
+}
+
+TEST_CASE("detect_resize_edge: the two axes clamp independently", "[grid_edit][resize][1126]") {
+    GridEditMode em;
+    // 30 wide x 200 tall. inward_x = 10, inward_y = min(18, 66) = 18.
+    lv_area_t tall = {100, 100, 130, 300};
+
+    // 12px below the top edge: inside the 18px vertical band, so Top wins even
+    // though the horizontal centre is outside the (narrower) horizontal bands.
+    CHECK(em.detect_resize_edge(115, 112, tall) == GridEditMode::ResizeEdge::Top);
+
+    // 40px below the top edge: outside both bands on both axes.
+    CHECK(em.detect_resize_edge(115, 140, tall) == GridEditMode::ResizeEdge::None);
+}
+
 // ============================================================================
 // round_to_grid_cell helper
 // ============================================================================

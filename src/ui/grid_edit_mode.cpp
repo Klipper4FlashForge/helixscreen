@@ -41,7 +41,12 @@ static void safe_deferred_delete(lv_obj_t* obj) {
 // Drag visual constants
 static constexpr int PREVIEW_BORDER_WIDTH = 3;
 
-// Resize edge detection: 18px inside + 18px outside the widget edge = 36px total
+// Resize edge detection. EDGE_HIT_MARGIN is the outward reach, which is always
+// the full value — it lands outside the widget, where there is nothing to run
+// out of. EDGE_HIT_INWARD is a ceiling: on a widget narrower than three bands
+// the inward reach shrinks with it, so an interior big enough to grab and drag
+// always survives. A half-cell widget is ~30px across, where two flat 18px
+// bands would overlap and every pixel would report an edge.
 static constexpr int EDGE_HIT_INWARD = 18;
 static constexpr int EDGE_HIT_MARGIN = 18;
 
@@ -871,14 +876,13 @@ std::pair<int, int> GridEditMode::clamp_span(const std::string& widget_id, int d
 GridEditMode::ResizeEdge GridEditMode::detect_resize_edge(int px, int py,
                                                           const lv_area_t& widget_area) const {
     // Check proximity to each edge (INWARD inside, OUTWARD outside)
-    bool near_right =
-        (px >= widget_area.x2 - EDGE_HIT_INWARD && px <= widget_area.x2 + EDGE_HIT_MARGIN);
-    bool near_left =
-        (px >= widget_area.x1 - EDGE_HIT_MARGIN && px <= widget_area.x1 + EDGE_HIT_INWARD);
-    bool near_bottom =
-        (py >= widget_area.y2 - EDGE_HIT_INWARD && py <= widget_area.y2 + EDGE_HIT_MARGIN);
-    bool near_top =
-        (py >= widget_area.y1 - EDGE_HIT_MARGIN && py <= widget_area.y1 + EDGE_HIT_INWARD);
+    const int inward_x = std::min(EDGE_HIT_INWARD, lv_area_get_width(&widget_area) / 3);
+    const int inward_y = std::min(EDGE_HIT_INWARD, lv_area_get_height(&widget_area) / 3);
+
+    bool near_right = (px >= widget_area.x2 - inward_x && px <= widget_area.x2 + EDGE_HIT_MARGIN);
+    bool near_left = (px >= widget_area.x1 - EDGE_HIT_MARGIN && px <= widget_area.x1 + inward_x);
+    bool near_bottom = (py >= widget_area.y2 - inward_y && py <= widget_area.y2 + EDGE_HIT_MARGIN);
+    bool near_top = (py >= widget_area.y1 - EDGE_HIT_MARGIN && py <= widget_area.y1 + inward_y);
 
     // Must be within widget bounds on the perpendicular axis (with outward tolerance)
     bool within_x =
