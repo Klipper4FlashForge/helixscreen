@@ -53,8 +53,6 @@
 #include "system/crash_handler.h"
 #include "temp_graph_controller.h"
 #include "theme_manager.h"
-#include "thumbnail_cache.h"
-#include "thumbnail_processor.h"
 #include "tool_state.h"
 #include "ui/fan_spin_animation.h"
 #include "ui/ui_widget_helpers.h"
@@ -245,7 +243,8 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, MoonrakerAPI* ap
         AmsState::instance().get_tool_map_version_subject(), this,
         [](PrintStatusPanel* self, int /*version*/) { self->build_and_apply_tool_colors(); });
 
-    // Subscribe to shared print thumbnail path set by ActivePrintMediaManager.
+    // Subscribe to the shared print thumbnail path. ActivePrintMediaManager is
+    // its sole writer; this panel only reads it.
     // Use observe_string_immediate: the handler only calls lv_image_set_src
     // (no observer lifecycle changes), and set_print_thumbnail is always called
     // from the UI thread via queue_update.
@@ -254,19 +253,30 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, MoonrakerAPI* ap
         [](PrintStatusPanel* self, const char* path) {
             if (!path || path[0] == '\0')
                 return;
+            // The subject carries the file the path was produced FOR
+            // (set_print_thumbnail writes it before publishing the path), so
+            // compare identity instead of assuming the value is ours. A result
+            // that lands for the previous print must not be applied, and above
+            // all must not advance displayed_file_ — that stamp is what
+            // convinced ensure_preview_current() the current file was already
+            // on screen, turning activation and print start into no-ops.
+            const std::string& for_file = self->printer_state_.get_print_thumbnail_file();
+            std::string effective = self->thumbnail_source_filename_.empty()
+                                        ? self->current_print_filename_
+                                        : self->thumbnail_source_filename_;
+            if (!effective.empty() && for_file != effective) {
+                spdlog::debug("[{}] Ignoring thumbnail published for '{}' (showing '{}')",
+                              self->get_name(), for_file, effective);
+                return;
+            }
             self->cached_thumbnail_path_ = path;
             if (self->print_thumbnail_) {
                 lv_image_set_src(self->print_thumbnail_, path);
                 spdlog::debug("[{}] Thumbnail updated from shared subject: {}", self->get_name(),
                               path);
-                // Fallback content for the current print is now on screen; record
-                // it so ensure_preview_current() treats the thumbnail as current.
-                std::string effective = self->thumbnail_source_filename_.empty()
-                                            ? self->current_print_filename_
-                                            : self->thumbnail_source_filename_;
-                if (!effective.empty()) {
-                    self->displayed_file_ = effective;
-                }
+                // Record what is ACTUALLY on screen, not what the panel wishes
+                // were on screen.
+                self->displayed_file_ = for_file;
             }
         });
 
@@ -3268,154 +3278,6 @@ void PrintStatusPanel::animate_print_error() {
 // XML callbacks are registered in ui_print_tune_overlay.cpp on first show()
 
 // ============================================================================
-// THUMBNAIL LOADING
-// ============================================================================
-
-void PrintStatusPanel::load_thumbnail_for_file(const std::string& filename) {
-    // One staleness context per load. Creating it bumps
-    // thumbnail_load_generation_, so every callback still in flight from an
-    // earlier load now reports stale — same invalidation the bare `++` did,
-    // including on the early-return paths below. The context also carries the
-    // panel's lifetime token, which is what lets it go straight to the cache.
-    //
-    // NOTE: is_valid() consults that token, so it is NOT a thread guard — every
-    // check below sits inside an already-marshalled token.defer() body.
-    ThumbnailLoadContext ctx = ThumbnailLoadContext::create(lifetime_, &thumbnail_load_generation_);
-
-    // If we already have a directly-set thumbnail path, don't overwrite it.
-    // This happens when PrintStartController sets the path from a pre-extracted
-    // USB thumbnail before the filename observer fires.
-    const char* current_thumb =
-        lv_subject_get_string(get_printer_state().get_print_thumbnail_path_subject());
-    if (current_thumb && current_thumb[0] != '\0') {
-        spdlog::debug("[{}] Thumbnail already set ({}), skipping API lookup", get_name(),
-                      current_thumb);
-        // Update local cache so on_activate() can restore it
-        cached_thumbnail_path_ = current_thumb;
-        if (print_thumbnail_) {
-            lv_image_set_src(print_thumbnail_, current_thumb);
-        }
-        return;
-    }
-
-    // Skip if no API available (e.g., in mock mode)
-    if (!api_) {
-        spdlog::debug("[{}] No API available - skipping thumbnail load", get_name());
-        return;
-    }
-
-    // Note: We intentionally do NOT skip if print_thumbnail_ is null.
-    // The thumbnail must still be fetched and cached so that:
-    // 1. The shared print_thumbnail_path is set for HomePanel to use
-    // 2. The thumbnail is ready when PrintStatusPanel is later displayed
-    // The lv_image_set_src() call is guarded separately below.
-
-    // Resolve to original filename if this is a modified temp file
-    // (Moonraker only has metadata for original files, not modified copies)
-    std::string metadata_filename = resolve_gcode_filename(filename);
-
-    // First, get file metadata to find thumbnail path
-    auto token = lifetime_.token();
-    api_->files().get_file_metadata(
-        metadata_filename,
-        [this, token, ctx, filename](const FileMetadata& metadata) {
-            // L081 Mechanism C: defer the entire body — it touches member state
-            // (the load context, get_name(), api_, cached_thumbnail_path_ via
-            // the inner cb) and dispatches to LVGL-touching code paths. Run it
-            // on the main thread.
-            token.defer("PrintStatusPanel::metadata_apply", [this, token, ctx, filename,
-                                                             metadata]() {
-                // Superseded by a newer load — drop it.
-                if (!ctx.is_valid()) {
-                    spdlog::trace("[PrintStatusPanel] Stale metadata callback, ignoring");
-                    return;
-                }
-
-                // Note: Layer count from metadata is now set by ActivePrintMediaManager
-
-                // Cache the per-tool slicer palette so the live render can resolve
-                // the effective tool→lane match (build_and_apply_tool_colors).
-                store_filament_metadata(metadata);
-
-                // Store slicer's estimated print time for remaining time fallback
-                if (metadata.estimated_time > 0) {
-                    get_printer_state().set_estimated_print_time(
-                        static_cast<int>(metadata.estimated_time));
-                }
-
-                // Get the largest thumbnail available
-                std::string thumbnail_rel_path = metadata.get_largest_thumbnail();
-                if (thumbnail_rel_path.empty()) {
-                    spdlog::debug("[{}] No thumbnail available in metadata", get_name());
-                    return;
-                }
-
-                spdlog::debug("[{}] Found thumbnail: {}", get_name(), thumbnail_rel_path);
-
-                // Note: We intentionally do NOT invalidate the cache here.
-                // PrintSelectPanel already handles file modification detection and cache
-                // invalidation when files are re-uploaded. Aggressive invalidation here
-                // causes a race condition where Print Status deletes thumbnails that
-                // Print Select just cached, resulting in placeholder thumbnails.
-
-                // Detail-sized pre-scaled .bin, stated by the request so one
-                // guarded entry point serves every consumer. The load's own
-                // context goes to the cache, so a superseded result is dropped
-                // at the cache boundary; the success callback re-checks after
-                // marshalling because a newer load can start in between.
-                ThumbnailRequest req;
-                req.key = thumbnail_rel_path;
-                req.target =
-                    helix::ThumbnailProcessor::get_target_for_display(helix::ThumbnailSize::Detail);
-                req.api = api_;
-
-                get_thumbnail_cache().fetch(
-                    req, ctx,
-                    [this, ctx, token, filename](const std::string& lvgl_path, bool /*degraded*/) {
-                        // L081 Mechanism C: defer everything. The inner cb
-                        // mutates cached_thumbnail_path_ and calls get_name();
-                        // fetch may invoke us off the main thread depending on
-                        // cache state. Marshal the whole body.
-                        token.defer("PrintStatusPanel::thumbnail_apply", [this, ctx, filename,
-                                                                          lvgl_path]() {
-                            if (!ctx.is_valid()) {
-                                return;
-                            }
-
-                            // Store the cached path (without "A:" prefix for internal use)
-                            cached_thumbnail_path_ = lvgl_path;
-
-                            get_printer_state().set_print_thumbnail(filename, lvgl_path);
-
-                            if (print_thumbnail_) {
-                                lv_image_set_src(print_thumbnail_, lvgl_path.c_str());
-                                spdlog::info("[{}] Thumbnail loaded and displayed: {}", get_name(),
-                                             lvgl_path);
-                            } else {
-                                spdlog::info("[{}] Thumbnail cached (panel not yet displayed): {}",
-                                             get_name(), lvgl_path);
-                            }
-                        });
-                    },
-                    [this, token](const std::string& error) {
-                        // L081 Mechanism C: defer to access get_name() on main.
-                        token.defer("PrintStatusPanel::thumbnail_fetch_error", [this, error]() {
-                            spdlog::warn("[{}] Failed to fetch thumbnail: {}", get_name(), error);
-                        });
-                    });
-            });
-        },
-        [this, token](const MoonrakerError& err) {
-            // L081 Mechanism C: get_name() is virtual on `this`; defer to main.
-            token.defer("PrintStatusPanel::metadata_error", [this, err]() {
-                spdlog::debug("[{}] Failed to get file metadata: {}", get_name(), err.message);
-            });
-        },
-        true // silent - don't trigger RPC_ERROR event/toast
-    );
-}
-
-// ============================================================================
 // G-CODE VIEWER LOADING
 // ============================================================================
 
@@ -3859,15 +3721,15 @@ void PrintStatusPanel::ensure_preview_current() {
 
     if (action.load_thumbnail) {
         // Re-apply an already-cached thumbnail synchronously when it matches the
-        // desired file (cheap, no network); otherwise fetch it. Either way the
-        // shared-path observer / load_thumbnail_for_file records displayed_file_.
+        // desired file (cheap, no network). There is no else: fetching belongs to
+        // ActivePrintMediaManager, the single writer of the shared subject, and
+        // its result reaches us through print_thumbnail_path_observer_, which
+        // records displayed_file_ from the identity the subject carries.
         if (print_thumbnail_ && !cached_thumbnail_path_.empty() && displayed_file_ == desired) {
             crash_handler::breadcrumb::note("pstat_thm", "set_src_pre");
             lv_image_set_src(print_thumbnail_, cached_thumbnail_path_.c_str());
             crash_handler::breadcrumb::note("pstat_thm", "set_src_post");
             displayed_file_ = desired;
-        } else {
-            load_thumbnail_for_file(desired);
         }
     }
 
