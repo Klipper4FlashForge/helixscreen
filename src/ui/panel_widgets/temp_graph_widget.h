@@ -85,9 +85,6 @@ class TempGraphWidget : public PanelWidget {
 
     std::unique_ptr<TempGraphController> controller_;
 
-    int current_colspan_ = 2;
-    int current_rowspan_ = 2;
-
     /// When true, the card mirrors whatever curves the user last left visible
     /// on the full-screen TempGraphOverlay. When false, the card uses the
     /// per-sensor `enabled` flags from `config_["sensors"]`.

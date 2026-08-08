@@ -116,8 +116,8 @@ void TempGraphWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
         lv_obj_set_style_bg_opa(widget_obj_, LV_OPA_COVER, 0);
     }
 
-    spdlog::debug("[TempGraphWidget] Attached '{}' ({}x{})", instance_id_, current_colspan_,
-                  current_rowspan_);
+    spdlog::debug("[TempGraphWidget] Attached '{}' (seed {}x{}px)", instance_id_, kSeedWidthPx,
+                  kSeedHeightPx);
 }
 
 void TempGraphWidget::detach() {
@@ -133,9 +133,6 @@ void TempGraphWidget::detach() {
 }
 
 void TempGraphWidget::on_size_changed(int colspan, int rowspan, int width_px, int height_px) {
-    current_colspan_ = colspan;
-    current_rowspan_ = rowspan;
-
     if (controller_) {
         uint32_t features = features_for_size(width_px, height_px);
         controller_->set_features(features);
