@@ -548,7 +548,7 @@ void FanStackWidget::bind_carousel_fans() {
 
         // Shrink knob for compact carousel display
         if (cp.arc) {
-            lv_obj_set_style_pad_all(cp.arc, 2, LV_PART_KNOB);
+            lv_obj_set_style_pad_all(cp.arc, theme_manager_get_spacing("space_xxs"), LV_PART_KNOB);
         }
 
         // Auto-controlled fans: hide knob, disable arc interaction
@@ -992,7 +992,7 @@ void FanStackWidget::show_fan_picker() {
     lv_obj_set_flex_flow(icon_grid, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_flex_align(icon_grid, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_all(icon_grid, 0, 0);
-    lv_obj_set_style_pad_gap(icon_grid, 4, 0);
+    lv_obj_set_style_pad_gap(icon_grid, theme_manager_get_spacing("space_xxs"), 0);
     lv_obj_set_style_bg_opa(icon_grid, 0, 0);
     lv_obj_set_style_border_width(icon_grid, 0, 0);
     lv_obj_remove_flag(icon_grid, LV_OBJ_FLAG_SCROLLABLE);

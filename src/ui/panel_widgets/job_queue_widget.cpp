@@ -232,7 +232,7 @@ void JobQueueWidget::rebuild_job_list() {
         lv_obj_set_height(row, LV_SIZE_CONTENT);
         lv_obj_set_style_bg_opa(row, 0, 0);
         lv_obj_set_style_border_width(row, 0, 0);
-        lv_obj_set_style_pad_all(row, 2, 0);
+        lv_obj_set_style_pad_all(row, theme_manager_get_spacing("space_xxs"), 0);
         lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
         lv_obj_set_style_flex_main_place(row, LV_FLEX_ALIGN_SPACE_BETWEEN, 0);
         lv_obj_remove_flag(row, LV_OBJ_FLAG_CLICKABLE);

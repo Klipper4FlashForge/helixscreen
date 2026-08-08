@@ -739,7 +739,7 @@ void ExcludeObjectMapView::build_key_bar() {
         lv_obj_set_size(entry_row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         lv_obj_set_style_bg_opa(entry_row, LV_OPA_TRANSP, 0);
         lv_obj_set_style_border_width(entry_row, 0, 0);
-        lv_obj_set_style_pad_all(entry_row, 2, 0);
+        lv_obj_set_style_pad_all(entry_row, theme_manager_get_spacing("space_xxs"), 0);
         lv_obj_set_flex_flow(entry_row, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(entry_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
                               LV_FLEX_ALIGN_CENTER);
@@ -765,7 +765,7 @@ void ExcludeObjectMapView::build_key_bar() {
         lv_obj_t* name_label = lv_label_create(entry_row);
         lv_obj_set_style_text_font(name_label, theme_manager_get_font("font_small"), 0);
         lv_obj_set_style_text_color(name_label, theme_manager_get_color("text_muted"), 0);
-        lv_obj_set_style_pad_left(name_label, 3, 0);
+        lv_obj_set_style_pad_left(name_label, theme_manager_get_spacing("space_xxs"), 0);
         lv_obj_remove_flag(name_label, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_flag(name_label, LV_OBJ_FLAG_EVENT_BUBBLE);
         if (is_excluded) {

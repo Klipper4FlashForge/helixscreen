@@ -160,7 +160,7 @@
           </lv_obj>
           <!-- Slider -->
           <lv_obj width="100%"
-                  height="50" style_pad_left="#space_md" style_pad_right="#space_md"
+                  height="#input_height" style_pad_left="#space_md" style_pad_right="#space_md"
                   scrollable="false" flex_flow="row" style_flex_cross_place="center">
             <text_small width="40" text="100"/>
             <lv_slider name="qidi_eject_distance_slider"
@@ -197,7 +197,7 @@
           </lv_obj>
           <!-- Slider -->
           <lv_obj width="100%"
-                  height="50" style_pad_left="#space_md" style_pad_right="#space_md"
+                  height="#input_height" style_pad_left="#space_md" style_pad_right="#space_md"
                   scrollable="false" flex_flow="row" style_flex_cross_place="center">
             <text_small width="40" text="10"/>
             <lv_slider name="qidi_eject_velocity_slider"

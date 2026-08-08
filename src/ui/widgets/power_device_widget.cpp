@@ -486,7 +486,7 @@ void PowerDeviceWidget::show_device_picker() {
     lv_obj_set_flex_grow(list, 1);
     lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_all(list, 0, 0);
-    lv_obj_set_style_pad_gap(list, 2, 0);
+    lv_obj_set_style_pad_gap(list, theme_manager_get_spacing("space_xxs"), 0);
     lv_obj_set_style_bg_opa(list, 0, 0);
     lv_obj_set_style_border_width(list, 0, 0);
 
@@ -600,7 +600,7 @@ void PowerDeviceWidget::show_device_picker() {
     lv_obj_set_flex_flow(icon_grid, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_flex_align(icon_grid, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_all(icon_grid, 0, 0);
-    lv_obj_set_style_pad_gap(icon_grid, 4, 0);
+    lv_obj_set_style_pad_gap(icon_grid, theme_manager_get_spacing("space_xxs"), 0);
     lv_obj_set_style_bg_opa(icon_grid, 0, 0);
     lv_obj_set_style_border_width(icon_grid, 0, 0);
     lv_obj_remove_flag(icon_grid, LV_OBJ_FLAG_SCROLLABLE);

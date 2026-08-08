@@ -44,12 +44,13 @@ lv_obj_t* create_led_chip(lv_obj_t* parent, const std::string& led_name,
     lv_obj_t* chip = lv_button_create(parent);
     lv_obj_set_size(chip, LV_SIZE_CONTENT, 32);
     lv_obj_set_style_radius(chip, 16, 0); // Pill shape
-    lv_obj_set_style_pad_hor(chip, 12, 0);
-    lv_obj_set_style_pad_ver(chip, 4, 0);
+    int32_t chip_pad_tight = theme_manager_get_spacing("space_xxs");
+    lv_obj_set_style_pad_hor(chip, theme_manager_get_spacing("space_md"), 0);
+    lv_obj_set_style_pad_ver(chip, chip_pad_tight, 0);
     lv_obj_set_layout(chip, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(chip, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(chip, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_gap(chip, 4, 0);
+    lv_obj_set_style_pad_gap(chip, chip_pad_tight, 0);
     lv_obj_remove_flag(chip, LV_OBJ_FLAG_SCROLLABLE);
 
     // Remove from default input group to prevent focus shift on click
