@@ -17,8 +17,12 @@
     <divider_horizontal/>
 
     <!-- Scrollable sensor list (populated programmatically in C++) -->
+    <!-- Capped by the responsive ladder rather than a flat 300. This root is
+         height="content" with no max_height of its own, so this cap is the only
+         thing bounding the dialog - and the list is filled per-printer in C++,
+         so a machine with many sensors is what reaches it. -->
     <lv_obj name="sensor_list" width="100%" height="content"
-            style_max_height="300"
+            style_max_height="#dialog_content_max"
             flex_flow="column" style_pad_gap="0"
             style_pad_left="#space_md" style_pad_right="#space_md"
             style_pad_top="#space_sm" style_pad_bottom="#space_sm"

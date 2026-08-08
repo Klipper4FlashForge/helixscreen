@@ -29,6 +29,12 @@ WHAT IS FLAGGED
      debug_bundle_modal's style_max_height="400" were each taller than the whole
      screen, so the dialog rendered partly off it. A floor above the budget can
      never be satisfied; a cap above it simply is not a bound.
+     Only fires when the component root does NOT bound its own height. A root
+     that is a percentage, or that carries its own style_max_height, already
+     clips everything inside it, so an inner cap there is a dead attribute
+     rather than a bug -- job_queue_modal caps a list at 300 but is itself
+     height="90%", i.e. 244 on a MICRO panel. Skipping those took this rule
+     from 7 findings to 1, four of the six removed being false positives.
   4. cpp-pad   — lv_obj_set_style_pad_*/margin_* in src/ passed an integer >= 2.
      Same tokens, read through theme_manager_get_spacing().
 
@@ -194,6 +200,31 @@ def annotated(lines: list[str], lineno: int) -> bool:
     return any(OPT_OUT in ln for ln in lines[start:lineno])
 
 
+ROOT_VIEW_RE = re.compile(r"<view\b[^>]*>", re.S)
+ROOT_HEIGHT_RE = re.compile(r'(?<![\w_])height="([^"]+)"')
+
+
+def root_is_self_bounding(text: str) -> bool:
+    """True when the component's root already bounds its own height.
+
+    This is the difference between a real overflow and a dead attribute, and
+    getting it wrong makes the xml-tall rule cry wolf. job_queue_modal caps its
+    inner list at 300, which looks alarming on a 272px panel -- but its root is
+    height="90%", so the dialog is 244 and the inner cap never binds. Only a
+    root that sizes to content with no cap of its own leaves the inner number
+    as the sole bound; that is the debug_bundle_modal / crash_report_modal
+    shape that actually rendered off-screen.
+    """
+    m = ROOT_VIEW_RE.search(text)
+    if not m:
+        return False
+    root = m.group(0)
+    if "style_max_height" in root:
+        return True
+    h = ROOT_HEIGHT_RE.search(root)
+    return bool(h and h.group(1).strip().endswith("%"))
+
+
 def blank_comments(text: str) -> str:
     """Replace XML comment bodies with spaces, preserving length and newlines.
 
@@ -219,10 +250,13 @@ def scan_xml(path: Path, rel: str, tokens: dict[int, list[str]]) -> list[tuple]:
     # satisfied on a 480x272 panel. Both real #1204 dialog bugs were this shape:
     # hidden_network's style_min_height="280" and debug_bundle's
     # style_max_height="400", each larger than the 272px screen itself.
+    self_bounded = root_is_self_bounding(scan)
     for m in XML_TALL_RE.finditer(scan):
         value = int(m.group(1))
         if value <= MICRO_DIALOG_BUDGET:
             continue
+        if self_bounded:
+            continue  # the root already bounds it; this number never binds
         lineno = scan.count("\n", 0, m.start()) + 1
         if annotated(lines, lineno):
             continue

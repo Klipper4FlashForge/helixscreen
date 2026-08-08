@@ -101,6 +101,39 @@ run_gate() {
     [[ "$output" == *"[xml-tall]"* ]]
 }
 
+@test "silent on a tall inner cap when the root is a percentage" {
+    # job_queue_modal caps its list at 300 but is itself height="90%" -- 244 on
+    # a MICRO panel -- so the inner number never binds. Flagging this was a
+    # false positive, and four of the seven original findings were this shape.
+    run_gate boundedpct.xml '<component>
+  <view name="x" extends="ui_dialog" width="85%" height="90%">
+    <lv_obj name="list" height="content" style_max_height="300"/>
+  </view>
+</component>'
+    [ "$status" -eq 0 ]
+}
+
+@test "silent on a tall inner cap when the root carries its own max_height" {
+    run_gate boundedmax.xml '<component>
+  <view name="x" extends="ui_dialog" width="70%" height="content" style_max_height="85%">
+    <lv_obj name="list" height="content" style_max_height="250"/>
+  </view>
+</component>'
+    [ "$status" -eq 0 ]
+}
+
+@test "still flags a tall inner cap when the root sizes to content unbounded" {
+    # The debug_bundle_modal / crash_report_modal shape: the inner cap is the
+    # only bound, and at 400 it exceeded the whole 272px screen.
+    run_gate unbounded.xml '<component>
+  <view name="x" extends="ui_dialog" width="85%" height="content">
+    <lv_obj name="content_container" height="content" style_max_height="400"/>
+  </view>
+</component>'
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"[xml-tall]"* ]]
+}
+
 @test "silent on a min/max height within the MICRO budget" {
     run_gate shortmax.xml '<component><view>
   <lv_obj style_max_height="220" style_min_height="60"/>
