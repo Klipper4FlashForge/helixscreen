@@ -16,6 +16,7 @@
 #include "app_globals.h"
 #include "panel_widget_manager.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 #include "printer_state.h"
 #include "temperature_service.h"
 #include "theme_manager.h"
@@ -236,13 +237,13 @@ void TempStackWidget::attach_carousel(lv_obj_t* widget_obj) {
     spdlog::debug("[TempStackWidget] Attached carousel with {} pages", page_count);
 }
 
-void TempStackWidget::on_size_changed(int /*colspan*/, int rowspan, int /*width_px*/,
-                                      int /*height_px*/) {
+void TempStackWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int /*width_px*/,
+                                      int height_px) {
     if (!widget_obj_ || is_carousel_mode())
         return;
 
     // Determine size tier based on vertical space
-    const char* size = (rowspan >= 2) ? "sm" : "xs";
+    const char* size = (height_px >= widget_size::H_TALL) ? "sm" : "xs";
 
     // Get text font for this size tier
     const char* font_token = theme_manager_size_to_font_token(size, "xs");
@@ -251,7 +252,7 @@ void TempStackWidget::on_size_changed(int /*colspan*/, int rowspan, int /*width_
         return;
 
     // Icon font: xs=16px, sm=24px
-    const lv_font_t* icon_font = (rowspan >= 2) ? &mdi_icons_24 : &mdi_icons_16;
+    const lv_font_t* icon_font = (height_px >= widget_size::H_TALL) ? &mdi_icons_24 : &mdi_icons_16;
 
     // Update nozzle icon glyph
     lv_obj_t* nozzle_glyph = lv_obj_find_by_name(widget_obj_, "nozzle_icon_glyph");
@@ -288,7 +289,7 @@ void TempStackWidget::on_size_changed(int /*colspan*/, int rowspan, int /*width_
         }
     }
 
-    spdlog::debug("[TempStackWidget] on_size_changed rowspan={} -> size {}", rowspan, size);
+    spdlog::debug("[TempStackWidget] on_size_changed height_px={} -> size {}", height_px, size);
 }
 
 void TempStackWidget::detach() {
