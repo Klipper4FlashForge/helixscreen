@@ -185,9 +185,9 @@ struct ChannelStateInfo {
                state.compare(state.size() - suffix.size(), suffix.size(), suffix) == 0;
     };
     const bool is_unload = state.rfind("unload_", 0) == 0;
-    const bool is_load = !is_unload && (state.rfind("load_", 0) == 0 ||
-                                        state.rfind("preload_", 0) == 0 ||
-                                        state.rfind("manual_sta_", 0) == 0);
+    const bool is_load =
+        !is_unload && (state.rfind("load_", 0) == 0 || state.rfind("preload_", 0) == 0 ||
+                       state.rfind("manual_sta_", 0) == 0);
     if (ends_with("_fail")) {
         info.action = AmsAction::ERROR;
         info.is_fail = true;
@@ -423,7 +423,17 @@ PathSegment AmsBackendSnapmaker::infer_error_segment() const {
 // ============================================================================
 
 AmsError AmsBackendSnapmaker::load_filament(int slot_index) {
-    auto err = validate_slot_index(slot_index);
+    // Every op in this section drives the toolhead — AUTO_FEEDING forwards to
+    // FEED_AUTO, which homes before it feeds, and `T{n}` moves the carriage — so
+    // they refuse while a print owns it. PAUSED still passes
+    // (filament_ops_self_home() is false), which is what keeps runout recovery
+    // working.
+    auto err = check_preconditions(true);
+    if (!err.success()) {
+        return err;
+    }
+
+    err = validate_slot_index(slot_index);
     if (err.result != AmsResult::SUCCESS)
         return err;
 
@@ -452,6 +462,11 @@ AmsError AmsBackendSnapmaker::load_filament(int slot_index) {
 }
 
 AmsError AmsBackendSnapmaker::unload_filament(int slot_index) {
+    auto err = check_preconditions(true);
+    if (!err.success()) {
+        return err;
+    }
+
     // Unload must mirror load: route through AUTO_FEEDING (the firmware macro
     // that forwards to FEED_AUTO with module/channel resolved from
     // _FILAMENT_FEED_VARIABLE), passing UNLOAD=1. FEED_AUTO with no STAGE runs
@@ -479,7 +494,7 @@ AmsError AmsBackendSnapmaker::unload_filament(int slot_index) {
         return execute_gcode("INNER_FILAMENT_UNLOAD");
     }
 
-    auto err = validate_slot_index(extruder);
+    err = validate_slot_index(extruder);
     if (err.result != AmsResult::SUCCESS)
         return err;
 
@@ -528,7 +543,12 @@ AmsError AmsBackendSnapmaker::select_slot(int slot_index) {
 }
 
 AmsError AmsBackendSnapmaker::change_tool(int tool_number) {
-    auto err = validate_slot_index(tool_number);
+    auto err = check_preconditions(true);
+    if (!err.success()) {
+        return err;
+    }
+
+    err = validate_slot_index(tool_number);
     if (err.result != AmsResult::SUCCESS)
         return err;
 

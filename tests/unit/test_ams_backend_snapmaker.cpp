@@ -176,7 +176,14 @@ json make_filament_detect_status(int slot_index, const std::string& main_type, u
 // without a live Moonraker connection — same idiom as test_ams_backend_afc.cpp.
 class CapturingSnapmakerBackend : public AmsBackendSnapmaker {
   public:
-    CapturingSnapmakerBackend() : AmsBackendSnapmaker(nullptr, nullptr) {}
+    // running_ has to be set: the filament ops gate on check_preconditions(),
+    // which answers not_connected on a backend that never started. api_ stays
+    // null, so the print-active half of that gate passes (unknown print state is
+    // not blocked) and these tests keep asserting the command, not the gate —
+    // the gate itself is covered in test_ams_paused_filament_ops.cpp.
+    CapturingSnapmakerBackend() : AmsBackendSnapmaker(nullptr, nullptr) {
+        running_.store(true);
+    }
 
     std::vector<std::string> captured_gcodes;
 
