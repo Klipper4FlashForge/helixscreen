@@ -533,6 +533,34 @@ void ui_notification_error(const char* title, const char* message, bool modal) {
     }
 }
 
+// The two-line variants hand the hook the SAME text the toast renders, joined,
+// so a test can assert that the suggestion actually reached the user instead of
+// only that the message did. Matches ui_notification.cpp's history-row join.
+static std::string join_detail(const char* message, const char* detail) {
+    std::string joined = message ? message : "";
+    if (detail && *detail) {
+        joined += " - ";
+        joined += detail;
+    }
+    return joined;
+}
+
+void ui_notification_error_with_detail(const char* message, const char* detail) {
+    const std::string joined = join_detail(message, detail);
+    spdlog::debug("[Test Stub] ui_notification_error_with_detail: {}", joined);
+    if (g_test_error_hook) {
+        g_test_error_hook(joined);
+    }
+}
+
+void ui_notification_warning_with_detail(const char* message, const char* detail) {
+    const std::string joined = join_detail(message, detail);
+    spdlog::debug("[Test Stub] ui_notification_warning_with_detail: {}", joined);
+    if (g_test_warning_hook) {
+        g_test_warning_hook(joined);
+    }
+}
+
 // Stub ToastManager class for tests
 #include "ui_toast_manager.h"
 
@@ -559,6 +587,14 @@ void ToastManager::show(ToastSeverity severity, const char* message, uint32_t du
     (void)severity;
     (void)duration_ms;
     spdlog::debug("[Test Stub] ToastManager::show: {}", message ? message : "(null)");
+}
+
+void ToastManager::show_with_detail(ToastSeverity severity, const char* message, const char* detail,
+                                    uint32_t duration_ms) {
+    (void)severity;
+    (void)duration_ms;
+    spdlog::debug("[Test Stub] ToastManager::show_with_detail: {} | {}",
+                  message ? message : "(null)", detail ? detail : "");
 }
 
 void ToastManager::show_with_action(ToastSeverity severity, const char* message,

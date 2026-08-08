@@ -389,7 +389,7 @@ void ToolSwitcherWidget::show_tool_picker() {
     const AmsError refusal = tool_change_refusal();
     if (!refusal.success()) {
         spdlog::info("[ToolSwitcher] Picker refused: {}", refusal.technical_msg);
-        NOTIFY_WARNING("{}", refusal.user_msg);
+        helix::ui::notify_ams_warning(refusal);
         return;
     }
 
@@ -646,7 +646,7 @@ void ToolSwitcherWidget::handle_tool_selected(int tool_index) {
     if (!refusal.success()) {
         spdlog::info("[ToolSwitcher] Tool change to T{} refused: {}", tool_index,
                      refusal.technical_msg);
-        NOTIFY_WARNING("{}", refusal.user_msg);
+        helix::ui::notify_ams_warning(refusal);
         return;
     }
 

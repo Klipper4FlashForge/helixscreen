@@ -160,3 +160,27 @@ void ui_notification_warning(const char* title, const char* message);
  * @param modal If true, shows blocking modal dialog; if false, shows toast
  */
 void ui_notification_error(const char* title, const char* message, bool modal = true);
+
+/**
+ * @brief Show an error toast with a second line saying what to do about it
+ *
+ * The toast renders @p message as the body and @p detail beneath it in the
+ * smaller muted style. Notification history stores the two joined, since a
+ * history row is a single line.
+ *
+ * Distinct name rather than an overload: ui_notification_error already has a
+ * (title, message) shape, so a (message, detail) overload would be ambiguous at
+ * every existing two-argument call site.
+ *
+ * **Thread-safe**: marshals to the LVGL main thread. Safe from any thread.
+ *
+ * @param message What happened
+ * @param detail  What the user can do about it; empty renders as a plain toast
+ */
+void ui_notification_error_with_detail(const char* message, const char* detail);
+
+/**
+ * @brief Show a warning toast with a "what to do" second line
+ * @see ui_notification_error_with_detail
+ */
+void ui_notification_warning_with_detail(const char* message, const char* detail);

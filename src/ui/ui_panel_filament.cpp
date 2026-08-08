@@ -2610,7 +2610,7 @@ void FilamentPanel::execute_load() {
             backend_op_active_ = false;
             op_in_flight_.reset();
             op_failed(FilamentOp::Load);
-            NOTIFY_ERROR("{}", err.user_msg);
+            helix::ui::notify_ams_error(err);
         }
         return;
     }
@@ -2739,7 +2739,7 @@ void FilamentPanel::execute_unload() {
             backend_op_active_ = false;
             op_in_flight_.reset();
             op_failed(FilamentOp::Unload);
-            NOTIFY_ERROR(lv_tr("Unload failed: {}"), err.user_msg);
+            helix::ui::notify_ams_error(err);
         }
         // Guard ends via ams_action_observer_ (AmsAction IDLE/ERROR) or timeout.
         return;

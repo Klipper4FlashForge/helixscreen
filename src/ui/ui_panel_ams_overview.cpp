@@ -1233,7 +1233,7 @@ void AmsOverviewPanel::show_detail_context_menu(int slot_index, lv_obj_t* near_w
             } else if (backend) {
                 AmsError error = backend->unload_filament(slot);
                 if (error.result != AmsResult::SUCCESS) {
-                    NOTIFY_ERROR(lv_tr("Unload failed: {}"), error.user_msg);
+                    helix::ui::notify_ams_error(error);
                 }
             } else {
                 NOTIFY_WARNING(lv_tr("Multi-Filament System not available"));
@@ -1257,7 +1257,7 @@ void AmsOverviewPanel::show_detail_context_menu(int slot_index, lv_obj_t* near_w
             {
                 AmsError error = backend->recover_lane_position(slot);
                 if (error.result != AmsResult::SUCCESS) {
-                    NOTIFY_ERROR(lv_tr("Recovery failed: {}"), error.user_msg);
+                    helix::ui::notify_ams_error(error, lv_tr("Recovery failed"));
                 }
             }
             break;

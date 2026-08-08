@@ -296,7 +296,7 @@ void AmsOperationSidebar::init_observers() {
                     if (err.result == AmsResult::SUCCESS) {
                         NOTIFY_INFO(lv_tr("Bypass enabled"));
                     } else {
-                        NOTIFY_ERROR(lv_tr("Bypass failed: {}"), err.user_msg);
+                        helix::ui::notify_ams_error(err, lv_tr("Bypass failed"));
                     }
                 }
             }
@@ -901,7 +901,7 @@ void AmsOperationSidebar::start_operation(StepOperationType op_type, int target_
 void AmsOperationSidebar::fail_started_operation(const AmsError& error) {
     spdlog::warn("[AmsSidebar] Operation dispatch failed: {} ({})", error.user_msg,
                  error.technical_msg);
-    NOTIFY_ERROR(lv_tr("Filament operation failed: {}"), error.user_msg);
+    helix::ui::notify_ams_error(error, lv_tr("Filament operation failed"));
     target_load_slot_ = -1;
     AmsState::instance().set_pending_target_slot(-1);
     // Backend never left IDLE; pull its truth back into the UI so the action
@@ -1164,7 +1164,7 @@ void AmsOperationSidebar::handle_unload(int slot_index) {
     AmsBackend* backend = AmsState::instance().get_backend();
     AmsError error = backend->unload_filament(slot_index);
     if (error.result != AmsResult::SUCCESS) {
-        NOTIFY_ERROR(lv_tr("Unload failed: {}"), error.user_msg);
+        helix::ui::notify_ams_error(error);
     }
 }
 
@@ -1187,7 +1187,7 @@ void AmsOperationSidebar::handle_reset() {
 
     AmsError error = backend->reset();
     if (error.result != AmsResult::SUCCESS) {
-        NOTIFY_ERROR(lv_tr("Reset failed: {}"), error.user_msg);
+        helix::ui::notify_ams_error(error, lv_tr("Reset failed"));
     }
 }
 
@@ -1202,7 +1202,7 @@ void AmsOperationSidebar::handle_check_gates() {
 
     AmsError error = backend->check_all_gates();
     if (error.result != AmsResult::SUCCESS) {
-        NOTIFY_ERROR(lv_tr("Check slots failed: {}"), error.user_msg);
+        helix::ui::notify_ams_error(error, lv_tr("Check slots failed"));
     }
 }
 
@@ -1246,7 +1246,7 @@ void AmsOperationSidebar::handle_bypass_toggle() {
                 NOTIFY_INFO(lv_tr("Unloading before bypass..."));
             } else {
                 pending_bypass_enable_ = false;
-                NOTIFY_ERROR(lv_tr("Unload failed: {}"), error.user_msg);
+                helix::ui::notify_ams_error(error);
             }
             return;
         }
@@ -1259,7 +1259,7 @@ void AmsOperationSidebar::handle_bypass_toggle() {
     }
 
     if (error.result != AmsResult::SUCCESS) {
-        NOTIFY_ERROR(lv_tr("Bypass toggle failed: {}"), error.user_msg);
+        helix::ui::notify_ams_error(error, lv_tr("Bypass toggle failed"));
     }
 }
 

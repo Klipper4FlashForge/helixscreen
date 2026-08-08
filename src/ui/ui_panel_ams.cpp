@@ -1342,7 +1342,7 @@ void AmsPanel::dispatch_selector_action(helix::ui::AmsSelectorMenu::SelectorActi
         return;
     }
     if (err.result != AmsResult::SUCCESS) {
-        NOTIFY_ERROR(lv_tr("MMU command failed: {}"), err.user_msg);
+        helix::ui::notify_ams_error(err, lv_tr("MMU command failed"));
     }
 }
 
@@ -1446,7 +1446,7 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
             } else {
                 AmsError error = backend->unload_filament(slot);
                 if (error.result != AmsResult::SUCCESS) {
-                    NOTIFY_ERROR(lv_tr("Unload failed: {}"), error.user_msg);
+                    helix::ui::notify_ams_error(error);
                 }
             }
             break;
@@ -1462,7 +1462,7 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
                 }
                 AmsError error = backend->eject_lane(slot);
                 if (error.result != AmsResult::SUCCESS) {
-                    NOTIFY_ERROR(lv_tr("Eject failed: {}"), error.user_msg);
+                    helix::ui::notify_ams_error(error, lv_tr("Eject failed"));
                     if (path_canvas_) {
                         ui_filament_path_canvas_set_eject_mode(path_canvas_, false);
                     }
@@ -1478,7 +1478,7 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
             {
                 AmsError error = backend->recover_lane_position(slot);
                 if (error.result != AmsResult::SUCCESS) {
-                    NOTIFY_ERROR(lv_tr("Recovery failed: {}"), error.user_msg);
+                    helix::ui::notify_ams_error(error, lv_tr("Recovery failed"));
                 }
             }
             break;
@@ -1491,7 +1491,7 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
             {
                 AmsError error = backend->select_gate(slot);
                 if (error.result != AmsResult::SUCCESS) {
-                    NOTIFY_ERROR(lv_tr("Select slot failed: {}"), error.user_msg);
+                    helix::ui::notify_ams_error(error, lv_tr("Select slot failed"));
                 }
             }
             break;
@@ -1504,7 +1504,7 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
             {
                 AmsError error = backend->check_gate(slot);
                 if (error.result != AmsResult::SUCCESS) {
-                    NOTIFY_ERROR(lv_tr("Check slot failed: {}"), error.user_msg);
+                    helix::ui::notify_ams_error(error, lv_tr("Check slot failed"));
                 }
             }
             break;
@@ -1528,7 +1528,7 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
                 apply_spool_to_slot(info, spool);
                 AmsError err = be->set_slot_info(slot, info);
                 if (!err.success()) {
-                    NOTIFY_ERROR("{}", err.user_msg);
+                    helix::ui::notify_ams_error(err);
                     return;
                 }
                 AmsState::instance().sync_from_backend();
@@ -1567,7 +1567,7 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
                     AmsState::instance().sync_from_backend();
                     NOTIFY_INFO(lv_tr("Slot {} spool cleared"), slot + 1);
                 } else {
-                    NOTIFY_ERROR(lv_tr("Clear failed: {}"), error.user_msg);
+                    helix::ui::notify_ams_error(error, lv_tr("Clear failed"));
                 }
             }
             break;
@@ -1642,7 +1642,7 @@ void AmsPanel::show_edit_modal(int slot_index, bool open_on_picker) {
                 if (backend) {
                     AmsError err = backend->set_slot_info(result.slot_index, result.slot_info);
                     if (!err.success()) {
-                        NOTIFY_ERROR("{}", err.user_msg);
+                        helix::ui::notify_ams_error(err);
                         return;
                     }
 

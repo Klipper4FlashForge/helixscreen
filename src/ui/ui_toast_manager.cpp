@@ -312,8 +312,28 @@ void ToastManager::show(ToastSeverity severity, const char* message, uint32_t du
         std::make_unique<ToastParams>(ToastParams{severity, message ? message : "", duration_ms});
 
     helix::ui::queue_update<ToastParams>(std::move(params), [](ToastParams* p) {
-        ToastManager::instance().create_toast_internal(
-            p->severity, p->message.c_str(), p->duration_ms, false, nullptr, nullptr, nullptr);
+        ToastManager::instance().create_toast_internal(p->severity, p->message.c_str(), nullptr,
+                                                       p->duration_ms, false, nullptr, nullptr,
+                                                       nullptr);
+    });
+}
+
+void ToastManager::show_with_detail(ToastSeverity severity, const char* message, const char* detail,
+                                    uint32_t duration_ms) {
+    struct ToastDetailParams {
+        ToastSeverity severity;
+        std::string message;
+        std::string detail;
+        uint32_t duration_ms;
+    };
+
+    auto params = std::make_unique<ToastDetailParams>(
+        ToastDetailParams{severity, message ? message : "", detail ? detail : "", duration_ms});
+
+    helix::ui::queue_update<ToastDetailParams>(std::move(params), [](ToastDetailParams* p) {
+        ToastManager::instance().create_toast_internal(p->severity, p->message.c_str(),
+                                                       p->detail.c_str(), p->duration_ms, false,
+                                                       nullptr, nullptr, nullptr);
     });
 }
 
@@ -339,7 +359,7 @@ void ToastManager::show_with_action(ToastSeverity severity, const char* message,
         severity, message ? message : "", action_text, callback, user_data, duration_ms});
 
     helix::ui::queue_update<ToastActionParams>(std::move(params), [](ToastActionParams* p) {
-        ToastManager::instance().create_toast_internal(p->severity, p->message.c_str(),
+        ToastManager::instance().create_toast_internal(p->severity, p->message.c_str(), nullptr,
                                                        p->duration_ms, true, p->action_cb,
                                                        p->user_data, p->action_text.c_str());
     });
@@ -362,7 +382,7 @@ bool ToastManager::is_visible() const {
 // ============================================================================
 
 void ToastManager::create_toast_internal(ToastSeverity severity, const char* message,
-                                         uint32_t duration_ms, bool with_action,
+                                         const char* detail, uint32_t duration_ms, bool with_action,
                                          toast_action_callback_t action_cb, void* action_user_data,
                                          const char* action_text) {
     if (!message) {
@@ -400,10 +420,14 @@ void ToastManager::create_toast_internal(ToastSeverity severity, const char* mes
     // Build attrs. Keep the buffers alive for the lv_xml_create call.
     const char* hide_action_str = with_action ? "false" : "true";
     const char* action_text_safe = (with_action && action_text) ? action_text : "";
+    const bool has_detail = detail && *detail;
+    const char* detail_safe = has_detail ? detail : "";
+    const char* hide_detail_str = has_detail ? "false" : "true";
     // lv_xml_create's attrs are key/value pairs terminated by a null entry.
     const char* attrs[] = {"message",     message,         "icon_glyph",  icon_glyph,
                            "icon_color",  icon_color,      "action_text", action_text_safe,
-                           "hide_action", hide_action_str, nullptr};
+                           "hide_action", hide_action_str, "detail",      detail_safe,
+                           "hide_detail", hide_detail_str, nullptr};
 
     lv_obj_t* widget =
         static_cast<lv_obj_t*>(lv_xml_create(toast_stack_, "toast_notification", attrs));
@@ -443,8 +467,9 @@ void ToastManager::create_toast_internal(ToastSeverity severity, const char* mes
         SoundManager::instance().play("error_tone", SoundPriority::EVENT);
     }
 
-    spdlog::debug("[ToastManager] Toast shown: [{}] {} ({}ms, action={}, stack={})",
-                  severity_to_string(severity), message, duration_ms, with_action, active_.size());
+    spdlog::debug("[ToastManager] Toast shown: [{}] {}{}{} ({}ms, action={}, stack={})",
+                  severity_to_string(severity), message, has_detail ? " | " : "", detail_safe,
+                  duration_ms, with_action, active_.size());
 }
 
 // ============================================================================

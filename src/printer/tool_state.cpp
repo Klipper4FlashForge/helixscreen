@@ -472,8 +472,11 @@ void ToolState::request_tool_change(int tool_index, MoonrakerAPI* api,
                 if (on_success)
                     on_success();
             } else {
+                // display_text(), not user_msg: this callback is the only thing
+                // the caller ever sees, so dropping the suggestion here means no
+                // UI downstream can render it however good its toast is.
                 if (on_error)
-                    on_error(::fmt::format("Backend tool change failed: {}", result.user_msg));
+                    on_error(result.display_text());
             }
             return;
         }
@@ -782,8 +785,7 @@ void ToolState::load_spool_assignments(MoonrakerAPI* api) {
                                       "[ToolState] Loaded spool assignments from Moonraker DB");
                               }),
         async_lifetime_.bg_cb(
-            "ToolState::load_spool_assignments_error",
-            [this, api](const MoonrakerError& err) {
+            "ToolState::load_spool_assignments_error", [this, api](const MoonrakerError& err) {
                 spdlog::debug("[ToolState] Moonraker DB load failed ({}), trying local JSON",
                               err.user_message());
                 load_spool_json();

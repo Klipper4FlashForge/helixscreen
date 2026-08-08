@@ -5,6 +5,7 @@
 
 #include "ui_button.h"
 #include "ui_callback_helpers.h"
+#include "ui_error_reporting.h"
 #include "ui_toast_manager.h"
 
 #include "ams_backend.h"
@@ -714,8 +715,8 @@ void AmsContextMenu::handle_tool_changed() {
 
         auto result = backend_->set_tool_mapping(tool_number, get_item_index());
         if (!result.success()) {
-            spdlog::warn("[AmsContextMenu] Failed to set tool mapping: {}", result.user_msg);
-            ToastManager::instance().show(ToastSeverity::ERROR, result.user_msg.c_str());
+            // notify_ams_error() logs the technical message itself.
+            helix::ui::notify_ams_error(result, lv_tr("Tool mapping failed"));
         }
     }
     // Note: "None" selection doesn't clear mapping - user needs to map another slot to that tool

@@ -2298,6 +2298,16 @@ bool show_demo_overlay(const std::string& name) {
         return true;
     }
 
+    if (name == "ams-error-toast") {
+        // The widest thing the AMS error renderer ever has to lay out: the
+        // longest suggestion any backend produces (96 chars) under a 44-char
+        // message. Unreachable in mock mode — AmsBackendMock carries no print
+        // gate — so this is the only way to check the two-line toast against a
+        // real 480x272 panel instead of arithmetic on a font table.
+        helix::ui::notify_ams_error(AmsErrorHelper::print_active(/*is_paused=*/true));
+        return true;
+    }
+
     if (name == "print-tune") {
         // show() is the real entry point (create() alone builds a hidden panel
         // that never gets pushed) — it wires api + printer state and pushes.

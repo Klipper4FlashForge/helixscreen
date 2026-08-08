@@ -1035,7 +1035,7 @@ void PrintStatusWidget::dispatch_load() {
                            : backend->load_filament(plan.ams_arg);
         if (!err.success()) {
             spdlog::error("[PrintStatusWidget] Load filament failed: {}", err.technical_msg);
-            NOTIFY_ERROR(lv_tr("Failed to load filament: {}"), err.user_msg);
+            helix::ui::notify_ams_error(err);
         }
         return;
     }
