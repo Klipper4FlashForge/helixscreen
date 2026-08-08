@@ -13,7 +13,8 @@
 #include "system/crash_handler.h"
 #endif
 
-#include <spdlog/sinks/ringbuffer_sink.h>
+#include "system/monotonic_ring_sink.h"
+
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
@@ -115,7 +116,20 @@ class MonotonicFlagFormatter : public spdlog::custom_flag_formatter {
   public:
     void format(const spdlog::details::log_msg& msg, const std::tm& /*tm*/,
                 spdlog::memory_buf_t& dest) override {
-        const double mono = monotonic_seconds();
+        // A ring dump replays the offset captured when the line was logged;
+        // every other sink formats on the logging thread, where reading the
+        // clock here IS the log time. reset_sequence makes each dump
+        // self-contained so its first line is not diffed against whatever this
+        // formatter saw on a previous dump.
+        auto& replay = detail::monotonic_replay();
+        double mono = monotonic_seconds();
+        if (replay.active) {
+            mono = replay.value;
+            if (replay.reset_sequence) {
+                have_prev_ = false;
+                replay.reset_sequence = false;
+            }
+        }
         const double wall = std::chrono::duration<double>(msg.time.time_since_epoch()).count();
 
         std::string out = format_monotonic(mono);
@@ -151,7 +165,7 @@ std::string g_effective_file_path;
 // platform by init() and read by tail_ring_buffer() (debug-bundle log_tail).
 // Rebuilt on each init() — a shared_ptr so a logger swap never frees it out
 // from under a concurrent tail read. Null in the watchdog build / before init.
-std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> g_ring_sink;
+std::shared_ptr<MonotonicRingSink> g_ring_sink;
 
 // The user-configured level the persistent sinks run at (the logger floor may
 // be lower so the ring captures debug). Recorded for the bundle's log_meta.
@@ -380,6 +394,15 @@ std::string format_monotonic(double seconds) {
     return fmt::format("+{:09.3f}", seconds);
 }
 
+namespace detail {
+
+MonotonicReplay& monotonic_replay() {
+    thread_local MonotonicReplay state;
+    return state;
+}
+
+} // namespace detail
+
 bool is_clock_step(double wall_delta_s, double mono_delta_s) {
     // adjtime() slews at most ~500 ppm, so over any interval the honest
     // wall-vs-monotonic disagreement stays under 0.05% of the interval. One
@@ -543,7 +566,7 @@ void init(const LogConfig& config) {
     // value; HELIX_BUNDLE_LOG_DEBUG=0 reverts the ring to the configured level.
     const spdlog::level::level_enum ring_level =
         ring_captures_debug() ? spdlog::level::debug : config.level;
-    g_ring_sink = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(resolve_ring_capacity());
+    g_ring_sink = std::make_shared<MonotonicRingSink>(resolve_ring_capacity());
     g_ring_sink->set_formatter(make_formatter(SinkKind::File));
     g_ring_sink->set_level(ring_level);
     sinks.push_back(g_ring_sink);
@@ -562,6 +585,16 @@ void init(const LogConfig& config) {
     // normal volume; only the ring buffer gains the extra detail.
     auto logger = std::make_shared<spdlog::logger>("helix", sinks.begin(), sinks.end());
     logger->set_level(std::min(config.level, ring_level));
+
+    // Flush warnings and worse immediately instead of waiting for spdlog's
+    // buffer to fill. The UI is routinely SIGKILLed rather than shut down
+    // cleanly — an init script escalating `kill` to `kill -9`, or a firmware
+    // helper stopping the GUI to free RAM — and anything still buffered at that
+    // moment is lost. The lost lines are exactly the ones describing why the
+    // process was in trouble, which is what makes such a failure undiagnosable
+    // after the fact. Levels below warn stay buffered so ordinary logging on
+    // flash-backed boards keeps its write batching.
+    logger->flush_on(spdlog::level::warn);
 
     // Set as default logger
     spdlog::set_default_logger(logger);

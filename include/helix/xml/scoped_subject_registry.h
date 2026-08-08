@@ -39,6 +39,12 @@ class ScopedSubjectRegistryOverride {
 // (equivalent to lv_xml_register_subject(nullptr, name, subject)).
 lv_result_t register_subject_in_current_scope(const char* name, lv_subject_t* subject);
 
+/// Drop `name` from the active scope so it stops resolving. The counterpart to
+/// register_subject_in_current_scope(): the registry keeps resolving a name after
+/// its lv_subject_t is freed, so any owner that does not live for the whole
+/// process must unregister or leave the name pointing at dead memory.
+lv_result_t unregister_subject_in_current_scope(const char* name);
+
 // Access the active scope (nullptr if none). For debug assertions only.
 lv_xml_component_scope_t* current_scope();
 

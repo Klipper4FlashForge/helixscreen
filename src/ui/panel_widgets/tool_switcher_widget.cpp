@@ -13,6 +13,7 @@
 #include "filament_op_slot_resolver.h"
 #include "observer_factory.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 #include "printer_state.h"
 #include "theme_manager.h"
 #include "tool_state.h"
@@ -50,10 +51,43 @@ ToolSwitcherWidget::~ToolSwitcherWidget() {
     }
 }
 
+// Compact mode: too small on both axes for pills (was colspan==1 &&
+// rowspan==1). W_NORMAL/H_TALL are the pixel floors below which the old
+// predicate's colspan/rowspan==1 held.
+bool ToolSwitcherWidget::is_compact_size() const {
+    return current_width_px_ < widget_size::W_NORMAL && current_height_px_ < widget_size::H_TALL;
+}
+
+// Narrow but tall: single vertical column of pills (was colspan==1 &&
+// rowspan>=2) — the legacy 1x2 layout.
+bool ToolSwitcherWidget::is_narrow_tall_size() const {
+    return current_width_px_ < widget_size::W_NORMAL && current_height_px_ >= widget_size::H_TALL;
+}
+
 void ToolSwitcherWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
     widget_obj_ = widget_obj;
     parent_screen_ = parent_screen;
     s_active_instance = this;
+
+    // SIZE_CHANGED is a layout event — cannot be registered via XML
+    // <event_cb>. Hooked on tool_switcher_container itself (not widget_obj_):
+    // LVGL's layout_update_core() fires SIZE_CHANGED for an object as soon as
+    // ITS OWN refr_size() runs, before it applies its layout to reflow
+    // percentage-sized children (lv_layout_apply() runs after). Hooking
+    // widget_obj_ and then self-measuring the child container inside
+    // rebuild_pills() would read the child's stale, not-yet-cascaded size —
+    // and the lv_obj_update_layout() call rebuild_pills() already does for
+    // its own reasons is a no-op here too, since lv_obj_update_layout() self-
+    // guards against the reentrant call this handler is nested inside via
+    // its own mutex. Watching the container directly — the same object
+    // rebuild_pills() measures — matches UiClogMeter/UiBufferMeter, which
+    // always measure the same object their handler is hooked on.
+    // See rebuild_for_settled_grid_size() for why this is here.
+    size_watch_container_ = lv_obj_find_by_name(widget_obj_, "tool_switcher_container");
+    if (size_watch_container_) {
+        lv_obj_add_event_cb(size_watch_container_, on_widget_size_changed, LV_EVENT_SIZE_CHANGED,
+                            this);
+    }
 
     auto& tool_state = ToolState::instance();
     auto token = lifetime_.token();
@@ -72,7 +106,7 @@ void ToolSwitcherWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
         [token](ToolSwitcherWidget* self, int /*count*/) {
             if (token.expired())
                 return;
-            if (self->current_colspan_ == 1 && self->current_rowspan_ == 1) {
+            if (self->is_compact_size()) {
                 self->rebuild_compact();
             } else {
                 self->rebuild_pills();
@@ -108,23 +142,71 @@ void ToolSwitcherWidget::detach() {
     if (s_active_instance == this) {
         s_active_instance = nullptr;
     }
+    if (size_watch_container_) {
+        lv_obj_remove_event_cb_with_user_data(size_watch_container_, on_widget_size_changed, this);
+    }
+    size_watch_container_ = nullptr;
     widget_obj_ = nullptr;
     parent_screen_ = nullptr;
+    grid_settled_w_px_ = -1;
+    grid_settled_h_px_ = -1;
+    in_grid_size_refresh_ = false;
 }
 
-void ToolSwitcherWidget::on_size_changed(int colspan, int rowspan, int /*width_px*/,
-                                         int /*height_px*/) {
-    current_colspan_ = colspan;
-    current_rowspan_ = rowspan;
+void ToolSwitcherWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_px,
+                                         int height_px) {
+    current_width_px_ = width_px;
+    current_height_px_ = height_px;
 
     if (!widget_obj_)
         return;
 
-    if (colspan == 1 && rowspan == 1) {
+    if (is_compact_size()) {
         rebuild_compact();
     } else {
         rebuild_pills();
     }
+}
+
+void ToolSwitcherWidget::on_widget_size_changed(lv_event_t* e) {
+    auto* self = static_cast<ToolSwitcherWidget*>(lv_event_get_user_data(e));
+    if (self)
+        self->rebuild_for_settled_grid_size();
+}
+
+void ToolSwitcherWidget::rebuild_for_settled_grid_size() {
+    if (!widget_obj_ || !size_watch_container_)
+        return;
+
+    // Re-entrancy guard — see the member comment on in_grid_size_refresh_.
+    if (in_grid_size_refresh_)
+        return;
+
+    int w = lv_obj_get_width(size_watch_container_);
+    int h = lv_obj_get_height(size_watch_container_);
+
+    // No-op when unchanged — see the member comment on grid_settled_w_px_.
+    if (w == grid_settled_w_px_ && h == grid_settled_h_px_)
+        return;
+
+    in_grid_size_refresh_ = true;
+    grid_settled_w_px_ = w;
+    grid_settled_h_px_ = h;
+
+    // current_width_px_/current_height_px_ (the granted cell size) were
+    // already set correctly by on_size_changed() — PanelWidgetManager
+    // computes those from grid_track_extent(), not from widget_obj_'s
+    // on-screen size, so they are right from the start. Only
+    // tool_switcher_container's OWN on-screen size lagged behind pre-grid;
+    // re-running the same mode decision now lets rebuild_pills() self-measure
+    // the now-settled container instead of the stale pre-grid box.
+    if (is_compact_size()) {
+        rebuild_compact();
+    } else {
+        rebuild_pills();
+    }
+
+    in_grid_size_refresh_ = false;
 }
 
 // ============================================================================
@@ -179,7 +261,7 @@ void ToolSwitcherWidget::rebuild_pills() {
     int cols = total;
     bool use_grid = false;
 
-    if (current_colspan_ == 1 && current_rowspan_ >= 2) {
+    if (is_narrow_tall_size()) {
         // Tall narrow widget — vertical pill column (legacy behavior).
         lv_obj_set_flex_flow(container, LV_FLEX_FLOW_COLUMN);
     } else {
@@ -289,7 +371,7 @@ void ToolSwitcherWidget::rebuild_pills() {
 }
 
 void ToolSwitcherWidget::on_active_tool_changed(int tool_index) {
-    if (current_colspan_ == 1 && current_rowspan_ == 1) {
+    if (is_compact_size()) {
         // Compact mode — rebuild to update the label
         if (widget_obj_) {
             rebuild_compact();

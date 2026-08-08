@@ -794,6 +794,27 @@ struct SlotInfo {
     std::string material;                        ///< Material type (e.g., "PLA", "PETG", "ABS")
     std::string brand;                           ///< Brand name (e.g., "Polymaker", "eSUN")
 
+    // Catalog product identity — WHICH branded product, not just its material.
+    //
+    // `material` collapses every PLA product a vendor sells into one string, so
+    // brand + material cannot distinguish SUNLU "PLA+ 2.0" from SUNLU "PLA
+    // Marble". Both are stored because they answer different questions and can
+    // outlive each other:
+    //   - catalog_id resolves through FilamentCatalog::resolve_id() to seed the
+    //     editor's product list back to the exact row the user picked.
+    //   - product_name is the display string, and survives a catalog_id that no
+    //     longer resolves (a custom overlay product the user deleted, a bundled
+    //     id retired by an app update). Without it a dead id would leave the
+    //     lane with no record of what was chosen at all.
+    // Both empty = no catalog pick; the editor falls back to preselect-first.
+    //
+    // Deliberately NOT folded into spool_name: that carries a Spoolman /
+    // firmware-label meaning, is written behind our back by AFC/CFS/Snapmaker,
+    // is wiped by clear_spoolman_link(), and Snapmaker round-trips it to
+    // firmware as SUB_TYPE.
+    std::string catalog_id;   ///< assets/filaments.json product id ("sunlu-pla-plus-2-0")
+    std::string product_name; ///< Catalog display name ("PLA+ 2.0")
+
     // Temperature recommendations (from Spoolman or manual entry)
     int nozzle_temp_min = 0; ///< Minimum nozzle temp (°C)
     int nozzle_temp_max = 0; ///< Maximum nozzle temp (°C)
@@ -838,6 +859,13 @@ struct SlotInfo {
     /**
      * @brief Check if this slot has filament data configured
      * @return true if material or custom color is set
+     *
+     * catalog_id / product_name are deliberately NOT tested here. A catalog
+     * pick always writes `material` alongside them (the product's type is the
+     * material), so an extra clause could never change the answer — it would
+     * only imply a state that cannot occur. Same reasoning applies to the two
+     * ghost-slot predicates that mirror this one (ui_ams_slot.cpp,
+     * ui_ams_mini_status.cpp); keep all three in agreement.
      */
     [[nodiscard]] bool has_filament_info() const {
         return !material.empty() || color_rgb != AMS_DEFAULT_SLOT_COLOR;
@@ -869,7 +897,12 @@ struct SlotInfo {
      *
      * Locally-editable identity (brand / material / colour / weights) is
      * deliberately KEPT: unlinking means "stop tracking this in Spoolman", not
-     * "forget what is in the lane".
+     * "forget what is in the lane". catalog_id / product_name fall on the KEPT
+     * side for the same reason and one stronger: the catalog pick comes from
+     * assets/filaments.json, which has no Spoolman record behind it at all —
+     * there is no handle here to go stale. Clearing it would drop the user back
+     * to the alphabetically-first variant of their material on the next open,
+     * which is precisely the failure these fields exist to prevent.
      */
     void clear_spoolman_link() {
         spoolman_id = 0;

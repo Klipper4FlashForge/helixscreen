@@ -4173,6 +4173,14 @@ void AmsBackendAfc::apply_overrides(SlotInfo& slot, int slot_index) {
         slot.color_name = o.color_name;
     if (!o.material.empty())
         slot.material = o.material;
+    // Catalog product identity — same "override wins only when it carries a
+    // real value" rule as the strings above. Firmware never populates these
+    // (no AMS protocol has a notion of a branded product id), so a non-empty
+    // value here is always a user pick and always wins.
+    if (!o.catalog_id.empty())
+        slot.catalog_id = o.catalog_id;
+    if (!o.product_name.empty())
+        slot.product_name = o.product_name;
 }
 
 void AmsBackendAfc::persist_override(int slot_index, const SlotInfo& info) {
@@ -4186,6 +4194,10 @@ void AmsBackendAfc::persist_override(int slot_index, const SlotInfo& info) {
     o.total_weight_g = info.total_weight_g;
     o.color_name = info.color_name;
     o.material = info.material;
+    // Catalog product identity — see apply_overrides(). Never auto-mirrored;
+    // a non-empty value is always a user pick.
+    o.catalog_id = info.catalog_id;
+    o.product_name = info.product_name;
     if (info.color_rgb != 0 && info.color_rgb != AMS_DEFAULT_SLOT_COLOR) {
         o.color_rgb = info.color_rgb;
         o.color_set = true;
@@ -4222,6 +4234,12 @@ void AmsBackendAfc::clear_slot_override(int slot_index) {
             entry->info.remaining_weight_g = -1.0f;
             entry->info.total_weight_g = -1.0f;
             entry->info.color_name.clear();
+            // The catalog pick is override-exclusive on every backend — no AMS
+            // firmware carries a branded product id — so a clear always drops it.
+            // Leaving it would re-navigate the editor to the removed spool's
+            // product on the next open.
+            entry->info.catalog_id.clear();
+            entry->info.product_name.clear();
         }
     }
     emit_event(EVENT_SLOT_CHANGED, std::to_string(slot_index));
@@ -4761,6 +4779,8 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
         // Detect whether anything actually changed
         bool changed = slot.color_name != info.color_name || slot.color_rgb != info.color_rgb ||
                        slot.material != info.material || slot.brand != info.brand ||
+                       slot.catalog_id != info.catalog_id ||
+                       slot.product_name != info.product_name ||
                        slot.spoolman_id != info.spoolman_id || slot.spool_name != info.spool_name ||
                        slot.remaining_weight_g != info.remaining_weight_g ||
                        slot.total_weight_g != info.total_weight_g ||
@@ -4773,6 +4793,11 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
         slot.color_rgb = info.color_rgb;
         slot.material = info.material;
         slot.brand = info.brand;
+        // Carry the catalog product identity through preview writes too — a
+        // persist=false preview that dropped it would make the editor snap
+        // back to a different variant on the next get_slot_info().
+        slot.catalog_id = info.catalog_id;
+        slot.product_name = info.product_name;
         slot.spoolman_id = info.spoolman_id;
         slot.spool_name = info.spool_name;
         slot.remaining_weight_g = info.remaining_weight_g;

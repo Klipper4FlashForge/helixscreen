@@ -86,6 +86,36 @@ std::string format_monotonic(double seconds);
  */
 bool is_clock_step(double wall_delta_s, double mono_delta_s);
 
+namespace detail {
+
+/**
+ * @brief Thread-local replay state for formatting stored log entries
+ *
+ * `%*` normally reads the clock as it formats, which is right for a sink that
+ * formats on the logging thread. A ring buffer does not: it stores raw messages
+ * and formats them later, so every line in a dump would receive the dump
+ * instant. MonotonicRingSink records the real offset per entry and replays it
+ * here while formatting.
+ *
+ * Thread-local, so a live sink formatting concurrently on another thread is
+ * unaffected and keeps reading the clock. `reset_sequence` clears the flag
+ * formatter's step-detection memory at the start of a dump, so a dump is
+ * self-contained: the first line is never diffed against whatever that
+ * formatter last saw (debug_bundle_collector probes the ring with a 1-line
+ * tail before log_collector takes the real dump, which would otherwise open
+ * every bundle with a fabricated CLOCK_STEP).
+ */
+struct MonotonicReplay {
+    bool active = false;
+    double value = 0.0;
+    bool reset_sequence = false;
+};
+
+/// Accessor for the calling thread's replay state.
+MonotonicReplay& monotonic_replay();
+
+} // namespace detail
+
 /**
  * @brief Build the formatter for a sink kind
  *

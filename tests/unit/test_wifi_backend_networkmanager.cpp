@@ -715,13 +715,14 @@ TEST_CASE("NM backend: status poll fires CONNECTED/DISCONNECTED on transitions",
 
 TEST_CASE("NM backend: start() resets prev_connected_ so next poll re-detects",
           "[network][nm][status][events]") {
-    // The backend object is REUSED across a WiFi off/on toggle
-    // (WiFiManager::set_enabled calls backend_->stop() then backend_->start()
-    // on the same instance) — the member is NOT recreated. start() therefore
-    // explicitly resets prev_connected_ to false, so the first poll after a
-    // restart re-fires CONNECTED if the system is still connected and re-notifies
-    // observers (fixes the stale-icon-after-toggle bug, #1059). Here we drive
-    // that reset directly since start() needs a live NetworkManager.
+    // The backend object is REUSED across a WiFi off/on toggle: WiFiManager
+    // drives backend_->set_radio_enabled() and deliberately leaves the backend
+    // running, so the member is NOT recreated. A genuine stop()/start() cycle
+    // (auto-failover, re-init after INIT_FAILED) hits the same reuse. start()
+    // therefore explicitly resets prev_connected_ to false, so the first poll
+    // after a restart re-fires CONNECTED if the system is still connected and
+    // re-notifies observers (fixes the stale-icon-after-toggle bug, #1059).
+    // Here we drive that reset directly since start() needs a live NetworkManager.
     TestableNMBackend backend;
 
     int connect_count = 0;
@@ -737,6 +738,31 @@ TEST_CASE("NM backend: start() resets prev_connected_ so next poll re-detects",
         backend.simulate_status_poll(true); // false→true: CONNECTED fires again
         CHECK(connect_count == 1);
     }
+}
+
+// ============================================================================
+// Radio power — the backend must answer for itself, not inherit the base
+// class's silent no-op + unconditional "radio is on"
+// ============================================================================
+
+TEST_CASE("NM backend implements radio power instead of inheriting the base no-op",
+          "[network][nm][radio]") {
+    TestableNMBackend backend;
+
+    // Not started: set_radio_enabled() must refuse rather than report the
+    // base class's silent success, which is what let the UI switch flip and
+    // then snap straight back.
+    WiFiError err = backend.set_radio_enabled(false);
+    CHECK_FALSE(err.success());
+    CHECK(err.result == WiFiResult::NOT_INITIALIZED);
+
+    // And a refused change must not have moved the cached state.
+    CHECK(backend.is_radio_enabled());
+
+    // The base-class defaults would have made both of the above pass in the
+    // opposite direction; pin the override explicitly so removing it fails.
+    WifiBackend& as_base = backend;
+    CHECK_FALSE(as_base.set_radio_enabled(false).success());
 }
 
 #else

@@ -376,6 +376,17 @@ void populate_release_urls_from_manifest(const json& platform_asset,
     }
 }
 
+/// Which half of in_app_updates_suppressed() actually fired. The two causes need
+/// completely different follow-up — one is a deliberate firmware opt-out, the
+/// other is a machine that cannot apply the swap — and a support report often has
+/// nothing but this log line to go on. Only call when suppressed.
+const char* suppression_reason() {
+    if (updates_externally_managed()) {
+        return "firmware-managed (HELIX_DISABLE_AUTO_UPDATES is set)";
+    }
+    return "install tree not writable and root not obtainable";
+}
+
 /**
  * @brief Execute a command safely via fork/exec (no shell interpretation)
  *
@@ -676,6 +687,11 @@ void UpdateChecker::init() {
     init_subjects();
     register_notify_callbacks();
 
+    // Snapshot the Config-derived settings while we are provably on the main
+    // thread, so the debug bundle can report channel/manifest URL from its
+    // worker thread even when no check has ever run.
+    refresh_config_snapshot();
+
     // Clean up stale .old backup from a previous in-app update that may have
     // failed to remove it (e.g., NoNewPrivileges blocked sudo rm).
     cleanup_stale_old_install();
@@ -717,10 +733,13 @@ void UpdateChecker::shutdown() {
         download_thread_.join();
     }
 
-    // Clear callback to prevent stale references
+    // Clear callback to prevent stale references, and drop the diagnostics
+    // snapshot — once the checker is down, a stale channel/URL would read as
+    // live config in a debug bundle. init() takes a fresh one.
     {
         std::lock_guard<std::mutex> lock(mutex_);
         pending_callback_ = nullptr;
+        config_snapshot_ = {};
     }
 
     // Cleanup subjects
@@ -1194,8 +1213,8 @@ void UpdateChecker::start_download() {
     // self-download/install in either case — it would fight the firmware's setup
     // or fail the atomic directory rename.
     if (in_app_updates_suppressed()) {
-        spdlog::info("[UpdateChecker] Update skipped: in-app updates are suppressed "
-                     "(firmware-managed or install tree not writable)");
+        spdlog::info("[UpdateChecker] Update skipped: in-app updates are suppressed - {}",
+                     suppression_reason());
         return;
     }
 
@@ -2314,8 +2333,8 @@ void UpdateChecker::check_for_updates(Callback callback) {
     // this top-level entry covers both manual and auto-check callers so no
     // download/install path can ever proceed.
     if (in_app_updates_suppressed()) {
-        spdlog::info("[UpdateChecker] Update skipped: in-app updates are suppressed "
-                     "(firmware-managed or install tree not writable)");
+        spdlog::info("[UpdateChecker] Update skipped: in-app updates are suppressed - {}",
+                     suppression_reason());
         return;
     }
 
@@ -2388,21 +2407,11 @@ void UpdateChecker::check_for_updates(Callback callback) {
     cached_channel_ = get_channel();
     auto* config = Config::get_instance();
     cached_dev_url_ = config ? config->get<std::string>("/update/dev_url", "") : "";
-    cached_r2_base_url_ = config ? config->get<std::string>("/update/r2_url", "") : "";
-    if (cached_r2_base_url_.empty()) {
-        cached_r2_base_url_ = DEFAULT_R2_BASE_URL;
-    }
-    // Normalize: strip trailing slash
-    if (!cached_r2_base_url_.empty() && cached_r2_base_url_.back() == '/') {
-        cached_r2_base_url_.pop_back();
-    }
+    cached_r2_base_url_ = effective_r2_base_url();
 
-    const char* channel_name = (cached_channel_ == UpdateChannel::Beta)  ? "beta"
-                               : (cached_channel_ == UpdateChannel::Dev) ? "dev"
-                                                                         : "stable";
     spdlog::debug("[UpdateChecker] check_for_updates: channel={} dev_url='{}' r2_base_url='{}'",
-                  channel_name, cached_dev_url_.empty() ? "(none)" : cached_dev_url_,
-                  cached_r2_base_url_);
+                  channel_name(cached_channel_),
+                  cached_dev_url_.empty() ? "(none)" : cached_dev_url_, cached_r2_base_url_);
 
     // Update subjects on LVGL thread (check_for_updates is public, could be called from any thread)
     if (subjects_initialized_) {
@@ -2561,6 +2570,46 @@ UpdateChecker::UpdateChannel UpdateChecker::get_channel() const {
     }
 }
 
+const char* UpdateChecker::channel_name(UpdateChannel channel) {
+    switch (channel) {
+    case UpdateChannel::Beta:
+        return "beta";
+    case UpdateChannel::Dev:
+        return "dev";
+    case UpdateChannel::Stable:
+        break;
+    }
+    return "stable";
+}
+
+void UpdateChecker::refresh_config_snapshot() {
+    // Read Config on the caller's (main) thread, then publish under mutex_.
+    ConfigSnapshot snap;
+    snap.channel = channel_name(get_channel());
+    snap.r2_base_url = effective_r2_base_url();
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    config_snapshot_ = std::move(snap);
+}
+
+UpdateChecker::ConfigSnapshot UpdateChecker::config_snapshot() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_snapshot_;
+}
+
+std::string UpdateChecker::effective_r2_base_url() {
+    auto* config = Config::get_instance();
+    std::string url = config ? config->get<std::string>("/update/r2_url", std::string{}) : "";
+    if (url.empty()) {
+        url = DEFAULT_R2_BASE_URL;
+    }
+    // Normalize: strip trailing slashes so callers can join with "/<path>".
+    while (url.size() > 1 && url.back() == '/') {
+        url.pop_back();
+    }
+    return url;
+}
+
 std::string UpdateChecker::get_platform_key() {
 #ifdef HELIX_PLATFORM_AD5M
     return "ad5m";
@@ -2686,8 +2735,8 @@ void UpdateChecker::start_auto_check() {
     // tree can't be updated in place — never schedule the periodic auto-check timer
     // in either case, so the "update available" notification path can never fire.
     if (in_app_updates_suppressed()) {
-        spdlog::info("[UpdateChecker] Auto-check disabled: in-app updates are suppressed "
-                     "(firmware-managed or install tree not writable)");
+        spdlog::info("[UpdateChecker] Auto-check disabled: in-app updates are suppressed - {}",
+                     suppression_reason());
         return;
     }
 
@@ -3105,33 +3154,33 @@ void UpdateChecker::report_result(Status status, std::optional<ReleaseInfo> info
 
     // Dispatch to LVGL thread for subject updates and callback
     spdlog::debug("[UpdateChecker] Dispatching to LVGL thread");
-    async_lifetime_.defer("UpdateChecker::do_check_complete", [this, callback, status, info,
-                                                               error]() {
-        spdlog::debug("[UpdateChecker] Executing on LVGL thread");
+    async_lifetime_.defer(
+        "UpdateChecker::do_check_complete", [this, callback, status, info, error]() {
+            spdlog::debug("[UpdateChecker] Executing on LVGL thread");
 
-        // Update LVGL subjects
-        if (subjects_initialized_) {
-            lv_subject_set_int(&status_subject_, static_cast<int>(status));
+            // Update LVGL subjects
+            if (subjects_initialized_) {
+                lv_subject_set_int(&status_subject_, static_cast<int>(status));
 
-            if (status == Status::UpdateAvailable && info) {
-                snprintf(version_text_buf_, sizeof(version_text_buf_), lv_tr("v%s available"),
-                         info->version.c_str());
-                lv_subject_copy_string(&version_text_subject_, version_text_buf_);
-                lv_subject_copy_string(&new_version_subject_, info->version.c_str());
-            } else if (status == Status::UpToDate) {
-                lv_subject_copy_string(&version_text_subject_, lv_tr("Up to date"));
-                lv_subject_copy_string(&new_version_subject_, "");
-            } else if (status == Status::Error) {
-                snprintf(version_text_buf_, sizeof(version_text_buf_), lv_tr("Error: %s"),
-                         error.c_str());
-                lv_subject_copy_string(&version_text_subject_, version_text_buf_);
-                lv_subject_copy_string(&new_version_subject_, "");
+                if (status == Status::UpdateAvailable && info) {
+                    snprintf(version_text_buf_, sizeof(version_text_buf_), lv_tr("v%s available"),
+                             info->version.c_str());
+                    lv_subject_copy_string(&version_text_subject_, version_text_buf_);
+                    lv_subject_copy_string(&new_version_subject_, info->version.c_str());
+                } else if (status == Status::UpToDate) {
+                    lv_subject_copy_string(&version_text_subject_, lv_tr("Up to date"));
+                    lv_subject_copy_string(&new_version_subject_, "");
+                } else if (status == Status::Error) {
+                    snprintf(version_text_buf_, sizeof(version_text_buf_), lv_tr("Error: %s"),
+                             error.c_str());
+                    lv_subject_copy_string(&version_text_subject_, version_text_buf_);
+                    lv_subject_copy_string(&new_version_subject_, "");
+                }
             }
-        }
 
-        // Execute callback if present
-        if (callback) {
-            callback(status, info);
-        }
-    });
+            // Execute callback if present
+            if (callback) {
+                callback(status, info);
+            }
+        });
 }

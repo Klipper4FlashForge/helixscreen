@@ -1487,6 +1487,11 @@ void NavigationManager::scrub_deleted_widget(lv_obj_t* widget) {
     persistent_overlay_instances_.erase(widget);
     // Drop the backdrop map entry only — out of scope to delete the backdrop here.
     overlay_backdrops_.erase(widget);
+    // The active backdrop is a scalar, not a widget-keyed container, so it needs
+    // an explicit clear. Without it deinit_subjects() lv_obj_del()s freed memory
+    // whenever the backdrop died with its parent screen.
+    if (widget == overlay_backdrop_)
+        overlay_backdrop_ = nullptr;
     overlay_close_callbacks_.erase(widget);
     zoom_source_rects_.erase(widget);
     overlay_is_destination_.erase(widget);
@@ -1504,6 +1509,22 @@ void NavigationManager::overlay_delete_event_cb(lv_event_t* e) {
         return;
     auto* target = static_cast<lv_obj_t*>(lv_event_get_target(e));
     NavigationManager::instance().scrub_deleted_widget(target);
+}
+
+void NavigationManager::adopt_overlay_backdrop(lv_obj_t* screen) {
+    overlay_backdrop_ = helix::ui::create_darkened_backdrop(screen, 40);
+    if (!overlay_backdrop_)
+        return;
+
+    lv_obj_move_foreground(overlay_backdrop_);
+    // PRESSED latches keyboard visibility before LVGL's click-focus
+    // hides it; CLICKED consumes the tap for the keyboard dismiss.
+    lv_obj_add_event_cb(overlay_backdrop_, backdrop_click_event_cb, LV_EVENT_PRESSED, nullptr);
+    lv_obj_add_event_cb(overlay_backdrop_, backdrop_click_event_cb, LV_EVENT_CLICKED, nullptr);
+    // Scalar counterpart to the widget-keyed containers scrub_deleted_widget()
+    // already covers: deleting the parent screen frees the backdrop with no
+    // go_back(), and deinit_subjects() would then lv_obj_del() freed memory.
+    ensure_delete_hook(overlay_backdrop_);
 }
 
 void NavigationManager::ensure_delete_hook(lv_obj_t* widget) {
@@ -1751,16 +1772,7 @@ void NavigationManager::push_overlay(lv_obj_t* overlay_panel, bool hide_previous
         // the visible content, not a blank screen.
         lv_obj_t* screen = lv_obj_get_screen(overlay_panel);
         if (screen && is_first_overlay) {
-            mgr.overlay_backdrop_ = helix::ui::create_darkened_backdrop(screen, 40);
-            if (mgr.overlay_backdrop_) {
-                lv_obj_move_foreground(mgr.overlay_backdrop_);
-                // PRESSED latches keyboard visibility before LVGL's click-focus
-                // hides it; CLICKED consumes the tap for the keyboard dismiss.
-                lv_obj_add_event_cb(mgr.overlay_backdrop_, backdrop_click_event_cb,
-                                    LV_EVENT_PRESSED, nullptr);
-                lv_obj_add_event_cb(mgr.overlay_backdrop_, backdrop_click_event_cb,
-                                    LV_EVENT_CLICKED, nullptr);
-            }
+            mgr.adopt_overlay_backdrop(screen);
         }
 
         // Optionally hide current top panel (after snapshot)
@@ -1871,16 +1883,7 @@ void NavigationManager::push_overlay_zoom_from(lv_obj_t* overlay_panel, lv_area_
         // the visible content, not a blank screen.
         lv_obj_t* screen = lv_obj_get_screen(overlay_panel);
         if (screen && is_first_overlay) {
-            mgr.overlay_backdrop_ = helix::ui::create_darkened_backdrop(screen, 40);
-            if (mgr.overlay_backdrop_) {
-                lv_obj_move_foreground(mgr.overlay_backdrop_);
-                // PRESSED latches keyboard visibility before LVGL's click-focus
-                // hides it; CLICKED consumes the tap for the keyboard dismiss.
-                lv_obj_add_event_cb(mgr.overlay_backdrop_, backdrop_click_event_cb,
-                                    LV_EVENT_PRESSED, nullptr);
-                lv_obj_add_event_cb(mgr.overlay_backdrop_, backdrop_click_event_cb,
-                                    LV_EVENT_CLICKED, nullptr);
-            }
+            mgr.adopt_overlay_backdrop(screen);
         }
 
         // Hide current top panel (after snapshot)

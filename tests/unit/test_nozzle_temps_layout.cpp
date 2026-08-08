@@ -99,3 +99,38 @@ TEST_CASE("Zero rows clamps to a single column", "[nozzle][layout]") {
                                                   /*row_count=*/0);
     REQUIRE(d.columns == 1);
 }
+
+// --- Exact boundaries, derived from decide_nozzle_layout()'s own arithmetic
+// (columns = avail_px >= 2*short_row_px + gap_px; use_long_label = col_w >=
+// long_row_px), not by running the function and recording what it printed.
+
+TEST_CASE("Column split at the exact 2*short+gap boundary picks two columns", "[nozzle][layout]") {
+    // threshold = 2*short_row_px(90) + gap_px(12) = 192, avail_px == threshold
+    // -> the ">=" in decide_nozzle_layout takes the two-column branch.
+    NozzleLayoutDecision d = decide_nozzle_layout(/*avail_px=*/192, /*gap_px=*/12,
+                                                  /*long_row_px=*/150, /*short_row_px=*/90,
+                                                  /*row_count=*/4);
+    REQUIRE(d.columns == 2);
+    // col_w = (192 - 12) / 2 = 90 < long_row_px(150) -> short label.
+    REQUIRE(d.use_long_label == false);
+}
+
+TEST_CASE("One pixel below the split boundary stays a single column", "[nozzle][layout]") {
+    // Same threshold (192) as above, avail_px one pixel under it.
+    NozzleLayoutDecision d = decide_nozzle_layout(/*avail_px=*/191, /*gap_px=*/12,
+                                                  /*long_row_px=*/150, /*short_row_px=*/90,
+                                                  /*row_count=*/4);
+    REQUIRE(d.columns == 1);
+    // col_w == avail_px == 191 >= long_row_px(150) -> long label still fits.
+    REQUIRE(d.use_long_label == true);
+}
+
+TEST_CASE("One pixel below the long-label boundary uses the short label", "[nozzle][layout]") {
+    // Single column (avail_px(149) < split threshold(192)); col_w == avail_px
+    // == long_row_px(150) - 1 -> the ">=" in use_long_label just misses.
+    NozzleLayoutDecision d = decide_nozzle_layout(/*avail_px=*/149, /*gap_px=*/12,
+                                                  /*long_row_px=*/150, /*short_row_px=*/90,
+                                                  /*row_count=*/4);
+    REQUIRE(d.columns == 1);
+    REQUIRE(d.use_long_label == false);
+}

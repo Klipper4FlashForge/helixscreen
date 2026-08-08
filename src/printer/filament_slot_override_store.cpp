@@ -118,6 +118,15 @@ nlohmann::json to_lane_data_record(int slot_index, const FilamentSlotOverride& o
             j["material"] = match;
         j["helix_material"] = o.material;
     }
+    // Catalog product identity. HelixScreen-only (Orca and the AMS plugins have
+    // no notion of a branded product id), hence the helix_ prefix in this shared
+    // namespace. Emitted independently: a pick whose id later stops resolving
+    // still has a name worth keeping, and a name with no id is a legitimate
+    // half-record rather than a reason to drop both.
+    if (!o.catalog_id.empty())
+        j["helix_catalog_id"] = o.catalog_id;
+    if (!o.product_name.empty())
+        j["helix_product_name"] = o.product_name;
     // helix_locked_* are HelixScreen-internal markers. Always emit both (even
     // when false) so a future re-load can distinguish "explicit auto-mirror,
     // safe to track" from "missing key, fall back to pessimistic default."
@@ -459,6 +468,12 @@ std::optional<std::pair<int, FilamentSlotOverride>> from_lane_data_record(const 
     o.remaining_weight_g = helix::json_util::safe_float(j, "remaining_weight_g", -1.0f);
     o.total_weight_g = helix::json_util::safe_float(j, "total_weight_g", -1.0f);
     o.color_name = helix::json_util::safe_string(j, "color_name");
+    // No alias fallback and no legacy default: these keys are ours alone, so a
+    // record without them simply had no catalog pick. safe_string (not .value())
+    // because a hand-edited or third-party record can carry them as JSON null,
+    // which .value() would throw type_error.302 on.
+    o.catalog_id = helix::json_util::safe_string(j, "helix_catalog_id");
+    o.product_name = helix::json_util::safe_string(j, "helix_product_name");
     return std::make_pair(slot_index, o);
 }
 
@@ -516,6 +531,11 @@ nlohmann::json to_json(const FilamentSlotOverride& o) {
         {"color_set", o.color_set},
         {"color_name", o.color_name},
         {"material", o.material},
+        // Bare names: this file is HelixScreen-private, so there is nothing to
+        // disambiguate against (same convention as user_locked_color below,
+        // which is helix_locked_color on the shared wire).
+        {"catalog_id", o.catalog_id},
+        {"product_name", o.product_name},
         {"user_locked_color", o.user_locked_color},
         {"user_locked_material", o.user_locked_material},
         {"bed_temp", o.bed_temp},
@@ -549,6 +569,12 @@ FilamentSlotOverride from_json(const nlohmann::json& j) {
     o.color_set = helix::json_util::safe_bool(j, "color_set", o.color_rgb != 0u);
     o.color_name = helix::json_util::safe_string(j, "color_name");
     o.material = helix::json_util::safe_string(j, "material");
+    // Absent in a pre-upgrade cache -> empty, which is exactly "no catalog
+    // pick". No schema bump: these are purely additive optional fields and
+    // read_cache's version gate would discard the whole file if we bumped it
+    // (an older build would then truncate a newer cache on its next save).
+    o.catalog_id = helix::json_util::safe_string(j, "catalog_id");
+    o.product_name = helix::json_util::safe_string(j, "product_name");
     // Pessimistic legacy-default — see from_lane_data_record + #965.
     o.user_locked_color = helix::json_util::safe_bool(j, "user_locked_color", o.color_set);
     o.user_locked_material =

@@ -15,12 +15,14 @@
 #include "../lvgl_test_fixture.h"
 #include "app_globals.h"
 #include "panel_widget_manager.h"
+#include "panel_widget_size.h"
 #include "printer_state.h"
 #include "src/ui/panel_widgets/print_status_widget.h"
 
 #include "../catch_amalgamated.hpp"
 
 using namespace helix;
+using namespace helix::widget_size;
 
 namespace {
 bool s_widgets_registered = false;
@@ -133,11 +135,12 @@ TEST_CASE_METHOD(PrintStatusDetailedVisibilityFixture,
 }
 
 TEST_CASE_METHOD(PrintStatusDetailedVisibilityFixture,
-                 "view=3 (Library) at colspan=1 even with detailed requested while PRINTING",
+                 "view=3 (Library) below the normal width floor even with detailed requested "
+                 "while PRINTING",
                  "[print_status][detailed_visibility]") {
     PrintStatusWidget w;
     w.set_config(nlohmann::json{{"layout_style", "detailed"}});
-    w.on_size_changed(1, 2, 200, 400);
+    w.on_size_changed(1, 2, W_NORMAL - 1, 400);
     lv_obj_t* container = create_mock_tree(test_screen());
     w.attach(container, test_screen());
     process_lvgl(50);
@@ -161,11 +164,12 @@ TEST_CASE_METHOD(PrintStatusDetailedVisibilityFixture,
 }
 
 TEST_CASE_METHOD(PrintStatusDetailedVisibilityFixture,
-                 "view=1 (idle_library_compact) at colspan=1 regardless of layout_style",
+                 "view=1 (idle_library_compact) below the normal width floor regardless of "
+                 "layout_style",
                  "[print_status][detailed_visibility]") {
     PrintStatusWidget w;
     w.set_config(nlohmann::json{{"layout_style", "detailed"}});
-    w.on_size_changed(1, 2, 200, 400);
+    w.on_size_changed(1, 2, W_NORMAL - 1, 400);
     lv_obj_t* container = create_mock_tree(test_screen());
     w.attach(container, test_screen());
     process_lvgl(50);

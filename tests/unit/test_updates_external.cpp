@@ -12,8 +12,9 @@
  * testable unit; the cache is a thin static wrapper around it.
  *
  * Also covers compute_self_update_supported() — the pure predicate behind the
- * "can a self-update PHYSICALLY be applied?" check (writable install-root parent)
- * — using real temp dirs, and the combined in_app_updates_suppressed() gate.
+ * "can a self-update PHYSICALLY be applied?" check (writable install-root parent,
+ * OR root obtainable so install.sh can sudo the swap) — using real temp dirs, and
+ * the combined in_app_updates_suppressed() gate.
  */
 
 #include "app_globals.h"
@@ -22,7 +23,6 @@
 #include <filesystem>
 #include <string>
 #include <system_error>
-
 #include <unistd.h>
 
 #include "../catch_amalgamated.hpp"
@@ -74,8 +74,7 @@ TEST_CASE("compute_updates_externally_managed gates on the explicit flag only",
     CHECK_FALSE(compute_updates_externally_managed(""));
 }
 
-TEST_CASE("updates_externally_managed reflects the environment (cached)",
-          "[update][external]") {
+TEST_CASE("updates_externally_managed reflects the environment (cached)", "[update][external]") {
     // The value is cached process-wide, so we assert it agrees with the pure
     // predicate over the current env rather than trying to flip it mid-process.
     const bool expected =
@@ -90,27 +89,61 @@ TEST_CASE("compute_self_update_supported treats an empty install root as support
     // Empty install root = unresolvable layout (bind-mounted binary). Conservative:
     // return TRUE so the installer's own fallbacks + the explicit flag remain the
     // deciding factors rather than a false negative from an unknown parent.
-    CHECK(compute_self_update_supported(""));
+    // Neither escalation value may turn that into a block.
+    CHECK(compute_self_update_supported("", /*can_escalate=*/false));
+    CHECK(compute_self_update_supported("", /*can_escalate=*/true));
 }
 
 TEST_CASE("compute_self_update_supported is TRUE when the install-root parent is writable",
           "[update][external]") {
     std::error_code ec;
-    const std::filesystem::path base =
-        std::filesystem::temp_directory_path(ec) /
-        ("helix_selfupdate_ok_" + std::to_string(::getpid()));
+    const std::filesystem::path base = std::filesystem::temp_directory_path(ec) /
+                                       ("helix_selfupdate_ok_" + std::to_string(::getpid()));
     std::filesystem::create_directories(base, ec);
     REQUIRE_FALSE(ec);
 
     // The install root itself need not exist — the rename swap acts on the PARENT
-    // (base), which is writable here.
+    // (base), which is writable here. Escalation is irrelevant to a writable parent.
     const std::string install_root = (base / "helixscreen").string();
-    CHECK(compute_self_update_supported(install_root));
+    CHECK(compute_self_update_supported(install_root, /*can_escalate=*/false));
+    CHECK(compute_self_update_supported(install_root, /*can_escalate=*/true));
 
     std::filesystem::remove_all(base, ec);
 }
 
-TEST_CASE("compute_self_update_supported is FALSE when the install-root parent is read-only",
+TEST_CASE("compute_self_update_supported is TRUE on a non-writable parent when root is reachable",
+          "[update][external]") {
+    if (::geteuid() == 0) {
+        SKIP("running as root: access(W_OK) ignores permission bits");
+    }
+
+    // The standard Pi layout: install root under a root-owned parent (/opt),
+    // service running as an unprivileged user. install.sh escalates with sudo for
+    // the swap (scripts/install.sh check_permissions), so this install IS
+    // updatable and the updater must not hide itself.
+    std::error_code ec;
+    const std::filesystem::path base = std::filesystem::temp_directory_path(ec) /
+                                       ("helix_selfupdate_sudo_" + std::to_string(::getpid()));
+    std::filesystem::create_directories(base, ec);
+    REQUIRE_FALSE(ec);
+
+    std::filesystem::permissions(
+        base, std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec,
+        std::filesystem::perm_options::replace, ec);
+    REQUIRE_FALSE(ec);
+
+    const std::string install_root = (base / "helixscreen").string();
+    // Same non-writable parent, opposite answers — escalation is the deciding term.
+    CHECK(compute_self_update_supported(install_root, /*can_escalate=*/true));
+    CHECK_FALSE(compute_self_update_supported(install_root, /*can_escalate=*/false));
+
+    std::filesystem::permissions(base, std::filesystem::perms::owner_all,
+                                 std::filesystem::perm_options::replace, ec);
+    std::filesystem::remove_all(base, ec);
+}
+
+TEST_CASE("compute_self_update_supported is FALSE when the parent is read-only and root is not "
+          "reachable",
           "[update][external]") {
     if (::geteuid() == 0) {
         // root bypasses W_OK permission bits on a normal fs (access(W_OK) still
@@ -119,26 +152,23 @@ TEST_CASE("compute_self_update_supported is FALSE when the install-root parent i
     }
 
     std::error_code ec;
-    const std::filesystem::path base =
-        std::filesystem::temp_directory_path(ec) /
-        ("helix_selfupdate_ro_" + std::to_string(::getpid()));
+    const std::filesystem::path base = std::filesystem::temp_directory_path(ec) /
+                                       ("helix_selfupdate_ro_" + std::to_string(::getpid()));
     std::filesystem::create_directories(base, ec);
     REQUIRE_FALSE(ec);
 
     // Drop write on the parent (0500: owner read + exec only). rename() into it
     // then fails → self-update can't physically apply.
-    std::filesystem::permissions(base,
-                                 std::filesystem::perms::owner_read |
-                                     std::filesystem::perms::owner_exec,
-                                 std::filesystem::perm_options::replace, ec);
+    std::filesystem::permissions(
+        base, std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec,
+        std::filesystem::perm_options::replace, ec);
     REQUIRE_FALSE(ec);
 
     const std::string install_root = (base / "helixscreen").string();
-    CHECK_FALSE(compute_self_update_supported(install_root));
+    CHECK_FALSE(compute_self_update_supported(install_root, /*can_escalate=*/false));
 
     // Restore write so remove_all can clean up.
-    std::filesystem::permissions(base,
-                                 std::filesystem::perms::owner_all,
+    std::filesystem::permissions(base, std::filesystem::perms::owner_all,
                                  std::filesystem::perm_options::replace, ec);
     std::filesystem::remove_all(base, ec);
 }
@@ -150,4 +180,15 @@ TEST_CASE("self_update_supported / in_app_updates_suppressed are cached and cons
     CHECK(self_update_supported() == self_update_supported());
     CHECK(in_app_updates_suppressed() ==
           (updates_externally_managed() || !self_update_supported()));
+}
+
+TEST_CASE("root_escalation_available is cached and true under root", "[update][external]") {
+    // The value depends on the host's sudoers, so the only universally true
+    // assertions are stability and the euid-0 shortcut. (The test build stubs the
+    // sudo probe out — see the mirror in tests/ui_test_utils.cpp — so this checks
+    // the contract, not the probe.)
+    CHECK(root_escalation_available() == root_escalation_available());
+    if (::geteuid() == 0) {
+        CHECK(root_escalation_available());
+    }
 }

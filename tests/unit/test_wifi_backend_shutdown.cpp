@@ -171,6 +171,25 @@ class SafeShutdownBackend : private hv::EventLoopThread {
         return init_progress_.load();
     }
 
+    /**
+     * Process-wide latch set when any worker finds its resource already freed.
+     *
+     * The per-instance accessed_after_free_ flag is unreadable in the stress
+     * loop, because the only interesting moment is after the backend is gone.
+     * A static latch survives the destructor, which is what makes "no cycle
+     * freed resources out from under its own thread" checkable at all.
+     *
+     * Note this is what the cycle loop can prove, and joining is not: libhv's
+     * ~EventLoopThread always calls stop() + join(), so no destructor ordering
+     * leaves a thread running past full destruction. Ordering is the real
+     * variable - free-then-join versus join-then-free - and that is exactly
+     * what this latch detects.
+     */
+    static std::atomic<bool>& uaf_detected() {
+        static std::atomic<bool> flag{false};
+        return flag;
+    }
+
   private:
     void slow_init() {
         for (int i = 0; i < 50 && !shutdown_requested_.load(); i++) {
@@ -181,6 +200,7 @@ class SafeShutdownBackend : private hv::EventLoopThread {
                 resource_->store(i);
             } else {
                 accessed_after_free_ = true;
+                uaf_detected().store(true);
                 break;
             }
         }
@@ -367,13 +387,27 @@ TEST_CASE("Safe shutdown backend responds to cancellation quickly",
 TEST_CASE("Safe shutdown never accesses freed resources",
           "[network][backend][shutdown][issue-8][eventloop][slow]") {
     SECTION("Repeated start/timeout/destroy cycles are safe") {
+        SafeShutdownBackend::uaf_detected().store(false);
+
         // Stress test: rapidly create, timeout, destroy
         for (int i = 0; i < 5; i++) {
+            INFO("cycle " << i);
             SafeShutdownBackend backend;
             backend.start_with_timeout(100);
+
+            // slow_init takes 5s; a 100ms timeout must expire against a worker
+            // that is still running. If this ever passed, the cycle would be
+            // tearing down an already-finished backend and proving nothing about
+            // the timeout path this test exists to stress.
+            REQUIRE_FALSE(backend.init_completed());
             // Destroy immediately
         }
-        SUCCEED("All cycles completed without crash");
+
+        // Issue #8 itself: every cycle signalled shutdown and joined its worker
+        // BEFORE freeing the resource the worker is still dereferencing. Reorder
+        // those two steps and a worker wakes to a null resource_ on its next
+        // 100ms tick, which is what this latch records.
+        REQUIRE_FALSE(SafeShutdownBackend::uaf_detected().load());
     }
 }
 

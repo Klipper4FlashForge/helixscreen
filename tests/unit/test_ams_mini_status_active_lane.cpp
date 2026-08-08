@@ -176,7 +176,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini: idle unload clears the lane highl
 
     ui_ams_mini_status_init();
     lv_obj_t* w = ui_ams_mini_status_create(test_screen(), 60);
-    ui_ams_mini_status_set_width(w, 260, 2); // spool mode
+    ui_ams_mini_status_set_width(w, 260); // spool mode
     helix::ui::UpdateQueue::instance().drain();
 
     AmsState::instance().sync_from_backend();
@@ -211,7 +211,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini: idle unload clears the bar-view o
 
     ui_ams_mini_status_init();
     lv_obj_t* w = ui_ams_mini_status_create(test_screen(), 60);
-    ui_ams_mini_status_set_width(w, 130, 1); // bar mode
+    ui_ams_mini_status_set_width(w, 130); // bar mode
     helix::ui::UpdateQueue::instance().drain();
 
     AmsState::instance().sync_from_backend();
@@ -252,7 +252,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini: per-slot authority beats a stale 
 
     ui_ams_mini_status_init();
     lv_obj_t* w = ui_ams_mini_status_create(test_screen(), 60);
-    ui_ams_mini_status_set_width(w, 260, 2);
+    ui_ams_mini_status_set_width(w, 260);
     helix::ui::UpdateQueue::instance().drain();
 
     AmsState::instance().sync_from_backend();
@@ -293,7 +293,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
     ui_ams_mini_status_init();
     lv_obj_t* w = ui_ams_mini_status_create(test_screen(), 60);
-    ui_ams_mini_status_set_width(w, 260, 2);
+    ui_ams_mini_status_set_width(w, 260);
     helix::ui::UpdateQueue::instance().drain();
 
     AmsState::instance().sync_from_backend();
@@ -336,7 +336,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini: spent lane keeps the shared fill 
 
     ui_ams_mini_status_init();
     lv_obj_t* w = ui_ams_mini_status_create(test_screen(), 60);
-    ui_ams_mini_status_set_width(w, 130, 1); // bar mode exposes the fill element
+    ui_ams_mini_status_set_width(w, 130); // bar mode exposes the fill element
     helix::ui::UpdateQueue::instance().drain();
 
     AmsState::instance().sync_from_backend();

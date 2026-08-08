@@ -5,10 +5,12 @@
 
 #include "ui_callback_helpers.h"
 #include "ui_effects.h"
+#include "ui_error_reporting.h"
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
 #include "ui_step_progress.h"
 #include "ui_subject_registry.h"
+#include "ui_timer_guard.h"
 #include "ui_toast_manager.h"
 #include "ui_utils.h"
 
@@ -20,6 +22,7 @@
 #include "static_panel_registry.h"
 #include "system_settings_manager.h"
 #include "wifi_manager.h"
+#include "wifi_radio_toggle.h"
 #include "wifi_ui_utils.h"
 
 #include <lvgl/lvgl.h>
@@ -115,6 +118,11 @@ NetworkSettingsOverlay::NetworkSettingsOverlay() {
 }
 
 NetworkSettingsOverlay::~NetworkSettingsOverlay() {
+    // cleanup() cancels this too, but a teardown that skips cleanup() would
+    // otherwise leave the backstop armed on a freed `this` (#1173).
+    // lv_timer_cancel_safe() self-guards on lv_is_initialized().
+    cancel_wlan_toggle_backstop();
+
     // Clean up managers FIRST - they have background threads
     // NOTE: wifi_manager_ is the global singleton - do NOT reset it
     ethernet_manager_.reset();
@@ -424,6 +432,8 @@ void NetworkSettingsOverlay::cleanup() {
 
     // Call base class to set cleanup_called_ flag
     OverlayBase::cleanup();
+
+    cancel_wlan_toggle_backstop();
 
     if (wifi_manager_) {
         wifi_manager_->stop_scan();
@@ -858,19 +868,60 @@ void NetworkSettingsOverlay::apply_wlan_toggle(bool enabled) {
         return;
     }
 
-    wifi_manager_->set_enabled(enabled);
+    // Optimistic: the switch has already moved under the user's finger, so
+    // move the model with it. Driving the radio can park the caller for tens
+    // of seconds (two wpa_ctrl commands per direction, each retrying the send
+    // for up to 5s and then waiting up to 10s for a reply), and doing that on
+    // the LVGL thread froze the whole UI mid-animation. Reality is folded back
+    // in by finish_wlan_toggle().
+    wlan_toggle_requested_ = enabled;
+    lv_subject_set_int(&wifi_enabled_, enabled ? 1 : 0);
+
+    if (enabled) {
+        // Spinner runs from the tap until the radio is actually up and the
+        // first scan lands.
+        lv_subject_set_int(&wifi_scanning_, 1);
+    } else {
+        // Off is immediate feedback: nothing here waits on the radio.
+        wifi_manager_->stop_scan();
+        lv_subject_set_int(&wifi_scanning_, 0);
+        clear_network_list();
+        show_placeholder(true);
+    }
+
+    arm_wlan_toggle_backstop();
+
+    auto token = lifetime_.token();
+    wifi_manager_->set_enabled_async(enabled, token, [this, enabled](bool success, bool actual) {
+        // Runs on the UI thread — set_enabled_async() delivers through the
+        // token, so `this` is already known-good here.
+        cancel_wlan_toggle_backstop();
+        finish_wlan_toggle(enabled, success, actual);
+    });
+}
+
+void NetworkSettingsOverlay::finish_wlan_toggle(bool requested, bool success, bool actual) {
+    auto outcome = helix::wifi::reconcile_radio_toggle(requested, success, actual);
+
+    if (outcome.reverted) {
+        spdlog::warn("[NetworkSettingsOverlay] WiFi {} did not take — radio is {}",
+                     requested ? "enable" : "disable", actual ? "on" : "off");
+        if (outcome.silent_revert) {
+            // The backend reported success, so WiFiManager raised no error
+            // toast; without this the switch would jump back with no
+            // explanation at all.
+            NOTIFY_WARNING(lv_tr("WiFi radio did not change state"));
+        }
+    }
 
     // Persist and reflect what actually happened, not what was requested —
-    // set_enabled() can fail (e.g. rfkill write denied), and persisting the
+    // the radio change can fail (e.g. rfkill write denied), and persisting the
     // requested value regardless would feed a false "off" (or "on") back into
     // the startup reassert and the UI, the exact class of state lie this
     // whole branch exists to eliminate.
-    bool actual_enabled = wifi_manager_->is_enabled();
-    SystemSettingsManager::instance().set_wifi_enabled(actual_enabled);
-    lv_subject_set_int(&wifi_enabled_, actual_enabled ? 1 : 0);
+    lv_subject_set_int(&wifi_enabled_, outcome.enabled ? 1 : 0);
 
-    if (actual_enabled) {
-        // Start scanning
+    if (outcome.enabled) {
         lv_subject_set_int(&wifi_scanning_, 1);
 
         std::weak_ptr<WiFiManager> weak_mgr = wifi_manager_;
@@ -886,8 +937,9 @@ void NetworkSettingsOverlay::apply_wlan_toggle(bool enabled) {
                 });
             });
     } else {
-        // Stop scanning, clear list
-        wifi_manager_->stop_scan();
+        if (wifi_manager_) {
+            wifi_manager_->stop_scan();
+        }
         lv_subject_set_int(&wifi_scanning_, 0);
         clear_network_list();
         show_placeholder(true);
@@ -902,14 +954,49 @@ void NetworkSettingsOverlay::apply_wlan_toggle(bool enabled) {
         lv_subject_notify(&mac_address_);
     }
 
-    // Persist WiFi expectation
+    // Both writes below hit settings.json. Deferred to here rather than run on
+    // the click so the LVGL thread never does a synchronous disk write while
+    // the user is still touching the switch. set_wifi_enabled() saves, so the
+    // expectation is staged first and the pair costs one write.
     if (auto* config = Config::get_instance()) {
-        config->set_wifi_expected(actual_enabled);
-        config->save();
+        config->set_wifi_expected(outcome.enabled);
     }
+    SystemSettingsManager::instance().set_wifi_enabled(outcome.enabled);
 
     // Update combined network status
     update_any_network_connected();
+}
+
+void NetworkSettingsOverlay::arm_wlan_toggle_backstop() {
+    cancel_wlan_toggle_backstop();
+
+    // Last resort only. The completion normally arrives well inside this
+    // window; this covers a dispatch that never reports at all (HttpExecutor
+    // stopped mid-flight breaks the promise without running the work), which
+    // would otherwise leave the switch stuck showing a state the radio never
+    // reached.
+    wlan_toggle_backstop_ = lv_timer_create(
+        [](lv_timer_t* t) {
+            auto* self = static_cast<NetworkSettingsOverlay*>(lv_timer_get_user_data(t));
+            if (!self)
+                return;
+            self->cancel_wlan_toggle_backstop();
+            if (!self->wifi_manager_)
+                return;
+            spdlog::warn("[NetworkSettingsOverlay] WiFi toggle never reported — "
+                         "reconciling against the radio");
+            const bool actual = self->wifi_manager_->is_enabled();
+            self->finish_wlan_toggle(self->wlan_toggle_requested_, /*success=*/false, actual);
+        },
+        45000, this);
+    lv_timer_set_repeat_count(wlan_toggle_backstop_, 1);
+}
+
+void NetworkSettingsOverlay::cancel_wlan_toggle_backstop() {
+    if (wlan_toggle_backstop_) {
+        helix::ui::lv_timer_cancel_safe(wlan_toggle_backstop_);
+        wlan_toggle_backstop_ = nullptr;
+    }
 }
 
 void NetworkSettingsOverlay::handle_refresh_clicked() {

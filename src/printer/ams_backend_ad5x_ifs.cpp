@@ -821,6 +821,14 @@ void AmsBackendAd5xIfs::apply_overrides(SlotInfo& slot, int slot_index) {
         slot.color_name = o.color_name;
     if (!o.material.empty())
         slot.material = o.material;
+    // Catalog product identity — same "override wins only when it carries a
+    // real value" rule as the strings above. Firmware never populates these
+    // (no AMS protocol has a notion of a branded product id), so a non-empty
+    // value here is always a user pick and always wins.
+    if (!o.catalog_id.empty())
+        slot.catalog_id = o.catalog_id;
+    if (!o.product_name.empty())
+        slot.product_name = o.product_name;
 }
 
 bool AmsBackendAd5xIfs::check_external_color_change(int slot_index,
@@ -1043,6 +1051,12 @@ void AmsBackendAd5xIfs::clear_override_locked(int slot_index, SlotInfo& slot) {
     slot.remaining_weight_g = -1.0f;
     slot.total_weight_g = -1.0f;
     slot.color_name.clear();
+    // The catalog pick is override-exclusive on every backend — no AMS
+    // firmware carries a branded product id — so a clear always drops it.
+    // Leaving it would re-navigate the editor to the removed spool's
+    // product on the next open.
+    slot.catalog_id.clear();
+    slot.product_name.clear();
 
     if (override_store_) {
         // Capture by value only — clear_async's Moonraker callback can fire
@@ -1104,6 +1118,17 @@ void AmsBackendAd5xIfs::release_locked_override_keep_identity_locked(int slot_in
     ovr.color_rgb = 0;
     ovr.color_name.clear();
     ovr.material.clear();
+    // The catalog pick is scoped to a MATERIAL — "sunlu-pla-plus-2-0" only makes
+    // sense while the lane is PLA. This path exists because firmware just
+    // re-authored the material, so the pick goes with it. Keeping it would be
+    // worse than losing it: setup_details_selector() seeds the type dropdown
+    // from catalog_id first, so a stale id would drag the editor back to the old
+    // material family and contradict the firmware truth we just accepted.
+    // Deliberately NOT counted in has_identity above for the same reason — it is
+    // not firmware-uncarryable metadata like brand/spool_name, it is material-
+    // derived.
+    ovr.catalog_id.clear();
+    ovr.product_name.clear();
 
     // Persist the trimmed override so a restart reloads the retained identity
     // (and the released locks) instead of the pre-edit locked record. Capture
@@ -1925,6 +1950,11 @@ AmsError AmsBackendAd5xIfs::set_slot_info(int slot_index, const SlotInfo& info, 
         entry->info.color_name = info.color_name;
         entry->info.material = normalized_material;
         entry->info.brand = info.brand;
+        // Carry the catalog product identity through preview writes too — a
+        // persist=false preview that dropped it would make the editor snap
+        // back to a different variant on the next get_slot_info().
+        entry->info.catalog_id = info.catalog_id;
+        entry->info.product_name = info.product_name;
         entry->info.spool_name = info.spool_name;
         entry->info.spoolman_id = info.spoolman_id;
         entry->info.spoolman_vendor_id = info.spoolman_vendor_id;
@@ -1954,6 +1984,13 @@ AmsError AmsBackendAd5xIfs::set_slot_info(int slot_index, const SlotInfo& info, 
             // materials_ copy; reuse it so the on-disk record carries the
             // firmware-valid value instead of the raw user-typed string.
             ovr.material = normalized_material;
+            // Catalog product identity. Persisted so a reopen can restore the
+            // EXACT product rather than the alphabetically-first variant of the
+            // same vendor+material. Never auto-mirrored (firmware has no notion
+            // of a catalog product), so no user-lock flag is needed: a non-empty
+            // value can only have come from a user pick.
+            ovr.catalog_id = info.catalog_id;
+            ovr.product_name = info.product_name;
             // User-lock signals: persist=true is a user edit, so tag both
             // fields user-locked. Material is only locked when the user
             // actually provided one — an explicit empty material is the user

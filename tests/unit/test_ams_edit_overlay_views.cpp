@@ -16,6 +16,7 @@
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
 #include "printer_state.h"
+#include "spoolman_manager.h"
 #include "spoolman_slot_saver.h"
 
 #include "../catch_amalgamated.hpp"
@@ -157,6 +158,19 @@ SlotInfo tracked_slot_spoolman_named() {
     info.material = "PLA";
     info.spool_name = "Ambrosia Pink";
     info.color_rgb = 0xFFB6C1;
+    return info;
+}
+
+// A Spoolman-linked lane on AFC older than v1.2.0: the firmware publishes
+// spool_id but no filament_name, so the slot carries the link and nothing to
+// name it with. Seen live on a BoxTurtle at 192.168.1.112 (spool #106).
+SlotInfo tracked_slot_named_only_in_cache() {
+    SlotInfo info;
+    info.slot_index = 0;
+    info.spoolman_id = 106;
+    info.material = "PLA";
+    info.color_rgb = 0x333333;
+    // brand and spool_name deliberately empty — only the cache knows them.
     return info;
 }
 
@@ -333,6 +347,45 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     CHECK(access.is_managed() == 1);
 
     close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "spool card names a linked slot from the identity cache when AFC cannot",
+                 "[ams_edit_overlay][card][spoolman][regression]") {
+    // AFC below v1.2.0 publishes spool_id but no filament_name, so the slot
+    // carries the Spoolman link with nothing to name it. The loaded card
+    // resolves that through the identity cache; this card must too, or it
+    // silently degrades to the untracked "Elegoo · PLA" for a spool we can
+    // name. Reproduced live on a BoxTurtle (spool #106) before this fix.
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    // Seed through the real entry point the weight poll uses.
+    SpoolInfo spool;
+    spool.id = 106;
+    spool.vendor = "Elegoo";
+    spool.filament_name = "Black Rapid PLA+";
+    spool.material = "PLA";
+    SpoolmanManager::invalidate_identity(106); // insert-if-absent: start clean
+    SpoolmanManager::cache_identity(spool);
+    REQUIRE(SpoolmanManager::find_identity(106).has_value());
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot_named_only_in_cache(), nullptr,
+                                  nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* label = access.widget("card_identity_label");
+    REQUIRE(label != nullptr);
+    // "PLA" is dropped because "PLA+" already states it.
+    CHECK(std::string(lv_label_get_text(label)) == "Elegoo Black Rapid PLA+");
+
+    close_editor_overlay();
+    SpoolmanManager::invalidate_identity(106);
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture,
@@ -2046,4 +2099,145 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     get_printer_state().set_spoolman_available(false);
     UpdateQueue::instance().drain();
     process_lvgl(10);
+}
+
+// =============================================================================
+// Catalog product identity round-trip (bundle TDQCCQB3, AD5X v0.99.107)
+// =============================================================================
+//
+// The user edits an AMS slot, picks SUNLU "PLA+ 2.0", and Save reports success.
+// Reopening the editor shows "PLA Marble". Brand and material family DO persist,
+// which is what made it look like a reload bug — it is not. The catalog product
+// identity was never captured at SAVE:
+//
+//   - handle_spool_edit_save() read the highlighted EffectiveFilament but copied
+//     only type / brand / the three temps into working_info_. ef->name and
+//     ef->id were read nowhere.
+//   - clear_catalog() then wiped the selector-local highlighted_id_.
+//   - On reopen, setup_details_selector() seeded vendor + material family only,
+//     and preselect_first() took ordered_products_for().front(). All six SUNLU
+//     PLA products share variant_key "" and rank 1, so the tiebreak is
+//     lowercased-name alphabetical and "pla marble" always sorts first.
+//
+// Deterministic, which is why this test can assert an exact product id.
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "spool-edit Save persists the picked catalog product across a reopen",
+                 "[ams_edit_overlay][spool_edit][catalog_identity]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    SlotInfo slot;
+    slot.slot_index = 0;
+    slot.spoolman_id = 0;
+    slot.brand = "SUNLU";
+    slot.material = "PLA";
+    slot.color_rgb = 0xFEF043;
+    slot.color_name = "Yellow";
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Sanity: the vendor seed resolved, and the list really does put the wrong
+    // product first — so a passing assertion below cannot be an accident of
+    // ordering.
+    REQUIRE(access.details_selector().current_vendor() == "SUNLU");
+    REQUIRE(access.details_selector().current_type() == "PLA");
+    REQUIRE(access.details_selector().product_names_for_test().front() == "PLA Marble");
+
+    // The user taps the "PLA+ 2.0" row.
+    access.details_selector().select_product_for_test("sunlu-pla-plus-2-0");
+    REQUIRE(access.details_selector().highlighted() != nullptr);
+    REQUIRE(access.details_selector().highlighted()->name == "PLA+ 2.0");
+
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Save must capture the product identity, not just the material family.
+    const SlotInfo saved = access.working_info();
+    CHECK(saved.catalog_id == "sunlu-pla-plus-2-0");
+    CHECK(saved.product_name == "PLA+ 2.0");
+    CHECK(saved.material == "PLA"); // family still the firmware-facing string
+    CHECK(saved.brand == "SUNLU");
+
+    close_editor_overlay();
+
+    // --- Reopen with exactly what was persisted -------------------------------
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, saved, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // THE regression assertion: the same product is checked, not the
+    // alphabetically-first one.
+    REQUIRE(access.details_selector().highlighted() != nullptr);
+    CHECK(access.details_selector().highlighted()->id == "sunlu-pla-plus-2-0");
+    CHECK(access.details_selector().highlighted()->name == "PLA+ 2.0");
+    CHECK(access.details_selector().current_vendor() == "SUNLU");
+
+    // And an untouched Save round-trips it rather than re-collapsing to first.
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    CHECK(access.working_info().catalog_id == "sunlu-pla-plus-2-0");
+    CHECK(access.working_info().product_name == "PLA+ 2.0");
+
+    close_editor_overlay();
+}
+
+// A stored id that no longer resolves (a custom overlay product the user
+// deleted, or an id retired by an app update) must not strand the editor: the
+// selector falls back to preselect_first() so the list still shows a checked
+// row, and the SAVE overwrites the dead id with whatever the user confirms.
+// The old product_name is not preserved through such a save — the user is
+// looking at, and confirming, a different product.
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "spool-edit tolerates a stored catalog id that no longer resolves",
+                 "[ams_edit_overlay][spool_edit][catalog_identity]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    SlotInfo slot;
+    slot.slot_index = 0;
+    slot.spoolman_id = 0;
+    slot.brand = "SUNLU";
+    slot.material = "PLA";
+    slot.color_rgb = 0xFEF043;
+    slot.catalog_id = "sunlu-pla-plus-9-9-retired";
+    slot.product_name = "PLA+ 9.9";
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Fallback path: a checked row (the preselect_on_change invariant) on the
+    // right vendor+family, just not the dead id.
+    REQUIRE(access.details_selector().highlighted() != nullptr);
+    CHECK(access.details_selector().current_vendor() == "SUNLU");
+    CHECK(access.details_selector().highlighted()->id != "sunlu-pla-plus-9-9-retired");
+
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // The dead id is replaced by the product the user actually confirmed —
+    // never carried forward, or the lane would advertise an id nothing resolves
+    // for the rest of its life.
+    CHECK(access.working_info().catalog_id != "sunlu-pla-plus-9-9-retired");
+    CHECK_FALSE(access.working_info().catalog_id.empty());
+    CHECK(access.working_info().product_name != "PLA+ 9.9");
+
+    close_editor_overlay();
 }

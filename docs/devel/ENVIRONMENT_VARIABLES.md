@@ -1798,6 +1798,35 @@ HELIX_SKIP_SPLASH=1
 
 The launcher translates this to `--skip-splash` on the CLI.
 
+### `HELIX_REMOTE_CONTROL`
+
+Start the `helix-screen ctl` remote-control server on a deployed device.
+
+The server only listens when the app is started with `--remote` (or `--test`), and the SysV
+init script and systemd unit both exec the launcher with no arguments. Without this variable
+there is no way to reach an installed instance with `ctl` at all, so diagnosing a display
+problem means physically walking to the printer.
+
+| Property | Value |
+|----------|-------|
+| **Values** | `1` (enable) or unset (disabled) |
+| **Default** | Unset (server not started) |
+| **File** | `scripts/helix-launcher.sh` |
+
+```bash
+# In helixscreen.env:
+HELIX_REMOTE_CONTROL=1
+HELIX_REMOTE_SOCKET=/tmp/helix-cc1.sock   # optional; omit for the default path
+```
+
+The launcher translates these to `--remote` and `--remote-socket <path>`.
+
+Off by default deliberately: the control socket can drive the entire UI — navigate, click,
+set values, capture screenshots — so it is a debugging aid to switch on for a session, not
+something to leave enabled on a shared machine. Pin `HELIX_REMOTE_SOCKET` when more than one
+instance could be running, since a bare `ctl` silently drives whichever started first and
+still reports success. See `docs/devel/HELIXCTL.md`.
+
 ### `HELIX_LOG_RING_LINES`
 
 Size the in-memory log ring, in messages. The ring sink is what a debug bundle harvests — it holds recent lines that the WARN-level file/syslog sinks never persisted, which is the whole point of attaching a bundle to a bug report. Shrink it on a device where even a few hundred KB matters.

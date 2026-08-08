@@ -564,6 +564,12 @@ class NavigationManager {
     // Attach the LV_EVENT_DELETE scrub callback to a widget exactly once.
     void ensure_delete_hook(lv_obj_t* widget);
     static void overlay_delete_event_cb(lv_event_t* e);
+    // Create the darkened backdrop over `screen` and adopt it as
+    // overlay_backdrop_, wiring its click handlers and the delete scrub. The
+    // backdrop is a child of `screen`, so any path that deletes the screen frees
+    // it without going through go_back(); the scrub hook is what keeps
+    // overlay_backdrop_ from outliving it.
+    void adopt_overlay_backdrop(lv_obj_t* screen);
 
     // Event callbacks
     static void backdrop_click_event_cb(lv_event_t* e);

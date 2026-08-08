@@ -934,6 +934,8 @@ AmsError AmsBackendMock::set_slot_info(int slot_index, const SlotInfo& info, boo
         entry->info.multi_color_hexes = info.multi_color_hexes;
         entry->info.material = info.material;
         entry->info.brand = info.brand;
+        entry->info.catalog_id = info.catalog_id;
+        entry->info.product_name = info.product_name;
         entry->info.spoolman_id = info.spoolman_id;
         entry->info.spool_name = info.spool_name;
         entry->info.remaining_weight_g = info.remaining_weight_g;

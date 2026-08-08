@@ -1440,14 +1440,22 @@ static void ui_gcode_viewer_load_file_async(lv_obj_t* obj, const char* file_path
         lv_obj_set_style_bg_opa(st->loading_container, 220, LV_PART_MAIN);
         lv_obj_set_style_border_width(st->loading_container, 0, LV_PART_MAIN);
         lv_obj_set_style_radius(st->loading_container, 8, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(st->loading_container, 24, LV_PART_MAIN);
-        lv_obj_set_style_pad_gap(st->loading_container, 12, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(st->loading_container, theme_manager_get_spacing("space_xl"),
+                                 LV_PART_MAIN);
+        lv_obj_set_style_pad_gap(st->loading_container, theme_manager_get_spacing("space_md"),
+                                 LV_PART_MAIN);
 
         st->loading_spinner = lv_spinner_create(st->loading_container);
-        lv_obj_set_size(st->loading_spinner, 48, 48);
+        int32_t spinner_size = theme_manager_get_spacing("spinner_lg");
+        if (spinner_size <= 0)
+            spinner_size = 48;
+        int32_t spinner_arc = theme_manager_get_spacing("spinner_arc_lg");
+        if (spinner_arc <= 0)
+            spinner_arc = 4;
+        lv_obj_set_size(st->loading_spinner, spinner_size, spinner_size);
         lv_color_t primary = theme_manager_get_color("primary");
         lv_obj_set_style_arc_color(st->loading_spinner, primary, LV_PART_INDICATOR);
-        lv_obj_set_style_arc_width(st->loading_spinner, 4, LV_PART_INDICATOR);
+        lv_obj_set_style_arc_width(st->loading_spinner, spinner_arc, LV_PART_INDICATOR);
         lv_obj_set_style_arc_opa(st->loading_spinner, LV_OPA_0, LV_PART_MAIN);
 
         st->loading_label = lv_label_create(st->loading_container);
@@ -1628,15 +1636,23 @@ static void ui_gcode_viewer_load_file_async(lv_obj_t* obj, const char* file_path
         lv_obj_set_style_bg_opa(st->loading_container, 220, LV_PART_MAIN);
         lv_obj_set_style_border_width(st->loading_container, 0, LV_PART_MAIN);
         lv_obj_set_style_radius(st->loading_container, 8, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(st->loading_container, 24, LV_PART_MAIN);
-        lv_obj_set_style_pad_gap(st->loading_container, 12, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(st->loading_container, theme_manager_get_spacing("space_xl"),
+                                 LV_PART_MAIN);
+        lv_obj_set_style_pad_gap(st->loading_container, theme_manager_get_spacing("space_md"),
+                                 LV_PART_MAIN);
 
         st->loading_spinner = lv_spinner_create(st->loading_container);
-        lv_obj_set_size(st->loading_spinner, 48, 48);
+        int32_t spinner_size = theme_manager_get_spacing("spinner_lg");
+        if (spinner_size <= 0)
+            spinner_size = 48;
+        int32_t spinner_arc = theme_manager_get_spacing("spinner_arc_lg");
+        if (spinner_arc <= 0)
+            spinner_arc = 4;
+        lv_obj_set_size(st->loading_spinner, spinner_size, spinner_size);
 
         lv_color_t primary = theme_manager_get_color("primary");
         lv_obj_set_style_arc_color(st->loading_spinner, primary, LV_PART_INDICATOR);
-        lv_obj_set_style_arc_width(st->loading_spinner, 4, LV_PART_INDICATOR);
+        lv_obj_set_style_arc_width(st->loading_spinner, spinner_arc, LV_PART_INDICATOR);
         lv_obj_set_style_arc_opa(st->loading_spinner, LV_OPA_0, LV_PART_MAIN);
 
         st->loading_label = lv_label_create(st->loading_container);

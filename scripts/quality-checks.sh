@@ -386,6 +386,71 @@ fi
 echo ""
 
 # ====================================================================
+# helix-xml submodule test suite (CMake + Unity + ctest)
+# ====================================================================
+# lib/helix-xml is our own submodule and carries its own standalone suite,
+# which `make test` does NOT build: helix-tests only reaches the engine through
+# the app. A pointer bump that regresses the parser is therefore invisible to
+# every other gate here.
+#
+# Kept off the hot path three ways, because a first configure clones LVGL
+# (FetchContent, minutes, needs network) and that must never land on someone's
+# unrelated commit:
+#   - Triggers on staged lib/helix-xml only. The submodule's own files are not
+#     tracked by this repo, so the one thing that CAN be staged is the pointer
+#     itself — which is exactly the change that alters what the suite tests.
+#   - Never configures. If the build tree is absent this SKIPS with an
+#     instruction to run `make test-xml` once by hand, rather than blocking a
+#     commit on a network fetch. That also means CI mode (no staged files, no
+#     build tree) skips, leaving the fetch to a job that opts into it.
+#   - No cmake, no submodule checkout: skip with a note, same as bats/xmllint.
+# When it does run, a failing suite is a hard failure like any other test gate.
+SECTION_START=$(date +%s)
+echo -n "🧩 Checking helix-xml submodule tests..."
+
+HELIX_XML_TEST_BUILD_DIR="build/helix-xml-tests"
+
+if [ "$STAGED_ONLY" = true ]; then
+  HELIX_XML_TRIGGERS=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^lib/helix-xml' || true)
+else
+  # CI mode has no staged set; the build-tree check below is what keeps this
+  # from triggering a fetch.
+  HELIX_XML_TRIGGERS="all"
+fi
+
+section_time $SECTION_START
+echo ""
+
+if [ -z "$HELIX_XML_TRIGGERS" ]; then
+  echo "ℹ️  No lib/helix-xml changes staged — skipping submodule tests"
+elif [ ! -f "lib/helix-xml/tests/CMakeLists.txt" ]; then
+  echo "⚠️  lib/helix-xml/tests not found — skipping submodule tests"
+  echo "   Run: git submodule update --init --recursive"
+elif ! command -v cmake >/dev/null 2>&1; then
+  echo "⚠️  cmake not found — skipping helix-xml submodule tests"
+  echo "   Install with: brew install cmake (macOS) or apt install cmake (Linux)"
+elif [ ! -f "$HELIX_XML_TEST_BUILD_DIR/CMakeCache.txt" ]; then
+  echo "⚠️  helix-xml test build tree not configured — skipping"
+  echo "   The first configure clones LVGL (needs network, several minutes),"
+  echo "   which is too slow to run from a commit hook."
+  echo "   Run 'make test-xml' once by hand to enable this gate."
+else
+  SECTION_START=$(date +%s)
+  if make test-xml >/tmp/test_xml.out 2>&1; then
+    printf "✅ helix-xml submodule tests passed"
+    section_time $SECTION_START
+    echo ""
+  else
+    tail -30 /tmp/test_xml.out
+    echo "❌ helix-xml submodule tests failed"
+    echo "   Run: make test-xml"
+    EXIT_CODE=1
+  fi
+fi
+
+echo ""
+
+# ====================================================================
 # Overlay width is decided at push time, never in XML (#1178)
 # ====================================================================
 # The two width constants encode destination-vs-transient-layer, and which one
@@ -411,6 +476,38 @@ if [ -f "scripts/check_overlay_width.py" ]; then
   fi
 else
   echo "⚠️  check_overlay_width.py not found — skipping"
+fi
+
+echo ""
+
+# ====================================================================
+# Spacing and sizing go through design tokens, not raw pixel literals
+# ====================================================================
+# HelixScreen ships on 480x272 through 1440p. A literal style_pad_all="12" is
+# 12px on all of them, so a layout tuned in a 1024x600 dev window is cramped on
+# a Snapmaker U1 and lost in whitespace on a 1280x720 panel. The ladders in
+# ui_xml/globals.xml resolve per breakpoint; a literal freezes one column of the
+# ladder forever.
+#
+# Ratcheting baseline. The remaining sites are real debt — mostly 2px hairline
+# gaps and two negative overlap margins with no token to name them. The number
+# may go DOWN (convert a site, then lower this baseline) but must never go up.
+# A reasoned exception is annotated SIZE_OK, the way ui_xml/color_picker.xml
+# walks its swatch-grid content floor.
+echo "📏 Checking design-token usage (hardcoded pixels)..."
+
+if [ -f "scripts/check_hardcoded_pixels.py" ]; then
+  if python3 scripts/check_hardcoded_pixels.py --max-allowed 162 --summary \
+      >/tmp/hardcoded_pixels.out 2>&1; then
+    tail -1 /tmp/hardcoded_pixels.out
+  else
+    cat /tmp/hardcoded_pixels.out
+    echo "   Run: python3 scripts/check_hardcoded_pixels.py --list"
+    echo "   Use a token; see CLAUDE.md § Design Tokens (MANDATORY)."
+    EXIT_CODE=1
+  fi
+else
+  echo "⚠️  check_hardcoded_pixels.py not found — skipping"
 fi
 
 echo ""
@@ -979,6 +1076,35 @@ else
   section_time $SECTION_START
   echo ""
   echo "⚠️  check_timer_destructor_cancel.py not found — skipping"
+fi
+
+echo ""
+
+SECTION_START=$(date +%s)
+echo -n "⏱️  Checking grid cell-metrics single source..."
+
+if [ -f "scripts/check_grid_metrics_single_source.py" ]; then
+  # Every drag/resize/preview/lattice path needs the same cols/rows/cell size,
+  # and each independent computation is free to drift from the others on
+  # gutter handling or int-vs-float rounding. GridEditMode::current_metrics()
+  # is the one place allowed to ask GridLayout for the grid's dimensions; this
+  # caps GridLayout::get_cols/get_rows/get_dimensions call sites at 2 (the pair
+  # inside current_metrics() itself) so a new call site cannot grow a second copy.
+  if python3 scripts/check_grid_metrics_single_source.py >/tmp/grid_metrics.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    tail -1 /tmp/grid_metrics.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/grid_metrics.out
+    echo "   Take a helix::CellMetrics from GridEditMode::current_metrics() instead."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_grid_metrics_single_source.py not found — skipping"
 fi
 
 echo ""

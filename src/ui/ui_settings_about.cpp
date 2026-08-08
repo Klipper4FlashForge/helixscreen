@@ -336,11 +336,10 @@ void AboutSettingsOverlay::fetch_print_hours() {
                             lv_subject_copy_string(&print_hours_value_subject_, formatted.c_str());
                             spdlog::trace("[{}] Print hours updated: {}", get_name(), formatted);
                         }),
-        lifetime_.bg_cb("AboutSettingsOverlay::get_history_totals_error",
-                        [this](const MoonrakerError& err) {
-                            spdlog::warn("[{}] Failed to fetch print hours: {}", get_name(),
-                                         err.message);
-                        }));
+        lifetime_.bg_cb(
+            "AboutSettingsOverlay::get_history_totals_error", [this](const MoonrakerError& err) {
+                spdlog::warn("[{}] Failed to fetch print hours: {}", get_name(), err.message);
+            }));
 }
 
 // ============================================================================
@@ -513,6 +512,10 @@ void AboutSettingsOverlay::on_about_update_channel_changed(lv_event_t* e) {
         spdlog::info("[AboutSettings] Update channel changed: {} ({})", index,
                      index == 0 ? "Stable" : (index == 1 ? "Beta" : "Dev"));
         SystemSettingsManager::instance().set_update_channel(index);
+        // Re-snapshot for the debug bundle's update section, which reads it from
+        // a worker thread and so cannot consult Config itself. We are on the
+        // main thread here; nothing on a check worker reads this snapshot.
+        UpdateChecker::instance().refresh_config_snapshot();
     }
     LVGL_SAFE_EVENT_CB_END();
 }

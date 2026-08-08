@@ -263,8 +263,9 @@ void LedSettingsOverlay::populate_macro_devices_impl() {
             lv_obj_set_width(note, lv_pct(100));
             lv_label_set_long_mode(note, LV_LABEL_LONG_WRAP);
             lv_obj_set_style_text_color(note, theme_manager_get_color("text_subtle"), 0);
-            lv_obj_set_style_pad_left(note, 24, 0);
-            lv_obj_set_style_pad_right(note, 24, 0);
+            int32_t note_pad_hor = theme_manager_get_spacing("space_xl");
+            lv_obj_set_style_pad_left(note, note_pad_hor, 0);
+            lv_obj_set_style_pad_right(note, note_pad_hor, 0);
         }
 
         spdlog::debug("[{}] No macro devices to display", get_name());
@@ -296,7 +297,7 @@ void LedSettingsOverlay::populate_macro_devices_impl() {
         lv_obj_set_flex_align(header_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
                               LV_FLEX_ALIGN_CENTER);
         lv_obj_set_style_pad_all(header_row, 0, 0);
-        lv_obj_set_style_pad_gap(header_row, 8, 0);
+        lv_obj_set_style_pad_gap(header_row, theme_manager_get_spacing("space_sm"), 0);
         lv_obj_set_style_bg_opa(header_row, LV_OPA_TRANSP, 0);
         lv_obj_set_style_border_width(header_row, 0, 0);
         lv_obj_remove_flag(header_row, LV_OBJ_FLAG_SCROLLABLE);
@@ -333,9 +334,16 @@ void LedSettingsOverlay::populate_macro_devices_impl() {
         lv_obj_set_style_pad_all(spacer, 0, 0);
         lv_obj_remove_flag(spacer, LV_OBJ_FLAG_SCROLLABLE);
 
+        // Icon-only edit/delete buttons share the larger touch target. Read once
+        // per row; the token is flat today but reading it keeps these in step if
+        // it ever grows a breakpoint ladder.
+        int32_t icon_btn_size = theme_manager_get_spacing("icon_button_size_lg");
+        if (icon_btn_size <= 0)
+            icon_btn_size = 36;
+
         // Edit button
         auto* edit_btn = lv_button_create(header_row);
-        lv_obj_set_size(edit_btn, 36, 36);
+        lv_obj_set_size(edit_btn, icon_btn_size, icon_btn_size);
         lv_obj_set_style_bg_opa(edit_btn, LV_OPA_TRANSP, 0);
         lv_obj_set_style_border_width(edit_btn, 0, 0);
         const char* edit_icon_attrs[] = {"src",     "pencil",   "size", "sm",
@@ -366,7 +374,7 @@ void LedSettingsOverlay::populate_macro_devices_impl() {
 
         // Delete button
         auto* del_btn = lv_button_create(header_row);
-        lv_obj_set_size(del_btn, 36, 36);
+        lv_obj_set_size(del_btn, icon_btn_size, icon_btn_size);
         lv_obj_set_style_bg_opa(del_btn, LV_OPA_TRANSP, 0);
         lv_obj_set_style_border_width(del_btn, 0, 0);
         const char* del_icon_attrs[] = {"src",     "delete",    "size", "sm",
@@ -428,7 +436,7 @@ void LedSettingsOverlay::populate_macro_devices_impl() {
             lv_obj_set_height(edit_container, LV_SIZE_CONTENT);
             lv_obj_set_flex_flow(edit_container, LV_FLEX_FLOW_COLUMN);
             lv_obj_set_style_pad_all(edit_container, 0, 0);
-            lv_obj_set_style_pad_gap(edit_container, 8, 0);
+            lv_obj_set_style_pad_gap(edit_container, theme_manager_get_spacing("space_sm"), 0);
             lv_obj_set_style_bg_opa(edit_container, LV_OPA_TRANSP, 0);
             lv_obj_set_style_border_width(edit_container, 0, 0);
             lv_obj_remove_flag(edit_container, LV_OBJ_FLAG_SCROLLABLE);
@@ -505,8 +513,9 @@ void LedSettingsOverlay::rebuild_macro_edit_controls(lv_obj_t* container, int in
     lv_obj_set_width(type_help, lv_pct(100));
     lv_label_set_long_mode(type_help, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_color(type_help, theme_manager_get_color("text_subtle"), 0);
-    lv_obj_set_style_pad_left(type_help, 24, 0);
-    lv_obj_set_style_pad_right(type_help, 24, 0);
+    int32_t help_pad_hor = theme_manager_get_spacing("space_xl");
+    lv_obj_set_style_pad_left(type_help, help_pad_hor, 0);
+    lv_obj_set_style_pad_right(type_help, help_pad_hor, 0);
     switch (macro.type) {
     case helix::led::MacroLedType::ON_OFF:
         lv_label_set_text(type_help,
@@ -645,7 +654,7 @@ void LedSettingsOverlay::rebuild_macro_edit_controls(lv_obj_t* container, int in
                 lv_obj_set_flex_align(preset_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
                                       LV_FLEX_ALIGN_CENTER);
                 lv_obj_set_style_pad_all(preset_row, 0, 0);
-                lv_obj_set_style_pad_gap(preset_row, 4, 0);
+                lv_obj_set_style_pad_gap(preset_row, theme_manager_get_spacing("space_xxs"), 0);
                 lv_obj_set_style_bg_opa(preset_row, LV_OPA_TRANSP, 0);
                 lv_obj_set_style_border_width(preset_row, 0, 0);
                 lv_obj_remove_flag(preset_row, LV_OBJ_FLAG_SCROLLABLE);
@@ -721,7 +730,7 @@ void LedSettingsOverlay::rebuild_macro_edit_controls(lv_obj_t* container, int in
             lv_obj_set_style_border_width(add_preset_btn, 1, 0);
             lv_obj_set_style_border_color(add_preset_btn, theme_manager_get_color("border"), 0);
             lv_obj_set_style_radius(add_preset_btn, 6, 0);
-            lv_obj_set_style_pad_all(add_preset_btn, 8, 0);
+            lv_obj_set_style_pad_all(add_preset_btn, theme_manager_get_spacing("space_sm"), 0);
 
             auto* add_preset_lbl = lv_label_create(add_preset_btn);
             lv_label_set_text(add_preset_lbl, lv_tr("+ Add Preset"));
@@ -773,8 +782,9 @@ void LedSettingsOverlay::rebuild_macro_edit_controls(lv_obj_t* container, int in
     lv_obj_set_style_bg_color(save_btn, primary_color, 0);
     lv_obj_set_style_bg_opa(save_btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(save_btn, 6, 0);
-    lv_obj_set_style_pad_left(save_btn, 16, 0);
-    lv_obj_set_style_pad_right(save_btn, 16, 0);
+    int32_t save_pad_hor = theme_manager_get_spacing("space_lg");
+    lv_obj_set_style_pad_left(save_btn, save_pad_hor, 0);
+    lv_obj_set_style_pad_right(save_btn, save_pad_hor, 0);
 
     auto* save_lbl = lv_label_create(save_btn);
     lv_label_set_text(save_lbl, lv_tr("Save"));
@@ -1371,7 +1381,7 @@ void LedSettingsOverlay::rebuild_contextual_controls(const std::string& state_ke
         lv_obj_set_flex_flow(swatch_row, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(swatch_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
                               LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_pad_gap(swatch_row, 8, 0);
+        lv_obj_set_style_pad_gap(swatch_row, theme_manager_get_spacing("space_sm"), 0);
         lv_obj_set_style_pad_all(swatch_row, 0, 0);
         lv_obj_set_style_bg_opa(swatch_row, LV_OPA_TRANSP, 0);
         lv_obj_set_style_border_width(swatch_row, 0, 0);

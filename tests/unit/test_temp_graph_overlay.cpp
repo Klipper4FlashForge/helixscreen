@@ -13,6 +13,7 @@
 #include "ui_overlay_temp_graph.h"
 
 #include "../lvgl_test_fixture.h"
+#include "subject_debug_registry.h"
 
 #include <cmath>
 
@@ -71,13 +72,12 @@ TEST_CASE_METHOD(LVGLTestFixture, "TempGraphOverlay: get_name returns expected v
     REQUIRE(std::string(overlay.get_name()) == "Temperature Graph");
 }
 
-TEST_CASE_METHOD(LVGLTestFixture, "TempGraphOverlay: mode defaults to GraphOnly",
-                 "[temp_graph_overlay]") {
-    // Mode is private, but we can verify the default indirectly:
-    // a freshly-constructed overlay should not crash on cleanup
-    TempGraphOverlay overlay;
-    SUCCEED("Default construction succeeded");
-}
+// NOTE: a "mode defaults to GraphOnly" case used to live here. It constructed an
+// overlay and asserted nothing, because Mode is private and has no observable
+// effect until create()/open() builds the control strips. Rather than add a
+// production getter so the test could restate a member initializer, the case is
+// gone. The default becomes testable the day this file can build the overlay from
+// XML: opening in the default mode must leave nozzle/bed/chamber strips hidden.
 
 // =============================================================================
 // Subject Initialization
@@ -149,15 +149,29 @@ TEST_CASE_METHOD(LVGLTestFixture,
 // Destructor / Cleanup
 // =============================================================================
 
-TEST_CASE_METHOD(LVGLTestFixture, "TempGraphOverlay: destructor cleans up initialized subjects",
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "TempGraphOverlay: init_subjects publishes nothing for the destructor to leak",
                  "[temp_graph_overlay]") {
+    // TempGraphOverlay::init_subjects() is init_subjects_guarded([]() {}) - it
+    // registers no subjects at all. Everything the graph observes lives in
+    // TempGraphController, which the destructor drops with controller_.reset().
+    //
+    // So there is no per-subject teardown to check here, and asserting "the
+    // destructor did not crash" checks nothing. What IS checkable is the premise:
+    // the overlay publishes zero subjects. If someone adds one, this goes red and
+    // the destructor coverage has to be written to match - the destructor cannot
+    // deinit a subject nobody wrote code to deinit.
+    const size_t before = SubjectDebugRegistry::instance().list_all().size();
+
     {
         TempGraphOverlay overlay;
         overlay.init_subjects();
         REQUIRE(overlay.are_subjects_initialized());
-        // Destructor runs here - should not crash
+        REQUIRE(SubjectDebugRegistry::instance().list_all().size() == before);
+        // Destructor runs here.
     }
-    SUCCEED("Destructor completed without crash");
+
+    REQUIRE(SubjectDebugRegistry::instance().list_all().size() == before);
 }
 
 TEST_CASE_METHOD(LVGLTestFixture, "TempGraphOverlay: destructor safe without init_subjects",

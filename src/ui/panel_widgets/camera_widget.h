@@ -63,7 +63,8 @@ class CameraWidget : public PanelWidget {
     // Fullscreen overlay state
     lv_obj_t* fullscreen_overlay_ = nullptr;
     lv_obj_t* fullscreen_image_ = nullptr;
-    lv_obj_t* fullscreen_spinner_ = nullptr; // "Connecting…" overlay in fullscreen, hidden on first frame
+    lv_obj_t* fullscreen_spinner_ =
+        nullptr; // "Connecting…" overlay in fullscreen, hidden on first frame
 
     std::unique_ptr<CameraStream> stream_;
     bool active_ = false;              // true when on_activate() has been called
@@ -89,6 +90,19 @@ class CameraWidget : public PanelWidget {
 
     // Persisted transform config
     nlohmann::json config_;
+
+    // Test-observable call counts for the stream lifecycle. start_stream()/
+    // stop_stream() sit behind their own guards (active_, fullscreen_overlay_)
+    // strictly narrower than the on_size_changed() edge-trigger conditions
+    // that invoke them, and with no camera configured stream_ always ends up
+    // null again after either call — so "stream_ non-null" cannot distinguish
+    // "the call happened and no-op'd" from "the call never happened". A raw
+    // count of invocations can, without needing a real camera. See
+    // tests/test_helpers/camera_widget_test_access.h.
+    int start_stream_calls_ = 0;
+    int stop_stream_calls_ = 0;
+
+    friend class CameraWidgetTestAccess;
 };
 
 /**

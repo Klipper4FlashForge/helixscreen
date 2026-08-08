@@ -134,7 +134,6 @@ void NozzleTempsWidget::clear_rows() {
     bed_icon_ = nullptr;
     bed_temp_label_ = nullptr;
     bed_target_label_ = nullptr;
-    bed_progress_bar_ = nullptr;
     cached_bed_temp_ = 0;
     cached_bed_target_ = 0;
 }
@@ -178,16 +177,15 @@ void NozzleTempsWidget::rebuild_rows() {
             row.cached_temp = lv_subject_get_int(temp_subj);
             auto* temp_lbl = row.temp_label;
             auto* target_lbl = row.target_label;
-            auto* bar = row.progress_bar;
             row.temp_observer = helix::ui::observe_int_sync<NozzleTempsWidget>(
                 temp_subj, this,
-                [token, idx = extruder_rows_.size(), temp_lbl, target_lbl,
-                 bar](NozzleTempsWidget* self, int temp) {
+                [token, idx = extruder_rows_.size(), temp_lbl, target_lbl](NozzleTempsWidget* self,
+                                                                           int temp) {
                     if (token.expired())
                         return;
                     if (idx < self->extruder_rows_.size()) {
                         self->extruder_rows_[idx].cached_temp = temp;
-                        self->update_row_display(temp_lbl, target_lbl, bar, temp,
+                        self->update_row_display(temp_lbl, target_lbl, temp,
                                                  self->extruder_rows_[idx].cached_target, false);
                     }
                 },
@@ -198,16 +196,15 @@ void NozzleTempsWidget::rebuild_rows() {
             row.cached_target = lv_subject_get_int(target_subj);
             auto* temp_lbl = row.temp_label;
             auto* target_lbl = row.target_label;
-            auto* bar = row.progress_bar;
             row.target_observer = helix::ui::observe_int_sync<NozzleTempsWidget>(
                 target_subj, this,
-                [token, idx = extruder_rows_.size(), temp_lbl, target_lbl,
-                 bar](NozzleTempsWidget* self, int target) {
+                [token, idx = extruder_rows_.size(), temp_lbl, target_lbl](NozzleTempsWidget* self,
+                                                                           int target) {
                     if (token.expired())
                         return;
                     if (idx < self->extruder_rows_.size()) {
                         self->extruder_rows_[idx].cached_target = target;
-                        self->update_row_display(temp_lbl, target_lbl, bar,
+                        self->update_row_display(temp_lbl, target_lbl,
                                                  self->extruder_rows_[idx].cached_temp, target,
                                                  false);
                     }
@@ -216,8 +213,8 @@ void NozzleTempsWidget::rebuild_rows() {
         }
 
         // Initial display update
-        update_row_display(row.temp_label, row.target_label, row.progress_bar, row.cached_temp,
-                           row.cached_target, false);
+        update_row_display(row.temp_label, row.target_label, row.cached_temp, row.cached_target,
+                           false);
 
         extruder_rows_.push_back(std::move(row));
     }
@@ -237,9 +234,8 @@ void NozzleTempsWidget::rebuild_rows() {
                 if (token.expired())
                     return;
                 self->cached_bed_temp_ = temp;
-                self->update_row_display(self->bed_temp_label_, self->bed_target_label_,
-                                         self->bed_progress_bar_, temp, self->cached_bed_target_,
-                                         true);
+                self->update_row_display(self->bed_temp_label_, self->bed_target_label_, temp,
+                                         self->cached_bed_target_, true);
             },
             bed_temp_lifetime_);
     }
@@ -253,14 +249,13 @@ void NozzleTempsWidget::rebuild_rows() {
                     return;
                 self->cached_bed_target_ = target;
                 self->update_row_display(self->bed_temp_label_, self->bed_target_label_,
-                                         self->bed_progress_bar_, self->cached_bed_temp_, target,
-                                         true);
+                                         self->cached_bed_temp_, target, true);
             },
             bed_target_lifetime_);
     }
 
-    update_row_display(bed_temp_label_, bed_target_label_, bed_progress_bar_, cached_bed_temp_,
-                       cached_bed_target_, true);
+    update_row_display(bed_temp_label_, bed_target_label_, cached_bed_temp_, cached_bed_target_,
+                       true);
 
     rebuilding_ = false;
     spdlog::debug("[NozzleTempsWidget] Rebuilt with {} extruder rows + bed", extruder_rows_.size());
@@ -291,14 +286,13 @@ void NozzleTempsWidget::on_size_changed(int colspan, int rowspan, int width_px, 
     if (!container)
         return;
 
-    current_colspan_ = colspan;
-
     const int pad_x = theme_manager_get_spacing("space_xs"); // root style_pad_all per side
     const int avail_px = width_px - 2 * pad_x;
 
     // Pre-layout / degenerate width: fall back to single full-width column with
     // long labels rather than dividing by an unknown width.
     if (width_px <= 0 || avail_px <= 0) {
+        use_long_label_ = true;
         lv_obj_set_style_flex_flow(container, LV_FLEX_FLOW_COLUMN, 0);
         lv_obj_set_style_pad_column(container, 0, 0);
         lv_obj_set_style_flex_main_place(container, LV_FLEX_ALIGN_START, 0);
@@ -346,6 +340,7 @@ void NozzleTempsWidget::on_size_changed(int colspan, int rowspan, int width_px, 
 
     const NozzleLayoutDecision decision = decide_nozzle_layout(
         avail_px, gap_px, long_row_px, short_row_px, static_cast<int>(extruder_rows_.size()));
+    use_long_label_ = decision.use_long_label;
 
     if (decision.columns == 2) {
         lv_obj_set_style_flex_flow(container, LV_FLEX_FLOW_ROW_WRAP, 0);
@@ -433,7 +428,12 @@ void NozzleTempsWidget::create_extruder_row(lv_obj_t* container, ExtruderRow& ro
     row.short_name = std::move(short_name);
     row.long_name = std::move(long_name);
 
-    const std::string& initial_label = (current_colspan_ >= 2) ? row.long_name : row.short_name;
+    // A row built by a rebuild that happens after the widget already knows its
+    // real pixel width (e.g. late tool discovery) reuses that width's label
+    // decision (use_long_label_, last set by decide_nozzle_layout() in
+    // on_size_changed) rather than a span, so it never disagrees with the
+    // rows already on screen.
+    const std::string& initial_label = use_long_label_ ? row.long_name : row.short_name;
 
     // Create row from XML template — layout, fonts, colors are all declarative
     const char* attrs[] = {"tool_name", initial_label.c_str(), nullptr};
@@ -448,7 +448,6 @@ void NozzleTempsWidget::create_extruder_row(lv_obj_t* container, ExtruderRow& ro
     row.tool_label = lv_obj_find_by_name(row_obj, "tool_label");
     row.temp_label = lv_obj_find_by_name(row_obj, "temp_label");
     row.target_label = lv_obj_find_by_name(row_obj, "target_label");
-    row.progress_bar = lv_obj_find_by_name(row_obj, "progress_bar");
 
     // Belt-and-suspenders: clip (never wrap) the value labels so even a
     // pathologically narrow tile keeps "220° / 230°" on one line. The XML
@@ -486,7 +485,6 @@ void NozzleTempsWidget::create_bed_row(lv_obj_t* container) {
     bed_icon_ = lv_obj_find_by_name(row_obj, "bed_icon");
     bed_temp_label_ = lv_obj_find_by_name(row_obj, "bed_temp_label");
     bed_target_label_ = lv_obj_find_by_name(row_obj, "bed_target_label");
-    bed_progress_bar_ = lv_obj_find_by_name(row_obj, "bed_progress_bar");
 
     // Clip rather than wrap the bed value labels (see create_extruder_row).
     if (bed_temp_label_)
@@ -509,8 +507,7 @@ void NozzleTempsWidget::create_bed_row(lv_obj_t* container) {
 }
 
 void NozzleTempsWidget::update_row_display(lv_obj_t* temp_label, lv_obj_t* target_label,
-                                           lv_obj_t* /* progress_bar */, int temp_deci,
-                                           int target_deci, bool is_bed) {
+                                           int temp_deci, int target_deci, bool is_bed) {
     if (!temp_label || !target_label)
         return;
 

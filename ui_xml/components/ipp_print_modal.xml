@@ -4,7 +4,7 @@
 <!-- NOTE: Backdrop created programmatically by Modal system -->
 <component>
   <view name="ipp_print_modal"
-        extends="ui_dialog" width="380" height="content" align="center" flex_flow="column" style_flex_main_place="start"
+        extends="ui_dialog" width="70%" style_min_width="320" style_max_width="420" height="content" align="center" flex_flow="column" style_flex_main_place="start"
         style_pad_gap="0">
 
     <!-- Title -->

@@ -652,9 +652,10 @@ void AmsPanel::rebuild_backend_selector() {
         // Create a button-like segment for each backend
         lv_obj_t* btn = lv_obj_create(row);
         lv_obj_set_size(btn, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-        lv_obj_set_style_pad_all(btn, 8, 0);
-        lv_obj_set_style_pad_left(btn, 12, 0);
-        lv_obj_set_style_pad_right(btn, 12, 0);
+        int32_t btn_pad_hor = theme_manager_get_spacing("space_md");
+        lv_obj_set_style_pad_all(btn, theme_manager_get_spacing("space_sm"), 0);
+        lv_obj_set_style_pad_left(btn, btn_pad_hor, 0);
+        lv_obj_set_style_pad_right(btn, btn_pad_hor, 0);
         lv_obj_set_style_radius(btn, 8, 0);
         lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
 

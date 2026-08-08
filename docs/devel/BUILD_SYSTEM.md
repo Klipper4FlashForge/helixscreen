@@ -1344,7 +1344,16 @@ The build system has 30+ test targets by feature area; see **[TESTING.md](TESTIN
 | `make test-all` | All tests incl. `[slow]` |
 | `make test-asan` / `test-tsan` | Run under Address/Thread sanitizer |
 | `make test-list-tags` | List available tags |
+| `make test-xml` | Configure, build and run the helix-xml engine suite (CMake + Unity + ctest) - **not** part of `make test` |
 | `./build/bin/helix-tests "[tag]"` | Run a specific tag (e.g. `[ams]`, `[gcode]`) |
+
+`make test-xml` is the odd one out: it drives the standalone suite in the `lib/helix-xml/`
+submodule rather than `helix-tests`. Its build tree is `build/helix-xml-tests/` (outside the
+submodule) and LVGL comes from CMake `FetchContent` pinned at v9.5.0, so the **first**
+configure needs network and takes minutes; every run after that is a no-op configure plus a
+couple of seconds of ctest. Forward extra ctest args with
+`make test-xml HELIX_XML_CTEST_ARGS='-R test_expr'`. See
+**[TESTING.md](TESTING.md)** § "helix-xml Engine Tests".
 
 ### Code quality & IDE
 
@@ -1504,6 +1513,8 @@ The project uses git submodules for external dependencies:
 - `wpa_supplicant` - WiFi control (Linux only, auto-built)
 
 Additionally, `lib/helix-xml/` is the XML engine — a permanent MIT fork taken from LVGL at `a15dcbeb5` (`v9.4.0-358`), the last commit before v9.5 removed XML from core. It is a submodule, but **ours**: [prestonbrown/helix-xml](https://github.com/prestonbrown/helix-xml). That makes its workflow the opposite of every other submodule here — edit the files directly, commit and push inside `lib/helix-xml/`, then commit the bumped pointer in this repo. It gets no `patches/*.patch` entry, and it is excluded from clang-format. See `LVGL_XML_SITUATION.md`.
+
+Being its own repo, it also carries its own tests and its own CI. `lib/helix-xml/tests/` is a standalone CMake + Unity suite that builds the engine against a pinned upstream LVGL v9.5.0 rather than our patched `lib/lvgl`; run it with `make test-xml` (`make test` does not build it), and see **[TESTING.md](TESTING.md)** § "helix-xml Engine Tests". `.github/workflows/ci.yml` *inside* the submodule covers a gcc + clang matrix, ASAN/UBSAN, and a conf-guards job. `scripts/quality-checks.sh` runs the suite on commits that stage a `lib/helix-xml` change, but only once `build/helix-xml-tests/` has been configured by hand - the first configure fetches LVGL and is too slow for a commit hook.
 
 **Automatic handling**: Submodule dependencies are built automatically when missing. Patches are applied automatically before builds. Never commit changes directly to submodules - always create patches instead.
 

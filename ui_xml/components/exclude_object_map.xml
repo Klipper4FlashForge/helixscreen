@@ -50,11 +50,11 @@
               align="top_right"
               style_translate_x="-4"
               style_translate_y="4"
-              style_width="36"
-              style_height="36"
+              style_width="#icon_button_size_lg"
+              style_height="#icon_button_size_lg"
               style_bg_color="#card_bg"
               style_bg_opa="180"
-              style_radius="18"
+              style_radius="#icon_button_radius_lg"
               style_border_width="0"
               style_pad_all="0">
         <event_cb trigger="clicked" callback="on_exclude_map_close"/>

@@ -12,8 +12,7 @@
   </api>
   <view name="macro_card"
         extends="lv_button" width="100%" height="content" style_radius="#border_radius" style_bg_color="#card_bg"
-        style_bg_opa="255" style_border_width="0" style_pad_all="#space_md" style_shadow_width="0"
-        user_data="$row_index">
+        style_bg_opa="255" style_border_width="0" style_pad_all="#space_md" style_shadow_width="0">
     <!-- Content container: checkbox (edit mode) + icon + text -->
     <lv_obj width="100%"
             height="content" flex_flow="row" style_flex_cross_place="center" style_pad_gap="#space_sm"

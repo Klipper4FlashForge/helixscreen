@@ -48,7 +48,45 @@ Key safety rules:
 - **Config** is read on the main thread and cached before spawning the worker (Config is NOT thread-safe).
 - **LVGL subjects** are only updated via `ui_queue_update()` from background threads.
 - **Downloads are blocked** while a print is in progress (`PrintJobState::PRINTING` or `PAUSED`).
-- **Rate limited** to 1 check per hour minimum (`MIN_CHECK_INTERVAL`).
+- **Rate limited** to one check per `MIN_CHECK_INTERVAL` (10 minutes). A manual tap inside that
+  window returns the cached result and logs only at `debug`, so it looks like nothing happened.
+
+---
+
+## When the Updater Hides Itself
+
+`in_app_updates_suppressed()` (`app_globals.h`) gates `check_for_updates()`,
+`start_auto_check()` and `start_download()`, and drives `show_update_settings` — when it is
+true the About screen has no "Check for Updates" or "Install Update" row at all. It is the OR
+of two independent reasons, and telling them apart is the first thing to establish on any
+"my updates are disabled" report:
+
+| Reason | Predicate | UI notice |
+|--------|-----------|-----------|
+| Firmware owns updates | `updates_externally_managed()` — the `HELIX_DISABLE_AUTO_UPDATES` env flag, nothing else | "Managed by your firmware" |
+| Self-update can't physically apply | `!self_update_supported()` | "Updates aren't available on this installation" |
+
+`self_update_supported()` exists because the install applies by renaming the install root
+(`mv <root> <root>.old; mv <new> <root>`), which mutates the **parent** directory's entries.
+So it is true when either:
+
+1. the parent of the install root is writable by the service user, **or**
+2. root is reachable — `geteuid() == 0`, or `sudo -n true` succeeds.
+
+The second term is not optional. The default Pi layout installs to `/opt/helixscreen` and runs
+the service as an unprivileged user, so the parent (`/opt`) is root-owned and term 1 is false
+on a machine that updates perfectly well: `install.sh` sets `SUDO="sudo"` in
+`check_permissions()` and escalates the privileged steps itself. Gating on writability alone
+hides the updater from the most common Raspberry Pi install there is.
+
+The sudo probe runs at most once per process, only when term 1 already failed, and is bounded
+at 2s so a network-backed sudoers lookup can't stall startup.
+
+Debug bundles carry all of this under `update`: `install_parent_writable` (term 1),
+`self_update_supported` (the OR), `externally_managed`, and `suppressed`. A
+`false` / `true` pair for the first two is the ordinary sudo-escalating Pi; `false` / `false`
+is a genuinely read-only install. The `[UpdateChecker] ... suppressed (firmware-managed or
+install tree not writable)` log line does **not** distinguish them — use the bundle fields.
 
 ---
 
@@ -535,7 +573,9 @@ Run with:
 
 - Check network connectivity from the device
 - R2 CDN may be down -- the checker automatically falls back to GitHub API
-- GitHub API has rate limits (60 requests/hour unauthenticated). The 1-hour rate limit in UpdateChecker prevents this in normal use, but rapid restarts could exhaust it.
+- GitHub API has rate limits (60 requests/hour unauthenticated). `MIN_CHECK_INTERVAL` caps a single
+  running instance at 6 checks/hour, but the limiter is in-process only -- rapid restarts reset it
+  and can exhaust the quota.
 - Check logs: `./build/bin/helix-screen --test -vv` and look for `[UpdateChecker]` messages
 
 ### No Asset for Platform

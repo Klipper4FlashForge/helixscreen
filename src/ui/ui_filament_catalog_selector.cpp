@@ -606,24 +606,39 @@ void FilamentCatalogSelector::select_type_family(const std::string& family) {
     }
 }
 
+bool FilamentCatalogSelector::focus_product(const std::string& id) {
+    if (id.empty())
+        return false;
+    const auto* ef = catalog_.resolve_id(id);
+    if (!ef)
+        return false;
+    select_vendor(ef->brand.empty() ? std::string("Generic") : ef->brand);
+    populate_type_dropdown(); // the vendor change re-derives the family headings
+    select_type_family(family_of(ef->type));
+    highlighted_id_ = id;
+    // Anchor it too, so a dropdown round-trip (preselect_after_change) restores
+    // THIS product rather than the family's first row. refresh_after_edit used
+    // to skip this, which meant a just-edited product silently lost its place
+    // the moment the user browsed to another type and back.
+    preselect_anchor_id_ = id;
+    rebuild_product_list();
+    if (on_selection_changed_)
+        on_selection_changed_(highlighted());
+    return true;
+}
+
+bool FilamentCatalogSelector::preselect_product_id(const std::string& id) {
+    return focus_product(id);
+}
+
 void FilamentCatalogSelector::refresh_after_edit(const std::string& focus_id) {
     // Re-read the overlay from disk so the just-saved/removed product is
     // reflected, then rebuild dropdowns (a new brand may have appeared).
     catalog_ = helix::printer::FilamentCatalog::load_full();
     populate_vendor_dropdown();
 
-    if (!focus_id.empty()) {
-        if (const auto* ef = catalog_.resolve_id(focus_id)) {
-            select_vendor(ef->brand.empty() ? std::string("Generic") : ef->brand);
-            populate_type_dropdown();
-            select_type_family(family_of(ef->type));
-            highlighted_id_ = focus_id;
-            rebuild_product_list();
-            if (on_selection_changed_)
-                on_selection_changed_(highlighted());
-            return;
-        }
-    }
+    if (focus_product(focus_id))
+        return;
 
     // Delete/restore, or the product no longer resolves: keep the current
     // vendor/type view and just repaint.

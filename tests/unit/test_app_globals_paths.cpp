@@ -5,33 +5,64 @@
 
 #include "../catch_amalgamated.hpp"
 
-TEST_CASE("app_get_install_root returns without crashing", "[app_globals][paths]") {
-    // g_executable_path is populated at startup by app_store_argv(). In test
-    // binaries it is set by the test runner via argv[0]. Should return a
-    // string (install root derived from exe) OR the empty-string fallback —
-    // never crash, never UB.
+// NOTE ON WHAT IS ACTUALLY LINKED HERE.
+// app_globals.o is excluded from the test link; tests/ui_test_utils.cpp supplies
+// the three accessors below. So these cases pin the *interface contract* that
+// both the stub and the production body have to satisfy - never a relative path,
+// never a trailing slash, and the same answer every call (all three production
+// bodies memoize into a function-local static, so a second call that differs is
+// a real bug). The production derivation itself is covered by
+// tests/unit/application/test_data_root_resolver.cpp.
+
+namespace {
+
+// Empty is a legal answer (nothing resolvable); anything non-empty must be an
+// absolute path. A relative path here silently mis-resolves every file the app
+// opens, depending on the cwd it happened to be launched from.
+void require_absolute_or_empty(const std::string& p) {
+    if (!p.empty()) {
+        INFO("path was: " << p);
+        REQUIRE(p.front() == '/');
+    }
+}
+
+// Callers concatenate "/" + name onto these, so a trailing slash yields "//".
+void require_no_trailing_slash(const std::string& p) {
+    if (p.size() > 1) {
+        INFO("path was: " << p);
+        REQUIRE(p.back() != '/');
+    }
+}
+
+} // namespace
+
+TEST_CASE("app_get_install_root returns an absolute, slash-free, stable path",
+          "[app_globals][paths]") {
     const std::string root = app_get_install_root();
-    // Smoke: the call succeeds and returns without throwing. Empty is a
-    // valid result when the test binary is not under a recognized /bin or
-    // /build/bin directory.
-    (void)root;
-    SUCCEED("app_get_install_root() returned without crashing");
+
+    require_absolute_or_empty(root);
+    require_no_trailing_slash(root);
+
+    // Derived once and cached - a second call must not re-derive to something
+    // else (or leak a per-call temporary).
+    REQUIRE(app_get_install_root() == root);
 }
 
-TEST_CASE("app_get_cache_dir returns a non-empty absolute path", "[app_globals][paths]") {
-    // Note: in the test binary, ui_test_utils.cpp stubs this to return "",
-    // so this test primarily smoke-checks the production interface. The
-    // underlying get_helix_cache_dir() is exercised by its own tests.
+TEST_CASE("app_get_cache_dir returns an absolute, stable path", "[app_globals][paths]") {
     const std::string cache = app_get_cache_dir();
-    (void)cache;
-    SUCCEED("app_get_cache_dir() returned without crashing");
+
+    require_absolute_or_empty(cache);
+    require_no_trailing_slash(cache);
+    REQUIRE(app_get_cache_dir() == cache);
 }
 
-TEST_CASE("app_get_config_dir returns without crashing", "[app_globals][paths]") {
-    // Note: in the test binary, ui_test_utils.cpp stubs this to return "",
-    // so this test smoke-checks the production interface only. The
-    // underlying helix::get_user_config_dir() is exercised by its own tests.
+TEST_CASE("app_get_config_dir returns a slash-free, stable path", "[app_globals][paths]") {
     const std::string cfg = app_get_config_dir();
-    (void)cfg;
-    SUCCEED("app_get_config_dir() returned without crashing");
+
+    // Deliberately NOT require_absolute_or_empty(): app_get_config_dir()
+    // documents a best-effort *relative* fallback ("config") for the case where
+    // the install root could not be derived, so absoluteness is not part of its
+    // contract the way it is for the other two.
+    require_no_trailing_slash(cfg);
+    REQUIRE(app_get_config_dir() == cfg);
 }

@@ -11,4 +11,9 @@ class NavigationManagerTestAccess {
     static void set_backdrop_press_keyboard_visible(NavigationManager& nav, bool visible) {
         nav.backdrop_press_keyboard_visible_ = visible;
     }
+
+    /// Read the raw backdrop pointer, to assert it does not outlive the widget.
+    static lv_obj_t* overlay_backdrop(NavigationManager& nav) {
+        return nav.overlay_backdrop_;
+    }
 };

@@ -36,6 +36,22 @@ template <typename F> long long real_ms(F&& fn) {
     return duration_cast<milliseconds>(steady_clock::now() - t0).count();
 }
 
+/// Same, but re-measured once when the first sample lands at or above `bound`.
+///
+/// The UPPER-bound assertions below time real work while the other 41 shards of
+/// `make test-run` compete for the same cores, so one descheduled sample can
+/// exceed the bound with the contract intact — this test has failed at 427ms
+/// against a <400ms bound and an expected ~100ms. Re-measuring costs nothing on
+/// a passing run and keeps the bound strict: a genuine regression (process_lvgl
+/// starting to sleep proportionally) misses both samples, not one.
+///
+/// Lower-bound checks deliberately do NOT use this — load only pushes them
+/// further into passing, so a retry there would mask a real failure.
+template <typename F> long long real_ms_under(F&& fn, long long bound) {
+    const long long first = real_ms(fn);
+    return first < bound ? first : real_ms(fn);
+}
+
 } // namespace
 
 TEST_CASE_METHOD(LVGLTestFixture, "process_lvgl advances virtual time, not real time",
@@ -43,19 +59,27 @@ TEST_CASE_METHOD(LVGLTestFixture, "process_lvgl advances virtual time, not real 
     // The whole reason wait_until() has to exist. If this ever starts sleeping
     // proportionally, the wall-clock-wait trap is gone and the docs are stale.
     const uint32_t tick_before = lv_tick_get();
-    const long long elapsed = real_ms([&] { process_lvgl(500); });
+    long long elapsed = real_ms([&] { process_lvgl(500); });
 
-    // Virtual time advanced by the full nominal amount...
+    // Virtual time advanced by the full nominal amount. Asserted on the FIRST
+    // sample, before any retry below adds another 500 ticks.
     CHECK(lv_tick_get() - tick_before == 500);
+
     // ...while real time did not. ~100ms expected (1ms per 5ms step); allow
     // generous headroom for a loaded CI box, but well under the nominal 500.
+    // Re-measured once on a miss — see real_ms_under().
+    if (elapsed >= 400) {
+        elapsed = real_ms([&] { process_lvgl(500); });
+    }
     CHECK(elapsed < 400);
 }
 
 TEST_CASE_METHOD(LVGLTestFixture, "process_lvgl below the sleep threshold never yields",
                  "[core][fixture][timing]") {
     // ms <= 50 skips the sleep entirely: pure busy-advance, zero yielding.
-    const long long elapsed = real_ms([&] { process_lvgl(50); });
+    // Tighter bound than the test above and just as exposed to a loaded box, so
+    // it gets the same single re-measure.
+    const long long elapsed = real_ms_under([&] { process_lvgl(50); }, 20);
     CHECK(elapsed < 20);
 }
 

@@ -4,6 +4,7 @@
 #include "grid_layout.h"
 
 #include "layout_manager.h"
+#include "theme_manager.h"
 
 #include <spdlog/spdlog.h>
 
@@ -11,6 +12,10 @@
 #include <array>
 
 namespace helix {
+
+namespace {
+constexpr int GRID_TRACK_SCAN_MAX = 256;
+} // namespace
 
 // Grid dimensions per breakpoint: {cols, rows}
 // MICRO (≤272px height):  6x4 (same as TINY/SMALL/MEDIUM — cells are smaller)
@@ -340,6 +345,39 @@ GridLayout::filter_for_breakpoint(UiBreakpoint bp, const std::vector<GridPlaceme
 
 void GridLayout::clear() {
     placements_.clear();
+}
+
+int GridLayout::gutter_px() {
+    return theme_manager_get_spacing("space_xs");
+}
+
+int grid_count_tracks(const int32_t* dsc) {
+    if (dsc == nullptr) {
+        return 0;
+    }
+    for (int i = 0; i < GRID_TRACK_SCAN_MAX; ++i) {
+        if (dsc[i] == LV_GRID_TEMPLATE_LAST) {
+            return i;
+        }
+    }
+    return 0;
+}
+
+CellMetrics grid_cell_metrics(int content_w, int content_h, int cols, int rows, int gutter) {
+    CellMetrics m{};
+    m.cols = cols;
+    m.rows = rows;
+    m.gutter = std::max(0, gutter);
+
+    if (cols > 0 && content_w > 0) {
+        float usable = static_cast<float>(content_w) - static_cast<float>(cols - 1) * m.gutter;
+        m.cell_w = (usable > 0.0f) ? usable / static_cast<float>(cols) : 0.0f;
+    }
+    if (rows > 0 && content_h > 0) {
+        float usable = static_cast<float>(content_h) - static_cast<float>(rows - 1) * m.gutter;
+        m.cell_h = (usable > 0.0f) ? usable / static_cast<float>(rows) : 0.0f;
+    }
+    return m;
 }
 
 } // namespace helix

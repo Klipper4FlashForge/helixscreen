@@ -90,8 +90,9 @@ lv_obj_t* WidgetCatalogOverlay::create_row(lv_obj_t* parent, const char* name, c
     lv_obj_t* row = lv_obj_create(parent);
     lv_obj_set_width(row, LV_PCT(100));
     lv_obj_set_height(row, LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(row, 10, 0);
-    lv_obj_set_style_pad_gap(row, 8, 0);
+    int32_t pad_xs = theme_manager_get_spacing("space_xs");
+    lv_obj_set_style_pad_all(row, theme_manager_get_spacing("space_md"), 0);
+    lv_obj_set_style_pad_gap(row, theme_manager_get_spacing("space_sm"), 0);
     lv_obj_set_style_bg_color(row, theme_manager_get_color("card_bg"), 0);
     lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(row, 8, 0);
@@ -148,7 +149,7 @@ lv_obj_t* WidgetCatalogOverlay::create_row(lv_obj_t* parent, const char* name, c
     lv_obj_t* right_group = lv_obj_create(row);
     lv_obj_set_size(right_group, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_style_pad_all(right_group, 0, 0);
-    lv_obj_set_style_pad_gap(right_group, 6, 0);
+    lv_obj_set_style_pad_gap(right_group, pad_xs, 0);
     lv_obj_set_style_bg_opa(right_group, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(right_group, 0, 0);
     lv_obj_set_layout(right_group, LV_LAYOUT_FLEX);
@@ -167,10 +168,11 @@ lv_obj_t* WidgetCatalogOverlay::create_row(lv_obj_t* parent, const char* name, c
     // Size badge (e.g. "2x1")
     lv_obj_t* badge = lv_obj_create(right_group);
     lv_obj_set_size(badge, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_left(badge, 6, 0);
-    lv_obj_set_style_pad_right(badge, 6, 0);
-    lv_obj_set_style_pad_top(badge, 2, 0);
-    lv_obj_set_style_pad_bottom(badge, 2, 0);
+    int32_t badge_pad_ver = theme_manager_get_spacing("space_xxs");
+    lv_obj_set_style_pad_left(badge, pad_xs, 0);
+    lv_obj_set_style_pad_right(badge, pad_xs, 0);
+    lv_obj_set_style_pad_top(badge, badge_pad_ver, 0);
+    lv_obj_set_style_pad_bottom(badge, badge_pad_ver, 0);
     lv_obj_set_style_bg_color(badge, theme_manager_get_color("secondary"), 0);
     lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(badge, 4, 0);
