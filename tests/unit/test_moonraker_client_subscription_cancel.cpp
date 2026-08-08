@@ -40,6 +40,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <thread>
@@ -884,43 +885,73 @@ TEST_CASE_METHOD(MoonrakerClientLifecycleFixture,
     }
 }
 
+// Destruction has to actually *release* the registered notify callbacks, not merely
+// avoid crashing on the way out. The counter below lives in a shared_ptr that each
+// of the 10 lambdas copies, so use_count() is direct, non-sanitizer evidence of
+// whether the stored std::functions were destroyed with the client: a destructor
+// that stashes them anywhere (a static registry, a detached container, a map moved
+// aside and never freed) leaves the count above 1 in a plain build.
+//
+// Each section dispatches once before teardown so the post-destruction check is
+// measuring cleanup and not a registration that silently overwrote itself.
 TEST_CASE_METHOD(MoonrakerClientLifecycleFixture,
-                 "MoonrakerClient client destruction cleans up subscriptions",
+                 "MoonrakerClient client destruction releases notify subscriptions",
                  "[connection][cleanup][eventloop][slow]") {
-    SECTION("Destroying client with active subscriptions is safe") {
-        std::atomic<int> callback_count{0};
+    // Payload with no bed_mesh/toolhead keys, so dispatch_status_update does nothing
+    // beyond the callback fan-out we are measuring.
+    const json status = {{"extruder", {{"temperature", 25.0}}}};
+
+    SECTION("Destroying client releases every registered notify callback") {
+        auto callback_count = std::make_shared<std::atomic<int>>(0);
 
         {
             MoonrakerClient client;
 
             for (int i = 0; i < 10; i++) {
-                client.register_notify_update([&callback_count](json) { callback_count++; });
+                client.register_notify_update([callback_count](json) { (*callback_count)++; });
             }
+            // 10 stored callbacks + this scope's own reference.
+            REQUIRE(callback_count.use_count() == 11);
+
+            client.dispatch_status_update(status);
+            REQUIRE(callback_count->load() == 10);
             // Client destroyed here
         }
 
-        // Should not crash
-        REQUIRE(true);
+        // Sole remaining owner: all 10 stored callbacks went away with the client.
+        REQUIRE(callback_count.use_count() == 1);
+        // And nothing fired during or after teardown.
+        REQUIRE(callback_count->load() == 10);
     }
 
-    SECTION("Destroying mock client with active subscriptions is safe") {
-        std::atomic<int> callback_count{0};
+    SECTION("Destroying mock client releases every registered notify callback") {
+        auto callback_count = std::make_shared<std::atomic<int>>(0);
+        int dispatched_while_alive = 0;
 
         {
             MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
 
             for (int i = 0; i < 10; i++) {
-                mock.register_notify_update([&callback_count](json) { callback_count++; });
+                mock.register_notify_update([callback_count](json) { (*callback_count)++; });
             }
 
             mock.connect("ws://mock/websocket", []() {}, []() {});
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             mock.stop_temperature_simulation();
+
+            // Simulation thread is stopped, so this is the only writer from here on.
+            const int before = callback_count->load();
+            mock.dispatch_status_update(status);
+            dispatched_while_alive = callback_count->load();
+            REQUIRE(dispatched_while_alive >= before + 10);
             // Mock destroyed here
         }
 
-        // Should not crash
-        REQUIRE(true);
+        REQUIRE(callback_count.use_count() == 1);
+
+        // No straggler thread still holding and firing a copy.
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        REQUIRE(callback_count->load() == dispatched_while_alive);
     }
 }
 
