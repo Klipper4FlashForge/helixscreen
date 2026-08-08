@@ -57,6 +57,12 @@ class AmsSubscriptionBackend : public AmsBackend {
     // backends and missed the eighth, which shipped with no gate at all
     // (180a71c7d). A backend cannot forget it here, because it never writes the
     // entry point.
+    //
+    // The gate is a CLAIM, not a test: run_filament_op() test-and-sets an
+    // in-flight flag in the same critical section as the busy read and holds it
+    // across the do_* dispatch, so exactly one op can be in flight at a time.
+    // See filament_op_in_flight_ for why holding mutex_ across the busy check —
+    // which is what the pre-NVI backends did — never achieved that.
     AmsError load_filament(int slot_index) final;
     AmsError unload_filament(int slot_index) final;
     AmsError select_slot(int slot_index) final;
@@ -116,6 +122,12 @@ class AmsSubscriptionBackend : public AmsBackend {
     /// Backend implementation of the matching public operation. Reached only
     /// after the gate has passed, so these must NOT call check_preconditions()
     /// or refuse_if_printing() again — one authority, in the base.
+    ///
+    /// Called WITHOUT mutex_ held, and with the in-flight claim held for the
+    /// whole call. Take mutex_ for the state you need; do not hold it across the
+    /// gcode send. A hook must not re-enter a PUBLIC filament op on the same
+    /// backend — it would be refused by its own claim. Forward to the sibling
+    /// do_* instead, which is what the delegating backends already do.
     ///
     /// When one op is really another (ACE loads to select, a Snapmaker select
     /// IS a tool change), forward to the sibling do_* rather than the public
@@ -191,8 +203,63 @@ class AmsSubscriptionBackend : public AmsBackend {
     /// Motion classification, stated ONCE for every backend.
     [[nodiscard]] bool op_moves_toolhead(FilamentOp op) const;
 
-    /// Run the gate this backend declares, for this operation.
-    [[nodiscard]] AmsError gate_filament_op(FilamentOp op) const;
+    /// The started/busy half of check_preconditions(), with no locking of its
+    /// own. check_preconditions() keeps its historical no-internal-lock contract
+    /// because roughly half its ~15 callers already hold mutex_ when they call
+    /// it (AFC eject_lane/reset/enable_bypass, AD5X eject_lane, ...) and would
+    /// self-deadlock on a non-recursive re-acquire. claim_filament_op() calls
+    /// this WITH mutex_ held, which is what makes the gate's read of
+    /// system_info_.action race-free on the filament-op path.
+    [[nodiscard]] AmsError state_preconditions_unlocked() const;
+
+    /// Test-and-set the in-flight claim, in the SAME critical section as the
+    /// started/busy read it has to be atomic with. Returns the refusal when the
+    /// claim is denied; on success the caller owns the claim and must release it
+    /// (run_filament_op() does so via FilamentOpClaim).
+    [[nodiscard]] AmsError claim_filament_op(FilamentOp op, bool check_state);
+    void release_filament_op_claim();
+
+    /// RAII release for claim_filament_op(). Only run_filament_op() builds one,
+    /// so a backend cannot hold, leak, or skip the claim.
+    class FilamentOpClaim {
+      public:
+        FilamentOpClaim() = default;
+        explicit FilamentOpClaim(AmsSubscriptionBackend* owner) : owner_(owner) {}
+        ~FilamentOpClaim() {
+            if (owner_ != nullptr) {
+                owner_->release_filament_op_claim();
+            }
+        }
+        FilamentOpClaim(const FilamentOpClaim&) = delete;
+        FilamentOpClaim& operator=(const FilamentOpClaim&) = delete;
+
+      private:
+        AmsSubscriptionBackend* owner_ = nullptr;
+    };
+
+    /// Gate, claim, then dispatch. The four public entry points are one line
+    /// each on top of this, so there is exactly one place the gate can run.
+    AmsError run_filament_op(FilamentOp op, int arg);
+
+    /// True from the instant a filament op wins the gate until its do_* hook
+    /// returns. Guarded by mutex_.
+    ///
+    /// This is what makes the gate a claim rather than a test. The state the
+    /// gate reads — system_info_.action — is NOT set by the op itself: every
+    /// backend that publishes an optimistic action does it inside the do_* hook,
+    /// in a LATER critical section (AFC/ToolChanger begin_dispatch_locked, ACE,
+    /// CFS, AD5X), and Happy Hare, Snapmaker and QIDI never set it at all and
+    /// wait for firmware to echo. So "check busy, then act" was two steps with a
+    /// window between them long before the NVI refactor moved the check out of
+    /// the hook's lock — holding mutex_ across the check never closed it,
+    /// because the write that closes it happens after the lock is dropped.
+    /// The claim closes the check→dispatch half of that window outright, for
+    /// every backend, without extending mutex_ across the gcode send.
+    bool filament_op_in_flight_ = false;
+
+    /// The action the in-flight op stands for, so a refused second op names it
+    /// the same way an AMS-reported busy state would.
+    AmsAction filament_op_claimed_action_ = AmsAction::IDLE;
 
     EventCallback event_callback_;
     SubscriptionGuard subscription_;
