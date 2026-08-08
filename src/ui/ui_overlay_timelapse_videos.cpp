@@ -3,7 +3,6 @@
 
 #include "ui_overlay_timelapse_videos.h"
 
-#include "app_globals.h"
 #include "ui_callback_helpers.h"
 #include "ui_format_utils.h"
 #include "ui_gradient_canvas.h"
@@ -12,6 +11,7 @@
 #include "ui_update_queue.h"
 #include "ui_utils.h"
 
+#include "app_globals.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "static_panel_registry.h"
@@ -473,9 +473,16 @@ void TimelapseVideosOverlay::load_thumbnail_for_card(lv_obj_t* card, const std::
     auto cache_key = helix::timelapse::cache_key(filename);
     auto target = helix::ThumbnailProcessor::get_target_for_display(helix::ThumbnailSize::Card);
 
-    // Check if already cached (synchronous, fast path)
+    // Check if already cached (synchronous, fast path). The request-shaped
+    // lookup is the same query as get_if_optimized(key, target) — timelapse
+    // companions have no Moonraker mtime to validate against, so
+    // source_modified stays 0.
+    ThumbnailRequest req;
+    req.key = cache_key;
+    req.target = target;
+
     auto& cache = get_thumbnail_cache();
-    std::string cached = cache.get_if_optimized(cache_key, target);
+    std::string cached = cache.get_if_cached(req);
     if (!cached.empty()) {
         spdlog::debug("[{}] Thumbnail cache hit for '{}'", get_name(), filename);
         if (thumbnail) {
@@ -862,4 +869,3 @@ void TimelapseVideosOverlay::on_card_long_pressed(lv_event_t* e) {
     spdlog::debug("[Timelapse Videos] Card long-pressed: {}", filename);
     self->confirm_delete(filename);
 }
-

@@ -12,6 +12,7 @@
 #include "print_history_manager.h"
 #include "subject_managed_panel.h"
 
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <string>
@@ -267,9 +268,10 @@ class HistoryListPanel : public OverlayBase {
     // === Subject for panel state binding ===
     //
 
-    lv_subject_t subject_panel_state_; ///< 0 = LOADING, 1 = EMPTY, 2 = HAS_JOBS
+    lv_subject_t subject_panel_state_;      ///< 0 = LOADING, 1 = EMPTY, 2 = HAS_JOBS
     lv_subject_t subject_filters_expanded_; ///< 0 = filter dropdowns collapsed, 1 = expanded
-    lv_subject_t subject_filter_active_;    ///< 1 when a status/search/sort filter is active (drives funnel accent)
+    lv_subject_t subject_filter_active_; ///< 1 when a status/search/sort filter is active (drives
+                                         ///< funnel accent)
 
     // Empty state message subjects (for dynamic text based on filter state)
     lv_subject_t subject_empty_message_; ///< Empty state message text
@@ -283,9 +285,12 @@ class HistoryListPanel : public OverlayBase {
     // === Detail Overlay State ===
     //
 
-    lv_obj_t* detail_overlay_ = nullptr;     ///< Detail overlay widget (created on first use)
-    size_t selected_job_index_ = 0;          ///< Index of currently selected job in filtered_jobs_
-    uint64_t detail_overlay_generation_ = 0; ///< Generation counter for async callback safety
+    lv_obj_t* detail_overlay_ = nullptr; ///< Detail overlay widget (created on first use)
+    size_t selected_job_index_ = 0;      ///< Index of currently selected job in filtered_jobs_
+    /// Generation counter for async callback safety. Owned by the
+    /// ThumbnailLoadContext each detail-overlay open creates — atomic because
+    /// the context reads it from whichever thread delivers a fetch result.
+    std::atomic<uint32_t> detail_overlay_generation_{0};
 
     // Detail overlay subjects (string subjects for reactive binding)
     lv_subject_t detail_filename_;

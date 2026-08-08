@@ -1289,10 +1289,11 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                     // native-size 300x300 source gets drawn at 300x300 and cropped to the
                     // widget box, showing a fragment of the model (#1208). Routing it
                     // through the prescaler also keeps --test faithful to a real printer.
-                    ThumbnailLoadContext ctx;
-                    ctx.alive = self->thumbnail_alive_;
-                    ctx.generation = &self->nav_generation_;
-                    ctx.captured_gen = self->nav_generation_.load();
+                    // capture(), not create(): nav_generation_ is bumped by
+                    // panel navigation, never by a thumbnail load. Incrementing
+                    // it here would cancel every other in-flight card fetch.
+                    ThumbnailLoadContext ctx = ThumbnailLoadContext::capture(
+                        self->thumbnail_alive_, &self->nav_generation_);
 
                     size_t file_idx = d->index;
                     std::string filename_copy = d->filename;
@@ -1318,8 +1319,13 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                                       self->get_name(), d->filename,
                                       self->file_list_[d->index].thumbnail_path);
                     } else {
-                        get_thumbnail_cache().fetch_for_card_view(
-                            self->api_, cache_key, ctx,
+                        ThumbnailRequest req;
+                        req.key = cache_key;
+                        req.target = helix::ThumbnailProcessor::get_target_for_display();
+                        req.api = self->api_;
+
+                        get_thumbnail_cache().fetch(
+                            req, ctx,
                             [self, panel_tok, file_idx, filename_copy](const std::string& optimized,
                                                                        bool /*degraded*/) {
                                 struct LocalThumbUpdate {
@@ -1362,14 +1368,21 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                     std::string filename_copy = d->filename;
                     time_t modified_ts = self->file_list_[d->index].modified_timestamp;
 
-                    // Create context with alive flag and nav generation for safety
-                    ThumbnailLoadContext ctx;
-                    ctx.alive = self->thumbnail_alive_;
-                    ctx.generation = &self->nav_generation_;
-                    ctx.captured_gen = self->nav_generation_.load();
+                    // Create context with alive flag and nav generation for safety.
+                    // capture(), not create(): nav_generation_ tracks panel
+                    // navigation, and one card's fetch must not supersede the
+                    // rest of the visible range.
+                    ThumbnailLoadContext ctx = ThumbnailLoadContext::capture(
+                        self->thumbnail_alive_, &self->nav_generation_);
 
-                    get_thumbnail_cache().fetch_for_card_view(
-                        self->api_, d->thumb_path, ctx,
+                    ThumbnailRequest req;
+                    req.key = d->thumb_path;
+                    req.target = helix::ThumbnailProcessor::get_target_for_display();
+                    req.source_modified = modified_ts;
+                    req.api = self->api_;
+
+                    get_thumbnail_cache().fetch(
+                        req, ctx,
                         // Success callback - receives pre-scaled .bin path
                         [self, panel_tok, file_idx, filename_copy](const std::string& lvgl_path,
                                                                    bool /*degraded*/) {
@@ -1429,8 +1442,7 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                         [self, filename_copy](const std::string& error) {
                             spdlog::warn("[{}] Failed to fetch thumbnail for {}: {}",
                                          self->get_name(), filename_copy, error);
-                        },
-                        modified_ts);
+                        });
                 }
             } else if (self->api_) {
                 // No thumbnail from metadata - try extracting from gcode file directly
@@ -1458,11 +1470,12 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                     // Download first 100KB of gcode (thumbnails are always in header)
                     constexpr size_t THUMBNAIL_HEADER_SIZE = 100 * 1024;
 
-                    // Create context for prescale callback safety
-                    ThumbnailLoadContext ctx;
-                    ctx.alive = self->thumbnail_alive_;
-                    ctx.generation = &self->nav_generation_;
-                    ctx.captured_gen = self->nav_generation_.load();
+                    // Create context for prescale callback safety. capture(),
+                    // not create(): nav_generation_ belongs to panel
+                    // navigation, so a gcode extraction must observe it, not
+                    // advance it.
+                    ThumbnailLoadContext ctx = ThumbnailLoadContext::capture(
+                        self->thumbnail_alive_, &self->nav_generation_);
 
                     self->api_->transfers().download_file_partial(
                         "gcodes", gcode_path, THUMBNAIL_HEADER_SIZE,
@@ -1503,8 +1516,13 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
 
                             // Feed through prescale pipeline for .bin generation
                             // (avoids runtime 300x300→160x160 scaling on every frame)
-                            get_thumbnail_cache().fetch_for_card_view(
-                                panel_api, cache_key, ctx,
+                            ThumbnailRequest req;
+                            req.key = cache_key;
+                            req.target = helix::ThumbnailProcessor::get_target_for_display();
+                            req.api = panel_api;
+
+                            get_thumbnail_cache().fetch(
+                                req, ctx,
                                 [self, panel_tok, file_idx,
                                  filename_copy](const std::string& optimized, bool /*degraded*/) {
                                     // Everything that touches the panel happens in the

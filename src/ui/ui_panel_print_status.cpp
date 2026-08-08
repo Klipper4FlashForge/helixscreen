@@ -3272,9 +3272,15 @@ void PrintStatusPanel::animate_print_error() {
 // ============================================================================
 
 void PrintStatusPanel::load_thumbnail_for_file(const std::string& filename) {
-    // Increment generation to invalidate any in-flight async operations
-    ++thumbnail_load_generation_;
-    uint32_t current_gen = thumbnail_load_generation_;
+    // One staleness context per load. Creating it bumps
+    // thumbnail_load_generation_, so every callback still in flight from an
+    // earlier load now reports stale — same invalidation the bare `++` did,
+    // including on the early-return paths below. The context also carries the
+    // panel's lifetime token, which is what lets it go straight to the cache.
+    //
+    // NOTE: is_valid() consults that token, so it is NOT a thread guard — every
+    // check below sits inside an already-marshalled token.defer() body.
+    ThumbnailLoadContext ctx = ThumbnailLoadContext::create(lifetime_, &thumbnail_load_generation_);
 
     // If we already have a directly-set thumbnail path, don't overwrite it.
     // This happens when PrintStartController sets the path from a pre-extracted
@@ -3312,16 +3318,15 @@ void PrintStatusPanel::load_thumbnail_for_file(const std::string& filename) {
     auto token = lifetime_.token();
     api_->files().get_file_metadata(
         metadata_filename,
-        [this, token, current_gen](const FileMetadata& metadata) {
+        [this, token, ctx](const FileMetadata& metadata) {
             // L081 Mechanism C: defer the entire body — it touches member state
-            // (thumbnail_load_generation_, get_name(), api_, cached_thumbnail_path_
-            // via the inner cb) and dispatches to LVGL-touching code paths. Run
-            // it on the main thread.
-            token.defer("PrintStatusPanel::metadata_apply", [this, token, current_gen, metadata]() {
-                // Check if this callback is still relevant
-                if (current_gen != thumbnail_load_generation_) {
-                    spdlog::trace("[{}] Stale metadata callback (gen {} != {}), ignoring",
-                                  get_name(), current_gen, thumbnail_load_generation_);
+            // (the load context, get_name(), api_, cached_thumbnail_path_ via
+            // the inner cb) and dispatches to LVGL-touching code paths. Run it
+            // on the main thread.
+            token.defer("PrintStatusPanel::metadata_apply", [this, token, ctx, metadata]() {
+                // Superseded by a newer load — drop it.
+                if (!ctx.is_valid()) {
+                    spdlog::trace("[PrintStatusPanel] Stale metadata callback, ignoring");
                     return;
                 }
 
@@ -3352,30 +3357,27 @@ void PrintStatusPanel::load_thumbnail_for_file(const std::string& filename) {
                 // causes a race condition where Print Status deletes thumbnails that
                 // Print Select just cached, resulting in placeholder thumbnails.
 
-                // Use fetch_for_detail_view() for full-resolution PNG (not pre-scaled .bin)
-                // The semantic API ensures we always get the right format for large views.
-                // Create context with lifetime token for validity checking.
-                ThumbnailLoadContext ctx;
-                ctx.lifetime_token = token;
-                ctx.generation = nullptr; // Using manual gen check below
-                ctx.captured_gen = current_gen;
+                // Detail-sized pre-scaled .bin — the same target
+                // fetch_for_detail_view picked, now stated by the request so
+                // one guarded entry point serves every consumer. The load's own
+                // context goes to the cache, so a superseded result is dropped
+                // at the cache boundary; the success callback re-checks after
+                // marshalling because a newer load can start in between.
+                ThumbnailRequest req;
+                req.key = thumbnail_rel_path;
+                req.target =
+                    helix::ThumbnailProcessor::get_target_for_display(helix::ThumbnailSize::Detail);
+                req.api = api_;
 
-                get_thumbnail_cache().fetch_for_detail_view(
-                    api_, thumbnail_rel_path, ctx,
-                    [this, current_gen, token](const std::string& lvgl_path, bool /*degraded*/) {
+                get_thumbnail_cache().fetch(
+                    req, ctx,
+                    [this, ctx, token](const std::string& lvgl_path, bool /*degraded*/) {
                         // L081 Mechanism C: defer everything. The inner cb
-                        // mutates cached_thumbnail_path_ and reads
-                        // thumbnail_load_generation_/get_name(); fetch may
-                        // invoke us off the main thread depending on cache
-                        // state. Marshal the whole body.
-                        token.defer("PrintStatusPanel::thumbnail_apply", [this, current_gen,
-                                                                          lvgl_path]() {
-                            // Generation check (we passed nullptr for the cache's
-                            // own generation tracking).
-                            if (current_gen != thumbnail_load_generation_) {
-                                spdlog::trace(
-                                    "[{}] Stale thumbnail callback (gen {} != {}), ignoring",
-                                    get_name(), current_gen, thumbnail_load_generation_);
+                        // mutates cached_thumbnail_path_ and calls get_name();
+                        // fetch may invoke us off the main thread depending on
+                        // cache state. Marshal the whole body.
+                        token.defer("PrintStatusPanel::thumbnail_apply", [this, ctx, lvgl_path]() {
+                            if (!ctx.is_valid()) {
                                 return;
                             }
 

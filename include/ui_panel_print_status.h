@@ -29,6 +29,7 @@ class TempGraphController;
 
 #include "filament_mapper.h" // helix::GcodeToolInfo
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <set>
@@ -446,7 +447,10 @@ class PrintStatusPanel : public OverlayBase {
     // Thumbnail loading state
     std::string current_print_filename_; ///< Full path to current print file (for metadata fetch)
     std::string cached_thumbnail_path_;  ///< Local cache path for downloaded thumbnail
-    uint32_t thumbnail_load_generation_ = 0; ///< Generation counter for async callback safety
+    /// Generation counter for async callback safety. Owned by the
+    /// ThumbnailLoadContext the load creates — atomic because the context
+    /// reads it from whichever thread delivers a fetch result.
+    std::atomic<uint32_t> thumbnail_load_generation_{0};
 
     // Child widgets
     lv_obj_t* progress_bar_ = nullptr;
