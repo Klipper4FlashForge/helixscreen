@@ -149,24 +149,68 @@ TEST_CASE("compose_filament_label: material already in the name is not repeated"
 // Each assertion here fails if the boundary check is downgraded to find().
 // ============================================================================
 
-TEST_CASE("compose_filament_label: dedup matches whole words only", "[filament][label]") {
-    SECTION("HIPLA does not absorb PLA") {
-        REQUIRE(compose_filament_label("", "Elegoo HIPLA", "PLA") == "Elegoo HIPLA PLA");
+TEST_CASE("compose_filament_label: a material the name already states is dropped",
+          "[filament][label]") {
+    // Materials are a closed vocabulary, so containment really is redundancy —
+    // "ePLA", "PLA+", "HIPLA" and "ABS+" all mean "this is that material", and
+    // appending the bare material after one of them reads like nothing a human
+    // would write. Brands get word-boundary matching instead (see below).
+
+    SECTION("a trade name ending in the polymer absorbs it") {
+        REQUIRE(compose_filament_label("", "Elegoo HIPLA", "PLA") == "Elegoo HIPLA");
+        REQUIRE(compose_filament_label("eSUN", "Silk Blue ePLA", "Silk PLA") ==
+                "eSUN Silk Blue ePLA");
     }
 
-    SECTION("PLA+ does not absorb PLA") {
-        REQUIRE(compose_filament_label("", "Ambrosia Pink PLA+", "PLA") ==
-                "Ambrosia Pink PLA+ PLA");
-        REQUIRE(compose_filament_label("", "PLA+ Matte", "PLA") == "PLA+ Matte PLA");
+    SECTION("a graded name absorbs the base polymer") {
+        REQUIRE(compose_filament_label("", "Ambrosia Pink PLA+", "PLA") == "Ambrosia Pink PLA+");
+        REQUIRE(compose_filament_label("", "PLA+ Matte", "PLA") == "PLA+ Matte");
+        REQUIRE(compose_filament_label("eSUN", "Fire Engine Red ABS+", "ABS") ==
+                "eSUN Fire Engine Red ABS+");
     }
 
-    SECTION("PLA+ absorbs PLA+") {
+    SECTION("an exact match still absorbs") {
         REQUIRE(compose_filament_label("", "Ambrosia Pink PLA+", "PLA+") == "Ambrosia Pink PLA+");
+        REQUIRE(compose_filament_label("Kingroon", "Yellow PETG", "PETG") ==
+                "Kingroon Yellow PETG");
     }
 
-    SECTION("hyphenated composites are not split") {
-        REQUIRE(compose_filament_label("", "Bambu PA6-CF", "PA6") == "Bambu PA6-CF PA6");
+    SECTION("compound materials need every word present") {
+        REQUIRE(compose_filament_label("", "Bambu PA6-CF", "PA6") == "Bambu PA6-CF");
         REQUIRE(compose_filament_label("", "Bambu PA6-CF", "PA6-CF") == "Bambu PA6-CF");
+        // "Carbon" appears nowhere in the name, so the material still earns its place.
+        REQUIRE(compose_filament_label("", "Bambu PA6-CF", "PA6 Carbon") ==
+                "Bambu PA6-CF PA6 Carbon");
+    }
+
+    SECTION("the material need not be at the end of the name") {
+        // Redundancy is about whether the name MENTIONS the material, not where.
+        // Vendors write it mid-string all the time.
+        REQUIRE(compose_filament_label("Polymaker", "Ambrosia PLA (Pink)", "PLA") ==
+                "Polymaker Ambrosia PLA (Pink)");
+        REQUIRE(compose_filament_label("Polymaker", "PLA Matte Charcoal", "PLA") ==
+                "Polymaker PLA Matte Charcoal");
+        REQUIRE(compose_filament_label("", "Blue PETG Translucent", "PETG") ==
+                "Blue PETG Translucent");
+    }
+
+    SECTION("a partially-stated compound material is still appended") {
+        // The name says PLA but not that it is the silk variant, so the
+        // material still carries information and stays.
+        REQUIRE(compose_filament_label("", "Ambrosia PLA (Pink)", "Silk PLA") ==
+                "Ambrosia PLA (Pink) Silk PLA");
+    }
+
+    SECTION("a brand stated mid-name is not repeated either") {
+        REQUIRE(compose_filament_label("Polymaker", "Ambrosia by Polymaker", "PLA") ==
+                "Ambrosia by Polymaker PLA");
+    }
+
+    SECTION("a material the name does not state is kept") {
+        // adamstorm's case: AFC supplies a bare colour-ish name, so "PLA" is
+        // the only thing telling the user what is loaded.
+        REQUIRE(compose_filament_label("Polymaker", "Ambrosia Pink", "PLA") ==
+                "Polymaker Ambrosia Pink PLA");
     }
 
     SECTION("Poly is not absorbed by Polymaker") {

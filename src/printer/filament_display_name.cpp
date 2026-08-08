@@ -72,6 +72,62 @@ bool contains_word(const std::string& haystack, const std::string& needle) {
     return false;
 }
 
+/// Case-insensitive substring search, no boundary requirement.
+bool contains_ci(const std::string& haystack, const std::string& needle) {
+    if (needle.empty() || needle.size() > haystack.size()) {
+        return false;
+    }
+    const size_t last = haystack.size() - needle.size();
+    for (size_t i = 0; i <= last; ++i) {
+        size_t j = 0;
+        while (j < needle.size() && ascii_lower(haystack[i + j]) == ascii_lower(needle[j])) {
+            ++j;
+        }
+        if (j == needle.size()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Does `name` already say what `material` says?
+///
+/// Materials are a small closed vocabulary, so containment really does imply
+/// redundancy: "ePLA", "PLA+", "ABS+" and "HIPLA" all mean "this is that
+/// material". Brands get no such treatment — they are arbitrary strings, and
+/// "Sun" must never be stripped out of "Sunlu".
+///
+/// Matching is token-wise because Spoolman materials are often compound:
+/// material "Silk PLA" against name "Silk Blue ePLA" has both of its words
+/// present ("Silk" outright, "PLA" inside "ePLA"), so appending it would give
+/// "eSUN Silk Blue ePLA Silk PLA" — redundant in a way no human would write.
+/// A material with no overlap ("PLA" against "Ambrosia Pink") is still added,
+/// which is what keeps the material on names that omit it.
+bool material_is_redundant(const std::string& name, const std::string& material) {
+    if (material.empty()) {
+        return false;
+    }
+    size_t i = 0;
+    bool saw_token = false;
+    while (i < material.size()) {
+        while (i < material.size() && std::isspace(static_cast<unsigned char>(material[i])) != 0) {
+            ++i;
+        }
+        const size_t start = i;
+        while (i < material.size() && std::isspace(static_cast<unsigned char>(material[i])) == 0) {
+            ++i;
+        }
+        if (start == i) {
+            continue;
+        }
+        saw_token = true;
+        if (!contains_ci(name, material.substr(start, i - start))) {
+            return false;
+        }
+    }
+    return saw_token;
+}
+
 /// First candidate that is not blank, normalized. Blank is the unset sentinel
 /// for every string field in the slot/override merge policy.
 std::string first_non_blank(std::initializer_list<std::string_view> candidates) {
@@ -92,8 +148,10 @@ std::string compose_filament_label(std::string_view brand, std::string_view name
     const std::string name_part = normalize_ws(name);
     const std::string material_part = normalize_ws(material);
 
+    // Brand keeps word-boundary matching (arbitrary strings — "Sun" must not
+    // match inside "Sunlu"); material uses containment (closed vocabulary).
     const bool brand_redundant = contains_word(name_part, brand_part);
-    const bool material_redundant = contains_word(name_part, material_part);
+    const bool material_redundant = material_is_redundant(name_part, material_part);
 
     std::string label;
     const auto append = [&label](const std::string& part) {
