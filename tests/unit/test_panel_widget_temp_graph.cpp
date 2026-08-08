@@ -303,6 +303,50 @@ TEST_CASE("TempGraphWidget::features_for_size maps pixel size to feature flags",
     }
 }
 
+// Real measured tier extents, not symbolic offsets from the constants — see
+// span-pixel-table.md. temp_graph's LEGEND/Y_AXIS/X_AXIS gate is
+// deliberately height-only (features_for_size() near :199-206): unlike
+// fan_stack's resolved names or camera's live stream, the chart draws these
+// with graceful width degradation (draw_legend_cb's "+N" overflow pill,
+// ui_temp_graph.cpp:647-665; a configurable Y-axis label column, 30-50px).
+// A plain 1x1 widget genuinely reaches Large's 107px / XLarge's 134px width
+// there, but temp_graph is also resizable down to a genuinely-2-row 1-column
+// cell as narrow as 65px (Small tier) — narrower than either "false
+// positive" width — so these features already render at widths tighter than
+// what Large/XLarge's height-driven promotion produces. Nothing new breaks.
+TEST_CASE("TempGraphWidget::features_for_size at real Large/XLarge 1x1 and Small 1x2 extents",
+          "[temp_graph][panel_widget][features]") {
+    SECTION("Large 1x1 (107x141): legend/axes fire on height, narrower widths already handled") {
+        uint32_t f = TempGraphWidget::features_for_size(107, 141);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_LEGEND) != 0);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_Y_AXIS) != 0);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_X_AXIS) != 0);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_READOUTS) == 0); // width < W_WIDE
+    }
+
+    SECTION("XLarge 1x1 (134x169): same story, taller and slightly wider still") {
+        uint32_t f = TempGraphWidget::features_for_size(134, 169);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_LEGEND) != 0);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_Y_AXIS) != 0);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_X_AXIS) != 0);
+    }
+
+    SECTION("Medium 1x1 (114x112): below both thresholds, no promotion") {
+        uint32_t f = TempGraphWidget::features_for_size(114, 112);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_LEGEND) == 0);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_Y_AXIS) == 0);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_X_AXIS) == 0);
+    }
+
+    SECTION("Micro 1x2 (70x131): the legitimate tall case, narrower than either false "
+            "positive above — proves Large/XLarge introduce nothing new") {
+        uint32_t f = TempGraphWidget::features_for_size(70, 131);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_LEGEND) != 0);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_Y_AXIS) != 0);
+        REQUIRE((f & TEMP_GRAPH_FEATURE_X_AXIS) != 0);
+    }
+}
+
 // ============================================================================
 // Config round-trip tests
 // ============================================================================

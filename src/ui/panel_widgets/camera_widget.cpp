@@ -256,7 +256,12 @@ void CameraWidget::on_deactivate() {
 
 void CameraWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_px, int height_px) {
     bool was_compact = compact_;
-    compact_ = (width_px < widget_size::W_NORMAL && height_px < widget_size::H_TALL);
+    // Streaming needs genuine room on both axes: Large/XLarge's single-row
+    // cell height alone clears H_TALL (141px, 169px), so a widget authored
+    // at plain 1x1 must not read as tall enough to start an MJPEG stream
+    // just because those two tiers are naturally taller per row.
+    compact_ =
+        !widget_size::fits_both(width_px, height_px, widget_size::W_NORMAL, widget_size::H_TALL);
 
     // Ensure scale-to-cover after any resize
     if (camera_image_) {

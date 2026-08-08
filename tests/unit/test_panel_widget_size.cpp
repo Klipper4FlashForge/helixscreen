@@ -114,3 +114,15 @@ TEST_CASE("H_TALLER already reflects truncation, not the raw float midpoint",
     CHECK(micro_row3_raw_truncated >= H_TALLER);
     CHECK(H_TALLER == 197);
 }
+
+TEST_CASE("fits_both requires both axes independently", "[widget_size][panel_widget_size]") {
+    // Large 1x1 (107x141): height alone clears H_TALL, width does not.
+    CHECK_FALSE(fits_both(107, 141, W_NORMAL, H_TALL));
+    // XLarge 1x1 (134x169): same shape, still fails on width alone.
+    CHECK_FALSE(fits_both(134, 169, W_NORMAL, H_TALL));
+    // Width alone, mirrored, must also fail.
+    CHECK_FALSE(fits_both(W_WIDE, 130, W_NORMAL, H_TALL));
+    // Both axes clearing their floor is the only passing case.
+    CHECK(fits_both(W_NORMAL, H_TALL, W_NORMAL, H_TALL));
+    CHECK(fits_both(W_WIDE, 200, W_NORMAL, H_TALL));
+}

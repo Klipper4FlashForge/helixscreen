@@ -23,11 +23,17 @@
  * icons scale with the widget, covered by the font assertions below (16px
  * xs / 24px sm, the same size tiers the text already used).
  *
- * `bigger = (width_px >= W_NORMAL || height_px >= H_TALL)`. Three cases
- * isolate the two independent terms of that OR: neither term true (large
- * span, sub-threshold pixels — proves pixels win over span), width alone,
- * and height alone. A predicate that dropped either term would still pass
- * the "neither" case but fail exactly one of the other two.
+ * `bigger = (width_px >= W_NORMAL)` — width only. Each row lays out icon +
+ * name + speed horizontally (panel_widget_fan_stack.xml), so a resolved name
+ * ("Hotend" instead of "H") only ever competes for room along the width
+ * axis; extra height just centers the same three rows, it never widens one.
+ * Height used to also drive "bigger" (an OR), but Large/XLarge's single-row
+ * cell height alone already clears H_TALL (141px, 169px) — wider than
+ * H_TALL's own calibration point (Micro's genuinely-2-row 131px) — so a
+ * plain 1x1 widget on those two tiers read as "bigger" and squeezed resolved
+ * names into a ~107-134px row. Three cases cover this: sub-threshold on both
+ * axes (compact), width alone (bigger), and height alone at a Large/XLarge-
+ * shaped extent, which must stay compact now that height no longer counts.
  *
  * Row geometry (`fan_stack_{part,hotend,aux}_row` width/flex alignment,
  * `fan_stack_widget.cpp` ~:294-331) is also driven by this predicate, but
@@ -40,9 +46,10 @@
  * at a realistic near-threshold compact grant (harness now applies
  * width_px/height_px to the widget's own `lv_obj_t`, matching
  * `PanelWidgetManager`'s real `grid_track_extent()` allocation —
- * `panel_widget_size_harness.h`'s `resize()`): compact width 123px
- * (`W_NORMAL - 1 = 133`, minus `#space_xs` padding both sides) versus
- * bigger width 111px — compact is *wider* here, the opposite of what an
+ * `panel_widget_size_harness.h`'s `resize()`): compact width ~123px
+ * (`W_NORMAL - 1`, minus `#space_xs` padding both sides — the exact figure
+ * shifts by a pixel with W_NORMAL's own calibration) versus bigger width
+ * 111px — compact is *wider* here, the opposite of what an
  * unconstrained harness object (which floors out at `style_min_width="80"`
  * with nothing to widen it) had shown before that fix. Neither direction
  * generalizes: a longer resolved fan name pushes the bigger row's fixed
@@ -162,28 +169,60 @@ TEST_CASE_METHOD(LVGLUITestFixture, "fan_stack labels/names follow pixels, not s
     // (see file header for why a width-based assertion was dropped).
     CHECK(lv_obj_get_style_flex_main_place(part_row, LV_PART_MAIN) == LV_FLEX_ALIGN_START);
 
-    // --- Height alone: at the height threshold, width still sub-threshold. ---
-    h.resize(1, 1, W_NORMAL - 1, H_TALL);
+    // --- Height alone, at a real Large-tier 1x1 extent (107x141, from the
+    // measured tier table): a plain 1x1 widget must stay compact here.
+    // Before this fix, height_px(141) >= H_TALL alone flipped this to
+    // "bigger" and squeezed "Hotend"/"Chamber" into a 107px-wide row.
+    // Contradicting span: 1x1 (old rowspan/colspan predicate -> compact, so
+    // this also proves pixels don't silently regress to spans).
+    h.resize(1, 1, 107, 141);
     process_lvgl(30);
 
     CHECK(lv_obj_get_style_text_font(part_speed, LV_PART_MAIN) ==
-          theme_manager_get_font("font_small"));
+          theme_manager_get_font("font_xs"));
     CHECK(lv_obj_get_style_text_font(hotend_speed, LV_PART_MAIN) ==
-          theme_manager_get_font("font_small"));
-    CHECK(lv_obj_get_style_text_font(aux_speed, LV_PART_MAIN) ==
-          theme_manager_get_font("font_small"));
+          theme_manager_get_font("font_xs"));
+    CHECK(lv_obj_get_style_text_font(aux_speed, LV_PART_MAIN) == theme_manager_get_font("font_xs"));
 
-    CHECK(lv_obj_get_style_text_font(part_name, LV_PART_MAIN) ==
-          theme_manager_get_font("font_small"));
-    CHECK(std::string(lv_label_get_text(part_name)) == part_bigger_text);
-    CHECK(std::string(lv_label_get_text(hotend_name)) == hotend_bigger_text);
-    CHECK(std::string(lv_label_get_text(aux_name)) == aux_bigger_text);
+    CHECK(lv_obj_get_style_text_font(part_name, LV_PART_MAIN) == theme_manager_get_font("font_xs"));
+    CHECK(std::string(lv_label_get_text(part_name)) == lv_tr("P"));
+    CHECK(std::string(lv_label_get_text(hotend_name)) == lv_tr("H"));
+    CHECK(std::string(lv_label_get_text(aux_name)) == lv_tr("C"));
 
-    CHECK(lv_obj_get_style_text_font(part_icon, LV_PART_MAIN) == &mdi_icons_24);
-    CHECK(lv_obj_get_style_text_font(hotend_icon, LV_PART_MAIN) == &mdi_icons_24);
-    CHECK(lv_obj_get_style_text_font(aux_icon, LV_PART_MAIN) == &mdi_icons_24);
+    CHECK(lv_obj_get_style_text_font(part_icon, LV_PART_MAIN) == &mdi_icons_16);
+    CHECK(lv_obj_get_style_text_font(hotend_icon, LV_PART_MAIN) == &mdi_icons_16);
+    CHECK(lv_obj_get_style_text_font(aux_icon, LV_PART_MAIN) == &mdi_icons_16);
 
-    CHECK(lv_obj_get_style_flex_main_place(part_row, LV_PART_MAIN) == LV_FLEX_ALIGN_START);
+    CHECK(lv_obj_get_style_flex_main_place(part_row, LV_PART_MAIN) == LV_FLEX_ALIGN_CENTER);
+
+    // --- XLarge-tier 1x1 (134x169): same story, taller still.
+    h.resize(1, 1, 134, 169);
+    process_lvgl(30);
+
+    CHECK(lv_obj_get_style_text_font(part_name, LV_PART_MAIN) == theme_manager_get_font("font_xs"));
+    CHECK(std::string(lv_label_get_text(part_name)) == lv_tr("P"));
+    CHECK(lv_obj_get_style_flex_main_place(part_row, LV_PART_MAIN) == LV_FLEX_ALIGN_CENTER);
+
+    // --- Medium-tier 1x1 (114x112): both axes below their floor anyway —
+    // never promoted the old way either, kept here as a same-shape baseline.
+    h.resize(1, 1, 114, 112);
+    process_lvgl(30);
+
+    CHECK(lv_obj_get_style_text_font(part_name, LV_PART_MAIN) == theme_manager_get_font("font_xs"));
+    CHECK(std::string(lv_label_get_text(part_name)) == lv_tr("P"));
+
+    // --- Micro-tier 1x2 (70x131): the legitimate tall case. Narrower than
+    // any of the Large/XLarge false positives above, and genuinely
+    // rowspan==2 — but this widget's "bigger" is width-only now, so a
+    // colspan==1 widget stays compact here regardless of row count. That is
+    // a real behavior change from the pre-fix OR (which showed resolved
+    // names in this same 70px row), traded deliberately: full names never
+    // fit a 70px row named/iconed/valued in three parts, tall or not.
+    h.resize(1, 2, 70, 131);
+    process_lvgl(30);
+
+    CHECK(lv_obj_get_style_text_font(part_name, LV_PART_MAIN) == theme_manager_get_font("font_xs"));
+    CHECK(std::string(lv_label_get_text(part_name)) == lv_tr("P"));
 }
 
 /**

@@ -235,7 +235,14 @@ void FanStackWidget::on_size_changed(int colspan, int rowspan, int width_px, int
     // same authored layout reads correctly on every panel:
     //   compact: xs fonts, single-letter labels (P, H, C)
     //   bigger:  sm fonts, resolved display names from PrinterFanState
-    bool bigger = (width_px >= widget_size::W_NORMAL || height_px >= widget_size::H_TALL);
+    //
+    // Width-only: each row is icon + name + speed laid out horizontally
+    // (panel_widget_fan_stack.xml), so a resolved name ("Hotend") only ever
+    // competes for room along the width axis. Extra height centers the same
+    // three rows with more breathing space but never widens one — gating on
+    // height too would read a plain 1x1 as "bigger" on Large/XLarge, where a
+    // single grid row (141px, 169px) already clears H_TALL on its own.
+    bool bigger = (width_px >= widget_size::W_NORMAL);
 
     const char* font_token = bigger ? "font_small" : "font_xs";
     const lv_font_t* text_font = theme_manager_get_font(font_token);

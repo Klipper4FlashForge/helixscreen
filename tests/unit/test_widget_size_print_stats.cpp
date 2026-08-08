@@ -65,3 +65,33 @@ TEST_CASE_METHOD(HelixTestFixture, "print_stats mode follows pixels on both axes
     w.on_size_changed(1, 1, W_WIDE, H_TALL);
     CHECK(print_stats_size_mode() == 2);
 }
+
+TEST_CASE_METHOD(HelixTestFixture,
+                 "print_stats mode1 (2x2 grid) never fires at print_stats' own minimum "
+                 "reachable width on Large/XLarge",
+                 "[widget_size][print_stats]") {
+    // print_stats' registry entry (panel_widget_registry.cpp) sets
+    // min_colspan=2 — grid_edit_mode.cpp enforces that as a hard floor on
+    // resize, so unlike clock/camera/fan_stack/favorite_macro this widget
+    // can never actually reach a 1-column width. Its true minimum reachable
+    // size is colspan=2, rowspan=1 (min_rowspan=1). On Large/XLarge a
+    // 2-column width alone already clears W_WIDE (span2 = 221px/276px, vs.
+    // W_WIDE = 205), so mode1 ("2x2 grid", which needs width < W_WIDE) is
+    // structurally unreachable there — the Large/XLarge single-row height
+    // inflation that breaks other widgets' H_TALL check cannot manifest as
+    // print_stats' suspected "2x2 grid crammed into a narrow cell" defect,
+    // because print_stats is never narrow enough on those two tiers to
+    // reach mode1 in the first place.
+    PanelWidgetManager::instance().init_widget_subjects();
+    PrintStatsWidget w;
+
+    // Large tier, min reachable size (colspan=2, rowspan=1): width=221
+    // (>= W_WIDE), height=141 (>= H_TALL) -> falls straight to mode 2 (full),
+    // never mode 1.
+    w.on_size_changed(2, 1, 221, 141);
+    CHECK(print_stats_size_mode() == 2);
+
+    // XLarge tier, same story: width=276, height=169.
+    w.on_size_changed(2, 1, 276, 169);
+    CHECK(print_stats_size_mode() == 2);
+}

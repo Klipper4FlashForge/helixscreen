@@ -26,4 +26,20 @@ inline constexpr int H_TALL = 131;   ///< was rowspan >= 2 (smallest measured: 1
 inline constexpr int H_TALLER = 197; ///< was rowspan >= 3 (smallest measured: 197.5, truncates to
                                      ///< 197 at runtime, Micro row3 — already the `>=` value)
 
+/// True when the cell clears both thresholds at once, not just one.
+///
+/// A single-row cell's height alone already exceeds H_TALL on Large and
+/// XLarge (their one-row extent is 141px and 169px — taller than Micro's
+/// genuinely-2-row 131px), so any predicate that reads "tall" from height_px
+/// alone treats a plain 1x1 widget on those two tiers as if it had gained a
+/// second row it never has. That is harmless for a layout that only scales
+/// type or icon size in place, but wrong for a layout that also lays out new
+/// content across the width — a legend beside a chart, a second column, a
+/// longer resolved label next to an icon. Those need genuine room on both
+/// axes, not just the one that happened to cross a bar.
+inline constexpr bool fits_both(int width_px, int height_px, int width_threshold,
+                                int height_threshold) {
+    return width_px >= width_threshold && height_px >= height_threshold;
+}
+
 } // namespace helix::widget_size
