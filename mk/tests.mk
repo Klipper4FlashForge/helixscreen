@@ -417,6 +417,47 @@ test-all: test-build
 	$(TEST_BIN) "[slow]" --durations yes; \
 	$(call report_test_result,All tests)
 
+# Run the HIDDEN test set — every test whose first tag character is '.'.
+#
+# FILTER: "[.]" selects ALL of them, not just the ones literally tagged [.].
+# Catch2 appends a bare "." tag to every hidden test when it registers it
+# (TestCaseInfo ctor, tests/catch_amalgamated.cpp: `if (isHidden())
+# internalAppendTag("."_sr)`), and the spec parser splits a `[.foo]` pattern
+# into a required "." plus a required "foo". So one `[.]` covers
+# [.ui_integration], [.xml_required], [.disabled], [.skip], [.slow],
+# [.benchmark], [.memprobe] and [.integration] alike. Enumerating the sub-tags
+# would only rot the moment someone invents a new one.
+#
+# `cd $(CURDIR)` is load-bearing, not decoration. The [.ui_integration] and
+# [.xml_required] tests read ui_xml/ on a RELATIVE path; from any other working
+# directory they fail by the hundred and it reads as a regression. That cwd
+# coupling is the main reason this set was hidden in the first place. $(CURDIR)
+# is the directory make was started in, which for this tree is the repo root
+# (and stays correct under `make -C`).
+#
+# SEQUENTIAL on purpose. Several of these own destructive global state
+# (StaticSubjectRegistry deinit/re-init cycles in test_config.cpp) and several
+# are timing-sensitive stress harnesses; sharding buys little here and muddies
+# attribution when something goes red.
+#
+# Deliberately NOT wired into test-run or scripts/quality-checks.sh. Making the
+# hidden set *runnable* is a separate decision from making it *mandatory* — see
+# docs/devel/HIDDEN_TESTS_TRACKER.md for the current pass/fail inventory.
+#
+# Override the filter to run one slice: make test-hidden HIDDEN_FILTER='[.ui_integration]'
+HIDDEN_FILTER ?= [.]
+
+test-hidden: test-build
+	$(ECHO) "$(CYAN)$(BOLD)Running HIDDEN tests ($(HIDDEN_FILTER)) sequentially from $(CURDIR)...$(RESET)"
+	@START_TIME=$$(date +%s); \
+	cd $(CURDIR) && $(TEST_BIN) "$(HIDDEN_FILTER)"; \
+	$(call report_test_result,Hidden tests)
+
+# List the hidden set without running it — the inventory behind the tracker doc.
+test-hidden-list: test-build
+	$(ECHO) "$(CYAN)$(BOLD)Hidden test cases ($(HIDDEN_FILTER)):$(RESET)"
+	$(Q)cd $(CURDIR) && $(TEST_BIN) "$(HIDDEN_FILTER)" --list-tests
+
 # Alias that rebuilds and runs tests (useful for development)
 tests: test-run
 
@@ -1172,7 +1213,7 @@ clean-sanitizers:
 # Test Help
 # ============================================================================
 
-.PHONY: help-test test-kiauh test-shell test-xml test-ui-pytest test-serial test-asan test-tsan test-asan-one test-tsan-one clean-sanitizers
+.PHONY: help-test test-kiauh test-shell test-xml test-ui-pytest test-serial test-hidden test-hidden-list test-asan test-tsan test-asan-one test-tsan-one clean-sanitizers
 help-test:
 	@if [ -t 1 ] && [ -n "$(TERM)" ] && [ "$(TERM)" != "dumb" ]; then \
 		B='$(BOLD)'; G='$(GREEN)'; Y='$(YELLOW)'; C='$(CYAN)'; X='$(RESET)'; \
@@ -1188,6 +1229,8 @@ help-test:
 	echo "  $${G}test-smoke$${X}           - Quick smoke test (~30s) for rapid iteration"; \
 	echo "  $${G}test-all$${X}             - Run ALL tests in parallel (including slow)"; \
 	echo "  $${G}test-slow$${X}            - Run only [slow] tagged tests"; \
+	echo "  $${G}test-hidden$${X}          - Run the hidden set ([.]) serially from the repo root"; \
+	echo "  $${G}test-hidden-list$${X}     - List the hidden set without running it"; \
 	echo "  $${G}test-eventloop$${X}       - Run only [eventloop] tests (5-10 min)"; \
 	echo "  $${G}test-verbose$${X}         - Run with per-test timing (sequential)"; \
 	echo ""; \
