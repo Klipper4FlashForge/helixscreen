@@ -17,6 +17,7 @@
 #include "helix-xml/src/xml/lv_xml_parser.h"
 #include "helix-xml/src/xml/parsers/lv_xml_obj_parser.h"
 #include "observer_factory.h"
+#include "panel_widget_size.h"
 #include "theme_manager.h"
 #include "ui/ams_drawing_utils.h"
 
@@ -42,8 +43,25 @@ static constexpr int32_t MAX_BAR_WIDTH_PX = 16;
 /** Border radius for bar corners in pixels (very rounded appearance) */
 static constexpr int32_t BAR_BORDER_RADIUS_PX = 8;
 
-/** Minimum width of a spool cell in the wide spool view (px) */
-static constexpr int SPOOL_CELL_MIN_PX = 80;
+/**
+ * Minimum width of one spool cell in the wide spool view (px), and the divisor
+ * used to derive how many spool cells fit across a row:
+ * visible = (avail_w + gap) / (MIN_SPOOL_W + gap).
+ *
+ * Replaces the old "one spool cell per grid column" rule (visible = colspan:
+ * 2 across at 2x, 4 at 4x), which cannot survive Plan 2's square-cell grid
+ * halving today's cell width. Chosen empirically against the span2/span4
+ * pixel table measured across all eight home-grid tiers
+ * (.superpowers/sdd/2026-08-05-grid-metrics-followups/span-pixel-table.md):
+ * no single constant reproduces every tier's count exactly, since narrow
+ * low-density tiers (Micro/Tiny/Small, ~65-70px column cells) and wide
+ * high-density tiers (Medium/Large/XLarge, ~107-134px column cells) pull in
+ * opposite directions. 60 reproduces today's count exactly on Micro, Tiny,
+ * and Small (the tightest, most common tiers) and on the roomier tiers shows
+ * MORE, smaller spools than before -- never fewer -- consistent with this
+ * migration's low-side bias elsewhere.
+ */
+static constexpr int MIN_SPOOL_W = 60;
 
 // ============================================================================
 // Per-widget user data
@@ -52,7 +70,7 @@ static constexpr int SPOOL_CELL_MIN_PX = 80;
 /** Magic number to identify ams_mini_status widgets ("AMS1" as ASCII) */
 static constexpr uint32_t AMS_MINI_STATUS_MAGIC = 0x414D5331;
 
-/** Render mode: narrow bars vs. wide spool cells (selected by colspan) */
+/** Render mode: narrow bars vs. wide spool cells (selected by width_px) */
 enum class AmsMiniMode { BAR, SPOOL };
 
 /**
@@ -116,13 +134,12 @@ struct AmsMiniStatusData {
 
     // Available pixel width for responsive sizing
     int width_px = 0; // 0 = unknown/default, set by set_width()
-    int colspan = 1;  // Grid columns spanned (>=2 = wide spool view), set by set_width()
 
     // Multi-unit support
     int unit_count = 0;       // Number of AMS units (0 or 1 = single row, 2+ = stacked rows)
     UnitRowInfo unit_rows[8]; // Max 8 units
 
-    // Render mode selection (BAR for narrow, SPOOL for colspan >= 2)
+    // Render mode selection (BAR for narrow, SPOOL for width_px >= W_NORMAL)
     AmsMiniMode mode = AmsMiniMode::BAR;
 
     // Child objects
@@ -142,7 +159,6 @@ struct AmsMiniStatusData {
     // avoiding constant canvas alloc/free churn on every AmsState sync.
     std::vector<SpoolCellData> rendered_cells;
     int rendered_width_px = -1;
-    int rendered_colspan = -1;
     bool rendered_3d = true;
     int rendered_height = -1;
 
@@ -227,8 +243,9 @@ static int32_t effective_max_bar_width(const AmsMiniStatusData* data) {
 static int effective_max_visible(const AmsMiniStatusData* data) {
     if (data->width_px > 0 && data->width_px < 100)
         return std::min(data->max_visible, 6); // Tight: show max 6 bars
-    if (data->width_px > 0 && data->width_px < 150)
-        return std::min(data->max_visible, 8); // Medium: show all
+    // width_px >= 100 shows every configured slot: max_visible is already
+    // clamped to <= AMS_MINI_STATUS_MAX_VISIBLE (8) by the setter, so a
+    // second min(max_visible, 8) here was always a no-op.
     return data->max_visible;
 }
 
@@ -515,7 +532,7 @@ static void rebuild_bars(AmsMiniStatusData* data) {
 }
 
 /**
- * @brief Render the wide spool view (colspan >= 2).
+ * @brief Render the wide spool view (width_px >= W_NORMAL).
  *
  * Lazily creates the horizontally-scrollable spool container, then renders one
  * cell per entry in data->spool_cells (spool graphic with lane badge, material
@@ -562,10 +579,10 @@ static void rebuild_spools(AmsMiniStatusData* data) {
     lv_obj_t* sc = data->spools_container;
     lv_obj_remove_flag(sc, LV_OBJ_FLAG_HIDDEN);
 
-    // Give each visible spool an equal share of the width: colspan spools across
-    // (2 at 2x, 4 at 4x). Subtract the (visible-1) inter-cell gaps so they fit
-    // exactly — no sliver of the next spool, and no scrollbar until there are more
-    // than colspan spools. The spool+label group is centered within each share.
+    // Give each visible spool an equal share of the width. Subtract the
+    // (visible-1) inter-cell gaps so they fit exactly — no sliver of the next
+    // spool, and no scrollbar until there are more than `visible` spools. The
+    // spool+label group is centered within each share.
     lv_obj_update_layout(sc);
     int avail_h = lv_obj_get_content_height(sc);
     if (avail_h <= 0)
@@ -576,12 +593,16 @@ static void rebuild_spools(AmsMiniStatusData* data) {
     if (avail_w <= 0)
         avail_w = data->width_px; // before layout resolves
     int gap = theme_manager_get_spacing("space_xxs");
-    int visible = (data->colspan >= 1) ? data->colspan : 1;
+    // How many spool cells fit across the row at MIN_SPOOL_W each, capped to
+    // the actual number of slots so a wide, sparsely-filled widget doesn't
+    // reserve blank trailing columns for spools that don't exist.
+    int visible = (avail_w + gap) / (MIN_SPOOL_W + gap);
+    visible = std::clamp(visible, 1, std::max(1, data->slot_count));
     // -2px safety so sub-pixel rounding can't tip the row into a spurious scrollbar
     // (a real scrollbar still appears when there are MORE than `visible` spools).
     int cell_px = (avail_w - (visible - 1) * gap - 2) / visible;
-    if (cell_px < 48)
-        cell_px = 48;
+    if (cell_px < MIN_SPOOL_W)
+        cell_px = MIN_SPOOL_W;
     int spool_size = avail_h - 4; // square spool fits the row height
     if (spool_size > 56)
         spool_size = 56;
@@ -599,14 +620,14 @@ static void rebuild_spools(AmsMiniStatusData* data) {
         text_w = 20;
 
     // Dirty-check: the render is fully determined by the cell data, available
-    // width, colspan, and spool style. If none changed since the last real render
-    // and the cells already exist on screen, skip the costly clean+recreate (and
+    // width, and spool style. If none changed since the last real render and
+    // the cells already exist on screen, skip the costly clean+recreate (and
     // its transient 2x canvas-memory peak). The container was un-hidden above, so
     // a bar->spool switch with identical data still shows the existing cells.
-    bool unchanged =
-        (data->rendered_width_px == data->width_px) && (data->rendered_colspan == data->colspan) &&
-        (data->rendered_3d == cur_3d) && (data->rendered_height == avail_h) &&
-        (data->rendered_cells == data->spool_cells) && (lv_obj_get_child_count(sc) > 0);
+    bool unchanged = (data->rendered_width_px == data->width_px) && (data->rendered_3d == cur_3d) &&
+                     (data->rendered_height == avail_h) &&
+                     (data->rendered_cells == data->spool_cells) &&
+                     (lv_obj_get_child_count(sc) > 0);
     if (unchanged)
         return; // identical render already on screen — skip churn
 
@@ -711,21 +732,23 @@ static void rebuild_spools(AmsMiniStatusData* data) {
     // Record the rendered signature so an identical subsequent sync can be skipped.
     data->rendered_cells = data->spool_cells;
     data->rendered_width_px = data->width_px;
-    data->rendered_colspan = data->colspan;
     data->rendered_3d = cur_3d;
     data->rendered_height = avail_h;
 }
 
 /**
- * @brief Render dispatcher: select bar vs. spool mode by colspan.
+ * @brief Render dispatcher: select bar vs. spool mode by physical width.
  *
- * colspan >= 2 selects the wide spool view; otherwise the narrow bar view.
- * The inactive mode's container is hidden so only one is visible at a time.
+ * width_px >= W_NORMAL (the same "has room for two columns" threshold every
+ * other home widget migrated to) selects the wide spool view; otherwise the
+ * narrow bar view. The inactive mode's container is hidden so only one is
+ * visible at a time.
  */
 static void rebuild(AmsMiniStatusData* data) {
     if (!data)
         return;
-    data->mode = (data->colspan >= 2) ? AmsMiniMode::SPOOL : AmsMiniMode::BAR;
+    data->mode =
+        (data->width_px >= helix::widget_size::W_NORMAL) ? AmsMiniMode::SPOOL : AmsMiniMode::BAR;
     if (data->mode == AmsMiniMode::SPOOL) {
         if (data->bars_container)
             lv_obj_add_flag(data->bars_container, LV_OBJ_FLAG_HIDDEN);
@@ -988,19 +1011,18 @@ void ui_ams_mini_status_refresh(lv_obj_t* obj) {
     }
 }
 
-void ui_ams_mini_status_set_width(lv_obj_t* obj, int width_px, int colspan) {
+void ui_ams_mini_status_set_width(lv_obj_t* obj, int width_px) {
     auto* data = get_data(obj);
     if (!data)
         return;
 
-    if (data->width_px == width_px && data->colspan == colspan)
+    if (data->width_px == width_px)
         return;
 
     data->width_px = width_px;
-    data->colspan = colspan;
-    spdlog::debug("[AmsMiniStatus] Width set to {}px, colspan {}", width_px, colspan);
+    spdlog::debug("[AmsMiniStatus] Width set to {}px", width_px);
 
-    // Rebuild if we already have slots (width + colspan affect mode and bar width)
+    // Rebuild if we already have slots (width affects mode, bar width, and spool count)
     if (data->slot_count > 0)
         rebuild(data);
 }
