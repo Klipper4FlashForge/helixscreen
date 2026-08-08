@@ -767,6 +767,10 @@ class StubTransferAPI : public MoonrakerFileTransferAPI {
                             StringCallback on_success, ErrorCallback on_error) override {
         (void)thumbnail_path;
         download_count_++;
+        if (capture_downloads_) {
+            captured_.push_back(Captured{cache_path, std::move(on_success)});
+            return;
+        }
         if (fail_downloads_) {
             MoonrakerError err;
             err.message = "stub download failure";
@@ -787,7 +791,28 @@ class StubTransferAPI : public MoonrakerFileTransferAPI {
         return download_count_;
     }
 
+    /// Hold subsequent downloads open instead of completing them inline, so a
+    /// test can let a newer print supersede the load that started them.
+    void set_capture_downloads(bool capture) {
+        capture_downloads_ = capture;
+    }
+    [[nodiscard]] size_t captured_downloads() const {
+        return captured_.size();
+    }
+    /// Complete a held download as if its PNG had just finished transferring.
+    void fire_captured_download(size_t index) {
+        REQUIRE(index < captured_.size());
+        auto cb = captured_[index].on_success;
+        REQUIRE(cb);
+        cb(captured_[index].cache_path);
+    }
+
   private:
+    struct Captured {
+        std::string cache_path;
+        StringCallback on_success;
+    };
+
     // Ctor stores a reference to the URL string; keep storage with static duration.
     static const std::string& base_url_storage() {
         static const std::string url = "http://stub.invalid";
@@ -795,7 +820,9 @@ class StubTransferAPI : public MoonrakerFileTransferAPI {
     }
 
     bool fail_downloads_ = false;
+    bool capture_downloads_ = false;
     int download_count_ = 0;
+    std::vector<Captured> captured_;
 };
 
 /// MoonrakerAPI that installs the CapturingFileAPI in place of the real file API
@@ -1047,6 +1074,46 @@ TEST_CASE_METHOD(ActivePrintMediaAsyncFixture,
     drain();
 
     REQUIRE(get_layer_total() == 99);
+}
+
+TEST_CASE_METHOD(ActivePrintMediaAsyncFixture,
+                 "ActivePrintMediaManager: a superseded load cannot publish its thumbnail",
+                 "[ActivePrintMediaManager][async][thumbnail]") {
+    // The metadata callback's generation check is not enough on its own: a load
+    // can clear metadata while it is still current and only lose the race later,
+    // during the thumbnail download. Hold the download open so print B starts in
+    // that window, then let A's image arrive.
+    transfers_stub().set_capture_downloads(true);
+
+    set_print_filename_no_drain("print_a.gcode");
+    drain();
+    REQUIRE(files().pending_count() == 1);
+
+    // A's metadata resolves while A is still the current print, so the fetch
+    // starts. The download is held, so nothing is published yet.
+    files().fire_last(make_metadata_with_thumb(10, unique_thumb_path("superseded_publish")));
+    drain();
+    REQUIRE(transfers_stub().captured_downloads() == 1);
+    REQUIRE(get_thumbnail_path().empty());
+
+    // Print B starts. process_filename() runs synchronously off the filename
+    // subject write, so the load generation is bumped here — before A's
+    // in-flight download completes. B's own metadata stays pending.
+    transfers_stub().set_capture_downloads(false);
+    set_print_filename_no_drain("print_b.gcode");
+    drain();
+    REQUIRE(files().pending_count() == 2);
+    REQUIRE(get_thumbnail_path().empty());
+
+    // A's download finally lands and its PNG is pre-scaled. The result belongs
+    // to a superseded load: publishing it would put print A's image on print B.
+    transfers_stub().fire_captured_download(0);
+    drain();
+
+    CHECK(get_thumbnail_path().empty());
+    // Publishing also disarms recovery, so a leaked publish would additionally
+    // stop B's own thumbnail from ever being retried.
+    CHECK_FALSE(helix::ActivePrintMediaManagerTestAccess::thumbnail_loaded(manager()));
 }
 
 // ============================================================================

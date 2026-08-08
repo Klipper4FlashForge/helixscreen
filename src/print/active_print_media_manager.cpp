@@ -12,6 +12,7 @@
 #include "memory_monitor.h"
 #include "observer_factory.h"
 #include "thumbnail_cache.h"
+#include "thumbnail_load_context.h"
 #include "thumbnail_processor.h"
 
 #include <spdlog/spdlog.h>
@@ -207,11 +208,15 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
         return;
     }
 
-    // Increment generation to invalidate any in-flight async operations
-    // (only after early-return checks to avoid incrementing when no async op starts).
-    // Relaxed: the value is only compared for equality across loads; the actual
-    // happens-before ordering of the apply is provided by the UpdateQueue.
-    uint32_t current_gen = thumbnail_load_generation_.fetch_add(1, std::memory_order_relaxed) + 1;
+    // One staleness context per load. Creating it bumps thumbnail_load_generation_,
+    // so every callback still in flight from an earlier load now reports stale.
+    // Created only after the early-return checks, so no generation is burned when
+    // no async op starts. The context also carries our lifetime token, which is
+    // what lets it be handed straight to the thumbnail cache below.
+    //
+    // NOTE: is_valid() consults that token, so it is NOT a thread guard — every
+    // check below sits inside an already-marshalled tok.defer() body (L081 Mech C).
+    ThumbnailLoadContext ctx = ThumbnailLoadContext::create(lifetime_, &thumbnail_load_generation_);
 
     // Resolve to original filename if this is a modified temp file
     // (Moonraker only has metadata for original files, not modified copies)
@@ -224,24 +229,20 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
     // THREADING: get_file_metadata invokes its success callback on the Moonraker
     // WebSocket background thread. The ONLY work allowed on that thread is
     // this-free local parsing — everything that touches `this`, `printer_state_`,
-    // `api_`, the generation counter, or any subject is marshalled to the main
-    // thread via tok.defer(). The metadata struct is copied by value into the
-    // deferred body so the bg-thread reference can't dangle.
+    // `api_`, the load context, or any subject is marshalled to the main thread
+    // via tok.defer(). The metadata struct is copied by value into the deferred
+    // body so the bg-thread reference can't dangle.
     api_->files().get_file_metadata(
         metadata_filename,
-        [this, tok = lifetime_.token(), current_gen, skip_thumbnail, filename,
+        [this, tok = lifetime_.token(), ctx, skip_thumbnail, filename,
          metadata_filename](const FileMetadata& metadata) {
             // bg thread: copy the metadata, then marshal ALL member access to main.
-            tok.defer("ActivePrintMediaManager::on_metadata", [this, current_gen, skip_thumbnail,
-                                                               filename, metadata_filename,
-                                                               metadata]() {
+            tok.defer("ActivePrintMediaManager::on_metadata", [this, ctx, skip_thumbnail, filename,
+                                                               metadata_filename, metadata]() {
                 // main thread, `this` valid + lifetime-checked.
                 // Drop stale callbacks superseded by a newer load.
-                if (current_gen != thumbnail_load_generation_.load(std::memory_order_relaxed)) {
-                    spdlog::trace("[ActivePrintMediaManager] Stale metadata callback (gen {} != "
-                                  "{}), ignoring",
-                                  current_gen,
-                                  thumbnail_load_generation_.load(std::memory_order_relaxed));
+                if (!ctx.is_valid()) {
+                    spdlog::trace("[ActivePrintMediaManager] Stale metadata callback, ignoring");
                     return;
                 }
 
@@ -276,16 +277,15 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
                     bool need_est_time = (metadata.estimated_time <= 0);
                     api_->transfers().download_file_partial(
                         "gcodes", metadata_filename, 16 * 1024,
-                        [this, tok = lifetime_.token(), current_gen,
+                        [this, tok = lifetime_.token(), ctx,
                          need_est_time](const std::string& content) {
                             // bg thread (HttpExecutor::slow worker): parse locally only.
                             auto header =
                                 helix::gcode::extract_header_metadata_from_content(content);
-                            // main thread: re-check generation + apply.
+                            // main thread: re-check staleness + apply.
                             tok.defer("ActivePrintMediaManager::on_gcode_header",
-                                      [this, current_gen, need_est_time, header]() {
-                                          if (current_gen != thumbnail_load_generation_.load(
-                                                                 std::memory_order_relaxed)) {
+                                      [this, ctx, need_est_time, header]() {
+                                          if (!ctx.is_valid()) {
                                               return;
                                           }
                                           if (header.layer_count > 0) {
@@ -350,25 +350,18 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
                 spdlog::debug("[ActivePrintMediaManager] Found thumbnail: {}", thumbnail_rel_path);
 
                 // Use detail-sized thumbnails (200-400px) — works for both card and detail
-                // views since LVGL scales down efficiently. We do NOT hand the thumbnail
-                // cache a lifetime/alive guard: its on_success fires on a bg thread, so we
-                // marshal back ourselves via tok.defer() and do the generation + lifetime
-                // re-check there. An empty ctx would make fetch_for_detail_view's internal
-                // ctx.is_valid() guard reject every result, so capture our lifetime token
-                // (its expired() check is benign — it only short-circuits the cache's call
-                // into our already-self-guarding success callback).
-                ThumbnailLoadContext ctx = ThumbnailLoadContext::capture(lifetime_);
-
+                // views since LVGL scales down efficiently. The load's own context goes
+                // to the cache, so a result superseded by a newer load is dropped at the
+                // cache boundary; our success callback re-checks it after marshalling
+                // because the cache's guard alone says nothing about `this`.
                 get_thumbnail_cache().fetch_for_detail_view(
                     api_, thumbnail_rel_path, ctx,
-                    [this, tok = lifetime_.token(), current_gen](const std::string& lvgl_path,
-                                                                 bool /*degraded*/) {
+                    [this, tok = lifetime_.token(), ctx](const std::string& lvgl_path,
+                                                         bool /*degraded*/) {
                         // bg thread (thumbnail prescale worker): no member access here.
                         std::string path = lvgl_path;
-                        tok.defer("ActivePrintMediaManager::on_thumbnail", [this, current_gen,
-                                                                            path]() {
-                            if (current_gen !=
-                                thumbnail_load_generation_.load(std::memory_order_relaxed)) {
+                        tok.defer("ActivePrintMediaManager::on_thumbnail", [this, ctx, path]() {
+                            if (!ctx.is_valid()) {
                                 spdlog::trace("[ActivePrintMediaManager] Stale thumbnail "
                                               "callback, ignoring");
                                 return;
@@ -388,15 +381,13 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
                             helix::MemoryMonitor::log_now("thumbnail_loaded", spdlog::level::debug);
                         });
                     },
-                    [this, tok = lifetime_.token(), current_gen,
-                     filename](const std::string& error) {
+                    [this, tok = lifetime_.token(), ctx, filename](const std::string& error) {
                         // bg thread (HTTP worker): copy the message, marshal
                         // ALL member access (retry bookkeeping) to main.
                         std::string message = error;
                         tok.defer("ActivePrintMediaManager::on_thumbnail_error",
-                                  [this, current_gen, filename, message = std::move(message)]() {
-                                      if (current_gen != thumbnail_load_generation_.load(
-                                                             std::memory_order_relaxed)) {
+                                  [this, ctx, filename, message = std::move(message)]() {
+                                      if (!ctx.is_valid()) {
                                           return; // superseded by a newer load
                                       }
                                       spdlog::warn("[ActivePrintMediaManager] Thumbnail download "
@@ -408,25 +399,24 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
                     });
             });
         },
-        [this, tok = lifetime_.token(), current_gen, filename,
+        [this, tok = lifetime_.token(), ctx, filename,
          metadata_filename](const MoonrakerError& err) {
             // bg thread (WebSocket response router): copy the message, marshal
             // ALL member access (retry bookkeeping) to main. Happens when
             // Moonraker hasn't finished scanning a just-uploaded file
             // (OrcaSlicer upload-and-print) or on transient RPC failures.
             std::string message = err.message;
-            tok.defer(
-                "ActivePrintMediaManager::on_metadata_error",
-                [this, current_gen, filename, metadata_filename, message = std::move(message)]() {
-                    if (current_gen != thumbnail_load_generation_.load(std::memory_order_relaxed)) {
-                        return; // superseded by a newer load
-                    }
-                    spdlog::warn("[ActivePrintMediaManager] Thumbnail metadata fetch failed "
-                                 "for '{}' (attempt {}/{}): {}",
-                                 metadata_filename, thumbnail_retry_count_ + 1,
-                                 kMaxThumbnailAttempts, message);
-                    schedule_thumbnail_retry(filename);
-                });
+            tok.defer("ActivePrintMediaManager::on_metadata_error",
+                      [this, ctx, filename, metadata_filename, message = std::move(message)]() {
+                          if (!ctx.is_valid()) {
+                              return; // superseded by a newer load
+                          }
+                          spdlog::warn("[ActivePrintMediaManager] Thumbnail metadata fetch failed "
+                                       "for '{}' (attempt {}/{}): {}",
+                                       metadata_filename, thumbnail_retry_count_ + 1,
+                                       kMaxThumbnailAttempts, message);
+                          schedule_thumbnail_retry(filename);
+                      });
         },
         true // silent - don't trigger RPC_ERROR event/toast
     );

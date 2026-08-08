@@ -150,10 +150,14 @@ class ActivePrintMediaManager {
     std::string filelist_handler_name_;
     std::string klippy_ready_handler_name_;
 
-    /// Generation counter for stale-callback detection. Bumped on the main thread
-    /// each time a new load starts; read on the main thread inside deferred applies.
-    /// Atomic because the value is captured by background-thread callbacks (even
-    /// though the re-check itself always runs on the main thread via tok.defer).
+    /// Generation counter for stale-callback detection. Owned by the
+    /// ThumbnailLoadContext that load_thumbnail_for_file() creates per load:
+    /// creating the context bumps this on the main thread, and every deferred
+    /// apply asks that context whether it is still current instead of comparing
+    /// by hand. Atomic because the context is captured by background-thread
+    /// callbacks (the check itself always runs on the main thread via tok.defer).
+    /// Distinct from retry_generation_, which pins a scheduled retry to the load
+    /// that asked for it rather than gating an in-flight callback.
     std::atomic<uint32_t> thumbnail_load_generation_{0};
 
     /// Async callback safety guard. Invalidated on destruction, so any in-flight
