@@ -7,6 +7,7 @@
 #include "printer_discovery.h"
 #include "printer_state.h"
 
+#include <optional>
 #include <thread>
 
 #include "../catch_amalgamated.hpp"
@@ -235,32 +236,51 @@ TEST_CASE("MacroManager - filename constant is valid", "[config][constants]") {
 // because the mock doesn't implement printer.restart. When HTTP file upload
 // is implemented, these tests should be updated to verify actual success.
 
-TEST_CASE_METHOD(MacroManagerTestFixture, "MacroManager - install initiates sequence",
+// Step 1 of both install() and update() is upload_macro_file(), which goes
+// through MoonrakerAPI::transfers() over HTTP - not over the websocket client -
+// so MoonrakerClientMock records nothing for these paths. What it does do is
+// fail SYNCHRONOUSLY on the calling thread, with err.method == "upload_file".
+// That error callback is the observable proof that install()/update() actually
+// reached the upload step: an implementation that returned early, or never
+// touched the API, leaves it unfired.
+//
+// Deliberately not asserting err.type. Today it is VALIDATION_ERROR, because
+// upload_macro_file() passes path="" (upload straight to the config root) and
+// MoonrakerFileTransferAPI::upload_file_with_name() runs reject_invalid_path()
+// first - and is_safe_path("") is false. So the upload is refused before the
+// "HTTP base URL not configured" check is even reached, and before any request
+// is built. That looks like a real bug in the production path rather than a
+// test artifact (see the report accompanying this change); pinning the type
+// here would freeze it in place. err.method is the stable part.
+
+TEST_CASE_METHOD(MacroManagerTestFixture, "MacroManager - install reaches the upload step",
                  "[config][install]") {
     set_no_helix_macros();
 
-    bool callback_received = false;
+    bool success_called = false;
+    std::optional<MoonrakerError> error;
 
-    // Install initiates the sequence but mock doesn't complete it
-    // (printer.restart not implemented in mock)
-    manager_.install([&callback_received]() { callback_received = true; },
-                     [&callback_received](const MoonrakerError&) { callback_received = true; });
+    manager_.install([&]() { success_called = true; },
+                     [&](const MoonrakerError& err) { error = err; });
 
-    // For now, just verify no crash occurs during the install sequence
-    // The callback won't fire because mock's printer.restart doesn't invoke callbacks
-    // This is expected behavior until HTTP file upload is fully implemented
-    SUCCEED("Install sequence initiated without crash");
+    REQUIRE_FALSE(success_called); // nothing can have succeeded without a server
+    REQUIRE(error.has_value());
+    CHECK(error->method == "upload_file"); // it got as far as the upload
+    CHECK_FALSE(error->message.empty());
 }
 
-TEST_CASE_METHOD(MacroManagerTestFixture, "MacroManager - update initiates sequence",
+TEST_CASE_METHOD(MacroManagerTestFixture, "MacroManager - update reaches the upload step",
                  "[config][install]") {
     set_helix_macros_installed();
 
-    bool callback_received = false;
+    bool success_called = false;
+    std::optional<MoonrakerError> error;
 
-    // Same as install - mock doesn't complete the sequence
-    manager_.update([&callback_received]() { callback_received = true; },
-                    [&callback_received](const MoonrakerError&) { callback_received = true; });
+    manager_.update([&]() { success_called = true; },
+                    [&](const MoonrakerError& err) { error = err; });
 
-    SUCCEED("Update sequence initiated without crash");
+    REQUIRE_FALSE(success_called);
+    REQUIRE(error.has_value());
+    CHECK(error->method == "upload_file");
+    CHECK_FALSE(error->message.empty());
 }

@@ -16,7 +16,9 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <unistd.h>
+#include <utility>
 
 #include "../catch_amalgamated.hpp"
 
@@ -1072,10 +1074,21 @@ TEST_CASE("Material comfort ranges", "[filament]") {
 }
 
 TEST_CASE("CFS backend has environment sensors", "[ams][cfs]") {
-    // CFS units have built-in temperature and humidity sensors
-    // Verify the capability is reported correctly at the type level
-    // (Cannot instantiate AmsBackendCfs without a real API, so test the header contract)
-    REQUIRE(true); // Compile-time check: has_environment_sensors() exists in header
+    // CFS units have built-in temperature and humidity sensors; every other
+    // backend inherits AmsBackend's default of false, and ui_ams_detail.cpp
+    // gates the whole environment card on this returning true.
+    //
+    // (The old body was REQUIRE(true) with a comment claiming a compile-time
+    // check. AmsBackendCfs is perfectly constructible with a null API - the
+    // rest of this file does it all over - so just ask the object.)
+    AmsBackendCfs backend(nullptr, nullptr);
+
+    static_assert(
+        std::is_same_v<decltype(std::declval<const AmsBackendCfs&>().has_environment_sensors()),
+                       bool>,
+        "ui_ams_detail.cpp branches on a bool from has_environment_sensors()");
+
+    REQUIRE(backend.has_environment_sensors());
 }
 
 // =============================================================================

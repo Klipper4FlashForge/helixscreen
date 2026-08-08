@@ -6204,11 +6204,39 @@ TEST_CASE("AD5X IFS clear_slot_override is safe when no override is present",
 TEST_CASE("AD5X IFS clear_slot_override rejects out-of-range indices",
           "[ams][ad5x_ifs][filament_slot_override]") {
     AmsBackendAd5xIfs backend(nullptr, nullptr);
-    // Should not crash or touch anything — validate_slot_index rejects.
+
+    // Give slot 0 a real firmware entry and a staged override, so "did the
+    // out-of-range call touch anything?" has something to be true of. Without
+    // this the test asserts nothing: an empty backend has no state to clobber.
+    // Seed BEFORE the parse - overrides are folded into the live SlotInfo by
+    // update_slot_from_state, so one staged afterwards never reaches
+    // get_slot_info().
+    helix::ams::FilamentSlotOverride ovr;
+    ovr.brand = "Polymaker";
+    ovr.spool_name = "PolyTerra Charcoal";
+    ovr.spoolman_id = 42;
+    Ad5xIfsTestAccess::seed_override(backend, 0, ovr);
+    Ad5xIfsTestAccess::parse_adventurer_json(backend, R"({
+        "FFMInfo": {"ffmColor1": "#00FF00", "ffmType1": "PETG"}
+    })");
+    REQUIRE(Ad5xIfsTestAccess::get_override(backend, 0).has_value());
+    REQUIRE(backend.get_slot_info(0).brand == "Polymaker");
+
     backend.clear_slot_override(-1);
     backend.clear_slot_override(AmsBackendAd5xIfs::NUM_PORTS);
     backend.clear_slot_override(999);
-    SUCCEED();
+
+    // The rejected indices must not have been folded/clamped onto a real slot.
+    REQUIRE(Ad5xIfsTestAccess::get_override(backend, 0).has_value());
+    CHECK(Ad5xIfsTestAccess::get_override(backend, 0)->spoolman_id == 42);
+    CHECK(backend.get_slot_info(0).brand == "Polymaker");
+
+    // Positive control: the same call with an in-range index DOES clear, so a
+    // clear_slot_override() that had simply stopped working could not pass the
+    // assertions above by accident.
+    backend.clear_slot_override(0);
+    CHECK_FALSE(Ad5xIfsTestAccess::get_override(backend, 0).has_value());
+    CHECK(backend.get_slot_info(0).brand.empty());
 }
 
 // ==========================================================================
