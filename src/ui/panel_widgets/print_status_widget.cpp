@@ -764,6 +764,22 @@ std::string PrintStatusWidget::get_last_print_thumbnail_path() const {
     return job.thumbnail_path;
 }
 
+time_t PrintStatusWidget::get_last_print_source_modified() const {
+    auto* history = get_print_history_manager();
+    if (!history || !history->is_loaded()) {
+        return 0;
+    }
+
+    const auto& jobs = history->get_jobs();
+    if (jobs.empty()) {
+        return 0;
+    }
+
+    // Same head entry get_last_print_thumbnail_path() picks its key from, so the
+    // freshness stamp always describes the key it is validating.
+    return static_cast<time_t>(jobs.front().modified);
+}
+
 void PrintStatusWidget::defer_reset_print_card_to_idle() {
     // Raw lv_async_call escapes the UpdateQueue::process_pending() batch (see
     // CLAUDE.md "Safe escape routes"). live_instances() + widget_obj_ guard UAF
@@ -819,8 +835,18 @@ void PrintStatusWidget::reset_print_card_to_idle() {
     auto target = helix::ThumbnailProcessor::get_target_for_resolution(
         widget_w, widget_h, helix::ThumbnailSize::Detail);
 
-    // Check if we already have a pre-scaled BIN version
-    auto cached = get_thumbnail_cache().get_if_optimized(thumb_rel_path, target);
+    // One request describes both the synchronous probe and the async fetch
+    // below, so the two cannot disagree about what they are looking for. In
+    // particular source_modified applies to BOTH: the probe answers first, and
+    // without it a render from a previous slice of the same filename is served
+    // indefinitely and the guarded fetch is never reached.
+    ThumbnailRequest req;
+    req.key = thumb_rel_path;
+    req.target = target;
+    req.source_modified = get_last_print_source_modified();
+
+    // Check if we already have a fresh pre-scaled BIN version
+    auto cached = get_thumbnail_cache().get_if_cached(req);
     if (!cached.empty()) {
         set_thumb_on_widgets(cached.c_str());
         spdlog::debug("[PrintStatusWidget] Idle thumbnail from cache: {}", cached);
@@ -839,9 +865,6 @@ void PrintStatusWidget::reset_print_card_to_idle() {
     // Fetch async from Moonraker. ctx carries both the lifetime token and the
     // generation, so ThumbnailCache drops a result a later reset has superseded
     // before it ever reaches this callback.
-    ThumbnailRequest req;
-    req.key = thumb_rel_path;
-    req.target = target;
     req.api = api;
 
     auto token = lifetime_.token();

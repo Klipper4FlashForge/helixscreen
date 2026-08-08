@@ -365,6 +365,11 @@ class PrintStatusWidget : public PanelWidget {
 
     // Print card update methods
     [[nodiscard]] std::string get_last_print_thumbnail_path() const;
+    /// Source gcode mtime for the history entry get_last_print_thumbnail_path()
+    /// resolved from, or 0 when history is unavailable or Moonraker omitted it.
+    /// Feeds ThumbnailRequest::source_modified so a re-slice under the same
+    /// filename invalidates the cached render instead of being served forever.
+    [[nodiscard]] time_t get_last_print_source_modified() const;
     void handle_print_card_clicked();
     void on_print_state_changed(PrintJobState state);
     void on_print_thumbnail_path_changed(const char* path);

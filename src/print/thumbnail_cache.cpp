@@ -1038,10 +1038,11 @@ void ThumbnailCache::process_and_callback(const std::string& png_lvgl_path,
 
 void ThumbnailCache::fetch(const ThumbnailRequest& req, ThumbnailLoadContext ctx,
                            SuccessCallback on_success, ErrorCallback on_error) {
-    // Same guard shape as fetch_for_detail_view/fetch_for_card_view: the caller's
-    // success callback runs only if no newer request superseded this one. The
-    // difference is that the target comes from the request rather than being
-    // chosen here, which is what lets one method serve every call site.
+    // The caller's success callback runs only if no newer request superseded
+    // this one. The target comes from the request rather than being chosen
+    // here, which is what lets one method serve every call site — the per-view
+    // wrappers this replaced each picked their own and could not be told
+    // otherwise.
     auto guarded_success = [ctx, on_success = std::move(on_success)](const std::string& path,
                                                                      bool degraded) {
         if (!ctx.is_valid()) {
@@ -1076,65 +1077,4 @@ std::string ThumbnailCache::get_if_cached(const ThumbnailRequest& req) const {
         return get_if_cached(req.key, req.source_modified);
     }
     return get_if_optimized(req.key, req.target, req.source_modified);
-}
-
-void ThumbnailCache::fetch_for_detail_view(MoonrakerAPI* api, const std::string& relative_path,
-                                           ThumbnailLoadContext ctx, SuccessCallback on_success,
-                                           ErrorCallback on_error, time_t source_modified) {
-    // Detail views use pre-scaled .bin at a larger size than card views.
-    // ThumbnailSize::Detail produces 200–400px targets depending on display,
-    // giving good quality while avoiding full-resolution PNG decode at render time.
-
-    // Wrap the success callback with validity check to reduce boilerplate
-    auto guarded_success = [ctx, on_success = std::move(on_success)](const std::string& path,
-                                                                     bool degraded) {
-        if (!ctx.is_valid()) {
-            spdlog::trace("[ThumbnailCache] Detail view callback skipped (context invalid)");
-            return;
-        }
-        if (on_success) {
-            on_success(path, degraded);
-        }
-    };
-
-    helix::ThumbnailTarget target =
-        helix::ThumbnailProcessor::get_target_for_display(helix::ThumbnailSize::Detail);
-
-    fetch_optimized(
-        api, relative_path, target, std::move(guarded_success),
-        on_error ? std::move(on_error)
-                 : [relative_path](const std::string& error) {
-                       spdlog::warn("[ThumbnailCache] Detail view fetch failed for {}: {}",
-                                    relative_path, error);
-                   },
-        source_modified);
-}
-
-void ThumbnailCache::fetch_for_card_view(MoonrakerAPI* api, const std::string& relative_path,
-                                         ThumbnailLoadContext ctx, SuccessCallback on_success,
-                                         ErrorCallback on_error, time_t source_modified) {
-    // Card views benefit from pre-scaled .bin files for faster rendering.
-    // The small display size (e.g., 120x120 or 160x160) means full PNG
-    // resolution is wasted - pre-scaling once and caching is more efficient.
-
-    // Wrap the success callback with validity check to reduce boilerplate
-    auto guarded_success = [ctx, on_success = std::move(on_success)](const std::string& path,
-                                                                     bool degraded) {
-        if (!ctx.is_valid()) {
-            spdlog::trace("[ThumbnailCache] Card view callback skipped (context invalid)");
-            return;
-        }
-        if (on_success) {
-            on_success(path, degraded);
-        }
-    };
-
-    helix::ThumbnailTarget target = helix::ThumbnailProcessor::get_target_for_display();
-
-    fetch_optimized(api, relative_path, target, std::move(guarded_success),
-                    on_error ? std::move(on_error) : [relative_path](const std::string& error) {
-                        spdlog::warn("[ThumbnailCache] Card view fetch failed for {}: {}",
-                                     relative_path, error);
-                    },
-                    source_modified);
 }

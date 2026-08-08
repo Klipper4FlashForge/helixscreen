@@ -1200,7 +1200,7 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
     // marshal back to main from the bg thread that used to run this function.
     // Post-L081 sweep that's redundant: just call the apply lambda directly.
     // The MetadataUpdate struct is preserved as a parameter bag so the
-    // ~260-line existing apply body (chains fetch_for_card_view +
+    // ~260-line existing apply body (chains the guarded thumbnail fetch +
     // download_file_partial) stays unchanged.
     {
         auto d_owned = std::make_unique<MetadataUpdate>(MetadataUpdate{this,

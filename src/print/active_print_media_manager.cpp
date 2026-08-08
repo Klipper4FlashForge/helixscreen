@@ -349,13 +349,19 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
 
                 spdlog::debug("[ActivePrintMediaManager] Found thumbnail: {}", thumbnail_rel_path);
 
-                // Use detail-sized thumbnails (200-400px) — works for both card and detail
+                // Detail-sized thumbnails (200-400px) — works for both card and detail
                 // views since LVGL scales down efficiently. The load's own context goes
                 // to the cache, so a result superseded by a newer load is dropped at the
                 // cache boundary; our success callback re-checks it after marshalling
                 // because the cache's guard alone says nothing about `this`.
-                get_thumbnail_cache().fetch_for_detail_view(
-                    api_, thumbnail_rel_path, ctx,
+                ThumbnailRequest req;
+                req.key = thumbnail_rel_path;
+                req.target =
+                    helix::ThumbnailProcessor::get_target_for_display(helix::ThumbnailSize::Detail);
+                req.api = api_;
+
+                get_thumbnail_cache().fetch(
+                    req, ctx,
                     [this, tok = lifetime_.token(), ctx](const std::string& lvgl_path,
                                                          bool /*degraded*/) {
                         // bg thread (thumbnail prescale worker): no member access here.

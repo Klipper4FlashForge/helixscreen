@@ -283,6 +283,30 @@ void plant_cached_png(const ThumbnailCache& cache, const std::string& key) {
     REQUIRE(std::filesystem::exists(path));
 }
 
+/// The pre-scaled lookup the widget performs, freshness-blind: source_modified
+/// stays 0, so this answers "is the .bin present at all" regardless of mtime.
+std::string cached_bin(const ThumbnailCache& cache, const std::string& key,
+                       const helix::ThumbnailTarget& target) {
+    ThumbnailRequest req;
+    req.key = key;
+    req.target = target;
+    return cache.get_if_cached(req);
+}
+
+/// Push a cached artifact's mtime far into the past, so any positive
+/// source_modified is newer than it. Takes the LVGL path the cache and the
+/// processor hand back ("A:/abs/path") and strips the prefix, the same way
+/// ThumbnailCache does before stat'ing.
+void backdate(const std::string& lvgl_path) {
+    REQUIRE(ThumbnailCache::is_lvgl_path(lvgl_path));
+    const std::string fs_path = lvgl_path.substr(2);
+    REQUIRE(std::filesystem::exists(fs_path));
+    // Expressed in the filesystem clock's own terms — converting between it and
+    // system_clock is exactly the fiddly step this test does not need.
+    std::filesystem::last_write_time(fs_path, std::filesystem::file_time_type::clock::now() -
+                                                  std::chrono::hours(24 * 365 * 20));
+}
+
 } // namespace
 
 /// PrintStatusIdleThumbFixture with a loaded print history installed, so
@@ -329,6 +353,14 @@ class PrintStatusIdleThumbHistoryFixture : public PrintStatusIdleThumbFixture {
         REQUIRE(job.thumbnails.size() == 1);
         REQUIRE_FALSE(job.thumbnails.front().relative_path.empty());
         return job.thumbnails.front().relative_path;
+    }
+
+    /// The source mtime the widget must validate the cached render against —
+    /// read off the same history head head_thumbnail_key() resolves from.
+    double head_job_modified() {
+        const auto& jobs = history_->get_jobs();
+        REQUIRE_FALSE(jobs.empty());
+        return jobs.front().modified;
     }
 
     /// Resize the idle thumb and report the pre-scale target the widget will
@@ -398,7 +430,7 @@ TEST_CASE_METHOD(PrintStatusIdleThumbHistoryFixture,
     plant_cached_png(cache, key);
     // No .bin, so the resolve cannot short-circuit on the synchronous cache hit
     // — this is what forces it onto the async path under test.
-    REQUIRE(cache.get_if_optimized(key, target).empty());
+    REQUIRE(cached_bin(cache, key, target).empty());
 
     set_moonraker_api(api_.get());
     PrintStatusWidgetTestAccess::reset_to_idle(widget);
@@ -409,7 +441,7 @@ TEST_CASE_METHOD(PrintStatusIdleThumbHistoryFixture,
 
     settle_thumb([this]() { return subject_value() != BENCHY_PATH; });
 
-    const std::string produced = cache.get_if_optimized(key, target);
+    const std::string produced = cached_bin(cache, key, target);
     REQUIRE_FALSE(produced.empty()); // the pre-scale really ran
     CHECK(get_idle_thumb_src(container) == produced);
     CHECK(subject_value() == produced);
@@ -439,7 +471,7 @@ TEST_CASE_METHOD(PrintStatusIdleThumbHistoryFixture,
     // Load A — 100px thumb, so a 200x200 detail target, PNG only.
     const helix::ThumbnailTarget target_a = size_thumb(container, 100, 100);
     plant_cached_png(cache, key);
-    REQUIRE(cache.get_if_optimized(key, target_a).empty());
+    REQUIRE(cached_bin(cache, key, target_a).empty());
     set_moonraker_api(api_.get());
 
     auto& queue = helix::ui::UpdateQueue::instance();
@@ -450,7 +482,7 @@ TEST_CASE_METHOD(PrintStatusIdleThumbHistoryFixture,
     REQUIRE(subject_value() == BENCHY_PATH);
 
     REQUIRE(park_pool_result());
-    const std::string path_a = cache.get_if_optimized(key, target_a);
+    const std::string path_a = cached_bin(cache, key, target_a);
     REQUIRE_FALSE(path_a.empty());
 
     // Load B — 900px thumb, so a 400x400 target, pre-scaled up front so this
@@ -474,6 +506,69 @@ TEST_CASE_METHOD(PrintStatusIdleThumbHistoryFixture,
 
     CHECK(subject_value() == path_b);
     CHECK(get_idle_thumb_src(container) == path_b);
+
+    widget.detach();
+    cache.invalidate(key);
+}
+
+// The SYNCHRONOUS probe at the top of the idle resolve asked the cache
+// get_if_optimized(key, target) with no source_modified, so mtime validation
+// never ran on it — the same defect the detail-view fetch had. Re-slice a model
+// under the same filename and the idle card serves the previous slice's render
+// forever, because the probe answers before the guarded async fetch is ever
+// reached.
+//
+// The two halves are a pair. The first plants a FRESH .bin and pins that the
+// resolve reaches the probe and publishes what it finds; without it, "benchy is
+// shown" in the second half would hold for the trivial reason that the resolve
+// bailed out early. The second backdates that same .bin behind the history
+// entry's source mtime and requires it to be refused.
+TEST_CASE_METHOD(PrintStatusIdleThumbHistoryFixture,
+                 "PrintStatusWidget: the idle probe refuses a cache entry older than its source",
+                 "[print_status_widget][idle_thumb][thumbnail]") {
+    auto& cache = get_thumbnail_cache();
+    const std::string key = head_thumbnail_key();
+    cache.invalidate(key);
+
+    PrintStatusWidget widget;
+    lv_obj_t* container = create_mock_print_card(test_screen());
+    widget.attach(container, test_screen());
+    process_lvgl(200); // deferred reset #0 — no API installed, so inert
+    REQUIRE(get_idle_thumb_src(container) == BENCHY_PATH);
+
+    // The history head carries the source mtime the probe has to compare
+    // against. Without it there is nothing to validate and this test is inert.
+    const double source_modified = head_job_modified();
+    REQUIRE(source_modified > 0.0);
+
+    const helix::ThumbnailTarget target = size_thumb(container, 100, 100);
+    const auto planted = helix::ThumbnailProcessor::instance().process_sync(kTinyPng, key, target);
+    REQUIRE(planted.success);
+    REQUIRE(ThumbnailCache::is_lvgl_path(planted.output_path));
+
+    // --- Fresh: written now, so newer than the history entry's source. ---
+    PrintStatusWidgetTestAccess::reset_to_idle(widget);
+    REQUIRE(subject_value() == planted.output_path);
+    REQUIRE(get_idle_thumb_src(container) == planted.output_path);
+
+    // --- Stale: same entry, now older than the source it was rendered from. ---
+    backdate(planted.output_path);
+
+    // Pinned with a freshness-blind lookup: the entry is still there and still
+    // servable, so a refusal below is about the mtime and not an empty cache.
+    // (Deliberately not the source_modified-carrying lookup — that one deletes
+    // the entry it rejects, which would hand the widget an empty cache and let
+    // the assertion pass against unfixed code.)
+    REQUIRE(cached_bin(cache, key, target) == planted.output_path);
+
+    PrintStatusWidgetTestAccess::reset_to_idle(widget);
+
+    // No API is installed, so a probe that correctly misses can only fall back
+    // to benchy — it cannot quietly resolve the same path through a fetch.
+    CHECK(subject_value() != planted.output_path);
+    CHECK(get_idle_thumb_src(container) != planted.output_path);
+    CHECK(subject_value() == BENCHY_PATH);
+    CHECK(get_idle_thumb_src(container) == BENCHY_PATH);
 
     widget.detach();
     cache.invalidate(key);

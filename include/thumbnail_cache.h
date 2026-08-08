@@ -217,60 +217,6 @@ class ThumbnailCache {
                ErrorCallback on_error);
 
     /**
-     * @brief Fetch thumbnail with pre-scaling optimization
-     *
-     * Similar to fetch(), but produces pre-scaled LVGL binary files (.bin) for
-     * optimal display performance. Pre-scaled thumbnails render instantly without
-     * runtime scaling overhead.
-     *
-     * Flow:
-     * 1. Check for pre-scaled .bin (instant return if found)
-     * 2. Check for cached PNG (queue for background pre-scaling)
-     * 3. Download PNG if needed, then pre-scale
-     * 4. Return .bin path on success
-     *
-     * @param api MoonrakerAPI instance for downloading
-     * @param relative_path Moonraker relative path (e.g., ".thumbnails/file.png")
-     * @param target Target dimensions for pre-scaling (from
-     * ThumbnailProcessor::get_target_for_display())
-     * @param on_success Called with LVGL path to .bin on success
-     * @param on_error Called with error message on failure
-     * @param source_modified Optional source file modification time (Unix timestamp).
-     *        If provided and the cached file is older than this, the cache is
-     *        invalidated and a fresh download is triggered. Use 0 to skip validation.
-     *
-     * @note Falls back to PNG on pre-scaling failure - display still works, just slower
-     * @see docs/THUMBNAIL_OPTIMIZATION_PLAN.md
-     */
-    void fetch_optimized(MoonrakerAPI* api, const std::string& relative_path,
-                         const helix::ThumbnailTarget& target, SuccessCallback on_success,
-                         ErrorCallback on_error, time_t source_modified = 0);
-
-    /**
-     * @brief Check if a pre-scaled version exists in cache
-     *
-     * Fast synchronous lookup for pre-scaled .bin files.
-     * Does not trigger download or processing.
-     *
-     * @param relative_path Moonraker relative path
-     * @param target Target dimensions to check for
-     * @param source_modified Optional source file modification time (Unix timestamp).
-     *        If provided and the cached file is older than this, the cache is
-     *        invalidated and empty string is returned. Use 0 to skip validation.
-     * @return LVGL path (A:/...) to .bin if cached and fresh, empty string otherwise
-     */
-    [[nodiscard]] std::string get_if_optimized(const std::string& relative_path,
-                                               const helix::ThumbnailTarget& target,
-                                               time_t source_modified = 0) const;
-
-    // =========================================================================
-    // HIGH-LEVEL SEMANTIC METHODS
-    // =========================================================================
-    // These methods encode the correct strategy for each use case, preventing
-    // accidental use of the wrong format (e.g., using pre-scaled .bin for a
-    // detail view where full PNG quality is needed).
-
-    /**
      * @brief Fetch a thumbnail described by a request, guarded by a load context
      *
      * The single fetch entry point every consumer is being moved onto. The
@@ -293,65 +239,6 @@ class ThumbnailCache {
      */
     void fetch(const ThumbnailRequest& req, ThumbnailLoadContext ctx, SuccessCallback on_success,
                ErrorCallback on_error = nullptr);
-
-    /**
-     * @brief Fetch thumbnail for a detail/large view (pre-scaled .bin at detail size)
-     *
-     * Use this for:
-     * - Print Status panel thumbnail
-     * - Print File Detail view
-     * - Any large thumbnail display
-     *
-     * Internally uses fetch_optimized() with ThumbnailSize::Detail for larger
-     * pre-scaled targets (200–400px) than card views.
-     *
-     * The success callback is automatically guarded by ctx.is_valid() - it will
-     * only be invoked if the caller is still alive and the generation matches.
-     * This eliminates the need for manual validity checks in each callback.
-     *
-     * @param api MoonrakerAPI instance for downloading
-     * @param relative_path Moonraker relative path (e.g., ".thumbnails/file.png")
-     * @param ctx Async safety context (created via ThumbnailLoadContext::create())
-     * @param on_success Called with LVGL path on success (only if ctx.is_valid())
-     * @param on_error Optional error callback (NOT guarded - always called on error)
-     * @param source_modified Optional source file modification time (Unix timestamp).
-     *        If provided and the cached file is older than this, the cache is
-     *        invalidated and a fresh download is triggered. Use 0 to skip validation.
-     *
-     * @note Callbacks may be invoked from background thread - use ui_queue_update() for UI updates
-     * @see ThumbnailLoadContext::create
-     */
-    void fetch_for_detail_view(MoonrakerAPI* api, const std::string& relative_path,
-                               ThumbnailLoadContext ctx, SuccessCallback on_success,
-                               ErrorCallback on_error = nullptr, time_t source_modified = 0);
-
-    /**
-     * @brief Fetch thumbnail for a card/small view (pre-scaled .bin for speed)
-     *
-     * Use this for:
-     * - Print Select file cards
-     * - History list items
-     * - Any small thumbnail where rendering speed matters more than quality
-     *
-     * Internally uses fetch_optimized() with display-appropriate dimensions.
-     *
-     * The success callback is automatically guarded by ctx.is_valid() - it will
-     * only be invoked if the caller is still alive and the generation matches.
-     * This eliminates the need for manual validity checks in each callback.
-     *
-     * @param api MoonrakerAPI instance for downloading
-     * @param relative_path Moonraker relative path (e.g., ".thumbnails/file.png")
-     * @param ctx Async safety context (created via ThumbnailLoadContext::create())
-     * @param on_success Called with LVGL path on success (only if ctx.is_valid())
-     * @param on_error Optional error callback (NOT guarded - always called on error)
-     * @param source_modified Optional source file modification time for cache invalidation
-     *
-     * @note Callbacks may be invoked from background thread - use ui_queue_update() for UI updates
-     * @see ThumbnailLoadContext::create
-     */
-    void fetch_for_card_view(MoonrakerAPI* api, const std::string& relative_path,
-                             ThumbnailLoadContext ctx, SuccessCallback on_success,
-                             ErrorCallback on_error = nullptr, time_t source_modified = 0);
 
     /**
      * @brief Save raw PNG data directly to cache
@@ -487,6 +374,49 @@ class ThumbnailCache {
     }
 
   private:
+    /**
+     * @brief Fetch thumbnail with pre-scaling optimization
+     *
+     * The engine under fetch(ThumbnailRequest, ...): produces pre-scaled LVGL
+     * binary files (.bin) that render without runtime scaling.
+     *
+     * Flow:
+     * 1. Check for pre-scaled .bin (instant return if found)
+     * 2. Check for cached PNG (queue for background pre-scaling)
+     * 3. Download PNG if needed, then pre-scale
+     * 4. Return .bin path on success
+     *
+     * Private because every consumer now goes through fetch(): reaching this
+     * directly skips the ThumbnailLoadContext guard, which is how the idle
+     * thumbnail ended up with no staleness protection at all.
+     *
+     * @param source_modified Optional source file modification time (Unix timestamp).
+     *        If provided and the cached file is older than this, the cache is
+     *        invalidated and a fresh download is triggered. Use 0 to skip validation.
+     *
+     * @note Falls back to PNG on pre-scaling failure - display still works, just slower
+     */
+    void fetch_optimized(MoonrakerAPI* api, const std::string& relative_path,
+                         const helix::ThumbnailTarget& target, SuccessCallback on_success,
+                         ErrorCallback on_error, time_t source_modified = 0);
+
+    /**
+     * @brief Check if a pre-scaled version exists in cache
+     *
+     * Fast synchronous lookup for pre-scaled .bin files, and what
+     * get_if_cached(ThumbnailRequest) resolves to for Prescaled requests.
+     * Private for the same reason as fetch_optimized(): callers that build the
+     * target by hand drift from the request the fetch will use.
+     *
+     * @param source_modified Optional source file modification time (Unix timestamp).
+     *        If provided and the cached file is older than this, the cache is
+     *        invalidated and empty string is returned. Use 0 to skip validation.
+     * @return LVGL path (A:/...) to .bin if cached and fresh, empty string otherwise
+     */
+    [[nodiscard]] std::string get_if_optimized(const std::string& relative_path,
+                                               const helix::ThumbnailTarget& target,
+                                               time_t source_modified = 0) const;
+
     /**
      * @brief Wrap a caller callback so it always fires on the LVGL main thread
      *

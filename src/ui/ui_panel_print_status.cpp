@@ -3357,9 +3357,8 @@ void PrintStatusPanel::load_thumbnail_for_file(const std::string& filename) {
                 // causes a race condition where Print Status deletes thumbnails that
                 // Print Select just cached, resulting in placeholder thumbnails.
 
-                // Detail-sized pre-scaled .bin — the same target
-                // fetch_for_detail_view picked, now stated by the request so
-                // one guarded entry point serves every consumer. The load's own
+                // Detail-sized pre-scaled .bin, stated by the request so one
+                // guarded entry point serves every consumer. The load's own
                 // context goes to the cache, so a superseded result is dropped
                 // at the cache boundary; the success callback re-checks after
                 // marshalling because a newer load can start in between.
