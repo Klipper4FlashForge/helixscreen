@@ -15,6 +15,7 @@
 #include "http_executor.h"
 #include "moonraker_api.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 #include "printer_state.h"
 #include "static_subject_registry.h"
 #include "subject_debug_registry.h"
@@ -253,9 +254,9 @@ void CameraWidget::on_deactivate() {
     }
 }
 
-void CameraWidget::on_size_changed(int colspan, int rowspan, int /*width_px*/, int /*height_px*/) {
+void CameraWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_px, int height_px) {
     bool was_compact = compact_;
-    compact_ = (colspan <= 1 && rowspan <= 1);
+    compact_ = (width_px < widget_size::W_NORMAL && height_px < widget_size::H_TALL);
 
     // Ensure scale-to-cover after any resize
     if (camera_image_) {
