@@ -213,8 +213,9 @@ void JobQueueModal::populate_job_list() {
         lv_obj_set_style_bg_opa(row, LV_OPA_20, LV_STATE_PRESSED);
         lv_obj_set_style_radius(row, 6, 0);
         lv_obj_set_style_border_width(row, 0, 0);
-        lv_obj_set_style_pad_all(row, 8, 0);
-        lv_obj_set_style_pad_gap(row, 8, 0);
+        int32_t row_pad = theme_manager_get_spacing("space_sm");
+        lv_obj_set_style_pad_all(row, row_pad, 0);
+        lv_obj_set_style_pad_gap(row, row_pad, 0);
         lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
         lv_obj_set_style_flex_main_place(row, LV_FLEX_ALIGN_SPACE_BETWEEN, 0);
         lv_obj_set_style_flex_cross_place(row, LV_FLEX_ALIGN_CENTER, 0);
@@ -252,7 +253,7 @@ void JobQueueModal::populate_job_list() {
         lv_obj_set_style_bg_opa(info_col, 0, 0);
         lv_obj_set_style_border_width(info_col, 0, 0);
         lv_obj_set_style_pad_all(info_col, 0, 0);
-        lv_obj_set_style_pad_gap(info_col, 2, 0);
+        lv_obj_set_style_pad_gap(info_col, theme_manager_get_spacing("space_xxs"), 0);
         lv_obj_set_flex_flow(info_col, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_flex_grow(info_col, 1);
         lv_obj_remove_flag(info_col, LV_OBJ_FLAG_CLICKABLE);
@@ -295,7 +296,7 @@ void JobQueueModal::populate_job_list() {
         lv_obj_set_style_text_color(del_icon, danger_color, 0);
         lv_obj_set_style_text_color(del_icon, theme_manager_get_color("text"), LV_STATE_PRESSED);
         lv_obj_add_flag(del_icon, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_style_pad_all(del_icon, 6, 0);
+        lv_obj_set_style_pad_all(del_icon, theme_manager_get_spacing("space_xs"), 0);
         const char* icon_font_name = lv_xml_get_const(nullptr, "icon_font_sm");
         const lv_font_t* icon_font =
             icon_font_name ? lv_xml_get_font(nullptr, icon_font_name) : nullptr;

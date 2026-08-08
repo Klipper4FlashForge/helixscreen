@@ -70,16 +70,19 @@
           <spinner name="bt_scan_spinner" size="sm" hidden="true">
             <bind_flag_if_eq subject="bt_scanning" flag="hidden" ref_value="0"/>
           </spinner>
+          <!-- SIZE_OK: 200, not #button_width_action, because "Scan for Printers"
+               is the longest label in the row and does not fit 140. The two
+               siblings below are the standard action width. -->
           <ui_button name="btn_bt_scan" text="Scan for Printers" translation_tag="Scan for Printers"
                      icon="magnify_scan" width="200">
             <event_cb trigger="clicked" callback="on_lp_bt_scan"/>
           </ui_button>
           <ui_button name="btn_bt_connect" text="Connect" translation_tag="Connect"
-                     icon="bluetooth" width="160" disabled="true">
+                     icon="bluetooth" width="#button_width_action" disabled="true">
             <event_cb trigger="clicked" callback="on_lp_bt_connect"/>
           </ui_button>
           <ui_button name="btn_bt_forget" text="Forget" translation_tag="Forget"
-                     icon="delete" width="140" disabled="true">
+                     icon="delete" width="#button_width_action" disabled="true">
             <event_cb trigger="clicked" callback="on_lp_bt_forget"/>
           </ui_button>
         </lv_obj>

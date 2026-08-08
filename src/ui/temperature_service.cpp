@@ -1176,7 +1176,7 @@ void TemperatureService::rebuild_extruder_segments_impl() {
     lv_obj_set_flex_flow(selector, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(selector, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(selector, 8, 0);
+    lv_obj_set_style_pad_column(selector, theme_manager_get_spacing("space_sm"), 0);
 
     auto& tool_state = helix::ToolState::instance();
 

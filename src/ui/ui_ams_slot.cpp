@@ -1230,7 +1230,8 @@ void ui_ams_slot_set_layout_info(lv_obj_t* obj, int slot_index, int total_count)
     } else if (data->material_label) {
         // No staggering - keep label in flex flow at default position
         lv_obj_remove_flag(data->material_label, LV_OBJ_FLAG_IGNORE_LAYOUT);
-        lv_obj_set_style_pad_top(obj, 2, LV_PART_MAIN); // Original padding
+        lv_obj_set_style_pad_top(obj, theme_manager_get_spacing("space_xxs"),
+                                 LV_PART_MAIN); // Original padding
 
         // Hide leader line if it exists
         if (data->leader_line) {

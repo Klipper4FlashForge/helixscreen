@@ -460,7 +460,7 @@
                     style_text_align="center" style_text_color="#text_muted"/>
         <!-- Spacer pushes Done button to bottom -->
         <lv_obj width="0" flex_grow="1" style_pad_all="0" scrollable="false"/>
-        <ui_button name="btn_done" width="140" height="#button_height" text="Done" translation_tag="Done">
+        <ui_button name="btn_done" width="#button_width_action" height="#button_height" text="Done" translation_tag="Done">
           <event_cb trigger="clicked" callback="on_pid_done"/>
         </ui_button>
       </lv_obj>
@@ -481,10 +481,10 @@
         <lv_obj width="100%"
                 height="#button_height" style_pad_all="0" flex_flow="row" style_flex_main_place="center"
                 style_pad_gap="#space_md" scrollable="false">
-          <ui_button name="btn_close_error" width="140" text="Close" translation_tag="Close">
+          <ui_button name="btn_close_error" width="#button_width_action" text="Close" translation_tag="Close">
             <event_cb trigger="clicked" callback="on_pid_done"/>
           </ui_button>
-          <ui_button name="btn_retry" width="140" text="Retry" translation_tag="Retry" variant="primary">
+          <ui_button name="btn_retry" width="#button_width_action" text="Retry" translation_tag="Retry" variant="primary">
             <event_cb trigger="clicked" callback="on_pid_retry"/>
           </ui_button>
         </lv_obj>

@@ -475,8 +475,8 @@ void TempGraphWidget::TempGraphConfigModal::populate_follow_toggle() {
     lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_ver(row, 6, 0);
-    lv_obj_set_style_pad_gap(row, 12, 0);
+    lv_obj_set_style_pad_ver(row, theme_manager_get_spacing("space_xs"), 0);
+    lv_obj_set_style_pad_gap(row, theme_manager_get_spacing("space_md"), 0);
 
     lv_obj_t* col = lv_obj_create(row);
     lv_obj_set_size(col, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
@@ -578,8 +578,8 @@ void TempGraphWidget::TempGraphConfigModal::populate_sensor_list() {
         lv_obj_set_flex_flow(row_obj, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(row_obj, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
                               LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_pad_ver(row_obj, 6, 0);
-        lv_obj_set_style_pad_gap(row_obj, 12, 0);
+        lv_obj_set_style_pad_ver(row_obj, theme_manager_get_spacing("space_xs"), 0);
+        lv_obj_set_style_pad_gap(row_obj, theme_manager_get_spacing("space_md"), 0);
 
         // Color swatch — small colored square, clickable to cycle
         lv_obj_t* swatch = lv_obj_create(row_obj);
