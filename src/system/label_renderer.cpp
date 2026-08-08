@@ -324,7 +324,10 @@ LabelBitmap LabelRenderer::render(const SpoolInfo& spool, LabelPreset preset,
     // Build text content
     std::string vendor = to_upper(spool.vendor.empty() ? "UNKNOWN" : spool.vendor);
     std::string material = to_upper(spool.material.empty() ? "FILAMENT" : spool.material);
-    std::string color = to_upper(spool.color_name);
+    // Behaviour preserved across the color_name -> filament_name rename: this
+    // line has always rendered Spoolman's filament.name, which is the most
+    // specific string on the record and what a user scans the label for.
+    std::string color = to_upper(spool.filament_name);
 
     // --- NARROW labels (< 150px wide): render landscape, rotate 90° CW ---
     // Narrow labels like Niimbot D110 (96px wide × 307px tall) have the

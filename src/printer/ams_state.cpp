@@ -18,6 +18,7 @@
 
 #include "app_globals.h"
 #include "filament_database.h"
+#include "filament_display_name.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
 #include "observer_factory.h"
@@ -25,6 +26,7 @@
 #include "printer_state.h"
 #include "runtime_config.h"
 #include "settings_manager.h"
+#include "spoolman_manager.h"
 #include "state/subject_macros.h"
 #include "static_subject_registry.h"
 #include "tool_state.h"
@@ -2558,23 +2560,14 @@ void AmsState::sync_current_loaded_from_backend(const AmsSystemInfo& primary_inf
                 lv_subject_set_int(&current_color_, ext_color);
             }
 
-            // Build label from spool info
-            std::string color_label;
-            if (ext.spoolman_id > 0 && !ext.color_name.empty()) {
-                color_label = ext.color_name;
-            } else {
-                color_label = helix::get_color_name_from_hex(ext.color_rgb);
-            }
-            std::string label;
-            if (!color_label.empty() && !ext.material.empty()) {
-                label = color_label + " " + ext.material;
-            } else if (!color_label.empty()) {
-                label = color_label;
-            } else if (!ext.material.empty()) {
-                label = ext.material;
-            } else {
-                label = lv_tr("External");
-            }
+            // Build label from spool info — same resolver as the loaded-slot
+            // card below. Precedence and brand/material dedup live in
+            // helix::resolve_filament_label(); the last resort stays the
+            // translated "External" this card has always shown.
+            auto ext_identity = SpoolmanManager::find_identity(ext.spoolman_id);
+            std::string label = helix::resolve_filament_label(
+                ext, ext_identity ? &*ext_identity : nullptr,
+                helix::get_color_name_from_hex(ext.color_rgb), lv_tr("External"));
             if (strcmp(lv_subject_get_string(&current_material_text_), label.c_str()) != 0) {
                 lv_subject_copy_string(&current_material_text_, label.c_str());
             }
@@ -2635,26 +2628,17 @@ void AmsState::sync_current_loaded_from_backend(const AmsSystemInfo& primary_inf
             lv_subject_set_int(&current_color_, slot_color);
         }
 
-        // Build material label - color name + material (e.g., "Red PLA")
-        // Use Spoolman color name if available, otherwise identify from hex
+        // Build the material label. The slot's own name/brand/material win, the
+        // cached Spoolman identity fills the gaps (it is the only source of a
+        // brand for AFC), and the algorithmic colour name is the last naming
+        // layer — which is the bug this replaced: AFC never populates
+        // color_name, so the old guard always fell through to "Light Pink PLA"
+        // while the real name sat unread in slot_info.spool_name.
         {
-            std::string color_label;
-            if (slot_info.spoolman_id > 0 && !slot_info.color_name.empty()) {
-                color_label = slot_info.color_name;
-            } else {
-                color_label = helix::get_color_name_from_hex(slot_info.color_rgb);
-            }
-
-            std::string label;
-            if (!color_label.empty() && !slot_info.material.empty()) {
-                label = color_label + " " + slot_info.material;
-            } else if (!color_label.empty()) {
-                label = color_label;
-            } else if (!slot_info.material.empty()) {
-                label = slot_info.material;
-            } else {
-                label = "Filament";
-            }
+            auto identity = SpoolmanManager::find_identity(slot_info.spoolman_id);
+            std::string label =
+                helix::resolve_filament_label(slot_info, identity ? &*identity : nullptr,
+                                              helix::get_color_name_from_hex(slot_info.color_rgb));
             if (strcmp(lv_subject_get_string(&current_material_text_), label.c_str()) != 0) {
                 lv_subject_copy_string(&current_material_text_, label.c_str());
             }

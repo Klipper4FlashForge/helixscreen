@@ -146,6 +146,20 @@ SlotInfo tracked_slot() {
     return info;
 }
 
+// A slot as apply_spool_to_slot() leaves it: spool_name is the Spoolman
+// filament name alone, with brand and material in their own fields. Nothing
+// about the name repeats the other two, so the chip has to join all three.
+SlotInfo tracked_slot_spoolman_named() {
+    SlotInfo info;
+    info.slot_index = 0;
+    info.spoolman_id = 42;
+    info.brand = "Polymaker";
+    info.material = "PLA";
+    info.spool_name = "Ambrosia Pink";
+    info.color_rgb = 0xFFB6C1;
+    return info;
+}
+
 // Copy of untracked_slot() with weights explicitly marked unknown (-1
 // sentinel, also SlotInfo's default) — models a slot with no Spoolman/manual
 // weight data on record.
@@ -287,6 +301,36 @@ TEST_CASE_METHOD(LVGLUITestFixture, "spool card shows spool name + mark for trac
     CHECK(lv_obj_find_by_name(form_view, "vendor_dropdown") == nullptr);
     CHECK(lv_obj_find_by_name(form_view, "material_dropdown") == nullptr);
     CHECK(access.widget("btn_change_spool") == nullptr);
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "spool card keeps brand and material around a bare Spoolman filament name",
+                 "[ams_edit_overlay][card][spoolman][regression]") {
+    // apply_spool_to_slot() writes the Spoolman filament name into spool_name
+    // rather than a synthesized "vendor material". Printing that field verbatim
+    // would reduce the chip to "Ambrosia Pink" — a colour with no vendor and no
+    // material, strictly less than the "Generic · PETG" the untracked branch
+    // shows. The chip joins the three fields through the same dedup helper the
+    // AMS card uses, so a name that already contains the brand or the material
+    // still prints once.
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    REQUIRE(
+        overlay.show_for_slot(test_screen(), 0, tracked_slot_spoolman_named(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* label = access.widget("card_identity_label");
+    REQUIRE(label != nullptr);
+    CHECK(std::string(lv_label_get_text(label)) == "Polymaker Ambrosia Pink PLA");
+    CHECK(access.is_managed() == 1);
 
     close_editor_overlay();
 }
@@ -1710,7 +1754,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     seed.filament_id = 3;
     seed.vendor = "Generic";
     seed.material = "PLA";
-    seed.color_name = "Navy";
+    seed.filament_name = "Navy";
     seed.color_hex = "#112233";
     seed.price = 19.99;
     seed.remaining_weight_g = 500.0;
