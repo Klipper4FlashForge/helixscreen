@@ -8,7 +8,13 @@
 #include "../ui_test_utils.h"
 #include "lvgl/lvgl.h"
 
+#include <spdlog/sinks/ostream_sink.h>
+#include <spdlog/spdlog.h>
+
 #include <cstring>
+#include <memory>
+#include <sstream>
+#include <string>
 
 #include "../catch_amalgamated.hpp"
 
@@ -142,6 +148,43 @@ class SplitButtonXmlFixture : public XMLTestFixture {
     }
 };
 
+/**
+ * @brief Redirects the default spdlog logger into a string for its scope.
+ *
+ * Same shape as the helper in test_widget_helpers.cpp. Both halves of the #980
+ * assertion below are log lines, because that is the only place the widget-safe
+ * guard and the label-width body surface anything observable.
+ */
+namespace {
+class SplitButtonLogCapture {
+  public:
+    SplitButtonLogCapture() {
+        auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(captured_);
+        sink->set_pattern("%v"); // message only
+        capture_logger_ = std::make_shared<spdlog::logger>("split_button_capture", sink);
+        capture_logger_->set_level(spdlog::level::trace);
+        original_logger_ = spdlog::default_logger();
+        spdlog::set_default_logger(capture_logger_);
+    }
+
+    ~SplitButtonLogCapture() {
+        spdlog::set_default_logger(original_logger_);
+    }
+
+    SplitButtonLogCapture(const SplitButtonLogCapture&) = delete;
+    SplitButtonLogCapture& operator=(const SplitButtonLogCapture&) = delete;
+
+    std::string text() const {
+        return captured_.str();
+    }
+
+  private:
+    std::ostringstream captured_;
+    std::shared_ptr<spdlog::logger> capture_logger_;
+    std::shared_ptr<spdlog::logger> original_logger_;
+};
+} // namespace
+
 // Teardown-safety guard for the #980 SIGSEGV: ui_split_button_create() schedules
 // a deferred callback that calls get_data()->lv_obj_get_child() on the widget.
 // During rapid panel teardown the widget is freed before that callback fires.
@@ -149,17 +192,34 @@ class SplitButtonXmlFixture : public XMLTestFixture {
 // guard) instead of a raw lv_async_call, so the callback is skipped once the
 // widget is gone.
 //
-// NOTE: this cannot deterministically reproduce the production use-after-free,
-// even under ASAN — LVGL objects come from LVGL's internal memory pool, not the
-// system allocator, so a freed lv_obj is not sanitizer-poisoned. The test guards
-// the create -> delete -> pump-deferrals path against crashing/regressing; the
-// correctness guarantee comes from the widget-safe guard exercised here.
+// The use-after-free itself is not reproducible here, even under ASAN: LVGL
+// objects come from LVGL's internal memory pool, not the system allocator, so a
+// freed lv_obj is not sanitizer-poisoned. "It did not crash" is therefore an
+// outcome this test cannot fail on, and asserting it would be theatre.
+//
+// What IS falsifiable is the skip. helix::ui::async_call(widget, ...) logs
+// "Widget-safe guard: widget destroyed, skipping async_call" on the drop path.
+// Drop the widget argument at ui_split_button.cpp - i.e. revert the #980 fix to
+// a plain async_call - and that line disappears, so the first CHECK below goes
+// red. Verified by mutation.
+//
+// The second CHECK is the weaker half and is documented as such: under the
+// reverted fix the callback DOES run, but get_data() on the freed container
+// returns null or fails the magic check, so it returns before reaching the
+// "Label width set to" log. That early bail IS the read of freed memory #980
+// crashed on, and nothing here can see it. The line's absence therefore only
+// pins "the body did not complete", not "the body did not run".
 TEST_CASE_METHOD(SplitButtonXmlFixture,
                  "split_button: deferred label-width callback is safe after widget delete (#980)",
-                 "[split_button][crash]") {
+                 "[split_button][crash][980]") {
     const char* attrs[] = {"text", "Preheat", "options", "PLA\nPETG\nABS", nullptr};
     auto* sb = static_cast<lv_obj_t*>(lv_xml_create(test_screen(), "ui_split_button", attrs));
     REQUIRE(sb != nullptr);
+
+    // The deferral must still be pending - it is the whole subject of the test.
+    // If something drained the queue during create there is nothing left to skip
+    // and both checks below would pass vacuously.
+    REQUIRE(helix::ui::UpdateQueue::instance().pending_count() > 0);
 
     // Delete the widget while the label-width deferral is still pending,
     // simulating the panel teardown seen in the crash crumbs.
@@ -167,10 +227,20 @@ TEST_CASE_METHOD(SplitButtonXmlFixture,
 
     // Fire both deferral mechanisms: the raw LVGL async queue (unfixed path,
     // pumped via the test-safe handler that fires one-shot lv_async_call timers)
-    // and the UpdateQueue (fixed, widget-safe path). Neither may touch the freed
-    // widget. Reaching the end without a use-after-free is the assertion.
-    lv_timer_handler_safe();
-    helix::ui::UpdateQueue::instance().drain();
+    // and the UpdateQueue (fixed, widget-safe path).
+    std::string captured;
+    {
+        SplitButtonLogCapture capture;
+        lv_timer_handler_safe();
+        helix::ui::UpdateQueue::instance().drain();
+        captured = capture.text();
+    }
 
-    SUCCEED("Deferred label-width callback did not dereference the freed widget");
+    INFO("captured log:\n" << captured);
+
+    // The guard saw an invalid widget and dropped the callback.
+    CHECK(captured.find("Widget-safe guard: widget destroyed") != std::string::npos);
+
+    // ...and the callback body never ran against the freed widget.
+    CHECK(captured.find("[ui_split_button] Label width set to") == std::string::npos);
 }
