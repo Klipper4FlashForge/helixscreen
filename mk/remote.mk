@@ -52,6 +52,8 @@ remote-sync:
 	@ssh $(REMOTE_SSH_TARGET) "mkdir -p $(REMOTE_DIR)"
 	rsync -avz --copy-unsafe-links --delete \
 		--exclude='build/' \
+		--exclude='build[0-9]*/' \
+		--exclude='_deps/' \
 		--exclude='.git/' \
 		--exclude='*.o' \
 		--exclude='*.a' \
