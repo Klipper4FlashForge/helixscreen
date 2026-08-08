@@ -197,6 +197,64 @@ EOF
     [ "$output" -ge 3 ]
 }
 
+# ---------------------------------------------------------------------------
+# helixscreen.init: stop pacing
+# ---------------------------------------------------------------------------
+
+@test "init: stop signals the watchdog before waiting on the PID file" {
+    # The PID file holds the launcher shell, which is blocked in a foreground
+    # child (the watchdog) and therefore will not run its TERM trap until that
+    # child exits. Signalling the launcher first is a guaranteed 5s stall, so
+    # the watchdog kill has to come first in source order.
+    local init="$WORKTREE_ROOT/config/helixscreen.init"
+
+    local wd_line pidfile_line
+    wd_line=$(sed -n '/^stop() {/,/^}/p' "$init" | grep -n '_wd_pids=$(pidof' | head -n 1 | cut -d: -f1)
+    pidfile_line=$(sed -n '/^stop() {/,/^}/p' "$init" | grep -n 'if \[ -f "\$PIDFILE" \]' | head -n 1 | cut -d: -f1)
+
+    [ -n "$wd_line" ]
+    [ -n "$pidfile_line" ]
+    [ "$wd_line" -lt "$pidfile_line" ]
+}
+
+@test "init: stop resolves the process names once, not twice" {
+    # The names are needed by the early watchdog signal, so the later sweep must
+    # reuse them rather than recomputing and shadowing.
+    local init="$WORKTREE_ROOT/config/helixscreen.init"
+    run sh -c "sed -n '/^stop() {/,/^}/p' '$init' | grep -c 'WATCHDOG_NAME=\$(basename'"
+    [ "$output" = "1" ]
+}
+
+@test "init: a launcher blocked on its child still stops fast once watchdog dies" {
+    # Model the real shape: the launcher ignores TERM while its foreground child
+    # lives, and exits once that child is signalled. Ordering the watchdog kill
+    # first must therefore avoid the 5-iteration wait entirely.
+    cat > "$BATS_TEST_TMPDIR/run.sh" <<'EOF'
+sleep() { echo "SLEPT $*" >> "$TRACE"; }
+# Launcher is "alive" until the watchdog has been signalled.
+pidof() { [ "$1" = "helix-watchdog" ] && { [ -f "$TMP/wd_dead" ] && return 1; echo 800; return 0; }; return 1; }
+kill() { case "$1" in 800) : > "$TMP/wd_dead" ;; esac; return 0; }
+launcher_alive() { [ ! -f "$TMP/wd_dead" ]; }
+
+# --- stop(), watchdog-first ordering ---
+_wd_pids=$(pidof helix-watchdog 2>/dev/null || true)
+[ -n "$_wd_pids" ] && kill $_wd_pids
+_n=0
+while launcher_alive; do
+    [ "$_n" -ge 5 ] && break
+    sleep 1
+    _n=$((_n + 1))
+done
+echo "waited=$_n"
+EOF
+    TMP="$BATS_TEST_TMPDIR" TRACE="$BATS_TEST_TMPDIR/trace" \
+        run sh "$BATS_TEST_TMPDIR/run.sh"
+    [ "$status" -eq 0 ]
+    # Watchdog signalled first means the launcher is already gone: zero waits.
+    [ "$output" = "waited=0" ]
+    [ ! -f "$BATS_TEST_TMPDIR/trace" ]
+}
+
 @test "init and cc1 hook are POSIX sh clean" {
     run sh -n "$WORKTREE_ROOT/config/helixscreen.init"
     [ "$status" -eq 0 ]

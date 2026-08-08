@@ -255,6 +255,31 @@ stop() {
     # Stop splash first
     stop_splash
 
+    WATCHDOG_NAME=$(basename "$WATCHDOG")
+    DAEMON_NAME=$(basename "$DAEMON")
+    SPLASH_NAME=$(basename "$SPLASH")
+
+    # Signal the watchdog BEFORE waiting on the PID file below.
+    #
+    # PIDFILE holds the launcher shell, and that shell spends its entire life
+    # blocked in a foreground child: the watchdog. A shell does not run its
+    # TERM trap while a foreground child is still running, so signalling the
+    # launcher on its own accomplishes nothing and the wait below burns its
+    # whole budget before falling back to SIGKILL. Measured on a Centauri
+    # Carbon: the launcher ignored SIGTERM for 12s and counting, then exited
+    # 1s after the watchdog was signalled.
+    #
+    # Signalling the watchdog first lets it reap helix-screen and exit, which
+    # unblocks the launcher, which then runs its own cleanup trap and leaves on
+    # its own. That also turns this into a clean shutdown instead of a SIGKILL,
+    # so buffered log output survives rather than being lost with the process.
+    _wd_pids=$(pidof "$WATCHDOG_NAME" 2>/dev/null || true)
+    if [ -n "$_wd_pids" ]; then
+        # shellcheck disable=SC2086  # intentional word splitting: pidof may list several
+        kill $_wd_pids 2>/dev/null || true
+    fi
+    unset _wd_pids
+
     if [ -f "$PIDFILE" ]; then
         PID=$(cat "$PIDFILE")
         if kill -0 "$PID" 2>/dev/null; then
@@ -274,13 +299,13 @@ stop() {
         rm -f "$PIDFILE"
     fi
 
-    # Also kill by name in case PID file is stale or the launcher died before
-    # signaling its children. Kill watchdog first to prevent crash dialog flash
-    # during clean shutdown. SIGTERM then SIGKILL: helix-watchdog and helix-screen
-    # may catch SIGTERM without exiting (splash handoff, blocked I/O).
-    WATCHDOG_NAME=$(basename "$WATCHDOG")
-    DAEMON_NAME=$(basename "$DAEMON")
-    SPLASH_NAME=$(basename "$SPLASH")
+    # Sweep by name to catch anything the signalling above missed: a stale PID
+    # file, a launcher that died before signalling its children, or a process
+    # started outside this script. The watchdog is listed first so a crash
+    # dialog cannot flash during a clean shutdown. SIGTERM then SIGKILL, since
+    # helix-watchdog and helix-screen may catch SIGTERM without exiting
+    # promptly (splash handoff, blocked I/O). The *_NAME values were resolved
+    # at the top of stop().
     for proc in "$WATCHDOG_NAME" "$DAEMON_NAME" "$SPLASH_NAME"; do
         pids=$(pidof "$proc" 2>/dev/null || true)
         [ -n "$pids" ] || continue
