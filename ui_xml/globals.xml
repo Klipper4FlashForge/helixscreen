@@ -102,6 +102,14 @@
     <string name="icon_size_xlarge" value="xl"/>
     <string name="icon_size_xxlarge" value="xl"/>
 
+    <!-- Literal text that begins with '#'. resolve_consts() treats a leading
+         '#' as a const reference on EVERY attribute, and only lets a value
+         through unchanged when it is exactly 6 hex digits (is_hex_color), so
+         placeholder_text="#RRGGBB" was looked up as a const, missed, and the
+         attribute was dropped — the hex field showed no hint at all. A const's
+         VALUE is not re-scanned, so routing the literal through one works. -->
+    <string name="hex_placeholder" value="#RRGGBB"/>
+
     <!-- ===================================================================== -->
     <!-- Responsive Badge Sizes (badge_size)                                   -->
     <!-- ===================================================================== -->

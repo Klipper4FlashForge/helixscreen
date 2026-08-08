@@ -1668,6 +1668,11 @@ AmsError AmsBackendCfs::set_slot_info(int slot_index, const SlotInfo& info, bool
         target->color_name = info.color_name;
         target->material = info.material;
         target->brand = info.brand;
+        // Carry the catalog product identity through preview writes too — a
+        // persist=false preview that dropped it would make the editor snap
+        // back to a different variant on the next get_slot_info().
+        target->catalog_id = info.catalog_id;
+        target->product_name = info.product_name;
         target->spool_name = info.spool_name;
         target->spoolman_id = info.spoolman_id;
         target->spoolman_vendor_id = info.spoolman_vendor_id;
@@ -1704,6 +1709,13 @@ AmsError AmsBackendCfs::set_slot_info(int slot_index, const SlotInfo& info, bool
             ovr.color_set = true; // a user-edit always records a color, even pure black (#000000)
             ovr.color_name = info.color_name;
             ovr.material = info.material;
+            // Catalog product identity. Persisted so a reopen can restore the
+            // EXACT product rather than the alphabetically-first variant of the
+            // same vendor+material. Never auto-mirrored (firmware has no notion
+            // of a catalog product), so no user-lock flag is needed: a non-empty
+            // value can only have come from a user pick.
+            ovr.catalog_id = info.catalog_id;
+            ovr.product_name = info.product_name;
             // User-lock: CFS uses FillUnsetOnly so the locks are
             // belt-and-suspenders here, but they keep the on-disk schema
             // consistent across backends and protect against a future
@@ -2071,9 +2083,8 @@ std::string AmsBackendCfs::slot_set_gcode(int global_slot_index, const std::stri
     char color[10];
     std::snprintf(color, sizeof(color), "#%06X", color_rgb & 0xFFFFFFu);
     return "_BOX_SLOT_SET SLOT=" + std::to_string(global_slot_index) +
-           " MATERIAL=" + quote_gcode_param(upper) +
-           " COLOR=" + quote_gcode_param(color) + " BRAND=" + quote_gcode_param(brand) +
-           " NAME=" + quote_gcode_param(name) +
+           " MATERIAL=" + quote_gcode_param(upper) + " COLOR=" + quote_gcode_param(color) +
+           " BRAND=" + quote_gcode_param(brand) + " NAME=" + quote_gcode_param(name) +
            " SPOOLMAN_ID=" + std::to_string(spoolman_id > 0 ? spoolman_id : -1);
 }
 
@@ -2609,6 +2620,14 @@ void AmsBackendCfs::apply_overrides(SlotInfo& slot, int slot_index) {
         slot.color_name = o.color_name;
     if (!o.material.empty())
         slot.material = o.material;
+    // Catalog product identity — same "override wins only when it carries a
+    // real value" rule as the strings above. Firmware never populates these
+    // (no AMS protocol has a notion of a branded product id), so a non-empty
+    // value here is always a user pick and always wins.
+    if (!o.catalog_id.empty())
+        slot.catalog_id = o.catalog_id;
+    if (!o.product_name.empty())
+        slot.product_name = o.product_name;
 
     // Trust the user's assignment for presence. Untagged 3rd-party spools
     // always read RFID -1, so firmware reports the bay EMPTY even though a
@@ -2700,8 +2719,14 @@ bool AmsBackendCfs::clear_stale_override_on_removal_locked(SlotInfo& slot, int s
     // empty bay exactly like a locked field does. Without this, a bay that
     // reads EMPTY for one poll — a genuine unload, but equally a transient
     // unreadable-tag read — silently destroys the user's Spoolman linkage.
+    //
+    // catalog_id belongs in the same list and is NOT redundant with brand: a
+    // Generic catalog product carries an empty brand, so a user who picked one
+    // leaves brand/spool_name/ids all empty and would fall through to the
+    // auto-mirror-residue verdict below. Nothing but a user pick can ever write
+    // it — the mirror has no notion of a catalog product.
     if (!o.brand.empty() || !o.spool_name.empty() || o.spoolman_id != 0 ||
-        o.spoolman_vendor_id != 0) {
+        o.spoolman_vendor_id != 0 || !o.catalog_id.empty() || !o.product_name.empty()) {
         return false;
     }
 
@@ -2734,6 +2759,12 @@ void AmsBackendCfs::clear_override_locked(int slot_index, SlotInfo& slot) {
     slot.spoolman_id = 0;
     slot.spoolman_vendor_id = 0;
     slot.remaining_weight_g = -1.0f;
+    // The catalog pick is override-exclusive on every backend — no AMS
+    // firmware carries a branded product id — so a clear always drops it.
+    // Leaving it would re-navigate the editor to the removed spool's
+    // product on the next open.
+    slot.catalog_id.clear();
+    slot.product_name.clear();
 
     if (override_store_) {
         // Capture by value — clear_async's Moonraker callback may fire after

@@ -750,6 +750,13 @@ std::optional<SlotInfo> SettingsManager::get_external_spool_info() const {
                                                static_cast<int>(AMS_DEFAULT_SLOT_COLOR)));
     info.material = config->get<std::string>(config->df() + "filament/external_spool/material", "");
     info.brand = config->get<std::string>(config->df() + "filament/external_spool/brand", "");
+    // The external spool has no lane_data record, so this get/set pair is its
+    // ONLY persistence — the catalog product identity has to round-trip here or
+    // the editor reopens on the alphabetically-first variant of the material.
+    info.catalog_id =
+        config->get<std::string>(config->df() + "filament/external_spool/catalog_id", "");
+    info.product_name =
+        config->get<std::string>(config->df() + "filament/external_spool/product_name", "");
     info.nozzle_temp_min =
         config->get<int>(config->df() + "filament/external_spool/nozzle_temp_min", 0);
     info.nozzle_temp_max =
@@ -773,6 +780,9 @@ void SettingsManager::set_external_spool_info(const SlotInfo& info) {
                      static_cast<int>(info.color_rgb));
     config->set<std::string>(config->df() + "filament/external_spool/material", info.material);
     config->set<std::string>(config->df() + "filament/external_spool/brand", info.brand);
+    config->set<std::string>(config->df() + "filament/external_spool/catalog_id", info.catalog_id);
+    config->set<std::string>(config->df() + "filament/external_spool/product_name",
+                             info.product_name);
     config->set<int>(config->df() + "filament/external_spool/nozzle_temp_min",
                      info.nozzle_temp_min);
     config->set<int>(config->df() + "filament/external_spool/nozzle_temp_max",

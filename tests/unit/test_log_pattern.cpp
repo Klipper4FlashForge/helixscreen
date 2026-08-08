@@ -14,12 +14,15 @@
 // emits the two characters literally.
 
 #include "logging_init.h"
+#include "system/monotonic_ring_sink.h"
 
 #include <spdlog/details/log_msg.h>
 #include <spdlog/pattern_formatter.h>
 
 #include <chrono>
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "../catch_amalgamated.hpp"
 
@@ -215,4 +218,100 @@ TEST_CASE("Each sink formatter tracks its own clock-step state", "[logging][patt
     buf.clear();
     b->format(second, buf);
     REQUIRE(std::string(buf.data(), buf.size()).find("CLOCK_STEP") != std::string::npos);
+}
+
+// ============================================================================
+// MonotonicRingSink — the bundle's log_tail source
+// ============================================================================
+//
+// spdlog's stock ringbuffer_sink stores raw messages and formats them in
+// last_formatted(), so `%*` read the DUMP instant and every line in a 2000-line
+// tail carried the same offset. The step detector then compared a real wall
+// delta against a monotonic delta of ~0 and fired on every idle gap over a
+// second: bundle TDQCCQB3 shipped 97 CLOCK_STEP annotations summing to 8978 s,
+// which is the entire session. These pin the stamp to log time.
+//
+// The clock is injected, so none of these sleep.
+
+namespace {
+
+std::shared_ptr<helix::logging::MonotonicRingSink> make_ring(std::vector<double> stamps) {
+    auto seq = std::make_shared<size_t>(0);
+    auto values = std::make_shared<std::vector<double>>(std::move(stamps));
+    auto sink = std::make_shared<helix::logging::MonotonicRingSink>(16, [seq, values]() -> double {
+        return *seq < values->size() ? (*values)[(*seq)++] : values->back();
+    });
+    sink->set_formatter(helix::logging::make_formatter(helix::logging::SinkKind::File));
+    return sink;
+}
+
+void push(const std::shared_ptr<helix::logging::MonotonicRingSink>& sink, double wall,
+          const char* text) {
+    spdlog::details::log_msg msg{epoch_plus(wall), spdlog::source_loc{}, "helix",
+                                 spdlog::level::info, text};
+    sink->log(msg);
+}
+
+std::string join(const std::vector<std::string>& lines) {
+    std::string out;
+    for (const auto& l : lines)
+        out += l;
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("Ring sink stamps each entry when logged, not when dumped",
+          "[logging][pattern][1218][ring]") {
+    // Three lines a second apart. The stock sink gave all three the same
+    // column; each must now carry its own.
+    auto sink = make_ring({100.0, 101.0, 102.0});
+    push(sink, 1000.0, "a");
+    push(sink, 1001.0, "b");
+    push(sink, 1002.0, "c");
+
+    auto lines = sink->last_formatted();
+    REQUIRE(lines.size() == 3);
+    REQUIRE(lines[0].find("+00100.000") != std::string::npos);
+    REQUIRE(lines[1].find("+00101.000") != std::string::npos);
+    REQUIRE(lines[2].find("+00102.000") != std::string::npos);
+}
+
+TEST_CASE("Ring dump does not fabricate CLOCK_STEP across an idle gap",
+          "[logging][pattern][1218][ring]") {
+    // Wall and monotonic both advance 30 s: a quiet app, not a clock step.
+    auto sink = make_ring({100.0, 130.0});
+    push(sink, 1000.0, "a");
+    push(sink, 1030.0, "b");
+
+    REQUIRE(join(sink->last_formatted()).find("CLOCK_STEP") == std::string::npos);
+}
+
+TEST_CASE("Ring dump still reports a genuine clock step", "[logging][pattern][1218][ring]") {
+    // Wall jumps 100 s while monotonic advances 1 s — a real step, and the
+    // whole reason the column exists. Must survive the replay path.
+    auto sink = make_ring({100.0, 101.0});
+    push(sink, 1000.0, "a");
+    push(sink, 1100.0, "b");
+
+    REQUIRE(join(sink->last_formatted()).find("CLOCK_STEP") != std::string::npos);
+}
+
+TEST_CASE("Ring dump is idempotent", "[logging][pattern][1218][ring]") {
+    // debug_bundle_collector probes the ring with a 1-line tail before
+    // log_collector takes the real dump. Carrying step state across dumps made
+    // the real dump's first line diff against the probe's, opening every bundle
+    // with a fabricated step.
+    auto sink = make_ring({100.0, 130.0, 160.0});
+    push(sink, 1000.0, "a");
+    push(sink, 1030.0, "b");
+    push(sink, 1060.0, "c");
+
+    auto probe = sink->last_formatted(1); // the collector's emptiness check
+    REQUIRE(probe.size() == 1);
+
+    auto first = sink->last_formatted();
+    auto second = sink->last_formatted();
+    REQUIRE(first == second);
+    REQUIRE(join(first).find("CLOCK_STEP") == std::string::npos);
 }

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include "ui_filament_product_edit_modal.h"
+
 #include "filament_catalog.h"
 #include "lvgl.h"
-#include "ui_filament_product_edit_modal.h"
 
 #include <functional>
 #include <map>
@@ -82,6 +83,17 @@ class FilamentCatalogSelector {
     /// restore it (see set_preselect_on_change()).
     void preselect_first();
 
+    /// Navigate the dropdowns to @p id's vendor + material family and highlight
+    /// that exact product, recording it as the preselect anchor. Returns false
+    /// (leaving the selector untouched) when @p id is empty or no longer
+    /// resolves — a custom overlay product the user deleted, or a bundled id
+    /// retired by an app update. Hosts restoring a saved pick call this FIRST
+    /// and fall back to preselect_first() on false: preselect_first() can only
+    /// ever land on ordered_products_for().front(), which for a vendor whose
+    /// products all share one material collapses to lowercased-name
+    /// alphabetical order and silently substitutes a different variant.
+    bool preselect_product_id(const std::string& id);
+
     /// Opt-in: when enabled, a vendor/type dropdown change auto-highlights a
     /// product in the rebuilt list instead of leaving it unchecked — the
     /// anchor product if it survived into the new list, else the first row.
@@ -97,7 +109,9 @@ class FilamentCatalogSelector {
     /// slot-assignment selector leaves it off, where catalog editing is out of
     /// place). Set before populate(). The "+ Add custom filament" row shows in
     /// both contexts regardless.
-    void set_show_edit_affordances(bool v) { show_edit_affordances_ = v; }
+    void set_show_edit_affordances(bool v) {
+        show_edit_affordances_ = v;
+    }
 
     // === Introspection (tests + hosts) ===
     [[nodiscard]] std::string current_vendor() const;
@@ -156,6 +170,11 @@ class FilamentCatalogSelector {
     void handle_add_custom();
     /// Open the product-edit modal in edit mode for @p product_id (row edit icon).
     void handle_edit_product(const std::string& product_id);
+    /// Resolve @p id, navigate the dropdowns to its vendor + family, highlight
+    /// it, set the preselect anchor and notify. False = unresolvable (empty id
+    /// or absent from the catalog), selector left untouched. Shared by
+    /// refresh_after_edit() and preselect_product_id().
+    bool focus_product(const std::string& id);
     /// Reload the catalog after a save/delete and, when @p focus_id resolves,
     /// navigate the dropdowns to its vendor+family and highlight it.
     void refresh_after_edit(const std::string& focus_id);
@@ -189,7 +208,7 @@ class FilamentCatalogSelector {
     std::string highlighted_id_;
     std::string preselect_anchor_id_; // product to restore on a dropdown round-trip
     bool preselect_on_change_ = false;
-    bool show_edit_affordances_ = false; // per-row edit pencil (picker opts in)
+    bool show_edit_affordances_ = false;          // per-row edit pencil (picker opts in)
     std::vector<std::string> vendor_order_;       // dropdown index -> brand
     std::vector<std::string> additional_vendors_; // host-supplied, merged into the vendor list
     SelectionChangedCallback on_selection_changed_;

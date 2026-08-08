@@ -821,6 +821,14 @@ void AmsBackendAd5xIfs::apply_overrides(SlotInfo& slot, int slot_index) {
         slot.color_name = o.color_name;
     if (!o.material.empty())
         slot.material = o.material;
+    // Catalog product identity — same "override wins only when it carries a
+    // real value" rule as the strings above. Firmware never populates these
+    // (no AMS protocol has a notion of a branded product id), so a non-empty
+    // value here is always a user pick and always wins.
+    if (!o.catalog_id.empty())
+        slot.catalog_id = o.catalog_id;
+    if (!o.product_name.empty())
+        slot.product_name = o.product_name;
 }
 
 bool AmsBackendAd5xIfs::check_external_color_change(int slot_index,
@@ -902,9 +910,9 @@ bool AmsBackendAd5xIfs::check_external_color_change(int slot_index,
 }
 
 bool AmsBackendAd5xIfs::check_external_type_change(int slot_index,
-                                                  const std::string& observed_material,
-                                                  std::optional<uint32_t> observed_color,
-                                                  bool slot_has_filament) {
+                                                   const std::string& observed_material,
+                                                   std::optional<uint32_t> observed_color,
+                                                   bool slot_has_filament) {
     // Track a material baseline across empty lanes — mirroring
     // check_external_color_change, which keeps a live baseline over an empty
     // lane (empty color parses to the #808080 placeholder). The prior top-level
@@ -1043,6 +1051,12 @@ void AmsBackendAd5xIfs::clear_override_locked(int slot_index, SlotInfo& slot) {
     slot.remaining_weight_g = -1.0f;
     slot.total_weight_g = -1.0f;
     slot.color_name.clear();
+    // The catalog pick is override-exclusive on every backend — no AMS
+    // firmware carries a branded product id — so a clear always drops it.
+    // Leaving it would re-navigate the editor to the removed spool's
+    // product on the next open.
+    slot.catalog_id.clear();
+    slot.product_name.clear();
 
     if (override_store_) {
         // Capture by value only — clear_async's Moonraker callback can fire
@@ -1059,7 +1073,7 @@ void AmsBackendAd5xIfs::clear_override_locked(int slot_index, SlotInfo& slot) {
 }
 
 void AmsBackendAd5xIfs::release_locked_override_keep_identity_locked(int slot_index,
-                                                                    SlotInfo& slot) {
+                                                                     SlotInfo& slot) {
     // Caller must hold mutex_. See the header for the full rationale. Short
     // version: an external CHANGE_ZCOLOR legitimately re-authors color/material
     // (firmware truth wins), but the firmware can't carry brand/spool_name/
@@ -1104,6 +1118,17 @@ void AmsBackendAd5xIfs::release_locked_override_keep_identity_locked(int slot_in
     ovr.color_rgb = 0;
     ovr.color_name.clear();
     ovr.material.clear();
+    // The catalog pick is scoped to a MATERIAL — "sunlu-pla-plus-2-0" only makes
+    // sense while the lane is PLA. This path exists because firmware just
+    // re-authored the material, so the pick goes with it. Keeping it would be
+    // worse than losing it: setup_details_selector() seeds the type dropdown
+    // from catalog_id first, so a stale id would drag the editor back to the old
+    // material family and contradict the firmware truth we just accepted.
+    // Deliberately NOT counted in has_identity above for the same reason — it is
+    // not firmware-uncarryable metadata like brand/spool_name, it is material-
+    // derived.
+    ovr.catalog_id.clear();
+    ovr.product_name.clear();
 
     // Persist the trimmed override so a restart reloads the retained identity
     // (and the released locks) instead of the pre-edit locked record. Capture
@@ -1452,7 +1477,7 @@ AmsError AmsBackendAd5xIfs::unload_filament(int slot_index) {
         // slot. Passing -1 through to eject_lane() fails validate_slot_index()
         // and the swap path discarded that error, freezing the sidebar in
         // "Heating" (Vger1700, bundle Z5V4K3NL).
-        int eject_slot = slot_index >= 0 ? slot_index
+        int eject_slot = slot_index >= 0    ? slot_index
                          : seated_slot >= 0 ? seated_slot
                                             : current_slot;
         if (eject_slot < 0) {
@@ -1938,6 +1963,11 @@ AmsError AmsBackendAd5xIfs::set_slot_info(int slot_index, const SlotInfo& info, 
         entry->info.color_name = info.color_name;
         entry->info.material = normalized_material;
         entry->info.brand = info.brand;
+        // Carry the catalog product identity through preview writes too — a
+        // persist=false preview that dropped it would make the editor snap
+        // back to a different variant on the next get_slot_info().
+        entry->info.catalog_id = info.catalog_id;
+        entry->info.product_name = info.product_name;
         entry->info.spool_name = info.spool_name;
         entry->info.spoolman_id = info.spoolman_id;
         entry->info.spoolman_vendor_id = info.spoolman_vendor_id;
@@ -1967,6 +1997,13 @@ AmsError AmsBackendAd5xIfs::set_slot_info(int slot_index, const SlotInfo& info, 
             // materials_ copy; reuse it so the on-disk record carries the
             // firmware-valid value instead of the raw user-typed string.
             ovr.material = normalized_material;
+            // Catalog product identity. Persisted so a reopen can restore the
+            // EXACT product rather than the alphabetically-first variant of the
+            // same vendor+material. Never auto-mirrored (firmware has no notion
+            // of a catalog product), so no user-lock flag is needed: a non-empty
+            // value can only have come from a user pick.
+            ovr.catalog_id = info.catalog_id;
+            ovr.product_name = info.product_name;
             // User-lock signals: persist=true is a user edit, so tag both
             // fields user-locked. Material is only locked when the user
             // actually provided one — an explicit empty material is the user
@@ -3079,10 +3116,11 @@ bool AmsBackendAd5xIfs::on_gcode_response_line(const std::string& line) {
                          (it->second.user_locked_color || it->second.user_locked_material));
 
                     if (has_locked_override) {
-                        spdlog::info("{} External CHANGE_ZCOLOR for slot {} overrides an earlier "
-                                     "HelixScreen edit — releasing the stale color/material locks so "
-                                     "the new firmware color/type wins (#981)",
-                                     backend_log_tag(), slot0);
+                        spdlog::info(
+                            "{} External CHANGE_ZCOLOR for slot {} overrides an earlier "
+                            "HelixScreen edit — releasing the stale color/material locks so "
+                            "the new firmware color/type wins (#981)",
+                            backend_log_tag(), slot0);
                         auto* entry = slots_.get_mut(slot0);
                         if (entry) {
                             // Release the stale color/material locks + strip the
@@ -3121,9 +3159,10 @@ bool AmsBackendAd5xIfs::on_gcode_response_line(const std::string& line) {
                                 const uint32_t color_value =
                                     static_cast<uint32_t>(std::stoul(*parsed_hex, nullptr, 16));
                                 last_firmware_color_[slot0] = color_value;
-                                spdlog::info("{} External CHANGE_ZCOLOR applied HEX='{}' to slot {} "
-                                             "(#1065 gcode-path extraction)",
-                                             backend_log_tag(), *parsed_hex, slot0);
+                                spdlog::info(
+                                    "{} External CHANGE_ZCOLOR applied HEX='{}' to slot {} "
+                                    "(#1065 gcode-path extraction)",
+                                    backend_log_tag(), *parsed_hex, slot0);
                                 mutated = true;
                             } catch (...) {
                                 // std::stoul on a regex-validated 6-hex-digit
@@ -3226,7 +3265,8 @@ bool AmsBackendAd5xIfs::apply_color_menu_slot_row(const std::string& line) {
     // submenu's buttons (Load|IN_ZCOLOR …, Change color|CHANGE_ZCOLOR …), and
     // RUN_ZCOLOR is display-only — it never mutates firmware state, so a row
     // can be read as a snapshot with no risk of confusing it for a command.
-    static const std::regex slot_row_re(R"(action:prompt_button\s+(\d+)\s*:[^|]*\|\s*RUN_ZCOLOR\b)");
+    static const std::regex slot_row_re(
+        R"(action:prompt_button\s+(\d+)\s*:[^|]*\|\s*RUN_ZCOLOR\b)");
     std::smatch rm;
     if (!std::regex_search(line, rm, slot_row_re))
         return false;
@@ -3267,8 +3307,8 @@ bool AmsBackendAd5xIfs::apply_color_menu_slot_row(const std::string& line) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         const auto idx = static_cast<size_t>(slot0);
-        const bool same = (!has_type || materials_[idx] == tm[1].str()) &&
-                          (!has_hex || colors_[idx] == hex);
+        const bool same =
+            (!has_type || materials_[idx] == tm[1].str()) && (!has_hex || colors_[idx] == hex);
         if (same)
             return false; // Nothing moved — the common case on a re-render.
 
@@ -4693,8 +4733,7 @@ void AmsBackendAd5xIfs::on_head_transition_locked(bool detected) {
         }
         spdlog::info("{} Phase: head sensor dropped (cut/retract started{}"
                      ")",
-                     backend_log_tag(),
-                     phase_tracker_.is_unload ? "" : " — LOAD swap clock reset");
+                     backend_log_tag(), phase_tracker_.is_unload ? "" : " — LOAD swap clock reset");
     } else {
         // Head sensor tripped: filament reached the nozzle (load) — advance to
         // the purge phase.

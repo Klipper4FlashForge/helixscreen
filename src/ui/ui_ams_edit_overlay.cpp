@@ -855,8 +855,16 @@ void AmsEditOverlay::handle_spool_edit_save(bool finish) {
         working_info_.nozzle_temp_min = ef->nozzle_min;
         working_info_.nozzle_temp_max = ef->nozzle_max;
         working_info_.bed_temp = ef->bed_temp;
-        spdlog::info("[AmsEditOverlay] Spool-edit pick: '{} {}' ({}-{}/{}°C)", ef->brand, ef->type,
-                     ef->nozzle_min, ef->nozzle_max, ef->bed_temp);
+        // WHICH product, not just its material. ef->type collapses every PLA
+        // product a vendor sells into one string, so without these the reopened
+        // editor can only preselect-first and lands on whichever variant sorts
+        // alphabetically first. Overwritten unconditionally (never merged) so a
+        // stale id from a previous pick — or one that no longer resolves — is
+        // replaced by whatever the user is actually confirming here.
+        working_info_.catalog_id = ef->id;
+        working_info_.product_name = ef->name;
+        spdlog::info("[AmsEditOverlay] Spool-edit pick: '{} {}' [{}] ({}-{}/{}°C)", ef->brand,
+                     ef->name, ef->id, ef->nozzle_min, ef->nozzle_max, ef->bed_temp);
     } else {
         // No product highlighted. With preselect-on-change enabled this only
         // happens when the rebuilt product list was empty — a type the firmware
@@ -879,6 +887,12 @@ void AmsEditOverlay::handle_spool_edit_save(bool finish) {
             } else {
                 working_info_.brand = "Generic";
             }
+            // The material genuinely changed and the catalog stocks nothing for
+            // it, so any previously stored product identity now describes a
+            // DIFFERENT material. Leaving it would make the next open navigate
+            // the selector back to the old family and re-adopt the old product.
+            working_info_.catalog_id.clear();
+            working_info_.product_name.clear();
             spdlog::info("[AmsEditOverlay] Spool-edit type change with no catalog product: '{} {}'",
                          working_info_.brand, sel_type);
         }
@@ -1518,7 +1532,15 @@ void AmsEditOverlay::update_temp_display() {
 }
 
 bool AmsEditOverlay::is_dirty() const {
-    // Compare relevant fields that can be edited
+    // Compare relevant fields that can be edited.
+    //
+    // catalog_id / product_name are deliberately NOT compared, for the same
+    // reason the temps aren't: the spool-edit view AUTO-highlights a product
+    // (preselect_first / preselect_on_change), and Save copies whatever is
+    // highlighted. Including them would make an untouched open-and-Save of a
+    // slot that never had a catalog pick report itself dirty. Nothing is lost —
+    // handle_spool_edit_save(finish=true) is the only production caller and it
+    // routes straight into commit_and_close(), which never consults is_dirty().
     return working_info_.color_rgb != original_info_.color_rgb ||
            working_info_.material != original_info_.material ||
            working_info_.brand != original_info_.brand ||
@@ -1968,9 +1990,21 @@ bool AmsEditOverlay::setup_details_selector() {
     // identity). Opt in before populate; the standalone picker stays opt-out.
     details_selector_.set_preselect_on_change(true);
     details_selector_.populate();
-    // An already-defined filament should show its matching variant checked;
-    // a fresh list pre-checks the first product so Save is one tap.
-    details_selector_.preselect_first();
+    // Restore the EXACT product the user last saved, when we have one. Vendor +
+    // material family alone are not enough: preselect_first() takes
+    // ordered_products_for().front(), and a vendor whose products all share one
+    // material (SUNLU's six PLAs) has no variant/rank tiebreak left, so it falls
+    // through to lowercased-name alphabetical — "PLA Marble" wins every time and
+    // a saved "PLA+ 2.0" comes back relabelled.
+    //
+    // preselect_product_id() returns false for an id that no longer resolves (a
+    // custom overlay product the user deleted, an id retired by an app update);
+    // preselect_first() then keeps the list from opening all-unchecked. The
+    // stored product_name is still on working_info_ either way, so nothing
+    // downstream forgets what was chosen until the user confirms a replacement.
+    if (!details_selector_.preselect_product_id(working_info_.catalog_id)) {
+        details_selector_.preselect_first();
+    }
     // A Spoolman-only vendor (present on the server but absent from the bundled
     // catalog) isn't in the catalog brand list, so the seed above snapped it to
     // Generic. Fetch the live vendor list and merge it in so the seed resolves.
@@ -2013,12 +2047,19 @@ void AmsEditOverlay::maybe_merge_spoolman_vendors() {
                               return;
                           }
                           details_selector_.set_additional_vendors(std::move(names));
-                          // Re-check the product matching the now-resolved seed
-                          // vendor+type. For a pure-Spoolman vendor the catalog
-                          // has no product, so the list stays empty and nothing
-                          // is checked — handle_spool_edit_save() then keeps the
-                          // dropdown's vendor string, preserving the brand.
-                          details_selector_.preselect_first();
+                          // set_additional_vendors() rebuilds the dropdowns and
+                          // drops both the highlight and the anchor, so the
+                          // saved product has to be re-seeded here or the merge
+                          // undoes setup_details_selector()'s restore. Same
+                          // id-then-first order for the same reason.
+                          //
+                          // For a pure-Spoolman vendor the catalog has no
+                          // product at all, so both calls no-op and the list
+                          // stays empty — handle_spool_edit_save() then keeps
+                          // the dropdown's vendor string, preserving the brand.
+                          if (!details_selector_.preselect_product_id(working_info_.catalog_id)) {
+                              details_selector_.preselect_first();
+                          }
                       });
         },
         [](const MoonrakerError& err) {

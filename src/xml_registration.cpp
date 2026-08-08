@@ -114,10 +114,16 @@ static void register_color_picker_responsive_constants() {
 }
 
 /**
- * Register responsive constants into the color_picker component scope.
- * Must be called AFTER register_xml("color_picker.xml") so the scope exists.
+ * Register the responsive HSV-picker constants into a component scope.
+ * Must be called AFTER register_xml() for that component so the scope exists.
+ *
+ * Takes the component name because consts are SCOPE-LOCAL: any component that
+ * instantiates <ui_hsv_picker sv_size="#sv_size"> needs its own registration.
+ * ams_edit_overlay embeds the picker and had none, so resolve_consts() dropped
+ * both attributes and the widget silently fell back to default_sv_size() — a
+ * fixed 128px on constrained devices, ignoring the breakpoint ladder entirely.
  */
-static void register_color_picker_component_constants() {
+static void register_color_picker_component_constants(const char* component_name) {
     lv_display_t* display = lv_display_get_default();
     int32_t ver_res = lv_display_get_vertical_resolution(display);
     // Swatch is a square touch target — size it off the constrained axis so it
@@ -152,14 +158,25 @@ static void register_color_picker_component_constants() {
     snprintf(sv_buf, sizeof(sv_buf), "%d", computed_sv);
     snprintf(hue_buf, sizeof(hue_buf), "%d", computed_hue);
 
-    lv_xml_component_scope_t* scope = lv_xml_component_get_scope("color_picker");
+    lv_xml_component_scope_t* scope = lv_xml_component_get_scope(component_name);
     if (scope) {
-        lv_xml_register_const(scope, "swatch_size", swatch_size);
+        // swatch_size ONLY where the component declares a fallback <px> for it.
+        // register_const is first-write-wins, and <consts> are parsed during
+        // register_xml(), so the declaration in color_picker.xml already owns
+        // the name by the time we get here — the responsive 24/28/32 ladder was
+        // silently discarded and every screen got the declared 32. update_const
+        // overwrites, same reason register_swatch_grid_constants() uses it.
+        // Scopes without the declaration are skipped: update_const would log a
+        // "not found for update" warning on every boot for a name they never use.
+        if (lv_xml_get_const_silent(scope, "swatch_size") != nullptr) {
+            lv_xml_update_const(scope, "swatch_size", swatch_size);
+        }
+        // Never declared in XML anywhere, so register is silent and correct.
         lv_xml_register_const(scope, "sv_size", sv_buf);
         lv_xml_register_const(scope, "hue_height", hue_buf);
-        spdlog::debug("[Color Picker] Registered swatch_size={}, sv_size={}, hue_height={} "
+        spdlog::debug("[Color Picker] {}: swatch_size={}, sv_size={}, hue_height={} "
                       "for height {}px",
-                      swatch_size, sv_buf, hue_buf, ver_res);
+                      component_name, swatch_size, sv_buf, hue_buf, ver_res);
     }
 }
 
@@ -336,6 +353,8 @@ void register_xml_components() {
     register_xml("components/theme_swatch_grid.xml");
     register_swatch_grid_constants("theme_swatch_grid");
     register_xml("ams_edit_overlay.xml");
+    // Embeds <ui_hsv_picker sv_size="#sv_size">; consts are scope-local.
+    register_color_picker_component_constants("ams_edit_overlay");
 
     // Spoolman components (MUST be after spool_canvas registration)
     register_xml("spoolman_spool_row.xml");
@@ -435,7 +454,7 @@ void register_xml_components() {
     register_xml("action_prompt_modal.xml");
     register_xml("info_qr_modal.xml");
     register_xml("color_picker.xml");
-    register_color_picker_component_constants();
+    register_color_picker_component_constants("color_picker");
 
     // Print file components
     register_xml("print_file_card.xml");

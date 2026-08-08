@@ -652,6 +652,11 @@ AmsError AmsBackendToolChanger::set_slot_info(int slot_index, const SlotInfo& in
             slot.color_name = info.color_name;
             slot.material = info.material;
             slot.brand = info.brand;
+            // No override store on this backend, so this in-memory copy is the
+            // only thing keeping the editor's catalog pick visible until the
+            // next parse.
+            slot.catalog_id = info.catalog_id;
+            slot.product_name = info.product_name;
             slot.spoolman_id = info.spoolman_id;
             slot.spool_name = info.spool_name;
             slot.remaining_weight_g = info.remaining_weight_g;

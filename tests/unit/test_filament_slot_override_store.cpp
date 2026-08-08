@@ -188,11 +188,21 @@ TEST_CASE("FilamentSlotOverride roundtrips through JSON", "[filament_slot_overri
     ovr.color_rgb = 0xFF5500;
     ovr.color_name = "Orange";
     ovr.material = "PLA";
+    // Catalog product identity — the variant the user actually picked. `material`
+    // alone collapses every PLA product of a vendor into one string, so without
+    // these two the reopened editor cannot tell "PLA+ 2.0" from "PLA Marble".
+    ovr.catalog_id = "sunlu-pla-plus-2-0";
+    ovr.product_name = "PLA+ 2.0";
     ovr.bed_temp = 60;
     ovr.nozzle_temp = 215;
     ovr.updated_at = std::chrono::system_clock::from_time_t(1713441296);
 
     json j = helix::ams::to_json(ovr);
+    // The local cache is HelixScreen-private, so it uses bare key names (the
+    // same convention as user_locked_color) rather than the helix_ prefix the
+    // shared lane_data namespace needs.
+    CHECK(j["catalog_id"] == "sunlu-pla-plus-2-0");
+    CHECK(j["product_name"] == "PLA+ 2.0");
     FilamentSlotOverride round = helix::ams::from_json(j);
 
     CHECK(round.brand == ovr.brand);
@@ -204,9 +214,22 @@ TEST_CASE("FilamentSlotOverride roundtrips through JSON", "[filament_slot_overri
     CHECK(round.color_rgb == ovr.color_rgb);
     CHECK(round.color_name == ovr.color_name);
     CHECK(round.material == ovr.material);
+    CHECK(round.catalog_id == ovr.catalog_id);
+    CHECK(round.product_name == ovr.product_name);
     CHECK(round.bed_temp == ovr.bed_temp);
     CHECK(round.nozzle_temp == ovr.nozzle_temp);
     CHECK(round.updated_at == ovr.updated_at);
+
+    // A record written before these fields existed must load with clean empty
+    // defaults, never throw — from_json is the offline-cache read path and a
+    // single bad slot must not cost the user every other override.
+    json legacy = j;
+    legacy.erase("catalog_id");
+    legacy.erase("product_name");
+    FilamentSlotOverride old_record = helix::ams::from_json(legacy);
+    CHECK(old_record.catalog_id.empty());
+    CHECK(old_record.product_name.empty());
+    CHECK(old_record.material == "PLA"); // the rest still parses
 }
 
 TEST_CASE("FilamentSlotOverrideStore load returns empty when namespace absent",
@@ -242,6 +265,11 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking parses lane_data entries",
         {"remaining_weight_g", 850.0},
         {"bed_temp", 65},
         {"nozzle_temp", 220},
+        // Catalog product identity. helix_-prefixed because lane_data is a
+        // SHARED namespace (AFC, Happy Hare, Mainsail all write into it) —
+        // same convention as helix_material / helix_locked_*.
+        {"helix_catalog_id", "sunlu-pla-plus-2-0"},
+        {"helix_product_name", "PLA+ 2.0"},
     };
     json lane2 = {
         {"lane", "1"},
@@ -249,6 +277,8 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking parses lane_data entries",
         {"material", "PETG"},
         // No bed_temp / nozzle_temp — load must default to 0 (the "use
         // material default" sentinel that resolved_temps() consults at emit).
+        // No helix_catalog_id / helix_product_name either: a foreign or
+        // pre-upgrade record must load with empty defaults.
     };
     api.mock_set_db_value("lane_data", "lane1", lane1);
     api.mock_set_db_value("lane_data", "lane2", lane2);
@@ -265,10 +295,15 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking parses lane_data entries",
     CHECK(overrides[0].remaining_weight_g == 850.0f);
     CHECK(overrides[0].bed_temp == 65);
     CHECK(overrides[0].nozzle_temp == 220);
+    CHECK(overrides[0].catalog_id == "sunlu-pla-plus-2-0");
+    CHECK(overrides[0].product_name == "PLA+ 2.0");
 
     REQUIRE(overrides.count(1) == 1);
     CHECK(overrides[1].material == "PETG");
     CHECK(overrides[1].color_rgb == 0x00FF00u);
+    // Absent on the wire -> clean empty defaults, no throw.
+    CHECK(overrides[1].catalog_id.empty());
+    CHECK(overrides[1].product_name.empty());
     // brand / spoolman_id not present in lane2 entry - default values
     CHECK(overrides[1].brand == "");
     CHECK(overrides[1].spoolman_id == 0);
@@ -326,6 +361,8 @@ TEST_CASE("FilamentSlotOverrideStore save_async writes AFC-shaped record to lane
     ovr.spoolman_id = 42;
     ovr.remaining_weight_g = 850.0f;
     ovr.total_weight_g = 1000.0f;
+    ovr.catalog_id = "sunlu-pla-plus-2-0";
+    ovr.product_name = "PLA+ 2.0";
 
     bool cb_done = false;
     bool cb_ok = false;
@@ -353,7 +390,18 @@ TEST_CASE("FilamentSlotOverrideStore save_async writes AFC-shaped record to lane
     CHECK(stored["spool_id"] == 42);
     CHECK(stored["remaining_weight_g"] == 850.0f);
     CHECK(stored["total_weight_g"] == 1000.0f);
+    // helix_-prefixed: lane_data is shared with AFC/Happy Hare/Mainsail/Orca,
+    // and an unprefixed "catalog_id" would squat a name none of them own.
+    CHECK(stored["helix_catalog_id"] == "sunlu-pla-plus-2-0");
+    CHECK(stored["helix_product_name"] == "PLA+ 2.0");
     CHECK(stored.contains("scan_time")); // set by save_async
+
+    // The record we just wrote must read back as the same product identity —
+    // save -> load is the exact path the reported bug took.
+    auto reparsed = helix::ams::from_lane_data_record(stored);
+    REQUIRE(reparsed.has_value());
+    CHECK(reparsed->second.catalog_id == "sunlu-pla-plus-2-0");
+    CHECK(reparsed->second.product_name == "PLA+ 2.0");
 }
 
 TEST_CASE("FilamentSlotOverrideStore save_async emits Happy Hare key aliases",
@@ -455,7 +503,7 @@ TEST_CASE("FilamentSlotOverrideStore save_async omits aliases when source empty"
     FilamentSlotOverrideStoreTestAccess::set_cache_directory(store, tmp.path);
 
     FilamentSlotOverride ovr;
-    ovr.material = "PLA"; // brand + spool_name deliberately left empty
+    ovr.material = "PLA"; // brand + spool_name + catalog identity left empty
 
     bool cb_done = false;
     store.save_async(0, ovr, [&](bool, std::string) { cb_done = true; });
@@ -467,6 +515,58 @@ TEST_CASE("FilamentSlotOverrideStore save_async omits aliases when source empty"
     CHECK_FALSE(stored.contains("vendor_name"));
     CHECK_FALSE(stored.contains("spool_name"));
     CHECK_FALSE(stored.contains("name"));
+    // A slot with no catalog pick must not squat two more keys in the shared
+    // namespace with empty strings — an empty helix_catalog_id would also make
+    // the reopen path's resolve_id() lookup meaningless work on every open.
+    CHECK_FALSE(stored.contains("helix_catalog_id"));
+    CHECK_FALSE(stored.contains("helix_product_name"));
+}
+
+// A user can pick a catalog product whose id later disappears — a custom
+// overlay product they deleted, or a bundled id retired by an app update. The
+// stored NAME is what keeps the editor honest in that case: resolve_id() misses
+// so the selector cannot navigate to the exact row, but the record still knows
+// what the user chose, so nothing downstream silently relabels the lane. The
+// two fields are therefore independently persisted, never derived one from the
+// other.
+TEST_CASE("FilamentSlotOverride persists product_name independently of catalog_id",
+          "[filament_slot_override]") {
+    TmpCacheDir tmp("catalog_name_only");
+    MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
+    helix::PrinterState state;
+    state.init_subjects(false);
+    MoonrakerAPIMock api(client, state);
+
+    FilamentSlotOverrideStore store(&api, "ifs");
+    FilamentSlotOverrideStoreTestAccess::set_cache_directory(store, tmp.path);
+
+    FilamentSlotOverride ovr;
+    ovr.material = "PLA";
+    ovr.product_name = "PLA+ 2.0"; // catalog_id deliberately empty
+
+    bool cb_done = false;
+    store.save_async(0, ovr, [&](bool, std::string) { cb_done = true; });
+    REQUIRE(cb_done);
+
+    auto stored = api.mock_get_db_value("lane_data", "lane1");
+    REQUIRE(!stored.is_null());
+    CHECK_FALSE(stored.contains("helix_catalog_id"));
+    CHECK(stored["helix_product_name"] == "PLA+ 2.0");
+
+    auto reparsed = helix::ams::from_lane_data_record(stored);
+    REQUIRE(reparsed.has_value());
+    CHECK(reparsed->second.catalog_id.empty());
+    CHECK(reparsed->second.product_name == "PLA+ 2.0");
+
+    // Same asymmetry through the local cache. to_json emits every field
+    // unconditionally (it is a fixed-shape private record), so the empty
+    // catalog_id is present-but-empty rather than absent.
+    json cached = helix::ams::to_json(ovr);
+    CHECK(cached["catalog_id"] == "");
+    CHECK(cached["product_name"] == "PLA+ 2.0");
+    FilamentSlotOverride round = helix::ams::from_json(cached);
+    CHECK(round.catalog_id.empty());
+    CHECK(round.product_name == "PLA+ 2.0");
 }
 
 TEST_CASE("FilamentSlotOverrideStore load_blocking reads Happy Hare alias-only record",
