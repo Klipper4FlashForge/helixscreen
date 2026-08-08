@@ -1093,6 +1093,7 @@ translations:
   Hide Firmware Noise: Скрыть служебные сообщения прошивки
   Hide Temperature Reports: Скрыть отчёты о температуре
   High Water Mark: Пиковое значение
+  Hold anywhere to cancel: ''
   Holding nozzle at {}°C to purge previous filament.: Удержание сопла при {}°C для очистки от предыдущего филамента.
   Home: Главная
   Home failed: Парковка не удалась

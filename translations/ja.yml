@@ -1000,6 +1000,7 @@ translations:
   Hide Firmware Noise: ファームウェアノイズを非表示
   Hide Temperature Reports: 温度レポートを非表示
   High Water Mark: 最大値
+  Hold anywhere to cancel: ''
   Holding nozzle at {}°C to purge previous filament.: 前のフィラメントをパージするためノズルを {}°C に保持しています。
   Home: ホーム
   Home failed: ホーミング失敗

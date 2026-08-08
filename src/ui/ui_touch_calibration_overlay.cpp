@@ -82,6 +82,13 @@ static void on_touch_cal_cancel_clicked(lv_event_t* e) {
     LVGL_SAFE_EVENT_CB_END();
 }
 
+static void on_touch_cal_hold_abort(lv_event_t* e) {
+    (void)e;
+    LVGL_SAFE_EVENT_CB_BEGIN("[TouchCalibrationOverlay] hold abort");
+    get_touch_calibration_overlay().handle_hold_abort();
+    LVGL_SAFE_EVENT_CB_END();
+}
+
 void register_touch_calibration_overlay_callbacks() {
     get_touch_calibration_overlay().register_callbacks();
 }
@@ -128,8 +135,17 @@ TouchCalibrationOverlay::TouchCalibrationOverlay() {
 
         // Revert to the pre-session calibration and disable affine for the next
         // capture attempt.
-        if (DisplayManager* dm = DisplayManager::instance()) {
-            session_.revert_for_retry(*dm);
+        if (helix::ICalibrationSink* sink = calibration_sink()) {
+            session_.revert_for_retry(*sink);
+        }
+
+        // Restarting forever is the trap: a user who cannot press Accept under
+        // this panel's mapping will not be able to press it on the next pass
+        // either, and the countdown put them straight back into capture with no
+        // way out (#943).
+        if (++unattended_verify_rounds_ >= MAX_UNATTENDED_VERIFY_ROUNDS) {
+            abort_session(lv_tr("Calibration kept timing out. Your previous settings were kept."));
+            return;
         }
 
         // Reset accept button text
@@ -150,28 +166,44 @@ TouchCalibrationOverlay::TouchCalibrationOverlay() {
     // Set up sample progress callback for UI updates
     panel_->set_sample_progress_callback([this]() { update_instruction_text(); });
 
-    // Re-enable the ORIGINAL calibration the instant the panel enters VERIFY.
+    // Install the JUST-CAPTURED calibration the instant the panel enters VERIFY.
     //
     // Fires on the actual state transition (from the release-commit, the stall
-    // timer, or legacy sample-on-press), so it cannot be defeated by which
-    // input edge happened to trigger the commit. The new (untested) cal is NOT
-    // applied — keeping the known-good cal active means Accept/Retry dispatch on
-    // their true screen locations, and a bad matrix can't map a stray tap onto
-    // Accept and save itself. The ripple in handle_screen_touched() visualizes
-    // where the new cal WOULD place the finger.
+    // timer, or legacy sample-on-press), so it cannot be defeated by which input
+    // edge happened to trigger the commit.
     //
-    // Without this, VERIFY ran on raw, uncalibrated coordinates; on a resistive
-    // panel whose raw Y is inverted vs screen Y (AD5M) the bottom Accept button
-    // was unhittable and the cal timed out (#943/#986).
+    // VERIFY exists to test the new matrix, so the new matrix is what has to be
+    // active: Accept and Retry sit at bottom-center, and only the transform the
+    // user just captured can put a finger there. Re-installing the PRE-SESSION
+    // matrix instead inverts the assumption the screen is built on — the stored
+    // matrix being wrong is the sole reason anyone opens recalibration. On a
+    // digitizer that over-reports its ABS range every tap collapses into a
+    // top-left sub-rectangle under the stored matrix, so the buttons could never
+    // be pressed and the session could only ever time out (#943, Qidi Q2).
+    //
+    // This also covers the case the previous behaviour was written for (#943/#986,
+    // AD5M): a resistive panel whose raw Y runs opposite to screen Y. The new
+    // matrix is precisely the one that un-inverts Y, so Accept is reachable under
+    // it as well.
+    //
+    // The session backup stays armed, so Retry, a timeout, a fast-revert, and a
+    // plain dismiss all still revert to the pre-session calibration; only Accept
+    // calls session_.commit() and keeps this matrix.
     panel_->set_verify_entry_callback([this]() {
-        if (DisplayManager* dm = DisplayManager::instance()) {
-            dm->enable_affine_calibration();
-            spdlog::info("[{}] Entered VERIFY: re-enabled original calibration "
-                         "(new cal NOT applied until accept)",
+        helix::ICalibrationSink* sink = calibration_sink();
+        const TouchCalibration* fresh = panel_ ? panel_->get_calibration() : nullptr;
+        if (sink && fresh && fresh->valid && sink->apply_calibration(*fresh)) {
+            spdlog::info("[{}] Entered VERIFY under the newly captured calibration "
+                         "(a={:.4f} e={:.4f}); reverts unless accepted",
+                         get_name(), fresh->a, fresh->e);
+        } else if (sink) {
+            // No usable new matrix to test — fall back to whatever was stored so
+            // the screen is at least as usable as it was on entry.
+            sink->enable_affine();
+            spdlog::warn("[{}] Entered VERIFY without a usable new calibration; "
+                         "kept the pre-session one",
                          get_name());
         }
-        // Keep the session backup armed: the user can still Retry or back out of
-        // VERIFY, and either way must revert to the pre-session calibration.
         update_state_subject();
         update_instruction_text();
         update_crosshair_position();
@@ -182,8 +214,16 @@ TouchCalibrationOverlay::TouchCalibrationOverlay() {
         spdlog::warn("[{}] Fast-revert: broken matrix detected, reverting", get_name());
 
         // Revert to the pre-session calibration and disable affine for retry.
-        if (DisplayManager* dm = DisplayManager::instance()) {
-            session_.revert_for_retry(*dm);
+        if (helix::ICalibrationSink* sink = calibration_sink()) {
+            session_.revert_for_retry(*sink);
+        }
+
+        // Shares the timeout's budget: a fast-revert also sends the user back
+        // into capture without them asking, so on its own it is the same loop.
+        if (++unattended_verify_rounds_ >= MAX_UNATTENDED_VERIFY_ROUNDS) {
+            abort_session(lv_tr("Touch input did not track the new calibration. "
+                                "Your previous settings were kept."));
+            return;
         }
 
         panel_->retry();
@@ -211,6 +251,19 @@ TouchCalibrationOverlay::~TouchCalibrationOverlay() {
     // Clear widget pointers (owned by LVGL)
     overlay_root_ = nullptr;
     crosshair_ = nullptr;
+}
+
+// ============================================================================
+// Calibration Sink
+// ============================================================================
+
+helix::ICalibrationSink* TouchCalibrationOverlay::calibration_sink() {
+    if (calibration_sink_override_) {
+        return calibration_sink_override_;
+    }
+    // DisplayManager implements ICalibrationSink; it is null before the display
+    // is brought up and in unit tests.
+    return DisplayManager::instance();
 }
 
 // ============================================================================
@@ -254,6 +307,7 @@ void TouchCalibrationOverlay::register_callbacks() {
         {"on_touch_cal_overlay_released", on_touch_cal_overlay_released},
         {"on_touch_cal_back_clicked", on_touch_cal_back_clicked},
         {"on_touch_cal_cancel_clicked", on_touch_cal_cancel_clicked},
+        {"on_touch_cal_hold_abort", on_touch_cal_hold_abort},
     });
 
     spdlog::debug("[{}] Event callbacks registered", get_name());
@@ -340,13 +394,16 @@ void TouchCalibrationOverlay::show(CompletionCallback callback) {
     if (panel_) {
         panel_->reset();
     }
+    unattended_verify_rounds_ = 0;
+    hold_repeat_count_ = 0;
 
     // Snapshot the active calibration and disable affine so we capture raw
     // coordinates. session_.restore() (in on_deactivate/cleanup) re-enables it
     // however this session ends.
-    DisplayManager* dm = DisplayManager::instance();
-    if (dm) {
-        session_.begin_capture(*dm);
+    if (helix::ICalibrationSink* sink = calibration_sink()) {
+        session_.begin_capture(*sink);
+    }
+    if (DisplayManager* dm = DisplayManager::instance()) {
         // Suppress the global debug-touches ripple while this overlay is up —
         // it draws its own ripple, and the global one would render raw coords
         // during capture (#943).
@@ -456,8 +513,10 @@ void TouchCalibrationOverlay::on_deactivate() {
     // dismiss, so this is the path that must re-arm touch. Without it, aborting
     // recalibration before accepting left the affine disabled until the next
     // reboot, so touch reverted to raw/unscaled coordinates (#943).
+    if (helix::ICalibrationSink* sink = calibration_sink()) {
+        session_.restore(*sink);
+    }
     if (DisplayManager* dm = DisplayManager::instance()) {
-        session_.restore(*dm);
         // Re-allow the global debug-touches ripple now that the overlay is gone.
         dm->set_touch_calibration_active(false);
     }
@@ -505,8 +564,8 @@ void TouchCalibrationOverlay::cleanup() {
     // Restore the pre-session calibration and re-enable the affine transform.
     // (on_deactivate() already does this on a normal dismiss; this covers
     // teardown/destruction paths that bypass it.)
-    if (DisplayManager* dm = DisplayManager::instance()) {
-        session_.restore(*dm);
+    if (helix::ICalibrationSink* sink = calibration_sink()) {
+        session_.restore(*sink);
     }
 
     spdlog::debug("[{}] Cleanup complete", get_name());
@@ -544,9 +603,9 @@ void TouchCalibrationOverlay::handle_accept_clicked() {
         spdlog::info("[{}] Calibration saved to config", get_name());
     }
 
-    // Apply calibration immediately via DisplayManager
-    DisplayManager* dm = DisplayManager::instance();
-    if (dm && dm->apply_touch_calibration(*cal)) {
+    // Apply calibration immediately via the live input device
+    helix::ICalibrationSink* sink = calibration_sink();
+    if (sink && sink->apply_calibration(*cal)) {
         spdlog::info("[{}] Calibration applied to touch input", get_name());
     } else {
 #ifndef HELIX_DISPLAY_FBDEV
@@ -561,6 +620,7 @@ void TouchCalibrationOverlay::handle_accept_clicked() {
 
     // Calibration accepted — keep it; teardown must not revert it.
     session_.commit();
+    unattended_verify_rounds_ = 0;
 
     // Reset accept button text for next calibration
     snprintf(accept_text_buffer_, sizeof(accept_text_buffer_), "Accept");
@@ -587,9 +647,14 @@ void TouchCalibrationOverlay::handle_retry_clicked() {
     }
 
     // Revert to the pre-session calibration and disable affine for raw capture.
-    if (DisplayManager* dm = DisplayManager::instance()) {
-        session_.revert_for_retry(*dm);
+    if (helix::ICalibrationSink* sink = calibration_sink()) {
+        session_.revert_for_retry(*sink);
     }
+
+    // A pressed Retry is proof the user can reach the buttons, so the
+    // unattended-round budget starts over rather than counting toward an abort
+    // they did not ask for.
+    unattended_verify_rounds_ = 0;
 
     panel_->retry();
 
@@ -609,45 +674,35 @@ void TouchCalibrationOverlay::handle_screen_touched(lv_event_t* e) {
     lv_point_t point;
     lv_indev_get_point(lv_indev_active(), &point);
 
+    // A fresh press ends any hold in progress.
+    hold_repeat_count_ = 0;
+
     auto state_before = panel_->get_state();
 
     // Handle VERIFY state - show calibration accuracy visualization with ripple.
     //
-    // The OLD calibration is active in the touch wrapper (for safe button
-    // dispatch — re-enabled by the panel's verify_entry_callback). That means
-    // `point` is the finger's position under OLD cal. To give the user honest
-    // feedback about the NEW cal they just captured, we must show the ripple
-    // where the NEW cal would place the same physical finger: reverse OLD cal
-    // to recover raw coords, then forward through NEW cal.
+    // The NEW calibration is active in the touch wrapper (installed by the
+    // panel's verify_entry_callback), so `point` already IS where the matrix
+    // under test places the finger — no round trip through the old matrix.
     if (state_before == helix::TouchCalibrationPanel::State::VERIFY) {
         spdlog::debug("[{}] Verify touch at ({}, {})", get_name(), point.x, point.y);
-
-        DisplayManager* dm = DisplayManager::instance();
-        helix::Point ripple_pt{point.x, point.y};
-
-        const TouchCalibration* new_cal = panel_->get_calibration();
-        if (dm && new_cal && new_cal->valid) {
-            TouchCalibration old_cal = dm->get_current_calibration();
-            helix::Point raw;
-            if (helix::invert_transform_point(old_cal, {point.x, point.y}, raw)) {
-                ripple_pt =
-                    helix::transform_point(*new_cal, raw, dm->width() - 1, dm->height() - 1);
-                if (helix::is_touch_debug_enabled()) {
-                    spdlog::warn("[TouchDebug] verify ripple: lvgl=({},{}) -> raw=({},{}) "
-                                 "-> new_cal=({},{})",
-                                 point.x, point.y, raw.x, raw.y, ripple_pt.x, ripple_pt.y);
-                }
-            }
-        }
 
         // Verify phase: a transient ripple is enough — the user is just checking
         // that touches track. No lingering dot here (that's only useful in the
         // alignment phase, to see where each target press landed) (#1082).
         // Drawn on the top layer so its coordinates are SCREEN-ABSOLUTE.
-        create_ripple(lv_layer_top(), ripple_pt.x, ripple_pt.y);
+        create_ripple(lv_layer_top(), point.x, point.y);
 
-        bool on_screen = dm && ripple_pt.x >= 0 && ripple_pt.x < dm->width() && ripple_pt.y >= 0 &&
-                         ripple_pt.y < dm->height();
+        // Broken-matrix signal. calibrated_read_cb() clamps every transformed
+        // coordinate to the panel, so a matrix that throws touches off-screen
+        // does not surface as an out-of-range value — it surfaces as one pinned
+        // to an extreme edge. Treat an edge-pinned touch as "did not land where
+        // the finger was", which is what the 3s fast-revert net counts.
+        lv_display_t* disp = lv_display_get_default();
+        const int32_t w = disp ? lv_display_get_horizontal_resolution(disp) : 0;
+        const int32_t h = disp ? lv_display_get_vertical_resolution(disp) : 0;
+        const bool on_screen =
+            w > 1 && h > 1 && point.x > 0 && point.y > 0 && point.x < w - 1 && point.y < h - 1;
         panel_->report_verify_touch(on_screen);
         return;
     }
@@ -690,6 +745,8 @@ void TouchCalibrationOverlay::handle_screen_released() {
     if (!panel_) {
         return;
     }
+    // Lifting the finger ends any hold in progress.
+    hold_repeat_count_ = 0;
     panel_->on_release();
 
     // The commit happens here (not on press), so refresh the UI now that the
@@ -710,6 +767,71 @@ void TouchCalibrationOverlay::handle_back_clicked() {
     }
 
     hide();
+}
+
+void TouchCalibrationOverlay::handle_hold_abort() {
+    if (++hold_repeat_count_ < HOLD_ABORT_REPEATS) {
+        return;
+    }
+    hold_repeat_count_ = 0;
+    spdlog::info("[{}] Press-and-hold abort", get_name());
+    abort_session(lv_tr("Calibration cancelled."));
+}
+
+// Reached from three places that all run inside an LVGL dispatch: the Cancel
+// chip's `clicked` callback, the capture surface's LONG_PRESSED_REPEAT callback,
+// and the panel's countdown / fast-revert lv_timer callbacks. Nothing here
+// destroys a widget synchronously, which is what threading rule 3 forbids:
+//
+//   - The exit is handle_back_clicked() -> hide() -> NavigationManager::go_back(),
+//     whose entire body is a queue_update() lambda. UpdateQueue::queue() only
+//     pushes onto pending_ — it has no same-thread fast path — so go_back()
+//     returns having merely enqueued. on_deactivate(), restore_reparented_widgets()
+//     (which moves the very object a long press is dispatching on) and the
+//     slide-out all run on a later process_pending tick, after LVGL's event and
+//     timer dispatch have unwound.
+//   - handle_back_clicked() is the LAST statement here, and abort_session() is
+//     the last statement in each of its callers, so no path touches `this`, the
+//     overlay root, or the pressed object after the enqueue.
+//   - The overlay is a StaticPanelRegistry singleton and go_back() never deletes
+//     overlay_root_ (it animates it out and pops the stack), so there is no
+//     object for a late callback to land on either way.
+//
+// Ordering guarantee for the timer paths: panel_->reset() below runs BEFORE
+// handle_back_clicked(), and reset() stops the countdown, fast-revert and stall
+// timers. All three are therefore cancelled before anything is enqueued.
+// Cancelling the countdown timer from inside its own callback is safe —
+// lv_timer_delete() sets state.timer_deleted, which makes lv_timer_handler
+// restart its walk, and lv_timer_exec() touches the timer only before the
+// callback, never after.
+void TouchCalibrationOverlay::abort_session(const char* reason) {
+    spdlog::warn("[{}] Aborting session: {}", get_name(), reason);
+
+    // Put the device back on the calibration it had on entry and re-arm the
+    // affine, so an abort never leaves touch running on an unaccepted matrix or
+    // on raw coordinates.
+    if (helix::ICalibrationSink* sink = calibration_sink()) {
+        session_.restore(*sink);
+    }
+
+    // Silent fresh baseline: reset() does not fire the completion callback, so
+    // handle_back_clicked() below stays the single "cancelled" report.
+    if (panel_) {
+        panel_->reset();
+    }
+    unattended_verify_rounds_ = 0;
+    hold_repeat_count_ = 0;
+
+    snprintf(accept_text_buffer_, sizeof(accept_text_buffer_), "Accept");
+    lv_subject_copy_string(&accept_button_text_, accept_text_buffer_);
+
+    update_state_subject();
+    update_instruction_text();
+    update_crosshair_position();
+
+    ToastManager::instance().show(ToastSeverity::WARNING, reason, 4000);
+
+    handle_back_clicked();
 }
 
 void TouchCalibrationOverlay::handle_cancel_clicked() {
