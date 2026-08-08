@@ -299,15 +299,24 @@ TEST_CASE_METHOD(XMLTestFixture,
     REQUIRE(register_component("components/exclude_object_map"));
     seed_objects(*state().get_excluded_objects_state());
 
+    const uint32_t baseline_children = lv_obj_get_child_count(test_screen());
+
     {
         ExcludeObjectMapView view;
         view.create(test_screen(), state().get_excluded_objects_state(), 200.0f, 200.0f, nullptr,
                     nullptr);
         REQUIRE(view.is_active());
+        REQUIRE(lv_obj_get_child_count(test_screen()) > baseline_children);
         process_lvgl(30);
         // No explicit destroy(): the destructor must invoke destroy() and tear
         // down the canvas buffer + widget tree safely.
     }
     process_lvgl(50);
-    SUCCEED("destructor teardown completed without crash");
+
+    // The heap canvas_buf_ leaks invisibly, but the widget subtree does not: a
+    // destructor that skips destroy() leaves root_ parented to the screen. Child
+    // count back at baseline is the observable proof that destroy() ran and its
+    // deferred deletion completed - and destroy() is the only path that frees
+    // the draw buffer too.
+    REQUIRE(lv_obj_get_child_count(test_screen()) == baseline_children);
 }

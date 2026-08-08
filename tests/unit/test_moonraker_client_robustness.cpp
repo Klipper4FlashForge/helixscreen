@@ -732,11 +732,11 @@ TEST_CASE("MoonrakerClient callbacks not invoked after disconnect",
 TEST_CASE_METHOD(MoonrakerRobustnessFixture, "MoonrakerClient handles exceptions in user callbacks",
                  "[connection][edge][lifecycle][priority5][eventloop][slow]") {
     SECTION("Exception in success callback is caught") {
-        // This section verifies by code inspection that libhv's event loop
-        // catches exceptions from user callbacks. No runtime test is possible
-        // without a connected server — see the timeout callback test below
-        // for an actual runtime verification of exception safety.
-        SUCCEED("Verified by code inspection");
+        // Not covered. Reaching a success callback needs a connected server, and
+        // this suite has none, so the claim that libhv's event loop swallows a
+        // throwing user callback was only ever asserted by reading the code. The
+        // error-callback path below is the one with real runtime coverage.
+        SKIP("needs a connected Moonraker server to drive a success callback");
     }
 
     SECTION("Exception in error callback is caught during timeout") {
