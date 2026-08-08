@@ -132,3 +132,57 @@ TEST_CASE_METHOD(LVGLTestFixture, "ThumbnailRequest: fetch suppresses a supersed
 
     cache.invalidate(key);
 }
+
+/// fetch_for_detail_view is the path both active-print consumers use, and it had
+/// no source_modified parameter at all - so mtime validation never ran on it.
+/// Re-slice a model under the same filename and the cache kept serving the old
+/// image forever. The two blocks below are deliberately paired: the first proves
+/// the planted entry IS servable, so the second's "not served" is about freshness
+/// and not about an empty cache. With no api the re-fetch cannot proceed, which
+/// is what makes the difference observable - fresh source means on_error, a stale
+/// cache hit means on_success carrying the old path.
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "ThumbnailRequest: detail view honors a source newer than the cached file",
+                 "[thumbnail][request]") {
+    ThumbnailCache cache;
+    auto& processor = helix::ThumbnailProcessor::instance();
+
+    // fetch_for_detail_view picks its own target internally, so the plant has to
+    // use the same one or there is no entry for the fetch to hit.
+    const helix::ThumbnailTarget target =
+        helix::ThumbnailProcessor::get_target_for_display(helix::ThumbnailSize::Detail);
+    const std::string key = unique_key("detail_mtime");
+
+    const auto planted = processor.process_sync(kTinyPng, key, target);
+    REQUIRE(planted.success);
+    REQUIRE(ThumbnailCache::is_lvgl_path(planted.output_path));
+
+    std::atomic<uint32_t> gen{0};
+    helix::AsyncLifetimeGuard guard;
+
+    {
+        auto ctx = ThumbnailLoadContext::create(guard, &gen);
+        std::string delivered;
+        cache.fetch_for_detail_view(
+            nullptr, key, ctx, [&delivered](const std::string& path) { delivered = path; },
+            [](const std::string& error) {
+                FAIL_CHECK("unexpected detail view error: " << error);
+            });
+        REQUIRE(delivered == planted.output_path);
+    }
+
+    {
+        auto ctx = ThumbnailLoadContext::create(guard, &gen);
+        std::string delivered;
+        std::string reported_error;
+        cache.fetch_for_detail_view(
+            nullptr, key, ctx, [&delivered](const std::string& path) { delivered = path; },
+            [&reported_error](const std::string& error) { reported_error = error; },
+            /*source_modified=*/4102444800); // 2100-01-01, newer than any cached file
+
+        CHECK(delivered.empty());
+        CHECK_FALSE(reported_error.empty());
+    }
+
+    cache.invalidate(key);
+}

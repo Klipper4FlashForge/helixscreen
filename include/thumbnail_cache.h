@@ -290,13 +290,16 @@ class ThumbnailCache {
      * @param ctx Async safety context (created via ThumbnailLoadContext::create())
      * @param on_success Called with LVGL path on success (only if ctx.is_valid())
      * @param on_error Optional error callback (NOT guarded - always called on error)
+     * @param source_modified Optional source file modification time (Unix timestamp).
+     *        If provided and the cached file is older than this, the cache is
+     *        invalidated and a fresh download is triggered. Use 0 to skip validation.
      *
      * @note Callbacks may be invoked from background thread - use ui_queue_update() for UI updates
      * @see ThumbnailLoadContext::create
      */
     void fetch_for_detail_view(MoonrakerAPI* api, const std::string& relative_path,
                                ThumbnailLoadContext ctx, SuccessCallback on_success,
-                               ErrorCallback on_error = nullptr);
+                               ErrorCallback on_error = nullptr, time_t source_modified = 0);
 
     /**
      * @brief Fetch thumbnail for a card/small view (pre-scaled .bin for speed)

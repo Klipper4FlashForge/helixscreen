@@ -1059,7 +1059,7 @@ std::string ThumbnailCache::get_if_cached(const ThumbnailRequest& req) const {
 
 void ThumbnailCache::fetch_for_detail_view(MoonrakerAPI* api, const std::string& relative_path,
                                            ThumbnailLoadContext ctx, SuccessCallback on_success,
-                                           ErrorCallback on_error) {
+                                           ErrorCallback on_error, time_t source_modified) {
     // Detail views use pre-scaled .bin at a larger size than card views.
     // ThumbnailSize::Detail produces 200–400px targets depending on display,
     // giving good quality while avoiding full-resolution PNG decode at render time.
@@ -1080,10 +1080,12 @@ void ThumbnailCache::fetch_for_detail_view(MoonrakerAPI* api, const std::string&
 
     fetch_optimized(
         api, relative_path, target, std::move(guarded_success),
-        on_error ? std::move(on_error) : [relative_path](const std::string& error) {
-            spdlog::warn("[ThumbnailCache] Detail view fetch failed for {}: {}", relative_path,
-                         error);
-        });
+        on_error ? std::move(on_error)
+                 : [relative_path](const std::string& error) {
+                       spdlog::warn("[ThumbnailCache] Detail view fetch failed for {}: {}",
+                                    relative_path, error);
+                   },
+        source_modified);
 }
 
 void ThumbnailCache::fetch_for_card_view(MoonrakerAPI* api, const std::string& relative_path,
