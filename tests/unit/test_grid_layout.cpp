@@ -454,8 +454,13 @@ TEST_CASE("PanelWidgetDef: half-cell capability is opt-in", "[widget_def][half_c
     // whole cell on both axes, so its flags stay false.
     const std::vector<std::string> half_capable = {"lock", "shutdown", "firmware_restart",
                                                    "led_controls", "clock"};
-    const std::vector<std::string> whole_cell_only = {"camera",    "temp_graph", "print_status",
-                                                      "job_queue", "ams",        "tips"};
+    // camera is absent from the registry on builds without camera support, so it
+    // is appended only where it exists rather than listed unconditionally.
+    std::vector<std::string> whole_cell_only = {"temp_graph", "print_status", "job_queue", "ams",
+                                                "tips"};
+#if HELIX_HAS_CAMERA
+    whole_cell_only.emplace_back("camera");
+#endif
 
     for (const auto& id : half_capable) {
         INFO("widget " << id);
