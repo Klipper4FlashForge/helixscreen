@@ -54,6 +54,17 @@ class ActivePrintMediaManager {
     explicit ActivePrintMediaManager(PrinterState& printer_state);
     ~ActivePrintMediaManager();
 
+    /**
+     * @brief Path published when the current file has no thumbnail
+     *
+     * This manager is the sole writer of print_thumbnail_path, and it never
+     * publishes the empty string — "there is no thumbnail" is said with an
+     * explicit image. See PrinterPrintState::kNoThumbnailPlaceholder for why
+     * the empty string is not merely untidy but unsafe to hand a consumer.
+     */
+    static constexpr const char* kNoThumbnailPlaceholder =
+        PrinterPrintState::kNoThumbnailPlaceholder;
+
     // Non-copyable
     ActivePrintMediaManager(const ActivePrintMediaManager&) = delete;
     ActivePrintMediaManager& operator=(const ActivePrintMediaManager&) = delete;
@@ -107,6 +118,11 @@ class ActivePrintMediaManager {
     void set_thumbnail_path(const std::string& for_file, const std::string& path);
 
   private:
+    /// The ONLY place this manager writes print_thumbnail_path. Every publish
+    /// routes through here so the "never empty" invariant has a single
+    /// enforcement point rather than one guard per consumer.
+    void publish_thumbnail(const std::string& for_file, const std::string& path);
+
     void process_filename(const char* raw_filename);
     void load_thumbnail_for_file(const std::string& filename);
     void clear_print_info();

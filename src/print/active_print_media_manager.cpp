@@ -17,6 +17,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include <cassert>
+#include <cstring>
 #include <memory>
 #include <stdexcept>
 
@@ -111,6 +113,12 @@ void ActivePrintMediaManager::clear_thumbnail_source() {
     spdlog::debug("[ActivePrintMediaManager] Thumbnail source cleared");
 }
 
+void ActivePrintMediaManager::publish_thumbnail(const std::string& for_file,
+                                                const std::string& path) {
+    assert(!path.empty() && "never publish an empty thumbnail path - use kNoThumbnailPlaceholder");
+    printer_state_.set_print_thumbnail(for_file, path);
+}
+
 void ActivePrintMediaManager::set_thumbnail_path(const std::string& for_file,
                                                  const std::string& path) {
     // Set the thumbnail path directly (bypasses Moonraker API lookup). The
@@ -118,7 +126,9 @@ void ActivePrintMediaManager::set_thumbnail_path(const std::string& for_file,
     // can arrive before Moonraker reports the filename, so neither
     // thumbnail_source_filename_ nor last_effective_filename_ is trustworthy
     // here — the latter may still name the PREVIOUS print.
-    printer_state_.set_print_thumbnail(for_file, path);
+    // An empty path is the caller saying "no pre-extracted thumbnail"; that is
+    // published as the placeholder, never as "".
+    publish_thumbnail(for_file, path.empty() ? kNoThumbnailPlaceholder : path);
     // A pre-extracted thumbnail (USB / embedded G-code) skips the fetch, but it
     // is NOT a completed load: recovery stays armed.
     thumbnail_origin_ = path.empty() ? ThumbnailOrigin::None : ThumbnailOrigin::PreSet;
@@ -128,8 +138,12 @@ void ActivePrintMediaManager::set_thumbnail_path(const std::string& for_file,
 
 bool ActivePrintMediaManager::has_thumbnail_for(const std::string& filename) {
     const char* current = lv_subject_get_string(printer_state_.get_print_thumbnail_path_subject());
-    return current && current[0] != '\0' && !filename.empty() &&
-           printer_state_.get_print_thumbnail_file() == filename;
+    // The placeholder is what "no thumbnail" looks like on the wire now that the
+    // empty string is never published. It must NOT read as a thumbnail here, or
+    // the clear below would make load_thumbnail_for_file() skip its own fetch
+    // and every print would stop at the placeholder.
+    return current && current[0] != '\0' && strcmp(current, kNoThumbnailPlaceholder) != 0 &&
+           !filename.empty() && printer_state_.get_print_thumbnail_file() == filename;
 }
 
 void ActivePrintMediaManager::process_filename(const char* raw_filename) {
@@ -193,7 +207,7 @@ void ActivePrintMediaManager::process_filename(const char* raw_filename) {
         if (!preset_for_this_file) {
             // The clear belongs to the file we are about to load for: "nothing
             // yet for effective_filename", not "nothing for the previous print".
-            printer_state_.set_print_thumbnail(effective_filename, "");
+            publish_thumbnail(effective_filename, kNoThumbnailPlaceholder);
         }
         // New file: drop any pending retry for the previous file and reset
         // the per-filename retry budget.
@@ -395,7 +409,7 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
                                               "callback, ignoring");
                                 return;
                             }
-                            printer_state_.set_print_thumbnail(filename, path);
+                            publish_thumbnail(filename, path);
                             if (thumbnail_retry_count_ > 0) {
                                 spdlog::info("[ActivePrintMediaManager] Thumbnail loaded after "
                                              "{} retries: {}",
@@ -699,13 +713,15 @@ void ActivePrintMediaManager::clear_print_info() {
     thumbnail_retry_count_ = 0;
     thumbnail_origin_ = ThumbnailOrigin::None;
 
-    // Thread-safe clear of shared subjects (capture printer_state_ for testability)
-    PrinterState* state = &printer_state_;
-    helix::ui::queue_update([state]() {
+    // Thread-safe clear of shared subjects. Deferred through the lifetime guard
+    // rather than a bare queue_update so the publish can route through
+    // publish_thumbnail() — the one enforcement point for the never-empty
+    // invariant — without a raw `this` outliving the manager.
+    lifetime_.defer("ActivePrintMediaManager::clear_print_info", [this]() {
         // Everything for the previous print is being dropped, including the
         // identity — there is no file this clear is "for".
-        state->set_print_thumbnail("", "");
-        state->set_print_display_filename("");
+        publish_thumbnail("", kNoThumbnailPlaceholder);
+        printer_state_.set_print_display_filename("");
         spdlog::debug("[ActivePrintMediaManager] Cleared print info subjects");
     });
 }

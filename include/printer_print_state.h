@@ -140,6 +140,23 @@ class PrinterPrintState {
     }
 
     /**
+     * @brief Image the print-thumbnail subject carries when there is no thumbnail
+     *
+     * The subject is NEVER the empty string — not at init, and not for a file
+     * with no thumbnail of its own. `""` reaches lv_image_set_src with a first
+     * byte of 0x00, which lv_image_src_get_type() classifies as
+     * LV_IMAGE_SRC_VARIABLE (lv_draw_image.c:211), so LVGL then dereferences the
+     * one-byte literal as an lv_image_dsc_t. Every consumer used to carry its
+     * own guard against that; publishing an explicit placeholder removes the
+     * input instead of the guards' need to disagree about it.
+     *
+     * Re-exported as ActivePrintMediaManager::kNoThumbnailPlaceholder, which is
+     * the name the sole writer of this subject publishes it under.
+     */
+    static constexpr const char* kNoThumbnailPlaceholder =
+        "A:assets/images/benchy_thumbnail_white.png";
+
+    /**
      * @brief Gcode filename the current thumbnail path was produced for
      *
      * Written by set_print_thumbnail() BEFORE the path subject is published, so an

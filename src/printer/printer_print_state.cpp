@@ -61,7 +61,11 @@ void PrinterPrintState::init_subjects(bool register_xml) {
     INIT_SUBJECT_INT(print_active, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(print_show_progress, 0, subjects_, register_xml);
     INIT_SUBJECT_STRING(print_display_filename, "", subjects_, register_xml);
-    INIT_SUBJECT_STRING(print_thumbnail_path, "", subjects_, register_xml);
+    // Seeded with the placeholder rather than "": consumers bind this subject
+    // straight to lv_image_set_src and observers fire once at registration, so
+    // an empty initial value would be delivered to every consumer before the
+    // first print. See kNoThumbnailPlaceholder for why "" is unsafe there.
+    INIT_SUBJECT_STRING(print_thumbnail_path, kNoThumbnailPlaceholder, subjects_, register_xml);
 
     // Layer tracking subjects
     INIT_SUBJECT_INT(print_layer_current, 0, subjects_, register_xml);

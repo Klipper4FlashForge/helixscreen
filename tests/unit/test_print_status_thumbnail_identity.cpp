@@ -35,7 +35,10 @@ using namespace helix;
 namespace {
 
 // A real asset, so lv_image_set_src resolves instead of logging a decoder miss.
-constexpr const char* kThumbPath = "A:assets/images/benchy_thumbnail_white.png";
+// Deliberately NOT benchy_thumbnail_white.png: that is the no-thumbnail
+// placeholder AND the subject's initial value, so publishing it would be a
+// no-op write that never fires the observer these cases are about.
+constexpr const char* kThumbPath = "A:assets/images/printer.png";
 
 /// Owns a PrintStatusPanel with a thumbnail widget attached, which is what the
 /// XML build normally supplies. Without it the observer's image branch — the

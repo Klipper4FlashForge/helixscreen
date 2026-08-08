@@ -712,13 +712,11 @@ void PrintStatusWidget::on_print_thumbnail_path_changed(const char* path) {
         return;
     }
 
-    if (path && path[0] != '\0') {
-        lv_image_set_src(print_card_active_thumb_, path);
-        spdlog::info("[PrintStatusWidget] Active print thumbnail updated: {}", path);
-    } else {
-        lv_image_set_src(print_card_active_thumb_, "A:assets/images/benchy_thumbnail_white.png");
-        spdlog::debug("[PrintStatusWidget] Active print thumbnail cleared (empty path)");
-    }
+    // No empty-path branch: ActivePrintMediaManager is the subject's sole writer
+    // and publishes kNoThumbnailPlaceholder — the very image this used to
+    // substitute — when a file has no thumbnail, so the value is always an image.
+    lv_image_set_src(print_card_active_thumb_, path);
+    spdlog::info("[PrintStatusWidget] Active print thumbnail updated: {}", path);
 }
 
 std::string PrintStatusWidget::get_last_print_thumbnail_path() const {

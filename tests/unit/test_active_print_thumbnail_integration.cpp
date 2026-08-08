@@ -155,10 +155,11 @@ TEST_CASE_METHOD(ActivePrintThumbnailFixture,
     // or an explicit placeholder), it is not A's image.
     CHECK(state().get_print_thumbnail_file() == "model_b.gcode");
     CHECK(subject_path() != kThumbA);
-    // The panel must not claim B's preview is on screen — that stamp is what
-    // turned ensure_preview_current() into a permanent no-op.
+    // "Nothing yet" is the placeholder, published explicitly, so the panel
+    // actually repaints instead of leaving A's pixels on B's card.
+    CHECK(subject_path() == ActivePrintMediaManager::kNoThumbnailPlaceholder);
+    CHECK(panel_src() == ActivePrintMediaManager::kNoThumbnailPlaceholder);
     CHECK(PrintStatusPanelTestAccess::cached_thumbnail_path(panel()) != kThumbA);
-    CHECK(PrintStatusPanelTestAccess::displayed_file(panel()) != "model_b.gcode");
 
     // --- Print B's thumbnail resolves --------------------------------------
     media().set_thumbnail_path("model_b.gcode", kThumbB);
@@ -195,5 +196,48 @@ TEST_CASE_METHOD(ActivePrintThumbnailFixture,
 
     CHECK(state().get_print_thumbnail_file() == "model_b.gcode");
     CHECK(subject_path() != kThumbA);
-    CHECK(PrintStatusPanelTestAccess::displayed_file(panel()) != "model_b.gcode");
+    CHECK(panel_src() != kThumbA);
+}
+
+TEST_CASE_METHOD(ActivePrintThumbnailFixture,
+                 "Active print thumbnail: a file with no thumbnail shows the placeholder on "
+                 "every consumer",
+                 "[print_status][thumbnail][integration]") {
+    start_consumers();
+
+    set_print_filename("model_a.gcode");
+    media().set_thumbnail_path("model_a.gcode", kThumbA);
+    drain();
+    REQUIRE(panel_src() == kThumbA);
+
+    // Print B has no thumbnail: nothing pre-set, and no API to fetch one.
+    set_print_filename("no_thumb.gcode");
+
+    const std::string shown = subject_path();
+    CHECK_FALSE(shown.empty());
+    CHECK(shown == ActivePrintMediaManager::kNoThumbnailPlaceholder);
+    CHECK(panel_src() == shown);
+}
+
+TEST_CASE_METHOD(ActivePrintThumbnailFixture,
+                 "Active print thumbnail: the shared subject is never the empty string",
+                 "[print_status][thumbnail][integration]") {
+    // This is the invariant that lets all three consumers drop their
+    // empty-string branches. It is not cosmetic: lv_image_set_src("") has a
+    // first byte of 0x00, which lv_image_src_get_type classifies as
+    // LV_IMAGE_SRC_VARIABLE, so LVGL dereferences the one-byte literal as an
+    // lv_image_dsc_t. A consumer without a guard is only safe if the subject
+    // genuinely never carries "".
+    CHECK(subject_path() == ActivePrintMediaManager::kNoThumbnailPlaceholder);
+
+    start_consumers();
+    CHECK_FALSE(subject_path().empty());
+
+    // Print starts, nothing resolved yet.
+    set_print_filename("model_a.gcode");
+    CHECK_FALSE(subject_path().empty());
+
+    // Print ends.
+    set_print_filename("");
+    CHECK_FALSE(subject_path().empty());
 }

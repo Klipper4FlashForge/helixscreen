@@ -251,8 +251,9 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, MoonrakerAPI* ap
     print_thumbnail_path_observer_ = ui::observe_string_immediate<PrintStatusPanel>(
         printer_state_.get_print_thumbnail_path_subject(), this,
         [](PrintStatusPanel* self, const char* path) {
-            if (!path || path[0] == '\0')
-                return;
+            // No empty-path branch: ActivePrintMediaManager publishes
+            // kNoThumbnailPlaceholder for a file with no thumbnail and the
+            // subject is seeded with it, so the value is always an image.
             // The subject carries the file the path was produced FOR
             // (set_print_thumbnail writes it before publishing the path), so
             // compare identity instead of assuming the value is ours. A result
@@ -3719,17 +3720,34 @@ void PrintStatusPanel::ensure_preview_current() {
         return; // Nothing to show.
     }
 
-    if (action.load_thumbnail) {
-        // Re-apply an already-cached thumbnail synchronously when it matches the
-        // desired file (cheap, no network). There is no else: fetching belongs to
-        // ActivePrintMediaManager, the single writer of the shared subject, and
-        // its result reaches us through print_thumbnail_path_observer_, which
-        // records displayed_file_ from the identity the subject carries.
-        if (print_thumbnail_ && !cached_thumbnail_path_.empty() && displayed_file_ == desired) {
+    if (action.load_thumbnail && print_thumbnail_) {
+        // Nothing here fetches: that belongs to ActivePrintMediaManager, the
+        // single writer of the shared subject. The only two sources are our own
+        // cache and that subject's current value.
+        if (!cached_thumbnail_path_.empty() && displayed_file_ == desired) {
+            // Cheap re-apply of a thumbnail we already hold for this file.
             crash_handler::breadcrumb::note("pstat_thm", "set_src_pre");
             lv_image_set_src(print_thumbnail_, cached_thumbnail_path_.c_str());
             crash_handler::breadcrumb::note("pstat_thm", "set_src_post");
             displayed_file_ = desired;
+        } else if (printer_state_.get_print_thumbnail_file() == desired) {
+            // The subject already carries this file's image, but it was
+            // published BEFORE our own view of the filename caught up: the
+            // manager observes print_filename synchronously while this panel's
+            // filename observer is deferred, so print_thumbnail_path_observer_
+            // compared against the PREVIOUS filename and correctly dropped it.
+            // Re-reading the subject once the filename lands is what makes that
+            // ordering self-healing instead of leaving the previous print's
+            // image on the new print's card.
+            const char* published =
+                lv_subject_get_string(printer_state_.get_print_thumbnail_path_subject());
+            cached_thumbnail_path_ = published;
+            crash_handler::breadcrumb::note("pstat_thm", "set_src_pre");
+            lv_image_set_src(print_thumbnail_, published);
+            crash_handler::breadcrumb::note("pstat_thm", "set_src_post");
+            displayed_file_ = desired;
+            spdlog::debug("[{}] Adopted already-published thumbnail for '{}': {}", get_name(),
+                          desired, published);
         }
     }
 
