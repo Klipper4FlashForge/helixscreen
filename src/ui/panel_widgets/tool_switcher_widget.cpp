@@ -65,6 +65,26 @@ void ToolSwitcherWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
     parent_screen_ = parent_screen;
     s_active_instance = this;
 
+    // SIZE_CHANGED is a layout event — cannot be registered via XML
+    // <event_cb>. Hooked on tool_switcher_container itself (not widget_obj_):
+    // LVGL's layout_update_core() fires SIZE_CHANGED for an object as soon as
+    // ITS OWN refr_size() runs, before it applies its layout to reflow
+    // percentage-sized children (lv_layout_apply() runs after). Hooking
+    // widget_obj_ and then self-measuring the child container inside
+    // rebuild_pills() would read the child's stale, not-yet-cascaded size —
+    // and the lv_obj_update_layout() call rebuild_pills() already does for
+    // its own reasons is a no-op here too, since lv_obj_update_layout() self-
+    // guards against the reentrant call this handler is nested inside via
+    // its own mutex. Watching the container directly — the same object
+    // rebuild_pills() measures — matches UiClogMeter/UiBufferMeter, which
+    // always measure the same object their handler is hooked on.
+    // See rebuild_for_settled_grid_size() for why this is here.
+    size_watch_container_ = lv_obj_find_by_name(widget_obj_, "tool_switcher_container");
+    if (size_watch_container_) {
+        lv_obj_add_event_cb(size_watch_container_, on_widget_size_changed, LV_EVENT_SIZE_CHANGED,
+                            this);
+    }
+
     auto& tool_state = ToolState::instance();
     auto token = lifetime_.token();
 
@@ -103,8 +123,15 @@ void ToolSwitcherWidget::detach() {
     if (s_active_instance == this) {
         s_active_instance = nullptr;
     }
+    if (size_watch_container_) {
+        lv_obj_remove_event_cb_with_user_data(size_watch_container_, on_widget_size_changed, this);
+    }
+    size_watch_container_ = nullptr;
     widget_obj_ = nullptr;
     parent_screen_ = nullptr;
+    grid_settled_w_px_ = -1;
+    grid_settled_h_px_ = -1;
+    in_grid_size_refresh_ = false;
 }
 
 void ToolSwitcherWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_px,
@@ -120,6 +147,47 @@ void ToolSwitcherWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int w
     } else {
         rebuild_pills();
     }
+}
+
+void ToolSwitcherWidget::on_widget_size_changed(lv_event_t* e) {
+    auto* self = static_cast<ToolSwitcherWidget*>(lv_event_get_user_data(e));
+    if (self)
+        self->rebuild_for_settled_grid_size();
+}
+
+void ToolSwitcherWidget::rebuild_for_settled_grid_size() {
+    if (!widget_obj_ || !size_watch_container_)
+        return;
+
+    // Re-entrancy guard — see the member comment on in_grid_size_refresh_.
+    if (in_grid_size_refresh_)
+        return;
+
+    int w = lv_obj_get_width(size_watch_container_);
+    int h = lv_obj_get_height(size_watch_container_);
+
+    // No-op when unchanged — see the member comment on grid_settled_w_px_.
+    if (w == grid_settled_w_px_ && h == grid_settled_h_px_)
+        return;
+
+    in_grid_size_refresh_ = true;
+    grid_settled_w_px_ = w;
+    grid_settled_h_px_ = h;
+
+    // current_width_px_/current_height_px_ (the granted cell size) were
+    // already set correctly by on_size_changed() — PanelWidgetManager
+    // computes those from grid_track_extent(), not from widget_obj_'s
+    // on-screen size, so they are right from the start. Only
+    // tool_switcher_container's OWN on-screen size lagged behind pre-grid;
+    // re-running the same mode decision now lets rebuild_pills() self-measure
+    // the now-settled container instead of the stale pre-grid box.
+    if (is_compact_size()) {
+        rebuild_compact();
+    } else {
+        rebuild_pills();
+    }
+
+    in_grid_size_refresh_ = false;
 }
 
 // ============================================================================

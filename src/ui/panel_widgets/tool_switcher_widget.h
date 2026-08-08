@@ -54,6 +54,27 @@ class ToolSwitcherWidget : public PanelWidget {
     std::vector<int32_t> grid_col_dsc_;
     std::vector<int32_t> grid_row_dsc_;
 
+    // tool_switcher_container, cached so the native SIZE_CHANGED hook (below)
+    // can watch and clean up the same object across rebuild_pills()/
+    // rebuild_compact() calls (they only replace its children, never the
+    // container object itself).
+    lv_obj_t* size_watch_container_ = nullptr;
+
+    // size_watch_container_'s own size the last time the SIZE_CHANGED hook
+    // drove a rebuild, cached so a re-fire with an unchanged size is a no-op
+    // instead of a redundant rebuild. rebuild_pills()'s row-count decision is
+    // a pure function of (w, h, tool list) here, so an unchanged size always
+    // reproduces the same layout — this is also what keeps a same-size
+    // re-fire from looping.
+    int grid_settled_w_px_ = -1;
+    int grid_settled_h_px_ = -1;
+
+    // Re-entrancy guard: rebuild_pills()/rebuild_compact() call
+    // lv_obj_update_layout()/lv_obj_set_layout() on size_watch_container_,
+    // which can re-dispatch LV_EVENT_SIZE_CHANGED on it before this call
+    // returns.
+    bool in_grid_size_refresh_ = false;
+
     // MUST stay declared LAST: reverse-declaration destruction makes this the
     // first member torn down, invalidating every captured token before any
     // observer destructs. Without this, queued observer callbacks captured
@@ -74,6 +95,20 @@ class ToolSwitcherWidget : public PanelWidget {
     bool is_compact_size() const;
     bool is_narrow_tall_size() const;
     void on_active_tool_changed(int tool_index);
+
+    // Native SIZE_CHANGED hook on size_watch_container_ (tool_switcher_container)
+    // — same mechanism as UiClogMeter::resize_arc()/UiBufferMeter::resize(),
+    // and watching the same object rebuild_pills() self-measures, not an
+    // ancestor of it (see attach()'s comment for why that distinction
+    // matters). PanelWidgetManager activates the grid layout only after
+    // every widget's on_size_changed() has already run
+    // (panel_widget_manager.cpp:901-903, deliberately — see #983), so the
+    // container still reports its pre-grid, whole-content-box size the first
+    // time rebuild_pills() measures it. This fires once the grid settles the
+    // container to its real cell-derived size and re-drives the same
+    // rebuild against the now-correct geometry.
+    static void on_widget_size_changed(lv_event_t* e);
+    void rebuild_for_settled_grid_size();
 
   public:
     static void tool_pill_cb(lv_event_t* e);

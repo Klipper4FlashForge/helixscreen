@@ -31,6 +31,8 @@
 #include "src/ui/panel_widgets/tool_switcher_widget.h"
 #include "tool_state.h"
 
+#include <cstdlib>
+
 #include "../catch_amalgamated.hpp"
 
 using namespace helix;
@@ -73,6 +75,15 @@ void update_tools(int count, int active_index) {
     topo.active_tool = active_index;
     topo.tool_name_prefix = "T";
     ToolState::instance().set_ams_topology(topo);
+}
+
+/// Mirrors tool_switcher_widget.cpp's (anonymous-namespace, unexported)
+/// resolve_space_token() so the row-count thresholds below are derived from
+/// whatever breakpoint tier is actually active in this test run, not a
+/// hardcoded guess at "button_height_sm"/"space_xs"'s resolved pixel value.
+int resolve_space_token(const char* name, int fallback) {
+    const char* s = lv_xml_get_const(nullptr, name);
+    return s ? std::atoi(s) : fallback;
 }
 
 } // namespace
@@ -208,4 +219,73 @@ TEST_CASE_METHOD(ToolSwitcherFixture,
     CHECK(lv_obj_get_style_bg_opa(lv_obj_get_child(container, 0), LV_PART_MAIN) == LV_OPA_COVER);
     CHECK(lv_obj_get_style_bg_opa(lv_obj_get_child(container, 1), LV_PART_MAIN) == LV_OPA_0);
     CHECK(lv_obj_get_style_bg_opa(lv_obj_get_child(container, 2), LV_PART_MAIN) == LV_OPA_0);
+}
+
+TEST_CASE_METHOD(ToolSwitcherFixture,
+                 "tool_switcher: pre-grid oversized self-measurement is corrected once the "
+                 "real grid cell settles",
+                 "[widget_size][tool_switcher]") {
+    // PanelWidgetManager calls on_size_changed() BEFORE activating the grid
+    // layout (panel_widget_manager.cpp:901-903, deliberately — activating
+    // early crashed, #983). Until the grid activates, widget_obj_'s XML
+    // 100%/100% sizing resolves against the outer panel's whole content box,
+    // not its eventual grid cell — so the FIRST time rebuild_pills()
+    // self-measures tool_switcher_container's height to pick a row count, it
+    // reads that oversized box, not the real cell.
+    configure_tools(3);
+
+    int pill_min_h = resolve_space_token("button_height_sm", 40);
+    int row_gap = resolve_space_token("space_xs", 4);
+
+    // Pre-grid: tall enough that fit_rows saturates well past rebuild_pills()'s
+    // 2-row cap, regardless of which breakpoint tier resolved the tokens above.
+    int pregrid_h = 20 * (pill_min_h + row_gap);
+    // Real cell: exactly enough height for one pill row (fit_rows == 1
+    // exactly) — the real cell that only fits a single row, per the bug
+    // report's "590px measured, 66px real" repro.
+    int real_h = pill_min_h;
+    int real_w = W_WIDE;
+
+    PanelWidgetHarness<ToolSwitcherWidget> h(test_screen(), state());
+    lv_obj_t* container = h.child("tool_switcher_container");
+    REQUIRE(container != nullptr);
+
+    // Drain attach()'s immediate-on-subscribe observer notifications (see the
+    // longer comment in the compact/pill-row/pill-column test above).
+    process_lvgl(30);
+
+    // Step 1: pre-grid state — widget_obj_ (h.root()) still reports the
+    // oversized whole-content-box size. Deliberately NOT using h.resize()
+    // here: it keeps widget_obj_'s actual size and on_size_changed()'s
+    // arguments in lockstep, which is exactly what production does NOT do
+    // pre-grid.
+    lv_obj_set_size(h.root(), real_w, pregrid_h);
+    lv_obj_update_layout(h.root());
+
+    // Step 2: on_size_changed() receives the CORRECT target cell pixels (as
+    // PanelWidgetManager's grid_track_extent() computes them in production)
+    // even though widget_obj_'s on-screen size hasn't caught up to them yet.
+    h.widget().on_size_changed(1, 1, real_w, real_h);
+    process_lvgl(30);
+
+    // Sanity check on the reproduction itself: rebuild_pills() self-measured
+    // the still-oversized container and baked the 2-row grid — this holds
+    // both before AND after the fix, since the fix doesn't change what
+    // happens here, only what happens once the grid actually settles below.
+    REQUIRE(lv_obj_get_child_count(container) == 3);
+    CHECK(lv_obj_get_style_layout(container, LV_PART_MAIN) == LV_LAYOUT_GRID);
+
+    // Step 3: grid activation — widget_obj_ actually shrinks to its real
+    // cell size, firing LV_EVENT_SIZE_CHANGED. Before the fix, nothing
+    // listens for this and the 2-row grid from step 2 is never revisited.
+    lv_obj_set_size(h.root(), real_w, real_h);
+    lv_obj_update_layout(h.root());
+    process_lvgl(30);
+
+    // The real cell only fits one pill row (real_h == pill_min_h exactly),
+    // so the layout must have collapsed to the single flex row — not stayed
+    // on the 2-row grid baked from the oversized pre-grid box.
+    REQUIRE(lv_obj_get_child_count(container) == 3);
+    CHECK(lv_obj_get_style_layout(container, LV_PART_MAIN) == LV_LAYOUT_FLEX);
+    CHECK(lv_obj_get_style_flex_flow(container, LV_PART_MAIN) == LV_FLEX_FLOW_ROW);
 }
