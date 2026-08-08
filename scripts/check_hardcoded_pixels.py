@@ -23,7 +23,13 @@ WHAT IS FLAGGED
      the signal: it means the author reproduced a token by hand rather than
      naming it. A width nothing declares (a measured canvas, a one-off) is not
      flagged, because there is nothing to name it with.
-  3. cpp-pad   — lv_obj_set_style_pad_*/margin_* in src/ passed an integer >= 2.
+  3. xml-tall  — a literal style_min_height/style_max_height above 231, the
+     85% dialog budget on a 272px MICRO panel. Both real #1204 dialog bugs were
+     this exact shape: hidden_network_modal's style_min_height="280" and
+     debug_bundle_modal's style_max_height="400" were each taller than the whole
+     screen, so the dialog rendered partly off it. A floor above the budget can
+     never be satisfied; a cap above it simply is not a bound.
+  4. cpp-pad   — lv_obj_set_style_pad_*/margin_* in src/ passed an integer >= 2.
      Same tokens, read through theme_manager_get_spacing().
 
 WHAT IS NOT FLAGGED
@@ -34,9 +40,12 @@ WHAT IS NOT FLAGGED
     against the declared width before growing — not a size. Removing it breaks
     the layout, so `width="1"` must stay legal forever.
   - Percentages, "content", and `#token` references. Those are already correct.
-  - min_width/max_width/min_height/max_height. A px guard paired with a
-    percentage width is the house idiom for dialogs (action_prompt_modal.xml:10),
-    and the number there is a clamp, not the layout.
+  - min_width/max_width, and min/max heights at or below the MICRO budget. A px
+    guard paired with a percentage width is the house idiom for dialogs
+    (action_prompt_modal.xml:10), and the number there is a clamp, not the
+    layout. Only a HEIGHT above the budget is flagged — see xml-tall.
+  - Anything inside an XML comment. A comment that documents a fix by quoting
+    the attribute it replaced is documentation, not a violation.
   - Sub-token granularity: a value below 2 has no ladder, see above.
   - The dev-only panels (ui_xml/test_panel.xml, gcode_test_panel.xml,
     step_test_panel.xml and their C++), the crash/hang screens
@@ -117,13 +126,20 @@ XML_PAD_RE = re.compile(r'\bstyle_(?:pad|margin)_[a-z]+\s*=\s*"(-?\d+)"')
 # a px clamp paired with a percentage is the dialog idiom, not a hardcoded size.
 XML_SIZE_RE = re.compile(r'(?<![\w_])(?:style_)?(?:width|height)\s*=\s*"(\d+)"')
 
+# The MICRO panel is 272px tall and modal_dialog caps a dialog at 85% of that.
+# A literal min/max height above this cannot fit the smallest supported screen.
+MICRO_DIALOG_BUDGET = 231
+
+XML_TALL_RE = re.compile(r'\bstyle_(?:min|max)_height\s*=\s*"(\d+)"')
+
 # lv_obj_set_style_pad_all(obj, 12, 0) — second argument an integer literal.
 CPP_PAD_RE = re.compile(
     r'\blv_obj_set_style_(?:pad|margin)_[a-z]+\s*\(\s*[^,()]+,\s*(-?\d+)\s*,')
 
-RULES = ("xml-pad", "xml-size", "cpp-pad")
+RULES = ("xml-pad", "xml-size", "xml-tall", "cpp-pad")
 
 FIX = {
+    "xml-tall": "a responsive cap — style_max_height=\"#dialog_content_max\"",
     "xml-pad": 'a spacing token — style_pad_all="#space_md"',
     "xml-size": "a size token — width=\"#icon_button_size_lg\"",
     "cpp-pad": 'theme_manager_get_spacing("space_md")',
@@ -178,16 +194,44 @@ def annotated(lines: list[str], lineno: int) -> bool:
     return any(OPT_OUT in ln for ln in lines[start:lineno])
 
 
+def blank_comments(text: str) -> str:
+    """Replace XML comment bodies with spaces, preserving length and newlines.
+
+    A comment that explains a fix by quoting the old attribute -- and the good
+    ones here do exactly that -- is documentation, not a violation. Offsets and
+    line numbers are preserved so annotation lookup still reads the real lines.
+    """
+    def blank(m: re.Match) -> str:
+        return "".join(ch if ch == "\n" else " " for ch in m.group(0))
+    return re.sub(r"<!--.*?-->", blank, text, flags=re.S)
+
+
 def scan_xml(path: Path, rel: str, tokens: dict[int, list[str]]) -> list[tuple]:
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return []
     lines = text.split("\n")
+    scan = blank_comments(text)
     hits = []
 
+    # A min/max height literal taller than the MICRO dialog budget cannot be
+    # satisfied on a 480x272 panel. Both real #1204 dialog bugs were this shape:
+    # hidden_network's style_min_height="280" and debug_bundle's
+    # style_max_height="400", each larger than the 272px screen itself.
+    for m in XML_TALL_RE.finditer(scan):
+        value = int(m.group(1))
+        if value <= MICRO_DIALOG_BUDGET:
+            continue
+        lineno = scan.count("\n", 0, m.start()) + 1
+        if annotated(lines, lineno):
+            continue
+        hits.append((rel, lineno, "xml-tall", value,
+                     f" > {MICRO_DIALOG_BUDGET} MICRO budget",
+                     lines[lineno - 1].strip()[:80]))
+
     for rule, pattern in (("xml-pad", XML_PAD_RE), ("xml-size", XML_SIZE_RE)):
-        for m in pattern.finditer(text):
+        for m in pattern.finditer(scan):
             value = int(m.group(1))
             if abs(value) < 2:
                 continue
@@ -197,7 +241,7 @@ def scan_xml(path: Path, rel: str, tokens: dict[int, list[str]]) -> list[tuple]:
                 if not names:
                     continue  # nothing declares this size; nothing to name it with
                 note = " == " + "/".join(names[:3])
-            lineno = text.count("\n", 0, m.start()) + 1
+            lineno = scan.count("\n", 0, m.start()) + 1
             if annotated(lines, lineno):
                 continue
             hits.append((rel, lineno, rule, value, note,

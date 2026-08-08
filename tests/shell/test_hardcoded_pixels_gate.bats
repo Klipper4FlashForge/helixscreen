@@ -82,7 +82,45 @@ run_gate() {
     [[ "$output" == *"xml-size      2"* ]]
 }
 
+@test "flags a min-height taller than the MICRO dialog budget" {
+    # hidden_network_modal shipped style_min_height="280" on a 272px screen.
+    # A floor above the budget can never be satisfied (#1204).
+    run_gate tallmin.xml '<component><view>
+  <lv_obj style_min_height="280"/>
+</view></component>'
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"[xml-tall]"* ]]
+}
+
+@test "flags a max-height taller than the MICRO dialog budget" {
+    # debug_bundle_modal shipped style_max_height="400" and rendered y=-103.
+    run_gate tallmax.xml '<component><view>
+  <lv_obj style_max_height="400"/>
+</view></component>'
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"[xml-tall]"* ]]
+}
+
+@test "silent on a min/max height within the MICRO budget" {
+    run_gate shortmax.xml '<component><view>
+  <lv_obj style_max_height="220" style_min_height="60"/>
+</view></component>'
+    [ "$status" -eq 0 ]
+}
+
 # --------------------------------------------------------------- must ignore
+
+@test "silent on a pixel value quoted inside an XML comment" {
+    # The good comments in this tree document a fix by quoting the attribute
+    # they replaced. That is documentation, not a violation -- and before the
+    # gate blanked comments it counted them as real hits.
+    run_gate comment.xml '<component><view>
+  <!-- The old style_pad_all="12" and width="36" are gone; see the budget. -->
+  <lv_obj style_pad_all="#space_md"/>
+</view></component>'
+    [ "$status" -eq 0 ]
+}
+
 
 @test 'silent on width="1" — the required LVGL flex idiom' {
     # flex wraps against the declared width before growing. Removing this
