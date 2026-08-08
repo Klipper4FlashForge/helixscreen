@@ -19,6 +19,7 @@
 #include "filament_display_name.h"
 #include "filament_mapper.h"
 #include "format_utils.h"
+#include "spoolman_manager.h"
 #include "static_panel_registry.h"
 #include "ui/ui_lazy_panel_helper.h"
 #if HELIX_HAS_LABEL_PRINTER
@@ -1351,9 +1352,28 @@ void AmsEditOverlay::update_ui() {
     // way the AMS card does, and drops a brand or material the name already
     // contains — so a Spoolman name that reads "Bambu Lab ASA" still prints
     // once, not three times.
-    if (managed && !working_info_.spool_name.empty()) {
-        const std::string chip = helix::compose_filament_label(
-            working_info_.brand, working_info_.spool_name, working_info_.material);
+    //
+    // The name is not always on the slot. AFC only publishes filament_name from
+    // v1.2.0, so on an older unit a Spoolman-linked lane has an empty spool_name
+    // while the identity cache holds the real one — the same split the loaded
+    // card resolves through resolve_filament_label(). Consult it here too, or
+    // this card silently degrades to "Elegoo · PLA" for a spool we can name.
+    std::string chip_brand = working_info_.brand;
+    std::string chip_name = working_info_.spool_name;
+    if (working_info_.spoolman_id > 0 && (chip_name.empty() || chip_brand.empty())) {
+        if (const auto identity = SpoolmanManager::find_identity(working_info_.spoolman_id)) {
+            if (chip_name.empty()) {
+                chip_name = identity->filament_name;
+            }
+            if (chip_brand.empty()) {
+                chip_brand = identity->vendor;
+            }
+        }
+    }
+
+    if (managed && !chip_name.empty()) {
+        const std::string chip =
+            helix::compose_filament_label(chip_brand, chip_name, working_info_.material);
         snprintf(chip_text_buf_, sizeof(chip_text_buf_), "%s", chip.c_str());
     } else {
         const char* brand = working_info_.brand.empty() ? "Generic" : working_info_.brand.c_str();

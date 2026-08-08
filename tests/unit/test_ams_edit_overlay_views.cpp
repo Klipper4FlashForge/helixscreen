@@ -16,6 +16,7 @@
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
 #include "printer_state.h"
+#include "spoolman_manager.h"
 #include "spoolman_slot_saver.h"
 
 #include "../catch_amalgamated.hpp"
@@ -157,6 +158,19 @@ SlotInfo tracked_slot_spoolman_named() {
     info.material = "PLA";
     info.spool_name = "Ambrosia Pink";
     info.color_rgb = 0xFFB6C1;
+    return info;
+}
+
+// A Spoolman-linked lane on AFC older than v1.2.0: the firmware publishes
+// spool_id but no filament_name, so the slot carries the link and nothing to
+// name it with. Seen live on a BoxTurtle at 192.168.1.112 (spool #106).
+SlotInfo tracked_slot_named_only_in_cache() {
+    SlotInfo info;
+    info.slot_index = 0;
+    info.spoolman_id = 106;
+    info.material = "PLA";
+    info.color_rgb = 0x333333;
+    // brand and spool_name deliberately empty — only the cache knows them.
     return info;
 }
 
@@ -333,6 +347,45 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     CHECK(access.is_managed() == 1);
 
     close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "spool card names a linked slot from the identity cache when AFC cannot",
+                 "[ams_edit_overlay][card][spoolman][regression]") {
+    // AFC below v1.2.0 publishes spool_id but no filament_name, so the slot
+    // carries the Spoolman link with nothing to name it. The loaded card
+    // resolves that through the identity cache; this card must too, or it
+    // silently degrades to the untracked "Elegoo · PLA" for a spool we can
+    // name. Reproduced live on a BoxTurtle (spool #106) before this fix.
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    // Seed through the real entry point the weight poll uses.
+    SpoolInfo spool;
+    spool.id = 106;
+    spool.vendor = "Elegoo";
+    spool.filament_name = "Black Rapid PLA+";
+    spool.material = "PLA";
+    SpoolmanManager::invalidate_identity(106); // insert-if-absent: start clean
+    SpoolmanManager::cache_identity(spool);
+    REQUIRE(SpoolmanManager::find_identity(106).has_value());
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot_named_only_in_cache(), nullptr,
+                                  nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* label = access.widget("card_identity_label");
+    REQUIRE(label != nullptr);
+    // "PLA" is dropped because "PLA+" already states it.
+    CHECK(std::string(lv_label_get_text(label)) == "Elegoo Black Rapid PLA+");
+
+    close_editor_overlay();
+    SpoolmanManager::invalidate_identity(106);
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture,
