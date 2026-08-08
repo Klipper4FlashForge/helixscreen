@@ -5,7 +5,8 @@
  * @file update_checker.h
  * @brief Async update checker for HelixScreen
  *
- * Checks GitHub releases API for newer versions of HelixScreen.
+ * Checks the R2 CDN manifest for newer versions of HelixScreen, falling back
+ * to the GitHub releases API when the manifest is unreachable.
  * Uses background thread to avoid blocking the UI during network operations.
  *
  * SAFETY: Downloads and installs require explicit user confirmation and are
@@ -32,8 +33,8 @@
 /**
  * @brief Async update checker for HelixScreen
  *
- * Checks GitHub releases API to determine if a newer version is available.
- * Rate-limited to 1 check per hour minimum.
+ * Checks the R2 CDN manifest (GitHub releases API as fallback) to determine if
+ * a newer version is available. Rate-limited to one check per MIN_CHECK_INTERVAL.
  *
  * Usage:
  * @code
@@ -113,7 +114,7 @@ class UpdateChecker {
     /**
      * @brief Check for updates asynchronously
      *
-     * Spawns background thread to check GitHub releases API.
+     * Spawns background thread to fetch the channel manifest.
      * Callback is invoked on LVGL thread when check completes.
      *
      * Rate limited: If called within MIN_CHECK_INTERVAL of last check,
@@ -276,8 +277,58 @@ class UpdateChecker {
      */
     static ReleaseInfoRepair repair_release_info(const std::string& install_root);
 
-    /** @brief Get the configured update channel */
+    /**
+     * @brief Get the configured update channel.
+     * @warning MAIN THREAD ONLY — reads Config, which is not thread-safe
+     *          (include/config.h). Off-thread callers want config_snapshot().
+     */
     UpdateChannel get_channel() const;
+
+    /**
+     * @brief Human-readable name for a channel ("stable", "beta", "dev").
+     *
+     * Single source of truth for the enum→string map so log lines and the debug
+     * bundle's update section cannot drift from each other.
+     */
+    static const char* channel_name(UpdateChannel channel);
+
+    /**
+     * @brief Resolve the R2 base URL the next check will actually use.
+     *
+     * Reads /update/r2_url, falls back to DEFAULT_R2_BASE_URL when unset, and
+     * strips trailing slashes. Single source of truth for that resolution:
+     * check_for_updates() caches its result into cached_r2_base_url_, and
+     * refresh_config_snapshot() stores it for off-thread readers.
+     *
+     * @warning MAIN THREAD ONLY — reads Config, which is not thread-safe
+     *          (include/config.h). Off-thread callers want config_snapshot().
+     */
+    static std::string effective_r2_base_url();
+
+    /**
+     * @brief Main-thread snapshot of the Config-derived update settings.
+     *
+     * Exists so diagnostics that run on a worker thread (the debug bundle is
+     * collected on HttpExecutor::slow()) can report the channel and effective
+     * manifest URL without reading Config off the main thread.
+     */
+    struct ConfigSnapshot {
+        std::string channel;     ///< "stable" | "beta" | "dev"
+        std::string r2_base_url; ///< effective, normalized manifest base URL
+    };
+
+    /**
+     * @brief Re-read the Config-derived settings into the diagnostics snapshot.
+     * @warning MAIN THREAD ONLY (reads Config).
+     *
+     * Called from init() so the snapshot is valid before any check has run, and
+     * again whenever the user changes the channel, so a switch is visible
+     * without waiting for a check.
+     */
+    void refresh_config_snapshot();
+
+    /** @brief Thread-safe copy of the diagnostics snapshot. Safe from any thread. */
+    ConfigSnapshot config_snapshot() const;
 
     /** @brief Get platform key for current build ("pi", "ad5m", "k1") */
     static std::string get_platform_key();
@@ -466,10 +517,20 @@ class UpdateChecker {
     std::atomic<bool> initialized_{false};
     Callback pending_callback_;
 
-    // Channel cached on main thread before worker spawns (Config is not thread-safe)
+    // Channel cached on main thread before worker spawns (Config is not thread-safe).
+    // These are written ONCE in check_for_updates() before the worker is spawned,
+    // which is the only thing that makes the worker's UNLOCKED reads of them
+    // (do_check(), get_r2_base_url()) safe. Never write them anywhere else — a
+    // refresh from the main thread would race an in-flight worker.
     UpdateChannel cached_channel_{UpdateChannel::Stable};
     std::string cached_dev_url_;
     std::string cached_r2_base_url_;
+
+    // Diagnostics-only mirror of the two Config-derived values above, deliberately
+    // SEPARATE from cached_* so it can be refreshed at any time on the main thread
+    // without racing a running check. Written and read only under mutex_; no worker
+    // thread ever touches it.
+    ConfigSnapshot config_snapshot_;
 
     // LVGL subjects for UI binding (update check)
     lv_subject_t status_subject_{};

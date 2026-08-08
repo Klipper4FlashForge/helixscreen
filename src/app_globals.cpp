@@ -32,20 +32,22 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cerrno>
 #include <climits>
 #include <csignal>
-#include <algorithm>
-#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <string>
 #include <vector>
 
-// Platform-specific includes for process restart
+// Platform-specific includes for process restart and the sudo capability probe
 #if defined(__unix__) || defined(__APPLE__)
-#include <unistd.h> // fork, execv, usleep
+#include <fcntl.h>    // open (redirect the probe child to /dev/null)
+#include <sys/wait.h> // waitpid, WNOHANG
+#include <unistd.h>   // fork, execv, usleep
 using namespace helix;
 
 #endif
@@ -539,12 +541,79 @@ bool updates_externally_managed() {
     return cached;
 }
 
-bool compute_self_update_supported(const std::string& install_root) {
+// Run `sudo -n true` and report whether it exited 0. `-n` is non-interactive:
+// with NOPASSWD sudoers it succeeds immediately, otherwise it fails immediately
+// rather than prompting, which matches how install.sh runs (forked with no tty).
+//
+// Bounded: sudoers can be backed by LDAP/SSSD, where a lookup against an
+// unreachable directory blocks for the resolver's own timeout. This is called
+// from the main thread during startup, so poll for the child instead of a
+// blocking waitpid() and treat "still running at the deadline" as no.
+static bool probe_passwordless_sudo() {
+    constexpr int kTimeoutMs = 2000;
+    constexpr int kPollIntervalMs = 20;
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        spdlog::warn("[Updates] fork() for sudo probe failed: {}", strerror(errno));
+        return false;
+    }
+
+    if (pid == 0) {
+        // Child — discard sudo's output; only the exit status matters.
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) {
+            dup2(devnull, STDOUT_FILENO);
+            dup2(devnull, STDERR_FILENO);
+            close(devnull);
+        }
+        // systemd services can start with PATH unset, which would break the
+        // execvp lookup and misreport a sudo-capable box as not.
+        const char* cur_path = std::getenv("PATH");
+        if (!cur_path || cur_path[0] == '\0') {
+            setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", 1);
+        }
+        char* const argv[] = {const_cast<char*>("sudo"), const_cast<char*>("-n"),
+                              const_cast<char*>("true"), nullptr};
+        execvp("sudo", argv);
+        _exit(127); // no sudo binary
+    }
+
+    for (int waited_ms = 0; waited_ms < kTimeoutMs; waited_ms += kPollIntervalMs) {
+        int status = 0;
+        const pid_t done = waitpid(pid, &status, WNOHANG);
+        if (done == pid) {
+            return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+        }
+        if (done < 0) {
+            return false; // child vanished (SIGCHLD reaped elsewhere) — assume no
+        }
+        usleep(kPollIntervalMs * 1000);
+    }
+
+    spdlog::warn("[Updates] sudo probe did not finish in {}ms — assuming no escalation",
+                 kTimeoutMs);
+    kill(pid, SIGKILL);
+    waitpid(pid, nullptr, 0);
+    return false;
+}
+
+bool root_escalation_available() {
+    static const bool cached = []() {
+        if (geteuid() == 0) {
+            return true; // already root — every embedded platform runs this way
+        }
+        const bool ok = probe_passwordless_sudo();
+        spdlog::info("[Updates] Passwordless sudo {}", ok ? "available" : "unavailable");
+        return ok;
+    }();
+    return cached;
+}
+
+bool compute_self_update_supported(const std::string& install_root, bool can_escalate) {
     // Self-update swaps the install root via rename ("mv <root> <root>.old;
     // mv <new> <root>"), which needs write permission on the PARENT directory —
-    // rename mutates the parent's directory entries, not the root itself. So the
-    // physical precondition is a writable parent. access(W_OK) on it is an exact
-    // predictor: false on a read-only rootfs (EROFS) and on a permission mismatch.
+    // rename mutates the parent's directory entries, not the root itself.
     if (install_root.empty()) {
         // Unresolvable layout (bind-mounted binary). Conservative: assume
         // supported — the installer's own fallbacks and the explicit
@@ -555,14 +624,39 @@ bool compute_self_update_supported(const std::string& install_root) {
     if (parent.empty()) {
         return true; // no parent to test (e.g. a bare relative name) — don't block.
     }
-    return helix::paths::is_writable_dir(parent);
+    if (helix::paths::is_writable_dir(parent)) {
+        return true;
+    }
+    // Parent isn't writable by this user. That is NOT the same as impossible:
+    // install.sh escalates with sudo for exactly these steps, so the swap still
+    // runs on the common /opt/helixscreen + non-root service user layout. Only a
+    // box with neither write access nor root is genuinely stuck (read-only rootfs).
+    return can_escalate;
 }
 
 bool self_update_supported() {
-    static const bool cached = compute_self_update_supported(app_get_install_root());
+    static const bool cached = []() {
+        const std::string root = app_get_install_root();
+        // Ask without escalation first so the writable-parent case never pays for
+        // the sudo probe.
+        if (compute_self_update_supported(root, /*can_escalate=*/false)) {
+            return true;
+        }
+        const bool escalate = root_escalation_available();
+        if (!escalate) {
+            spdlog::info("[Updates] Self-update unsupported: parent of {} is not writable and "
+                         "root is not obtainable",
+                         root);
+        }
+        return compute_self_update_supported(root, escalate);
+    }();
     return cached;
 }
 
+bool compute_in_app_updates_suppressed(bool externally_managed, bool self_update_ok) {
+    return externally_managed || !self_update_ok;
+}
+
 bool in_app_updates_suppressed() {
-    return updates_externally_managed() || !self_update_supported();
+    return compute_in_app_updates_suppressed(updates_externally_managed(), self_update_supported());
 }

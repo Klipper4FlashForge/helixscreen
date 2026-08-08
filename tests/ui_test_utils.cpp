@@ -774,7 +774,9 @@ bool updates_externally_managed() {
 // Mirror of src/app_globals.cpp compute_self_update_supported / self_update_supported /
 // in_app_updates_suppressed (app_globals.o is excluded from the test link).
 #include "system/helix_paths.h"
-bool compute_self_update_supported(const std::string& install_root) {
+
+#include <unistd.h> // geteuid
+bool compute_self_update_supported(const std::string& install_root, bool can_escalate) {
     if (install_root.empty()) {
         return true;
     }
@@ -782,16 +784,37 @@ bool compute_self_update_supported(const std::string& install_root) {
     if (parent.empty()) {
         return true;
     }
-    return helix::paths::is_writable_dir(parent);
+    if (helix::paths::is_writable_dir(parent)) {
+        return true;
+    }
+    return can_escalate;
+}
+
+// Deliberately NOT a mirror: the real probe forks `sudo -n true`, and a test
+// binary must not shell out to sudo. euid 0 is the one branch that is free to
+// evaluate honestly. The pure predicate above is what the update-gate tests
+// exercise for both escalation values, so this stub costs no coverage.
+bool root_escalation_available() {
+    return geteuid() == 0;
 }
 
 bool self_update_supported() {
-    static const bool cached = compute_self_update_supported(app_get_install_root());
+    static const bool cached = []() {
+        const std::string root = app_get_install_root();
+        if (compute_self_update_supported(root, /*can_escalate=*/false)) {
+            return true;
+        }
+        return compute_self_update_supported(root, root_escalation_available());
+    }();
     return cached;
 }
 
+bool compute_in_app_updates_suppressed(bool externally_managed, bool self_update_ok) {
+    return externally_managed || !self_update_ok;
+}
+
 bool in_app_updates_suppressed() {
-    return updates_externally_managed() || !self_update_supported();
+    return compute_in_app_updates_suppressed(updates_externally_managed(), self_update_supported());
 }
 
 // Stubs for the manager accessors in app_globals.h. Each getter reads a file-static
