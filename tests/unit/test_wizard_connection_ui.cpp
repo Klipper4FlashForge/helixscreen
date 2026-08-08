@@ -84,13 +84,6 @@ class WizardConnectionUIFixture : public LVGLUITestFixture {
         }
     }
 
-    void require_interactive() {
-        require_ready();
-        // Interactive tests (type_text, click, wait_ms) need KeyboardManager
-        // and a mock mDNS backend. Skip until test infrastructure supports this.
-        SKIP("Interactive tests require KeyboardManager initialization");
-    }
-
     lv_obj_t* wizard = nullptr;
     bool ready_ = false;
 };
@@ -102,14 +95,16 @@ class WizardConnectionUIFixture : public LVGLUITestFixture {
 // =============================================================================
 // UI Integration Tests - Require XML component registration
 // =============================================================================
-// These tests are marked [.ui_integration] because they require:
-// 1. XML components to be registered (wizard_container.xml, etc.)
-// 2. LVGL filesystem driver to read ui_xml/ directory
+// These tests are marked [.ui_integration] (hidden from the default run)
+// because they need the ui_xml/ component tree readable from disk, which makes
+// them dependent on the working directory rather than on the build alone.
+// LVGLUITestFixture does register the components, so they pass when run from
+// the repo root:
+//   ./build/bin/helix-tests "[.ui_integration]"
 //
-// The test fixture's ensure_components_registered() is a stub that doesn't
-// actually register XML components. To run these tests, you need to either:
-// - Set up the XML filesystem driver in the test infrastructure
-// - Run tests with: ./build/bin/helix-tests "[ui_integration]"
+// They assert the wizard connection step's XML structure (widget names, title
+// text, flex layout). Nothing else in the suite covers that, and tests/ui/ has
+// no wizard coverage — the wizard is pre-first-boot, so ctl cannot reach it.
 // =============================================================================
 
 TEST_CASE_METHOD(WizardConnectionUIFixture, "Connection UI: All widgets exist",
@@ -131,37 +126,6 @@ TEST_CASE_METHOD(WizardConnectionUIFixture, "Connection UI: All widgets exist",
     REQUIRE(status_label != nullptr);
 }
 
-TEST_CASE_METHOD(WizardConnectionUIFixture, "Connection UI: Input field interaction",
-                 "[wizard][connection][ui][.ui_integration]") {
-    require_interactive();
-    lv_obj_t* ip_input = UITest::find_by_name(test_screen(), "ip_input");
-    REQUIRE(ip_input != nullptr);
-
-    lv_obj_t* port_input = UITest::find_by_name(test_screen(), "port_input");
-    REQUIRE(port_input != nullptr);
-
-    // Type IP address
-    UITest::type_text(ip_input, "192.168.1.100");
-    UITest::wait_ms(50);
-
-    // Verify text was entered
-    std::string entered_ip = UITest::get_text(ip_input);
-    REQUIRE(entered_ip == "192.168.1.100");
-
-    // Check default port value
-    std::string port_value = UITest::get_text(port_input);
-    REQUIRE(port_value == "7125");
-
-    // Modify port - clear by selecting all and typing over
-    lv_textarea_set_cursor_pos(port_input, 0);
-    lv_textarea_set_text(port_input, ""); // Clear existing text
-    UITest::type_text(port_input, "8080");
-    UITest::wait_ms(50);
-
-    port_value = UITest::get_text(port_input);
-    REQUIRE(port_value == "8080");
-}
-
 TEST_CASE_METHOD(WizardConnectionUIFixture, "Connection UI: Test button state",
                  "[wizard][connection][ui][.ui_integration]") {
     require_ready();
@@ -174,31 +138,6 @@ TEST_CASE_METHOD(WizardConnectionUIFixture, "Connection UI: Test button state",
 
     // Button should be visible
     REQUIRE(UITest::is_visible(test_btn) == true);
-}
-
-TEST_CASE_METHOD(WizardConnectionUIFixture, "Connection UI: Status label updates",
-                 "[wizard][connection][ui][.ui_integration]") {
-    require_interactive();
-    lv_obj_t* status_label = UITest::find_by_name(test_screen(), "connection_status");
-    REQUIRE(status_label != nullptr);
-
-    // Initially status should be empty or hidden
-    std::string initial_status = UITest::get_text(status_label);
-    REQUIRE(initial_status.empty());
-
-    // Enter invalid IP
-    lv_obj_t* ip_input = UITest::find_by_name(test_screen(), "ip_input");
-    lv_textarea_set_text(ip_input, ""); // Clear existing text
-    UITest::type_text(ip_input, "999.999.999.999");
-
-    // Click test button
-    lv_obj_t* test_btn = UITest::find_by_name(test_screen(), "btn_test_connection");
-    UITest::click(test_btn);
-    UITest::wait_ms(100);
-
-    // Status should show error
-    std::string error_status = UITest::get_text(status_label);
-    REQUIRE(error_status.find("Invalid") != std::string::npos);
 }
 
 TEST_CASE_METHOD(WizardConnectionUIFixture, "Connection UI: Navigation buttons",
@@ -308,55 +247,6 @@ TEST_CASE("Connection UI: Mock connection flow", "[wizard][connection][mock]") {
     SECTION("Timeout configuration") {
         mock_client.set_connection_timeout(5000);
         REQUIRE(mock_client.timeout == 5000);
-    }
-}
-
-// ============================================================================
-// Input Validation UI Tests
-// ============================================================================
-
-TEST_CASE_METHOD(WizardConnectionUIFixture, "Connection UI: Input validation feedback",
-                 "[wizard][connection][ui][validation][.ui_integration]") {
-    require_interactive();
-    lv_obj_t* ip_input = UITest::find_by_name(test_screen(), "ip_input");
-    lv_obj_t* port_input = UITest::find_by_name(test_screen(), "port_input");
-    lv_obj_t* test_btn = UITest::find_by_name(test_screen(), "btn_test_connection");
-    lv_obj_t* status = UITest::find_by_name(test_screen(), "connection_status");
-
-    SECTION("Empty IP address") {
-        lv_textarea_set_text(ip_input, ""); // Clear text
-        UITest::click(test_btn);
-        UITest::wait_ms(100);
-
-        std::string status_text = UITest::get_text(status);
-        REQUIRE(status_text.find("enter") != std::string::npos);
-    }
-
-    SECTION("Invalid port") {
-        UITest::type_text(ip_input, "192.168.1.100");
-        lv_textarea_set_text(port_input, ""); // Clear text
-        UITest::type_text(port_input, "99999");
-        UITest::click(test_btn);
-        UITest::wait_ms(100);
-
-        std::string status_text = UITest::get_text(status);
-        REQUIRE(status_text.find("Invalid port") != std::string::npos);
-    }
-
-    SECTION("Valid inputs") {
-        lv_textarea_set_text(ip_input, ""); // Clear text
-        UITest::type_text(ip_input, "printer.local");
-        lv_textarea_set_text(port_input, ""); // Clear text
-        UITest::type_text(port_input, "7125");
-
-        // Status should allow testing with valid inputs
-        UITest::click(test_btn);
-        UITest::wait_ms(100);
-
-        std::string status_text = UITest::get_text(status);
-        // Should either be testing or show connection result
-        REQUIRE((status_text.find("Testing") != std::string::npos ||
-                 status_text.find("Connection") != std::string::npos));
     }
 }
 

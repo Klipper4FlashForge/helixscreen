@@ -59,11 +59,13 @@ static void* ui_status_pill_xml_create(lv_xml_parser_state_t* state, const char*
     lv_obj_set_style_radius(pill, 4, LV_PART_MAIN);
     lv_obj_set_style_border_width(pill, 0, LV_PART_MAIN);
 
-    // Padding: space_xs horizontal, 2px vertical (matches beta_badge pattern)
-    lv_obj_set_style_pad_left(pill, 6, LV_PART_MAIN);
-    lv_obj_set_style_pad_right(pill, 6, LV_PART_MAIN);
-    lv_obj_set_style_pad_top(pill, 2, LV_PART_MAIN);
-    lv_obj_set_style_pad_bottom(pill, 2, LV_PART_MAIN);
+    // Padding: space_xs horizontal, space_xxs vertical (matches beta_badge pattern)
+    int32_t pad_hor = theme_manager_get_spacing("space_xs");
+    int32_t pad_ver = theme_manager_get_spacing("space_xxs");
+    lv_obj_set_style_pad_left(pill, pad_hor, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(pill, pad_hor, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(pill, pad_ver, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(pill, pad_ver, LV_PART_MAIN);
 
     // Child label for text
     lv_obj_t* label = lv_label_create(pill);

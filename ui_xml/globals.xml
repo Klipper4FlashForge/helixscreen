@@ -270,6 +270,30 @@
     <px name="slider_height" value="8"/>
     <!-- Icon-only buttons (close, edit, etc.) -->
     <px name="icon_button_size" value="32"/>
+    <!-- icon_button_size_lg: the larger icon-only touch target, used where the
+         button floats over content (canvas overlays) or sits alone in a panel
+         header rather than in a dense row. Follows the existing
+         <name>_<variant> convention of button_height_sm / button_height_lg.
+         Flat, not a breakpoint ladder — every consumer was a literal 36 on all
+         screens, so this is a lift-and-name, not a resize. icon_button_radius_lg
+         is half the size and MUST track it, otherwise the round variants
+         (print_status overlay buttons, exclude_object close) go oval. -->
+    <px name="icon_button_size_lg" value="36"/>
+    <px name="icon_button_radius_lg" value="18"/>
+
+    <!-- icon_badge: the circular container holding a single status icon at the
+         top of an overlay or on a home-screen widget. NOT badge_size_* — that
+         family tops out at 28 and means the small count chip overlaid on an
+         icon, which is a different component. icon_badge_radius is half the
+         size and MUST track it. -->
+    <px name="icon_badge_size" value="48"/>
+    <px name="icon_badge_radius" value="24"/>
+
+    <!-- button_width_action: fixed width for a standalone action button that
+         must not stretch to fill its row (Done/Retry/Close in calibration
+         flows, the Bluetooth scan/pair/forget triplet). Rows that instead want
+         equal-width buttons should use flex_grow="1" and not this token. -->
+    <px name="button_width_action" value="140"/>
 
     <!-- ===================================================================== -->
     <!-- Typography - Responsive Semantic Fonts                              -->

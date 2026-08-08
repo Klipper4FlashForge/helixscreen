@@ -489,8 +489,10 @@ void* ui_split_button_create(lv_xml_parser_state_t* state, const char** attrs) {
     lv_obj_set_style_bg_opa(data->arrow_btn, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(data->arrow_btn, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(data->arrow_btn, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_left(data->arrow_btn, 4, LV_PART_MAIN);
-    lv_obj_set_style_pad_right(data->arrow_btn, 6, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(data->arrow_btn, theme_manager_get_spacing("space_xxs"),
+                              LV_PART_MAIN);
+    lv_obj_set_style_pad_right(data->arrow_btn, theme_manager_get_spacing("space_xs"),
+                               LV_PART_MAIN);
     lv_obj_set_size(data->arrow_btn, LV_SIZE_CONTENT, lv_pct(100));
     lv_obj_remove_flag(data->arrow_btn, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_flex_flow(data->arrow_btn, LV_FLEX_FLOW_ROW);

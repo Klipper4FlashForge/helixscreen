@@ -60,6 +60,16 @@ json DebugBundleCollector::collect(const BundleOptions& options) {
         bundle["system"] = json{{"error", e.what()}};
     }
 
+    // Why the in-app updater is (or isn't) usable on this device. Kept as a
+    // top-level sibling of `system` because the answer to "cannot update" is a
+    // handful of specific predicates, not general host facts.
+    try {
+        bundle["update"] = collect_update_info();
+    } catch (const std::exception& e) {
+        spdlog::warn("[DebugBundle] Failed to collect update info: {}", e.what());
+        bundle["update"] = json{{"error", e.what()}};
+    }
+
     try {
         bundle["printer"] = collect_printer_info();
     } catch (const std::exception& e) {
@@ -226,6 +236,107 @@ json DebugBundleCollector::collect_system_info() {
     }
 
     return sys;
+}
+
+// =============================================================================
+// Update diagnostics
+// =============================================================================
+
+// Readable name for the last check's status. The raw enum ordinal means nothing
+// to a human reading a bundle or to the dashboard rendering it.
+static const char* update_status_name(UpdateChecker::Status status) {
+    switch (status) {
+    case UpdateChecker::Status::Idle:
+        return "idle";
+    case UpdateChecker::Status::Checking:
+        return "checking";
+    case UpdateChecker::Status::UpdateAvailable:
+        return "update_available";
+    case UpdateChecker::Status::UpToDate:
+        return "up_to_date";
+    case UpdateChecker::Status::Error:
+        return "error";
+    }
+    return "unknown";
+}
+
+json DebugBundleCollector::build_update_info(const UpdateDiagnostics& diag) {
+    json upd;
+
+    // install_root is a filesystem path and can embed a username
+    // (/home/pi/helixscreen). It goes through sanitize_value() like every other
+    // string that leaves the machine, which catches credential/email/MAC shapes
+    // but deliberately leaves the directory layout intact: WHICH root the app
+    // installed into is the entire diagnostic value of this field, and the same
+    // path already appears verbatim throughout log_tail and crash_report.
+    upd["install_root"] = sanitize_value(diag.install_root);
+
+    // The predicates the update UI actually gates on. `suppressed` is the one
+    // that decides whether the "Check for Updates" / "Install Update" rows
+    // exist at all (show_update_settings = !in_app_updates_suppressed()); the
+    // rest say which cause fired.
+    //
+    // install_parent_writable is reported alongside self_update_supported (their
+    // OR with root escalation) because the pair distinguishes the two shapes that
+    // matter: false/false is a genuinely read-only install, while false/true is the
+    // ordinary /opt + unprivileged-service layout where install.sh sudoes the swap.
+    upd["install_parent_writable"] = diag.install_parent_writable;
+    upd["self_update_supported"] = diag.self_update_supported;
+    upd["externally_managed"] = diag.externally_managed;
+    upd["suppressed"] =
+        compute_in_app_updates_suppressed(diag.externally_managed, diag.self_update_supported);
+
+    // These two come from UpdateChecker's main-thread config snapshot, which is
+    // empty until init() runs. Report that as "unknown" rather than "" so a
+    // bundle reader can tell "updater never initialised" from "channel is
+    // stable" — an empty string reads like a failed lookup either way.
+    upd["channel"] = diag.channel.empty() ? "unknown" : diag.channel;
+    upd["r2_base_url"] =
+        diag.r2_base_url.empty() ? std::string("unknown") : sanitize_value(diag.r2_base_url);
+    upd["last_check_status"] = diag.last_check_status;
+    upd["platform_asset_name"] = diag.platform_asset_name;
+
+    if (!diag.available_version.empty()) {
+        upd["available_version"] = diag.available_version;
+    }
+    if (!diag.last_check_error.empty()) {
+        upd["last_check_error"] = sanitize_value(diag.last_check_error);
+    }
+
+    return upd;
+}
+
+json DebugBundleCollector::collect_update_info() {
+    UpdateDiagnostics diag;
+
+    diag.install_root = app_get_install_root();
+    // can_escalate=false isolates the raw writability term; self_update_supported()
+    // is the cached OR of it and root_escalation_available(). Reading them in this
+    // order means a writable parent still never triggers the sudo probe — the
+    // cached value is already decided by the time the bundle asks.
+    diag.install_parent_writable = compute_self_update_supported(diag.install_root, false);
+    diag.self_update_supported = self_update_supported();
+    diag.externally_managed = updates_externally_managed();
+
+    // upload_async() collects on HttpExecutor::slow(), so nothing here may touch
+    // LVGL or Config. get_status() is atomic; get_cached_update(),
+    // get_error_message() and config_snapshot() copy under UpdateChecker's own
+    // mutex; platform_asset_name() is pure. The channel and manifest URL come
+    // from the snapshot rather than get_channel()/effective_r2_base_url()
+    // because those two read Config, which is main-thread-only (config.h).
+    const auto& checker = UpdateChecker::instance();
+    const auto snapshot = checker.config_snapshot();
+    diag.channel = snapshot.channel;
+    diag.r2_base_url = snapshot.r2_base_url;
+    diag.last_check_status = update_status_name(checker.get_status());
+    diag.platform_asset_name = UpdateChecker::platform_asset_name();
+
+    if (auto cached = checker.get_cached_update()) {
+        diag.available_version = cached->version;
+    }
+    diag.last_check_error = checker.get_error_message();
+
+    return build_update_info(diag);
 }
 
 // =============================================================================

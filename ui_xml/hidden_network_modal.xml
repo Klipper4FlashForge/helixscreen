@@ -3,6 +3,30 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <!-- NOTE: Backdrop created programmatically by Modal system -->
 <component>
+  <consts>
+    <!-- Connecting-state height.
+
+         connecting_state's own root is height="100%", so a content-sized
+         parent collapses it to nothing - the container has to state a height.
+         It used to state style_min_height="280", which is taller than a
+         480x272 screen before the divider and the button row are counted, so
+         the connecting state overflowed on a Qidi Q2 no matter what the rest
+         of the dialog did.
+
+         This ladder replaces it with a per-breakpoint height that holds
+         spinner_lg plus its caption (48 + 6 + ~14 = 68px at MICRO, ~100px at
+         LARGE) and keeps the whole card inside the dialog's 85% cap:
+         at 480x272 that is 120 + 1 (divider) + 26 (button row) = 147 against a
+         231px cap; at 480x320, 150 + 1 + 32 = 183 against 272; at 1024x600,
+         240 + 1 + 72 = 313 against 510. -->
+    <px name="hidden_connecting_height_micro" value="120"/>
+    <px name="hidden_connecting_height_tiny" value="150"/>
+    <px name="hidden_connecting_height_small" value="180"/>
+    <px name="hidden_connecting_height_medium" value="200"/>
+    <px name="hidden_connecting_height_large" value="240"/>
+    <px name="hidden_connecting_height_xlarge" value="280"/>
+    <px name="hidden_connecting_height_xxlarge" value="320"/>
+  </consts>
   <subjects>
     <subject name="hidden_ssid" type="string" value=""/>
     <subject name="hidden_security" type="int" value="1"/>
@@ -13,17 +37,39 @@
     <subject name="hidden_show_password" type="int" value="0"/>
     <!-- 0=hide input, 1=show for None -->
   </subjects>
-  <!-- Dialog card (backdrop created programmatically) -->
+  <!-- Dialog card (backdrop created programmatically).
+
+       style_max_height="85%" + scrollable="false" is modal_dialog.xml's bound:
+       without it nothing caps the card's growth, and the form inside it is
+       taller than a 480x272 panel on its own (title + three labelled 48px
+       inputs + error line measures ~272px at MICRO). The form scrolls inside
+       #dialog_content_max the way modal_dialog's content_container does, so
+       the worst case the card can reach is content-cap + divider + button row:
+       140 + 1 + 26 = 167 at MICRO (cap 231), 200 + 1 + 32 = 233 at TINY (cap
+       272), 260 + 1 + 48 = 309 at SMALL (cap 340). -->
   <view name="hidden_network_modal"
-        extends="ui_dialog" width="400" height="content" align="center" flex_flow="column" style_flex_main_place="start"
-        style_pad_gap="0">
+        extends="ui_dialog" width="70%" style_min_width="320" style_max_width="440" height="content"
+        style_max_height="85%" align="center" flex_flow="column" style_flex_main_place="start"
+        style_pad_gap="0" scrollable="false">
     <!-- ============================================================ -->
     <!-- STATE: IDLE - Hidden network entry form (hidden when connecting) -->
     <!-- ============================================================ -->
+    <!-- Scroll area, per modal_dialog.xml's content_container: height="content"
+         capped at #dialog_content_max, scrollable, no snap. The cap is what
+         creates the scroll range - the form's natural height exceeds it at
+         MICRO and TINY, so this is a live scroller and not an inert attribute.
+         The old style_min_height="280" is gone rather than made responsive:
+         the form always has a title, an SSID field and a dropdown in it, so it
+         can never collapse, and a floor is the one thing that cannot help a
+         box that is already too tall. The title stays inside the scroll area
+         (and inside the connecting-state hide) because it is form content
+         here, not the prop-driven chrome modal_dialog pins in its header. -->
     <lv_obj name="hidden_form_container"
-            width="100%" height="content" style_min_height="280" style_pad_left="#space_lg" style_pad_right="#space_lg"
-            style_pad_top="#space_lg" style_pad_bottom="#space_lg" flex_flow="column" style_flex_cross_place="start"
-            style_pad_gap="#space_md">
+            width="100%" height="content" style_max_height="#dialog_content_max"
+            style_pad_left="#space_lg" style_pad_right="#space_lg"
+            style_pad_top="#space_lg" style_pad_bottom="#space_lg" flex_flow="column"
+            style_flex_cross_place="start" style_pad_gap="#space_md"
+            scrollable="true" scroll_snap_y="none">
       <!-- Hide form when hidden_connecting == 1 -->
       <bind_flag_if_eq subject="hidden_connecting" flag="hidden" ref_value="1"/>
       <!-- Title -->
@@ -56,8 +102,9 @@
     <!-- ============================================================ -->
     <!-- STATE: CONNECTING - Spinner and status (shown when connecting) -->
     <!-- ============================================================ -->
+    <!-- Height, not min-height: see the hidden_connecting_height ladder above. -->
     <lv_obj name="connecting_container"
-            width="100%" height="content" style_min_height="280" style_pad_all="0" hidden="true">
+            width="100%" height="#hidden_connecting_height" style_pad_all="0" hidden="true">
       <!-- Show spinner when hidden_connecting == 1 -->
       <bind_flag_if_eq subject="hidden_connecting" flag="hidden" ref_value="0"/>
       <connecting_state text="Connecting..." translation_tag="Connecting..."/>

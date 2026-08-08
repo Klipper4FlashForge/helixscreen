@@ -87,7 +87,12 @@ void create_overlay_internal() {
         g_spinner = lv_spinner_create(container);
         if (g_spinner) {
             lv_spinner_set_anim_params(g_spinner, 1000, 200); // 1s rotation, 200deg arc
-            lv_obj_set_size(g_spinner, 48, 48);
+            // Match what the <spinner> XML widget would have produced on the
+            // happy path, rather than freezing the small-breakpoint value here.
+            int32_t spinner_size = theme_manager_get_spacing("spinner_lg");
+            if (spinner_size <= 0)
+                spinner_size = 48;
+            lv_obj_set_size(g_spinner, spinner_size, spinner_size);
             spdlog::debug("[BusyOverlay] Using fallback spinner (XML not available)");
         } else {
             spdlog::error("[BusyOverlay] Failed to create spinner widget");

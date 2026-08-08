@@ -13,8 +13,21 @@
 #include "ui_printer_manager_overlay.h"
 
 #include "../lvgl_test_fixture.h"
+#include "subject_debug_registry.h"
 
 #include "../catch_amalgamated.hpp"
+
+namespace {
+
+/// Observer body is irrelevant - the test only cares that attaching the
+/// observer to a widget installs an LV_EVENT_DELETE hook on that widget, and
+/// that lv_subject_deinit() takes it back off again.
+void sentinel_observer_cb(lv_observer_t*, lv_subject_t*) {}
+
+/// One of the four subjects PrinterManagerOverlay::init_subjects() publishes.
+constexpr const char* kOwnedSubjectName = "pm_name_editing";
+
+} // namespace
 
 // =============================================================================
 // Basic Properties
@@ -83,23 +96,81 @@ TEST_CASE_METHOD(LVGLTestFixture, "PrinterManagerOverlay: global accessor return
 TEST_CASE_METHOD(LVGLTestFixture,
                  "PrinterManagerOverlay: destructor cleans up initialized subjects",
                  "[printer_manager]") {
+    // ~PrinterManagerOverlay() -> deinit_subjects_base() -> lv_subject_deinit()
+    // on every subject the overlay published. lv_subject_deinit() walks the
+    // subject's observer list and calls lv_observer_remove(), which for an
+    // obj-bound observer strips the LV_EVENT_DELETE hook that
+    // lv_subject_add_observer_obj() installed on the target widget.
+    //
+    // So a sentinel widget's event count is direct, checkable evidence: it goes
+    // up by one when we observe the overlay's subject, and only comes back down
+    // if the destructor actually deinitialized that subject. A destructor that
+    // skips cleanup leaves the hook - and a dangling observer pointing at freed
+    // subject memory - in place, with no crash to give it away.
+    lv_obj_t* sentinel = lv_obj_create(test_screen());
+    const uint32_t baseline_events = lv_obj_get_event_count(sentinel);
+    lv_observer_t* observer = nullptr;
+
     {
         PrinterManagerOverlay overlay;
         overlay.init_subjects();
         REQUIRE(overlay.are_subjects_initialized());
-        // Destructor runs here - should not crash
+
+        lv_subject_t* owned = SubjectDebugRegistry::instance().lookup_by_name(kOwnedSubjectName);
+        REQUIRE(owned != nullptr);
+
+        observer = lv_subject_add_observer_obj(owned, sentinel_observer_cb, sentinel, nullptr);
+        REQUIRE(observer != nullptr);
+        REQUIRE(lv_obj_get_event_count(sentinel) == baseline_events + 1);
+        // Destructor runs here.
     }
-    SUCCEED("Destructor completed without crash");
+
+    const uint32_t after_events = lv_obj_get_event_count(sentinel);
+
+    if (after_events != baseline_events) {
+        // Broken build: the hook still points at a freed observer/subject, so
+        // deleting the sentinel would fault before Catch2 could report. Strip it
+        // by user_data (a null cb means "any callback") and let the check below
+        // do the reporting.
+        lv_obj_remove_event_cb_with_user_data(sentinel, nullptr, observer);
+    }
+    lv_obj_delete(sentinel);
+
+    REQUIRE(after_events == baseline_events);
 }
 
 TEST_CASE_METHOD(LVGLTestFixture, "PrinterManagerOverlay: destructor safe without init_subjects",
                  "[printer_manager]") {
+    // An overlay that never called init_subjects() owns nothing, so neither its
+    // construction nor its destruction may disturb the subject another instance
+    // published under the same XML name. Pin that with a live owner: the registry
+    // entry must still resolve to the owner's subject afterwards, and the owner's
+    // observer hook must still be attached.
+    PrinterManagerOverlay owner;
+    owner.init_subjects();
+    lv_subject_t* owned = SubjectDebugRegistry::instance().lookup_by_name(kOwnedSubjectName);
+    REQUIRE(owned != nullptr);
+
+    lv_obj_t* sentinel = lv_obj_create(test_screen());
+    const uint32_t baseline_events = lv_obj_get_event_count(sentinel);
+    lv_observer_t* observer =
+        lv_subject_add_observer_obj(owned, sentinel_observer_cb, sentinel, nullptr);
+    REQUIRE(observer != nullptr);
+    REQUIRE(lv_obj_get_event_count(sentinel) == baseline_events + 1);
+
     {
-        PrinterManagerOverlay overlay;
-        REQUIRE_FALSE(overlay.are_subjects_initialized());
-        // Destructor runs here - should be safe even without init
+        PrinterManagerOverlay uninitialized;
+        REQUIRE_FALSE(uninitialized.are_subjects_initialized());
+        // Destructor runs here - it must be a no-op.
     }
-    SUCCEED("Destructor completed without crash");
+
+    REQUIRE(SubjectDebugRegistry::instance().lookup_by_name(kOwnedSubjectName) == owned);
+    REQUIRE(lv_obj_get_event_count(sentinel) == baseline_events + 1);
+
+    // Owner is still alive; drop the observer before the sentinel so teardown
+    // order cannot matter.
+    lv_observer_remove(observer);
+    lv_obj_delete(sentinel);
 }
 
 // =============================================================================

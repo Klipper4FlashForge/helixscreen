@@ -6,7 +6,7 @@
 <component>
   <!-- Dialog card -->
   <view name="ams_loading_error_modal"
-        extends="ui_dialog" width="360" height="content" align="center" flex_flow="column" style_flex_main_place="start"
+        extends="ui_dialog" width="70%" style_min_width="300" style_max_width="400" height="content" align="center" flex_flow="column" style_flex_main_place="start"
         style_pad_gap="0">
     <!-- Header: danger icon + title + close. Close wired in C++ via wire_cancel_button("btn_close"). -->
     <modal_header icon_src="alert_circle" icon_variant="danger"

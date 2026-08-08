@@ -13,7 +13,7 @@ from translations.extractor import (  # noqa: E402
 )
 
 # Shared collapse-parity table — keep in sync with the C tests in
-# tests/unit/test_xml_inline_text.cpp (inputs are post-entity-decode).
+# lib/helix-xml/tests/cases/test_inline_text.c (inputs are post-entity-decode).
 COLLAPSE_TABLE = [
     ("Hello world", "Hello world"),
     ("  Hello  world  ", "Hello world"),
