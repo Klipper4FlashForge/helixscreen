@@ -3,14 +3,18 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <!--
   PIN Entry Modal — numeric keypad for PIN set/change/remove flows.
-  Similar layout to lock_screen.xml but inside a ui_dialog.
+  Same landscape/portrait reflow as lock_screen.xml, but inside a modal card
+  that carries its own header row.
   Dots and heading are updated imperatively from C++ (PinEntryModal).
 -->
 <component>
   <consts>
     <!-- Dot indicator size — same as lock screen -->
     <px name="pin_dot_size" value="20"/>
-    <!-- Keypad button height -->
+    <!-- Keypad button height. Held constant across every breakpoint, exactly as
+         lock_screen.xml holds its 52px: this is a PIN pad, so the touch target
+         is the one dimension that must not shrink. The card reflows instead -
+         see the pin_card_* / pin_body_* / pin_keypad_* styles below. -->
     <px name="pin_btn_height" value="48"/>
   </consts>
 
@@ -28,11 +32,64 @@
            border_color="#text_muted"
            border_opa="255"
            radius="99"/>
+
+    <!-- Card orientation.
+
+         Four keypad rows at 48px is 192px of vertical space before the header,
+         the heading, the dots or the error line are counted. Stacked at MICRO
+         (space_lg=8, space_md=6, space_sm=4) the card measures 2 (border) + 50
+         (header: 6 + a 40px close button + 4) + 8 (root flex gap) + 290 (body:
+         16 padding + a 64px info stack + a 6px gap + 204 for four 48px rows
+         with three 4px gaps) = 350px on a 272px screen. The bottom keypad row
+         and the confirm button land off the display and no PIN can be entered
+         - the same failure lock_screen.xml had before 49ab58d3f.
+
+         MICRO/TINY therefore stand the info block (heading, dots, error)
+         beside the keypad instead of above it, spending the width these
+         screens have rather than the height they don't: 2 (border) + 50
+         (header) + 214 (body: 16 padding + 198 for four 48px rows with 2px row
+         gaps; the 64px info stack rides alongside) = 266, inside 272 and
+         inside 320. Measured with `ctl geom pin_entry_modal 3` at -s micro.
+
+         Width and flex_flow live in these styles, never as inline attributes
+         on the elements, because an inline attribute wins over bind_style.
+
+         SIZE_OK: 440 is the card width lock_screen.xml already ships for this
+         same landscape keypad - 20px of margin each side of a 480px panel. The
+         70% / 300..380 clamp is the stacked (SMALL and up) sizing the
+         percentage was written for; it resolves to 336px on a 480-wide panel,
+         far too narrow to stand a keypad beside an info column. -->
+    <style name="pin_card_compact" width="440"/>
+    <style name="pin_card_stacked" width="70%" min_width="300" max_width="380"/>
+
+    <!-- Body flow. pad_row / pad_column rather than a single pad_gap, so the
+         compact layout can tighten the vertical gaps without touching the
+         horizontal ones. -->
+    <style name="pin_body_compact" layout="flex" flex_flow="row" pad_column="#space_lg"/>
+    <style name="pin_body_stacked" layout="flex" flex_flow="column" pad_row="#space_md"/>
+
+    <!-- Info block and keypad track the body. Compact: 160 + an 8px column gap
+         + 250 = 418, inside the 424px the 440px card leaves after the body's
+         8px padding. The dot row is 6 x 20 plus five 4px gaps = 140, inside
+         the 160px info column. -->
+    <style name="pin_info_compact" width="160"/>
+    <style name="pin_info_stacked" width="100%"/>
+    <!-- Keypad. Buttons are 30% wide, so 3 x 75 plus two 4px column gaps = 233,
+         inside 250. The compact row gap drops to #space_xs: a gap is not a
+         touch target, and the 6px it gives back is what puts the card at 264
+         on a 272px screen instead of 270. -->
+    <style name="pin_keypad_compact" width="250" pad_row="#space_xs" pad_column="#space_sm"/>
+    <style name="pin_keypad_stacked" width="100%" pad_row="#space_sm" pad_column="#space_sm"/>
   </styles>
 
+  <!-- Card root — width comes from pin_card_compact / pin_card_stacked.
+       style_pad_row="0" because lv_obj's default theme puts an 8px flex gap
+       between the header and the body, and at MICRO those 8px are the
+       difference between a 266px card and a 274px one on a 272px screen. The
+       header's own pad_bottom and the body's pad_top already separate them. -->
   <view name="pin_entry_modal"
         extends="lv_obj"
-        width="70%" style_min_width="300" style_max_width="380" height="content"
+        height="content"
         align="center"
         style_bg_color="#card_bg" style_bg_opa="255"
         style_border_width="1"
@@ -40,10 +97,14 @@
         style_border_opa="64"
         style_radius="#border_radius"
         style_pad_all="0"
+        style_pad_row="0"
         flex_flow="column"
         style_flex_main_place="center"
         style_flex_cross_place="center"
         scrollable="false">
+
+    <bind_style_if_le name="pin_card_compact" subject="ui_breakpoint" ref_value="1"/>
+    <bind_style_if_ge name="pin_card_stacked" subject="ui_breakpoint" ref_value="2"/>
 
     <!-- Header with close (X) button -->
     <lv_obj width="100%" height="content"
@@ -61,71 +122,93 @@
       </ui_button>
     </lv_obj>
 
-    <!-- Content: heading, dots, error, keypad -->
-    <lv_obj width="100%" height="content"
+    <!-- Body: info block + keypad.
+         flex_flow and the gaps come from pin_body_compact / pin_body_stacked. -->
+    <lv_obj name="pin_body" width="100%" height="content"
             style_pad_all="#space_lg"
-            style_pad_gap="#space_md"
             style_bg_opa="0"
             style_border_width="0"
-            flex_flow="column"
             style_flex_main_place="center"
             style_flex_cross_place="center"
             scrollable="false">
 
-      <!-- Dynamic heading text (updated from C++) -->
-      <text_body name="pin_heading"
-                 text="Enter New PIN"
-                 style_text_align="center"
-                 width="100%"/>
+      <bind_style_if_le name="pin_body_compact" subject="ui_breakpoint" ref_value="1"/>
+      <bind_style_if_ge name="pin_body_stacked" subject="ui_breakpoint" ref_value="2"/>
 
-      <!-- 6 PIN dot indicators -->
-      <lv_obj name="pin_dots_container"
-              width="content" height="content"
-              flex_flow="row"
-              style_pad_gap="#space_sm"
+      <!-- Info block: heading, dots, error line.
+           Sits above the keypad when stacked, left of it when compact. -->
+      <lv_obj name="pin_info_column"
+              height="content"
+              flex_flow="column"
               style_pad_all="0"
+              style_pad_gap="#space_md"
+              style_flex_main_place="center"
+              style_flex_cross_place="center"
               style_bg_opa="0"
               style_border_width="0"
-              align="center">
-        <lv_obj name="pin_dot_0" width="#pin_dot_size" height="#pin_dot_size">
-          <style name="pin_dot_empty"/>
+              scrollable="false">
+
+        <bind_style_if_le name="pin_info_compact" subject="ui_breakpoint" ref_value="1"/>
+        <bind_style_if_ge name="pin_info_stacked" subject="ui_breakpoint" ref_value="2"/>
+
+        <!-- Dynamic heading text (updated from C++) -->
+        <text_body name="pin_heading"
+                   text="Enter New PIN"
+                   style_text_align="center"
+                   width="100%"/>
+
+        <!-- 6 PIN dot indicators -->
+        <lv_obj name="pin_dots_container"
+                width="content" height="content"
+                flex_flow="row"
+                style_pad_gap="#space_sm"
+                style_pad_all="0"
+                style_bg_opa="0"
+                style_border_width="0"
+                align="center">
+          <lv_obj name="pin_dot_0" width="#pin_dot_size" height="#pin_dot_size">
+            <style name="pin_dot_empty"/>
+          </lv_obj>
+          <lv_obj name="pin_dot_1" width="#pin_dot_size" height="#pin_dot_size">
+            <style name="pin_dot_empty"/>
+          </lv_obj>
+          <lv_obj name="pin_dot_2" width="#pin_dot_size" height="#pin_dot_size">
+            <style name="pin_dot_empty"/>
+          </lv_obj>
+          <lv_obj name="pin_dot_3" width="#pin_dot_size" height="#pin_dot_size">
+            <style name="pin_dot_empty"/>
+          </lv_obj>
+          <lv_obj name="pin_dot_4" width="#pin_dot_size" height="#pin_dot_size">
+            <style name="pin_dot_empty"/>
+          </lv_obj>
+          <lv_obj name="pin_dot_5" width="#pin_dot_size" height="#pin_dot_size">
+            <style name="pin_dot_empty"/>
+          </lv_obj>
         </lv_obj>
-        <lv_obj name="pin_dot_1" width="#pin_dot_size" height="#pin_dot_size">
-          <style name="pin_dot_empty"/>
-        </lv_obj>
-        <lv_obj name="pin_dot_2" width="#pin_dot_size" height="#pin_dot_size">
-          <style name="pin_dot_empty"/>
-        </lv_obj>
-        <lv_obj name="pin_dot_3" width="#pin_dot_size" height="#pin_dot_size">
-          <style name="pin_dot_empty"/>
-        </lv_obj>
-        <lv_obj name="pin_dot_4" width="#pin_dot_size" height="#pin_dot_size">
-          <style name="pin_dot_empty"/>
-        </lv_obj>
-        <lv_obj name="pin_dot_5" width="#pin_dot_size" height="#pin_dot_size">
-          <style name="pin_dot_empty"/>
-        </lv_obj>
+
+        <!-- Error text (shown on PIN mismatch etc.) -->
+        <text_small name="pin_error_label"
+                    text=" "
+                    style_text_color="#warning"
+                    style_text_align="center"
+                    width="100%"
+                    style_opa="0"/>
       </lv_obj>
 
-      <!-- Error text (shown on PIN mismatch etc.) -->
-      <text_small name="pin_error_label"
-                  text=" "
-                  style_text_color="#warning"
-                  style_text_align="center"
-                  width="100%"
-                  style_opa="0"/>
-
-      <!-- 4x3 numeric keypad — mirrors lock_screen.xml layout -->
+      <!-- 4x3 numeric keypad — mirrors lock_screen.xml layout.
+           width and the gaps come from pin_keypad_compact / pin_keypad_stacked. -->
       <lv_obj name="pin_keypad"
-              width="100%" height="content"
+              height="content"
               flex_flow="row_wrap"
               style_flex_main_place="center"
               style_flex_track_place="center"
               style_pad_all="0"
-              style_pad_gap="#space_sm"
               style_bg_opa="0"
               style_border_width="0"
               scrollable="false">
+
+        <bind_style_if_le name="pin_keypad_compact" subject="ui_breakpoint" ref_value="1"/>
+        <bind_style_if_ge name="pin_keypad_stacked" subject="ui_breakpoint" ref_value="2"/>
 
         <!-- Row 1: 1 2 3 -->
         <ui_button name="pin_digit_1"
