@@ -1,10 +1,29 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "ui_update_queue.h"
+
 #include "../lvgl_test_fixture.h"
 #include "../test_helpers/print_status_widget_test_access.h"
+#include "../test_helpers/update_queue_test_access.h"
+#include "app_globals.h"
+#include "moonraker_api.h"
+#include "moonraker_client_mock.h"
 #include "panel_widget_manager.h"
 #include "panel_widget_registry.h"
+#include "print_history_manager.h"
+#include "printer_state.h"
 #include "src/ui/panel_widgets/print_status_widget.h"
+#include "thumbnail_cache.h"
+#include "thumbnail_processor.h"
+
+#include <chrono>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <memory>
+#include <thread>
+#include <vector>
 
 #include "../catch_amalgamated.hpp"
 
@@ -211,4 +230,251 @@ TEST_CASE_METHOD(PrintStatusIdleThumbFixture,
     REQUIRE(after_process == BENCHY_PATH);
 
     widget.detach();
+}
+
+// =============================================================================
+// The idle thumbnail fetch: staleness guard + the shared subject
+//
+// reset_print_card_to_idle() resolves "the last print's thumbnail" and is
+// reachable repeatedly — from attach(), from a print-state change and from a
+// history change. Two defects lived in that resolve:
+//
+//  1. The async fetch carried a lifetime token and nothing else, so two loads
+//     for different history heads resolved last-write-wins.
+//  2. Only the SYNCHRONOUS paths published to idle_thumb_path_subject_. The
+//     async completion wrote the two Library-mode image widgets and skipped the
+//     subject, so the detailed-idle hero (which reads it through bind_src)
+//     showed a different image from the thumbs beside it.
+//
+// Both need the resolve to actually reach the fetch, which needs a loaded
+// history (for a thumbnail key), a non-null API (the widget bails without one)
+// and a cache state that misses the pre-scaled .bin. The fixture below builds
+// exactly that; a test that skipped it would assert against the benchy
+// early-return and pin nothing.
+// =============================================================================
+
+namespace {
+
+/// Smallest PNG the cache and the processor will both accept: a 10x10 solid
+/// square, 75 bytes. Same bytes as tests/unit/test_thumbnail_cache_request.cpp.
+// clang-format off
+const std::vector<uint8_t> kTinyPng = {
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+    0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x0A, 0x00, 0x00, 0x00, 0x0A,
+    0x08, 0x02, 0x00, 0x00, 0x00, 0x02, 0x50, 0x58, 0xEA, 0x00, 0x00, 0x00,
+    0x12, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x68, 0x70, 0x50, 0xC0,
+    0x83, 0x18, 0x46, 0xA5, 0xB1, 0x21, 0x00, 0x24, 0x51, 0x57, 0x81, 0xF7,
+    0xEC, 0xA3, 0x23, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+    0x42, 0x60, 0x82};
+// clang-format on
+
+/// Drop a raw PNG into the cache's PNG slot for `key` WITHOUT a pre-scaled
+/// .bin. That is the one cache state that sends fetch_optimized down its
+/// "PNG is cached, queue the pre-scale" branch, which resolves on the processor
+/// pool and delivers through the UpdateQueue — i.e. asynchronously, which is
+/// the whole point.
+void plant_cached_png(const ThumbnailCache& cache, const std::string& key) {
+    const std::string path = cache.get_cache_path(key);
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    REQUIRE(out.good());
+    out.write(reinterpret_cast<const char*>(kTinyPng.data()),
+              static_cast<std::streamsize>(kTinyPng.size()));
+    out.close();
+    REQUIRE(std::filesystem::exists(path));
+}
+
+} // namespace
+
+/// PrintStatusIdleThumbFixture with a loaded print history installed, so
+/// get_last_print_thumbnail_path() returns a real key instead of "".
+///
+/// The API is deliberately left null at construction: attach() defers an idle
+/// reset, and with no API that reset stops right after painting benchy. Each
+/// test installs the API itself at the moment it wants a fetch to happen, so
+/// the only loads in flight are the ones the test started.
+class PrintStatusIdleThumbHistoryFixture : public PrintStatusIdleThumbFixture {
+  public:
+    PrintStatusIdleThumbHistoryFixture()
+        : client_(MoonrakerClientMock::PrinterType::VORON_24, 1000.0) {
+        client_.connect("ws://mock/websocket", []() {}, []() {});
+        api_ = std::make_unique<MoonrakerAPI>(client_, get_printer_state());
+        history_ = std::make_unique<PrintHistoryManager>(api_.get(), &client_);
+        history_->fetch();
+        wait_until([this]() { return history_->is_loaded(); }, 3000);
+        set_print_history_manager(history_.get());
+        set_moonraker_api(nullptr);
+    }
+
+    ~PrintStatusIdleThumbHistoryFixture() {
+        set_print_history_manager(nullptr);
+        set_moonraker_api(nullptr);
+        // Join the pool and drain whatever it produced while the manager is
+        // still alive; a callback left queued would run against dead state.
+        for (int i = 0; i < 20; ++i) {
+            helix::ThumbnailProcessor::instance().wait_for_completion();
+            helix::ui::UpdateQueue::instance().drain();
+        }
+        history_.reset();
+        api_.reset();
+        client_.disconnect();
+    }
+
+    /// The cache key the widget will resolve to for the most recent job.
+    std::string head_thumbnail_key() {
+        const auto& jobs = history_->get_jobs();
+        REQUIRE_FALSE(jobs.empty());
+        const auto& job = jobs.front();
+        // One entry means the widget's size-based "smallest adequate, else
+        // largest" pick is unambiguous, so the test key is the widget's key.
+        REQUIRE(job.thumbnails.size() == 1);
+        REQUIRE_FALSE(job.thumbnails.front().relative_path.empty());
+        return job.thumbnails.front().relative_path;
+    }
+
+    /// Resize the idle thumb and report the pre-scale target the widget will
+    /// derive from it. Computed with the production function off the MEASURED
+    /// size, not hardcoded, so it cannot drift from what the widget picks.
+    helix::ThumbnailTarget size_thumb(lv_obj_t* container, int w, int h) {
+        auto* thumb = lv_obj_find_by_name(container, "print_card_thumb");
+        REQUIRE(thumb != nullptr);
+        lv_obj_set_size(thumb, w, h);
+        lv_obj_update_layout(thumb);
+        return helix::ThumbnailProcessor::get_target_for_resolution(
+            lv_obj_get_width(thumb), lv_obj_get_height(thumb), helix::ThumbnailSize::Detail);
+    }
+
+    std::string subject_value() {
+        auto* subj = PrintStatusWidgetTestAccess::idle_thumb_path_subject();
+        const char* p = static_cast<const char*>(subj->value.pointer);
+        return std::string(p ? p : "");
+    }
+
+    /// Join the pool and drain until `done`, or give up.
+    void settle_thumb(const std::function<bool()>& done) {
+        for (int i = 0; i < 40 && !done(); ++i) {
+            helix::ThumbnailProcessor::instance().wait_for_completion();
+            helix::ui::UpdateQueue::instance().drain();
+        }
+    }
+
+    /// Wait until the in-flight pre-scale has finished AND parked its result in
+    /// the UpdateQueue, without draining it. That parked callback is the stale
+    /// completion the guard has to drop.
+    bool park_pool_result() {
+        auto& q = helix::ui::UpdateQueue::instance();
+        for (int i = 0; i < 400; ++i) {
+            helix::ThumbnailProcessor::instance().wait_for_completion();
+            if (!helix::ui::UpdateQueueTestAccess::queue_empty(q)) {
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        return false;
+    }
+
+  protected:
+    MoonrakerClientMock client_;
+    std::unique_ptr<MoonrakerAPI> api_;
+    std::unique_ptr<PrintHistoryManager> history_;
+};
+
+// Defect 2: the async completion published to the two Library-mode widgets but
+// not to idle_thumb_path_subject_, so the detailed-idle hero kept showing the
+// benchy placeholder the synchronous path had left there.
+TEST_CASE_METHOD(PrintStatusIdleThumbHistoryFixture,
+                 "PrintStatusWidget: an async idle thumbnail load publishes to the shared subject",
+                 "[print_status_widget][idle_thumb][thumbnail]") {
+    auto& cache = get_thumbnail_cache();
+    const std::string key = head_thumbnail_key();
+    cache.invalidate(key);
+
+    PrintStatusWidget widget;
+    lv_obj_t* container = create_mock_print_card(test_screen());
+    widget.attach(container, test_screen());
+    process_lvgl(200); // deferred reset #0 — no API installed yet, so inert
+    REQUIRE(get_idle_thumb_src(container) == BENCHY_PATH);
+
+    const helix::ThumbnailTarget target = size_thumb(container, 100, 100);
+    plant_cached_png(cache, key);
+    // No .bin, so the resolve cannot short-circuit on the synchronous cache hit
+    // — this is what forces it onto the async path under test.
+    REQUIRE(cache.get_if_optimized(key, target).empty());
+
+    set_moonraker_api(api_.get());
+    PrintStatusWidgetTestAccess::reset_to_idle(widget);
+
+    // Benchy is painted as a placeholder while the fetch runs. Pinned so the
+    // final assertion cannot pass by the subject simply never having moved.
+    REQUIRE(subject_value() == BENCHY_PATH);
+
+    settle_thumb([this]() { return subject_value() != BENCHY_PATH; });
+
+    const std::string produced = cache.get_if_optimized(key, target);
+    REQUIRE_FALSE(produced.empty()); // the pre-scale really ran
+    CHECK(get_idle_thumb_src(container) == produced);
+    CHECK(subject_value() == produced);
+
+    widget.detach();
+    cache.invalidate(key);
+}
+
+// Defect 1: the fetch carried no generation guard, so a load for the previous
+// history head could land after a newer resolve had already painted and
+// overwrite it. Load A resolves through the pool and is parked mid-flight;
+// load B then supersedes it and resolves synchronously from cache. Draining A
+// afterwards must change nothing.
+TEST_CASE_METHOD(PrintStatusIdleThumbHistoryFixture,
+                 "PrintStatusWidget: a superseded idle thumbnail load cannot overwrite a newer one",
+                 "[print_status_widget][idle_thumb][thumbnail]") {
+    auto& cache = get_thumbnail_cache();
+    const std::string key = head_thumbnail_key();
+    cache.invalidate(key);
+
+    PrintStatusWidget widget;
+    lv_obj_t* container = create_mock_print_card(test_screen());
+    widget.attach(container, test_screen());
+    process_lvgl(200);
+    REQUIRE(get_idle_thumb_src(container) == BENCHY_PATH);
+
+    // Load A — 100px thumb, so a 200x200 detail target, PNG only.
+    const helix::ThumbnailTarget target_a = size_thumb(container, 100, 100);
+    plant_cached_png(cache, key);
+    REQUIRE(cache.get_if_optimized(key, target_a).empty());
+    set_moonraker_api(api_.get());
+
+    auto& queue = helix::ui::UpdateQueue::instance();
+    queue.drain();
+    REQUIRE(helix::ui::UpdateQueueTestAccess::queue_empty(queue));
+
+    PrintStatusWidgetTestAccess::reset_to_idle(widget);
+    REQUIRE(subject_value() == BENCHY_PATH);
+
+    REQUIRE(park_pool_result());
+    const std::string path_a = cache.get_if_optimized(key, target_a);
+    REQUIRE_FALSE(path_a.empty());
+
+    // Load B — 900px thumb, so a 400x400 target, pre-scaled up front so this
+    // resolve hits the synchronous cache branch and publishes immediately.
+    const helix::ThumbnailTarget target_b = size_thumb(container, 900, 900);
+    REQUIRE(target_b.width != target_a.width);
+    const auto planted_b =
+        helix::ThumbnailProcessor::instance().process_sync(kTinyPng, key, target_b);
+    REQUIRE(planted_b.success);
+    const std::string path_b = planted_b.output_path;
+    REQUIRE(path_b != path_a);
+
+    PrintStatusWidgetTestAccess::reset_to_idle(widget);
+    REQUIRE(subject_value() == path_b);
+    REQUIRE(get_idle_thumb_src(container) == path_b);
+
+    // A's parked completion lands now. Two drains: the fetch callback itself,
+    // then the tok.defer hop it schedules.
+    queue.drain();
+    queue.drain();
+
+    CHECK(subject_value() == path_b);
+    CHECK(get_idle_thumb_src(container) == path_b);
+
+    widget.detach();
+    cache.invalidate(key);
 }

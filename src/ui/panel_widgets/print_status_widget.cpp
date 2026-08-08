@@ -799,18 +799,11 @@ void PrintStatusWidget::reset_print_card_to_idle() {
         return;
     }
 
-    // Update Library-mode thumbs (imperative — they don't bind_src), AND publish
-    // to print_status_idle_thumb_path so the detailed idle hero's bind_src
-    // picks it up automatically.
-    auto set_thumb_on_widgets = [this](const char* src) {
-        if (print_card_thumb_ && lv_obj_is_valid(print_card_thumb_)) {
-            lv_image_set_src(print_card_thumb_, src);
-        }
-        if (print_card_thumb_compact_ && lv_obj_is_valid(print_card_thumb_compact_)) {
-            lv_image_set_src(print_card_thumb_compact_, src);
-        }
-        lv_subject_copy_string(&idle_thumb_path_subject_, src);
-    };
+    // Every idle reset supersedes whatever thumbnail load is still in flight for
+    // the previous history head. Created here rather than at the fetch below so
+    // it also covers the cache-hit exit: that path publishes synchronously, and
+    // an older fetch completing afterwards would otherwise overwrite it.
+    auto ctx = ThumbnailLoadContext::create(lifetime_, &idle_thumb_generation_);
 
     // Try to show the last printed file's thumbnail instead of benchy
     std::string thumb_rel_path = get_last_print_thumbnail_path();
@@ -837,38 +830,48 @@ void PrintStatusWidget::reset_print_card_to_idle() {
     // Set benchy as placeholder while we fetch
     set_thumb_on_widgets("A:assets/images/benchy_thumbnail_white.png");
 
-    // Fetch async from Moonraker
     auto* api = get_moonraker_api();
     if (!api) {
         spdlog::debug("[PrintStatusWidget] Idle thumbnail: benchy (no API)");
         return;
     }
 
-    // Use lifetime token to prevent use-after-free if widget is destroyed during fetch
-    lv_obj_t* thumb_widget = print_card_thumb_;
-    lv_obj_t* thumb_compact = print_card_thumb_compact_;
+    // Fetch async from Moonraker. ctx carries both the lifetime token and the
+    // generation, so ThumbnailCache drops a result a later reset has superseded
+    // before it ever reaches this callback.
+    ThumbnailRequest req;
+    req.key = thumb_rel_path;
+    req.target = target;
+    req.api = api;
+
     auto token = lifetime_.token();
 
-    get_thumbnail_cache().fetch_optimized(
-        api, thumb_rel_path, target,
-        [thumb_widget, thumb_compact, token](const std::string& lvgl_path, bool /*degraded*/) {
-            if (token.expired())
-                return;
-            helix::ui::queue_update<std::string>(
-                std::make_unique<std::string>(lvgl_path),
-                [thumb_widget, thumb_compact](std::string* path) {
-                    if (lv_obj_is_valid(thumb_widget)) {
-                        lv_image_set_src(thumb_widget, path->c_str());
-                    }
-                    if (thumb_compact && lv_obj_is_valid(thumb_compact)) {
-                        lv_image_set_src(thumb_compact, path->c_str());
-                    }
-                    spdlog::info("[PrintStatusWidget] Idle thumbnail loaded: {}", *path);
-                });
+    get_thumbnail_cache().fetch(
+        req, ctx,
+        [this, token](const std::string& lvgl_path, bool /*degraded*/) {
+            // Marshal first, then touch members — a bare expired() check
+            // followed by a `this` dereference is L081 Mechanism C.
+            token.defer("PrintStatusWidget::apply_idle_thumb", [this, lvgl_path]() {
+                set_thumb_on_widgets(lvgl_path.c_str());
+                spdlog::info("[PrintStatusWidget] Idle thumbnail loaded: {}", lvgl_path);
+            });
         },
         [](const std::string& error) {
             spdlog::debug("[PrintStatusWidget] Idle thumbnail fetch failed: {}", error);
         });
+}
+
+void PrintStatusWidget::set_thumb_on_widgets(const char* src) {
+    // Library-mode thumbs are imperative (they don't bind_src); the subject is
+    // what drives the detailed-idle hero. All three must move together or the
+    // hero shows a different image from the thumbs next to it.
+    if (print_card_thumb_ && lv_obj_is_valid(print_card_thumb_)) {
+        lv_image_set_src(print_card_thumb_, src);
+    }
+    if (print_card_thumb_compact_ && lv_obj_is_valid(print_card_thumb_compact_)) {
+        lv_image_set_src(print_card_thumb_compact_, src);
+    }
+    lv_subject_copy_string(&idle_thumb_path_subject_, src);
 }
 
 void PrintStatusWidget::update_last_print_availability() {
