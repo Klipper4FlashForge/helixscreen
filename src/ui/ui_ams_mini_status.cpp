@@ -228,11 +228,16 @@ static lv_obj_t* ensure_unit_row(AmsMiniStatusData* data, int unit_index) {
  * When squeezed into a narrow cell, bars shrink to stay proportional.
  */
 static int32_t effective_max_bar_width(const AmsMiniStatusData* data) {
-    if (data->width_px > 0 && data->width_px < 100)
+    // width_px <= 0 is the struct's default before ui_ams_mini_status_set_width()
+    // has ever run — set_slot_count()/set_slot_full() can trigger a rebuild in
+    // that state, so this is a real, reachable path, not just a >=150 fallback.
+    if (data->width_px <= 0)
+        return MAX_BAR_WIDTH_PX; // Default: 16
+    if (data->width_px < 100)
         return 8; // Tight layout: narrow bars
-    if (data->width_px > 0 && data->width_px < 150)
-        return 10;           // Medium layout: slightly reduced
-    return MAX_BAR_WIDTH_PX; // Default: 16
+    if (data->width_px < 150)
+        return 10; // Medium layout: slightly reduced
+    return MAX_BAR_WIDTH_PX;
 }
 
 /**
@@ -241,7 +246,12 @@ static int32_t effective_max_bar_width(const AmsMiniStatusData* data) {
  * In narrow cells, reduce visible slots to avoid overflow/clipping.
  */
 static int effective_max_visible(const AmsMiniStatusData* data) {
-    if (data->width_px > 0 && data->width_px < 100)
+    // width_px <= 0 is the struct's default before set_width() has ever run
+    // (see effective_max_bar_width) — falls through to the unclamped default,
+    // same as width_px >= 100.
+    if (data->width_px <= 0)
+        return data->max_visible;
+    if (data->width_px < 100)
         return std::min(data->max_visible, 6); // Tight: show max 6 bars
     // width_px >= 100 shows every configured slot: max_visible is already
     // clamped to <= AMS_MINI_STATUS_MAX_VISIBLE (8) by the setter, so a
