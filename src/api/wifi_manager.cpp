@@ -16,6 +16,7 @@
 #include "ui_error_reporting.h"
 #include "ui_update_queue.h"
 
+#include "http_executor.h"
 #include "log_redact.h"
 #include "lvgl/lvgl.h"
 #include "safe_log.h"
@@ -248,6 +249,10 @@ bool WiFiManager::has_non_wifi_fallback() {
 WiFiManager::~WiFiManager() {
     // Use fprintf - spdlog may be destroyed during static cleanup
     fprintf(stderr, "[WiFiManager] Destructor called\n");
+
+    // A set_enabled_async() worker is sitting inside backend_->set_radio_enabled().
+    // Nothing below (least of all backend_.reset()) may run while it is.
+    wait_for_radio_ops();
 
     // Clean up scanning
     stop_scan();
@@ -598,6 +603,42 @@ bool WiFiManager::is_enabled() {
     return backend_->is_running() && backend_->is_radio_enabled();
 }
 
+WiFiError WiFiManager::apply_radio_enabled(bool enabled) {
+    if (!backend_) {
+        return WiFiError(WiFiResult::NOT_INITIALIZED, "No WiFi backend", "WiFi system not ready");
+    }
+
+    // Radio on/off, NOT backend start()/stop(). stop() tears down the control
+    // connection to wpa_supplicant entirely, so a subsequent STATUS has
+    // nothing to query — every later call logs "send_command called but not
+    // connected to wpa_supplicant" and the UI can't even report the radio is
+    // off, let alone turn it back on. set_radio_enabled() actually asserts
+    // the interface down (or blocks it via rfkill) while keeping the control
+    // socket alive.
+    return backend_->set_radio_enabled(enabled);
+}
+
+void WiFiManager::report_radio_result(bool enabled, const WiFiError& result) {
+    if (result.success()) {
+        spdlog::debug("[WiFiManager] WiFi radio {}", enabled ? "enabled" : "disabled");
+        return;
+    }
+
+    // A live system-managed link (printer reachable by IP) means the
+    // backend just can't reach wpa_supplicant's control socket; the
+    // radio is not actually off. Don't surface a hard error toast for
+    // an unmanageable-but-up link (helixscreen#1059).
+    if (os_link_up()) {
+        spdlog::debug("[WiFiManager] Radio {} failed but OS link is up "
+                      "(system-managed) — suppressing user error: {}",
+                      enabled ? "enable" : "disable",
+                      result.user_msg.empty() ? result.technical_msg : result.user_msg);
+    } else {
+        NOTIFY_ERROR("Failed to {} WiFi: {}", enabled ? "enable" : "disable",
+                     result.user_msg.empty() ? result.technical_msg : result.user_msg);
+    }
+}
+
 bool WiFiManager::set_enabled(bool enabled) {
     if (!backend_)
         return false;
@@ -610,32 +651,83 @@ bool WiFiManager::set_enabled(bool enabled) {
         stop_scan();
     }
 
-    // Radio on/off, NOT backend start()/stop(). stop() tears down the control
-    // connection to wpa_supplicant entirely, so a subsequent STATUS has
-    // nothing to query — every later call logs "send_command called but not
-    // connected to wpa_supplicant" and the UI can't even report the radio is
-    // off, let alone turn it back on. set_radio_enabled() actually asserts
-    // the interface down (or blocks it via rfkill) while keeping the control
-    // socket alive.
-    WiFiError result = backend_->set_radio_enabled(enabled);
-    if (!result.success()) {
-        // A live system-managed link (printer reachable by IP) means the
-        // backend just can't reach wpa_supplicant's control socket; the
-        // radio is not actually off. Don't surface a hard error toast for
-        // an unmanageable-but-up link (helixscreen#1059).
-        if (os_link_up()) {
-            spdlog::debug("[WiFiManager] Radio {} failed but OS link is up "
-                          "(system-managed) — suppressing user error: {}",
-                          enabled ? "enable" : "disable",
-                          result.user_msg.empty() ? result.technical_msg : result.user_msg);
-        } else {
-            NOTIFY_ERROR("Failed to {} WiFi: {}", enabled ? "enable" : "disable",
-                         result.user_msg.empty() ? result.technical_msg : result.user_msg);
-        }
-    } else {
-        spdlog::debug("[WiFiManager] WiFi radio {}", enabled ? "enabled" : "disabled");
-    }
+    WiFiError result = apply_radio_enabled(enabled);
+    report_radio_result(enabled, result);
     return result.success();
+}
+
+void WiFiManager::set_enabled_async(bool enabled, helix::LifetimeToken token,
+                                    std::function<void(bool, bool)> on_complete) {
+    spdlog::debug("[WiFiManager] set_enabled_async({})", enabled);
+
+    if (!backend_) {
+        // Still answer off the call stack, so callers see one async contract.
+        if (on_complete) {
+            token.defer("WiFiManager::set_enabled_async_no_backend",
+                        [cb = std::move(on_complete)]() { cb(false, false); });
+        }
+        return;
+    }
+
+    // stop_scan() deletes an lv_timer_t and mutates the ScanScheduler, both of
+    // which are main-thread-only state. Do it here (this method is called from
+    // the UI thread) rather than on the worker.
+    if (!enabled) {
+        stop_scan();
+    }
+
+    // Idempotent; covers unit tests and any call site that runs before
+    // Application calls HttpExecutor::start_all().
+    helix::http::HttpExecutor::fast().start();
+
+    // Guards the toast below against the manager outliving neither more nor
+    // less than it should: taken on the main thread, where `this` is valid.
+    auto mgr_token = async_lifetime_.token();
+
+    {
+        std::lock_guard<std::mutex> lock(radio_op_mutex_);
+        ++radio_ops_inflight_;
+    }
+
+    // Route through HttpExecutor::fast() (bounded 4-worker pool) rather than a
+    // detached std::thread — per-call spawns fail with pthread EAGAIN under
+    // thread exhaustion on memory-constrained ARM devices (#724).
+    helix::http::HttpExecutor::fast().submit(
+        [this, enabled, token, mgr_token, cb = std::move(on_complete)]() mutable {
+            // `this` is valid for the whole body: ~WiFiManager blocks on
+            // radio_op_cv_ until radio_ops_inflight_ drains, before it touches a
+            // single member.
+            WiFiError result = apply_radio_enabled(enabled);
+            const bool success = result.success();
+            const bool actual = backend_->is_running() && backend_->is_radio_enabled();
+
+            // Neither deferred body dereferences `this`: report_radio_result is
+            // static, and the caller's lambda carries its own captures. That keeps
+            // both safe even if the manager is destroyed between here and the next
+            // UpdateQueue tick.
+            mgr_token.defer("WiFiManager::report_radio_result",
+                            [enabled, result]() { report_radio_result(enabled, result); });
+            if (cb) {
+                token.defer("WiFiManager::set_enabled_async",
+                            [cb = std::move(cb), success, actual]() { cb(success, actual); });
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(radio_op_mutex_);
+                --radio_ops_inflight_;
+            }
+            radio_op_cv_.notify_all();
+        });
+}
+
+void WiFiManager::wait_for_radio_ops() {
+    std::unique_lock<std::mutex> lock(radio_op_mutex_);
+    if (radio_ops_inflight_ == 0) {
+        return;
+    }
+    spdlog::debug("[WiFiManager] Waiting for {} in-flight radio op(s) before teardown",
+                  radio_ops_inflight_);
+    radio_op_cv_.wait(lock, [this] { return radio_ops_inflight_ == 0; });
 }
 
 void WiFiManager::retry_async() {

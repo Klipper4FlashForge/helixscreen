@@ -391,6 +391,54 @@ WiFiError WifiBackendMacOS::disconnect_network() {
 }
 
 // ============================================================================
+// Radio Power
+// ============================================================================
+
+WiFiError WifiBackendMacOS::set_radio_enabled(bool on) {
+    if (!running_) {
+        return WiFiError(WiFiResult::NOT_INITIALIZED, "Backend not started",
+                         "WiFi system not initialized", "");
+    }
+
+    @autoreleasepool {
+        CWInterface* iface = (__bridge CWInterface*)interface_;
+        if (!iface) {
+            return WiFiError(WiFiResult::BACKEND_ERROR, "No WiFi interface",
+                             "WiFi interface unavailable", "");
+        }
+
+        // -setPower: is CoreWLAN's own soft radio switch: association stops and
+        // the interface stays present, which is what WifiBackend requires.
+        NSError* err = nil;
+        if (![iface setPower:(on ? YES : NO) error:&err]) {
+            std::string detail = err ? std::string([[err localizedDescription] UTF8String])
+                                     : std::string("setPower failed");
+            spdlog::warn("[WiFiMacOS] setPower:{} failed: {}", on, detail);
+            return WiFiError(WiFiResult::PERMISSION_DENIED, "CoreWLAN setPower failed: " + detail,
+                             on ? "Could not turn WiFi radio on" : "Could not turn WiFi radio off");
+        }
+
+        spdlog::info("[WiFiMacOS] Radio {}", on ? "enabled" : "disabled");
+    }
+
+    return WiFiErrorHelper::success();
+}
+
+bool WifiBackendMacOS::is_radio_enabled() const {
+    if (!interface_) {
+        // Nothing to ask. Report off rather than inheriting the base class's
+        // unconditional true, which would let the UI claim a radio it cannot
+        // see is on.
+        return false;
+    }
+
+    @autoreleasepool {
+        CWInterface* iface = (__bridge CWInterface*)interface_;
+        return [iface powerOn] == YES;
+    }
+}
+
+// ============================================================================
 // Status Queries
 // ============================================================================
 

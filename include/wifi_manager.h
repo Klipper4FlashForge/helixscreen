@@ -8,6 +8,7 @@
 #include "wifi_backend.h"
 #include "wifi_scan_scheduler.h"
 
+#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -209,12 +210,46 @@ class WiFiManager {
     bool is_enabled();
 
     /**
-     * @brief Enable or disable WiFi radio
+     * @brief Enable or disable WiFi radio (BLOCKING — not for UI callbacks)
+     *
+     * Runs the backend radio change on the calling thread. On wpa_supplicant
+     * that is two control commands per direction, each of which can spend up
+     * to 5s retrying the send and then up to 10s waiting for a reply, so this
+     * can stall its caller for tens of seconds. Anything reachable from an
+     * LVGL event callback must use set_enabled_async() instead.
      *
      * @param enabled true to enable, false to disable
      * @return true on success
      */
     bool set_enabled(bool enabled);
+
+    /**
+     * @brief Non-blocking radio on/off for UI callers
+     *
+     * Dispatches the blocking backend work to an HttpExecutor worker and
+     * returns immediately, so a switch can flip optimistically and reconcile
+     * when the real outcome lands (see helix::wifi::reconcile_radio_toggle).
+     *
+     * `on_complete` is invoked on the main/LVGL thread through `token`, so its
+     * body may touch widgets and subjects directly and needs no expired()
+     * check of its own. It receives:
+     *  - `success` — whether the backend reported the change as applied
+     *  - `actual_enabled` — the radio state read back afterwards, which is the
+     *    value the UI and the persisted setting must follow
+     *
+     * A failure is reported to the user by this method (the same toast
+     * set_enabled() raises, minus the suppression case for an unmanageable
+     * -but-up link), so callers only handle the state reconciliation.
+     *
+     * The manager's destructor blocks until any in-flight radio op finishes,
+     * so the worker can never outlive the backend it is driving.
+     *
+     * @param enabled     true to enable, false to disable
+     * @param token       Caller's LifetimeToken — expires with the owning object
+     * @param on_complete Invoked on the UI thread; may be null
+     */
+    void set_enabled_async(bool enabled, helix::LifetimeToken token,
+                           std::function<void(bool success, bool actual_enabled)> on_complete);
 
     /**
      * @brief Non-blocking re-attempt of backend bringup.
@@ -375,6 +410,27 @@ class WiFiManager {
     // real sysfs/proc probe; tests inject a stub via WiFiManagerTestAccess.
     static std::function<bool()> os_link_probe_;
     static bool os_link_up();
+
+    // Drives the backend radio change. Blocking, and safe to call from any
+    // thread — it touches only backend_, which the destructor barrier below
+    // keeps alive for the duration.
+    WiFiError apply_radio_enabled(bool enabled);
+
+    // Surfaces a radio failure to the user. Static (and therefore free of any
+    // `this` access) so the async path can hand it to a deferred callback
+    // without tying that callback's safety to the manager's lifetime.
+    // Main-thread only — NOTIFY_ERROR builds widgets.
+    static void report_radio_result(bool enabled, const WiFiError& result);
+
+    // Barrier for set_enabled_async() workers. The worker runs on an
+    // HttpExecutor thread and dereferences `this` (backend_) for the whole of
+    // apply_radio_enabled(), so the destructor waits here before any member is
+    // torn down. Unbounded on purpose: a timeout that expired would hand the
+    // worker a freed backend, and the backend calls carry their own deadlines.
+    std::mutex radio_op_mutex_;
+    std::condition_variable radio_op_cv_;
+    int radio_ops_inflight_ = 0;
+    void wait_for_radio_ops();
 
     // Sysfs root used by has_non_wifi_network_path() to gate the stored-radio
     // -state reassert (Task 15: never disable the radio on a device whose
