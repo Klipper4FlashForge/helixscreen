@@ -2086,14 +2086,9 @@ AmsError AmsBackendHappyHare::validate_slot_index(int gate_index) const {
 
 // execute_gcode() provided by AmsSubscriptionBackend
 
-AmsError AmsBackendHappyHare::load_filament(int slot_index) {
+AmsError AmsBackendHappyHare::do_load_filament(int slot_index) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
-
-        AmsError precondition = check_preconditions(true);
-        if (!precondition) {
-            return precondition;
-        }
 
         AmsError gate_valid = validate_slot_index(slot_index);
         if (!gate_valid) {
@@ -2115,14 +2110,9 @@ AmsError AmsBackendHappyHare::load_filament(int slot_index) {
     return ensure_homed_then(cmd.str());
 }
 
-AmsError AmsBackendHappyHare::unload_filament(int /*slot_index*/) {
+AmsError AmsBackendHappyHare::do_unload_filament(int /*slot_index*/) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
-
-        AmsError precondition = check_preconditions(true);
-        if (!precondition) {
-            return precondition;
-        }
 
         if (!system_info_.filament_loaded) {
             return AmsError(AmsResult::WRONG_STATE, "No filament loaded", "No filament to unload",
@@ -2134,14 +2124,9 @@ AmsError AmsBackendHappyHare::unload_filament(int /*slot_index*/) {
     return ensure_homed_then("MMU_UNLOAD");
 }
 
-AmsError AmsBackendHappyHare::select_slot(int slot_index) {
+AmsError AmsBackendHappyHare::do_select_slot(int slot_index) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
-
-        AmsError precondition = check_preconditions();
-        if (!precondition) {
-            return precondition;
-        }
 
         AmsError gate_valid = validate_slot_index(slot_index);
         if (!gate_valid) {
@@ -2157,14 +2142,9 @@ AmsError AmsBackendHappyHare::select_slot(int slot_index) {
     return execute_gcode(cmd.str());
 }
 
-AmsError AmsBackendHappyHare::change_tool(int tool_number) {
+AmsError AmsBackendHappyHare::do_change_tool(int tool_number) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
-
-        AmsError precondition = check_preconditions(true);
-        if (!precondition) {
-            return precondition;
-        }
 
         if (tool_number < 0 ||
             tool_number >= static_cast<int>(system_info_.tool_to_slot_map.size())) {

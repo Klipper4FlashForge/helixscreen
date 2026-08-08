@@ -139,6 +139,58 @@ bool AmsSubscriptionBackend::is_filament_loaded() const {
     return system_info_.filament_loaded;
 }
 
+bool AmsSubscriptionBackend::op_moves_toolhead(FilamentOp op) const {
+    switch (op) {
+    case FilamentOp::Load:
+    case FilamentOp::Unload:
+    case FilamentOp::ChangeTool:
+        // Pushing or pulling filament through the hotend, and swapping what is
+        // on the carriage, are toolhead motion on every backend there is. No
+        // override path exists for these on purpose.
+        return true;
+    case FilamentOp::SelectSlot:
+        // The one genuinely per-backend answer. See select_slot_moves_toolhead().
+        return select_slot_moves_toolhead();
+    }
+    return true; // Unreachable; fail closed if the enum ever grows.
+}
+
+AmsError AmsSubscriptionBackend::gate_filament_op(FilamentOp op) const {
+    const bool moves_toolhead = op_moves_toolhead(op);
+    if (filament_op_gate() == FilamentOpGate::PrintActiveOnly) {
+        return moves_toolhead ? refuse_if_printing() : AmsErrorHelper::success();
+    }
+    return check_preconditions(moves_toolhead);
+}
+
+AmsError AmsSubscriptionBackend::load_filament(int slot_index) {
+    if (auto e = gate_filament_op(FilamentOp::Load); !e.success()) {
+        return e;
+    }
+    return do_load_filament(slot_index);
+}
+
+AmsError AmsSubscriptionBackend::unload_filament(int slot_index) {
+    if (auto e = gate_filament_op(FilamentOp::Unload); !e.success()) {
+        return e;
+    }
+    return do_unload_filament(slot_index);
+}
+
+AmsError AmsSubscriptionBackend::select_slot(int slot_index) {
+    if (auto e = gate_filament_op(FilamentOp::SelectSlot); !e.success()) {
+        return e;
+    }
+    return do_select_slot(slot_index);
+}
+
+AmsError AmsSubscriptionBackend::change_tool(int tool_number) {
+    if (auto e = gate_filament_op(FilamentOp::ChangeTool); !e.success()) {
+        return e;
+    }
+    return do_change_tool(tool_number);
+}
+
 AmsError AmsSubscriptionBackend::check_preconditions(bool requires_toolhead_motion) const {
     if (!running_) {
         return AmsErrorHelper::not_connected(std::string(backend_log_tag()) +

@@ -258,12 +258,16 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// bookkeeping), which would otherwise log on every single toolchange.
     [[nodiscard]] bool is_narration_drift_candidate(const std::string& line) const override;
 
-    // Operations
-    AmsError load_filament(int slot_index) override;
-    AmsError unload_filament(int slot_index) override;
-    AmsError select_slot(int slot_index) override;
-    AmsError change_tool(int tool_number) override;
+  protected:
+    // Operations. Gated by AmsSubscriptionBackend's NVI wrapper.
+    // select_slot_moves_toolhead() stays false: an AFC select positions a lane,
+    // it does not drive the toolhead.
+    AmsError do_load_filament(int slot_index) override;
+    AmsError do_unload_filament(int slot_index) override;
+    AmsError do_select_slot(int slot_index) override;
+    AmsError do_change_tool(int tool_number) override;
 
+  public:
     // Recovery
     AmsError recover() override;
     AmsError reset() override;

@@ -3969,15 +3969,10 @@ AmsError AmsBackendAfc::execute_gcode_notify(const std::string& gcode,
     return AmsErrorHelper::success();
 }
 
-AmsError AmsBackendAfc::load_filament(int slot_index) {
+AmsError AmsBackendAfc::do_load_filament(int slot_index) {
     std::string lane_name;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-
-        AmsError precondition = check_preconditions(true);
-        if (!precondition) {
-            return precondition;
-        }
 
         AmsError gate_valid = validate_slot_index(slot_index);
         if (!gate_valid) {
@@ -4029,15 +4024,10 @@ AmsError AmsBackendAfc::load_filament(int slot_index) {
     return dispatch_operation(cmd.str(), AmsAction::LOADING);
 }
 
-AmsError AmsBackendAfc::unload_filament(int slot_index) {
+AmsError AmsBackendAfc::do_unload_filament(int slot_index) {
     std::string lane_name;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-
-        AmsError precondition = check_preconditions(true);
-        if (!precondition) {
-            return precondition;
-        }
 
         if (!system_info_.filament_loaded) {
             return AmsError(AmsResult::WRONG_STATE, "No filament loaded", "No filament to unload",
@@ -4066,15 +4056,10 @@ AmsError AmsBackendAfc::unload_filament(int slot_index) {
     return dispatch_operation(std::move(cmd), AmsAction::UNLOADING);
 }
 
-AmsError AmsBackendAfc::select_slot(int slot_index) {
+AmsError AmsBackendAfc::do_select_slot(int slot_index) {
     std::string lane_name;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-
-        AmsError precondition = check_preconditions();
-        if (!precondition) {
-            return precondition;
-        }
 
         AmsError gate_valid = validate_slot_index(slot_index);
         if (!gate_valid) {
@@ -4093,14 +4078,9 @@ AmsError AmsBackendAfc::select_slot(int slot_index) {
     return AmsErrorHelper::not_supported("AFC does not support select without load");
 }
 
-AmsError AmsBackendAfc::change_tool(int tool_number) {
+AmsError AmsBackendAfc::do_change_tool(int tool_number) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
-
-        AmsError precondition = check_preconditions(true);
-        if (!precondition) {
-            return precondition;
-        }
 
         if (tool_number < 0 || tool_number >= slots_.slot_count()) {
             return AmsError(AmsResult::INVALID_TOOL,

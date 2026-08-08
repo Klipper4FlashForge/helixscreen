@@ -533,20 +533,15 @@ AmsError AmsBackendToolChanger::dispatch_operation(std::string gcode, AmsAction 
 
 // ============================================================================
 
-AmsError AmsBackendToolChanger::load_filament(int slot_index) {
+AmsError AmsBackendToolChanger::do_load_filament(int slot_index) {
     // For tool changers, "load filament" means "mount tool"
-    return change_tool(slot_index);
+    return do_change_tool(slot_index);
 }
 
-AmsError AmsBackendToolChanger::unload_filament(int slot_index) {
+AmsError AmsBackendToolChanger::do_unload_filament(int slot_index) {
     // For tool changers, "unload" means unmount a specific tool (or current if -1)
     {
         std::lock_guard<std::mutex> lock(mutex_);
-
-        AmsError precondition = check_preconditions(true);
-        if (!precondition) {
-            return precondition;
-        }
 
         if (slot_index >= 0) {
             AmsError slot_valid = validate_slot_index(slot_index);
@@ -571,19 +566,14 @@ AmsError AmsBackendToolChanger::unload_filament(int slot_index) {
     return dispatch_operation("UNSELECT_TOOL", AmsAction::UNLOADING);
 }
 
-AmsError AmsBackendToolChanger::select_slot(int slot_index) {
+AmsError AmsBackendToolChanger::do_select_slot(int slot_index) {
     // For tool changers, selecting a slot means mounting that tool
-    return change_tool(slot_index);
+    return do_change_tool(slot_index);
 }
 
-AmsError AmsBackendToolChanger::change_tool(int tool_number) {
+AmsError AmsBackendToolChanger::do_change_tool(int tool_number) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
-
-        AmsError precondition = check_preconditions(true);
-        if (!precondition) {
-            return precondition;
-        }
 
         AmsError slot_valid = validate_slot_index(tool_number);
         if (!slot_valid) {

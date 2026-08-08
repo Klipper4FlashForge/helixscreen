@@ -291,13 +291,8 @@ PathSegment AmsBackendAce::infer_error_segment() const {
 // Filament Operations
 // ============================================================================
 
-AmsError AmsBackendAce::load_filament(int slot_index) {
-    auto err = check_preconditions(true);
-    if (!err.success()) {
-        return err;
-    }
-
-    err = validate_slot_index(slot_index);
+AmsError AmsBackendAce::do_load_filament(int slot_index) {
+    auto err = validate_slot_index(slot_index);
     if (!err.success()) {
         return err;
     }
@@ -357,12 +352,7 @@ AmsError AmsBackendAce::load_filament(int slot_index) {
     return AmsErrorHelper::success();
 }
 
-AmsError AmsBackendAce::unload_filament(int /*slot_index*/) {
-    auto err = check_preconditions(true);
-    if (!err.success()) {
-        return err;
-    }
-
+AmsError AmsBackendAce::do_unload_filament(int /*slot_index*/) {
     spdlog::info("[ACE] Unloading filament");
 
     {
@@ -417,12 +407,12 @@ AmsError AmsBackendAce::unload_filament(int /*slot_index*/) {
     return AmsErrorHelper::success();
 }
 
-AmsError AmsBackendAce::select_slot(int slot_index) {
-    return load_filament(slot_index);
+AmsError AmsBackendAce::do_select_slot(int slot_index) {
+    return do_load_filament(slot_index);
 }
 
-AmsError AmsBackendAce::change_tool(int tool_number) {
-    return load_filament(tool_number);
+AmsError AmsBackendAce::do_change_tool(int tool_number) {
+    return do_load_filament(tool_number);
 }
 
 // ============================================================================

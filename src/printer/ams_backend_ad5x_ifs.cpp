@@ -902,9 +902,9 @@ bool AmsBackendAd5xIfs::check_external_color_change(int slot_index,
 }
 
 bool AmsBackendAd5xIfs::check_external_type_change(int slot_index,
-                                                  const std::string& observed_material,
-                                                  std::optional<uint32_t> observed_color,
-                                                  bool slot_has_filament) {
+                                                   const std::string& observed_material,
+                                                   std::optional<uint32_t> observed_color,
+                                                   bool slot_has_filament) {
     // Track a material baseline across empty lanes — mirroring
     // check_external_color_change, which keeps a live baseline over an empty
     // lane (empty color parses to the #808080 placeholder). The prior top-level
@@ -1059,7 +1059,7 @@ void AmsBackendAd5xIfs::clear_override_locked(int slot_index, SlotInfo& slot) {
 }
 
 void AmsBackendAd5xIfs::release_locked_override_keep_identity_locked(int slot_index,
-                                                                    SlotInfo& slot) {
+                                                                     SlotInfo& slot) {
     // Caller must hold mutex_. See the header for the full rationale. Short
     // version: an external CHANGE_ZCOLOR legitimately re-authors color/material
     // (firmware truth wins), but the firmware can't carry brand/spool_name/
@@ -1334,13 +1334,10 @@ PathSegment AmsBackendAd5xIfs::infer_error_segment() const {
 
 // --- Filament operations ---
 
-AmsError AmsBackendAd5xIfs::load_filament(int slot_index) {
+AmsError AmsBackendAd5xIfs::do_load_filament(int slot_index) {
     if (!validate_slot_index(slot_index)) {
         return AmsErrorHelper::invalid_slot(slot_index, NUM_PORTS - 1);
     }
-    auto err = check_preconditions(true);
-    if (!err.success())
-        return err;
 
     int port = slot_index + 1;
     {
@@ -1382,11 +1379,7 @@ AmsError AmsBackendAd5xIfs::load_filament(int slot_index) {
     });
 }
 
-AmsError AmsBackendAd5xIfs::unload_filament(int slot_index) {
-    auto err = check_preconditions(true);
-    if (!err.success())
-        return err;
-
+AmsError AmsBackendAd5xIfs::do_unload_filament(int slot_index) {
     bool head_loaded;
     int current_slot;
     int seated_slot; // 0-based slot of the IFS_STATUS-seated port (-1 = none)
@@ -1452,7 +1445,7 @@ AmsError AmsBackendAd5xIfs::unload_filament(int slot_index) {
         // slot. Passing -1 through to eject_lane() fails validate_slot_index()
         // and the swap path discarded that error, freezing the sidebar in
         // "Heating" (Vger1700, bundle Z5V4K3NL).
-        int eject_slot = slot_index >= 0 ? slot_index
+        int eject_slot = slot_index >= 0    ? slot_index
                          : seated_slot >= 0 ? seated_slot
                                             : current_slot;
         if (eject_slot < 0) {
@@ -1574,26 +1567,20 @@ void AmsBackendAd5xIfs::finalize_op_after_macro(bool is_unload) {
     }
 }
 
-AmsError AmsBackendAd5xIfs::select_slot(int slot_index) {
+AmsError AmsBackendAd5xIfs::do_select_slot(int slot_index) {
     if (!validate_slot_index(slot_index)) {
         return AmsErrorHelper::invalid_slot(slot_index, NUM_PORTS - 1);
     }
-    auto err = check_preconditions();
-    if (!err.success())
-        return err;
 
     int port = slot_index + 1;
     spdlog::info("{} Selecting port {}", backend_log_tag(), port);
     return execute_gcode("SET_EXTRUDER_SLOT SLOT=" + std::to_string(port));
 }
 
-AmsError AmsBackendAd5xIfs::change_tool(int tool_number) {
+AmsError AmsBackendAd5xIfs::do_change_tool(int tool_number) {
     if (tool_number < 0 || tool_number >= TOOL_MAP_SIZE) {
         return AmsErrorHelper::invalid_slot(tool_number, TOOL_MAP_SIZE - 1);
     }
-    auto err = check_preconditions(true);
-    if (!err.success())
-        return err;
 
     int port;
     {
@@ -3079,10 +3066,11 @@ bool AmsBackendAd5xIfs::on_gcode_response_line(const std::string& line) {
                          (it->second.user_locked_color || it->second.user_locked_material));
 
                     if (has_locked_override) {
-                        spdlog::info("{} External CHANGE_ZCOLOR for slot {} overrides an earlier "
-                                     "HelixScreen edit — releasing the stale color/material locks so "
-                                     "the new firmware color/type wins (#981)",
-                                     backend_log_tag(), slot0);
+                        spdlog::info(
+                            "{} External CHANGE_ZCOLOR for slot {} overrides an earlier "
+                            "HelixScreen edit — releasing the stale color/material locks so "
+                            "the new firmware color/type wins (#981)",
+                            backend_log_tag(), slot0);
                         auto* entry = slots_.get_mut(slot0);
                         if (entry) {
                             // Release the stale color/material locks + strip the
@@ -3121,9 +3109,10 @@ bool AmsBackendAd5xIfs::on_gcode_response_line(const std::string& line) {
                                 const uint32_t color_value =
                                     static_cast<uint32_t>(std::stoul(*parsed_hex, nullptr, 16));
                                 last_firmware_color_[slot0] = color_value;
-                                spdlog::info("{} External CHANGE_ZCOLOR applied HEX='{}' to slot {} "
-                                             "(#1065 gcode-path extraction)",
-                                             backend_log_tag(), *parsed_hex, slot0);
+                                spdlog::info(
+                                    "{} External CHANGE_ZCOLOR applied HEX='{}' to slot {} "
+                                    "(#1065 gcode-path extraction)",
+                                    backend_log_tag(), *parsed_hex, slot0);
                                 mutated = true;
                             } catch (...) {
                                 // std::stoul on a regex-validated 6-hex-digit
@@ -3226,7 +3215,8 @@ bool AmsBackendAd5xIfs::apply_color_menu_slot_row(const std::string& line) {
     // submenu's buttons (Load|IN_ZCOLOR …, Change color|CHANGE_ZCOLOR …), and
     // RUN_ZCOLOR is display-only — it never mutates firmware state, so a row
     // can be read as a snapshot with no risk of confusing it for a command.
-    static const std::regex slot_row_re(R"(action:prompt_button\s+(\d+)\s*:[^|]*\|\s*RUN_ZCOLOR\b)");
+    static const std::regex slot_row_re(
+        R"(action:prompt_button\s+(\d+)\s*:[^|]*\|\s*RUN_ZCOLOR\b)");
     std::smatch rm;
     if (!std::regex_search(line, rm, slot_row_re))
         return false;
@@ -3267,8 +3257,8 @@ bool AmsBackendAd5xIfs::apply_color_menu_slot_row(const std::string& line) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         const auto idx = static_cast<size_t>(slot0);
-        const bool same = (!has_type || materials_[idx] == tm[1].str()) &&
-                          (!has_hex || colors_[idx] == hex);
+        const bool same =
+            (!has_type || materials_[idx] == tm[1].str()) && (!has_hex || colors_[idx] == hex);
         if (same)
             return false; // Nothing moved — the common case on a re-render.
 
@@ -4693,8 +4683,7 @@ void AmsBackendAd5xIfs::on_head_transition_locked(bool detected) {
         }
         spdlog::info("{} Phase: head sensor dropped (cut/retract started{}"
                      ")",
-                     backend_log_tag(),
-                     phase_tracker_.is_unload ? "" : " — LOAD swap clock reset");
+                     backend_log_tag(), phase_tracker_.is_unload ? "" : " — LOAD swap clock reset");
     } else {
         // Head sensor tripped: filament reached the nozzle (load) — advance to
         // the purge phase.

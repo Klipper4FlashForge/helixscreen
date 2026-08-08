@@ -120,11 +120,28 @@ class AmsBackendQidi : public AmsSubscriptionBackend {
         return true;
     }
 
-    AmsError load_filament(int slot_index) override;
-    AmsError unload_filament(int slot_index) override;
-    AmsError select_slot(int slot_index) override;
-    AmsError change_tool(int tool_number) override;
+  protected:
+    // Operations. Gated by AmsSubscriptionBackend's NVI wrapper.
+    // select_slot_moves_toolhead() stays false: do_select_slot() is
+    // not_supported here — load_filament is the only path.
+    AmsError do_load_filament(int slot_index) override;
+    AmsError do_unload_filament(int slot_index) override;
+    AmsError do_select_slot(int slot_index) override;
+    AmsError do_change_tool(int tool_number) override;
 
+    /// QIDI's filament ops have never consulted running_ or
+    /// system_info_.action — they were ungated entirely until 329e731e9 added
+    /// the print-active check, which chose the narrower gate to preserve that.
+    /// The box DOES report AmsAction::LOADING (parse_variables sets it from
+    /// `is_tool_change`), so this is not a no-op: widening it to Standard would
+    /// newly refuse a load while the box calls itself busy. That is a behaviour
+    /// change on hardware nobody here owns, so it stays a deliberate narrowing
+    /// rather than an accident preserved by silence.
+    [[nodiscard]] FilamentOpGate filament_op_gate() const override {
+        return FilamentOpGate::PrintActiveOnly;
+    }
+
+  public:
     AmsError recover() override;
     AmsError reset() override;
     AmsError cancel() override;
