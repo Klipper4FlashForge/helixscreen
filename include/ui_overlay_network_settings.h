@@ -262,9 +262,19 @@ class NetworkSettingsOverlay : public OverlayBase {
 
     // Event handler implementations
     void handle_wlan_toggle_changed(lv_event_t* e);
-    // Actually applies the radio on/off request (post no-strand confirmation,
-    // if one was needed) and syncs manager/settings/subjects to the result.
+    // Dispatches the radio on/off request (post no-strand confirmation, if one
+    // was needed). Flips the UI optimistically and returns immediately; the
+    // real outcome lands in finish_wlan_toggle().
     void apply_wlan_toggle(bool enabled);
+    // Folds the radio's real state back into the subjects, settings and
+    // network list, reverting the optimistic flip when they disagree.
+    void finish_wlan_toggle(bool requested, bool success, bool actual);
+    // Backstop for a dispatch whose completion never arrives (e.g. the
+    // executor was stopped mid-flight): re-reads the radio and reconciles.
+    void arm_wlan_toggle_backstop();
+    void cancel_wlan_toggle_backstop();
+    lv_timer_t* wlan_toggle_backstop_ = nullptr;
+    bool wlan_toggle_requested_ = false;
     void handle_wlan_toggle_off_confirm();
     void handle_wlan_toggle_off_cancel();
     void handle_refresh_clicked();

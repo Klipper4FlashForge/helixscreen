@@ -83,6 +83,14 @@ WiFiError WifiBackendNetworkManager::start() {
     // NetworkManager auto-reconnect, leaving the icon stale (#1059).
     prev_connected_.store(false);
 
+    // Seed the radio cache from reality rather than leaving it at the
+    // optimistic `true` default. is_radio_enabled() is read on the UI thread,
+    // so it can never shell out for itself.
+    if (std::optional<bool> radio = query_radio_enabled()) {
+        radio_enabled_.store(*radio);
+        spdlog::debug("[WifiBackend] NM: WiFi radio is {}", *radio ? "on" : "off");
+    }
+
     // Start background status polling thread. Wrap — EAGAIN throws ([L083]).
     status_running_ = true;
     try {
@@ -933,6 +941,55 @@ WiFiError WifiBackendNetworkManager::disconnect_network() {
 }
 
 // ============================================================================
+// Radio power
+// ============================================================================
+
+std::optional<bool> WifiBackendNetworkManager::query_radio_enabled() {
+    return wifi_parse_nm_radio_state(exec_nmcli("radio wifi"));
+}
+
+WiFiError WifiBackendNetworkManager::set_radio_enabled(bool on) {
+    if (!running_) {
+        return WiFiError(WiFiResult::NOT_INITIALIZED, "Backend not started",
+                         "WiFi system not ready");
+    }
+
+    // `nmcli radio wifi on|off` is NetworkManager's own rfkill soft-block, so
+    // it stops association without taking the interface down — the one thing
+    // WifiBackend::set_radio_enabled() forbids, because a downed interface
+    // strands a WiFi-only printer.
+    spdlog::info("[WifiBackend] NM: Setting WiFi radio {}", on ? "on" : "off");
+    exec_nmcli(std::string("radio wifi ") + (on ? "on" : "off"));
+
+    // Trust the read-back, not the command's exit status: nmcli exits 0 for a
+    // request polkit silently refused. Without this, the UI would flip the
+    // switch and the radio would stay where it was.
+    std::optional<bool> observed = query_radio_enabled();
+    if (!observed.has_value()) {
+        return WiFiError(WiFiResult::BACKEND_ERROR,
+                         "nmcli radio wifi returned no usable state after the change",
+                         on ? "Could not turn WiFi radio on" : "Could not turn WiFi radio off");
+    }
+
+    radio_enabled_.store(*observed);
+    if (*observed != on) {
+        return WiFiError(WiFiResult::PERMISSION_DENIED,
+                         std::string("nmcli refused to turn the WiFi radio ") + (on ? "on" : "off"),
+                         on ? "Could not turn WiFi radio on" : "Could not turn WiFi radio off");
+    }
+
+    // A radio that just came back on may reassociate; a radio that just went
+    // off must stop reporting a connection. Either way the cached status is
+    // stale now.
+    request_status_refresh();
+    return WiFiErrorHelper::success();
+}
+
+bool WifiBackendNetworkManager::is_radio_enabled() const {
+    return radio_enabled_.load();
+}
+
+// ============================================================================
 // Status
 // ============================================================================
 
@@ -1065,6 +1122,12 @@ void WifiBackendNetworkManager::status_thread_func() {
         std::optional<ConnectionStatus> polled;
         if (running_) {
             polled = poll_status_now();
+            // Pick up a radio state someone changed behind our back (nmcli,
+            // a hardware kill switch, another UI). Keep the last-known value
+            // when the query is inconclusive.
+            if (std::optional<bool> radio = query_radio_enabled()) {
+                radio_enabled_.store(*radio);
+            }
         }
 
         if (polled) {

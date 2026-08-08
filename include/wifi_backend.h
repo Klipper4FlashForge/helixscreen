@@ -174,6 +174,24 @@ enum WiFiBandFlag : uint8_t {
 uint8_t wifi_band_flag_from_frequency(int frequency_mhz);
 
 /**
+ * @brief Parse the output of `nmcli radio wifi` into a radio-on/off answer
+ *
+ * NetworkManager answers with a single word — "enabled" or "disabled" — and
+ * decorates it with a trailing newline and (outside terse mode) leading
+ * whitespace. Anything else is a broken/absent nmcli, and must NOT be guessed
+ * at: an unparseable answer that defaulted to "enabled" is exactly how the
+ * base-class default made the UI switch snap back on after a successful
+ * radio-off.
+ *
+ * Declared here rather than in wifi_backend_networkmanager.h so it is
+ * reachable (and testable) on platforms that do not build the NM backend.
+ *
+ * @param output Raw stdout from `nmcli radio wifi`
+ * @return true/false for enabled/disabled, nullopt when unrecognized
+ */
+std::optional<bool> wifi_parse_nm_radio_state(const std::string& output);
+
+/**
  * @brief WiFi network information
  */
 struct WiFiNetwork {
