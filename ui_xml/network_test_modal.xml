@@ -30,7 +30,7 @@
   <!-- NOTE: test_complete subject is registered globally in C++ (network_settings_overlay.cpp) -->
   <!-- Dialog card (backdrop created programmatically) -->
   <view name="network_test_modal"
-        extends="ui_dialog" width="320" height="content" align="center" flex_flow="column" style_flex_main_place="start"
+        extends="ui_dialog" width="70%" style_min_width="300" style_max_width="380" height="content" align="center" flex_flow="column" style_flex_main_place="start"
         style_pad_gap="0">
     <!-- Header with title -->
     <lv_obj width="100%"
