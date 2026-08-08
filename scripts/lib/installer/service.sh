@@ -475,7 +475,7 @@ start_service_systemd() {
 
     if ! $SUDO systemctl "$action" "$SERVICE_NAME"; then
         log_error "Failed to start ${SERVICE_NAME} service."
-        log_error "Check logs with: journalctl -u ${SERVICE_NAME} -n 50"
+        log_error "Check logs with: sudo journalctl -u ${SERVICE_NAME} -n 50"
         exit 1
     fi
 
