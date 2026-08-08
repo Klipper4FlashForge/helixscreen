@@ -68,6 +68,38 @@ std::string env_or(const char* name) {
 // measure this listener uses (prestonbrown/helixscreen#1146, #1212).
 using helix::test::live_thread_count;
 
+// Count occurrences of `key`, preserving first-seen order.
+void tally(std::vector<std::pair<std::string, size_t>>& counts, const std::string& key) {
+    auto it = std::find_if(counts.begin(), counts.end(),
+                           [&key](const auto& e) { return e.first == key; });
+    if (it == counts.end()) {
+        counts.emplace_back(key, 1);
+    } else {
+        ++it->second;
+    }
+}
+
+// "a, b x3, c" from a tally.
+std::string join(const std::vector<std::pair<std::string, size_t>>& counts) {
+    std::string detail;
+    for (const auto& [key, n] : counts) {
+        if (!detail.empty()) {
+            detail += ", ";
+        }
+        detail += key;
+        if (n > 1) {
+            detail += " x" + std::to_string(n);
+        }
+    }
+    return detail;
+}
+
+std::string basename(const char* path) {
+    std::string p(path);
+    size_t slash = p.find_last_of('/');
+    return slash == std::string::npos ? p : p.substr(slash + 1);
+}
+
 class IsolationListener : public Catch::EventListenerBase {
   public:
     using Catch::EventListenerBase::EventListenerBase;
@@ -156,36 +188,36 @@ class IsolationListener : public Catch::EventListenerBase {
         // The tags name the producers, which is what makes a report actionable:
         // a tag pointing at a process singleton is benign unflushed work, while
         // one closing over a per-test object is a real UAF awaiting the next drain.
-        if (std::vector<const char*> tags = helix::ui::UpdateQueueTestAccess::discard_pending(
-                helix::ui::UpdateQueue::instance());
-            !tags.empty()) {
+        if (std::vector<helix::ui::UpdateQueueTestAccess::DroppedCallback> dropped =
+                helix::ui::UpdateQueueTestAccess::discard_pending(
+                    helix::ui::UpdateQueue::instance());
+            !dropped.empty()) {
             // Collapse repeats — a loop-driven test queues the same tag N times —
             // but match tags EXACTLY. A substring test would hide any producer
             // whose tag is a prefix of one already listed.
             std::vector<std::pair<std::string, size_t>> counts;
-            for (const char* t : tags) {
-                auto it = std::find_if(counts.begin(), counts.end(),
-                                       [t](const auto& e) { return e.first == t; });
-                if (it == counts.end()) {
-                    counts.emplace_back(t, 1);
-                } else {
-                    ++it->second;
-                }
-            }
-            std::string detail;
-            for (const auto& [tag, n] : counts) {
-                if (!detail.empty()) {
-                    detail += ", ";
-                }
-                detail += tag;
-                if (n > 1) {
-                    detail += " x" + std::to_string(n);
+            std::vector<std::pair<std::string, size_t>> sites;
+            for (const auto& d : dropped) {
+                tally(counts, d.tag);
+                if (d.file != nullptr) {
+                    tally(sites, basename(d.file) + ":" + std::to_string(d.line));
                 }
             }
             std::fprintf(stderr,
                          "\n[ISOLATION-LEAK] test \"%s\" left %zu queued UpdateQueue "
                          "callback(s); discarded. Producers: %s\n",
-                         name_.c_str(), tags.size(), detail.c_str());
+                         name_.c_str(), dropped.size(), join(counts).c_str());
+            // Untagged producers are anonymous in the line above, and
+            // "<untagged> x44" cannot be acted on. The call sites go on their
+            // OWN line, with a distinct prefix, so scripts/check_update_queue_leaks.py
+            // keeps parsing the report exactly as before — its regex matches the
+            // [ISOLATION-LEAK] line only, and the untagged ceiling it enforces
+            // must stay keyed on "<untagged>", not on a file:line that moves
+            // whenever anything above the call site is edited.
+            if (!sites.empty()) {
+                std::fprintf(stderr, "[ISOLATION-LEAK-SITES] untagged from: %s\n",
+                             join(sites).c_str());
+            }
         }
 
         // Thread leaks can't be healed; settle briefly to avoid flagging a thread

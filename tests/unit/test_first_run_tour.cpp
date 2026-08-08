@@ -1,6 +1,7 @@
 // Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "../helix_test_fixture.h"
 #include "config.h"
 #include "first_run_tour.h"
 #include "tour_steps.h"
@@ -91,7 +92,7 @@ TEST_CASE("Tour steps: welcome and customize steps have correct targets", "[tour
     REQUIRE(steps[2].target_name == "fan_stack"); // Customize example tile
 }
 
-TEST_CASE("FirstRunTour: start() sets is_running", "[tour]") {
+TEST_CASE_METHOD(HelixTestFixture, "FirstRunTour: start() sets is_running", "[tour]") {
     reset_tour_settings();
     auto& t = FirstRunTour::instance();
     REQUIRE(!t.is_running());
@@ -101,7 +102,7 @@ TEST_CASE("FirstRunTour: start() sets is_running", "[tour]") {
     REQUIRE(!t.is_running());
 }
 
-TEST_CASE("FirstRunTour: skip writes tour.completed", "[tour]") {
+TEST_CASE_METHOD(HelixTestFixture, "FirstRunTour: skip writes tour.completed", "[tour]") {
     reset_tour_settings();
     auto& t = FirstRunTour::instance();
     t.start();
@@ -109,7 +110,7 @@ TEST_CASE("FirstRunTour: skip writes tour.completed", "[tour]") {
     REQUIRE(Config::get_instance()->get<bool>("/tour/completed", false) == true);
 }
 
-TEST_CASE("FirstRunTour: advance past last step finishes", "[tour]") {
+TEST_CASE_METHOD(HelixTestFixture, "FirstRunTour: advance past last step finishes", "[tour]") {
     reset_tour_settings();
     auto& t = FirstRunTour::instance();
     t.start();

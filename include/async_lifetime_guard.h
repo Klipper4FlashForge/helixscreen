@@ -140,20 +140,46 @@ class LifetimeToken {
      * The token holds its own shared_ptr to the generation counter, so it
      * remains safe to use even after the guard (and its owner) are destroyed.
      */
-    template <typename F> void defer(F&& fn) const {
+    // file/line default-evaluate at the call site so an untagged defer still
+    // names its producer in a cross-test leak report (see TaggedCallback).
+    template <typename F>
+    void defer(F&& fn, const char* file = __builtin_FILE(), int line = __builtin_LINE()) const {
         auto gen = gen_;
         auto snapshot = snapshot_;
-        helix::ui::queue_update([gen, snapshot, f = std::forward<F>(fn)]() mutable {
-            if (gen->load(std::memory_order_acquire) != snapshot)
-                return;
-            f();
-        });
+        // See the tagged overload: an already-expired token enqueues a callback
+        // that can only skip, so drop it here instead of parking it in the queue.
+        if (gen->load(std::memory_order_acquire) != snapshot) {
+            helix::async_lifetime::note_skipped(nullptr);
+            return;
+        }
+        helix::ui::queue_update(
+            [gen, snapshot, f = std::forward<F>(fn)]() mutable {
+                if (gen->load(std::memory_order_acquire) != snapshot)
+                    return;
+                f();
+            },
+            file, line);
     }
 
     /// Tagged variant for crash diagnostics
     template <typename F> void defer(const char* tag, F&& fn) const {
         auto gen = gen_;
         auto snapshot = snapshot_;
+        // Already dead before we even enqueue — the body below would load the
+        // same generation and skip, so queueing it buys nothing and costs a
+        // slot in the queue that outlives the owner. This is the common shape
+        // for a debounced background worker (sleep, then defer) whose owner was
+        // destroyed while it slept: AmsBackendAd5xIfs::schedule_zcolor_query
+        // holds a 500ms sleep on an HttpExecutor lane, and every backend torn
+        // down inside that window used to leave a doomed callback behind.
+        // Checking here is safe on any thread — the token owns a shared_ptr to
+        // the counter and never touches the guard or its owner.
+        if (gen->load(std::memory_order_acquire) != snapshot) {
+            helix::async_lifetime::note_skipped(tag);
+            spdlog::trace("[LifetimeToken] Skipped expired callback before enqueue: {}",
+                          tag ? tag : "unknown");
+            return;
+        }
         helix::ui::queue_update(tag, [gen, snapshot, tag, f = std::forward<F>(fn)]() mutable {
             if (gen->load(std::memory_order_acquire) != snapshot) {
                 helix::async_lifetime::note_skipped(tag);
@@ -228,15 +254,18 @@ class AsyncLifetimeGuard {
      * @tparam F Callable with signature void()
      * @param fn The callback to defer
      */
-    template <typename F> void defer(F&& fn) {
+    template <typename F>
+    void defer(F&& fn, const char* file = __builtin_FILE(), int line = __builtin_LINE()) {
         auto gen = gen_;
         auto snapshot = gen_->load(std::memory_order_acquire);
-        helix::ui::queue_update([gen, snapshot, f = std::forward<F>(fn)]() mutable {
-            if (gen->load(std::memory_order_acquire) != snapshot) {
-                return;
-            }
-            f();
-        });
+        helix::ui::queue_update(
+            [gen, snapshot, f = std::forward<F>(fn)]() mutable {
+                if (gen->load(std::memory_order_acquire) != snapshot) {
+                    return;
+                }
+                f();
+            },
+            file, line);
     }
 
     /**
@@ -301,6 +330,13 @@ class AsyncLifetimeGuard {
         auto gen = gen_;
         auto snapshot = gen_->load(std::memory_order_acquire);
         return [gen, snapshot, tag, fn = std::forward<F>(fn)](auto&&... args) mutable {
+            // Owner already gone: skip before enqueueing (see LifetimeToken::defer).
+            if (gen->load(std::memory_order_acquire) != snapshot) {
+                helix::async_lifetime::note_skipped(tag);
+                spdlog::trace("[AsyncLifetimeGuard] Skipped expired bg_cb before enqueue: {}",
+                              tag ? tag : "unknown");
+                return;
+            }
             // Decay args into a value-tuple so the deferred body can't observe
             // references that died with the bg-thread stack frame.
             auto args_tuple = std::make_tuple(
@@ -358,8 +394,11 @@ constexpr size_t kMaxTrackedTags = 64;
 /// Increment the skip counter for `tag`. Lock-free on the repeating-tag hot
 /// path (linear scan over cache-friendly slots); the first sighting of a tag
 /// within a window claims a free slot by CAS. `nullptr` is normalised to
-/// "(null)". Safe from any thread, though in practice all three skip paths fire
-/// on the LVGL main thread inside `UpdateQueue::process_pending()`.
+/// "(null)". Safe from any thread — and it does get called from background
+/// threads: each defer path checks the generation BEFORE enqueueing (so a
+/// doomed callback never occupies a queue slot), and that pre-check runs on
+/// whichever thread deferred. The post-enqueue check inside the queued body
+/// still fires on the LVGL main thread.
 void note_skipped(const char* tag) noexcept;
 
 struct SkipEntry {

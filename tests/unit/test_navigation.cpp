@@ -1,8 +1,11 @@
 // Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "ui_update_queue.h"
+
 #include "../../include/theme_manager.h"
 #include "../../include/ui_nav_manager.h"
+#include "../helix_test_fixture.h"
 #include "../test_helpers/navigation_manager_test_access.h"
 #include "../ui_test_utils.h"
 #include "lvgl/lvgl.h"
@@ -13,8 +16,13 @@
 
 using namespace helix;
 
-// Test fixture for navigation tests
-class NavigationTestFixture {
+// Test fixture for navigation tests.
+//
+// Derives from HelixTestFixture so the UpdateQueue is drained on the way out:
+// panel switching notifies subjects, and observe_int_sync defers every apply,
+// so a hand-rolled fixture returns with those applies still queued and hands
+// them to whichever test runs next (tests/CLAUDE.md, "inherit, don't hand-roll").
+class NavigationTestFixture : public HelixTestFixture {
   public:
     NavigationTestFixture() {
         // Initialize LVGL for testing (safe version avoids "already initialized" warnings)
@@ -30,7 +38,12 @@ class NavigationTestFixture {
         NavigationManager::instance().init();
     }
 
-    ~NavigationTestFixture() {
+    ~NavigationTestFixture() override {
+        // Drain BEFORE deinit_subjects(), while the subjects those deferred
+        // applies read are still alive. The base destructor drains again, but
+        // that one runs after teardown — too late to be the only drain.
+        helix::ui::UpdateQueue::instance().drain();
+
         // Reset singleton state so it doesn't leak between test cases.
         // deinit_subjects() clears observers, panel/overlay tracking,
         // and resets subjects_initialized_ so init() works in the next fixture.

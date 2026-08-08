@@ -368,11 +368,12 @@ ObserverGuard observe_int_sync(lv_subject_t* subject, Panel* panel, Handler&& ha
                 auto handler_copy = c->handler;
                 auto* panel_ptr = c->panel;
                 std::weak_ptr<bool> weak_alive = c->alive;
-                helix::ui::queue_update([handler_copy, panel_ptr, value, weak_alive]() {
-                    if (weak_alive.expired())
-                        return;
-                    handler_copy(panel_ptr, value);
-                });
+                helix::ui::queue_update("observe_int_sync::apply",
+                                        [handler_copy, panel_ptr, value, weak_alive]() {
+                                            if (weak_alive.expired())
+                                                return;
+                                            handler_copy(panel_ptr, value);
+                                        });
             }
         },
         ctx, [ctx]() { delete ctx; });
@@ -505,11 +506,12 @@ ObserverGuard observe_string(lv_subject_t* subject, Panel* panel, Handler&& hand
                 auto handler_copy = c->handler;
                 auto* panel_ptr = c->panel;
                 std::weak_ptr<bool> weak_alive = c->alive;
-                helix::ui::queue_update([handler_copy, panel_ptr, str_copy, weak_alive]() {
-                    if (weak_alive.expired())
-                        return;
-                    handler_copy(panel_ptr, str_copy.c_str());
-                });
+                helix::ui::queue_update("observe_string_sync::apply",
+                                        [handler_copy, panel_ptr, str_copy, weak_alive]() {
+                                            if (weak_alive.expired())
+                                                return;
+                                            handler_copy(panel_ptr, str_copy.c_str());
+                                        });
             }
         },
         ctx, [ctx]() { delete ctx; });
