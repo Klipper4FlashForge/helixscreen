@@ -254,17 +254,6 @@ void TempStackWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int /*wi
     // Icon font: xs=16px, sm=24px
     const lv_font_t* icon_font = (height_px >= widget_size::H_TALL) ? &mdi_icons_24 : &mdi_icons_16;
 
-    // Update nozzle icon glyph
-    lv_obj_t* nozzle_glyph = lv_obj_find_by_name(widget_obj_, "nozzle_icon_glyph");
-    if (nozzle_glyph)
-        lv_obj_set_style_text_font(nozzle_glyph, icon_font, 0);
-
-    // Update bed icon — a leaf label (no child to dig into), named per the
-    // HeaterIconBinder convention so this and the binder agree on one icon.
-    lv_obj_t* bed_icon = lv_obj_find_by_name(widget_obj_, "bed_icon_glyph");
-    if (bed_icon)
-        lv_obj_set_style_text_font(bed_icon, icon_font, 0);
-
     // Update temp_display fonts and icon fonts in all rows
     const char* row_names[] = {"temp_stack_nozzle_row", "temp_stack_bed_row",
                                "temp_stack_chamber_row"};
@@ -281,7 +270,9 @@ void TempStackWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int /*wi
                     lv_obj_set_style_text_font(label, text_font, 0);
                 }
             } else if (lv_obj_get_child_count(child) > 0) {
-                // Icon component — update first child glyph (chamber row icon)
+                // Icon component (nozzle_icon/heater_icon wrapper) — the
+                // glyph is its first child, whether or not that wrapper also
+                // carries a tool badge (nozzle_icon.xml, heater_icon.xml).
                 lv_obj_t* glyph = lv_obj_get_child(child, 0);
                 if (glyph)
                     lv_obj_set_style_text_font(glyph, icon_font, 0);
