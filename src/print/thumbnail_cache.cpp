@@ -1033,6 +1033,30 @@ void ThumbnailCache::process_and_callback(const std::string& png_lvgl_path,
 // High-Level Semantic Methods
 // ============================================================================
 
+void ThumbnailCache::fetch(const ThumbnailRequest& req, ThumbnailLoadContext ctx,
+                           SuccessCallback on_success, ErrorCallback on_error) {
+    // Same guard shape as fetch_for_detail_view/fetch_for_card_view: the caller's
+    // success callback runs only if no newer request superseded this one. The
+    // difference is that the target comes from the request rather than being
+    // chosen here, which is what lets one method serve every call site.
+    auto guarded_success = [ctx, on_success = std::move(on_success)](const std::string& path) {
+        if (!ctx.is_valid()) {
+            spdlog::debug("[ThumbnailCache] Dropping stale fetch result: {}", path);
+            return;
+        }
+        if (on_success) {
+            on_success(path);
+        }
+    };
+
+    fetch_optimized(req.api, req.key, req.target, std::move(guarded_success), std::move(on_error),
+                    req.source_modified);
+}
+
+std::string ThumbnailCache::get_if_cached(const ThumbnailRequest& req) const {
+    return get_if_optimized(req.key, req.target, req.source_modified);
+}
+
 void ThumbnailCache::fetch_for_detail_view(MoonrakerAPI* api, const std::string& relative_path,
                                            ThumbnailLoadContext ctx, SuccessCallback on_success,
                                            ErrorCallback on_error) {

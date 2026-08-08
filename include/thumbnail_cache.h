@@ -53,6 +53,22 @@
  *
  * @see MoonrakerAPI::download_thumbnail
  */
+
+/**
+ * @brief One thumbnail fetch request.
+ *
+ * `key` is the source-namespaced cache key, NOT necessarily a Moonraker
+ * relative path. The existing namespaces ("usb:<file>", "<path>_local",
+ * "<path>_extracted", and bare relative paths) are unchanged by this struct —
+ * it carries whatever key the caller already used.
+ */
+struct ThumbnailRequest {
+    std::string key;
+    helix::ThumbnailTarget target;
+    time_t source_modified = 0;
+    MoonrakerAPI* api = nullptr;
+};
+
 class ThumbnailCache {
   public:
     /// Default cache subdirectory name (appended to base cache dir)
@@ -128,6 +144,19 @@ class ThumbnailCache {
      */
     [[nodiscard]] std::string get_if_cached(const std::string& relative_path,
                                             time_t source_modified = 0) const;
+
+    /**
+     * @brief Synchronous cache lookup for a request
+     *
+     * The request-shaped counterpart to fetch(). Resolves to the pre-scaled
+     * .bin for req.target, honouring req.source_modified for freshness, so a
+     * caller that already built a ThumbnailRequest does not have to unpack it
+     * to ask "do I already have this?".
+     *
+     * @param req The request to look up
+     * @return LVGL path ("A:...") to the pre-scaled file, or empty if absent/stale
+     */
+    [[nodiscard]] std::string get_if_cached(const ThumbnailRequest& req) const;
 
     /**
      * @brief Check if a path is already in LVGL format
@@ -216,6 +245,30 @@ class ThumbnailCache {
     // These methods encode the correct strategy for each use case, preventing
     // accidental use of the wrong format (e.g., using pre-scaled .bin for a
     // detail view where full PNG quality is needed).
+
+    /**
+     * @brief Fetch a thumbnail described by a request, guarded by a load context
+     *
+     * The single fetch entry point every consumer is being moved onto. The
+     * request carries what to fetch (key, target, freshness, api); the context
+     * carries whether the answer is still wanted.
+     *
+     * on_success is invoked only if ctx.is_valid() — that is, the caller is
+     * still alive AND no newer request has bumped the generation counter the
+     * context captured. A superseded load is dropped silently, so callbacks do
+     * not each need their own staleness check. on_error is NOT guarded.
+     *
+     * @param req What to fetch
+     * @param ctx Async safety context (created via ThumbnailLoadContext::create())
+     * @param on_success Called with the LVGL path (only if ctx.is_valid())
+     * @param on_error Optional error callback (always called on error)
+     *
+     * @note Callbacks are marshalled to the LVGL main thread by fetch_optimized(),
+     *       and run inline when the caller is already on it.
+     * @see ThumbnailLoadContext::create
+     */
+    void fetch(const ThumbnailRequest& req, ThumbnailLoadContext ctx, SuccessCallback on_success,
+               ErrorCallback on_error = nullptr);
 
     /**
      * @brief Fetch thumbnail for a detail/large view (pre-scaled .bin at detail size)
