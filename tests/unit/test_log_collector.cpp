@@ -231,14 +231,22 @@ TEST_CASE("helix::logs::tail_best uses provided paths first", "[log_collector]")
     REQUIRE(result.find("line 16") != std::string::npos);
 }
 
-TEST_CASE("helix::logs::tail_best falls through on empty file paths", "[log_collector]") {
-    // All provided paths missing → falls through to syslog then journal. On
-    // dev/CI hosts those are unlikely to have content for us, so expect empty.
-    auto result = helix::logs::tail_best(10, {"/nonexistent/a.log", "/nonexistent/b.log"});
-    // Don't assert empty — a dev machine running this on their dev box could
-    // conceivably have journalctl entries. But we can assert no crash happened.
-    (void)result;
-    SUCCEED("tail_best cascade completed without error");
+TEST_CASE("helix::logs::tail_best steps over a missing path to the next one", "[log_collector]") {
+    // Asserting "empty" for an all-missing list is not safe (a dev box could
+    // have journalctl entries), so pin the property that actually matters:
+    // the file cascade must SKIP an unreadable path and keep going, not abort
+    // at the first miss. Put a real file second and require its content back.
+    TempDirGuard tmp;
+    auto log = tmp.path / "second.log";
+    write_lines(log, 12, "cascade"); // TempDirGuard removes the file on scope exit
+
+    auto result = helix::logs::tail_best(10, {"/nonexistent/a.log", log.string()});
+
+    REQUIRE_FALSE(result.empty());
+    REQUIRE(result.find("cascade 12") != std::string::npos);
+    REQUIRE(result.find("cascade 3") != std::string::npos);
+    // Tail semantics still apply: only the last 10 of 12 lines survive.
+    REQUIRE(result.find("cascade 1\n") == std::string::npos);
 }
 
 // ============================================================================

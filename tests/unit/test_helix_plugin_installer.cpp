@@ -15,6 +15,7 @@
  *       The HelixPluginInstaller class will be implemented to pass these tests.
  */
 
+#include "../../include/config.h"
 #include "../../include/helix_plugin_installer.h"
 
 #include <filesystem>
@@ -158,18 +159,31 @@ TEST_CASE("HelixPluginInstaller", "[plugin_installer]") {
 // the logic but may need to be run in isolation or with a test config setup.
 
 TEST_CASE("HelixPluginInstaller preferences logic", "[plugin_installer][preferences]") {
-    SECTION("should_prompt_install returns true when config unavailable") {
-        // When Config::get_instance() returns nullptr, should default to prompting
-        // This tests the fallback behavior
+    SECTION("should_prompt_install is suppressed when config is unavailable") {
         helix::HelixPluginInstaller installer;
 
-        // If no config is set up, should still return true (fail-safe to prompt)
-        // The actual behavior depends on whether Config singleton is initialized
-        // In a clean test environment, it should return true
-        bool result = installer.should_prompt_install();
-        // This test documents the expected behavior - actual result depends on
-        // whether tests run with Config initialized
-        SUCCEED();
+        // The implementation returns FALSE when Config::get_instance() is null
+        // (the old comment here claimed the opposite). Suppressing is the safe
+        // side: with no config we cannot know whether the user already declined,
+        // so we must not nag.
+        helix::Config* config = helix::Config::get_instance();
+        const bool result = installer.should_prompt_install();
+
+        if (!config) {
+            REQUIRE_FALSE(result);
+        } else {
+            // Config present: prompting is gated behind beta features AND a
+            // completed wizard. Whatever this environment's config happens to
+            // say, a true answer implies both gates were open.
+            if (result) {
+                CHECK(config->is_beta_features_enabled());
+                CHECK_FALSE(config->is_wizard_required());
+            }
+            // Contrapositive, so the false branch is not a free pass either.
+            if (!config->is_beta_features_enabled() || config->is_wizard_required()) {
+                CHECK_FALSE(result);
+            }
+        }
     }
 }
 
@@ -192,15 +206,25 @@ TEST_CASE("HelixPluginInstaller script path", "[plugin_installer]") {
         // This is acceptable - we fall back to remote instructions
     }
 
-    SECTION("get_install_script_path returns empty when script not found") {
-        // This tests the fallback behavior
-        // Implementation should handle missing script gracefully
+    SECTION("get_install_script_path never returns a path that isn't there") {
         helix::HelixPluginInstaller installer;
 
-        // Even if empty, should not throw
-        std::string path = installer.get_install_script_path();
-        // Just verify it doesn't crash
-        SUCCEED();
+        // The resolver walks a candidate list and returns the first entry that
+        // exists, canonicalizes to a file still named install.sh, and is
+        // owner-executable. Every other outcome is "". So the invariant that
+        // holds regardless of whether this checkout has the script bundled is:
+        // empty, or a real executable file called install.sh.
+        const std::string path = installer.get_install_script_path();
+
+        CHECK((path.empty() || std::filesystem::exists(path)));
+        if (!path.empty()) {
+            CHECK(std::filesystem::path(path).filename() == "install.sh");
+            const auto perms = std::filesystem::status(path).permissions();
+            CHECK((perms & std::filesystem::perms::owner_exec) != std::filesystem::perms::none);
+        }
+
+        // Path resolution is a pure query - it must not move the state machine.
+        CHECK(installer.get_state() == helix::PluginInstallState::IDLE);
     }
 }
 

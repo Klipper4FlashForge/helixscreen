@@ -177,8 +177,12 @@ class MoonrakerFileTransferAPI {
      * Virtual to allow mocking in tests (MoonrakerAPIMock logs but doesn't write).
      *
      * @param root Root directory ("gcodes", "config", etc.)
-     * @param path Destination path relative to root (e.g., ".helix_temp/foo.gcode")
-     * @param filename Filename for form (e.g., ".helix_temp/foo.gcode")
+     * @param path Destination path relative to root (e.g., ".helix_temp/foo.gcode").
+     *             Only its directory component is used; pass "" to upload straight
+     *             to the root of @p root (same empty-means-root convention as
+     *             list_files()/get_directory()).
+     * @param filename Filename for form (e.g., ".helix_temp/foo.gcode"). Must be
+     *                 non-empty and traversal-free - it is used verbatim.
      * @param content File content to upload
      * @param on_success Success callback
      * @param on_error Error callback

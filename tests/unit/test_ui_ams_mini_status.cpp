@@ -25,12 +25,42 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams registry: scalable to 4x wide",
     REQUIRE(def->max_colspan == 4);
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini: set_width accepts width_px", "[ui][ams_mini]") {
+TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini: set_width applies its width argument",
+                 "[ui][ams_mini]") {
     ui_ams_mini_status_init();
     lv_obj_t* w = ui_ams_mini_status_create(test_screen(), 40);
     REQUIRE(w != nullptr);
+    // Flush the AmsState auto-sync queued at create time before seeding slots
+    // (see the mode test below for why).
+    helix::ui::UpdateQueue::instance().drain();
+
+    ui_ams_mini_status_set_slot_count(w, 2);
+    ui_ams_mini_status_set_slot_full(w, 0, 0xFF0000, 70, true, "PLA", 70);
+    ui_ams_mini_status_set_slot_full(w, 1, 0x00FF00, 40, true, "PETG", 40);
+
+    // Note: set_width does NOT resize the widget object itself (the manager
+    // owns the grid cell); width_px is a render hint. The observable effect of
+    // the call is therefore the rebuild it triggers, and the width is what
+    // picks the render mode. Drive it high->low->high so a set_width that
+    // ignored its argument (or only ever built one mode) cannot pass.
     ui_ams_mini_status_set_width(w, 260);
-    SUCCEED("compiles and runs");
+    helix::ui::UpdateQueue::instance().drain();
+    lv_obj_t* spools = UITest::find_by_name(w, "ams_spools_container");
+    REQUIRE(spools != nullptr);
+    REQUIRE_FALSE(lv_obj_has_flag(spools, LV_OBJ_FLAG_HIDDEN));
+
+    // Dropping below W_NORMAL hides the spool view rather than deleting it (the
+    // container is built once and recycled), so assert on the flag.
+    ui_ams_mini_status_set_width(w, 130);
+    helix::ui::UpdateQueue::instance().drain();
+    REQUIRE(UITest::find_by_name(w, "ams_spools_container") == spools);
+    REQUIRE(lv_obj_has_flag(spools, LV_OBJ_FLAG_HIDDEN));
+
+    // ...and coming back up shows it again.
+    ui_ams_mini_status_set_width(w, 260);
+    helix::ui::UpdateQueue::instance().drain();
+    REQUIRE_FALSE(lv_obj_has_flag(spools, LV_OBJ_FLAG_HIDDEN));
+
     lv_obj_delete(w);
 }
 
