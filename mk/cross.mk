@@ -2383,7 +2383,7 @@ deploy-k2:
 	@# (set -e) so any failure aborts the deploy; rc.d symlinks are verified
 	@# post-enable because `enable` exits 0 even when the symlinks are wrong.
 	@echo "$(DIM)Installing init script + procd shim...$(RESET)"
-	@tar -cf - -C config helixscreen.init helixscreen-k2-procd-shim.sh \
+	@COPYFILE_DISABLE=1 tar -cf - -C config helixscreen.init helixscreen-k2-procd-shim.sh \
 		| ssh $(K2_SSH_TARGET) 'set -e; \
 			cd /tmp && tar -xf - && \
 			cp helixscreen.init /etc/init.d/S99helixscreen && \
