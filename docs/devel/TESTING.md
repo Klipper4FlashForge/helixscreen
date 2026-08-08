@@ -215,17 +215,20 @@ The default `make test-run` uses filter `~[.] ~[slow]` to exclude tests that wou
 
 *Note: Some overlap exists between [slow] and [.]*
 
-### Hidden Tests `[.]` (~57 tests)
+### Hidden Tests `[.]` (90 tests)
 
-Hidden tests never run automatically. They require explicit invocation.
+Hidden tests never run automatically. They require explicit invocation, and the
+`ui_xml/`-dependent ones must be run **from the repo root**. Full inventory and
+per-file coverage notes: `HIDDEN_TESTS_TRACKER.md`.
 
 | Category | Count | Purpose |
 |----------|------:|---------|
-| `[.][application][integration]` | ~15 | Full app integration tests |
-| `[.][xml_required]` | ~25 | UI tests needing XML components |
-| `[.][ui_integration]` | ~6 | Full LVGL UI integration |
-| `[.][disabled]` | ~4 | Known broken (macOS WiFi, etc.) |
-| `[.][stress]` | ~2 | Stress/threading tests |
+| `[.xml_required]` | 41 | Panel subject-binding tests needing XML components |
+| `[.ui_integration]` | 17 | Real widget tree built from `ui_xml/` |
+| `[.disabled]` | 11 | Known broken (macOS WiFi Location permission) |
+| `[.]` (generic) | 9 | Destructive global state, event-loop concurrency |
+| `[.skip]` | 7 | Superseded `ams_slot` binding tests |
+| `[.slow]` / `[.benchmark]` / `[.memprobe]` / `[.integration]` | 5 | Stress, timing, memory probe |
 
 ### Slow Tests `[slow]` (~185 tests)
 
