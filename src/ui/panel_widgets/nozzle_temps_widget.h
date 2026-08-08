@@ -23,10 +23,10 @@ struct ToolInfo;
 /// Tools with no extruder_name are dropped.
 [[nodiscard]] std::vector<std::string> distinct_extruder_names(const std::vector<ToolInfo>& tools);
 
-/// Panel widget showing per-extruder temperature rows with progress bars.
+/// Panel widget showing per-extruder temperature rows.
 /// Gated on show_tool_badge (multi-tool printers only). Displays each
-/// extruder's current/target temperature and a colored progress bar,
-/// plus a bed temperature row at the bottom.
+/// extruder's current/target temperature, plus a bed temperature row
+/// at the bottom.
 class NozzleTempsWidget : public PanelWidget {
   public:
     explicit NozzleTempsWidget(PrinterState& printer_state);
@@ -52,7 +52,6 @@ class NozzleTempsWidget : public PanelWidget {
         lv_obj_t* tool_label = nullptr;
         lv_obj_t* temp_label = nullptr;
         lv_obj_t* target_label = nullptr;
-        lv_obj_t* progress_bar = nullptr;
         // Lifetimes MUST be declared before observers: C++ destroys members in
         // reverse order, so observers are destroyed first (calling lv_observer_remove
         // while the lifetime shared_ptr is still alive and the subject is valid).
@@ -72,7 +71,6 @@ class NozzleTempsWidget : public PanelWidget {
     lv_obj_t* bed_icon_ = nullptr;
     lv_obj_t* bed_temp_label_ = nullptr;
     lv_obj_t* bed_target_label_ = nullptr;
-    lv_obj_t* bed_progress_bar_ = nullptr;
     // Lifetimes MUST be declared before observers (same pattern as ExtruderRow)
     SubjectLifetime bed_temp_lifetime_;
     SubjectLifetime bed_target_lifetime_;
@@ -108,8 +106,8 @@ class NozzleTempsWidget : public PanelWidget {
     void clear_rows();
     void create_extruder_row(lv_obj_t* container, ExtruderRow& row);
     void create_bed_row(lv_obj_t* container);
-    void update_row_display(lv_obj_t* temp_label, lv_obj_t* target_label, lv_obj_t* progress_bar,
-                            int temp_deci, int target_deci, bool is_bed);
+    void update_row_display(lv_obj_t* temp_label, lv_obj_t* target_label, int temp_deci,
+                            int target_deci, bool is_bed);
 };
 
 void register_nozzle_temps_widget();
