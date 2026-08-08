@@ -18,10 +18,10 @@
  *
  * `H_TALLER` (197, just below that measured minimum) is added to
  * panel_widget_size.h as the height counterpart to `W_WIDE`, following the
- * same "set just below the smallest measured extent" rule as the other
- * three constants — the option that preserves today's OR-of-two-axes
- * behavior. Reusing `W_WIDE` (204) for the height bound would drop Micro's
- * 3-row case (197.5px < 204px) out of mode 2 — a real regression, not a
+ * same ">= admits the smallest measured extent" rule as the other three
+ * constants — the option that preserves today's OR-of-two-axes behavior.
+ * Reusing `W_WIDE` (205) for the height bound would drop Micro's 3-row case
+ * (197px truncated < 205px) out of mode 2 — a real regression, not a
  * cosmetic threshold shift. Leaving mode 1 unbounded on height would drop
  * the height-only expansion path entirely — a tall-but-narrow queue that
  * reaches mode 2 today via rowspan alone would be stuck in mode 1.
