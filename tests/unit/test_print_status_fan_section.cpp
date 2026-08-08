@@ -72,9 +72,10 @@ TEST_CASE_METHOD(HelixTestFixture, "classify_primary_fans picks first not extras
     REQUIRE(state.classify_primary_fans().part == "fan");
 }
 
-TEST_CASE_METHOD(HelixTestFixture,
-                 "classify_primary_fans: auto-controlled lone fan -> aux, commandable lone fan -> part",
-                 "[fan_state][drift]") {
+TEST_CASE_METHOD(
+    HelixTestFixture,
+    "classify_primary_fans: auto-controlled lone fan -> aux, commandable lone fan -> part",
+    "[fan_state][drift]") {
     // controller_fan / temperature_fan are auto-controlled and can't be the part
     // fan, so a lone one lands in the aux slot.
     for (FanType aux_type : {FanType::CONTROLLER_FAN, FanType::TEMPERATURE_FAN}) {
@@ -229,7 +230,8 @@ TEST_CASE_METHOD(HelixTestFixture,
 
     std::vector<FanInfo> running;
     running.push_back({"fan", "Part", FanType::PART_COOLING, 0, true, std::nullopt});
-    running.push_back({"output_pin fan0", "Fan 0", FanType::OUTPUT_PIN_FAN, 90, true, std::nullopt});
+    running.push_back(
+        {"output_pin fan0", "Fan 0", FanType::OUTPUT_PIN_FAN, 90, true, std::nullopt});
     PrinterFanStateTestAccess::set_fans(state, running);
     REQUIRE(state.classify_primary_fans().part == "output_pin fan0");
 }
@@ -255,7 +257,8 @@ TEST_CASE_METHOD(HelixTestFixture,
     // The commandable fan spins up → part slot must move to it and version tick.
     std::vector<FanInfo> running;
     running.push_back({"fan", "Part", FanType::PART_COOLING, 0, true, std::nullopt});
-    running.push_back({"output_pin fan0", "Fan 0", FanType::OUTPUT_PIN_FAN, 90, true, std::nullopt});
+    running.push_back(
+        {"output_pin fan0", "Fan 0", FanType::OUTPUT_PIN_FAN, 90, true, std::nullopt});
     PrinterFanStateTestAccess::set_fans(state, running);
     PrinterFanStateTestAccess::refresh_primary_fans(state);
     REQUIRE(lv_subject_get_int(ver) > v_idle);
@@ -272,18 +275,19 @@ TEST_CASE_METHOD(HelixTestFixture,
     std::vector<FanInfo> fans;
     // {name, display, type, speed, controllable, rpm, ever_ran}
     fans.push_back({"fan", "Part", FanType::PART_COOLING, 0, true, std::nullopt, true});
-    fans.push_back(
-        {"fan_generic nevermore", "Nevermore", FanType::GENERIC_FAN, 40, true, std::nullopt, false});
+    fans.push_back({"fan_generic nevermore", "Nevermore", FanType::GENERIC_FAN, 40, true,
+                    std::nullopt, false});
     PrinterFanStateTestAccess::set_fans(state, fans);
 
     auto picked = state.classify_primary_fans();
-    REQUIRE(picked.part == "fan");                     // sticky: stays on the proven part fan
-    REQUIRE(picked.aux == "fan_generic nevermore");    // the running commandable fan goes to aux
+    REQUIRE(picked.part == "fan");                  // sticky: stays on the proven part fan
+    REQUIRE(picked.aux == "fan_generic nevermore"); // the running commandable fan goes to aux
 }
 
-TEST_CASE_METHOD(HelixTestFixture,
-                 "classify_primary_fans: aux prefers commandable fan over auto-controlled (SV08, #1124)",
-                 "[fan_state][drift]") {
+TEST_CASE_METHOD(
+    HelixTestFixture,
+    "classify_primary_fans: aux prefers commandable fan over auto-controlled (SV08, #1124)",
+    "[fan_state][drift]") {
     // Full Sovol SV08 fan set in real discovery order. The aux slot must surface
     // the user-commandable Nevermore, not the idle chamber temperature_fan that
     // sorts ahead of it.
@@ -316,7 +320,14 @@ struct FanPanelFixture : public HelixTestFixture {
     FanPanelFixture() : panel(get_printer_state(), nullptr) {
         panel.init_subjects();
     }
-    ~FanPanelFixture() override = default;
+    // `panel` is a member of a Catch2 fixture, which is constructed on the stack.
+    // init_subjects() publishes its subjects into LVGL's process-wide XML registry
+    // by name, so letting the fixture die without deinit leaves those names
+    // resolving into this frame after it returns. The next test that builds XML
+    // binding a print_status_* name then reads a dead stack slot.
+    ~FanPanelFixture() override {
+        panel.deinit_subjects();
+    }
 
     PrintStatusPanel panel;
 };

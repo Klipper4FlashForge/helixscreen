@@ -5,6 +5,30 @@
 
 #include <spdlog/spdlog.h>
 
+#include <atomic>
+
+/// True between the singleton's construction and destruction.
+///
+/// SubjectManager::deinit_all() unregisters through this registry, and panels in
+/// static storage run that during static destruction — potentially after this
+/// singleton is gone, where locking a destroyed mutex_ aborts the process with
+/// "mutex lock failed: Invalid argument".
+///
+/// Zero-initialized before any dynamic initialization and never destroyed (it is
+/// trivially destructible), so it stays readable for the whole process, including
+/// after ~SubjectDebugRegistry. That makes a late unregister a no-op instead of an
+/// abort — correct, because nothing can look the entry up after the registry dies
+/// either. Preferred over leaking the singleton: the lifetime stays honest.
+static std::atomic<bool> g_registry_alive{false};
+
+SubjectDebugRegistry::SubjectDebugRegistry() {
+    g_registry_alive.store(true, std::memory_order_release);
+}
+
+SubjectDebugRegistry::~SubjectDebugRegistry() {
+    g_registry_alive.store(false, std::memory_order_release);
+}
+
 SubjectDebugRegistry& SubjectDebugRegistry::instance() {
     static SubjectDebugRegistry instance;
     return instance;
@@ -19,6 +43,32 @@ void SubjectDebugRegistry::register_subject(lv_subject_t* subject, const std::st
     std::lock_guard<std::mutex> lock(mutex_);
     subjects_[subject] = SubjectDebugInfo{name, type, file, line};
     name_to_subject_[name] = subject;
+}
+
+void SubjectDebugRegistry::unregister_subject(lv_subject_t* subject) {
+    if (subject == nullptr) {
+        return;
+    }
+    // See g_registry_alive: a panel destroyed after this singleton would otherwise
+    // lock a destroyed mutex_ and abort. Nothing can query the entry at that point
+    // either, so dropping the work is the correct outcome, not a papered-over bug.
+    if (!g_registry_alive.load(std::memory_order_acquire)) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = subjects_.find(subject);
+    if (it == subjects_.end()) {
+        return;
+    }
+    // Drop the reverse mapping only when it still points at THIS subject. A newer
+    // instance may already have re-registered the same name at a different address
+    // (panels are destroyed and rebuilt); erasing blindly would strip the live
+    // entry and leave lookup_by_name() answering for a subject that is going away.
+    auto name_it = name_to_subject_.find(it->second.name);
+    if (name_it != name_to_subject_.end() && name_it->second == subject) {
+        name_to_subject_.erase(name_it);
+    }
+    subjects_.erase(it);
 }
 
 const SubjectDebugInfo* SubjectDebugRegistry::lookup(lv_subject_t* subject) {
