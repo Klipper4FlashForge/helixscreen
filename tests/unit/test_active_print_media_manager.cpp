@@ -463,7 +463,7 @@ TEST_CASE_METHOD(ActivePrintMediaManagerTestFixture,
         std::string extracted_path = "/tmp/helix/thumbnails/extracted_12345.png";
 
         // Set the thumbnail path directly via new method
-        manager().set_thumbnail_path(extracted_path);
+        manager().set_thumbnail_path("usb_extracted.gcode", extracted_path);
 
         // Thumbnail path subject should have the value
         REQUIRE(get_thumbnail_path() == extracted_path);
@@ -476,7 +476,7 @@ TEST_CASE_METHOD(ActivePrintMediaManagerTestFixture,
 
         // Set thumbnail path directly (from pre-extracted USB thumbnail)
         std::string usb_thumbnail = "/media/usb/thumbnails/usb_print.png";
-        manager().set_thumbnail_path(usb_thumbnail);
+        manager().set_thumbnail_path("usb_print.gcode", usb_thumbnail);
 
         // Both should be set correctly
         REQUIRE(get_display_filename() == "usb_print");
@@ -486,7 +486,7 @@ TEST_CASE_METHOD(ActivePrintMediaManagerTestFixture,
     SECTION("direct path not overwritten by filename change if set") {
         // Set thumbnail path first (from PrintStartController)
         std::string preextracted = "/tmp/helix/embedded_thumbnail.png";
-        manager().set_thumbnail_path(preextracted);
+        manager().set_thumbnail_path("some_file.gcode", preextracted);
         REQUIRE(get_thumbnail_path() == preextracted);
 
         // When filename arrives from Moonraker, the pre-set thumbnail should persist
@@ -503,7 +503,7 @@ TEST_CASE_METHOD(ActivePrintMediaManagerTestFixture,
         // The fix ensures metadata is always fetched; only thumbnail download is skipped.
 
         // Set thumbnail path first (simulating PrintStartController pre-extraction)
-        manager().set_thumbnail_path("/tmp/helix/preextracted.png");
+        manager().set_thumbnail_path("model_with_layers.gcode", "/tmp/helix/preextracted.png");
         REQUIRE(get_thumbnail_path() == "/tmp/helix/preextracted.png");
 
         // Verify that having a pre-set thumbnail doesn't prevent layer_total
@@ -526,11 +526,11 @@ TEST_CASE_METHOD(ActivePrintMediaManagerTestFixture,
 
     SECTION("empty path clears thumbnail") {
         // Set a thumbnail first
-        manager().set_thumbnail_path("/tmp/some_thumbnail.png");
+        manager().set_thumbnail_path("cleared.gcode", "/tmp/some_thumbnail.png");
         REQUIRE(get_thumbnail_path() == "/tmp/some_thumbnail.png");
 
         // Clear it
-        manager().set_thumbnail_path("");
+        manager().set_thumbnail_path("cleared.gcode", "");
 
         // Should be cleared
         REQUIRE(get_thumbnail_path() == "");
@@ -666,6 +666,26 @@ TEST_CASE_METHOD(ActivePrintMediaManagerTestFixture,
         set_print_filename("benchy.gcode");
         REQUIRE(get_thumbnail_path() == "A:/cache/benchy_thumb.bin");
     }
+}
+
+TEST_CASE_METHOD(ActivePrintMediaManagerTestFixture,
+                 "ActivePrintMediaManager: first print clears a leftover thumbnail path",
+                 "[ActivePrintMediaManager][thumbnail]") {
+    // The reported field bug (Discord, jeremytodd1): the app reconnects or
+    // restarts mid-print, so THIS manager never processed the previous print —
+    // last_loaded_thumbnail_filename_ is empty. The shared subject, however,
+    // still carries the previous print's path. The first filename this manager
+    // ever sees must clear that leftover, not adopt it.
+    state().set_print_thumbnail("previous.gcode", "A:/cache/previous.bin");
+    REQUIRE(get_thumbnail_path() == "A:/cache/previous.bin");
+
+    set_print_filename("brand_new.gcode");
+
+    REQUIRE(get_display_filename() == "brand_new");
+    // The leftover must be dropped, and the identity must describe the file we
+    // are now loading for — not the finished print.
+    CHECK(get_thumbnail_path().empty());
+    CHECK(state().get_print_thumbnail_file() != "previous.gcode");
 }
 
 // ============================================================================
@@ -1349,6 +1369,49 @@ TEST_CASE_METHOD(ActivePrintMediaAsyncFixture,
     drain();
 
     REQUIRE(files().pending_count() == 1); // no redundant reload
+}
+
+TEST_CASE_METHOD(ActivePrintMediaAsyncFixture,
+                 "ActivePrintMediaManager: a pre-set thumbnail still allows retry re-triggers",
+                 "[ActivePrintMediaManager][thumbnail][retry]") {
+    // PrintStartController pre-sets a USB / embedded-gcode thumbnail for the
+    // file that is about to print. That is a legitimate reason to skip the
+    // thumbnail FETCH — it is never a reason to disarm RECOVERY. Conflating the
+    // two is what makes a wrong path permanent instead of transient.
+    manager().set_thumbnail_path("usb_model.gcode", "A:/cache/usb_preset.bin");
+    set_print_filename_no_drain("usb_model.gcode");
+    drain();
+
+    // The pre-set path belongs to this print, so it survives and no thumbnail
+    // fetch is issued — but metadata is still requested.
+    CHECK(get_thumbnail_path() == "A:/cache/usb_preset.bin");
+    CHECK(TestAccess::thumbnail_origin(manager()) == helix::ThumbnailOrigin::PreSet);
+    CHECK_FALSE(TestAccess::thumbnail_loaded(manager()));
+    REQUIRE(files().pending_count() == 1);
+
+    // Leg 1: the backoff ladder. A metadata failure schedules a retry, and the
+    // retry body must actually re-issue the request.
+    files().fire_error_last(make_error("Metadata not available"));
+    drain();
+    REQUIRE(TestAccess::has_pending_retry(manager()));
+    REQUIRE(TestAccess::fire_pending_retry(manager()));
+    CHECK(files().pending_count() == 2);
+
+    // Leg 2: notify_klippy_ready (WebSocket reconnect mid-print).
+    fire_notification("notify_klippy_ready", json{{"method", "notify_klippy_ready"}});
+    drain();
+    CHECK(files().pending_count() == 3);
+
+    // Leg 3: notify_filelist_changed for the file being printed.
+    json msg = {{"method", "notify_filelist_changed"},
+                {"params", json::array({{{"action", "modify_file"},
+                                         {"item", {{"path", "usb_model.gcode"}}}}})}};
+    fire_notification("notify_filelist_changed", msg);
+    drain();
+    CHECK(files().pending_count() == 4);
+
+    // Recovery stayed armed without ever clobbering the pre-set image.
+    CHECK(get_thumbnail_path() == "A:/cache/usb_preset.bin");
 }
 
 TEST_CASE_METHOD(ActivePrintMediaAsyncFixture,

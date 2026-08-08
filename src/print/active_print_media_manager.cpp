@@ -111,19 +111,25 @@ void ActivePrintMediaManager::clear_thumbnail_source() {
     spdlog::debug("[ActivePrintMediaManager] Thumbnail source cleared");
 }
 
-void ActivePrintMediaManager::set_thumbnail_path(const std::string& path) {
-    // Set the thumbnail path directly (bypasses Moonraker API lookup).
-    // The file it belongs to is the effective filename this manager is tracking:
-    // the source override when one is set (PrintStartController sets it just
-    // before handing us the pre-extracted path), otherwise the file the last
-    // process_filename() load was for. Same precedence as process_filename().
-    const std::string& for_file =
-        thumbnail_source_filename_.empty() ? last_effective_filename_ : thumbnail_source_filename_;
+void ActivePrintMediaManager::set_thumbnail_path(const std::string& for_file,
+                                                 const std::string& path) {
+    // Set the thumbnail path directly (bypasses Moonraker API lookup). The
+    // caller owns the identity: this lands at print-start-confirmed time, which
+    // can arrive before Moonraker reports the filename, so neither
+    // thumbnail_source_filename_ nor last_effective_filename_ is trustworthy
+    // here — the latter may still name the PREVIOUS print.
     printer_state_.set_print_thumbnail(for_file, path);
-    // A pre-extracted thumbnail (USB / embedded G-code) counts as loaded for
-    // retry purposes; an empty path clears that state.
-    thumbnail_loaded_ = !path.empty();
-    spdlog::debug("[ActivePrintMediaManager] Thumbnail path set directly: {}", path);
+    // A pre-extracted thumbnail (USB / embedded G-code) skips the fetch, but it
+    // is NOT a completed load: recovery stays armed.
+    thumbnail_origin_ = path.empty() ? ThumbnailOrigin::None : ThumbnailOrigin::PreSet;
+    spdlog::debug("[ActivePrintMediaManager] Thumbnail path set directly for '{}': {}", for_file,
+                  path);
+}
+
+bool ActivePrintMediaManager::has_thumbnail_for(const std::string& filename) {
+    const char* current = lv_subject_get_string(printer_state_.get_print_thumbnail_path_subject());
+    return current && current[0] != '\0' && !filename.empty() &&
+           printer_state_.get_print_thumbnail_file() == filename;
 }
 
 void ActivePrintMediaManager::process_filename(const char* raw_filename) {
@@ -174,13 +180,17 @@ void ActivePrintMediaManager::process_filename(const char* raw_filename) {
 
     // Load thumbnail if filename changed
     if (!effective_filename.empty() && effective_filename != last_loaded_thumbnail_filename_) {
-        // Clear stale thumbnail path from the previous print so load_thumbnail_for_file()
-        // doesn't short-circuit with the old thumbnail. This fixes the bug where starting
-        // a new print via Mainsail would show the previous print's thumbnail.
-        // Only clear if we previously loaded a thumbnail for a different file — if
-        // last_loaded_thumbnail_filename_ is empty, this is the first print and any
-        // existing thumbnail was intentionally pre-set (e.g., USB/PrintStartController).
-        if (!last_loaded_thumbnail_filename_.empty()) {
+        // Whether the published path survives is decided by the path's own
+        // identity, not by this manager's history. A path published FOR this
+        // file (USB / PrintStartController pre-set) is kept; anything else is
+        // cleared so load_thumbnail_for_file() can't short-circuit on it.
+        //
+        // The old guard asked "have WE loaded a thumbnail before?" and skipped
+        // the clear when we hadn't. A manager that never processed the previous
+        // print — fresh after a reconnect or a restart mid-print — therefore
+        // adopted that print's path as if it were ours.
+        const bool preset_for_this_file = has_thumbnail_for(effective_filename);
+        if (!preset_for_this_file) {
             // The clear belongs to the file we are about to load for: "nothing
             // yet for effective_filename", not "nothing for the previous print".
             printer_state_.set_print_thumbnail(effective_filename, "");
@@ -189,25 +199,29 @@ void ActivePrintMediaManager::process_filename(const char* raw_filename) {
         // the per-filename retry budget.
         cancel_thumbnail_retry();
         thumbnail_retry_count_ = 0;
-        thumbnail_loaded_ = false;
+        thumbnail_origin_ = preset_for_this_file ? ThumbnailOrigin::PreSet : ThumbnailOrigin::None;
         load_thumbnail_for_file(effective_filename);
         last_loaded_thumbnail_filename_ = effective_filename;
     }
 }
 
 void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filename) {
-    // Check if thumbnail is already set (e.g., PrintStartController set it from USB).
-    // We still need metadata for layer_count and estimated_time, so don't early-return.
-    const char* current_thumb =
-        lv_subject_get_string(printer_state_.get_print_thumbnail_path_subject());
-    bool skip_thumbnail = (current_thumb && current_thumb[0] != '\0');
+    // A path already published FOR THIS FILE (e.g., PrintStartController set it
+    // from USB) makes the thumbnail download unnecessary. We still need metadata
+    // for layer_count and estimated_time, so don't early-return. A path
+    // published for some OTHER file is not ours to reuse, so it does not skip
+    // anything.
+    const bool skip_thumbnail = has_thumbnail_for(filename);
     if (skip_thumbnail) {
         spdlog::debug(
-            "[ActivePrintMediaManager] Thumbnail already set ({}), will fetch metadata only",
-            current_thumb);
-        // A pre-set path (USB / PrintStartController) counts as loaded — the
-        // notification re-triggers only care about a MISSING thumbnail.
-        thumbnail_loaded_ = true;
+            "[ActivePrintMediaManager] Thumbnail already set for '{}', will fetch metadata only",
+            filename);
+        // Record the provenance WITHOUT claiming the load finished: a pre-set
+        // path skips the fetch but must leave the retry ladder and the
+        // notification re-triggers armed. Only a completed fetch sets Fetched.
+        if (thumbnail_origin_ != ThumbnailOrigin::Fetched) {
+            thumbnail_origin_ = ThumbnailOrigin::PreSet;
+        }
     }
 
     // Skip if no API available
@@ -390,7 +404,7 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
                                 spdlog::info("[ActivePrintMediaManager] Thumbnail path set: {}",
                                              path);
                             }
-                            thumbnail_loaded_ = true;
+                            thumbnail_origin_ = ThumbnailOrigin::Fetched;
                             thumbnail_retry_count_ = 0;
                             cancel_thumbnail_retry();
                             helix::MemoryMonitor::log_now("thumbnail_loaded", spdlog::level::debug);
@@ -511,8 +525,8 @@ void ActivePrintMediaManager::on_retry_timer_fired() {
         spdlog::debug("[ActivePrintMediaManager] Stale retry (superseded load), skipping");
         return;
     }
-    if (thumbnail_loaded_) {
-        return; // loaded in the meantime (e.g., set_thumbnail_path)
+    if (thumbnail_origin_ == ThumbnailOrigin::Fetched) {
+        return; // a fetch completed in the meantime
     }
     spdlog::info("[ActivePrintMediaManager] Retrying thumbnail load for '{}' (attempt {}/{})",
                  retry_filename_, thumbnail_retry_count_ + 1, kMaxThumbnailAttempts);
@@ -616,7 +630,7 @@ void ActivePrintMediaManager::handle_filelist_changed(const std::string& action,
                                                       const std::string& item_path,
                                                       const std::string& source_path) {
     // Main thread (marshalled via token.defer).
-    if (thumbnail_loaded_ || last_effective_filename_.empty()) {
+    if (thumbnail_origin_ == ThumbnailOrigin::Fetched || last_effective_filename_.empty()) {
         return;
     }
 
@@ -667,7 +681,7 @@ void ActivePrintMediaManager::handle_filelist_changed(const std::string& action,
 
 void ActivePrintMediaManager::retrigger_thumbnail_load(const char* reason) {
     // Main thread (marshalled via token.defer).
-    if (thumbnail_loaded_ || last_effective_filename_.empty()) {
+    if (thumbnail_origin_ == ThumbnailOrigin::Fetched || last_effective_filename_.empty()) {
         return;
     }
     spdlog::info("[ActivePrintMediaManager] {} - reloading thumbnail for '{}'", reason,
@@ -683,7 +697,7 @@ void ActivePrintMediaManager::clear_print_info() {
     last_loaded_thumbnail_filename_.clear();
     cancel_thumbnail_retry();
     thumbnail_retry_count_ = 0;
-    thumbnail_loaded_ = false;
+    thumbnail_origin_ = ThumbnailOrigin::None;
 
     // Thread-safe clear of shared subjects (capture printer_state_ for testability)
     PrinterState* state = &printer_state_;
