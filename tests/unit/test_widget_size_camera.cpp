@@ -13,25 +13,24 @@
  * PrinterState's webcam stream/snapshot URLs and returns false when both are
  * empty (src/system/camera_stream.cpp:86-107) — start_stream() then resets
  * stream_ and returns *before* CameraStream::start() (the call that opens a
- * socket) is ever reached. The global PrinterState singleton
- * (get_printer_state(), shared process-wide across the test binary) has no
- * webcam configured by default, and the one other test file that touches
- * PrinterCapabilitiesState::set_webcam_available()
- * (test_queue_update_lifetime.cpp) does so on a locally-constructed
- * PrinterCapabilitiesState, never the global singleton — so this precondition
- * cannot be polluted by test order. The REQUIRE at the top of the test case
- * pins that guarantee rather than trusting it silently.
+ * socket) is ever reached. This test actively zeroes the global PrinterState
+ * singleton's webcam config at the top (get_printer_state() is process-wide
+ * across the test binary, and MoonrakerClientMock::discover_printer() —
+ * exercised by other test files sharing this shard — DOES set it), rather
+ * than only asserting it happens to be empty already; see the zeroing step
+ * below.
  *
- * Because start_stream()/stop_stream() are private and produce no externally
- * observable effect when no camera is configured (the interesting branch
- * bodies below the URL check never run), the edge-trigger property is
- * verified through the OTHER state on_size_changed() mutates in the same
- * branch: camera_image_'s source (cleared on entering compact) and
- * camera_status_'s hidden flag (cleared on leaving compact). Both are
- * artificially set to a sentinel value between two same-target resizes so a
- * spurious re-run of the branch is directly observable — this is the closest
- * available proxy for "the stream lifecycle only fires on the edge" without
- * touching the network.
+ * start_stream()/stop_stream() are private and, with no camera configured,
+ * their own interesting bodies (below the URL check) never run — so
+ * "stream_ non-null" cannot tell a test whether the call happened and
+ * no-op'd versus never happened. CameraWidgetTestAccess exposes call counts
+ * instead: on_size_changed()'s stop_stream()/start_stream() invocations sit
+ * behind guards (`!fullscreen_overlay_`, `active_`) strictly narrower than
+ * the compact-transition conditions that reach them, so on_activate() is
+ * called first (setting active_ = true) to put the start path on the same
+ * footing as the stop path — otherwise the "leaving compact" branch's
+ * start_stream() call would never execute at all, and the assertion would be
+ * as vacuous as checking a proxy that no code touches.
  */
 
 #include "lvgl.h"
@@ -42,7 +41,10 @@
 
 #if HELIX_HAS_CAMERA
 
+#include "ui_update_queue.h"
+
 #include "../lvgl_ui_test_fixture.h"
+#include "../test_helpers/camera_widget_test_access.h"
 #include "../test_helpers/panel_widget_size_harness.h"
 #include "app_globals.h"
 #include "panel_widget_manager.h"
@@ -57,10 +59,18 @@ TEST_CASE_METHOD(LVGLUITestFixture,
                  "camera compact/live layout follows pixels, not spans, and stream "
                  "start/stop stays edge-triggered",
                  "[widget_size][camera]") {
-    // No webcam configured on the shared global PrinterState -> start_stream()
-    // bails out inside CameraStream::configure_from_printer() before any
-    // socket is opened. See the file comment above for why this cannot be
-    // polluted by test order.
+    // Actively zero the global PrinterState singleton's webcam config rather
+    // than trusting it is already empty: MoonrakerClientMock::discover_printer()
+    // (src/api/moonraker_client_mock.cpp) calls
+    // get_printer_state().set_webcam_available(true, ...) on this SAME
+    // process-wide singleton, and MoonrakerAPIDomainTestFixture's constructor
+    // (test_moonraker_api_domain.cpp) triggers that before every test case in
+    // that file. Whether this test observes that pollution depends entirely
+    // on Catch2's shard split — set_webcam_available() defers through
+    // async_lifetime_, so it needs a drain to actually apply.
+    get_printer_state().set_webcam_available(false);
+    helix::ui::UpdateQueue::instance().drain();
+
     REQUIRE(get_printer_state().get_webcam_stream_url().empty());
     REQUIRE(get_printer_state().get_webcam_snapshot_url().empty());
 
@@ -78,6 +88,19 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     REQUIRE(camera_overlay != nullptr);
     REQUIRE(camera_status != nullptr);
 
+    // Put the widget in the same activation state PanelWidgetManager grants a
+    // real, visible instance — active_ gates the "leaving compact ->
+    // start_stream()" call, and the harness alone never calls this. compact_
+    // is still false (its default), so this itself invokes start_stream()
+    // once synchronously (still a no-op — no camera configured) and is the
+    // baseline every count below is measured from.
+    h.widget().on_activate();
+    process_lvgl(30);
+
+    REQUIRE(CameraWidgetTestAccess::active(h.widget()));
+    REQUIRE(CameraWidgetTestAccess::start_stream_calls(h.widget()) == 1);
+    REQUIRE(CameraWidgetTestAccess::stop_stream_calls(h.widget()) == 0);
+
     // --- Entering compact: width AND height both below floor. Contradicting
     // span: 4x4 (old predicate: colspan<=1 && rowspan<=1 -> false, not
     // compact). Seed a non-null image source first (a real, decodable asset —
@@ -94,17 +117,23 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     CHECK(lv_image_get_src(camera_image) == nullptr);
     CHECK_FALSE(lv_obj_has_flag(camera_overlay, LV_OBJ_FLAG_HIDDEN)); // icon overlay shown
     CHECK(lv_obj_has_flag(camera_status, LV_OBJ_FLAG_HIDDEN));        // status text hidden
+    // The actual lifecycle call: entering compact must invoke stop_stream()
+    // exactly once, and must NOT touch start_stream().
+    CHECK(CameraWidgetTestAccess::stop_stream_calls(h.widget()) == 1);
+    CHECK(CameraWidgetTestAccess::start_stream_calls(h.widget()) == 1);
 
     // --- Edge-trigger check (entering-compact direction): resize to the
     // EXACT SAME compact target again (no transition — compact_ was already
     // true). Re-seed the sentinel source; a correct edge-triggered
     // implementation must NOT re-enter the "compact && !was_compact" branch,
-    // so the sentinel must survive.
+    // so the sentinel must survive AND stop_stream_calls must not advance.
     lv_image_set_src(camera_image, "A:assets/images/ams/spoolman_24.png");
     h.resize(3, 3, W_NORMAL - 1, H_TALL - 1); // spans vary, pixels identical
     process_lvgl(30);
 
-    CHECK(lv_image_get_src(camera_image) != nullptr); // NOT re-cleared
+    CHECK(lv_image_get_src(camera_image) != nullptr);                  // NOT re-cleared
+    CHECK(CameraWidgetTestAccess::stop_stream_calls(h.widget()) == 1); // NOT re-called
+    CHECK(CameraWidgetTestAccess::start_stream_calls(h.widget()) == 1);
 
     // --- Leaving compact: width AND height both at/over their floor.
     // Contradicting span: 1x1 (old predicate -> compact stays true).
@@ -112,17 +141,24 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     process_lvgl(30);
 
     CHECK_FALSE(lv_obj_has_flag(camera_status, LV_OBJ_FLAG_HIDDEN)); // status text shown again
+    // active_ is true (set above), so leaving compact must invoke
+    // start_stream() exactly once more, and must NOT touch stop_stream().
+    CHECK(CameraWidgetTestAccess::start_stream_calls(h.widget()) == 2);
+    CHECK(CameraWidgetTestAccess::stop_stream_calls(h.widget()) == 1);
 
     // --- Edge-trigger check (leaving-compact direction): manually re-hide
     // camera_status, then resize to the EXACT SAME non-compact target again
     // (no transition — compact_ was already false). A correct edge-triggered
     // implementation must NOT re-enter the "!compact_ && was_compact" branch,
-    // so the manually-set hidden flag must survive.
+    // so the manually-set hidden flag must survive AND start_stream_calls
+    // must not advance.
     lv_obj_add_flag(camera_status, LV_OBJ_FLAG_HIDDEN);
     h.resize(2, 2, W_WIDE, H_TALLER); // spans vary, pixels identical
     process_lvgl(30);
 
-    CHECK(lv_obj_has_flag(camera_status, LV_OBJ_FLAG_HIDDEN)); // NOT re-shown
+    CHECK(lv_obj_has_flag(camera_status, LV_OBJ_FLAG_HIDDEN));          // NOT re-shown
+    CHECK(CameraWidgetTestAccess::start_stream_calls(h.widget()) == 2); // NOT re-called
+    CHECK(CameraWidgetTestAccess::stop_stream_calls(h.widget()) == 1);
 }
 
 #endif // HELIX_HAS_CAMERA

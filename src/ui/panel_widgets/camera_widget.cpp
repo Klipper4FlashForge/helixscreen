@@ -289,6 +289,7 @@ void CameraWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_p
 }
 
 void CameraWidget::start_stream() {
+    ++start_stream_calls_;
     if (stream_ && stream_->is_running()) {
         spdlog::debug("[CameraWidget] start_stream: already running, skipping");
         return;
@@ -373,6 +374,7 @@ void CameraWidget::start_stream() {
 }
 
 void CameraWidget::stop_stream() {
+    ++stop_stream_calls_;
     if (!stream_) {
         spdlog::trace("[CameraWidget] stop_stream: no stream to stop");
         return;
