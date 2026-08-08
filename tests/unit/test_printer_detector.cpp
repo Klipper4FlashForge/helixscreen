@@ -2486,16 +2486,92 @@ TEST_CASE_METHOD(PrinterDetectorFixture,
     REQUIRE(result.type_name != "Qidi Max 4");
 }
 
+// ============================================================================
+// Regression: the real stock Qidi Q2 fingerprint, transcribed from the
+// printer.cfg a Q2 owner attached to prestonbrown/helixscreen#1047. The Q2
+// ships `[probe_air]` and `[multi_color_controller]` — objects the database
+// credited to the Artillery M1 Pro (95) and the Qidi Max 4 (85/70) as if they
+// were model-unique. They are QIDI *firmware* objects shared across the range,
+// so both sibling entries outscored the Q2's own top signal (M191, 80) and a
+// stock Q2 detected as someone else's printer.
+//
+// Two firmware generations are covered because they fail differently: 1.1.1
+// has no M4029 macro, so nothing vetoes the Artillery M1 Pro; 01.01.02+ added
+// M4029, which vetoes the M1 Pro but leaves the Qidi Max 4 winning.
+// ============================================================================
+
+namespace {
+// Stock Q2 hardware as reported by Klipper. `mcu` is left unset: the attached
+// config includes its MCU id from a separate file that was not captured.
+PrinterHardwareData stock_q2_hardware(bool with_m4029) {
+    std::vector<std::string> objects = {"heater_generic chamber",
+                                        "temperature_sensor Chamber_Thermal_Protection_Sensor",
+                                        "probe_air",
+                                        "multi_color_controller",
+                                        "z_tilt",
+                                        "bed_mesh",
+                                        "exclude_object",
+                                        "filament_switch_sensor filament_switch_sensor",
+                                        "output_pin caselight",
+                                        "gcode_macro M141",
+                                        "gcode_macro M191",
+                                        "gcode_macro CLEAR_NOZZLE"};
+    if (with_m4029) {
+        objects.emplace_back("gcode_macro M4029");
+    }
+
+    return PrinterHardwareData{
+        .heaters = {"extruder", "heater_bed", "heater_generic chamber"},
+        .sensors = {"temperature_sensor Chamber_Thermal_Protection_Sensor"},
+        .fans = {"fan_generic cooling_fan", "heater_fan hotend_fan", "controller_fan chamber_fan",
+                 "controller_fan board_fan", "fan_generic chamber_circulation_fan",
+                 "fan_generic auxiliary_cooling_fan"},
+        .leds = {"output_pin caselight"},
+        .hostname = "linaro-alip",
+        .printer_objects = objects,
+        .steppers = {"stepper_x", "stepper_y", "stepper_z", "stepper_z1"},
+        .kinematics = "corexy",
+        .build_volume = {.x_min = 10, .x_max = 260, .y_min = 10, .y_max = 260, .z_max = 260},
+    };
+}
+} // namespace
+
+TEST_CASE_METHOD(PrinterDetectorFixture,
+                 "PrinterDetector: stock Q2 on 1.1.1 firmware detects Qidi Q2",
+                 "[printer][qidi][q2][regression]") {
+    auto result = PrinterDetector::detect(stock_q2_hardware(/*with_m4029=*/false));
+
+    REQUIRE(result.detected());
+    REQUIRE(result.type_name == "Qidi Q2");
+}
+
+// On 01.01.02+ the M4029 macro vetoes the Artillery M1 Pro on its own, so the
+// demoted probe_air is what keeps the Qidi Max 4 off this profile.
+//
+// This case does NOT yet land on "Qidi Q2". Every Qidi entry fingerprints the
+// same shared stock firmware (chamber heater + M141/M191/CLEAR_NOZZLE) and
+// nothing model-specific outranks it, so five Qidi models tie on score and the
+// winner is decided by database order. Pinning the exact (wrong) winner here
+// would just cement that, so this asserts only the regression that is fixed.
+TEST_CASE_METHOD(PrinterDetectorFixture,
+                 "PrinterDetector: stock Q2 on 01.01.02+ firmware is not an Artillery or a Max 4",
+                 "[printer][qidi][q2][regression]") {
+    auto result = PrinterDetector::detect(stock_q2_hardware(/*with_m4029=*/true));
+
+    REQUIRE(result.detected());
+    REQUIRE(result.type_name != "Artillery M1 Pro");
+    REQUIRE(result.type_name != "Qidi Max 4");
+}
+
 TEST_CASE_METHOD(PrinterDetectorFixture,
                  "PrinterDetector: stock Max 4 fingerprint detects Qidi Max 4",
                  "[printer][qidi][max4]") {
     PrinterHardwareData hardware{
         .heaters = {"extruder", "heater_bed", "heater_generic chamber"},
         .sensors = {"temperature_sensor Chamber_Thermal_Protection_Sensor"},
-        .fans = {"fan_generic cooling_fan", "heater_fan hotend_fan",
-                 "controller_fan chamber_fan", "controller_fan board_fan",
-                 "fan_generic chamber_circulation_fan", "fan_generic auxiliary_cooling_fan",
-                 "fan_generic auxiliary_cooling_fan2"},
+        .fans = {"fan_generic cooling_fan", "heater_fan hotend_fan", "controller_fan chamber_fan",
+                 "controller_fan board_fan", "fan_generic chamber_circulation_fan",
+                 "fan_generic auxiliary_cooling_fan", "fan_generic auxiliary_cooling_fan2"},
         .leds = {"output_pin caselight", "neopixel RGB"},
         .hostname = "linaro-alip",
         .printer_objects = {"heater_generic chamber", "probe_air", "z_tilt", "bed_mesh",

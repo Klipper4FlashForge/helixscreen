@@ -17,13 +17,43 @@ namespace {
 /// user storage at /usr/data; the OpenWrt-class K2 uses /mnt/UDISK.
 constexpr std::array<const char*, 2> kCrealityDataRoots = {"/usr/data", "/mnt/UDISK"};
 
-/// Characters that would end the gcode command or start a new extended
-/// parameter, letting a filename escape `FILENAME=<f>`. Spaces are NOT here:
-/// Klipper's extended-command parser runs a value up to the next `KEY=` or end
-/// of line, so spaces are legal and gcode filenames routinely contain them.
-constexpr const char* kGcodeParamBreakers = "\n\r;#*=";
+/// Characters that would end the gcode command or break out of the quoted
+/// `FILENAME="<f>"` value. Klipper tokenizes extended parameters with `shlex`
+/// in POSIX mode, so `"` closes the value early and `\` is an escape character;
+/// `;`/`#` are shlex comment introducers and `*` is a checksum marker, all of
+/// which older regex-path forks strip before shlex ever runs. Spaces are NOT
+/// here — that is exactly what the quoting buys us.
+constexpr const char* kGcodeParamBreakers = "\n\r;#*=\"\\";
+
+/// Path segment that ends the virtual_sdcard root in every Creality image.
+constexpr const char* kGcodesDirMarker = "/gcodes/";
 
 } // namespace
+
+std::string plr_creality_sdcard_relative_name(const std::string& path) {
+    if (path.empty() || path.front() != '/') {
+        return path; // already relative — nothing to strip
+    }
+    // Preferred: the exact roots we know, so a directory that merely happens to
+    // be called "gcodes" deeper in the tree cannot win.
+    for (const char* root : kCrealityDataRoots) {
+        std::string prefix = std::string(root) + "/printer_data/gcodes/";
+        if (path.rfind(prefix, 0) == 0) {
+            return path.substr(prefix.size());
+        }
+    }
+    // Fallback for a relocated virtual_sdcard path: first "/gcodes/" segment.
+    // First, not last — a job really stored in a "gcodes" subfolder must keep
+    // that subfolder in its relative name.
+    size_t pos = path.find(kGcodesDirMarker);
+    if (pos != std::string::npos) {
+        return path.substr(pos + std::string(kGcodesDirMarker).size());
+    }
+    spdlog::warn("[PLR] Creality recovery path '{}' has no recognizable gcodes root — "
+                 "sending it unchanged",
+                 path);
+    return path;
+}
 
 PlrBackendType plr_select_backend(const PlrCapabilitySignals& caps) {
     // Snapmaker first: its signal is passive, so choosing it never costs a
@@ -102,16 +132,31 @@ PlrRecoveryPlan plr_build_plan(PlrBackendType backend, const std::string& recove
                          detect.completed, detect.file_state, detect.eeprom_state);
             break;
         }
-        if (!plr_is_safe_recovery_filename(recovery_file)) {
-            // The gcode embeds FILENAME=, so with nothing safe to substitute
-            // there is no command we can send at all.
-            spdlog::warn("[PLR] Creality resume withheld: unusable recovery filename '{}'",
-                         recovery_file);
+        {
+            // The sidecar stores an ABSOLUTE path, but cmd_SDCARD_PRINT_FILE looks
+            // the name up in virtual_sdcard's file list, which is relative to the
+            // sdcard root — an absolute path just loses its leading '/' and misses,
+            // giving "Unable to open file". Worse, the reopened file's absolute
+            // name is compared back against the sidecar's file_path, and a mismatch
+            // DELETES the recovery data and prints from the beginning. Both hinge
+            // on sending the relative name.
+            std::string wire_name = plr_creality_sdcard_relative_name(recovery_file);
+            if (!plr_is_safe_recovery_filename(wire_name)) {
+                // The gcode embeds FILENAME=, so with nothing safe to substitute
+                // there is no command we can send at all.
+                spdlog::warn("[PLR] Creality resume withheld: unusable recovery filename '{}'",
+                             recovery_file);
+                break;
+            }
+            // The filename MUST be double-quoted. Klipper tokenizes extended
+            // parameters with shlex(posix, whitespace_split), so an unquoted name
+            // containing a space splits into tokens with no `=` and the whole
+            // command is rejected as "Malformed command args". Moonraker's own
+            // print-start path quotes it the same way (klippy_apis.py).
+            plan.resume_gcode =
+                std::string("SDCARD_PRINT_FILE FILENAME=\"") + wire_name + "\" ISCONTINUEPRINT=1";
             break;
         }
-        plan.resume_gcode =
-            std::string("SDCARD_PRINT_FILE FILENAME=") + recovery_file + " ISCONTINUEPRINT=1";
-        break;
 
     case PlrBackendType::NONE:
         break;

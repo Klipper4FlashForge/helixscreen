@@ -64,8 +64,8 @@ helix::ErrorEvent make_afc_jam() {
 }
 
 /// Counts how many times @p needle appears across the recorded gcode scripts.
-/// execute_gcode() appends a "; from helixscreen" provenance comment, so the
-/// recorded string is never an exact match for the action's gcode.
+/// A substring match, because an action's gcode may be one line of a larger
+/// script; the send layer itself adds nothing (test_gcode_verbatim.cpp).
 int gcode_count(const MoonrakerClientMock& c, const std::string& needle) {
     int n = 0;
     for (const auto& s : c.gcode_script_history()) {

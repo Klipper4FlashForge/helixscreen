@@ -181,6 +181,27 @@ define report_test_result
 	echo "$(GREEN)$(BOLD)✓ $(1) passed in $${DURATION}s$(RESET)"
 endef
 
+# Report the Unity test-case total behind a ctest run.
+#
+# ctest counts EXECUTABLES, so a suite of twelve binaries reports "12 tests"
+# no matter how many cases are inside them — which makes the headline number
+# useless for spotting a case that stopped being registered. Unity prints its
+# own "<n> Tests <n> Failures <n> Ignored" summary per binary, and ctest always
+# archives full per-test output in Testing/Temporary/LastTest.log regardless of
+# --output-on-failure, so the real total is recoverable without a second run.
+#
+# Best-effort: silent if the log is missing or has no Unity summaries (a
+# non-Unity suite, or a ctest that never got that far).
+# Args: $(1) = ctest build dir
+define summarize_unity_cases
+	_lt="$(1)/Testing/Temporary/LastTest.log"; \
+	if [ -f "$$_lt" ]; then \
+		awk '/^[0-9]+ Tests [0-9]+ Failures [0-9]+ Ignored/ { t += $$1; f += $$3; n += 1 } \
+		     END { if (n > 0) printf "  %d Unity test case(s), %d failure(s), across %d executable(s)\n", t, f, n }' \
+			"$$_lt"; \
+	fi
+endef
+
 # ============================================================================
 # Test Dependency System - AUTOMATIC DISCOVERY
 # ============================================================================
@@ -439,6 +460,67 @@ test-shell:
 		echo "$(YELLOW)⚠ bats not found - skipping shell tests$(RESET)"; \
 		echo "  Install with: brew install bats-core (macOS) or apt install bats (Linux)"; \
 	fi
+
+# ============================================================================
+# helix-xml Submodule Test Suite (standalone CMake + Unity + ctest)
+# ============================================================================
+# lib/helix-xml is our own submodule (github.com/prestonbrown/helix-xml) and
+# carries its own test suite, which the HelixScreen test binary does NOT run:
+# helix-tests exercises the engine only through the app. These tests cover the
+# parser, registries, expressions and malformed-input handling directly.
+#
+# The suite is standalone by design — it builds against a PINNED UPSTREAM LVGL
+# pulled by FetchContent, never against our lib/lvgl. Ours has patches/*.patch
+# applied, which inject calls to app-side symbols (helix_crash_note_*) that a
+# standalone link cannot resolve; tests/CMakeLists.txt probes for that marker
+# and rejects -DLVGL_DIR pointing at it. So do NOT try to save the fetch by
+# pointing this at lib/lvgl.
+#
+# Build tree lives under $(BUILD_DIR), NOT inside the submodule. Two reasons:
+# the submodule is edited in place (it is ours), so keeping generated artifacts
+# out of it keeps `git status` there readable; and `make clean` semantics stay
+# with the rest of the build. A developer following the submodule's own README
+# may separately have lib/helix-xml/build — that one is theirs, untouched here.
+#
+# First configure clones LVGL and is slow + needs network. Every run after that
+# is a no-op configure and ~2s of ctest.
+HELIX_XML_TEST_SRC_DIR := $(HELIX_XML_DIR)/tests
+HELIX_XML_TEST_BUILD_DIR ?= $(BUILD_DIR)/helix-xml-tests
+
+# Extra args forwarded to ctest, e.g. HELIX_XML_CTEST_ARGS='-R test_expr'
+HELIX_XML_CTEST_ARGS ?=
+
+test-xml:
+	$(ECHO) "$(CYAN)$(BOLD)Running helix-xml submodule tests (CMake + Unity)...$(RESET)"
+	@if [ ! -f "$(HELIX_XML_TEST_SRC_DIR)/CMakeLists.txt" ]; then \
+		echo "$(RED)$(BOLD)✗ $(HELIX_XML_TEST_SRC_DIR)/ not found — submodule not initialised$(RESET)"; \
+		echo "  Run: git submodule update --init --recursive"; \
+		exit 1; \
+	fi
+	@if ! command -v cmake >/dev/null 2>&1; then \
+		echo "$(RED)$(BOLD)✗ cmake not found — required to build the helix-xml test suite$(RESET)"; \
+		echo "  Install with: brew install cmake (macOS) or apt install cmake (Linux)"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(HELIX_XML_TEST_BUILD_DIR)/CMakeCache.txt" ]; then \
+		echo "$(YELLOW)First configure: FetchContent will clone LVGL (needs network, minutes)...$(RESET)"; \
+	fi
+	@START_TIME=$$(date +%s); \
+	cmake -S $(HELIX_XML_TEST_SRC_DIR) -B $(HELIX_XML_TEST_BUILD_DIR) > /tmp/helix_xml_cmake.log 2>&1 || { \
+		cat /tmp/helix_xml_cmake.log; \
+		echo "$(RED)$(BOLD)✗ helix-xml test configure failed$(RESET)"; \
+		echo "  Log: /tmp/helix_xml_cmake.log"; \
+		exit 1; \
+	}; \
+	cmake --build $(HELIX_XML_TEST_BUILD_DIR) -j $(NPROC) > /tmp/helix_xml_build.log 2>&1 || { \
+		cat /tmp/helix_xml_build.log; \
+		echo "$(RED)$(BOLD)✗ helix-xml test build failed$(RESET)"; \
+		echo "  Log: /tmp/helix_xml_build.log"; \
+		exit 1; \
+	}; \
+	ctest --test-dir $(HELIX_XML_TEST_BUILD_DIR) --output-on-failure --no-tests=error $(HELIX_XML_CTEST_ARGS); \
+	$(call report_test_result,helix-xml submodule tests); \
+	$(call summarize_unity_cases,$(HELIX_XML_TEST_BUILD_DIR))
 
 # ============================================================================
 # Out-of-Process UI Tests (pytest, tests/ui/)
@@ -1090,7 +1172,7 @@ clean-sanitizers:
 # Test Help
 # ============================================================================
 
-.PHONY: help-test test-kiauh test-shell test-ui-pytest test-serial test-asan test-tsan test-asan-one test-tsan-one clean-sanitizers
+.PHONY: help-test test-kiauh test-shell test-xml test-ui-pytest test-serial test-asan test-tsan test-asan-one test-tsan-one clean-sanitizers
 help-test:
 	@if [ -t 1 ] && [ -n "$(TERM)" ] && [ "$(TERM)" != "dumb" ]; then \
 		B='$(BOLD)'; G='$(GREEN)'; Y='$(YELLOW)'; C='$(CYAN)'; X='$(RESET)'; \
@@ -1117,6 +1199,8 @@ help-test:
 	echo "  $${G}test-security$${X}        - Security and injection tests"; \
 	echo "  $${G}test-config$${X}          - Configuration tests"; \
 	echo "  $${G}test-integration$${X}     - Integration tests (with mocks)"; \
+	echo "  $${G}test-xml$${X}             - helix-xml submodule suite (CMake+Unity)"; \
+	echo "  $${G}test-shell$${X}           - Shell/installer tests (bats)"; \
 	echo ""; \
 	echo "$${C}Geometry Tests:$${X}"; \
 	echo "  $${G}test-gcode-geometry$${X}  - G-code to 3D geometry test"; \

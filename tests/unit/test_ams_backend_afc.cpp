@@ -122,6 +122,28 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
             entry->sensors.loaded_to_hub = state;
     }
 
+    // AFC_stepper.extruder — which extruder this lane feeds. Present whether or
+    // not the lane is seated, unlike the lane_loaded back-reference.
+    void set_lane_extruder(int lane_index, const std::string& extruder_name) {
+        auto* entry = slots_.get_mut(lane_index);
+        if (entry)
+            entry->info.extruder_name = extruder_name;
+    }
+
+    // AFC_extruder.lane_loaded — the lane this extruder currently holds.
+    void set_extruder_lane_loaded(const std::string& extruder_name, const std::string& lane_name) {
+        extruder_sensors_[extruder_name].lane_loaded = lane_name;
+    }
+
+    // AFC_extruder.is_standalone, as REPORTED. Only v1.2.0+ publishes it, and its
+    // presence is what dates the install — so a test that wants the pre-1.2.0
+    // shape must simply never call this.
+    void report_extruder_standalone(const std::string& extruder_name, bool standalone) {
+        AfcToolState& ts = tool_states_[extruder_name];
+        ts.is_standalone = standalone;
+        ts.has_is_standalone = true;
+    }
+
     void set_running(bool state) {
         running_ = state;
     }
@@ -153,7 +175,9 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         std::lock_guard<std::mutex> lock(mutex_);
         std::string deferred_error_event;
         bool current_slot_set_by_afc_state = false;
-        parse_afc_state(data, deferred_error_event, current_slot_set_by_afc_state);
+        bool afc_stated_unloaded = false;
+        parse_afc_state(data, deferred_error_event, current_slot_set_by_afc_state,
+                        afc_stated_unloaded);
     }
 
     // Discovery testing helpers
@@ -510,8 +534,35 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         return system_info_;
     }
 
-    // Toolchanger mode setup: configures num_extruders_ and extruders_
-    void setup_toolchanger(int num_extruders) {
+    // Stand in for the configfile.settings response, which the test backend has
+    // no client to fetch. Keys are the LOWERCASED AFC_extruder section names,
+    // exactly as query_afc_configfile_topology() stores them.
+    void seed_extruder_klipper_names(
+        const std::unordered_map<std::string, std::string>& section_to_klipper) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        extruder_klipper_names_ = section_to_klipper;
+        extruder_tool_index_warned_.clear();
+    }
+
+    int tool_index_for(const std::string& ext_name) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return tool_index_for_extruder_unlocked(ext_name);
+    }
+
+    /// Stand in for an `[AFC_Toolchanger …]` section in configfile.settings.
+    void seed_configfile_toolchanger(bool present) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        configfile_has_toolchanger_ = present;
+    }
+
+    bool test_has_toolchanger() const {
+        return has_toolchanger();
+    }
+
+    /// N extruders and NO toolchanger — IDEX, or standalone toolheads each
+    /// driven by their own [AFC_extruder] section. This is a real machine, and
+    /// `AFC_SELECT_TOOL` does not exist on it.
+    void setup_multi_extruder_no_toolchanger(int num_extruders) {
         num_extruders_ = num_extruders;
         extruders_.clear();
         extruder_names_.clear();
@@ -522,6 +573,19 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
             extruders_.push_back(std::move(ext));
             extruder_names_.push_back(std::move(name));
         }
+    }
+
+    /// A real toolchanger: N extruders AND the `[AFC_Toolchanger …]` section
+    /// that registers AFC_SELECT_TOOL. Extruder COUNT alone does not make a
+    /// toolchanger — see setup_multi_extruder_no_toolchanger() — so anything
+    /// asserting on AFC_SELECT_TOOL has to establish the toolchanger itself.
+    ///
+    /// Uses the configfile signal rather than pushing a unit: `unit_infos_` is
+    /// rebuilt wholesale by any later frame carrying `units`, and several
+    /// topology tests below assert on its exact contents.
+    void setup_toolchanger(int num_extruders) {
+        setup_multi_extruder_no_toolchanger(num_extruders);
+        configfile_has_toolchanger_ = true;
     }
 };
 
@@ -1517,33 +1581,33 @@ TEST_CASE("AFC reset_endless_spool continues on partial failure",
 // state updates flow through correctly to internal state.
 // ============================================================================
 
-TEST_CASE("AFC current_state preferred over status field", "[ams][afc][state][phase1]") {
-    // Real device sends "current_state": "Idle" (in AFC global object)
-    // but we only parse "status" field today. current_state should take priority
-    // because it's the newer, more accurate field.
+TEST_CASE("AFC action comes from current_state; a stray AFC.status is ignored",
+          "[ams][afc][state][deadfields]") {
+    // AFC.get_status() publishes current_state and no "status" key at all
+    // (AFC.py v1.2.0:2531-2564; same shape at v1.1.0). "status" exists on
+    // AFC_lane and AFC_extruder, which have their own parsers — reading it off
+    // the AFC object was a second, contradictory action writer that could never
+    // fire on real firmware.
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes_with_slots(4);
 
-    // Feed AFC state with both current_state and status
-    // current_state says "Idle" but status says "Loading" — current_state should win
-    nlohmann::json afc_data = {{"current_state", "Idle"}, {"status", "Loading"}};
-    helper.feed_afc_state(afc_data);
+    SECTION("current_state drives the action") {
+        helper.feed_afc_state({{"current_state", "Loading"}});
+        REQUIRE(helper.get_action() == AmsAction::LOADING);
+    }
 
-    // current_state takes priority over status field
-    REQUIRE(helper.get_action() == AmsAction::IDLE);
-}
+    SECTION("a status key never overrides current_state") {
+        helper.feed_afc_state({{"current_state", "Idle"}, {"status", "Loading"}});
+        REQUIRE(helper.get_action() == AmsAction::IDLE);
+    }
 
-TEST_CASE("AFC current_state fallback to status when no current_state",
-          "[ams][afc][state][phase1]") {
-    // When current_state is absent, fall back to status field (regression guard)
-    AmsBackendAfcTestHelper helper;
-    helper.initialize_test_lanes_with_slots(4);
+    SECTION("a status key on its own moves nothing") {
+        helper.feed_afc_state({{"current_state", "Idle"}});
+        REQUIRE(helper.get_action() == AmsAction::IDLE);
 
-    nlohmann::json afc_data = {{"status", "Loading"}};
-    helper.feed_afc_state(afc_data);
-
-    // Should still work via status field — this PASSES today (regression guard)
-    REQUIRE(helper.get_action() == AmsAction::LOADING);
+        helper.feed_afc_state({{"status", "Loading"}});
+        REQUIRE(helper.get_action() == AmsAction::IDLE);
+    }
 }
 
 TEST_CASE("AFC tool mapping from stepper map field", "[ams][afc][tool_mapping][phase1]") {
@@ -2052,14 +2116,63 @@ TEST_CASE("AFC device action led toggle off when on", "[ams][afc][device_actions
     REQUIRE(helper.has_gcode("TURN_OFF_AFC_LED"));
 }
 
-TEST_CASE("AFC device action quiet_mode dispatches gcode", "[ams][afc][device_actions][phase3]") {
-    AmsBackendAfcTestHelper helper;
-    helper.initialize_test_lanes_with_slots(4);
+TEST_CASE("AFC device action quiet_mode dispatches an explicit ENABLE",
+          "[ams][afc][device_actions][quiet_mode][phase3]") {
+    // AFC_QUIET_MODE's ENABLE parameter defaults to the CURRENT value —
+    // `gcmd.get_int("ENABLE", self._get_quiet_mode(), minval=0, maxval=1)`
+    // (AFC.py v1.2.0:934-953, identical at v1.1.0:736-756) — so a bare
+    // `AFC_QUIET_MODE` sets quiet mode to whatever it already was and the
+    // button does nothing at all.
+    //
+    // The `show_macros` wrapper supplies no parameter either: _create_options
+    // emits `{%set dummy=params.ENABLE|default('0')|int%}` and then
+    // `_AFC_QUIET_MODE {rawparams}` (AFC_functions.py:637-644). The `dummy`
+    // assignment is discarded and rawparams is empty for a bare call.
+    //
+    // So the ENABLE VALUE is the whole test. A prefix or substring match would
+    // re-admit the exact bug, because `AFC_QUIET_MODE` is a prefix of the
+    // correct command.
+    SECTION("off -> on") {
+        AmsBackendAfcTestHelper helper;
+        helper.initialize_test_lanes_with_slots(4);
+        REQUIRE_FALSE(helper.get_quiet_mode()); // default
 
-    auto result = helper.execute_device_action("quiet_mode");
+        REQUIRE(helper.execute_device_action("quiet_mode").success());
 
-    REQUIRE(result.success());
-    REQUIRE(helper.has_gcode("AFC_QUIET_MODE"));
+        REQUIRE(helper.has_gcode("AFC_QUIET_MODE ENABLE=1"));
+        // The value must be the INVERSE of the tracked state, not a constant.
+        REQUIRE_FALSE(helper.has_gcode("AFC_QUIET_MODE ENABLE=0"));
+    }
+
+    SECTION("on -> off") {
+        AmsBackendAfcTestHelper helper;
+        helper.initialize_test_lanes_with_slots(4);
+        helper.feed_afc_state({{"quiet_mode", true}});
+        REQUIRE(helper.get_quiet_mode());
+
+        REQUIRE(helper.execute_device_action("quiet_mode").success());
+
+        REQUIRE(helper.has_gcode("AFC_QUIET_MODE ENABLE=0"));
+        REQUIRE_FALSE(helper.has_gcode("AFC_QUIET_MODE ENABLE=1"));
+    }
+
+    SECTION("never the bare no-op form, whatever the state") {
+        // Exact-match, so this fails if the parameter is ever dropped again.
+        for (bool quiet : {false, true}) {
+            CAPTURE(quiet);
+            AmsBackendAfcTestHelper helper;
+            helper.initialize_test_lanes_with_slots(4);
+            helper.feed_afc_state({{"quiet_mode", quiet}});
+            helper.clear_captured_gcodes();
+
+            REQUIRE(helper.execute_device_action("quiet_mode").success());
+
+            REQUIRE(helper.captured_gcodes.size() == 1);
+            REQUIRE_FALSE(helper.has_gcode("AFC_QUIET_MODE"));
+            REQUIRE(helper.captured_gcodes[0] ==
+                    (quiet ? "AFC_QUIET_MODE ENABLE=0" : "AFC_QUIET_MODE ENABLE=1"));
+        }
+    }
 }
 
 // ============================================================================
@@ -2387,7 +2500,13 @@ TEST_CASE("AFC treats a stale active_load_lane_ as unattributed rather than "
 
     // Attribute to a real lane first, to prove the stale case is what changes
     // behavior here (not simply an always-empty active_load_lane_).
-    helper.set_active_load_lane("lane2");
+    //
+    // Driven through parse_afc_state rather than poking active_load_lane_ alone:
+    // the name only ever reaches us on a frame that also carries current_state,
+    // and lane_recovery_is_attributed() now reads the action too, so setting the
+    // name by itself models a state AFC cannot produce.
+    helper.test_parse_afc_state({{"current_lane", "lane2"}, {"current_state", "Loading"}});
+    REQUIRE(helper.get_active_load_lane() == "lane2");
     REQUIRE(helper.lane_recovery_is_attributed());
     REQUIRE(helper.can_recover_lane_position(1));
 
@@ -2401,6 +2520,88 @@ TEST_CASE("AFC treats a stale active_load_lane_ as unattributed rather than "
     // unattributed rather than disagree with each other.
     REQUIRE_FALSE(helper.lane_recovery_is_attributed());
     REQUIRE_FALSE(helper.can_recover_lane_position(0));
+}
+
+TEST_CASE("AFC: a current_loading latched by a FAILED toolchange is not attribution",
+          "[ams][afc][recovery][eject]") {
+    // AFC.current_loading is set at the top of TOOL_LOAD (AFC.py v1.2.0:1523) and
+    // TOOL_UNLOAD (:1948). It is cleared in exactly two places, set_tool_loaded()
+    // and set_tool_unloaded(), and BOTH clears sit under `if normal_toolchange:`
+    // (AFC_lane.py:1526, :1545) — the success path. A toolchange that fails
+    // therefore pins current_loading to that lane until the next SUCCESSFUL one,
+    // which a user with a jammed lane cannot perform.
+    //
+    // AFC publishes it as `current_lane`, which active_load_lane_ prefers over
+    // current_load precisely because attribution wants "the lane being worked".
+    // That is right while a toolchange is running and wrong once it has stopped:
+    // a latched name is the residue of a failure, not a live diagnosis.
+    //
+    // It matters because can_recover && recovery_attributed OUTRANKS Eject in
+    // decide_unload_mode(). Treating the latch as attribution means the failure
+    // that makes a user want Eject is the very thing that takes Eject away,
+    // replacing it with Recover — a lane reset that retracts toward the hub and
+    // never returns filament to the spool.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+    for (const char* lane : {"lane1", "lane2", "lane3", "lane4"}) {
+        helper.set_lane_hub_routing(lane, "Turtle_1");
+    }
+    helper.set_hub_sensor("Turtle_1", true);
+    for (int i = 0; i < 4; ++i) {
+        helper.set_lane_load_sensor(i, true);
+    }
+
+    SECTION("mid-toolchange, the named lane IS the one being worked") {
+        helper.test_parse_afc_state({{"current_lane", "lane2"}, {"current_state", "Loading"}});
+
+        REQUIRE(helper.get_active_load_lane() == "lane2");
+        CHECK(helper.lane_recovery_is_attributed());
+        CHECK(helper.can_recover_lane_position(1));
+    }
+
+    SECTION("an AFC error state is still a live diagnosis") {
+        // The lane genuinely needs recovery here and AFC is still saying so, so
+        // the attribution stands. Narrowing must not cost the case recovery
+        // ranking exists to serve.
+        helper.test_parse_afc_state({{"current_lane", "lane2"}, {"current_state", "Error"}});
+
+        CHECK(helper.lane_recovery_is_attributed());
+        CHECK(helper.can_recover_lane_position(1));
+    }
+
+    SECTION("back at Idle with the name still latched, it is NOT attribution") {
+        // The failure path: TOOL_LOAD set current_loading, failed, and nothing
+        // ever cleared it. AFC is idle, so no lane is being worked — the name is
+        // stale by construction.
+        helper.test_parse_afc_state({{"current_lane", "lane2"}, {"current_state", "Loading"}});
+        REQUIRE(helper.lane_recovery_is_attributed());
+
+        helper.test_parse_afc_state({{"current_state", "Idle"}});
+
+        // The name is still there; AFC never clears it on failure.
+        REQUIRE(helper.get_active_load_lane() == "lane2");
+        // It no longer outranks Eject...
+        CHECK_FALSE(helper.lane_recovery_is_attributed());
+        // ...but Recover itself must REMAIN offered. can_recover_lane_position()
+        // reads the same name as a safety gate — "only retract a lane AFC itself
+        // names", so a blind opening retract cannot land on the wrong one
+        // (#1182). A latched name still identifies the right lane, and the lane
+        // really may be stranded. Withdrawing the ranking must not withdraw the
+        // recovery; that would strand exactly the user it exists for.
+        CHECK(helper.can_recover_lane_position(1));
+    }
+
+    SECTION("the whole point: Recover stays available but stops displacing Eject") {
+        // decide_unload_mode() ranks `can_recover && attributed` above Eject and
+        // plain `can_recover` below it. With attribution withdrawn and the gate
+        // still open, the jammed lane gets Eject back AND keeps Recover as the
+        // last-resort arm — which is the outcome this whole change is for.
+        helper.test_parse_afc_state({{"current_lane", "lane2"}, {"current_state", "Idle"}});
+
+        CHECK_FALSE(helper.lane_recovery_is_attributed());
+        CHECK(helper.can_recover_lane_position(1));
+    }
 }
 
 TEST_CASE("AFC active_load_lane_ is populated from a current_load delta and "
@@ -2805,22 +3006,22 @@ TEST_CASE("AFC HTLF mixed topology classification from per-lane hub routing",
     helper.feed_afc_stepper("lane0", {{"map", "T0"},
                                       {"extruder", "extruder"},
                                       {"hub", "direct"},
-                                      {"status", "Ready"},
+                                      {"status", "Loaded"},
                                       {"color", "FF0000"}});
     helper.feed_afc_stepper("lane1", {{"map", "T2"},
                                       {"extruder", "extruder1"},
                                       {"hub", "direct"},
-                                      {"status", "Ready"},
+                                      {"status", "Loaded"},
                                       {"color", "00FF00"}});
     helper.feed_afc_stepper("lane2", {{"map", "T1"},
                                       {"extruder", "extruder2"},
                                       {"hub", "HTLF_1"},
-                                      {"status", "Ready"},
+                                      {"status", "Loaded"},
                                       {"color", "0000FF"}});
     helper.feed_afc_stepper("lane3", {{"map", "T3"},
                                       {"extruder", "extruder2"},
                                       {"hub", "HTLF_1"},
-                                      {"status", "Ready"},
+                                      {"status", "Loaded"},
                                       {"color", "FFFF00"}});
 
     // Feed AFC state with unit name
@@ -2869,6 +3070,113 @@ TEST_CASE("AFC HTLF mixed topology classification from per-lane hub routing",
     REQUIRE(found);
 }
 
+TEST_CASE("AFC MIXED unit: a direct-fed lane and a hub-routed lane disagree on unload-before-load",
+          "[ams][afc][topology][mixed][dispatch]") {
+    // needs_unload_before_load() is a PER-LANE question and this is the machine
+    // that proves it: one HTLF unit, lanes 0/1 wired straight to their own
+    // extruders and lanes 2/3 merged through HTLF_1 into a shared one. Feeding
+    // lane 1 disturbs nothing that lane 2 owns; feeding lane 3 must first clear
+    // the shared path. A backend-wide answer cannot say both.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_zero_based(4);
+    helper.initialize_slots_from_discovery();
+    helper.setup_toolchanger(3);
+
+    helper.feed_afc_stepper(
+        "lane0",
+        {{"map", "T0"}, {"extruder", "extruder"}, {"hub", "direct"}, {"status", "Loaded"}});
+    helper.feed_afc_stepper(
+        "lane1",
+        {{"map", "T2"}, {"extruder", "extruder1"}, {"hub", "direct"}, {"status", "Loaded"}});
+    helper.feed_afc_stepper(
+        "lane2",
+        {{"map", "T1"}, {"extruder", "extruder2"}, {"hub", "HTLF_1"}, {"status", "Loaded"}});
+    helper.feed_afc_stepper(
+        "lane3",
+        {{"map", "T3"}, {"extruder", "extruder2"}, {"hub", "HTLF_1"}, {"status", "Loaded"}});
+
+    nlohmann::json afc_state;
+    afc_state["units"] = nlohmann::json::array({"HTLF HTLF_1"});
+    helper.feed_afc_state(afc_state);
+
+    nlohmann::json unit_data;
+    unit_data["lanes"] = nlohmann::json::array({"lane0", "lane1", "lane2", "lane3"});
+    unit_data["extruders"] = nlohmann::json::array({"extruder", "extruder1", "extruder2"});
+    unit_data["hubs"] = nlohmann::json::array({"HTLF_1"});
+    unit_data["buffers"] = nlohmann::json::array();
+    nlohmann::json params;
+    params["AFC_HTLF HTLF_1"] = unit_data;
+    helper.feed_status_update(params);
+
+    // Seat lane 2 (hub-routed) so the serial rule has something to want cleared.
+    helper.set_filament_loaded(true);
+    helper.set_current_slot(2);
+
+    AmsSystemInfo info = helper.get_system_info();
+    REQUIRE(info.units.size() == 1);
+    const AmsUnit& unit = info.units[0];
+    REQUIRE(unit.topology == PathTopology::MIXED);
+    REQUIRE(unit.lane_is_hub_routed.size() == 4);
+    REQUIRE_FALSE(unit.lane_is_hub_routed[1]); // direct
+    REQUIRE(unit.lane_is_hub_routed[3]);       // through HTLF_1
+
+    const int direct_slot = unit.first_slot_global_index + 1;
+    const int hub_slot = unit.first_slot_global_index + 3;
+
+    // The whole point: same backend, same snapshot, two different answers.
+    CHECK_FALSE(helper.needs_unload_before_load(info, direct_slot));
+    CHECK(helper.needs_unload_before_load(info, hub_slot));
+
+    // Guard rail — the backend-wide topology says HUB, so a get_topology()-keyed
+    // rule would have answered "swap" for the direct lane too. That is the bug.
+    REQUIRE(helper.get_topology() == PathTopology::HUB);
+}
+
+TEST_CASE("AFC uniform HUB unit: an unparsed lane does not masquerade as direct-fed",
+          "[ams][afc][topology][mixed][dispatch]") {
+    // lane_is_hub_routed stores `false` for lanes whose routing has not arrived
+    // yet — Moonraker sorts unit objects before AFC_lane ones, so a frame can
+    // carry a unit while some of its lanes have never been parsed (#1229 defect
+    // 4). On a uniform unit that placeholder is indistinguishable from "direct",
+    // which is why the per-lane vector is consulted ONLY on a MIXED unit. Pin it:
+    // every lane of a pure-hub unit still needs the shared path cleared.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_zero_based(4);
+    helper.initialize_slots_from_discovery();
+
+    // lane3's routing is deliberately never fed.
+    for (const char* lane : {"lane0", "lane1", "lane2"}) {
+        helper.feed_afc_stepper(
+            lane,
+            {{"map", "T0"}, {"extruder", "extruder"}, {"hub", "Turtle_1"}, {"status", "Loaded"}});
+    }
+
+    nlohmann::json afc_state;
+    afc_state["units"] = nlohmann::json::array({"Box_Turtle Turtle_1"});
+    helper.feed_afc_state(afc_state);
+
+    nlohmann::json unit_data;
+    unit_data["lanes"] = nlohmann::json::array({"lane0", "lane1", "lane2", "lane3"});
+    unit_data["extruders"] = nlohmann::json::array({"extruder"});
+    unit_data["hubs"] = nlohmann::json::array({"Turtle_1"});
+    unit_data["buffers"] = nlohmann::json::array();
+    nlohmann::json params;
+    params["AFC_BoxTurtle Turtle_1"] = unit_data;
+    helper.feed_status_update(params);
+
+    helper.set_filament_loaded(true);
+    helper.set_current_slot(0);
+
+    AmsSystemInfo info = helper.get_system_info();
+    REQUIRE(info.units.size() == 1);
+    const AmsUnit& unit = info.units[0];
+    REQUIRE(unit.topology == PathTopology::HUB);
+    REQUIRE(unit.lane_is_hub_routed.size() == 4);
+    REQUIRE_FALSE(unit.lane_is_hub_routed[3]); // the placeholder, not a real "direct"
+
+    CHECK(helper.needs_unload_before_load(info, unit.first_slot_global_index + 3));
+}
+
 TEST_CASE("AFC all-hub lanes classified as HUB topology", "[ams][afc][topology]") {
     // When all lanes route through a hub, topology should be HUB (not MIXED)
     AmsBackendAfcTestHelper helper;
@@ -2876,10 +3184,10 @@ TEST_CASE("AFC all-hub lanes classified as HUB topology", "[ams][afc][topology]"
     helper.initialize_slots_from_discovery();
 
     // Feed stepper data: all lanes through hub
-    helper.feed_afc_stepper("lane0", {{"hub", "Hub_1"}, {"status", "Ready"}, {"color", "FF0000"}});
-    helper.feed_afc_stepper("lane1", {{"hub", "Hub_1"}, {"status", "Ready"}, {"color", "00FF00"}});
-    helper.feed_afc_stepper("lane2", {{"hub", "Hub_1"}, {"status", "Ready"}, {"color", "0000FF"}});
-    helper.feed_afc_stepper("lane3", {{"hub", "Hub_1"}, {"status", "Ready"}, {"color", "FFFF00"}});
+    helper.feed_afc_stepper("lane0", {{"hub", "Hub_1"}, {"status", "Loaded"}, {"color", "FF0000"}});
+    helper.feed_afc_stepper("lane1", {{"hub", "Hub_1"}, {"status", "Loaded"}, {"color", "00FF00"}});
+    helper.feed_afc_stepper("lane2", {{"hub", "Hub_1"}, {"status", "Loaded"}, {"color", "0000FF"}});
+    helper.feed_afc_stepper("lane3", {{"hub", "Hub_1"}, {"status", "Loaded"}, {"color", "FFFF00"}});
 
     nlohmann::json afc_state;
     afc_state["units"] = nlohmann::json::array({"OpenAMS AMS_1"});
@@ -2913,13 +3221,13 @@ TEST_CASE("AFC all-direct lanes classified as PARALLEL topology", "[ams][afc][to
 
     // Feed stepper data: all lanes direct
     helper.feed_afc_stepper("lane0",
-                            {{"hub", "direct"}, {"extruder", "extruder"}, {"status", "Ready"}});
+                            {{"hub", "direct"}, {"extruder", "extruder"}, {"status", "Loaded"}});
     helper.feed_afc_stepper("lane1",
-                            {{"hub", "direct"}, {"extruder", "extruder1"}, {"status", "Ready"}});
+                            {{"hub", "direct"}, {"extruder", "extruder1"}, {"status", "Loaded"}});
     helper.feed_afc_stepper("lane2",
-                            {{"hub", "direct"}, {"extruder", "extruder2"}, {"status", "Ready"}});
+                            {{"hub", "direct"}, {"extruder", "extruder2"}, {"status", "Loaded"}});
     helper.feed_afc_stepper("lane3",
-                            {{"hub", "direct"}, {"extruder", "extruder3"}, {"status", "Ready"}});
+                            {{"hub", "direct"}, {"extruder", "extruder3"}, {"status", "Loaded"}});
 
     nlohmann::json afc_state;
     afc_state["units"] = nlohmann::json::array({"Box_Turtle Turtle_1"});
@@ -2956,13 +3264,13 @@ TEST_CASE("AFC direct_load hub field classified as direct (not hub-routed)",
 
     // Feed stepper data: all lanes with hub:"direct_load"
     helper.feed_afc_stepper(
-        "lane0", {{"hub", "direct_load"}, {"extruder", "extruder"}, {"status", "Ready"}});
+        "lane0", {{"hub", "direct_load"}, {"extruder", "extruder"}, {"status", "Loaded"}});
     helper.feed_afc_stepper(
-        "lane1", {{"hub", "direct_load"}, {"extruder", "extruder1"}, {"status", "Ready"}});
+        "lane1", {{"hub", "direct_load"}, {"extruder", "extruder1"}, {"status", "Loaded"}});
     helper.feed_afc_stepper(
-        "lane2", {{"hub", "direct_load"}, {"extruder", "extruder2"}, {"status", "Ready"}});
+        "lane2", {{"hub", "direct_load"}, {"extruder", "extruder2"}, {"status", "Loaded"}});
     helper.feed_afc_stepper(
-        "lane3", {{"hub", "direct_load"}, {"extruder", "extruder3"}, {"status", "Ready"}});
+        "lane3", {{"hub", "direct_load"}, {"extruder", "extruder3"}, {"status", "Loaded"}});
 
     nlohmann::json afc_state;
     afc_state["units"] = nlohmann::json::array({"Box_Turtle Turtle_1"});
@@ -3022,16 +3330,16 @@ TEST_CASE("AFC unit with hubs AND multiple extruders gets PARALLEL topology",
     // Feed stepper map data: lanes 0,1 direct, lanes 2,3 shared via hub
     helper.feed_afc_stepper(
         "lane0",
-        {{"map", "T0"}, {"extruder", "extruder"}, {"status", "Ready"}, {"color", "FF0000"}});
+        {{"map", "T0"}, {"extruder", "extruder"}, {"status", "Loaded"}, {"color", "FF0000"}});
     helper.feed_afc_stepper(
         "lane1",
-        {{"map", "T2"}, {"extruder", "extruder1"}, {"status", "Ready"}, {"color", "00FF00"}});
+        {{"map", "T2"}, {"extruder", "extruder1"}, {"status", "Loaded"}, {"color", "00FF00"}});
     helper.feed_afc_stepper(
         "lane2",
-        {{"map", "T1"}, {"extruder", "extruder2"}, {"status", "Ready"}, {"color", "0000FF"}});
+        {{"map", "T1"}, {"extruder", "extruder2"}, {"status", "Loaded"}, {"color", "0000FF"}});
     helper.feed_afc_stepper(
         "lane3",
-        {{"map", "T3"}, {"extruder", "extruder2"}, {"status", "Ready"}, {"color", "FFFF00"}});
+        {{"map", "T3"}, {"extruder", "extruder2"}, {"status", "Loaded"}, {"color", "FFFF00"}});
 
     // Verify tool mappings
     auto info = helper.get_system_info();
@@ -3136,16 +3444,16 @@ TEST_CASE("AFC hub-routed lanes with shared extruder still classified as HUB",
     // Feed stepper data: all lanes through per-lane hubs but same extruder
     helper.feed_afc_stepper(
         "lane0",
-        {{"hub", "Hub_1"}, {"extruder", "extruder4"}, {"status", "Ready"}, {"color", "FF0000"}});
+        {{"hub", "Hub_1"}, {"extruder", "extruder4"}, {"status", "Loaded"}, {"color", "FF0000"}});
     helper.feed_afc_stepper(
         "lane1",
-        {{"hub", "Hub_2"}, {"extruder", "extruder4"}, {"status", "Ready"}, {"color", "00FF00"}});
+        {{"hub", "Hub_2"}, {"extruder", "extruder4"}, {"status", "Loaded"}, {"color", "00FF00"}});
     helper.feed_afc_stepper(
         "lane2",
-        {{"hub", "Hub_3"}, {"extruder", "extruder4"}, {"status", "Ready"}, {"color", "0000FF"}});
+        {{"hub", "Hub_3"}, {"extruder", "extruder4"}, {"status", "Loaded"}, {"color", "0000FF"}});
     helper.feed_afc_stepper(
         "lane3",
-        {{"hub", "Hub_4"}, {"extruder", "extruder4"}, {"status", "Ready"}, {"color", "FFFF00"}});
+        {{"hub", "Hub_4"}, {"extruder", "extruder4"}, {"status", "Loaded"}, {"color", "FFFF00"}});
 
     nlohmann::json afc_state;
     afc_state["units"] = nlohmann::json::array({"OpenAMS AMS_1"});
@@ -3442,7 +3750,7 @@ TEST_CASE("AFC backend with only AFC_stepper lanes works correctly (no AFC_lane)
                                       {"material", "PETG"},
                                       {"color", "#00FF00"},
                                       {"map", "T1"},
-                                      {"status", "Ready"}});
+                                      {"status", "Loaded"}});
 
     // Verify stepper data parsed correctly
     auto info = helper.get_system_info();
@@ -3515,6 +3823,229 @@ TEST_CASE("AFC eject_lane sends LANE_UNLOAD command", "[ams][afc][eject]") {
 
     REQUIRE(result.success());
     REQUIRE(helper.has_gcode("LANE_UNLOAD LANE=lane1"));
+}
+
+// ============================================================================
+// eject_lane() mirrors upstream LANE_UNLOAD's own refusals
+//
+// Every condition upstream refuses on ends in a bare `return` or falls off the
+// end of an if/elif chain. Klipper acks the G-code as success either way, so
+// without these guards eject_lane() reports success and nothing moves — the
+// user sees a button that does nothing and produces no error to explain it.
+//
+// Two shapes are live in the field and they refuse on DIFFERENT conditions:
+// v1.1.0 keys on the global AFC.current plus the lane's hub routing; v1.2.0
+// (2026-07-26) rewrote the body to key on the lane's own extruder and its
+// is_standalone flag, dropping hub routing entirely. is_standalone arrived in
+// that same release, so whether AFC reports it dates the install.
+//
+// Mutation check: delete the whole lane_unload_refusal_unlocked() call from
+// eject_lane() and every "refuses" case below fails; swap the v1.2.0 arm order
+// so the toolhead test precedes the standalone one and "standalone extruder
+// holding the lane" fails.
+// ============================================================================
+
+TEST_CASE("AFC eject_lane: v1.2.0 shape keys on the lane's own extruder",
+          "[ams][afc][eject][refusal]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+    helper.set_lane_extruder(0, "extruder");
+    helper.set_lane_extruder(1, "extruder");
+
+    SECTION("arm 1: lane-fed extruder not holding this lane — the normal eject") {
+        helper.report_extruder_standalone("extruder", false);
+        helper.set_extruder_lane_loaded("extruder", "lane2");
+
+        REQUIRE(helper.eject_lane(0).success());
+        CHECK(helper.has_gcode("LANE_UNLOAD LANE=lane1"));
+    }
+
+    SECTION("arm 2: standalone extruder IS holding the lane — upstream retracts, so allow") {
+        // The ordering that matters: this lane is at the toolhead, but on a
+        // standalone extruder upstream takes the retract arm BEFORE the
+        // "loaded in toolhead" arm. Refusing here would block a working op.
+        helper.report_extruder_standalone("extruder", true);
+        helper.set_extruder_lane_loaded("extruder", "lane1");
+
+        REQUIRE(helper.eject_lane(0).success());
+        CHECK(helper.has_gcode("LANE_UNLOAD LANE=lane1"));
+    }
+
+    SECTION("arm 3: lane-fed extruder holding this lane — refused, no gcode") {
+        helper.report_extruder_standalone("extruder", false);
+        helper.set_extruder_lane_loaded("extruder", "lane1");
+
+        auto result = helper.eject_lane(0);
+
+        REQUIRE_FALSE(result.success());
+        CHECK(result.result == AmsResult::WRONG_STATE);
+        CHECK(result.user_msg == "Unload from toolhead first");
+        CHECK(helper.captured_gcodes.empty());
+    }
+
+    SECTION("fall-through: standalone extruder holding nothing — the silent case") {
+        // Matches no arm at all: not arm 1 (standalone), not arm 2 (lane_loaded
+        // empty), not arm 3 ("lane1" != ""). Upstream returns having logged
+        // nothing whatsoever.
+        //
+        // The empty lane_loaded must be REPORTED, not merely absent: upstream
+        // always has an extruder_obj and reads a falsy lane_loaded off it,
+        // whereas a missing AFC_extruder object on our side means the frame has
+        // not arrived yet. Unknown is not "holding nothing" — see the delta
+        // section below, which pins that distinction from the other direction.
+        helper.report_extruder_standalone("extruder", true);
+        helper.set_extruder_lane_loaded("extruder", "");
+
+        auto result = helper.eject_lane(0);
+
+        REQUIRE_FALSE(result.success());
+        CHECK(result.result == AmsResult::WRONG_STATE);
+        CHECK(result.user_msg == "Nothing to eject on this toolhead");
+        CHECK(helper.captured_gcodes.empty());
+    }
+
+    SECTION("hub routing is NOT consulted on v1.2.0") {
+        // v1.1.0 refused a direct lane outright. v1.2.0 dropped hub routing from
+        // the decision, so applying the old rule here would block a working eject.
+        helper.report_extruder_standalone("extruder", false);
+        helper.set_lane_hub_routing("lane1", "direct");
+
+        REQUIRE(helper.eject_lane(0).success());
+        CHECK(helper.has_gcode("LANE_UNLOAD LANE=lane1"));
+    }
+
+    SECTION("an AFC_extruder frame that has not arrived is unknown, not empty") {
+        // Standalone reported, but no AFC_extruder object yet — so lane_loaded is
+        // genuinely unknown. Refusing here would block ejects on every frame that
+        // arrives before the extruder object, which Moonraker's deltas make
+        // routine. Mutation check: treat a missing sensors entry as an empty
+        // lane_loaded and this fails.
+        helper.report_extruder_standalone("extruder", true);
+
+        REQUIRE(helper.eject_lane(0).success());
+        CHECK(helper.has_gcode("LANE_UNLOAD LANE=lane1"));
+    }
+}
+
+TEST_CASE("AFC eject_lane: aggregate state is the last resort, never the first",
+          "[ams][afc][eject][refusal]") {
+    // system_info_.filament_loaded / current_slot are DERIVED — parse_afc_state
+    // computes filament_loaded from `loaded_lane`, which prefers
+    // AFC.current_loading and so reads true across an entire toolchange (see
+    // toolhead_is_free_unlocked). They must never outrank a per-lane answer
+    // (#1199), but before any per-lane object has landed they are the only thing
+    // that knows a lane is at the head — and refusing with a clear message beats
+    // firing a LANE_UNLOAD upstream silently discards.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+
+    SECTION("used when no per-lane authority has spoken") {
+        helper.set_filament_loaded(true);
+        helper.set_current_slot(1);
+
+        auto result = helper.eject_lane(1);
+
+        REQUIRE_FALSE(result.success());
+        CHECK(result.result == AmsResult::WRONG_STATE);
+        CHECK(helper.captured_gcodes.empty());
+    }
+
+    SECTION("a non-current slot still ejects while the aggregate says loaded") {
+        helper.set_filament_loaded(true);
+        helper.set_current_slot(1);
+
+        REQUIRE(helper.eject_lane(2).success());
+        CHECK(helper.has_gcode("LANE_UNLOAD LANE=lane3"));
+    }
+
+    SECTION("overruled by the per-lane answer — the whole point of #1199") {
+        // The aggregate says slot 1 is loaded; the lane's own extruder says it
+        // holds lane4, not lane2. The per-lane answer wins and the eject runs.
+        helper.set_filament_loaded(true);
+        helper.set_current_slot(1);
+        helper.set_lane_extruder(1, "extruder");
+        helper.report_extruder_standalone("extruder", false);
+        helper.set_extruder_lane_loaded("extruder", "lane4");
+
+        REQUIRE(helper.eject_lane(1).success());
+        CHECK(helper.has_gcode("LANE_UNLOAD LANE=lane2"));
+    }
+}
+
+TEST_CASE("AFC eject_lane: v1.2.0 attributes per extruder, not globally",
+          "[ams][afc][eject][refusal]") {
+    // A toolchanger is where the v1.1.0 global AFC.current and the v1.2.0
+    // per-extruder lane_loaded actually diverge. lane1 feeds extruder, lane2
+    // feeds extruder1; extruder1 holds lane2. Ejecting lane1 must not be refused
+    // because some OTHER toolhead is loaded.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+    helper.set_lane_extruder(0, "extruder");
+    helper.set_lane_extruder(1, "extruder1");
+    helper.report_extruder_standalone("extruder", false);
+    helper.report_extruder_standalone("extruder1", false);
+    helper.set_extruder_lane_loaded("extruder1", "lane2");
+
+    SECTION("the idle toolhead's lane still ejects") {
+        REQUIRE(helper.eject_lane(0).success());
+        CHECK(helper.has_gcode("LANE_UNLOAD LANE=lane1"));
+    }
+
+    SECTION("the loaded toolhead's own lane is still refused") {
+        auto result = helper.eject_lane(1);
+
+        REQUIRE_FALSE(result.success());
+        CHECK(result.user_msg == "Unload from toolhead first");
+        CHECK(helper.captured_gcodes.empty());
+    }
+}
+
+TEST_CASE("AFC eject_lane: pre-v1.2.0 shape keys on AFC.current and hub routing",
+          "[ams][afc][eject][refusal]") {
+    // No report_extruder_standalone() call anywhere here — an install that never
+    // publishes is_standalone is how the older shape is recognised.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+
+    SECTION("hub-routed lane, nothing at the toolhead — ejects") {
+        helper.set_lane_hub_routing("lane1", "Turtle_1");
+
+        REQUIRE(helper.eject_lane(0).success());
+        CHECK(helper.has_gcode("LANE_UNLOAD LANE=lane1"));
+    }
+
+    SECTION("direct-routed lane — refused, no gcode") {
+        helper.set_lane_hub_routing("lane1", "direct");
+
+        auto result = helper.eject_lane(0);
+
+        REQUIRE_FALSE(result.success());
+        CHECK(result.result == AmsResult::WRONG_STATE);
+        CHECK(result.user_msg == "Unload from the toolhead instead");
+        CHECK(helper.captured_gcodes.empty());
+    }
+
+    SECTION("lane named by AFC.current — refused, no gcode") {
+        helper.set_lane_hub_routing("lane1", "Turtle_1");
+        helper.set_toolhead_lane("lane1");
+
+        auto result = helper.eject_lane(0);
+
+        REQUIRE_FALSE(result.success());
+        CHECK(result.user_msg == "Unload from toolhead first");
+        CHECK(helper.captured_gcodes.empty());
+    }
+
+    SECTION("unknown hub routing is not treated as direct") {
+        // Moonraker sends deltas; a lane whose AFC_stepper frame has not arrived
+        // yet must not inherit a refusal it never earned.
+        REQUIRE(helper.eject_lane(0).success());
+        CHECK(helper.has_gcode("LANE_UNLOAD LANE=lane1"));
+    }
 }
 
 TEST_CASE("AFC eject_lane targets correct lane", "[ams][afc][eject]") {
@@ -3955,11 +4486,15 @@ TEST_CASE("AFC current_tool derived from current_load via tool mapping",
     REQUIRE(info.current_tool == 2); // derived from slot 2 → T2 mapping
 }
 
-TEST_CASE("AFC explicit current_tool overrides derived value", "[ams][afc][status][current_tool]") {
+TEST_CASE("AFC ignores a current_tool key it never publishes",
+          "[ams][afc][status][current_tool][deadfields]") {
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes_with_slots(4); // slot N → tool N
 
-    // AFC reports both current_load and an explicit current_tool that differs
+    // There is no "current_tool" in AFC.get_status() on any version (AFC.py
+    // v1.2.0:2531-2564). The branch that let it override the slot→tool mapping
+    // was unreachable, and honouring it would have let an invented key put the
+    // UI on a tool that does not exist.
     helper.feed_afc_state({{"current_load", "lane3"},
                            {"current_tool", 5},
                            {"current_state", "Idle"},
@@ -3967,8 +4502,8 @@ TEST_CASE("AFC explicit current_tool overrides derived value", "[ams][afc][statu
 
     auto info = helper.get_system_info();
     REQUIRE(info.current_slot == 2);
-    // Explicit current_tool=5 overrides derived T2
-    REQUIRE(info.current_tool == 5);
+    // The slot→tool mapping is the only authority: slot 2 → T2, not the 5 fed in.
+    REQUIRE(info.current_tool == 2);
 }
 
 TEST_CASE("AFC current_tool cleared on unload (current_load null)",
@@ -4013,14 +4548,17 @@ TEST_CASE("AFC current_tool uses default 1:1 mapping from initialize_slots",
     REQUIRE(info.current_tool == 2);
 }
 
-TEST_CASE("AFC explicit filament_loaded not overridden by stepper post-scan",
-          "[ams][afc][status]") {
+TEST_CASE("AFC stepper post-scan owns filament_loaded; a stray AFC.filament_loaded is ignored",
+          "[ams][afc][status][deadfields]") {
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes(4);
     helper.initialize_slots_from_discovery();
 
-    // Single notification with both AFC state (explicit filament_loaded=false during
-    // unload transition) and stepper data that still shows tool_loaded=true
+    // No AFC version publishes filament_loaded on the AFC object (AFC.py
+    // v1.2.0:2531-2564), so the per-lane scan is the only authority. The old
+    // code suppressed the scan whenever the key was merely PRESENT — which,
+    // had AFC ever added it, would have handed a single boolean veto over
+    // every lane's tool_loaded.
     nlohmann::json params;
     params["AFC"] = {{"filament_loaded", false}, {"current_state", "Unloading"}};
     params["AFC_stepper lane1"] = {
@@ -4028,9 +4566,8 @@ TEST_CASE("AFC explicit filament_loaded not overridden by stepper post-scan",
     helper.feed_status_update(params);
 
     auto info = helper.get_system_info();
-    // Explicit filament_loaded=false from AFC takes priority over stepper post-scan
-    REQUIRE_FALSE(info.filament_loaded);
-    // But slot status should still reflect the stepper data
+    // The lane says it is at the toolhead, so the system is loaded.
+    REQUIRE(info.filament_loaded);
     REQUIRE(info.get_slot_global(0)->status == SlotStatus::LOADED);
 }
 
@@ -4215,6 +4752,51 @@ TEST_CASE("AFC load_filament sends CHANGE_TOOL in single-extruder mode",
     REQUIRE(result);
     REQUIRE(helper.has_gcode("CHANGE_TOOL LANE=lane2"));
     REQUIRE_FALSE(helper.has_gcode_starting_with("AFC_SELECT_TOOL"));
+}
+
+TEST_CASE("AFC multi-extruder WITHOUT a toolchanger never sends AFC_SELECT_TOOL",
+          "[ams][afc][toolchanger][select_tool]") {
+    // The machine the old `num_extruders_ > 1` gate got wrong: IDEX, or two
+    // standalone toolheads, each with its own [AFC_extruder] section and no
+    // [AFC_Toolchanger] anywhere. AFC_SELECT_TOOL is registered exclusively by
+    // AfcToolchanger.__init__ (AFC_Toolchanger.py:47-49, v1.2.0 only), so
+    // Klipper answers `// Unknown command:"AFC_SELECT_TOOL"` and the operation
+    // silently does nothing.
+    SECTION("load_filament falls back to CHANGE_TOOL") {
+        AmsBackendAfcTestHelper helper;
+        helper.initialize_test_lanes_with_slots(4);
+        helper.set_running(true);
+        helper.setup_multi_extruder_no_toolchanger(3);
+
+        REQUIRE(helper.load_filament(1));
+        REQUIRE(helper.has_gcode("CHANGE_TOOL LANE=lane2"));
+        REQUIRE_FALSE(helper.has_gcode_starting_with("AFC_SELECT_TOOL"));
+    }
+
+    SECTION("change_tool falls back to T{n}") {
+        AmsBackendAfcTestHelper helper;
+        helper.initialize_test_lanes_with_slots(4);
+        helper.set_running(true);
+        helper.setup_multi_extruder_no_toolchanger(3);
+
+        REQUIRE(helper.change_tool(1));
+        REQUIRE(helper.has_gcode("T1"));
+        REQUIRE_FALSE(helper.has_gcode_starting_with("AFC_SELECT_TOOL"));
+    }
+
+    SECTION("the SAME machine plus a toolchanger section does tool-select") {
+        // Both halves of the branch off one fixture: the only difference is the
+        // toolchanger, which is exactly what the gate is supposed to key on.
+        AmsBackendAfcTestHelper helper;
+        helper.initialize_test_lanes_with_slots(4);
+        helper.set_running(true);
+        helper.setup_multi_extruder_no_toolchanger(3);
+        helper.seed_configfile_toolchanger(true);
+
+        REQUIRE(helper.change_tool(1));
+        REQUIRE(helper.has_gcode("AFC_SELECT_TOOL TOOL=extruder1"));
+        REQUIRE_FALSE(helper.has_gcode("T1"));
+    }
 }
 
 TEST_CASE("AFC unload_filament sends bare TOOL_UNLOAD in toolchanger mode (no slot)",
@@ -4852,7 +5434,7 @@ TEST_CASE("AFC stepper-only updates do not overwrite current_slot set by AFC sta
     // Step 1: AFC global state sets current_load = "lane9" (slot 9)
     {
         nlohmann::json params;
-        params["AFC"] = {{"current_load", "lane9"}, {"filament_loaded", true}};
+        params["AFC"] = {{"current_load", "lane9"}};
         params["AFC_stepper lane9"] = {{"status", "Tooled"}, {"tool_loaded", true},
                                        {"color", "00AEFF"},  {"material", "ASA"},
                                        {"spool_id", 42},     {"weight", 800}};
@@ -4864,7 +5446,7 @@ TEST_CASE("AFC stepper-only updates do not overwrite current_slot set by AFC sta
     {
         nlohmann::json params;
         params["AFC_stepper lane0"] = {
-            {"prep", true}, {"load", true}, {"status", "Ready"}, {"tool_loaded", false}};
+            {"prep", true}, {"load", true}, {"status", "Loaded"}, {"tool_loaded", false}};
         helper.feed_status_update(params);
     }
 
@@ -4880,6 +5462,76 @@ TEST_CASE("AFC stepper-only updates do not overwrite current_slot set by AFC sta
         helper.feed_status_update(params);
     }
     CHECK(helper.get_system_info().current_slot == 9);
+}
+
+TEST_CASE("AFC carriage authority does not invent filament AFC says is absent",
+          "[ams][afc][reconciliation][1229]") {
+    // Guard rails on the afc_stated_unloaded suppression. The carriage is the
+    // single authority on WHICH tool is current (#1229) and that must not be
+    // weakened — it may simply not manufacture a loaded slot on a frame where AFC
+    // said the toolhead is empty.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_zero_based(4);
+    helper.initialize_slots_from_discovery();
+    helper.setup_toolchanger(4);
+    // "Tooled", not "Loaded": upstream's AFCLaneState separates the two
+    // (AFC_lane.py:55-65) and only TOOLED / TOOL_LOADED / tool_loaded mean the
+    // filament reached a melt zone — "Loaded" is loaded to the HUB
+    // (AFC_lane.py:873). The sections below assert filament_loaded, which is a
+    // toolhead claim, so the lanes have to actually be at their toolheads.
+    // All four at once is legitimate here and not a contrived state: a
+    // toolchanger has one melt zone PER toolhead, which is why reconcile's own
+    // comment notes several lanes are loaded simultaneously on these machines.
+    for (int i = 0; i < 4; ++i) {
+        helper.feed_afc_stepper(
+            "lane" + std::to_string(i),
+            {{"map", "T" + std::to_string(i)}, {"status", "Tooled"}, {"tool_loaded", true}});
+    }
+
+    SECTION("a frame silent about current_load still lets the carriage elect") {
+        // The authority itself is untouched: no AFC key, so nothing suppresses it.
+        nlohmann::json params;
+        params["toolchanger"] = {{"tool_number", 2}};
+        helper.feed_status_update(params);
+
+        auto info = helper.get_system_info();
+        CHECK(info.current_slot == 2);
+        CHECK(info.current_tool == 2);
+    }
+
+    SECTION("the suppression is frame-scoped and cannot latch") {
+        // #1229 was a value latching and never moving again. Suppress on one
+        // frame, then elect normally on the next.
+        {
+            nlohmann::json params;
+            params["AFC"] = {{"current_load", nullptr}};
+            params["toolchanger"] = {{"tool_number", 2}};
+            helper.feed_status_update(params);
+        }
+        REQUIRE(helper.get_system_info().current_slot == -1);
+
+        {
+            nlohmann::json params;
+            params["toolchanger"] = {{"tool_number", 2}};
+            helper.feed_status_update(params);
+        }
+        auto info = helper.get_system_info();
+        CHECK(info.current_slot == 2); // elects again — the flag did not stick
+        CHECK(info.filament_loaded == true);
+    }
+
+    SECTION("a named current_load is not mistaken for the unloaded signal") {
+        // afc_stated_unloaded must be narrower than current_slot_set_by_afc_state,
+        // which a named lane also sets. Reusing that flag would suppress here too.
+        nlohmann::json params;
+        params["AFC"] = {{"current_load", "lane1"}};
+        params["toolchanger"] = {{"tool_number", 1}};
+        helper.feed_status_update(params);
+
+        auto info = helper.get_system_info();
+        CHECK(info.current_slot == 1);
+        CHECK(info.filament_loaded == true);
+    }
 }
 
 TEST_CASE("AFC reconciliation updates current_slot when active lane becomes unloaded",
@@ -4902,7 +5554,7 @@ TEST_CASE("AFC reconciliation updates current_slot when active lane becomes unlo
     {
         nlohmann::json params;
         params["AFC"] = {{"current_load", "lane3"}};
-        params["AFC_stepper lane2"] = {{"status", "Ready"}, {"tool_loaded", false}};
+        params["AFC_stepper lane2"] = {{"status", "Loaded"}, {"tool_loaded", false}};
         params["AFC_stepper lane3"] = {
             {"status", "Tooled"}, {"tool_loaded", true}, {"color", "00FF00"}, {"material", "PETG"}};
         helper.feed_status_update(params);
@@ -4930,7 +5582,7 @@ TEST_CASE("AFC reconciliation via stepper-only updates current_slot when no auth
     // Step 2: Stepper-only tool change — should detect and update
     {
         nlohmann::json params;
-        params["AFC_stepper lane2"] = {{"status", "Ready"}, {"tool_loaded", false}};
+        params["AFC_stepper lane2"] = {{"status", "Loaded"}, {"tool_loaded", false}};
         params["AFC_stepper lane3"] = {
             {"status", "Tooled"}, {"tool_loaded", true}, {"color", "00FF00"}, {"material", "PETG"}};
         helper.feed_status_update(params);
@@ -4950,10 +5602,12 @@ TEST_CASE("AFC non-active extruder does not overwrite current_slot", "[ams][afc]
     helper.feed_afc_stepper(
         "lane0", {{"map", "T0"}, {"status", "Tooled"}, {"tool_loaded", true}, {"color", "FF0000"}});
     helper.feed_afc_stepper(
-        "lane1", {{"map", "T1"}, {"status", "Ready"}, {"tool_loaded", false}, {"color", "00FF00"}});
+        "lane1",
+        {{"map", "T1"}, {"status", "Loaded"}, {"tool_loaded", false}, {"color", "00FF00"}});
 
-    // AFC state says current_load = lane0, current_tool = 0
-    helper.feed_afc_state({{"current_load", "lane0"}, {"current_tool", 0}});
+    // AFC state says current_load = lane0. The tool number is DERIVED from that
+    // lane's mapping (lane0 -> slot 0 -> T0); AFC publishes no current_tool key.
+    helper.feed_afc_state({{"current_load", "lane0"}});
     REQUIRE(helper.get_system_info().current_slot == 0);
     REQUIRE(helper.get_system_info().current_tool == 0);
 
@@ -4975,7 +5629,7 @@ TEST_CASE("AFC filament unload (current_load=null) clears state", "[ams][afc][re
     // Load filament into lane2
     {
         nlohmann::json params;
-        params["AFC"] = {{"current_load", "lane2"}, {"filament_loaded", true}};
+        params["AFC"] = {{"current_load", "lane2"}};
         params["AFC_stepper lane2"] = {
             {"status", "Tooled"}, {"tool_loaded", true}, {"color", "FF0000"}, {"material", "PLA"}};
         helper.feed_status_update(params);
@@ -5000,13 +5654,17 @@ TEST_CASE("AFC tool changer reconciliation derives current_slot from active tool
 
     // Set up tool mapping: T0->slot0, T1->slot1, T2->slot2, T3->slot3
     helper.feed_afc_stepper(
-        "lane0", {{"map", "T0"}, {"status", "Ready"}, {"tool_loaded", false}, {"color", "FF0000"}});
+        "lane0",
+        {{"map", "T0"}, {"status", "Loaded"}, {"tool_loaded", false}, {"color", "FF0000"}});
     helper.feed_afc_stepper(
-        "lane1", {{"map", "T1"}, {"status", "Ready"}, {"tool_loaded", false}, {"color", "00FF00"}});
+        "lane1",
+        {{"map", "T1"}, {"status", "Loaded"}, {"tool_loaded", false}, {"color", "00FF00"}});
     helper.feed_afc_stepper(
-        "lane2", {{"map", "T2"}, {"status", "Ready"}, {"tool_loaded", false}, {"color", "0000FF"}});
+        "lane2",
+        {{"map", "T2"}, {"status", "Loaded"}, {"tool_loaded", false}, {"color", "0000FF"}});
     helper.feed_afc_stepper(
-        "lane3", {{"map", "T3"}, {"status", "Ready"}, {"tool_loaded", false}, {"color", "FFFF00"}});
+        "lane3",
+        {{"map", "T3"}, {"status", "Loaded"}, {"tool_loaded", false}, {"color", "FFFF00"}});
 
     // Verify tool mapping is populated
     auto mapping = helper.get_tool_to_slot_map();
@@ -5025,13 +5683,21 @@ TEST_CASE("AFC tool changer reconciliation derives current_slot from active tool
         helper.feed_status_update(params);
     }
 
-    // Simulate: Klipper reports active tool = T2, current_load is null (mid tool-swap)
-    // parse_afc_state treats null current_load as authoritative "unloaded" state,
-    // so the tool changer reconciliation block does not override current_slot.
-    // current_tool is preserved since it was explicitly provided.
+    // Simulate: Klipper reports active tool = T2, current_load is null (mid
+    // tool-swap). The tool number comes from Klipper's own toolchanger object,
+    // which is where a mid-swap tool number REALLY comes from — AFC.get_status()
+    // publishes no "current_tool" key on any version (AFC.py v1.2.0:2531-2564),
+    // so the fixture used to prove this with a field the firmware never sends.
+    //
+    // Both keys land in one frame, the same way Moonraker batches them:
+    // parse_afc_state() runs first and clears the tool on the null current_load,
+    // then the toolchanger block re-establishes T2. current_slot stays -1
+    // because the null current_load is authoritative "unloaded" and sets
+    // current_slot_set_by_afc_state, which the reconciliation block honours.
     {
         nlohmann::json params;
-        params["AFC"] = {{"current_load", nullptr}, {"current_tool", 2}};
+        params["AFC"] = {{"current_load", nullptr}};
+        params["toolchanger"] = {{"tool_number", 2}};
         helper.feed_status_update(params);
     }
 
@@ -5233,17 +5899,24 @@ TEST_CASE("AFC LOAD_SWAP template mirrors AFC's real CHANGE_TOOL order",
     };
     // AFC's CHANGE_TOOL is TOOL_UNLOAD(old) then TOOL_LOAD(new):
     //   heat -> cut/form tip -> retract old to lane      (TOOL_UNLOAD)
-    //   -> feed new to toolhead -> poop -> kick -> brush (TOOL_LOAD)
-    // Verified against upstream v1.1.0 and v1.2.0 (AFC.py do_poop_kick_wipe is
-    // called *after* load_sequence succeeds), 2026-07-26.
+    //   -> feed new to toolhead -> poop -> wipe -> kick -> wipe (TOOL_LOAD)
+    // do_poop_kick_wipe runs *after* load_sequence succeeds, and its wipe runs
+    // twice, straddling the kick: AFC.py v1.2.0:1390-1413, and the same sequence
+    // inline in TOOL_LOAD at v1.1.0:1417-1440.
+    //
+    // The template is therefore ordered by FIRST occurrence, which puts brush
+    // BEFORE kick. Listing kick first made the published index run 4 -> 6 -> 5
+    // on every stock toolchange.
     REQUIRE(idx("heat") == 0);
     REQUIRE(idx("cut") == 1);
     REQUIRE(idx("unload") == 2);
     REQUIRE(idx("feed") == 3);
     REQUIRE(idx("poop") == 4);
-    REQUIRE(idx("kick") == 5);
-    REQUIRE(idx("brush") == 6);
+    REQUIRE(idx("brush") == 5);
+    REQUIRE(idx("kick") == 6);
     REQUIRE(idx("load") == 7);
+    // The load-bearing half: brush precedes kick because the FIRST wipe does.
+    REQUIRE(idx("brush") < idx("kick"));
 
     // The purge-to-bucket and the kick happen AFTER the new filament is fed —
     // that is the entire point of the poop, it purges the old colour out through
@@ -5267,9 +5940,10 @@ TEST_CASE("AFC LOAD_FRESH and UNLOAD templates match the real sequences",
         return out;
     };
     // A fresh load is TOOL_LOAD alone: no cut, no unload of a previous lane, but
-    // do_poop_kick_wipe still runs afterwards.
+    // do_poop_kick_wipe still runs afterwards — same poop / wipe / kick / wipe
+    // body, so the same first-occurrence order as LOAD_SWAP.
     REQUIRE(ids(StepOperationType::LOAD_FRESH) ==
-            std::vector<std::string>{"heat", "feed", "poop", "kick", "brush", "load"});
+            std::vector<std::string>{"heat", "feed", "poop", "brush", "kick", "load"});
     // TOOL_UNLOAD alone: heat, cut/form tip, then pull back to the lane.
     REQUIRE(ids(StepOperationType::UNLOAD) == std::vector<std::string>{"heat", "cut", "unload"});
 }
@@ -5381,7 +6055,11 @@ TEST_CASE("AFC parse: absent fields are retained (deltas, not snapshots)", "[ams
     // A weight-only delta must not disturb identity.
     helper.feed_afc_stepper("lane1", {{"weight", 500.0}});
 
-    const auto* slot = helper.get_system_info().get_slot_global(0);
+    // get_system_info() returns by value; hold the snapshot in a named local.
+    // Binding the pointer to the temporary let it die at the end of the
+    // statement, so every check below read freed memory (ASAN: heap-use-after-free).
+    const AmsSystemInfo info = helper.get_system_info();
+    const auto* slot = info.get_slot_global(0);
     REQUIRE(slot->spoolman_id == 86);
     REQUIRE(slot->material == "ASA");
     REQUIRE(slot->color_rgb == 0xE53935);
@@ -5433,7 +6111,7 @@ TEST_CASE("AFC can_recover_lane_position requires filament at the hub", "[ams][a
 
     SECTION("toolhead loaded -> reset refused even with hub sensor triggered") {
         helper.feed_afc_hub("Turtle_1", {{"state", true}});
-        helper.feed_afc_state({{"filament_loaded", true}, {"current_load", "lane1"}});
+        helper.feed_afc_state({{"current_load", "lane1"}});
         CHECK_FALSE(helper.can_recover_lane_position(0));
     }
 
@@ -6124,7 +6802,10 @@ TEST_CASE("AFC full multi-lane v1.2.0 frame lands on every slot",
         lane["bed_temp"] = lf.bed_temp;
         lane["initial_weight"] = 1000.0;
         lane["remember_spool"] = true;
-        lane["status"] = "Ready";
+        // AFCLaneState.LOADED — "loaded to hub". There is no "Ready" in the
+        // lane `status` vocabulary (AFC_lane.py:65-76); that word belongs to the
+        // separate filament_status field.
+        lane["status"] = "Loaded";
         helper.feed_afc_stepper(lf.name, lane);
     }
 
@@ -6230,14 +6911,17 @@ class AfcDispatchAckHelper : public AmsBackendAfc {
         helix::ui::UpdateQueue::instance().drain();
     }
 
-    void feed_state(const std::string& current_state) {
-        nlohmann::json afc;
-        afc["current_state"] = current_state;
+    /// Feed an arbitrary AFC-object frame through the real status handler.
+    void feed_afc(const nlohmann::json& afc) {
         nlohmann::json params;
         params["AFC"] = afc;
         nlohmann::json notification;
         notification["params"] = nlohmann::json::array({params, 0.0});
         handle_status_update(notification);
+    }
+
+    void feed_state(const std::string& current_state) {
+        feed_afc(nlohmann::json{{"current_state", current_state}});
     }
 
     void age_action(std::chrono::seconds elapsed) {
@@ -6248,6 +6932,13 @@ class AfcDispatchAckHelper : public AmsBackendAfc {
     void mark_filament_loaded(bool loaded) {
         std::lock_guard<std::mutex> lock(mutex_);
         system_info_.filament_loaded = loaded;
+    }
+
+    /// Stand in for an `[AFC_Toolchanger …]` section in configfile.settings —
+    /// the backend has no client here, so the real query never runs.
+    void seed_configfile_toolchanger(bool present) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        configfile_has_toolchanger_ = present;
     }
 
     [[nodiscard]] AmsAction action() const {
@@ -6495,4 +7186,267 @@ TEST_CASE("AFC enable_bypass sends the sensor enable when nothing is loaded",
     // The AFC ctor defaults has_hardware_bypass_sensor to true; discovery
     // downgrades it to "virtual_bypass" only when Klipper publishes that object.
     REQUIRE(helper.has_gcode("SET_FILAMENT_SENSOR SENSOR=bypass ENABLE=1"));
+}
+
+// ============================================================================
+// AFC_SELECT_TOOL is gated on a toolchanger EXISTING, not on the extruder count
+// ============================================================================
+//
+// AFC_SELECT_TOOL is registered by AfcToolchanger.__init__ and nowhere else
+// (AFC_Toolchanger.py:47-49), a file that exists only from v1.2.0 and that
+// Klipper loads only for an `[AFC_Toolchanger <name>]` section. An IDEX or
+// standalone-toolhead machine has several [AFC_extruder] sections and no
+// toolchanger: `num_extruders_ > 1` was true there, we emitted the command,
+// Klipper answered `// Unknown command:"AFC_SELECT_TOOL"`, and the load simply
+// never happened.
+//
+// Two independent sufficient signals, because neither covers every topology:
+// the `[AFC_Toolchanger …]` section in configfile.settings (authoritative — it
+// IS the registration condition), and a `Toolchanger` entry in AFC.units. The
+// units array misses a toolchanger whose toolheads are all lane-fed, because
+// AFC only emits a unit with `len(unit.lanes) > 0` (AFC.py v1.2.0:2554) and
+// AFCExtruder.check_lanes() pops the synthetic per-toolhead lane back off the
+// unit as soon as a real lane feeds that head (AFC_extruder.py:391-401).
+
+TEST_CASE("AFC toolchanger detection", "[ams][afc][toolchanger][select_tool]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes(4);
+
+    SECTION("nothing reported at all") {
+        REQUIRE_FALSE(helper.test_has_toolchanger());
+    }
+
+    SECTION("a BoxTurtle is not a toolchanger") {
+        helper.feed_afc_state({{"units", {"Box_Turtle Turtle_1"}}});
+        REQUIRE(helper.get_unit_infos().size() == 1);
+        REQUIRE_FALSE(helper.test_has_toolchanger());
+    }
+
+    SECTION("several extruders without a toolchanger is still not a toolchanger") {
+        // The IDEX / standalone-toolhead machine. This is the whole defect:
+        // extruder COUNT says nothing about whether AFC_SELECT_TOOL exists.
+        helper.feed_afc_state({{"units", {"Box_Turtle Turtle_1"}},
+                               {"extruders", {"extruder", "extruder1", "extruder2"}}});
+        REQUIRE(helper.get_extruder_names().size() == 3);
+        REQUIRE_FALSE(helper.test_has_toolchanger());
+    }
+
+    SECTION("signal 2: a published Toolchanger unit") {
+        helper.feed_afc_state({{"units", {"Toolchanger TC_1"}}});
+        REQUIRE(helper.test_has_toolchanger());
+    }
+
+    SECTION("signal 2 alongside a lane unit") {
+        helper.feed_afc_state({{"units", {"Box_Turtle Turtle_1", "Toolchanger TC_1"}}});
+        REQUIRE(helper.test_has_toolchanger());
+    }
+
+    SECTION("signal 2: the type is user-overridable, so matching is case-insensitive") {
+        helper.feed_afc_state({{"units", {"toolchanger tc"}}});
+        REQUIRE(helper.test_has_toolchanger());
+    }
+
+    SECTION("signal 1 alone: lane-fed toolchanger publishes NO Toolchanger unit") {
+        // A BoxTurtle feeding several heads on a shuttle. Every toolhead has a
+        // real lane, so check_lanes() popped each synthetic lane off the
+        // Toolchanger unit and AFC's `len(unit.lanes) > 0` filter drops it from
+        // the units array entirely. Only configfile knows.
+        helper.feed_afc_state(
+            {{"units", {"Box_Turtle Turtle_1"}}, {"extruders", {"extruder", "extruder1"}}});
+        REQUIRE_FALSE(helper.test_has_toolchanger()); // units alone: invisible
+        helper.seed_configfile_toolchanger(true);
+        REQUIRE(helper.test_has_toolchanger());
+    }
+
+    SECTION("signal 1 stays latched across later status frames") {
+        helper.seed_configfile_toolchanger(true);
+        helper.feed_afc_state({{"units", {"Box_Turtle Turtle_1"}}});
+        REQUIRE(helper.test_has_toolchanger());
+    }
+}
+
+TEST_CASE("AFC load_filament only uses AFC_SELECT_TOOL on a toolchanger",
+          "[ams][afc][toolchanger][select_tool]") {
+    SECTION("multi-extruder, NO toolchanger unit -> CHANGE_TOOL") {
+        AfcDispatchAckHelper h;
+        h.feed_afc({{"units", {"Box_Turtle Turtle_1"}},
+                    {"extruders", {"extruder", "extruder1", "extruder2", "extruder3"}}});
+
+        REQUIRE(h.load_filament(2).success());
+        REQUIRE(h.sent().size() == 1);
+        // The regression: this used to be `AFC_SELECT_TOOL TOOL=extruder2`,
+        // which Klipper does not know, so nothing loaded.
+        REQUIRE(h.sent()[0] == "CHANGE_TOOL LANE=lane3");
+    }
+
+    SECTION("toolchanger unit present -> AFC_SELECT_TOOL") {
+        AfcDispatchAckHelper h;
+        h.feed_afc({{"units", {"Toolchanger TC_1"}},
+                    {"extruders", {"extruder", "extruder1", "extruder2", "extruder3"}}});
+
+        REQUIRE(h.load_filament(2).success());
+        REQUIRE(h.sent().size() == 1);
+        REQUIRE(h.sent()[0] == "AFC_SELECT_TOOL TOOL=extruder2");
+    }
+
+    SECTION("single extruder, no units -> CHANGE_TOOL") {
+        AfcDispatchAckHelper h;
+        REQUIRE(h.load_filament(0).success());
+        REQUIRE(h.sent()[0] == "CHANGE_TOOL LANE=lane1");
+    }
+
+    SECTION("lane-fed toolchanger: no Toolchanger unit, but configfile has the section") {
+        // The topology the units array cannot see. Must still tool-select.
+        AfcDispatchAckHelper h;
+        h.seed_configfile_toolchanger(true);
+        h.feed_afc({{"units", {"Box_Turtle Turtle_1"}},
+                    {"extruders", {"extruder", "extruder1", "extruder2", "extruder3"}}});
+
+        REQUIRE(h.load_filament(2).success());
+        REQUIRE(h.sent()[0] == "AFC_SELECT_TOOL TOOL=extruder2");
+    }
+}
+
+TEST_CASE("AFC change_tool only uses AFC_SELECT_TOOL on a toolchanger",
+          "[ams][afc][toolchanger][select_tool]") {
+    SECTION("multi-extruder, NO toolchanger unit -> T<n>") {
+        AfcDispatchAckHelper h;
+        h.feed_afc({{"units", {"Box_Turtle Turtle_1"}},
+                    {"extruders", {"extruder", "extruder1", "extruder2", "extruder3"}}});
+
+        REQUIRE(h.change_tool(2).success());
+        REQUIRE(h.sent()[0] == "T2");
+    }
+
+    SECTION("toolchanger unit present -> AFC_SELECT_TOOL") {
+        AfcDispatchAckHelper h;
+        h.feed_afc({{"units", {"Toolchanger TC_1"}},
+                    {"extruders", {"extruder", "extruder1", "extruder2", "extruder3"}}});
+
+        REQUIRE(h.change_tool(2).success());
+        REQUIRE(h.sent()[0] == "AFC_SELECT_TOOL TOOL=extruder2");
+    }
+
+    SECTION("lane-fed toolchanger: configfile section, no Toolchanger unit") {
+        AfcDispatchAckHelper h;
+        h.seed_configfile_toolchanger(true);
+        h.feed_afc({{"units", {"Box_Turtle Turtle_1"}},
+                    {"extruders", {"extruder", "extruder1", "extruder2", "extruder3"}}});
+
+        REQUIRE(h.change_tool(2).success());
+        REQUIRE(h.sent()[0] == "AFC_SELECT_TOOL TOOL=extruder2");
+    }
+}
+
+// ============================================================================
+// Tool number comes from th_extruder_name, not the AFC_extruder section name
+// ============================================================================
+//
+// AFC derives a toolhead's tool index from `th_extruder_name`
+// (AFC_extruder.py:222-223 = `config.get("extruder_name", <section name>)`,
+// consumed at AFC_Toolchanger.py:231-232, both v1.2.0). That value is published
+// in NO get_status() anywhere — configfile.settings is the only surface that
+// carries it. The old code read the SECTION name, threw on anything that was
+// not `extruder<N>`, caught the throw and mapped every toolhead to T0.
+
+TEST_CASE("AFC extruder tool index prefers configfile extruder_name",
+          "[ams][afc][extruder_tool_index]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes(4);
+
+    SECTION("section name that already carries the index") {
+        REQUIRE(helper.tool_index_for("extruder") == 0);
+        REQUIRE(helper.tool_index_for("extruder1") == 1);
+        REQUIRE(helper.tool_index_for("extruder12") == 12);
+    }
+
+    SECTION("configfile resolves a section name that does not") {
+        helper.seed_extruder_klipper_names({{"e0", "extruder"}, {"e1", "extruder1"}});
+        REQUIRE(helper.tool_index_for("e0") == 0);
+        REQUIRE(helper.tool_index_for("e1") == 1);
+    }
+
+    SECTION("configfile wins over a misleading section name") {
+        // `[AFC_extruder extruder1]` with `extruder_name: extruder3` is legal:
+        // AFC indexes on the option, so T3 is the right answer, not T1.
+        helper.seed_extruder_klipper_names({{"extruder1", "extruder3"}});
+        REQUIRE(helper.tool_index_for("extruder1") == 3);
+    }
+
+    SECTION("lookup is case-insensitive — Klipper lowercases section headers") {
+        helper.seed_extruder_klipper_names({{"t1", "extruder1"}});
+        REQUIRE(helper.tool_index_for("T1") == 1);
+    }
+
+    SECTION("unresolvable is -1, never a silent T0") {
+        // This is the whole defect: `e1` used to throw inside substr(8), get
+        // caught, and become T0 — as did e2, e3 and every other toolhead.
+        REQUIRE(helper.tool_index_for("e1") == -1);
+        REQUIRE(helper.tool_index_for("e2") == -1);
+        REQUIRE(helper.tool_index_for("left_head") == -1);
+    }
+
+    SECTION("a nonsense extruder_name falls back to the section name") {
+        helper.seed_extruder_klipper_names({{"extruder2", "not_a_tool"}});
+        REQUIRE(helper.tool_index_for("extruder2") == 2);
+    }
+}
+
+TEST_CASE("AFC v1.1.0 resolves tool indices with no configfile answer at all",
+          "[ams][afc][extruder_tool_index]") {
+    // v1.1.0 has no `extruder_name` option on [AFC_extruder] (th_extruder_name
+    // was introduced with the toolchanger in v1.2.0), so Klipper never
+    // access-tracks the option and configfile.settings carries no value for it.
+    // The section-name fallback is then the ONLY path, and it has to work
+    // unaided — this is the majority of installed AFC hardware.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes(4);
+    helper.initialize_slots_from_discovery();
+
+    SECTION("plain extruder<N> section names resolve without configfile") {
+        REQUIRE(helper.tool_index_for("extruder") == 0);
+        REQUIRE(helper.tool_index_for("extruder1") == 1);
+        REQUIRE(helper.tool_index_for("extruder2") == 2);
+    }
+
+    SECTION("and lane attribution works end to end") {
+        helper.feed_afc_state({{"extruders", {"extruder", "extruder1"}}});
+        // T1 is the tool on the carriage; extruder1 is T1, so its lane wins and
+        // extruder (T0) is ignored — the ordering-independence the old
+        // substr(8)/catch path destroyed by mapping both to T0.
+        helper.feed_status_update(nlohmann::json{{"toolchanger", {{"tool_number", 1}}}});
+        REQUIRE(helper.get_system_info().current_tool == 1);
+
+        nlohmann::json frame;
+        frame["AFC_extruder extruder"] = {{"lane_loaded", "lane1"}};
+        frame["AFC_extruder extruder1"] = {{"lane_loaded", "lane3"}};
+        helper.feed_status_update(frame);
+
+        REQUIRE(helper.get_system_info().current_slot == 2); // lane3, not lane1
+    }
+}
+
+TEST_CASE("AFC unresolvable extruder makes no lane attribution claim",
+          "[ams][afc][extruder_tool_index]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes(4);
+    helper.initialize_slots_from_discovery();
+
+    // Two toolheads named so the section name carries no index. Before the fix
+    // both resolved to T0 and each in turn claimed to be the active tool, so
+    // current_slot tracked whichever AFC_extruder frame arrived last.
+    // AFC.extruders is what routes an "AFC_extruder <name>" frame to a parser.
+    helper.feed_afc_state({{"extruders", {"e0", "e1"}}});
+    REQUIRE(helper.get_extruder_names() == std::vector<std::string>{"e0", "e1"});
+
+    helper.feed_afc_extruder("e0", {{"lane_loaded", "lane1"}});
+    helper.feed_afc_extruder("e1", {{"lane_loaded", "lane3"}});
+
+    REQUIRE(helper.get_system_info().current_slot == -1);
+
+    // Once configfile resolves the names, attribution works again: e1 is T1,
+    // and with current_tool unset the first resolvable claim is honoured.
+    helper.seed_extruder_klipper_names({{"e0", "extruder"}, {"e1", "extruder1"}});
+    helper.feed_afc_extruder("e1", {{"lane_loaded", "lane3"}});
+    REQUIRE(helper.get_system_info().current_slot == 2); // lane3
 }

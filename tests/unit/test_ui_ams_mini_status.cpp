@@ -78,7 +78,9 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini spool mode: cell has spool + mater
     lv_obj_delete(w);
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini spool mode: empty slot shows -- and no pct",
+// An empty lane with no assigned identity names its purpose ("Empty"), matching
+// the ams_slot material label — "--" reads as "assigned, unknown material".
+TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini spool mode: unassigned empty slot reads Empty",
                  "[ui][ams_mini][spool]") {
     ui_ams_mini_status_init();
     lv_obj_t* w = ui_ams_mini_status_create(test_screen(), 60);
@@ -87,7 +89,8 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini spool mode: empty slot shows -- an
     ui_ams_mini_status_set_slot_full(w, 0, 0x808080, 0, false, "", -1);
     ui_ams_mini_status_set_width(w, 260);
     helix::ui::UpdateQueue::instance().drain();
-    REQUIRE(std::string(lv_label_get_text(UITest::find_by_name(w, "spool_material_0"))) == "--");
+    REQUIRE(std::string(lv_label_get_text(UITest::find_by_name(w, "spool_material_0"))) ==
+            std::string(lv_tr("Empty")));
     REQUIRE(std::string(lv_label_get_text(UITest::find_by_name(w, "spool_pct_0"))) == "");
     lv_obj_delete(w);
 }

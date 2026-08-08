@@ -81,20 +81,11 @@ class CfsErrorDecoder {
 /// K1-series printer. Issue #968.
 ///
 /// Fork — community Kalico ports of the K2 whose reimplemented `box` module
-/// replaces Creality's closed one. High-level and self-contained: BOX_LOAD,
-/// BOX_UNLOAD, BOX_CHANGE, BOX_CUT, BOX_RESET, BOX_RESUME, BOX_RECOVERY,
-/// BOX_GO_TO_WASTEBIN, BOX_EMERGENCY_STOP — the port's box.py owns the whole
-/// feed/purge/park sequence, so there is no envelope for HelixScreen to
-/// assemble. `BOX_LOAD` in the macro list is the discriminator; neither stock
-/// dialect defines it.
-///
-/// RESERVED — nothing assigns this value yet. The port's box.py is unpublished,
-/// so BOX_LOAD's parameter name is unverified and no builder emits it; the
-/// control paths are refused up front by reject_if_flat_schema() instead. The
-/// value exists so the dialect axis is expressible independently of CfsSchema,
-/// which is the mistake that made this firmware hard to support in the first
-/// place. See docs/devel/printers/CREALITY_K2_SUPPORT.md § "Community Kalico
-/// port".
+/// replaces Creality's closed one. `T<n>` and `BOX_UNLOAD` are high-level and
+/// self-contained: box.py owns the whole feed/purge/park sequence, so
+/// HelixScreen sends no stock envelope. Detected by `api_version` in the box
+/// payload. See docs/devel/printers/CREALITY_K2_SUPPORT.md §
+/// "Community Kalico port".
 enum class CfsMacroVariant {
     K2,
     K1,
@@ -179,10 +170,16 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     // *preloaded* (cassette-staged) slot via current_slot with the nozzle still
     // empty, so on K1 only filament_loaded implies a cut-before-load is needed.
     // K2 keeps the base behavior (filament_loaded OR current_slot >= 0). (#968)
-    [[nodiscard]] bool needs_unload_before_load(const AmsSystemInfo& info) const override {
-        return macro_variant_ == CfsMacroVariant::K1
-                   ? info.filament_loaded
-                   : (info.filament_loaded || info.current_slot >= 0);
+    //
+    // Every CFS bay merges into one extruder, so the base class's per-lane
+    // independence arm can never fire here — deferring to it on K2 keeps that
+    // path in one place without changing the answer.
+    [[nodiscard]] bool needs_unload_before_load(const AmsSystemInfo& info,
+                                                int target_slot) const override {
+        if (macro_variant_ != CfsMacroVariant::K1) {
+            return AmsBackend::needs_unload_before_load(info, target_slot);
+        }
+        return info.filament_loaded;
     }
 
     // Slot management (user overrides persisted via shared FilamentSlotOverrideStore)
@@ -195,9 +192,11 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     // override_store_->clear_async. CFS firmware populates brand / color_name /
     // total_weight_g from its RFID material database, so those fields are
     // preserved. Only spool_name / spoolman_* / remaining_weight_g are zeroed.
-    // The hardware-event detector calls this internally once an RFID
-    // fingerprint change confirms a physical swap.
     void clear_slot_override(int slot_index) override;
+
+    // Explicit Clear Spool action. Fork firmware owns the persisted profile;
+    // stock CFS dialects have no equivalent command.
+    void clear_box_slot_profile(int slot_index);
 
     // Bypass (not supported)
     AmsError enable_bypass() override;
@@ -258,14 +257,10 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     /// True when this `box` payload comes from the community box.py, i.e. the
     /// firmware speaks CfsMacroVariant::Fork.
     ///
-    /// Keys on `fluidd_widget_version`, which is that module's own
-    /// WIDGET_VERSION constant — a MODULE-identity marker, not a schema shape.
-    /// That distinction matters twice over: it keeps the dialect axis separate
-    /// from CfsSchema (a different flat-schema firmware must not inherit this
-    /// one's command set), and it is the only signal available. The Fork
-    /// commands are registered in Python via gcode.register_command, so they
-    /// are NOT gcode_macros and never appear in printer.objects.list —
-    /// PrinterDiscovery::has_macro("BOX_LOAD") can never see them.
+    /// Requires `api_version == 1`, the explicit version for this command
+    /// dialect. Do not infer commands from the `slots[]` status layout alone;
+    /// another firmware may expose the same flat layout. The Fork commands are
+    /// registered in Python, so PrinterDiscovery::has_macro() cannot see them.
     [[nodiscard]] static bool detect_fork_dialect(const nlohmann::json& box_json);
 
     /// `_BOX_SLOT_SET` — the Fork counterpart to the stock BOX_MODIFY_TN_DATA
@@ -277,7 +272,8 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     /// module's own `str(material).strip().upper()` normalization, so a later
     /// status frame echoes back exactly what we sent.
     static std::string slot_set_gcode(int global_slot_index, const std::string& material,
-                                      uint32_t color_rgb);
+                                      uint32_t color_rgb, const std::string& brand,
+                                      const std::string& name, int spoolman_id);
 
     // GCode helpers (public for testing)
     static std::string load_gcode(int global_slot_index,
@@ -337,17 +333,13 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     /// affected printers report as stock K2 hardware, so it is only knowable
     /// from a payload. Stock until a payload says otherwise.
     ///
-    /// Also the guard on the control paths. A Flat box means the firmware's
-    /// box module is a community reimplementation whose command surface we have
-    /// not verified; emitting the stock CR_BOX_*/BOX_* sequences at it sends
-    /// commands it does not define (confirmed on bundle QJKZEMTS: zero
-    /// CR_BOX_*, zero BOX_MODIFY_TN_DATA, zero M8200 in its config). Refusing
-    /// with a clear error beats a half-executed feed sequence.
+    /// Payload layout only. The command dialect is selected independently;
+    /// Flat + Fork is supported, while an unidentified Flat implementation is
+    /// kept off stock command paths.
     CfsSchema schema_ = CfsSchema::Stock;
 
-    /// SUCCESS on stock firmware; a not_supported error naming @p operation
-    /// when the box is a flat-schema reimplementation. Called at the top of
-    /// every path that emits a stock gcode sequence.
+    /// SUCCESS for stock schemas and the identified Fork dialect; returns
+    /// not_supported for an unidentified Flat implementation.
     [[nodiscard]] AmsError reject_if_flat_schema(const char* operation) const;
 
     // Callback lifetime management

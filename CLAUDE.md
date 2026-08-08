@@ -81,6 +81,17 @@ Most commonly needed:
 
 ---
 
+## Above a Bugfix: Investigate, Then Scope
+
+Features, refactors, new panels/widgets/managers — **scope AFTER investigating, not before.**
+
+- Map what exists (call sites, subjects, tests) and read that subsystem's `docs/devel/` doc
+- Find the canonical implementation of each piece you're about to write
+- Extend the near-fit helper — never fork a twin. Copy-paste-modify = red flag
+- Say what you searched and what you're reusing; scope without that is a guess
+
+---
+
 ## Code Standards
 
 | Rule | ❌ WRONG | ✅ CORRECT |

@@ -12,6 +12,7 @@
 #include "app_globals.h"
 #include "lvgl_image_writer.h"
 #include "memory_monitor.h"
+#include "system/crash_handler.h"
 
 #include <hv/hthreadpool.h>
 #include <spdlog/spdlog.h>
@@ -550,6 +551,12 @@ ThumbnailProcessor::do_process(const std::vector<uint8_t>& png_data, const std::
 
     helix::MemoryMonitor::log_now("thumbnail_decode_start");
 
+    // Bracket the decode so the next crash bundle shows directly whether one
+    // was in flight, instead of it having to be inferred from a post-restart
+    // log the way 6F3QJLFG's was (prestonbrown/helixscreen#960). Worker thread
+    // — breadcrumb::note() is written for concurrent producers.
+    crash_handler::breadcrumb::note("thumb", "decode_begin", static_cast<long>(png_data.size()));
+
     // stbi_load_from_memory returns RGBA data (4 channels) when we request it
     unsigned char* src_pixels = stbi_load_from_memory(
         png_data.data(), static_cast<int>(png_data.size()), &src_width, &src_height, &src_channels,
@@ -632,6 +639,11 @@ ThumbnailProcessor::do_process(const std::vector<uint8_t>& png_data, const std::
     }
 
     helix::MemoryMonitor::log_now("thumbnail_resize_done");
+
+    // Detail encodes the output geometry as w*10000+h — the crash record is
+    // line-oriented, and one number reads more cleanly than a formatted string.
+    crash_handler::breadcrumb::note("thumb", "decode_end",
+                                    static_cast<long>(out_width) * 10000 + out_height);
 
     // ========================================================================
     // Step 5: Write LVGL binary file

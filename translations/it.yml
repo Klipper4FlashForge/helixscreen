@@ -38,7 +38,7 @@ translations:
   -- kWh: -- kWh
   --°C: --°C
   -0.5 Hz: -0,5 Hz
-  '...': ''
+  '...': '...'
   0 = computed: 0 = calcolato
   0 events queued: 0 eventi in coda
   0 slots: '{0} Slot'
@@ -418,7 +418,7 @@ translations:
   Chamber heating to %d°C...: Riscaldamento camera a %d°C...
   Chamber target set to {}°C: Target camera impostato a {}°C
   Change: Cambia
-  Change Address: ''
+  Change Address: Cambia indirizzo
   Change Filament: Cambia filamento
   Change LED color based on printer state: Cambia colore LED in base allo stato della
     stampante
@@ -541,9 +541,9 @@ translations:
   Connected to: Connesso a
   'Connected to ': 'Connesso a '
   ? Connected to Moonraker, but Klipper is not running. You can continue — HelixScreen will show the Klipper error, and hardware detection stays limited until Klipper starts.
-  : ''
+  : Connesso a Moonraker, ma Klipper non è in esecuzione. Puoi continuare — HelixScreen mostrerà l'errore di Klipper e il rilevamento hardware resterà limitato finché Klipper non si avvia.
   ? Connected to Moonraker, but printer discovery did not finish. You can continue — hardware detection stays limited until the printer responds.
-  : ''
+  : Connesso a Moonraker, ma il rilevamento della stampante non è terminato. Puoi continuare — il rilevamento hardware resterà limitato finché la stampante non risponde.
   Connected to {}: Connesso a {}
   Connected! Discovering printer...: Connesso! Rilevamento stampante...
   Connected, discovering...: Connesso, rilevamento...
@@ -576,7 +576,7 @@ translations:
   Controlled by hardware sensor: Controllato da sensore hardware
   Controller: Controller
   Cool Down: Raffredda
-  Cool nozzle after filament ops: ''
+  Cool nozzle after filament ops: Raffredda ugello dopo operazioni filamento
   Cooling: Raffreddamento
   Copied to clipboard!: Copiato negli appunti!
   Copy Command: Copia comando
@@ -705,7 +705,7 @@ translations:
   Do not touch the printer during calibration: Non toccare la stampante durante la
     calibrazione
   Dock: Aggancia
-  Docking tool: ''
+  Docking tool: Rilascio utensile
   Documentation: Documentazione
   Don't Save: Non salvare
   Don't ask again: Non chiedere più
@@ -746,7 +746,7 @@ translations:
   'Eject failed: {}': 'Espulsione fallita: {}'
   Eject needs [force_move] enabled in printer config: L'espulsione richiede [force_move]
     abilitato nella configurazione della stampante
-  Ejecting: ''
+  Ejecting: Espulsione
   Elegoo Centauri Carbon: Elegoo Centauri Carbon
   Emergency Stop: Arresto emergenza
   Emergency Stop?: Arresto emergenza?
@@ -1017,6 +1017,8 @@ translations:
   Follow active tool: Segui strumento attivo
   Follow graph screen: Segui schermata grafico
   Forget: Dimentica
+  Forget Network?: Dimenticare la rete?
+  Forget network '{}'? You will need the password to reconnect.: Dimenticare la rete '{}'? Servirà la password per riconnetterti.
   Forming Tip: Formazione punta
   Forming tip...: Formazione punta...
   Found %zu printers: '%zu stampanti trovate'
@@ -1089,7 +1091,7 @@ translations:
   Heating Bed...: Riscaldamento piatto...
   Heating Nozzle...: Riscaldamento ugello...
   Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: Riscaldamento a %d\xC2\xB0C... %.0f\xC2\xB0C
-  Heating to {}°C before {}...: ''
+  Heating to {}°C before {}...: Riscaldamento a {}°C prima di {}...
   Heating to {}°C for {}...: Riscaldamento a {}°C per {}...
   Heating to {}°C...: Riscaldamento a {}°C...
   Heating...: Riscaldamento...
@@ -1107,6 +1109,7 @@ translations:
   Hide Firmware Noise: Nascondi rumore firmware
   Hide Temperature Reports: Nascondi report temperature
   High Water Mark: Picco massimo
+  Hold anywhere to cancel: ''
   Holding nozzle at {}°C to purge previous filament.: Mantenimento ugello a {}°C per
     spurgare il filamento precedente.
   Home: Home
@@ -1139,7 +1142,7 @@ translations:
     viene spinto indietro nella scatola durante l'espulsione (mm)
   How many labels to print: Quante etichette stampare
   How the toolhead icon appears: Aspetto dell'icona della testina
-  Hub: ''
+  Hub: Hub
   Humidity: Umidità
   Hyperlapse: Hyperlapse
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: Hyperlapse
@@ -1166,7 +1169,7 @@ translations:
     {} non può usare {} come riserva'
   Indexing G-code...: Indicizzazione G-code...
   Info: Info
-  Initialized: ''
+  Initialized: Inizializzato
   Initializing...: Inizializzazione...
   Input: Input
   Input Shaper: Input Shaper
@@ -1218,8 +1221,8 @@ translations:
     {} (disponibili {})'
   Invalid status response from printer: Risposta di stato non valida dalla stampante
   Issue description: Descrizione problema
-  It's a new spool: ''
-  Jammed at the Toolhead: ''
+  It's a new spool: È una nuova bobina
+  Jammed at the Toolhead: Inceppato nella testina
   Job Queue: Coda lavori
   'Jog failed: {}': 'Movimento fallito: {}'
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: Unisciti
@@ -1363,7 +1366,7 @@ translations:
   Macro handles heating: La macro gestisce il riscaldamento
   Macro may still be running — response timed out: La macro potrebbe essere ancora
     in esecuzione — tempo scaduto
-  "Macro stopped: printer has no '{}' command": ''
+  "Macro stopped: printer has no '{}' command": "Macro interrotta: la stampante non ha il comando '{}'"
   Macro to cancel an active print: Macro per annullare una stampa attiva
   Macro to clean/wipe the nozzle: Macro per pulire l'ugello
   Macro to load filament into extruder: Macro per caricare filamento nell'estrusore
@@ -1446,7 +1449,7 @@ translations:
     minutes. The printer will make noise — this is normal.
   : Muove la testina per misurare le frequenze di vibrazione su ogni asse. Richiede
     2-3 minuti. La stampante farà rumore — è normale.
-  Moving lane: ''
+  Moving lane: Spostamento corsia
   Multi-Filament: Multi-filamento
   Multi-Filament Overview: Panoramica multi-filamento
   Multi-Filament System: Sistema multi-filamento
@@ -1471,6 +1474,7 @@ translations:
   Network Name (SSID): Nome rete (SSID)
   Network Settings: Impostazioni rete
   Network Test: Test rete
+  Network forgotten: Rete dimenticata
   Network name cannot be empty: Il nome della rete non può essere vuoto
   Never: Mai
   'New Spool: Step 1 of 3': 'Nuova bobina: Passo 1 di 3'
@@ -1570,7 +1574,7 @@ translations:
   Not found (strobe only): Non trovato (solo stroboscopio)
   Not found (use phone app): Non trovato (usa l’app del telefono)
   Not in your spools? Set it up: Non è tra le tue bobine? Configuralo
-  Not now: ''
+  Not now: Non ora
   Not yet calibrated: Non ancora calibrato
   Notes: Note
   Notes (optional): Note (facoltativo)
@@ -1591,7 +1595,7 @@ translations:
   Nozzle Temp: Temp. ugello
   Nozzle Temperature: Temperatura ugello
   Nozzle Temps: Temp. ugelli
-  Nozzle did not reach {}°C — {} cancelled: ''
+  Nozzle did not reach {}°C — {} cancelled: L'ugello non ha raggiunto {}°C — {} annullato
   Nozzle min cannot exceed max: Il minimo dell’ugello non può superare il massimo
   Nozzle target set to {}°C: Obiettivo ugello impostato a {}°C
   Nozzle temp must be 100-500°C: La temperatura dell’ugello deve essere 100-500°C
@@ -1691,7 +1695,7 @@ translations:
   Phomemo M110: Phomemo M110
   Pick: Scegli
   Pick Color: Scegli colore
-  Picking up tool: ''
+  Picking up tool: Prelievo utensile
   Pill: Pillola
   Pixels before a press becomes a scroll (lower = scrolls engage sooner): Pixel prima
     che una pressione diventi scorrimento (più basso = scorrimento più rapido)
@@ -1815,7 +1819,7 @@ translations:
     — assicurati che sia accesa e nel raggio d'azione
   Printer doesn't expose the expected service — wrong device?: La stampante non espone
     il servizio previsto — dispositivo errato?
-  Printer hardware detected: ''
+  Printer hardware detected: Hardware stampante rilevato
   Printer image set to auto-detect: Immagine stampante impostata su rilevamento auto
   Printer is not paired — pair it first: La stampante non è associata — associala
     prima
@@ -1980,7 +1984,7 @@ translations:
   Restarting with the new version...: Riavvio con la nuova versione...
   Restarting...: Riavvio in corso...
   Restore Defaults: Ripristina predefiniti
-  Restoring position: ''
+  Restoring position: Ripristino posizione
   Resume: Riprendi
   Resume Print: Riprendi stampa
   Resume interrupted print?: Riprendere la stampa interrotta?
@@ -2166,7 +2170,7 @@ translations:
   Set local timezone for time display: Imposta fuso orario locale per l'ora
   Set logging verbosity for troubleshooting: Imposta il livello di dettaglio del log
     per la risoluzione dei problemi
-  Set up: ''
+  Set up: Configura
   Set up your label printer in Settings: Configura la stampante etichette nelle Impostazioni
   Settings: Impostazioni
   Settings Snapshot: Istantanea delle impostazioni
@@ -2306,9 +2310,9 @@ translations:
   Stop Print?: Fermare stampa?
   Stop failed: Arresto fallito
   Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds.: 'Interrompere la stampa di \"{}\"?\n\nNon sarà possibile annullare dopo 5 secondi.'
-  Stopped between Hub and Toolhead: ''
-  Stopped between Lane and Hub: ''
-  Stopped between Spool and Lane: ''
+  Stopped between Hub and Toolhead: Fermo tra Hub e testina
+  Stopped between Lane and Hub: Fermo tra corsia e Hub
+  Stopped between Spool and Lane: Fermo tra bobina e corsia
   Stops all motion. Requires firmware restart.: Ferma tutto il movimento. Richiede
     riavvio firmware.
   Stow: Ritrai
@@ -2399,7 +2403,7 @@ translations:
     interfering with prints. You can re-enable it in Settings > Display.
   : Il salvaschermo animato è stato disattivato su questo dispositivo per evitare
     che interferisca con le stampe. Puoi riattivarlo in Impostazioni > Schermo.
-  The filament system reported an error: ''
+  The filament system reported an error: Il sistema filamento ha segnalato un errore
   The heater will cycle on and off several times.: Il riscaldatore si accenderà e
     spegnerà diverse volte.
   ? The motor vibrates the belt while a strobe light flashes at the same frequency.
@@ -2414,10 +2418,10 @@ translations:
     stampante ha interrotto questa stampa e non può riprenderla. Riavviare dall'inizio?
   The printer lost power during a print. It can resume where it left off.: La stampante
     ha perso l'alimentazione durante una stampa. Può riprendere da dove si è interrotta.
-  The printer lost power during a print. The resumed layer may not line up exactly.: ''
+  The printer lost power during a print. The resumed layer may not line up exactly.: La stampante ha perso l'alimentazione durante una stampa. Il layer ripreso potrebbe non allinearsi perfettamente.
   The printer lost power while printing {}. Resume where it left off?: La stampante ha
     perso l'alimentazione durante la stampa di {}. Riprendere da dove si è interrotta?
-  The printer lost power while printing {}. The resumed layer may not line up exactly.: ''
+  The printer lost power while printing {}. The resumed layer may not line up exactly.: La stampante ha perso l'alimentazione durante la stampa di {}. Il layer ripreso potrebbe non allinearsi perfettamente.
   The printer rejected the filament configuration. The print was not started.: La
     stampante ha rifiutato la configurazione del filamento. La stampa non è stata
     avviata.
@@ -2447,7 +2451,7 @@ translations:
   : Questo dispositivo ha solo {} MB di RAM. La calibrazione della risonanza usa molta memoria e può causare un errore \"Timer Too Close\" nel firmware della stampante o un riavvio a metà test. Continuare comunque?
   ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
   : Questo dispositivo ha pochissima RAM. La calibrazione della risonanza usa molta memoria e può causare un errore \"Timer Too Close\". Continuare comunque?
-  This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: ''
+  This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: Non corrisponde alla bobina Spoolman collegata. Aggiungerla come nuova bobina o aggiornare quella collegata?
   This file was sliced for {} but {} is loaded.: Questo file è stato sezionato per
     {} ma è caricato {}.
   This is exactly the data that will be sent: Questi sono esattamente i dati che verranno
@@ -2526,7 +2530,7 @@ translations:
   Tool: Strumento
   Tool Changer: Cambia utensile
   'Tool change failed: {}': 'Cambio utensile fallito: {}'
-  Tool swap: ''
+  Tool swap: Cambio utensile
   'Tool {} → Lane {}: no filament loaded.': 'Strumento {} → Corsia {}: nessun filamento
     caricato.'
   Toolhead: 'Testina'
@@ -2557,7 +2561,7 @@ translations:
   Turn Off: Spegni
   Turn On: Accendi
   Turn on LEDs when printer starts: Accendi LED all'avvio della stampante
-  Turn the extruder heater off after a load or unload finishes: ''
+  Turn the extruder heater off after a load or unload finishes: Spegni il riscaldatore dell'estrusore al termine di un caricamento o scaricamento
   Type: Tipo
   Type to preview input field...: Digita per visualizzare anteprima campo input...
   'Type:': 'Tipo:'
@@ -2751,7 +2755,7 @@ translations:
     configurato!
   Your printer has an automatic filament changer: La stampante ha un cambio filamento
     automatico
-  Your printer was offline during setup, so hardware options were skipped. Set them up now?: ''
+  Your printer was offline during setup, so hardware options were skipped. Set them up now?: La stampante era offline durante la configurazione, quindi le opzioni hardware sono state saltate. Configurarle ora?
   Z: Z
   Z Calibration: Calibrazione Z
   Z Movement: Movimento Z

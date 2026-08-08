@@ -163,12 +163,29 @@ TEST_CASE_METHOD(MoonrakerRobustnessFixture,
     }
 
     SECTION("Concurrent send_jsonrpc with different methods") {
+        constexpr int NUM_SENDERS = 5;
+        constexpr int SENDS_PER_SENDER = 50;
+        constexpr int MIXED_TOTAL = NUM_SENDERS * SENDS_PER_SENDER;
+
         std::atomic<int> completed{0};
+        std::atomic<bool> connected{false};
         std::vector<std::string> methods = {"printer.info", "server.info", "printer.objects.list",
                                             "printer.gcode.script", "machine.update.status"};
 
+        // Catch2 SECTIONs are independent runs of the body, so this one has to
+        // establish its own connection. Without it every send is refused by
+        // ready_to_send() and the counter below would only prove that a
+        // synchronous rejection fires one callback.
+        client_->connect(
+            server_url().c_str(), [&connected]() { connected = true; },
+            []() { /* disconnected */ });
+        for (int i = 0; i < 50 && !connected; i++) {
+            std::this_thread::sleep_for(milliseconds(100));
+        }
+        REQUIRE(connected);
+
         auto send_mixed = [&]() {
-            for (int i = 0; i < 50; i++) {
+            for (int i = 0; i < SENDS_PER_SENDER; i++) {
                 const auto& method = methods[i % methods.size()];
                 client_->send_jsonrpc(
                     method, json(), [&completed](json) { completed++; },
@@ -177,7 +194,7 @@ TEST_CASE_METHOD(MoonrakerRobustnessFixture,
         };
 
         std::vector<std::thread> threads;
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < NUM_SENDERS; i++) {
             threads.emplace_back(send_mixed);
         }
 
@@ -185,13 +202,21 @@ TEST_CASE_METHOD(MoonrakerRobustnessFixture,
             thread.join();
         }
 
-        // Cleanup and verify
-        std::this_thread::sleep_for(milliseconds(500));
+        // Wait for responses, then flush anything the server never answered so the
+        // count is final either way: process_timeouts() fires the error callback for
+        // every request past its deadline.
+        for (int i = 0; i < 100 && completed < MIXED_TOTAL; i++) {
+            std::this_thread::sleep_for(milliseconds(50));
+        }
         client_->process_timeouts();
-        std::this_thread::sleep_for(milliseconds(500));
 
-        // Test passes if no crashes/races (ThreadSanitizer would detect)
-        REQUIRE(true);
+        INFO("completed: " << completed.load() << " of " << MIXED_TOTAL);
+
+        // Every request resolves exactly once - success or error, never dropped and
+        // never fired twice. Under contention that is what the request tracker's
+        // locking exists to guarantee, and it is checkable in a plain build rather
+        // than only under ThreadSanitizer.
+        REQUIRE(completed == MIXED_TOTAL);
     }
 }
 

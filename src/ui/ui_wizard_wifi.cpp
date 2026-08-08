@@ -20,6 +20,7 @@
 #include "system/crash_handler.h"
 #include "theme_manager.h"
 #include "wifi_manager.h"
+#include "wifi_radio_toggle.h"
 #include "wifi_ui_utils.h"
 
 #include <spdlog/spdlog.h>
@@ -562,12 +563,46 @@ void WizardWifiStep::handle_wifi_toggle_changed(lv_event_t* e) {
         // Don't save yet - will be saved on wizard completion
     }
 
+    if (!wifi_manager_) {
+        LOG_ERROR_INTERNAL("WiFi manager not initialized");
+        NOTIFY_ERROR(lv_tr("WiFi unavailable"));
+        return;
+    }
+
     if (checked) {
         update_wifi_status(get_status_text("enabled"));
+        lv_subject_set_int(&wifi_scanning_, 1);
+    } else {
+        update_wifi_status(get_status_text("disabled"));
+        update_wifi_ip(""); // Clear IP when WiFi disabled
+        lv_subject_set_int(&wifi_scanning_, 0);
+        clear_network_list();
+        wifi_manager_->stop_scan();
+    }
 
-        if (wifi_manager_) {
-            wifi_manager_->set_enabled(true);
-            lv_subject_set_int(&wifi_scanning_, 1);
+    // Radio work runs off-thread: on wpa_supplicant it is two control commands
+    // per direction, each of which can spend up to 5s retrying the send and
+    // then up to 10s waiting for a reply. Done inline it froze the wizard.
+    // The subject above is the optimistic value; reconcile below.
+    auto radio_token = lifetime_.token();
+    wifi_manager_->set_enabled_async(
+        checked, radio_token, [this, checked](bool success, bool actual) {
+            auto outcome = helix::wifi::reconcile_radio_toggle(checked, success, actual);
+            if (outcome.reverted) {
+                spdlog::warn("[{}] WiFi {} did not take — radio is {}", get_name(),
+                             checked ? "enable" : "disable", actual ? "on" : "off");
+                lv_subject_set_int(&wifi_enabled_, outcome.enabled ? 1 : 0);
+                update_wifi_status(get_status_text(outcome.enabled ? "enabled" : "disabled"));
+                if (auto* config = Config::get_instance()) {
+                    config->set_wifi_expected(outcome.enabled);
+                }
+            }
+
+            if (!outcome.enabled) {
+                lv_subject_set_int(&wifi_scanning_, 0);
+                clear_network_list();
+                return;
+            }
 
             // Capture weak reference for async safety
             std::weak_ptr<WiFiManager> weak_mgr = wifi_manager_;
@@ -597,21 +632,7 @@ void WizardWifiStep::handle_wifi_toggle_changed(lv_event_t* e) {
                     populate_network_list(cached_networks_);
                 });
             });
-        } else {
-            LOG_ERROR_INTERNAL("WiFi manager not initialized");
-            NOTIFY_ERROR(lv_tr("WiFi unavailable"));
-        }
-    } else {
-        update_wifi_status(get_status_text("disabled"));
-        update_wifi_ip(""); // Clear IP when WiFi disabled
-        lv_subject_set_int(&wifi_scanning_, 0);
-        clear_network_list();
-
-        if (wifi_manager_) {
-            wifi_manager_->stop_scan();
-            wifi_manager_->set_enabled(false);
-        }
-    }
+        });
 }
 
 void WizardWifiStep::handle_network_item_clicked(lv_event_t* e) {

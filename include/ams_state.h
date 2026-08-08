@@ -1159,13 +1159,20 @@ class AmsState {
     }
 
     /// @brief Set the active toolchange operation kind.
-    void set_active_step_operation(StepOperationType op) {
-        active_step_operation_.store(op, std::memory_order_relaxed);
-    }
+    ///
+    /// Out-of-line because a change of operation also has to drop the narration
+    /// high-water mark: phase indices are template-relative, and each
+    /// StepOperationType has its own template.
+    void set_active_step_operation(StepOperationType op);
 
     /// Set the current toolchange narration phase index (MAIN THREAD ONLY).
     /// Also mirrors the human label into ams_action_detail for the status line.
     /// index = -1 clears.
+    ///
+    /// The published index is LATCHED so it can only move forwards within one
+    /// operation — see the implementation for why a firmware may legitimately
+    /// re-narrate an earlier phase. index = 0 (the template's first phase) and
+    /// index = -1 both reset the latch.
     void set_narration_phase(int index, const std::string& label);
 
     /**
@@ -1313,6 +1320,10 @@ class AmsState {
     /// Active toolchange operation for the narration router to resolve a phase
     /// index without a sidebar pointer. Defaults to a swap (most common case).
     std::atomic<StepOperationType> active_step_operation_{StepOperationType::LOAD_SWAP};
+    /// Highest phase index published since the current operation began. Guards
+    /// toolchange_step_ against firmware that narrates one phase more than once
+    /// per operation (AFC wipes before AND after the kick). -1 = no phase yet.
+    int narration_phase_high_water_{-1};
     lv_subject_t current_slot_;
     lv_subject_t pending_target_slot_;
     lv_subject_t ams_current_tool_;
@@ -1439,7 +1450,11 @@ class AmsState {
 
     // Currently Loaded display subjects (reactive binding for "Currently Loaded" card)
     lv_subject_t current_material_text_;
-    char current_material_text_buf_[48];
+    // Holds a full filament identity — brand, Spoolman filament name and
+    // material concatenated. lv_subject_copy_string() truncates with
+    // lv_strlcpy and reports nothing, so an undersized buffer clips the label
+    // silently; real Spoolman names run past 50 characters on their own.
+    char current_material_text_buf_[128];
     lv_subject_t current_slot_text_;
     char current_slot_text_buf_[64];
     lv_subject_t current_weight_text_;

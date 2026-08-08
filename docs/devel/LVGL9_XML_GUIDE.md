@@ -639,7 +639,7 @@ The bare `$i` sigil is a whole-value substitution: `text="$i"` becomes the index
 </lv_obj>
 <!-- c > 0: root's only child is "t". c <= 0: root's only child is "f". -->
 ```
-(adapted from `tests/unit/test_xml_if_else.cpp`)
+(adapted from `lib/helix-xml/tests/cases/test_if_else.c`)
 
 `<else/>` is an inline divider *inside* the single matched `<if>…</if>` block, not a separate sibling tag: everything before it is the true-body, everything after it (up to `</if>`) is the false-body. Both spellings behave identically — self-closing `<else/>` and empty-element `<else></else>` — the split point is the `<else>` open tag; the marker's own open/close events aren't part of either body. `<else>` is optional: `<if cond="X">…</if>` with no `<else>` creates nothing when `cond` is false, and the component still loads. A second `<else/>` inside one `<if>` is a mistake — it warns and the first split wins. A stray `<else/>` with no enclosing `<if>` also warns and is ignored; the component still loads.
 

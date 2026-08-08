@@ -1,7 +1,28 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+/**
+ * @file filament_op_slot_resolver.h
+ * @brief The per-surface decisions every filament op surface must answer alike.
+ *
+ * filament_op_dispatch.h answers *which tier* an op takes once the user has
+ * committed to it. This header answers the three questions asked BEFORE that,
+ * each of which had grown a private copy on every surface:
+ *
+ *   - which slot do this tool's buttons act on?  resolve_op_button_slot()
+ *   - may Load / Unload be pressed right now?    compute_op_button_gating()
+ *   - how hot must the nozzle be to load it?     resolve_load_preheat_material()
+ *
+ * All three are display-free and take plain values, so the whole decision is
+ * testable in a binary with no printer and no screen.
+ */
+
+#include "active_material_provider.h"
 #include "ams_types.h"
+#include "filament_database.h"
+
+#include <optional>
+#include <string>
 
 namespace helix::ui {
 
@@ -32,7 +53,7 @@ namespace helix::ui {
     }
     if (slot < 0) {
         if (tool_count > 1) {
-            slot = selected_tool;    // toolchanger: tool index == slot index
+            slot = selected_tool; // toolchanger: tool index == slot index
         } else {
             slot = sys.current_slot; // single-tool multi-lane AMS: loaded lane
         }
@@ -40,28 +61,238 @@ namespace helix::ui {
     return slot;
 }
 
-/// Enabled/disabled state of the filament panel's Load and Unload/Purge buttons.
+/// Enabled/disabled state of a surface's Load and Unload/Purge buttons.
 struct OpButtonGating {
     bool load_disabled = false;
     bool unload_disabled = false;
 };
 
 /**
- * @brief Gate the panel's Load / Unload buttons on load state AND print state.
+ * @brief Everything compute_op_button_gating() needs, from any surface.
  *
- * Load state alone is not enough: both operations run through
- * AmsSubscriptionBackend::check_preconditions(true), which refuses while a print
- * is PRINTING or PAUSED because the load/unload macros home the toolhead. A
- * button offered in that window is a guaranteed-failure dead end — which is
- * exactly what a runout-paused user hits, since Klipper's own message tells them
- * to load filament (bundle JX2FVRB9).
- *
- * @param is_loaded    Selected slot has filament at the toolhead.
- * @param print_active A print job owns the toolhead (see print_occupies_toolhead).
+ * Filled from the live backend + print state. Every field is a question the
+ * surface can answer locally; the *combination* is the part that must not fork.
  */
-[[nodiscard]] inline OpButtonGating compute_op_button_gating(bool is_loaded, bool print_active) {
-    return {/*load_disabled=*/is_loaded || print_active,
-            /*unload_disabled=*/!is_loaded || print_active};
+struct OpButtonState {
+    /// Filament is at the toolhead for the acted-on slot, so there is nothing to
+    /// load into it. On the AMS context menu this is slot_unloads_to_toolhead(),
+    /// which is deliberately narrower than the broadened recovery signal.
+    bool slot_is_loaded = false;
+
+    /// There is filament in the lane worth feeding. std::nullopt means the
+    /// surface cannot answer (no slot resolved, no per-slot presence signal) —
+    /// Load then stays reachable so the surface's own refusal path can run and
+    /// explain itself (e.g. FilamentRefusal::SelectSlot -> the AMS slot picker).
+    std::optional<bool> slot_has_filament{};
+
+    /// This surface's Unload button has something to do. The filament panel
+    /// passes its slot's loaded state; the AMS context menu passes
+    /// `mode != UnloadMode::Unavailable`, since Eject/Recover are also "unload".
+    bool unload_available = false;
+
+    /// AmsSystemInfo::is_busy() — an AMS operation is already running. Every
+    /// backend op goes through check_preconditions(), which refuses on busy, so
+    /// a button offered here is a guaranteed-failure dead end. This is the term
+    /// the filament panel never had: an op started from the AMS panel (or by the
+    /// printer itself) left the panel's Load button lit the whole time.
+    bool system_busy = false;
+
+    /// A print would make the backend refuse this op. NOT the raw print_active
+    /// subject — PAUSED is now allowed on backends whose filament macros do not
+    /// home themselves. Always fill this from print_blocks_filament_op() so the
+    /// affordance and AmsSubscriptionBackend::refuse_if_printing() cannot drift.
+    bool print_blocks_op = false;
+
+    /// This surface's Unload button runs a COLD lane op (Eject / Recover) rather
+    /// than a heated toolhead unload. Deliberate asymmetry, not an oversight:
+    /// #995 / #1199 keep the cold lane ops reachable mid-print because they move
+    /// no toolhead — the backend lets them through check_preconditions(false),
+    /// which never consults the print state at all. Do not flatten this into a
+    /// blanket print gate.
+    bool unload_is_cold_lane_op = false;
+};
+
+/**
+ * @brief Would a print refuse a toolhead-motion filament op right now?
+ *
+ * The UI mirror of AmsSubscriptionBackend::refuse_if_printing(). Read that
+ * function's comment for the reasoning; the rule it enforces is:
+ *
+ *   PRINTING                            -> refuse. The nozzle is laying plastic.
+ *   PAUSED, backend homes itself        -> refuse. AD5X IFS only: its
+ *                                         `_IFS_REMOVE_CURRENT_PRUTOK` runs a
+ *                                         buried `_G28` that probes a loadcell-Z
+ *                                         nozzle into the part (bundle XWPBR2DX).
+ *   PAUSED, backend does NOT self-home  -> ALLOW. Pause-then-swap is the runout
+ *                                         and colour-change recovery workflow on
+ *                                         AFC / Happy Hare / CFS / ACE / QIDI /
+ *                                         toolchangers / Snapmaker.
+ *
+ * A UI that keeps greying the paused case makes the backend relaxation invisible
+ * — which is the whole user-visible half of the fix. Equally, a UI that offers
+ * what the backend refuses is the dead end of bundle JX2FVRB9. One predicate,
+ * both directions.
+ *
+ * @param printing            PrintJobState::PRINTING.
+ * @param paused              PrintJobState::PAUSED.
+ * @param backend_self_homes  AmsBackend::filament_ops_self_home(). Pass false
+ *                            when there is no backend — a plain macro/gcode path
+ *                            has no firmware macro that could hide a home, and
+ *                            Layer 1 (reject_homing_during_active_print) still
+ *                            refuses any G28 the app itself emits.
+ */
+[[nodiscard]] inline bool print_blocks_filament_op(bool printing, bool paused,
+                                                   bool backend_self_homes) {
+    if (printing) {
+        return true;
+    }
+    return paused && backend_self_homes;
+}
+
+/**
+ * @brief SlotInfo presence as an OpButtonState::slot_has_filament answer.
+ *
+ * SlotStatus::UNKNOWN is "this backend publishes no presence signal for the
+ * lane", not "the lane is empty". is_present() collapses the two, so answering
+ * with it directly greys Load on any printer that simply never reports slot
+ * status. Unanswerable is the honest answer: the button stays live and the
+ * backend gets to refuse if the lane really is empty.
+ */
+[[nodiscard]] inline std::optional<bool> slot_presence(const SlotInfo& slot) {
+    if (slot.status == SlotStatus::UNKNOWN) {
+        return std::nullopt;
+    }
+    return slot.is_present();
+}
+
+/**
+ * @brief Gate Load / Unload from one rule, for every surface that shows them.
+ *
+ * Load state alone is not enough. Both operations run through
+ * AmsSubscriptionBackend::check_preconditions(true), which refuses while the AMS
+ * is busy and — per print_blocks_filament_op() — while a print owns the toolhead
+ * in a way the backend will not accept. A button offered in either window is a
+ * guaranteed-failure dead end, which is exactly what a runout-paused user hits
+ * since Klipper's own message tells them to load filament (bundle JX2FVRB9).
+ *
+ * The filament panel and the AMS context menu each carried a partial version of
+ * this: the panel had no `system_busy` and no `slot_has_filament` term, the AMS
+ * sidebar had no print term at all. One answer now, three callers.
+ */
+[[nodiscard]] inline OpButtonGating compute_op_button_gating(const OpButtonState& s) {
+    const bool nothing_to_feed = s.slot_has_filament.has_value() && !*s.slot_has_filament;
+    return {/*load_disabled=*/s.system_busy || s.print_blocks_op || s.slot_is_loaded ||
+                nothing_to_feed,
+            /*unload_disabled=*/s.system_busy || !s.unload_available ||
+                (s.print_blocks_op && !s.unload_is_cold_lane_op)};
+}
+
+// ---------------------------------------------------------------------------
+// Load preheat
+// ---------------------------------------------------------------------------
+
+/// Slot sentinel meaning "the external / bypass spool", not an AMS lane. The
+/// value AmsOperationSidebar's callers have always passed for the bypass row.
+inline constexpr int kExternalSpoolSlot = -2;
+
+/// A resolved preheat target. @c material_name is empty when no source named the
+/// material, which is the caller's cue to say "Heating to N°C" without a "for X".
+struct PreheatTarget {
+    int temp_c = 0;
+    std::string material_name;
+};
+
+/**
+ * @brief The nozzle temperature a LOAD should preheat to for @p mat.
+ *
+ * nozzle_recommended() — the midpoint of the material's window — NOT nozzle_min.
+ *
+ * nozzle_min is the bottom edge of the printable range: the temperature below
+ * which the material will not flow at all. A load pushes cold filament through
+ * the melt zone and usually purges behind it, which is the highest-viscosity
+ * demand the hotend ever sees, so sitting exactly on that edge is how you get
+ * the grinding/jamming this resolver exists to prevent. Recommended is inside
+ * the same window by construction ((min+max)/2 <= max), so it can never ask for
+ * a temperature the material cannot take.
+ *
+ * It is also the number the filament panel already shows everywhere else — the
+ * preset buttons and the material temp readout both use nozzle_recommended().
+ * Loading at nozzle_min meant one panel advertised two different temperatures
+ * for the same material.
+ *
+ * For a material with no DB entry, build_active_material() synthesises
+ * nozzle_max == nozzle_min, so recommended == min and nothing changes there.
+ */
+[[nodiscard]] inline int load_preheat_temp(const filament::MaterialInfo& mat) {
+    return mat.nozzle_recommended();
+}
+
+/**
+ * @brief The material a LOAD should heat for, from the slot being loaded.
+ *
+ * Resolution order — and the order is the whole point:
+ *
+ *   1. The slot the load actually targets. An AMS lane the user picked is the
+ *      filament about to pass through the melt zone; nothing outranks it.
+ *   2. The external / bypass spool, but ONLY when the load has no AMS lane of
+ *      its own (@p target_slot == kExternalSpoolSlot, or nothing resolved, or
+ *      the lane names no material). On an external-spool-only printer this is
+ *      the one filament there is.
+ *
+ * FilamentPanel used to consult the external spool FIRST and unconditionally,
+ * then fall back to `AmsSystemInfo::get_active_slot()` — the LOADED lane, not
+ * the selected one. Both are wrong for a load and both are silent: selecting
+ * tool 3 (PETG) while tool 1 (PLA) was loaded preheated to PLA, and any printer
+ * with an external spool assigned preheated every load to that spool's material
+ * regardless of the lane. AmsOperationSidebar always had this right; the two now
+ * share the rule so they cannot drift apart again.
+ *
+ * Note the deliberate difference from helix::get_active_material(), which orders
+ * AMS-active-slot then external spool. That answers "what is IN the nozzle right
+ * now" and is correct for its callers. This answers "what is about to go in",
+ * where the target slot — not the active one — is the authority.
+ *
+ * @param target_slot       Slot the load targets; kExternalSpoolSlot for bypass,
+ *                          < 0 for "none resolved".
+ * @param target_slot_info  SlotInfo for @p target_slot, or nullptr when there is
+ *                          no backend / no such slot.
+ * @param external_spool    The assigned external spool, or nullptr.
+ * @return The resolved target, or nullopt when no source names a usable
+ *         material — the caller's own tail (a UI material preset, a default)
+ *         then applies.
+ */
+[[nodiscard]] inline std::optional<PreheatTarget>
+resolve_load_preheat_material(int target_slot, const SlotInfo* target_slot_info,
+                              const SlotInfo* external_spool) {
+    auto from = [](const SlotInfo& slot) -> std::optional<PreheatTarget> {
+        // A lane with neither a material name nor a vendor temp names nothing.
+        // build_active_material() would still hand back a synthetic 220°C
+        // default for it, which would mask every lower-priority source the
+        // caller has — its own external spool, and the panel's material preset.
+        // Same "is this slot speakable" predicate helix::get_active_material()
+        // applies before it will build from a slot.
+        if (slot.material.empty() && slot.nozzle_temp_min <= 0) {
+            return std::nullopt;
+        }
+        helix::ActiveMaterial mat = helix::build_active_material(slot);
+        if (mat.material_info.nozzle_min <= 0) {
+            return std::nullopt;
+        }
+        return PreheatTarget{load_preheat_temp(mat.material_info), mat.display_name};
+    };
+
+    // The bypass row IS the external spool — never look at an AMS lane for it.
+    if (target_slot == kExternalSpoolSlot) {
+        return external_spool ? from(*external_spool) : std::nullopt;
+    }
+
+    if (target_slot_info) {
+        if (auto slot_target = from(*target_slot_info)) {
+            return slot_target;
+        }
+    }
+
+    return external_spool ? from(*external_spool) : std::nullopt;
 }
 
 } // namespace helix::ui

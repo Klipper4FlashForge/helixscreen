@@ -4,6 +4,7 @@
 
 #include "filament_database.h"
 #include "moonraker_api.h"
+#include "spoolman_manager.h"
 
 #include <spdlog/spdlog.h>
 
@@ -35,9 +36,22 @@ bool SpoolmanSlotSaver::is_filament_complete(const SlotInfo& slot) {
 ChangeSet SpoolmanSlotSaver::detect_changes(const SlotInfo& original, const SlotInfo& edited) {
     ChangeSet changes;
 
-    // Filament-level: brand, material, color_rgb
+    // Filament-level: brand, material, color_rgb, catalog product identity.
+    //
+    // The product fields matter on their own: a variant swap within one vendor
+    // and material (SUNLU "PLA Marble" -> "PLA+ 2.0") leaves brand, material and
+    // color identical, so without them detect_changes() reports no change at all
+    // and commit_and_close() treats the edit as a no-op.
+    //
+    // This does NOT make such a swap prompt "Different filament?" —
+    // needs_identity_confirmation() additionally requires
+    // is_material_identity_change(), which compares materials and colors only.
+    // On a linked spool it routes through find_or_create_filament(), which
+    // matches on material + color and therefore resolves back to the same
+    // filament record: a repoint that is a no-op by construction.
     if (original.brand != edited.brand || original.material != edited.material ||
-        original.color_rgb != edited.color_rgb) {
+        original.color_rgb != edited.color_rgb || original.catalog_id != edited.catalog_id ||
+        original.product_name != edited.product_name) {
         changes.filament_level = true;
     }
 
@@ -100,6 +114,29 @@ void SpoolmanSlotSaver::save(const SlotInfo& original, const SlotInfo& edited,
 
 void SpoolmanSlotSaver::save(const SlotInfo& original, const SlotInfo& edited, LinkIntent intent,
                              CompletionCallback on_complete) {
+    // A user edit is the one thing that makes an otherwise-immutable Spoolman
+    // identity stale, so drop the cached record for every id this save could
+    // touch: the spool that was linked, the spool that is linked now, and any
+    // spool the save created. Invalidating on *completion* rather than on entry
+    // matters — a weight poll landing mid-save would otherwise re-cache the old
+    // server-side values and, since identity is extracted once per id, keep them
+    // forever. Doing it on failure too is harmless: the next poll refills it.
+    //
+    // This runs on whichever thread the API completes on. invalidate_identity()
+    // is mutex-guarded, shutdown-guarded and touches no LVGL, so no marshalling.
+    const int original_id = original.spoolman_id;
+    const int edited_id = edited.spoolman_id;
+    CompletionCallback invalidating =
+        [original_id, edited_id, on_complete = std::move(on_complete)](const SaveResult& result) {
+            SpoolmanManager::invalidate_identity(original_id);
+            SpoolmanManager::invalidate_identity(edited_id);
+            SpoolmanManager::invalidate_identity(result.new_spool_id);
+            if (on_complete) {
+                on_complete(result);
+            }
+        };
+    on_complete = std::move(invalidating);
+
     // UnlinkLocalOnly never touches Spoolman: the lane stops being tracked and
     // its values stay local. Nothing to write, so report success immediately.
     if (intent == LinkIntent::UnlinkLocalOnly) {
@@ -147,7 +184,7 @@ void SpoolmanSlotSaver::save_impl(const SlotInfo& original, const SlotInfo& edit
             edited.brand,
             [this, edited, color_hex, weight, initial_weight, on_complete](int vendor_id) {
                 find_or_create_filament(
-                    vendor_id, edited.material, color_hex,
+                    vendor_id, edited.material, color_hex, edited.spool_name,
                     [this, vendor_id, weight, initial_weight, on_complete](int filament_id) {
                         nlohmann::json payload;
                         payload["filament_id"] = filament_id;
@@ -242,7 +279,7 @@ void SpoolmanSlotSaver::save_impl(const SlotInfo& original, const SlotInfo& edit
             [this, edited, color_hex, spool_id, weight, original_filament_id, weight_changed,
              on_complete](int vendor_id) {
                 find_or_create_filament(
-                    vendor_id, edited.material, color_hex,
+                    vendor_id, edited.material, color_hex, edited.spool_name,
                     [this, spool_id, weight, vendor_id, original_filament_id, weight_changed,
                      on_complete](int filament_id) {
                         // If we resolved to the SAME filament, skip repoint
@@ -380,6 +417,7 @@ std::string SpoolmanSlotSaver::normalize_color_hex(const std::string& in) {
 
 void SpoolmanSlotSaver::find_or_create_filament(int vendor_id, const std::string& material,
                                                 const std::string& color_hex,
+                                                const std::string& filament_name,
                                                 FilamentCallback on_found, ErrorCallback on_error) {
     const std::string needle_color = normalize_color_hex(color_hex);
     if (needle_color.empty()) {
@@ -395,7 +433,7 @@ void SpoolmanSlotSaver::find_or_create_filament(int vendor_id, const std::string
     }
     api_->spoolman().get_spoolman_filaments(
         vendor_id,
-        [this, vendor_id, material, needle_color, on_found,
+        [this, vendor_id, material, needle_color, filament_name, on_found,
          on_error](const std::vector<FilamentInfo>& filaments) {
             for (const auto& f : filaments) {
                 if (f.material == material && normalize_color_hex(f.color_hex) == needle_color) {
@@ -411,7 +449,10 @@ void SpoolmanSlotSaver::find_or_create_filament(int vendor_id, const std::string
             payload["vendor_id"] = vendor_id;
             payload["material"] = material;
             payload["color_hex"] = needle_color;
-            payload["name"] = material;
+            // Spoolman's `name` is the filament's own display name. Use the
+            // one the slot already carries; fall back to the material only when
+            // there is nothing better, which is all this used to do.
+            payload["name"] = filament_name.empty() ? material : filament_name;
             // density and diameter are REQUIRED by Spoolman (no defaults in their API).
             // Look up density from the material database; fall back to 1.24 g/cm³ (PLA).
             // Diameter defaults to 1.75 mm — correct for ~99% of hobbyist setups.

@@ -14,6 +14,11 @@ _HELIX_MOONRAKER_SOURCED=1
 # ZMOD-on-AD5X notes:
 #   /opt/config is a symlink to /usr/data/config; printer_data lives under both.
 #   We list both forms so symlink-aware and -unaware path resolutions both hit.
+# COSMOS (OpenCentauri, Elegoo Centauri Carbon) note:
+#   /etc/klipper/config has no printer_data component at all. set_install_paths
+#   points KLIPPER_CONFIG_DIR there for platform=cc1, so the dynamic probe below
+#   normally wins; the static entry is the safety net for a COSMOS box that was
+#   not detected as cc1 (forced --platform, future Elegoo model, etc.).
 MOONRAKER_CONF_PATHS="
 /home/pi/printer_data/config/moonraker.conf
 /home/biqu/printer_data/config/moonraker.conf
@@ -24,6 +29,7 @@ MOONRAKER_CONF_PATHS="
 /opt/config/moonraker.conf
 /usr/data/config/printer_data/config/moonraker.conf
 /usr/data/printer_data/config/moonraker.conf
+/etc/klipper/config/moonraker.conf
 "
 
 # Common Moonraker SOURCE roots (the checkout/package that holds the Python
@@ -137,9 +143,12 @@ moonraker_asset_name_support() {
 # Find moonraker.conf
 # Returns: path to moonraker.conf or empty string
 find_moonraker_conf() {
-    # Dynamic: check detected user's home first
-    if [ -n "${KLIPPER_HOME:-}" ]; then
-        local user_conf="${KLIPPER_HOME}/printer_data/config/moonraker.conf"
+    # Dynamic: the platform's own config dir first -- KLIPPER_CONFIG_DIR when a
+    # firmware declared one (COSMOS), else <KLIPPER_HOME>/printer_data/config.
+    local config_dir
+    config_dir="$(klipper_config_dir)"
+    if [ -n "$config_dir" ]; then
+        local user_conf="${config_dir}/moonraker.conf"
         if [ -f "$user_conf" ]; then
             echo "$user_conf"
             return 0
@@ -432,14 +441,21 @@ EOF
 
 # Ensure helixscreen is in moonraker.asvc (service allowlist)
 # Moonraker requires services to be listed here before it can manage them.
-# The asvc file lives in printer_data/, one level up from config/moonraker.conf.
-# Args: $1 = moonraker.conf path (used to derive printer_data path)
+#
+# The allowlist lives one directory above the config dir, so it is derived from
+# moonraker.conf rather than from any printer_data assumption. That derivation
+# holds on the non-printer_data layouts too:
+#   /home/pi/printer_data/config/moonraker.conf -> /home/pi/printer_data/moonraker.asvc
+#   /etc/klipper/config/moonraker.conf          -> /etc/klipper/moonraker.asvc  (COSMOS)
+# The COSMOS path was verified on a real CC1 -- that IS where its asvc file is.
+#
+# Args: $1 = moonraker.conf path (used to derive the data dir holding the asvc)
 ensure_moonraker_asvc() {
     local conf="$1"
-    # printer_data is two levels up from config/moonraker.conf
-    local printer_data
-    printer_data="$(dirname "$(dirname "$conf")")"
-    local asvc="${printer_data}/moonraker.asvc"
+    # The data dir is two levels up from <config dir>/moonraker.conf
+    local data_dir
+    data_dir="$(dirname "$(dirname "$conf")")"
+    local asvc="${data_dir}/moonraker.asvc"
 
     if [ ! -f "$asvc" ]; then
         log_info "No moonraker.asvc found at $asvc, skipping"
@@ -498,8 +514,10 @@ configure_moonraker_updates() {
 
     if [ -z "$conf" ]; then
         log_warn "Could not find moonraker.conf in any known location:"
-        if [ -n "${KLIPPER_HOME:-}" ]; then
-            log_warn "  ${KLIPPER_HOME}/printer_data/config/moonraker.conf"
+        local probed_dir
+        probed_dir="$(klipper_config_dir)"
+        if [ -n "$probed_dir" ]; then
+            log_warn "  ${probed_dir}/moonraker.conf"
         fi
         for tried in $MOONRAKER_CONF_PATHS; do
             log_warn "  $tried"

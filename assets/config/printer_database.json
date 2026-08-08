@@ -467,7 +467,6 @@
       "image": "flashforge-adventurer-5x.png",
       "preset": "ad5x",
       "z_offset_calibration_strategy": "firmware_managed",
-      "firmware_echoes_gcode": true,
       "heuristics": [
         {
           "type": "object_exists",
@@ -3215,8 +3214,8 @@
           "type": "object_exists",
           "field": "printer_objects",
           "pattern": "probe_air",
-          "confidence": 85,
-          "reason": "probe_air object (QIDI Max 4 stock probe)"
+          "confidence": 40,
+          "reason": "probe_air object (QIDI stock firmware, shared across the range)"
         },
         {
           "type": "fan_match",
@@ -3229,8 +3228,8 @@
           "type": "object_exists",
           "field": "printer_objects",
           "pattern": "multi_color_controller",
-          "confidence": 70,
-          "reason": "QIDI multi-color controller object"
+          "confidence": 45,
+          "reason": "QIDI multi-color controller object (QIDI Box host -- also on Q2/Plus 4)"
         },
         {
           "type": "macro_match",
@@ -5324,8 +5323,8 @@
           "type": "object_exists",
           "field": "printer_objects",
           "pattern": "probe_air",
-          "confidence": 95,
-          "reason": "probe_air object (Artillery M1 Pro custom probe)"
+          "confidence": 35,
+          "reason": "probe_air object (not Artillery-specific -- QIDI stock firmware ships it too)"
         },
         {
           "type": "object_exists",

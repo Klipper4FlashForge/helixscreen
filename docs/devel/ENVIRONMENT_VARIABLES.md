@@ -808,6 +808,42 @@ HELIX_AMS_GATES=8 ./build/bin/helix-screen --test
 HELIX_AMS_GATES=16 ./build/bin/helix-screen --test
 ```
 
+### `HELIX_MOCK_REMOTE_THUMBS`
+
+Make the mock advertise Moonraker-relative thumbnail paths and fetch them over real HTTP, so `--test` exercises the cold-fetch pipeline instead of short-cutting it.
+
+| Property | Value |
+|----------|-------|
+| **Values** | `1` / any non-empty, non-`0` value to enable |
+| **Default** | unset (thumbnails resolve from local files) |
+| **File** | `src/api/moonraker_client_mock_files.cpp` (advertised path), `src/api/moonraker_api_mock.cpp` (delegates to the real transfer API), served by `src/api/mock_http_file_server.cpp` |
+
+By default the mock advertises a local cache path and `MoonrakerFileTransferAPIMock` copies the file, so download → decode → prescale → evict never runs under `--test`. That is fast and right for normal mock use, but it made the pipeline implicated by debug bundle `6F3QJLFG` unreachable without a printer (prestonbrown/helixscreen#960). With this set, paths become `.thumbs/<name>-300x300.png`, the mock delegates to the real `MoonrakerFileTransferAPI`, and `MockHttpFileServer` answers on a loopback port — so the real HTTP client, HttpExecutor workers and stb_image decode all run.
+
+Pair with `HELIX_THUMB_CACHE_MAX_MB` to make eviction fire too.
+
+```bash
+HELIX_MOCK_REMOTE_THUMBS=1 ./build/bin/helix-screen --test -vv
+```
+
+### `HELIX_THUMB_CACHE_MAX_MB`
+
+Force a hard ceiling on the thumbnail cache so eviction is reachable on demand.
+
+| Property | Value |
+|----------|-------|
+| **Values** | Positive integer (MB) |
+| **Default** | unset (config `/cache/thumbnail_max_mb`, default 20 MB) |
+| **File** | `src/print/thumbnail_cache.cpp` (`ThumbnailCache` constructor) |
+
+Applied **after** `calculate_dynamic_max_size()` and deliberately not through it: that function clamps its result up to `MIN_CACHE_SIZE` (5 MB), so a small value fed in via config gets raised straight back and eviction still never fires. Setting it below the cache's real usage (~1.7 MB for the mock's file list) makes eviction run every pass.
+
+```bash
+# Cold fetch with eviction live — the decode-vs-evict interaction from #960
+HELIX_MOCK_REMOTE_THUMBS=1 HELIX_THUMB_CACHE_MAX_MB=1 \
+  HELIX_CACHE_DIR=/tmp/ht ./build/bin/helix-screen --test -vv
+```
+
 ### `HELIX_MOCK_AUTO_PRINT`
 
 Boot the mock printer straight into an active print so print-gated features can be exercised under `--test` without manually driving a print-start flow.
@@ -1761,6 +1797,35 @@ HELIX_SKIP_SPLASH=1
 ```
 
 The launcher translates this to `--skip-splash` on the CLI.
+
+### `HELIX_REMOTE_CONTROL`
+
+Start the `helix-screen ctl` remote-control server on a deployed device.
+
+The server only listens when the app is started with `--remote` (or `--test`), and the SysV
+init script and systemd unit both exec the launcher with no arguments. Without this variable
+there is no way to reach an installed instance with `ctl` at all, so diagnosing a display
+problem means physically walking to the printer.
+
+| Property | Value |
+|----------|-------|
+| **Values** | `1` (enable) or unset (disabled) |
+| **Default** | Unset (server not started) |
+| **File** | `scripts/helix-launcher.sh` |
+
+```bash
+# In helixscreen.env:
+HELIX_REMOTE_CONTROL=1
+HELIX_REMOTE_SOCKET=/tmp/helix-cc1.sock   # optional; omit for the default path
+```
+
+The launcher translates these to `--remote` and `--remote-socket <path>`.
+
+Off by default deliberately: the control socket can drive the entire UI — navigate, click,
+set values, capture screenshots — so it is a debugging aid to switch on for a session, not
+something to leave enabled on a shared machine. Pin `HELIX_REMOTE_SOCKET` when more than one
+instance could be running, since a bare `ctl` silently drives whichever started first and
+still reports success. See `docs/devel/HELIXCTL.md`.
 
 ### `HELIX_LOG_RING_LINES`
 

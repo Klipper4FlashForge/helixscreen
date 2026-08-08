@@ -610,9 +610,11 @@ clean_old_installation() {
     $SUDO rm -f /etc/polkit-1/rules.d/50-helixscreen-network.rules
     $SUDO systemctl daemon-reload 2>/dev/null || true
 
-    # Remove printer_data/config/helixscreen/ (user config) in clean mode
-    if [ -n "${KLIPPER_HOME:-}" ]; then
-        local pd_helix="${KLIPPER_HOME}/printer_data/config/helixscreen"
+    # Remove <klipper config dir>/helixscreen/ (user config) in clean mode
+    local pd_config
+    pd_config="$(klipper_config_dir)"
+    if [ -n "$pd_config" ]; then
+        local pd_helix="${pd_config}/helixscreen"
         if [ -d "$pd_helix" ] || [ -L "$pd_helix" ]; then
             log_info "Removing user config: $pd_helix"
             $SUDO rm -rf "$pd_helix"

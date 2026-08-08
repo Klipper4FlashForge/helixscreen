@@ -29,7 +29,8 @@
 #endif
 
 // LVGL heap monitor
-#include "lv_init.h" // lv_is_initialized() — guards the lv_mem_monitor read
+#include "core/lv_obj_tree.h" // lv_obj_get_name() for delete crumbs
+#include "lv_init.h"          // lv_is_initialized() — guards the lv_mem_monitor read
 #include "misc/lv_types.h"
 #include "stdlib/lv_mem.h"
 
@@ -1370,16 +1371,53 @@ extern "C" int helix_get_text_bounds(unsigned long* lo, unsigned long* hi) {
 }
 
 // C-ABI bridges for LVGL — see include/system/crash_handler.h.
-// Crumb subject is the class name; detail is the pointer (correlate with
-// the destructor's `obj` argument via addr2line on the next bundle resolve).
+//
+// Subject is "<class>:<name>" when the widget has an XML name, else just the
+// class; detail is the pointer. The bare class name was not enough to act on:
+// bundle 6F3QJLFG's final crumb before a heap abort was `async_d lv_obj
+// 57241184`, and "some plain container was being deleted" does not identify a
+// site — nearly every teardown crumb in that trace read the same. The name is
+// what the XML author wrote, so it points straight at a file
+// (prestonbrown/helixscreen#960).
+//
+// Read here rather than passed in from the patch: four patches already touch
+// lv_obj_tree.c, so widening that hook means the pristine-file regeneration
+// dance in patches/README.md. lv_obj_get_name() is a plain read of
+// spec_attr->name with no allocation, and this file already links LVGL for
+// lv_mem_monitor(). The name may be heap-owned by LVGL, so it is copied into
+// the fixed slot immediately — which breadcrumb::note() does.
+static void note_delete_crumb(const char* category, const void* obj,
+                              const char* class_name) noexcept {
+    const char* cls = class_name ? class_name : "?";
+
+    // Guard the LVGL call: teardown can reach here after lv_deinit(), where
+    // spec_attr is no longer safe to walk.
+    const char* name = nullptr;
+    if (obj && lv_is_initialized()) {
+        name = lv_obj_get_name(static_cast<const lv_obj_t*>(obj));
+    }
+
+    if (!name || !name[0]) {
+        crash_handler::breadcrumb::note(category, cls, reinterpret_cast<long>(obj));
+        return;
+    }
+
+    // "<class>:<name>" — breadcrumb::note truncates to the slot's 60 bytes.
+    char subject[60];
+    size_t n = copy_truncated(subject, sizeof(subject), cls);
+    if (n + 1 < sizeof(subject)) {
+        subject[n++] = ':';
+        copy_truncated(subject + n, sizeof(subject) - n, name);
+    }
+    crash_handler::breadcrumb::note(category, subject, reinterpret_cast<long>(obj));
+}
+
 extern "C" void helix_crash_note_async_del(const void* obj, const char* class_name) {
-    crash_handler::breadcrumb::note("async_d", class_name ? class_name : "?",
-                                    reinterpret_cast<long>(obj));
+    note_delete_crumb("async_d", obj, class_name);
 }
 
 extern "C" void helix_crash_note_sync_del(const void* obj, const char* class_name) {
-    crash_handler::breadcrumb::note("sync_d", class_name ? class_name : "?",
-                                    reinterpret_cast<long>(obj));
+    note_delete_crumb("sync_d", obj, class_name);
 }
 
 uint32_t crash_handler::detail::elapsed_ms(uint32_t start_ms, uint32_t now_ms) noexcept {

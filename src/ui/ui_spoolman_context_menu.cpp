@@ -106,13 +106,17 @@ void SpoolmanContextMenu::on_created(lv_obj_t* menu_obj) {
         lv_label_set_text(header, name.c_str());
     }
 
-    // Color subtitle (e.g., "Jet Black") -- hidden when no color name
+    // Filament-name subtitle (e.g., "PLA Matte Charcoal") -- hidden when the
+    // spool's filament has no name. The XML widget is still called
+    // "spool_color_label" for compatibility; the string it has always shown is
+    // Spoolman's filament.name, which is the useful subtitle under a header
+    // that already carries vendor + material.
     lv_obj_t* color_label = lv_obj_find_by_name(menu_obj, "spool_color_label");
     if (color_label) {
-        if (pending_spool_.color_name.empty()) {
+        if (pending_spool_.filament_name.empty()) {
             lv_obj_add_flag(color_label, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_label_set_text(color_label, pending_spool_.color_name.c_str());
+            lv_label_set_text(color_label, pending_spool_.filament_name.c_str());
         }
     }
 

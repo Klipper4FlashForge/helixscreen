@@ -86,6 +86,9 @@ class CfsTestAccess {
     static void set_macro_variant_k1(AmsBackendCfs& b) {
         b.macro_variant_ = helix::printer::CfsMacroVariant::K1;
     }
+    static void set_macro_variant_fork(AmsBackendCfs& b) {
+        b.macro_variant_ = helix::printer::CfsMacroVariant::Fork;
+    }
     // Seed N connected CFS units (unit_index 0..N-1) so device-action code that
     // iterates system_info_.units (e.g. refresh_rfid → BOX_INFO_REFRESH) has
     // addressable units without a live Moonraker parse.
@@ -168,6 +171,19 @@ class CfsK1RemapHelper : public CfsRemapHelper {
     }
 };
 } // namespace
+
+TEST_CASE("CFS Box profile clear is Fork-only", "[ams][cfs][fork]") {
+    CfsRemapHelper backend;
+
+    backend.clear_box_slot_profile(2);
+    REQUIRE(backend.captured.empty());
+
+    CfsTestAccess::set_macro_variant_fork(backend);
+
+    backend.clear_box_slot_profile(2);
+
+    REQUIRE(backend.captured == std::vector<std::string>{"_BOX_SLOT_CLEAR SLOT=2"});
+}
 
 TEST_CASE("CFS type enum", "[ams][cfs]") {
     SECTION("CFS is a valid AmsType") {
@@ -1299,11 +1315,65 @@ TEST_CASE("CFS set_tool_mapping updates local tool_to_slot_map", "[ams][cfs][rem
     auto baseline = helper.get_tool_mapping();
     REQUIRE_FALSE(baseline.empty()); // box.map populated by handle_status
 
-    REQUIRE(helper.set_tool_mapping(1, 5).result == AmsResult::SUCCESS);
+    SECTION("a remap onto a connected lane moves BOTH directions") {
+        // This payload connects T1 only — T2 reports state "None" — so the box
+        // has four lanes, 0..3, and lane 3 is one of them.
+        REQUIRE(helper.set_tool_mapping(1, 3).result == AmsResult::SUCCESS);
 
-    auto after = helper.get_tool_mapping();
-    REQUIRE(after.size() == baseline.size());
-    REQUIRE(after[1] == 5);
+        auto after = helper.get_tool_mapping();
+        REQUIRE(after.size() == baseline.size());
+        REQUIRE(after[1] == 3);
+
+        // The reverse direction has to follow, or the AMS panel badges one lane
+        // while the filament panel's Load/Unload buttons act on another.
+        auto info = helper.get_system_info();
+        const auto* lane3 = info.get_slot_global(3);
+        REQUIRE(lane3 != nullptr);
+        CHECK(lane3->mapped_tool == 1);
+
+        // Both losing sides give up their claim: lane 1 no longer answers to
+        // T1, and T3 no longer resolves to the lane T1 just took.
+        const auto* lane1 = info.get_slot_global(1);
+        REQUIRE(lane1 != nullptr);
+        CHECK(lane1->mapped_tool == -1);
+        CHECK(after[3] == -1);
+    }
+
+    SECTION("a remap onto a lane the box has not reported is sent but not recorded") {
+        // Slot 5 lives in unit T2, which this payload reports as state "None" —
+        // not connected. The command still goes out, because firmware is the
+        // authority and a unit we have not yet parsed a frame for may well be
+        // there; the frame that describes it is what makes the mapping real.
+        //
+        // What must NOT happen is recording it locally. A forward entry naming
+        // a lane with no SlotInfo has no mapped_tool to pair with, so the two
+        // directions could never agree — and resolve_op_button_slot() would
+        // hand the filament panel slot 5, which get_slot_global() answers with
+        // nullptr. This assertion used to read `after[1] == 5`, from when the
+        // forward map was written on its own and nothing had to match it.
+        const size_t sent_before = helper.captured.size();
+        REQUIRE(helper.set_tool_mapping(1, 5).result == AmsResult::SUCCESS);
+
+        REQUIRE(helper.captured.size() == sent_before + 1);
+        CHECK(helper.captured.back() == "BOX_MODIFY_TN T1B=T2B");
+
+        auto after = helper.get_tool_mapping();
+        CHECK(after == baseline);
+
+        // The invariant, stated directly: every forward entry names a lane that
+        // exists and claims that tool back.
+        auto info = helper.get_system_info();
+        for (int t = 0; t < static_cast<int>(after.size()); ++t) {
+            int slot = after[static_cast<size_t>(t)];
+            if (slot < 0) {
+                continue;
+            }
+            INFO("T" << t << " resolves to slot " << slot);
+            const auto* lane = info.get_slot_global(slot);
+            REQUIRE(lane != nullptr);
+            CHECK(lane->mapped_tool == t);
+        }
+    }
 }
 
 TEST_CASE("CFS get_tool_mapping_capabilities advertises editable", "[ams][cfs][remap]") {
@@ -1468,8 +1538,7 @@ TEST_CASE("CFS migrates from helix-screen:cfs_slot_overrides on first startup",
     CHECK(api.mock_get_db_value("helix-screen", "cfs_slot_overrides").is_null());
 }
 
-TEST_CASE("CFS set_slot_info(persist=true) writes to store",
-          "[ams][cfs][filament_slot_override]") {
+TEST_CASE("CFS set_slot_info(persist=true) writes to store", "[ams][cfs][filament_slot_override]") {
     CfsTmpCacheDir tmp("task14_persist_true");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -1753,8 +1822,7 @@ TEST_CASE("CFS empty RFID fingerprint does not update baseline or clear",
     CHECK(!api.mock_get_db_value("lane_data", "lane1").is_null());
 }
 
-TEST_CASE("CFS override preserved across unchanged parses",
-          "[ams][cfs][filament_slot_override]") {
+TEST_CASE("CFS override preserved across unchanged parses", "[ams][cfs][filament_slot_override]") {
     // When the RFID fingerprint is unchanged (same spool re-observed), the
     // override must be re-applied on every parse. This is the core behavior
     // that was broken pre-Task-14: firmware data overwrote user edits on

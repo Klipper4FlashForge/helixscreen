@@ -923,6 +923,14 @@ void DisplayBackendFbdev::enable_affine_calibration() {
     spdlog::debug("[Fbdev Backend] Affine calibration re-enabled (valid={})", calibration_.valid);
 }
 
+void DisplayBackendFbdev::clear_calibration() {
+    // Both slots, so enable_affine_calibration() cannot bring the old matrix
+    // back. Operates on owned members for the same reason set_calibration does.
+    calibration_ = helix::TouchCalibration{};
+    calibration_context_.calibration = calibration_;
+    spdlog::info("[Fbdev Backend] Stored calibration cleared — device is uncalibrated");
+}
+
 void DisplayBackendFbdev::set_display_rotation(lv_display_rotation_t rot, int phys_w, int phys_h) {
     // No-op for fbdev — LVGL's indev_pointer_proc() already calls
     // lv_display_rotate_point() to transform touch coordinates for

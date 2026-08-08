@@ -19,14 +19,16 @@
  * selected lane 0. Both executors now call the private selected_op_slot() — the
  * same resolution the button gating uses — so the op can never diverge.
  *
- * Mutation check: reverting execute_load() to load_filament(sys.current_slot)
- * makes "BoxTurtle: Load follows the selected tool" FAIL (load_filament gets 3,
- * not 0). If it still passes, the test does not reach the callsite.
+ * Mutation check: reverting execute_load() to dispatching on sys.current_slot
+ * makes "BoxTurtle: Load follows the selected tool" FAIL (the backend is asked
+ * for 3, not 0). If it still passes, the test does not reach the callsite.
  */
+
+#include "ui_panel_filament.h"
+#include "ui_update_queue.h"
 
 #include "../lvgl_ui_test_fixture.h"
 #include "../test_helpers/filament_panel_test_access.h"
-
 #include "ams_backend_mock.h"
 #include "ams_state.h"
 #include "ams_types.h"
@@ -34,8 +36,6 @@
 #include "post_op_cooldown_manager.h"
 #include "printer_state.h"
 #include "tool_state.h"
-#include "ui_panel_filament.h"
-#include "ui_update_queue.h"
 
 #include <lvgl.h>
 #include <memory>
@@ -58,9 +58,16 @@ class RecordingBackend : public AmsBackendMock {
   public:
     RecordingBackend() : AmsBackendMock(4) {}
 
-    AmsSystemInfo sys_{}; ///< Snapshot returned to the panel (test sets fields)
+    AmsSystemInfo sys_{};  ///< Snapshot returned to the panel (test sets fields)
     int loaded_slot_ = -1; ///< Which slot reports "loaded at toolhead"
     PathTopology topology_ = PathTopology::HUB; ///< Simulated path topology (test sets)
+    /// Presence the gating reads for every non-loaded lane. AVAILABLE by default
+    /// so the button gating's slot_has_filament term never masks what a test is
+    /// actually asserting; a test that cares sets it explicitly.
+    SlotStatus slot_status_ = SlotStatus::AVAILABLE;
+    /// AmsBackend::filament_ops_self_home() — true only on AD5X IFS in
+    /// production. Decides whether a PAUSED print still refuses filament ops.
+    bool self_homes_ = false;
 
     // Observed dispatches
     int last_load_slot = -999;
@@ -88,6 +95,19 @@ class RecordingBackend : public AmsBackendMock {
     }
     [[nodiscard]] bool slot_has_filament_at_toolhead(int slot) const override {
         return slot == loaded_slot_;
+    }
+    // Deterministic per-lane presence for the button gating (the base mock owns
+    // its own slot table, which this test does not populate).
+    [[nodiscard]] SlotInfo get_slot_info(int slot) const override {
+        SlotInfo info;
+        info.slot_index = slot;
+        info.global_index = slot;
+        info.mapped_tool = slot;
+        info.status = (slot == loaded_slot_) ? SlotStatus::LOADED : slot_status_;
+        return info;
+    }
+    [[nodiscard]] bool filament_ops_self_home() const override {
+        return self_homes_;
     }
 
     AmsError load_filament(int slot) override {
@@ -169,7 +189,9 @@ struct OpSlotHarness {
 };
 
 // Identity BoxTurtle/AFC snapshot: 4 lanes, tool i -> slot i, lane 4 (slot 3)
-// loaded to the toolhead, aggregate current_slot == 3.
+// loaded to the toolhead, aggregate current_slot == 3. The unit is populated
+// because the load-vs-swap rule reads per-slot mapped_tool off it — a real AFC
+// snapshot always carries its lanes.
 AmsSystemInfo boxturtle_sys() {
     AmsSystemInfo sys;
     sys.type = AmsType::AFC;
@@ -177,6 +199,17 @@ AmsSystemInfo boxturtle_sys() {
     sys.current_slot = 3;
     sys.filament_loaded = true;
     sys.tool_to_slot_map = {0, 1, 2, 3};
+
+    AmsUnit unit;
+    unit.slot_count = 4;
+    unit.connected = true;
+    for (int i = 0; i < 4; ++i) {
+        SlotInfo slot;
+        slot.slot_index = i;
+        slot.mapped_tool = i;
+        unit.slots.push_back(slot);
+    }
+    sys.units.push_back(std::move(unit));
     return sys;
 }
 
@@ -193,9 +226,11 @@ ToolTopology identity_topo() {
 TEST_CASE_METHOD(LVGLUITestFixture,
                  "BoxTurtle: execute_load targets the SELECTED tool, not current_slot",
                  "[filament][op_slot][panel]") {
-    // Dropdown = T0 while lane 4 (slot 3) is loaded. execute_load() must dispatch
-    // load_filament(0) — the selected lane — never load_filament(3). This is the
-    // exact single-source-of-truth bug the fix closes, and the mutation target.
+    // Dropdown = T0 while lane 4 (slot 3) is loaded. Filament is seated, so this
+    // is a swap, not a fresh load (plan_load's load-vs-swap rule) — but the
+    // argument must still come from the SELECTED lane: change_tool(0), never a
+    // dispatch derived from current_slot 3. That is the single-source-of-truth
+    // bug this guards, and the mutation target.
     OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
     h.select_tool(0);
 
@@ -204,12 +239,12 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
     TA::execute_load(*h.panel);
 
-    REQUIRE(h.mock->load_calls == 1);
-    CHECK(h.mock->last_load_slot == 0); // NOT 3 (the loaded current_slot)
+    REQUIRE(h.mock->change_tool_calls == 1);
+    CHECK(h.mock->last_change_tool == 0); // slot 0's mapped tool, NOT 3
+    CHECK(h.mock->load_calls == 0);       // seated machine swaps, never feeds
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture,
-                 "BoxTurtle: execute_unload targets the selected loaded slot",
+TEST_CASE_METHOD(LVGLUITestFixture, "BoxTurtle: execute_unload targets the selected loaded slot",
                  "[filament][op_slot][panel]") {
     // Dropdown = T3 and slot 3 is loaded -> unload_filament(3).
     OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
@@ -391,8 +426,10 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     process_lvgl(10);
     REQUIRE_FALSE(cd.has_pending_timer());
 
-    TA::execute_load(*h.panel); // fire-and-forget backend load; op guard now active
-    REQUIRE(h.mock->load_calls == 1);
+    // Fire-and-forget backend op; op guard now active. Lane 3 is seated, so the
+    // dispatch is the swap arm — the completion path is the same either way.
+    TA::execute_load(*h.panel);
+    REQUIRE(h.mock->change_tool_calls == 1);
 
     // Backend signals progress, then completion, via the shared AMS action subject.
     lv_subject_t* action = AmsState::instance().get_ams_action_subject();
@@ -440,8 +477,7 @@ template <typename T> class ScopedConfigValue {
 
 } // namespace
 
-TEST_CASE_METHOD(LVGLUITestFixture,
-                 "Post-op cooldown: disabled in settings schedules nothing",
+TEST_CASE_METHOD(LVGLUITestFixture, "Post-op cooldown: disabled in settings schedules nothing",
                  "[filament][op_slot][panel]") {
     OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
 
@@ -505,15 +541,20 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
 // The pure gating rule is pinned in test_filament_op_slot_resolver.cpp. This
 // drives the REAL panel: it asserts that update_filament_op_buttons() actually
-// consults print state, and that the print_active observer re-runs the gating on
+// consults print state, and that the print-state observer re-runs the gating on
 // a panel that is already open — which is how the failure reached the user. The
 // AD5X reporter was sitting on the filament screen when the runout pause fired,
 // tapped a still-lit Load, and got "Cannot run filament operation while
 // printing" from the backend guard (bundle JX2FVRB9).
 //
-// Mutation check: drop `print_active` from the compute_op_button_gating() call
-// in update_filament_op_buttons(), OR delete the print_active_observer_
-// registration, and this test fails at the post-pause assertions.
+// The panel watches print_state_enum, NOT the derived print_active subject:
+// PRINTING -> PAUSED is a gating edge now (a pause UNGATES the buttons on every
+// backend but AD5X) and print_active reads 1 across both, so it never fires on
+// that transition.
+//
+// Mutation check: drop `print_blocks_op` from the compute_op_button_gating()
+// call in update_filament_op_buttons(), OR delete the print-state observer
+// registration, and this test fails at the post-start assertions.
 TEST_CASE_METHOD(LVGLUITestFixture,
                  "Filament panel greys Load/Unload when a print owns the toolhead",
                  "[filament][op_slot][panel][print_guard]") {
@@ -521,6 +562,10 @@ TEST_CASE_METHOD(LVGLUITestFixture,
         lv_subject_t* s = lv_xml_get_subject(nullptr, name);
         REQUIRE(s != nullptr);
         return lv_subject_get_int(s);
+    };
+    auto set_job_state = [this](helix::PrintJobState s) {
+        lv_subject_set_int(state().get_print_state_enum_subject(), static_cast<int>(s));
+        process_lvgl(10);
     };
 
     OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
@@ -532,19 +577,114 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     REQUIRE(read("filament_load_disabled") == 1);
     REQUIRE(read("filament_unload_disabled") == 0);
 
-    // A runout pause arrives while the panel is open. print_active is the derived
-    // subject PrinterState publishes for PRINTING||PAUSED; setting it must drive
-    // the observer and re-gate BOTH buttons with no other interaction.
-    lv_subject_set_int(state().get_print_active_subject(), 1);
-    process_lvgl(10);
-
+    // A print starts while the panel is open. Setting the state subject must
+    // drive the observer and re-gate BOTH buttons with no other interaction.
+    set_job_state(helix::PrintJobState::PRINTING);
     CHECK(read("filament_load_disabled") == 1);
     CHECK(read("filament_unload_disabled") == 1); // the regression: was 0
 
-    // Cancelling/finishing the print hands the buttons back.
-    lv_subject_set_int(state().get_print_active_subject(), 0);
-    process_lvgl(10);
+    // The runout pause. AFC does not self-home, so refuse_if_printing() now
+    // ALLOWS the unload here — pause-then-swap is the recovery Klipper asks for,
+    // and the panel must hand the button back or the fix is invisible.
+    set_job_state(helix::PrintJobState::PAUSED);
+    CHECK(read("filament_load_disabled") == 1);   // slot 3 already loaded
+    CHECK(read("filament_unload_disabled") == 0); // the paused-swap fix
 
+    // Same pause on a backend whose filament macro homes itself (AD5X IFS):
+    // still refused, because the buried _G28 would probe into the part.
+    h.mock->self_homes_ = true;
+    set_job_state(helix::PrintJobState::PRINTING); // force an observed edge
+    set_job_state(helix::PrintJobState::PAUSED);
+    CHECK(read("filament_load_disabled") == 1);
+    CHECK(read("filament_unload_disabled") == 1);
+    h.mock->self_homes_ = false;
+
+    // Cancelling/finishing the print hands the buttons back.
+    set_job_state(helix::PrintJobState::STANDBY);
     CHECK(read("filament_load_disabled") == 1); // still loaded
+    CHECK(read("filament_unload_disabled") == 0);
+}
+
+// The panel's Load gate grew a slot_has_filament term (the AMS context menu had
+// carried it since it was written). An empty lane cannot be loaded from, and
+// dispatching one leaves the button spinning against a backend refusal.
+//
+// SlotStatus::UNKNOWN is deliberately NOT read as empty: it means the backend
+// publishes no per-lane presence, and greying Load there would break loading
+// entirely on such a printer.
+//
+// Mutation check: drop the slot_has_filament assignment in
+// update_filament_op_buttons() and the empty-lane section fails; make
+// slot_presence() map UNKNOWN to false and the unknown section fails.
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "Filament panel greys Load on an empty lane, not an unknown one",
+                 "[filament][op_slot][panel][op_gating]") {
+    auto read = [](const char* name) {
+        lv_subject_t* s = lv_xml_get_subject(nullptr, name);
+        REQUIRE(s != nullptr);
+        return lv_subject_get_int(s);
+    };
+
+    OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
+
+    SECTION("a lane the backend reports EMPTY cannot be loaded from") {
+        h.mock->slot_status_ = SlotStatus::EMPTY;
+        h.select_tool(0); // an unloaded lane
+        TA::handle_extruder_changed(*h.panel);
+        process_lvgl(10);
+        CHECK(read("filament_load_disabled") == 1);
+    }
+
+    SECTION("a lane with filament stays loadable") {
+        h.mock->slot_status_ = SlotStatus::AVAILABLE;
+        h.select_tool(0);
+        TA::handle_extruder_changed(*h.panel);
+        process_lvgl(10);
+        CHECK(read("filament_load_disabled") == 0);
+    }
+
+    SECTION("UNKNOWN presence does not grey Load") {
+        h.mock->slot_status_ = SlotStatus::UNKNOWN;
+        h.select_tool(0);
+        TA::handle_extruder_changed(*h.panel);
+        process_lvgl(10);
+        CHECK(read("filament_load_disabled") == 0);
+    }
+}
+
+// The panel's Load/Unload had no system_busy term, so an AMS op started
+// elsewhere (the AMS panel, or the printer itself) left both buttons lit for its
+// whole duration — every tap answered by check_preconditions()'s busy refusal.
+//
+// Mutation check: drop the system_busy assignment in
+// update_filament_op_buttons() and this fails.
+TEST_CASE_METHOD(LVGLUITestFixture, "Filament panel greys Load/Unload while the AMS is busy",
+                 "[filament][op_slot][panel][op_gating]") {
+    auto read = [](const char* name) {
+        lv_subject_t* s = lv_xml_get_subject(nullptr, name);
+        REQUIRE(s != nullptr);
+        return lv_subject_get_int(s);
+    };
+
+    OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
+    h.select_tool(3);
+    TA::handle_extruder_changed(*h.panel);
+    process_lvgl(10);
+    REQUIRE(read("filament_unload_disabled") == 0);
+
+    // An unload kicked off from the AMS panel. AmsSystemInfo::is_busy() is
+    // "action is neither IDLE nor ERROR"; publishing it must re-gate here.
+    h.mock->sys_.action = AmsAction::UNLOADING;
+    lv_subject_set_int(AmsState::instance().get_ams_action_subject(),
+                       static_cast<int>(AmsAction::UNLOADING));
+    process_lvgl(10);
+    CHECK(read("filament_load_disabled") == 1);
+    CHECK(read("filament_unload_disabled") == 1);
+
+    // ...and hands them back when it finishes.
+    h.mock->sys_.action = AmsAction::IDLE;
+    lv_subject_set_int(AmsState::instance().get_ams_action_subject(),
+                       static_cast<int>(AmsAction::IDLE));
+    process_lvgl(10);
     CHECK(read("filament_unload_disabled") == 0);
 }

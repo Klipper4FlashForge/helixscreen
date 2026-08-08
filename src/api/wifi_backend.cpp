@@ -6,6 +6,7 @@
 #include "runtime_config.h"
 #include "spdlog/spdlog.h"
 
+#include <cctype>
 #include <unistd.h>
 #include <unordered_map>
 #ifdef HELIX_ENABLE_MOCKS
@@ -34,6 +35,30 @@ uint8_t wifi_band_flag_from_frequency(int frequency_mhz) {
         return WIFI_BAND_6GHZ;
     }
     return WIFI_BAND_NONE;
+}
+
+std::optional<bool> wifi_parse_nm_radio_state(const std::string& output) {
+    // Trim whitespace and lowercase — nmcli pads non-terse output and always
+    // appends a newline.
+    const std::string ws = " \t\r\n";
+    const size_t first = output.find_first_not_of(ws);
+    if (first == std::string::npos) {
+        return std::nullopt;
+    }
+    const size_t last = output.find_last_not_of(ws);
+    std::string word = output.substr(first, last - first + 1);
+    for (char& c : word) {
+        c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
+    }
+
+    if (word == "enabled") {
+        return true;
+    }
+    if (word == "disabled") {
+        return false;
+    }
+    // "missing", "unavailable", an error string, or empty: inconclusive.
+    return std::nullopt;
 }
 
 std::vector<WiFiNetwork> wifi_merge_networks_by_ssid(const std::vector<WiFiNetwork>& networks) {

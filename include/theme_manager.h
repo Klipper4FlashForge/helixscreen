@@ -131,6 +131,12 @@ struct OverlayWidths {
  * horizontally — reserving nav_width there strands a column of dead backdrop
  * beside every overlay, 54px of 320 on the Waveshare 11.9".
  *
+ * The transient class's "you will return from this" gap follows the same
+ * rule: it is spent on whichever axis the nav bar occupies. In landscape
+ * that is here (gap subtracted from the leading edge, alongside nav_width).
+ * In portrait the nav bar is vertical, so the gap moves to
+ * compute_overlay_heights() instead and both widths here are full-width.
+ *
  * Pure so the formula can be tested without the XML const registry, which
  * ignores duplicate registrations and therefore cannot be re-registered at a
  * second resolution within one process.
@@ -138,10 +144,38 @@ struct OverlayWidths {
  * @param hor_res   Display width in px
  * @param ver_res   Display height in px
  * @param nav_width Registered nav_width const for this breakpoint
- * @param gap       Leading-edge gap for the transient class (space_lg)
+ * @param gap       Leading-edge gap for the transient class (space_lg).
+ *                  Landscape only — see above.
  */
 OverlayWidths compute_overlay_widths(int32_t hor_res, int32_t ver_res, int32_t nav_width,
                                      int32_t gap);
+
+/**
+ * @brief Overlay heights for a screen geometry.
+ *
+ * The vertical twin of OverlayWidths. In landscape the navigation bar is a
+ * full-height vertical strip, so it consumes no vertical extent and both
+ * classes span the whole display. In portrait it is a full-width bottom strip
+ * (ui_xml/portrait/navigation_bar.xml), so both classes must stop short of it.
+ */
+struct OverlayHeights {
+    int32_t transient;   ///< A layer you will return from — leaves the gap above the nav bar.
+    int32_t destination; ///< A place you park — flush to the nav bar.
+};
+
+/**
+ * @brief Compute overlay heights for a screen geometry.
+ *
+ * Shares detect_layout_type() with compute_overlay_widths() so the two can
+ * never disagree about which axis the navigation bar occupies.
+ *
+ * @param hor_res    Display horizontal resolution.
+ * @param ver_res    Display vertical resolution.
+ * @param nav_height Height of the portrait bottom nav strip (#button_height_lg).
+ * @param gap        Leading-edge gap for transient overlays (#space_lg).
+ */
+OverlayHeights compute_overlay_heights(int32_t hor_res, int32_t ver_res, int32_t nav_height,
+                                       int32_t gap);
 } // namespace helix
 
 /// Style entry - binds a role to its style and configure function.
@@ -706,21 +740,16 @@ void theme_manager_apply_bg_color(lv_obj_t* obj, const char* base_name,
 int32_t theme_manager_get_font_height(const lv_font_t* font);
 
 /**
- * @brief Set an overlay's width from its resolved class
+ * @brief Apply an overlay's navigation geometry at push time.
  *
- * Destinations fill the space beside the nav dock (screen - nav); transient
- * layers leave a space_lg gap so the dimmed backdrop shows at the leading edge.
- * See include/overlay_class.h for what the two mean and
- * prestonbrown/helixscreen#1178 for why the choice is not an XML attribute.
+ * Sets width always. In portrait also sets height and top alignment, because
+ * ui_xml/portrait/navigation_bar.xml is a bottom strip that a full-height
+ * overlay would cover. Landscape leaves height and alignment to the XML.
  *
- * NavigationManager::apply_overlay_width() is the normal caller — it resolves
- * the class on every push. Call this directly only for overlays created outside
- * the push path.
- *
- * @param obj Widget to resize (typically an overlay panel or detail view)
- * @param is_destination true for destination width, false for transient
+ * The sole writer of overlay geometry — see OverlayClass for why the class is
+ * resolved at push time rather than baked into XML.
  */
-void ui_set_overlay_width(lv_obj_t* obj, bool is_destination);
+void ui_set_overlay_geometry(lv_obj_t* obj, bool is_destination);
 
 /**
  * @brief Get spacing value from unified space_* system

@@ -95,7 +95,8 @@ void check_prefixed(const AmsBackendAfc& afc, const CorpusCase& c) {
 }
 
 // LOAD_SWAP template order, needed to turn a phase id into the step index the
-// router publishes: heat,cut,unload,feed,poop,kick,brush,load.
+// router publishes: heat,cut,unload,feed,poop,brush,kick,load. (brush precedes
+// kick because AFC's wipe runs before the kick as well as after it.)
 constexpr int kStepUnload = 2;
 constexpr int kStepFeed = 3;
 constexpr int kStepPoop = 4;
@@ -112,6 +113,16 @@ int step_after(GcodeNarrationRouter& router, const std::string& line) {
     GcodeNarrationRouterTestAccess::feed(router, line);
     helix::ui::UpdateQueue::instance().drain();
     return lv_subject_get_int(AmsState::instance().get_toolchange_step_subject());
+}
+
+/// step_after() from a cleared bar. Needed wherever the lines under test are
+/// independent probes rather than a real sequence: AmsState latches the phase
+/// index so it can only advance within one operation, so probing "unload" right
+/// after "load" would (correctly) be refused.
+int step_isolated(GcodeNarrationRouter& router, const std::string& line) {
+    AmsState::instance().set_narration_phase(-1, "");
+    helix::ui::UpdateQueue::instance().drain();
+    return step_after(router, line);
 }
 
 } // namespace
@@ -238,10 +249,10 @@ TEST_CASE_METHOD(LVGLTestFixture, "bare AFC narration reaches the step bar",
     reset_step_baseline();
     GcodeNarrationRouter router(nullptr, nullptr);
 
-    CHECK(step_after(router, "Loading lane3") == kStepFeed);
-    CHECK(step_after(router, "lane3 is now loaded in toolhead t:0") == kStepLoad);
-    CHECK(step_after(router, "Unloading lane1") == kStepUnload);
-    CHECK(step_after(router, "Lane lane1 unload done t:0") == kStepUnload);
+    CHECK(step_isolated(router, "Loading lane3") == kStepFeed);
+    CHECK(step_isolated(router, "lane3 is now loaded in toolhead t:0") == kStepLoad);
+    CHECK(step_isolated(router, "Unloading lane1") == kStepUnload);
+    CHECK(step_isolated(router, "Lane lane1 unload done t:0") == kStepUnload);
 }
 
 TEST_CASE_METHOD(LVGLTestFixture, "console noise never moves the step bar",
@@ -252,8 +263,8 @@ TEST_CASE_METHOD(LVGLTestFixture, "console noise never moves the step bar",
     CHECK(step_after(router, "File opened: haircut.gcode Size: 12345678") == -1);
     CHECK(step_after(router, "B:60 /60 T0:220 /220") == -1);
     CHECK(step_after(router, "Done printing file") == -1);
-    CHECK(step_after(router, "<span class=warning--text>Please remove SET_AFC_TOOLCHANGES</span>") ==
-          -1);
+    CHECK(step_after(router,
+                     "<span class=warning--text>Please remove SET_AFC_TOOLCHANGES</span>") == -1);
     CHECK(step_after(router, "lane1 already loaded") == -1);
     CHECK(step_after(router, "Tool Change - lane1 -> lane3") == -1);
     // `!!` belongs to GcodeErrorRouter and must never reach the phase model,

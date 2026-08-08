@@ -669,10 +669,26 @@ void MoonrakerFileTransferAPIMock::download_thumbnail(const std::string& thumbna
                                                       const std::string& cache_path,
                                                       StringCallback on_success,
                                                       ErrorCallback on_error) {
-    (void)on_error; // Unused - mock falls back to placeholder on failure
-
     spdlog::debug("[MoonrakerAPIMock] download_thumbnail: path='{}' -> cache='{}'", thumbnail_path,
                   cache_path);
+
+    // HELIX_MOCK_REMOTE_THUMBS=1 — go through the REAL transfer implementation
+    // so the request actually crosses HTTP to MockHttpFileServer. Resolving the
+    // file locally here is faster and is the right default, but it means the
+    // download → HttpExecutor worker → decode → prescale → evict pipeline is
+    // never executed under --test, which is the pipeline bundle 6F3QJLFG
+    // implicates (#960). This is the only way to reach it without a printer.
+    static const bool remote_thumbs = [] {
+        const char* v = std::getenv("HELIX_MOCK_REMOTE_THUMBS");
+        return v && v[0] && std::string(v) != "0";
+    }();
+    if (remote_thumbs) {
+        MoonrakerFileTransferAPI::download_thumbnail(thumbnail_path, cache_path,
+                                                     std::move(on_success), std::move(on_error));
+        return;
+    }
+
+    (void)on_error; // Unused below - mock falls back to placeholder on failure
 
     namespace fs = std::filesystem;
 
@@ -909,17 +925,21 @@ void MoonrakerRestAPIMock::wled_get_strips(RestCallback on_success, ErrorCallbac
         RestResponse resp;
         resp.success = true;
         resp.status_code = 200;
+        // Moonraker nests the strip map under result.strips — reproduce that envelope
+        // exactly, or parser bugs that read the wrapper key as a strip name go
+        // undetected (prestonbrown/helixscreen#1241).
         resp.data = {{"result",
-                      {{"printer_led",
-                        {{"strip", "printer_led"},
-                         {"status", mock_wled_states_["printer_led"] ? "on" : "off"},
-                         {"brightness", mock_wled_brightness_["printer_led"]},
-                         {"preset", mock_wled_presets_["printer_led"]}}},
-                       {"enclosure_led",
-                        {{"strip", "enclosure_led"},
-                         {"status", mock_wled_states_["enclosure_led"] ? "on" : "off"},
-                         {"brightness", mock_wled_brightness_["enclosure_led"]},
-                         {"preset", mock_wled_presets_["enclosure_led"]}}}}}};
+                      {{"strips",
+                        {{"printer_led",
+                          {{"strip", "printer_led"},
+                           {"status", mock_wled_states_["printer_led"] ? "on" : "off"},
+                           {"brightness", mock_wled_brightness_["printer_led"]},
+                           {"preset", mock_wled_presets_["printer_led"]}}},
+                         {"enclosure_led",
+                          {{"strip", "enclosure_led"},
+                           {"status", mock_wled_states_["enclosure_led"] ? "on" : "off"},
+                           {"brightness", mock_wled_brightness_["enclosure_led"]},
+                           {"preset", mock_wled_presets_["enclosure_led"]}}}}}}}};
         on_success(resp);
     }
 }
@@ -984,25 +1004,27 @@ void MoonrakerRestAPIMock::wled_get_status(RestCallback on_success, ErrorCallbac
         RestResponse resp;
         resp.success = true;
         resp.status_code = 200;
+        // Same endpoint as wled_get_strips(), same result.strips envelope.
         resp.data = {{"result",
-                      {{"printer_led",
-                        {{"strip", "printer_led"},
-                         {"status", mock_wled_states_["printer_led"] ? "on" : "off"},
-                         {"chain_count", 30},
-                         {"preset", mock_wled_presets_["printer_led"]},
-                         {"brightness", mock_wled_brightness_["printer_led"]},
-                         {"intensity", -1},
-                         {"speed", -1},
-                         {"error", nullptr}}},
-                       {"enclosure_led",
-                        {{"strip", "enclosure_led"},
-                         {"status", mock_wled_states_["enclosure_led"] ? "on" : "off"},
-                         {"chain_count", 60},
-                         {"preset", mock_wled_presets_["enclosure_led"]},
-                         {"brightness", mock_wled_brightness_["enclosure_led"]},
-                         {"intensity", -1},
-                         {"speed", -1},
-                         {"error", nullptr}}}}}};
+                      {{"strips",
+                        {{"printer_led",
+                          {{"strip", "printer_led"},
+                           {"status", mock_wled_states_["printer_led"] ? "on" : "off"},
+                           {"chain_count", 30},
+                           {"preset", mock_wled_presets_["printer_led"]},
+                           {"brightness", mock_wled_brightness_["printer_led"]},
+                           {"intensity", -1},
+                           {"speed", -1},
+                           {"error", nullptr}}},
+                         {"enclosure_led",
+                          {{"strip", "enclosure_led"},
+                           {"status", mock_wled_states_["enclosure_led"] ? "on" : "off"},
+                           {"chain_count", 60},
+                           {"preset", mock_wled_presets_["enclosure_led"]},
+                           {"brightness", mock_wled_brightness_["enclosure_led"]},
+                           {"intensity", -1},
+                           {"speed", -1},
+                           {"error", nullptr}}}}}}}};
         on_success(resp);
     }
 }
@@ -1314,7 +1336,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool1.id = 1;
     spool1.vendor = "Polymaker";
     spool1.material = "PLA";
-    spool1.color_name = "Jet Black";
+    spool1.filament_name = "Jet Black";
     spool1.color_hex = "1A1A2E";
     spool1.remaining_weight_g = 850.0;
     spool1.initial_weight_g = 1000.0;
@@ -1330,7 +1352,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool2.id = 2;
     spool2.vendor = "eSUN";
     spool2.material = "Silk PLA";
-    spool2.color_name = "Silk Blue";
+    spool2.filament_name = "Silk Blue";
     spool2.color_hex = "26DCD9";
     spool2.remaining_weight_g = 750.0;
     spool2.initial_weight_g = 1000.0;
@@ -1346,7 +1368,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool3.id = 3;
     spool3.vendor = "Elegoo";
     spool3.material = "ASA";
-    spool3.color_name = "Pop Blue";
+    spool3.filament_name = "Pop Blue";
     spool3.color_hex = "00AEFF";
     spool3.remaining_weight_g = 500.0;
     spool3.initial_weight_g = 1000.0;
@@ -1362,7 +1384,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool4.id = 4;
     spool4.vendor = "Flashforge";
     spool4.material = "ABS";
-    spool4.color_name = "Fire Engine Red";
+    spool4.filament_name = "Fire Engine Red";
     spool4.color_hex = "D20000";
     spool4.remaining_weight_g = 100.0;
     spool4.initial_weight_g = 1000.0;
@@ -1378,7 +1400,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool5.id = 5;
     spool5.vendor = "Kingroon";
     spool5.material = "PETG";
-    spool5.color_name = "Signal Yellow";
+    spool5.filament_name = "Signal Yellow";
     spool5.color_hex = "F4E111";
     spool5.remaining_weight_g = 1000.0;
     spool5.initial_weight_g = 1000.0;
@@ -1394,7 +1416,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool6.id = 6;
     spool6.vendor = "Overture";
     spool6.material = "TPU";
-    spool6.color_name = "Clear";
+    spool6.filament_name = "Clear";
     spool6.color_hex = "E8E8E8";
     spool6.remaining_weight_g = 600.0;
     spool6.initial_weight_g = 1000.0;
@@ -1412,7 +1434,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool7.id = 7;
     spool7.vendor = "Bambu Lab";
     spool7.material = "ASA";
-    spool7.color_name = "Gray ASA";
+    spool7.filament_name = "Gray ASA";
     spool7.color_hex = "8A949E";
     spool7.remaining_weight_g = 1000.0;
     spool7.initial_weight_g = 1000.0;
@@ -1428,7 +1450,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool8.id = 8;
     spool8.vendor = "Polymaker";
     spool8.material = "PC";
-    spool8.color_name = "PolyMax PC Grey";
+    spool8.filament_name = "PolyMax PC Grey";
     spool8.color_hex = "A2AAAD";
     spool8.remaining_weight_g = 500.0;
     spool8.initial_weight_g = 750.0;
@@ -1444,7 +1466,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool9.id = 9;
     spool9.vendor = "Polymaker";
     spool9.material = "PA-CF";
-    spool9.color_name = "Fiberon PA12-CF15 Black";
+    spool9.filament_name = "Fiberon PA12-CF15 Black";
     spool9.color_hex = "000000";
     spool9.remaining_weight_g = 500.0;
     spool9.initial_weight_g = 500.0;
@@ -1460,7 +1482,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool10.id = 10;
     spool10.vendor = "Tinmorry";
     spool10.material = "TPU";
-    spool10.color_name = "Blue TPU";
+    spool10.filament_name = "Blue TPU";
     spool10.color_hex = "435FCC";
     spool10.remaining_weight_g = 900.0;
     spool10.initial_weight_g = 1000.0;
@@ -1476,7 +1498,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool11.id = 11;
     spool11.vendor = "eSUN";
     spool11.material = "ABS";
-    spool11.color_name = "Black ABS+HS";
+    spool11.filament_name = "Black ABS+HS";
     spool11.color_hex = "000000";
     spool11.remaining_weight_g = 400.0;
     spool11.initial_weight_g = 1000.0;
@@ -1492,7 +1514,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool12.id = 12;
     spool12.vendor = "Flashforge";
     spool12.material = "ASA";
-    spool12.color_name = "Dark Green Sparkle ASA";
+    spool12.filament_name = "Dark Green Sparkle ASA";
     spool12.color_hex = "276E27";
     spool12.remaining_weight_g = 350.0;
     spool12.initial_weight_g = 1000.0;
@@ -1508,7 +1530,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool13.id = 13;
     spool13.vendor = "Bambu Lab";
     spool13.material = "PETG";
-    spool13.color_name = "Translucent Green PETG";
+    spool13.filament_name = "Translucent Green PETG";
     spool13.color_hex = "29A261";
     spool13.remaining_weight_g = 1000.0;
     spool13.initial_weight_g = 1000.0;
@@ -1524,7 +1546,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool14.id = 14;
     spool14.vendor = "Eryone";
     spool14.material = "Silk PLA";
-    spool14.color_name = "Gold/Silver/Copper Tri-Color";
+    spool14.filament_name = "Gold/Silver/Copper Tri-Color";
     spool14.color_hex = "D4AF37";                          // Primary color (gold)
     spool14.multi_color_hexes = "#D4AF37,#C0C0C0,#B87333"; // Gold, Silver, Copper
     spool14.remaining_weight_g = 494.0;
@@ -1541,7 +1563,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool15.id = 15;
     spool15.vendor = "Bambu Lab";
     spool15.material = "PLA";
-    spool15.color_name = "Red PLA";
+    spool15.filament_name = "Red PLA";
     spool15.color_hex = "C12E1F";
     spool15.remaining_weight_g = 1000.0;
     spool15.initial_weight_g = 1000.0;
@@ -1557,7 +1579,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool16.id = 16;
     spool16.vendor = "Polymaker";
     spool16.material = "ABS";
-    spool16.color_name = "PolyLite ABS Metallic Blue";
+    spool16.filament_name = "PolyLite ABS Metallic Blue";
     spool16.color_hex = "333C64";
     spool16.remaining_weight_g = 174.0;
     spool16.initial_weight_g = 1000.0;
@@ -1573,7 +1595,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool17.id = 17;
     spool17.vendor = "Sunlu";
     spool17.material = "PETG";
-    spool17.color_name = "Black PETG";
+    spool17.filament_name = "Black PETG";
     spool17.color_hex = "000000";
     spool17.remaining_weight_g = 550.0;
     spool17.initial_weight_g = 1000.0;
@@ -1589,7 +1611,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool18.id = 18;
     spool18.vendor = "eSUN";
     spool18.material = "PLA+";
-    spool18.color_name = "PLA+ White";
+    spool18.filament_name = "PLA+ White";
     spool18.color_hex = "FFFFFF";
     spool18.remaining_weight_g = 300.0;
     spool18.initial_weight_g = 1000.0;
@@ -1605,7 +1627,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool19.id = 19;
     spool19.vendor = "TTYT3D";
     spool19.material = "Marble PLA";
-    spool19.color_name = "Black/White Marble";
+    spool19.filament_name = "Black/White Marble";
     spool19.color_hex = "202020";                  // Primary color (dark base)
     spool19.multi_color_hexes = "#202020,#F0F0F0"; // Black, White
     spool19.remaining_weight_g = 850.0;
@@ -1772,7 +1794,7 @@ void MoonrakerSpoolmanAPIMock::update_spoolman_spool(int spool_id, const nlohman
                 for (const auto& f : mock_filaments_) {
                     if (f.id == spool.filament_id) {
                         spool.material = f.material;
-                        spool.color_name = f.color_name;
+                        spool.filament_name = f.filament_name;
                         spool.color_hex = f.color_hex;
                         spool.vendor_id = f.vendor_id;
                         spool.vendor = f.vendor_name;
@@ -1898,7 +1920,7 @@ void MoonrakerSpoolmanAPIMock::get_spoolman_filaments(FilamentListCallback on_su
         filaments.push_back(mf);
         seen_ids.insert(mf.id);
         // Track by key to avoid duplicates with spool-synthesized entries
-        std::string key = mf.vendor_name + "|" + mf.material + "|" + mf.color_name;
+        std::string key = mf.vendor_name + "|" + mf.material + "|" + mf.filament_name;
         seen.insert(key);
         // Ensure auto-assigned IDs don't collide
         if (mf.id >= next_id) {
@@ -1908,14 +1930,14 @@ void MoonrakerSpoolmanAPIMock::get_spoolman_filaments(FilamentListCallback on_su
 
     // Synthesize filaments from spools (skip duplicates already covered above)
     for (const auto& spool : mock_spools_) {
-        std::string key = spool.vendor + "|" + spool.material + "|" + spool.color_name;
+        std::string key = spool.vendor + "|" + spool.material + "|" + spool.filament_name;
         if (seen.find(key) == seen.end()) {
             seen.insert(key);
             FilamentInfo f;
             f.id = next_id++;
             f.vendor_name = spool.vendor;
             f.material = spool.material;
-            f.color_name = spool.color_name;
+            f.filament_name = spool.filament_name;
             f.color_hex = spool.color_hex;
             f.diameter = 1.75f;
             f.weight = static_cast<float>(spool.initial_weight_g);
@@ -1980,7 +2002,7 @@ void MoonrakerSpoolmanAPIMock::create_spoolman_filament(const nlohmann::json& fi
     FilamentInfo filament;
     filament.id = next_created_filament_id > 0 ? next_created_filament_id : next_filament_id_++;
     filament.material = filament_data.value("material", "");
-    filament.color_name = filament_data.value("color_name", "");
+    filament.filament_name = filament_data.value("name", "");
     filament.color_hex = filament_data.value("color_hex", "");
     filament.diameter = filament_data.value("diameter", 1.75f);
     filament.weight = filament_data.value("weight", 0.0f);
@@ -2032,7 +2054,7 @@ void MoonrakerSpoolmanAPIMock::create_spoolman_spool(const nlohmann::json& spool
         for (const auto& f : mock_filaments_) {
             if (f.id == spool.filament_id) {
                 spool.material = f.material;
-                spool.color_name = f.color_name;
+                spool.filament_name = f.filament_name;
                 spool.color_hex = f.color_hex;
                 spool.vendor_id = f.vendor_id;
                 spool.vendor = f.vendor_name;
@@ -2132,7 +2154,7 @@ void MoonrakerSpoolmanAPIMock::get_spoolman_external_filaments(const std::string
     f1.id = 1;
     f1.vendor_name = vendor_name;
     f1.material = "PLA";
-    f1.color_name = "Black";
+    f1.filament_name = "Black";
     f1.color_hex = "000000";
     f1.diameter = 1.75f;
     f1.weight = 1000.0f;
@@ -2146,7 +2168,7 @@ void MoonrakerSpoolmanAPIMock::get_spoolman_external_filaments(const std::string
     f2.id = 2;
     f2.vendor_name = vendor_name;
     f2.material = "PLA";
-    f2.color_name = "White";
+    f2.filament_name = "White";
     f2.color_hex = "FFFFFF";
     f2.diameter = 1.75f;
     f2.weight = 1000.0f;
@@ -2160,7 +2182,7 @@ void MoonrakerSpoolmanAPIMock::get_spoolman_external_filaments(const std::string
     f3.id = 3;
     f3.vendor_name = vendor_name;
     f3.material = "PETG";
-    f3.color_name = "Blue";
+    f3.filament_name = "Blue";
     f3.color_hex = "0000FF";
     f3.diameter = 1.75f;
     f3.weight = 1000.0f;
@@ -2204,7 +2226,7 @@ void MoonrakerSpoolmanAPIMock::get_spoolman_filaments(int vendor_id,
         f.id = next_id++;
         f.vendor_name = spool.vendor;
         f.material = spool.material;
-        f.color_name = spool.color_name;
+        f.filament_name = spool.filament_name;
         f.color_hex = spool.color_hex;
         f.diameter = 1.75f;
         f.weight = static_cast<float>(spool.initial_weight_g);
@@ -2369,7 +2391,7 @@ void MoonrakerSpoolmanAPIMock::assign_spool_to_slot(int slot_index, int spool_id
 
     slot_spool_map_[slot_index] = spool_id;
     spdlog::info("[MoonrakerAPIMock] Assigned spool {} ({} {}) to slot {}", spool_id, spool->vendor,
-                 spool->color_name, slot_index);
+                 spool->filament_name, slot_index);
 }
 
 void MoonrakerSpoolmanAPIMock::unassign_spool_from_slot(int slot_index) {
@@ -2430,7 +2452,7 @@ void MoonrakerSpoolmanAPIMock::consume_filament(float grams, int slot_index) {
 
             spdlog::debug(
                 "[MoonrakerAPIMock] Consumed {:.1f}g from spool {} ({}): {:.1f}g -> {:.1f}g", grams,
-                spool_id, spool.color_name, old_weight, spool.remaining_weight_g);
+                spool_id, spool.filament_name, old_weight, spool.remaining_weight_g);
             return;
         }
     }

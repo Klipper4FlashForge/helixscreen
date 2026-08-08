@@ -15,7 +15,7 @@
 #include "macro_param_cache.h"
 #include "moonraker_api.h"
 #include "moonraker_api_internal.h"
-#include "moonraker_gcode_annotate.h"
+#include "moonraker_gcode_guards.h"
 #include "printer_state.h"
 #include "sensor_state.h"
 #include "spdlog/spdlog.h"
@@ -221,9 +221,31 @@ void MoonrakerAPI::get_power_devices(PowerDevicesCallback on_success, ErrorCallb
 
 void MoonrakerAPI::set_device_power(const std::string& device, const std::string& action,
                                     SuccessCallback on_success, ErrorCallback on_error) {
-    // Validate device name
-    if (!is_safe_identifier(device)) {
-        spdlog::error("[Moonraker API] Invalid device name: {}", device);
+    // Validate device name. Power devices are named by their Moonraker config section
+    // (`[power -Power-]`, `[power Printer PSU]`), so the identifier allowlist is far too
+    // narrow here — it rejected every hyphenated name (prestonbrown/helixscreen#1241).
+    // The name is percent-encoded into the query string below and never reaches G-code,
+    // so only control characters need rejecting.
+    if (!is_safe_url_param(device)) {
+        // Escape before logging: the rejected class is exactly the bytes that would
+        // otherwise forge extra log lines.
+        std::string escaped;
+        for (char c : device) {
+            auto byte = static_cast<unsigned char>(c);
+            if (byte < 0x20 || byte == 0x7F) {
+                char buf[5];
+                std::snprintf(buf, sizeof(buf), "\\x%02X", byte);
+                escaped += buf;
+            } else {
+                escaped += c;
+            }
+        }
+        // No NOTIFY_ERROR here: every caller already surfaces the failure through
+        // on_error (a toast in PowerDeviceWidget, a status line in PowerPanel), and
+        // toasting from the API layer too would double-report the same rejection.
+        spdlog::warn("[Moonraker API] Rejected power device name '{}' — contains control "
+                     "characters",
+                     escaped);
         if (on_error) {
             MoonrakerError err =
                 MoonrakerError::validation_error("set_device_power", "Invalid device name");
@@ -370,12 +392,10 @@ void MoonrakerAPI::get_sensors(SensorsCallback on_success, ErrorCallback on_erro
 
 void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_success,
                                  ErrorCallback on_error, uint32_t timeout_ms, bool silent,
-                                 GcodeSource source, SuccessCallback on_queued) {
-    // Provenance-comment policy: tag HelixScreen-initiated commands so they're
-    // traceable in Klipper logs, but never tag user-typed console input, and
-    // never tag anything when the printer's firmware re-echoes received G-code
-    // (AD5X: the echoed quoted RESPOND MSG="..." would be mis-parsed by Klipper).
-    const bool add_comment = (source == GcodeSource::Internal) && !state_.firmware_echoes_gcode();
+                                 SuccessCallback on_queued) {
+    // G-code leaves here VERBATIM. Nothing is appended, rewritten, or stripped —
+    // see moonraker_gcode_guards.h and tests/unit/test_gcode_verbatim.cpp.
+    //
     // Refuse to ship gcode while Klipper is halted. The user-visible bug this
     // closes: dragging the fan slider on a K2 with `key298` produced a stream
     // of M106 commands that Klipper rejected on each tick (see /server/gcode_store
@@ -506,8 +526,7 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
             NOTIFY_INFO("Printer is busy — your {} will run when it's ready.",
                         helix::discretionary_gcode_noun(gcode));
         }
-        std::string queued = helix::api::annotate_gcode(gcode, add_comment);
-        json queued_params = {{"script", queued}};
+        json queued_params = {{"script", gcode}};
         // "Sending", not "queuing": the command goes to Klipper NOW and Klipper runs
         // it when its gcode lock frees. HelixScreen holds no queue of its own, and
         // there is nothing here to drain later. The old wording read as though one
@@ -517,7 +536,7 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
         // invisible from this side.
         spdlog::debug("[Moonraker API] Sending discretionary G-code for Klipper to run when the "
                       "blocking op releases the gcode lock: {}",
-                      queued);
+                      gcode);
         client_.send_jsonrpc("printer.gcode.script", queued_params, nullptr, nullptr, timeout_ms,
                              /*silent=*/true);
         // Settle the CALLER directly, not via the RPC response — waiting on the
@@ -532,17 +551,16 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
         return;
     }
 
-    std::string annotated = helix::api::annotate_gcode(gcode, add_comment);
-    json params = {{"script", annotated}};
+    json params = {{"script", gcode}};
 
-    spdlog::trace("[Moonraker API] Executing G-code: {}", annotated);
+    spdlog::trace("[Moonraker API] Executing G-code: {}", gcode);
 
     // Stamp app-initiated macro activity so the busy-queue toast above can tell
     // "the user just pressed Unload here" from "something else started a bed
     // mesh" (#1206). The complement of the discretionary set is exactly the
     // macro / homing / calibration / filament-op family that takes Klipper's
-    // gcode lock and flips idle_timeout to "Printing". Stamped regardless of
-    // GcodeSource: a macro the user typed into HelixScreen's own console is
+    // gcode lock and flips idle_timeout to "Printing". Stamped regardless of the
+    // command's origin: a macro the user typed into HelixScreen's own console is
     // still something they just did themselves.
     //
     // Every early return above (klippy halted, homing-during-print, the whole

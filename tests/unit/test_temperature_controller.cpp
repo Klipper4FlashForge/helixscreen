@@ -183,25 +183,19 @@ namespace {
 // non-zero target latches last_nonzero_target; a later 0 clears the live target
 // but the latch survives. `temperature` sets the actual nozzle temp subject.
 void feed_nozzle(helix::PrinterState& state, double actual_c, double target_c) {
-    nlohmann::json status = {
-        {"extruder", {{"temperature", actual_c}, {"target", target_c}}}};
+    nlohmann::json status = {{"extruder", {{"temperature", actual_c}, {"target", target_c}}}};
     state.update_from_status(status);
 }
 
 // The last temperature gcode the controller emitted (e.g. "SET_HEATER_TEMPERATURE
-// HEATER=extruder TARGET=250"). Empty if nothing was sent. The mock appends a
-// " ; from helixscreen" source comment — strip it so tests assert on the command.
+// HEATER=extruder TARGET=250"). Empty if nothing was sent. Returned exactly as
+// it reached the wire — the send layer decorates nothing (test_gcode_verbatim.cpp).
 std::string last_temp_gcode(const MoonrakerClientMock& client) {
     const auto& hist = client.gcode_script_history();
     if (hist.empty()) {
         return {};
     }
-    std::string cmd = hist.back();
-    auto comment = cmd.find(" ;");
-    if (comment != std::string::npos) {
-        cmd.erase(comment);
-    }
-    return cmd;
+    return hist.back();
 }
 } // namespace
 

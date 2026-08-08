@@ -1835,6 +1835,38 @@ TEST_CASE("MoonrakerClientMock SDCARD_PRINT_FILE starts print", "[slow][print][s
         mock.disconnect();
     }
 
+    SECTION("SDCARD_PRINT_FILE accepts a quoted filename containing spaces") {
+        // Klipper tokenizes extended parameters with shlex, so callers quote
+        // any name with a space in it (Moonraker's klippy_apis.py and our
+        // Creality power-loss resume both do). The quotes are syntax, not part
+        // of the filename.
+        MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
+        mock.register_notify_update(fixture.create_capture_callback());
+        mock.connect("ws://mock/websocket", []() {}, []() {});
+
+        mock.gcode_script("SDCARD_PRINT_FILE FILENAME=\"My Part v2.gcode\" ISCONTINUEPRINT=1");
+
+        REQUIRE(fixture.wait_for_matching(
+            [](const json& n) {
+                if (!n.contains("params") || !n["params"].is_array() || n["params"].empty()) {
+                    return false;
+                }
+                const json& status = n["params"][0];
+                if (!status.contains("print_stats")) {
+                    return false;
+                }
+                const json& ps = status["print_stats"];
+                if (!ps.contains("state") || !ps.contains("filename")) {
+                    return false;
+                }
+                return ps["state"] == "printing" && ps["filename"] == "My Part v2.gcode";
+            },
+            2000));
+
+        mock.stop_temperature_simulation();
+        mock.disconnect();
+    }
+
     SECTION("SDCARD_PRINT_FILE resets progress to 0") {
         MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
         mock.register_notify_update(fixture.create_capture_callback());

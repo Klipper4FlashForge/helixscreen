@@ -22,6 +22,26 @@ struct BundleResult {
     std::string error_message;
 };
 
+/**
+ * @brief Inputs to the bundle's `update` section.
+ *
+ * Plain data so the section can be assembled — and unit-tested — for both the
+ * suppressed and not-suppressed cases without mutating the process-wide caches
+ * behind updates_externally_managed() / self_update_supported().
+ */
+struct UpdateDiagnostics {
+    std::string install_root;            ///< app_get_install_root() ("" if unresolvable)
+    bool install_parent_writable = true; ///< dirname(install_root) writable WITHOUT escalation
+    bool self_update_supported = true;   ///< self_update_supported(): writable OR root reachable
+    bool externally_managed = false;     ///< updates_externally_managed()
+    std::string channel;                 ///< "stable"|"beta"|"dev"; "" → "unknown"
+    std::string r2_base_url;             ///< effective manifest base URL; "" → "unknown"
+    std::string last_check_status;       ///< UpdateChecker::Status as a readable string
+    std::string available_version;       ///< cached update version, "" if none
+    std::string last_check_error;        ///< last check's error text, "" if none
+    std::string platform_asset_name;     ///< exact release artifact this device requests
+};
+
 class DebugBundleCollector {
   public:
     /// Collect all debug data into JSON
@@ -40,6 +60,25 @@ class DebugBundleCollector {
     /// Metadata about the log pipeline so a bundle reader knows whether debug
     /// was being captured: { target, level, ring_lines, log_tail_source }.
     static nlohmann::json collect_log_meta();
+
+    /**
+     * @brief In-app update diagnostics: why the update UI is (or is not) usable.
+     *
+     * The About screen gates both "Check for Updates" and "Install Update" on
+     * !in_app_updates_suppressed(); when suppressed the rows are absent and the
+     * user cannot update at all. Without this section a "cannot update" report
+     * carries no evidence of whether that happened or which of the two
+     * predicates caused it.
+     *
+     * No LVGL access — every value comes from a plain C++ getter, so this is
+     * safe from the HttpExecutor thread that upload_async() collects on.
+     */
+    static nlohmann::json collect_update_info();
+
+    /// Assemble the `update` section from explicit inputs. Pure and static so
+    /// both suppression branches are unit-testable.
+    static nlohmann::json build_update_info(const UpdateDiagnostics& diag);
+
     static std::string collect_crash_txt();
     static nlohmann::json collect_sanitized_settings();
     static std::string collect_klipper_log_tail(int num_lines = 2000);

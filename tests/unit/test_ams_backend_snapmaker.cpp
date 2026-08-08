@@ -15,6 +15,7 @@
 #include "moonraker_client_mock.h"
 #include "printer_discovery.h"
 #include "printer_state.h"
+#include "spoolman_types.h" // SpoolInfo + apply_spool_to_slot (the picker-side writer)
 
 #include <chrono>
 #include <filesystem>
@@ -175,7 +176,14 @@ json make_filament_detect_status(int slot_index, const std::string& main_type, u
 // without a live Moonraker connection — same idiom as test_ams_backend_afc.cpp.
 class CapturingSnapmakerBackend : public AmsBackendSnapmaker {
   public:
-    CapturingSnapmakerBackend() : AmsBackendSnapmaker(nullptr, nullptr) {}
+    // running_ has to be set: the filament ops gate on check_preconditions(),
+    // which answers not_connected on a backend that never started. api_ stays
+    // null, so the print-active half of that gate passes (unknown print state is
+    // not blocked) and these tests keep asserting the command, not the gate —
+    // the gate itself is covered in test_ams_paused_filament_ops.cpp.
+    CapturingSnapmakerBackend() : AmsBackendSnapmaker(nullptr, nullptr) {
+        running_.store(true);
+    }
 
     std::vector<std::string> captured_gcodes;
 
@@ -354,6 +362,50 @@ TEST_CASE_METHOD(SnapmakerFixture,
 // ============================================================================
 // Filament Operation Command Tests
 // ============================================================================
+
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker load routes through AUTO_FEEDING LOAD=1",
+                 "[ams][snapmaker][load]") {
+    // The mirror of the unload contract below, and previously unasserted — the
+    // gap that let a UI-layer change silently swap this command for `T{n}`.
+    //
+    // FEED_AUTO silent-returns when passed no LOAD/UNLOAD parameter, and `T{n}`
+    // only seats the carriage without feeding, so both wrong answers look like
+    // "the button did nothing". See load_filament()'s trail-of-bad-guesses note.
+    SECTION("explicit slot emits AUTO_FEEDING EXTRUDER=n LOAD=1") {
+        CapturingSnapmakerBackend backend;
+        auto err = backend.load_filament(2);
+        REQUIRE(err.success());
+        REQUIRE(backend.captured_gcodes.size() == 1);
+        REQUIRE(backend.captured_gcodes[0] == "AUTO_FEEDING EXTRUDER=2 LOAD=1");
+    }
+}
+
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker never routes a load through a tool change",
+                 "[ams][snapmaker][load][dispatch]") {
+    // PARALLEL topology: four toolheads, each with its own extruder, sharing no
+    // path to a nozzle. The base needs_unload_before_load() rule is SERIAL —
+    // "clear the shared path first" — and is true here essentially always,
+    // because current_slot is assigned from toolhead.extruder and a tool is
+    // always picked up.
+    //
+    // Answering true routes a load through change_tool() -> `T{n}`, which seats
+    // the carriage and feeds nothing. That is what AmsOperationSidebar has been
+    // dispatching, and what plan_load() would make the filament panel dispatch
+    // too. AUTO_FEEDING already targets an arbitrary extruder directly.
+    CapturingSnapmakerBackend backend;
+
+    AmsSystemInfo seated = backend.get_system_info();
+    seated.filament_loaded = true;
+    seated.current_slot = 0;
+    CHECK_FALSE(backend.needs_unload_before_load(seated, /*target_slot=*/1));
+
+    // And the command that would have been sent instead is the known-bad one,
+    // so this stays a real distinction rather than two spellings of one thing.
+    backend.captured_gcodes.clear();
+    REQUIRE(backend.change_tool(1).success());
+    REQUIRE(backend.captured_gcodes.size() == 1);
+    CHECK(backend.captured_gcodes[0] == "T1");
+}
 
 TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker unload routes through AUTO_FEEDING UNLOAD=1",
                  "[ams][snapmaker][unload]") {
@@ -1636,6 +1688,50 @@ TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker firmware POST omits unknown SUB_TY
     const auto& info_obj = history[0].body["info"];
     CHECK(info_obj["VENDOR"].get<std::string>() == "Generic");
     CHECK(info_obj["MAIN_TYPE"].get<std::string>() == "PETG");
+    CHECK_FALSE(info_obj.contains("SUB_TYPE"));
+}
+
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker firmware POST omits a Spoolman filament name as SUB_TYPE",
+                 "[ams][snapmaker][firmware_writeback][spoolman]") {
+    // Snapmaker is the one consumer that puts spool_name back on the wire to
+    // firmware. It is the same free-form guard as the test above, reached
+    // through the Spoolman picker's writer instead of a hand-typed string: a
+    // real filament name ("Ambrosia Pink") is not one of the eight known
+    // product lines, so SUB_TYPE is omitted and firmware keeps what it had.
+    SnapmakerTmpCacheDir tmp("firmware_writeback_spoolman_name");
+    MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
+    helix::PrinterState state;
+    state.init_subjects(false);
+    MoonrakerAPIMock api(client, state);
+
+    AmsBackendSnapmaker backend(&api, nullptr);
+    auto store = std::make_unique<helix::ams::FilamentSlotOverrideStore>(
+        &api, "snapmaker", helix::ams::LaneKeyStyle::Tool);
+    FilamentSlotOverrideStoreTestAccess::set_cache_directory(*store, tmp.path);
+    SnapmakerTestAccess::inject_override_store(backend, std::move(store));
+
+    api.rest_mock().mock_clear_post_history();
+
+    SpoolInfo spool;
+    spool.id = 42;
+    spool.vendor = "Polymaker";
+    spool.material = "PLA";
+    spool.filament_name = "Ambrosia Pink"; // parse_spool_info maps filament.name here
+    spool.color_hex = "FFB6C1";
+
+    SlotInfo edit;
+    apply_spool_to_slot(edit, spool);
+    REQUIRE(edit.spool_name == "Ambrosia Pink");
+
+    auto err = backend.set_slot_info(0, edit, /*persist=*/true);
+    REQUIRE(err.success());
+
+    auto history = api.rest_mock().mock_get_post_history();
+    REQUIRE(history.size() == 1);
+    const auto& info_obj = history[0].body["info"];
+    CHECK(info_obj["VENDOR"].get<std::string>() == "Polymaker");
+    CHECK(info_obj["MAIN_TYPE"].get<std::string>() == "PLA");
     CHECK_FALSE(info_obj.contains("SUB_TYPE"));
 }
 

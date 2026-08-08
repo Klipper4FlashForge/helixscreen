@@ -52,6 +52,8 @@ remote-sync:
 	@ssh $(REMOTE_SSH_TARGET) "mkdir -p $(REMOTE_DIR)"
 	rsync -avz --copy-unsafe-links --delete \
 		--exclude='build/' \
+		--exclude='build[0-9]*/' \
+		--exclude='_deps/' \
 		--exclude='.git/' \
 		--exclude='*.o' \
 		--exclude='*.a' \
@@ -156,7 +158,7 @@ remote-clean:
 remote-pi: remote-sync
 	@echo "$(CYAN)$(BOLD)Building Pi target on $(REMOTE_HOST)...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	ssh $(REMOTE_SSH_TARGET) "cd $(REMOTE_DIR) && make pi-docker" && \
+	ssh $(REMOTE_SSH_TARGET) "cd $(REMOTE_DIR) && make pi-docker" || exit $$?; \
 	END_TIME=$$(date +%s); \
 	ELAPSED=$$((END_TIME - START_TIME)); \
 	echo "$(GREEN)✓ Remote build completed in $${ELAPSED}s$(RESET)"
@@ -167,7 +169,7 @@ remote-pi: remote-sync
 remote-ad5m: remote-sync
 	@echo "$(CYAN)$(BOLD)Building AD5M target on $(REMOTE_HOST)...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	ssh $(REMOTE_SSH_TARGET) "cd $(REMOTE_DIR) && make ad5m-docker" && \
+	ssh $(REMOTE_SSH_TARGET) "cd $(REMOTE_DIR) && make ad5m-docker" || exit $$?; \
 	END_TIME=$$(date +%s); \
 	ELAPSED=$$((END_TIME - START_TIME)); \
 	echo "$(GREEN)✓ Remote build completed in $${ELAPSED}s$(RESET)"
@@ -178,7 +180,7 @@ remote-ad5m: remote-sync
 remote-native: remote-sync
 	@echo "$(CYAN)$(BOLD)Building native Linux on $(REMOTE_HOST)...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	ssh $(REMOTE_SSH_TARGET) "cd $(REMOTE_DIR) && make -j" && \
+	ssh $(REMOTE_SSH_TARGET) "cd $(REMOTE_DIR) && make -j" || exit $$?; \
 	END_TIME=$$(date +%s); \
 	ELAPSED=$$((END_TIME - START_TIME)); \
 	echo "$(GREEN)✓ Remote build completed in $${ELAPSED}s$(RESET)"
@@ -189,7 +191,7 @@ remote-native: remote-sync
 remote-all: remote-sync
 	@echo "$(CYAN)$(BOLD)Building ALL targets on $(REMOTE_HOST)...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	ssh $(REMOTE_SSH_TARGET) "cd $(REMOTE_DIR) && make pi-docker ad5m-docker -j2" && \
+	ssh $(REMOTE_SSH_TARGET) "cd $(REMOTE_DIR) && make pi-docker ad5m-docker -j2" || exit $$?; \
 	END_TIME=$$(date +%s); \
 	ELAPSED=$$((END_TIME - START_TIME)); \
 	echo "$(GREEN)✓ Remote builds completed in $${ELAPSED}s$(RESET)"

@@ -16,8 +16,10 @@
 #include "app_globals.h"
 #include "color_utils.h"
 #include "filament_database.h"
+#include "filament_display_name.h"
 #include "filament_mapper.h"
 #include "format_utils.h"
+#include "spoolman_manager.h"
 #include "static_panel_registry.h"
 #include "ui/ui_lazy_panel_helper.h"
 #if HELIX_HAS_LABEL_PRINTER
@@ -580,9 +582,11 @@ void AmsEditOverlay::render_spool_list(const std::string& filter) {
             lv_label_set_text(name_label, name.c_str());
         }
 
+        // The XML widget kept its "spool_color" name; the string is Spoolman's
+        // filament.name, which is the only per-spool label Spoolman stores.
         lv_obj_t* color_label = lv_obj_find_by_name(item, "spool_color");
-        if (color_label && !spool.color_name.empty()) {
-            lv_label_set_text(color_label, spool.color_name.c_str());
+        if (color_label && !spool.filament_name.empty()) {
+            lv_label_set_text(color_label, spool.filament_name.c_str());
         }
 
         lv_obj_t* weight_label = lv_obj_find_by_name(item, "spool_weight");
@@ -635,31 +639,12 @@ void AmsEditOverlay::handle_spool_selected(int spool_id) {
     // Look up SpoolInfo from cached spools
     for (const auto& spool : cached_spools_) {
         if (spool.id == spool_id) {
-            // Auto-fill working_info_ from the selected spool
-            working_info_.spoolman_id = spool.id;
-            working_info_.spoolman_filament_id = spool.filament_id;
-            working_info_.spoolman_vendor_id = spool.vendor_id;
-            working_info_.color_name = spool.color_name;
-            working_info_.multi_color_hexes = spool.multi_color_hexes;
-            working_info_.material = spool.material;
-            working_info_.brand = spool.vendor;
-            working_info_.spool_name = spool.vendor + " " + spool.material;
-            working_info_.remaining_weight_g = static_cast<float>(spool.remaining_weight_g);
-            working_info_.total_weight_g = static_cast<float>(spool.initial_weight_g);
-            working_info_.nozzle_temp_min = spool.nozzle_temp_min;
-            working_info_.nozzle_temp_max = spool.nozzle_temp_max;
-            working_info_.bed_temp = spool.bed_temp_recommended;
-
-            // Parse color hex to RGB
-            if (!spool.color_hex.empty()) {
-                uint32_t rgb = 0;
-                if (helix::parse_hex_color(spool.color_hex.c_str(), rgb)) {
-                    working_info_.color_rgb = rgb;
-                } else {
-                    spdlog::warn("[AmsEditOverlay] Failed to parse color hex: {}", spool.color_hex);
-                }
-            }
-
+            // Auto-fill working_info_ from the selected spool. The field-by-
+            // field copy this replaced had drifted from apply_spool_to_slot()
+            // — it synthesized its own spool_name — so the same spool labelled
+            // differently depending on whether it arrived here or through the
+            // external-spool sync.
+            apply_spool_to_slot(working_info_, spool);
             break;
         }
     }
@@ -777,7 +762,7 @@ void AmsEditOverlay::enter_spool_edit() {
     detail_original_.filament_id = working_info_.spoolman_filament_id;
     detail_original_.vendor = working_info_.brand;
     detail_original_.material = working_info_.material;
-    detail_original_.color_name = working_info_.color_name;
+    detail_original_.filament_name = working_info_.spool_name;
     detail_original_.remaining_weight_g = working_info_.remaining_weight_g;
     detail_original_.initial_weight_g = working_info_.total_weight_g;
     // The untracked "Spool weight" field maps to working_info_.total_weight_g on
@@ -870,8 +855,16 @@ void AmsEditOverlay::handle_spool_edit_save(bool finish) {
         working_info_.nozzle_temp_min = ef->nozzle_min;
         working_info_.nozzle_temp_max = ef->nozzle_max;
         working_info_.bed_temp = ef->bed_temp;
-        spdlog::info("[AmsEditOverlay] Spool-edit pick: '{} {}' ({}-{}/{}°C)", ef->brand, ef->type,
-                     ef->nozzle_min, ef->nozzle_max, ef->bed_temp);
+        // WHICH product, not just its material. ef->type collapses every PLA
+        // product a vendor sells into one string, so without these the reopened
+        // editor can only preselect-first and lands on whichever variant sorts
+        // alphabetically first. Overwritten unconditionally (never merged) so a
+        // stale id from a previous pick — or one that no longer resolves — is
+        // replaced by whatever the user is actually confirming here.
+        working_info_.catalog_id = ef->id;
+        working_info_.product_name = ef->name;
+        spdlog::info("[AmsEditOverlay] Spool-edit pick: '{} {}' [{}] ({}-{}/{}°C)", ef->brand,
+                     ef->name, ef->id, ef->nozzle_min, ef->nozzle_max, ef->bed_temp);
     } else {
         // No product highlighted. With preselect-on-change enabled this only
         // happens when the rebuilt product list was empty — a type the firmware
@@ -894,6 +887,12 @@ void AmsEditOverlay::handle_spool_edit_save(bool finish) {
             } else {
                 working_info_.brand = "Generic";
             }
+            // The material genuinely changed and the catalog stocks nothing for
+            // it, so any previously stored product identity now describes a
+            // DIFFERENT material. Leaving it would make the next open navigate
+            // the selector back to the old family and re-adopt the old product.
+            working_info_.catalog_id.clear();
+            working_info_.product_name.clear();
             spdlog::info("[AmsEditOverlay] Spool-edit type change with no catalog product: '{} {}'",
                          working_info_.brand, sel_type);
         }
@@ -1230,24 +1229,7 @@ void AmsEditOverlay::handle_scan_qr() {
             // direct backend write anymore: the live form repopulates and the
             // user confirms with Save.
             SlotInfo scanned;
-            scanned.spoolman_id = spool.id;
-            scanned.spoolman_filament_id = spool.filament_id;
-            scanned.spoolman_vendor_id = spool.vendor_id;
-            scanned.color_name = spool.color_name;
-            scanned.material = spool.material;
-            scanned.brand = spool.vendor;
-            scanned.spool_name = spool.vendor + " " + spool.material;
-            scanned.remaining_weight_g = static_cast<float>(spool.remaining_weight_g);
-            scanned.total_weight_g = static_cast<float>(spool.initial_weight_g);
-            scanned.nozzle_temp_min = spool.nozzle_temp_min;
-            scanned.nozzle_temp_max = spool.nozzle_temp_max;
-            scanned.bed_temp = spool.bed_temp_recommended;
-            if (!spool.color_hex.empty()) {
-                uint32_t rgb = 0;
-                if (helix::parse_hex_color(spool.color_hex.c_str(), rgb)) {
-                    scanned.color_rgb = rgb;
-                }
-            }
+            apply_spool_to_slot(scanned, spool);
             helix::ui::queue_update([scanned = std::move(scanned)]() {
                 auto& editor = get_ams_edit_overlay();
                 if (!editor.get_root()) {
@@ -1300,7 +1282,7 @@ void AmsEditOverlay::handle_print_label() {
         spool_info.id = working_info_.spoolman_id;
         spool_info.vendor = working_info_.brand;
         spool_info.material = working_info_.material;
-        spool_info.color_name = working_info_.color_name;
+        spool_info.filament_name = working_info_.spool_name;
         spool_info.remaining_weight_g = working_info_.remaining_weight_g;
         spool_info.initial_weight_g = working_info_.total_weight_g;
     }
@@ -1377,8 +1359,36 @@ void AmsEditOverlay::update_ui() {
 
     // Identity chip: tracked = spool name (+ mark via binding);
     // untracked = "Brand · Material" (spec §3.8 locked format).
-    if (managed && !working_info_.spool_name.empty()) {
-        snprintf(chip_text_buf_, sizeof(chip_text_buf_), "%s", working_info_.spool_name.c_str());
+    //
+    // spool_name carries the filament name alone ("Ambrosia Pink"), so printing
+    // it verbatim would drop the vendor and the material and say less than the
+    // untracked branch does. compose_filament_label() joins the three the same
+    // way the AMS card does, and drops a brand or material the name already
+    // contains — so a Spoolman name that reads "Bambu Lab ASA" still prints
+    // once, not three times.
+    //
+    // The name is not always on the slot. AFC only publishes filament_name from
+    // v1.2.0, so on an older unit a Spoolman-linked lane has an empty spool_name
+    // while the identity cache holds the real one — the same split the loaded
+    // card resolves through resolve_filament_label(). Consult it here too, or
+    // this card silently degrades to "Elegoo · PLA" for a spool we can name.
+    std::string chip_brand = working_info_.brand;
+    std::string chip_name = working_info_.spool_name;
+    if (working_info_.spoolman_id > 0 && (chip_name.empty() || chip_brand.empty())) {
+        if (const auto identity = SpoolmanManager::find_identity(working_info_.spoolman_id)) {
+            if (chip_name.empty()) {
+                chip_name = identity->filament_name;
+            }
+            if (chip_brand.empty()) {
+                chip_brand = identity->vendor;
+            }
+        }
+    }
+
+    if (managed && !chip_name.empty()) {
+        const std::string chip =
+            helix::compose_filament_label(chip_brand, chip_name, working_info_.material);
+        snprintf(chip_text_buf_, sizeof(chip_text_buf_), "%s", chip.c_str());
     } else {
         const char* brand = working_info_.brand.empty() ? "Generic" : working_info_.brand.c_str();
         const char* material =
@@ -1522,7 +1532,15 @@ void AmsEditOverlay::update_temp_display() {
 }
 
 bool AmsEditOverlay::is_dirty() const {
-    // Compare relevant fields that can be edited
+    // Compare relevant fields that can be edited.
+    //
+    // catalog_id / product_name are deliberately NOT compared, for the same
+    // reason the temps aren't: the spool-edit view AUTO-highlights a product
+    // (preselect_first / preselect_on_change), and Save copies whatever is
+    // highlighted. Including them would make an untouched open-and-Save of a
+    // slot that never had a catalog pick report itself dirty. Nothing is lost —
+    // handle_spool_edit_save(finish=true) is the only production caller and it
+    // routes straight into commit_and_close(), which never consults is_dirty().
     return working_info_.color_rgb != original_info_.color_rgb ||
            working_info_.material != original_info_.material ||
            working_info_.brand != original_info_.brand ||
@@ -1972,9 +1990,21 @@ bool AmsEditOverlay::setup_details_selector() {
     // identity). Opt in before populate; the standalone picker stays opt-out.
     details_selector_.set_preselect_on_change(true);
     details_selector_.populate();
-    // An already-defined filament should show its matching variant checked;
-    // a fresh list pre-checks the first product so Save is one tap.
-    details_selector_.preselect_first();
+    // Restore the EXACT product the user last saved, when we have one. Vendor +
+    // material family alone are not enough: preselect_first() takes
+    // ordered_products_for().front(), and a vendor whose products all share one
+    // material (SUNLU's six PLAs) has no variant/rank tiebreak left, so it falls
+    // through to lowercased-name alphabetical — "PLA Marble" wins every time and
+    // a saved "PLA+ 2.0" comes back relabelled.
+    //
+    // preselect_product_id() returns false for an id that no longer resolves (a
+    // custom overlay product the user deleted, an id retired by an app update);
+    // preselect_first() then keeps the list from opening all-unchecked. The
+    // stored product_name is still on working_info_ either way, so nothing
+    // downstream forgets what was chosen until the user confirms a replacement.
+    if (!details_selector_.preselect_product_id(working_info_.catalog_id)) {
+        details_selector_.preselect_first();
+    }
     // A Spoolman-only vendor (present on the server but absent from the bundled
     // catalog) isn't in the catalog brand list, so the seed above snapped it to
     // Generic. Fetch the live vendor list and merge it in so the seed resolves.
@@ -2017,12 +2047,19 @@ void AmsEditOverlay::maybe_merge_spoolman_vendors() {
                               return;
                           }
                           details_selector_.set_additional_vendors(std::move(names));
-                          // Re-check the product matching the now-resolved seed
-                          // vendor+type. For a pure-Spoolman vendor the catalog
-                          // has no product, so the list stays empty and nothing
-                          // is checked — handle_spool_edit_save() then keeps the
-                          // dropdown's vendor string, preserving the brand.
-                          details_selector_.preselect_first();
+                          // set_additional_vendors() rebuilds the dropdowns and
+                          // drops both the highlight and the anchor, so the
+                          // saved product has to be re-seeded here or the merge
+                          // undoes setup_details_selector()'s restore. Same
+                          // id-then-first order for the same reason.
+                          //
+                          // For a pure-Spoolman vendor the catalog has no
+                          // product at all, so both calls no-op and the list
+                          // stays empty — handle_spool_edit_save() then keeps
+                          // the dropdown's vendor string, preserving the brand.
+                          if (!details_selector_.preselect_product_id(working_info_.catalog_id)) {
+                              details_selector_.preselect_first();
+                          }
                       });
         },
         [](const MoonrakerError& err) {

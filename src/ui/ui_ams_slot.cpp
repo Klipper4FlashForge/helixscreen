@@ -46,6 +46,12 @@ struct AmsSlotData {
     int total_count = 4;      // Total slots being displayed (for stagger calculation)
     bool use_3d_style = true; // Cached style setting
 
+    // Last status seen from the per-slot status subject. The material label's
+    // text depends on it (an ejected, unassigned lane reads "Empty", not "--"),
+    // and the two arrive on SEPARATE subjects with no ordering guarantee — so
+    // the material path reads the status from here rather than racing for it.
+    SlotStatus last_status = SlotStatus::UNKNOWN;
+
     // RAII observer handles - automatically removed when this struct is destroyed
     ObserverGuard color_observer;
     ObserverGuard status_observer;
@@ -228,18 +234,58 @@ static void apply_slot_fill_pct(AmsSlotData* data, int pct) {
 }
 
 /**
+ * @brief Does this lane still carry an identity after being ejected?
+ *
+ * Spoolman link, material, brand or spool name — the override is deliberately
+ * NOT cleared on eject (#1071), so a lane that has one is "assigned, not
+ * present" rather than genuinely unused. THE predicate for the empty-lane
+ * presentation, shared by apply_slot_status() (which ghosts the spool) and
+ * apply_slot_material() (which picks the label text) so the two cannot reach
+ * opposite conclusions about the same lane. ui_ams_mini_status.cpp runs the
+ * identical test for the strip the filament panel embeds (4da7a07db).
+ */
+static bool slot_has_retained_identity(int slot_index) {
+    AmsBackend* backend = AmsState::instance().get_backend();
+    if (!backend || slot_index < 0)
+        return false;
+    SlotInfo slot_info = backend->get_slot_info(slot_index);
+    return slot_info.spoolman_id > 0 || !slot_info.material.empty() || !slot_info.brand.empty() ||
+           !slot_info.spool_name.empty();
+}
+
+/**
  * @brief Apply the material-type label from the per-slot material subject.
  *
  * The widget owns its own material rendering (like fill and color) so every
  * ams_slot consumer — AmsPanel, AmsOverviewPanel, AmsDetail — repaints on a
  * material-only change without any container re-reading it imperatively
- * (#1065). Empty material -> "--" placeholder; long names truncate to 4 chars
- * when 5+ slots share a row (overlap guard, matching the old refresh_slots()).
- * Material names (PLA, PETG, …) are not translated.
+ * (#1065). Long names truncate to 4 chars when 5+ slots share a row (overlap
+ * guard, matching the old refresh_slots()). Material names (PLA, PETG, …) are
+ * not translated.
+ *
+ * Steady-state rule for the label, shared with apply_slot_status() and with the
+ * mini status strip (4da7a07db):
+ *
+ *   present              -> material ("--" if the lane reports none)
+ *   ejected + assigned   -> retained material, ghosted by apply_slot_status()
+ *   ejected + unassigned -> lv_tr("Empty") at full strength
+ *
+ * The last arm has to live HERE, not only in apply_slot_status(). Status and
+ * material are separate subjects with separate observers: setup_slot_observers()
+ * applies status first and material second, so a material path that always wrote
+ * "--" overwrote the status path's "Empty" on every first paint, and afterwards
+ * the lane read whichever of the two had fired most recently.
  */
 static void apply_slot_material(AmsSlotData* data, const char* material) {
     if (!data || !data->material_label)
         return;
+    if (data->last_status == SlotStatus::EMPTY && !slot_has_retained_identity(data->slot_index)) {
+        // Name the lane's purpose instead of showing a placeholder for a
+        // material that was never there. "Empty" is UI copy, not a material
+        // name, so unlike the material itself it is translated.
+        lv_label_set_text(data->material_label, lv_tr("Empty"));
+        return;
+    }
     if (!material || material[0] == '\0') {
         lv_label_set_text(data->material_label, "--");
         return;
@@ -249,6 +295,19 @@ static void apply_slot_material(AmsSlotData* data, const char* material) {
         text = text.substr(0, 4);
     }
     lv_label_set_text(data->material_label, text.c_str());
+}
+
+/// Re-apply the material label from the live per-slot material subject.
+///
+/// Used by apply_slot_status(), whose outcome changes what the label should
+/// read. Goes through apply_slot_material() rather than writing text itself, so
+/// the rule above has exactly one implementation.
+static void refresh_slot_material_label(AmsSlotData* data) {
+    if (!data || !data->material_label)
+        return;
+    lv_subject_t* material_subject =
+        AmsState::instance().get_slot_material_subject(data->slot_index);
+    apply_slot_material(data, material_subject ? lv_subject_get_string(material_subject) : nullptr);
 }
 
 // ============================================================================
@@ -276,9 +335,16 @@ static void apply_slot_color(AmsSlotData* data, int color_int) {
  * @brief Update slot status badge and opacity
  */
 static void apply_slot_status(AmsSlotData* data, int status_int) {
-    if (!data->status_badge_bg)
+    if (!data)
         return;
     auto status = static_cast<SlotStatus>(status_int);
+    // Record before the early-out: the material label's rule keys on this, and
+    // a slot widget without a status badge still has a material label.
+    data->last_status = status;
+    if (!data->status_badge_bg) {
+        refresh_slot_material_label(data);
+        return;
+    }
 
     lv_color_t badge_bg = theme_manager_get_color("ams_badge_bg");
     bool show_badge = true;
@@ -318,28 +384,19 @@ static void apply_slot_status(AmsSlotData* data, int status_int) {
     bool show_empty_placeholder = false;
 
     if (status == SlotStatus::EMPTY) {
-        // Check if slot is assigned (has Spoolman data, material, or override metadata).
-        // Brand/spool_name cover IFS-style backends where a user-configured override
-        // exists without a Spoolman ID, so we still ghost-render the spool visual.
-        AmsBackend* backend = AmsState::instance().get_backend();
-        bool is_assigned = false;
-        if (backend && data->slot_index >= 0) {
-            SlotInfo slot_info = backend->get_slot_info(data->slot_index);
-            is_assigned = (slot_info.spoolman_id > 0 || !slot_info.material.empty() ||
-                           !slot_info.brand.empty() || !slot_info.spool_name.empty());
-        }
-
-        if (is_assigned) {
+        // Brand/spool_name cover IFS-style backends where a user-configured
+        // override exists without a Spoolman ID, so we still ghost-render the
+        // spool visual — see slot_has_retained_identity().
+        if (slot_has_retained_identity(data->slot_index)) {
             // Assigned but empty: ghosted spool at 20%
             spool_opa = LV_OPA_20;
         } else {
-            // Unassigned and empty: hide spool, show empty placeholder circle
+            // Unassigned and empty: hide spool, show empty placeholder circle.
+            // The label's "Empty" text is NOT written here — the shared
+            // refresh below owns it, so the material observer firing afterwards
+            // reaches the same answer instead of replacing it with "--".
             show_spool = false;
             show_empty_placeholder = true;
-            // Show "Empty" in the material label so the slot's purpose is clear
-            if (data->material_label) {
-                lv_label_set_text(data->material_label, lv_tr("Empty"));
-            }
         }
     }
 
@@ -381,6 +438,10 @@ static void apply_slot_status(AmsSlotData* data, int status_int) {
     // "Empty" placeholder text shown), so its label is not dimmed.
     if (data->material_label)
         lv_obj_set_style_text_opa(data->material_label, spool_opa, LV_PART_MAIN);
+
+    // The label's TEXT depends on the status we just applied, so re-derive it
+    // from the one rule (apply_slot_material) now that last_status is current.
+    refresh_slot_material_label(data);
 
     // Show/hide empty slot placeholder
     if (data->empty_placeholder) {

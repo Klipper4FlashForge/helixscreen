@@ -63,9 +63,14 @@
         </ui_switch>
       </lv_obj>
       <!-- Unload Button (full width) - hidden for tool changers -->
+      <!-- Disabled state comes from ams_sidebar_unload_disabled, which
+           AmsOperationSidebar::refresh_unload_gating() computes through the
+           shared compute_op_button_gating() rule. It folds in the old
+           ams_filament_loaded term plus the two this button never had: an AMS
+           op already running, and a print owning the toolhead. -->
       <ui_button name="btn_unload" width="100%" variant="secondary" icon="tray_arrow_up" text="Unload" translation_tag="Unload">
         <bind_flag_if_eq subject="ams_type" flag="hidden" ref_value="4"/>
-        <bind_state_if_eq subject="ams_filament_loaded" state="disabled" ref_value="0"/>
+        <bind_state_if_eq subject="ams_sidebar_unload_disabled" state="disabled" ref_value="1"/>
         <event_cb trigger="clicked" callback="ams_sidebar_unload_clicked"/>
       </ui_button>
       <!-- Reset Button (full width) - hidden for tool changers -->

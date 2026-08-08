@@ -262,6 +262,10 @@ void SlotRegistry::set_tool_map(const std::vector<int>& tool_to_slot) {
     }
 }
 
+const std::vector<int>& SlotRegistry::tool_map() const {
+    return tool_to_slot_;
+}
+
 int SlotRegistry::backup_for_slot(int global_index) const {
     if (!is_valid_index(global_index))
         return -1;

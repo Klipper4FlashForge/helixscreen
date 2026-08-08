@@ -8,6 +8,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <dirent.h>
 #include <sys/stat.h>
 
@@ -203,6 +204,25 @@ static json build_mock_file_metadata_response(const std::string& filename) {
     // Get cached thumbnail path (creates cache if needed)
     std::string thumbnail_path = helix::gcode::get_cached_thumbnail(full_path, THUMBNAIL_CACHE_DIR);
 
+    // HELIX_MOCK_REMOTE_THUMBS=1 — advertise a Moonraker-relative path instead
+    // of the local cache file. PrintSelectPanel branches on whether the
+    // advertised path exists on disk, so a local path (the default) short-cuts
+    // straight to the prescaler and the HTTP download is never exercised. That
+    // is why --test could not reach the cold-fetch pipeline that bundle
+    // 6F3QJLFG implicates (#960). MockHttpFileServer serves these.
+    static const bool remote_thumbs = [] {
+        const char* v = std::getenv("HELIX_MOCK_REMOTE_THUMBS");
+        return v && v[0] && std::string(v) != "0";
+    }();
+    if (remote_thumbs && !thumbnail_path.empty()) {
+        std::string base = filename;
+        const size_t dot = base.rfind('.');
+        if (dot != std::string::npos) {
+            base = base.substr(0, dot);
+        }
+        thumbnail_path = ".thumbs/" + base + "-300x300.png";
+    }
+
     json thumbnails = json::array();
     if (!thumbnail_path.empty()) {
         // Return relative path to cached thumbnail (no LVGL prefix - that's a UI concern)
@@ -332,8 +352,8 @@ void register_file_handlers(std::unordered_map<std::string, MethodHandler>& regi
                 success_cb(response);
             }
         } else if (error_cb) {
-            MoonrakerError err =
-                MoonrakerError::validation_error("server.files.metadata", "Missing filename parameter");
+            MoonrakerError err = MoonrakerError::validation_error("server.files.metadata",
+                                                                  "Missing filename parameter");
             error_cb(err);
         }
         return true;
@@ -357,8 +377,8 @@ void register_file_handlers(std::unordered_map<std::string, MethodHandler>& regi
                 success_cb(response);
             }
         } else if (error_cb) {
-            MoonrakerError err =
-                MoonrakerError::validation_error("server.files.metascan", "Missing filename parameter");
+            MoonrakerError err = MoonrakerError::validation_error("server.files.metascan",
+                                                                  "Missing filename parameter");
             error_cb(err);
         }
         return true;

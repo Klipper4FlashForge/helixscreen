@@ -70,6 +70,10 @@ class AfcLaneDataClearHelper : public AmsBackendAfc {
     [[nodiscard]] std::string material(int slot_index) const {
         return get_slot_info(slot_index).material;
     }
+
+    [[nodiscard]] std::string spool_name(int slot_index) const {
+        return get_slot_info(slot_index).spool_name;
+    }
 };
 
 namespace {
@@ -111,8 +115,7 @@ TEST_CASE("AFC lane_data treats a null spool_id as an explicit clear", "[ams][af
     }
 
     SECTION("an ABSENT key means unchanged — these are deltas, not snapshots") {
-        afc.feed_lane_data(
-            both_lanes(nlohmann::json{{"color", "#00FF00"}, {"material", "PETG"}}));
+        afc.feed_lane_data(both_lanes(nlohmann::json{{"color", "#00FF00"}, {"material", "PETG"}}));
         CHECK(afc.spool_id(0) == 42);
     }
 
@@ -157,11 +160,83 @@ TEST_CASE("AFC lane_data applies the user's slot overrides", "[ams][afc][1195]")
 
     SECTION("a lane with no override is untouched") {
         afc.feed_lane_data(both_lanes(nlohmann::json::object(),
-                                     nlohmann::json{{"material", "PETG"}, {"spool_id", 5}}));
+                                      nlohmann::json{{"material", "PETG"}, {"spool_id", 5}}));
         CHECK(afc.material(1) == "PETG");
         CHECK(afc.spool_id(1) == 5);
         CHECK(afc.brand(1).empty());
     }
+}
+
+TEST_CASE("AFC lane_data adopts the filament name, like the status path", "[ams][afc][1195]") {
+    // The DB record carries filament_name just as AFC_lane.get_status() does,
+    // but only the status parser read it — so a lane whose data arrived solely
+    // through the lane_data path had no name at all, and the loaded card fell
+    // back to the algorithmic colour name.
+    AfcLaneDataClearHelper afc;
+
+    SECTION("a name in the DB record reaches the slot") {
+        afc.feed_lane_data(
+            both_lanes(nlohmann::json{{"material", "PLA"}, {"filament_name", "Ambrosia Pink"}}));
+        CHECK(afc.spool_name(0) == "Ambrosia Pink");
+    }
+
+    SECTION("an empty string is a deliberate clear") {
+        // clear_values() writes filament_name="" on eject. Treating that as a
+        // parse failure would keep painting the previous spool's name.
+        afc.feed_lane_data(both_lanes(nlohmann::json{{"filament_name", "Ambrosia Pink"}}));
+        REQUIRE(afc.spool_name(0) == "Ambrosia Pink");
+
+        afc.feed_lane_data(both_lanes(nlohmann::json{{"filament_name", ""}}));
+        CHECK(afc.spool_name(0).empty());
+    }
+
+    SECTION("an ABSENT key means unchanged — these are deltas, not snapshots") {
+        afc.feed_lane_data(both_lanes(nlohmann::json{{"filament_name", "Ambrosia Pink"}}));
+        afc.feed_lane_data(both_lanes(nlohmann::json{{"material", "PETG"}}));
+        CHECK(afc.spool_name(0) == "Ambrosia Pink");
+    }
+
+    SECTION("a non-string value leaves the name alone") {
+        afc.feed_lane_data(both_lanes(nlohmann::json{{"filament_name", "Ambrosia Pink"}}));
+        afc.feed_lane_data(both_lanes(nlohmann::json{{"filament_name", nullptr}}));
+        CHECK(afc.spool_name(0) == "Ambrosia Pink");
+    }
+
+    SECTION("a user-entered name still wins over firmware's") {
+        // apply_overrides() must run AFTER the parse, same as the status path.
+        helix::ams::FilamentSlotOverride o;
+        o.spool_name = "My Pink Spool";
+        afc.set_override(0, o);
+
+        afc.feed_lane_data(both_lanes(nlohmann::json{{"filament_name", "Ambrosia Pink"}}));
+        CHECK(afc.spool_name(0) == "My Pink Spool");
+    }
+
+    SECTION("naming one lane leaves the other alone") {
+        afc.feed_lane_data(both_lanes(nlohmann::json{{"filament_name", "Ambrosia Pink"}},
+                                      nlohmann::json{{"filament_name", "Galaxy Black"}}));
+        CHECK(afc.spool_name(0) == "Ambrosia Pink");
+        CHECK(afc.spool_name(1) == "Galaxy Black");
+    }
+}
+
+TEST_CASE("AFC lane_data and status paths agree about the filament name", "[ams][afc][1195]") {
+    // The bug was an ASYMMETRY, so pin the parity: the same firmware value
+    // expressed through either parser must reach the same slot field.
+    AfcLaneDataClearHelper via_db;
+    AfcLaneDataClearHelper via_status;
+
+    via_db.feed_lane_data(both_lanes(nlohmann::json{{"filament_name", "Ambrosia Pink"}}));
+    via_status.feed_stepper("lane1", nlohmann::json{{"filament_name", "Ambrosia Pink"}});
+
+    CHECK(via_db.spool_name(0) == via_status.spool_name(0));
+    CHECK(via_db.spool_name(0) == "Ambrosia Pink");
+
+    via_db.feed_lane_data(both_lanes(nlohmann::json{{"filament_name", ""}}));
+    via_status.feed_stepper("lane1", nlohmann::json{{"filament_name", ""}});
+
+    CHECK(via_db.spool_name(0) == via_status.spool_name(0));
+    CHECK(via_db.spool_name(0).empty());
 }
 
 TEST_CASE("AFC lane_data and status paths agree about the null clear", "[ams][afc][1195]") {

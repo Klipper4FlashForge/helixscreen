@@ -33,6 +33,7 @@
 #endif
 #include "app_constants.h"
 #include "logging_init.h"
+#include "watchdog_restart_policy.h"
 
 #include <spdlog/spdlog.h>
 
@@ -67,16 +68,22 @@ static constexpr int DEFAULT_AUTO_RESTART_SEC = 30;
 // not a crash signal) too often within a short window, the watchdog gives up
 // and exits with RESTART_LOOP_EXIT_CODE so the system service manager (systemd,
 // inittab, init script) sees the failure rather than the watchdog quietly
-// busy-restarting forever at the 3-second backoff cadence. Typical trigger:
-// "another instance is already running", config-validation failure, missing
-// shared library — conditions that won't resolve via blind retry.
+// busy-restarting forever. Typical trigger: "another instance is already
+// running", config-validation failure, missing shared library — conditions that
+// won't resolve via blind retry.
 //
 // Crash-handler exits (128..159) and signal terminations are EXCLUDED from the
 // counter: those have their own crash-recovery dialog + crash-report pipeline
 // and represent transient faults the user is already being notified about.
 // Counting them here would suppress the recovery dialog after a few crashes,
 // which is worse UX than letting the dialog keep appearing.
-static constexpr int RESTART_LOOP_MAX_FAILURES = 5;
+//
+// TRANSIENT exec/fork failures are excluded too, and tracked separately with a
+// far larger budget — see watchdog_restart_policy.h. Under memory pressure
+// execv() of an intact binary can fail with ENOEXEC/ENOMEM; spending the small
+// budget above on those turns a passing squeeze into a permanently black screen.
+// The budget itself (RESTART_LOOP_MAX_FAILURES) and the pacing live in the
+// policy header so they can be unit tested on hosts that never build this binary.
 static constexpr int RESTART_LOOP_WINDOW_SEC = 60;
 static constexpr int RESTART_LOOP_EXIT_CODE = 42;
 
@@ -519,9 +526,17 @@ static CrashInfo run_child_process(const WatchdogArgs& args, pid_t splash_pid) {
     pid_t child_pid = fork();
 
     if (child_pid < 0) {
-        spdlog::error("[Watchdog] fork() failed: {}", strerror(errno));
+        // fork() failure is classified with the same table as exec: EAGAIN
+        // (process/thread limit) and ENOMEM are resource pressure that lifts,
+        // everything else is a standing condition. Encoding the class in
+        // crash.exit_code routes it through the same restart policy below.
+        const int fork_errno = errno;
+        const auto cls = helix::watchdog::classify_exec_errno(fork_errno);
+        spdlog::error("[Watchdog] fork() failed: binary={} errno={} ({}) class={}",
+                      args.child_binary, fork_errno, strerror(fork_errno),
+                      helix::watchdog::exec_failure_class_name(cls));
         crash.was_signaled = false;
-        crash.exit_code = 127;
+        crash.exit_code = helix::watchdog::exec_failure_exit_code(fork_errno);
         crash.crash_time = time(nullptr);
         return crash;
     }
@@ -532,9 +547,40 @@ static CrashInfo run_child_process(const WatchdogArgs& args, pid_t splash_pid) {
 
         // exec helix-screen
         execv(args.child_binary.c_str(), child_argv.data());
-        // If we get here, exec failed
-        fprintf(stderr, "[Watchdog] execv failed: %s\n", strerror(errno));
-        _exit(127);
+
+        // Exec failed. Two things matter here.
+        //
+        // First, the exit code carries the errno CLASS back to the parent so it
+        // can tell "install is broken" from "system was briefly out of memory"
+        // and pace its retries accordingly.
+        //
+        // Second, this line has to stand on its own. On platforms where
+        // /var/log is tmpfs, spdlog goes to syslog and every surrounding
+        // "[Watchdog] Child binary:" / "[Watchdog] Launching:" line is gone
+        // after a reboot — this stderr write, captured in launcher.log, is all
+        // that survives. So it names the binary, the numeric errno, its text,
+        // and the classification.
+        //
+        // This is a forked child, so it formats into a stack buffer and issues
+        // one write() rather than calling spdlog (whose sinks and mutexes were
+        // inherited mid-flight from the parent).
+        const int exec_errno = errno;
+        const auto cls = helix::watchdog::classify_exec_errno(exec_errno);
+        const int exit_code = helix::watchdog::exec_failure_exit_code(exec_errno);
+
+        char msg[768];
+        int len = snprintf(msg, sizeof(msg),
+                           "[Watchdog] execv failed: binary=%s errno=%d (%s) class=%s exit=%d\n",
+                           args.child_binary.c_str(), exec_errno, strerror(exec_errno),
+                           helix::watchdog::exec_failure_class_name(cls), exit_code);
+        if (len > 0) {
+            if (len > static_cast<int>(sizeof(msg)) - 1) {
+                len = static_cast<int>(sizeof(msg)) - 1;
+            }
+            ssize_t written = write(STDERR_FILENO, msg, static_cast<size_t>(len));
+            (void)written; // nothing useful to do if even stderr is gone
+        }
+        _exit(exit_code);
     }
 
     // Parent: wait for child with proper EINTR handling
@@ -1037,6 +1083,19 @@ static DialogChoice show_crash_dialog(int width, int height, int rotation, const
 // Main Watchdog Loop
 // =============================================================================
 
+/**
+ * @brief Sleep for @p seconds, yielding promptly if a shutdown was requested.
+ *
+ * Backoff delays reach a full minute, so a plain sleep() would leave
+ * `start-stop-daemon -K` (or systemctl stop) waiting that long before the
+ * supervisor noticed. Chunking into one-second naps bounds that to ~1s.
+ */
+static void backoff_sleep(int seconds) {
+    for (int i = 0; i < seconds && !g_quit; ++i) {
+        sleep(1);
+    }
+}
+
 static int run_watchdog(const WatchdogArgs& args) {
     spdlog::info("[Watchdog] Starting watchdog supervisor");
     spdlog::info("[Watchdog] Child binary: {}", args.child_binary);
@@ -1052,6 +1111,14 @@ static int run_watchdog(const WatchdogArgs& args) {
     // Rolling window of recent non-zero deliberate-exit timestamps. See the
     // RESTART_LOOP_* constants at the top of this file for rationale.
     std::deque<std::chrono::steady_clock::time_point> recent_failures;
+
+    // TRANSIENT exec/fork failures get their own counters, deliberately NOT
+    // windowed: with exponential backoff a fixed window would drain faster than
+    // failures arrive and the budget would never bite. Consecutive-count
+    // semantics instead — any launch that actually reached helix-screen clears
+    // them, so a single successful start wipes the history.
+    int consecutive_transient_failures = 0;
+    int transient_cooldown_rounds = 0;
 
     // Rolling window of recent crash signatures (signal_num for SIGNAL crashes,
     // or exit_code for crash-handler 128..159 exits). Detecting the same
@@ -1122,6 +1189,21 @@ static int run_watchdog(const WatchdogArgs& args) {
             break;
         }
 
+        // Did this launch fail in exec/fork, and if so, is that failure the kind
+        // that retrying fixes? The forked child encodes the answer in reserved
+        // exit codes helix-screen itself never returns (see
+        // watchdog_restart_policy.h); anything else means the app really ran.
+        const auto exec_class = crash.was_signaled
+                                    ? helix::watchdog::ExecFailureClass::NONE
+                                    : helix::watchdog::classify_child_exit_code(crash.exit_code);
+
+        // Any launch that got past exec ends the transient streak, so one
+        // successful start wipes the accumulated pressure history.
+        if (exec_class != helix::watchdog::ExecFailureClass::TRANSIENT) {
+            consecutive_transient_failures = 0;
+            transient_cooldown_rounds = 0;
+        }
+
         // Normal exit (code 0) - just restart silently
         if (!crash.was_signaled && crash.exit_code == 0) {
             spdlog::info("[Watchdog] Child exited normally, restarting");
@@ -1144,39 +1226,80 @@ static int run_watchdog(const WatchdogArgs& args) {
             crash.exit_code = 0;
             // fall through to crash-handling path below
         } else if (!crash.was_signaled) {
-            // Genuine non-zero exit (no crash): deliberate exit() with a
-            // failure code — "another instance running", config validation,
-            // CLI arg error, etc. Log and restart with backoff to avoid
-            // busy-looping when the condition persists.
-            //
-            // Also track these in a rolling window: if they keep happening,
-            // the underlying problem won't fix itself by retrying, so bail
-            // out and let the service manager (or a human) see the failure
-            // rather than spamming logs at 3s cadence forever.
-            auto now = std::chrono::steady_clock::now();
-            const auto window = std::chrono::seconds(RESTART_LOOP_WINDOW_SEC);
-            while (!recent_failures.empty() && (now - recent_failures.front()) > window) {
-                recent_failures.pop_front();
-            }
-            recent_failures.push_back(now);
+            using helix::watchdog::ExecFailureClass;
+            using helix::watchdog::RestartAction;
 
-            if (static_cast<int>(recent_failures.size()) > RESTART_LOOP_MAX_FAILURES) {
-                spdlog::critical(
-                    "[Watchdog] Restart loop detected: child exited non-zero {} times "
-                    "in the last {}s (last exit code: {}). Giving up to avoid busy-loop; "
-                    "exiting watchdog with code {}. Investigate the underlying failure "
-                    "(another instance running, bad config, missing library, etc.).",
-                    recent_failures.size(), RESTART_LOOP_WINDOW_SEC, crash.exit_code,
-                    RESTART_LOOP_EXIT_CODE);
+            int failure_count = 0;
+
+            if (exec_class == ExecFailureClass::TRANSIENT) {
+                // exec/fork lost to momentary resource pressure. The binary is
+                // intact and runs fine once the squeeze passes (an input-shaper
+                // FFT, a large upload — anything that pushes a small board into
+                // swap). Counted on its own so it cannot spend the small
+                // non-transient budget and strand the user at a black screen.
+                failure_count = ++consecutive_transient_failures;
+                spdlog::warn("[Watchdog] Child launch failed transiently (exit {}); "
+                             "consecutive transient failures: {}/{}, cooldown rounds used {}/{}",
+                             crash.exit_code, failure_count,
+                             helix::watchdog::TRANSIENT_MAX_FAILURES, transient_cooldown_rounds,
+                             helix::watchdog::TRANSIENT_MAX_COOLDOWN_ROUNDS);
+            } else {
+                // Genuine non-zero exit (no crash): deliberate exit() with a
+                // failure code — "another instance running", config validation,
+                // CLI arg error — or a PERMANENT exec failure (missing binary,
+                // no execute permission, path is a directory).
+                //
+                // Tracked in a rolling window: if they keep happening, the
+                // underlying problem won't fix itself by retrying, so bail out
+                // and let the service manager (or a human) see the failure
+                // rather than spamming logs forever.
+                auto now = std::chrono::steady_clock::now();
+                const auto window = std::chrono::seconds(RESTART_LOOP_WINDOW_SEC);
+                while (!recent_failures.empty() && (now - recent_failures.front()) > window) {
+                    recent_failures.pop_front();
+                }
+                recent_failures.push_back(now);
+                failure_count = static_cast<int>(recent_failures.size());
+            }
+
+            const auto decision = helix::watchdog::decide_restart_action(exec_class, failure_count,
+                                                                         transient_cooldown_rounds);
+
+            if (decision.action == RestartAction::GIVE_UP) {
+                if (exec_class == ExecFailureClass::TRANSIENT) {
+                    spdlog::critical(
+                        "[Watchdog] Transient launch failures never cleared: {} cooldown "
+                        "rounds exhausted (last exit code: {}). Exiting watchdog with code "
+                        "{} so the service manager sees it.",
+                        transient_cooldown_rounds, crash.exit_code, RESTART_LOOP_EXIT_CODE);
+                } else {
+                    spdlog::critical(
+                        "[Watchdog] Restart loop detected: child exited non-zero {} times "
+                        "in the last {}s (last exit code: {}). Giving up to avoid busy-loop; "
+                        "exiting watchdog with code {}. Investigate the underlying failure "
+                        "(another instance running, bad config, missing library, etc.).",
+                        failure_count, RESTART_LOOP_WINDOW_SEC, crash.exit_code,
+                        RESTART_LOOP_EXIT_CODE);
+                }
                 cleanup_splash(g_splash_pid);
                 return RESTART_LOOP_EXIT_CODE;
             }
 
-            spdlog::warn("[Watchdog] Child exited with code {} (not a crash), restarting in 3s "
-                         "(failure {}/{} in {}s window)",
-                         crash.exit_code, recent_failures.size(), RESTART_LOOP_MAX_FAILURES,
-                         RESTART_LOOP_WINDOW_SEC);
-            sleep(3);
+            if (decision.action == RestartAction::COOLDOWN_RETRY) {
+                ++transient_cooldown_rounds;
+                consecutive_transient_failures = 0;
+                spdlog::warn("[Watchdog] Transient launch failures outlasted the backoff "
+                             "budget; cooling down {}s before retrying (round {}/{})",
+                             decision.delay_seconds, transient_cooldown_rounds,
+                             helix::watchdog::TRANSIENT_MAX_COOLDOWN_ROUNDS);
+            } else {
+                spdlog::warn("[Watchdog] Child exited with code {} ({}, not a crash), "
+                             "restarting in {}s (failure {})",
+                             crash.exit_code, helix::watchdog::exec_failure_class_name(exec_class),
+                             decision.delay_seconds, failure_count);
+            }
+
+            backoff_sleep(decision.delay_seconds);
             continue;
         }
 

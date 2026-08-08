@@ -58,6 +58,7 @@
 #include "screenshot.h"
 #include "sensor_state.h"
 #include "sound_manager.h"
+#include "spoolman_manager.h"
 #include "static_panel_registry.h"
 #include "static_subject_registry.h"
 #include "streaming_policy.h"
@@ -229,6 +230,7 @@
 #include <atomic>
 #include <cerrno>
 #include <chrono>
+#include <climits>
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
@@ -275,6 +277,14 @@ const std::string& crash_marker_path() {
     static const std::string p = helix::writable_path(".crash_restart_count");
     return p;
 }
+
+// Async-signal-safe copy of crash_marker_path(). The SIGTERM handler clears the
+// marker with unlink(2) and may not build the path itself: std::string, the
+// function-local static's guard, and std::filesystem::remove are all unsafe in
+// a handler. The path is snapshotted here once on the main thread at startup;
+// s_crash_marker_path_ready gates the handler until it is.
+char s_crash_marker_path[PATH_MAX] = {0};
+volatile sig_atomic_t s_crash_marker_path_ready = 0;
 
 // GPU 3D crash-loop guard file (issues #966 / #1084 / #1085). The 3D GLES
 // renderer writes this immediately before its first GPU draw and removes it
@@ -380,6 +390,15 @@ void invalidate_all_recursive(lv_obj_t* obj) {
  */
 void graceful_quit_signal_handler(int sig) {
     if (sig == SIGTERM) {
+        // A supervisor stop is not a crash. Because this path skips
+        // Application::shutdown() — the only other place the crash-restart
+        // marker is cleared — every SIGTERM used to leave its start timestamp
+        // behind. On the Elegoo CC1, COSMOS's resonance-calibration macro
+        // stops and starts the UI through gui-switcher (SIGTERM by pidfile);
+        // three of those inside the 120s window tripped "Crash loop detected"
+        // and HelixScreen refused to boot. unlink(2) is async-signal-safe;
+        // the path was cached at startup so nothing is constructed here.
+        helix::clear_crash_marker_signal_safe();
         static const char msg[] = "[Application] SIGTERM — fast exit\n";
         ssize_t n = write(STDERR_FILENO, msg, sizeof(msg) - 1);
         (void)n; // suppress unused-result warning
@@ -390,6 +409,30 @@ void graceful_quit_signal_handler(int sig) {
 }
 
 } // namespace
+
+namespace helix {
+
+bool cache_crash_marker_path_for_signal(const std::string& path) {
+    if (path.empty() || path.size() >= sizeof(s_crash_marker_path)) {
+        spdlog::warn("[Application] Crash marker path not signal-cacheable ({} bytes): '{}'",
+                     path.size(), path);
+        s_crash_marker_path_ready = 0;
+        return false;
+    }
+    std::memcpy(s_crash_marker_path, path.c_str(), path.size() + 1);
+    s_crash_marker_path_ready = 1;
+    return true;
+}
+
+void clear_crash_marker_signal_safe() {
+    if (s_crash_marker_path_ready == 0) {
+        return;
+    }
+    // ENOENT is the common case (no marker written, e.g. --test mode).
+    (void)::unlink(s_crash_marker_path);
+}
+
+} // namespace helix
 
 // C bridge functions called from SDL event handler (lv_sdl_window.c)
 extern "C" void helix_notify_app_backgrounded() {
@@ -517,6 +560,10 @@ int Application::run(int argc, char** argv) {
     if (!init_config()) {
         return 1;
     }
+
+    // Snapshot the marker path for the SIGTERM handler. init_config() has run,
+    // so writable_path() now resolves; the handler cannot construct this itself.
+    helix::cache_crash_marker_path_for_signal(crash_marker_path());
 
     // Crash loop detection: track rapid restarts via marker file. Skipped in
     // test mode — automation (screenshot pipeline, helixctl-driven runs) relaunches
@@ -2921,12 +2968,23 @@ void Application::setup_discovery_callbacks() {
                                                                          std::string log_context) {
                 helix::ui::queue_update([spool, try_assign_active_spool_to_tool,
                                          log_context = std::move(log_context)]() {
+                    // This record is the freshest view of the spool we will get
+                    // — it arrives from the startup sync and from every
+                    // notify_active_spool_set. Refresh the identity side
+                    // channel from it (invalidate first: cache_identity() is
+                    // insert-if-absent, so a stale entry would win otherwise).
+                    SpoolmanManager::invalidate_identity(spool.id);
+                    SpoolmanManager::cache_identity(spool);
+
                     SlotInfo slot;
                     slot.slot_index = -2;
                     slot.global_index = -2;
+                    // apply_spool_to_slot() owns the whole identity copy,
+                    // multi-colour included. Overwriting spool_name with
+                    // display_name() here used to put "Polymaker PLA - Jet
+                    // Black" on a field the lane_data schema, AFC and Happy
+                    // Hare all read as the bare filament name.
                     apply_spool_to_slot(slot, spool);
-                    slot.spool_name = spool.display_name();
-                    slot.multi_color_hexes = spool.multi_color_hexes;
                     AmsState::instance().set_external_spool_info(slot);
                     try_assign_active_spool_to_tool(spool);
                     spdlog::info("[Application] External spool {}: {} (id={})", log_context,

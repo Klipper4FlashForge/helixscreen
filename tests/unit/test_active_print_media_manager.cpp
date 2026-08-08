@@ -905,13 +905,23 @@ class ActivePrintMediaAsyncFixture {
     /// publishes print_thumbnail_path_ has usually not been queued yet, so the
     /// subject still reads empty. Join the pool first, then drain — and repeat,
     /// since a drained callback can commit further pool work.
+    ///
+    /// Test the settled condition BEFORE draining, never after. It is
+    /// drain_all() that commits the pool task (the metadata callback it runs
+    /// reaches process_file_async), and pending_tasks() is HThreadPool::taskNum()
+    /// — queue depth only. A worker that has already dequeued that task reports
+    /// zero while still running it, so a post-drain check reads "settled" and
+    /// returns before the result exists. wait_for_completion() is the accurate
+    /// join: it waits for in-flight tasks too.
     void drain() {
+        auto& processor = helix::ThumbnailProcessor::instance();
+        auto& queue = helix::ui::UpdateQueue::instance();
         for (int pass = 0; pass < 4; ++pass) {
-            helix::ThumbnailProcessor::instance().wait_for_completion();
-            UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
-            if (helix::ThumbnailProcessor::instance().pending_tasks() == 0) {
+            processor.wait_for_completion();
+            if (processor.pending_tasks() == 0 && UpdateQueueTestAccess::queue_empty(queue)) {
                 break;
             }
+            UpdateQueueTestAccess::drain_all(queue);
         }
     }
 

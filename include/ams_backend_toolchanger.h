@@ -5,6 +5,8 @@
 
 #include "ams_subscription_backend.h"
 
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -110,6 +112,21 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
     AmsError load_filament(int slot_index) override;
     AmsError unload_filament(int slot_index) override;
     AmsError select_slot(int slot_index) override;
+
+    /**
+     * @brief Mount a physical toolhead. The argument is a SLOT INDEX.
+     *
+     * Named `tool_number` only because the base signature is, and validated as a
+     * slot: the implementation emits `SELECT_TOOL T={n}`, which resolves through
+     * the toolchanger's own list and therefore BYPASSES ASSIGN_TOOL remapping.
+     * That is deliberate — a tap on lane 2 must mount the toolhead the user
+     * tapped, not whichever physical tool the slicer's T2 was reassigned to.
+     *
+     * So on this backend a tool number and a slot index are NOT
+     * interchangeable, and anything that has to cross between them goes through
+     * the tool map (AmsSystemInfo::tool_to_slot_map / SlotInfo::mapped_tool),
+     * never by assuming they are equal.
+     */
     AmsError change_tool(int tool_number) override;
 
     /**
@@ -135,8 +152,10 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
     // no per-tool switch is read, and is_filament_loaded() is just
     // `tool_number >= 0`. The only fact the parse can state is which tool is on
     // the carriage — single-valued, which is exactly what the aggregate
-    // current_slot + filament_loaded pair encodes, assigned verbatim from
-    // klipper-toolchanger's own toolchanger.tool_number. The per-slot LOADED
+    // current_slot + filament_loaded pair encodes, derived from
+    // klipper-toolchanger's own toolchanger.tool_number — through the forward
+    // tool map, since that number is the ASSIGNED one and ASSIGN_TOOL can point
+    // it at any physical tool. The per-slot LOADED
     // stamp is derived FROM that pair (refresh_slot_statuses_locked), so
     // believing it back would only add staleness — the same argument that keeps
     // Happy Hare on the aggregate rule (prestonbrown/helixscreen#1199).
@@ -243,6 +262,45 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
      * @return AmsError (SUCCESS if valid, INVALID_SLOT otherwise)
      */
     AmsError validate_slot_index(int slot_index) const;
+
+    // === Optimistic dispatch + macro-ack resolution =========================
+    //
+    // The only thing that can move the action off the value a dispatch sets is
+    // a `toolchanger.status` frame, and Moonraker only pushes fields whose value
+    // CHANGED. klipper-toolchanger short-circuits SELECT_TOOL on the tool already
+    // on the carriage ("Tool tool T4 already selected") without touching
+    // `status`, so a no-op produces no frame at all and the action never leaves
+    // SELECTING — the filament panel spins and is_busy() locks out every later
+    // operation until restart. Same defect and same fix as AFC (#1183): set the
+    // action optimistically so there is a transition to complete, and resolve it
+    // on the macro's own gcode ack when the toolchanger never claimed the op.
+
+    /// Action the most recent dispatch set optimistically, cleared once that
+    /// dispatch has been resolved — by its ack, by klipper-toolchanger taking
+    /// the operation over, or by a newer dispatch superseding it.
+    std::optional<AmsAction> pending_dispatch_action_;
+
+    /// Monotonic dispatch counter. The ack carries the generation it was issued
+    /// under, so an ack that lands after a newer dispatch resolves nothing.
+    uint64_t dispatch_generation_{0};
+
+    /// Set @p action optimistically for a dispatch that is about to go out and
+    /// return the generation its ack must present. Caller holds mutex_.
+    uint64_t begin_dispatch_locked(AmsAction action);
+
+    /// Undo an optimistic set whose gcode never left the building. Caller must
+    /// NOT hold mutex_.
+    void abandon_dispatch(uint64_t generation);
+
+    /// Resolve a dispatch to IDLE on its macro's gcode ack, but only when the
+    /// toolchanger never took the operation over. Main thread; must NOT hold
+    /// mutex_.
+    void finalize_dispatch_after_macro(uint64_t generation);
+
+    /// Send a tool operation: set @p action optimistically, dispatch @p gcode
+    /// through ensure_homed_then(), and resolve on the macro's ack. Caller must
+    /// NOT hold mutex_ and must have passed check_preconditions().
+    AmsError dispatch_operation(std::string gcode, AmsAction action);
 
     // Tool changer specific state
     std::vector<std::string> tool_names_; ///< Tool names from discovery

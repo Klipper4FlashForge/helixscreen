@@ -374,6 +374,44 @@ TEST_CASE_METHOD(NavbarIconTestFixture, "Overlay registration accepts IPanelLife
 
 #include "../test_helpers/update_queue_test_access.h"
 
+TEST_CASE_METHOD(NavbarIconTestFixture, "Out-of-band backdrop deletion scrubs overlay_backdrop_",
+                 "[navigation][overlay][backdrop]") {
+    auto& nav = NavigationManager::instance();
+
+    // Same base-stack seeding as the sibling scrub test — push_overlay only
+    // builds a backdrop when it sees itself as the first overlay.
+    lv_obj_t* base = lv_obj_create(test_screen());
+    REQUIRE(base != nullptr);
+    lv_obj_t* panels[UI_PANEL_COUNT] = {nullptr};
+    panels[static_cast<int>(PanelId::Home)] = base;
+    nav.set_panels(panels);
+
+    MockPanelLifecycle mock_panel;
+    lv_obj_t* overlay = lv_obj_create(test_screen());
+    REQUIRE(overlay != nullptr);
+    lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+    nav.register_overlay_instance(overlay, &mock_panel);
+    nav.push_overlay(overlay);
+    helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+
+    lv_obj_t* backdrop = NavigationManagerTestAccess::overlay_backdrop(nav);
+    REQUIRE(backdrop != nullptr);
+
+    // Delete the backdrop OUT-OF-BAND. In the suite this happens when a fixture
+    // destructor deletes the screen the backdrop is parented to (XMLTestFixture
+    // does exactly that), which frees it with no go_back() involved.
+    lv_obj_delete(backdrop);
+
+    // Regression assertion: overlay_backdrop_ is a scalar, so scrub_deleted_widget()
+    // must clear it explicitly. Without that, deinit_subjects() reaches
+    // lv_obj_del(overlay_backdrop_) on freed memory — a heap-use-after-free that
+    // detonates in whatever unrelated test runs next.
+    REQUIRE(NavigationManagerTestAccess::overlay_backdrop(nav) == nullptr);
+
+    lv_obj_delete(overlay);
+    lv_obj_delete(base);
+}
+
 TEST_CASE_METHOD(NavbarIconTestFixture, "Out-of-band widget deletion scrubs panel_stack_",
                  "[navigation][overlay][l081]") {
     auto& nav = NavigationManager::instance();

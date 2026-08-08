@@ -18,10 +18,16 @@
 #include "app_constants.h"
 #include "app_globals.h"
 #include "filament_database.h"
+#include "filament_op_dispatch.h"
+#include "filament_op_router.h"
+#include "filament_op_slot_resolver.h"
 #include "lvgl/src/others/translation/lv_translation.h"
+#include "moonraker_api.h"
 #include "observer_factory.h"
 #include "post_op_cooldown_manager.h"
 #include "printer_state.h"
+#include "standard_macros.h"
+#include "static_subject_registry.h"
 #include "temperature_controller.h"
 #include "ui/ui_cleanup_helpers.h"
 
@@ -31,6 +37,41 @@
 #include <cmath>
 
 namespace helix::ui {
+
+namespace {
+
+/**
+ * @brief Drives the sidebar Unload button's disabled state (1 = disabled).
+ *
+ * Process-wide rather than an AmsOperationSidebar member: the sidebar is a
+ * unique_ptr on the AMS / AMS Overview panel and is destroyed every time that
+ * panel closes, while the XML tree bound to this subject is torn down
+ * asynchronously. An instance-owned subject would be deinit'd out from under a
+ * live binding. Registered once, deinit'd via StaticSubjectRegistry (which runs
+ * before lv_deinit()), same shape as ScrewsTiltShareModal's row subjects.
+ */
+lv_subject_t s_unload_disabled;
+bool s_unload_disabled_initialized = false;
+
+void init_unload_gating_subject() {
+    if (s_unload_disabled_initialized) {
+        return;
+    }
+    // Start disabled: nothing is known to be loaded until the first refresh.
+    lv_subject_init_int(&s_unload_disabled, 1);
+    lv_xml_register_subject(nullptr, "ams_sidebar_unload_disabled", &s_unload_disabled);
+    s_unload_disabled_initialized = true;
+
+    StaticSubjectRegistry::instance().register_deinit("AmsSidebarUnloadGating", []() {
+        if (s_unload_disabled_initialized && lv_is_initialized()) {
+            lv_subject_deinit(&s_unload_disabled);
+            s_unload_disabled_initialized = false;
+            spdlog::trace("[AmsSidebar] Unload gating subject deinitialized");
+        }
+    });
+}
+
+} // namespace
 
 // ============================================================================
 // Construction / Destruction
@@ -50,6 +91,11 @@ AmsOperationSidebar::~AmsOperationSidebar() {
 // ============================================================================
 
 void AmsOperationSidebar::register_callbacks_static() {
+    // Must exist before ams_sidebar.xml is parsed — btn_unload binds it. Same
+    // "before the parser sees it" contract as the callbacks below, so it is
+    // registered from the same hook.
+    init_unload_gating_subject();
+
     register_xml_callbacks({
         {"ams_sidebar_bypass_toggled", on_bypass_toggled_cb},
         {"ams_sidebar_unload_clicked", on_unload_clicked_cb},
@@ -173,6 +219,7 @@ bool AmsOperationSidebar::setup(lv_obj_t* panel) {
 
     sync_reset_button_label();
     update_check_gates_visibility();
+    refresh_unload_gating();
     spdlog::debug("[AmsSidebar] Setup complete");
     return true;
 }
@@ -257,6 +304,10 @@ void AmsOperationSidebar::init_observers() {
             // Update step progress (BEFORE updating prev_ams_action_)
             self->update_action_display(action);
 
+            // AmsSystemInfo::is_busy() is "action is neither IDLE nor ERROR", so
+            // every edge here changes the Unload button's gating.
+            self->refresh_unload_gating();
+
             self->prev_ams_action_ = action;
         });
 
@@ -269,7 +320,25 @@ void AmsOperationSidebar::init_observers() {
                                                   self->update_current_loaded_display();
                                                   self->sync_reset_button_label();
                                                   self->update_check_gates_visibility();
+                                                  self->refresh_unload_gating();
                                               });
+
+    // The two terms the sidebar never had. ams_filament_loaded is what the XML
+    // used to bind on its own; print state is the one whose absence let Unload
+    // dispatch mid-print and eat a backend refusal.
+    //
+    // print_state_enum, not print_active: PRINTING -> PAUSED is a gating edge
+    // (a pause UNGATES Unload on every backend but AD5X) and print_active reads
+    // 1 across both, so it never fires on that transition. PrinterState is a
+    // separate singleton whose subjects tests deinit between cases, so its
+    // observer takes the lifetime token (#705); AmsState's does not.
+    filament_loaded_observer_ = observe_int_sync<AmsOperationSidebar>(
+        AmsState::instance().get_filament_loaded_subject(), this,
+        [](AmsOperationSidebar* self, int) { self->refresh_unload_gating(); });
+    print_state_observer_ = observe_int_sync<AmsOperationSidebar>(
+        printer_state_.get_print_state_enum_subject(), this,
+        [](AmsOperationSidebar* self, int) { self->refresh_unload_gating(); },
+        printer_state_.get_static_print_subjects_lifetime());
 
     // Active backend observer: re-syncs reset button label when the user switches backend tabs
     active_backend_observer_ = observe_int_sync<AmsOperationSidebar>(
@@ -380,6 +449,8 @@ void AmsOperationSidebar::cleanup() {
     extruder_temp_observer_.reset();
     extruder_target_observer_.reset();
     indeterminate_observer_.reset();
+    filament_loaded_observer_.reset();
+    print_state_observer_.reset();
 
     // Reset extracted modules AFTER observers — they may have their own observers
     // that reference widget pointers; resetting before our observers could
@@ -425,6 +496,7 @@ void AmsOperationSidebar::sync_from_state() {
     update_settings_visibility();
     update_check_gates_visibility();
     sync_reset_button_label();
+    refresh_unload_gating();
 }
 
 // ============================================================================
@@ -952,6 +1024,49 @@ void AmsOperationSidebar::refresh_heat_step_display() {
 // Action Handlers
 // ============================================================================
 
+helix::ui::OpButtonState AmsOperationSidebar::read_unload_gating_state() const {
+    helix::ui::OpButtonState state;
+
+    AmsBackend* backend = AmsState::instance().get_backend();
+
+    // print_blocks_filament_op(), not the raw print_active subject: PRINTING
+    // always refuses, but a PAUSED print now ALLOWS the unload on every backend
+    // whose filament macro does not home itself (only AD5X IFS does). Gating on
+    // print_active would keep this button greyed through the pause that is the
+    // entire recovery workflow — and the sidebar had no print term at all
+    // before, so it went straight from "always tappable" to "correct" only if
+    // this asks the same question the backend does.
+    const auto job_state = static_cast<helix::PrintJobState>(
+        lv_subject_get_int(printer_state_.get_print_state_enum_subject()));
+    state.print_blocks_op = helix::ui::print_blocks_filament_op(
+        job_state == helix::PrintJobState::PRINTING, job_state == helix::PrintJobState::PAUSED,
+        backend && backend->filament_ops_self_home());
+
+    if (backend) {
+        // AmsSystemInfo::is_busy() — the same predicate check_preconditions()
+        // refuses on, instead of a fourth open-coded `action != IDLE && != ERROR`.
+        state.system_busy = backend->get_system_info().is_busy();
+    }
+
+    // This button means "unload whatever is active", so the aggregate loaded flag
+    // is its availability — the same signal the XML used to bind directly.
+    lv_subject_t* loaded = AmsState::instance().get_filament_loaded_subject();
+    state.unload_available = loaded && lv_subject_get_int(loaded) == 1;
+
+    // Always the heated toolhead unload. The cold lane ops (Eject / Recover),
+    // which stay reachable mid-print, live on the AMS context menu.
+    state.unload_is_cold_lane_op = false;
+    return state;
+}
+
+void AmsOperationSidebar::refresh_unload_gating() {
+    if (!s_unload_disabled_initialized) {
+        return;
+    }
+    const auto gating = helix::ui::compute_op_button_gating(read_unload_gating_state());
+    lv_subject_set_int(&s_unload_disabled, gating.unload_disabled ? 1 : 0);
+}
+
 void AmsOperationSidebar::handle_unload() {
     // Active-slot unload (sidebar Unload button). Delegate to the slot overload
     // with slot_index = -1 so the stepper-build + backend-call path lives in one
@@ -963,24 +1078,90 @@ void AmsOperationSidebar::handle_unload() {
 void AmsOperationSidebar::handle_unload(int slot_index) {
     spdlog::info("[AmsSidebar] Unload requested (slot={})", slot_index);
 
-    AmsBackend* backend = AmsState::instance().get_backend();
-    if (!backend) {
-        NOTIFY_WARNING(lv_tr("Multi-Filament System not available"));
+    // The button is bound to ams_sidebar_unload_disabled, but a tap can still
+    // land in the window between a print starting and the subject settling, and
+    // handle_unload(slot) is also the context menu's dispatch entry. Refuse here
+    // with copy the user can act on rather than forwarding a guaranteed backend
+    // rejection ("Cannot run filament operation while printing" raised while
+    // merely PAUSED was a live field report).
+    const auto gating_state = read_unload_gating_state();
+    if (gating_state.system_busy) {
+        spdlog::info("[AmsSidebar] Unload refused — an AMS operation is already running");
+        NOTIFY_WARNING(lv_tr("Wait for the current filament operation to finish"));
+        return;
+    }
+    if (gating_state.print_blocks_op) {
+        AmsBackend* gating_backend = AmsState::instance().get_backend();
+        const bool self_homes = gating_backend && gating_backend->filament_ops_self_home();
+        spdlog::info("[AmsSidebar] Unload refused — a print owns the toolhead (self_homes={})",
+                     self_homes);
+        if (self_homes) {
+            // AD5X IFS: the unload macro homes itself, so pausing does not help
+            // — recommending it would send the user into the exact loadcell-Z
+            // collision the backend guard exists to prevent.
+            NOTIFY_WARNING(lv_tr("Cannot unload while a print is active"));
+        } else {
+            // PRINTING on every other backend. A PAUSED print here would not
+            // have reached this branch at all, so pausing IS the recovery.
+            NOTIFY_WARNING(lv_tr("Pause the print first, then load, unload, or change filament"));
+        }
+        return;
+    }
+
+    AmsSystemInfo info;
+    // -1: plan_unload() never reads caps.needs_unload_before_load, and the slot
+    // this unload is about is only resolvable from the info this call fills in.
+    const helix::ui::BackendCaps caps = read_backend_caps(info, /*target_slot=*/-1);
+
+    // Which slot the unload is *about*. -1 from the sidebar's own Unload button
+    // means "whatever the firmware has active"; the context menu passes a slot.
+    const int target_slot = (slot_index >= 0) ? slot_index : info.current_slot;
+
+    // plan_unload() gates tier 1 on the backend merely existing — deliberately
+    // asymmetric with plan_load(), because bypass unload stays on the backend:
+    // AFC calls the user's unload macro itself when bypass is enabled, and
+    // routing it to tier 2 here would run that macro twice.
+    bool loaded = false;
+    if (caps.present) {
+        AmsBackend* backend = AmsState::instance().get_backend();
+        loaded =
+            target_slot >= 0 && backend &&
+            helix::ui::unload_target_is_loaded(backend->slot_is_actively_loaded(target_slot),
+                                               backend->slot_has_filament_at_toolhead(target_slot),
+                                               info.current_slot == target_slot);
+    }
+
+    const auto& macro_info = StandardMacros::instance().get(StandardMacroSlot::UnloadFilament);
+    const helix::ui::FilamentOpPlan plan =
+        helix::ui::plan_unload(caps, target_slot, loaded, !macro_info.is_empty());
+
+    if (plan.tier == helix::ui::FilamentTier::Refused) {
+        // NothingLoaded is plan_unload's only refusal.
+        spdlog::info("[AmsSidebar] Unload refused — nothing loaded (slot={})", target_slot);
+        NOTIFY_WARNING(lv_tr("No filament loaded to unload"));
         return;
     }
 
     // Filament is being pulled — drop the swap-preheat latch so the next load
     // computes its hold-temp fresh instead of inheriting this material's target.
+    // Cleared once we know something will actually be dispatched, never on a
+    // refusal.
     printer_state_.clear_nozzle_load_latch();
 
-    // Build the UNLOAD stepper first (HEATING + correct step list). Use the
-    // explicit slot when supplied, otherwise the firmware's active slot.
-    AmsSystemInfo info = backend->get_system_info();
-    int target_slot = (slot_index >= 0) ? slot_index : info.current_slot;
+    if (plan.tier != helix::ui::FilamentTier::AmsBackend) {
+        dispatch_unload_outside_backend(plan);
+        return;
+    }
+
+    // Build the UNLOAD stepper first (HEATING + correct step list).
     if (target_slot >= 0) {
         start_operation(StepOperationType::UNLOAD, target_slot);
     }
 
+    // Pass the caller's slot through unchanged, NOT plan.ams_arg: the sidebar's
+    // own Unload button means "the active one" and the IFS backend keys on that
+    // -1 to send its current-channel toolhead unload.
+    AmsBackend* backend = AmsState::instance().get_backend();
     AmsError error = backend->unload_filament(slot_index);
     if (error.result != AmsResult::SUCCESS) {
         NOTIFY_ERROR(lv_tr("Unload failed: {}"), error.user_msg);
@@ -1087,80 +1268,81 @@ void AmsOperationSidebar::handle_bypass_toggle() {
 // ============================================================================
 
 int AmsOperationSidebar::get_load_temp_for_slot(int slot_index) {
-    // External spool (bypass/direct)
-    if (slot_index == -2) {
-        auto info = AmsState::instance().get_external_spool_info();
-        if (info.has_value()) {
-            auto active = helix::build_active_material(*info);
-            return active.material_info.nozzle_min;
-        }
-        return AppConstants::Ams::DEFAULT_LOAD_PREHEAT_TEMP;
-    }
-
+    // The slot-vs-external-spool precedence and the nozzle_recommended() choice
+    // both come from resolve_load_preheat_material(), shared with
+    // FilamentPanel::resolve_preheat_temp(). The two surfaces preheating the
+    // same lane to two different temperatures is the bug that rule exists to end.
     AmsBackend* backend = AmsState::instance().get_backend();
-    if (!backend) {
-        return AppConstants::Ams::DEFAULT_LOAD_PREHEAT_TEMP;
+    SlotInfo slot;
+    const SlotInfo* slot_ptr = nullptr;
+    if (backend && slot_index >= 0) {
+        slot = backend->get_slot_info(slot_index);
+        slot_ptr = &slot;
     }
 
-    SlotInfo info = backend->get_slot_info(slot_index);
-    auto active = helix::build_active_material(info);
-    return active.material_info.nozzle_min;
+    auto ext = AmsState::instance().get_external_spool_info();
+    const auto resolved = helix::ui::resolve_load_preheat_material(
+        slot_index, slot_ptr, ext.has_value() ? &ext.value() : nullptr);
+
+    if (resolved) {
+        return resolved->temp_c;
+    }
+    return AppConstants::Ams::DEFAULT_LOAD_PREHEAT_TEMP;
 }
 
 void AmsOperationSidebar::handle_load_with_preheat(int slot_index) {
+    // The three-tier routing (AMS backend → configured macro → raw gcode) and
+    // the load-vs-swap rule both come from plan_load(), the one answer every
+    // dispatch surface shares. This sidebar used to be the only place the
+    // already-mounted guard lived; it is now FilamentRefusal::AlreadyMounted.
+    AmsSystemInfo info;
+    const helix::ui::BackendCaps caps = read_backend_caps(info, slot_index);
+
+    const auto& macro_info = StandardMacros::instance().get(StandardMacroSlot::LoadFilament);
+    const helix::ui::FilamentOpPlan plan =
+        helix::ui::plan_load(info, caps, slot_index, !macro_info.is_empty());
+
+    if (plan.tier == helix::ui::FilamentTier::Refused) {
+        // Silent on THIS surface. The AMS panel already highlights the mounted
+        // slot and greys the ones that cannot be picked, so a toast here would
+        // narrate what the grid is showing. The Filament panel, where the user
+        // pressed a button with no other feedback, does toast.
+        spdlog::debug("[AmsSidebar] Load of slot {} refused ({})", slot_index,
+                      plan.refusal == helix::ui::FilamentRefusal::AlreadyMounted
+                          ? "already mounted"
+                          : "no slot selected");
+        return;
+    }
+
+    if (plan.tier != helix::ui::FilamentTier::AmsBackend) {
+        dispatch_load_outside_backend(plan);
+        return;
+    }
+
     AmsBackend* backend = AmsState::instance().get_backend();
-    if (!backend) {
+
+    // Tool changers keep their fast path: no UI preheat and no optimistic
+    // HEATING stepper. SELECT_TOOL owns its own heat sequence, and the backend
+    // sets SELECTING at dispatch and resolves it on the macro ack (#1183) — an
+    // optimistic HEATING would fight that. Only the *decision* is shared.
+    if (caps.is_tool_changer) {
+        dispatch_backend_load(plan, slot_index);
         return;
     }
 
-    // Tool changers: just send T{n}
-    if (backend->get_type() == AmsType::TOOL_CHANGER) {
-        AmsSystemInfo info = backend->get_system_info();
-        if (info.current_slot >= 0 && info.current_slot == slot_index) {
-            spdlog::debug("[AmsSidebar] Tool {} already active, ignoring load", slot_index);
-            return;
-        }
-        backend->load_filament(slot_index);
-        return;
-    }
-
-    // Determine operation type BEFORE calling backend. The load-vs-swap rule is
-    // centralized in needs_unload_before_load() so the UI and backend agree —
-    // K1 CFS reports a preloaded cassette slot with an empty nozzle, and a SWAP
-    // there would cut nothing and stall at the cut step (#968). The K1 override
-    // keys on filament_loaded only; K2 keeps filament_loaded || current_slot.
-    AmsSystemInfo info = backend->get_system_info();
-    if (backend->needs_unload_before_load(info) && info.current_slot != slot_index) {
-        start_operation(StepOperationType::LOAD_SWAP, slot_index);
-    } else {
-        start_operation(StepOperationType::LOAD_FRESH, slot_index);
-    }
-
-    // Helper: initiate load or tool change depending on current state
-    auto do_load_or_swap = [&]() {
-        AmsError error;
-        if (backend->needs_unload_before_load(info) && info.current_slot != slot_index) {
-            const SlotInfo* slot_info = info.get_slot_global(slot_index);
-            if (slot_info && slot_info->mapped_tool >= 0) {
-                spdlog::info("[AmsSidebar] Preheat path: swapping via tool change T{}",
-                             slot_info->mapped_tool);
-                error = backend->change_tool(slot_info->mapped_tool);
-            } else {
-                spdlog::info("[AmsSidebar] Preheat path: unload first, then load {}", slot_index);
-                error = backend->unload_active_filament();
-            }
-        } else {
-            error = backend->load_filament(slot_index);
-        }
-        if (!error.success()) {
-            fail_started_operation(error);
-        }
-    };
+    // Determine operation type BEFORE calling the backend. plan.ams_call carries
+    // the load-vs-swap answer (needs_unload_before_load, centralized so the UI
+    // and backend agree — K1 CFS reports a preloaded cassette slot with an empty
+    // nozzle and a SWAP there would cut nothing and stall at the cut step,
+    // #968).
+    start_operation(plan.ams_call == helix::ui::AmsCall::Load ? StepOperationType::LOAD_FRESH
+                                                              : StepOperationType::LOAD_SWAP,
+                    slot_index);
 
     // If backend handles heating automatically, just call load directly
     if (backend->supports_auto_heat_on_load()) {
         ui_initiated_heat_ = false;
-        do_load_or_swap();
+        dispatch_backend_load(plan, slot_index);
         return;
     }
 
@@ -1182,7 +1364,7 @@ void AmsOperationSidebar::handle_load_with_preheat(int slot_index) {
     constexpr int TEMP_THRESHOLD = 5;
     if (current >= (effective_target - TEMP_THRESHOLD)) {
         ui_initiated_heat_ = false;
-        do_load_or_swap();
+        dispatch_backend_load(plan, slot_index);
         return;
     }
 
@@ -1223,33 +1405,173 @@ void AmsOperationSidebar::check_pending_load() {
         pending_load_slot_ = -1;
         pending_load_target_temp_ = 0;
 
-        AmsBackend* backend = AmsState::instance().get_backend();
-        if (backend) {
-            AmsError error;
-            AmsSystemInfo preheat_info = backend->get_system_info();
-            // Same centralized load-vs-swap rule as handle_load_with_preheat /
-            // on_path_slot_clicked — keeps K1 vs K2 consistent (#968).
-            if (backend->needs_unload_before_load(preheat_info) &&
-                preheat_info.current_slot != slot) {
-                const SlotInfo* slot_info = preheat_info.get_slot_global(slot);
-                if (slot_info && slot_info->mapped_tool >= 0) {
-                    spdlog::info("[AmsSidebar] Preheat complete, swapping via tool change T{}",
-                                 slot_info->mapped_tool);
-                    error = backend->change_tool(slot_info->mapped_tool);
-                } else {
-                    spdlog::info("[AmsSidebar] Preheat complete, unloading first then load {}",
-                                 slot);
-                    error = backend->unload_active_filament();
-                }
-            } else {
-                spdlog::info("[AmsSidebar] Preheat complete, loading slot {}", slot);
-                error = backend->load_filament(slot);
-            }
-            if (!error.success()) {
-                fail_started_operation(error);
-            }
+        // Re-plan against live state rather than replaying the plan computed
+        // before the preheat: the firmware may have picked up or dropped a tool
+        // while the nozzle came up to temperature, which flips load-vs-swap.
+        AmsSystemInfo preheat_info;
+        const helix::ui::BackendCaps caps = read_backend_caps(preheat_info, slot);
+        const auto& macro_info = StandardMacros::instance().get(StandardMacroSlot::LoadFilament);
+        const helix::ui::FilamentOpPlan plan =
+            helix::ui::plan_load(preheat_info, caps, slot, !macro_info.is_empty());
+
+        if (plan.tier != helix::ui::FilamentTier::AmsBackend) {
+            // The preheat only ever starts on the tier-1 path, so anything else
+            // means the backend changed under us. Surface it in the log and let
+            // the stepper unwind rather than dispatching a guess.
+            spdlog::warn("[AmsSidebar] Preheat complete but slot {} no longer routes to the "
+                         "backend (tier={}) — not dispatching",
+                         slot, static_cast<int>(plan.tier));
+            return;
         }
+        spdlog::info("[AmsSidebar] Preheat complete, dispatching load for slot {}", slot);
+        dispatch_backend_load(plan, slot);
     }
+}
+
+// ============================================================================
+// Shared Dispatch Plan
+// ============================================================================
+
+helix::ui::BackendCaps AmsOperationSidebar::read_backend_caps(AmsSystemInfo& info_out,
+                                                              int target_slot) const {
+    helix::ui::BackendCaps caps;
+    AmsBackend* backend = AmsState::instance().get_backend();
+    if (!backend) {
+        return caps;
+    }
+    info_out = backend->get_system_info();
+    caps.present = true;
+    caps.requires_slot_selection_for_load = backend->requires_slot_selection_for_load();
+    caps.needs_unload_before_load = backend->needs_unload_before_load(info_out, target_slot);
+    caps.is_tool_changer = backend->get_type() == AmsType::TOOL_CHANGER;
+    return caps;
+}
+
+void AmsOperationSidebar::dispatch_backend_load(const helix::ui::FilamentOpPlan& plan,
+                                                int slot_index) {
+    AmsBackend* backend = AmsState::instance().get_backend();
+    if (!backend) {
+        spdlog::warn("[AmsSidebar] Backend vanished before load dispatch (slot {})", slot_index);
+        return;
+    }
+
+    AmsError error;
+    switch (plan.ams_call) {
+    case helix::ui::AmsCall::ChangeTool:
+        spdlog::info("[AmsSidebar] Filament seated — swapping to slot {} via tool change T{}",
+                     slot_index, plan.ams_arg);
+        error = backend->change_tool(plan.ams_arg);
+        break;
+    case helix::ui::AmsCall::Load:
+    default: // plan_load yields no other tier-1 call
+        spdlog::info("[AmsSidebar] Loading slot {} directly", plan.ams_arg);
+        error = backend->load_filament(plan.ams_arg);
+        break;
+    }
+
+    if (!error.success()) {
+        fail_started_operation(error);
+    }
+}
+
+// ============================================================================
+// Tiers 2 and 3 — configured macro, then raw gcode
+// ============================================================================
+
+namespace {
+/// UpdateQueue tags for the guarded param-modal callbacks. String literals: the
+/// skip counter interns by pointer identity.
+constexpr const char* kLoadMacroTag = "AmsOperationSidebar::load_macro";
+constexpr const char* kUnloadMacroTag = "AmsOperationSidebar::unload_macro";
+} // namespace
+
+void AmsOperationSidebar::dispatch_load_outside_backend(const helix::ui::FilamentOpPlan& plan) {
+    if (plan.tier == helix::ui::FilamentTier::RawGcode) {
+        spdlog::info("[AmsSidebar] No backend and no load macro — raw gcode fallback");
+        send_filament_fallback_gcode(/*is_load=*/true);
+        return;
+    }
+
+    const std::string macro_name =
+        StandardMacros::instance().get(StandardMacroSlot::LoadFilament).get_macro();
+    // The shared MacroParamModal retains this callback past dismissal, and this
+    // sidebar dies with the AMS panel. token.defer() re-checks the generation on
+    // the main thread before touching `this`; a Run press after the panel closed
+    // is dropped (and counted) instead of running against freed memory.
+    auto token = lifetime_.token();
+    helix::ui::dispatch_filament_macro(
+        macro_name, helix::ui::ParamPolicy::Prompt,
+        [this, token](const helix::MacroParamResult& result) {
+            token.defer(kLoadMacroTag, [this, params = result.params]() {
+                send_standard_filament_macro(/*is_load=*/true, params);
+            });
+        });
+}
+
+void AmsOperationSidebar::dispatch_unload_outside_backend(const helix::ui::FilamentOpPlan& plan) {
+    if (plan.tier == helix::ui::FilamentTier::RawGcode) {
+        spdlog::info("[AmsSidebar] No backend and no unload macro — raw gcode fallback");
+        send_filament_fallback_gcode(/*is_load=*/false);
+        return;
+    }
+
+    const std::string macro_name =
+        StandardMacros::instance().get(StandardMacroSlot::UnloadFilament).get_macro();
+    auto token = lifetime_.token();
+    helix::ui::dispatch_filament_macro(
+        macro_name, helix::ui::ParamPolicy::Prompt,
+        [this, token](const helix::MacroParamResult& result) {
+            token.defer(kUnloadMacroTag, [this, params = result.params]() {
+                send_standard_filament_macro(/*is_load=*/false, params);
+            });
+        });
+}
+
+void AmsOperationSidebar::send_standard_filament_macro(
+    bool is_load, const std::map<std::string, std::string>& params) {
+    MoonrakerAPI* api = get_moonraker_api();
+    if (!api) {
+        NOTIFY_WARNING(lv_tr("Multi-Filament System not available"));
+        return;
+    }
+
+    const StandardMacroSlot slot =
+        is_load ? StandardMacroSlot::LoadFilament : StandardMacroSlot::UnloadFilament;
+    const char* label = is_load ? "Load" : "Unload";
+    spdlog::info("[AmsSidebar] Running standard {} macro with {} parameter(s)", label,
+                 params.size());
+    StandardMacros::instance().execute(
+        slot, api, params, [label]() { spdlog::info("[AmsSidebar] {} macro started", label); },
+        [is_load](const MoonrakerError& err) {
+            spdlog::error("[AmsSidebar] Filament macro failed: {}", err.message);
+            if (is_load) {
+                NOTIFY_ERROR(lv_tr("Failed to load filament: {}"), err.user_message());
+            } else {
+                NOTIFY_ERROR(lv_tr("Failed to unload: {}"), err.user_message());
+            }
+        });
+}
+
+void AmsOperationSidebar::send_filament_fallback_gcode(bool is_load) {
+    MoonrakerAPI* api = get_moonraker_api();
+    if (!api) {
+        NOTIFY_WARNING(lv_tr("Multi-Filament System not available"));
+        return;
+    }
+
+    const std::string gcode = is_load ? helix::ui::filament_load_fallback_gcode()
+                                      : helix::ui::filament_unload_fallback_gcode();
+    api->execute_gcode(
+        gcode, []() {},
+        [is_load](const MoonrakerError& err) {
+            spdlog::error("[AmsSidebar] Fallback gcode failed: {}", err.message);
+            if (is_load) {
+                NOTIFY_ERROR(lv_tr("Failed to load filament: {}"), err.user_message());
+            } else {
+                NOTIFY_ERROR(lv_tr("Failed to unload: {}"), err.user_message());
+            }
+        },
+        MoonrakerAPI::EXTRUSION_TIMEOUT_MS);
 }
 
 void AmsOperationSidebar::handle_load_complete() {

@@ -996,14 +996,6 @@ void PrinterState::set_printer_type_internal(const std::string& type) {
                        (pre_print_option_set_.find("nozzle_priming") != nullptr);
     capabilities_state_.set_purge_line(has_priming);
 
-    // Whether this printer's firmware re-echoes received G-code (e.g. AD5X). The
-    // outgoing send layer reads the atomic from the WS/background thread to
-    // decide whether to append the "; from helixscreen" provenance comment; the
-    // mirrored capability subject is for main-thread UI observers only.
-    bool echoes_gcode = PrinterDetector::firmware_echoes_gcode(type);
-    firmware_echoes_gcode_.store(echoes_gcode);
-    capabilities_state_.set_firmware_echoes_gcode(echoes_gcode);
-
     // Recalculate composite visibility subjects
     update_gcode_modification_visibility();
 

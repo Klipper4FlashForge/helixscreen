@@ -309,20 +309,6 @@ class PrinterDetector {
      */
     static std::string get_z_offset_calibration_strategy(const std::string& printer_name);
 
-    /**
-     * @brief Whether the printer's native firmware re-echoes received G-code
-     *
-     * Some firmwares (e.g. FlashForge AD5X) wrap each received line into a
-     * quoted RESPOND MSG="..." command. Klipper truncates at the first ';'
-     * even inside quotes, so HelixScreen must NOT append its "; from
-     * helixscreen" provenance comment on these printers. Reads the
-     * firmware_echoes_gcode field from the printer database JSON.
-     *
-     * @param printer_name Printer name (e.g., "FlashForge Adventurer 5X")
-     * @return true if the field is present and true; false otherwise (default)
-     */
-    static bool firmware_echoes_gcode(const std::string& printer_name);
-
     /// Look up probe type override from the printer database.
     /// @return Probe type string (e.g., "prtouch_v2"), or empty if not specified
     static std::string get_probe_type(const std::string& printer_name);

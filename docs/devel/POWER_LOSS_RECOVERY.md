@@ -73,7 +73,7 @@ true**.
 | Capability | presence of `print_stats.power_loss` (see below) |
 | Availability | one-shot probe returns `file_state && eeprom_state` |
 | Recovery filename | sidecar JSON, `<base>/creality/userdata/config/print_file_name.json`, key `file_path` |
-| Resume | gcode `SDCARD_PRINT_FILE FILENAME=<file> ISCONTINUEPRINT=1` |
+| Resume | gcode `SDCARD_PRINT_FILE FILENAME="<file>" ISCONTINUEPRINT=1` — quoted, and `<file>` **relative to the sdcard root** (both are load-bearing; see "Filename safety") |
 | Discard | JSON-RPC `printer.pause_resume.cancel_continue_print` |
 
 `<base>` is `/usr/data` on K1-class and `/mnt/UDISK` on the OpenWrt-class K2.
@@ -199,12 +199,84 @@ tap. The modal itself stays backend-agnostic: primary button runs
 
 ### Filename safety
 
-The Creality resume gcode embeds the filename as an extended-command parameter.
-Klipper's extended parser runs a parameter value up to the next `KEY=` or end of
-line, so **spaces are legal** (and common in gcode filenames) — but `\n`, `\r`,
-`;`, `#`, `*` and `=` are not. `plr_is_safe_recovery_filename()` enforces that;
+The Creality resume gcode embeds the filename as an extended-command parameter,
+and **it must be double-quoted**:
+
+```
+SDCARD_PRINT_FILE FILENAME="/usr/data/printer_data/gcodes/My Part_PLA.gcode" ISCONTINUEPRINT=1
+```
+
+Klipper tokenizes extended parameters with `shlex` in POSIX mode
+(`whitespace_split=True`, `commenters="#;"`), then splits each token on the
+first `=`. An unquoted filename containing a space therefore produces tokens
+with no `=` at all, and the whole command is rejected before the file is ever
+looked up:
+
+```
+{"code":"key514", "msg": "Malformed command args 'SDCARD_PRINT_FILE FILENAME=/usr/data/
+ printer_data/gcodes/PTOP Phone Stand_Elegoo PLA Matte Slate Grey_1h55m.gcode
+ ISCONTINUEPRINT=1 ; from helixscreen'", "values": ["not enough values to unpack
+ (expected 2, got 1)"]}
+```
+
+Spaces are the common case, not the exotic one — slicers put the model and
+filament names in the filename. Moonraker's own print-start path quotes it
+identically (`klippy_apis.py`, `SDCARD_PRINT_FILE FILENAME="{filename}"`).
+
+Inside the quotes, `\n`, `\r`, `;`, `#`, `*`, `=`, `"` and `\` are still
+rejected: `"` closes the value early, `\` is shlex's POSIX escape, and the rest
+are comment/terminator characters that older regex-path Klipper forks strip
+before shlex ever runs. `plr_is_safe_recovery_filename()` enforces that;
 `MoonrakerAPI::is_safe_gcode_param()` is the wrong helper here because it
 rejects whitespace.
+
+> A trailing ` ; from helixscreen` comment would ALSO break this command, and
+> for a non-obvious reason: Creality special-cases `SDCARD_PRINT_FILE` to use a
+> second regex (`extended_r1`) whose terminators are `|` and `*`, *not* `;` and
+> `#` — "Support filename contain '#'". So the `;` survives into
+> `shlex.split()`, which is called without `comments=True` and therefore treats
+> `;` as an ordinary character. HelixScreen no longer annotates outgoing G-code
+> at all (`src/api/moonraker_gcode_guards.h`), so this is historical — but it is
+> why the field report showed both faults in one line.
+
+### Path form: relative, not absolute
+
+The sidecar stores an **absolute** path (`/usr/data/printer_data/gcodes/…`),
+because Klipper writes it from the opened file handle's `.name`.
+`SDCARD_PRINT_FILE` cannot be given that path:
+
+```python
+if filename[0] == '/':
+    filename = filename[1:]          # cmd_SDCARD_PRINT_FILE
+self._load_file(gcmd, filename, check_subdirs=True)
+```
+
+`_load_file` looks the name up in `get_file_list()`, whose entries are relative
+to `sdcard_dirname` (`/usr/data/printer_data/gcodes` on K1-class). A
+de-slashed absolute path is not in that list, so the lookup raises and the user
+gets `{"code":"key121", "msg": "Unable to open file"}`.
+
+There is a second, quieter reason. Once the file is open, the resume branch
+does:
+
+```python
+if result.get("file_path", "") == self.current_file.name:
+    sameFileName = True
+else:
+    os.remove(self.print_file_name_path)   # recovery data discarded
+```
+
+`current_file.name` is `os.path.join(sdcard_dirname, <relative name>)`. Sending
+the relative name is what makes that comparison succeed; anything else that
+still manages to open would **delete the recovery snapshot and print from the
+beginning**.
+
+`plr_creality_sdcard_relative_name()` does the stripping — known data roots
+first (`/usr/data`, `/mnt/UDISK`), then the first `/gcodes/` segment as a
+fallback for a relocated `virtual_sdcard: path`.
+
+Verified by reading `klippy/extras/virtual_sdcard.py` and `klippy/gcode.py` on a
+physical K1C.
 
 With no resolvable filename there is no safe command to send, so the offer is
 suppressed entirely rather than showing a Resume button that cannot work.

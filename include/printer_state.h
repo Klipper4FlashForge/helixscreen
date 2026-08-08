@@ -2000,23 +2000,6 @@ class PrinterState {
     const std::string& get_printer_type() const;
 
     /**
-     * @brief Whether the connected printer's firmware re-echoes received G-code
-     *
-     * True for printers (e.g. AD5X) whose native firmware wraps each received
-     * line into a quoted RESPOND MSG="..." that Klipper mis-parses when a
-     * trailing "; ..." comment is present. The outgoing-G-code send layer reads
-     * this to decide whether to append the "; from helixscreen" provenance
-     * comment. Reads a lock-free atomic — safe to call from the WebSocket
-     * background thread (unlike the mirrored capability subject, which must only
-     * be read on the main thread).
-     *
-     * @return true if the firmware re-echoes received G-code; false otherwise
-     */
-    bool firmware_echoes_gcode() const {
-        return firmware_echoes_gcode_.load();
-    }
-
-    /**
      * @brief Get the pre-print option set for the current printer type
      *
      * Returns the option set fetched from the database when set_printer_type()
@@ -2222,11 +2205,6 @@ class PrinterState {
     ZOffsetCalibrationStrategy z_offset_calibration_strategy_ =
         ZOffsetCalibrationStrategy::PROBE_CALIBRATE;
     lv_subject_t z_offset_can_save_{}; ///< 1 when manual save needed, 0 when auto-saved
-
-    /// Cached firmware-echoes-gcode flag for the current printer type. Read
-    /// from the WS/background thread by the send layer, so it is a lock-free
-    /// atomic rather than the (main-thread-only) capability subject.
-    std::atomic<bool> firmware_echoes_gcode_{false};
 
     /// Last kinematics string (to skip redundant recomputation)
     std::string last_kinematics_;

@@ -147,6 +147,30 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
         return true;
     }
 
+    /// AD5X IFS is the one backend whose filament macros home inside firmware.
+    ///
+    /// `_IFS_REMOVE_CURRENT_PRUTOK` (the unload HelixScreen dispatches for a
+    /// loaded toolhead) runs `_G28` itself before removing the filament — which
+    /// is why unload_filament() sends it via execute_gcode() rather than
+    /// ensure_homed_then(), to avoid homing twice
+    /// (ams_backend_ad5x_ifs.cpp "it homes itself (_G28)";
+    /// docs/devel/printer-research/FLASHFORGE_AD5X_IFS_ANALYSIS.md). The load
+    /// macro `INSERT_PRUTOK_IFS` is likewise home -> heat -> feed -> purge.
+    ///
+    /// The AD5X has a loadcell Z: that `_G28` probes the nozzle DOWN into the
+    /// bed. Issued while a job owns the toolhead it drives the nozzle into the
+    /// part, tripping ZMOD's ZCONTROL_AUTO force trip and shutting Klipper down
+    /// — recoverable only by a firmware restart (bundle XWPBR2DX, commit
+    /// 329e731e9). Layer 1 (reject_homing_during_active_print) cannot help: the
+    /// `_G28` is buried in the firmware macro and never crosses our gcode API.
+    ///
+    /// So this backend keeps refusing load/unload/change_tool while PAUSED as
+    /// well as while PRINTING. That protection was earned on a real shutdown and
+    /// must not be relaxed without evidence the macro stopped self-homing.
+    [[nodiscard]] bool filament_ops_self_home() const override {
+        return true;
+    }
+
     // Seated-channel-aware: a non-seated lane cold-ejects, so the menu reads
     // "Eject" even when the firmware dropped its active pointer. Mirrors
     // unload_filament()'s eject-vs-toolhead routing (drift-guarded by test).
@@ -165,8 +189,10 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // routed it to eject_lane(-1) when the head read empty, silently dropping
     // the load (Vger1700, bundle Z5V4K3NL). Load straight through the macro,
     // exactly like the stock screen (zmod_color.py).
-    [[nodiscard]] bool needs_unload_before_load(const AmsSystemInfo& info) const override {
+    [[nodiscard]] bool needs_unload_before_load(const AmsSystemInfo& info,
+                                                int target_slot) const override {
         (void)info;
+        (void)target_slot;
         return false;
     }
 

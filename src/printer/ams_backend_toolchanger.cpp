@@ -4,12 +4,15 @@
 #include "ams_backend_toolchanger.h"
 
 #include "ams_error.h"
+#include "ams_tool_map_sync.h"
+#include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
 
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <sstream>
+#include <utility>
 
 using namespace helix;
 
@@ -108,7 +111,12 @@ bool AmsBackendToolChanger::can_unload_from_toolhead(int slot_index) const {
     if (slot_index < 0 || slot_index >= system_info_.total_slots) {
         return false;
     }
-    return system_info_.current_tool >= 0 && slot_index == system_info_.current_tool;
+    // Against current_SLOT, not current_tool. On this backend the two are
+    // deliberately not interchangeable: ASSIGN_TOOL moves a G-code tool number
+    // onto a different physical tool, and klipper-toolchanger reports the
+    // ASSIGNED number in toolchanger.tool_number. Comparing a slot index to it
+    // offered Unload on the wrong toolhead whenever a remap was in effect.
+    return system_info_.current_slot >= 0 && slot_index == system_info_.current_slot;
 }
 
 // ============================================================================
@@ -213,6 +221,22 @@ void AmsBackendToolChanger::parse_toolchanger_state(const nlohmann::json& tc_dat
         system_info_.operation_detail = status_str;
         spdlog::trace("[AMS ToolChanger] Status: {} -> {}", status_str,
                       ams_action_to_string(system_info_.action));
+
+        // The toolchanger reporting anything but "ready" means it has taken the
+        // dispatched operation over, so its own state machine owns completion
+        // from here and the pending macro ack must keep its hands off — a real
+        // SELECT_TOOL acks when the macro returns, which is well before the
+        // carriage finishes, and forcing IDLE there would report done mid-swap.
+        // A re-echoed "ready" is deliberately NOT taking over: that is the
+        // no-op case this mechanism exists to catch (#1183). It is harmless
+        // anyway — the frame already moved the action to IDLE, so the ack's own
+        // value guard drops it.
+        if (pending_dispatch_action_.has_value() && system_info_.action != AmsAction::IDLE) {
+            spdlog::debug("[AMS ToolChanger] Toolchanger took over the dispatched operation "
+                          "({} from status '{}')",
+                          ams_action_to_string(system_info_.action), status_str);
+            pending_dispatch_action_.reset();
+        }
     }
 
     // Parse current tool: toolchanger.tool_number
@@ -220,10 +244,25 @@ void AmsBackendToolChanger::parse_toolchanger_state(const nlohmann::json& tc_dat
     if (tc_data.contains("tool_number") && tc_data["tool_number"].is_number_integer()) {
         int tool_num = tc_data["tool_number"].get<int>();
         system_info_.current_tool = tool_num;
-        system_info_.current_slot = tool_num; // For tool changers, slot == tool
+        // toolchanger.tool_number is the ASSIGNED G-code number of the carriage
+        // tool, which ASSIGN_TOOL can move onto any physical tool — it is only
+        // the slot index while the mapping is identity. Resolve it through the
+        // forward map so the carriage lane is right under a remap too; an
+        // unmapped number falls back to itself, the pre-remap answer.
+        int seated_slot = -1;
+        if (tool_num >= 0) {
+            seated_slot = tool_num < static_cast<int>(system_info_.tool_to_slot_map.size())
+                              ? system_info_.tool_to_slot_map[static_cast<size_t>(tool_num)]
+                              : -1;
+            if (seated_slot < 0) {
+                seated_slot = tool_num;
+            }
+        }
+        system_info_.current_slot = seated_slot;
         system_info_.filament_loaded = (tool_num >= 0);
         refresh_slot_statuses_locked();
-        spdlog::trace("[AMS ToolChanger] Current tool: {}", tool_num);
+        spdlog::trace("[AMS ToolChanger] Current tool: T{} (physical slot {})", tool_num,
+                      seated_slot);
     }
 
     // Parse tool list: toolchanger.tool_numbers and toolchanger.tool_names
@@ -280,7 +319,12 @@ void AmsBackendToolChanger::refresh_slot_statuses_locked() {
     // the stamp is a straight two-way split on the carriage tool.
     auto& slots = system_info_.units[0].slots;
     for (int i = 0; i < static_cast<int>(slots.size()); ++i) {
-        slots[i].status = (system_info_.current_tool >= 0 && i == system_info_.current_tool)
+        // current_slot, not current_tool — `i` indexes physical toolheads, and
+        // under an ASSIGN_TOOL remap the carriage tool's G-code number is not
+        // its slot index (see the tool_number parse). The old comparison
+        // stamped LOADED on the lane that merely shares an index with the
+        // number.
+        slots[i].status = (system_info_.current_slot >= 0 && i == system_info_.current_slot)
                               ? SlotStatus::LOADED
                               : SlotStatus::AVAILABLE;
     }
@@ -324,7 +368,6 @@ void AmsBackendToolChanger::initialize_tools() {
         slot.slot_index = i;
         slot.global_index = i;
         slot.status = SlotStatus::AVAILABLE; // Tools start as available (docked)
-        slot.mapped_tool = i;                // Tool i maps to slot i
         slot.color_rgb = AMS_DEFAULT_SLOT_COLOR;
         slot.spool_name = tool_names_[i]; // Use tool name as placeholder
 
@@ -335,12 +378,14 @@ void AmsBackendToolChanger::initialize_tools() {
     system_info_.units.push_back(unit);
     system_info_.total_slots = tool_count;
 
-    // Initialize tool-to-slot mapping (1:1 for tool changers)
+    // Initialize tool-to-slot mapping (1:1 for tool changers) in BOTH
+    // directions from one pass: the slot loop above deliberately leaves
+    // mapped_tool alone so this is the only writer. ASSIGN_TOOL can move a
+    // G-code tool number onto a different physical tool later; when it does,
+    // the badge (mapped_tool) and the op-button lane (tool_to_slot_map) have to
+    // move together or they name different toolheads.
     system_info_.tool_to_slot_map.clear();
-    system_info_.tool_to_slot_map.reserve(tool_count);
-    for (int i = 0; i < tool_count; ++i) {
-        system_info_.tool_to_slot_map.push_back(i);
-    }
+    helix::printer::sync_tool_map_from_forward(system_info_, /*identity_fallback=*/true);
 
     // A toolchanger frame may already have named the carriage tool before the
     // tool list arrived; re-derive so the fresh slots match it.
@@ -379,6 +424,115 @@ AmsError AmsBackendToolChanger::validate_slot_index(int slot_index) const {
 
 // execute_gcode() provided by AmsSubscriptionBackend
 
+// ============================================================================
+// Optimistic dispatch + macro-ack resolution (#1183)
+// ============================================================================
+
+uint64_t AmsBackendToolChanger::begin_dispatch_locked(AmsAction action) {
+    // A newer dispatch supersedes any older one whose ack is still in flight:
+    // that ack presents a stale generation and finalize_dispatch_after_macro()
+    // drops it, so it can never resolve the operation now running.
+    const uint64_t generation = ++dispatch_generation_;
+    pending_dispatch_action_ = action;
+
+    system_info_.action = action;
+    // Otherwise the sidebar keeps showing the previous operation's detail (the
+    // raw toolchanger status string) until the next frame, which for a no-op
+    // never comes.
+    system_info_.operation_detail =
+        (action == AmsAction::UNLOADING) ? lv_tr("Unloading") : lv_tr("Tool swap");
+
+    spdlog::debug("[AMS ToolChanger] Dispatch #{}: action set optimistically to {}", generation,
+                  ams_action_to_string(action));
+    return generation;
+}
+
+void AmsBackendToolChanger::abandon_dispatch(uint64_t generation) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (generation != dispatch_generation_ || !pending_dispatch_action_.has_value()) {
+            return;
+        }
+        pending_dispatch_action_.reset();
+        system_info_.action = AmsAction::IDLE;
+        system_info_.operation_detail.clear();
+    }
+    emit_event(EVENT_STATE_CHANGED);
+}
+
+void AmsBackendToolChanger::finalize_dispatch_after_macro(uint64_t generation) {
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        // "Is the action still mine?" — three ways it can be someone else's:
+        //   * a newer dispatch bumped the generation;
+        //   * the toolchanger reported a busy status, so parse_toolchanger_state()
+        //     handed the operation to klipper-toolchanger's own state machine and
+        //     cleared the pending mark;
+        //   * something moved the action off the value this dispatch set — a
+        //     "ready" frame (which already produced the transition the UI needed)
+        //     or an "error" one.
+        // In all three the operation is already resolved or is still legitimately
+        // running, and forcing IDLE would either lie or truncate it.
+        if (generation != dispatch_generation_ || !pending_dispatch_action_.has_value() ||
+            system_info_.action != *pending_dispatch_action_) {
+            spdlog::debug("[AMS ToolChanger] Macro ack for dispatch #{} resolves nothing (current "
+                          "action {}, generation {})",
+                          generation, ams_action_to_string(system_info_.action),
+                          dispatch_generation_);
+            return;
+        }
+
+        // The macro ran to completion and the toolchanger never reported doing
+        // anything — the "tool T4 already selected" no-op. The gcode ack is the
+        // only completion signal that exists for it (#1183).
+        spdlog::info("[AMS ToolChanger] Macro complete (gcode ack) with no toolchanger status "
+                     "change -> IDLE");
+        pending_dispatch_action_.reset();
+        system_info_.action = AmsAction::IDLE;
+        system_info_.operation_detail.clear();
+        changed = true;
+    }
+    if (changed) {
+        emit_event(EVENT_STATE_CHANGED);
+    }
+}
+
+AmsError AmsBackendToolChanger::dispatch_operation(std::string gcode, AmsAction action) {
+    uint64_t generation;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        generation = begin_dispatch_locked(action);
+    }
+    // Publish the optimistic action immediately, and OUTSIDE mutex_: the
+    // filament panel's completion observer has to see the operation start
+    // before it can ever see one end, and the callback may call back in for
+    // state (get_current_action() takes mutex_).
+    emit_event(EVENT_STATE_CHANGED);
+
+    auto token = lifetime_.token();
+    AmsError result = ensure_homed_then(std::move(gcode), [this, token, generation]() {
+        // L081 Mechanism C: the gcode ack lands on a background thread and the
+        // handler writes system_info_ under mutex_. Marshal to main.
+        token.defer("AmsBackendToolChanger::dispatch_macro_complete",
+                    [this, generation]() { finalize_dispatch_after_macro(generation); });
+    });
+
+    if (!result) {
+        // The gcode never left: no MoonrakerAPI, or the send was refused. No ack
+        // will ever arrive, so undo the optimistic action instead of leaving the
+        // UI busy and every later operation locked out by is_busy().
+        spdlog::warn("[AMS ToolChanger] Dispatch #{} failed to send ({}), reverting optimistic "
+                     "action",
+                     generation, result.technical_msg);
+        abandon_dispatch(generation);
+    }
+    return result;
+}
+
+// ============================================================================
+
 AmsError AmsBackendToolChanger::load_filament(int slot_index) {
     // For tool changers, "load filament" means "mount tool"
     return change_tool(slot_index);
@@ -404,14 +558,17 @@ AmsError AmsBackendToolChanger::unload_filament(int slot_index) {
         }
     }
 
+    // UNSELECT_TOOL has the same no-op shortcut as SELECT_TOOL — unmounting when
+    // nothing is on the carriage returns without touching toolchanger.status —
+    // so it needs the same optimistic-set + ack-resolution treatment (#1183).
     if (slot_index >= 0) {
         std::string cmd = "UNSELECT_TOOL T=" + std::to_string(slot_index);
         spdlog::info("[AMS ToolChanger] Unmounting tool {}: {}", slot_index, cmd);
-        return execute_gcode(cmd);
+        return dispatch_operation(std::move(cmd), AmsAction::UNLOADING);
     }
 
     spdlog::info("[AMS ToolChanger] Unmounting current tool");
-    return execute_gcode("UNSELECT_TOOL");
+    return dispatch_operation("UNSELECT_TOOL", AmsAction::UNLOADING);
 }
 
 AmsError AmsBackendToolChanger::select_slot(int slot_index) {
@@ -434,21 +591,18 @@ AmsError AmsBackendToolChanger::change_tool(int tool_number) {
         }
     }
 
-    // Set action immediately to prevent race window where a second click
-    // could arrive before Klipper's status update changes the action
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        system_info_.action = AmsAction::SELECTING;
-    }
-    emit_event(EVENT_STATE_CHANGED);
-
     // Use SELECT_TOOL T={n} to select by tool number via the toolchanger's
     // internal lookup, bypassing any ASSIGN_TOOL T-command remapping.
     // This ensures we mount the physical tool the user tapped, not whatever
     // the slicer's T{n} command was remapped to.
+    //
+    // dispatch_operation() sets SELECTING before the send — which also closes
+    // the race window where a second tap could arrive before Klipper's status
+    // update changes the action — and resolves it on the macro's ack when the
+    // toolchanger never claims the operation (#1183).
     std::string cmd = "SELECT_TOOL T=" + std::to_string(tool_number);
     spdlog::info("[AMS ToolChanger] Mounting tool {}: {}", tool_number, cmd);
-    return execute_gcode(cmd);
+    return dispatch_operation(std::move(cmd), AmsAction::SELECTING);
 }
 
 // ============================================================================
@@ -498,6 +652,11 @@ AmsError AmsBackendToolChanger::set_slot_info(int slot_index, const SlotInfo& in
             slot.color_name = info.color_name;
             slot.material = info.material;
             slot.brand = info.brand;
+            // No override store on this backend, so this in-memory copy is the
+            // only thing keeping the editor's catalog pick visible until the
+            // next parse.
+            slot.catalog_id = info.catalog_id;
+            slot.product_name = info.product_name;
             slot.spoolman_id = info.spoolman_id;
             slot.spool_name = info.spool_name;
             slot.remaining_weight_g = info.remaining_weight_g;
@@ -509,8 +668,12 @@ AmsError AmsBackendToolChanger::set_slot_info(int slot_index, const SlotInfo& in
             if (info.mapped_tool != old_mapped_tool && info.mapped_tool >= 0 &&
                 info.mapped_tool < static_cast<int>(system_info_.tool_to_slot_map.size()) &&
                 slot_index < static_cast<int>(tool_names_.size())) {
-                slot.mapped_tool = info.mapped_tool;
-                system_info_.tool_to_slot_map[info.mapped_tool] = slot_index;
+                // One pass for both directions, and it EVICTS: the tool being
+                // moved leaves its old lane unmapped, and whatever tool this
+                // lane previously answered to gives it up. Writing the two
+                // fields by hand left both stale halves in place, so a swap
+                // ended with two lanes claiming one tool number.
+                helix::printer::assign_tool_slot(system_info_, info.mapped_tool, slot_index);
                 physical_tool_name = tool_names_[slot_index];
             }
         }
@@ -550,10 +713,12 @@ AmsError AmsBackendToolChanger::set_tool_mapping(int tool_number, int slot_index
         // The physical tool to assign (slot_index maps to tool_names_[slot_index])
         physical_tool_name = tool_names_[slot_index];
 
-        // Update internal mapping
-        if (tool_number < static_cast<int>(system_info_.tool_to_slot_map.size())) {
-            system_info_.tool_to_slot_map[tool_number] = slot_index;
-        }
+        // Update internal mapping — both directions, with eviction. The AMS
+        // panel badges a lane from SlotInfo::mapped_tool while the filament
+        // panel's op buttons resolve their lane through tool_to_slot_map;
+        // writing only the forward entry here left the badge on the lane the
+        // tool had just been moved away from.
+        helix::printer::assign_tool_slot(system_info_, tool_number, slot_index);
     }
 
     // Send ASSIGN_TOOL: assign physical tool to respond to T<tool_number> commands
@@ -590,6 +755,15 @@ AmsError AmsBackendToolChanger::reset_tool_mappings() {
                 remaps_needed.emplace_back(i, tool_names_[i]);
                 system_info_.tool_to_slot_map[i] = i;
             }
+        }
+        // Re-derive every slot's mapped_tool from the identity map just
+        // written. The loop above touches only the forward direction, so
+        // without this the lane badges kept showing the remap the user just
+        // reset — the panel and the op buttons disagreeing again, one frame
+        // after we told the user the reset succeeded.
+        if (!remaps_needed.empty()) {
+            helix::printer::sync_tool_map_from_forward(system_info_,
+                                                       /*identity_fallback=*/true);
         }
     }
 

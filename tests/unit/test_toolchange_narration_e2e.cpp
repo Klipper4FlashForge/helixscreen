@@ -23,6 +23,10 @@
 #include "ams_state.h"
 #include "gcode_narration_router.h"
 
+#include <algorithm>
+#include <string>
+#include <vector>
+
 #include "../catch_amalgamated.hpp"
 #include "hv/json.hpp" // libhv-bundled nlohmann::json, same header the router uses
 
@@ -83,7 +87,7 @@ TEST_CASE_METHOD(LVGLTestFixture,
     GcodeNarrationRouter router(nullptr, nullptr); // null client => no real subscription
 
     // LOAD_SWAP template indices:
-    //   heat=0, cut=1, unload=2, feed=3, poop=4, kick=5, brush=6, load=7
+    //   heat=0, cut=1, unload=2, feed=3, poop=4, brush=5, kick=6, load=7
     struct Step {
         const char* line;
         int expected_index;
@@ -91,15 +95,21 @@ TEST_CASE_METHOD(LVGLTestFixture,
     };
     // Mirrors a real AFC CHANGE_TOOL on the wire: TOOL_UNLOAD heats, cuts and
     // pulls the old filament back to its lane, then TOOL_LOAD feeds the new one
-    // and only afterwards poops, kicks and brushes.
+    // and only afterwards runs do_poop_kick_wipe — whose body is
+    // poop -> wipe -> kick -> wipe (AFC.py v1.2.0:1390-1413, v1.1.0:1417-1440),
+    // all four narrating at the shipped default variable_verbose=1.
+    //
+    // The trailing wipe is the second "brush" and it must NOT rewind the bar
+    // from kick(6) to brush(5) — see the dedicated latch test below.
     const Step sequence[] = {
         {"// Heat nozzle", 0, "Heat nozzle"},
         {"// Cutting tip", 1, "Cut tip"},
         {"// Unloading lane1", 2, "Unload filament"},
         {"// Loading lane2", 3, "Feed filament"},
         {"// AFC_Poop: Starting poop", 4, "Purge to bucket"},
-        {"// AFC_Kick: Starting Filament Kick", 5, "Kick away"},
-        {"// AFC_Brush: Clean Nozzle", 6, "Brush nozzle"},
+        {"// AFC_Brush: Clean Nozzle", 5, "Brush nozzle"},
+        {"// AFC_Kick: Starting Filament Kick", 6, "Kick away"},
+        {"// AFC_Brush: Clean Nozzle", 6, "Kick away"},
         {"// lane2 is now loaded in toolhead", 7, "Load complete"},
     };
 
@@ -124,7 +134,11 @@ TEST_CASE_METHOD(LVGLTestFixture,
 
     // S1 acceptance, restated for the corrected model: purge wording resolves to
     // the poop phase (index 4 / "Purge to bucket") and never to the preceding
-    // "Feed filament" phase. Re-feed in isolation to make the invariant plain.
+    // "Feed filament" phase. Re-feed in isolation to make the invariant plain —
+    // the sequence above ended on load(7), and the phase latch would otherwise
+    // (correctly) refuse to rewind to 4.
+    AmsState::instance().set_narration_phase(-1, "");
+    helix::ui::UpdateQueue::instance().drain();
     GcodeNarrationRouterTestAccess::feed(router, "// Purging filament");
     REQUIRE(current_detail() == std::string("Purge to bucket"));
     REQUIRE(current_detail() != std::string("Feed filament"));
@@ -174,7 +188,7 @@ TEST_CASE_METHOD(LVGLTestFixture,
     nlohmann::json flat = {{"params", nlohmann::json::array({"// AFC_Brush: Clean Nozzle"})}};
     GcodeNarrationRouterTestAccess::notify(router, flat);
     helix::ui::UpdateQueue::instance().drain();
-    REQUIRE(current_step() == 6); // brush
+    REQUIRE(current_step() == 5); // brush
 
     // Reset, then the nested params form: {"params": [["// Purge"]]}
     AmsState::instance().set_narration_phase(-1, "");
@@ -258,4 +272,130 @@ TEST_CASE_METHOD(LVGLTestFixture,
     // connectors around, so the template is the authoritative label source).
 
     lv_obj_delete(bar);
+}
+
+// ---------------------------------------------------------------------------
+// 4. The stock toolchange emission ORDER, and the monotonic guarantee.
+//
+// AFC's do_poop_kick_wipe runs poop -> wipe -> kick -> wipe (AFC.py
+// v1.2.0:1390-1413; the same body inline in TOOL_LOAD at v1.1.0:1417-1440), and
+// all four narrate at the shipped default variable_verbose: 1
+// (config/AFC_Macro_Vars.cfg:17). match_narration_phase maps them to
+// poop, brush, kick, brush.
+//
+// Two things have to hold together, and neither alone is enough:
+//   - the template must order brush BEFORE kick (first occurrence), or the bar
+//     never lights "Kick away" at all once the latch is in place;
+//   - the published index must never decrease, or the repeated wipe rewinds it.
+// With kick listed before brush and no latch, the index ran 4 -> 6 -> 5 -> 6.
+// ---------------------------------------------------------------------------
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "Toolchange narration - stock AFC wipe order never rewinds the bar",
+                 "[ams][afc][narration][stepbar]") {
+    reset_step_baseline();
+    GcodeNarrationRouter router(nullptr, nullptr);
+
+    // Verbatim shapes AFC emits at variable_verbose: 1.
+    const char* const stock_toolchange[] = {
+        "// Heat nozzle",
+        "// AFC_Cut: Cutting Filament",
+        "Unloading lane1",
+        "Loading lane2",
+        "// AFC_Poop: Starting poop",
+        "// AFC_Brush: Clean Nozzle",          // first wipe
+        "// AFC_Kick: Starting Filament Kick", // kick
+        "// AFC_Brush: Clean Nozzle",          // second wipe
+        "lane2 is now loaded in toolhead t:0",
+    };
+
+    std::vector<int> published;
+    for (const char* line : stock_toolchange) {
+        GcodeNarrationRouterTestAccess::feed(router, line);
+        helix::ui::UpdateQueue::instance().drain();
+        published.push_back(current_step());
+    }
+
+    // The exact indices, so a template reshuffle is caught rather than absorbed.
+    // heat, cut, unload, feed, poop, brush, kick, (wipe swallowed), load.
+    REQUIRE(published == std::vector<int>{0, 1, 2, 3, 4, 5, 6, 6, 7});
+
+    // The invariant, stated independently of the numbers above: a progress bar
+    // that goes backwards is the user-visible defect.
+    for (size_t i = 1; i < published.size(); ++i) {
+        CAPTURE(i, stock_toolchange[i], published[i - 1], published[i]);
+        REQUIRE(published[i] >= published[i - 1]);
+    }
+
+    // Every phase the bar draws was reached — a latch that simply pinned the
+    // maximum would also satisfy "never decreases".
+    REQUIRE(published.back() == 7);
+    REQUIRE(std::find(published.begin(), published.end(), 5) != published.end()); // brush lit
+    REQUIRE(std::find(published.begin(), published.end(), 6) != published.end()); // kick lit
+}
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "Toolchange narration - the phase latch resets between operations",
+                 "[ams][afc][narration][stepbar]") {
+    reset_step_baseline();
+    auto& ams = AmsState::instance();
+
+    auto publish = [&](int index, const char* label) {
+        ams.set_narration_phase(index, label);
+        helix::ui::UpdateQueue::instance().drain();
+        return current_step();
+    };
+
+    SECTION("a backwards phase mid-operation is swallowed") {
+        REQUIRE(publish(6, "Kick away") == 6);
+        REQUIRE(publish(5, "Brush nozzle") == 6);
+        // The label is suppressed too, so the bar and the status line agree.
+        REQUIRE(current_detail() == std::string("Kick away"));
+    }
+
+    SECTION("an explicit clear resets it") {
+        REQUIRE(publish(6, "Kick away") == 6);
+        REQUIRE(publish(-1, "") == -1);
+        REQUIRE(publish(3, "Feed filament") == 3);
+    }
+
+    SECTION("the operation ending resets it") {
+        // set_action only acts on a CHANGE, so establish a non-idle action
+        // first — that is also the real shape: an operation was running.
+        ams.set_action(AmsAction::LOADING);
+        REQUIRE(publish(7, "Load complete") == 7);
+        ams.set_action(AmsAction::IDLE);
+        helix::ui::UpdateQueue::instance().drain();
+        REQUIRE(current_step() == -1);
+        REQUIRE(publish(2, "Unload filament") == 2);
+    }
+
+    SECTION("a restart from the template's first phase resets it") {
+        // AFC retrying a failed TOOL_LOAD re-runs it from the heat. Index 0 is
+        // the first phase of every template, so it is unambiguous.
+        REQUIRE(publish(6, "Kick away") == 6);
+        REQUIRE(publish(0, "Heat nozzle") == 0);
+        REQUIRE(publish(3, "Feed filament") == 3);
+    }
+
+    SECTION("changing the operation resets it — indices are template-relative") {
+        REQUIRE(publish(7, "Load complete") == 7);
+        ams.set_active_step_operation(StepOperationType::UNLOAD);
+        // UNLOAD's template is heat, cut, unload — 2 is its LAST step, not a
+        // rewind, and the swap's 7 must not hold it back.
+        REQUIRE(publish(2, "Retract filament") == 2);
+        ams.set_active_step_operation(StepOperationType::LOAD_SWAP);
+    }
+
+    SECTION("re-setting the SAME operation does not reset it") {
+        // Otherwise the sidebar's periodic re-assertion of the current op would
+        // silently disarm the latch.
+        REQUIRE(publish(6, "Kick away") == 6);
+        ams.set_active_step_operation(StepOperationType::LOAD_SWAP);
+        REQUIRE(publish(5, "Brush nozzle") == 6);
+    }
+
+    // Leave the singleton where reset_step_baseline() expects it.
+    ams.set_active_step_operation(StepOperationType::LOAD_SWAP);
+    ams.set_narration_phase(-1, "");
+    helix::ui::UpdateQueue::instance().drain();
 }

@@ -345,3 +345,20 @@ TEST_CASE("json_string_list_or normalizes filament type formats", "[moonraker][h
         REQUIRE(json_string_list_or(j, "filament_type") == "PLA;ASA;PETG");
     }
 }
+
+// ============================================================================
+// MoonrakerError static factories
+// ============================================================================
+
+TEST_CASE("MoonrakerError::not_ready / validation_error factories set fields",
+          "[moonraker][error][helpers]") {
+    MoonrakerError nr = MoonrakerError::not_ready("printer.gcode.script", "Klipper is halted");
+    CHECK(nr.type == MoonrakerErrorType::NOT_READY);
+    CHECK(nr.method == "printer.gcode.script");
+    CHECK(nr.message == "Klipper is halted");
+
+    MoonrakerError ve = MoonrakerError::validation_error("motion.move", "NaN or Inf value");
+    CHECK(ve.type == MoonrakerErrorType::VALIDATION_ERROR);
+    CHECK(ve.method == "motion.move");
+    CHECK(ve.message == "NaN or Inf value");
+}

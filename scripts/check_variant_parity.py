@@ -172,16 +172,15 @@ def report(kind: str, base_rel: str, variant_rel: str, base: set[str], variant: 
     return bool(missing)
 
 
-def main() -> int:
-    repo_root = Path(__file__).resolve().parent.parent
-    ui_xml = repo_root / "ui_xml"
-    if not ui_xml.is_dir():
-        print(f"error: {ui_xml} not found", file=sys.stderr)
-        return 1
+def iter_variant_pairs(ui_xml: Path):
+    """Yield (base_file, variant_file) for every ui_xml/<variant>/ override that
+    has a same-relative-path base file.
 
-    failures = 0
-    pairs = 0
-
+    Shared with check_variant_content_drift.py so the two gates cannot disagree
+    about what counts as a variant — VARIANT_DIRS above is the single list of
+    directories either gate treats as a layout variant (as opposed to a content
+    subdirectory like components/ or translations/).
+    """
     for variant in VARIANT_DIRS:
         variant_dir = ui_xml / variant
         if not variant_dir.is_dir():
@@ -195,21 +194,34 @@ def main() -> int:
                 # against, and resolve_xml_path falls back to base only when a
                 # base exists.
                 continue
+            yield base_file, variant_file
 
-            pairs += 1
-            base = collect(base_file)
-            var = collect(variant_file)
 
-            base_rel = str(base_file.relative_to(repo_root))
-            variant_rel = str(variant_file.relative_to(repo_root))
+def main() -> int:
+    repo_root = Path(__file__).resolve().parent.parent
+    ui_xml = repo_root / "ui_xml"
+    if not ui_xml.is_dir():
+        print(f"error: {ui_xml} not found", file=sys.stderr)
+        return 1
 
-            bad = False
-            bad |= report("widget name", base_rel, variant_rel, base.names, var.names)
-            bad |= report("subject", base_rel, variant_rel, base.subjects, var.subjects)
-            bad |= report("callback", base_rel, variant_rel, base.callbacks, var.callbacks)
-            bad |= report("api prop", base_rel, variant_rel, base.props, var.props)
-            if bad:
-                failures += 1
+    failures = 0
+    pairs = 0
+
+    for base_file, variant_file in iter_variant_pairs(ui_xml):
+        pairs += 1
+        base = collect(base_file)
+        var = collect(variant_file)
+
+        base_rel = str(base_file.relative_to(repo_root))
+        variant_rel = str(variant_file.relative_to(repo_root))
+
+        bad = False
+        bad |= report("widget name", base_rel, variant_rel, base.names, var.names)
+        bad |= report("subject", base_rel, variant_rel, base.subjects, var.subjects)
+        bad |= report("callback", base_rel, variant_rel, base.callbacks, var.callbacks)
+        bad |= report("api prop", base_rel, variant_rel, base.props, var.props)
+        if bad:
+            failures += 1
 
     if failures:
         print(

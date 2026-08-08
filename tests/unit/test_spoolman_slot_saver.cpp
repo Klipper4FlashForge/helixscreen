@@ -82,6 +82,43 @@ TEST_CASE("SpoolmanSlotSaver detect_changes: color changed sets filament_level",
     REQUIRE(changes.any());
 }
 
+// A variant swap within one vendor+material — SUNLU "PLA Marble" -> "PLA+ 2.0"
+// — leaves brand, material and color identical, so without the product-identity
+// fields detect_changes() reports NO change at all and the edit reads as a
+// no-op everywhere downstream.
+TEST_CASE("SpoolmanSlotSaver detect_changes: catalog product changed sets filament_level",
+          "[spoolman][slot_saver]") {
+    SlotInfo original = make_test_slot();
+    original.catalog_id = "sunlu-pla-marble";
+    original.product_name = "PLA Marble";
+
+    SECTION("catalog id alone") {
+        SlotInfo edited = original;
+        edited.catalog_id = "sunlu-pla-plus-2-0";
+        edited.product_name = "PLA+ 2.0";
+
+        auto changes = SpoolmanSlotSaver::detect_changes(original, edited);
+        REQUIRE(changes.filament_level);
+        REQUIRE_FALSE(changes.spool_level);
+    }
+
+    SECTION("display name alone — an id-less pick still counts") {
+        SlotInfo edited = original;
+        edited.catalog_id.clear();
+        SlotInfo base = original;
+        base.catalog_id.clear();
+        edited.product_name = "PLA+ 2.0";
+
+        auto changes = SpoolmanSlotSaver::detect_changes(base, edited);
+        REQUIRE(changes.filament_level);
+    }
+
+    SECTION("identical product is not a change") {
+        auto changes = SpoolmanSlotSaver::detect_changes(original, original);
+        REQUIRE_FALSE(changes.any());
+    }
+}
+
 TEST_CASE("SpoolmanSlotSaver detect_changes: remaining weight changed sets spool_level only",
           "[spoolman][slot_saver]") {
     SlotInfo original = make_test_slot();
@@ -759,7 +796,7 @@ TEST_CASE("SpoolmanSlotSaver find_or_create_filament: matches on vendor+material
     int got_id = -1;
     bool error_called = false;
     saver.find_or_create_filament(
-        7, "PLA", "FF0000", // upper-case input vs lower-case seed
+        7, "PLA", "FF0000", /*filament_name*/ "", // upper-case input vs lower-case seed
         [&](int id) { got_id = id; }, [&](const MoonrakerError&) { error_called = true; });
 
     REQUIRE(got_id == 100);
@@ -779,7 +816,7 @@ TEST_CASE("SpoolmanSlotSaver find_or_create_filament: mismatched material -> cre
     SpoolmanSlotSaver saver(&api);
     int got_id = -1;
     saver.find_or_create_filament(
-        7, "PETG", "FF0000", [&](int id) { got_id = id; },
+        7, "PETG", "FF0000", /*filament_name*/ "", [&](int id) { got_id = id; },
         [&](const MoonrakerError&) { got_id = -99; });
 
     REQUIRE(got_id == 101);
@@ -803,7 +840,7 @@ TEST_CASE("SpoolmanSlotSaver find_or_create_filament: mismatched color -> create
     SpoolmanSlotSaver saver(&api);
     int got_id = -1;
     saver.find_or_create_filament(
-        7, "PLA", "00FF00", [&](int id) { got_id = id; },
+        7, "PLA", "00FF00", /*filament_name*/ "", [&](int id) { got_id = id; },
         [&](const MoonrakerError&) { got_id = -99; });
 
     REQUIRE(got_id == 101);
@@ -823,7 +860,7 @@ TEST_CASE("SpoolmanSlotSaver find_or_create_filament: invalid color hex triggers
     int got_id = -1;
     bool error_called = false;
     saver.find_or_create_filament(
-        7, "PLA", "XYZ", // invalid
+        7, "PLA", "XYZ", /*filament_name*/ "", // invalid
         [&](int id) { got_id = id; }, [&](const MoonrakerError&) { error_called = true; });
 
     REQUIRE(got_id == -1);
@@ -843,7 +880,7 @@ TEST_CASE("SpoolmanSlotSaver find_or_create_filament: accepts leading # and stri
     SpoolmanSlotSaver saver(&api);
     int got_id = -1;
     saver.find_or_create_filament(
-        7, "PLA", "#ff0000", [&](int id) { got_id = id; },
+        7, "PLA", "#ff0000", /*filament_name*/ "", [&](int id) { got_id = id; },
         [&](const MoonrakerError&) { got_id = -99; });
 
     REQUIRE(got_id == 100);

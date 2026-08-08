@@ -108,7 +108,7 @@ static std::vector<SpoolInfo> make_test_spools(int count) {
         s.id = i + 1;
         s.vendor = "TestVendor";
         s.material = (i % 2 == 0) ? "PLA" : "PETG";
-        s.color_name = "Color " + std::to_string(i + 1);
+        s.filament_name = "Color " + std::to_string(i + 1);
         s.color_hex = "#808080";
         s.initial_weight_g = 1000.0;
         s.remaining_weight_g = 1000.0 - (i * 50.0);

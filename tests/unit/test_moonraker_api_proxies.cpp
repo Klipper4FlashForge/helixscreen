@@ -8,6 +8,7 @@
  */
 
 #include "ui_update_queue.h"
+
 #include "../../include/moonraker_api.h"
 #include "../../include/moonraker_client_mock.h"
 #include "../../lvgl/lvgl.h"
@@ -76,14 +77,12 @@ TEST_CASE_METHOD(ProxyTestFixture, "is_connected returns true when client is con
     REQUIRE(api->is_connected());
 }
 
-TEST_CASE_METHOD(ProxyTestFixture, "is_connected returns false after disconnect",
-                 "[api][proxy]") {
+TEST_CASE_METHOD(ProxyTestFixture, "is_connected returns false after disconnect", "[api][proxy]") {
     mock_client.disconnect();
     REQUIRE_FALSE(api->is_connected());
 }
 
-TEST_CASE_METHOD(ProxyTestFixture, "get_connection_state mirrors client state",
-                 "[api][proxy]") {
+TEST_CASE_METHOD(ProxyTestFixture, "get_connection_state mirrors client state", "[api][proxy]") {
     REQUIRE(api->get_connection_state() == ConnectionState::CONNECTED);
     mock_client.disconnect();
     REQUIRE(api->get_connection_state() == ConnectionState::DISCONNECTED);
@@ -101,8 +100,7 @@ TEST_CASE_METHOD(ProxyTestFixture, "get_websocket_url returns client URL", "[api
 // Subscription Proxy Tests
 // ============================================================================
 
-TEST_CASE_METHOD(ProxyTestFixture, "subscribe_notifications returns valid ID",
-                 "[api][proxy]") {
+TEST_CASE_METHOD(ProxyTestFixture, "subscribe_notifications returns valid ID", "[api][proxy]") {
     SubscriptionId id = api->subscribe_notifications([](json) {});
     REQUIRE(id != INVALID_SUBSCRIPTION_ID);
 }
@@ -159,8 +157,7 @@ TEST_CASE_METHOD(ProxyTestFixture, "unregister nonexistent method callback retur
 // Disconnect Modal Suppression Proxy Tests
 // ============================================================================
 
-TEST_CASE_METHOD(ProxyTestFixture, "suppress_disconnect_modal forwards to client",
-                 "[api][proxy]") {
+TEST_CASE_METHOD(ProxyTestFixture, "suppress_disconnect_modal forwards to client", "[api][proxy]") {
     // Should not throw, and client should report suppressed
     api->suppress_disconnect_modal(5000);
     REQUIRE(mock_client.is_disconnect_modal_suppressed());
@@ -170,49 +167,60 @@ TEST_CASE_METHOD(ProxyTestFixture, "suppress_disconnect_modal forwards to client
 // Database Operation Proxy Tests
 // ============================================================================
 
-TEST_CASE_METHOD(ProxyTestFixture, "database_get_item sends correct JSON-RPC",
-                 "[api][proxy]") {
-    // The mock client will process the JSON-RPC request. Since this is a mock,
-    // the request will likely fail or timeout. We verify the callback mechanism works.
-    bool callback_invoked = false;
-    bool error_invoked = false;
+// The mock has no server.database.* handler, so its send_jsonrpc records the call
+// and returns without ever invoking a callback. That is enough to pin the wire
+// format (last_send_method()), but it means the response lambdas inside
+// MoonrakerAPI never run against the mock. The null-callback cases below therefore
+// use a real, unconnected MoonrakerClient, whose pre-send guard invokes the error
+// callback synchronously (moonraker_client.cpp ready_to_send) and so actually
+// executes the `if (on_error)` branch.
 
-    api->database_get_item(
-        "helix", "settings", [&callback_invoked](const json&) { callback_invoked = true; },
-        [&error_invoked](const MoonrakerError&) { error_invoked = true; });
+TEST_CASE_METHOD(ProxyTestFixture, "database_get_item sends correct JSON-RPC", "[api][proxy]") {
+    api->database_get_item("helix", "settings", [](const json&) {}, [](const MoonrakerError&) {});
 
-    // The mock client doesn't have a database endpoint, so either success or error
-    // callback may be invoked (depending on mock behavior). The important thing is
-    // that the method doesn't crash and the JSON-RPC is sent.
-    // With mock client, the request goes to the pending queue but no response comes.
-    // Neither callback will be invoked synchronously.
-    // This test verifies the method doesn't throw.
-    SUCCEED("database_get_item completed without throwing");
+    REQUIRE(mock_client.last_send_method() == "server.database.get_item");
 }
 
-TEST_CASE_METHOD(ProxyTestFixture, "database_post_item sends correct JSON-RPC",
-                 "[api][proxy]") {
-    bool callback_invoked = false;
-    bool error_invoked = false;
-
+TEST_CASE_METHOD(ProxyTestFixture, "database_post_item sends correct JSON-RPC", "[api][proxy]") {
     json value = {{"theme", "dark"}, {"language", "en"}};
 
-    api->database_post_item(
-        "helix", "settings", value, [&callback_invoked]() { callback_invoked = true; },
+    api->database_post_item("helix", "settings", value, []() {}, [](const MoonrakerError&) {});
+
+    REQUIRE(mock_client.last_send_method() == "server.database.post_item");
+}
+
+TEST_CASE_METHOD(ProxyTestFixture, "database_get_item error path tolerates a null error callback",
+                 "[api][proxy]") {
+    MoonrakerClient offline;
+    MoonrakerAPI offline_api(offline, state);
+
+    // Paired non-null run first: proves the error lambda really is reached in this
+    // setup, so the null run below is exercising the guard rather than nothing.
+    bool success_invoked = false;
+    bool error_invoked = false;
+    offline_api.database_get_item(
+        "helix", "key", [&success_invoked](const json&) { success_invoked = true; },
         [&error_invoked](const MoonrakerError&) { error_invoked = true; });
+    REQUIRE(error_invoked);
+    REQUIRE_FALSE(success_invoked);
 
-    // Same as above - verifies no crash
-    SUCCEED("database_post_item completed without throwing");
+    // Same path, null error callback: the `if (on_error)` guard now executes.
+    REQUIRE_NOTHROW(offline_api.database_get_item("helix", "key", [](const json&) {}, nullptr));
 }
 
-TEST_CASE_METHOD(ProxyTestFixture, "database_get_item with null error callback doesn't crash",
+TEST_CASE_METHOD(ProxyTestFixture, "database_post_item error path tolerates null callbacks",
                  "[api][proxy]") {
-    api->database_get_item("helix", "key", [](const json&) {}, nullptr);
-    SUCCEED("No crash with null error callback");
-}
+    MoonrakerClient offline;
+    MoonrakerAPI offline_api(offline, state);
 
-TEST_CASE_METHOD(ProxyTestFixture, "database_post_item with null callbacks doesn't crash",
-                 "[api][proxy]") {
-    api->database_post_item("helix", "key", json{{"val", 1}}, nullptr, nullptr);
-    SUCCEED("No crash with null callbacks");
+    bool success_invoked = false;
+    bool error_invoked = false;
+    offline_api.database_post_item(
+        "helix", "key", json{{"val", 1}}, [&success_invoked]() { success_invoked = true; },
+        [&error_invoked](const MoonrakerError&) { error_invoked = true; });
+    REQUIRE(error_invoked);
+    REQUIRE_FALSE(success_invoked);
+
+    REQUIRE_NOTHROW(
+        offline_api.database_post_item("helix", "key", json{{"val", 1}}, nullptr, nullptr));
 }

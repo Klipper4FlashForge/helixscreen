@@ -40,6 +40,39 @@ prune_cache() {
     fi
 }
 
+# Print the code addresses under one "## <heading>" section of a crash-report
+# issue body (read from stdin).
+#
+# The worker emits the backtrace in two shapes: a `| # | \`0xADDR\` | symbol |`
+# table when it resolved symbols server-side, and a fenced code block of bare
+# addresses when it didn't (#1240). Both are handled here.
+#
+# Scoping to one section is the point: the Registers and All Registers tables
+# hold SP and r0-r12, which are data, not return addresses — resolving them as
+# frames invents call sites that were never on the stack. `<sub>` footnotes are
+# skipped too, since they carry load_base.
+extract_section_addrs() {
+    local heading="$1"
+    awk -v heading="$heading" '
+        $0 ~ heading { in_section = 1; next }
+        /^## / || /^<details/ || /^---$/ { in_section = 0 }
+        !in_section { next }
+        /^<sub>/ { next }
+        # Table row: the Address column is the first backticked address.
+        /^\|/ {
+            if (match($0, /`0[xX][0-9a-fA-F]+`/)) {
+                print substr($0, RSTART + 1, RLENGTH - 2)
+            }
+            next
+        }
+        # Bare address line inside a code fence.
+        /^[[:space:]]*0[xX][0-9a-fA-F]+[[:space:]]*$/ {
+            gsub(/[[:space:]]/, "")
+            print
+        }
+    '
+}
+
 LOAD_BASE=0
 AUTO_DETECT_BASE=false
 CRASH_FILE=""
@@ -341,30 +374,38 @@ if [[ -n "$ISSUE_NUMBER" ]]; then
         fi
     fi
 
-    # Extract backtrace addresses from "| N | \`0xADDR\` | ... |"
+    # Extract the backtrace frames (table or bare code block — see
+    # extract_section_addrs).
     ADDRS=()
     while IFS= read -r addr; do
-        if [[ -n "$addr" ]]; then
-            ADDRS+=("$addr")
-        fi
-    done < <(echo "$ISSUE_BODY" | grep -oE '\| `0x[0-9a-fA-F]+`' | grep -oE '0x[0-9a-fA-F]+' || true)
+        [[ -n "$addr" ]] && ADDRS+=("$addr")
+    done < <(echo "$ISSUE_BODY" | extract_section_addrs '^## Backtrace' || true)
 
-    # Also extract register addresses (PC, LR) as they may point to app code
+    # Stack-scan candidates live in their own section and are noisy by
+    # construction (real return addresses interleaved with stale ones). Record
+    # where they start so the output separates them from the reliable frames,
+    # the same way --bundle and --crash-file mode do.
+    SCAN_ADDRS=()
     while IFS= read -r addr; do
-        if [[ -n "$addr" ]]; then
-            # Don't add duplicates
-            local_dup=false
-            for existing in "${ADDRS[@]+"${ADDRS[@]}"}"; do
-                if [[ "$existing" == "$addr" ]]; then
-                    local_dup=true
-                    break
-                fi
-            done
-            if [[ "$local_dup" == "false" ]]; then
-                ADDRS+=("$addr")
-            fi
+        [[ -n "$addr" ]] && SCAN_ADDRS+=("$addr")
+    done < <(echo "$ISSUE_BODY" | extract_section_addrs '^## Stack Scan' || true)
+
+    if [[ ${#SCAN_ADDRS[@]} -gt 0 ]]; then
+        PRIMARY_COUNT=${#ADDRS[@]}
+        ADDRS+=("${SCAN_ADDRS[@]}")
+    fi
+
+    # No backtrace section at all — fall back to PC and LR, the only registers
+    # that hold a code address. SP and the general-purpose registers are data.
+    if [[ ${#ADDRS[@]} -eq 0 ]]; then
+        for reg in PC LR; do
+            reg_addr=$(echo "$ISSUE_BODY" | grep -E "\*\*${reg}\*\*" | grep -oE '`0x[0-9a-fA-F]+`' | head -1 | tr -d '`' || true)
+            [[ -n "$reg_addr" ]] && ADDRS+=("$reg_addr")
+        done
+        if [[ ${#ADDRS[@]} -gt 0 ]]; then
+            echo "No backtrace section in issue #${ISSUE_NUMBER} — falling back to PC/LR" >&2
         fi
-    done < <(echo "$ISSUE_BODY" | grep -E '\*\*(LR|PC)\*\*' | while IFS= read -r regline; do echo "$regline" | grep -oE '`0x[0-9a-fA-F]+`' | head -1; done | grep -oE '0x[0-9a-fA-F]+' || true)
+    fi
 
     if [[ ${#ADDRS[@]} -eq 0 ]]; then
         echo "Error: No backtrace addresses found in issue #${ISSUE_NUMBER}" >&2

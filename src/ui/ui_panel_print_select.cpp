@@ -1243,6 +1243,16 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
             // dereferencing the freed panel (use-after-free → glibc heap abort).
             auto panel_tok = self->lifetime_.token();
 
+            // Same hazard, for the pieces the bg-thread callbacks below need.
+            // get_name() is virtual, so calling it on a torn-down panel dispatches
+            // through a freed vtable pointer — and a bare `ctx.is_valid()` ahead of
+            // it does not close the window, it only narrows it (L081 Mechanism C).
+            // Both of these are stable for the panel's life and the name is a
+            // compile-time literal, so snapshot them here, on the main thread,
+            // and let the callbacks format and fetch without touching `self`.
+            const char* panel_name = self->get_name();
+            auto* panel_api = self->api_;
+
             // Update metadata fields (now on main thread - safe!)
             self->file_list_[d->index].print_time_minutes = d->print_time_minutes;
             self->file_list_[d->index].filament_grams = d->filament_grams;
@@ -1335,11 +1345,12 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                                         }
                                     });
                             },
-                            [self, filename_copy, ctx](const std::string& error) {
-                                if (!ctx.is_valid())
-                                    return;
+                            [panel_name, filename_copy](const std::string& error) {
+                                // HttpExecutor worker: no `self`, so nothing to
+                                // outlive us. panel_name is a literal snapshotted
+                                // on the main thread.
                                 spdlog::warn("[{}] Failed to prescale local thumbnail for {}: {}",
-                                             self->get_name(), filename_copy, error);
+                                             panel_name, filename_copy, error);
                             });
                     }
                 } else {
@@ -1455,15 +1466,19 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                     self->api_->transfers().download_file_partial(
                         "gcodes", gcode_path, THUMBNAIL_HEADER_SIZE,
                         // Success callback - extract thumbnails from gcode content
-                        [self, panel_tok, file_idx, filename_copy, gcode_path,
-                         ctx](const std::string& content) {
-                            if (!ctx.is_valid())
-                                return;
+                        [self, panel_tok, panel_name, panel_api, file_idx, filename_copy,
+                         gcode_path, ctx](const std::string& content) {
+                            // HttpExecutor worker. The parse and the cache write below
+                            // are deliberately left here — they are the expensive part
+                            // and touch no panel state. What must NOT happen on this
+                            // thread is a `self` dereference, so everything the body
+                            // needs from the panel (name, api, lifetime) was captured
+                            // by value on the main thread instead.
                             auto thumbnails =
                                 helix::gcode::extract_thumbnails_from_content(content);
 
                             if (thumbnails.empty()) {
-                                spdlog::debug("[{}] No embedded thumbnails in {}", self->get_name(),
+                                spdlog::debug("[{}] No embedded thumbnails in {}", panel_name,
                                               gcode_path);
                                 return;
                             }
@@ -1471,8 +1486,8 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                             // Use the largest thumbnail (already sorted largest-first)
                             const auto& best = thumbnails[0];
                             spdlog::debug("[{}] Extracted {}x{} thumbnail ({} bytes) from {}",
-                                          self->get_name(), best.width, best.height,
-                                          best.png_data.size(), gcode_path);
+                                          panel_name, best.width, best.height, best.png_data.size(),
+                                          gcode_path);
 
                             // Save to cache using the gcode path as identifier
                             std::string cache_key = gcode_path + "_extracted";
@@ -1481,18 +1496,19 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
 
                             if (lvgl_path.empty()) {
                                 spdlog::warn("[{}] Failed to cache extracted thumbnail for {}",
-                                             self->get_name(), gcode_path);
+                                             panel_name, gcode_path);
                                 return;
                             }
 
                             // Feed through prescale pipeline for .bin generation
                             // (avoids runtime 300x300→160x160 scaling on every frame)
                             get_thumbnail_cache().fetch_for_card_view(
-                                self->api_, cache_key, ctx,
-                                [self, panel_tok, file_idx, filename_copy,
-                                 ctx](const std::string& optimized) {
-                                    if (!ctx.is_valid())
-                                        return;
+                                panel_api, cache_key, ctx,
+                                [self, panel_tok, file_idx,
+                                 filename_copy](const std::string& optimized) {
+                                    // Everything that touches the panel happens in the
+                                    // queued apply below, which re-checks the token on
+                                    // the main thread.
                                     struct ExtractedThumbUpdate {
                                         PrintSelectPanel* panel;
                                         helix::LifetimeToken token;
@@ -1522,20 +1538,16 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                                             }
                                         });
                                 },
-                                [self, filename_copy, ctx](const std::string& error) {
-                                    if (!ctx.is_valid())
-                                        return;
+                                [panel_name, filename_copy](const std::string& error) {
                                     spdlog::warn(
                                         "[{}] Failed to prescale extracted thumbnail for {}: {}",
-                                        self->get_name(), filename_copy, error);
+                                        panel_name, filename_copy, error);
                                 });
                         },
                         // Error callback - silent fail (file might be too small or inaccessible)
-                        [self, gcode_path, ctx](const MoonrakerError& error) {
-                            if (!ctx.is_valid())
-                                return;
+                        [panel_name, gcode_path](const MoonrakerError& error) {
                             spdlog::debug("[{}] Failed to download gcode header for {}: {}",
-                                          self->get_name(), gcode_path, error.message);
+                                          panel_name, gcode_path, error.message);
                         });
                 }
             }

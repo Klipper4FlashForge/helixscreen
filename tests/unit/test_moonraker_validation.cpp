@@ -169,6 +169,93 @@ TEST_CASE("is_safe_identifier() rejects empty identifier", "[moonraker_validatio
 }
 
 // ============================================================================
+// is_safe_url_param() Tests
+// ============================================================================
+
+TEST_CASE("is_safe_url_param() accepts Moonraker config section names",
+          "[moonraker_validation][url_param]") {
+    SECTION("leading and trailing hyphens (prestonbrown/helixscreen#1241)") {
+        REQUIRE(is_safe_url_param("-Power-") == true);
+    }
+
+    SECTION("plain identifier") {
+        REQUIRE(is_safe_url_param("printer") == true);
+    }
+
+    SECTION("dots") {
+        REQUIRE(is_safe_url_param("shelly.plug.1") == true);
+    }
+
+    SECTION("spaces") {
+        REQUIRE(is_safe_url_param("Printer PSU") == true);
+    }
+
+    SECTION("parentheses and brackets") {
+        REQUIRE(is_safe_url_param("Light (Back)") == true);
+        REQUIRE(is_safe_url_param("psu[0]") == true);
+    }
+
+    SECTION("punctuation that only matters in G-code") {
+        // The device name is percent-encoded into a query string, never emitted
+        // as G-code, so `;` and friends carry no injection risk here.
+        REQUIRE(is_safe_url_param("psu;light") == true);
+        REQUIRE(is_safe_url_param("a&b=c") == true);
+        REQUIRE(is_safe_url_param("100%") == true);
+    }
+
+    SECTION("multi-byte UTF-8 bytes") {
+        REQUIRE(is_safe_url_param("Beleuchtung Küche") == true);
+        REQUIRE(is_safe_url_param("电源") == true);
+    }
+}
+
+TEST_CASE("is_safe_url_param() rejects control characters",
+          "[moonraker_validation][url_param][security]") {
+    SECTION("empty") {
+        REQUIRE(is_safe_url_param("") == false);
+    }
+
+    SECTION("newline (log injection / header splitting)") {
+        REQUIRE(is_safe_url_param("psu\nX-Evil: 1") == false);
+    }
+
+    SECTION("carriage return") {
+        REQUIRE(is_safe_url_param("psu\rX-Evil: 1") == false);
+    }
+
+    SECTION("tab") {
+        REQUIRE(is_safe_url_param("psu\tlight") == false);
+    }
+
+    SECTION("embedded NUL") {
+        REQUIRE(is_safe_url_param(std::string("psu\0light", 9)) == false);
+    }
+
+    SECTION("DEL (0x7F)") {
+        REQUIRE(is_safe_url_param(std::string("psu\x7F")) == false);
+    }
+
+    SECTION("other low control bytes") {
+        REQUIRE(is_safe_url_param(std::string("psu\x01")) == false);
+        REQUIRE(is_safe_url_param(std::string("\x1B[31mpsu")) == false);
+    }
+}
+
+TEST_CASE("is_safe_url_param() is looser than is_safe_identifier for power devices",
+          "[moonraker_validation][url_param][1241]") {
+    // Regression for prestonbrown/helixscreen#1241: `[power -Power-]` is a legal
+    // Moonraker section name, and gating set_device_power() on is_safe_identifier()
+    // silently broke power control for it. The two validators must stay distinct:
+    // identifiers reach G-code, URL params get percent-encoded.
+    REQUIRE(is_safe_identifier("-Power-") == false);
+    REQUIRE(is_safe_url_param("-Power-") == true);
+
+    // Both still reject the injection primitives that matter to each.
+    REQUIRE(is_safe_identifier("psu\nG28") == false);
+    REQUIRE(is_safe_url_param("psu\nG28") == false);
+}
+
+// ============================================================================
 // is_valid_axis() Tests
 // ============================================================================
 
@@ -291,9 +378,7 @@ TEST_CASE("reject_invalid_file_root() accepts hidden Moonraker roots",
 
 TEST_CASE("reject_invalid_file_root() rejects unsafe roots", "[moonraker_validation][reject]") {
     MoonrakerError captured_error;
-    MoonrakerAPI::ErrorCallback on_error = [&](const MoonrakerError& err) {
-        captured_error = err;
-    };
+    MoonrakerAPI::ErrorCallback on_error = [&](const MoonrakerError& err) { captured_error = err; };
 
     REQUIRE(reject_invalid_file_root("../secret", "list_files", on_error, true) == true);
     REQUIRE(captured_error.type == MoonrakerErrorType::VALIDATION_ERROR);

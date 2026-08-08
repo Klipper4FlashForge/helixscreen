@@ -185,9 +185,9 @@ struct ChannelStateInfo {
                state.compare(state.size() - suffix.size(), suffix.size(), suffix) == 0;
     };
     const bool is_unload = state.rfind("unload_", 0) == 0;
-    const bool is_load = !is_unload && (state.rfind("load_", 0) == 0 ||
-                                        state.rfind("preload_", 0) == 0 ||
-                                        state.rfind("manual_sta_", 0) == 0);
+    const bool is_load =
+        !is_unload && (state.rfind("load_", 0) == 0 || state.rfind("preload_", 0) == 0 ||
+                       state.rfind("manual_sta_", 0) == 0);
     if (ends_with("_fail")) {
         info.action = AmsAction::ERROR;
         info.is_fail = true;
@@ -423,7 +423,17 @@ PathSegment AmsBackendSnapmaker::infer_error_segment() const {
 // ============================================================================
 
 AmsError AmsBackendSnapmaker::load_filament(int slot_index) {
-    auto err = validate_slot_index(slot_index);
+    // Every op in this section drives the toolhead — AUTO_FEEDING forwards to
+    // FEED_AUTO, which homes before it feeds, and `T{n}` moves the carriage — so
+    // they refuse while a print owns it. PAUSED still passes
+    // (filament_ops_self_home() is false), which is what keeps runout recovery
+    // working.
+    auto err = check_preconditions(true);
+    if (!err.success()) {
+        return err;
+    }
+
+    err = validate_slot_index(slot_index);
     if (err.result != AmsResult::SUCCESS)
         return err;
 
@@ -452,6 +462,11 @@ AmsError AmsBackendSnapmaker::load_filament(int slot_index) {
 }
 
 AmsError AmsBackendSnapmaker::unload_filament(int slot_index) {
+    auto err = check_preconditions(true);
+    if (!err.success()) {
+        return err;
+    }
+
     // Unload must mirror load: route through AUTO_FEEDING (the firmware macro
     // that forwards to FEED_AUTO with module/channel resolved from
     // _FILAMENT_FEED_VARIABLE), passing UNLOAD=1. FEED_AUTO with no STAGE runs
@@ -479,7 +494,7 @@ AmsError AmsBackendSnapmaker::unload_filament(int slot_index) {
         return execute_gcode("INNER_FILAMENT_UNLOAD");
     }
 
-    auto err = validate_slot_index(extruder);
+    err = validate_slot_index(extruder);
     if (err.result != AmsResult::SUCCESS)
         return err;
 
@@ -528,7 +543,12 @@ AmsError AmsBackendSnapmaker::select_slot(int slot_index) {
 }
 
 AmsError AmsBackendSnapmaker::change_tool(int tool_number) {
-    auto err = validate_slot_index(tool_number);
+    auto err = check_preconditions(true);
+    if (!err.success()) {
+        return err;
+    }
+
+    err = validate_slot_index(tool_number);
     if (err.result != AmsResult::SUCCESS)
         return err;
 
@@ -746,6 +766,11 @@ AmsError AmsBackendSnapmaker::set_slot_info(int slot_index, const SlotInfo& info
         slot->color_rgb = info.color_rgb;
         slot->material = info.material;
         slot->brand = info.brand;
+        // Carry the catalog product identity through preview writes too — a
+        // persist=false preview that dropped it would make the editor snap
+        // back to a different variant on the next get_slot_info().
+        slot->catalog_id = info.catalog_id;
+        slot->product_name = info.product_name;
         slot->nozzle_temp_min = info.nozzle_temp_min;
         slot->nozzle_temp_max = info.nozzle_temp_max;
         slot->bed_temp = info.bed_temp;
@@ -787,6 +812,13 @@ AmsError AmsBackendSnapmaker::set_slot_info(int slot_index, const SlotInfo& info
             ovr.color_set = true; // a user-edit always records a color, even pure black (#000000)
             ovr.color_name = info.color_name;
             ovr.material = info.material;
+            // Catalog product identity. Persisted so a reopen can restore the
+            // EXACT product rather than the alphabetically-first variant of the
+            // same vendor+material. Never auto-mirrored (firmware has no notion
+            // of a catalog product), so no user-lock flag is needed: a non-empty
+            // value can only have come from a user pick.
+            ovr.catalog_id = info.catalog_id;
+            ovr.product_name = info.product_name;
             // User-lock: persist=true edits are sticky against the
             // OverwriteAlways auto-mirror (#965). Material is only locked
             // when the user provided one; an explicit empty material means
@@ -1712,6 +1744,14 @@ void AmsBackendSnapmaker::apply_overrides(SlotInfo& slot, int slot_index) {
         slot.color_name = o.color_name;
     if (!o.material.empty())
         slot.material = o.material;
+    // Catalog product identity — same "override wins only when it carries a
+    // real value" rule as the strings above. Firmware never populates these
+    // (no AMS protocol has a notion of a branded product id), so a non-empty
+    // value here is always a user pick and always wins.
+    if (!o.catalog_id.empty())
+        slot.catalog_id = o.catalog_id;
+    if (!o.product_name.empty())
+        slot.product_name = o.product_name;
 }
 
 void AmsBackendSnapmaker::check_hardware_event_clear(SlotInfo& slot, int slot_index,
@@ -1775,6 +1815,12 @@ void AmsBackendSnapmaker::clear_override_locked(int slot_index, SlotInfo& slot) 
     slot.spoolman_vendor_id = 0;
     slot.remaining_weight_g = -1.0f;
     slot.color_name.clear();
+    // The catalog pick is override-exclusive on every backend — no AMS
+    // firmware carries a branded product id — so a clear always drops it.
+    // Leaving it would re-navigate the editor to the removed spool's
+    // product on the next open.
+    slot.catalog_id.clear();
+    slot.product_name.clear();
 
     if (override_store_) {
         // Capture by value only — clear_async's Moonraker callback can fire

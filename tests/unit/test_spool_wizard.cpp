@@ -387,7 +387,7 @@ TEST_CASE("merge_filaments deduplicates by material+color_hex, server priority",
     server_pla.vendor_id = 5;
     server_pla.material = "PLA";
     server_pla.color_hex = "FF0000";
-    server_pla.color_name = "Red";
+    server_pla.filament_name = "Red";
     server_pla.nozzle_temp_min = 190;
     server_pla.nozzle_temp_max = 220;
     server_pla.density = 1.24;
@@ -650,7 +650,7 @@ TEST_CASE("merge_filaments: external entries serve as templates for new vendor",
     ext1.id = 0;
     ext1.material = "PLA";
     ext1.color_hex = "FF0000";
-    ext1.color_name = "Red";
+    ext1.filament_name = "Red";
     ext1.nozzle_temp_min = 190;
     ext1.nozzle_temp_max = 220;
     ext1.density = 1.24;
@@ -681,7 +681,7 @@ TEST_CASE("merge_filaments: external entries serve as templates for new vendor",
             return e.material == "PLA";
         });
     REQUIRE(it != result.end());
-    CHECK(it->name == "PLA - Red");
+    CHECK(it->name == "Red PLA");
     CHECK(it->nozzle_temp_min == 190);
     CHECK(it->density == Catch::Approx(1.24));
     CHECK(it->weight == Catch::Approx(1000));

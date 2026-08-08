@@ -564,6 +564,49 @@ class AmsBackend {
     // ========================================================================
 
     /**
+     * @brief Does this backend's load/unload/tool-change macro home the toolhead
+     *        by itself, inside firmware, where HelixScreen cannot see the G28?
+     *
+     * Decides whether a toolhead-motion filament op is refused during a PAUSED
+     * print (see AmsSubscriptionBackend::refuse_if_printing). PRINTING is refused
+     * for every backend regardless of this answer.
+     *
+     * Pausing to swap filament is the runout / colour-change recovery workflow,
+     * not an edge case: Klipper's runout handler pauses and tells the user to
+     * load filament and press RESUME, and `pause_resume` saves the gcode state so
+     * the job resumes from where it left off. Mainsail offers unload on a paused
+     * print and it works. AFC goes further — its own `is_printing()` is
+     * `print_stats.state == "printing"` (paused is NOT printing, so AFC's
+     * firmware guards permit the op), and AFC_PAUSE Z-hops the nozzle clear of
+     * the part before handing off to the user's PAUSE macro
+     * (AFC-Klipper-Add-On `extras/AFC_error.py` cmd_AFC_PAUSE).
+     *
+     * What is NOT safe is a firmware macro that buries its own home. On
+     * loadcell-Z printers a G28 probes the nozzle DOWN into the bed; issued while
+     * a job owns the toolhead that is a collision, and on AD5X/ZMOD it trips
+     * ZCONTROL_AUTO into a Klipper shutdown needing a firmware restart to recover
+     * (bundle XWPBR2DX, commit 329e731e9).
+     *
+     * HelixScreen's OWN homing is already handled without this flag, in two
+     * layers that both remain in force:
+     *   - Layer 1: helix::api::reject_homing_during_active_print() refuses any
+     *     app-emitted G28 while PRINTING or PAUSED, in MoonrakerAPI::execute_gcode
+     *     and MoonrakerMotionAPI::execute_gcode.
+     *   - AmsSubscriptionBackend::ensure_homed_then() only emits G28 when
+     *     toolhead.homed_axes lacks "xyz" — and a paused print is homed by
+     *     construction, so it emits nothing.
+     * This flag therefore covers exactly one thing: homes Layer 1 cannot see.
+     *
+     * Default: false. Override true ONLY with positive evidence that the specific
+     * firmware macro this backend dispatches homes on its own; "not sure" must
+     * stay false, because a permanent false refusal is its own broken workflow
+     * (bundle JX2FVRB9).
+     */
+    [[nodiscard]] virtual bool filament_ops_self_home() const {
+        return false;
+    }
+
+    /**
      * @brief Whether the UI should redirect to the AMS panel for slot selection
      *        before loading filament.
      *
@@ -591,9 +634,85 @@ class AmsBackend {
      *
      * Default: filament at nozzle OR a slot engaged. Override where the
      * current_slot signal does not imply filament at the nozzle.
+     *
+     * A slot on an independent path is answered false outright — see
+     * slot_has_independent_path(). The default rule encodes a SERIAL premise
+     * (one shared route to the nozzle, so clear it before another lane can feed)
+     * and a lane whose toolhead owns its own extruder shares nothing to clear.
+     * Loading tool 3 never requires unloading tool 1.
+     *
+     * That is not academic on either uniformly-PARALLEL backend, because both
+     * report current_slot from the mounted tool and so answered true permanently:
+     *   - Snapmaker: routed Load through change_tool() -> `T{n}`, which seats the
+     *     carriage and feeds nothing. load_filament() names that as its first
+     *     wrong answer; AUTO_FEEDING already targets any extruder directly.
+     *   - Toolchanger: the swap arm dispatches change_tool(mapped_tool), but
+     *     change_tool() validates its argument as a SLOT and emits
+     *     `SELECT_TOOL T={n}` precisely to bypass ASSIGN_TOOL remapping — so a
+     *     remapped tool would mount the wrong physical toolhead.
+     * This is the PARALLEL-appropriate rule deferred in #1199.
+     *
+     * @param info        Backend system info snapshot.
+     * @param target_slot Global index of the slot the user asked to load. Pass
+     *                    -1 when no slot is resolved; the per-lane refinement is
+     *                    skipped and the backend-wide topology answers.
      */
-    [[nodiscard]] virtual bool needs_unload_before_load(const AmsSystemInfo& info) const {
+    [[nodiscard]] virtual bool needs_unload_before_load(const AmsSystemInfo& info,
+                                                        int target_slot) const {
+        if (slot_has_independent_path(info, target_slot)) {
+            return false;
+        }
         return info.filament_loaded || info.current_slot >= 0;
+    }
+
+    /**
+     * @brief Does @p target_slot reach a nozzle by a route it shares with no
+     *        other lane?
+     *
+     * The question load-vs-swap actually turns on, and it is per-LANE, not
+     * per-backend. PathTopology::MIXED exists for exactly this: a unit with some
+     * lanes wired straight to their own extruder and others merged through a hub
+     * into a shared one. On such a unit the answer differs between two lanes of
+     * the same unit, so no backend-wide constant can express it.
+     *
+     * Three sources, most specific first:
+     *   1. AmsUnit::lane_is_hub_routed — AFC's per-lane `hub` field ("direct" /
+     *      "direct_load" vs a hub name). Consulted ONLY on a MIXED unit: the
+     *      vector stores `false` for lanes whose routing has not been parsed yet
+     *      (ams_backend_afc.cpp, #1229 defect 4), and on a uniform unit that
+     *      unknown would masquerade as "direct" and skip a swap the machine
+     *      needs. On a MIXED unit an out-of-range or unknown lane answers false
+     *      (shared), which is the conservative direction.
+     *   2. get_unit_topology(position) — the backend's own per-unit answer. Its
+     *      default falls back to get_topology(), so backends that never populate
+     *      AmsUnit::topology (ToolChanger) still answer correctly.
+     *   3. get_topology() — when no unit covers @p target_slot at all, including
+     *      target_slot < 0.
+     *
+     * @warning Reaches a virtual accessor that may take the backend's own mutex
+     *          (AmsBackendAfc::get_unit_topology does). Do not call it, or
+     *          needs_unload_before_load(), while holding that mutex.
+     *          AmsBackendCfs::change_tool() is the one backend-internal caller
+     *          and is safe: CFS does not override get_unit_topology(), and its
+     *          get_topology() is an inline constant.
+     */
+    [[nodiscard]] bool slot_has_independent_path(const AmsSystemInfo& info, int target_slot) const {
+        const int unit_pos = info.get_unit_position_for_slot(target_slot);
+        if (unit_pos < 0) {
+            return get_topology() == PathTopology::PARALLEL;
+        }
+
+        const PathTopology topology = get_unit_topology(unit_pos);
+        if (topology != PathTopology::MIXED) {
+            return topology == PathTopology::PARALLEL;
+        }
+
+        const AmsUnit& unit = info.units[static_cast<size_t>(unit_pos)];
+        const int lane = target_slot - unit.first_slot_global_index;
+        if (lane < 0 || lane >= static_cast<int>(unit.lane_is_hub_routed.size())) {
+            return false;
+        }
+        return !unit.lane_is_hub_routed[static_cast<size_t>(lane)];
     }
 
     /**
@@ -819,6 +938,30 @@ class AmsBackend {
      * @return true if a cold, sensor-ignoring eject is available
      */
     [[nodiscard]] virtual bool supports_force_eject() const {
+        return false;
+    }
+
+    /**
+     * @brief Whether this backend's COLD lane ops are themselves refused mid-print
+     *
+     * The cold lane ops (Eject / Recover / ForceEject) move no toolhead, so the
+     * shared affordance rule deliberately exempts them from the print gate that
+     * blocks a heated unload — see OpButtonState::unload_is_cold_lane_op. That
+     * exemption is about OUR gate. It says nothing about whether the firmware on
+     * the other end will accept the command.
+     *
+     * AFC does not: `cmd_LANE_UNLOAD` opens with
+     * `if self.function.is_printing(): AFC_error(...); return` on every version
+     * shipped (v1.1.0 AFC.py:1112, v1.2.0 AFC.py:1331). A backend that answers
+     * true here keeps its cold ops greyed while the print gate is closed, so the
+     * button is not offered into a guaranteed refusal.
+     *
+     * Default false: for every other backend the exemption is correct, and the
+     * cold ops stay reachable mid-pause for clearing a snapped strand.
+     *
+     * @return true if a print blocks this backend's cold lane ops too
+     */
+    [[nodiscard]] virtual bool cold_lane_ops_refused_during_print() const {
         return false;
     }
 

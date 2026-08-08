@@ -77,17 +77,6 @@ class PrinterCapabilitiesState {
     void set_purge_line(bool has_purge_line);
 
     /**
-     * @brief Set whether the printer's firmware re-echoes received G-code
-     *
-     * Called when printer type is set. When true, HelixScreen must not append
-     * its "; from helixscreen" provenance comment (e.g. AD5X — the firmware
-     * wraps lines into a quoted RESPOND MSG="..." that Klipper mis-parses).
-     *
-     * @param echoes True if the firmware re-echoes received G-code
-     */
-    void set_firmware_echoes_gcode(bool echoes);
-
-    /**
      * @brief Set webcam availability (async update from Moonraker query)
      *
      * Thread-safe: Uses helix::ui::queue_update() for main-thread execution.
@@ -235,11 +224,6 @@ class PrinterCapabilitiesState {
         return const_cast<lv_subject_t*>(&printer_has_purge_line_);
     }
 
-    /// 1 if the printer's firmware re-echoes received G-code (drop provenance tag)
-    lv_subject_t* get_printer_firmware_echoes_gcode_subject() const {
-        return const_cast<lv_subject_t*>(&printer_firmware_echoes_gcode_);
-    }
-
     /// 1 if printer has firmware retraction (G10/G11)
     lv_subject_t* get_printer_has_firmware_retraction_subject() const {
         return const_cast<lv_subject_t*>(&printer_has_firmware_retraction_);
@@ -359,7 +343,6 @@ class PrinterCapabilitiesState {
     lv_subject_t printer_has_speaker_{};             // speaker for M300
     lv_subject_t printer_has_timelapse_{};           // moonraker-timelapse plugin
     lv_subject_t printer_has_purge_line_{};          // purge/priming capability
-    lv_subject_t printer_firmware_echoes_gcode_{};   // firmware re-echoes received G-code
     lv_subject_t printer_has_firmware_retraction_{}; // firmware retraction (G10/G11)
     lv_subject_t printer_bed_moves_{};               // 0=gantry moves on Z, 1=bed moves on Z
     lv_subject_t printer_has_chamber_sensor_{};      // chamber temperature sensor

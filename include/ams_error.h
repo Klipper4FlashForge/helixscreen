@@ -272,28 +272,46 @@ class AmsErrorHelper {
     /**
      * @brief Create a "print in progress" refusal for toolhead-motion ops.
      *
-     * Load/unload/tool-change move the toolhead and can self-home (G28) inside
-     * firmware macros; running them mid-print collides with the part. Blocked
-     * while PRINTING or PAUSED.
+     * PRINTING is refused for every backend. PAUSED is refused only when the
+     * backend's firmware macro homes itself (AmsBackend::filament_ops_self_home()
+     * — AD5X IFS), because that buried G28 probes a loadcell-Z nozzle into the
+     * part. See AmsSubscriptionBackend::refuse_if_printing().
+     *
+     * @param is_paused        The job is PAUSED rather than PRINTING.
+     * @param pause_allows_ops This backend WOULD permit the op on a paused print,
+     *                         so pausing is a recovery worth naming. Meaningless
+     *                         when @p is_paused (pausing is already the state).
      * @return AmsError configured for UI display
      */
-    static AmsError print_active(bool is_paused = false) {
+    static AmsError print_active(bool is_paused = false, bool pause_allows_ops = false) {
         // A paused print is the case that actually reaches a user: Klipper's
         // runout handler pauses and prints "load it and press RESUME", so the
         // obvious next move is the Load button. Saying "while printing" there
         // reads as a bug, and "finish or cancel the print" is the opposite of
         // what they want. Give the recovery that does work (bundle JX2FVRB9).
+        //
+        // Reaching this branch now means the backend self-homes (AD5X IFS), so
+        // the two recoveries named have to work on THAT machine. Both do: feeding
+        // filament past the toolhead sensor by hand re-triggers head_switch_sensor
+        // so RESUME continues the job, and cancelling returns the printer to
+        // STANDBY where Load/Unload are permitted again.
         if (is_paused) {
             return AmsError(AmsResult::WRONG_STATE,
-                            "Filament operation blocked: print paused mid-job",
+                            "Filament operation blocked: print paused mid-job and this printer's "
+                            "filament macros home the toolhead themselves",
                             "Can't move filament while the print is paused",
                             "Feed filament past the sensor by hand, then press Resume — or cancel "
                             "the print to use Load/Unload");
         }
+        // PRINTING. On a backend that permits filament ops while paused, pausing
+        // is the cheap recovery — naming "finish or cancel" there would push the
+        // user to throw away a print they could have saved.
         return AmsError(AmsResult::WRONG_STATE, "Filament operation blocked: print in progress",
                         "Cannot run filament operation while printing",
-                        "Finish or cancel the print before loading, unloading, or changing "
-                        "filament");
+                        pause_allows_ops
+                            ? "Pause the print first, then load, unload, or change filament"
+                            : "Finish or cancel the print before loading, unloading, or changing "
+                              "filament");
     }
 
     /**

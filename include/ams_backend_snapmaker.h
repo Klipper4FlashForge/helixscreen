@@ -101,6 +101,11 @@ class AmsBackendSnapmaker : public AmsSubscriptionBackend {
     [[nodiscard]] PathTopology get_topology() const override {
         return PathTopology::PARALLEL;
     }
+
+    // needs_unload_before_load() is answered by the base class: every lane here
+    // is PARALLEL, so slot_has_independent_path() is true for all of them and the
+    // serial rule never applies. See AmsBackend for why, including the `T{n}`
+    // load this backend used to dispatch.
     [[nodiscard]] PathSegment get_filament_segment() const override;
     [[nodiscard]] PathSegment get_slot_filament_segment(int slot_index) const override;
     [[nodiscard]] PathSegment infer_error_segment() const override;
