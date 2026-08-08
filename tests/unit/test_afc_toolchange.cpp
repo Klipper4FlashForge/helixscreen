@@ -199,17 +199,25 @@ TEST_CASE("AFC backend parses toolchanger.tool_number from Klipper status (#379)
         REQUIRE(afc.info().current_slot == 0); // lane1 = slot index 0 (fallback)
     }
 
-    SECTION("AFC state current_tool overrides toolchanger when AFC sends explicit value") {
+    SECTION("a current_tool key on the AFC object does NOT override the toolchanger") {
+        // AFC.get_status() has never published a "current_tool" key on any
+        // version (AFC.py v1.2.0:2531-2564 and the v1.1.0 equivalent publish
+        // current_load / current_lane / next_lane / current_state / … and no
+        // tool number). The branch that let this phantom field outrank
+        // Klipper's own toolchanger.tool_number was therefore unreachable, and
+        // honouring it would have let an invented key point the UI at a tool
+        // that is not on the carriage.
+        //
+        // toolchanger.tool_number is the real source, and it stays authoritative.
         nlohmann::json tc_params;
         tc_params["toolchanger"] = {{"tool_number", 1}};
         afc.feed_status_update(tc_params);
         REQUIRE(afc.info().current_tool == 1);
 
-        // AFC firmware sends its own current_tool (authoritative)
         nlohmann::json afc_params;
         afc_params["AFC"] = {{"current_tool", 0}, {"current_state", "Idle"}};
         afc.feed_status_update(afc_params);
-        REQUIRE(afc.info().current_tool == 0);
+        REQUIRE(afc.info().current_tool == 1);
     }
 
     SECTION("toolchanger update with non-object value is ignored") {

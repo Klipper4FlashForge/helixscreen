@@ -158,22 +158,50 @@ AmsError AmsSubscriptionBackend::check_preconditions(bool requires_toolhead_moti
 }
 
 AmsError AmsSubscriptionBackend::refuse_if_printing() const {
-    // Refuse toolhead-motion filament ops while a print is active. Some backends
-    // (AD5X IFS) unload via a firmware macro that self-homes (G28) internally, so
-    // Layer 1's gcode-send guard cannot see the buried _G28 — the collision must be
-    // prevented here, before the op begins. "Active" = PRINTING or PAUSED.
+    // Refuse toolhead-motion filament ops while a print OWNS the toolhead.
+    //
+    // PRINTING is always refused: the nozzle is laying plastic and any filament
+    // move collides with the job.
+    //
+    // PAUSED splits on filament_ops_self_home(). Pause-then-swap is the runout /
+    // colour-change recovery workflow — pause_resume has saved the gcode state,
+    // the job resumes where it left off, and this is exactly what a user does
+    // from Mainsail. Refusing it universally made HelixScreen the only surface
+    // that could not perform the recovery Klipper had just asked for. What still
+    // has to be refused is a backend whose firmware macro homes ITSELF: on the
+    // loadcell-Z AD5X, `_IFS_REMOVE_CURRENT_PRUTOK` runs a buried `_G28` that
+    // probes the nozzle down into the part, tripping ZMOD's ZCONTROL_AUTO into a
+    // Klipper shutdown (bundle XWPBR2DX, commit 329e731e9). Layer 1's gcode-send
+    // guard never sees that `_G28`, so it must be stopped here, before the op.
+    //
+    // Relaxing PAUSED does NOT widen what homing can reach the printer:
+    // helix::api::reject_homing_during_active_print() still refuses every
+    // app-emitted G28 while PRINTING or PAUSED, and ensure_homed_then() only
+    // emits one when toolhead.homed_axes lacks "xyz" — which a paused print,
+    // homed by construction, never does.
+    //
     // api_ can be null in unit tests / cold-boot; when it is, print state is
     // unknown and we do not block (mirrors ensure_homed_then's null-client path).
     if (!api_) {
         return AmsErrorHelper::success();
     }
     const helix::PrintJobState pstate = api_->printer_state().get_print_job_state();
-    if (helix::print_occupies_toolhead(pstate)) {
-        spdlog::warn("{} Refusing filament operation while a print is active (state={})",
-                     backend_log_tag(), static_cast<int>(pstate));
-        return AmsErrorHelper::print_active(pstate == helix::PrintJobState::PAUSED);
+    if (!helix::print_occupies_toolhead(pstate)) {
+        return AmsErrorHelper::success();
     }
-    return AmsErrorHelper::success();
+    const bool is_paused = (pstate == helix::PrintJobState::PAUSED);
+    const bool self_homes = filament_ops_self_home();
+    if (is_paused && !self_homes) {
+        spdlog::info("{} Allowing filament operation on a PAUSED print "
+                     "(backend does not self-home; Layer 1 still blocks any G28)",
+                     backend_log_tag());
+        return AmsErrorHelper::success();
+    }
+    spdlog::warn("{} Refusing filament operation while a print is active (state={}, self_homes={})",
+                 backend_log_tag(), static_cast<int>(pstate), self_homes);
+    // A non-self-homing backend that reaches here is PRINTING, and pausing is a
+    // recovery it can actually offer — say so instead of "finish or cancel".
+    return AmsErrorHelper::print_active(is_paused, /*pause_allows_ops=*/!self_homes);
 }
 
 AmsError AmsSubscriptionBackend::ensure_homed_then(std::string gcode,

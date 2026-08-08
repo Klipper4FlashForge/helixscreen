@@ -208,9 +208,16 @@ FilamentPanel::FilamentPanel(PrinterState& printer_state, MoonrakerAPI* api)
     // The same gating depends on print state: a runout pause arrives while the
     // panel is already open, so without this the buttons keep the pre-pause
     // enablement until some unrelated AMS signal happens to fire.
+    //
+    // print_state_enum, not print_active: PRINTING -> PAUSED is now a gating edge
+    // (a pause UNGATES the buttons on every backend but AD5X) and print_active is
+    // 1 across both, so it never fires on that transition. The lifetime token is
+    // mandatory — PrinterState is a separate singleton whose subjects tests tear
+    // down while this guard is alive (#705).
     print_active_observer_ = observe_int_sync<FilamentPanel>(
-        printer_state_.get_print_active_subject(), this,
-        [](FilamentPanel* self, int) { self->update_filament_op_buttons(); });
+        printer_state_.get_print_state_enum_subject(), this,
+        [](FilamentPanel* self, int) { self->update_filament_op_buttons(); },
+        printer_state_.get_static_print_subjects_lifetime());
 
     // Note: Chamber temperature display is initialized by observer callbacks
     // and refresh_all_displays() on panel activation.
@@ -351,6 +358,9 @@ void FilamentPanel::deinit_subjects() {
     external_spool_observer_.reset();
     ams_loaded_observer_.reset();
     ams_current_slot_observer_.reset();
+    // Watches PrinterState's print_state_enum, a subject tests deinit between
+    // cases — must be released alongside the AmsState guards above.
+    print_active_observer_.reset();
     temp_observers_.clear();
     deinit_subjects_base(subjects_);
 }
@@ -448,6 +458,11 @@ void FilamentPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
         AmsState::instance().get_ams_action_subject(), this, [](FilamentPanel* self, int action) {
             const bool idle = (action == static_cast<int>(AmsAction::IDLE));
             const bool failed = (action == static_cast<int>(AmsAction::ERROR));
+            // AmsSystemInfo::is_busy() is exactly "action is neither IDLE nor
+            // ERROR", so every edge of this subject changes the button gating —
+            // including ops this panel did not start. Re-gate before the guard
+            // bookkeeping below, which only cares about the terminal edges.
+            self->update_filament_op_buttons();
             if ((!idle && !failed) || !self->operation_guard_.is_active()) {
                 return;
             }
@@ -1797,26 +1812,49 @@ void FilamentPanel::update_filament_op_buttons() {
     // Load/Unload executors use, so gating can never diverge from the op.
     int slot = selected_op_slot();
 
-    // A print job owns the toolhead while PRINTING or PAUSED, and
-    // check_preconditions(true) refuses load/unload in both (the macros home).
-    // Gate here too so the button greys out instead of being tapped-then-refused.
-    auto* print_active_subj = printer_state_.get_print_active_subject();
-    const bool print_active = print_active_subj && lv_subject_get_int(print_active_subj) == 1;
+    // Whether a print blocks the op is print_blocks_filament_op(), the mirror of
+    // AmsSubscriptionBackend::refuse_if_printing(). PRINTING always blocks;
+    // PAUSED blocks only on a backend whose filament macro homes itself (AD5X
+    // IFS). Reading the raw print_active subject here would grey the buttons
+    // through every runout pause on every other backend — i.e. exactly when the
+    // user needs them.
+    const auto job_state = static_cast<helix::PrintJobState>(
+        lv_subject_get_int(printer_state_.get_print_state_enum_subject()));
+    const bool print_blocks_op = helix::ui::print_blocks_filament_op(
+        job_state == helix::PrintJobState::PRINTING, job_state == helix::PrintJobState::PAUSED,
+        backend->filament_ops_self_home());
 
-    bool is_loaded = false;
+    // check_preconditions() refuses on a busy AMS *before* it even looks at the
+    // print state, and an op can be started from the AMS panel or by the printer
+    // itself. The panel never read this, so its Load button stayed lit through
+    // every load someone else kicked off. AmsSystemInfo::is_busy() is the same
+    // predicate the backend guard uses.
+    const AmsSystemInfo sys = backend->get_system_info();
+
+    helix::ui::OpButtonState state;
+    state.print_blocks_op = print_blocks_op;
+    state.system_busy = sys.is_busy();
     if (slot >= 0) {
-        is_loaded =
+        state.slot_is_loaded =
             backend->slot_is_actively_loaded(slot) || backend->slot_has_filament_at_toolhead(slot);
+        state.slot_has_filament = helix::ui::slot_presence(backend->get_slot_info(slot));
     }
+    // Unload/Purge act on whatever is at the toolhead for this slot, and the
+    // panel's Unload is always the heated toolhead unload — the cold lane ops
+    // (Eject / Recover) live on the AMS context menu, not here.
+    state.unload_available = state.slot_is_loaded;
+    state.unload_is_cold_lane_op = false;
 
-    // Load disabled when already loaded; Unload/Purge disabled when NOT loaded.
-    // Both additionally disabled while a print owns the toolhead.
-    const auto gating = helix::ui::compute_op_button_gating(is_loaded, print_active);
+    const auto gating = helix::ui::compute_op_button_gating(state);
     lv_subject_set_int(&load_disabled_subject_, gating.load_disabled ? 1 : 0);
     lv_subject_set_int(&unload_disabled_subject_, gating.unload_disabled ? 1 : 0);
-    spdlog::debug("[FilamentPanel] Op buttons: slot={} loaded={} print_active={} "
+    spdlog::debug("[FilamentPanel] Op buttons: slot={} loaded={} has_filament={} busy={} "
+                  "print_blocks={} (state={}, self_homes={}) "
                   "(load_disabled={}, unload_disabled={})",
-                  slot, is_loaded, print_active, gating.load_disabled, gating.unload_disabled);
+                  slot, state.slot_is_loaded,
+                  state.slot_has_filament ? (*state.slot_has_filament ? "yes" : "no") : "unknown",
+                  state.system_busy, print_blocks_op, static_cast<int>(job_state),
+                  backend->filament_ops_self_home(), gating.load_disabled, gating.unload_disabled);
 }
 
 void FilamentPanel::handle_extruder_changed() {
@@ -2298,34 +2336,58 @@ bool FilamentPanel::has_active_spool_material() const {
     return false;
 }
 
-FilamentPanel::PreheatTempResult FilamentPanel::resolve_preheat_temp() const {
-    // Priority 1: External spool
-    auto ext = AmsState::instance().get_external_spool_info();
-    if (ext.has_value()) {
-        auto active = helix::build_active_material(*ext);
-        if (active.material_info.nozzle_min > 0) {
-            return {active.material_info.nozzle_min, active.display_name};
-        }
+int FilamentPanel::preheat_slot_for_op(PreheatOp op) const {
+    switch (op) {
+    case PreheatOp::LOAD:
+    case PreheatOp::UNLOAD:
+        // The slot the operation acts on — the same resolution execute_load() /
+        // execute_unload() use, so the temperature can never belong to a
+        // different lane than the op.
+        return selected_op_slot();
+    case PreheatOp::EXTRUDE:
+    case PreheatOp::RETRACT:
+    case PreheatOp::PURGE: {
+        // Not slot-scoped: these push whatever is already in the melt zone, so
+        // the loaded lane is the authority, not the dropdown selection.
+        AmsBackend* backend = AmsState::instance().get_backend();
+        return backend ? backend->get_current_slot() : -1;
     }
+    default:
+        return -1;
+    }
+}
 
-    // Priority 2: AMS active slot (loaded filament)
+FilamentPanel::PreheatTempResult FilamentPanel::resolve_preheat_temp(int target_slot) const {
+    // Priorities 1 and 2 (target slot, then the external spool as the fallback
+    // for a load with no lane of its own) are shared with
+    // AmsOperationSidebar::get_load_temp_for_slot() via
+    // resolve_load_preheat_material(). This used to consult the external spool
+    // FIRST and unconditionally, then the *loaded* slot rather than the selected
+    // one — so a PETG lane selected while PLA was loaded preheated to PLA, and
+    // any printer with an external spool assigned preheated every load to that
+    // spool. Both were silent and both cause jams.
     AmsBackend* backend = AmsState::instance().get_backend();
-    if (backend) {
-        AmsSystemInfo sys_info = backend->get_system_info();
-        const SlotInfo* active_slot = sys_info.get_active_slot();
-        if (active_slot) {
-            auto active = helix::build_active_material(*active_slot);
-            if (active.material_info.nozzle_min > 0) {
-                return {active.material_info.nozzle_min, active.display_name};
-            }
-        }
+    SlotInfo slot;
+    const SlotInfo* slot_ptr = nullptr;
+    if (backend && target_slot >= 0) {
+        slot = backend->get_slot_info(target_slot);
+        slot_ptr = &slot;
     }
 
-    // Priority 3: Selected material preset
+    auto ext = AmsState::instance().get_external_spool_info();
+    if (auto resolved = helix::ui::resolve_load_preheat_material(
+            target_slot, slot_ptr, ext.has_value() ? &ext.value() : nullptr)) {
+        return {resolved->temp_c, resolved->material_name};
+    }
+
+    // Priority 3: the panel's selected material preset. The sidebar has no
+    // preset UI, so this tail is the panel's alone — it only runs when neither
+    // the target lane nor an external spool names a material, i.e. exactly where
+    // the sidebar would fall back to a blind default.
     if (selected_material_ >= 0 && selected_material_ < PRESET_COUNT) {
         auto mat = filament::find_material(helix::presets::name(selected_material_));
         if (mat) {
-            return {mat->nozzle_min, helix::presets::name(selected_material_)};
+            return {helix::ui::load_preheat_temp(*mat), helix::presets::name(selected_material_)};
         }
     }
 
@@ -2367,7 +2429,7 @@ void FilamentPanel::snapshot_prior_heater_target() {
 }
 
 void FilamentPanel::start_preheat_for_op(PreheatOp op) {
-    auto [target, material_name] = resolve_preheat_temp();
+    auto [target, material_name] = resolve_preheat_temp(preheat_slot_for_op(op));
 
     pending_preheat_op_ = op;
     pending_preheat_target_ = target;

@@ -1800,12 +1800,8 @@ struct QidiHomingGuardFixture : public LVGLTestFixture {
 } // namespace
 
 TEST_CASE_METHOD(QidiHomingGuardFixture,
-                 "QIDI load/unload/change_tool refuse and emit nothing while printing",
+                 "QIDI load/unload/change_tool refuse while PRINTING, proceed while PAUSED",
                  "[ams][qidi_box][homing_guard]") {
-    // The refusal copy differs by state: a PAUSED print is the case a user
-    // actually reaches (Klipper's runout handler pauses and says "load it and
-    // press RESUME"), so it names the recovery that works instead of telling
-    // them to finish or cancel the print. See AmsErrorHelper::print_active().
     auto check_refused = [](AmsError err, const std::vector<std::string>& sent,
                             const std::string& expected_msg) {
         CHECK_FALSE(err.success());
@@ -1820,14 +1816,30 @@ TEST_CASE_METHOD(QidiHomingGuardFixture,
         check_refused(backend->load_filament(2), backend->sent, msg);
         check_refused(backend->unload_filament(1), backend->sent, msg);
         check_refused(backend->change_tool(0), backend->sent, msg);
+        // QIDI does not self-home, so pausing is a recovery it can honour —
+        // the copy says so rather than "finish or cancel the print".
+        CHECK(backend->load_filament(2).suggestion.find("Pause the print") != std::string::npos);
     }
 
-    SECTION("PAUSED blocks all three ops") {
-        const std::string msg = "Can't move filament while the print is paused";
+    SECTION("PAUSED permits all three ops — QIDI does not self-home") {
+        // Pause-then-swap is the runout / colour-change recovery workflow, and
+        // nothing QIDI dispatches homes on its own: the unload is M603, and the
+        // only toolhead move in the load path (CLEAR_NOZZLE) is routed through
+        // ensure_homed_then() precisely BECAUSE the stock macro has no homing
+        // guard of its own. ensure_homed_then() emits G28 only when
+        // toolhead.homed_axes lacks "xyz", which a paused print never does, and
+        // Layer 1 (reject_homing_during_active_print) would refuse it anyway.
+        // Only AmsBackend::filament_ops_self_home() backends (AD5X IFS) still
+        // refuse here — see test_ams_paused_filament_ops.cpp.
         set_print_state(helix::PrintJobState::PAUSED);
-        check_refused(backend->load_filament(2), backend->sent, msg);
-        check_refused(backend->unload_filament(1), backend->sent, msg);
-        check_refused(backend->change_tool(0), backend->sent, msg);
+        REQUIRE(backend->load_filament(2).success());
+        CHECK_FALSE(backend->sent.empty());
+        backend->sent.clear();
+        REQUIRE(backend->unload_filament(1).success());
+        CHECK_FALSE(backend->sent.empty());
+        backend->sent.clear();
+        REQUIRE(backend->change_tool(0).success());
+        CHECK_FALSE(backend->sent.empty());
     }
 }
 

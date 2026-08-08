@@ -22,6 +22,7 @@
 #include <cctype>
 #include <climits>
 #include <cmath>
+#include <cstring>
 #include <optional>
 #include <sstream>
 #include <vector>
@@ -288,6 +289,11 @@ void AmsBackendAfc::on_started() {
     // Attempting and adapting is the only correct detection: a missing namespace
     // just errors, and the probe is silent.
     query_lane_data();
+
+    // AFC indexes toolheads by th_extruder_name, which no get_status() carries.
+    // configfile.settings is the only published source, so fetch it once here;
+    // parse_afc_extruder() falls back to the section name until it lands.
+    query_afc_configfile_topology();
 
     // Note: With the early hardware discovery callback architecture, this backend is
     // created and started BEFORE printer.objects.subscribe is called. The notification
@@ -780,22 +786,35 @@ AmsBackendAfc::toolchange_phase_template(StepOperationType op) const {
     //
     // AFC has exactly one purge (the poop macro, `poop_cmd`) and one wipe
     // (`wipe_cmd`/AFC_BRUSH), so there is no "Purge" distinct from the poop and
-    // no "Clean nozzle" distinct from the brush. The wipe actually runs twice
-    // (before and after the kick); the bar has no notion of a repeated step, so
-    // it collapses to the single trailing brush.
+    // no "Clean nozzle" distinct from the brush.
+    //
+    // The wipe runs TWICE, straddling the kick. Upstream order is
+    // poop -> wipe -> kick -> wipe, unchanged across both releases:
+    // AFC.py do_poop_kick_wipe() v1.2.0:1390-1413, and the same sequence inline
+    // in TOOL_LOAD at v1.1.0:1417-1440. All four macros narrate at the shipped
+    // default `variable_verbose: 1` (config/AFC_Macro_Vars.cfg:17), so the
+    // router sees poop, brush, kick, brush.
+    //
+    // The phases are therefore ordered by FIRST occurrence — poop, brush, kick —
+    // not by the order a naive reading of the macro names suggests. Listing kick
+    // before brush made the published index run 4 -> 6 -> 5 -> 6 on every stock
+    // toolchange: the bar jumped to "Brush nozzle", snapped back to "Kick away",
+    // then forward again. The bar has no notion of a repeated step, so the
+    // trailing wipe re-reports the brush phase; AmsState::set_narration_phase()
+    // latches the high-water index and swallows it.
     switch (op) {
     case StepOperationType::LOAD_SWAP:
         return {
             {"heat", "Heat nozzle", false},       {"cut", "Cut tip", true},
             {"unload", "Unload filament", false}, {"feed", "Feed filament", false},
-            {"poop", "Purge to bucket", true},    {"kick", "Kick away", true},
-            {"brush", "Brush nozzle", true},      {"load", "Load complete", false},
+            {"poop", "Purge to bucket", true},    {"brush", "Brush nozzle", true},
+            {"kick", "Kick away", true},          {"load", "Load complete", false},
         };
     case StepOperationType::LOAD_FRESH:
         return {
             {"heat", "Heat nozzle", false},    {"feed", "Feed filament", false},
-            {"poop", "Purge to bucket", true}, {"kick", "Kick away", true},
-            {"brush", "Brush nozzle", true},   {"load", "Load complete", false},
+            {"poop", "Purge to bucket", true}, {"brush", "Brush nozzle", true},
+            {"kick", "Kick away", true},       {"load", "Load complete", false},
         };
     case StepOperationType::UNLOAD:
         return {
@@ -1077,34 +1096,30 @@ void AmsBackendAfc::handle_status_update(const nlohmann::json& notification) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
-        // Check if AFC provides an explicit filament_loaded field — if so, the
-        // post-scan should not override it (newer AFC versions are authoritative)
-        bool has_explicit_filament_loaded = false;
-        if (params.contains("AFC") && params["AFC"].is_object()) {
-            const auto& afc = params["AFC"];
-            has_explicit_filament_loaded =
-                afc.contains("filament_loaded") && afc["filament_loaded"].is_boolean();
-        }
-        if (!has_explicit_filament_loaded && params.contains("afc") && params["afc"].is_object()) {
-            const auto& afc = params["afc"];
-            has_explicit_filament_loaded =
-                afc.contains("filament_loaded") && afc["filament_loaded"].is_boolean();
-        }
-
         // Track whether parse_afc_state set current_slot from current_load/current_lane.
         // When set, the reconciliation block must not overwrite it (tool changers have
         // ALL lanes loaded, so scanning for first loaded lane picks the wrong one).
         bool current_slot_set_by_afc_state = false;
 
+        // Distinct from the flag above, which is true whichever WAY the AFC object
+        // spoke — a named current_load sets it too. This one means specifically
+        // "AFC said nothing is at the toolhead", and only apply_mount_state()
+        // consults it. Both are per-frame locals on purpose: #1229 was a value
+        // latching and never moving again, and a variable reborn every frame
+        // cannot latch.
+        bool afc_stated_unloaded = false;
+
         // Parse global AFC state if present
         if (params.contains("AFC") && params["AFC"].is_object()) {
-            parse_afc_state(params["AFC"], deferred_error_event, current_slot_set_by_afc_state);
+            parse_afc_state(params["AFC"], deferred_error_event, current_slot_set_by_afc_state,
+                            afc_stated_unloaded);
             state_changed = true;
         }
 
         // Legacy: also check for lowercase "afc" (older AFC versions)
         if (params.contains("afc") && params["afc"].is_object()) {
-            parse_afc_state(params["afc"], deferred_error_event, current_slot_set_by_afc_state);
+            parse_afc_state(params["afc"], deferred_error_event, current_slot_set_by_afc_state,
+                            afc_stated_unloaded);
             state_changed = true;
         }
 
@@ -1133,11 +1148,11 @@ void AmsBackendAfc::handle_status_update(const nlohmann::json& notification) {
             }
         }
 
-        // After processing lane updates, reconcile filament_loaded from slot
-        // statuses. Only needed on AFC versions that lack an explicit
-        // "filament_loaded" field — when present, parse_afc_state() already set
-        // the authoritative value and the post-scan must not override it.
-        if (lanes_updated && slots_.is_initialized() && !has_explicit_filament_loaded) {
+        // After processing lane updates, reconcile filament_loaded from the slot
+        // statuses. Unconditional: no AFC version publishes a filament_loaded
+        // key on the AFC object (AFC.py get_status, v1.1.0 and v1.2.0:2531-2564),
+        // so the per-lane scan is the only authority there has ever been.
+        if (lanes_updated && slots_.is_initialized()) {
             bool any_loaded = false;
             int loaded_slot = -1;
             for (int i = 0; i < slots_.slot_count(); ++i) {
@@ -1293,7 +1308,7 @@ void AmsBackendAfc::handle_status_update(const nlohmann::json& notification) {
         // Single authority for machines that have a carriage. Runs last, so it
         // overrides whatever the individual parsers negotiated among themselves
         // (#1229). No-op on every backend without a toolchanger.
-        apply_mount_state(extruder_set_active_slot);
+        apply_mount_state(extruder_set_active_slot, afc_stated_unloaded);
 
         // Backstop for a frame that never terminates the operation. Runs with
         // mutex_ held; the emit happens below, outside it. A flip to ERROR is
@@ -1572,7 +1587,8 @@ AmsError AmsBackendAfc::dispatch_operation(std::string gcode, AmsAction action) 
 
 void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
                                     std::string& deferred_error_event,
-                                    bool& current_slot_set_by_afc_state) {
+                                    bool& current_slot_set_by_afc_state,
+                                    bool& afc_stated_unloaded) {
     // Stuck-action clock: captured here and compared at the very bottom of this
     // function. See the tail block for why the comparison is frame-scoped.
     const AmsAction action_at_frame_start = system_info_.action;
@@ -1662,54 +1678,39 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
         }
     }
 
-    // Explicit current_tool from firmware overrides derived value
-    if (afc_data.contains("current_tool") && afc_data["current_tool"].is_number_integer()) {
-        system_info_.current_tool = afc_data["current_tool"].get<int>();
-        spdlog::trace("[AMS AFC] Current tool (explicit): {}", system_info_.current_tool);
-    }
-
-    // Parse filament loaded state — try explicit field first, derive from current_load
-    if (afc_data.contains("filament_loaded") && afc_data["filament_loaded"].is_boolean()) {
-        bool explicit_loaded = afc_data["filament_loaded"].get<bool>();
-        system_info_.filament_loaded = explicit_loaded;
-        if (!explicit_loaded && !loaded_lane.empty()) {
-            spdlog::warn("[AMS AFC] Firmware says filament_loaded=false but current_lane='{}' "
-                         "— may indicate in-progress load; UI will not show loaded",
-                         loaded_lane);
-        } else {
-            spdlog::debug("[AMS AFC] Filament loaded={} (explicit)", explicit_loaded);
-        }
-    } else if (!loaded_lane.empty()) {
-        // AFC versions without "filament_loaded" field: best-effort derivation.
-        // current_load/current_lane being set to a lane name is treated as "loaded" —
-        // may briefly show loaded during in-progress operations on some firmware versions,
-        // but is the best signal available.
+    // Filament-loaded state is DERIVED. The AFC object has never published a
+    // "filament_loaded" key, nor a "current_tool" one — AFC.py get_status()
+    // (v1.2.0:2531-2564, and the v1.1.0 equivalent) publishes current_load,
+    // current_lane, next_lane, current_state, current_toolchange,
+    // number_of_toolchanges, spoolman, td1_present, lane_data_enabled,
+    // error_state, bypass_state, quiet_mode, position_saved, units, lanes, maps,
+    // extruders, hubs, buffers, message and led_state. The tool number therefore
+    // only ever comes from the slot→tool mapping resolved above.
+    if (!loaded_lane.empty()) {
+        // current_load/current_lane being set to a lane name is treated as
+        // "loaded" — it may briefly read loaded during an in-progress load,
+        // but it is the best signal the object carries.
         system_info_.filament_loaded = true;
         spdlog::debug("[AMS AFC] Filament loaded=true (derived from current_lane='{}')",
                       loaded_lane);
     } else if ((afc_data.contains("current_load") && afc_data["current_load"].is_null()) ||
                (afc_data.contains("current_lane") && afc_data["current_lane"].is_null())) {
         // current_load/current_lane went null (unloaded) — clear filament state.
-        // Preserve current_tool if explicitly provided (tool changer mid-swap:
-        // current_load goes null while current_tool already reflects new tool).
-        bool has_explicit_tool =
-            afc_data.contains("current_tool") && afc_data["current_tool"].is_number_integer();
         system_info_.filament_loaded = false;
         system_info_.current_slot = -1;
-        if (!has_explicit_tool) {
-            system_info_.current_tool = -1;
-        }
+        system_info_.current_tool = -1;
         current_slot_set_by_afc_state = true;
-        spdlog::debug("[AMS AFC] Filament unloaded (current lane/load=null, "
-                      "preserve_tool={})",
-                      has_explicit_tool);
+        // A mounted tool must not re-elect a slot behind this. The carriage still
+        // decides WHICH tool is current; it does not get to invent filament AFC
+        // just told us is not there.
+        afc_stated_unloaded = true;
+        spdlog::debug("[AMS AFC] Filament unloaded (current lane/load=null)");
     }
 
-    // Parse action/status ("status" is the legacy spelling; "current_state" is
-    // authoritative and applied second so it wins when both are present).
-    if (afc_data.contains("status") && afc_data["status"].is_string()) {
-        apply_state_string(afc_data["status"].get<std::string>(), "status");
-    }
+    // Action comes from current_state, the only state key AFC publishes. (There
+    // was a second branch here reading a "status" key as a legacy spelling; no
+    // AFC version has ever emitted one on the AFC object — "status" exists only
+    // on AFC_lane and AFC_extruder, and those are parsed by their own handlers.)
     if (afc_data.contains("current_state") && afc_data["current_state"].is_string()) {
         apply_state_string(afc_data["current_state"].get<std::string>(), "current_state");
     }
@@ -2392,12 +2393,23 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
         bool tool_loaded = has_tool_loaded && data["tool_loaded"].get<bool>();
         std::string status_str = has_status ? data["status"].get<std::string>() : "";
 
-        // AFC "Loaded" status means hub-loaded, not toolhead-loaded.
-        // Only tool_loaded == true means filament is at the extruder.
-        if (tool_loaded || status_str == "Tooled") {
+        // The lane `status` vocabulary is closed: AFCLaneState in
+        // AFC_lane.py:65-76 (v1.2.0; v1.1.0:55-64 is the same list minus
+        // "Infinite Runout"). Nothing outside it is ever published.
+        //
+        // "Loaded" means loaded to the HUB, not to the toolhead
+        // (AFC_lane.py:1497). The two that mean toolhead are "Tooled"
+        // (AFC_lane.py:1523) and "Tool Loaded", the latter set the moment
+        // filament trips the pre-extruder sensor (AFC.py v1.2.0:1633 and :1764,
+        // v1.1.0:1360). "Tool Loaded" used to fall through to the catch-all and
+        // read as EMPTY unless a cached prep/load sensor happened to rescue it.
+        //
+        // There is no "Ready" lane status in any AFC version. That belongs to
+        // the SEPARATE `filament_status` field, whose vocabulary is
+        // In Tool / Ready / Prep / Not Ready (AFC_functions.py:407-414).
+        if (tool_loaded || status_str == "Tooled" || status_str == "Tool Loaded") {
             slot.status = SlotStatus::LOADED;
-        } else if (status_str == "Loaded" || status_str == "Ready" || sensors.prep ||
-                   sensors.load) {
+        } else if (status_str == "Loaded" || sensors.prep || sensors.load) {
             slot.status = SlotStatus::AVAILABLE;
         } else if (status_str == "None" || status_str.empty()) {
             slot.status = SlotStatus::EMPTY;
@@ -2766,6 +2778,7 @@ void AmsBackendAfc::parse_afc_extruder(const std::string& ext_name, const nlohma
         }
         if (data.contains("is_standalone") && data["is_standalone"].is_boolean()) {
             ts.is_standalone = data["is_standalone"].get<bool>();
+            ts.has_is_standalone = true;
         }
     }
 
@@ -2774,24 +2787,30 @@ void AmsBackendAfc::parse_afc_extruder(const std::string& ext_name, const nlohma
             std::string lane = data["lane_loaded"].get<std::string>();
             int loaded_slot = slots_.index_of(lane);
             if (loaded_slot >= 0) {
-                // Derive tool number from extruder name:
-                // "extruder" = T0, "extruder1" = T1, "extruder2" = T2, etc.
-                int ext_tool = 0;
-                if (ext_name.size() > 8) { // longer than "extruder"
-                    try {
-                        ext_tool = std::stoi(ext_name.substr(8));
-                    } catch (const std::exception& e) {
-                        spdlog::warn("[AMS AFC] Failed to parse tool number from '{}': {}",
-                                     ext_name, e.what());
-                        ext_tool = 0;
-                    }
-                }
+                // Tool number comes from the extruder's th_extruder_name, NOT
+                // from the AFC_extruder SECTION name — AFC itself indexes on
+                // `config.get("extruder_name", <section name>)`
+                // (AFC_extruder.py:222-223, consumed at
+                // AFC_Toolchanger.py:231-232, both v1.2.0). The two coincide on
+                // `[AFC_extruder extruder1]` and diverge on anything else, e.g.
+                // `[AFC_extruder e1]\nextruder_name: extruder1`.
+                //
+                // The old substr(8) read the section name and threw on any name
+                // that was not `extruder<N>`; the catch then mapped EVERY
+                // toolhead to T0, so on such a machine each extruder in turn
+                // claimed to be the active tool. -1 now means "unknown", and an
+                // unknown tool makes no attribution claim at all.
+                const int ext_tool = tool_index_for_extruder_unlocked(ext_name);
 
                 // Only update current_slot if this extruder is the active tool
                 // or no authoritative source has set it yet
-                bool is_active_tool =
-                    (system_info_.current_tool >= 0) && (ext_tool == system_info_.current_tool);
-                if (system_info_.current_slot < 0 || is_active_tool) {
+                bool is_active_tool = (ext_tool >= 0) && (system_info_.current_tool >= 0) &&
+                                      (ext_tool == system_info_.current_tool);
+                if (ext_tool < 0) {
+                    spdlog::trace("[AMS AFC] Extruder {}: lane_loaded={} ignored (tool number "
+                                  "unresolved)",
+                                  ext_name, lane);
+                } else if (system_info_.current_slot < 0 || is_active_tool) {
                     current_lane_name_ = lane;
                     system_info_.current_slot = loaded_slot;
                     spdlog::trace("[AMS AFC] Extruder {} (T{}): lane_loaded={} -> slot {}",
@@ -3195,6 +3214,159 @@ void AmsBackendAfc::query_lane_data() {
         });
 }
 
+// ============================================================================
+// Toolchanger identity
+// ============================================================================
+
+bool AmsBackendAfc::has_toolchanger() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    // Signal 1: the config section that registers AFC_SELECT_TOOL.
+    if (configfile_has_toolchanger_) {
+        return true;
+    }
+    // Signal 2: a published Toolchanger unit. Only reachable when that unit
+    // owns at least one lane (AFC.py v1.2.0:2554), which is why signal 1 exists.
+    return std::any_of(unit_infos_.begin(), unit_infos_.end(), [](const AfcUnitInfo& u) {
+        // `type` is user-overridable (`config.get("type", "Toolchanger")`), so
+        // compare case-insensitively rather than pinning the exact spelling.
+        return to_lower_copy(u.type) == "toolchanger";
+    });
+}
+
+void AmsBackendAfc::query_afc_configfile_topology() {
+    if (!client_) {
+        return;
+    }
+
+    // configfile has no sub-field selector in Moonraker — asking for "settings"
+    // returns the entire resolved config. Accepted once at startup because it is
+    // the only place th_extruder_name and the [AFC_Toolchanger] section are
+    // observable.
+    nlohmann::json params = {{"objects", nlohmann::json::object({{"configfile", {"settings"}}})}};
+
+    auto token = lifetime_.token();
+    client_->send_jsonrpc(
+        "printer.objects.query", params,
+        [this, token](const nlohmann::json& response) {
+            // L081 Mechanism C: the body mutates members under mutex_.
+            token.defer("AmsBackendAfc::query_afc_configfile_topology_success", [this, response]() {
+                if (!response.contains("result") || !response["result"].contains("status") ||
+                    !response["result"]["status"].is_object()) {
+                    return;
+                }
+                const auto& status = response["result"]["status"];
+                if (!status.contains("configfile") || !status["configfile"].is_object() ||
+                    !status["configfile"].contains("settings") ||
+                    !status["configfile"]["settings"].is_object()) {
+                    spdlog::debug("[AMS AFC] configfile.settings absent — AFC_extruder tool "
+                                  "indices stay derived from section names");
+                    return;
+                }
+                const auto& settings = status["configfile"]["settings"];
+
+                // Klipper lowercases both section headers and option keys in
+                // configfile.settings, so `[AFC_extruder T1]` arrives as
+                // "afc_extruder t1". The section suffix is matched
+                // case-insensitively against the names AFC.extruders publishes.
+                static constexpr const char* kExtruderPrefix = "afc_extruder ";
+                static constexpr const char* kToolchangerPrefix = "afc_toolchanger ";
+                std::unordered_map<std::string, std::string> found;
+                bool saw_toolchanger = false;
+                for (auto it = settings.begin(); it != settings.end(); ++it) {
+                    const std::string key = to_lower_copy(it.key());
+                    if (key.rfind(kToolchangerPrefix, 0) == 0) {
+                        saw_toolchanger = true;
+                        continue;
+                    }
+                    if (key.rfind(kExtruderPrefix, 0) != 0 || !it.value().is_object()) {
+                        continue;
+                    }
+                    const auto& section = it.value();
+                    if (!section.contains("extruder_name") ||
+                        !section["extruder_name"].is_string()) {
+                        continue;
+                    }
+                    found[key.substr(std::strlen(kExtruderPrefix))] =
+                        section["extruder_name"].get<std::string>();
+                }
+
+                std::lock_guard<std::mutex> lock(mutex_);
+                extruder_klipper_names_ = std::move(found);
+                // A newly-arrived mapping can resolve a name that already
+                // warned; let it warn again if it still cannot be resolved.
+                extruder_tool_index_warned_.clear();
+                // Latch only on presence. A config we could not read, or one
+                // read before a section was added, must not be taken as proof
+                // that no toolchanger exists.
+                if (saw_toolchanger) {
+                    configfile_has_toolchanger_ = true;
+                }
+                spdlog::debug("[AMS AFC] configfile: {} AFC_extruder -> Klipper extruder names, "
+                              "toolchanger section {}",
+                              extruder_klipper_names_.size(),
+                              saw_toolchanger ? "present" : "absent");
+            });
+        },
+        [](const MoonrakerError& err) {
+            spdlog::debug("[AMS AFC] Failed to query configfile: {} — tool indices stay derived "
+                          "from section names and toolchanger detection falls back to AFC.units",
+                          err.message);
+        });
+}
+
+int AmsBackendAfc::tool_index_for_extruder_unlocked(const std::string& ext_name) const {
+    // Mirrors AFC_Toolchanger.py:231-232 (v1.2.0):
+    //     name = lane.extruder_obj.th_extruder_name
+    //     tool_index = 0 if name == "extruder" else int(name.replace("extruder", ""))
+    auto index_of = [](const std::string& klipper_name) -> int {
+        if (klipper_name == "extruder") {
+            return 0;
+        }
+        const auto pos = klipper_name.find("extruder");
+        if (pos == std::string::npos) {
+            return -1;
+        }
+        std::string rest = klipper_name;
+        rest.erase(pos, std::strlen("extruder"));
+        if (rest.empty() || rest.find_first_not_of("0123456789") != std::string::npos) {
+            return -1;
+        }
+        try {
+            return std::stoi(rest);
+        } catch (const std::exception&) {
+            return -1;
+        }
+    };
+
+    // configfile-sourced th_extruder_name is authoritative — it is what AFC
+    // itself indexes on, and the section name is free to be anything.
+    auto it = extruder_klipper_names_.find(to_lower_copy(ext_name));
+    if (it != extruder_klipper_names_.end()) {
+        const int idx = index_of(it->second);
+        if (idx >= 0) {
+            return idx;
+        }
+    }
+
+    // Fall back to the section name. `[AFC_extruder extruder1]` is what AFC's
+    // own docs show and what every published config uses, and on v1.1.0 (no
+    // extruder_name option at all) it is the ONLY thing that exists.
+    const int derived = index_of(ext_name);
+    if (derived >= 0) {
+        return derived;
+    }
+
+    if (extruder_tool_index_warned_.insert(ext_name).second) {
+        spdlog::warn("[AMS AFC] Cannot determine a tool number for AFC_extruder '{}': the "
+                     "section name carries no extruder index and configfile.settings has no "
+                     "extruder_name for it. Lane attribution for this toolhead is disabled "
+                     "(it is NOT being assumed to be T0). Set `extruder_name: extruder<N>` in "
+                     "the [AFC_extruder {}] section.",
+                     ext_name, ext_name);
+    }
+    return -1;
+}
+
 void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
     // Lane data format:
     // {
@@ -3365,7 +3537,7 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
     }
 }
 
-void AmsBackendAfc::apply_mount_state(bool extruder_set_active_slot) {
+void AmsBackendAfc::apply_mount_state(bool extruder_set_active_slot, bool afc_stated_unloaded) {
     // --- AFC's own carriage signal, preferred where it exists ---
     //
     // Gated on more than one extruder. A Box Turtle has a single extruder and no
@@ -3476,6 +3648,59 @@ void AmsBackendAfc::apply_mount_state(bool extruder_set_active_slot) {
     // per frame, so it cannot pin a stale value the way `current_slot < 0` did.
     if (extruder_set_active_slot) {
         return;
+    }
+
+    // AFC said, this frame, that nothing is at the toolhead. The carriage is still
+    // the authority on WHICH tool is current — mounted_tool and current_tool stand
+    // — but electing its lane here would manufacture filament the firmware just
+    // told us is absent. Same outcome as the "mounted but holding nothing" arm
+    // above, reached by a different route: a tool can be on the carriage with an
+    // empty melt zone, and current_slot = -1 is how that state is expressed
+    // (#1229). Frame-scoped, so the next frame elects normally.
+    //
+    // Deliberately BELOW the on_shuttle arm, which returns before reaching here.
+    // That arm already prefers the mounted extruder's own lane_loaded over the
+    // lane→tool map — several lanes can feed one extruder, so the extruder knows
+    // which is seated and a map cannot; overriding it is the wrong-lane selection
+    // #379 fixed. This check applies the SAME precedence one branch lower, where
+    // on_shuttle is absent and the map is otherwise the only voice.
+    if (afc_stated_unloaded) {
+        // ...unless the MOUNTED extruder names a lane of its own.
+        //
+        // These are not two signals. AFC.current_load is a property, not a stored
+        // field: AFC.py's `current` returns AFC_functions.get_current_lane(), which
+        // is `tools[get_current_extruder()].lane_loaded`. So the aggregate IS the
+        // mounted toolhead's lane_loaded, resolved through Klipper's active
+        // extruder. When the two disagree the specific one wins, because it is the
+        // same fact at a finer resolution — and a disagreement means Klipper's
+        // active extruder and the toolchanger's mounted tool have not converged yet.
+        //
+        // Asking instead whether ANY extruder holds filament answers a different
+        // question, wrongly: parked toolheads routinely grip filament on a
+        // toolchanger (the premise of #1229's own "parked toolheads may well hold
+        // filament" note), so that is true on essentially every real multi-tool
+        // machine. The suppression would never fire in production and only look
+        // fixed in a fixture with no per-extruder data.
+        const AfcExtruderSensors* mounted_sensors = nullptr;
+        for (const auto& entry : extruder_sensors_) {
+            const auto tool_num = helix::tool_number_for_extruder(entry.first);
+            if (tool_num && *tool_num == system_info_.mounted_tool) {
+                mounted_sensors = &entry.second;
+                break;
+            }
+        }
+
+        // No per-extruder evidence at all: nothing contradicts AFC, so believe it.
+        if (mounted_sensors == nullptr || mounted_sensors->lane_loaded.empty()) {
+            if (system_info_.current_slot != -1 || system_info_.filament_loaded) {
+                spdlog::debug("[AMS AFC] AFC reports nothing at the toolhead — mounted T{} elects "
+                              "no slot (was {})",
+                              system_info_.mounted_tool, system_info_.current_slot);
+            }
+            system_info_.current_slot = -1;
+            system_info_.filament_loaded = false;
+            return;
+        }
     }
 
     if (!slots_.is_initialized() || system_info_.mounted_tool < 0) {
@@ -3759,8 +3984,17 @@ AmsError AmsBackendAfc::load_filament(int slot_index) {
         }
     }
 
-    // Toolchanger mode: use AFC_SELECT_TOOL with extruder name
-    if (num_extruders_ > 1) {
+    // Toolchanger mode: use AFC_SELECT_TOOL with extruder name.
+    //
+    // Gated on a toolchanger EXISTING (see has_toolchanger() for the two
+    // signals), not on the extruder count. AFC_SELECT_TOOL is registered by
+    // AfcToolchanger.__init__ and nowhere else (AFC_Toolchanger.py:47-49), a
+    // file that exists only from v1.2.0 and that Klipper only loads for an
+    // `[AFC_Toolchanger <name>]` section. An IDEX or standalone-toolhead machine
+    // has several [AFC_extruder] sections and no toolchanger, so
+    // `num_extruders_ > 1` was true there and the command came back
+    // `// Unknown command:"AFC_SELECT_TOOL"` with the load never happening.
+    if (has_toolchanger()) {
         const auto* entry = slots_.get(slot_index);
         int tool = entry ? entry->info.mapped_tool : slot_index;
         if (tool >= 0 && tool < static_cast<int>(extruders_.size())) {
@@ -3770,7 +4004,12 @@ AmsError AmsBackendAfc::load_filament(int slot_index) {
         }
     }
 
-    // Standard mode: CHANGE_TOOL LANE={name}
+    // Standard mode: CHANGE_TOOL LANE={name}.
+    //
+    // Also the correct fallback for a multi-extruder machine with no toolchanger
+    // unit: CHANGE_TOOL resolves the lane's own extruder object
+    // (cur_lane.extruder_obj) and loads through it, so naming the LANE is
+    // sufficient and needs no per-tool selection verb.
     std::ostringstream cmd;
     cmd << "CHANGE_TOOL LANE=" << lane_name;
 
@@ -3859,11 +4098,16 @@ AmsError AmsBackendAfc::change_tool(int tool_number) {
     }
 
     std::string cmd;
-    if (num_extruders_ > 1 && tool_number < static_cast<int>(extruders_.size())) {
-        // Toolchanger mode: use AFC_SELECT_TOOL with extruder name
+    if (has_toolchanger() && tool_number < static_cast<int>(extruders_.size())) {
+        // Toolchanger mode: use AFC_SELECT_TOOL with extruder name. See
+        // load_filament() for why the gate is the unit type and not the
+        // extruder count (AFC_Toolchanger.py:47-49, v1.2.0 only).
         cmd = "AFC_SELECT_TOOL TOOL=" + extruders_[tool_number].name;
     } else {
-        // Standard mode: use T{n}
+        // Standard mode: use T{n}. Correct for a multi-extruder machine with no
+        // toolchanger too — AFC's TcmdAssign registers a T-command per lane on
+        // every topology, and cmd_CHANGE_TOOL routes it through the lane's own
+        // extruder object.
         cmd = "T" + std::to_string(tool_number);
     }
 
@@ -4194,18 +4438,180 @@ AmsError AmsBackendAfc::eject_lane(int slot_index) {
             return slot_err;
         }
 
-        if (system_info_.filament_loaded && system_info_.current_slot == slot_index) {
-            return AmsError(AmsResult::WRONG_STATE, "Lane is loaded in toolhead",
-                            "Unload from toolhead first", "Use Unload before Eject");
-        }
-
         lane_name = slots_.name_of(slot_index);
         if (lane_name.empty()) {
             return AmsErrorHelper::invalid_slot(slot_index, system_info_.total_slots - 1);
         }
+
+        AmsError refusal = lane_unload_refusal_unlocked(slot_index, lane_name);
+        if (!refusal) {
+            return refusal;
+        }
     }
 
     return enqueue_lane_unload(lane_name);
+}
+
+bool AmsBackendAfc::afc_reports_standalone_unlocked() const {
+    // Callers hold mutex_.
+    for (const auto& [ext_name, ts] : tool_states_) {
+        if (ts.has_is_standalone) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string AmsBackendAfc::extruder_for_lane_unlocked(int slot_index,
+                                                      const std::string& lane_name) const {
+    // Callers hold mutex_.
+    //
+    // AFC_stepper.extruder names the extruder a lane feeds whether or not that
+    // lane is currently seated, which is what the standalone check needs — the
+    // condition it models is precisely "this extruder holds nothing".
+    const helix::printer::SlotEntry* entry = slots_.get(slot_index);
+    if (entry && !entry->info.extruder_name.empty()) {
+        return entry->info.extruder_name;
+    }
+
+    // Fallback for a partial delta that has not carried AFC_stepper.extruder yet.
+    // Only a seated lane can be found this way, which is the case the caller's
+    // toolhead check has already handled — so this mostly returns empty, and an
+    // unknown extruder makes no claim rather than guessing "extruder".
+    for (const auto& [ext_name, sensors] : extruder_sensors_) {
+        if (sensors.lane_loaded == lane_name) {
+            return ext_name;
+        }
+    }
+    return {};
+}
+
+AmsError AmsBackendAfc::lane_unload_refusal_unlocked(int slot_index,
+                                                     const std::string& lane_name) const {
+    // Callers hold mutex_.
+    //
+    // Two upstream shapes are live in the field and they refuse on DIFFERENT
+    // conditions, so each guard below is scoped to the era that actually has it.
+    // v1.1.0 (AFC.py:1123-1157) keys on the global AFC.current and the lane's hub
+    // routing; v1.2.0 (AFC.py:1342-1378, unchanged on main) rewrote the body to
+    // key on the lane's own extruder and its is_standalone flag, dropping hub
+    // routing from the decision entirely. Applying either era's rule to the other
+    // is a defect in both directions — over-refusing an eject upstream would
+    // perform, or letting through one it silently discards.
+
+    // 1. Printing. Identical on every version: cmd_LANE_UNLOAD opens with
+    //    `if self.function.is_printing()` and returns after AFC_error(...,
+    //    pause=False). is_printing() is `print_stats.state == "printing"`
+    //    exactly (AFC_functions.py:308-323) — NOT in_print(), so a PAUSED job is
+    //    genuinely allowed. refuse_if_printing() already resolves to precisely
+    //    that for a backend which does not self-home, so this is the same rule,
+    //    not a second one.
+    if (AmsError printing = refuse_if_printing(); !printing) {
+        return printing;
+    }
+
+    // 2. The body's own if/elif chain. Transcribed per era rather than reduced to
+    //    a set of independent tests, because the ORDER carries meaning: on
+    //    v1.2.0 a standalone extruder that IS holding the lane takes the second
+    //    arm and performs a retract, so the "lane is at the toolhead" reading
+    //    that would refuse it never gets to run.
+    const AmsError loaded_here(AmsResult::WRONG_STATE, "Lane is loaded in toolhead",
+                               "Unload from toolhead first", "Use Unload before Eject");
+
+    // Set when the era's own authority had nothing to say for this lane — no
+    // extruder attribution on v1.2.0, no AFC.current on v1.1.0. Moonraker sends
+    // deltas, so a frame can reach here before the object that carries the
+    // signal has ever arrived. The aggregate fallback below covers that gap.
+    bool authority_silent = false;
+    AmsError era_refusal = AmsErrorHelper::success();
+
+    if (afc_reports_standalone_unlocked()) {
+        // v1.2.0 (AFC.py:1342-1378, unchanged on main):
+        //
+        //   if name != extruder.lane_loaded and not extruder.is_standalone(): ACT
+        //   elif extruder.is_standalone() and extruder.lane_loaded:           ACT
+        //   elif name == extruder.lane_loaded:                                refuse, logs
+        //   (no else)                                                         refuse, SILENT
+        //
+        // Both comparisons are against the lane's OWN extruder, not the global
+        // AFC.current v1.1.0 used — the distinction only matters on a
+        // toolchanger, and there the per-extruder answer is the correct one.
+        const std::string ext_name = extruder_for_lane_unlocked(slot_index, lane_name);
+        auto sensors = extruder_sensors_.find(ext_name);
+        auto ts = tool_states_.find(ext_name);
+
+        if (ext_name.empty() || sensors == extruder_sensors_.end()) {
+            // Nothing attributes this lane to an extruder yet, so neither arm can
+            // be evaluated against a real lane_loaded.
+            authority_silent = true;
+        } else {
+            const std::string& lane_loaded = sensors->second.lane_loaded;
+            const bool standalone = ts != tool_states_.end() && ts->second.is_standalone;
+
+            if (lane_name != lane_loaded && !standalone) {
+                // arm 1: the normal lane eject
+            } else if (standalone && !lane_loaded.empty()) {
+                // arm 2: the standalone retract
+            } else if (lane_name == lane_loaded) {
+                era_refusal = loaded_here; // arm 3: logged refusal
+            } else {
+                // Fell off the end: a standalone extruder holding nothing. AFC
+                // returns having logged NOTHING AT ALL — the only refusal in
+                // either era with no trace in klippy.log, and so the hardest to
+                // diagnose from a user report.
+                era_refusal =
+                    AmsError(AmsResult::WRONG_STATE, "Standalone extruder reports no lane loaded",
+                             "Nothing to eject on this toolhead",
+                             "Load the lane first, or unload from the toolhead");
+            }
+        }
+    } else {
+        // v1.1.0 (AFC.py:1123-1157):
+        //
+        //   if name != AFC.current and hub != 'direct': ACT
+        //   elif name == AFC.current:                   refuse, logs
+        //   elif hub == 'direct':                       refuse, logs
+        //
+        // v1.2.0 dropped hub routing from this decision entirely, which is why
+        // the direct-lane arm is confined to this branch: applying it to a 1.2.0
+        // install would refuse ejects upstream performs happily.
+        //
+        // Exact match on "direct", deliberately NOT the rfind("direct", 0) prefix
+        // used for topology derivation above — upstream compares `== 'direct'`,
+        // and "direct_load" appears nowhere in the AFC source at any version.
+        auto route = lane_hub_routing_.find(lane_name);
+        const bool is_direct = route != lane_hub_routing_.end() && route->second == "direct";
+        authority_silent = toolhead_lane_.empty();
+
+        if (lane_name != toolhead_lane_ && !is_direct) {
+            // the normal lane eject
+        } else if (lane_name == toolhead_lane_) {
+            era_refusal = loaded_here;
+        } else {
+            era_refusal = AmsError(AmsResult::WRONG_STATE, "Direct lane cannot be lane-ejected",
+                                   "Unload from the toolhead instead",
+                                   "This lane feeds the extruder directly — use Unload, not Eject");
+        }
+    }
+
+    if (!era_refusal) {
+        return era_refusal;
+    }
+
+    // 3. Last resort: the aggregate pair, used ONLY where the era's own authority
+    //    said nothing. These are derived signals — parse_afc_state() computes
+    //    filament_loaded from `loaded_lane`, which prefers AFC.current_loading and
+    //    so reads true across an entire toolchange (see toolhead_is_free_unlocked)
+    //    — which is exactly why they must not outrank a per-lane answer. But
+    //    before the AFC_extruder / AFC objects have landed they are the only thing
+    //    that knows a lane is at the head, and refusing with a clear message beats
+    //    firing a LANE_UNLOAD that upstream silently discards.
+    if (authority_silent && system_info_.filament_loaded &&
+        system_info_.current_slot == slot_index) {
+        return loaded_here;
+    }
+
+    return AmsErrorHelper::success();
 }
 
 AmsError AmsBackendAfc::enqueue_lane_unload(const std::string& lane_name) {
@@ -5259,7 +5665,23 @@ AmsError AmsBackendAfc::execute_device_action(const std::string& action_id, cons
         std::lock_guard<std::mutex> lock(mutex_);
         return execute_gcode(afc_led_state_ ? "TURN_OFF_AFC_LED" : "TURN_ON_AFC_LED");
     } else if (action_id == "quiet_mode") {
-        return execute_gcode("AFC_QUIET_MODE");
+        std::lock_guard<std::mutex> lock(mutex_);
+        // ENABLE must be explicit. AFC's cmd_AFC_QUIET_MODE defaults the
+        // parameter to the CURRENT value — `gcmd.get_int("ENABLE",
+        // self._get_quiet_mode(), ...)` (AFC.py v1.2.0:934-953, identical at
+        // v1.1.0:736-756) — so a bare `AFC_QUIET_MODE` sets quiet mode to what
+        // it already was and the button did nothing.
+        //
+        // The `show_macros` wrapper does not supply one either: _create_options
+        // emits `{%set dummy=params.ENABLE|default('0')|int%}` followed by
+        // `_AFC_QUIET_MODE {rawparams}` (AFC_functions.py:637-644), and the
+        // `dummy` assignment is discarded — only rawparams reaches the real
+        // command, and rawparams is empty for a bare call.
+        //
+        // Same shape as led_toggle above: we hold the state, so we send the
+        // value we want rather than asking for a toggle AFC has no verb for.
+        return execute_gcode(afc_quiet_mode_ ? "AFC_QUIET_MODE ENABLE=0"
+                                             : "AFC_QUIET_MODE ENABLE=1");
     } else if (action_id.rfind("led_extruder_T", 0) == 0) {
         // Per-extruder toolhead LED toggle: led_extruder_T0, led_extruder_T1, etc.
         try {

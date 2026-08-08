@@ -5,6 +5,7 @@
 
 #include "ui_temperature_utils.h"
 
+#include "ams_tool_map_sync.h"
 #include "filament_catalog.h"
 #include "filament_slot_override.h"
 #include "filament_slot_override_store.h"
@@ -817,8 +818,13 @@ AmsSystemInfo AmsBackendCfs::parse_stock_box_status(const nlohmann::json& box_js
                 slot.remaining_length_m = 0.0f;
             }
 
-            // CFS slots map 1:1 to tools (slot 0 = tool 0, etc.)
-            slot.mapped_tool = slot.global_index;
+            // mapped_tool is deliberately NOT written here. box.map, parsed
+            // above into info.tool_to_slot_map, is the box's own statement of
+            // the mapping, and the single sync_tool_map_from_forward() pass at
+            // the end of this function derives every slot's mapped_tool from
+            // it. Stamping the identity here as well is what made a
+            // BOX_MODIFY_TN remap show the right op-button lane and the wrong
+            // lane badge — two writers, one of them ignoring firmware.
 
             unit.slots.push_back(std::move(slot));
         }
@@ -829,16 +835,40 @@ AmsSystemInfo AmsBackendCfs::parse_stock_box_status(const nlohmann::json& box_js
         if (fil_letter.size() == 1 && fil_letter[0] >= 'A' && fil_letter[0] <= 'D') {
             int active_local = fil_letter[0] - 'A';
             info.current_slot = (n - 1) * 4 + active_local;
-            // CFS slots map 1:1 to tools (slot.mapped_tool = slot.global_index above);
-            // current_tool must mirror current_slot so the print-status color dot
-            // labels the correct tool index.
-            info.current_tool = info.current_slot;
-            spdlog::debug("[AMS CFS] Active filament: {} (slot {}, tool {})", fil_letter,
-                          info.current_slot, info.current_tool);
+            spdlog::debug("[AMS CFS] Active filament: {} (slot {})", fil_letter, info.current_slot);
         }
 
         info.units.push_back(std::move(unit));
         info.total_slots += 4;
+    }
+
+    // Publish both directions from the one source the box actually states —
+    // box.map. identity_fallback=true keeps the historical 1:1 default for
+    // every tool the payload leaves unmapped (and for the common case of no
+    // `map` key at all), so a box that has never been remapped parses exactly
+    // as it always did.
+    sync_tool_map_from_forward(info, /*identity_fallback=*/true);
+
+    // current_tool must name the tool that ROUTES THROUGH the seated lane, not
+    // the lane index: with T0 remapped onto lane 2 the print-status color dot
+    // has to read T0. Derived from the same pass above, so it cannot disagree
+    // with the badge.
+    //
+    // A seated lane that no tool maps to (possible from a PARTIAL box.map,
+    // where identity_fallback deliberately refuses to hand a claimed lane back)
+    // falls back to the lane index — the pre-remap answer — rather than
+    // publishing -1. -1 is a legitimate value of this field, but only in
+    // combination with "nothing loaded", and no consumer renders the
+    // seated-yet-toolless pair usefully: ams_current_tool.xml hides the whole
+    // indicator on `< 0`, taking the still-valid filament colour swatch with
+    // it, and ToolState::set_ams_topology() clamps a negative active_tool to 0,
+    // which lights T0 in the tool switcher and the nozzle label while a
+    // different lane is physically seated. A stale-but-plausible tool number
+    // beats both of those.
+    if (info.current_slot >= 0) {
+        const auto* seated = info.get_slot_global(info.current_slot);
+        const int seated_tool = seated ? seated->mapped_tool : -1;
+        info.current_tool = seated_tool >= 0 ? seated_tool : info.current_slot;
     }
 
     return info;
@@ -997,8 +1027,10 @@ AmsSystemInfo AmsBackendCfs::parse_flat_box_status(const nlohmann::json& box_jso
                              "using position; check for sparse or reordered slots",
                              reported, slot.slot_index);
             }
-            // CFS slots map 1:1 to tools, as in the stock parse.
-            slot.mapped_tool = slot.global_index;
+            // mapped_tool comes from the sync pass at the end of this function,
+            // as in the stock parse — one writer for both directions. The flat
+            // schema states no map of its own, so that pass hands every lane
+            // the 1:1 default this line used to write.
 
             // The literal string "None" means ABSENT on every one of these
             // fields, and it is not a chosen value: the module builds each
@@ -1050,6 +1082,12 @@ AmsSystemInfo AmsBackendCfs::parse_flat_box_status(const nlohmann::json& box_jso
     }
 
     info.units.push_back(std::move(unit));
+
+    // Same single-writer pass as the stock parse. The flat payload carries no
+    // `map`, so tool_to_slot_map is empty here and identity_fallback supplies
+    // the 1:1 default in BOTH directions rather than in one of them.
+    sync_tool_map_from_forward(info, /*identity_fallback=*/true);
+
     return info;
 }
 
@@ -1875,10 +1913,33 @@ AmsError AmsBackendCfs::set_tool_mapping(int tool_number, int slot_index) {
     // immediately for UI/restore-snapshot reads. The next box-status websocket
     // update will re-confirm (or correct, if Klipper rejected the BOX_MODIFY_TN
     // for some reason) — firmware remains the source of truth.
+    //
+    // Both directions move together (assign_tool_slot), because the AMS panel's
+    // lane badge reads mapped_tool while the filament panel's op buttons read
+    // tool_to_slot_map. Writing the forward entry alone left the badge on the
+    // lane the tool was moved AWAY from until the next box frame — and on K1,
+    // where BOX_MODIFY_TN is known to no-op, no such frame ever arrives.
+    //
+    // Only lanes the current parse actually knows about can be recorded: a
+    // forward entry naming a lane with no SlotInfo has no reverse counterpart
+    // to pair with, and resolve_op_button_slot() would hand the filament panel
+    // a slot index that get_slot_global() answers with nullptr. The command is
+    // still dispatched — firmware is the authority, the box may have a unit we
+    // have not parsed a frame for yet, and that frame is what will make the
+    // mapping real in both directions.
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (tool_number < static_cast<int>(system_info_.tool_to_slot_map.size())) {
-            system_info_.tool_to_slot_map[tool_number] = slot_index;
+        const int known_slots = system_info_.total_slots;
+        if (slot_index < known_slots) {
+            assign_tool_slot(system_info_, tool_number, slot_index);
+        } else if (known_slots > 0) {
+            spdlog::warn("[AMS CFS] Remap targets slot {} but only {} lanes are connected; "
+                         "sending the command, not recording it locally — the next box frame "
+                         "decides",
+                         slot_index, known_slots);
+        } else {
+            spdlog::debug("[AMS CFS] Remap issued before the first box frame; local map "
+                          "stays empty until one arrives");
         }
     }
 

@@ -4,6 +4,7 @@
 #include "ams_backend_toolchanger.h"
 
 #include "ams_error.h"
+#include "ams_tool_map_sync.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
 
@@ -110,7 +111,12 @@ bool AmsBackendToolChanger::can_unload_from_toolhead(int slot_index) const {
     if (slot_index < 0 || slot_index >= system_info_.total_slots) {
         return false;
     }
-    return system_info_.current_tool >= 0 && slot_index == system_info_.current_tool;
+    // Against current_SLOT, not current_tool. On this backend the two are
+    // deliberately not interchangeable: ASSIGN_TOOL moves a G-code tool number
+    // onto a different physical tool, and klipper-toolchanger reports the
+    // ASSIGNED number in toolchanger.tool_number. Comparing a slot index to it
+    // offered Unload on the wrong toolhead whenever a remap was in effect.
+    return system_info_.current_slot >= 0 && slot_index == system_info_.current_slot;
 }
 
 // ============================================================================
@@ -238,10 +244,25 @@ void AmsBackendToolChanger::parse_toolchanger_state(const nlohmann::json& tc_dat
     if (tc_data.contains("tool_number") && tc_data["tool_number"].is_number_integer()) {
         int tool_num = tc_data["tool_number"].get<int>();
         system_info_.current_tool = tool_num;
-        system_info_.current_slot = tool_num; // For tool changers, slot == tool
+        // toolchanger.tool_number is the ASSIGNED G-code number of the carriage
+        // tool, which ASSIGN_TOOL can move onto any physical tool — it is only
+        // the slot index while the mapping is identity. Resolve it through the
+        // forward map so the carriage lane is right under a remap too; an
+        // unmapped number falls back to itself, the pre-remap answer.
+        int seated_slot = -1;
+        if (tool_num >= 0) {
+            seated_slot = tool_num < static_cast<int>(system_info_.tool_to_slot_map.size())
+                              ? system_info_.tool_to_slot_map[static_cast<size_t>(tool_num)]
+                              : -1;
+            if (seated_slot < 0) {
+                seated_slot = tool_num;
+            }
+        }
+        system_info_.current_slot = seated_slot;
         system_info_.filament_loaded = (tool_num >= 0);
         refresh_slot_statuses_locked();
-        spdlog::trace("[AMS ToolChanger] Current tool: {}", tool_num);
+        spdlog::trace("[AMS ToolChanger] Current tool: T{} (physical slot {})", tool_num,
+                      seated_slot);
     }
 
     // Parse tool list: toolchanger.tool_numbers and toolchanger.tool_names
@@ -298,7 +319,12 @@ void AmsBackendToolChanger::refresh_slot_statuses_locked() {
     // the stamp is a straight two-way split on the carriage tool.
     auto& slots = system_info_.units[0].slots;
     for (int i = 0; i < static_cast<int>(slots.size()); ++i) {
-        slots[i].status = (system_info_.current_tool >= 0 && i == system_info_.current_tool)
+        // current_slot, not current_tool — `i` indexes physical toolheads, and
+        // under an ASSIGN_TOOL remap the carriage tool's G-code number is not
+        // its slot index (see the tool_number parse). The old comparison
+        // stamped LOADED on the lane that merely shares an index with the
+        // number.
+        slots[i].status = (system_info_.current_slot >= 0 && i == system_info_.current_slot)
                               ? SlotStatus::LOADED
                               : SlotStatus::AVAILABLE;
     }
@@ -342,7 +368,6 @@ void AmsBackendToolChanger::initialize_tools() {
         slot.slot_index = i;
         slot.global_index = i;
         slot.status = SlotStatus::AVAILABLE; // Tools start as available (docked)
-        slot.mapped_tool = i;                // Tool i maps to slot i
         slot.color_rgb = AMS_DEFAULT_SLOT_COLOR;
         slot.spool_name = tool_names_[i]; // Use tool name as placeholder
 
@@ -353,12 +378,14 @@ void AmsBackendToolChanger::initialize_tools() {
     system_info_.units.push_back(unit);
     system_info_.total_slots = tool_count;
 
-    // Initialize tool-to-slot mapping (1:1 for tool changers)
+    // Initialize tool-to-slot mapping (1:1 for tool changers) in BOTH
+    // directions from one pass: the slot loop above deliberately leaves
+    // mapped_tool alone so this is the only writer. ASSIGN_TOOL can move a
+    // G-code tool number onto a different physical tool later; when it does,
+    // the badge (mapped_tool) and the op-button lane (tool_to_slot_map) have to
+    // move together or they name different toolheads.
     system_info_.tool_to_slot_map.clear();
-    system_info_.tool_to_slot_map.reserve(tool_count);
-    for (int i = 0; i < tool_count; ++i) {
-        system_info_.tool_to_slot_map.push_back(i);
-    }
+    helix::printer::sync_tool_map_from_forward(system_info_, /*identity_fallback=*/true);
 
     // A toolchanger frame may already have named the carriage tool before the
     // tool list arrived; re-derive so the fresh slots match it.
@@ -641,8 +668,12 @@ AmsError AmsBackendToolChanger::set_slot_info(int slot_index, const SlotInfo& in
             if (info.mapped_tool != old_mapped_tool && info.mapped_tool >= 0 &&
                 info.mapped_tool < static_cast<int>(system_info_.tool_to_slot_map.size()) &&
                 slot_index < static_cast<int>(tool_names_.size())) {
-                slot.mapped_tool = info.mapped_tool;
-                system_info_.tool_to_slot_map[info.mapped_tool] = slot_index;
+                // One pass for both directions, and it EVICTS: the tool being
+                // moved leaves its old lane unmapped, and whatever tool this
+                // lane previously answered to gives it up. Writing the two
+                // fields by hand left both stale halves in place, so a swap
+                // ended with two lanes claiming one tool number.
+                helix::printer::assign_tool_slot(system_info_, info.mapped_tool, slot_index);
                 physical_tool_name = tool_names_[slot_index];
             }
         }
@@ -682,10 +713,12 @@ AmsError AmsBackendToolChanger::set_tool_mapping(int tool_number, int slot_index
         // The physical tool to assign (slot_index maps to tool_names_[slot_index])
         physical_tool_name = tool_names_[slot_index];
 
-        // Update internal mapping
-        if (tool_number < static_cast<int>(system_info_.tool_to_slot_map.size())) {
-            system_info_.tool_to_slot_map[tool_number] = slot_index;
-        }
+        // Update internal mapping — both directions, with eviction. The AMS
+        // panel badges a lane from SlotInfo::mapped_tool while the filament
+        // panel's op buttons resolve their lane through tool_to_slot_map;
+        // writing only the forward entry here left the badge on the lane the
+        // tool had just been moved away from.
+        helix::printer::assign_tool_slot(system_info_, tool_number, slot_index);
     }
 
     // Send ASSIGN_TOOL: assign physical tool to respond to T<tool_number> commands
@@ -722,6 +755,15 @@ AmsError AmsBackendToolChanger::reset_tool_mappings() {
                 remaps_needed.emplace_back(i, tool_names_[i]);
                 system_info_.tool_to_slot_map[i] = i;
             }
+        }
+        // Re-derive every slot's mapped_tool from the identity map just
+        // written. The loop above touches only the forward direction, so
+        // without this the lane badges kept showing the remap the user just
+        // reset — the panel and the op buttons disagreeing again, one frame
+        // after we told the user the reset succeeded.
+        if (!remaps_needed.empty()) {
+            helix::printer::sync_tool_map_from_forward(system_info_,
+                                                       /*identity_fallback=*/true);
         }
     }
 

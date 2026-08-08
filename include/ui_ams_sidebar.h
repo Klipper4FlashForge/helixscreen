@@ -11,6 +11,7 @@
 #include "ams_types.h"
 #include "async_lifetime_guard.h"
 #include "filament_op_dispatch.h"
+#include "filament_op_slot_resolver.h"
 
 #include <map>
 #include <memory>
@@ -287,6 +288,25 @@ class AmsOperationSidebar {
     void send_standard_filament_macro(bool is_load,
                                       const std::map<std::string, std::string>& params);
     void send_filament_fallback_gcode(bool is_load);
+
+    // ---- Unload button gating (filament_op_slot_resolver.h) -----------------
+    // Recompute the sidebar Unload button's enabled state from the SAME
+    // compute_op_button_gating() rule the filament panel and the AMS context
+    // menu use, and publish it on ams_sidebar_unload_disabled.
+    //
+    // The sidebar had no print-state term at all, so its Unload stayed tappable
+    // through a print or a runout pause, dispatched, and ate the backend's
+    // "Cannot run filament operation while printing" refusal.
+    void refresh_unload_gating();
+
+    // Live inputs for refresh_unload_gating(), also consulted by handle_unload()
+    // so the dispatch cannot run when the button should have been greyed.
+    [[nodiscard]] helix::ui::OpButtonState read_unload_gating_state() const;
+
+    // Observers feeding refresh_unload_gating(). ams_action / current_slot are
+    // already watched above; these two are the terms the sidebar never had.
+    ObserverGuard filament_loaded_observer_;
+    ObserverGuard print_state_observer_;
 
     // Action handlers
     void handle_unload();

@@ -68,12 +68,13 @@ TEST_CASE_METHOD(LVGLTestFixture, "Narration router advances toolchange_step on 
 
     GcodeNarrationRouter router(nullptr, nullptr);
     // "Clean Nozzle" is AFC_BRUSH's verbose=1 wording, so the matcher returns
-    // "brush"; "brush" is index 6 in the LOAD_SWAP template
-    // (heat,cut,unload,feed,poop,kick,brush,load).
+    // "brush"; "brush" is index 5 in the LOAD_SWAP template
+    // (heat,cut,unload,feed,poop,brush,kick,load — the wipe runs before the
+    // kick as well as after it, so it is ordered by first occurrence).
     GcodeNarrationRouterTestAccess::feed(router, "// AFC_Brush: Clean Nozzle");
     helix::ui::UpdateQueue::instance().drain();
 
-    REQUIRE(lv_subject_get_int(AmsState::instance().get_toolchange_step_subject()) == 6);
+    REQUIRE(lv_subject_get_int(AmsState::instance().get_toolchange_step_subject()) == 5);
 }
 
 TEST_CASE_METHOD(LVGLTestFixture, "Narration router ignores unrecognized // lines",

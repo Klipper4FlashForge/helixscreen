@@ -564,6 +564,49 @@ class AmsBackend {
     // ========================================================================
 
     /**
+     * @brief Does this backend's load/unload/tool-change macro home the toolhead
+     *        by itself, inside firmware, where HelixScreen cannot see the G28?
+     *
+     * Decides whether a toolhead-motion filament op is refused during a PAUSED
+     * print (see AmsSubscriptionBackend::refuse_if_printing). PRINTING is refused
+     * for every backend regardless of this answer.
+     *
+     * Pausing to swap filament is the runout / colour-change recovery workflow,
+     * not an edge case: Klipper's runout handler pauses and tells the user to
+     * load filament and press RESUME, and `pause_resume` saves the gcode state so
+     * the job resumes from where it left off. Mainsail offers unload on a paused
+     * print and it works. AFC goes further — its own `is_printing()` is
+     * `print_stats.state == "printing"` (paused is NOT printing, so AFC's
+     * firmware guards permit the op), and AFC_PAUSE Z-hops the nozzle clear of
+     * the part before handing off to the user's PAUSE macro
+     * (AFC-Klipper-Add-On `extras/AFC_error.py` cmd_AFC_PAUSE).
+     *
+     * What is NOT safe is a firmware macro that buries its own home. On
+     * loadcell-Z printers a G28 probes the nozzle DOWN into the bed; issued while
+     * a job owns the toolhead that is a collision, and on AD5X/ZMOD it trips
+     * ZCONTROL_AUTO into a Klipper shutdown needing a firmware restart to recover
+     * (bundle XWPBR2DX, commit 329e731e9).
+     *
+     * HelixScreen's OWN homing is already handled without this flag, in two
+     * layers that both remain in force:
+     *   - Layer 1: helix::api::reject_homing_during_active_print() refuses any
+     *     app-emitted G28 while PRINTING or PAUSED, in MoonrakerAPI::execute_gcode
+     *     and MoonrakerMotionAPI::execute_gcode.
+     *   - AmsSubscriptionBackend::ensure_homed_then() only emits G28 when
+     *     toolhead.homed_axes lacks "xyz" — and a paused print is homed by
+     *     construction, so it emits nothing.
+     * This flag therefore covers exactly one thing: homes Layer 1 cannot see.
+     *
+     * Default: false. Override true ONLY with positive evidence that the specific
+     * firmware macro this backend dispatches homes on its own; "not sure" must
+     * stay false, because a permanent false refusal is its own broken workflow
+     * (bundle JX2FVRB9).
+     */
+    [[nodiscard]] virtual bool filament_ops_self_home() const {
+        return false;
+    }
+
+    /**
      * @brief Whether the UI should redirect to the AMS panel for slot selection
      *        before loading filament.
      *
@@ -895,6 +938,30 @@ class AmsBackend {
      * @return true if a cold, sensor-ignoring eject is available
      */
     [[nodiscard]] virtual bool supports_force_eject() const {
+        return false;
+    }
+
+    /**
+     * @brief Whether this backend's COLD lane ops are themselves refused mid-print
+     *
+     * The cold lane ops (Eject / Recover / ForceEject) move no toolhead, so the
+     * shared affordance rule deliberately exempts them from the print gate that
+     * blocks a heated unload — see OpButtonState::unload_is_cold_lane_op. That
+     * exemption is about OUR gate. It says nothing about whether the firmware on
+     * the other end will accept the command.
+     *
+     * AFC does not: `cmd_LANE_UNLOAD` opens with
+     * `if self.function.is_printing(): AFC_error(...); return` on every version
+     * shipped (v1.1.0 AFC.py:1112, v1.2.0 AFC.py:1331). A backend that answers
+     * true here keeps its cold ops greyed while the print gate is closed, so the
+     * button is not offered into a guaranteed refusal.
+     *
+     * Default false: for every other backend the exemption is correct, and the
+     * cold ops stay reachable mid-pause for clearing a snapped strand.
+     *
+     * @return true if a print blocks this backend's cold lane ops too
+     */
+    [[nodiscard]] virtual bool cold_lane_ops_refused_during_print() const {
         return false;
     }
 
