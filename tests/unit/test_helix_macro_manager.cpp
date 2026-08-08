@@ -244,14 +244,15 @@ TEST_CASE("MacroManager - filename constant is valid", "[config][constants]") {
 // reached the upload step: an implementation that returned early, or never
 // touched the API, leaves it unfired.
 //
-// Deliberately not asserting err.type. Today it is VALIDATION_ERROR, because
-// upload_macro_file() passes path="" (upload straight to the config root) and
-// MoonrakerFileTransferAPI::upload_file_with_name() runs reject_invalid_path()
-// first - and is_safe_path("") is false. So the upload is refused before the
-// "HTTP base URL not configured" check is even reached, and before any request
-// is built. That looks like a real bug in the production path rather than a
-// test artifact (see the report accompanying this change); pinning the type
-// here would freeze it in place. err.method is the stable part.
+// err.type is what separates "reached the upload and could not reach a server"
+// from "was refused before a request was ever built". upload_macro_file() passes
+// path="" meaning "upload straight to the config root", and
+// upload_file_with_name() used to run reject_invalid_path() on that path -
+// is_safe_path("") is false, so every install/update on a real printer died with
+// VALIDATION_ERROR before the URL check. The fix scopes that guard to non-empty
+// paths (the directory component is optional) and validates the filename
+// instead. CONNECTION_LOST here is the assertion that the upload got past
+// validation and failed only for want of a configured server.
 
 TEST_CASE_METHOD(MacroManagerTestFixture, "MacroManager - install reaches the upload step",
                  "[config][install]") {
@@ -266,6 +267,8 @@ TEST_CASE_METHOD(MacroManagerTestFixture, "MacroManager - install reaches the up
     REQUIRE_FALSE(success_called); // nothing can have succeeded without a server
     REQUIRE(error.has_value());
     CHECK(error->method == "upload_file"); // it got as far as the upload
+    // Not VALIDATION_ERROR: the empty config-root path must not be refused.
+    CHECK(error->type == MoonrakerErrorType::CONNECTION_LOST);
     CHECK_FALSE(error->message.empty());
 }
 
@@ -282,5 +285,52 @@ TEST_CASE_METHOD(MacroManagerTestFixture, "MacroManager - update reaches the upl
     REQUIRE_FALSE(success_called);
     REQUIRE(error.has_value());
     CHECK(error->method == "upload_file");
+    CHECK(error->type == MoonrakerErrorType::CONNECTION_LOST);
     CHECK_FALSE(error->message.empty());
+}
+
+// Direct coverage of the validation contract that the two tests above depend on,
+// so a regression is attributable to upload_file_with_name() rather than to
+// MacroManager. The fixture's MoonrakerAPI has no HTTP base URL configured, so
+// anything that clears validation stops at CONNECTION_LOST - which is exactly
+// how we tell "accepted" from "refused" without a server.
+TEST_CASE_METHOD(MacroManagerTestFixture,
+                 "upload_file_with_name - empty path means the root of the root",
+                 "[config][install][upload][validation]") {
+    std::optional<MoonrakerError> error;
+
+    api_.transfers().upload_file_with_name("config", "", "helix_macros.cfg", "content", nullptr,
+                                           [&](const MoonrakerError& err) { error = err; });
+
+    REQUIRE(error.has_value());
+    CHECK(error->method == "upload_file");
+    CHECK(error->type == MoonrakerErrorType::CONNECTION_LOST);
+}
+
+TEST_CASE_METHOD(MacroManagerTestFixture,
+                 "upload_file_with_name - rejects an empty or traversing filename",
+                 "[config][install][upload][validation]") {
+    SECTION("empty filename is refused even though an empty path is allowed") {
+        std::optional<MoonrakerError> error;
+        api_.transfers().upload_file_with_name("config", "", "", "content", nullptr,
+                                               [&](const MoonrakerError& err) { error = err; });
+        REQUIRE(error.has_value());
+        CHECK(error->type == MoonrakerErrorType::VALIDATION_ERROR);
+    }
+
+    SECTION("filename is used verbatim in the form, so traversal must be refused") {
+        std::optional<MoonrakerError> error;
+        api_.transfers().upload_file_with_name("config", "", "../../etc/passwd", "content", nullptr,
+                                               [&](const MoonrakerError& err) { error = err; });
+        REQUIRE(error.has_value());
+        CHECK(error->type == MoonrakerErrorType::VALIDATION_ERROR);
+    }
+
+    SECTION("a traversing directory path is still refused") {
+        std::optional<MoonrakerError> error;
+        api_.transfers().upload_file_with_name("config", "../../etc", "passwd", "content", nullptr,
+                                               [&](const MoonrakerError& err) { error = err; });
+        REQUIRE(error.has_value());
+        CHECK(error->type == MoonrakerErrorType::VALIDATION_ERROR);
+    }
 }
