@@ -9,29 +9,12 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
-#include <array>
 
 namespace helix {
 
 namespace {
 constexpr int GRID_TRACK_SCAN_MAX = 256;
 } // namespace
-
-// Grid dimensions per breakpoint: {cols, rows}
-// MICRO (≤272px height):  6x4 (same as TINY/SMALL/MEDIUM — cells are smaller)
-// TINY (273-390px):       6x4
-// SMALL (391-460px):      6x4
-// MEDIUM (461-550px):     6x4
-// LARGE (551-700px):      8x5
-// XLARGE (>700px):        8x5
-static constexpr std::array<GridDimensions, GridLayout::NUM_BREAKPOINTS> GRID_DIMS = {{
-    {6, 4}, // MICRO (same grid as TINY/SMALL/MEDIUM)
-    {6, 4}, // TINY
-    {6, 4}, // SMALL
-    {6, 4}, // MEDIUM
-    {8, 5}, // LARGE
-    {8, 5}, // XLARGE
-}};
 
 static int clamp_bp(UiBreakpoint bp) {
     int32_t v = to_int(bp);
@@ -47,45 +30,17 @@ static int clamp_bp(UiBreakpoint bp) {
 // ---------------------------------------------------------------------------
 
 GridDimensions GridLayout::get_dimensions(UiBreakpoint bp) {
-    auto base = GRID_DIMS[static_cast<size_t>(clamp_bp(bp))];
-
+    const int track = GRID_CELL[static_cast<size_t>(clamp_bp(bp))];
     auto& lm = LayoutManager::instance();
-    switch (lm.type()) {
-    case LayoutType::ULTRAWIDE: {
-        // Columns only. Rows stay on the breakpoint table, which on a 480px-tall
-        // panel works out to the 120px row that TARGET_CELL_H_PX encodes.
-        int w = lm.width();
-        if (w > 0) {
-            base.cols = std::clamp(w / TARGET_CELL_W_PX, MIN_DYNAMIC_COLS, MAX_DYNAMIC_COLS);
-        }
-        break;
-    }
-    case LayoutType::PORTRAIT:
-    case LayoutType::TINY_PORTRAIT:
-    case LayoutType::MICRO_PORTRAIT: {
-        // Both axes, not just rows. Leaving cols at the breakpoint default gave
-        // a 320px-wide panel the landscape count of 6, i.e. 53px cells — so a
-        // widget authored 3-of-6 for landscape rendered at half the screen and
-        // the rest of the row stayed empty.
-        //
-        // Each axis uses its own target: width against TARGET_CELL_W_PX, height
-        // against TARGET_CELL_H_PX. Driving both from the 160px width target
-        // rationed the axis with room to spare (#1215).
-        int h = lm.height();
-        if (h > 0) {
-            base.rows = std::clamp(h / TARGET_CELL_H_PX, MIN_DYNAMIC_ROWS, MAX_DYNAMIC_ROWS);
-        }
-        int w = lm.width();
-        if (w > 0) {
-            base.cols = std::clamp(w / TARGET_CELL_W_PX, MIN_PORTRAIT_COLS, MAX_DYNAMIC_COLS);
-        }
-        break;
-    }
-    default:
-        break;
-    }
-
-    return base;
+    // Floored to a whole number of cells: a track is half a cell, so an odd
+    // track count leaves a final half-cell that no whole-cell widget can ever
+    // occupy. Dropping it also spreads less leftover across the remaining
+    // tracks, which is what keeps the cell square.
+    auto tracks = [track](int extent) {
+        const int n = std::clamp(extent / track, MIN_TRACKS, MAX_TRACKS);
+        return n - (n % GridLayout::TRACKS_PER_CELL);
+    };
+    return {tracks(lm.width()), tracks(lm.height())};
 }
 
 int GridLayout::get_cols(UiBreakpoint bp) {

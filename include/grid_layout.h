@@ -87,46 +87,25 @@ class GridLayout {
     /// layout — are expressed in cells. The grid lays out tracks. Every site
     /// that converts between the two reads this, so a widget that is not
     /// allowed to occupy half a cell can never be placed straddling one.
-    static constexpr int TRACKS_PER_CELL = 1;
+    static constexpr int TRACKS_PER_CELL = 2;
 
-    /// Target cell WIDTH in pixels. ULTRAWIDE and PORTRAIT divide screen width
-    /// by this to derive a column count.
-    static constexpr int TARGET_CELL_W_PX = 160;
-
-    /// Target cell HEIGHT in pixels. PORTRAIT divides screen height by this to
-    /// derive a row count.
+    /// Target track edge in px, per breakpoint tier, indexed by UiBreakpoint.
     ///
-    /// 120, not 160: ultrawide has always kept the fixed 4-row table on a 480px
-    /// panel, i.e. a 120px row, so 120 is the row height the dashboard is
-    /// actually authored against. Portrait used to reuse the 160px WIDTH target
-    /// for both axes, which made its rows 164px tall — the tall screen got
-    /// fewer, chunkier cells than the wide one (#1215). A 320x1480 panel now
-    /// yields 12 rows instead of 9.
-    static constexpr int TARGET_CELL_H_PX = 120;
+    /// A track is half a cell, so a widget's authored colspan and rowspan are
+    /// the same physical unit and it is authored once for every panel and
+    /// orientation. Dividing each screen axis by the same number is what makes
+    /// the cell square: a rotated panel transposes its grid exactly.
+    static constexpr int GRID_CELL[NUM_BREAKPOINTS] = {34, 40, 40, 60, 60, 72};
 
-    /// Clamp range for dynamically computed grid dimensions
-    static constexpr int MIN_DYNAMIC_COLS = 4;
-    static constexpr int MAX_DYNAMIC_COLS = 16;
-    static constexpr int MIN_DYNAMIC_ROWS = 3;
+    /// Degenerate-display guard. No shipping panel reaches it — the narrowest
+    /// is 272px against a 34px track, which gives 8.
+    static constexpr int MIN_TRACKS = 4;
 
-    /// Row cap for dynamically computed grids.
-    ///
-    /// 16 mirrors MAX_DYNAMIC_COLS and covers the tallest panels in the wild at
-    /// the 120px row target: 320x1480 lands on 12, and a 480x1920 ultratall
-    /// lands exactly on 16. Past that a taller screen gets taller cells rather
-    /// than more tracks — every extra row is a real LVGL grid track that costs
-    /// descriptor memory and a layout pass whether or not a widget occupies it,
-    /// and a 17th row on a 2-column grid buys cells no widget is authored for.
-    static constexpr int MAX_DYNAMIC_ROWS = 16;
-
-    /// Column floor for portrait, below the landscape floor of 4.
-    ///
-    /// A portrait panel is narrow by definition: 320px against MIN_DYNAMIC_COLS
-    /// would give 80px cells, half of TARGET_CELL_W_PX, and every widget that
-    /// branches on `colspan >= 2` would read as compact no matter how much of
-    /// the screen it actually covers. Two columns keeps cells at their intended
-    /// size and lets a full-width widget genuinely be full width.
-    static constexpr int MIN_PORTRAIT_COLS = 2;
+    /// Ceiling on track count. 1024x600 wants 17 columns and 1920x440 wants 48,
+    /// so any lower cap stretches the track and breaks the square-cell
+    /// invariant. The cost is descriptor entries, not objects: a 48x11 grid is
+    /// 59 int32 values (cols+1 plus rows+1) in the LVGL grid descriptor.
+    static constexpr int MAX_TRACKS = 64;
 
     /// Get grid dimensions for a given breakpoint
     static GridDimensions get_dimensions(UiBreakpoint bp);
