@@ -2,11 +2,15 @@
 
 #include "tool_switcher_widget.h"
 
+#include "ui_error_reporting.h"
 #include "ui_event_safety.h"
 #include "ui_modal.h"
 #include "ui_utils.h"
 
+#include "ams_error.h"
+#include "ams_state.h"
 #include "app_globals.h"
+#include "filament_op_slot_resolver.h"
 #include "observer_factory.h"
 #include "panel_widget_registry.h"
 #include "printer_state.h"
@@ -75,6 +79,19 @@ void ToolSwitcherWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
             }
         });
 
+    // Re-grey on every print-state transition. PanelWidget instances are
+    // RECYCLED across home-panel rebuilds, so registering here (rather than
+    // only reacting to on_size_changed) is what keeps a reused instance from
+    // carrying the previous screen's gating. print_state_enum is a static
+    // global subject — no SubjectLifetime needed.
+    print_state_observer_ = helix::ui::observe_int_sync<ToolSwitcherWidget>(
+        printer_state_.get_print_state_enum_subject(), this,
+        [token](ToolSwitcherWidget* self, int /*state*/) {
+            if (token.expired())
+                return;
+            self->refresh_print_gating();
+        });
+
     // Initial build deferred to on_size_changed() which fires after
     // the widget is fully attached to the screen tree.
     // Building here can crash (disp==NULL) if XML tree isn't mounted yet.
@@ -85,7 +102,9 @@ void ToolSwitcherWidget::detach() {
     dismiss_tool_picker();
     active_tool_observer_.reset();
     tool_count_observer_.reset();
+    print_state_observer_.reset();
     pill_buttons_.clear();
+    compact_label_ = nullptr;
     if (s_active_instance == this) {
         s_active_instance = nullptr;
     }
@@ -123,6 +142,7 @@ void ToolSwitcherWidget::rebuild_pills() {
     }
 
     pill_buttons_.clear();
+    compact_label_ = nullptr;
     helix::ui::safe_clean_children(container);
 
     // Neutralize any grid layout left active by a previous rebuild before we
@@ -260,6 +280,10 @@ void ToolSwitcherWidget::rebuild_pills() {
         lv_obj_scroll_to_view(pill_buttons_[active], LV_ANIM_OFF);
     }
 
+    // Freshly created pills carry no state — apply the print gate to them here
+    // as well as from the observer, or a rebuild silently re-enables them.
+    refresh_print_gating();
+
     spdlog::debug("[ToolSwitcher] Built {} pill buttons, active={}, layout={} ({}x{})",
                   tools.size(), active, use_grid ? "grid" : "flex", rows, cols);
 }
@@ -323,7 +347,7 @@ void ToolSwitcherWidget::rebuild_compact() {
     std::string tool_name =
         (active >= 0 && active < static_cast<int>(tools.size())) ? tools[active].name : "T?";
     lv_label_set_text(label, tool_name.c_str());
-    lv_obj_set_style_text_color(label, theme_manager_get_color("text"), 0);
+    compact_label_ = label;
     const lv_font_t* body_font = theme_manager_get_font("font_body");
     if (body_font)
         lv_obj_set_style_text_font(label, body_font, 0);
@@ -344,6 +368,10 @@ void ToolSwitcherWidget::rebuild_compact() {
         },
         LV_EVENT_CLICKED, nullptr);
 
+    // Sets the label colour (muted while a print blocks the change, normal
+    // otherwise). Must run on every rebuild, not just on a state change.
+    refresh_print_gating();
+
     spdlog::debug("[ToolSwitcher] Built compact mode, active=T{}", active);
 }
 
@@ -353,6 +381,15 @@ void ToolSwitcherWidget::rebuild_compact() {
 
 void ToolSwitcherWidget::show_tool_picker() {
     if (picker_backdrop_ || !parent_screen_) {
+        return;
+    }
+
+    // Compact mode's only affordance is this picker, so refuse before opening a
+    // list in which every entry is a guaranteed-failure dead end.
+    const AmsError refusal = tool_change_refusal();
+    if (!refusal.success()) {
+        spdlog::info("[ToolSwitcher] Picker refused: {}", refusal.technical_msg);
+        NOTIFY_WARNING("{}", refusal.user_msg);
         return;
     }
 
@@ -526,6 +563,71 @@ void ToolSwitcherWidget::dismiss_tool_picker() {
 // Tool selection with safety gate
 // ============================================================================
 
+AmsError ToolSwitcherWidget::tool_change_refusal() const {
+    const auto job_state = static_cast<PrintJobState>(
+        lv_subject_get_int(printer_state_.get_print_state_enum_subject()));
+    const bool printing = job_state == PrintJobState::PRINTING;
+    const bool paused = job_state == PrintJobState::PAUSED;
+
+    // No backend means a plain Tn / macro path with no firmware macro that could
+    // hide a home — the documented argument for passing false here.
+    AmsBackend* backend = AmsState::instance().get_backend();
+    const bool self_homes = backend && backend->filament_ops_self_home();
+
+    if (!helix::ui::print_blocks_filament_op(printing, paused, self_homes)) {
+        return AmsErrorHelper::success();
+    }
+    // Same copy the backend would have produced had the request reached it, so
+    // the pre-guard and the backend refusal never say two different things.
+    return AmsErrorHelper::print_active(paused, /*pause_allows_ops=*/!self_homes);
+}
+
+void ToolSwitcherWidget::refresh_print_gating() {
+    const bool blocked = !tool_change_refusal().success();
+
+    for (lv_obj_t* pill : pill_buttons_) {
+        if (!pill)
+            continue;
+        if (blocked) {
+            lv_obj_add_state(pill, LV_STATE_DISABLED);
+        } else {
+            lv_obj_remove_state(pill, LV_STATE_DISABLED);
+        }
+    }
+
+    if (compact_label_) {
+        lv_obj_set_style_text_color(compact_label_,
+                                    theme_manager_get_color(blocked ? "text_muted" : "text"), 0);
+    }
+}
+
+void ToolSwitcherWidget::dispatch_tool_change(int tool_index) {
+    spdlog::info("[ToolSwitcher] Requesting tool change to T{}", tool_index);
+
+    // A null api is NOT a reason to skip the call: the AMS backend performs the
+    // change without one, and request_tool_change() reports "No API connection"
+    // through on_error when there is no backend either. The previous
+    // `if (api)` guard turned that case into silence too.
+    ToolState::instance().request_tool_change(
+        tool_index, get_moonraker_api(),
+        /*on_success=*/nullptr, [](const std::string& error) {
+            NOTIFY_ERROR(lv_tr("Tool change failed: {}"), error);
+            // The pills and the compact label are rebuilt from ToolState's
+            // active-tool subject, so a refused change never moved the
+            // highlight in the first place. Resync anyway: a backend that got
+            // partway before failing leaves the subject as the only truth, and
+            // this costs one rebuild on an error path.
+            helix::ui::async_call(
+                [](void*) {
+                    if (s_active_instance) {
+                        s_active_instance->on_active_tool_changed(
+                            ToolState::instance().active_tool_index());
+                    }
+                },
+                nullptr);
+        });
+}
+
 void ToolSwitcherWidget::handle_tool_selected(int tool_index) {
     auto& tool_state = ToolState::instance();
 
@@ -535,24 +637,38 @@ void ToolSwitcherWidget::handle_tool_selected(int tool_index) {
         return;
     }
 
-    // Check if printing — warn before tool change
-    auto job_state = static_cast<PrintJobState>(
-        lv_subject_get_int(printer_state_.get_print_state_enum_subject()));
+    // The buttons are greyed by refresh_print_gating(), but a tap can still land
+    // in the window between a print starting and the observer firing — and the
+    // backend refuses PRINTING unconditionally, so offering the change behind a
+    // confirmation modal was offering a dead end. Refuse here with copy the user
+    // can act on, exactly as AmsOperationSidebar::handle_unload() does.
+    const AmsError refusal = tool_change_refusal();
+    if (!refusal.success()) {
+        spdlog::info("[ToolSwitcher] Tool change to T{} refused: {}", tool_index,
+                     refusal.technical_msg);
+        NOTIFY_WARNING("{}", refusal.user_msg);
+        return;
+    }
 
-    if (job_state == PrintJobState::PRINTING || job_state == PrintJobState::PAUSED) {
-        spdlog::info("[ToolSwitcher] Print active, showing confirmation for T{}", tool_index);
+    // Reaching here while PAUSED means the backend permits filament ops on a
+    // paused job (everything except AD5X IFS) — pause-then-swap is the runout
+    // and colour-change recovery workflow, so the change is offered, with a
+    // confirmation because it moves the toolhead into a part still on the bed.
+    const auto job_state = static_cast<PrintJobState>(
+        lv_subject_get_int(printer_state_.get_print_state_enum_subject()));
+    if (job_state == PrintJobState::PAUSED) {
+        spdlog::info("[ToolSwitcher] Print paused, showing confirmation for T{}", tool_index);
 
         helix::ui::modal_show_confirmation(
-            "Tool Change During Print", "Changing tools while printing may cause issues. Continue?",
-            ::ModalSeverity::Warning, "Change Tool",
+            lv_tr("Change Tool While Paused"),
+            lv_tr("The print is paused. Changing tools now moves the toolhead and swaps the "
+                  "filament at the nozzle. Resume the print once the change finishes."),
+            ::ModalSeverity::Warning, lv_tr("Change Tool"),
             // on_confirm
             [](lv_event_t* e) {
                 LVGL_SAFE_EVENT_CB_BEGIN("[ToolSwitcher] confirm_tool_change");
                 int idx = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(e)));
-                auto* api = get_moonraker_api();
-                if (api) {
-                    ToolState::instance().request_tool_change(idx, api);
-                }
+                dispatch_tool_change(idx);
                 LVGL_SAFE_EVENT_CB_END();
             },
             // on_cancel (nullptr = just dismiss)
@@ -562,12 +678,7 @@ void ToolSwitcherWidget::handle_tool_selected(int tool_index) {
         return;
     }
 
-    // Not printing — change directly
-    auto* api = get_moonraker_api();
-    if (api) {
-        tool_state.request_tool_change(tool_index, api);
-        spdlog::info("[ToolSwitcher] Requesting tool change to T{}", tool_index);
-    }
+    dispatch_tool_change(tool_index);
 }
 
 // ============================================================================
