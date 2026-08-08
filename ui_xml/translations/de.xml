@@ -974,6 +974,7 @@
   <translation tag="Hide Firmware Noise" de="Firmware-Rauschen ausblenden"/>
   <translation tag="Hide Temperature Reports" de="Temperaturberichte ausblenden"/>
   <translation tag="High Water Mark" de="Höchststand"/>
+  <translation tag="Hold anywhere to cancel"/>
   <translation tag="Holding nozzle at {}°C to purge previous filament." de="Düse wird bei {}°C gehalten, um vorheriges Filament auszuspülen."/>
   <translation tag="Home" de="Home"/>
   <translation tag="Home failed" de="Referenzfahrt fehlgeschlagen"/>

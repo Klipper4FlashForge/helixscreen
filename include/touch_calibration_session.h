@@ -28,6 +28,17 @@ struct ICalibrationSink {
 
     /// Re-enable the affine transform using the device's stored calibration.
     virtual void enable_affine() = 0;
+
+    /// Discard the device's stored calibration, leaving it uncalibrated.
+    ///
+    /// Distinct from disable_affine(), which only suppresses the stored matrix:
+    /// this drops it, so a later enable_affine() cannot bring it back. Needed
+    /// because a session that began on an uncalibrated device still has
+    /// something to undo — VERIFY installs the candidate matrix on the device so
+    /// the user can test it, and apply_calibration() rejects the invalid
+    /// "no calibration" value, so there is no way to put the original state back
+    /// by applying it.
+    virtual void clear_calibration() = 0;
 };
 
 /// Shared backup/disable/restore bookkeeping for an interactive touch

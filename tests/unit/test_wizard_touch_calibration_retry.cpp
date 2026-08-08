@@ -62,6 +62,10 @@ struct FakeSink : ICalibrationSink {
         ops.push_back("apply");
         return true;
     }
+    void clear_calibration() override {
+        stored = TouchCalibration{};
+        ops.push_back("clear");
+    }
     void disable_affine() override {
         affine_enabled = false;
         ops.push_back("disable");
@@ -76,8 +80,7 @@ struct FakeSink : ICalibrationSink {
 
 // The LVGLUITestFixture stands up LVGL + the wizard container subjects
 // (wizard_subtitle / wizard_show_skip) that handle_retry_clicked() writes to.
-TEST_CASE_METHOD(LVGLUITestFixture,
-                 "Wizard retry reverts the affine before re-capture (#943)",
+TEST_CASE_METHOD(LVGLUITestFixture, "Wizard retry reverts the affine before re-capture (#943)",
                  "[wizard][touch][calibration][retry][943]") {
     WizardTouchCalibrationStep step;
     step.init_subjects(); // registers the step's own current_step_/calibration_valid_

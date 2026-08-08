@@ -1112,6 +1112,7 @@ translations:
   Hide Firmware Noise: Ocultar Ruido del Firmware
   Hide Temperature Reports: Ocultar Reportes de Temperatura
   High Water Mark: Marca de máximo histórico
+  Hold anywhere to cancel: ''
   Holding nozzle at {}°C to purge previous filament.: Manteniendo la boquilla a {}°C
     para purgar el filamento anterior.
   Home: Inicio

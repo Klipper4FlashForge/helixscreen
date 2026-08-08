@@ -6055,7 +6055,11 @@ TEST_CASE("AFC parse: absent fields are retained (deltas, not snapshots)", "[ams
     // A weight-only delta must not disturb identity.
     helper.feed_afc_stepper("lane1", {{"weight", 500.0}});
 
-    const auto* slot = helper.get_system_info().get_slot_global(0);
+    // get_system_info() returns by value; hold the snapshot in a named local.
+    // Binding the pointer to the temporary let it die at the end of the
+    // statement, so every check below read freed memory (ASAN: heap-use-after-free).
+    const AmsSystemInfo info = helper.get_system_info();
+    const auto* slot = info.get_slot_global(0);
     REQUIRE(slot->spoolman_id == 86);
     REQUIRE(slot->material == "ASA");
     REQUIRE(slot->color_rgb == 0xE53935);
