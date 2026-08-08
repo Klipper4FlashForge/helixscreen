@@ -91,7 +91,6 @@ translations:
   ACTIONS: 操作
   ADXL: ADXL
   AFC: AFC
-  AFC Version Warning: AFC版本警告
   AFC failure reset complete: AFC故障重置完成
   AFC failure reset failed: AFC故障重置失败
   AFC recovery complete: AFC恢复完成
@@ -99,8 +98,6 @@ translations:
   AFC reset complete: AFC重置完成
   AFC reset failed: AFC重置失败
   AFC retracts filament from the toolhead at end of print: AFC 在打印结束时将耗材从工具头退出
-  AFC version {} may have compatibility issues. Please upgrade to v1.0.35 or later.: AFC
-    版本 {} 可能存在兼容性问题。请升级到 v1.0.35 或更高版本。
   ALL DEVICES: 所有设备
   AMS: AMS
   'AMS Active: ': 'AMS 已激活: '
@@ -153,6 +150,7 @@ translations:
   Allow display to sleep during active prints: 打印时允许屏幕休眠
   Allwinner: Allwinner
   Already connecting — wait a moment and try again: 正在连接中 — 请稍候再试
+  Always Show Bypass Spool: 始终显示旁路料盘
   Always show Android navigation bar instead of using gestures: 始终显示 Android 导航栏而不使用手势
   Ambient Transfer: 环境传热
   AmsIdentify: 识别 AMS
@@ -317,10 +315,12 @@ translations:
   Calibration & Tools: 校准与工具
   Calibration Complete!: 校准完成！
   Calibration Failed: 校准失败
+  Calibration cancelled.: 校准已取消。
   Calibration complete: 校准完成
   Calibration complete!: 校准完成！
   Calibration complete! Press 'Next' to continue.: 校准完成！按“下一步”继续。
   Calibration failed - touch targets more precisely.: 校准失败 – 请更精确地触摸目标。
+  Calibration kept timing out. Your previous settings were kept.: 校准反复超时，已保留您之前的设置。
   Calibration may still be running — response timed out: 校准可能仍在运行 — 响应超时
   Calibration move may still be running — response timed out: 校准移动可能仍在运行 — 响应超时
   Calibration saved but cannot apply on SDL display: 校准已保存，但无法在 SDL 显示上应用
@@ -348,6 +348,7 @@ translations:
   'Cannot start print: internal error': '无法开始打印: 内部错误'
   'Cannot start print: not connected to printer': '无法开始打印: 未连接打印机'
   'Cannot start print: printer is {}': '无法开始打印: 打印机状态为 {}'
+  Cannot unload while a print is active: 打印时无法卸载
   'Capabilities: ': '功能: '
   Cartographer scan calibrate sent — use Z-Offset panel to adjust: Cartographer扫描校准已发送
     — 使用Z偏移面板进行调整
@@ -517,6 +518,7 @@ translations:
   Could not load printer database: 无法加载打印机数据库
   Could not parse tips database: 无法解析提示数据库
   Could not reach Spoolman at: 无法连接 Spoolman：
+  Could not read the screw adjustments from the printer: 无法从打印机读取螺丝调整数据
   Could not resolve printer RFCOMM channel: 无法解析打印机 RFCOMM 通道
   Could not save filament: 无法保存耗材
   Could not start Bluetooth discovery: 无法启动蓝牙发现
@@ -996,7 +998,7 @@ translations:
   Hide Firmware Noise: 隐藏固件噪声
   Hide Temperature Reports: 隐藏温度报告
   High Water Mark: 峰值标记
-  Hold anywhere to cancel: ''
+  Hold anywhere to cancel: 长按任意位置取消
   Holding nozzle at {}°C to purge previous filament.: 将喷嘴保持在 {}°C 以清洗之前的耗材。
   Home: 归位
   Home failed: 归位失败
@@ -1101,6 +1103,7 @@ translations:
   Keep Navigation Bar: 保留导航栏
   Keep Printing: 继续打印
   Keep Required: 保持必需
+  Keep the bypass spool visible when bypass is off: 旁路关闭时保持料盘可见
   Kinematics: 运动学
   Klipper: Klipper
   Klipper Error: Klipper 错误
@@ -1509,6 +1512,7 @@ translations:
   Path Similarity: 路径相似度
   Pause: 暂停
   Pause macro not configured: 暂停宏未配置
+  Pause the print first, then load, unload, or change filament: 请先暂停打印，然后再加载、卸载或更换耗材
   Paused: 已暂停
   Paused (attention needed): 已暂停（需要处理）
   Pausing...: 暂停中...
@@ -2148,6 +2152,7 @@ translations:
   Thanks! Anonymous usage data helps improve HelixScreen.: 感谢！匿名使用数据有助于改进 HelixScreen。
   Thanks! TOTALLY anonymous usage data helps improve HelixScreen.: 感谢！完全匿名的使用数据有助于改进
     HelixScreen。
+  That tool is already loaded: 该工具已加载耗材
   ? The HelixPrint plugin enables fast G-code modifications directly on your printer—like
     skipping bed mesh for quick reprints.
   : HelixPrint 插件可在打印机上直接进行快速 G-code 修改——例如跳过热床网格以快速重新打印。
@@ -2182,6 +2187,7 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: 此校准使用纸张摩擦法设置
     Z 偏移。
   This cannot be undone.: 此操作无法撤销。
+  This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: 此设备没有有线网络连接。关闭 WiFi 后，只能在此界面重新开启。
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
   : 此设备仅有 {} MB 内存。共振校准会占用大量内存，可能导致打印机固件报告 \"Timer Too Close\" 错误或在测试中途重启。仍要继续吗？
   ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
@@ -2190,7 +2196,6 @@ translations:
   This file was sliced for {} but {} is loaded.: 此文件为 {} 切片，但当前加载的是 {}。
   This is exactly the data that will be sent: 这正是将要发送的数据
   This is what data would be sent if enabled: 这是启用后将发送的数据
-  'This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?': 这看起来与关联的 Spoolman 料盘中的耗材不同。是否更新 Spoolman 料盘以匹配？
   This may take up to 30 seconds: 这可能需要 30 秒
   ? This plugin lets HelixScreen control print start options like bed mesh and QGL.
     Once installed, use Configure PRINT_START below to enable optional steps.
@@ -2261,6 +2266,7 @@ translations:
   Touch Jitter Filter: 触摸抖动过滤
   Touch anywhere to test calibration: 触摸任意位置测试校准
   Touch anywhere to verify accuracy: 触摸任意位置验证精度
+  Touch input did not track the new calibration. Your previous settings were kept.: 触摸输入未能跟随新的校准，已保留您之前的设置。
   Touch screen to wake from sleep: 触摸屏幕唤醒
   Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: 触摸目标（第 %1$d
     个点，共 3 个）\xe2\x80\x94 触摸 %2$d / %3$d
@@ -2273,6 +2279,7 @@ translations:
   Tuning tower enabled - start a print to test: 调优塔已启用 - 开始打印以测试
   Turbo: 极速
   Turn Off: 关闭
+  Turn Off WiFi?: 关闭 WiFi？
   Turn On: 开启
   Turn on LEDs when printer starts: 打印机启动时开启 LED
   Turn the extruder heater off after a load or unload finishes: 加载或卸载完成后关闭挤出机加热器
@@ -2327,7 +2334,6 @@ translations:
   Update Channel: 更新通道
   Update Failed: 更新失败
   Update Success: 更新成功
-  Update anyway: 仍要更新
   Update installed!: 更新已安装！
   Update your security PIN: 更新您的安全 PIN
   Updates aren't available on this installation.: 此安装版本无法使用更新。
@@ -2377,6 +2383,7 @@ translations:
   WLED Preset: WLED 预设
   WPA/WPA2: 'WPA/WPA2'
   WPA3: 'WPA3'
+  Wait for the current filament operation to finish: 请等待当前耗材操作完成
   Waiting for Moonraker...: 正在等待 Moonraker...
   Waiting for bed to reach temperature for accurate calibration.: 等待热床达到温度以进行精确校准。
   Warm Bed: 预热热床
@@ -2409,6 +2416,7 @@ translations:
   WiFi and Ethernet configuration: WiFi 和以太网配置
   WiFi control unavailable: WiFi 控制不可用
   WiFi hardware unavailable: WiFi 硬件不可用
+  WiFi radio did not change state: WiFi 状态未改变
   WiFi unavailable: WiFi 不可用
   WiFi was configured but hardware is not available. Check system configuration.: 已配置
     WiFi 但硬件不可用。请检查系统配置。
