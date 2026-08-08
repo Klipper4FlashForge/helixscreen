@@ -3,12 +3,13 @@
 #include "print_stats_widget.h"
 
 #include "ui_event_safety.h"
+#include "ui_filename_utils.h"
 
 #include "app_globals.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 #include "static_subject_registry.h"
 #include "subject_debug_registry.h"
-#include "ui_filename_utils.h"
 
 #include <spdlog/spdlog.h>
 
@@ -18,8 +19,7 @@
 
 // Subjects owned by PrintStatsWidget module
 static lv_subject_t s_size_mode;
-static lv_subject_t s_show_title; // 0=hidden (compact modes), 1=visible
-static lv_subject_t s_view_mode;  // 0=lifetime, 1=weekly
+static lv_subject_t s_view_mode; // 0=lifetime, 1=weekly
 static lv_subject_t s_title;
 static lv_subject_t s_total_prints;
 static lv_subject_t s_total_time;
@@ -43,7 +43,6 @@ static void print_stats_init_subjects() {
         return;
 
     lv_subject_init_int(&s_size_mode, 2);
-    lv_subject_init_int(&s_show_title, 1);
     lv_subject_init_int(&s_view_mode, 0);
     lv_subject_init_string(&s_title, s_title_buf, nullptr, sizeof(s_title_buf),
                            lv_tr("Lifetime Print Stats"));
@@ -59,7 +58,6 @@ static void print_stats_init_subjects() {
     lv_subject_init_string(&s_last_print, s_last_print_buf, nullptr, sizeof(s_last_print_buf), "");
 
     lv_xml_register_subject(nullptr, "print_stats_size_mode", &s_size_mode);
-    lv_xml_register_subject(nullptr, "print_stats_show_title", &s_show_title);
     lv_xml_register_subject(nullptr, "print_stats_view_mode", &s_view_mode);
     lv_xml_register_subject(nullptr, "print_stats_title", &s_title);
     lv_xml_register_subject(nullptr, "print_stats_total_prints", &s_total_prints);
@@ -70,8 +68,6 @@ static void print_stats_init_subjects() {
     lv_xml_register_subject(nullptr, "print_stats_last_print", &s_last_print);
 
     SubjectDebugRegistry::instance().register_subject(&s_size_mode, "print_stats_size_mode",
-                                                      LV_SUBJECT_TYPE_INT, __FILE__, __LINE__);
-    SubjectDebugRegistry::instance().register_subject(&s_show_title, "print_stats_show_title",
                                                       LV_SUBJECT_TYPE_INT, __FILE__, __LINE__);
     SubjectDebugRegistry::instance().register_subject(&s_view_mode, "print_stats_view_mode",
                                                       LV_SUBJECT_TYPE_INT, __FILE__, __LINE__);
@@ -103,7 +99,6 @@ static void print_stats_init_subjects() {
             lv_subject_deinit(&s_total_prints);
             lv_subject_deinit(&s_title);
             lv_subject_deinit(&s_view_mode);
-            lv_subject_deinit(&s_show_title);
             lv_subject_deinit(&s_size_mode);
             s_subjects_initialized = false;
         }
@@ -195,21 +190,21 @@ void PrintStatsWidget::detach() {
     spdlog::debug("[PrintStatsWidget] Detached");
 }
 
-void PrintStatsWidget::on_size_changed(int colspan, int rowspan, int /*width_px*/,
-                                       int /*height_px*/) {
+void PrintStatsWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_px,
+                                       int height_px) {
     int mode;
-    if (rowspan <= 1 && colspan <= 2) {
+    if (height_px < widget_size::H_TALL && width_px < widget_size::W_WIDE) {
         mode = 0; // narrow compact: time · success
-    } else if (rowspan <= 1) {
+    } else if (height_px < widget_size::H_TALL) {
         mode = 3; // wide compact: prints · time · success · weekly
-    } else if (colspan <= 2) {
+    } else if (width_px < widget_size::W_WIDE) {
         mode = 1; // 2x2 grid
     } else {
         mode = 2; // 3x2 full
     }
-    spdlog::debug("[PrintStatsWidget] on_size_changed {}x{} -> mode {}", colspan, rowspan, mode);
+    spdlog::debug("[PrintStatsWidget] on_size_changed {}x{}px -> mode {}", width_px, height_px,
+                  mode);
     lv_subject_set_int(&s_size_mode, mode);
-    lv_subject_set_int(&s_show_title, (mode == 0) ? 0 : 1);
 }
 
 void PrintStatsWidget::update_stats() {

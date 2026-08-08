@@ -75,15 +75,15 @@
             <bind_flag_if_eq subject="scanner_bt_discovering" flag="hidden" ref_value="0"/>
           </spinner>
           <ui_button name="btn_bt_scan" text="Scan" translation_tag="Scan"
-                     icon="magnify_scan" width="140">
+                     icon="magnify_scan" width="#button_width_action">
             <event_cb trigger="clicked" callback="on_bs_scan_bluetooth"/>
           </ui_button>
           <ui_button name="btn_bt_pair" text="Pair" translation_tag="Pair"
-                     icon="bluetooth" width="140" disabled="true">
+                     icon="bluetooth" width="#button_width_action" disabled="true">
             <event_cb trigger="clicked" callback="on_bs_bt_pair"/>
           </ui_button>
           <ui_button name="btn_bt_forget" text="Forget" translation_tag="Forget"
-                     icon="delete" width="140" disabled="true">
+                     icon="delete" width="#button_width_action" disabled="true">
             <event_cb trigger="clicked" callback="on_bs_bt_forget"/>
           </ui_button>
         </lv_obj>

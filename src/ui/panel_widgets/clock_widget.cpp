@@ -7,6 +7,7 @@
 
 #include "locale_formats.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 #include "static_subject_registry.h"
 #include "subject_debug_registry.h"
 #include "theme_manager.h"
@@ -174,14 +175,15 @@ void ClockWidget::on_deactivate() {
     }
 }
 
-void ClockWidget::on_size_changed(int colspan, int rowspan, int /*width_px*/, int /*height_px*/) {
-    // Determine size mode: 0=compact (1x1), 1=normal (2x1), 2=expanded (2x2+), 3=large (3x2+)
+void ClockWidget::on_size_changed(int colspan, int rowspan, int width_px, int height_px) {
+    // Determine size mode from physical pixels: 0=compact, 1=normal,
+    // 2=expanded, 3=large
     int mode;
-    if (colspan <= 1 && rowspan <= 1) {
+    if (width_px < widget_size::W_NORMAL && height_px < widget_size::H_TALL) {
         mode = 0; // compact: time only
-    } else if (rowspan <= 1) {
+    } else if (height_px < widget_size::H_TALL) {
         mode = 1; // normal: time + date
-    } else if (colspan >= 3 && rowspan >= 2) {
+    } else if (width_px >= widget_size::W_WIDE) {
         mode = 3; // large: big time + date + uptime
     } else {
         mode = 2; // expanded: time + date + uptime

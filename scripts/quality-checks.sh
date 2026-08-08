@@ -480,6 +480,38 @@ fi
 
 echo ""
 
+# ====================================================================
+# Spacing and sizing go through design tokens, not raw pixel literals
+# ====================================================================
+# HelixScreen ships on 480x272 through 1440p. A literal style_pad_all="12" is
+# 12px on all of them, so a layout tuned in a 1024x600 dev window is cramped on
+# a Snapmaker U1 and lost in whitespace on a 1280x720 panel. The ladders in
+# ui_xml/globals.xml resolve per breakpoint; a literal freezes one column of the
+# ladder forever.
+#
+# Ratcheting baseline. The remaining sites are real debt — mostly 2px hairline
+# gaps and two negative overlap margins with no token to name them. The number
+# may go DOWN (convert a site, then lower this baseline) but must never go up.
+# A reasoned exception is annotated SIZE_OK, the way ui_xml/color_picker.xml
+# walks its swatch-grid content floor.
+echo "📏 Checking design-token usage (hardcoded pixels)..."
+
+if [ -f "scripts/check_hardcoded_pixels.py" ]; then
+  if python3 scripts/check_hardcoded_pixels.py --max-allowed 162 --summary \
+      >/tmp/hardcoded_pixels.out 2>&1; then
+    tail -1 /tmp/hardcoded_pixels.out
+  else
+    cat /tmp/hardcoded_pixels.out
+    echo "   Run: python3 scripts/check_hardcoded_pixels.py --list"
+    echo "   Use a token; see CLAUDE.md § Design Tokens (MANDATORY)."
+    EXIT_CODE=1
+  fi
+else
+  echo "⚠️  check_hardcoded_pixels.py not found — skipping"
+fi
+
+echo ""
+
 echo "🪟 Checking layout-variant parity..."
 
 # A ui_xml/<variant>/ file replaces its base wholesale, so nothing else notices
@@ -1044,6 +1076,35 @@ else
   section_time $SECTION_START
   echo ""
   echo "⚠️  check_timer_destructor_cancel.py not found — skipping"
+fi
+
+echo ""
+
+SECTION_START=$(date +%s)
+echo -n "⏱️  Checking grid cell-metrics single source..."
+
+if [ -f "scripts/check_grid_metrics_single_source.py" ]; then
+  # Every drag/resize/preview/lattice path needs the same cols/rows/cell size,
+  # and each independent computation is free to drift from the others on
+  # gutter handling or int-vs-float rounding. GridEditMode::current_metrics()
+  # is the one place allowed to ask GridLayout for the grid's dimensions; this
+  # caps GridLayout::get_cols/get_rows/get_dimensions call sites at 2 (the pair
+  # inside current_metrics() itself) so a new call site cannot grow a second copy.
+  if python3 scripts/check_grid_metrics_single_source.py >/tmp/grid_metrics.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    tail -1 /tmp/grid_metrics.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/grid_metrics.out
+    echo "   Take a helix::CellMetrics from GridEditMode::current_metrics() instead."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_grid_metrics_single_source.py not found — skipping"
 fi
 
 echo ""

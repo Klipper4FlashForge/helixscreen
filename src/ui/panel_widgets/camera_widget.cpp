@@ -15,6 +15,7 @@
 #include "http_executor.h"
 #include "moonraker_api.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 #include "printer_state.h"
 #include "static_subject_registry.h"
 #include "subject_debug_registry.h"
@@ -253,9 +254,14 @@ void CameraWidget::on_deactivate() {
     }
 }
 
-void CameraWidget::on_size_changed(int colspan, int rowspan, int /*width_px*/, int /*height_px*/) {
+void CameraWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_px,
+                                   int /*height_px*/) {
     bool was_compact = compact_;
-    compact_ = (colspan <= 1 && rowspan <= 1);
+    // Width-only: the live view fills its cell edge-to-edge either way
+    // (LV_IMAGE_ALIGN_COVER), so extra height alone never earns the widget
+    // a stream it wouldn't otherwise get — only a second column does, same
+    // as fan_stack's row layout.
+    compact_ = (width_px < widget_size::W_NORMAL);
 
     // Ensure scale-to-cover after any resize
     if (camera_image_) {
@@ -288,6 +294,7 @@ void CameraWidget::on_size_changed(int colspan, int rowspan, int /*width_px*/, i
 }
 
 void CameraWidget::start_stream() {
+    ++start_stream_calls_;
     if (stream_ && stream_->is_running()) {
         spdlog::debug("[CameraWidget] start_stream: already running, skipping");
         return;
@@ -372,6 +379,7 @@ void CameraWidget::start_stream() {
 }
 
 void CameraWidget::stop_stream() {
+    ++stop_stream_calls_;
     if (!stream_) {
         spdlog::trace("[CameraWidget] stop_stream: no stream to stop");
         return;

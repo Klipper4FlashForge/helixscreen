@@ -12,6 +12,15 @@
     <!-- preview_size comes from globals as #color_preview_size (responsive: 40/48/56px) -->
     <!-- sv_size, hue_height registered at runtime by register_color_picker_component_constants() -->
   </consts>
+  <!-- SIZE_OK: 470 is an absolute width, not the house 70%, because the
+       two-column layout below has a hard content floor and the swatch grid is a
+       fixed-px row_wrap that overflows rather than reflowing. Budget:
+         space_md pad 12 x2 + left column 190 + space_lg gap 20 + grid 232 = 466
+       The 232 is register_swatch_grid_constants() (src/xml_registration.cpp) at
+       6 columns; it drops to 208 on SMALL and 174 on MICRO. A percentage width
+       narrower than ~470 clips the rightmost swatch column.
+       MICRO/TINY never see this card - ui_color_picker.cpp forces LV_PCT(100)
+       and the tabbed layout below takes over. -->
   <view name="color_picker"
         extends="ui_dialog" width="470" height="content" align="center" flex_flow="column" style_flex_main_place="start"
         style_pad_gap="0">

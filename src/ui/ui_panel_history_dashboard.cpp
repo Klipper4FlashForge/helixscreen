@@ -600,7 +600,7 @@ void HistoryDashboardPanel::create_trend_chart() {
     // Styling for a clean sparkline look
     lv_obj_set_style_bg_opa(trend_chart_, LV_OPA_0, LV_PART_MAIN);
     lv_obj_set_style_border_width(trend_chart_, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(trend_chart_, 4, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(trend_chart_, theme_manager_get_spacing("space_xxs"), LV_PART_MAIN);
 
     // Hide division lines for sparkline effect
     lv_chart_set_div_line_count(trend_chart_, 0, 0);
@@ -878,7 +878,7 @@ void HistoryDashboardPanel::update_filament_chart(const std::vector<PrintHistory
         lv_obj_set_style_pad_all(row, 0, 0);
         lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
-        lv_obj_set_style_pad_gap(row, 4, 0);
+        lv_obj_set_style_pad_gap(row, theme_manager_get_spacing("space_xxs"), 0);
         lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
         filament_bar_rows_.push_back(row);
 

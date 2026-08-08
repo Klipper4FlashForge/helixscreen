@@ -104,14 +104,16 @@ void ui_ams_mini_status_set_slot_full(lv_obj_t* obj, int slot_index, uint32_t co
 void ui_ams_mini_status_refresh(lv_obj_t* obj);
 
 /**
- * @brief Set width + colspan hint for responsive sizing / mode selection.
+ * @brief Set the available pixel width, for responsive sizing / mode selection.
  *
- * colspan >= 2 selects the wide spool view; colspan == 1 keeps the bar view.
+ * width_px >= W_NORMAL (include/panel_widget_size.h) selects the wide spool
+ * view; narrower widths keep the compact bar view. Also drives the bar-width
+ * band and the spool count within the wide view.
+ *
  * @param obj The ams_mini_status widget
  * @param width_px Available pixel width for the widget
- * @param colspan Grid columns the widget spans (1 = narrow/bar, >=2 = wide/spool)
  */
-void ui_ams_mini_status_set_width(lv_obj_t* obj, int width_px, int colspan);
+void ui_ams_mini_status_set_width(lv_obj_t* obj, int width_px);
 
 /**
  * @brief Check if this is an ams_mini_status widget

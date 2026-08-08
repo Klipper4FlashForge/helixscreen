@@ -26,6 +26,7 @@
 #include "observer_factory.h"
 #include "panel_widget_manager.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 #include "print_history_manager.h"
 #include "printer_state.h"
 #include "runtime_config.h"
@@ -94,9 +95,9 @@ void PrintStatusWidget::init_static_subjects() {
     lv_subject_init_int(&column_mode_subject_, 0);
     lv_xml_register_subject(nullptr, "print_status_column_mode", &column_mode_subject_);
     column_mode_subject_initialized_ = true;
-    lv_subject_init_int(&colspan_subject_, 2);
-    lv_xml_register_subject(nullptr, "print_status_colspan", &colspan_subject_);
-    colspan_subject_initialized_ = true;
+    lv_subject_init_int(&width_band_subject_, 1); // 1 = normal, matches the old colspan=2 default
+    lv_xml_register_subject(nullptr, "print_status_width_band", &width_band_subject_);
+    width_band_subject_initialized_ = true;
 
     lv_subject_init_int(&title_hidden_subject_, 0);
     lv_xml_register_subject(nullptr, "print_status_title_hidden", &title_hidden_subject_);
@@ -159,9 +160,9 @@ void PrintStatusWidget::init_static_subjects() {
             lv_subject_deinit(&actions_hidden_subject_);
             visibility_subjects_initialized_ = false;
         }
-        if (colspan_subject_initialized_ && lv_is_initialized()) {
-            lv_subject_deinit(&colspan_subject_);
-            colspan_subject_initialized_ = false;
+        if (width_band_subject_initialized_ && lv_is_initialized()) {
+            lv_subject_deinit(&width_band_subject_);
+            width_band_subject_initialized_ = false;
         }
         if (column_mode_subject_initialized_ && lv_is_initialized()) {
             lv_subject_deinit(&column_mode_subject_);
@@ -451,24 +452,40 @@ void PrintStatusWidget::detach() {
 // Size-Dependent Layout
 // ============================================================================
 
-void PrintStatusWidget::on_size_changed(int colspan, int rowspan, int /*width_px*/,
-                                        int /*height_px*/) {
-    last_rowspan_ = rowspan;
-    lv_subject_set_int(&colspan_subject_, colspan);
+void PrintStatusWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_px,
+                                        int height_px) {
+    last_width_px_ = width_px;
+    last_height_px_ = height_px;
 
-    // Derive layout_effective: detailed only when user opted in AND colspan >= 2
+    // Width band from physical pixels, not colspan — see panel_widget_size.h. Three
+    // bands (0=compact, 1=normal, 2=wide) mirror the old colspan<=1 / ==2 / >=3
+    // taxonomy closely enough to drive the same predicates below. Published to XML:
+    // library_body's two bind_style entries (panel_widget_print_status.xml) key off
+    // this band, not the raw pixel count, which wouldn't mean anything to a ref_value
+    // comparison.
+    int width_band;
+    if (width_px < widget_size::W_NORMAL) {
+        width_band = 0; // compact
+    } else if (width_px < widget_size::W_WIDE) {
+        width_band = 1; // normal
+    } else {
+        width_band = 2; // wide
+    }
+    lv_subject_set_int(&width_band_subject_, width_band);
+
+    // Derive layout_effective: detailed only when user opted in AND width clears the normal floor
     int user_pref = (layout_style_ == "detailed") ? 1 : 0;
     lv_subject_set_int(&layout_mode_subject_, user_pref);
-    int effective = (user_pref == 1 && colspan >= 2) ? 1 : 0;
+    int effective = (user_pref == 1 && width_band >= 1) ? 1 : 0;
     lv_subject_set_int(&layout_effective_subject_, effective);
-    // Combined gate: only show the filament line at colspan>=3 AND when actual
+    // Combined gate: only show the filament line at the wide band AND when actual
     // filament has been extruded. update_filament_text() also writes this
     // subject on used_mm changes, keeping both inputs in sync.
     int used_mm = lv_subject_get_int(printer_state_.get_print_filament_used_subject());
-    lv_subject_set_int(&show_filament_active_subject_, (colspan >= 3 && used_mm > 0) ? 1 : 0);
+    lv_subject_set_int(&show_filament_active_subject_, (width_band >= 2 && used_mm > 0) ? 1 : 0);
 
-    // Compact mode: 1-column — not enough horizontal space for thumbnail + action rows
-    bool compact = (colspan <= 1);
+    // Compact mode: narrow — not enough horizontal space for thumbnail + action rows
+    bool compact = (width_band == 0);
     if (compact != is_compact_) {
         is_compact_ = compact;
         update_idle_compact_mode();
@@ -479,17 +496,17 @@ void PrintStatusWidget::on_size_changed(int colspan, int rowspan, int /*width_px
         return;
     }
 
-    // 2x2: column layout (thumbnail on top, info below)
-    // 1x2, 3x2: row layout (thumbnail left, info right)
-    bool use_column = (colspan == 2 && rowspan >= 2);
+    // Normal band + tall enough: column layout (thumbnail on top, info below)
+    // Compact or wide band: row layout (thumbnail left, info right)
+    bool use_column = (width_band == 1 && height_px >= widget_size::H_TALL);
     if (use_column == is_column_) {
         return;
     }
     is_column_ = use_column;
     apply_card_layout();
 
-    spdlog::debug("[PrintStatusWidget] on_size_changed {}x{} -> {} (compact={})", colspan, rowspan,
-                  use_column ? "column" : "row", is_compact_);
+    spdlog::debug("[PrintStatusWidget] on_size_changed {}x{}px -> {} (compact={})", width_px,
+                  height_px, use_column ? "column" : "row", is_compact_);
 }
 
 // Apply the imperative print-card flex layout (thumbnail row vs column) for the
@@ -1432,8 +1449,7 @@ void PrintStatusWidget::dismiss_configure_picker() {
     // After the user changed layout_style, re-run width gating so the change
     // takes effect immediately on the visible widget.
     if (widget_obj_) {
-        int colspan = lv_subject_get_int(&colspan_subject_);
-        on_size_changed(colspan, last_rowspan_, 0, 0);
+        on_size_changed(0, 0, last_width_px_, last_height_px_);
     }
 }
 
@@ -1811,10 +1827,10 @@ void PrintStatusWidget::DetailedFormatter::update_filament_text() {
     lv_subject_copy_string(&filament_text_subject_, filament_text_buf_);
 
     // Keep the show_filament_active gate honest as filament accumulates.
-    // on_size_changed handles the colspan side; this side handles the
+    // on_size_changed handles the width-band side; this side handles the
     // used-mm transition (e.g., first extrusion of the print).
-    int colspan = lv_subject_get_int(&PrintStatusWidget::colspan_subject_);
-    int show = (colspan >= 3 && used_mm > 0) ? 1 : 0;
+    int width_band = lv_subject_get_int(&PrintStatusWidget::width_band_subject_);
+    int show = (width_band >= 2 && used_mm > 0) ? 1 : 0;
     if (lv_subject_get_int(&PrintStatusWidget::show_filament_active_subject_) != show) {
         lv_subject_set_int(&PrintStatusWidget::show_filament_active_subject_, show);
     }

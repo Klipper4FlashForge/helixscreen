@@ -16,6 +16,7 @@
 #include "app_globals.h"
 #include "panel_widget_manager.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 #include "printer_state.h"
 #include "temperature_service.h"
 #include "theme_manager.h"
@@ -236,13 +237,13 @@ void TempStackWidget::attach_carousel(lv_obj_t* widget_obj) {
     spdlog::debug("[TempStackWidget] Attached carousel with {} pages", page_count);
 }
 
-void TempStackWidget::on_size_changed(int /*colspan*/, int rowspan, int /*width_px*/,
-                                      int /*height_px*/) {
+void TempStackWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int /*width_px*/,
+                                      int height_px) {
     if (!widget_obj_ || is_carousel_mode())
         return;
 
     // Determine size tier based on vertical space
-    const char* size = (rowspan >= 2) ? "sm" : "xs";
+    const char* size = (height_px >= widget_size::H_TALL) ? "sm" : "xs";
 
     // Get text font for this size tier
     const char* font_token = theme_manager_size_to_font_token(size, "xs");
@@ -251,18 +252,7 @@ void TempStackWidget::on_size_changed(int /*colspan*/, int rowspan, int /*width_
         return;
 
     // Icon font: xs=16px, sm=24px
-    const lv_font_t* icon_font = (rowspan >= 2) ? &mdi_icons_24 : &mdi_icons_16;
-
-    // Update nozzle icon glyph
-    lv_obj_t* nozzle_glyph = lv_obj_find_by_name(widget_obj_, "nozzle_icon_glyph");
-    if (nozzle_glyph)
-        lv_obj_set_style_text_font(nozzle_glyph, icon_font, 0);
-
-    // Update bed icon — a leaf label (no child to dig into), named per the
-    // HeaterIconBinder convention so this and the binder agree on one icon.
-    lv_obj_t* bed_icon = lv_obj_find_by_name(widget_obj_, "bed_icon_glyph");
-    if (bed_icon)
-        lv_obj_set_style_text_font(bed_icon, icon_font, 0);
+    const lv_font_t* icon_font = (height_px >= widget_size::H_TALL) ? &mdi_icons_24 : &mdi_icons_16;
 
     // Update temp_display fonts and icon fonts in all rows
     const char* row_names[] = {"temp_stack_nozzle_row", "temp_stack_bed_row",
@@ -280,7 +270,9 @@ void TempStackWidget::on_size_changed(int /*colspan*/, int rowspan, int /*width_
                     lv_obj_set_style_text_font(label, text_font, 0);
                 }
             } else if (lv_obj_get_child_count(child) > 0) {
-                // Icon component — update first child glyph (chamber row icon)
+                // Icon component (nozzle_icon/heater_icon wrapper) — the
+                // glyph is its first child, whether or not that wrapper also
+                // carries a tool badge (nozzle_icon.xml, heater_icon.xml).
                 lv_obj_t* glyph = lv_obj_get_child(child, 0);
                 if (glyph)
                     lv_obj_set_style_text_font(glyph, icon_font, 0);
@@ -288,7 +280,7 @@ void TempStackWidget::on_size_changed(int /*colspan*/, int rowspan, int /*width_
         }
     }
 
-    spdlog::debug("[TempStackWidget] on_size_changed rowspan={} -> size {}", rowspan, size);
+    spdlog::debug("[TempStackWidget] on_size_changed height_px={} -> size {}", height_px, size);
 }
 
 void TempStackWidget::detach() {

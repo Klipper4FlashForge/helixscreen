@@ -49,8 +49,8 @@ class TempGraphWidget : public PanelWidget {
         return true;
     }
 
-    /// Map grid size to appropriate feature flags
-    static uint32_t features_for_size(int colspan, int rowspan);
+    /// Map physical widget size (gutter-correct pixels) to feature flags
+    static uint32_t features_for_size(int width_px, int height_px);
 
     /// Static click callback (XML-registered)
     static void on_temp_graph_widget_clicked(lv_event_t* e);
@@ -84,9 +84,6 @@ class TempGraphWidget : public PanelWidget {
     lv_obj_t* parent_screen_ = nullptr;
 
     std::unique_ptr<TempGraphController> controller_;
-
-    int current_colspan_ = 2;
-    int current_rowspan_ = 2;
 
     /// When true, the card mirrors whatever curves the user last left visible
     /// on the full-screen TempGraphOverlay. When false, the card uses the

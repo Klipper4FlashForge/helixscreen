@@ -59,6 +59,17 @@ class SubjectDebugRegistry {
                           const std::string& file, int line);
 
     /**
+     * @brief Drop a subject's debug entry before its storage is freed
+     *
+     * Without this the registry keeps a key pointing at freed memory, and
+     * lookup_by_name() can hand back a dead subject when a later instance
+     * republishes the same name from a different address.
+     *
+     * @param subject Pointer to the subject being torn down (null is ignored)
+     */
+    void unregister_subject(lv_subject_t* subject);
+
+    /**
      * @brief Look up debug info for a subject
      * @param subject Pointer to the LVGL subject
      * @return Pointer to debug info, or nullptr if not registered
@@ -100,8 +111,10 @@ class SubjectDebugRegistry {
     void clear();
 
   private:
-    SubjectDebugRegistry() = default;
-    ~SubjectDebugRegistry() = default;
+    // Defined out-of-line: they maintain the liveness flag that makes a late
+    // unregister_subject() during static destruction a no-op rather than an abort.
+    SubjectDebugRegistry();
+    ~SubjectDebugRegistry();
 
     SubjectDebugRegistry(const SubjectDebugRegistry&) = delete;
     SubjectDebugRegistry& operator=(const SubjectDebugRegistry&) = delete;

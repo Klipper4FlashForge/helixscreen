@@ -46,7 +46,7 @@
         </lv_obj>
         <!-- Slider -->
         <lv_obj width="100%"
-                height="50" style_pad_left="#space_md" style_pad_right="#space_md" style_pad_top="#space_md"
+                height="#input_height" style_pad_left="#space_md" style_pad_right="#space_md" style_pad_top="#space_md"
                 style_pad_bottom="#space_md" scrollable="false" flex_flow="row" style_flex_cross_place="center">
           <text_small width="40" text="50"/>
           <lv_slider name="max_velocity_slider"
@@ -83,7 +83,7 @@
         </lv_obj>
         <!-- Slider -->
         <lv_obj width="100%"
-                height="50" style_pad_left="#space_md" style_pad_right="#space_md" style_pad_top="#space_md"
+                height="#input_height" style_pad_left="#space_md" style_pad_right="#space_md" style_pad_top="#space_md"
                 style_pad_bottom="#space_md" scrollable="false" flex_flow="row" style_flex_cross_place="center">
           <text_small width="40" text="500"/>
           <lv_slider name="max_accel_slider"
@@ -121,7 +121,7 @@
         </lv_obj>
         <!-- Slider -->
         <lv_obj width="100%"
-                height="50" style_pad_left="#space_md" style_pad_right="#space_md" style_pad_top="#space_md"
+                height="#input_height" style_pad_left="#space_md" style_pad_right="#space_md" style_pad_top="#space_md"
                 style_pad_bottom="#space_md" scrollable="false" flex_flow="row" style_flex_cross_place="center">
           <text_small width="40" text="500"/>
           <lv_slider name="accel_to_decel_slider"
@@ -158,7 +158,7 @@
         </lv_obj>
         <!-- Slider -->
         <lv_obj width="100%"
-                height="50" style_pad_left="#space_md" style_pad_right="#space_md" style_pad_top="#space_md"
+                height="#input_height" style_pad_left="#space_md" style_pad_right="#space_md" style_pad_top="#space_md"
                 style_pad_bottom="#space_md" scrollable="false" flex_flow="row" style_flex_cross_place="center">
           <text_small width="30" text="1"/>
           <lv_slider name="square_corner_velocity_slider"
@@ -195,7 +195,7 @@
         </lv_obj>
         <!-- Slider -->
         <lv_obj width="100%"
-                height="50" style_pad_left="#space_md" style_pad_right="#space_md" style_pad_top="#space_md"
+                height="#input_height" style_pad_left="#space_md" style_pad_right="#space_md" style_pad_top="#space_md"
                 style_pad_bottom="#space_md" scrollable="false" flex_flow="row" style_flex_cross_place="center">
           <text_small width="30" text="1"/>
           <lv_slider name="extrude_speed_slider"

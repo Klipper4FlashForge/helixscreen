@@ -32,7 +32,7 @@
                   style_pad_gap="#space_sm" scrollable="false">
             <icon src="sine_wave" size="lg" variant="primary"/>
             <text_body text="Reduce vibration artifacts like ringing and ghosting" translation_tag="Reduce vibration artifacts like ringing and ghosting" flex_grow="1" style_text_color="#text_muted"/>
-            <ui_button name="btn_help" width="36" height="36" variant="ghost" icon="help_circle">
+            <ui_button name="btn_help" width="#icon_button_size_lg" height="#icon_button_size_lg" variant="ghost" icon="help_circle">
               <event_cb trigger="clicked" callback="input_shaper_help_cb"/>
             </ui_button>
           </lv_obj>
