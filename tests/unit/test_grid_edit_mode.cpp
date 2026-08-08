@@ -1491,52 +1491,52 @@ TEST_CASE("detect_resize_edge: the two axes clamp independently", "[grid_edit][r
 TEST_CASE("round_to_grid_cell: exact cell boundary", "[grid_edit][resize]") {
     // 6 cells in 600px container starting at x=0
     // Cell boundaries: 0, 100, 200, 300, 400, 500, 600
-    CHECK(GridEditMode::round_to_grid_cell(0, 0, 600, 6, 0) == 0);
-    CHECK(GridEditMode::round_to_grid_cell(100, 0, 600, 6, 0) == 1);
-    CHECK(GridEditMode::round_to_grid_cell(300, 0, 600, 6, 0) == 3);
-    CHECK(GridEditMode::round_to_grid_cell(600, 0, 600, 6, 0) == 6);
+    CHECK(GridEditMode::round_to_grid_cell(0, 0, 600, 6, 0, 1) == 0);
+    CHECK(GridEditMode::round_to_grid_cell(100, 0, 600, 6, 0, 1) == 1);
+    CHECK(GridEditMode::round_to_grid_cell(300, 0, 600, 6, 0, 1) == 3);
+    CHECK(GridEditMode::round_to_grid_cell(600, 0, 600, 6, 0, 1) == 6);
 }
 
 TEST_CASE("round_to_grid_cell: midpoint rounding", "[grid_edit][resize]") {
     // Cell size = 100px. Midpoint of cell 0 = 50px.
     // 49px → rounds to boundary 0 (cell 0)
-    CHECK(GridEditMode::round_to_grid_cell(49, 0, 600, 6, 0) == 0);
+    CHECK(GridEditMode::round_to_grid_cell(49, 0, 600, 6, 0, 1) == 0);
     // 50px → rounds to boundary 1 (std::round rounds 0.5 up)
-    CHECK(GridEditMode::round_to_grid_cell(50, 0, 600, 6, 0) == 1);
+    CHECK(GridEditMode::round_to_grid_cell(50, 0, 600, 6, 0, 1) == 1);
     // 51px → rounds to boundary 1
-    CHECK(GridEditMode::round_to_grid_cell(51, 0, 600, 6, 0) == 1);
+    CHECK(GridEditMode::round_to_grid_cell(51, 0, 600, 6, 0, 1) == 1);
 
     // Just past midpoint of cell 2 (250px)
-    CHECK(GridEditMode::round_to_grid_cell(249, 0, 600, 6, 0) == 2);
-    CHECK(GridEditMode::round_to_grid_cell(251, 0, 600, 6, 0) == 3);
+    CHECK(GridEditMode::round_to_grid_cell(249, 0, 600, 6, 0, 1) == 2);
+    CHECK(GridEditMode::round_to_grid_cell(251, 0, 600, 6, 0, 1) == 3);
 }
 
 TEST_CASE("round_to_grid_cell: with content origin offset", "[grid_edit][resize]") {
     // Container starts at x=100, 600px wide, 6 cells
-    CHECK(GridEditMode::round_to_grid_cell(100, 100, 600, 6, 0) == 0);
-    CHECK(GridEditMode::round_to_grid_cell(200, 100, 600, 6, 0) == 1);
-    CHECK(GridEditMode::round_to_grid_cell(700, 100, 600, 6, 0) == 6);
+    CHECK(GridEditMode::round_to_grid_cell(100, 100, 600, 6, 0, 1) == 0);
+    CHECK(GridEditMode::round_to_grid_cell(200, 100, 600, 6, 0, 1) == 1);
+    CHECK(GridEditMode::round_to_grid_cell(700, 100, 600, 6, 0, 1) == 6);
 
     // Midpoint: 100 + 50 = 150 → rounds to 1
-    CHECK(GridEditMode::round_to_grid_cell(150, 100, 600, 6, 0) == 1);
-    CHECK(GridEditMode::round_to_grid_cell(149, 100, 600, 6, 0) == 0);
+    CHECK(GridEditMode::round_to_grid_cell(150, 100, 600, 6, 0, 1) == 1);
+    CHECK(GridEditMode::round_to_grid_cell(149, 100, 600, 6, 0, 1) == 0);
 }
 
 TEST_CASE("round_to_grid_cell: clamps to valid range", "[grid_edit][resize]") {
     // Below origin → clamps to 0
-    CHECK(GridEditMode::round_to_grid_cell(-50, 0, 600, 6, 0) == 0);
+    CHECK(GridEditMode::round_to_grid_cell(-50, 0, 600, 6, 0, 1) == 0);
     // Above maximum → clamps to ncells
-    CHECK(GridEditMode::round_to_grid_cell(800, 0, 600, 6, 0) == 6);
+    CHECK(GridEditMode::round_to_grid_cell(800, 0, 600, 6, 0, 1) == 6);
 }
 
 TEST_CASE("round_to_grid_cell: rounds against the gutter-aware pitch",
           "[grid_edit][resize][grid_metrics]") {
     // pitch = 80.67. Boundary 3 sits at 242; the midpoint before it is ~201.7.
-    REQUIRE(helix::GridEditMode::round_to_grid_cell(202, 0, 480, 6, 4) == 3);
-    REQUIRE(helix::GridEditMode::round_to_grid_cell(201, 0, 480, 6, 4) == 2);
+    REQUIRE(helix::GridEditMode::round_to_grid_cell(202, 0, 480, 6, 4, 1) == 3);
+    REQUIRE(helix::GridEditMode::round_to_grid_cell(201, 0, 480, 6, 4, 1) == 2);
     // Clamps still hold at both ends.
-    REQUIRE(helix::GridEditMode::round_to_grid_cell(-500, 0, 480, 6, 4) == 0);
-    REQUIRE(helix::GridEditMode::round_to_grid_cell(9999, 0, 480, 6, 4) == 6);
+    REQUIRE(helix::GridEditMode::round_to_grid_cell(-500, 0, 480, 6, 4, 1) == 0);
+    REQUIRE(helix::GridEditMode::round_to_grid_cell(9999, 0, 480, 6, 4, 1) == 6);
 }
 
 // ============================================================================
@@ -1545,8 +1545,9 @@ TEST_CASE("round_to_grid_cell: rounds against the gutter-aware pitch",
 
 TEST_CASE("compute_resize_result: right edge grow", "[grid_edit][resize]") {
     // Widget at (1,0) span 2x2, drag right edge to cell boundary 4
-    auto result = GridEditMode::compute_resize_result(GridEditMode::ResizeEdge::Right, 1, 0, 2, 2,
-                                                      /*new_edge_cell=*/4, /*ncells=*/6);
+    auto result =
+        GridEditMode::compute_resize_result(GridEditMode::ResizeEdge::Right, 1, 0, 2, 2,
+                                            /*new_edge_cell=*/4, /*ncells=*/6, /*step=*/1);
     CHECK(result.col == 1);
     CHECK(result.row == 0);
     CHECK(result.colspan == 3); // was 2, now extends to col 4 → 4-1=3
@@ -1556,8 +1557,9 @@ TEST_CASE("compute_resize_result: right edge grow", "[grid_edit][resize]") {
 
 TEST_CASE("compute_resize_result: right edge shrink", "[grid_edit][resize]") {
     // Widget at (1,0) span 3x2, drag right edge to cell boundary 3
-    auto result = GridEditMode::compute_resize_result(GridEditMode::ResizeEdge::Right, 1, 0, 3, 2,
-                                                      /*new_edge_cell=*/3, /*ncells=*/6);
+    auto result =
+        GridEditMode::compute_resize_result(GridEditMode::ResizeEdge::Right, 1, 0, 3, 2,
+                                            /*new_edge_cell=*/3, /*ncells=*/6, /*step=*/1);
     CHECK(result.col == 1);
     CHECK(result.colspan == 2); // 3-1=2
     CHECK(result.rowspan == 2);
@@ -1565,8 +1567,9 @@ TEST_CASE("compute_resize_result: right edge shrink", "[grid_edit][resize]") {
 
 TEST_CASE("compute_resize_result: left edge grow", "[grid_edit][resize]") {
     // Widget at (2,0) span 2x2, drag left edge to cell boundary 1
-    auto result = GridEditMode::compute_resize_result(GridEditMode::ResizeEdge::Left, 2, 0, 2, 2,
-                                                      /*new_edge_cell=*/1, /*ncells=*/6);
+    auto result =
+        GridEditMode::compute_resize_result(GridEditMode::ResizeEdge::Left, 2, 0, 2, 2,
+                                            /*new_edge_cell=*/1, /*ncells=*/6, /*step=*/1);
     CHECK(result.col == 1); // origin shifts left
     CHECK(result.row == 0);
     CHECK(result.colspan == 3); // was 2, grew by 1
@@ -1576,8 +1579,9 @@ TEST_CASE("compute_resize_result: left edge grow", "[grid_edit][resize]") {
 
 TEST_CASE("compute_resize_result: left edge shrink", "[grid_edit][resize]") {
     // Widget at (1,0) span 3x2, drag left edge to cell boundary 2
-    auto result = GridEditMode::compute_resize_result(GridEditMode::ResizeEdge::Left, 1, 0, 3, 2,
-                                                      /*new_edge_cell=*/2, /*ncells=*/6);
+    auto result =
+        GridEditMode::compute_resize_result(GridEditMode::ResizeEdge::Left, 1, 0, 3, 2,
+                                            /*new_edge_cell=*/2, /*ncells=*/6, /*step=*/1);
     CHECK(result.col == 2);     // origin shifts right
     CHECK(result.colspan == 2); // was 3, shrank by 1 (right edge stays at 4)
     CHECK(result.rowspan == 2);
@@ -1585,8 +1589,9 @@ TEST_CASE("compute_resize_result: left edge shrink", "[grid_edit][resize]") {
 
 TEST_CASE("compute_resize_result: top edge grow", "[grid_edit][resize]") {
     // Widget at (0,2) span 2x2, drag top edge to cell boundary 1
-    auto result = GridEditMode::compute_resize_result(GridEditMode::ResizeEdge::Top, 0, 2, 2, 2,
-                                                      /*new_edge_cell=*/1, /*ncells=*/4);
+    auto result =
+        GridEditMode::compute_resize_result(GridEditMode::ResizeEdge::Top, 0, 2, 2, 2,
+                                            /*new_edge_cell=*/1, /*ncells=*/4, /*step=*/1);
     CHECK(result.col == 0);
     CHECK(result.row == 1); // origin shifts up
     CHECK(result.colspan == 2);
@@ -1596,8 +1601,9 @@ TEST_CASE("compute_resize_result: top edge grow", "[grid_edit][resize]") {
 
 TEST_CASE("compute_resize_result: bottom edge grow", "[grid_edit][resize]") {
     // Widget at (0,0) span 2x2, drag bottom edge to cell boundary 3
-    auto result = GridEditMode::compute_resize_result(GridEditMode::ResizeEdge::Bottom, 0, 0, 2, 2,
-                                                      /*new_edge_cell=*/3, /*ncells=*/4);
+    auto result =
+        GridEditMode::compute_resize_result(GridEditMode::ResizeEdge::Bottom, 0, 0, 2, 2,
+                                            /*new_edge_cell=*/3, /*ncells=*/4, /*step=*/1);
     CHECK(result.col == 0);
     CHECK(result.row == 0);
     CHECK(result.colspan == 2);
@@ -1607,8 +1613,9 @@ TEST_CASE("compute_resize_result: bottom edge grow", "[grid_edit][resize]") {
 
 TEST_CASE("compute_resize_result: clamp to min span 1", "[grid_edit][resize]") {
     // Widget at (2,0) span 2x2, drag left edge past right edge → clamps to min 1
-    auto result = GridEditMode::compute_resize_result(GridEditMode::ResizeEdge::Left, 2, 0, 2, 2,
-                                                      /*new_edge_cell=*/5, /*ncells=*/6);
+    auto result =
+        GridEditMode::compute_resize_result(GridEditMode::ResizeEdge::Left, 2, 0, 2, 2,
+                                            /*new_edge_cell=*/5, /*ncells=*/6, /*step=*/1);
     CHECK(result.colspan >= 1);
     // Origin should be clamped so widget stays within right edge
     CHECK(result.col + result.colspan <= 6);
@@ -1616,15 +1623,90 @@ TEST_CASE("compute_resize_result: clamp to min span 1", "[grid_edit][resize]") {
 
 TEST_CASE("compute_resize_result: clamp to grid bounds", "[grid_edit][resize]") {
     // Widget at (4,0) span 2x2, drag right edge past grid boundary
-    auto result = GridEditMode::compute_resize_result(GridEditMode::ResizeEdge::Right, 4, 0, 2, 2,
-                                                      /*new_edge_cell=*/7, /*ncells=*/6);
+    auto result =
+        GridEditMode::compute_resize_result(GridEditMode::ResizeEdge::Right, 4, 0, 2, 2,
+                                            /*new_edge_cell=*/7, /*ncells=*/6, /*step=*/1);
     CHECK(result.col == 4);
     CHECK(result.col + result.colspan <= 6);
 
     // Drag top edge past grid top
-    auto result2 = GridEditMode::compute_resize_result(GridEditMode::ResizeEdge::Top, 0, 1, 2, 2,
-                                                       /*new_edge_cell=*/-1, /*ncells=*/4);
+    auto result2 =
+        GridEditMode::compute_resize_result(GridEditMode::ResizeEdge::Top, 0, 1, 2, 2,
+                                            /*new_edge_cell=*/-1, /*ncells=*/4, /*step=*/1);
     CHECK(result2.row >= 0);
+}
+
+// ============================================================================
+// Step-aware snapping
+// ============================================================================
+
+TEST_CASE("round_to_grid_cell: step 2 snaps to even boundaries on an even grid",
+          "[grid_edit][resize][half_cell]") {
+    // 12 tracks in 600px, no gutter: pitch = 50. Boundaries at 0,50,...,600.
+    CHECK(GridEditMode::round_to_grid_cell(100, 0, 600, 12, 0, 2) == 2);
+    CHECK(GridEditMode::round_to_grid_cell(140, 0, 600, 12, 0, 2) == 2); // 2.8 -> 2
+    CHECK(GridEditMode::round_to_grid_cell(160, 0, 600, 12, 0, 2) == 4); // 3.2 -> 4
+    CHECK(GridEditMode::round_to_grid_cell(600, 0, 600, 12, 0, 2) == 12);
+    // Step 1 still reaches odd boundaries.
+    CHECK(GridEditMode::round_to_grid_cell(150, 0, 600, 12, 0, 1) == 3);
+}
+
+TEST_CASE("round_to_grid_cell: step 2 stays exact on an odd track count",
+          "[grid_edit][resize][half_cell]") {
+    // 13 tracks in 650px, no gutter: pitch = 50 exactly. Halving the track
+    // count would give a pitch of 650/6 = 108.3 instead of 100, an 8% error
+    // that compounds to a whole cell by the right edge.
+    CHECK(GridEditMode::round_to_grid_cell(300, 0, 650, 13, 0, 2) == 6); // 6.0
+    // 7.0 / step(2) = 3.5, an exact tie. std::round ties away from zero (same
+    // convention the step-1 "midpoint rounding" cases above rely on), so this
+    // rounds up to 4 tracks-of-2 -> 8, not down.
+    CHECK(GridEditMode::round_to_grid_cell(350, 0, 650, 13, 0, 2) == 8); // 7.0 -> 8 (ties up)
+    CHECK(GridEditMode::round_to_grid_cell(400, 0, 650, 13, 0, 2) == 8); // 8.0
+    // The final odd track is unreachable at step 2 — the clamp is the last
+    // even boundary, not the track count.
+    CHECK(GridEditMode::round_to_grid_cell(650, 0, 650, 13, 0, 2) == 12);
+}
+
+TEST_CASE("round_to_grid_cell: gutters do not shift the stepped boundary",
+          "[grid_edit][resize][half_cell]") {
+    // pitch = (content_size + gutter) / ncells = (404 + 2) / 14 = 29.0
+    CHECK(GridEditMode::round_to_grid_cell(116, 0, 404, 14, 2, 2) == 4); // 4.0
+    CHECK(GridEditMode::round_to_grid_cell(174, 0, 404, 14, 2, 2) == 6); // 6.0
+}
+
+TEST_CASE("snap_step_for: whole-cell widgets step by a full cell",
+          "[grid_edit][resize][half_cell]") {
+    auto [wc, wr] = GridEditMode::snap_step_for("camera");
+    CHECK(wc == helix::GridLayout::TRACKS_PER_CELL);
+    CHECK(wr == helix::GridLayout::TRACKS_PER_CELL);
+
+    auto [hc, hr] = GridEditMode::snap_step_for("shutdown");
+    CHECK(hc == 1);
+    CHECK(hr == helix::GridLayout::TRACKS_PER_CELL);
+
+    auto [cc, cr] = GridEditMode::snap_step_for("clock");
+    CHECK(cc == 1);
+    CHECK(cr == 1);
+
+    // An id with no registry entry gets the conservative whole-cell answer.
+    auto [uc, ur] = GridEditMode::snap_step_for("not_a_widget");
+    CHECK(uc == helix::GridLayout::TRACKS_PER_CELL);
+    CHECK(ur == helix::GridLayout::TRACKS_PER_CELL);
+}
+
+TEST_CASE("compute_resize_result: a stepped span never lands on an odd count",
+          "[grid_edit][resize][half_cell]") {
+    // Right edge dragged to track 7 on a widget at col 2, step 2: the span must
+    // round to an even number rather than leaving the widget straddling a cell.
+    auto r =
+        GridEditMode::compute_resize_result(GridEditMode::ResizeEdge::Right, 2, 0, 2, 2, 7, 12, 2);
+    CHECK(r.colspan % 2 == 0);
+    CHECK(r.colspan >= 2);
+
+    // The floor is one whole cell, not one track.
+    auto tiny =
+        GridEditMode::compute_resize_result(GridEditMode::ResizeEdge::Right, 2, 0, 4, 2, 2, 12, 2);
+    CHECK(tiny.colspan == 2);
 }
 
 // ============================================================================

@@ -81,6 +81,14 @@ class GridLayout {
     /// Number of defined breakpoints
     static constexpr int NUM_BREAKPOINTS = 6;
 
+    /// Number of grid tracks that make up one authored cell.
+    ///
+    /// Authored spans — in the registry, in default_layout.json and in a saved
+    /// layout — are expressed in cells. The grid lays out tracks. Every site
+    /// that converts between the two reads this, so a widget that is not
+    /// allowed to occupy half a cell can never be placed straddling one.
+    static constexpr int TRACKS_PER_CELL = 1;
+
     /// Target cell WIDTH in pixels. ULTRAWIDE and PORTRAIT divide screen width
     /// by this to derive a column count.
     static constexpr int TARGET_CELL_W_PX = 160;
