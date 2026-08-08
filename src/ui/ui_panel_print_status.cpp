@@ -3362,7 +3362,7 @@ void PrintStatusPanel::load_thumbnail_for_file(const std::string& filename) {
 
                 get_thumbnail_cache().fetch_for_detail_view(
                     api_, thumbnail_rel_path, ctx,
-                    [this, current_gen, token](const std::string& lvgl_path) {
+                    [this, current_gen, token](const std::string& lvgl_path, bool /*degraded*/) {
                         // L081 Mechanism C: defer everything. The inner cb
                         // mutates cached_thumbnail_path_ and reads
                         // thumbnail_load_generation_/get_name(); fetch may

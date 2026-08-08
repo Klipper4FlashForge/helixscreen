@@ -1320,8 +1320,8 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                     } else {
                         get_thumbnail_cache().fetch_for_card_view(
                             self->api_, cache_key, ctx,
-                            [self, panel_tok, file_idx,
-                             filename_copy](const std::string& optimized) {
+                            [self, panel_tok, file_idx, filename_copy](const std::string& optimized,
+                                                                       bool /*degraded*/) {
                                 struct LocalThumbUpdate {
                                     PrintSelectPanel* panel;
                                     helix::LifetimeToken token;
@@ -1371,7 +1371,8 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                     get_thumbnail_cache().fetch_for_card_view(
                         self->api_, d->thumb_path, ctx,
                         // Success callback - receives pre-scaled .bin path
-                        [self, panel_tok, file_idx, filename_copy](const std::string& lvgl_path) {
+                        [self, panel_tok, file_idx, filename_copy](const std::string& lvgl_path,
+                                                                   bool /*degraded*/) {
                             struct ThumbUpdate {
                                 PrintSelectPanel* panel;
                                 helix::LifetimeToken token;
@@ -1505,7 +1506,7 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                             get_thumbnail_cache().fetch_for_card_view(
                                 panel_api, cache_key, ctx,
                                 [self, panel_tok, file_idx,
-                                 filename_copy](const std::string& optimized) {
+                                 filename_copy](const std::string& optimized, bool /*degraded*/) {
                                     // Everything that touches the panel happens in the
                                     // queued apply below, which re-checks the token on
                                     // the main thread.

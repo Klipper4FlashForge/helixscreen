@@ -597,8 +597,9 @@ ThumbnailCache::SuccessCallback ThumbnailCache::on_main(SuccessCallback cb) {
     if (!cb) {
         return cb;
     }
-    return [cb = std::move(cb)](const std::string& path) {
-        helix::ui::run_on_main("ThumbnailCache::on_success", [cb, path]() { cb(path); });
+    return [cb = std::move(cb)](const std::string& path, bool degraded) {
+        helix::ui::run_on_main("ThumbnailCache::on_success",
+                               [cb, path, degraded]() { cb(path, degraded); });
     };
 }
 
@@ -631,7 +632,7 @@ void ThumbnailCache::fetch(MoonrakerAPI* api, const std::string& relative_path,
         if (std::filesystem::exists(local_path)) {
             spdlog::debug("[ThumbnailCache] Already LVGL path: {}", relative_path);
             if (on_success) {
-                on_success(relative_path);
+                on_success(relative_path, /*degraded=*/false);
             }
         } else if (on_error) {
             on_error("LVGL path file not found: " + local_path);
@@ -643,7 +644,7 @@ void ThumbnailCache::fetch(MoonrakerAPI* api, const std::string& relative_path,
     if (std::filesystem::exists(relative_path)) {
         spdlog::debug("[ThumbnailCache] Local file exists: {}", relative_path);
         if (on_success) {
-            on_success(to_lvgl_path(relative_path));
+            on_success(to_lvgl_path(relative_path), /*degraded=*/false);
         }
         return;
     }
@@ -652,7 +653,7 @@ void ThumbnailCache::fetch(MoonrakerAPI* api, const std::string& relative_path,
     std::string cached = get_if_cached(relative_path);
     if (!cached.empty()) {
         if (on_success) {
-            on_success(cached);
+            on_success(cached, /*degraded=*/false);
         }
         return;
     }
@@ -692,7 +693,7 @@ void ThumbnailCache::fetch(MoonrakerAPI* api, const std::string& relative_path,
             // does not know it has.
             note_write_and_evict(local_path);
             if (on_success) {
-                on_success(to_lvgl_path(local_path));
+                on_success(to_lvgl_path(local_path), /*degraded=*/false);
             }
         },
         // Error callback
@@ -927,7 +928,7 @@ void ThumbnailCache::fetch_optimized(MoonrakerAPI* api, const std::string& relat
     if (!optimized.empty()) {
         spdlog::debug("[ThumbnailCache] Pre-scaled cache hit: {}", optimized);
         if (on_success) {
-            on_success(optimized);
+            on_success(optimized, /*degraded=*/false);
         }
         return;
     }
@@ -1016,15 +1017,17 @@ void ThumbnailCache::process_and_callback(const std::string& png_lvgl_path,
         [on_success](const std::string& lvbin_path) {
             spdlog::debug("[ThumbnailCache] Pre-scaling complete: {}", lvbin_path);
             if (on_success) {
-                on_success(lvbin_path);
+                on_success(lvbin_path, /*degraded=*/false);
             }
         },
-        // Error - fallback to PNG
+        // Error - fallback to PNG. Reported through on_success because the PNG
+        // still renders, but flagged degraded so the caller can tell it did not
+        // get the pre-scaled .bin it asked for.
         [on_success, png_lvgl_path](const std::string& error) {
             spdlog::warn("[ThumbnailCache] Pre-scaling failed ({}), using PNG fallback", error);
             // Fallback: return PNG path (still works, just slower)
             if (on_success) {
-                on_success(png_lvgl_path);
+                on_success(png_lvgl_path, /*degraded=*/true);
             }
         });
 }
@@ -1039,13 +1042,14 @@ void ThumbnailCache::fetch(const ThumbnailRequest& req, ThumbnailLoadContext ctx
     // success callback runs only if no newer request superseded this one. The
     // difference is that the target comes from the request rather than being
     // chosen here, which is what lets one method serve every call site.
-    auto guarded_success = [ctx, on_success = std::move(on_success)](const std::string& path) {
+    auto guarded_success = [ctx, on_success = std::move(on_success)](const std::string& path,
+                                                                     bool degraded) {
         if (!ctx.is_valid()) {
             spdlog::debug("[ThumbnailCache] Dropping stale fetch result: {}", path);
             return;
         }
         if (on_success) {
-            on_success(path);
+            on_success(path, degraded);
         }
     };
 
@@ -1065,13 +1069,14 @@ void ThumbnailCache::fetch_for_detail_view(MoonrakerAPI* api, const std::string&
     // giving good quality while avoiding full-resolution PNG decode at render time.
 
     // Wrap the success callback with validity check to reduce boilerplate
-    auto guarded_success = [ctx, on_success = std::move(on_success)](const std::string& path) {
+    auto guarded_success = [ctx, on_success = std::move(on_success)](const std::string& path,
+                                                                     bool degraded) {
         if (!ctx.is_valid()) {
             spdlog::trace("[ThumbnailCache] Detail view callback skipped (context invalid)");
             return;
         }
         if (on_success) {
-            on_success(path);
+            on_success(path, degraded);
         }
     };
 
@@ -1096,13 +1101,14 @@ void ThumbnailCache::fetch_for_card_view(MoonrakerAPI* api, const std::string& r
     // resolution is wasted - pre-scaling once and caching is more efficient.
 
     // Wrap the success callback with validity check to reduce boilerplate
-    auto guarded_success = [ctx, on_success = std::move(on_success)](const std::string& path) {
+    auto guarded_success = [ctx, on_success = std::move(on_success)](const std::string& path,
+                                                                     bool degraded) {
         if (!ctx.is_valid()) {
             spdlog::trace("[ThumbnailCache] Card view callback skipped (context invalid)");
             return;
         }
         if (on_success) {
-            on_success(path);
+            on_success(path, degraded);
         }
     };
 

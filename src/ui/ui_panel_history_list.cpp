@@ -1028,7 +1028,7 @@ void HistoryListPanel::show_detail_overlay(const PrintHistoryJob& job) {
                 api, job.thumbnail_path,
                 // Success callback - may be called from background thread
                 // Capture generation counter, NOT widget pointers (avoids use-after-free)
-                [self, this_generation](const std::string& lvgl_path) {
+                [self, this_generation](const std::string& lvgl_path, bool /*degraded*/) {
                     // Dispatch UI update to main thread
                     struct ThumbUpdate {
                         HistoryListPanel* panel;

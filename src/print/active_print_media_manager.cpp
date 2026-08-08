@@ -361,7 +361,8 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
 
                 get_thumbnail_cache().fetch_for_detail_view(
                     api_, thumbnail_rel_path, ctx,
-                    [this, tok = lifetime_.token(), current_gen](const std::string& lvgl_path) {
+                    [this, tok = lifetime_.token(), current_gen](const std::string& lvgl_path,
+                                                                 bool /*degraded*/) {
                         // bg thread (thumbnail prescale worker): no member access here.
                         std::string path = lvgl_path;
                         tok.defer("ActivePrintMediaManager::on_thumbnail", [this, current_gen,

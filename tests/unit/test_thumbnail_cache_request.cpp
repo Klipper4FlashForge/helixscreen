@@ -24,10 +24,14 @@
 #include "../../include/thumbnail_cache.h"
 #include "../../include/thumbnail_load_context.h"
 #include "../../include/thumbnail_processor.h"
+#include "../../include/ui_update_queue.h"
 #include "../lvgl_test_fixture.h"
 
 #include <atomic>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <functional>
 #include <string>
 #include <unistd.h>
 #include <vector>
@@ -64,6 +68,35 @@ std::string unique_key(const char* tag) {
     return std::string("thumb_request_") + tag + "_" + std::to_string(::getpid()) + ".png";
 }
 
+/// Write raw bytes straight into the cache's PNG slot for `key`.
+///
+/// Deliberately NOT save_raw_png(): that validates the PNG magic bytes, and the
+/// fallback case below needs a file that exists (so fetch_optimized takes its
+/// "PNG is cached, queue the pre-scale" branch) but cannot be decoded (so the
+/// processor reports an error and process_and_callback substitutes the PNG).
+/// Only a direct write can be both.
+void plant_cached_png(const ThumbnailCache& cache, const std::string& key,
+                      const std::vector<uint8_t>& bytes) {
+    const std::string path = cache.get_cache_path(key);
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    REQUIRE(out.good());
+    out.write(reinterpret_cast<const char*>(bytes.data()),
+              static_cast<std::streamsize>(bytes.size()));
+    out.close();
+    REQUIRE(std::filesystem::exists(path));
+}
+
+/// A fetch that reaches process_and_callback has delivered nothing by the time
+/// fetch() returns: the pre-scale runs on the processor pool and its result is
+/// marshalled back through UpdateQueue. Join the pool, then drain — repeatedly,
+/// because a drained callback can commit more pool work.
+void settle(const std::function<bool()>& done) {
+    for (int i = 0; i < 20 && !done(); ++i) {
+        helix::ThumbnailProcessor::instance().wait_for_completion();
+        helix::ui::UpdateQueue::instance().drain();
+    }
+}
+
 } // namespace
 
 TEST_CASE_METHOD(LVGLTestFixture, "ThumbnailRequest: fetch delivers when the context is live",
@@ -91,7 +124,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "ThumbnailRequest: fetch delivers when the con
 
     std::string delivered;
     cache.fetch(
-        req, ctx, [&delivered](const std::string& path) { delivered = path; },
+        req, ctx, [&delivered](const std::string& path, bool /*degraded*/) { delivered = path; },
         [](const std::string& error) { FAIL_CHECK("unexpected fetch error: " << error); });
 
     CHECK(delivered == planted.output_path);
@@ -126,7 +159,8 @@ TEST_CASE_METHOD(LVGLTestFixture, "ThumbnailRequest: fetch suppresses a supersed
     REQUIRE_FALSE(ctx.is_valid());
 
     bool success_fired = false;
-    cache.fetch(req, ctx, [&success_fired](const std::string&) { success_fired = true; }, nullptr);
+    cache.fetch(
+        req, ctx, [&success_fired](const std::string&, bool) { success_fired = true; }, nullptr);
 
     CHECK_FALSE(success_fired);
 
@@ -164,7 +198,8 @@ TEST_CASE_METHOD(LVGLTestFixture,
         auto ctx = ThumbnailLoadContext::create(guard, &gen);
         std::string delivered;
         cache.fetch_for_detail_view(
-            nullptr, key, ctx, [&delivered](const std::string& path) { delivered = path; },
+            nullptr, key, ctx,
+            [&delivered](const std::string& path, bool /*degraded*/) { delivered = path; },
             [](const std::string& error) {
                 FAIL_CHECK("unexpected detail view error: " << error);
             });
@@ -176,13 +211,125 @@ TEST_CASE_METHOD(LVGLTestFixture,
         std::string delivered;
         std::string reported_error;
         cache.fetch_for_detail_view(
-            nullptr, key, ctx, [&delivered](const std::string& path) { delivered = path; },
+            nullptr, key, ctx,
+            [&delivered](const std::string& path, bool /*degraded*/) { delivered = path; },
             [&reported_error](const std::string& error) { reported_error = error; },
             /*source_modified=*/4102444800); // 2100-01-01, newer than any cached file
 
         CHECK(delivered.empty());
         CHECK_FALSE(reported_error.empty());
     }
+
+    cache.invalidate(key);
+}
+
+/// process_and_callback() wires the ThumbnailProcessor's ERROR handler to
+/// on_success, handing the caller the raw PNG when pre-scaling fails. That is a
+/// deliberate graceful degradation - the PNG still renders, just slower - but
+/// until the callback carried a flag it was indistinguishable from a real
+/// pre-scale, so nobody downstream could tell they were holding the slow path.
+///
+/// The two cases below are a pair on purpose. Asserting only the fallback would
+/// pass against an implementation that hardcoded `degraded = true` everywhere,
+/// and asserting only the success would pass against one that hardcoded
+/// `false`. Both have to be observed on the same build for the flag to mean
+/// anything. Each drives the SAME entry point (fetch -> fetch_optimized step 2
+/// -> process_and_callback); the only difference is whether the planted PNG can
+/// actually be decoded.
+
+TEST_CASE_METHOD(LVGLTestFixture, "ThumbnailCache: a completed pre-scale reports degraded=false",
+                 "[thumbnail][request]") {
+    ThumbnailCache cache;
+    const helix::ThumbnailTarget target = target_120();
+    const std::string key = unique_key("degraded_false");
+    cache.invalidate(key);
+
+    plant_cached_png(cache, key, kTinyPng);
+
+    ThumbnailRequest req;
+    req.key = key;
+    req.target = target;
+
+    // No .bin yet - this is what forces fetch() past its pre-scaled-hit branch
+    // and into process_and_callback, the function under test.
+    REQUIRE(cache.get_if_cached(req).empty());
+
+    std::atomic<uint32_t> gen{0};
+    helix::AsyncLifetimeGuard guard;
+    auto ctx = ThumbnailLoadContext::create(guard, &gen);
+
+    bool fired = false;
+    // Seeded to the OPPOSITE of the expectation so a callback that never runs
+    // cannot be mistaken for a passing assertion.
+    bool degraded = true;
+    std::string delivered;
+    std::string reported_error;
+
+    cache.fetch(
+        req, ctx,
+        [&](const std::string& path, bool is_degraded) {
+            fired = true;
+            degraded = is_degraded;
+            delivered = path;
+        },
+        [&reported_error](const std::string& error) { reported_error = error; });
+
+    settle([&fired] { return fired; });
+
+    INFO("error reported: " << reported_error);
+    REQUIRE(fired);
+    CHECK_FALSE(degraded);
+    // A real pre-scale delivers the .bin it produced, not the PNG it read.
+    CHECK(delivered.size() > 4);
+    CHECK(delivered.substr(delivered.size() - 4) == ".bin");
+
+    cache.invalidate(key);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "ThumbnailCache: the PNG fallback reports degraded=true",
+                 "[thumbnail][request]") {
+    ThumbnailCache cache;
+    const helix::ThumbnailTarget target = target_120();
+    const std::string key = unique_key("degraded_true");
+    cache.invalidate(key);
+
+    // Exists, so fetch_optimized takes its "PNG is cached" branch; undecodable,
+    // so the pre-scale fails and process_and_callback substitutes this file.
+    const std::vector<uint8_t> not_a_png(64, 0x7F);
+    plant_cached_png(cache, key, not_a_png);
+
+    ThumbnailRequest req;
+    req.key = key;
+    req.target = target;
+
+    REQUIRE(cache.get_if_cached(req).empty());
+
+    std::atomic<uint32_t> gen{0};
+    helix::AsyncLifetimeGuard guard;
+    auto ctx = ThumbnailLoadContext::create(guard, &gen);
+
+    bool fired = false;
+    bool degraded = false;
+    std::string delivered;
+    std::string reported_error;
+
+    cache.fetch(
+        req, ctx,
+        [&](const std::string& path, bool is_degraded) {
+            fired = true;
+            degraded = is_degraded;
+            delivered = path;
+        },
+        [&reported_error](const std::string& error) { reported_error = error; });
+
+    settle([&fired] { return fired; });
+
+    INFO("error reported: " << reported_error);
+    // The fallback is delivered through the SUCCESS channel - that is the whole
+    // problem this flag exists to make visible.
+    REQUIRE(fired);
+    CHECK(degraded);
+    CHECK(delivered == ThumbnailCache::to_lvgl_path(cache.get_cache_path(key)));
 
     cache.invalidate(key);
 }

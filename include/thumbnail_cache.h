@@ -90,7 +90,13 @@ class ThumbnailCache {
     static constexpr size_t DEFAULT_DISK_LOW = 20 * 1024 * 1024;
 
     /// Callback for successful thumbnail fetch (receives LVGL-ready path with "A:" prefix)
-    using SuccessCallback = std::function<void(const std::string& lvgl_path)>;
+    ///
+    /// `degraded` is true when the path is a graceful fallback rather than the
+    /// thing that was asked for: process_and_callback() answers a pre-scaling
+    /// FAILURE through this success channel, handing back the raw PNG. It still
+    /// renders, just without the pre-scale, and callers could not previously
+    /// tell the two apart.
+    using SuccessCallback = std::function<void(const std::string& path, bool degraded)>;
 
     /// Callback for failed thumbnail fetch (receives error message)
     using ErrorCallback = std::function<void(const std::string& error)>;

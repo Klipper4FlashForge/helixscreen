@@ -851,7 +851,7 @@ void PrintStatusWidget::reset_print_card_to_idle() {
 
     get_thumbnail_cache().fetch_optimized(
         api, thumb_rel_path, target,
-        [thumb_widget, thumb_compact, token](const std::string& lvgl_path) {
+        [thumb_widget, thumb_compact, token](const std::string& lvgl_path, bool /*degraded*/) {
             if (token.expired())
                 return;
             helix::ui::queue_update<std::string>(
