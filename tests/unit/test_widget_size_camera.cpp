@@ -6,14 +6,19 @@
  * physical pixels, not colspan/rowspan — and unlike every other migrated
  * widget, the transition is edge-triggered around a network resource: it
  * starts/stops an MJPEG stream on the compact<->non-compact boundary
- * (camera_widget.cpp on_size_changed(), :256-287).
+ * (camera_widget.cpp on_size_changed(), :257-294).
  *
- * `compact_ = !(width_px >= W_NORMAL && height_px >= H_TALL)` — both axes
- * must clear their floor before a stream starts. A single grid row on
- * Large/XLarge already clears H_TALL by itself (141px, 169px cell height),
- * so a plain 1x1 widget there must not read as "non-compact" on height
- * alone and open a stream nobody asked for; the two single-axis cases below
- * (Large-shaped height-only, then width-only) pin that.
+ * `compact_ = (width_px < W_NORMAL)` — width alone decides. The live view is
+ * scaled with LV_IMAGE_ALIGN_COVER, so it fills whatever cell it is given
+ * either way; extra height never buys the widget new content the way a
+ * resolved name or a second column would, so gating on height too would only
+ * ever produce false results. Large and XLarge's single-row 1x1 cells (107px,
+ * 141px / 134px, 169px) are the case that matters: their row height alone
+ * clears what used to be the tall threshold, so a plain 1x1 widget there must
+ * not read as big enough to open a stream nobody asked for. Width-only keeps
+ * those compact without also dropping the stream on every 2-column cell whose
+ * row happens to be short (Medium, Portrait) — the cases below pin both
+ * sides.
  *
  * No network I/O happens in this file. CameraWidget::start_stream() builds a
  * CameraStream and calls CameraStream::configure_from_printer(), which reads
@@ -63,7 +68,7 @@ using namespace helix;
 using namespace helix::widget_size;
 
 TEST_CASE_METHOD(LVGLUITestFixture,
-                 "camera compact/live layout follows pixels, not spans, and stream "
+                 "camera compact/live layout follows width alone, and stream "
                  "start/stop stays edge-triggered",
                  "[widget_size][camera]") {
     // Actively zero the global PrinterState singleton's webcam config rather
@@ -108,9 +113,10 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     REQUIRE(CameraWidgetTestAccess::start_stream_calls(h.widget()) == 1);
     REQUIRE(CameraWidgetTestAccess::stop_stream_calls(h.widget()) == 0);
 
-    // --- Entering compact: width AND height both below floor. Contradicting
-    // span: 4x4 (old predicate: colspan<=1 && rowspan<=1 -> false, not
-    // compact). Seed a non-null image source first (a real, decodable asset —
+    // --- Entering compact: width below floor (height also below floor here,
+    // but only width is load-bearing). Contradicting span: 4x4 (old
+    // shipping predicate: colspan<=1 && rowspan<=1 -> false, not compact).
+    // Seed a non-null image source first (a real, decodable asset —
     // lv_image_set_src() rejects a fabricated path via
     // lv_image_decoder_get_info() and silently leaves src null, see
     // lv_image.c:180-201) so clearing it on this transition is a real
@@ -130,26 +136,23 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     CHECK(CameraWidgetTestAccess::start_stream_calls(h.widget()) == 1);
 
     // --- Edge-trigger check (entering-compact direction): resize to the
-    // EXACT SAME compact target again (no transition — compact_ was already
+    // EXACT SAME compact width again (no transition — compact_ was already
     // true). Re-seed the sentinel source; a correct edge-triggered
     // implementation must NOT re-enter the "compact && !was_compact" branch,
     // so the sentinel must survive AND stop_stream_calls must not advance.
     lv_image_set_src(camera_image, "A:assets/images/ams/spoolman_24.png");
-    h.resize(3, 3, W_NORMAL - 1, H_TALL - 1); // spans vary, pixels identical
+    h.resize(3, 3, W_NORMAL - 1, H_TALL - 1); // spans vary, width identical
     process_lvgl(30);
 
     CHECK(lv_image_get_src(camera_image) != nullptr);                  // NOT re-cleared
     CHECK(CameraWidgetTestAccess::stop_stream_calls(h.widget()) == 1); // NOT re-called
     CHECK(CameraWidgetTestAccess::start_stream_calls(h.widget()) == 1);
 
-    // --- Height alone, at a real Large-tier 1x1 extent (107x141): must NOT
-    // leave compact. Before this fix, height_px(141) >= H_TALL on its own
-    // was enough (compact_ was width<W_NORMAL && height<H_TALL, so either
-    // axis clearing its floor flipped it), and a single grid row on
-    // Large/XLarge already clears H_TALL by itself (141px, 169px) — wider
-    // than H_TALL's own calibration point (Micro's genuinely-2-row 131px).
-    // A widget authored/resized to plain 1x1 must read as compact on every
-    // tier, the same way it does everywhere else.
+    // --- Large-tier 1x1 (107x141): must stay compact. This is the case the
+    // width-only rule exists for — a single grid row on Large already
+    // clears what used to be the tall threshold (141px), so reading height
+    // at all here would open a stream for a widget that never grew past one
+    // column.
     h.resize(1, 1, 107, 141);
     process_lvgl(30);
 
@@ -158,17 +161,8 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     CHECK(CameraWidgetTestAccess::start_stream_calls(h.widget()) == 1); // unchanged
     CHECK(CameraWidgetTestAccess::stop_stream_calls(h.widget()) == 1);  // unchanged
 
-    // --- Width alone, mirrored: must also stay compact.
-    h.resize(1, 1, 205, 130);
-    process_lvgl(30);
-
-    CHECK_FALSE(lv_obj_has_flag(camera_overlay, LV_OBJ_FLAG_HIDDEN));
-    CHECK(lv_obj_has_flag(camera_status, LV_OBJ_FLAG_HIDDEN));
-    CHECK(CameraWidgetTestAccess::start_stream_calls(h.widget()) == 1);
-    CHECK(CameraWidgetTestAccess::stop_stream_calls(h.widget()) == 1);
-
-    // --- XLarge-tier 1x1 (134x169): same false-positive shape, taller
-    // still — must also stay compact.
+    // --- XLarge-tier 1x1 (134x169): same shape, taller still — must also
+    // stay compact.
     h.resize(1, 1, 134, 169);
     process_lvgl(30);
 
@@ -177,23 +171,11 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     CHECK(CameraWidgetTestAccess::start_stream_calls(h.widget()) == 1);
     CHECK(CameraWidgetTestAccess::stop_stream_calls(h.widget()) == 1);
 
-    // --- Medium-tier 1x1 (114x112): both axes below floor anyway, kept as
-    // a same-shape baseline alongside the false-positive cases above.
-    h.resize(1, 1, 114, 112);
-    process_lvgl(30);
-
-    CHECK_FALSE(lv_obj_has_flag(camera_overlay, LV_OBJ_FLAG_HIDDEN));
-    CHECK(lv_obj_has_flag(camera_status, LV_OBJ_FLAG_HIDDEN));
-    CHECK(CameraWidgetTestAccess::start_stream_calls(h.widget()) == 1);
-    CHECK(CameraWidgetTestAccess::stop_stream_calls(h.widget()) == 1);
-
-    // --- Micro-tier 1x2 (70x131): the legitimate tall case (genuinely
-    // rowspan==2). Width still never clears W_NORMAL, so both-axes-required
-    // keeps this compact too — unlike fan_stack's row layout, a camera
-    // stream scaled to LV_IMAGE_ALIGN_COVER doesn't inherently need width
-    // *content*, but the widget stays conservative here: starting network
-    // I/O for a widget that never grew past 1 column is the behavior this
-    // fix intentionally narrows, tall or not.
+    // --- Micro-tier 1x2 (70x131): genuinely tall (rowspan==2) but still
+    // only one column wide. Width never clears W_NORMAL, so this stays
+    // compact too — a stream scaled to LV_IMAGE_ALIGN_COVER doesn't need
+    // width *content* the way a resolved label would, but the rule tracks
+    // width alone regardless of why a widget happens to be tall.
     h.resize(1, 2, 70, 131);
     process_lvgl(30);
 
@@ -202,30 +184,64 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     CHECK(CameraWidgetTestAccess::start_stream_calls(h.widget()) == 1);
     CHECK(CameraWidgetTestAccess::stop_stream_calls(h.widget()) == 1);
 
-    // --- Leaving compact: width AND height both at/over their floor.
-    // Contradicting span: 1x1 (old predicate -> compact stays true).
+    // --- Medium-tier 2x1 (233x112): the case a both-axes-required rule gets
+    // wrong. Height (112) never reaches the old tall floor, but this cell is
+    // genuinely two columns wide and streams in production — Medium is the
+    // most common panel size in the fleet, so losing this would be the
+    // regression that matters most. Leaving compact here must invoke
+    // start_stream() exactly once.
+    h.resize(2, 1, 233, 112);
+    process_lvgl(30);
+
+    CHECK_FALSE(lv_obj_has_flag(camera_status, LV_OBJ_FLAG_HIDDEN)); // status text shown again
+    CHECK(CameraWidgetTestAccess::start_stream_calls(h.widget()) == 2);
+    CHECK(CameraWidgetTestAccess::stop_stream_calls(h.widget()) == 1);
+
+    // --- Portrait-tier 2x1 (309x106): same shape as Medium above, and an
+    // edge-trigger check in the same direction — width clears the floor at a
+    // different value, compact_ was already false, so this must NOT re-fire
+    // start_stream().
+    h.resize(2, 1, 309, 106);
+    process_lvgl(30);
+
+    CHECK_FALSE(lv_obj_has_flag(camera_status, LV_OBJ_FLAG_HIDDEN));
+    CHECK(CameraWidgetTestAccess::start_stream_calls(h.widget()) == 2); // NOT re-called
+    CHECK(CameraWidgetTestAccess::stop_stream_calls(h.widget()) == 1);
+
+    // --- Back to compact (Large 1x1 again): confirms the transition still
+    // fires both directions, not just once at startup.
+    h.resize(1, 1, 107, 141);
+    process_lvgl(30);
+
+    CHECK_FALSE(lv_obj_has_flag(camera_overlay, LV_OBJ_FLAG_HIDDEN));
+    CHECK(lv_obj_has_flag(camera_status, LV_OBJ_FLAG_HIDDEN));
+    CHECK(CameraWidgetTestAccess::start_stream_calls(h.widget()) == 2);
+    CHECK(CameraWidgetTestAccess::stop_stream_calls(h.widget()) == 2);
+
+    // --- Leaving compact: width at/over its floor. Contradicting span: 1x1
+    // (old shipping predicate -> compact stays true).
     h.resize(1, 1, W_WIDE, H_TALLER);
     process_lvgl(30);
 
     CHECK_FALSE(lv_obj_has_flag(camera_status, LV_OBJ_FLAG_HIDDEN)); // status text shown again
     // active_ is true (set above), so leaving compact must invoke
     // start_stream() exactly once more, and must NOT touch stop_stream().
-    CHECK(CameraWidgetTestAccess::start_stream_calls(h.widget()) == 2);
-    CHECK(CameraWidgetTestAccess::stop_stream_calls(h.widget()) == 1);
+    CHECK(CameraWidgetTestAccess::start_stream_calls(h.widget()) == 3);
+    CHECK(CameraWidgetTestAccess::stop_stream_calls(h.widget()) == 2);
 
     // --- Edge-trigger check (leaving-compact direction): manually re-hide
-    // camera_status, then resize to the EXACT SAME non-compact target again
-    // (no transition — compact_ was already false). A correct edge-triggered
-    // implementation must NOT re-enter the "!compact_ && was_compact" branch,
-    // so the manually-set hidden flag must survive AND start_stream_calls
-    // must not advance.
+    // camera_status, then resize to a different non-compact width again (no
+    // transition — compact_ was already false). A correct edge-triggered
+    // implementation must NOT re-enter the "!compact_ && was_compact"
+    // branch, so the manually-set hidden flag must survive AND
+    // start_stream_calls must not advance.
     lv_obj_add_flag(camera_status, LV_OBJ_FLAG_HIDDEN);
-    h.resize(2, 2, W_WIDE, H_TALLER); // spans vary, pixels identical
+    h.resize(2, 2, W_WIDE, H_TALLER); // spans vary, width identical
     process_lvgl(30);
 
     CHECK(lv_obj_has_flag(camera_status, LV_OBJ_FLAG_HIDDEN));          // NOT re-shown
-    CHECK(CameraWidgetTestAccess::start_stream_calls(h.widget()) == 2); // NOT re-called
-    CHECK(CameraWidgetTestAccess::stop_stream_calls(h.widget()) == 1);
+    CHECK(CameraWidgetTestAccess::start_stream_calls(h.widget()) == 3); // NOT re-called
+    CHECK(CameraWidgetTestAccess::stop_stream_calls(h.widget()) == 2);
 }
 
 #endif // HELIX_HAS_CAMERA

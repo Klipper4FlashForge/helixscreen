@@ -254,14 +254,14 @@ void CameraWidget::on_deactivate() {
     }
 }
 
-void CameraWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_px, int height_px) {
+void CameraWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_px,
+                                   int /*height_px*/) {
     bool was_compact = compact_;
-    // Streaming needs genuine room on both axes: Large/XLarge's single-row
-    // cell height alone clears H_TALL (141px, 169px), so a widget authored
-    // at plain 1x1 must not read as tall enough to start an MJPEG stream
-    // just because those two tiers are naturally taller per row.
-    compact_ =
-        !widget_size::fits_both(width_px, height_px, widget_size::W_NORMAL, widget_size::H_TALL);
+    // Width-only: the live view fills its cell edge-to-edge either way
+    // (LV_IMAGE_ALIGN_COVER), so extra height alone never earns the widget
+    // a stream it wouldn't otherwise get — only a second column does, same
+    // as fan_stack's row layout.
+    compact_ = (width_px < widget_size::W_NORMAL);
 
     // Ensure scale-to-cover after any resize
     if (camera_image_) {
