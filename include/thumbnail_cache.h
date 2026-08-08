@@ -63,10 +63,26 @@
  * it carries whatever key the caller already used.
  */
 struct ThumbnailRequest {
+    /**
+     * @brief Which artifact the request resolves to.
+     *
+     * Pre-scaled is right for almost everything — it renders without runtime
+     * scaling. FullPng exists for the two places that genuinely need the
+     * original: print-select's fallback when no card .bin has been produced yet
+     * (on Snapmaker U1 / AD5M the detail preview is the ONLY render, so
+     * answering "not cached" there leaves a black preview), and the history
+     * detail overlay, which has always shown the raw PNG.
+     */
+    enum class ThumbnailFormat {
+        Prescaled, ///< pre-scaled .bin at req.target (default; fastest to render)
+        FullPng,   ///< full-resolution cached PNG; req.target is ignored
+    };
+
     std::string key;
     helix::ThumbnailTarget target;
     time_t source_modified = 0;
     MoonrakerAPI* api = nullptr;
+    ThumbnailFormat format = ThumbnailFormat::Prescaled;
 };
 
 class ThumbnailCache {
@@ -154,13 +170,15 @@ class ThumbnailCache {
     /**
      * @brief Synchronous cache lookup for a request
      *
-     * The request-shaped counterpart to fetch(). Resolves to the pre-scaled
-     * .bin for req.target, honouring req.source_modified for freshness, so a
-     * caller that already built a ThumbnailRequest does not have to unpack it
-     * to ask "do I already have this?".
+     * The request-shaped counterpart to fetch(), and it resolves the same
+     * artifact fetch() would: the pre-scaled .bin for req.target, or the
+     * full-resolution PNG when req.format is FullPng. Either way
+     * req.source_modified governs freshness, so a caller that already built a
+     * ThumbnailRequest does not have to unpack it to ask "do I already have
+     * this?".
      *
      * @param req The request to look up
-     * @return LVGL path ("A:...") to the pre-scaled file, or empty if absent/stale
+     * @return LVGL path ("A:...") to the cached file, or empty if absent/stale
      */
     [[nodiscard]] std::string get_if_cached(const ThumbnailRequest& req) const;
 
@@ -256,8 +274,8 @@ class ThumbnailCache {
      * @brief Fetch a thumbnail described by a request, guarded by a load context
      *
      * The single fetch entry point every consumer is being moved onto. The
-     * request carries what to fetch (key, target, freshness, api); the context
-     * carries whether the answer is still wanted.
+     * request carries what to fetch (key, target, format, freshness, api); the
+     * context carries whether the answer is still wanted.
      *
      * on_success is invoked only if ctx.is_valid() — that is, the caller is
      * still alive AND no newer request has bumped the generation counter the

@@ -1920,9 +1920,14 @@ void PrintSelectPanel::set_selected_file(const char* filename, const char* thumb
         spdlog::debug("[{}] Using pre-scaled .bin for detail view: {}", get_name(), detail_src);
     } else if (original_url && original_url[0] != '\0') {
         // No card .bin yet — fall back to the cached full-res PNG so the detail
-        // view still shows the model. Pass modification timestamp to invalidate
-        // stale cache entries.
-        detail_src = get_thumbnail_cache().get_if_cached(original_url, modified_timestamp);
+        // view still shows the model. FullPng is load-bearing here: a pre-scaled
+        // lookup would answer "not cached" in exactly the case this branch
+        // exists for. Pass modification timestamp to invalidate stale entries.
+        ThumbnailRequest req;
+        req.key = original_url;
+        req.source_modified = modified_timestamp;
+        req.format = ThumbnailRequest::ThumbnailFormat::FullPng;
+        detail_src = get_thumbnail_cache().get_if_cached(req);
         if (!detail_src.empty()) {
             spdlog::debug("[{}] No .bin yet — using cached PNG for detail view: {}", get_name(),
                           detail_src);

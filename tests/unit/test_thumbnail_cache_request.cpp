@@ -237,6 +237,165 @@ TEST_CASE_METHOD(LVGLTestFixture,
 /// -> process_and_callback); the only difference is whether the planted PNG can
 /// actually be decoded.
 
+/// ThumbnailRequest::format is the only way to ask for the full-resolution PNG
+/// instead of the pre-scaled .bin. Two call sites need it: print-select's
+/// no-.bin-yet fallback (Snapmaker U1 / AD5M, where the detail preview is the
+/// only render) and the history detail overlay.
+///
+/// Both cases below plant exactly ONE of the two artifacts and assert the other
+/// format comes back empty. That is what makes the routing observable: a build
+/// where both branches resolve the same way fails one half or the other, and a
+/// single-sided assertion would pass against a hardcoded branch.
+///
+/// process_sync() writes only the .bin; plant_cached_png() writes only the PNG.
+/// So each key is unambiguously one artifact and not the other.
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "ThumbnailRequest: format selects PNG or pre-scaled on get_if_cached",
+                 "[thumbnail][request]") {
+    ThumbnailCache cache;
+    auto& processor = helix::ThumbnailProcessor::instance();
+    const helix::ThumbnailTarget target = target_120();
+
+    // Entry A: pre-scaled .bin, no cached PNG.
+    const std::string bin_key = unique_key("fmt_bin");
+    cache.invalidate(bin_key);
+    const auto planted = processor.process_sync(kTinyPng, bin_key, target);
+    REQUIRE(planted.success);
+    REQUIRE(ThumbnailCache::is_lvgl_path(planted.output_path));
+
+    // Entry B: full-resolution PNG, no .bin.
+    const std::string png_key = unique_key("fmt_png");
+    cache.invalidate(png_key);
+    plant_cached_png(cache, png_key, kTinyPng);
+    const std::string png_path = ThumbnailCache::to_lvgl_path(cache.get_cache_path(png_key));
+
+    ThumbnailRequest bin_req;
+    bin_req.key = bin_key;
+    bin_req.target = target;
+
+    ThumbnailRequest png_req;
+    png_req.key = png_key;
+    png_req.target = target;
+
+    // Default must stay Prescaled so every pre-existing caller is unaffected.
+    REQUIRE(bin_req.format == ThumbnailRequest::ThumbnailFormat::Prescaled);
+
+    CHECK(cache.get_if_cached(bin_req) == planted.output_path);
+    CHECK(cache.get_if_cached(png_req).empty());
+
+    bin_req.format = ThumbnailRequest::ThumbnailFormat::FullPng;
+    png_req.format = ThumbnailRequest::ThumbnailFormat::FullPng;
+
+    // Exact mirror image: FullPng sees the PNG and is blind to the .bin.
+    CHECK(cache.get_if_cached(bin_req).empty());
+    CHECK(cache.get_if_cached(png_req) == png_path);
+
+    cache.invalidate(bin_key);
+    cache.invalidate(png_key);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "ThumbnailRequest: format selects PNG or pre-scaled on fetch",
+                 "[thumbnail][request]") {
+    ThumbnailCache cache;
+    const helix::ThumbnailTarget target = target_120();
+
+    // Both keys start identically: a decodable PNG in the cache and no .bin, so
+    // the ONLY thing that can differ downstream is which branch fetch() took.
+    const std::string pre_key = unique_key("fetchfmt_pre");
+    const std::string png_key = unique_key("fetchfmt_png");
+    cache.invalidate(pre_key);
+    cache.invalidate(png_key);
+    plant_cached_png(cache, pre_key, kTinyPng);
+    plant_cached_png(cache, png_key, kTinyPng);
+
+    std::atomic<uint32_t> gen{0};
+    helix::AsyncLifetimeGuard guard;
+
+    // --- Prescaled: must run the pre-scaler and hand back a .bin. ---
+    ThumbnailRequest pre_req;
+    pre_req.key = pre_key;
+    pre_req.target = target;
+    REQUIRE(cache.get_if_cached(pre_req).empty()); // no .bin yet
+
+    bool pre_fired = false;
+    std::string pre_delivered;
+    {
+        auto ctx = ThumbnailLoadContext::create(guard, &gen);
+        cache.fetch(
+            pre_req, ctx,
+            [&](const std::string& path, bool /*degraded*/) {
+                pre_fired = true;
+                pre_delivered = path;
+            },
+            [](const std::string& error) { FAIL_CHECK("unexpected prescaled error: " << error); });
+        settle([&pre_fired] { return pre_fired; });
+    }
+    REQUIRE(pre_fired);
+    REQUIRE(pre_delivered.size() > 4);
+    CHECK(pre_delivered.substr(pre_delivered.size() - 4) == ".bin");
+
+    // --- FullPng: must hand back the cached PNG, untouched by the pre-scaler. ---
+    ThumbnailRequest png_req;
+    png_req.key = png_key;
+    png_req.target = target;
+    png_req.format = ThumbnailRequest::ThumbnailFormat::FullPng;
+
+    bool png_fired = false;
+    // Seeded true so a callback that never runs cannot read as a passing check.
+    bool png_degraded = true;
+    std::string png_delivered;
+    {
+        auto ctx = ThumbnailLoadContext::create(guard, &gen);
+        cache.fetch(
+            png_req, ctx,
+            [&](const std::string& path, bool degraded) {
+                png_fired = true;
+                png_degraded = degraded;
+                png_delivered = path;
+            },
+            [](const std::string& error) { FAIL_CHECK("unexpected PNG error: " << error); });
+        settle([&png_fired] { return png_fired; });
+    }
+    REQUIRE(png_fired);
+    CHECK(png_delivered == ThumbnailCache::to_lvgl_path(cache.get_cache_path(png_key)));
+    // A PNG delivered because a PNG was asked for is not a degraded fallback.
+    CHECK_FALSE(png_degraded);
+
+    // And the pre-scaler was never invoked for this key - which is the part a
+    // FullPng branch that silently fell through to fetch_optimized would fail.
+    ThumbnailRequest png_as_bin;
+    png_as_bin.key = png_key;
+    png_as_bin.target = target;
+    CHECK(cache.get_if_cached(png_as_bin).empty());
+
+    // --- The staleness guard must still apply on the FullPng branch. ---
+    const std::string stale_key = unique_key("fetchfmt_stale");
+    cache.invalidate(stale_key);
+    plant_cached_png(cache, stale_key, kTinyPng);
+
+    ThumbnailRequest stale_req;
+    stale_req.key = stale_key;
+    stale_req.target = target;
+    stale_req.format = ThumbnailRequest::ThumbnailFormat::FullPng;
+    // Pinned: without a real cache hit "nothing fired" would be trivially true.
+    REQUIRE_FALSE(cache.get_if_cached(stale_req).empty());
+
+    auto stale_ctx = ThumbnailLoadContext::create(guard, &gen);
+    ++gen;
+    REQUIRE_FALSE(stale_ctx.is_valid());
+
+    bool stale_fired = false;
+    cache.fetch(
+        stale_req, stale_ctx, [&stale_fired](const std::string&, bool) { stale_fired = true; },
+        nullptr);
+    settle([] { return false; });
+    CHECK_FALSE(stale_fired);
+
+    cache.invalidate(pre_key);
+    cache.invalidate(png_key);
+    cache.invalidate(stale_key);
+}
+
 TEST_CASE_METHOD(LVGLTestFixture, "ThumbnailCache: a completed pre-scale reports degraded=false",
                  "[thumbnail][request]") {
     ThumbnailCache cache;

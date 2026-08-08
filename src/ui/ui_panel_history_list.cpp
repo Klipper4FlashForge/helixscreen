@@ -1027,14 +1027,13 @@ void HistoryListPanel::show_detail_overlay(const PrintHistoryJob& job) {
 
             MoonrakerAPI* api = get_moonraker_api();
 
-            // The detail overlay renders the thumbnail large, so it takes the
-            // detail-sized pre-scaled target. The cache key is the job's
-            // Moonraker relative path, unchanged.
+            // The detail overlay has always rendered the full-resolution PNG,
+            // so it asks for FullPng and req.target goes unused. The cache key
+            // is the job's Moonraker relative path, unchanged.
             ThumbnailRequest req;
             req.key = job.thumbnail_path;
-            req.target =
-                helix::ThumbnailProcessor::get_target_for_display(helix::ThumbnailSize::Detail);
             req.api = api;
+            req.format = ThumbnailRequest::ThumbnailFormat::FullPng;
 
             auto* self = this;
             get_thumbnail_cache().fetch(

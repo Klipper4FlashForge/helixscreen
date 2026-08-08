@@ -1053,11 +1053,28 @@ void ThumbnailCache::fetch(const ThumbnailRequest& req, ThumbnailLoadContext ctx
         }
     };
 
+    if (req.format == ThumbnailRequest::ThumbnailFormat::FullPng) {
+        // Full-resolution PNG: req.target does not apply, so this bypasses the
+        // pre-scaler entirely. A PNG handed back because a PNG was requested is
+        // the thing that was asked for, never the degraded fallback that
+        // process_and_callback reports when a pre-scale FAILS.
+        fetch(
+            req.api, req.key,
+            [guarded_success](const std::string& path, bool /*degraded*/) {
+                guarded_success(path, /*degraded=*/false);
+            },
+            std::move(on_error));
+        return;
+    }
+
     fetch_optimized(req.api, req.key, req.target, std::move(guarded_success), std::move(on_error),
                     req.source_modified);
 }
 
 std::string ThumbnailCache::get_if_cached(const ThumbnailRequest& req) const {
+    if (req.format == ThumbnailRequest::ThumbnailFormat::FullPng) {
+        return get_if_cached(req.key, req.source_modified);
+    }
     return get_if_optimized(req.key, req.target, req.source_modified);
 }
 
