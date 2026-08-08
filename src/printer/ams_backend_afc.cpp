@@ -3257,6 +3257,18 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
             slot.material = lane["material"].get<std::string>();
         }
 
+        // Filament name, as AFC copied it out of Spoolman's filament record.
+        // Mirrors parse_afc_stepper(): an EMPTY value is a deliberate clear —
+        // clear_lane_data()/clear_values() write filament_name="" on eject — so
+        // it is adopted as-is rather than treated as "keep existing". Without
+        // this a lane whose data only ever arrived through the DB path had no
+        // name at all, and the loaded card fell back to the algorithmic colour
+        // description. apply_overrides() runs below, so a user-entered name
+        // still wins.
+        if (lane.contains("filament_name") && lane["filament_name"].is_string()) {
+            slot.spool_name = lane["filament_name"].get<std::string>();
+        }
+
         // Parse loaded state.
         // AFC "loaded" means hub-loaded, not toolhead-loaded — only
         // tool_loaded == true means filament is at the extruder.

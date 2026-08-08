@@ -6,6 +6,7 @@
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
 #include "printer_state.h"
+#include "spoolman_types.h" // SpoolInfo + apply_spool_to_slot (the picker-side writer)
 
 #include <chrono>
 #include <filesystem>
@@ -385,6 +386,58 @@ TEST_CASE("FilamentSlotOverrideStore save_async emits Happy Hare key aliases",
     CHECK(stored["vendor_name"] == "Polymaker");
     CHECK(stored["spool_name"] == "PolyLite PLA Orange");
     CHECK(stored["name"] == "PolyLite PLA Orange");
+}
+
+TEST_CASE("FilamentSlotOverrideStore lane_data carries the real Spoolman filament name",
+          "[filament_slot_override][spoolman][regression]") {
+    // Interop guarantee. spool_name (and its Happy Hare `name` alias) is the
+    // key AFC, Happy Hare and OrcaSlicer read as the *filament's* name, and
+    // docs/specs/filament_slots.md pins it as "distinct from vendor +
+    // material". A slot linked through the Spoolman picker must therefore put
+    // the same shape of value there that AFC's own filament_name parse does.
+    TmpCacheDir tmp("save_spoolman_real_name");
+    MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
+    helix::PrinterState state;
+    state.init_subjects(false);
+    MoonrakerAPIMock api(client, state);
+
+    FilamentSlotOverrideStore store(&api, "ifs");
+    FilamentSlotOverrideStoreTestAccess::set_cache_directory(store, tmp.path);
+
+    SpoolInfo spool;
+    spool.id = 42;
+    spool.vendor = "Polymaker";
+    spool.material = "PLA";
+    spool.filament_name = "Ambrosia Pink"; // parse_spool_info maps filament.name here
+
+    SlotInfo slot;
+    apply_spool_to_slot(slot, spool);
+
+    // The persist path every backend runs: SlotInfo identity → override.
+    FilamentSlotOverride ovr;
+    ovr.brand = slot.brand;
+    ovr.material = slot.material;
+    ovr.spool_name = slot.spool_name;
+    ovr.spoolman_id = slot.spoolman_id;
+
+    bool cb_done = false;
+    store.save_async(3, ovr, [&](bool, std::string) { cb_done = true; });
+    REQUIRE(cb_done);
+
+    auto stored = api.mock_get_db_value("lane_data", "lane4");
+    REQUIRE(!stored.is_null());
+    CHECK(stored["spool_name"] == "Ambrosia Pink");
+    CHECK(stored["name"] == "Ambrosia Pink"); // Happy Hare alias
+    CHECK(stored["vendor"] == "Polymaker");
+    CHECK(stored["spool_name"] != "Polymaker PLA");
+
+    // And it survives the reader, which is what a restart / another client sees.
+    auto parsed = helix::ams::from_lane_data_record(stored);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->first == 3);
+    CHECK(parsed->second.spool_name == "Ambrosia Pink");
+    CHECK(parsed->second.brand == "Polymaker");
+    CHECK(parsed->second.spoolman_id == 42);
 }
 
 TEST_CASE("FilamentSlotOverrideStore save_async omits aliases when source empty",

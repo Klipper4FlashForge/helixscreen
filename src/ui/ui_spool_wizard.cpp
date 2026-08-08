@@ -1096,7 +1096,10 @@ SpoolWizardOverlay::merge_filaments(const std::vector<FilamentInfo>& server_fila
         entry.name = fi.display_name();
         entry.material = fi.material;
         entry.color_hex = fi.color_hex;
-        entry.color_name = fi.color_name;
+        // FilamentEntry::color_name means a colour word ("Red") — it is what the
+        // colour picker fills on the create-new path. FilamentInfo::filament_name
+        // is the filament's own name and already reaches the entry through
+        // display_name() above, so it must not be copied here.
         entry.server_id = is_server ? fi.id : -1;
         entry.vendor_id = is_server ? fi.vendor_id : -1;
         entry.density = fi.density;
@@ -1228,50 +1231,49 @@ void SpoolWizardOverlay::load_filaments() {
     int vendor_id = selected_vendor_.server_id;
     api->spoolman().get_spoolman_filaments(
         vendor_id,
-        lifetime_.bg_cb(
-            "SpoolWizard::load_filaments_apply",
-            [this, vendor_id](const std::vector<FilamentInfo>& server_list) {
-                // Convert FilamentInfo -> FilamentEntry
-                for (const auto& fi : server_list) {
-                    FilamentEntry entry;
-                    entry.name = fi.display_name();
-                    entry.material = fi.material;
-                    entry.color_hex = fi.color_hex;
-                    entry.color_name = fi.color_name;
-                    entry.server_id = fi.id;
-                    entry.vendor_id = fi.vendor_id;
-                    entry.density = fi.density;
-                    entry.diameter = fi.diameter;
-                    entry.weight = fi.weight;
-                    entry.spool_weight = fi.spool_weight;
-                    entry.nozzle_temp_min = fi.nozzle_temp_min;
-                    entry.nozzle_temp_max = fi.nozzle_temp_max;
-                    entry.bed_temp_min = fi.bed_temp_min;
-                    entry.bed_temp_max = fi.bed_temp_max;
-                    entry.from_server = true;
-                    all_filaments_.push_back(entry);
-                }
+        lifetime_.bg_cb("SpoolWizard::load_filaments_apply",
+                        [this, vendor_id](const std::vector<FilamentInfo>& server_list) {
+                            // Convert FilamentInfo -> FilamentEntry
+                            for (const auto& fi : server_list) {
+                                FilamentEntry entry;
+                                entry.name = fi.display_name();
+                                entry.material = fi.material;
+                                entry.color_hex = fi.color_hex;
+                                // See to_entry(): a filament name is not a colour name.
+                                entry.server_id = fi.id;
+                                entry.vendor_id = fi.vendor_id;
+                                entry.density = fi.density;
+                                entry.diameter = fi.diameter;
+                                entry.weight = fi.weight;
+                                entry.spool_weight = fi.spool_weight;
+                                entry.nozzle_temp_min = fi.nozzle_temp_min;
+                                entry.nozzle_temp_max = fi.nozzle_temp_max;
+                                entry.bed_temp_min = fi.bed_temp_min;
+                                entry.bed_temp_max = fi.bed_temp_max;
+                                entry.from_server = true;
+                                all_filaments_.push_back(entry);
+                            }
 
-                // Sort by material then name
-                std::sort(all_filaments_.begin(), all_filaments_.end(),
-                          [](const FilamentEntry& a, const FilamentEntry& b) {
-                              std::string a_mat = to_lower(a.material);
-                              std::string b_mat = to_lower(b.material);
-                              if (a_mat != b_mat)
-                                  return a_mat < b_mat;
-                              return to_lower(a.name) < to_lower(b.name);
-                          });
+                            // Sort by material then name
+                            std::sort(all_filaments_.begin(), all_filaments_.end(),
+                                      [](const FilamentEntry& a, const FilamentEntry& b) {
+                                          std::string a_mat = to_lower(a.material);
+                                          std::string b_mat = to_lower(b.material);
+                                          if (a_mat != b_mat)
+                                              return a_mat < b_mat;
+                                          return to_lower(a.name) < to_lower(b.name);
+                                      });
 
-                if (subjects_initialized_) {
-                    lv_subject_set_int(&filaments_loading_subject_, 0);
-                    lv_subject_set_int(&filament_count_subject_,
-                                       static_cast<int32_t>(all_filaments_.size()));
-                }
+                            if (subjects_initialized_) {
+                                lv_subject_set_int(&filaments_loading_subject_, 0);
+                                lv_subject_set_int(&filament_count_subject_,
+                                                   static_cast<int32_t>(all_filaments_.size()));
+                            }
 
-                populate_filament_list();
-                spdlog::info("[SpoolWizard] Loaded {} filaments for vendor_id {}",
-                             all_filaments_.size(), vendor_id);
-            }),
+                            populate_filament_list();
+                            spdlog::info("[SpoolWizard] Loaded {} filaments for vendor_id {}",
+                                         all_filaments_.size(), vendor_id);
+                        }),
         lifetime_.bg_cb("SpoolWizard::load_filaments_error", [this](const MoonrakerError& err) {
             spdlog::warn("[SpoolWizard] Failed to fetch filaments: {}", err.message);
             if (cleanup_called())
