@@ -140,6 +140,24 @@ start() {
     # before trusting it. Otherwise a stale PID owned by an unrelated process
     # makes us return "already running" while no UI is actually up.
     DAEMON_NAME=$(basename "$DAEMON")
+
+    # A stop that was cut short — its caller hit a timeout partway through the
+    # kill — leaves the daemon alive for a moment while it finishes exiting.
+    # Reading that as "already running" turns this start into a no-op and
+    # strands the user on a blank screen, because whoever stopped us has
+    # usually cleared the framebuffer already. Let a dying process finish
+    # before believing it is healthy. Costs nothing when nothing is running,
+    # which covers boot and any restart after a clean stop.
+    if pidof "$DAEMON_NAME" >/dev/null 2>&1; then
+        _exit_waited=0
+        while pidof "$DAEMON_NAME" >/dev/null 2>&1; do
+            [ "$_exit_waited" -ge 3 ] && break
+            sleep 1
+            _exit_waited=$((_exit_waited + 1))
+        done
+        unset _exit_waited
+    fi
+
     if [ -f "$PIDFILE" ]; then
         PID=$(cat "$PIDFILE")
         if kill -0 "$PID" 2>/dev/null && pidof "$DAEMON_NAME" >/dev/null 2>&1; then
@@ -200,15 +218,31 @@ start() {
     ) >> "$LOGFILE" 2>&1 &
     echo $! > "$PIDFILE"
 
-    # Wait briefly and check if started
-    sleep 2
-    if [ -f "$PIDFILE" ]; then
-        PID=$(cat "$PIDFILE")
-        if kill -0 "$PID" 2>/dev/null; then
-            echo "$NAME started (PID $PID)"
-            return 0
+    # Confirm the supervisor came up, polling instead of sleeping a fixed
+    # interval. The forked subshell exists the moment we return from fork, so
+    # the common case answers on the first check and costs nothing; only a
+    # genuine immediate failure pays the full wait.
+    #
+    # The latency matters because a caller may hold a short timeout over this
+    # script. On the Centauri Carbon the stock resonance macro restarts the UI
+    # via a Klipper shell command with a 5s budget (GUI_START -> gui-switcher
+    # start -> here), and a shell command killed on timeout takes its whole
+    # process group with it, including the supervisor just forked above.
+    _start_waited=0
+    while :; do
+        if [ -f "$PIDFILE" ]; then
+            PID=$(cat "$PIDFILE")
+            if kill -0 "$PID" 2>/dev/null; then
+                echo "$NAME started (PID $PID)"
+                unset _start_waited
+                return 0
+            fi
         fi
-    fi
+        [ "$_start_waited" -ge 2 ] && break
+        sleep 1
+        _start_waited=$((_start_waited + 1))
+    done
+    unset _start_waited
 
     echo "Failed to start $NAME"
     stop_splash
