@@ -448,6 +448,41 @@ TEST_CASE("PanelWidgetDef: registry entries have valid scalability constraints",
     }
 }
 
+TEST_CASE("PanelWidgetDef: half-cell capability is opt-in", "[widget_def][half_cell][1126]") {
+    // #1126 grants half-cell resolution to the small single-action widgets only.
+    // Anything that renders a chart, an image, a list or a video frame needs a
+    // whole cell on both axes, so its flags stay false.
+    const std::vector<std::string> half_capable = {"lock", "shutdown", "firmware_restart",
+                                                   "led_controls", "clock"};
+    const std::vector<std::string> whole_cell_only = {"camera",    "temp_graph", "print_status",
+                                                      "job_queue", "ams",        "tips"};
+
+    for (const auto& id : half_capable) {
+        INFO("widget " << id);
+        const auto* def = helix::find_widget_def(id);
+        REQUIRE(def != nullptr);
+        CHECK(def->supports_half_col);
+    }
+    for (const auto& id : whole_cell_only) {
+        INFO("widget " << id);
+        const auto* def = helix::find_widget_def(id);
+        REQUIRE(def != nullptr);
+        CHECK_FALSE(def->supports_half_col);
+        CHECK_FALSE(def->supports_half_row);
+    }
+
+    // clock is the only one that can halve on both axes.
+    const auto* clock = helix::find_widget_def("clock");
+    REQUIRE(clock != nullptr);
+    CHECK(clock->supports_half_row);
+}
+
+TEST_CASE("PanelWidgetDef: half-cell defaults to off", "[widget_def][half_cell]") {
+    helix::PanelWidgetDef def{};
+    CHECK_FALSE(def.supports_half_col);
+    CHECK_FALSE(def.supports_half_row);
+}
+
 // =============================================================================
 // Dynamic grid dimensions for non-standard layouts
 // =============================================================================
