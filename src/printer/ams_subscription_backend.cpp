@@ -5,6 +5,7 @@
 
 #include "moonraker_error.h"
 #include "printer_state.h"
+#include "toolhead_homing.h"
 
 #include "hv/json.hpp"
 
@@ -202,6 +203,16 @@ AmsError AmsSubscriptionBackend::refuse_if_printing() const {
     // A non-self-homing backend that reaches here is PRINTING, and pausing is a
     // recovery it can actually offer — say so instead of "finish or cancel".
     return AmsErrorHelper::print_active(is_paused, /*pause_allows_ops=*/!self_homes);
+}
+
+bool AmsSubscriptionBackend::toolhead_homed() const {
+    if (!api_) {
+        // No connection: callers fall back to dispatching directly, so the
+        // answer is not consulted. Report homed so no G28 is ever synthesized
+        // against a printer we cannot talk to.
+        return true;
+    }
+    return helix::toolhead_is_homed(api_->printer_state());
 }
 
 AmsError AmsSubscriptionBackend::ensure_homed_then(std::string gcode,

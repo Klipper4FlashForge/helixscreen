@@ -68,6 +68,12 @@ class AmsSubscriptionBackend : public AmsBackend {
     /// macro's completion is the reliable terminal signal for an operation.
     virtual AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete);
 
+    /// Whether the toolhead is homed. Virtual purely as a test seam: fixtures
+    /// override it to exercise the homed and unhomed branches of
+    /// ensure_homed_then() without a live Moonraker connection or a PrinterState.
+    /// Production implementation reads the live homed_axes subject via api_.
+    [[nodiscard]] virtual bool toolhead_homed() const;
+
     /// Query homing status and auto-home (G28) if needed before executing gcode.
     /// Returns immediately — homing and gcode execution happen asynchronously.
     /// @p on_complete (optional) fires when the final gcode command finishes
