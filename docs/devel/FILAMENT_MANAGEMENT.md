@@ -457,7 +457,12 @@ infrastructure and publish to `lane_data`; AFC and Happy Hare each write
 `lane_data` via their own Klipper plugins. **HelixScreen never writes
 `lane_data` for the AFC or Happy Hare backends** — those plugins own their
 records, and HelixScreen's AFC/HH backends route user edits through G-code
-(`SET_COLOR`/`SET_MATERIAL`, `MMU_GATE_MAP`) only, so there is no clobber risk.
+(`SET_COLOR`/`SET_MATERIAL`, `MMU_GATE_MAP`) only. The reason is stronger than
+clobber risk: AFC deletes every key in the namespace on each Klipper boot
+(`AFC.py` `delete_lane_data()`) and rebuilds it lane by lane as PREP advances,
+so a record we wrote there would vanish on reboot, and a *read* landing in that
+window sees a partial namespace. Treat `lane_data` as neither durable nor
+atomic for AFC. User overrides go to a private namespace instead (#1158).
 (Earlier docs said HH reached Orca solely via the live `mmu` Klipper object.
 That is outdated: HH's `push_lane_data` now writes the namespace directly and
 Orca prefers it; the `mmu` object is the fallback.)

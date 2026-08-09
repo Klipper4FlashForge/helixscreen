@@ -36,9 +36,15 @@ auto-populate filament presets when sending a print.
 > (see §3) for forward-compatibility.
 >
 > HelixScreen does **not** write `lane_data` records for AFC or Happy Hare
-> backends — those plugins own their own lane records, and HelixScreen would
-> only clobber them. HelixScreen writes `lane_data` only for backends that have
-> no native `lane_data` writer (IFS, CFS, ACE, Snapmaker).
+> backends — those plugins own their own lane records. "Clobber" understates it:
+> AFC *empties the entire namespace* on every Klipper boot (`AFC.py`
+> `delete_lane_data()`), then repopulates it one key at a time as each lane's
+> PREP finishes, and full-POSTs a freshly-built dict on every lane event
+> (`SET_COLOR`, `SET_MATERIAL`, `SET_MAP`, `set_spoolID`). Anything we wrote
+> there would not survive a reboot, and would not even be reliably *readable*
+> during the seconds-wide repopulation window. AFC/HH overrides therefore live
+> in a private namespace; HelixScreen writes `lane_data` only for backends with
+> no native writer (IFS, CFS, ACE, Snapmaker). See prestonbrown/helixscreen#1158.
 
 HelixScreen participates as both reader and writer. When a user edits slot
 metadata in HelixScreen's filament panel (brand, material, color, Spoolman

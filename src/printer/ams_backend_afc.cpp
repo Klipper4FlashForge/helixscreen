@@ -65,9 +65,10 @@ bool natural_less(const std::string& a, const std::string& b) {
 // Empty values are IGNORED rather than treated as a clear. That is deliberate and
 // differs from the color/material handling above: #808 is unimplemented, so we do
 // not know whether an unlinked lane will omit the key or publish "". Guessing
-// wrong in the clearing direction silently wipes a user's brand override — and on
-// the lane_data path nothing re-covers it, because parse_lane_data() does not call
-// apply_overrides(). Revisit once #808 ships and the real payload is observable.
+// wrong in the clearing direction wipes a brand nothing re-supplies. A user's
+// override is safe either way — both callers run apply_overrides() after this
+// reader (#1195 closed that gap on the lane_data path) — so the exposure is lanes
+// with no override at all. Revisit once #808 ships and the payload is observable.
 bool read_vendor(const nlohmann::json& src, std::string& out) {
     for (const char* key : {"vendor_name", "vendor", "brand"}) {
         auto it = src.find(key);
@@ -2374,8 +2375,8 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
     // and version-independent, where lane_data is a DB snapshot that only refreshes
     // when AFC decides to push. Inert until #808 ships; harmless before then.
     //
-    // Unlike the lane_data path, apply_overrides() runs directly below, so a user's
-    // brand override still wins over whatever firmware reports.
+    // apply_overrides() runs directly below, so a user's brand override still wins
+    // over whatever firmware reports. The lane_data path does the same since #1195.
     read_vendor(data, slot.brand);
 
     // Re-supply the user's attached identity on top of firmware truth. This is
