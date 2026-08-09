@@ -235,7 +235,7 @@ class WiFiManagerTestFixture {
 // ============================================================================
 
 TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFiManager instance creation",
-                 "[.disabled][macos-wifi][network][instance]") {
+                 "[.slow][macos-wifi][network][instance]") {
     SECTION("Instance created successfully") {
         REQUIRE(wifi_manager != nullptr);
     }
@@ -268,7 +268,7 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFiManager instance creation",
 // ============================================================================
 
 TEST_CASE_METHOD(WiFiManagerTestFixture, "Backend initialization state",
-                 "[.disabled][macos-wifi][network][backend][init]") {
+                 "[.slow][macos-wifi][network][backend][init]") {
 #ifndef HELIX_ENABLE_MOCKS
     SKIP("Mocks disabled in this build — no backend to assert against");
 #else
@@ -328,7 +328,7 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "Backend initialization state",
 // ============================================================================
 
 TEST_CASE_METHOD(WiFiManagerTestFixture, "Scan callback preservation",
-                 "[.disabled][macos-wifi][network][scan][callback]") {
+                 "[.slow][macos-wifi][network][scan][callback]") {
 #ifndef HELIX_ENABLE_MOCKS
     SKIP("Mocks disabled in this build — no scan results to assert against");
 #else
@@ -439,7 +439,7 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "Scan callback preservation",
 // ============================================================================
 
 TEST_CASE_METHOD(WiFiManagerTestFixture, "Network scanning lifecycle",
-                 "[.disabled][macos-wifi][network][scan]") {
+                 "[.slow][macos-wifi][network][scan]") {
 #ifndef HELIX_ENABLE_MOCKS
     SKIP("Mocks disabled in this build — no scan results to assert against");
 #else
@@ -498,7 +498,7 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "Network scanning lifecycle",
 // ============================================================================
 
 TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi connection management",
-                 "[.disabled][macos-wifi][network][connection]") {
+                 "[.slow][macos-wifi][network][connection]") {
 #ifndef HELIX_ENABLE_MOCKS
     SKIP("Mocks disabled in this build — no network to connect to");
 #else
@@ -548,7 +548,7 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi connection management",
 // ============================================================================
 
 TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi status queries",
-                 "[.disabled][macos-wifi][network][status]") {
+                 "[.slow][macos-wifi][network][status]") {
     SECTION("Hardware detection") {
         bool has_wifi = wifi_manager->has_hardware();
 
@@ -589,7 +589,7 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi status queries",
 // ============================================================================
 
 TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi edge cases",
-                 "[.disabled][macos-wifi][network][edge-cases]") {
+                 "[.slow][macos-wifi][network][edge-cases]") {
 #ifndef HELIX_ENABLE_MOCKS
     SKIP("Mocks disabled in this build — no backend to toggle");
 #else
@@ -648,8 +648,7 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi edge cases",
 
 // Asserts on the mock backend's seeded network list, so it runs against the mock
 // on every platform rather than whatever the machine's real radio can see.
-TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi network information",
-                 "[network][networks][.disabled]") {
+TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi network information", "[network][networks][.slow]") {
 #ifndef HELIX_ENABLE_MOCKS
     SKIP("Mocks disabled in this build — no seeded network list to assert against");
 #else
@@ -719,7 +718,7 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi network information",
 //
 // These tests use the mock backend's connect flow — slow (2-3s per test
 // because connect_thread_func sleeps 2000+rng()%1000ms), which is why
-// they're tagged [.disabled] alongside the other wifi_manager integration
+// they're tagged [.slow] alongside the other wifi_manager integration
 // tests. Run locally with './build/bin/helix-tests [observers]'.
 
 namespace {
@@ -749,7 +748,7 @@ NetworkPick pick_strong_secured_network(WiFiManager& wifi) {
 } // namespace
 
 TEST_CASE_METHOD(WiFiManagerTestFixture, "State observer fires when backend dispatches CONNECTED",
-                 "[.disabled][macos-wifi][network][observers][slow]") {
+                 "[.slow][macos-wifi][network][observers]") {
 #ifdef HELIX_ENABLE_MOCKS
     MockWifiGuard mock_guard;
 
@@ -786,7 +785,7 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "State observer fires when backend disp
 }
 
 TEST_CASE_METHOD(WiFiManagerTestFixture, "State observer with expired token is not invoked",
-                 "[.disabled][macos-wifi][network][observers][slow]") {
+                 "[.slow][macos-wifi][network][observers]") {
 #ifdef HELIX_ENABLE_MOCKS
     MockWifiGuard mock_guard;
 
@@ -832,7 +831,7 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "State observer with expired token is n
 // fails first.
 TEST_CASE_METHOD(WiFiManagerTestFixture,
                  "State observer added after READY is not replayed the READY",
-                 "[.disabled][macos-wifi][network][observers][slow]") {
+                 "[.slow][macos-wifi][network][observers]") {
 #ifdef HELIX_ENABLE_MOCKS
     MockWifiGuard mock_guard;
 
