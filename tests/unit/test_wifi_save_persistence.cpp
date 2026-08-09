@@ -242,7 +242,7 @@ TEST_CASE("classify_removal_result separates verified absence from an unread con
  * and its SCAN_COMPLETE still arrives, so there is nothing to report.
  */
 TEST_CASE("classify_scan_reply treats FAIL-BUSY as a scan in flight, not a failure",
-          "[wifi][unit][scan]") {
+          "[wifi][unit][ad5x]") {
     REQUIRE(classify_scan_reply("OK\n") == ScanTrigger::Started);
     REQUIRE(classify_scan_reply("FAIL-BUSY\n") == ScanTrigger::AlreadyBusy);
     REQUIRE(classify_scan_reply("FAIL\n") == ScanTrigger::Failed);

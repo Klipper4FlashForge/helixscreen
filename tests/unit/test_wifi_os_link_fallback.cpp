@@ -317,7 +317,7 @@ TEST_CASE("start_scan with OS link up suppresses the scan-failed user warning",
 }
 
 TEST_CASE("A scan that fails right after our own forget does not warn the user",
-          "[wifi][unit][scan]") {
+          "[wifi][unit][ad5x]") {
     // AD5X bundle TAU4PW4H: the user taps Forget on the CONNECTED network, that
     // disassociates, the overlay restarts scanning immediately, the trigger
     // fails while the link is mid-teardown — and because the link genuinely is
@@ -358,7 +358,7 @@ TEST_CASE("A scan that fails right after our own forget does not warn the user",
 }
 
 TEST_CASE("The association grace is not armed before any association change",
-          "[wifi][unit][scan]") {
+          "[wifi][unit][ad5x]") {
     // A fresh manager must not start life suppressing scan failures — the boot
     // -race warning path (#1059's other half) still has to reach the user.
     OsLinkBehaviorFixture fx;
