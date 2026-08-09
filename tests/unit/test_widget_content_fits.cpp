@@ -1,0 +1,545 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/**
+ * @file test_widget_content_fits.cpp
+ * @brief Do home widgets actually render their content at their minimum size?
+ *
+ * Every other check in this area is arithmetic: the band table proves a span
+ * lands in a pixel band, and test_panel_widget_manager_cell_px.cpp proves the
+ * manager hands a widget the pixels it promised. Nothing measured whether the
+ * widget's content fits in those pixels. A widget can be handed a correct,
+ * in-band size and still push a control past its own edge, ellipsize a label
+ * into uselessness, or need more room than the box can show.
+ *
+ * The minimum is the size worth driving: it is what a widget gets when the grid
+ * is full, and what the placement engine falls back to under scarcity
+ * (GridLayout::find_available_bottom_min).
+ *
+ * Two halves:
+ *
+ *  - The detector's own proof. Each of the three checks in
+ *    helix::collect_overflow() is driven red against a hand-built tree, and the
+ *    intentional-truncation exceptions are driven green. Without these, a
+ *    detector that silently stopped firing would read as "no widget clips".
+ *  - The sweep. Every PanelWidgetDef is built through its registry factory —
+ *    the same path PanelWidgetManager uses — sized to its authored minimum on
+ *    each shipping geometry, and measured.
+ *
+ * The sweep asserts against kKnownClipping, an enumerated baseline of what
+ * clips today. Fixing those is a per-widget judgement call (raise the authored
+ * minimum, add a smaller layout branch, or accept the truncation) and is not
+ * done here. The baseline may shrink; a widget/geometry pair that is not in it
+ * and clips fails this test.
+ */
+
+#include "ui_breakpoint.h"
+#include "ui_update_queue.h"
+
+#include "../lvgl_ui_test_fixture.h"
+#include "../test_helpers/panel_widget_size_harness.h"
+#include "../test_helpers/update_queue_test_access.h"
+#include "grid_layout.h"
+#include "panel_widget_manager.h"
+#include "panel_widget_registry.h"
+#include "printer_state.h"
+#include "src/ui/panel_widgets/print_status_widget.h"
+#include "theme_manager.h"
+#include "tool_state.h"
+
+#include <spdlog/spdlog.h>
+
+#include <algorithm>
+#include <set>
+#include <string>
+#include <vector>
+
+#include "../catch_amalgamated.hpp"
+#include "hv/json.hpp"
+
+using namespace helix;
+
+namespace {
+
+// ---------------------------------------------------------------------------
+// Detector proof
+// ---------------------------------------------------------------------------
+
+bool has_kind(const OverflowReport& r, OverflowKind k) {
+    return std::any_of(r.findings.begin(), r.findings.end(),
+                       [k](const OverflowFinding& f) { return f.kind == k; });
+}
+
+// ---------------------------------------------------------------------------
+// Sweep
+// ---------------------------------------------------------------------------
+
+/// One shipping geometry: the panel resolution and the home grid container's
+/// MEASURED content box at that resolution, which is what get_dimensions()
+/// divides. Same numbers as tests/unit/test_grid_square_cells.cpp — read off a
+/// live instance, not recomputed here.
+struct Geometry {
+    const char* name;
+    int panel_w, panel_h;
+    int content_w, content_h;
+    int gutter;
+};
+
+// clang-format off
+const std::vector<Geometry> kShipping = {
+    {"480x272",   480,  272,   430, 264,  2},
+    {"272x480",   272,  480,   264, 394,  2},
+    {"480x320",   480,  320,   418, 312,  2},
+    {"480x400",   480,  400,   414, 388,  4},
+    {"800x480",   800,  480,   710, 466,  5},
+    {"480x800",   480,  800,   466, 664,  5},
+    {"1024x600", 1024,  600,   904, 584,  6},
+    {"1280x720", 1280,  720,  1128, 700,  8},
+};
+// clang-format on
+
+/// Subtrees whose overflow is the design.
+///
+/// Named rather than flag-tested — see OverflowExceptions. Every entry needs a
+/// reason; a list that grows without one is how a gate goes quiet.
+const OverflowExceptions& exceptions() {
+    static const OverflowExceptions ex{{
+        // The G-code console is a transcript: it is scrolled to read history,
+        // and its content exceeding the box is its normal state, not a size
+        // failure.
+        "gcode_console_output",
+    }};
+    return ex;
+}
+
+/// One widget/geometry pair that does not fit today. `geometry` is "*" when it
+/// clips on every shipping geometry.
+struct KnownClip {
+    const char* widget;
+    const char* geometry;
+};
+
+bool operator<(const KnownClip& a, const KnownClip& b) {
+    int c = std::string(a.widget).compare(b.widget);
+    return c != 0 ? c < 0 : std::string(a.geometry) < std::string(b.geometry);
+}
+
+/// Baseline: what does not fit at its authored minimum today. Debt, not
+/// approval — each entry is a widget whose content needs more room than the
+/// span its own definition claims it can live in, and the fix is a per-widget
+/// choice between raising that minimum, adding a smaller layout branch, and
+/// accepting the truncation.
+///
+/// Shrinking this list is the point. Adding to it means a widget that used to
+/// fit no longer does.
+// clang-format off
+const std::vector<KnownClip> kKnownClipping = {
+    // Whole-widget: does not fit at its minimum on any shipping panel.
+    {"clock",            "*"},
+    {"clog_detection",   "*"},
+    {"led_controls",     "*"},
+    {"lock",             "*"},
+    {"preheat",          "*"},
+    {"print_status",     "*"},
+    {"printer_image",    "*"},
+    {"shutdown",         "*"},
+    {"temp_stack",       "*"},
+    {"temperature",      "*"},
+
+    // Geometry-specific.
+    {"active_spool",     "1024x600"}, {"active_spool",     "272x480"},
+    {"active_spool",     "480x272"},  {"active_spool",     "480x320"},
+    {"active_spool",     "480x400"},  {"active_spool",     "480x800"},
+
+    {"ams",              "272x480"},
+
+    {"control_buttons",  "1024x600"}, {"control_buttons",  "1280x720"},
+    {"control_buttons",  "272x480"},  {"control_buttons",  "480x272"},
+    {"control_buttons",  "480x400"},  {"control_buttons",  "480x800"},
+    {"control_buttons",  "800x480"},
+
+    {"favorite_macro",   "272x480"},  {"favorite_macro",   "480x272"},
+
+    {"filament",         "1024x600"}, {"filament",         "1280x720"},
+    {"filament",         "272x480"},  {"filament",         "480x272"},
+    {"filament",         "480x320"},  {"filament",         "480x400"},
+    {"filament",         "480x800"},
+
+    {"firmware_restart", "1024x600"}, {"firmware_restart", "1280x720"},
+    {"firmware_restart", "272x480"},  {"firmware_restart", "480x272"},
+    {"firmware_restart", "480x320"},  {"firmware_restart", "480x400"},
+
+    {"job_queue",        "1024x600"}, {"job_queue",        "480x400"},
+
+    {"nozzle_temps",     "1024x600"}, {"nozzle_temps",     "1280x720"},
+    {"nozzle_temps",     "272x480"},  {"nozzle_temps",     "480x400"},
+
+    {"power_device",     "1024x600"}, {"power_device",     "272x480"},
+    {"power_device",     "480x272"},  {"power_device",     "480x320"},
+    {"power_device",     "480x400"},  {"power_device",     "480x800"},
+
+    {"print_stats",      "1280x720"},
+
+    {"tips",             "1024x600"}, {"tips",             "1280x720"},
+    {"tips",             "272x480"},  {"tips",             "480x400"},
+    {"tips",             "480x800"},  {"tips",             "800x480"},
+};
+// clang-format on
+
+bool is_known(const std::string& widget, const std::string& geometry) {
+    return std::any_of(kKnownClipping.begin(), kKnownClipping.end(), [&](const KnownClip& k) {
+        return widget == k.widget && (geometry == k.geometry || std::string("*") == k.geometry);
+    });
+}
+
+/// Fixture teardown for the singletons this file seeds. ToolState is outside
+/// LVGLUITestFixture's own init/deinit chain, so a file that populates it must
+/// clear it or later files in the same binary inherit stale tools (same trap
+/// as NozzleTempsFixture in test_widget_size_nozzle_temps.cpp).
+struct ContentFitsFixture : public LVGLUITestFixture {
+    ~ContentFitsFixture() override {
+        // Before ToolState, and before the base fixture's reset_all() gets to
+        // it: PrintStatusWidget's formatter is a process-lifetime static whose
+        // observers sit on ToolState and PrinterState subjects. Tearing those
+        // subjects down first frees the observer nodes, and the formatter's
+        // guards then call lv_observer_remove() on freed memory.
+        PrintStatusWidget::destroy_formatter_for_test();
+        ToolState::instance().deinit_subjects();
+        helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+        // The sweep drives the display through eight resolutions; put the token
+        // table back where the rest of the suite expects it.
+        if (lv_display_t* d = lv_display_get_default()) {
+            theme_manager_refresh_layout_constants(d);
+        }
+    }
+};
+
+/// Two tools and one extruder, so tool_switcher and nozzle_temps have content
+/// to lay out instead of rendering an empty container that trivially fits.
+void seed_printer_topology(PrinterState& state) {
+    ToolState::instance().deinit_subjects();
+    ToolState::instance().init_subjects(false);
+
+    ToolTopology topo;
+    topo.tool_count = 2;
+    topo.active_tool = 0;
+    topo.tool_name_prefix = "T";
+    ToolState::instance().set_ams_topology(topo);
+
+    state.init_extruders({"extruder"});
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+}
+
+} // namespace
+
+// ===========================================================================
+// The detector must go red before anything it reports can be believed
+// ===========================================================================
+
+TEST_CASE_METHOD(LVGLUITestFixture, "overflow detector: a child past the content box is geometry",
+                 "[content_fits][detector]") {
+    lv_obj_t* parent = lv_obj_create(test_screen());
+    lv_obj_set_size(parent, 100, 100);
+    lv_obj_remove_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_all(parent, 0, 0);
+    lv_obj_set_style_border_width(parent, 0, 0);
+
+    lv_obj_t* child = lv_obj_create(parent);
+    lv_obj_set_size(child, 180, 40);
+    lv_obj_set_pos(child, 0, 0);
+    lv_obj_update_layout(parent);
+
+    OverflowReport r = collect_overflow(parent);
+    CHECK(has_kind(r, OverflowKind::Geometry));
+
+    lv_obj_delete(parent);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "overflow detector: padding is not usable space, so it measures content coords",
+                 "[content_fits][detector]") {
+    // The mutation target for the geometric check: comparing against
+    // lv_obj_get_coords() instead of lv_obj_get_content_coords() makes this
+    // case pass, because the child fits the OUTER box exactly and only
+    // overruns once the 20px padding is taken out.
+    lv_obj_t* parent = lv_obj_create(test_screen());
+    lv_obj_set_size(parent, 100, 100);
+    lv_obj_remove_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_border_width(parent, 0, 0);
+    lv_obj_set_style_pad_all(parent, 20, 0);
+
+    lv_obj_t* child = lv_obj_create(parent);
+    lv_obj_set_size(child, 100, 100);
+    lv_obj_set_pos(child, -20, -20); // Flush with the parent's outer edge.
+    lv_obj_update_layout(parent);
+
+    OverflowReport r = collect_overflow(parent);
+    CHECK(has_kind(r, OverflowKind::Geometry));
+
+    lv_obj_delete(parent);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "overflow detector: content the layout repositioned still reports scroll",
+                 "[content_fits][detector]") {
+    // The mutation target for the scroll check: delete the
+    // lv_obj_get_scroll_bottom() branch and this goes red.
+    //
+    // The two checks are not redundant, but they do agree here. For an
+    // unscrolled parent with no floating children, LVGL's scroll extent is the
+    // same measurement the per-child comparison makes, so both fire. They
+    // diverge on a container that has already been scrolled (children get
+    // repositioned back inside the box while the content still does not fit)
+    // and on LV_OBJ_FLAG_FLOATING children, which the scroll extent excludes
+    // and the geometric walk does not.
+    lv_obj_t* parent = lv_obj_create(test_screen());
+    lv_obj_set_size(parent, 100, 60);
+    lv_obj_set_style_pad_all(parent, 0, 0);
+    lv_obj_set_style_border_width(parent, 0, 0);
+    lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
+    for (int i = 0; i < 6; ++i) {
+        lv_obj_t* c = lv_obj_create(parent);
+        lv_obj_set_size(c, 80, 30);
+    }
+    lv_obj_update_layout(parent);
+
+    OverflowReport r = collect_overflow(parent);
+    CHECK(has_kind(r, OverflowKind::Scroll));
+
+    lv_obj_delete(parent);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "overflow detector: a clipped string reports text overflow",
+                 "[content_fits][detector]") {
+    require_font_tokens_distinct();
+
+    lv_obj_t* parent = lv_obj_create(test_screen());
+    lv_obj_set_size(parent, 60, 40);
+    lv_obj_remove_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_all(parent, 0, 0);
+    lv_obj_set_style_border_width(parent, 0, 0);
+
+    lv_obj_t* lbl = lv_label_create(parent);
+    lv_obj_set_style_text_font(lbl, theme_manager_get_font("font_body"), 0);
+    lv_label_set_long_mode(lbl, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_set_size(lbl, 50, 20);
+    lv_label_set_text(lbl, "a string far too long for fifty pixels");
+    lv_obj_update_layout(parent);
+
+    OverflowReport r = collect_overflow(parent);
+    CHECK(has_kind(r, OverflowKind::Text));
+
+    lv_obj_delete(parent);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "overflow detector: a label that declares truncation is skipped, visibly",
+                 "[content_fits][detector]") {
+    require_font_tokens_distinct();
+
+    lv_obj_t* parent = lv_obj_create(test_screen());
+    lv_obj_set_size(parent, 60, 40);
+    lv_obj_remove_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_all(parent, 0, 0);
+    lv_obj_set_style_border_width(parent, 0, 0);
+
+    lv_obj_t* lbl = lv_label_create(parent);
+    lv_obj_set_style_text_font(lbl, theme_manager_get_font("font_body"), 0);
+    lv_label_set_long_mode(lbl, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_size(lbl, 50, 20);
+    lv_label_set_text(lbl, "a filename that is supposed to ellipsize.gcode");
+    lv_obj_update_layout(parent);
+
+    OverflowReport r = collect_overflow(parent);
+    CHECK_FALSE(has_kind(r, OverflowKind::Text));
+    // The skip has to be countable, not silent.
+    CHECK_FALSE(r.skipped.empty());
+
+    lv_obj_delete(parent);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "overflow detector: a tree that fits reports nothing",
+                 "[content_fits][detector]") {
+    // The other half of the gate's contract: it must stay quiet on legitimate
+    // layout, or it gets switched off.
+    lv_obj_t* parent = lv_obj_create(test_screen());
+    lv_obj_set_size(parent, 200, 120);
+    lv_obj_remove_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_all(parent, 4, 0);
+    lv_obj_set_style_border_width(parent, 0, 0);
+
+    lv_obj_t* child = lv_obj_create(parent);
+    lv_obj_set_size(child, 100, 40);
+    lv_obj_set_pos(child, 0, 0);
+
+    lv_obj_t* lbl = lv_label_create(parent);
+    lv_obj_set_style_text_font(lbl, theme_manager_get_font("font_xs"), 0);
+    lv_obj_set_pos(lbl, 0, 60);
+    lv_label_set_text(lbl, "ok");
+    lv_obj_update_layout(parent);
+
+    OverflowReport r = collect_overflow(parent);
+    for (const auto& f : r.findings) {
+        UNSCOPED_INFO(std::string(overflow_kind_name(f.kind)) + " " + f.path + ": " + f.detail);
+    }
+    CHECK(r.clean());
+
+    lv_obj_delete(parent);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "overflow detector: a named scrollable subtree is exempt and reported as skipped",
+                 "[content_fits][detector]") {
+    lv_obj_t* parent = lv_obj_create(test_screen());
+    lv_obj_set_size(parent, 100, 60);
+    lv_obj_set_style_pad_all(parent, 0, 0);
+    lv_obj_set_style_border_width(parent, 0, 0);
+    lv_obj_set_name(parent, "deliberate_scroller");
+    lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
+    for (int i = 0; i < 6; ++i) {
+        lv_obj_t* c = lv_obj_create(parent);
+        lv_obj_set_size(c, 80, 30);
+    }
+    lv_obj_update_layout(parent);
+
+    // Without the name in the list it fires.
+    CHECK_FALSE(collect_overflow(parent).clean());
+
+    OverflowExceptions ex{{"deliberate_scroller"}};
+    OverflowReport r = collect_overflow(parent, ex);
+    CHECK(r.clean());
+    CHECK(r.skipped.size() == 1);
+
+    lv_obj_delete(parent);
+}
+
+// ===========================================================================
+// The sweep
+// ===========================================================================
+
+TEST_CASE_METHOD(ContentFitsFixture,
+                 "every home widget renders its content at its authored minimum",
+                 "[content_fits][sweep]") {
+    lv_display_t* disp = lv_display_get_default();
+    REQUIRE(disp != nullptr);
+
+    PanelWidgetManager::instance().init_widget_subjects();
+    require_font_tokens_distinct();
+    seed_printer_topology(state());
+
+    const auto& defs = get_all_widget_defs();
+    REQUIRE(defs.size() > 10);
+
+    std::set<KnownClip> observed;
+    int checked = 0;
+    int unbuildable = 0;
+    int too_large_for_grid = 0;
+    std::vector<std::string> tight; // Passed, but by two pixels or fewer.
+
+    for (const auto& g : kShipping) {
+        ScopedResolution res(disp, g.panel_w, g.panel_h);
+        theme_manager_refresh_layout_constants(disp);
+
+        const UiBreakpoint bp = breakpoint_for(std::min(g.panel_w, g.panel_h));
+        const GridDimensions dims = GridLayout::get_dimensions(bp, g.content_w, g.content_h);
+        const CellMetrics m =
+            grid_cell_metrics(g.content_w, g.content_h, dims.cols, dims.rows, g.gutter);
+
+        for (const auto& def : defs) {
+            const int min_c = def.effective_min_colspan();
+            const int min_r = def.effective_min_rowspan();
+            if (min_c > dims.cols || min_r > dims.rows) {
+                // GridLayout::PlacementFailure::TooLargeForGrid — the widget is
+                // never placed here, so there is no size to measure.
+                ++too_large_for_grid;
+                continue;
+            }
+
+            // Same arithmetic PanelWidgetManager applies before calling
+            // on_size_changed(), truncation included.
+            const int w_px = static_cast<int>(grid_track_extent(m.cell_w, m.gutter, min_c));
+            const int h_px = static_cast<int>(grid_track_extent(m.cell_h, m.gutter, min_r));
+
+            OverflowReport r;
+            {
+                RegistryWidgetHarness h(test_screen(), def);
+                if (!h.created()) {
+                    spdlog::warn("[content_fits] {} @ {}: component would not build", def.id,
+                                 g.name);
+                    ++unbuildable;
+                    continue;
+                }
+                h.resize(min_c, min_r, w_px, h_px);
+                // Several widgets rebuild their content from an observer that
+                // fires through UpdateQueue rather than inline (observe_int_sync
+                // queues its handler), so measuring before the drain measures
+                // the pre-rebuild tree.
+                helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+                lv_obj_update_layout(h.root());
+                r = collect_overflow(h.root(), exceptions());
+            }
+            // Anything the widget queued on its way out must run while the
+            // objects it captured are still the most recent ones deleted.
+            helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+            ++checked;
+
+            if (!r.clean()) {
+                observed.insert({def.id, g.name});
+                for (const auto& f : r.findings) {
+                    spdlog::warn("[content_fits] {} @ {} ({}x{}px, min span {}x{}) [{}] {}: {}",
+                                 def.id, g.name, w_px, h_px, min_c, min_r,
+                                 overflow_kind_name(f.kind), f.path, f.detail);
+                }
+                for (const auto& s : r.skipped) {
+                    spdlog::info("[content_fits] {} @ {} skipped {}", def.id, g.name, s);
+                }
+            } else if (r.min_text_slack_px <= 2 && r.min_text_slack_px != INT32_MAX) {
+                // One translation away from clipping. Text slack only: a child
+                // sitting flush against its parent's content box is what
+                // LV_PCT(100) is for and says nothing about the next language,
+                // whereas a string with 2px to spare in English will not
+                // survive German.
+                tight.push_back(std::string(def.id) + " @ " + g.name + " (text slack " +
+                                std::to_string(r.min_text_slack_px) + "px)");
+            }
+        }
+    }
+
+    for (const auto& t : tight) {
+        spdlog::warn("[content_fits] TIGHT {}", t);
+    }
+    spdlog::info("[content_fits] checked {} widget/geometry pairs, {} clipped, {} tight, "
+                 "{} unbuildable, {} too large for the grid",
+                 checked, observed.size(), tight.size(), unbuildable, too_large_for_grid);
+
+    CHECK(checked > 0);
+    CHECK(unbuildable == 0);
+
+    // Baseline entries nothing hit any more. Reported, not failed: the ratchet
+    // is one-directional on purpose, so fixing a widget never turns this red.
+    // A "*" entry still matches while the widget clips on any one geometry.
+    for (const auto& k : kKnownClipping) {
+        const bool still = std::any_of(observed.begin(), observed.end(), [&](const KnownClip& o) {
+            return std::string(o.widget) == k.widget &&
+                   (std::string("*") == k.geometry || std::string(o.geometry) == k.geometry);
+        });
+        if (!still) {
+            spdlog::warn("[content_fits] STALE baseline entry: {} @ {} now fits — drop it",
+                         k.widget, k.geometry);
+        }
+    }
+
+    // Anything clipping that the baseline does not already record.
+    std::vector<std::string> regressions;
+    for (const auto& o : observed) {
+        if (!is_known(o.widget, o.geometry)) {
+            regressions.push_back(std::string(o.widget) + " @ " + o.geometry);
+        }
+    }
+    INFO("new clipping (see the [content_fits] warnings above for the measured detail):\n  " + [&] {
+        std::string s;
+        for (const auto& x : regressions)
+            s += x + "\n  ";
+        return s;
+    }());
+    CHECK(regressions.empty());
+}
