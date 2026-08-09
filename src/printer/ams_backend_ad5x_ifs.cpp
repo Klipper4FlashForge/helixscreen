@@ -4976,6 +4976,7 @@ void AmsBackendAd5xIfs::on_home_confirmation_declined() {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         end_phase_tracking_locked();
+        set_operation_detail_locked("");
     }
     AmsSubscriptionBackend::on_home_confirmation_declined();
 }

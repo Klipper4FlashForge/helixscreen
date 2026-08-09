@@ -7266,16 +7266,35 @@ TEST_CASE("AD5X IFS declining the pre-load home confirmation unwinds the phase t
     Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
     backend.homed = false;
 
-    ScopedHomeConfirmPrompter guard(
-        [](std::function<void()>, std::function<void()> cancel) { cancel(); });
+    // The stub prompter below resolves synchronously (declines inline, before
+    // load_filament() ever returns), so operation_detail has already been
+    // cleared by the time we get control back. Capture it from inside the
+    // cancel callback -- i.e. the arming that load_filament() did right
+    // before calling ensure_homed_then() -- to prove there was something to
+    // clear, not that the field was already empty.
+    std::string detail_while_pending;
+    ScopedHomeConfirmPrompter guard([&](std::function<void()>, std::function<void()> cancel) {
+        detail_while_pending = Ad5xIfsTestAccess::operation_detail(backend);
+        cancel();
+    });
 
     REQUIRE(backend.load_filament(0).success());
+    // load_filament() arms operation_detail (e.g. "Heating nozzle to 230°C")
+    // via apply_phase_action_locked() in the same locked block that begins
+    // phase tracking -- assert it actually got set so the post-decline check
+    // below proves something was cleared, not that it was already empty.
+    REQUIRE_FALSE(detail_while_pending.empty());
 
     // Declined before any gcode went out, and the phase tracker + action are
-    // both fully unwound -- not just the action.
+    // both fully unwound -- not just the action. operation_detail must also
+    // be cleared: AmsState::recompute_action_detail() gives last_operation_
+    // detail_ priority over the IDLE fallback, so a stale detail string
+    // would keep showing under an IDLE action until the next op overwrites
+    // it (mirrors the cancel() precedent a few hundred lines above).
     CHECK(backend.captured_gcodes.empty());
     CHECK(backend.get_system_info().action == AmsAction::IDLE);
     CHECK_FALSE(Ad5xIfsTestAccess::phase_active(backend));
+    CHECK(Ad5xIfsTestAccess::operation_detail(backend).empty());
 
     // The whole point: prove it STAYS unwound. Feed the exact status frame
     // apply_phase_action_locked()'s caller (on_extruder_temp_locked) would
