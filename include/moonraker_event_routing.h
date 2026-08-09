@@ -56,8 +56,10 @@ struct MoonrakerEventDecision {
  * @param is_error           MoonrakerEvent::is_error
  * @param within_grace_period Event arrived inside the startup notification grace period
  * @param wizard_active      Setup wizard is on screen
+ * @param modal_active       A modal is already open (see the CONNECTION_FAILED note below)
  */
 MoonrakerEventDecision decide_moonraker_event(MoonrakerEventType type, bool is_error,
-                                              bool within_grace_period, bool wizard_active);
+                                              bool within_grace_period, bool wizard_active,
+                                              bool modal_active = false);
 
 } // namespace helix

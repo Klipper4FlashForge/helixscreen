@@ -91,7 +91,7 @@ translations:
   ACTIONS: 操作
   ADXL: ADXL
   AFC: AFC
-  AFC Update Available: ''
+  AFC Update Available: AFC 有可用更新
   AFC failure reset complete: AFC故障重置完成
   AFC failure reset failed: AFC故障重置失败
   AFC recovery complete: AFC恢复完成
@@ -287,8 +287,8 @@ translations:
   Bypass controlled by sensor: 旁通由传感器控制
   Bypass disabled: 旁通已禁用
   Bypass enabled: 旁通已启用
-  'Bypass failed: {}': '旁通失败: {}'
-  'Bypass toggle failed: {}': '旁通切换失败: {}'
+  Bypass failed: 旁通失败
+  Bypass toggle failed: 旁通切换失败
   C: 腔
   CALIBRATION: 校准
   CAPABILITIES: 功能
@@ -374,6 +374,8 @@ translations:
   Change LED color based on printer state: 根据打印机状态更改 LED 颜色
   Change PIN: 更改 PIN
   Change Printer Host: 更改打印机主机
+  Change Tool: 切换工具
+  Change Tool While Paused: 暂停时切换工具
   Changes apply immediately. Adjust during print for tuning.: 更改立即生效。可在打印时调整进行调优。
   Changes are temporary and reset on printer reboot: 更改是临时的，打印机重启后会重置
   Changes can be reversed anytime using the Macro Viewer.: 可随时使用 Macro Viewer 恢复更改。
@@ -381,9 +383,9 @@ translations:
   Check filament: 检查耗材
   Check for Updates: 检查更新
   Check slot: 检查料仓
-  'Check slot failed: {}': '检查料仓失败: {}'
+  Check slot failed: 检查料仓失败
   Check slots: 检查料仓
-  'Check slots failed: {}': '检查料仓失败: {}'
+  Check slots failed: 检查料仓失败
   Check the filament path and try again.: 检查耗材路径并重试。
   Check your heater's rating (typically 40-60W for hotends): 检查加热器功率（热端通常为 40-60W）
   Checking: 检查中
@@ -413,7 +415,7 @@ translations:
   Clear All Events: 清除所有事件
   Clear Console?: 清空控制台？
   Clear Spool: 移除料盘
-  'Clear failed: {}': '清除失败: {}'
+  Clear failed: 清除失败
   Cleared from settings — system unpair failed, may need OS Bluetooth: 已从设置中清除；系统解除配对失败，可能需使用系统蓝牙设置
   Clipboard unavailable - use SSH: 剪贴板不可用 - 请使用 SSH
   Clog Detection: 堵料检测
@@ -664,7 +666,7 @@ translations:
   Eject: 弹出
   Eject Distance: 弹出距离
   Eject Velocity: 弹出速度
-  'Eject failed: {}': '弹出失败: {}'
+  Eject failed: 弹出失败
   Eject needs [force_move] enabled in printer config: 弹出需要在打印机配置中启用 [force_move]
   Ejecting: 弹出中
   Elegoo Centauri Carbon: Elegoo Centauri Carbon
@@ -676,7 +678,7 @@ translations:
   Empty: 空
   Empty slots disable the associated functionality: 空料仓将禁用相关功能
   Enable: 启用
-  Enable Bypass Controls: ''
+  Enable Bypass Controls: 启用旁路控制
   Enable Monitoring: 启用监控
   Enable Retraction: 启用回抽
   Enable Timelapse: 启用延时摄影
@@ -883,7 +885,6 @@ translations:
   'Filament load failed: {}': '耗材加载失败: {}'
   Filament loaded: 耗材已加载
   Filament operation failed: 耗材操作失败
-  'Filament operation failed: {}': '耗材操作失败: {}'
   Filament operation timed out: 耗材操作超时
   Filament runout: 耗材用尽
   Filament runout and motion detection sensors: 耗材用尽和运动检测传感器
@@ -902,7 +903,7 @@ translations:
   Finish: 完成
   Finishing up...: 即将完成...
   Firmware Restart: 固件重启
-  Firmware reports no bypass. Enable if you feed filament straight to the extruder: ''
+  Firmware reports no bypass. Enable if you feed filament straight to the extruder: 固件报告未配置旁路。如果您将耗材直接送入挤出机，请启用此选项
   Firmware restarting...: 固件重启中...
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
@@ -1210,7 +1211,7 @@ translations:
   'MCU: ': 'MCU: '
   MDI Icons: MDI 图标
   MISSING CONFIGURED: 缺少配置
-  'MMU command failed: {}': 'MMU 命令失败: {}'
+  MMU command failed: MMU 命令失败
   MPC: MPC
   Machine Limits: 机器限制
   Macro: 宏
@@ -1310,7 +1311,7 @@ translations:
   Must home axes first: 请先归位
   My Custom Theme: 我的自定义主题
   My Panel: 我的面板
-  My Printer: ''
+  My Printer: 我的打印机
   NEWLY DISCOVERED: 新发现
   Name: 名称
   Name (optional): 名称（可选）
@@ -1771,7 +1772,7 @@ translations:
   Reset Home Screen?: 重置主屏幕？
   Reset Speed & Flow to 100%: 重置速度和流量为 100%
   Reset all settings and restart wizard: 重置所有设置并重新启动向导
-  'Reset failed: {}': '重置失败: {}'
+  Reset failed: 重置失败
   Reset to Default: 重置为默认
   Reset to defaults: 重置为默认值
   Reset to original values: 重置为原始值
@@ -1801,7 +1802,7 @@ translations:
   Resume Print: 恢复打印
   Resume interrupted print?: 恢复中断的打印？
   Resume macro not configured: 恢复宏未配置
-  'Resume preparation failed: {}': 恢复准备失败：{}
+  Resume preparation failed: 恢复准备失败
   Resuming...: 恢复中...
   Retract: 回抽
   Retract Distance: 回抽距离
@@ -1924,7 +1925,7 @@ translations:
   Select material to begin: 选择材料以开始
   Select sensor: 选择传感器
   Select slot: 选择料仓
-  'Select slot failed: {}': '选择料仓失败: {}'
+  Select slot failed: 选择料仓失败
   Select the heaters Klipper uses for your bed and hotend: 选择 Klipper 用于热床和热端的加热器
   Select which devices the home screen power button controls: 选择主页电源按钮控制的设备
   Select which sensor triggers pause on filament runout: 选择耗材用尽时触发暂停的传感器
@@ -2172,6 +2173,8 @@ translations:
     the frequency buttons to sweep through values until the belt looks stationary,
     then lock the reading.
   : 电机振动皮带的同时,频闪灯以相同频率闪烁。当皮带看起来静止不动(冻结)时,即找到了共振频率。\n\n使用频率按钮扫描各数值,直到皮带看起来静止,然后锁定读数。
+  ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
+  : 打印已暂停。现在切换工具会移动工具头并更换喷嘴处的耗材。切换完成后请恢复打印。
   The printer halted this print and cannot resume it. Restart from the beginning?: 打印机已停止此打印且无法恢复。从头重新开始？
   The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear.: 打印机尚未归位。继续将对所有轴执行归位操作，移动工具头。请确保热床上没有障碍物。
   The printer lost power during a print. It can resume where it left off.: 打印机在打印过程中断电。可以从中断处继续。
@@ -2258,6 +2261,7 @@ translations:
   Tool: 工具
   Tool Changer: 换刀器
   'Tool change failed: {}': '工具切换失败: {}'
+  Tool mapping failed: 工具映射失败
   Tool swap: 工具切换
   'Tool {} → Lane {}: no filament loaded.': '工具 {} → 料仓 {}: 未加载耗材。'
   Toolhead: '工具头'
@@ -2322,7 +2326,6 @@ translations:
   Unknown error: 未知错误
   Unload: 卸载
   Unload Filament: 卸载耗材
-  'Unload failed: {}': '卸载失败: {}'
   Unload macro not configured: 卸载宏未配置
   Unload may still be running — response timed out: 卸载可能仍在运行 — 响应超时
   Unloading: 卸载中
@@ -2345,7 +2348,7 @@ translations:
   Update your security PIN: 更新您的安全 PIN
   Updates aren't available on this installation.: 此安装版本无法使用更新。
   Updating Configuration...: 正在更新配置...
-  Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: ''
+  Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: 升级至 AFC 1.2.0 或更高版本，以使用耗材名称和多色料盘功能。
   Upload: 上传
   Upload Debug Bundle: 上传调试捆绑包
   Upload Failed: 上传失败

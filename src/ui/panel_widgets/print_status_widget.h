@@ -61,8 +61,9 @@ class PrintStatusWidget : public PanelWidget {
     static void library_recent_cb(lv_event_t* e);
     static void library_queue_cb(lv_event_t* e);
 
-    /// Configure picker callback
+    /// Configure picker callbacks — backdrop tap and the explicit Done button
     static void print_status_picker_backdrop_cb(lv_event_t* e);
+    static void print_status_picker_done_cb(lv_event_t* e);
 
     /// XML event callbacks — layout selector in configure picker
     static void print_status_layout_library_cb(lv_event_t* e);

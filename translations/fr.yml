@@ -100,7 +100,7 @@ translations:
   ACTIONS: ACTIONS
   ADXL: ADXL
   AFC: AFC
-  AFC Update Available: ''
+  AFC Update Available: Mise à jour AFC disponible
   AFC failure reset complete: Réinitialisation erreur AFC terminée
   AFC failure reset failed: Échec de la réinitialisation erreur AFC
   AFC recovery complete: Récupération AFC terminée
@@ -324,8 +324,8 @@ translations:
   Bypass controlled by sensor: Bypass contrôlé par le capteur
   Bypass disabled: Bypass désactivé
   Bypass enabled: Bypass activé
-  'Bypass failed: {}': 'Échec du bypass : {}'
-  'Bypass toggle failed: {}': 'Échec de la bascule du bypass : {}'
+  Bypass failed: Échec du bypass
+  Bypass toggle failed: Échec de la bascule du bypass
   C: C
   CALIBRATION: CALIBRATION
   CAPABILITIES: CAPACITÉS
@@ -436,6 +436,8 @@ translations:
     l'imprimante
   Change PIN: Changer le PIN
   Change Printer Host: Changer l'hôte de l'imprimante
+  Change Tool: Changer d'outil
+  Change Tool While Paused: Changer d'outil en pause
   Changes apply immediately. Adjust during print for tuning.: Les modifications s'appliquent
     immédiatement. Ajustez pendant l'impression pour le réglage.
   Changes are temporary and reset on printer reboot: Les modifications sont temporaires
@@ -446,9 +448,9 @@ translations:
   Check filament: Vérifier le filament
   Check for Updates: Vérifier les mises à jour
   Check slot: Vérifier le slot
-  'Check slot failed: {}': 'Échec de la vérification du slot : {}'
+  Check slot failed: Échec de la vérification du slot
   Check slots: Vérifier les slots
-  'Check slots failed: {}': 'Échec de la vérification des slots : {}'
+  Check slots failed: Échec de la vérification des slots
   Check the filament path and try again.: Vérifiez le chemin du filament et réessayez.
   Check your heater's rating (typically 40-60W for hotends): Vérifiez la puissance
     de votre chauffage (généralement 40-60W pour les hotends)
@@ -483,7 +485,7 @@ translations:
   Clear All Events: Effacer tous les événements
   Clear Console?: Effacer la console ?
   Clear Spool: Retirer la bobine
-  'Clear failed: {}': 'Échec de l''effacement : {}'
+  Clear failed: Échec de l'effacement
   Cleared from settings — system unpair failed, may need OS Bluetooth: Effacé des
     paramètres ; échec du désappairage système, utiliser le Bluetooth de l'OS si besoin
   Clipboard unavailable - use SSH: Presse-papiers indisponible - utilisez SSH
@@ -757,7 +759,7 @@ translations:
   Eject: Éjecter
   Eject Distance: Distance d'éjection
   Eject Velocity: Vitesse d'éjection
-  'Eject failed: {}': 'Échec de l''éjection : {}'
+  Eject failed: Échec de l'éjection
   Eject needs [force_move] enabled in printer config: L'éjection nécessite l'activation
     de [force_move] dans la configuration de l'imprimante
   Ejecting: Éjection
@@ -771,7 +773,7 @@ translations:
   Empty slots disable the associated functionality: Les slots vides désactivent la
     fonctionnalité associée
   Enable: Activer
-  Enable Bypass Controls: ''
+  Enable Bypass Controls: Activer les contrôles du bypass
   Enable Monitoring: Activer la surveillance
   Enable Retraction: Activer la rétraction
   Enable Timelapse: Activer le timelapse
@@ -1003,7 +1005,6 @@ translations:
   'Filament load failed: {}': 'Échec du chargement du filament : {}'
   Filament loaded: Filament chargé
   Filament operation failed: Échec de l'opération filament
-  'Filament operation failed: {}': 'Échec de l''opération sur le filament : {}'
   Filament operation timed out: Opération filament — délai dépassé
   Filament runout: Fin de filament
   Filament runout and motion detection sensors: Capteurs de fin de filament et de
@@ -1024,7 +1025,7 @@ translations:
   Finish: Terminer
   Finishing up...: Finalisation...
   Firmware Restart: Redémarrage firmware
-  Firmware reports no bypass. Enable if you feed filament straight to the extruder: ''
+  Firmware reports no bypass. Enable if you feed filament straight to the extruder: Le firmware ne signale aucun bypass. Activez cette option si vous alimentez l'extrudeur directement en filament
   Firmware restarting...: Redémarrage du firmware...
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
@@ -1374,7 +1375,7 @@ translations:
   'MCU: ': 'MCU : '
   MDI Icons: Icônes MDI
   MISSING CONFIGURED: CONFIGURÉ MANQUANT
-  'MMU command failed: {}': 'Échec de la commande MMU : {}'
+  MMU command failed: Échec de la commande MMU
   MPC: MPC
   Machine Limits: Limites de la machine
   Macro: Macro
@@ -1484,7 +1485,7 @@ translations:
   Must home axes first: Les axes doivent d'abord être référencés
   My Custom Theme: Mon thème personnalisé
   My Panel: Mon panneau
-  My Printer: ''
+  My Printer: Mon imprimante
   NEWLY DISCOVERED: NOUVELLEMENT DÉCOUVERT
   Name: Nom
   Name (optional): Nom (facultatif)
@@ -1994,7 +1995,7 @@ translations:
   Reset Speed & Flow to 100%: Réinitialiser vitesse & débit à 100%
   Reset all settings and restart wizard: Réinitialiser tous les paramètres et redémarrer
     l'assistant
-  'Reset failed: {}': 'Échec de la réinitialisation : {}'
+  Reset failed: Échec de la réinitialisation
   Reset to Default: Réinitialiser par défaut
   Reset to defaults: Réinitialiser par défaut
   Reset to original values: Réinitialiser aux valeurs d'origine
@@ -2024,7 +2025,7 @@ translations:
   Resume Print: Reprendre l'impression
   Resume interrupted print?: 'Reprendre l''impression interrompue ?'
   Resume macro not configured: Macro de reprise non configurée
-  'Resume preparation failed: {}': 'Échec de la préparation à la reprise : {}'
+  Resume preparation failed: Échec de la préparation à la reprise
   Resuming...: Reprise en cours...
   Retract: Rétracter
   Retract Distance: Distance de rétraction
@@ -2165,7 +2166,7 @@ translations:
   Select material to begin: Sélectionnez un matériau pour commencer
   Select sensor: Sélectionner un capteur
   Select slot: Sélectionner le slot
-  'Select slot failed: {}': 'Échec de la sélection du slot : {}'
+  Select slot failed: Échec de la sélection du slot
   Select the heaters Klipper uses for your bed and hotend: Sélectionnez les chauffages
     utilisés par Klipper pour votre plateau et hotend
   Select which devices the home screen power button controls: Sélectionnez les appareils
@@ -2456,6 +2457,8 @@ translations:
     fréquence. Lorsque la courroie semble immobile (figée), vous avez trouvé la fréquence
     de résonance.\n\nUtilisez les boutons de fréquence pour balayer les valeurs jusqu'à
     ce que la courroie paraisse immobile, puis verrouillez la lecture.
+  ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
+  : L'impression est en pause. Changer d'outil maintenant déplace la tête d'impression et remplace le filament au niveau de la buse. Reprenez l'impression une fois le changement terminé.
   The printer halted this print and cannot resume it. Restart from the beginning?: L'imprimante
     a arrêté cette impression et ne peut pas la reprendre. Redémarrer depuis le début
     ?
@@ -2582,6 +2585,7 @@ translations:
   Tool: Outil
   Tool Changer: Changeur d'outils
   'Tool change failed: {}': 'Échec du changement d''outil : {}'
+  Tool mapping failed: Échec de la correspondance d'outils
   Tool swap: Changement d'outil
   'Tool {} → Lane {}: no filament loaded.': 'Outil {} → Voie {} : aucun filament chargé.'
   Toolhead: 'Tête d''outil'
@@ -2653,7 +2657,6 @@ translations:
   Unknown error: Erreur inconnue
   Unload: Décharger
   Unload Filament: Décharger le filament
-  'Unload failed: {}': 'Échec du déchargement : {}'
   Unload macro not configured: Macro de déchargement non configurée
   Unload may still be running — response timed out: Le déchargement est peut-être
     encore en cours — délai dépassé
@@ -2678,7 +2681,7 @@ translations:
   Updates aren't available on this installation.: Les mises à jour ne sont pas disponibles
     sur cette installation.
   Updating Configuration...: Mise à jour de la configuration...
-  Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: ''
+  Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: Passez à AFC 1.2.0 ou supérieur pour les noms de filament et les bobines multicolores.
   Upload: Téléverser
   Upload Debug Bundle: Téléverser le bundle de débogage
   Upload Failed: Téléversement échoué

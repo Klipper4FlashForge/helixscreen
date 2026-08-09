@@ -5,6 +5,7 @@
 
 #include "app_globals.h"
 #include "helix_version.h"
+#include "logging_init.h"
 #include "runtime_config.h"
 #include "theme_manager.h"
 
@@ -666,11 +667,11 @@ bool parse_cli_args(int argc, char** argv, CliArgs& args, int& screen_width, int
                 return false;
             }
             g_log_dest_cli = value;
-            if (g_log_dest_cli != "auto" && g_log_dest_cli != "journal" &&
-                g_log_dest_cli != "syslog" && g_log_dest_cli != "file" &&
-                g_log_dest_cli != "console") {
+            // Shared with the HELIX_LOG_DEST reader in Application::init_logging()
+            // so the accepted set cannot drift between the flag and the env var.
+            if (!helix::logging::is_valid_log_target(g_log_dest_cli)) {
                 printf("Error: invalid --log-dest value: %s\n", g_log_dest_cli.c_str());
-                printf("Valid values: auto, journal, syslog, file, console\n");
+                printf("Valid values: %s\n", helix::logging::log_target_accepted_values());
                 return false;
             }
         } else if (strcmp(argv[i], "--log-file") == 0 || strncmp(argv[i], "--log-file=", 11) == 0) {
@@ -694,12 +695,10 @@ bool parse_cli_args(int argc, char** argv, CliArgs& args, int& screen_width, int
                 return false;
             }
             g_log_level_cli = value;
-            if (g_log_level_cli != "trace" && g_log_level_cli != "debug" &&
-                g_log_level_cli != "info" && g_log_level_cli != "warn" &&
-                g_log_level_cli != "error" && g_log_level_cli != "critical" &&
-                g_log_level_cli != "off") {
+            // Shared with the HELIX_LOG_LEVEL reader in Application::init_logging().
+            if (!helix::logging::is_valid_log_level(g_log_level_cli)) {
                 printf("Error: invalid --log-level value: %s\n", g_log_level_cli.c_str());
-                printf("Valid values: trace, debug, info, warn, error, critical, off\n");
+                printf("Valid values: %s\n", helix::logging::log_level_accepted_values());
                 return false;
             }
         }
