@@ -2,6 +2,7 @@
 #include "../lvgl_test_fixture.h"
 #include "ams_backend_afc.h"
 #include "ams_backend_cfs.h"
+#include "filament_op_router.h"
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
 #include "printer_state.h"
@@ -104,6 +105,90 @@ TEST_CASE("ensure_homed_then reports G28 failure through on_error", "[ams][homin
 
     CHECK(seen == "boom");
     CHECK(backend.captured.empty());
+}
+
+// =====================================================================
+// The confirmation prompt (Task 8)
+// =====================================================================
+// HomingProbeBackend's api_ is null, so these stay on the synchronous
+// fixture-only leg of ensure_homed_then() -- the prompter itself, and
+// on_confirm/on_cancel, all run inline with no queue drain needed. That is
+// exactly what proves the no-prompter default in test 4 below: nothing here
+// (or in any of the ~4600 other pre-existing tests) installs a prompter, so
+// request_home_confirmation() invoking on_confirm() synchronously is the only
+// thing keeping today's "just home it" behaviour intact.
+
+TEST_CASE("unhomed load asks before homing, and confirming proceeds", "[ams][homing][confirm]") {
+    LVGLTestFixture fixture;
+    HomingProbeBackend backend;
+    backend.homed = false;
+
+    int prompts = 0;
+    helix::ui::set_home_confirm_prompter(
+        [&prompts](std::function<void()> confirm, std::function<void()>) {
+            ++prompts;
+            confirm();
+        });
+
+    backend.ensure_homed_then("CHANGE_TOOL LANE=lane1");
+
+    CHECK(prompts == 1);
+    REQUIRE(backend.captured.size() == 2);
+    CHECK(backend.captured[0] == "G28");
+    CHECK(backend.captured[1] == "CHANGE_TOOL LANE=lane1");
+    helix::ui::set_home_confirm_prompter({});
+}
+
+TEST_CASE("cancelling the home sends nothing and lands IDLE", "[ams][homing][confirm]") {
+    LVGLTestFixture fixture;
+    HomingProbeBackend backend;
+    backend.homed = false;
+
+    helix::ui::set_home_confirm_prompter(
+        [](std::function<void()>, std::function<void()> cancel) { cancel(); });
+
+    backend.ensure_homed_then("CHANGE_TOOL LANE=lane1");
+
+    CHECK(backend.captured.empty());
+    CHECK(backend.get_system_info().action == AmsAction::IDLE);
+
+    // A cancelled op must not wedge the backend: the next load still works.
+    backend.homed = true;
+    helix::ui::set_home_confirm_prompter({});
+    backend.ensure_homed_then("CHANGE_TOOL LANE=lane2");
+    REQUIRE(backend.captured.size() == 1);
+    CHECK(backend.captured[0] == "CHANGE_TOOL LANE=lane2");
+}
+
+TEST_CASE("an already-homed printer is never prompted", "[ams][homing][confirm]") {
+    LVGLTestFixture fixture;
+    HomingProbeBackend backend;
+    backend.homed = true;
+
+    int prompts = 0;
+    helix::ui::set_home_confirm_prompter(
+        [&prompts](std::function<void()> confirm, std::function<void()>) {
+            ++prompts;
+            confirm();
+        });
+
+    backend.ensure_homed_then("CHANGE_TOOL LANE=lane1");
+
+    CHECK(prompts == 0);
+    REQUIRE(backend.captured.size() == 1);
+    helix::ui::set_home_confirm_prompter({});
+}
+
+TEST_CASE("with no prompter installed the home proceeds silently", "[ams][homing][confirm]") {
+    LVGLTestFixture fixture;
+    HomingProbeBackend backend;
+    backend.homed = false;
+    helix::ui::set_home_confirm_prompter({});
+
+    backend.ensure_homed_then("CHANGE_TOOL LANE=lane1");
+
+    REQUIRE(backend.captured.size() == 2);
+    CHECK(backend.captured[0] == "G28");
 }
 
 // =====================================================================

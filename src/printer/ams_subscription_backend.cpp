@@ -3,6 +3,7 @@
 
 #include "ams_subscription_backend.h"
 
+#include "filament_op_router.h"
 #include "moonraker_error.h"
 #include "printer_state.h"
 #include "toolhead_homing.h"
@@ -230,50 +231,88 @@ AmsSubscriptionBackend::ensure_homed_then(std::string gcode, std::function<void(
     }
 
     auto gcode_copy = std::move(gcode);
-    spdlog::info("{} Not homed, sending G28 before operation", backend_log_tag());
+    spdlog::info("{} Not homed -- asking before sending G28", backend_log_tag());
 
-    // No API: emit the G28 through the VIRTUAL execute_gcode rather than
-    // skipping it. api_ is null only in fixtures, and they override the virtual
-    // to capture - routing around it here would make the unhomed branch
-    // untestable and silently drop the G28 from the recorded sequence.
-    // The real path below cannot use the virtual because it needs an error
-    // callback and HOMING_TIMEOUT_MS, which the virtual forms do not take.
-    // Fixtures are synchronous (no real RPC), so the AmsError the virtual
-    // returns IS the only failure signal available here -- there is no async
-    // MoonrakerError to forward, so a failure is translated into one.
-    if (!api_) {
-        AmsError g28_result = execute_gcode("G28");
-        if (!g28_result.success()) {
-            MoonrakerError synthetic;
-            synthetic.type = MoonrakerErrorType::UNKNOWN;
-            synthetic.message = g28_result.technical_msg;
-            handle_dispatch_error(synthetic, on_error);
-            return g28_result;
-        }
-        return dispatch_payload(std::move(gcode_copy), std::move(on_complete), std::move(on_error),
-                                timeout_ms, silent);
-    }
-
+    // The confirmation always resolves through on_confirm/on_cancel below,
+    // never back through this function's return value: with a real prompter
+    // installed the answer arrives on a later main-thread tick (a modal
+    // button tap), so there is nothing left here to return synchronously.
+    // request_home_confirmation() is what makes on_confirm fire immediately
+    // and synchronously when no prompter is installed -- the default every
+    // pre-existing test relies on -- so the two branches below still run in
+    // this same call for all of them.
     auto token = lifetime_.token();
-    // MoonrakerAPI::execute_gcode() returns void (it's inherently async), so
-    // this call cannot be returned directly - success is reported immediately
-    // below, matching the pre-refactor behavior of the query path this
-    // replaces (it never returned the send_jsonrpc() call either).
-    api_->execute_gcode(
-        "G28",
+    helix::ui::request_home_confirmation(
         [this, token, gcode_copy, on_complete, on_error, timeout_ms, silent]() {
-            // L081 Mechanism C: the ack lands on a bg thread and
-            // dispatch_payload touches api_/members. Marshal to main.
-            token.defer("AmsSubscriptionBackend::ensure_homed_then_g28_success",
-                        [this, gcode_copy, on_complete, on_error, timeout_ms, silent]() {
-                            dispatch_payload(gcode_copy, on_complete, on_error, timeout_ms, silent);
-                        });
+            // Runs either inline in this call (no prompter, or a synchronous
+            // test prompter) or later from an LVGL confirm-button event
+            // callback. Both cases are on the main thread -- the modal only
+            // ever fires its callbacks from lv_timer_handler() -- so this is
+            // not the bg-thread TOCTOU the bare expired()-then-`this` pattern
+            // usually flags.
+            if (token.expired()) { // L081_OK: main-thread only, see comment above
+                return;
+            }
+            spdlog::info("{} Confirmed -- sending G28 before operation", backend_log_tag());
+
+            // No API: emit the G28 through the VIRTUAL execute_gcode rather
+            // than skipping it. api_ is null only in fixtures, and they
+            // override the virtual to capture - routing around it here would
+            // make the unhomed branch untestable and silently drop the G28
+            // from the recorded sequence. The real path below cannot use the
+            // virtual because it needs an error callback and
+            // HOMING_TIMEOUT_MS, which the virtual forms do not take.
+            // Fixtures are synchronous (no real RPC), so the AmsError the
+            // virtual returns IS the only failure signal available here --
+            // there is no async MoonrakerError to forward, so a failure is
+            // translated into one.
+            if (!api_) {
+                AmsError g28_result = execute_gcode("G28");
+                if (!g28_result.success()) {
+                    MoonrakerError synthetic;
+                    synthetic.type = MoonrakerErrorType::UNKNOWN;
+                    synthetic.message = g28_result.technical_msg;
+                    handle_dispatch_error(synthetic, on_error);
+                    return;
+                }
+                dispatch_payload(gcode_copy, on_complete, on_error, timeout_ms, silent);
+                return;
+            }
+
+            // MoonrakerAPI::execute_gcode() returns void (it's inherently
+            // async); dispatch_payload()'s result on the success leg mirrors
+            // the pre-refactor behavior of the query path this replaces (it
+            // never returned the send_jsonrpc() call either).
+            api_->execute_gcode(
+                "G28",
+                [this, token, gcode_copy, on_complete, on_error, timeout_ms, silent]() {
+                    // L081 Mechanism C: the ack lands on a bg thread and
+                    // dispatch_payload touches api_/members. Marshal to main.
+                    token.defer("AmsSubscriptionBackend::ensure_homed_then_g28_success",
+                                [this, gcode_copy, on_complete, on_error, timeout_ms, silent]() {
+                                    dispatch_payload(gcode_copy, on_complete, on_error, timeout_ms,
+                                                     silent);
+                                });
+                },
+                [this, token, on_error](const MoonrakerError& err) {
+                    token.defer("AmsSubscriptionBackend::ensure_homed_then_g28_error",
+                                [this, err, on_error]() { handle_dispatch_error(err, on_error); });
+                },
+                MoonrakerAPI::HOMING_TIMEOUT_MS);
         },
-        [this, token, on_error](const MoonrakerError& err) {
-            token.defer("AmsSubscriptionBackend::ensure_homed_then_g28_error",
-                        [this, err, on_error]() { handle_dispatch_error(err, on_error); });
-        },
-        MoonrakerAPI::HOMING_TIMEOUT_MS);
+        [this, token]() {
+            // Same main-thread-only reasoning as the on_confirm branch above.
+            if (token.expired()) { // L081_OK: main-thread only, see comment above
+                return;
+            }
+            spdlog::info("{} User declined the pre-op home; operation cancelled",
+                         backend_log_tag());
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                system_info_.action = AmsAction::IDLE;
+            }
+            emit_event(EVENT_STATE_CHANGED);
+        });
 
     return AmsErrorHelper::success();
 }

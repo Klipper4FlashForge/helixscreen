@@ -6,7 +6,9 @@
 #include "ui_component_keypad.h"
 #include "ui_emergency_stop.h"
 #include "ui_error_reporting.h"
+#include "ui_event_safety.h"
 #include "ui_fan_control_overlay.h"
+#include "ui_modal.h"
 #include "ui_nav_manager.h"
 #include "ui_notification.h"
 #include "ui_notification_manager.h"
@@ -46,6 +48,7 @@
 #include "app_globals.h"
 #include "color_sensor_manager.h"
 #include "filament_catalog.h"
+#include "filament_op_router.h"
 #include "filament_sensor_manager.h"
 #include "filament_variants.h"
 #include "humidity_sensor_manager.h"
@@ -54,10 +57,10 @@
 #include "lvgl/lvgl.h"
 #include "material_settings_manager.h"
 #include "panel_widget_manager.h"
+#include "plr_offer_controller.h"
 #include "preset_materials.h"
 #include "print_completion.h"
 #include "print_control_buttons.h"
-#include "plr_offer_controller.h"
 #include "print_start_navigation.h"
 #include "printer_state.h"
 #include "probe_sensor_manager.h"
@@ -76,6 +79,79 @@
 #include <spdlog/spdlog.h>
 
 #include <chrono>
+
+namespace {
+
+// The one live installation of helix::ui::HomeConfirmPrompter (Task 8). Every
+// other caller of set_home_confirm_prompter() is a test. modal_show_confirmation()
+// takes a C-style lv_event_cb_t, not a std::function, so the pending
+// on_confirm/on_cancel from AmsSubscriptionBackend::ensure_homed_then() can't
+// be captured in a lambda passed to it -- they're stashed here instead and
+// read back by the two static callbacks below. Same idiom as
+// MacrosPanel::pending_dangerous_macro_ (ui_panel_macros.cpp), just file-local
+// because this prompter is a free function, not a panel method.
+//
+// Only one home-confirmation dialog is ever showing at a time (the AMS
+// dispatch chokepoint is synchronous up to the point it raises this modal),
+// so a single pending pair is enough -- a second request_home_confirmation()
+// call before this one resolves would overwrite it, but nothing in the
+// dispatch chain issues one without waiting on the first.
+std::function<void()> g_pending_home_confirm;
+std::function<void()> g_pending_home_cancel;
+
+void on_home_confirm_cb(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[SubjectInitializer] home_confirm_cb");
+    (void)e;
+    // Custom on_confirm replaces the dialog's default close handler, so this
+    // must dismiss it explicitly.
+    helix::ui::modal_hide(helix::ui::modal_get_top());
+    auto confirm = std::move(g_pending_home_confirm);
+    g_pending_home_confirm = nullptr;
+    g_pending_home_cancel = nullptr;
+    if (confirm) {
+        confirm();
+    }
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+void on_home_cancel_cb(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[SubjectInitializer] home_cancel_cb");
+    (void)e;
+    helix::ui::modal_hide(helix::ui::modal_get_top());
+    auto cancel = std::move(g_pending_home_cancel);
+    g_pending_home_confirm = nullptr;
+    g_pending_home_cancel = nullptr;
+    if (cancel) {
+        cancel();
+    }
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+/// Installs the modal-backed HomeConfirmPrompter used by every real run of
+/// the app. Must run after DisplayManager has created the LVGL display (so
+/// lv_screen_active() and the modal subsystem exist by the time a user
+/// action later triggers the callback) -- true for every SubjectInitializer
+/// entry point, since Application::init_display() (Phase 4) runs well before
+/// Application::init_core_subjects()/init_panels()/init_ui() (Phases 9+),
+/// which is what calls into SubjectInitializer at all. Installing here (not
+/// e.g. inside AmsSubscriptionBackend) keeps the AMS backend layer free of
+/// any LVGL/modal dependency -- it only ever calls the seam in
+/// filament_op_router.h.
+void install_home_confirm_prompter() {
+    helix::ui::set_home_confirm_prompter(
+        [](std::function<void()> on_confirm, std::function<void()> on_cancel) {
+            g_pending_home_confirm = std::move(on_confirm);
+            g_pending_home_cancel = std::move(on_cancel);
+            helix::ui::modal_show_confirmation(
+                lv_tr("Home printer first?"),
+                lv_tr("The printer is not homed. Continuing will home all axes, moving the "
+                      "toolhead. Make sure the bed is clear."),
+                ModalSeverity::Warning, lv_tr("Home & Continue"), on_home_confirm_cb,
+                on_home_cancel_cb, nullptr);
+        });
+}
+
+} // namespace
 
 SubjectInitializer::SubjectInitializer() = default;
 SubjectInitializer::~SubjectInitializer() {
@@ -103,8 +179,7 @@ void SubjectInitializer::init_core_and_state() {
     // (object form, `orca_type_map` key). User entries win over shipped entries
     // in orca_match_type() resolution. Same main-thread / pre-backend window as
     // warm_orca_tables() above — see FILAMENT_MANAGEMENT.md § "User overlay format".
-    filament::merge_user_orca_overrides(
-        helix::printer::FilamentCatalog::load_user_orca_type_map());
+    filament::merge_user_orca_overrides(helix::printer::FilamentCatalog::load_user_orca_type_map());
 
     // Phase 3: AMS and filament sensor subjects
     init_ams_subjects();
@@ -137,15 +212,23 @@ void SubjectInitializer::init_post(const RuntimeConfig& runtime_config) {
     // Phase 7: USB manager (needs notification system)
     init_usb_manager(runtime_config);
 
+    // Phase 8: Install the real "home printer first?" confirmation prompter
+    // (Task 8) -- see install_home_confirm_prompter() above for why this
+    // placement is safe. No test ever reaches this: HelixTestFixture's
+    // reset_all() doesn't touch the prompter slot, and no test calls
+    // SubjectInitializer::init_post(), so the ~4600 existing tests keep
+    // seeing the default (no-prompter, proceed-immediately) behaviour.
+    install_home_confirm_prompter();
+
     m_initialized = true;
     spdlog::debug("[SubjectInitializer] Initialized {} observer guards", m_observers.size());
 }
 
 void SubjectInitializer::init_core_subjects() {
     spdlog::trace("[SubjectInitializer] Initializing core subjects");
-    app_globals_init_subjects();                   // Global subjects (notification subject, etc.)
-    PrinterStatusIcon::instance().init_subjects(); // Printer icon state
-    helix::ui::notification_init_subjects();       // Notification badge subjects
+    app_globals_init_subjects();                    // Global subjects (notification subject, etc.)
+    PrinterStatusIcon::instance().init_subjects();  // Printer icon state
+    helix::ui::notification_init_subjects();        // Notification badge subjects
     helix::LockManager::instance().init_subjects(); // Lock screen pin_set subject
 
     // Quick-preset material name/temperature subjects. MUST be here in core
