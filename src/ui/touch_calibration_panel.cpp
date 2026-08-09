@@ -532,6 +532,9 @@ const TouchCalibration* TouchCalibrationPanel::get_calibration() const {
 }
 
 void TouchCalibrationPanel::start_countdown_timer() {
+    // Cancel first, for the same reason as start_fast_revert_timer(): a second
+    // start would strand the first timer in LVGL's list pointing at this panel.
+    stop_countdown_timer();
     countdown_remaining_ = verify_timeout_seconds_;
     countdown_timer_ = lv_timer_create(countdown_timer_cb, 1000, this);
     spdlog::debug("[TouchCalibrationPanel] Started countdown timer: {} seconds",
@@ -580,6 +583,14 @@ void TouchCalibrationPanel::report_verify_touch(bool on_screen) {
 }
 
 void TouchCalibrationPanel::start_fast_revert_timer() {
+    // Cancel first, like start_stall_timer(). Overwriting the handle instead
+    // orphans the previous lv_timer_t: it stays armed in LVGL's list holding
+    // user_data == this, the destructor only ever deletes the newest handle,
+    // and the orphan then fires on freed memory (ASAN: heap-buffer-overflow
+    // WRITE at the `self->fast_revert_timer_ = nullptr` below, landing in an
+    // unrelated test's process_lvgl). Re-entering VERIFY is enough to get here
+    // twice.
+    stop_fast_revert_timer();
     verify_raw_touch_count_ = 0;
     verify_onscreen_touch_count_ = 0;
     fast_revert_timer_ = lv_timer_create(fast_revert_timer_cb, FAST_REVERT_CHECK_MS, this);
