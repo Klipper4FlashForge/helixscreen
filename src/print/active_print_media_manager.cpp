@@ -395,6 +395,12 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
                 req.target =
                     helix::ThumbnailProcessor::get_target_for_display(helix::ThumbnailSize::Detail);
                 req.api = api_;
+                // Moonraker's mtime for the gcode file this thumbnail came out
+                // of. Without it the cache serves whatever it rendered the first
+                // time this filename was printed, so a re-slice under the same
+                // name shows the old model for the entire job. Zero (metadata
+                // that omits it) degrades to skipping validation, as before.
+                req.source_modified = static_cast<time_t>(metadata.modified);
 
                 get_thumbnail_cache().fetch(
                     req, ctx,

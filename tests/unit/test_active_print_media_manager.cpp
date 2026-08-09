@@ -23,6 +23,7 @@
 #include "moonraker_file_api.h"
 #include "moonraker_file_transfer_api.h"
 #include "printer_state.h"
+#include "thumbnail_cache.h"
 #include "thumbnail_processor.h"
 
 #include <spdlog/sinks/null_sink.h>
@@ -30,8 +31,10 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 #include "../catch_amalgamated.hpp"
 
@@ -1140,6 +1143,108 @@ TEST_CASE_METHOD(ActivePrintMediaAsyncFixture,
     // Publishing also disarms recovery, so a leaked publish would additionally
     // stop B's own thumbnail from ever being retried.
     CHECK_FALSE(helix::ActivePrintMediaManagerTestAccess::thumbnail_loaded(manager()));
+}
+
+// ============================================================================
+// Thumbnail cache freshness (re-slice under the same filename)
+// ============================================================================
+// The active print was the last consumer still building its ThumbnailRequest
+// without source_modified, so ThumbnailCache never got to validate the cached
+// artifact's mtime for it. Re-slice a model, reprint under the same name, and
+// the print-status panel showed the PREVIOUS render for the whole job.
+//
+// The metadata callback already receives FileMetadata::modified, which is the
+// timestamp Moonraker reports for the gcode file itself — exactly what the
+// print-select cards feed their own requests.
+
+namespace {
+
+/// Smallest PNG both the cache and the processor accept: a 10x10 solid square.
+/// Same bytes as tests/unit/test_thumbnail_cache_request.cpp.
+// clang-format off
+const std::vector<uint8_t> kFreshnessPng = {
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+    0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x0A, 0x00, 0x00, 0x00, 0x0A,
+    0x08, 0x02, 0x00, 0x00, 0x00, 0x02, 0x50, 0x58, 0xEA, 0x00, 0x00, 0x00,
+    0x12, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x68, 0x70, 0x50, 0xC0,
+    0x83, 0x18, 0x46, 0xA5, 0xB1, 0x21, 0x00, 0x24, 0x51, 0x57, 0x81, 0xF7,
+    0xEC, 0xA3, 0x23, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+    0x42, 0x60, 0x82};
+// clang-format on
+
+/// The target ActivePrintMediaManager builds its request from. Planting under
+/// any other target would produce a .bin the manager never looks for, and the
+/// "not served" assertion below would then hold for the wrong reason.
+helix::ThumbnailTarget active_print_target() {
+    return helix::ThumbnailProcessor::get_target_for_display(helix::ThumbnailSize::Detail);
+}
+
+/// Metadata carrying both a thumbnail and the source mtime Moonraker reports.
+FileMetadata metadata_with_thumb_modified(uint32_t layer_count, const std::string& thumb_path,
+                                          double modified) {
+    FileMetadata m;
+    m.layer_count = layer_count;
+    m.estimated_time = 0;
+    m.modified = modified;
+    m.thumbnails.push_back(ThumbnailInfo{thumb_path, 300, 300});
+    return m;
+}
+
+} // namespace
+
+/// Positive control for the test below. It pins that a pre-scaled entry planted
+/// under this key and target really is servable to the active-print load, so
+/// the "stale entry is not served" assertion cannot pass just because the cache
+/// was empty or the key/target never matched.
+TEST_CASE_METHOD(ActivePrintMediaAsyncFixture,
+                 "ActivePrintMediaManager: a cached thumbnail older than the source is served",
+                 "[ActivePrintMediaManager][async][thumbnail]") {
+    const std::string key = unique_thumb_path("freshness_control");
+    const auto planted = helix::ThumbnailProcessor::instance().process_sync(kFreshnessPng, key,
+                                                                            active_print_target());
+    REQUIRE(planted.success);
+    REQUIRE(ThumbnailCache::is_lvgl_path(planted.output_path));
+
+    set_print_filename_no_drain("reprint_control.gcode");
+    drain();
+    REQUIRE(files().pending_count() == 1);
+
+    // Source last modified in 2001 — long before the .bin that was just written.
+    files().fire_last(metadata_with_thumb_modified(5, key, 1000000000.0));
+    drain();
+
+    CHECK(get_thumbnail_path() == planted.output_path);
+    // A fresh cache hit resolves synchronously; nothing is downloaded.
+    CHECK(transfers_stub().download_count() == 0);
+
+    get_thumbnail_cache().invalidate(key);
+}
+
+TEST_CASE_METHOD(ActivePrintMediaAsyncFixture,
+                 "ActivePrintMediaManager: a source newer than the cached thumbnail is not served "
+                 "from cache",
+                 "[ActivePrintMediaManager][async][thumbnail]") {
+    const std::string key = unique_thumb_path("freshness_stale");
+    const auto planted = helix::ThumbnailProcessor::instance().process_sync(kFreshnessPng, key,
+                                                                            active_print_target());
+    REQUIRE(planted.success);
+    REQUIRE(ThumbnailCache::is_lvgl_path(planted.output_path));
+
+    set_print_filename_no_drain("reprint_stale.gcode");
+    drain();
+    REQUIRE(files().pending_count() == 1);
+
+    // The re-slice: Moonraker reports the gcode as modified in 2100, newer than
+    // anything on disk. The cached render describes the OLD model.
+    files().fire_last(metadata_with_thumb_modified(5, key, 4102444800.0));
+    drain();
+
+    // The stale artifact must be invalidated and the image re-fetched, not
+    // handed straight back.
+    CHECK(transfers_stub().download_count() == 1);
+    CHECK(get_thumbnail_path() != planted.output_path);
+
+    get_thumbnail_cache().invalidate(key);
 }
 
 // ============================================================================
