@@ -73,10 +73,15 @@ class Ad5xIfsTestAccess;
 ///                                                   single boolean on stock zMod)
 ///
 /// NOTE: `parse_head_sensor()` currently conflates `ifs_motion_sensor` with the
-/// toolhead switch. That is a known simplification — motion at the hub does not
+/// toolhead switch. That is a known simplification - motion at the hub does not
 /// mean filament has reached the nozzle. Fixing this requires splitting a
 /// hub_output presence from head_filament and updating
 /// `system_info_.filament_loaded` + `detect_load_unload_completion()` accordingly.
+/// Until then, `head_filament_ == false` is NOT evidence the toolhead is empty:
+/// the motion sensor reads `filament_detected=false` on a lane that is loaded but
+/// idle. Anything that needs an authoritative empty head must use the switch pair
+/// `head_switch_seen_ && !head_switch_present_` instead - that is what the #1065
+/// row 28 seated head-gate and the runout detector below both do.
 ///
 /// Ports are 1-based (1-4), slots are 0-based (0-3).
 /// slot_to_port = slot + 1, port_to_slot = port - 1.
@@ -88,6 +93,26 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     static constexpr int NUM_PORTS = 4;
     static constexpr int TOOL_MAP_SIZE = 16;
     static constexpr int UNMAPPED_PORT = 5;
+
+    /// Which auto-switchover macro package is driving the IFS, if any.
+    ///
+    /// The numeric values are published verbatim on the `ams_ifs_plugin` XML
+    /// subject, so they are part of the UI contract - append, never renumber.
+    /// `None` is the stock-zMod case and is the one that matters most to the
+    /// user: with no plugin there is no backup-spool switching at all, so a
+    /// runout stops the print until a human intervenes (#1247).
+    enum class IfsPlugin : int {
+        None = 0,      ///< Stock zMod - no _IFS_VARS macro, no auto switchover
+        LessWaste = 1, ///< Hrybmo/lessWaste (`less_waste_*` save_variables)
+        Bambufy = 2    ///< function3d/bambufy (`bambufy_*` save_variables)
+    };
+
+    /// Published on the `ams_ifs_backup_enabled` XML subject. Tri-state because
+    /// "we could not read it" is a different answer from "it is off", and only
+    /// the latter justifies telling the user switchover will not happen.
+    static constexpr int BACKUP_UNKNOWN = -1;
+    static constexpr int BACKUP_OFF = 0;
+    static constexpr int BACKUP_ON = 1;
 
     /// Cadence of the Adventurer5M.json freshness poll. Slower while printing:
     /// FFMInfo holds only per-slot colour/type labels, and each poll is a
@@ -247,6 +272,36 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
 
     [[nodiscard]] std::optional<helix::ErrorEvent> current_error() const override;
 
+    /// Which auto-switchover plugin the live printer has, from the same two
+    /// signals set_slot_info()/parse_save_variables() already trust: the
+    /// detected variable prefix and the `gcode_macro _ifs_vars` existence latch.
+    /// Returns IfsPlugin::None whenever has_ifs_vars_ is false - stale
+    /// `less_waste_*` rows left behind by an uninstalled plugin must not read as
+    /// "installed", which is exactly what the latch exists to prevent.
+    [[nodiscard]] IfsPlugin get_plugin() const;
+
+    /// The plugin's `variable_backup` setting, or nullopt when the macro's
+    /// get_status() dict never carried the key (no plugin, or a version that
+    /// does not declare it). nullopt means UNKNOWN and must never be reported
+    /// as "off" - see BACKUP_UNKNOWN.
+    [[nodiscard]] std::optional<bool> plugin_backup_enabled() const;
+
+    /// True while the backend is holding an unattended-runout fault (see
+    /// evaluate_runout_locked). Distinct from `action == ERROR`, which the
+    /// operation-timeout backstop also produces.
+    [[nodiscard]] bool runout_active() const;
+
+  protected:
+    /// The recovery buttons for whichever fault is currently latched.
+    ///
+    /// Two shapes: the operation-timeout fault keeps the historical lone
+    /// "Recover" (IFS_UNLOCK), and an unattended runout gets the Resume / Purge
+    /// / Recover set (see the implementation for why there is deliberately no
+    /// "Load" button). Caller holds mutex_ (the base declares that contract;
+    /// mutex_ is non-recursive, so this must not lock).
+    [[nodiscard]] std::vector<helix::RecoveryAction> build_recovery_actions() const override;
+
+  public:
     // Backend-driven step model for the right-side vertical operation tracker.
     // The AD5X synthesizes 3 firmware phases (HEATING→CUTTING→UNLOADING /
     // HEATING→LOADING→PURGING) from extruder temp + head sensor in
@@ -612,6 +667,68 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     void detect_local_adventurer_json_path();
     void detect_load_unload_completion(bool head_detected);
 
+    // === Unattended runout detection (#1250, reported as #1247) ===
+    //
+    // The hole this fills: detect_load_unload_completion() only reacts to a head
+    // transition while action is LOADING or UNLOADING, and check_action_timeout()
+    // only runs while an operation phase is active. A head drop at IDLE with no
+    // phase tracking therefore produced nothing at all - the print sat paused with
+    // an empty toolhead and HelixScreen said nothing.
+    //
+    // The authority is the SWITCH pair (head_switch_seen_ && !head_switch_present_),
+    // never head_filament_: the motion sensor also writes head_filament_ and reads
+    // false on a loaded-but-idle lane, so gating on it would fire on healthy idle.
+
+    /// Record a toolhead SWITCH reading and maintain the runout edge state.
+    /// Arms head_empty_since_ only on a genuine present->absent transition, and
+    /// clears both the stamp and any latched runout when filament returns.
+    /// Caller must hold mutex_.
+    void note_head_switch_reading_locked(bool detected);
+
+    /// Stamp "a filament-moving command was just dispatched". Any head-empty
+    /// window that opens within kRunoutOpSuppression of the stamp belongs to
+    /// that operation, not to a runout. Covers the paths that leave the backend
+    /// IDLE and armless: eject_lane() and the three early returns in
+    /// do_unload_filament() that route to it. Caller must hold mutex_.
+    void note_filament_op_dispatch_locked();
+
+    /// Evaluate the runout predicate and latch/clear the fault. Returns true when
+    /// it changed observable state (so the caller emits EVENT_STATE_CHANGED).
+    /// Caller must hold mutex_.
+    bool evaluate_runout_locked();
+
+    /// Drop the latched runout back to IDLE. Caller must hold mutex_.
+    void clear_runout_locked(const char* why);
+
+    /// Compose the user-facing runout text, including the plugin sentence that
+    /// answers "will the printer switch to a backup spool by itself?".
+    /// Caller must hold mutex_.
+    [[nodiscard]] std::string build_runout_detail_locked() const;
+
+    /// Strict backup-spool match for @p runout_slot: a port qualifies only when
+    /// its filament TYPE and COLOUR both equal the ran-out lane's and its own
+    /// port sensor reads filament present. Returns a 0-based slot index, or -1
+    /// when nothing qualifies. Deliberately strict - this is what the hint text
+    /// promises, and promising more than the plugin delivers is the #1247
+    /// misexpectation. Caller must hold mutex_.
+    [[nodiscard]] int find_backup_slot_locked(int runout_slot) const;
+
+    /// How long the toolhead must read authoritatively empty, while paused and
+    /// idle, before the fault is raised. Longer when a plugin with backup
+    /// switching is installed: that plugin's own recovery pauses, unloads and
+    /// loads a replacement lane, which takes minutes and must not be
+    /// interrupted by us declaring a runout on top of it. Caller holds mutex_.
+    [[nodiscard]] std::chrono::seconds runout_confirm_delay_locked() const;
+
+    /// Read the `variable_*` payload out of a `gcode_macro _ifs_vars`
+    /// get_status() dict. Returns true when something we publish changed.
+    /// Caller must hold mutex_.
+    bool parse_ifs_vars_macro_locked(const nlohmann::json& macro_status);
+
+    /// Value for the `ams_ifs_backup_enabled` subject (BACKUP_*). Caller holds
+    /// mutex_.
+    [[nodiscard]] int backup_subject_value_locked() const;
+
     // === Live load/unload progress phase tracker ===
     //
     // Between the moment WE start a load/unload (load_filament / unload_filament)
@@ -822,6 +939,38 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // fires — the seated lane is preserved (fall back to prior behaviour).
     bool head_switch_seen_ = false;
     bool head_switch_present_ = false;
+
+    // --- Unattended runout detection (#1250 / #1247) ---
+    // Set on a genuine head-switch present->absent EDGE; nullopt otherwise. An
+    // edge, not a level, on purpose: a printer that boots already paused with an
+    // empty toolhead has no runout to report, and a level test would invent one.
+    std::optional<std::chrono::steady_clock::time_point> head_empty_since_;
+    // Instant of the last filament-moving dispatch (load / unload / change tool /
+    // eject). Default-constructed = the epoch, so a fresh backend is never
+    // suppressed. See note_filament_op_dispatch_locked().
+    std::chrono::steady_clock::time_point last_filament_op_dispatch_{};
+    // True while system_info_.action == ERROR *because of* a runout rather than
+    // an operation timeout. current_error() and build_recovery_actions() branch
+    // on it; recover()/reset()/cancel() clear it alongside the ERROR itself.
+    bool runout_active_ = false;
+    // 0-based lane that was seated when the toolhead emptied (-1 = unknown). The
+    // firmware routinely drops its active pointer on a runout, so this is
+    // captured at raise time from whichever authority still had it.
+    int runout_slot_ = -1;
+    // Head must read authoritatively empty this long, paused and idle, before the
+    // fault is raised. Long enough to ride out a status-frame hiccup and to give
+    // a firmware-driven sequence a chance to put filament back, short enough that
+    // the user is not left staring at a stopped print with no explanation.
+    static constexpr std::chrono::seconds kRunoutConfirmDelay{30};
+    // The lessWaste backup switchover is itself an unload + load, minutes long,
+    // during which the toolhead is legitimately empty on a paused print. Wait it
+    // out before claiming the runout is unattended.
+    static constexpr std::chrono::seconds kRunoutConfirmDelayWithBackup{180};
+    // A head-empty window opening within this long after a filament-moving
+    // dispatch is attributed to that operation. Covers eject_lane() and
+    // do_unload_filament()'s early returns, which leave action IDLE.
+    static constexpr std::chrono::seconds kRunoutOpSuppression{30};
+
     std::array<bool, NUM_PORTS> dirty_{}; // Per-slot dirty flag to prevent stale overwrites
 
     helix::printer::SlotRegistry slots_;
@@ -849,6 +998,18 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // missing objects rather than erroring the query, so empty-vs-non-empty
     // is the discriminator, not key presence.
     bool ifs_macro_confirmed_missing_ = true;
+
+    // `variable_backup` from the `gcode_macro _ifs_vars` get_status() dict:
+    // lessWaste's "auto-switch to a matching backup spool on runout" toggle
+    // (docs/devel/printers/FLASHFORGE_AD5X_SUPPORT.md § lessWaste-Specific
+    // Variables; a real dump in printer-research/FLASHFORGE_AD5X_IFS_ANALYSIS.md
+    // shows `variable_backup: 0`, i.e. the feature exists but ships OFF).
+    // nullopt = the dict never carried the key, which is NOT the same as off and
+    // must be reported as unknown. Never observed on a device by us - the value
+    // is read and displayed, nothing branches on it except the wording and the
+    // longer runout confirm delay.
+    std::optional<bool> ifs_backup_variable_;
+
     std::atomic<bool> reread_pending_{false};
 
     // Main-thread-only: counts external color-change detections in the gcode

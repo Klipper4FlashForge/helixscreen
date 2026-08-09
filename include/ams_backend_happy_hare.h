@@ -250,6 +250,7 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     friend class HappyHareErrorStateHelper;
     friend class HappyHareCharHelper;
     friend class HHToolchangeTestHelper;
+    friend class HhFaultEventCharHelper;
 
     // --- AmsSubscriptionBackend hooks ---
     void on_started() override;
@@ -281,8 +282,10 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     // Locks mutex_ internally — call with no lock held.
     [[nodiscard]] std::string gates_suffix_for_unit(int unit) const;
 
-    // Build context-aware recovery actions from live MMU state. Caller holds mutex_.
-    [[nodiscard]] std::vector<helix::RecoveryAction> build_recovery_actions() const;
+    // Build context-aware recovery actions from live MMU state. Caller holds mutex_
+    // (the base declares that contract; mutex_ is non-recursive, so this must not
+    // lock).
+    [[nodiscard]] std::vector<helix::RecoveryAction> build_recovery_actions() const override;
 
     // Synthesize a toolchange step index from the current AmsAction and push it
     // to AmsState's step subject (deferred to the main thread). Happy Hare emits

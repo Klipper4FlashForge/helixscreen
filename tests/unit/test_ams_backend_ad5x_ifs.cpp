@@ -7,6 +7,7 @@
 #include "ams_state.h"
 #include "ams_step_operation.h"
 #include "ams_types.h"
+#include "app_globals.h"
 #include "filament_op_router.h"
 #include "filament_slot_override.h"
 #include "filament_slot_override_store.h"
@@ -494,6 +495,73 @@ class Ad5xIfsTestAccess {
 
     static void finalize_op_after_macro(AmsBackendAd5xIfs& b, bool is_unload) {
         b.finalize_op_after_macro(is_unload);
+    }
+
+    // --- Unattended runout detection (#1250 / #1247) ---
+
+    // Is a runout-shaped candidate armed? (a head-switch present->absent edge
+    // seen while idle, not yet confirmed by the dwell)
+    static bool head_empty_armed(const AmsBackendAd5xIfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.head_empty_since_.has_value();
+    }
+    // Backdate the armed candidate so the confirm dwell has elapsed without the
+    // test sleeping. No-op when nothing is armed.
+    static void age_head_empty(AmsBackendAd5xIfs& b, std::chrono::seconds age) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        if (b.head_empty_since_.has_value()) {
+            b.head_empty_since_ = std::chrono::steady_clock::now() - age;
+        }
+    }
+    // Backdate the "a filament op was just dispatched" stamp past the
+    // suppression window.
+    static void age_op_dispatch(AmsBackendAd5xIfs& b, std::chrono::seconds age) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        b.last_filament_op_dispatch_ = std::chrono::steady_clock::now() - age;
+    }
+    static std::chrono::steady_clock::time_point op_dispatch_stamp(const AmsBackendAd5xIfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.last_filament_op_dispatch_;
+    }
+    // Run the predicate against the current clock, exactly as handle_status_update
+    // does after check_action_timeout(). Returns whether it changed state.
+    static bool evaluate_runout(AmsBackendAd5xIfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.evaluate_runout_locked();
+    }
+    static bool runout_active(const AmsBackendAd5xIfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.runout_active_;
+    }
+    static int runout_slot(const AmsBackendAd5xIfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.runout_slot_;
+    }
+    // The cross-backend AmsSystemInfo flag AmsState mirrors into
+    // ams_filament_runout.
+    static bool filament_runout(const AmsBackendAd5xIfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.system_info_.filament_runout;
+    }
+    static int find_backup_slot(const AmsBackendAd5xIfs& b, int runout_slot) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.find_backup_slot_locked(runout_slot);
+    }
+    static std::chrono::seconds runout_confirm_delay(const AmsBackendAd5xIfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.runout_confirm_delay_locked();
+    }
+
+    // --- Plugin visibility (#1250 B1-4) ---
+
+    // Drive the `gcode_macro _ifs_vars` get_status() dict parse directly.
+    static bool parse_ifs_vars_macro(AmsBackendAd5xIfs& b, const json& macro_status) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.parse_ifs_vars_macro_locked(macro_status);
+    }
+    static int backup_subject_value(const AmsBackendAd5xIfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.backup_subject_value_locked();
     }
 };
 
@@ -9477,4 +9545,585 @@ TEST_CASE("AD5X IFS: print end forces an off-cadence poll", "[ams][ad5x][ifs][po
 
     // Entering a print is NOT an edge — no reason to poll off-cadence there.
     REQUIRE_FALSE(B::should_poll_json(true, false, seconds(0)));
+}
+
+// ==========================================================================
+// Unattended runout detection + auto-switchover plugin visibility
+// prestonbrown/helixscreen#1250 (reported as #1247).
+//
+// Before this, a head-sensor drop at AmsAction::IDLE with no phase tracking
+// produced nothing at all: detect_load_unload_completion() only reacts while
+// the action is LOADING/UNLOADING and check_action_timeout() only runs during
+// an operation phase. The print sat paused with an empty toolhead and the UI
+// said nothing, while the reporter waited for a backup-spool switch that was
+// never going to happen because no plugin was installed.
+// ==========================================================================
+
+namespace {
+
+/// LVGL plus a live GLOBAL PrinterState.
+///
+/// The runout detector reads `get_printer_state().get_print_state_enum_subject()`
+/// - the same global accessor handle_status_update() already uses to pick the
+/// Adventurer5M.json poll cadence - NOT the PrinterState a MoonrakerAPIMock was
+/// constructed with. Driving the global is therefore what a test has to do; the
+/// two are separate objects and setting the wrong one silently proves nothing.
+struct Ad5xRunoutFixture : public LVGLTestFixture {
+    Ad5xRunoutFixture() {
+        get_printer_state().init_subjects(false);
+        set_print_state(helix::PrintJobState::STANDBY);
+    }
+    ~Ad5xRunoutFixture() override {
+        set_print_state(helix::PrintJobState::STANDBY);
+    }
+
+    // Plain null check, not REQUIRE: this also runs from the destructor, where a
+    // Catch2 assertion would throw during unwinding.
+    static void set_print_state(helix::PrintJobState s) {
+        if (auto* subj = get_printer_state().get_print_state_enum_subject()) {
+            lv_subject_set_int(subj, static_cast<int>(s));
+        }
+    }
+
+    /// Seat filament at the toolhead SWITCH, then drop it - the present->absent
+    /// edge the detector arms on. Two frames, because an edge needs a previous
+    /// value and a fresh backend has never seen the switch.
+    static void seat_then_drop_head(AmsBackendAd5xIfs& b) {
+        Ad5xIfsTestAccess::handle_status(b, make_head_sensor(true));
+        Ad5xIfsTestAccess::handle_status(b, make_head_sensor(false));
+    }
+};
+
+/// Gcode-capturing backend wired to a MoonrakerAPIMock, so the real
+/// change_tool() / unload_filament() dispatch paths run without a printer.
+class Ad5xRunoutOpBackend : public AmsBackendAd5xIfs {
+  public:
+    explicit Ad5xRunoutOpBackend(MoonrakerAPI* api) : AmsBackendAd5xIfs(api, nullptr) {}
+
+    std::vector<std::string> captured_gcodes;
+
+    AmsError execute_gcode(const std::string& gcode) override {
+        captured_gcodes.push_back(gcode);
+        return AmsErrorHelper::success();
+    }
+    AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+        captured_gcodes.push_back(gcode);
+        (void)on_complete;
+        return AmsErrorHelper::success();
+    }
+    bool toolhead_homed() const override {
+        return true;
+    }
+    bool has_gcode_containing(const std::string& needle) const {
+        for (const auto& g : captured_gcodes) {
+            if (g.find(needle) != std::string::npos)
+                return true;
+        }
+        return false;
+    }
+};
+
+/// Adds the mock API the operation-dispatch tests need.
+///
+/// Two PrinterStates are deliberately in play: `local_state` backs the mock API
+/// and is what refuse_if_printing() consults (kept STANDBY so a dispatch is
+/// allowed at all - this backend refuses filament ops while PAUSED, see
+/// filament_ops_self_home()), while the inherited global is what the runout
+/// detector reads and is what the tests drive to PAUSED.
+struct Ad5xRunoutOpFixture : public Ad5xRunoutFixture {
+    Ad5xRunoutOpFixture() : mock_client(MoonrakerClientMock::PrinterType::VORON_24) {
+        local_state.init_subjects(false);
+        lv_subject_set_int(local_state.get_print_state_enum_subject(),
+                           static_cast<int>(helix::PrintJobState::STANDBY));
+        api = std::make_unique<MoonrakerAPIMock>(mock_client, local_state);
+        backend = std::make_unique<Ad5xRunoutOpBackend>(api.get());
+        Ad5xIfsTestAccess::set_running(*backend, true);
+        Ad5xIfsTestAccess::set_zcolor_supported(*backend, false);
+    }
+
+    MoonrakerClientMock mock_client;
+    helix::PrinterState local_state;
+    std::unique_ptr<MoonrakerAPIMock> api;
+    std::unique_ptr<Ad5xRunoutOpBackend> backend;
+};
+
+} // namespace
+
+TEST_CASE_METHOD(Ad5xRunoutFixture,
+                 "AD5X IFS runout: head drop while paused and idle raises the fault",
+                 "[ams][ad5x_ifs][runout][1250]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+
+    // The drop happens mid-print, which is when a real runout happens.
+    set_print_state(helix::PrintJobState::PRINTING);
+    seat_then_drop_head(backend);
+    REQUIRE(Ad5xIfsTestAccess::head_empty_armed(backend));
+
+    // Still PRINTING: an empty head here is a firmware tool change, not a
+    // runout. However long it stays empty, nothing is raised.
+    Ad5xIfsTestAccess::age_head_empty(backend, std::chrono::seconds(600));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::evaluate_runout(backend));
+    REQUIRE(Ad5xIfsTestAccess::action(backend) == AmsAction::IDLE);
+    REQUIRE_FALSE(Ad5xIfsTestAccess::filament_runout(backend));
+
+    // Klipper's runout handling pauses the job. Now it is a runout.
+    set_print_state(helix::PrintJobState::PAUSED);
+    REQUIRE(Ad5xIfsTestAccess::evaluate_runout(backend));
+    REQUIRE(Ad5xIfsTestAccess::runout_active(backend));
+    REQUIRE(Ad5xIfsTestAccess::filament_runout(backend));
+    // ERROR is the only edge AmsErrorBridge watches, so it is the only route to
+    // current_error() and the recovery modal.
+    REQUIRE(Ad5xIfsTestAccess::action(backend) == AmsAction::ERROR);
+    REQUIRE_FALSE(Ad5xIfsTestAccess::operation_detail(backend).empty());
+
+    // Idempotent: re-evaluating must not report a second state change (which
+    // would re-emit EVENT_STATE_CHANGED on every status frame).
+    REQUIRE_FALSE(Ad5xIfsTestAccess::evaluate_runout(backend));
+}
+
+TEST_CASE_METHOD(Ad5xRunoutFixture, "AD5X IFS runout: the confirm dwell is load-bearing",
+                 "[ams][ad5x_ifs][runout][1250]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+
+    set_print_state(helix::PrintJobState::PAUSED);
+    seat_then_drop_head(backend);
+    REQUIRE(Ad5xIfsTestAccess::head_empty_armed(backend));
+
+    // Freshly armed: every other condition holds, but the dwell has not elapsed.
+    REQUIRE_FALSE(Ad5xIfsTestAccess::evaluate_runout(backend));
+    REQUIRE(Ad5xIfsTestAccess::action(backend) == AmsAction::IDLE);
+
+    Ad5xIfsTestAccess::age_head_empty(backend, std::chrono::seconds(600));
+    REQUIRE(Ad5xIfsTestAccess::evaluate_runout(backend));
+    REQUIRE(Ad5xIfsTestAccess::runout_active(backend));
+}
+
+TEST_CASE_METHOD(Ad5xRunoutFixture, "AD5X IFS runout: not raised while the print is not paused",
+                 "[ams][ad5x_ifs][runout][1250]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+
+    for (auto state : {helix::PrintJobState::PRINTING, helix::PrintJobState::STANDBY,
+                       helix::PrintJobState::COMPLETE}) {
+        set_print_state(state);
+        seat_then_drop_head(backend);
+        Ad5xIfsTestAccess::age_head_empty(backend, std::chrono::seconds(600));
+        CHECK_FALSE(Ad5xIfsTestAccess::evaluate_runout(backend));
+        CHECK_FALSE(Ad5xIfsTestAccess::runout_active(backend));
+        CHECK(Ad5xIfsTestAccess::action(backend) == AmsAction::IDLE);
+    }
+}
+
+TEST_CASE_METHOD(Ad5xRunoutFixture,
+                 "AD5X IFS runout: a motion-sensor-only drop is not an empty toolhead",
+                 "[ams][ad5x_ifs][runout][1250]") {
+    // The conflation trap: parse_head_sensor() writes head_filament_ from BOTH
+    // the switch and ifs_motion_sensor, and the motion sensor is device-confirmed
+    // to read filament_detected=false on a loaded-but-idle lane. Gating on
+    // head_filament_ would fire a runout on a perfectly healthy paused print.
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+    set_print_state(helix::PrintJobState::PAUSED);
+
+    Ad5xIfsTestAccess::handle_status(backend, make_head_sensor(true));
+    REQUIRE(Ad5xIfsTestAccess::head_switch_present(backend));
+
+    Ad5xIfsTestAccess::handle_status(backend, make_motion_sensor(false));
+    // head_filament_ IS now false - and that is exactly why it cannot be trusted.
+    REQUIRE_FALSE(Ad5xIfsTestAccess::head_filament(backend));
+    // The switch, the actual authority, still says loaded.
+    REQUIRE(Ad5xIfsTestAccess::head_switch_present(backend));
+
+    REQUIRE_FALSE(Ad5xIfsTestAccess::head_empty_armed(backend));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::evaluate_runout(backend));
+    REQUIRE(Ad5xIfsTestAccess::action(backend) == AmsAction::IDLE);
+}
+
+TEST_CASE_METHOD(Ad5xRunoutFixture,
+                 "AD5X IFS runout: a head drop during a tracked load/unload is not a runout",
+                 "[ams][ad5x_ifs][runout][phase][1250]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+    set_print_state(helix::PrintJobState::PAUSED);
+
+    Ad5xIfsTestAccess::handle_status(backend, make_head_sensor(true));
+    Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/true);
+    Ad5xIfsTestAccess::handle_status(backend, make_extruder(230.0, 230.0));
+    REQUIRE(Ad5xIfsTestAccess::action(backend) == AmsAction::CUTTING);
+
+    // The cut drops the head sensor. That is progress, not a runout.
+    Ad5xIfsTestAccess::handle_status(backend, make_head_sensor(false));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::head_empty_armed(backend));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::runout_active(backend));
+
+    // Existing phase behaviour is untouched: CUTTING -> UNLOADING on the drop.
+    REQUIRE(Ad5xIfsTestAccess::action(backend) == AmsAction::UNLOADING);
+    REQUIRE(Ad5xIfsTestAccess::operation_detail(backend) == "Retracting filament from nozzle");
+    REQUIRE(Ad5xIfsTestAccess::phase_active(backend));
+}
+
+TEST_CASE_METHOD(Ad5xRunoutOpFixture,
+                 "AD5X IFS runout: a head drop during a tool-change swap is not a runout",
+                 "[ams][ad5x_ifs][runout][1250]") {
+    // The regression the "operation in flight" gate exists for. do_change_tool()
+    // sets LOADING but never arms the phase tracker, so gating on
+    // phase_tracker_.active alone would pop a runout modal on every multicolour
+    // swap that happens to land on a paused job.
+    REQUIRE(backend->set_tool_mapping(0, 1).success()); // T0 -> port 2
+
+    Ad5xIfsTestAccess::handle_status(*backend, make_head_sensor(true));
+    REQUIRE(backend->change_tool(0).success());
+    REQUIRE(backend->has_gcode_containing("A_CHANGE_FILAMENT CHANNEL=2"));
+    REQUIRE(Ad5xIfsTestAccess::action(*backend) == AmsAction::LOADING);
+
+    // Mid-swap the head empties, and the job is paused.
+    set_print_state(helix::PrintJobState::PAUSED);
+    Ad5xIfsTestAccess::handle_status(*backend, make_head_sensor(false));
+
+    // Nothing armed: the action is LOADING, so an operation is in flight.
+    REQUIRE_FALSE(Ad5xIfsTestAccess::head_empty_armed(*backend));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::evaluate_runout(*backend));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::runout_active(*backend));
+    REQUIRE(Ad5xIfsTestAccess::action(*backend) == AmsAction::LOADING);
+
+    // Even if the action snaps back to IDLE (the legacy head-rise finalize) the
+    // dispatch stamp still attributes the window to the swap.
+    Ad5xIfsTestAccess::set_action(*backend, AmsAction::IDLE);
+    Ad5xIfsTestAccess::handle_status(*backend, make_head_sensor(true));
+    Ad5xIfsTestAccess::handle_status(*backend, make_head_sensor(false));
+    Ad5xIfsTestAccess::age_head_empty(*backend, std::chrono::seconds(600));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::evaluate_runout(*backend));
+}
+
+TEST_CASE_METHOD(Ad5xRunoutFixture,
+                 "AD5X IFS runout: an eject-routed unload suppresses the fault window",
+                 "[ams][ad5x_ifs][runout][1250]") {
+    // do_unload_filament() has three early returns that hand off to eject_lane()
+    // without touching phase_tracker_ or system_info_.action, so the backend
+    // stays IDLE right through an operation that legitimately empties the head.
+    // The dispatch stamp is the only thing standing between that and a false
+    // runout.
+    TestableAd5xIfsBackend backend;
+    Ad5xIfsTestAccess::set_running(backend, true);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+    set_print_state(helix::PrintJobState::PRINTING);
+
+    seat_then_drop_head(backend);
+    REQUIRE(Ad5xIfsTestAccess::head_empty_armed(backend));
+    set_print_state(helix::PrintJobState::PAUSED);
+
+    // Empty head + a requested unload routes to the cold per-lane eject.
+    Ad5xIfsTestAccess::set_current_slot(backend, 0, false);
+    REQUIRE(backend.unload_filament(0).success());
+    REQUIRE(backend.has_gcode("IFS_F11 PRUTOK=1 LEN=1000 SPEED=1200"));
+    REQUIRE_FALSE(backend.has_gcode_containing("REMOVE_CURRENT_PRUTOK"));
+
+    // The dispatch disarmed the candidate outright.
+    REQUIRE_FALSE(Ad5xIfsTestAccess::head_empty_armed(backend));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::evaluate_runout(backend));
+
+    // And a candidate that re-arms inside the suppression window is still
+    // attributed to that eject, not to a runout.
+    Ad5xIfsTestAccess::handle_status(backend, make_head_sensor(true));
+    Ad5xIfsTestAccess::handle_status(backend, make_head_sensor(false));
+    Ad5xIfsTestAccess::age_head_empty(backend, std::chrono::seconds(600));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::evaluate_runout(backend));
+
+    // Once the window expires, the same state IS a runout.
+    Ad5xIfsTestAccess::age_op_dispatch(backend, std::chrono::seconds(600));
+    REQUIRE(Ad5xIfsTestAccess::evaluate_runout(backend));
+    REQUIRE(Ad5xIfsTestAccess::runout_active(backend));
+}
+
+TEST_CASE_METHOD(Ad5xRunoutFixture, "AD5X IFS runout: clears on refill, resume and recover",
+                 "[ams][ad5x_ifs][runout][1250]") {
+    auto raise = [this](AmsBackendAd5xIfs& b) {
+        set_print_state(helix::PrintJobState::PAUSED);
+        Ad5xIfsTestAccess::handle_status(b, make_head_sensor(true));
+        Ad5xIfsTestAccess::handle_status(b, make_head_sensor(false));
+        Ad5xIfsTestAccess::age_head_empty(b, std::chrono::seconds(600));
+        REQUIRE(Ad5xIfsTestAccess::evaluate_runout(b));
+        REQUIRE(Ad5xIfsTestAccess::action(b) == AmsAction::ERROR);
+    };
+
+    SECTION("filament back at the toolhead clears it") {
+        AmsBackendAd5xIfs backend(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+        raise(backend);
+        Ad5xIfsTestAccess::handle_status(backend, make_head_sensor(true));
+        REQUIRE_FALSE(Ad5xIfsTestAccess::runout_active(backend));
+        REQUIRE_FALSE(Ad5xIfsTestAccess::filament_runout(backend));
+        REQUIRE(Ad5xIfsTestAccess::action(backend) == AmsAction::IDLE);
+    }
+
+    SECTION("resuming the print clears it (this is what dismisses the modal)") {
+        AmsBackendAd5xIfs backend(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+        raise(backend);
+        set_print_state(helix::PrintJobState::PRINTING);
+        REQUIRE(Ad5xIfsTestAccess::evaluate_runout(backend));
+        REQUIRE_FALSE(Ad5xIfsTestAccess::runout_active(backend));
+        REQUIRE(Ad5xIfsTestAccess::action(backend) == AmsAction::IDLE);
+    }
+
+    SECTION("recover() clears it") {
+        TestableAd5xIfsBackend backend;
+        Ad5xIfsTestAccess::set_running(backend, true);
+        Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+        raise(backend);
+        REQUIRE(backend.recover().success());
+        REQUIRE_FALSE(Ad5xIfsTestAccess::runout_active(backend));
+        REQUIRE_FALSE(Ad5xIfsTestAccess::filament_runout(backend));
+        REQUIRE(Ad5xIfsTestAccess::action(backend) == AmsAction::IDLE);
+    }
+}
+
+TEST_CASE_METHOD(Ad5xRunoutFixture,
+                 "AD5X IFS runout: current_error distinguishes runout from an op timeout",
+                 "[ams][ad5x_ifs][runout][error-center][1250]") {
+    SECTION("runout: Resume / Purge / Recover, and deliberately NO load button") {
+        AmsBackendAd5xIfs backend(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+        set_print_state(helix::PrintJobState::PAUSED);
+        Ad5xIfsTestAccess::handle_status(backend, make_head_sensor(true));
+        Ad5xIfsTestAccess::handle_status(backend, make_head_sensor(false));
+        Ad5xIfsTestAccess::age_head_empty(backend, std::chrono::seconds(600));
+        REQUIRE(Ad5xIfsTestAccess::evaluate_runout(backend));
+
+        auto ev = backend.current_error();
+        REQUIRE(ev.has_value());
+        REQUIRE(ev->source == helix::ErrorSource::IFS);
+        REQUIRE(ev->severity == helix::ErrorSeverity::CRITICAL);
+        REQUIRE(ev->sticky);
+        REQUIRE(ev->title == std::string("Filament runout"));
+
+        REQUIRE(ev->recovery_actions.size() == 3);
+        REQUIRE(ev->recovery_actions[0].gcode == "RESUME");
+        REQUIRE(ev->recovery_actions[0].style == "primary");
+        REQUIRE(ev->recovery_actions[0].needs_hot_nozzle);
+        // A plain extruder move, not zmod's PURGE_FILAMENT macro - no homing, so
+        // it cannot reach the loadcell _G28 that shuts the AD5X down mid-job.
+        REQUIRE(ev->recovery_actions[1].gcode == "M83\nG1 E50 F600");
+        REQUIRE(ev->recovery_actions[1].needs_hot_nozzle);
+        REQUIRE(ev->recovery_actions[2].gcode == "IFS_UNLOCK");
+        REQUIRE_FALSE(ev->recovery_actions[2].needs_hot_nozzle);
+
+        // No load: every AD5X load path runs INSERT_PRUTOK_IFS, whose macro homes
+        // itself, and a runout state is PAUSED by construction.
+        for (const auto& a : ev->recovery_actions) {
+            CHECK(a.gcode.find("INSERT_PRUTOK_IFS") == std::string::npos);
+            CHECK(a.gcode.find("A_CHANGE_FILAMENT") == std::string::npos);
+        }
+    }
+
+    SECTION("operation timeout keeps the historical single Recover action") {
+        AmsBackendAd5xIfs backend(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+        Ad5xIfsTestAccess::set_head_filament(backend, true);
+        Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/true);
+        Ad5xIfsTestAccess::check_action_timeout(backend, std::chrono::seconds(600));
+        REQUIRE(Ad5xIfsTestAccess::action(backend) == AmsAction::ERROR);
+        REQUIRE_FALSE(Ad5xIfsTestAccess::runout_active(backend));
+
+        auto ev = backend.current_error();
+        REQUIRE(ev.has_value());
+        REQUIRE(ev->title == std::string("Filament System Error"));
+        REQUIRE(ev->recovery_actions.size() == 1);
+        REQUIRE(ev->recovery_actions[0].gcode == "IFS_UNLOCK");
+        REQUIRE(ev->recovery_actions[0].style == "primary");
+    }
+}
+
+TEST_CASE_METHOD(Ad5xRunoutFixture, "AD5X IFS runout: detail text names the plugin situation",
+                 "[ams][ad5x_ifs][runout][1250]") {
+    auto raise = [this](AmsBackendAd5xIfs& b) {
+        set_print_state(helix::PrintJobState::PAUSED);
+        Ad5xIfsTestAccess::handle_status(b, make_head_sensor(true));
+        Ad5xIfsTestAccess::handle_status(b, make_head_sensor(false));
+        Ad5xIfsTestAccess::age_head_empty(b, std::chrono::seconds(600));
+        REQUIRE(Ad5xIfsTestAccess::evaluate_runout(b));
+        return Ad5xIfsTestAccess::operation_detail(b);
+    };
+
+    SECTION("no plugin: say plainly that no backup switch will happen (#1247)") {
+        AmsBackendAd5xIfs backend(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+        const std::string detail = raise(backend);
+        CHECK(detail.find("lessWaste") != std::string::npos);
+        CHECK(detail.find("bambufy") != std::string::npos);
+        CHECK(detail.find("will not change to a backup spool") != std::string::npos);
+    }
+
+    SECTION("plugin installed, backup off") {
+        AmsBackendAd5xIfs backend(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+        Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
+        Ad5xIfsTestAccess::set_var_prefix(backend, "less_waste");
+        Ad5xIfsTestAccess::parse_ifs_vars_macro(backend, json{{"variable_backup", 0}});
+        const std::string detail = raise(backend);
+        CHECK(detail.find("lessWaste") != std::string::npos);
+        CHECK(detail.find("turned off") != std::string::npos);
+    }
+
+    SECTION("plugin installed, backup on: state the strict matching rule") {
+        AmsBackendAd5xIfs backend(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+        Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
+        Ad5xIfsTestAccess::set_var_prefix(backend, "bambufy");
+        Ad5xIfsTestAccess::parse_ifs_vars_macro(backend, json{{"variable_backup", 1}});
+        const std::string detail = raise(backend);
+        CHECK(detail.find("bambufy") != std::string::npos);
+        // Both criteria promised, never one.
+        CHECK(detail.find("type") != std::string::npos);
+        CHECK(detail.find("colour") != std::string::npos);
+        CHECK(detail.find("port sensor") != std::string::npos);
+    }
+}
+
+TEST_CASE_METHOD(Ad5xRunoutFixture,
+                 "AD5X IFS runout: the backup-capable confirm delay outlasts a plugin swap",
+                 "[ams][ad5x_ifs][runout][1250]") {
+    // lessWaste's own switchover pauses, unloads and loads a replacement lane.
+    // Declaring a runout 30 s into that would talk over a recovery already under
+    // way, so a backup-enabled plugin buys a much longer window.
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+    const auto plain = Ad5xIfsTestAccess::runout_confirm_delay(backend);
+
+    Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
+    Ad5xIfsTestAccess::parse_ifs_vars_macro(backend, json{{"variable_backup", 1}});
+    const auto with_backup = Ad5xIfsTestAccess::runout_confirm_delay(backend);
+    REQUIRE(with_backup > plain);
+
+    set_print_state(helix::PrintJobState::PAUSED);
+    seat_then_drop_head(backend);
+    // Long enough for the plain delay, nowhere near the backup one.
+    Ad5xIfsTestAccess::age_head_empty(backend, plain + std::chrono::seconds(5));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::evaluate_runout(backend));
+    Ad5xIfsTestAccess::age_head_empty(backend, with_backup + std::chrono::seconds(5));
+    REQUIRE(Ad5xIfsTestAccess::evaluate_runout(backend));
+}
+
+TEST_CASE("AD5X IFS plugin visibility: which plugin, and is backup on",
+          "[ams][ad5x_ifs][runout][1250]") {
+    using B = AmsBackendAd5xIfs;
+
+    SECTION("stock zMod: no plugin, and backup is a definite OFF") {
+        B backend(nullptr, nullptr);
+        REQUIRE(backend.get_plugin() == B::IfsPlugin::None);
+        REQUIRE_FALSE(backend.plugin_backup_enabled().has_value());
+        // No plugin means no mechanism at all - that is not "unknown".
+        REQUIRE(Ad5xIfsTestAccess::backup_subject_value(backend) == B::BACKUP_OFF);
+    }
+
+    SECTION("lessWaste detected from its own save_variables") {
+        B backend(nullptr, nullptr);
+        // The macro-existence latch has to be cleared first; stale save_variables
+        // rows left by an uninstalled plugin must NOT read as installed.
+        Ad5xIfsTestAccess::set_ifs_macro_confirmed_missing(backend, false);
+        Ad5xIfsTestAccess::parse_vars(backend,
+                                      json{{"less_waste_tools", json::array({1, 2, 3, 4})}});
+        REQUIRE(backend.get_plugin() == B::IfsPlugin::LessWaste);
+        // Nothing read yet -> unknown, NOT off.
+        REQUIRE(Ad5xIfsTestAccess::backup_subject_value(backend) == B::BACKUP_UNKNOWN);
+    }
+
+    SECTION("bambufy detected from its own save_variables") {
+        B backend(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_ifs_macro_confirmed_missing(backend, false);
+        Ad5xIfsTestAccess::parse_vars(backend, json{{"bambufy_tools", json::array({1, 2, 3, 4})}});
+        REQUIRE(backend.get_plugin() == B::IfsPlugin::Bambufy);
+    }
+
+    SECTION("a stale prefix without the macro is still None") {
+        B backend(nullptr, nullptr);
+        // ifs_macro_confirmed_missing_ starts true (pessimistic).
+        Ad5xIfsTestAccess::parse_vars(backend,
+                                      json{{"less_waste_tools", json::array({1, 2, 3, 4})}});
+        REQUIRE(backend.get_plugin() == B::IfsPlugin::None);
+        REQUIRE(Ad5xIfsTestAccess::backup_subject_value(backend) == B::BACKUP_OFF);
+    }
+
+    SECTION("variable_backup is read from the macro dict, int or bool") {
+        B backend(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
+
+        REQUIRE(Ad5xIfsTestAccess::parse_ifs_vars_macro(backend, json{{"variable_backup", 0}}));
+        REQUIRE(backend.plugin_backup_enabled() == std::optional<bool>{false});
+        REQUIRE(Ad5xIfsTestAccess::backup_subject_value(backend) == B::BACKUP_OFF);
+
+        REQUIRE(Ad5xIfsTestAccess::parse_ifs_vars_macro(backend, json{{"variable_backup", 1}}));
+        REQUIRE(backend.plugin_backup_enabled() == std::optional<bool>{true});
+        REQUIRE(Ad5xIfsTestAccess::backup_subject_value(backend) == B::BACKUP_ON);
+
+        REQUIRE(Ad5xIfsTestAccess::parse_ifs_vars_macro(backend, json{{"variable_backup", false}}));
+        REQUIRE(backend.plugin_backup_enabled() == std::optional<bool>{false});
+
+        // Unchanged value reports no change (so it does not force an event).
+        REQUIRE_FALSE(
+            Ad5xIfsTestAccess::parse_ifs_vars_macro(backend, json{{"variable_backup", 0}}));
+    }
+
+    SECTION("a dict without variable_backup leaves the answer UNKNOWN") {
+        B backend(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
+        REQUIRE_FALSE(Ad5xIfsTestAccess::parse_ifs_vars_macro(
+            backend, json{{"variable_tools", json::array({1, 2, 3, 4})}}));
+        REQUIRE_FALSE(backend.plugin_backup_enabled().has_value());
+        REQUIRE(Ad5xIfsTestAccess::backup_subject_value(backend) == B::BACKUP_UNKNOWN);
+    }
+
+    SECTION("an empty dict is Klipper's 'no such object' answer, not data") {
+        B backend(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
+        REQUIRE_FALSE(Ad5xIfsTestAccess::parse_ifs_vars_macro(backend, json::object()));
+        REQUIRE_FALSE(backend.plugin_backup_enabled().has_value());
+    }
+}
+
+TEST_CASE("AD5X IFS runout: backup-slot match needs type AND colour AND presence",
+          "[ams][ad5x_ifs][runout][1250]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    // Lane 0 is the one that ran out: PLA / FF0000.
+    Ad5xIfsTestAccess::set_port_presence(backend, 0, true);
+    Ad5xIfsTestAccess::set_material(backend, 0, "PLA");
+    Ad5xIfsTestAccess::set_color(backend, 0, "FF0000");
+
+    SECTION("nothing else loaded: no match") {
+        REQUIRE(Ad5xIfsTestAccess::find_backup_slot(backend, 0) == -1);
+    }
+
+    SECTION("same type, different colour: no match") {
+        Ad5xIfsTestAccess::set_port_presence(backend, 2, true);
+        Ad5xIfsTestAccess::set_material(backend, 2, "PLA");
+        Ad5xIfsTestAccess::set_color(backend, 2, "00FF00");
+        REQUIRE(Ad5xIfsTestAccess::find_backup_slot(backend, 0) == -1);
+    }
+
+    SECTION("same colour, different type: no match") {
+        Ad5xIfsTestAccess::set_port_presence(backend, 2, true);
+        Ad5xIfsTestAccess::set_material(backend, 2, "PETG");
+        Ad5xIfsTestAccess::set_color(backend, 2, "FF0000");
+        REQUIRE(Ad5xIfsTestAccess::find_backup_slot(backend, 0) == -1);
+    }
+
+    SECTION("both match but the port reads empty: no match") {
+        Ad5xIfsTestAccess::set_material(backend, 2, "PLA");
+        Ad5xIfsTestAccess::set_color(backend, 2, "FF0000");
+        Ad5xIfsTestAccess::set_port_presence(backend, 2, false);
+        REQUIRE(Ad5xIfsTestAccess::find_backup_slot(backend, 0) == -1);
+    }
+
+    SECTION("all three: match, case-insensitively on the hex") {
+        Ad5xIfsTestAccess::set_port_presence(backend, 2, true);
+        Ad5xIfsTestAccess::set_material(backend, 2, "pla");
+        Ad5xIfsTestAccess::set_color(backend, 2, "ff0000");
+        REQUIRE(Ad5xIfsTestAccess::find_backup_slot(backend, 0) == 2);
+    }
+
+    SECTION("the ran-out lane never matches itself") {
+        REQUIRE(Ad5xIfsTestAccess::find_backup_slot(backend, 0) != 0);
+    }
 }

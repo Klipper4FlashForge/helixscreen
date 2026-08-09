@@ -1332,10 +1332,14 @@ void AmsState::sync_from_backend() {
         lv_subject_set_int(&filament_loaded_, new_loaded);
     }
 
-    // Gate the runout indicator on a paused print. The firmware asserts
-    // filament_useup at pre-load print-start too, so only treat it as a runout
-    // when the print is actually paused (a CFS runout pauses; pre-load does not).
-    // Box state polls sub-second, so this stays fresh without observing print state.
+    // Gate the runout indicator on a paused print. `box.filament_useup` is not a
+    // runout signal on its own: the CFS asserts it whenever no filament sits at
+    // the extrude position, which includes plain idle with no print running.
+    // Observed live on a K2 Plus over Moonraker HTTP, printer idle:
+    //   "box": {"filament":1, "state":"connect", "auto_refill":1, "enable":1,
+    //           "filament_useup":1, ...}
+    // The paused gate is what turns the flag into a runout. Box state polls
+    // sub-second, so this stays fresh without observing print state.
     bool paused = get_printer_state().get_print_job_state() == PrintJobState::PAUSED;
     int new_runout = (info.filament_runout && paused) ? 1 : 0;
     if (lv_subject_get_int(&filament_runout_) != new_runout) {

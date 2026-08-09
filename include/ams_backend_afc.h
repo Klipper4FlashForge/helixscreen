@@ -486,6 +486,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcPerSlotLoadedHelper;
     friend class AfcCurrentErrorHelper;
     friend class AfcLaneDataClearHelper;
+    friend class AfcFaultEventCharHelper;
     friend class AfcFeatureLevelHelper;
     friend class AfcFixtureHelper;
     friend class AmsBackendAfcEndlessSpoolHelper;
@@ -955,9 +956,10 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     [[nodiscard]] bool recovery_attribution_valid_unlocked() const;
 
     /// Build the applicable recovery actions for an AFC pause/jam, reading live
-    /// toolhead state. Caller holds mutex_. Offers Unload only when the toolhead
-    /// is loaded; Eject only when empty and a lane is selected.
-    [[nodiscard]] std::vector<helix::RecoveryAction> build_recovery_actions() const;
+    /// toolhead state. Caller holds mutex_ (the base declares that contract;
+    /// mutex_ is non-recursive, so this must not lock). Offers Unload only when
+    /// the toolhead is loaded; Eject only when empty and a lane is selected.
+    [[nodiscard]] std::vector<helix::RecoveryAction> build_recovery_actions() const override;
 
     /**
      * @brief Execute a G-code command with user-facing toast notifications

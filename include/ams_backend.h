@@ -8,7 +8,7 @@
  * @pattern Pure virtual interface + static create()/create_auto() factory methods
  * @threading Implementation-dependent; see concrete implementations
  *
- * @see ams_backend_happyhare.cpp, ams_backend_afc.cpp
+ * @see ams_backend_happy_hare.cpp, ams_backend_afc.cpp
  */
 
 #pragma once
@@ -240,10 +240,12 @@ class AmsBackend {
     /**
      * @brief Backend-specific error classification hook.
      *
-     * Called by ErrorCenter before the generic classifier so domain-aware
-     * backends (AFC first, others later) can recognize their own error lines
-     * and attach accurate severity + recovery actions. Return nullopt to
-     * defer to the generic classifier; return an ErrorEvent to short-circuit it.
+     * Called by GcodeErrorRouter::handle_gcode_response()
+     * (gcode_error_router.cpp) before the generic error_classify::classify(),
+     * so domain-aware backends can recognize their own error lines and attach
+     * accurate severity + recovery actions. Return nullopt to defer to the
+     * generic classifier; return an ErrorEvent to short-circuit it. AFC and
+     * Happy Hare override today; both guard on the `!!` prefix themselves.
      *
      * @param raw_line  Unmodified gcode-response line to classify
      * @param ctx       Printer state at the time the line arrived
@@ -262,6 +264,37 @@ class AmsBackend {
         return std::nullopt;
     }
 
+  protected:
+    /**
+     * @brief The recovery buttons this backend offers for its current fault.
+     *
+     * The companion to classify_error() / current_error(): those decide *that*
+     * there is a fault and what to call it, this decides what the user can tap.
+     * Split out as its own hook because the action set is derived from live
+     * backend state (is the toolhead loaded, which lane is selected) and is
+     * therefore the same answer no matter which of the two entry points asked.
+     *
+     * @warning **The caller must already hold the backend's own mutex_.**
+     *          Both existing overrides read mutex-protected state directly and
+     *          take no lock of their own, and every call site is inside a
+     *          `std::lock_guard<std::mutex> lock(mutex_)` scope in the same
+     *          object. The mutexes are plain `std::mutex`, not recursive, so an
+     *          override that locks — or a caller that does not — deadlocks.
+     *          Overrides must document and preserve this.
+     *
+     * The base returns an EMPTY vector, and that is deliberate rather than a
+     * placeholder: `decide_presentation()` (gcode_error_router.cpp) keys off
+     * `recovery_actions.empty()` to choose MODAL vs MODAL_WITH_RECOVER, so any
+     * guessed generic default here would silently promote every non-overriding
+     * backend's plain error modal into a recovery prompt with buttons that
+     * backend never vetted. Empty preserves today's behaviour exactly: a backend
+     * offers recovery only by opting in.
+     */
+    [[nodiscard]] virtual std::vector<helix::RecoveryAction> build_recovery_actions() const {
+        return {};
+    }
+
+  public:
     /// One ordered phase in a backend's toolchange narration model.
     struct ToolchangePhase {
         std::string id;    ///< stable key matched from narration, e.g. "brush"

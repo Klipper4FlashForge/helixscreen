@@ -4,11 +4,13 @@
 #include "ams_backend_happy_hare.h"
 
 #include "ams_bypass_policy.h"
+#include "ams_fault_event.h"
 #include "ams_state.h"
 #include "config.h"
 #include "hh_defaults.h"
 #include "humidity_sensor_types.h"
 #include "moonraker_api.h"
+#include "operation_patterns.h" // helix::contains_ci
 
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
@@ -1131,7 +1133,7 @@ std::optional<helix::ErrorEvent>
 AmsBackendHappyHare::classify_error(const std::string& raw_line,
                                     const helix::ClassifyContext& ctx) const {
     // Only `!!` emergency lines are candidates (matches AFC).
-    if (raw_line.size() < 2 || raw_line[0] != '!' || raw_line[1] != '!') {
+    if (!helix::is_bang_line(raw_line)) {
         return std::nullopt;
     }
 
@@ -1139,36 +1141,23 @@ AmsBackendHappyHare::classify_error(const std::string& raw_line,
 
     // Happy Hare reports the descriptive cause in reason_for_pause_; prefer it
     // over the terse !! line for the modal detail.
-    std::string bare =
-        (raw_line.size() > 3 && raw_line[2] == ' ') ? raw_line.substr(3) : raw_line.substr(2);
+    std::string bare = helix::strip_bang_prefix(raw_line);
     std::string detail = !reason_for_pause_.empty() ? reason_for_pause_ : bare;
-
-    auto contains_ci = [](const std::string& hay, const char* needle) {
-        std::string h = hay, n = needle;
-        for (auto& c : h)
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        for (auto& c : n)
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        return h.find(n) != std::string::npos;
-    };
 
     // A recognized MMU fault: a descriptive reason is present, OR the print is
     // paused while HH is in its ERROR action. Mirrors AFC's error_state_ gate.
     const bool hh_error_state = (system_info_.action == AmsAction::ERROR);
-    const bool recognized = contains_ci(detail, "runout") || contains_ci(detail, "clog") ||
-                            contains_ci(detail, "encoder") || contains_ci(detail, "jam") ||
-                            contains_ci(detail, "manual intervention");
+    const bool recognized =
+        helix::contains_ci(detail, "runout") || helix::contains_ci(detail, "clog") ||
+        helix::contains_ci(detail, "encoder") || helix::contains_ci(detail, "jam") ||
+        helix::contains_ci(detail, "manual intervention");
 
     if (ctx.is_paused && (hh_error_state || (recognized && !reason_for_pause_.empty()))) {
-        helix::ErrorEvent e;
-        e.source = helix::ErrorSource::HAPPY_HARE;
-        e.severity = helix::ErrorSeverity::CRITICAL;
-        e.title = contains_ci(detail, "runout") ? lv_tr("Filament runout")
-                                                : lv_tr("Filament System Error");
-        e.detail = detail;
-        e.sticky = true;
-        e.recovery_actions = build_recovery_actions();
-        return e;
+        return helix::make_ams_fault_event(helix::ErrorSource::HAPPY_HARE,
+                                           helix::contains_ci(detail, "runout")
+                                               ? lv_tr("Filament runout")
+                                               : lv_tr("Filament System Error"),
+                                           detail, build_recovery_actions());
     }
 
     // Not an HH-owned fault — let the generic classifier handle it.

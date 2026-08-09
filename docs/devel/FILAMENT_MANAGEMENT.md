@@ -2102,6 +2102,52 @@ On native ZMOD (no lessWaste / bambufy plugin) the backend reconciles **two** in
 
 Tool mapping: array index = tool number (T0-T15), value = physical port (1-4, 5=unmapped).
 
+#### Unattended runout detection (#1250, reported as #1247)
+
+**The hole this fills.** `detect_load_unload_completion()` only reacts to a head-sensor transition while the action is `LOADING` or `UNLOADING`, and `check_action_timeout()` only runs during an operation phase. A head drop at `AmsAction::IDLE` with no phase tracking therefore produced **nothing at all** — the print sat paused with an empty toolhead and HelixScreen said nothing, while the reporter waited for a backup-spool switch that was never going to happen (no plugin installed).
+
+**The authority is the switch pair, never `head_filament_`.** `parse_head_sensor()` writes `head_filament_` from *both* the toolhead switch and `ifs_motion_sensor`, and the motion sensor is device-confirmed to read `filament_detected=false` on a lane that is loaded but idle. The detector uses `head_switch_seen_ && !head_switch_present_` — the same pair as the #1065 row 28 seated head-gate.
+
+**The predicate** (`evaluate_runout_locked()`, run from `handle_status_update()` right after `check_action_timeout()`), all of which must hold:
+
+| Condition | Why |
+|-----------|-----|
+| A genuine `head_switch_present_` **true → false edge** was seen (`head_empty_since_`) | An edge, not a level: a printer that boots into a paused job with an empty toolhead has no runout to report |
+| The edge was armed while nothing was in flight | `note_head_switch_reading_locked()` refuses to arm during a tracked op or a non-IDLE action |
+| Print state is **PAUSED** | A real runout stops the job. While PRINTING, the same empty head is the middle of a firmware `A_CHANGE_FILAMENT`. Klipper queues a `PAUSE` behind the running macro, so a swap cannot make the job read PAUSED with the head still empty |
+| `!phase_tracker_.active` **and** `action == IDLE` | The tracker covers load/unload; the action covers `do_change_tool()`, which sets `LOADING` without arming the tracker |
+| `now - last_filament_op_dispatch_ >= 30 s` | `eject_lane()` and `do_unload_filament()`'s three early returns leave the backend IDLE and armless — the dispatch stamp is the only thing that sees them |
+| The head has been empty for the confirm dwell | 30 s normally; **180 s** when a plugin with `variable_backup` on is installed, because that plugin's own switchover pauses, unloads and loads a replacement lane and must not be talked over |
+
+On a raise: `runout_active_ = true`, `system_info_.filament_runout = true`, and `system_info_.action = AmsAction::ERROR`. **ERROR is not decorative** — it is the only edge `AmsErrorBridge` watches, so it is the only route to `current_error()` and the recovery modal. `check_action_timeout()` early-returns on ERROR, so the fault cannot be re-timed-out on top of itself. It clears when filament returns to the switch, when the print leaves PAUSED (which is what dismisses the modal), or via `recover()` / `reset()` / `cancel()`.
+
+**Recovery actions** (`build_recovery_actions()` branches on `runout_active_`): `RESUME` (primary, hot), a plain `M83` + `G1 E50 F600` purge (hot), and `IFS_UNLOCK` (danger, cold-safe). The operation-timeout fault keeps its historical lone `IFS_UNLOCK`.
+
+> **There is deliberately NO "Load slot N" recovery button**, even though a runout is exactly when the user wants one. Every AD5X load path runs `INSERT_PRUTOK_IFS`, whose macro homes itself (this is what `filament_ops_self_home()` is about). On the loadcell-Z AD5X that `_G28` probes the nozzle **down into the part**; with a job owning the toolhead it trips ZMOD's `ZCONTROL_AUTO` and shuts Klipper down, recoverable only by a firmware restart (bundle `XWPBR2DX`, commit `329e731e9`). A runout state is PAUSED by construction, so the button would fire straight into that. `refuse_if_printing()` protects `load_filament()`; it does **not** protect a recovery button, which hands its gcode directly to `MoonrakerAPI::execute_gcode`, and the `_G28` is buried inside the macro where `reject_homing_during_active_print()` never sees it. The purge is a bare extruder move for the same reason — no homing, so it cannot reach the `_G28`. If a verified non-homing load-to-toolhead command ever turns up, that is the time to add the button.
+
+> **Unverified, flagged rather than assumed:** whether a firmware tool change can make the job read PAUSED with the head still empty. The reasoning above (Klipper queues `PAUSE` behind the running macro) is first-principles, not a device observation, and there is no AD5X in the fleet and no `ad5x` mock profile to test it on. If a false runout ever shows up mid-swap, the fix is to lengthen `kRunoutConfirmDelay` past a full swap (~2 min measured in bundle `NJB2U558`), not to loosen the PAUSED gate.
+
+#### Auto-switchover plugin visibility
+
+The `has_ifs_vars_` / `ifs_macro_confirmed_missing_` machinery already knew whether lessWaste or bambufy was installed, but only ever logged it at debug level. #1250 surfaces it, because "no plugin installed" is the answer the #1247 reporter needed: **stock zMod has no backup-spool switching at all**, so a runout stops the print until a human intervenes.
+
+| Getter / subject | Values |
+|------------------|--------|
+| `AmsBackendAd5xIfs::get_plugin()` | `IfsPlugin::None` / `LessWaste` / `Bambufy`. `None` whenever `has_ifs_vars_` is false, so stale `less_waste_*` rows left behind by an uninstalled plugin never read as installed |
+| `AmsBackendAd5xIfs::plugin_backup_enabled()` | `std::optional<bool>` — `nullopt` means the macro dict never carried the key, which is **not** the same as off |
+| XML subject `ams_ifs_plugin` | int, matching `IfsPlugin` (0/1/2). Values are a UI contract — append, never renumber |
+| XML subject `ams_ifs_backup_enabled` | `BACKUP_UNKNOWN` (-1) / `BACKUP_OFF` (0) / `BACKUP_ON` (1). No plugin reports OFF: there is no mechanism, which is a definite answer |
+
+Both subjects are owned by `ams_backend_ad5x_ifs.cpp` (function-local statics, lazily registered on first publish and guarded on `lv_is_initialized()`, deinit self-registered with `StaticSubjectRegistry`) rather than by `AmsState`: they are AD5X-specific, and an XML binding outlives any one backend instance.
+
+**`variable_backup`.** `gcode_macro _ifs_vars`'s `get_status()` dict used to be reduced to a single "does the macro exist" bool at the `on_started()` probe and thrown away. It now flows into `parse_ifs_vars_macro_locked()`, which reads `variable_backup` (accepting the jinja int form and a bool). Note this object is **not** in the standing `objects.subscribe` set — the `on_started()` query and `recheck_ifs_vars_macro()` (fired on `notify_klippy_ready`) are the only two places it ever reaches us.
+
+Per `printers/FLASHFORGE_AD5X_SUPPORT.md` § "lessWaste-Specific Variables" and the real variable dump in `printer-research/FLASHFORGE_AD5X_IFS_ANALYSIS.md` (`variable_backup: 0`), lessWaste ships the feature but defaults it **off**, and bambufy has no backup/failover at all. **Neither has been observed on a device by us.** Nothing branches on the value except the wording and the longer confirm delay.
+
+**The matching rule the hint text promises is strict and must stay strict**: a backup port qualifies only when its filament **type** and **colour** both equal the active spool's *and* its own port sensor reads filament present (`find_backup_slot_locked()`). Promising more than that is the #1247 misexpectation in a new costume.
+
+> **Follow-up, not implemented:** lessWaste emits `PAUSE REASON=` with one of `jam`, `broken`, `runout`, `empty`, `backup`, `loading` (`printers/FLASHFORGE_AD5X_SUPPORT.md`). That is a direct, unambiguous runout signal — but only on the plugin path, which is precisely the case the sensor-based detector above is *not* needed for. Parsing it would let the plugin path skip the dwell entirely.
+
 ### G-code Commands
 
 | Command | Action |
@@ -2197,6 +2243,8 @@ The raw IFS commands (`zmod_ifs.py` registrations + `docs/en/AD5X.md`). `F##` nu
 | Auto-Heat on Load | No | -- |
 | Dryer | No | -- |
 | Device Actions | No | -- |
+| Runout detection | Yes | Sensor-derived, HelixScreen-side — see "Unattended runout detection" above |
+| Backup-spool switchover | Firmware-only | lessWaste `variable_backup`; absent on stock zMod and on bambufy. HelixScreen reports the state, it does not perform the swap |
 
 ### Open Issues & Debugging Notes
 
