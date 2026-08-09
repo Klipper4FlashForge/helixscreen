@@ -250,6 +250,24 @@ endif
 SUBMODULE_CFLAGS := -std=c11 -O2 -g -D_GNU_SOURCE -w
 SUBMODULE_CXXFLAGS := -std=c++17 -O2 -g -w
 
+# XML create-cost profiling in lib/helix-xml (lv_xml.c). Counts component
+# creates and separates expat/SAX time from element-handler time, which is the
+# only way to tell parsing apart from widget building: XML_Parse drives the
+# handlers, so one timer around it measures both.
+#
+# Dev-build only, and OFF even there. It reads the clock on every element, which
+# distorts what it is measuring, and logs every 25 creates. Turn it on for a
+# measurement run, not for everyday work:
+#   make ENABLE_XML_PROFILE=yes
+#
+# make does not track compiler flags, so toggling this rebuilds nothing on its
+# own — delete the object too:
+#   rm -f build/obj/helix-xml/src/xml/lv_xml.o
+ENABLE_XML_PROFILE ?= no
+ifeq ($(ENABLE_XML_PROFILE),yes)
+    SUBMODULE_CFLAGS += -DLV_XML_PROFILE=1
+endif
+
 # Platform detection (needed early for conditional compilation)
 UNAME_S := $(shell uname -s)
 
