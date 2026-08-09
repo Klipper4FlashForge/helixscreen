@@ -152,4 +152,13 @@ void register_queue_handlers(std::unordered_map<std::string, MethodHandler>& reg
  */
 json get_mock_gcode_macro_config();
 
+/**
+ * @brief Get mock Happy Hare "mmu" status (--real-ams)
+ *
+ * Minimal static 4-gate setup with a mix of loaded/empty gates. Used by the
+ * objects.query/subscribe handlers and by MoonrakerClientMock's post-discovery
+ * dispatch that seeds AmsBackendHappyHare's initial state.
+ */
+json get_mock_mmu_status();
+
 } // namespace mock_internal
