@@ -123,8 +123,12 @@ bool DisplayManager::init(const Config& config) {
         spdlog::error("[DisplayManager] No display backend available");
         TelemetryManager::instance().record_error("display", "init_failed",
                                                   "no display backend available");
-        lv_xml_deinit();
+        // lv_deinit() first, then lv_xml_deinit() — the teardown order shutdown()
+        // documents. Nothing is registered yet on this path, so either order works
+        // today; keeping one order everywhere is what stops the shutdown ordering
+        // bug from being reintroduced by copying this block.
         lv_deinit();
+        lv_xml_deinit();
         return false;
     }
 
@@ -211,8 +215,9 @@ bool DisplayManager::init(const Config& config) {
         TelemetryManager::instance().record_error("display", "init_failed",
                                                   "all display backends exhausted");
         m_backend.reset();
-        lv_xml_deinit();
+        // Same teardown order as above and as shutdown().
         lv_deinit();
+        lv_xml_deinit();
         return false;
     }
 
@@ -341,8 +346,13 @@ bool DisplayManager::init(const Config& config) {
                                 suggestions, 30000);
 
             m_backend.reset();
-            lv_xml_deinit();
+            // Order matters here, unlike the two paths above: ui_show_fatal_error()
+            // has just built and shown a widget tree. Freeing the component scopes
+            // first would free styles those widgets still point at, and lv_deinit()
+            // runs layout passes while tearing them down — the use-after-free
+            // shutdown() hit. Destroy the widgets first, then the scopes.
             lv_deinit();
+            lv_xml_deinit();
             return false;
         }
 #else

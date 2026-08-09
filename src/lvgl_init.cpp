@@ -187,8 +187,12 @@ void deinit_lvgl(LvglContext& ctx) {
     ctx.backend.reset();
     ctx.display = nullptr;
     ctx.pointer = nullptr;
-    lv_xml_deinit();
+    // lv_deinit() before lv_xml_deinit(), matching DisplayManager::shutdown().
+    // A component scope owns the styles its widgets point at, so the widget tree
+    // has to go first — freeing the scopes while widgets live is the
+    // use-after-free that made every shutdown corrupt the heap.
     lv_deinit();
+    lv_xml_deinit();
 }
 
 } // namespace helix
