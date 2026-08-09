@@ -255,13 +255,14 @@ void PrintStatusWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
     chamber_icon_binder_.bind(widget_obj_, printer_state_, helix::HeaterType::Chamber);
 
     // Set up observers (after widget references are cached and widget_obj_ is set)
-    print_state_observer_ =
-        observe_print_state<PrintStatusWidget>(printer_state_.get_print_state_enum_subject(), this,
-                                               [](PrintStatusWidget* self, PrintJobState state) {
-                                                   if (!self->widget_obj_)
-                                                       return;
-                                                   self->on_print_state_changed(state);
-                                               });
+    print_state_observer_ = observe_print_state<PrintStatusWidget>(
+        printer_state_.get_print_state_enum_subject(), this,
+        [](PrintStatusWidget* self, PrintJobState state) {
+            if (!self->widget_obj_)
+                return;
+            self->on_print_state_changed(state);
+        },
+        printer_state_.get_subjects_lifetime());
 
     // Use observe_string_immediate: the thumbnail handler only calls lv_image_set_src
     // (no observer lifecycle changes), and set_print_thumbnail_path is always called
@@ -273,7 +274,8 @@ void PrintStatusWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
             if (!self->widget_obj_)
                 return;
             self->on_print_thumbnail_path_changed(path);
-        });
+        },
+        printer_state_.get_subjects_lifetime());
 
     auto& fsm = helix::FilamentSensorManager::instance();
     filament_runout_observer_ = observe_int_sync<PrintStatusWidget>(
@@ -337,7 +339,8 @@ void PrintStatusWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
                     hm->fetch();
                 }
             }
-        });
+        },
+        printer_state_.get_subjects_lifetime());
 
     spdlog::debug("[PrintStatusWidget] Subscribed to print state/progress/time/thumbnail/runout");
 
@@ -2103,13 +2106,16 @@ PrintStatusWidget::DetailedFormatter::DetailedFormatter() {
 
     // Multi-tool: observe tool_count + active_tool to drive gate and T<n> label
     tool_count_observer_ = observe_int_sync<DetailedFormatter>(
-        ToolState::instance().get_tool_count_subject(), this, [](DetailedFormatter* self, int) {
+        ToolState::instance().get_tool_count_subject(), this,
+        [](DetailedFormatter* self, int) {
             self->update_multi_tool();
             self->update_tool_label();
-        });
+        },
+        ToolState::instance().get_subjects_lifetime());
     active_tool_observer_ = observe_int_sync<DetailedFormatter>(
         ToolState::instance().get_active_tool_subject(), this,
-        [](DetailedFormatter* self, int) { self->update_tool_label(); });
+        [](DetailedFormatter* self, int) { self->update_tool_label(); },
+        ToolState::instance().get_subjects_lifetime());
     update_multi_tool();
     update_tool_label();
 

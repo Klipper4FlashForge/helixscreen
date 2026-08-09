@@ -159,16 +159,16 @@ TemperatureService::TemperatureService(PrinterState& printer_state, MoonrakerAPI
     // Subscribe to temperature subjects with individual ObserverGuards.
     // Nozzle observers are separate so they can be rebound when switching
     // extruders in multi-extruder setups (bed/chamber observers stay constant).
-    nozzle.temp_observer =
-        observe_int_sync<TemperatureService>(printer_state_.get_active_extruder_temp_subject(),
-                                             this, [](TemperatureService* self, int temp) {
-                                                 self->on_temp_changed(HeaterType::Nozzle, temp);
-                                             });
+    nozzle.temp_observer = observe_int_sync<TemperatureService>(
+        printer_state_.get_active_extruder_temp_subject(), this,
+        [](TemperatureService* self, int temp) { self->on_temp_changed(HeaterType::Nozzle, temp); },
+        printer_state_.get_subjects_lifetime());
     nozzle.target_observer = observe_int_sync<TemperatureService>(
         printer_state_.get_active_extruder_target_subject(), this,
         [](TemperatureService* self, int target) {
             self->on_target_changed(HeaterType::Nozzle, target);
-        });
+        },
+        printer_state_.get_subjects_lifetime());
     bed.temp_observer = observe_int_sync<TemperatureService>(
         printer_state_.get_bed_temp_subject(bed.temp_lifetime), this,
         [](TemperatureService* self, int temp) { self->on_temp_changed(HeaterType::Bed, temp); },
@@ -781,7 +781,8 @@ void TemperatureService::setup_panel(HeaterType type, lv_obj_t* panel, lv_obj_t*
             [](TemperatureService* self, int /*version*/) {
                 spdlog::debug("[TempPanel] Extruder list changed, rebuilding selector");
                 self->rebuild_extruder_segments();
-            });
+            },
+            printer_state_.get_subjects_lifetime());
 
         auto& tool_state = helix::ToolState::instance();
         if (tool_state.is_multi_tool()) {
@@ -793,7 +794,8 @@ void TemperatureService::setup_panel(HeaterType type, lv_obj_t* panel, lv_obj_t*
                     if (tool && tool->extruder_name) {
                         self->select_extruder(*tool->extruder_name);
                     }
-                });
+                },
+                tool_state.get_subjects_lifetime());
         }
     }
 

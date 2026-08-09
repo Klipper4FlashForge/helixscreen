@@ -544,7 +544,8 @@ void SettingsPanel::setup_toggle_handlers() {
         if (led_light_switch_) {
             // Sync toggle with actual printer LED state via observer
             led_state_observer_ = helix::ui::observe_int_sync<SettingsPanel>(
-                printer_state_.get_led_state_subject(), this, [](SettingsPanel* self, int value) {
+                printer_state_.get_led_state_subject(), this,
+                [](SettingsPanel* self, int value) {
                     if (self->led_light_switch_) {
                         bool on = value != 0;
                         if (on) {
@@ -553,7 +554,8 @@ void SettingsPanel::setup_toggle_handlers() {
                             lv_obj_remove_state(self->led_light_switch_, LV_STATE_CHECKED);
                         }
                     }
-                });
+                },
+                printer_state_.get_subjects_lifetime());
             spdlog::trace("[{}]   ✓ LED light toggle (observing printer state)", get_name());
         }
     }

@@ -57,7 +57,8 @@ void PrintExcludeObjectManager::init() {
     // Subscribe to excluded objects changes from PrinterState
     excluded_objects_observer_ = helix::ui::observe_int_sync<PrintExcludeObjectManager>(
         printer_state_.get_excluded_objects_version_subject(), this,
-        [](PrintExcludeObjectManager* self, int) { self->on_excluded_objects_changed(); });
+        [](PrintExcludeObjectManager* self, int) { self->on_excluded_objects_changed(); },
+        printer_state_.get_subjects_lifetime());
 
     // Watchdog: if the print ends (cancel, complete, error, standby) while we still
     // hold optimistic visuals for unconfirmed exclusions, drop them. Guards against
@@ -66,7 +67,8 @@ void PrintExcludeObjectManager::init() {
     // cancels are usually deliberate and a toast would just be noise.
     print_state_observer_ = helix::ui::observe_int_sync<PrintExcludeObjectManager>(
         printer_state_.get_print_state_enum_subject(), this,
-        [](PrintExcludeObjectManager* self, int state) { self->on_print_state_changed(state); });
+        [](PrintExcludeObjectManager* self, int state) { self->on_print_state_changed(state); },
+        printer_state_.get_subjects_lifetime());
 
     // Register long-press callback on gcode viewer
     if (gcode_viewer_) {

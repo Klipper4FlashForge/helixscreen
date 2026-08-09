@@ -203,7 +203,8 @@ void ControlsPanel::init_subjects() {
 
     // Observe homed_axes from PrinterState to update homing subjects using string observer
     homed_axes_observer_ = observe_string<ControlsPanel>(
-        printer_state_.get_homed_axes_subject(), this, [](ControlsPanel* self, const char* axes) {
+        printer_state_.get_homed_axes_subject(), this,
+        [](ControlsPanel* self, const char* axes) {
             bool has_x = strchr(axes, 'x') != nullptr;
             bool has_y = strchr(axes, 'y') != nullptr;
             bool has_z = strchr(axes, 'z') != nullptr;
@@ -242,7 +243,8 @@ void ControlsPanel::init_subjects() {
                              "(axes='{}')",
                              x, y, z, all, axes);
             }
-        });
+        },
+        printer_state_.get_subjects_lifetime());
 
     register_xml_callbacks({
         // Calibration button event callbacks (direct buttons in card, no modal)
@@ -602,11 +604,13 @@ void ControlsPanel::register_observers() {
         chamber_mode_lifetime_);
 
     // Subscribe to fan updates (skip formatting when hidden)
-    fan_observer_ = observe_int_sync<ControlsPanel>(printer_state_.get_fan_speed_subject(), this,
-                                                    [](ControlsPanel* self, int /* value */) {
-                                                        if (self->active_)
-                                                            self->update_fan_display();
-                                                    });
+    fan_observer_ = observe_int_sync<ControlsPanel>(
+        printer_state_.get_fan_speed_subject(), this,
+        [](ControlsPanel* self, int /* value */) {
+            if (self->active_)
+                self->update_fan_display();
+        },
+        printer_state_.get_subjects_lifetime());
 
     // Subscribe to multi-fan list changes (fires when fans are discovered/updated)
     // Skip widget rebuilds when hidden; on_activate() calls populate_secondary_fans()
@@ -630,12 +634,13 @@ void ControlsPanel::register_observers() {
         });
 
     // Subscribe to active tool changes for dynamic nozzle label
-    active_tool_observer_ =
-        observe_int_sync<ControlsPanel>(helix::ToolState::instance().get_active_tool_subject(),
-                                        this, [](ControlsPanel* self, int /* tool_idx */) {
-                                            if (self->active_)
-                                                self->update_nozzle_label();
-                                        });
+    active_tool_observer_ = observe_int_sync<ControlsPanel>(
+        helix::ToolState::instance().get_active_tool_subject(), this,
+        [](ControlsPanel* self, int /* tool_idx */) {
+            if (self->active_)
+                self->update_nozzle_label();
+        },
+        helix::ToolState::instance().get_subjects_lifetime());
     update_nozzle_label(); // Set initial value
 
     // Subscribe to temperature sensor count changes
@@ -660,12 +665,13 @@ void ControlsPanel::register_observers() {
         });
 
     // Subscribe to pending Z-offset delta (for unsaved adjustment banner)
-    pending_z_offset_observer_ =
-        observe_int_sync<ControlsPanel>(printer_state_.get_pending_z_offset_delta_subject(), this,
-                                        [](ControlsPanel* self, int delta_microns) {
-                                            if (self->active_)
-                                                self->update_z_offset_delta_display(delta_microns);
-                                        });
+    pending_z_offset_observer_ = observe_int_sync<ControlsPanel>(
+        printer_state_.get_pending_z_offset_delta_subject(), this,
+        [](ControlsPanel* self, int delta_microns) {
+            if (self->active_)
+                self->update_z_offset_delta_display(delta_microns);
+        },
+        printer_state_.get_subjects_lifetime());
 
     // Subscribe to gcode position updates for Position card using bundle (commanded position in
     // centimillimeters). Skip formatting when hidden — positions update very frequently.
@@ -692,10 +698,12 @@ void ControlsPanel::register_observers() {
 
     // Subscribe to speed/flow factor updates (skip formatting when hidden)
     speed_factor_observer_ = observe_int_sync<ControlsPanel>(
-        printer_state_.get_speed_factor_subject(), this, [](ControlsPanel* self, int /* value */) {
+        printer_state_.get_speed_factor_subject(), this,
+        [](ControlsPanel* self, int /* value */) {
             if (self->active_)
                 self->update_speed_display();
-        });
+        },
+        printer_state_.get_subjects_lifetime());
 
     // Subscribe to gcode Z-offset for live tuning display (skip formatting when hidden)
     gcode_z_offset_observer_ = observe_int_sync<ControlsPanel>(
@@ -703,7 +711,8 @@ void ControlsPanel::register_observers() {
         [](ControlsPanel* self, int offset_microns) {
             if (self->active_)
                 self->update_controls_z_offset_display(offset_microns);
-        });
+        },
+        printer_state_.get_subjects_lifetime());
 
     spdlog::trace("[{}] Observers registered for dashboard live data", get_name());
 }

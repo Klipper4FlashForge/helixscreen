@@ -65,7 +65,8 @@ ActivePrintMediaManager::ActivePrintMediaManager(PrinterState& printer_state)
         printer_state_.get_print_filename_subject(), this,
         [](ActivePrintMediaManager* self, const char* filename) {
             self->process_filename(filename);
-        });
+        },
+        printer_state_.get_subjects_lifetime());
 
     spdlog::debug("[ActivePrintMediaManager] Observer attached to print_filename subject");
 }

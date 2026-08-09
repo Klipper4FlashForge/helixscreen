@@ -1114,12 +1114,14 @@ void NavigationManager::wire_events(lv_obj_t* navbar) {
     // Register connection state observer for redirect on disconnect
     connection_state_observer_ = observe_int_sync<NavigationManager>(
         get_printer_state().get_printer_connection_state_subject(), this,
-        [](NavigationManager* mgr, int value) { mgr->handle_connection_state_change(value); });
+        [](NavigationManager* mgr, int value) { mgr->handle_connection_state_change(value); },
+        get_printer_state().get_subjects_lifetime());
 
     // Register klippy state observer for redirect on SHUTDOWN/ERROR
     klippy_state_observer_ = observe_int_sync<NavigationManager>(
         get_printer_state().get_klippy_state_subject(), this,
-        [](NavigationManager* mgr, int value) { mgr->handle_klippy_state_change(value); });
+        [](NavigationManager* mgr, int value) { mgr->handle_klippy_state_change(value); },
+        get_printer_state().get_subjects_lifetime());
 
     // Printer badge click handler
     lv_obj_t* printer_badge = lv_obj_find_by_name(navbar, "nav_printer_badge");
@@ -1152,7 +1154,8 @@ void NavigationManager::wire_events(lv_obj_t* navbar) {
                     break;
                 }
                 lv_obj_set_style_bg_color(mgr->printer_dot_widget_, color, 0);
-            });
+            },
+            get_printer_state().get_subjects_lifetime());
     }
 
     spdlog::trace(

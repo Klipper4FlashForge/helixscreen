@@ -172,7 +172,8 @@ void PowerDeviceWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
                 if (token.expired())
                     return;
                 self->refresh_all_devices_state();
-            });
+            },
+            get_printer_state().get_subjects_lifetime());
 
         if (name_label_) {
             lv_label_set_text(name_label_, lv_tr("All Devices"));
@@ -839,7 +840,8 @@ void PowerDeviceWidget::select_device(const std::string& name) {
                     if (token.expired())
                         return;
                     self->refresh_all_devices_state();
-                });
+                },
+                get_printer_state().get_subjects_lifetime());
 
             if (name_label_) {
                 lv_label_set_text(name_label_, lv_tr("All Devices"));

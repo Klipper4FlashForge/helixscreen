@@ -199,7 +199,8 @@ void ZOffsetCalibrationPanel::setup_widgets() {
                 spdlog::info("[ZOffsetCal] Manual probe ended externally, returning to IDLE");
                 self->set_state(State::IDLE);
             }
-        });
+        },
+        ps.get_subjects_lifetime());
 
     manual_probe_z_observer_ = observe_int_sync<ZOffsetCalibrationPanel>(
         ps.get_manual_probe_z_position_subject(), this,
@@ -405,12 +406,11 @@ void ZOffsetCalibrationPanel::begin_saving_restart_watch() {
                 // Settle on the next tick, NOT here: on_calibration_result() ->
                 // set_state() -> end_saving_restart_watch() would reset this very
                 // observer from inside its own callback.
-                self->lifetime_.defer(
-                    "ZOffsetCalibrationPanel::settle_after_restart", [self]() {
-                        if (self->state_ == State::SAVING) {
-                            self->on_calibration_result(true, "");
-                        }
-                    });
+                self->lifetime_.defer("ZOffsetCalibrationPanel::settle_after_restart", [self]() {
+                    if (self->state_ == State::SAVING) {
+                        self->on_calibration_result(true, "");
+                    }
+                });
             }
         });
 }
