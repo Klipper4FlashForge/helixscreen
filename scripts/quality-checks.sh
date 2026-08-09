@@ -1137,6 +1137,38 @@ fi
 echo ""
 
 SECTION_START=$(date +%s)
+echo -n "🖼️  Checking guarded ThumbnailCache access..."
+
+if [ -f "scripts/check_thumbnail_cache_guard.py" ]; then
+  # Hard gate, never a baseline: src/ has no legacy call sites left. The two
+  # unguarded overloads — fetch(api, path, ...) and get_if_cached(path, mtime) —
+  # stay public only because tests exercise them deliberately, so the compiler
+  # cannot enforce this. They take no ThumbnailLoadContext, which is what lets
+  # fetch() drop a superseded on_success; without it an in-flight download that
+  # has already been outdated still lands and overwrites a NEWER thumbnail.
+  # Build a ThumbnailRequest + ThumbnailLoadContext, or annotate a genuine
+  # exception with // THUMB_LEGACY_OK: <reason>.
+  if python3 scripts/check_thumbnail_cache_guard.py >/tmp/thumb_guard.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    echo "✅ ThumbnailCache: every src/ consumer passes a ThumbnailLoadContext"
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/thumb_guard.out
+    echo "   Run: python3 scripts/check_thumbnail_cache_guard.py"
+    echo "   Use fetch(req, ctx, ...) / get_if_cached(req); see include/thumbnail_cache.h."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_thumbnail_cache_guard.py not found — skipping"
+fi
+
+echo ""
+
+SECTION_START=$(date +%s)
 echo -n "⏱️  Checking grid cell-metrics single source..."
 
 if [ -f "scripts/check_grid_metrics_single_source.py" ]; then

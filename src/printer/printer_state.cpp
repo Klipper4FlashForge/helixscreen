@@ -908,8 +908,8 @@ void PrinterState::reset_print_start_state() {
     print_domain_.reset_print_start_state();
 }
 
-void PrinterState::set_print_thumbnail_path(const std::string& path) {
-    print_domain_.set_print_thumbnail_path(path);
+void PrinterState::set_print_thumbnail(const std::string& for_file, const std::string& path) {
+    print_domain_.set_print_thumbnail(for_file, path);
 }
 
 void PrinterState::set_print_display_filename(const std::string& name) {
