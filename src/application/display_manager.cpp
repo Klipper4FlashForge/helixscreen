@@ -1251,11 +1251,22 @@ void DisplayManager::enable_affine_calibration() {
 // ============================================================================
 
 void DisplayManager::disable_input_briefly() {
-    // Disable all pointer input devices
+    // Disable all pointer input devices, and cancel whatever press is already
+    // in flight on each.
+    //
+    // lv_indev_enable(false) is a pure flag write: pr_timestamp, long_pr_sent
+    // and pointer.act_obj all survive the blackout, so a finger still on the
+    // glass when input comes back keeps counting toward LV_EVENT_LONG_PRESSED
+    // from the ORIGINAL touch-down. On the wake touch that means a long-press
+    // gesture the user never made — home-grid edit mode opening behind the lock
+    // screen (#1245). lv_indev_reset() is what actually discards that state, and
+    // it lands even while the device is disabled: lv_indev_read() runs the reset
+    // query handler before it checks the enabled flag.
     lv_indev_t* indev = lv_indev_get_next(nullptr);
     while (indev) {
         if (lv_indev_get_type(indev) == LV_INDEV_TYPE_POINTER) {
             lv_indev_enable(indev, false);
+            lv_indev_reset(indev, nullptr);
         }
         indev = lv_indev_get_next(indev);
     }
