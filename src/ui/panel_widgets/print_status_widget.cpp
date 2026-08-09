@@ -20,6 +20,7 @@
 #include "filament_op_dispatch.h"
 #include "filament_op_router.h"
 #include "filament_sensor_manager.h"
+#include "format_utils.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
 #include "moonraker_client.h"
@@ -1850,8 +1851,9 @@ void PrintStatusWidget::DetailedFormatter::update_time_text() {
     int elapsed = lv_subject_get_int(ps.get_print_elapsed_subject());
     int remain = lv_subject_get_int(ps.get_print_time_left_subject());
     int total = elapsed + remain;
-    snprintf(time_text_buf_, sizeof(time_text_buf_), "%dh %02dm / %dh %02dm", elapsed / 3600,
-             (elapsed % 3600) / 60, total / 3600, (total % 3600) / 60);
+    std::string text =
+        helix::format::duration_padded(elapsed) + " / " + helix::format::duration_padded(total);
+    snprintf(time_text_buf_, sizeof(time_text_buf_), "%s", text.c_str());
     lv_subject_copy_string(&time_text_subject_, time_text_buf_);
 }
 
@@ -1860,8 +1862,9 @@ void PrintStatusWidget::DetailedFormatter::update_filament_text() {
     if (used_mm <= 0) {
         filament_text_buf_[0] = '\0';
     } else {
-        snprintf(filament_text_buf_, sizeof(filament_text_buf_), "Filament: %.1fm",
-                 used_mm / 1000.0);
+        std::string text = std::string(lv_tr("Filament")) + ": " +
+                           helix::format::format_filament_length(static_cast<double>(used_mm));
+        snprintf(filament_text_buf_, sizeof(filament_text_buf_), "%s", text.c_str());
     }
     lv_subject_copy_string(&filament_text_subject_, filament_text_buf_);
 

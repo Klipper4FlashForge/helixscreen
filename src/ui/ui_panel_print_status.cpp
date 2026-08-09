@@ -1628,6 +1628,20 @@ void PrintStatusPanel::load_gcode_file(const char* file_path) {
     ui_gcode_viewer_load_file(gcode_viewer_, file_path);
 }
 
+void PrintStatusPanel::update_filament_used_text() {
+    int filament_mm = lv_subject_get_int(get_printer_state().get_print_filament_used_subject());
+    if (filament_mm > 0) {
+        std::string fil_str =
+            helix::format::format_filament_length(static_cast<double>(filament_mm)) + " " +
+            lv_tr("used");
+        std::strncpy(filament_used_text_buf_, fil_str.c_str(), sizeof(filament_used_text_buf_) - 1);
+        filament_used_text_buf_[sizeof(filament_used_text_buf_) - 1] = '\0';
+    } else {
+        filament_used_text_buf_[0] = '\0';
+    }
+    lv_subject_copy_string(&filament_used_text_subject_, filament_used_text_buf_);
+}
+
 void PrintStatusPanel::update_all_displays() {
     // Guard: don't update if subjects aren't initialized yet
     if (!subjects_initialized_) {
@@ -1647,17 +1661,7 @@ void PrintStatusPanel::update_all_displays() {
     lv_subject_copy_string(&layer_text_subject_, layer_text_buf_);
 
     // Filament used text
-    int filament_mm = lv_subject_get_int(get_printer_state().get_print_filament_used_subject());
-    if (filament_mm > 0) {
-        std::string fil_str =
-            helix::format::format_filament_length(static_cast<double>(filament_mm)) + " " +
-            lv_tr("used");
-        std::strncpy(filament_used_text_buf_, fil_str.c_str(), sizeof(filament_used_text_buf_) - 1);
-        filament_used_text_buf_[sizeof(filament_used_text_buf_) - 1] = '\0';
-    } else {
-        filament_used_text_buf_[0] = '\0';
-    }
-    lv_subject_copy_string(&filament_used_text_subject_, filament_used_text_buf_);
+    update_filament_used_text();
 
     // Time displays - Preparing: preprint observers own these.
     // Complete: on_print_state_changed sets frozen final values, don't overwrite.
@@ -2681,17 +2685,7 @@ void PrintStatusPanel::on_print_progress_changed(int progress) {
     }
 
     // Update filament used text (evolves during active printing)
-    int filament_mm = lv_subject_get_int(get_printer_state().get_print_filament_used_subject());
-    if (filament_mm > 0) {
-        std::string fil_str =
-            helix::format::format_filament_length(static_cast<double>(filament_mm)) + " " +
-            lv_tr("used");
-        std::strncpy(filament_used_text_buf_, fil_str.c_str(), sizeof(filament_used_text_buf_) - 1);
-        filament_used_text_buf_[sizeof(filament_used_text_buf_) - 1] = '\0';
-    } else {
-        filament_used_text_buf_[0] = '\0';
-    }
-    lv_subject_copy_string(&filament_used_text_subject_, filament_used_text_buf_);
+    update_filament_used_text();
 
     spdlog::trace("[{}] Progress updated: {}%", get_name(), lifecycle_.progress());
 }

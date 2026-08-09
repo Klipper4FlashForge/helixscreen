@@ -543,6 +543,9 @@ class PrintStatusPanel : public OverlayBase {
     void recompute_aux_composites_for_measurement(int density,
                                                   bool aux_present); ///< Measurement helper
 
+    /// Render print_filament_used_text from the current filament_used subject.
+    void update_filament_used_text();
+
     void update_all_displays();
     void show_gcode_viewer(bool show);
     void load_gcode_file(const char* file_path);

@@ -53,9 +53,53 @@ TEST_CASE_METHOD(HelixTestFixture, "DetailedFormatter writes progress, layer, ti
                 lv_xml_get_subject(nullptr, "print_status_progress_pct"))) == "47%");
     REQUIRE(std::string(lv_subject_get_string(
                 lv_xml_get_subject(nullptr, "print_status_layer_text"))) == "Layer 42 / 213");
-    // elapsed=42m, total=42m+2h14m=2h56m
+    // elapsed=42m, total=42m+2h14m=2h56m. Sub-hour durations carry no "0h" —
+    // helix::format::duration_padded drops the hours field below one hour.
     REQUIRE(std::string(lv_subject_get_string(
-                lv_xml_get_subject(nullptr, "print_status_time_text"))) == "0h 42m / 2h 56m");
+                lv_xml_get_subject(nullptr, "print_status_time_text"))) == "42m / 2h 56m");
+}
+
+TEST_CASE_METHOD(HelixTestFixture, "DetailedFormatter time text omits hours under an hour",
+                 "[print_status][formatter]") {
+    PrintStatusWidget::destroy_formatter_for_test();
+
+    PrinterState& ps = get_printer_state();
+    PrinterStateTestAccess::reset(ps);
+    ps.init_subjects(false);
+
+    FormatterScope fs;
+
+    lv_subject_set_int(ps.get_print_elapsed_subject(), 45 * 60);
+    lv_subject_set_int(ps.get_print_time_left_subject(), 0);
+    UpdateQueueTestAccess::drain_all(UpdateQueue::instance());
+
+    // A hand-rolled "%dh %02dm" renders this as "0h 45m / 0h 45m".
+    REQUIRE(std::string(lv_subject_get_string(
+                lv_xml_get_subject(nullptr, "print_status_time_text"))) == "45m / 45m");
+}
+
+TEST_CASE_METHOD(HelixTestFixture, "DetailedFormatter filament text switches unit at 1000mm",
+                 "[print_status][formatter]") {
+    PrintStatusWidget::destroy_formatter_for_test();
+
+    PrinterState& ps = get_printer_state();
+    PrinterStateTestAccess::reset(ps);
+    ps.init_subjects(false);
+
+    FormatterScope fs;
+
+    // Below 1000mm the canonical formatter stays in millimetres. Dividing by
+    // 1000 unconditionally renders this as "0.9m".
+    lv_subject_set_int(ps.get_print_filament_used_subject(), 850);
+    UpdateQueueTestAccess::drain_all(UpdateQueue::instance());
+    REQUIRE(std::string(lv_subject_get_string(
+                lv_xml_get_subject(nullptr, "print_status_filament_text"))) == "Filament: 850mm");
+
+    // Above 1000000mm it switches to kilometres rather than "1200.0m".
+    lv_subject_set_int(ps.get_print_filament_used_subject(), 1200000);
+    UpdateQueueTestAccess::drain_all(UpdateQueue::instance());
+    REQUIRE(std::string(lv_subject_get_string(
+                lv_xml_get_subject(nullptr, "print_status_filament_text"))) == "Filament: 1.20km");
 }
 
 TEST_CASE_METHOD(HelixTestFixture, "DetailedFormatter seeds initial values on construction",
