@@ -406,6 +406,14 @@ class UpdateQueue {
             initialized_ = false;
             shut_down_ = true;
             std::queue<TaggedCallback>().swap(pending_); // Discard any stragglers
+            // ...including whatever a live ScopedFreeze diverted. Application
+            // holds a freeze across update_queue_shutdown() (shutdown step 5 vs
+            // step 6), so work enqueued in that window sits in the buffer and
+            // ~ScopedFreeze splices it back into pending_ afterwards. At process
+            // exit that is merely never drained, but the soft-restart path calls
+            // update_queue_init() next, which re-arms the timer and runs those
+            // callbacks against the objects teardown just destroyed.
+            std::queue<TaggedCallback>().swap(frozen_buffer_);
         }
         timer_ = nullptr;
     }
