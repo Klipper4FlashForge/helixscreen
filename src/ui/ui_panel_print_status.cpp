@@ -418,8 +418,6 @@ void PrintStatusPanel::init_subjects() {
 
     // Initialize all subjects with default values
     // Note: Display filename is now handled by ActivePrintMediaManager via print_display_filename
-    UI_MANAGED_SUBJECT_STRING(progress_text_subject_, progress_text_buf_, "0%",
-                              "print_progress_text", subjects_);
     UI_MANAGED_SUBJECT_STRING(layer_text_subject_, layer_text_buf_, "Layer 0 / 0",
                               "print_layer_text", subjects_);
     UI_MANAGED_SUBJECT_STRING(filament_used_text_subject_, filament_used_text_buf_, "",
@@ -1659,9 +1657,6 @@ void PrintStatusPanel::update_all_displays() {
     }
 
     // Progress text
-    helix::format::format_percent(lifecycle_.progress(), progress_text_buf_,
-                                  sizeof(progress_text_buf_));
-    lv_subject_copy_string(&progress_text_subject_, progress_text_buf_);
 
     update_layer_text();
 
@@ -2677,9 +2672,6 @@ void PrintStatusPanel::on_print_progress_changed(int progress) {
     }
 
     // Update progress text
-    helix::format::format_percent(lifecycle_.progress(), progress_text_buf_,
-                                  sizeof(progress_text_buf_));
-    lv_subject_copy_string(&progress_text_subject_, progress_text_buf_);
 
     // Update progress bar with smooth animation (300ms ease-out) if animations enabled
     // This complements the subject binding with animated transitions
@@ -2830,8 +2822,6 @@ void PrintStatusPanel::on_print_state_changed(PrintJobState job_state) {
 
     // Freeze display values on Complete (lifecycle already froze the state values)
     if (result.should_freeze_complete) {
-        std::snprintf(progress_text_buf_, sizeof(progress_text_buf_), "100%%");
-        lv_subject_copy_string(&progress_text_subject_, progress_text_buf_);
         if (progress_bar_) {
             lv_bar_set_value(progress_bar_, 100, LV_ANIM_OFF);
         }
@@ -3065,8 +3055,6 @@ void PrintStatusPanel::on_print_start_phase_changed(int phase) {
         if (progress_bar_) {
             lv_bar_set_value(progress_bar_, 0, LV_ANIM_OFF);
         }
-        std::snprintf(progress_text_buf_, sizeof(progress_text_buf_), "0%%");
-        lv_subject_copy_string(&progress_text_subject_, progress_text_buf_);
         std::snprintf(layer_text_buf_, sizeof(layer_text_buf_), " ");
         lv_subject_copy_string(&layer_text_subject_, layer_text_buf_);
 

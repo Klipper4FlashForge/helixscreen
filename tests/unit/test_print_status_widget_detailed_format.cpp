@@ -28,7 +28,7 @@ struct FormatterScope {
     }
 };
 
-TEST_CASE_METHOD(HelixTestFixture, "DetailedFormatter writes progress, layer, time",
+TEST_CASE_METHOD(HelixTestFixture, "DetailedFormatter writes layer and time",
                  "[print_status][formatter]") {
     // Tear down any inherited formatter BEFORE resetting PrinterState — otherwise
     // its observers point to subjects that are about to be deinit'd/reinit'd, and
@@ -45,7 +45,6 @@ TEST_CASE_METHOD(HelixTestFixture, "DetailedFormatter writes progress, layer, ti
 
     FormatterScope fs;
 
-    lv_subject_set_int(ps.get_print_progress_subject(), 47);
     lv_subject_set_int(ps.get_print_layer_current_subject(), 42);
     lv_subject_set_int(ps.get_print_layer_total_subject(), 213);
     lv_subject_set_int(ps.get_print_elapsed_subject(), 42 * 60);              // 0h 42m
@@ -53,8 +52,6 @@ TEST_CASE_METHOD(HelixTestFixture, "DetailedFormatter writes progress, layer, ti
 
     UpdateQueueTestAccess::drain_all(UpdateQueue::instance());
 
-    REQUIRE(std::string(lv_subject_get_string(
-                lv_xml_get_subject(nullptr, "print_status_progress_pct"))) == "47%");
     REQUIRE(std::string(lv_subject_get_string(
                 lv_xml_get_subject(nullptr, "print_status_layer_text"))) == "Layer 42 / 213");
     // elapsed=42m, total=42m+2h14m=2h56m. Sub-hour durations carry no "0h" —
@@ -118,15 +115,12 @@ TEST_CASE_METHOD(HelixTestFixture, "DetailedFormatter seeds initial values on co
         PrinterStateTestAccess::get_print_state(ps), true);
 
     // Set subjects BEFORE creating formatter — seed calls in constructor pick them up
-    lv_subject_set_int(ps.get_print_progress_subject(), 75);
     lv_subject_set_int(ps.get_print_layer_current_subject(), 100);
     lv_subject_set_int(ps.get_print_layer_total_subject(), 200);
 
     FormatterScope fs;
 
     // No drain needed — seed calls are synchronous in the constructor
-    REQUIRE(std::string(lv_subject_get_string(
-                lv_xml_get_subject(nullptr, "print_status_progress_pct"))) == "75%");
     REQUIRE(std::string(lv_subject_get_string(
                 lv_xml_get_subject(nullptr, "print_status_layer_text"))) == "Layer 100 / 200");
 }

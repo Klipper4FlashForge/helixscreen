@@ -80,9 +80,25 @@ class PrinterPrintState {
     // Subject accessors (18 subjects)
     // ========================================================================
 
-    /// Print progress as 0-100 percent
+    /// Print progress as 0-100 percent, straight from Moonraker.
+    /// Drives time estimates, which key off progress being 0 before a print.
     lv_subject_t* get_print_progress_subject() {
         return &print_progress_;
+    }
+
+    /// Progress for display: tracks print_progress_ until the print reaches a
+    /// terminal state, then holds its final value (100 on completion) until the
+    /// next print starts. Moonraker zeroes print_progress_ in the same batch as
+    /// STANDBY, so a display bound to the raw value drops to 0 the instant a
+    /// print finishes.
+    lv_subject_t* get_print_progress_display_subject() {
+        return &print_progress_display_;
+    }
+
+    /// print_progress_display_ rendered as "N%". Written by the same call that
+    /// writes the int, so a bar and its label can never disagree.
+    lv_subject_t* get_print_progress_text_subject() {
+        return &print_progress_text_;
     }
 
     /// Raw filename from Moonraker
@@ -566,6 +582,18 @@ class PrinterPrintState {
      */
     void update_display_message_visible();
 
+    /// Write print_progress_display_ and print_progress_text_ together. The sole
+    /// writer of both, so the int and its rendered string cannot drift apart.
+    /// No-ops while progress_frozen_ is set.
+    void publish_progress_display(int percent);
+
+    /// Hold the current display progress until the next print starts. Called on
+    /// the transition into COMPLETE/CANCELLED/ERROR; completion pins 100 first.
+    void freeze_progress_display(bool complete);
+
+    /// Resume tracking print_progress_ and reset the display to 0.
+    void unfreeze_progress_display();
+
     /**
      * @brief Internal setter for print-in-progress flag
      *
@@ -591,6 +619,8 @@ class PrinterPrintState {
 
     // Print progress subjects
     lv_subject_t print_progress_{};         // Integer 0-100
+    lv_subject_t print_progress_display_{}; // Integer 0-100, frozen after completion
+    lv_subject_t print_progress_text_{};    // String: print_progress_display_ as "N%"
     lv_subject_t print_filename_{};         // String buffer
     lv_subject_t print_state_{};            // String buffer (for UI display)
     lv_subject_t print_state_enum_{};       // Integer: PrintJobState enum
@@ -703,6 +733,10 @@ class PrinterPrintState {
     // only, updated from update_from_status.
     bool sdcard_active_ = false;
 
+    /// True between a terminal print state and the start of the next print,
+    /// while print_progress_display_ holds its final value.
+    bool progress_frozen_ = false;
+
     // virtual_sdcard.pl_env_valid — Snapmaker-fork Power-Loss-Recovery flag.
     lv_subject_t pl_env_valid_{}; // Integer: 1 when a validated PLR snapshot exists
     // virtual_sdcard.file_path — companion to pl_env_valid_. Not a subject:
@@ -743,6 +777,7 @@ class PrinterPrintState {
     // Identity for print_thumbnail_path_: the gcode filename that path was
     // produced for. Plain member (no XML binding), written before the subject.
     std::string print_thumbnail_file_;
+    char print_progress_text_buf_[16]{};
     char print_state_buf_[32]{};
     char print_start_message_buf_[64]{};
     char print_start_time_left_buf_[32]{};

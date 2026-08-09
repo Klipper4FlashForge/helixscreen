@@ -278,7 +278,6 @@ class PrintStatusPanel : public OverlayBase {
 
     SubjectManager subjects_; ///< RAII manager for automatic subject cleanup
 
-    lv_subject_t progress_text_subject_;
     lv_subject_t layer_text_subject_;
     lv_subject_t filament_used_text_subject_;
     lv_subject_t elapsed_subject_;
@@ -381,7 +380,6 @@ class PrintStatusPanel : public OverlayBase {
     lv_subject_t print_controls_enabled_subject_; ///< 1 when lifecycle.is_active()
 
     // Subject storage buffers
-    char progress_text_buf_[32] = "0%";
     char layer_text_buf_[80] = "Layer 0 / 0";
     char filament_used_text_buf_[32] = "";
     char elapsed_buf_[32] = "0h 00m";

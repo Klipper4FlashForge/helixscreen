@@ -308,7 +308,6 @@ class PrintStatusWidget : public PanelWidget {
         SubjectManager subjects_;
 
         // Buffers backing string subjects
-        char progress_pct_buf_[8];      // "100%"
         char layer_text_buf_[64];       // "Layer ~9999 / 9999 (123.4mm)", translated
         char time_text_buf_[40];        // "12h 34m / 99h 99m"
         char filament_text_buf_[32];    // "1234.5m / 9999.9m"
@@ -319,7 +318,6 @@ class PrintStatusWidget : public PanelWidget {
         char idle_meta_buf_[64]; // "12.4m filament • 4h 12m"
 
         // String + int subjects (XML-registered)
-        lv_subject_t progress_pct_subject_;
         lv_subject_t layer_text_subject_;
         lv_subject_t time_text_subject_;
         lv_subject_t filament_text_subject_;
@@ -337,7 +335,6 @@ class PrintStatusWidget : public PanelWidget {
         lv_subject_t idle_has_last_subject_;
 
         // Print-state observers (wired in constructor, RAII cleanup via ObserverGuard)
-        ObserverGuard progress_observer_;
         ObserverGuard layer_current_observer_;
         ObserverGuard layer_total_observer_;
         ObserverGuard elapsed_observer_;
@@ -356,7 +353,6 @@ class PrintStatusWidget : public PanelWidget {
         ObserverGuard tool_count_observer_;
         ObserverGuard active_tool_observer_;
 
-        void update_progress_pct();
         void update_layer_text();
         void update_time_text();
         void update_filament_text();

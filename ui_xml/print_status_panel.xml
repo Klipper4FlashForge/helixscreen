@@ -223,7 +223,7 @@
                   style_pad_left="#space_sm" style_pad_right="#space_sm" style_pad_top="#space_md"
                   style_pad_bottom="#space_md" style_pad_gap="#space_xs" flex_flow="column" scrollable="false">
             <!-- Print Progress Bar (invisible during pre-print operations, but keeps layout space) -->
-            <progress_bar name="print_progress" bind_value="print_progress">
+            <progress_bar name="print_progress" bind_value="print_progress_display">
               <bind_style name="invisible" subject="preparing_visible" ref_value="1"/>
             </progress_bar>
             <!-- Layer Progress (Layer X / Y) + Objects Count -->
