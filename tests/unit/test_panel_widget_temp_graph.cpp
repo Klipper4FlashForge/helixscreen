@@ -199,12 +199,13 @@ TEST_CASE("TempGraphWidget: registered in widget registry", "[temp_graph][panel_
     REQUIRE(std::string(def->display_name) == "Temperature Graph");
     REQUIRE(std::string(def->icon) == "chart_line");
     REQUIRE(def->multi_instance == true);
-    REQUIRE(def->colspan == 2);
-    REQUIRE(def->rowspan == 2);
-    REQUIRE(def->min_colspan == 1);
-    REQUIRE(def->min_rowspan == 1);
-    REQUIRE(def->max_colspan == 6);
-    REQUIRE(def->max_rowspan == 4);
+    // Tracks, not cells — a track is half a cell (GridLayout::TRACKS_PER_CELL).
+    REQUIRE(def->colspan == 4);
+    REQUIRE(def->rowspan == 4);
+    REQUIRE(def->min_colspan == 2);
+    REQUIRE(def->min_rowspan == 2);
+    REQUIRE(def->max_colspan == 12);
+    REQUIRE(def->max_rowspan == 8);
     REQUIRE(def->hardware_gate_subject == nullptr);
 }
 

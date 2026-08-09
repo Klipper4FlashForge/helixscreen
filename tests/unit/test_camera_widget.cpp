@@ -25,12 +25,13 @@ TEST_CASE("CameraWidget: registered in widget registry", "[camera][panel_widget]
     REQUIRE(std::string(def->icon) == "video");
     REQUIRE(def->hardware_gate_subject == nullptr);
     REQUIRE(def->default_enabled == false); // opt-in widget
-    REQUIRE(def->colspan == 2);
-    REQUIRE(def->rowspan == 2);
-    REQUIRE(def->min_colspan == 1);
-    REQUIRE(def->min_rowspan == 1);
-    REQUIRE(def->max_colspan == 4);
-    REQUIRE(def->max_rowspan == 3);
+    // Tracks, not cells — a track is half a cell (GridLayout::TRACKS_PER_CELL).
+    REQUIRE(def->colspan == 4);
+    REQUIRE(def->rowspan == 4);
+    REQUIRE(def->min_colspan == 2);
+    REQUIRE(def->min_rowspan == 2);
+    REQUIRE(def->max_colspan == 8);
+    REQUIRE(def->max_rowspan == 6);
 }
 
 // ============================================================================

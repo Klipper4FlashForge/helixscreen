@@ -175,7 +175,7 @@ TEST_CASE("screen_to_grid_cell: zero gutter matches the historical behavior",
 // =============================================================================
 
 TEST_CASE("GridEditMode: clamp_span respects min/max from registry", "[grid_edit][resize]") {
-    // printer_image: min 1x1, max 4x3 (from registry)
+    // printer_image: min 2x2, max 8x6 tracks (from registry)
     const auto* def = find_widget_def("printer_image");
     REQUIRE(def != nullptr);
     REQUIRE(def->is_scalable());
@@ -197,40 +197,40 @@ TEST_CASE("GridEditMode: clamp_span respects min/max from registry", "[grid_edit
 }
 
 TEST_CASE("GridEditMode: clamp_span non-scalable widget stays fixed", "[grid_edit][resize]") {
-    // "shutdown" has no min/max overrides, so effective min == max == default (1x1)
-    const auto* def = find_widget_def("shutdown");
+    // "macros" is pinned at one whole cell on both axes: min == max == default.
+    // ("shutdown" is no longer the example — it can shrink to a half column.)
+    const auto* def = find_widget_def("macros");
     REQUIRE(def != nullptr);
     REQUIRE_FALSE(def->is_scalable());
 
-    auto [c, r] = GridEditMode::clamp_span("shutdown", 3, 3);
+    auto [c, r] = GridEditMode::clamp_span("macros", 6, 6);
     CHECK(c == def->effective_min_colspan());
     CHECK(r == def->effective_min_rowspan());
-    // Both should equal the default colspan/rowspan (1x1)
-    CHECK(c == 1);
-    CHECK(r == 1);
+    // Both should equal the default colspan/rowspan — one cell, so two tracks.
+    CHECK(c == GridLayout::TRACKS_PER_CELL);
+    CHECK(r == GridLayout::TRACKS_PER_CELL);
 }
 
-TEST_CASE("GridEditMode: clamp_span unknown widget returns at least 1x1", "[grid_edit][resize]") {
+TEST_CASE("GridEditMode: clamp_span unknown widget returns at least one track",
+          "[grid_edit][resize]") {
     auto [c, r] = GridEditMode::clamp_span("nonexistent_widget_xyz", 0, 0);
     CHECK(c >= 1);
     CHECK(r >= 1);
 }
 
 TEST_CASE("GridEditMode: clamp_span tips widget respects range", "[grid_edit][resize]") {
-    // tips: colspan default=3, min=2, max=6, rowspan default=1, min=1, max=1
+    // tips: colspan default=8, min=4, max=12; rowspan default=4, min=2, max=4 tracks
     const auto* def = find_widget_def("tips");
     REQUIRE(def != nullptr);
     REQUIRE(def->is_scalable());
 
-    // Max colspan 6, only 1 row allowed
-    auto [c, r] = GridEditMode::clamp_span("tips", 10, 5);
+    auto [c, r] = GridEditMode::clamp_span("tips", 20, 10);
     CHECK(c == def->effective_max_colspan());
     CHECK(r == def->effective_max_rowspan());
 
-    // Min colspan 2
     auto [c2, r2] = GridEditMode::clamp_span("tips", 1, 1);
     CHECK(c2 == def->effective_min_colspan());
-    CHECK(r2 == 1);
+    CHECK(r2 == def->effective_min_rowspan());
 }
 
 // =============================================================================
@@ -1282,41 +1282,41 @@ TEST_CASE("PanelWidgetDef: partially scalable (one axis)", "[grid_edit][sizing]"
 }
 
 TEST_CASE("clamp_span: clamps to widget min/max", "[grid_edit][sizing]") {
-    // Register a test widget definition with known constraints
-    // Use an existing scalable widget: "temperature" (min 1x1, max 2x2)
+    // Spans are in tracks — a track is half a cell (GridLayout::TRACKS_PER_CELL).
+    // Use an existing scalable widget: "temperature" (min 2x2, max 4x4 tracks).
     auto [c1, r1] = GridEditMode::clamp_span("temperature", 0, 0);
-    CHECK(c1 == 1); // Clamped to min
-    CHECK(r1 == 1);
+    CHECK(c1 == 2); // Clamped to min
+    CHECK(r1 == 2);
 
-    auto [c2, r2] = GridEditMode::clamp_span("temperature", 5, 5);
-    CHECK(c2 == 2); // Clamped to max
-    CHECK(r2 == 2);
+    auto [c2, r2] = GridEditMode::clamp_span("temperature", 9, 9);
+    CHECK(c2 == 4); // Clamped to max
+    CHECK(r2 == 4);
 
-    auto [c3, r3] = GridEditMode::clamp_span("temperature", 1, 1);
-    CHECK(c3 == 1); // Within range
-    CHECK(r3 == 1);
+    auto [c3, r3] = GridEditMode::clamp_span("temperature", 3, 3);
+    CHECK(c3 == 3); // Within range
+    CHECK(r3 == 3);
 
-    auto [c4, r4] = GridEditMode::clamp_span("temperature", 2, 2);
-    CHECK(c4 == 2); // At max
-    CHECK(r4 == 2);
+    auto [c4, r4] = GridEditMode::clamp_span("temperature", 4, 4);
+    CHECK(c4 == 4); // At max
+    CHECK(r4 == 4);
 }
 
 TEST_CASE("clamp_span: non-scalable widget stays fixed", "[grid_edit][sizing]") {
-    // "shutdown" is 1x1, min 1x1, max 1x1
-    auto [c1, r1] = GridEditMode::clamp_span("shutdown", 3, 3);
-    CHECK(c1 == 1);
-    CHECK(r1 == 1);
+    // "macros" is one whole cell on both axes and cannot scale on either.
+    auto [c1, r1] = GridEditMode::clamp_span("macros", 6, 6);
+    CHECK(c1 == 2);
+    CHECK(r1 == 2);
 }
 
 TEST_CASE("clamp_span: asymmetric constraints", "[grid_edit][sizing]") {
-    // "tips" is 4x2, min 2x1, max 6x2 — wide and moderately tall
+    // "tips" is 8x4 tracks, min 4x2, max 12x4 — wide and moderately tall.
     auto [c1, r1] = GridEditMode::clamp_span("tips", 1, 1);
-    CHECK(c1 == 2); // Clamped to min_colspan
-    CHECK(r1 == 1); // rowspan stays at 1 (within [1,2])
+    CHECK(c1 == 4); // Clamped to min_colspan
+    CHECK(r1 == 2); // Clamped to min_rowspan
 
-    auto [c2, r2] = GridEditMode::clamp_span("tips", 6, 3);
-    CHECK(c2 == 6); // At max_colspan
-    CHECK(r2 == 2); // Clamped to max_rowspan
+    auto [c2, r2] = GridEditMode::clamp_span("tips", 12, 6);
+    CHECK(c2 == 12); // At max_colspan
+    CHECK(r2 == 4);  // Clamped to max_rowspan
 }
 
 TEST_CASE("All registered widgets have valid sizing constraints", "[grid_edit][sizing]") {
