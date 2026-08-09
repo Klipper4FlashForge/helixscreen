@@ -56,6 +56,22 @@ uint32_t lv_timer_handler_safe() {
         t = lv_timer_get_next(t);
     }
 
+    // Step animations explicitly.
+    //
+    // LVGL drives them from a PERIODIC timer (repeat_count -1), which the sweep
+    // above paused and the one-shot loop below skips, so before this call no
+    // animation ever advanced in a test — not slowly, not at all. Anything whose
+    // completion runs from an anim ready_cb simply never completed: a modal exit
+    // with animations enabled left its dialog parented to the screen forever, and
+    // the next lv_obj_find_by_name() walked into the outgoing subtree.
+    //
+    // lv_anim_refr_now() is LVGL's own entry point for this (it calls the same
+    // anim_timer body) and it reads lv_tick_elaps(), which process_lvgl() is
+    // already advancing. Ready callbacks may delete widgets and schedule
+    // lv_async_call one-shots, so run it BEFORE the one-shot loop and those
+    // deletions land in the same pump.
+    lv_anim_refr_now();
+
     // Execute one-shot timers (repeat_count >= 1) that are ready.
     // These include lv_async_call (period=0, repeat=1) and scheduled
     // retry timers. Process in a loop since callbacks may create new ones.
