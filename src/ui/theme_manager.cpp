@@ -1073,14 +1073,17 @@ const std::string& pick_tier(const PxTierTables& t, const std::string& base, con
 
 std::unordered_map<std::string, std::string>
 theme_manager_resolve_px_tokens(lv_display_t* display) {
+    // tm_ui_xml_dir(), not the "ui_xml" literal: on ESP-IDF the asset root is a
+    // VFS mount, and the literal would scan an empty path AND miss the
+    // build-time token-table fast path (its guard string-compares the dir).
     PxTierTables t{
-        theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_micro"),
-        theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_tiny"),
-        theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_small"),
-        theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_medium"),
-        theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_large"),
-        theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_xlarge"),
-        theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_xxlarge"),
+        theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_micro"),
+        theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_tiny"),
+        theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_small"),
+        theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_medium"),
+        theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_large"),
+        theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_xlarge"),
+        theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_xxlarge"),
     };
 
     // Two ladders, one classification function. Landscape and square displays
