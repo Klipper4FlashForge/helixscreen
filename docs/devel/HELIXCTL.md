@@ -528,8 +528,9 @@ state, constructed with representative sample data and the real lifecycle:
 | `reset` | Return to the home panel with no overlays or modals open. Returns `{"panel": "home", "overlays_popped": N, "modals_cleared": N, "toasts_cleared": N}` |
 
 `log` reads the same ring buffer the debug bundle's `log_tail` uses — capacity
-is `HELIX_LOG_RING_LINES` (default 2000). It means a scripted run can read the
-app's own log without redirecting stdout to a file first.
+scales with the device's RAM and is overridable via `HELIX_LOG_RING_LINES`. It
+means a scripted run can read the app's own log without redirecting stdout to a
+file first.
 
 #### `reset` — a cheap alternative to rebooting between tests
 

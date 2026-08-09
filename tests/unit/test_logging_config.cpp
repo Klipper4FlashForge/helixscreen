@@ -358,3 +358,44 @@ TEST_CASE("should_add_console: production guard intact when test mode is off",
         REQUIRE(should_add_console(target, true, true, false, StdoutKind::Pipe));
     }
 }
+
+// ============================================================================
+// Ring capacity scales with device RAM
+// ============================================================================
+
+TEST_CASE("ring_capacity_for_ram scales with the machine", "[logging][config][ring]") {
+    using helix::logging::ring_capacity_for_ram;
+
+    SECTION("small boards keep the historical floor, never regress") {
+        REQUIRE(ring_capacity_for_ram(107) == 2000); // AD5M
+        REQUIRE(ring_capacity_for_ram(128) == 2048); // CC1, just over the floor
+    }
+
+    SECTION("mid-range boards get proportionally more") {
+        // AD5X: 473 MB -> 7568 lines, ~4x the old fixed 2000.
+        REQUIRE(ring_capacity_for_ram(473) == 7568);
+        REQUIRE(ring_capacity_for_ram(473) > ring_capacity_for_ram(128));
+    }
+
+    SECTION("large machines are capped — more lines stop paying for themselves") {
+        REQUIRE(ring_capacity_for_ram(2048) == 20000);
+        REQUIRE(ring_capacity_for_ram(8192) == 20000);
+    }
+
+    SECTION("failed detection falls back to the floor rather than 0") {
+        REQUIRE(ring_capacity_for_ram(0) == 2000);
+    }
+
+    SECTION("monotonic in RAM") {
+        size_t prev = 0;
+        for (size_t mb : {0u, 64u, 107u, 128u, 256u, 473u, 512u, 1024u, 2048u, 4096u}) {
+            size_t cap = ring_capacity_for_ram(mb);
+            if (mb > 0) {
+                REQUIRE(cap >= prev);
+            }
+            REQUIRE(cap >= 2000);
+            REQUIRE(cap <= 20000);
+            prev = cap;
+        }
+    }
+}

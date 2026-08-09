@@ -7,6 +7,7 @@
 #endif
 #include "lvgl_assert_handler.h"
 #include "lvgl_log_handler.h"
+#include "platform_capabilities.h"
 #include "system/helix_paths.h"
 #ifndef HELIX_WATCHDOG
 #include "system/crash_error_log_sink.h"
@@ -171,21 +172,32 @@ std::shared_ptr<MonotonicRingSink> g_ring_sink;
 // be lower so the ring captures debug). Recorded for the bundle's log_meta.
 spdlog::level::level_enum g_effective_log_level = spdlog::level::warn;
 
-// Default ring capacity (messages). Tunable via HELIX_LOG_RING_LINES so a
-// constrained device can shrink it. ~2000 lines ≈ a few hundred KB at typical
-// line lengths — well within budget even on the 14 MB-diet AD5M.
-constexpr size_t kDefaultRingLines = 2000;
+// Floor ring capacity (messages), and the fallback when RAM detection fails.
+// Capacity otherwise scales with the device — see ring_capacity_for_ram(). This
+// is the historical fixed size, kept as the floor so the smallest boards (AD5M
+// at ~107 MB) keep exactly what they had: ~2000 lines ≈ 300 KB at typical line
+// lengths. Tunable in both directions via HELIX_LOG_RING_LINES.
+constexpr size_t kMinRingLines = 2000;
+
+/// Upper bound: past a few thousand lines a bundle reader is scrolling, not
+/// diagnosing, and the memory stops paying for itself.
+constexpr size_t kMaxRingLines = 20000;
+
+/// ~150 bytes per retained line (≈119 bytes of text plus std::string overhead,
+/// measured against real AD5X bundles), so 16 lines/MB budgets ~0.24% of RAM.
+constexpr size_t kRingLinesPerMb = 16;
 
 size_t resolve_ring_capacity() {
-    size_t lines = kDefaultRingLines;
+    // Explicit override always wins — a constrained board can pin it down and a
+    // developer chasing something can pin it up.
     if (const char* env = std::getenv("HELIX_LOG_RING_LINES")) {
         char* end = nullptr;
         unsigned long long v = std::strtoull(env, &end, 10);
         if (end != env && v > 0) {
-            lines = static_cast<size_t>(v);
+            return static_cast<size_t>(v);
         }
     }
-    return lines;
+    return ring_capacity_for_ram(PlatformCapabilities::detect().total_ram_mb);
 }
 
 // Whether the ring buffer captures DEBUG (the diagnostic win) or matches the
@@ -614,6 +626,16 @@ void init(const LogConfig& config) {
     // Log what we configured (at debug level so it's not noisy)
     spdlog::debug("[Logging] Initialized: target={}, console={}, backtrace=32 messages",
                   log_target_name(effective_target), config.enable_console ? "yes" : "no");
+}
+
+size_t ring_capacity_for_ram(size_t total_ram_mb) {
+    // total_ram_mb == 0 means detection failed (non-Linux, unreadable
+    // /proc/meminfo); fall back to the historical size rather than guessing.
+    if (total_ram_mb == 0) {
+        return kMinRingLines;
+    }
+    const size_t scaled = total_ram_mb * kRingLinesPerMb;
+    return std::clamp(scaled, kMinRingLines, kMaxRingLines);
 }
 
 LogTarget parse_log_target(const std::string& str) {

@@ -271,6 +271,26 @@ void init_early();
 void init(const LogConfig& config);
 
 /**
+ * @brief Ring-buffer capacity for a device with `total_ram_mb` of RAM
+ *
+ * The debug ring is the only place a bundle can recover live DEBUG context on a
+ * device whose persistent sinks run at WARN, so its useful size is "how far back
+ * can we see" — and that should scale with the machine rather than being one
+ * number chosen for the smallest board. Roughly 0.24% of RAM (~16 lines/MB at
+ * ~150 bytes a line), floored at the historical 2000 so no device regresses and
+ * capped so a desktop does not hoard megabytes it will never read.
+ *
+ * Deliberately keyed on TOTAL ram, not available: MemAvailable at logging-init
+ * time depends on boot ordering, which would give the same printer a different
+ * ring every boot and shrink it hardest under memory pressure — precisely when
+ * the diagnostics matter most.
+ *
+ * @param total_ram_mb Total system RAM in MB (0 = detection failed, use floor)
+ * @return Ring capacity in lines
+ */
+size_t ring_capacity_for_ram(size_t total_ram_mb);
+
+/**
  * @brief Parse log target from string
  *
  * @param str One of: "auto", "journal", "syslog", "file", "console"

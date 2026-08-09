@@ -1834,8 +1834,8 @@ Size the in-memory log ring, in messages. The ring sink is what a debug bundle h
 | Property | Value |
 |----------|-------|
 | **Values** | Positive integer (message count). Zero, negative, and unparseable values are ignored. |
-| **Default** | `2000` (≈ a few hundred KB at typical line lengths) |
-| **File** | `src/system/logging_init.cpp` |
+| **Default** | Scales with total RAM: `clamp(total_ram_mb × 16, 2000, 20000)` |
+| **File** | `src/system/logging_init.cpp` (`ring_capacity_for_ram()`) |
 
 ```bash
 # Shrink the ring on a very tight device
@@ -1845,7 +1845,21 @@ HELIX_LOG_RING_LINES=500 ./build/bin/helix-screen
 HELIX_LOG_RING_LINES=500
 ```
 
-The default was chosen to stay well inside budget even on the 14 MB-diet AD5M, so most platforms have no reason to change it.
+Capacity is derived from the machine rather than fixed, because the ring's useful
+size is "how far back can we see" and that should track the hardware. At roughly
+150 bytes per retained line the formula budgets ~0.24% of RAM:
+
+| Device | RAM | Lines | Ring RAM |
+|--------|-----|-------|----------|
+| AD5M | 107 MB | 2000 (floor) | ~300 KB |
+| CC1 | 128 MB | 2048 | ~300 KB |
+| AD5X | 473 MB | 7568 | ~1.1 MB |
+| Pi / CB1 | 2 GB+ | 20000 (cap) | ~2.9 MB |
+
+The 2000 floor is the historical fixed size, so no device regresses; it is also
+the fallback when RAM detection fails. Keyed on **total** RAM, not `MemAvailable`
+— the latter depends on boot ordering, which would resize the ring every boot and
+shrink it hardest under memory pressure, exactly when the history matters most.
 
 ### `HELIX_BUNDLE_LOG_DEBUG`
 
