@@ -8,6 +8,7 @@
 #include "moonraker_client_mock.h"
 #include "printer_state.h"
 #include "test_helpers/cfs_test_access.h"
+#include "test_helpers/scoped_home_confirm_prompter.h"
 #include "test_helpers/toolchanger_test_access.h"
 #include "test_helpers/update_queue_test_access.h"
 
@@ -126,7 +127,7 @@ TEST_CASE("unhomed load asks before homing, and confirming proceeds", "[ams][hom
     backend.homed = false;
 
     int prompts = 0;
-    helix::ui::set_home_confirm_prompter(
+    ScopedHomeConfirmPrompter guard(
         [&prompts](std::function<void()> confirm, std::function<void()>) {
             ++prompts;
             confirm();
@@ -138,7 +139,6 @@ TEST_CASE("unhomed load asks before homing, and confirming proceeds", "[ams][hom
     REQUIRE(backend.captured.size() == 2);
     CHECK(backend.captured[0] == "G28");
     CHECK(backend.captured[1] == "CHANGE_TOOL LANE=lane1");
-    helix::ui::set_home_confirm_prompter({});
 }
 
 TEST_CASE("cancelling the home sends nothing and lands IDLE", "[ams][homing][confirm]") {
@@ -146,7 +146,7 @@ TEST_CASE("cancelling the home sends nothing and lands IDLE", "[ams][homing][con
     HomingProbeBackend backend;
     backend.homed = false;
 
-    helix::ui::set_home_confirm_prompter(
+    ScopedHomeConfirmPrompter guard(
         [](std::function<void()>, std::function<void()> cancel) { cancel(); });
 
     backend.ensure_homed_then("CHANGE_TOOL LANE=lane1");
@@ -155,8 +155,9 @@ TEST_CASE("cancelling the home sends nothing and lands IDLE", "[ams][homing][con
     CHECK(backend.get_system_info().action == AmsAction::IDLE);
 
     // A cancelled op must not wedge the backend: the next load still works.
+    // homed=true means ensure_homed_then() never consults the prompter, so
+    // the still-installed cancel lambda above is simply never invoked.
     backend.homed = true;
-    helix::ui::set_home_confirm_prompter({});
     backend.ensure_homed_then("CHANGE_TOOL LANE=lane2");
     REQUIRE(backend.captured.size() == 1);
     CHECK(backend.captured[0] == "CHANGE_TOOL LANE=lane2");
@@ -168,7 +169,7 @@ TEST_CASE("an already-homed printer is never prompted", "[ams][homing][confirm]"
     backend.homed = true;
 
     int prompts = 0;
-    helix::ui::set_home_confirm_prompter(
+    ScopedHomeConfirmPrompter guard(
         [&prompts](std::function<void()> confirm, std::function<void()>) {
             ++prompts;
             confirm();
@@ -178,14 +179,13 @@ TEST_CASE("an already-homed printer is never prompted", "[ams][homing][confirm]"
 
     CHECK(prompts == 0);
     REQUIRE(backend.captured.size() == 1);
-    helix::ui::set_home_confirm_prompter({});
 }
 
 TEST_CASE("with no prompter installed the home proceeds silently", "[ams][homing][confirm]") {
     LVGLTestFixture fixture;
     HomingProbeBackend backend;
     backend.homed = false;
-    helix::ui::set_home_confirm_prompter({});
+    ScopedHomeConfirmPrompter guard;
 
     backend.ensure_homed_then("CHANGE_TOOL LANE=lane1");
 
@@ -257,7 +257,7 @@ TEST_CASE("a dismissal that resolves asynchronously still unwedges dispatch_oper
     backend.homed = false;
 
     std::function<void()> pending_cancel;
-    helix::ui::set_home_confirm_prompter(
+    ScopedHomeConfirmPrompter guard(
         [&pending_cancel](std::function<void()>, std::function<void()> cancel) {
             // Neither callback is invoked here -- the dialog is "open" and
             // will resolve later, from an LVGL event (button, ESC, or
@@ -273,18 +273,30 @@ TEST_CASE("a dismissal that resolves asynchronously still unwedges dispatch_oper
     // still busy -- expected while the dialog is open, not the bug.
     REQUIRE(pending_cancel);
     CHECK(backend.get_system_info().action == AmsAction::SELECTING);
+    CHECK(ToolChangerTestAccess::has_pending_dispatch(backend));
     CHECK(backend.captured.empty());
 
     // Resolve it -- standing in for backdrop-tap/ESC/Cancel, all of which
-    // reach this same callback through HomeConfirmModal's fallback net.
+    // reach this same callback through HomeConfirmModal's fallback net,
+    // which (final-review I2) routes through AmsBackendToolChanger::
+    // on_home_confirmation_declined() -> abandon_dispatch() -- the SAME
+    // unwind a direct Cancel-button tap uses. Check more than just the
+    // action: a partial unwind that only reset action to IDLE would leave
+    // pending_dispatch_action_ armed (so the next macro ack, or a newer
+    // dispatch, would resolve against a generation nothing is tracking
+    // anymore) and operation_detail stale (the sidebar would keep showing
+    // "Tool swap" under an IDLE action) -- that gap is exactly what made the
+    // "exactly like the Cancel button" claim in this test's name untrue
+    // before the fix.
     pending_cancel();
 
     CHECK(backend.get_system_info().action == AmsAction::IDLE);
+    CHECK_FALSE(ToolChangerTestAccess::has_pending_dispatch(backend));
+    CHECK(backend.get_system_info().operation_detail.empty());
     CHECK(backend.captured.empty());
 
     // Not wedged: a subsequent dispatch still works.
     backend.homed = true;
-    helix::ui::set_home_confirm_prompter({});
     auto err = ToolChangerTestAccess::call_dispatch_operation(backend, "SELECT_TOOL T=2",
                                                               AmsAction::SELECTING);
     REQUIRE(err.success());

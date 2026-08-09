@@ -206,6 +206,15 @@ AmsError AmsSubscriptionBackend::refuse_if_printing() const {
     return AmsErrorHelper::print_active(is_paused, /*pause_allows_ops=*/!self_homes);
 }
 
+void AmsSubscriptionBackend::on_home_confirmation_declined() {
+    spdlog::info("{} User declined the pre-op home; operation cancelled", backend_log_tag());
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        system_info_.action = AmsAction::IDLE;
+    }
+    emit_event(EVENT_STATE_CHANGED);
+}
+
 bool AmsSubscriptionBackend::toolhead_homed() const {
     if (!api_) {
         // No connection: callers fall back to dispatching directly, so the
@@ -305,13 +314,7 @@ AmsSubscriptionBackend::ensure_homed_then(std::string gcode, std::function<void(
             if (token.expired()) { // L081_OK: main-thread only, see comment above
                 return;
             }
-            spdlog::info("{} User declined the pre-op home; operation cancelled",
-                         backend_log_tag());
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                system_info_.action = AmsAction::IDLE;
-            }
-            emit_event(EVENT_STATE_CHANGED);
+            on_home_confirmation_declined();
         });
 
     return AmsErrorHelper::success();

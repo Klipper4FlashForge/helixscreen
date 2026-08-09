@@ -5,6 +5,7 @@
 #include "ams_backend_toolchanger.h"
 #include "ams_error.h"
 
+#include <mutex>
 #include <string>
 #include <utility>
 
@@ -25,5 +26,14 @@ class ToolChangerTestAccess {
     static AmsError call_dispatch_operation(AmsBackendToolChanger& b, std::string gcode,
                                             AmsAction action) {
         return b.dispatch_operation(std::move(gcode), action);
+    }
+
+    /// Whether an optimistic dispatch is still armed and awaiting resolution.
+    /// A cancelled home confirmation must clear this -- otherwise the next
+    /// macro ack (or a superseding dispatch) resolves against a generation
+    /// that no longer describes anything in flight.
+    static bool has_pending_dispatch(const AmsBackendToolChanger& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.pending_dispatch_action_.has_value();
     }
 };

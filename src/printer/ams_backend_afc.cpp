@@ -1503,6 +1503,17 @@ uint64_t AmsBackendAfc::begin_dispatch_locked(AmsAction action) {
     return generation;
 }
 
+void AmsBackendAfc::on_home_confirmation_declined() {
+    // dispatch_generation_ is the generation of whichever dispatch is
+    // currently pending -- the confirmation modal is exclusive (nothing else
+    // can dispatch while it's up), so it is always the one that just prompted.
+    // abandon_dispatch() clears pending_dispatch_action_/operation_detail and
+    // resets action_start_time_ in addition to the action -> IDLE reset the
+    // base class's default performs; skip the base call entirely here since
+    // abandon_dispatch() already emits EVENT_STATE_CHANGED.
+    abandon_dispatch(dispatch_generation_);
+}
+
 void AmsBackendAfc::abandon_dispatch(uint64_t generation) {
     {
         std::lock_guard<std::mutex> lock(mutex_);

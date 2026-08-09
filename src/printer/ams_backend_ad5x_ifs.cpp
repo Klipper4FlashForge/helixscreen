@@ -4965,6 +4965,21 @@ bool AmsBackendAd5xIfs::validate_slot_index(int slot_index) const {
 
 // ensure_homed_then() provided by AmsSubscriptionBackend
 
+void AmsBackendAd5xIfs::on_home_confirmation_declined() {
+    // load_filament()/unload_filament() arm HEATING + begin_phase_tracking_locked()
+    // before ever reaching ensure_homed_then(); undo that half here, then let the
+    // base implementation reset the action to IDLE and emit. Without this the
+    // phase tracker stays active, apply_phase_action_locked() has no `!= IDLE`
+    // guard, and the next extruder-temp frame flips IDLE -> HEATING again with a
+    // fresh action_start_time_ -- 300s later check_action_timeout() latches ERROR
+    // on an operation the user already declined.
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        end_phase_tracking_locked();
+    }
+    AmsSubscriptionBackend::on_home_confirmation_declined();
+}
+
 void AmsBackendAd5xIfs::check_action_timeout() {
     // Indeterminate ("Working…") detector (#1065 row 14). While a phase-tracked
     // load/unload is in flight, if no genuine progress signal (temp-VALUE change,

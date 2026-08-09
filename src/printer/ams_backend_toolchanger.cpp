@@ -447,6 +447,15 @@ uint64_t AmsBackendToolChanger::begin_dispatch_locked(AmsAction action) {
     return generation;
 }
 
+void AmsBackendToolChanger::on_home_confirmation_declined() {
+    // dispatch_generation_ is the generation of whichever dispatch is
+    // currently pending -- the confirmation modal is exclusive (nothing else
+    // can dispatch while it's up), so it is always the one that just
+    // prompted. abandon_dispatch() already emits EVENT_STATE_CHANGED, so skip
+    // the base class's default entirely.
+    abandon_dispatch(dispatch_generation_);
+}
+
 void AmsBackendToolChanger::abandon_dispatch(uint64_t generation) {
     {
         std::lock_guard<std::mutex> lock(mutex_);

@@ -88,6 +88,10 @@ class AmsSubscriptionBackend : public AmsBackend {
     ///                   themselves (CFS Fork variant).
     /// @param silent     Suppress REQUEST_TIMEOUT toasts on the payload. True
     ///                   matches every backend except CFS, which passes false.
+    ///
+    /// @warning Call from the main thread only — checks toolhead_homed(),
+    /// which (in the production override) reads an LVGL subject, and may
+    /// synchronously create a confirmation modal.
     AmsError ensure_homed_then(std::string gcode, std::function<void()> on_complete = nullptr,
                                std::function<void(const MoonrakerError&)> on_error = nullptr,
                                uint32_t timeout_ms = MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS,
@@ -103,6 +107,23 @@ class AmsSubscriptionBackend : public AmsBackend {
     /// Called before stop() releases the subscription.
     /// Lock IS held.
     virtual void on_stopping() {}
+
+    /// Called when the user declines the pre-operation home prompt raised by
+    /// ensure_homed_then(). Default resets system_info_.action to IDLE (under
+    /// mutex_) and emits EVENT_STATE_CHANGED -- exactly what a plain Cancel
+    /// looked like before the confirmation prompt existed.
+    ///
+    /// Override when the backend arms additional optimistic state BEFORE
+    /// calling ensure_homed_then() (a phase tracker, a pending-dispatch
+    /// generation, ...): the default only clears system_info_.action, so any
+    /// such state is left active. A backend whose apply-loop lacks an
+    /// explicit `!= IDLE` guard (AmsBackendAd5xIfs's phase tracker did) then
+    /// gets re-armed busy by the very next status frame -- the user declines
+    /// a home and the backend wedges for a full timeout window before
+    /// latching a fabricated error. Unwind exactly what was armed before the
+    /// prompt, then call the base implementation (or replicate its IDLE
+    /// reset) to finish the cancel.
+    virtual void on_home_confirmation_declined();
 
     /// Extra checks before subscribing (e.g., ToolChanger requires tools discovered).
     /// Return error to abort start. Lock IS held.
