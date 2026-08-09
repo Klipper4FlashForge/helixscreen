@@ -82,17 +82,30 @@ jobs:
         max_attempts: 3
         command: npm install
 
+    # Hygiene, not the timeout fix: the restore step downloads the 1.8 GB
+    # `ccache-ubuntu-22.04-` entry (the `ccache-nightly-` entries get evicted
+    # whenever the repo is over its Actions cache quota), and a 500M cap threw
+    # away roughly three quarters of it before compiling a line. 2G matches
+    # build.yml so the fallback survives intact.
     - name: Configure ccache
       run: |
-        ccache --set-config=max_size=500M
+        ccache --set-config=max_size=2G
         ccache --set-config=compression=true
         ccache -z
 
     - name: Setup Python venv
       run: make venv-setup
 
+    # This step does the same work build.yml splits across two steps, but on a
+    # smaller budget: build.yml allows 75 + 70 = 145 minutes, this one allowed
+    # 120 for both. On a cold cache that is not enough: the 2026-08-09 run died
+    # having compiled 754 of 754 test objects, killed at the link. Sized to the
+    # same work, within the job's own 180-minute cap.
+    #
+    # `make test` needs no -j: mk/tests.mk re-execs itself with -j$(NPROC) when
+    # MAKEFLAGS carries no jobserver, so it is already parallel here.
     - name: Build application + tests
-      timeout-minutes: 120
+      timeout-minutes: 165
       run: |
         make -j$(nproc)
         make test

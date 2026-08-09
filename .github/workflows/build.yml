@@ -10,7 +10,11 @@ jobs:
   compile-ubuntu:
     name: Compile (Ubuntu 22.04)
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    # The two build steps below budget 75 + 70 minutes, so a 120-minute job cap
+    # could kill the job before either step reached its own timeout — and did
+    # come within 30 seconds of it on a cold cache. Sized to cover the step
+    # budgets plus setup rather than silently undercutting them.
+    timeout-minutes: 165
 
     steps:
     - name: Checkout repository
