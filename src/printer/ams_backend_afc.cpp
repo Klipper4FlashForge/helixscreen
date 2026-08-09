@@ -3,8 +3,6 @@
 
 #include "ams_backend_afc.h"
 
-#include "ams_bypass_policy.h"
-
 #include "ui_error_reporting.h"
 #include "ui_modal.h"
 #include "ui_notification.h"
@@ -12,6 +10,7 @@
 
 #include "action_prompt_manager.h"
 #include "afc_defaults.h"
+#include "ams_bypass_policy.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
 #include "printer_discovery.h"
@@ -3383,10 +3382,29 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
     }
     std::sort(new_lane_names.begin(), new_lane_names.end(), natural_less);
 
-    // Initialize lanes if this is the first time or count changed
-    if (!slots_.is_initialized() ||
-        static_cast<int>(new_lane_names.size()) != slots_.slot_count()) {
-        initialize_slots(new_lane_names);
+    // This payload is a supplement (colours, materials, spool ids), never the
+    // authority on WHICH lanes exist. Klipper's object list is. AFC empties the
+    // whole lane_data namespace at the start of every PREP (AFC.py
+    // delete_lane_data) and writes each lane's key back only as that lane's own
+    // prep finishes (AFC_BoxTurtle.py send_lane_data), which for a BoxTurtle
+    // means driving each lane motor in turn. The namespace is therefore
+    // partially populated for seconds on every boot, and query_lane_data() is
+    // one-shot and never retried. Resizing to match it once pinned a 4-lane
+    // BoxTurtle to a single slot for the whole session: initialize_slots()
+    // clears discovered_lane_names_, and the status handler only iterates slots
+    // that exist, so lanes 2-4 became permanently invisible.
+    //
+    // So: only ever bootstrap an empty registry, and prefer discovery when it
+    // has something to offer. Once the registry exists, leave its shape alone.
+    if (!slots_.is_initialized()) {
+        // By value: initialize_slots() clears discovered_lane_names_ on its way
+        // out, which would dangle a reference bound to it.
+        const std::vector<std::string> initial_lanes =
+            !discovered_lane_names_.empty() ? discovered_lane_names_ : new_lane_names;
+        if (initial_lanes.empty()) {
+            return; // Nothing names a lane yet; a later payload or discovery will.
+        }
+        initialize_slots(initial_lanes);
     }
 
     // Track whether any lane has tool_loaded — used to update filament_loaded
