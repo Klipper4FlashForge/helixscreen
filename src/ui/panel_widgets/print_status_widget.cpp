@@ -306,13 +306,14 @@ void PrintStatusWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
     // lv_image_set_src plus a shared_ptr swap (no observer lifecycle changes, no
     // widget destruction), and the setter always runs on the UI thread — so the
     // extra deferral would only add a frame and a stale-read window.
-    print_psram_thumb_observer_ =
-        observe_int_immediate<PrintStatusWidget>(printer_state_.get_print_psram_thumb_gen_subject(),
-                                                 this, [](PrintStatusWidget* self, int /*gen*/) {
-                                                     if (!self->widget_obj_)
-                                                         return;
-                                                     self->apply_esp_psram_thumbnail();
-                                                 });
+    print_psram_thumb_observer_ = observe_int_immediate<PrintStatusWidget>(
+        printer_state_.get_print_psram_thumb_gen_subject(), this,
+        [](PrintStatusWidget* self, int /*gen*/) {
+            if (!self->widget_obj_)
+                return;
+            self->apply_esp_psram_thumbnail();
+        },
+        printer_state_.get_subjects_lifetime());
 #endif
 
     auto& fsm = helix::FilamentSensorManager::instance();
@@ -457,8 +458,16 @@ void PrintStatusWidget::detach() {
     print_thumbnail_path_observer_.reset();
 #if defined(HELIX_PLATFORM_ESP32)
     print_psram_thumb_observer_.reset();
-    // Release our reference now that no widget of ours points at the buffer.
     // detach() is main-thread, which EspPsramThumbnail's destructor requires.
+    // Stop the image pointing at the descriptor before releasing: instances are
+    // recycled, so the lv_image outlives this detach, and for a variable source
+    // lv_image stores the raw pointer (it only strdups paths). Ours can be the
+    // last reference — PrinterState drops its own on the next filename change.
+    if (esp_thumbnail_ && print_card_active_thumb_ &&
+        lv_image_get_src(print_card_active_thumb_) == esp_thumbnail_->dsc()) {
+        lv_image_set_src(print_card_active_thumb_,
+                         helix::PrinterPrintState::kNoThumbnailPlaceholder);
+    }
     esp_thumbnail_.reset();
 #endif
     filament_runout_observer_.reset();

@@ -11,10 +11,15 @@ bool enabled() {
         if (const char* env = std::getenv("HELIX_TOKEN_TABLE")) {
             return env[0] == '1';
         }
-#if defined(HELIX_RELEASE_BUILD) || defined(HELIX_TOKEN_TABLE_DEFAULT_ON)
-        return true; // immutable ui_xml: table is safe and fast
+        // ESP32 ships ui_xml as a read-only frogfs image, so the compiled table
+        // can never disagree with what the device would have parsed. Every other
+        // platform — including cross-built embedded Linux — keeps live parsing:
+        // editing ~/helixscreen/ui_xml and relaunching is the only way to adjust
+        // tokens on a device that cannot rebuild.
+#if defined(HELIX_PLATFORM_ESP32) || defined(HELIX_TOKEN_TABLE_DEFAULT_ON)
+        return true;
 #else
-        return false; // dev build: preserve edit-XML-and-relaunch
+        return false;
 #endif
     }();
     return on;

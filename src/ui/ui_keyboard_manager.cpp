@@ -1039,6 +1039,7 @@ void KeyboardManager::init(lv_obj_t* parent) {
     lv_keyboard_set_popovers(keyboard_, true);
 #endif
 
+#if defined(ESP_PLATFORM)
     // lv_theme_default installs an animated style transition on pressed states.
     // Style-transition ticks can't be localized to one button, so every frame
     // of that animation invalidates the ENTIRE keyboard widget — per tap, on
@@ -1062,7 +1063,6 @@ void KeyboardManager::init(lv_obj_t* parent) {
     lv_obj_set_style_transition(keyboard_, &s_no_transition, LV_PART_ITEMS | LV_STATE_PRESSED);
     lv_obj_set_style_transition(keyboard_, &s_no_transition, LV_PART_ITEMS | LV_STATE_CHECKED);
 
-#if defined(ESP_PLATFORM)
     // Even with transitions gone, LVGL's state compare is STRUCTURAL: any
     // style entry whose selector includes PRESSED makes lv_obj_add_state()
     // invalidate the ENTIRE widget on every press AND release — measured

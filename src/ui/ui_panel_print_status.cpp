@@ -320,7 +320,8 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, IMoonrakerAPI* a
     // extra deferral would only add a frame and a stale-read window.
     print_psram_thumb_observer_ = ui::observe_int_immediate<PrintStatusPanel>(
         printer_state_.get_print_psram_thumb_gen_subject(), this,
-        [](PrintStatusPanel* self, int /*gen*/) { self->apply_esp_psram_thumbnail(); });
+        [](PrintStatusPanel* self, int /*gen*/) { self->apply_esp_psram_thumbnail(); },
+        ps_subjects);
 #endif
 
     spdlog::debug("[{}] Subscribed to PrinterState subjects", get_name());
@@ -2769,9 +2770,20 @@ void PrintStatusPanel::on_print_state_changed(PrintJobState job_state) {
             cached_thumbnail_path_.clear();
 #if defined(HELIX_PLATFORM_ESP32)
             // Release our reference to the PSRAM buffer. Main thread (job-state
-            // handler), as EspPsramThumbnail's destructor requires. The widget
-            // keeps showing the final frame until a new src is set — PrinterState
-            // still holds the last reference until the next print installs one.
+            // handler), as EspPsramThumbnail's destructor requires.
+            //
+            // The src must stop naming the descriptor BEFORE the release: for a
+            // variable source lv_image stores the raw pointer (it only strdups
+            // paths), and ours can be the last reference — PrinterState drops
+            // its own the moment the filename changes, and no replacement
+            // arrives at all when the next file has no thumbnail or the fetch
+            // fails. The placeholder is what the shared path subject publishes
+            // for a file with no thumbnail, so it is a valid src here.
+            if (esp_thumbnail_ && print_thumbnail_ &&
+                lv_image_get_src(print_thumbnail_) == esp_thumbnail_->dsc()) {
+                lv_image_set_src(print_thumbnail_,
+                                 helix::PrinterPrintState::kNoThumbnailPlaceholder);
+            }
             esp_thumbnail_.reset();
 #endif
             pending_gcode_filename_.clear();

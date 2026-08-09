@@ -2197,14 +2197,27 @@ bool Config::save() {
 
     ensure_storage();
 
-    std::ostringstream oss;
-    oss << std::setw(2) << data << std::endl;
-    if (!storage_->store(oss.str())) {
-        // FileConfigStorage (the default backend) already reports the specific
-        // failure via NOTIFY_ERROR + CONFIG_RECORD_ERROR at the failing phase
-        // (open/write/rename/exception) — don't double-toast here. Non-file
-        // backends get at least this log line.
-        spdlog::error("[Config] Failed to save via {}", storage_->describe());
+    // Serialization is inside the handler: operator<< dumps with
+    // error_handler_t::strict, which throws json::type_error 316 on invalid
+    // UTF-8 in any stored string, and the stream buffer can throw bad_alloc on
+    // a RAM-constrained target. save() has 133 call sites, many inside LVGL
+    // event callbacks, where an escaping exception unwinds through a C frame.
+    try {
+        std::ostringstream oss;
+        oss << std::setw(2) << data << std::endl;
+        if (!storage_->store(oss.str())) {
+            // FileConfigStorage (the default backend) already reports the specific
+            // failure via NOTIFY_ERROR + CONFIG_RECORD_ERROR at the failing phase
+            // (open/write/rename/exception) — don't double-toast here. Non-file
+            // backends get at least this log line.
+            spdlog::error("[Config] Failed to save via {}", storage_->describe());
+            return false;
+        }
+    } catch (const std::exception& e) {
+        NOTIFY_ERROR("Failed to save configuration: {}", e.what());
+        LOG_ERROR_INTERNAL("Exception while saving config to {}: {}", path, e.what());
+        CONFIG_RECORD_ERROR("file_io", "config_write_failed",
+                            fmt::format("exception: {}", e.what()));
         return false;
     }
     spdlog::trace("[Config] saved successfully to {}", storage_->describe());
