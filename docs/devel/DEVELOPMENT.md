@@ -84,6 +84,9 @@ make compile_commands  # Generate compile_commands.json for IDE/LSP
 | `--real-moonraker` | Connect to real printer |
 | `--real-files` | Use real printer files |
 | `--real-ams` | Use a real AMS backend instead of mock |
+| `--real-sensors` | Use real sensor data instead of mock |
+| `--no-ams` | Disable mock AMS (for runout modal testing) |
+| `--disconnected` | Simulate a disconnected printer |
 
 **Test mode keyboard shortcuts:** S=screenshot, P=test prompt, N=test notification, Q/Esc=quit
 
