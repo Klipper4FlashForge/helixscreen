@@ -173,7 +173,14 @@ TEST_CASE_METHOD(LVGLTestFixture,
         REQUIRE(DisplaySettingsManager::instance().get_display_sleep_sec() == 60);
     }
 
+    // Re-init rather than leaving the singleton torn down. A deinitialised
+    // DisplaySettingsManager withdraws settings_animations_enabled from the XML
+    // registry, so HelixTestFixture::reset_all()'s force-animations-off lookup
+    // silently finds nothing and the next fixture's init_subjects() restores the
+    // platform default (animations ON). Modal exits then animate for 150ms and
+    // every later modal test that pumps less than that sees the outgoing dialog.
     DisplaySettingsManager::instance().deinit_subjects();
+    DisplaySettingsManager::instance().init_subjects();
 }
 
 TEST_CASE_METHOD(LVGLTestFixture,
@@ -191,7 +198,14 @@ TEST_CASE_METHOD(LVGLTestFixture,
     REQUIRE(DisplaySettingsManager::instance().get_display_dim_sec() == 300);
     REQUIRE(DisplaySettingsManager::instance().get_display_sleep_sec() == 300);
 
+    // Re-init rather than leaving the singleton torn down. A deinitialised
+    // DisplaySettingsManager withdraws settings_animations_enabled from the XML
+    // registry, so HelixTestFixture::reset_all()'s force-animations-off lookup
+    // silently finds nothing and the next fixture's init_subjects() restores the
+    // platform default (animations ON). Modal exits then animate for 150ms and
+    // every later modal test that pumps less than that sees the outgoing dialog.
     DisplaySettingsManager::instance().deinit_subjects();
+    DisplaySettingsManager::instance().init_subjects();
 }
 
 TEST_CASE_METHOD(
@@ -212,7 +226,14 @@ TEST_CASE_METHOD(
     REQUIRE(DisplaySettingsManager::instance().get_display_sleep_sec() == 600);
     REQUIRE(config->get<int>("/display/sleep_sec", -1) == 600);
 
+    // Re-init rather than leaving the singleton torn down. A deinitialised
+    // DisplaySettingsManager withdraws settings_animations_enabled from the XML
+    // registry, so HelixTestFixture::reset_all()'s force-animations-off lookup
+    // silently finds nothing and the next fixture's init_subjects() restores the
+    // platform default (animations ON). Modal exits then animate for 150ms and
+    // every later modal test that pumps less than that sees the outgoing dialog.
     DisplaySettingsManager::instance().deinit_subjects();
+    DisplaySettingsManager::instance().init_subjects();
 }
 
 // ============================================================================
@@ -251,7 +272,14 @@ TEST_CASE_METHOD(LVGLTestFixture,
     REQUIRE_FALSE(mgr.is_display_sleeping());
 
     mgr.wake_display();
+    // Re-init rather than leaving the singleton torn down. A deinitialised
+    // DisplaySettingsManager withdraws settings_animations_enabled from the XML
+    // registry, so HelixTestFixture::reset_all()'s force-animations-off lookup
+    // silently finds nothing and the next fixture's init_subjects() restores the
+    // platform default (animations ON). Modal exits then animate for 150ms and
+    // every later modal test that pumps less than that sees the outgoing dialog.
     DisplaySettingsManager::instance().deinit_subjects();
+    DisplaySettingsManager::instance().init_subjects();
 }
 
 // ============================================================================
