@@ -109,6 +109,20 @@ class DebugBundleCollector {
     /// Filter a Klipper object list to filament-related objects (public for testing)
     static nlohmann::json filter_filament_objects(const nlohmann::json& object_list);
 
+    /// Drop the Stats padding from a raw klippy.log tail (public for testing).
+    ///
+    /// Keeps every non-Stats line, the `stats_context` Stats lines immediately
+    /// preceding each one, and the final `stats_tail` Stats lines. Klipper emits
+    /// one ~850-byte "Stats <time>: ..." line per second, so a raw tail is almost
+    /// entirely load averages — condensing lets the same byte budget reach hours
+    /// back instead of minutes.
+    ///
+    /// Defaults are sized against real AD5X data (bundle UJCCQP6S: 21 events per
+    /// 616s): an 82-minute fetch window condenses to ~340 KiB worst case, versus
+    /// 512 KiB for the 10 minutes the old raw tail could reach.
+    static std::string condense_klipper_log(const std::string& raw, int stats_context = 3,
+                                            int stats_tail = 60);
+
     /// Collect platform-specific diagnostic files (e.g., AD5X Adventurer5M.json)
     /// served via Moonraker's /server/files/<root>/<path> endpoint. Files that
     /// don't exist (404) are skipped silently; other errors are recorded in-line.
@@ -149,7 +163,8 @@ class DebugBundleCollector {
 
     /// Fetch the tail of a log file from Moonraker using HTTP Range requests
     static std::string fetch_log_tail(const std::string& base_url, const std::string& endpoint,
-                                      int num_lines, int tail_bytes = 524288);
+                                      int num_lines, int tail_bytes = 524288,
+                                      bool condense_klipper = false);
 
     /// Check if a key name matches a sensitive pattern
     static bool is_sensitive_key(const std::string& key);

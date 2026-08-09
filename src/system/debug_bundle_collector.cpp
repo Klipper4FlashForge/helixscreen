@@ -1009,9 +1009,54 @@ json DebugBundleCollector::collect_platform_files() {
 // Klipper / Moonraker log tails (via HTTP Range for memory safety)
 // =============================================================================
 
+std::string DebugBundleCollector::condense_klipper_log(const std::string& raw, int stats_context,
+                                                       int stats_tail) {
+    const size_t keep_ctx = stats_context < 0 ? 0 : static_cast<size_t>(stats_context);
+    const size_t keep_tail = stats_tail < 0 ? 0 : static_cast<size_t>(stats_tail);
+    const size_t ring_cap = std::max(keep_ctx, keep_tail);
+
+    std::istringstream stream(raw);
+    std::deque<std::string> pending_stats; // most recent Stats not yet emitted
+    std::string out;
+    std::string line;
+
+    auto emit = [&out](const std::string& s) {
+        if (!out.empty())
+            out += '\n';
+        out += s;
+    };
+
+    while (std::getline(stream, line)) {
+        if (line.rfind("Stats ", 0) == 0) {
+            if (ring_cap == 0)
+                continue;
+            pending_stats.push_back(std::move(line));
+            if (pending_stats.size() > ring_cap)
+                pending_stats.pop_front();
+            continue;
+        }
+        // Event line: emit the run-up Stats in order, then the event itself.
+        while (pending_stats.size() > keep_ctx)
+            pending_stats.pop_front();
+        for (const auto& s : pending_stats)
+            emit(s);
+        pending_stats.clear();
+        emit(line);
+    }
+
+    // Trailing Stats: keep the most recent few so a reader still sees the
+    // sysload/buffer_time picture at the moment the bundle was taken.
+    while (pending_stats.size() > keep_tail)
+        pending_stats.pop_front();
+    for (const auto& s : pending_stats)
+        emit(s);
+
+    return out;
+}
+
 std::string DebugBundleCollector::fetch_log_tail(const std::string& base_url,
                                                  const std::string& endpoint, int num_lines,
-                                                 int tail_bytes) {
+                                                 int tail_bytes, bool condense_klipper) {
     try {
         auto req = std::make_shared<HttpRequest>();
         req->method = HTTP_GET;
@@ -1057,19 +1102,29 @@ std::string DebugBundleCollector::fetch_log_tail(const std::string& base_url,
             return {};
         }
 
+        std::string body = std::move(resp->body);
+
+        // If we got a partial response (206), the first line is likely truncated -- drop it
+        if (status == 206) {
+            size_t nl = body.find('\n');
+            body = (nl == std::string::npos) ? std::string{} : body.substr(nl + 1);
+        }
+
+        // Condense BEFORE the num_lines cap: the whole point is to spend the
+        // line budget on events rather than on Klipper's per-second Stats spam.
+        if (condense_klipper) {
+            size_t raw_bytes = body.size();
+            body = condense_klipper_log(body);
+            spdlog::debug("[DebugBundle] Condensed {} to {} bytes from {}", raw_bytes, body.size(),
+                          endpoint);
+        }
+
         // Take last N lines from the response
-        std::istringstream stream(resp->body);
+        std::istringstream stream(body);
         std::deque<std::string> lines;
         std::string line;
 
-        // If we got a partial response (206), the first line is likely truncated -- skip it
-        bool skip_first = (status == 206);
-
         while (std::getline(stream, line)) {
-            if (skip_first) {
-                skip_first = false;
-                continue;
-            }
             lines.push_back(std::move(line));
             if (static_cast<int>(lines.size()) > num_lines) {
                 lines.pop_front();
@@ -1096,7 +1151,14 @@ std::string DebugBundleCollector::collect_klipper_log_tail(int num_lines) {
     std::string base_url = get_moonraker_url();
     if (base_url.empty())
         return {};
-    return fetch_log_tail(base_url, "/server/files/klippy.log", num_lines);
+    // 4 MiB of raw klippy.log is ~80 minutes of Klipper's 1-Stats-line-per-second
+    // output, versus ~10 minutes for the old 512 KiB tail. condense_klipper_log()
+    // then strips the Stats padding, so the retained payload stays in the same
+    // ballpark as before while reaching far enough back to contain the incident
+    // (bundle UJCCQP6S: 615 of 635 captured lines were Stats, and the MCU
+    // shutdown being investigated had scrolled off hours earlier).
+    return fetch_log_tail(base_url, "/server/files/klippy.log", num_lines,
+                          /*tail_bytes=*/4 * 1024 * 1024, /*condense_klipper=*/true);
 }
 
 std::string DebugBundleCollector::collect_moonraker_log_tail(int num_lines) {

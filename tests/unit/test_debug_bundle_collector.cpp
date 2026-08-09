@@ -13,6 +13,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <zlib.h>
 
@@ -977,4 +978,104 @@ TEST_CASE("DebugBundleCollector: build_update_info reports an unsnapshotted upda
 
     REQUIRE(upd["channel"].get<std::string>() == "unknown");
     REQUIRE(upd["r2_base_url"].get<std::string>() == "unknown");
+}
+
+// ============================================================================
+// condense_klipper_log — Stats padding removal
+// ============================================================================
+
+namespace {
+
+/// Build a synthetic klippy.log: `stats_before` Stats lines, an event, then
+/// `stats_after` more Stats lines.
+std::string make_klippy_log(int stats_before, const std::string& event, int stats_after) {
+    std::string s;
+    for (int i = 0; i < stats_before; ++i) {
+        s += "Stats " + std::to_string(i) + ".0: sysload=0.5 print_stall=7\n";
+    }
+    if (!event.empty()) {
+        s += event + "\n";
+    }
+    for (int i = 0; i < stats_after; ++i) {
+        s += "Stats " + std::to_string(1000 + i) + ".0: sysload=0.9 print_stall=7\n";
+    }
+    return s;
+}
+
+int count_lines_with(const std::string& hay, const std::string& needle) {
+    int n = 0;
+    std::istringstream st(hay);
+    std::string l;
+    while (std::getline(st, l)) {
+        if (l.find(needle) != std::string::npos)
+            ++n;
+    }
+    return n;
+}
+
+} // namespace
+
+TEST_CASE("DebugBundleCollector: condense_klipper_log keeps every event line",
+          "[debug-bundle][klippy]") {
+    // 5000 Stats lines burying two events — the real-world shape (bundle
+    // UJCCQP6S was 615 Stats to 20 events).
+    std::string raw = make_klippy_log(2500, "MCU 'mcu' shutdown: Timer too close", 0) +
+                      make_klippy_log(2500, "Transition to shutdown state", 0);
+
+    auto out = helix::DebugBundleCollector::condense_klipper_log(raw);
+
+    // Both events survive — this is the whole point of the filter.
+    REQUIRE(count_lines_with(out, "Timer too close") == 1);
+    REQUIRE(count_lines_with(out, "Transition to shutdown state") == 1);
+
+    // And the Stats padding is gone: 5000 in, at most context-per-event + tail out.
+    int stats_out = count_lines_with(out, "Stats ");
+    REQUIRE(stats_out <= 3 + 3 + 60);
+    REQUIRE(out.size() < raw.size() / 10);
+}
+
+TEST_CASE("DebugBundleCollector: condense_klipper_log keeps run-up Stats before an event",
+          "[debug-bundle][klippy]") {
+    std::string raw = make_klippy_log(50, "MCU 'mcu' shutdown: Timer too close", 0);
+
+    auto out = helix::DebugBundleCollector::condense_klipper_log(raw, /*stats_context=*/5,
+                                                                 /*stats_tail=*/0);
+
+    // Exactly the 5 Stats immediately preceding the event, in order, then the event.
+    REQUIRE(count_lines_with(out, "Stats ") == 5);
+    REQUIRE(count_lines_with(out, "Timer too close") == 1);
+    REQUIRE(out.find("Stats 45.0") != std::string::npos); // 5 before the event (0..49)
+    REQUIRE(out.find("Stats 44.0") == std::string::npos); // 6 before — dropped
+    // Ordering: context precedes the event it explains.
+    REQUIRE(out.find("Stats 49.0") < out.find("Timer too close"));
+}
+
+TEST_CASE("DebugBundleCollector: condense_klipper_log keeps a trailing Stats tail",
+          "[debug-bundle][klippy]") {
+    std::string raw = make_klippy_log(0, "", 500);
+
+    auto out = helix::DebugBundleCollector::condense_klipper_log(raw, /*stats_context=*/5,
+                                                                 /*stats_tail=*/10);
+
+    // Only the most recent 10, so the reader still sees load at bundle time.
+    REQUIRE(count_lines_with(out, "Stats ") == 10);
+    REQUIRE(out.find("Stats 1499.0") != std::string::npos); // last
+    REQUIRE(out.find("Stats 1489.0") == std::string::npos); // 11th from the end
+}
+
+TEST_CASE("DebugBundleCollector: condense_klipper_log handles degenerate input",
+          "[debug-bundle][klippy]") {
+    REQUIRE(helix::DebugBundleCollector::condense_klipper_log("").empty());
+
+    // Stats-only log with no tail requested collapses to nothing.
+    REQUIRE(helix::DebugBundleCollector::condense_klipper_log(make_klippy_log(0, "", 20), 5, 0)
+                .empty());
+
+    // A log with no Stats at all is passed through intact.
+    std::string events = "Extract filament 3 with length 90\nUnlocking filament 3";
+    REQUIRE(helix::DebugBundleCollector::condense_klipper_log(events) == events);
+
+    // "Statsomething" is not a Stats line — prefix match must require the space.
+    std::string tricky = "Statsomething happened";
+    REQUIRE(helix::DebugBundleCollector::condense_klipper_log(tricky, 0, 0) == tricky);
 }
