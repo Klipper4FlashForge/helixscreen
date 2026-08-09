@@ -615,10 +615,12 @@ helix::CellMetrics GridEditMode::current_metrics(lv_area_t* out_content) const {
     int cols = grid_count_tracks(lv_obj_get_style_grid_column_dsc_array(container_, LV_PART_MAIN));
     int rows = grid_count_tracks(lv_obj_get_style_grid_row_dsc_array(container_, LV_PART_MAIN));
     if (cols <= 0) {
-        cols = GridLayout::get_cols(breakpoint);
+        cols = GridLayout::get_cols(breakpoint, lv_area_get_width(&content),
+                                    lv_area_get_height(&content));
     }
     if (rows <= 0) {
-        rows = GridLayout::get_rows(breakpoint);
+        rows = GridLayout::get_rows(breakpoint, lv_area_get_width(&content),
+                                    lv_area_get_height(&content));
     }
     return grid_cell_metrics(lv_area_get_width(&content), lv_area_get_height(&content), cols, rows,
                              GridLayout::gutter_px());
@@ -1357,8 +1359,10 @@ void GridEditMode::handle_drag_move(lv_event_t* /*e*/) {
     }
 
     // Check placement validity: build a temporary grid with only VISIBLE widgets
-    // (hardware-gated widgets may be enabled in config but not placed on screen)
-    GridLayout temp_grid(breakpoint);
+    // (hardware-gated widgets may be enabled in config but not placed on screen).
+    // Sized from the metrics above so the bounds check runs against the grid the
+    // container is actually laid out on.
+    GridLayout temp_grid(breakpoint, {m.cols, m.rows});
     const auto& entries = config_->page_entries(static_cast<size_t>(page_index_));
     std::string dragged_id;
     if (drag_cfg_idx_ >= 0 && static_cast<size_t>(drag_cfg_idx_) < entries.size()) {
@@ -1494,8 +1498,10 @@ void GridEditMode::handle_drag_end(lv_event_t* /*e*/) {
                 spdlog::debug("[GridEditMode] Drag end: target occupied by '{}', rejecting drop",
                               entries[static_cast<size_t>(occupant_cfg_idx)].id);
             } else {
-                // Empty cell — check bounds and collision (only visible widgets)
-                GridLayout temp_grid(breakpoint);
+                // Empty cell — check bounds and collision (only visible widgets),
+                // against the grid the container is actually laid out on.
+                const helix::CellMetrics m = current_metrics();
+                GridLayout temp_grid(breakpoint, {m.cols, m.rows});
 
                 for (const auto& entry : entries) {
                     if (!entry.enabled || !entry.has_grid_position()) {
@@ -1721,7 +1727,7 @@ void GridEditMode::handle_resize_move(lv_event_t* /*e*/) {
     }
 
     // Check collision with other widgets
-    GridLayout temp_grid(breakpoint);
+    GridLayout temp_grid(breakpoint, {m.cols, m.rows});
     const auto& entries = config_->page_entries(static_cast<size_t>(page_index_));
     for (const auto& e : entries) {
         if (!e.enabled || !e.has_grid_position()) {
@@ -1842,7 +1848,7 @@ void GridEditMode::handle_resize_end(lv_event_t* /*e*/) {
 
         if (changed && span_changed) {
             // Validate against other widgets
-            GridLayout temp_grid(breakpoint);
+            GridLayout temp_grid(breakpoint, {m.cols, m.rows});
             const auto& entries = config_->page_entries(static_cast<size_t>(page_index_));
             for (const auto& e : entries) {
                 if (!e.enabled || !e.has_grid_position()) {
@@ -2396,7 +2402,8 @@ void GridEditMode::place_widget_from_catalog(const std::string& widget_id) {
     UiBreakpoint breakpoint =
         bp_subj ? as_breakpoint(lv_subject_get_int(bp_subj)) : UiBreakpoint::Medium;
 
-    GridLayout temp_grid(breakpoint);
+    const helix::CellMetrics m = current_metrics();
+    GridLayout temp_grid(breakpoint, {m.cols, m.rows});
     const auto& entries = config_->page_entries(static_cast<size_t>(page_index_));
 
     // Only include widgets actually visible on screen (not hardware-gated invisible ones)

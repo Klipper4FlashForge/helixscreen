@@ -10,6 +10,7 @@
 
 #include "config.h"
 #include "grid_layout.h"
+#include "layout_manager.h"
 #include "observer_factory.h"
 #include "panel_widget.h"
 #include "panel_widget_config.h"
@@ -277,8 +278,35 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
     UiBreakpoint breakpoint = bp_subj ? as_breakpoint(lv_subject_get_int(bp_subj))
                                       : UiBreakpoint::Medium; // Default to MEDIUM
 
+    // Measure what the tracks will actually be laid out inside. The track count
+    // is derived from the CONTENT box, so this measurement decides the shape of
+    // the whole dashboard, not just the pixel size it reports downstream.
+    //
+    // The layout pass is mandatory: on a first build the container has just been
+    // created and its coordinates are still unresolved, so the content box reads
+    // zero. Safe here because the grid was switched off at LV_LAYOUT_NONE above
+    // and the children have not been created yet — there is no half-built grid
+    // for a layout pass to cascade over (#983).
+    lv_obj_update_layout(container);
+    int content_w = lv_obj_get_content_width(container);
+    int content_h = lv_obj_get_content_height(container);
+    if (content_w <= 0 || content_h <= 0) {
+        // Nothing legitimate produces this; a container that measures empty
+        // after an explicit layout pass is detached or zero-sized. Fall back to
+        // the panel extent, which oversizes the grid slightly but keeps the
+        // dashboard usable, rather than collapsing to the MIN_TRACKS floor and
+        // silently disabling every widget too large for a 4x4 grid.
+        auto& lm = LayoutManager::instance();
+        spdlog::error("[PanelWidgetManager] '{}' content box measured {}x{} after layout; "
+                      "falling back to the {}x{} panel extent",
+                      panel_id, content_w, content_h, lm.width(), lm.height());
+        content_w = lm.width();
+        content_h = lm.height();
+    }
+    const GridDimensions grid_dims = GridLayout::get_dimensions(breakpoint, content_w, content_h);
+
     // Build grid placement tracker to compute positions
-    GridLayout grid(breakpoint);
+    GridLayout grid(breakpoint, grid_dims);
 
     // Correlate widget entries with config entries to get grid positions
     const auto& entries = widget_config.page_entries(page_index);
@@ -586,15 +614,16 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
     // grid's tracks are square by construction, so a page that uses only the
     // top half of them leaves the bottom half empty rather than stretching
     // every widget to fill the height.
-    const int cols = GridLayout::get_cols(breakpoint);
-    const int grid_rows = GridLayout::get_rows(breakpoint);
+    const int cols = grid_dims.cols;
+    const int grid_rows = grid_dims.rows;
 
-    spdlog::debug("[PanelWidgetManager] Grid layout: {}cols x {}rows (bp={}) for '{}'", cols,
-                  grid_rows, to_int(breakpoint), panel_id);
+    spdlog::debug(
+        "[PanelWidgetManager] Grid layout: {}cols x {}rows (bp={}, content {}x{}) for '{}'", cols,
+        grid_rows, to_int(breakpoint), content_w, content_h, panel_id);
 
     auto& dsc = grid_descriptors_[make_cache_key(panel_id, page_index)];
-    dsc.col_dsc = GridLayout::make_col_dsc(breakpoint);
-    dsc.row_dsc = GridLayout::make_row_dsc(breakpoint);
+    dsc.col_dsc = GridLayout::make_col_dsc(cols);
+    dsc.row_dsc = GridLayout::make_row_dsc(grid_rows);
 
     // Configure grid padding now, but DEFER activating LV_LAYOUT_GRID and
     // installing the grid descriptor array until all children have been created
@@ -613,11 +642,12 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
     lv_obj_set_style_pad_row(container, gutter, 0);
 
     // Compute cell pixel dimensions for size callbacks and card backgrounds.
-    int container_w = lv_obj_get_content_width(container);
-    int container_h = lv_obj_get_content_height(container);
-    CellMetrics metrics = grid_cell_metrics(container_w, container_h, cols, grid_rows, gutter);
+    // Same content box the track counts came from, so the two cannot disagree.
+    CellMetrics metrics = grid_cell_metrics(content_w, content_h, cols, grid_rows, gutter);
     int cell_w = static_cast<int>(metrics.cell_w);
     int cell_h = static_cast<int>(metrics.cell_h);
+    spdlog::debug("[PanelWidgetManager] Track geometry: {:.2f}x{:.2f}px, gutter {}px",
+                  metrics.cell_w, metrics.cell_h, gutter);
 
     // Create merged card backgrounds behind adjacent 1x1 widgets.
     // BFS flood-fill finds connected components of 1x1 cells, then a single

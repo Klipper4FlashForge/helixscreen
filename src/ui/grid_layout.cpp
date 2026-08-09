@@ -3,7 +3,6 @@
 
 #include "grid_layout.h"
 
-#include "layout_manager.h"
 #include "theme_manager.h"
 
 #include <spdlog/spdlog.h>
@@ -14,6 +13,17 @@ namespace helix {
 
 namespace {
 constexpr int GRID_TRACK_SCAN_MAX = 256;
+
+// The track clamps are stated in tracks because that is what the grid
+// descriptor holds, but the quantiser works in whole cells, so it clamps the
+// cell count. Both bounds are whole cells, which is what lets the clamp run in
+// cell space without ever producing an odd track count.
+static_assert(GridLayout::MIN_TRACKS % GridLayout::TRACKS_PER_CELL == 0,
+              "MIN_TRACKS must be a whole number of cells");
+static_assert(GridLayout::MAX_TRACKS % GridLayout::TRACKS_PER_CELL == 0,
+              "MAX_TRACKS must be a whole number of cells");
+constexpr int MIN_CELLS = GridLayout::MIN_TRACKS / GridLayout::TRACKS_PER_CELL;
+constexpr int MAX_CELLS = GridLayout::MAX_TRACKS / GridLayout::TRACKS_PER_CELL;
 } // namespace
 
 static int clamp_bp(UiBreakpoint bp) {
@@ -29,44 +39,48 @@ static int clamp_bp(UiBreakpoint bp) {
 // Static helpers
 // ---------------------------------------------------------------------------
 
-GridDimensions GridLayout::get_dimensions(UiBreakpoint bp) {
-    const int track = GRID_CELL[static_cast<size_t>(clamp_bp(bp))];
-    auto& lm = LayoutManager::instance();
-    // Floored to a whole number of cells: a track is half a cell, so an odd
-    // track count leaves a final half-cell that no whole-cell widget can ever
-    // occupy. Dropping it also spreads less leftover across the remaining
-    // tracks, which is what keeps the cell square.
-    auto tracks = [track](int extent) {
-        const int n = std::clamp(extent / track, MIN_TRACKS, MAX_TRACKS);
-        return n - (n % GridLayout::TRACKS_PER_CELL);
+GridDimensions GridLayout::get_dimensions(UiBreakpoint bp, int content_w, int content_h) {
+    // A cell is TRACKS_PER_CELL tracks, and only a whole cell can be occupied,
+    // so the quantiser counts cells and multiplies back up. Nearest rather than
+    // largest-that-fits: the remainder is spread across the tracks that survive,
+    // so discarding a nearly-complete cell inflates every track on that axis,
+    // while rounding it up shrinks each one by a much smaller share.
+    const int cell = GridLayout::TRACKS_PER_CELL * GRID_CELL[static_cast<size_t>(clamp_bp(bp))];
+    auto tracks = [cell](int content) {
+        const int cells = (std::max(0, content) + cell / 2) / cell;
+        return GridLayout::TRACKS_PER_CELL * std::clamp(cells, MIN_CELLS, MAX_CELLS);
     };
-    return {tracks(lm.width()), tracks(lm.height())};
+    return {tracks(content_w), tracks(content_h)};
 }
 
-int GridLayout::get_cols(UiBreakpoint bp) {
-    return get_dimensions(bp).cols;
+int GridLayout::get_cols(UiBreakpoint bp, int content_w, int content_h) {
+    return get_dimensions(bp, content_w, content_h).cols;
 }
 
-int GridLayout::get_rows(UiBreakpoint bp) {
-    return get_dimensions(bp).rows;
+int GridLayout::get_rows(UiBreakpoint bp, int content_w, int content_h) {
+    return get_dimensions(bp, content_w, content_h).rows;
 }
 
-std::vector<int32_t> GridLayout::make_col_dsc(UiBreakpoint bp) {
-    int ncols = get_cols(bp);
+std::vector<int32_t> GridLayout::make_col_dsc(int ncols) {
+    // A negative count would wrap in the reserve() cast; a descriptor of no
+    // tracks is still a valid, terminated descriptor.
+    const int count = std::max(0, ncols);
     std::vector<int32_t> dsc;
-    dsc.reserve(static_cast<size_t>(ncols) + 1);
-    for (int i = 0; i < ncols; ++i) {
+    dsc.reserve(static_cast<size_t>(count) + 1);
+    for (int i = 0; i < count; ++i) {
         dsc.push_back(LV_GRID_FR(1));
     }
     dsc.push_back(LV_GRID_TEMPLATE_LAST);
     return dsc;
 }
 
-std::vector<int32_t> GridLayout::make_row_dsc(UiBreakpoint bp) {
-    int nrows = get_rows(bp);
+std::vector<int32_t> GridLayout::make_row_dsc(int nrows) {
+    // A negative count would wrap in the reserve() cast; a descriptor of no
+    // tracks is still a valid, terminated descriptor.
+    const int count = std::max(0, nrows);
     std::vector<int32_t> dsc;
-    dsc.reserve(static_cast<size_t>(nrows) + 1);
-    for (int i = 0; i < nrows; ++i) {
+    dsc.reserve(static_cast<size_t>(count) + 1);
+    for (int i = 0; i < count; ++i) {
         dsc.push_back(LV_GRID_FR(1));
     }
     dsc.push_back(LV_GRID_TEMPLATE_LAST);
@@ -77,18 +91,18 @@ std::vector<int32_t> GridLayout::make_row_dsc(UiBreakpoint bp) {
 // Instance methods
 // ---------------------------------------------------------------------------
 
-GridLayout::GridLayout(UiBreakpoint bp) : breakpoint_(bp) {}
+GridLayout::GridLayout(UiBreakpoint bp, GridDimensions dims) : breakpoint_(bp), dims_(dims) {}
 
 GridDimensions GridLayout::dimensions() const {
-    return get_dimensions(breakpoint_);
+    return dims_;
 }
 
 int GridLayout::cols() const {
-    return get_cols(breakpoint_);
+    return dims_.cols;
 }
 
 int GridLayout::rows() const {
-    return get_rows(breakpoint_);
+    return dims_.rows;
 }
 
 bool GridLayout::is_occupied(int col, int row) const {
@@ -282,8 +296,7 @@ const char* GridLayout::failure_text(PlacementFailure reason) {
 }
 
 std::pair<std::vector<GridPlacement>, std::vector<GridPlacement>>
-GridLayout::filter_for_breakpoint(UiBreakpoint bp, const std::vector<GridPlacement>& placements) {
-    auto dims = get_dimensions(bp);
+GridLayout::filter_for_grid(GridDimensions dims, const std::vector<GridPlacement>& placements) {
     std::vector<GridPlacement> fits;
     std::vector<GridPlacement> does_not_fit;
 

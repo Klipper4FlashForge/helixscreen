@@ -97,24 +97,47 @@ class GridLayout {
     /// the cell square: a rotated panel transposes its grid exactly.
     static constexpr int GRID_CELL[NUM_BREAKPOINTS] = {34, 40, 40, 60, 60, 72};
 
-    /// Degenerate-display guard. No shipping panel reaches it — the narrowest
-    /// is 272px against a 34px track, which gives 8.
+    /// Degenerate-display guard, in tracks. Reached only by a content box that
+    /// is empty or has not been laid out yet; the narrowest shipping content
+    /// box is 264px against a 68px cell, which gives 8 tracks.
+    ///
+    /// A whole number of cells, so clamping cannot produce an odd track count.
     static constexpr int MIN_TRACKS = 4;
 
-    /// Ceiling on track count. 1024x600 wants 17 columns and 1920x440 wants 48,
-    /// so any lower cap stretches the track and breaks the square-cell
-    /// invariant. The cost is descriptor entries, not objects: a 48x11 grid is
-    /// 59 int32 values (cols+1 plus rows+1) in the LVGL grid descriptor.
+    /// Ceiling on track count. High enough that no plausible content box
+    /// reaches it — a lower cap would stretch the track and break the
+    /// square-cell invariant instead of merely capping memory. The cost is
+    /// descriptor entries, not objects: a 64x64 grid is 130 int32 values
+    /// (cols+1 plus rows+1) in the LVGL grid descriptor.
+    ///
+    /// A whole number of cells, so clamping cannot produce an odd track count.
     static constexpr int MAX_TRACKS = 64;
 
-    /// Get grid dimensions for a given breakpoint
-    static GridDimensions get_dimensions(UiBreakpoint bp);
+    /// Track counts for a content rectangle at a given breakpoint.
+    ///
+    /// `content_w` and `content_h` are the container's CONTENT box — what the
+    /// tracks are actually laid out inside — not the panel resolution. Panel
+    /// chrome takes a different bite out of each axis and out of each
+    /// orientation, so dividing the panel extent sizes every track against a
+    /// rectangle the grid never occupies.
+    ///
+    /// Each axis is quantised to the NEAREST whole cell rather than the
+    /// largest that fits. Flooring throws away up to a full cell and spreads it
+    /// across the survivors, which on some panels stretches a track by a
+    /// quarter of its target; rounding keeps the delivered track within half a
+    /// cell of GRID_CELL on both axes, which is what keeps the cell square.
+    /// The result is a whole number of cells, so the track count is always even.
+    ///
+    /// A zero or negative extent yields the MIN_TRACKS floor, deliberately and
+    /// identically on both axes, rather than a plausible-looking grid derived
+    /// from nothing.
+    static GridDimensions get_dimensions(UiBreakpoint bp, int content_w, int content_h);
 
-    /// Get the number of columns for a breakpoint
-    static int get_cols(UiBreakpoint bp);
+    /// Column track count for a content rectangle. See get_dimensions().
+    static int get_cols(UiBreakpoint bp, int content_w, int content_h);
 
-    /// Get the number of rows for a breakpoint
-    static int get_rows(UiBreakpoint bp);
+    /// Row track count for a content rectangle. See get_dimensions().
+    static int get_rows(UiBreakpoint bp, int content_w, int content_h);
 
     /// Inter-track gap the home grid is built with, in px.
     ///
@@ -125,16 +148,22 @@ class GridLayout {
     /// not been styled yet.
     static int gutter_px();
 
-    /// Generate LVGL column descriptor array for a breakpoint.
+    /// Generate an LVGL column descriptor array of `ncols` equal tracks.
     /// Returns vector of int32_t values terminated by LV_GRID_TEMPLATE_LAST.
-    static std::vector<int32_t> make_col_dsc(UiBreakpoint bp);
+    static std::vector<int32_t> make_col_dsc(int ncols);
 
-    /// Generate LVGL row descriptor array for a breakpoint.
+    /// Generate an LVGL row descriptor array of `nrows` equal tracks.
     /// Returns vector of int32_t values terminated by LV_GRID_TEMPLATE_LAST.
-    static std::vector<int32_t> make_row_dsc(UiBreakpoint bp);
+    static std::vector<int32_t> make_row_dsc(int nrows);
 
-    /// Construct a GridLayout for a specific breakpoint
-    explicit GridLayout(UiBreakpoint bp);
+    /// Construct a GridLayout for placement on a grid of the given size.
+    ///
+    /// The size is supplied rather than derived: it is a property of the
+    /// container being subdivided, and a caller that has already built a
+    /// descriptor must place widgets against the same track counts that
+    /// descriptor was built with. Callers holding a container get `dims` from
+    /// get_dimensions(); GridEditMode reads them off the live descriptor.
+    GridLayout(UiBreakpoint bp, GridDimensions dims);
 
     /// Get the breakpoint this layout was constructed for
     UiBreakpoint breakpoint() const {
@@ -244,10 +273,10 @@ class GridLayout {
         return placements_;
     }
 
-    /// Check which placements from a list fit within this layout's grid.
+    /// Check which placements from a list fit within a grid of the given size.
     /// Returns two vectors: (fits, does_not_fit)
     static std::pair<std::vector<GridPlacement>, std::vector<GridPlacement>>
-    filter_for_breakpoint(UiBreakpoint bp, const std::vector<GridPlacement>& placements);
+    filter_for_grid(GridDimensions dims, const std::vector<GridPlacement>& placements);
 
     /// Clear all placements
     void clear();
@@ -264,6 +293,7 @@ class GridLayout {
     GridPlacement* find_placement_mut(const std::string& widget_id);
 
     UiBreakpoint breakpoint_;
+    GridDimensions dims_;
     std::vector<GridPlacement> placements_;
 };
 
