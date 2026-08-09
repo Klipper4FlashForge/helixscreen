@@ -154,7 +154,9 @@ Some steps only apply to how your machine is set up. A step your system never re
 
 On systems that support **Endless Spool**, the context menu also includes:
 
-- **Backup Slot** — Choose a backup slot to automatically switch to if this spool runs out mid-print. The backup must hold a compatible material; the menu warns you if you pick an incompatible one. Shown only on backends that support endless spool (AFC, Happy Hare, and CFS auto-refill).
+- **Backup Slot** — Choose a backup slot to automatically switch to if this spool runs out mid-print. The backup must hold a compatible material; the menu warns you if you pick an incompatible one. This picker appears on **AFC (Box Turtle)** and on **single-unit Happy Hare** setups; a multi-unit Happy Hare shows its groups read-only, because the command that edits them acts on whichever unit is selected.
+
+**The Creality CFS is different: there is nothing to pick.** Its auto-refill is managed entirely by the box's firmware, so the Backup Slot row appears **greyed out** and no backup arrows are drawn between the slots. The box decides for itself which slot can stand in, and it only accepts one holding the **exact same material and the exact same colour**. If nothing matches, or auto-refill is switched off, it does not swap at all: the print stays paused and HelixScreen tells you which of the two it was. Auto-refill itself can be turned on or off from the CFS device actions.
 
 > **Assigning tools:** Tool-to-slot mapping isn't set from the slot context menu — it's done from the **filament mapping card** that appears when you select a file to print. See [Tool Mapping](#tool-mapping) below.
 
@@ -317,7 +319,7 @@ Tap the menu icon on the CFS panel to access device actions:
 | Action | What It Does |
 |--------|--------------|
 | **Refresh** | Re-read all RFID tags across all units — useful after swapping spools while the printer was off |
-| **Auto-Refill** | Toggle automatic backup spool switching — when enabled, if the current spool runs out mid-print, the system loads the next spool of the same material |
+| **Auto-Refill** | Toggle automatic backup spool switching. A runout pauses the print either way; with this on, the box then swaps in another slot **only** if one holds the exact same material and colour, and resumes. With it off, or with no match, the print stays paused |
 | **Nozzle Clean** | Trigger the nozzle cleaning routine using the CFS's built-in silicone strip |
 
 ---

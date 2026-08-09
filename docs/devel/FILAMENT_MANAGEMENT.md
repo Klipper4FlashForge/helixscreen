@@ -1188,6 +1188,11 @@ to `is_tool_changer(get_type())`, which is false for an MMU.
 
 - **Reset** (`reset()`) sends `MMU_HOME` to home the selector. Used for general state reset.
 - **Recover** (`recover()`) sends `MMU_RECOVER` to attempt error recovery without full re-homing.
+- **Clear fault** (`clear_fault(slot_index)`) is a third, gate-scoped door onto the same command.
+  Happy Hare overrides the base default (which forwards to `cancel()`): `slot_index >= 0` sends
+  `MMU_RECOVER GATE=<n>`, and `slot_index < 0` (what both UI callers pass whenever nothing is
+  loaded, which is the state Reset is pressed in) drops the parameter and sends bare
+  `MMU_RECOVER`, re-syncing the whole selector.
 
 ---
 
@@ -1393,9 +1398,12 @@ the next session's stale error. (Verified against the add-on source on a live Bo
 empty**, bounded by a wall-clock deadline and by `kMessageDrainMaxClears` as a runaway guard
 (not as the expected stopping point); see `message_drain_budget_` / `message_drain_deadline_`.
 
-**`AFC.error_state` is not the error signal.** It stayed `false` for a whole session while
-`message` held an error. It drives only `error_segment_` and a `classify_error` catch-all.
-`message.type == "error"` is the real signal.
+**`AFC.error_state` is not the *detection* signal.** It stayed `false` for a whole session while
+`message` held an error, so `message.type == "error"` is what tells you a fault exists. But
+`error_state_` is far from inert: besides `error_segment_` and the `classify_error` catch-all, it
+is the entire gate on `AmsBackendAfc::current_error()`, which returns `nullopt` unless it is set.
+That is the whole status-driven fault channel for AFC; see
+§ [Two error channels](#two-error-channels).
 
 **The hub sensor cannot attribute a strand to a lane.** One sensor per unit, shared. When a
 strand is stuck past the hub, every lane on that unit looks identical — during a live failure
@@ -1682,9 +1690,10 @@ to the int subject `afc_fault_segment` and returns the stripped text:
 | Path | Modal | Call site |
 |---|---|---|
 | `!!` -> `GcodeErrorRouter` -> `RecoveryModalPresenter` | `ActionPromptModal` | `recovery_modal_presenter.cpp` `present()` |
+| `AmsAction::ERROR` rising edge -> `AmsErrorBridge` -> `backend->current_error()` -> `RecoveryModalPresenter` | `ActionPromptModal` | same call site as the row above, reached with no `!!` line involved |
 | `printer.AFC.message` -> `AmsAction::ERROR` -> `AmsPanel` | `AmsLoadingErrorModal` | `ui_panel_ams.cpp` `show_loading_error_modal()` |
 
-Both can fire for the same fault. The graphic itself is `ui_xml/components/afc_fault_path.xml` —
+All three can fire for the same fault. The graphic itself is `ui_xml/components/afc_fault_path.xml` —
 four labelled checkpoints joined by the three **gaps** between them, all bound to
 `afc_fault_segment` alone; 0 (`PathSegment::NONE`) hides the whole component.
 
@@ -1827,7 +1836,7 @@ The device operations overlay exposes AFC maintenance actions:
 | Change Blade | `AFC_CHANGE_BLADE` | Initiate blade change procedure |
 | Park | `AFC_PARK` | Park the AFC system |
 | Clean Brush | `AFC_BRUSH` | Run nozzle cleaning brush cycle |
-| Reset Motor Timer | `AFC_RESET_MOTOR_TIME` | Reset motor run-time counter |
+| Reset Motor Timer | `AFC_RESET_MOTOR_TIME LANE={name}` | Reset motor run-time counter. The command is **per-lane**, so `execute_device_action("reset_motor")` loops every configured lane and sends one `AFC_RESET_MOTOR_TIME LANE=<name>` each, aborting on the first failure. No lanes configured is a `not_supported` error, not a silent success |
 
 #### LED Toggle
 
@@ -2289,7 +2298,7 @@ Per `printers/FLASHFORGE_AD5X_SUPPORT.md` § "lessWaste-Specific Variables" and 
 | Command | Action |
 |---------|--------|
 | `INSERT_PRUTOK_IFS PRUTOK={port}` | Load filament from port (looks up temp from config) |
-| `IFS_REMOVE_PRUTOK` | Toolhead unload — retract the currently-loaded filament |
+| `IFS_REMOVE_PRUTOK` | **Bare, with no `PRUTOK=`: a guaranteed no-op.** `cmd_IFS_REMOVE_PRUTOK` defaults `PRUTOK=0` and returns immediately on `prutok == 0` (`zmod_ifs.py:1113`). Given an explicit `PRUTOK=N` it forwards to the firmware's `_IFS_REMOVE_PRUTOK` macro for lane N, which is how `IFS_REMOVE_CURRENT_PRUTOK` calls it internally. HelixScreen never sends it, bare or otherwise |
 | `REMOVE_PRUTOK_IFS PRUTOK={port}` | Toolhead unload (heat + retract the currently-loaded filament). **Not** a per-port jog — `PRUTOK=N` does not eject an idle lane; see note below |
 | `IFS_F11 PRUTOK={port} LEN={mm} SPEED={s} CHECK=0` | Cold per-lane retract — reverse one idle lane's feed motor toward the spool; no heat, no presence guard. Used for idle-lane recovery (#996) |
 | `A_CHANGE_FILAMENT CHANNEL={port}` | Full tool change |
@@ -2301,7 +2310,7 @@ Per `printers/FLASHFORGE_AD5X_SUPPORT.md` § "lessWaste-Specific Variables" and 
 
 **Plugin compatibility**: HelixScreen auto-detects the variable prefix from whichever `save_variables` are present on the printer. Both lessWaste and bambufy use the same schema, just different prefixes.
 
-**Unload is toolhead-oriented, not per-lane**: Both `REMOVE_PRUTOK_IFS PRUTOK={port}` and `IFS_REMOVE_PRUTOK` run the toolhead unload sequence — they heat the hotend and retract whatever filament is currently loaded to the toolhead. The `PRUTOK={port}` argument does **not** select an idle lane to jog independently; observed on a real AD5X (native ZMOD), `REMOVE_PRUTOK_IFS PRUTOK=N` unloaded the currently-loaded filament (in a different slot) and ignored port N, and can error `No filament N in IFS` when IFS state disagrees with presence. A cold per-lane retract, by contrast, **is** available at the gcode layer via `IFS_F11 PRUTOK={n} LEN={mm} SPEED={s} CHECK=0` (core ZMOD — a thin wrapper over raw serial `F11 C{port}…` with no heating and, with `CHECK=0`, no presence guard). This is why HelixScreen keeps the currently-loaded slot unloadable after runout (#995); and #996 implements HelixScreen calling `IFS_F11` directly for idle-lane recovery (e.g. a snapped chunk stuck in a lane's feed path — no hot nozzle involved). See `printer-research/FLASHFORGE_AD5X_IFS_ANALYSIS.md` §12.
+**Unload is toolhead-oriented, not per-lane**: `REMOVE_PRUTOK_IFS PRUTOK={port}` runs the toolhead unload sequence — it heats the hotend and retracts whatever filament is currently loaded to the toolhead. The `PRUTOK={port}` argument does **not** select an idle lane to jog independently; observed on a real AD5X (native ZMOD), `REMOVE_PRUTOK_IFS PRUTOK=N` unloaded the currently-loaded filament (in a different slot) and ignored port N. (Bare `IFS_REMOVE_PRUTOK` is not a third way to do this: it is a firmware no-op, see the table above.) An older note here claimed the command "can error `No filament N in IFS`". **It cannot.** That string lives in `print_result()` on `RET_SILK` (`zmod_ifs.py:789`), which is reached only from the load paths; the error the unload chain actually raises is `"Failed to extract filament from extruder"` (`zmod_ifs.py:1140`), when the extruder sensor is still tripped after the retract. A cold per-lane retract, by contrast, **is** available at the gcode layer via `IFS_F11 PRUTOK={n} LEN={mm} SPEED={s} CHECK=0` (core ZMOD — a thin wrapper over raw serial `F11 C{port}…` with no heating and, with `CHECK=0`, no presence guard). This is why HelixScreen keeps the currently-loaded slot unloadable after runout (#995); and #996 implements HelixScreen calling `IFS_F11` directly for idle-lane recovery (e.g. a snapped chunk stuck in a lane's feed path — no hot nozzle involved). See `printer-research/FLASHFORGE_AD5X_IFS_ANALYSIS.md` §12.
 
 #### Per-lane eject (`eject_lane()`)
 
