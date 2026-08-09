@@ -24,6 +24,7 @@
 #include "ui_temperature_utils.h"
 #include "ui_toast_manager.h"
 #include "ui_update_queue.h"
+#include "ui_utils.h"
 
 #include "ams_state.h"
 #include "app_constants.h"
@@ -3736,7 +3737,15 @@ void PrintStatusPanel::ensure_preview_current() {
         return; // Nothing to show.
     }
 
-    if (action.load_thumbnail && print_thumbnail_) {
+    if (action.load_thumbnail && print_thumbnail_ &&
+        helix::ui::is_on_active_screen(print_thumbnail_)) {
+        // The overlay root is parented under the active screen, so a thumbnail
+        // that no longer roots there has been reparented onto lv_layer_top() to
+        // await deletion. Setting its image src would cascade lv_image_set_src →
+        // update_align → lv_obj_update_layout across the layer and recurse into
+        // sibling condemned grid subtrees whose children may already be freed
+        // (#1001). Same guard the home-panel widget applies to its own thumbs.
+        //
         // Nothing here fetches: that belongs to ActivePrintMediaManager, the
         // single writer of the shared subject. The only two sources are our own
         // cache and that subject's current value.
