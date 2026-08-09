@@ -1245,10 +1245,27 @@ bool Application::init_logging() {
 
     LogConfig log_config;
 
-    // Resolve log level with precedence: --log-level > -v flags > config file > defaults
+    // HELIX_LOG_* is read HERE, not only translated by scripts/helix-launcher.sh
+    // into --log-dest/--log-file/--log-level. The launcher is not always in the
+    // picture: a systemd unit with Environment=, a hand-run binary over SSH, and
+    // third-party init scripts (ZMOD ships its own fork of ours) all start
+    // helix-screen directly, and until now every HELIX_LOG_* they exported was
+    // silently ignored — the variables looked configurable and were not (#1249).
+    // The launcher's flags still win, because a CLI flag outranks the env below.
+    const std::string env_log_dest =
+        log_env_override("HELIX_LOG_DEST", &is_valid_log_target, log_target_accepted_values());
+    const std::string env_log_level =
+        log_env_override("HELIX_LOG_LEVEL", &is_valid_log_level, log_level_accepted_values());
+    // No validity predicate for a path: any string is a candidate, and an
+    // unopenable one degrades to the platform's normal sink inside init().
+    const std::string env_log_file = log_env_override("HELIX_LOG_FILE", nullptr, nullptr);
+
+    // Resolve log level: --log-level > HELIX_LOG_LEVEL > -v flags > config file > defaults
     std::string config_level = m_config->get<std::string>("/log_level", "");
     if (!g_log_level_cli.empty()) {
         log_config.level = parse_level(g_log_level_cli, spdlog::level::warn);
+    } else if (!env_log_level.empty()) {
+        log_config.level = parse_level(env_log_level, spdlog::level::warn);
     } else {
         log_config.level =
             resolve_log_level(m_args.verbosity, config_level, get_runtime_config()->test_mode);
@@ -1259,25 +1276,31 @@ bool Application::init_logging() {
     // tee run.log` on any box with a systemd journal socket produces no output at
     // all — auto-detection picks the Journal target, whose console gate is
     // isatty(stdout). A bare run with no flag keeps the journal-only behavior.
-    log_config.force_console = m_args.verbosity > 0 || !g_log_level_cli.empty();
+    //
+    // HELIX_LOG_LEVEL counts as explicit for the same reason the flag does: the
+    // launcher already turns that variable into --log-level=, so it has ALWAYS
+    // set force_console on a launcher-started device. Treating the direct-env
+    // path differently would make the same helixscreen.env behave one way under
+    // the launcher and another under systemd/a forked init script, which is the
+    // exact inconsistency this block exists to remove. The blast radius is
+    // bounded: force_console only adds a sink for a PIPE — should_add_console()
+    // still refuses a regular file or socket, which is where the daemon
+    // double-log (the Snapmaker U1 tmpfs blowout) came from.
+    log_config.force_console =
+        m_args.verbosity > 0 || !g_log_level_cli.empty() || !env_log_level.empty();
 
     // --test always gets a console sink, whatever stdout is (pipe, file, socket).
     // Read here rather than inside logging_init.cpp because that TU is linked into
     // the watchdog build, which does not link runtime_config.o.
     log_config.test_mode = get_runtime_config()->test_mode;
 
-    // Resolve log destination: CLI > config > auto
-    std::string log_dest_str = g_log_dest_cli;
-    if (log_dest_str.empty()) {
-        log_dest_str = m_config->get<std::string>("/log_dest", "auto");
-    }
-    log_config.target = parse_log_target(log_dest_str);
+    // Resolve log destination: CLI > HELIX_LOG_DEST > config > auto
+    log_config.target = parse_log_target(resolve_log_setting(
+        g_log_dest_cli, env_log_dest, m_config->get<std::string>("/log_dest", "auto")));
 
-    // Resolve log file path: CLI > config
-    log_config.file_path = g_log_file_cli;
-    if (log_config.file_path.empty()) {
-        log_config.file_path = m_config->get<std::string>("/log_path", "");
-    }
+    // Resolve log file path: CLI > HELIX_LOG_FILE > config
+    log_config.file_path = resolve_log_setting(g_log_file_cli, env_log_file,
+                                               m_config->get<std::string>("/log_path", ""));
 
     init(log_config);
 

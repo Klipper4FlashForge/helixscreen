@@ -326,10 +326,35 @@ void add_system_sink(std::vector<spdlog::sink_ptr>& sinks, LogTarget target,
                 max_files = static_cast<size_t>(v);
             }
         }
-        auto sink =
-            std::make_shared<spdlog::sinks::rotating_file_sink_mt>(path, max_bytes, max_files);
-        sink->set_formatter(make_formatter(SinkKind::File));
-        sinks.push_back(std::move(sink));
+        try {
+            auto sink =
+                std::make_shared<spdlog::sinks::rotating_file_sink_mt>(path, max_bytes, max_files);
+            sink->set_formatter(make_formatter(SinkKind::File));
+            sinks.push_back(std::move(sink));
+        } catch (const spdlog::spdlog_ex& e) {
+            // rotating_file_sink_mt THROWS when the path cannot be opened —
+            // missing parent directory, read-only mount, full flash. That
+            // exception used to propagate out of init() and out of
+            // Application::run(), so a bad HELIX_LOG_FILE took the whole UI
+            // down. Logging is never worth refusing to boot over: degrade to
+            // whatever this platform would have picked on its own and say so.
+            // Matters now that platform hooks steer the log at firmware-owned
+            // directories that may not exist on every variant (#1249).
+            LogTarget fallback = detect_best_target();
+            spdlog::warn("[Logging] Cannot open log file '{}' ({}); falling back to {}", path,
+                         e.what(), log_target_name(fallback));
+            // Guard the recursion: detect_best_target() never returns File
+            // today, but a future platform branch that did would loop forever.
+            if (fallback != LogTarget::File) {
+                add_system_sink(sinks, fallback, "");
+            }
+            // Keep effective_destination()/effective_log_file_path() honest —
+            // the crash reporter and debug-bundle collector read the latter to
+            // find the live log, and a path with no sink behind it would send
+            // them at a file that does not exist.
+            g_effective_target = fallback;
+            g_effective_file_path.clear();
+        }
         break;
     }
 #ifdef HELIX_PLATFORM_ANDROID
@@ -724,6 +749,52 @@ const char* log_target_name(LogTarget target) {
         return "android";
     }
     return "unknown";
+}
+
+bool is_valid_log_target(const std::string& str) {
+    return str == "auto" || str == "journal" || str == "syslog" || str == "file" ||
+           str == "console";
+}
+
+const char* log_target_accepted_values() {
+    return "auto, journal, syslog, file, console";
+}
+
+bool is_valid_log_level(const std::string& str) {
+    return str == "trace" || str == "debug" || str == "info" || str == "warn" || str == "error" ||
+           str == "critical" || str == "off";
+}
+
+const char* log_level_accepted_values() {
+    return "trace, debug, info, warn, error, critical, off";
+}
+
+std::string log_env_override(const char* var_name, bool (*validate)(const std::string&),
+                             const char* accepted_values) {
+    const char* raw = std::getenv(var_name);
+    if (raw == nullptr || raw[0] == '\0') {
+        return {};
+    }
+    std::string value(raw);
+    if (validate != nullptr && !validate(value)) {
+        // init_early() has already installed a console logger at warn, so this
+        // is visible even though the real sinks are not built yet.
+        spdlog::warn("[Logging] Ignoring invalid {}='{}' (accepted: {})", var_name, value,
+                     accepted_values != nullptr ? accepted_values : "");
+        return {};
+    }
+    return value;
+}
+
+std::string resolve_log_setting(const std::string& cli_value, const std::string& env_value,
+                                const std::string& config_value) {
+    if (!cli_value.empty()) {
+        return cli_value;
+    }
+    if (!env_value.empty()) {
+        return env_value;
+    }
+    return config_value;
 }
 
 spdlog::level::level_enum parse_level(const std::string& str,

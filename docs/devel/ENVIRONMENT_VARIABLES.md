@@ -1760,7 +1760,7 @@ Set the log verbosity level. Preferred over the legacy `HELIX_DEBUG` variable.
 |----------|-------|
 | **Values** | `trace`, `debug`, `info`, `warn`, `error`, `critical`, `off` |
 | **Default** | `warn` |
-| **File** | `scripts/helix-launcher.sh`, `src/system/cli_args.cpp` |
+| **File** | `scripts/helix-launcher.sh`, `src/system/cli_args.cpp`, `src/application/application.cpp` |
 
 ```bash
 # In helixscreen.env (persistent, recommended for deployed systems):
@@ -1770,9 +1770,9 @@ HELIX_LOG_LEVEL=debug
 HELIX_LOG_LEVEL=trace ./build/bin/helix-screen
 ```
 
-The launcher translates this to `--log-level=<value>` on the CLI. Equivalent CLI flags: `-v` (info), `-vv` (debug), `-vvv` (trace), or `--log-level=<level>`.
+Read two ways, so it works however the binary was started: the launcher translates it to `--log-level=<value>`, and `Application::init_logging()` also reads the variable directly. Equivalent CLI flags: `-v` (info), `-vv` (debug), `-vvv` (trace), or `--log-level=<level>`. An unrecognized value is warned about and ignored rather than being fatal, so a typo in `helixscreen.env` cannot crash-loop a printer.
 
-**Where structured logs land** depends on the platform — `Auto` resolves to systemd-journal on Pi/x86 (with `journalctl -u helixscreen`), to BusyBox syslog on K1/K2/CC1/AD5X (with `logread`), or to persistent syslog file on AD5M and Snapmaker U1 (`/var/log/messages`). The launcher's shell-stdout-redirect file (`launcher.log`) is a separate, smaller stream that captures startup echoes and crash output — see [LOGGING.md](LOGGING.md#log-destinations--retrieval) for the full map.
+**Where structured logs land** depends on the platform. Only Pi/x86 and Snapmaker U1 actually use `Auto` (→ systemd journal via `journalctl -u helixscreen`, or syslog → `/var/log/messages`). On AD5M, AD5X, K1, K2 and CC1 the platform hook sets `HELIX_LOG_DEST=file` at pre-start, so the log is a rotating file on persistent flash — `logread` there only shows whatever was emitted before the hook took effect. See [LOGGING.md](LOGGING.md#per-platform-routing-summary) for the per-platform paths. The launcher's shell-stdout-redirect file (`launcher.log`) is a separate, smaller stream that captures startup echoes and crash output.
 
 **Priority order:**
 1. CLI `--log-level` / `-v` flags (highest)
@@ -2244,20 +2244,23 @@ These are set at compile time to enable/disable features:
 HELIX_SCREENSHOT_DISPLAY=0 HELIX_SCREENSHOT_OPEN=1 ./scripts/screenshot.sh helix-screen test-output
 ```
 
-### Launcher Logging (`scripts/helix-launcher.sh`)
+### Logging Destination (`scripts/helix-launcher.sh` + `src/application/application.cpp`)
 
-Launcher-only variables that translate into CLI flags on the `helix-screen` invocation. Set them in `helixscreen.env`, which the launcher sources before it builds the command line. `helix-screen` itself never reads these — a value passed directly to the binary does nothing.
+Set these in `helixscreen.env`, which the launcher sources before it builds the command line, or export them from a `platform_pre_start` hook.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `HELIX_DEBUG` | Legacy debug switch; `1` adds `-vv` (debug-level logging). Superseded by `HELIX_LOG_LEVEL`. | `0` |
+| `HELIX_DEBUG` | Legacy debug switch; `1` adds `-vv` (debug-level logging). Launcher-only — the binary does not read it. Superseded by `HELIX_LOG_LEVEL`. | `0` |
 | `HELIX_LOG_DEST` | Log destination — same as `--log-dest`: `auto`, `journal`, `syslog`, `file`, `console`. | `auto` |
-| `HELIX_LOG_FILE` | Log file path — same as `--log-file`. Only meaningful with `HELIX_LOG_DEST=file`. | Unset |
+| `HELIX_LOG_FILE` | Log file path — same as `--log-file`. Only meaningful once the destination resolves to `file`. | Unset |
 
 **Usage Notes:**
-- Resolution is CLI flags > env vars (including `helixscreen.env`) > defaults, for all three.
+- `HELIX_LOG_DEST` / `HELIX_LOG_FILE` / `HELIX_LOG_LEVEL` are read **twice, independently**: the launcher turns them into `--log-dest=` / `--log-file=` / `--log-level=`, and `Application::init_logging()` reads them directly. The direct read is what makes them work under a systemd unit's `Environment=`, a hand-run binary, or a third-party init script that execs `helix-screen` without our launcher. `HELIX_DEBUG` is the exception: launcher-only.
+- Resolution is CLI flag > env var (including `helixscreen.env` and hook exports) > `/log_dest` and `/log_path` in `settings.json` > default.
 - `HELIX_LOG_LEVEL` takes priority over `HELIX_DEBUG`: a named level emits `--log-level=<level>` and the legacy `-vv` branch is never reached.
-- `HELIX_LOG_DEST=auto` is the only value that produces no flag — the binary then auto-detects journal under systemd, console when interactive.
+- `HELIX_LOG_DEST=auto` is the only value that produces no launcher flag. `auto` resolves to the systemd journal when `/run/systemd/journal/socket` exists, otherwise syslog on Linux, console on macOS. It **never** resolves to a file on any platform — the file sink has to be asked for, which is what the embedded platform hooks do.
+- The launcher resolves these **after** sourcing `platform/hooks.sh`, so a value exported from `platform_pre_start` is picked up. Six of the seven hooks rely on that.
+- An unopenable `HELIX_LOG_FILE` is not fatal: the sink construction is caught and the platform's normal system sink takes over with a warning.
 
 **Example:**
 ```bash
