@@ -326,15 +326,23 @@ int MoonrakerClientMock::connect(const char* url, std::function<void()> on_conne
     // Seed AmsBackendHappyHare's initial "mmu" status (--real-ams only — see
     // should_mock_ams() guard below). Real Moonraker delivers gate data as part
     // of the printer.objects.subscribe response, which Application::
-    // on_discovery_complete re-broadcasts via dispatch_status_update() AFTER
-    // init_subsystems_from_hardware() creates the AMS backend (both in the same
-    // queued callback — see application.cpp). The mock's own discovery path
-    // (just above, via on_connected() -> discover_printer()) reports an empty
-    // status snapshot instead, so nothing ever primes the backend's
-    // notify_status_update listener with gate_status. Queuing here — strictly
-    // AFTER discover_printer() already queued Application's discovery-complete
-    // handler — relies on FIFO draining of UpdateQueue::pending_ so the backend
-    // (and its notify subscription) exists by the time this callback runs.
+    // dispatch_status_update() re-broadcasts AFTER init_subsystems_from_hardware()
+    // creates the AMS backend. Those two calls live in two DIFFERENT queued
+    // callbacks, not one: init_subsystems_from_hardware() runs inside the
+    // set_on_hardware_discovered handler's queue_update (application.cpp,
+    // Application::setup_discovery_callbacks), and dispatch_status_update() runs
+    // inside the later set_on_discovery_complete handler's queue_update (same
+    // function). The mock's own discovery path (just above, via on_connected()
+    // -> discover_printer()) reports an empty status snapshot instead, so
+    // nothing ever primes the backend's notify_status_update listener with
+    // gate_status. The ordering this seed depends on holds because
+    // discover_printer() invokes invoke_hardware_discovered() then
+    // invoke_discovery_complete() synchronously and in that order — each one
+    // enqueues its own queue_update() from the same call stack — and
+    // UpdateQueue::pending_ is a plain std::queue drained FIFO, so this seed's
+    // own queue_update() call below (issued after both of those) is guaranteed
+    // to drain after them, by which point the backend (and its notify
+    // subscription) already exists.
     // Gated on test_mode + !should_mock_ams(): AmsState only creates a real
     // AmsSubscriptionBackend (the thing that would ever consume this) when
     // should_mock_ams() is false (src/printer/ams_state.cpp
