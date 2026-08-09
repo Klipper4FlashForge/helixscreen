@@ -91,9 +91,8 @@ class AmsSelectorMenu : public ContextMenu {
     const char* xml_component_name() const override {
         return "ams_selector_menu";
     }
-    const char* menu_card_name() const override {
-        return "selector_menu";
-    }
+    // menu_card_name() is the base's "context_menu": the card comes from the
+    // shared <context_menu_card>, which names its own <view> that.
     void on_created(lv_obj_t* menu_obj) override;
     /// A tap outside a single-select action menu chooses nothing, so it reports
     /// CANCELLED through this menu's own callback rather than the base's.

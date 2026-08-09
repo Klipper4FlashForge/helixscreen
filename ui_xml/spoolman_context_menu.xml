@@ -7,23 +7,12 @@
   </api>
   <!-- Full-screen backdrop overlay - tap to dismiss -->
   <view name="context_backdrop" extends="context_menu_backdrop">
-    <!-- Context menu card - positioned by C++ -->
-    <lv_obj name="context_menu"
-            width="220" height="content" style_bg_color="#elevated_bg" style_bg_opa="255" style_radius="#border_radius"
-            style_pad_all="#space_sm" style_pad_gap="#space_sm" flex_flow="column" style_flex_main_place="start"
-            style_flex_cross_place="start" scrollable="false" clickable="true">
-      <!-- Header row: spool material name (e.g. "Polymaker PLA") + close.
-           Backdrop tap still dismisses. -->
-      <lv_obj width="100%"
-              height="content" flex_flow="row" style_flex_main_place="space_between" style_flex_cross_place="center"
-              style_pad_all="0" scrollable="false" clickable="false" event_bubble="true">
-        <text_body name="spool_header"
-                   flex_grow="1" text="Spool" translation_tag="Spool" long_mode="dots" style_text_color="#text"
-                   clickable="false" event_bubble="true"/>
-        <ui_button name="btn_close" width="content" height="content" variant="ghost" icon="close" style_pad_right="0">
-          <event_cb trigger="clicked" callback="context_menu_close_cb"/>
-        </ui_button>
-      </lv_obj>
+    <!-- Context menu card - positioned by C++. The header carries the spool's
+         material name (e.g. "Polymaker PLA"); the colour and vendor subtitles sit
+         between it and the rule, so the card's own rule is suppressed. -->
+    <context_menu_card width="220"
+                       title="Spool" title_tag="Spool" title_name="spool_header" title_grow="1" title_long_mode="dots"
+                       hide_divider="true">
       <!-- Color name (e.g., "Jet Black") -->
       <text_small name="spool_color_label" width="100%" text="" long_mode="dots" style_text_color="#text_muted"/>
       <!-- Vendor subtitle -->
@@ -67,6 +56,6 @@
                  style_text_color="#danger">
         <event_cb trigger="clicked" callback="spoolman_context_delete_cb"/>
       </ui_button>
-    </lv_obj>
+    </context_menu_card>
   </view>
 </component>

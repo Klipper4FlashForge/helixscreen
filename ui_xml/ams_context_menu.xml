@@ -16,24 +16,9 @@
   </consts>
   <!-- Full-screen backdrop overlay - tap to dismiss -->
   <view name="context_backdrop" extends="context_menu_backdrop">
-    <!-- Context menu card - positioned by C++ -->
-    <lv_obj name="context_menu"
-            width="content" height="content" style_bg_color="#elevated_bg" style_bg_opa="255"
-            style_radius="#border_radius" style_pad_all="#space_sm" style_pad_gap="#space_md" flex_flow="column"
-            style_flex_main_place="start" scrollable="false" clickable="true">
-      <!-- Header row: "Slot N" + close. Backdrop tap still dismisses. -->
-      <lv_obj width="100%"
-              height="content" flex_flow="row" style_flex_main_place="space_between" style_flex_cross_place="center"
-              style_pad_all="0" scrollable="false" clickable="false" event_bubble="true">
-        <text_body name="slot_header" text="Slot 1" translation_tag="Slot 1" clickable="false" event_bubble="true"/>
-        <ui_button name="btn_close" width="content" height="content" variant="ghost" icon="close" style_pad_right="0">
-          <event_cb trigger="clicked" callback="context_menu_close_cb"/>
-        </ui_button>
-      </lv_obj>
-      <!-- Header Divider -->
-      <lv_obj width="100%"
-              height="1" style_bg_color="#text_muted" style_bg_opa="38" style_pad_all="0" scrollable="false"
-              clickable="false"/>
+    <!-- Context menu card - positioned by C++. Header reads "Slot N", rewritten
+         from C++ through slot_header. -->
+    <context_menu_card title="Slot 1" title_tag="Slot 1" title_name="slot_header" pad_gap="#space_md">
       <!-- Action columns. Stacked (flex_flow="column") by default so a short menu
            reads as one list; ContextMenu::fit_card_to_screen() flips this to a row
            when the stacked card would not fit the screen, at which point the two
@@ -162,6 +147,6 @@
           <event_cb trigger="value_changed" callback="ams_context_backup_changed_cb"/>
         </lv_dropdown>
       </lv_obj>
-    </lv_obj>
+    </context_menu_card>
   </view>
 </component>

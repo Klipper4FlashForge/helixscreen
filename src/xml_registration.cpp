@@ -328,6 +328,9 @@ void register_xml_components() {
     // <context_menu_backdrop> shared dimmed backdrop root. Every context menu
     // extends it, so it must be registered before any of them.
     register_xml("components/context_menu_backdrop.xml");
+    // <context_menu_card> the card every context menu nests inside that backdrop:
+    // elevated panel, title + close/Done header, and the rule under it.
+    register_xml("components/context_menu_card.xml");
     lv_subject_init_int(&s_noop_subject, 0);
     lv_xml_register_subject(nullptr, "", &s_noop_subject);
     s_noop_subject_initialized = true;

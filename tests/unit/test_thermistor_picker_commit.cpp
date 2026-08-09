@@ -137,7 +137,7 @@ TEST_CASE_METHOD(ThermistorPickerFixture, "thermistor configure picker: Done com
     widget.attach(tile, test_screen());
 
     OpenPicker picker = open_and_tick_second_sensor(widget, test_screen());
-    lv_obj_t* done = lv_obj_find_by_name(picker.card, "btn_done");
+    lv_obj_t* done = lv_obj_find_by_name(picker.card, "btn_close");
     REQUIRE(done != nullptr);
     lv_obj_send_event(done, LV_EVENT_CLICKED, nullptr);
     process_lvgl(50);
