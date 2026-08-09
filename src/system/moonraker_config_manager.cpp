@@ -77,6 +77,18 @@ int MoonrakerConfigManager::select_primary_config_index(
     return -1;
 }
 
+int MoonrakerConfigManager::select_root_config_index(const std::vector<LoadedConfigFile>& files) {
+    // Moonraker records the file it was pointed at before descending into that
+    // file's includes, so the chain always arrives root-first. Section contents
+    // are deliberately not consulted: on COSMOS the root defines nothing at all,
+    // and picking by [server] is precisely what selects the vendor file.
+    for (size_t i = 0; i < files.size(); ++i) {
+        if (!files[i].filename.empty())
+            return static_cast<int>(i);
+    }
+    return -1;
+}
+
 std::vector<size_t>
 MoonrakerConfigManager::find_files_defining_section(const std::vector<LoadedConfigFile>& files,
                                                     const std::string& section_name) {

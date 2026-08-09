@@ -1913,10 +1913,20 @@ tail -200 /usr/data/helixscreen/logs/launcher.log
 
 **Flashforge AD5X (ZMOD MIPS):**
 ```bash
-logread | grep helix-screen | tail -200
-tail -200 /usr/data/helixscreen/logs/launcher.log
-# ghzserg's S80helixscreen also writes here:
+# Structured app log — the one you almost always want
+tail -200 /opt/config/mod_data/log/helix.log
+
+# Launcher / crash-stderr capture, written by ghzserg's S80helixscreen
 tail -200 /opt/config/mod_data/log/helixscreen.log
+
+# Same two files, alternate path spelling (/opt/config is a bind-mount)
+tail -200 /usr/data/config/mod_data/log/helix.log
+
+# Older installs, before the app log moved under /opt/config
+tail -200 /data/helixscreen/logs/helix.log
+tail -200 /srv/helixscreen/logs/launcher.log
+
+logread | grep helix-screen | tail -200
 ```
 
 **Snapmaker U1:**

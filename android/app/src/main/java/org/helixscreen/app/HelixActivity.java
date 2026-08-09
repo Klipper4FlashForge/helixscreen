@@ -73,6 +73,30 @@ public class HelixActivity extends SDLActivity {
      */
     private static volatile boolean sLightAppearance = false;
 
+    /**
+     * Desired FLAG_KEEP_SCREEN_ON state (issue #1245).
+     *
+     * SDL2 adds the flag during video init (SDL_video.c disables the screensaver
+     * by default), which is what we want while the app is in use — but it never
+     * clears it, so the device could never power the panel down. Native
+     * DisplayManager releases it when its own Display Sleep timeout fires and
+     * re-asserts it on wake, so Android's display timeout genuinely turns the
+     * panel off instead of us painting a black rectangle over a lit screen.
+     *
+     * Static so the value survives activity recreation; {@link #onResume} re-applies
+     * it because Android can hand us a brand-new window with default flags.
+     * True at startup to match what SDL already did.
+     */
+    private static volatile boolean sKeepScreenOn = true;
+
+    /**
+     * Incremented on every {@link #onResume}. Native code samples this when it
+     * releases the screen lock and again while idle: a change means the app was
+     * paused and resumed (i.e. the panel powered off and came back), which is the
+     * only "wake" signal available when the user never touches our surface.
+     */
+    private static volatile int sResumeSeq = 0;
+
     private final Handler mHideHandler = new Handler(Looper.getMainLooper());
     private final Runnable mHideRunnable = new Runnable() {
         @Override
@@ -338,6 +362,12 @@ public class HelixActivity extends SDLActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        // A resume means the panel is on again — the signal native code uses to
+        // wake a display it put to sleep by releasing FLAG_KEEP_SCREEN_ON (#1245).
+        sResumeSeq++;
+        // Android may have recreated the window with default flags, so re-apply
+        // the desired keep-screen-on state. We are already on the UI thread here.
+        applyKeepScreenOn();
         // SDL's COMMAND_CHANGE_WINDOW_STYLE handler applies immersive-sticky
         // flags asynchronously on the main thread during startup.  Post our
         // reapply to run after those messages drain so we win the race.
@@ -424,6 +454,53 @@ public class HelixActivity extends SDLActivity {
                 helix.applySystemUi();
             }
         });
+    }
+
+    /**
+     * Allow or prevent the device from sleeping while HelixScreen is foregrounded
+     * (issue #1245). Called from native DisplayManager when its Display Sleep
+     * timeout fires (false) and on wake (true).
+     *
+     * With Display Sleep = "Never" native code never passes false, so a
+     * wall-mounted tablet stays lit exactly as before.
+     *
+     * @param keepOn true to hold the screen awake, false to let Android's own
+     *               display timeout power the panel off
+     */
+    public static void setKeepScreenOn(final boolean keepOn) {
+        // Update the static first so onResume picks it up even if the activity is
+        // being created right now (same discipline as setNavBarAlwaysVisible).
+        sKeepScreenOn = keepOn;
+
+        final android.content.Context ctx = SDLActivity.getContext();
+        if (!(ctx instanceof HelixActivity)) return;
+        final HelixActivity helix = (HelixActivity) ctx;
+        // Window flag changes are UI-thread only.
+        helix.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                helix.applyKeepScreenOn();
+            }
+        });
+    }
+
+    /**
+     * Number of times {@link #onResume} has run. Read from native code to detect a
+     * pause/resume cycle without a touch event. See {@link #sResumeSeq}.
+     */
+    public static int getResumeSeq() {
+        return sResumeSeq;
+    }
+
+    /** Push {@link #sKeepScreenOn} onto the window. UI thread only. */
+    private void applyKeepScreenOn() {
+        Window window = getWindow();
+        if (window == null) return;
+        if (sKeepScreenOn) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
     }
 
     /**

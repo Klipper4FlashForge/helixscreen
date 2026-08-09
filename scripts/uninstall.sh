@@ -3893,6 +3893,37 @@ ensure_moonraker_asvc() {
     log_success "Added helixscreen to Moonraker service allowlist"
 }
 
+# Remove helixscreen from moonraker.asvc (service allowlist)
+#
+# The counterpart to ensure_moonraker_asvc(). Without it an uninstall left
+# helixscreen in the allowlist permanently, since nothing else ever prunes that
+# file (observed on a CC1 running COSMOS).
+#
+# Args: $1 = moonraker.conf path
+remove_moonraker_asvc() {
+    local conf="$1"
+    # The data dir is two levels up from <config dir>/moonraker.conf
+    local data_dir
+    data_dir="$(dirname "$(dirname "$conf")")"
+    local asvc="${data_dir}/moonraker.asvc"
+
+    if [ ! -f "$asvc" ]; then
+        return 0
+    fi
+
+    if ! grep -q '^helixscreen$' "$asvc" 2>/dev/null; then
+        return 0
+    fi
+
+    local fs
+    fs=$(file_sudo "$asvc")
+    log_info "Removing helixscreen from $asvc..."
+    # Anchored, so a neighbouring entry like helixscreen-old is left alone.
+    $fs sed -i '/^helixscreen$/d' "$asvc" 2>/dev/null || \
+    $fs sed -i '' '/^helixscreen$/d' "$asvc" 2>/dev/null || true
+    log_success "Removed helixscreen from Moonraker service allowlist"
+}
+
 # Restart Moonraker to pick up configuration changes
 restart_moonraker() {
     if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet moonraker 2>/dev/null; then
@@ -4050,20 +4081,45 @@ remove_update_manager_section() {
     fs=$(file_sudo "$conf")
     $fs cp "$conf" "${conf}.bak.helixscreen-uninstall" 2>/dev/null || true
 
-    # Remove the section (from [update_manager helixscreen] to next section or EOF)
-    # This uses awk to skip lines between [update_manager helixscreen] and the next [section]
-    $fs sh -c "awk '
-        /^\[update_manager helixscreen\]/ { skip=1; next }
-        /^\[/ { skip=0 }
-        !skip { print }
-    ' \"$conf\" > \"${conf}.tmp\"" && $fs mv "${conf}.tmp" "$conf"
-
-    # Also remove any "Added by HelixScreen" comment lines that precede it
-    $fs sed -i '/# HelixScreen Update Manager/d' "$conf" 2>/dev/null || \
-    $fs sed -i '' '/# HelixScreen Update Manager/d' "$conf" 2>/dev/null || true
-
-    $fs sed -i '/# Added by HelixScreen installer/d' "$conf" 2>/dev/null || \
-    $fs sed -i '' '/# Added by HelixScreen installer/d' "$conf" 2>/dev/null || true
+    # Remove the section (from [update_manager helixscreen] to the next section
+    # or EOF) together with the comment block generate_update_manager_config()
+    # writes above it.
+    #
+    # The comment block is matched structurally, not by literal text. Deleting
+    # named lines instead meant the two patterns here had to track every line
+    # the generator emits, and they did not: the generator writes five comment
+    # lines and only two were deleted, so each install/uninstall cycle orphaned
+    # the other three (seen on a CC1, where "mainsail#2444" ended up in
+    # moonraker.conf twice).
+    #
+    # Lines are buffered until something that is not a comment or blank arrives.
+    # On reaching our section, the trailing run of comment lines plus at most one
+    # blank line before it is dropped, which is exactly the generator's output;
+    # anything earlier is another line's comment and is printed back.
+    local prog='
+        skip {
+            if ($0 ~ /^\[/) { skip = 0 } else { next }
+        }
+        /^[[:space:]]*#/ || /^[[:space:]]*$/ { buf[++n] = $0; next }
+        /^\[update_manager helixscreen\]/ {
+            i = n
+            while (i >= 1 && buf[i] ~ /^[[:space:]]*#/) i--
+            if (i >= 1 && buf[i] ~ /^[[:space:]]*$/) i--
+            for (j = 1; j <= i; j++) print buf[j]
+            n = 0
+            skip = 1
+            next
+        }
+        {
+            for (j = 1; j <= n; j++) print buf[j]
+            n = 0
+            print
+        }
+        END { for (j = 1; j <= n; j++) print buf[j] }
+    '
+    # The program is passed as an argument rather than interpolated into the
+    # -c string, so its $0 and $1 stay awk's and are never expanded by a shell.
+    $fs sh -c 'awk "$1" "$2" > "$2.helixtmp" && mv "$2.helixtmp" "$2"' sh "$prog" "$conf"
 
     log_success "Removed update_manager section from $conf"
 }
@@ -4933,6 +4989,14 @@ uninstall() {
     # the effective fix; no moonraker restart needed.
     if type remove_update_manager_section >/dev/null 2>&1; then
         remove_update_manager_section || true
+    fi
+
+    # Drop the service-allowlist entry the install added. Nothing else prunes
+    # moonraker.asvc, so skipping this leaves helixscreen listed forever.
+    if type remove_moonraker_asvc >/dev/null 2>&1; then
+        local _asvc_conf
+        _asvc_conf=$(find_moonraker_conf 2>/dev/null || true)
+        [ -n "$_asvc_conf" ] && remove_moonraker_asvc "$_asvc_conf" || true
     fi
 
     # Detect init system first

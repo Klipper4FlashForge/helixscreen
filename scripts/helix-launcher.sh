@@ -27,8 +27,15 @@
 # All other options are passed through to helix-screen.
 #
 # Logging behavior:
-#   - When run via systemd: auto-detects journal (recommended)
-#   - When run interactively: auto-detects console
+#   - Destination defaults to "auto", which helix-screen resolves with
+#     detect_best_target(): systemd journal when /run/systemd/journal/socket
+#     exists, otherwise syslog on Linux, console only on macOS. Auto NEVER
+#     resolves to a file.
+#   - Most embedded targets therefore do not use auto: their platform hook
+#     exports HELIX_LOG_DEST=file + HELIX_LOG_FILE from platform_pre_start,
+#     which this script reads (after sourcing the hooks) and forwards.
+#   - An interactive run additionally gets a stdout console sink on top of the
+#     resolved target, because stdout is a TTY — the target itself is unchanged.
 #   - Use --log-dest=file --log-file=/path for explicit file logging
 #
 # Installation:
@@ -108,10 +115,12 @@ done
 #
 # Uses stderr to avoid polluting stdout which could be captured unexpectedly.
 #
-# Every line is stamped with wall-clock time. On platforms where /var/log is a
-# tmpfs, launcher.log is the only record that survives a reboot, and without a
-# timestamp its lines cannot be correlated to anything else on the machine (a
-# Klipper macro, a print, a calibration run). The format is deliberately plain
+# Every line is stamped with wall-clock time. launcher.log is the only record
+# of the wrapper's own output and of crash stderr (glibc aborts,
+# std::terminate); spdlog is already dead by then, so none of that reaches the
+# app log. Without a timestamp its lines cannot be correlated to anything else
+# on the machine (a Klipper macro, a print, a calibration run). The format is
+# deliberately plain
 # `date` with %Y-%m-%d %H:%M:%S — the BusyBox date on AD5M/K1/CC1/SonicPad has
 # no -I / --rfc-3339 / %N. If date is missing entirely, log without the stamp
 # rather than aborting the launcher under `set -e`.
@@ -294,12 +303,6 @@ if [ "$_enable_heap_diag" = "1" ]; then
 fi
 unset _arch _kernel _enable_heap_diag
 
-# Resolve debug/logging settings: CLI flags > env vars (incl. env file) > defaults
-DEBUG_MODE="${CLI_DEBUG:-${HELIX_DEBUG:-0}}"
-LOG_DEST="${CLI_LOG_DEST:-${HELIX_LOG_DEST:-auto}}"
-LOG_FILE="${CLI_LOG_FILE:-${HELIX_LOG_FILE:-}}"
-LOG_LEVEL="${CLI_LOG_LEVEL:-${HELIX_LOG_LEVEL:-}}"
-
 # Select binary AFTER env file is sourced so HELIX_DISPLAY_BACKEND=fbdev in env file works
 MAIN_BIN=$(select_binary "${BIN_DIR}")
 
@@ -359,6 +362,23 @@ if [ -f "${PLATFORM_HOOKS}" ]; then
         platform_pre_start || true
     fi
 fi
+
+# Resolve debug/logging settings: CLI flags > env vars (incl. env file) > defaults.
+#
+# MUST come after the platform-hooks block above. Six of the seven platform
+# hooks export HELIX_LOG_DEST / HELIX_LOG_FILE from platform_pre_start
+# (ad5m-zmod, ad5m-forgex, ad5m-kmod, k1, k2, cc1) to steer the app log onto a
+# partition that is persistent AND captured by that firmware's log archiver.
+# Resolving before platform_pre_start ran read an unset variable, so
+# --log-dest/--log-file never reached the binary and the app log fell back to
+# auto-detection (syslog on Linux). helixscreen.init happens to call
+# platform_pre_start itself before exec'ing us, which masked this on a normal
+# boot — but NOT for `make deploy-*` restarts, hand-started launchers, or any
+# third-party init script that leaves the hook to us. See issue #1249.
+DEBUG_MODE="${CLI_DEBUG:-${HELIX_DEBUG:-0}}"
+LOG_DEST="${CLI_LOG_DEST:-${HELIX_LOG_DEST:-auto}}"
+LOG_FILE="${CLI_LOG_FILE:-${HELIX_LOG_FILE:-}}"
+LOG_LEVEL="${CLI_LOG_LEVEL:-${HELIX_LOG_LEVEL:-}}"
 
 # Check if watchdog is available (embedded targets only, provides crash recovery)
 USE_WATCHDOG=0

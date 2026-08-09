@@ -30,6 +30,7 @@
 #include <fstream>
 #include <regex>
 #include <sstream>
+#include <unordered_map>
 #include <zlib.h>
 
 using json = nlohmann::json;
@@ -1074,47 +1075,80 @@ json DebugBundleCollector::collect_platform_files() {
 // Klipper / Moonraker log tails (via HTTP Range for memory safety)
 // =============================================================================
 
-std::string DebugBundleCollector::condense_klipper_log(const std::string& raw, int stats_context,
-                                                       int stats_tail) {
-    const size_t keep_ctx = stats_context < 0 ? 0 : static_cast<size_t>(stats_context);
-    const size_t keep_tail = stats_tail < 0 ? 0 : static_cast<size_t>(stats_tail);
-    const size_t ring_cap = std::max(keep_ctx, keep_tail);
+/// Collapse digit runs so lines that differ only by numbers share a shape:
+/// "Stats 14645.9: ... sysload=0.60" and "Stats 14646.9: ... sysload=0.58"
+/// both become "Stats N.N: ... sysload=N.N".
+static std::string line_shape(const std::string& line) {
+    std::string shape;
+    shape.reserve(line.size());
+    bool in_digits = false;
+    for (char c : line) {
+        const bool is_digit = (c >= '0' && c <= '9');
+        if (is_digit) {
+            if (!in_digits) {
+                shape += 'N';
+                in_digits = true;
+            }
+            continue;
+        }
+        in_digits = false;
+        shape += c;
+    }
+    return shape;
+}
 
-    std::istringstream stream(raw);
-    std::deque<std::string> pending_stats; // most recent Stats not yet emitted
+std::string DebugBundleCollector::condense_klipper_log(const std::string& raw, int max_repeats,
+                                                       int tail_lines) {
+    std::vector<std::string> lines;
+    {
+        std::istringstream stream(raw);
+        std::string line;
+        while (std::getline(stream, line)) {
+            lines.push_back(std::move(line));
+        }
+    }
+    if (lines.empty()) {
+        return {};
+    }
+
+    const size_t keep_repeats = max_repeats < 0 ? 0 : static_cast<size_t>(max_repeats);
+    const size_t keep_tail =
+        std::min(lines.size(), tail_lines < 0 ? size_t{0} : static_cast<size_t>(tail_lines));
+    const size_t cut = lines.size() - keep_tail; // [cut, end) ships verbatim
+
+    // Pass 1: how often does each shape occur outside the verbatim tail?
+    std::unordered_map<std::string, size_t> shape_total;
+    for (size_t i = 0; i < cut; ++i) {
+        shape_total[line_shape(lines[i])]++;
+    }
+
+    // Pass 2: for a shape that recurs more than keep_repeats times, keep only its
+    // LAST keep_repeats occurrences — in place, so ordering is never disturbed.
+    // Recent repeats beat old ones: the values near the failure are the ones
+    // worth reading.
+    std::unordered_map<std::string, size_t> shape_seen;
     std::string out;
-    std::string line;
-
     auto emit = [&out](const std::string& s) {
         if (!out.empty())
             out += '\n';
         out += s;
     };
 
-    while (std::getline(stream, line)) {
-        if (line.rfind("Stats ", 0) == 0) {
-            if (ring_cap == 0)
-                continue;
-            pending_stats.push_back(std::move(line));
-            if (pending_stats.size() > ring_cap)
-                pending_stats.pop_front();
+    for (size_t i = 0; i < lines.size(); ++i) {
+        if (i >= cut) { // verbatim tail: the shutdown dump lives here
+            emit(lines[i]);
             continue;
         }
-        // Event line: emit the run-up Stats in order, then the event itself.
-        while (pending_stats.size() > keep_ctx)
-            pending_stats.pop_front();
-        for (const auto& s : pending_stats)
-            emit(s);
-        pending_stats.clear();
-        emit(line);
+        const std::string shape = line_shape(lines[i]);
+        const size_t total = shape_total[shape];
+        if (total <= keep_repeats) {
+            emit(lines[i]); // rare enough to be interesting on its own
+            continue;
+        }
+        if (++shape_seen[shape] > total - keep_repeats) {
+            emit(lines[i]);
+        }
     }
-
-    // Trailing Stats: keep the most recent few so a reader still sees the
-    // sysload/buffer_time picture at the moment the bundle was taken.
-    while (pending_stats.size() > keep_tail)
-        pending_stats.pop_front();
-    for (const auto& s : pending_stats)
-        emit(s);
 
     return out;
 }
