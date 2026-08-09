@@ -360,6 +360,14 @@ void AmsPanel::init_subjects() {
             self->update_bypass_spool_from_state();
         });
 
+    // Bypass support is not fixed at setup time. Happy Hare publishes has_bypass
+    // from the live mmu object, and our own default stands in as true until that
+    // first status lands, so the node has to be able to appear and disappear
+    // after the panel is built.
+    supports_bypass_observer_ = observe_int_sync<AmsPanel>(
+        AmsState::instance().get_supports_bypass_subject(), this,
+        [](AmsPanel* self, int /*supported*/) { self->update_bypass_spool_from_state(); });
+
     // UI module subjects are now encapsulated in their respective classes:
     // - helix::ui::AmsEditOverlay
     // - helix::ui::AmsColorPicker
@@ -861,13 +869,13 @@ void AmsPanel::setup_bypass_spool() {
         return;
     }
 
-    // Check if bypass is supported
-    auto* backend = AmsState::instance().get_backend();
-    if (!backend || !backend->get_system_info().supports_bypass) {
-        spdlog::debug("[{}] Bypass not supported — skipping spool holder", get_name());
-        return;
-    }
-
+    // Built unconditionally, then shown or hidden by update_bypass_spool_from_state()
+    // via bypass_node_visible_for(). Skipping creation here instead would make the
+    // node's presence a one-shot decision taken before the backend has published
+    // its first status: a system whose bypass only becomes visible later (Happy
+    // Hare gates has_bypass on selector calibration) would keep the sidebar toggle
+    // and the Device Operations section, which are subject-bound, but never grow
+    // the spool back onto the path. AmsOverviewPanel already builds it this way.
     lv_obj_t* path_container = lv_obj_get_parent(path_canvas_);
     if (!path_container) {
         return;

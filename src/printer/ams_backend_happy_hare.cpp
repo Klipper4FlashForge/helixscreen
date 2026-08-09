@@ -30,8 +30,12 @@ AmsBackendHappyHare::AmsBackendHappyHare(MoonrakerAPI* api, MoonrakerClient* cli
     system_info_.supports_endless_spool = true;
     system_info_.supports_tool_mapping = true;
     // Bypass support is determined at runtime from mmu.has_bypass status field.
-    // Default to true; will be updated when first status arrives.
-    system_info_.supports_bypass = true;
+    // Starts false so the bypass UI stays absent until the firmware confirms it:
+    // an optimistic default shows the toggle, the Device Operations section and
+    // the path node on every connect, then withdraws all three a moment later on
+    // any machine that has no bypass. A control arriving late reads as loading;
+    // one that appears and vanishes reads as a bug.
+    system_info_.supports_bypass = false;
     // Happy Hare bypass is always positional (selector moves to bypass position), never a sensor
     system_info_.has_hardware_bypass_sensor = false;
     // Default to TIP_FORM -- Happy Hare's default macro is _MMU_FORM_TIP.
@@ -464,9 +468,30 @@ void AmsBackendHappyHare::parse_mmu_state(const nlohmann::json& mmu_data) {
 
     // Parse has_bypass: printer.mmu.has_bypass
     // Not all MMU types support bypass (e.g., ERCF/Tradrack do, BoxTurtle does not)
+    //
+    // Logged at info rather than trace, and on every change rather than never:
+    // false here removes the entire bypass UI (sidebar toggle, Device Operations
+    // section, path node) and this flag is the sole reason. Happy Hare derives it
+    // from [mmu_machine] has_bypass, which defaults to 0 for mmu_vendor "Other",
+    // and on type-A selectors ANDs it with the calibrated bypass offset — so an
+    // owner with a physical bypass can legitimately see false and have no way to
+    // tell that from a bug in us.
     if (mmu_data.contains("has_bypass") && mmu_data["has_bypass"].is_boolean()) {
-        system_info_.supports_bypass = mmu_data["has_bypass"].get<bool>();
-        spdlog::trace("[AMS HappyHare] Bypass supported: {}", system_info_.supports_bypass);
+        const bool has_bypass = mmu_data["has_bypass"].get<bool>();
+        if (!bypass_support_seen_ || has_bypass != system_info_.supports_bypass) {
+            spdlog::info("[AMS HappyHare] Bypass supported: {}", has_bypass);
+            bypass_support_seen_ = true;
+        }
+        system_info_.supports_bypass = has_bypass;
+    } else if (!bypass_support_seen_) {
+        // Field absent entirely. Every Happy Hare we know of publishes it, so this
+        // is a fork or a version we have not seen; assume supported rather than
+        // silently removing a control the machine may well have. Deliberately not
+        // the same as the pre-status default, which is false so that a system
+        // without a bypass never flashes the UI up and then withdraws it.
+        bypass_support_seen_ = true;
+        system_info_.supports_bypass = true;
+        spdlog::warn("[AMS HappyHare] No has_bypass field in mmu status; assuming supported");
     }
 
     // Parse num_units if available (multi-unit Happy Hare setups)

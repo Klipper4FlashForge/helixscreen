@@ -190,6 +190,8 @@ class AmsPanel : public PanelBase {
     ObserverGuard print_state_observer_;    ///< Dismisses a stale error dialog when a print resumes
     ObserverGuard backend_count_observer_;  ///< For backend selector visibility
     ObserverGuard external_spool_observer_; ///< Reactive updates when external spool color changes
+    ObserverGuard
+        supports_bypass_observer_; ///< Bypass node appears/disappears with backend support
     helix::AsyncLifetimeGuard
         lifetime_; ///< Guards deferred callbacks from accessing destroyed panel
     bool backend_rebuild_pending_ = false; ///< Coalesces rapid backend count changes

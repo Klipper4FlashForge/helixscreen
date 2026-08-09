@@ -1843,6 +1843,77 @@ TEST_CASE("Happy Hare v3 data with no v4 fields works normally", "[ams][happy_ha
     REQUIRE(slot2.status == SlotStatus::LOADED);
 }
 
+// --- has_bypass: the single flag behind the whole bypass UI ---
+
+// printer.mmu.has_bypass gates the sidebar toggle, the Device Operations bypass
+// section and the bypass node on the filament path. Happy Hare defaults it to 0
+// for mmu_vendor "Other" (which is what a Qidi Box under HH reports) and on
+// type-A selectors ANDs it with the calibrated bypass offset, so it is both
+// legitimately false on real hardware and able to turn true later.
+TEST_CASE("Happy Hare has_bypass drives supports_bypass", "[ams][happy_hare][bypass]") {
+    auto base_mmu = []() {
+        return nlohmann::json{{"gate", 0},
+                              {"tool", 0},
+                              {"filament", "Loaded"},
+                              {"action", "Idle"},
+                              {"filament_pos", 8},
+                              {"gate_status", {1, 0, 2, 1}},
+                              {"gate_material", {"PLA", "PETG", "ABS", "TPU"}},
+                              {"ttg_map", {0, 1, 2, 3}}};
+    };
+
+    SECTION("stays off until the firmware confirms, so the UI never flickers") {
+        AmsBackendHappyHareTestHelper helper;
+        REQUIRE(helper.get_system_info().supports_bypass == false);
+
+        nlohmann::json mmu = base_mmu();
+        mmu["has_bypass"] = false;
+        helper.test_parse_mmu_state(mmu);
+
+        REQUIRE(helper.get_system_info().supports_bypass == false);
+    }
+
+    SECTION("firmware true turns it on") {
+        AmsBackendHappyHareTestHelper helper;
+
+        nlohmann::json mmu = base_mmu();
+        mmu["has_bypass"] = true;
+        helper.test_parse_mmu_state(mmu);
+
+        REQUIRE(helper.get_system_info().supports_bypass == true);
+    }
+
+    SECTION("absent field assumes supported rather than removing the control") {
+        AmsBackendHappyHareTestHelper helper;
+        helper.test_parse_mmu_state(base_mmu());
+
+        REQUIRE(helper.get_system_info().supports_bypass == true);
+    }
+
+    SECTION("turns back on when the selector is calibrated mid-session") {
+        AmsBackendHappyHareTestHelper helper;
+
+        nlohmann::json mmu = base_mmu();
+        mmu["has_bypass"] = false;
+        helper.test_parse_mmu_state(mmu);
+        REQUIRE(helper.get_system_info().supports_bypass == false);
+
+        mmu["has_bypass"] = true;
+        helper.test_parse_mmu_state(mmu);
+        REQUIRE(helper.get_system_info().supports_bypass == true);
+    }
+
+    SECTION("a non-boolean value is ignored rather than coerced") {
+        AmsBackendHappyHareTestHelper helper;
+
+        nlohmann::json mmu = base_mmu();
+        mmu["has_bypass"] = nullptr;
+        helper.test_parse_mmu_state(mmu);
+
+        REQUIRE(helper.get_system_info().supports_bypass == true);
+    }
+}
+
 // --- v3+v4 mixed: some v4 fields with v3 base ---
 
 TEST_CASE("Happy Hare mixed v3/v4 data parses both correctly", "[ams][happy_hare][v4][compat]") {
