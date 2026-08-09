@@ -18,15 +18,12 @@
        content. Positioning of the stack itself is handled by ToastManager on
        lv_layer_top. -->
   <view name="toast_root"
-        extends="lv_obj" width="100%" height="content"
-        style_radius="#border_radius" style_pad_all="#space_lg"
+        extends="lv_obj" width="100%" height="content" style_radius="#border_radius" style_pad_all="#space_lg"
         style_pad_gap="#space_sm" style_border_width="#border_width" style_border_color="#border"
-        style_bg_color="#elevated_bg" style_bg_opa="255"
-        style_shadow_width="#space_2xl" style_shadow_spread="#space_xs" style_shadow_opa="120"
-        style_shadow_ofs_y="#space_xs" flex_flow="row" style_flex_main_place="start"
+        style_bg_color="#elevated_bg" style_bg_opa="255" style_shadow_width="#space_2xl" style_shadow_spread="#space_xs"
+        style_shadow_opa="120" style_shadow_ofs_y="#space_xs" flex_flow="row" style_flex_main_place="start"
         style_flex_cross_place="center">
-    <lv_label name="icon"
-              text="$icon_glyph" style_text_font="mdi_icons_24" style_text_color="$icon_color"/>
+    <lv_label name="icon" text="$icon_glyph" style_text_font="mdi_icons_24" style_text_color="$icon_color"/>
     <text_body name="toast_message"
                text="$message" flex_grow="1" long_mode="wrap" style_pad_left="#space_sm" style_pad_right="#space_sm"/>
     <ui_button name="toast_action_btn"

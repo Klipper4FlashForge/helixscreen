@@ -7,7 +7,9 @@
   <consts>
     <!-- Step metadata (read by wizard orchestrator) -->
     <str name="step_title" value="Multi-Filament System Detected" value_tag="Multi-Filament System Detected"/>
-    <str name="step_subtitle" value="Your printer has an automatic filament changer" value_tag="Your printer has an automatic filament changer"/>
+    <str name="step_subtitle"
+         value="Your printer has an automatic filament changer"
+         value_tag="Your printer has an automatic filament changer"/>
     <int name="step_order" value="6"/>
   </consts>
   <view name="wizard_ams_identify_root"
@@ -21,7 +23,8 @@
              style_flex_track_place="center">
 
       <!-- Logo image - 64x64 icons, use min_width/min_height to prevent clipping -->
-      <lv_image name="ams_logo" width="64" height="64" style_min_width="64" style_min_height="64" inner_align="center" hidden="true"/>
+      <lv_image name="ams_logo"
+                width="64" height="64" style_min_width="64" style_min_height="64" inner_align="center" hidden="true"/>
 
       <!-- Spacer between logo and text -->
       <lv_obj width="1" height="#space_md"/>
@@ -38,7 +41,8 @@
       <!-- Integration message - static text -->
       <text_muted width="85%"
                   style_text_align="center"
-                  text="HelixScreen will integrate with your filament changer for multi-spool/color print operations." translation_tag="HelixScreen will integrate with your filament changer for multi-spool/color print operations."/>
+                  text="HelixScreen will integrate with your filament changer for multi-spool/color print operations."
+                  translation_tag="HelixScreen will integrate with your filament changer for multi-spool/color print operations."/>
 
     </ui_card>
 

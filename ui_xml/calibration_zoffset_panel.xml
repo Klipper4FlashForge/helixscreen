@@ -11,8 +11,8 @@
     <header_bar name="overlay_header" title="Z-Offset Calibration" title_tag="Z-Offset Calibration"/>
     <!-- Content Area -->
     <lv_obj name="overlay_content"
-            width="100%" flex_grow="1" style_pad_all="#space_lg"
-            flex_flow="column" style_pad_gap="#space_lg" scrollable="false">
+            width="100%" flex_grow="1" style_pad_all="#space_lg" flex_flow="column" style_pad_gap="#space_lg"
+            scrollable="false">
       <!-- Disable content when printer not connected or klippy not ready -->
       <bind_state_if_not_eq subject="nav_buttons_enabled" state="disabled" ref_value="1"/>
       <!-- ================================================================== -->
@@ -24,38 +24,50 @@
         <bind_flag_if_not_eq subject="zoffset_cal_state" flag="hidden" ref_value="0"/>
         <!-- Instructions -->
         <lv_obj width="100%" style_pad_all="0" flex_flow="column" style_pad_gap="#space_sm">
-          <text_heading width="100%" text="Paper Test Calibration" translation_tag="Paper Test Calibration" style_text_align="center"/>
+          <text_heading width="100%"
+                        text="Paper Test Calibration" translation_tag="Paper Test Calibration" style_text_align="center"/>
           <text_small width="100%"
-                      text="This calibration uses the paper friction method to set your Z-offset." translation_tag="This calibration uses the paper friction method to set your Z-offset."
+                      text="This calibration uses the paper friction method to set your Z-offset."
+                      translation_tag="This calibration uses the paper friction method to set your Z-offset."
                       style_text_align="center"/>
         </lv_obj>
         <!-- Two-column layout: Steps (left) | Warm Bed (right) -->
-        <lv_obj width="100%" flex_grow="1" style_pad_all="0" flex_flow="row"
-                style_flex_cross_place="center" style_pad_gap="#space_md" scrollable="false">
+        <lv_obj width="100%"
+                flex_grow="1" style_pad_all="0" flex_flow="row" style_flex_cross_place="center"
+                style_pad_gap="#space_md" scrollable="false">
           <!-- Left: Steps Preview -->
-          <lv_obj flex_grow="1" height="content"
-                  style_bg_color="#section_bg_color" style_radius="#border_radius"
+          <lv_obj height="content"
+                  flex_grow="1" style_bg_color="#section_bg_color" style_radius="#border_radius"
                   style_pad_all="#space_lg" flex_flow="column" style_pad_gap="#space_xs">
-            <text_small text="Have a piece of paper ready." translation_tag="Have a piece of paper ready." style_text_color="#text_muted"/>
+            <text_small text="Have a piece of paper ready."
+                        translation_tag="Have a piece of paper ready." style_text_color="#text_muted"/>
             <lv_obj width="100%" height="4" style_pad_all="0"/>
-            <text_small width="100%" text="1. Printer homes and probes the bed" translation_tag="1. Printer homes and probes the bed"/>
-            <text_small width="100%" text="2. Place paper between nozzle and bed" translation_tag="2. Place paper between nozzle and bed"/>
-            <text_small width="100%" text="3. Lower nozzle until paper drags slightly" translation_tag="3. Lower nozzle until paper drags slightly"/>
-            <text_small width="100%" text="4. Paper should move but with resistance" translation_tag="4. Paper should move but with resistance"/>
+            <text_small width="100%"
+                        text="1. Printer homes and probes the bed" translation_tag="1. Printer homes and probes the bed"/>
+            <text_small width="100%"
+                        text="2. Place paper between nozzle and bed"
+                        translation_tag="2. Place paper between nozzle and bed"/>
+            <text_small width="100%"
+                        text="3. Lower nozzle until paper drags slightly"
+                        translation_tag="3. Lower nozzle until paper drags slightly"/>
+            <text_small width="100%"
+                        text="4. Paper should move but with resistance"
+                        translation_tag="4. Paper should move but with resistance"/>
           </lv_obj>
           <!-- Divider -->
           <divider_vertical height="80%"/>
           <!-- Right: Warm Bed Option (only visible when printer has a heated bed) -->
-          <lv_obj flex_grow="1" height="content" style_pad_all="#space_lg"
-                  style_bg_color="#section_bg_color" style_radius="#border_radius"
-                  flex_flow="row" style_flex_cross_place="center" style_pad_gap="#space_md"
-                  scrollable="false">
+          <lv_obj height="content"
+                  flex_grow="1" style_pad_all="#space_lg" style_bg_color="#section_bg_color"
+                  style_radius="#border_radius" flex_flow="row" style_flex_cross_place="center"
+                  style_pad_gap="#space_md" scrollable="false">
             <bind_flag_if_not_eq subject="printer_has_heater_bed" flag="hidden" ref_value="1"/>
             <!-- Left: icon + text -->
-            <lv_obj flex_grow="1" height="content" style_pad_all="0" flex_flow="column"
-                    style_pad_gap="#space_xs" scrollable="false">
-              <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="row"
-                      style_flex_cross_place="center" style_pad_gap="#space_sm" scrollable="false">
+            <lv_obj height="content"
+                    flex_grow="1" style_pad_all="0" flex_flow="column" style_pad_gap="#space_xs" scrollable="false">
+              <lv_obj width="100%"
+                      height="content" style_pad_all="0" flex_flow="row" style_flex_cross_place="center"
+                      style_pad_gap="#space_sm" scrollable="false">
                 <icon src="thermometer" size="sm" variant="secondary"/>
                 <text_body text="Warm Bed" translation_tag="Warm Bed"/>
               </lv_obj>
@@ -85,7 +97,9 @@
         <bind_flag_if_not_eq subject="zoffset_cal_state" flag="hidden" ref_value="1"/>
         <spinner size="lg"/>
         <text_heading width="100%" text="Probing Bed..." translation_tag="Probing Bed..." style_text_align="center"/>
-        <text_small width="80%" text="Please wait while the printer homes and probes." translation_tag="Please wait while the printer homes and probes." style_text_align="center"/>
+        <text_small width="80%"
+                    text="Please wait while the printer homes and probes."
+                    translation_tag="Please wait while the printer homes and probes." style_text_align="center"/>
         <!-- Abort Button -->
         <ui_button name="btn_abort_probing" width="40%" text="Abort" translation_tag="Abort" variant="danger">
           <event_cb trigger="clicked" callback="on_zoffset_abort_clicked"/>
@@ -99,33 +113,37 @@
               style_flex_cross_place="center" style_pad_gap="#space_lg" scrollable="false">
         <bind_flag_if_not_eq subject="zoffset_cal_state" flag="hidden" ref_value="2"/>
         <!-- Z Position + Indicator side by side -->
-        <lv_obj width="100%" flex_grow="1" style_pad_all="0" flex_flow="row" style_pad_gap="#space_md" scrollable="false">
+        <lv_obj width="100%"
+                flex_grow="1" style_pad_all="0" flex_flow="row" style_pad_gap="#space_md" scrollable="false">
           <!-- Z Position Display (left) -->
-          <lv_obj flex_grow="1" height="100%"
-                  style_bg_color="#section_bg_color" style_radius="#border_radius" style_pad_all="#space_md"
-                  flex_flow="row" style_flex_main_place="center" style_flex_cross_place="center"
-                  style_pad_gap="#space_md" scrollable="false">
+          <lv_obj height="100%"
+                  flex_grow="1" style_bg_color="#section_bg_color" style_radius="#border_radius"
+                  style_pad_all="#space_md" flex_flow="row" style_flex_main_place="center"
+                  style_flex_cross_place="center" style_pad_gap="#space_md" scrollable="false">
             <!-- Saved Z-Offset (left side) -->
-            <lv_obj flex_grow="1" height="content" style_pad_all="0" flex_flow="column"
-                    style_flex_cross_place="center" style_pad_gap="#space_xs" scrollable="false">
+            <lv_obj height="content"
+                    flex_grow="1" style_pad_all="0" flex_flow="column" style_flex_cross_place="center"
+                    style_pad_gap="#space_xs" scrollable="false">
               <text_small text="Saved Z-Offset" translation_tag="Saved Z-Offset" style_text_color="#text_muted"/>
               <text_heading name="saved_z_offset_display" text=""/>
             </lv_obj>
             <!-- Vertical divider -->
             <divider_vertical height="80%"/>
             <!-- Current Z Position (right side) -->
-            <lv_obj flex_grow="1" height="content" style_pad_all="0" flex_flow="column"
-                    style_flex_cross_place="center" style_pad_gap="#space_xs" scrollable="false">
+            <lv_obj height="content"
+                    flex_grow="1" style_pad_all="0" flex_flow="column" style_flex_cross_place="center"
+                    style_pad_gap="#space_xs" scrollable="false">
               <text_small text="Current Z Position" translation_tag="Current Z Position" style_text_color="#text_muted"/>
               <text_heading name="z_position_display" text="Z: 0.000" translation_tag="Z: 0.000"/>
             </lv_obj>
           </lv_obj>
           <!-- Vertical meter indicator (right) -->
-          <z_offset_indicator name="z_offset_indicator" flex_grow="1" height="100%"/>
+          <z_offset_indicator name="z_offset_indicator" height="100%" flex_grow="1"/>
         </lv_obj>
         <!-- Instructions -->
         <text_small width="100%"
-                    text="Move paper back and forth while adjusting. Stop when paper catches slightly but still slides." translation_tag="Move paper back and forth while adjusting. Stop when paper catches slightly but still slides."
+                    text="Move paper back and forth while adjusting. Stop when paper catches slightly but still slides."
+                    translation_tag="Move paper back and forth while adjusting. Stop when paper catches slightly but still slides."
                     style_text_align="center"/>
         <!-- Adjustment Buttons Grid (Mainsail-style: top=farther, bottom=closer) -->
         <lv_obj width="100%"
@@ -134,7 +152,7 @@
           <lv_obj width="100%"
                   height="content" style_pad_all="0" flex_flow="row" style_flex_main_place="center"
                   style_flex_cross_place="center" style_pad_gap="#space_sm" scrollable="false">
-            <text_small text="Farther" translation_tag="Farther" width="60"/>
+            <text_small width="60" text="Farther" translation_tag="Farther"/>
             <ui_button flex_grow="1" text="+.005">
               <event_cb trigger="clicked" callback="on_zoffset_z_adjust" user_data="0.005"/>
             </ui_button>
@@ -155,7 +173,7 @@
           <lv_obj width="100%"
                   height="content" style_pad_all="0" flex_flow="row" style_flex_main_place="center"
                   style_flex_cross_place="center" style_pad_gap="#space_sm" scrollable="false">
-            <text_small text="Closer" translation_tag="Closer" width="60"/>
+            <text_small width="60" text="Closer" translation_tag="Closer"/>
             <ui_button flex_grow="1" text="-.005">
               <event_cb trigger="clicked" callback="on_zoffset_z_adjust" user_data="-0.005"/>
             </ui_button>
@@ -175,8 +193,8 @@
         </lv_obj>
         <!-- Accept / Abort Buttons -->
         <lv_obj width="100%"
-                height="content" style_pad_all="0" flex_flow="row" style_flex_main_place="center" style_pad_gap="#space_md"
-                scrollable="false">
+                height="content" style_pad_all="0" flex_flow="row" style_flex_main_place="center"
+                style_pad_gap="#space_md" scrollable="false">
           <ui_button name="btn_abort" flex_grow="1" text="Abort" translation_tag="Abort" variant="danger">
             <event_cb trigger="clicked" callback="on_zoffset_abort_clicked"/>
           </ui_button>
@@ -194,7 +212,9 @@
         <bind_flag_if_not_eq subject="zoffset_cal_state" flag="hidden" ref_value="3"/>
         <spinner size="lg"/>
         <text_heading text="Saving Configuration..." translation_tag="Saving Configuration..." style_text_align="center"/>
-        <text_small width="80%" text="Klipper will restart to apply changes." translation_tag="Klipper will restart to apply changes." style_text_align="center"/>
+        <text_small width="80%"
+                    text="Klipper will restart to apply changes."
+                    translation_tag="Klipper will restart to apply changes." style_text_align="center"/>
       </lv_obj>
       <!-- ================================================================== -->
       <!-- STATE: COMPLETE (4) - Calibration finished -->
@@ -206,7 +226,8 @@
         <bind_flag_if_not_eq subject="zoffset_cal_state" flag="hidden" ref_value="4"/>
         <lv_label text="#icon_check_circle" style_text_font="mdi_icons_48" style_text_color="#success"/>
         <text_heading text="Calibration Complete!" translation_tag="Calibration Complete!" style_text_align="center"/>
-        <text_body name="final_offset_label" text="Accepted Z Position: 0.000" translation_tag="Accepted Z Position: 0.000"/>
+        <text_body name="final_offset_label"
+                   text="Accepted Z Position: 0.000" translation_tag="Accepted Z Position: 0.000"/>
         <ui_button name="btn_done" width="40%" text="Done" translation_tag="Done">
           <event_cb trigger="clicked" callback="on_zoffset_done_clicked"/>
         </ui_button>
@@ -222,10 +243,11 @@
         <lv_label text="#icon_close_circle" style_text_font="mdi_icons_48" style_text_color="#danger"/>
         <text_heading text="Calibration Failed" translation_tag="Calibration Failed" style_text_align="center"/>
         <text_muted name="error_message"
-                    width="80%" text="An error occurred during calibration." translation_tag="An error occurred during calibration." style_text_align="center" long_mode="wrap"/>
+                    width="80%" text="An error occurred during calibration."
+                    translation_tag="An error occurred during calibration." style_text_align="center" long_mode="wrap"/>
         <lv_obj width="100%"
-                height="content" style_pad_all="0" flex_flow="row" style_flex_main_place="center" style_pad_gap="#space_md"
-                scrollable="false">
+                height="content" style_pad_all="0" flex_flow="row" style_flex_main_place="center"
+                style_pad_gap="#space_md" scrollable="false">
           <ui_button name="btn_close_error" flex_grow="1" text="Close" translation_tag="Close">
             <event_cb trigger="clicked" callback="on_zoffset_done_clicked"/>
           </ui_button>

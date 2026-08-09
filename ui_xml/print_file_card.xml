@@ -27,13 +27,11 @@
   </consts>
   <view name="card_root"
         extends="ui_card" height="#card_height" style_flex_basis="#card_base_width" flex_grow="1"
-        style_min_width="#card_min_width" style_max_width="#card_max_width"
-        style_pad_all="0" style_border_width="0" style_radius="#border_radius"
-        clickable="true">
+        style_min_width="#card_min_width" style_max_width="#card_max_width" style_pad_all="0" style_border_width="0"
+        style_radius="#border_radius" clickable="true">
     <!-- Pre-rendered gradient background (LVGL native .bin for instant blitting)
          Source updated at runtime by C++ based on theme mode (dark/light) and card size -->
-    <lv_image name="gradient_bg"
-              width="100%" height="100%" inner_align="stretch"/>
+    <lv_image name="gradient_bg" width="100%" height="100%" inner_align="stretch"/>
     <!-- Thumbnail image - pre-scaled to exact display size via ThumbnailProcessor.
          Widget dimensions set by C++ to match .bin target (e.g. 160x160 for 800px),
          ensuring 1:1 blit with zero per-frame scaling overhead. Every source that
@@ -41,26 +39,22 @@
          USB-extracted thumbnails alike — so do NOT add inner_align="contain" here as
          a safety net: it would put a mis-sized source on LVGL's transform path and
          scale it on every frame, which the weakest devices cannot afford. -->
-    <lv_image name="thumbnail"
-              src="$thumbnail_src" align="center"
-              style_translate_y="#preview_offset_y"/>
+    <lv_image name="thumbnail" src="$thumbnail_src" align="center" style_translate_y="#preview_offset_y"/>
     <!-- No-thumbnail placeholder - shown for files without real thumbnails -->
-    <icon name="no_thumbnail_icon" src="cube_outline" size="xl" variant="tertiary"
-          align="center" style_translate_y="-10" hidden="true"/>
+    <icon name="no_thumbnail_icon"
+          src="cube_outline" size="xl" variant="tertiary" align="center" style_translate_y="-10" hidden="true"/>
     <!-- Folder icon - shown for regular directories (folder_type=1) -->
-    <icon name="folder_icon" src="folder" size="xl" variant="warning"
-          align="center" style_translate_y="-10" hidden="true"/>
+    <icon name="folder_icon"
+          src="folder" size="xl" variant="warning" align="center" style_translate_y="-10" hidden="true"/>
     <!-- Parent directory icon - shown for ".." entries (folder_type=2) -->
-    <icon name="parent_dir_icon" src="folder_arrow_up" size="xl" variant="warning"
-          align="center" style_translate_y="-10" hidden="true"/>
+    <icon name="parent_dir_icon"
+          src="folder_arrow_up" size="xl" variant="warning" align="center" style_translate_y="-10" hidden="true"/>
     <!-- Metadata overlay - flat rectangle, flush to card bottom -->
     <lv_obj name="metadata_overlay"
-            width="100%" height="content" align="bottom_mid"
-            style_bg_color="#card_bg" style_bg_opa="#metadata_overlay_opacity" style_radius="0"
-            style_pad_left="#space_xs" style_pad_right="#space_xs" style_pad_top="#space_lg"
-            style_pad_bottom="#space_xs" style_border_width="0"
-            flex_flow="column" scrollable="false"
-            clickable="false" event_bubble="true">
+            width="100%" height="content" align="bottom_mid" style_bg_color="#card_bg"
+            style_bg_opa="#metadata_overlay_opacity" style_radius="0" style_pad_left="#space_xs"
+            style_pad_right="#space_xs" style_pad_top="#space_lg" style_pad_bottom="#space_xs" style_border_width="0"
+            flex_flow="column" scrollable="false" clickable="false" event_bubble="true">
       <!-- Filename label (single line, truncated with ...) -->
       <text_xs name="filename_label"
                width="100%" height="content" text="$filename" long_mode="dots" style_text_color="#text"/>

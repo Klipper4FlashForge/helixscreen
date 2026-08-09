@@ -12,7 +12,8 @@
       <!-- Title: "Printer Setup: Network", etc. -->
       <text_heading name="wizard_title" bind_text="wizard_title"/>
       <!-- Progress: "Step X of Y" - separate elements for translation -->
-      <lv_obj name="wizard_progress" height="content" width="content" flex_flow="row" style_pad_all="0" style_pad_gap="4">
+      <lv_obj name="wizard_progress"
+              width="content" height="content" flex_flow="row" style_pad_all="0" style_pad_gap="4">
         <text_small text="Step" translation_tag="Step"/>
         <text_small name="wizard_step_current" bind_text="wizard_step_current"/>
         <text_small text="of" translation_tag="of"/>

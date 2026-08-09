@@ -5,8 +5,7 @@
 <!-- Shows detailed controls for a specific device section (e.g., Speed Settings, Calibration) -->
 <component>
   <view name="ams_device_section_detail"
-        extends="overlay_panel"
-        title="Section Detail" title_tag="Device Section" bg_color="#screen_bg">
+        extends="overlay_panel" title="Section Detail" title_tag="Device Section" bg_color="#screen_bg">
     <!-- Content Area (scrollable) -->
     <lv_obj name="overlay_content"
             width="100%" flex_grow="1" style_pad_all="#space_md" scrollable="true" flex_flow="column"
@@ -15,8 +14,7 @@
       <!-- Dynamic controls container (populated by C++) -->
       <lv_obj name="section_actions_container"
               width="100%" height="content" style_pad_all="0" flex_flow="column" style_pad_gap="#space_sm"
-              scrollable="false">
-      </lv_obj>
+              scrollable="false"/>
 
     </lv_obj>
   </view>

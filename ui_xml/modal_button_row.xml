@@ -30,14 +30,19 @@
       <!-- Optional leading tertiary button + trailing divider. Both carry hide_tertiary so,
            when hidden, they drop out of the flex row and the layout is identical to the
            original two-button row. Same border_width="0" divider treatment as below. -->
-      <ui_button name="btn_tertiary" hidden="$hide_tertiary" variant="$tertiary_variant" height="100%" flex_grow="1" style_radius="0" style_border_width="0" focusable="false" icon="$tertiary_icon" text="$tertiary_text" translation_tag="$tertiary_tag">
+      <ui_button name="btn_tertiary"
+                 height="100%" hidden="$hide_tertiary" variant="$tertiary_variant" flex_grow="1" style_radius="0"
+                 style_border_width="0" focusable="false" icon="$tertiary_icon" text="$tertiary_text"
+                 translation_tag="$tertiary_tag">
         <event_cb trigger="clicked" callback="$tertiary_callback"/>
       </ui_button>
       <divider_vertical name="div_tertiary" hidden="$hide_tertiary"/>
       <!-- Secondary button. style_border_width="0" so the theme's 1px button
            border doesn't stack against divider_vertical (previously looked
            like a triple-thick edge between Cancel and Save). -->
-      <ui_button name="btn_secondary" height="100%" flex_grow="1" style_radius="0" style_border_width="0" focusable="false" icon="$secondary_icon" text="$secondary_text" translation_tag="$secondary_tag">
+      <ui_button name="btn_secondary"
+                 height="100%" flex_grow="1" style_radius="0" style_border_width="0" focusable="false"
+                 icon="$secondary_icon" text="$secondary_text" translation_tag="$secondary_tag">
         <event_cb trigger="clicked" callback="$secondary_callback"/>
       </ui_button>
       <!-- Vertical divider -->
@@ -45,7 +50,9 @@
       <!-- Primary button (same border-width suppression as secondary).
            variant="primary" by default; pass primary_variant="danger" for
            destructive actions (Shutdown, Cancel Print, etc.). -->
-      <ui_button name="btn_primary" variant="$primary_variant" height="100%" flex_grow="1" style_radius="0" style_border_width="0" focusable="false" icon="$primary_icon" text="$primary_text" translation_tag="$primary_tag">
+      <ui_button name="btn_primary"
+                 height="100%" variant="$primary_variant" flex_grow="1" style_radius="0" style_border_width="0"
+                 focusable="false" icon="$primary_icon" text="$primary_text" translation_tag="$primary_tag">
         <event_cb trigger="clicked" callback="$primary_callback"/>
       </ui_button>
     </lv_obj>

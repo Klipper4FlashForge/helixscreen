@@ -10,52 +10,48 @@
   <!-- Overlay panel - right-aligned, row layout so right column spans full height -->
   <view name="ams_overview_panel"
         extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_pad_all="0"
-        style_border_width="0" style_bg_opa="255" style_bg_color="#card_bg" scrollable="false"
-        flex_flow="row" style_pad_gap="0">
+        style_border_width="0" style_bg_opa="255" style_bg_color="#card_bg" scrollable="false" flex_flow="row"
+        style_pad_gap="0">
     <!-- Left section: header + content (column) -->
     <lv_obj name="overview_content"
-            height="100%" flex_grow="3" style_pad_all="0" style_pad_gap="0"
-            flex_flow="column" scrollable="false">
+            height="100%" flex_grow="3" style_pad_all="0" style_pad_gap="0" flex_flow="column" scrollable="false">
       <!-- Header Bar - left-column width only, with unit logo + name in detail mode -->
       <lv_obj name="overlay_header"
               width="100%" height="#header_height" style_pad_left="#space_xs" style_pad_right="#space_sm"
-              style_pad_top="#space_xs" style_pad_bottom="#space_xs" flex_flow="row"
-              style_flex_main_place="start" style_flex_cross_place="center"
-              style_flex_track_place="center" scrollable="false">
+              style_pad_top="#space_xs" style_pad_bottom="#space_xs" flex_flow="row" style_flex_main_place="start"
+              style_flex_cross_place="center" style_flex_track_place="center" scrollable="false">
         <!-- Back button: flex_grow region covers arrow + title = large touch target -->
-        <lv_obj name="back_button" flex_grow="1" height="100%"
-                style_pad_left="0" style_pad_right="0" style_pad_top="0" style_pad_bottom="0"
-                scrollable="false" clickable="true"
-                style_flex_cross_place="center" style_flex_track_place="center"
-                flex_flow="row" style_pad_gap="#space_xs">
+        <lv_obj name="back_button"
+                height="100%" flex_grow="1" style_pad_left="0" style_pad_right="0" style_pad_top="0"
+                style_pad_bottom="0" scrollable="false" clickable="true" style_flex_cross_place="center"
+                style_flex_track_place="center" flex_flow="row" style_pad_gap="#space_xs">
           <event_cb trigger="clicked" callback="on_ams_overview_back_clicked"/>
           <icon src="back" size="lg" variant="text" clickable="false" event_bubble="true"/>
           <!-- Overview mode title (hidden in detail mode) -->
           <text_heading name="header_title"
                         text="Multi-Filament Overview" translation_tag="Multi-Filament Overview"
-                        text_transform="uppercase" long_mode="dots" style_text_align="left"
-                        clickable="false" event_bubble="true" scrollable="false"/>
+                        text_transform="uppercase" long_mode="dots" style_text_align="left" clickable="false"
+                        event_bubble="true" scrollable="false"/>
           <!-- Detail mode: unit logo + name (hidden in overview mode) -->
-          <lv_image name="detail_logo" width="#ams_logo_size" height="#ams_logo_size"
-                    inner_align="contain" hidden="true"
-                    clickable="false" event_bubble="true"/>
-          <text_heading name="detail_unit_name" text="" hidden="true"
-                        text_transform="uppercase" long_mode="dots" clickable="false" event_bubble="true" scrollable="false"/>
+          <lv_image name="detail_logo"
+                    width="#ams_logo_size" height="#ams_logo_size" inner_align="contain" hidden="true" clickable="false"
+                    event_bubble="true"/>
+          <text_heading name="detail_unit_name"
+                        text="" hidden="true" text_transform="uppercase" long_mode="dots" clickable="false"
+                        event_bubble="true" scrollable="false"/>
         </lv_obj>
       </lv_obj>
       <!-- Left column content (cards + canvas OR detail slot view) -->
       <lv_obj name="left_column"
-              width="100%" flex_grow="1" style_pad_all="#space_sm" style_pad_top="0"
-              style_pad_gap="#space_sm" flex_flow="column"
-              style_flex_main_place="start" style_flex_cross_place="center" scrollable="false">
+              width="100%" flex_grow="1" style_pad_all="#space_sm" style_pad_top="0" style_pad_gap="#space_sm"
+              flex_flow="column" style_flex_main_place="start" style_flex_cross_place="center" scrollable="false">
         <!-- Disable content when printer not connected or klippy not ready -->
         <bind_state_if_not_eq subject="nav_buttons_enabled" state="disabled" ref_value="1"/>
         <!-- === Overview Mode (visible by default) === -->
         <!-- Unit Cards Row - horizontal layout for unit summary cards -->
         <lv_obj name="unit_cards_row"
                 width="100%" height="content" style_pad_all="0" style_pad_gap="#space_md" flex_flow="row"
-                style_flex_main_place="start" style_flex_cross_place="start" scrollable="true"
-                scrollbar_mode="active">
+                style_flex_main_place="start" style_flex_cross_place="start" scrollable="true" scrollbar_mode="active">
           <!-- Unit cards created dynamically by AmsOverviewPanel::create_unit_cards() -->
         </lv_obj>
         <!-- System Path Area - shows unit outputs → hub → toolhead + bypass path -->
@@ -63,22 +59,22 @@
           <!-- Path canvas created programmatically with status text drawn to left of nozzle -->
         </lv_obj>
         <!-- === Detail Mode (hidden by default, shown when unit card clicked) === -->
-        <lv_obj name="unit_detail_container" hidden="true"
-                width="100%" flex_grow="1" style_pad_all="0" style_pad_gap="#space_xs" flex_flow="column"
+        <lv_obj name="unit_detail_container"
+                width="100%" hidden="true" flex_grow="1" style_pad_all="0" style_pad_gap="#space_xs" flex_flow="column"
                 style_flex_main_place="start" style_flex_cross_place="center" scrollable="false">
           <!-- Slot grid card (populated dynamically with ams_slot widgets) -->
           <ui_card name="detail_unit_card"
-                   width="100%" height="content" style_radius="4" style_pad_all="#space_sm"
-                   style_border_width="0" scrollable="false">
-            <lv_obj name="detail_slot_area"
-                    width="100%" height="content" style_pad_all="0" scrollable="false">
+                   width="100%" height="content" style_radius="4" style_pad_all="#space_sm" style_border_width="0"
+                   scrollable="false">
+            <lv_obj name="detail_slot_area" width="100%" height="content" style_pad_all="0" scrollable="false">
               <!-- Shared spool grid + tray + labels component -->
               <ams_unit_detail name="detail_unit_detail"/>
             </lv_obj>
           </ui_card>
           <!-- Path Canvas - shows filament routing from slots through hub to nozzle -->
-          <lv_obj name="detail_path_container" width="100%" flex_grow="1" style_pad_all="0"
-                  flex_flow="column" style_flex_main_place="start" scrollable="false">
+          <lv_obj name="detail_path_container"
+                  width="100%" flex_grow="1" style_pad_all="0" flex_flow="column" style_flex_main_place="start"
+                  scrollable="false">
             <filament_path_canvas name="detail_path_canvas" width="100%" flex_grow="1"/>
           </lv_obj>
         </lv_obj>
@@ -86,8 +82,8 @@
     </lv_obj>
     <!-- Right column (loaded info + action buttons) - spans full panel height -->
     <lv_obj name="right_column"
-            height="100%" width="#ams_right_col_w" style_pad_all="#space_sm" style_pad_gap="#space_sm" flex_flow="column"
-            style_flex_main_place="start" style_flex_cross_place="start" scrollable="false">
+            width="#ams_right_col_w" height="100%" style_pad_all="#space_sm" style_pad_gap="#space_sm"
+            flex_flow="column" style_flex_main_place="start" style_flex_cross_place="start" scrollable="false">
       <bind_state_if_not_eq subject="nav_buttons_enabled" state="disabled" ref_value="1"/>
       <ams_sidebar name="ams_operation_sidebar"/>
     </lv_obj>

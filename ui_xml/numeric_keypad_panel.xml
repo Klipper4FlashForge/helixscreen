@@ -23,8 +23,8 @@
         style_bg_opa="255" style_bg_color="#card_bg" scrollable="false" flex_flow="column" hidden="true">
     <!-- Header: no title, just back arrow and OK button -->
     <header_bar name="overlay_header"
-                title="" action_button_text="Set " action_button_text_tag="Set " hide_action_button="false" action_button_height="#button_height"
-                action_button_pad="#space_md"/>
+                title="" action_button_text="Set " action_button_text_tag="Set " hide_action_button="false"
+                action_button_height="#button_height" action_button_pad="#space_md"/>
     <!-- Content -->
     <lv_obj name="overlay_content"
             width="100%" flex_grow="1" style_pad_all="#space_md" scrollable="false" flex_flow="column" style_pad_gap="0"
@@ -32,12 +32,12 @@
 
       <!-- Display: Textarea styled input (read-only) with unit label -->
       <lv_obj name="display_container"
-              width="100%" height="content" style_pad_all="0" style_pad_left="#space_xs" scrollable="false" flex_flow="row"
-              style_flex_cross_place="center" style_pad_bottom="#space_md">
+              width="100%" height="content" style_pad_all="0" style_pad_left="#space_xs" scrollable="false"
+              flex_flow="row" style_flex_cross_place="center" style_pad_bottom="#space_md">
         <text_input name="input_display"
                     height="content" flex_grow="1" text="" bind_text="keypad_display" style_text_font="#font_heading"
-                    style_text_align="right" style_radius="#border_radius"
-                    one_line="true" clickable="false" scrollable="false"/>
+                    style_text_align="right" style_radius="#border_radius" one_line="true" clickable="false"
+                    scrollable="false"/>
         <lv_label name="input_unit"
                   text="" style_text_font="#font_body" style_text_color="#text_muted" style_pad_left="#space_sm"/>
       </lv_obj>

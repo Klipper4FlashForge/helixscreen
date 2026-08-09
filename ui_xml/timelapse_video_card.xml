@@ -26,19 +26,17 @@
         style_min_width="#card_min_width" style_max_width="#card_max_width" style_pad_all="0" style_clip_corner="true"
         clickable="true">
     <!-- Pre-rendered gradient background -->
-    <lv_image name="gradient_bg"
-              width="100%" height="100%" inner_align="stretch"/>
+    <lv_image name="gradient_bg" width="100%" height="100%" inner_align="stretch"/>
     <!-- Thumbnail image -->
-    <lv_image name="thumbnail"
-              width="100%" height="100%" src="$thumbnail_src" align="center" inner_align="contain"/>
+    <lv_image name="thumbnail" width="100%" height="100%" src="$thumbnail_src" align="center" inner_align="contain"/>
     <!-- No-thumbnail placeholder -->
-    <icon name="no_thumbnail_icon" src="video" size="xl" variant="tertiary"
-          align="center" style_translate_y="-10" hidden="true"/>
+    <icon name="no_thumbnail_icon"
+          src="video" size="xl" variant="tertiary" align="center" style_translate_y="-10" hidden="true"/>
     <!-- Play button overlay (centered, semi-transparent) -->
     <lv_obj name="play_overlay"
             width="#play_icon_size" height="#play_icon_size" align="center" style_translate_y="-10"
-            style_bg_color="0x000000" style_bg_opa="140" style_radius="20"
-            scrollable="false" clickable="false" event_bubble="true">
+            style_bg_color="0x000000" style_bg_opa="140" style_radius="20" scrollable="false" clickable="false"
+            event_bubble="true">
       <icon src="play" size="sm" variant="text" align="center" clickable="false" event_bubble="true"/>
     </lv_obj>
     <!-- Metadata clip container -->
@@ -48,15 +46,14 @@
       <lv_obj name="metadata_overlay"
               width="100%" height="62" style_bg_opa="#metadata_overlay_opacity" style_radius="#border_radius"
               style_pad_left="#space_xs" style_pad_right="#space_xs" style_pad_top="#space_md"
-              style_pad_bottom="#space_xs" align="bottom_mid" flex_flow="column" scrollable="false"
-              clickable="false" event_bubble="true">
+              style_pad_bottom="#space_xs" align="bottom_mid" flex_flow="column" scrollable="false" clickable="false"
+              event_bubble="true">
         <!-- Filename label -->
         <text_xs name="filename_label"
                  width="100%" height="18" text="$filename" long_mode="dots" style_text_color="#text"/>
         <!-- File info (size + date) -->
         <text_xs name="file_info_label"
-                 width="100%" text="$file_info" style_text_color="#text_muted"
-                 style_pad_top="#metadata_top_pad"/>
+                 width="100%" text="$file_info" style_text_color="#text_muted" style_pad_top="#metadata_top_pad"/>
       </lv_obj>
     </lv_obj>
   </view>

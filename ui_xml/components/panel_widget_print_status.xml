@@ -16,26 +16,24 @@
     <!-- IDLE STATE: Library card with thumbnail + file actions.
          Visibility driven by print_status_view subject (0 = idle_library_full). -->
     <lv_obj name="print_card_idle"
-            width="100%" height="100%" style_pad_all="0" flex_flow="column" style_pad_gap="0"
-            clickable="false" event_bubble="true">
+            width="100%" height="100%" style_pad_all="0" flex_flow="column" style_pad_gap="0" clickable="false"
+            event_bubble="true">
       <bind_flag_if_not_eq subject="print_status_view" flag="hidden" ref_value="0"/>
       <!-- Header: "Library" label with underline. Hidden flag bound to
            print_status_title_hidden (1 when show_title config is off OR at micro breakpoint). -->
       <lv_obj name="library_header"
               width="100%" height="content" flex_flow="column" style_pad_left="#space_sm" style_pad_right="#space_sm"
-              style_pad_top="0" style_pad_bottom="0" style_pad_gap="#space_xxs" clickable="false"
-              event_bubble="true">
+              style_pad_top="0" style_pad_bottom="0" style_pad_gap="#space_xxs" clickable="false" event_bubble="true">
         <bind_flag_if_eq subject="print_status_title_hidden" flag="hidden" ref_value="1"/>
         <text_small text="Print Library"
-                    translation_tag="Print Library" text_transform="uppercase" clickable="false"
-                    event_bubble="true"/>
+                    translation_tag="Print Library" text_transform="uppercase" clickable="false" event_bubble="true"/>
         <divider_horizontal/>
       </lv_obj>
       <!-- Body: thumbnail left, action list right.
            pad_gap intentionally omitted inline — driven by bind_style per width band. -->
       <lv_obj name="library_body"
-              width="100%" flex_grow="1" style_pad_all="#space_xxs" style_pad_left="0" flex_flow="row" scrollable="false"
-              clickable="false" event_bubble="true">
+              width="100%" flex_grow="1" style_pad_all="#space_xxs" style_pad_left="0" flex_flow="row"
+              scrollable="false" clickable="false" event_bubble="true">
         <bind_style name="library_body_gap_wide" subject="print_status_width_band" ref_value="2"/>
         <bind_style name="library_body_gap_default" subject="print_status_width_band" ref_value="1"/>
         <!-- Thumbnail (last print or benchy) -->
@@ -92,9 +90,8 @@
            still show the previous job's farewell text into the next pre-print.
            clickable/event_bubble keep taps reaching the card handler. -->
       <text_small name="idle_display_message"
-                  width="100%" bind_text="display_message" style_text_align="center"
-                  long_mode="dots" style_text_color="#text_muted" hidden="true"
-                  clickable="false" event_bubble="true">
+                  width="100%" bind_text="display_message" style_text_align="center" long_mode="dots"
+                  style_text_color="#text_muted" hidden="true" clickable="false" event_bubble="true">
         <bind_flag_if_eq subject="display_message_visible" flag="hidden" ref_value="0"/>
       </text_small>
     </lv_obj>
@@ -143,13 +140,9 @@
            active card wrapper so it shows for both library and detailed
            layouts. Scaled-down sibling of the paused_badge on print_status_panel. -->
       <ui_button name="home_paused_badge"
-                 variant="primary" layout="row"
-                 width="content" height="content" style_min_height="0"
-                 clickable="false" focusable="false"
-                 style_radius="#space_md"
-                 style_pad_left="#space_sm" style_pad_right="#space_sm"
-                 style_pad_top="#space_xxs" style_pad_bottom="#space_xxs"
-                 style_pad_gap="#space_xs">
+                 width="content" height="content" variant="primary" layout="row" style_min_height="0" clickable="false"
+                 focusable="false" style_radius="#space_md" style_pad_left="#space_sm" style_pad_right="#space_sm"
+                 style_pad_top="#space_xxs" style_pad_bottom="#space_xxs" style_pad_gap="#space_xs">
         <bind_flag_if_not_eq subject="print_state_enum" flag="hidden" ref_value="2"/>
         <lv_label text="#icon_pause" style_text_font="mdi_icons_16" event_bubble="true"/>
         <text_small text="Paused" translation_tag="Paused" event_bubble="true"/>
@@ -204,8 +197,8 @@
            active view has its own M117 row inside print_status_detailed_active;
            this copy is clipped there by that component's height="100%". -->
       <text_small name="display_message"
-                  width="100%" bind_text="display_message" style_text_align="center"
-                  long_mode="dots" hidden="true" clickable="false" event_bubble="true">
+                  width="100%" bind_text="display_message" style_text_align="center" long_mode="dots" hidden="true"
+                  clickable="false" event_bubble="true">
         <bind_flag_if cond="print_status_view ne 3 or display_message_visible eq 0" flag="hidden"/>
       </text_small>
     </lv_obj>

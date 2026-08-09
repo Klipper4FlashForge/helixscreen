@@ -167,7 +167,8 @@
               height="content" style_pad_all="0" scrollable="false" flex_flow="row" style_flex_cross_place="center"
               style_pad_gap="#space_sm">
         <icon src="info" size="xs" variant="secondary"/>
-        <text_small text="Changes apply immediately. Adjust during print for tuning." translation_tag="Changes apply immediately. Adjust during print for tuning."/>
+        <text_small text="Changes apply immediately. Adjust during print for tuning."
+                    translation_tag="Changes apply immediately. Adjust during print for tuning."/>
       </lv_obj>
     </lv_obj>
   </view>

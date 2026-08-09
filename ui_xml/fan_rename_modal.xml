@@ -24,8 +24,8 @@
       </lv_obj>
       <!-- New name input -->
       <text_input name="fan_rename_new_name_input"
-                  width="100%" height="#input_height" placeholder_text="New fan name" placeholder_tag="New fan name" translation_tag="New fan name"
-                  style_margin_top="#space_sm"/>
+                  width="100%" height="#input_height" placeholder_text="New fan name" placeholder_tag="New fan name"
+                  translation_tag="New fan name" style_margin_top="#space_sm"/>
     </lv_obj>
     <modal_button_row primary_text="Rename"
                       secondary_text="Cancel" primary_callback="on_fan_rename_confirm"

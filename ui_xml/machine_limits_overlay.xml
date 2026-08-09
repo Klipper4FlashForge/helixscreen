@@ -6,10 +6,11 @@
 <!-- Max Z values are read-only (config-defined, not runtime adjustable) -->
 <component>
   <view name="machine_limits_overlay"
-        extends="overlay_panel" title="Machine Limits" title_tag="Machine Limits"
-        bg_color="#screen_bg">
+        extends="overlay_panel" title="Machine Limits" title_tag="Machine Limits" bg_color="#screen_bg">
     <!-- Content Area -->
-    <lv_obj name="overlay_content" width="100%" flex_grow="1" style_pad_top="0" style_pad_left="#space_lg" style_pad_right="#space_lg" style_pad_bottom="#space_lg" scrollable="true" flex_flow="column">
+    <lv_obj name="overlay_content"
+            width="100%" flex_grow="1" style_pad_top="0" style_pad_left="#space_lg" style_pad_right="#space_lg"
+            style_pad_bottom="#space_lg" scrollable="true" flex_flow="column">
       <!-- ================================================================== -->
       <!-- INFO BANNER - Changes are temporary -->
       <!-- ================================================================== -->

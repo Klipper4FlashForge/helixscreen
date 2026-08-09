@@ -1,12 +1,6 @@
 <?xml version="1.0"?>
 <!-- Copyright (C) 2025-2026 356C LLC -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<!--
-  PIN Entry Modal — numeric keypad for PIN set/change/remove flows.
-  Same landscape/portrait reflow as lock_screen.xml, but inside a modal card
-  that carries its own header row.
-  Dots and heading are updated imperatively from C++ (PinEntryModal).
--->
 <component>
   <consts>
     <!-- Dot indicator size — same as lock screen -->
@@ -20,18 +14,9 @@
 
   <styles>
     <!-- Filled dot: digit entered -->
-    <style name="pin_dot_filled"
-           bg_opa="255"
-           bg_color="#text"
-           border_width="0"
-           radius="99"/>
+    <style name="pin_dot_filled" bg_opa="255" bg_color="#text" border_width="0" radius="99"/>
     <!-- Empty dot: digit not yet entered -->
-    <style name="pin_dot_empty"
-           bg_opa="0"
-           border_width="2"
-           border_color="#text_muted"
-           border_opa="255"
-           radius="99"/>
+    <style name="pin_dot_empty" bg_opa="0" border_width="2" border_color="#text_muted" border_opa="255" radius="99"/>
 
     <!-- Card orientation.
 
@@ -88,49 +73,33 @@
        difference between a 266px card and a 274px one on a 272px screen. The
        header's own pad_bottom and the body's pad_top already separate them. -->
   <view name="pin_entry_modal"
-        extends="lv_obj"
-        height="content"
-        align="center"
-        style_bg_color="#card_bg" style_bg_opa="255"
-        style_border_width="1"
-        style_border_color="#text_muted"
-        style_border_opa="64"
-        style_radius="#border_radius"
-        style_pad_all="0"
-        style_pad_row="0"
-        flex_flow="column"
-        style_flex_main_place="center"
-        style_flex_cross_place="center"
-        scrollable="false">
+        extends="lv_obj" height="content" align="center" style_bg_color="#card_bg" style_bg_opa="255"
+        style_border_width="1" style_border_color="#text_muted" style_border_opa="64" style_radius="#border_radius"
+        style_pad_all="0" style_pad_row="0" flex_flow="column" style_flex_main_place="center"
+        style_flex_cross_place="center" scrollable="false">
 
     <bind_style_if_le name="pin_card_compact" subject="ui_breakpoint" ref_value="1"/>
     <bind_style_if_ge name="pin_card_stacked" subject="ui_breakpoint" ref_value="2"/>
 
     <!-- Header with close (X) button -->
-    <lv_obj width="100%" height="content"
-            style_pad_left="#space_lg" style_pad_right="#space_sm" style_pad_top="#space_md"
-            style_pad_bottom="#space_sm" flex_flow="row" style_flex_cross_place="center"
-            style_pad_gap="#space_sm" style_bg_opa="0" style_border_width="0"
-            scrollable="false">
+    <lv_obj width="100%"
+            height="content" style_pad_left="#space_lg" style_pad_right="#space_sm" style_pad_top="#space_md"
+            style_pad_bottom="#space_sm" flex_flow="row" style_flex_cross_place="center" style_pad_gap="#space_sm"
+            style_bg_opa="0" style_border_width="0" scrollable="false">
       <icon src="lock" size="md" variant="primary" clickable="false" event_bubble="true"/>
-      <text_heading text="Enter PIN" translation_tag="Enter PIN"
-                    style_text_align="left" flex_grow="1"
-                    clickable="false" event_bubble="true"/>
-      <ui_button name="pin_close_btn" icon="close" variant="ghost"
-                 width="40" height="40">
+      <text_heading text="Enter PIN"
+                    translation_tag="Enter PIN" style_text_align="left" flex_grow="1" clickable="false"
+                    event_bubble="true"/>
+      <ui_button name="pin_close_btn" width="40" height="40" icon="close" variant="ghost">
         <event_cb trigger="clicked" callback="pin_modal_cancel_clicked"/>
       </ui_button>
     </lv_obj>
 
     <!-- Body: info block + keypad.
          flex_flow and the gaps come from pin_body_compact / pin_body_stacked. -->
-    <lv_obj name="pin_body" width="100%" height="content"
-            style_pad_all="#space_lg"
-            style_bg_opa="0"
-            style_border_width="0"
-            style_flex_main_place="center"
-            style_flex_cross_place="center"
-            scrollable="false">
+    <lv_obj name="pin_body"
+            width="100%" height="content" style_pad_all="#space_lg" style_bg_opa="0" style_border_width="0"
+            style_flex_main_place="center" style_flex_cross_place="center" scrollable="false">
 
       <bind_style_if_le name="pin_body_compact" subject="ui_breakpoint" ref_value="1"/>
       <bind_style_if_ge name="pin_body_stacked" subject="ui_breakpoint" ref_value="2"/>
@@ -138,34 +107,20 @@
       <!-- Info block: heading, dots, error line.
            Sits above the keypad when stacked, left of it when compact. -->
       <lv_obj name="pin_info_column"
-              height="content"
-              flex_flow="column"
-              style_pad_all="0"
-              style_pad_gap="#space_md"
-              style_flex_main_place="center"
-              style_flex_cross_place="center"
-              style_bg_opa="0"
-              style_border_width="0"
+              height="content" flex_flow="column" style_pad_all="0" style_pad_gap="#space_md"
+              style_flex_main_place="center" style_flex_cross_place="center" style_bg_opa="0" style_border_width="0"
               scrollable="false">
 
         <bind_style_if_le name="pin_info_compact" subject="ui_breakpoint" ref_value="1"/>
         <bind_style_if_ge name="pin_info_stacked" subject="ui_breakpoint" ref_value="2"/>
 
         <!-- Dynamic heading text (updated from C++) -->
-        <text_body name="pin_heading"
-                   text="Enter New PIN"
-                   style_text_align="center"
-                   width="100%"/>
+        <text_body name="pin_heading" width="100%" text="Enter New PIN" style_text_align="center"/>
 
         <!-- 6 PIN dot indicators -->
         <lv_obj name="pin_dots_container"
-                width="content" height="content"
-                flex_flow="row"
-                style_pad_gap="#space_sm"
-                style_pad_all="0"
-                style_bg_opa="0"
-                style_border_width="0"
-                align="center">
+                width="content" height="content" flex_flow="row" style_pad_gap="#space_sm" style_pad_all="0"
+                style_bg_opa="0" style_border_width="0" align="center">
           <lv_obj name="pin_dot_0" width="#pin_dot_size" height="#pin_dot_size">
             <style name="pin_dot_empty"/>
           </lv_obj>
@@ -188,95 +143,59 @@
 
         <!-- Error text (shown on PIN mismatch etc.) -->
         <text_small name="pin_error_label"
-                    text=" "
-                    style_text_color="#warning"
-                    style_text_align="center"
-                    width="100%"
-                    style_opa="0"/>
+                    width="100%" text=" " style_text_color="#warning" style_text_align="center" style_opa="0"/>
       </lv_obj>
 
       <!-- 4x3 numeric keypad — mirrors lock_screen.xml layout.
            width and the gaps come from pin_keypad_compact / pin_keypad_stacked. -->
       <lv_obj name="pin_keypad"
-              height="content"
-              flex_flow="row_wrap"
-              style_flex_main_place="center"
-              style_flex_track_place="center"
-              style_pad_all="0"
-              style_bg_opa="0"
-              style_border_width="0"
-              scrollable="false">
+              height="content" flex_flow="row_wrap" style_flex_main_place="center" style_flex_track_place="center"
+              style_pad_all="0" style_bg_opa="0" style_border_width="0" scrollable="false">
 
         <bind_style_if_le name="pin_keypad_compact" subject="ui_breakpoint" ref_value="1"/>
         <bind_style_if_ge name="pin_keypad_stacked" subject="ui_breakpoint" ref_value="2"/>
 
         <!-- Row 1: 1 2 3 -->
-        <ui_button name="pin_digit_1"
-                   width="30%" height="#pin_btn_height"
-                   text="1" variant="secondary">
+        <ui_button name="pin_digit_1" width="30%" height="#pin_btn_height" text="1" variant="secondary">
           <event_cb trigger="clicked" callback="pin_modal_digit_clicked"/>
         </ui_button>
-        <ui_button name="pin_digit_2"
-                   width="30%" height="#pin_btn_height"
-                   text="2" variant="secondary">
+        <ui_button name="pin_digit_2" width="30%" height="#pin_btn_height" text="2" variant="secondary">
           <event_cb trigger="clicked" callback="pin_modal_digit_clicked"/>
         </ui_button>
-        <ui_button name="pin_digit_3"
-                   width="30%" height="#pin_btn_height"
-                   text="3" variant="secondary">
+        <ui_button name="pin_digit_3" width="30%" height="#pin_btn_height" text="3" variant="secondary">
           <event_cb trigger="clicked" callback="pin_modal_digit_clicked"/>
         </ui_button>
 
         <!-- Row 2: 4 5 6 -->
-        <ui_button name="pin_digit_4"
-                   width="30%" height="#pin_btn_height"
-                   text="4" variant="secondary">
+        <ui_button name="pin_digit_4" width="30%" height="#pin_btn_height" text="4" variant="secondary">
           <event_cb trigger="clicked" callback="pin_modal_digit_clicked"/>
         </ui_button>
-        <ui_button name="pin_digit_5"
-                   width="30%" height="#pin_btn_height"
-                   text="5" variant="secondary">
+        <ui_button name="pin_digit_5" width="30%" height="#pin_btn_height" text="5" variant="secondary">
           <event_cb trigger="clicked" callback="pin_modal_digit_clicked"/>
         </ui_button>
-        <ui_button name="pin_digit_6"
-                   width="30%" height="#pin_btn_height"
-                   text="6" variant="secondary">
+        <ui_button name="pin_digit_6" width="30%" height="#pin_btn_height" text="6" variant="secondary">
           <event_cb trigger="clicked" callback="pin_modal_digit_clicked"/>
         </ui_button>
 
         <!-- Row 3: 7 8 9 -->
-        <ui_button name="pin_digit_7"
-                   width="30%" height="#pin_btn_height"
-                   text="7" variant="secondary">
+        <ui_button name="pin_digit_7" width="30%" height="#pin_btn_height" text="7" variant="secondary">
           <event_cb trigger="clicked" callback="pin_modal_digit_clicked"/>
         </ui_button>
-        <ui_button name="pin_digit_8"
-                   width="30%" height="#pin_btn_height"
-                   text="8" variant="secondary">
+        <ui_button name="pin_digit_8" width="30%" height="#pin_btn_height" text="8" variant="secondary">
           <event_cb trigger="clicked" callback="pin_modal_digit_clicked"/>
         </ui_button>
-        <ui_button name="pin_digit_9"
-                   width="30%" height="#pin_btn_height"
-                   text="9" variant="secondary">
+        <ui_button name="pin_digit_9" width="30%" height="#pin_btn_height" text="9" variant="secondary">
           <event_cb trigger="clicked" callback="pin_modal_digit_clicked"/>
         </ui_button>
 
         <!-- Row 4: backspace 0 confirm -->
-        <ui_button name="pin_backspace"
-                   width="30%" height="#pin_btn_height"
-                   icon="backspace" text=""
-                   variant="ghost">
+        <ui_button name="pin_backspace" width="30%" height="#pin_btn_height" icon="backspace" text="" variant="ghost">
           <event_cb trigger="clicked" callback="pin_modal_backspace_clicked"/>
         </ui_button>
-        <ui_button name="pin_digit_0"
-                   width="30%" height="#pin_btn_height"
-                   text="0" variant="secondary">
+        <ui_button name="pin_digit_0" width="30%" height="#pin_btn_height" text="0" variant="secondary">
           <event_cb trigger="clicked" callback="pin_modal_digit_clicked"/>
         </ui_button>
-        <ui_button name="pin_confirm"
-                   width="30%" height="#pin_btn_height"
-                   icon="check" text=""
-                   variant="primary">
+        <ui_button name="pin_confirm" width="30%" height="#pin_btn_height" icon="check" text="" variant="primary">
           <event_cb trigger="clicked" callback="pin_modal_confirm_clicked"/>
         </ui_button>
 

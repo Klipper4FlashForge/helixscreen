@@ -21,9 +21,9 @@
     <event_cb trigger="clicked" callback="ams_context_backdrop_cb"/>
     <!-- Context menu card - positioned by C++ -->
     <lv_obj name="context_menu"
-            width="content" height="content" style_bg_color="#elevated_bg" style_bg_opa="255" style_radius="#border_radius"
-            style_pad_all="#space_sm" style_pad_gap="#space_md" flex_flow="column" style_flex_main_place="start"
-            scrollable="false" clickable="true">
+            width="content" height="content" style_bg_color="#elevated_bg" style_bg_opa="255"
+            style_radius="#border_radius" style_pad_all="#space_sm" style_pad_gap="#space_md" flex_flow="column"
+            style_flex_main_place="start" scrollable="false" clickable="true">
       <!-- Header: "Slot N" -->
       <text_body name="slot_header" text="Slot 1" translation_tag="Slot 1"/>
       <!-- Header Divider -->
@@ -36,35 +36,36 @@
            groups sit side by side. Same widget tree either way - only this
            container's flow changes - so nothing is rebuilt to switch layouts. -->
       <lv_obj name="menu_columns"
-              width="content" height="content" style_pad_all="0" style_pad_gap="#space_md"
-              flex_flow="column" style_flex_main_place="start" scrollable="false">
+              width="content" height="content" style_pad_all="0" style_pad_gap="#space_md" flex_flow="column"
+              style_flex_main_place="start" scrollable="false">
         <!-- Lane/filament motion actions -->
         <lv_obj name="col_filament"
-                width="content" height="content" style_pad_all="0" style_pad_gap="#space_md"
-                flex_flow="column" style_flex_main_place="start" scrollable="false">
+                width="content" height="content" style_pad_all="0" style_pad_gap="#space_md" flex_flow="column"
+                style_flex_main_place="start" scrollable="false">
           <!-- Group heading. ContextMenu hides this when only one group survives:
                with no sibling group to tell it apart from, the heading just repeats
                what the card header already said. -->
           <!-- DUPLICATE_NAME_OK: ContextMenu searches per column, lv_obj_find_by_name(col, ...) — the base class iterates arbitrary columns and cannot know per-column names -->
-          <lv_obj name="col_heading" width="100%" height="content" style_pad_all="0"
-                  style_pad_gap="#space_xs" flex_flow="column" scrollable="false" clickable="false">
-            <text_small name="col_filament_label" text="Filament" translation_tag="Filament"
-                        style_text_color="#text_muted"/>
+          <lv_obj name="col_heading"
+                  width="100%" height="content" style_pad_all="0" style_pad_gap="#space_xs" flex_flow="column"
+                  scrollable="false" clickable="false">
+            <text_small name="col_filament_label"
+                        text="Filament" translation_tag="Filament" style_text_color="#text_muted"/>
             <lv_obj width="100%"
-                    height="1" style_bg_color="#text_muted" style_bg_opa="38" style_pad_all="0"
-                    scrollable="false" clickable="false"/>
+                    height="1" style_bg_color="#text_muted" style_bg_opa="38" style_pad_all="0" scrollable="false"
+                    clickable="false"/>
           </lv_obj>
           <!-- Load Button -->
           <ui_button name="btn_load"
-                     height="#button_height_sm" icon="z_closer" text="Load" translation_tag="Load"
-                     variant="ghost" clickable="true" style_flex_main_place="start">
+                     height="#button_height_sm" icon="z_closer" text="Load" translation_tag="Load" variant="ghost"
+                     clickable="true" style_flex_main_place="start">
             <bind_state_if_eq subject="ams_slot_can_load" state="disabled" ref_value="0"/>
             <event_cb trigger="clicked" callback="ams_context_load_cb"/>
           </ui_button>
           <!-- Unload Button (disabled when slot is not loaded) -->
           <ui_button name="btn_unload"
-                     height="#button_height_sm" icon="z_farther" text="Unload" translation_tag="Unload"
-                     variant="ghost" clickable="true" style_flex_main_place="start">
+                     height="#button_height_sm" icon="z_farther" text="Unload" translation_tag="Unload" variant="ghost"
+                     clickable="true" style_flex_main_place="start">
             <bind_state_if_eq subject="ams_slot_is_loaded" state="disabled" ref_value="0"/>
             <event_cb trigger="clicked" callback="ams_context_unload_cb"/>
           </ui_button>
@@ -72,8 +73,7 @@
                [force_move] enable_force_move is off, so eject is unavailable.
                Revealed from C++ instead of silently omitting the action (#1041). -->
           <text_small name="eject_force_move_hint"
-                      width="100%" long_mode="wrap"
-                      text="Eject needs [force_move] enabled in printer config"
+                      width="100%" long_mode="wrap" text="Eject needs [force_move] enabled in printer config"
                       translation_tag="Eject needs [force_move] enabled in printer config"
                       style_text_color="#text_muted" hidden="true"/>
           <!-- Select Slot Button (hidden unless backend supports direct slot select, e.g. Happy Hare MMU_SELECT) -->
@@ -91,30 +91,28 @@
         </lv_obj>
         <!-- Spool identity / Spoolman actions -->
         <lv_obj name="col_spool"
-                width="content" height="content" style_pad_all="0" style_pad_gap="#space_md"
-                flex_flow="column" style_flex_main_place="start" scrollable="false">
+                width="content" height="content" style_pad_all="0" style_pad_gap="#space_md" flex_flow="column"
+                style_flex_main_place="start" scrollable="false">
           <!-- Group heading — see col_filament's. -->
           <!-- DUPLICATE_NAME_OK: ContextMenu searches per column, lv_obj_find_by_name(col, ...) — the base class iterates arbitrary columns and cannot know per-column names -->
-          <lv_obj name="col_heading" width="100%" height="content" style_pad_all="0"
-                  style_pad_gap="#space_xs" flex_flow="column" scrollable="false" clickable="false">
-            <text_small name="col_spool_label" text="Spool" translation_tag="Spool"
-                        style_text_color="#text_muted"/>
+          <lv_obj name="col_heading"
+                  width="100%" height="content" style_pad_all="0" style_pad_gap="#space_xs" flex_flow="column"
+                  scrollable="false" clickable="false">
+            <text_small name="col_spool_label" text="Spool" translation_tag="Spool" style_text_color="#text_muted"/>
             <lv_obj width="100%"
-                    height="1" style_bg_color="#text_muted" style_bg_opa="38" style_pad_all="0"
-                    scrollable="false" clickable="false"/>
+                    height="1" style_bg_color="#text_muted" style_bg_opa="38" style_pad_all="0" scrollable="false"
+                    clickable="false"/>
           </lv_obj>
           <!-- Select Spool Button (Spoolman quick-assign, hidden by default) -->
           <ui_button name="btn_spoolman"
-                     height="#button_height_sm" icon="spoolman" text="Select Spool"
-                     translation_tag="Select Spool" variant="ghost" clickable="true" style_flex_main_place="start"
-                     hidden="true">
+                     height="#button_height_sm" icon="spoolman" text="Select Spool" translation_tag="Select Spool"
+                     variant="ghost" clickable="true" style_flex_main_place="start" hidden="true">
             <event_cb trigger="clicked" callback="ams_context_spoolman_cb"/>
           </ui_button>
           <!-- Scan QR Code Button (hidden by default, shown when Spoolman enabled) -->
           <ui_button name="btn_scan_qr"
-                     height="#button_height_sm" icon="qrcode_scan" text="Scan QR Code"
-                     translation_tag="Scan QR Code" variant="ghost" clickable="true" style_flex_main_place="start"
-                     hidden="true">
+                     height="#button_height_sm" icon="qrcode_scan" text="Scan QR Code" translation_tag="Scan QR Code"
+                     variant="ghost" clickable="true" style_flex_main_place="start" hidden="true">
             <event_cb trigger="clicked" callback="ams_context_scan_qr_cb"/>
           </ui_button>
           <!-- Spool Info Button — always opens edit modal -->
@@ -142,7 +140,9 @@
               flex_flow="row" style_flex_main_place="space_between" style_flex_cross_place="center" scrollable="false"
               hidden="true">
         <text_small text="Tool" translation_tag="Tool"/>
-        <lv_dropdown name="tool_dropdown" width="#ams_context_dropdown_w" height="#button_height_sm" style_radius="#border_radius" style_border_width="0">
+        <lv_dropdown name="tool_dropdown"
+                     width="#ams_context_dropdown_w" height="#button_height_sm" style_radius="#border_radius"
+                     style_border_width="0">
           <event_cb trigger="value_changed" callback="ams_context_tool_changed_cb"/>
         </lv_dropdown>
       </lv_obj>
@@ -152,7 +152,9 @@
               flex_flow="row" style_flex_main_place="space_between" style_flex_cross_place="center" scrollable="false"
               hidden="true">
         <lv_label name="backup_icon" text="#icon_infinity" style_text_font="mdi_icons_16" style_text_color="#text_muted"/>
-        <lv_dropdown name="backup_dropdown" width="#ams_context_dropdown_w" height="#button_height_sm" style_radius="#border_radius" style_border_width="0">
+        <lv_dropdown name="backup_dropdown"
+                     width="#ams_context_dropdown_w" height="#button_height_sm" style_radius="#border_radius"
+                     style_border_width="0">
           <event_cb trigger="value_changed" callback="ams_context_backup_changed_cb"/>
         </lv_dropdown>
       </lv_obj>

@@ -8,13 +8,13 @@
     <px name="status_line_gap" value="2"/>
   </consts>
   <api>
-    <prop name="temp_text"        type="subject" default="ams_env_ind_0_temp_text"/>
-    <prop name="humidity_text"    type="subject" default="ams_env_ind_0_humidity_text"/>
-    <prop name="humidity_status"  type="subject" default="ams_env_ind_0_humidity_status"/>
+    <prop name="temp_text" type="subject" default="ams_env_ind_0_temp_text"/>
+    <prop name="humidity_text" type="subject" default="ams_env_ind_0_humidity_text"/>
+    <prop name="humidity_status" type="subject" default="ams_env_ind_0_humidity_status"/>
     <prop name="humidity_visible" type="subject" default="ams_env_ind_0_humidity_visible"/>
-    <prop name="visible"          type="subject" default="ams_env_ind_0_visible"/>
-    <prop name="drying_active"    type="subject" default="ams_env_ind_0_drying_active"/>
-    <prop name="drying_text"      type="subject" default="ams_env_ind_0_drying_text"/>
+    <prop name="visible" type="subject" default="ams_env_ind_0_visible"/>
+    <prop name="drying_active" type="subject" default="ams_env_ind_0_drying_active"/>
+    <prop name="drying_text" type="subject" default="ams_env_ind_0_drying_text"/>
   </api>
   <view name="ams_unit_card"
         extends="lv_obj" height="content" scrollable="false" flex_flow="column" style_flex_main_place="start"
@@ -34,14 +34,15 @@
          Keeping the indicator in the row (not stacked below) prevents it from growing
          the card's height and pushing the panel's system-path area off the bottom;
          mirrors the single-unit detail layout (ams_unit_detail.xml). -->
-    <lv_obj width="100%" height="content" scrollable="false" clickable="false" event_bubble="true"
-            flex_flow="row" style_flex_main_place="center" style_flex_cross_place="center"
-            style_pad_all="0" style_pad_gap="#space_xs" style_bg_opa="0" style_border_width="0">
+    <lv_obj width="100%"
+            height="content" scrollable="false" clickable="false" event_bubble="true" flex_flow="row"
+            style_flex_main_place="center" style_flex_cross_place="center" style_pad_all="0" style_pad_gap="#space_xs"
+            style_bg_opa="0" style_border_width="0">
       <!-- Left column: mini bars + slot count + runout. width="1"+flex_grow per L066 so
            flex allocates from grown width (not content), letting the indicator take the rest. -->
-      <lv_obj width="1" flex_grow="1" height="content" scrollable="false" clickable="false"
-              event_bubble="true" flex_flow="column" style_flex_main_place="center"
-              style_flex_cross_place="center" style_pad_all="0" style_pad_gap="#space_xs"
+      <lv_obj width="1"
+              height="content" flex_grow="1" scrollable="false" clickable="false" event_bubble="true" flex_flow="column"
+              style_flex_main_place="center" style_flex_cross_place="center" style_pad_all="0" style_pad_gap="#space_xs"
               style_bg_opa="0" style_border_width="0">
         <!-- Mini status bars container (clickable=false + event_bubble so clicks reach card) -->
         <lv_obj name="bars_container"
@@ -53,16 +54,15 @@
         <!-- Filament runout indicator — only shown on a real runout (print paused).
              ams_filament_runout is gated on PAUSED state in ams_state.cpp so the
              pre-load filament_useup assertion at print start never lights it. -->
-        <icon name="runout_indicator" src="alert" size="sm" variant="warning"
-              hidden="true" event_bubble="true">
+        <icon name="runout_indicator" src="alert" size="sm" variant="warning" hidden="true" event_bubble="true">
           <bind_flag_if_eq subject="ams_filament_runout" flag="hidden" ref_value="0"/>
         </icon>
       </lv_obj>
       <!-- Environment indicator (temp/humidity/dryer) — to the right; hidden when no sensors -->
-      <ams_environment_indicator name="env_indicator" event_bubble="true"
-          temp_text="$temp_text" humidity_text="$humidity_text"
-          humidity_status="$humidity_status" humidity_visible="$humidity_visible"
-          visible="$visible" drying_active="$drying_active" drying_text="$drying_text"/>
+      <ams_environment_indicator name="env_indicator"
+                                 event_bubble="true" temp_text="$temp_text" humidity_text="$humidity_text"
+                                 humidity_status="$humidity_status" humidity_visible="$humidity_visible"
+                                 visible="$visible" drying_active="$drying_active" drying_text="$drying_text"/>
     </lv_obj>
   </view>
 </component>
