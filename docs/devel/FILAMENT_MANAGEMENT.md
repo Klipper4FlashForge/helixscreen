@@ -1162,12 +1162,27 @@ Happy Hare's `filament_pos` (0-8) maps to `PathSegment` via `path_segment_from_h
 
 | Feature | Supported | Editable |
 |---------|-----------|----------|
-| Endless Spool | Yes | Read-only (configured in `mmu_vars.cfg`) |
+| Endless Spool | Yes | Yes on a single-unit MMU, read-only on multi-unit |
 | Tool Mapping | Yes | Yes (via `MMU_TTG_MAP`) |
 | Bypass Mode | Yes | Yes (selector position -2) |
 | Spoolman | Yes | -- |
 | Auto-Heat on Load | No | UI manages preheat |
-| Dryer | No | -- |
+| Dryer | Yes | `MMU_HEATER` (see [Happy Hare Specifics](#happy-hare-specifics)) |
+| Lane Eject | Yes | `supports_lane_eject()` + `eject_lane()` |
+
+Happy Hare's endless spool is group-based and settable at runtime, not a config-file
+read: `set_endless_spool_backup()` builds a full `GROUPS=` array (one non-negative group
+id per gate) and sends `MMU_ENDLESS_SPOOL`. `get_endless_spool_capabilities()` reports
+`editable` only when `system_info_.units.size() <= 1`: `MMU_ENDLESS_SPOOL` has no `UNIT=`
+parameter and acts on the currently-selected unit, so a client cannot reliably target one
+unit's groups on a multi-unit (EMU) rig. `reset_endless_spool()` sends
+`MMU_ENDLESS_SPOOL ENABLE=1 RESET=1 QUIET=1`; the `ENABLE=1` is required because Happy
+Hare's handler early-returns on `RESET` while endless spool is disabled.
+
+`recovers_filament_on_resume()` is **not** overridden here (default `false`), so a Happy
+Hare runout gets the dialog with manual **Load** kept prominent, because Resume alone does not
+re-feed. `supports_per_tool_spool_assignment()` is not overridden either; it falls through
+to `is_tool_changer(get_type())`, which is false for an MMU.
 
 ### Reset vs Recover
 
@@ -1708,8 +1723,8 @@ as useful as the template it feeds:
 
 | Operation | Phase ids, in order (opt = optional: stays Pending when never narrated) |
 |---|---|
-| `LOAD_SWAP` (toolchange) | `heat`, `cut` (opt), `unload`, `feed`, `poop` (opt), `kick` (opt), `brush` (opt), `load` |
-| `LOAD_FRESH` | `heat`, `feed`, `poop` (opt), `kick` (opt), `brush` (opt), `load` |
+| `LOAD_SWAP` (toolchange) | `heat`, `cut` (opt), `unload`, `feed`, `poop` (opt), `brush` (opt), `kick` (opt), `load` |
+| `LOAD_FRESH` | `heat`, `feed`, `poop` (opt), `brush` (opt), `kick` (opt), `load` |
 | `UNLOAD` | `heat`, `cut` (opt), `unload` |
 
 There is no `park` and no `clean` distinct from `brush` — AFC has exactly one purge macro and one
@@ -1890,18 +1905,39 @@ absent from `src/` and `include/`, and is recorded here so the reasoning is not 
 | Spoolman | Yes | -- |
 | Auto-Heat on Load | Yes | AFC uses `default_material_temps` from config |
 | Dryer | No | -- |
-| Device Actions | Yes | Calibration, Speed, Maintenance, LED/Modes |
+| Device Actions | Yes | Setup, Speed, Toolhead, Maintenance, Hub & Cutter, Tip Forming, Purge & Wipe (see [Device Operations Overlay](#device-operations-overlay)) |
 
-### AFC Version Differences
+`recovers_filament_on_resume()` is **not** overridden (default `false`), so an AFC runout
+gets the dialog with manual **Load** kept prominent, because Resume alone does not re-feed.
+`supports_per_tool_spool_assignment()` is not overridden either; it falls through to
+`is_tool_changer(get_type())`, which is false for AFC.
 
-| Feature | v1.0.0 | v1.0.32+ |
-|---------|--------|----------|
-| `AFC_stepper lane*` objects | Full sensor data | Same |
-| `lane_data` in Moonraker DB | Not available | Available (richer data) |
-| TD1 sensor support | No | Yes |
-| Auto-level during home | No | Yes |
+### AFC Version Reporting
 
-The backend detects the installed version by querying the `afc-install` database namespace and sets `has_lane_data_db_` for v1.0.32+. The version check uses `version_at_least()`.
+`afc_version_` is **display and diagnostics only. Never gate behavior on it.** AFC has no
+trustworthy version signal:
+
+- The `afc-install` database namespace has been an orphan since AFC's `7d20db7` (mid-2025),
+  so `detect_afc_version()` finds nothing on any current install.
+- `AFC_VERSION` is a hand-bumped literal that sat at `1.1.37` through the whole v1.2.0 release.
+- v1.2.0's own `get_status()` publishes no version key at all (upstream #807 is an open PR).
+- A live BoxTurtle reported `"1.0.0"` while running v1.1.0.
+
+Capabilities therefore come from **feature detection**, not comparison:
+
+| Hook | What it inspects |
+|------|------------------|
+| `AmsBackendAfc::status_has_modern_fields()` | `filament_name` / `multi_color_hexes` / `initial_weight` on a lane status. All three ship from one `if not save_to_file:` block in `AFC_lane.get_status()`, so any one proves the whole block. Only meaningful on a **complete** status object, the subscription's first baseline frame; every later frame is a delta where an absent key means "unchanged". |
+| `AmsBackendAfc::probe_feature_level()` | Queries one lane object directly (never a status frame) to obtain that baseline. |
+
+The `AFC` / `lane_data` database query follows the same rule: `on_started()` calls
+`query_lane_data()` **unconditionally**, because there is no reliable flag to gate on.
+AFC's `lane_data_enabled` reports whether Moonraker has the (now unused) `[lane_data]`
+section, not whether the namespace holds data; `send_lane_data()` writes regardless. A
+live BoxTurtle on 2026-07-26 had `lane_data_enabled=false` with a fully populated
+namespace. Lanes are initialized from `PrinterCapabilities` discovery first, so the query
+only ever supplements colours / materials / spool ids; a missing namespace just errors and
+the probe stays silent.
 
 ---
 
@@ -2644,7 +2680,7 @@ The `AmsContextMenu` (`ui_ams_context_menu.h`) provides per-slot operations:
 |--------|-------------|------------|
 | **Load** | Load filament from this slot | When slot has filament and not at toolhead |
 | **Unload** | Unload filament from extruder | When filament is loaded to extruder |
-| **Eject** | Eject filament from hub back to spool (AFC only) | When hub-loaded but not at toolhead, and backend supports lane eject |
+| **Eject** | Eject filament from hub back to spool | When hub-loaded but not at toolhead, and `supports_lane_eject()` is true (AFC and Happy Hare) |
 | **Spool Info** | View/edit slot properties (color, material, brand) | When slot has filament |
 | **Spoolman** | Assign a Spoolman spool to this slot | Always |
 
@@ -2674,7 +2710,25 @@ The `AmsDeviceOperationsOverlay` (`ui_ams_device_operations_overlay.h`) consolid
 
 Each backend can expose dynamic device actions via `get_device_sections()` and `get_device_actions()`. The UI renders them as buttons, toggles, sliders, or dropdowns based on `ActionType`.
 
-AFC exposes four sections: **Calibration**, **Speed Settings**, **Maintenance**, and **LED & Modes**. See the [AFC-Specific Features](#afc-specific-features) section for details.
+The section lists live in `src/printer/afc_defaults.cpp` (`afc_default_sections()`) and
+`src/printer/hh_defaults.cpp` (`hh_default_sections()`):
+
+| Backend | Sections |
+|---------|----------|
+| AFC | **Setup**, **Speed Settings**, **Toolhead**, **Maintenance**, **Hub & Cutter**, **Tip Forming**, **Purge & Wipe** (7) |
+| Happy Hare | **Setup**, **Speed**, **Toolhead**, **Accessories**, **Maintenance** (5) |
+
+There is no separate "Calibration" or "LED & Modes" section on AFC. The calibration
+wizard, bowden length, LED toggles and quiet mode all live under **Setup**.
+`AmsBackendAfc::get_device_sections()` drops **Tip Forming** whenever
+`system_info_.tip_method != TipMethod::TIP_FORM`, which is the common case (the default
+capability set is `TipMethod::CUT`), so a stock Box Turtle shows six.
+
+Action counts are not fixed either. `afc_default_actions()` returns 26 static actions, and
+`AmsBackendAfc::get_device_actions()` then adds one **Hub Distance** slider per lane and,
+on a multi-extruder rig, swaps the single bowden / toolhead / toolhead-LED entries for
+per-extruder ones. See the [AFC-Specific Features](#afc-specific-features) section for
+details.
 
 ---
 
@@ -2785,7 +2839,7 @@ The mock backend exposes additional methods for unit testing:
 | `force_slot_status(slot, status)` | Force a specific slot status |
 | `set_has_hardware_bypass_sensor(bool)` | Toggle hardware vs virtual bypass sensor |
 | `set_endless_spool_supported(bool)` | Toggle endless spool support |
-| `set_endless_spool_editable(bool)` | Toggle AFC-style (editable) vs Happy Hare-style (read-only) |
+| `set_endless_spool_editable(bool)` | Toggle whether `set_endless_spool_backup()` is accepted or returns NOT_SUPPORTED |
 | `set_device_sections(sections)` | Set custom device sections for testing |
 | `set_device_actions(actions)` | Set custom device actions for testing |
 
@@ -2844,6 +2898,30 @@ Create `include/ams_backend_mysystem.h` and `src/printer/ams_backend_mysystem.cp
 - `get_device_sections()`, `get_device_actions()`, `execute_device_action()` -- Device-specific actions
 - `set_discovered_lanes()`, `set_discovered_tools()` -- Discovery configuration
 - `supports_auto_heat_on_load()` -- Auto-heat capability
+- `supports_lane_eject()` + `eject_lane()` -- Cold retract of a lane's filament back to the spool. Without the predicate the context menu never offers Eject, whatever `eject_lane()` does.
+- `has_per_slot_loaded_authority()` -- Return true only when the firmware reports load state **per slot**. Leave it false when your per-slot answer is derived from an aggregate "current slot" pointer, or a mid-toolchange null will drop the highlight.
+- `reset_button_label()` -- Sidebar Reset button text (default `"Reset"`; Happy Hare uses `"Home"`)
+
+**The error seam.** All optional, all defaulted to "nothing", and a backend that skips the
+whole group gets **no error dialog at all**, silently. Read § [Two error channels](#two-error-channels)
+before implementing any of them:
+
+- `classify_error()` -- Channel A: claim one gcode-response line and return an `ErrorEvent`. The router applies **no line filtering**, so every override must gate itself (AFC and Happy Hare take only `!!` lines via `helix::is_bang_line`; CFS deliberately takes only non-`!!` lines). Return `nullopt` to defer to the generic classifier.
+- `current_error()` -- Channel B: the current actionable fault derived from backend **status**, consulted only by `AmsErrorBridge` on the rising edge into `AmsAction::ERROR`. Independent of channel A, not an alternative to it: AFC overrides both.
+- `build_recovery_actions()` (protected) -- The buttons the user can tap for the current fault. **The caller already holds `mutex_`**, which is non-recursive: an override that locks deadlocks. The base returns an empty vector deliberately: `decide_presentation()` keys off `recovery_actions.empty()` to pick MODAL vs MODAL_WITH_RECOVER, so recovery is strictly opt-in.
+
+**The toolchange narration seam.** Also optional; leaving it empty falls back to the
+sidebar's legacy `AmsAction`-driven hardcoded step list, which is a valid choice:
+
+- `toolchange_phase_template(op)` -- The ordered phase list per `StepOperationType`. Order it by **first narration**, not by macro name: a phase whose line fires twice re-reports the earlier index, and the step bar has no notion of a repeated step.
+- `match_narration_phase()` -- Map a `//` narration body to a phase id. Loose substring needles are fine here; the text came from a macro's own `respond_info`.
+- `match_bare_narration_phase()` -- Map an **unprefixed** console line to a phase id. Must match anchored line shapes, never loose substrings. The open console carries user-controlled gcode filenames, so a `cut` needle fires on `haircut.gcode`.
+
+**Runout and spool-assignment routing.** Both default to something reasonable; override
+only if your hardware model diverges:
+
+- `recovers_filament_on_resume()` -- True when Resume itself re-feeds filament (Snapmaker U1 runs `AUTO_FEEDING` then `RESUME`). Such backends present Resume as the runout dialog's primary action and demote manual Load/Unload/Purge. Default false, which keeps Load prominent. That is correct for AFC, Happy Hare, and every basic runout sensor.
+- `supports_per_tool_spool_assignment()` -- Whether each tool owns its own spool assignment. Default is `is_tool_changer(get_type())`; no backend currently overrides it.
 
 ### 4. Wire into the Factory
 

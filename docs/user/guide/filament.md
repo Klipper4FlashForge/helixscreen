@@ -95,8 +95,9 @@ When a slot runs into trouble, HelixScreen shows it visually so you don't have t
 
 **To recover:**
 
-- Tap the affected slot and choose **Reset Lane** to clear a jam or error on that one slot (shown only on backends that support per-slot reset).
-- For a system-wide problem, use **Reset** in the sidebar, or **Recover** in the AMS Management overlay (Settings), to bring the whole system back to a known-good state.
+- Use **Reset** in the sidebar (it reads **Home** on Happy Hare). This clears the error message your system is holding onto and then puts the system back to a known-good state. It is the right first move for almost every jam or fault, including one reported against a single slot.
+- If filament from one slot is stuck partway down the tube, tap that slot. When your system can pull it back, the slot menu's second button changes from **Unload** to **Recover**. Tap it to draw the filament back toward the slot without heating the nozzle.
+- For a system-wide problem that Reset does not shift, use **Recover** in the AMS Management overlay (Settings).
 
 ### Sidebar (Right)
 
@@ -110,13 +111,23 @@ The right sidebar shows the status of the currently loaded filament and provides
 - **Remaining weight** — Estimated filament remaining (e.g., "750g"), if available
 - **Clog detection meter** — When your system has flow monitoring (encoder, FlowGuard, or AFC buffer), an arc meter shows the current flow rate percentage
 
-**During load/unload operations**, the sidebar switches to a **step progress display** showing each stage of the operation:
+**During load/unload operations**, the sidebar switches to a **step progress display** showing each stage of the operation. The exact steps come from your filament system, so they match what it actually does rather than a generic list.
 
-- **Load (fresh):** Heat nozzle → Feed filament → Purge
-- **Load (swap):** Heat nozzle → Cut/form tip → Feed filament → Purge
-- **Unload:** Heat nozzle → Cut/form tip → Retract
+On **AFC** (Box Turtle, OpenAMS):
 
-Each step updates in real time so you can see exactly where the operation is.
+- **Load into an empty toolhead:** Heat nozzle → Feed filament → Purge to bucket → Brush nozzle → Kick away → Load complete
+- **Swap to a different slot:** Heat nozzle → Cut tip → Unload filament → Feed filament → Purge to bucket → Brush nozzle → Kick away → Load complete
+- **Unload:** Heat nozzle → Cut tip → Retract filament
+
+On **Happy Hare**:
+
+- **Load into an empty toolhead:** Heat nozzle → Select gate → Load filament → Purge → Load complete
+- **Swap to a different slot:** Heat nozzle → Form tip → Cut tip → Unload → Select gate → Load filament → Purge → Load complete
+- **Unload:** Heat nozzle → Form tip → Cut tip → Unload
+
+Systems that don't publish a step list of their own get a shorter generic bar: Heat nozzle → Feed filament → Purge, with a tip step added for a swap.
+
+Some steps only apply to how your machine is set up. A step your system never reaches stays greyed out instead of lighting up, so a bar that skips **Cut tip** or **Kick away** is normal, not a stall. Each step updates in real time so you can see exactly where the operation is.
 
 **Action buttons** (hidden while an operation is in progress):
 
@@ -136,7 +147,7 @@ Each step updates in real time so you can see exactly where the operation is.
 | **Load** | Feed filament from this slot to the toolhead. Disabled if the slot is empty. |
 | **Unload** | Retract filament from this slot. Only available if this slot is currently loaded. |
 | **Eject** | Push filament fully out of the lane to release the spool, when the slot has filament in its lane but **not** loaded into the toolhead. Replaces the Unload button in that state. Only on backends that support per-lane eject (AFC and Happy Hare). |
-| **Reset Lane** | Clear an error or jam state on this slot. Only shown if your backend supports per-slot reset. |
+| **Recover** | Pull filament that is stranded partway down the tube back toward its slot, without heating the nozzle. Takes the place of **Unload** when the system can tell that this slot's filament is stuck past the hub. |
 | **Spool Info** | Open the filament editor to view or change material, color, vendor, and remaining weight. |
 | **Select Spool** | Assign a saved Spoolman spool to this slot. Only shown when Spoolman is configured. |
 | **Scan QR Code** | Scan a filament QR code to auto-fill spool data. Only shown when Spoolman is configured. |

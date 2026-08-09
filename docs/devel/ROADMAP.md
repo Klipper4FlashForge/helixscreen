@@ -166,7 +166,7 @@ Remaining items for production readiness:
 
 | Backend | Hardware | Topology | Slots | Key Capabilities |
 |---------|----------|----------|-------|-----------------|
-| **Happy Hare** | ERCF, Tradrack, 3MS, Night Owl | Linear | 1-16 | Tool mapping, bypass, endless spool (read-only) |
+| **Happy Hare** | ERCF, Tradrack, 3MS, Night Owl | Linear | 1-16 | Tool mapping, bypass, runtime-editable endless spool (single-unit), lane eject, `MMU_HEATER` dryer |
 | **AFC** | Box Turtle, ViViD (AFC-Klipper-Add-On) | Hub | 1-16 | Editable endless spool, auto-heat on load, buffer health, 12+ device actions |
 | **Tool Changer** | viesturz/klipper-toolchanger | Parallel | 1-16 | Mounted/detect state, per-tool filament systems |
 | **ACE** | Anycubic ACE Pro (ValgACE/BunnyACE/DuckACE) | Hub | 4 | Integrated dryer control (temp/duration/fan), REST polling |
@@ -194,7 +194,7 @@ Remaining items for production readiness:
 **UI components (16 XML files):**
 - **AMS Panel** — Slot grid, path canvas (spool → hub → toolhead → nozzle), backend selector
 - **AMS Overview Panel** — Multi-unit grid with inline detail
-- **Device Operations Overlay** — Dynamic backend-specific sections (AFC: 4 sections, HH: 3 sections)
+- **Device Operations Overlay** — Dynamic backend-specific sections (AFC: 7 sections, 6 when tip forming is not the active tip method; Happy Hare: 5 sections)
 - **Context Menu** — Per-slot actions: load, unload, edit, Spoolman assign, tool mapping, endless spool backup
 - **Spool Wizard** — 3-step creation: Vendor → Filament → Spool Details with modal forms for new vendors/filaments
 - **Spoolman Panel** — Browse, search, edit, delete with virtualized list and context menus
