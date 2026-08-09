@@ -981,26 +981,10 @@ TEST_CASE("DebugBundleCollector: build_update_info reports an unsnapshotted upda
 }
 
 // ============================================================================
-// condense_klipper_log — Stats padding removal
+// condense_klipper_log — repeating-shape collapse
 // ============================================================================
 
 namespace {
-
-/// Build a synthetic klippy.log: `stats_before` Stats lines, an event, then
-/// `stats_after` more Stats lines.
-std::string make_klippy_log(int stats_before, const std::string& event, int stats_after) {
-    std::string s;
-    for (int i = 0; i < stats_before; ++i) {
-        s += "Stats " + std::to_string(i) + ".0: sysload=0.5 print_stall=7\n";
-    }
-    if (!event.empty()) {
-        s += event + "\n";
-    }
-    for (int i = 0; i < stats_after; ++i) {
-        s += "Stats " + std::to_string(1000 + i) + ".0: sysload=0.9 print_stall=7\n";
-    }
-    return s;
-}
 
 int count_lines_with(const std::string& hay, const std::string& needle) {
     int n = 0;
@@ -1013,69 +997,121 @@ int count_lines_with(const std::string& hay, const std::string& needle) {
     return n;
 }
 
+int line_count(const std::string& s) {
+    if (s.empty())
+        return 0;
+    return 1 + static_cast<int>(std::count(s.begin(), s.end(), '\n'));
+}
+
+/// Klipper's per-second Stats line: the noise the first implementation targeted.
+std::string stats_lines(int n, int t0 = 0) {
+    std::string s;
+    for (int i = 0; i < n; ++i)
+        s += "Stats " + std::to_string(t0 + i) + ".0: sysload=0.5 print_stall=7\n";
+    return s;
+}
+
+/// ZMOD's 4-line toolhead parameter dump: the noise it MISSED, which is what
+/// made the shipped payload reach less far than the raw tail it replaced.
+std::string toolhead_spam(int n) {
+    std::string s;
+    for (int i = 0; i < n; ++i) {
+        s += "toolhead: max_velocity: 600.000000\n";
+        s += "max_accel: " + std::string(i % 2 ? "10000" : "5000") + ".000000\n";
+        s += "minimum_cruise_ratio: 0.500000\n";
+        s += "square_corner_velocity: 9.000000\n";
+    }
+    return s;
+}
+
 } // namespace
 
-TEST_CASE("DebugBundleCollector: condense_klipper_log keeps every event line",
+TEST_CASE("DebugBundleCollector: condense_klipper_log collapses Stats padding",
           "[debug-bundle][klippy]") {
-    // 5000 Stats lines burying two events — the real-world shape (bundle
-    // UJCCQP6S was 615 Stats to 20 events).
-    std::string raw = make_klippy_log(2500, "MCU 'mcu' shutdown: Timer too close", 0) +
-                      make_klippy_log(2500, "Transition to shutdown state", 0);
+    std::string raw = stats_lines(2000) + "MCU 'mcu' shutdown: Timer too close\n";
 
     auto out = helix::DebugBundleCollector::condense_klipper_log(raw);
 
-    // Both events survive — this is the whole point of the filter.
     REQUIRE(count_lines_with(out, "Timer too close") == 1);
-    REQUIRE(count_lines_with(out, "Transition to shutdown state") == 1);
-
-    // And the Stats padding is gone: 5000 in, at most context-per-event + tail out.
-    int stats_out = count_lines_with(out, "Stats ");
-    REQUIRE(stats_out <= 3 + 3 + 60);
-    REQUIRE(out.size() < raw.size() / 10);
+    REQUIRE(count_lines_with(out, "Stats ") <= 40 + 200);
+    REQUIRE(out.size() < raw.size() / 4);
 }
 
-TEST_CASE("DebugBundleCollector: condense_klipper_log keeps run-up Stats before an event",
+TEST_CASE("DebugBundleCollector: condense_klipper_log collapses NON-Stats periodic noise",
           "[debug-bundle][klippy]") {
-    std::string raw = make_klippy_log(50, "MCU 'mcu' shutdown: Timer too close", 0);
+    // Regression: the first implementation special-cased the "Stats " prefix, so
+    // ZMOD's toolhead dump (7916 repetitions on a real AD5X log) passed through
+    // untouched and crowded the events out of the shipped payload.
+    std::string raw = toolhead_spam(2000) + "Setting active filament T2\n" +
+                      "MCU 'mcu' shutdown: Timer too close\n";
 
-    auto out = helix::DebugBundleCollector::condense_klipper_log(raw, /*stats_context=*/5,
-                                                                 /*stats_tail=*/0);
+    auto out = helix::DebugBundleCollector::condense_klipper_log(raw);
 
-    // Exactly the 5 Stats immediately preceding the event, in order, then the event.
-    REQUIRE(count_lines_with(out, "Stats ") == 5);
     REQUIRE(count_lines_with(out, "Timer too close") == 1);
-    REQUIRE(out.find("Stats 45.0") != std::string::npos); // 5 before the event (0..49)
-    REQUIRE(out.find("Stats 44.0") == std::string::npos); // 6 before — dropped
-    // Ordering: context precedes the event it explains.
-    REQUIRE(out.find("Stats 49.0") < out.find("Timer too close"));
+    REQUIRE(count_lines_with(out, "Setting active filament") == 1);
+    // 8000 spam lines in; the collapse must cut them down hard.
+    REQUIRE(count_lines_with(out, "max_velocity") <= 240);
+    REQUIRE(line_count(out) < 1000);
 }
 
-TEST_CASE("DebugBundleCollector: condense_klipper_log keeps a trailing Stats tail",
+TEST_CASE("DebugBundleCollector: condense_klipper_log keeps rare lines and recent repeats",
           "[debug-bundle][klippy]") {
-    std::string raw = make_klippy_log(0, "", 500);
+    SECTION("a shape under the threshold is kept in full") {
+        std::string raw = stats_lines(10);
+        auto out = helix::DebugBundleCollector::condense_klipper_log(raw, /*max_repeats=*/40,
+                                                                     /*tail_lines=*/0);
+        REQUIRE(count_lines_with(out, "Stats ") == 10);
+    }
 
-    auto out = helix::DebugBundleCollector::condense_klipper_log(raw, /*stats_context=*/5,
-                                                                 /*stats_tail=*/10);
+    SECTION("over the threshold, the MOST RECENT occurrences survive") {
+        std::string raw = stats_lines(100) + "event\n";
+        auto out = helix::DebugBundleCollector::condense_klipper_log(raw, /*max_repeats=*/10,
+                                                                     /*tail_lines=*/0);
+        REQUIRE(count_lines_with(out, "Stats ") == 10);
+        REQUIRE(out.find("Stats 99.0") != std::string::npos); // newest kept
+        REQUIRE(out.find("Stats 89.0") == std::string::npos); // 11th-newest dropped
+    }
 
-    // Only the most recent 10, so the reader still sees load at bundle time.
-    REQUIRE(count_lines_with(out, "Stats ") == 10);
-    REQUIRE(out.find("Stats 1499.0") != std::string::npos); // last
-    REQUIRE(out.find("Stats 1489.0") == std::string::npos); // 11th from the end
+    SECTION("original order is preserved") {
+        std::string raw =
+            stats_lines(50) + "FIRST EVENT\n" + stats_lines(50, 100) + "SECOND EVENT\n";
+        auto out = helix::DebugBundleCollector::condense_klipper_log(raw, /*max_repeats=*/5,
+                                                                     /*tail_lines=*/0);
+        auto a = out.find("FIRST EVENT");
+        auto b = out.find("SECOND EVENT");
+        REQUIRE(a != std::string::npos);
+        REQUIRE(b != std::string::npos);
+        REQUIRE(a < b);
+    }
+}
+
+TEST_CASE("DebugBundleCollector: condense_klipper_log ships the tail verbatim",
+          "[debug-bundle][klippy]") {
+    // The shutdown dump lives in the last lines and must never be thinned, even
+    // though it repeats shapes heavily (81 identical is_shutdown lines on a real
+    // AD5X log).
+    std::string raw = stats_lines(500);
+    for (int i = 0; i < 50; ++i)
+        raw += "Receive: " + std::to_string(i) + " is_shutdown static_string_id=Timer too close\n";
+
+    auto out = helix::DebugBundleCollector::condense_klipper_log(raw, /*max_repeats=*/5,
+                                                                 /*tail_lines=*/50);
+
+    REQUIRE(count_lines_with(out, "is_shutdown") == 50);
 }
 
 TEST_CASE("DebugBundleCollector: condense_klipper_log handles degenerate input",
           "[debug-bundle][klippy]") {
     REQUIRE(helix::DebugBundleCollector::condense_klipper_log("").empty());
 
-    // Stats-only log with no tail requested collapses to nothing.
-    REQUIRE(helix::DebugBundleCollector::condense_klipper_log(make_klippy_log(0, "", 20), 5, 0)
-                .empty());
-
-    // A log with no Stats at all is passed through intact.
+    // No repetition at all: passed through intact.
     std::string events = "Extract filament 3 with length 90\nUnlocking filament 3";
     REQUIRE(helix::DebugBundleCollector::condense_klipper_log(events) == events);
 
-    // "Statsomething" is not a Stats line — prefix match must require the space.
-    std::string tricky = "Statsomething happened";
-    REQUIRE(helix::DebugBundleCollector::condense_klipper_log(tricky, 0, 0) == tricky);
+    // max_repeats=0 with no verbatim tail drops every repeating shape.
+    REQUIRE(helix::DebugBundleCollector::condense_klipper_log(stats_lines(20), 0, 0).empty());
+
+    // tail_lines larger than the input keeps everything.
+    auto all = helix::DebugBundleCollector::condense_klipper_log(stats_lines(5), 1, 999);
+    REQUIRE(count_lines_with(all, "Stats ") == 5);
 }
