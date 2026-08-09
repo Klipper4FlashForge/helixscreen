@@ -83,7 +83,7 @@ make compile_commands  # Generate compile_commands.json for IDE/LSP
 | `--real-ethernet` | Use real Ethernet instead of mock |
 | `--real-moonraker` | Connect to real printer |
 | `--real-files` | Use real printer files |
-| `--real-ams` | Use a real AMS backend (e.g. Happy Hare) instead of `AmsBackendMock`, driven against the mock Moonraker client's minimal `mmu` status simulation |
+| `--real-ams` | Use a real AMS backend instead of mock |
 
 **Test mode keyboard shortcuts:** S=screenshot, P=test prompt, N=test notification, Q/Esc=quit
 
