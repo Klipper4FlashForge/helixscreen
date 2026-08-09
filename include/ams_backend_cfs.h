@@ -320,12 +320,19 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     std::string current_tnn_;
     bool motor_ready_ = true;
 
+  protected:
     // K1 vs K2 macro dialect, latched in ctor from PrinterDetector. Most
     // callers route through dispatch_action_script and pull the macro string
     // from the static helpers (load_gcode/unload_gcode/swap_gcode), so this
     // is read on the script-build side, not in hot paths.
+    //
+    // Protected (not private) so a test subclass can force CfsMacroVariant::Fork
+    // without a live status payload -- see CfsHomingProbe in
+    // test_ams_home_confirmation.cpp, which needs it settable without going
+    // through the ::CfsTestAccess friend shim that test_ams_backend_cfs.cpp owns.
     CfsMacroVariant macro_variant_ = CfsMacroVariant::K2;
 
+  private:
     /// Box schema last seen on the wire, latched by handle_status_update.
     ///
     /// Separate axis from macro_variant_ above: the dialect is latched once in
@@ -345,6 +352,7 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     // Callback lifetime management
     helix::AsyncLifetimeGuard lifetime_;
 
+  protected:
     /// Dispatch a load/unload/swap CR_BOX_* script with proper completion
     /// semantics: ensures the toolhead is homed, sends the gcode, and flips
     /// `system_info_.action` back to IDLE *only when Klipper finishes the
@@ -356,9 +364,13 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     /// UI told the user the load was idle.
     /// Marked virtual so test subclasses can capture the assembled load/swap/
     /// unload script (and the WITH/WITHOUT-material selection that produced it)
-    /// without a live Moonraker connection.
+    /// without a live Moonraker connection. Protected (not private) so a test
+    /// subclass can also call the REAL implementation directly via a `using`
+    /// declaration -- see CfsHomingProbe in test_ams_home_confirmation.cpp,
+    /// which must NOT override this (it's the thing under test).
     virtual AmsError dispatch_action_script(std::string gcode);
 
+  private:
     /// Undo the derived LOADED stamp, putting back whatever the last parse
     /// wrote there. Caller must hold mutex_. Runs at the TOP of
     /// handle_status_update so check_hardware_event_clear, the lane_data mirror
