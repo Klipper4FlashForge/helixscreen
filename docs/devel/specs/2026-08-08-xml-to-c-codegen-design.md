@@ -1,7 +1,9 @@
 # XML to C Code Generation (build-time component compiler) - Design Spec
 
 **Date:** 2026-08-08
-**Status:** Design, pre-implementation
+**Status:** On hold pending one measurement. Both CPU arguments are dead and the
+flash argument inverts on the K-Touch; only PSRAM headroom can still justify it. See
+"Gate B" below.
 **Author:** Preston Brown (with Claude)
 **Component:** `lib/helix-xml` (the generator ships in the fork's own repo, not here)
 
@@ -33,9 +35,9 @@ same XML files and a differential test proves they produce identical trees.
 
 ### What survived contact with the numbers
 
-**Flash and resident RAM: the case holds.** 1.47 MB of markup sits on the heap for
-process lifetime and ships in the frogfs image on the K-Touch. That is the real payoff,
-and it is an ESP32 payoff. On a Pi-class board with hundreds of MB it is noise.
+**Resident RAM: the case holds.** 1.47 MB of markup sits on the heap for process
+lifetime. That is an ESP32 payoff; on a Pi-class board with hundreds of MB it is noise.
+(The flash half of this claim does not survive Gate B below.)
 
 **Boot CPU: the case is dead.** Registering all 303 components takes **10 ms**, file I/O
 included. There is nothing here worth optimizing.
@@ -73,15 +75,50 @@ times 2.7% leaves the conclusion unchanged.
 **So the CPU argument is dead in both halves**: 10 ms at boot, and low single-digit
 percent of create time thereafter.
 
-### Consequence for scope
+### Gate B: the K-Touch budget, where the flash argument inverts
 
-This is an **ESP32-motivated** change justified by flash and resident RAM, and by nothing
-else. Both CPU arguments are measured and gone.
+Measured from `firmware/helixscreen-esp32` on branch `esp32/port-4-app`:
 
-That leaves a single open question, and it decides the whole project: **is the K-Touch
-actually short of flash or PSRAM?** If it has room for 1.47 MB of markup, there is no
-case for phases 2 through 5 and this spec should be closed as a record of why not.
-Phase 1 is worth doing regardless, on its own merits.
+| Partition | Size | Used | Free |
+|-----------|------|------|------|
+| `ota_0` / `ota_1` app slot (**two of them**) | 6.50 MB | 6,271,568 | **544,176 (8%)** |
+| `storage` (frogfs) | 2.75 MB | 2,300,456 | 583,128 (20%) |
+
+And the frogfs image splits as `ui_xml` 654,428 bytes against `assets` 1,621,868. **The
+markup costs 639 KB on the device, not 1.72 MB** — it is deflate-compressed in frogfs at
+roughly 2.6:1.
+
+That kills the flash case, and worse than kills it:
+
+- Codegen does not delete the markup, it **relocates** it. The bytes leave `storage` as
+  compressed data and arrive in the app image as string tables, where they are
+  uncompressed rodata, because the app partition is XIP-mapped and cannot be compressed.
+- It moves them from the partition with 583 KB free **into the one with 544 KB free**,
+  and deduplicated attribute tables from 1.72 MB of markup will not fit in that.
+- The app slot is doubled for OTA A/B, so every byte added to the image costs **two**
+  bytes of the 16 MB budget, while the `storage` byte freed is counted once.
+- Re-cutting the partition table is not a free out: per the header in `partitions.csv`,
+  changed offsets require `erase_flash` and a full reflash of every device.
+
+**Net flash effect is negative.** The change would trade 639 KB of compressed data in a
+roomy partition for a larger volume of uncompressed data in the tightest one, charged
+twice.
+
+### What is actually left
+
+PSRAM, and only PSRAM. `app_boot.cpp:741` calls the same `register_xml_components()`, so
+all 303 `scope->view_def` bodies (1.47 MB) are held resident on the device exactly as
+they are natively. On an ESP32-S3 with octal PSRAM that is real memory.
+
+**This is unmeasured and I cannot measure it here** — it needs free-PSRAM figures from a
+running K-Touch. That single number is now the whole decision:
+
+- If PSRAM headroom is comfortable, **close this spec**. Phases 2-5 would cost weeks,
+  make flash worse, and buy memory that is not needed.
+- If PSRAM is tight, the design stands, but it must be paired with a plan for the app
+  image growth, because the flash math does not work as-is.
+
+Phase 1 is worth doing on its own merits either way, and does not depend on this answer.
 
 ## The seam this targets
 
