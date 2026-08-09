@@ -104,7 +104,7 @@ All developer documentation lives here. When working on features, look up the re
 |-----|-------------|
 | `ROADMAP.md` | Feature timeline, what's complete, what's next |
 | `IDEAS.md` | Feature ideas and brainstorming |
-| `plans/` | Active implementation plans |
+| `plans/` | Implementation plans — **point-in-time, not current truth.** A plan records what was intended when it was written; several prescribe approaches the shipped code has since diverged from, and they read as instructions. Verify every predicate against the code before following one. Live example: `plans/2026-06-25-ad5x-ifs-seated-chan-robustness.md:63-65` tells you to gate on `head_filament_`, which `include/ams_backend_ad5x_ifs.h:808-825` now documents as untrustworthy on its own — the shipped gate is `head_switch_seen_ && !head_switch_present_`. |
 | `superpowers/specs/2026-04-21-xml-hot-reload-rebuild-design.md` | XML hot reload: rebuild-active-widgets design (implemented; see `src/application/xml_hot_reloader.cpp` + `NavigationManager::rebuild_active_views`) |
 | `plans/2026-06-13-slow-boot-splash-ux.md` | Slow-boot splash UX: 30s splash cap + blank-screen gap on slow devices (K2, AD5M Forge-X), handoff timing |
 | `printer-research/` | Printer-specific research notes |
