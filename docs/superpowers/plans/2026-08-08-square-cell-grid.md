@@ -2534,6 +2534,95 @@ that ran out of room are replaced by the current model."
 
 ---
 
+### Task 14: Widgets must render their content at their minimum size without clipping
+
+**Why this exists.** Every verification in this plan is arithmetic. The band table proves a
+span lands in a pixel band; `test_panel_widget_manager_cell_px.cpp` proves the manager hands a
+widget the pixels it promised. **Nothing anywhere proves the widget's actual content fits in
+those pixels.** A widget can be handed a correct, in-band size and still overflow its box,
+ellipsize a label to uselessness, or push a control off its own edge — and the entire test
+suite stays green, because no assertion has ever looked. The square-cell change moves every
+widget's authored size on eight panels, so this is the moment that gap costs something.
+
+**Files:**
+- Modify: `tests/test_helpers/panel_widget_size_harness.h`
+- Create: `tests/unit/test_widget_content_fits.cpp`
+- Possibly modify: `src/ui/panel_widgets/*.cpp` and `ui_xml/components/panel_widget_*.xml`, for whatever this finds
+
+**Interfaces:**
+- Consumes: `PanelWidgetHarness<W>` (existing — creates the real XML component, attaches the widget, drives `on_size_changed()` and settles layout), `find_widget_def()`, `GridLayout::get_dimensions`, `grid_track_extent`.
+- Produces: `require_no_overflow()` in `namespace helix`, alongside the existing `require_font_tokens_distinct()`.
+
+**Do not build a new harness.** `PanelWidgetHarness` already does the hard part, and its
+`resize()` already handles the ordering trap (set size → `lv_obj_update_layout` →
+`on_size_changed` → `lv_obj_update_layout`) that a hand-rolled version gets wrong. Fifteen
+`test_widget_size_*.cpp` files already use it. Extend it.
+
+- [ ] **Step 1: Add the overflow detector to the harness**
+
+`require_no_overflow(lv_obj_t* root)`, next to `require_font_tokens_distinct()`. It must catch
+three distinct failures, which are not the same check:
+
+1. **Geometric overflow.** Walk every descendant; compare each child's absolute area against
+   its parent's *content* coords (`lv_obj_get_content_coords`, not the outer coords — padding
+   is not usable space). A child extending past it is clipped.
+2. **Scroll overflow.** `lv_obj_get_scroll_bottom(obj) > 0` or `lv_obj_get_scroll_right(obj) > 0`
+   means laid-out content exceeds the box even where children were repositioned rather than
+   drawn outside it.
+3. **Text truncation.** A label whose rendered text is wider than its box is ellipsized or cut.
+   Measure with `lv_text_get_size()` using the label's own resolved font and letter/line space,
+   and compare against the label's width. A font mismatch here makes the check vacuous — see
+   `require_font_tokens_distinct()` for why that failure mode is easy to ship.
+
+**The exceptions list is the hard part, and it decides whether this gate survives.**
+`tests/CLAUDE.md`: *"A gate that fires on legitimate code gets switched off, so the silent
+cases matter as much as the loud ones."* Some overflow is correct by design — a deliberately
+scrollable console, a filename that is *supposed* to ellipsize, a marquee label
+(`LV_LABEL_LONG_SCROLL`/`SCROLL_CIRC`). Do not suppress those with a blanket allowance.
+Skip a subtree only when the object itself declares the intent — `LV_OBJ_FLAG_SCROLLABLE` set
+deliberately, or a label whose `long_mode` is an explicitly scrolling/dotting mode — and
+make each skip visible in the failure message. Report every exception you add and why.
+
+- [ ] **Step 2: Prove the detector catches something before trusting it**
+
+Point it at a deliberately under-sized widget and watch it fail. A detector that has never
+gone red is not evidence. Then mutate it (drop the scroll check, or compare against outer
+coords instead of content coords) and confirm the corresponding case stops failing — mutate
+the FEATURE, not a constant.
+
+- [ ] **Step 3: Drive every widget at its authored MINIMUM on every shipping geometry**
+
+For each `PanelWidgetDef`, compute the pixel size of `effective_min_colspan` ×
+`effective_min_rowspan` on each of the eight geometries via `grid_track_extent()` — the same
+path `PanelWidgetManager` uses — then `resize()` the harness to it and run
+`require_no_overflow()`. The minimum is the interesting size: it is what a widget gets when the
+grid is full or the user shrinks it, and it is what the placement engine falls back to under
+scarcity.
+
+Widgets whose construction needs live state (`ams`, `tool_switcher`, `camera`) already have
+working setups in their `test_widget_size_*.cpp` files — reuse those, do not invent fixtures.
+
+- [ ] **Step 4: Report before fixing**
+
+This will find real clipping. **Do not start fixing widgets inside this task.** Produce the
+list — widget, geometry, size, which of the three checks fired — and stop. Each fix is a
+judgment call between raising the widget's authored minimum, adding a smaller layout branch,
+or accepting truncation as correct, and those are not decisions to make thirty times in a row
+inside a test task. Route them.
+
+- [ ] **Step 5: Wire it in and commit**
+
+Tag it so it can run alone. Note in the report which widgets pass at minimum but only just —
+a widget clearing its box by two pixels is a translation away from clipping, and this suite
+runs in one language.
+
+**Sequencing.** Task 14 depends on the authored minimums (Task 7) and on the final sizing
+expression, so it runs after both. **Re-run it as a gate at the end of Task 8 and Task 9** —
+those tasks re-author anchors and seed layouts, which changes what sizes widgets actually get
+on a real dashboard.
+
+---
+
 ## Self-review
 
 **Spec coverage.** §1 → Task 5 (+ Task 6 for the row axis the spec's aspect table assumes). §2a → Task 2. §2b → Task 4. §2c → Task 3. §2d → already complete on this branch (`current_metrics()`, `grid_cell_metrics()`). §2e → already complete (`create_drag_ghost` and the `DRAG_SHADOW_*` constants are absent from the current file). §3 → already complete; Task 7 supplies the verification the spec asks for. §4a → Tasks 1 and 7. §4b → Tasks 8 and 9. §4c → Tasks 10 and 11. §5 rewritten tests → Tasks 5, 8; §5 new invariants 1-2 → Task 5, 3 → Task 8, 4-5 → Task 11, 6 → Task 2, 7 → Task 3. "Previously rejected" honoured: the placement algorithm (`find_available_bottom_min`, `grow_to_targets`) is untouched, and no greedy span-stepping or strict-minimum-first is introduced.
