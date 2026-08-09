@@ -1126,22 +1126,29 @@ void AmsBackendAfc::handle_status_update(const nlohmann::json& notification) {
             state_changed = true;
         }
 
-        // Feature-probe the FIRST frame carrying any lane object, before the
-        // loops below — they are bounded by slots_.slot_count(), so on a frame
-        // that arrives before the registry exists they match nothing and the
-        // probe would slip to a later frame. Later frames are deltas, where an
-        // absent key means "unchanged" and would read as legacy firmware.
-        // Scanning the raw params keeps the probe on the complete baseline
-        // regardless of registry state. Both prefixes: OpenAMS and friends
-        // publish AFC_lane, BoxTurtle publishes AFC_stepper, same get_status().
-        if (!feature_level_checked_) {
+        // Learn which prefix this firmware publishes lanes under, then fire the
+        // one-shot feature probe. The probe CANNOT read a status frame: the
+        // subscription is field-scoped (afc_stepper_fields in
+        // moonraker_discovery_sequence.cpp) and does not request
+        // filament_name/multi_color_hexes/initial_weight, so those keys never
+        // arrive here on any AFC version. Reading a frame reported "legacy" on a
+        // confirmed v1.2.0 BoxTurtle. Only an explicit unscoped
+        // printer.objects.query returns the whole lane object.
+        if (!feature_level_checked_ && lane_object_prefix_.empty()) {
             for (auto it = params.begin(); it != params.end(); ++it) {
                 const std::string& k = it.key();
-                if (it.value().is_object() &&
-                    (k.rfind("AFC_stepper ", 0) == 0 || k.rfind("AFC_lane ", 0) == 0)) {
-                    check_afc_feature_level(it.value());
-                    break;
+                if (!it.value().is_object()) {
+                    continue;
                 }
+                if (k.rfind("AFC_stepper ", 0) == 0) {
+                    lane_object_prefix_ = "AFC_stepper ";
+                } else if (k.rfind("AFC_lane ", 0) == 0) {
+                    lane_object_prefix_ = "AFC_lane ";
+                } else {
+                    continue;
+                }
+                probe_feature_level(k);
+                break;
             }
         }
 
@@ -3072,10 +3079,38 @@ bool AmsBackendAfc::status_has_modern_fields(const nlohmann::json& lane_status) 
            lane_status.contains("initial_weight");
 }
 
+void AmsBackendAfc::probe_feature_level(const std::string& lane_object) {
+    // An explicit, UNSCOPED query — no "fields" key, so Moonraker returns the
+    // whole object. This is the only way to see the v1.2.0 keys: the standing
+    // subscription enumerates its fields and does not ask for them.
+    if (!client_ || feature_level_checked_) {
+        return;
+    }
+    nlohmann::json params = {{"objects", {{lane_object, nlohmann::json()}}}};
+
+    auto token = lifetime_.token();
+    client_->send_jsonrpc(
+        "printer.objects.query", params,
+        [this, token, lane_object](const nlohmann::json& response) {
+            token.defer("AmsBackendAfc::probe_feature_level", [this, response, lane_object]() {
+                const auto* result = response.contains("result") ? &response["result"] : nullptr;
+                if (!result || !result->contains("status") ||
+                    !(*result)["status"].contains(lane_object)) {
+                    spdlog::debug("[AMS AFC] Feature probe: no status for '{}'", lane_object);
+                    return;
+                }
+                std::lock_guard<std::mutex> lock(mutex_);
+                check_afc_feature_level((*result)["status"][lane_object]);
+            });
+        },
+        [](const MoonrakerError& err) {
+            spdlog::debug("[AMS AFC] Feature probe query failed: {}", err.message);
+        });
+}
+
 void AmsBackendAfc::check_afc_feature_level(const nlohmann::json& lane_status) {
-    // Runs once, against the subscription's first frame — see the @warning on
-    // status_has_modern_fields(). Latch before deciding so a malformed baseline
-    // cannot re-arm the probe onto a delta.
+    // Runs once, on the COMPLETE object returned by probe_feature_level()'s
+    // explicit query — never on a status frame. See status_has_modern_fields().
     if (feature_level_checked_) {
         return;
     }

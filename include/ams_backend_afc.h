@@ -800,8 +800,12 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
      */
     bool apply_afc_version_response(const nlohmann::json& response);
 
-    /// One-shot feature probe + upgrade advisory. Reads the subscription's first
-    /// baseline frame only; see status_has_modern_fields().
+    /// Issue the one-shot unscoped query that check_afc_feature_level() needs.
+    /// @param lane_object Full Klipper object name, e.g. "AFC_stepper lane1".
+    void probe_feature_level(const std::string& lane_object);
+
+    /// One-shot feature probe + upgrade advisory. Must be handed a COMPLETE lane
+    /// object (see probe_feature_level), never a status frame.
     void check_afc_feature_level(const nlohmann::json& lane_status);
 
     /**
@@ -983,9 +987,13 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // before that date. Detect capabilities from the data instead.
     std::string afc_version_{"unknown"};
 
-    /// Latch for status_has_modern_fields(): the feature probe may only read the
-    /// subscription's first (complete) frame, so it runs exactly once.
+    /// Latch for the feature probe: it costs a query, so it runs exactly once.
     bool feature_level_checked_{false};
+
+    /// "AFC_stepper " or "AFC_lane ", learned from the first status frame that
+    /// carries a lane. Only the prefix is learnable from a frame; the fields are
+    /// not, because the subscription is field-scoped.
+    std::string lane_object_prefix_;
 
     // Per-lane hub routing: lane_name → hub name ("direct" for direct lanes)
     std::unordered_map<std::string, std::string> lane_hub_routing_;

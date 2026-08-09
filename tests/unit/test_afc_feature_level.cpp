@@ -105,7 +105,7 @@ TEST_CASE("AFC feature detection accepts any field of the v1.2.0 block",
     }
 }
 
-/// Drives the real status path so the one-shot latch can be asserted.
+/// Drives the real status path so the prefix learner can be asserted.
 class AfcFeatureLevelHelper : public AmsBackendAfc {
   public:
     AfcFeatureLevelHelper() : AmsBackendAfc(nullptr, nullptr) {}
@@ -117,51 +117,45 @@ class AfcFeatureLevelHelper : public AmsBackendAfc {
         handle_status_update(notification);
     }
 
-    [[nodiscard]] bool probed() const {
-        return feature_level_checked_;
+    [[nodiscard]] std::string prefix() const {
+        return lane_object_prefix_;
     }
 };
 
-TEST_CASE("AFC feature probe reads the baseline frame, never a later delta",
+TEST_CASE("AFC feature probe learns the lane prefix from a status frame",
           "[ams][afc][feature-level]") {
-    // The probe must not be bounded by the slot registry. It originally sat
-    // inside the `i < slots_.slot_count()` loops, so a baseline arriving before
-    // the registry was built matched nothing and the probe slipped onto the next
-    // frame — a delta, where every absent key reads as legacy firmware. That
-    // would nag a fully up-to-date printer.
-    SECTION("a baseline with NO registry still probes") {
-        AfcFeatureLevelHelper afc; // zero slots, as before discovery lands
-        REQUIRE_FALSE(afc.probed());
-
-        afc.feed_frame(nlohmann::json{{"AFC_stepper lane1", lane_v1_2_0_loaded()}});
-
-        CHECK(afc.probed());
-    }
-
-    SECTION("a later delta cannot re-open the probe") {
+    // A status frame can only tell us WHICH object name the firmware uses. It
+    // can never tell us which fields exist: the subscription is field-scoped
+    // (afc_stepper_fields in moonraker_discovery_sequence.cpp) and never asks
+    // for filament_name/multi_color_hexes/initial_weight, so those keys are
+    // absent from every frame regardless of AFC version. Probing a frame
+    // reported "legacy" against a BoxTurtle confirmed on v1.2.0 by direct query.
+    // The fields come from probe_feature_level()'s explicit unscoped query.
+    SECTION("BoxTurtle publishes AFC_stepper") {
         AfcFeatureLevelHelper afc;
-        afc.feed_frame(nlohmann::json{{"AFC_stepper lane1", lane_v1_2_0_loaded()}});
-        REQUIRE(afc.probed());
-
-        // A partial frame carrying only a changed weight — no v1.2.0 keys. On
-        // the unlatched code this reads as legacy.
-        afc.feed_frame(nlohmann::json{{"AFC_stepper lane1", nlohmann::json{{"weight", 900.0}}}});
-
-        CHECK(afc.probed()); // still latched from the baseline, not re-evaluated
+        afc.feed_frame(nlohmann::json{{"AFC_stepper lane1", lane_v1_1_0_loaded()}});
+        CHECK(afc.prefix() == "AFC_stepper ");
     }
 
-    SECTION("a frame with no lane object at all leaves the probe armed") {
-        // Some frames carry only the aggregate AFC object. Consuming the latch
-        // there would burn it on a payload that proves nothing.
+    SECTION("OpenAMS and friends publish AFC_lane") {
+        AfcFeatureLevelHelper afc;
+        afc.feed_frame(nlohmann::json{{"AFC_lane lane1", lane_v1_1_0_loaded()}});
+        CHECK(afc.prefix() == "AFC_lane ");
+    }
+
+    SECTION("the prefix is learnable with NO slot registry") {
+        // The learner must not sit inside the `i < slots_.slot_count()` loops —
+        // a frame arriving before discovery builds the registry matches nothing
+        // there, and the probe would never fire at all.
+        AfcFeatureLevelHelper afc; // zero slots
+        afc.feed_frame(nlohmann::json{{"AFC_stepper lane3", lane_v1_1_0_loaded()}});
+        CHECK(afc.prefix() == "AFC_stepper ");
+    }
+
+    SECTION("a frame with no lane object teaches nothing") {
         AfcFeatureLevelHelper afc;
         afc.feed_frame(nlohmann::json{{"AFC", nlohmann::json{{"current_state", "Idle"}}}});
-        CHECK_FALSE(afc.probed());
-    }
-
-    SECTION("the AFC_lane prefix probes too") {
-        AfcFeatureLevelHelper afc;
-        afc.feed_frame(nlohmann::json{{"AFC_lane lane1", lane_v1_2_0_loaded()}});
-        CHECK(afc.probed());
+        CHECK(afc.prefix().empty());
     }
 }
 
