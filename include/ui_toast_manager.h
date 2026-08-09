@@ -49,6 +49,22 @@ class ToastManager {
     void show(ToastSeverity severity, const char* message, uint32_t duration_ms = 4000);
 
     /**
+     * Show a toast carrying a second, smaller line under the message: what the
+     * user should DO about it.
+     *
+     * Separate entry point rather than a defaulted parameter on show(), so no
+     * existing caller changes shape and a literal 0 duration can never become
+     * ambiguous with a null detail. An empty or null @p detail renders exactly
+     * as show() would.
+     *
+     * Longer default duration than show(): a two-part message is roughly twice
+     * the reading time, and the whole point of the detail line is that the user
+     * acts on it rather than glancing past it.
+     */
+    void show_with_detail(ToastSeverity severity, const char* message, const char* detail,
+                          uint32_t duration_ms = 8000);
+
+    /**
      * Show a toast with an action button. Each toast has its own callback, so
      * multiple action toasts can coexist in the stack.
      */
@@ -87,9 +103,10 @@ class ToastManager {
     };
     using ToastList = std::list<ToastInstance>; // std::list → stable pointers
 
-    void create_toast_internal(ToastSeverity severity, const char* message, uint32_t duration_ms,
-                               bool with_action, toast_action_callback_t action_cb,
-                               void* action_user_data, const char* action_text);
+    void create_toast_internal(ToastSeverity severity, const char* message, const char* detail,
+                               uint32_t duration_ms, bool with_action,
+                               toast_action_callback_t action_cb, void* action_user_data,
+                               const char* action_text);
     void ensure_stack_container();
     ToastList::iterator find_by_widget(lv_obj_t* widget);
     /** If a non-exiting, non-action toast with identical severity+message is

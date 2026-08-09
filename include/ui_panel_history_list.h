@@ -12,6 +12,7 @@
 #include "print_history_manager.h"
 #include "subject_managed_panel.h"
 
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <string>
@@ -284,9 +285,12 @@ class HistoryListPanel : public OverlayBase {
     // === Detail Overlay State ===
     //
 
-    lv_obj_t* detail_overlay_ = nullptr;     ///< Detail overlay widget (created on first use)
-    size_t selected_job_index_ = 0;          ///< Index of currently selected job in filtered_jobs_
-    uint64_t detail_overlay_generation_ = 0; ///< Generation counter for async callback safety
+    lv_obj_t* detail_overlay_ = nullptr; ///< Detail overlay widget (created on first use)
+    size_t selected_job_index_ = 0;      ///< Index of currently selected job in filtered_jobs_
+    /// Generation counter for async callback safety. Owned by the
+    /// ThumbnailLoadContext each detail-overlay open creates — atomic because
+    /// the context reads it from whichever thread delivers a fetch result.
+    std::atomic<uint32_t> detail_overlay_generation_{0};
 
     // Detail overlay subjects (string subjects for reactive binding)
     lv_subject_t detail_filename_;

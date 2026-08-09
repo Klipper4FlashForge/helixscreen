@@ -108,6 +108,7 @@ translations:
   ACTIONS: ДЕЙСТВИЯ
   ADXL: ADXL
   AFC: AFC
+  AFC Update Available: Доступно обновление AFC
   AFC failure reset complete: Сброс ошибки AFC завершён
   AFC failure reset failed: Ошибка сброса ошибки AFC
   AFC recovery complete: Восстановление AFC завершено
@@ -326,8 +327,8 @@ translations:
   Bypass controlled by sensor: Байпас управляется датчиком
   Bypass disabled: Байпас отключён
   Bypass enabled: Байпас включён
-  'Bypass failed: {}': 'Ошибка байпаса: {}'
-  'Bypass toggle failed: {}': 'Не удалось переключить байпас: {}'
+  Bypass failed: Ошибка байпаса
+  Bypass toggle failed: Не удалось переключить байпас
   C: К
   CALIBRATION: КАЛИБРОВКА
   CAPABILITIES: ВОЗМОЖНОСТИ
@@ -434,6 +435,8 @@ translations:
     принтера
   Change PIN: Изменить PIN
   Change Printer Host: Изменить хост принтера
+  Change Tool: Сменить инструмент
+  Change Tool While Paused: Смена инструмента при паузе
   Changes apply immediately. Adjust during print for tuning.: Изменения применяются
     немедленно. Корректируйте во время печати.
   Changes are temporary and reset on printer reboot: Изменения временные и сбрасываются
@@ -444,9 +447,9 @@ translations:
   Check filament: Проверьте филамент
   Check for Updates: Проверить обновления
   Check slot: Проверить слот
-  'Check slot failed: {}': 'Ошибка проверки слота: {}'
+  Check slot failed: Ошибка проверки слота
   Check slots: Проверить слоты
-  'Check slots failed: {}': 'Ошибка проверки слотов: {}'
+  Check slots failed: Ошибка проверки слотов
   Check the filament path and try again.: Проверьте путь филамента и попробуйте снова.
   Check your heater's rating (typically 40-60W for hotends): Проверьте мощность нагревателя
     (обычно 40–60W для хотэндов)
@@ -482,7 +485,7 @@ translations:
   Clear All Events: Очистить все события
   Clear Console?: Очистить консоль?
   Clear Spool: Убрать катушку
-  'Clear failed: {}': 'Ошибка очистки: {}'
+  Clear failed: Ошибка очистки
   Cleared from settings — system unpair failed, may need OS Bluetooth: Удалено из
     настроек; не удалось отменить сопряжение в системе, возможно нужен Bluetooth ОС
   Clipboard unavailable - use SSH: Буфер обмена недоступен - используйте SSH
@@ -749,7 +752,7 @@ translations:
   Eject: Извлечь
   Eject Distance: Расстояние извлечения
   Eject Velocity: Скорость извлечения
-  'Eject failed: {}': 'Ошибка извлечения: {}'
+  Eject failed: Ошибка извлечения
   Eject needs [force_move] enabled in printer config: Для извлечения нужно включить
     [force_move] в конфигурации принтера
   Ejecting: Извлечение
@@ -763,7 +766,7 @@ translations:
   Empty slots disable the associated functionality: Пустые слоты отключают связанный
     функционал
   Enable: Включить
-  Enable Bypass Controls: ''
+  Enable Bypass Controls: Включить управление байпасом
   Enable Monitoring: Включить мониторинг
   Enable Retraction: Включить аппаратный ретракт
   Enable Timelapse: Включить таймлапс
@@ -986,7 +989,6 @@ translations:
   'Filament load failed: {}': 'Ошибка загрузки филамента: {}'
   Filament loaded: Филамент загружен
   Filament operation failed: Операция с филаментом не удалась
-  'Filament operation failed: {}': 'Ошибка операции с филаментом: {}'
   Filament operation timed out: Операция с филаментом — время ожидания истекло
   Filament runout: Окончание филамента
   Filament runout and motion detection sensors: Датчики окончания и движения филамента
@@ -1006,7 +1008,7 @@ translations:
   Finish: Завершить
   Finishing up...: Завершение...
   Firmware Restart: Перезапуск прошивки
-  Firmware reports no bypass. Enable if you feed filament straight to the extruder: ''
+  Firmware reports no bypass. Enable if you feed filament straight to the extruder: Прошивка не сообщает о байпасе. Включите, если филамент подаётся прямо в экструдер.
   Firmware restarting...: Перезапуск прошивки...
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
@@ -1114,7 +1116,9 @@ translations:
   Hold anywhere to cancel: Удерживайте в любом месте для отмены
   Holding nozzle at {}°C to purge previous filament.: Удержание сопла при {}°C для очистки от предыдущего филамента.
   Home: Главная
+  Home & Continue: Запарковать и продолжить
   Home failed: Парковка не удалась
+  Home printer first?: Сначала запарковать принтер?
   Home selector: Парковать селектор
   Homing AFC system...: Парковка системы AFC...
   Homing X...: Парковка X...
@@ -1357,7 +1361,7 @@ translations:
   'MCU: ': 'MCU: '
   MDI Icons: Иконки MDI
   MISSING CONFIGURED: ОТСУТСТВУЕТ НАСТРОЕННОЕ
-  'MMU command failed: {}': 'Ошибка команды MMU: {}'
+  MMU command failed: Ошибка команды MMU
   MPC: MPC
   Machine Limits: Ограничения принтера
   Macro: Макрос
@@ -1464,8 +1468,7 @@ translations:
   Must home axes first: Сначала необходимо запарковать оси
   My Custom Theme: Моя тема
   My Panel: Моя панель
-  # Source: wizard_printer_identify.xml:30, wizard_printer_identify.xml:30
-  My Printer: ''
+  My Printer: Мой принтер
   NEWLY DISCOVERED: НЕДАВНО ОБНАРУЖЕНО
   Name: Название
   Name (optional): Название (необязательно)
@@ -1966,7 +1969,7 @@ translations:
   Reset Home Screen?: Сбросить главный экран?
   Reset Speed & Flow to 100%: Сбросить скорость и поток на 100%
   Reset all settings and restart wizard: Сбросить все настройки и перезапустить мастер
-  'Reset failed: {}': 'Ошибка сброса: {}'
+  Reset failed: Ошибка сброса
   Reset to Default: Сбросить до умолчания
   Reset to defaults: Сбросить по умолчанию
   Reset to original values: Сбросить к исходным значениям
@@ -1996,7 +1999,7 @@ translations:
   Resume Print: Продолжить печать
   Resume interrupted print?: Продолжить прерванную печать?
   Resume macro not configured: Макрос возобновления не настроен
-  'Resume preparation failed: {}': 'Не удалось подготовиться к возобновлению: {}'
+  Resume preparation failed: Не удалось подготовиться к возобновлению
   Resuming...: Возобновление...
   Retract: Ретракция
   Retract Distance: Расстояние ретракта
@@ -2134,7 +2137,7 @@ translations:
   Select material to begin: Выберите материал для начала
   Select sensor: Выбрать датчик
   Select slot: Выбрать слот
-  'Select slot failed: {}': 'Ошибка выбора слота: {}'
+  Select slot failed: Ошибка выбора слота
   Select the heaters Klipper uses for your bed and hotend: Выберите нагреватели Klipper
     для стола и хотенда
   Select which devices the home screen power button controls: Выберите устройства
@@ -2426,8 +2429,11 @@ translations:
     кажется неподвижным (застывшим), вы нашли резонансную частоту.\n\nИспользуйте
     кнопки частоты для перебора значений, пока ремень не будет выглядеть неподвижным,
     затем зафиксируйте показание.
+  ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
+  : Печать на паузе. Смена инструмента сейчас переместит печатающую головку и заменит филамент в сопле. Возобновите печать после завершения смены.
   The printer halted this print and cannot resume it. Restart from the beginning?: Принтер
     остановил эту печать и не может её возобновить. Начать с начала?
+  The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear.: Принтер не запаркован. Продолжение выполнит парковку всех осей, печатающая головка переместится. Убедитесь, что стол свободен.
   The printer lost power during a print. It can resume where it left off.: Принтер потерял питание во время печати. Он может продолжить с места остановки.
   The printer lost power during a print. The resumed layer may not line up exactly.: Принтер потерял питание во время печати. Возобновлённый слой может не совпасть точно.
   The printer lost power while printing {}. Resume where it left off?: Принтер потерял питание при печати {}. Продолжить с места остановки?
@@ -2536,6 +2542,7 @@ translations:
   Tool: Инструмент
   Tool Changer: Сменщик инструментов
   'Tool change failed: {}': 'Ошибка смены инструмента: {}'
+  Tool mapping failed: Ошибка сопоставления инструмента
   Tool swap: Смена инструмента
   'Tool {} → Lane {}: no filament loaded.': 'Инструмент {} → Слот {}: филамент не
     загружен.'
@@ -2608,7 +2615,6 @@ translations:
   Unknown error: Неизвестная ошибка
   Unload: Выгрузить
   Unload Filament: Выгрузить филамент
-  'Unload failed: {}': 'Ошибка выгрузки: {}'
   Unload macro not configured: Макрос выгрузки не настроен
   Unload may still be running — response timed out: Выгрузка может ещё выполняться
     — время ожидания истекло
@@ -2632,6 +2638,7 @@ translations:
   Update your security PIN: Обновите ваш PIN-код
   Updates aren't available on this installation.: Обновления недоступны в этой установке.
   Updating Configuration...: Обновление конфигурации...
+  Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: Обновите AFC до версии 1.2.0 или новее, чтобы получить имена филамента и многоцветные катушки.
   Upload: Отправить
   Upload Debug Bundle: Отправить пакет диагностики
   Upload Failed: Ошибка отправки

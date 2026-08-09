@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+class ToolChangerTestAccess;
+
 /**
  * @file ams_backend_toolchanger.h
  * @brief Physical tool changer backend implementation
@@ -108,10 +110,18 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
     [[nodiscard]] PathSegment get_slot_filament_segment(int slot_index) const override;
     [[nodiscard]] PathSegment infer_error_segment() const override;
 
-    // Operations
-    AmsError load_filament(int slot_index) override;
-    AmsError unload_filament(int slot_index) override;
-    AmsError select_slot(int slot_index) override;
+  protected:
+    // Operations. Gated by AmsSubscriptionBackend's NVI wrapper.
+    AmsError do_load_filament(int slot_index) override;
+    AmsError do_unload_filament(int slot_index) override;
+    AmsError do_select_slot(int slot_index) override;
+
+    /// On a tool changer, selecting a slot means mounting that toolhead —
+    /// do_select_slot() forwards to do_change_tool(), which emits SELECT_TOOL
+    /// and swaps what is on the carriage.
+    [[nodiscard]] bool select_slot_moves_toolhead() const override {
+        return true;
+    }
 
     /**
      * @brief Mount a physical toolhead. The argument is a SLOT INDEX.
@@ -127,8 +137,9 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
      * the tool map (AmsSystemInfo::tool_to_slot_map / SlotInfo::mapped_tool),
      * never by assuming they are equal.
      */
-    AmsError change_tool(int tool_number) override;
+    AmsError do_change_tool(int tool_number) override;
 
+  public:
     /**
      * @brief Offer Unload only for the tool currently on the carriage.
      *
@@ -193,6 +204,7 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
   protected:
     // Allow test helper access to private members
     friend class ToolChangerCharHelper;
+    friend class ToolChangerTestAccess;
 
     // --- AmsSubscriptionBackend hooks ---
     AmsError additional_start_checks() override;
@@ -200,6 +212,15 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
     const char* backend_log_tag() const override {
         return "[AMS ToolChanger]";
     }
+
+    /// dispatch_operation() sets the optimistic action (begin_dispatch_locked)
+    /// BEFORE calling ensure_homed_then() -- on decline, the base class's
+    /// generic IDLE reset alone leaves pending_dispatch_action_ armed and
+    /// operation_detail stale, so route through abandon_dispatch() instead,
+    /// the same unwind dispatch_operation()'s own `if (!result)` net uses.
+    /// ToolChanger has no stuck-action watchdog at all, so this matters even
+    /// more here than on AFC.
+    void on_home_confirmation_declined() override;
 
   private:
     /**

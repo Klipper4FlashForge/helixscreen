@@ -567,6 +567,88 @@ TEST_CASE("select_primary_config_index reports no usable entry", "[config_manage
     CHECK(MoonrakerConfigManager::select_primary_config_index(blank) == -1);
 }
 
+// ============================================================================
+// Root vs primary — the COSMOS split (#1242)
+//
+// select_primary_config_index answers "which file can prove reachability by
+// content", which is why it looks for [server]: that file carries a rich
+// section list to verify against. On every firmware where the root config also
+// defines [server] the two questions have the same answer, so the distinction
+// never surfaced.
+//
+// COSMOS 26.07.0 on the Elegoo Centauri Carbon splits them. The root config is
+// user-editable and holds nothing but includes; [server] lives in a vendor
+// directory the firmware replaces on upgrade. Writing there loses the setting.
+//
+// files[] captured live from each device on 2026-08-09. Moonraker reports the
+// config chain root-first, then in include order — confirmed on all six.
+// ============================================================================
+
+// COSMOS 26.07.0, Elegoo Centauri Carbon. Root defines NO sections.
+static std::vector<helix::LoadedConfigFile> cosmos_server_config_files() {
+    return {{"moonraker.conf", {}},
+            {"helixscreen.conf", {"spoolman"}},
+            {"moonraker-readonly/moonraker.conf",
+             {"server", "machine", "file_manager", "authorization", "octoprint_compat", "history",
+              "announcements", "webcam webcam"}}};
+}
+
+TEST_CASE("select_root_config_index picks the user-editable root on COSMOS, not the vendor file",
+          "[config_manager][config_path][1242]") {
+    auto files = cosmos_server_config_files();
+
+    // The vendor file is the one defining [server], and it is what the
+    // reachability proof still has to download.
+    CHECK(MoonrakerConfigManager::select_primary_config_index(files) == 2);
+
+    // The write target must be the root, which COSMOS preserves across upgrades.
+    int root = MoonrakerConfigManager::select_root_config_index(files);
+    REQUIRE(root == 0);
+    CHECK(files[static_cast<size_t>(root)].filename == "moonraker.conf");
+
+    // The specific regression: never hand back a path inside the vendor tree.
+    CHECK(files[static_cast<size_t>(root)].filename.find("-readonly/") == std::string::npos);
+}
+
+TEST_CASE("select_root_config_index leaves single-file firmwares alone",
+          "[config_manager][config_path][1242]") {
+    // K2: one file, defines [server]. Root and primary must agree, or the
+    // original K2 unreachable-config fix regresses.
+    auto k2 = k2_server_config_files();
+    CHECK(MoonrakerConfigManager::select_root_config_index(k2) == 0);
+    CHECK(MoonrakerConfigManager::select_primary_config_index(k2) == 0);
+}
+
+TEST_CASE("select_root_config_index picks the root ahead of its includes",
+          "[config_manager][config_path][1242]") {
+    // Snapmaker U1: root defines [server], five extended/ includes follow it.
+    std::vector<helix::LoadedConfigFile> u1 = {
+        {"moonraker.conf", {"server", "file_manager", "machine"}},
+        {"extended/moonraker/00_keep.cfg", {}},
+        {"extended/moonraker/01_timelapse_stub.cfg", {"timelapse"}},
+        {"extended/moonraker/04_remote_screen.cfg", {"remote_screen"}}};
+    CHECK(MoonrakerConfigManager::select_root_config_index(u1) == 0);
+
+    // Flashforge AD5M reports the root as an absolute path, with a mod_data
+    // include after it. Still index 0.
+    std::vector<helix::LoadedConfigFile> ad5m = {
+        {"/root/printer_data/config/moonraker.conf", {"server", "machine"}},
+        {"/root/printer_data/config/mod_data/user.moonraker.conf", {"spoolman"}}};
+    CHECK(MoonrakerConfigManager::select_root_config_index(ad5m) == 0);
+}
+
+TEST_CASE("select_root_config_index skips unusable entries",
+          "[config_manager][config_path][1242]") {
+    CHECK(MoonrakerConfigManager::select_root_config_index({}) == -1);
+
+    std::vector<helix::LoadedConfigFile> blank_only = {{"", {}}};
+    CHECK(MoonrakerConfigManager::select_root_config_index(blank_only) == -1);
+
+    // A nameless leading entry must not shadow the real root behind it.
+    std::vector<helix::LoadedConfigFile> blank_first = {{"", {}}, {"moonraker.conf", {"server"}}};
+    CHECK(MoonrakerConfigManager::select_root_config_index(blank_first) == 1);
+}
+
 TEST_CASE("config_path_from_relative accepts a bare filename as reported by K2",
           "[config_manager][config_path]") {
     auto files = k2_server_config_files();

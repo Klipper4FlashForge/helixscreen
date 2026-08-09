@@ -143,20 +143,21 @@ void FanWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
 
     // Observe fan version to detect fan discovery/reconnection
     auto token = lifetime_.token();
-    version_observer_ =
-        helix::ui::observe_int_sync<FanWidget>(get_printer_state().get_fans_version_subject(), this,
-                                               [token](FanWidget* self, int /*version*/) {
-                                                   if (token.expired())
-                                                       return;
-                                                   if (self->selected_fan_.empty()) {
-                                                       self->auto_select_first_fan();
-                                                   } else {
-                                                       // Rebind in case subjects were recreated
-                                                       // after reconnection
-                                                       self->bind_speed_observer();
-                                                       self->update_display();
-                                                   }
-                                               });
+    version_observer_ = helix::ui::observe_int_sync<FanWidget>(
+        get_printer_state().get_fans_version_subject(), this,
+        [token](FanWidget* self, int /*version*/) {
+            if (token.expired())
+                return;
+            if (self->selected_fan_.empty()) {
+                self->auto_select_first_fan();
+            } else {
+                // Rebind in case subjects were recreated
+                // after reconnection
+                self->bind_speed_observer();
+                self->update_display();
+            }
+        },
+        get_printer_state().get_subjects_lifetime());
 
     spdlog::debug("[FanWidget] Attached (fan: {})", selected_fan_.empty() ? "none" : selected_fan_);
 }

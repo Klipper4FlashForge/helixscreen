@@ -68,6 +68,16 @@ using UpdateCallback = std::function<void()>;
 struct TaggedCallback {
     const char* tag = nullptr;
     UpdateCallback callback;
+    /// Call site of an UNTAGGED enqueue, captured automatically via
+    /// __builtin_FILE()/__builtin_LINE() defaults on the queue_update()
+    /// wrappers. Purely diagnostic: a tagged callback already names its
+    /// producer, but an untagged one is anonymous, and "<untagged> x44" in a
+    /// cross-test leak report is unactionable — there is no way to find which
+    /// of the ~600 queue_update() sites left the work behind. The crash
+    /// handler still reads `tag` only; this pair is read by the test
+    /// isolation listener.
+    const char* file = nullptr;
+    int line = 0;
 };
 
 /**
@@ -159,8 +169,11 @@ class UpdateQueue {
      *
      * @param callback Function to execute
      */
-    void queue(UpdateCallback callback) {
-        queue(nullptr, std::move(callback));
+    /// The file/line defaults are evaluated at the CALL SITE, so an untagged
+    /// enqueue still records where it came from without any caller change.
+    void queue(UpdateCallback callback, const char* file = __builtin_FILE(),
+               int line = __builtin_LINE()) {
+        queue_impl(nullptr, std::move(callback), file, line);
     }
 
     /**
@@ -187,22 +200,7 @@ class UpdateQueue {
     // older defer/defer_critical split: with buffer-not-drop the two were
     // functionally identical, so there is now one path.
     void queue(const char* tag, UpdateCallback callback) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (shut_down_) {
-            if (tag)
-                spdlog::warn("[UpdateQueue] DROPPED (shutdown): {}", tag);
-            return;
-        }
-        if (freeze_depth_ > 0) {
-            frozen_buffer_.push({tag, std::move(callback)});
-            if (tag)
-                spdlog::trace("[UpdateQueue] Buffered (frozen): {} (buffered={})", tag,
-                              frozen_buffer_.size());
-            return;
-        }
-        pending_.push({tag, std::move(callback)});
-        if (tag)
-            spdlog::trace("[UpdateQueue] Enqueued: {} (pending={})", tag, pending_.size());
+        queue_impl(tag, std::move(callback), nullptr, 0);
     }
 
     /**
@@ -358,6 +356,25 @@ class UpdateQueue {
     }
 
   private:
+    void queue_impl(const char* tag, UpdateCallback callback, const char* file, int line) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (shut_down_) {
+            if (tag)
+                spdlog::warn("[UpdateQueue] DROPPED (shutdown): {}", tag);
+            return;
+        }
+        if (freeze_depth_ > 0) {
+            frozen_buffer_.push({tag, std::move(callback), file, line});
+            if (tag)
+                spdlog::trace("[UpdateQueue] Buffered (frozen): {} (buffered={})", tag,
+                              frozen_buffer_.size());
+            return;
+        }
+        pending_.push({tag, std::move(callback), file, line});
+        if (tag)
+            spdlog::trace("[UpdateQueue] Enqueued: {} (pending={})", tag, pending_.size());
+    }
+
     friend class UpdateQueueTestAccess;
     UpdateQueue() = default;
     ~UpdateQueue() {
@@ -389,6 +406,14 @@ class UpdateQueue {
             initialized_ = false;
             shut_down_ = true;
             std::queue<TaggedCallback>().swap(pending_); // Discard any stragglers
+            // ...including whatever a live ScopedFreeze diverted. Application
+            // holds a freeze across update_queue_shutdown() (shutdown step 5 vs
+            // step 6), so work enqueued in that window sits in the buffer and
+            // ~ScopedFreeze splices it back into pending_ afterwards. At process
+            // exit that is merely never drained, but the soft-restart path calls
+            // update_queue_init() next, which re-arms the timer and runs those
+            // callbacks against the objects teardown just destroyed.
+            std::queue<TaggedCallback>().swap(frozen_buffer_);
         }
         timer_ = nullptr;
     }
@@ -571,8 +596,13 @@ inline void run_on_main(const char* tag, UpdateCallback fn) {
     UpdateQueue::instance().queue(tag, std::move(fn));
 }
 
-inline void queue_update(UpdateCallback callback) {
-    UpdateQueue::instance().queue(std::move(callback));
+// The trailing file/line parameters are never passed explicitly: their default
+// arguments are evaluated in the CALLER, so every untagged enqueue records its
+// own call site. Forwarding wrappers below thread the pair through so the
+// recorded site is the real producer rather than a line in this header.
+inline void queue_update(UpdateCallback callback, const char* file = __builtin_FILE(),
+                         int line = __builtin_LINE()) {
+    UpdateQueue::instance().queue(std::move(callback), file, line);
 }
 
 /**
@@ -597,13 +627,17 @@ inline void queue_update(const char* tag, UpdateCallback callback) {
  * @param data Data to pass to callback (moved into queue)
  * @param callback Function to execute with data
  */
-template <typename T> void queue_update(std::unique_ptr<T> data, std::function<void(T*)> callback) {
+template <typename T>
+void queue_update(std::unique_ptr<T> data, std::function<void(T*)> callback,
+                  const char* file = __builtin_FILE(), int line = __builtin_LINE()) {
     // Capture data and callback in a lambda
     T* raw_ptr = data.release(); // Transfer ownership
-    queue_update([raw_ptr, callback = std::move(callback)]() {
-        std::unique_ptr<T> owned(raw_ptr); // Reclaim ownership for RAII
-        callback(owned.get());
-    });
+    queue_update(
+        [raw_ptr, callback = std::move(callback)]() {
+            std::unique_ptr<T> owned(raw_ptr); // Reclaim ownership for RAII
+            callback(owned.get());
+        },
+        file, line);
 }
 
 /**
@@ -639,12 +673,15 @@ inline void update_queue_shutdown() {
  * @param user_data User data passed to callback
  * @return LV_RESULT_OK always (queue never fails)
  */
-inline lv_result_t async_call(lv_async_cb_t async_xcb, void* user_data) {
-    queue_update([async_xcb, user_data]() {
-        if (async_xcb) {
-            async_xcb(user_data);
-        }
-    });
+inline lv_result_t async_call(lv_async_cb_t async_xcb, void* user_data,
+                              const char* file = __builtin_FILE(), int line = __builtin_LINE()) {
+    queue_update(
+        [async_xcb, user_data]() {
+            if (async_xcb) {
+                async_xcb(user_data);
+            }
+        },
+        file, line);
     return LV_RESULT_OK;
 }
 
@@ -669,16 +706,20 @@ inline lv_result_t async_call(lv_async_cb_t async_xcb, void* user_data) {
  * @param callback Function to execute with validated widget and data
  */
 template <typename T, typename F>
-void queue_update(lv_obj_t* widget, std::unique_ptr<T> data, F&& callback) {
+void queue_update(lv_obj_t* widget, std::unique_ptr<T> data, F&& callback,
+                  const char* file = __builtin_FILE(), int line = __builtin_LINE()) {
     T* raw_ptr = data.release();
-    queue_update([widget, raw_ptr, cb = std::forward<F>(callback)]() {
-        std::unique_ptr<T> owned(raw_ptr); // RAII: always freed
-        if (!lv_obj_is_valid(widget)) {
-            spdlog::debug("[UpdateQueue] Widget-safe guard: widget destroyed, skipping callback");
-            return;
-        }
-        cb(widget, owned.get());
-    });
+    queue_update(
+        [widget, raw_ptr, cb = std::forward<F>(callback)]() {
+            std::unique_ptr<T> owned(raw_ptr); // RAII: always freed
+            if (!lv_obj_is_valid(widget)) {
+                spdlog::debug(
+                    "[UpdateQueue] Widget-safe guard: widget destroyed, skipping callback");
+                return;
+            }
+            cb(widget, owned.get());
+        },
+        file, line);
 }
 
 /**
@@ -691,14 +732,19 @@ void queue_update(lv_obj_t* widget, std::unique_ptr<T> data, F&& callback) {
  * @param widget Widget that must still be valid when callback fires
  * @param callback Function to execute with validated widget
  */
-template <typename F> void queue_widget_update(lv_obj_t* widget, F&& callback) {
-    queue_update([widget, cb = std::forward<F>(callback)]() {
-        if (!lv_obj_is_valid(widget)) {
-            spdlog::debug("[UpdateQueue] Widget-safe guard: widget destroyed, skipping callback");
-            return;
-        }
-        cb(widget);
-    });
+template <typename F>
+void queue_widget_update(lv_obj_t* widget, F&& callback, const char* file = __builtin_FILE(),
+                         int line = __builtin_LINE()) {
+    queue_update(
+        [widget, cb = std::forward<F>(callback)]() {
+            if (!lv_obj_is_valid(widget)) {
+                spdlog::debug(
+                    "[UpdateQueue] Widget-safe guard: widget destroyed, skipping callback");
+                return;
+            }
+            cb(widget);
+        },
+        file, line);
 }
 
 /**
@@ -712,16 +758,20 @@ template <typename F> void queue_widget_update(lv_obj_t* widget, F&& callback) {
  * @param user_data User data passed to callback
  * @return LV_RESULT_OK always (queue never fails)
  */
-inline lv_result_t async_call(lv_obj_t* widget, lv_async_cb_t async_xcb, void* user_data) {
-    queue_update([widget, async_xcb, user_data]() {
-        if (!lv_obj_is_valid(widget)) {
-            spdlog::debug("[UpdateQueue] Widget-safe guard: widget destroyed, skipping async_call");
-            return;
-        }
-        if (async_xcb) {
-            async_xcb(user_data);
-        }
-    });
+inline lv_result_t async_call(lv_obj_t* widget, lv_async_cb_t async_xcb, void* user_data,
+                              const char* file = __builtin_FILE(), int line = __builtin_LINE()) {
+    queue_update(
+        [widget, async_xcb, user_data]() {
+            if (!lv_obj_is_valid(widget)) {
+                spdlog::debug(
+                    "[UpdateQueue] Widget-safe guard: widget destroyed, skipping async_call");
+                return;
+            }
+            if (async_xcb) {
+                async_xcb(user_data);
+            }
+        },
+        file, line);
     return LV_RESULT_OK;
 }
 

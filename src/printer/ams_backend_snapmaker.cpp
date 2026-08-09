@@ -422,18 +422,8 @@ PathSegment AmsBackendSnapmaker::infer_error_segment() const {
 // Filament Operations
 // ============================================================================
 
-AmsError AmsBackendSnapmaker::load_filament(int slot_index) {
-    // Every op in this section drives the toolhead — AUTO_FEEDING forwards to
-    // FEED_AUTO, which homes before it feeds, and `T{n}` moves the carriage — so
-    // they refuse while a print owns it. PAUSED still passes
-    // (filament_ops_self_home() is false), which is what keeps runout recovery
-    // working.
-    auto err = check_preconditions(true);
-    if (!err.success()) {
-        return err;
-    }
-
-    err = validate_slot_index(slot_index);
+AmsError AmsBackendSnapmaker::do_load_filament(int slot_index) {
+    auto err = validate_slot_index(slot_index);
     if (err.result != AmsResult::SUCCESS)
         return err;
 
@@ -461,12 +451,7 @@ AmsError AmsBackendSnapmaker::load_filament(int slot_index) {
     return execute_gcode(fmt::format("AUTO_FEEDING EXTRUDER={} LOAD=1", slot_index));
 }
 
-AmsError AmsBackendSnapmaker::unload_filament(int slot_index) {
-    auto err = check_preconditions(true);
-    if (!err.success()) {
-        return err;
-    }
-
+AmsError AmsBackendSnapmaker::do_unload_filament(int slot_index) {
     // Unload must mirror load: route through AUTO_FEEDING (the firmware macro
     // that forwards to FEED_AUTO with module/channel resolved from
     // _FILAMENT_FEED_VARIABLE), passing UNLOAD=1. FEED_AUTO with no STAGE runs
@@ -494,7 +479,7 @@ AmsError AmsBackendSnapmaker::unload_filament(int slot_index) {
         return execute_gcode("INNER_FILAMENT_UNLOAD");
     }
 
-    err = validate_slot_index(extruder);
+    auto err = validate_slot_index(extruder);
     if (err.result != AmsResult::SUCCESS)
         return err;
 
@@ -538,17 +523,12 @@ bool AmsBackendSnapmaker::slot_is_actively_loaded(int slot_index) const {
     return slot && slot->status == SlotStatus::LOADED;
 }
 
-AmsError AmsBackendSnapmaker::select_slot(int slot_index) {
-    return change_tool(slot_index);
+AmsError AmsBackendSnapmaker::do_select_slot(int slot_index) {
+    return do_change_tool(slot_index);
 }
 
-AmsError AmsBackendSnapmaker::change_tool(int tool_number) {
-    auto err = check_preconditions(true);
-    if (!err.success()) {
-        return err;
-    }
-
-    err = validate_slot_index(tool_number);
+AmsError AmsBackendSnapmaker::do_change_tool(int tool_number) {
+    auto err = validate_slot_index(tool_number);
     if (err.result != AmsResult::SUCCESS)
         return err;
 

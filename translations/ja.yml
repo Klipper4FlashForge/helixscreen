@@ -104,6 +104,7 @@ translations:
   ACTIONS: アクション
   ADXL: ADXL
   AFC: AFC
+  AFC Update Available: AFC更新あり
   AFC failure reset complete: AFCエラーリセット完了
   AFC failure reset failed: AFCエラーリセット失敗
   AFC recovery complete: AFC復旧完了
@@ -301,8 +302,8 @@ translations:
   Bypass controlled by sensor: バイパスはセンサーで制御中
   Bypass disabled: バイパス無効
   Bypass enabled: バイパス有効
-  'Bypass failed: {}': 'バイパスに失敗しました: {}'
-  'Bypass toggle failed: {}': 'バイパス切替に失敗しました: {}'
+  Bypass failed: バイパスに失敗しました
+  Bypass toggle failed: バイパス切替に失敗しました
   C: C
   CALIBRATION: キャリブレーション
   CAPABILITIES: 機能
@@ -390,6 +391,8 @@ translations:
   Change LED color based on printer state: プリンターの状態に応じて LED の色を変更
   Change PIN: PIN を変更
   Change Printer Host: プリンターホスト変更
+  Change Tool: ツール交換
+  Change Tool While Paused: 一時停止中のツール交換
   Changes apply immediately. Adjust during print for tuning.: 変更は即座に適用されます。印刷中に調整して最適化できます。
   Changes are temporary and reset on printer reboot: 変更は一時的で、プリンター再起動時にリセットされます
   Changes can be reversed anytime using the Macro Viewer.: 変更はいつでも Macro Viewer を使って元に戻せます。
@@ -397,9 +400,9 @@ translations:
   Check filament: フィラメントを確認
   Check for Updates: 更新を確認
   Check slot: スロットを確認
-  'Check slot failed: {}': 'スロットの確認に失敗しました: {}'
+  Check slot failed: スロットの確認に失敗しました
   Check slots: スロットを確認
-  'Check slots failed: {}': 'スロットの確認に失敗しました: {}'
+  Check slots failed: スロットの確認に失敗しました
   Check the filament path and try again.: フィラメント経路を確認して、もう一度お試しください。
   Check your heater's rating (typically 40-60W for hotends): ヒーターの定格を確認してください（ホットエンドは通常40〜60W）
   Checking: 確認中
@@ -429,7 +432,7 @@ translations:
   Clear All Events: すべてのイベントをクリア
   Clear Console?: コンソールをクリアしますか？
   Clear Spool: スプールを解除
-  'Clear failed: {}': 'クリアに失敗しました: {}'
+  Clear failed: クリアに失敗しました
   Cleared from settings — system unpair failed, may need OS Bluetooth: 設定から削除しました。システムのペアリング解除に失敗、OS
     の Bluetooth 設定が必要な場合があります
   Clipboard unavailable - use SSH: クリップボード利用不可 - SSHを使用してください
@@ -682,7 +685,7 @@ translations:
   Eject: 取り出し
   Eject Distance: 取り出し距離
   Eject Velocity: 取り出し速度
-  'Eject failed: {}': 'イジェクトに失敗しました: {}'
+  Eject failed: イジェクトに失敗しました
   Eject needs [force_move] enabled in printer config: 取り出しにはプリンター設定で [force_move]
     を有効にする必要があります
   Ejecting: 排出中
@@ -695,7 +698,7 @@ translations:
   Empty: 空
   Empty slots disable the associated functionality: 空のスロットは関連機能を無効にします
   Enable: 有効化
-  Enable Bypass Controls: ''
+  Enable Bypass Controls: バイパスコントロールを有効化
   Enable Monitoring: 監視を有効化
   Enable Retraction: リトラクションを有効化
   Enable Timelapse: タイムラプスを有効化
@@ -900,7 +903,6 @@ translations:
   'Filament load failed: {}': 'フィラメントの装填に失敗しました: {}'
   Filament loaded: フィラメントを装填しました
   Filament operation failed: フィラメント操作に失敗しました
-  'Filament operation failed: {}': 'フィラメント操作に失敗しました: {}'
   Filament operation timed out: フィラメント操作がタイムアウトしました
   Filament runout: フィラメント切れ
   Filament runout and motion detection sensors: フィラメント切れとモーション検出センサー
@@ -919,7 +921,7 @@ translations:
   Finish: 完了
   Finishing up...: 完了中...
   Firmware Restart: ファームウェア再起動
-  Firmware reports no bypass. Enable if you feed filament straight to the extruder: ''
+  Firmware reports no bypass. Enable if you feed filament straight to the extruder: ファームウェアはバイパスがないと報告しています。フィラメントをエクストルーダーに直接送っている場合は有効にしてください
   Firmware restarting...: ファームウェア再起動中...
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
@@ -1021,7 +1023,9 @@ translations:
   Hold anywhere to cancel: どこかを長押ししてキャンセル
   Holding nozzle at {}°C to purge previous filament.: 前のフィラメントをパージするためノズルを {}°C に保持しています。
   Home: ホーム
+  Home & Continue: ホーミングして続行
   Home failed: ホーミング失敗
+  Home printer first?: 先にプリンターをホーミングしますか？
   Home selector: セレクターをホーミング
   Homing AFC system...: AFCシステムをホーミング中...
   Homing X...: X軸をホーミング中...
@@ -1232,7 +1236,7 @@ translations:
   'MCU: ': 'MCU: '
   MDI Icons: MDI アイコン
   MISSING CONFIGURED: 設定済みが見つかりません
-  'MMU command failed: {}': 'MMU コマンドに失敗しました: {}'
+  MMU command failed: MMU コマンドに失敗しました
   MPC: MPC
   Machine Limits: 機械制限
   Macro: マクロ
@@ -1332,8 +1336,7 @@ translations:
   Must home axes first: 先にホーミングしてください
   My Custom Theme: マイカスタムテーマ
   My Panel: マイパネル
-  # Source: wizard_printer_identify.xml:30, wizard_printer_identify.xml:30
-  My Printer: ''
+  My Printer: マイプリンター
   NEWLY DISCOVERED: 新規検出
   Name: 名前
   Name (optional): 名前（オプション）
@@ -1801,7 +1804,7 @@ translations:
   Reset Home Screen?: ホーム画面をリセットしますか？
   Reset Speed & Flow to 100%: 速度とフローを100%にリセット
   Reset all settings and restart wizard: すべての設定をリセットしてウィザードを再開
-  'Reset failed: {}': 'リセットに失敗しました: {}'
+  Reset failed: リセットに失敗しました
   Reset to Default: デフォルトにリセット
   Reset to defaults: デフォルトに戻す
   Reset to original values: 元の値にリセット
@@ -1831,7 +1834,7 @@ translations:
   Resume Print: 印刷を再開
   Resume interrupted print?: 中断した印刷を再開しますか？
   Resume macro not configured: 再開マクロが未設定です
-  'Resume preparation failed: {}': '再開準備に失敗しました: {}'
+  Resume preparation failed: 再開準備に失敗しました
   Resuming...: 再開中...
   Retract: 引き戻し
   Retract Distance: リトラクト距離
@@ -1954,7 +1957,7 @@ translations:
   Select material to begin: 素材を選択して開始してください
   Select sensor: センサーを選択
   Select slot: スロットを選択
-  'Select slot failed: {}': 'スロットの選択に失敗しました: {}'
+  Select slot failed: スロットの選択に失敗しました
   Select the heaters Klipper uses for your bed and hotend: Klipper がベッドとホットエンドに使用するヒーターを選択してください
   Select which devices the home screen power button controls: ホーム画面の電源ボタンで制御するデバイスを選択
   Select which sensor triggers pause on filament runout: フィラメント切れ時に一時停止するセンサーを選択してください
@@ -2210,7 +2213,10 @@ translations:
     the frequency buttons to sweep through values until the belt looks stationary,
     then lock the reading.
   : モーターがベルトを振動させ、ストロボライトが同じ周波数で点滅します。ベルトが静止して(止まって)見えたとき、共振周波数を見つけたことになります。\n\n周波数ボタンで値を変化させ、ベルトが静止して見えたらその値を固定してください。
+  ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
+  : 印刷は一時停止中です。ここでツールを交換すると、ツールヘッドが移動してノズルのフィラメントが入れ替わります。交換が完了したら印刷を再開してください。
   The printer halted this print and cannot resume it. Restart from the beginning?: プリンターはこの印刷を停止し、再開できません。最初からやり直しますか？
+  The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear.: プリンターがホーミングされていません。続行すると全軸がホーミングされ、ツールヘッドが移動します。ベッドに物がないことを確認してください。
   The printer lost power during a print. It can resume where it left off.: 印刷中にプリンターの電源が失われました。中断した箇所から再開できます。
   The printer lost power during a print. The resumed layer may not line up exactly.: 印刷中にプリンターの電源が失われました。再開したレイヤーがわずかにずれる可能性があります。
   The printer lost power while printing {}. Resume where it left off?: '{} の印刷中にプリンターの電源が失われました。中断した箇所から再開しますか？'
@@ -2296,6 +2302,7 @@ translations:
   Tool: ツール
   Tool Changer: ツールチェンジャー
   'Tool change failed: {}': 'ツール変更に失敗しました: {}'
+  Tool mapping failed: ツールマッピングに失敗しました
   Tool swap: ツール交換
   'Tool {} → Lane {}: no filament loaded.': 'ツール {} → レーン {}: フィラメントが装填されていません。'
   Toolhead: 'ツールヘッド'
@@ -2360,7 +2367,6 @@ translations:
   Unknown error: 不明なエラー
   Unload: 排出
   Unload Filament: フィラメントを排出
-  'Unload failed: {}': 'アンロードに失敗しました: {}'
   Unload macro not configured: アンロードマクロが未設定です
   Unload may still be running — response timed out: 排出がまだ実行中の可能性があります — 応答タイムアウト
   Unloading: アンロード中
@@ -2383,6 +2389,7 @@ translations:
   Update your security PIN: セキュリティ PIN を更新
   Updates aren't available on this installation.: このインストールでは更新は利用できません。
   Updating Configuration...: 設定を更新中...
+  Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: フィラメント名とマルチカラースプールに対応するには、AFC 1.2.0以降にアップグレードしてください。
   Upload: アップロード
   Upload Debug Bundle: デバッグバンドルをアップロード
   Upload Failed: アップロード失敗

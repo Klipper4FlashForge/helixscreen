@@ -4,6 +4,7 @@
 #include "ui_panel_print_status.h"
 
 #include "../helix_test_fixture.h"
+#include "../test_helpers/print_status_panel_test_access.h"
 #include "../test_helpers/printer_state_test_access.h"
 #include "app_globals.h"
 #include "printer_fan_state.h"
@@ -25,12 +26,8 @@ class PrinterFanStateTestAccess {
 };
 } // namespace helix
 
-class PrintStatusPanelTestAccess {
-  public:
-    static void recompute_aux_composites(PrintStatusPanel& panel, int density, bool aux_present) {
-        panel.recompute_aux_composites_for_measurement(density, aux_present);
-    }
-};
+// PrintStatusPanelTestAccess lives in tests/test_helpers/ — one definition
+// only, or two TUs defining it differently would be an ODR violation.
 
 TEST_CASE_METHOD(HelixTestFixture, "classify_primary_fans picks first of each type",
                  "[fan_state][drift]") {

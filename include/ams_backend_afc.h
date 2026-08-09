@@ -198,6 +198,27 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     }
     [[nodiscard]] SlotInfo get_slot_info(int slot_index) const override;
 
+    /**
+     * @brief Does this lane status payload prove AFC publishes the v1.2.0 field set?
+     *
+     * Feature detection, deliberately NOT a version comparison. AFC has no
+     * trustworthy version signal: the `afc-install` DB namespace has been an
+     * orphan since their 7d20db7, `AFC_VERSION` is a hand-bumped literal that sat
+     * at 1.1.37 through the whole v1.2.0 release, and v1.2.0's own get_status()
+     * publishes no version key at all (upstream #807 is still an open PR). A live
+     * BoxTurtle reported "1.0.0" while running v1.1.0.
+     *
+     * `filament_name`, `multi_color_hexes` and `initial_weight` are emitted
+     * together from one `if not save_to_file:` block in AFC_lane.get_status(), so
+     * any of them proves the whole block. Verified on one physical BoxTurtle
+     * across an upgrade: all three absent on v1.1.0, all three present on v1.2.0.
+     *
+     * @warning Only meaningful on a COMPLETE status object — the subscription's
+     * first baseline frame. Every later frame is a delta where an absent key
+     * means "unchanged", not "unsupported".
+     */
+    [[nodiscard]] static bool status_has_modern_fields(const nlohmann::json& lane_status);
+
     // Path visualization
     [[nodiscard]] PathTopology get_topology() const override;
     [[nodiscard]] PathTopology get_unit_topology(int unit_index) const override;
@@ -258,12 +279,16 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// bookkeeping), which would otherwise log on every single toolchange.
     [[nodiscard]] bool is_narration_drift_candidate(const std::string& line) const override;
 
-    // Operations
-    AmsError load_filament(int slot_index) override;
-    AmsError unload_filament(int slot_index) override;
-    AmsError select_slot(int slot_index) override;
-    AmsError change_tool(int tool_number) override;
+  protected:
+    // Operations. Gated by AmsSubscriptionBackend's NVI wrapper.
+    // select_slot_moves_toolhead() stays false: an AFC select positions a lane,
+    // it does not drive the toolhead.
+    AmsError do_load_filament(int slot_index) override;
+    AmsError do_unload_filament(int slot_index) override;
+    AmsError do_select_slot(int slot_index) override;
+    AmsError do_change_tool(int tool_number) override;
 
+  public:
     // Recovery
     AmsError recover() override;
     AmsError reset() override;
@@ -461,6 +486,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcPerSlotLoadedHelper;
     friend class AfcCurrentErrorHelper;
     friend class AfcLaneDataClearHelper;
+    friend class AfcFeatureLevelHelper;
     friend class AfcFixtureHelper;
     friend class AmsBackendAfcEndlessSpoolHelper;
     friend class AmsBackendAfcMultiUnitHelper;
@@ -487,6 +513,13 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     const char* backend_log_tag() const override {
         return "[AMS AFC]";
     }
+
+    /// dispatch_operation() sets the optimistic action (begin_dispatch_locked)
+    /// BEFORE calling ensure_homed_then() -- on decline, the base class's
+    /// generic IDLE reset alone leaves pending_dispatch_action_ armed and
+    /// operation_detail stale, so route through abandon_dispatch() instead,
+    /// the same unwind dispatch_operation()'s own `if (!result)` net uses.
+    void on_home_confirmation_declined() override;
 
   private:
     // === User-attached slot identity (FilamentSlotOverrideStore) =============
@@ -778,6 +811,14 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
      */
     bool apply_afc_version_response(const nlohmann::json& response);
 
+    /// Issue the one-shot unscoped query that check_afc_feature_level() needs.
+    /// @param lane_object Full Klipper object name, e.g. "AFC_stepper lane1".
+    void probe_feature_level(const std::string& lane_object);
+
+    /// One-shot feature probe + upgrade advisory. Must be handed a COMPLETE lane
+    /// object (see probe_feature_level), never a status frame.
+    void check_afc_feature_level(const nlohmann::json& lane_status);
+
     /**
      * @brief Apply an AFC/lane_data database reply
      *
@@ -956,6 +997,14 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // 7d20db7, #451, 2025-06-16), so this is either "unknown" or a value frozen
     // before that date. Detect capabilities from the data instead.
     std::string afc_version_{"unknown"};
+
+    /// Latch for the feature probe: it costs a query, so it runs exactly once.
+    bool feature_level_checked_{false};
+
+    /// "AFC_stepper " or "AFC_lane ", learned from the first status frame that
+    /// carries a lane. Only the prefix is learnable from a frame; the fields are
+    /// not, because the subscription is field-scoped.
+    std::string lane_object_prefix_;
 
     // Per-lane hub routing: lane_name → hub name ("direct" for direct lanes)
     std::unordered_map<std::string, std::string> lane_hub_routing_;

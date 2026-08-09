@@ -77,6 +77,16 @@ void ToolState::deinit_subjects() {
 
     spdlog::debug("[ToolState] Deinitializing subjects");
 
+    // Death signal BEFORE the subjects go away: deinit frees every observer
+    // node on them, so outside ObserverGuards must learn they are gone or their
+    // next reset() calls lv_observer_remove() on freed memory. Replaced, not
+    // cleared — an empty token reads as "dead" and would suppress removal for
+    // observers registered after this teardown.
+    if (subjects_lifetime_) {
+        *subjects_lifetime_ = false;
+    }
+    subjects_lifetime_ = std::make_shared<bool>(true);
+
     // Expire the in-flight Moonraker-DB callbacks before the subjects they
     // ultimately notify go away (#1165, #1146).
     async_lifetime_.invalidate();
@@ -472,8 +482,11 @@ void ToolState::request_tool_change(int tool_index, IMoonrakerAPI* api,
                 if (on_success)
                     on_success();
             } else {
+                // display_text(), not user_msg: this callback is the only thing
+                // the caller ever sees, so dropping the suggestion here means no
+                // UI downstream can render it however good its toast is.
                 if (on_error)
-                    on_error(::fmt::format("Backend tool change failed: {}", result.user_msg));
+                    on_error(result.display_text());
             }
             return;
         }

@@ -676,7 +676,7 @@ void AmsEnvironmentOverlay::on_start_stop_clicked(lv_event_t* e) {
             if (result.success()) {
                 NOTIFY_INFO("{}", lv_tr("Drying stopped"));
             } else {
-                NOTIFY_ERROR("{}: {}", lv_tr("Stop failed"), result.user_msg);
+                helix::ui::notify_ams_error(result, lv_tr("Stop failed"));
             }
         } else {
             // Start drying with textarea values, clamped to backend limits.
@@ -723,7 +723,7 @@ void AmsEnvironmentOverlay::on_start_stop_clicked(lv_event_t* e) {
                 config->save();
                 NOTIFY_INFO("{}", lv_tr("Drying started"));
             } else {
-                NOTIFY_ERROR("{}: {}", lv_tr("Start failed"), result.user_msg);
+                helix::ui::notify_ams_error(result, lv_tr("Start failed"));
             }
         }
 

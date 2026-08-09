@@ -56,6 +56,22 @@ uint32_t lv_timer_handler_safe() {
         t = lv_timer_get_next(t);
     }
 
+    // Step animations explicitly.
+    //
+    // LVGL drives them from a PERIODIC timer (repeat_count -1), which the sweep
+    // above paused and the one-shot loop below skips, so before this call no
+    // animation ever advanced in a test — not slowly, not at all. Anything whose
+    // completion runs from an anim ready_cb simply never completed: a modal exit
+    // with animations enabled left its dialog parented to the screen forever, and
+    // the next lv_obj_find_by_name() walked into the outgoing subtree.
+    //
+    // lv_anim_refr_now() is LVGL's own entry point for this (it calls the same
+    // anim_timer body) and it reads lv_tick_elaps(), which process_lvgl() is
+    // already advancing. Ready callbacks may delete widgets and schedule
+    // lv_async_call one-shots, so run it BEFORE the one-shot loop and those
+    // deletions land in the same pump.
+    lv_anim_refr_now();
+
     // Execute one-shot timers (repeat_count >= 1) that are ready.
     // These include lv_async_call (period=0, repeat=1) and scheduled
     // retry timers. Process in a loop since callbacks may create new ones.
@@ -71,7 +87,24 @@ uint32_t lv_timer_handler_safe() {
                     if (t->repeat_count > 0) {
                         t->repeat_count--;
                     }
+                    const bool exhausted = t->repeat_count == 0;
                     t->timer_cb(t);
+                    // Match lv_timer_handler(): it deletes a timer whose repeat
+                    // count reached 0 (lv_timer.c:369). Leaving it behind parks
+                    // a spent lv_timer_t in LVGL's list holding the callback's
+                    // user_data, so an owner destroyed later cannot free what it
+                    // no longer has a handle to. Re-find it rather than reusing
+                    // `t`: the callback may already have deleted it (the common
+                    // one-shot pattern nulls its own handle and returns).
+                    if (exhausted) {
+                        for (lv_timer_t* s = lv_timer_get_next(nullptr); s != nullptr;
+                             s = lv_timer_get_next(s)) {
+                            if (s == t) {
+                                lv_timer_delete(t);
+                                break;
+                            }
+                        }
+                    }
                     found = true;
                     break; // Restart iteration since list may have changed
                 }
@@ -533,6 +566,34 @@ void ui_notification_error(const char* title, const char* message, bool modal) {
     }
 }
 
+// The two-line variants hand the hook the SAME text the toast renders, joined,
+// so a test can assert that the suggestion actually reached the user instead of
+// only that the message did. Matches ui_notification.cpp's history-row join.
+static std::string join_detail(const char* message, const char* detail) {
+    std::string joined = message ? message : "";
+    if (detail && *detail) {
+        joined += " - ";
+        joined += detail;
+    }
+    return joined;
+}
+
+void ui_notification_error_with_detail(const char* message, const char* detail) {
+    const std::string joined = join_detail(message, detail);
+    spdlog::debug("[Test Stub] ui_notification_error_with_detail: {}", joined);
+    if (g_test_error_hook) {
+        g_test_error_hook(joined);
+    }
+}
+
+void ui_notification_warning_with_detail(const char* message, const char* detail) {
+    const std::string joined = join_detail(message, detail);
+    spdlog::debug("[Test Stub] ui_notification_warning_with_detail: {}", joined);
+    if (g_test_warning_hook) {
+        g_test_warning_hook(joined);
+    }
+}
+
 // Stub ToastManager class for tests
 #include "ui_toast_manager.h"
 
@@ -559,6 +620,14 @@ void ToastManager::show(ToastSeverity severity, const char* message, uint32_t du
     (void)severity;
     (void)duration_ms;
     spdlog::debug("[Test Stub] ToastManager::show: {}", message ? message : "(null)");
+}
+
+void ToastManager::show_with_detail(ToastSeverity severity, const char* message, const char* detail,
+                                    uint32_t duration_ms) {
+    (void)severity;
+    (void)duration_ms;
+    spdlog::debug("[Test Stub] ToastManager::show_with_detail: {} | {}",
+                  message ? message : "(null)", detail ? detail : "");
 }
 
 void ToastManager::show_with_action(ToastSeverity severity, const char* message,

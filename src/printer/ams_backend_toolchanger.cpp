@@ -447,6 +447,34 @@ uint64_t AmsBackendToolChanger::begin_dispatch_locked(AmsAction action) {
     return generation;
 }
 
+void AmsBackendToolChanger::on_home_confirmation_declined() {
+    // The confirmation modal is exclusive -- nothing else can begin a new
+    // dispatch while it's up -- so the pending dispatch is always the one
+    // that just prompted; that exclusivity is what makes this call correct,
+    // not the generation compare inside abandon_dispatch(). abandon_dispatch()
+    // takes an explicit generation to share its guard with dispatch_operation()'s
+    // own failure path, which captures a real, independent value before this
+    // exclusivity window even opens. Here there is no such independent
+    // capture: the value handed in is dispatch_generation_ itself, so the
+    // compare is trivially true and abandon_dispatch() always proceeds when a
+    // dispatch is pending. Read it under mutex_ rather than as a bare member
+    // access (every write to dispatch_generation_ is mutex_-guarded, in
+    // begin_dispatch_locked()) so this stays race-free even though nothing
+    // can invalidate it today. abandon_dispatch() already emits
+    // EVENT_STATE_CHANGED, so skip the base class's default entirely.
+    //
+    // If this hook ever gains a non-modal caller, this guard alone will not
+    // protect a genuinely newer dispatch from being abandoned -- that would
+    // need the generation captured at prompt time and threaded through here
+    // instead of re-read live.
+    uint64_t generation;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        generation = dispatch_generation_;
+    }
+    abandon_dispatch(generation);
+}
+
 void AmsBackendToolChanger::abandon_dispatch(uint64_t generation) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -533,20 +561,15 @@ AmsError AmsBackendToolChanger::dispatch_operation(std::string gcode, AmsAction 
 
 // ============================================================================
 
-AmsError AmsBackendToolChanger::load_filament(int slot_index) {
+AmsError AmsBackendToolChanger::do_load_filament(int slot_index) {
     // For tool changers, "load filament" means "mount tool"
-    return change_tool(slot_index);
+    return do_change_tool(slot_index);
 }
 
-AmsError AmsBackendToolChanger::unload_filament(int slot_index) {
+AmsError AmsBackendToolChanger::do_unload_filament(int slot_index) {
     // For tool changers, "unload" means unmount a specific tool (or current if -1)
     {
         std::lock_guard<std::mutex> lock(mutex_);
-
-        AmsError precondition = check_preconditions(true);
-        if (!precondition) {
-            return precondition;
-        }
 
         if (slot_index >= 0) {
             AmsError slot_valid = validate_slot_index(slot_index);
@@ -571,19 +594,14 @@ AmsError AmsBackendToolChanger::unload_filament(int slot_index) {
     return dispatch_operation("UNSELECT_TOOL", AmsAction::UNLOADING);
 }
 
-AmsError AmsBackendToolChanger::select_slot(int slot_index) {
+AmsError AmsBackendToolChanger::do_select_slot(int slot_index) {
     // For tool changers, selecting a slot means mounting that tool
-    return change_tool(slot_index);
+    return do_change_tool(slot_index);
 }
 
-AmsError AmsBackendToolChanger::change_tool(int tool_number) {
+AmsError AmsBackendToolChanger::do_change_tool(int tool_number) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
-
-        AmsError precondition = check_preconditions(true);
-        if (!precondition) {
-            return precondition;
-        }
 
         AmsError slot_valid = validate_slot_index(tool_number);
         if (!slot_valid) {

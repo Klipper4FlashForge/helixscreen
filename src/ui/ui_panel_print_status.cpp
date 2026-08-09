@@ -53,8 +53,6 @@
 #include "system/crash_handler.h"
 #include "temp_graph_controller.h"
 #include "theme_manager.h"
-#include "thumbnail_cache.h"
-#include "thumbnail_processor.h"
 #include "tool_state.h"
 #include "ui/fan_spin_animation.h"
 #include "ui/ui_widget_helpers.h"
@@ -141,6 +139,16 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, IMoonrakerAPI* a
     // Pre-init local subject used by observer callback below (fires immediately on subscribe)
     lv_subject_init_int(&exclude_objects_available_subject_, 0);
 
+    // Death signal for every PrinterState-owned subject observed below. This panel
+    // is a process-lifetime singleton (get_global_print_status_panel()), so it
+    // routinely outlives a PrinterState::deinit_subjects() cycle — printer
+    // switching in production, per-fixture teardown in tests. Without the token
+    // each guard keeps a pointer to an observer node that lv_subject_deinit()
+    // already freed, and the next reset() calls lv_observer_remove() on freed
+    // memory: SIGSEGV at lv_observer.c:584 dereferencing observer->subject.
+    // Subjects owned by this panel or by other singletons take no token here.
+    const SubjectLifetime ps_subjects = printer_state_.get_subjects_lifetime();
+
     // Subscribe to temperature subjects using bundle (replaces 4 individual observers)
     temp_observers_.setup_sync(
         this, printer_state_, [](PrintStatusPanel* self, int) { self->on_temperature_changed(); },
@@ -151,72 +159,87 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, IMoonrakerAPI* a
     // Subscribe to active tool changes (refreshes nozzle temp with tool name prefix)
     active_tool_observer_ = observe_int_sync<PrintStatusPanel>(
         helix::ToolState::instance().get_active_tool_subject(), this,
-        [](PrintStatusPanel* self, int) { self->on_temperature_changed(); });
+        [](PrintStatusPanel* self, int) { self->on_temperature_changed(); },
+        helix::ToolState::instance().get_subjects_lifetime());
 
     // Chamber status text: observe chamber temp to compute Heating/Cooling/Holding status
     chamber_temp_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_chamber_temp_subject(), this,
-        [](PrintStatusPanel* self, int) { self->update_chamber_status(); });
+        [](PrintStatusPanel* self, int) { self->update_chamber_status(); }, ps_subjects);
 
     // Subscribe to print progress and state
     print_progress_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_print_progress_subject(), this,
-        [](PrintStatusPanel* self, int progress) { self->on_print_progress_changed(progress); });
+        [](PrintStatusPanel* self, int progress) { self->on_print_progress_changed(progress); },
+        ps_subjects);
     print_state_observer_ = observe_print_state<PrintStatusPanel>(
         printer_state_.get_print_state_enum_subject(), this,
-        [](PrintStatusPanel* self, PrintJobState state) { self->on_print_state_changed(state); });
-    print_filename_observer_ =
-        observe_string<PrintStatusPanel>(printer_state_.get_print_filename_subject(), this,
-                                         [](PrintStatusPanel* self, const char* filename) {
-                                             self->on_print_filename_changed(filename);
-                                         });
+        [](PrintStatusPanel* self, PrintJobState state) { self->on_print_state_changed(state); },
+        ps_subjects);
+    print_filename_observer_ = observe_string<PrintStatusPanel>(
+        printer_state_.get_print_filename_subject(), this,
+        [](PrintStatusPanel* self, const char* filename) {
+            self->on_print_filename_changed(filename);
+        },
+        ps_subjects);
 
     // Subscribe to speed/flow factors
     speed_factor_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_speed_factor_subject(), this,
-        [](PrintStatusPanel* self, int speed) { self->on_speed_factor_changed(speed); });
+        [](PrintStatusPanel* self, int speed) { self->on_speed_factor_changed(speed); },
+        ps_subjects);
     flow_factor_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_flow_factor_subject(), this,
-        [](PrintStatusPanel* self, int flow) { self->on_flow_factor_changed(flow); });
+        [](PrintStatusPanel* self, int flow) { self->on_flow_factor_changed(flow); }, ps_subjects);
     gcode_z_offset_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_gcode_z_offset_subject(), this,
-        [](PrintStatusPanel* self, int microns) { self->on_gcode_z_offset_changed(microns); });
+        [](PrintStatusPanel* self, int microns) { self->on_gcode_z_offset_changed(microns); },
+        ps_subjects);
 
     // Subscribe to layer tracking for G-code viewer ghost layer updates
     print_layer_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_print_layer_current_subject(), this,
-        [](PrintStatusPanel* self, int layer) { self->on_print_layer_changed(layer); });
+        [](PrintStatusPanel* self, int layer) { self->on_print_layer_changed(layer); },
+        ps_subjects);
 
     // Re-render layer text when Z position changes (Z updates more frequently than layer count)
     z_position_observer_ = observe_int_sync<PrintStatusPanel>(
-        printer_state_.get_gcode_position_z_subject(), this, [](PrintStatusPanel* self, int) {
+        printer_state_.get_gcode_position_z_subject(), this,
+        [](PrintStatusPanel* self, int) {
             int layer = lv_subject_get_int(self->printer_state_.get_print_layer_current_subject());
             self->on_print_layer_changed(layer);
-        });
+        },
+        ps_subjects);
 
     // Subscribe to wall-clock elapsed time (total_duration includes prep time)
     print_duration_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_print_elapsed_subject(), this,
-        [](PrintStatusPanel* self, int seconds) { self->on_print_duration_changed(seconds); });
+        [](PrintStatusPanel* self, int seconds) { self->on_print_duration_changed(seconds); },
+        ps_subjects);
     print_time_left_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_print_time_left_subject(), this,
-        [](PrintStatusPanel* self, int seconds) { self->on_print_time_left_changed(seconds); });
+        [](PrintStatusPanel* self, int seconds) { self->on_print_time_left_changed(seconds); },
+        ps_subjects);
 
     // Subscribe to print start preparation phase subjects
     print_start_phase_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_print_start_phase_subject(), this,
-        [](PrintStatusPanel* self, int phase) { self->on_print_start_phase_changed(phase); });
-    print_start_progress_observer_ =
-        observe_int_sync<PrintStatusPanel>(printer_state_.get_print_start_progress_subject(), this,
-                                           [](PrintStatusPanel* self, int progress) {
-                                               self->on_print_start_progress_changed(progress);
-                                           });
+        [](PrintStatusPanel* self, int phase) { self->on_print_start_phase_changed(phase); },
+        ps_subjects);
+    print_start_progress_observer_ = observe_int_sync<PrintStatusPanel>(
+        printer_state_.get_print_start_progress_subject(), this,
+        [](PrintStatusPanel* self, int progress) {
+            self->on_print_start_progress_changed(progress);
+        },
+        ps_subjects);
     preprint_remaining_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_preprint_remaining_subject(), this,
-        [](PrintStatusPanel* self, int seconds) { self->on_preprint_remaining_changed(seconds); });
+        [](PrintStatusPanel* self, int seconds) { self->on_preprint_remaining_changed(seconds); },
+        ps_subjects);
     preprint_elapsed_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_preprint_elapsed_subject(), this,
-        [](PrintStatusPanel* self, int seconds) { self->on_preprint_elapsed_changed(seconds); });
+        [](PrintStatusPanel* self, int seconds) { self->on_preprint_elapsed_changed(seconds); },
+        ps_subjects);
 
     // Subscribe to defined objects changes (for objects list button visibility + count)
     exclude_objects_observer_ = observe_int_sync<PrintStatusPanel>(
@@ -226,49 +249,66 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, IMoonrakerAPI* a
             lv_subject_set_int(&self->exclude_objects_available_subject_, available);
             self->update_objects_text();
             self->update_view_toggle_position(available != 0);
-        });
+        },
+        ps_subjects);
 
     // Subscribe to excluded objects changes (for "X of Y obj" count updates)
     excluded_objects_version_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_excluded_objects_version_subject(), this,
-        [](PrintStatusPanel* self, int) { self->update_objects_text(); });
+        [](PrintStatusPanel* self, int) { self->update_objects_text(); }, ps_subjects);
 
     // Subscribe to AMS current filament color for gcode viewer color override
     // When a known filament color is available (from Spoolman spool or AMS lane),
     // use it instead of the gcode metadata color for the 2D/3D render
     ams_color_observer_ = observe_int_sync<PrintStatusPanel>(
         AmsState::instance().get_current_color_subject(), this,
-        [](PrintStatusPanel* self, int /*color_rgb*/) { self->build_and_apply_tool_colors(); });
+        [](PrintStatusPanel* self, int /*color_rgb*/) { self->build_and_apply_tool_colors(); },
+        AmsState::instance().get_subjects_lifetime());
 
     // Also refresh gcode viewer colors when tool_to_slot_map changes (user remap)
     tool_map_version_observer_ = observe_int_sync<PrintStatusPanel>(
         AmsState::instance().get_tool_map_version_subject(), this,
-        [](PrintStatusPanel* self, int /*version*/) { self->build_and_apply_tool_colors(); });
+        [](PrintStatusPanel* self, int /*version*/) { self->build_and_apply_tool_colors(); },
+        AmsState::instance().get_subjects_lifetime());
 
-    // Subscribe to shared print thumbnail path set by ActivePrintMediaManager.
+    // Subscribe to the shared print thumbnail path. ActivePrintMediaManager is
+    // its sole writer; this panel only reads it.
     // Use observe_string_immediate: the handler only calls lv_image_set_src
-    // (no observer lifecycle changes), and set_print_thumbnail_path is always called
+    // (no observer lifecycle changes), and set_print_thumbnail is always called
     // from the UI thread via queue_update.
     print_thumbnail_path_observer_ = ui::observe_string_immediate<PrintStatusPanel>(
         printer_state_.get_print_thumbnail_path_subject(), this,
         [](PrintStatusPanel* self, const char* path) {
-            if (!path || path[0] == '\0')
+            // No empty-path branch: ActivePrintMediaManager publishes
+            // kNoThumbnailPlaceholder for a file with no thumbnail and the
+            // subject is seeded with it, so the value is always an image.
+            // The subject carries the file the path was produced FOR
+            // (set_print_thumbnail writes it before publishing the path), so
+            // compare identity instead of assuming the value is ours. A result
+            // that lands for the previous print must not be applied, and above
+            // all must not advance displayed_file_ — that stamp is what
+            // convinced ensure_preview_current() the current file was already
+            // on screen, turning activation and print start into no-ops.
+            const std::string& for_file = self->printer_state_.get_print_thumbnail_file();
+            std::string effective = self->thumbnail_source_filename_.empty()
+                                        ? self->current_print_filename_
+                                        : self->thumbnail_source_filename_;
+            if (!effective.empty() && for_file != effective) {
+                spdlog::debug("[{}] Ignoring thumbnail published for '{}' (showing '{}')",
+                              self->get_name(), for_file, effective);
                 return;
+            }
             self->cached_thumbnail_path_ = path;
             if (self->print_thumbnail_) {
                 lv_image_set_src(self->print_thumbnail_, path);
                 spdlog::debug("[{}] Thumbnail updated from shared subject: {}", self->get_name(),
                               path);
-                // Fallback content for the current print is now on screen; record
-                // it so ensure_preview_current() treats the thumbnail as current.
-                std::string effective = self->thumbnail_source_filename_.empty()
-                                            ? self->current_print_filename_
-                                            : self->thumbnail_source_filename_;
-                if (!effective.empty()) {
-                    self->displayed_file_ = effective;
-                }
+                // Record what is ACTUALLY on screen, not what the panel wishes
+                // were on screen.
+                self->displayed_file_ = for_file;
             }
-        });
+        },
+        ps_subjects);
 
 #if defined(HELIX_PLATFORM_ESP32)
     // ESP32 has no disk thumbnail cache, so print_thumbnail_path stays empty and
@@ -290,7 +330,7 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, IMoonrakerAPI* a
     // LED state observer is set up on first on_activate() when strips are available.
     led_state_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_led_state_subject(), this,
-        [](PrintStatusPanel* self, int state) { self->on_led_state_changed(state); });
+        [](PrintStatusPanel* self, int state) { self->on_led_state_changed(state); }, ps_subjects);
     spdlog::debug("[{}] LED state observer registered (strips read lazily)", get_name());
 
     // Subscribe to G-code render mode changes from settings panel
@@ -314,7 +354,8 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, IMoonrakerAPI* a
                     }
                 }
             }
-        });
+        },
+        DisplaySettingsManager::instance().get_subjects_lifetime());
     spdlog::debug("[{}] G-code render mode observer registered", get_name());
 
     // End-overlay visibility: derive three show_* bool subjects from print_outcome
@@ -323,7 +364,7 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, IMoonrakerAPI* a
     // pop at startup when end_overlay_dismissed==0 unhide-raced the outcome check.
     print_outcome_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_print_outcome_subject(), this,
-        [](PrintStatusPanel* self, int) { self->recompute_end_overlay_visibility(); });
+        [](PrintStatusPanel* self, int) { self->recompute_end_overlay_visibility(); }, ps_subjects);
     recompute_end_overlay_visibility();
 
     // Create filament runout handler (extracted from PrintStatusPanel)
@@ -458,23 +499,25 @@ void PrintStatusPanel::init_subjects() {
     // runtime part-fan reassignment as fans start/stop (primary_fans_version, #1124).
     {
         auto token = lifetime_.token();
-        fans_version_observer_ =
-            observe_int_sync<PrintStatusPanel>(printer_state_.get_fans_version_subject(), this,
-                                               [token](PrintStatusPanel* self, int /*v*/) {
-                                                   if (token.expired())
-                                                       return;
-                                                   self->bind_fan_observers();
-                                               });
+        fans_version_observer_ = observe_int_sync<PrintStatusPanel>(
+            printer_state_.get_fans_version_subject(), this,
+            [token](PrintStatusPanel* self, int /*v*/) {
+                if (token.expired())
+                    return;
+                self->bind_fan_observers();
+            },
+            printer_state_.get_subjects_lifetime());
     }
     {
         auto token = lifetime_.token();
-        primary_fans_version_observer_ =
-            observe_int_sync<PrintStatusPanel>(printer_state_.get_primary_fans_version_subject(),
-                                               this, [token](PrintStatusPanel* self, int /*v*/) {
-                                                   if (token.expired())
-                                                       return;
-                                                   self->bind_fan_observers();
-                                               });
+        primary_fans_version_observer_ = observe_int_sync<PrintStatusPanel>(
+            printer_state_.get_primary_fans_version_subject(), this,
+            [token](PrintStatusPanel* self, int /*v*/) {
+                if (token.expired())
+                    return;
+                self->bind_fan_observers();
+            },
+            printer_state_.get_subjects_lifetime());
     }
 
     // Density + fit recompute on breakpoint change
@@ -581,7 +624,8 @@ void PrintStatusPanel::init_subjects() {
                     return;
                 self->animations_enabled_ = (enabled != 0);
                 self->refresh_fan_animations();
-            });
+            },
+            DisplaySettingsManager::instance().get_subjects_lifetime());
     }
 
     end_overlay_dismissed_observer_ = observe_int_sync<PrintStatusPanel>(
@@ -607,14 +651,16 @@ void PrintStatusPanel::init_subjects() {
                            subjects_);
     print_message_observer_ = observe_string<PrintStatusPanel>(
         printer_state_.get_print_message_subject(), this,
-        [](PrintStatusPanel* self, const char*) { self->recompute_paused_overlay_visibility(); });
+        [](PrintStatusPanel* self, const char*) { self->recompute_paused_overlay_visibility(); },
+        printer_state_.get_subjects_lifetime());
 
     // Re-evaluate the paused overlay whenever the shared controller's pending
     // action flips (optimistic Pausing/Resuming) — decoupled from our own
     // print_state_enum observer to avoid an ordering race between the two.
     pending_action_observer_ = observe_int_sync<PrintStatusPanel>(
         helix::ui::PrintControlButtons::instance().pending_action_subject(), this,
-        [](PrintStatusPanel* self, int) { self->recompute_paused_overlay_visibility(); });
+        [](PrintStatusPanel* self, int) { self->recompute_paused_overlay_visibility(); },
+        helix::ui::PrintControlButtons::instance().get_subjects_lifetime());
 
     // Button enable states driven declaratively from XML (see update_button_states).
     UI_MANAGED_SUBJECT_INT(print_controls_enabled_subject_, 0, "print_controls_enabled", subjects_);
@@ -3336,157 +3382,6 @@ void PrintStatusPanel::apply_esp_psram_thumbnail() {
 }
 #endif
 
-void PrintStatusPanel::load_thumbnail_for_file(const std::string& filename) {
-    // Increment generation to invalidate any in-flight async operations
-    ++thumbnail_load_generation_;
-    uint32_t current_gen = thumbnail_load_generation_;
-
-    // If we already have a directly-set thumbnail path, don't overwrite it.
-    // This happens when PrintStartController sets the path from a pre-extracted
-    // USB thumbnail before the filename observer fires.
-    const char* current_thumb =
-        lv_subject_get_string(get_printer_state().get_print_thumbnail_path_subject());
-    if (current_thumb && current_thumb[0] != '\0') {
-        spdlog::debug("[{}] Thumbnail already set ({}), skipping API lookup", get_name(),
-                      current_thumb);
-        // Update local cache so on_activate() can restore it
-        cached_thumbnail_path_ = current_thumb;
-        if (print_thumbnail_) {
-            lv_image_set_src(print_thumbnail_, current_thumb);
-        }
-        return;
-    }
-
-    // Skip if no API available (e.g., in mock mode)
-    if (!api_) {
-        spdlog::debug("[{}] No API available - skipping thumbnail load", get_name());
-        return;
-    }
-
-    // Note: We intentionally do NOT skip if print_thumbnail_ is null.
-    // The thumbnail must still be fetched and cached so that:
-    // 1. The shared print_thumbnail_path is set for HomePanel to use
-    // 2. The thumbnail is ready when PrintStatusPanel is later displayed
-    // The lv_image_set_src() call is guarded separately below.
-
-    // Resolve to original filename if this is a modified temp file
-    // (Moonraker only has metadata for original files, not modified copies)
-    std::string metadata_filename = resolve_gcode_filename(filename);
-
-    // First, get file metadata to find thumbnail path
-    auto token = lifetime_.token();
-    api_->files().get_file_metadata(
-        metadata_filename,
-        [this, token, current_gen](const FileMetadata& metadata) {
-            // L081 Mechanism C: defer the entire body — it touches member state
-            // (thumbnail_load_generation_, get_name(), api_, cached_thumbnail_path_
-            // via the inner cb) and dispatches to LVGL-touching code paths. Run
-            // it on the main thread.
-            token.defer("PrintStatusPanel::metadata_apply", [this, token, current_gen, metadata]() {
-                // Check if this callback is still relevant
-                if (current_gen != thumbnail_load_generation_) {
-                    spdlog::trace("[{}] Stale metadata callback (gen {} != {}), ignoring",
-                                  get_name(), current_gen, thumbnail_load_generation_);
-                    return;
-                }
-
-                // Note: Layer count from metadata is now set by ActivePrintMediaManager
-
-                // Cache the per-tool slicer palette so the live render can resolve
-                // the effective tool→lane match (build_and_apply_tool_colors).
-                store_filament_metadata(metadata);
-
-                // Store slicer's estimated print time for remaining time fallback
-                if (metadata.estimated_time > 0) {
-                    get_printer_state().set_estimated_print_time(
-                        static_cast<int>(metadata.estimated_time));
-                }
-
-#if defined(HELIX_PLATFORM_ESP32)
-            // ESP32: ActivePrintMediaManager is the SINGLE producer of the
-            // active print's thumbnail on this platform — it fetches the PNG
-            // straight into PSRAM (there is no disk cache to share) and
-            // publishes via print_psram_thumb_gen. Running the fetch here too
-            // would double the HTTP traffic and the PSRAM allocation for one
-            // image. The metadata handling above is NOT a duplicate (filament
-            // palette + estimated time) and stays on both platforms.
-#else
-                // Get the largest thumbnail available
-                std::string thumbnail_rel_path = metadata.get_largest_thumbnail();
-                if (thumbnail_rel_path.empty()) {
-                    spdlog::debug("[{}] No thumbnail available in metadata", get_name());
-                    return;
-                }
-
-                spdlog::debug("[{}] Found thumbnail: {}", get_name(), thumbnail_rel_path);
-
-                // Note: We intentionally do NOT invalidate the cache here.
-                // PrintSelectPanel already handles file modification detection and cache
-                // invalidation when files are re-uploaded. Aggressive invalidation here
-                // causes a race condition where Print Status deletes thumbnails that
-                // Print Select just cached, resulting in placeholder thumbnails.
-
-                // Use fetch_for_detail_view() for full-resolution PNG (not pre-scaled .bin)
-                // The semantic API ensures we always get the right format for large views.
-                // Create context with lifetime token for validity checking.
-                ThumbnailLoadContext ctx;
-                ctx.lifetime_token = token;
-                ctx.generation = nullptr; // Using manual gen check below
-                ctx.captured_gen = current_gen;
-
-                get_thumbnail_cache().fetch_for_detail_view(
-                    api_, thumbnail_rel_path, ctx,
-                    [this, current_gen, token](const std::string& lvgl_path) {
-                        // L081 Mechanism C: defer everything. The inner cb
-                        // mutates cached_thumbnail_path_ and reads
-                        // thumbnail_load_generation_/get_name(); fetch may
-                        // invoke us off the main thread depending on cache
-                        // state. Marshal the whole body.
-                        token.defer("PrintStatusPanel::thumbnail_apply", [this, current_gen,
-                                                                          lvgl_path]() {
-                            // Generation check (we passed nullptr for the cache's
-                            // own generation tracking).
-                            if (current_gen != thumbnail_load_generation_) {
-                                spdlog::trace(
-                                    "[{}] Stale thumbnail callback (gen {} != {}), ignoring",
-                                    get_name(), current_gen, thumbnail_load_generation_);
-                                return;
-                            }
-
-                            // Store the cached path (without "A:" prefix for internal use)
-                            cached_thumbnail_path_ = lvgl_path;
-
-                            get_printer_state().set_print_thumbnail_path(lvgl_path);
-
-                            if (print_thumbnail_) {
-                                lv_image_set_src(print_thumbnail_, lvgl_path.c_str());
-                                spdlog::info("[{}] Thumbnail loaded and displayed: {}", get_name(),
-                                             lvgl_path);
-                            } else {
-                                spdlog::info("[{}] Thumbnail cached (panel not yet displayed): {}",
-                                             get_name(), lvgl_path);
-                            }
-                        });
-                    },
-                    [this, token](const std::string& error) {
-                        // L081 Mechanism C: defer to access get_name() on main.
-                        token.defer("PrintStatusPanel::thumbnail_fetch_error", [this, error]() {
-                            spdlog::warn("[{}] Failed to fetch thumbnail: {}", get_name(), error);
-                        });
-                    });
-#endif
-            });
-        },
-        [this, token](const MoonrakerError& err) {
-            // L081 Mechanism C: get_name() is virtual on `this`; defer to main.
-            token.defer("PrintStatusPanel::metadata_error", [this, err]() {
-                spdlog::debug("[{}] Failed to get file metadata: {}", get_name(), err.message);
-            });
-        },
-        true // silent - don't trigger RPC_ERROR event/toast
-    );
-}
-
 // ============================================================================
 // G-CODE VIEWER LOADING
 // ============================================================================
@@ -3929,17 +3824,34 @@ void PrintStatusPanel::ensure_preview_current() {
         return; // Nothing to show.
     }
 
-    if (action.load_thumbnail) {
-        // Re-apply an already-cached thumbnail synchronously when it matches the
-        // desired file (cheap, no network); otherwise fetch it. Either way the
-        // shared-path observer / load_thumbnail_for_file records displayed_file_.
-        if (print_thumbnail_ && !cached_thumbnail_path_.empty() && displayed_file_ == desired) {
+    if (action.load_thumbnail && print_thumbnail_) {
+        // Nothing here fetches: that belongs to ActivePrintMediaManager, the
+        // single writer of the shared subject. The only two sources are our own
+        // cache and that subject's current value.
+        if (!cached_thumbnail_path_.empty() && displayed_file_ == desired) {
+            // Cheap re-apply of a thumbnail we already hold for this file.
             crash_handler::breadcrumb::note("pstat_thm", "set_src_pre");
             lv_image_set_src(print_thumbnail_, cached_thumbnail_path_.c_str());
             crash_handler::breadcrumb::note("pstat_thm", "set_src_post");
             displayed_file_ = desired;
-        } else {
-            load_thumbnail_for_file(desired);
+        } else if (printer_state_.get_print_thumbnail_file() == desired) {
+            // The subject already carries this file's image, but it was
+            // published BEFORE our own view of the filename caught up: the
+            // manager observes print_filename synchronously while this panel's
+            // filename observer is deferred, so print_thumbnail_path_observer_
+            // compared against the PREVIOUS filename and correctly dropped it.
+            // Re-reading the subject once the filename lands is what makes that
+            // ordering self-healing instead of leaving the previous print's
+            // image on the new print's card.
+            const char* published =
+                lv_subject_get_string(printer_state_.get_print_thumbnail_path_subject());
+            cached_thumbnail_path_ = published;
+            crash_handler::breadcrumb::note("pstat_thm", "set_src_pre");
+            lv_image_set_src(print_thumbnail_, published);
+            crash_handler::breadcrumb::note("pstat_thm", "set_src_post");
+            displayed_file_ = desired;
+            spdlog::debug("[{}] Adopted already-published thumbnail for '{}': {}", get_name(),
+                          desired, published);
         }
     }
 

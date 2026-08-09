@@ -91,6 +91,7 @@ WATCHDOG_EXTRA_OBJS := $(BUILD_DIR)/watchdog/config.o \
                        $(BUILD_DIR)/watchdog/data_root_resolver.o \
                        $(BUILD_DIR)/watchdog/helix_paths.o \
                        $(BUILD_DIR)/watchdog/logging_init.o \
+                       $(BUILD_DIR)/watchdog/platform_capabilities.o \
                        $(BUILD_DIR)/watchdog/ui_notification_stub.o \
                        $(BUILD_DIR)/watchdog/drm_mode_matching.o \
                        $(BUILD_DIR)/watchdog/fbdev_size_helper.o \
@@ -132,6 +133,11 @@ $(BUILD_DIR)/watchdog/helix_paths.o: src/system/helix_paths.cpp | $(BUILD_DIR)/w
 
 # Compile logging_init for watchdog
 $(BUILD_DIR)/watchdog/logging_init.o: src/system/logging_init.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) | $(BUILD_DIR)/watchdog
+	@echo "[CXX] $< (watchdog)"
+	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
+
+# logging_init sizes the debug ring from total RAM, so the watchdog links this too.
+$(BUILD_DIR)/watchdog/platform_capabilities.o: src/system/platform_capabilities.cpp | $(BUILD_DIR)/watchdog
 	@echo "[CXX] $< (watchdog)"
 	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 

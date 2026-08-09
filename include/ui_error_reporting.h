@@ -5,8 +5,12 @@
 
 #include "ui_notification.h"
 
+#include "ams_error.h"
+
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
+
+#include <string>
 
 /**
  * @file ui_error_reporting.h
@@ -162,6 +166,75 @@
         spdlog::error("[CRITICAL] {}: {}", title, formatted_msg);                                  \
         ui_notification_error(title, formatted_msg.c_str(), true);                                 \
     } while (0)
+
+// ============================================================================
+// AMS errors — the one place an AmsError becomes user-visible
+// ============================================================================
+
+namespace helix::ui {
+
+/**
+ * @brief Compose the visible body of an AmsError toast.
+ *
+ * @p context is the operation name, and it is only worth passing when the
+ * backend's own @c user_msg would not already say which operation failed.
+ * Every load/unload/eject/tool-change factory in AmsErrorHelper writes a
+ * complete sentence ("Failed to unload filament", "Slot 2 is empty"), so
+ * prefixing those produced "Unload failed: Failed to unload filament" — pure
+ * duplication that also ate a line of a 480x272 toast. The generic results
+ * (COMMAND_FAILED -> "Command failed", WRONG_STATE -> "Cannot perform this
+ * action now") name nothing, which is where a context word earns its place.
+ */
+[[nodiscard]] inline std::string ams_error_body(const AmsError& err, const char* context) {
+    std::string body =
+        err.user_msg.empty() ? std::string(ams_result_to_string(err.result)) : err.user_msg;
+    if (context && *context) {
+        body = std::string(context) + ": " + body;
+    }
+    return body;
+}
+
+/**
+ * @brief Report an AmsError to the user, suggestion included.
+ *
+ * AmsError::suggestion was populated by every backend and rendered by nothing:
+ * 30-odd call sites each open-coded `NOTIFY_ERROR(..., err.user_msg)` with
+ * their own verb prefix, so users read "Cannot run filament operation while
+ * printing" and never "Pause the print first, then load, unload, or change
+ * filament" — the half that gets them unstuck. This is the one renderer.
+ *
+ * The technical message is logged, not shown; it was previously dropped
+ * entirely at most of those sites.
+ *
+ * @param err     The failure. A successful AmsError is ignored.
+ * @param context Optional operation name — see ams_error_body().
+ */
+inline void notify_ams_error(const AmsError& err, const char* context = nullptr) {
+    if (err.success()) {
+        return;
+    }
+    const std::string body = ams_error_body(err, context);
+    spdlog::error("[USER] {} [{}] {}", body, ams_result_to_string(err.result), err.technical_msg);
+    ui_notification_error_with_detail(body.c_str(), err.suggestion.c_str());
+}
+
+/**
+ * @brief Same, at warning severity — for a refusal the UI predicted itself.
+ *
+ * A pre-guard that declines before dispatching (the filament surfaces' print
+ * gate) is not a failure the printer reported, so it does not deserve the error
+ * tone or the error chime.
+ */
+inline void notify_ams_warning(const AmsError& err, const char* context = nullptr) {
+    if (err.success()) {
+        return;
+    }
+    const std::string body = ams_error_body(err, context);
+    spdlog::warn("[USER] {} [{}] {}", body, ams_result_to_string(err.result), err.technical_msg);
+    ui_notification_warning_with_detail(body.c_str(), err.suggestion.c_str());
+}
+
+} // namespace helix::ui
 
 // ============================================================================
 // Context-Aware Error Reporting

@@ -469,6 +469,21 @@ class AmsState {
      *
      * @return Subject holding version counter
      */
+    /**
+     * @brief Death signal for the subjects this singleton owns.
+     *
+     * The per-slot accessors above hand out narrower tokens for subjects that
+     * die on their own during rediscovery; this one covers the whole set, which
+     * dies together in deinit_subjects(). Long-lived outside observers —
+     * PrintStatusPanel watches get_current_color_subject() and
+     * get_tool_map_version_subject() to recolor the gcode preview — must pass it
+     * to observe_*(), or their guards dereference observer nodes that
+     * deinit_subjects() freed.
+     */
+    [[nodiscard]] SubjectLifetime get_subjects_lifetime() const {
+        return subjects_lifetime_;
+    }
+
     lv_subject_t* get_tool_map_version_subject() {
         return &tool_map_version_;
     }
@@ -1294,6 +1309,10 @@ class AmsState {
 
     // Subject manager for automatic cleanup
     SubjectManager subjects_;
+    /// See get_subjects_lifetime(). Created with the object and REPLACED (never
+    /// nulled) by deinit_subjects(): an empty token reads as "dead" and would
+    /// suppress removal for live observers.
+    SubjectLifetime subjects_lifetime_ = std::make_shared<bool>(true);
 
     /// Expires the setters that marshal themselves to the main thread. Declared
     /// after `subjects_` so reverse-order member destruction invalidates it

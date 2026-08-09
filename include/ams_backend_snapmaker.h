@@ -123,11 +123,24 @@ class AmsBackendSnapmaker : public AmsSubscriptionBackend {
     // current_slot. Drives the active-lane highlight per tool.
     [[nodiscard]] bool slot_is_actively_loaded(int slot_index) const override;
 
-    // Operations
-    AmsError load_filament(int slot_index) override;
-    AmsError unload_filament(int slot_index) override;
-    AmsError select_slot(int slot_index) override;
-    AmsError change_tool(int tool_number) override;
+  protected:
+    // Operations. Every one of these drives the toolhead: AUTO_FEEDING forwards
+    // to FEED_AUTO, which homes before it feeds, and `T{n}` moves the carriage.
+    // AmsSubscriptionBackend's NVI wrapper refuses them while a print owns the
+    // toolhead; PAUSED still passes (filament_ops_self_home() is false), which
+    // is what keeps U1 runout recovery working (#991).
+    AmsError do_load_filament(int slot_index) override;
+    AmsError do_unload_filament(int slot_index) override;
+    AmsError do_select_slot(int slot_index) override;
+    AmsError do_change_tool(int tool_number) override;
+
+    /// On the U1 a slot select IS a physical tool change — do_select_slot()
+    /// forwards to do_change_tool(), which emits `T{n}` and moves the carriage.
+    [[nodiscard]] bool select_slot_moves_toolhead() const override {
+        return true;
+    }
+
+  public:
     // The base PARALLEL gate offers Unload for any tool with filament in its
     // buffer (is_present()). On the U1 that keeps offering Unload after a tool
     // is already unloaded — the firmware retracts the filament to the buffer

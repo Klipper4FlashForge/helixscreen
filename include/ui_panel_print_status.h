@@ -445,8 +445,9 @@ class PrintStatusPanel : public OverlayBase {
 
     // Thumbnail loading state
     std::string current_print_filename_; ///< Full path to current print file (for metadata fetch)
-    std::string cached_thumbnail_path_;  ///< Local cache path for downloaded thumbnail
-    uint32_t thumbnail_load_generation_ = 0; ///< Generation counter for async callback safety
+    /// Path most recently accepted from the shared thumbnail subject. Kept so
+    /// on_activate() can re-apply it without a refetch.
+    std::string cached_thumbnail_path_;
 
 #if defined(HELIX_PLATFORM_ESP32)
     /// PSRAM-resident thumbnail currently shown in print_thumbnail_. There is
@@ -463,8 +464,9 @@ class PrintStatusPanel : public OverlayBase {
     lv_obj_t* print_thumbnail_ = nullptr;
     lv_obj_t* gradient_background_ = nullptr;
 
-    // Thumbnail source override - used when printing modified temp files
-    // When set, load_thumbnail_for_file() uses this instead of the actual filename
+    // Thumbnail source override - used when printing modified temp files.
+    // When set, it replaces the actual filename as the "effective" file the
+    // preview must show, for both the thumbnail and the gcode viewer.
     std::string thumbnail_source_filename_;
 
     // Per-asset "what is on screen" markers. The thumbnail (fallback image) and
@@ -588,8 +590,6 @@ class PrintStatusPanel : public OverlayBase {
     void update_all_displays();
     void show_gcode_viewer(bool show);
     void load_gcode_file(const char* file_path);
-    void load_thumbnail_for_file(const std::string& filename); ///< Fetch and display thumbnail
-
 #if defined(HELIX_PLATFORM_ESP32)
     /// Pull the current PSRAM thumbnail from PrinterState, hold a reference,
     /// and point print_thumbnail_ at its descriptor. Main thread only; no-op

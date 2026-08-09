@@ -133,6 +133,12 @@ PrintHistoryJob parse_history_job(const json& job_json) {
         // UUID and file size for precise history matching
         job.uuid = helix::json_util::safe_string(meta, "uuid", "");
         job.size_bytes = json_number_or(meta, "size", static_cast<size_t>(0));
+
+        // Source gcode mtime. Same field server.files.metadata returns, carried
+        // in the history snapshot; it is what tells a thumbnail consumer that a
+        // re-slice under the same filename outdated the cached render. Absent
+        // means 0, which every consumer reads as "skip freshness validation".
+        job.modified = json_number_or(meta, "modified", 0.0);
     }
 
     // Pre-format display strings

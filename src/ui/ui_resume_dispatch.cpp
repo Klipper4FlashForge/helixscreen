@@ -10,8 +10,8 @@
 
 #include "ams_state.h"
 #include "app_globals.h"
-#include "lvgl/src/others/translation/lv_translation.h"
 #include "i_moonraker_api.h"
+#include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_job_api.h"
 #include "printer_state.h"
 #include "standard_macros.h"
@@ -220,7 +220,7 @@ void dispatch_prepared_resume(IMoonrakerAPI* api, std::string log_prefix,
         }
         if (!err.success()) {
             spdlog::error("{} prepare_for_resume failed: {}", log_prefix, err.technical_msg);
-            NOTIFY_ERROR(lv_tr("Resume preparation failed: {}"), err.user_msg);
+            helix::ui::notify_ams_error(err, lv_tr("Resume preparation failed"));
             if (on_failure)
                 on_failure();
             return;

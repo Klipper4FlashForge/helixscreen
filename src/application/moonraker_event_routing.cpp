@@ -6,7 +6,8 @@
 namespace helix {
 
 MoonrakerEventDecision decide_moonraker_event(MoonrakerEventType type, bool is_error,
-                                              bool within_grace_period, bool wizard_active) {
+                                              bool within_grace_period, bool wizard_active,
+                                              bool modal_active) {
     // Recovery-dialog events are routed regardless of is_error, the grace
     // period, or the wizard — a disconnected or shut-down Klippy is not a toast
     // that can be suppressed as startup noise.
@@ -27,6 +28,18 @@ MoonrakerEventDecision decide_moonraker_event(MoonrakerEventType type, bool is_e
                     MoonrakerEventSuppression::DiscoveryDeferred};
         }
         if (type == MoonrakerEventType::CONNECTION_FAILED) {
+            // Never steal an open modal. This event is latched and fires 60 s
+            // after startup, which on an unreachable printer is exactly when the
+            // user is in Settings > Network typing a WiFi password to fix it —
+            // and the prompt lands on top of that keyboard (bundle 865DXBQ7:
+            // pushed at stack depth 2, the password re-entered from scratch
+            // afterwards). Degrade to a toast: same information, no focus theft,
+            // no dialog to dismiss before getting back to the field. The
+            // disconnected status icon still carries the state afterwards.
+            if (modal_active) {
+                return {MoonrakerEventRoute::ErrorToast, "Connection Failed",
+                        MoonrakerEventSuppression::None};
+            }
             return {MoonrakerEventRoute::ConnectionFailedModal, "Connection Failed",
                     MoonrakerEventSuppression::None};
         }

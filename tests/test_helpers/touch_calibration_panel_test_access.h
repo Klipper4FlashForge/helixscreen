@@ -90,6 +90,22 @@ class TouchCalibrationPanelTestAccess {
     static int verify_onscreen_touch_count(const TouchCalibrationPanel& p) {
         return p.verify_onscreen_touch_count_;
     }
+
+    /// Timer starters + handles, for the leak regression: a second start must
+    /// cancel the first rather than strand it in LVGL's list still pointing at
+    /// this panel.
+    static void start_fast_revert_timer(TouchCalibrationPanel& p) {
+        p.start_fast_revert_timer();
+    }
+    static void start_countdown_timer(TouchCalibrationPanel& p) {
+        p.start_countdown_timer();
+    }
+    static lv_timer_t* fast_revert_timer(const TouchCalibrationPanel& p) {
+        return p.fast_revert_timer_;
+    }
+    static lv_timer_t* countdown_timer(const TouchCalibrationPanel& p) {
+        return p.countdown_timer_;
+    }
 };
 
 } // namespace helix

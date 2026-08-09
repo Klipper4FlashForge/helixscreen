@@ -34,11 +34,6 @@
 #define HELIX_VERSION_PATCH 0
 #endif
 
-// Git commit hash (short), defined by Makefile
-#ifndef HELIX_GIT_HASH
-#define HELIX_GIT_HASH "unknown"
-#endif
-
 // Build type
 #ifndef HELIX_BUILD_TYPE
 #define HELIX_BUILD_TYPE "dev"
@@ -53,18 +48,24 @@ inline const char* helix_version() {
 }
 
 /**
+ * @brief Get the short git commit hash, or "unknown" outside a git checkout
+ *
+ * Out of line, and deliberately not a macro: the hash changes on every commit,
+ * so exposing it as a -D on the global compiler flags made every translation
+ * unit miss ccache's direct mode on every push. It now reaches exactly one
+ * object, src/system/helix_version.cpp. See scripts/gen-git-hash.sh.
+ */
+const char* helix_git_hash();
+
+/**
  * @brief Get version with git hash
  * @return Version string like "1.1.0 (abc1234)"
+ *
+ * Out of line for the same reason, and because an inline definition reading the
+ * hash would have a different body in TUs that saw the define and TUs that did
+ * not, which is an ODR violation the linker resolves arbitrarily.
  */
-inline const char* helix_version_full() {
-    static char buf[64];
-    static bool initialized = false;
-    if (!initialized) {
-        snprintf(buf, sizeof(buf), "%s (%s)", HELIX_VERSION, HELIX_GIT_HASH);
-        initialized = true;
-    }
-    return buf;
-}
+const char* helix_version_full();
 
 /**
  * @brief Check if version is at least the specified version

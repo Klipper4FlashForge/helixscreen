@@ -10,6 +10,7 @@
  */
 
 #include "../../include/moonraker_client_mock.h"
+#include "../helix_test_fixture.h"
 
 #include <atomic>
 #include <chrono>
@@ -88,8 +89,9 @@ TEST_CASE("MoonrakerClientMock handles server.connection.identify",
 // Identify Integration with Discovery Flow
 // ============================================================================
 
-TEST_CASE("MoonrakerClientMock discover_printer doesn't fail due to identify",
-          "[moonraker][connection][discovery]") {
+TEST_CASE_METHOD(HelixTestFixture,
+                 "MoonrakerClientMock discover_printer doesn't fail due to identify",
+                 "[moonraker][connection][discovery]") {
     MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
     mock.connect("ws://mock/websocket", []() {}, []() {});
 
@@ -117,8 +119,8 @@ TEST_CASE("MoonrakerClientMock discover_printer doesn't fail due to identify",
 // The realistic mock overrides discover_printer() but the identification
 // state tracking is available for inspection.
 
-TEST_CASE("MoonrakerClient identification state tracking",
-          "[moonraker][connection][identify][state]") {
+TEST_CASE_METHOD(HelixTestFixture, "MoonrakerClient identification state tracking",
+                 "[moonraker][connection][identify][state]") {
     MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
 
     SECTION("is_identified starts false before connection") {

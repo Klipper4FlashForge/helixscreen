@@ -17,9 +17,11 @@
  * provides progress/error callbacks to the UI layer.
  */
 
+#include "async_lifetime_guard.h"
 #include "calibration_types.h"
 
 #include <functional>
+#include <memory>
 #include <string>
 
 // Forward declaration
@@ -263,19 +265,32 @@ class InputShaperCalibrator {
 
   private:
     /**
-     * @brief Ensure printer is homed before proceeding
+     * @brief Translate a G28 failure into the user-facing message
+     *        ensure_homed_then()'s caller-supplied on_error expects.
      *
-     * Checks homed_axes subject. If not fully homed, sends G28 first.
-     * Calls continuation on success, on_error on failure.
-     *
-     * @param then Callback to invoke once homing is confirmed
-     * @param on_error Called with error message if homing fails
+     * Shared by check_accelerometer() and run_calibration(), the two
+     * ensure_homed_then() call sites: firmware-halt detection takes
+     * priority (a distinct actionable message), then TIMEOUT, then the
+     * generic friendly-message fallback.
      */
-    void ensure_homed_then(std::function<void()> then, ErrorCallback on_error);
+    static std::string homing_error_message(const MoonrakerError& err);
 
     IMoonrakerAPI* api_ = nullptr; ///< Non-owning pointer to API
     State state_ = State::IDLE;
     CalibrationResults results_;
+
+    /**
+     * @brief Async callback safety guard for ensure_homed_then().
+     *
+     * Held via unique_ptr (not a plain member) so InputShaperCalibrator
+     * stays move-constructible/assignable — AsyncLifetimeGuard itself is
+     * non-copyable/non-movable (see "InputShaperCalibrator is movable" in
+     * tests/unit/test_input_shaper_calibrator.cpp), but the pointer that
+     * owns it can move; the guard's identity, and any outstanding tokens,
+     * travel with the calibrator.
+     */
+    std::unique_ptr<helix::AsyncLifetimeGuard> lifetime_ =
+        std::make_unique<helix::AsyncLifetimeGuard>();
 };
 
 } // namespace calibration

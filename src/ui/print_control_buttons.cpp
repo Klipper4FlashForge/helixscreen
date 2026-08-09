@@ -44,17 +44,18 @@ void PrintControlButtons::init_subjects() {
     lv_xml_register_event_cb(nullptr, "on_print_control_stop", on_stop_clicked);
 
     // print_state_enum is a static global subject — no SubjectLifetime needed.
-    print_state_observer_ =
-        observe_int_sync<PrintControlButtons>(get_printer_state().get_print_state_enum_subject(),
-                                              this, [](PrintControlButtons* self, int) {
-                                                  // A real state change clears any optimistic
-                                                  // pending action; the new state is authoritative.
-                                                  // Otherwise just recompute the buttons.
-                                                  if (self->pending_action_ != PendingAction::None)
-                                                      self->clear_pending_action();
-                                                  else
-                                                      self->recompute();
-                                              });
+    print_state_observer_ = observe_int_sync<PrintControlButtons>(
+        get_printer_state().get_print_state_enum_subject(), this,
+        [](PrintControlButtons* self, int) {
+            // A real state change clears any optimistic
+            // pending action; the new state is authoritative.
+            // Otherwise just recompute the buttons.
+            if (self->pending_action_ != PendingAction::None)
+                self->clear_pending_action();
+            else
+                self->recompute();
+        },
+        get_printer_state().get_subjects_lifetime());
 
     // Self-register cleanup so subjects/observer are torn down before lv_deinit().
     StaticSubjectRegistry::instance().register_deinit("PrintControlButtons", []() {
@@ -62,9 +63,7 @@ void PrintControlButtons::init_subjects() {
         // release() (NOT reset()) is correct here: this runs pre-lv_deinit when
         // the observed subject is already being destroyed by its own owner.
         self.print_state_observer_.release();
-        self.cancel_pending_action_timer();
-        self.subjects_.deinit_all();
-        self.subjects_initialized_ = false;
+        self.teardown_subjects();
     });
 
     subjects_initialized_ = true;
@@ -202,6 +201,23 @@ PrintControlButtons::~PrintControlButtons() {
     // `this`. lv_timer_cancel_safe() self-guards on lv_is_initialized(), which is
     // what makes it safe from a static's destructor (#750, #751, #1173).
     cancel_pending_action_timer();
+}
+
+void PrintControlButtons::teardown_subjects() {
+    // Death signal BEFORE deinit_all(), which frees every observer node on these
+    // subjects. Outside holders — PrintStatusPanel's pending_action_observer_ —
+    // read it in ObserverGuard::reset() and skip the removal instead of
+    // dereferencing a freed observer. Replace rather than clear: an empty token
+    // reads as "dead" and would suppress removal for observers registered after
+    // this teardown, orphaning live nodes.
+    if (subjects_lifetime_) {
+        *subjects_lifetime_ = false;
+    }
+    subjects_lifetime_ = std::make_shared<bool>(true);
+
+    cancel_pending_action_timer();
+    subjects_.deinit_all();
+    subjects_initialized_ = false;
 }
 
 void PrintControlButtons::cancel_pending_action_timer() {

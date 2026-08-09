@@ -1011,9 +1011,13 @@ void HistoryListPanel::show_detail_overlay(const PrintHistoryJob& job) {
     lv_obj_t* thumbnail_image = lv_obj_find_by_name(detail_overlay_, "thumbnail_image");
     lv_obj_t* thumbnail_fallback = lv_obj_find_by_name(detail_overlay_, "thumbnail_fallback");
 
-    // Increment generation counter for this overlay instance
-    ++detail_overlay_generation_;
-    uint64_t this_generation = detail_overlay_generation_;
+    // One staleness context per overlay open. Creating it bumps
+    // detail_overlay_generation_, exactly as the bare `++` did, so a thumbnail
+    // still in flight from a previously-opened job now reports stale. It also
+    // carries the panel's lifetime token, which the raw generation compare
+    // never had — the queued apply below used to dereference a possibly-freed
+    // panel just to read the counter.
+    ThumbnailLoadContext ctx = ThumbnailLoadContext::create(lifetime_, &detail_overlay_generation_);
 
     if (thumbnail_image && thumbnail_fallback) {
         if (!job.thumbnail_path.empty()) {
@@ -1022,29 +1026,40 @@ void HistoryListPanel::show_detail_overlay(const PrintHistoryJob& job) {
             lv_obj_remove_flag(thumbnail_fallback, LV_OBJ_FLAG_HIDDEN);
 
             IMoonrakerAPI* api = get_moonraker_api();
-            // Use ThumbnailCache to fetch/download thumbnail
+
+            // The detail overlay has always rendered the full-resolution PNG,
+            // so it asks for FullPng and req.target goes unused. The cache key
+            // is the job's Moonraker relative path, unchanged.
+            ThumbnailRequest req;
+            req.key = job.thumbnail_path;
+            req.api = api;
+            req.format = ThumbnailRequest::ThumbnailFormat::FullPng;
+
             auto* self = this;
             get_thumbnail_cache().fetch(
-                api, job.thumbnail_path,
-                // Success callback - may be called from background thread
-                // Capture generation counter, NOT widget pointers (avoids use-after-free)
-                [self, this_generation](const std::string& lvgl_path) {
+                req, ctx,
+                // Success callback - may be called from background thread.
+                // Capture the load context, NOT widget pointers (avoids use-after-free)
+                [self, ctx](const std::string& lvgl_path, bool /*degraded*/) {
                     // Dispatch UI update to main thread
                     struct ThumbUpdate {
                         HistoryListPanel* panel;
-                        uint64_t generation;
+                        ThumbnailLoadContext ctx;
                         std::string path;
                     };
                     helix::ui::queue_update<ThumbUpdate>(
-                        std::make_unique<ThumbUpdate>(
-                            ThumbUpdate{self, this_generation, lvgl_path}),
+                        std::make_unique<ThumbUpdate>(ThumbUpdate{self, ctx, lvgl_path}),
                         [](ThumbUpdate* t) {
-                            // Verify overlay still exists and generation matches
-                            // (overlay might have been closed and reopened)
-                            if (!t->panel->detail_overlay_ ||
-                                t->panel->detail_overlay_generation_ != t->generation) {
-                                spdlog::debug("[HistoryListPanel] Thumbnail callback stale "
-                                              "(generation mismatch), ignoring");
+                            // Panel alive AND generation still current? The
+                            // overlay may have been closed, reopened for a
+                            // different job, or torn down entirely between the
+                            // fetch completing and this queued apply running.
+                            if (!t->ctx.is_valid()) {
+                                spdlog::debug("[HistoryListPanel] Thumbnail callback stale, "
+                                              "ignoring");
+                                return;
+                            }
+                            if (!t->panel->detail_overlay_) {
                                 return;
                             }
 

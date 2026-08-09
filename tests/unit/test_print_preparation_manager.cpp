@@ -3,6 +3,7 @@
 
 #include "ui_print_preparation_manager.h"
 
+#include "../helix_test_fixture.h"
 #include "../test_helpers/printer_state_test_access.h"
 #include "macro_param_cache.h"
 
@@ -562,8 +563,8 @@ TEST_CASE("PrintPreparationManager: macro analysis in-progress tracking",
  *
  * These tests verify the manager correctly uses PrinterState for capabilities.
  */
-TEST_CASE("PrintPreparationManager: capabilities come from PrinterState",
-          "[print_preparation][capabilities][lt1]") {
+TEST_CASE_METHOD(HelixTestFixture, "PrintPreparationManager: capabilities come from PrinterState",
+                 "[print_preparation][capabilities][lt1]") {
     // Initialize LVGL for PrinterState subjects
     lv_init_safe();
 
@@ -618,8 +619,9 @@ TEST_CASE("PrintPreparationManager: capabilities come from PrinterState",
     }
 }
 
-TEST_CASE("PrintPreparationManager: capabilities update when PrinterState type changes",
-          "[print_preparation][capabilities][lt1]") {
+TEST_CASE_METHOD(HelixTestFixture,
+                 "PrintPreparationManager: capabilities update when PrinterState type changes",
+                 "[print_preparation][capabilities][lt1]") {
     // Initialize LVGL for PrinterState subjects
     lv_init_safe();
 
@@ -818,8 +820,9 @@ TEST_CASE("PrintPreparationManager: option id keys are consistent",
  * to default_enabled, but that option is `macro_param` (not `pre_start_gcode`)
  * so it's filtered out here regardless.
  */
-TEST_CASE("PrintPreparationManager: collect_pre_start_gcode_lines (K2 Plus ai_detect)",
-          "[print_preparation][pre_print_options]") {
+TEST_CASE_METHOD(HelixTestFixture,
+                 "PrintPreparationManager: collect_pre_start_gcode_lines (K2 Plus ai_detect)",
+                 "[print_preparation][pre_print_options]") {
     lv_init_safe();
 
     PrinterState& printer_state = get_printer_state();
@@ -1644,7 +1647,8 @@ TEST_CASE("PrintPreparationManager: get_option_state in collection context",
  * They will FAIL to compile initially because build_capability_matrix() doesn't exist.
  */
 
-TEST_CASE("PrintPreparationManager: build_capability_matrix", "[print_preparation][p3]") {
+TEST_CASE_METHOD(HelixTestFixture, "PrintPreparationManager: build_capability_matrix",
+                 "[print_preparation][p3]") {
     lv_init_safe();
     PrintPreparationManager manager;
 
@@ -1738,7 +1742,8 @@ TEST_CASE("PrintPreparationManager: build_capability_matrix", "[print_preparatio
     }
 }
 
-TEST_CASE("PrintPreparationManager: capability priority ordering", "[print_preparation][p3]") {
+TEST_CASE_METHOD(HelixTestFixture, "PrintPreparationManager: capability priority ordering",
+                 "[print_preparation][p3]") {
     lv_init_safe();
     PrintPreparationManager manager;
 
@@ -1825,8 +1830,8 @@ TEST_CASE("PrintPreparationManager: capability priority ordering", "[print_prepa
     }
 }
 
-TEST_CASE("PrintPreparationManager: collect_macro_skip_params with matrix",
-          "[print_preparation][p3]") {
+TEST_CASE_METHOD(HelixTestFixture, "PrintPreparationManager: collect_macro_skip_params with matrix",
+                 "[print_preparation][p3]") {
     lv_init_safe();
     PrintPreparationManager manager;
     MockOptionState state;
@@ -1958,8 +1963,9 @@ TEST_CASE("PrintPreparationManager: get_option_state(id) provider takes priority
     }
 }
 
-TEST_CASE("PrintPreparationManager: get_option_state(id) falls back to DB default_enabled",
-          "[print_preparation][option_state][p3]") {
+TEST_CASE_METHOD(HelixTestFixture,
+                 "PrintPreparationManager: get_option_state(id) falls back to DB default_enabled",
+                 "[print_preparation][option_state][p3]") {
     // When no provider returns 0/1 for an id, get_option_state(id) falls
     // through to the cached PrePrintOptionSet's default_enabled flag — used
     // by headless callers (macro analysis) that don't have a panel attached.
@@ -1989,8 +1995,9 @@ TEST_CASE("PrintPreparationManager: get_option_state(id) falls back to DB defaul
     }
 }
 
-TEST_CASE("PrintPreparationManager: collect_macro_skip_params drives off provider when set",
-          "[print_preparation][option_state][p3]") {
+TEST_CASE_METHOD(HelixTestFixture,
+                 "PrintPreparationManager: collect_macro_skip_params drives off provider when set",
+                 "[print_preparation][option_state][p3]") {
     lv_init_safe();
     // Use AD5M Pro DB entry — has bed_mesh as MacroParam.
     PrinterState& printer_state = get_printer_state();
@@ -2628,8 +2635,9 @@ TEST_CASE("PrepManager: Extension safety - database key consistency", "[print_pr
  * line for each PreStartGcode option in the active set, regardless of
  * enabled/disabled state. Hidden / NOT_APPLICABLE options are skipped.
  */
-TEST_CASE("PrintPreparationManager: timelapse option synthesized when plugin available",
-          "[print_preparation][timelapse][p4]") {
+TEST_CASE_METHOD(HelixTestFixture,
+                 "PrintPreparationManager: timelapse option synthesized when plugin available",
+                 "[print_preparation][timelapse][p4]") {
     // When the moonraker-timelapse plugin is reported available via
     // PrinterState::set_timelapse_available(true), the cached
     // PrePrintOptionSet should grow a synthesized "timelapse" option (id,
@@ -2690,8 +2698,10 @@ TEST_CASE("PrintPreparationManager: timelapse option synthesized when plugin ava
     }
 }
 
-TEST_CASE("PrintPreparationManager: collect_pre_start_gcode_lines emits ai_detect for K2 Plus",
-          "[print_preparation][ai_detect][p4]") {
+TEST_CASE_METHOD(
+    HelixTestFixture,
+    "PrintPreparationManager: collect_pre_start_gcode_lines emits ai_detect for K2 Plus",
+    "[print_preparation][ai_detect][p4]") {
     lv_init_safe();
     PrinterState& printer_state = get_printer_state();
     PrinterStateTestAccess::reset(printer_state);
@@ -2740,9 +2750,10 @@ TEST_CASE("PrintPreparationManager: collect_pre_start_gcode_lines emits ai_detec
     }
 }
 
-TEST_CASE("PrintPreparationManager: collect_pre_start_gcode_lines empty for printer w/o "
-          "PreStartGcode options",
-          "[print_preparation][ai_detect][p4]") {
+TEST_CASE_METHOD(HelixTestFixture,
+                 "PrintPreparationManager: collect_pre_start_gcode_lines empty for printer w/o "
+                 "PreStartGcode options",
+                 "[print_preparation][ai_detect][p4]") {
     lv_init_safe();
     // AD5M Pro only has MacroParam options — no PreStartGcode.
     PrinterState& printer_state = get_printer_state();
@@ -2770,8 +2781,9 @@ TEST_CASE("PrintPreparationManager: collect_pre_start_gcode_lines empty when no 
 // Post-Phase-3.5 framework tests (T1-T5 from review)
 // ============================================================================
 
-TEST_CASE("PrintPreparationManager: collect_ops_to_disable returns ops user disabled",
-          "[print_preparation][gcode][framework]") {
+TEST_CASE_METHOD(HelixTestFixture,
+                 "PrintPreparationManager: collect_ops_to_disable returns ops user disabled",
+                 "[print_preparation][gcode][framework]") {
     // T1: Verifies the post-Phase-3.5 path where collect_ops_to_disable()
     // resolves user intent through get_option_state() (provider-driven) for
     // the embedded-op skip set.
@@ -2825,8 +2837,10 @@ TEST_CASE("PrintPreparationManager: collect_ops_to_disable returns ops user disa
     }
 }
 
-TEST_CASE("PrintPreparationManager: K2 Plus DB-driven bed_mesh emits PREPARE=1 when disabled",
-          "[print_preparation][framework][k2_plus]") {
+TEST_CASE_METHOD(
+    HelixTestFixture,
+    "PrintPreparationManager: K2 Plus DB-driven bed_mesh emits PREPARE=1 when disabled",
+    "[print_preparation][framework][k2_plus]") {
     // T2: Full pipeline test — provider DISABLES K2 Plus's bed_mesh
     // (MacroParam strategy with PREPARE=0/1). collect_macro_skip_params()
     // should emit ("PREPARE", "1") via the LAYER 1 (DB) path, with no
@@ -2856,8 +2870,9 @@ TEST_CASE("PrintPreparationManager: K2 Plus DB-driven bed_mesh emits PREPARE=1 w
     REQUIRE(found_prepare);
 }
 
-TEST_CASE("PrintPreparationManager: collect_pre_start_gcode_lines skips NOT_APPLICABLE",
-          "[print_preparation][framework][ai_detect]") {
+TEST_CASE_METHOD(HelixTestFixture,
+                 "PrintPreparationManager: collect_pre_start_gcode_lines skips NOT_APPLICABLE",
+                 "[print_preparation][framework][ai_detect]") {
     // T5: K2 Plus has ai_detect (PreStartGcode strategy). When the provider
     // returns -1 (not bound) AND the option's default_enabled is false, the
     // option resolves to DISABLED — emitting SWITCH=0. To get NOT_APPLICABLE,
@@ -2971,7 +2986,8 @@ struct GateFixture {
 
 } // namespace
 
-TEST_CASE(
+TEST_CASE_METHOD(
+    HelixTestFixture,
     "disabling_option_requires_plugin: K2 regression — MacroParam + setup_gcode stays visible",
     "[print_preparation][preprint][plugin_gate]") {
     // MOST IMPORTANT case. K2 Plus bed_mesh is a MacroParam (PREPARE-style)
@@ -2999,8 +3015,10 @@ TEST_CASE(
     }
 }
 
-TEST_CASE("disabling_option_requires_plugin: Voron — MacroParam, no pre-start mechanism, hidden",
-          "[print_preparation][preprint][plugin_gate]") {
+TEST_CASE_METHOD(
+    HelixTestFixture,
+    "disabling_option_requires_plugin: Voron — MacroParam, no pre-start mechanism, hidden",
+    "[print_preparation][preprint][plugin_gate]") {
     // MacroParam bed_mesh with no setup_gcode and no PreStartGcode siblings:
     // disabling it means rewriting the START_PRINT call in the file, which
     // needs the plugin for clean history -> hidden when plugin absent.
@@ -3019,8 +3037,8 @@ TEST_CASE("disabling_option_requires_plugin: Voron — MacroParam, no pre-start 
     }
 }
 
-TEST_CASE("disabling_option_requires_plugin: file-embedded term isolated",
-          "[print_preparation][preprint][plugin_gate]") {
+TEST_CASE_METHOD(HelixTestFixture, "disabling_option_requires_plugin: file-embedded term isolated",
+                 "[print_preparation][preprint][plugin_gate]") {
     // Use a (synthetic) RuntimeCommand strategy on a file-embeddable id so the
     // MacroParam term is off and no pre-start line is emitted — this isolates
     // the "file has the op embedded" contribution to the predicate.
@@ -3039,9 +3057,11 @@ TEST_CASE("disabling_option_requires_plugin: file-embedded term isolated",
     }
 }
 
-TEST_CASE("disabling_option_requires_plugin: MacroParam disable dropped when a PreStartGcode "
-          "sibling short-circuits",
-          "[print_preparation][preprint][plugin_gate]") {
+TEST_CASE_METHOD(
+    HelixTestFixture,
+    "disabling_option_requires_plugin: MacroParam disable dropped when a PreStartGcode "
+    "sibling short-circuits",
+    "[print_preparation][preprint][plugin_gate]") {
     // No setup_gcode, but a PreStartGcode sibling emits a line -> start_print()
     // takes the pre-start path and never reaches the capability check. The
     // MacroParam skip is silently dropped (a pre-existing quirk), but crucially
@@ -3055,8 +3075,10 @@ TEST_CASE("disabling_option_requires_plugin: MacroParam disable dropped when a P
     REQUIRE(fx.requires_plugin("bed_mesh") == false);
 }
 
-TEST_CASE("disabling_option_requires_plugin: PreStartGcode and RuntimeCommand never require plugin",
-          "[print_preparation][preprint][plugin_gate]") {
+TEST_CASE_METHOD(
+    HelixTestFixture,
+    "disabling_option_requires_plugin: PreStartGcode and RuntimeCommand never require plugin",
+    "[print_preparation][preprint][plugin_gate]") {
     SECTION("PreStartGcode option (with setup_gcode present — must not matter)") {
         PrePrintOptionSet set;
         set.macro_name = "START_PRINT";

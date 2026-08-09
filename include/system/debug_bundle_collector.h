@@ -82,7 +82,18 @@ class DebugBundleCollector {
     static std::string collect_crash_txt();
     static nlohmann::json collect_sanitized_settings();
     static std::string collect_klipper_log_tail(int num_lines = 2000);
-    static std::string collect_moonraker_log_tail(int num_lines = 2000);
+
+    /// Read klippy.log / moonraker.log straight off the local disk, for when
+    /// Moonraker cannot serve them. Only for a same-host printer; the paths come
+    /// from the daemons' own argv (see candidate_log_paths()), so an unknown
+    /// platform layout returns empty rather than a guess.
+    static std::string collect_local_log_tail(const std::string& log_name, int num_lines,
+                                              bool condense_klipper = false);
+    /// moonraker.log is small — a real 22-hour AD5X log was 2833 lines / 198 KB,
+    /// so the old 2000-line cap discarded the oldest 30% of a file that fits the
+    /// 512 KiB byte budget several times over. Cap high enough that the byte
+    /// budget is what binds.
+    static std::string collect_moonraker_log_tail(int num_lines = 8000);
 
     /// Read crash_report.txt from config_dir (persists after crash.txt consumed)
     static std::string collect_crash_report_txt(const std::string& config_dir);
@@ -103,25 +114,43 @@ class DebugBundleCollector {
     /// Collect Moonraker state via REST (server info, printer state, config)
     static nlohmann::json collect_moonraker_info();
 
+    /// Local evidence about a same-host Moonraker, gathered from /proc rather
+    /// than from Moonraker. Everything in collect_moonraker_info() goes through
+    /// Moonraker's own HTTP API, so a bundle uploaded while Moonraker is down
+    /// carries only "No response" and cannot distinguish "not running" from
+    /// "running, bound to an address we did not dial" (AD5X bundles TAU4PW4H /
+    /// 865DXBQ7). Returns `{"same_host": false}` for a remote printer, where our
+    /// own /proc says nothing about it.
+    static nlohmann::json collect_moonraker_local_probe();
+
     /// Collect filament system data (AFC, Happy Hare, ACE, Spoolman, tool changers)
     static nlohmann::json collect_filament_system_info();
 
     /// Filter a Klipper object list to filament-related objects (public for testing)
     static nlohmann::json filter_filament_objects(const nlohmann::json& object_list);
 
-    /// Drop the Stats padding from a raw klippy.log tail (public for testing).
+    /// Collapse repeating noise in a raw klippy.log tail (public for testing).
     ///
-    /// Keeps every non-Stats line, the `stats_context` Stats lines immediately
-    /// preceding each one, and the final `stats_tail` Stats lines. Klipper emits
-    /// one ~850-byte "Stats <time>: ..." line per second, so a raw tail is almost
-    /// entirely load averages — condensing lets the same byte budget reach hours
-    /// back instead of minutes.
+    /// Lines are grouped by "shape" (digit runs folded to N), and any shape
+    /// occurring more than `max_repeats` times keeps only its most recent
+    /// `max_repeats` occurrences, in place. The final `tail_lines` ship verbatim
+    /// so the shutdown dump is never thinned.
     ///
-    /// Defaults are sized against real AD5X data (bundle UJCCQP6S: 21 events per
-    /// 616s): an 82-minute fetch window condenses to ~340 KiB worst case, versus
-    /// 512 KiB for the 10 minutes the old raw tail could reach.
-    static std::string condense_klipper_log(const std::string& raw, int stats_context = 3,
-                                            int stats_tail = 60);
+    /// Deliberately shape-based rather than a list of known-noisy prefixes. The
+    /// first version of this special-cased Klipper's per-second "Stats " line,
+    /// which was the only padding in the sample it was written against — on a
+    /// real ZMOD AD5X log the dominant noise turned out to be a 4-line
+    /// `toolhead: max_velocity/max_accel/...` dump repeated 7916 times, which
+    /// sailed straight through and made the shipped payload reach *less* far
+    /// than the unfiltered tail it replaced. Shape-collapse catches both, and
+    /// whatever the next firmware invents.
+    ///
+    /// Measured on two real AD5X logs: a 4 MiB (~85 min) window of the 11.7 MB
+    /// crash log condenses 36142 lines to ~1300 (~340 KiB) while keeping the MCU
+    /// shutdown and all 22 tool changes; a quiet 512 KiB sample keeps all 21 of
+    /// its event lines.
+    static std::string condense_klipper_log(const std::string& raw, int max_repeats = 40,
+                                            int tail_lines = 200);
 
     /// Collect platform-specific diagnostic files (e.g., AD5X Adventurer5M.json)
     /// served via Moonraker's /server/files/<root>/<path> endpoint. Files that

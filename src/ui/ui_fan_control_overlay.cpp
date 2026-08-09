@@ -18,8 +18,8 @@
 #include "display_settings_manager.h"
 #include "format_utils.h"
 #include "helix-xml/src/xml/lv_xml.h"
-#include "lvgl/src/others/translation/lv_translation.h"
 #include "i_moonraker_api.h"
+#include "lvgl/src/others/translation/lv_translation.h"
 #include "observer_factory.h"
 #include "ui/fan_spin_animation.h"
 
@@ -245,7 +245,8 @@ void FanControlOverlay::on_activate() {
                 // Refresh auto fan card animations
                 self->refresh_all_auto_fan_animations();
             }
-        });
+        },
+        DisplaySettingsManager::instance().get_subjects_lifetime());
 
     // Subscribe to per-fan speed subjects for reactive updates
     subscribe_to_fan_speeds();

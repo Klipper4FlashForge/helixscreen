@@ -161,6 +161,24 @@ run_gate() { run python3 "$GATE" --baseline "$BASE" "$LOG"; }
     [[ "$output" == *'1 untagged callback(s) exceeds'* ]]
 }
 
+# --- the companion SITES line must stay invisible to the gate --------------
+
+@test "the [ISOLATION-LEAK-SITES] line is ignored, not parsed as another leak" {
+    # The listener prints untagged call sites on their OWN line so the report
+    # above it keeps the exact shape this gate parses. If a future regex change
+    # started matching it, every untagged leak would be counted twice and the
+    # ceiling would need doubling to stay green — which is how a ratchet quietly
+    # stops ratcheting.
+    leak "known leaker" 2 "<untagged> x2"
+    printf '[ISOLATION-LEAK-SITES] untagged from: observer_factory.h:371 x2\n' >> "$LOG"
+    finish_run
+    printf 'max-untagged-callbacks: 2\ntest:known leaker\n' > "$BASE"
+    run_gate
+    [ "$status" -eq 0 ]
+    [[ "$output" != *'ISOLATION-LEAK-SITES'* ]]
+    [[ "$output" != *'observer_factory'* ]]
+}
+
 # --- the log must be a real, complete run ----------------------------------
 
 @test "a log with no Catch2 summary is rejected rather than read as zero leaks" {
@@ -213,17 +231,34 @@ run_gate() { run python3 "$GATE" --baseline "$BASE" "$LOG"; }
 
 # --- the committed baseline ------------------------------------------------
 
-@test "the committed baseline is in the new format and carries a ceiling" {
-    run grep -c '^tag:' "$BASELINE"
-    [ "$status" -eq 0 ]
-    [ "$output" -gt 0 ]
-
-    run grep -c '^test:' "$BASELINE"
-    [ "$status" -eq 0 ]
-    [ "$output" -gt 0 ]
-
+@test "the committed baseline carries exactly one ceiling line" {
+    # The ceiling is the half of the contract the key set cannot express, so its
+    # presence is load-bearing however few keys remain.
+    #
+    # This deliberately does NOT require a non-empty key set. It used to, back
+    # when 272 keys made "at least one of each" a free assertion. The debt is now
+    # worked down to zero: every leaking test was a TEST_CASE with no fixture (or
+    # a hand-rolled one), so none of them drained, and putting them on
+    # HelixTestFixture emptied the list. A ratchet that cannot represent its own
+    # goal state would have to be loosened the moment the goal is reached.
     run grep -c '^max-untagged-callbacks: [0-9][0-9]*$' "$BASELINE"
     [ "$output" -eq 1 ]
+}
+
+@test "an empty key set is accepted, and any new leak against it fails" {
+    # The pairing that makes zero-keys safe: the gate must not read "no keys" as
+    # "nothing to check". Guards the regression where an emptied baseline turns
+    # the ratchet into a no-op.
+    printf 'max-untagged-callbacks: 0\n' > "$BASE"
+
+    finish_run
+    run_gate
+    [ "$status" -eq 0 ]
+
+    leak "a test that regressed" 1 "<untagged>"
+    run_gate
+    [ "$status" -eq 1 ]
+    [[ "$output" == *'test:a test that regressed'* ]]
 }
 
 @test "the committed baseline has no stray unprefixed entries" {

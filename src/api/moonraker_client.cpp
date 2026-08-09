@@ -20,6 +20,7 @@
 #include "abort_manager.h"
 #include "app_globals.h"
 #include "helix_version.h"
+#include "host_identity.h"
 #include "printer_state.h"
 #include "system/telemetry_manager.h"
 
@@ -48,6 +49,24 @@ std::string format_ws_endpoint(const std::string& url) {
         s.erase(slash);
     }
     return s.empty() ? url : s;
+}
+
+// "127.0.0.1:7125" -> "127.0.0.1". Handles the bracketed IPv6 literal form
+// ("[::1]:7125") so a v6 loopback is not mistaken for a remote host, and leaves
+// a bare v6 address (no brackets, no port) alone rather than truncating it at
+// its first colon.
+std::string host_of_endpoint(const std::string& endpoint) {
+    if (!endpoint.empty() && endpoint.front() == '[') {
+        const size_t close = endpoint.find(']');
+        return (close != std::string::npos) ? endpoint.substr(1, close - 1) : endpoint;
+    }
+    const size_t colon = endpoint.find(':');
+    if (colon == std::string::npos)
+        return endpoint;
+    // More than one colon and no brackets: an unbracketed IPv6 literal.
+    if (endpoint.find(':', colon + 1) != std::string::npos)
+        return endpoint;
+    return endpoint.substr(0, colon);
 }
 
 // Reset notification flags on successful connection
@@ -807,11 +826,26 @@ void MoonrakerClient::on_ws_close() {
                                   "the initial connection (retries continue)",
                                   endpoint, elapsed);
                     set_connection_state(ConnectionState::FAILED);
-                    emit_event(MoonrakerEventType::CONNECTION_FAILED,
-                               fmt::format("Unable to reach printer at {}. Check that the printer "
-                                           "is powered on and that this address is correct.",
-                                           endpoint),
-                               true);
+                    // "Check that the printer is powered on and that this
+                    // address is correct" is wrong advice when the address is
+                    // this machine: HelixScreen is running on the printer, so
+                    // it is demonstrably powered on and the address is not in
+                    // question — Moonraker is simply not up. The AD5X bundles
+                    // TAU4PW4H / 865DXBQ7 are exactly that: instant connection
+                    // refusals on 127.0.0.1:7125 for two boots running, and a
+                    // dialog telling the user to check the address and offering
+                    // to change it.
+                    emit_event(
+                        MoonrakerEventType::CONNECTION_FAILED,
+                        helix::is_moonraker_on_same_host(host_of_endpoint(endpoint))
+                            ? fmt::format("Moonraker is not responding at {}. It runs on this "
+                                          "printer, so check that the Klipper and Moonraker "
+                                          "services started.",
+                                          endpoint)
+                            : fmt::format("Unable to reach printer at {}. Check that the printer "
+                                          "is powered on and that this address is correct.",
+                                          endpoint),
+                        true);
                 }
             }
 

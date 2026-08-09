@@ -16,9 +16,13 @@ struct PrintControlButtonsTestAccess {
             lv_timer_delete(s.pending_action_timeout_);
             s.pending_action_timeout_ = nullptr;
         }
-        s.subjects_.deinit_all();
+        // Go through the shared teardown rather than reaching for deinit_all()
+        // directly: it is what signals subject death to outside ObserverGuards.
+        // This runs on EVERY HelixTestFixture construction, so a hand-rolled
+        // teardown here silently dangles every cross-object observer in the
+        // process (PrintStatusPanel::pending_action_observer_ above all).
+        s.teardown_subjects();
         s.pending_action_ = PendingAction::None;
-        s.subjects_initialized_ = false;
     }
 
     /// True if the singleton currently holds a live observer on the global

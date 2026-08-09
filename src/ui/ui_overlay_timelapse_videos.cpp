@@ -467,17 +467,24 @@ void TimelapseVideosOverlay::load_thumbnail_for_card(lv_obj_t* card, const std::
     }
 
     // Build the relative path for Moonraker download: "timelapse/<companion>"
-    // ThumbnailCache::fetch_for_card_view uses api->download_thumbnail which
-    // expects a relative path. For timelapse files, we use the transfers API
-    // directly since these aren't gcode thumbnails.
+    // ThumbnailCache's fetch goes through api->download_thumbnail, which expects
+    // a relative path under ".thumbnails/". For timelapse files, we use the
+    // transfers API directly since these aren't gcode thumbnails.
 
     // Use the cache key from TimelapseThumbnailer as the cache identifier
     auto cache_key = helix::timelapse::cache_key(filename);
     auto target = helix::ThumbnailProcessor::get_target_for_display(helix::ThumbnailSize::Card);
 
-    // Check if already cached (synchronous, fast path)
+    // Check if already cached (synchronous, fast path). The request-shaped
+    // lookup is the same query as get_if_optimized(key, target) — timelapse
+    // companions have no Moonraker mtime to validate against, so
+    // source_modified stays 0.
+    ThumbnailRequest req;
+    req.key = cache_key;
+    req.target = target;
+
     auto& cache = get_thumbnail_cache();
-    std::string cached = cache.get_if_optimized(cache_key, target);
+    std::string cached = cache.get_if_cached(req);
     if (!cached.empty()) {
         spdlog::debug("[{}] Thumbnail cache hit for '{}'", get_name(), filename);
         if (thumbnail) {
@@ -505,13 +512,12 @@ void TimelapseVideosOverlay::load_thumbnail_for_card(lv_obj_t* card, const std::
 
     std::string filename_copy = filename;
 
-    // Download the companion thumbnail via the timelapse file root.
-    // Use fetch_for_card_view with the cache key so the pre-scaled .bin
-    // is stored under the timelapse-specific key.
+    // Download the companion thumbnail via the timelapse file root, keyed by the
+    // timelapse-specific cache key so the pre-scaled .bin lands under it.
     // The companion .jpg is accessible at "timelapse/<companion>" via Moonraker's
-    // file download endpoint, which is what the thumbnail cache's fetch uses.
-    // However, fetch_for_card_view calls download_thumbnail which prefixes
-    // ".thumbnails/". For timelapse companions we need a direct download approach.
+    // file download endpoint. The cache's own fetch cannot be used here: it goes
+    // through download_thumbnail, which prefixes ".thumbnails/". For timelapse
+    // companions we need a direct download approach.
 
     // Download companion to a temp location, then save to cache and pre-scale
     std::string dest_path = app_get_runtime_dir() + "/helix_timelapse_thumb_" + companion;

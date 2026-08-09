@@ -100,11 +100,21 @@ class AmsBackendAce : public AmsSubscriptionBackend {
     // Filament Operations
     // ========================================================================
 
-    AmsError load_filament(int slot_index) override;
-    AmsError unload_filament(int slot_index) override;
-    AmsError select_slot(int slot_index) override;
-    AmsError change_tool(int tool_number) override;
+  protected:
+    // Gated by AmsSubscriptionBackend's NVI wrapper — these run only once the
+    // print-active check has passed.
+    AmsError do_load_filament(int slot_index) override;
+    AmsError do_unload_filament(int slot_index) override;
+    AmsError do_select_slot(int slot_index) override;
+    AmsError do_change_tool(int tool_number) override;
 
+    /// ACE has no "select without loading": do_select_slot() forwards to
+    /// do_load_filament(), so a select pushes filament through the hotend.
+    [[nodiscard]] bool select_slot_moves_toolhead() const override {
+        return true;
+    }
+
+  public:
     // ========================================================================
     // Recovery Operations
     // ========================================================================

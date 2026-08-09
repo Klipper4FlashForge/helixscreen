@@ -8,8 +8,8 @@
 #include "ui_toast_manager.h"
 #include "ui_update_queue.h"
 
-#include "lvgl/src/others/translation/lv_translation.h"
 #include "i_moonraker_api.h"
+#include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_error.h"
 #include "observer_factory.h"
 #include "printer_state.h"
@@ -30,7 +30,8 @@ constexpr uint32_t EXCLUDE_UNDO_WINDOW_MS = 5000;
 // PrintExcludeObjectManager Implementation
 // ============================================================================
 
-PrintExcludeObjectManager::PrintExcludeObjectManager(IMoonrakerAPI* api, PrinterState& printer_state,
+PrintExcludeObjectManager::PrintExcludeObjectManager(IMoonrakerAPI* api,
+                                                     PrinterState& printer_state,
                                                      lv_obj_t* gcode_viewer)
     : api_(api), printer_state_(printer_state), gcode_viewer_(gcode_viewer) {
     spdlog::debug("[PrintExcludeObjectManager] Constructed");
@@ -57,7 +58,8 @@ void PrintExcludeObjectManager::init() {
     // Subscribe to excluded objects changes from PrinterState
     excluded_objects_observer_ = helix::ui::observe_int_sync<PrintExcludeObjectManager>(
         printer_state_.get_excluded_objects_version_subject(), this,
-        [](PrintExcludeObjectManager* self, int) { self->on_excluded_objects_changed(); });
+        [](PrintExcludeObjectManager* self, int) { self->on_excluded_objects_changed(); },
+        printer_state_.get_subjects_lifetime());
 
     // Watchdog: if the print ends (cancel, complete, error, standby) while we still
     // hold optimistic visuals for unconfirmed exclusions, drop them. Guards against
@@ -66,7 +68,8 @@ void PrintExcludeObjectManager::init() {
     // cancels are usually deliberate and a toast would just be noise.
     print_state_observer_ = helix::ui::observe_int_sync<PrintExcludeObjectManager>(
         printer_state_.get_print_state_enum_subject(), this,
-        [](PrintExcludeObjectManager* self, int state) { self->on_print_state_changed(state); });
+        [](PrintExcludeObjectManager* self, int state) { self->on_print_state_changed(state); },
+        printer_state_.get_subjects_lifetime());
 
     // Register long-press callback on gcode viewer
     if (gcode_viewer_) {

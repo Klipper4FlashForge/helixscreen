@@ -157,11 +157,16 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
         return true;
     }
 
-    // Operations
-    AmsError load_filament(int slot_index) override;
-    AmsError unload_filament(int slot_index) override;
-    AmsError select_slot(int slot_index) override;
-    AmsError change_tool(int tool_number) override;
+  protected:
+    // Operations. Gated by AmsSubscriptionBackend's NVI wrapper.
+    // select_slot_moves_toolhead() stays false: CFS has no select at all
+    // (do_select_slot returns not_supported — it loads directly).
+    AmsError do_load_filament(int slot_index) override;
+    AmsError do_unload_filament(int slot_index) override;
+    AmsError do_select_slot(int slot_index) override;
+    AmsError do_change_tool(int tool_number) override;
+
+  public:
     AmsError reset() override;
     AmsError recover() override;
     AmsError cancel() override;
@@ -356,7 +361,9 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     /// UI told the user the load was idle.
     /// Marked virtual so test subclasses can capture the assembled load/swap/
     /// unload script (and the WITH/WITHOUT-material selection that produced it)
-    /// without a live Moonraker connection.
+    /// without a live Moonraker connection. Private -- test access to call the
+    /// real implementation directly goes through the ::CfsTestAccess friend
+    /// shim (tests/test_helpers/cfs_test_access.h), not a `using` declaration.
     virtual AmsError dispatch_action_script(std::string gcode);
 
     /// Undo the derived LOADED stamp, putting back whatever the last parse

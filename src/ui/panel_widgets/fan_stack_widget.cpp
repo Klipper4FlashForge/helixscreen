@@ -687,7 +687,8 @@ void FanStackWidget::setup_common_observers(std::function<void()> on_anim_change
                 return;
             self->animations_enabled_ = (enabled != 0);
             on_anim_changed();
-        });
+        },
+        DisplaySettingsManager::instance().get_subjects_lifetime());
 
     version_observer_ = helix::ui::observe_int_sync<FanStackWidget>(
         printer_state_.get_fans_version_subject(), this,
@@ -695,7 +696,8 @@ void FanStackWidget::setup_common_observers(std::function<void()> on_anim_change
             if (token.expired())
                 return;
             on_fans_version();
-        });
+        },
+        printer_state_.get_subjects_lifetime());
 }
 
 void FanStackWidget::update_label(lv_obj_t* label, int speed_pct) {

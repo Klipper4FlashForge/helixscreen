@@ -27,6 +27,8 @@ constexpr bool kInGrace = true;
 constexpr bool kAfterGrace = false;
 constexpr bool kWizardUp = true;
 constexpr bool kNoWizard = false;
+constexpr bool kModalUp = true;
+constexpr bool kNoModal = false;
 } // namespace
 
 TEST_CASE("Recovery events route to the unified dialog", "[moonraker][routing][1219]") {
@@ -59,6 +61,42 @@ TEST_CASE("Connection failure gets the Change-Address prompt, not a toast",
                                     kNoWizard);
     REQUIRE(d.route == MoonrakerEventRoute::ConnectionFailedModal);
     REQUIRE(std::string(d.title_tag) == "Connection Failed");
+}
+
+TEST_CASE("Connection failure degrades to a toast while a modal is open", "[moonraker][routing]") {
+    // AD5X bundle 865DXBQ7: the latched CONNECTION_FAILED fires ~60 s after
+    // startup, which on an unreachable printer is exactly when the user is in
+    // Settings > Network typing a WiFi password to fix it. The prompt was pushed
+    // at modal stack depth 2, over that keyboard, and the password had to be
+    // retyped from scratch. A toast carries the same information without taking
+    // the screen away.
+    auto d = decide_moonraker_event(MoonrakerEventType::CONNECTION_FAILED, kError, kAfterGrace,
+                                    kNoWizard, kModalUp);
+    REQUIRE(d.route == MoonrakerEventRoute::ErrorToast);
+    REQUIRE(std::string(d.title_tag) == "Connection Failed");
+
+    SECTION("and still gets the full prompt when nothing is open") {
+        auto clear = decide_moonraker_event(MoonrakerEventType::CONNECTION_FAILED, kError,
+                                            kAfterGrace, kNoWizard, kNoModal);
+        REQUIRE(clear.route == MoonrakerEventRoute::ConnectionFailedModal);
+    }
+
+    SECTION("an open modal does not suppress the event entirely") {
+        // Degrade, never drop: the connection state has to reach the user
+        // somehow, and this event fires once per session.
+        REQUIRE(d.route != MoonrakerEventRoute::Ignore);
+    }
+
+    SECTION("an open modal does not reroute the recovery dialogs") {
+        // Those are not "notifications" — a shut-down Klippy needs its dialog
+        // whatever else is on screen.
+        REQUIRE(decide_moonraker_event(MoonrakerEventType::KLIPPY_SHUTDOWN, kError, kAfterGrace,
+                                       kNoWizard, kModalUp)
+                    .route == MoonrakerEventRoute::RecoveryShutdown);
+        REQUIRE(decide_moonraker_event(MoonrakerEventType::KLIPPY_DISCONNECTED, kError, kAfterGrace,
+                                       kNoWizard, kModalUp)
+                    .route == MoonrakerEventRoute::RecoveryDisconnected);
+    }
 }
 
 TEST_CASE("Deferred discovery is suppressed before the error routing",

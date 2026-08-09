@@ -208,6 +208,31 @@ struct AmsError {
     [[nodiscard]] bool is_recoverable() const {
         return ams_result_is_recoverable(result);
     }
+
+    /**
+     * @brief Both user-facing halves flattened into one string.
+     *
+     * For boundaries that can only carry a single string — notification
+     * history rows, and ToolState::request_tool_change()'s
+     * `std::function<void(const std::string&)>` on_error. UI surfaces that can
+     * lay out two lines should use helix::ui::notify_ams_error() instead, which
+     * renders @c suggestion as a distinct, smaller line.
+     *
+     * Falls back to the result name when the backend populated neither field,
+     * so a caller can never end up showing an empty toast.
+     */
+    [[nodiscard]] std::string display_text() const {
+        if (user_msg.empty() && suggestion.empty()) {
+            return ams_result_to_string(result);
+        }
+        if (suggestion.empty()) {
+            return user_msg;
+        }
+        if (user_msg.empty()) {
+            return suggestion;
+        }
+        return user_msg + " - " + suggestion;
+    }
 };
 
 /**

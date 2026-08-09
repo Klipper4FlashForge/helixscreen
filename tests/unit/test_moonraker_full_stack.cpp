@@ -31,6 +31,7 @@
 #include "../../include/printer_hardware.h"
 #include "../../include/printer_state.h"
 #include "../../lvgl/lvgl.h"
+#include "../helix_test_fixture.h"
 #include "../mocks/mock_printer_state.h"
 #include "../ui_test_utils.h"
 
@@ -482,8 +483,8 @@ TEST_CASE_METHOD(FullStackTestFixture, "Full stack: PrinterHardware guessing",
 // Test Case 6: All Printer Types Integration
 // ============================================================================
 
-TEST_CASE("Full stack: All printer types work correctly",
-          "[connection][integration][all_printers]") {
+TEST_CASE_METHOD(HelixTestFixture, "Full stack: All printer types work correctly",
+                 "[connection][integration][all_printers]") {
     PrinterState state;
     state.init_subjects(false);
 
@@ -670,7 +671,8 @@ TEST_CASE_METHOD(FullStackTestFixture, "Full stack: State reset and cleanup",
 // Test Case 9: API Error Handling Integration
 // ============================================================================
 
-TEST_CASE("Full stack: API error callbacks work correctly", "[connection][integration][errors]") {
+TEST_CASE_METHOD(HelixTestFixture, "Full stack: API error callbacks work correctly",
+                 "[connection][integration][errors]") {
     PrinterState state;
     state.init_subjects(false);
 

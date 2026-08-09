@@ -97,6 +97,7 @@
   <translation tag="ACTIONS" zh="操作"/>
   <translation tag="ADXL" zh="ADXL"/>
   <translation tag="AFC" zh="AFC"/>
+  <translation tag="AFC Update Available" zh="AFC 有可用更新"/>
   <translation tag="AFC failure reset complete" zh="AFC故障重置完成"/>
   <translation tag="AFC failure reset failed" zh="AFC故障重置失败"/>
   <translation tag="AFC recovery complete" zh="AFC恢复完成"/>
@@ -290,8 +291,8 @@
   <translation tag="Bypass controlled by sensor" zh="旁通由传感器控制"/>
   <translation tag="Bypass disabled" zh="旁通已禁用"/>
   <translation tag="Bypass enabled" zh="旁通已启用"/>
-  <translation tag="Bypass failed: {}" zh="旁通失败: {}"/>
-  <translation tag="Bypass toggle failed: {}" zh="旁通切换失败: {}"/>
+  <translation tag="Bypass failed" zh="旁通失败"/>
+  <translation tag="Bypass toggle failed" zh="旁通切换失败"/>
   <translation tag="C" zh="腔"/>
   <translation tag="CALIBRATION" zh="校准"/>
   <translation tag="CAPABILITIES" zh="功能"/>
@@ -376,6 +377,8 @@
   <translation tag="Change LED color based on printer state" zh="根据打印机状态更改 LED 颜色"/>
   <translation tag="Change PIN" zh="更改 PIN"/>
   <translation tag="Change Printer Host" zh="更改打印机主机"/>
+  <translation tag="Change Tool" zh="切换工具"/>
+  <translation tag="Change Tool While Paused" zh="暂停时切换工具"/>
   <translation tag="Changes apply immediately. Adjust during print for tuning." zh="更改立即生效。可在打印时调整进行调优。"/>
   <translation tag="Changes are temporary and reset on printer reboot" zh="更改是临时的，打印机重启后会重置"/>
   <translation tag="Changes can be reversed anytime using the Macro Viewer." zh="可随时使用 Macro Viewer 恢复更改。"/>
@@ -383,9 +386,9 @@
   <translation tag="Check filament" zh="检查耗材"/>
   <translation tag="Check for Updates" zh="检查更新"/>
   <translation tag="Check slot" zh="检查料仓"/>
-  <translation tag="Check slot failed: {}" zh="检查料仓失败: {}"/>
+  <translation tag="Check slot failed" zh="检查料仓失败"/>
   <translation tag="Check slots" zh="检查料仓"/>
-  <translation tag="Check slots failed: {}" zh="检查料仓失败: {}"/>
+  <translation tag="Check slots failed" zh="检查料仓失败"/>
   <translation tag="Check the filament path and try again." zh="检查耗材路径并重试。"/>
   <translation tag="Check your heater&apos;s rating (typically 40-60W for hotends)" zh="检查加热器功率（热端通常为 40-60W）"/>
   <translation tag="Checking" zh="检查中"/>
@@ -415,7 +418,7 @@
   <translation tag="Clear All Events" zh="清除所有事件"/>
   <translation tag="Clear Console?" zh="清空控制台？"/>
   <translation tag="Clear Spool" zh="移除料盘"/>
-  <translation tag="Clear failed: {}" zh="清除失败: {}"/>
+  <translation tag="Clear failed" zh="清除失败"/>
   <translation tag="Cleared from settings — system unpair failed, may need OS Bluetooth" zh="已从设置中清除；系统解除配对失败，可能需使用系统蓝牙设置"/>
   <translation tag="Clipboard unavailable - use SSH" zh="剪贴板不可用 - 请使用 SSH"/>
   <translation tag="Clog Detection" zh="堵料检测"/>
@@ -659,7 +662,7 @@
   <translation tag="Eject" zh="弹出"/>
   <translation tag="Eject Distance" zh="弹出距离"/>
   <translation tag="Eject Velocity" zh="弹出速度"/>
-  <translation tag="Eject failed: {}" zh="弹出失败: {}"/>
+  <translation tag="Eject failed" zh="弹出失败"/>
   <translation tag="Eject needs [force_move] enabled in printer config" zh="弹出需要在打印机配置中启用 [force_move]"/>
   <translation tag="Ejecting" zh="弹出中"/>
   <translation tag="Elegoo Centauri Carbon" zh="Elegoo Centauri Carbon"/>
@@ -671,7 +674,7 @@
   <translation tag="Empty" zh="空"/>
   <translation tag="Empty slots disable the associated functionality" zh="空料仓将禁用相关功能"/>
   <translation tag="Enable" zh="启用"/>
-  <translation tag="Enable Bypass Controls"/>
+  <translation tag="Enable Bypass Controls" zh="启用旁路控制"/>
   <translation tag="Enable Monitoring" zh="启用监控"/>
   <translation tag="Enable Retraction" zh="启用回抽"/>
   <translation tag="Enable Timelapse" zh="启用延时摄影"/>
@@ -876,7 +879,6 @@
   <translation tag="Filament load failed: {}" zh="耗材加载失败: {}"/>
   <translation tag="Filament loaded" zh="耗材已加载"/>
   <translation tag="Filament operation failed" zh="耗材操作失败"/>
-  <translation tag="Filament operation failed: {}" zh="耗材操作失败: {}"/>
   <translation tag="Filament operation timed out" zh="耗材操作超时"/>
   <translation tag="Filament runout" zh="耗材用尽"/>
   <translation tag="Filament runout and motion detection sensors" zh="耗材用尽和运动检测传感器"/>
@@ -895,7 +897,7 @@
   <translation tag="Finish" zh="完成"/>
   <translation tag="Finishing up..." zh="即将完成..."/>
   <translation tag="Firmware Restart" zh="固件重启"/>
-  <translation tag="Firmware reports no bypass. Enable if you feed filament straight to the extruder"/>
+  <translation tag="Firmware reports no bypass. Enable if you feed filament straight to the extruder" zh="固件报告未配置旁路。如果您将耗材直接送入挤出机，请启用此选项"/>
   <translation tag="Firmware restarting..." zh="固件重启中..."/>
   <translation tag="FlashForge Adventurer 5M" zh="FlashForge Adventurer 5M"/>
   <translation tag="FlashForge Adventurer 5X" zh="FlashForge Adventurer 5X"/>
@@ -989,7 +991,9 @@
   <translation tag="Hold anywhere to cancel" zh="长按任意位置取消"/>
   <translation tag="Holding nozzle at {}°C to purge previous filament." zh="将喷嘴保持在 {}°C 以清洗之前的耗材。"/>
   <translation tag="Home" zh="归位"/>
+  <translation tag="Home &amp; Continue" zh="归位并继续"/>
   <translation tag="Home failed" zh="归位失败"/>
+  <translation tag="Home printer first?" zh="先将打印机归位？"/>
   <translation tag="Home selector" zh="选择器归位"/>
   <translation tag="Homing AFC system..." zh="AFC系统归位中..."/>
   <translation tag="Homing X..." zh="正在归位 X..."/>
@@ -1188,7 +1192,7 @@
   <translation tag="MCU: " zh="MCU: "/>
   <translation tag="MDI Icons" zh="MDI 图标"/>
   <translation tag="MISSING CONFIGURED" zh="缺少配置"/>
-  <translation tag="MMU command failed: {}" zh="MMU 命令失败: {}"/>
+  <translation tag="MMU command failed" zh="MMU 命令失败"/>
   <translation tag="MPC" zh="MPC"/>
   <translation tag="Machine Limits" zh="机器限制"/>
   <translation tag="Macro" zh="宏"/>
@@ -1285,7 +1289,7 @@
   <translation tag="Must home axes first" zh="请先归位"/>
   <translation tag="My Custom Theme" zh="我的自定义主题"/>
   <translation tag="My Panel" zh="我的面板"/>
-  <translation tag="My Printer"/>
+  <translation tag="My Printer" zh="我的打印机"/>
   <translation tag="NEWLY DISCOVERED" zh="新发现"/>
   <translation tag="Name" zh="名称"/>
   <translation tag="Name (optional)" zh="名称（可选）"/>
@@ -1740,7 +1744,7 @@
   <translation tag="Reset Home Screen?" zh="重置主屏幕？"/>
   <translation tag="Reset Speed &amp; Flow to 100%" zh="重置速度和流量为 100%"/>
   <translation tag="Reset all settings and restart wizard" zh="重置所有设置并重新启动向导"/>
-  <translation tag="Reset failed: {}" zh="重置失败: {}"/>
+  <translation tag="Reset failed" zh="重置失败"/>
   <translation tag="Reset to Default" zh="重置为默认"/>
   <translation tag="Reset to defaults" zh="重置为默认值"/>
   <translation tag="Reset to original values" zh="重置为原始值"/>
@@ -1770,7 +1774,7 @@
   <translation tag="Resume Print" zh="恢复打印"/>
   <translation tag="Resume interrupted print?" zh="恢复中断的打印？"/>
   <translation tag="Resume macro not configured" zh="恢复宏未配置"/>
-  <translation tag="Resume preparation failed: {}" zh="恢复准备失败：{}"/>
+  <translation tag="Resume preparation failed" zh="恢复准备失败"/>
   <translation tag="Resuming..." zh="恢复中..."/>
   <translation tag="Retract" zh="回抽"/>
   <translation tag="Retract Distance" zh="回抽距离"/>
@@ -1887,7 +1891,7 @@
   <translation tag="Select material to begin" zh="选择材料以开始"/>
   <translation tag="Select sensor" zh="选择传感器"/>
   <translation tag="Select slot" zh="选择料仓"/>
-  <translation tag="Select slot failed: {}" zh="选择料仓失败: {}"/>
+  <translation tag="Select slot failed" zh="选择料仓失败"/>
   <translation tag="Select the heaters Klipper uses for your bed and hotend" zh="选择 Klipper 用于热床和热端的加热器"/>
   <translation tag="Select which devices the home screen power button controls" zh="选择主页电源按钮控制的设备"/>
   <translation tag="Select which sensor triggers pause on filament runout" zh="选择耗材用尽时触发暂停的传感器"/>
@@ -2122,7 +2126,9 @@
   <translation tag="The filament system reported an error" zh="耗材系统报告错误"/>
   <translation tag="The heater will cycle on and off several times." zh="加热器将多次开关循环。"/>
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." zh="电机振动皮带的同时,频闪灯以相同频率闪烁。当皮带看起来静止不动(冻结)时,即找到了共振频率。\n\n使用频率按钮扫描各数值,直到皮带看起来静止,然后锁定读数。"/>
+  <translation tag="The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes." zh="打印已暂停。现在切换工具会移动工具头并更换喷嘴处的耗材。切换完成后请恢复打印。"/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" zh="打印机已停止此打印且无法恢复。从头重新开始？"/>
+  <translation tag="The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear." zh="打印机尚未归位。继续将对所有轴执行归位操作，移动工具头。请确保热床上没有障碍物。"/>
   <translation tag="The printer lost power during a print. It can resume where it left off." zh="打印机在打印过程中断电。可以从中断处继续。"/>
   <translation tag="The printer lost power during a print. The resumed layer may not line up exactly." zh="打印机在打印过程中断电。恢复后的层可能无法完全对准。"/>
   <translation tag="The printer lost power while printing {}. Resume where it left off?" zh="打印机在打印 {} 时断电。是否从中断处继续？"/>
@@ -2194,6 +2200,7 @@
   <translation tag="Tool" zh="工具"/>
   <translation tag="Tool Changer" zh="换刀器"/>
   <translation tag="Tool change failed: {}" zh="工具切换失败: {}"/>
+  <translation tag="Tool mapping failed" zh="工具映射失败"/>
   <translation tag="Tool swap" zh="工具切换"/>
   <translation tag="Tool {} → Lane {}: no filament loaded." zh="工具 {} → 料仓 {}: 未加载耗材。"/>
   <translation tag="Toolhead" zh="工具头"/>
@@ -2252,7 +2259,6 @@
   <translation tag="Unknown error" zh="未知错误"/>
   <translation tag="Unload" zh="卸载"/>
   <translation tag="Unload Filament" zh="卸载耗材"/>
-  <translation tag="Unload failed: {}" zh="卸载失败: {}"/>
   <translation tag="Unload macro not configured" zh="卸载宏未配置"/>
   <translation tag="Unload may still be running — response timed out" zh="卸载可能仍在运行 — 响应超时"/>
   <translation tag="Unloading" zh="卸载中"/>
@@ -2275,6 +2281,7 @@
   <translation tag="Update your security PIN" zh="更新您的安全 PIN"/>
   <translation tag="Updates aren&apos;t available on this installation." zh="此安装版本无法使用更新。"/>
   <translation tag="Updating Configuration..." zh="正在更新配置..."/>
+  <translation tag="Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools." zh="升级至 AFC 1.2.0 或更高版本，以使用耗材名称和多色料盘功能。"/>
   <translation tag="Upload" zh="上传"/>
   <translation tag="Upload Debug Bundle" zh="上传调试捆绑包"/>
   <translation tag="Upload Failed" zh="上传失败"/>

@@ -19,6 +19,7 @@
  * - Status enum transitions
  */
 
+#include "../helix_test_fixture.h"
 #include "../test_helpers/live_thread_count.h"
 #include "../test_helpers/update_queue_test_access.h"
 #include "config.h"
@@ -793,7 +794,8 @@ TEST_CASE("UpdateChecker download status enum values", "[update_checker]") {
     REQUIRE(static_cast<int>(UpdateChecker::DownloadStatus::Restarting) == 7);
 }
 
-TEST_CASE("UpdateChecker report_download_status transitions to Restarting", "[update_checker]") {
+TEST_CASE_METHOD(HelixTestFixture, "UpdateChecker report_download_status transitions to Restarting",
+                 "[update_checker]") {
     auto& checker = UpdateChecker::instance();
     checker.init();
 
@@ -996,7 +998,8 @@ TEST_CASE("UpdateChecker get_platform_asset_name format", "[update_checker]") {
     checker.shutdown();
 }
 
-TEST_CASE("UpdateChecker download requires cached update", "[update_checker]") {
+TEST_CASE_METHOD(HelixTestFixture, "UpdateChecker download requires cached update",
+                 "[update_checker]") {
     auto& checker = UpdateChecker::instance();
     checker.init();
     checker.clear_cache();

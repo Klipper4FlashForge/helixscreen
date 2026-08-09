@@ -11,6 +11,7 @@
 #include "action_prompt_manager.h"
 #include "afc_defaults.h"
 #include "ams_bypass_policy.h"
+#include "config.h"
 #include "i_moonraker_api.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "printer_discovery.h"
@@ -1125,6 +1126,32 @@ void AmsBackendAfc::handle_status_update(const nlohmann::json& notification) {
             state_changed = true;
         }
 
+        // Learn which prefix this firmware publishes lanes under, then fire the
+        // one-shot feature probe. The probe CANNOT read a status frame: the
+        // subscription is field-scoped (afc_stepper_fields in
+        // moonraker_discovery_sequence.cpp) and does not request
+        // filament_name/multi_color_hexes/initial_weight, so those keys never
+        // arrive here on any AFC version. Reading a frame reported "legacy" on a
+        // confirmed v1.2.0 BoxTurtle. Only an explicit unscoped
+        // printer.objects.query returns the whole lane object.
+        if (!feature_level_checked_ && lane_object_prefix_.empty()) {
+            for (auto it = params.begin(); it != params.end(); ++it) {
+                const std::string& k = it.key();
+                if (!it.value().is_object()) {
+                    continue;
+                }
+                if (k.rfind("AFC_stepper ", 0) == 0) {
+                    lane_object_prefix_ = "AFC_stepper ";
+                } else if (k.rfind("AFC_lane ", 0) == 0) {
+                    lane_object_prefix_ = "AFC_lane ";
+                } else {
+                    continue;
+                }
+                probe_feature_level(k);
+                break;
+            }
+        }
+
         // Parse AFC_stepper lane objects for sensor states
         // Keys like "AFC_stepper lane1", "AFC_stepper lane2", etc.
         bool lanes_updated = false;
@@ -1503,6 +1530,37 @@ uint64_t AmsBackendAfc::begin_dispatch_locked(AmsAction action) {
     spdlog::debug("[AMS AFC] Dispatch #{}: action set optimistically to {}", generation,
                   ams_action_to_string(action));
     return generation;
+}
+
+void AmsBackendAfc::on_home_confirmation_declined() {
+    // The confirmation modal is exclusive -- nothing else can begin a new
+    // dispatch while it's up -- so the pending dispatch is always the one
+    // that just prompted; that exclusivity is what makes this call correct,
+    // not the generation compare inside abandon_dispatch(). abandon_dispatch()
+    // takes an explicit generation to share its guard with dispatch_operation()'s
+    // own `if (!result)` failure path, which captures a real, independent
+    // value before this exclusivity window even opens. Here there is no such
+    // independent capture: the value handed in is dispatch_generation_ itself,
+    // so the compare is trivially true and abandon_dispatch() always proceeds
+    // when a dispatch is pending. Read it under mutex_ rather than as a bare
+    // member access (every write to dispatch_generation_ is mutex_-guarded,
+    // in begin_dispatch_locked()) so this stays race-free even though nothing
+    // can invalidate it today. abandon_dispatch() clears pending_dispatch_
+    // action_/operation_detail and resets action_start_time_ in addition to
+    // the action -> IDLE reset the base class's default performs; skip the
+    // base call entirely here since abandon_dispatch() already emits
+    // EVENT_STATE_CHANGED.
+    //
+    // If this hook ever gains a non-modal caller, this guard alone will not
+    // protect a genuinely newer dispatch from being abandoned -- that would
+    // need the generation captured at prompt time and threaded through here
+    // instead of re-read live.
+    uint64_t generation;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        generation = dispatch_generation_;
+    }
+    abandon_dispatch(generation);
 }
 
 void AmsBackendAfc::abandon_dispatch(uint64_t generation) {
@@ -3047,6 +3105,93 @@ bool AmsBackendAfc::apply_afc_version_response(const nlohmann::json& response) {
     return true;
 }
 
+bool AmsBackendAfc::status_has_modern_fields(const nlohmann::json& lane_status) {
+    return lane_status.contains("filament_name") || lane_status.contains("multi_color_hexes") ||
+           lane_status.contains("initial_weight");
+}
+
+void AmsBackendAfc::probe_feature_level(const std::string& lane_object) {
+    // An explicit, UNSCOPED query — no "fields" key, so Moonraker returns the
+    // whole object. This is the only way to see the v1.2.0 keys: the standing
+    // subscription enumerates its fields and does not ask for them.
+    if (!client_ || feature_level_checked_) {
+        return;
+    }
+    nlohmann::json params = {{"objects", {{lane_object, nlohmann::json()}}}};
+
+    auto token = lifetime_.token();
+    client_->send_jsonrpc(
+        "printer.objects.query", params,
+        [this, token, lane_object](const nlohmann::json& response) {
+            token.defer("AmsBackendAfc::probe_feature_level", [this, response, lane_object]() {
+                const auto* result = response.contains("result") ? &response["result"] : nullptr;
+                if (!result || !result->contains("status") ||
+                    !(*result)["status"].contains(lane_object)) {
+                    spdlog::debug("[AMS AFC] Feature probe: no status for '{}'", lane_object);
+                    return;
+                }
+                std::lock_guard<std::mutex> lock(mutex_);
+                check_afc_feature_level((*result)["status"][lane_object]);
+            });
+        },
+        [](const MoonrakerError& err) {
+            spdlog::debug("[AMS AFC] Feature probe query failed: {}", err.message);
+        });
+}
+
+void AmsBackendAfc::check_afc_feature_level(const nlohmann::json& lane_status) {
+    // Runs once, on the COMPLETE object returned by probe_feature_level()'s
+    // explicit query — never on a status frame. See status_has_modern_fields().
+    if (feature_level_checked_) {
+        return;
+    }
+    feature_level_checked_ = true;
+
+    const bool modern = status_has_modern_fields(lane_status);
+
+    // Side effects only for a backend actually wired to a printer. An unwired
+    // one is a harness fixture replaying a synthetic payload — most such
+    // payloads carry none of the v1.2.0 keys and so read as legacy, which would
+    // mean a config write and an upgrade toast per fixture (126 of them across
+    // the [ams] suite) advising nobody to upgrade nothing.
+    if (!client_) {
+        spdlog::debug("[AMS AFC] Feature level probe: no client, advisory skipped");
+        return;
+    }
+
+    spdlog::info("[AMS AFC] Feature level: AFC {} the v1.2.0 lane fields",
+                 modern ? "publishes" : "does NOT publish");
+
+    auto* config = Config::get_instance();
+    if (!config) {
+        return;
+    }
+    constexpr const char* kNoticeShownKey = "/ams/afc_upgrade_notice_shown";
+
+    if (modern) {
+        // Re-arm, so a downgrade is reported again rather than silently accepted.
+        if (config->get<bool>(kNoticeShownKey, false)) {
+            config->set<bool>(kNoticeShownKey, false);
+            config->save();
+        }
+        return;
+    }
+
+    if (config->get<bool>(kNoticeShownKey, false)) {
+        return; // Already told them once; do not nag on every boot.
+    }
+    config->set<bool>(kNoticeShownKey, true);
+    config->save();
+
+    // Advisory, not an error — nothing is broken, some detail is just missing.
+    // Names the version for the user's benefit even though the trigger is
+    // capability: "1.2.0" is actionable, "your payload lacks filament_name" is not.
+    ui_notification_info_with_action(
+        lv_tr("AFC Update Available"),
+        lv_tr("Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools."),
+        "afc_message");
+}
+
 bool AmsBackendAfc::apply_lane_data_response(const nlohmann::json& response) {
     const nlohmann::json& value = database_item_value(response);
     if (!value.is_object())
@@ -3990,15 +4135,10 @@ AmsError AmsBackendAfc::execute_gcode_notify(const std::string& gcode,
     return AmsErrorHelper::success();
 }
 
-AmsError AmsBackendAfc::load_filament(int slot_index) {
+AmsError AmsBackendAfc::do_load_filament(int slot_index) {
     std::string lane_name;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-
-        AmsError precondition = check_preconditions(true);
-        if (!precondition) {
-            return precondition;
-        }
 
         AmsError gate_valid = validate_slot_index(slot_index);
         if (!gate_valid) {
@@ -4050,15 +4190,10 @@ AmsError AmsBackendAfc::load_filament(int slot_index) {
     return dispatch_operation(cmd.str(), AmsAction::LOADING);
 }
 
-AmsError AmsBackendAfc::unload_filament(int slot_index) {
+AmsError AmsBackendAfc::do_unload_filament(int slot_index) {
     std::string lane_name;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-
-        AmsError precondition = check_preconditions(true);
-        if (!precondition) {
-            return precondition;
-        }
 
         if (!system_info_.filament_loaded) {
             return AmsError(AmsResult::WRONG_STATE, "No filament loaded", "No filament to unload",
@@ -4087,15 +4222,10 @@ AmsError AmsBackendAfc::unload_filament(int slot_index) {
     return dispatch_operation(std::move(cmd), AmsAction::UNLOADING);
 }
 
-AmsError AmsBackendAfc::select_slot(int slot_index) {
+AmsError AmsBackendAfc::do_select_slot(int slot_index) {
     std::string lane_name;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-
-        AmsError precondition = check_preconditions();
-        if (!precondition) {
-            return precondition;
-        }
 
         AmsError gate_valid = validate_slot_index(slot_index);
         if (!gate_valid) {
@@ -4114,14 +4244,9 @@ AmsError AmsBackendAfc::select_slot(int slot_index) {
     return AmsErrorHelper::not_supported("AFC does not support select without load");
 }
 
-AmsError AmsBackendAfc::change_tool(int tool_number) {
+AmsError AmsBackendAfc::do_change_tool(int tool_number) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
-
-        AmsError precondition = check_preconditions(true);
-        if (!precondition) {
-            return precondition;
-        }
 
         if (tool_number < 0 || tool_number >= slots_.slot_count()) {
             return AmsError(AmsResult::INVALID_TOOL,

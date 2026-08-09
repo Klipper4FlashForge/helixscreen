@@ -97,6 +97,7 @@
   <translation tag="ACTIONS" es="ACCIONES"/>
   <translation tag="ADXL" es="ADXL"/>
   <translation tag="AFC" es="AFC"/>
+  <translation tag="AFC Update Available" es="Actualización de AFC Disponible"/>
   <translation tag="AFC failure reset complete" es="Reinicio de fallo AFC completado"/>
   <translation tag="AFC failure reset failed" es="Error al reiniciar fallo AFC"/>
   <translation tag="AFC recovery complete" es="Recuperación AFC completada"/>
@@ -290,8 +291,8 @@
   <translation tag="Bypass controlled by sensor" es="Bypass controlado por sensor"/>
   <translation tag="Bypass disabled" es="Bypass desactivado"/>
   <translation tag="Bypass enabled" es="Bypass activado"/>
-  <translation tag="Bypass failed: {}" es="Error en bypass: {}"/>
-  <translation tag="Bypass toggle failed: {}" es="Error al alternar bypass: {}"/>
+  <translation tag="Bypass failed" es="Error en bypass"/>
+  <translation tag="Bypass toggle failed" es="Error al alternar bypass"/>
   <translation tag="C" es="C"/>
   <translation tag="CALIBRATION" es="CALIBRACIÓN"/>
   <translation tag="CAPABILITIES" es="CAPACIDADES"/>
@@ -376,6 +377,8 @@
   <translation tag="Change LED color based on printer state" es="Cambiar color de LED según el estado de la impresora"/>
   <translation tag="Change PIN" es="Cambiar PIN"/>
   <translation tag="Change Printer Host" es="Cambiar host de impresora"/>
+  <translation tag="Change Tool" es="Cambiar Herramienta"/>
+  <translation tag="Change Tool While Paused" es="Cambiar Herramienta en Pausa"/>
   <translation tag="Changes apply immediately. Adjust during print for tuning." es="Los cambios se aplican inmediatamente. Ajuste durante la impresión para afinar."/>
   <translation tag="Changes are temporary and reset on printer reboot" es="Los cambios son temporales y se reinician al reiniciar la impresora"/>
   <translation tag="Changes can be reversed anytime using the Macro Viewer." es="Los cambios se pueden revertir en cualquier momento usando el Macro Viewer."/>
@@ -383,9 +386,9 @@
   <translation tag="Check filament" es="Comprobar filamento"/>
   <translation tag="Check for Updates" es="Buscar actualizaciones"/>
   <translation tag="Check slot" es="Comprobar ranura"/>
-  <translation tag="Check slot failed: {}" es="Error al comprobar ranura: {}"/>
+  <translation tag="Check slot failed" es="Error al comprobar ranura"/>
   <translation tag="Check slots" es="Comprobar ranuras"/>
-  <translation tag="Check slots failed: {}" es="Error al comprobar ranuras: {}"/>
+  <translation tag="Check slots failed" es="Error al comprobar ranuras"/>
   <translation tag="Check the filament path and try again." es="Verifique la ruta del filamento e intente de nuevo."/>
   <translation tag="Check your heater&apos;s rating (typically 40-60W for hotends)" es="Consulte la potencia de su calentador (normalmente 40-60W para hotends)"/>
   <translation tag="Checking" es="Comprobando"/>
@@ -415,7 +418,7 @@
   <translation tag="Clear All Events" es="Borrar Todos los Eventos"/>
   <translation tag="Clear Console?" es="¿Limpiar Consola?"/>
   <translation tag="Clear Spool" es="Quitar bobina"/>
-  <translation tag="Clear failed: {}" es="Error al limpiar: {}"/>
+  <translation tag="Clear failed" es="Error al limpiar"/>
   <translation tag="Cleared from settings — system unpair failed, may need OS Bluetooth" es="Borrado de los ajustes; falló el desemparejamiento del sistema, puede que necesite el Bluetooth del SO"/>
   <translation tag="Clipboard unavailable - use SSH" es="Portapapeles no disponible - use SSH"/>
   <translation tag="Clog Detection" es="Detección de obstrucción"/>
@@ -659,7 +662,7 @@
   <translation tag="Eject" es="Expulsar"/>
   <translation tag="Eject Distance" es="Distancia de expulsión"/>
   <translation tag="Eject Velocity" es="Velocidad de expulsión"/>
-  <translation tag="Eject failed: {}" es="Error al expulsar: {}"/>
+  <translation tag="Eject failed" es="Error al expulsar"/>
   <translation tag="Eject needs [force_move] enabled in printer config" es="La expulsión requiere [force_move] habilitado en la configuración de la impresora"/>
   <translation tag="Ejecting" es="Expulsando"/>
   <translation tag="Elegoo Centauri Carbon" es="Elegoo Centauri Carbon"/>
@@ -671,7 +674,7 @@
   <translation tag="Empty" es="Vacío"/>
   <translation tag="Empty slots disable the associated functionality" es="Las ranuras vacías desactivan la funcionalidad asociada"/>
   <translation tag="Enable" es="Activar"/>
-  <translation tag="Enable Bypass Controls"/>
+  <translation tag="Enable Bypass Controls" es="Activar Controles de Bypass"/>
   <translation tag="Enable Monitoring" es="Activar Monitoreo"/>
   <translation tag="Enable Retraction" es="Activar Retracción"/>
   <translation tag="Enable Timelapse" es="Activar Timelapse"/>
@@ -876,7 +879,6 @@
   <translation tag="Filament load failed: {}" es="Error al cargar filamento: {}"/>
   <translation tag="Filament loaded" es="Filamento cargado"/>
   <translation tag="Filament operation failed" es="Falló la operación de filamento"/>
-  <translation tag="Filament operation failed: {}" es="Falló la operación de filamento: {}"/>
   <translation tag="Filament operation timed out" es="Operación de filamento — tiempo de espera agotado"/>
   <translation tag="Filament runout" es="Filamento agotado"/>
   <translation tag="Filament runout and motion detection sensors" es="Sensores de detección de agotamiento y movimiento de filamento"/>
@@ -895,7 +897,7 @@
   <translation tag="Finish" es="Finalizar"/>
   <translation tag="Finishing up..." es="Finalizando..."/>
   <translation tag="Firmware Restart" es="Reinicio de Firmware"/>
-  <translation tag="Firmware reports no bypass. Enable if you feed filament straight to the extruder"/>
+  <translation tag="Firmware reports no bypass. Enable if you feed filament straight to the extruder" es="El firmware no reporta bypass. Actívelo si alimenta el filamento directamente al extrusor."/>
   <translation tag="Firmware restarting..." es="Reiniciando firmware..."/>
   <translation tag="FlashForge Adventurer 5M" es="FlashForge Adventurer 5M"/>
   <translation tag="FlashForge Adventurer 5X" es="FlashForge Adventurer 5X"/>
@@ -989,7 +991,9 @@
   <translation tag="Hold anywhere to cancel" es="Mantén pulsado en cualquier lugar para cancelar"/>
   <translation tag="Holding nozzle at {}°C to purge previous filament." es="Manteniendo la boquilla a {}°C para purgar el filamento anterior."/>
   <translation tag="Home" es="Inicio"/>
+  <translation tag="Home &amp; Continue" es="Referenciar y continuar"/>
   <translation tag="Home failed" es="Error en referencia"/>
+  <translation tag="Home printer first?" es="¿Referenciar la impresora primero?"/>
   <translation tag="Home selector" es="Referenciar selector"/>
   <translation tag="Homing AFC system..." es="Referenciando sistema AFC..."/>
   <translation tag="Homing X..." es="Posicionando X..."/>
@@ -1188,7 +1192,7 @@
   <translation tag="MCU: " es="MCU: "/>
   <translation tag="MDI Icons" es="Iconos MDI"/>
   <translation tag="MISSING CONFIGURED" es="CONFIGURADO FALTANTE"/>
-  <translation tag="MMU command failed: {}" es="Error en comando MMU: {}"/>
+  <translation tag="MMU command failed" es="Error en comando MMU"/>
   <translation tag="MPC" es="MPC"/>
   <translation tag="Machine Limits" es="Límites de la Máquina"/>
   <translation tag="Macro" es="Macro"/>
@@ -1285,7 +1289,7 @@
   <translation tag="Must home axes first" es="Debe posicionar los ejes primero"/>
   <translation tag="My Custom Theme" es="Mi Tema Personalizado"/>
   <translation tag="My Panel" es="Mi Panel"/>
-  <translation tag="My Printer"/>
+  <translation tag="My Printer" es="Mi Impresora"/>
   <translation tag="NEWLY DISCOVERED" es="RECIÉN DESCUBIERTO"/>
   <translation tag="Name" es="Nombre"/>
   <translation tag="Name (optional)" es="Nombre (opcional)"/>
@@ -1740,7 +1744,7 @@
   <translation tag="Reset Home Screen?" es="¿Restablecer pantalla de inicio?"/>
   <translation tag="Reset Speed &amp; Flow to 100%" es="Restablecer Velocidad y Flujo a 100%"/>
   <translation tag="Reset all settings and restart wizard" es="Restablecer todos los ajustes y reiniciar asistente"/>
-  <translation tag="Reset failed: {}" es="Error al restablecer: {}"/>
+  <translation tag="Reset failed" es="Error al restablecer"/>
   <translation tag="Reset to Default" es="Restablecer valores predeterminados"/>
   <translation tag="Reset to defaults" es="Restablecer valores predeterminados"/>
   <translation tag="Reset to original values" es="Restaurar valores originales"/>
@@ -1770,7 +1774,7 @@
   <translation tag="Resume Print" es="Reanudar Impresión"/>
   <translation tag="Resume interrupted print?" es="¿Reanudar impresión interrumpida?"/>
   <translation tag="Resume macro not configured" es="Macro de reanudación no configurado"/>
-  <translation tag="Resume preparation failed: {}" es="La preparación para reanudar falló: {}"/>
+  <translation tag="Resume preparation failed" es="La preparación para reanudar falló"/>
   <translation tag="Resuming..." es="Reanudando..."/>
   <translation tag="Retract" es="Retraer"/>
   <translation tag="Retract Distance" es="Distancia de Retracción"/>
@@ -1887,7 +1891,7 @@
   <translation tag="Select material to begin" es="Selecciona un material para empezar"/>
   <translation tag="Select sensor" es="Seleccionar sensor"/>
   <translation tag="Select slot" es="Seleccionar ranura"/>
-  <translation tag="Select slot failed: {}" es="Error al seleccionar ranura: {}"/>
+  <translation tag="Select slot failed" es="Error al seleccionar ranura"/>
   <translation tag="Select the heaters Klipper uses for your bed and hotend" es="Selecciona los calentadores que Klipper usa para tu cama y hotend"/>
   <translation tag="Select which devices the home screen power button controls" es="Seleccione qué dispositivos controla el botón de encendido"/>
   <translation tag="Select which sensor triggers pause on filament runout" es="Selecciona qué sensor activa la pausa al agotarse el filamento"/>
@@ -2122,7 +2126,9 @@
   <translation tag="The filament system reported an error" es="El sistema de filamento informó un error"/>
   <translation tag="The heater will cycle on and off several times." es="El calentador se encenderá y apagará varias veces."/>
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." es="El motor hace vibrar la correa mientras una luz estroboscópica parpadea a la misma frecuencia. Cuando la correa parece quedarse quieta (congelada), has encontrado la frecuencia de resonancia.\n\nUsa los botones de frecuencia para recorrer los valores hasta que la correa parezca estar inmóvil, luego bloquea la lectura."/>
+  <translation tag="The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes." es="La impresión está pausada. Cambiar de herramienta ahora mueve el cabezal y cambia el filamento en la boquilla. Reanude la impresión una vez que el cambio termine."/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" es="La impresora detuvo esta impresión y no puede reanudarla. ¿Reiniciar desde el principio?"/>
+  <translation tag="The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear." es="La impresora no está referenciada. Si continúa, se referenciarán todos los ejes y el cabezal se moverá. Asegúrese de que la cama esté despejada."/>
   <translation tag="The printer lost power during a print. It can resume where it left off." es="La impresora perdió corriente durante una impresión. Puede reanudar donde se quedó."/>
   <translation tag="The printer lost power during a print. The resumed layer may not line up exactly." es="La impresora perdió corriente durante una impresión. La capa reanudada puede no alinearse con exactitud."/>
   <translation tag="The printer lost power while printing {}. Resume where it left off?" es="La impresora perdió corriente mientras imprimía {}. ¿Reanudar donde se quedó?"/>
@@ -2194,6 +2200,7 @@
   <translation tag="Tool" es="Herramienta"/>
   <translation tag="Tool Changer" es="Cambiador de Herramientas"/>
   <translation tag="Tool change failed: {}" es="Error al cambiar herramienta: {}"/>
+  <translation tag="Tool mapping failed" es="Error de mapeo de herramientas"/>
   <translation tag="Tool swap" es="Cambio de herramienta"/>
   <translation tag="Tool {} → Lane {}: no filament loaded." es="Herramienta {} → Carril {}: no hay filamento cargado."/>
   <translation tag="Toolhead" es="Cabezal"/>
@@ -2252,7 +2259,6 @@
   <translation tag="Unknown error" es="Error desconocido"/>
   <translation tag="Unload" es="Descargar"/>
   <translation tag="Unload Filament" es="Descargar Filamento"/>
-  <translation tag="Unload failed: {}" es="Error al descargar: {}"/>
   <translation tag="Unload macro not configured" es="Macro de descarga no configurado"/>
   <translation tag="Unload may still be running — response timed out" es="La descarga puede seguir en curso — tiempo de espera agotado"/>
   <translation tag="Unloading" es="Descargando"/>
@@ -2275,6 +2281,7 @@
   <translation tag="Update your security PIN" es="Actualice su PIN de seguridad"/>
   <translation tag="Updates aren&apos;t available on this installation." es="Las actualizaciones no están disponibles en esta instalación."/>
   <translation tag="Updating Configuration..." es="Actualizando configuración..."/>
+  <translation tag="Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools." es="Actualice a AFC 1.2.0 o posterior para nombres de filamento y bobinas multicolor."/>
   <translation tag="Upload" es="Subir"/>
   <translation tag="Upload Debug Bundle" es="Subir paquete de diagnóstico"/>
   <translation tag="Upload Failed" es="Error al subir"/>

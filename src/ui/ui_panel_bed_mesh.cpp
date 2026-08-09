@@ -40,6 +40,7 @@
 #include "static_panel_registry.h"
 #include "temperature_controller.h"
 #include "theme_manager.h"
+#include "toolhead_homing.h"
 
 #include <spdlog/spdlog.h>
 
@@ -1342,35 +1343,27 @@ void BedMeshPanel::start_home_and_probe() {
         return;
     }
 
-    // Check homing state — auto-home if needed before probing
-    const char* homed = lv_subject_get_string(get_printer_state().get_homed_axes_subject());
-    bool all_homed = homed && std::string(homed).find("xyz") != std::string::npos;
-
-    if (all_homed) {
-        start_calibration_probing();
-    } else {
-        spdlog::info("[BedMeshPanel] Not fully homed (axes={}), sending G28 first",
-                     homed ? homed : "none");
+    // Check homing state — auto-home if needed before probing. The
+    // indeterminate spinner + "Homing..." text only apply while we are
+    // actually about to home, so gate them on the same predicate
+    // ensure_homed_then() uses internally.
+    if (!toolhead_is_homed(get_printer_state())) {
+        spdlog::info("[BedMeshPanel] Not fully homed, sending G28 first");
         lv_subject_set_int(&bed_mesh_probe_indeterminate_, 1);
         lv_subject_copy_string(&bed_mesh_probe_text_, lv_tr("Homing..."));
-
-        api->execute_gcode(
-            "G28",
-            lifetime_.bg_cb("BedMeshPanel::g28_done",
-                            [this]() {
-                                spdlog::info("[BedMeshPanel] G28 complete, starting calibration");
-                                start_calibration_probing();
-                            }),
-            lifetime_.bg_cb("BedMeshPanel::g28_error",
-                            [this](const MoonrakerError& err) {
-                                on_calibration_error(
-                                    err.type == MoonrakerErrorType::TIMEOUT
-                                        ? std::string(
-                                              "Homing timed out — printer may still be homing")
-                                        : "Homing failed: " + err.message);
-                            }),
-            IMoonrakerAPI::HOMING_TIMEOUT_MS);
     }
+
+    ensure_homed_then(
+        api, lifetime_,
+        [this]() {
+            spdlog::info("[BedMeshPanel] Proceeding to calibration");
+            start_calibration_probing();
+        },
+        [this](const MoonrakerError& err) {
+            on_calibration_error(err.type == MoonrakerErrorType::TIMEOUT
+                                     ? std::string("Homing timed out — printer may still be homing")
+                                     : "Homing failed: " + err.message);
+        });
 }
 
 void BedMeshPanel::start_calibration_probing() {

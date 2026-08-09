@@ -405,7 +405,8 @@ void MotionPanel::register_position_observers() {
             self->current_x_ = x;
             helix::format::format_distance_mm(x, 2, self->pos_x_buf_, sizeof(self->pos_x_buf_));
             lv_subject_copy_string(&self->pos_x_subject_, self->pos_x_buf_);
-        });
+        },
+        get_printer_state().get_subjects_lifetime());
 
     position_y_observer_ = observe_int_sync<MotionPanel>(
         get_printer_state().get_gcode_position_y_subject(), this,
@@ -416,7 +417,8 @@ void MotionPanel::register_position_observers() {
             self->current_y_ = y;
             helix::format::format_distance_mm(y, 2, self->pos_y_buf_, sizeof(self->pos_y_buf_));
             lv_subject_copy_string(&self->pos_y_subject_, self->pos_y_buf_);
-        });
+        },
+        get_printer_state().get_subjects_lifetime());
 
     // Z needs both gcode (commanded) and actual (with mesh compensation) positions
     // Display shows commanded with actual in brackets when they differ
@@ -428,15 +430,18 @@ void MotionPanel::register_position_observers() {
             self->gcode_z_centimm_ = centimm;
             self->current_z_ = static_cast<float>(helix::units::from_centimm(centimm));
             self->update_z_display();
-        });
+        },
+        get_printer_state().get_subjects_lifetime());
 
-    actual_z_observer_ = observe_int_sync<MotionPanel>(get_printer_state().get_position_z_subject(),
-                                                       this, [](MotionPanel* self, int centimm) {
-                                                           if (!self->subjects_initialized_)
-                                                               return;
-                                                           self->actual_z_centimm_ = centimm;
-                                                           self->update_z_display();
-                                                       });
+    actual_z_observer_ = observe_int_sync<MotionPanel>(
+        get_printer_state().get_position_z_subject(), this,
+        [](MotionPanel* self, int centimm) {
+            if (!self->subjects_initialized_)
+                return;
+            self->actual_z_centimm_ = centimm;
+            self->update_z_display();
+        },
+        get_printer_state().get_subjects_lifetime());
 
     // Watch for kinematics changes to update Z-axis label ("Bed" vs "Print Head")
     // Use observe_int_immediate — label/icon updates are safe to do immediately,
@@ -447,41 +452,45 @@ void MotionPanel::register_position_observers() {
             if (!self->subjects_initialized_)
                 return;
             self->update_z_axis_label(bed_moves != 0);
-        });
+        },
+        get_printer_state().get_subjects_lifetime());
 
     // Observe homed_axes from PrinterState to update homing indicator subjects
     // Same pattern as ControlsPanel - parse "xyz" string into individual integer subjects
-    homed_axes_observer_ =
-        observe_string<MotionPanel>(get_printer_state().get_homed_axes_subject(), this,
-                                    [](MotionPanel* self, const char* axes) {
-                                        if (!self->subjects_initialized_)
-                                            return;
-                                        int x = (strchr(axes, 'x') != nullptr) ? 1 : 0;
-                                        int y = (strchr(axes, 'y') != nullptr) ? 1 : 0;
-                                        int z = (strchr(axes, 'z') != nullptr) ? 1 : 0;
+    homed_axes_observer_ = observe_string<MotionPanel>(
+        get_printer_state().get_homed_axes_subject(), this,
+        [](MotionPanel* self, const char* axes) {
+            if (!self->subjects_initialized_)
+                return;
+            int x = (strchr(axes, 'x') != nullptr) ? 1 : 0;
+            int y = (strchr(axes, 'y') != nullptr) ? 1 : 0;
+            int z = (strchr(axes, 'z') != nullptr) ? 1 : 0;
 
-                                        if (lv_subject_get_int(&self->motion_x_homed_) != x)
-                                            lv_subject_set_int(&self->motion_x_homed_, x);
-                                        if (lv_subject_get_int(&self->motion_y_homed_) != y)
-                                            lv_subject_set_int(&self->motion_y_homed_, y);
-                                        if (lv_subject_get_int(&self->motion_z_homed_) != z)
-                                            lv_subject_set_int(&self->motion_z_homed_, z);
+            if (lv_subject_get_int(&self->motion_x_homed_) != x)
+                lv_subject_set_int(&self->motion_x_homed_, x);
+            if (lv_subject_get_int(&self->motion_y_homed_) != y)
+                lv_subject_set_int(&self->motion_y_homed_, y);
+            if (lv_subject_get_int(&self->motion_z_homed_) != z)
+                lv_subject_set_int(&self->motion_z_homed_, z);
 
-                                        // Recolor the custom-drawn center home button:
-                                        // warning tint until all axes are homed.
-                                        if (self->jog_pad_)
-                                            ui_jog_pad_set_homed(self->jog_pad_, x && y && z);
-                                    });
+            // Recolor the custom-drawn center home button:
+            // warning tint until all axes are homed.
+            if (self->jog_pad_)
+                ui_jog_pad_set_homed(self->jog_pad_, x && y && z);
+        },
+        get_printer_state().get_subjects_lifetime());
 
     // Dim/enable the jog pad to track connection + klippy readiness. The same
     // subject greys the surrounding panel content via motion_panel.xml, but the
     // custom-drawn jog pad has no XML binding, so drive it here.
     jog_ready_observer_ = observe_int_sync<MotionPanel>(
-        get_printer_state().get_nav_buttons_enabled_subject(), this, [](MotionPanel* self, int) {
+        get_printer_state().get_nav_buttons_enabled_subject(), this,
+        [](MotionPanel* self, int) {
             if (!self->subjects_initialized_)
                 return;
             self->update_jog_pad_enabled();
-        });
+        },
+        get_printer_state().get_subjects_lifetime());
 
     spdlog::debug("[{}] Position + kinematics + homing observers registered (observer factory)",
                   get_name());

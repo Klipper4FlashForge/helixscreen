@@ -61,7 +61,11 @@ void PrinterPrintState::init_subjects(bool register_xml) {
     INIT_SUBJECT_INT(print_active, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(print_show_progress, 0, subjects_, register_xml);
     INIT_SUBJECT_STRING(print_display_filename, "", subjects_, register_xml);
-    INIT_SUBJECT_STRING(print_thumbnail_path, "", subjects_, register_xml);
+    // Seeded with the placeholder rather than "": consumers bind this subject
+    // straight to lv_image_set_src and observers fire once at registration, so
+    // an empty initial value would be delivered to every consumer before the
+    // first print. See kNoThumbnailPlaceholder for why "" is unsafe there.
+    INIT_SUBJECT_STRING(print_thumbnail_path, kNoThumbnailPlaceholder, subjects_, register_xml);
 #if defined(HELIX_PLATFORM_ESP32)
     INIT_SUBJECT_INT(print_psram_thumb_gen, 0, subjects_, register_xml);
 #endif
@@ -942,14 +946,18 @@ void PrinterPrintState::set_print_outcome(PrintOutcome outcome) {
     }
 }
 
-void PrinterPrintState::set_print_thumbnail_path(const std::string& path) {
-    // Thumbnail path is set from PrintStatusPanel via ui_queue_update(),
-    // so this runs on the main thread and can update the subject directly.
+void PrinterPrintState::set_print_thumbnail(const std::string& for_file, const std::string& path) {
+    // Callers marshal to the main thread (ui_queue_update / token.defer) before
+    // reaching here, so the subject can be updated directly.
     if (path.empty()) {
-        spdlog::debug("[PrinterPrintState] Clearing print thumbnail path");
+        spdlog::debug("[PrinterPrintState] Clearing print thumbnail path for '{}'", for_file);
     } else {
-        spdlog::debug("[PrinterPrintState] Setting print thumbnail path: {}", path);
+        spdlog::debug("[PrinterPrintState] Setting print thumbnail path for '{}': {}", for_file,
+                      path);
     }
+    // Order matters: for_file must be visible BEFORE any observer of the path
+    // subject runs, so observers can trust it describes the path they see.
+    print_thumbnail_file_ = for_file;
     if (strcmp(lv_subject_get_string(&print_thumbnail_path_), path.c_str()) != 0) {
         lv_subject_copy_string(&print_thumbnail_path_, path.c_str());
     }

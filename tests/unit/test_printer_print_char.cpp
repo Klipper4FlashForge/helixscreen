@@ -44,6 +44,7 @@
  * - can_start_new_print(): returns false when print_in_progress_ == 1 OR print_active_ == 1
  */
 
+#include "../helix_test_fixture.h"
 #include "../test_helpers/printer_state_test_access.h"
 #include "../ui_test_utils.h"
 #include "app_globals.h"
@@ -335,16 +336,17 @@ TEST_CASE("Print characterization: file info API methods", "[characterization][p
         REQUIRE(std::string(val) == "Clean Model Name");
     }
 
-    SECTION("set_print_thumbnail_path updates subject") {
-        state.set_print_thumbnail_path("A:/tmp/thumbnail_abc123.bin");
+    SECTION("set_print_thumbnail updates subject") {
+        state.set_print_thumbnail("model.gcode", "A:/tmp/thumbnail_abc123.bin");
 
         const char* val = lv_subject_get_string(state.get_print_thumbnail_path_subject());
         REQUIRE(std::string(val) == "A:/tmp/thumbnail_abc123.bin");
+        REQUIRE(state.get_print_thumbnail_file() == "model.gcode");
     }
 
     SECTION("empty thumbnail path clears subject") {
-        state.set_print_thumbnail_path("A:/tmp/thumbnail.bin");
-        state.set_print_thumbnail_path("");
+        state.set_print_thumbnail("model.gcode", "A:/tmp/thumbnail.bin");
+        state.set_print_thumbnail("model.gcode", "");
 
         const char* val = lv_subject_get_string(state.get_print_thumbnail_path_subject());
         REQUIRE(std::string(val) == "");
@@ -1525,8 +1527,9 @@ TEST_CASE("Print characterization: print_job_state_to_string function",
 // Slicer Estimated Print Time Fallback Tests
 // ============================================================================
 
-TEST_CASE("Print characterization: slicer estimated_print_time used as fallback",
-          "[characterization][print][time][slicer]") {
+TEST_CASE_METHOD(HelixTestFixture,
+                 "Print characterization: slicer estimated_print_time used as fallback",
+                 "[characterization][print][time][slicer]") {
     lv_init_safe();
 
     PrinterState& state = get_printer_state();

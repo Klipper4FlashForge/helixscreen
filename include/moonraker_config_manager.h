@@ -53,12 +53,31 @@ class MoonrakerConfigManager {
     static bool defines_all_sections(const std::string& content,
                                      const std::vector<std::string>& required);
 
-    /// Index of the root config file within a server.config `files[]` list.
+    /// Index of the file best able to *prove* the config root is addressable.
     ///
-    /// Moonraker's root config is the one defining `[server]`; if no entry claims it,
-    /// fall back to the first, which is the order Moonraker reports. Returns -1 when the
-    /// list is empty or holds no usable filename.
+    /// This is the entry defining `[server]`, chosen for its rich section list: the
+    /// spoolman flow downloads it through the file API and checks it still defines
+    /// every section Moonraker reported, which is how an unreachable config is caught
+    /// without an absolute path (stock Creality K2). If no entry claims `[server]`,
+    /// fall back to the first, which is the order Moonraker reports. Returns -1 when
+    /// the list is empty or holds no usable filename.
+    ///
+    /// This is deliberately NOT the file to write to — see select_root_config_index().
     static int select_primary_config_index(const std::vector<LoadedConfigFile>& files);
+
+    /// Index of the user-editable root config within a server.config `files[]` list.
+    ///
+    /// Moonraker reports its config chain root-first, then in include order, so the
+    /// first usable entry is the file it was pointed at. Verified against six
+    /// firmwares (Raspberry Pi, BTT CB1, Creality K2 and SonicPad, Flashforge AD5M,
+    /// Snapmaker U1, Elegoo COSMOS) on 2026-08-09.
+    ///
+    /// This is the write target. It differs from select_primary_config_index() only
+    /// when the root does not itself define `[server]`, which is exactly the COSMOS
+    /// case: there the root holds nothing but includes and `[server]` lives in a
+    /// vendor directory the firmware replaces on upgrade, so a section written there
+    /// is lost (#1242). Returns -1 when no entry has a usable filename.
+    static int select_root_config_index(const std::vector<LoadedConfigFile>& files);
 
     /// Indices of loaded config files that define `section_name`.
     ///

@@ -156,6 +156,11 @@ void register_history_handlers(std::unordered_map<std::string, MethodHandler>& r
                           {"first_layer_bed_temp", 60.0},
                           {"uuid", mock_uuid},
                           {"size", file_size},
+                          // Source gcode mtime, as Moonraker reports it. Set to
+                          // the job's start time: the file existed when it was
+                          // printed, so anything cached from it is at least that
+                          // old.
+                          {"modified", start_time},
                           {"thumbnails", json::array({{{"relative_path", thumb_path},
                                                        {"width", 300},
                                                        {"height", 300},

@@ -167,7 +167,8 @@ void PrintSelectDetailView::init_subjects() {
     // lifetime token. Handler no-ops while the view is closed.
     slots_version_observer_ = observe_int_sync<PrintSelectDetailView>(
         AmsState::instance().get_slots_version_subject(), this,
-        [](PrintSelectDetailView* self, int /*version*/) { self->on_ams_state_changed(); });
+        [](PrintSelectDetailView* self, int /*version*/) { self->on_ams_state_changed(); },
+        AmsState::instance().get_subjects_lifetime());
 
     subjects_initialized_ = true;
     spdlog::debug("[DetailView] Initialized pre-print option subjects");

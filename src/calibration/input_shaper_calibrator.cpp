@@ -15,6 +15,7 @@
 #include "moonraker_error.h"
 #include "printer_state.h"
 #include "spdlog/spdlog.h"
+#include "toolhead_homing.h"
 
 #include <cctype>
 
@@ -72,55 +73,23 @@ std::string InputShaperCalibrator::firmware_halt_message(const MoonrakerError& e
 }
 
 // ============================================================================
-// ensure_homed_then()
+// homing_error_message()
 // ============================================================================
 
-void InputShaperCalibrator::ensure_homed_then(std::function<void()> then, ErrorCallback on_error) {
-    // Check current homing state from PrinterState
-    const char* homed = lv_subject_get_string(get_printer_state().get_homed_axes_subject());
-    bool all_homed = homed && std::string(homed).find("xyz") != std::string::npos;
-
-    if (all_homed) {
-        spdlog::debug("[InputShaperCalibrator] Already homed, proceeding");
-        then();
-        return;
+std::string InputShaperCalibrator::homing_error_message(const MoonrakerError& err) {
+    if (err.type == MoonrakerErrorType::TIMEOUT) {
+        spdlog::warn("[InputShaperCalibrator] G28 response timed out (may still be running)");
+        return "Homing timed out — printer may still be homing";
     }
-
-    spdlog::info("[InputShaperCalibrator] Not fully homed (axes={}), sending G28",
-                 homed ? homed : "none");
-
-    api_->execute_gcode(
-        "G28",
-        [then = std::move(then)]() {
-            spdlog::info("[InputShaperCalibrator] G28 complete, proceeding");
-            then();
-        },
-        [this, on_error](const MoonrakerError& err) {
-            if (err.type == MoonrakerErrorType::TIMEOUT) {
-                spdlog::warn(
-                    "[InputShaperCalibrator] G28 response timed out (may still be running)");
-                if (on_error) {
-                    on_error("Homing timed out — printer may still be homing");
-                }
-            } else if (std::string halt = firmware_halt_message(err); !halt.empty()) {
-                // Klipper aborted the homing move and shut down (e.g. the K2
-                // record_z_pos crash, #1021). Surface the firmware-fault
-                // message instead of dumping the raw JSON-RPC envelope.
-                spdlog::error("[InputShaperCalibrator] Homing aborted (firmware halt): {}",
-                              err.message);
-                if (on_error) {
-                    on_error(halt);
-                }
-            } else {
-                spdlog::error("[InputShaperCalibrator] Homing failed: {}", err.message);
-                if (on_error) {
-                    on_error("Homing failed: " +
-                             MoonrakerError::extract_friendly_message(err.message));
-                }
-            }
-            state_ = State::IDLE;
-        },
-        IMoonrakerAPI::HOMING_TIMEOUT_MS);
+    if (std::string halt = firmware_halt_message(err); !halt.empty()) {
+        // Klipper aborted the homing move and shut down (e.g. the K2
+        // record_z_pos crash, #1021). Surface the firmware-fault message
+        // instead of dumping the raw JSON-RPC envelope.
+        spdlog::error("[InputShaperCalibrator] Homing aborted (firmware halt): {}", err.message);
+        return halt;
+    }
+    spdlog::error("[InputShaperCalibrator] Homing failed: {}", err.message);
+    return "Homing failed: " + MoonrakerError::extract_friendly_message(err.message);
 }
 
 // ============================================================================
@@ -144,6 +113,7 @@ void InputShaperCalibrator::check_accelerometer(AccelCheckCallback on_complete,
 
     // Ensure homed before measuring (toolhead needs to be positioned)
     ensure_homed_then(
+        api_, *lifetime_,
         [this, on_complete, on_error]() {
             api_->advanced().measure_axes_noise(
                 [this, on_complete](float noise_level) {
@@ -172,7 +142,13 @@ void InputShaperCalibrator::check_accelerometer(AccelCheckCallback on_complete,
                     }
                 });
         },
-        on_error);
+        [this, on_error](const MoonrakerError& err) {
+            std::string msg = homing_error_message(err);
+            state_ = State::IDLE;
+            if (on_error) {
+                on_error(msg);
+            }
+        });
 }
 
 // ============================================================================
@@ -219,6 +195,7 @@ void InputShaperCalibrator::run_calibration(char axis, ProgressCallback on_progr
 
     // Ensure homed before running resonance test (needs absolute coordinates)
     ensure_homed_then(
+        api_, *lifetime_,
         [this, normalized_axis, on_progress, on_complete, on_error]() {
             auto api_progress = [on_progress](int percent) {
                 if (on_progress) {
@@ -260,7 +237,13 @@ void InputShaperCalibrator::run_calibration(char axis, ProgressCallback on_progr
                     }
                 });
         },
-        on_error);
+        [this, on_error](const MoonrakerError& err) {
+            std::string msg = homing_error_message(err);
+            state_ = State::IDLE;
+            if (on_error) {
+                on_error(msg);
+            }
+        });
 }
 
 // ============================================================================

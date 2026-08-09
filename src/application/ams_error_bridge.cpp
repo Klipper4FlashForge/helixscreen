@@ -22,7 +22,8 @@ void AmsErrorBridge::start() {
     // observer while leaving prev_action_/presented_ stale — don't.
     action_observer_ = helix::ui::observe_int_sync<AmsErrorBridge>(
         AmsState::instance().get_ams_action_subject(), this,
-        [](AmsErrorBridge* self, int action) { self->on_action_changed(action); });
+        [](AmsErrorBridge* self, int action) { self->on_action_changed(action); },
+        AmsState::instance().get_subjects_lifetime());
 }
 
 void AmsErrorBridge::on_action_changed(int action) {

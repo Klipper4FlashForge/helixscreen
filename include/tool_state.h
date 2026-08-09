@@ -3,11 +3,14 @@
 
 #pragma once
 
+#include "ui_observer_guard.h" // SubjectLifetime
+
 #include "async_lifetime_guard.h"
 #include "subject_managed_panel.h"
 
 #include <functional>
 #include <lvgl.h>
+#include <memory>
 #include <optional>
 #include <set>
 #include <string>
@@ -165,6 +168,19 @@ class ToolState {
     lv_subject_t* get_active_tool_subject() {
         return &active_tool_;
     }
+
+    /**
+     * @brief Death signal for the subjects this singleton owns.
+     *
+     * Long-lived observers outside ToolState — PrintStatusPanel watches
+     * get_active_tool_subject() to re-render the nozzle temperature label — must
+     * pass this to observe_*(). deinit_subjects() frees every observer node on
+     * these subjects, and several tests call it mid-process, so a guard without
+     * the token dereferences a freed observer on its next reset().
+     */
+    [[nodiscard]] SubjectLifetime get_subjects_lifetime() const {
+        return subjects_lifetime_;
+    }
     lv_subject_t* get_tool_count_subject() {
         return &tool_count_;
     }
@@ -181,6 +197,11 @@ class ToolState {
   private:
     ToolState() = default;
     SubjectManager subjects_;
+    /// See get_subjects_lifetime(). Created with the object and REPLACED (never
+    /// nulled) by deinit_subjects(), so the accessor never hands out an empty
+    /// token — an empty one reads as "dead" and would suppress removal for live
+    /// observers instead of protecting dead ones.
+    SubjectLifetime subjects_lifetime_ = std::make_shared<bool>(true);
     bool subjects_initialized_ = false;
 
     /// Expires the Moonraker-DB spool-assignment callbacks, which fire from the

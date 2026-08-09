@@ -86,8 +86,7 @@ const std::string& asset_root() {
 }
 
 void set_asset_root(const std::string& root) {
-    asset_root_storage() =
-        root.empty() ? "." : helix::paths::strip_trailing_slash(root);
+    asset_root_storage() = root.empty() ? "." : helix::paths::strip_trailing_slash(root);
 }
 
 std::string asset_path(const std::string& relpath) {
@@ -110,7 +109,8 @@ std::string find_readable(const std::string& relpath) {
     std::string user = writable_path(relpath);
     if (path_exists(user))
         return user;
-    std::string seed = helix::paths::strip_trailing_slash(get_data_dir()) + "/assets/config/" + relpath;
+    std::string seed =
+        helix::paths::strip_trailing_slash(get_data_dir()) + "/assets/config/" + relpath;
     if (path_exists(seed))
         return seed;
     return user;
