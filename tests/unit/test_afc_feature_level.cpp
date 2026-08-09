@@ -1,0 +1,183 @@
+// Copyright (C) 2025-2026 356C LLC
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/**
+ * @file test_afc_feature_level.cpp
+ * @brief AFC v1.2.0 feature detection for the upgrade advisory.
+ *
+ * The trigger for the "upgrade your AFC" toast is capability, never a version
+ * string. AFC has no trustworthy version signal — the `afc-install` namespace
+ * has been an orphan since their 7d20db7, `AFC_VERSION` is hand-bumped and sat
+ * at 1.1.37 through the whole v1.2.0 release, and v1.2.0's get_status()
+ * publishes no version key at all. A live BoxTurtle reported "1.0.0" while
+ * actually running v1.1.0.
+ *
+ * The payloads below are real, captured from one physical 4-lane BoxTurtle
+ * (Turtle_1) on 2026-08-09 either side of a v1.1.0 -> v1.2.0 upgrade. That is
+ * what makes this a regression test rather than a restatement of the
+ * implementation: the expectations come from firmware, not from the parser.
+ */
+
+#include "ams_backend_afc.h"
+
+#include "../catch_amalgamated.hpp"
+
+using namespace helix;
+
+namespace {
+
+/// Turtle_1 lane2, loaded and Spoolman-linked, on AFC v1.1.0-4-g2921371.
+nlohmann::json lane_v1_1_0_loaded() {
+    return nlohmann::json{{"name", "lane2"},   {"unit", "Turtle_1"},   {"hub", "Turtle_1"},
+                          {"lane", 2},         {"map", "T1"},          {"load", true},
+                          {"prep", true},      {"tool_loaded", false}, {"loaded_to_hub", true},
+                          {"material", "ASA"}, {"spool_id", 5},        {"color", "#00AEFF"},
+                          {"weight", 915.22},  {"extruder_temp", 260}, {"status", "None"}};
+}
+
+/// The same lane after upgrading that machine to v1.2.0 (a06f14d).
+nlohmann::json lane_v1_2_0_loaded() {
+    auto j = lane_v1_1_0_loaded();
+    j["filament_name"] = "PolyLite™ ASA Pop Blue";
+    j["initial_weight"] = 1000.0;
+    j["multi_color_hexes"] = nlohmann::json::array();
+    j["bed_temp"] = 100;
+    return j;
+}
+
+/// Turtle_1 lane4 on v1.2.0 — EMPTY. Every new field is still published.
+nlohmann::json lane_v1_2_0_empty() {
+    return nlohmann::json{{"name", "lane4"},
+                          {"lane", 4},
+                          {"load", false},
+                          {"prep", false},
+                          {"material", ""},
+                          {"spool_id", nullptr},
+                          {"color", ""},
+                          {"weight", 0},
+                          {"filament_name", ""},
+                          {"initial_weight", 1000},
+                          {"multi_color_hexes", nlohmann::json::array()}};
+}
+
+} // namespace
+
+TEST_CASE("AFC feature detection separates v1.1.0 from v1.2.0", "[ams][afc][feature-level]") {
+    SECTION("a real v1.1.0 lane payload reads as legacy") {
+        CHECK_FALSE(AmsBackendAfc::status_has_modern_fields(lane_v1_1_0_loaded()));
+    }
+
+    SECTION("a real v1.2.0 lane payload reads as modern") {
+        CHECK(AmsBackendAfc::status_has_modern_fields(lane_v1_2_0_loaded()));
+    }
+
+    SECTION("an EMPTY v1.2.0 lane still reads as modern") {
+        // The fields are unconditional on v1.2.0, not gated on a spool being
+        // present. If they were spool-gated, a printer with every lane empty
+        // would be misreported as legacy and nagged forever.
+        CHECK(AmsBackendAfc::status_has_modern_fields(lane_v1_2_0_empty()));
+    }
+}
+
+TEST_CASE("AFC feature detection accepts any field of the v1.2.0 block",
+          "[ams][afc][feature-level]") {
+    // AFC emits filament_name / multi_color_hexes / initial_weight together from
+    // a single `if not save_to_file:` block, so any one of them proves the block.
+    // Accepting all three keeps this working if upstream reorders or splits it.
+    SECTION("filament_name alone") {
+        CHECK(AmsBackendAfc::status_has_modern_fields(
+            nlohmann::json{{"name", "lane1"}, {"filament_name", "x"}}));
+    }
+    SECTION("initial_weight alone") {
+        CHECK(AmsBackendAfc::status_has_modern_fields(
+            nlohmann::json{{"name", "lane1"}, {"initial_weight", 1000}}));
+    }
+    SECTION("multi_color_hexes alone") {
+        CHECK(AmsBackendAfc::status_has_modern_fields(
+            nlohmann::json{{"name", "lane1"}, {"multi_color_hexes", nlohmann::json::array()}}));
+    }
+
+    SECTION("an empty-valued field still counts — presence is the signal") {
+        // filament_name is "" on an empty lane and multi_color_hexes is []. The
+        // probe asks whether AFC PUBLISHES the key, not whether it has content.
+        CHECK(AmsBackendAfc::status_has_modern_fields(
+            nlohmann::json{{"name", "lane4"}, {"filament_name", ""}}));
+    }
+}
+
+/// Drives the real status path so the one-shot latch can be asserted.
+class AfcFeatureLevelHelper : public AmsBackendAfc {
+  public:
+    AfcFeatureLevelHelper() : AmsBackendAfc(nullptr, nullptr) {}
+
+    /// Feed a whole status frame, exactly as the subscription delivers it.
+    void feed_frame(const nlohmann::json& objects) {
+        nlohmann::json notification;
+        notification["params"] = nlohmann::json::array({objects, 0.0});
+        handle_status_update(notification);
+    }
+
+    [[nodiscard]] bool probed() const {
+        return feature_level_checked_;
+    }
+};
+
+TEST_CASE("AFC feature probe reads the baseline frame, never a later delta",
+          "[ams][afc][feature-level]") {
+    // The probe must not be bounded by the slot registry. It originally sat
+    // inside the `i < slots_.slot_count()` loops, so a baseline arriving before
+    // the registry was built matched nothing and the probe slipped onto the next
+    // frame — a delta, where every absent key reads as legacy firmware. That
+    // would nag a fully up-to-date printer.
+    SECTION("a baseline with NO registry still probes") {
+        AfcFeatureLevelHelper afc; // zero slots, as before discovery lands
+        REQUIRE_FALSE(afc.probed());
+
+        afc.feed_frame(nlohmann::json{{"AFC_stepper lane1", lane_v1_2_0_loaded()}});
+
+        CHECK(afc.probed());
+    }
+
+    SECTION("a later delta cannot re-open the probe") {
+        AfcFeatureLevelHelper afc;
+        afc.feed_frame(nlohmann::json{{"AFC_stepper lane1", lane_v1_2_0_loaded()}});
+        REQUIRE(afc.probed());
+
+        // A partial frame carrying only a changed weight — no v1.2.0 keys. On
+        // the unlatched code this reads as legacy.
+        afc.feed_frame(nlohmann::json{{"AFC_stepper lane1", nlohmann::json{{"weight", 900.0}}}});
+
+        CHECK(afc.probed()); // still latched from the baseline, not re-evaluated
+    }
+
+    SECTION("a frame with no lane object at all leaves the probe armed") {
+        // Some frames carry only the aggregate AFC object. Consuming the latch
+        // there would burn it on a payload that proves nothing.
+        AfcFeatureLevelHelper afc;
+        afc.feed_frame(nlohmann::json{{"AFC", nlohmann::json{{"current_state", "Idle"}}}});
+        CHECK_FALSE(afc.probed());
+    }
+
+    SECTION("the AFC_lane prefix probes too") {
+        AfcFeatureLevelHelper afc;
+        afc.feed_frame(nlohmann::json{{"AFC_lane lane1", lane_v1_2_0_loaded()}});
+        CHECK(afc.probed());
+    }
+}
+
+TEST_CASE("AFC feature detection ignores unrelated fields", "[ams][afc][feature-level]") {
+    // A lane carrying plenty of data but none of the v1.2.0 block is legacy.
+    // Guards against the probe drifting into "has any rich field" and going
+    // permanently quiet on old firmware.
+    SECTION("a rich v1.1.0 payload is still legacy") {
+        auto j = lane_v1_1_0_loaded();
+        j["td1_td"] = "";
+        j["endstops"] = "load,hub,tool_start";
+        j["buffer_status"] = "Advancing";
+        CHECK_FALSE(AmsBackendAfc::status_has_modern_fields(j));
+    }
+
+    SECTION("an empty object is legacy, not modern") {
+        CHECK_FALSE(AmsBackendAfc::status_has_modern_fields(nlohmann::json::object()));
+    }
+}

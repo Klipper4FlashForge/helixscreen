@@ -91,6 +91,7 @@
   <translation tag="ACTIONS" es="ACCIONES"/>
   <translation tag="ADXL" es="ADXL"/>
   <translation tag="AFC" es="AFC"/>
+  <translation tag="AFC Update Available"/>
   <translation tag="AFC failure reset complete" es="Reinicio de fallo AFC completado"/>
   <translation tag="AFC failure reset failed" es="Error al reiniciar fallo AFC"/>
   <translation tag="AFC recovery complete" es="Recuperación AFC completada"/>
@@ -664,6 +665,7 @@
   <translation tag="Empty" es="Vacío"/>
   <translation tag="Empty slots disable the associated functionality" es="Las ranuras vacías desactivan la funcionalidad asociada"/>
   <translation tag="Enable" es="Activar"/>
+  <translation tag="Enable Bypass Controls"/>
   <translation tag="Enable Monitoring" es="Activar Monitoreo"/>
   <translation tag="Enable Retraction" es="Activar Retracción"/>
   <translation tag="Enable Timelapse" es="Activar Timelapse"/>
@@ -887,6 +889,7 @@
   <translation tag="Finish" es="Finalizar"/>
   <translation tag="Finishing up..." es="Finalizando..."/>
   <translation tag="Firmware Restart" es="Reinicio de Firmware"/>
+  <translation tag="Firmware reports no bypass. Enable if you feed filament straight to the extruder"/>
   <translation tag="Firmware restarting..." es="Reiniciando firmware..."/>
   <translation tag="FlashForge Adventurer 5M" es="FlashForge Adventurer 5M"/>
   <translation tag="FlashForge Adventurer 5X" es="FlashForge Adventurer 5X"/>
@@ -1273,6 +1276,7 @@
   <translation tag="Must home axes first" es="Debe posicionar los ejes primero"/>
   <translation tag="My Custom Theme" es="Mi Tema Personalizado"/>
   <translation tag="My Panel" es="Mi Panel"/>
+  <translation tag="My Printer"/>
   <translation tag="NEWLY DISCOVERED" es="RECIÉN DESCUBIERTO"/>
   <translation tag="Name" es="Nombre"/>
   <translation tag="Name (optional)" es="Nombre (opcional)"/>
@@ -2253,6 +2257,7 @@
   <translation tag="Update your security PIN" es="Actualice su PIN de seguridad"/>
   <translation tag="Updates aren&apos;t available on this installation." es="Las actualizaciones no están disponibles en esta instalación."/>
   <translation tag="Updating Configuration..." es="Actualizando configuración..."/>
+  <translation tag="Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools."/>
   <translation tag="Upload" es="Subir"/>
   <translation tag="Upload Debug Bundle" es="Subir paquete de diagnóstico"/>
   <translation tag="Upload Failed" es="Error al subir"/>

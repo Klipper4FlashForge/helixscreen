@@ -91,6 +91,7 @@
   <translation tag="ACTIONS" ru="ДЕЙСТВИЯ"/>
   <translation tag="ADXL" ru="ADXL"/>
   <translation tag="AFC" ru="AFC"/>
+  <translation tag="AFC Update Available"/>
   <translation tag="AFC failure reset complete" ru="Сброс ошибки AFC завершён"/>
   <translation tag="AFC failure reset failed" ru="Ошибка сброса ошибки AFC"/>
   <translation tag="AFC recovery complete" ru="Восстановление AFC завершено"/>
@@ -664,6 +665,7 @@
   <translation tag="Empty" ru="Пусто"/>
   <translation tag="Empty slots disable the associated functionality" ru="Пустые слоты отключают связанный функционал"/>
   <translation tag="Enable" ru="Включить"/>
+  <translation tag="Enable Bypass Controls"/>
   <translation tag="Enable Monitoring" ru="Включить мониторинг"/>
   <translation tag="Enable Retraction" ru="Включить аппаратный ретракт"/>
   <translation tag="Enable Timelapse" ru="Включить таймлапс"/>
@@ -887,6 +889,7 @@
   <translation tag="Finish" ru="Завершить"/>
   <translation tag="Finishing up..." ru="Завершение..."/>
   <translation tag="Firmware Restart" ru="Перезапуск прошивки"/>
+  <translation tag="Firmware reports no bypass. Enable if you feed filament straight to the extruder"/>
   <translation tag="Firmware restarting..." ru="Перезапуск прошивки..."/>
   <translation tag="FlashForge Adventurer 5M" ru="FlashForge Adventurer 5M"/>
   <translation tag="FlashForge Adventurer 5X" ru="FlashForge Adventurer 5X"/>
@@ -1273,6 +1276,7 @@
   <translation tag="Must home axes first" ru="Сначала необходимо запарковать оси"/>
   <translation tag="My Custom Theme" ru="Моя тема"/>
   <translation tag="My Panel" ru="Моя панель"/>
+  <translation tag="My Printer"/>
   <translation tag="NEWLY DISCOVERED" ru="НЕДАВНО ОБНАРУЖЕНО"/>
   <translation tag="Name" ru="Название"/>
   <translation tag="Name (optional)" ru="Название (необязательно)"/>
@@ -2253,6 +2257,7 @@
   <translation tag="Update your security PIN" ru="Обновите ваш PIN-код"/>
   <translation tag="Updates aren&apos;t available on this installation." ru="Обновления недоступны в этой установке."/>
   <translation tag="Updating Configuration..." ru="Обновление конфигурации..."/>
+  <translation tag="Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools."/>
   <translation tag="Upload" ru="Отправить"/>
   <translation tag="Upload Debug Bundle" ru="Отправить пакет диагностики"/>
   <translation tag="Upload Failed" ru="Ошибка отправки"/>

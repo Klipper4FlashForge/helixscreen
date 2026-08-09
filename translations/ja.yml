@@ -92,6 +92,7 @@ translations:
   ACTIONS: アクション
   ADXL: ADXL
   AFC: AFC
+  AFC Update Available: ''
   AFC failure reset complete: AFCエラーリセット完了
   AFC failure reset failed: AFCエラーリセット失敗
   AFC recovery complete: AFC復旧完了
@@ -681,6 +682,7 @@ translations:
   Empty: 空
   Empty slots disable the associated functionality: 空のスロットは関連機能を無効にします
   Enable: 有効化
+  Enable Bypass Controls: ''
   Enable Monitoring: 監視を有効化
   Enable Retraction: リトラクションを有効化
   Enable Timelapse: タイムラプスを有効化
@@ -904,6 +906,7 @@ translations:
   Finish: 完了
   Finishing up...: 完了中...
   Firmware Restart: ファームウェア再起動
+  Firmware reports no bypass. Enable if you feed filament straight to the extruder: ''
   Firmware restarting...: ファームウェア再起動中...
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
@@ -1310,6 +1313,7 @@ translations:
   Must home axes first: 先にホーミングしてください
   My Custom Theme: マイカスタムテーマ
   My Panel: マイパネル
+  My Printer: ''
   NEWLY DISCOVERED: 新規検出
   Name: 名前
   Name (optional): 名前（オプション）
@@ -2347,6 +2351,7 @@ translations:
   Update your security PIN: セキュリティ PIN を更新
   Updates aren't available on this installation.: このインストールでは更新は利用できません。
   Updating Configuration...: 設定を更新中...
+  Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: ''
   Upload: アップロード
   Upload Debug Bundle: デバッグバンドルをアップロード
   Upload Failed: アップロード失敗

@@ -91,6 +91,7 @@ translations:
   ACTIONS: 操作
   ADXL: ADXL
   AFC: AFC
+  AFC Update Available: ''
   AFC failure reset complete: AFC故障重置完成
   AFC failure reset failed: AFC故障重置失败
   AFC recovery complete: AFC恢复完成
@@ -675,6 +676,7 @@ translations:
   Empty: 空
   Empty slots disable the associated functionality: 空料仓将禁用相关功能
   Enable: 启用
+  Enable Bypass Controls: ''
   Enable Monitoring: 启用监控
   Enable Retraction: 启用回抽
   Enable Timelapse: 启用延时摄影
@@ -900,6 +902,7 @@ translations:
   Finish: 完成
   Finishing up...: 即将完成...
   Firmware Restart: 固件重启
+  Firmware reports no bypass. Enable if you feed filament straight to the extruder: ''
   Firmware restarting...: 固件重启中...
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
@@ -1305,6 +1308,7 @@ translations:
   Must home axes first: 请先归位
   My Custom Theme: 我的自定义主题
   My Panel: 我的面板
+  My Printer: ''
   NEWLY DISCOVERED: 新发现
   Name: 名称
   Name (optional): 名称（可选）
@@ -2338,6 +2342,7 @@ translations:
   Update your security PIN: 更新您的安全 PIN
   Updates aren't available on this installation.: 此安装版本无法使用更新。
   Updating Configuration...: 正在更新配置...
+  Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: ''
   Upload: 上传
   Upload Debug Bundle: 上传调试捆绑包
   Upload Failed: 上传失败

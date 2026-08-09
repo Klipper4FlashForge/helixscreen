@@ -91,6 +91,7 @@
   <translation tag="ACTIONS" en="ACTIONS"/>
   <translation tag="ADXL" en="ADXL"/>
   <translation tag="AFC" en="AFC"/>
+  <translation tag="AFC Update Available" en="AFC Update Available"/>
   <translation tag="AFC failure reset complete" en="AFC failure reset complete"/>
   <translation tag="AFC failure reset failed" en="AFC failure reset failed"/>
   <translation tag="AFC recovery complete" en="AFC recovery complete"/>
@@ -664,6 +665,7 @@
   <translation tag="Empty" en="Empty"/>
   <translation tag="Empty slots disable the associated functionality" en="Empty slots disable the associated functionality"/>
   <translation tag="Enable" en="Enable"/>
+  <translation tag="Enable Bypass Controls" en="Enable Bypass Controls"/>
   <translation tag="Enable Monitoring" en="Enable Monitoring"/>
   <translation tag="Enable Retraction" en="Enable Retraction"/>
   <translation tag="Enable Timelapse" en="Enable Timelapse"/>
@@ -887,6 +889,7 @@
   <translation tag="Finish" en="Finish"/>
   <translation tag="Finishing up..." en="Finishing up..."/>
   <translation tag="Firmware Restart" en="Firmware Restart"/>
+  <translation tag="Firmware reports no bypass. Enable if you feed filament straight to the extruder" en="Firmware reports no bypass. Enable if you feed filament straight to the extruder"/>
   <translation tag="Firmware restarting..." en="Firmware restarting..."/>
   <translation tag="FlashForge Adventurer 5M" en="FlashForge Adventurer 5M"/>
   <translation tag="FlashForge Adventurer 5X" en="FlashForge Adventurer 5X"/>
@@ -1273,6 +1276,7 @@
   <translation tag="Must home axes first" en="Must home axes first"/>
   <translation tag="My Custom Theme" en="My Custom Theme"/>
   <translation tag="My Panel" en="My Panel"/>
+  <translation tag="My Printer" en="My Printer"/>
   <translation tag="NEWLY DISCOVERED" en="NEWLY DISCOVERED"/>
   <translation tag="Name" en="Name"/>
   <translation tag="Name (optional)" en="Name (optional)"/>
@@ -2253,6 +2257,7 @@
   <translation tag="Update your security PIN" en="Update your security PIN"/>
   <translation tag="Updates aren&apos;t available on this installation." en="Updates aren&apos;t available on this installation."/>
   <translation tag="Updating Configuration..." en="Updating Configuration..."/>
+  <translation tag="Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools." en="Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools."/>
   <translation tag="Upload" en="Upload"/>
   <translation tag="Upload Debug Bundle" en="Upload Debug Bundle"/>
   <translation tag="Upload Failed" en="Upload Failed"/>

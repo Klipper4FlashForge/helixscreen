@@ -198,6 +198,27 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     }
     [[nodiscard]] SlotInfo get_slot_info(int slot_index) const override;
 
+    /**
+     * @brief Does this lane status payload prove AFC publishes the v1.2.0 field set?
+     *
+     * Feature detection, deliberately NOT a version comparison. AFC has no
+     * trustworthy version signal: the `afc-install` DB namespace has been an
+     * orphan since their 7d20db7, `AFC_VERSION` is a hand-bumped literal that sat
+     * at 1.1.37 through the whole v1.2.0 release, and v1.2.0's own get_status()
+     * publishes no version key at all (upstream #807 is still an open PR). A live
+     * BoxTurtle reported "1.0.0" while running v1.1.0.
+     *
+     * `filament_name`, `multi_color_hexes` and `initial_weight` are emitted
+     * together from one `if not save_to_file:` block in AFC_lane.get_status(), so
+     * any of them proves the whole block. Verified on one physical BoxTurtle
+     * across an upgrade: all three absent on v1.1.0, all three present on v1.2.0.
+     *
+     * @warning Only meaningful on a COMPLETE status object — the subscription's
+     * first baseline frame. Every later frame is a delta where an absent key
+     * means "unchanged", not "unsupported".
+     */
+    [[nodiscard]] static bool status_has_modern_fields(const nlohmann::json& lane_status);
+
     // Path visualization
     [[nodiscard]] PathTopology get_topology() const override;
     [[nodiscard]] PathTopology get_unit_topology(int unit_index) const override;
@@ -461,6 +482,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcPerSlotLoadedHelper;
     friend class AfcCurrentErrorHelper;
     friend class AfcLaneDataClearHelper;
+    friend class AfcFeatureLevelHelper;
     friend class AfcFixtureHelper;
     friend class AmsBackendAfcEndlessSpoolHelper;
     friend class AmsBackendAfcMultiUnitHelper;
@@ -778,6 +800,10 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
      */
     bool apply_afc_version_response(const nlohmann::json& response);
 
+    /// One-shot feature probe + upgrade advisory. Reads the subscription's first
+    /// baseline frame only; see status_has_modern_fields().
+    void check_afc_feature_level(const nlohmann::json& lane_status);
+
     /**
      * @brief Apply an AFC/lane_data database reply
      *
@@ -956,6 +982,10 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // 7d20db7, #451, 2025-06-16), so this is either "unknown" or a value frozen
     // before that date. Detect capabilities from the data instead.
     std::string afc_version_{"unknown"};
+
+    /// Latch for status_has_modern_fields(): the feature probe may only read the
+    /// subscription's first (complete) frame, so it runs exactly once.
+    bool feature_level_checked_{false};
 
     // Per-lane hub routing: lane_name → hub name ("direct" for direct lanes)
     std::unordered_map<std::string, std::string> lane_hub_routing_;

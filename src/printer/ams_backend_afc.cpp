@@ -11,6 +11,7 @@
 #include "action_prompt_manager.h"
 #include "afc_defaults.h"
 #include "ams_bypass_policy.h"
+#include "config.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
 #include "printer_discovery.h"
@@ -1123,6 +1124,25 @@ void AmsBackendAfc::handle_status_update(const nlohmann::json& notification) {
             parse_afc_state(params["afc"], deferred_error_event, current_slot_set_by_afc_state,
                             afc_stated_unloaded);
             state_changed = true;
+        }
+
+        // Feature-probe the FIRST frame carrying any lane object, before the
+        // loops below — they are bounded by slots_.slot_count(), so on a frame
+        // that arrives before the registry exists they match nothing and the
+        // probe would slip to a later frame. Later frames are deltas, where an
+        // absent key means "unchanged" and would read as legacy firmware.
+        // Scanning the raw params keeps the probe on the complete baseline
+        // regardless of registry state. Both prefixes: OpenAMS and friends
+        // publish AFC_lane, BoxTurtle publishes AFC_stepper, same get_status().
+        if (!feature_level_checked_) {
+            for (auto it = params.begin(); it != params.end(); ++it) {
+                const std::string& k = it.key();
+                if (it.value().is_object() &&
+                    (k.rfind("AFC_stepper ", 0) == 0 || k.rfind("AFC_lane ", 0) == 0)) {
+                    check_afc_feature_level(it.value());
+                    break;
+                }
+            }
         }
 
         // Parse AFC_stepper lane objects for sensor states
@@ -3045,6 +3065,65 @@ bool AmsBackendAfc::apply_afc_version_response(const nlohmann::json& response) {
                  "feature-detected)",
                  afc_version_);
     return true;
+}
+
+bool AmsBackendAfc::status_has_modern_fields(const nlohmann::json& lane_status) {
+    return lane_status.contains("filament_name") || lane_status.contains("multi_color_hexes") ||
+           lane_status.contains("initial_weight");
+}
+
+void AmsBackendAfc::check_afc_feature_level(const nlohmann::json& lane_status) {
+    // Runs once, against the subscription's first frame — see the @warning on
+    // status_has_modern_fields(). Latch before deciding so a malformed baseline
+    // cannot re-arm the probe onto a delta.
+    if (feature_level_checked_) {
+        return;
+    }
+    feature_level_checked_ = true;
+
+    const bool modern = status_has_modern_fields(lane_status);
+
+    // Side effects only for a backend actually wired to a printer. An unwired
+    // one is a harness fixture replaying a synthetic payload — most such
+    // payloads carry none of the v1.2.0 keys and so read as legacy, which would
+    // mean a config write and an upgrade toast per fixture (126 of them across
+    // the [ams] suite) advising nobody to upgrade nothing.
+    if (!client_) {
+        spdlog::debug("[AMS AFC] Feature level probe: no client, advisory skipped");
+        return;
+    }
+
+    spdlog::info("[AMS AFC] Feature level: AFC {} the v1.2.0 lane fields",
+                 modern ? "publishes" : "does NOT publish");
+
+    auto* config = Config::get_instance();
+    if (!config) {
+        return;
+    }
+    constexpr const char* kNoticeShownKey = "/ams/afc_upgrade_notice_shown";
+
+    if (modern) {
+        // Re-arm, so a downgrade is reported again rather than silently accepted.
+        if (config->get<bool>(kNoticeShownKey, false)) {
+            config->set<bool>(kNoticeShownKey, false);
+            config->save();
+        }
+        return;
+    }
+
+    if (config->get<bool>(kNoticeShownKey, false)) {
+        return; // Already told them once; do not nag on every boot.
+    }
+    config->set<bool>(kNoticeShownKey, true);
+    config->save();
+
+    // Advisory, not an error — nothing is broken, some detail is just missing.
+    // Names the version for the user's benefit even though the trigger is
+    // capability: "1.2.0" is actionable, "your payload lacks filament_name" is not.
+    ui_notification_info_with_action(
+        lv_tr("AFC Update Available"),
+        lv_tr("Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools."),
+        "afc_message");
 }
 
 bool AmsBackendAfc::apply_lane_data_response(const nlohmann::json& response) {

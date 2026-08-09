@@ -92,6 +92,7 @@ translations:
   ACTIONS: ACTIONS
   ADXL: ADXL
   AFC: AFC
+  AFC Update Available: AFC Update Available
   AFC failure reset complete: AFC failure reset complete
   AFC failure reset failed: AFC failure reset failed
   AFC recovery complete: AFC recovery complete
@@ -731,6 +732,7 @@ translations:
   Empty slots disable the associated functionality: Empty slots disable the associated
     functionality
   Enable: Enable
+  Enable Bypass Controls: Enable Bypass Controls
   Enable Monitoring: Enable Monitoring
   Enable Retraction: Enable Retraction
   Enable Timelapse: Enable Timelapse
@@ -971,6 +973,7 @@ translations:
   Finish: Finish
   Finishing up...: Finishing up...
   Firmware Restart: Firmware Restart
+  Firmware reports no bypass. Enable if you feed filament straight to the extruder: Firmware reports no bypass. Enable if you feed filament straight to the extruder
   Firmware restarting...: Firmware restarting...
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
@@ -1417,6 +1420,7 @@ translations:
   Must home axes first: Must home axes first
   My Custom Theme: My Custom Theme
   My Panel: My Panel
+  My Printer: My Printer
   NEWLY DISCOVERED: NEWLY DISCOVERED
   Name: Name
   Name (optional): Name (optional)
@@ -2555,6 +2559,7 @@ translations:
   Update your security PIN: Update your security PIN
   Updates aren't available on this installation.: Updates aren't available on this installation.
   Updating Configuration...: Updating Configuration...
+  Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.
   Upload: Upload
   Upload Debug Bundle: Upload Debug Bundle
   Upload Failed: Upload Failed

@@ -91,6 +91,7 @@
   <translation tag="ACTIONS" ja="アクション"/>
   <translation tag="ADXL" ja="ADXL"/>
   <translation tag="AFC" ja="AFC"/>
+  <translation tag="AFC Update Available"/>
   <translation tag="AFC failure reset complete" ja="AFCエラーリセット完了"/>
   <translation tag="AFC failure reset failed" ja="AFCエラーリセット失敗"/>
   <translation tag="AFC recovery complete" ja="AFC復旧完了"/>
@@ -664,6 +665,7 @@
   <translation tag="Empty" ja="空"/>
   <translation tag="Empty slots disable the associated functionality" ja="空のスロットは関連機能を無効にします"/>
   <translation tag="Enable" ja="有効化"/>
+  <translation tag="Enable Bypass Controls"/>
   <translation tag="Enable Monitoring" ja="監視を有効化"/>
   <translation tag="Enable Retraction" ja="リトラクションを有効化"/>
   <translation tag="Enable Timelapse" ja="タイムラプスを有効化"/>
@@ -887,6 +889,7 @@
   <translation tag="Finish" ja="完了"/>
   <translation tag="Finishing up..." ja="完了中..."/>
   <translation tag="Firmware Restart" ja="ファームウェア再起動"/>
+  <translation tag="Firmware reports no bypass. Enable if you feed filament straight to the extruder"/>
   <translation tag="Firmware restarting..." ja="ファームウェア再起動中..."/>
   <translation tag="FlashForge Adventurer 5M" ja="FlashForge Adventurer 5M"/>
   <translation tag="FlashForge Adventurer 5X" ja="FlashForge Adventurer 5X"/>
@@ -1273,6 +1276,7 @@
   <translation tag="Must home axes first" ja="先にホーミングしてください"/>
   <translation tag="My Custom Theme" ja="マイカスタムテーマ"/>
   <translation tag="My Panel" ja="マイパネル"/>
+  <translation tag="My Printer"/>
   <translation tag="NEWLY DISCOVERED" ja="新規検出"/>
   <translation tag="Name" ja="名前"/>
   <translation tag="Name (optional)" ja="名前（オプション）"/>
@@ -2253,6 +2257,7 @@
   <translation tag="Update your security PIN" ja="セキュリティ PIN を更新"/>
   <translation tag="Updates aren&apos;t available on this installation." ja="このインストールでは更新は利用できません。"/>
   <translation tag="Updating Configuration..." ja="設定を更新中..."/>
+  <translation tag="Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools."/>
   <translation tag="Upload" ja="アップロード"/>
   <translation tag="Upload Debug Bundle" ja="デバッグバンドルをアップロード"/>
   <translation tag="Upload Failed" ja="アップロード失敗"/>

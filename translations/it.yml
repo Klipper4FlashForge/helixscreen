@@ -97,6 +97,7 @@ translations:
   ACTIONS: AZIONI
   ADXL: ADXL
   AFC: AFC
+  AFC Update Available: ''
   AFC failure reset complete: Reset errore AFC completato
   AFC failure reset failed: Reset errore AFC fallito
   AFC recovery complete: Recupero AFC completato
@@ -758,6 +759,7 @@ translations:
   Empty slots disable the associated functionality: Gli slot vuoti disabilitano le
     funzionalità associate
   Enable: Abilita
+  Enable Bypass Controls: ''
   Enable Monitoring: Abilita monitoraggio
   Enable Retraction: Abilita retrazione
   Enable Timelapse: Abilita timelapse
@@ -1004,6 +1006,7 @@ translations:
   Finish: Fine
   Finishing up...: Completamento...
   Firmware Restart: Riavvio firmware
+  Firmware reports no bypass. Enable if you feed filament straight to the extruder: ''
   Firmware restarting...: Riavvio firmware...
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
@@ -1462,6 +1465,7 @@ translations:
   Must home axes first: È necessario eseguire homing prima
   My Custom Theme: Il mio tema personalizzato
   My Panel: Il mio pannello
+  My Printer: ''
   NEWLY DISCOVERED: APPENA RILEVATO
   Name: Nome
   Name (optional): Nome (facoltativo)
@@ -2631,6 +2635,7 @@ translations:
   Updates aren't available on this installation.: Gli aggiornamenti non sono disponibili
     in questa installazione.
   Updating Configuration...: Aggiornamento configurazione...
+  Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: ''
   Upload: Carica
   Upload Debug Bundle: Carica bundle di debug
   Upload Failed: Caricamento fallito
