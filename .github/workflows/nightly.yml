@@ -91,6 +91,9 @@ jobs:
       run: |
         ccache --set-config=max_size=2G
         ccache --set-config=compression=true
+        # See build.yml for why depend mode is on: the git hash is no longer a
+        # global define, so direct-mode hits are the common case here too.
+        ccache --set-config=depend_mode=true
         ccache -z
 
     - name: Setup Python venv

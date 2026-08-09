@@ -196,17 +196,25 @@ HELIX_VERSION := $(shell cat VERSION.txt 2>/dev/null || echo "0.0.0")
 HELIX_VERSION_MAJOR := $(word 1,$(subst ., ,$(HELIX_VERSION)))
 HELIX_VERSION_MINOR := $(word 2,$(subst ., ,$(HELIX_VERSION)))
 HELIX_VERSION_PATCH := $(word 3,$(subst ., ,$(HELIX_VERSION)))
-HELIX_GIT_HASH := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+# The short git hash is produced by scripts/gen-git-hash.sh into a generated
+# header, not read here: a make variable would be a second source of the same
+# value, free to drift from the one the binary actually reports.
 
 # Installer script filename (single source of truth for Makefile packaging + C++ extraction)
 INSTALLER_FILENAME := install.sh
 
-# Add version defines to compiler flags
+# Add version defines to compiler flags.
+#
+# HELIX_GIT_HASH is deliberately NOT here. Everything in this list lands on
+# every translation unit's command line, and ccache's direct mode hashes that
+# command line, so a value that changes every commit invalidates the whole
+# project's cache on every push. The rest only move at release, which is why
+# they are safe to keep global. The hash goes through a generated header that
+# reaches one object instead. See scripts/gen-git-hash.sh and $(GIT_HASH_H).
 VERSION_DEFINES := -DHELIX_VERSION=\"$(HELIX_VERSION)\" \
                    -DHELIX_VERSION_MAJOR=$(HELIX_VERSION_MAJOR) \
                    -DHELIX_VERSION_MINOR=$(HELIX_VERSION_MINOR) \
                    -DHELIX_VERSION_PATCH=$(HELIX_VERSION_PATCH) \
-                   -DHELIX_GIT_HASH=\"$(HELIX_GIT_HASH)\" \
                    -DINSTALLER_FILENAME=\"$(INSTALLER_FILENAME)\"
 CFLAGS += $(VERSION_DEFINES)
 CXXFLAGS += $(VERSION_DEFINES)
@@ -1123,6 +1131,23 @@ CONTRIBUTORS_H := $(BUILD_DIR)/generated/contributors.h
 
 $(CONTRIBUTORS_H): CONTRIBUTORS.txt scripts/gen-contributors.sh
 	$(Q)BUILD_DIR=$(BUILD_DIR) ./scripts/gen-contributors.sh
+
+# Generated git-hash header. The generator runs every build (there is no single
+# file to depend on: HEAD, packed-refs and worktree .git indirection all move
+# independently) but rewrites the header only when the hash actually changes, so
+# an unchanged HEAD leaves helix_version.o alone.
+GIT_HASH_H := $(BUILD_DIR)/generated/helix_git_hash.h
+
+.PHONY: force-git-hash
+force-git-hash:
+
+$(GIT_HASH_H): force-git-hash
+	$(Q)BUILD_DIR=$(BUILD_DIR) ./scripts/gen-git-hash.sh
+
+# Named explicitly rather than left to the .d file: on a clean tree the header
+# does not exist yet, and the generic pattern rule would compile before it is
+# written. OBJ_DIR follows the sanitizer variants, so this covers those too.
+$(OBJ_DIR)/system/helix_version.o: $(GIT_HASH_H)
 
 # Refresh CONTRIBUTORS.txt from git history (respects .mailmap).
 # Unions primary authors (%aN) with Co-authored-by trailer names so pair- and

@@ -2212,7 +2212,7 @@ These are set during compilation via the Makefile system.
 | `HELIX_VERSION_MAJOR` | Major version number | Parsed from version |
 | `HELIX_VERSION_MINOR` | Minor version number | Parsed from version |
 | `HELIX_VERSION_PATCH` | Patch version number | Parsed from version |
-| `HELIX_GIT_HASH` | Git commit hash (short) | `git describe` |
+| `HELIX_GIT_HASH` | Git commit hash (short) | `scripts/gen-git-hash.sh` → `build/generated/helix_git_hash.h`, not a global define (see BUILD_SYSTEM.md § Version) |
 
 ---
 

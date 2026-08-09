@@ -95,6 +95,13 @@ jobs:
       run: |
         ccache --set-config=max_size=2G
         ccache --set-config=compression=true
+        # Depend mode: resolve cache entries from the compiler's own -MMD
+        # dependency output instead of preprocessing each TU first. Worth
+        # enabling only now that the git hash is out of the global flags (see
+        # scripts/gen-git-hash.sh), so direct-mode hits are the common case
+        # rather than the exception. Trade-off: it disables the preprocessed-mode
+        # fallback, so a direct miss is a full compile with no second chance.
+        ccache --set-config=depend_mode=true
         ccache -z  # Reset stats for this run
 
     - name: Setup Python venv for translations
