@@ -1389,6 +1389,20 @@ actually in the hub. `AFC.current_lane` is the only attribution signal, and it i
 Klipper crash mid-toolchange. **Software cannot determine this from sensors.** See
 `active_load_lane_` and `can_recover_lane_position()`.
 
+This is not a signal that is merely unwired. It does not exist. The full measured state during
+that failure:
+
+```
+lane1  prep=True  load=True  loaded_to_hub=True
+lane4  prep=True  load=True  loaded_to_hub=True
+AFC_hub Turtle_1.state = True   (one sensor, shared by all four lanes)
+AFC.current_lane = None
+```
+
+Console history pointed at lanes 1 and 2. The answer was lane 4, and only looking at the machine
+established it. Anything that claims to pick the stranded lane out of sensor data is guessing,
+and it will be wrong three times in four on a 4-lane unit.
+
 **A failed `AFC_LANE_RESET` names the wrong lane, it does not report a failure.**
 `cmd_AFC_LANE_RESET` retracts the named lane until the hub clears, bailing if *that lane's* own
 switch opens first:
@@ -1403,6 +1417,27 @@ The first two also mean **that lane has now been retracted past its own switch**
 its next load with "LOAD TRIGGER NOT TRIGGERED" until advanced forward again. The third means
 the retract ran the full bowden without clearing — most likely a snapped fragment in the hub,
 which no lane reset can ever clear.
+
+**A wrong lane guess is destructive, not free.** The retract loop runs until *that lane's* own
+switch opens, so the guess always ends with the lane pulled back behind its load sensor. In the
+observed instance a guess at lane 1 left it `load=False`; a forward lane move of 20 mm restored
+the switch (driven that night through BoxTurtle's `BT_LANE_MOVE` wrapper; the portable command
+is `LANE_MOVE`), after which `T0` loaded normally. Until that forward move the lane is unusable,
+and tapping the lane reset again only drags it further back.
+
+*Automatic sequential retry is therefore rejected, deliberately.* Walking the roster on the
+user's behalf leaves every lane it eliminates de-seated: four lanes tried, three working lanes
+broken, to reach an answer a person standing at the machine can read off it directly. Do not add
+it later as a convenience. The only defensible way to spend a guess is one at a time, with the
+resulting de-seat undone before the next.
+
+**When every lane on a hub has been eliminated, the hub holds a broken fragment.** Each
+wrong-lane diagnostic rules out one candidate. Once the whole roster routed to that hub has
+returned it, nothing on that unit owns the obstruction, no lane reset can ever clear it, and it
+comes out by hand. AFC reaches the same conclusion on the load path: `AFC.py` raises *"Hub not
+clear when trying to load. Please check that hub does not contain broken filament and is
+clear"*. This case is not exotic; it occurred twice in one evening on the `.112` rig. A recovery
+flow modelled only on "which lane is it" never terminates here.
 
 **`AFC_LANE_RESET`'s toolhead guard does not actually stop it.** In v1.2.0 (`a06f14d`) the
 hub-clear guard has a `return`; the toolhead guard does not:
@@ -1811,6 +1846,39 @@ Separately, **Reset** (`reset()`) and **Recover** (`recover()`) both send `AFC_R
 today — `reset()` after the usual busy-state preconditions, `recover()` skipping them
 so it still works while the system is stuck. Neither homes the system; `AFC_HOME` is
 not sent by either.
+
+`can_recover_lane_position()` ends with `lane_name == active_load_lane_ &&
+recovery_attribution_valid_unlocked()`, so the targeted per-lane action is offered only when AFC
+itself names the lane. There is no all-lanes fallback: an unattributed strand deliberately offers
+nothing per lane, and the route out is the sidebar Reset, which dispatches `AFC_RESET` and lets
+AFC's own picker list the candidates. That picker's list is built from the firmware's view of its
+hardware and is a better answer than anything derivable from a shared hub sensor.
+
+**Known gaps in wrong-lane handling.** The wrong-lane diagnostic described under "Fields that do
+not mean what they say" is understood but only partly acted on. Each of the following is verified
+absent from `src/` and `include/`, and is recorded here so the reasoning is not re-derived:
+
+- **The diagnostic is not classified.** `AmsBackendAfc::classify_error()` has exactly two
+  AFC-owned branches: a toolhead-jam match, and a `ctx.is_paused && error_state_` catch-all
+  titled "Filament System Error". `"'<lane>' failed to reset to hub, load switch became false
+  during reset"` matches neither on its own. It therefore renders as the generic title when the
+  print happens to be paused and AFC is in an error state, and otherwise falls through to the
+  generic classifier untouched, since AFC raises it with `pause=False`. The one useful fact in
+  the line, the name of a lane now ruled out and de-seated, never reaches the user.
+- **There is no elimination set.** Nothing records which lanes have already returned the
+  diagnostic for the strand currently in a hub, so the broken-fragment conclusion cannot be
+  drawn and the UI keeps inviting another guess. Any such set has to be keyed per hub, because a
+  multi-unit machine has independent hubs, and it has to clear when that hub's sensor goes false
+  or one session's eliminations permanently suppress recovery for later strands.
+- **There is no re-seat action.** Nothing undoes the retract that a wrong guess causes.
+  `AmsBackend::clear_fault()` is bookkeeping and moves no filament, and
+  `recover_lane_position()` sends `AFC_LANE_RESET`, which retracts *toward* the hub, the opposite
+  direction from what a de-seated lane needs. The user is left to work the forward `LANE_MOVE`
+  out themselves. A re-seat would have to advance in bounded steps and stop the moment
+  `raw_load_state` returns true, never move a fixed distance, since overshoot pushes filament
+  back at a hub that is still blocked. `LANE_MOVE`'s printing guard is not an obstacle for the
+  common case: `AFC_functions.py`'s `is_printing()` compares `print_stats.state` against
+  `"printing"` only, so a paused print does not trip it and no `FORCE=1` is needed.
 
 ### Capabilities
 
