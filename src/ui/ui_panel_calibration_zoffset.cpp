@@ -20,6 +20,7 @@
 #include "probe_sensor_manager.h"
 #include "probe_sensor_types.h"
 #include "static_panel_registry.h"
+#include "toolhead_homing.h"
 #include "z_offset_utils.h"
 
 #include <spdlog/spdlog.h>
@@ -405,12 +406,11 @@ void ZOffsetCalibrationPanel::begin_saving_restart_watch() {
                 // Settle on the next tick, NOT here: on_calibration_result() ->
                 // set_state() -> end_saving_restart_watch() would reset this very
                 // observer from inside its own callback.
-                self->lifetime_.defer(
-                    "ZOffsetCalibrationPanel::settle_after_restart", [self]() {
-                        if (self->state_ == State::SAVING) {
-                            self->on_calibration_result(true, "");
-                        }
-                    });
+                self->lifetime_.defer("ZOffsetCalibrationPanel::settle_after_restart", [self]() {
+                    if (self->state_ == State::SAVING) {
+                        self->on_calibration_result(true, "");
+                    }
+                });
             }
         });
 }
@@ -519,8 +519,7 @@ void ZOffsetCalibrationPanel::begin_probe_sequence() {
     auto strategy = ps.get_z_offset_calibration_strategy();
 
     // Check homing state (shared across all strategies)
-    const char* homed = lv_subject_get_string(ps.get_homed_axes_subject());
-    bool all_homed = homed && std::string(homed).find("xyz") != std::string::npos;
+    const bool all_homed = helix::toolhead_is_homed(ps);
 
     if (strategy == ZOffsetCalibrationStrategy::FIRMWARE_MANAGED) {
         // Manual Z calibrate: home, move to center, lower to Z0.1
@@ -573,8 +572,9 @@ void ZOffsetCalibrationPanel::begin_probe_sequence() {
         // Probe calibrate or endstop strategy
         std::string gcode;
         if (!all_homed) {
+            const char* homed_dbg = lv_subject_get_string(ps.get_homed_axes_subject());
             spdlog::info("[ZOffsetCal] Axes not homed (homed_axes='{}'), homing first",
-                         homed ? homed : "");
+                         homed_dbg ? homed_dbg : "");
             gcode = "G28\n";
         }
 
