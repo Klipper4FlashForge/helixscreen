@@ -39,6 +39,10 @@ TEST_CASE_METHOD(HelixTestFixture, "DetailedFormatter writes progress, layer, ti
     PrinterStateTestAccess::reset(ps);
     ps.init_subjects(false);
 
+    // Real slicer layer fields — no "~" estimate marker.
+    PrinterPrintStateTestAccess::set_has_real_layer_data(
+        PrinterStateTestAccess::get_print_state(ps), true);
+
     FormatterScope fs;
 
     lv_subject_set_int(ps.get_print_progress_subject(), 47);
@@ -110,6 +114,9 @@ TEST_CASE_METHOD(HelixTestFixture, "DetailedFormatter seeds initial values on co
     PrinterStateTestAccess::reset(ps);
     ps.init_subjects(false);
 
+    PrinterPrintStateTestAccess::set_has_real_layer_data(
+        PrinterStateTestAccess::get_print_state(ps), true);
+
     // Set subjects BEFORE creating formatter — seed calls in constructor pick them up
     lv_subject_set_int(ps.get_print_progress_subject(), 75);
     lv_subject_set_int(ps.get_print_layer_current_subject(), 100);
@@ -132,6 +139,9 @@ TEST_CASE_METHOD(HelixTestFixture, "DetailedFormatter layer text omits total whe
     PrinterStateTestAccess::reset(ps);
     ps.init_subjects(false);
 
+    PrinterPrintStateTestAccess::set_has_real_layer_data(
+        PrinterStateTestAccess::get_print_state(ps), true);
+
     FormatterScope fs;
 
     lv_subject_set_int(ps.get_print_layer_current_subject(), 7);
@@ -141,6 +151,32 @@ TEST_CASE_METHOD(HelixTestFixture, "DetailedFormatter layer text omits total whe
 
     REQUIRE(std::string(lv_subject_get_string(
                 lv_xml_get_subject(nullptr, "print_status_layer_text"))) == "Layer 7");
+}
+
+// The panel's richest layer path (on_print_layer_changed) marks progress-derived
+// layers with "~" and appends the commanded Z height. The widget renders the same
+// subjects and must produce the same string.
+TEST_CASE_METHOD(HelixTestFixture, "DetailedFormatter layer text marks estimates and shows Z",
+                 "[print_status][formatter]") {
+    PrintStatusWidget::destroy_formatter_for_test();
+
+    PrinterState& ps = get_printer_state();
+    PrinterStateTestAccess::reset(ps);
+    ps.init_subjects(false);
+
+    FormatterScope fs;
+
+    // A freshly reset PrinterState has neither real layer data nor a Z-derived
+    // layer, so layer_is_accurate() is false and the count is an estimate.
+    REQUIRE(ps.layer_is_accurate() == false);
+
+    lv_subject_set_int(ps.get_gcode_position_z_subject(), 2400); // 24.00mm
+    lv_subject_set_int(ps.get_print_layer_current_subject(), 42);
+    lv_subject_set_int(ps.get_print_layer_total_subject(), 213);
+    UpdateQueueTestAccess::drain_all(UpdateQueue::instance());
+
+    REQUIRE(std::string(lv_subject_get_string(lv_xml_get_subject(
+                nullptr, "print_status_layer_text"))) == "Layer ~42 / 213 (24.0mm)");
 }
 
 TEST_CASE_METHOD(HelixTestFixture, "DetailedFormatter filament text empty when zero",

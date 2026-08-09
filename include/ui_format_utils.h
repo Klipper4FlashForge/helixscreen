@@ -43,6 +43,22 @@ std::string format_filament_weight(float grams);
 std::string format_layer_count(uint32_t layer_count);
 
 /**
+ * @brief Format live layer progress for the print-status displays
+ *
+ * The single renderer behind every "Layer N / M" string. Omits the total when
+ * it is unknown, marks counts that were guessed from the progress fraction with
+ * a leading "~", and appends the commanded Z height when one is available.
+ * Examples: "Layer 42 / 213", "Layer ~42 / 213 (24.0mm)", "Layer 7"
+ *
+ * @param current Current layer number
+ * @param total Total layers, or 0/negative when unknown
+ * @param accurate False when the layer was estimated from the progress fraction
+ * @param z_centimm Commanded Z in centimillimeters, or 0/negative to omit
+ * @return Formatted layer string
+ */
+std::string format_layer_progress(int current, int total, bool accurate, int z_centimm);
+
+/**
  * @brief Format print height in millimeters
  *
  * Formats object height with appropriate precision.

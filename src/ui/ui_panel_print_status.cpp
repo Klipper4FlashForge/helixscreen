@@ -12,6 +12,7 @@
 #include "ui_fan_control_overlay.h"
 #include "ui_filament_mapping_card.h"
 #include "ui_filename_utils.h"
+#include "ui_format_utils.h"
 #include "ui_gcode_viewer.h"
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
@@ -1628,6 +1629,14 @@ void PrintStatusPanel::load_gcode_file(const char* file_path) {
     ui_gcode_viewer_load_file(gcode_viewer_, file_path);
 }
 
+void PrintStatusPanel::update_layer_text() {
+    std::string text = helix::ui::format_layer_progress(
+        lifecycle_.current_layer(), lifecycle_.total_layers(), printer_state_.layer_is_accurate(),
+        lv_subject_get_int(printer_state_.get_gcode_position_z_subject()));
+    std::snprintf(layer_text_buf_, sizeof(layer_text_buf_), "%s", text.c_str());
+    lv_subject_copy_string(&layer_text_subject_, layer_text_buf_);
+}
+
 void PrintStatusPanel::update_filament_used_text() {
     int filament_mm = lv_subject_get_int(get_printer_state().get_print_filament_used_subject());
     if (filament_mm > 0) {
@@ -1653,12 +1662,7 @@ void PrintStatusPanel::update_all_displays() {
                                   sizeof(progress_text_buf_));
     lv_subject_copy_string(&progress_text_subject_, progress_text_buf_);
 
-    // Layer text (prefix with ~ when estimated from progress)
-    const char* layer_fmt =
-        printer_state_.has_real_layer_data() ? "Layer %d / %d" : "Layer ~%d / %d";
-    std::snprintf(layer_text_buf_, sizeof(layer_text_buf_), layer_fmt, lifecycle_.current_layer(),
-                  lifecycle_.total_layers());
-    lv_subject_copy_string(&layer_text_subject_, layer_text_buf_);
+    update_layer_text();
 
     // Filament used text
     update_filament_used_text();
@@ -2832,9 +2836,7 @@ void PrintStatusPanel::on_print_state_changed(PrintJobState job_state) {
         }
 
         if (lifecycle_.total_layers() > 0) {
-            std::snprintf(layer_text_buf_, sizeof(layer_text_buf_), "Layer %d / %d",
-                          lifecycle_.current_layer(), lifecycle_.total_layers());
-            lv_subject_copy_string(&layer_text_subject_, layer_text_buf_);
+            update_layer_text();
         }
 
         format_time(lifecycle_.elapsed_seconds(), elapsed_buf_, sizeof(elapsed_buf_));
@@ -2954,22 +2956,7 @@ void PrintStatusPanel::on_print_layer_changed(int current_layer) {
         return;
     }
 
-    // Prefix "~" only for the progress-fraction guess. Real slicer/Moonraker
-    // fields AND Z-height-derived layers are accurate (Mainsail parity), so
-    // layer_is_accurate() — not the narrower has_real_data — drives the prefix.
-    // Include Z height in centimillimeters when available.
-    bool layer_accurate = printer_state_.layer_is_accurate();
-    int z_centimm = lv_subject_get_int(printer_state_.get_gcode_position_z_subject());
-    if (z_centimm > 0) {
-        const char* fmt = layer_accurate ? "Layer %d / %d (%.1fmm)" : "Layer ~%d / %d (%.1fmm)";
-        std::snprintf(layer_text_buf_, sizeof(layer_text_buf_), fmt, lifecycle_.current_layer(),
-                      lifecycle_.total_layers(), z_centimm / 100.0);
-    } else {
-        const char* fmt = layer_accurate ? "Layer %d / %d" : "Layer ~%d / %d";
-        std::snprintf(layer_text_buf_, sizeof(layer_text_buf_), fmt, lifecycle_.current_layer(),
-                      lifecycle_.total_layers());
-    }
-    lv_subject_copy_string(&layer_text_subject_, layer_text_buf_);
+    update_layer_text();
 
     // Update G-code viewer ghost layer if panel is active and viewer is visible
     if (is_active_ && gcode_viewer_ && !lv_obj_has_flag(gcode_viewer_, LV_OBJ_FLAG_HIDDEN) &&

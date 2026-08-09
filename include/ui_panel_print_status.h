@@ -543,6 +543,9 @@ class PrintStatusPanel : public OverlayBase {
     void recompute_aux_composites_for_measurement(int density,
                                                   bool aux_present); ///< Measurement helper
 
+    /// Render print_layer_text from the lifecycle's layer counters.
+    void update_layer_text();
+
     /// Render print_filament_used_text from the current filament_used subject.
     void update_filament_used_text();
 

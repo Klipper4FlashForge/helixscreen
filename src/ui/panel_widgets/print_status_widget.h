@@ -309,7 +309,7 @@ class PrintStatusWidget : public PanelWidget {
 
         // Buffers backing string subjects
         char progress_pct_buf_[8];      // "100%"
-        char layer_text_buf_[32];       // "Layer 9999 / 9999"
+        char layer_text_buf_[64];       // "Layer ~9999 / 9999 (123.4mm)", translated
         char time_text_buf_[40];        // "12h 34m / 99h 99m"
         char filament_text_buf_[32];    // "1234.5m / 9999.9m"
         char nozzle_text_buf_[32];      // "265 / 270°C" — kept for tool_override test

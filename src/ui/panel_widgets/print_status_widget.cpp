@@ -5,6 +5,7 @@
 
 #include "ui_error_reporting.h"
 #include "ui_event_safety.h"
+#include "ui_format_utils.h"
 #include "ui_nav_manager.h"
 #include "ui_overlay_temp_graph.h"
 #include "ui_panel_print_select.h"
@@ -1838,11 +1839,9 @@ void PrintStatusWidget::DetailedFormatter::update_layer_text() {
     auto& ps = get_printer_state();
     int cur = lv_subject_get_int(ps.get_print_layer_current_subject());
     int tot = lv_subject_get_int(ps.get_print_layer_total_subject());
-    if (tot <= 0) {
-        snprintf(layer_text_buf_, sizeof(layer_text_buf_), "Layer %d", cur);
-    } else {
-        snprintf(layer_text_buf_, sizeof(layer_text_buf_), "Layer %d / %d", cur, tot);
-    }
+    std::string text = helix::ui::format_layer_progress(
+        cur, tot, ps.layer_is_accurate(), lv_subject_get_int(ps.get_gcode_position_z_subject()));
+    snprintf(layer_text_buf_, sizeof(layer_text_buf_), "%s", text.c_str());
     lv_subject_copy_string(&layer_text_subject_, layer_text_buf_);
 }
 
