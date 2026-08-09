@@ -404,8 +404,10 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
                 // bypassed entirely. Fetch the PNG bytes over the HTTP lane and
                 // decode them into a PSRAM-backed lv_image_dsc_t instead of a
                 // cache file — same shape as the print-select card fetch in
-                // ui_panel_print_select.cpp. print_thumbnail_path_ stays empty
-                // here; consumers observe print_psram_thumb_gen instead.
+                // ui_panel_print_select.cpp. print_thumbnail_path_ carries the
+                // shared kNoThumbnailPlaceholder (benchy) on this platform; the
+                // real image arrives via print_psram_thumb_gen, whose observer
+                // replaces the placeholder src with the PSRAM descriptor.
                 //
                 // Moonraker's thumbnail relative_path is relative to the gcode
                 // file's PARENT directory, so a print from a subdirectory needs
