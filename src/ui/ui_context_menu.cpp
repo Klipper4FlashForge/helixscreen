@@ -76,9 +76,10 @@ bool ContextMenu::show_near_widget(lv_obj_t* parent, int item_index, lv_obj_t* n
     // Let subclass configure the menu
     on_created(menu_);
 
-    // Position the menu card near the target widget
+    // Widen the action rows to the card, then position it near the target widget
     lv_obj_t* menu_card = lv_obj_find_by_name(menu_, menu_card_name());
     if (menu_card) {
+        stretch_rows_to_card(menu_card);
         position_near_widget(menu_card, near_widget);
     }
 
@@ -114,6 +115,46 @@ void ContextMenu::dispatch_action(int action) {
     if (callback_copy) {
         callback_copy(action, item);
     }
+}
+
+// ============================================================================
+// Row sizing
+// ============================================================================
+
+// DECLARATIVE_OK: measured layout. A menu card sized `width="content"` cannot stretch
+// its rows declaratively — LVGL flex has no cross-axis stretch, and giving a row
+// `width="100%"` drops it out of the parent's content-width calculation entirely
+// (`w_ignore_size`, lv_obj_pos.c), collapsing the card to its widest non-percentage
+// child. So measure the card once, then widen every action row to that measurement:
+// the whole row becomes the hit target instead of just the text inside it.
+void ContextMenu::stretch_rows_to_card(lv_obj_t* menu_card) {
+    lv_obj_update_layout(menu_card);
+
+    int32_t content_w = lv_obj_get_content_width(menu_card);
+    if (content_w <= 0)
+        return;
+
+    uint32_t child_cnt = lv_obj_get_child_count(menu_card);
+    for (uint32_t i = 0; i < child_cnt; i++) {
+        lv_obj_t* child = lv_obj_get_child(menu_card, i);
+        if (!child)
+            continue;
+        // Hidden rows do not contribute to content_w, so forcing a width on one could
+        // clip it if it is revealed later. Leave them at their natural size.
+        if (lv_obj_has_flag(child, LV_OBJ_FLAG_HIDDEN))
+            continue;
+        // Only rows that can actually be tapped — labels, hints and separators keep
+        // their declared sizing.
+        if (!lv_obj_has_flag(child, LV_OBJ_FLAG_CLICKABLE))
+            continue;
+        // Percentage rows already track the card width.
+        if (LV_COORD_IS_PCT(lv_obj_get_style_width(child, LV_PART_MAIN)))
+            continue;
+
+        lv_obj_set_width(child, content_w);
+    }
+
+    spdlog::trace("[ContextMenu] Stretched rows to card content width {}", content_w);
 }
 
 // ============================================================================

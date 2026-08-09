@@ -140,6 +140,13 @@ class ContextMenu {
     ActionCallback action_callback_;
 
     /**
+     * @brief Widen every tappable row to the card's content width
+     * Makes a row clickable across the full menu width rather than only across the
+     * width of its own text. Runs after on_created() so it sees the final row set.
+     */
+    static void stretch_rows_to_card(lv_obj_t* menu_card);
+
+    /**
      * @brief Position the menu card near the target widget
      */
     void position_near_widget(lv_obj_t* menu_card, lv_obj_t* near_widget);
