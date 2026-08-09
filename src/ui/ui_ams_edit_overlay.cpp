@@ -16,8 +16,10 @@
 #include "app_globals.h"
 #include "color_utils.h"
 #include "filament_database.h"
+#include "filament_display_name.h"
 #include "filament_mapper.h"
 #include "format_utils.h"
+#include "spoolman_manager.h"
 #include "static_panel_registry.h"
 #include "ui/ui_lazy_panel_helper.h"
 #if HELIX_HAS_LABEL_PRINTER
@@ -148,12 +150,11 @@ bool AmsEditOverlay::show_for_slot(lv_obj_t* parent, int slot_index, const SlotI
     // It has to be ONE combined callback: NavigationManager keeps a single close
     // callback per widget, so a separate destroy_on_close registration would
     // just overwrite this one (or be overwritten by it).
-    NavigationManager::instance().register_overlay_close_callback(
-        cached_overlay_widget_, []() {
-            auto& overlay = get_ams_edit_overlay();
-            overlay.fire_completion(false);
-            overlay.destroy_overlay_ui(overlay.cached_overlay_widget_);
-        });
+    NavigationManager::instance().register_overlay_close_callback(cached_overlay_widget_, []() {
+        auto& overlay = get_ams_edit_overlay();
+        overlay.fire_completion(false);
+        overlay.destroy_overlay_ui(overlay.cached_overlay_widget_);
+    });
 
     // Reset per-session view state HERE (covered-safe — on_deactivate must not
     // touch it, since it also fires when the QR scanner merely covers us).
@@ -176,7 +177,11 @@ bool AmsEditOverlay::show_for_slot(lv_obj_t* parent, int slot_index, const SlotI
         api_->spoolman().get_spoolman_spool(
             spool_id,
             [this, token, spool_id](const std::optional<SpoolInfo>& spool) {
-                if (!spool || token.expired())
+                // No bare token.expired() here: that is the L081 Mechanism C
+                // TOCTOU shape (checked on a bg thread, acted on afterwards) and
+                // it is what the bg_tok_expired_check telemetry recorded on
+                // editor open. token.defer() below already gates on liveness.
+                if (!spool)
                     return;
                 // Capture Spoolman's authoritative data for the spool
                 int fetched_filament_id = spool->filament_id;
@@ -257,6 +262,16 @@ lv_obj_t* AmsEditOverlay::create(lv_obj_t* parent) {
     lv_obj_t* header_title = find_widget("header_title");
     if (header_title) {
         lv_label_bind_text(header_title, &slot_indicator_subject_, nullptr);
+    }
+
+    // header_bar's optional trailing badge. The image and the group's visibility
+    // are wired from XML; only the label text is bound here, so the shared
+    // component needs no bind_text of its own (an unset one warns on every
+    // header without a badge). Tracked slots therefore show the Spoolman mark
+    // and spool number together, on every view of the editor.
+    lv_obj_t* badge_text = find_widget("header_title_badge_text");
+    if (badge_text) {
+        lv_label_bind_text(badge_text, &spoolman_id_subject_, nullptr);
     }
 
     lv_obj_t* temp_nozzle_label = find_widget("temp_nozzle_label");
@@ -374,6 +389,26 @@ void AmsEditOverlay::init_subjects() {
         lv_subject_init_string(&chip_text_subject_, chip_text_buf_, nullptr, sizeof(chip_text_buf_),
                                "");
         subjects_.register_subject(&chip_text_subject_);
+
+        // Spoolman spool number shown beside the tracked mark on the overview
+        // card ("#19"). Named so the label binds via bind_text in XML rather than
+        // an imperative lv_label_set_text from update_ui().
+        UI_MANAGED_SUBJECT_STRING(spoolman_id_subject_, spoolman_id_buf_, "",
+                                  "ams_edit_spoolman_id", subjects_);
+
+#if HELIX_HAS_LABEL_PRINTER
+        // Expose the label-printer readiness flag to XML so
+        // btn_detail_print_label can bind its `hidden` flag declaratively and
+        // track pairing/unpairing while the overlay is open. The subject is
+        // owned by LabelPrinterSettingsManager (NOT registered into subjects_ —
+        // it must outlive this overlay). Builds without HELIX_HAS_LABEL_PRINTER
+        // leave the subject unregistered; the XML binding then never installs
+        // and the button keeps its static hidden="true".
+        helix::LabelPrinterSettingsManager::instance().init_subjects();
+        lv_xml_register_subject(
+            nullptr, "label_printer_configured",
+            helix::LabelPrinterSettingsManager::instance().subject_printer_configured());
+#endif
     });
 }
 
@@ -448,8 +483,8 @@ void AmsEditOverlay::populate_picker() {
 
     api_->spoolman().get_spoolman_spools(
         [this, token](const std::vector<SpoolInfo>& spools) {
-            if (token.expired())
-                return;
+            // Liveness is token.defer()'s job — a bare expired() check here is
+            // the L081 Mechanism C anti-pattern.
             spdlog::debug("[AmsEditOverlay] Spoolman returned {} spools", spools.size());
             token.defer([this, spools]() {
                 if (!overlay_root_) {
@@ -469,8 +504,8 @@ void AmsEditOverlay::populate_picker() {
                     return;
                 }
 
-                // Spools arrive already ordered most-recently-used first (then
-                // most-recently-created for never-used) — sort_spools_by_recency()
+                // Spools arrive ordered by most recent activity first, where a
+                // spool's rank is max(last_used, registered) — sort_spools_by_recency()
                 // is applied once in the API layer on fetch (#1071). filter_spools()
                 // preserves order, so filtering doesn't need to re-sort.
                 cached_spools_ = spools;
@@ -547,9 +582,11 @@ void AmsEditOverlay::render_spool_list(const std::string& filter) {
             lv_label_set_text(name_label, name.c_str());
         }
 
+        // The XML widget kept its "spool_color" name; the string is Spoolman's
+        // filament.name, which is the only per-spool label Spoolman stores.
         lv_obj_t* color_label = lv_obj_find_by_name(item, "spool_color");
-        if (color_label && !spool.color_name.empty()) {
-            lv_label_set_text(color_label, spool.color_name.c_str());
+        if (color_label && !spool.filament_name.empty()) {
+            lv_label_set_text(color_label, spool.filament_name.c_str());
         }
 
         lv_obj_t* weight_label = lv_obj_find_by_name(item, "spool_weight");
@@ -602,31 +639,12 @@ void AmsEditOverlay::handle_spool_selected(int spool_id) {
     // Look up SpoolInfo from cached spools
     for (const auto& spool : cached_spools_) {
         if (spool.id == spool_id) {
-            // Auto-fill working_info_ from the selected spool
-            working_info_.spoolman_id = spool.id;
-            working_info_.spoolman_filament_id = spool.filament_id;
-            working_info_.spoolman_vendor_id = spool.vendor_id;
-            working_info_.color_name = spool.color_name;
-            working_info_.multi_color_hexes = spool.multi_color_hexes;
-            working_info_.material = spool.material;
-            working_info_.brand = spool.vendor;
-            working_info_.spool_name = spool.vendor + " " + spool.material;
-            working_info_.remaining_weight_g = static_cast<float>(spool.remaining_weight_g);
-            working_info_.total_weight_g = static_cast<float>(spool.initial_weight_g);
-            working_info_.nozzle_temp_min = spool.nozzle_temp_min;
-            working_info_.nozzle_temp_max = spool.nozzle_temp_max;
-            working_info_.bed_temp = spool.bed_temp_recommended;
-
-            // Parse color hex to RGB
-            if (!spool.color_hex.empty()) {
-                uint32_t rgb = 0;
-                if (helix::parse_hex_color(spool.color_hex.c_str(), rgb)) {
-                    working_info_.color_rgb = rgb;
-                } else {
-                    spdlog::warn("[AmsEditOverlay] Failed to parse color hex: {}", spool.color_hex);
-                }
-            }
-
+            // Auto-fill working_info_ from the selected spool. The field-by-
+            // field copy this replaced had drifted from apply_spool_to_slot()
+            // — it synthesized its own spool_name — so the same spool labelled
+            // differently depending on whether it arrived here or through the
+            // external-spool sync.
+            apply_spool_to_slot(working_info_, spool);
             break;
         }
     }
@@ -673,6 +691,50 @@ void AmsEditOverlay::handle_change_filament() {
     enter_spool_edit();
 }
 
+bool AmsEditOverlay::populate_spool_edit_view() {
+    // Everything the spool-edit view shows that XML alone cannot produce: the
+    // catalog selector's vendor/type dropdown options and product rows, the
+    // pending-color swatch, and the logistics field text. Reads only state this
+    // object already holds, so it is safe to re-run against a rebuilt tree
+    // without disturbing an edit in progress.
+    if (!setup_details_selector()) {
+        return false;
+    }
+
+    lv_obj_t* preview = find_widget("details_color_preview");
+    if (preview) {
+        helix::ui::apply_swatch_color(preview, details_color_, {});
+    }
+
+    populate_detail_fields();
+    return true;
+}
+
+void AmsEditOverlay::repopulate() {
+    // The view subject is C++-owned, so it keeps its value across the rebuild
+    // and the fresh widgets bind to the right branch on their own. What does
+    // not survive is the content each view populates on entry, so re-apply it
+    // for whichever view is showing. The overview is entirely subject-bound and
+    // on_activate() refreshes it.
+    const int view = lv_subject_get_int(&view_mode_subject_);
+    switch (view) {
+    case kViewSpoolPicker:
+        populate_picker();
+        break;
+    case kViewSpoolEdit:
+        populate_spool_edit_view();
+        break;
+    case kViewColor:
+        // Reached from spool-edit, which stays built underneath it.
+        populate_spool_edit_view();
+        populate_color_view();
+        break;
+    default:
+        break;
+    }
+    spdlog::debug("[AmsEditOverlay] Repopulated view {}", view);
+}
+
 void AmsEditOverlay::enter_spool_edit() {
     // Single identity+color+logistics editor (spec §3.3): fresh untracked setup
     // and editing the current filament. Pre-fill from the working slot; the
@@ -684,18 +746,10 @@ void AmsEditOverlay::enter_spool_edit() {
     // stage Spoolman's core spool-weight over the real total (Finding 1).
     spool_edit_entered_tracked_ = working_info_.spoolman_id > 0;
 
-    if (!setup_details_selector()) {
-        return;
-    }
-
     // Seed the pending color from the working slot so Save without a color tap
     // keeps the current color.
     details_color_ = working_info_.color_rgb;
     details_color_set_ = false;
-    lv_obj_t* preview = find_widget("details_color_preview");
-    if (preview) {
-        helix::ui::apply_swatch_color(preview, details_color_, {});
-    }
 
     if (!api_) {
         api_ = get_moonraker_api();
@@ -708,7 +762,7 @@ void AmsEditOverlay::enter_spool_edit() {
     detail_original_.filament_id = working_info_.spoolman_filament_id;
     detail_original_.vendor = working_info_.brand;
     detail_original_.material = working_info_.material;
-    detail_original_.color_name = working_info_.color_name;
+    detail_original_.filament_name = working_info_.spool_name;
     detail_original_.remaining_weight_g = working_info_.remaining_weight_g;
     detail_original_.initial_weight_g = working_info_.total_weight_g;
     // The untracked "Spool weight" field maps to working_info_.total_weight_g on
@@ -725,21 +779,15 @@ void AmsEditOverlay::enter_spool_edit() {
         detail_original_.color_hex = hex_buf;
     }
     detail_working_ = detail_original_;
-    populate_detail_fields();
-
-    // Print Label is spool logistics — offer it here, only when configured.
-    if (lv_obj_t* btn_print = find_widget("btn_detail_print_label")) {
-#if HELIX_HAS_LABEL_PRINTER
-        bool printer_ready = helix::LabelPrinterSettingsManager::instance().is_configured();
-#else
-        bool printer_ready = false;
-#endif
-        if (printer_ready) {
-            lv_obj_remove_flag(btn_print, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(btn_print, LV_OBJ_FLAG_HIDDEN);
-        }
+    // A missing catalog fragment means the view cannot be filled in, so stay
+    // where we are rather than switching to a half-built editor.
+    if (!populate_spool_edit_view()) {
+        return;
     }
+
+    // Print Label visibility is declarative — btn_detail_print_label binds its
+    // hidden flag to `label_printer_configured` in ams_edit_overlay.xml, so
+    // pairing a printer while this view is open reveals the button live.
 
     set_view(kViewSpoolEdit);
 
@@ -756,9 +804,10 @@ void AmsEditOverlay::enter_spool_edit() {
         api_->spoolman().get_spoolman_spool(
             spool_id,
             [this, token, spool_id](const std::optional<SpoolInfo>& spool) {
-                if (!spool || token.expired()) {
+                if (!spool) {
                     return;
                 }
+                // Liveness handled by token.defer(), not a bare expired() check.
                 token.defer([this, spool = *spool]() {
                     detail_original_ = spool;
                     detail_working_ = spool;
@@ -785,37 +834,67 @@ void AmsEditOverlay::handle_spool_edit_save(bool finish) {
     //     filament-details apply path) ---
     // Apply catalog pick (if any) — brand/material/temps from the branded
     // catalog (spec §5: EffectiveFilament -> slot mapping reused).
+    auto iequals = [](const std::string& a, const std::string& b) {
+        if (a.size() != b.size())
+            return false;
+        return std::equal(a.begin(), a.end(), b.begin(), [](unsigned char x, unsigned char y) {
+            return std::tolower(x) == std::tolower(y);
+        });
+    };
     const helix::printer::EffectiveFilament* ef = details_selector_.highlighted();
     if (ef) {
         working_info_.material = ef->type;
-        working_info_.brand = ef->brand;
+        // Preserve the user's stored brand string when the highlighted product
+        // is the SAME vendor (case-insensitive). The selector is seeded to the
+        // slot's brand, so an untouched Save re-highlights that vendor's first
+        // product — adopting ef->brand would rewrite the user's "Sunlu" to the
+        // catalog's canonical "SUNLU" casing (and, before the seed fix, clobber
+        // it to "Generic"). A genuine vendor change still adopts the new brand.
+        if (!iequals(ef->brand, working_info_.brand))
+            working_info_.brand = ef->brand;
         working_info_.nozzle_temp_min = ef->nozzle_min;
         working_info_.nozzle_temp_max = ef->nozzle_max;
         working_info_.bed_temp = ef->bed_temp;
-        spdlog::info("[AmsEditOverlay] Spool-edit pick: '{} {}' ({}-{}/{}°C)", ef->brand, ef->type,
-                     ef->nozzle_min, ef->nozzle_max, ef->bed_temp);
+        // WHICH product, not just its material. ef->type collapses every PLA
+        // product a vendor sells into one string, so without these the reopened
+        // editor can only preselect-first and lands on whichever variant sorts
+        // alphabetically first. Overwritten unconditionally (never merged) so a
+        // stale id from a previous pick — or one that no longer resolves — is
+        // replaced by whatever the user is actually confirming here.
+        working_info_.catalog_id = ef->id;
+        working_info_.product_name = ef->name;
+        spdlog::info("[AmsEditOverlay] Spool-edit pick: '{} {}' [{}] ({}-{}/{}°C)", ef->brand,
+                     ef->name, ef->id, ef->nozzle_min, ef->nozzle_max, ef->bed_temp);
     } else {
         // No product highlighted. With preselect-on-change enabled this only
         // happens when the rebuilt product list was empty — a type the firmware
         // whitelists but the catalog has no product for yet. If the user did
-        // change the type, apply a Generic identity so Save doesn't silently
-        // drop it; temps are left as-is (no catalog data to source them from).
-        // When the selected type still equals the slot's material the identity
-        // is unchanged and the old skip behavior is correct.
+        // change the type, keep the vendor the dropdown still shows (it was
+        // seeded to the slot's brand and the user didn't change it here) rather
+        // than forcing Generic — only fall back to Generic when the selection
+        // genuinely is Generic/empty. Temps are left as-is (no catalog data to
+        // source them from). When the selected type still equals the slot's
+        // material the identity is unchanged and the old skip behavior is right.
         std::string sel_type = details_selector_.current_type();
-        auto iequals = [](const std::string& a, const std::string& b) {
-            if (a.size() != b.size())
-                return false;
-            return std::equal(a.begin(), a.end(), b.begin(), [](unsigned char x, unsigned char y) {
-                return std::tolower(x) == std::tolower(y);
-            });
-        };
         if (!sel_type.empty() && !iequals(sel_type, working_info_.material)) {
             working_info_.material = sel_type; // material names are not translated (L070)
-            working_info_.brand = "Generic";
-            spdlog::info("[AmsEditOverlay] Spool-edit type change with no catalog product: "
-                         "'Generic {}'",
-                         sel_type);
+            std::string sel_vendor = details_selector_.current_vendor();
+            if (iequals(sel_vendor, working_info_.brand)) {
+                // Same vendor as the slot already had — preserve the user's
+                // exact brand string (casing) rather than the dropdown's copy.
+            } else if (!sel_vendor.empty()) {
+                working_info_.brand = sel_vendor;
+            } else {
+                working_info_.brand = "Generic";
+            }
+            // The material genuinely changed and the catalog stocks nothing for
+            // it, so any previously stored product identity now describes a
+            // DIFFERENT material. Leaving it would make the next open navigate
+            // the selector back to the old family and re-adopt the old product.
+            working_info_.catalog_id.clear();
+            working_info_.product_name.clear();
+            spdlog::info("[AmsEditOverlay] Spool-edit type change with no catalog product: '{} {}'",
+                         working_info_.brand, sel_type);
         }
     }
 
@@ -839,8 +918,7 @@ void AmsEditOverlay::handle_spool_edit_save(bool finish) {
         // is the single unlink path (the picker's unlink entry was retired).
         spdlog::info("[AmsEditOverlay] Save-to-Spoolman off — unlinking spool {}",
                      working_info_.spoolman_id);
-        working_info_.spoolman_id = 0;
-        working_info_.spool_name.clear();
+        working_info_.clear_spoolman_link();
     }
 
     // --- Read + validate quantity/logistics fields BEFORE detaching the
@@ -854,8 +932,8 @@ void AmsEditOverlay::handle_spool_edit_save(bool finish) {
     // Reject negative numerics (same rule as SpoolEditModal::validate_fields).
     if (detail_working_.remaining_weight_g < 0 || detail_working_.spool_weight_g < 0 ||
         detail_working_.price < 0) {
-        ToastManager::instance().show(ToastSeverity::ERROR,
-                                      lv_tr("Values must not be negative"), 3000);
+        ToastManager::instance().show(ToastSeverity::ERROR, lv_tr("Values must not be negative"),
+                                      3000);
         return; // stay on the spool-edit view so the user can fix it
     }
 
@@ -864,7 +942,30 @@ void AmsEditOverlay::handle_spool_edit_save(bool finish) {
 
     // --- Logistics two-PATCH for slots that stay managed (merged from the old
     //     spool-details save path) ---
-    if (working_info_.spoolman_id > 0) {
+    if (working_info_.spoolman_id > 0 && !may_write_spoolman_now(original_info_, working_info_)) {
+        // This save is going to raise "Different filament?" in commit_and_close().
+        // Write NOTHING to Spoolman until the user answers: Cancel is a true abort
+        // and cannot retract a PATCH that has already gone out. The identity
+        // outcome (update / create-new / unlink) owns the write from here.
+        //
+        // Logistics-only fields typed in the same save (price, lot, notes,
+        // location) are not carried through the prompt yet — Wave C's LinkIntent
+        // refactor makes the whole decision one ordered plan.
+        spdlog::info("[AmsEditOverlay] Withholding Spoolman write for slot {} pending "
+                     "identity confirmation",
+                     slot_index_);
+
+        // Still stage the edited weights LOCALLY. The logistics block was doing
+        // double duty — sending the PATCH and copying detail_working_ into
+        // working_info_ — so withholding it alone would silently drop the user's
+        // weight edit and leave do_spoolman_save() with no delta to write on
+        // confirm. Deliberately do NOT touch original_info_: the delta is what
+        // makes the post-confirm save PATCH the weight exactly once.
+        working_info_.remaining_weight_g = static_cast<float>(detail_working_.remaining_weight_g);
+        if (detail_working_.initial_weight_g > 0) {
+            working_info_.total_weight_g = static_cast<float>(detail_working_.initial_weight_g);
+        }
+    } else if (working_info_.spoolman_id > 0) {
         nlohmann::json spool_patch;
         nlohmann::json filament_patch;
         SpoolmanSlotSaver::build_spool_patches(detail_original_, detail_working_, spool_patch,
@@ -972,25 +1073,26 @@ void AmsEditOverlay::handle_spool_edit_save(bool finish) {
         // untouched: this both keeps an untouched unknown-weight slot from
         // going spuriously dirty (-1 -> 0) and preserves the sentinel.
         //
-        // Guard: only a GENUINE untracked slot commits these. If this Save
-        // just unlinked a formerly-tracked slot (toggle off above), the
-        // logistics fields on screen came from the async Spoolman fetch —
-        // detail_working_.spool_weight_g is the empty-spool CORE weight, not
-        // the filament total — so staging it would clobber the correct
-        // total_weight_g. The unlinked slot's weights are already right; skip
-        // the staging entirely (Finding 1).
-        if (!spool_edit_entered_tracked_) {
-            lv_obj_t* remaining_w = find_widget("detail_field_remaining");
-            lv_obj_t* spool_wt_w = find_widget("detail_field_spool_weight");
-            const char* remaining_t = remaining_w ? lv_textarea_get_text(remaining_w) : nullptr;
-            const char* spool_wt_t = spool_wt_w ? lv_textarea_get_text(spool_wt_w) : nullptr;
-            if (remaining_t && remaining_t[0] != '\0') {
-                working_info_.remaining_weight_g =
-                    static_cast<float>(detail_working_.remaining_weight_g);
-            }
-            if (spool_wt_t && spool_wt_t[0] != '\0') {
-                working_info_.total_weight_g = static_cast<float>(detail_working_.spool_weight_g);
-            }
+        // Per-field decision (decide_weight_staging): remaining always stages
+        // when filled, because it means the same thing linked or not. Only
+        // total_weight_g is withheld on an unlink-in-place, where the on-screen
+        // "Spool wt" came from Spoolman's spool_weight (empty-spool CORE weight)
+        // and would clobber a correct filament total.
+        lv_obj_t* remaining_w = find_widget("detail_field_remaining");
+        lv_obj_t* spool_wt_w = find_widget("detail_field_spool_weight");
+        const char* remaining_t = remaining_w ? lv_textarea_get_text(remaining_w) : nullptr;
+        const char* spool_wt_t = spool_wt_w ? lv_textarea_get_text(spool_wt_w) : nullptr;
+
+        const WeightStaging staging = decide_weight_staging(spool_edit_entered_tracked_,
+                                                            remaining_t && remaining_t[0] != '\0',
+                                                            spool_wt_t && spool_wt_t[0] != '\0');
+
+        if (staging.stage_remaining) {
+            working_info_.remaining_weight_g =
+                static_cast<float>(detail_working_.remaining_weight_g);
+        }
+        if (staging.stage_total) {
+            working_info_.total_weight_g = static_cast<float>(detail_working_.spool_weight_g);
         }
     }
 
@@ -1128,24 +1230,7 @@ void AmsEditOverlay::handle_scan_qr() {
             // direct backend write anymore: the live form repopulates and the
             // user confirms with Save.
             SlotInfo scanned;
-            scanned.spoolman_id = spool.id;
-            scanned.spoolman_filament_id = spool.filament_id;
-            scanned.spoolman_vendor_id = spool.vendor_id;
-            scanned.color_name = spool.color_name;
-            scanned.material = spool.material;
-            scanned.brand = spool.vendor;
-            scanned.spool_name = spool.vendor + " " + spool.material;
-            scanned.remaining_weight_g = static_cast<float>(spool.remaining_weight_g);
-            scanned.total_weight_g = static_cast<float>(spool.initial_weight_g);
-            scanned.nozzle_temp_min = spool.nozzle_temp_min;
-            scanned.nozzle_temp_max = spool.nozzle_temp_max;
-            scanned.bed_temp = spool.bed_temp_recommended;
-            if (!spool.color_hex.empty()) {
-                uint32_t rgb = 0;
-                if (helix::parse_hex_color(spool.color_hex.c_str(), rgb)) {
-                    scanned.color_rgb = rgb;
-                }
-            }
+            apply_spool_to_slot(scanned, spool);
             helix::ui::queue_update([scanned = std::move(scanned)]() {
                 auto& editor = get_ams_edit_overlay();
                 if (!editor.get_root()) {
@@ -1201,7 +1286,7 @@ void AmsEditOverlay::handle_print_label() {
         spool_info.id = working_info_.spoolman_id;
         spool_info.vendor = working_info_.brand;
         spool_info.material = working_info_.material;
-        spool_info.color_name = working_info_.color_name;
+        spool_info.filament_name = working_info_.spool_name;
         spool_info.remaining_weight_g = working_info_.remaining_weight_g;
         spool_info.initial_weight_g = working_info_.total_weight_g;
     }
@@ -1263,6 +1348,16 @@ void AmsEditOverlay::update_ui() {
         return;
     }
 
+    // Managed-vs-untracked signal (drives mark, details row, toggle default).
+    // Fresh synchronous read — the XML binding fires asynchronously (#311);
+    // mirrors update_spoolman_button_state(). A slot can carry a stale
+    // spoolman_id even when Spoolman itself is unavailable, so gate on both.
+    // Computed before the title because the title carries the spool number.
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    bool has_spoolman = spoolman_subj && lv_subject_get_int(spoolman_subj) == 1;
+    const bool managed = has_spoolman && working_info_.spoolman_id > 0;
+    lv_subject_set_int(&is_managed_subject_, managed ? 1 : 0);
+
     // Header title via subject
     if (slot_index_ < 0) {
         snprintf(slot_indicator_buf_, sizeof(slot_indicator_buf_), "%s",
@@ -1273,19 +1368,38 @@ void AmsEditOverlay::update_ui() {
     }
     lv_subject_copy_string(&slot_indicator_subject_, slot_indicator_buf_);
 
-    // Managed-vs-untracked signal (drives mark, details row, toggle default).
-    // Fresh synchronous read — the XML binding fires asynchronously (#311);
-    // mirrors update_spoolman_button_state(). A slot can carry a stale
-    // spoolman_id even when Spoolman itself is unavailable, so gate on both.
-    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
-    bool has_spoolman = spoolman_subj && lv_subject_get_int(spoolman_subj) == 1;
-    const bool managed = has_spoolman && working_info_.spoolman_id > 0;
-    lv_subject_set_int(&is_managed_subject_, managed ? 1 : 0);
-
     // Identity chip: tracked = spool name (+ mark via binding);
     // untracked = "Brand · Material" (spec §3.8 locked format).
-    if (managed && !working_info_.spool_name.empty()) {
-        snprintf(chip_text_buf_, sizeof(chip_text_buf_), "%s", working_info_.spool_name.c_str());
+    //
+    // spool_name carries the filament name alone ("Ambrosia Pink"), so printing
+    // it verbatim would drop the vendor and the material and say less than the
+    // untracked branch does. compose_filament_label() joins the three the same
+    // way the AMS card does, and drops a brand or material the name already
+    // contains — so a Spoolman name that reads "Bambu Lab ASA" still prints
+    // once, not three times.
+    //
+    // The name is not always on the slot. AFC only publishes filament_name from
+    // v1.2.0, so on an older unit a Spoolman-linked lane has an empty spool_name
+    // while the identity cache holds the real one — the same split the loaded
+    // card resolves through resolve_filament_label(). Consult it here too, or
+    // this card silently degrades to "Elegoo · PLA" for a spool we can name.
+    std::string chip_brand = working_info_.brand;
+    std::string chip_name = working_info_.spool_name;
+    if (working_info_.spoolman_id > 0 && (chip_name.empty() || chip_brand.empty())) {
+        if (const auto identity = SpoolmanManager::find_identity(working_info_.spoolman_id)) {
+            if (chip_name.empty()) {
+                chip_name = identity->filament_name;
+            }
+            if (chip_brand.empty()) {
+                chip_brand = identity->vendor;
+            }
+        }
+    }
+
+    if (managed && !chip_name.empty()) {
+        const std::string chip =
+            helix::compose_filament_label(chip_brand, chip_name, working_info_.material);
+        snprintf(chip_text_buf_, sizeof(chip_text_buf_), "%s", chip.c_str());
     } else {
         const char* brand = working_info_.brand.empty() ? "Generic" : working_info_.brand.c_str();
         const char* material =
@@ -1293,6 +1407,15 @@ void AmsEditOverlay::update_ui() {
         snprintf(chip_text_buf_, sizeof(chip_text_buf_), "%s \xC2\xB7 %s", brand, material);
     }
     lv_subject_copy_string(&chip_text_subject_, chip_text_buf_);
+
+    // Spool number beside the tracked mark. Empty for untracked slots; the label's
+    // own hidden-flag binding on ams_edit_is_managed keeps it off screen there.
+    if (managed) {
+        snprintf(spoolman_id_buf_, sizeof(spoolman_id_buf_), "#%d", working_info_.spoolman_id);
+    } else {
+        spoolman_id_buf_[0] = '\0';
+    }
+    lv_subject_copy_string(&spoolman_id_subject_, spoolman_id_buf_);
 
     // Card color swatch (grandfathered dynamic bg-color write, same as the old
     // big overview swatch).
@@ -1420,7 +1543,15 @@ void AmsEditOverlay::update_temp_display() {
 }
 
 bool AmsEditOverlay::is_dirty() const {
-    // Compare relevant fields that can be edited
+    // Compare relevant fields that can be edited.
+    //
+    // catalog_id / product_name are deliberately NOT compared, for the same
+    // reason the temps aren't: the spool-edit view AUTO-highlights a product
+    // (preselect_first / preselect_on_change), and Save copies whatever is
+    // highlighted. Including them would make an untouched open-and-Save of a
+    // slot that never had a catalog pick report itself dirty. Nothing is lost —
+    // handle_spool_edit_save(finish=true) is the only production caller and it
+    // routes straight into commit_and_close(), which never consults is_dirty().
     return working_info_.color_rgb != original_info_.color_rgb ||
            working_info_.material != original_info_.material ||
            working_info_.brand != original_info_.brand ||
@@ -1450,6 +1581,12 @@ void AmsEditOverlay::open_color_view() {
     if (custom_color_ == 0) {
         custom_color_ = 0x808080;
     }
+    populate_color_view();
+    set_view(kViewColor);
+    spdlog::debug("[AmsEditOverlay] Color view opened (returns to spool-edit)");
+}
+
+void AmsEditOverlay::populate_color_view() {
     lv_obj_t* hsv = find_widget("ams_color_hsv");
     if (hsv) {
         ui_hsv_picker_set_color_rgb(hsv, custom_color_);
@@ -1464,8 +1601,6 @@ void AmsEditOverlay::open_color_view() {
         snprintf(buf, sizeof(buf), "#%06X", custom_color_);
         lv_textarea_set_text(hex_input, buf);
     }
-    set_view(kViewColor);
-    spdlog::debug("[AmsEditOverlay] Color view opened (returns to spool-edit)");
 }
 
 void AmsEditOverlay::apply_color(uint32_t rgb) {
@@ -1704,54 +1839,64 @@ void AmsEditOverlay::commit_and_close() {
     close_editor(true);
 }
 
-void AmsEditOverlay::do_spoolman_save() {
+void AmsEditOverlay::do_spoolman_save(helix::SpoolmanSlotSaver::LinkIntent intent) {
     auto token = lifetime_.token();
     auto saver = std::make_shared<helix::SpoolmanSlotSaver>(api_);
-    saver->save(
-        original_info_, working_info_, [this, token, saver](const helix::SaveResult& result) {
-            if (token.expired()) {
-                return;
-            }
-            // Spoolman callback arrives on a background thread — defer
-            // to the UI thread before touching LVGL subjects/widgets.
-            token.defer([this, result]() {
-                if (!result.success) {
-                    // Local save still proceeds; only the Spoolman mirror failed.
-                    spdlog::error("[AmsEditOverlay] Spoolman save failed, saving locally");
-                    ToastManager::instance().show(ToastSeverity::ERROR,
-                                                  lv_tr("Couldn't update Spoolman — saved locally"),
-                                                  3000);
-                } else if (result.created_new_spool || result.repointed_filament) {
-                    // Persist new Spoolman IDs into working_info_ so the
-                    // completion callback's backend->set_slot_info() writes
-                    // the link back to the slot. Without this, a subsequent
-                    // edit would not know the spool exists and would create
-                    // a duplicate.
-                    if (result.new_spool_id != 0) {
-                        working_info_.spoolman_id = result.new_spool_id;
-                    }
-                    if (result.new_filament_id != 0) {
-                        working_info_.spoolman_filament_id = result.new_filament_id;
-                    }
-                    if (result.new_vendor_id != 0) {
-                        working_info_.spoolman_vendor_id = result.new_vendor_id;
-                    }
-                    // The early sync_active_spool() above was skipped because
-                    // spoolman_id was 0 on both sides (creation hadn't happened
-                    // yet). Notify Moonraker now so Mainsail/Fluidd show the
-                    // new spool as active and filament tracking starts.
-                    if (result.created_new_spool && result.new_spool_id != 0 && api_) {
-                        sync_active_spool(api_, result.new_spool_id);
-                    }
-                    if (result.created_new_spool) {
-                        ToastManager::instance().show(ToastSeverity::INFO,
-                                                      lv_tr("Added to Spoolman"), 2500);
-                    }
-                    // Repoint is silent — IDs change but no toast.
-                }
-                close_editor(true);
-            });
-        });
+    saver->save(original_info_, working_info_, intent,
+                [this, token, saver](const helix::SaveResult& result) {
+                    // Spoolman callback arrives on a background thread — defer
+                    // to the UI thread before touching LVGL subjects/widgets.
+                    token.defer([this, result]() {
+                        if (!result.success) {
+                            // Local save still proceeds; only the Spoolman mirror failed.
+                            spdlog::error("[AmsEditOverlay] Spoolman save failed, saving locally");
+                            ToastManager::instance().show(
+                                ToastSeverity::ERROR,
+                                lv_tr("Couldn't update Spoolman — saved locally"), 3000);
+                        } else if (result.created_new_spool || result.repointed_filament) {
+                            // Persist new Spoolman IDs into working_info_ so the
+                            // completion callback's backend->set_slot_info() writes
+                            // the link back to the slot. Without this, a subsequent
+                            // edit would not know the spool exists and would create
+                            // a duplicate.
+                            if (result.new_spool_id != 0) {
+                                working_info_.spoolman_id = result.new_spool_id;
+                            }
+                            if (result.new_filament_id != 0) {
+                                working_info_.spoolman_filament_id = result.new_filament_id;
+                            }
+                            if (result.new_vendor_id != 0) {
+                                working_info_.spoolman_vendor_id = result.new_vendor_id;
+                            }
+                            // The early sync_active_spool() above was skipped because
+                            // spoolman_id was 0 on both sides (creation hadn't happened
+                            // yet). Notify Moonraker now so Mainsail/Fluidd show the
+                            // new spool as active and filament tracking starts.
+                            if (result.created_new_spool && result.new_spool_id != 0 && api_) {
+                                sync_active_spool(api_, result.new_spool_id);
+                            }
+                            if (result.created_new_spool) {
+                                ToastManager::instance().show(ToastSeverity::INFO,
+                                                              lv_tr("Added to Spoolman"), 2500);
+                            }
+                            // Repoint is silent — IDs change but no toast.
+                        }
+                        close_editor(true);
+                    });
+                });
+}
+
+bool AmsEditOverlay::may_write_spoolman_now(const SlotInfo& original, const SlotInfo& edited) {
+    return !needs_identity_confirmation(original, edited);
+}
+
+AmsEditOverlay::WeightStaging AmsEditOverlay::decide_weight_staging(bool entered_tracked,
+                                                                    bool remaining_filled,
+                                                                    bool total_filled) {
+    WeightStaging staging;
+    staging.stage_remaining = remaining_filled;
+    staging.stage_total = total_filled && !entered_tracked;
+    return staging;
 }
 
 bool AmsEditOverlay::is_material_identity_change(const SlotInfo& original, const SlotInfo& edited) {
@@ -1762,26 +1907,32 @@ bool AmsEditOverlay::is_material_identity_change(const SlotInfo& original, const
 }
 
 void AmsEditOverlay::prompt_identity_change_then_save() {
-    // Dismiss-safe binary confirmation. "Update anyway" -> PATCH the linked
-    // Spoolman spool to match the edited identity, then save+close. "Cancel"
-    // -> TRUE ABORT: nothing is written anywhere, not even locally — a silent
-    // local commit here would show the "different" color/material in the AMS
-    // panel while Spoolman still has the old one, which is worse than either
-    // option this dialog offers. Tapping outside behaves the same as Cancel
-    // (Modal::hide with no completion). No path writes a materially-different
-    // spool, local or remote, without an explicit "Update anyway" confirm.
+    // Nothing can detect a spool swap on these systems — no RFID, no colour
+    // sensing — so the user's answer is the only signal, and the dialog has to
+    // offer the outcome they actually want.
+    //
+    // PRIMARY is "It's a new spool": create a new Spoolman spool and rebind the
+    // lane, leaving the linked one untouched. That is the case a lane keeps its
+    // link across an eject for, and it used to be unreachable — the save
+    // silently patched the OLD spool instead, which is the reported corruption.
+    //
+    // Cancel stays a TRUE ABORT: nothing written, locally or remotely. That
+    // guarantee is worth more than a third button, so "update the linked spool
+    // to match" is deliberately NOT offered here — correcting a mislabelled
+    // spool belongs in the Spoolman panel's own edit, where it is not one
+    // mis-tap away from overwriting a different spool's identity.
     lv_obj_t* dlg = modal_show_confirmation(
         lv_tr("Different filament?"),
-        lv_tr("This looks like a different filament than the linked Spoolman spool. Update the "
-              "Spoolman spool to match?"),
-        ModalSeverity::Warning, lv_tr("Update anyway"), on_identity_confirm_cb,
+        lv_tr("This doesn't match the linked Spoolman spool. Add it as a new spool, or update "
+              "the linked one to match?"),
+        ModalSeverity::Warning, lv_tr("It's a new spool"), on_identity_confirm_cb,
         on_identity_cancel_cb, nullptr);
     if (!dlg) {
-        // Couldn't show the dialog — fall back to the pre-gate behavior rather
-        // than stranding the save (which would never fire_completion).
-        spdlog::warn(
-            "[AmsEditOverlay] identity-change confirmation failed to show; updating anyway");
-        do_spoolman_save();
+        // Couldn't show the dialog — abort rather than guess. Falling through to
+        // a write here would pick one of two destructive outcomes on the user's
+        // behalf, which is exactly what this gate exists to prevent.
+        spdlog::warn("[AmsEditOverlay] identity confirmation failed to show; aborting save");
+        close_editor(false);
     }
 }
 
@@ -1790,7 +1941,9 @@ void AmsEditOverlay::on_identity_confirm_cb(lv_event_t* /*e*/) {
     // leaving it up would keep the buttons re-tappable, double-firing the
     // Spoolman write. Confirmation modals still stack above the overlay (§13.6).
     Modal::hide(Modal::get_top());
-    get_ams_edit_overlay().do_spoolman_save();
+    // "It's a new spool" — create and rebind; the previously linked spool is
+    // left exactly as it was.
+    get_ams_edit_overlay().do_spoolman_save(helix::SpoolmanSlotSaver::LinkIntent::CreateAndRebind);
 }
 
 void AmsEditOverlay::on_identity_cancel_cb(lv_event_t* /*e*/) {
@@ -1833,18 +1986,96 @@ bool AmsEditOverlay::setup_details_selector() {
     std::optional<std::string> seed = working_info_.material.empty()
                                           ? std::nullopt
                                           : std::optional<std::string>(working_info_.material);
+    // Seed the Vendor dropdown from the slot's existing brand so an untouched
+    // Save round-trips it (the selector otherwise snaps vendor to Generic and
+    // preselect_first() would then paint a Generic product over the user's
+    // saved brand). Empty brand -> nullopt -> Generic default, unchanged.
+    std::optional<std::string> vendor_seed = working_info_.brand.empty()
+                                                 ? std::nullopt
+                                                 : std::optional<std::string>(working_info_.brand);
     details_selector_.attach(fragment);
-    details_selector_.configure(std::move(seed), std::move(allowed));
+    details_selector_.configure(std::move(seed), std::move(allowed), std::move(vendor_seed));
     // A vendor/type dropdown change must always leave a product checked so a
     // subsequent header Save can't silently drop the identity change (the
     // rebuilt list would otherwise be all-unchecked and Save would skip
     // identity). Opt in before populate; the standalone picker stays opt-out.
     details_selector_.set_preselect_on_change(true);
     details_selector_.populate();
-    // An already-defined filament should show its matching variant checked;
-    // a fresh list pre-checks the first product so Save is one tap.
-    details_selector_.preselect_first();
+    // Restore the EXACT product the user last saved, when we have one. Vendor +
+    // material family alone are not enough: preselect_first() takes
+    // ordered_products_for().front(), and a vendor whose products all share one
+    // material (SUNLU's six PLAs) has no variant/rank tiebreak left, so it falls
+    // through to lowercased-name alphabetical — "PLA Marble" wins every time and
+    // a saved "PLA+ 2.0" comes back relabelled.
+    //
+    // preselect_product_id() returns false for an id that no longer resolves (a
+    // custom overlay product the user deleted, an id retired by an app update);
+    // preselect_first() then keeps the list from opening all-unchecked. The
+    // stored product_name is still on working_info_ either way, so nothing
+    // downstream forgets what was chosen until the user confirms a replacement.
+    if (!details_selector_.preselect_product_id(working_info_.catalog_id)) {
+        details_selector_.preselect_first();
+    }
+    // A Spoolman-only vendor (present on the server but absent from the bundled
+    // catalog) isn't in the catalog brand list, so the seed above snapped it to
+    // Generic. Fetch the live vendor list and merge it in so the seed resolves.
+    maybe_merge_spoolman_vendors();
     return true;
+}
+
+void AmsEditOverlay::maybe_merge_spoolman_vendors() {
+    // Same availability gate the rest of this overlay uses — skip the RPC (and
+    // its "method not found" warn) on a Spoolman-less printer, where the catalog-
+    // only vendor list is the accepted behavior.
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    if (!spoolman_subj || lv_subject_get_int(spoolman_subj) != 1) {
+        return;
+    }
+    if (!api_) {
+        api_ = get_moonraker_api();
+    }
+    if (!api_) {
+        return;
+    }
+
+    auto tok = lifetime_.token();
+    api_->spoolman().get_spoolman_vendors(
+        [this, tok](const std::vector<VendorInfo>& vendors) {
+            // Background thread: build a plain name list. No `this`/member access
+            // here — L081-safe (the defer wrapper does the atomic liveness check
+            // on the main thread).
+            std::vector<std::string> names;
+            names.reserve(vendors.size());
+            for (const auto& v : vendors) {
+                if (!v.name.empty()) {
+                    names.push_back(v.name);
+                }
+            }
+            tok.defer("AmsEditOverlay::merge_spoolman_vendors_apply",
+                      [this, names = std::move(names)]() mutable {
+                          // Only meaningful while the spool-edit view is still up.
+                          if (lv_subject_get_int(&view_mode_subject_) != kViewSpoolEdit) {
+                              return;
+                          }
+                          details_selector_.set_additional_vendors(std::move(names));
+                          // set_additional_vendors() rebuilds the dropdowns and
+                          // drops both the highlight and the anchor, so the
+                          // saved product has to be re-seeded here or the merge
+                          // undoes setup_details_selector()'s restore. Same
+                          // id-then-first order for the same reason.
+                          //
+                          // For a pure-Spoolman vendor the catalog has no
+                          // product at all, so both calls no-op and the list
+                          // stays empty — handle_spool_edit_save() then keeps
+                          // the dropdown's vendor string, preserving the brand.
+                          if (!details_selector_.preselect_product_id(working_info_.catalog_id)) {
+                              details_selector_.preselect_first();
+                          }
+                      });
+        },
+        [](const MoonrakerError& err) {
+            spdlog::debug("[AmsEditOverlay] Spoolman vendor merge skipped: {}", err.message);
+        });
 }
 
 // ============================================================================

@@ -56,6 +56,8 @@ class JobQueueState {
     void init_subjects();
 
   private:
+    friend class JobQueueStateTestAccess;
+
     void on_queue_fetched(const JobQueueStatus& status);
     void subscribe_to_notifications();
     void update_subjects();

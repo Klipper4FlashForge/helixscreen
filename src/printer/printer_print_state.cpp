@@ -95,6 +95,14 @@ void PrinterPrintState::init_subjects(bool register_xml) {
     // Klipper print_stats.message — pause/error reason from firmware
     INIT_SUBJECT_STRING(print_message, "", subjects_, register_xml);
 
+    // virtual_sdcard.pl_env_valid — Snapmaker-fork Power-Loss-Recovery flag.
+    // Default 0; stays 0 forever on mainline Klipper (field absent).
+    INIT_SUBJECT_INT(pl_env_valid, 0, subjects_, register_xml);
+
+    // print_stats.power_loss — Creality-fork Power-Loss-Recovery capability
+    // marker. Default 0; set to 1 by presence of the key (see update_from_status).
+    INIT_SUBJECT_INT(creality_plr_capable, 0, subjects_, register_xml);
+
     // Pre-populate per-extruder filament_used map. Freezing the map structure
     // here eliminates the BG-thread emplace vs UI-thread read rehash race
     // (see header). update_from_status and the accessor both do direct
@@ -113,6 +121,11 @@ void PrinterPrintState::deinit_subjects() {
     }
 
     spdlog::trace("[PrinterPrintState] Deinitializing subjects");
+
+    // Expire any setter callbacks still queued on the UpdateQueue. They capture
+    // `this` and write the subjects being torn down below; without this the next
+    // drain notifies a freed observer list (#1165, #1146).
+    async_lifetime_.invalidate();
 
     // Signal death of the "static" subjects (print_state_enum, etc.) BEFORE
     // calling deinit_all() — observers in other singletons (AmsState) check
@@ -183,8 +196,6 @@ void PrinterPrintState::reset_for_new_print() {
     layer_z_derived_ = false;
     slicer_progress_ = 0.0;
     slicer_progress_active_ = false;
-    lv_subject_copy_string(&display_message_, "");
-    update_display_message_visible();
     lv_subject_copy_string(&print_message_, "");
     lv_subject_set_int(&print_duration_, 0);
     lv_subject_set_int(&print_elapsed_, 0);
@@ -231,6 +242,27 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
     // false mid-print detection and preventing the print start collector from activating.
     if (status.contains("print_stats")) {
         const auto& stats = status["print_stats"];
+
+        // print_stats.power_loss — Creality-Klipper-fork Power-Loss-Recovery
+        // capability marker. The key exists ONLY in that fork, so PRESENCE (not
+        // value) is the signal: it normally reads 0 and only becomes 1 after the
+        // side-effectful detect probe. Two subtleties:
+        //   - "Present" must mean present AND numeric. We subscribe to a
+        //     narrowed field list, and Moonraker answers a subscribed-but-
+        //     unpopulated field with an explicit null, so on mainline Klipper the
+        //     key IS in the payload as null. is_number() is what discriminates.
+        //   - Latch UP only. Status arrives as deltas, so a later print_stats
+        //     notification carrying just print_duration has no power_loss key at
+        //     all; clearing on absence would manufacture a spurious 1->0->1 edge
+        //     and re-fire the probe. PlrOfferController resets this on the
+        //     disconnect edge instead.
+        if (auto plw_it = stats.find("power_loss"); plw_it != stats.end() && plw_it->is_number()) {
+            if (lv_subject_get_int(&creality_plr_capable_) != 1) {
+                spdlog::info("[PrinterPrintState] print_stats.power_loss present — Creality "
+                             "power-loss-recovery backend available");
+                lv_subject_set_int(&creality_plr_capable_, 1);
+            }
+        }
 
         // Seed print_duration_ BEFORE updating print_state_enum_. The state-change
         // observer in MoonrakerManager fires synchronously when print_state_enum_
@@ -284,12 +316,46 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
                         spdlog::info("[PrinterPrintState] New print starting - clearing outcome");
                         lv_subject_set_int(&print_outcome_, static_cast<int>(PrintOutcome::NONE));
                     }
-                    // Reset slicer progress and display message for the new print
+                    // Reset slicer progress for the new print
                     slicer_progress_ = 0.0;
                     slicer_progress_active_ = false;
+                    lv_subject_copy_string(&print_message_, "");
+                }
+
+                // Clear M117 at print END, never at print start. Clearing on the
+                // observed transition INTO printing destroys PRINT_START-era
+                // messages permanently: Moonraker sends deltas, so Klipper never
+                // re-sends an unchanged value. Correctness here depends on
+                // print_stats being parsed (above) before display_status is
+                // parsed (see the display_status handling later in this
+                // function) within the same status object: if that ordering
+                // ever reversed, a display_status delta belonging to this same
+                // notification could be applied before this clear and get wiped
+                // out immediately after. An END_PRINT macro's M117 arrives in a
+                // later notification and displays normally.
+                //
+                // Must stay inside the `new_state != current_state` guard so this
+                // is EDGE-triggered. Level-triggered would re-clear on every
+                // notification while COMPLETE and would swallow the END_PRINT M117.
+                //
+                // Second clause covers an ABNORMAL exit: some paths (Klipper
+                // restart mid-print, SDCARD_RESET_FILE, certain firmware cancels)
+                // go printing/paused -> standby directly, without ever passing
+                // through a terminal state, so the block above never fires and
+                // the last mid-print M117 would otherwise persist into idle and
+                // into the next print. This must NOT fire on the normal
+                // complete -> standby leg of the end-of-print sequence — that
+                // transition's `current_state` is COMPLETE, not
+                // PRINTING/PAUSED, so it's excluded here and the END_PRINT
+                // macro's farewell message (set after the COMPLETE clear above)
+                // survives.
+                if (new_state == PrintJobState::COMPLETE || new_state == PrintJobState::CANCELLED ||
+                    new_state == PrintJobState::ERROR ||
+                    (new_state == PrintJobState::STANDBY &&
+                     (current_state == PrintJobState::PRINTING ||
+                      current_state == PrintJobState::PAUSED))) {
                     lv_subject_copy_string(&display_message_, "");
                     update_display_message_visible();
-                    lv_subject_copy_string(&print_message_, "");
                 }
             }
 
@@ -631,6 +697,26 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
             sdcard_active_ = sdcard["is_active"].get<bool>();
         }
 
+        // pl_env_valid / file_path — Snapmaker-fork Power-Loss-Recovery fields.
+        // Absent (harmless) on mainline Klipper; Moonraker sends an explicit
+        // null for a subscribed field the connected firmware never populates,
+        // so type-check before extracting rather than assuming presence.
+        if (auto pl_it = sdcard.find("pl_env_valid");
+            pl_it != sdcard.end() && pl_it->is_boolean()) {
+            int val = pl_it->get<bool>() ? 1 : 0;
+            if (lv_subject_get_int(&pl_env_valid_) != val) {
+                lv_subject_set_int(&pl_env_valid_, val);
+            }
+        }
+        if (auto fp_it = sdcard.find("file_path"); fp_it != sdcard.end() && fp_it->is_string()) {
+            // get_ref borrows the stored string (no temporary); assign only when
+            // it actually changed, mirroring the pl_env_valid changed-guard above.
+            const auto& fp = fp_it->get_ref<const std::string&>();
+            if (pl_recovery_file_ != fp) {
+                pl_recovery_file_ = fp;
+            }
+        }
+
         if (sdcard.contains("progress") && sdcard["progress"].is_number()) {
             int file_progress_pct = helix::units::json_to_percent(sdcard, "progress");
 
@@ -715,7 +801,16 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
             // owns the estimate (it tracks real geometry instead of the byte/time
             // progress fraction, which drifts high early in a print). This tier
             // stays for non-sliced jobs / prints with no height metadata.
-            if (!printer_reports_layers_ && layer_height_ <= 0.0) {
+            //
+            // Gated on print_duration > 0: Klipper advances print_duration only
+            // once real print/extrusion moves execute — never during PRINT_START
+            // (bed mesh / purge line / Z-hop). File-position progress, however,
+            // climbs while the START_PRINT macro streams through the file header,
+            // so without this gate a fabricated layer appears (and self-corrects
+            // only once printing begins). Deferring until print_duration > 0 shows
+            // the pre-print default instead of a bogus number.
+            if (!printer_reports_layers_ && layer_height_ <= 0.0 &&
+                lv_subject_get_int(&print_duration_) > 0) {
                 auto current_state =
                     static_cast<PrintJobState>(lv_subject_get_int(&print_state_enum_));
                 bool is_terminal_state = (current_state == PrintJobState::COMPLETE ||
@@ -761,7 +856,17 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
     // should_complete_preprint stays unaffected). It IS flagged layer_z_derived_,
     // which marks the value display-accurate (Mainsail parity) so the label drops
     // the "~" estimate prefix — the derivation tracks real commanded geometry.
-    if (!printer_reports_layers_ && layer_height_ > 0.0 && have_gcode_z_) {
+    //
+    // Gated on print_duration > 0 (see the Tier-2b note above): during
+    // PRINT_START the commanded Z is driven by bed probing and Z-hop, NOT model
+    // layers, so round((z - first) / height) + 1 fabricates a bogus layer
+    // (e.g. Z=2mm with 0.2mm layers => "layer 10"). Worse, this tier sets
+    // layer_z_derived_, so layer_is_accurate() would present that garbage WITHOUT
+    // the "~" estimate prefix. Klipper holds print_duration at 0 until real
+    // extrusion begins, so deferring the derivation until then keeps the layer at
+    // the pre-print default through bed mesh / purge / Z-hop.
+    if (!printer_reports_layers_ && layer_height_ > 0.0 && have_gcode_z_ &&
+        lv_subject_get_int(&print_duration_) > 0) {
         auto current_state = static_cast<PrintJobState>(lv_subject_get_int(&print_state_enum_));
         bool is_terminal_state =
             (current_state == PrintJobState::COMPLETE ||
@@ -805,14 +910,11 @@ void PrinterPrintState::update_print_show_progress() {
 }
 
 void PrinterPrintState::update_display_message_visible() {
-    // Suppress the standalone display_message row during pre-print preparation:
-    // print_start_collector already pipes display_status.message into
-    // print_start_message, so showing it again on the print-status widget would
-    // duplicate the line (e.g. two "Heating..." rows on the preparing card).
-    bool has_message = strcmp(lv_subject_get_string(&display_message_), "") != 0;
-    bool is_preparing =
-        lv_subject_get_int(&print_start_phase_) != static_cast<int>(PrintStartPhase::IDLE);
-    int new_value = (has_message && !is_preparing) ? 1 : 0;
+    // The row mirrors display_status.message and is shown whenever there is
+    // text. Pre-print is deliberately included: PRINT_START macros are where
+    // most M117 traffic originates. The collector's phase label lives in a
+    // separate subject (print_start_message), so there is nothing to duplicate.
+    int new_value = (strcmp(lv_subject_get_string(&display_message_), "") != 0) ? 1 : 0;
     if (lv_subject_get_int(&display_message_visible_) != new_value) {
         lv_subject_set_int(&display_message_visible_, new_value);
     }
@@ -852,7 +954,7 @@ void PrinterPrintState::set_print_display_filename(const std::string& name) {
 }
 
 void PrinterPrintState::set_print_layer_total(int total) {
-    helix::ui::queue_update([this, total]() {
+    async_lifetime_.defer("PrinterPrintState::set_print_layer_total", [this, total]() {
         if (lv_subject_get_int(&print_layer_total_) != total) {
             lv_subject_set_int(&print_layer_total_, total);
         }
@@ -860,15 +962,16 @@ void PrinterPrintState::set_print_layer_total(int total) {
 }
 
 void PrinterPrintState::set_print_layer_heights(double layer_height, double first_layer_height) {
-    helix::ui::queue_update([this, layer_height, first_layer_height]() {
-        layer_height_ = layer_height;
-        first_layer_height_ = (first_layer_height > 0.0) ? first_layer_height : layer_height;
-    });
+    async_lifetime_.defer(
+        "PrinterPrintState::set_print_layer_heights", [this, layer_height, first_layer_height]() {
+            layer_height_ = layer_height;
+            first_layer_height_ = (first_layer_height > 0.0) ? first_layer_height : layer_height;
+        });
 }
 
 void PrinterPrintState::set_print_layer_current(int layer) {
     spdlog::debug("[LayerTracker] set_print_layer_current({}) via gcode fallback", layer);
-    helix::ui::queue_update([this, layer]() {
+    async_lifetime_.defer("PrinterPrintState::set_print_layer_current", [this, layer]() {
         if (!has_real_layer_data_) {
             spdlog::info("[LayerTracker] Receiving real layer data from gcode response");
             has_real_layer_data_ = true;
@@ -890,7 +993,8 @@ void PrinterPrintState::set_print_start_state(PrintStartPhase phase, const char*
     // This is called from WebSocket callbacks (background thread).
     std::string msg = message ? message : "";
     int clamped_progress = std::clamp(progress, 0, 100);
-    helix::ui::queue_update([this, phase, msg, clamped_progress]() {
+    async_lifetime_.defer("PrinterPrintState::set_print_start_state", [this, phase, msg,
+                                                                       clamped_progress]() {
         // Guard: reject non-IDLE phase updates when print is no longer active,
         // UNLESS this is a new print starting (transitioning from IDLE phase).
         // This prevents a deferred COMPLETE callback from arriving after the print
@@ -936,7 +1040,7 @@ void PrinterPrintState::set_print_start_state(PrintStartPhase phase, const char*
 
 void PrinterPrintState::reset_print_start_state() {
     // CRITICAL: Defer to main thread via ui_queue_update
-    helix::ui::queue_update([this]() {
+    async_lifetime_.defer("PrinterPrintState::reset_print_start_state", [this]() {
         int phase = lv_subject_get_int(&print_start_phase_);
         if (phase != static_cast<int>(PrintStartPhase::IDLE)) {
             spdlog::debug("[PrinterPrintState] Resetting print start state to IDLE");
@@ -951,7 +1055,8 @@ void PrinterPrintState::reset_print_start_state() {
 
 void PrinterPrintState::set_print_in_progress(bool in_progress) {
     // Thread-safe wrapper: defer LVGL subject updates to main thread
-    helix::ui::queue_update([this, in_progress]() { set_print_in_progress_internal(in_progress); });
+    async_lifetime_.defer("PrinterPrintState::set_print_in_progress",
+                          [this, in_progress]() { set_print_in_progress_internal(in_progress); });
 }
 
 void PrinterPrintState::set_print_start_time_left(const char* text) {
@@ -994,7 +1099,7 @@ void PrinterPrintState::set_estimated_print_time(int seconds) {
     // Defer subject update to main thread: called from metadata callback (background thread).
     // lv_subject_set_int triggers observer chain which touches LVGL objects.
     int est = estimated_print_time_;
-    helix::ui::queue_update([this, est]() {
+    async_lifetime_.defer("PrinterPrintState::set_estimated_print_time", [this, est]() {
         // Seed/update time_left with slicer estimate when progress is still 0%.
         // Once progress-based calculation kicks in (>=1%), it takes over.
         if (est > 0 && lv_subject_get_int(&print_progress_) == 0) {

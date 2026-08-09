@@ -9,7 +9,7 @@ How the modular print start profile system works, how to add profiles for new pr
 ## Architecture Overview
 
 ```
-printer_database.json              config/print_start_profiles/
+printer_database.json              assets/config/print_start_profiles/
   ┌────────────────────┐             ┌──────────────┐
   │ "ad5m" entry       │──refs────-> │ forge_x.json │  Sequential "// State:" signals
   │ "ad5m_pro" entry   │──refs────-> │ forge_x.json │  Same profile, same firmware
@@ -73,7 +73,7 @@ Notes:
 
 ## Profile JSON Schema
 
-Profiles live in `config/print_start_profiles/{name}.json`.
+Profiles live in `assets/config/print_start_profiles/{name}.json`.
 
 ```jsonc
 {
@@ -180,7 +180,7 @@ Or check Moonraker's console output / Mainsail console. Look for patterns during
 
 ### Step 2: Create the profile JSON
 
-Create `config/print_start_profiles/{name}.json`. Choose your approach:
+Create `assets/config/print_start_profiles/{name}.json`. Choose your approach:
 
 **Structured output (sequential mode)** — If the firmware emits structured lines like `// State: HOMING...` or `[STATUS] Heating bed`, use `signal_formats` with `sequential` progress mode. Map each state to a progress percentage based on roughly how far through the prep sequence it occurs.
 
@@ -190,7 +190,7 @@ Create `config/print_start_profiles/{name}.json`. Choose your approach:
 
 ### Step 3: Add to printer database
 
-In `config/printer_database.json`, add the `print_start_profile` field to the printer entry:
+In `assets/config/printer_database.json`, add the `print_start_profile` field to the printer entry:
 
 ```json
 {
@@ -241,7 +241,7 @@ The ThermoBot firmware outputs lines like:
 // Bed stabilizing at 60C
 ```
 
-Profile: `config/print_start_profiles/thermobot.json`
+Profile: `assets/config/print_start_profiles/thermobot.json`
 
 ```json
 {
@@ -336,12 +336,12 @@ For printers that don't emit any G-code layer markers (like Forge-X), the collec
 | `src/application/moonraker_manager.cpp` | Wiring: profile loading, observer setup |
 | `include/printer_detector.h` | `get_print_start_profile()` declaration |
 | `src/printer/printer_detector.cpp` | Database lookup for profile name |
-| `config/print_start_profiles/*.json` | Profile definitions |
-| `config/printer_database.json` | Maps printer IDs to profile names |
+| `assets/config/print_start_profiles/*.json` | Profile definitions |
+| `assets/config/printer_database.json` | Maps printer IDs to profile names |
 | `tests/unit/test_print_start_profile.cpp` | Profile loading + matching tests |
 | `tests/unit/test_print_start_collector.cpp` | Integration tests with collector |
 | `tests/unit/test_preprint_predictor.cpp` | Predictor unit tests (weighting, FIFO, edge cases) |
-| `docs/PRINT_START_INTEGRATION.md` | User-facing setup guide |
+| `docs/devel/PRINT_START_INTEGRATION.md` | User-facing setup guide |
 
 ---
 
@@ -350,7 +350,7 @@ For printers that don't emit any G-code layer markers (like Forge-X), the collec
 - `set_profile()` must be called **before** `start()`. It is rejected (with a warning) if the collector is active.
 - `profile_` is a `shared_ptr` that is read-only after `start()`. No mutex needed for reads.
 - `state_mutex_` protects `detected_phases_`, `current_phase_`, `print_start_detected_`, and `printing_state_start_`. All writes happen under the lock.
-- `update_phase()` calls `state_.set_print_start_state()` **outside** the lock (it posts to the UI thread via `ui_async_call`).
+- `update_phase()` calls `state_.set_print_start_state()` **outside** the lock (it posts to the UI thread via `ui_queue_update()`).
 - WebSocket callbacks (`on_gcode_response`) run on a background thread. `check_fallback_completion()` runs on the main thread.
 
 ---

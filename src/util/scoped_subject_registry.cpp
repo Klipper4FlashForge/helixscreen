@@ -28,6 +28,18 @@ lv_result_t register_subject_in_current_scope(const char* name, lv_subject_t* su
     return lv_xml_register_subject(g_active_scope, name, subject);
 }
 
+lv_result_t unregister_subject_in_current_scope(const char* name) {
+    if (name == nullptr) {
+        return LV_RESULT_INVALID;
+    }
+    // Symmetric with register_subject_in_current_scope(), including its use of
+    // the *currently active* scope: an owner that registered under a scope
+    // override must also deinit under it, or the name is looked up in the wrong
+    // scope and survives. Everything registered at global scope (the common
+    // case, and every panel today) round-trips correctly.
+    return lv_xml_unregister_subject(g_active_scope, name);
+}
+
 lv_xml_component_scope_t* current_scope() {
     return g_active_scope;
 }

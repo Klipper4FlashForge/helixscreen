@@ -5,7 +5,10 @@
 
 #include "ui_observer_guard.h"
 
+#include "async_lifetime_guard.h"
 #include "json_fwd.h"
+#include "mock_http_file_server.h"
+#include "moonraker_events.h"
 #include "runtime_config.h"
 
 #include <atomic>
@@ -263,14 +266,27 @@ class MoonrakerManager {
      * @return true if the pre-print phase should be marked COMPLETE
      */
     static inline bool should_complete_preprint(bool printer_reports_layers, int current_layer,
-                                                int print_duration, bool seen_layer_zero) {
+                                                int print_duration, bool seen_layer_zero,
+                                                bool layer_advanced = false) {
         if (printer_reports_layers) {
-            // Authoritative: only a genuine 0 -> >=1 transition within this
-            // print ends Preparing. seen_layer_zero rejects a stale positive
+            // Authoritative: layer data proven to belong to THIS print, plus a
+            // layer >= 1. Two ways to prove it, because either alone hangs:
+            //
+            //  - seen_layer_zero: a genuine 0 -> >=1 edge.
+            //  - layer_advanced: the counter moved while we were collecting.
+            //
+            // Both reject the case the guard exists for — a stale positive
             // carried over from the previous print before reset_for_new_print()
-            // has zeroed the subject. The print_duration fallback is NEVER used
-            // for a layer-reporting printer — that was the U1 regression.
-            return seen_layer_zero && current_layer >= 1;
+            // zeroes the subject — because a stale value is static and is never
+            // preceded by a zero. Requiring the zero edge *alone* was a hang:
+            // notify_status_update is coalesced, so a fast first layer or a
+            // reconnect part-way in can make the first observed sample >= 1,
+            // after which nothing ever completes the pre-print phase and the
+            // overlay covers the whole print.
+            //
+            // The print_duration fallback is NEVER used for a layer-reporting
+            // printer — that was the U1 regression.
+            return (seen_layer_zero || layer_advanced) && current_layer >= 1;
         }
         // Printer never reported a layer field — fall back to the old
         // first-extrusion signal so genuine non-reporters still complete.
@@ -299,6 +315,12 @@ class MoonrakerManager {
     void configure_timeouts(helix::Config* config);
     void register_callbacks();
     void create_api(const RuntimeConfig& runtime_config);
+
+    /// Present one Moonraker event. MAIN THREAD ONLY — the registered event
+    /// handler marshals here through lifetime_.bg_cb(), because everything this
+    /// touches (lv_tr, toasts, modals) is LVGL-facing while the handler itself
+    /// runs on whatever thread raised the event (#1219).
+    void present_event(const MoonrakerEvent& evt);
 
     // Owned resources
     std::unique_ptr<helix::IMoonrakerClient> m_client;
@@ -329,8 +351,21 @@ class MoonrakerManager {
     // Macro modification manager (PRINT_START wizard integration)
     std::unique_ptr<helix::MacroModificationManager> m_macro_analysis;
 
+#ifdef HELIX_ENABLE_MOCKS
+    /// Loopback HTTP server backing thumbnail/gcode downloads under --test.
+    /// Owned here because its lifetime must match the mock client's, and the
+    /// HTTP base URL it publishes is consumed by connect().
+    std::unique_ptr<helix::MockHttpFileServer> m_mock_http;
+#endif
+
     // Destruction flag for async callback safety [L012]
     std::shared_ptr<std::atomic<bool>> m_alive = std::make_shared<std::atomic<bool>>(true);
+
+    // Generation guard for callbacks that must run on the main thread. Used by
+    // the Moonraker event handler, whose body is LVGL-facing but is raised on the
+    // libhv event-loop thread (#1219). Invalidated in shutdown() alongside
+    // m_alive.
+    helix::AsyncLifetimeGuard lifetime_;
 
     // Startup time for suppressing initial notifications (Klipper ready toast)
     std::chrono::steady_clock::time_point m_startup_time;

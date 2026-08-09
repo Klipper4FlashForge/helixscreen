@@ -15,10 +15,12 @@
 
 #include "app_globals.h"
 #include "backdrop_blur.h"
-#include "display_settings_manager.h"
 #include "connection_state.h" // For ConnectionState enum
+#include "display_settings_manager.h"
+#include "layout_manager.h"
 #include "observer_factory.h"
 #include "overlay_base.h"
+#include "overlay_class.h"
 #include "page_scroll_auto_inject.h"
 #include "printer_state.h" // For KlippyState enum
 #include "sound_manager.h"
@@ -100,7 +102,7 @@ void schedule_settle_heal(uint32_t delay_ms) {
 // scrim — switch_to_panel_impl can cascade into handle_active_panel_change via
 // the active_panel subject, and we must not nest two.
 class NavTransitionScrim {
-public:
+  public:
     explicit NavTransitionScrim(bool& active) : active_(active), owns_(!active) {
         if (owns_) {
             active_ = true;
@@ -119,7 +121,7 @@ public:
     NavTransitionScrim(const NavTransitionScrim&) = delete;
     NavTransitionScrim& operator=(const NavTransitionScrim&) = delete;
 
-private:
+  private:
     bool& active_;
     bool owns_;
     lv_obj_t* scrim_ = nullptr;
@@ -269,6 +271,8 @@ void NavigationManager::clear_overlay_stack() {
 
     // Clear zoom source rects for any cleared overlays
     zoom_source_rects_.clear();
+    overlay_is_destination_.clear();
+    overlay_width_unmanaged_.clear();
 
     // Destroy primary backdrop snapshot
     if (overlay_backdrop_) {
@@ -347,35 +351,53 @@ void NavigationManager::overlay_slide_out_complete_cb(lv_anim_t* anim) {
 }
 
 void NavigationManager::overlay_animate_slide_in(lv_obj_t* panel) {
-    int32_t panel_width = lv_obj_get_width(panel);
-    if (panel_width <= 0) {
-        panel_width = OVERLAY_SLIDE_OFFSET;
+    // Portrait overlays are top-anchored (ui_set_overlay_geometry), so they
+    // enter from ABOVE the screen on the Y axis. Landscape enters from the
+    // right on X. Everything else about the animation is identical.
+    lv_obj_t* screen = lv_obj_get_screen(panel);
+    const bool portrait = helix::is_portrait_layout(helix::detect_layout_type(
+        screen ? lv_obj_get_width(screen) : 800, screen ? lv_obj_get_height(screen) : 480));
+
+    int32_t offset = portrait ? -lv_obj_get_height(panel) : lv_obj_get_width(panel);
+    if (offset == 0) {
+        offset = portrait ? -OVERLAY_SLIDE_OFFSET : OVERLAY_SLIDE_OFFSET;
     }
+
+    // Two captureless lambdas decay to the same function-pointer type, which is
+    // also lv_anim_exec_xcb_t — so one variable serves both the immediate
+    // "animations disabled" write and the animation's exec callback.
+    using TranslateFn = void (*)(void*, int32_t);
+    static const TranslateFn kTranslateY = [](void* obj, int32_t v) {
+        if (!lv_obj_is_valid(static_cast<lv_obj_t*>(obj)))
+            return;
+        lv_obj_set_style_translate_y(static_cast<lv_obj_t*>(obj), v, LV_PART_MAIN);
+    };
+    static const TranslateFn kTranslateX = [](void* obj, int32_t v) {
+        if (!lv_obj_is_valid(static_cast<lv_obj_t*>(obj)))
+            return;
+        lv_obj_set_style_translate_x(static_cast<lv_obj_t*>(obj), v, LV_PART_MAIN);
+    };
+    const TranslateFn set_translate = portrait ? kTranslateY : kTranslateX;
 
     // Skip animation if disabled - show panel in final state
     if (!DisplaySettingsManager::instance().get_animations_enabled()) {
-        lv_obj_set_style_translate_x(panel, 0, LV_PART_MAIN);
+        set_translate(panel, 0);
         lv_obj_set_style_opa(panel, LV_OPA_COVER, LV_PART_MAIN);
         spdlog::trace("[NavigationManager] Animations disabled - showing overlay instantly");
         return;
     }
 
     // Set initial state: off-screen and transparent
-    lv_obj_set_style_translate_x(panel, panel_width, LV_PART_MAIN);
+    set_translate(panel, offset);
     lv_obj_set_style_opa(panel, LV_OPA_TRANSP, LV_PART_MAIN);
 
-    // Slide animation: translate from right to final position
     lv_anim_t slide_anim;
     lv_anim_init(&slide_anim);
     lv_anim_set_var(&slide_anim, panel);
-    lv_anim_set_values(&slide_anim, panel_width, 0);
+    lv_anim_set_values(&slide_anim, offset, 0);
     lv_anim_set_duration(&slide_anim, OVERLAY_ANIM_DURATION_MS);
     lv_anim_set_path_cb(&slide_anim, lv_anim_path_ease_out);
-    lv_anim_set_exec_cb(&slide_anim, [](void* obj, int32_t value) {
-        if (!lv_obj_is_valid(static_cast<lv_obj_t*>(obj)))
-            return;
-        lv_obj_set_style_translate_x(static_cast<lv_obj_t*>(obj), value, LV_PART_MAIN);
-    });
+    lv_anim_set_exec_cb(&slide_anim, set_translate);
     lv_anim_start(&slide_anim);
 
     // Fade animation: opacity from transparent to opaque (runs simultaneously)
@@ -392,8 +414,8 @@ void NavigationManager::overlay_animate_slide_in(lv_obj_t* panel) {
     });
     lv_anim_start(&fade_anim);
 
-    spdlog::trace("[NavigationManager] Started slide+fade-in animation for panel {} (width={})",
-                  (void*)panel, panel_width);
+    spdlog::trace("[NavigationManager] Started slide+fade-in for panel {} (offset={}, {})",
+                  (void*)panel, offset, portrait ? "portrait/Y" : "landscape/X");
 }
 
 void NavigationManager::overlay_animate_slide_out(lv_obj_t* panel) {
@@ -441,23 +463,38 @@ void NavigationManager::overlay_animate_slide_out(lv_obj_t* panel) {
         return;
     }
 
-    int32_t panel_width = lv_obj_get_width(panel);
-    if (panel_width <= 0) {
-        panel_width = OVERLAY_SLIDE_OFFSET;
+    // Portrait overlays are top-anchored, so they exit back off the TOP on the
+    // Y axis. Landscape exits back off the right on X. Mirrors
+    // overlay_animate_slide_in()'s axis selection.
+    lv_obj_t* screen = lv_obj_get_screen(panel);
+    const bool portrait = helix::is_portrait_layout(helix::detect_layout_type(
+        screen ? lv_obj_get_width(screen) : 800, screen ? lv_obj_get_height(screen) : 480));
+
+    int32_t offset = portrait ? -lv_obj_get_height(panel) : lv_obj_get_width(panel);
+    if (offset == 0) {
+        offset = portrait ? -OVERLAY_SLIDE_OFFSET : OVERLAY_SLIDE_OFFSET;
     }
 
-    // Slide animation: translate to off-screen right
+    using TranslateFn = void (*)(void*, int32_t);
+    static const TranslateFn kTranslateY = [](void* obj, int32_t v) {
+        if (!lv_obj_is_valid(static_cast<lv_obj_t*>(obj)))
+            return;
+        lv_obj_set_style_translate_y(static_cast<lv_obj_t*>(obj), v, LV_PART_MAIN);
+    };
+    static const TranslateFn kTranslateX = [](void* obj, int32_t v) {
+        if (!lv_obj_is_valid(static_cast<lv_obj_t*>(obj)))
+            return;
+        lv_obj_set_style_translate_x(static_cast<lv_obj_t*>(obj), v, LV_PART_MAIN);
+    };
+    const TranslateFn set_translate = portrait ? kTranslateY : kTranslateX;
+
     lv_anim_t slide_anim;
     lv_anim_init(&slide_anim);
     lv_anim_set_var(&slide_anim, panel);
-    lv_anim_set_values(&slide_anim, 0, panel_width);
+    lv_anim_set_values(&slide_anim, 0, offset);
     lv_anim_set_duration(&slide_anim, OVERLAY_ANIM_DURATION_MS);
     lv_anim_set_path_cb(&slide_anim, lv_anim_path_ease_in);
-    lv_anim_set_exec_cb(&slide_anim, [](void* obj, int32_t value) {
-        if (!lv_obj_is_valid(static_cast<lv_obj_t*>(obj)))
-            return;
-        lv_obj_set_style_translate_x(static_cast<lv_obj_t*>(obj), value, LV_PART_MAIN);
-    });
+    lv_anim_set_exec_cb(&slide_anim, set_translate);
     lv_anim_set_completed_cb(&slide_anim, overlay_slide_out_complete_cb);
     lv_anim_start(&slide_anim);
 
@@ -475,8 +512,8 @@ void NavigationManager::overlay_animate_slide_out(lv_obj_t* panel) {
     });
     lv_anim_start(&fade_anim);
 
-    spdlog::trace("[NavigationManager] Started slide+fade-out animation for panel {} (width={})",
-                  (void*)panel, panel_width);
+    spdlog::trace("[NavigationManager] Started slide+fade-out for panel {} (offset={}, {})",
+                  (void*)panel, offset, portrait ? "portrait/Y" : "landscape/X");
 }
 
 void NavigationManager::overlay_animate_zoom_in(lv_obj_t* panel, lv_area_t source_rect) {
@@ -810,12 +847,29 @@ void NavigationManager::backdrop_click_event_cb(lv_event_t* e) {
     lv_obj_t* target = static_cast<lv_obj_t*>(lv_event_get_target(e));
     lv_obj_t* current = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
 
-    // Only respond if click was directly on backdrop (not bubbled from child)
+    // Only respond if the event was directly on the backdrop (not bubbled)
     if (target != current) {
         return;
     }
 
     auto& mgr = NavigationManager::instance();
+
+    if (lv_event_get_code(e) == LV_EVENT_PRESSED) {
+        // Capture keyboard visibility at PRESS time. LVGL's indev_proc_press
+        // sends PRESSED before indev_click_focus, whose DEFOCUS hides the
+        // keyboard — so by CLICKED, is_visible() would already read false.
+        mgr.backdrop_press_keyboard_visible_ = KeyboardManager::instance().is_visible();
+        return;
+    }
+
+    // LV_EVENT_CLICKED — a tap that dismissed the on-screen keyboard must not
+    // also dismiss (or navigate away from) the overlay behind it. Consume this
+    // tap for the keyboard dismiss only; a second tap dismisses the overlay.
+    if (mgr.take_backdrop_keyboard_dismiss()) {
+        spdlog::trace(
+            "[NavigationManager] Backdrop tap dismissed on-screen keyboard; overlay kept");
+        return;
+    }
 
     // Only process if there's an overlay to close (stack > 1 means overlays exist)
     if (mgr.panel_stack_.size() <= 1) {
@@ -826,11 +880,19 @@ void NavigationManager::backdrop_click_event_cb(lv_event_t* e) {
     lv_point_t click_point;
     lv_indev_get_point(lv_indev_active(), &click_point);
 
-    // Check if click is in navbar area and find which button was clicked
+    // Check if click is in navbar area and find which button was clicked.
+    //
+    // Tested against the bar's own coordinates rather than "x < navbar_width".
+    // The width comparison assumed the bar is a full-height strip pinned to the
+    // leading edge, which is only true of ui_xml/navigation_bar.xml. Portrait
+    // lays the bar along the bottom at width="100%", where that test is true for
+    // every point on the screen.
     if (mgr.navbar_widget_) {
-        int32_t navbar_width = lv_obj_get_width(mgr.navbar_widget_);
+        lv_area_t navbar_area;
+        lv_obj_get_coords(mgr.navbar_widget_, &navbar_area);
 
-        if (click_point.x < navbar_width) {
+        if (click_point.x >= navbar_area.x1 && click_point.x <= navbar_area.x2 &&
+            click_point.y >= navbar_area.y1 && click_point.y <= navbar_area.y2) {
             // Click is in navbar area - find which button and trigger navigation
             const char* button_names[] = {"nav_btn_home",     "nav_btn_print_select",
                                           "nav_btn_controls", "nav_btn_filament",
@@ -865,6 +927,14 @@ void NavigationManager::backdrop_click_event_cb(lv_event_t* e) {
     // Regular backdrop click - close topmost overlay
     spdlog::trace("[NavigationManager] Backdrop clicked, closing topmost overlay");
     mgr.go_back();
+}
+
+bool NavigationManager::take_backdrop_keyboard_dismiss() {
+    if (!backdrop_press_keyboard_visible_) {
+        return false;
+    }
+    backdrop_press_keyboard_visible_ = false;
+    return true;
 }
 
 void NavigationManager::nav_button_clicked_cb(lv_event_t* event) {
@@ -1304,6 +1374,21 @@ PanelId NavigationManager::get_active() const {
     return active_panel_;
 }
 
+std::vector<std::string> NavigationManager::overlay_stack_names() const {
+    std::vector<std::string> names;
+    // panel_stack_[0] is the base panel; entries above it are pushed overlays.
+    for (size_t i = 1; i < panel_stack_.size(); ++i) {
+        lv_obj_t* w = panel_stack_[i];
+        if (!w) {
+            continue;
+        }
+        char buf[128];
+        lv_obj_get_name_resolved(w, buf, sizeof(buf));
+        names.emplace_back(buf[0] != '\0' ? buf : "overlay");
+    }
+    return names;
+}
+
 void NavigationManager::set_panels(lv_obj_t** panels) {
     if (!panels) {
         spdlog::error("[NavigationManager] NULL panels array provided");
@@ -1421,6 +1506,13 @@ void NavigationManager::rekey_overlay_widget(lv_obj_t* old_widget, lv_obj_t* new
         overlay_close_callbacks_[new_widget] = std::move(cb);
     }
 
+    auto wc_it = overlay_is_destination_.find(old_widget);
+    if (wc_it != overlay_is_destination_.end()) {
+        bool cls = wc_it->second;
+        overlay_is_destination_.erase(wc_it);
+        overlay_is_destination_[new_widget] = cls;
+    }
+
     auto zs_it = zoom_source_rects_.find(old_widget);
     if (zs_it != zoom_source_rects_.end()) {
         auto rect = zs_it->second;
@@ -1438,6 +1530,78 @@ void NavigationManager::rekey_overlay_widget(lv_obj_t* old_widget, lv_obj_t* new
                   (void*)new_widget);
 }
 
+void NavigationManager::set_overlay_width_unmanaged(lv_obj_t* overlay) {
+    if (overlay) {
+        overlay_width_unmanaged_.insert(overlay);
+    }
+}
+
+bool NavigationManager::apply_overlay_width(lv_obj_t* overlay, bool is_first_overlay) {
+    // Deliberate custom width — not one of the two navigation classes.
+    if (overlay_width_unmanaged_.count(overlay)) {
+        return false;
+    }
+
+    // A promotion declared on the panel class travels with the panel, so a
+    // long-dwell screen reachable from several places (AmsPanel: Home, Printer
+    // Manager, AMS Overview) is full width from all of them.
+    auto* lifecycle = resolve_overlay_lifecycle(overlay);
+    const helix::OverlayClass requested = (lifecycle && lifecycle->is_destination())
+                                              ? helix::OverlayClass::Destination
+                                              : helix::OverlayClass::Inherit;
+
+    // panel_stack_.back() is still the widget beneath this one — the caller has
+    // not pushed yet. is_first_overlay guards the empty/root-only cases where
+    // back() is the main panel rather than an overlay.
+    bool parent_is_destination = false;
+    if (!is_first_overlay && !panel_stack_.empty()) {
+        auto it = overlay_is_destination_.find(panel_stack_.back());
+        if (it != overlay_is_destination_.end()) {
+            parent_is_destination = it->second;
+        }
+    }
+
+    const bool is_destination =
+        helix::resolve_overlay_is_destination(requested, !is_first_overlay, parent_is_destination,
+                                              helix::nav_root_is_destination(active_panel_));
+
+    overlay_is_destination_[overlay] = is_destination;
+
+    // Re-applied on EVERY push, not just at creation: OverlayBase caches its
+    // root widget across show/hide cycles, and the same cached widget can be
+    // reached from a transient parent one time and a destination parent the
+    // next.
+    ui_set_overlay_geometry(overlay, is_destination);
+
+    // LV_STATE_USER_1 == "this is a transient layer". overlay_panel.xml hangs a
+    // leading-edge treatment off it so the panel reads as something sitting ON
+    // TOP of what is behind it, rather than as a seam between two pieces of
+    // chrome — the reporter's actual objection in #1178. Only the state bit is
+    // set here; what it looks like stays in XML.
+    if (is_destination) {
+        lv_obj_remove_state(overlay, LV_STATE_USER_1);
+    } else {
+        lv_obj_add_state(overlay, LV_STATE_USER_1);
+    }
+
+    spdlog::trace("[NavigationManager] Overlay {} width class: {}", (void*)overlay,
+                  is_destination ? "destination" : "transient");
+    return is_destination;
+}
+
+void NavigationManager::reapply_overlay_widths() {
+    for (const auto& [overlay, is_destination] : overlay_is_destination_) {
+        // Entries are erased on widget delete (scrub_deleted_widget), but guard
+        // anyway — this runs from a display resize callback, outside the normal
+        // push/pop ordering.
+        if (lv_obj_is_valid(overlay)) {
+            ui_set_overlay_geometry(overlay, is_destination);
+        }
+    }
+    spdlog::debug("[NavigationManager] Re-applied width to {} overlay(s)",
+                  overlay_is_destination_.size());
+}
+
 void NavigationManager::scrub_deleted_widget(lv_obj_t* widget) {
     if (!widget)
         return;
@@ -1451,8 +1615,15 @@ void NavigationManager::scrub_deleted_widget(lv_obj_t* widget) {
     persistent_overlay_instances_.erase(widget);
     // Drop the backdrop map entry only — out of scope to delete the backdrop here.
     overlay_backdrops_.erase(widget);
+    // The active backdrop is a scalar, not a widget-keyed container, so it needs
+    // an explicit clear. Without it deinit_subjects() lv_obj_del()s freed memory
+    // whenever the backdrop died with its parent screen.
+    if (widget == overlay_backdrop_)
+        overlay_backdrop_ = nullptr;
     overlay_close_callbacks_.erase(widget);
     zoom_source_rects_.erase(widget);
+    overlay_is_destination_.erase(widget);
+    overlay_width_unmanaged_.erase(widget);
     panel_stack_.erase(std::remove(panel_stack_.begin(), panel_stack_.end(), widget),
                        panel_stack_.end());
     delete_hooked_.erase(widget);
@@ -1466,6 +1637,22 @@ void NavigationManager::overlay_delete_event_cb(lv_event_t* e) {
         return;
     auto* target = static_cast<lv_obj_t*>(lv_event_get_target(e));
     NavigationManager::instance().scrub_deleted_widget(target);
+}
+
+void NavigationManager::adopt_overlay_backdrop(lv_obj_t* screen) {
+    overlay_backdrop_ = helix::ui::create_darkened_backdrop(screen, 40);
+    if (!overlay_backdrop_)
+        return;
+
+    lv_obj_move_foreground(overlay_backdrop_);
+    // PRESSED latches keyboard visibility before LVGL's click-focus
+    // hides it; CLICKED consumes the tap for the keyboard dismiss.
+    lv_obj_add_event_cb(overlay_backdrop_, backdrop_click_event_cb, LV_EVENT_PRESSED, nullptr);
+    lv_obj_add_event_cb(overlay_backdrop_, backdrop_click_event_cb, LV_EVENT_CLICKED, nullptr);
+    // Scalar counterpart to the widget-keyed containers scrub_deleted_widget()
+    // already covers: deleting the parent screen frees the backdrop with no
+    // go_back(), and deinit_subjects() would then lv_obj_del() freed memory.
+    ensure_delete_hook(overlay_backdrop_);
 }
 
 void NavigationManager::ensure_delete_hook(lv_obj_t* widget) {
@@ -1713,12 +1900,7 @@ void NavigationManager::push_overlay(lv_obj_t* overlay_panel, bool hide_previous
         // the visible content, not a blank screen.
         lv_obj_t* screen = lv_obj_get_screen(overlay_panel);
         if (screen && is_first_overlay) {
-            mgr.overlay_backdrop_ = helix::ui::create_darkened_backdrop(screen, 40);
-            if (mgr.overlay_backdrop_) {
-                lv_obj_move_foreground(mgr.overlay_backdrop_);
-                lv_obj_add_event_cb(mgr.overlay_backdrop_, backdrop_click_event_cb,
-                                    LV_EVENT_CLICKED, nullptr);
-            }
+            mgr.adopt_overlay_backdrop(screen);
         }
 
         // Optionally hide current top panel (after snapshot)
@@ -1726,6 +1908,10 @@ void NavigationManager::push_overlay(lv_obj_t* overlay_panel, bool hide_previous
             lv_obj_t* current_top = mgr.panel_stack_.back();
             lv_obj_add_flag(current_top, LV_OBJ_FLAG_HIDDEN);
         }
+
+        // Resolve and apply the width class before the overlay becomes visible,
+        // while panel_stack_.back() is still the widget beneath it. #1178
+        mgr.apply_overlay_width(overlay_panel, is_first_overlay);
 
         // Show overlay
         lv_obj_remove_flag(overlay_panel, LV_OBJ_FLAG_HIDDEN);
@@ -1825,12 +2011,7 @@ void NavigationManager::push_overlay_zoom_from(lv_obj_t* overlay_panel, lv_area_
         // the visible content, not a blank screen.
         lv_obj_t* screen = lv_obj_get_screen(overlay_panel);
         if (screen && is_first_overlay) {
-            mgr.overlay_backdrop_ = helix::ui::create_darkened_backdrop(screen, 40);
-            if (mgr.overlay_backdrop_) {
-                lv_obj_move_foreground(mgr.overlay_backdrop_);
-                lv_obj_add_event_cb(mgr.overlay_backdrop_, backdrop_click_event_cb,
-                                    LV_EVENT_CLICKED, nullptr);
-            }
+            mgr.adopt_overlay_backdrop(screen);
         }
 
         // Hide current top panel (after snapshot)
@@ -1838,6 +2019,10 @@ void NavigationManager::push_overlay_zoom_from(lv_obj_t* overlay_panel, lv_area_
             lv_obj_t* current_top = mgr.panel_stack_.back();
             lv_obj_add_flag(current_top, LV_OBJ_FLAG_HIDDEN);
         }
+
+        // Resolve and apply the width class before the overlay becomes visible,
+        // while panel_stack_.back() is still the widget beneath it. #1178
+        mgr.apply_overlay_width(overlay_panel, is_first_overlay);
 
         // Show overlay with zoom animation instead of slide
         lv_obj_remove_flag(overlay_panel, LV_OBJ_FLAG_HIDDEN);
@@ -2064,6 +2249,13 @@ bool NavigationManager::is_panel_in_stack(lv_obj_t* panel) const {
     return std::find(panel_stack_.begin(), panel_stack_.end(), panel) != panel_stack_.end();
 }
 
+bool NavigationManager::is_panel_on_top(lv_obj_t* panel) const {
+    if (!panel || panel_stack_.empty()) {
+        return false;
+    }
+    return panel_stack_.back() == panel;
+}
+
 bool NavigationManager::has_open_overlays() const {
     // Only check the panel stack — it tracks what's actually open/visible.
     // overlay_instances_ is a registration map (persistent overlays survive
@@ -2106,6 +2298,8 @@ void NavigationManager::shutdown() {
     // Clear panel stack and zoom state
     panel_stack_.clear();
     zoom_source_rects_.clear();
+    overlay_is_destination_.clear();
+    overlay_width_unmanaged_.clear();
 
     // Clear printer callbacks — they capture Application pointers that become
     // invalid after soft restart tears down and rebuilds printer state
@@ -2207,6 +2401,8 @@ void NavigationManager::deinit_subjects() {
     overlay_close_callbacks_.clear();
     overlay_backdrops_.clear();
     zoom_source_rects_.clear();
+    overlay_is_destination_.clear();
+    overlay_width_unmanaged_.clear();
     delete_hooked_.clear();
     panel_stack_.clear();
     app_layout_widget_ = nullptr;

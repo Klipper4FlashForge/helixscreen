@@ -10,6 +10,7 @@
  * the internal state machine via the SpoolmanManagerTestAccess friend class.
  */
 
+#include "ui_spoolman_overlay.h"
 #include "ui_update_queue.h"
 
 #include "../test_helpers/update_queue_test_access.h"
@@ -295,4 +296,101 @@ TEST_CASE_METHOD(SpoolmanFixture,
 
     // No API set — should return without crash
     REQUIRE_NOTHROW(mgr.refresh_spoolman_weights());
+}
+
+// ============================================================================
+// SpoolmanOverlay poll-reference discipline (#1159)
+// ============================================================================
+//
+// The overlay applies the persisted sync_enabled setting on every open, and the
+// apply took an unmatched poll reference each time — refcount climbed forever and
+// the poll timer could never be deleted. These tests pin the ownership contract:
+// at most one reference per overlay instance, given back on dismissal.
+//
+// apply_sync() itself is a lambda inside the async load_from_database() chain, so
+// the tests drive set_poll_ref() — the single helper that lambda now calls — plus
+// the real public on_deactivate().
+
+class SpoolmanOverlayTestAccess {
+  public:
+    /// Stand-in for load_from_database()'s apply_sync(enabled)
+    static void apply_sync(helix::ui::SpoolmanOverlay& o, bool enabled) {
+        o.set_poll_ref(enabled);
+    }
+    static bool holds_poll_ref(const helix::ui::SpoolmanOverlay& o) {
+        return o.holds_poll_ref_;
+    }
+};
+
+using OverlayTA = SpoolmanOverlayTestAccess;
+
+TEST_CASE_METHOD(SpoolmanFixture, "SpoolmanOverlay: repeated opens do not leak poll references",
+                 "[spoolman][overlay]") {
+    auto& mgr = SpoolmanManager::instance();
+    set_spoolman_available(true);
+
+    helix::ui::SpoolmanOverlay overlay;
+
+    // Open #1 — sync enabled, one reference taken
+    OverlayTA::apply_sync(overlay, true);
+    REQUIRE(TA::poll_refcount(mgr) == 1);
+    REQUIRE(OverlayTA::holds_poll_ref(overlay));
+
+    // Dismissal gives it back
+    overlay.on_deactivate();
+    REQUIRE(TA::poll_refcount(mgr) == 0);
+    REQUIRE_FALSE(OverlayTA::holds_poll_ref(overlay));
+
+    // Open #2 — must not stack a second reference
+    OverlayTA::apply_sync(overlay, true);
+    REQUIRE(TA::poll_refcount(mgr) == 1);
+
+    overlay.on_deactivate();
+    REQUIRE(TA::poll_refcount(mgr) == 0);
+}
+
+TEST_CASE_METHOD(SpoolmanFixture, "SpoolmanOverlay: repeated sync apply takes one reference",
+                 "[spoolman][overlay]") {
+    auto& mgr = SpoolmanManager::instance();
+    set_spoolman_available(true);
+
+    helix::ui::SpoolmanOverlay overlay;
+
+    // load_from_database()'s key-fallback chain can apply the value more than
+    // once per open (new key -> legacy key -> default)
+    OverlayTA::apply_sync(overlay, true);
+    OverlayTA::apply_sync(overlay, true);
+    OverlayTA::apply_sync(overlay, true);
+    REQUIRE(TA::poll_refcount(mgr) == 1);
+
+    overlay.on_deactivate();
+    REQUIRE(TA::poll_refcount(mgr) == 0);
+}
+
+TEST_CASE_METHOD(SpoolmanFixture,
+                 "SpoolmanOverlay: release never steals another holder's reference",
+                 "[spoolman][overlay]") {
+    auto& mgr = SpoolmanManager::instance();
+    set_spoolman_available(true);
+
+    // A panel (HomePanel/AmsPanel/SpoolmanPanel) holds its own reference
+    mgr.start_spoolman_polling();
+    REQUIRE(TA::poll_refcount(mgr) == 1);
+
+    helix::ui::SpoolmanOverlay overlay;
+
+    // Overlay opened with sync disabled — it never took a reference, so applying
+    // "disabled" and dismissing must leave the panel's reference alone
+    OverlayTA::apply_sync(overlay, false);
+    overlay.on_deactivate();
+    overlay.on_deactivate();
+    REQUIRE(TA::poll_refcount(mgr) == 1);
+
+    // Same for a dismissal that follows a toggle-off
+    OverlayTA::apply_sync(overlay, true);
+    REQUIRE(TA::poll_refcount(mgr) == 2);
+    OverlayTA::apply_sync(overlay, false);
+    REQUIRE(TA::poll_refcount(mgr) == 1);
+    overlay.on_deactivate();
+    REQUIRE(TA::poll_refcount(mgr) == 1);
 }

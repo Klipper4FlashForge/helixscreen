@@ -1,0 +1,194 @@
+// Copyright (C) 2025-2026 356C LLC
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/**
+ * @file test_updates_external.cpp
+ * @brief Tests for the in-app-update gates (firmware flag + physical writability).
+ *
+ * Covers helix_parse_truthy_env() (the pure parse that feeds the cached
+ * updates_externally_managed() helper) and confirms the cached predicate is
+ * consistent with the process environment. The cache is deliberately NOT
+ * exercised for both true/false in one process — the parse function is the
+ * testable unit; the cache is a thin static wrapper around it.
+ *
+ * Also covers compute_self_update_supported() — the pure predicate behind the
+ * "can a self-update PHYSICALLY be applied?" check (writable install-root parent,
+ * OR root obtainable so install.sh can sudo the swap) — using real temp dirs, and
+ * the combined in_app_updates_suppressed() gate.
+ */
+
+#include "app_globals.h"
+
+#include <cstdlib>
+#include <filesystem>
+#include <string>
+#include <system_error>
+#include <unistd.h>
+
+#include "../catch_amalgamated.hpp"
+
+TEST_CASE("helix_parse_truthy_env recognizes truthy values", "[update][external]") {
+    // Truthy — case-insensitive
+    CHECK(helix_parse_truthy_env("1"));
+    CHECK(helix_parse_truthy_env("true"));
+    CHECK(helix_parse_truthy_env("TRUE"));
+    CHECK(helix_parse_truthy_env("True"));
+    CHECK(helix_parse_truthy_env("yes"));
+    CHECK(helix_parse_truthy_env("YES"));
+    CHECK(helix_parse_truthy_env("on"));
+    CHECK(helix_parse_truthy_env("ON"));
+    // Surrounding whitespace tolerated (helixscreen.env may carry a stray space)
+    CHECK(helix_parse_truthy_env("  1  "));
+    CHECK(helix_parse_truthy_env("\ttrue\n"));
+}
+
+TEST_CASE("helix_parse_truthy_env rejects falsy and empty values", "[update][external]") {
+    CHECK_FALSE(helix_parse_truthy_env(nullptr));
+    CHECK_FALSE(helix_parse_truthy_env(""));
+    CHECK_FALSE(helix_parse_truthy_env("0"));
+    CHECK_FALSE(helix_parse_truthy_env("false"));
+    CHECK_FALSE(helix_parse_truthy_env("no"));
+    CHECK_FALSE(helix_parse_truthy_env("off"));
+    CHECK_FALSE(helix_parse_truthy_env("2"));
+    CHECK_FALSE(helix_parse_truthy_env("enabled"));
+    CHECK_FALSE(helix_parse_truthy_env("   "));
+}
+
+TEST_CASE("compute_updates_externally_managed gates on the explicit flag only",
+          "[update][external]") {
+    // Arg: (disable_auto_updates)
+
+    // Explicit HELIX_DISABLE_AUTO_UPDATES (firmware-facing flag) is truthy.
+    CHECK(compute_updates_externally_managed("1"));
+    CHECK(compute_updates_externally_managed("true"));
+    CHECK(compute_updates_externally_managed("yes"));
+    CHECK(compute_updates_externally_managed("on"));
+
+    // A falsy explicit opt-out does not force the managed state.
+    CHECK_FALSE(compute_updates_externally_managed("0"));
+    CHECK_FALSE(compute_updates_externally_managed("no"));
+    CHECK_FALSE(compute_updates_externally_managed("false"));
+
+    // Nothing set → normal self-managed install.
+    CHECK_FALSE(compute_updates_externally_managed(nullptr));
+    CHECK_FALSE(compute_updates_externally_managed(""));
+}
+
+TEST_CASE("updates_externally_managed reflects the environment (cached)", "[update][external]") {
+    // The value is cached process-wide, so we assert it agrees with the pure
+    // predicate over the current env rather than trying to flip it mid-process.
+    const bool expected =
+        compute_updates_externally_managed(std::getenv("HELIX_DISABLE_AUTO_UPDATES"));
+    CHECK(updates_externally_managed() == expected);
+    // Stable across calls (proves the cache doesn't re-read differently).
+    CHECK(updates_externally_managed() == updates_externally_managed());
+}
+
+TEST_CASE("compute_self_update_supported treats an empty install root as supported",
+          "[update][external]") {
+    // Empty install root = unresolvable layout (bind-mounted binary). Conservative:
+    // return TRUE so the installer's own fallbacks + the explicit flag remain the
+    // deciding factors rather than a false negative from an unknown parent.
+    // Neither escalation value may turn that into a block.
+    CHECK(compute_self_update_supported("", /*can_escalate=*/false));
+    CHECK(compute_self_update_supported("", /*can_escalate=*/true));
+}
+
+TEST_CASE("compute_self_update_supported is TRUE when the install-root parent is writable",
+          "[update][external]") {
+    std::error_code ec;
+    const std::filesystem::path base = std::filesystem::temp_directory_path(ec) /
+                                       ("helix_selfupdate_ok_" + std::to_string(::getpid()));
+    std::filesystem::create_directories(base, ec);
+    REQUIRE_FALSE(ec);
+
+    // The install root itself need not exist — the rename swap acts on the PARENT
+    // (base), which is writable here. Escalation is irrelevant to a writable parent.
+    const std::string install_root = (base / "helixscreen").string();
+    CHECK(compute_self_update_supported(install_root, /*can_escalate=*/false));
+    CHECK(compute_self_update_supported(install_root, /*can_escalate=*/true));
+
+    std::filesystem::remove_all(base, ec);
+}
+
+TEST_CASE("compute_self_update_supported is TRUE on a non-writable parent when root is reachable",
+          "[update][external]") {
+    if (::geteuid() == 0) {
+        SKIP("running as root: access(W_OK) ignores permission bits");
+    }
+
+    // The standard Pi layout: install root under a root-owned parent (/opt),
+    // service running as an unprivileged user. install.sh escalates with sudo for
+    // the swap (scripts/install.sh check_permissions), so this install IS
+    // updatable and the updater must not hide itself.
+    std::error_code ec;
+    const std::filesystem::path base = std::filesystem::temp_directory_path(ec) /
+                                       ("helix_selfupdate_sudo_" + std::to_string(::getpid()));
+    std::filesystem::create_directories(base, ec);
+    REQUIRE_FALSE(ec);
+
+    std::filesystem::permissions(
+        base, std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec,
+        std::filesystem::perm_options::replace, ec);
+    REQUIRE_FALSE(ec);
+
+    const std::string install_root = (base / "helixscreen").string();
+    // Same non-writable parent, opposite answers — escalation is the deciding term.
+    CHECK(compute_self_update_supported(install_root, /*can_escalate=*/true));
+    CHECK_FALSE(compute_self_update_supported(install_root, /*can_escalate=*/false));
+
+    std::filesystem::permissions(base, std::filesystem::perms::owner_all,
+                                 std::filesystem::perm_options::replace, ec);
+    std::filesystem::remove_all(base, ec);
+}
+
+TEST_CASE("compute_self_update_supported is FALSE when the parent is read-only and root is not "
+          "reachable",
+          "[update][external]") {
+    if (::geteuid() == 0) {
+        // root bypasses W_OK permission bits on a normal fs (access(W_OK) still
+        // returns 0), so the read-only assertion is meaningless under root CI.
+        SKIP("running as root: access(W_OK) ignores permission bits");
+    }
+
+    std::error_code ec;
+    const std::filesystem::path base = std::filesystem::temp_directory_path(ec) /
+                                       ("helix_selfupdate_ro_" + std::to_string(::getpid()));
+    std::filesystem::create_directories(base, ec);
+    REQUIRE_FALSE(ec);
+
+    // Drop write on the parent (0500: owner read + exec only). rename() into it
+    // then fails → self-update can't physically apply.
+    std::filesystem::permissions(
+        base, std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec,
+        std::filesystem::perm_options::replace, ec);
+    REQUIRE_FALSE(ec);
+
+    const std::string install_root = (base / "helixscreen").string();
+    CHECK_FALSE(compute_self_update_supported(install_root, /*can_escalate=*/false));
+
+    // Restore write so remove_all can clean up.
+    std::filesystem::permissions(base, std::filesystem::perms::owner_all,
+                                 std::filesystem::perm_options::replace, ec);
+    std::filesystem::remove_all(base, ec);
+}
+
+TEST_CASE("self_update_supported / in_app_updates_suppressed are cached and consistent",
+          "[update][external]") {
+    // self_update_supported() is cached process-wide off the real install root.
+    // Assert stability and that the combined gate is the OR of the two reasons.
+    CHECK(self_update_supported() == self_update_supported());
+    CHECK(in_app_updates_suppressed() ==
+          (updates_externally_managed() || !self_update_supported()));
+}
+
+TEST_CASE("root_escalation_available is cached and true under root", "[update][external]") {
+    // The value depends on the host's sudoers, so the only universally true
+    // assertions are stability and the euid-0 shortcut. (The test build stubs the
+    // sudo probe out — see the mirror in tests/ui_test_utils.cpp — so this checks
+    // the contract, not the probe.)
+    CHECK(root_escalation_available() == root_escalation_available());
+    if (::geteuid() == 0) {
+        CHECK(root_escalation_available());
+    }
+}

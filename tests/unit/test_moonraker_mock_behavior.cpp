@@ -174,19 +174,18 @@ class MockBehaviorTestFixture {
      * @return true if matching notification found, false on timeout
      */
     bool wait_for_matching(std::function<bool(const json&)> predicate, int timeout_ms = 2000) {
-        auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
-        while (std::chrono::steady_clock::now() < deadline) {
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                for (const auto& n : notifications_) {
-                    if (predicate(n)) {
-                        return true;
-                    }
+        // Condition-variable driven rather than polled: waking on the notification
+        // itself keeps the return precise enough for callers that time how long a
+        // simulated operation took.
+        std::unique_lock<std::mutex> lock(mutex_);
+        return cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms), [this, &predicate] {
+            for (const auto& n : notifications_) {
+                if (predicate(n)) {
+                    return true;
                 }
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        }
-        return false;
+            return false;
+        });
     }
 
   private:
@@ -680,6 +679,24 @@ TEST_CASE("MoonrakerClientMock G-code temperature parsing", "[connection][slow][
         mock.disconnect();
     }
 
+    SECTION("lowercase m104 Sxxx sets extruder target") {
+        // Command token normalization must cover more than just M117 - real
+        // Klipper uppercases the command word for every G/M-code, not just
+        // display messages.
+        MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
+        mock.register_notify_update(fixture.create_capture_callback());
+        mock.connect("ws://mock/websocket", []() {}, []() {});
+
+        int result = mock.gcode_script("m104 S220");
+        REQUIRE(result == 0);
+
+        // Verify the target actually changed in status notifications
+        REQUIRE(verify_extruder_target(220.0));
+
+        mock.stop_temperature_simulation();
+        mock.disconnect();
+    }
+
     SECTION("M109 Sxxx sets extruder target") {
         MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
         mock.register_notify_update(fixture.create_capture_callback());
@@ -752,7 +769,7 @@ TEST_CASE("MoonrakerClientMock G-code temperature parsing", "[connection][slow][
 // Hardware Discovery Tests
 // ============================================================================
 
-TEST_CASE("MoonrakerClientMock hardware discovery", "[connection][slow][hardware_discovery]") {
+TEST_CASE("MoonrakerClientMock hardware discovery", "[connection][hardware_discovery]") {
     SECTION("VORON_24 has correct hardware") {
         MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
         auto hw = mock.hardware();
@@ -1289,7 +1306,7 @@ TEST_CASE("MoonrakerClientMock bed mesh", "[slow][mock][calibration]") {
 // send_jsonrpc Tests
 // ============================================================================
 
-TEST_CASE("MoonrakerClientMock send_jsonrpc methods", "[connection][slow][jsonrpc]") {
+TEST_CASE("MoonrakerClientMock send_jsonrpc methods", "[connection][jsonrpc]") {
     SECTION("send_jsonrpc without params returns success") {
         MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
         REQUIRE(mock.send_jsonrpc("printer.info") == 0);
@@ -1818,6 +1835,38 @@ TEST_CASE("MoonrakerClientMock SDCARD_PRINT_FILE starts print", "[slow][print][s
         mock.disconnect();
     }
 
+    SECTION("SDCARD_PRINT_FILE accepts a quoted filename containing spaces") {
+        // Klipper tokenizes extended parameters with shlex, so callers quote
+        // any name with a space in it (Moonraker's klippy_apis.py and our
+        // Creality power-loss resume both do). The quotes are syntax, not part
+        // of the filename.
+        MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
+        mock.register_notify_update(fixture.create_capture_callback());
+        mock.connect("ws://mock/websocket", []() {}, []() {});
+
+        mock.gcode_script("SDCARD_PRINT_FILE FILENAME=\"My Part v2.gcode\" ISCONTINUEPRINT=1");
+
+        REQUIRE(fixture.wait_for_matching(
+            [](const json& n) {
+                if (!n.contains("params") || !n["params"].is_array() || n["params"].empty()) {
+                    return false;
+                }
+                const json& status = n["params"][0];
+                if (!status.contains("print_stats")) {
+                    return false;
+                }
+                const json& ps = status["print_stats"];
+                if (!ps.contains("state") || !ps.contains("filename")) {
+                    return false;
+                }
+                return ps["state"] == "printing" && ps["filename"] == "My Part v2.gcode";
+            },
+            2000));
+
+        mock.stop_temperature_simulation();
+        mock.disconnect();
+    }
+
     SECTION("SDCARD_PRINT_FILE resets progress to 0") {
         MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
         mock.register_notify_update(fixture.create_capture_callback());
@@ -2109,8 +2158,7 @@ TEST_CASE("MoonrakerClientMock print progress increments during printing",
     }
 }
 
-TEST_CASE("MoonrakerClientMock print completion triggers complete state",
-          "[print][complete][slow]") {
+TEST_CASE("MoonrakerClientMock print completion triggers complete state", "[print][complete]") {
     MockBehaviorTestFixture fixture;
 
     SECTION("print state transitions through phases correctly") {
@@ -2346,7 +2394,7 @@ TEST_CASE("MoonrakerClientMock BED_MESH_CALIBRATE generates new mesh",
 }
 
 TEST_CASE("MoonrakerClientMock BED_MESH_PROFILE LOAD changes active profile",
-          "[mock][calibration][gcode][slow]") {
+          "[mock][calibration][gcode]") {
     MockBehaviorTestFixture fixture;
 
     SECTION("BED_MESH_PROFILE LOAD loads existing profile") {
@@ -2384,8 +2432,7 @@ TEST_CASE("MoonrakerClientMock BED_MESH_PROFILE LOAD changes active profile",
     }
 }
 
-TEST_CASE("MoonrakerClientMock BED_MESH_CLEAR clears active mesh",
-          "[mock][calibration][gcode][slow]") {
+TEST_CASE("MoonrakerClientMock BED_MESH_CLEAR clears active mesh", "[mock][calibration][gcode]") {
     MockBehaviorTestFixture fixture;
 
     SECTION("BED_MESH_CLEAR clears active mesh and sends notification") {
@@ -2565,6 +2612,34 @@ TEST_CASE("MoonrakerClientMock - file metadata with success/error callbacks",
 // Fan Control Tests
 // ============================================================================
 
+namespace {
+
+/**
+ * @brief True when a status notification reports @p fan_key at @p expected speed.
+ *
+ * The simulation loop emits full-status notifications, and those always carry a
+ * "fan" entry (moonraker_client_mock.cpp builds it unconditionally) plus every
+ * fan already present in fan_speeds_. So the FIRST notification mentioning a fan
+ * is not necessarily the one the gcode under test produced — it is just as
+ * likely a periodic update carrying the pre-command value. Matching on the
+ * value rather than on the key's presence is what makes these sections
+ * deterministic.
+ */
+bool reports_fan_speed(const json& n, const char* fan_key, double expected) {
+    if (!n.contains("params") || !n["params"].is_array() || n["params"].empty()) {
+        return false;
+    }
+    const json& status = n["params"][0];
+    if (!status.is_object() || !status.contains(fan_key)) {
+        return false;
+    }
+    const json& fan = status[fan_key];
+    return fan.contains("speed") &&
+           fan["speed"].get<double>() == Catch::Approx(expected).margin(0.01);
+}
+
+} // namespace
+
 TEST_CASE("MoonrakerClientMock fan control", "[slow][mock][fan]") {
     // fixture must be declared BEFORE mock for correct destruction order
     MockBehaviorTestFixture fixture;
@@ -2576,60 +2651,30 @@ TEST_CASE("MoonrakerClientMock fan control", "[slow][mock][fan]") {
 
     SECTION("M106 sets part cooling fan speed") {
         mock.gcode_script("M106 S127"); // ~50%
-        fixture.wait_for_callback();
 
-        auto notifications = fixture.get_notifications();
-        REQUIRE(!notifications.empty());
-
-        // Find notification with fan data
-        bool found = false;
-        for (const auto& n : notifications) {
-            if (n.contains("params") && n["params"][0].contains("fan")) {
-                double speed = n["params"][0]["fan"]["speed"].get<double>();
-                REQUIRE(speed == Catch::Approx(0.498).margin(0.01));
-                found = true;
-                break;
-            }
-        }
-        REQUIRE(found);
+        REQUIRE(fixture.wait_for_matching(
+            [](const json& n) { return reports_fan_speed(n, "fan", 0.498); }));
     }
 
     SECTION("M106 with P parameter sets specific fan index") {
         mock.gcode_script("M106 P1 S255"); // Fan 1 at 100%
-        fixture.wait_for_callback();
 
-        auto notifications = fixture.get_notifications();
-        bool found = false;
-        for (const auto& n : notifications) {
-            if (n.contains("params") && n["params"][0].contains("fan1")) {
-                double speed = n["params"][0]["fan1"]["speed"].get<double>();
-                REQUIRE(speed == Catch::Approx(1.0));
-                found = true;
-                break;
-            }
-        }
-        REQUIRE(found);
+        REQUIRE(fixture.wait_for_matching(
+            [](const json& n) { return reports_fan_speed(n, "fan1", 1.0); }));
     }
 
     SECTION("M107 turns off fan") {
         mock.gcode_script("M106 S255");
-        fixture.wait_for_callback();
+        REQUIRE(fixture.wait_for_matching(
+            [](const json& n) { return reports_fan_speed(n, "fan", 1.0); }));
+
+        // Reset AFTER the fan is confirmed at full speed, so the zero below can
+        // only have come from M107 — nothing captured before it reports zero.
         fixture.reset();
 
         mock.gcode_script("M107");
-        fixture.wait_for_callback();
-
-        auto notifications = fixture.get_notifications();
-        bool found = false;
-        for (const auto& n : notifications) {
-            if (n.contains("params") && n["params"][0].contains("fan")) {
-                double speed = n["params"][0]["fan"]["speed"].get<double>();
-                REQUIRE(speed == 0.0);
-                found = true;
-                break;
-            }
-        }
-        REQUIRE(found);
+        REQUIRE(fixture.wait_for_matching(
+            [](const json& n) { return reports_fan_speed(n, "fan", 0.0); }));
     }
 
     SECTION("SET_FAN_SPEED with normalized speed") {
@@ -2664,6 +2709,33 @@ TEST_CASE("MoonrakerClientMock fan control", "[slow][mock][fan]") {
 // Z Offset Tracking Tests
 // ============================================================================
 
+namespace {
+/// True when `n` is a gcode_move notification whose Z homing_origin equals `want`.
+///
+/// These sections used to call wait_for_callback(), which returns on the FIRST
+/// notification of any kind, and then scanned for the first notification carrying
+/// homing_origin and broke on it. The mock emits more than one notification per
+/// command and the gcode_move snapshot is not necessarily the one that woke the
+/// wait, so a pre-update snapshot could be the first match and the assertion read
+/// 0.0 against the expected offset — roughly 3 runs in 40. Waiting on the VALUE
+/// removes the race instead of widening a timeout.
+bool has_z_offset(const nlohmann::json& n, double want) {
+    if (!n.contains("params") || !n["params"].is_array() || n["params"].empty()) {
+        return false;
+    }
+    const auto& p0 = n["params"][0];
+    if (!p0.is_object() || !p0.contains("gcode_move")) {
+        return false;
+    }
+    const auto& gm = p0["gcode_move"];
+    if (!gm.contains("homing_origin") || !gm["homing_origin"].is_array() ||
+        gm["homing_origin"].size() < 3 || !gm["homing_origin"][2].is_number()) {
+        return false;
+    }
+    return gm["homing_origin"][2].get<double>() == Catch::Approx(want);
+}
+} // namespace
+
 TEST_CASE("MoonrakerClientMock Z offset tracking", "[slow][mock][offset]") {
     // fixture must be declared BEFORE mock for correct destruction order
     MockBehaviorTestFixture fixture;
@@ -2675,66 +2747,29 @@ TEST_CASE("MoonrakerClientMock Z offset tracking", "[slow][mock][offset]") {
 
     SECTION("SET_GCODE_OFFSET Z sets absolute offset") {
         mock.gcode_script("SET_GCODE_OFFSET Z=0.15");
-        fixture.wait_for_callback();
-
-        auto notifications = fixture.get_notifications();
-        bool found = false;
-        for (const auto& n : notifications) {
-            if (n.contains("params") && n["params"][0].contains("gcode_move")) {
-                const auto& gcode_move = n["params"][0]["gcode_move"];
-                if (gcode_move.contains("homing_origin")) {
-                    double z_offset = gcode_move["homing_origin"][2].get<double>();
-                    REQUIRE(z_offset == Catch::Approx(0.15));
-                    found = true;
-                    break;
-                }
-            }
-        }
-        REQUIRE(found);
+        REQUIRE(fixture.wait_for_matching(
+            [](const nlohmann::json& n) { return has_z_offset(n, 0.15); }, 2000));
     }
 
     SECTION("SET_GCODE_OFFSET Z_ADJUST adds to current offset") {
+        // Wait for the base offset to actually land before adjusting off it —
+        // wait_for_callback() could return first, and reset() would then discard
+        // the notification that would have proved it, leaving Z_ADJUST to apply
+        // to 0.0 and yield -0.05.
         mock.gcode_script("SET_GCODE_OFFSET Z=0.1");
-        fixture.wait_for_callback();
+        REQUIRE(fixture.wait_for_matching(
+            [](const nlohmann::json& n) { return has_z_offset(n, 0.1); }, 2000));
         fixture.reset();
 
         mock.gcode_script("SET_GCODE_OFFSET Z_ADJUST=-0.05");
-        fixture.wait_for_callback();
-
-        auto notifications = fixture.get_notifications();
-        bool found = false;
-        for (const auto& n : notifications) {
-            if (n.contains("params") && n["params"][0].contains("gcode_move")) {
-                const auto& gcode_move = n["params"][0]["gcode_move"];
-                if (gcode_move.contains("homing_origin")) {
-                    double z_offset = gcode_move["homing_origin"][2].get<double>();
-                    REQUIRE(z_offset == Catch::Approx(0.05));
-                    found = true;
-                    break;
-                }
-            }
-        }
-        REQUIRE(found);
+        REQUIRE(fixture.wait_for_matching(
+            [](const nlohmann::json& n) { return has_z_offset(n, 0.05); }, 2000));
     }
 
     SECTION("Negative Z offset supported") {
         mock.gcode_script("SET_GCODE_OFFSET Z=-0.2");
-        fixture.wait_for_callback();
-
-        auto notifications = fixture.get_notifications();
-        bool found = false;
-        for (const auto& n : notifications) {
-            if (n.contains("params") && n["params"][0].contains("gcode_move")) {
-                const auto& gcode_move = n["params"][0]["gcode_move"];
-                if (gcode_move.contains("homing_origin")) {
-                    double z_offset = gcode_move["homing_origin"][2].get<double>();
-                    REQUIRE(z_offset == Catch::Approx(-0.2));
-                    found = true;
-                    break;
-                }
-            }
-        }
-        REQUIRE(found);
+        REQUIRE(fixture.wait_for_matching(
+            [](const nlohmann::json& n) { return has_z_offset(n, -0.2); }, 2000));
     }
 
     (void)sub_id; // Callback auto-unregisters when mock destructs
@@ -2814,14 +2849,27 @@ TEST_CASE("MoonrakerClientMock restart simulation", "[slow][mock][restart]") {
     }
 
     SECTION("FIRMWARE_RESTART takes longer than RESTART") {
-        // At 100x speedup: RESTART = 20ms, FIRMWARE_RESTART = 30ms
+        // At 100x speedup: RESTART = 20ms, FIRMWARE_RESTART = 30ms.
+        //
+        // Time to the webhooks "ready" notification, NOT to an arbitrary notification
+        // count: the mock's physics thread dispatches a status update every
+        // SIMULATION_INTERVAL_MS (250ms of REAL time — the speedup scales the physics
+        // step, not the tick period), so a stray temperature tick can push the
+        // notification count past a threshold while the restart is still in flight.
         auto start = std::chrono::steady_clock::now();
         mock.gcode_script("FIRMWARE_RESTART");
-        fixture.wait_for_callbacks(2, 200);
+        REQUIRE(fixture.wait_for_matching(
+            [](const json& n) {
+                return n.contains("params") && n["params"][0].contains("webhooks") &&
+                       n["params"][0]["webhooks"]["state"] == "ready";
+            },
+            2000));
         auto duration = std::chrono::steady_clock::now() - start;
 
-        // FIRMWARE_RESTART should take at least 25ms (with margin)
-        REQUIRE(std::chrono::duration_cast<std::chrono::milliseconds>(duration).count() >= 20);
+        // The restart thread sleeps in 10ms slices, so the firmware path floors at
+        // 30ms and can only overshoot. 25ms keeps a margin while still excluding the
+        // 20ms plain-RESTART delay.
+        REQUIRE(std::chrono::duration_cast<std::chrono::milliseconds>(duration).count() >= 25);
     }
 
     (void)sub_id; // Callback auto-unregisters when mock destructs
@@ -3189,7 +3237,7 @@ TEST_CASE("MoonrakerClientMock idle_timeout simulation", "[mock][idle_timeout][s
 // gcode_script return value contract: 0 = success, non-zero = error
 // ============================================================================
 
-TEST_CASE("MoonrakerClientMock gcode_script returns 0 on success", "[mock][gcode][slow]") {
+TEST_CASE("MoonrakerClientMock gcode_script returns 0 on success", "[mock][gcode]") {
     MockBehaviorTestFixture fixture;
     auto mock = fixture.create_mock();
     mock->connect("ws://localhost:7125/websocket", [] {}, [] {});
@@ -3229,7 +3277,7 @@ TEST_CASE("MoonrakerClientMock gcode_script returns 0 on success", "[mock][gcode
     mock->disconnect();
 }
 
-TEST_CASE("MoonrakerClientMock gcode_script returns non-zero on error", "[mock][gcode][slow]") {
+TEST_CASE("MoonrakerClientMock gcode_script returns non-zero on error", "[mock][gcode]") {
     MockBehaviorTestFixture fixture;
     auto mock = fixture.create_mock();
     mock->connect("ws://localhost:7125/websocket", [] {}, [] {});
@@ -3248,6 +3296,161 @@ TEST_CASE("MoonrakerClientMock gcode_script returns non-zero on error", "[mock][
     }
 
     mock->disconnect();
+}
+
+TEST_CASE("MoonrakerClientMock: M117 sets display_status.message", "[mock][display_message]") {
+    TestableMoonrakerMock mock;
+
+    json captured;
+    mock.register_notify_update([&captured](const json& notif) {
+        if (notif.contains("params") && notif["params"].is_array() && !notif["params"].empty() &&
+            notif["params"][0].contains("display_status")) {
+            captured = notif["params"][0]["display_status"];
+        }
+    });
+
+    SECTION("sets the message text") {
+        mock.gcode_script("M117 Leveling 3/9");
+        REQUIRE(captured.contains("message"));
+        REQUIRE(captured["message"].get<std::string>() == "Leveling 3/9");
+    }
+
+    SECTION("bare M117 clears the message") {
+        mock.gcode_script("M117 something");
+        captured = json{};
+        mock.gcode_script("M117");
+        REQUIRE(captured.contains("message"));
+        REQUIRE(captured["message"].get<std::string>() == "");
+    }
+
+    SECTION("strips exactly one leading space, preserves the rest") {
+        mock.gcode_script("M117  two spaces");
+        REQUIRE(captured["message"].get<std::string>() == " two spaces");
+    }
+
+    SECTION("preserves embedded quotes and backslashes verbatim") {
+        mock.gcode_script("M117 She said \"hi\" \\ok\\");
+        REQUIRE(captured.contains("message"));
+        REQUIRE(captured["message"].get<std::string>() == "She said \"hi\" \\ok\\");
+    }
+
+    SECTION("preserves a message longer than the downstream 128-byte display buffer") {
+        std::string long_text(200, 'x');
+        mock.gcode_script("M117 " + long_text);
+        REQUIRE(captured.contains("message"));
+        REQUIRE(captured["message"].get<std::string>() == long_text);
+    }
+
+    // Real Klipper uppercases the command word before dispatch, so "m117",
+    // "M117", and mixed case all reach the same handler. A user typing
+    // lowercase "m117 ..." in the console must not be silently swallowed.
+    SECTION("lowercase m117 sets the message text") {
+        mock.gcode_script("m117 some text");
+        REQUIRE(captured.contains("message"));
+        REQUIRE(captured["message"].get<std::string>() == "some text");
+    }
+
+    // Only the command token may be normalized - the payload must survive
+    // with its original case intact. A broad "uppercase the whole line" fix
+    // would turn this into "HELLO WORLD", which this test must catch.
+    SECTION("lowercase command preserves the payload's original case") {
+        mock.gcode_script("m117 Hello World");
+        REQUIRE(captured.contains("message"));
+        REQUIRE(captured["message"].get<std::string>() == "Hello World");
+    }
+
+    // Regression: the M117 branch used to fall through the rest of
+    // gcode_script() instead of returning, so message TEXT containing other
+    // command substrings ("G28", "G1"/"G0") re-triggered those handlers. A
+    // user M117 message that merely mentions "G28" must not home the axes.
+    SECTION("M117 text containing G28 does not trigger homing") {
+        json toolhead_captured;
+        mock.register_notify_update([&toolhead_captured](const json& notif) {
+            if (notif.contains("params") && notif["params"].is_array() &&
+                !notif["params"].empty() && notif["params"][0].contains("toolhead")) {
+                toolhead_captured = notif["params"][0]["toolhead"];
+            }
+        });
+
+        int result = mock.gcode_script("M117 G28 done");
+
+        REQUIRE(result == 0);
+        REQUIRE(captured.contains("message"));
+        REQUIRE(captured["message"].get<std::string>() == "G28 done");
+        // Homing dispatches a toolhead/homed_axes update (see the G28 tests
+        // above) - none should have been produced by this M117 call.
+        REQUIRE_FALSE(toolhead_captured.contains("homed_axes"));
+    }
+}
+
+// ============================================================================
+// M117 precedence over periodic status broadcasts
+// ============================================================================
+//
+// Commit 959bb0140's central design property: once a user sends M117, that
+// message must survive the mock's own periodic status broadcast (fired every
+// NOTIFICATION_INTERVAL_TICKS ticks from temperature_simulation_loop()) even
+// while the print is in a phase that would otherwise emit a canned string
+// ("Heating...", "Purging nozzle"). The SECTIONs above only ever inspect the
+// notification dispatched by the M117 call itself - they never drive the
+// periodic broadcast, so they cannot prove precedence. This test does.
+TEST_CASE("MoonrakerClientMock: M117 message survives periodic status broadcasts",
+          "[mock][display_message][slow]") {
+    MockBehaviorTestFixture fixture;
+
+    // Speedup chosen so PREHEAT (nozzle 25->220 @ 3C/s, bed 25->55 @ 1C/s)
+    // takes a few seconds of wall-clock time - long enough to observe several
+    // periodic broadcasts (~1s apart, wall-clock, independent of speedup)
+    // while still in PREHEAT/early-PRINTING, where the canned strings apply.
+    MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24, 20.0);
+    mock.register_notify_update(fixture.create_capture_callback());
+    mock.connect("ws://mock/websocket", []() {}, []() {});
+
+    const std::string custom_message = "Precedence check 42";
+
+    // Start a print (enters PREHEAT) and immediately set a custom M117
+    // message before any canned string has had a chance to appear.
+    mock.gcode_script("SDCARD_PRINT_FILE FILENAME=3DBenchy.gcode");
+    mock.gcode_script("M117 " + custom_message);
+
+    // Discard everything so far (initial state, the print-start notification,
+    // and the M117 call's own narrow {"display_status":{"message":...}}
+    // dispatch). Only notifications captured from here on can be periodic
+    // broadcasts.
+    fixture.reset();
+
+    // Wait for at least 3 further notifications so we sample multiple
+    // periodic broadcast ticks across the PREHEAT -> early-PRINTING window.
+    REQUIRE(fixture.wait_for_callbacks(3, 8000));
+    mock.stop_temperature_simulation();
+
+    // A periodic broadcast is identifiable by carrying the full status
+    // object (print_stats + display_status together) - unlike the M117
+    // call's own narrow dispatch, which only ever contains display_status.
+    size_t periodic_broadcasts_checked = 0;
+    for (const auto& notification : fixture.get_notifications()) {
+        if (!notification.contains("params") || !notification["params"].is_array() ||
+            notification["params"].empty()) {
+            continue;
+        }
+        const json& status = notification["params"][0];
+        if (!status.is_object() || !status.contains("print_stats") ||
+            !status.contains("display_status")) {
+            continue;
+        }
+
+        ++periodic_broadcasts_checked;
+        REQUIRE(status["display_status"].contains("message"));
+        const json& message = status["display_status"]["message"];
+        REQUIRE(message.is_string());
+        REQUIRE(message.get<std::string>() == custom_message);
+    }
+
+    // Make sure we actually exercised the periodic-broadcast path and didn't
+    // just vacuously pass because no full status object showed up.
+    REQUIRE(periodic_broadcasts_checked >= 1);
+
+    mock.disconnect();
 }
 
 #pragma GCC diagnostic pop

@@ -4,13 +4,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # Capture all screenshots for the documentation gallery
-# Uses Nord theme in dark mode for consistency
+# Uses the default HelixScreen theme in dark mode for consistency
 
 set -e
 cd "$(dirname "$0")/.."
 
 # Configuration
-THEME="${HELIX_THEME:-nord}"
+THEME="${HELIX_THEME:-helixscreen}"
 MODE="--dark"
 FLAGS="--test"
 OUTPUT_DIR="docs/images/user"
@@ -21,7 +21,9 @@ echo "Capturing screenshots with HELIX_THEME=$THEME $MODE $FLAGS"
 echo "Output: $OUTPUT_DIR/"
 echo ""
 
-# Define all panels: "output-name:panel-arg"
+# Define all screens: "output-name:token". The token resolves to a helix-screen ctl
+# navigation recipe (see scripts/screenshot-recipes.sh) — screenshot.sh boots a
+# fresh instance, drives it to that screen, and captures it.
 PANELS=(
     # Base panels
     "home:home"
@@ -45,6 +47,11 @@ PANELS=(
     "settings-theme:theme"
     "settings-network:network"
     "settings-hardware:hardware-health"
+    "settings-fans:fan-settings"
+    "settings-barcode-scanner:barcode-scanner"
+    "settings-label-printer:label-printer"
+    "settings-security:security"
+    "screen-lock:lock-screen"
 
     # Advanced overlays
     "advanced-shaper:input-shaper"
@@ -53,10 +60,15 @@ PANELS=(
     "advanced-spoolman:spoolman"
     "advanced-history:history-dashboard"
     "advanced-macros:macros"
+    "advanced-console:console"
 
     # Print overlays
     "print-status:print-status"
     "print-tune:print-tune"
+
+    # Sample-data modals
+    "preflight-check:preflight-check"
+    "runout-modal:runout-modal"
 )
 
 # Track results

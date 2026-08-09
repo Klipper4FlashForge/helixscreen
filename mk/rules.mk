@@ -164,7 +164,7 @@ endif
 
 # Link binary (SDL2_LIB is empty if using system SDL2)
 # Keep broad filtering so non-object prerequisites can be added safely later.
-$(TARGET): $(SDL2_LIB) $(LIBHV_LIB) $(LIBHV_JSON_HEADER) $(CONTRIBUTORS_H) $(APP_C_OBJS) $(APP_OBJS) $(APP_MODULE_OBJS) $(OBJCPP_OBJS) $(LVGL_OBJS) $(HELIX_XML_OBJS) $(THORVG_OBJS) $(LVGL_OPENGLES_OBJS) $(LV_MARKDOWN_OBJS) $(QUIRC_OBJS) $(FONT_OBJS) $(TRANS_OBJS) $(APP_DNS_RESOLV_OBJ) $(WPA_DEPS)
+$(TARGET): $(SDL2_LIB) $(LIBHV_LIB) $(LIBHV_JSON_HEADER) $(CONTRIBUTORS_H) $(APP_C_OBJS) $(APP_OBJS) $(APP_MODULE_OBJS) $(REMOTE_LINENOISE_OBJ) $(OBJCPP_OBJS) $(LVGL_OBJS) $(HELIX_XML_OBJS) $(THORVG_OBJS) $(LVGL_OPENGLES_OBJS) $(LV_MARKDOWN_OBJS) $(QUIRC_OBJS) $(FONT_OBJS) $(TRANS_OBJS) $(APP_DNS_RESOLV_OBJ) $(WPA_DEPS)
 	$(Q)mkdir -p $(BIN_DIR)
 	$(ECHO) "$(MAGENTA)$(BOLD)[LD]$(RESET) $@"
 	# Exclude header prerequisites (including .hpp generated deps like hv/json.hpp).
@@ -300,11 +300,16 @@ endif
 	}
 	$(call emit-compile-command,$(CC),$(LVGL_C_CFLAGS) $(INCLUDES) $(LV_CONF),$<,$@)
 
-# Compile Helix XML sources (extracted from LVGL, with our patches baked in)
+# Compile Helix XML sources (our MIT fork of LVGL's XML engine)
+# lib/helix-xml is a submodule, but OURS (github.com/prestonbrown/helix-xml) -
+# unlike LVGL/lv_markdown/quirc it is edited in place and under active
+# development (see CLAUDE.md), so it gets
+# DEPFLAGS like app sources do - stale objects after a header-only edit here
+# caused a struct-size mismatch/stack-smash that required hand-deleting 168 .o files.
 $(OBJ_DIR)/helix-xml/%.o: $(HELIX_XML_DIR)/%.c lv_conf.h $(PATCHES_STAMP)
 	$(Q)mkdir -p $(dir $@)
 	$(ECHO) "$(CYAN)[CC]$(RESET) $<"
-	$(Q)$(CC) $(SUBMODULE_CFLAGS) $(INCLUDES) $(LV_CONF) -c $< -o $@ || { \
+	$(Q)$(CC) $(SUBMODULE_CFLAGS) $(DEPFLAGS) $(INCLUDES) $(LV_CONF) -c $< -o $@ || { \
 		echo "$(RED)$(BOLD)✗ Compilation failed:$(RESET) $<"; \
 		exit 1; \
 	}
@@ -546,5 +551,12 @@ compile_commands_full:
 -include $(wildcard $(OBJ_DIR)/*/*/*.d)
 -include $(wildcard $(OBJ_DIR)/tests/*.d)
 -include $(wildcard $(OBJ_DIR)/tests/*/*.d)
+# helix-xml is edited in place (our own submodule), so its .d files ARE
+# tracked, unlike LVGL/lv_markdown/quirc below. Paths are 3-4 levels deep:
+#   $(OBJ_DIR)/helix-xml/src/xml/*.d           - e.g. lv_xml.c, lv_xml_component.c
+#   $(OBJ_DIR)/helix-xml/src/xml/parsers/*.d   - per-widget XML parsers
+#   $(OBJ_DIR)/helix-xml/src/libs/expat/*.d    - vendored expat (same tree)
+-include $(wildcard $(OBJ_DIR)/helix-xml/*/*/*.d)
+-include $(wildcard $(OBJ_DIR)/helix-xml/*/*/*/*.d)
 # NOTE: LVGL .d files intentionally NOT included - they add 150k+ lines of deps
 # that slow make startup by 4+ seconds. LVGL rarely changes; do clean build if needed.

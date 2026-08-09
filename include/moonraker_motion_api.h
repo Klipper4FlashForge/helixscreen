@@ -89,6 +89,31 @@ class MoonrakerMotionAPI : public IMotionAPI {
                    ErrorCallback on_error) override;
 
     /**
+     * @brief Relative multi-axis move as ONE gcode script
+     *
+     * XY combined on a single G0 (true diagonal) at xy_feedrate, Z on its own
+     * G0 at z_feedrate. Used by the jog coalescer flush path. Zero deltas ->
+     * on_success immediately, no RPC.
+     *
+     * @param dx X delta in mm (0 to skip)
+     * @param dy Y delta in mm (0 to skip)
+     * @param dz Z delta in mm (0 to skip)
+     * @param xy_feedrate Movement speed for the XY move in mm/min (0 for default)
+     * @param z_feedrate Movement speed for the Z move in mm/min (0 for default)
+     * @param on_success Success callback
+     * @param on_error Error callback
+     */
+    void move_relative(double dx, double dy, double dz, double xy_feedrate, double z_feedrate,
+                       SuccessCallback on_success, ErrorCallback on_error) override;
+
+    /**
+     * @brief Generate G-code for a relative multi-axis move (public for direct
+     * unit testing, mirrors generate_move_gcode)
+     */
+    static std::string generate_relative_move_gcode(double dx, double dy, double dz,
+                                                    double xy_feedrate, double z_feedrate);
+
+    /**
      * @brief Set absolute position for an axis
      *
      * @param axis Axis name ('X', 'Y', 'Z')

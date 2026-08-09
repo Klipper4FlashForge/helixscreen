@@ -3,6 +3,9 @@
 
 #pragma once
 
+#include "app_macro_activity.h"
+#include "app_motion_activity.h"
+#include "async_lifetime_guard.h"
 #include "capability_overrides.h"
 #include "hardware_validator.h"
 #include "lvgl/lvgl.h"
@@ -25,6 +28,7 @@
 #include "state/subject_macros.h"
 #include "subject_managed_panel.h"
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -85,6 +89,29 @@ enum class PrintJobState {
     CANCELLED = 4, ///< Print cancelled by user (Moonraker: "cancelled")
     ERROR = 5      ///< Print failed with error (Moonraker: "error")
 };
+
+/**
+ * @brief True while a print job still owns the toolhead — PRINTING or PAUSED.
+ *
+ * A paused print is NOT a safe state for toolhead motion: the nozzle is parked
+ * over (or in) the part and the job resumes from wherever it is left. On
+ * loadcell-Z printers a G28 probes the nozzle DOWN into the bed, so a homing
+ * move issued while paused collides with the print exactly as it would
+ * mid-print (bundle XWPBR2DX, commit 329e731e9).
+ *
+ * Single source of truth for the AMS backend guard AND the UI affordances that
+ * must agree with it — a button that is offered but always refused is a dead
+ * end for the user (bundle JX2FVRB9).
+ *
+ * The `print_active` subject (get_print_active_subject()) is the subject-shaped
+ * equivalent, derived from the raw print_stats.state string by
+ * PrinterPrintState::status_indicates_active_print(). The two agree by
+ * construction; UI code that already has a subject should read that instead of
+ * reaching for the enum.
+ */
+[[nodiscard]] constexpr bool print_occupies_toolhead(PrintJobState state) {
+    return state == PrintJobState::PRINTING || state == PrintJobState::PAUSED;
+}
 
 /**
  * @brief Terminal outcome of a print job (for UI persistence)
@@ -298,6 +325,16 @@ class PrinterState {
 
     void set_active_extruder(const std::string& name) {
         temperature_state_.set_active_extruder(name);
+    }
+
+    // Active extruder's latched last non-zero target (°C); 0 if unknown.
+    float get_active_extruder_last_nonzero_target() const {
+        return temperature_state_.get_active_extruder_last_nonzero_target();
+    }
+
+    // Clear the nozzle load latch (last non-zero target); empty name = active extruder.
+    void clear_nozzle_load_latch(const std::string& extruder_name = "") {
+        temperature_state_.clear_load_latch(extruder_name);
     }
 
     lv_subject_t* get_extruder_version_subject() {
@@ -543,6 +580,47 @@ class PrinterState {
      */
     [[nodiscard]] bool is_sdcard_active() const {
         return print_domain_.is_sdcard_active();
+    }
+
+    /**
+     * @brief virtual_sdcard.pl_env_valid — Snapmaker-fork Power-Loss-Recovery flag.
+     *
+     * Delegated to PrinterPrintState; see its accessor docs.
+     */
+    lv_subject_t* get_pl_env_valid_subject() {
+        return print_domain_.get_pl_env_valid_subject();
+    }
+
+    [[nodiscard]] bool is_pl_env_valid() const {
+        return print_domain_.is_pl_env_valid();
+    }
+
+    /**
+     * @brief virtual_sdcard.file_path — the file a PLR restore would resume.
+     * Only meaningful when is_pl_env_valid() is true.
+     */
+    [[nodiscard]] const std::string& pl_recovery_file() const {
+        return print_domain_.pl_recovery_file();
+    }
+
+    /// Clear the cached PLR recovery file path. Delegated to PrinterPrintState;
+    /// see its accessor docs. Main-thread only.
+    /**
+     * @brief print_stats.power_loss presence — Creality-fork PLR capability.
+     *
+     * See PrinterPrintState::get_creality_plr_capable_subject().
+     */
+    lv_subject_t* get_creality_plr_capable_subject() {
+        return print_domain_.get_creality_plr_capable_subject();
+    }
+
+    /// True when print_stats.power_loss has been seen (Creality Klipper fork).
+    [[nodiscard]] bool is_creality_plr_capable() const {
+        return print_domain_.is_creality_plr_capable();
+    }
+
+    void clear_pl_recovery_file() {
+        print_domain_.clear_pl_recovery_file();
     }
 
     /**
@@ -916,6 +994,10 @@ class PrinterState {
         return fan_state_.get_fans_version_subject();
     }
 
+    lv_subject_t* get_primary_fans_version_subject() {
+        return fan_state_.get_primary_fans_version_subject();
+    }
+
     /**
      * @brief Get speed subject for a specific fan (with lifetime token for observer safety)
      *
@@ -945,6 +1027,13 @@ class PrinterState {
                    const helix::FanRoleConfig& roles = {},
                    const std::unordered_map<std::string, double>& max_power = {}) {
         fan_state_.init_fans(fan_objects, roles, max_power);
+    }
+
+    /// Re-apply fan roles to the already-discovered fans. See
+    /// PrinterFanState::apply_roles — use this, not init_fans, when the hardware
+    /// has not changed and only the role mapping has.
+    void apply_fan_roles(const helix::FanRoleConfig& roles) {
+        fan_state_.apply_roles(roles);
     }
 
     /**
@@ -1217,7 +1306,7 @@ class PrinterState {
 
     /**
      * @brief Internal: set connection state on main thread
-     * @note Called via ui_async_call from set_printer_connection_state()
+     * @note Called via ui_queue_update() from set_printer_connection_state()
      */
     void set_printer_connection_state_internal(int state, const char* message);
 
@@ -1337,6 +1426,16 @@ class PrinterState {
     [[nodiscard]] const CapabilityOverrides& get_capability_overrides() const {
         return capability_overrides_;
     }
+
+    /**
+     * @brief Re-read the user capability overrides from the ACTIVE printer's config
+     *
+     * capability_overrides_ is populated from `Config::df() + "capability_overrides/…"` in
+     * the constructor, and PrinterState is a process-lifetime singleton — so without this
+     * the map keeps whatever the printer that was active at startup had configured.
+     * Registered with PrinterCacheRegistry from init_subjects().
+     */
+    void reload_capability_overrides();
 
     /**
      * @brief Get cached hardware discovery result
@@ -1698,6 +1797,48 @@ class PrinterState {
     bool is_blocking_operation_active();
 
     /**
+     * @brief Like is_blocking_operation_active(), but attributes self-inflicted busy
+     *
+     * Treats busy-ness attributable to the app's own recent jog activity (in
+     * flight, or acked within AppMotionActivity::kGraceWindow) as NOT blocking.
+     * Manual probe remains an absolute block. Guards for discretionary gcode use
+     * THIS predicate so back-to-back jogs don't self-block — idle_timeout reports
+     * "Printing" during any move, including our own jog (spec 2026-07-15).
+     *
+     * @return true if a blocking non-print operation NOT caused by the app is active
+     */
+    bool is_external_blocking_operation_active();
+
+    /// App-initiated motion (jog) activity tracker; Task 3 stamps it from the
+    /// motion API so is_external_blocking_operation_active() can subtract self-busy.
+    helix::AppMotionActivity& app_motion_activity() {
+        return app_motion_activity_;
+    }
+
+    /// App-initiated macro/homing/calibration/filament-op activity tracker.
+    ///
+    /// Consulted ONLY by the busy-queue toast decision in
+    /// IMoonrakerAPI::execute_gcode, which suppresses the "printer is busy"
+    /// notification when the blocking op is one the user just started here
+    /// (prestonbrown/helixscreen#1206).
+    ///
+    /// Deliberately NOT read by is_blocking_operation_active() or
+    /// is_external_blocking_operation_active(). Those predicates also gate
+    /// motion, and subtracting app-initiated macros there would let a late jog
+    /// through during a filament op — a toolhead-collision hazard (#1108).
+    helix::AppMacroActivity& app_macro_activity() {
+        return app_macro_activity_;
+    }
+
+    /// Claim the once-per-episode "busy — your change will queue" toast. True for
+    /// the first benign discretionary command queued behind a blocking op, false
+    /// thereafter until the op ends. Delegates to the calibration state, which
+    /// re-arms it on the op's falling edge. See PrinterCalibrationState.
+    bool claim_busy_queue_toast() {
+        return calibration_state_.claim_busy_queue_toast();
+    }
+
+    /**
      * @brief Check if printer has a probe configured
      *
      * Used by Z-offset calibration to determine whether to use
@@ -1944,6 +2085,13 @@ class PrinterState {
     /// Calibration state component (firmware retraction, manual probe, motor state)
     helix::PrinterCalibrationState calibration_state_;
 
+    /// App-initiated motion (jog) activity tracker for busy-guard attribution
+    helix::AppMotionActivity app_motion_activity_;
+
+    /// App-initiated macro/filament-op activity tracker for busy-TOAST attribution
+    /// only — never consulted by the blocking-op predicates (see accessor).
+    helix::AppMacroActivity app_macro_activity_;
+
     /// Hardware validation state component (issue counts, severity, status text)
     helix::PrinterHardwareValidationState hardware_validation_state_;
 
@@ -2031,6 +2179,14 @@ class PrinterState {
 
     // Initialization guard to prevent multiple subject initializations
     bool subjects_initialized_ = false;
+
+    /// Generation guard for the setters that defer their work to the main
+    /// thread. Invalidated by `deinit_subjects()` and by destruction, so a
+    /// callback still queued when the subjects go away is dropped instead of
+    /// running against a torn-down subject tree (#1165, #1146). Distinct from
+    /// the `SubjectLifetime` tokens handed to observers, which are
+    /// `shared_ptr<bool>` death signals and carry no deferral machinery.
+    AsyncLifetimeGuard async_lifetime_;
 
     // Cached display pointer to detect LVGL reinitialization (for test isolation)
     lv_display_t* cached_display_ = nullptr;

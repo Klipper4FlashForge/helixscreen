@@ -12,7 +12,6 @@
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
 #include "ui_notification.h"
-#include "ui_toast_manager.h"
 #include "ui_overlay_temp_graph.h"
 #include "ui_panel_bed_mesh.h"
 #include "ui_panel_calibration_zoffset.h"
@@ -22,6 +21,7 @@
 #include "ui_settings_sensors.h"
 #include "ui_subject_registry.h"
 #include "ui_temperature_utils.h"
+#include "ui_toast_manager.h"
 #include "ui_update_queue.h"
 #include "ui_utils.h"
 
@@ -382,15 +382,12 @@ void ControlsPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
     // Wire up card click handlers (cards need manual wiring for navigation)
     setup_card_handlers();
 
-    // Attach heating icon animators for nozzle/bed status visualization
-    if (auto* icon = lv_obj_find_by_name(panel_, "nozzle_heater_icon")) {
-        nozzle_heater_animator_.attach(icon);
-        nozzle_heater_animator_.update(cached_extruder_temp_, cached_extruder_target_);
-    }
-    if (auto* icon = lv_obj_find_by_name(panel_, "bed_heater_icon")) {
-        bed_heater_animator_.attach(icon);
-        bed_heater_animator_.update(cached_bed_temp_, cached_bed_target_);
-    }
+    // Bind heating icon animators for nozzle/bed/chamber status visualization.
+    // The binder owns its own temperature observers, so the panel does not need
+    // to feed them from update_*_temp_display().
+    nozzle_icon_binder_.bind(panel_, printer_state_, helix::HeaterType::Nozzle);
+    bed_icon_binder_.bind(panel_, printer_state_, helix::HeaterType::Bed);
+    chamber_icon_binder_.bind(panel_, printer_state_, helix::HeaterType::Chamber);
 
     // Register observers for live data updates
     register_observers();
@@ -735,8 +732,6 @@ void ControlsPanel::update_nozzle_temp_display() {
 
     std::snprintf(nozzle_status_buf_, sizeof(nozzle_status_buf_), "%s", result.status.c_str());
     lv_subject_copy_string(&nozzle_status_subject_, nozzle_status_buf_);
-
-    nozzle_heater_animator_.update(cached_extruder_temp_, cached_extruder_target_);
 }
 
 void ControlsPanel::update_bed_temp_display() {
@@ -749,8 +744,6 @@ void ControlsPanel::update_bed_temp_display() {
 
     std::snprintf(bed_status_buf_, sizeof(bed_status_buf_), "%s", result.status.c_str());
     lv_subject_copy_string(&bed_status_subject_, bed_status_buf_);
-
-    bed_heater_animator_.update(cached_bed_temp_, cached_bed_target_);
 }
 
 void ControlsPanel::update_chamber_temp_display() {
@@ -1061,17 +1054,23 @@ void ControlsPanel::handle_save_z_offset() {
 void ControlsPanel::handle_save_z_offset_confirm() {
     spdlog::debug("[{}] Save Z-offset confirmed", get_name());
 
-    if (save_z_offset_in_progress_) {
+    if (save_z_offset_guard_.is_active()) {
         spdlog::warn("[{}] Save Z-offset already in progress, ignoring", get_name());
         return;
     }
-    save_z_offset_in_progress_ = true;
+
+    // Bounded guard: SAVE_CONFIG restarts Klipper, which drops the in-flight RPC,
+    // so the success/error callbacks below are not guaranteed to fire. Without a
+    // timeout the button would stay disabled until the app restarts.
+    save_z_offset_guard_.begin(SAVE_Z_OFFSET_TIMEOUT_MS, [this] {
+        spdlog::warn("[{}] Save Z-offset guard timed out — re-enabling save", get_name());
+    });
 
     save_z_offset_confirmation_dialog_.hide();
 
     if (!api_) {
         NOTIFY_ERROR(lv_tr("No printer connection"));
-        save_z_offset_in_progress_ = false;
+        save_z_offset_guard_.end();
         return;
     }
 
@@ -1092,13 +1091,13 @@ void ControlsPanel::handle_save_z_offset_confirm() {
             tok.defer("ControlsPanel::save_z_offset_done", [this, offset_mm]() {
                 NOTIFY_SUCCESS(lv_tr("Z-offset saved ({:+.3f}mm). Klipper restarting..."),
                                offset_mm);
-                save_z_offset_in_progress_ = false;
+                save_z_offset_guard_.end();
             });
         },
         [this, tok](const std::string& error) {
             tok.defer("ControlsPanel::save_z_offset_done", [this, error]() {
                 NOTIFY_ERROR("{}", error);
-                save_z_offset_in_progress_ = false;
+                save_z_offset_guard_.end();
             });
         });
 }
@@ -1957,9 +1956,9 @@ void ControlsPanel::populate_secondary_temps() {
         SubjectLifetime lt;
         auto* subj = tsm.get_temp_subject(sensor.klipper_name, lt);
         int decidegrees = subj ? lv_subject_get_int(subj) : 0;
-        int temp_c = decidegrees / 100;
         char temp_buf[16];
-        std::snprintf(temp_buf, sizeof(temp_buf), "%d\u00B0C", temp_c);
+        helix::ui::temperature::format_temperature(
+            helix::ui::temperature::deci_to_degrees(decidegrees), temp_buf, sizeof(temp_buf));
         lv_obj_t* temp_label = lv_label_create(row);
         lv_label_set_text(temp_label, temp_buf);
         lv_obj_set_style_text_color(temp_label, theme_manager_get_color("text"), 0);
@@ -2056,8 +2055,8 @@ void ControlsPanel::update_secondary_temp(const std::string& klipper_name, int d
     for (const auto& row : secondary_temp_rows_) {
         if (row.klipper_name == klipper_name && row.temp_label) {
             char temp_buf[16];
-            int temp_c = decidegrees / 100;
-            std::snprintf(temp_buf, sizeof(temp_buf), "%d\u00B0C", temp_c);
+            helix::ui::temperature::format_temperature(
+                helix::ui::temperature::deci_to_degrees(decidegrees), temp_buf, sizeof(temp_buf));
             lv_label_set_text(row.temp_label, temp_buf);
             spdlog::trace("[{}] Updated secondary temp '{}' to {}", get_name(), klipper_name,
                           temp_buf);

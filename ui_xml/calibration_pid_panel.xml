@@ -7,15 +7,48 @@
   <styles>
     <style name="pid_heater_selected" bg_color="#tertiary" bg_opa="255"/>
     <style name="pid_heater_unselected" bg_color="#elevated_bg" bg_opa="255"/>
+
+    <!-- Material preset row.
+
+         Four equal-width buttons cannot hold an arbitrary material name: the
+         names come from subjects (preset_material_N_name), so their length is
+         data, not layout. At MICRO a button is 46px and "Generic TPU" measures
+         57px, which clipped to "eneric TP" — chopped at BOTH ends, because the
+         label is centred and wider than the button that clips it
+         (prestonbrown/helixscreen#1204). 800x480 clipped too (99px label, 73px button).
+
+         Up to and including MEDIUM the row wraps to 2x2, which roughly doubles
+         each button's width so the name fits on one line. MEDIUM needs it as
+         much as MICRO does: font_small scales with the breakpoint (10px at
+         MICRO, 16px at MEDIUM) while the button only reaches 73px, so a single
+         row of four cannot hold a long name at any size below LARGE.
+
+         layout="flex" must accompany flex_flow in a style — flex_flow alone is
+         inert, since it is lv_obj_set_flex_flow() that sets both. -->
+    <style name="presets_wrapped" layout="flex" flex_flow="row_wrap" flex_main_place="space_between"/>
+    <style name="presets_single_row" layout="flex" flex_flow="row" flex_main_place="start"/>
+    <!-- 48% (not 50%) leaves room for the inter-column gap.
+
+         The tight horizontal padding matters: ui_button's default padding ate
+         26px of an 87px button at TINY, leaving the label only 61px. "Generic
+         TPU" needs ~63px at the TINY font (noto_sans_light_11), so it wrapped to
+         a second line and the wrapped label — 30px in a 28px button — had "TPU"
+         clipped off the bottom. Note long_mode="dots" does NOT save this case:
+         LVGL only draws the ellipsis when the label's HEIGHT is bounded, and an
+         auto-height label wraps instead. Reclaiming the padding keeps the name
+         on one line and costs no vertical space. -->
+    <style name="preset_btn_half" width="48%" flex_grow="0" pad_left="#space_xs" pad_right="#space_xs"/>
+    <style name="preset_btn_grow" flex_grow="1" pad_left="#space_xs" pad_right="#space_xs"/>
   </styles>
   <view name="calibration_pid_panel"
-        extends="lv_obj" width="#overlay_panel_width" height="100%" align="right_mid" style_bg_opa="255"
+        extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_bg_opa="255"
         style_bg_color="#card_bg" style_pad_all="0" style_border_width="0" scrollable="false" flex_flow="column">
     <!-- Header Bar -->
     <header_bar name="overlay_header"
                 title="Automatic Heater Control Calibration" title_tag="Automatic Heater Control Calibration"
-                hide_action_button="false" action_button_text="Start" action_button_text_tag="Start" action_button_callback="on_pid_start"
-                action_button_disabled_subject="pid_cal_not_idle"/>
+                hide_action_button="false" action_button_text="Start" action_button_text_tag="Start"
+                action_button_callback="on_pid_start"
+                action_button_disabled_cond="pid_cal_not_idle or nav_buttons_enabled eq 0"/>
     <!-- Content Area -->
     <lv_obj name="overlay_content"
             width="100%" flex_grow="1" style_pad_all="#space_lg" flex_flow="column" style_pad_gap="#space_lg"
@@ -44,12 +77,13 @@
                   style_pad_all="#space_sm" flex_flow="row" style_pad_gap="#space_md" style_flex_cross_place="center"
                   scrollable="false">
             <!-- Method selector (Kalico only, beta-gated via C++ cal_is_kalico subject) -->
-            <lv_obj name="method_selector" width="1" flex_grow="1" height="content" style_pad_all="0"
-                    flex_flow="row" style_pad_gap="#space_xs" style_flex_cross_place="center"
-                    scrollable="false" style_flex_track_place="center">
+            <lv_obj name="method_selector"
+                    width="1" height="content" flex_grow="1" style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs"
+                    style_flex_cross_place="center" scrollable="false" style_flex_track_place="center">
               <bind_flag_if_eq subject="cal_is_kalico" flag="hidden" ref_value="0"/>
-              <lv_obj width="content" height="content" style_pad_all="0" flex_flow="column"
-                      style_pad_gap="2" style_flex_cross_place="center" scrollable="false">
+              <lv_obj width="content"
+                      height="content" style_pad_all="0" flex_flow="column" style_pad_gap="2"
+                      style_flex_cross_place="center" scrollable="false">
                 <text_body text="Method" translation_tag="Method"/>
                 <beta_badge/>
               </lv_obj>
@@ -66,8 +100,9 @@
               <divider_vertical/>
             </lv_obj>
             <!-- Heater selector -->
-            <lv_obj width="1" flex_grow="1" height="content" style_pad_all="0"
-                    flex_flow="row" style_pad_gap="#space_xs" style_flex_cross_place="center" scrollable="false">
+            <lv_obj width="1"
+                    height="content" flex_grow="1" style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs"
+                    style_flex_cross_place="center" scrollable="false">
               <text_body text="Heater" translation_tag="Heater"/>
               <ui_button name="btn_heater_extruder" flex_grow="1" text="Extruder" translation_tag="Extruder">
                 <bind_style name="pid_heater_selected" subject="pid_heater_is_extruder" ref_value="1"/>
@@ -91,38 +126,72 @@
               <text_body text="Target Temperature" translation_tag="Target Temperature"/>
               <!-- Material Presets (Extruder) -->
               <lv_obj name="extruder_presets"
-                      width="100%" height="content" style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs"
-                      style_flex_main_place="start" scrollable="false">
+                      width="100%" height="content" style_pad_all="0" style_pad_gap="#space_xs" scrollable="false">
+                <bind_style_if_le name="presets_wrapped" subject="ui_breakpoint" ref_value="3"/>
+                <bind_style_if_ge name="presets_single_row" subject="ui_breakpoint" ref_value="4"/>
                 <bind_flag_if_eq subject="pid_heater_is_extruder" flag="hidden" ref_value="0"/>
-                <ui_button name="btn_preset_pla" flex_grow="1" height="#button_height_sm" text="PLA" style_text_font="#font_small">
-                  <event_cb trigger="clicked" callback="on_pid_preset_pla"/>
+                <ui_button name="btn_preset_m0"
+                           height="#button_height_sm" bind_text="preset_material_0_name" style_text_font="#font_small"
+                           long_mode="dots">
+                  <bind_style_if_le name="preset_btn_half" subject="ui_breakpoint" ref_value="3"/>
+                  <bind_style_if_ge name="preset_btn_grow" subject="ui_breakpoint" ref_value="4"/>
+                  <event_cb trigger="clicked" callback="on_pid_preset_material"/>
                 </ui_button>
-                <ui_button name="btn_preset_petg" flex_grow="1" height="#button_height_sm" text="PETG" style_text_font="#font_small">
-                  <event_cb trigger="clicked" callback="on_pid_preset_petg"/>
+                <ui_button name="btn_preset_m1"
+                           height="#button_height_sm" bind_text="preset_material_1_name" style_text_font="#font_small"
+                           long_mode="dots">
+                  <bind_style_if_le name="preset_btn_half" subject="ui_breakpoint" ref_value="3"/>
+                  <bind_style_if_ge name="preset_btn_grow" subject="ui_breakpoint" ref_value="4"/>
+                  <event_cb trigger="clicked" callback="on_pid_preset_material"/>
                 </ui_button>
-                <ui_button name="btn_preset_abs" flex_grow="1" height="#button_height_sm" text="ABS" style_text_font="#font_small">
-                  <event_cb trigger="clicked" callback="on_pid_preset_abs"/>
+                <ui_button name="btn_preset_m2"
+                           height="#button_height_sm" bind_text="preset_material_2_name" style_text_font="#font_small"
+                           long_mode="dots">
+                  <bind_style_if_le name="preset_btn_half" subject="ui_breakpoint" ref_value="3"/>
+                  <bind_style_if_ge name="preset_btn_grow" subject="ui_breakpoint" ref_value="4"/>
+                  <event_cb trigger="clicked" callback="on_pid_preset_material"/>
                 </ui_button>
-                <ui_button name="btn_preset_pa" flex_grow="1" height="#button_height_sm" text="PA" style_text_font="#font_small">
-                  <event_cb trigger="clicked" callback="on_pid_preset_pa"/>
-                </ui_button>
-                <ui_button name="btn_preset_tpu" flex_grow="1" height="#button_height_sm" text="TPU" style_text_font="#font_small">
-                  <event_cb trigger="clicked" callback="on_pid_preset_tpu"/>
+                <ui_button name="btn_preset_m3"
+                           height="#button_height_sm" bind_text="preset_material_3_name" style_text_font="#font_small"
+                           long_mode="dots">
+                  <bind_style_if_le name="preset_btn_half" subject="ui_breakpoint" ref_value="3"/>
+                  <bind_style_if_ge name="preset_btn_grow" subject="ui_breakpoint" ref_value="4"/>
+                  <event_cb trigger="clicked" callback="on_pid_preset_material"/>
                 </ui_button>
               </lv_obj>
               <!-- Material Presets (Bed) -->
               <lv_obj name="bed_presets"
-                      width="100%" height="content" style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs"
-                      style_flex_main_place="start" scrollable="false">
+                      width="100%" height="content" style_pad_all="0" style_pad_gap="#space_xs" scrollable="false">
+                <bind_style_if_le name="presets_wrapped" subject="ui_breakpoint" ref_value="3"/>
+                <bind_style_if_ge name="presets_single_row" subject="ui_breakpoint" ref_value="4"/>
                 <bind_flag_if_not_eq subject="pid_heater_is_extruder" flag="hidden" ref_value="0"/>
-                <ui_button name="btn_preset_bed_pla" flex_grow="1" height="#button_height_sm" text="PLA" style_text_font="#font_small">
-                  <event_cb trigger="clicked" callback="on_pid_preset_bed_pla"/>
+                <ui_button name="btn_preset_bed_m0"
+                           height="#button_height_sm" bind_text="preset_material_0_name" style_text_font="#font_small"
+                           long_mode="dots">
+                  <bind_style_if_le name="preset_btn_half" subject="ui_breakpoint" ref_value="3"/>
+                  <bind_style_if_ge name="preset_btn_grow" subject="ui_breakpoint" ref_value="4"/>
+                  <event_cb trigger="clicked" callback="on_pid_preset_bed_material"/>
                 </ui_button>
-                <ui_button name="btn_preset_bed_petg" flex_grow="1" height="#button_height_sm" text="PETG" style_text_font="#font_small">
-                  <event_cb trigger="clicked" callback="on_pid_preset_bed_petg"/>
+                <ui_button name="btn_preset_bed_m1"
+                           height="#button_height_sm" bind_text="preset_material_1_name" style_text_font="#font_small"
+                           long_mode="dots">
+                  <bind_style_if_le name="preset_btn_half" subject="ui_breakpoint" ref_value="3"/>
+                  <bind_style_if_ge name="preset_btn_grow" subject="ui_breakpoint" ref_value="4"/>
+                  <event_cb trigger="clicked" callback="on_pid_preset_bed_material"/>
                 </ui_button>
-                <ui_button name="btn_preset_bed_abs" flex_grow="1" height="#button_height_sm" text="ABS" style_text_font="#font_small">
-                  <event_cb trigger="clicked" callback="on_pid_preset_bed_abs"/>
+                <ui_button name="btn_preset_bed_m2"
+                           height="#button_height_sm" bind_text="preset_material_2_name" style_text_font="#font_small"
+                           long_mode="dots">
+                  <bind_style_if_le name="preset_btn_half" subject="ui_breakpoint" ref_value="3"/>
+                  <bind_style_if_ge name="preset_btn_grow" subject="ui_breakpoint" ref_value="4"/>
+                  <event_cb trigger="clicked" callback="on_pid_preset_bed_material"/>
+                </ui_button>
+                <ui_button name="btn_preset_bed_m3"
+                           height="#button_height_sm" bind_text="preset_material_3_name" style_text_font="#font_small"
+                           long_mode="dots">
+                  <bind_style_if_le name="preset_btn_half" subject="ui_breakpoint" ref_value="3"/>
+                  <bind_style_if_ge name="preset_btn_grow" subject="ui_breakpoint" ref_value="4"/>
+                  <event_cb trigger="clicked" callback="on_pid_preset_bed_material"/>
                 </ui_button>
               </lv_obj>
               <!-- Temperature: [-] 200°C [+] -->
@@ -133,8 +202,8 @@
                   <event_cb trigger="clicked" callback="on_pid_temp_down"/>
                 </ui_button>
                 <lv_label name="temp_display"
-                          flex_grow="1" text="200°C" style_text_font="#font_heading"
-                          style_text_align="center" bind_text="pid_temp_display"/>
+                          flex_grow="1" text="200°C" style_text_font="#font_heading" style_text_align="center"
+                          bind_text="pid_temp_display"/>
                 <ui_button name="btn_temp_up" width="#button_height" height="#button_height" text="+">
                   <event_cb trigger="clicked" callback="on_pid_temp_up"/>
                 </ui_button>
@@ -154,8 +223,7 @@
                 <lv_obj width="100%"
                         height="content" style_pad_top="#space_md" style_pad_bottom="#space_md"
                         style_pad_left="#space_lg" style_pad_right="#space_md" flex_flow="row"
-                        style_flex_cross_place="center" style_pad_gap="#space_md" scrollable="false"
-                        >
+                        style_flex_cross_place="center" style_pad_gap="#space_md" scrollable="false">
                   <lv_slider name="fan_speed_slider" flex_grow="1" min_value="0" max_value="100" value="0"/>
                   <lv_label name="fan_speed_label"
                             width="40" text="0%" style_text_font="#font_small" style_text_align="right"
@@ -194,7 +262,8 @@
                     <event_cb trigger="clicked" callback="on_cal_fan_thorough"/>
                   </ui_button>
                 </lv_obj>
-                <text_small width="100%" text="More points = more accurate, but takes longer."
+                <text_small width="100%"
+                            text="More points = more accurate, but takes longer."
                             translation_tag="More points = more accurate, but takes longer."
                             style_text_color="#text_muted" long_mode="wrap"/>
               </lv_obj>
@@ -225,8 +294,8 @@
           </lv_obj>
         </lv_obj>
         <!-- Footer warnings (outside scroll, always at bottom) -->
-        <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="column"
-                style_pad_gap="#space_xs" scrollable="false">
+        <lv_obj width="100%"
+                height="content" style_pad_all="0" flex_flow="column" style_pad_gap="#space_xs" scrollable="false">
           <!-- Migration warning (MPC needs config change) -->
           <lv_obj name="migration_warning"
                   width="100%" height="content" style_pad_all="#space_xs" flex_flow="row"
@@ -238,12 +307,12 @@
                         style_text_color="#text_muted" flex_grow="1"/>
           </lv_obj>
           <!-- Duration warning (always visible) -->
-          <lv_obj width="100%" height="content" style_pad_all="#space_xs" flex_flow="row"
-                  style_flex_cross_place="center" style_pad_gap="#space_sm" scrollable="false">
+          <lv_obj width="100%"
+                  height="content" style_pad_all="#space_xs" flex_flow="row" style_flex_cross_place="center"
+                  style_pad_gap="#space_sm" scrollable="false">
             <icon src="alert" size="sm" variant="warning"/>
             <text_small text="Takes 3-5 min. Do not interrupt."
-                        translation_tag="Takes 3-5 min. Do not interrupt." style_text_color="#text_muted"
-                        flex_grow="1"/>
+                        translation_tag="Takes 3-5 min. Do not interrupt." style_text_color="#text_muted" flex_grow="1"/>
           </lv_obj>
         </lv_obj>
       </lv_obj>
@@ -270,8 +339,7 @@
             <progress_bar name="pid_progress_bar" width="80%" bind_value="pid_cal_progress"/>
             <text_small name="pid_progress_text"
                         bind_text="pid_progress_text" text="Starting..." style_text_color="#text_muted"/>
-            <text_small name="pid_eta_text"
-                        bind_text="pid_cal_eta" text="" style_text_color="#text_muted"/>
+            <text_small name="pid_eta_text" bind_text="pid_cal_eta" text="" style_text_color="#text_muted"/>
           </lv_obj>
           <!-- Right: temperature graph + live display -->
           <lv_obj height="100%"
@@ -324,8 +392,9 @@
               scrollable="false">
         <bind_flag_if_not_eq subject="pid_cal_state" flag="hidden" ref_value="3"/>
         <!-- Title row: icon + heading inline -->
-        <lv_obj width="content" height="content" style_pad_all="0" flex_flow="row"
-                style_flex_cross_place="center" style_pad_gap="#space_sm" scrollable="false">
+        <lv_obj width="content"
+                height="content" style_pad_all="0" flex_flow="row" style_flex_cross_place="center"
+                style_pad_gap="#space_sm" scrollable="false">
           <icon src="check_circle" size="md" variant="success"/>
           <text_heading text="Calibration Complete!" translation_tag="Calibration Complete!"/>
         </lv_obj>
@@ -391,7 +460,8 @@
                     style_text_align="center" style_text_color="#text_muted"/>
         <!-- Spacer pushes Done button to bottom -->
         <lv_obj width="0" flex_grow="1" style_pad_all="0" scrollable="false"/>
-        <ui_button name="btn_done" width="140" height="#button_height" text="Done" translation_tag="Done">
+        <ui_button name="btn_done"
+                   width="#button_width_action" height="#button_height" text="Done" translation_tag="Done">
           <event_cb trigger="clicked" callback="on_pid_done"/>
         </ui_button>
       </lv_obj>
@@ -410,12 +480,13 @@
                     translation_tag="An error occurred during calibration." style_text_align="center" long_mode="wrap"
                     bind_text="pid_error_message"/>
         <lv_obj width="100%"
-                height="#button_height" style_pad_all="0" flex_flow="row" style_flex_main_place="center" style_pad_gap="#space_md"
-                scrollable="false">
-          <ui_button name="btn_close_error" width="140" text="Close" translation_tag="Close">
+                height="#button_height" style_pad_all="0" flex_flow="row" style_flex_main_place="center"
+                style_pad_gap="#space_md" scrollable="false">
+          <ui_button name="btn_close_error" width="#button_width_action" text="Close" translation_tag="Close">
             <event_cb trigger="clicked" callback="on_pid_done"/>
           </ui_button>
-          <ui_button name="btn_retry" width="140" text="Retry" translation_tag="Retry" variant="primary">
+          <ui_button name="btn_retry"
+                     width="#button_width_action" text="Retry" translation_tag="Retry" variant="primary">
             <event_cb trigger="clicked" callback="on_pid_retry"/>
           </ui_button>
         </lv_obj>

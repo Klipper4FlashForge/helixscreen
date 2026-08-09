@@ -5,6 +5,7 @@
 
 #include "ui_observer_guard.h"
 
+#include "jog_coalescer.h"
 #include "overlay_base.h"
 #include "subject_managed_panel.h"
 
@@ -82,6 +83,7 @@ class MotionPanel : public OverlayBase {
     // === Lifecycle hooks ===
     void on_activate() override;
     void on_deactivate() override;
+    void on_ui_destroyed() override;
 
     // === Public API ===
     lv_obj_t* get_panel() const {
@@ -136,6 +138,15 @@ class MotionPanel : public OverlayBase {
     lv_obj_t* jog_pad_ = nullptr;
     lv_obj_t* parent_screen_ = nullptr;
     bool callbacks_registered_ = false;
+
+    helix::JogCoalescer jog_coalescer_;
+    bool x_edge_warned_ = false; // dedupe "blocked at bed edge" warnings
+    bool y_edge_warned_ = false;
+
+    // Route a tap/flush through the coalescer and send if idle.
+    void dispatch_jog(const helix::AxisMove& delta);
+    // Send one relative move; ack/error callbacks re-enter the coalescer.
+    void send_jog_move(const helix::AxisMove& move);
 
     // Homing state subjects (0=unhomed, 1=homed) for declarative XML bind_style
     lv_subject_t motion_x_homed_;

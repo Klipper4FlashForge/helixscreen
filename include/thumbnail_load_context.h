@@ -23,17 +23,40 @@
  * newer AsyncLifetimeGuard token pattern. When both are set, both must
  * report alive/valid for is_valid() to return true.
  *
+ * ## What is_valid() is, and is not
+ *
+ * It is a STALENESS check (has a newer request superseded this one?) that also
+ * happens to consult the lifetime token. It is **not** a thread guard: it calls
+ * `lifetime_token->expired()` internally, so `if (!ctx.is_valid()) return;`
+ * followed by a `this`/`self` dereference is the same check-then-use race as a
+ * bare `tok.expired()` — L081 Mechanism C.
+ *
+ * That is not theoretical. This header previously showed the bare-check form as
+ * its usage example, and five callbacks in ui_panel_print_select.cpp were
+ * written to match, each dereferencing `self` on an HttpExecutor worker
+ * (prestonbrown/helixscreen#960). `scripts/check_l081_anti_pattern.py` now
+ * flags that shape.
+ *
+ * ThumbnailCache marshals its callbacks to the main thread at the fetch
+ * boundary, so within a fetch callback the race is closed by that — but do not
+ * rely on it silently. Keep member access inside `tok.defer(...)`, or annotate
+ * the site `// L081_OK: <why>` so the guarantee is written down where the next
+ * reader will look.
+ *
  * ## Usage Example (AsyncLifetimeGuard — preferred)
  * ```cpp
  * // In your panel class (OverlayBase provides lifetime_):
  * void load_thumbnail() {
  *     auto ctx = ThumbnailLoadContext::create(lifetime_);
+ *     auto tok = lifetime_.token();
  *
  *     get_thumbnail_cache().fetch_for_detail_view(
  *         api_, path, ctx,
- *         [this, ctx](const std::string& lvgl_path) {
- *             if (!ctx.is_valid()) return;
- *             // ... use lvgl_path ...
+ *         [this, tok](const std::string& lvgl_path) {
+ *             // Marshal, then touch members — never check-then-deref.
+ *             tok.defer("MyPanel::apply_thumbnail", [this, lvgl_path]() {
+ *                 lv_image_set_src(thumb_, lvgl_path.c_str());
+ *             });
  *         });
  * }
  * ```

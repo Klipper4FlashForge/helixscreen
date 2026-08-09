@@ -4,7 +4,7 @@
 #pragma once
 
 #include "ui_component_keypad.h"
-#include "ui_heating_animator.h"
+#include "ui_heater_icon_binder.h"
 #include "ui_observer_guard.h"
 #include "ui_panel_base.h"
 #include "ui_print_tune_overlay.h"
@@ -185,7 +185,6 @@ class ControlsPanel : public PanelBase {
     lv_subject_t nozzle_pct_subject_{};
     lv_subject_t nozzle_status_subject_{};
     char nozzle_status_buf_[16] = {};
-    HeatingIconAnimator nozzle_heater_animator_;
 
     // Bed temperature display
     lv_subject_t bed_temp_subject_{};
@@ -193,11 +192,17 @@ class ControlsPanel : public PanelBase {
     lv_subject_t bed_pct_subject_{};
     lv_subject_t bed_status_subject_{};
     char bed_status_buf_[16] = {};
-    HeatingIconAnimator bed_heater_animator_;
 
     // Chamber temperature display
     lv_subject_t chamber_status_subject_{};
     char chamber_status_buf_[16] = {};
+
+    // Heating icon animators (nozzle/bed/chamber), bound from the panel's own
+    // container so lv_obj_find_by_name() cannot pick up another panel's
+    // same-named icon. Each binder owns its own temperature observers.
+    helix::ui::HeaterIconBinder nozzle_icon_binder_;
+    helix::ui::HeaterIconBinder bed_icon_binder_;
+    helix::ui::HeaterIconBinder chamber_icon_binder_;
 
     // Fan speed display
     lv_subject_t fan_speed_subject_{};
@@ -282,8 +287,22 @@ class ControlsPanel : public PanelBase {
     helix::ui::ModalGuard save_z_offset_confirmation_dialog_;
     helix::ui::ModalGuard macro_run_confirmation_dialog_;
     OperationTimeoutGuard operation_guard_;
-    bool save_z_offset_in_progress_ = false; ///< Guard against double-click race condition
-    size_t pending_macro_run_index_ = 0;     ///< Slot index awaiting run confirmation
+
+    /// Guards against a double-click race on Save Z-Offset.
+    ///
+    /// A bounded timeout rather than a bare bool: SAVE_CONFIG restarts Klipper,
+    /// and MoonrakerClient::notify_klippy_disconnected() calls
+    /// tracker_.cleanup_all(), which drops the pending RPC — so neither the
+    /// success nor the error callback ever fires and a plain flag stayed latched
+    /// until app restart, leaving the Save button dead. The guard self-clears.
+    OperationTimeoutGuard save_z_offset_guard_;
+
+    /// Covers Z_OFFSET_APPLY_PROBE + SAVE_CONFIG plus the Klipper restart, with
+    /// headroom for stock code that chains a second config write (Creality K2 +
+    /// CFS writes CFS Tn_data via CXSAVE_CONFIG ~50s later).
+    static constexpr uint32_t SAVE_Z_OFFSET_TIMEOUT_MS = 90000;
+
+    size_t pending_macro_run_index_ = 0; ///< Slot index awaiting run confirmation
 
     //
     // === Dynamic UI Containers ===
@@ -299,9 +318,12 @@ class ControlsPanel : public PanelBase {
     std::vector<SecondaryFanRow> secondary_fan_rows_;    ///< Tracked for reactive updates
     std::vector<ObserverGuard> secondary_fan_observers_; ///< Per-fan speed observers
     /// Lifetime tokens for the dynamic per-fan speed subjects observed above. Per-fan
-    /// subjects are destroyed/recreated on fan rediscovery; each token must outlive its
-    /// paired ObserverGuard so the guard's weak_ptr expires before the subject is freed.
-    /// Kept aligned with secondary_fan_observers_ and cleared FIRST during teardown.
+    /// subjects are destroyed/recreated on fan rediscovery; what makes the guards safe is
+    /// that each token is handed to observe_int_sync(), not where the token is stored.
+    /// These are copies of shared_ptrs PrinterFanState owns — it signals subject death by
+    /// writing *token = false — so declaring them after the observers (destroyed first) is
+    /// equivalent to declaring them before. Kept index-aligned with
+    /// secondary_fan_observers_. See docs/devel/THREADING.md § 5.
     std::vector<SubjectLifetime> secondary_fan_lifetimes_;
     uint32_t fan_populate_gen_ = 0; ///< Incremented on each populate; stale callbacks skip
 

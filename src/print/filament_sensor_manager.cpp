@@ -20,7 +20,7 @@
 // CRITICAL: Subject updates trigger lv_obj_invalidate() which asserts if called
 // during LVGL rendering. WebSocket callbacks run on libhv's event loop thread,
 // not the main LVGL thread. We must defer subject updates to the main thread
-// via ui_async_call to avoid the "Invalidate area not allowed during rendering"
+// via ui_queue_update() to avoid the "Invalidate area not allowed during rendering"
 // assertion.
 
 namespace helix {
@@ -268,9 +268,9 @@ void FilamentSensorManager::load_config_from_file() {
 
     // Load per-sensor config
     try {
-        json& sensors_json = config->get_json(base_path + "/sensors");
-        if (sensors_json.is_array()) {
-            for (const auto& sensor_json : sensors_json) {
+        const json* sensors_node = config->try_get_json(base_path + "/sensors");
+        if (sensors_node != nullptr && sensors_node->is_array()) {
+            for (const auto& sensor_json : *sensors_node) {
                 if (!sensor_json.contains("klipper_name")) {
                     continue;
                 }

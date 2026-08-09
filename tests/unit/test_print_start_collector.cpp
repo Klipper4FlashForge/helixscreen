@@ -690,6 +690,19 @@ class PrintStartCollectorHeaterFixture : public LVGLTestFixture {
     }
 
     /**
+     * @brief Feed a raw gcode response line through the real signal path
+     *
+     * Dispatches notify_gcode_response so the collector's pattern matching runs
+     * and (on a match) latches current_phase_ AND sets real_signal_seen_ — the
+     * exact firmware-speaks condition that gates the proactive detector off.
+     */
+    void send_gcode_response(const std::string& line) {
+        json msg = {{"method", "notify_gcode_response"}, {"params", {line}}};
+        client().dispatch_method_callback("notify_gcode_response", msg);
+        drain_async_updates();
+    }
+
+    /**
      * @brief Reset collector's internal state back to IDLE for proactive detection tests
      *
      * After start(), the collector's internal current_phase_ is INITIALIZING.
@@ -987,6 +1000,37 @@ TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
     }
 }
 
+// ============================================================================
+// Writer Independence (subject ownership)
+// ============================================================================
+
+TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
+                 "PrintStartCollector: M117 does not overwrite the phase label",
+                 "[print][collector][proactive][heating]") {
+    // Drive to a known phase that has its own label. Mirrors the existing
+    // proactive bed-heating section at :955-964.
+    collector().start();
+    drain_async_updates();
+    drain_async_updates(); // INITIALIZING settle
+    collector().enable_fallbacks();
+
+    set_all_temps(150, 600, 0, 0);
+    collector().check_fallback_completion();
+    drain_async_updates();
+    drain_async_updates();
+    REQUIRE(get_current_phase() == PrintStartPhase::HEATING_BED);
+    REQUIRE(get_current_message() == "Heating Bed...");
+
+    // A user M117 arrives on the same notify_status_update path the collector
+    // listens on. It must NOT clobber the collector's phase label — user text
+    // belongs in display_message, which PrinterPrintState owns.
+    client().dispatch_status_update({{"display_status", {{"message", "Leveling 3/9"}}}});
+    drain_async_updates();
+    drain_async_updates();
+
+    REQUIRE(get_current_message() == "Heating Bed...");
+}
+
 TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
                  "Proactive detection: bed heating stays HEATING_BED until bed reaches target",
                  "[print][collector][proactive][heating]") {
@@ -1030,6 +1074,159 @@ TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
         // Bed is within tolerance, so nozzle heating takes over
         REQUIRE(get_current_phase() == PrintStartPhase::HEATING_NOZZLE);
     }
+}
+
+// ============================================================================
+// Heating-phase heater correction (signal-latched, temp-aware relabel)
+//
+// These drive the phase via the REAL gcode signal path (send_gcode_response),
+// so real_signal_seen_ is genuinely set and the proactive detector is gated
+// off — exactly the K2 condition where a latched M109 leaves the label stuck
+// on the wrong heater. check_fallback_completion() must then re-derive the
+// shown heater from live temps, bed-first, without ever relabeling a
+// firmware's ordered non-heating phase.
+// ============================================================================
+
+TEST_CASE_METHOD(
+    PrintStartCollectorHeaterFixture,
+    "Heater correction: latched HEATING_NOZZLE with hot nozzle + cold bed -> HEATING_BED",
+    "[print][collector][heating][heater_correction]") {
+    // Reproduces the observed K2 screenshot: nozzle already at target (green),
+    // bed is the real long pole, but firmware's M109 latched HEATING_NOZZLE.
+    collector().start();
+    drain_async_updates();
+    drain_async_updates();
+    collector().enable_fallbacks();
+
+    // Arm pattern matching, then latch HEATING_NOZZLE via a real M109 line.
+    send_gcode_response("PRINT_START");
+    send_gcode_response("M109 S140");
+    drain_async_updates();
+
+    // Precondition: the signal path genuinely latched HEATING_NOZZLE.
+    REQUIRE(get_current_phase() == PrintStartPhase::HEATING_NOZZLE);
+
+    // Bed 48.8/100C (heating), nozzle 139.7/140C (at target).
+    set_all_temps(488, 1000, 1397, 1400);
+
+    collector().check_fallback_completion();
+    drain_async_updates();
+    drain_async_updates();
+
+    REQUIRE(get_current_phase() == PrintStartPhase::HEATING_BED);
+    REQUIRE(get_current_message() == "Heating Bed...");
+}
+
+TEST_CASE_METHOD(
+    PrintStartCollectorHeaterFixture,
+    "Heater correction: latched HEATING_BED with hot bed + cold nozzle -> HEATING_NOZZLE",
+    "[print][collector][heating][heater_correction]") {
+    // Symmetric case: bed reached target first, nozzle still climbing.
+    collector().start();
+    drain_async_updates();
+    drain_async_updates();
+    collector().enable_fallbacks();
+
+    send_gcode_response("PRINT_START");
+    send_gcode_response("M190 S100");
+    drain_async_updates();
+
+    REQUIRE(get_current_phase() == PrintStartPhase::HEATING_BED);
+
+    // Bed 100/100C (at target), nozzle 100/210C (heating).
+    set_all_temps(1000, 1000, 1000, 2100);
+
+    collector().check_fallback_completion();
+    drain_async_updates();
+    drain_async_updates();
+
+    REQUIRE(get_current_phase() == PrintStartPhase::HEATING_NOZZLE);
+    REQUIRE(get_current_message() == "Heating Nozzle...");
+}
+
+TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
+                 "Heater correction: non-heating latched phase (HOMING) is never relabeled",
+                 "[print][collector][heating][heater_correction]") {
+    // U1 protection: a firmware-signaled non-heating phase must survive even
+    // though both heaters read below target. Proves the scope guard.
+    collector().start();
+    drain_async_updates();
+    drain_async_updates();
+    collector().enable_fallbacks();
+
+    send_gcode_response("PRINT_START");
+    send_gcode_response("G28");
+    drain_async_updates();
+
+    REQUIRE(get_current_phase() == PrintStartPhase::HOMING);
+
+    // Both heaters well below target — a naive detector would fire HEATING_BED.
+    set_all_temps(300, 1000, 500, 2100);
+
+    collector().check_fallback_completion();
+    drain_async_updates();
+    drain_async_updates();
+
+    // Scope guard: HOMING is not a heating phase, so it must be left alone.
+    REQUIRE(get_current_phase() == PrintStartPhase::HOMING);
+}
+
+TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
+                 "Heater correction: both heaters heating resolves bed-first",
+                 "[print][collector][heating][heater_correction]") {
+    // Tiebreak: when both are still heating, the bed (usual long pole) wins.
+    collector().start();
+    drain_async_updates();
+    drain_async_updates();
+    collector().enable_fallbacks();
+
+    send_gcode_response("PRINT_START");
+    send_gcode_response("M109 S210");
+    drain_async_updates();
+
+    REQUIRE(get_current_phase() == PrintStartPhase::HEATING_NOZZLE);
+
+    // Bed 30/60C and nozzle 50/210C — both heating.
+    set_all_temps(300, 600, 500, 2100);
+
+    collector().check_fallback_completion();
+    drain_async_updates();
+    drain_async_updates();
+
+    REQUIRE(get_current_phase() == PrintStartPhase::HEATING_BED);
+}
+
+TEST_CASE_METHOD(
+    PrintStartCollectorHeaterFixture,
+    "Heater correction: CAS guard refuses to regress a phase that advanced past heating",
+    "[print][collector][heating][heater_correction]") {
+    // Race guard. In production, check_fallback_completion() snapshots the phase
+    // under lock, releases it, reads temps, then relabels — a bg gcode signal can
+    // advance current_phase_ past heating in that gap. relabel_heating_phase()
+    // re-checks under the lock and must refuse, so the newer phase is never
+    // regressed. Here we reproduce that deterministically: drive the phase to QGL
+    // (a non-heating phase), then invoke the relabel as if a stale snapshot did.
+    collector().start();
+    drain_async_updates();
+    drain_async_updates();
+    collector().enable_fallbacks();
+
+    send_gcode_response("PRINT_START");
+    send_gcode_response("M109 S210"); // was heating...
+    REQUIRE(get_current_phase() == PrintStartPhase::HEATING_NOZZLE);
+    send_gcode_response("QUAD_GANTRY_LEVEL"); // ...but firmware advanced to QGL
+    REQUIRE(get_current_phase() == PrintStartPhase::QGL);
+
+    // Both heaters below target — a naive relabel would fire HEATING_BED.
+    set_all_temps(300, 1000, 500, 2100);
+
+    // Stale relabel, as check_fallback_completion() would attempt off its snapshot.
+    PrintStartCollectorTestAccess::relabel_heating_phase(collector(), PrintStartPhase::HEATING_BED);
+    drain_async_updates();
+    drain_async_updates();
+
+    // CAS refused: QGL survives, not regressed to HEATING_BED.
+    REQUIRE(get_current_phase() == PrintStartPhase::QGL);
 }
 
 // ============================================================================
@@ -2533,5 +2730,31 @@ TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
         feed("// probe at 10.000,10.000 is z=-0.100000");
         feed("// Bed preheating: 30s left");
         REQUIRE(PrintStartCollectorTestAccess::get_mesh_probe_total(collector()) == 16);
+    }
+}
+
+TEST_CASE_METHOD(PrintStartCollectorHeaterFixture, "PrintStartCollector - layer advance latch",
+                 "[print_start][regression]") {
+    // The pre-print phase can only end once layer data is proven to belong to
+    // THIS print. A zero sample proves it, but is not guaranteed to arrive —
+    // notify_status_update is coalesced. The advance latch is the second route;
+    // it must not fire on a stale positive carried over from a previous print,
+    // which is static by definition.
+    SECTION("repeated stale value never arms the latch") {
+        for (int i = 0; i < 5; ++i) {
+            collector().note_current_layer(97);
+        }
+        CHECK_FALSE(collector().has_seen_layer_advance());
+        CHECK_FALSE(collector().has_seen_layer_zero());
+    }
+    SECTION("an increase arms it") {
+        collector().note_current_layer(3);
+        CHECK_FALSE(collector().has_seen_layer_advance());
+        collector().note_current_layer(8);
+        CHECK(collector().has_seen_layer_advance());
+    }
+    SECTION("a zero sample arms the original latch") {
+        collector().note_current_layer(0);
+        CHECK(collector().has_seen_layer_zero());
     }
 }

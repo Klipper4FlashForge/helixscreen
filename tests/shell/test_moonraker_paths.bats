@@ -11,11 +11,18 @@ setup() {
 
     # Reset globals
     KLIPPER_HOME=""
+    KLIPPER_CONFIG_DIR=""
     INSTALL_DIR="/opt/helixscreen"
+    SUDO=""
 
-    # Source moonraker module
-    unset _HELIX_MOONRAKER_SOURCED
+    # common.sh supplies klipper_config_dir() and file_sudo(), which
+    # find_moonraker_conf() and ensure_moonraker_asvc() call. The bundled
+    # installer always carries common.sh ahead of moonraker.sh.
+    unset _HELIX_MOONRAKER_SOURCED _HELIX_COMMON_SOURCED
+    . "$WORKTREE_ROOT/scripts/lib/installer/common.sh"
     . "$WORKTREE_ROOT/scripts/lib/installer/moonraker.sh"
+    # common.sh defines the real log_* (stderr); restore helpers.bash's stubs.
+    load helpers
 }
 
 # --- Dynamic detection (KLIPPER_HOME set) ---
@@ -82,6 +89,128 @@ setup() {
     echo "$MOONRAKER_CONF_PATHS" | grep -q "^/usr/data/config/printer_data/config/moonraker.conf$"
 }
 
+@test "static paths include COSMOS /etc/klipper/config path (Elegoo CC1)" {
+    echo "$MOONRAKER_CONF_PATHS" | grep -q "^/etc/klipper/config/moonraker\.conf$"
+}
+
+@test "no static path assumes printer_data for the COSMOS entry" {
+    # Guards against someone 'normalising' the COSMOS entry into a
+    # printer_data shape. There is no printer_data anywhere on a CC1.
+    ! echo "$MOONRAKER_CONF_PATHS" | grep -q "^/etc/klipper/.*printer_data"
+}
+
+# --- COSMOS / CC1: no printer_data anywhere on the device ---
+
+@test "klipper_config_dir derives printer_data/config from KLIPPER_HOME by default" {
+    KLIPPER_HOME="/home/pi"
+    KLIPPER_CONFIG_DIR=""
+    [ "$(klipper_config_dir)" = "/home/pi/printer_data/config" ]
+}
+
+@test "klipper_config_dir honours an explicit KLIPPER_CONFIG_DIR" {
+    KLIPPER_HOME="/root"
+    KLIPPER_CONFIG_DIR="/etc/klipper/config"
+    [ "$(klipper_config_dir)" = "/etc/klipper/config" ]
+}
+
+@test "klipper_config_dir is empty when nothing is known" {
+    KLIPPER_HOME=""
+    KLIPPER_CONFIG_DIR=""
+    [ -z "$(klipper_config_dir)" ]
+}
+
+@test "find_moonraker_conf finds the COSMOS layout via KLIPPER_CONFIG_DIR" {
+    # Mirrors a real CC1: /etc/klipper/config/moonraker.conf, and KLIPPER_HOME
+    # is /root with NO printer_data anywhere.
+    local cosmos="$BATS_TEST_TMPDIR/etc/klipper/config"
+    mkdir -p "$cosmos" "$cosmos/moonraker-readonly"
+    touch "$cosmos/moonraker.conf" "$cosmos/printer.cfg"
+    touch "$cosmos/moonraker-readonly/moonraker.conf"
+
+    KLIPPER_HOME="$BATS_TEST_TMPDIR/root"
+    KLIPPER_CONFIG_DIR="$cosmos"
+    MOONRAKER_CONF_PATHS="/nonexistent/moonraker.conf"
+
+    result=$(find_moonraker_conf)
+    [ "$result" = "$cosmos/moonraker.conf" ]
+}
+
+@test "KLIPPER_CONFIG_DIR beats the KLIPPER_HOME printer_data derivation" {
+    local cosmos="$BATS_TEST_TMPDIR/etc/klipper/config"
+    mkdir -p "$cosmos"
+    touch "$cosmos/moonraker.conf"
+
+    # A printer_data tree also exists — the explicit dir must still win.
+    local home="$BATS_TEST_TMPDIR/root"
+    mkdir -p "$home/printer_data/config"
+    touch "$home/printer_data/config/moonraker.conf"
+
+    KLIPPER_HOME="$home"
+    KLIPPER_CONFIG_DIR="$cosmos"
+
+    result=$(find_moonraker_conf)
+    [ "$result" = "$cosmos/moonraker.conf" ]
+}
+
+@test "CC1 platform branch points KLIPPER_CONFIG_DIR at /etc/klipper/config" {
+    unset _HELIX_PLATFORM_SOURCED
+    . "$WORKTREE_ROOT/scripts/lib/installer/platform.sh"
+    load helpers
+
+    set_install_paths cc1 >/dev/null 2>&1
+
+    [ "$KLIPPER_CONFIG_DIR" = "/etc/klipper/config" ]
+    [ "$(klipper_config_dir)" = "/etc/klipper/config" ]
+}
+
+@test "non-CC1 platform leaves KLIPPER_CONFIG_DIR derived, not stale" {
+    unset _HELIX_PLATFORM_SOURCED
+    . "$WORKTREE_ROOT/scripts/lib/installer/platform.sh"
+    load helpers
+
+    set_install_paths cc1 >/dev/null 2>&1
+    set_install_paths k1 stock_klipper >/dev/null 2>&1
+
+    [ -z "$KLIPPER_CONFIG_DIR" ]
+    [ "$(klipper_config_dir)" = "/usr/data/printer_data/config" ]
+}
+
+# --- ensure_moonraker_asvc path derivation ---
+
+@test "ensure_moonraker_asvc derives the asvc one level above the config dir" {
+    local pd="$BATS_TEST_TMPDIR/home/pi/printer_data"
+    mkdir -p "$pd/config"
+    touch "$pd/config/moonraker.conf"
+    printf 'klipper\nmoonraker\n' > "$pd/moonraker.asvc"
+
+    ensure_moonraker_asvc "$pd/config/moonraker.conf"
+    grep -q '^helixscreen$' "$pd/moonraker.asvc"
+}
+
+@test "ensure_moonraker_asvc finds the COSMOS asvc at /etc/klipper/moonraker.asvc" {
+    # Verified on a real CC1: the allowlist sits beside config/, not under it.
+    local klipper="$BATS_TEST_TMPDIR/etc/klipper"
+    mkdir -p "$klipper/config"
+    touch "$klipper/config/moonraker.conf"
+    printf 'klipper\nmoonraker\n' > "$klipper/moonraker.asvc"
+
+    ensure_moonraker_asvc "$klipper/config/moonraker.conf"
+    grep -q '^helixscreen$' "$klipper/moonraker.asvc"
+    # Nothing invented inside config/
+    [ ! -e "$klipper/config/moonraker.asvc" ]
+}
+
+@test "ensure_moonraker_asvc is idempotent" {
+    local klipper="$BATS_TEST_TMPDIR/etc/klipper"
+    mkdir -p "$klipper/config"
+    touch "$klipper/config/moonraker.conf"
+    printf 'klipper\nmoonraker\n' > "$klipper/moonraker.asvc"
+
+    ensure_moonraker_asvc "$klipper/config/moonraker.conf"
+    ensure_moonraker_asvc "$klipper/config/moonraker.conf"
+    [ "$(grep -c '^helixscreen$' "$klipper/moonraker.asvc")" -eq 1 ]
+}
+
 @test "first matching static path wins" {
     # We can't easily create files at /home/pi etc in tests,
     # but we can verify the function returns the first match
@@ -135,8 +264,8 @@ setup() {
     INSTALL_DIR="/opt/helixscreen"
     local config
     config=$(generate_update_manager_config)
-    ! echo "$config" | grep -q "persistent_files:"
-    ! echo "$config" | grep -q "config/settings.json"
+    refute grep -q "persistent_files:" <<<"$config"
+    refute grep -q "config/settings.json" <<<"$config"
 }
 
 @test "generate_update_manager_config does NOT have install_script" {

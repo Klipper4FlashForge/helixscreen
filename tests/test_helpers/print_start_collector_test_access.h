@@ -43,4 +43,12 @@ class PrintStartCollectorTestAccess {
         std::lock_guard<std::mutex> lock(c.state_mutex_);
         return c.mesh_probe_total_;
     }
+
+    /// Directly invoke the private CAS-guarded heating relabel. In production
+    /// check_fallback_completion() calls this with a phase snapshot that a
+    /// concurrent bg gcode signal may have invalidated; a test uses this to
+    /// prove the guard refuses when current_phase_ has advanced past heating.
+    static void relabel_heating_phase(PrintStartCollector& c, helix::PrintStartPhase resolved) {
+        c.relabel_heating_phase(resolved);
+    }
 };

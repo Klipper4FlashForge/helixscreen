@@ -2,6 +2,8 @@
 
 If your printer has a webcam configured in Moonraker, HelixScreen can show the live feed both as a home-dashboard widget and as a standalone fullscreen viewer. You can rotate and flip the image to match how your camera is mounted.
 
+![Fullscreen Camera Viewer](../../images/user/camera.png)
+
 ---
 
 ## Viewing the Camera

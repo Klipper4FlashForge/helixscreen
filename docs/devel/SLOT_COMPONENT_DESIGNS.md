@@ -1,9 +1,25 @@
 # Slot Component Designs
 
-**Purpose**: Slot-based components to reduce XML verbosity using LVGL's slot support (available in `lib/helix-xml/`).
-**Status**: Ready to implement — slot support included in helix-xml extraction (commit `f38718108`)
+**Purpose**: Slot-based components to reduce XML verbosity using slot support in `lib/helix-xml/`.
+**Status**: **BLOCKED — the premise is wrong.** See the correction below.
 **Plan**: `docs/devel/plans/2026-02-18-helix-xml-plan.md` (Phase 3)
 **Estimated Savings**: ~170+ lines across 4 component patterns
+
+> ⚠️ **Correction (2026-07-31).** This doc was written before the LVGL 9.5 upgrade and assumes a
+> working slot system plus a future LVGL 9.5.1 to upgrade to. Both assumptions are dead:
+>
+> - **helix-xml has no real slots.** `f38718108` landed the `<component-slotname>` *usage* syntax
+>   (`lv_xml.c:2147-2163`), but there is no `<slot>` declaration, no API validation, no default
+>   content, and no multi-slot dispatch. It degrades to `lv_obj_find_by_name(parent, name)`, and a
+>   NULL result surfaces as a misleading "unknown tag / STALE BINARY" error. `lv_xml_create()`
+>   doesn't implement the fallback at all, so the two entry points disagree.
+> - **There is no LVGL 9.5.1 to wait for.** XML was removed from LVGL core in v9.5; upstream sells
+>   it as LVGL Pro now. Everything in this doc phrased as "after LVGL 9.5" or "check LVGL releases"
+>   is moot — building real slots is our work or nobody's. See `LVGL_XML_SITUATION.md`.
+>
+> The component designs below are still worth reading as motivation. Implementing them requires
+> building slot declarations first — tracked as
+> [helix-xml#1](https://github.com/prestonbrown/helix-xml/issues/1).
 
 ---
 

@@ -32,20 +32,51 @@
 using namespace helix;
 
 // Generate mock geometry for exclude_object status updates.
-// Spreads objects in a grid across a 235x235 bed.
+// Spreads objects in a grid inset from the edges of the mock bed, matching the
+// `center` + `polygon` shape Moonraker reports for EXCLUDE_OBJECT_DEFINE.
 static json mock_object_entry(const std::string& name, int index, int total) {
-    int cols = static_cast<int>(std::ceil(std::sqrt(static_cast<double>(total))));
+    constexpr float kInset = 20.0f; // keep the plate margin visible in the map
+    const float bed_w =
+        static_cast<float>(mock_internal::MOCK_BED_X_MAX - mock_internal::MOCK_BED_X_MIN) -
+        2.0f * kInset;
+    const float bed_h =
+        static_cast<float>(mock_internal::MOCK_BED_Y_MAX - mock_internal::MOCK_BED_Y_MIN) -
+        2.0f * kInset;
+    int cols = static_cast<int>(std::ceil(std::sqrt(static_cast<double>(std::max(1, total)))));
+    int rows = std::max(1, (total + cols - 1) / cols);
     int row = index / cols, col = index % cols;
-    float cell_w = 200.0f / static_cast<float>(cols);
-    float cell_h = 200.0f / static_cast<float>(std::max(1, (total + cols - 1) / cols));
-    float cx = 17.5f + (static_cast<float>(col) + 0.5f) * cell_w;
-    float cy = 17.5f + (static_cast<float>(row) + 0.5f) * cell_h;
+    float cell_w = bed_w / static_cast<float>(cols);
+    float cell_h = bed_h / static_cast<float>(rows);
+    float cx = static_cast<float>(mock_internal::MOCK_BED_X_MIN) + kInset +
+               (static_cast<float>(col) + 0.5f) * cell_w;
+    float cy = static_cast<float>(mock_internal::MOCK_BED_Y_MIN) + kInset +
+               (static_cast<float>(row) + 0.5f) * cell_h;
     float hw = cell_w * 0.35f, hh = cell_h * 0.35f;
     return {{"name", name},
             {"center", {cx, cy}},
             {"polygon",
              {{cx - hw, cy - hh}, {cx + hw, cy - hh}, {cx + hw, cy + hh}, {cx - hw, cy + hh}}}};
 }
+
+namespace {
+
+/// Slicer-style plate names for HELIX_MOCK_EXCLUDE_OBJECTS. Real slicers emit
+/// `<model>_id_<n>_copy_<n>`, so these are long enough to exercise label
+/// truncation/wrapping in the side list rather than flattering it.
+constexpr const char* kMockExcludeObjectNames[] = {
+    "Benchy_id_0_copy_0",        "Calibration_Cube_id_1_copy_0", "Bracket_Left_id_2_copy_0",
+    "Bracket_Right_id_3_copy_0", "Gear_Housing_id_4_copy_0",     "Vase_id_5_copy_0",
+    "Spool_Holder_id_6_copy_0",  "Cable_Clip_id_7_copy_0",       "Hinge_Pin_id_8_copy_0",
+    "Knob_id_9_copy_0",          "Fan_Duct_id_10_copy_0",        "Strain_Relief_id_11_copy_0"};
+
+constexpr int kMaxMockExcludeObjectCount =
+    static_cast<int>(sizeof(kMockExcludeObjectNames) / sizeof(kMockExcludeObjectNames[0]));
+
+/// Objects published for a bare `HELIX_MOCK_EXCLUDE_OBJECTS=1`. Enough to fill a
+/// side list past one screen on the short landscape panel without being absurd.
+constexpr int kDefaultMockExcludeObjectCount = 5;
+
+} // namespace
 
 // Delegating constructor - uses default speedup of 1.0
 MoonrakerClientMock::MoonrakerClientMock(PrinterType type) : MoonrakerClientMock(type, 1.0) {}
@@ -89,6 +120,26 @@ MoonrakerClientMock::MoonrakerClientMock(PrinterType type, double speedup_factor
     if (spoolman_env && (std::string(spoolman_env) == "0" || std::string(spoolman_env) == "off")) {
         mock_spoolman_enabled_ = false;
         spdlog::info("[MoonrakerClientMock] Mock Spoolman disabled via HELIX_MOCK_SPOOLMAN=0");
+    }
+
+    // HELIX_MOCK_EXCLUDE_OBJECTS=<n>|1 — publish a synthetic multi-object plate at
+    // print start. The stock test G-codes declare a single EXCLUDE_OBJECT_DEFINE,
+    // and the objects button is gated on two or more, so without this the
+    // exclude-object map and side list are unreachable under --test.
+    const char* exclude_env = std::getenv("HELIX_MOCK_EXCLUDE_OBJECTS");
+    if (exclude_env && exclude_env[0] && std::string(exclude_env) != "0" &&
+        std::string(exclude_env) != "off") {
+        int requested = static_cast<int>(std::strtol(exclude_env, nullptr, 10));
+        // "1"/"on"/"yes" mean "give me a plausible plate", not "give me one
+        // object" — one object would leave the button hidden, which is the very
+        // thing the flag exists to defeat.
+        if (requested <= 1) {
+            requested = kDefaultMockExcludeObjectCount;
+        }
+        mock_exclude_object_count_ = std::clamp(requested, 2, kMaxMockExcludeObjectCount);
+        spdlog::info("[MoonrakerClientMock] HELIX_MOCK_EXCLUDE_OBJECTS={} — will publish {} "
+                     "synthetic exclude_object entries at print start",
+                     exclude_env, mock_exclude_object_count_);
     }
 
     // Set up bed mesh callback to handle incoming status updates
@@ -507,6 +558,13 @@ void MoonrakerClientMock::populate_capabilities() {
     json mock_config;
     mock_config["adxl345"] = json::object();
     mock_config["resonance_tester"] = json::object();
+    // Bed screws — same story as the accelerometers: screws_tilt_adjust has no
+    // get_status(), so Klipper never lists it and the capability is detected
+    // from configfile.config. Without this the whole mock screws-tilt state
+    // machine is unreachable in --test.
+    mock_config["screws_tilt_adjust"] = {{"screw_thread", mock_internal::MOCK_SCREW_THREAD},
+                                         {"speed", "50"},
+                                         {"horizontal_move_z", "10"}};
     // Provide kinematics so bed_moves detection works
     // HELIX_MOCK_KINEMATICS overrides; otherwise default matches printer type
     const char* kin_env = std::getenv("HELIX_MOCK_KINEMATICS");
@@ -1237,11 +1295,36 @@ std::string MoonrakerClientMock::get_last_gcode_error() const {
     return last_gcode_error_;
 }
 
-int MoonrakerClientMock::gcode_script(const std::string& gcode) {
-    spdlog::trace("[MoonrakerClientMock] Mock gcode_script: {}", gcode);
+namespace {
+// Real Klipper uppercases only the leading command word before dispatch
+// (M117, m117, and M117 all route to the same handler) - it never touches
+// anything after that word. Mirror that here: every branch below matches on
+// the command name via gcode.find(...)/gcode == ..., so normalizing just the
+// token up to the first whitespace lets lowercase/mixed-case commands (as
+// typed in the console, or emitted by some slicers) match the same way they
+// would on real hardware, without mangling M117 message text, filenames
+// (SDCARD_PRINT_FILE FILENAME=...), or any other argument payload.
+std::string normalize_gcode_command_case(const std::string& raw) {
+    size_t token_end = raw.find_first_of(" \t");
+    std::string result = raw;
+    size_t end = (token_end == std::string::npos) ? raw.size() : token_end;
+    for (size_t i = 0; i < end; ++i) {
+        result[i] = static_cast<char>(std::toupper(static_cast<unsigned char>(result[i])));
+    }
+    return result;
+}
+} // namespace
+
+int MoonrakerClientMock::gcode_script(const std::string& raw_gcode) {
+    spdlog::trace("[MoonrakerClientMock] Mock gcode_script: {}", raw_gcode);
 
     // Record for test inspection (ordered history of every script handled).
-    record_gcode_script(gcode);
+    // Uses the raw, un-normalized text so tests/logs see exactly what was sent.
+    record_gcode_script(raw_gcode);
+
+    // Normalize the command token only (see normalize_gcode_command_case above).
+    // Every subsequent use of `gcode` in this function refers to this copy.
+    const std::string gcode = normalize_gcode_command_case(raw_gcode);
 
     // Clear previous error at start
     {
@@ -1323,6 +1406,28 @@ int MoonrakerClientMock::gcode_script(const std::string& gcode) {
             spdlog::info("[MoonrakerClientMock] Bed target set to {}°C (M-code)", target);
             dispatch_status_update({{"heater_bed", {{"target", target}}}});
         }
+    }
+
+    // M117 <message> - Set display message (LCD message on real printers).
+    // Bare M117 (or M117 followed only by whitespace) clears the message.
+    // Klipper strips exactly one leading space after the command, so
+    // "M117 hello" -> "hello" but "M117  hello" (two spaces) -> " hello".
+    if (gcode == "M117" || gcode.find("M117 ") == 0) {
+        std::string text = gcode.substr(4);
+        if (!text.empty() && text.front() == ' ') {
+            text.erase(0, 1);
+        }
+        if (text.find_first_not_of(" \t") == std::string::npos) {
+            text.clear();
+        }
+        {
+            std::lock_guard<std::mutex> lock(display_message_mutex_);
+            display_message_ = text;
+            display_message_set_ = true;
+        }
+        spdlog::info("[MoonrakerClientMock] Display message set to \"{}\" (M117)", text);
+        dispatch_status_update({{"display_status", {{"message", text}}}});
+        return 0;
     }
 
     // Parse motion mode commands (G90/G91)
@@ -1474,25 +1579,34 @@ int MoonrakerClientMock::gcode_script(const std::string& gcode) {
 
         // Check limits (like real Klipper)
         bool out_of_range = false;
-        std::string error_msg;
+        std::string error_detail;
         if (target_x < X_MIN || target_x > X_MAX) {
-            error_msg = "!! Move out of range: X=" + std::to_string(target_x);
+            error_detail = "Move out of range: X=" + std::to_string(target_x);
             out_of_range = true;
         } else if (target_y < Y_MIN || target_y > Y_MAX) {
-            error_msg = "!! Move out of range: Y=" + std::to_string(target_y);
+            error_detail = "Move out of range: Y=" + std::to_string(target_y);
             out_of_range = true;
         } else if (target_z < Z_MIN || target_z > Z_MAX) {
-            error_msg = "!! Move out of range: Z=" + std::to_string(target_z);
+            error_detail = "Move out of range: Z=" + std::to_string(target_z);
             out_of_range = true;
         }
 
         if (out_of_range) {
-            dispatch_gcode_response(error_msg);
-            spdlog::warn("[MoonrakerClientMock] Move rejected - {}", error_msg);
+            // The two channels carry the SAME rejection in different shapes, and
+            // real Moonraker is the spec for both:
+            //   - broadcast gcode-response stream: `!!`-prefixed (error_classify
+            //     strips the prefix before the router sees it);
+            //   - JSON-RPC error `message`: no prefix at all.
+            // Storing the prefixed form in the latch made the RPC message
+            // "!! Move out of range: ..." — a string the `!!` channel could never
+            // match, silently defeating the cross-source toast dedup.
+            const std::string broadcast_line = "!! " + error_detail;
+            dispatch_gcode_response(broadcast_line);
+            spdlog::warn("[MoonrakerClientMock] Move rejected - {}", broadcast_line);
             // Store error for RPC handler to return proper error response (like real Moonraker)
             {
                 std::lock_guard<std::mutex> lock(gcode_error_mutex_);
-                last_gcode_error_ = error_msg;
+                last_gcode_error_ = error_detail;
             }
         } else {
             // Apply the move as a group so the background simulation loop never
@@ -1547,11 +1661,22 @@ int MoonrakerClientMock::gcode_script(const std::string& gcode) {
     if (gcode.find("SDCARD_PRINT_FILE") != std::string::npos) {
         size_t filename_pos = gcode.find("FILENAME=");
         if (filename_pos != std::string::npos) {
-            // Extract filename (ends at space or end of string)
             size_t start = filename_pos + 9;
-            size_t end = gcode.find(' ', start);
-            std::string filename =
-                (end != std::string::npos) ? gcode.substr(start, end - start) : gcode.substr(start);
+            std::string filename;
+            if (start < gcode.size() && gcode[start] == '"') {
+                // Quoted value, as Klipper's shlex tokenizer expects whenever
+                // the name contains spaces (Moonraker and the PLR resume path
+                // both always quote). Runs to the closing quote; the quotes
+                // themselves are not part of the name.
+                size_t end = gcode.find('"', start + 1);
+                filename = (end != std::string::npos) ? gcode.substr(start + 1, end - start - 1)
+                                                      : gcode.substr(start + 1);
+            } else {
+                // Bare value: ends at the next whitespace.
+                size_t end = gcode.find(' ', start);
+                filename = (end != std::string::npos) ? gcode.substr(start, end - start)
+                                                      : gcode.substr(start);
+            }
 
             // Use unified internal handler
             start_print_internal(filename);
@@ -2713,6 +2838,39 @@ bool MoonrakerClientMock::start_print_internal(const std::string& filename) {
                                 {"current_object", nullptr}}}};
             dispatch_status_update(eo_status);
         }
+    }
+
+    // HELIX_MOCK_EXCLUDE_OBJECTS — replace whatever the G-code declared with a
+    // synthetic multi-object plate. Published through the same
+    // `exclude_object.objects` status update Klipper uses, so PrinterState,
+    // the map view and the side list see nothing special about it.
+    if (mock_exclude_object_count_ > 0) {
+        const int total = mock_exclude_object_count_;
+        std::vector<std::string> names;
+        names.reserve(static_cast<size_t>(total));
+        json objects_array = json::array();
+        for (int i = 0; i < total; ++i) {
+            names.emplace_back(kMockExcludeObjectNames[i]);
+            objects_array.push_back(mock_object_entry(names.back(), i, total));
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(excluded_objects_mutex_);
+            object_names_ = names;
+        }
+        if (mock_state_) {
+            mock_state_->set_available_objects(names);
+        }
+
+        json eo_status = {{"exclude_object",
+                           {{"objects", objects_array},
+                            {"excluded_objects", json::array()},
+                            {"current_object", nullptr}}}};
+        dispatch_status_update(eo_status);
+
+        spdlog::info("[MoonrakerClientMock] Published {} synthetic exclude_object entries "
+                     "(HELIX_MOCK_EXCLUDE_OBJECTS)",
+                     total);
     }
 
     // Reset PRINT_START simulation phase tracking for new print
@@ -3942,11 +4100,19 @@ void MoonrakerClientMock::temperature_simulation_loop() {
               {"progress", progress},
               {"is_active",
                phase == MockPrintPhase::PRINTING || phase == MockPrintPhase::PREHEAT}}},
-            // display_status: M73 slicer progress + M117 display message
+            // display_status: M73 slicer progress + M117 display message.
+            // A user-set M117 message (even cleared to "") always wins over the
+            // canned phase strings below - those only apply before the user has
+            // ever sent an M117.
             {"display_status",
              {{"progress", progress},
               {"message",
                [&]() -> json {
+                   {
+                       std::lock_guard<std::mutex> lock(display_message_mutex_);
+                       if (display_message_set_)
+                           return display_message_;
+                   }
                    if (phase == MockPrintPhase::PREHEAT)
                        return "Heating...";
                    if (phase == MockPrintPhase::PRINTING && progress < 0.02)

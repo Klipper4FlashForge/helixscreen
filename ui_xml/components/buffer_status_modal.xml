@@ -1,12 +1,12 @@
 <?xml version="1.0"?>
 <component>
   <view name="buffer_status_modal"
-        extends="ui_dialog" width="70%" height="content" align="center"
-        flex_flow="column" style_flex_main_place="start" style_pad_gap="0">
+        extends="ui_dialog" width="70%" height="content" align="center" flex_flow="column" style_flex_main_place="start"
+        style_pad_gap="0">
 
     <!-- Header row: icon + title + close button -->
-    <lv_obj width="100%" height="content"
-            style_pad_left="#space_lg" style_pad_right="#space_sm" style_pad_top="#space_lg"
+    <lv_obj width="100%"
+            height="content" style_pad_left="#space_lg" style_pad_right="#space_sm" style_pad_top="#space_lg"
             style_pad_bottom="#space_sm" flex_flow="row" style_flex_cross_place="center" style_pad_gap="#space_sm">
       <icon name="header_icon" src="info" size="md" variant="info"/>
       <text_heading text="Buffer Status" translation_tag="Buffer Status" style_text_align="left" flex_grow="1"/>
@@ -16,82 +16,63 @@
     </lv_obj>
 
     <!-- Content area: info column (left) + meter column (right) -->
-    <lv_obj width="100%" height="content"
-            style_pad_left="#space_lg" style_pad_right="#space_lg"
-            style_pad_top="#space_sm" style_pad_bottom="#space_lg"
-            flex_flow="row" style_pad_gap="#space_md"
-            style_flex_cross_place="center">
+    <lv_obj width="100%"
+            height="content" style_pad_left="#space_lg" style_pad_right="#space_lg" style_pad_top="#space_sm"
+            style_pad_bottom="#space_lg" flex_flow="row" style_pad_gap="#space_md" style_flex_cross_place="center">
 
       <!-- Info column -->
-      <lv_obj name="info_col" width="1" flex_grow="1" height="content"
-              flex_flow="column" style_pad_gap="#space_xs">
+      <lv_obj name="info_col" width="1" height="content" flex_grow="1" flex_flow="column" style_pad_gap="#space_xs">
 
         <!-- ============ Happy Hare section ============ -->
-        <lv_obj name="hh_section" width="100%" height="content"
-                flex_flow="column" style_pad_gap="#space_xs">
+        <lv_obj name="hh_section" width="100%" height="content" flex_flow="column" style_pad_gap="#space_xs">
           <bind_flag_if_not_eq subject="buf_type" flag="hidden" ref_value="1"/>
 
           <!-- Description -->
-          <text_small name="hh_description" bind_text="buf_description" width="100%"
-                      long_mode="wrap"/>
+          <text_small name="hh_description" width="100%" bind_text="buf_description" long_mode="wrap"/>
 
           <!-- Spool motor row -->
-          <lv_obj name="espooler_row" width="100%" height="content"
-                  flex_flow="row" style_pad_gap="#space_sm">
+          <lv_obj name="espooler_row" width="100%" height="content" flex_flow="row" style_pad_gap="#space_sm">
             <bind_flag_if_eq subject="buf_show_espooler" flag="hidden" ref_value="0"/>
-            <text_small name="lbl_espooler" text="Spool motor" translation_tag="Spool motor"
-                        width="110"/>
+            <text_small name="lbl_espooler" width="110" text="Spool motor" translation_tag="Spool motor"/>
             <text_small bind_text="buf_espooler_value" flex_grow="1"/>
           </lv_obj>
 
           <!-- Gear sync row -->
-          <lv_obj width="100%" height="content"
-                  flex_flow="row" style_pad_gap="#space_sm">
-            <text_small name="lbl_gear_sync" text="Gear sync" translation_tag="Gear sync"
-                        width="110"/>
+          <lv_obj width="100%" height="content" flex_flow="row" style_pad_gap="#space_sm">
+            <text_small name="lbl_gear_sync" width="110" text="Gear sync" translation_tag="Gear sync"/>
             <text_small bind_text="buf_gear_sync_value" flex_grow="1"/>
           </lv_obj>
 
           <!-- Clog detection row -->
-          <lv_obj width="100%" height="content"
-                  flex_flow="row" style_pad_gap="#space_sm">
-            <text_small name="lbl_clog" text="Clog detection" translation_tag="Clog detection"
-                        width="110"/>
+          <lv_obj width="100%" height="content" flex_flow="row" style_pad_gap="#space_sm">
+            <text_small name="lbl_clog" width="110" text="Clog detection" translation_tag="Clog detection"/>
             <text_small bind_text="buf_clog_value" flex_grow="1"/>
           </lv_obj>
 
           <!-- Flow row -->
-          <lv_obj name="flow_row" width="100%" height="content"
-                  flex_flow="row" style_pad_gap="#space_sm">
+          <lv_obj name="flow_row" width="100%" height="content" flex_flow="row" style_pad_gap="#space_sm">
             <bind_flag_if_eq subject="buf_show_flow" flag="hidden" ref_value="0"/>
-            <text_small name="lbl_flow" text="Flow" translation_tag="Flow"
-                        width="110"/>
+            <text_small name="lbl_flow" width="110" text="Flow" translation_tag="Flow"/>
             <text_small bind_text="buf_flow_value" flex_grow="1"/>
           </lv_obj>
         </lv_obj>
 
         <!-- ============ AFC section ============ -->
-        <lv_obj name="afc_section" width="100%" height="content"
-                flex_flow="column" style_pad_gap="#space_xs">
+        <lv_obj name="afc_section" width="100%" height="content" flex_flow="column" style_pad_gap="#space_xs">
           <bind_flag_if_not_eq subject="buf_type" flag="hidden" ref_value="2"/>
 
           <!-- State row -->
-          <text_small name="afc_state_label" bind_text="buf_afc_state" width="100%"
-                      long_mode="wrap"/>
+          <text_small name="afc_state_label" width="100%" bind_text="buf_afc_state" long_mode="wrap"/>
 
           <!-- Distance row -->
-          <lv_obj name="distance_row" width="100%" height="content"
-                  flex_flow="row" style_pad_gap="#space_sm">
+          <lv_obj name="distance_row" width="100%" height="content" flex_flow="row" style_pad_gap="#space_sm">
             <bind_flag_if_eq subject="buf_show_distance" flag="hidden" ref_value="0"/>
-            <text_small name="afc_distance_label" bind_text="buf_afc_distance" width="100%"
-                        long_mode="wrap"/>
+            <text_small name="afc_distance_label" width="100%" bind_text="buf_afc_distance" long_mode="wrap"/>
           </lv_obj>
 
           <!-- Clog detection row -->
-          <lv_obj width="100%" height="content"
-                  flex_flow="row" style_pad_gap="#space_sm">
-            <text_small name="lbl_afc_clog" text="Clog detection" translation_tag="Clog detection"
-                        width="110"/>
+          <lv_obj width="100%" height="content" flex_flow="row" style_pad_gap="#space_sm">
+            <text_small name="lbl_afc_clog" width="110" text="Clog detection" translation_tag="Clog detection"/>
             <text_small name="val_afc_clog" bind_text="buf_clog_value" flex_grow="1"/>
           </lv_obj>
         </lv_obj>
@@ -99,8 +80,7 @@
       </lv_obj>
 
       <!-- Meter column (programmatically populated with UiBufferMeter) -->
-      <lv_obj name="meter_col" width="100" height="150"
-              style_min_width="100">
+      <lv_obj name="meter_col" width="100" height="150" style_min_width="100">
         <bind_flag_if_eq subject="buf_show_meter" flag="hidden" ref_value="0"/>
       </lv_obj>
 
@@ -108,7 +88,8 @@
 
     <divider_horizontal/>
 
-    <modal_button_row secondary_text="Cancel" secondary_callback="on_modal_cancel_clicked"
-                      primary_text="OK" primary_callback="on_modal_ok_clicked"/>
+    <modal_button_row secondary_text="Cancel"
+                      secondary_callback="on_modal_cancel_clicked" primary_text="OK"
+                      primary_callback="on_modal_ok_clicked"/>
   </view>
 </component>

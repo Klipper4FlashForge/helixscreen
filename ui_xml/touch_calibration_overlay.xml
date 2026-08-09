@@ -7,11 +7,22 @@
 <!-- Subjects are registered in C++ (init_subjects) - do not define here to avoid shadowing -->
 <component>
   <view name="touch_calibration_overlay"
-        extends="overlay_panel" width="#overlay_panel_width_full" title="Touch Calibration"
-        title_tag="Touch Calibration" bg_color="#screen_bg" back_button_callback="on_touch_cal_back_clicked">
+        extends="overlay_panel" title="Touch Calibration" title_tag="Touch Calibration" bg_color="#screen_bg"
+        back_button_callback="on_touch_cal_back_clicked">
 
     <!-- Main content area - full screen for touch capture -->
-    <lv_obj name="calibration_content" width="100%" flex_grow="1" style_pad_all="0" scrollable="false">
+    <lv_obj name="calibration_content" width="100%" flex_grow="1" style_pad_all="0" scrollable="false" clickable="true">
+      <!-- VERIFY-phase touch sink. touch_capture_overlay below MUST hide in -->
+      <!-- VERIFY or it covers Accept/Retry, which left every VERIFY touch -->
+      <!-- unobserved: the fast-revert counters stayed at zero and the 3s -->
+      <!-- broken-matrix net always took its "passed" branch. This container is -->
+      <!-- visible in every state and, being the PARENT of the buttons, loses -->
+      <!-- the hit-test to them, so Accept/Retry keep their own presses. During -->
+      <!-- POINT capture the screen-foreground capture surface wins, so a tap is -->
+      <!-- never reported twice. -->
+      <event_cb trigger="pressed" callback="on_touch_cal_overlay_touched"/>
+      <event_cb trigger="released" callback="on_touch_cal_overlay_released"/>
+      <event_cb trigger="long_pressed_repeat" callback="on_touch_cal_hold_abort"/>
 
       <!-- Instruction text (centered, top area) -->
       <text_body name="instruction_label"
@@ -26,9 +37,9 @@
                 style_text_align="center" align="top_left">
         <!-- Bindings control visibility: hidden in states 0, 4, 5 (visible in 1, 2, 3) -->
         <!-- NOTE: Do NOT add hidden="true" base attribute - bindings handle it -->
-        <bind_flag_if_eq subject="touch_cal_state" flag="hidden" ref_value="0"/>
-        <bind_flag_if_eq subject="touch_cal_state" flag="hidden" ref_value="4"/>
-        <bind_flag_if_eq subject="touch_cal_state" flag="hidden" ref_value="5"/>
+        <!-- ONE observer: stacked bind_flag_if_eq on the same flag fight (each clears -->
+        <!-- on non-match, last-registered wins) and leave the crosshair visible in VERIFY. -->
+        <bind_flag_if cond="touch_cal_state lt 1 or touch_cal_state gt 3" flag="hidden"/>
       </lv_label>
 
       <!-- Note: Verify marker removed - using ripple effect instead (via ui_create_ripple) -->
@@ -38,10 +49,19 @@
       <lv_obj name="touch_capture_overlay" width="100%" height="100%" align="top_left" clickable="true">
         <event_cb trigger="pressed" callback="on_touch_cal_overlay_touched"/>
         <event_cb trigger="released" callback="on_touch_cal_overlay_released"/>
+        <!-- Press-and-hold anywhere aborts. This surface spans the WHOLE screen, -->
+        <!-- so the gesture is deliverable at every coordinate a touch controller -->
+        <!-- can emit — including a mapping that compresses every tap into a -->
+        <!-- sub-rectangle at the top-left corner, where no fixed chip can be both -->
+        <!-- reachable and clear of the calibration targets (every compressed -->
+        <!-- target tap travels a ray out of that same corner). -->
+        <event_cb trigger="long_pressed_repeat" callback="on_touch_cal_hold_abort"/>
         <!-- Hidden in VERIFY and COMPLETE states (visible in 1, 2, 3 for point capture) -->
-        <!-- In VERIFY, buttons must be clickable; ripples go on content area directly -->
-        <bind_flag_if_eq subject="touch_cal_state" flag="hidden" ref_value="4"/>
-        <bind_flag_if_eq subject="touch_cal_state" flag="hidden" ref_value="5"/>
+        <!-- In VERIFY, buttons must be clickable; ripples go on content area directly. -->
+        <!-- ONE observer: two stacked bind_flag_if_eq on the same flag fight (each -->
+        <!-- clears on non-match, last-registered wins) leaving this VISIBLE in VERIFY. -->
+        <!-- Since #1029 lifts this surface to screen foreground, that covers Accept. -->
+        <bind_flag_if cond="touch_cal_state gt 3" flag="hidden"/>
       </lv_obj>
 
       <!-- Button container (bottom center) -->
@@ -64,6 +84,41 @@
 
         <!-- Note: Skip button removed - only relevant for wizard (wizard_touch_calibration.xml) -->
       </lv_obj>
+
+      <!-- Discoverability for the press-and-hold escape. The gesture is the only
+           abort that works under a touch mapping the calibration screen cannot
+           address (a compressed mapping puts the Cancel chip out of reach), so
+           it has to be visible rather than folklore.
+
+           Bottom-RIGHT on purpose: bottom-center is calibration target P1
+           (0.50*W, 0.78*H) and bottom-left is the Cancel chip, so this is the
+           one corner of that row that collides with neither. Muted and small so
+           it stays subordinate to the instruction text.
+
+           Shown only during active capture (POINT_1..POINT_3 = states 1-3),
+           matching the Cancel chip: in VERIFY the normal chrome is back. ONE
+           observer — see the crosshair's note on stacked flag bindings. -->
+      <text_small name="hold_hint"
+                  width="content" text="Hold anywhere to cancel" translation_tag="Hold anywhere to cancel"
+                  style_text_color="#text_muted" style_text_align="right" align="bottom_right"
+                  style_pad_right="#space_md" style_pad_bottom="#space_md">
+        <bind_flag_if cond="touch_cal_state lt 1 or touch_cal_state gt 3" flag="hidden"/>
+      </text_small>
+
+      <!-- In-capture Cancel chip (bottom-left corner). During POINT_1/2/3 the -->
+      <!-- full-screen capture surface covers the header Back button, so this is -->
+      <!-- the abort affordance. Placed clear of every calibration target -->
+      <!-- (top-left, top-right, bottom-center). Lifted above the capture surface -->
+      <!-- in C++ (on_activate) so it stays clickable. Visible only in POINT states -->
+      <!-- (hidden in 0=IDLE, 4=VERIFY, 5=COMPLETE where the normal chrome returns). -->
+      <ui_button name="cancel_chip" width="content" variant="secondary" text="Cancel" translation_tag="Cancel">
+        <event_cb trigger="clicked" callback="on_touch_cal_cancel_clicked"/>
+        <!-- Visible only during active capture (POINT_1..POINT_3 = states 1-3); -->
+        <!-- hidden in IDLE(0), VERIFY(4), COMPLETE(5) where normal chrome returns. -->
+        <!-- ONE observer: three separate bind_flag_if_eq on the same flag fight -->
+        <!-- (each clears the flag on non-match) and the last-registered wins. -->
+        <bind_flag_if cond="touch_cal_state lt 1 or touch_cal_state gt 3" flag="hidden"/>
+      </ui_button>
     </lv_obj>
   </view>
 </component>

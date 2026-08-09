@@ -108,8 +108,14 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     auto ev = helix::error_classify::classify(kJamLine, ctx);
     REQUIRE(ev.has_value());
     REQUIRE(ev->severity == helix::ErrorSeverity::CRITICAL);
-    // E1: the routing decision is a blocking modal, not a toast.
-    REQUIRE(helix::decide_presentation(*ev) == helix::PresentAs::MODAL);
+    // E1: the routing decision is a blocking modal, not a toast. Since #1152 a
+    // paused uncoded `!!` also carries a generic Resume action, so the blocking
+    // arm is the recovery presenter's rather than the plain-alert one. What this
+    // locks is unchanged: paused + CRITICAL never degrades to a toast.
+    const helix::PresentAs decision = helix::decide_presentation(*ev);
+    REQUIRE(decision == helix::PresentAs::MODAL_WITH_RECOVER);
+    REQUIRE(decision != helix::PresentAs::TOAST);
+    REQUIRE(decision != helix::PresentAs::TOAST_WITH_RECOVER);
     // The detail process_line would surface is the full line, untruncated.
     REQUIRE(ev->detail == kJamDetail);
 
@@ -121,7 +127,10 @@ TEST_CASE_METHOD(LVGLUITestFixture,
         idle.is_printing = false;
         auto idle_ev = helix::error_classify::classify(kJamLine, idle);
         REQUIRE(idle_ev.has_value());
-        REQUIRE(helix::decide_presentation(*idle_ev) != helix::PresentAs::MODAL);
+        // Asserted positively: `!= MODAL` would now also pass for the recovery
+        // modal arm, which is not what "demoted" means.
+        REQUIRE(helix::decide_presentation(*idle_ev) == helix::PresentAs::TOAST);
+        REQUIRE(idle_ev->recovery_actions.empty()); // no Resume when nothing is paused
     }
 
     // ---- Drive the REAL glue (process_line) ----
@@ -145,6 +154,11 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     // comment), so we drive the same modal layer it would with the SAME
     // (title, detail) process_line hands it. modal_title_for(GENERIC) ==
     // "Printer Error".
+    //
+    // NOTE: since #1152 the paused case routes through present_recovery_modal()
+    // in production, not this alert path. What this seam still proves is the
+    // property it was written for — the FULL untruncated detail reaches a
+    // blocking modal — and that property is presenter-independent.
     lv_obj_t* dialog = helix::ui::modal_show_alert("Printer Error", ev->detail.c_str(),
                                                    ModalSeverity::Error, "OK");
     helix::ui::UpdateQueue::instance().drain();

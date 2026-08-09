@@ -3,6 +3,7 @@
 #include "input_device_scanner.h"
 
 #include "config.h"
+#include "log_redact.h"
 #include "touch_calibration.h"
 
 #include <spdlog/spdlog.h>
@@ -347,7 +348,7 @@ std::optional<ScannedDevice> find_keyboard_device() {
     try {
         Config* config = Config::get_instance();
         if (config) {
-            exclude_id = config->get<std::string>(config->df() + "scanner/usb_vendor_product", "");
+            exclude_id = config->get<std::string>("/scanner/usb_vendor_product", "");
         }
     } catch (...) {
         // Config may not be initialized yet during very early startup
@@ -562,11 +563,11 @@ std::optional<ScannedDevice> find_bt_hid_device_by_mac(const std::string& dev_ba
 
         std::string name = read_device_name(sysfs_base, event_num);
         spdlog::info("[InputScanner] Found paired BT HID scanner: {} ({}) mac={}", device_path,
-                     name, mac);
+                     name, helix::redact::mac(mac));
         return ScannedDevice{device_path, name, event_num};
     }
 
-    spdlog::debug("[InputScanner] No BT HID evdev found for mac={}", mac);
+    spdlog::debug("[InputScanner] No BT HID evdev found for mac={}", helix::redact::mac(mac));
     return std::nullopt;
 }
 

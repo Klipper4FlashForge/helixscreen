@@ -4,18 +4,18 @@
 #pragma once
 
 #include "ui_observer_guard.h"
+#include "ui_temperature_utils.h"
 
 #include "lvgl/lvgl.h"
+#include "printer_temperature_state.h" // helix::ChamberMode
 
 /**
- * @brief Animates heating icons with gradient color and pulse effects
+ * @brief Tints heating icons with the shared 4-state thermal color and pulse effect
  *
  * This class provides visual feedback for heating progress on temperature icons.
- * When heating is active, the icon:
- * - Displays a color gradient from cold (blue) → warm (amber) → hot (red)
- *   based on progress from ambient temperature to target
- * - Pulses (opacity oscillation) while actively heating
- * - Stops pulsing and shows solid hot color when at target temperature
+ * The icon shows the same four-state thermal color as the temperature labels
+ * (muted off / red heating / green at-temp / blue cooling), and pulses (opacity
+ * oscillation) only while actively heating.
  *
  * Usage:
  *   HeatingIconAnimator animator;
@@ -25,23 +25,19 @@
  *   // Cleanup:
  *   animator.detach();
  *
- * State machine:
- *   OFF ──(target > 0)──► HEATING ──(current ≥ target-20)──► AT_TARGET
- *    ▲                        │                                  │
- *    └────(target = 0)────────┴──────────(target = 0)────────────┘
- *
- * Note: 20 decidegrees = 2°C tolerance
+ * State is classified by helix::ui::temperature::classify_heat_state() —
+ * see HeatState for the four states and their thresholds. Note: 20 decidegrees
+ * = 2°C tolerance.
  */
 class HeatingIconAnimator {
   public:
     /**
-     * @brief Heating states
+     * @brief Heating states — shared with the temperature labels.
+     *
+     * The icon and the number must never disagree, so both classify through
+     * helix::ui::temperature::classify_heat_state().
      */
-    enum class State {
-        OFF,      ///< Heater off (target = 0), secondary color, no animation
-        HEATING,  ///< Actively heating, gradient color + pulse animation
-        AT_TARGET ///< At target temperature, solid hot color, no pulse
-    };
+    using State = helix::ui::temperature::HeatState;
 
     HeatingIconAnimator() = default;
     ~HeatingIconAnimator();
@@ -70,14 +66,20 @@ class HeatingIconAnimator {
      * @brief Update heating state based on current and target temperatures
      *
      * Call this whenever temperature readings change. The animator will:
-     * - Capture ambient temperature when heating starts
-     * - Calculate progress and update gradient color
+     * - Classify the new thermal state via classify_heat_state_with_mode()
+     * - Update the icon's tint color for that state
      * - Start/stop pulse animation based on state transitions
      *
      * @param current_temp Current temperature in decidegrees (31.5°C = 315)
      * @param target_temp Target temperature in decidegrees (0 = heater off)
+     * @param mode Chamber control mode. Defaults to Heating, which makes
+     *             classify_heat_state_with_mode() a pure passthrough to
+     *             classify_heat_state() — the correct behavior for nozzle/bed,
+     *             which have no mode concept. Only the chamber ever passes
+     *             Off/Maintaining.
      */
-    void update(int current_temp, int target_temp);
+    void update(int current_temp, int target_temp,
+                helix::ChamberMode mode = helix::ChamberMode::Heating);
 
     /**
      * @brief Refresh colors from theme (call after theme toggle)
@@ -113,28 +115,15 @@ class HeatingIconAnimator {
     static constexpr uint32_t PULSE_DURATION_MS = 400;
 
     lv_obj_t* icon_ = nullptr;
-    State state_ = State::OFF;
+    State state_ = State::Off;
 
-    int ambient_temp_ = 250; ///< Captured when heating starts (decidegrees)
     int current_temp_ = 250; ///< Current temperature (decidegrees)
     int target_temp_ = 0;    ///< Target temperature (decidegrees)
 
-    lv_color_t current_color_; ///< Current gradient color
+    lv_color_t current_color_; ///< Current thermal-state color
     lv_opa_t current_opacity_ = LV_OPA_COVER;
 
     bool pulse_active_ = false;
-
-    /**
-     * @brief Calculate gradient color based on heating progress
-     *
-     * Uses a two-segment gradient:
-     * - 0-50%: cold (blue) → warm (amber)
-     * - 50-100%: warm (amber) → hot (red)
-     *
-     * @param progress Heating progress 0.0 to 1.0
-     * @return Interpolated color
-     */
-    lv_color_t calculate_gradient_color(float progress);
 
     /**
      * @brief Start pulse animation (opacity oscillation)
@@ -152,7 +141,7 @@ class HeatingIconAnimator {
     void apply_color();
 
     /**
-     * @brief Get secondary (off) color from theme
+     * @brief Get the off-state color, shared with the temperature label (text_muted)
      */
     lv_color_t get_secondary_color();
 

@@ -9,6 +9,7 @@
 #include "wizard_step.h"
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -197,6 +198,18 @@ class WizardConnectionStep : public helix::wizard::Step {
     bool auto_probe_attempted_ = false; // Main thread only
     lv_timer_t* auto_probe_timer_ = nullptr;
 
+    /// Upper bound on the discovery spinner (#1161). A healthy discovery is a
+    /// handful of chained JSON-RPCs that settle in a few seconds even on an
+    /// AD5M/CC1 over wifi, so this is ~6x headroom; it is also deliberately
+    /// under MoonrakerRequestTracker's 60 s per-request timeout, which would
+    /// otherwise stack across identify → server.info → printer.objects.list.
+    static constexpr uint32_t DISCOVERY_WATCHDOG_MS = 30000;
+
+    // Watchdog state — main thread only (created, fired and cancelled there)
+    uint32_t discovery_watchdog_ms_ = DISCOVERY_WATCHDOG_MS;
+    lv_timer_t* discovery_watchdog_timer_ = nullptr;
+    bool discovery_in_flight_ = false;
+
     // Saved values for async callback - protected by mutex for thread-safe access
     mutable std::mutex saved_values_mutex_;
     std::string saved_ip_;   // Protected by saved_values_mutex_
@@ -215,6 +228,69 @@ class WizardConnectionStep : public helix::wizard::Step {
     enum class StatusVariant { None, Success, Warning, Danger };
     void set_status(const char* icon_name, StatusVariant variant, const char* text);
 
+  public:
+    /**
+     * @brief Hardware discovery failed even though Moonraker answered
+     *
+     * Reached only from the connected path, so the address the user entered is
+     * correct and only Klipper is unusable (bad printer.cfg, MCU fault, or
+     * still starting). Enables Next with an explicit warning instead of
+     * blocking: the wizard is a full-screen overlay with no Skip button on
+     * this step, so gating here left the single most common first-boot state
+     * (Moonraker up, Klipper in `error`) with no way forward, backward, or
+     * into the app's own Klipper error surface.
+     */
+    void allow_continue_without_klipper();
+
+    /**
+     * @brief Arm the bounded window that discovery must finish inside
+     *
+     * Called on the main thread immediately before discover_printer(). Cancels
+     * any previously armed watchdog, so a retry never leaves two running.
+     *
+     * discover_printer() is not guaranteed to invoke either of its callbacks:
+     * MoonrakerDiscoverySequence drops its RPC replies whenever the connection
+     * generation or the discovery sequence number moved on (is_stale() /
+     * is_current_sequence()), and the error path in continue_discovery() nulls
+     * on_complete_discovery_ before handing off. The sequence therefore cannot
+     * own this timeout — the step must.
+     */
+    void start_discovery_watchdog();
+
+    /**
+     * @brief The discovery window closed with neither callback having fired
+     *
+     * Unblocks Next the same way allow_continue_without_klipper() does, with a
+     * status that does not claim to know why: from here we only know discovery
+     * went quiet, not whether Klipper is down. Idempotent — a fire that races a
+     * completion is a no-op because the completion cancelled the watchdog.
+     */
+    void discovery_watchdog_expired();
+
+    /// Test-only: shorten the watchdog window so a test can observe it fire.
+    void set_discovery_watchdog_ms_for_test(uint32_t ms) {
+        discovery_watchdog_ms_ = ms;
+    }
+
+    /// Test-only: arm the one-shot auto-probe timer without building the screen,
+    /// so the teardown paths that must cancel it can be exercised directly.
+    void arm_auto_probe_timer_for_test();
+
+    /// Test-only: the armed auto-probe timer, or nullptr when none is armed.
+    lv_timer_t* auto_probe_timer_for_test() const {
+        return auto_probe_timer_;
+    }
+
+  private:
+    /// Cancel an armed watchdog. Safe to call when none is armed.
+    void cancel_discovery_watchdog();
+
+    /// Cancel a pending auto-probe timer. Safe to call when none is armed.
+    void cancel_auto_probe_timer();
+
+    /// Shared tail of allow_continue_without_klipper() / discovery_watchdog_expired()
+    void unblock_after_incomplete_discovery(const char* message);
+
     // Auto-probe methods for localhost detection
     bool should_auto_probe() const;
     void attempt_auto_probe();
@@ -226,6 +302,7 @@ class WizardConnectionStep : public helix::wizard::Step {
     static void on_ip_input_changed_static(lv_event_t* e);
     static void on_port_input_changed_static(lv_event_t* e);
     static void auto_probe_timer_cb(lv_timer_t* timer);
+    static void discovery_watchdog_timer_cb(lv_timer_t* timer);
 
     // mDNS discovery (injectable for testing)
     std::unique_ptr<helix::IMdnsDiscovery> mdns_discovery_;
@@ -250,10 +327,3 @@ class WizardConnectionStep : public helix::wizard::Step {
  * Creates the instance on first call. Used by wizard framework.
  */
 WizardConnectionStep* get_wizard_connection_step();
-
-/**
- * @brief Destroy the global WizardConnectionStep instance
- *
- * Call during application shutdown.
- */
-void destroy_wizard_connection_step();

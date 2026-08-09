@@ -8,14 +8,16 @@
 #include "ui_event_safety.h"
 #include "ui_nav_manager.h"
 #include "ui_temperature_utils.h"
+#include "ui_timer_guard.h"
 
 #include "app_globals.h"
 #include "config.h"
 #include "filament_database.h"
+#include "i_moonraker_api.h"
 #include "klipper_config_editor.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "i_moonraker_api.h"
 #include "observer_factory.h"
+#include "preset_materials.h"
 #include "static_panel_registry.h"
 #include "static_subject_registry.h"
 #include "temperature_service.h"
@@ -23,10 +25,12 @@
 
 #include <spdlog/spdlog.h>
 
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <lvgl.h>
 #include <memory>
+#include <string>
 
 // ============================================================================
 // STATIC SUBJECT
@@ -42,6 +46,11 @@ static bool s_callbacks_registered = false;
 // slow-cooling beds (e.g. AD5M Pro) legitimately take far longer to cycle.
 static constexpr uint32_t PID_OVERTIME_EXTRUDER_MS = 12u * 60u * 1000u; // 12 min
 static constexpr uint32_t PID_OVERTIME_BED_MS = 30u * 60u * 1000u;      // 30 min
+
+// Non-creating view of the global instance (defined with it at the bottom of
+// this file). Returns nullptr when the panel does not currently exist, so
+// shutdown callbacks can skip instead of resurrecting it through the getter.
+static PIDCalibrationPanel* existing_pid_cal_panel();
 
 // ============================================================================
 // CONSTRUCTOR / DESTRUCTOR
@@ -70,6 +79,12 @@ PIDCalibrationPanel::PIDCalibrationPanel() {
 
 PIDCalibrationPanel::~PIDCalibrationPanel() {
     deinit_subjects();
+
+    // stop_progress_tracking() cancels this on the normal path, but a teardown
+    // that destroys the panel mid-calibration skips it. StaticPanelRegistry::
+    // destroy_all() runs BEFORE lv_deinit(), so a live tick would then fire into
+    // a freed `this` (#1173).
+    cancel_eta_timer();
 
     // Clear widget pointers (owned by LVGL)
     overlay_root_ = nullptr;
@@ -161,9 +176,17 @@ void PIDCalibrationPanel::init_subjects() {
 
     subjects_initialized_ = true;
 
-    // Register shutdown cleanup to prevent crashes during lv_deinit()
-    StaticSubjectRegistry::instance().register_deinit(
-        "PIDCalibrationPanel", []() { get_global_pid_cal_panel().deinit_subjects(); });
+    // Register shutdown cleanup to prevent crashes during lv_deinit().
+    // Test the pointer instead of calling get_global_pid_cal_panel(): this
+    // callback runs from StaticSubjectRegistry::deinit_all(), which is sequenced
+    // AFTER StaticPanelRegistry::destroy_all() has already destroyed the panel.
+    // The auto-creating getter would build a replacement whose destructor then
+    // runs during static destruction, with LVGL and spdlog already gone.
+    StaticSubjectRegistry::instance().register_deinit("PIDCalibrationPanel", []() {
+        if (auto* panel = existing_pid_cal_panel()) {
+            panel->deinit_subjects();
+        }
+    });
 
     // Register XML event callbacks (once globally)
     if (!s_callbacks_registered) {
@@ -176,15 +199,10 @@ void PIDCalibrationPanel::init_subjects() {
             {"on_pid_abort", on_abort_clicked},
             {"on_pid_done", on_done_clicked},
             {"on_pid_retry", on_retry_clicked},
-            // Material preset callbacks
-            {"on_pid_preset_pla", on_pid_preset_pla},
-            {"on_pid_preset_petg", on_pid_preset_petg},
-            {"on_pid_preset_abs", on_pid_preset_abs},
-            {"on_pid_preset_pa", on_pid_preset_pa},
-            {"on_pid_preset_tpu", on_pid_preset_tpu},
-            {"on_pid_preset_bed_pla", on_pid_preset_bed_pla},
-            {"on_pid_preset_bed_petg", on_pid_preset_bed_petg},
-            {"on_pid_preset_bed_abs", on_pid_preset_bed_abs},
+            // Material preset callbacks — one per heater, slot read from the
+            // button name (replaces 8 per-material trampolines).
+            {"on_pid_preset_material", on_pid_preset_material},
+            {"on_pid_preset_bed_material", on_pid_preset_bed_material},
             // MPC method/config callbacks
             {"on_cal_method_pid", on_method_pid_clicked},
             {"on_cal_method_mpc", on_method_mpc_clicked},
@@ -1060,10 +1078,22 @@ void PIDCalibrationPanel::stop_progress_tracking() {
     progress_temp_lifetime_.reset();
     progress_temp_observer_.reset();
 
-    if (eta_update_timer_) {
-        lv_timer_delete(eta_update_timer_);
-        eta_update_timer_ = nullptr;
+    cancel_eta_timer();
+}
+
+void PIDCalibrationPanel::arm_eta_timer_for_test() {
+    cancel_eta_timer();
+    eta_update_timer_ = lv_timer_create(on_eta_timer_tick, 1000, this);
+}
+
+void PIDCalibrationPanel::cancel_eta_timer() {
+    // Neuter rather than delete: the tick runs inside lv_timer_handler, where
+    // deleting a timer can corrupt the list (#750, #751). lv_timer_cancel_safe()
+    // also no-ops once LVGL is gone, so the destructor can share this.
+    if (eta_update_timer_ && lv_is_initialized()) {
+        helix::ui::lv_timer_cancel_safe(eta_update_timer_);
     }
+    eta_update_timer_ = nullptr;
 }
 
 void PIDCalibrationPanel::on_progress_temperature(int temp_tenths) {
@@ -1545,61 +1575,57 @@ static int get_material_bed_temp(const char* name) {
     return mat ? mat->bed_temp : 60;
 }
 
-// Material preset trampolines (extruder) — temps from filament database
-void PIDCalibrationPanel::on_pid_preset_pla(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[PIDCal] on_pid_preset_pla");
-    (void)e;
-    get_global_pid_cal_panel().handle_preset_clicked(get_material_nozzle_temp("PLA"), "PLA");
+// Material preset handlers — index-parameterized.
+//
+// These were eight near-identical trampolines, one per hardcoded material
+// (PLA/PETG/ABS/PA/TPU for the extruder, PLA/PETG/ABS for the bed), each
+// differing only in the string it looked a temperature up with. They are now
+// two handlers that read the preset SLOT from the clicked button's name and
+// resolve the material through helix::presets, so the PID panel offers exactly
+// the materials the user configured instead of a fixed list that disagreed with
+// every other preset surface in the app.
+
+/// Parse the preset slot from a button named "btn_preset_mN" / "btn_preset_bed_mN".
+/// Returns -1 if the name is missing or malformed.
+static int pid_preset_slot(lv_event_t* e) {
+    auto* btn = static_cast<lv_obj_t*>(lv_event_get_target(e));
+    const char* name = btn ? lv_obj_get_name(btn) : nullptr;
+    if (!name) {
+        spdlog::warn("[PIDCal] Preset button has no name; ignoring click");
+        return -1;
+    }
+    const char* suffix = std::strrchr(name, '_');
+    if (!suffix || suffix[1] != 'm' || !std::isdigit(static_cast<unsigned char>(suffix[2]))) {
+        spdlog::warn("[PIDCal] Preset button '{}' has no slot suffix; ignoring click", name);
+        return -1;
+    }
+    int slot = suffix[2] - '0';
+    if (slot < 0 || slot >= helix::presets::PRESET_COUNT) {
+        spdlog::warn("[PIDCal] Preset button '{}' slot {} out of range", name, slot);
+        return -1;
+    }
+    return slot;
+}
+
+void PIDCalibrationPanel::on_pid_preset_material(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[PIDCal] on_pid_preset_material");
+    int slot = pid_preset_slot(e);
+    if (slot >= 0) {
+        const std::string material = helix::presets::name(slot);
+        get_global_pid_cal_panel().handle_preset_clicked(get_material_nozzle_temp(material.c_str()),
+                                                         material.c_str());
+    }
     LVGL_SAFE_EVENT_CB_END();
 }
 
-void PIDCalibrationPanel::on_pid_preset_petg(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[PIDCal] on_pid_preset_petg");
-    (void)e;
-    get_global_pid_cal_panel().handle_preset_clicked(get_material_nozzle_temp("PETG"), "PETG");
-    LVGL_SAFE_EVENT_CB_END();
-}
-
-void PIDCalibrationPanel::on_pid_preset_abs(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[PIDCal] on_pid_preset_abs");
-    (void)e;
-    get_global_pid_cal_panel().handle_preset_clicked(get_material_nozzle_temp("ABS"), "ABS");
-    LVGL_SAFE_EVENT_CB_END();
-}
-
-void PIDCalibrationPanel::on_pid_preset_pa(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[PIDCal] on_pid_preset_pa");
-    (void)e;
-    get_global_pid_cal_panel().handle_preset_clicked(get_material_nozzle_temp("PA"), "PA");
-    LVGL_SAFE_EVENT_CB_END();
-}
-
-void PIDCalibrationPanel::on_pid_preset_tpu(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[PIDCal] on_pid_preset_tpu");
-    (void)e;
-    get_global_pid_cal_panel().handle_preset_clicked(get_material_nozzle_temp("TPU"), "TPU");
-    LVGL_SAFE_EVENT_CB_END();
-}
-
-// Material preset trampolines (bed) — temps from filament database
-void PIDCalibrationPanel::on_pid_preset_bed_pla(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[PIDCal] on_pid_preset_bed_pla");
-    (void)e;
-    get_global_pid_cal_panel().handle_preset_clicked(get_material_bed_temp("PLA"), "PLA");
-    LVGL_SAFE_EVENT_CB_END();
-}
-
-void PIDCalibrationPanel::on_pid_preset_bed_petg(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[PIDCal] on_pid_preset_bed_petg");
-    (void)e;
-    get_global_pid_cal_panel().handle_preset_clicked(get_material_bed_temp("PETG"), "PETG");
-    LVGL_SAFE_EVENT_CB_END();
-}
-
-void PIDCalibrationPanel::on_pid_preset_bed_abs(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[PIDCal] on_pid_preset_bed_abs");
-    (void)e;
-    get_global_pid_cal_panel().handle_preset_clicked(get_material_bed_temp("ABS"), "ABS");
+void PIDCalibrationPanel::on_pid_preset_bed_material(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[PIDCal] on_pid_preset_bed_material");
+    int slot = pid_preset_slot(e);
+    if (slot >= 0) {
+        const std::string material = helix::presets::name(slot);
+        get_global_pid_cal_panel().handle_preset_clicked(get_material_bed_temp(material.c_str()),
+                                                         material.c_str());
+    }
     LVGL_SAFE_EVENT_CB_END();
 }
 
@@ -1668,6 +1694,6 @@ PIDCalibrationPanel& get_global_pid_cal_panel() {
     return *g_pid_cal_panel;
 }
 
-void destroy_pid_cal_panel() {
-    g_pid_cal_panel.reset();
+static PIDCalibrationPanel* existing_pid_cal_panel() {
+    return g_pid_cal_panel.get();
 }

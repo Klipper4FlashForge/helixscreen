@@ -497,6 +497,43 @@ uninstall() {
     fi
 }
 
+# Gate --clean's irreversible sweep on explicit consent.
+#
+# "stdin is not a terminal" is NOT consent. The documented invocation is
+# `curl … | sh -s -- --clean`, where stdin is the pipe carrying the script, so
+# a bare `[ -t 0 ]` guard skipped the "PERMANENTLY DELETE your configuration"
+# prompt on exactly the path users actually take. Non-interactive runs must opt
+# in with --yes (ASSUME_YES, set by main.sh's argument parser).
+#
+# Returns 0 to proceed; otherwise exits (0 = user declined, 1 = no consent).
+confirm_clean_install() {
+    if [ "${ASSUME_YES:-false}" = true ]; then
+        log_warn "--yes given: proceeding without confirmation."
+        return 0
+    fi
+
+    if [ -t 0 ]; then
+        printf "Are you sure? [y/N] "
+        read -r response
+        case "$response" in
+            [yY][eE][sS]|[yY])
+                return 0
+                ;;
+            *)
+                log_info "Clean install cancelled."
+                exit 0
+                ;;
+        esac
+    fi
+
+    log_error "Refusing to run --clean without confirmation."
+    log_error "stdin is not a terminal (a piped 'curl ... | sh' has the script on"
+    log_error "stdin), so the y/N prompt cannot be answered."
+    log_error "Re-run with --yes to confirm the deletions listed above:"
+    log_error "  curl -sSL https://releases.helixscreen.org/install.sh | sh -s -- --clean --yes"
+    exit 1
+}
+
 # Clean up old installation completely (for --clean flag)
 # Removes all files, config, and caches without backup
 # Args: platform
@@ -514,19 +551,7 @@ clean_old_installation() {
     log_warn "  - Thumbnail cache files"
     log_warn ""
 
-    # Interactive confirmation if stdin is a terminal
-    if [ -t 0 ]; then
-        printf "Are you sure? [y/N] "
-        read -r response
-        case "$response" in
-            [yY][eE][sS]|[yY])
-                ;;
-            *)
-                log_info "Clean install cancelled."
-                exit 0
-                ;;
-        esac
-    fi
+    confirm_clean_install
 
     log_info "Cleaning old installation..."
 
@@ -585,9 +610,11 @@ clean_old_installation() {
     $SUDO rm -f /etc/polkit-1/rules.d/50-helixscreen-network.rules
     $SUDO systemctl daemon-reload 2>/dev/null || true
 
-    # Remove printer_data/config/helixscreen/ (user config) in clean mode
-    if [ -n "${KLIPPER_HOME:-}" ]; then
-        local pd_helix="${KLIPPER_HOME}/printer_data/config/helixscreen"
+    # Remove <klipper config dir>/helixscreen/ (user config) in clean mode
+    local pd_config
+    pd_config="$(klipper_config_dir)"
+    if [ -n "$pd_config" ]; then
+        local pd_helix="${pd_config}/helixscreen"
         if [ -d "$pd_helix" ] || [ -L "$pd_helix" ]; then
             log_info "Removing user config: $pd_helix"
             $SUDO rm -rf "$pd_helix"

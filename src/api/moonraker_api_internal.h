@@ -110,6 +110,36 @@ inline bool is_safe_object_name(const std::string& str) {
 }
 
 /**
+ * @brief Validate that a string is safe to percent-encode into a URL query parameter.
+ *
+ * Moonraker power-device names are arbitrary config section names — `[power -Power-]`,
+ * `[power Printer PSU]`, `[power shelly.plug.1]` are all legal — and they routinely contain
+ * `-`, `.`, `(`, `)` and other punctuation. Gating `set_device_power()` on
+ * `is_safe_identifier()` (alphanumeric, `_`, space only) rejected those names before the
+ * request was ever built, so power control silently did nothing for anyone whose device name
+ * carried a hyphen (prestonbrown/helixscreen#1241).
+ *
+ * The caller percent-encodes every non-`[A-Za-z0-9_.-]` byte into the query string and the
+ * value never reaches G-code, so no character class needs to be filtered for injection here.
+ * The one thing worth rejecting is control characters: they cannot appear in a Moonraker
+ * config section name at all, and letting them through would put raw CR/LF into log lines
+ * (and into any future caller that forgets to encode).
+ *
+ * Allows: every non-control byte, including whitespace and multi-byte UTF-8.
+ * Rejects: empty strings, and any byte < 0x20 or == 0x7F.
+ */
+inline bool is_safe_url_param(const std::string& str) {
+    if (str.empty()) {
+        return false;
+    }
+
+    return std::none_of(str.begin(), str.end(), [](char c) {
+        auto byte = static_cast<unsigned char>(c);
+        return byte < 0x20 || byte == 0x7F;
+    });
+}
+
+/**
  * @brief Validate that a file path is safe from directory traversal attacks
  *
  * Rejects paths containing:
@@ -260,10 +290,8 @@ inline bool reject_invalid_path(const std::string& path, const char* method,
     }
 
     if (on_error) {
-        MoonrakerError err;
-        err.type = MoonrakerErrorType::VALIDATION_ERROR;
-        err.message = "Invalid path contains directory traversal or illegal characters";
-        err.method = method;
+        MoonrakerError err = MoonrakerError::validation_error(
+            method, "Invalid path contains directory traversal or illegal characters");
         on_error(err);
     }
     return true; // Invalid, caller should return
@@ -292,10 +320,8 @@ inline bool reject_invalid_identifier(const std::string& id, const char* method,
     }
 
     if (on_error) {
-        MoonrakerError err;
-        err.type = MoonrakerErrorType::VALIDATION_ERROR;
-        err.message = "Invalid identifier contains illegal characters";
-        err.method = method;
+        MoonrakerError err = MoonrakerError::validation_error(
+            method, "Invalid identifier contains illegal characters");
         on_error(err);
     }
     return true; // Invalid, caller should return
@@ -316,10 +342,8 @@ inline bool reject_invalid_file_root(const std::string& root, const char* method
     }
 
     if (on_error) {
-        MoonrakerError err;
-        err.type = MoonrakerErrorType::VALIDATION_ERROR;
-        err.message = "Invalid file root contains illegal characters";
-        err.method = method;
+        MoonrakerError err = MoonrakerError::validation_error(
+            method, "Invalid file root contains illegal characters");
         on_error(err);
     }
     return true; // Invalid, caller should return
@@ -352,10 +376,8 @@ inline bool reject_out_of_range(double value, double min, double max, const char
     }
 
     if (on_error) {
-        MoonrakerError err;
-        err.type = MoonrakerErrorType::VALIDATION_ERROR;
-        err.message = std::string(param_name) + " value out of allowed range";
-        err.method = method;
+        MoonrakerError err = MoonrakerError::validation_error(
+            method, std::string(param_name) + " value out of allowed range");
         on_error(err);
     }
     return true; // Invalid, caller should return
@@ -380,10 +402,8 @@ inline bool reject_non_finite(std::initializer_list<double> values, const char* 
                          "invalid value (NaN/Inf)",
                          method);
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::VALIDATION_ERROR;
-                err.message = "Parameter contains NaN or Inf value";
-                err.method = method;
+                MoonrakerError err =
+                    MoonrakerError::validation_error(method, "Parameter contains NaN or Inf value");
                 on_error(err);
             }
             return true; // Invalid, caller should return

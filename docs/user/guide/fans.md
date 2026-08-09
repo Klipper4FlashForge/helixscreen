@@ -36,6 +36,8 @@ HelixScreen identifies each fan by its Klipper configuration and shows a short t
 
 ## Fan Control Overlay
 
+![Fan Control Overlay](../../images/user/controls-fan.png)
+
 Open it from the **Controls** panel by tapping the cooling/fans card. Fans are shown in two groups:
 
 - **Controllable fans** appear as circular dials. Drag the dial (or tap along its ring) to set the speed from 0–100%. The fan icon spins faster as the speed increases, and the new speed takes effect immediately.
@@ -46,6 +48,8 @@ Open it from the **Controls** panel by tapping the cooling/fans card. Fans are s
 ---
 
 ## Renaming a Fan
+
+![Fan Settings](../../images/user/settings-fans.png)
 
 Klipper fan names like `fan_generic exhaust_fan` aren't always friendly. You can give any fan a custom display name:
 
@@ -61,4 +65,4 @@ The custom name is saved and appears everywhere that fan is shown in HelixScreen
 
 ---
 
-**Next:** [Sensors](sensors.md) | [Back to User Guide](../USER_GUIDE.md)
+**Prev:** [Settings](settings.md) | **Next:** [Sensors](sensors.md) | [Back to User Guide](../USER_GUIDE.md)

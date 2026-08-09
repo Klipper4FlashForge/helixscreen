@@ -11,6 +11,8 @@
 
 #include "bed_mesh_probe_parser.h"
 
+#include <algorithm>
+#include <cstdio>
 #include <regex>
 #include <string>
 #include <vector>
@@ -321,28 +323,32 @@ TEST_CASE("BedMeshCollector handles edge case probe counts", "[bed_mesh_collecto
 // ============================================================================
 
 /**
- * @brief Simulate the fallback path with probe_samples > 1
+ * @brief Drive the real ProbePointCounter over a linear sweep of mesh points
  *
- * When firmware doesn't emit "Probing point X/Y" but does emit
- * "probe at X,Y is z=Z" for each sample, the collector divides by
- * probe_samples to report mesh-point progress instead of raw sample count.
+ * Firmware that doesn't emit "Probing point X/Y" still emits one
+ * "probe at X,Y is z=Z" line per SAMPLE, so the collector has to collapse
+ * samples into mesh points. Returns the (mesh_point, total) pair the collector
+ * would report for every line, in order.
  *
- * Math: mesh_point = ceil(probe_at_count / probe_samples)
+ * This used to reimplement `ceil(count / samples)` locally, which is why it
+ * stayed green while production had the #1224 bug — assert against real code.
  */
 static std::vector<std::pair<int, int>> simulate_fallback_probing(int grid_points,
                                                                   int probe_samples) {
     std::vector<std::pair<int, int>> progress_calls;
-    int probe_at_count = 0;
-    int expected_probes = grid_points;
-    int samples = std::max(probe_samples, 1);
+    const int samples = std::max(probe_samples, 1);
+    helix::ProbePointCounter counter(samples);
 
-    // Each mesh point produces `samples` "probe at" lines
+    // Each mesh point produces `samples` "probe at" lines at one (x,y).
     for (int point = 0; point < grid_points; ++point) {
+        const double x = 20.0 + point * 15.0;
+        const double y = 30.0;
         for (int s = 0; s < samples; ++s) {
-            // Simulate a "probe at X,Y is z=Z" line
-            ++probe_at_count;
-            int mesh_point = (probe_at_count + samples - 1) / samples;
-            progress_calls.push_back({mesh_point, expected_probes});
+            char line[128];
+            std::snprintf(line, sizeof(line), "// probe at %.3f,%.3f is z=-0.031000", x, y);
+            if (auto mesh_point = counter.feed(line)) {
+                progress_calls.push_back({*mesh_point, grid_points});
+            }
         }
     }
     return progress_calls;
@@ -471,68 +477,153 @@ TEST_CASE("parse_adapted_probe_count rejects unrelated lines", "[bed_mesh_collec
     REQUIRE_FALSE(helix::parse_adapted_probe_count("").has_value());
 }
 
-/**
- * @brief Simulate Klipper's `samples: N` probe stream with dedupe
- *
- * Klipper emits N consecutive "probe at X,Y is z=Z" lines at the same (x,y)
- * for each grid point when `samples: N` is configured. The collector's
- * dedupe logic (parse_probe_position + tolerance check) should count unique
- * points, not raw sample lines — matching the user-facing "# points probed"
- * expectation.
- *
- * This mirrors the real Snapmaker U1 observation: probed_matrix 6x5=30 with
- * samples=3 produces 90 "probe at" lines that must deduplicate to 30 points.
- */
-static int simulate_dedupe_count(int grid_rows, int grid_cols, int samples, double x_spacing = 46.1,
-                                 double y_spacing = 41.62) {
-    constexpr double POS_TOL = 0.05;
-    double last_x = 0.0, last_y = 0.0;
-    bool has_last = false;
-    int unique_points = 0;
+// ============================================================================
+// Sample dedupe — drives the REAL helix::ProbePointCounter
+// ============================================================================
+//
+// These previously ran against a local reimplementation of the dedupe rule,
+// which is why they stayed green while the production collector did no dedupe
+// at all and divided by a config-derived sample count instead (#1224). Feed the
+// real counter real Klipper lines, or the tests prove nothing about shipping
+// code.
 
+namespace {
+
+/// Render the line Klipper actually emits for one probe sample.
+std::string probe_line(double x, double y, double z = -0.031) {
+    char buf[128];
+    std::snprintf(buf, sizeof(buf), "// probe at %.3f,%.3f is z=%.6f", x, y, z);
+    return buf;
+}
+
+/**
+ * @brief Drive a real ProbePointCounter over a full grid sweep
+ *
+ * @param configured_samples What the counter was TOLD (from configfile). Pass 1
+ *                           to model a printer whose probe section we failed to
+ *                           recognise — the #1224 case.
+ * @param actual_samples     How many lines the firmware really emits per point.
+ * @return points counted
+ */
+int sweep_grid(int grid_rows, int grid_cols, int actual_samples, int configured_samples = 1,
+               double x_spacing = 46.1, double y_spacing = 41.62) {
+    helix::ProbePointCounter counter(configured_samples);
     for (int r = 0; r < grid_rows; ++r) {
         for (int c = 0; c < grid_cols; ++c) {
-            double x = 43.173 + c * x_spacing;
-            double y = 55.048 + r * y_spacing;
-            for (int s = 0; s < samples; ++s) {
-                // Simulate the same dedupe logic as production:
-                // count unique points, ignore consecutive samples at same (x,y).
-                bool is_new =
-                    !has_last || std::abs(x - last_x) > POS_TOL || std::abs(y - last_y) > POS_TOL;
-                if (is_new) {
-                    ++unique_points;
-                    last_x = x;
-                    last_y = y;
-                    has_last = true;
-                }
+            const double x = 43.173 + c * x_spacing;
+            const double y = 55.048 + r * y_spacing;
+            for (int s = 0; s < actual_samples; ++s) {
+                counter.feed(probe_line(x, y));
             }
         }
     }
-    return unique_points;
+    return counter.points();
+}
+
+} // namespace
+
+TEST_CASE("Qidi Q2: two touches per point does not double the count",
+          "[bed_mesh_collector][dedupe][1224]") {
+    // The reported bug: a 6x6 mesh ran past 36 because the Q2 probes each point
+    // twice and its probe section is not one the configfile scan recognises, so
+    // the collector was told samples=1 and counted raw lines.
+    REQUIRE(sweep_grid(6, 6, /*actual_samples=*/2, /*configured_samples=*/1) == 36);
+}
+
+TEST_CASE("Sample dedupe survives an unknown probe section at any sample count",
+          "[bed_mesh_collector][dedupe][1224]") {
+    // Positional dedupe needs no configuration at all, which is the whole point:
+    // the set of probe section names across firmware forks is open-ended.
+    REQUIRE(sweep_grid(5, 5, 3, /*configured_samples=*/1) == 25);
+    REQUIRE(sweep_grid(3, 3, 5, /*configured_samples=*/1) == 9);
+}
+
+TEST_CASE("Sample dedupe: tolerance retries at one point do not inflate the count",
+          "[bed_mesh_collector][dedupe][1224]") {
+    // samples_tolerance_retries re-probes the SAME point an unpredictable number
+    // of times. A fixed divisor cannot model that; position dedupe absorbs it.
+    helix::ProbePointCounter counter(2);
+    for (int i = 0; i < 7; ++i) { // 7 samples at one point — not a multiple of 2
+        counter.feed(probe_line(100.0, 100.0));
+    }
+    REQUIRE(counter.points() == 1);
+    counter.feed(probe_line(150.0, 100.0));
+    REQUIRE(counter.points() == 2);
 }
 
 TEST_CASE("Sample dedupe: 6x5 grid with samples=3 counts 30 points, not 90",
           "[bed_mesh_collector][dedupe]") {
-    // Matches Snapmaker U1 observed behavior: probe_count=[13,13] config,
-    // but adaptive mesh probes 6x5=30 points, 3 samples each = 90 "probe at" lines.
-    // Dedupe must collapse these to 30 unique points.
-    REQUIRE(simulate_dedupe_count(6, 5, 3) == 30);
+    // Snapmaker U1: probe_count=[13,13] config, adaptive mesh probes 6x5=30
+    // points, 3 samples each = 90 "probe at" lines.
+    REQUIRE(sweep_grid(6, 5, 3, /*configured_samples=*/3) == 30);
 }
 
 TEST_CASE("Sample dedupe: 5x5 grid with samples=1 counts 25 points",
           "[bed_mesh_collector][dedupe]") {
-    REQUIRE(simulate_dedupe_count(5, 5, 1) == 25);
+    REQUIRE(sweep_grid(5, 5, 1, /*configured_samples=*/1) == 25);
 }
 
 TEST_CASE("Sample dedupe: 3x3 grid with samples=5 counts 9 points",
           "[bed_mesh_collector][dedupe]") {
-    REQUIRE(simulate_dedupe_count(3, 3, 5) == 9);
+    REQUIRE(sweep_grid(3, 3, 5, /*configured_samples=*/5) == 9);
 }
 
 TEST_CASE("Sample dedupe: tolerance distinguishes adjacent grid points",
           "[bed_mesh_collector][dedupe]") {
-    // Neighboring probe positions ~1mm apart must NOT be treated as the same point
-    // even though they're close. Tolerance is 0.05mm — samples at exactly the same
-    // xy have 0 difference, real grid moves are always >>0.05mm.
-    REQUIRE(simulate_dedupe_count(2, 2, 2, 1.0, 1.0) == 4);
+    // Neighboring probe positions 1mm apart must NOT collapse. Tolerance is
+    // 0.05mm — repeated samples differ by exactly 0, real grid moves by mm.
+    REQUIRE(sweep_grid(2, 2, 2, /*configured_samples=*/1, 1.0, 1.0) == 4);
+}
+
+TEST_CASE("ProbePointCounter reports the U1 'x:'/'y:' prefixed form",
+          "[bed_mesh_collector][dedupe][1224]") {
+    helix::ProbePointCounter counter(1);
+    REQUIRE(counter.feed("// probe at x: 181.474, y: 55.048 is z=-0.031") == 1);
+    REQUIRE(counter.feed("// probe at x: 181.474, y: 55.048 is z=-0.029") == 1);
+    REQUIRE(counter.feed("// probe at x: 227.574, y: 55.048 is z=-0.030") == 2);
+}
+
+TEST_CASE("ProbePointCounter ignores lines that are not probe results",
+          "[bed_mesh_collector][dedupe][1224]") {
+    helix::ProbePointCounter counter(1);
+    REQUIRE_FALSE(counter.feed("// Klipper state: Ready").has_value());
+    REQUIRE_FALSE(counter.feed("Probing point 3/25").has_value());
+    REQUIRE_FALSE(counter.feed("").has_value());
+    REQUIRE(counter.points() == 0);
+}
+
+TEST_CASE("ProbePointCounter falls back to the divisor when coordinates do not parse",
+          "[bed_mesh_collector][dedupe][1224]") {
+    // A probe result line whose coordinates are unreadable still has to advance
+    // progress; the configured sample count is the only signal left.
+    helix::ProbePointCounter counter(2);
+    const std::string bad = "// probe at nan,nan is z=-0.031";
+    REQUIRE(counter.feed(bad) == 1); // ceil(1/2)
+    REQUIRE(counter.feed(bad) == 1); // ceil(2/2)
+    REQUIRE(counter.feed(bad) == 2); // ceil(3/2)
+}
+
+TEST_CASE("ProbePointCounter never counts backwards", "[bed_mesh_collector][dedupe][1224]") {
+    // A malformed line landing mid-sweep must not drag a positional count down
+    // to the divisor's smaller estimate — progress readouts only move forward.
+    helix::ProbePointCounter counter(4);
+    counter.feed(probe_line(10.0, 10.0));
+    counter.feed(probe_line(20.0, 10.0));
+    counter.feed(probe_line(30.0, 10.0));
+    REQUIRE(counter.points() == 3);
+    counter.feed("// probe at nan,nan is z=-0.031"); // ceil(4/4) = 1
+    REQUIRE(counter.points() == 3);
+}
+
+TEST_CASE("ProbePointCounter reset clears both counters", "[bed_mesh_collector][dedupe][1224]") {
+    helix::ProbePointCounter counter(1);
+    counter.feed(probe_line(10.0, 10.0));
+    counter.feed(probe_line(20.0, 10.0));
+    REQUIRE(counter.points() == 2);
+    REQUIRE(counter.sample_lines() == 2);
+    counter.reset();
+    REQUIRE(counter.points() == 0);
+    REQUIRE(counter.sample_lines() == 0);
+    // And the position history is cleared, so the first point after reset counts.
+    REQUIRE(counter.feed(probe_line(20.0, 10.0)) == 1);
 }

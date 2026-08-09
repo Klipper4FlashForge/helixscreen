@@ -6,6 +6,8 @@
  * @brief Tests for ToolInfo struct, DetectState enum, and ToolState singleton
  */
 
+#include "../helix_test_fixture.h"
+#include "../test_helpers/update_queue_test_access.h"
 #include "../ui_test_utils.h"
 #include "ams_backend_mock.h"
 #include "ams_state.h"
@@ -20,11 +22,24 @@
 
 using namespace helix;
 
+/// This file had no fixture, so nothing drained the UpdateQueue. The
+/// request_tool_change / assign_spool tests register an AMS backend, and the
+/// backend's events reach AmsState::on_backend_event, which defers its subject
+/// writes; each test returned with that work queued and handed it to whichever
+/// test drained next (prestonbrown/helixscreen#1169). The drain sits in the
+/// derived destructor body so it runs while AmsState's subjects and the test's
+/// backend are still alive, before HelixTestFixture's own teardown.
+struct ToolStateFixture : public HelixTestFixture {
+    ~ToolStateFixture() override {
+        helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+    }
+};
+
 // ============================================================================
 // ToolInfo struct tests
 // ============================================================================
 
-TEST_CASE("ToolInfo: default construction", "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolInfo: default construction", "[tool][tool-state]") {
     ToolInfo info;
 
     REQUIRE(info.index == 0);
@@ -43,13 +58,15 @@ TEST_CASE("ToolInfo: default construction", "[tool][tool-state]") {
     REQUIRE(info.backend_slot == -1);
 }
 
-TEST_CASE("ToolInfo: default backend mapping is unassigned", "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolInfo: default backend mapping is unassigned",
+                 "[tool][tool-state]") {
     ToolInfo info;
     REQUIRE(info.backend_index == -1);
     REQUIRE(info.backend_slot == -1);
 }
 
-TEST_CASE("ToolInfo: effective_heater prefers heater_name", "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolInfo: effective_heater prefers heater_name",
+                 "[tool][tool-state]") {
     ToolInfo info;
     info.heater_name = "heater_generic chamber";
     info.extruder_name = "extruder1";
@@ -57,7 +74,8 @@ TEST_CASE("ToolInfo: effective_heater prefers heater_name", "[tool][tool-state]"
     REQUIRE(info.effective_heater() == "heater_generic chamber");
 }
 
-TEST_CASE("ToolInfo: effective_heater falls back to extruder_name", "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolInfo: effective_heater falls back to extruder_name",
+                 "[tool][tool-state]") {
     ToolInfo info;
     info.extruder_name = "extruder1";
     // heater_name not set
@@ -65,7 +83,8 @@ TEST_CASE("ToolInfo: effective_heater falls back to extruder_name", "[tool][tool
     REQUIRE(info.effective_heater() == "extruder1");
 }
 
-TEST_CASE("ToolInfo: effective_heater fallback when nothing set", "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolInfo: effective_heater fallback when nothing set",
+                 "[tool][tool-state]") {
     ToolInfo info;
     info.extruder_name = std::nullopt;
     info.heater_name = std::nullopt;
@@ -77,7 +96,7 @@ TEST_CASE("ToolInfo: effective_heater fallback when nothing set", "[tool][tool-s
 // DetectState enum tests
 // ============================================================================
 
-TEST_CASE("DetectState: enum values", "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture, "DetectState: enum values", "[tool][tool-state]") {
     REQUIRE(static_cast<int>(DetectState::PRESENT) == 0);
     REQUIRE(static_cast<int>(DetectState::ABSENT) == 1);
     REQUIRE(static_cast<int>(DetectState::UNAVAILABLE) == 2);
@@ -87,14 +106,15 @@ TEST_CASE("DetectState: enum values", "[tool][tool-state]") {
 // ToolState singleton tests
 // ============================================================================
 
-TEST_CASE("ToolState: singleton access", "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: singleton access", "[tool][tool-state]") {
     ToolState& a = ToolState::instance();
     ToolState& b = ToolState::instance();
 
     REQUIRE(&a == &b);
 }
 
-TEST_CASE("ToolState: init_subjects creates subjects", "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: init_subjects creates subjects",
+                 "[tool][tool-state]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -110,7 +130,7 @@ TEST_CASE("ToolState: init_subjects creates subjects", "[tool][tool-state]") {
     REQUIRE(lv_subject_get_int(ts.get_tools_version_subject()) == 0);
 }
 
-TEST_CASE("ToolState: double init is safe", "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: double init is safe", "[tool][tool-state]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -121,7 +141,7 @@ TEST_CASE("ToolState: double init is safe", "[tool][tool-state]") {
     REQUIRE(lv_subject_get_int(ts.get_active_tool_subject()) == 0);
 }
 
-TEST_CASE("ToolState: deinit then re-init", "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: deinit then re-init", "[tool][tool-state]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -148,7 +168,8 @@ TEST_CASE("ToolState: deinit then re-init", "[tool][tool-state]") {
 // init_tools tests
 // ============================================================================
 
-TEST_CASE("ToolState: init_tools with no tools creates implicit tool", "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: init_tools with no tools creates implicit tool",
+                 "[tool][tool-state]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -173,7 +194,8 @@ TEST_CASE("ToolState: init_tools with no tools creates implicit tool", "[tool][t
     REQUIRE(tools[0].index == 0);
 }
 
-TEST_CASE("ToolState: init_tools with toolchanger creates N tools", "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: init_tools with toolchanger creates N tools",
+                 "[tool][tool-state]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -202,7 +224,7 @@ TEST_CASE("ToolState: init_tools with toolchanger creates N tools", "[tool][tool
     REQUIRE(tools[2].extruder_name.value() == "extruder2");
 }
 
-TEST_CASE("ToolState: active_tool accessors", "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: active_tool accessors", "[tool][tool-state]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -220,7 +242,8 @@ TEST_CASE("ToolState: active_tool accessors", "[tool][tool-state]") {
     REQUIRE(ts.active_tool()->name == "T0");
 }
 
-TEST_CASE("ToolState: re-init with different tool count", "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: re-init with different tool count",
+                 "[tool][tool-state]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -252,7 +275,8 @@ TEST_CASE("ToolState: re-init with different tool count", "[tool][tool-state]") 
 // update_from_status tests
 // ============================================================================
 
-TEST_CASE("ToolState: update_from_status sets active tool", "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: update_from_status sets active tool",
+                 "[tool][tool-state]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -273,7 +297,8 @@ TEST_CASE("ToolState: update_from_status sets active tool", "[tool][tool-state]"
     REQUIRE(ts.active_tool()->name == "T1");
 }
 
-TEST_CASE("ToolState: update_from_status sets mounted state", "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: update_from_status sets mounted state",
+                 "[tool][tool-state]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -296,7 +321,8 @@ TEST_CASE("ToolState: update_from_status sets mounted state", "[tool][tool-state
     REQUIRE(ts.tools()[1].active == false);
 }
 
-TEST_CASE("ToolState: update_from_status parses offsets", "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: update_from_status parses offsets",
+                 "[tool][tool-state]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -318,7 +344,8 @@ TEST_CASE("ToolState: update_from_status parses offsets", "[tool][tool-state]") 
     REQUIRE(ts.tools()[1].gcode_z_offset == Catch::Approx(0.15f));
 }
 
-TEST_CASE("ToolState: update_from_status with no tools is safe", "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: update_from_status with no tools is safe",
+                 "[tool][tool-state]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -330,7 +357,8 @@ TEST_CASE("ToolState: update_from_status with no tools is safe", "[tool][tool-st
     ts.update_from_status(status); // Should not crash
 }
 
-TEST_CASE("ToolState: update_from_status tool_number -1 means no tool", "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: update_from_status tool_number -1 means no tool",
+                 "[tool][tool-state]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -360,8 +388,9 @@ TEST_CASE("ToolState: update_from_status tool_number -1 means no tool", "[tool][
 // Lifecycle edge case tests
 // ============================================================================
 
-TEST_CASE("ToolState: update_from_status captures extruder and fan from Klipper",
-          "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture,
+                 "ToolState: update_from_status captures extruder and fan from Klipper",
+                 "[tool][tool-state]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -387,7 +416,8 @@ TEST_CASE("ToolState: update_from_status captures extruder and fan from Klipper"
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: detect_state parsed from status", "[tool][tool-state]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: detect_state parsed from status",
+                 "[tool][tool-state]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -416,8 +446,9 @@ TEST_CASE("ToolState: detect_state parsed from status", "[tool][tool-state]") {
 // toolhead.extruder cross-check tests
 // ============================================================================
 
-TEST_CASE("ToolState: toolhead.extruder updates active tool for multi-extruder",
-          "[tool][tool-state][active-extruder]") {
+TEST_CASE_METHOD(ToolStateFixture,
+                 "ToolState: toolhead.extruder updates active tool for multi-extruder",
+                 "[tool][tool-state][active-extruder]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -443,8 +474,9 @@ TEST_CASE("ToolState: toolhead.extruder updates active tool for multi-extruder",
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: toolchanger tool_number takes priority over toolhead.extruder",
-          "[tool][tool-state][active-extruder]") {
+TEST_CASE_METHOD(ToolStateFixture,
+                 "ToolState: toolchanger tool_number takes priority over toolhead.extruder",
+                 "[tool][tool-state][active-extruder]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -473,8 +505,8 @@ TEST_CASE("ToolState: toolchanger tool_number takes priority over toolhead.extru
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: toolhead.extruder with no matching tool is ignored",
-          "[tool][tool-state][active-extruder]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: toolhead.extruder with no matching tool is ignored",
+                 "[tool][tool-state][active-extruder]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -499,8 +531,8 @@ TEST_CASE("ToolState: toolhead.extruder with no matching tool is ignored",
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: toolhead.extruder works for implicit single tool",
-          "[tool][tool-state][active-extruder]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: toolhead.extruder works for implicit single tool",
+                 "[tool][tool-state][active-extruder]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -529,8 +561,9 @@ TEST_CASE("ToolState: toolhead.extruder works for implicit single tool",
 // Multi-extruder (no toolchanger) tests
 // ============================================================================
 
-TEST_CASE("ToolState: multi-extruder without toolchanger creates multiple tools",
-          "[tool][tool-state][multi-extruder]") {
+TEST_CASE_METHOD(ToolStateFixture,
+                 "ToolState: multi-extruder without toolchanger creates multiple tools",
+                 "[tool][tool-state][multi-extruder]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -562,8 +595,9 @@ TEST_CASE("ToolState: multi-extruder without toolchanger creates multiple tools"
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: single extruder without toolchanger still creates 1 tool",
-          "[tool][tool-state][multi-extruder]") {
+TEST_CASE_METHOD(ToolStateFixture,
+                 "ToolState: single extruder without toolchanger still creates 1 tool",
+                 "[tool][tool-state][multi-extruder]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -586,7 +620,8 @@ TEST_CASE("ToolState: single extruder without toolchanger still creates 1 tool",
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: three extruders without toolchanger", "[tool][tool-state][multi-extruder]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: three extruders without toolchanger",
+                 "[tool][tool-state][multi-extruder]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -610,8 +645,8 @@ TEST_CASE("ToolState: three extruders without toolchanger", "[tool][tool-state][
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: multi-extruder tracks active via toolhead.extruder",
-          "[tool][tool-state][multi-extruder]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: multi-extruder tracks active via toolhead.extruder",
+                 "[tool][tool-state][multi-extruder]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -641,8 +676,8 @@ TEST_CASE("ToolState: multi-extruder tracks active via toolhead.extruder",
 // request_tool_change tests
 // ============================================================================
 
-TEST_CASE("ToolState: request_tool_change with invalid index calls error",
-          "[tool][tool-state][tool-change]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: request_tool_change with invalid index calls error",
+                 "[tool][tool-state][tool-change]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -666,8 +701,9 @@ TEST_CASE("ToolState: request_tool_change with invalid index calls error",
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: request_tool_change for already-active tool calls success",
-          "[tool][tool-state][tool-change]") {
+TEST_CASE_METHOD(ToolStateFixture,
+                 "ToolState: request_tool_change for already-active tool calls success",
+                 "[tool][tool-state][tool-change]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -688,8 +724,8 @@ TEST_CASE("ToolState: request_tool_change for already-active tool calls success"
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: request_tool_change with no API calls error",
-          "[tool][tool-state][tool-change]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: request_tool_change with no API calls error",
+                 "[tool][tool-state][tool-change]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -713,8 +749,9 @@ TEST_CASE("ToolState: request_tool_change with no API calls error",
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: request_tool_change delegates to AMS backend when it manages the tool",
-          "[tool][tool-state][tool-change][toolchanger]") {
+TEST_CASE_METHOD(ToolStateFixture,
+                 "ToolState: request_tool_change delegates to AMS backend when it manages the tool",
+                 "[tool][tool-state][tool-change][toolchanger]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -753,10 +790,18 @@ TEST_CASE("ToolState: request_tool_change delegates to AMS backend when it manag
 
         CHECK(success_called);
 
-        // Backend's change_tool is async (schedule_completion), so we verify
-        // the action was initiated rather than checking current_slot
-        auto action = mock_ptr->get_current_action();
-        CHECK(action != AmsAction::IDLE); // Should be UNLOADING or LOADING
+        // change_tool() runs on a real std::thread, so the action sampled right
+        // here is a race against it — and at set_operation_delay(0) that thread
+        // usually finishes first, leaving IDLE. Sampling the transient made this
+        // pass alone and fail under parallel load. Join, then assert the RESULT,
+        // which is both deterministic and a stronger claim: it proves the backend
+        // performed the change rather than merely starting something.
+        mock_ptr->wait_for_operation_thread();
+
+        const AmsSystemInfo info = mock_ptr->get_system_info();
+        CHECK(info.action == AmsAction::IDLE);
+        CHECK(info.current_slot == 1);
+        CHECK(info.filament_loaded);
     }
 
     SECTION("tool change to T2 via backend works") {
@@ -773,8 +818,10 @@ TEST_CASE("ToolState: request_tool_change delegates to AMS backend when it manag
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: request_tool_change falls back to gcode when AMS backend has no tool map",
-          "[tool][tool-state][tool-change][toolchanger]") {
+TEST_CASE_METHOD(
+    ToolStateFixture,
+    "ToolState: request_tool_change falls back to gcode when AMS backend has no tool map",
+    "[tool][tool-state][tool-change][toolchanger]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -809,8 +856,8 @@ TEST_CASE("ToolState: request_tool_change falls back to gcode when AMS backend h
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: request_tool_change with negative tool index",
-          "[tool][tool-state][tool-change][toolchanger]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: request_tool_change with negative tool index",
+                 "[tool][tool-state][tool-change][toolchanger]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -834,8 +881,10 @@ TEST_CASE("ToolState: request_tool_change with negative tool index",
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: request_tool_change for toolchanger with no AMS backend uses gcode fallback",
-          "[tool][tool-state][tool-change][toolchanger]") {
+TEST_CASE_METHOD(
+    ToolStateFixture,
+    "ToolState: request_tool_change for toolchanger with no AMS backend uses gcode fallback",
+    "[tool][tool-state][tool-change][toolchanger]") {
     lv_init_safe();
 
     ToolState& ts = ToolState::instance();
@@ -890,7 +939,7 @@ struct TempDir {
 };
 } // namespace
 
-TEST_CASE("ToolInfo: default spool fields", "[tool][tool-state][spool]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolInfo: default spool fields", "[tool][tool-state][spool]") {
     ToolInfo info;
     REQUIRE(info.spoolman_id == 0);
     REQUIRE(info.spool_name.empty());
@@ -898,7 +947,8 @@ TEST_CASE("ToolInfo: default spool fields", "[tool][tool-state][spool]") {
     REQUIRE(info.total_weight_g == -1.0f);
 }
 
-TEST_CASE("ToolState: assign_spool updates ToolInfo fields", "[tool][tool-state][spool]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: assign_spool updates ToolInfo fields",
+                 "[tool][tool-state][spool]") {
     lv_init_safe();
     auto& ts = ToolState::instance();
     ts.deinit_subjects();
@@ -927,7 +977,8 @@ TEST_CASE("ToolState: assign_spool updates ToolInfo fields", "[tool][tool-state]
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: clear_spool resets ToolInfo fields", "[tool][tool-state][spool]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: clear_spool resets ToolInfo fields",
+                 "[tool][tool-state][spool]") {
     lv_init_safe();
     auto& ts = ToolState::instance();
     ts.deinit_subjects();
@@ -950,7 +1001,8 @@ TEST_CASE("ToolState: clear_spool resets ToolInfo fields", "[tool][tool-state][s
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: assign_spool ignores invalid index", "[tool][tool-state][spool]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: assign_spool ignores invalid index",
+                 "[tool][tool-state][spool]") {
     lv_init_safe();
     auto& ts = ToolState::instance();
     ts.deinit_subjects();
@@ -969,7 +1021,8 @@ TEST_CASE("ToolState: assign_spool ignores invalid index", "[tool][tool-state][s
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: save/load JSON round-trip", "[tool][tool-state][spool]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: save/load JSON round-trip",
+                 "[tool][tool-state][spool]") {
     lv_init_safe();
     auto& ts = ToolState::instance();
     ts.deinit_subjects();
@@ -1024,7 +1077,8 @@ TEST_CASE("ToolState: save/load JSON round-trip", "[tool][tool-state][spool]") {
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: load from missing JSON file is no-op", "[tool][tool-state][spool]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: load from missing JSON file is no-op",
+                 "[tool][tool-state][spool]") {
     lv_init_safe();
     auto& ts = ToolState::instance();
     ts.deinit_subjects();
@@ -1045,8 +1099,8 @@ TEST_CASE("ToolState: load from missing JSON file is no-op", "[tool][tool-state]
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: save with no assigned spools writes empty object",
-          "[tool][tool-state][spool]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: save with no assigned spools writes empty object",
+                 "[tool][tool-state][spool]") {
     lv_init_safe();
     auto& ts = ToolState::instance();
     ts.deinit_subjects();
@@ -1073,7 +1127,8 @@ TEST_CASE("ToolState: save with no assigned spools writes empty object",
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: weight fields omitted from JSON when unknown", "[tool][tool-state][spool]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: weight fields omitted from JSON when unknown",
+                 "[tool][tool-state][spool]") {
     lv_init_safe();
     auto& ts = ToolState::instance();
     ts.deinit_subjects();
@@ -1105,7 +1160,8 @@ TEST_CASE("ToolState: weight fields omitted from JSON when unknown", "[tool][too
 // assigned_spool_ids tests
 // ============================================================================
 
-TEST_CASE("ToolState: assigned_spool_ids returns all assigned IDs", "[tool][tool-state][spool]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: assigned_spool_ids returns all assigned IDs",
+                 "[tool][tool-state][spool]") {
     lv_init_safe();
     auto& ts = ToolState::instance();
     ts.deinit_subjects();
@@ -1130,7 +1186,8 @@ TEST_CASE("ToolState: assigned_spool_ids returns all assigned IDs", "[tool][tool
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: assigned_spool_ids excludes specified tool", "[tool][tool-state][spool]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: assigned_spool_ids excludes specified tool",
+                 "[tool][tool-state][spool]") {
     lv_init_safe();
     auto& ts = ToolState::instance();
     ts.deinit_subjects();
@@ -1156,8 +1213,8 @@ TEST_CASE("ToolState: assigned_spool_ids excludes specified tool", "[tool][tool-
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: assigned_spool_ids empty when no spools assigned",
-          "[tool][tool-state][spool]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: assigned_spool_ids empty when no spools assigned",
+                 "[tool][tool-state][spool]") {
     lv_init_safe();
     auto& ts = ToolState::instance();
     ts.deinit_subjects();
@@ -1174,7 +1231,8 @@ TEST_CASE("ToolState: assigned_spool_ids empty when no spools assigned",
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: assigned_spool_ids skips cleared spools", "[tool][tool-state][spool]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: assigned_spool_ids skips cleared spools",
+                 "[tool][tool-state][spool]") {
     lv_init_safe();
     auto& ts = ToolState::instance();
     ts.deinit_subjects();
@@ -1201,7 +1259,8 @@ TEST_CASE("ToolState: assigned_spool_ids skips cleared spools", "[tool][tool-sta
 // spool_assignments_loaded flag tests
 // ============================================================================
 
-TEST_CASE("ToolState: spool_assignments_loaded initially false", "[tool][tool-state][spool]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: spool_assignments_loaded initially false",
+                 "[tool][tool-state][spool]") {
     lv_init_safe();
     auto& ts = ToolState::instance();
     ts.deinit_subjects();
@@ -1212,8 +1271,8 @@ TEST_CASE("ToolState: spool_assignments_loaded initially false", "[tool][tool-st
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: spool_assignments_loaded set after load without API",
-          "[tool][tool-state][spool]") {
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: spool_assignments_loaded set after load without API",
+                 "[tool][tool-state][spool]") {
     lv_init_safe();
     auto& ts = ToolState::instance();
     ts.deinit_subjects();
@@ -1239,8 +1298,9 @@ TEST_CASE("ToolState: spool_assignments_loaded set after load without API",
 // Toolchanger reverse-sync: ToolState → AmsBackend slot propagation
 // ============================================================================
 
-TEST_CASE("ToolState: assign_spool + sync_from_backend populates toolchanger slot",
-          "[tool][tool-state][spool][ams]") {
+TEST_CASE_METHOD(ToolStateFixture,
+                 "ToolState: assign_spool + sync_from_backend populates toolchanger slot",
+                 "[tool][tool-state][spool][ams]") {
     lv_init_safe();
 
     // Set up ToolState with a 2-tool toolchanger
@@ -1302,8 +1362,9 @@ TEST_CASE("ToolState: assign_spool + sync_from_backend populates toolchanger slo
     ts.deinit_subjects();
 }
 
-TEST_CASE("ToolState: sync_from_backend does not overwrite existing tool assignment",
-          "[tool][tool-state][spool][ams]") {
+TEST_CASE_METHOD(ToolStateFixture,
+                 "ToolState: sync_from_backend does not overwrite existing tool assignment",
+                 "[tool][tool-state][spool][ams]") {
     lv_init_safe();
 
     auto& ts = ToolState::instance();
@@ -1349,5 +1410,69 @@ TEST_CASE("ToolState: sync_from_backend does not overwrite existing tool assignm
 
     ams.set_backend(nullptr);
     ams.deinit_subjects();
+    ts.deinit_subjects();
+}
+
+// Regression for prestonbrown/helixscreen#1176.
+//
+// The installer symlinks tool_spools.json out to printer_data
+// (HELIX_USER_CONFIG_FILES), and that link is the only thing keeping the file
+// alive through a Moonraker one-click update, which rmtree()s the install dir --
+// rmtree unlinks a symlink instead of following it. save_spool_json() does an
+// atomic write, and rename(2) onto a symlink replaces THE SYMLINK, not its
+// target. So before the fix the first spool save silently converted the link
+// into a regular file and stranded it in the doomed directory. Observed in the
+// field on the Pi: a real tool_spools.json in the install dir with an orphaned
+// copy three months stale in printer_data.
+//
+// Content-only assertions cannot see this -- the data round-trips perfectly
+// either way. The property under test is that the path is STILL A SYMLINK after
+// saving, and that the bytes landed on the far side of it.
+TEST_CASE_METHOD(ToolStateFixture, "ToolState: saving through a symlink preserves the link (#1176)",
+                 "[tool][tool-state][spool][regression]") {
+    lv_init_safe();
+    auto& ts = ToolState::instance();
+    ts.deinit_subjects();
+    ts.init_subjects(false);
+
+    TempDir install; // stands in for ~/helixscreen/config
+    TempDir real;    // stands in for printer_data/config/helixscreen
+
+    auto real_file = std::filesystem::path(real.str()) / "tool_spools.json";
+    auto link_path = std::filesystem::path(install.str()) / "tool_spools.json";
+    {
+        std::ofstream seed(real_file);
+        seed << "{}";
+    }
+    std::error_code ec;
+    std::filesystem::create_symlink(real_file, link_path, ec);
+    REQUIRE_FALSE(ec);
+    REQUIRE(std::filesystem::is_symlink(link_path));
+
+    ts.set_config_dir(install.str());
+
+    PrinterDiscovery hw;
+    nlohmann::json objects = nlohmann::json::array({"extruder", "extruder1"});
+    hw.parse_objects(objects);
+    ts.init_tools(hw);
+    ts.assign_spool(0, 4242, "Symlink PLA", 750.0f, 1000.0f);
+    ts.save_spool_assignments(nullptr);
+
+    // The link must survive. Pre-fix this is a regular file and the test fails here.
+    CHECK(std::filesystem::is_symlink(link_path));
+
+    // ...and the write must have gone through it to the real file, not beside it.
+    // Shape is a flat object keyed by tool index: {"0": {"spoolman_id": ...}}
+    std::ifstream in(real_file);
+    nlohmann::json written;
+    in >> written;
+    REQUIRE(written.contains("0"));
+    CHECK(written["0"]["spoolman_id"].get<int>() == 4242);
+    CHECK(written["0"]["spool_name"].get<std::string>() == "Symlink PLA");
+
+    // No stray temp file left behind next to either path.
+    CHECK_FALSE(std::filesystem::exists(link_path.string() + ".tmp"));
+    CHECK_FALSE(std::filesystem::exists(real_file.string() + ".tmp"));
+
     ts.deinit_subjects();
 }

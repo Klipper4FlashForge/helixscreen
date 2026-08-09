@@ -382,6 +382,9 @@
     "lv_checkbox": {
       "inherits": "lv_obj",
       "attributes": {
+        "translation_tag": {
+          "type": "string"
+        },
         "text": {
           "type": "string"
         }
@@ -416,9 +419,6 @@
         "text": {
           "type": "string"
         },
-        "placeholder_text": {
-          "type": "string"
-        },
         "placeholder_tag": {
           "type": "string"
         },
@@ -436,6 +436,9 @@
         },
         "cursor_pos": {
           "type": "int"
+        },
+        "placeholder_text": {
+          "type": "string"
         }
       }
     },
@@ -787,6 +790,33 @@
     },
     "lv_calendar-header_dropdown": {
       "inherits": "lv_obj",
+      "attributes": {}
+    },
+    "subject_expr": {
+      "attributes": {
+        "name": {
+          "type": "string"
+        },
+        "expr": {
+          "type": "string"
+        }
+      }
+    },
+    "repeat": {
+      "attributes": {
+        "count": {
+          "type": "string"
+        }
+      }
+    },
+    "if": {
+      "attributes": {
+        "cond": {
+          "type": "string"
+        }
+      }
+    },
+    "else": {
       "attributes": {}
     },
     "lv_obj-style": {
@@ -1254,6 +1284,53 @@
         },
         "ref_value": {
           "type": "int"
+        }
+      }
+    },
+    "lv_obj-bind_flag_if": {
+      "attributes": {
+        "cond": {
+          "type": "string"
+        },
+        "flag": {
+          "type": "enum",
+          "enum": "flag"
+        },
+        "invert": {
+          "type": "bool"
+        }
+      }
+    },
+    "lv_obj-bind_state_if": {
+      "attributes": {
+        "cond": {
+          "type": "string"
+        },
+        "state": {
+          "type": "enum",
+          "enum": "state"
+        },
+        "invert": {
+          "type": "bool"
+        }
+      }
+    },
+    "lv_obj-bind_style_if": {
+      "attributes": {
+        "cond": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "selector": {
+          "type": "string"
+        },
+        "parts": {
+          "type": "string"
+        },
+        "invert": {
+          "type": "bool"
         }
       }
     },
@@ -1832,14 +1909,6 @@
       "ver",
       "all"
     ],
-    "border_side": [
-      "none",
-      "top",
-      "bottom",
-      "left",
-      "right",
-      "full"
-    ],
     "grad_dir": [
       "none",
       "hor",
@@ -2003,30 +2072,6 @@
       "out_right",
       "out_top",
       "out_bottom"
-    ],
-    "style_state": [
-      "default",
-      "pressed",
-      "checked",
-      "scrolled",
-      "focused",
-      "focus_key",
-      "edited",
-      "hovered",
-      "disabled",
-      "user_1",
-      "user_2",
-      "user_3",
-      "user_4"
-    ],
-    "style_part": [
-      "main",
-      "scrollbar",
-      "indicator",
-      "knob",
-      "selected",
-      "items",
-      "cursor"
     ],
     "flag": [
       "hidden",
@@ -2693,12 +2738,19 @@
     "lv_obj-bind_flag_if_lt",
     "lv_obj-bind_flag_if_ge",
     "lv_obj-bind_flag_if_le",
+    "lv_obj-bind_flag_if",
+    "lv_obj-bind_state_if",
+    "lv_obj-bind_style_if",
     "lv_obj-bind_state_if_eq",
     "lv_obj-bind_state_if_not_eq",
     "lv_obj-bind_state_if_gt",
     "lv_obj-bind_state_if_lt",
     "lv_obj-bind_state_if_ge",
-    "lv_obj-bind_state_if_le"
+    "lv_obj-bind_state_if_le",
+    "subject_expr",
+    "repeat",
+    "if",
+    "else"
   ],
   "registered_widgets": [
     "lv_obj",
@@ -2790,30 +2842,6 @@
     "ams_context_dropdown_w_micro",
     "ams_context_dropdown_w_small",
     "ams_context_dropdown_w_tiny",
-    "ams_edit_close_btn_size",
-    "ams_edit_close_btn_size_large",
-    "ams_edit_close_btn_size_medium",
-    "ams_edit_close_btn_size_micro",
-    "ams_edit_close_btn_size_small",
-    "ams_edit_close_btn_size_tiny",
-    "ams_edit_color_preview_size",
-    "ams_edit_color_preview_size_large",
-    "ams_edit_color_preview_size_medium",
-    "ams_edit_color_preview_size_micro",
-    "ams_edit_color_preview_size_small",
-    "ams_edit_color_preview_size_tiny",
-    "ams_edit_header_pad_bot",
-    "ams_edit_header_pad_bot_large",
-    "ams_edit_header_pad_bot_medium",
-    "ams_edit_header_pad_bot_micro",
-    "ams_edit_header_pad_bot_small",
-    "ams_edit_header_pad_bot_tiny",
-    "ams_edit_header_pad_top",
-    "ams_edit_header_pad_top_large",
-    "ams_edit_header_pad_top_medium",
-    "ams_edit_header_pad_top_micro",
-    "ams_edit_header_pad_top_small",
-    "ams_edit_header_pad_top_tiny",
     "ams_hub",
     "ams_hub_border",
     "ams_logo_size",
@@ -2867,6 +2895,14 @@
     "badge_size",
     "badge_size_large",
     "badge_size_medium",
+    "badge_size_on_sm_icon",
+    "badge_size_on_sm_icon_large",
+    "badge_size_on_sm_icon_medium",
+    "badge_size_on_sm_icon_micro",
+    "badge_size_on_sm_icon_small",
+    "badge_size_on_sm_icon_tiny",
+    "badge_size_on_sm_icon_xlarge",
+    "badge_size_on_sm_icon_xxlarge",
     "badge_size_small",
     "badge_size_tiny",
     "badge_size_xlarge",
@@ -2880,6 +2916,17 @@
     "bed_mesh_info_column_width_medium",
     "bed_mesh_info_column_width_small",
     "bed_mesh_info_column_width_tiny",
+    "bed_mesh_portrait_info_width",
+    "bed_mesh_portrait_info_width_large",
+    "bed_mesh_portrait_info_width_medium",
+    "bed_mesh_portrait_info_width_small",
+    "bed_mesh_portrait_info_width_tiny",
+    "bed_mesh_profile_row_height",
+    "bed_mesh_profile_row_height_large",
+    "bed_mesh_profile_row_height_medium",
+    "bed_mesh_profile_row_height_micro",
+    "bed_mesh_profile_row_height_small",
+    "bed_mesh_profile_row_height_tiny",
     "border",
     "border_opacity",
     "border_radius",
@@ -2912,6 +2959,7 @@
     "button_height_xlarge",
     "button_height_xxlarge",
     "button_padding",
+    "button_width_action",
     "card_base_width",
     "card_bg",
     "card_height",
@@ -2932,6 +2980,16 @@
     "cooling_color_dark",
     "cooling_color_light",
     "danger",
+    "demo_count",
+    "demo_error",
+    "demo_slot_0_label",
+    "demo_slot_1_label",
+    "demo_slot_2_label",
+    "demo_slot_3_label",
+    "demo_slot_4_label",
+    "demo_slot_5_label",
+    "demo_temp",
+    "demo_threshold",
     "dialog_content_max",
     "dialog_content_max_large",
     "dialog_content_max_medium",
@@ -2941,7 +2999,6 @@
     "dialog_content_max_xlarge",
     "dialog_content_max_xxlarge",
     "dot_size",
-    "dropdown_width",
     "elevated_bg",
     "fan_arc_size",
     "fan_arc_size_large",
@@ -2985,6 +3042,14 @@
     "fan_name_max_width_large",
     "fan_name_max_width_medium",
     "fan_name_max_width_small",
+    "field_w_num",
+    "field_w_num_large",
+    "field_w_num_medium",
+    "field_w_num_small",
+    "field_w_text",
+    "field_w_text_large",
+    "field_w_text_medium",
+    "field_w_text_small",
     "filament_ams_row_h",
     "filament_ams_row_h_large",
     "filament_ams_row_h_medium",
@@ -3000,7 +3065,23 @@
     "filament_idle_light",
     "filament_metal",
     "focus",
+    "font_badge_compact",
+    "font_badge_compact_large",
+    "font_badge_compact_medium",
+    "font_badge_compact_micro",
+    "font_badge_compact_small",
+    "font_badge_compact_tiny",
+    "font_badge_compact_xlarge",
+    "font_badge_compact_xxlarge",
     "font_body",
+    "font_body_bold",
+    "font_body_bold_large",
+    "font_body_bold_medium",
+    "font_body_bold_micro",
+    "font_body_bold_small",
+    "font_body_bold_tiny",
+    "font_body_bold_xlarge",
+    "font_body_bold_xxlarge",
     "font_body_large",
     "font_body_medium",
     "font_body_micro",
@@ -3053,8 +3134,19 @@
     "graph_line_primary",
     "graph_line_secondary",
     "graph_line_target",
+    "grid_gap",
+    "grid_swatch_size",
+    "grid_width",
     "handle_color",
     "handle_style",
+    "header_button_height",
+    "header_button_height_large",
+    "header_button_height_medium",
+    "header_button_height_micro",
+    "header_button_height_small",
+    "header_button_height_tiny",
+    "header_button_height_xlarge",
+    "header_button_height_xxlarge",
     "header_height",
     "header_height_large",
     "header_height_medium",
@@ -3065,8 +3157,21 @@
     "header_height_xxlarge",
     "heating_color_dark",
     "heating_color_light",
+    "hex_placeholder",
+    "hidden_connecting_height",
+    "hidden_connecting_height_large",
+    "hidden_connecting_height_medium",
+    "hidden_connecting_height_micro",
+    "hidden_connecting_height_small",
+    "hidden_connecting_height_tiny",
+    "hidden_connecting_height_xlarge",
+    "hidden_connecting_height_xxlarge",
     "hue_height",
+    "icon_badge_radius",
+    "icon_badge_size",
+    "icon_button_radius_lg",
     "icon_button_size",
+    "icon_button_size_lg",
     "icon_font_hero",
     "icon_font_hero_large",
     "icon_font_hero_medium",
@@ -3126,7 +3231,13 @@
     "icon_text_gap",
     "info",
     "input_height",
-    "input_width",
+    "input_height_large",
+    "input_height_medium",
+    "input_height_micro",
+    "input_height_small",
+    "input_height_tiny",
+    "input_height_xlarge",
+    "input_height_xxlarge",
     "keypad_btn_height",
     "keypad_btn_height_large",
     "keypad_btn_height_medium",
@@ -3159,6 +3270,8 @@
     "metadata_clip_height_micro",
     "metadata_clip_height_small",
     "metadata_clip_height_tiny",
+    "metadata_clip_height_xlarge",
+    "metadata_clip_height_xxlarge",
     "metadata_label_min_width",
     "metadata_overlay_min_height",
     "metadata_overlay_opacity",
@@ -3187,10 +3300,11 @@
     "overlay_bg",
     "overlay_bg_dark",
     "overlay_bg_light",
-    "overlay_panel_width",
-    "overlay_panel_width_full",
+    "overlay_shadow_opa",
     "overlay_text_dark",
     "overlay_text_light",
+    "overlay_width_destination",
+    "overlay_width_transient",
     "panel_button_width",
     "pill_dot_sz",
     "pin_btn_height",
@@ -3215,6 +3329,7 @@
     "screw_indicator_width_small",
     "secondary",
     "section_bg_color",
+    "shadow_cast",
     "shadow_intensity",
     "shadow_offset_y",
     "shadow_opa",
@@ -3388,6 +3503,14 @@
     "step_row_gap_small",
     "success",
     "sv_size",
+    "swatch_col_height",
+    "swatch_col_height_large",
+    "swatch_col_height_medium",
+    "swatch_col_height_micro",
+    "swatch_col_height_small",
+    "swatch_col_height_tiny",
+    "swatch_col_height_xlarge",
+    "swatch_col_height_xxlarge",
     "swatch_size",
     "temp_card_height",
     "temp_card_height_large",
@@ -3432,12 +3555,32 @@
     "text_subtle",
     "theme_swatch_size",
     "thumbnail_height",
-    "thumbnail_offset_y",
     "toolhead_body",
     "tray_bg",
     "tray_border",
     "tray_default_height",
     "warning",
-    "wizard_button_width"
+    "wizard_button_width",
+    "z_tune_dir_col_w",
+    "z_tune_dir_col_w_large",
+    "z_tune_dir_col_w_medium",
+    "z_tune_dir_col_w_micro",
+    "z_tune_dir_col_w_small",
+    "z_tune_dir_col_w_tiny",
+    "z_tune_dir_col_w_xlarge",
+    "z_tune_indicator_h",
+    "z_tune_indicator_h_large",
+    "z_tune_indicator_h_medium",
+    "z_tune_indicator_h_micro",
+    "z_tune_indicator_h_small",
+    "z_tune_indicator_h_tiny",
+    "z_tune_indicator_h_xlarge",
+    "z_tune_indicator_w",
+    "z_tune_indicator_w_large",
+    "z_tune_indicator_w_medium",
+    "z_tune_indicator_w_micro",
+    "z_tune_indicator_w_small",
+    "z_tune_indicator_w_tiny",
+    "z_tune_indicator_w_xlarge"
   ]
 }

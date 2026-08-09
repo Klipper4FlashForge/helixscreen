@@ -63,6 +63,50 @@ class IPanelLifecycle {
     }
 
     /**
+     * @brief Whether this view is a destination rather than a transient layer
+     *
+     * Destinations render full width (screen - nav) and occlude the backdrop;
+     * their drill-downs inherit that. Transient layers render gapped
+     * (screen - nav - space_lg) so the backdrop shows at the leading edge,
+     * signalling "you opened this and will return."
+     *
+     * Default false — most overlays are tools you return from. Override to true
+     * only for screens users park on for long stretches (AMS, AMS Overview,
+     * Print Status). Declaring it here rather than at the push site means the
+     * promotion travels with the panel: AmsPanel is reachable from Home, the
+     * Printer Manager overlay and the AMS Overview, and must be full width from
+     * all three.
+     *
+     * NavigationManager::push_overlay() reads this. See include/overlay_class.h
+     * and prestonbrown/helixscreen#1178.
+     */
+    virtual bool is_destination() const {
+        return false;
+    }
+
+    /**
+     * @brief Re-apply C++-side content to a freshly rebuilt widget tree
+     *
+     * rebuild() re-runs setup()/create() and nothing else, so it reproduces
+     * exactly what the XML describes. Content a view writes into its widgets
+     * afterwards is not in the XML and does not come back on its own: dropdown
+     * option lists, imperatively built rows, text set with lv_textarea_set_text,
+     * colors applied to a swatch. Views that populate from a separate entry
+     * point — a show_for_*(), a click handler — override this to re-apply that
+     * content from the state they already hold, and must not re-seed that state
+     * (doing so would discard the user's in-progress edits).
+     *
+     * Nothing is needed here for content bound to a subject: the rebuilt widgets
+     * read the subject's current value when they bind. Nothing is needed either
+     * for content populated inside create()/setup() or on_activate(), both of
+     * which rebuild() already re-runs.
+     *
+     * Called after the new tree exists and before on_activate(). Dev-only path,
+     * reached only via XML hot-reload.
+     */
+    virtual void repopulate() {}
+
+    /**
      * @brief Get human-readable name for logging
      * @return Panel/overlay name (e.g., "Motion Panel", "Network Settings")
      */

@@ -54,6 +54,26 @@ TEST_CASE("control view: pending Resuming -> hourglass + Resuming label", "[prin
     REQUIRE_FALSE(v.primary_enabled);
 }
 
+// The user-visible consequence of a stuck pending action, stated as one
+// before/after pair: while Resuming is pending the paused printer's primary
+// button is BOTH mislabelled and un-tappable, and clearing the pending action is
+// the entire difference. On the reporter's AD5X that window lasted 150s because
+// nothing linked Klipper's `!!` rejection back to the pending state — they could
+// not retry even after clearing the runout (bundle JX2FVRB9). See
+// PrintControlButtons::notify_printer_error(), which performs this transition.
+TEST_CASE("control view: clearing a pending Resume makes the button tappable again",
+          "[print_control_view]") {
+    auto stuck = compute_control_button_view(PrintJobState::PAUSED, PendingAction::Resuming,
+                                             /*pause*/ true, /*resume*/ true, /*cancel*/ true);
+    REQUIRE(std::string(stuck.primary_label) == "Resuming...");
+    REQUIRE_FALSE(stuck.primary_enabled);
+
+    auto released = compute_control_button_view(PrintJobState::PAUSED, PendingAction::None,
+                                                /*pause*/ true, /*resume*/ true, /*cancel*/ true);
+    REQUIRE(std::string(released.primary_label) == "Resume");
+    REQUIRE(released.primary_enabled);
+}
+
 TEST_CASE("control view: missing macro slot disables primary", "[print_control_view]") {
     auto v = compute_control_button_view(PrintJobState::PRINTING, PendingAction::None,
                                          /*pause*/ false, /*resume*/ true, /*cancel*/ true);

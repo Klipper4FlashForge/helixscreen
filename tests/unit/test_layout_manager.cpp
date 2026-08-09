@@ -376,3 +376,51 @@ TEST_CASE_METHOD(LayoutFixture, "has_override returns true for micro controls_pa
     REQUIRE(lm.has_override("controls_panel.xml") == true);
     REQUIRE(lm.has_override("home_panel.xml") == false);
 }
+
+// ============================================================================
+// Portrait family fallback chain (requires ui_xml/portrait/ files on disk)
+//
+// tiny_portrait and micro_portrait carry no app_layout.xml of their own; they
+// inherit the shared ui_xml/portrait/ layer before falling back to base
+// (landscape). This lets the small-portrait classes hold only files that differ
+// from portrait/ instead of duplicating the whole shell.
+// ============================================================================
+
+TEST_CASE_METHOD(LayoutFixture, "tiny_portrait inherits app_layout from portrait layer",
+                 "[layout-manager]") {
+    auto& lm = LayoutManager::instance();
+    lm.init(320, 480);
+    REQUIRE(lm.type() == LayoutType::TINY_PORTRAIT);
+
+    // No tiny_portrait/app_layout.xml -> resolves up the chain to portrait/.
+    REQUIRE(lm.resolve_xml_path("app_layout.xml") == "ui_xml/portrait/app_layout.xml");
+    REQUIRE(lm.has_override("app_layout.xml") == true);
+}
+
+TEST_CASE_METHOD(LayoutFixture, "micro_portrait inherits app_layout from portrait layer",
+                 "[layout-manager]") {
+    auto& lm = LayoutManager::instance();
+    lm.init(272, 480);
+    REQUIRE(lm.type() == LayoutType::MICRO_PORTRAIT);
+
+    REQUIRE(lm.resolve_xml_path("app_layout.xml") == "ui_xml/portrait/app_layout.xml");
+}
+
+TEST_CASE_METHOD(LayoutFixture, "portrait resolves its own app_layout override",
+                 "[layout-manager]") {
+    auto& lm = LayoutManager::instance();
+    lm.init(480, 800);
+    REQUIRE(lm.type() == LayoutType::PORTRAIT);
+
+    REQUIRE(lm.resolve_xml_path("app_layout.xml") == "ui_xml/portrait/app_layout.xml");
+}
+
+TEST_CASE_METHOD(LayoutFixture, "portrait family still falls back to base for non-overridden files",
+                 "[layout-manager]") {
+    auto& lm = LayoutManager::instance();
+    lm.init(320, 480); // tiny_portrait
+
+    // home_panel.xml has no portrait-family override -> base (landscape).
+    REQUIRE(lm.resolve_xml_path("home_panel.xml") == "ui_xml/home_panel.xml");
+    REQUIRE(lm.has_override("home_panel.xml") == false);
+}

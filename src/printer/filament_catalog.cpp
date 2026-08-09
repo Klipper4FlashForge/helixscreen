@@ -2,12 +2,15 @@
 #include "filament_catalog.h"
 
 #include "filament_database.h"
+#include "json_utils.h"
 
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <set>
+#include <system_error>
 
 #include "hv/json.hpp"
 
@@ -18,8 +21,7 @@ namespace {
 // Search paths for the built-in catalog (mirrors the old CFS loader).
 const char* kBuiltinPaths[] = {"assets/filaments.json", "../assets/filaments.json",
                                "/opt/helixscreen/assets/filaments.json"};
-const char* kUserPaths[] = {"config/user_filaments.json",
-                            "../config/user_filaments.json"};
+const char* kUserPaths[] = {"config/user_filaments.json", "../config/user_filaments.json"};
 
 int get_int(const nlohmann::json& j, const char* key, int def) {
     auto it = j.find(key);
@@ -27,14 +29,22 @@ int get_int(const nlohmann::json& j, const char* key, int def) {
 }
 
 /// Resolve one product JSON into an EffectiveFilament, inheriting from its type.
+///
+/// The string fields go through safe_string for the same reason get_int above
+/// uses find + is_number: config/user_filaments.json is hand-editable, and
+/// nlohmann's .value() throws type_error.302 on a key that is PRESENT with a
+/// null value (a missing key is fine). This function is the single resolution
+/// point for every catalog load path, so one `"brand": null` used to unwind out
+/// of FilamentCatalog::load_full() and take the whole catalog with it — a
+/// per-field default keeps the cost to that field.
 EffectiveFilament to_effective(const nlohmann::json& p) {
     EffectiveFilament e;
-    e.id = p.value("id", "");
-    e.brand = p.value("brand", "");
-    e.name = p.value("name", "");
-    e.type = p.value("type", "");
+    e.id = helix::json_util::safe_string(p, "id");
+    e.brand = helix::json_util::safe_string(p, "brand");
+    e.name = helix::json_util::safe_string(p, "name");
+    e.type = helix::json_util::safe_string(p, "type");
 
-    auto base = filament::find_material(e.type);  // std::optional<MaterialInfo>
+    auto base = filament::find_material(e.type); // std::optional<MaterialInfo>
     const int type_min = base ? base->nozzle_min : 0;
     const int type_max = base ? base->nozzle_max : 0;
 
@@ -59,6 +69,25 @@ EffectiveFilament to_effective(const nlohmann::json& p) {
     return e;
 }
 
+/// Copy a product array, dropping entries that are not JSON objects.
+///
+/// The one gate every product passes through. A hand-edited overlay can easily
+/// contain a stray scalar, and letting one through would produce a product with
+/// an empty id — which then collides in by_id_ with every other malformed entry
+/// and can shadow a real product. Dropping it costs exactly that entry.
+std::vector<nlohmann::json> object_entries(const nlohmann::json& arr, const char* path) {
+    std::vector<nlohmann::json> out;
+    out.reserve(arr.size());
+    for (const auto& item : arr) {
+        if (item.is_object()) {
+            out.push_back(item);
+        } else {
+            spdlog::warn("[filament] skipping non-object product entry in {}", path);
+        }
+    }
+    return out;
+}
+
 std::vector<nlohmann::json> read_products(const char* const* paths, size_t n) {
     for (size_t i = 0; i < n; ++i) {
         std::ifstream f(paths[i]);
@@ -67,9 +96,9 @@ std::vector<nlohmann::json> read_products(const char* const* paths, size_t n) {
         try {
             auto doc = nlohmann::json::parse(f);
             if (doc.is_object() && doc.contains("filaments") && doc["filaments"].is_array())
-                return doc["filaments"].get<std::vector<nlohmann::json>>();
-            if (doc.is_array())  // user overlay is a bare array
-                return doc.get<std::vector<nlohmann::json>>();
+                return object_entries(doc["filaments"], paths[i]);
+            if (doc.is_array()) // user overlay is a bare array
+                return object_entries(doc, paths[i]);
         } catch (const std::exception& e) {
             spdlog::warn("[filament] parse failed {}: {}", paths[i], e.what());
         }
@@ -77,7 +106,7 @@ std::vector<nlohmann::json> read_products(const char* const* paths, size_t n) {
     return {};
 }
 
-}  // namespace
+} // namespace
 
 void FilamentCatalog::index() {
     by_id_.clear();
@@ -113,18 +142,18 @@ FilamentCatalog FilamentCatalog::load_with_overlay(const std::string& builtin_pa
     std::unordered_map<std::string, nlohmann::json> merged;
     std::vector<std::string> order;
     for (const auto& jp : read_products(bpaths, 1)) {
-        std::string id = jp.value("id", "");
+        std::string id = helix::json_util::safe_string(jp, "id");
         if (merged.find(id) == merged.end())
             order.push_back(id);
         merged[id] = jp;
     }
     for (const auto& jp : read_products(opaths, 1)) {
-        std::string id = jp.value("id", "");
+        std::string id = helix::json_util::safe_string(jp, "id");
         if (merged.find(id) == merged.end()) {
             order.push_back(id);
             merged[id] = jp;
         } else {
-            merged[id].merge_patch(jp);  // field-level override
+            merged[id].merge_patch(jp); // field-level override
         }
     }
     FilamentCatalog cat;
@@ -163,11 +192,186 @@ std::string first_existing(const char* const* paths, size_t n) {
     return "";
 }
 
-}  // namespace
+} // namespace
 
 FilamentCatalog FilamentCatalog::load_full() {
     return load_with_overlay(first_existing(kBuiltinPaths, std::size(kBuiltinPaths)),
                              first_existing(kUserPaths, std::size(kUserPaths)));
+}
+
+std::map<std::string, std::string> FilamentCatalog::load_user_orca_type_map() {
+    return load_user_orca_type_map_from(first_existing(kUserPaths, std::size(kUserPaths)));
+}
+
+std::map<std::string, std::string>
+FilamentCatalog::load_user_orca_type_map_from(const std::string& path) {
+    std::map<std::string, std::string> out;
+    if (path.empty())
+        return out;
+    std::ifstream f(path);
+    if (!f.is_open())
+        return out;
+    try {
+        auto doc = nlohmann::json::parse(f);
+        // Only the object form carries orca_type_map. A bare array is a
+        // product-only overlay (the historical minimum) and contributes nothing
+        // here — by design, since users add Orca hints via the UI, which writes
+        // the object form.
+        if (!doc.is_object())
+            return out;
+        auto it = doc.find("orca_type_map");
+        if (it == doc.end() || !it->is_object())
+            return out;
+        for (const auto& [k, v] : it->items()) {
+            if (v.is_string())
+                out[k] = v.get<std::string>();
+        }
+    } catch (const std::exception& e) {
+        spdlog::warn("[filament] user orca_type_map parse failed {}: {}", path, e.what());
+    }
+    return out;
+}
+
+std::string FilamentCatalog::choose_overlay_write_path(const char* const* paths, std::size_t n) {
+    std::string path = first_existing(paths, n);
+    // Fresh install: no overlay exists yet, so first_existing() is empty. Fall
+    // back to the primary path so the file can be created — without this the
+    // very first save (from the edit modal) has nowhere to write and fails.
+    if (path.empty() && n > 0)
+        path = paths[0];
+    return path;
+}
+
+bool FilamentCatalog::save_user_products(const std::vector<nlohmann::json>& products) {
+    return save_user_products_to(products,
+                                 choose_overlay_write_path(kUserPaths, std::size(kUserPaths)));
+}
+
+std::vector<nlohmann::json> FilamentCatalog::load_user_products() {
+    return read_products(kUserPaths, std::size(kUserPaths));
+}
+
+std::vector<nlohmann::json> FilamentCatalog::load_user_products_from(const std::string& path) {
+    const char* paths[] = {path.c_str()};
+    return read_products(paths, 1);
+}
+
+bool FilamentCatalog::upsert_product(std::vector<nlohmann::json>& products,
+                                     const nlohmann::json& product) {
+    // safe_string handles both hazards .value() has here: a non-object receiver
+    // (type_error.306) and a key present with a null value (type_error.302).
+    // The is_object() checks stay for their non-throwing role — see the note in
+    // remove_product below.
+    const std::string id = helix::json_util::safe_string(product, "id");
+    if (!id.empty()) {
+        for (auto& p : products) {
+            if (p.is_object() && helix::json_util::safe_string(p, "id") == id) {
+                p = product; // replace in place, preserving list order
+                return true;
+            }
+        }
+    }
+    products.push_back(product);
+    return false;
+}
+
+bool FilamentCatalog::remove_product(std::vector<nlohmann::json>& products, const std::string& id) {
+    const size_t before = products.size();
+    products.erase(std::remove_if(products.begin(), products.end(),
+                                  [&](const nlohmann::json& p) {
+                                      // is_object() stays: it is not redundant
+                                      // with safe_string when `id` is empty,
+                                      // where dropping it would start matching
+                                      // (and erasing) non-object entries.
+                                      return p.is_object() &&
+                                             helix::json_util::safe_string(p, "id") == id;
+                                  }),
+                   products.end());
+    return products.size() != before;
+}
+
+bool FilamentCatalog::save_user_products_to(const std::vector<nlohmann::json>& products,
+                                            const std::string& path) {
+    if (path.empty()) {
+        spdlog::warn("[filament] save_user_products: no overlay path configured");
+        return false;
+    }
+
+    // Read-modify-write: preserve any existing `orca_type_map`. If the file is
+    // missing, a bare array (legacy), or unparseable, start fresh with an empty
+    // object — a corrupt existing file must not block the user's save.
+    nlohmann::json doc = nlohmann::json::object();
+    {
+        std::ifstream in(path);
+        if (in.is_open()) {
+            try {
+                auto parsed = nlohmann::json::parse(in);
+                if (parsed.is_object())
+                    doc = std::move(parsed);
+                // Bare array or other shape: silently start fresh. The legacy
+                // bare-array form carried only products, never orca_type_map,
+                // so nothing is lost by replacing it with object form here.
+            } catch (const std::exception& e) {
+                // The existing file is unparseable — we must not block the save,
+                // but the user may have hand-authored an orca_type_map in there.
+                // Preserve the original as a .bak (best-effort) so it stays
+                // recoverable, then start fresh with an empty object.
+                const std::string bak = path + ".bak";
+                std::error_code bak_ec;
+                std::filesystem::copy_file(
+                    path, bak, std::filesystem::copy_options::overwrite_existing, bak_ec);
+                spdlog::warn("[filament] existing overlay parse failed on save ({}): {}; {} to {}",
+                             path, e.what(), bak_ec ? "could not back up" : "backed up", bak);
+            }
+        }
+    }
+
+    // Atomic write: tmp file + rename. POSIX rename is atomic within a single
+    // filesystem. The tmp file lives next to the target so the rename never
+    // crosses a mount boundary.
+    std::filesystem::path target(path);
+    std::filesystem::path tmp = target;
+    tmp += ".tmp";
+
+    // Ensure parent dir exists (the on-device runtime config dir is created
+    // elsewhere, but tests / fresh installs may hit this path first).
+    std::error_code ec;
+    if (auto parent = target.parent_path(); !parent.empty()) {
+        std::filesystem::create_directories(parent, ec);
+        // Ignore "already exists"; report everything else.
+        if (ec && !std::filesystem::is_directory(parent)) {
+            spdlog::warn("[filament] save_user_products: cannot create parent dir {}: {}",
+                         parent.string(), ec.message());
+            return false;
+        }
+    }
+
+    doc["filaments"] = products;
+
+    {
+        std::ofstream out(tmp, std::ios::trunc);
+        if (!out) {
+            spdlog::warn("[filament] save_user_products: cannot open {} for writing", tmp.string());
+            return false;
+        }
+        out << doc.dump(2);
+        if (!out) {
+            spdlog::warn("[filament] save_user_products: error writing to {}", tmp.string());
+            std::error_code rm_ec;
+            std::filesystem::remove(tmp, rm_ec);
+            return false;
+        }
+    } // ofstream closed here, buffers flushed, before rename
+
+    std::filesystem::rename(tmp, target, ec);
+    if (ec) {
+        spdlog::warn("[filament] save_user_products: rename failed ({} -> {}): {}", tmp.string(),
+                     target.string(), ec.message());
+        std::error_code rm_ec;
+        std::filesystem::remove(tmp, rm_ec);
+        return false;
+    }
+    return true;
 }
 
 const EffectiveFilament* FilamentCatalog::resolve_code(const std::string& scheme,
@@ -204,8 +408,9 @@ FilamentCatalog::products_for_brand(const std::string& brand) const {
 
 std::vector<std::string> FilamentCatalog::all_brands() const {
     std::set<std::string> seen;
-    for (const auto& p : products_) seen.insert(p.brand);
-    return {seen.begin(), seen.end()};  // sorted + deduped
+    for (const auto& p : products_)
+        seen.insert(p.brand);
+    return {seen.begin(), seen.end()}; // sorted + deduped
 }
 
 std::vector<const EffectiveFilament*> FilamentCatalog::all_products() const {
@@ -239,8 +444,8 @@ std::vector<std::string> FilamentCatalog::brands_for_type(const std::string& typ
     return out;
 }
 
-std::vector<const EffectiveFilament*> FilamentCatalog::products_for(
-    const std::string& brand, const std::string& type) const {
+std::vector<const EffectiveFilament*> FilamentCatalog::products_for(const std::string& brand,
+                                                                    const std::string& type) const {
     std::vector<const EffectiveFilament*> out;
     for (const auto& p : products_) {
         if (p.brand == brand && p.type == type) {
@@ -250,4 +455,4 @@ std::vector<const EffectiveFilament*> FilamentCatalog::products_for(
     return out;
 }
 
-}  // namespace helix::printer
+} // namespace helix::printer

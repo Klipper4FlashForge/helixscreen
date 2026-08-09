@@ -14,9 +14,9 @@
 #include "ui_utils.h"
 
 #include "app_globals.h"
-#include "observer_factory.h"
 #include "panel_widget_manager.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 #include "printer_state.h"
 #include "temperature_service.h"
 #include "theme_manager.h"
@@ -125,64 +125,14 @@ void TempStackWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
 }
 
 void TempStackWidget::attach_stack(lv_obj_t* /*widget_obj*/) {
-    using helix::ui::observe_int_sync;
-    auto token = lifetime_.token();
+    nozzle_icon_binder_.bind(widget_obj_, printer_state_, HeaterType::Nozzle);
+    bed_icon_binder_.bind(widget_obj_, printer_state_, HeaterType::Bed);
+    chamber_icon_binder_.bind(widget_obj_, printer_state_, HeaterType::Chamber);
 
-    // Nozzle observers
-    nozzle_temp_observer_ =
-        observe_int_sync<TempStackWidget>(printer_state_.get_active_extruder_temp_subject(), this,
-                                          [token](TempStackWidget* self, int temp) {
-                                              if (token.expired())
-                                                  return;
-                                              self->on_nozzle_temp_changed(temp);
-                                          });
-    nozzle_target_observer_ =
-        observe_int_sync<TempStackWidget>(printer_state_.get_active_extruder_target_subject(), this,
-                                          [token](TempStackWidget* self, int target) {
-                                              if (token.expired())
-                                                  return;
-                                              self->on_nozzle_target_changed(target);
-                                          });
-
-    // Bed observers (subjects destroyed during deinit — need lifetime tokens #734)
-    bed_temp_observer_ = observe_int_sync<TempStackWidget>(
-        printer_state_.get_bed_temp_subject(bed_temp_lifetime_), this,
-        [token](TempStackWidget* self, int temp) {
-            if (token.expired())
-                return;
-            self->on_bed_temp_changed(temp);
-        },
-        bed_temp_lifetime_);
-    bed_target_observer_ = observe_int_sync<TempStackWidget>(
-        printer_state_.get_bed_target_subject(bed_target_lifetime_), this,
-        [token](TempStackWidget* self, int target) {
-            if (token.expired())
-                return;
-            self->on_bed_target_changed(target);
-        },
-        bed_target_lifetime_);
-
-    // Attach nozzle animator - look for the glyph inside the nozzle_icon component
-    lv_obj_t* nozzle_icon = lv_obj_find_by_name(widget_obj_, "nozzle_icon_glyph");
-    if (nozzle_icon) {
-        nozzle_animator_.attach(nozzle_icon);
-        cached_nozzle_temp_ = lv_subject_get_int(printer_state_.get_active_extruder_temp_subject());
-        cached_nozzle_target_ =
-            lv_subject_get_int(printer_state_.get_active_extruder_target_subject());
-        nozzle_animator_.update(cached_nozzle_temp_, cached_nozzle_target_);
-    }
-
-    // Attach bed animator
-    lv_obj_t* bed_icon = lv_obj_find_by_name(widget_obj_, "temp_stack_bed_icon_glyph");
-    if (bed_icon) {
-        bed_animator_.attach(bed_icon);
-        cached_bed_temp_ = lv_subject_get_int(printer_state_.get_bed_temp_subject());
-        cached_bed_target_ = lv_subject_get_int(printer_state_.get_bed_target_subject());
-        bed_animator_.update(cached_bed_temp_, cached_bed_target_);
-    }
-
-    spdlog::debug("[TempStackWidget] Attached stack with {} animators",
-                  (nozzle_icon ? 1 : 0) + (bed_icon ? 1 : 0));
+    int attached = static_cast<int>(nozzle_icon_binder_.is_bound()) +
+                   static_cast<int>(bed_icon_binder_.is_bound()) +
+                   static_cast<int>(chamber_icon_binder_.is_bound());
+    spdlog::debug("[TempStackWidget] Attached stack with {} animators", attached);
 }
 
 void TempStackWidget::attach_carousel(lv_obj_t* widget_obj) {
@@ -257,90 +207,43 @@ void TempStackWidget::attach_carousel(lv_obj_t* widget_obj) {
     make_children_passthrough(nozzle_page);
     ui_carousel_add_item(carousel, nozzle_page);
 
-    // Attach nozzle heating animator
-    lv_obj_t* nozzle_glyph = lv_obj_find_by_name(nozzle_page, "nozzle_icon_glyph");
-    if (nozzle_glyph) {
-        nozzle_animator_.attach(nozzle_glyph);
-        cached_nozzle_temp_ = lv_subject_get_int(printer_state_.get_active_extruder_temp_subject());
-        cached_nozzle_target_ =
-            lv_subject_get_int(printer_state_.get_active_extruder_target_subject());
-        nozzle_animator_.update(cached_nozzle_temp_, cached_nozzle_target_);
-    }
+    // Bind nozzle heating icon from its own page root. Carousel pages are
+    // separate subtrees under widget_obj_ — binding from the page (rather than
+    // widget_obj_) keeps this immune to any other same-named icon in the tree.
+    nozzle_icon_binder_.bind(nozzle_page, printer_state_, HeaterType::Nozzle);
 
-    // Bed page
+    // Bed page — glyph named "bed_icon_glyph" so the binder's default lookup
+    // finds it directly (it is a leaf label; there is no wrapper child to dig
+    // into, unlike the old lv_obj_get_child(bed_glyph, 0) attempt).
     lv_obj_t* bed_page =
-        create_temp_page("radiator", "carousel_bed_icon", "bed_temp", "bed_target", "bed");
+        create_temp_page("radiator", "bed_icon_glyph", "bed_temp", "bed_target", "bed");
     ui_carousel_add_item(carousel, bed_page);
+    bed_icon_binder_.bind(bed_page, printer_state_, HeaterType::Bed);
 
-    // Attach bed heating animator
-    lv_obj_t* bed_glyph = lv_obj_find_by_name(bed_page, "carousel_bed_icon");
-    if (bed_glyph) {
-        // The icon component wraps a glyph child — try to find the actual glyph
-        lv_obj_t* inner_glyph = lv_obj_get_child(bed_glyph, 0);
-        if (inner_glyph) {
-            bed_animator_.attach(inner_glyph);
-        } else {
-            bed_animator_.attach(bed_glyph);
-        }
-        cached_bed_temp_ = lv_subject_get_int(printer_state_.get_bed_temp_subject());
-        cached_bed_target_ = lv_subject_get_int(printer_state_.get_bed_target_subject());
-        bed_animator_.update(cached_bed_temp_, cached_bed_target_);
-    }
-
-    // Chamber page (only if sensor present)
+    // Chamber page (only if sensor present). Target is the effective target
+    // subject (heater target while heating, cooling-fan ceiling while
+    // maintaining) — previously this bound "chamber_temp" as both current AND
+    // target, so the displayed target never reflected the real setpoint.
     lv_subject_t* chamber_gate = lv_xml_get_subject(nullptr, "printer_has_chamber");
     if (chamber_gate && lv_subject_get_int(chamber_gate) != 0) {
-        lv_obj_t* chamber_page = create_temp_page("fridge_industrial", "carousel_chamber_icon",
-                                                  "chamber_temp", "chamber_temp", "chamber");
+        lv_obj_t* chamber_page =
+            create_temp_page("fridge_industrial", "chamber_icon_glyph", "chamber_temp",
+                             "chamber_effective_target", "chamber");
         ui_carousel_add_item(carousel, chamber_page);
+        chamber_icon_binder_.bind(chamber_page, printer_state_, HeaterType::Chamber);
     }
-
-    // Observe heating state for animators in carousel mode
-    using helix::ui::observe_int_sync;
-    auto token = lifetime_.token();
-
-    nozzle_temp_observer_ =
-        observe_int_sync<TempStackWidget>(printer_state_.get_active_extruder_temp_subject(), this,
-                                          [token](TempStackWidget* self, int temp) {
-                                              if (token.expired())
-                                                  return;
-                                              self->on_nozzle_temp_changed(temp);
-                                          });
-    nozzle_target_observer_ =
-        observe_int_sync<TempStackWidget>(printer_state_.get_active_extruder_target_subject(), this,
-                                          [token](TempStackWidget* self, int target) {
-                                              if (token.expired())
-                                                  return;
-                                              self->on_nozzle_target_changed(target);
-                                          });
-    bed_temp_observer_ = observe_int_sync<TempStackWidget>(
-        printer_state_.get_bed_temp_subject(bed_temp_lifetime_), this,
-        [token](TempStackWidget* self, int temp) {
-            if (token.expired())
-                return;
-            self->on_bed_temp_changed(temp);
-        },
-        bed_temp_lifetime_);
-    bed_target_observer_ = observe_int_sync<TempStackWidget>(
-        printer_state_.get_bed_target_subject(bed_target_lifetime_), this,
-        [token](TempStackWidget* self, int target) {
-            if (token.expired())
-                return;
-            self->on_bed_target_changed(target);
-        },
-        bed_target_lifetime_);
 
     int page_count = ui_carousel_get_page_count(carousel);
     spdlog::debug("[TempStackWidget] Attached carousel with {} pages", page_count);
 }
 
-void TempStackWidget::on_size_changed(int /*colspan*/, int rowspan, int /*width_px*/,
-                                      int /*height_px*/) {
+void TempStackWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int /*width_px*/,
+                                      int height_px) {
     if (!widget_obj_ || is_carousel_mode())
         return;
 
     // Determine size tier based on vertical space
-    const char* size = (rowspan >= 2) ? "sm" : "xs";
+    const char* size = (height_px >= widget_size::H_TALL) ? "sm" : "xs";
 
     // Get text font for this size tier
     const char* font_token = theme_manager_size_to_font_token(size, "xs");
@@ -349,20 +252,7 @@ void TempStackWidget::on_size_changed(int /*colspan*/, int rowspan, int /*width_
         return;
 
     // Icon font: xs=16px, sm=24px
-    const lv_font_t* icon_font = (rowspan >= 2) ? &mdi_icons_24 : &mdi_icons_16;
-
-    // Update nozzle icon glyph
-    lv_obj_t* nozzle_glyph = lv_obj_find_by_name(widget_obj_, "nozzle_icon_glyph");
-    if (nozzle_glyph)
-        lv_obj_set_style_text_font(nozzle_glyph, icon_font, 0);
-
-    // Update bed icon — the <icon> component wraps a label child
-    lv_obj_t* bed_icon = lv_obj_find_by_name(widget_obj_, "temp_stack_bed_icon_glyph");
-    if (bed_icon) {
-        lv_obj_t* glyph = lv_obj_get_child(bed_icon, 0);
-        if (glyph)
-            lv_obj_set_style_text_font(glyph, icon_font, 0);
-    }
+    const lv_font_t* icon_font = (height_px >= widget_size::H_TALL) ? &mdi_icons_24 : &mdi_icons_16;
 
     // Update temp_display fonts and icon fonts in all rows
     const char* row_names[] = {"temp_stack_nozzle_row", "temp_stack_bed_row",
@@ -380,7 +270,9 @@ void TempStackWidget::on_size_changed(int /*colspan*/, int rowspan, int /*width_
                     lv_obj_set_style_text_font(label, text_font, 0);
                 }
             } else if (lv_obj_get_child_count(child) > 0) {
-                // Icon component — update first child glyph (chamber row icon)
+                // Icon component (nozzle_icon/heater_icon wrapper) — the
+                // glyph is its first child, whether or not that wrapper also
+                // carries a tool badge (nozzle_icon.xml, heater_icon.xml).
                 lv_obj_t* glyph = lv_obj_get_child(child, 0);
                 if (glyph)
                     lv_obj_set_style_text_font(glyph, icon_font, 0);
@@ -388,19 +280,14 @@ void TempStackWidget::on_size_changed(int /*colspan*/, int rowspan, int /*width_
         }
     }
 
-    spdlog::debug("[TempStackWidget] on_size_changed rowspan={} -> size {}", rowspan, size);
+    spdlog::debug("[TempStackWidget] on_size_changed height_px={} -> size {}", height_px, size);
 }
 
 void TempStackWidget::detach() {
     lifetime_.invalidate();
-    nozzle_animator_.detach();
-    bed_animator_.detach();
-    nozzle_temp_observer_.reset();
-    nozzle_target_observer_.reset();
-    bed_temp_lifetime_.reset();
-    bed_target_lifetime_.reset();
-    bed_temp_observer_.reset();
-    bed_target_observer_.reset();
+    nozzle_icon_binder_.unbind();
+    bed_icon_binder_.unbind();
+    chamber_icon_binder_.unbind();
 
     if (s_active_instance == this) {
         s_active_instance = nullptr;
@@ -412,26 +299,6 @@ void TempStackWidget::detach() {
     parent_screen_ = nullptr;
 
     spdlog::debug("[TempStackWidget] Detached");
-}
-
-void TempStackWidget::on_nozzle_temp_changed(int temp_deci) {
-    cached_nozzle_temp_ = temp_deci;
-    nozzle_animator_.update(cached_nozzle_temp_, cached_nozzle_target_);
-}
-
-void TempStackWidget::on_nozzle_target_changed(int target_deci) {
-    cached_nozzle_target_ = target_deci;
-    nozzle_animator_.update(cached_nozzle_temp_, cached_nozzle_target_);
-}
-
-void TempStackWidget::on_bed_temp_changed(int temp_deci) {
-    cached_bed_temp_ = temp_deci;
-    bed_animator_.update(cached_bed_temp_, cached_bed_target_);
-}
-
-void TempStackWidget::on_bed_target_changed(int target_deci) {
-    cached_bed_target_ = target_deci;
-    bed_animator_.update(cached_bed_temp_, cached_bed_target_);
 }
 
 void TempStackWidget::handle_nozzle_clicked() {

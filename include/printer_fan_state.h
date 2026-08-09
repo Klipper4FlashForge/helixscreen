@@ -63,6 +63,10 @@ struct FanInfo {
     int speed_percent = 0;        ///< Current speed 0-100%
     bool is_controllable = false; ///< true for fan_generic, false for heater_fan/controller_fan
     std::optional<int> rpm;       ///< RPM from fan_feedback or Klipper rpm field
+    bool ever_ran = false;        ///< true once speed_percent has been > 0 this session —
+                                  ///< lets the part slot stay on a real [fan] that is only
+                                  ///< momentarily off (first layer, bridges) instead of
+                                  ///< flicking to a running auxiliary fan (#1124)
 };
 
 /**
@@ -72,10 +76,17 @@ struct FanInfo {
  * the discovered fan list (in fan-discovery order), or empty if none.
  */
 struct PrimaryFans {
-    std::string part;   ///< First PART_COOLING fan, or empty
+    std::string part;   ///< PART_COOLING fan (runtime-resolved), or empty
     std::string hotend; ///< First HEATER_FAN, or empty
     std::string aux;    ///< First of CONTROLLER_FAN, TEMPERATURE_FAN,
                         ///< GENERIC_FAN, OUTPUT_PIN_FAN — or empty
+
+    bool operator==(const PrimaryFans& o) const {
+        return part == o.part && hotend == o.hotend && aux == o.aux;
+    }
+    bool operator!=(const PrimaryFans& o) const {
+        return !(*this == o);
+    }
 };
 
 /**
@@ -124,6 +135,23 @@ class PrinterFanState {
                    const std::unordered_map<std::string, double>& max_power = {});
 
     /**
+     * @brief Re-apply a role mapping to the fans already discovered.
+     *
+     * For the targeted-roles wizard, where the hardware did not change — only
+     * which discovered fan plays which role. Callers used to reach for
+     * init_fans() because it was the only entry point that accepted a
+     * FanRoleConfig, which meant re-passing a fan list on a config change and
+     * hoping it matched what was discovered. This re-uses the retained list, so
+     * the two cannot drift apart.
+     *
+     * Note this is NOT list-preserving: roles decide whether the bare [fan]
+     * object is shadowed by a named part fan, so a role change can legitimately
+     * add or drop that one entry. Everything else — live speeds, ever_ran, rpm,
+     * and the per-fan subjects — rides through, as it does for any re-init.
+     */
+    void apply_roles(const FanRoleConfig& roles);
+
+    /**
      * @brief Update speed for a specific fan (called during status updates)
      * @param object_name Moonraker object name (e.g., "heater_fan hotend_fan")
      * @param speed Speed as 0.0-1.0 (Moonraker format)
@@ -142,6 +170,14 @@ class PrinterFanState {
     }
     lv_subject_t* get_fans_version_subject() {
         return &fans_version_;
+    }
+
+    /// Increments whenever the runtime-resolved primary fan roles change (e.g. a
+    /// fan starts/stops and the part slot moves to it). The print-status compact
+    /// row re-binds on this, distinct from fans_version which signals structural
+    /// (fan set) changes to every fan consumer (#1124).
+    lv_subject_t* get_primary_fans_version_subject() {
+        return &primary_fans_version_;
     }
 
     /**
@@ -182,8 +218,34 @@ class PrinterFanState {
     /// Classify fan type from object name (considers configured part fan)
     FanType classify_fan_type(const std::string& object_name) const;
 
-    /// Check if fan type is user-controllable
+    /// Check if fan type is user-controllable, i.e. M106-commandable and thus
+    /// eligible to be the part cooling fan: PART_COOLING, GENERIC_FAN,
+    /// OUTPUT_PIN_FAN. Auto-controlled fans (heater/controller/temperature) are
+    /// excluded — they can never be driven as a part fan.
     static bool is_fan_controllable(FanType type);
+
+    /// Check if fan type belongs in the aux slot (anything that isn't the part
+    /// cooling or hotend fan): CONTROLLER_FAN, TEMPERATURE_FAN, GENERIC_FAN,
+    /// OUTPUT_PIN_FAN.
+    static bool is_aux_fan(FanType type);
+
+    /// Resolve the part-cooling slot with runtime awareness. Given the
+    /// type-classified candidate (the configured bare "fan"/role, or empty),
+    /// prefer it once it has run (sticky); otherwise promote a commandable named
+    /// fan that has run (stale-"fan" printers); otherwise keep the canonical
+    /// candidate. "Has run" = ever_ran || currently spinning.
+    std::string resolve_part_fan(const std::string& configured) const;
+
+    /// Resolve the aux slot, preferring a user-commandable fan (fan_generic /
+    /// output_pin) over an auto-controlled one (controller_fan / temperature_fan)
+    /// — the commandable fan is the one worth glancing at in the compact row.
+    /// Excludes the already-assigned part and hotend fans (#1124).
+    std::string resolve_aux_fan(const std::string& part, const std::string& hotend) const;
+
+    /// Recompute classify_primary_fans() and bump primary_fans_version_ if the
+    /// resolved roles changed. Called on fan start/stop so the compact row tracks
+    /// the live part fan.
+    void refresh_primary_fans_selection();
 
     /// Get role-based display name override, or empty string if none
     std::string get_role_display_name(const std::string& object_name) const;
@@ -205,8 +267,19 @@ class PrinterFanState {
     bool subjects_initialized_ = false;
 
     // Static fan subjects
-    lv_subject_t fan_speed_{};    ///< Main part-cooling fan, 0-100%
-    lv_subject_t fans_version_{}; ///< Increments on fan list changes
+    lv_subject_t fan_speed_{};            ///< Main part-cooling fan, 0-100%
+    lv_subject_t fans_version_{};         ///< Increments on fan list (structural) changes
+    lv_subject_t primary_fans_version_{}; ///< Increments on primary-role reassignment (#1124)
+
+    /// Object names exactly as discovery handed them over — before the bare-[fan]
+    /// shadowing rule filters them into fans_. apply_roles() re-runs that filter,
+    /// which needs the unfiltered list: once [fan] is shadowed it is gone from
+    /// fans_, so nothing else remembers it existed to un-shadow it later.
+    std::vector<std::string> discovered_objects_;
+
+    /// Last resolved primary roles — compared in refresh_primary_fans_selection()
+    /// so primary_fans_version_ only ticks on an actual change.
+    PrimaryFans primary_fans_cache_;
 
     // Dynamic per-fan subjects (unique_ptr prevents invalidation on rehash)
     std::unordered_map<std::string, std::unique_ptr<lv_subject_t>> fan_speed_subjects_;

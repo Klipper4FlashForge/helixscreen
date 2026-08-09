@@ -19,6 +19,7 @@
 #include "ipp_printer.h"
 #include "label_printer_settings.h"
 #include "label_printer_utils.h"
+#include "log_redact.h"
 #include "makeid_protocol.h"
 #include "niimbot_protocol.h"
 #include "phomemo_printer.h"
@@ -1003,7 +1004,7 @@ void LabelPrinterSettingsOverlay::handle_test_print() {
     mock_spool.id = -1;
     mock_spool.vendor = "Hatchbox";
     mock_spool.material = "PLA";
-    mock_spool.color_name = "Red";
+    mock_spool.filament_name = "Red";
     mock_spool.color_hex = "#FF0000";
     mock_spool.remaining_weight_g = 800;
     mock_spool.initial_weight_g = 1000;
@@ -1240,7 +1241,7 @@ void LabelPrinterSettingsOverlay::start_bt_discovery() {
                     // Skip barcode scanners before marshaling to UI thread
                     if (info.is_scanner) {
                         spdlog::debug("[Label Printer] Skipping scanner: {} ({})", info.name,
-                                      info.mac);
+                                      helix::redact::mac(info.mac));
                         return;
                     }
 
@@ -1280,15 +1281,18 @@ void LabelPrinterSettingsOverlay::start_bt_discovery() {
                                     // re-pairs on the correct transport.
                                     spdlog::info("[Label Printer] Migrating {} from {} {} "
                                                  "to brand-preferred {} {}",
-                                                 it->name, it->mac, it->is_ble ? "BLE" : "Classic",
-                                                 info.mac, info.is_ble ? "BLE" : "Classic");
+                                                 it->name, helix::redact::mac(it->mac),
+                                                 it->is_ble ? "BLE" : "Classic",
+                                                 helix::redact::mac(info.mac),
+                                                 info.is_ble ? "BLE" : "Classic");
                                     auto& settings_mgr = LabelPrinterSettingsManager::instance();
                                     if (settings_mgr.get_bt_address() == it->mac &&
                                         it->mac != info.mac) {
                                         spdlog::warn("[Label Printer] Saved BT address {} is the "
                                                      "wrong transport for {}; clearing so user "
                                                      "re-pairs with {}",
-                                                     it->mac, it->name, info.mac);
+                                                     helix::redact::mac(it->mac), it->name,
+                                                     helix::redact::mac(info.mac));
                                         settings_mgr.set_bt_address("");
                                     }
                                     *it = info;
@@ -1303,13 +1307,14 @@ void LabelPrinterSettingsOverlay::start_bt_discovery() {
                                                   "advertisement for {} (existing {}, new {}) "
                                                   "— same transport, treating as RPA rotation",
                                                   info.is_ble ? "BLE" : "Classic", info.name,
-                                                  it->mac, info.mac);
+                                                  helix::redact::mac(it->mac),
+                                                  helix::redact::mac(info.mac));
                                     return;
                                 } else {
                                     // New entry is on the non-preferred transport; drop.
                                     spdlog::debug("[Label Printer] Ignoring {} ({} {}): "
                                                   "brand prefers {} transport already present",
-                                                  info.name, info.mac,
+                                                  info.name, helix::redact::mac(info.mac),
                                                   info.is_ble ? "BLE" : "Classic",
                                                   brand_prefers_ble ? "BLE" : "Classic");
                                     return;
@@ -1321,7 +1326,7 @@ void LabelPrinterSettingsOverlay::start_bt_discovery() {
                         if (!replaced) {
                             overlay->bt_devices_.push_back(info);
                             spdlog::debug("[Label Printer] BT discovered: {} ({})", info.name,
-                                          info.mac);
+                                          helix::redact::mac(info.mac));
                         }
 
                         // Update dropdown
@@ -1432,10 +1437,11 @@ void LabelPrinterSettingsOverlay::handle_bt_printer_selected(int index) {
     const auto& device = bt_devices_[index];
     if (device.is_scanner) {
         spdlog::warn("[{}] Ignoring selection of scanner device: {} ({})", get_name(), device.name,
-                     device.mac);
+                     helix::redact::mac(device.mac));
         return;
     }
-    spdlog::info("[{}] Selected BT printer: {} ({})", get_name(), device.name, device.mac);
+    spdlog::info("[{}] Selected BT printer: {} ({})", get_name(), device.name,
+                 helix::redact::mac(device.mac));
 
     // If not paired and not already saved (i.e. a newly discovered device), prompt for pairing.
     // Saved devices (address matches settings) can skip re-pairing — BLE devices don't
@@ -1613,7 +1619,7 @@ void LabelPrinterSettingsOverlay::handle_bt_connect() {
             // try a brief scan to rediscover, then retry
             if (ret < 0 && ldr.discover && ldr.pair) {
                 spdlog::info("[LabelPrinterSettings] Pair failed, scanning to rediscover {}...",
-                             mac);
+                             helix::redact::mac(mac));
                 struct ScanCtx {
                     std::string target;
                     bool found = false;
@@ -1630,10 +1636,12 @@ void LabelPrinterSettingsOverlay::handle_bt_connect() {
                     &scan_ctx);
 
                 if (scan_ctx.found) {
-                    spdlog::info("[LabelPrinterSettings] Rediscovered {}, retrying pair", mac);
+                    spdlog::info("[LabelPrinterSettings] Rediscovered {}, retrying pair",
+                                 helix::redact::mac(mac));
                     ret = ldr.pair(init_ctx, mac.c_str());
                 } else {
-                    spdlog::warn("[LabelPrinterSettings] Device {} not found during rescan", mac);
+                    spdlog::warn("[LabelPrinterSettings] Device {} not found during rescan",
+                                 helix::redact::mac(mac));
                 }
             }
 
@@ -1725,7 +1733,7 @@ void LabelPrinterSettingsOverlay::handle_bt_forget() {
         return;
     }
 
-    spdlog::info("[{}] Forgetting BT printer {}", get_name(), mac);
+    spdlog::info("[{}] Forgetting BT printer {}", get_name(), helix::redact::mac(mac));
 
     // Disable Forget + Connect buttons while the unpair is in flight
     if (overlay_root_) {
@@ -1756,12 +1764,13 @@ void LabelPrinterSettingsOverlay::handle_bt_forget() {
                     if (r < 0) {
                         const char* err = loader.last_error ? loader.last_error(ctx) : "unknown";
                         spdlog::error(
-                            "[LabelPrinterSettings] remove_device failed for {}: r={} err={}", mac,
-                            r, err);
+                            "[LabelPrinterSettings] remove_device failed for {}: r={} err={}",
+                            helix::redact::mac(mac), r, err);
                         // Fall through and clear settings anyway so the UI doesn't
                         // show a stale config.
                     } else {
-                        spdlog::info("[LabelPrinterSettings] BlueZ unpair succeeded for {}", mac);
+                        spdlog::info("[LabelPrinterSettings] BlueZ unpair succeeded for {}",
+                                     helix::redact::mac(mac));
                         bluez_ok = true;
                     }
                 }

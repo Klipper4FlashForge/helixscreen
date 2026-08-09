@@ -229,11 +229,44 @@ ifeq ($(SANITIZE),address)
     CXXFLAGS := $(filter-out -D_FORTIFY_SOURCE=2,$(CXXFLAGS))
 endif
 
+# Thread Sanitizer, for the other half of the problem space: ASAN finds the
+# corruption, TSAN finds the unsynchronized access that caused it. Added while
+# chasing #1198, whose glibc abort is detected during a ThumbnailCache eviction
+# that runs on both the main thread and HttpExecutor workers (#1202).
+#
+# Usage: make SANITIZE=thread
+#
+# NOT combinable with SANITIZE=address — the two runtimes are mutually
+# exclusive, and asking for both silently gets you neither.
+ifeq ($(SANITIZE),thread)
+    SANITIZE_FLAGS := -fsanitize=thread -fno-omit-frame-pointer
+    CFLAGS := $(filter-out -D_FORTIFY_SOURCE=2,$(CFLAGS))
+    CXXFLAGS := $(filter-out -D_FORTIFY_SOURCE=2,$(CXXFLAGS))
+endif
+
 # Submodule flags - suppress warnings from third-party code we don't control
 # Uses -w to completely silence warnings (cleaner build output)
 # Note: No DEPFLAGS for submodules - we don't track their internal dependencies
 SUBMODULE_CFLAGS := -std=c11 -O2 -g -D_GNU_SOURCE -w
 SUBMODULE_CXXFLAGS := -std=c++17 -O2 -g -w
+
+# XML create-cost profiling in lib/helix-xml (lv_xml.c). Counts component
+# creates and separates expat/SAX time from element-handler time, which is the
+# only way to tell parsing apart from widget building: XML_Parse drives the
+# handlers, so one timer around it measures both.
+#
+# Dev-build only, and OFF even there. It reads the clock on every element, which
+# distorts what it is measuring, and logs every 25 creates. Turn it on for a
+# measurement run, not for everyday work:
+#   make ENABLE_XML_PROFILE=yes
+#
+# make does not track compiler flags, so toggling this rebuilds nothing on its
+# own — delete the object too:
+#   rm -f build/obj/helix-xml/src/xml/lv_xml.o
+ENABLE_XML_PROFILE ?= no
+ifeq ($(ENABLE_XML_PROFILE),yes)
+    SUBMODULE_CFLAGS += -DLV_XML_PROFILE=1
+endif
 
 # Platform detection (needed early for conditional compilation)
 UNAME_S := $(shell uname -s)
@@ -254,6 +287,27 @@ INC_DIR := include
 # BUILD_DIR, BIN_DIR, OBJ_DIR may be set by cross.mk for cross-compilation
 # Only set defaults if not already defined
 BUILD_DIR ?= build
+
+# Native sanitizer builds need their own object tree, the same way cross.mk
+# suffixes BUILD_SUBDIR with -asan/-tsan. Without this, `make SANITIZE=address`
+# on an already-built tree finds every object up to date and only RELINKS them:
+# the result is a binary with zero __asan symbols that passes everything,
+# because it was never instrumented. That silently cost a full debugging pass
+# on prestonbrown/helixscreen#960.
+#
+# BIN_DIR is deliberately NOT suffixed. mk/tests.mk computes TEST_ASAN_BIN from
+# BIN_DIR in the PARENT make (where SANITIZE is unset) and passes only
+# OBJ_DIR/PCH down, so moving BIN_DIR here would have the sub-make build into a
+# directory the parent is not looking in. The app binary is therefore still
+# replaced in place — but it is genuinely instrumented, which is the part that
+# matters. Pass BIN_DIR=... explicitly to keep both.
+ifeq ($(SANITIZE),address)
+    OBJ_DIR ?= $(BUILD_DIR)/obj-asan
+endif
+ifeq ($(SANITIZE),thread)
+    OBJ_DIR ?= $(BUILD_DIR)/obj-tsan
+endif
+
 BIN_DIR ?= $(BUILD_DIR)/bin
 OBJ_DIR ?= $(BUILD_DIR)/obj
 
@@ -375,7 +429,55 @@ ifneq ($(ENABLE_MOCKS),yes)
     APP_SRCS := $(filter-out $(SRC_DIR)/printer/ams_backend_mock.cpp,$(APP_SRCS))
     APP_SRCS := $(filter-out $(SRC_DIR)/api/moonraker_api_mock.cpp,$(APP_SRCS))
 endif
+
+# Remote-control subsystem (helixctl server + socket/HTTP transport + the folded
+# `ctl`/`repl` client). Dev/test-only: default ON for the native dev build, OFF
+# for release/cross builds so shipped devices don't build it or pay the overhead.
+# Force it into a device dev/test image by overriding on the command line:
+#   make PLATFORM_TARGET=pi ENABLE_REMOTE_CONTROL=yes
+ifeq ($(PLATFORM_TARGET),native)
+    ENABLE_REMOTE_CONTROL ?= yes
+else
+    ENABLE_REMOTE_CONTROL ?= no
+endif
+
+ifeq ($(ENABLE_REMOTE_CONTROL),yes)
+    # The helixctl client is folded into helix-screen (src/remote/remote_client.cpp,
+    # reached via the `ctl`/`repl` subcommands); it needs linenoise for the REPL.
+    REMOTE_LINENOISE_OBJ := $(OBJ_DIR)/linenoise.o
+else
+    REMOTE_LINENOISE_OBJ :=
+    APP_SRCS := $(filter-out $(wildcard $(SRC_DIR)/remote/*.cpp),$(APP_SRCS))
+endif
+
+# Developer-only showcase panels. Not reachable from the shipped navigation
+# (no PanelId, no PanelFactory wiring) — they exist as live testbeds: XML
+# binding/repeat demos (test_panel), wizard step-progress (step_test_panel),
+# the 3D G-code viewer harness (gcode_test_panel), and icon-font coverage
+# (glyphs_panel). Dev-only: default ON for the native dev build, OFF for
+# release/cross builds. Force into a device dev image with:
+#   make PLATFORM_TARGET=pi ENABLE_DEV_PANELS=yes
+ifeq ($(PLATFORM_TARGET),native)
+    ENABLE_DEV_PANELS ?= yes
+else
+    ENABLE_DEV_PANELS ?= no
+endif
+
+ifneq ($(ENABLE_DEV_PANELS),yes)
+    APP_SRCS := $(filter-out $(SRC_DIR)/ui/ui_panel_test.cpp,$(APP_SRCS))
+    APP_SRCS := $(filter-out $(SRC_DIR)/ui/ui_panel_step_test.cpp,$(APP_SRCS))
+    APP_SRCS := $(filter-out $(SRC_DIR)/ui/ui_panel_gcode_test.cpp,$(APP_SRCS))
+    APP_SRCS := $(filter-out $(SRC_DIR)/ui/ui_panel_glyphs.cpp,$(APP_SRCS))
+endif
 APP_OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(APP_SRCS))
+
+# Linenoise (bundled line-editing library) for the folded REPL. Built as C99 with
+# _GNU_SOURCE so strdup/fchmod/fileno are declared — without it they are implicit
+# int, truncating strdup's 64-bit pointer to 32 bits (corrupt history -> SIGSEGV).
+$(OBJ_DIR)/linenoise.o: lib/linenoise/linenoise.c
+	$(Q)mkdir -p $(dir $@)
+	$(ECHO) "$(BLUE)[CC]$(RESET) $<"
+	$(Q)$(CC) -std=c99 -D_GNU_SOURCE -Wall -Os -c $< -o $@
 
 # libhv dns_resolv.c — needed by safe_resolve.h on statically-linked ARM/MIPS
 # targets (avoids glibc __check_pf SIGSEGV). Only compiled for cross builds.
@@ -561,6 +663,20 @@ else
     MOCK_DEFINES :=
 endif
 
+# Remote-control subsystem define (see ENABLE_REMOTE_CONTROL above)
+ifeq ($(ENABLE_REMOTE_CONTROL),yes)
+    REMOTE_CONTROL_DEFINES := -DHELIX_ENABLE_REMOTE_CONTROL
+else
+    REMOTE_CONTROL_DEFINES :=
+endif
+
+# Developer-only showcase panels define (see ENABLE_DEV_PANELS above)
+ifeq ($(ENABLE_DEV_PANELS),yes)
+    DEV_PANELS_DEFINES := -DHELIX_ENABLE_DEV_PANELS
+else
+    DEV_PANELS_DEFINES :=
+endif
+
 # wpa_supplicant (WiFi control via wpa_ctrl interface)
 WPA_DIR := lib/wpa_supplicant
 # Output to $(BUILD_DIR)/lib/ for architecture isolation (native/pi/ad5m)
@@ -571,7 +687,17 @@ WPA_INC := -isystem $(WPA_DIR)/src/common -isystem $(WPA_DIR)/src/utils
 # Precompiled header for LVGL (30-50% faster clean builds)
 # Only supported by gcc and clang (not MSVC)
 PCH_HEADER := $(INC_DIR)/lvgl_pch.h
+# Sanitizer builds get their own PCH for the same reason they get their own
+# OBJ_DIR: a PCH compiled without -fsanitize cannot be reused by an
+# instrumented compile, and sharing one silently poisons the whole tree.
+# `:=` is fine — a command-line PCH=... still overrides it.
+ifeq ($(SANITIZE),address)
+PCH := $(BUILD_DIR)/asan-lvgl_pch.h.gch
+else ifeq ($(SANITIZE),thread)
+PCH := $(BUILD_DIR)/tsan-lvgl_pch.h.gch
+else
 PCH := $(BUILD_DIR)/lvgl_pch.h.gch
+endif
 PCH_FLAGS := -include $(PCH_HEADER)
 
 # Include paths
@@ -580,6 +706,11 @@ PCH_FLAGS := -include $(PCH_HEADER)
 # stb_image headers (used for thumbnail processing)
 STB_INC := -isystem lib/stb
 INCLUDES := -I. -I$(INC_DIR) -Isrc/generated -I$(BUILD_DIR)/generated -isystem lib -isystem lib/glm $(LVGL_INC) $(LIBHV_INC) $(SPDLOG_INC) $(STB_INC) $(LV_MARKDOWN_INC) $(QUIRC_INC) $(WPA_INC) $(SDL2_INC)
+
+# The folded helixctl client (src/remote/remote_client.cpp) includes linenoise.h.
+ifeq ($(ENABLE_REMOTE_CONTROL),yes)
+    INCLUDES += -I lib/linenoise
+endif
 
 # Common linker flags (used by both macOS and Linux)
 LDFLAGS_COMMON := $(SDL2_LIBS) $(LIBHV_LIBS) $(FMT_LIBS) -lz -lm -lpthread
@@ -726,6 +857,14 @@ CXXFLAGS += $(SCREENSAVER_DEFINES)
 CFLAGS += $(MOCK_DEFINES)
 CXXFLAGS += $(MOCK_DEFINES)
 
+# Add remote-control defines to compiler flags
+CFLAGS += $(REMOTE_CONTROL_DEFINES)
+CXXFLAGS += $(REMOTE_CONTROL_DEFINES)
+
+# Add developer-panel defines to compiler flags
+CFLAGS += $(DEV_PANELS_DEFINES)
+CXXFLAGS += $(DEV_PANELS_DEFINES)
+
 # Add systemd defines to C++ compiler flags (for logging_init.cpp)
 CXXFLAGS += $(SYSTEMD_CXXFLAGS)
 
@@ -757,6 +896,15 @@ ifeq ($(SANITIZE),address)
     LDFLAGS += $(SANITIZE_FLAGS)
     ifneq ($(CROSS_COMPILE),)
         LDFLAGS += -static-libasan
+    endif
+endif
+
+# Same re-application for TSAN, and for the same reason: the per-platform
+# `LDFLAGS :=` above clobbers anything injected earlier.
+ifeq ($(SANITIZE),thread)
+    LDFLAGS += $(SANITIZE_FLAGS)
+    ifneq ($(CROSS_COMPILE),)
+        LDFLAGS += -static-libtsan
     endif
 endif
 

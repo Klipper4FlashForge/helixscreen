@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "lv_markdown_style.h"
+
 /**
  * @file ui_markdown.h
  * @brief Markdown viewer XML widget with theme-aware styling and subject binding
@@ -28,3 +30,19 @@
  * Must be called after lv_xml_init() and after theme is initialized.
  */
 void ui_markdown_init();
+
+/**
+ * @brief Populate a lv_markdown_style_t from the current theme tokens
+ *
+ * Maps responsive font tokens (font_body, font_body_bold, font_heading,
+ * font_xl, font_small) and color tokens (text, text_subtle, text_muted,
+ * primary, secondary) onto the lv_markdown style so the rendered markdown
+ * matches the app's look across breakpoints and light/dark themes.
+ *
+ * Exposed for unit-testing the token wiring; production callers should
+ * use the <ui_markdown> XML widget, which builds and applies the style
+ * internally.
+ *
+ * @param style Output struct; overwritten in full.
+ */
+void ui_markdown_get_theme_style(lv_markdown_style_t& style);

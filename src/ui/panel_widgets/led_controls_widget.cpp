@@ -6,12 +6,8 @@
 #include "ui_event_safety.h"
 #include "ui_nav_manager.h"
 
-#include "app_globals.h"
 #include "led/ui_led_control_overlay.h"
-#include "i_moonraker_api.h"
-#include "panel_widget_manager.h"
 #include "panel_widget_registry.h"
-#include "printer_state.h"
 
 #include <spdlog/spdlog.h>
 
@@ -21,16 +17,11 @@ namespace helix {
 
 void register_led_controls_widget() {
     register_widget_factory("led_controls", [](const std::string&) -> std::unique_ptr<PanelWidget> {
-        auto& ps = get_printer_state();
-        auto* api = PanelWidgetManager::instance().shared_resource<IMoonrakerAPI>();
-        return std::make_unique<LedControlsWidget>(ps, api);
+        return std::make_unique<LedControlsWidget>();
     });
     lv_xml_register_event_cb(nullptr, "on_led_controls_clicked",
                              LedControlsWidget::on_led_controls_clicked);
 }
-
-LedControlsWidget::LedControlsWidget(PrinterState& printer_state, IMoonrakerAPI* api)
-    : printer_state_(printer_state), api_(api) {}
 
 LedControlsWidget::~LedControlsWidget() {
     detach();
@@ -81,7 +72,6 @@ void LedControlsWidget::handle_clicked() {
             overlay.init_subjects();
         }
         overlay.register_callbacks();
-        overlay.set_api(api_);
 
         led_control_panel_ = overlay.create(parent_screen_);
         if (!led_control_panel_) {
@@ -92,7 +82,6 @@ void LedControlsWidget::handle_clicked() {
     }
 
     if (led_control_panel_) {
-        get_led_control_overlay().set_api(api_);
         NavigationManager::instance().push_overlay(led_control_panel_);
     }
 }

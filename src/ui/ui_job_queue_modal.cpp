@@ -9,8 +9,8 @@
 #include "ui_utils.h"
 
 #include "app_globals.h"
-#include "job_queue_state.h"
 #include "i_moonraker_api.h"
+#include "job_queue_state.h"
 #include "observer_factory.h"
 #include "theme_manager.h"
 
@@ -27,11 +27,26 @@ struct RowData {
     char* filename;
 };
 
+// NOTE: this site owns TWO strings behind one pointer, so it cannot use
+// helix::ui::set_owned_user_string() (single char* slot). It keeps its own
+// allocator, but with the same contract: every lv_malloc is checked and a
+// partial allocation is rolled back rather than left half-built.
 RowData* make_row_data(const std::string& job_id, const std::string& filename) {
     auto* rd = static_cast<RowData*>(lv_malloc(sizeof(RowData)));
+    if (!rd) {
+        spdlog::error("[JobQueueModal] Failed to allocate row data for '{}'", filename);
+        return nullptr;
+    }
     rd->job_id = static_cast<char*>(lv_malloc(job_id.size() + 1));
-    std::memcpy(rd->job_id, job_id.c_str(), job_id.size() + 1);
     rd->filename = static_cast<char*>(lv_malloc(filename.size() + 1));
+    if (!rd->job_id || !rd->filename) {
+        spdlog::error("[JobQueueModal] Failed to allocate row strings for '{}'", filename);
+        lv_free(rd->job_id);
+        lv_free(rd->filename);
+        lv_free(rd);
+        return nullptr;
+    }
+    std::memcpy(rd->job_id, job_id.c_str(), job_id.size() + 1);
     std::memcpy(rd->filename, filename.c_str(), filename.size() + 1);
     return rd;
 }
@@ -198,8 +213,9 @@ void JobQueueModal::populate_job_list() {
         lv_obj_set_style_bg_opa(row, LV_OPA_20, LV_STATE_PRESSED);
         lv_obj_set_style_radius(row, 6, 0);
         lv_obj_set_style_border_width(row, 0, 0);
-        lv_obj_set_style_pad_all(row, 8, 0);
-        lv_obj_set_style_pad_gap(row, 8, 0);
+        int32_t row_pad = theme_manager_get_spacing("space_sm");
+        lv_obj_set_style_pad_all(row, row_pad, 0);
+        lv_obj_set_style_pad_gap(row, row_pad, 0);
         lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
         lv_obj_set_style_flex_main_place(row, LV_FLEX_ALIGN_SPACE_BETWEEN, 0);
         lv_obj_set_style_flex_cross_place(row, LV_FLEX_ALIGN_CENTER, 0);
@@ -237,7 +253,7 @@ void JobQueueModal::populate_job_list() {
         lv_obj_set_style_bg_opa(info_col, 0, 0);
         lv_obj_set_style_border_width(info_col, 0, 0);
         lv_obj_set_style_pad_all(info_col, 0, 0);
-        lv_obj_set_style_pad_gap(info_col, 2, 0);
+        lv_obj_set_style_pad_gap(info_col, theme_manager_get_spacing("space_xxs"), 0);
         lv_obj_set_flex_flow(info_col, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_flex_grow(info_col, 1);
         lv_obj_remove_flag(info_col, LV_OBJ_FLAG_CLICKABLE);
@@ -280,7 +296,7 @@ void JobQueueModal::populate_job_list() {
         lv_obj_set_style_text_color(del_icon, danger_color, 0);
         lv_obj_set_style_text_color(del_icon, theme_manager_get_color("text"), LV_STATE_PRESSED);
         lv_obj_add_flag(del_icon, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_style_pad_all(del_icon, 6, 0);
+        lv_obj_set_style_pad_all(del_icon, theme_manager_get_spacing("space_xs"), 0);
         const char* icon_font_name = lv_xml_get_const(nullptr, "icon_font_sm");
         const lv_font_t* icon_font =
             icon_font_name ? lv_xml_get_font(nullptr, icon_font_name) : nullptr;

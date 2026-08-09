@@ -29,19 +29,39 @@ void PostOpCooldownManager::schedule() {
     }
 
     auto* cfg = helix::Config::get_instance();
+
+    // Read config rather than the SettingsManager subject: schedule() is callable
+    // from any thread, and the config accessors are the only thread-safe half.
+    if (cfg && !cfg->get<bool>(cfg->df() + "filament/auto_cooldown", true)) {
+        spdlog::debug("[PostOpCooldown] Skipping — auto-cooldown disabled in settings");
+        return;
+    }
+
     int delay_seconds =
         cfg ? cfg->get<int>(cfg->df() + "filament/cooldown_delay_seconds", 120) : 120;
 
+    // A zero/negative delay means "off" — an lv_timer with a 0ms period would
+    // otherwise fire on the next tick and cool the nozzle immediately.
+    if (delay_seconds <= 0) {
+        spdlog::debug("[PostOpCooldown] Skipping — cooldown_delay_seconds={}", delay_seconds);
+        return;
+    }
+
     spdlog::info("[PostOpCooldown] Scheduling cooldown in {}s", delay_seconds);
 
-    helix::ui::queue_update([this, delay_seconds]() {
+    // Reach the manager through instance() rather than a captured `this`, for the
+    // same reason the timer callback below does: it keeps the queued lambda from
+    // holding a pointer whose validity it cannot check (#1165).
+    helix::ui::queue_update("PostOpCooldownManager::schedule", [delay_seconds]() {
+        auto& self = PostOpCooldownManager::instance();
+
         // Delete existing timer if any
-        if (timer_) {
-            lv_timer_delete(timer_);
-            timer_ = nullptr;
+        if (self.timer_) {
+            lv_timer_delete(self.timer_);
+            self.timer_ = nullptr;
         }
 
-        timer_ = lv_timer_create(
+        self.timer_ = lv_timer_create(
             [](lv_timer_t* /*t*/) {
                 auto& self = PostOpCooldownManager::instance();
                 self.timer_ = nullptr;
@@ -70,7 +90,7 @@ void PostOpCooldownManager::schedule() {
                 }
             },
             static_cast<uint32_t>(delay_seconds) * 1000, nullptr);
-        lv_timer_set_repeat_count(timer_, 1);
+        lv_timer_set_repeat_count(self.timer_, 1);
     });
 }
 
@@ -80,10 +100,11 @@ void PostOpCooldownManager::cancel() {
 
     spdlog::debug("[PostOpCooldown] Cancelling pending cooldown");
 
-    helix::ui::queue_update([this]() {
-        if (timer_) {
-            lv_timer_delete(timer_);
-            timer_ = nullptr;
+    helix::ui::queue_update("PostOpCooldownManager::cancel", []() {
+        auto& self = PostOpCooldownManager::instance();
+        if (self.timer_) {
+            lv_timer_delete(self.timer_);
+            self.timer_ = nullptr;
         }
     });
 }

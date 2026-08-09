@@ -69,6 +69,7 @@ void PrinterFanState::init_subjects(bool register_xml) {
     // Fan subjects
     INIT_SUBJECT_INT(fan_speed, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(fans_version, 0, subjects_, register_xml);
+    INIT_SUBJECT_INT(primary_fans_version, 0, subjects_, register_xml);
 
     subjects_initialized_ = true;
     spdlog::trace("[PrinterFanState] Subjects initialized successfully");
@@ -202,26 +203,103 @@ FanType PrinterFanState::classify_fan_type(const std::string& object_name) const
 
 PrimaryFans PrinterFanState::classify_primary_fans() const {
     PrimaryFans out;
+
+    // Seed part/hotend from the first fan of each type; aux is resolved separately
+    // (it prefers commandable fans and must exclude the resolved part fan).
     for (const auto& fan : fans_) {
-        switch (fan.type) {
-        case FanType::PART_COOLING:
-            if (out.part.empty())
-                out.part = fan.object_name;
-            break;
-        case FanType::HEATER_FAN:
-            if (out.hotend.empty())
-                out.hotend = fan.object_name;
-            break;
-        case FanType::CONTROLLER_FAN:
-        case FanType::TEMPERATURE_FAN:
-        case FanType::GENERIC_FAN:
-        case FanType::OUTPUT_PIN_FAN:
-            if (out.aux.empty())
-                out.aux = fan.object_name;
-            break;
+        if (fan.type == FanType::PART_COOLING && out.part.empty())
+            out.part = fan.object_name;
+        else if (fan.type == FanType::HEATER_FAN && out.hotend.empty())
+            out.hotend = fan.object_name;
+    }
+
+    out.part = resolve_part_fan(out.part);
+    out.aux = resolve_aux_fan(out.part, out.hotend);
+    return out;
+}
+
+std::string PrinterFanState::resolve_part_fan(const std::string& configured) const {
+    // The bare [fan] is Klipper's canonical part cooling object, but some printers
+    // leave it a stale 0% stub and drive a manually-commandable named fan instead
+    // (output_pin fanN / fan_generic; user Discord report, e3f92c3f4). Auto-controlled
+    // fans (heater/controller/temperature) can never be the M106 part fan, so they are
+    // never candidates — promoting an idle controller_fan/temperature_fan over the
+    // live [fan] is what stuck the Sovol SV08 part fan at 0% (#1124).
+    //
+    // Pick by which fan has actually spun (sticky: ever_ran survives a fan turning
+    // off, so the slot doesn't flick to a running auxiliary fan while the real [fan]
+    // is briefly idle at first layer / on a bridge). classify re-runs on fan
+    // start/stop via primary_fans_version:
+    //   1. configured part fan has run             -> keep it
+    //   2. else a commandable named fan that ran   -> promote it (stale-"fan" printers)
+    //   3. else keep the configured part fan; if none configured, the front-most
+    //      commandable fan (the real part fan is a named object).
+    auto has_run = [this](const std::string& name) -> bool {
+        for (const auto& fan : fans_)
+            if (fan.object_name == name)
+                return fan.ever_ran || fan.speed_percent > 0;
+        return false;
+    };
+
+    if (!configured.empty() && has_run(configured))
+        return configured; // (1) the configured part fan proved itself
+
+    std::string first_candidate;
+    for (const auto& fan : fans_) {
+        if (!is_fan_controllable(fan.type) || fan.object_name == configured)
+            continue;
+        if (first_candidate.empty())
+            first_candidate = fan.object_name;
+        if (fan.ever_ran || fan.speed_percent > 0)
+            return fan.object_name; // (2) a commandable named fan that ran is the part fan
+    }
+
+    if (!configured.empty())
+        return configured;  // (3a) keep canonical part fan (never ran, or no commandable peer)
+    return first_candidate; // (3b) no configured part fan -> front-most commandable, may be empty
+}
+
+std::string PrinterFanState::resolve_aux_fan(const std::string& part,
+                                             const std::string& hotend) const {
+    // The compact row has one aux slot. Prefer a user-commandable fan (fan_generic /
+    // output_pin) — the one a user actually toggles and wants to see — over an
+    // auto-controlled controller_fan / temperature_fan whose reading rarely changes
+    // and looks "stuck". Falls back to the first auto-controlled fan when there is no
+    // commandable candidate. Excludes the fans already shown in part/hotend (#1124).
+    std::string commandable, auto_controlled;
+    for (const auto& fan : fans_) {
+        if (fan.object_name == part || fan.object_name == hotend || !is_aux_fan(fan.type))
+            continue;
+        bool user_commandable =
+            fan.type == FanType::GENERIC_FAN || fan.type == FanType::OUTPUT_PIN_FAN;
+        if (user_commandable) {
+            if (commandable.empty())
+                commandable = fan.object_name;
+        } else if (auto_controlled.empty()) {
+            auto_controlled = fan.object_name;
         }
     }
-    return out;
+    return !commandable.empty() ? commandable : auto_controlled;
+}
+
+void PrinterFanState::apply_roles(const FanRoleConfig& roles) {
+    // Copy both out first: init_fans assigns straight into the members these
+    // alias, and passing a member as a const& argument to the call that
+    // overwrites it is the kind of self-assignment that works until someone
+    // reorders two lines inside init_fans.
+    const std::vector<std::string> objects = discovered_objects_;
+    const std::unordered_map<std::string, double> max_power = fan_max_power_;
+    init_fans(objects, roles, max_power);
+}
+
+void PrinterFanState::refresh_primary_fans_selection() {
+    PrimaryFans now = classify_primary_fans();
+    if (now != primary_fans_cache_) {
+        primary_fans_cache_ = now;
+        lv_subject_set_int(&primary_fans_version_, lv_subject_get_int(&primary_fans_version_) + 1);
+        spdlog::debug("[PrinterFanState] Primary fans reassigned: part='{}' hotend='{}' aux='{}'",
+                      now.part, now.hotend, now.aux);
+    }
 }
 
 std::string PrinterFanState::get_role_display_name(const std::string& object_name) const {
@@ -258,6 +336,11 @@ bool PrinterFanState::is_fan_controllable(FanType type) {
            type == FanType::OUTPUT_PIN_FAN;
 }
 
+bool PrinterFanState::is_aux_fan(FanType type) {
+    return type == FanType::CONTROLLER_FAN || type == FanType::TEMPERATURE_FAN ||
+           type == FanType::GENERIC_FAN || type == FanType::OUTPUT_PIN_FAN;
+}
+
 double PrinterFanState::normalize_speed(const std::string& object_name, double raw_speed) const {
     std::string key = object_name;
     std::transform(key.begin(), key.end(), key.begin(), ::tolower);
@@ -275,6 +358,7 @@ void PrinterFanState::init_fans(const std::vector<std::string>& fan_objects,
                                 const FanRoleConfig& roles,
                                 const std::unordered_map<std::string, double>& max_power) {
     fan_max_power_ = max_power;
+    discovered_objects_ = fan_objects;
 
     // Build new subject map, reusing existing subjects for fans that persist
     // across reconnections. Only deinit subjects for fans that disappeared.
@@ -307,6 +391,19 @@ void PrinterFanState::init_fans(const std::vector<std::string>& fan_objects,
                   roles_.part_fan, roles_.hotend_fan, roles_.chamber_fan, roles_.exhaust_fan,
                   role_display_names_.size());
 
+    // Carry live telemetry across the rebuild for fans that persist, exactly as
+    // the subject map below does. init_fans() re-runs on every
+    // reapply_hardware_roles() while the subscription stays live, and Moonraker's
+    // notify_status_update is DIFFERENTIAL: a fan holding a steady speed reports
+    // nothing afterwards, so anything zeroed here has no event that would ever
+    // restore it. Losing speed_percent freezes the readout; losing ever_ran also
+    // drops the part slot back to the front-most commandable fan, stranding it on
+    // a dead [fan] at 0% while All Fans stays correct (#1181).
+    std::unordered_map<std::string, FanInfo> previous;
+    previous.reserve(fans_.size());
+    for (auto& fan : fans_)
+        previous.emplace(fan.object_name, std::move(fan));
+
     fans_.clear();
     fans_.reserve(fan_objects.size());
 
@@ -329,6 +426,17 @@ void PrinterFanState::init_fans(const std::vector<std::string>& fan_objects,
         info.is_controllable = is_fan_controllable(info.type);
         info.speed_percent = 0;
 
+        // Same object name = same physical fan, the assumption the subject reuse
+        // below already makes. Identity fields (type, controllability, display
+        // name) are recomputed from the fresh config; only the live readings ride
+        // along (#1181).
+        auto prior = previous.find(obj_name);
+        if (prior != previous.end()) {
+            info.speed_percent = prior->second.speed_percent;
+            info.ever_ran = prior->second.ever_ran;
+            info.rpm = prior->second.rpm;
+        }
+
         // Name priority: custom name > role name > auto-generated
         auto* config = Config::get_instance();
         std::string custom_name;
@@ -348,13 +456,17 @@ void PrinterFanState::init_fans(const std::vector<std::string>& fan_objects,
         spdlog::trace("[PrinterFanState] Registered fan: {} -> \"{}\" (type={}, controllable={})",
                       obj_name, info.display_name, static_cast<int>(info.type),
                       info.is_controllable);
+        const int carried_speed = info.speed_percent;
         fans_.push_back(std::move(info));
 
         // Reuse existing subject if this fan was already tracked, otherwise create new
         auto existing = fan_speed_subjects_.find(obj_name);
         if (existing != fan_speed_subjects_.end() && existing->second) {
-            // Reuse — reset value but keep subject alive (observers remain valid)
-            lv_subject_set_int(existing->second.get(), 0);
+            // Reuse — keep the subject alive so observers stay valid, and hold it
+            // to the same value the struct carried forward. Writing 0 here would
+            // re-open the struct/subject split that update_fan_speed's
+            // unconditional write exists to absorb (#1181).
+            lv_subject_set_int(existing->second.get(), carried_speed);
             new_subjects.emplace(obj_name, std::move(existing->second));
             // Reuse existing lifetime token too (observers still hold valid weak_ptrs)
             auto lifetime_it = fan_speed_lifetimes_.find(obj_name);
@@ -395,7 +507,12 @@ void PrinterFanState::init_fans(const std::vector<std::string>& fan_objects,
     fan_speed_subjects_ = std::move(new_subjects);
     fan_speed_lifetimes_ = std::move(new_lifetimes);
 
-    // Initialize and bump version to notify UI
+    // Seed the primary-role cache from the fresh (idle) fan set so the first
+    // fan start/stop after discovery is compared against a known baseline.
+    primary_fans_cache_ = classify_primary_fans();
+
+    // Initialize and bump version to notify UI. fans_version signals the
+    // structural change; primary_fans_version follows once speeds arrive.
     lv_subject_set_int(&fans_version_, lv_subject_get_int(&fans_version_) + 1);
     spdlog::debug("[PrinterFanState] Initialized {} fans with {} speed subjects (version {})",
                   fans_.size(), fan_speed_subjects_.size(), lv_subject_get_int(&fans_version_));
@@ -406,20 +523,45 @@ void PrinterFanState::update_fan_speed(const std::string& object_name, double sp
 
     for (auto& fan : fans_) {
         if (fan.object_name == object_name) {
-            if (fan.speed_percent != speed_pct) {
-                fan.speed_percent = speed_pct;
+            bool changed = fan.speed_percent != speed_pct;
+            bool was_running = fan.speed_percent > 0;
 
-                // Fire per-fan subject for reactive UI updates
-                auto it = fan_speed_subjects_.find(object_name);
-                if (it != fan_speed_subjects_.end() && it->second) {
-                    lv_subject_set_int(it->second.get(), speed_pct);
+            if (changed) {
+                fan.speed_percent = speed_pct;
+                if (speed_pct > 0)
+                    fan.ever_ran = true;
+            }
+
+            // Always fire the per-fan subject — lv_subject_set_int no-ops
+            // internally when the value hasn't changed (lv_observer.c
+            // lv_subject_notify_if_changed), so there is no perf cost when
+            // struct and subject agree.
+            //
+            // The write is deliberately NOT gated on the struct comparison. A
+            // gated write can only ever restore the subject when the struct also
+            // moves, so any divergence becomes permanent: the subject waits for a
+            // change that, on a differential feed, may never come. Nothing in the
+            // tree is known to diverge them today — init_fans() carries struct and
+            // subject forward together — and this write is what keeps that true
+            // cheaply rather than by argument (#1181).
+            auto it = fan_speed_subjects_.find(object_name);
+            if (it != fan_speed_subjects_.end() && it->second) {
+                lv_subject_set_int(it->second.get(), speed_pct);
+                if (changed) {
                     spdlog::trace("[PrinterFanState] Fan {} speed updated to {}%", object_name,
                                   speed_pct);
-                } else {
-                    spdlog::debug("[PrinterFanState] Dropping speed update for '{}' — subject "
-                                  "not initialized",
-                                  object_name);
                 }
+            } else if (changed) {
+                spdlog::debug("[PrinterFanState] Dropping speed update for '{}' — subject "
+                              "not initialized",
+                              object_name);
+            }
+
+            // A fan starting or stopping can change which fan owns the part
+            // slot (runtime-adaptive selection). Only a zero-crossing can flip
+            // it, so skip the recompute for same-running-state changes (#1124).
+            if (changed && was_running != (speed_pct > 0)) {
+                refresh_primary_fans_selection();
             }
             return;
         }

@@ -55,6 +55,10 @@ namespace helix::ui {
  * @endcode
  */
 class FilamentRunoutHandler {
+    // Reaches dispatch_load() without a live modal — see
+    // tests/test_helpers/filament_runout_handler_test_access.h.
+    friend class FilamentRunoutHandlerTestAccess;
+
   public:
     /**
      * @brief Construct handler with dependencies
@@ -197,6 +201,49 @@ class FilamentRunoutHandler {
      * @brief Hide and cleanup the runout guidance modal
      */
     void hide_runout_guidance_modal();
+
+    /**
+     * @brief Dispatch the dialog's "Load filament" action.
+     *
+     * Routes through the shared plan_load() ladder — AMS backend, then the
+     * configured LOAD_FILAMENT macro, then raw gcode — so this dialog agrees
+     * with the Filament panel and the AMS sidebar. Two constraints are specific
+     * to this surface: parameters are never prompted for (ParamPolicy::Suppress,
+     * because a param modal would stack on top of this live dialog), and a
+     * refusal never navigates away (the dialog the user is standing in would be
+     * torn down beneath them).
+     *
+     * Main thread only — called from the modal's button callback after its
+     * LifetimeToken check.
+     */
+    void dispatch_load();
+
+    /**
+     * @brief Dispatch the dialog's "Unload filament" action.
+     *
+     * The plan_unload() counterpart of dispatch_load(). This button used to call
+     * StandardMacros::execute() directly: no backend tier at all, no raw-gcode
+     * fallback, and a "Unload macro not configured" warning on a printer whose
+     * AMS backend would have handled it perfectly well.
+     *
+     * The unload target is the current lane, and unload_target_is_loaded()'s
+     * is_current_slot arm is what keeps it reachable here — a runout clears the
+     * lane's own sensor while filament is still at the head (#995 / #1199).
+     *
+     * Main thread only.
+     */
+    void dispatch_unload();
+
+    /**
+     * @brief Dispatch the dialog's "Purge" action.
+     *
+     * Tiers 2 and 3 only — there is no backend purge entry point, so there is no
+     * plan_purge() to route through. Same ParamPolicy::Suppress and the same
+     * never-navigate rule as the other two buttons.
+     *
+     * Main thread only.
+     */
+    void dispatch_purge();
 };
 
 } // namespace helix::ui

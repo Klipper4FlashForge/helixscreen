@@ -157,4 +157,3 @@ class WizardFanSelectStep : public helix::wizard::Step {
 // ============================================================================
 
 WizardFanSelectStep* get_wizard_fan_select_step();
-void destroy_wizard_fan_select_step();

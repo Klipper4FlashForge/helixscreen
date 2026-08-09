@@ -14,6 +14,10 @@
 #include "keyboard_layout_provider.h"
 #include "theme_manager.h"
 
+// For lv_buttonmatrix_t::button_areas — the real per-button rects LVGL laid out.
+// There is no public getter; see buttonmatrix_button_area() below.
+#include "lvgl/src/widgets/buttonmatrix/lv_buttonmatrix_private.h"
+
 #include <spdlog/spdlog.h>
 
 #include <cstring>
@@ -23,6 +27,35 @@
 #endif
 
 using namespace helix;
+
+namespace {
+
+/**
+ * @brief Absolute screen rect of one button in a button matrix.
+ *
+ * `button_areas[]` is stored relative to the widget origin — lv_buttonmatrix.c
+ * copies the entry and then adds the object's coords before drawing — so translate
+ * it the same way here.
+ *
+ * @param obj     Button matrix (or keyboard, which derives from it)
+ * @param btn_id  Button index, counting real buttons only (NOT map indices, which
+ *                include "\n" row separators)
+ * @param out     Receives the absolute rect
+ * @return false if the matrix has no laid-out buttons or btn_id is out of range
+ */
+bool buttonmatrix_button_area(lv_obj_t* obj, uint32_t btn_id, lv_area_t* out) {
+    auto* btnm = reinterpret_cast<lv_buttonmatrix_t*>(obj);
+    if (!btnm || !btnm->button_areas || btn_id >= btnm->btn_cnt) {
+        return false;
+    }
+    lv_area_t coords;
+    lv_obj_get_coords(obj, &coords);
+    *out = btnm->button_areas[btn_id];
+    lv_area_move(out, coords.x1, coords.y1);
+    return true;
+}
+
+} // namespace
 
 // Macro for keyboard button control flags
 #define LV_KB_BTN(width) static_cast<lv_buttonmatrix_ctrl_t>(LV_BUTTONMATRIX_CTRL_POPOVER | (width))
@@ -92,6 +125,16 @@ const KeyboardManager::AltCharMapping KeyboardManager::alt_char_map_[] = {
     {'n', "!"},
     {'M', "?"},
     {'m', "?"},
+    // Bottom-row punctuation. Unlike the letters these carry a multi-character set:
+    // hold for the first, slide onto the popover for the rest. Every character here
+    // is otherwise unreachable from the alpha layer entirely — '=' in particular is
+    // constant in Klipper macros (PROFILE=default, Z=0.1) and previously needed two
+    // layer switches (?123 then #+=) to reach.
+    //
+    // Order is the initial default only; promote_alternative() reorders it in place
+    // as the user picks, so element 0 tracks their last choice for the session.
+    {',', "=<>"},
+    {'.', "/[]"},
     {0, nullptr} // Sentinel
 };
 
@@ -136,12 +179,61 @@ KeyboardManager& KeyboardManager::instance() {
 // ============================================================================
 
 const char* KeyboardManager::find_alternatives(char base_char) const {
+    // A user-reordered list wins over the shipped order for this session.
+    auto it = alt_order_.find(base_char);
+    if (it != alt_order_.end()) {
+        return it->second.c_str();
+    }
     for (size_t i = 0; alt_char_map_[i].alternatives != nullptr; i++) {
         if (alt_char_map_[i].base_char == base_char) {
             return alt_char_map_[i].alternatives;
         }
     }
     return nullptr;
+}
+
+void KeyboardManager::promote_alternative(char base_char, char chosen) {
+    if (base_char == 0 || chosen == 0) {
+        return;
+    }
+
+    // Seed this key's mutable order from the shipped table on first promotion.
+    auto it = alt_order_.find(base_char);
+    std::string order;
+    if (it != alt_order_.end()) {
+        order = it->second;
+    } else {
+        const char* shipped = nullptr;
+        for (size_t i = 0; alt_char_map_[i].alternatives != nullptr; i++) {
+            if (alt_char_map_[i].base_char == base_char) {
+                shipped = alt_char_map_[i].alternatives;
+                break;
+            }
+        }
+        if (!shipped) {
+            return; // Key has no alternates at all.
+        }
+        order = shipped;
+    }
+
+    const size_t pos = order.find(chosen);
+    if (pos == std::string::npos || pos == 0) {
+        return; // Not one of this key's alternates, or already the default.
+    }
+
+    order.erase(pos, 1);
+    order.insert(order.begin(), chosen);
+    alt_order_[base_char] = std::move(order);
+
+    // The on-key hint draws element 0, so it now shows a different character —
+    // repaint so the key reflects the new default immediately rather than at the
+    // next unrelated invalidation.
+    if (keyboard_ != nullptr) {
+        lv_obj_invalidate(keyboard_);
+    }
+
+    spdlog::info("[KeyboardManager] '{}' default alternate is now '{}'", log_char(base_char),
+                 log_char(chosen));
 }
 
 bool KeyboardManager::point_in_area(const lv_area_t* area, const lv_point_t* point) const {
@@ -325,7 +417,12 @@ void KeyboardManager::textarea_focus_event_cb(lv_event_t* e) {
     if (code == LV_EVENT_FOCUSED) {
         // Suppress keyboard when focus is a side effect of scrolling — LVGL fires
         // FOCUSED on whatever the finger lands on, even during a swipe gesture.
-        lv_indev_t* indev = lv_indev_active();
+        // The device that raised the focus, so a second pointer's scroll state
+        // cannot suppress a keyboard the user legitimately asked for.
+        lv_indev_t* indev = lv_event_get_indev(e);
+        if (!indev) {
+            indev = lv_indev_active();
+        }
         if (indev && lv_indev_get_scroll_obj(indev)) {
             spdlog::debug("[KeyboardManager] Suppressed keyboard — input device is scrolling");
             return;
@@ -365,7 +462,12 @@ void KeyboardManager::longpress_event_handler(lv_event_t* e) {
         return;
     }
 
-    spdlog::debug("[KeyboardManager] EVENT RECEIVED: code={}", (int)code);
+    // Per-keystroke chatter stays at trace: the ring buffer that backs the debug
+    // bundle's log_tail keeps everything from debug up, so anything logged here
+    // at debug evicts the diagnostic window one keypress at a time. Bundle
+    // 5HLV7EAJ arrived with 1776 of its 2000 lines spent on this handler and a
+    // total span of 3m50s — the reported fault had long since scrolled out.
+    spdlog::trace("[KeyboardManager] EVENT RECEIVED: code={}", (int)code);
 
     if (code == LV_EVENT_PRESSED) {
         uint32_t btn_id = lv_buttonmatrix_get_selected_button(keyboard);
@@ -386,7 +488,15 @@ void KeyboardManager::longpress_event_handler(lv_event_t* e) {
         mgr.pressed_btn_id_ = btn_id;
         mgr.pressed_char_ = (btn_text && btn_text[0]) ? btn_text[0] : 0;
 
-        lv_indev_t* indev = lv_indev_active();
+        // The device that delivered THIS event, not "whichever device is active".
+        // Those differ once more than one pointer indev exists — a touchscreen plus a
+        // USB mouse (which HelixScreen supports), or the ctl synthetic pointer — and
+        // lv_indev_active() can then hand back the other device, making press_point_
+        // the mouse's idle position instead of where the finger actually landed.
+        lv_indev_t* indev = lv_event_get_indev(e);
+        if (!indev) {
+            indev = lv_indev_active();
+        }
         if (indev) {
             lv_indev_get_point(indev, &mgr.press_point_);
         }
@@ -394,8 +504,8 @@ void KeyboardManager::longpress_event_handler(lv_event_t* e) {
         if (btn_text && btn_text[0] && !btn_text[1]) {
             mgr.alternatives_ = mgr.find_alternatives(btn_text[0]);
             if (mgr.alternatives_) {
-                spdlog::debug("[KeyboardManager] PRESSED '{}' - has alternatives: '{}'",
-                              btn_text[0], mgr.alternatives_);
+                spdlog::trace("[KeyboardManager] PRESSED '{}' - has alternatives: '{}'",
+                              mgr.log_char(btn_text[0]), mgr.alternatives_);
             }
         }
 
@@ -403,44 +513,64 @@ void KeyboardManager::longpress_event_handler(lv_event_t* e) {
         if (mgr.longpress_state_ == LP_PRESSED && mgr.alternatives_ != nullptr) {
             mgr.longpress_state_ = LP_LONG_DETECTED;
 
+            // The real key rect, not a hardcoded 50px box around the touch point.
+            // This is both the popover anchor and the "released back on the key"
+            // hit test below, so a fixed box mis-sized the overlay on large screens
+            // and swallowed neighbouring keys on small ones.
             lv_area_t btn_area;
-            btn_area.x1 = mgr.press_point_.x - 25;
-            btn_area.x2 = mgr.press_point_.x + 25;
-            btn_area.y1 = mgr.press_point_.y - 25;
-            btn_area.y2 = mgr.press_point_.y + 25;
+            if (!buttonmatrix_button_area(keyboard, mgr.pressed_btn_id_, &btn_area)) {
+                // No real rect for this key, so abandon the long-press rather than
+                // invent one. The previous fallback — a fixed 50px box around
+                // press_point_ — turned "unknown" into "wrong": if press_point_ did
+                // not match the button (a second pointer device, a stale sample), the
+                // box landed on a different key, the popover drew over it, and the
+                // release was judged outside, silently cancelling. Staying in
+                // LP_PRESSED instead lets the release fall through to the normal
+                // VALUE_CHANGED path, so the key types its primary character. Losing
+                // the alternate is a far better failure than typing nothing.
+                spdlog::warn("[KeyboardManager] No button rect for id {} — long-press skipped",
+                             mgr.pressed_btn_id_);
+                mgr.longpress_state_ = LP_PRESSED;
+                // Return inside the SAFE_EVENT_CB try block; the single _END at the
+                // bottom closes it. Calling _END here would double-close the try.
+                return;
+            }
 
             mgr.pressed_key_area_ = btn_area;
             mgr.show_overlay(&btn_area, mgr.alternatives_);
 
-            // Auto-insert mode: insert the first alt char immediately on long-press
-            if (mgr.auto_insert_alt_ && mgr.alternatives_[0] && mgr.context_textarea_ != nullptr) {
-                char str[2] = {mgr.alternatives_[0], '\0'};
-                lv_textarea_add_text(mgr.context_textarea_, str);
-                mgr.longpress_state_ = LP_ALT_SELECTED;
-                spdlog::info("[KeyboardManager] LONG_PRESSED '{}' - auto-inserted alt '{}'",
-                             mgr.pressed_char_ ? mgr.pressed_char_ : '?', mgr.alternatives_[0]);
-            } else {
-                spdlog::info("[KeyboardManager] LONG_PRESSED detected for '{}' - overlay shown",
-                             mgr.pressed_char_ ? mgr.pressed_char_ : '?');
-            }
+            // Nothing is inserted yet. Insertion happens on RELEASE so that sliding
+            // onto an exposed alternative selects it, and sliding away cancels.
+            // Inserting here (the old auto-insert path) made the overlay decorative:
+            // the character was already committed before the user could aim at it,
+            // and sliding away to cancel still left it in the field.
+            spdlog::info("[KeyboardManager] LONG_PRESSED '{}' - overlay shown, awaiting release",
+                         mgr.pressed_char_ ? mgr.log_char(mgr.pressed_char_) : '?');
         }
 
     } else if (code == LV_EVENT_RELEASED) {
         spdlog::trace("[KeyboardManager] RELEASED event - state={}, overlay={}, textarea={}",
                       (int)mgr.longpress_state_, (void*)mgr.overlay_, (void*)mgr.context_textarea_);
 
-        if (mgr.longpress_state_ == LP_ALT_SELECTED) {
-            // Auto-insert mode: alt char already inserted, just clean up
-            spdlog::info("[KeyboardManager] Cleaning up overlay (alt already auto-inserted)");
-            mgr.longpress_reset();
-            mgr.longpress_state_ = LP_IDLE;
-
-        } else if (mgr.longpress_state_ == LP_LONG_DETECTED && mgr.overlay_ != nullptr) {
+        if (mgr.longpress_state_ == LP_LONG_DETECTED && mgr.overlay_ != nullptr) {
             // Slide-to-select mode: check release position to pick a character
-            lv_indev_t* indev = lv_indev_active();
+            // Same reasoning as the press: read the release position from the device
+            // that delivered this event, not from whichever happens to be active.
+            lv_indev_t* indev = lv_event_get_indev(e);
+            if (!indev) {
+                indev = lv_indev_active();
+            }
             lv_point_t release_point;
 
             spdlog::info("[KeyboardManager] Long-press mode active, checking release position");
+
+            // What a release with no sliding commits. Insertion now happens on
+            // release rather than on long-press, so this must also cover the
+            // no-indev path below — otherwise the keystroke is silently dropped.
+            const char in_place_char =
+                (mgr.auto_insert_alt_ && mgr.alternatives_ && mgr.alternatives_[0])
+                    ? mgr.alternatives_[0]
+                    : mgr.pressed_char_;
 
             if (indev) {
                 lv_indev_get_point(indev, &release_point);
@@ -473,25 +603,44 @@ void KeyboardManager::longpress_event_handler(lv_event_t* e) {
                         }
                     }
                     spdlog::info("[KeyboardManager] Selected nearest label '{}' (dist={})",
-                                 selected_char, min_dist);
+                                 mgr.log_char(selected_char), min_dist);
                 }
 
                 if (selected_char != 0 && mgr.context_textarea_ != nullptr) {
                     char str[2] = {selected_char, '\0'};
                     lv_textarea_add_text(mgr.context_textarea_, str);
                     spdlog::info("[KeyboardManager] Inserted alternative character: '{}'",
-                                 selected_char);
+                                 mgr.log_char(selected_char));
+                    // Deliberately picked off the popover, so make it this key's new
+                    // default. Must come after every read of mgr.alternatives_ above:
+                    // promoting rewrites the backing string and invalidates the
+                    // c_str() that alternatives_ points at.
+                    const char base = mgr.pressed_char_;
+                    mgr.alternatives_ = nullptr;
+                    mgr.promote_alternative(base, selected_char);
                 } else if (mgr.point_in_area(&mgr.pressed_key_area_, &release_point)) {
-                    spdlog::info("[KeyboardManager] Release in original key area");
-                    if (mgr.pressed_char_ != 0 && mgr.context_textarea_ != nullptr) {
-                        char str[2] = {mgr.pressed_char_, '\0'};
+                    // Held and released without sliding. A long-press is a deliberate
+                    // request for the alternate, so honour it rather than falling back
+                    // to the primary — this is the one-gesture path (hold 'f' -> '_')
+                    // that users rely on, and it is what the old auto-insert did.
+                    // With auto_insert_alt_ off, the release lands on the primary
+                    // instead and the alternate requires sliding onto the popover.
+                    if (in_place_char != 0 && mgr.context_textarea_ != nullptr) {
+                        char str[2] = {in_place_char, '\0'};
                         lv_textarea_add_text(mgr.context_textarea_, str);
-                        spdlog::info("[KeyboardManager] Inserted primary character: '{}'",
-                                     mgr.pressed_char_);
+                        spdlog::info("[KeyboardManager] Release on key - inserted '{}'",
+                                     mgr.log_char(in_place_char));
                     }
                 } else {
                     spdlog::info("[KeyboardManager] Released outside - cancelled");
                 }
+            } else if (in_place_char != 0 && mgr.context_textarea_ != nullptr) {
+                // No active indev to locate the release: treat it as a release in
+                // place rather than dropping the keystroke.
+                char str[2] = {in_place_char, '\0'};
+                lv_textarea_add_text(mgr.context_textarea_, str);
+                spdlog::warn("[KeyboardManager] No indev at release - inserted '{}' in place",
+                             mgr.log_char(in_place_char));
             }
 
             spdlog::info("[KeyboardManager] Cleaning up overlay");
@@ -499,7 +648,7 @@ void KeyboardManager::longpress_event_handler(lv_event_t* e) {
             mgr.longpress_state_ = LP_IDLE;
 
         } else if (mgr.longpress_state_ == LP_PRESSED) {
-            spdlog::debug("[KeyboardManager] Short press - normal input");
+            spdlog::trace("[KeyboardManager] Short press - normal input");
             mgr.longpress_reset();
             mgr.longpress_state_ = LP_IDLE;
         }
@@ -527,7 +676,7 @@ void KeyboardManager::keyboard_event_cb(lv_event_t* e) {
         mgr.hide();
     } else if (code == LV_EVENT_VALUE_CHANGED) {
         if (mgr.longpress_state_ == LP_LONG_DETECTED || mgr.longpress_state_ == LP_ALT_SELECTED) {
-            spdlog::debug("[KeyboardManager] Ignoring VALUE_CHANGED during long-press mode");
+            spdlog::trace("[KeyboardManager] Ignoring VALUE_CHANGED during long-press mode");
             return;
         }
 
@@ -620,14 +769,14 @@ void KeyboardManager::keyboard_event_cb(lv_event_t* e) {
                 if (mgr.context_textarea_) {
                     lv_textarea_delete_char(mgr.context_textarea_);
                 }
-                spdlog::debug("[KeyboardManager] Backspace");
+                spdlog::trace("[KeyboardManager] Backspace");
             }
         } else {
             // Regular printing key — insert text into textarea
             if (mgr.context_textarea_ && btn_text) {
                 if (strcmp(btn_text, keyboard_layout_get_spacebar_text()) == 0) {
                     lv_textarea_add_char(mgr.context_textarea_, ' ');
-                    spdlog::debug("[KeyboardManager] Space");
+                    spdlog::trace("[KeyboardManager] Space");
                 } else {
                     lv_textarea_add_text(mgr.context_textarea_, btn_text);
                 }
@@ -645,6 +794,93 @@ void KeyboardManager::keyboard_event_cb(lv_event_t* e) {
     }
 
     LVGL_SAFE_EVENT_CB_END();
+}
+
+namespace {
+
+/// Largest share of a key's height an alternate-character hint may occupy. Above
+/// roughly a third the glyph starts crowding the key's own centred letter on small
+/// panels; well below it the hint looks lost on a large one.
+constexpr float HINT_MAX_KEY_FRACTION = 0.32f;
+
+/// Pick the largest theme font whose glyph fits comfortably on a key of this size.
+///
+/// Candidates are ordered small→large; the last one that fits wins. Returns nullptr
+/// when even the smallest is too big, in which case the caller draws no hint rather
+/// than one that overlaps the key's letter.
+const lv_font_t* pick_hint_font(int32_t btn_h, int32_t btn_w) {
+    static const char* const kCandidates[] = {"font_xs", "font_small", "font_body", "font_heading"};
+
+    const int32_t max_h = static_cast<int32_t>(static_cast<float>(btn_h) * HINT_MAX_KEY_FRACTION);
+    const lv_font_t* chosen = nullptr;
+    const lv_font_t* smallest = nullptr;
+
+    for (const char* token : kCandidates) {
+        const lv_font_t* font = theme_manager_get_font(token);
+        if (!font) {
+            continue;
+        }
+        const int32_t h = theme_manager_get_font_height(font);
+        if (h <= 0) {
+            continue;
+        }
+        // Width check too: row-4 punctuation keys are half the width of a letter
+        // key, so a font can pass on height and still not fit horizontally.
+        const int32_t w = static_cast<int32_t>(static_cast<float>(h) * 0.9f);
+        if (w * 3 > btn_w) { // leave the key's own glyph at least two-thirds
+            continue;
+        }
+        if (!smallest) {
+            smallest = font; // candidates are ordered small→large
+        }
+        if (h <= max_h) {
+            chosen = font; // keep going: we want the LARGEST that still fits
+        }
+    }
+
+    // Prefer proportional sizing, but fall back to the smallest font that fits at
+    // all. On a micro panel even font_xs exceeds a third of the row height, and
+    // returning nothing there erased every hint on the keyboard — strictly worse
+    // than a snug one, since an invisible hint teaches the user nothing.
+    // compute_hint_area() still refuses anything that cannot physically fit.
+    return chosen ? chosen : smallest;
+}
+
+} // namespace
+
+bool KeyboardManager::compute_hint_area(const lv_area_t& btn, int32_t hint_w, int32_t hint_h,
+                                        lv_area_t* out) {
+    if (!out || hint_w <= 0 || hint_h <= 0) {
+        return false;
+    }
+
+    const int32_t btn_w = lv_area_get_width(&btn);
+    const int32_t btn_h = lv_area_get_height(&btn);
+
+    // Gap scales with the KEY, not the glyph. On a cramped micro key the hint has to
+    // hug the corner to stay clear of the key's own centred letter; on a large key a
+    // wider gap reads as deliberate rather than crammed. Deriving it from the glyph
+    // instead gave every size roughly the same relative gap, which is exactly wrong
+    // — the small keys are the ones short of room.
+    int32_t inset = btn_h / 20;
+    if (inset < 1) {
+        inset = 1;
+    }
+    if (hint_w + 2 * inset > btn_w || hint_h + 2 * inset > btn_h) {
+        inset = 1;
+    }
+    if (hint_w + 2 * inset > btn_w || hint_h + 2 * inset > btn_h) {
+        return false; // Key too small for this glyph at any inset.
+    }
+
+    // Top-right corner of the key itself, so placement follows the real layout at
+    // every breakpoint and for every key width.
+    // lv_area_t edges are inclusive, so a w-wide box spans x1 .. x1 + w - 1.
+    out->x2 = btn.x2 - inset;
+    out->x1 = out->x2 - hint_w + 1;
+    out->y1 = btn.y1 + inset;
+    out->y2 = out->y1 + hint_h - 1;
+    return true;
 }
 
 void KeyboardManager::keyboard_draw_alternative_chars(lv_event_t* e) {
@@ -666,83 +902,71 @@ void KeyboardManager::keyboard_draw_alternative_chars(lv_event_t* e) {
     lv_color_t gray_color = gray_color_str ? theme_manager_parse_hex_color(gray_color_str)
                                            : theme_manager_get_color("text_muted");
 
+    // Walks the map, which interleaves "\n" row separators with real buttons.
+    // button_areas[] is indexed by real buttons only, so track that separately.
+    uint32_t btn_i = 0;
+
     for (uint32_t i = 0; map[i][0] != '\0'; i++) {
         if (strcmp(map[i], "\n") == 0) {
-            continue;
+            continue; // Row separator: no button, no index consumed.
         }
 
+        const uint32_t this_btn = btn_i++;
         const char* btn_text = map[i];
 
         if (btn_text && btn_text[0] && !btn_text[1] && (unsigned char)btn_text[0] < 128) {
             const char* alternatives = mgr.find_alternatives(btn_text[0]);
 
             if (alternatives && alternatives[0]) {
-                lv_area_t kb_coords;
-                lv_obj_get_coords(keyboard, &kb_coords);
-
-                lv_coord_t kb_width = lv_obj_get_width(keyboard);
-                lv_coord_t kb_height = lv_obj_get_height(keyboard);
-                lv_coord_t unit_width = kb_width / 40;
-                lv_coord_t row_height = kb_height / 4;
-
-                uint32_t row = 0;
-                lv_coord_t cumulative_width = 0;
-
-                for (uint32_t j = 0; j <= i; j++) {
-                    if (strcmp(map[j], "\n") == 0) {
-                        row++;
-                        cumulative_width = 0;
-                    } else if (j < i) {
-                        const char* this_text = map[j];
-                        lv_coord_t this_width;
-
-                        if (strcmp(this_text, " ") == 0) {
-                            this_width = 2 * unit_width;
-                        } else if (strcmp(this_text, ICON_KEYBOARD_SHIFT) == 0 ||
-                                   strcmp(this_text, ICON_KEYBOARD_CAPS) == 0 ||
-                                   strcmp(this_text, ICON_BACKSPACE) == 0) {
-                            this_width = 6 * unit_width;
-                        } else {
-                            this_width = 4 * unit_width;
-                        }
-                        cumulative_width += this_width;
-                    }
+                // Ask the widget where it actually drew this key.
+                //
+                // This previously re-derived the geometry by hand: unit_width =
+                // kb_width/40 and row_height = kb_height/4, plus a width table that
+                // only knew 2-, 4- and 6-unit keys. That disagreed with LVGL's real
+                // layout in three ways — integer truncation compounding across a row,
+                // padding/row-gap/border ignored, and no entry for the 3- and 12-unit
+                // keys in row 4 or the 4-unit backspace on the #+= layer. The error
+                // scaled with resolution, so hints drifted off their keys at some
+                // breakpoints and onto neighbours at others.
+                lv_area_t btn_area;
+                if (!buttonmatrix_button_area(keyboard, this_btn, &btn_area)) {
+                    continue;
                 }
 
-                lv_coord_t current_btn_width = 4 * unit_width;
-
-                // Responsive hint font; anchor in the upper-right corner of the
-                // key with insets proportional to the hint font height so the
-                // overlay renders cleanly at micro as well as larger breakpoints.
-                const lv_font_t* hint_font = theme_manager_get_font("font_xs");
-                if (!hint_font)
-                    hint_font = &noto_sans_12;
+                // Size the hint against the KEY, not against a fixed token. Keys range
+                // from roughly 48x34 at micro to 128x96 at xlarge, so any single font
+                // choice is wrong at one end: font_xs is illegible on a large panel,
+                // while font_small crowds the key's own centred letter on a small one.
+                // Picking the largest font that stays within HINT_MAX_KEY_FRACTION of
+                // the key height keeps the glyph visually proportional everywhere.
+                const lv_font_t* hint_font =
+                    pick_hint_font(lv_area_get_height(&btn_area), lv_area_get_width(&btn_area));
+                if (!hint_font) {
+                    continue; // No font small enough to sit on this key.
+                }
                 const lv_coord_t hint_h = theme_manager_get_font_height(hint_font);
                 const lv_coord_t hint_w = static_cast<lv_coord_t>(hint_h * 0.9f);
-                // Equal padding from the key's top and right edges.
-                const lv_coord_t inset = hint_h / 5 + 1;
-                const lv_coord_t inset_x = inset;
-                const lv_coord_t inset_y = inset;
 
-                lv_coord_t btn_right = kb_coords.x1 + cumulative_width + current_btn_width;
-                lv_coord_t btn_top = kb_coords.y1 + static_cast<lv_coord_t>(row) * row_height;
+                // Containment is enforced in compute_hint_area(); a false return means
+                // the glyph cannot fit this key, so draw nothing rather than spill onto
+                // a neighbour.
+                lv_area_t alt_area;
+                if (!KeyboardManager::compute_hint_area(btn_area, hint_w, hint_h, &alt_area)) {
+                    continue;
+                }
 
                 lv_draw_label_dsc_t label_dsc;
                 lv_draw_label_dsc_init(&label_dsc);
                 label_dsc.font = hint_font;
                 label_dsc.color = gray_color;
-                label_dsc.opa = LV_OPA_60;
+                // Muted enough to stay secondary to the key's own letter, opaque
+                // enough to read without leaning in. LV_OPA_60 was too faint.
+                label_dsc.opa = LV_OPA_80;
 
                 char alt_str[2] = {alternatives[0], '\0'};
                 label_dsc.text = alt_str;
                 label_dsc.text_local = true;
                 label_dsc.align = LV_TEXT_ALIGN_CENTER;
-
-                lv_area_t alt_area;
-                alt_area.x2 = btn_right - inset_x;
-                alt_area.x1 = alt_area.x2 - hint_w;
-                alt_area.y1 = btn_top + inset_y;
-                alt_area.y2 = alt_area.y1 + hint_h + 2;
 
                 lv_draw_label(layer, &label_dsc, &alt_area);
             }
@@ -794,6 +1018,11 @@ void KeyboardManager::init(lv_obj_t* parent) {
     }
 
     keyboard_ = lv_keyboard_create(parent);
+
+    // Named so `helix-screen ctl` can address it — `geom on_screen_keyboard` is how
+    // you get real key coordinates for driving the synthetic pointer at a specific
+    // key. Created in C++ rather than XML, so nothing else would name it.
+    lv_obj_set_name_static(keyboard_, "on_screen_keyboard");
 
     // Remove LVGL's built-in keyboard handler — our custom handler manages all keys.
     // The default handler doesn't recognize our custom icon keys (ICON_BACKSPACE, etc.)
@@ -956,6 +1185,15 @@ void KeyboardManager::register_textarea_ex(lv_obj_t* textarea, bool is_password)
 
     spdlog::debug("[KeyboardManager] Registering textarea: {} (password: {})", (void*)textarea,
                   is_password);
+
+    // Assert the masking rather than merely recording it. is_password_context()
+    // reads the widget's live state, so a caller declaring a password field this
+    // way is guaranteed to get log redaction — previously this flag was logged
+    // and then dropped, which made the whole overload look protective when it
+    // did nothing at all.
+    if (is_password) {
+        lv_textarea_set_password_mode(textarea, true);
+    }
 
     register_textarea(textarea);
 }
@@ -1170,6 +1408,17 @@ bool KeyboardManager::is_visible() const {
         return false;
     }
     return !lv_obj_has_flag(keyboard_, LV_OBJ_FLAG_HIDDEN);
+}
+
+bool KeyboardManager::is_password_context() const {
+    if (context_textarea_ == nullptr || !lv_obj_is_valid(context_textarea_)) {
+        return false;
+    }
+    return lv_textarea_get_password_mode(context_textarea_);
+}
+
+char KeyboardManager::log_char(char c) const {
+    return is_password_context() ? '*' : c;
 }
 
 lv_obj_t* KeyboardManager::get_instance() const {

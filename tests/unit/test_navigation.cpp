@@ -3,6 +3,7 @@
 
 #include "../../include/theme_manager.h"
 #include "../../include/ui_nav_manager.h"
+#include "../test_helpers/navigation_manager_test_access.h"
 #include "../ui_test_utils.h"
 #include "lvgl/lvgl.h"
 
@@ -373,6 +374,44 @@ TEST_CASE_METHOD(NavbarIconTestFixture, "Overlay registration accepts IPanelLife
 
 #include "../test_helpers/update_queue_test_access.h"
 
+TEST_CASE_METHOD(NavbarIconTestFixture, "Out-of-band backdrop deletion scrubs overlay_backdrop_",
+                 "[navigation][overlay][backdrop]") {
+    auto& nav = NavigationManager::instance();
+
+    // Same base-stack seeding as the sibling scrub test — push_overlay only
+    // builds a backdrop when it sees itself as the first overlay.
+    lv_obj_t* base = lv_obj_create(test_screen());
+    REQUIRE(base != nullptr);
+    lv_obj_t* panels[UI_PANEL_COUNT] = {nullptr};
+    panels[static_cast<int>(PanelId::Home)] = base;
+    nav.set_panels(panels);
+
+    MockPanelLifecycle mock_panel;
+    lv_obj_t* overlay = lv_obj_create(test_screen());
+    REQUIRE(overlay != nullptr);
+    lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+    nav.register_overlay_instance(overlay, &mock_panel);
+    nav.push_overlay(overlay);
+    helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+
+    lv_obj_t* backdrop = NavigationManagerTestAccess::overlay_backdrop(nav);
+    REQUIRE(backdrop != nullptr);
+
+    // Delete the backdrop OUT-OF-BAND. In the suite this happens when a fixture
+    // destructor deletes the screen the backdrop is parented to (XMLTestFixture
+    // does exactly that), which frees it with no go_back() involved.
+    lv_obj_delete(backdrop);
+
+    // Regression assertion: overlay_backdrop_ is a scalar, so scrub_deleted_widget()
+    // must clear it explicitly. Without that, deinit_subjects() reaches
+    // lv_obj_del(overlay_backdrop_) on freed memory — a heap-use-after-free that
+    // detonates in whatever unrelated test runs next.
+    REQUIRE(NavigationManagerTestAccess::overlay_backdrop(nav) == nullptr);
+
+    lv_obj_delete(overlay);
+    lv_obj_delete(base);
+}
+
 TEST_CASE_METHOD(NavbarIconTestFixture, "Out-of-band widget deletion scrubs panel_stack_",
                  "[navigation][overlay][l081]") {
     auto& nav = NavigationManager::instance();
@@ -429,6 +468,58 @@ TEST_CASE_METHOD(NavbarIconTestFixture, "Out-of-band widget deletion scrubs pane
     // Cleanup: base is a main-panel widget (set_panels), not an overlay, so it
     // is not delete-hooked; the fixture's deinit_subjects() clears panel_stack_
     // without dereferencing, so leaving a stale base pointer is harmless.
+    lv_obj_delete(base);
+}
+
+// ============================================================================
+// Backdrop tap must not dismiss the overlay while the on-screen keyboard is up
+// ============================================================================
+// Reported on Snapmaker U1 v0.91: entering the Spoolman IP was impossible — the
+// on-screen keyboard closed and the settings overlay popped on nearly every
+// keystroke. Overlays are narrower than the screen (hor_res - nav_width) and sit
+// over a full-screen clickable dismiss-backdrop, so a stray tap outside the
+// keyboard/field lands on the exposed backdrop column and calls go_back().
+//
+// LVGL's indev_proc_press sends LV_EVENT_PRESSED before the click-focus DEFOCUS
+// that hides the keyboard (lv_indev.c: PRESSED at :1344, indev_click_focus at
+// :1351), so is_visible() already reads false by the CLICKED handler. The fix
+// latches keyboard visibility at PRESSED and consumes that first backdrop tap
+// for the keyboard dismiss only — the overlay stays; a second tap dismisses it.
+TEST_CASE_METHOD(NavbarIconTestFixture,
+                 "Backdrop tap with keyboard up dismisses keyboard, keeps overlay",
+                 "[navigation][overlay][keyboard]") {
+    auto& nav = NavigationManager::instance();
+
+    // Seed a base panel so push_overlay's is_first_overlay logic has a stack.
+    lv_obj_t* base = lv_obj_create(test_screen());
+    REQUIRE(base != nullptr);
+    lv_obj_t* panels[UI_PANEL_COUNT] = {nullptr};
+    panels[static_cast<int>(PanelId::Home)] = base;
+    nav.set_panels(panels);
+
+    MockPanelLifecycle mock_panel;
+    lv_obj_t* overlay = lv_obj_create(test_screen());
+    REQUIRE(overlay != nullptr);
+    lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+    nav.register_overlay_instance(overlay, &mock_panel);
+    nav.push_overlay(overlay);
+    helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+    REQUIRE(nav.is_panel_in_stack(overlay) == true);
+
+    // Keyboard was visible when the backdrop was pressed: the CLICKED handler
+    // consumes this tap for the keyboard dismiss and returns before go_back(), so
+    // the overlay is kept.
+    NavigationManagerTestAccess::set_backdrop_press_keyboard_visible(nav, true);
+    REQUIRE(nav.take_backdrop_keyboard_dismiss() == true);
+    REQUIRE(nav.is_panel_in_stack(overlay) == true);
+
+    // The latch is one-shot: the next tap (keyboard now down) is NOT consumed, so
+    // the handler falls through to go_back() and dismisses the overlay.
+    REQUIRE(nav.take_backdrop_keyboard_dismiss() == false);
+    nav.go_back();
+    helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+    REQUIRE(nav.is_panel_in_stack(overlay) == false);
+
     lv_obj_delete(base);
 }
 
@@ -521,4 +612,57 @@ TEST_CASE_METHOD(NavbarIconTestFixture, "push_overlay onto empty stack does not 
 
     lv_obj_delete(overlay);
     REQUIRE(nav.is_panel_in_stack(overlay) == false);
+}
+
+// ============================================================================
+// is_panel_on_top: "will go_back() pop THIS panel?" (#1221)
+// ============================================================================
+// A deferred callback that pushed an overlay earlier cannot assume it is still
+// the top when it finally runs. PrintStartController's failure handler pushed
+// print status, then called go_back() up to a minute later after a preparation
+// timeout — by which point the user had opened two more overlays, so the pop
+// closed THEIR screen and the follow-up re-show rebuilt widgets that same pop
+// had just destroyed (SIGSEGV, bundle SREQ5VQN). is_panel_in_stack() is not
+// enough to catch this: the pusher's panel is usually still IN the stack, just
+// buried.
+TEST_CASE_METHOD(NavbarIconTestFixture, "is_panel_on_top distinguishes top from merely-in-stack",
+                 "[navigation][overlay][1221]") {
+    auto& nav = NavigationManager::instance();
+
+    lv_obj_t* base = lv_obj_create(test_screen());
+    REQUIRE(base != nullptr);
+    lv_obj_t* panels[UI_PANEL_COUNT] = {nullptr};
+    panels[static_cast<int>(PanelId::Home)] = base;
+    nav.set_panels(panels);
+
+    REQUIRE(nav.is_panel_on_top(nullptr) == false);
+    REQUIRE(nav.is_panel_on_top(base) == true); // only entry
+
+    MockPanelLifecycle mock_first;
+    lv_obj_t* first = lv_obj_create(test_screen());
+    lv_obj_add_flag(first, LV_OBJ_FLAG_HIDDEN);
+    nav.register_overlay_instance(first, &mock_first);
+    nav.push_overlay(first);
+    helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+
+    REQUIRE(nav.is_panel_on_top(first) == true);
+    REQUIRE(nav.is_panel_on_top(base) == false); // in the stack, but buried
+
+    // The user navigates on — this is the state the timed-out callback wakes to.
+    MockPanelLifecycle mock_second;
+    lv_obj_t* second = lv_obj_create(test_screen());
+    lv_obj_add_flag(second, LV_OBJ_FLAG_HIDDEN);
+    nav.register_overlay_instance(second, &mock_second);
+    nav.push_overlay(second);
+    helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+
+    // The discrimination that matters: `first` is still in the stack, so an
+    // is_panel_in_stack() guard would wave the blind go_back() through.
+    REQUIRE(nav.is_panel_in_stack(first) == true);
+    REQUIRE(nav.is_panel_on_top(first) == false);
+    REQUIRE(nav.is_panel_on_top(second) == true);
+
+    lv_obj_delete(second);
+    lv_obj_delete(first);
+    lv_obj_delete(base);
 }

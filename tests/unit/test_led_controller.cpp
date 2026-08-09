@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "../helix_test_fixture.h"
 #include "../test_helpers/update_queue_test_access.h"
 #include "../ui_test_utils.h"
 #include "app_globals.h"
@@ -14,13 +15,28 @@
 #include "hv/json.hpp"
 
 using namespace helix;
-TEST_CASE("LedController singleton access", "[led]") {
+
+/// The fixture-less TEST_CASEs below drive LedController::init(), whose
+/// connection-state observer defers its first notification through the
+/// UpdateQueue, and light_set()/toggle paths that defer
+/// LedController::led_cmd_settled. With no fixture they returned with that work
+/// still queued and handed it to whichever test drained next
+/// (prestonbrown/helixscreen#1167). The drain sits in the derived destructor body
+/// so it runs while the controller and its subjects are still alive, before
+/// HelixTestFixture's own teardown.
+struct LedControllerFixture : public HelixTestFixture {
+    ~LedControllerFixture() override {
+        helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+    }
+};
+
+TEST_CASE_METHOD(LedControllerFixture, "LedController singleton access", "[led]") {
     auto& ctrl = helix::led::LedController::instance();
     auto& ctrl2 = helix::led::LedController::instance();
     REQUIRE(&ctrl == &ctrl2);
 }
 
-TEST_CASE("LedController init and deinit", "[led]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController init and deinit", "[led]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit(); // Clean state
 
@@ -31,7 +47,7 @@ TEST_CASE("LedController init and deinit", "[led]") {
     REQUIRE(!ctrl.is_initialized());
 }
 
-TEST_CASE("LedController has_any_backend empty", "[led]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController has_any_backend empty", "[led]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -42,7 +58,8 @@ TEST_CASE("LedController has_any_backend empty", "[led]") {
     ctrl.deinit();
 }
 
-TEST_CASE("LedController discover_from_hardware populates native backend", "[led]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController discover_from_hardware populates native backend", "[led]") {
     // Use PrinterDiscovery to populate
     helix::PrinterDiscovery discovery;
     nlohmann::json objects = nlohmann::json::array(
@@ -91,8 +108,9 @@ TEST_CASE("LedController discover_from_hardware populates native backend", "[led
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: generic [led] discovery defaults to white-only (fail-closed)",
-          "[led][discovery]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: generic [led] discovery defaults to white-only (fail-closed)",
+                 "[led][discovery]") {
     // A generic "[led]" section (e.g. AD5M [led chamber_light], white_pin only) must
     // NOT advertise color before the configfile parse proves RGB pins. This closes the
     // window where a white-only chamber light shows a meaningless color picker.
@@ -132,8 +150,9 @@ TEST_CASE("LedController: generic [led] discovery defaults to white-only (fail-c
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: configfile RGB pins upgrade a generic [led] to color",
-          "[led][discovery][pin_config]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: configfile RGB pins upgrade a generic [led] to color",
+                 "[led][discovery][pin_config]") {
     // A real RGB [led] strip starts white-only at discovery, then gets upgraded once
     // the configfile reveals red/green/blue pins (the connect-flow upgrade path).
     helix::PrinterDiscovery discovery;
@@ -176,14 +195,14 @@ TEST_CASE("LedController: configfile RGB pins upgrade a generic [led] to color",
     ctrl.deinit();
 }
 
-TEST_CASE("LedBackendType enum values", "[led]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedBackendType enum values", "[led]") {
     REQUIRE(static_cast<int>(helix::led::LedBackendType::NATIVE) == 0);
     REQUIRE(static_cast<int>(helix::led::LedBackendType::LED_EFFECT) == 1);
     REQUIRE(static_cast<int>(helix::led::LedBackendType::WLED) == 2);
     REQUIRE(static_cast<int>(helix::led::LedBackendType::MACRO) == 3);
 }
 
-TEST_CASE("LedStripInfo struct", "[led]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedStripInfo struct", "[led]") {
     helix::led::LedStripInfo info;
     info.name = "Chamber Light";
     info.id = "neopixel chamber_light";
@@ -198,7 +217,7 @@ TEST_CASE("LedStripInfo struct", "[led]") {
     REQUIRE(info.supports_white);
 }
 
-TEST_CASE("LedEffectBackend icon hint mapping", "[led]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedEffectBackend icon hint mapping", "[led]") {
     using helix::led::LedEffectBackend;
 
     REQUIRE(LedEffectBackend::icon_hint_for_effect("breathing") == "air");
@@ -212,7 +231,7 @@ TEST_CASE("LedEffectBackend icon hint mapping", "[led]") {
     REQUIRE(LedEffectBackend::icon_hint_for_effect("my_custom_effect") == "auto_awesome");
 }
 
-TEST_CASE("LedEffectBackend display name conversion", "[led]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedEffectBackend display name conversion", "[led]") {
     using helix::led::LedEffectBackend;
 
     REQUIRE(LedEffectBackend::display_name_for_effect("led_effect breathing") == "Breathing");
@@ -221,7 +240,7 @@ TEST_CASE("LedEffectBackend display name conversion", "[led]") {
     REQUIRE(LedEffectBackend::display_name_for_effect("") == "");
 }
 
-TEST_CASE("NativeBackend strip management", "[led]") {
+TEST_CASE_METHOD(LedControllerFixture, "NativeBackend strip management", "[led]") {
     helix::led::NativeBackend backend;
 
     REQUIRE(!backend.is_available());
@@ -242,7 +261,7 @@ TEST_CASE("NativeBackend strip management", "[led]") {
     REQUIRE(!backend.is_available());
 }
 
-TEST_CASE("MacroBackend macro management", "[led]") {
+TEST_CASE_METHOD(LedControllerFixture, "MacroBackend macro management", "[led]") {
     helix::led::MacroBackend backend;
 
     REQUIRE(!backend.is_available());
@@ -263,7 +282,7 @@ TEST_CASE("MacroBackend macro management", "[led]") {
     REQUIRE(!backend.is_available());
 }
 
-TEST_CASE("LedController deinit clears all backends", "[led]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController deinit clears all backends", "[led]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -292,7 +311,8 @@ TEST_CASE("LedController deinit clears all backends", "[led]") {
     REQUIRE(ctrl.effects().effects().empty());
 }
 
-TEST_CASE("LedController: selected_strips can hold WLED strip IDs", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: selected_strips can hold WLED strip IDs",
+                 "[led][controller]") {
     auto& controller = helix::led::LedController::instance();
     controller.deinit();
 
@@ -306,7 +326,9 @@ TEST_CASE("LedController: selected_strips can hold WLED strip IDs", "[led][contr
     REQUIRE(controller.selected_strips()[0] == "neopixel chamber_light");
 }
 
-TEST_CASE("LedController: light_set turns on all selected native strips", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: light_set turns on all selected native strips",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -333,7 +355,9 @@ TEST_CASE("LedController: light_set turns on all selected native strips", "[led]
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: light_set with empty selected_strips is a no-op", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: light_set with empty selected_strips is a no-op",
+                 "[led][controller]") {
     // Clear any auto-selected strips persisted by prior tests
     auto* cfg = Config::get_instance();
     if (cfg) {
@@ -355,7 +379,8 @@ TEST_CASE("LedController: light_set with empty selected_strips is a no-op", "[le
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: light_set with mixed backend types", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: light_set with mixed backend types",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -391,7 +416,8 @@ TEST_CASE("LedController: light_set with mixed backend types", "[led][controller
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: backend_for_strip returns correct type", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: backend_for_strip returns correct type",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -424,7 +450,8 @@ TEST_CASE("LedController: backend_for_strip returns correct type", "[led][contro
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: backend_for_strip identifies macro backend", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: backend_for_strip identifies macro backend",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -444,7 +471,8 @@ TEST_CASE("LedController: backend_for_strip identifies macro backend", "[led][co
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: get/set_led_on_at_start", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: get/set_led_on_at_start",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -461,8 +489,9 @@ TEST_CASE("LedController: get/set_led_on_at_start", "[led][controller]") {
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: apply_startup_preference does nothing when disabled",
-          "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: apply_startup_preference does nothing when disabled",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -475,8 +504,9 @@ TEST_CASE("LedController: apply_startup_preference does nothing when disabled",
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: apply_startup_preference with no strips is a no-op",
-          "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: apply_startup_preference with no strips is a no-op",
+                 "[led][controller]") {
     // Clear any auto-selected strips persisted by prior tests
     auto* cfg = Config::get_instance();
     if (cfg) {
@@ -501,7 +531,8 @@ TEST_CASE("LedController: apply_startup_preference with no strips is a no-op",
 // Phase 1: macro: prefix handling
 // ============================================================================
 
-TEST_CASE("LedController: backend_for_strip with macro: prefix", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: backend_for_strip with macro: prefix",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -521,7 +552,8 @@ TEST_CASE("LedController: backend_for_strip with macro: prefix", "[led][controll
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: light_set dispatches macro: prefixed strips", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: light_set dispatches macro: prefixed strips",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -551,8 +583,9 @@ TEST_CASE("LedController: light_set dispatches macro: prefixed strips", "[led][c
 // Phase 2: all_selectable_strips
 // ============================================================================
 
-TEST_CASE("LedController: all_selectable_strips includes native + WLED + macros",
-          "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: all_selectable_strips includes native + WLED + macros",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -608,7 +641,9 @@ TEST_CASE("LedController: all_selectable_strips includes native + WLED + macros"
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: all_selectable_strips empty when no backends", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: all_selectable_strips empty when no backends",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -623,7 +658,8 @@ TEST_CASE("LedController: all_selectable_strips empty when no backends", "[led][
 // Phase 3: first_available_strip
 // ============================================================================
 
-TEST_CASE("LedController: first_available_strip priority order", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: first_available_strip priority order",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -670,7 +706,8 @@ TEST_CASE("LedController: first_available_strip priority order", "[led][controll
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: first_available_strip skips PRESET macros", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: first_available_strip skips PRESET macros",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -696,7 +733,7 @@ TEST_CASE("LedController: first_available_strip skips PRESET macros", "[led][con
 // Phase 4: MacroBackend state tracking + abstract API
 // ============================================================================
 
-TEST_CASE("MacroBackend: optimistic state tracking", "[led][macro]") {
+TEST_CASE_METHOD(LedControllerFixture, "MacroBackend: ON_OFF has known state", "[led][macro]") {
     helix::led::MacroBackend backend;
 
     helix::led::LedMacroInfo on_off;
@@ -706,22 +743,17 @@ TEST_CASE("MacroBackend: optimistic state tracking", "[led][macro]") {
     on_off.off_macro = "LIGHTS_OFF";
     backend.add_macro(on_off);
 
-    // Initially off
-    REQUIRE(!backend.is_on("Cabinet Light"));
-
-    // ON_OFF has known state
     REQUIRE(backend.has_known_state("Cabinet Light"));
 
-    // After execute_on (will warn about no API, but state should track)
-    backend.execute_on("Cabinet Light");
-    REQUIRE(!backend.is_on("Cabinet Light")); // No API -> state NOT tracked (early return)
+    // Unknown macro names are not trackable
+    REQUIRE(!backend.has_known_state("No Such Macro"));
 
-    // Clear resets state
+    // clear() drops the macro list, so nothing is trackable afterwards
     backend.clear();
-    REQUIRE(!backend.is_on("Cabinet Light"));
+    REQUIRE(!backend.has_known_state("Cabinet Light"));
 }
 
-TEST_CASE("MacroBackend: TOGGLE has unknown state", "[led][macro]") {
+TEST_CASE_METHOD(LedControllerFixture, "MacroBackend: TOGGLE has unknown state", "[led][macro]") {
     helix::led::MacroBackend backend;
 
     helix::led::LedMacroInfo toggle;
@@ -734,7 +766,9 @@ TEST_CASE("MacroBackend: TOGGLE has unknown state", "[led][macro]") {
     REQUIRE(!backend.has_known_state("Desk Lamp"));
 }
 
-TEST_CASE("LedController: light_state_trackable with various selections", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: light_state_trackable with various selections",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -774,7 +808,8 @@ TEST_CASE("LedController: light_state_trackable with various selections", "[led]
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: light_toggle and light_is_on", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: light_toggle and light_is_on",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -807,7 +842,8 @@ TEST_CASE("LedController: light_toggle and light_is_on", "[led][controller]") {
 // OutputPinBackend tests
 // ============================================================================
 
-TEST_CASE("OutputPinBackend: enum value and is_pwm field", "[led][output_pin]") {
+TEST_CASE_METHOD(LedControllerFixture, "OutputPinBackend: enum value and is_pwm field",
+                 "[led][output_pin]") {
     helix::led::LedStripInfo info;
     info.backend = helix::led::LedBackendType::OUTPUT_PIN;
     REQUIRE(info.backend == helix::led::LedBackendType::OUTPUT_PIN);
@@ -816,7 +852,7 @@ TEST_CASE("OutputPinBackend: enum value and is_pwm field", "[led][output_pin]") 
     REQUIRE(info.is_pwm == true);
 }
 
-TEST_CASE("OutputPinBackend: strip management", "[led][output_pin]") {
+TEST_CASE_METHOD(LedControllerFixture, "OutputPinBackend: strip management", "[led][output_pin]") {
     helix::led::OutputPinBackend backend;
     REQUIRE_FALSE(backend.is_available());
     REQUIRE(backend.pins().empty());
@@ -838,7 +874,8 @@ TEST_CASE("OutputPinBackend: strip management", "[led][output_pin]") {
     REQUIRE_FALSE(backend.is_available());
 }
 
-TEST_CASE("OutputPinBackend: cached value from status", "[led][output_pin]") {
+TEST_CASE_METHOD(LedControllerFixture, "OutputPinBackend: cached value from status",
+                 "[led][output_pin]") {
     helix::led::OutputPinBackend backend;
     helix::led::LedStripInfo pin;
     pin.id = "output_pin test_led";
@@ -853,24 +890,26 @@ TEST_CASE("OutputPinBackend: cached value from status", "[led][output_pin]") {
     REQUIRE(backend.get_value("output_pin test_led") == Catch::Approx(0.75));
 }
 
-TEST_CASE("OutputPinBackend: is_on", "[led][output_pin]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "OutputPinBackend: status updates overwrite the cached value",
+                 "[led][output_pin]") {
     helix::led::OutputPinBackend backend;
     helix::led::LedStripInfo pin;
     pin.id = "output_pin test_led";
     backend.add_pin(pin);
 
-    REQUIRE_FALSE(backend.is_on("output_pin test_led"));
+    REQUIRE(backend.get_value("output_pin test_led") == Catch::Approx(0.0));
 
     nlohmann::json status = {{"output_pin test_led", {{"value", 0.5}}}};
     backend.update_from_status(status);
-    REQUIRE(backend.is_on("output_pin test_led"));
+    REQUIRE(backend.get_value("output_pin test_led") == Catch::Approx(0.5));
 
     status = {{"output_pin test_led", {{"value", 0.0}}}};
     backend.update_from_status(status);
-    REQUIRE_FALSE(backend.is_on("output_pin test_led"));
+    REQUIRE(backend.get_value("output_pin test_led") == Catch::Approx(0.0));
 }
 
-TEST_CASE("OutputPinBackend: brightness_pct", "[led][output_pin]") {
+TEST_CASE_METHOD(LedControllerFixture, "OutputPinBackend: brightness_pct", "[led][output_pin]") {
     helix::led::OutputPinBackend backend;
     helix::led::LedStripInfo pin;
     pin.id = "output_pin test_led";
@@ -881,7 +920,7 @@ TEST_CASE("OutputPinBackend: brightness_pct", "[led][output_pin]") {
     REQUIRE(backend.brightness_pct("output_pin test_led") == 75);
 }
 
-TEST_CASE("OutputPinBackend: is_pwm check", "[led][output_pin]") {
+TEST_CASE_METHOD(LedControllerFixture, "OutputPinBackend: is_pwm check", "[led][output_pin]") {
     helix::led::OutputPinBackend backend;
     helix::led::LedStripInfo pin;
     pin.id = "output_pin test_led";
@@ -894,27 +933,21 @@ TEST_CASE("OutputPinBackend: is_pwm check", "[led][output_pin]") {
     REQUIRE_FALSE(backend.is_pwm("output_pin test_led"));
 }
 
-TEST_CASE("OutputPinBackend: value change callback", "[led][output_pin]") {
+TEST_CASE_METHOD(LedControllerFixture, "OutputPinBackend: status for an unknown pin is ignored",
+                 "[led][output_pin]") {
     helix::led::OutputPinBackend backend;
     helix::led::LedStripInfo pin;
     pin.id = "output_pin test_led";
     backend.add_pin(pin);
 
-    std::string cb_pin;
-    double cb_value = -1.0;
-    backend.set_value_change_callback([&](const std::string& id, double val) {
-        cb_pin = id;
-        cb_value = val;
-    });
-
-    nlohmann::json status = {{"output_pin test_led", {{"value", 0.42}}}};
+    nlohmann::json status = {{"output_pin other_led", {{"value", 0.42}}}};
     backend.update_from_status(status);
 
-    REQUIRE(cb_pin == "output_pin test_led");
-    REQUIRE(cb_value == Catch::Approx(0.42));
+    REQUIRE(backend.get_value("output_pin test_led") == Catch::Approx(0.0));
+    REQUIRE(backend.get_value("output_pin other_led") == Catch::Approx(0.0));
 }
 
-TEST_CASE("OutputPinBackend: no API safety", "[led][output_pin]") {
+TEST_CASE_METHOD(LedControllerFixture, "OutputPinBackend: no API safety", "[led][output_pin]") {
     helix::led::OutputPinBackend backend;
     // Should not crash when API is null
     backend.set_value("output_pin test", 0.5);
@@ -927,7 +960,8 @@ TEST_CASE("OutputPinBackend: no API safety", "[led][output_pin]") {
 // LED Config Version Subject Tests
 // ============================================================================
 
-TEST_CASE("LedController: version subject accessible after init", "[led][version]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: version subject accessible after init",
+                 "[led][version]") {
     lv_init_safe();
 
     auto& ctrl = helix::led::LedController::instance();
@@ -943,7 +977,8 @@ TEST_CASE("LedController: version subject accessible after init", "[led][version
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: set_selected_strips bumps version", "[led][version]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: set_selected_strips bumps version",
+                 "[led][version]") {
     lv_init_safe();
 
     auto& ctrl = helix::led::LedController::instance();
@@ -961,7 +996,8 @@ TEST_CASE("LedController: set_selected_strips bumps version", "[led][version]") 
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: version observer fires on bump", "[led][version]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: version observer fires on bump",
+                 "[led][version]") {
     lv_init_safe();
 
     auto& ctrl = helix::led::LedController::instance();
@@ -997,7 +1033,8 @@ TEST_CASE("LedController: version observer fires on bump", "[led][version]") {
 // Regression tests: light_set / turn_off_all / apply_startup_preference state
 // ============================================================================
 
-TEST_CASE("LedController: light_set updates light_is_on", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: light_set updates light_is_on",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1013,7 +1050,8 @@ TEST_CASE("LedController: light_set updates light_is_on", "[led][controller]") {
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: turn_off_all sets light_is_on false", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: turn_off_all sets light_is_on false",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1027,7 +1065,8 @@ TEST_CASE("LedController: turn_off_all sets light_is_on false", "[led][controlle
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: set_color_all updates light_is_on", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: set_color_all updates light_is_on",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1043,7 +1082,8 @@ TEST_CASE("LedController: set_color_all updates light_is_on", "[led][controller]
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: set_brightness_all updates light_is_on", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: set_brightness_all updates light_is_on",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1057,7 +1097,9 @@ TEST_CASE("LedController: set_brightness_all updates light_is_on", "[led][contro
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: apply_startup_preference sets light_is_on true", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: apply_startup_preference sets light_is_on true",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1085,7 +1127,9 @@ TEST_CASE("LedController: apply_startup_preference sets light_is_on true", "[led
 // Regression: toggle off must stop LED effects before SET_LED
 // ============================================================================
 
-TEST_CASE("LedController: light_set(false) stops LED effects when available", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: light_set(false) stops LED effects when available",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1126,8 +1170,9 @@ TEST_CASE("LedController: light_set(false) stops LED effects when available", "[
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: light_set(false) without effects skips stop_all_effects",
-          "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: light_set(false) without effects skips stop_all_effects",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1158,7 +1203,8 @@ TEST_CASE("LedController: light_set(false) without effects skips stop_all_effect
 // Stale strip pruning (issue #360: preset LED name vs firmware mismatch)
 // ============================================================================
 
-TEST_CASE("LedController: stale selected strips pruned on discovery", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: stale selected strips pruned on discovery",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1182,7 +1228,9 @@ TEST_CASE("LedController: stale selected strips pruned on discovery", "[led][con
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: valid selected strips preserved on discovery", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: valid selected strips preserved on discovery",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1203,7 +1251,9 @@ TEST_CASE("LedController: valid selected strips preserved on discovery", "[led][
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: mixed valid and stale strips pruned correctly", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: mixed valid and stale strips pruned correctly",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1224,7 +1274,8 @@ TEST_CASE("LedController: mixed valid and stale strips pruned correctly", "[led]
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: all strips stale triggers auto-select", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: all strips stale triggers auto-select",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1246,8 +1297,9 @@ TEST_CASE("LedController: all strips stale triggers auto-select", "[led][control
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: auto-select picks output_pin LED when no native present",
-          "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: auto-select picks output_pin LED when no native present",
+                 "[led][controller]") {
     // Regression for K2 Plus / K1C: their only LED is `[output_pin LED]`. Auto-select
     // used to only fire for native strips, leaving the print-status light toggle to
     // bail out with "No light configured". Auto-select must also cover output_pin.
@@ -1272,8 +1324,9 @@ TEST_CASE("LedController: auto-select picks output_pin LED when no native presen
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: auto-select picks all selectable strips across backends",
-          "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: auto-select picks all selectable strips across backends",
+                 "[led][controller]") {
     auto* cfg = Config::get_instance();
     if (cfg) {
         cfg->set(cfg->df() + "leds/selected_strips", nlohmann::json::array());
@@ -1307,8 +1360,9 @@ TEST_CASE("LedController: auto-select picks all selectable strips across backend
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: led_controllable subject reflects selected_strips emptiness",
-          "[led][controller][led_controllable]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: led_controllable subject reflects selected_strips emptiness",
+                 "[led][controller][led_controllable]") {
     auto* cfg = Config::get_instance();
     if (cfg) {
         cfg->set(cfg->df() + "leds/selected_strips", nlohmann::json::array());
@@ -1351,7 +1405,7 @@ TEST_CASE("LedController: led_controllable subject reflects selected_strips empt
 // Mock-API fixture for tests that verify actual color values sent
 // ============================================================================
 
-struct LedMockApiFixture {
+struct LedMockApiFixture : public HelixTestFixture {
     MoonrakerClientMock mock_client{MoonrakerClientMock::PrinterType::VORON_24};
     helix::PrinterState state;
     std::unique_ptr<MoonrakerAPIMock> mock_api;
@@ -1535,6 +1589,169 @@ TEST_CASE_METHOD(LedMockApiFixture,
     REQUIRE(color.r == Catch::Approx(0.8).margin(0.01));
     REQUIRE(color.g == Catch::Approx(0.336).margin(0.01));
     REQUIRE(color.b == Catch::Approx(0.165).margin(0.02));
+}
+
+// ============================================================================
+// "LED on at start" means AT START — not on every rediscovery
+//
+// notify_klippy_ready re-triggers the connected callback unconditionally, and the
+// tail of that callback calls apply_startup_preference(). printer_discovery also
+// re-runs LedController::init() on every discovery. So a user who turned the
+// lights off and then restarted Klipper (FIRMWARE_RESTART, M112, a klippy crash)
+// got them switched back on behind their back.
+// ============================================================================
+
+namespace {
+
+/// Put both PrinterStates in the state a real dispatch needs. execute_gcode()
+/// refuses gcode outright while Klipper is halted, and MoonrakerAPI reads the
+/// PrinterState it was constructed with (the fixture's own instance, which
+/// defaults to SHUTDOWN) — without this, nothing reaches the mock wire and any
+/// "no gcode was sent" assertion passes for the wrong reason.
+void make_led_dispatch_real(helix::PrinterState& api_state) {
+    api_state.set_klippy_state_sync(helix::KlippyState::READY);
+    auto& ps = get_printer_state();
+    lv_subject_set_int(ps.get_printer_connection_state_subject(),
+                       static_cast<int>(helix::ConnectionState::CONNECTED));
+    ps.set_klippy_state_sync(helix::KlippyState::READY);
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+}
+
+/// Count SET_LED commands that actually hit the mock wire.
+size_t count_set_led(const std::vector<std::string>& history) {
+    size_t n = 0;
+    for (const auto& script : history) {
+        if (script.find("SET_LED") != std::string::npos)
+            ++n;
+    }
+    return n;
+}
+
+} // namespace
+
+TEST_CASE_METHOD(LedMockApiFixture,
+                 "LedController: startup preference applies once, not on every rediscovery",
+                 "[led][controller][regression]") {
+    setup_controller_with_strip();
+    auto& ctrl = helix::led::LedController::instance();
+    make_led_dispatch_real(state);
+
+    ctrl.set_led_on_at_start(true);
+    ctrl.set_last_color(0xFFFFFF);
+    ctrl.set_startup_brightness(80);
+
+    // --- First discovery completes: the preference applies, lights come up. ---
+    mock_client.clear_gcode_script_history();
+    ctrl.apply_startup_preference();
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+
+    REQUIRE(ctrl.light_is_on());
+    // Assert on the wire, not just the flag: a SET_LED really went to Klipper.
+    REQUIRE(count_set_led(mock_client.gcode_script_history()) == 1);
+    REQUIRE(ctrl.native().get_strip_color("neopixel chamber").r == Catch::Approx(0.8).margin(0.01));
+
+    // --- The user turns the lights off. ---
+    ctrl.light_set(false);
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+    REQUIRE_FALSE(ctrl.light_is_on());
+    REQUIRE(ctrl.native().get_strip_color("neopixel chamber").r == Catch::Approx(0.0).margin(0.01));
+
+    // --- Klipper restarts. Moonraker itself never went away, so
+    // notify_klippy_ready re-fires the connected callback → full rediscovery.
+    // printer_discovery re-runs init() WITHOUT a deinit() and re-selects the
+    // strips; init()'s load_config() restores the persisted preference (stood in
+    // for here by the explicit setters — the values are written by save_config).
+    mock_client.clear_gcode_script_history();
+    ctrl.init(mock_api.get(), &mock_client);
+    ctrl.set_selected_strips({"neopixel chamber"});
+    ctrl.set_led_on_at_start(true);
+    ctrl.set_startup_brightness(80);
+    make_led_dispatch_real(state);
+
+    // ...and the connected callback calls apply_startup_preference() again.
+    ctrl.apply_startup_preference();
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+
+    // The user's OFF has to survive the restart: startup already happened.
+    CHECK(count_set_led(mock_client.gcode_script_history()) == 0);
+    CHECK_FALSE(ctrl.light_is_on());
+    CHECK(ctrl.native().get_strip_color("neopixel chamber").r == Catch::Approx(0.0).margin(0.01));
+}
+
+TEST_CASE_METHOD(LedMockApiFixture,
+                 "LedController: startup preference still fires when strips arrive late",
+                 "[led][controller][regression]") {
+    // The guard must not burn its one shot on a discovery that had no strips to
+    // act on — WLED strips are discovered asynchronously, so the first
+    // discovery-complete callback can legitimately find selected_strips_ empty.
+    auto& ctrl = helix::led::LedController::instance();
+    ctrl.deinit();
+    ctrl.init(mock_api.get(), &mock_client);
+    // init() reloads the persisted selection; this machine's config may carry one.
+    ctrl.set_selected_strips({});
+    make_led_dispatch_real(state);
+
+    ctrl.set_led_on_at_start(true);
+    ctrl.set_last_color(0xFFFFFF);
+    ctrl.set_startup_brightness(80);
+
+    // First discovery: nothing selected yet — no-op, and no shot spent.
+    REQUIRE(ctrl.selected_strips().empty());
+    ctrl.apply_startup_preference();
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+    REQUIRE_FALSE(ctrl.light_is_on());
+
+    // Strips show up on the next pass.
+    helix::led::LedStripInfo strip;
+    strip.name = "Chamber";
+    strip.id = "neopixel chamber";
+    strip.backend = helix::led::LedBackendType::NATIVE;
+    strip.supports_color = true;
+    ctrl.native().add_strip(strip);
+    ctrl.set_selected_strips({"neopixel chamber"});
+
+    mock_client.clear_gcode_script_history();
+    ctrl.apply_startup_preference();
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+
+    CHECK(ctrl.light_is_on());
+    CHECK(count_set_led(mock_client.gcode_script_history()) == 1);
+}
+
+TEST_CASE_METHOD(LedMockApiFixture,
+                 "LedController: switching printers re-arms the startup preference",
+                 "[led][controller][regression]") {
+    // A printer switch runs Application::tear_down_printer_state() (which calls
+    // LedController::deinit()) followed by a fresh init — that is a genuine
+    // startup for the new printer, so the preference must apply again.
+    setup_controller_with_strip();
+    auto& ctrl = helix::led::LedController::instance();
+    make_led_dispatch_real(state);
+
+    ctrl.set_led_on_at_start(true);
+    ctrl.set_last_color(0xFFFFFF);
+    ctrl.set_startup_brightness(80);
+    ctrl.apply_startup_preference();
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+    REQUIRE(ctrl.light_is_on());
+
+    ctrl.light_set(false);
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+    REQUIRE_FALSE(ctrl.light_is_on());
+
+    // Printer switch: teardown + re-init.
+    setup_controller_with_strip();
+    ctrl.set_led_on_at_start(true);
+    ctrl.set_last_color(0xFFFFFF);
+    ctrl.set_startup_brightness(80);
+    make_led_dispatch_real(state);
+
+    mock_client.clear_gcode_script_history();
+    ctrl.apply_startup_preference();
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+
+    CHECK(ctrl.light_is_on());
+    CHECK(count_set_led(mock_client.gcode_script_history()) == 1);
 }
 
 // ============================================================================
@@ -1826,6 +2043,171 @@ TEST_CASE_METHOD(LedMockApiFixture, "LedController: disconnect clears in-flight 
 }
 
 // ============================================================================
+// A Klippy restart leaves the Moonraker WebSocket UP (#1129)
+//
+// printer_connection_state only tracks the Moonraker WebSocket, so a Klipper
+// restart never moves it off CONNECTED and the conn_observer_ above can never
+// fire. The reporter's journal proves it: led_command_in_flight stuck at 1
+// across a Klippy recovery with zero "force-clearing" lines. The klippy-state
+// observer is the safety net for any dispatch that leaks its settle callback.
+// ============================================================================
+
+namespace {
+
+/// Arrange the #1129 wedge: Moonraker CONNECTED, then dispatch an LED command whose
+/// RPC response is dropped so the settle callback never fires. Leaves
+/// in_flight_count_ pinned at 1 with a fully drained UpdateQueue.
+/// @p global_klippy is the klippy state the LedController sees at dispatch time.
+void wedge_in_flight_led_command(helix::PrinterState& api_state, MoonrakerClientMock& mock_client,
+                                 helix::KlippyState global_klippy = helix::KlippyState::READY) {
+    // execute_gcode() refuses gcode outright while Klipper is halted, and the API
+    // reads the PrinterState it was constructed with (the fixture's own instance),
+    // which defaults to SHUTDOWN. Make the dispatch actually reach the wire.
+    api_state.set_klippy_state_sync(helix::KlippyState::READY);
+
+    // The LedController observes the GLOBAL PrinterState, not the API's.
+    auto& ps = get_printer_state();
+    lv_subject_set_int(ps.get_printer_connection_state_subject(),
+                       static_cast<int>(helix::ConnectionState::CONNECTED));
+    ps.set_klippy_state_sync(global_klippy);
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+
+    // The RPC goes out; the response never comes back. Neither on_success nor
+    // on_error ever runs, so note_command_settled() is never reached.
+    mock_client.force_next_gcode_dropped_response("SET_LED");
+    helix::led::LedController::instance().light_set(true);
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+}
+
+} // namespace
+
+TEST_CASE_METHOD(LedMockApiFixture,
+                 "LedController: a dropped LED ACK really does wedge the in-flight counter",
+                 "[led][controller][inflight]") {
+    // Harness guard for the test below: without a genuinely lost response the
+    // mock ACKs synchronously and the counter clears on its own, which would make
+    // the klippy-restart test pass for the wrong reason.
+    setup_controller_with_strip();
+    auto& ctrl = helix::led::LedController::instance();
+    lv_subject_t* s = ctrl.get_led_command_in_flight_subject();
+
+    wedge_in_flight_led_command(state, mock_client);
+
+    // The SET_LED did reach Klipper — only its response was lost.
+    CHECK_FALSE(mock_client.gcode_script_history().empty());
+    // ...and the button is stuck greyed out.
+    REQUIRE(lv_subject_get_int(s) == 1);
+    REQUIRE(ctrl.light_command_in_flight());
+}
+
+TEST_CASE_METHOD(LedMockApiFixture,
+                 "LedController: Klippy leaving READY clears in-flight LED state (#1129)",
+                 "[led][controller][inflight]") {
+    setup_controller_with_strip();
+    auto& ctrl = helix::led::LedController::instance();
+    lv_subject_t* s = ctrl.get_led_command_in_flight_subject();
+    auto& ps = get_printer_state();
+
+    wedge_in_flight_led_command(state, mock_client);
+    REQUIRE(lv_subject_get_int(s) == 1);
+
+    // Klippy dies / restarts. Moonraker itself never went away, so the WebSocket
+    // stays up and printer_connection_state does NOT move.
+    helix::KlippyState non_ready = helix::KlippyState::SHUTDOWN;
+    SECTION("M112 shutdown") {
+        non_ready = helix::KlippyState::SHUTDOWN;
+    }
+    SECTION("klippy error") {
+        non_ready = helix::KlippyState::ERROR;
+    }
+    SECTION("FIRMWARE_RESTART startup") {
+        // Klipper re-inits: any RPC issued before the restart is gone for good.
+        non_ready = helix::KlippyState::STARTUP;
+    }
+    CAPTURE(static_cast<int>(non_ready));
+
+    ps.set_klippy_state_sync(non_ready);
+    REQUIRE(lv_subject_get_int(ps.get_printer_connection_state_subject()) ==
+            static_cast<int>(helix::ConnectionState::CONNECTED));
+
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+    CHECK(lv_subject_get_int(s) == 0);
+    CHECK_FALSE(ctrl.light_command_in_flight());
+}
+
+TEST_CASE_METHOD(LedMockApiFixture,
+                 "LedController: Klippy coming back READY does not clear an in-flight command",
+                 "[led][controller][inflight]") {
+    // The new observer must fire only on a READY *exit*. A klippy transition INTO
+    // READY (recovery finished) must leave a genuinely in-flight toggle greyed out,
+    // or the button un-greys before its command has landed.
+    // Note: lv_subject_set_int() uses notify_if_changed, so this has to be a real
+    // value transition — re-asserting the same value notifies nobody and would make
+    // this test vacuous.
+    setup_controller_with_strip();
+    auto& ctrl = helix::led::LedController::instance();
+    lv_subject_t* s = ctrl.get_led_command_in_flight_subject();
+    auto& ps = get_printer_state();
+
+    wedge_in_flight_led_command(state, mock_client, helix::KlippyState::SHUTDOWN);
+    REQUIRE(lv_subject_get_int(s) == 1);
+
+    ps.set_klippy_state_sync(helix::KlippyState::READY);
+    REQUIRE(lv_subject_get_int(ps.get_klippy_state_subject()) ==
+            static_cast<int>(helix::KlippyState::READY));
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+    CHECK(lv_subject_get_int(s) == 1);
+    CHECK(ctrl.light_command_in_flight());
+}
+
+// ============================================================================
+// A toggle QUEUED behind an external blocking op must still settle (#1129)
+// ============================================================================
+
+TEST_CASE_METHOD(LedMockApiFixture,
+                 "LedController: a toggle queued behind a blocking op settles in-flight (#1129)",
+                 "[led][controller][inflight]") {
+    // SET_LED is discretionary, so while an external blocking op (BED_MESH_CALIBRATE,
+    // QGL, a manual probe) holds Klipper's gcode lock, MoonrakerAPI queues it
+    // fire-and-forget and deliberately drops the RPC response — that is what stops
+    // the ~60s timeout toast #1108 removed. Neither on_success nor on_error will
+    // ever fire, so the settle has to come from the queued disposition or the
+    // counter stays pinned and both light buttons grey out for the session.
+    //
+    // Forcing the response drop is what makes this test honest: if the queued path
+    // regressed to passing the caller's callbacks straight through to send_jsonrpc,
+    // the drop wedges the counter and this fails.
+    setup_controller_with_strip();
+    auto& ctrl = helix::led::LedController::instance();
+    lv_subject_t* s = ctrl.get_led_command_in_flight_subject();
+
+    // Pin the two safety-net observers OPEN (Moonraker connected, Klippy READY) so
+    // neither can force-clear the counter and make this pass for the wrong reason.
+    auto& ps = get_printer_state();
+    lv_subject_set_int(ps.get_printer_connection_state_subject(),
+                       static_cast<int>(helix::ConnectionState::CONNECTED));
+    ps.set_klippy_state_sync(helix::KlippyState::READY);
+
+    // The API reads the PrinterState it was constructed with. READY + idle_timeout
+    // "Printing" without a file print == an external blocking op holds the lock.
+    state.set_klippy_state_sync(helix::KlippyState::READY);
+    lv_subject_set_int(state.get_print_state_enum_subject(),
+                       static_cast<int>(helix::PrintJobState::STANDBY));
+    lv_subject_set_int(state.get_idle_timeout_printing_subject(), 1);
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+
+    mock_client.force_next_gcode_dropped_response("SET_LED");
+    ctrl.light_set(true);
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+
+    // The command really did go out (queued in Klipper, not refused)...
+    CHECK_FALSE(mock_client.gcode_script_history().empty());
+    // ...and the buttons came back.
+    REQUIRE(lv_subject_get_int(s) == 0);
+    REQUIRE_FALSE(ctrl.light_command_in_flight());
+}
+
+// ============================================================================
 // WLED in-flight parity: REST toggle must grey the button the same as native
 // ============================================================================
 
@@ -1853,4 +2235,131 @@ TEST_CASE_METHOD(LedMockApiFixture, "LedController: WLED toggle marks in-flight 
     helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
     REQUIRE(lv_subject_get_int(s) == 0);
     REQUIRE_FALSE(ctrl.light_command_in_flight());
+}
+
+// ============================================================================
+// on_queued forwarding — prerequisite for widening the discretionary table (#1129)
+// ============================================================================
+
+TEST_CASE_METHOD(LedMockApiFixture, "OutputPinBackend accepts and forwards on_queued",
+                 "[led][1129]") {
+    // Compile-level contract: these overloads must exist before SET_PIN may be
+    // added to the discretionary table, or the queue path drops the settle.
+    helix::led::OutputPinBackend backend;
+    backend.set_api(mock_api.get());
+
+    helix::led::LedStripInfo pin;
+    pin.name = "Case Light";
+    pin.id = "output_pin case_light";
+    pin.backend = helix::led::LedBackendType::OUTPUT_PIN;
+    backend.add_pin(pin);
+
+    bool queued_fired = false;
+    auto on_queued = [&queued_fired]() { queued_fired = true; };
+
+    backend.turn_on("output_pin case_light", nullptr, nullptr, on_queued);
+    backend.turn_off("output_pin case_light", nullptr, nullptr, on_queued);
+    backend.set_value("output_pin case_light", 0.5, nullptr, nullptr, on_queued);
+    backend.set_brightness("output_pin case_light", 50, nullptr, nullptr, on_queued);
+
+    // The mock is not busy, so the normal path runs and on_queued must NOT fire.
+    CHECK_FALSE(queued_fired);
+}
+
+TEST_CASE_METHOD(LedMockApiFixture, "LedEffectBackend accepts and forwards on_queued",
+                 "[led][1129]") {
+    helix::led::LedEffectBackend backend;
+    backend.set_api(mock_api.get());
+
+    helix::led::LedEffectInfo effect;
+    effect.name = "led_effect rainbow";
+    backend.add_effect(effect);
+
+    bool queued_fired = false;
+    auto on_queued = [&queued_fired]() { queued_fired = true; };
+
+    backend.activate_effect("led_effect rainbow", nullptr, nullptr, on_queued);
+    backend.stop_effect("led_effect rainbow", nullptr, nullptr, on_queued);
+    backend.stop_all_effects(nullptr, nullptr, on_queued);
+
+    CHECK_FALSE(queued_fired);
+}
+
+TEST_CASE_METHOD(LedMockApiFixture,
+                 "two strips queued behind a blocking op both settle the in-flight counter",
+                 "[led][1129]") {
+    // The reporter's 17:04:29 pair: a print cancel fired auto-state SET_LED for
+    // main_led and neopixel toolhead_rgb at once, both took the discretionary queue
+    // path, and both settled. If either drops its settle the counter never returns
+    // to 0 and both light buttons grey out for the rest of the session.
+    auto& ctrl = helix::led::LedController::instance();
+    ctrl.deinit();
+    ctrl.init(mock_api.get(), &mock_client);
+
+    for (const auto& id : {std::string("led main_led"), std::string("neopixel toolhead_rgb")}) {
+        helix::led::LedStripInfo strip;
+        strip.name = id;
+        strip.id = id;
+        strip.backend = helix::led::LedBackendType::NATIVE;
+        ctrl.native().add_strip(strip);
+    }
+    ctrl.set_selected_strips({"led main_led", "neopixel toolhead_rgb"});
+
+    // ORDERING IS LOAD-BEARING (see Task 3, Step 5). Klippy subjects initialize to
+    // SHUTDOWN, so this call is a transition that resets the volatile subjects.
+    // It MUST come before idle_timeout is set, or the reset wipes it and the test
+    // silently exercises the non-busy path instead.
+    state.set_klippy_state_sync(helix::KlippyState::READY);
+
+    // Klipper is busy with a blocking non-print op, so both sends take the queue path.
+    lv_subject_set_int(state.get_idle_timeout_printing_subject(), 1);
+    REQUIRE(state.is_external_blocking_operation_active());
+
+    ctrl.light_toggle();
+
+    // The settle runs through tok.defer(...), so the subject still reads its
+    // pre-settle value without a drain ([L048]).
+    helix::ui::UpdateQueue::instance().drain();
+
+    CHECK(lv_subject_get_int(ctrl.get_led_command_in_flight_subject()) == 0);
+}
+
+TEST_CASE_METHOD(LedMockApiFixture,
+                 "OUTPUT_PIN strip queued behind a blocking op settles the in-flight counter",
+                 "[led][1129]") {
+    // Behavioural counterpart of "OutputPinBackend accepts and forwards on_queued"
+    // (compile-contract only): SET_PIN became discretionary alongside SET_LED, so
+    // an output_pin strip toggled while Klipper is busy must take the queue path
+    // and still settle the in-flight counter back to 0. If on_queued were dropped
+    // from set_value()/toggle_all()'s OUTPUT_PIN branch, this send would rely on
+    // on_success/on_error alone, which never fire on the queue path, and the
+    // counter would wedge at 1.
+    auto& ctrl = helix::led::LedController::instance();
+    ctrl.deinit();
+    ctrl.init(mock_api.get(), &mock_client);
+
+    helix::led::LedStripInfo pin;
+    pin.name = "Case Light";
+    pin.id = "output_pin case_light";
+    pin.backend = helix::led::LedBackendType::OUTPUT_PIN;
+    ctrl.output_pin().add_pin(pin);
+    ctrl.set_selected_strips({"output_pin case_light"});
+
+    // ORDERING IS LOAD-BEARING (see Task 3, Step 5). Klippy subjects initialize to
+    // SHUTDOWN, so this call is a transition that resets the volatile subjects.
+    // It MUST come before idle_timeout is set, or the reset wipes it and the test
+    // silently exercises the non-busy path instead.
+    state.set_klippy_state_sync(helix::KlippyState::READY);
+
+    // Klipper is busy with a blocking non-print op, so the send takes the queue path.
+    lv_subject_set_int(state.get_idle_timeout_printing_subject(), 1);
+    REQUIRE(state.is_external_blocking_operation_active());
+
+    ctrl.light_toggle();
+
+    // The settle runs through tok.defer(...), so the subject still reads its
+    // pre-settle value without a drain ([L048]).
+    helix::ui::UpdateQueue::instance().drain();
+
+    CHECK(lv_subject_get_int(ctrl.get_led_command_in_flight_subject()) == 0);
 }

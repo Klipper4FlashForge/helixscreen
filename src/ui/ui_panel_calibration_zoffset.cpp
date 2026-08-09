@@ -4,6 +4,7 @@
 #include "ui_panel_calibration_zoffset.h"
 
 #include "ui_callback_helpers.h"
+#include "ui_emergency_stop.h"
 #include "ui_error_reporting.h"
 #include "ui_event_safety.h"
 #include "ui_nav_manager.h"
@@ -323,6 +324,7 @@ void ZOffsetCalibrationPanel::cleanup() {
     // Reset ObserverGuards (applying [L020])
     manual_probe_active_observer_.reset();
     manual_probe_z_observer_.reset();
+    klippy_state_observer_.reset();
     bed_temp_lifetime_.reset();
     bed_temp_observer_.reset();
 
@@ -357,16 +359,18 @@ void ZOffsetCalibrationPanel::set_state(State new_state) {
         });
         break;
     case State::SAVING:
-        operation_guard_.begin(SAVING_TIMEOUT_MS, [this] {
-            set_state(State::ERROR);
-            NOTIFY_WARNING(lv_tr("Z-offset calibration timed out"));
-        });
+        saving_timeout_extensions_ = 0;
+        save_restart_latch_.reset(); // Fresh latch — never inherit a prior save's
+        begin_saving_restart_watch();
+        arm_saving_timeout();
         break;
     case State::ADJUSTING:
     case State::COMPLETE:
     case State::ERROR:
     case State::IDLE:
         operation_guard_.end();
+        end_saving_restart_watch();
+        save_restart_latch_.reset(); // Leaving SAVING — a later save starts clean
         bed_temp_lifetime_.reset();
         bed_temp_observer_.reset(); // Stop watching bed temp when not warming
         break;
@@ -374,6 +378,74 @@ void ZOffsetCalibrationPanel::set_state(State new_state) {
 
     // Update subject - XML bindings handle visibility automatically
     lv_subject_set_int(&s_zoffset_cal_state, static_cast<int>(new_state));
+}
+
+void ZOffsetCalibrationPanel::begin_saving_restart_watch() {
+    // Watch klippy state for the duration of the save. Two jobs:
+    //  1. Latch the restart that SAVE_CONFIG triggers, so the timeout below can
+    //     tell "restarting" apart from "hung".
+    //  2. Settle the panel when Klipper comes back. The save's RPC is dropped by
+    //     notify_klippy_disconnected(), so its success callback often never
+    //     fires — without this the panel burns the full extension budget and
+    //     then fails a save that actually succeeded.
+    klippy_state_observer_ = observe_int_sync<ZOffsetCalibrationPanel>(
+        get_printer_state().get_klippy_state_subject(), this,
+        [](ZOffsetCalibrationPanel* self, int state) {
+            if (self->state_ != State::SAVING) {
+                return; // Stale fire after the save settled
+            }
+
+            const bool ready = (static_cast<KlippyState>(state) == KlippyState::READY);
+            self->save_restart_latch_.on_klippy_ready(ready);
+
+            if (self->save_restart_latch_.restart_completed()) {
+                spdlog::info("[ZOffsetCal] Klipper back READY after the save's restart — "
+                             "treating SAVE_CONFIG as succeeded (its RPC was dropped)");
+
+                // Settle on the next tick, NOT here: on_calibration_result() ->
+                // set_state() -> end_saving_restart_watch() would reset this very
+                // observer from inside its own callback.
+                self->lifetime_.defer("ZOffsetCalibrationPanel::settle_after_restart", [self]() {
+                    if (self->state_ == State::SAVING) {
+                        self->on_calibration_result(true, "");
+                    }
+                });
+            }
+        });
+}
+
+void ZOffsetCalibrationPanel::end_saving_restart_watch() {
+    klippy_state_observer_.reset();
+}
+
+void ZOffsetCalibrationPanel::arm_saving_timeout() {
+    operation_guard_.begin(SAVING_TIMEOUT_MS, [this] {
+        // Fold in the suppression window as a second latch source, in case the
+        // klippy observer never saw the dip. Monotonic within this save.
+        save_restart_latch_.note_restart_expected(
+            EmergencyStopOverlay::instance().is_expected_restart());
+
+        if (helix::zoffset::should_extend_save_timeout(save_restart_latch_.restart_latched(),
+                                                       saving_timeout_extensions_,
+                                                       SAVING_TIMEOUT_MAX_EXTENSIONS)) {
+            saving_timeout_extensions_++;
+            spdlog::info("[ZOffsetCal] Save still pending across an expected Klipper restart — "
+                         "extending timeout ({}/{})",
+                         saving_timeout_extensions_, SAVING_TIMEOUT_MAX_EXTENSIONS);
+
+            // Re-arm on the next main-thread tick, NOT here: OperationTimeoutGuard::begin()
+            // assigns over on_timeout_, which would destroy this very closure mid-call.
+            lifetime_.defer("ZOffsetCalibrationPanel::arm_saving_timeout", [this]() {
+                if (state_ == State::SAVING) {
+                    arm_saving_timeout();
+                }
+            });
+            return;
+        }
+
+        set_state(State::ERROR);
+        NOTIFY_WARNING(lv_tr("Z-offset calibration timed out"));
+    });
 }
 
 // ============================================================================
@@ -874,10 +946,6 @@ ZOffsetCalibrationPanel& get_global_zoffset_cal_panel() {
                                                          []() { g_zoffset_cal_panel.reset(); });
     }
     return *g_zoffset_cal_panel;
-}
-
-void destroy_zoffset_cal_panel() {
-    g_zoffset_cal_panel.reset();
 }
 
 void init_zoffset_row_handler() {

@@ -20,8 +20,7 @@
     <text_body text="$label" translation_tag="$label_tag" style_text_align="left"/>
     <!-- Textarea input with configurable name for C++ lookup -->
     <text_input name="$input_name"
-                width="100%" height="#input_height" placeholder_text="$placeholder"
-                placeholder_tag="$placeholder_tag"
+                width="100%" height="#input_height" placeholder_text="$placeholder" placeholder_tag="$placeholder_tag"
                 password_mode="$password_mode"/>
   </view>
 </component>

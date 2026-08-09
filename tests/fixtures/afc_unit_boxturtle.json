@@ -1,0 +1,17 @@
+{
+  "buffers": [
+    "Turtle_1"
+  ],
+  "extruders": [
+    "extruder"
+  ],
+  "hubs": [
+    "Turtle_1"
+  ],
+  "lanes": [
+    "lane1",
+    "lane2",
+    "lane3",
+    "lane4"
+  ]
+}

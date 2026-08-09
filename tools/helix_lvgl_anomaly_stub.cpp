@@ -19,6 +19,13 @@ extern "C" void helix_lvgl_anomaly(const char* /*code*/, const char* /*context*/
     // splash/watchdog have no telemetry pipeline; drop the report on the floor.
 }
 
+// Display-backend telemetry bridge (helix_display_telemetry.h). The display
+// backends are force-linked (--whole-archive) into splash/watchdog, but neither
+// runs a telemetry pipeline, so drop the report. Real impl lives in
+// src/system/helix_display_telemetry.cpp.
+extern "C" void helix_display_telemetry_error(const char* /*category*/, const char* /*code*/,
+                                              const char* /*detail*/) {}
+
 // 3XNZQB2R bridges. Splash/watchdog don't run a crash handler, so widget
 // identity capture and text-bounds queries are no-ops.
 extern "C" void helix_crash_note_event_target_id(const char* /*class_name*/,

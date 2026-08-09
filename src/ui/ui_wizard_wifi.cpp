@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "ui_wizard_wifi.h"
-#include "data_root_resolver.h"
 
 #include "ui_error_reporting.h"
 #include "ui_icon.h"
@@ -13,18 +12,22 @@
 #include "ui_utils.h"
 
 #include "config.h"
+#include "data_root_resolver.h"
 #include "ethernet_manager.h"
+#include "log_redact.h"
 #include "lvgl/lvgl.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "static_panel_registry.h"
 #include "system/crash_handler.h"
 #include "theme_manager.h"
 #include "wifi_manager.h"
+#include "wifi_radio_toggle.h"
 #include "wifi_ui_utils.h"
 
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <memory>
 
@@ -83,10 +86,15 @@ struct WifiWizardNetworkItemData {
     lv_subject_t signal_strength;   // Stack-allocated subject
     lv_subject_t is_secured;        // Stack-allocated subject
     lv_subject_t signal_icon_state; // Combined state 1-8 for icon visibility binding
+    lv_subject_t band_text;         // Band badge text ("2.4G" / "5G" / "2.4/5G")
+    lv_subject_t band_visible;      // 1 when the badge should be shown, else 0
     char ssid_buffer[64];
+    char band_buffer[16];
     WizardWifiStep* parent; // Back-reference for callbacks
 
-    WifiWizardNetworkItemData(const WiFiNetwork& net, WizardWifiStep* p) : network(net), parent(p) {
+    WifiWizardNetworkItemData(const WiFiNetwork& net, WizardWifiStep* p,
+                              const std::string& band_label)
+        : network(net), parent(p) {
         strncpy(ssid_buffer, network.ssid.c_str(), sizeof(ssid_buffer) - 1);
         ssid_buffer[sizeof(ssid_buffer) - 1] = '\0';
         lv_subject_init_string(&ssid, ssid_buffer, nullptr, sizeof(ssid_buffer), ssid_buffer);
@@ -96,6 +104,10 @@ struct WifiWizardNetworkItemData {
         // Compute combined icon state (1-8)
         int icon_state = compute_signal_icon_state(network.signal_strength, network.is_secured);
         lv_subject_init_int(&signal_icon_state, icon_state);
+
+        snprintf(band_buffer, sizeof(band_buffer), "%s", band_label.c_str());
+        lv_subject_init_string(&band_text, band_buffer, nullptr, sizeof(band_buffer), band_buffer);
+        lv_subject_init_int(&band_visible, band_label.empty() ? 0 : 1);
     }
 
     ~WifiWizardNetworkItemData() {
@@ -104,6 +116,8 @@ struct WifiWizardNetworkItemData {
         lv_subject_deinit(&signal_strength);
         lv_subject_deinit(&is_secured);
         lv_subject_deinit(&signal_icon_state);
+        lv_subject_deinit(&band_text);
+        lv_subject_deinit(&band_visible);
     }
 };
 
@@ -204,7 +218,8 @@ void WizardWifiStep::update_wifi_ip(const char* ip) {
     // Update WiFi MAC when we have an IP (connected)
     if (ip && ip[0] != '\0' && wifi_manager_) {
         std::string mac = wifi_manager_->get_mac_address();
-        spdlog::debug("[{}] WiFi MAC from backend: '{}' (len={})", get_name(), mac, mac.size());
+        spdlog::debug("[{}] WiFi MAC from backend: '{}' (len={})", get_name(),
+                      helix::redact::mac(mac), mac.size());
         if (!mac.empty()) {
             char mac_buf[32];
             snprintf(mac_buf, sizeof(mac_buf), "MAC: %s", mac.c_str());
@@ -297,9 +312,14 @@ void WizardWifiStep::populate_network_list(const std::vector<WiFiNetwork>& netwo
     if (wifi_manager_) {
         connected_ssid = wifi_manager_->get_connected_ssid();
         if (!connected_ssid.empty()) {
-            spdlog::debug("[{}] Currently connected to: {}", get_name(), connected_ssid);
+            spdlog::debug("[{}] Currently connected to: {}", get_name(),
+                          helix::redact::ssid(connected_ssid));
         }
     }
+
+    // Band badges only earn their pixels when the scan actually spans bands —
+    // on a 2.4GHz-only radio every row would read "2.4G" (helixscreen#1189).
+    const bool show_bands = helix::ui::wifi::wifi_scan_spans_multiple_bands(sorted_networks);
 
     // Create network items
     static int item_counter = 0;
@@ -307,7 +327,8 @@ void WizardWifiStep::populate_network_list(const std::vector<WiFiNetwork>& netwo
         lv_obj_t* item = static_cast<lv_obj_t*>(
             lv_xml_create(network_list_container_, "wifi_network_item", nullptr));
         if (!item) {
-            LOG_ERROR_INTERNAL("Failed to create network item for SSID: {}", network.ssid);
+            LOG_ERROR_INTERNAL("Failed to create network item for SSID: {}",
+                               helix::redact::ssid(network.ssid));
             continue;
         }
 
@@ -316,12 +337,22 @@ void WizardWifiStep::populate_network_list(const std::vector<WiFiNetwork>& netwo
         lv_obj_set_name(item, item_name);
 
         // Create per-instance data with back-reference to this step
-        WifiWizardNetworkItemData* item_data = new WifiWizardNetworkItemData(network, this);
+        std::string band_label_text =
+            show_bands ? helix::ui::wifi::wifi_format_band_label(network.band_mask) : std::string();
+        WifiWizardNetworkItemData* item_data =
+            new WifiWizardNetworkItemData(network, this, band_label_text);
 
         // Bind SSID label to subject (LVGL auto-cleans observers when widget is deleted)
         lv_obj_t* ssid_label = lv_obj_find_by_name(item, "ssid_label");
         if (ssid_label) {
             lv_label_bind_text(ssid_label, &item_data->ssid, nullptr);
+        }
+
+        // Bind the band badge to this row's own subjects
+        lv_obj_t* band_label = lv_obj_find_by_name(item, "band_label");
+        if (band_label) {
+            lv_label_bind_text(band_label, &item_data->band_text, nullptr);
+            lv_obj_bind_flag_if_eq(band_label, &item_data->band_visible, LV_OBJ_FLAG_HIDDEN, 0);
         }
 
         // Set security type text
@@ -366,7 +397,8 @@ void WizardWifiStep::populate_network_list(const std::vector<WiFiNetwork>& netwo
         bool is_connected = (!connected_ssid.empty() && network.ssid == connected_ssid);
         if (is_connected) {
             lv_obj_add_state(item, LV_STATE_CHECKED);
-            spdlog::debug("[{}] Marked connected network: {}", get_name(), network.ssid);
+            spdlog::debug("[{}] Marked connected network: {}", get_name(),
+                          helix::redact::ssid(network.ssid));
 
             // Update status/IP/MAC display — the initial is_connected() check at
             // init time can miss pre-existing connections due to NM query timing,
@@ -385,8 +417,9 @@ void WizardWifiStep::populate_network_list(const std::vector<WiFiNetwork>& netwo
         // Register DELETE handler for automatic cleanup when widget is deleted
         lv_obj_add_event_cb(item, network_item_delete_cb, LV_EVENT_DELETE, nullptr);
 
-        spdlog::debug("[{}] Added network: {} ({}%, {})", get_name(), network.ssid,
-                      network.signal_strength, network.is_secured ? "secured" : "open");
+        spdlog::debug("[{}] Added network: {} ({}%, {})", get_name(),
+                      helix::redact::ssid(network.ssid), network.signal_strength,
+                      network.is_secured ? "secured" : "open");
     }
 
     // Restore scroll position after repopulating
@@ -531,12 +564,46 @@ void WizardWifiStep::handle_wifi_toggle_changed(lv_event_t* e) {
         // Don't save yet - will be saved on wizard completion
     }
 
+    if (!wifi_manager_) {
+        LOG_ERROR_INTERNAL("WiFi manager not initialized");
+        NOTIFY_ERROR(lv_tr("WiFi unavailable"));
+        return;
+    }
+
     if (checked) {
         update_wifi_status(get_status_text("enabled"));
+        lv_subject_set_int(&wifi_scanning_, 1);
+    } else {
+        update_wifi_status(get_status_text("disabled"));
+        update_wifi_ip(""); // Clear IP when WiFi disabled
+        lv_subject_set_int(&wifi_scanning_, 0);
+        clear_network_list();
+        wifi_manager_->stop_scan();
+    }
 
-        if (wifi_manager_) {
-            wifi_manager_->set_enabled(true);
-            lv_subject_set_int(&wifi_scanning_, 1);
+    // Radio work runs off-thread: on wpa_supplicant it is two control commands
+    // per direction, each of which can spend up to 5s retrying the send and
+    // then up to 10s waiting for a reply. Done inline it froze the wizard.
+    // The subject above is the optimistic value; reconcile below.
+    auto radio_token = lifetime_.token();
+    wifi_manager_->set_enabled_async(
+        checked, radio_token, [this, checked](bool success, bool actual) {
+            auto outcome = helix::wifi::reconcile_radio_toggle(checked, success, actual);
+            if (outcome.reverted) {
+                spdlog::warn("[{}] WiFi {} did not take — radio is {}", get_name(),
+                             checked ? "enable" : "disable", actual ? "on" : "off");
+                lv_subject_set_int(&wifi_enabled_, outcome.enabled ? 1 : 0);
+                update_wifi_status(get_status_text(outcome.enabled ? "enabled" : "disabled"));
+                if (auto* config = Config::get_instance()) {
+                    config->set_wifi_expected(outcome.enabled);
+                }
+            }
+
+            if (!outcome.enabled) {
+                lv_subject_set_int(&wifi_scanning_, 0);
+                clear_network_list();
+                return;
+            }
 
             // Capture weak reference for async safety
             std::weak_ptr<WiFiManager> weak_mgr = wifi_manager_;
@@ -566,21 +633,7 @@ void WizardWifiStep::handle_wifi_toggle_changed(lv_event_t* e) {
                     populate_network_list(cached_networks_);
                 });
             });
-        } else {
-            LOG_ERROR_INTERNAL("WiFi manager not initialized");
-            NOTIFY_ERROR(lv_tr("WiFi unavailable"));
-        }
-    } else {
-        update_wifi_status(get_status_text("disabled"));
-        update_wifi_ip(""); // Clear IP when WiFi disabled
-        lv_subject_set_int(&wifi_scanning_, 0);
-        clear_network_list();
-
-        if (wifi_manager_) {
-            wifi_manager_->stop_scan();
-            wifi_manager_->set_enabled(false);
-        }
-    }
+        });
 }
 
 void WizardWifiStep::handle_network_item_clicked(lv_event_t* e) {
@@ -596,7 +649,7 @@ void WizardWifiStep::handle_network_item_clicked(lv_event_t* e) {
     }
 
     const WiFiNetwork& network = item_data->network;
-    spdlog::debug("[{}] Network clicked: {} ({}%)", get_name(), network.ssid,
+    spdlog::debug("[{}] Network clicked: {} ({}%)", get_name(), helix::redact::ssid(network.ssid),
                   network.signal_strength);
 
     strncpy(current_ssid_, network.ssid.c_str(), sizeof(current_ssid_) - 1);
@@ -630,15 +683,16 @@ void WizardWifiStep::handle_network_item_clicked(lv_event_t* e) {
                                 std::string ip = wifi_manager_->get_ip_address();
                                 update_wifi_ip(ip.c_str());
                             }
-                            spdlog::info("[{}] Connected to {}", get_name(), current_ssid_);
+                            spdlog::info("[{}] Connected to {}", get_name(),
+                                         helix::redact::ssid(current_ssid_));
                         } else {
                             char msg[128];
                             snprintf(msg, sizeof(msg), lv_tr("Failed to connect: %s"),
                                      error.c_str());
                             update_wifi_status(msg);
                             update_wifi_ip(""); // Clear IP on failure
-                            NOTIFY_ERROR(lv_tr("Failed to connect to '{}': {}"), current_ssid_,
-                                         error);
+                            NOTIFY_ERROR(lv_tr("Failed to connect to '{}': {}"),
+                                         helix::redact::ssid(current_ssid_), error);
                         }
                     });
                 });
@@ -654,7 +708,8 @@ void WizardWifiStep::handle_modal_cancel_clicked() {
 
     if (wifi_manager_) {
         wifi_manager_->disconnect();
-        spdlog::info("[{}] Disconnecting from '{}'", get_name(), current_ssid_);
+        spdlog::info("[{}] Disconnecting from '{}'", get_name(),
+                     helix::redact::ssid(current_ssid_));
     }
 
     update_wifi_status(get_status_text("enabled"));
@@ -686,7 +741,8 @@ void WizardWifiStep::handle_modal_connect_clicked() {
         return;
     }
 
-    spdlog::debug("[{}] Connecting to {} with password", get_name(), current_ssid_);
+    spdlog::debug("[{}] Connecting to {} with password", get_name(),
+                  helix::redact::ssid(current_ssid_));
 
     lv_subject_set_int(&wifi_connecting_, 1);
 
@@ -727,7 +783,8 @@ void WizardWifiStep::handle_modal_connect_clicked() {
                             std::string ip = wifi_manager_->get_ip_address();
                             update_wifi_ip(ip.c_str());
                         }
-                        spdlog::info("[{}] Connected to {}", get_name(), current_ssid_);
+                        spdlog::info("[{}] Connected to {}", get_name(),
+                                     helix::redact::ssid(current_ssid_));
                     } else {
                         lv_obj_t* modal_status =
                             lv_obj_find_by_name(password_modal_, "modal_status");
@@ -740,7 +797,8 @@ void WizardWifiStep::handle_modal_connect_clicked() {
                         }
 
                         update_wifi_status(lv_tr("Connection failed"));
-                        NOTIFY_ERROR(lv_tr("Failed to connect to '{}': {}"), current_ssid_, error);
+                        NOTIFY_ERROR(lv_tr("Failed to connect to '{}': {}"),
+                                     helix::redact::ssid(current_ssid_), error);
                     }
                 });
             });
@@ -825,7 +883,8 @@ lv_obj_t* WizardWifiStep::create(lv_obj_t* parent) {
     // Register wifi_network_item component first
     static bool network_item_registered = false;
     if (!network_item_registered) {
-        lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/wifi_network_item.xml").c_str());
+        lv_xml_register_component_from_file(
+            helix::asset_component_uri("ui_xml/wifi_network_item.xml").c_str());
         network_item_registered = true;
         spdlog::debug("[{}] Registered wifi_network_item component", get_name());
     }
@@ -952,7 +1011,8 @@ void WizardWifiStep::apply_wifi_backend_state() {
         if (wifi_manager_->is_connected()) {
             std::string ssid = wifi_manager_->get_connected_ssid();
             std::string ip = wifi_manager_->get_ip_address();
-            spdlog::info("[{}] Already connected to '{}' with IP {}", get_name(), ssid, ip);
+            spdlog::info("[{}] Already connected to '{}' with IP {}", get_name(),
+                         helix::redact::ssid(ssid), ip);
 
             // Update status and IP display
             std::string status_msg = std::string(lv_tr("Connected to ")) + ssid;
@@ -1018,7 +1078,8 @@ void WizardWifiStep::show_password_modal(const char* ssid) {
         return;
     }
 
-    spdlog::debug("[{}] Showing password modal for SSID: {}", get_name(), ssid);
+    spdlog::debug("[{}] Showing password modal for SSID: {}", get_name(),
+                  helix::redact::ssid(ssid));
 
     const char* attrs[] = {"ssid", ssid, NULL};
     password_modal_ = helix::ui::modal_show("wifi_password_modal", attrs);
@@ -1052,7 +1113,7 @@ void WizardWifiStep::show_password_modal(const char* ssid) {
         lv_obj_add_event_cb(connect_btn, on_modal_connect_clicked_static, LV_EVENT_CLICKED, this);
     }
 
-    spdlog::info("[{}] Password modal shown for SSID: {}", get_name(), ssid);
+    spdlog::info("[{}] Password modal shown for SSID: {}", get_name(), helix::redact::ssid(ssid));
 }
 
 void WizardWifiStep::hide_password_modal() {

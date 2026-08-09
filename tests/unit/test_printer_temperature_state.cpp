@@ -124,6 +124,86 @@ TEST_CASE("PrinterTemperatureState: default active works with single extruder",
     PrinterTemperatureStateTestAccess::reset(state);
 }
 
+TEST_CASE("PrinterTemperatureState: load latch survives cooldown to 0",
+          "[core][temperature][swap_preheat]") {
+    lv_init_safe();
+    PrinterTemperatureState state;
+    state.init_subjects(false);
+    state.init_extruders({"extruder"});
+
+    // Heat to 250, then let the target cool back to 0.
+    state.update_from_status({{"extruder", {{"temperature", 248.0}, {"target", 250.0}}}});
+    REQUIRE(state.get_active_extruder_last_nonzero_target() == Catch::Approx(250.0));
+
+    state.update_from_status({{"extruder", {{"temperature", 40.0}, {"target", 0.0}}}});
+
+    // Live target is 0, but the latch holds the last non-zero value for purge.
+    REQUIRE(lv_subject_get_int(state.get_active_extruder_target_subject()) == 0);
+    REQUIRE(state.get_active_extruder_last_nonzero_target() == Catch::Approx(250.0));
+
+    PrinterTemperatureStateTestAccess::reset(state);
+}
+
+TEST_CASE("PrinterTemperatureState: latch tracks the most recent non-zero target",
+          "[core][temperature][swap_preheat]") {
+    lv_init_safe();
+    PrinterTemperatureState state;
+    state.init_subjects(false);
+    state.init_extruders({"extruder"});
+
+    state.update_from_status({{"extruder", {{"target", 250.0}}}});
+    REQUIRE(state.get_active_extruder_last_nonzero_target() == Catch::Approx(250.0));
+
+    // A newer non-zero target replaces the latch.
+    state.update_from_status({{"extruder", {{"target", 210.0}}}});
+    REQUIRE(state.get_active_extruder_last_nonzero_target() == Catch::Approx(210.0));
+
+    PrinterTemperatureStateTestAccess::reset(state);
+}
+
+TEST_CASE("PrinterTemperatureState: clear_load_latch resets the held target",
+          "[core][temperature][swap_preheat]") {
+    lv_init_safe();
+    PrinterTemperatureState state;
+    state.init_subjects(false);
+    state.init_extruders({"extruder"});
+
+    state.update_from_status({{"extruder", {{"target", 250.0}}}});
+    REQUIRE(state.get_active_extruder_last_nonzero_target() == Catch::Approx(250.0));
+
+    // Unload clears the latch (active extruder, empty name).
+    state.clear_load_latch();
+    REQUIRE(state.get_active_extruder_last_nonzero_target() == Catch::Approx(0.0));
+
+    PrinterTemperatureStateTestAccess::reset(state);
+}
+
+TEST_CASE("PrinterTemperatureState: latch is per-extruder and honors the active one",
+          "[core][temperature][swap_preheat]") {
+    lv_init_safe();
+    PrinterTemperatureState state;
+    state.init_subjects(false);
+    state.init_extruders({"extruder", "extruder1"});
+
+    state.update_from_status(
+        {{"extruder", {{"target", 250.0}}}, {"extruder1", {{"target", 210.0}}}});
+
+    // Active defaults to "extruder" → its latch.
+    REQUIRE(state.get_active_extruder_last_nonzero_target() == Catch::Approx(250.0));
+
+    state.set_active_extruder("extruder1");
+    REQUIRE(state.get_active_extruder_last_nonzero_target() == Catch::Approx(210.0));
+
+    // Clearing a named extruder leaves the other latch intact.
+    state.clear_load_latch("extruder");
+    state.set_active_extruder("extruder");
+    REQUIRE(state.get_active_extruder_last_nonzero_target() == Catch::Approx(0.0));
+    state.set_active_extruder("extruder1");
+    REQUIRE(state.get_active_extruder_last_nonzero_target() == Catch::Approx(210.0));
+
+    PrinterTemperatureStateTestAccess::reset(state);
+}
+
 TEST_CASE("PrinterTemperatureState: single extruder display_name is 'Nozzle'",
           "[core][temperature][display-name]") {
     lv_init_safe();

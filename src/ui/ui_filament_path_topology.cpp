@@ -156,11 +156,11 @@ void draw_parallel_slot(const RenderCtx& ctx, const SlotRenderStates& states, in
     // overlay canvas cache.
     draw_toolhead(ctx.layer, slot_x, toolhead_y, noz_color, tool_scale, toolhead_opa);
 
-    // Tool badge (T0, T1, etc.) below nozzle — matches system_path_canvas style
+    // Tool badge (E0/T0, …) below nozzle — matches system_path_canvas style
     if (theme.label_font) {
         char tool_label[16];
         int tool = (data->mapped_tool[i] >= 0) ? data->mapped_tool[i] : i;
-        snprintf(tool_label, sizeof(tool_label), "T%d", tool);
+        format_tool_badge_label(data, i, tool, tool_label, sizeof(tool_label));
         lv_color_t text = s.is_mounted ? theme.color_success : theme.color_text;
         draw_tool_badge(ctx, slot_x, toolhead_y + tool_scale * 4 + 6, tool_label, text,
                         toolhead_opa);
@@ -325,6 +325,10 @@ void draw_mixed_shared_toolhead(const RenderCtx& ctx, const MixedFrame& f) {
     int hub_tool = (f.first_hub_lane >= 0 && data->mapped_tool[f.first_hub_lane] >= 0)
                        ? data->mapped_tool[f.first_hub_lane]
                        : (f.first_hub_lane >= 0 ? f.first_hub_lane : 0);
+    // Lane whose extruder identity names this shared toolhead. Every hub-routed
+    // lane feeds the same extruder, so any of them answers; the loaded one is
+    // preferred only because the legacy T-label follows it.
+    int hub_badge_lane = f.first_hub_lane;
 
     for (int j = 0; j < data->slot_count; j++) {
         if (!data->slot_is_hub_routed[j])
@@ -334,6 +338,7 @@ void draw_mixed_shared_toolhead(const RenderCtx& ctx, const MixedFrame& f) {
             any_hub_at_nozzle = true;
             hub_nozzle_color = sj.color;
             hub_tool = (data->mapped_tool[j] >= 0) ? data->mapped_tool[j] : j;
+            hub_badge_lane = j;
             break;
         }
     }
@@ -355,7 +360,7 @@ void draw_mixed_shared_toolhead(const RenderCtx& ctx, const MixedFrame& f) {
     // Tool label below shared hub nozzle
     if (theme.label_font) {
         char tool_label[16];
-        snprintf(tool_label, sizeof(tool_label), "T%d", hub_tool);
+        format_tool_badge_label(data, hub_badge_lane, hub_tool, tool_label, sizeof(tool_label));
         draw_tool_badge(ctx, f.hub_cx, f.toolhead_y + f.tool_scale * 4 + 6, tool_label,
                         theme.color_text, hub_noz_opa);
     }
@@ -388,7 +393,7 @@ void draw_mixed_direct_lane(const RenderCtx& ctx, const MixedFrame& f, int i) {
     if (theme.label_font) {
         char tool_label[16];
         int tool = (data->mapped_tool[i] >= 0) ? data->mapped_tool[i] : i;
-        snprintf(tool_label, sizeof(tool_label), "T%d", tool);
+        format_tool_badge_label(data, i, tool, tool_label, sizeof(tool_label));
         lv_color_t text = s.is_mounted ? theme.color_success : theme.color_text;
         draw_tool_badge(ctx, slot_x, f.toolhead_y + f.tool_scale * 3 + 4, tool_label, text,
                         toolhead_opa);

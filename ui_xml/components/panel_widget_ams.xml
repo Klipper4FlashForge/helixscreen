@@ -2,13 +2,13 @@
 <!-- Copyright (C) 2025-2026 356C LLC -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <component>
-  <view name="panel_widget_ams" extends="lv_obj"
-        height="#button_height_lg" flex_grow="1" style_pad_all="0"
-        style_pad_left="#space_xxs" style_pad_right="#space_xxs" scrollable="false">
+  <view name="panel_widget_ams"
+        extends="lv_obj" height="#button_height_lg" flex_grow="1" style_pad_all="0" style_pad_left="#space_xxs"
+        style_pad_right="#space_xxs" scrollable="false">
     <!-- Hardware gate (ams_slot_count) checked in C++ populate_widgets() -->
     <ams_mini_status/>
-    <text_tiny text="Multi-Filament" style_text_color="#text_muted" style_text_align="center"
-               align="bottom_mid" y="-#space_md">
+    <text_tiny text="Multi-Filament"
+               style_text_color="#text_muted" style_text_align="center" align="bottom_mid" y="-#space_md">
       <bind_flag_if_eq subject="show_widget_labels" flag="hidden" ref_value="0"/>
     </text_tiny>
   </view>

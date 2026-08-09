@@ -1,5 +1,15 @@
 # Standard Macros System - Technical Specification
 
+> **Status: Shipped** — This was the original pre-implementation design spec.
+> The feature is now built and in production: the `StandardMacros` class lives at
+> `src/printer/standard_macros.cpp` (header `include/standard_macros.h`), wired
+> into discovery and the panels described below. The document is retained as
+> as-built reference — the macro/alias tables, slot states, resolution order, and
+> config schema still describe live behavior. The "Implementation Stages",
+> "Files to Create", and "Files to Modify" sections near the end are historical
+> planning artifacts kept for provenance; treat the source tree as the source of
+> truth for current file locations.
+
 ## Overview
 
 The Standard Macros system provides a unified registry that maps semantic operations (Load Filament, Pause, Clean Nozzle, etc.) to printer-specific G-code macros. It supports auto-detection from Moonraker, fallback to HELIX_* helper macros, and user configuration via the Settings UI.
@@ -261,20 +271,20 @@ void FilamentPanel::execute_load() {
 - `include/printer_discovery.h` - Macro discovery (`has_macro()`, `macros()`)
   - NOTE: `PrinterCapabilities` was deleted 2026-01-11, replaced by `PrinterDiscovery`
   - Access via `MoonrakerAPI::hardware_discovery()`
-- `src/helix_macro_manager.cpp` - HELIX_* macro definitions
+- `src/printer/macro_manager.cpp` - HELIX_* macro definitions
 - `include/config.h` - `MacroConfig` struct, `get_macro()` method
 - `ui_xml/settings_display_sound_overlay.xml` - Reference overlay pattern
 
-### Files to Create
+### Files Created (historical planning list; paths updated to as-built locations)
 - `include/standard_macros.h`
-- `src/standard_macros.cpp`
+- `src/printer/standard_macros.cpp`
 - `ui_xml/macro_buttons_overlay.xml`
 
-### Files to Modify
-- `src/ui_panel_settings.cpp/h` - Add overlay handler
+### Files Modified (historical planning list; paths updated to as-built locations)
+- `src/ui/ui_panel_settings.cpp/h` - Add overlay handler
 - `ui_xml/settings_panel.xml` - Add action row
 - `src/xml_registration.cpp` - Register new component
-- `src/moonraker_manager.cpp` - Init after discovery
-- `src/ui_panel_controls.cpp/h` - Use StandardMacros
-- `src/ui_panel_filament.cpp` - Use StandardMacros
-- `src/ui_panel_print_status.cpp` - Use StandardMacros
+- `src/application/moonraker_manager.cpp` - Init after discovery
+- `src/ui/ui_panel_controls.cpp/h` - Use StandardMacros
+- `src/ui/ui_panel_filament.cpp` - Use StandardMacros
+- `src/ui/ui_panel_print_status.cpp` - Use StandardMacros

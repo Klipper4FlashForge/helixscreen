@@ -11,12 +11,13 @@
 #include "app_globals.h"
 #include "config.h"
 #include "filament_database.h"
+#include "i_moonraker_api.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "macro_executor.h"
 #include "material_settings_manager.h"
-#include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "panel_widget_registry.h"
+#include "preset_materials.h"
 #include "printer_state.h"
 #include "temperature_controller.h"
 #include "tool_state.h"
@@ -25,8 +26,12 @@
 
 #include <cstdio>
 
-static constexpr const char* PRESET_NAMES[] = {"PLA", "PETG", "ABS", "TPU"};
-static constexpr int PRESET_COUNT = 4;
+// Preset material identity comes from helix::presets (backed by
+// MaterialSettingsManager), NOT a local literal table. A hardcoded copy here is
+// what made this widget show/apply PLA while the filament panel — which reads
+// the user's configured presets — showed the material the user actually
+// assigned to the slot.
+static constexpr int PRESET_COUNT = helix::presets::PRESET_COUNT;
 
 // Static instance for callback dispatch (one preheat widget at a time)
 static helix::PreheatWidget* s_active_instance = nullptr;
@@ -112,6 +117,13 @@ void PreheatWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
     if (bed_row)
         lv_obj_set_user_data(bed_row, this);
 
+    // Tint the two heater glyphs. The numbers beside them already carry the
+    // 4-state thermal color, so leaving the icons flat made them disagree
+    // inside a single row. Bound from widget_obj_ — the tile holds exactly one
+    // of each glyph name.
+    nozzle_icon_binder_.bind(widget_obj_, printer_state_, helix::HeaterType::Nozzle);
+    bed_icon_binder_.bind(widget_obj_, printer_state_, helix::HeaterType::Bed);
+
     // Observe heater targets to toggle preheat/cooldown mode
     using helix::ui::observe_int_sync;
     extruder_target_obs_ =
@@ -129,13 +141,16 @@ void PreheatWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
         bed_target_lifetime_);
 
     spdlog::debug("[PreheatWidget] Attached (material={}, tool_target={})",
-                  PRESET_NAMES[selected_material_], tool_target_);
+                  presets::name(selected_material_), tool_target_);
 }
 
 void PreheatWidget::detach() {
     if (s_active_instance == this) {
         s_active_instance = nullptr;
     }
+
+    nozzle_icon_binder_.unbind();
+    bed_icon_binder_.unbind();
 
     // Applying [L073]: subjects are alive during detach, use reset()
     extruder_target_obs_.reset();
@@ -164,32 +179,45 @@ void PreheatWidget::detach() {
     spdlog::debug("[PreheatWidget] Detached");
 }
 
+PreheatWidget::PreheatTargets PreheatWidget::targets_for_slot(int slot) {
+    // Slot identity comes from the user's configured presets, and find_material()
+    // folds in any MaterialSettingsManager temperature override for it.
+    auto mat = filament::find_material(presets::name(slot));
+    if (!mat) {
+        return {};
+    }
+    return {mat->nozzle_recommended(), mat->bed_temp};
+}
+
+std::string PreheatWidget::label_for_slot(int slot, bool heaters_active, int32_t width_px) {
+    if (heaters_active) {
+        return "Cool Down";
+    }
+
+    const std::string material_name = presets::name(slot);
+    const PreheatTargets t = targets_for_slot(slot);
+
+    char label[64];
+    if (width_px > 0 && width_px < 280) {
+        // Narrow (2-col): just material name
+        std::snprintf(label, sizeof(label), "%s", material_name.c_str());
+    } else if (t.nozzle > 0 && t.bed > 0) {
+        // Wide (3-col+): material + target temps
+        std::snprintf(label, sizeof(label), "Preheat %s (%d/%d)", material_name.c_str(), t.nozzle,
+                      t.bed);
+    } else {
+        std::snprintf(label, sizeof(label), "Preheat %s", material_name.c_str());
+    }
+    return label;
+}
+
 void PreheatWidget::update_button_label() {
     if (!split_btn_)
         return;
 
-    if (heaters_active_) {
-        ui_split_button_set_text(split_btn_, "Cool Down");
-        return;
-    }
-
-    auto mat = filament::find_material(PRESET_NAMES[selected_material_]);
-    int nozzle = mat ? mat->nozzle_recommended() : 0;
-    int bed = mat ? mat->bed_temp : 0;
-
-    char label[64];
-    int32_t w = widget_obj_ ? lv_obj_get_width(widget_obj_) : 0;
-    if (w > 0 && w < 280) {
-        // Narrow (2-col): just material name
-        std::snprintf(label, sizeof(label), "%s", PRESET_NAMES[selected_material_]);
-    } else if (nozzle > 0 && bed > 0) {
-        // Wide (3-col+): material + target temps
-        std::snprintf(label, sizeof(label), "Preheat %s (%d/%d)", PRESET_NAMES[selected_material_],
-                      nozzle, bed);
-    } else {
-        std::snprintf(label, sizeof(label), "Preheat %s", PRESET_NAMES[selected_material_]);
-    }
-    ui_split_button_set_text(split_btn_, label);
+    const int32_t w = widget_obj_ ? lv_obj_get_width(widget_obj_) : 0;
+    ui_split_button_set_text(split_btn_,
+                             label_for_slot(selected_material_, heaters_active_, w).c_str());
 }
 
 void PreheatWidget::update_heater_state() {
@@ -231,7 +259,7 @@ void PreheatWidget::handle_selection_changed() {
         save_widget_config(new_config);
         config_ = new_config;
 
-        spdlog::info("[PreheatWidget] Material changed to {}", PRESET_NAMES[selected_material_]);
+        spdlog::info("[PreheatWidget] Material changed to {}", presets::name(selected_material_));
     }
 }
 
@@ -255,7 +283,7 @@ void PreheatWidget::handle_apply() {
         return;
     }
 
-    const char* material_name = PRESET_NAMES[selected_material_];
+    const std::string material_name = presets::name(selected_material_);
     auto mat = filament::find_material(material_name);
     if (!mat) {
         spdlog::error("[PreheatWidget] Material '{}' not found", material_name);
@@ -275,7 +303,8 @@ void PreheatWidget::handle_apply() {
 
         if (!handles_heating) {
             // Macro is additive — set temps first
-            set_temperatures(mat->nozzle_recommended(), mat->bed_temp);
+            const PreheatTargets t = targets_for_slot(selected_material_);
+            set_temperatures(t.nozzle, t.bed);
         }
 
         // Execute the macro
@@ -287,9 +316,11 @@ void PreheatWidget::handle_apply() {
         return;
     }
 
-    // Default path: set temperatures
-    int nozzle = mat->nozzle_recommended();
-    int bed = mat->bed_temp;
+    // Default path: set temperatures. Same derivation the label uses, so the
+    // caption and the applied targets can never disagree.
+    const PreheatTargets t = targets_for_slot(selected_material_);
+    int nozzle = t.nozzle;
+    int bed = t.bed;
 
     if (ToolState::instance().is_multi_tool()) {
         set_temperatures_multi(nozzle, bed);

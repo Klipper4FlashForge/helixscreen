@@ -7,12 +7,12 @@
     <style name="image_dimmed" image_opa="128"/>
   </styles>
   <view extends="lv_obj"
-        width="100%" height="100%" style_pad_all="0" style_pad_gap="0"
-        style_bg_opa="0%" flex_flow="column" scrollable="false">
+        width="100%" height="100%" style_pad_all="0" style_pad_gap="0" style_bg_opa="0%" flex_flow="column"
+        scrollable="false">
     <!-- Printer image container -->
     <lv_obj name="printer_container"
-            width="100%" flex_grow="1" style_bg_color="#screen_bg" style_pad_all="0"
-            scrollable="false" align="center" flex_flow="row" clickable="true">
+            width="100%" flex_grow="1" style_bg_color="#screen_bg" style_pad_all="0" scrollable="false" align="center"
+            flex_flow="row" clickable="true">
       <event_cb trigger="clicked" callback="printer_manager_clicked_cb"/>
       <lv_image name="printer_image" width="100%" height="100%" align="center" inner_align="contain">
         <!-- Dim image when disconnected (state 0) or connecting (state 1) -->

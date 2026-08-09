@@ -66,7 +66,6 @@ setup() {
 #
 # Excluded paths are legitimately historical or out-of-scope:
 #   CHANGELOG.md          - records the old name as part of release history
-#   .claude/ .claude-recall/ - assistant memory/lesson logs, not shipped code
 #   docs/superpowers/     - archived planning docs
 #   src/generated/        - generated code (regenerated from templates)
 #   lib/                  - vendored submodules (LVGL, libhv, etc.)
@@ -75,8 +74,6 @@ setup() {
 @test "no 'centidegree' misnomer in code or docs" {
     run bash -c "git grep -iIln 'centidegree' -- \
         ':!CHANGELOG.md' \
-        ':(glob)!.claude/**' \
-        ':(glob)!.claude-recall/**' \
         ':(glob)!docs/superpowers/**' \
         ':(glob)!src/generated/**' \
         ':(glob)!lib/**' \
@@ -97,9 +94,21 @@ setup() {
 #
 # The regex matches a temperature identifier (target/temp/deci/nozzle/bed/chamber/
 # heater) or a bare keypad `value`, optionally closing a paren, then `* 10` or
-# `/ 10` — but NOT `* 100` / `/ 100` (the (\.0?f?)?([^0-9.]|$) tail rejects a
-# trailing digit so centimm/centi conversions are untouched). `//` comments are
-# stripped first so the "value * 10" explanatory comments don't trip the gate.
+# `/ 10` — the (\.0?f?)?([^0-9.]|$) tail rejects a trailing digit. `//` comments
+# are stripped first so the "value * 10" explanatory comments don't trip the gate.
+#
+# A SECOND pattern catches the x100 form. Decidegrees are degrees x10, so a
+# temperature never converts by 100 — `decidegrees / 100` is always the
+# controls-panel class of bug (secondary sensors rendered at 1/10 scale: 45°C
+# shown as "4°C"). That form slipped past the x10 gate precisely because the tail
+# rejects a trailing digit, which is what keeps genuine centimillimetre `/ 100`
+# conversions from being flagged.
+#
+# The x100 pattern therefore uses a NARROWER identifier set than the x10 one:
+#   - `value` is dropped: the keypad legitimately converts centimm via `value / 100`.
+#   - `bed` is dropped: bed-mesh Z values are distances, not temperatures.
+# Everything left (target/temp/deci/nozzle/chamber/heater) is unambiguously a
+# temperature in these files. Verified to produce zero hits on the clean tree.
 
 @test "migrated temp files do not convert decidegrees inline (use unit helpers)" {
     local files="src/print/print_start_collector.cpp \
@@ -119,7 +128,8 @@ setup() {
         src/ui/ui_print_preparation_manager.cpp \
         src/ui/ui_temp_display.cpp"
     local pat='(target|temp|deci|nozzle|bed|chamber|heater|value)[A-Za-z_]*(\s*\))?\s*[*/]\s*10(\.0?f?)?([^0-9.]|$)'
-    run bash -c "sed -E 's@//.*@@' $files | grep -nE '$pat'"
+    local pat100='(target|temp|deci|nozzle|chamber|heater)[A-Za-z_]*(\s*\))?\s*[*/]\s*100(\.0?f?)?([^0-9.]|$)'
+    run bash -c "sed -E 's@//.*@@' $files | grep -nE '$pat|$pat100'"
     [ "$status" -ne 0 ]  # non-zero == no inline decidegree conversion found
 }
 
@@ -159,6 +169,112 @@ setup() {
     local allowlist='moonraker_client|moonraker_manager|moonraker_api|moonraker_rest_api|moonraker_file_api|moonraker_file_transfer_api|moonraker_advanced_api|moonraker_history_api|moonraker_job_api|moonraker_motion_api|moonraker_queue_api|moonraker_spoolman_api|moonraker_timelapse_api|moonraker_request_tracker|moonraker_discovery_sequence|_mock'
     run bash -c "grep -rlE 'helix::MoonrakerClient|\bMoonrakerAPI\b' src/ include/ | grep -v -E \"$allowlist\""
     [ "$status" -ne 0 ]  # non-zero == no concrete-type reference found outside the allowlist
+}
+
+# --- switch_printer must invalidate every per-printer cache ---
+# Per-printer state lives under /printers/<id>/ and is reached via Config::df().
+# Any component that memoizes a df()-derived value serves the PREVIOUS printer's
+# data after a switch — PanelWidgetConfig was the first case (#804), and the fix
+# used to be a single hardcoded clear_all_panel_configs() call here. Components
+# now self-register with PrinterCacheRegistry and switch_printer() fires them all,
+# so this gate pins the registry walk rather than any one component.
+#
+# The registry's own behavior is pinned by tests/unit/test_printer_cache_registry.cpp,
+# and clear_all_panel_configs() by the unit test "PanelWidgetManager:
+# clear_all_panel_configs reloads after printer switch". What no unit test can
+# reach is the success path: switch_printer() ends in a full teardown and
+# display + Moonraker rebuild, which cannot run inside a shared Catch2 shard
+# without handing every later test rebuilt global singletons.
+# tests/unit/application/test_application_printer_switch.cpp covers the branches
+# on the near side of teardown. This gate pins the wiring beyond them — that
+# switch_printer() actually makes the call, and makes it BEFORE teardown, while
+# Config::df() has already moved to the new printer.
+
+# Print the body of Application::switch_printer() from the file given in $1.
+switch_printer_body() {
+    awk '
+        /^void Application::switch_printer\(/ { inside = 1 }
+        inside { print }
+        inside && /^\}/ { exit }
+    ' "$1"
+}
+
+# Emit a diagnostic and return non-zero if $1 does not wire up the invalidation.
+check_switch_printer_clears_caches() {
+    local body clear_line teardown_line
+    body=$(switch_printer_body "$1")
+    if [ -z "$body" ]; then
+        echo "could not locate Application::switch_printer() in $1"
+        return 1
+    fi
+
+    clear_line=$(printf '%s\n' "$body" | grep -n 'PrinterCacheRegistry::instance().invalidate_all()' | head -1 | cut -d: -f1)
+    if [ -z "$clear_line" ]; then
+        echo "switch_printer() does not call PrinterCacheRegistry::instance().invalidate_all() (#804)"
+        return 1
+    fi
+
+    teardown_line=$(printf '%s\n' "$body" | grep -n 'tear_down_printer_state()' | head -1 | cut -d: -f1)
+    if [ -z "$teardown_line" ]; then
+        echo "switch_printer() does not call tear_down_printer_state()"
+        return 1
+    fi
+
+    if [ "$clear_line" -ge "$teardown_line" ]; then
+        echo "PrinterCacheRegistry::invalidate_all() must precede tear_down_printer_state()"
+        return 1
+    fi
+    return 0
+}
+
+@test "switch_printer invalidates every registered per-printer cache before teardown" {
+    run check_switch_printer_clears_caches src/application/application.cpp
+    [ "$status" -eq 0 ]
+}
+
+@test "the switch_printer cache-invalidation gate fails when the call is removed" {
+    # Meta-test: a gate that cannot fail is not a gate. Strip the call from a
+    # copy and confirm the check reports the #804 regression.
+    local mutated="${BATS_TEST_TMPDIR}/application_no_clear.cpp"
+    grep -v 'PrinterCacheRegistry::instance().invalidate_all()' src/application/application.cpp > "$mutated"
+
+    run check_switch_printer_clears_caches "$mutated"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"#804"* ]]
+}
+
+@test "the switch_printer cache-invalidation gate fails when the call moves after teardown" {
+    # The ordering half: invalidating after teardown re-reads the OLD printer's
+    # values on the way down, so position matters as much as presence.
+    local mutated="${BATS_TEST_TMPDIR}/application_late_clear.cpp"
+    sed -e 's@^    helix::PrinterCacheRegistry::instance().invalidate_all();@@' \
+        -e 's@^    tear_down_printer_state();@    tear_down_printer_state();\n    helix::PrinterCacheRegistry::instance().invalidate_all();@' \
+        src/application/application.cpp > "$mutated"
+
+    run check_switch_printer_clears_caches "$mutated"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"must precede"* ]]
+}
+
+@test "the switch_printer cache-invalidation gate fails when the function cannot be located" {
+    # Fail-closed: a rename or signature change must break the gate loudly rather
+    # than silently pass on an empty body.
+    local mutated="${BATS_TEST_TMPDIR}/application_no_fn.cpp"
+    sed -e 's@^void Application::switch_printer(@void Application::switch_printer_renamed(@' \
+        src/application/application.cpp > "$mutated"
+
+    run check_switch_printer_clears_caches "$mutated"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"could not locate"* ]]
+}
+
+@test "the switch_printer cache-invalidation gate fails when teardown is missing" {
+    local mutated="${BATS_TEST_TMPDIR}/application_no_teardown.cpp"
+    grep -v '^    tear_down_printer_state();' src/application/application.cpp > "$mutated"
+
+    run check_switch_printer_clears_caches "$mutated"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"tear_down_printer_state"* ]]
 }
 
 @test "filaments.json android mirror matches when present" {

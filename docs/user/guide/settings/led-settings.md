@@ -1,6 +1,6 @@
 # Settings: LED Settings
 
-Tap **LED Settings** in the Printer section to open the LED configuration overlay. This is where you choose which lights HelixScreen controls and how they behave.
+Tap **LED Settings** in the Hardware & Devices section to open the LED configuration overlay. This is where you choose which lights HelixScreen controls and how they behave.
 
 > **Tip:** To control your LEDs during a print, **long-press the lightbulb button** on the Home Panel to open the LED Control Overlay. See [Home Panel > LED Controls](../home-panel.md#led-controls) for details.
 

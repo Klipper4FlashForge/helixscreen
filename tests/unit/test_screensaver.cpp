@@ -81,18 +81,6 @@ TEST_CASE_METHOD(LVGLTestFixture, "Screensaver type subject reflects setter",
     DisplaySettingsManager::instance().deinit_subjects();
 }
 
-TEST_CASE_METHOD(LVGLTestFixture, "Screensaver type options string is valid",
-                 "[screensaver][display_settings]") {
-    const char* options = DisplaySettingsManager::get_screensaver_type_options();
-    REQUIRE(options != nullptr);
-    std::string opts(options);
-    // Should contain all 4 options separated by newlines
-    REQUIRE(opts.find("Off") != std::string::npos);
-    REQUIRE(opts.find("Flying Toasters") != std::string::npos);
-    REQUIRE(opts.find("Starfield") != std::string::npos);
-    REQUIRE(opts.find("3D Pipes") != std::string::npos);
-}
-
 // ============================================================================
 // FlyingToasterScreensaver Lifecycle Tests
 // ============================================================================

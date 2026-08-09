@@ -125,6 +125,21 @@ class PrintStartCollector : public std::enable_shared_from_this<PrintStartCollec
     void note_current_layer(int current_layer) {
         if (current_layer < 1) {
             layer_zero_seen_.store(true, std::memory_order_relaxed);
+            return;
+        }
+
+        // A layer counter that ADVANCES while we are collecting is live data for
+        // this print, which is the same proof a 0 -> >=1 edge gives. Tracking it
+        // separately matters because the 0 sample is not guaranteed to be
+        // observed: notify_status_update is coalesced, so a fast first layer (or
+        // a reconnect part-way in) can deliver a first sample that is already
+        // >= 1 and the zero edge never arrives. Without this the pre-print
+        // overlay stays up for the entire print.
+        int prev = first_layer_observed_.load(std::memory_order_relaxed);
+        if (prev < 0) {
+            first_layer_observed_.store(current_layer, std::memory_order_relaxed);
+        } else if (current_layer > prev) {
+            layer_advanced_.store(true, std::memory_order_relaxed);
         }
     }
 
@@ -133,6 +148,17 @@ class PrintStartCollector : public std::enable_shared_from_this<PrintStartCollec
      */
     [[nodiscard]] bool has_seen_layer_zero() const {
         return layer_zero_seen_.load(std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Whether current_layer has increased since collection began.
+     *
+     * A stale positive carried over from the previous print is static, so it
+     * can never satisfy this — which is what the layer-zero latch was guarding
+     * against.
+     */
+    [[nodiscard]] bool has_seen_layer_advance() const {
+        return layer_advanced_.load(std::memory_order_relaxed);
     }
 
     /**
@@ -252,11 +278,16 @@ class PrintStartCollector : public std::enable_shared_from_this<PrintStartCollec
     void update_phase(helix::PrintStartPhase phase, const std::string& message, int progress);
 
     /**
-     * @brief Update only the status message without changing phase or progress
+     * @brief Relabel between the two heating phases from live temps (bed-first).
      *
-     * Used to pass through display_status.message (M117) from Klipper during preparation.
+     * Compare-and-swap: applies the relabel only if current_phase_ is STILL a
+     * heating phase (HEATING_BED/HEATING_NOZZLE) at write time. A background
+     * gcode signal may have advanced current_phase_ past heating between the
+     * caller's temperature snapshot and this call; the CAS refuses in that case
+     * so a newer non-heating phase is never regressed back to heating. The
+     * label is derived from `resolved`.
      */
-    void update_message_only(const std::string& message);
+    void relabel_heating_phase(helix::PrintStartPhase resolved);
 
     /**
      * @brief Calculate overall progress based on detected phases
@@ -426,6 +457,13 @@ class PrintStartCollector : public std::enable_shared_from_this<PrintStartCollec
     // Written/read on the main thread (LVGL observer callbacks); atomic for
     // consistency with the other cross-method flags above.
     std::atomic<bool> layer_zero_seen_{false};
+
+    // Second, equally authoritative route out of Preparing for the case where
+    // the 0 sample is never delivered: the first layer value seen while active
+    // (-1 = none yet) and whether a later sample exceeded it. Same threading
+    // note as layer_zero_seen_. Reset in start()/reset().
+    std::atomic<int> first_layer_observed_{-1};
+    std::atomic<bool> layer_advanced_{false};
 
     // LVGL timer for periodic ETA updates (main thread only)
     lv_timer_t* eta_timer_ = nullptr;

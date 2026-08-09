@@ -6,6 +6,10 @@ This guide covers both USB and Bluetooth scanners, and how to fix the most commo
 
 Scanning is a shortcut for assigning spools — see [Filament Tracking & Spoolman](filament-tracking.md) for what happens once a spool is linked.
 
+![Barcode Scanner Settings](../../images/user/settings-barcode-scanner.png)
+
+The Barcode Scanner settings overlay lives at **Settings → Hardware & Devices → Spoolman → Barcode Scanner**.
+
 ---
 
 ## USB Scanners
@@ -127,3 +131,7 @@ After the restart, HelixScreen no longer opens that device, and your other scann
 
 - Only one scanner (USB or Bluetooth) is used at a time. If both are configured, the paired Bluetooth scanner wins.
 - When a Bluetooth scanner is selected, HelixScreen captures its keystrokes exclusively so they don't leak into other UI widgets. USB scanners run in passive mode (some scanners rely on this) — if USB scanner keystrokes leak into focused text inputs, that is a known limitation.
+
+---
+
+**Next:** [Calibration & Tuning](calibration.md) | **Prev:** [Label Printing](label-printing.md) | [Back to User Guide](../USER_GUIDE.md)

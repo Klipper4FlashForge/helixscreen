@@ -4,12 +4,51 @@
 #include "theme_loader.h"
 
 #include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <string>
 #include <sys/stat.h>
 #include <unistd.h>
 
 #include "../catch_amalgamated.hpp"
 
 using namespace helix;
+
+namespace {
+// Redirects the writable config dir (get_themes_directory() resolves through
+// HELIX_CONFIG_DIR) to an isolated temp directory, so theme tests that create,
+// overwrite, or delete user theme files never touch the repo's real
+// config/themes/. Previously these tests ran against config/themes/ and could
+// wipe the tracked nord.json out of a developer's working tree.
+struct ThemeDirFixture {
+    ThemeDirFixture() {
+        if (const char* prev = std::getenv("HELIX_CONFIG_DIR")) {
+            had_prev_ = true;
+            prev_config_dir_ = prev;
+        }
+        temp_dir_ =
+            std::filesystem::temp_directory_path() /
+            ("helix_theme_test_" + std::to_string(::getpid()) + "_" + std::to_string(counter_++));
+        std::error_code ec;
+        std::filesystem::create_directories(temp_dir_ / "themes", ec);
+        ::setenv("HELIX_CONFIG_DIR", temp_dir_.c_str(), /*overwrite=*/1);
+    }
+    ~ThemeDirFixture() {
+        if (had_prev_) {
+            ::setenv("HELIX_CONFIG_DIR", prev_config_dir_.c_str(), /*overwrite=*/1);
+        } else {
+            ::unsetenv("HELIX_CONFIG_DIR");
+        }
+        std::error_code ec;
+        std::filesystem::remove_all(temp_dir_, ec);
+    }
+    std::filesystem::path temp_dir_;
+    std::string prev_config_dir_;
+    bool had_prev_ = false;
+    static int counter_;
+};
+int ThemeDirFixture::counter_ = 0;
+} // namespace
 
 TEST_CASE("ModePalette index access", "[theme]") {
     ModePalette palette;
@@ -188,7 +227,8 @@ TEST_CASE("get_default_themes_directory returns defaults path", "[theme]") {
     REQUIRE(path.find("/defaults") != std::string::npos);
 }
 
-TEST_CASE("load_theme_from_file falls back to defaults directory", "[theme]") {
+TEST_CASE_METHOD(ThemeDirFixture, "load_theme_from_file falls back to defaults directory",
+                 "[theme]") {
     // Setup: Theme exists only in defaults/, not in themes/
     // The "nord" theme should exist in defaults/ but not themes/
     std::string themes_dir = helix::get_themes_directory();
@@ -205,7 +245,7 @@ TEST_CASE("load_theme_from_file falls back to defaults directory", "[theme]") {
     REQUIRE(theme.name == "Nord");
 }
 
-TEST_CASE("user theme overrides default theme with same name", "[theme]") {
+TEST_CASE_METHOD(ThemeDirFixture, "user theme overrides default theme with same name", "[theme]") {
     std::string themes_dir = helix::get_themes_directory();
 
     // Create a user theme with the same name as a default theme
@@ -226,7 +266,7 @@ TEST_CASE("user theme overrides default theme with same name", "[theme]") {
     std::remove(user_path.c_str());
 }
 
-TEST_CASE("discover_themes merges user and default themes", "[theme]") {
+TEST_CASE_METHOD(ThemeDirFixture, "discover_themes merges user and default themes", "[theme]") {
     std::string themes_dir = helix::get_themes_directory();
 
     // Create a user-only theme
@@ -281,7 +321,8 @@ TEST_CASE("has_default_theme returns false for user-created themes", "[theme]") 
     REQUIRE(helix::has_default_theme("nonexistent") == false);
 }
 
-TEST_CASE("reset_theme_to_default deletes user file and returns default", "[theme]") {
+TEST_CASE_METHOD(ThemeDirFixture, "reset_theme_to_default deletes user file and returns default",
+                 "[theme]") {
     std::string themes_dir = helix::get_themes_directory();
 
     // Use "gruvbox" instead of "nord" to avoid interference from
@@ -311,7 +352,8 @@ TEST_CASE("reset_theme_to_default deletes user file and returns default", "[them
     REQUIRE(stat(user_path.c_str(), &st) != 0);
 }
 
-TEST_CASE("reset_theme_to_default returns nullopt for user-created themes", "[theme]") {
+TEST_CASE_METHOD(ThemeDirFixture, "reset_theme_to_default returns nullopt for user-created themes",
+                 "[theme]") {
     std::string themes_dir = helix::get_themes_directory();
 
     // Create a user-only theme (no default exists)

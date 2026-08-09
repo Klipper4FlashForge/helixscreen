@@ -13,6 +13,7 @@
 #include "settings_manager.h"
 #include "static_panel_registry.h"
 #include "theme_manager.h"
+#include "touch_calibration_layout.h"
 
 #include <spdlog/spdlog.h>
 
@@ -55,10 +56,6 @@ WizardTouchCalibrationStep* get_wizard_touch_calibration_step() {
             "WizardTouchCalibrationStep", []() { g_wizard_touch_calibration_step.reset(); });
     }
     return g_wizard_touch_calibration_step.get();
-}
-
-void destroy_wizard_touch_calibration_step() {
-    g_wizard_touch_calibration_step.reset();
 }
 
 // ============================================================================
@@ -185,53 +182,22 @@ lv_obj_t* WizardTouchCalibrationStep::create(lv_obj_t* parent) {
         return nullptr;
     }
 
-    // Find and reparent crosshair to screen for absolute positioning
-    // Calibration targets are screen-absolute coordinates, so crosshair must be
-    // a direct child of the screen (not nested in wizard content container)
-    crosshair_ = lv_obj_find_by_name(screen_root_, "crosshair");
+    // Reparent the crosshair + touch capture surface onto the active screen so
+    // the capture surface spans the WHOLE screen (targets in the header/footer
+    // strip stay tappable) and both use screen-absolute coordinates. Shared with
+    // the Settings recalibration overlay — see touch_calibration_layout.h.
+    helix::ui::CaptureSurfaceWidgets cap =
+        helix::ui::reparent_capture_surface_fullscreen(screen_root_);
+    crosshair_ = cap.crosshair;
     if (!crosshair_) {
         spdlog::error("[{}] Crosshair widget not found in XML", get_name());
         return screen_root_;
     }
-    lv_obj_set_parent(crosshair_, lv_screen_active());
-    lv_obj_add_flag(crosshair_, LV_OBJ_FLAG_FLOATING);
-    spdlog::debug("[{}] Crosshair reparented to screen for absolute positioning", get_name());
 
-    // Reparent touch capture overlay to screen for full-screen touch capture
-    // This allows calibration targets in header/footer areas to be tappable
-    lv_obj_t* touch_overlay = lv_obj_find_by_name(screen_root_, "touch_capture_overlay");
-    if (touch_overlay) {
-        lv_obj_set_parent(touch_overlay, lv_screen_active());
-        lv_obj_set_size(touch_overlay, LV_PCT(100), LV_PCT(100));
-        lv_obj_set_pos(touch_overlay, 0, 0);
-        lv_obj_add_flag(touch_overlay, LV_OBJ_FLAG_FLOATING);
-        lv_obj_move_foreground(touch_overlay); // Ensure it's on top for click capture
-        spdlog::debug("[{}] Touch overlay reparented to screen for full-screen capture",
-                      get_name());
-    }
-
-    // Bring the Next/Skip button group on top of the touch overlay so it remains
-    // clickable during calibration. The group contains both Next and Skip buttons
-    // (toggled by wizard_show_skip subject), so reparenting the group keeps both
-    // accessible. The overlay captures touches everywhere for calibration targets,
-    // but the buttons must still work.
-    lv_obj_update_layout(lv_screen_active());
-    skip_btn_original_parent_ = nullptr;
-    lv_obj_t* next_skip_group = lv_obj_find_by_name(lv_screen_active(), "next_skip_group");
-    if (next_skip_group) {
-        skip_btn_original_parent_ = lv_obj_get_parent(next_skip_group);
-        skip_btn_orig_w_ = lv_obj_get_style_width(next_skip_group, LV_PART_MAIN);
-        skip_btn_orig_h_ = lv_obj_get_style_height(next_skip_group, LV_PART_MAIN);
-        lv_area_t group_area;
-        lv_obj_get_coords(next_skip_group, &group_area);
-        lv_obj_set_parent(next_skip_group, lv_screen_active());
-        lv_obj_add_flag(next_skip_group, LV_OBJ_FLAG_FLOATING);
-        lv_obj_set_pos(next_skip_group, group_area.x1, group_area.y1);
-        lv_obj_set_size(next_skip_group, lv_area_get_width(&group_area),
-                        lv_area_get_height(&group_area));
-        lv_obj_move_foreground(next_skip_group);
-        spdlog::debug("[{}] Next/Skip group reparented above touch overlay", get_name());
-    }
+    // Lift the Next/Skip button group above the full-screen capture surface so it
+    // remains clickable during calibration. The group holds both Next and Skip
+    // (toggled by wizard_show_skip), so lifting the group keeps both accessible.
+    raised_skip_ = helix::ui::raise_control_above_capture(lv_screen_active(), "next_skip_group");
 
     // Find test area widgets (shown in COMPLETE state)
     test_area_container_ = lv_obj_find_by_name(screen_root_, "test_area_container");
@@ -305,14 +271,8 @@ void WizardTouchCalibrationStep::cleanup() {
     }
 
     // Restore Next/Skip group to its original parent before deleting reparented widgets
-    lv_obj_t* next_skip_group = lv_obj_find_by_name(lv_screen_active(), "next_skip_group");
-    if (next_skip_group && skip_btn_original_parent_) {
-        lv_obj_set_parent(next_skip_group, skip_btn_original_parent_);
-        lv_obj_remove_flag(next_skip_group, LV_OBJ_FLAG_FLOATING);
-        lv_obj_set_pos(next_skip_group, 0, 0);
-        lv_obj_set_size(next_skip_group, skip_btn_orig_w_, skip_btn_orig_h_);
-        skip_btn_original_parent_ = nullptr;
-    }
+    helix::ui::restore_raised_control(raised_skip_);
+    raised_skip_ = {};
 
     // Delete crosshair (it was reparented to screen, not part of screen_root_)
     helix::ui::safe_delete(crosshair_);
@@ -448,6 +408,13 @@ void WizardTouchCalibrationStep::on_test_area_touched_static(lv_event_t* e) {
 // Instance Event Handlers
 // ============================================================================
 
+helix::ICalibrationSink* WizardTouchCalibrationStep::calibration_sink() {
+    if (calibration_sink_override_) {
+        return calibration_sink_override_;
+    }
+    return DisplayManager::instance();
+}
+
 void WizardTouchCalibrationStep::handle_accept_clicked() {
     spdlog::info("[{}] Accept calibration clicked", get_name());
 
@@ -464,6 +431,16 @@ void WizardTouchCalibrationStep::handle_retry_clicked() {
 
     if (!panel_) {
         return;
+    }
+
+    // Revert the just-applied affine and re-disable it BEFORE re-capturing, so the
+    // re-run reads raw (post-LVGL-linear) coordinates instead of feeding the new
+    // (possibly bad) affine back through the transform — a feedback loop that made
+    // recalibration produce garbage. Mirrors the Settings overlay retry
+    // (ui_touch_calibration_overlay.cpp) and the begin_capture() disable in
+    // create() (#943). The backup is retained across retry.
+    if (helix::ICalibrationSink* sink = calibration_sink()) {
+        session_.revert_for_retry(*sink);
     }
 
     // Use cancel()+start() rather than retry() because the wizard auto-accepts
@@ -721,11 +698,8 @@ void WizardTouchCalibrationStep::update_instruction_text() {
 void WizardTouchCalibrationStep::ensure_skip_on_top() {
     // After any lv_obj_move_foreground(touch_overlay), the skip group may end up
     // behind the overlay. Re-assert its z-order so it stays clickable.
-    if (skip_btn_original_parent_) {
-        lv_obj_t* group = lv_obj_find_by_name(lv_screen_active(), "next_skip_group");
-        if (group) {
-            lv_obj_move_foreground(group);
-        }
+    if (raised_skip_.obj) {
+        lv_obj_move_foreground(raised_skip_.obj);
     }
 }
 

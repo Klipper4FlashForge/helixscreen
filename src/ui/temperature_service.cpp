@@ -18,8 +18,8 @@
 #include "app_constants.h"
 #include "app_globals.h"
 #include "filament_database.h"
-#include "lvgl/src/others/translation/lv_translation.h"
 #include "i_moonraker_api.h"
+#include "lvgl/src/others/translation/lv_translation.h"
 #include "observer_factory.h"
 #include "printer_state.h"
 #include "temperature_controller.h"
@@ -30,11 +30,13 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <chrono>
 #include <cstring>
 #include <ctime>
 #include <memory>
+#include <string>
 
 using namespace helix;
 using helix::ui::observe_int_sync;
@@ -59,26 +61,48 @@ static const char* heater_label(HeaterType type) {
     return "Unknown";
 }
 
+namespace {
+
+/// Preset button object name for index i: 0 is "Off", i>=1 is user preset slot
+/// i-1. Names are SLOT-indexed ("preset_m0"), not material-indexed
+/// ("preset_pla"), so reassigning a slot's material never requires renaming an
+/// XML object.
+const char* preset_button_name(int i) {
+    // Intentionally sized to PRESET_COUNT, not TEMP_PANEL_VISIBLE_PRESETS: the
+    // trailing "preset_m3" entry is unused by the temp panels and that is fine.
+    // Over-sizing a name table is harmless; under-sizing it is not.
+    static const auto names = [] {
+        std::array<std::string, 1 + helix::presets::PRESET_COUNT> n;
+        n[0] = "preset_off";
+        for (int s = 0; s < helix::presets::PRESET_COUNT; ++s) {
+            n[s + 1] = "preset_m" + std::to_string(s);
+        }
+        return n;
+    }();
+    return names[static_cast<size_t>(i)].c_str();
+}
+
+/// Target temperature behind preset button i for a given heater.
+int preset_button_value(const helix::HeaterPresets& p, int i) {
+    return i == 0 ? p.off : p.material[static_cast<size_t>(i - 1)];
+}
+
+} // namespace
+
 // ============================================================================
 // Constructor
 // ============================================================================
 
 TemperatureService::TemperatureService(PrinterState& printer_state, IMoonrakerAPI* api)
     : printer_state_(printer_state), api_(api) {
-    // Get recommended temperatures from filament database
-    auto pla_info = filament::find_material("PLA");
-    auto petg_info = filament::find_material("PETG");
-    auto abs_info = filament::find_material("ABS");
-
-    // Nozzle presets
-    int nozzle_pla = pla_info ? pla_info->nozzle_recommended() : 210;
-    int nozzle_petg = petg_info ? petg_info->nozzle_recommended() : 245;
-    int nozzle_abs = abs_info ? abs_info->nozzle_recommended() : 255;
-
-    // Bed presets
-    int bed_pla = pla_info ? pla_info->bed_temp : 60;
-    int bed_petg = petg_info ? petg_info->bed_temp : 80;
-    int bed_abs = abs_info ? abs_info->bed_temp : 100;
+    // Preset temperatures are derived per user preset slot, not per hardcoded
+    // material. TemperatureController owns the derivation (nozzle/bed from the
+    // filament database, chamber from its documented enclosure ladder) so the
+    // service and the controller can never drift apart — they used to maintain
+    // two independent copies of the same three lookups.
+    const HeaterPresets nozzle_presets = compute_heater_presets(HeaterType::Nozzle);
+    const HeaterPresets bed_presets = compute_heater_presets(HeaterType::Bed);
+    const HeaterPresets chamber_presets = compute_heater_presets(HeaterType::Chamber);
 
     // ── Nozzle config ───────────────────────────────────────────────────
     auto& nozzle = heaters_[idx(HeaterType::Nozzle)];
@@ -88,7 +112,7 @@ TemperatureService::TemperatureService(PrinterState& printer_state, IMoonrakerAP
                      .color = theme_manager_get_color("heating_color"),
                      .temp_range_max = 320.0f,
                      .y_axis_increment = 80,
-                     .presets = {0, nozzle_pla, nozzle_petg, nozzle_abs},
+                     .presets = nozzle_presets,
                      .keypad_range = {0.0f, 350.0f}};
     nozzle.cooling_threshold_deci = 400; // 40°C
     nozzle.klipper_name = "extruder";    // Updated dynamically for multi-extruder
@@ -103,7 +127,7 @@ TemperatureService::TemperatureService(PrinterState& printer_state, IMoonrakerAP
                   .color = theme_manager_get_color("cooling_color"),
                   .temp_range_max = 140.0f,
                   .y_axis_increment = 35,
-                  .presets = {0, bed_pla, bed_petg, bed_abs},
+                  .presets = bed_presets,
                   .keypad_range = {0.0f, 150.0f}};
     bed.cooling_threshold_deci = 350; // 35°C
     bed.klipper_name = "heater_bed";
@@ -118,7 +142,7 @@ TemperatureService::TemperatureService(PrinterState& printer_state, IMoonrakerAP
                       .color = lv_color_hex(0xA3BE8C), // nord14 Aurora green
                       .temp_range_max = 80.0f,
                       .y_axis_increment = 20,
-                      .presets = {0, 40, 50, 60}, // Off, 40°C, 50°C, 60°C
+                      .presets = chamber_presets,
                       .keypad_range = {0.0f, 80.0f}};
     chamber.cooling_threshold_deci = 300;            // 30°C
     chamber.klipper_name = "heater_generic chamber"; // Updated from discovery
@@ -185,15 +209,7 @@ TemperatureService::TemperatureService(PrinterState& printer_state, IMoonrakerAP
 
     // Legacy callbacks (still needed for existing nozzle/bed XML until they're updated)
     register_xml_callbacks({
-        {"on_nozzle_preset_off_clicked", on_nozzle_preset_off_clicked},
-        {"on_nozzle_preset_pla_clicked", on_nozzle_preset_pla_clicked},
-        {"on_nozzle_preset_petg_clicked", on_nozzle_preset_petg_clicked},
-        {"on_nozzle_preset_abs_clicked", on_nozzle_preset_abs_clicked},
         {"on_nozzle_custom_clicked", on_nozzle_custom_clicked},
-        {"on_bed_preset_off_clicked", on_bed_preset_off_clicked},
-        {"on_bed_preset_pla_clicked", on_bed_preset_pla_clicked},
-        {"on_bed_preset_petg_clicked", on_bed_preset_petg_clicked},
-        {"on_bed_preset_abs_clicked", on_bed_preset_abs_clicked},
         {"on_bed_custom_clicked", on_bed_custom_clicked},
     });
 
@@ -360,8 +376,6 @@ void TemperatureService::update_status(HeaterType type) {
     int heating_state = (h.target > 0) ? 1 : 0;
     lv_subject_set_int(&h.heating_subject, heating_state);
 
-    h.animator.update(h.current, h.target);
-
     spdlog::trace("[TempPanel] {} status: '{}' (heating={})", heater_label(type),
                   h.status_buf.data(), heating_state);
 }
@@ -399,25 +413,22 @@ void TemperatureService::apply_preset_limits(HeaterType type) {
         return;
     }
 
-    const char* preset_names[] = {"preset_off", "preset_pla", "preset_petg", "preset_abs"};
-    const int preset_values[] = {h.config.presets.off, h.config.presets.pla, h.config.presets.petg,
-                                 h.config.presets.abs};
-
     for (int i = 0; i < PRESETS_PER_HEATER; ++i) {
-        lv_obj_t* btn = lv_obj_find_by_name(overlay_content, preset_names[i]);
+        const int preset_value = preset_button_value(h.config.presets, i);
+        lv_obj_t* btn = lv_obj_find_by_name(overlay_content, preset_button_name(i));
         if (!btn) {
             continue;
         }
         // Set-or-clear so this is correct on reconnect to a printer with a
         // different ceiling, not just one-directional hiding. The controller
         // owns the configured-max ceiling (0 = unknown → all presets shown).
-        bool visible = controller_ ? controller_->preset_visible(type, preset_values[i]) : true;
+        bool visible = controller_ ? controller_->preset_visible(type, preset_value) : true;
         if (visible) {
             lv_obj_clear_flag(btn, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(btn, LV_OBJ_FLAG_HIDDEN);
             spdlog::debug("[TempPanel] {} preset {}°C hidden (> configured max)",
-                          heater_label(type), preset_values[i]);
+                          heater_label(type), preset_value);
         }
     }
 }
@@ -491,6 +502,9 @@ void TemperatureService::deinit_subjects() {
     // Set flag BEFORE deinit to prevent deferred callbacks from accessing
     // torn-down subjects during cleanup
     subjects_initialized_ = false;
+    // Expire the queued rebuild as well — the flag above stops it dereferencing
+    // torn-down subjects, but only while `this` is still alive to be read (#1165).
+    async_lifetime_.invalidate();
     subjects_.deinit_all();
     spdlog::debug("[TempPanel] Subjects deinitialized");
 }
@@ -664,19 +678,11 @@ void TemperatureService::setup_panel(HeaterType type, lv_obj_t* panel, lv_obj_t*
     // Wire preset buttons via C++ event handlers with per-button PresetButtonData.
     // Each button gets its own lv_obj_add_event_cb so the callback can read
     // the data via lv_event_get_user_data(e) without touching obj user_data.
-    const char* preset_names[] = {"preset_off", "preset_pla", "preset_petg", "preset_abs"};
-    int preset_values[] = {
-        h.config.presets.off,
-        h.config.presets.pla,
-        h.config.presets.petg,
-        h.config.presets.abs,
-    };
-
     int base_idx = idx(type) * PRESETS_PER_HEATER;
     for (int i = 0; i < PRESETS_PER_HEATER; ++i) {
-        lv_obj_t* btn = lv_obj_find_by_name(overlay_content, preset_names[i]);
+        lv_obj_t* btn = lv_obj_find_by_name(overlay_content, preset_button_name(i));
         if (btn) {
-            preset_data_[base_idx + i] = {this, type, preset_values[i]};
+            preset_data_[base_idx + i] = {this, type, preset_button_value(h.config.presets, i)};
             lv_obj_add_event_cb(btn, on_heater_preset_clicked, LV_EVENT_CLICKED,
                                 &preset_data_[base_idx + i]);
         }
@@ -756,23 +762,12 @@ void TemperatureService::setup_panel(HeaterType type, lv_obj_t* panel, lv_obj_t*
 
     replay_history_to_graph(type);
 
-    // Attach heating icon animator
-    const char* icon_name = nullptr;
-    if (type == HeaterType::Nozzle) {
-        icon_name = "nozzle_icon_glyph";
-    } else if (type == HeaterType::Bed) {
-        icon_name = "bed_icon";
-    } else if (type == HeaterType::Chamber) {
-        icon_name = "chamber_icon";
-    }
-
-    if (icon_name) {
-        lv_obj_t* heater_icon = lv_obj_find_by_name(panel, icon_name);
-        if (heater_icon) {
-            h.animator.attach(heater_icon);
-            h.animator.update(h.current, h.target);
-            spdlog::debug("[TempPanel] {} heating animator attached", heater_label(type));
-        }
+    // Bind heating icon animator. The binder owns its own temperature
+    // observers and finds the icon by the conventional glyph name under this
+    // heater's own overlay panel root, so it cannot pick up another heater's
+    // same-named icon.
+    if (h.icon_binder.bind(panel, printer_state_, type)) {
+        spdlog::debug("[TempPanel] {} heating icon binder attached", heater_label(type));
     }
 
     // Nozzle-specific: multi-extruder support
@@ -958,69 +953,6 @@ void TemperatureService::on_heater_custom_clicked(lv_event_t* e) {
 }
 
 // ============================================================================
-// XML event callbacks — LEGACY (delegate to generic)
-// ============================================================================
-
-// Legacy preset callbacks: delegate to generic handler via lv_event_get_user_data(e).
-// XML event_cb passes NULL user_data, so these return early. The actual work is done
-// by the C++ lv_obj_add_event_cb handler registered in setup_panel().
-void TemperatureService::on_nozzle_preset_off_clicked(lv_event_t* e) {
-    auto* data = static_cast<PresetButtonData*>(lv_event_get_user_data(e));
-    if (data && data->panel) {
-        data->panel->send_temperature(HeaterType::Nozzle, data->preset_value);
-    }
-}
-
-void TemperatureService::on_nozzle_preset_pla_clicked(lv_event_t* e) {
-    auto* data = static_cast<PresetButtonData*>(lv_event_get_user_data(e));
-    if (data && data->panel) {
-        data->panel->send_temperature(HeaterType::Nozzle, data->preset_value);
-    }
-}
-
-void TemperatureService::on_nozzle_preset_petg_clicked(lv_event_t* e) {
-    auto* data = static_cast<PresetButtonData*>(lv_event_get_user_data(e));
-    if (data && data->panel) {
-        data->panel->send_temperature(HeaterType::Nozzle, data->preset_value);
-    }
-}
-
-void TemperatureService::on_nozzle_preset_abs_clicked(lv_event_t* e) {
-    auto* data = static_cast<PresetButtonData*>(lv_event_get_user_data(e));
-    if (data && data->panel) {
-        data->panel->send_temperature(HeaterType::Nozzle, data->preset_value);
-    }
-}
-
-void TemperatureService::on_bed_preset_off_clicked(lv_event_t* e) {
-    auto* data = static_cast<PresetButtonData*>(lv_event_get_user_data(e));
-    if (data && data->panel) {
-        data->panel->send_temperature(HeaterType::Bed, data->preset_value);
-    }
-}
-
-void TemperatureService::on_bed_preset_pla_clicked(lv_event_t* e) {
-    auto* data = static_cast<PresetButtonData*>(lv_event_get_user_data(e));
-    if (data && data->panel) {
-        data->panel->send_temperature(HeaterType::Bed, data->preset_value);
-    }
-}
-
-void TemperatureService::on_bed_preset_petg_clicked(lv_event_t* e) {
-    auto* data = static_cast<PresetButtonData*>(lv_event_get_user_data(e));
-    if (data && data->panel) {
-        data->panel->send_temperature(HeaterType::Bed, data->preset_value);
-    }
-}
-
-void TemperatureService::on_bed_preset_abs_clicked(lv_event_t* e) {
-    auto* data = static_cast<PresetButtonData*>(lv_event_get_user_data(e));
-    if (data && data->panel) {
-        data->panel->send_temperature(HeaterType::Bed, data->preset_value);
-    }
-}
-
-// ============================================================================
 // Spool preset (dynamic button for active spool material)
 // ============================================================================
 
@@ -1199,7 +1131,7 @@ void TemperatureService::select_extruder(const std::string& name) {
 }
 
 void TemperatureService::rebuild_extruder_segments() {
-    helix::ui::queue_update([this]() {
+    async_lifetime_.defer("TemperatureService::rebuild_extruder_segments", [this]() {
         if (!subjects_initialized_)
             return;
         rebuild_extruder_segments_impl();
@@ -1244,7 +1176,7 @@ void TemperatureService::rebuild_extruder_segments_impl() {
     lv_obj_set_flex_flow(selector, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(selector, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(selector, 8, 0);
+    lv_obj_set_style_pad_column(selector, theme_manager_get_spacing("space_sm"), 0);
 
     auto& tool_state = helix::ToolState::instance();
 

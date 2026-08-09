@@ -249,17 +249,21 @@ TEST_CASE("DisplayManager destructor is safe when not initialized", "[applicatio
     // Create and immediately destroy - should not crash
     {
         DisplayManager mgr;
-        // Destructor calls shutdown()
+        // A default-constructed manager owns no display, so its destructor's
+        // shutdown() must take the uninitialized path.
+        REQUIRE_FALSE(mgr.is_initialized());
     }
 
     // Multiple instances
     {
         DisplayManager mgr1;
         DisplayManager mgr2;
+        // Neither may claim initialization off the back of the other - the
+        // display handle is per-instance, not process-global state.
+        REQUIRE_FALSE(mgr1.is_initialized());
+        REQUIRE_FALSE(mgr2.is_initialized());
         // Both destructors call shutdown()
     }
-
-    REQUIRE(true); // If we got here, no crash
 }
 
 TEST_CASE("DisplayManager scroll configuration applies to pointer", "[application][display]") {
@@ -436,6 +440,9 @@ TEST_CASE("sleep_backlight_off config controls backlight behavior during sleep",
     struct HomeRedirect {
         std::string orig;
         bool had;
+        // Put back the ref we found, not a recomputed $HOME/.helixscreen — the
+        // test binary sandboxes this deliberately (see helix_test_fixture.cpp).
+        std::string prev_ref = AppConstants::Update::detail::backup_fallback_dir_ref();
         explicit HomeRedirect(const std::string& dir) : had(std::getenv("HOME") != nullptr) {
             if (had)
                 orig = std::getenv("HOME");
@@ -448,8 +455,7 @@ TEST_CASE("sleep_backlight_off config controls backlight behavior during sleep",
                 setenv("HOME", orig.c_str(), 1);
             else
                 unsetenv("HOME");
-            AppConstants::Update::detail::backup_fallback_dir_ref() =
-                AppConstants::Update::sanitize_home(std::getenv("HOME")) + "/.helixscreen";
+            AppConstants::Update::detail::backup_fallback_dir_ref() = prev_ref;
         }
     } home_guard(tmp_dir.string());
 

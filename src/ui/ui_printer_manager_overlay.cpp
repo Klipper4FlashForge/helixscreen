@@ -138,6 +138,7 @@ lv_obj_t* PrinterManagerOverlay::create(lv_obj_t* parent) {
     // and this helix-xml build has no compound-condition (subject_expr/cond) support.
     // Compiled out on desktop → zero desktop impact.
     if (auto* timelapse_chip = lv_obj_find_by_name(overlay_root_, "pm_chip_timelapse")) {
+        // DECLARATIVE_OK: compile-time capability (#if), no runtime subject exists
         lv_obj_add_flag(timelapse_chip, LV_OBJ_FLAG_HIDDEN);
     }
 #endif

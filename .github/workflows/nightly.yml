@@ -159,7 +159,10 @@ jobs:
         echo "Running $NPROCS test shards in parallel (excluding slow)..."
         pids=""
         for i in $(seq 0 $((NPROCS-1))); do
-          (timeout 300 ./build/bin/helix-tests "~[.] ~[slow]" --shard-count $NPROCS --shard-index $i --durations yes 2>&1 | sed "s/^/[shard $i] /") &
+          # pipefail is required: without it the subshell reports sed's status, not
+          # the test binary's, and a failing shard silently exits 0. timeout's 124
+          # still propagates — pipefail yields the rightmost non-zero status.
+          (set -o pipefail; timeout 300 ./build/bin/helix-tests "~[.] ~[slow]" --shard-count $NPROCS --shard-index $i --durations yes 2>&1 | sed "s/^/[shard $i] /") &
           pids="$pids $!"
         done
         failed=0
@@ -563,10 +566,76 @@ jobs:
   # ===========================================================================
   # Final status gate
   # ===========================================================================
+  # The only UNSHARDED pass in CI. Everything else shards across $(nproc), which
+  # is what let prestonbrown/helixscreen#1146 hide: a test leaked queued UpdateQueue
+  # callbacks, the next fixture's drain notified subjects that died with it, and the
+  # resulting SIGSEGV moved with shard composition. Sharding broke the triggering
+  # order and reported green.
+  #
+  # This job also carries the leak ratchet. It cannot live in test-all (already at
+  # its 60-minute cap: 15 fast + 30 slow) and cannot live in build.yml, which shards
+  # and runs per-PR — an unsharded pass measured 769s locally.
+  # ===========================================================================
+  test-unsharded-leaks:
+    name: Unsharded Suite + UpdateQueue Leak Ratchet
+    needs: build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+      with:
+        submodules: false
+
+    - name: Initialize submodules
+      uses: ./.github/actions/init-submodules
+
+    - name: Install runtime deps
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libsdl2-dev libfmt-dev libcairo2 libpango-1.0-0 libpng16-16 libjpeg8 libnl-3-200 libnl-genl-3-200
+
+    - name: Download build
+      uses: actions/download-artifact@v8
+      with:
+        name: nightly-build
+        path: build/bin/
+
+    - name: Fix permissions
+      run: chmod +x build/bin/helix-tests
+
+    - name: Run suite unsharded
+      timeout-minutes: 30
+      run: |
+        # 2>&1 is REQUIRED: the isolation listener reports leaks via fprintf(stderr)
+        # while Catch2's summary goes to stdout. The gate rejects a log missing
+        # either stream rather than reading it as "zero leaks".
+        set -o pipefail
+        timeout 1800 ./build/bin/helix-tests "~[.] ~[slow]" 2>&1 | tee unsharded.log
+
+    - name: UpdateQueue leak ratchet
+      # Runs even if the suite failed: a crash mid-run is exactly when the leak
+      # report matters most, and the gate rejects a truncated log on its own.
+      if: always()
+      run: |
+        python3 scripts/check_update_queue_leaks.py \
+          --baseline scripts/update_queue_leak_baseline.txt \
+          unsharded.log
+
+    - name: Upload unsharded log
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: unsharded-test-log
+        path: unsharded.log
+        retention-days: 14
+
+  # ===========================================================================
   nightly-status:
     name: Nightly Status
     runs-on: ubuntu-latest
-    needs: [test-all, test-eventloop, test-shell, test-asan, test-tsan, test-python, test-macos]
+    needs: [test-all, test-eventloop, test-shell, test-asan, test-tsan, test-python, test-macos, test-unsharded-leaks]
     if: always()
 
     steps:
@@ -580,10 +649,11 @@ jobs:
         echo "TSAN:             ${{ needs.test-tsan.result }}"
         echo "Python:           ${{ needs.test-python.result }}"
         echo "macOS (build):    ${{ needs.test-macos.result }}"
+        echo "Unsharded+leaks:  ${{ needs.test-unsharded-leaks.result }}"
         echo "==========================="
 
         FAILED=0
-        for job in test-all test-eventloop test-shell test-asan test-tsan test-python test-macos; do
+        for job in test-all test-eventloop test-shell test-asan test-tsan test-python test-macos test-unsharded-leaks; do
           result="${{ needs[job].result }}" 2>/dev/null || result="unknown"
         done
 
@@ -593,7 +663,8 @@ jobs:
            [ "${{ needs.test-asan.result }}" != "success" ] || \
            [ "${{ needs.test-tsan.result }}" != "success" ] || \
            [ "${{ needs.test-python.result }}" != "success" ] || \
-           [ "${{ needs.test-macos.result }}" != "success" ]; then
+           [ "${{ needs.test-macos.result }}" != "success" ] || \
+           [ "${{ needs.test-unsharded-leaks.result }}" != "success" ]; then
           echo "::error::Nightly test suite had failures!"
           exit 1
         fi

@@ -27,8 +27,8 @@
       <text_body name="dialog_message" width="100%" text="$message" style_text_align="left" long_mode="wrap"/>
     </lv_obj>
     <!-- Button row -->
-    <modal_button_row secondary_text="Cancel"
-                      secondary_callback="on_exclude_object_cancel" primary_text="Exclude"
-                      primary_callback="on_exclude_object_confirm"/>
+    <!-- Buttons are wired in ExcludeObjectModal::on_show() via wire_ok_button()/
+         wire_cancel_button(); no XML callback names to resolve. -->
+    <modal_button_row secondary_text="Cancel" primary_text="Exclude"/>
   </view>
 </component>

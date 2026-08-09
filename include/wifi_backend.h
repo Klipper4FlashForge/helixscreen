@@ -13,8 +13,12 @@
 
 #pragma once
 
+#include "wifi_interface.h"
+
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -147,6 +151,47 @@ class WiFiErrorHelper {
 };
 
 /**
+ * @brief Radio bands an SSID can be seen on, as bit flags
+ *
+ * A single SSID is routinely broadcast by several BSSes on different bands.
+ * Collapsing those into one list row must not throw the band away, so the row
+ * carries the OR of every band it was observed on.
+ */
+enum WiFiBandFlag : uint8_t {
+    WIFI_BAND_NONE = 0,         ///< Band unknown (frequency not reported by the backend)
+    WIFI_BAND_2_4GHZ = 1u << 0, ///< 2.4 GHz (channels 1-14)
+    WIFI_BAND_5GHZ = 1u << 1,   ///< 5 GHz (UNII-1 through UNII-4)
+    WIFI_BAND_6GHZ = 1u << 2,   ///< 6 GHz (Wi-Fi 6E)
+};
+
+/**
+ * @brief Classify a channel centre frequency into a band flag
+ *
+ * @param frequency_mhz Centre frequency in MHz (0 or out-of-range = unknown)
+ * @return One of WIFI_BAND_2_4GHZ / WIFI_BAND_5GHZ / WIFI_BAND_6GHZ, or
+ *         WIFI_BAND_NONE when the frequency is unknown or not a WiFi band.
+ */
+uint8_t wifi_band_flag_from_frequency(int frequency_mhz);
+
+/**
+ * @brief Parse the output of `nmcli radio wifi` into a radio-on/off answer
+ *
+ * NetworkManager answers with a single word — "enabled" or "disabled" — and
+ * decorates it with a trailing newline and (outside terse mode) leading
+ * whitespace. Anything else is a broken/absent nmcli, and must NOT be guessed
+ * at: an unparseable answer that defaulted to "enabled" is exactly how the
+ * base-class default made the UI switch snap back on after a successful
+ * radio-off.
+ *
+ * Declared here rather than in wifi_backend_networkmanager.h so it is
+ * reachable (and testable) on platforms that do not build the NM backend.
+ *
+ * @param output Raw stdout from `nmcli radio wifi`
+ * @return true/false for enabled/disabled, nullopt when unrecognized
+ */
+std::optional<bool> wifi_parse_nm_radio_state(const std::string& output);
+
+/**
  * @brief WiFi network information
  */
 struct WiFiNetwork {
@@ -154,15 +199,31 @@ struct WiFiNetwork {
     int signal_strength;       ///< Signal strength (0-100 percentage)
     bool is_secured;           ///< True if network requires password
     std::string security_type; ///< Security type ("WPA2", "WPA3", "WEP", "Open")
-    int frequency_mhz{0};      ///< Frequency in MHz (0 = unknown)
+    int frequency_mhz{0};      ///< Frequency of the strongest BSS in MHz (0 = unknown)
+    uint8_t band_mask{0};      ///< OR of WiFiBandFlag for every band this SSID was seen on
 
     WiFiNetwork() : signal_strength(0), is_secured(false) {}
 
     WiFiNetwork(const std::string& ssid_, int strength, bool secured,
                 const std::string& security = "", int freq_mhz = 0)
         : ssid(ssid_), signal_strength(strength), is_secured(secured), security_type(security),
-          frequency_mhz(freq_mhz) {}
+          frequency_mhz(freq_mhz), band_mask(wifi_band_flag_from_frequency(freq_mhz)) {}
 };
+
+/**
+ * @brief Collapse per-BSS scan results into one row per SSID, preserving bands
+ *
+ * Mesh systems and ordinary dual-band routers broadcast one SSID from several
+ * BSSes. The picker shows one row per SSID, keeping the strongest signal — but
+ * the surviving row inherits the union of every band the SSID was seen on, so a
+ * 5 GHz BSS that loses on RSSI is still represented (helixscreen#1189).
+ *
+ * Result order is first-seen, making the output deterministic.
+ *
+ * @param networks Raw per-BSS scan results
+ * @return One entry per unique SSID: strongest signal, merged band_mask
+ */
+std::vector<WiFiNetwork> wifi_merge_networks_by_ssid(const std::vector<WiFiNetwork>& networks);
 
 /**
  * @brief Abstract WiFi backend interface
@@ -334,6 +395,74 @@ class WifiBackend {
      * @return WiFiError with detailed status information
      */
     virtual WiFiError disconnect_network() = 0;
+
+    /**
+     * @brief Enable or disable the WiFi radio itself
+     *
+     * Distinct from stop(), which only detaches this process from the WiFi
+     * subsystem. Before this existed the UI toggle called stop() and the
+     * station stayed associated and routed — a debug bundle uploaded over a
+     * connection the UI was reporting as off (9GQXV5VN, v0.99.106).
+     *
+     * Implementations should stop association and, where the platform exposes
+     * an rfkill switch, soft-block the radio. They must NOT take the network
+     * interface down: that is the one step a user cannot undo without a root
+     * shell, and it strands a WiFi-only printer whose UI is not running.
+     *
+     * Default implementation is a successful no-op, for platforms where this
+     * toggle is not reachable.
+     */
+    virtual WiFiError set_radio_enabled(bool on) {
+        (void)on;
+        return WiFiErrorHelper::success();
+    }
+
+    /// Last state requested via set_radio_enabled(). Defaults to true.
+    virtual bool is_radio_enabled() const {
+        return true;
+    }
+
+    /// The interface identity this backend resolved (netdev, control socket,
+    /// rfkill node — see wifi_interface.h), when resolution succeeded.
+    ///
+    /// Default returns nullopt — "inconclusive" — so a backend that has not
+    /// implemented interface resolution behaves the same as one that tried
+    /// and failed. Callers that gate a potentially device-stranding decision
+    /// on this (WiFiManager's stored-radio-state reassert, Task 15) MUST
+    /// treat nullopt as "unknown, fail safe", never as "definitely no wired
+    /// fallback".
+    virtual std::optional<helix::wifi::WifiInterface> resolved_interface() const {
+        return std::nullopt;
+    }
+
+    /**
+     * @brief Forget (permanently remove) a saved network
+     *
+     * Unlike the REMOVE_NETWORK calls issued internally as connect-failure
+     * cleanup elsewhere in this codebase, this is a real, user-initiated
+     * forget: it must remove the credential from every place this backend
+     * persists it (vendor config, HelixScreen's own credential store, or
+     * both), so the network does not reappear on its own.
+     *
+     * Default implementation returns BACKEND_ERROR, NOT a silent success.
+     * This is deliberately the opposite choice from set_radio_enabled()'s
+     * no-op default: a silent success here would tell the user a network
+     * was forgotten when nothing happened — the exact class of lie this
+     * feature exists to eliminate. Platforms that can forget a network must
+     * override.
+     *
+     * @param ssid Network name to forget
+     * @return WiFiResult::SUCCESS on success; WiFiResult::NETWORK_NOT_FOUND
+     *         when @p ssid has no saved entry anywhere this backend looks
+     *         (so callers can distinguish "nothing to forget" from "forget
+     *         failed"); WiFiResult::BACKEND_ERROR when this backend does not
+     *         support forgetting a network at all.
+     */
+    virtual WiFiError forget_network(const std::string& ssid) {
+        (void)ssid;
+        return WiFiError(WiFiResult::BACKEND_ERROR, "forget_network not supported by this backend",
+                         "Cannot forget this network on this platform");
+    }
 
     // ========================================================================
     // Status Queries

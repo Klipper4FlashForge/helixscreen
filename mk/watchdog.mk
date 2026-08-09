@@ -95,6 +95,7 @@ WATCHDOG_EXTRA_OBJS := $(BUILD_DIR)/watchdog/config.o \
                        $(BUILD_DIR)/watchdog/drm_mode_matching.o \
                        $(BUILD_DIR)/watchdog/fbdev_size_helper.o \
                        $(BUILD_DIR)/watchdog/pending_startup_warnings.o \
+                       $(BUILD_DIR)/watchdog/log_redact.o \
                        $(BUILD_DIR)/watchdog/helix_lvgl_anomaly_stub.o
 
 # Compile config for watchdog (with HELIX_WATCHDOG to guard get_runtime_config dependency)
@@ -137,6 +138,15 @@ $(BUILD_DIR)/watchdog/logging_init.o: src/system/logging_init.cpp $(LIBHV_LIB) $
 # Compile notification stub for watchdog (with dependency tracking)
 $(BUILD_DIR)/watchdog/ui_notification_stub.o: tools/ui_notification_stub.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) | $(BUILD_DIR)/watchdog
 	@echo "[CXX] $< (watchdog stub)"
+	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
+
+# Compile log_redact for watchdog. Watchdog calls none of it; input_device_scanner.cpp
+# does, and DISPLAY_LIB is linked --whole-archive (see the link rule below), so every
+# object in that archive becomes a hard link dependency whether or not this binary
+# reaches it. Without this the non-LTO targets (pi, pi32, x86) fail to link while the
+# -flto ones drop the unreachable caller and link clean.
+$(BUILD_DIR)/watchdog/log_redact.o: src/system/log_redact.cpp | $(BUILD_DIR)/watchdog
+	@echo "[CXX] $< (watchdog)"
 	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 
 # No-op stub for helix_lvgl_anomaly() — patched LVGL references it but watchdog

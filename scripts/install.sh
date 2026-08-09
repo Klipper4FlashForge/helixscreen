@@ -126,6 +126,35 @@ file_sudo() {
     fi
 }
 
+# Resolve the directory holding the user's Klipper/Moonraker config files.
+#
+# Almost every Klipper install puts them in <klipper home>/printer_data/config,
+# so that is the derived default and no platform needs to say anything. Vendor
+# firmwares that do not use printer_data AT ALL set KLIPPER_CONFIG_DIR in
+# set_install_paths() instead:
+#
+#   Elegoo Centauri Carbon / COSMOS (OpenCentauri) keeps everything in
+#   /etc/klipper/config — moonraker.conf, printer.cfg, the *-readonly/ vendor
+#   include dirs — and has no printer_data directory anywhere on the device
+#   (verified over SSH; Moonraker's /server/files/roots reports the `config`
+#   root as /etc/klipper/config, rw). Deriving from KLIPPER_HOME=/root there
+#   yields /root/printer_data/config, which does not exist, so moonraker.conf
+#   discovery, the config symlinks and the Klipper include all silently
+#   skipped.
+#
+# Echoes the directory, or an empty string when neither is known.
+klipper_config_dir() {
+    if [ -n "${KLIPPER_CONFIG_DIR:-}" ]; then
+        echo "$KLIPPER_CONFIG_DIR"
+        return 0
+    fi
+    if [ -n "${KLIPPER_HOME:-}" ]; then
+        echo "${KLIPPER_HOME}/printer_data/config"
+        return 0
+    fi
+    echo ""
+}
+
 # Track what we've done for cleanup
 CLEANUP_TMP=false
 CLEANUP_SERVICE=false
@@ -242,16 +271,103 @@ error_handler() {
     exit $exit_code
 }
 
-# Safely remove the installer's temp dir. REFUSES to delete the filesystem root
-# or a mountpoint — a user-supplied TMP_DIR pointing at a mount root (e.g.
-# `TMP_DIR=/mnt/UDISK`) once caused `rm -rf "$TMP_DIR"` to wipe a live data
-# partition (printer_data + device userdata). Only ever removes a normal,
-# non-mountpoint directory.
+# ---------------------------------------------------------------------------
+# User-supplied path guards
+#
+# TMP_DIR and INSTALL_DIR are both documented, user-settable overrides — the
+# installer itself prints "Try: TMP_DIR=/path/with/space sh install.sh" — and
+# both feed destructive operations:
+#
+#   TMP_DIR      rm -rf "$TMP_DIR"                 (cleanup_on_success, error_handler)
+#   INSTALL_DIR  mv "$INSTALL_DIR" "$INSTALL_BACKUP", rm -rf "$INSTALL_DIR",
+#                and a sweep of every config/ sibling               (release.sh, uninstall.sh)
+#
+# Pointing either at an ordinary data directory therefore erases it.
+# `TMP_DIR=/mnt/UDISK` once wiped a K2's whole user partition; the mountpoint
+# check in _safe_remove_tmp_dir below catches only that exact shape, not
+# `TMP_DIR=/home/pi`.
+#
+# The guard is the same one HELIX_OFFSITE_ROLLBACK_DIR already uses in
+# release.sh: a `case` on the FINAL path component with an explicit refusal
+# branch. If the last component isn't recognisably ours, we refuse loudly and
+# the caller exits rather than silently falling back to a default.
+# ---------------------------------------------------------------------------
+
+# _user_dir_name_ok DIR PATTERN [PATTERN...]
+# Returns 0 when DIR is absolute, traversal-free, and its final component
+# matches one of the shell patterns. Patterns are intentionally unquoted in the
+# `case` so globs apply.
+_user_dir_name_ok() {
+    local d="${1%/}"
+    shift
+    # Absolute only — a relative override resolves against an unknown $PWD.
+    case "$d" in
+        /*) ;;
+        *) return 1 ;;
+    esac
+    # "/data/helixscreen-install/../.." is not the directory it claims to be.
+    case "$d" in
+        *..*) return 1 ;;
+    esac
+    local base="${d##*/}"
+    # Empty base means d was "/" (or collapsed to it).
+    [ -n "$base" ] || return 1
+    local pat
+    for pat in "$@"; do
+        case "$base" in
+            $pat) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+# Accept only scratch directories the installer created, or the staging dir the
+# in-app updater hands over via TMP_DIR (update_checker.cpp kStagingName).
+validate_tmp_dir() {
+    local d="$1"
+    if _user_dir_name_ok "$d" '*helixscreen-install*' '.helix-update-staging'; then
+        return 0
+    fi
+    log_error "Refusing to use TMP_DIR='$d'"
+    log_error "TMP_DIR is removed with 'rm -rf' when the installer finishes, so it"
+    log_error "must be a scratch directory of ours — not an existing data directory."
+    log_error "Its last path component must contain 'helixscreen-install'."
+    log_error "Try: TMP_DIR=${d%/}/helixscreen-install sh install.sh"
+    return 1
+}
+
+# Accept only install directories that name themselves after us. Every
+# auto-detected value already does (/opt/helixscreen, $HOME/helixscreen,
+# /usr/data/helixscreen, /srv/helixscreen, /user-resource/helixscreen, ...).
+validate_install_dir() {
+    local d="$1"
+    if _user_dir_name_ok "$d" '*helixscreen*'; then
+        return 0
+    fi
+    log_error "Refusing to use INSTALL_DIR='$d'"
+    log_error "INSTALL_DIR is moved aside and 'rm -rf'd on update and uninstall, so"
+    log_error "it must be a directory of ours — not an existing data directory."
+    log_error "Its last path component must contain 'helixscreen'."
+    log_error "Try: INSTALL_DIR=${d%/}/helixscreen sh install.sh"
+    return 1
+}
+
+# Safely remove the installer's temp dir. REFUSES to delete the filesystem root,
+# a mountpoint, or anything whose name isn't one of ours — a user-supplied
+# TMP_DIR pointing at a mount root (e.g. `TMP_DIR=/mnt/UDISK`) once caused
+# `rm -rf "$TMP_DIR"` to wipe a live data partition (printer_data + device
+# userdata). Only ever removes a normal, non-mountpoint scratch directory.
 _safe_remove_tmp_dir() {
     local d="$1"
     [ -n "$d" ] && [ -d "$d" ] || return 0
     if [ "$d" = "/" ]; then
         log_warn "Refusing to remove TMP_DIR='/'"
+        return 0
+    fi
+    # Last line of defence: even if a caller skipped validate_tmp_dir, never
+    # rm -rf a directory that isn't recognisably the installer's scratch space.
+    if ! _user_dir_name_ok "$d" '*helixscreen-install*' '.helix-update-staging'; then
+        log_warn "Refusing to rm -rf TMP_DIR='$d' (name is not an installer scratch dir); leaving it in place."
         return 0
     fi
     # Mountpoint detection: prefer mountpoint(1); else compare the device id of
@@ -391,9 +507,12 @@ clean_helix_state_dirs() {
 print_post_install_commands() {
     echo "Useful commands:"
     if [ "$INIT_SYSTEM" = "systemd" ]; then
-        echo "  systemctl status ${SERVICE_NAME}    # Check status"
-        echo "  journalctl -u ${SERVICE_NAME} -f    # View logs"
-        echo "  systemctl restart ${SERVICE_NAME}   # Restart"
+        # journalctl and restart need privilege: a service user outside adm/
+        # systemd-journal gets "No journal files were found" on stderr and an
+        # empty stdout, which reads as "there are no logs" when redirected.
+        echo "  systemctl status ${SERVICE_NAME}         # Check status"
+        echo "  sudo journalctl -u ${SERVICE_NAME} -f    # View logs"
+        echo "  sudo systemctl restart ${SERVICE_NAME}   # Restart"
     else
         # helixscreen.init writes to /var/log/helixscreen/launcher.log when /var/log
         # is persistent, else ${INSTALL_DIR}/logs/launcher.log — show whichever exists.
@@ -426,6 +545,9 @@ K1_FIRMWARE=""
 KLIPPER_USER=""
 KLIPPER_GROUP=""
 KLIPPER_HOME=""
+# Empty means "derive <KLIPPER_HOME>/printer_data/config". Only firmwares with
+# no printer_data at all (CC1/COSMOS) set it. Read via klipper_config_dir().
+KLIPPER_CONFIG_DIR=""
 
 # Friendly description of the underlying SBC for the user-facing log line.
 # Returns free-text (NOT used for routing). Pi/pi32 covers a long tail of
@@ -953,8 +1075,11 @@ detect_k1_firmware() {
 # Requires: KLIPPER_HOME to be set (by detect_klipper_user)
 # Sets: INSTALL_DIR
 detect_pi_install_dir() {
-    # 1. User explicitly set INSTALL_DIR — respect their choice
+    # 1. User explicitly set INSTALL_DIR — respect their choice, once the name
+    #    guard has cleared it. INSTALL_DIR is mv'd aside and rm -rf'd on update
+    #    and uninstall, so an unvalidated override destroys its target.
     if [ -n "$_USER_INSTALL_DIR" ]; then
+        validate_install_dir "$_USER_INSTALL_DIR" || exit 1
         INSTALL_DIR="$_USER_INSTALL_DIR"
         log_info "Install directory (user override): $INSTALL_DIR"
         return 0
@@ -1001,8 +1126,12 @@ detect_pi_install_dir() {
 # User can override via TMP_DIR env var.
 # Sets: TMP_DIR
 detect_tmp_dir() {
-    # User already set TMP_DIR — respect it
+    # User already set TMP_DIR — respect it, but only after the name guard.
+    # TMP_DIR is rm -rf'd on both the success and the failure path, so an
+    # unvalidated override erases whatever it points at (validate_tmp_dir in
+    # common.sh; the /mnt/UDISK incident).
     if [ -n "${TMP_DIR:-}" ]; then
+        validate_tmp_dir "$TMP_DIR" || exit 1
         log_info "Temp directory (user override): $TMP_DIR"
         return 0
     fi
@@ -1070,10 +1199,15 @@ detect_tmp_dir() {
 }
 
 # Set installation paths based on platform and firmware
-# Sets: INSTALL_DIR, INIT_SCRIPT_DEST, PREVIOUS_UI_SCRIPT, TMP_DIR
+# Sets: INSTALL_DIR, INIT_SCRIPT_DEST, PREVIOUS_UI_SCRIPT, TMP_DIR, KLIPPER_CONFIG_DIR
 set_install_paths() {
     local platform=$1
     local firmware=${2:-}
+
+    # Start from "derive it from KLIPPER_HOME" every time; only the branches
+    # below opt out. Without the reset a stale value from the environment (or
+    # from an earlier call in the same shell) would leak into another platform.
+    KLIPPER_CONFIG_DIR=""
 
     if [ "$platform" = "ad5m" ]; then
         # AD5M runs the helix-screen service as root on all three firmwares
@@ -1169,12 +1303,17 @@ set_install_paths() {
         # - /user-resource is the 6.3 GB ext4 partition where user installs go.
         # - COSMOS provides gui-switcher: drop /etc/init.d/<name>, then
         #   `config-manager ui screen_ui <name>` + restart gui-switcher.
+        # - There is NO printer_data directory anywhere on the device. Klipper
+        #   and Moonraker config live in /etc/klipper/config (moonraker.conf,
+        #   printer.cfg, and the vendor *-readonly/ include dirs), which is
+        #   also the `config` root Moonraker advertises over /server/files/roots.
         INSTALL_DIR="/user-resource/helixscreen"
         INIT_SCRIPT_DEST="/etc/init.d/helixscreen"
         PREVIOUS_UI_SCRIPT=""
         KLIPPER_USER="root"
         KLIPPER_GROUP="root"
         KLIPPER_HOME="/root"
+        KLIPPER_CONFIG_DIR="/etc/klipper/config"
         INIT_SYSTEM="sysv"
         log_info "Platform: Elegoo Centauri Carbon (COSMOS)"
         log_info "Install directory: ${INSTALL_DIR}"
@@ -1205,6 +1344,12 @@ set_install_paths() {
         detect_pi_install_dir
     fi
 
+    # Final gate on whatever INSTALL_DIR we ended up with. Every hard-coded
+    # platform path above already satisfies it; this catches a future branch
+    # (or an override route added later) that would hand a bare data directory
+    # to the mv/rm -rf in release.sh and uninstall.sh.
+    validate_install_dir "$INSTALL_DIR" || exit 1
+
     # Auto-detect best temp directory (all platforms)
     detect_tmp_dir
 }
@@ -1213,7 +1358,162 @@ set_install_paths() {
 # These are the files users may want to edit from Fluidd/Mainsail, and that
 # the app writes to at runtime. All other files in INSTALL_DIR/config/ are
 # static assets reinstalled on each update.
-HELIX_USER_CONFIG_FILES="settings.json helixscreen.env .disabled_services tool_spools.json"
+HELIX_USER_CONFIG_FILES="settings.json helixscreen.env .disabled_services tool_spools.json crash_history.json"
+
+# User-writable config DIRECTORIES that live in printer_data/config/helixscreen/.
+#
+# Same contract as HELIX_USER_CONFIG_FILES, one level up: the install dir gets a
+# symlink and the real directory lives in printer_data. This matters because
+# Moonraker's type:web update_manager does shutil.rmtree(INSTALL_DIR) before
+# extracting the new ZIP, and rmtree UNLINKS a symlink it meets as a child entry
+# rather than descending through it — so the real data on the far side survives.
+# A real directory here is destroyed outright, which is exactly how users lost
+# their custom printer images, themes and printer-DB extensions.
+#
+#   custom_images     PrinterImageManager::init()  (config_dir + "/custom_images/")
+#   themes            writable_path("themes")      (user themes; defaults ship
+#                                                   separately in assets/config/themes/defaults)
+#   printer_database.d  writable_path("printer_database.d")  (user DB extensions)
+HELIX_USER_CONFIG_DIRS="custom_images themes printer_database.d"
+
+# Default content for runtime-created state files that have no packaged default.
+#
+# The file loop below refuses to create a symlink when the file exists in neither
+# place (a dangling symlink is worse than none). For a file the app only ever
+# writes AFTER the install completes, that rule means the very first Moonraker
+# update still destroys it — there was nothing to link on install day. Seeding an
+# empty-but-valid file at setup time closes that window.
+#
+# Echoes the seed content and returns 0 for a known file; returns 1 otherwise,
+# which leaves the "no dangling symlink" behaviour untouched for everything else.
+_helix_config_file_seed() {
+    case "$1" in
+        crash_history.json) printf '[]\n' ;;   # CrashHistory::load() expects a JSON array
+        *) return 1 ;;
+    esac
+}
+
+# Copy every entry under SRC that is missing from DST, never overwriting.
+#
+# Used to fold the shipped contents of a config directory (a fresh ZIP's
+# themes/, printer_database.d/README.md) into the user's printer_data copy
+# before the install-dir original is replaced by a symlink. Sorting guarantees
+# a parent is created before its children.
+# Args: SRC DST [SUDO_PREFIX]
+# Returns: 0 if every entry now exists at DST, 1 on the first failure.
+_helix_merge_config_dir() {
+    local src="$1" dst="$2" sudo_prefix="${3:-}"
+    local rel
+
+    [ -d "$src" ] || return 0
+
+    while IFS= read -r rel; do
+        [ -n "$rel" ] && [ "$rel" != "." ] || continue
+        rel="${rel#./}"
+        if [ -d "${src}/${rel}" ] && [ ! -L "${src}/${rel}" ]; then
+            [ -d "${dst}/${rel}" ] || $sudo_prefix mkdir -p "${dst}/${rel}" 2>/dev/null || return 1
+        elif [ ! -e "${dst}/${rel}" ] && [ ! -L "${dst}/${rel}" ]; then
+            $sudo_prefix cp -pR "${src}/${rel}" "${dst}/${rel}" 2>/dev/null || return 1
+        fi
+    done <<EOF
+$(cd "$src" 2>/dev/null && find . 2>/dev/null | LC_ALL=C sort)
+EOF
+    return 0
+}
+
+# True when DIR holds at least one entry (including dotfiles).
+# Used to cross-check the find(1) walk: a walk that reports nothing about a
+# directory that demonstrably has contents means the walk failed, and a failed
+# walk must never be read as "everything copied".
+_helix_dir_has_entries() {
+    local d="$1" e
+    [ -d "$d" ] || return 1
+    for e in "$d"/* "$d"/.[!.]* "$d"/..?*; do
+        [ -e "$e" ] || [ -L "$e" ] || continue
+        return 0
+    done
+    return 1
+}
+
+# True when every entry under SRC has a counterpart under DST.
+#
+# The precondition for deleting SRC. Deliberately independent of
+# _helix_merge_config_dir's own return code: a `cp` that reports success but
+# produces nothing (full filesystem, silently-dropped write) must not be
+# allowed to authorise the delete.
+# Args: SRC DST
+_helix_config_dir_fully_merged() {
+    local src="$1" dst="$2" rel seen=""
+
+    [ -d "$dst" ] || return 1
+
+    while IFS= read -r rel; do
+        [ -n "$rel" ] && [ "$rel" != "." ] || continue
+        seen=1
+        rel="${rel#./}"
+        [ -e "${dst}/${rel}" ] || [ -L "${dst}/${rel}" ] || return 1
+    done <<EOF
+$(cd "$src" 2>/dev/null && find . 2>/dev/null)
+EOF
+
+    # The walk found nothing. That is only trustworthy if the directory really
+    # is empty; otherwise find failed and we know nothing about what was copied.
+    if [ -z "$seen" ] && _helix_dir_has_entries "$src"; then
+        return 1
+    fi
+    return 0
+}
+
+# Delete a user-config directory in the install dir after its contents have been
+# copied into printer_data. Last line of defence on the only rm -rf this feature
+# performs — same shape as _safe_remove_tmp_dir in common.sh.
+#
+# Refuses unless ALL of:
+#   - SRC is exactly "${install_config}/${name}" for a name in HELIX_USER_CONFIG_DIRS
+#   - SRC is a real directory, not a symlink (a symlink is unlinked elsewhere)
+#   - DST holds a counterpart for every entry under SRC
+# Args: INSTALL_CONFIG NAME DST [SUDO_PREFIX]
+# Returns: 0 on success, 1 when it refuses (caller must then keep the real dir).
+_safe_remove_migrated_config_dir() {
+    local install_config="$1" name="$2" dst="$3" sudo_prefix="${4:-}"
+    local src="${install_config}/${name}"
+
+    # Name must be one we manage — never a path handed in from elsewhere.
+    local known="" d
+    for d in $HELIX_USER_CONFIG_DIRS; do
+        [ "$d" = "$name" ] && known=1
+    done
+    if [ -z "$known" ]; then
+        log_warn "Refusing to remove '$src' (not a managed user config directory)"
+        return 1
+    fi
+
+    # Absolute, traversal-free, and sitting directly under a config/ directory.
+    case "$install_config" in
+        /*) ;;
+        *) log_warn "Refusing to remove '$src' (install config path is not absolute)"; return 1 ;;
+    esac
+    case "$install_config" in
+        *..*) log_warn "Refusing to remove '$src' (install config path contains '..')"; return 1 ;;
+    esac
+    if [ "${install_config##*/}" != "config" ]; then
+        log_warn "Refusing to remove '$src' (parent is not a config/ directory)"
+        return 1
+    fi
+
+    if [ -L "$src" ] || [ ! -d "$src" ]; then
+        log_warn "Refusing to remove '$src' (not a real directory)"
+        return 1
+    fi
+
+    if ! _helix_config_dir_fully_merged "$src" "$dst"; then
+        log_warn "Not every file under $src reached $dst — keeping the original"
+        return 1
+    fi
+
+    $sudo_prefix rm -rf "$src" 2>/dev/null || return 1
+    return 0
+}
 
 # Set up editable config directory in printer_data/config/helixscreen/.
 #
@@ -1228,20 +1528,21 @@ HELIX_USER_CONFIG_FILES="settings.json helixscreen.env .disabled_services tool_s
 #   ~/helixscreen/config/settings.json → above          (symlink)
 #
 # On upgrade from old layout, migrates files from install dir to printer_data.
-# Reads: KLIPPER_HOME, INSTALL_DIR
+# Reads: KLIPPER_HOME / KLIPPER_CONFIG_DIR (via klipper_config_dir), INSTALL_DIR
 setup_config_symlink() {
-    # Only proceed if we have a Klipper home and install directory
-    if [ -z "${KLIPPER_HOME:-}" ] || [ -z "${INSTALL_DIR:-}" ]; then
+    # Only proceed if we have a Klipper config dir and an install directory
+    local pd_config
+    pd_config="$(klipper_config_dir)"
+    if [ -z "$pd_config" ] || [ -z "${INSTALL_DIR:-}" ]; then
         return 0
     fi
 
-    local pd_config="${KLIPPER_HOME}/printer_data/config"
     local pd_helix="${pd_config}/helixscreen"
     local install_config="${INSTALL_DIR}/config"
 
-    # Skip if printer_data/config doesn't exist
+    # Skip if the Klipper config dir doesn't exist
     if [ ! -d "$pd_config" ]; then
-        log_info "No printer_data/config found, skipping config symlink"
+        log_info "No Klipper config dir at $pd_config, skipping config symlink"
         return 0
     fi
 
@@ -1304,11 +1605,21 @@ setup_config_symlink() {
         fi
 
         # If pd_file still doesn't exist (e.g. runtime-created file like tool_spools.json
-        # or .disabled_services that isn't packaged and hasn't been written yet), skip
-        # symlink creation.  A dangling symlink is worse than no symlink: reads return
-        # ENOENT and writes may fail depending on the OS/filesystem.  The app will
-        # create the file at pd_file naturally; setup_config_symlink will wire it up
-        # correctly on the next update or reinstall.
+        # or .disabled_services that isn't packaged and hasn't been written yet), seed it
+        # when we know a safe default, else skip symlink creation.  A dangling symlink is
+        # worse than no symlink: reads return ENOENT and writes may fail depending on the
+        # OS/filesystem.  The app will create the file at pd_file naturally;
+        # setup_config_symlink will wire it up correctly on the next update or reinstall.
+        if [ ! -f "$pd_file" ] && [ ! -L "$pd_file" ]; then
+            local seed
+            if seed=$(_helix_config_file_seed "$file"); then
+                if printf '%s' "$seed" | $(file_sudo "$pd_helix") tee "$pd_file" >/dev/null 2>&1; then
+                    log_info "Seeded $file in printer_data"
+                else
+                    log_warn "Could not seed $file in printer_data"
+                fi
+            fi
+        fi
         if [ ! -f "$pd_file" ] && [ ! -L "$pd_file" ]; then
             # Only skip if install_file also doesn't exist or isn't already a symlink
             if [ ! -L "$install_file" ]; then
@@ -1333,6 +1644,63 @@ setup_config_symlink() {
         fi
     done
 
+    # --- Set up per-directory symlinks ---
+    #
+    # Migration order matters: copy first, verify, only then delete. Every exit
+    # before the delete leaves the user's real directory untouched in the install
+    # dir, which is the pre-fix status quo — worse than protected, never lost.
+    local dir
+    for dir in $HELIX_USER_CONFIG_DIRS; do
+        local pd_dir="${pd_helix}/${dir}"
+        local install_dir_path="${install_config}/${dir}"
+
+        # Already a symlink: fix it if it points somewhere stale, else leave it.
+        if [ -L "$install_dir_path" ]; then
+            local current_dir_target
+            current_dir_target=$(readlink "$install_dir_path" 2>/dev/null || echo "")
+            if [ "$current_dir_target" = "$pd_dir" ]; then
+                # Re-run of a completed migration. The target may still be missing
+                # if printer_data was reset out from under us — recreate it so the
+                # link is never dangling.
+                [ -d "$pd_dir" ] || $(file_sudo "$pd_helix") mkdir -p "$pd_dir" 2>/dev/null || true
+                continue
+            fi
+            $(file_sudo "$install_config") rm -f "$install_dir_path" 2>/dev/null
+        fi
+
+        # Ensure the printer_data side exists before anything is copied into it.
+        if [ ! -d "$pd_dir" ]; then
+            if ! $(file_sudo "$pd_helix") mkdir -p "$pd_dir" 2>/dev/null; then
+                log_warn "Could not create $pd_dir — leaving $dir in the install dir"
+                continue
+            fi
+        fi
+
+        # Real directory in the install dir: fold its contents into printer_data
+        # (never overwriting the user's copy), verify, then replace with a symlink.
+        if [ -d "$install_dir_path" ] && [ ! -L "$install_dir_path" ]; then
+            if ! _helix_merge_config_dir "$install_dir_path" "$pd_dir" "$(file_sudo "$pd_helix")"; then
+                log_warn "Could not migrate $dir/ to printer_data — keeping it in the install dir"
+                continue
+            fi
+            if ! _safe_remove_migrated_config_dir "$install_config" "$dir" "$pd_dir" \
+                    "$(file_sudo "$install_config")"; then
+                continue   # helper already logged why; original left intact
+            fi
+            log_info "Migrated $dir/ to printer_data"
+        elif [ -e "$install_dir_path" ]; then
+            # A plain file where we expect a directory. Not ours to delete.
+            log_warn "$install_dir_path is not a directory — skipping"
+            continue
+        fi
+
+        if $(file_sudo "$install_config") ln -s "$pd_dir" "$install_dir_path" 2>/dev/null; then
+            : # Symlink created
+        else
+            log_warn "Could not create symlink for $dir/"
+        fi
+    done
+
     log_success "Config directory: $pd_helix"
     log_info "You can now edit HelixScreen config from Mainsail/Fluidd"
     return 0
@@ -1340,13 +1708,15 @@ setup_config_symlink() {
 
 # Remove config symlinks and optionally the printer_data directory.
 # Called during uninstall. Preserves user files in printer_data.
-# Reads: KLIPPER_HOME, INSTALL_DIR
+# Reads: KLIPPER_HOME / KLIPPER_CONFIG_DIR (via klipper_config_dir), INSTALL_DIR
 remove_config_symlink() {
-    if [ -z "${KLIPPER_HOME:-}" ] || [ -z "${INSTALL_DIR:-}" ]; then
+    local pd_config
+    pd_config="$(klipper_config_dir)"
+    if [ -z "$pd_config" ] || [ -z "${INSTALL_DIR:-}" ]; then
         return 0
     fi
 
-    local pd_helix="${KLIPPER_HOME}/printer_data/config/helixscreen"
+    local pd_helix="${pd_config}/helixscreen"
     local install_config="${INSTALL_DIR}/config"
 
     # Remove per-file symlinks from install dir
@@ -1355,6 +1725,16 @@ remove_config_symlink() {
         local install_file="${install_config}/${file}"
         if [ -L "$install_file" ]; then
             rm -f "$install_file" 2>/dev/null
+        fi
+    done
+
+    # Remove per-directory symlinks. rm -f on a symlink-to-directory unlinks the
+    # link itself, so the user's real data in printer_data is untouched.
+    local dir
+    for dir in $HELIX_USER_CONFIG_DIRS; do
+        local install_dir_path="${install_config}/${dir}"
+        if [ -L "$install_dir_path" ]; then
+            rm -f "$install_dir_path" 2>/dev/null
         fi
     done
 
@@ -3219,9 +3599,13 @@ if isinstance(preset.get("printer"), dict):
     merge(pnode, preset["printer"])
 
 # Top-level structural markers for multi-printer settings shape.
+# setdefault, never assign: this seeding runs on --update too, after the user's
+# settings.json has been restored. Overwriting wizard_completed would send a
+# configured user back through first-boot setup, and on a multi-printer config
+# the app's stale-entry recovery would then drop the printer node entirely.
 base["active_printer_id"] = active
-pnode["wizard_completed"] = False
-base["preset"] = preset.get("preset", preset_id)
+pnode.setdefault("wizard_completed", False)
+base.setdefault("preset", preset.get("preset", preset_id))
 
 with open(tmp_out, "w") as f:
     json.dump(base, f, indent=2)
@@ -3357,14 +3741,18 @@ detect_printer_model() {
 #
 #
 # Bundled snippets live at: config/klipper_includes/<printer_id>.cfg
-# Installed to:             ~/printer_data/config/helixscreen/<printer_id>.cfg
+# Installed to:             <klipper config dir>/helixscreen/<printer_id>.cfg
+#                           (~/printer_data/config on most firmwares;
+#                            /etc/klipper/config on COSMOS -- see
+#                            klipper_config_dir() in common.sh)
 # printer.cfg gets:         [include helixscreen/<printer_id>.cfg]
 #
 # Both the copied cfg and the printer.cfg edit are recorded to
 # ${INSTALL_DIR}/config/.klipper_includes so uninstall can undo them.
 #
-# Reads: KLIPPER_HOME, INSTALL_DIR, SUDO (and HELIX_KLIPPER_CFG_DIR for tests)
-# Calls: file_sudo() from common.sh
+# Reads: KLIPPER_HOME / KLIPPER_CONFIG_DIR, INSTALL_DIR, SUDO
+#        (and HELIX_KLIPPER_CFG_DIR for tests)
+# Calls: file_sudo(), klipper_config_dir() from common.sh
 
 # Source guard
 
@@ -3428,14 +3816,15 @@ install_klipper_include_for_printer() {
         return 0
     fi
 
-    if [ -z "${KLIPPER_HOME:-}" ]; then
-        log_warn "KLIPPER_HOME not set; skipping Klipper include for ${printer_id}"
+    local pd_config
+    pd_config="$(klipper_config_dir)"
+    if [ -z "$pd_config" ]; then
+        log_warn "Klipper config dir unknown; skipping Klipper include for ${printer_id}"
         return 0
     fi
 
-    local pd_config="${KLIPPER_HOME}/printer_data/config"
     if [ ! -d "$pd_config" ]; then
-        log_warn "No printer_data/config found; skipping Klipper include for ${printer_id}"
+        log_warn "No Klipper config dir at ${pd_config}; skipping Klipper include for ${printer_id}"
         return 0
     fi
 
@@ -3508,17 +3897,35 @@ install_klipper_include_for_printer() {
 # Cached manifest from R2 (set by get_latest_version, consumed by download_release)
 _R2_MANIFEST=""
 
+# Which transport delivered _R2_MANIFEST ("https" or "http"). A hash read from
+# the plain-HTTP mirror is integrity-only — it travelled the same channel the
+# archive will — so download_release warns instead of claiming authenticity.
+_R2_MANIFEST_TRANSPORT=""
+
 # Which archive format is in use for this install. Set by download_release() or
 # use_local_tarball() based on what was found/provided. Consumed by
 # extract_release() and validate_tarball() to dispatch to the right tooling.
-# Values: "zip" (preferred, unversioned filename) or "tar.gz" (legacy fallback).
+# Values: "zip" (preferred) or "tar.gz" (legacy fallback).
 _ARCHIVE_FORMAT="tar.gz"
 
-# Resolve the staged archive path in TMP_DIR for the current _ARCHIVE_FORMAT.
+# Version tag and platform of a DOWNLOADED archive, recorded by download_release()
+# after it normalizes the version. When set, the staged file carries them
+# (helixscreen-<plat>-<ver>.zip) so a kept or aborted download shows which build
+# it is. Empty by default so every other path (--local installs, tests that
+# pre-stage an archive) keeps the bare helixscreen.<ext> name.
+_ARCHIVE_VERSION=""
+_ARCHIVE_PLATFORM=""
+
+# Resolve the staged archive path in TMP_DIR for the current format. Versioned
+# only when download_release() has recorded a platform+version; bare otherwise.
 _archive_tmp_path() {
+    local stem="helixscreen"
+    if [ -n "${_ARCHIVE_PLATFORM:-}" ] && [ -n "${_ARCHIVE_VERSION:-}" ]; then
+        stem="helixscreen-${_ARCHIVE_PLATFORM}-${_ARCHIVE_VERSION}"
+    fi
     case "${_ARCHIVE_FORMAT:-tar.gz}" in
-        zip) echo "${TMP_DIR}/helixscreen.zip" ;;
-        *)   echo "${TMP_DIR}/helixscreen.tar.gz" ;;
+        zip) echo "${TMP_DIR}/${stem}.zip" ;;
+        *)   echo "${TMP_DIR}/${stem}.tar.gz" ;;
     esac
 }
 
@@ -3758,9 +4165,205 @@ parse_manifest_platform_url() {
         sed -n 's/.*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
 }
 
+# Extract a platform's SHA256 from manifest JSON on stdin.
+# Args: platform [zip]   — "zip" reads zip_sha256, anything else reads sha256.
+# Prints the hex digest, or nothing when the manifest has no hash for it.
+#
+# Splitting each line on '"' and comparing whole fields (rather than regex) is
+# what keeps "sha256" from also matching "zip_sha256", and "pi" from matching
+# "pi32". Works on both the pretty-printed manifest jq emits and a compact
+# one-line variant. awk is present on every target (BusyBox included).
+parse_manifest_platform_sha256() {
+    local platform=$1 kind=${2:-tar}
+    local key="sha256"
+    [ "$kind" = "zip" ] && key="zip_sha256"
+    awk -v plat="$platform" -v key="$key" '
+        {
+            n = split($0, p, "\"")
+            hit = 0
+            for (i = 1; i <= n; i++) {
+                if (p[i] == plat) { inblk = 1; hit = 1; continue }
+                if (inblk && p[i] == key) { print p[i+2]; exit }
+            }
+            # Left the platform object without finding the key.
+            if (inblk && !hit && index($0, "}")) inblk = 0
+        }
+    '
+}
+
+# Print the lowercase SHA256 of a file, or nothing when this system has no way
+# to hash. Callers MUST treat empty as "unverifiable", never as "verified".
+# BusyBox ships sha256sum on every platform we support, but old/minimal builds
+# can omit the applet, hence the openssl and python fallbacks.
+_sha256_file() {
+    local f=$1 out=""
+    if command -v sha256sum >/dev/null 2>&1; then
+        out=$(sha256sum "$f" 2>/dev/null | awk '{print $1}')
+    elif command -v shasum >/dev/null 2>&1; then
+        out=$(shasum -a 256 "$f" 2>/dev/null | awk '{print $1}')
+    elif command -v openssl >/dev/null 2>&1; then
+        out=$(openssl dgst -sha256 "$f" 2>/dev/null | awk '{print $NF}')
+    elif _py_has_module hashlib; then
+        out=$("$_PY_BIN" -c 'import hashlib,sys
+h = hashlib.sha256()
+with open(sys.argv[1], "rb") as fh:
+    for chunk in iter(lambda: fh.read(1 << 20), b""):
+        h.update(chunk)
+print(h.hexdigest())' "$f" 2>/dev/null)
+    fi
+    printf '%s' "$out" | tr 'A-Z' 'a-z'
+}
+
+# Set by _verify_archive_hash when a candidate was dropped purely for lack of a
+# hash on the plain-HTTP transport. download_release reads it to decide whether
+# the "everything failed" message should explain the override.
+_UNVERIFIED_HTTP_REFUSED=false
+
+# Gate a staged download on its manifest SHA256.
+# Args: file expected_sha transport("https"|"http")
+# Returns 0 to accept the file, 1 to reject it.
+#
+# Policy:
+#   - hash present + match          -> accept
+#   - hash present + mismatch       -> REJECT (always, both transports)
+#   - hash present, no hash tool    -> falls through to the transport rule
+#   - no hash, transport=https      -> accept; TLS authenticated the bytes
+#   - no hash, transport=http       -> REJECT. An unauthenticated download
+#     extracted over a live install is remote root on a printer. Overridable
+#     with HELIX_ALLOW_UNVERIFIED_HTTP=1 for pinned-version installs on
+#     HTTPS-incapable firmware, where no manifest hash exists to check.
+#
+# The no-hash-over-HTTP rejection is a WARNING, not an error, because it fires
+# mid-cascade in the normal case: generate-manifest.sh withholds zip_url /
+# zip_sha256 from the BusyBox platforms in ZIP_EXCLUDE_PLATFORMS (ad5m, ad5x,
+# cc1, k1, k2, snapmaker-u1 — helixscreen#993), so on exactly the HTTP-only
+# devices the zip candidate has no hash and must be skipped before the tar.gz
+# candidate, which does have one, succeeds. Only download_release's final
+# all-candidates-exhausted message spells out the override.
+_verify_archive_hash() {
+    local file=$1 expected=$2 transport=$3
+    local actual
+
+    if [ -n "$expected" ]; then
+        actual=$(_sha256_file "$file")
+        if [ "$actual" = "$expected" ]; then
+            log_info "SHA256 verified ($(basename "$file"))"
+            return 0
+        fi
+        if [ -z "$actual" ]; then
+            log_warn "No sha256sum/openssl/python on this system — cannot verify $(basename "$file")."
+        else
+            log_error "SHA256 MISMATCH for $(basename "$file")"
+            log_error "  expected: $expected"
+            log_error "  actual:   $actual"
+            log_error "The download does not match the release manifest. Refusing to install it."
+            return 1
+        fi
+    fi
+
+    [ "$transport" = "https" ] && return 0
+
+    if [ "${HELIX_ALLOW_UNVERIFIED_HTTP:-0}" = "1" ]; then
+        log_warn "Installing an UNVERIFIED plain-HTTP download (HELIX_ALLOW_UNVERIFIED_HTTP=1)."
+        return 0
+    fi
+    _UNVERIFIED_HTTP_REFUSED=true
+    log_warn "Refusing an unverified plain-HTTP download: $(basename "$file")"
+    log_warn "No SHA256 was published for this artifact, and plain HTTP cannot"
+    log_warn "authenticate what it delivered — the archive is extracted over the"
+    log_warn "live install as root."
+    return 1
+}
+
+# Populate _R2_MANIFEST if it isn't already. HTTPS first, plain-HTTP mirror
+# second (matching get_latest_version's own source order), so an HTTPS-capable
+# box gets an authenticated set of hashes even when it later has to fall back
+# to the HTTP mirror for the much larger archive.
+# Returns 0 when a manifest is in hand.
+_ensure_manifest() {
+    [ -n "$_R2_MANIFEST" ] && return 0
+
+    if check_https_capability; then
+        _R2_MANIFEST=$(fetch_url "${R2_BASE_URL}/${R2_CHANNEL}/manifest.json") || true
+        if [ -n "$_R2_MANIFEST" ]; then
+            _R2_MANIFEST_TRANSPORT="https"
+            return 0
+        fi
+    fi
+
+    _R2_MANIFEST=$(fetch_url_http "${HTTP_BASE_URL}/${R2_CHANNEL}/manifest.json") || true
+    if [ -n "$_R2_MANIFEST" ]; then
+        _R2_MANIFEST_TRANSPORT="http"
+        return 0
+    fi
+    _R2_MANIFEST_TRANSPORT=""
+    return 1
+}
+
+# True when the cached manifest describes the exact version being downloaded.
+# The channel manifest only ever describes the LATEST release, so an explicit
+# `--version vOLD` must not be checked against it — the hashes would be for a
+# different build and every candidate would "mismatch".
+_manifest_covers_version() {
+    local want=$1 mver
+    [ -n "$_R2_MANIFEST" ] || return 1
+    mver=$(echo "$_R2_MANIFEST" | parse_manifest_version)
+    [ -n "$mver" ] || return 1
+    case "$mver" in
+        v*) ;;
+        *) mver="v${mver}" ;;
+    esac
+    [ "$mver" = "$want" ]
+}
+
+# Test a zip archive's integrity with whatever tool can actually do it.
+# Echoes "ok" / "corrupt" / "unverifiable" and always returns 0, so callers
+# can distinguish "this archive is bad" from "nothing here can check it".
+#
+# `unzip -t` cannot be the first choice because support for it varies by
+# firmware vintage (prestonbrown/helixscreen#993):
+#   - BusyBox 1.31.1 (Creality K1, verified on-device) has no -t at all:
+#     "unzip: invalid option -- 't'", exit 1. An intact download is then
+#     reported as a corrupt archive and every update fails.
+#   - BusyBox 1.32+ (verified on 1.36.1, Elegoo Centauri Carbon) does support
+#     -t and reports CRC errors correctly.
+#   - info-zip (Debian/Pi/desktop) supports -t correctly.
+# python3's zipfile.testzip() does a real per-entry CRC check and behaves
+# identically everywhere, so it goes first and we never have to probe unzip's
+# feature set. It needs zlib as well as zipfile: release zips are deflated, and
+# the AD5M's python3.7 is built without zlib, where ZipFile() raises
+# "Compression requires the (missing) zlib module" on a perfectly good archive.
+_zip_integrity() {
+    local archive=$1
+
+    if _py_has_module zipfile zlib; then
+        if _py_unzip_test "$archive"; then
+            echo "ok"
+        else
+            echo "corrupt"
+        fi
+        return 0
+    fi
+
+    # No usable python zipfile (absent, or built without zlib -- AD5M).
+    # `unzip -l` reads the central directory on both BusyBox and info-zip, so it
+    # catches truncation and garbage without ever false-failing a valid archive
+    # the way -t does on BusyBox 1.31 and older.
+    if command -v unzip >/dev/null 2>&1; then
+        if unzip -l "$archive" >/dev/null 2>&1; then
+            echo "ok"
+        else
+            echo "corrupt"
+        fi
+        return 0
+    fi
+
+    echo "unverifiable"
+}
+
 # Validate an archive is readable and not truncated.
-# Dispatches on the archive's filename extension: *.zip uses `unzip -tqq`,
-# everything else uses `gunzip -t`. Exits on failure.
+# Dispatches on the archive's filename extension: *.zip uses the portable
+# integrity check above, everything else uses `gunzip -t`. Exits on failure.
 # Args: archive_path, context (e.g., "Downloaded " or "Local ")
 validate_archive() {
     local archive=$1
@@ -3768,22 +4371,17 @@ validate_archive() {
 
     case "$archive" in
         *.zip)
-            if command -v unzip >/dev/null 2>&1; then
-                if ! unzip -tqq "$archive" >/dev/null 2>&1; then
+            case "$(_zip_integrity "$archive")" in
+                corrupt)
                     log_error "${context}file is not a valid zip archive."
                     [ -n "$context" ] && log_error "The ${context}may have been corrupted or incomplete."
                     exit 1
-                fi
-            elif _has_python; then
-                if ! _py_unzip_test "$archive"; then
-                    log_error "${context}file is not a valid zip archive."
-                    [ -n "$context" ] && log_error "The ${context}may have been corrupted or incomplete."
+                    ;;
+                unverifiable)
+                    log_error "${context}file is a zip but neither unzip nor python3 is available to validate it."
                     exit 1
-                fi
-            else
-                log_error "${context}file is a zip but neither unzip nor python3 is available to validate it."
-                exit 1
-            fi
+                    ;;
+            esac
             ;;
         *)
             if ! gunzip -t "$archive" 2>/dev/null; then
@@ -3900,6 +4498,7 @@ get_latest_version() {
         log_info "Fetching latest version from CDN..."
 
         _R2_MANIFEST=$(fetch_url "$manifest_url") || true
+        _R2_MANIFEST_TRANSPORT="https"
         if [ -n "$_R2_MANIFEST" ]; then
             version=$(echo "$_R2_MANIFEST" | parse_manifest_version)
             if [ -n "$version" ]; then
@@ -3911,6 +4510,7 @@ get_latest_version() {
             fi
             log_warn "CDN manifest found but version could not be parsed, trying GitHub..."
             _R2_MANIFEST=""
+            _R2_MANIFEST_TRANSPORT=""
         else
             log_warn "CDN unavailable, trying GitHub..."
         fi
@@ -3936,6 +4536,7 @@ get_latest_version() {
     log_info "Fetching latest version via HTTP..."
 
     _R2_MANIFEST=$(fetch_url_http "$http_manifest_url") || true
+    _R2_MANIFEST_TRANSPORT="http"
     if [ -n "$_R2_MANIFEST" ]; then
         version=$(echo "$_R2_MANIFEST" | parse_manifest_version)
         if [ -n "$version" ]; then
@@ -3965,11 +4566,13 @@ get_release_platform() {
 }
 
 # Try to download + validate a single candidate URL.
-# Args: url dest transport  ("https" | "http")
+# Args: url dest transport ("https" | "http") [expected_sha256]
 # Returns 0 on success (archive staged at dest), 1 otherwise.
-# Validation is format-aware based on dest's filename extension.
+# Validation is format-aware based on dest's filename extension, and is
+# followed by the integrity gate in _verify_archive_hash — a gzip/zip CRC only
+# proves the bytes arrived intact, not that they are the bytes we published.
 _try_download_candidate() {
-    local url=$1 dest=$2 transport=$3
+    local url=$1 dest=$2 transport=$3 expected_sha=${4:-}
     case "$transport" in
         https)
             download_file "$url" "$dest" 300 51200 || return 1 ;;
@@ -3995,6 +4598,8 @@ _try_download_candidate() {
             gunzip -t "$dest" 2>/dev/null || return 1
             ;;
     esac
+
+    _verify_archive_hash "$dest" "$expected_sha" "$transport" || return 1
     return 0
 }
 
@@ -4020,18 +4625,41 @@ download_release() {
         [0-9]*) version="v${version}" ;;
     esac
 
+    # Stage downloads under an identifiable local name (helixscreen-<plat>-<ver>.zip);
+    # extract_release()/use_local_tarball() read it back via _archive_tmp_path().
+    _ARCHIVE_VERSION="$version"
+    _ARCHIVE_PLATFORM="$platform"
+
     mkdir -p "$TMP_DIR"
     CLEANUP_TMP=true
 
+    # NOTE: *_filename are the fixed server-side asset names (fetch URLs); *_dest are
+    # the local staged paths. Only the local names carry the version — keep them in
+    # sync with _archive_tmp_path() above.
     local zip_filename="helixscreen-${platform}.zip"
-    local zip_dest="${TMP_DIR}/helixscreen.zip"
+    local zip_dest="${TMP_DIR}/helixscreen-${platform}-${version}.zip"
     local tar_filename="helixscreen-${platform}-${version}.tar.gz"
-    local tar_dest="${TMP_DIR}/helixscreen.tar.gz"
+    local tar_dest="${TMP_DIR}/helixscreen-${platform}-${version}.tar.gz"
+
+    # Make sure we have a manifest to check against. get_latest_version() is
+    # invoked as `version=$(get_latest_version ...)`, so the _R2_MANIFEST it
+    # caches lives and dies in that command substitution's subshell and never
+    # reaches here — without this refetch every download is unverifiable.
+    _ensure_manifest || true
+
+    # The channel manifest only ever describes the LATEST release. Anything it
+    # says (asset URLs *and* hashes) is off-limits when the caller pinned an
+    # older --version, or we would download the newest build under the old
+    # version's name and then fail its hash.
+    local manifest_ok=false
+    if _manifest_covers_version "$version"; then
+        manifest_ok=true
+    fi
 
     # Build candidate URL lists. Zip gets tried before tar at every transport.
     local zip_r2="${R2_BASE_URL}/releases/${version}/${zip_filename}"
     local tar_r2=""
-    if [ -n "$_R2_MANIFEST" ]; then
+    if [ "$manifest_ok" = true ]; then
         tar_r2=$(echo "$_R2_MANIFEST" | parse_manifest_platform_url "$platform")
     fi
     if [ -z "$tar_r2" ]; then
@@ -4043,7 +4671,7 @@ download_release() {
 
     local zip_http="${HTTP_BASE_URL}/releases/${version}/${zip_filename}"
     local tar_http="${HTTP_BASE_URL}/releases/${version}/${tar_filename}"
-    if [ -n "$_R2_MANIFEST" ]; then
+    if [ "$manifest_ok" = true ]; then
         local http_manifest_url
         http_manifest_url=$(echo "$_R2_MANIFEST" | parse_manifest_platform_url "$platform")
         if [ -n "$http_manifest_url" ]; then
@@ -4051,12 +4679,32 @@ download_release() {
         fi
     fi
 
+    # Expected SHA256s. All three transports serve byte-identical artifacts
+    # (one CI job uploads the same files to the GitHub release and to R2, and
+    # generates the manifest from them), so one pair of hashes covers every
+    # candidate.
+    local zip_sha="" tar_sha=""
+    if [ "$manifest_ok" = true ]; then
+        zip_sha=$(echo "$_R2_MANIFEST" | parse_manifest_platform_sha256 "$platform" zip)
+        tar_sha=$(echo "$_R2_MANIFEST" | parse_manifest_platform_sha256 "$platform")
+        # A hash fetched over the plain-HTTP mirror travelled the same
+        # unauthenticated channel as the archive will, so it proves integrity
+        # (truncation, a stale mirror) but not authenticity. Say so rather than
+        # letting "SHA256 verified" imply more than it does.
+        if [ "${_R2_MANIFEST_TRANSPORT:-}" = "http" ]; then
+            log_warn "Release hashes came from the plain-HTTP mirror: they detect corruption,"
+            log_warn "but cannot prove the release is genuine. Prefer an HTTPS-capable system."
+        fi
+    else
+        log_warn "No release manifest for ${version} — SHA256 verification unavailable."
+    fi
+
     log_info "Downloading HelixScreen ${version} for ${platform}..."
 
     local size
     # --- Attempt 1: R2 CDN, zip preferred ---
     log_info "URL: $zip_r2"
-    if _try_download_candidate "$zip_r2" "$zip_dest" https; then
+    if _try_download_candidate "$zip_r2" "$zip_dest" https "$zip_sha"; then
         _ARCHIVE_FORMAT="zip"
         size=$(ls -lh "$zip_dest" | awk '{print $5}')
         log_success "Downloaded ${zip_filename} (${size}) from CDN"
@@ -4064,7 +4712,7 @@ download_release() {
     fi
     rm -f "$zip_dest"
     log_info "URL: $tar_r2"
-    if _try_download_candidate "$tar_r2" "$tar_dest" https; then
+    if _try_download_candidate "$tar_r2" "$tar_dest" https "$tar_sha"; then
         _ARCHIVE_FORMAT="tar.gz"
         size=$(ls -lh "$tar_dest" | awk '{print $5}')
         log_success "Downloaded ${tar_filename} (${size}) from CDN"
@@ -4075,7 +4723,7 @@ download_release() {
 
     # --- Attempt 2: GitHub Releases ---
     log_info "URL: $zip_gh"
-    if _try_download_candidate "$zip_gh" "$zip_dest" https; then
+    if _try_download_candidate "$zip_gh" "$zip_dest" https "$zip_sha"; then
         _ARCHIVE_FORMAT="zip"
         size=$(ls -lh "$zip_dest" | awk '{print $5}')
         log_success "Downloaded ${zip_filename} (${size}) from GitHub"
@@ -4083,7 +4731,7 @@ download_release() {
     fi
     rm -f "$zip_dest"
     log_info "URL: $tar_gh"
-    if _try_download_candidate "$tar_gh" "$tar_dest" https; then
+    if _try_download_candidate "$tar_gh" "$tar_dest" https "$tar_sha"; then
         _ARCHIVE_FORMAT="tar.gz"
         size=$(ls -lh "$tar_dest" | awk '{print $5}')
         log_success "Downloaded ${tar_filename} (${size}) from GitHub"
@@ -4094,7 +4742,7 @@ download_release() {
     # --- Attempt 3: plain-HTTP mirror (BusyBox wget fallback) ---
     log_info "Trying HTTP fallback..."
     log_info "URL: $zip_http"
-    if _try_download_candidate "$zip_http" "$zip_dest" http; then
+    if _try_download_candidate "$zip_http" "$zip_dest" http "$zip_sha"; then
         _ARCHIVE_FORMAT="zip"
         size=$(ls -lh "$zip_dest" | awk '{print $5}')
         log_success "Downloaded ${zip_filename} (${size}) via HTTP"
@@ -4102,7 +4750,7 @@ download_release() {
     fi
     rm -f "$zip_dest"
     log_info "URL: $tar_http"
-    if _try_download_candidate "$tar_http" "$tar_dest" http; then
+    if _try_download_candidate "$tar_http" "$tar_dest" http "$tar_sha"; then
         _ARCHIVE_FORMAT="tar.gz"
         size=$(ls -lh "$tar_dest" | awk '{print $5}')
         log_success "Downloaded ${tar_filename} (${size}) via HTTP"
@@ -4125,9 +4773,21 @@ download_release() {
     log_error "  - Version ${version} may not exist for platform ${platform}"
     log_error "  - Network connectivity issues"
     log_error "  - CDN, GitHub, and HTTP mirror may be unavailable"
+    if [ "$_UNVERIFIED_HTTP_REFUSED" = true ]; then
+        log_error "  - Every remaining candidate was a plain-HTTP download with no"
+        log_error "    published SHA256, which this installer will not extract over"
+        log_error "    your install unverified."
+    fi
     log_error ""
     log_error "To install manually, download on another machine and use:"
     log_error "  ./install.sh --local /path/to/${zip_filename}"
+    if [ "$_UNVERIFIED_HTTP_REFUSED" = true ]; then
+        log_error ""
+        log_error "Installing the CURRENT release instead usually fixes this — its"
+        log_error "manifest carries hashes for every artifact. To accept an"
+        log_error "unverified download anyway (not recommended):"
+        log_error "  HELIX_ALLOW_UNVERIFIED_HTTP=1 sh install.sh ..."
+    fi
     exit 1
 }
 
@@ -4203,19 +4863,70 @@ validate_binary_architecture() {
         return 1
     fi
 
-    # Read first 20 bytes of ELF header as space-separated hex
-    # Try hexdump first (BusyBox), fall back to od (POSIX), then xxd
-    local header
-    header=$(dd if="$binary" bs=1 count=20 2>/dev/null | hexdump -v -e '1/1 "%02x "' 2>/dev/null) || true
+    # Read first 20 bytes of ELF header as space-separated hex.
+    #
+    # Each tool reads the file directly. Piping through `dd` made all three
+    # attempts share a single producer, so one broken `dd` defeated the whole
+    # fallback chain: a Pi CM4 with 32-bit userspace under a 64-bit kernel
+    # segfaults in `dd bs=1` via the libarmmem memcpy shim that Raspberry Pi OS
+    # force-loads from /etc/ld.so.preload.
+    #
+    # Order is load-bearing, verified against the physical fleet:
+    #   hexdump - the only capable tool on minimal BusyBox (Elegoo CC1, where
+    #             the `od` applet lacks -A/-t/-N and `xxd` is absent)
+    #   od      - covers hosts with no hexdump at all (BTT CB1)
+    #   xxd     - last; missing from several embedded images
+    #
+    # Each candidate must start with the ELF magic to be accepted, so a tool
+    # that emits address offsets or a usage banner falls through to the next
+    # method rather than being misread as a corrupt binary.
+    local header="" raw="" candidate=""
+
+    _try_header() {
+        [ -n "$header" ] && return 0
+        [ -z "$candidate" ] && return 1
+        [ -z "$raw" ] && raw=$candidate
+        case "$candidate" in
+            "7f 45 4c 46 "*) header=$candidate ;;
+        esac
+        [ -n "$header" ]
+    }
+
+    candidate=$(hexdump -v -n 20 -e '1/1 "%02x "' "$binary" 2>/dev/null) || true
+    _try_header
     if [ -z "$header" ]; then
-        header=$(dd if="$binary" bs=1 count=20 2>/dev/null | od -A n -t x1 -v 2>/dev/null | tr '\n' ' ' | tr -s ' ' | sed 's/^ //;s/ $//') || true
+        candidate=$(od -A n -t x1 -v -N 20 "$binary" 2>/dev/null | tr '\n' ' ' | tr -s ' ' | sed 's/^ //;s/ $//') || true
+        _try_header
     fi
     if [ -z "$header" ]; then
-        header=$(dd if="$binary" bs=1 count=20 2>/dev/null | xxd -p 2>/dev/null | sed 's/../& /g;s/ $//') || true
+        candidate=$(xxd -p -l 20 "$binary" 2>/dev/null | sed 's/../& /g;s/ $//') || true
+        _try_header
+    fi
+
+    # Safety net: the original dd-piped forms. Retained so any platform whose
+    # tools reject the direct-read flags behaves exactly as it did before.
+    if [ -z "$header" ]; then
+        candidate=$(dd if="$binary" bs=1 count=20 2>/dev/null | hexdump -v -e '1/1 "%02x "' 2>/dev/null) || true
+        _try_header
+    fi
+    if [ -z "$header" ]; then
+        candidate=$(dd if="$binary" bs=1 count=20 2>/dev/null | od -A n -t x1 -v 2>/dev/null | tr '\n' ' ' | tr -s ' ' | sed 's/^ //;s/ $//') || true
+        _try_header
+    fi
+    if [ -z "$header" ]; then
+        candidate=$(dd if="$binary" bs=1 count=20 2>/dev/null | xxd -p 2>/dev/null | sed 's/../& /g;s/ $//') || true
+        _try_header
+    fi
+
+    # A file that read fine but isn't an ELF still needs the "not an ELF"
+    # diagnosis below, not "cannot read".
+    if [ -z "$header" ] && [ -n "$raw" ]; then
+        header=$raw
     fi
 
     if [ -z "$header" ]; then
-        log_error "Cannot read binary header (file may be empty or corrupted)"
+        log_error "Cannot read binary header (no working hex reader, or file is empty)"
+        log_error "  Tried: hexdump, od, xxd (direct and via dd)"
         return 1
     fi
 
@@ -5297,7 +6008,16 @@ start_service_snapmaker_u1() {
         exit 1
     fi
 
-    if ! $SUDO "$init_src" start; then
+    # A plain "start" is a no-op when an instance is already up, which would
+    # leave the OLD (pre-upgrade) binary running while we report success
+    # (prestonbrown/helixscreen#1106). Restart so the new binary takes over.
+    local action=start
+    if pidof helix-screen >/dev/null 2>&1; then
+        log_info "HelixScreen is already running -- restarting to load the new version..."
+        action=restart
+    fi
+
+    if ! $SUDO "$init_src" "$action"; then
         log_error "Failed to start HelixScreen."
         log_error "Check logs: /var/log/helixscreen/launcher.log or ${INSTALL_DIR}/logs/launcher.log"
         exit 1
@@ -5333,9 +6053,18 @@ start_service_systemd() {
         exit 1
     fi
 
-    if ! $SUDO systemctl start "$SERVICE_NAME"; then
+    # "systemctl start" is a no-op when the service is already active, which
+    # would leave the OLD (pre-upgrade) binary running while we report success
+    # (prestonbrown/helixscreen#1106). Restart so the new binary takes over.
+    local action=start
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        log_info "HelixScreen is already running -- restarting to load the new version..."
+        action=restart
+    fi
+
+    if ! $SUDO systemctl "$action" "$SERVICE_NAME"; then
         log_error "Failed to start ${SERVICE_NAME} service."
-        log_error "Check logs with: journalctl -u ${SERVICE_NAME} -n 50"
+        log_error "Check logs with: sudo journalctl -u ${SERVICE_NAME} -n 50"
         exit 1
     fi
 
@@ -5368,7 +6097,16 @@ start_service_sysv() {
         exit 1
     fi
 
-    if ! $SUDO "$INIT_SCRIPT_DEST" start; then
+    # A plain "start" is a no-op when an instance is already up, which would
+    # leave the OLD (pre-upgrade) binary running while we report success
+    # (prestonbrown/helixscreen#1106). Restart so the new binary takes over.
+    local action=start
+    if pidof helix-screen >/dev/null 2>&1; then
+        log_info "HelixScreen is already running -- restarting to load the new version..."
+        action=restart
+    fi
+
+    if ! $SUDO "$INIT_SCRIPT_DEST" "$action"; then
         log_error "Failed to start HelixScreen."
         log_error "Check logs: /var/log/helixscreen/launcher.log or ${INSTALL_DIR}/logs/launcher.log"
         exit 1
@@ -5640,6 +6378,11 @@ configure_alsa_default() {
 # ZMOD-on-AD5X notes:
 #   /opt/config is a symlink to /usr/data/config; printer_data lives under both.
 #   We list both forms so symlink-aware and -unaware path resolutions both hit.
+# COSMOS (OpenCentauri, Elegoo Centauri Carbon) note:
+#   /etc/klipper/config has no printer_data component at all. set_install_paths
+#   points KLIPPER_CONFIG_DIR there for platform=cc1, so the dynamic probe below
+#   normally wins; the static entry is the safety net for a COSMOS box that was
+#   not detected as cc1 (forced --platform, future Elegoo model, etc.).
 MOONRAKER_CONF_PATHS="
 /home/pi/printer_data/config/moonraker.conf
 /home/biqu/printer_data/config/moonraker.conf
@@ -5650,14 +6393,126 @@ MOONRAKER_CONF_PATHS="
 /opt/config/moonraker.conf
 /usr/data/config/printer_data/config/moonraker.conf
 /usr/data/printer_data/config/moonraker.conf
+/etc/klipper/config/moonraker.conf
 "
+
+# Common Moonraker SOURCE roots (the checkout/package that holds the Python
+# code, NOT printer_data). Mirrors the discovery list in
+# moonraker-plugin/install.sh, extended with the buildroot vendor layouts:
+#   /home/lava/moonraker        Snapmaker U1 (klipper runs as 'lava')
+#   /usr/data/moonraker         Creality K1 series
+#   /mnt/UDISK/moonraker        Creality K2 series
+#   /usr/share/moonraker        Creality stock (vendor-installed package)
+#   /root/printer_software/...  FlashForge AD5M Klipper Mod
+# Overridable so tests can point at a fixture tree, same as MOONRAKER_CONF_PATHS.
+MOONRAKER_SRC_PATHS="
+/home/pi/moonraker
+/home/biqu/moonraker
+/home/mks/moonraker
+/home/qidi/moonraker
+/home/klipper/moonraker
+/home/lava/moonraker
+/root/moonraker
+/root/printer_software/moonraker
+/usr/data/moonraker
+/usr/share/moonraker
+/mnt/UDISK/moonraker
+/userdata/moonraker
+/opt/moonraker
+"
+
+# Locate Moonraker's update_manager component package.
+# Three on-disk layouts are covered:
+#   <root>/moonraker/components/update_manager            -- git checkout (~/moonraker)
+#   <root>/components/update_manager                      -- the package dir itself
+#   <root>/moonraker/moonraker/components/update_manager  -- repo nested in an install dir
+#
+# The third form is Creality's. Measured on a K1C (192.168.30.182) running
+# Moonraker v0.10.0-10: the install dir is /usr/data/moonraker, the git repo is
+# cloned to /usr/data/moonraker/moonraker, and the python package is a further
+# level down, so the real path is
+#   /usr/data/moonraker/moonraker/moonraker/components/update_manager
+# Both of the first two forms miss that, which would have made the probe return
+# "undetermined" on every K1/K2 -- exactly the platforms the gate exists for.
+# Returns: path to the update_manager directory, or empty string.
+find_moonraker_update_manager_dir() {
+    local root
+    local sub
+
+    # Dynamic: the detected Klipper user's home first (same precedence as
+    # find_moonraker_conf), then the static fallback list.
+    for root in ${KLIPPER_HOME:+"${KLIPPER_HOME}/moonraker"} $MOONRAKER_SRC_PATHS; do
+        [ -n "$root" ] || continue
+        for sub in "$root/moonraker/components/update_manager" \
+                   "$root/components/update_manager" \
+                   "$root/moonraker/moonraker/components/update_manager"; do
+            if [ -d "$sub" ]; then
+                echo "$sub"
+                return 0
+            fi
+        done
+    done
+
+    echo ""
+}
+
+# Probe whether the installed Moonraker honours release_info.json's asset_name.
+#
+# Why a source probe and not a version string: Moonraker reports versions like
+# "v0.9.3-73-gfab6c5c1", which cannot be ordered reliably across branches and
+# vendor forks. The file layout is decisive instead. Moonraker commit
+# 530f1c2016 (2025-01-19, first tagged in v0.10.0) added asset_name support AND
+# renamed zip_deploy.py -> net_deploy.py, so the two facts travel together.
+#
+# Without asset_name support, NetDeploy/ZipDeploy seeds release_asset =
+# assets[0]. GitHub sorts release assets by name, so assets[0] for
+# prestonbrown/helixscreen is "ad5m.sym.zst" -- a zstd symbol file.
+# _extract_release() then does shutil.rmtree(self.path) + mkdir BEFORE opening
+# the zip, so pressing Update in Mainsail/Fluidd DELETES the install directory
+# and dies with "File is not a zip file" (prestonbrown/helixscreen#993).
+#
+# Echoes exactly one of: supported | unsupported | undetermined
+moonraker_asset_name_support() {
+    local um
+    um=$(find_moonraker_update_manager_dir)
+
+    if [ -z "$um" ]; then
+        # No Moonraker source anywhere we know to look (vendor layout we don't
+        # recognise, container, remote Moonraker...). Can't reason about it.
+        echo "undetermined"
+        return 0
+    fi
+
+    if [ -f "$um/net_deploy.py" ]; then
+        if grep -q 'asset_name' "$um/net_deploy.py" 2>/dev/null; then
+            echo "supported"
+        else
+            # Renamed but asset_name stripped/absent -- a fork we must not trust.
+            echo "unsupported"
+        fi
+        return 0
+    fi
+
+    # Pre-530f1c2016 module names: zip_deploy.py (2024-01-20 onward) and
+    # web_deploy.py (earlier still). Neither reads asset_name.
+    if [ -f "$um/zip_deploy.py" ] || [ -f "$um/web_deploy.py" ]; then
+        echo "unsupported"
+        return 0
+    fi
+
+    # Found the package but none of the modules we know. Don't guess.
+    echo "undetermined"
+}
 
 # Find moonraker.conf
 # Returns: path to moonraker.conf or empty string
 find_moonraker_conf() {
-    # Dynamic: check detected user's home first
-    if [ -n "${KLIPPER_HOME:-}" ]; then
-        local user_conf="${KLIPPER_HOME}/printer_data/config/moonraker.conf"
+    # Dynamic: the platform's own config dir first -- KLIPPER_CONFIG_DIR when a
+    # firmware declared one (COSMOS), else <KLIPPER_HOME>/printer_data/config.
+    local config_dir
+    config_dir="$(klipper_config_dir)"
+    if [ -n "$config_dir" ]; then
+        local user_conf="${config_dir}/moonraker.conf"
         if [ -f "$user_conf" ]; then
             echo "$user_conf"
             return 0
@@ -5950,14 +6805,21 @@ EOF
 
 # Ensure helixscreen is in moonraker.asvc (service allowlist)
 # Moonraker requires services to be listed here before it can manage them.
-# The asvc file lives in printer_data/, one level up from config/moonraker.conf.
-# Args: $1 = moonraker.conf path (used to derive printer_data path)
+#
+# The allowlist lives one directory above the config dir, so it is derived from
+# moonraker.conf rather than from any printer_data assumption. That derivation
+# holds on the non-printer_data layouts too:
+#   /home/pi/printer_data/config/moonraker.conf -> /home/pi/printer_data/moonraker.asvc
+#   /etc/klipper/config/moonraker.conf          -> /etc/klipper/moonraker.asvc  (COSMOS)
+# The COSMOS path was verified on a real CC1 -- that IS where its asvc file is.
+#
+# Args: $1 = moonraker.conf path (used to derive the data dir holding the asvc)
 ensure_moonraker_asvc() {
     local conf="$1"
-    # printer_data is two levels up from config/moonraker.conf
-    local printer_data
-    printer_data="$(dirname "$(dirname "$conf")")"
-    local asvc="${printer_data}/moonraker.asvc"
+    # The data dir is two levels up from <config dir>/moonraker.conf
+    local data_dir
+    data_dir="$(dirname "$(dirname "$conf")")"
+    local asvc="${data_dir}/moonraker.asvc"
 
     if [ ! -f "$asvc" ]; then
         log_info "No moonraker.asvc found at $asvc, skipping"
@@ -6016,8 +6878,10 @@ configure_moonraker_updates() {
 
     if [ -z "$conf" ]; then
         log_warn "Could not find moonraker.conf in any known location:"
-        if [ -n "${KLIPPER_HOME:-}" ]; then
-            log_warn "  ${KLIPPER_HOME}/printer_data/config/moonraker.conf"
+        local probed_dir
+        probed_dir="$(klipper_config_dir)"
+        if [ -n "$probed_dir" ]; then
+            log_warn "  ${probed_dir}/moonraker.conf"
         fi
         for tried in $MOONRAKER_CONF_PATHS; do
             log_warn "  $tried"
@@ -6030,6 +6894,58 @@ configure_moonraker_updates() {
     fi
 
     log_info "Using moonraker.conf at: $conf"
+
+    # Gate on Moonraker's asset_name support before arming the one-click
+    # updater (prestonbrown/helixscreen#993). On a Moonraker that ignores
+    # asset_name, the Update button in Mainsail/Fluidd rmtree()s the install
+    # directory and then fails on a non-zip asset -- strictly worse than no
+    # button at all.
+    local mr_support
+    mr_support=$(moonraker_asset_name_support)
+
+    if [ "$mr_support" = "unsupported" ]; then
+        log_warn "This Moonraker predates release_info.json asset_name support."
+        log_warn "Its update_manager would download the WRONG release asset and"
+        log_warn "DELETE ${INSTALL_DIR} before failing. Skipping the"
+        log_warn "[update_manager helixscreen] section for your own safety."
+        log_warn "To get the in-UI update button: upgrade Moonraker to v0.10.0 or"
+        log_warn "newer, then re-run this installer."
+        log_warn "Either way, HelixScreen's built-in updater is unaffected:"
+        log_warn "  Settings -> Updates, inside HelixScreen."
+
+        # The gun may already be loaded from an earlier install that ran before
+        # this gate existed -- unload it.
+        local removed_stale=0
+        if has_update_manager_section "$conf"; then
+            log_warn "Removing the existing [update_manager helixscreen] section."
+            remove_update_manager_section
+            removed_stale=1
+        fi
+
+        # These two are orthogonal to the updater and must not regress just
+        # because we skipped the stanza: the buildroot key silences a warning
+        # caused by ANY update_manager section (mainsail/fluidd have their own),
+        # and the asvc allowlist is what lets a user restart HelixScreen from
+        # Mainsail's service list.
+        disable_system_updates_on_buildroot "$conf"
+        ensure_moonraker_asvc "$conf"
+
+        if [ "$removed_stale" -eq 1 ]; then
+            restart_moonraker
+        fi
+        return 0
+    fi
+
+    # undetermined: no recognisable Moonraker source on disk (vendor layout we
+    # don't know, remote/containerised Moonraker). Deliberately preserve the
+    # pre-gate behaviour and write the stanza -- refusing here would regress
+    # every install we simply can't reason about.
+    if [ "$mr_support" = "undetermined" ]; then
+        log_warn "Could not locate the Moonraker source to verify asset_name support."
+        log_warn "Configuring the updater anyway. If Moonraker is older than v0.10.0,"
+        log_warn "use HelixScreen's built-in updater (Settings -> Updates) instead of"
+        log_warn "the Update button in Mainsail/Fluidd."
+    fi
 
     # Migrate old git_repo or zip config to type: web
     # (type: zip shows perpetual UP-TO-DATE in Mainsail — see mainsail-crew/mainsail#2444)
@@ -6417,16 +7333,38 @@ _record_webcam_backup() {
         : > "$marker" 2>/dev/null || true
 }
 
-# Delete the stock iframe "Default" webcam (if present) and POST our ustreamer
-# webcam pointed at http://<lan_ip>:<port>/. Idempotent on the moonraker side:
-# POST /server/webcams/item upserts by name, so re-running just refreshes it.
-# Args: $1 = lan_ip, $2 = port. Returns non-zero only on hard python failure.
-_moonraker_migrate_webcams() {
-    local lan_ip="$1" port="$2"
+# Probe the K2's stock nginx webcam proxy (location /webcam/ -> 127.0.0.1:8080,
+# fronted on port 4408). When it serves an image, a RELATIVE stream URL
+# (/webcam/?action=stream) is preferable to an absolute http://<lan_ip>:8080 one:
+# the relative form resolves against whatever origin the client loaded fluidd from,
+# so it survives DHCP lease changes and multi-homed eth/wlan interface flips that
+# would otherwise strand a baked-in absolute IP (the "camera dead in fluidd after a
+# while" failure). Returns 0 only when the proxy returns an image snapshot.
+_k2_webcam_proxy_serves() {
     _has_python || return 1
-    "$_PY_BIN" - "$MOONRAKER_URL" "$lan_ip" "$port" "$HELIX_WEBCAM_NAME" <<'PYEOF' 2>/dev/null
+    "$_PY_BIN" - <<'PYEOF' 2>/dev/null
+import sys, urllib.request
+try:
+    with urllib.request.urlopen(
+            'http://127.0.0.1:4408/webcam/?action=snapshot', timeout=4) as r:
+        ct = (r.headers.get('Content-Type') or '').lower()
+        sys.exit(0 if r.status == 200 and ct.startswith('image/') else 1)
+except Exception:
+    sys.exit(1)
+PYEOF
+}
+
+# Delete the stock iframe "Default" webcam (if present) and POST our ustreamer
+# webcam pointed at the given stream/snapshot URLs. Idempotent on the moonraker
+# side: POST /server/webcams/item upserts by name, so re-running just refreshes it.
+# Args: $1 = stream_url, $2 = snapshot_url. Returns non-zero only on hard python
+# failure.
+_moonraker_migrate_webcams() {
+    local stream_url="$1" snap_url="$2"
+    _has_python || return 1
+    "$_PY_BIN" - "$MOONRAKER_URL" "$stream_url" "$snap_url" "$HELIX_WEBCAM_NAME" <<'PYEOF' 2>/dev/null
 import json, sys, urllib.request, urllib.parse
-base, lan_ip, port, name = sys.argv[1].rstrip('/'), sys.argv[2], sys.argv[3], sys.argv[4]
+base, stream, snap, name = sys.argv[1].rstrip('/'), sys.argv[2], sys.argv[3], sys.argv[4]
 
 def req(method, path, body=None):
     data = json.dumps(body).encode() if body is not None else None
@@ -6455,8 +7393,6 @@ try:
 except Exception:
     pass  # non-fatal; the POST below is what matters
 
-stream = 'http://%s:%s/stream' % (lan_ip, port)
-snap = 'http://%s:%s/snapshot' % (lan_ip, port)
 try:
     # 'mjpegstreamer-adaptive' (not 'ustreamer'): fluidd/mainsail render MJPEG by
     # service type and have no 'ustreamer' renderer — it shows "service not
@@ -6603,20 +7539,37 @@ install_camera_k2() {
         return 0
     fi
 
-    local lan_ip
-    lan_ip="$(detect_lan_ip)"
-    if [ -z "$lan_ip" ]; then
-        log_warn "Could not determine the K2's LAN IP — skipping webcam registration"
-        log_warn "ustreamer is running on :$port; add the webcam manually if needed."
-        return 0
+    # Choose the webcam URL form. Prefer a RELATIVE URL served through the K2's
+    # stock nginx /webcam/ proxy — it is immune to the DHCP lease changes and
+    # eth/wlan interface flips that strand an absolute http://<lan_ip>:8080 URL
+    # (fluidd resolves it against its own origin). Only fall back to the absolute
+    # LAN IP when that proxy isn't serving (non-stock nginx), which still needs a
+    # detected IP. Note: a remote HelixScreen consumer must reach the K2 through
+    # the same nginx front (port 4408) for the relative form to resolve.
+    local stream_url snap_url reg_desc
+    if _k2_webcam_proxy_serves; then
+        stream_url="/webcam/?action=stream"
+        snap_url="/webcam/?action=snapshot"
+        reg_desc="$stream_url (via nginx proxy)"
+    else
+        local lan_ip
+        lan_ip="$(detect_lan_ip)"
+        if [ -z "$lan_ip" ]; then
+            log_warn "Could not determine the K2's LAN IP and the nginx /webcam/ proxy is not serving — skipping webcam registration"
+            log_warn "ustreamer is running on :$port; add the webcam manually if needed."
+            return 0
+        fi
+        stream_url="http://${lan_ip}:${port}/stream"
+        snap_url="http://${lan_ip}:${port}/snapshot"
+        reg_desc="http://${lan_ip}:${port}/"
     fi
 
     # Record the pre-migration list ONCE (true stock state) for reversal.
     _record_webcam_backup "$cams_json"
 
-    log_info "Registering ustreamer webcam (http://${lan_ip}:${port}/) in Moonraker..."
+    log_info "Registering ustreamer webcam (${reg_desc}) in Moonraker..."
     local migrate_out
-    if migrate_out="$(_moonraker_migrate_webcams "$lan_ip" "$port")"; then
+    if migrate_out="$(_moonraker_migrate_webcams "$stream_url" "$snap_url")"; then
         log_success "Moonraker webcam configured for HelixScreen + fluidd"
         case "$migrate_out" in
             *CONFIG_DEFAULT_LEFT*)
@@ -7547,6 +8500,43 @@ uninstall() {
     fi
 }
 
+# Gate --clean's irreversible sweep on explicit consent.
+#
+# "stdin is not a terminal" is NOT consent. The documented invocation is
+# `curl … | sh -s -- --clean`, where stdin is the pipe carrying the script, so
+# a bare `[ -t 0 ]` guard skipped the "PERMANENTLY DELETE your configuration"
+# prompt on exactly the path users actually take. Non-interactive runs must opt
+# in with --yes (ASSUME_YES, set by main.sh's argument parser).
+#
+# Returns 0 to proceed; otherwise exits (0 = user declined, 1 = no consent).
+confirm_clean_install() {
+    if [ "${ASSUME_YES:-false}" = true ]; then
+        log_warn "--yes given: proceeding without confirmation."
+        return 0
+    fi
+
+    if [ -t 0 ]; then
+        printf "Are you sure? [y/N] "
+        read -r response
+        case "$response" in
+            [yY][eE][sS]|[yY])
+                return 0
+                ;;
+            *)
+                log_info "Clean install cancelled."
+                exit 0
+                ;;
+        esac
+    fi
+
+    log_error "Refusing to run --clean without confirmation."
+    log_error "stdin is not a terminal (a piped 'curl ... | sh' has the script on"
+    log_error "stdin), so the y/N prompt cannot be answered."
+    log_error "Re-run with --yes to confirm the deletions listed above:"
+    log_error "  curl -sSL https://releases.helixscreen.org/install.sh | sh -s -- --clean --yes"
+    exit 1
+}
+
 # Clean up old installation completely (for --clean flag)
 # Removes all files, config, and caches without backup
 # Args: platform
@@ -7564,19 +8554,7 @@ clean_old_installation() {
     log_warn "  - Thumbnail cache files"
     log_warn ""
 
-    # Interactive confirmation if stdin is a terminal
-    if [ -t 0 ]; then
-        printf "Are you sure? [y/N] "
-        read -r response
-        case "$response" in
-            [yY][eE][sS]|[yY])
-                ;;
-            *)
-                log_info "Clean install cancelled."
-                exit 0
-                ;;
-        esac
-    fi
+    confirm_clean_install
 
     log_info "Cleaning old installation..."
 
@@ -7635,9 +8613,11 @@ clean_old_installation() {
     $SUDO rm -f /etc/polkit-1/rules.d/50-helixscreen-network.rules
     $SUDO systemctl daemon-reload 2>/dev/null || true
 
-    # Remove printer_data/config/helixscreen/ (user config) in clean mode
-    if [ -n "${KLIPPER_HOME:-}" ]; then
-        local pd_helix="${KLIPPER_HOME}/printer_data/config/helixscreen"
+    # Remove <klipper config dir>/helixscreen/ (user config) in clean mode
+    local pd_config
+    pd_config="$(klipper_config_dir)"
+    if [ -n "$pd_config" ]; then
+        local pd_helix="${pd_config}/helixscreen"
         if [ -d "$pd_helix" ] || [ -L "$pd_helix" ]; then
             log_info "Removing user config: $pd_helix"
             $SUDO rm -rf "$pd_helix"
@@ -7672,6 +8652,9 @@ usage() {
     echo "  --uninstall    Remove HelixScreen"
     echo "  --clean        Clean install: remove old installation completely,"
     echo "                 including config and caches (asks for confirmation)"
+    echo "  --yes, -y      Confirm destructive prompts non-interactively."
+    echo "                 Required for --clean when stdin is not a terminal"
+    echo "                 (e.g. curl ... | sh -s -- --clean --yes)"
     echo "  --version VER  Install specific version (default: latest)"
     echo "  --local FILE   Install from local archive (.zip or .tar.gz, skip download)"
     echo "  --skip-kiauh-registration"
@@ -7682,6 +8665,7 @@ usage() {
     echo "  $0                    # Fresh install, latest version"
     echo "  $0 --update           # Update existing installation"
     echo "  $0 --clean            # Remove old install completely, then install"
+    echo "  $0 --clean --yes      # Same, without the interactive confirmation"
     echo "  $0 --version v1.1.0   # Install specific version"
     echo "  $0 --local /tmp/helixscreen-ad5m.tar.gz  # Install from local file"
 }
@@ -7790,11 +8774,53 @@ _refuse_uninstall_from_install_dir() {
     esac
 }
 
+# Refuse to run on a device where HelixScreen is managed by the firmware
+# (e.g. PAXX's Snapmaker U1 firmware, which bind-mounts our binary over
+# /usr/bin/gui, supervises it via lmd, and owns updates through a pinned
+# helixscreen-pkg). Running the standalone installer there would trample the
+# firmware-managed setup. Detection: either marker present ⇒ firmware-managed.
+#
+# Advanced users can force past the guard with HELIX_IGNORE_FIRMWARE_MANAGED=1.
+# Tests set HELIX_FIRMWARE_MANAGED_MARKER to a temp root to exercise the guard
+# without touching the real /oem or /etc trees.
+_refuse_if_firmware_managed() {
+    if [ "${HELIX_IGNORE_FIRMWARE_MANAGED:-0}" = "1" ]; then
+        log_warn "HELIX_IGNORE_FIRMWARE_MANAGED=1 set — skipping firmware-managed guard"
+        return 0
+    fi
+
+    _fw_root="${HELIX_FIRMWARE_MANAGED_MARKER:-}"
+    _fw_dir_marker="${_fw_root}/oem/apps/helixscreen"
+    _fw_hook_marker="${_fw_root}/etc/hooks/lmd.d/30-helixscreen.sh"
+
+    if [ -d "$_fw_dir_marker" ] || [ -f "$_fw_hook_marker" ]; then
+        if [ -d "$_fw_dir_marker" ]; then
+            _fw_detected="$_fw_dir_marker"
+        else
+            _fw_detected="$_fw_hook_marker"
+        fi
+        log_error "=========================================="
+        log_error "HelixScreen is managed by your firmware on this device."
+        log_error "Detected: $_fw_detected"
+        log_error "=========================================="
+        log_error ""
+        log_error "Use the firmware configuration to enable, disable, or update"
+        log_error "HelixScreen (Snapmaker Components > Touchscreen GUI)."
+        log_error "Do NOT run this installer — it would overwrite the"
+        log_error "firmware-managed setup."
+        log_error ""
+        log_error "To override this check anyway (advanced users), re-run with:"
+        log_error "  HELIX_IGNORE_FIRMWARE_MANAGED=1 sh install.sh"
+        exit 1
+    fi
+}
+
 # Main installation flow
 main() {
     update_mode=false
     uninstall_mode=false
     clean_mode=false
+    ASSUME_YES=false
     version=""
     local_tarball=""
     skip_kiauh_registration=false
@@ -7812,6 +8838,14 @@ main() {
                 ;;
             --clean)
                 clean_mode=true
+                shift
+                ;;
+            --yes|-y|--force)
+                # Explicit non-interactive consent for destructive prompts.
+                # ASSUME_YES is read by clean_old_installation (uninstall.sh);
+                # it is deliberately NOT inferred from a non-TTY stdin, since
+                # the documented `curl ... | sh` invocation always has one.
+                ASSUME_YES=true
                 shift
                 ;;
             --version)
@@ -7852,6 +8886,13 @@ main() {
     # the post-set_install_paths call below covers the normal runtime case.
     if [ "$uninstall_mode" = true ]; then
         _refuse_uninstall_from_install_dir
+    fi
+
+    # Refuse to install/update over a firmware-managed HelixScreen. Runs before
+    # platform detection and any install work so we never trample the firmware's
+    # setup. Uninstall is exempt — leave the firmware's own teardown to it.
+    if [ "$uninstall_mode" != true ]; then
+        _refuse_if_firmware_managed
     fi
 
     printf '\n'

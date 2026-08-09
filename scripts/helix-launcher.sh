@@ -63,12 +63,16 @@ fi
 killall display-sleep.sh 2>/dev/null || true
 
 # Hide the Linux console text cursor (visible as a blinking block on fbdev)
-setterm --cursor off 2>/dev/null || printf '\033[?25l' > /dev/tty1 2>/dev/null || true
+# The redirect target may exist but be unwritable, and the shell reports that
+# failure on whatever stderr is current when it *opens* the target — a trailing
+# 2>/dev/null is applied too late to catch it. Wrap in a group so stderr is
+# already silenced before the inner redirect is attempted.
+{ setterm --cursor off || printf '\033[?25l' > /dev/tty1; } 2>/dev/null || true
 
 # Unbind the kernel console from the framebuffer so it doesn't paint text
 # over the UI. This affects vtcon1 (the fbcon driver); vtcon0 is the dummy.
 for vtcon in /sys/class/vtconsole/vtcon*/bind; do
-    [ -f "$vtcon" ] && echo 0 > "$vtcon" 2>/dev/null || true
+    { [ -f "$vtcon" ] && echo 0 > "$vtcon"; } 2>/dev/null || true
 done
 
 # Parse launcher-specific arguments (POSIX-compatible, no arrays)
@@ -98,6 +102,27 @@ for arg in "$@"; do
             ;;
     esac
 done
+
+# Log function. Defined before the first log site so every launcher line,
+# including the env-file parse warnings below, gets the same treatment.
+#
+# Uses stderr to avoid polluting stdout which could be captured unexpectedly.
+#
+# Every line is stamped with wall-clock time. On platforms where /var/log is a
+# tmpfs, launcher.log is the only record that survives a reboot, and without a
+# timestamp its lines cannot be correlated to anything else on the machine (a
+# Klipper macro, a print, a calibration run). The format is deliberately plain
+# `date` with %Y-%m-%d %H:%M:%S — the BusyBox date on AD5M/K1/CC1/SonicPad has
+# no -I / --rfc-3339 / %N. If date is missing entirely, log without the stamp
+# rather than aborting the launcher under `set -e`.
+log() {
+    _log_ts=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || true)
+    if [ -n "$_log_ts" ]; then
+        echo "[$_log_ts] [helix-launcher] $*" >&2
+    else
+        echo "[helix-launcher] $*" >&2
+    fi
+}
 
 # Determine script and binary locations
 # Use $0 instead of BASH_SOURCE for POSIX compatibility
@@ -212,14 +237,14 @@ if [ -n "$_helix_env_file" ]; then
         case "$_line" in
             [A-Za-z_]*=*) ;;
             *)
-                echo "[helix-launcher] warning: ${_helix_env_file}:${_lineno}: ignored malformed line: $_line" >&2
+                log "warning: ${_helix_env_file}:${_lineno}: ignored malformed line: $_line"
                 continue
                 ;;
         esac
         _var="${_line%%=*}"
         case "$_var" in
             *[!A-Za-z0-9_]*)
-                echo "[helix-launcher] warning: ${_helix_env_file}:${_lineno}: invalid variable name '$_var'" >&2
+                log "warning: ${_helix_env_file}:${_lineno}: invalid variable name '$_var'"
                 continue
                 ;;
         esac
@@ -228,7 +253,7 @@ if [ -n "$_helix_env_file" ]; then
         eval "_existing=\"\${${_var}:-}\""
         if [ -z "$_existing" ]; then
             if ! eval "export $_line" 2>/dev/null; then
-                echo "[helix-launcher] warning: ${_helix_env_file}:${_lineno}: failed to export: $_line" >&2
+                log "warning: ${_helix_env_file}:${_lineno}: failed to export: $_line"
             fi
         fi
     done < "$_helix_env_file"
@@ -290,12 +315,6 @@ if [ -z "${HELIX_DISPLAY_BACKEND:-}" ]; then
         export HELIX_DISPLAY_BACKEND=drm
     fi
 fi
-
-# Log function (must be defined before first use)
-# Uses stderr to avoid polluting stdout which could be captured unexpectedly
-log() {
-    echo "[helix-launcher] $*" >&2
-}
 
 # Verify main binary exists
 if [ ! -x "${MAIN_BIN}" ]; then
@@ -421,6 +440,21 @@ if [ "${HELIX_SKIP_SPLASH:-0}" = "1" ]; then
     log "Splash screen disabled (HELIX_SKIP_SPLASH=1)"
 fi
 
+# Remote control server (helix-screen ctl). The server only listens when the app
+# is started with --remote or --test, and the SysV/systemd units exec this
+# launcher with no arguments — so without an env var there is no way to reach a
+# deployed device with `ctl` at all, and diagnosing a display problem means
+# physically walking to the printer. Off by default: it opens a control socket
+# that can drive the entire UI.
+if [ "${HELIX_REMOTE_CONTROL:-0}" = "1" ]; then
+    EXTRA_FLAGS="${EXTRA_FLAGS} --remote"
+    log "Remote control enabled (HELIX_REMOTE_CONTROL=1)"
+    if [ -n "${HELIX_REMOTE_SOCKET:-}" ]; then
+        EXTRA_FLAGS="${EXTRA_FLAGS} --remote-socket ${HELIX_REMOTE_SOCKET}"
+        log "Remote control socket: ${HELIX_REMOTE_SOCKET}"
+    fi
+fi
+
 # Run UI at reduced priority (nice +10) when co-hosted with Klipper/Moonraker
 # so the printer control loop keeps CPU headroom for stepper timing and MCU
 # comms. Skipped on standalone displays (remote SonicPad, dev workstation,
@@ -444,7 +478,17 @@ fi
 # available on every iteration.
 # Only retry on genuine crashes, NOT on signal-based exits (SIGTERM=143 from systemctl stop,
 # SIGKILL=137, SIGINT=130, SIGHUP=129). Crash signals: SIGABRT=134, SIGFPE=136, SIGBUS=138, SIGSEGV=139.
+#
+# 42 is helix-watchdog's RESTART_LOOP_EXIT_CODE: the supervisor already retried
+# and concluded the failure will not resolve itself. Re-running the whole
+# watchdog against the fbdev binary just reproduces it, so it is excluded even
+# though it falls inside the 1..127 "worth retrying" range.
+WATCHDOG_GIVE_UP_EXIT_CODE=42
+
 _is_crash_exit() {
+    if [ "$1" = "$WATCHDOG_GIVE_UP_EXIT_CODE" ]; then
+        return 1
+    fi
     case "$1" in
         134|136|138|139) return 0 ;;  # ABRT, FPE, BUS, SEGV
     esac

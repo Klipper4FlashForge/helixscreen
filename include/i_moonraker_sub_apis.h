@@ -72,8 +72,14 @@ class IMotionAPI {
     virtual void home_axes(const std::string& axes, SuccessCallback on_success,
                            ErrorCallback on_error) = 0;
 
-    virtual void move_axis(char axis, double distance, double feedrate,
-                           SuccessCallback on_success, ErrorCallback on_error) = 0;
+    virtual void move_axis(char axis, double distance, double feedrate, SuccessCallback on_success,
+                           ErrorCallback on_error) = 0;
+
+    /// Relative multi-axis move: XY combined on one G0, Z on its own. Zero
+    /// deltas complete immediately without an RPC. Used by the jog coalescer.
+    virtual void move_relative(double dx, double dy, double dz, double xy_feedrate,
+                               double z_feedrate, SuccessCallback on_success,
+                               ErrorCallback on_error) = 0;
 
     virtual void move_to_position(char axis, double position, double feedrate,
                                   SuccessCallback on_success, ErrorCallback on_error) = 0;
@@ -99,8 +105,7 @@ class IJobAPI {
     virtual void start_modified_print(const std::string& original_filename,
                                       const std::string& temp_file_path,
                                       const std::vector<std::string>& modifications,
-                                      ModifiedPrintCallback on_success,
-                                      ErrorCallback on_error) = 0;
+                                      ModifiedPrintCallback on_success, ErrorCallback on_error) = 0;
 
     virtual void check_helix_plugin(BoolCallback on_result, ErrorCallback on_error) = 0;
 
@@ -149,8 +154,8 @@ class IFilesAPI {
     virtual void create_directory(const std::string& path, SuccessCallback on_success,
                                   ErrorCallback on_error) = 0;
 
-    virtual void delete_directory(const std::string& path, bool force,
-                                  SuccessCallback on_success, ErrorCallback on_error) = 0;
+    virtual void delete_directory(const std::string& path, bool force, SuccessCallback on_success,
+                                  ErrorCallback on_error) = 0;
 };
 
 /**
@@ -252,9 +257,8 @@ class IAdvancedAPI {
 
     virtual const BedMeshProfile* get_bed_mesh_profile(const std::string& profile_name) const = 0;
 
-    virtual void
-    get_excluded_objects(std::function<void(const std::set<std::string>&)> on_success,
-                        ErrorCallback on_error) = 0;
+    virtual void get_excluded_objects(std::function<void(const std::set<std::string>&)> on_success,
+                                      ErrorCallback on_error) = 0;
 
     virtual void
     get_available_objects(std::function<void(const std::vector<std::string>&)> on_success,
@@ -287,13 +291,12 @@ class IAdvancedAPI {
     virtual void get_input_shaper_config(InputShaperConfigCallback on_success,
                                          ErrorCallback on_error) = 0;
 
-    virtual void get_heater_pid_values(const std::string& heater,
-                                      PIDCalibrateCallback on_complete,
-                                      ErrorCallback on_error) = 0;
+    virtual void get_heater_pid_values(const std::string& heater, PIDCalibrateCallback on_complete,
+                                       ErrorCallback on_error) = 0;
 
     virtual void get_heater_control_type(const std::string& heater,
-                                        HeaterControlTypeCallback on_complete,
-                                        ErrorCallback on_error) = 0;
+                                         HeaterControlTypeCallback on_complete,
+                                         ErrorCallback on_error) = 0;
 
     virtual void start_pid_calibrate(const std::string& heater, int target_temp,
                                      PIDCalibrateCallback on_complete, ErrorCallback on_error,
@@ -319,26 +322,21 @@ class IAdvancedAPI {
 
     virtual std::vector<MacroInfo> get_user_macros(bool include_system = false) const = 0;
 
-    virtual void detect_belt_hardware(BeltHardwareCallback on_complete,
-                                      ErrorCallback on_error) = 0;
+    virtual void detect_belt_hardware(BeltHardwareCallback on_complete, ErrorCallback on_error) = 0;
 
-    virtual void test_belt_resonance(const std::string& axis_param,
-                                     const std::string& output_name,
+    virtual void test_belt_resonance(const std::string& axis_param, const std::string& output_name,
                                      helix::AdvancedProgressCallback on_progress,
-                                     BeltResonanceCallback on_complete,
-                                     ErrorCallback on_error) = 0;
+                                     BeltResonanceCallback on_complete, ErrorCallback on_error) = 0;
 
     virtual void excite_belt_at_frequency(const std::string& axis_param, float freq_hz,
-                                          SuccessCallback on_complete,
-                                          ErrorCallback on_error) = 0;
+                                          SuccessCallback on_complete, ErrorCallback on_error) = 0;
 
     virtual void set_strobe_frequency(const std::string& pin_name, float freq_hz,
                                       SuccessCallback on_success, ErrorCallback on_error) = 0;
 
-    virtual void
-    download_accel_csv(const std::string& filename,
-                       std::function<void(const std::string& csv_data)> on_complete,
-                       ErrorCallback on_error) = 0;
+    virtual void download_accel_csv(const std::string& filename,
+                                    std::function<void(const std::string& csv_data)> on_complete,
+                                    ErrorCallback on_error) = 0;
 };
 
 /**
@@ -361,9 +359,8 @@ class IRestAPI {
 
     virtual void wled_get_strips(RestCallback on_success, ErrorCallback on_error) = 0;
 
-    virtual void wled_set_strip(const std::string& strip, const std::string& action,
-                                int brightness, int preset, SuccessCallback on_success,
-                                ErrorCallback on_error) = 0;
+    virtual void wled_set_strip(const std::string& strip, const std::string& action, int brightness,
+                                int preset, SuccessCallback on_success, ErrorCallback on_error) = 0;
 
     virtual void wled_get_status(RestCallback on_success, ErrorCallback on_error) = 0;
 
@@ -409,8 +406,8 @@ class ITransfersAPI {
                                        SuccessCallback on_success, ErrorCallback on_error) = 0;
 
     virtual void upload_file_from_path(const std::string& root, const std::string& dest_path,
-                                       const std::string& local_path,
-                                       SuccessCallback on_success, ErrorCallback on_error,
+                                       const std::string& local_path, SuccessCallback on_success,
+                                       ErrorCallback on_error,
                                        ProgressCallback on_progress = nullptr) = 0;
 };
 
@@ -452,8 +449,7 @@ class ISpoolmanAPI {
                                        SuccessCallback on_success, ErrorCallback on_error) = 0;
 
     virtual void update_spoolman_filament(int filament_id, const nlohmann::json& filament_data,
-                                          SuccessCallback on_success,
-                                          ErrorCallback on_error) = 0;
+                                          SuccessCallback on_success, ErrorCallback on_error) = 0;
 
     virtual void update_spoolman_filament_color(int filament_id, const std::string& color_hex,
                                                 SuccessCallback on_success,

@@ -26,6 +26,10 @@ namespace helix::filament_presets {
 bool validate_reassignment(int slot, const std::string& material);
 } // namespace helix::filament_presets
 
+namespace helix::ui {
+struct FilamentPanelTestAccess; // test-only friend (tests/test_helpers/)
+} // namespace helix::ui
+
 /**
  * @file ui_panel_filament.h
  * @brief Filament panel - Filament loading/unloading operations with safety checks
@@ -59,6 +63,8 @@ bool validate_reassignment(int slot, const std::string& material);
  */
 
 class FilamentPanel : public PanelBase {
+    friend struct helix::ui::FilamentPanelTestAccess;
+
   public:
     /**
      * @brief Construct FilamentPanel with injected dependencies
@@ -90,6 +96,23 @@ class FilamentPanel : public PanelBase {
      * Must be called BEFORE lv_deinit() to avoid dangling observer references.
      */
     void deinit_subjects();
+
+    /**
+     * @brief Fail the visibly-running filament operation because Klipper does not
+     *        know @p command.
+     *
+     * A user macro that references an undefined command (a `STATUS_*` LED macro is
+     * the common case) aborts mid-body, but Moonraker still returns `ok` for the
+     * script — so the op's success callback fires and the button shows a green
+     * checkmark for a macro that did nothing. Called from GcodeNarrationRouter,
+     * which is the only component that sees the `// Unknown command:"X"` response.
+     *
+     * No-op when no operation is showing its spinner. Main thread only.
+     *
+     * @param command The command name Klipper reported as unknown; it is the
+     *                actionable part of the message, so it reaches the toast.
+     */
+    void fail_op_on_unknown_command(const std::string& command);
 
     /**
      * @brief Setup button handlers and initial visual state
@@ -237,7 +260,13 @@ class FilamentPanel : public PanelBase {
     lv_subject_t unload_disabled_subject_;    ///< 1 = Unload/Purge buttons disabled
     ObserverGuard ams_loaded_observer_;       ///< Re-eval gating on live load change
     ObserverGuard ams_current_slot_observer_; ///< Re-eval gating on active-slot change
+    ObserverGuard print_active_observer_;     ///< Re-eval gating on print start/pause/end
     void update_filament_op_buttons(); ///< Recompute Load/Unload/Purge gating from live state
+
+    // Single source of truth for which global AMS slot the Load/Unload/gating
+    // operate on: the dropdown-selected tool resolved through resolve_op_button_slot.
+    // Returns -1 when there is no AMS backend or no resolvable slot.
+    int selected_op_slot() const;
 
     // Cooldown button visibility (1 when nozzle target > 0, 0 otherwise)
     lv_subject_t nozzle_heating_subject_;
@@ -262,8 +291,19 @@ class FilamentPanel : public PanelBase {
     lv_timer_t* op_revert_timer_ = nullptr; ///< shared one-shot timer (min-spinner delay / revert)
     FilamentOp op_revert_target_ = FilamentOp::Load; ///< which op the timer resets
     std::optional<FilamentOp> op_in_flight_; ///< op driven by run_filament_macro (one at a time)
-    uint32_t op_busy_started_tick_ = 0;      ///< lv_tick when busy began (min-spinner floor)
-    bool backend_op_active_ = false; ///< true while an AMS-backend op awaits ams_action IDLE
+    /// Op currently showing the spinner. Set by op_started() — the one funnel every
+    /// path uses — so the timeout handler can clear the right button no matter which
+    /// of the guard's callsites armed it. op_in_flight_ is not enough: the gcode and
+    /// inline-macro paths never set it.
+    std::optional<FilamentOp> op_showing_busy_;
+    /// Op torn down out-of-band while its RPC was still outstanding. Klipper aborts
+    /// a macro at an unknown command but Moonraker still answers `ok`, so the
+    /// success callback arrives anyway; this swallows exactly one such callback so
+    /// the checkmark cannot contradict the error toast. See
+    /// fail_op_on_unknown_command().
+    std::optional<FilamentOp> op_aborted_;
+    uint32_t op_busy_started_tick_ = 0; ///< lv_tick when busy began (min-spinner floor)
+    bool backend_op_active_ = false;    ///< true while an AMS-backend op awaits ams_action IDLE
 
     lv_subject_t* op_state_subject(FilamentOp op);
     void set_op_state(FilamentOp op, int state); ///< main-thread: set state subject
@@ -273,22 +313,17 @@ class FilamentPanel : public PanelBase {
     void enter_op_done_state(FilamentOp op);     ///< main-thread: → done + arm revert timer
     void schedule_op_timer(uint32_t delay_ms, lv_timer_cb_t cb); ///< (re)arm shared op timer
     void cancel_op_revert_timer();
+    void begin_operation_guard();    ///< arm operation_guard_ with the shared timeout handler
+    void handle_operation_timeout(); ///< main-thread: toast + tear down the stalled op
 
     // Purge amount state
     int purge_amount_ = 10; // Default 10mm
 
-    // Preset button temperature label subjects (e.g., "210°C / 60°C")
-    lv_subject_t preset_temps_subjects_[4];
-    char preset_temps_bufs_[4][24];
-
-    // Runtime-reassignable preset material per button (default PLA/PETG/ABS/TPU).
-    std::array<std::string, 4> preset_materials_ = {"PLA", "PETG", "ABS", "TPU"};
-
-    // Preset button NAME label subjects (e.g. "PLA"); parallel to preset_temps_subjects_.
-    // Wide enough for a branded "%s %s" (brand + type) without truncation (e.g. "Bambu Lab
-    // PETG-CF").
-    lv_subject_t preset_name_subjects_[4];
-    char preset_name_bufs_[4][48];
+    // Preset slot identity and the name/temps label subjects now live in
+    // helix::presets (include/preset_materials.h). They used to be panel-scoped
+    // here, which meant the nozzle/bed/chamber temp panels — a different XML
+    // scope — physically could not bind them and grew their own hardcoded
+    // copies instead. They are globally scoped and slot-indexed now.
 
     // Offline branded-filament catalog picker shown on preset long-press.
     helix::ui::FilamentCatalogPickerModal catalog_picker_;
@@ -304,8 +339,8 @@ class FilamentPanel : public PanelBase {
     char nozzle_target_buf_[16];
     char bed_current_buf_[16];
     char bed_target_buf_[16];
-    char chamber_current_buf_[16];
-    char chamber_target_buf_[16];
+    char chamber_current_buf_[16] = {};
+    char chamber_target_buf_[16] = {};
 
     //
     // === Instance State ===
@@ -411,8 +446,7 @@ class FilamentPanel : public PanelBase {
     void update_warning_text();
     void update_safety_state();
     void update_preset_buttons_visual();
-    void update_preset_button_temps();  ///< Update preset button labels from filament DB
-    void update_preset_button_labels(); ///< Update preset button NAME labels from preset_materials_
+    // Label/temps refresh moved to helix::presets::refresh_subjects().
     void check_and_auto_select_preset(); ///< Auto-select preset if targets match
     /// Apply a branded product picked from the catalog picker to a preset slot:
     /// updates the plain type (reassign_preset), attaches the exact branded product
@@ -425,8 +459,15 @@ class FilamentPanel : public PanelBase {
         int temp = 0;
         std::string material_name;
     };
-    PreheatTempResult
-    resolve_preheat_temp() const; ///< Priority: ext spool > AMS slot > preset > fallback
+    /// Nozzle preheat target for an op acting on @p target_slot.
+    /// Priority: that slot > external spool (only when the slot names nothing) >
+    /// the panel's material preset > min_extrude_temp_. The first two tiers are
+    /// helix::ui::resolve_load_preheat_material(), shared with the AMS sidebar.
+    PreheatTempResult resolve_preheat_temp(int target_slot) const;
+    /// Which slot's material a given op should heat for. Load/Unload follow the
+    /// dropdown selection (selected_op_slot); Extrude/Retract/Purge follow the
+    /// LOADED lane, since they push what is already in the melt zone.
+    int preheat_slot_for_op(PreheatOp op) const;
     bool
     has_active_spool_material() const; ///< True if external spool or AMS slot has known material
     void start_preheat_for_op(PreheatOp op); ///< Resolve temp, heat, set pending state
@@ -526,3 +567,10 @@ class FilamentPanel : public PanelBase {
 
 // Global instance accessor (needed by main.cpp)
 FilamentPanel& get_global_filament_panel();
+
+/// Route a `// Unknown command:"X"` response to the filament panel, failing
+/// whichever operation is visibly running. No-op when the panel has not been
+/// created yet — deliberately does NOT construct it, because the caller is a
+/// gcode-response path that must not bring a panel into existence as a side
+/// effect. Main thread only. @see FilamentPanel::fail_op_on_unknown_command
+void filament_panel_report_unknown_command(const std::string& command);

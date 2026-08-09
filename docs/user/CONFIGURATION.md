@@ -10,22 +10,30 @@ Complete reference for HelixScreen configuration options.
 - [Configuration Structure](#configuration-structure)
 - [Multi-Printer Configuration](#multi-printer-configuration)
 - [General Settings](#general-settings)
+- [Sound Settings](#sound-settings)
 - [Theme Settings](#theme-settings)
 - [Logging Settings](#logging-settings)
 - [Display Settings](#display-settings)
+- [Appearance Settings](#appearance-settings)
 - [Input Settings](#input-settings)
 - [Output Settings](#output-settings)
 - [Network Settings](#network-settings)
 - [Printer Settings](#printer-settings)
 - [LED Settings](#led-settings)
 - [Moonraker Settings](#moonraker-settings)
+- [Standard Macros (Quick Action Buttons)](#standard-macros-quick-action-buttons)
 - [G-code Viewer Settings](#g-code-viewer-settings)
 - [AMS Settings](#ams-settings)
 - [Panel Widget Settings](#panel-widget-settings)
 - [Cache Settings](#cache-settings)
 - [Streaming Settings](#streaming-settings)
 - [Safety Settings](#safety-settings)
+- [Filament Settings](#filament-settings)
 - [Filament Sensor Settings](#filament-sensor-settings)
+- [Security Settings](#security-settings)
+- [Label Printer Settings](#label-printer-settings)
+- [Printer Switcher](#printer-switcher)
+- [Telemetry Settings](#telemetry-settings)
 - [Plugin Settings](#plugin-settings)
 - [Update Settings](#update-settings)
 - [Safety Limits](#safety-limits)
@@ -65,30 +73,40 @@ The configuration file is JSON format with several top-level sections:
 ```json
 {
   "dark_mode": false,
-  "brightness": 50,
+  "brightness": 80,
   "sounds_enabled": true,
-  "completion_alert": 2,
+  "ui_sounds_enabled": true,
+  "sound_theme": "default",
+  "completion_alert": 1,
   "wizard_completed": false,
   "wifi_expected": false,
   "language": "en",
   "beta_features": false,
+  "telemetry_enabled": false,
   "log_dest": "auto",
   "log_path": "",
   "log_level": "warn",
 
   "panel_widgets": { ... },
   "theme": { ... },
+  "sounds": { ... },
   "display": { ... },
+  "appearance": { ... },
   "input": { ... },
   "output": { ... },
   "network": { ... },
   "printer": { ... },
+  "standard_macros": { ... },
   "gcode_viewer": { ... },
   "ams": { ... },
   "cache": { ... },
   "streaming": { ... },
   "safety": { ... },
+  "filament": { ... },
   "filament_sensors": { ... },
+  "security": { ... },
+  "label_printer": { ... },
+  "printers": { ... },
   "plugins": { ... },
   "update": { ... }
 }
@@ -144,18 +162,29 @@ Each printer entry contains all printer-specific settings (connection details, h
 
 ### `brightness`
 **Type:** integer
-**Default:** `50`
+**Default:** `80`
 **Range:** `1` - `100`
 **Description:** Screen brightness percentage. Adjustable via Settings panel.
 
 ### `sounds_enabled`
 **Type:** boolean
 **Default:** `true`
-**Description:** Enable UI sound effects (button clicks, navigation sounds).
+**Description:** Master switch for all sound effects. When `false`, no sounds play (UI or event). This is the "mute" toggle — it silences playback but still initializes the audio backend (see `disable_sound` to prevent initialization entirely).
+
+### `ui_sounds_enabled`
+**Type:** boolean
+**Default:** `true`
+**Description:** Enable UI interaction sounds specifically (button taps, navigation clicks). Independent of event sounds like the print-complete chime, so you can keep alerts while silencing tap feedback. Has no effect when `sounds_enabled` is `false`. Adjustable via **Settings > Display & Sound**.
+
+### `sound_theme`
+**Type:** string
+**Default:** `"default"`
+**Values:** `"default"`, `"minimal"`
+**Description:** The active sound theme, loaded from `config/sounds/<name>.json`. `"default"` uses the full set of tones; `"minimal"` uses a sparser, quieter set.
 
 ### `completion_alert`
 **Type:** integer
-**Default:** `2`
+**Default:** `1`
 **Values:** `0` (Off), `1` (Notification), `2` (Alert)
 **Description:** How HelixScreen notifies you when a print completes or is cancelled (while you're on a different screen):
 - `0` — **Off**: No notification (sound still plays if sounds are enabled)
@@ -190,7 +219,27 @@ This is different from `sounds_enabled` — that toggle mutes playback but still
 ### `beta_features`
 **Type:** boolean
 **Default:** `false`
-**Description:** Enable beta features that are still under testing. Gates several Advanced panel features (Macro Browser, Input Shaping, Z-Offset Calibration, HelixPrint plugin management, PRINT_START configuration, Timelapse), the Plugins section in Settings, and the Update Channel selector. Always enabled automatically when running in `--test` mode. Can also be toggled by tapping the version button 7 times in Settings → About. See the [Beta Features](USER_GUIDE.md#beta-features) section in the User Guide for the full list.
+**Description:** Enable beta features that are still under testing. Gates several Advanced panel features (Macro Browser, Input Shaping, Z-Offset Calibration, HelixPrint plugin management, PRINT_START configuration, Timelapse), the Plugins section in Settings, and the Update Channel selector. Always enabled automatically when running in `--test` mode. Can also be toggled by tapping the version button 7 times in Settings → About. See the [Beta Features](guide/beta-features.md) guide for the full list.
+
+---
+
+## Sound Settings
+
+Located in the `sounds` section:
+
+```json
+{
+  "sounds": {
+    "volume": 80
+  }
+}
+```
+
+### `sounds.volume`
+**Type:** integer
+**Default:** `80`
+**Range:** `0` - `100`
+**Description:** Master playback volume as a percentage. `0` is silent, `100` is full volume. Adjustable via **Settings > Display & Sound**. This scales the level of all sounds; the `sounds_enabled` and `ui_sounds_enabled` toggles decide *whether* sounds play at all.
 
 ---
 
@@ -280,9 +329,12 @@ Located in the `display` section:
   "display": {
     "animations_enabled": true,
     "time_format": 0,
+    "timezone": "UTC",
+    "theme": "nord",
     "rotate": 0,
-    "sleep_sec": 1800,
-    "dim_sec": 300,
+    "sleep_sec": 1200,
+    "sleep_while_printing": true,
+    "dim_sec": 600,
     "dim_brightness": 30,
     "drm_device": "",
     "gcode_render_mode": 2,
@@ -308,6 +360,25 @@ Located in the `display` section:
 **Values:** `0` (12-hour), `1` (24-hour)
 **Description:** Time display format. `0` shows "2:30 PM", `1` shows "14:30".
 
+### `timezone`
+**Type:** string
+**Default:** `"UTC"`
+**Example:** `"America/New_York"`, `"Europe/London"`
+**Description:** IANA timezone ID used for all displayed clocks and print time estimates. Set this so times shown on screen match your local time instead of UTC. Change via **Settings > Display & Sound > Timezone**.
+
+### `theme`
+**Type:** string
+**Default:** `"nord"`
+**Description:** Active color theme by name (e.g., `"nord"`, `"dracula"`, `"gruvbox"`). This is the string that actually determines the effective theme — the numeric `theme.preset` index is a legacy field. **Requires restart to take effect.** Easiest to change via **Settings > Appearance > Display Settings > Theme Colors**, which writes this value for you.
+
+### `layout`
+**Type:** string
+**Default:** `"auto"`
+**Values:** `auto`, `standard`, `ultrawide`, `portrait`, `micro`, `micro-portrait`, `tiny`, `tiny-portrait`
+**Description:** Override the auto-detected screen layout. Leave this at `auto` unless you are testing — HelixScreen picks the layout from your display's aspect ratio: wider than about 2.5:1 is `ultrawide`, narrower than about 0.8:1 is `portrait`, and anything in between is `standard`. Displays whose longest side is 480px or less get `micro` (480x272 class) or `tiny` instead, with `-portrait` variants when the screen is taller than wide.
+
+> **Ultrawide and portrait are alpha at best.** Detection, navigation-bar sizing, and grid sizing work, but there are no ultrawide panel layouts yet and portrait has only the app shell and navigation bar. The `micro-portrait` and `tiny-portrait` variants are placeholders with no layouts at all. Every panel without an override falls back to the standard landscape layout, so expect stretched, cramped, or clipped screens. Neither orientation has been tested on real hardware. Forcing one of these is useful for contributing layouts, not for daily use.
+
 ### `rotate`
 **Type:** integer
 **Default:** `0`
@@ -325,13 +396,18 @@ Located in the `display` section:
 
 ### `sleep_sec`
 **Type:** integer
-**Default:** `1800`
-**Description:** Seconds of inactivity before screen turns OFF. Set to `0` to disable sleep. Default is 30 minutes.
+**Default:** `1200`
+**Description:** Seconds of inactivity before screen turns OFF. Set to `0` to disable sleep. Default is 20 minutes.
+
+### `sleep_while_printing`
+**Type:** boolean
+**Default:** `true`
+**Description:** Whether the screen is allowed to dim and sleep during an active print. When `true`, the normal `dim_sec`/`sleep_sec` timers apply while printing. Set to `false` to keep the display on for the whole print so you can glance at progress without touching the screen. Adjustable via **Settings > Display & Sound**.
 
 ### `dim_sec`
 **Type:** integer
-**Default:** `300`
-**Description:** Seconds of inactivity before screen dims. Set to `0` to disable dimming. Must be less than `sleep_sec`. Default is 5 minutes.
+**Default:** `600`
+**Description:** Seconds of inactivity before screen dims. Set to `0` to disable dimming. Must be less than `sleep_sec`. Default is 10 minutes.
 
 ### `dim_brightness`
 **Type:** integer
@@ -355,9 +431,10 @@ Auto-detection finds the first device with dumb buffer support and a connected d
 ### `gcode_render_mode`
 **Type:** integer
 **Default:** `2`
-**Values:** `0` (Auto/2D), `2` (2D Layer)
+**Values:** `0` (Auto/2D), `1` (3D GLES), `2` (2D Layer)
 **Description:** G-code visualization mode:
 - `0` - Auto (currently uses 2D)
+- `1` - 3D GLES-accelerated view
 - `2` - 2D Layer view (default, recommended)
 
 Can also be overridden via `HELIX_GCODE_MODE` env var (`3D` or `2D`).
@@ -399,6 +476,32 @@ This setting can also be changed via the Printer Manager overlay (tap the printe
 **Type:** object
 **Default:** `{"valid": false}`
 **Description:** Touch calibration coefficients. Set by the calibration wizard or manually. Contains calibration matrix values (`a` through `f`) when valid. If the wizard detects that the touchscreen's X/Y axes are swapped relative to the display, it bakes that correction directly into the `a`–`f` coefficients — there is no separate setting to configure.
+
+---
+
+## Appearance Settings
+
+Located in the `appearance` section:
+
+```json
+{
+  "appearance": {
+    "toolhead_style": 0,
+    "show_widget_labels": false
+  }
+}
+```
+
+### `toolhead_style`
+**Type:** integer
+**Default:** `0`
+**Values:** `0` (Default), `1` (Creality K1), `2` (Creality K2)
+**Description:** Which toolhead illustration is drawn on the temperature panel. Normally auto-detected from your printer type, so you rarely need to set it by hand. Override only if the wrong toolhead graphic is shown.
+
+### `show_widget_labels`
+**Type:** boolean
+**Default:** `false`
+**Description:** Show text labels beneath the Home panel widget icons. Leave `false` for a cleaner icon-only look, or set `true` if you prefer captions under each widget. Adjustable via the Home panel's Edit Mode.
 
 ---
 
@@ -468,7 +571,7 @@ Matches LVGL's native default of 10.
 ### `jitter_threshold`
 **Type:** integer
 **Default:** `5`
-**Range:** `0` - `200`
+**Range:** `0` - `30`
 **Description:** Touch jitter filter dead zone in pixels. Capacitive touch controllers (notably Goodix GT9xx on FlashForge displays) report 2–5 px of coordinate drift even with a stationary finger. Without filtering, that drift accumulates past `scroll_limit` and a stationary tap gets cancelled as if it were a scroll. The filter freezes reported coordinates to the initial press point while movement stays within this radius.
 
 - **Raise** if stationary taps are still being misread as swipes or scrolls on a noisy panel (typical fix: 15–25).
@@ -571,6 +674,8 @@ Located in the `printer` section:
       "chamber": "",
       "exhaust": ""
     },
+    "chamber_heater": "auto",
+    "chamber_sensor": "auto",
     "leds": {
       "strip": "",
       "selected_strips": [],
@@ -642,6 +747,18 @@ Located in the `printer` section:
 **Type:** string
 **Default:** `""` (none)
 **Description:** Klipper fan name for exhaust fan (e.g., `"fan_generic exhaust_fan"`). Leave empty if not available.
+
+### `chamber_heater`
+**Type:** string
+**Default:** `"auto"`
+**Values:** `"auto"`, `"none"`, or a Klipper object name
+**Description:** Which heater warms the enclosure/chamber. `"auto"` lets HelixScreen pick it by name heuristics, `"none"` disables chamber-heater controls, or you can name the Klipper object explicitly (e.g., `"heater_generic chamber"`). Most printers work fine on `"auto"`.
+
+### `chamber_sensor`
+**Type:** string
+**Default:** `"auto"`
+**Values:** `"auto"`, `"none"`, or a Klipper object name
+**Description:** Which temperature sensor reports the enclosure/chamber temperature. `"auto"` detects it by name heuristics, `"none"` disables chamber-temperature display, or name the Klipper object explicitly (e.g., `"temperature_sensor enclosure_bme"`). Set this if your chamber temperature reads from the wrong sensor or isn't detected.
 
 ---
 
@@ -847,6 +964,31 @@ Connection settings are in the `printer` section:
 **Type:** integer
 **Default:** `2000`
 **Description:** Interval for checking request timeouts.
+
+---
+
+## Standard Macros (Quick Action Buttons)
+
+Located in the `standard_macros` section. These pick which built-in actions appear as the four quick-action buttons on the Controls panel:
+
+```json
+{
+  "standard_macros": {
+    "quick_button_1": "clean_nozzle",
+    "quick_button_2": "bed_level",
+    "quick_button_3": "",
+    "quick_button_4": ""
+  }
+}
+```
+
+### `quick_button_1` … `quick_button_4`
+**Type:** string
+**Default:** `"clean_nozzle"` (button 1), `"bed_level"` (button 2), `""` (buttons 3 and 4)
+**Values:** `"clean_nozzle"`, `"bed_level"`, `"heat_soak"`, `"purge"`, `"bed_mesh"`, or `""` (empty = hide the button)
+**Description:** Assigns a built-in action to each of the four Controls-panel quick buttons. An empty string hides that button. The action runs the matching macro on your printer (auto-detected from your Klipper config). Configured most easily via **Settings > Printer > Macro Buttons** rather than by editing JSON.
+
+> **Note:** This is separate from `printer.default_macros`, which customizes the Load/Unload/cooldown/custom-macro buttons elsewhere in the UI. See [Printer Settings › default_macros](#printer-settings).
 
 ---
 
@@ -1118,6 +1260,32 @@ Located in the `safety` section:
 
 ---
 
+## Filament Settings
+
+Located in the `filament` section:
+
+```json
+{
+  "filament": {
+    "auto_cooldown": true,
+    "cooldown_delay_seconds": 120
+  }
+}
+```
+
+### `auto_cooldown`
+**Type:** boolean
+**Default:** `true`
+**UI:** Settings > Safety & Notifications > **Cool nozzle after filament ops**
+**Description:** Whether HelixScreen turns the extruder heater off after a filament load or unload completes. Turn this off if your filament system runs its own post-operation cooldown — AFC does, in recent versions — so the two aren't both driving the same heater.
+
+### `cooldown_delay_seconds`
+**Type:** integer
+**Default:** `120`
+**Description:** How long to wait, in seconds, after a filament load or unload before automatically turning the extruder heater off. This lets you run several filament operations back-to-back without the nozzle cooling down between them. Default is 120 (2 minutes). Setting this to `0` also disables auto-cooldown, but prefer `auto_cooldown` — it's the one the UI toggle writes.
+
+---
+
 ## Filament Sensor Settings
 
 Located in the `filament_sensors` section:
@@ -1156,6 +1324,132 @@ Located in the `filament_sensors` section:
   ]
 }
 ```
+
+---
+
+## Security Settings
+
+Located in the `security` section. Controls the optional PIN lock screen:
+
+```json
+{
+  "security": {
+    "pin_hash": "",
+    "auto_lock": false
+  }
+}
+```
+
+### `security.pin_hash`
+**Type:** string
+**Default:** `""` (empty = lock screen disabled)
+**Description:** A SHA-256 hash of your lock-screen PIN. HelixScreen stores only this hash, never the PIN itself. **Do not edit this value by hand** — set, change, or clear your PIN through **Settings > System > Security**, which computes and writes the hash for you. An empty string means no PIN and no lock screen.
+
+### `security.auto_lock`
+**Type:** boolean
+**Default:** `false`
+**Description:** When `true`, the screen automatically locks whenever the display sleeps and wakes, requiring your PIN to get back in. Has no effect unless `pin_hash` is set (with no PIN there is nothing to lock). Toggle via **Settings > System > Security**.
+
+---
+
+## Label Printer Settings
+
+Located in the `label_printer` section. Configures the thermal label printer used to print filament spool labels. This is best set up through **Settings > Hardware & Devices > Spoolman > Label Printer** — scanning and selecting a printer fills these fields in for you. The keys are documented here for reference. See the [Label Printing guide](guide/label-printing.md) for the full walkthrough.
+
+```json
+{
+  "label_printer": {
+    "type": "network",
+    "address": "",
+    "port": 9100,
+    "protocol": "raw",
+    "label_size": 0,
+    "preset": 0,
+    "label_count": 1,
+    "usb_vid": 0,
+    "usb_pid": 0,
+    "usb_serial": "",
+    "bt_address": "",
+    "bt_name": "",
+    "bt_transport": "spp"
+  }
+}
+```
+
+### `type`
+**Type:** string
+**Default:** `"network"`
+**Values:** `"network"`, `"usb"`, `"bluetooth"`
+**Description:** How the label printer connects — Network (Brother QL over Ethernet/WiFi), USB (Phomemo over cable), or Bluetooth (any supported printer paired over Bluetooth). Bluetooth is only offered when your device has Bluetooth hardware.
+
+### `address`
+**Type:** string
+**Default:** `""`
+**Description:** IP address or hostname of a network label printer. Only used when `type` is `"network"`.
+
+### `port`
+**Type:** integer
+**Default:** `9100`
+**Description:** TCP port for a network label printer. `9100` is the standard RAW/JetDirect port used by Brother QL. Only used when `type` is `"network"`.
+
+### `protocol`
+**Type:** string
+**Default:** `"raw"`
+**Values:** `"raw"`, `"ipp"`
+**Description:** Network print protocol. `"raw"` (JetDirect, port 9100) works for most printers; `"ipp"` is used by some networked models.
+
+### `label_size`
+**Type:** integer
+**Default:** `0`
+**Description:** Index of the label/tape size preset for your printer. `0` selects that model's default size. The available sizes depend on the detected printer (a Niimbot D11 offers different sizes than a B21), so pick yours from the size list in the Label Printer settings overlay rather than guessing an index.
+
+### `preset`
+**Type:** integer
+**Default:** `0`
+**Description:** Label content layout preset. `0` = **Standard** (full label: spool name, material, color, temperatures, and QR code); other indices select the **Compact** or **QR Only** layouts. Choose it in the Label Printer settings overlay.
+
+### `label_count`
+**Type:** integer
+**Default:** `1`
+**Description:** Number of copies to print per label job.
+
+### `usb_vid` / `usb_pid` / `usb_serial`
+**Type:** integer / integer / string
+**Default:** `0` / `0` / `""`
+**Description:** USB vendor ID, product ID, and serial number identifying a USB label printer. `0` (and an empty serial) means auto-detect — you normally never set these by hand. Only used when `type` is `"usb"`.
+
+### `bt_address` / `bt_name` / `bt_transport`
+**Type:** string / string / string
+**Default:** `""` / `""` / `"spp"`
+**Description:** Bluetooth MAC address, advertised name, and transport of a Bluetooth label printer. `bt_transport` is `"spp"` (Bluetooth Classic / RFCOMM — used by Brother PT, Phomemo, and MakeID) or `"ble"` (Bluetooth Low Energy — used by Niimbot). These are filled in automatically when you scan and select a printer; you don't normally type the MAC address by hand. Only used when `type` is `"bluetooth"`.
+
+---
+
+## Printer Switcher
+
+Located in the `printers` section:
+
+```json
+{
+  "printers": {
+    "show_printer_switcher": false
+  }
+}
+```
+
+### `printers.show_printer_switcher`
+**Type:** boolean
+**Default:** `false`
+**Description:** Show a printer-switcher button on the Home panel for quickly jumping between configured printers. Off by default since single-printer setups don't need it; turn it on when you manage more than one printer. See [Multi-Printer Configuration](#multi-printer-configuration) above.
+
+---
+
+## Telemetry Settings
+
+### `telemetry_enabled`
+**Type:** boolean
+**Default:** `false`
+**Description:** Enables anonymous usage telemetry. This is a top-level key (not nested in a section). **OFF by default — you must opt in**, either during the setup wizard or via **Settings > Telemetry**. While `false`, nothing is collected, queued, or transmitted. For a full breakdown of exactly what is and isn't collected, and how the data is anonymized, see the [Telemetry](TELEMETRY.md) documentation.
 
 ---
 
@@ -1362,6 +1656,7 @@ HelixScreen accepts command-line options for overriding configuration and debugg
 | Option | Description |
 |--------|-------------|
 | `-s, --size <size>` | Screen size: `tiny` (480×320), `small` (480×400), `medium` (800×480), `large` (1024×600) |
+| `--layout <type>` | Override auto-detected layout: `auto`, `standard`, `ultrawide`, `portrait`, `micro`, `micro-portrait`, `tiny`, `tiny-portrait`. **`ultrawide` and all portrait variants are alpha** — see the [`layout`](#layout) setting |
 | `--dpi <n>` | Display DPI (50-500, default: 160) |
 | `--dark` | Use dark theme |
 | `--light` | Use light theme |
@@ -1372,8 +1667,10 @@ HelixScreen accepts command-line options for overriding configuration and debugg
 
 | Option | Description |
 |--------|-------------|
-| `-p, --panel <panel>` | Start on specific panel (home, controls, filament, settings, advanced, print-select) |
 | `-w, --wizard` | Force first-run configuration wizard |
+| `--skip-wizard` | Suppress the first-run wizard (for automation/screenshots) |
+
+> Developers: to drive the UI to a specific panel or overlay, see `docs/devel/HELIXCTL.md` (the `helix-screen ctl` remote-control client). The control server it talks to is auto-enabled in `--test` mode, or opt-in with `--remote` (and `--remote-socket <path>` to override the socket location).
 
 ### Connection Options
 
@@ -1408,8 +1705,8 @@ HelixScreen accepts command-line options for overriding configuration and debugg
 ### Examples
 
 ```bash
-# Start in dark mode on the settings panel
-helix-screen --dark --panel settings
+# Start in dark mode, skipping the splash screen
+helix-screen --dark --skip-splash
 
 # Override Moonraker connection
 helix-screen --moonraker ws://192.168.1.50:7125
@@ -1445,6 +1742,9 @@ These can be set in the systemd service file or before running the binary:
 | `HELIX_TOUCH_CALIBRATE` | Force touch calibration on next launch (`1` to enable) |
 | `HELIX_MOUSE_DEVICE` | Override USB mouse device (e.g., `/dev/input/event4`) |
 | `HELIX_KEYBOARD_DEVICE` | Override USB keyboard device (e.g., `/dev/input/event5`) |
+| `HELIX_TOUCH_JITTER` | Override `jitter_threshold` dead zone in pixels (`0`–`30`) |
+| `HELIX_SCROLL_GUARD` | Override `scroll_guard` post-scroll tap suppression (`1` to enable) |
+| `HELIX_SCROLL_GUARD_COOLDOWN_MS` | Override `scroll_guard_cooldown_ms` window in milliseconds |
 
 **Theme & Rendering:**
 
@@ -1454,7 +1754,7 @@ These can be set in the systemd service file or before running the binary:
 | `HELIX_GCODE_MODE` | Override G-code render mode (`3D` or `2D`) |
 | `HELIX_GCODE_STREAMING` | Override G-code streaming mode |
 | `HELIX_FORCE_STREAMING` | Force streaming for all file operations (`1` to enable) |
-| `HELIX_HOT_RELOAD` | Enable XML hot reload for development (`1` to enable) |
+| `HELIX_HOT_RELOAD` | Override XML hot reload default (`0` force off, `1` force on). Defaults ON for native builds, OFF for device release builds. |
 
 **Example in service file:**
 ```ini
@@ -1476,7 +1776,7 @@ Environment="HELIX_TOUCH_DEVICE=/dev/input/event0"
   "dark_mode": true,
   "brightness": 70,
   "sounds_enabled": true,
-  "completion_alert": 2,
+  "completion_alert": 1,
   "wizard_completed": true,
   "wifi_expected": true,
   "language": "en",
@@ -1492,8 +1792,8 @@ Environment="HELIX_TOUCH_DEVICE=/dev/input/event0"
     "animations_enabled": true,
     "time_format": 0,
     "rotate": 0,
-    "sleep_sec": 1800,
-    "dim_sec": 300,
+    "sleep_sec": 1200,
+    "dim_sec": 600,
     "dim_brightness": 30,
     "drm_device": "",
     "gcode_render_mode": 2,
@@ -1625,22 +1925,21 @@ Environment="HELIX_TOUCH_DEVICE=/dev/input/event0"
   },
 
   "panel_widgets": {
-    "home": [
-      {"id": "temperature", "enabled": true},
-      {"id": "network", "enabled": true},
-      {"id": "led", "enabled": true},
-      {"id": "ams", "enabled": true},
-      {"id": "notifications", "enabled": true},
-      {"id": "power", "enabled": true},
-      {"id": "firmware_restart", "enabled": false},
-      {"id": "humidity", "enabled": false},
-      {"id": "width_sensor", "enabled": false},
-      {"id": "probe", "enabled": false},
-      {"id": "filament", "enabled": false},
-      {"id": "temp_stack", "enabled": false},
-      {"id": "fan_stack", "enabled": true},
-      {"id": "thermistor", "enabled": false}
-    ]
+    "home": {
+      "pages": [
+        {
+          "id": "main",
+          "widgets": [
+            {"id": "printer_image", "enabled": true, "col": 0, "row": 0, "colspan": 2, "rowspan": 2},
+            {"id": "print_status", "enabled": true, "col": 0, "row": 2, "colspan": 2, "rowspan": 2},
+            {"id": "temperature", "enabled": true, "col": 2, "row": 0, "colspan": 1, "rowspan": 1},
+            {"id": "fan_stack", "enabled": true, "col": 3, "row": 0, "colspan": 1, "rowspan": 1}
+          ]
+        }
+      ],
+      "main_page_index": 0,
+      "next_page_id": 1
+    }
   },
 
   "ams": {

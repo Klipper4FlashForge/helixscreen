@@ -53,4 +53,3 @@ class WizardTelemetryStep : public helix::wizard::Step {
 };
 
 WizardTelemetryStep* get_wizard_telemetry_step();
-void destroy_wizard_telemetry_step();

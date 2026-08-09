@@ -53,6 +53,19 @@ class ColorPicker : public Modal {
      */
     using ColorCallback = std::function<void(uint32_t color_rgb, const std::string& color_name)>;
 
+    /**
+     * @brief Which preset grid the picker shows.
+     *
+     * The preset swatches are domain-specific: filament colors are a poor fit
+     * for theming (no dark surfaces, accents far more saturated than any
+     * shipped theme) and vice versa. Hosts pick the grid that matches what
+     * they are editing.
+     */
+    enum class Palette : int {
+        General = 0, ///< color_swatch_grid — filament, LED, general use
+        Theme = 1,   ///< theme_swatch_grid — surface ramp + hue families
+    };
+
     ColorPicker();
     ~ColorPicker() override;
 
@@ -71,6 +84,15 @@ class ColorPicker : public Modal {
      * @return true if modal was created successfully
      */
     bool show_with_color(lv_obj_t* parent, uint32_t initial_color);
+
+    /**
+     * @brief Choose which preset grid the picker builds.
+     *
+     * Must be called before show_with_color() — the grid is selected
+     * structurally at build time via <if> in color_picker.xml, so changing it
+     * while visible has no effect until the next show. Defaults to General.
+     */
+    void set_palette(Palette palette);
 
     /**
      * @brief Set callback for when color is selected
@@ -100,6 +122,7 @@ class ColorPicker : public Modal {
   private:
     // === State ===
     uint32_t selected_color_ = 0x808080;
+    Palette palette_ = Palette::General;
     ColorCallback color_callback_;
     std::function<void()> dismiss_callback_;
 

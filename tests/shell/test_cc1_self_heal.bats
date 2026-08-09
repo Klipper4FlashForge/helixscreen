@@ -99,7 +99,7 @@ EOF
     _make_stock_sibling guppyscreen
     run helix_platform_reassert_wrappers
     [ "$status" -eq 0 ]
-    ! grep -q "HELIXSCREEN_WRAPPER" "$MOCK_ROOT/etc/init.d/guppyscreen"
+    refute grep -q "HELIXSCREEN_WRAPPER" "$MOCK_ROOT/etc/init.d/guppyscreen"
     grep -q "stock guppyscreen" "$MOCK_ROOT/etc/init.d/guppyscreen"
     [ ! -e "$MOCK_ROOT/etc/init.d/guppyscreen.helix-bak" ]
 }
@@ -120,7 +120,7 @@ EOF
     run helix_platform_reassert_wrappers
     [ "$status" -eq 0 ]
     # Guard failed → stock file left in place, NOT re-wrapped.
-    ! grep -q "HELIXSCREEN_WRAPPER" "$MOCK_ROOT/etc/init.d/grumpyscreen"
+    refute grep -q "HELIXSCREEN_WRAPPER" "$MOCK_ROOT/etc/init.d/grumpyscreen"
     grep -q "stock grumpyscreen" "$MOCK_ROOT/etc/init.d/grumpyscreen"
 }
 

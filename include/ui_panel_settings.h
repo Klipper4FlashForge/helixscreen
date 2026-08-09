@@ -111,8 +111,9 @@ class SettingsPanel : public PanelBase {
     lv_obj_t* network_row_ = nullptr;
     lv_obj_t* factory_reset_row_ = nullptr;
 
-    // Change host modal (lazy-created)
-    std::unique_ptr<ChangeHostModal> change_host_modal_;
+    // Change host modal is owned by helix::ui::show_change_host_modal(); the
+    // connection-failed prompt reaches the same dialog, and ChangeHostModal keeps
+    // a static active_instance_, so a second owner here would fight it.
 
     // LED state observer (syncs toggle with printer LED state)
     ObserverGuard led_state_observer_;
@@ -133,6 +134,14 @@ class SettingsPanel : public PanelBase {
     // Platform visibility subjects (Android hides these)
     lv_subject_t show_network_settings_subject_;
     lv_subject_t show_update_settings_subject_;
+    // 1 when updates are managed by the device firmware (HELIX_DISABLE_AUTO_UPDATES):
+    // hides the in-app check/install controls and shows a static notice instead.
+    lv_subject_t updates_firmware_managed_subject_;
+    // 1 when in-app updates are suppressed for a NON-firmware reason (self-update is
+    // physically impossible because the install tree isn't writable). Drives a
+    // neutral "updates aren't available" notice, mutually exclusive with the
+    // firmware-managed notice above.
+    lv_subject_t updates_unavailable_subject_;
     lv_subject_t show_backlight_settings_subject_;
 
     // Touch calibration status subject
@@ -172,7 +181,6 @@ class SettingsPanel : public PanelBase {
 
     void handle_dark_mode_changed(bool enabled);
     void handle_animations_changed(bool enabled);
-    void handle_display_sleep_changed(int index);
     void handle_led_light_changed(bool enabled);
     void handle_led_settings_clicked();
     void handle_sound_settings_clicked();
@@ -217,6 +225,9 @@ class SettingsPanel : public PanelBase {
 
     // Called by plugin failure toast action to open plugins overlay
     void handle_plugins_clicked();
+
+    // Opens the Performance overlay (System settings row)
+    void handle_performance_clicked();
 
     // Note: handle_hardware_action() moved to HardwareHealthOverlay
     // See ui_settings_hardware_health.h
@@ -279,7 +290,6 @@ class SettingsPanel : public PanelBase {
     // === Static Trampolines (private - only used internally) ===
     //
     static void on_dark_mode_changed(lv_event_t* e);
-    static void on_display_sleep_changed(lv_event_t* e);
 
     // Static callbacks for overlays
     static void on_restart_later_clicked(lv_event_t* e);

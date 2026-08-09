@@ -2,13 +2,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /**
  * @file spoolman_manager.cpp
- * @brief Centralized Spoolman weight polling and circuit breaker management
+ * @brief Centralized Spoolman weight polling, circuit breaker, and identity cache
  *
  * @pattern Singleton with static s_shutdown_flag atomic for callback safety
  * @threading Weight refresh callbacks arrive from HTTP thread; circuit breaker
- *            state is updated on UI thread via queue_update
+ *            state and the identity cache are updated on the UI thread via
+ *            queue_update. The identity entry points are additionally mutex-
+ *            guarded and LVGL-free, so an invalidation from a save completion
+ *            (HTTP thread) is safe without marshalling.
  *
  * @see ams_state.cpp (slot data remains in AmsState)
+ * @see include/filament_display_name.h (the resolver this cache feeds)
  */
 
 #include "spoolman_manager.h"
@@ -18,8 +22,8 @@
 
 #include "ams_state.h"
 #include "app_globals.h"
-#include "lvgl/src/others/translation/lv_translation.h"
 #include "i_moonraker_api.h"
+#include "lvgl/src/others/translation/lv_translation.h"
 #include "observer_factory.h"
 #include "printer_state.h"
 #include "runtime_config.h"
@@ -31,6 +35,30 @@ using namespace helix;
 
 // Shutdown flag to prevent async callbacks from accessing destroyed singleton
 std::atomic<bool> SpoolmanManager::s_shutdown_flag{false};
+
+namespace {
+
+/**
+ * @brief Project a Spoolman spool record onto the identity the label needs.
+ *
+ * `SpoolInfo::filament_name` is Spoolman's `filament.name`
+ * ("PolyTerra Ambrosia Pink") — the human filament name, which is exactly
+ * what the label wants.
+ *
+ * Pure — no LVGL, no singleton access — so it is safe to call from either thread.
+ */
+helix::SpoolIdentity identity_from_spool(const SpoolInfo& spool) {
+    helix::SpoolIdentity identity;
+    identity.vendor = spool.vendor;
+    identity.filament_name = spool.filament_name;
+    identity.material = spool.material;
+    identity.color_hex = spool.color_hex;
+    identity.filament_id = spool.filament_id;
+    identity.vendor_id = spool.vendor_id;
+    return identity;
+}
+
+} // namespace
 
 SpoolmanManager& SpoolmanManager::instance() {
     static SpoolmanManager inst;
@@ -91,6 +119,11 @@ void SpoolmanManager::init_subjects() {
                         self->poll_timer_ = nullptr;
                     }
                     self->reset_circuit_breaker();
+                    // Nothing will refresh these while Spoolman is gone, and the
+                    // next Spoolman may not be the same one (printer switch).
+                    // Drop them so the resolver falls back to firmware data.
+                    self->identity_cache_.clear();
+                    self->identity_unresolvable_.clear();
                 }
             });
     }
@@ -123,6 +156,12 @@ void SpoolmanManager::deinit_subjects() {
     // Clear dangling API pointer — IMoonrakerAPI is destroyed during teardown
     api_ = nullptr;
 
+    // Direct member access, not clear_identity_cache(): s_shutdown_flag is
+    // already set above, so the static entry point would no-op and the cache
+    // would survive a soft restart (printer switch) into a different Spoolman.
+    identity_cache_.clear();
+    identity_unresolvable_.clear();
+
     if (poll_timer_ && lv_is_initialized()) {
         lv_timer_delete(poll_timer_);
         poll_timer_ = nullptr;
@@ -140,11 +179,12 @@ void SpoolmanManager::set_api(IMoonrakerAPI* api) {
 void SpoolmanManager::refresh_spoolman_weights() {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
 
-    // Mock backends use fake spoolman IDs that don't exist in real Spoolman
-    if (get_runtime_config()->should_mock_ams()) {
-        return;
-    }
-
+    // Mock mode polls too. AmsBackendMock seeds spoolman_id = lane + 1 to mirror
+    // MoonrakerSpoolmanAPIMock::init_mock_spools() (ids 1-7), so those ids resolve
+    // against the mock API and the identity cache fills exactly as it does on real
+    // hardware. The old guard here predated that alignment and skipped the poll on
+    // the premise that mock ids were fabricated; keeping it would have made every
+    // Spoolman-sourced label undemonstrable under --test.
     if (!api_) {
         return;
     }
@@ -195,6 +235,15 @@ void SpoolmanManager::refresh_spoolman_weights() {
         for (int i = 0; i < slot_count; ++i) {
             SlotInfo slot = backend->get_slot_info(i);
             if (slot.spoolman_id > 0) {
+                // A spool Spoolman has already denied exists has no weight to
+                // fetch either. Skipping it is what stops a deleted link from
+                // becoming one request per slot per poll, forever.
+                if (is_identity_unresolvable(slot.spoolman_id)) {
+                    spdlog::trace("[SpoolmanManager] Slot {} spool {} is unresolvable, skipping", i,
+                                  slot.spoolman_id);
+                    continue;
+                }
+
                 ++linked_count;
                 int slot_index = i;
                 int spoolman_id = slot.spoolman_id;
@@ -206,6 +255,11 @@ void SpoolmanManager::refresh_spoolman_weights() {
                         if (!spool_opt.has_value()) {
                             spdlog::warn("[SpoolmanManager] Spoolman spool {} not found",
                                          spoolman_id);
+                            // "No such spool" is an answer, not a transport
+                            // failure — the circuit breaker must not see it, but
+                            // the id must stop being polled.
+                            helix::ui::queue_update(
+                                [spoolman_id]() { note_identity_unresolvable(spoolman_id); });
                             return;
                         }
 
@@ -218,11 +272,16 @@ void SpoolmanManager::refresh_spoolman_weights() {
                             float remaining_weight_g;
                             float total_weight_g;
                             bool local_weight; // Backend tracks remaining weight locally
+                            // Whole record, carried only so the identity side
+                            // channel can be filled on the UI thread. NOTHING
+                            // from here is written onto the slot — see the
+                            // persist=false note below.
+                            SpoolInfo spool;
                         };
 
                         auto update_data = std::make_unique<WeightUpdate>(WeightUpdate{
                             slot_index, spoolman_id, static_cast<float>(spool.remaining_weight_g),
-                            static_cast<float>(spool.initial_weight_g), local_weight});
+                            static_cast<float>(spool.initial_weight_g), local_weight, spool});
 
                         helix::ui::queue_update<
                             WeightUpdate>(std::move(update_data), [](WeightUpdate* d) {
@@ -242,6 +301,12 @@ void SpoolmanManager::refresh_spoolman_weights() {
                             }
                             mgr.consecutive_failures_ = 0;
                             mgr.unavailable_notified_ = false;
+
+                            // Identity side channel. Must happen BEFORE the
+                            // slot-reassignment and weights-unchanged early
+                            // returns below — a slot whose weight never moves
+                            // would otherwise never get a name.
+                            cache_identity(d->spool);
 
                             AmsState& ams = AmsState::instance();
                             auto* primary = ams.get_backend(0);
@@ -345,7 +410,8 @@ void SpoolmanManager::refresh_spoolman_weights() {
 
     // Also refresh external spool if it has a Spoolman link
     auto ext_spool = AmsState::instance().get_external_spool_info();
-    if (ext_spool.has_value() && ext_spool->spoolman_id > 0) {
+    if (ext_spool.has_value() && ext_spool->spoolman_id > 0 &&
+        !is_identity_unresolvable(ext_spool->spoolman_id)) {
         ++linked_count;
         int ext_spoolman_id = ext_spool->spoolman_id;
 
@@ -355,6 +421,8 @@ void SpoolmanManager::refresh_spoolman_weights() {
                 if (!spool_opt.has_value()) {
                     spdlog::warn("[SpoolmanManager] External spool Spoolman #{} not found",
                                  ext_spoolman_id);
+                    helix::ui::queue_update(
+                        [ext_spoolman_id]() { note_identity_unresolvable(ext_spoolman_id); });
                     return;
                 }
 
@@ -362,10 +430,14 @@ void SpoolmanManager::refresh_spoolman_weights() {
                 float new_remaining = static_cast<float>(spool.remaining_weight_g);
                 float new_total = static_cast<float>(spool.initial_weight_g);
 
-                helix::ui::queue_update([ext_spoolman_id, new_remaining, new_total]() {
+                helix::ui::queue_update([ext_spoolman_id, new_remaining, new_total, spool]() {
                     if (s_shutdown_flag.load(std::memory_order_acquire)) {
                         return;
                     }
+
+                    // Before the unchanged-weights early return below, same as
+                    // the AMS slot path.
+                    cache_identity(spool);
 
                     AmsState& state = AmsState::instance();
                     auto ext = state.get_external_spool_info();
@@ -401,6 +473,122 @@ void SpoolmanManager::refresh_spoolman_weights() {
         spdlog::trace("[SpoolmanManager] Refreshing Spoolman weights for {} linked slots",
                       linked_count);
     }
+}
+
+// ============================================================================
+// Spoolman identity side channel
+//
+// Every entry point below is static and checks s_shutdown_flag BEFORE touching
+// the singleton: the flag has its own storage and stays readable after the
+// instance is gone, which is what makes these callable from an HTTP-thread
+// completion during teardown. None of them calls into LVGL.
+// ============================================================================
+
+std::optional<helix::SpoolIdentity> SpoolmanManager::find_identity(int spool_id) {
+    if (spool_id <= 0 || s_shutdown_flag.load(std::memory_order_acquire)) {
+        return std::nullopt;
+    }
+
+    SpoolmanManager& mgr = instance();
+    std::lock_guard<std::recursive_mutex> lock(mgr.mutex_);
+
+    auto it = mgr.identity_cache_.find(spool_id);
+    if (it == mgr.identity_cache_.end()) {
+        return std::nullopt;
+    }
+    return it->second; // by value — the map can rehash under a later poll
+}
+
+void SpoolmanManager::cache_identity(const SpoolInfo& spool) {
+    if (spool.id <= 0 || s_shutdown_flag.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    SpoolmanManager& mgr = instance();
+    std::lock_guard<std::recursive_mutex> lock(mgr.mutex_);
+
+    // A record came back, so whatever made this id unresolvable is over.
+    mgr.identity_unresolvable_.erase(spool.id);
+
+    // Identity is immutable in practice. Skipping the re-extraction here is the
+    // whole point of splitting the cadences: the weight fetch that carried this
+    // record still lands, the identity work happens once.
+    if (mgr.identity_cache_.count(spool.id) > 0) {
+        spdlog::trace("[SpoolmanManager] Identity for spool {} already cached, not re-extracting",
+                      spool.id);
+        return;
+    }
+
+    helix::SpoolIdentity identity = identity_from_spool(spool);
+    if (!identity.valid()) {
+        // Ids and a colour hex cannot name anything — storing this would be
+        // indistinguishable from a miss to the resolver, and would block a
+        // later, better record from being taken.
+        spdlog::trace("[SpoolmanManager] Spool {} carries no usable identity, not caching",
+                      spool.id);
+        return;
+    }
+
+    spdlog::debug("[SpoolmanManager] Cached identity for spool {}: vendor='{}' name='{}' "
+                  "material='{}'",
+                  spool.id, identity.vendor, identity.filament_name, identity.material);
+    mgr.identity_cache_.emplace(spool.id, std::move(identity));
+}
+
+void SpoolmanManager::note_identity_unresolvable(int spool_id) {
+    if (spool_id <= 0 || s_shutdown_flag.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    SpoolmanManager& mgr = instance();
+    std::lock_guard<std::recursive_mutex> lock(mgr.mutex_);
+
+    mgr.identity_cache_.erase(spool_id);
+    if (mgr.identity_unresolvable_.insert(spool_id).second) {
+        spdlog::info("[SpoolmanManager] Spool {} is not in Spoolman — no longer polling it",
+                     spool_id);
+    }
+}
+
+bool SpoolmanManager::is_identity_unresolvable(int spool_id) {
+    if (spool_id <= 0 || s_shutdown_flag.load(std::memory_order_acquire)) {
+        return false;
+    }
+
+    SpoolmanManager& mgr = instance();
+    std::lock_guard<std::recursive_mutex> lock(mgr.mutex_);
+    return mgr.identity_unresolvable_.count(spool_id) > 0;
+}
+
+void SpoolmanManager::invalidate_identity(int spool_id) {
+    if (spool_id <= 0 || s_shutdown_flag.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    SpoolmanManager& mgr = instance();
+    std::lock_guard<std::recursive_mutex> lock(mgr.mutex_);
+
+    const bool had = mgr.identity_cache_.erase(spool_id) > 0;
+    const bool was_dead = mgr.identity_unresolvable_.erase(spool_id) > 0;
+    if (had || was_dead) {
+        spdlog::debug("[SpoolmanManager] Invalidated cached identity for spool {}", spool_id);
+    }
+}
+
+void SpoolmanManager::clear_identity_cache() {
+    if (s_shutdown_flag.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    SpoolmanManager& mgr = instance();
+    std::lock_guard<std::recursive_mutex> lock(mgr.mutex_);
+
+    if (!mgr.identity_cache_.empty() || !mgr.identity_unresolvable_.empty()) {
+        spdlog::debug("[SpoolmanManager] Clearing identity cache ({} entries, {} unresolvable)",
+                      mgr.identity_cache_.size(), mgr.identity_unresolvable_.size());
+    }
+    mgr.identity_cache_.clear();
+    mgr.identity_unresolvable_.clear();
 }
 
 void SpoolmanManager::reset_circuit_breaker() {

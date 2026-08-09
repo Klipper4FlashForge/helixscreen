@@ -5,11 +5,12 @@
 
 #include "ui_observer_guard.h"
 
-#include "lvgl.h"
 #include "i_moonraker_api.h"
+#include "lvgl.h"
 #include "printer_state.h"
 #include "subject_managed_panel.h"
 
+#include <atomic>
 #include <chrono>
 
 /**
@@ -30,8 +31,18 @@ enum class RecoveryReason {
 namespace RecoverySuppression {
 static constexpr uint32_t SHORT = 5000;   ///< Brief operations (settings switch)
 static constexpr uint32_t NORMAL = 10000; ///< Standard restarts (firmware restart, power toggle)
-static constexpr uint32_t LONG = 15000;   ///< Extended operations (calibration, service install)
-static constexpr uint32_t EXTRA = 30000;  ///< Multi-step operations (PID→MPC migration)
+/// Extended operations (calibration, service install).
+///
+/// Deliberately short. Widening this to cover printers that chain a second
+/// config write + restart (Creality K2 + CFS writes the CFS Tn_data via
+/// CXSAVE_CONFIG tens of seconds after SAVE_CONFIG) was tried and reverted: the
+/// suppression check is edge-triggered on the klippy state transition, so a
+/// window long enough to cover the chained restart also swallows a genuine
+/// unrecoverable shutdown landing in the same span — observed at 57s after
+/// SAVE_CONFIG, which a 60s window would have hidden from the user entirely.
+/// Prefer a spurious dialog over a silently-eaten shutdown.
+static constexpr uint32_t LONG = 15000;
+static constexpr uint32_t EXTRA = 30000; ///< Multi-step operations (PID→MPC migration)
 } // namespace RecoverySuppression
 
 /**
@@ -129,6 +140,10 @@ class EmergencyStopOverlay {
      * If the dialog is already showing, updates the content to reflect
      * the combined error state (e.g., SHUTDOWN + DISCONNECTED).
      *
+     * Safe to call from any thread — callers include MoonrakerClient's event
+     * handler on the libhv event-loop thread and AbortManager. Only the atomic
+     * suppression check runs on the caller's thread; the rest is marshalled.
+     *
      * @param reason Why the recovery dialog is being shown
      */
     void show_recovery_for(RecoveryReason reason);
@@ -181,8 +196,10 @@ class EmergencyStopOverlay {
     lv_obj_t* confirmation_dialog_ = nullptr;
     lv_obj_t* recovery_dialog_ = nullptr;
 
-    // Restart operation tracking - prevents recovery dialog during expected SHUTDOWN
-    bool restart_in_progress_ = false;
+    // Restart operation tracking - prevents recovery dialog during expected SHUTDOWN.
+    // Atomic: written from the klippy_state observer (may run on the WebSocket
+    // thread) and read by is_expected_restart() on the LVGL main thread.
+    std::atomic<bool> restart_in_progress_{false};
 
     // Skip the first klippy_state observer fire — it carries the subject's
     // default (SHUTDOWN) before Moonraker has reported real state. A real
@@ -193,8 +210,12 @@ class EmergencyStopOverlay {
     // Recovery dialog state
     RecoveryReason recovery_reason_ = RecoveryReason::NONE;
 
-    // Time-based suppression for expected restarts (SAVE_CONFIG, PID calibration)
-    uint32_t suppress_recovery_until_ = 0;
+    // Time-based suppression for expected restarts (SAVE_CONFIG, PID calibration).
+    // Atomic: suppress_recovery_dialog() is called from Moonraker gcode callbacks
+    // that run on the WebSocket background thread (e.g. z_offset_utils.cpp), while
+    // is_recovery_suppressed() / is_expected_restart() read it from the LVGL main
+    // thread. Plain uint32_t here was a data race.
+    std::atomic<uint32_t> suppress_recovery_until_{0};
 
     // Visibility subject (1=visible, 0=hidden) - drives XML bindings
     lv_subject_t estop_visible_;
@@ -220,7 +241,13 @@ class EmergencyStopOverlay {
     void execute_emergency_stop();
     void show_confirmation_dialog();
     void dismiss_confirmation_dialog();
+    friend class EmergencyStopOverlayTestAccess;
+
     void show_recovery_dialog();
+    /// Main-thread half of show_recovery_for(). Reads and writes
+    /// recovery_dialog_/recovery_reason_ and queries ModalStack, none of which
+    /// may be touched from the libhv thread.
+    void show_recovery_for_main(RecoveryReason reason);
     void dismiss_recovery_dialog();
     void update_recovery_dialog_content();
     void restart_klipper();

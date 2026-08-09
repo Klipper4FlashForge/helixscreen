@@ -16,54 +16,49 @@
     <setting_section_header title="SETTINGS" title_tag="SETTINGS" icon="settings"/>
     <!-- Category navigation rows grouped in one card -->
     <setting_group>
-    <!-- ================================================================== -->
-    <!-- DISPLAY & SOUND -->
-    <!-- ================================================================== -->
-    <setting_action_row name="row_display_sound"
-                        label="Display &amp; Sound" label_tag="Display &amp; Sound" icon="light"
-                        description="Language, theme, brightness, and sound"
-                        description_tag="Language, theme, brightness, and sound"
-                        callback="on_display_sound_clicked"/>
-    <!-- ================================================================== -->
-    <!-- PRINTING -->
-    <!-- ================================================================== -->
-    <setting_action_row name="row_printing"
-                        label="Printing" label_tag="Printing" icon="printer_3d"
-                        description="Toolhead, G-code, limits, and materials"
-                        description_tag="Toolhead, G-code, limits, and materials"
-                        callback="on_printing_clicked"/>
-    <!-- ================================================================== -->
-    <!-- HARDWARE & DEVICES -->
-    <!-- ================================================================== -->
-    <setting_action_row name="row_hardware"
-                        label="Hardware &amp; Devices" label_tag="Hardware &amp; Devices" icon="sysinfo"
-                        description="Printers, Multi-Filament System, fans, sensors, and LEDs"
-                        description_tag="Printers, Multi-Filament System, fans, sensors, and LEDs"
-                        callback="on_hardware_clicked"/>
-    <!-- ================================================================== -->
-    <!-- SAFETY & NOTIFICATIONS -->
-    <!-- ================================================================== -->
-    <setting_action_row name="row_safety"
-                        label="Safety &amp; Notifications" label_tag="Safety &amp; Notifications" icon="alert_octagon"
-                        description="Emergency stop and print alerts"
-                        description_tag="Emergency stop and print alerts"
-                        callback="on_safety_clicked"/>
-    <!-- ================================================================== -->
-    <!-- SYSTEM -->
-    <!-- ================================================================== -->
-    <setting_action_row name="row_system"
-                        label="System" label_tag="System" icon="settings"
-                        description="Security, network, host, and administration"
-                        description_tag="Security, network, host, and administration"
-                        callback="on_system_clicked"/>
-    <!-- ================================================================== -->
-    <!-- HELP & ABOUT -->
-    <!-- ================================================================== -->
-    <setting_action_row name="row_help"
-                        label="Help &amp; About" label_tag="Help &amp; About" icon="help"
-                        description="Support, documentation, and version info"
-                        description_tag="Support, documentation, and version info"
-                        callback="on_help_clicked"/>
+      <!-- ================================================================== -->
+      <!-- DISPLAY & SOUND -->
+      <!-- ================================================================== -->
+      <setting_action_row name="row_display_sound"
+                          label="Display &amp; Sound" label_tag="Display &amp; Sound" icon="light"
+                          description="Language, theme, brightness, and sound"
+                          description_tag="Language, theme, brightness, and sound" callback="on_display_sound_clicked"/>
+      <!-- ================================================================== -->
+      <!-- PRINTING -->
+      <!-- ================================================================== -->
+      <setting_action_row name="row_printing"
+                          label="Printing" label_tag="Printing" icon="printer_3d"
+                          description="Toolhead, G-code, limits, and materials"
+                          description_tag="Toolhead, G-code, limits, and materials" callback="on_printing_clicked"/>
+      <!-- ================================================================== -->
+      <!-- HARDWARE & DEVICES -->
+      <!-- ================================================================== -->
+      <setting_action_row name="row_hardware"
+                          label="Hardware &amp; Devices" label_tag="Hardware &amp; Devices" icon="sysinfo"
+                          description="Printers, Multi-Filament System, fans, sensors, and LEDs"
+                          description_tag="Printers, Multi-Filament System, fans, sensors, and LEDs"
+                          callback="on_hardware_clicked"/>
+      <!-- ================================================================== -->
+      <!-- SAFETY & NOTIFICATIONS -->
+      <!-- ================================================================== -->
+      <setting_action_row name="row_safety"
+                          label="Safety &amp; Notifications" label_tag="Safety &amp; Notifications" icon="alert_octagon"
+                          description="Emergency stop and print alerts"
+                          description_tag="Emergency stop and print alerts" callback="on_safety_clicked"/>
+      <!-- ================================================================== -->
+      <!-- SYSTEM -->
+      <!-- ================================================================== -->
+      <setting_action_row name="row_system"
+                          label="System" label_tag="System" icon="settings"
+                          description="Security, network, host, and administration"
+                          description_tag="Security, network, host, and administration" callback="on_system_clicked"/>
+      <!-- ================================================================== -->
+      <!-- HELP & ABOUT -->
+      <!-- ================================================================== -->
+      <setting_action_row name="row_help"
+                          label="Help &amp; About" label_tag="Help &amp; About" icon="help"
+                          description="Support, documentation, and version info"
+                          description_tag="Support, documentation, and version info" callback="on_help_clicked"/>
     </setting_group>
     <!-- Bottom padding for scroll -->
     <lv_obj width="100%" scrollable="false">

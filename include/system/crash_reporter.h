@@ -25,6 +25,26 @@
 
 #include "hv/json.hpp"
 
+/**
+ * @brief Is a reported heap-snapshot age arithmetically possible?
+ *
+ * The snapshot is taken by the running process, so it can never be older than
+ * the process itself. Bundle ED2YC336 reported an age of 120036989ms (33.3h)
+ * against an uptime of 35390s (9.8h), which is not "stale" — it is impossible,
+ * and every heap figure in that report was therefore meaningless.
+ *
+ * Two things produce it, and the raw stamps emitted alongside the age tell them
+ * apart: the low 32 bits of CLOCK_MONOTONIC folding (needs ~49.7 days of
+ * uptime), or the main loop's 10s refresh having genuinely stalled.
+ *
+ * Pure; unit-tested. `uptime_sec <= 0` means we have nothing to check against,
+ * which counts as plausible rather than as a failure.
+ *
+ * @param age_ms     Reported heap_snapshot_age_ms
+ * @param uptime_sec Reported process uptime in seconds
+ */
+bool heap_snapshot_age_is_plausible(long age_ms, int uptime_sec);
+
 class CrashReporter {
   public:
     static CrashReporter& instance();
@@ -110,7 +130,12 @@ class CrashReporter {
 
         // Cached heap snapshot (refreshed every ~10s from main loop)
         struct HeapSnapshot {
-            long age_ms = 0; // monotonic-ms timestamp when captured
+            long age_ms = 0; // ms between snapshot capture and the crash
+            // Raw stamps the age was derived from — both low 32 bits of
+            // CLOCK_MONOTONIC. Present only on builds that emit them; 0 means
+            // the crash predates the fields, not that the clock read zero.
+            long snapshot_ts_ms = 0; // when refresh_heap_snapshot() ran
+            long mono_ms_now = 0;    // clock reading taken in the signal handler
             long rss_kb = 0;
             long vsz_kb = 0;
             long arena_kb = 0;    // glibc mallinfo total arena

@@ -3,7 +3,5 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <!-- Reusable multi-select list component -->
 <component>
-  <view extends="lv_obj"
-        width="100%" height="content" flex_flow="column" style_pad_gap="0"
-        scrollable="false"/>
+  <view extends="lv_obj" width="100%" height="content" flex_flow="column" style_pad_gap="0" scrollable="false"/>
 </component>

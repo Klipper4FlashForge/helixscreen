@@ -83,7 +83,18 @@ struct MoonrakerError {
         } else if (type == MoonrakerErrorType::CONNECTION_LOST) {
             return "Connection to printer lost.";
         } else if (type == MoonrakerErrorType::NOT_READY) {
-            return "Printer is not ready. Please wait for initialization.";
+            // A populated NOT_READY message is always more specific than the
+            // generic fallback, and the fallback is actively misleading for the
+            // transient cases: the guards distinguish "busy — try again in a
+            // moment" and "homing is disabled while a print is in progress",
+            // neither of which is "wait for initialization". Klipper's own
+            // not-ready text likewise names the actual fault.
+            //
+            // Deliberately narrow: TIMEOUT/CONNECTION_LOST above keep their
+            // curated strings because their `message` fields hold diagnostic
+            // detail ("WebSocket connection lost"), which reads as jargon.
+            return message.empty() ? "Printer is not ready. Please wait for initialization."
+                                   : message;
         } else if (type == MoonrakerErrorType::FILE_NOT_FOUND) {
             return "File not found on printer.";
         } else if (type == MoonrakerErrorType::PERMISSION_DENIED) {
@@ -160,12 +171,19 @@ struct MoonrakerError {
         err.type = MoonrakerErrorType::JSON_RPC_ERROR;
         err.method = method_name;
 
-        if (error_obj.contains("code")) {
-            err.code = error_obj["code"].get<int>();
+        // Type-check before .get<T>(): a wrong-typed field (a string "code", a
+        // null "message") throws nlohmann::type_error, and this runs on the
+        // WebSocket thread inside the request tracker's dispatch path. A throw
+        // there strands the caller's callback. Treat a wrong-typed field as
+        // absent instead.
+        const auto code_it = error_obj.find("code");
+        if (code_it != error_obj.end() && code_it->is_number()) {
+            err.code = code_it->get<int>();
         }
 
-        if (error_obj.contains("message")) {
-            err.message = extract_friendly_message(error_obj["message"].get<std::string>());
+        const auto msg_it = error_obj.find("message");
+        if (msg_it != error_obj.end() && msg_it->is_string()) {
+            err.message = extract_friendly_message(msg_it->get<std::string>());
         }
 
         if (error_obj.contains("data")) {
@@ -201,13 +219,16 @@ struct MoonrakerError {
     /**
      * @brief Create connection lost error
      * @param method_name Optional method name when connection was lost
+     * @param message Human-readable explanation (defaults to the generic transport message)
      * @return MoonrakerError configured as connection lost
      */
-    static MoonrakerError connection_lost(const std::string& method_name = "") {
+    static MoonrakerError
+    connection_lost(const std::string& method_name = "",
+                    const std::string& message = "WebSocket connection lost") {
         MoonrakerError err;
         err.type = MoonrakerErrorType::CONNECTION_LOST;
         err.method = method_name;
-        err.message = "WebSocket connection lost";
+        err.message = message;
         return err;
     }
 
@@ -223,6 +244,94 @@ struct MoonrakerError {
         err.type = MoonrakerErrorType::PARSE_ERROR;
         err.method = method_name;
         err.message = "JSON parse error: " + what;
+        return err;
+    }
+
+    /**
+     * @brief Create a "not ready" error (Klipper halted/busy/homing-blocked)
+     * @param method Method name that was refused
+     * @param message Human-readable explanation
+     * @return MoonrakerError configured as NOT_READY
+     */
+    static MoonrakerError not_ready(const std::string& method, const std::string& message) {
+        MoonrakerError err;
+        err.type = MoonrakerErrorType::NOT_READY;
+        err.method = method;
+        err.message = message;
+        return err;
+    }
+
+    /**
+     * @brief Create a validation error (bad request / rejected parameters)
+     * @param method Method name that failed validation
+     * @param message Human-readable explanation
+     * @return MoonrakerError configured as VALIDATION_ERROR
+     */
+    static MoonrakerError validation_error(const std::string& method, const std::string& message) {
+        MoonrakerError err;
+        err.type = MoonrakerErrorType::VALIDATION_ERROR;
+        err.method = method;
+        err.message = message;
+        return err;
+    }
+
+    /**
+     * @brief Create an UNKNOWN error (uncategorized failure)
+     * @param message Human-readable explanation
+     * @param method Optional method name that failed
+     * @return MoonrakerError configured as UNKNOWN
+     */
+    static MoonrakerError unknown(const std::string& message, const std::string& method = "") {
+        MoonrakerError err;
+        err.type = MoonrakerErrorType::UNKNOWN;
+        err.method = method;
+        err.message = message;
+        return err;
+    }
+
+    /**
+     * @brief Create an UNKNOWN error from a non-2xx HTTP response
+     * @param method Method name that issued the request
+     * @param status_code HTTP status code returned
+     * @return MoonrakerError with code=status_code and message "HTTP <code>"
+     */
+    static MoonrakerError http_status_error(const std::string& method, int status_code) {
+        MoonrakerError err;
+        err.type = MoonrakerErrorType::UNKNOWN;
+        err.code = status_code;
+        err.method = method;
+        err.message = "HTTP " + std::to_string(status_code);
+        return err;
+    }
+
+    /**
+     * @brief Create a FILE_NOT_FOUND error
+     * @param method Method name that requested the file
+     * @param message Human-readable explanation
+     * @return MoonrakerError configured as FILE_NOT_FOUND
+     */
+    static MoonrakerError file_not_found(const std::string& method, const std::string& message) {
+        MoonrakerError err;
+        err.type = MoonrakerErrorType::FILE_NOT_FOUND;
+        err.method = method;
+        err.message = message;
+        return err;
+    }
+
+    /**
+     * @brief Create a JSON_RPC_ERROR with an explicit message (not parsed from an error object)
+     * @param method Method name that failed
+     * @param message Human-readable explanation
+     * @param details Optional raw response payload for diagnostics
+     * @return MoonrakerError configured as JSON_RPC_ERROR
+     */
+    static MoonrakerError json_rpc_error(const std::string& method, const std::string& message,
+                                         const json& details = json()) {
+        MoonrakerError err;
+        err.type = MoonrakerErrorType::JSON_RPC_ERROR;
+        err.method = method;
+        err.message = message;
+        err.details = details;
         return err;
     }
 };

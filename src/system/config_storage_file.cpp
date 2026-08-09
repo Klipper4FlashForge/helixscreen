@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-#include "config_storage.h"
-
-#include "app_constants.h"
-#include "config_backup.h"
 #include "ui_error_reporting.h"
+
+#include "config_storage.h"
 
 #if !defined(HELIX_SPLASH_ONLY) && !defined(HELIX_WATCHDOG)
 #include "system/telemetry_manager.h"
@@ -26,10 +24,6 @@
 #include <unistd.h>
 
 namespace fs = std::filesystem;
-
-using AppConstants::Update::config_backup_fallback;
-using AppConstants::Update::CONFIG_BACKUP_PRIMARY;
-using helix::config_backup::write_rolling_backup;
 
 namespace helix {
 
@@ -147,8 +141,9 @@ class FileConfigStorage : public ConfigStorage {
                 }
             }
 
-            // Rolling backup outside install dir (survives Moonraker wipes).
-            write_rolling_backup(path_, CONFIG_BACKUP_PRIMARY, config_backup_fallback());
+            // The rolling backup is Config::save()'s job, not the backend's —
+            // whether a document is worth preserving is policy, not byte
+            // movement.
             return true;
         } catch (const std::exception& e) {
             NOTIFY_ERROR("Failed to save configuration: {}", e.what());
@@ -173,8 +168,7 @@ class FileConfigStorage : public ConfigStorage {
         if (!probe.is_open()) {
             int err = errno;
             if (err == EROFS || err == EACCES) {
-                spdlog::warn("[ConfigStorage] Read-only filesystem detected ({})",
-                             strerror(err));
+                spdlog::warn("[ConfigStorage] Read-only filesystem detected ({})", strerror(err));
                 return true;
             }
             return false;
@@ -184,7 +178,9 @@ class FileConfigStorage : public ConfigStorage {
         return false;
     }
 
-    std::string describe() const override { return path_; }
+    std::string describe() const override {
+        return path_;
+    }
 
   private:
     std::string path_;

@@ -451,29 +451,27 @@ void SpoolWizardOverlay::create_vendor_then_filament_then_spool() {
 
     api->spoolman().create_spoolman_vendor(
         data,
-        [this](const VendorInfo& vendor) {
-            helix::ui::queue_update([this, vendor]() {
-                if (!is_visible()) {
-                    spdlog::warn("[{}] Vendor created but overlay no longer visible", get_name());
-                    return;
-                }
-                selected_vendor_.server_id = vendor.id;
-                created_vendor_id_ = vendor.id;
-                spdlog::info("[{}] Created vendor id={} name='{}'", get_name(), vendor.id,
-                             vendor.name);
+        lifetime_.bg_cb("SpoolWizard::create_vendor_ok",
+                        [this](const VendorInfo& vendor) {
+                            if (!is_visible()) {
+                                spdlog::warn("[{}] Vendor created but overlay no longer visible",
+                                             get_name());
+                                return;
+                            }
+                            selected_vendor_.server_id = vendor.id;
+                            created_vendor_id_ = vendor.id;
+                            spdlog::info("[{}] Created vendor id={} name='{}'", get_name(),
+                                         vendor.id, vendor.name);
 
-                if (selected_filament_.server_id < 0) {
-                    create_filament_then_spool(vendor.id);
-                } else {
-                    create_spool(selected_filament_.server_id);
-                }
-            });
-        },
-        [this](const MoonrakerError& err) {
-            helix::ui::queue_update([this, msg = err.message]() {
-                on_creation_error(fmt::format("{} {}", lv_tr("Failed to create vendor:"), msg));
-            });
-        });
+                            if (selected_filament_.server_id < 0) {
+                                create_filament_then_spool(vendor.id);
+                            } else {
+                                create_spool(selected_filament_.server_id);
+                            }
+                        }),
+        lifetime_.bg_cb("SpoolWizard::create_vendor_error", [this](const MoonrakerError& err) {
+            on_creation_error(fmt::format("{} {}", lv_tr("Failed to create vendor:"), err.message));
+        }));
 }
 
 void SpoolWizardOverlay::create_filament_then_spool(int vendor_id) {
@@ -508,25 +506,24 @@ void SpoolWizardOverlay::create_filament_then_spool(int vendor_id) {
 
     api->spoolman().create_spoolman_filament(
         data,
-        [this](const FilamentInfo& filament) {
-            helix::ui::queue_update([this, filament]() {
-                if (!is_visible()) {
-                    spdlog::warn("[{}] Filament created but overlay no longer visible", get_name());
-                    return;
-                }
-                selected_filament_.server_id = filament.id;
-                created_filament_id_ = filament.id;
-                spdlog::info("[{}] Created filament id={} name='{}'", get_name(), filament.id,
-                             filament.display_name());
-                create_spool(filament.id);
-            });
-        },
-        [this](const MoonrakerError& err) {
-            helix::ui::queue_update([this, msg = err.message]() {
-                on_creation_error(fmt::format("{} {}", lv_tr("Failed to create filament:"), msg),
-                                  created_vendor_id_);
-            });
-        });
+        lifetime_.bg_cb("SpoolWizard::create_filament_ok",
+                        [this](const FilamentInfo& filament) {
+                            if (!is_visible()) {
+                                spdlog::warn("[{}] Filament created but overlay no longer visible",
+                                             get_name());
+                                return;
+                            }
+                            selected_filament_.server_id = filament.id;
+                            created_filament_id_ = filament.id;
+                            spdlog::info("[{}] Created filament id={} name='{}'", get_name(),
+                                         filament.id, filament.display_name());
+                            create_spool(filament.id);
+                        }),
+        lifetime_.bg_cb("SpoolWizard::create_filament_error", [this](const MoonrakerError& err) {
+            on_creation_error(
+                fmt::format("{} {}", lv_tr("Failed to create filament:"), err.message),
+                created_vendor_id_);
+        }));
 }
 
 void SpoolWizardOverlay::create_spool(int filament_id) {
@@ -553,21 +550,19 @@ void SpoolWizardOverlay::create_spool(int filament_id) {
 
     api->spoolman().create_spoolman_spool(
         data,
-        [this](const SpoolInfo& spool) {
-            helix::ui::queue_update([this, spool]() {
-                if (!is_visible()) {
-                    spdlog::warn("[{}] Spool created but overlay no longer visible", get_name());
-                    return;
-                }
-                on_creation_success(spool);
-            });
-        },
-        [this](const MoonrakerError& err) {
-            helix::ui::queue_update([this, msg = err.message]() {
-                on_creation_error(fmt::format("{} {}", lv_tr("Failed to create spool:"), msg),
-                                  created_vendor_id_, created_filament_id_);
-            });
-        });
+        lifetime_.bg_cb("SpoolWizard::create_spool_ok",
+                        [this](const SpoolInfo& spool) {
+                            if (!is_visible()) {
+                                spdlog::warn("[{}] Spool created but overlay no longer visible",
+                                             get_name());
+                                return;
+                            }
+                            on_creation_success(spool);
+                        }),
+        lifetime_.bg_cb("SpoolWizard::create_spool_error", [this](const MoonrakerError& err) {
+            on_creation_error(fmt::format("{} {}", lv_tr("Failed to create spool:"), err.message),
+                              created_vendor_id_, created_filament_id_);
+        }));
 }
 
 void SpoolWizardOverlay::on_creation_success(const SpoolInfo& spool) {
@@ -741,9 +736,12 @@ void SpoolWizardOverlay::load_vendors() {
     };
     auto ctx = std::make_shared<VendorLoadContext>();
 
-    // Helper lambda — called by whichever callback completes second
-    auto finish = [this, ctx]() {
-        helix::ui::queue_update([this, ctx]() {
+    // Helper lambda — called by whichever callback completes second, on whichever
+    // background thread got there. Captures a lifetime token rather than touching
+    // `this->lifetime_` off-thread (#707 TOCTOU); the deferred body is skipped
+    // outright if the overlay was deactivated in the meantime.
+    auto finish = [this, ctx, tok = lifetime_.token()]() {
+        tok.defer("SpoolWizard::load_vendors_apply", [this, ctx]() {
             all_vendors_ = merge_vendors(ctx->external_vendors, ctx->server_vendors);
             filtered_vendors_ = filter_vendor_list(all_vendors_, vendor_search_query_);
 
@@ -1098,7 +1096,10 @@ SpoolWizardOverlay::merge_filaments(const std::vector<FilamentInfo>& server_fila
         entry.name = fi.display_name();
         entry.material = fi.material;
         entry.color_hex = fi.color_hex;
-        entry.color_name = fi.color_name;
+        // FilamentEntry::color_name means a colour word ("Red") — it is what the
+        // colour picker fills on the create-new path. FilamentInfo::filament_name
+        // is the filament's own name and already reaches the entry through
+        // display_name() above, so it must not be copied here.
         entry.server_id = is_server ? fi.id : -1;
         entry.vendor_id = is_server ? fi.vendor_id : -1;
         entry.density = fi.density;
@@ -1230,62 +1231,59 @@ void SpoolWizardOverlay::load_filaments() {
     int vendor_id = selected_vendor_.server_id;
     api->spoolman().get_spoolman_filaments(
         vendor_id,
-        [this, vendor_id](const std::vector<FilamentInfo>& server_list) {
-            helix::ui::queue_update([this, server_list, vendor_id]() {
-                // Convert FilamentInfo -> FilamentEntry
-                for (const auto& fi : server_list) {
-                    FilamentEntry entry;
-                    entry.name = fi.display_name();
-                    entry.material = fi.material;
-                    entry.color_hex = fi.color_hex;
-                    entry.color_name = fi.color_name;
-                    entry.server_id = fi.id;
-                    entry.vendor_id = fi.vendor_id;
-                    entry.density = fi.density;
-                    entry.diameter = fi.diameter;
-                    entry.weight = fi.weight;
-                    entry.spool_weight = fi.spool_weight;
-                    entry.nozzle_temp_min = fi.nozzle_temp_min;
-                    entry.nozzle_temp_max = fi.nozzle_temp_max;
-                    entry.bed_temp_min = fi.bed_temp_min;
-                    entry.bed_temp_max = fi.bed_temp_max;
-                    entry.from_server = true;
-                    all_filaments_.push_back(entry);
-                }
+        lifetime_.bg_cb("SpoolWizard::load_filaments_apply",
+                        [this, vendor_id](const std::vector<FilamentInfo>& server_list) {
+                            // Convert FilamentInfo -> FilamentEntry
+                            for (const auto& fi : server_list) {
+                                FilamentEntry entry;
+                                entry.name = fi.display_name();
+                                entry.material = fi.material;
+                                entry.color_hex = fi.color_hex;
+                                // See to_entry(): a filament name is not a colour name.
+                                entry.server_id = fi.id;
+                                entry.vendor_id = fi.vendor_id;
+                                entry.density = fi.density;
+                                entry.diameter = fi.diameter;
+                                entry.weight = fi.weight;
+                                entry.spool_weight = fi.spool_weight;
+                                entry.nozzle_temp_min = fi.nozzle_temp_min;
+                                entry.nozzle_temp_max = fi.nozzle_temp_max;
+                                entry.bed_temp_min = fi.bed_temp_min;
+                                entry.bed_temp_max = fi.bed_temp_max;
+                                entry.from_server = true;
+                                all_filaments_.push_back(entry);
+                            }
 
-                // Sort by material then name
-                std::sort(all_filaments_.begin(), all_filaments_.end(),
-                          [](const FilamentEntry& a, const FilamentEntry& b) {
-                              std::string a_mat = to_lower(a.material);
-                              std::string b_mat = to_lower(b.material);
-                              if (a_mat != b_mat)
-                                  return a_mat < b_mat;
-                              return to_lower(a.name) < to_lower(b.name);
-                          });
+                            // Sort by material then name
+                            std::sort(all_filaments_.begin(), all_filaments_.end(),
+                                      [](const FilamentEntry& a, const FilamentEntry& b) {
+                                          std::string a_mat = to_lower(a.material);
+                                          std::string b_mat = to_lower(b.material);
+                                          if (a_mat != b_mat)
+                                              return a_mat < b_mat;
+                                          return to_lower(a.name) < to_lower(b.name);
+                                      });
 
-                if (subjects_initialized_) {
-                    lv_subject_set_int(&filaments_loading_subject_, 0);
-                    lv_subject_set_int(&filament_count_subject_,
-                                       static_cast<int32_t>(all_filaments_.size()));
-                }
+                            if (subjects_initialized_) {
+                                lv_subject_set_int(&filaments_loading_subject_, 0);
+                                lv_subject_set_int(&filament_count_subject_,
+                                                   static_cast<int32_t>(all_filaments_.size()));
+                            }
 
-                populate_filament_list();
-                spdlog::info("[SpoolWizard] Loaded {} filaments for vendor_id {}",
-                             all_filaments_.size(), vendor_id);
-            });
-        },
-        [this](const MoonrakerError& err) {
+                            populate_filament_list();
+                            spdlog::info("[SpoolWizard] Loaded {} filaments for vendor_id {}",
+                                         all_filaments_.size(), vendor_id);
+                        }),
+        lifetime_.bg_cb("SpoolWizard::load_filaments_error", [this](const MoonrakerError& err) {
             spdlog::warn("[SpoolWizard] Failed to fetch filaments: {}", err.message);
-            helix::ui::queue_update([this]() {
-                if (cleanup_called())
-                    return;
-                if (subjects_initialized_) {
-                    lv_subject_set_int(&filaments_loading_subject_, 0);
-                    lv_subject_set_int(&filament_count_subject_, 0);
-                }
-                populate_filament_list();
-            });
-        });
+            if (cleanup_called())
+                return;
+            if (subjects_initialized_) {
+                lv_subject_set_int(&filaments_loading_subject_, 0);
+                lv_subject_set_int(&filament_count_subject_, 0);
+            }
+            populate_filament_list();
+        }));
 }
 
 void SpoolWizardOverlay::select_filament(int index) {

@@ -6,6 +6,7 @@
 #include "ams_subscription_backend.h"
 #include "async_lifetime_guard.h"
 #include "error_event.h"
+#include "filament_slot_override_store.h"
 #include "slot_registry.h"
 
 #include <ctime>
@@ -93,17 +94,14 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
 
     // Operations
     AmsError load_filament(int slot_index) override;
-    AmsError unload_filament(int slot_index = -1) override;
+    AmsError unload_filament(int slot_index) override;
     AmsError select_slot(int slot_index) override;
     AmsError change_tool(int tool_number) override;
 
     // Recovery
     AmsError recover() override;
     AmsError reset() override;
-    AmsError reset_lane(int slot_index) override;
-    [[nodiscard]] bool supports_lane_reset() const override {
-        return true;
-    }
+    AmsError clear_fault(int slot_index) override;
     AmsError eject_lane(int slot_index) override;
     [[nodiscard]] bool supports_lane_eject() const override {
         return true;
@@ -150,6 +148,12 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     AmsError enable_bypass() override;
     AmsError disable_bypass() override;
     [[nodiscard]] bool is_bypass_active() const override;
+    /// Happy Hare users have a console; the screen passes their command through
+    /// rather than synthesising a prerequisite operation they never asked for
+    /// (#1229).
+    [[nodiscard]] bool allows_implicit_chaining() const override {
+        return false;
+    }
 
     // Endless Spool support (read-only - configured in Happy Hare config)
     [[nodiscard]] helix::printer::EndlessSpoolCapabilities
@@ -186,6 +190,10 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
         return true; // Live temp/target read from heater_generic via Moonraker subscriptions
     }
 
+    /// Delete this gate's user override ("Clear Spool"). Happy Hare previously
+    /// inherited the no-op default, so the button did nothing here.
+    void clear_slot_override(int slot_index) override;
+
     [[nodiscard]] bool has_firmware_spool_persistence() const override {
         return true; // Happy Hare persists via MMU_GATE_MAP SPOOLID
     }
@@ -214,6 +222,16 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
      */
     [[nodiscard]] std::vector<int> get_tool_mapping() const override;
 
+    // NOTE: has_per_slot_loaded_authority() is deliberately NOT overridden.
+    // printer.mmu.gate and printer.mmu.filament are Happy Hare's own values,
+    // parsed verbatim from one object into the aggregate pair, so the aggregate
+    // rule already answers with firmware truth here — unlike AFC, whose
+    // current_slot we derive from several sources. gate_status carries fill
+    // state, not seating, so the per-gate LOADED stamp is derived FROM that
+    // aggregate; believing it back would add staleness and would drop the
+    // highlight on a gate that ran out (gate_status 0) while its filament is
+    // still at the toolhead (prestonbrown/helixscreen#1199).
+
     // Device Management
     [[nodiscard]] std::vector<helix::printer::DeviceSection> get_device_sections() const override;
     [[nodiscard]] std::vector<helix::printer::DeviceAction> get_device_actions() const override;
@@ -237,6 +255,22 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     }
 
   private:
+    // === User-attached slot identity (FilamentSlotOverrideStore) =============
+    //
+    // Happy Hare's gate map carries spool_id / material / colour, but not brand,
+    // spool_name, total_weight_g, colour name or the Spoolman filament+vendor
+    // ids. Those live only here.
+    //
+    // PRIVATE namespace: lane_data belongs to the Happy Hare plugin, same as
+    // AFC. See AmsBackendAfc for the full rationale.
+    //
+    // Written blind — no Happy Hare hardware on hand; mirrors AFC exactly.
+    static constexpr const char* kOverrideNamespace = "helix-screen-hh-overrides";
+    std::unique_ptr<helix::ams::FilamentSlotOverrideStore> override_store_;
+    std::unordered_map<int, helix::ams::FilamentSlotOverride> overrides_;
+    void apply_overrides(SlotInfo& slot, int slot_index);
+    void persist_override(int slot_index, const SlotInfo& info);
+
     // Build a " GATES=g0,g1,..." suffix targeting a specific unit's gates for
     // MMU_HEATER on multi-unit (EMU) rigs. Returns "" for a single-unit MMU or
     // unit<0 so the command omits GATES and HH defaults to all non-empty gates.
@@ -259,6 +293,20 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
      * @param mmu_data JSON object containing printer.mmu data
      */
     void parse_mmu_state(const nlohmann::json& mmu_data);
+
+    /**
+     * @brief Re-derive every gate's SlotStatus from gate_status + the loaded gate
+     *
+     * printer.mmu arrives as a delta: `gate_status`, `gate` and `filament` each
+     * turn up in whatever frame changed them, and a toolchange typically carries
+     * the latter two alone. Deriving the LOADED stamp inside the gate_status
+     * branch therefore pinned it to whichever gate was loaded the last time a
+     * gate's fill state happened to change (#1199). Called at the end of every
+     * parse_mmu_state() instead, off the cached gate_status_raw_.
+     *
+     * Caller must hold mutex_.
+     */
+    void refresh_gate_statuses_locked();
 
     /**
      * @brief Initialize slot structures based on gate_status array size
@@ -356,6 +404,16 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     int num_units_{1};                      ///< Number of physical units (default 1)
     std::vector<int> per_unit_gate_counts_; ///< Per-unit gate counts for dissimilar multi-MMU (v4)
     int active_unit_{0};                    ///< Currently active MMU unit (v4)
+
+    /// Whether printer.mmu.has_bypass has been observed at least once, so the
+    /// resolved value gets logged even when it matches our optimistic default.
+    bool bypass_support_seen_{false};
+
+    /// Last printer.mmu.gate_status array, raw Happy Hare values (-1 unknown,
+    /// 0 empty, 1 available, 2 from_buffer). Kept because the array and the
+    /// gate/filament pair arrive in independent deltas and
+    /// refresh_gate_statuses_locked() needs both to derive a status.
+    std::vector<int> gate_status_raw_;
 
     // Path visualization state
     int filament_pos_{0};     ///< Happy Hare filament_pos value

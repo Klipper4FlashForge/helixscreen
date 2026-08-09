@@ -29,7 +29,7 @@ graph TB
 
         subgraph StateUpdate["State Processing"]
             PS_UPDATE["PrinterState::update_from_notification()"]
-            AS_UPDATE["AmsState::update_from_status()"]
+            AS_UPDATE["AmsState::sync_from_backend()<br/>(backend-event-driven, not fed by PrinterState)"]
             TS_UPDATE["ToolState::update_from_status()"]
             FS_UPDATE["FilamentSensorManager::update()"]
             SEN_UPDATE["SensorManagers::update()"]
@@ -65,7 +65,7 @@ graph TB
     %% Main loop flow
     NQ -->|"dequeue"| PN
     PN --> PS_UPDATE
-    PS_UPDATE --> AS_UPDATE
+    PN -.->|"backend events (AFC/ACE/CFS/…)"| AS_UPDATE
     PS_UPDATE --> TS_UPDATE
     PS_UPDATE --> FS_UPDATE
     PS_UPDATE --> SEN_UPDATE

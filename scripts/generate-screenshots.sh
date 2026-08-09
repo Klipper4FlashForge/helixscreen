@@ -26,7 +26,8 @@ info "This will take ~40 seconds (8 screenshots × 5 seconds each)"
 echo
 
 # Define all screenshots to capture
-# Format: output_name panel_name additional_flags
+# Format: output_name:token:additional_flags
+# The token resolves to a helix-screen ctl navigation recipe (scripts/screenshot-recipes.sh).
 SCREENSHOTS=(
     "home-panel:home:--test"
     "print-select-card:print-select:--test"

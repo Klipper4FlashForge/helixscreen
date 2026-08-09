@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include "state/volatile_subjects.h"
 #include "subject_managed_panel.h"
 
+#include <atomic>
 #include <lvgl.h>
 
 #include "hv/json.hpp"
@@ -137,10 +139,52 @@ class PrinterCalibrationState {
         return &unretract_speed_;
     }
 
+    /**
+     * @brief Claim the "printer is busy — your change will queue" toast for the
+     *        current blocking episode.
+     *
+     * The discretionary-gcode busy guard lets benign commands (fan/temp/LED) queue
+     * behind a blocking op instead of rejecting them, and wants to tell the user
+     * ONCE per episode rather than once per command (bundle 7CT79XXK saw four
+     * back-to-back toasts). Returns true for the first caller after the blocking op
+     * started, false thereafter, until PrinterState re-arms it via
+     * arm_busy_queue_toast() once the composite blocking condition clears.
+     *
+     * Both claim and re-arm normally run on the main thread (status parsing is
+     * queued to it, and NOTIFY_INFO self-defers). The flag is atomic purely so a
+     * background caller of execute_gcode remains safe against the concurrent
+     * re-arm; it is a lone flag with no data published alongside it, so relaxed
+     * ordering is sufficient.
+     */
+    bool claim_busy_queue_toast() {
+        return !busy_queue_toast_shown_.exchange(true, std::memory_order_relaxed);
+    }
+
+    /// Re-arm the once-per-episode busy-queue toast so the next blocking episode
+    /// announces itself again. Called by PrinterState::update_from_status when the
+    /// COMPOSITE blocking condition (is_blocking_operation_active) is clear — not on
+    /// any single subject's falling edge, which would re-toast mid-episode (#1108).
+    void arm_busy_queue_toast() {
+        busy_queue_toast_shown_.store(false, std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Restore subjects invalidated by a Klipper restart to their defaults.
+     *
+     * Called by PrinterState on any Klippy state transition. Klipper reports these
+     * as DELTA-only fields, so a value cached before a restart otherwise persists
+     * until the field next changes — which made a freshly-restarted idle printer
+     * look busy and wedged discretionary G-code (#1129).
+     */
+    void reset_klippy_volatile() {
+        volatile_.reset_all();
+    }
+
   private:
     friend class PrinterCalibrationStateTestAccess;
 
     SubjectManager subjects_;
+    helix::subjects::VolatileSubjects volatile_;
     bool subjects_initialized_ = false;
 
     // Firmware retraction settings (from firmware_retraction Klipper module)
@@ -159,6 +203,11 @@ class PrinterCalibrationState {
 
     // idle_timeout.state == "Printing" flag (Klipper's canonical busy indicator)
     lv_subject_t idle_timeout_printing_{}; // 0=not printing/busy, 1=state == "Printing"
+
+    // Latches the once-per-blocking-episode "your change will queue" toast. Claimed
+    // by the busy guard (main thread), re-armed on the blocking op's falling edge in
+    // update_from_status (websocket thread) — hence atomic.
+    std::atomic<bool> busy_queue_toast_shown_{false};
 };
 
 } // namespace helix

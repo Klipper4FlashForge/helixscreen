@@ -35,6 +35,14 @@
 #       member_ = r;                  // bg-thread member mutation — UAF risk
 #   }
 #
+#   // Same race, spelled through ThumbnailLoadContext. `ctx.is_valid()` calls
+#   // `lifetime_token->expired()` internally, so this is the form above with
+#   // an extra layer — not a safer alternative to it.
+#   [self, ctx](const std::string& error) {
+#       if (!ctx.is_valid()) return;  // bg-thread check
+#       spdlog::warn("[{}] ...", self->get_name(), error);   // UAF risk
+#   }
+#
 # Per-line opt-out:
 #
 #   if (tok.expired()) return; // L081_OK: synchronous wait wrapper, see write_adventurer_json
@@ -66,6 +74,29 @@ from typing import Iterable
 EXPIRED_CHECK_RE = re.compile(
     r'\bif\s*\([^)]*\b(?P<varname>[a-zA-Z_]\w*)\s*(?:\.|->)\s*expired\s*\(\)[^)]*\)'
 )
+
+# `ThumbnailLoadContext::is_valid()` is `LifetimeToken::expired()` wearing a
+# different name — read include/thumbnail_load_context.h:71, it calls
+# `lifetime_token->expired()` directly. So `if (!ctx.is_valid()) return;` on a
+# background thread is the identical TOCTOU, and matching only `expired()` let
+# five of them accumulate in ui_panel_print_select.cpp's thumbnail callbacks,
+# each one dereferencing `self` on an HttpExecutor worker (#960, bundle
+# 6F3QJLFG). The context's own header documented the bare-check form as the
+# usage example, so they were written to spec.
+#
+# Scoped by RECEIVER NAME rather than by method name. `is_valid()` is a common
+# predicate in this tree — themes, calibration results, gcode index entries and
+# stream sources all have one, ~25 call sites that have nothing to do with
+# lifetimes. Every ThumbnailLoadContext is named `ctx`/`context`/`*_ctx` by
+# convention, and that convention is what makes this precise instead of noisy.
+# A context under some other name is missed; the runtime detector remains the
+# source of truth, exactly as for the `expired()` forms above.
+CTX_VALID_CHECK_RE = re.compile(
+    r'\bif\s*\([^)]*\b(?P<varname>ctx|context|\w+_ctx)\s*(?:\.|->)\s*is_valid\s*\(\)[^)]*\)'
+)
+
+# Both spellings of the same bg-thread lifetime gate.
+LIFETIME_CHECK_RES = (EXPIRED_CHECK_RE, CTX_VALID_CHECK_RE)
 
 # Patterns that count as "this access" on the line(s) following the expired check.
 # Conservative — flags only obvious member dereferences. Misses some implicit
@@ -159,6 +190,65 @@ def file_lines(path: Path) -> list[str]:
         return []
 
 
+def _blank_noise(src: str) -> str:
+    """Blank out comments and string/char literals, preserving every offset and
+    newline so line numbers still map back to the original source.
+
+    Same helper as check_raw_this_queue_update.py. Without it a comment that
+    merely *describes* the anti-pattern — including the fix advice this script
+    prints — is reported as a violation.
+    """
+    out = list(src)
+    n = len(src)
+    i = 0
+    while i < n:
+        c = src[i]
+        if c == '/' and i + 1 < n and src[i + 1] == '/':
+            j = src.find('\n', i)
+            j = n if j < 0 else j
+            for k in range(i, j):
+                out[k] = ' '
+            i = j
+            continue
+        if c == '/' and i + 1 < n and src[i + 1] == '*':
+            j = src.find('*/', i + 2)
+            j = n if j < 0 else j + 2
+            for k in range(i, j):
+                if out[k] != '\n':
+                    out[k] = ' '
+            i = j
+            continue
+        if c in '"\'':
+            j = i + 1
+            while j < n:
+                if src[j] == '\\':
+                    j += 2
+                    continue
+                if src[j] == c or src[j] == '\n':
+                    j += 1
+                    break
+                j += 1
+            for k in range(i, min(j, n)):
+                if out[k] != '\n':
+                    out[k] = ' '
+            i = j
+            continue
+        i += 1
+    return ''.join(out)
+
+
+def code_lines(path: Path) -> list[str]:
+    """`file_lines` with comments and literals blanked, line-for-line aligned.
+
+    Match patterns against these; keep using the raw lines for the `L081_OK`
+    opt-out (which lives in a comment) and for the snippet shown to the user.
+    """
+    try:
+        return _blank_noise(path.read_text(encoding='utf-8', errors='replace')).splitlines()
+    except OSError:
+        return []
+
+
 def is_only_return(line: str) -> bool:
     """True if the line after the expired-check predicate is just `return;` (with optional braces)."""
     s = line.strip()
@@ -186,7 +276,7 @@ def trailing_after_paren(line: str) -> str:
 DEFER_CALL_RE = re.compile(r'\b\w+\s*\.\s*defer(?:_critical)?\s*\(')
 
 
-def scan_file(path: Path) -> list[tuple[int, str, str]]:
+def scan_file(path: Path, checks: tuple = LIFETIME_CHECK_RES) -> list[tuple[int, str, str]]:
     """Return list of (line_no, snippet, kind) for each suspect site in `path`.
 
     Two patterns flagged (both fire the runtime `bg_tok_expired_check` warning
@@ -207,27 +297,35 @@ def scan_file(path: Path) -> list[tuple[int, str, str]]:
     lines = file_lines(path)
     if not lines:
         return []
-    hits: list[tuple[int, str, str]] = []
+    # Patterns match against `code` (comments/literals blanked); `lines` stays
+    # raw so the L081_OK opt-out and the reported snippet still read correctly.
+    code = code_lines(path)
+    hits: list[tuple[int, str, str, str]] = []
     for i, line in enumerate(lines):
         if OPT_OUT in line:
             continue
-        m = EXPIRED_CHECK_RE.search(line)
-        if not m:
+        # Remember WHICH spelling matched so the report can quote the guard the
+        # author actually wrote — telling someone their `ctx.is_valid()` is a
+        # "bare tok.expired()" reads as a false positive and gets dismissed.
+        matched = next((r for r in checks if r.search(code[i])), None)
+        if matched is None:
             continue
+        spelling = ('ctx.is_valid()' if matched is CTX_VALID_CHECK_RE
+                    else 'tok.expired()')
         # If the rest of the same line is just `return;`, the lambda body
         # is a no-op past the gate — neither UAF nor redundant-with-defer.
         # The check might still trip the runtime detector, but the lint
         # only flags forms that have a clearer fix path.
-        same_line_after = trailing_after_paren(line)
+        same_line_after = trailing_after_paren(code[i])
         if same_line_after.startswith('return'):
             continue
         # Look ahead a few lines INSIDE the lambda for either a `.defer(`
         # call (REDUNDANT) or a `this`/member access (UAF). Stop at obvious
         # block-end markers so we don't bleed into the enclosing scope.
         for j in range(i + 1, min(i + 1 + LOOKAHEAD_LINES, len(lines))):
-            look = lines[j]
-            if OPT_OUT in look:
+            if OPT_OUT in lines[j]:
                 break
+            look = code[j]
             stripped = look.strip()
             if stripped == '':
                 continue
@@ -235,11 +333,11 @@ def scan_file(path: Path) -> list[tuple[int, str, str]]:
                 break
             if DEFER_CALL_RE.search(look):
                 snippet = '\n  '.join(lines[i:j + 1])
-                hits.append((i + 1, snippet, 'redundant'))
+                hits.append((i + 1, snippet, 'redundant', spelling))
                 break
             if THIS_ACCESS_RE.search(look):
                 snippet = '\n  '.join(lines[i:j + 1])
-                hits.append((i + 1, snippet, 'uaf'))
+                hits.append((i + 1, snippet, 'uaf', spelling))
                 break
     return hits
 
@@ -425,6 +523,17 @@ DEFAULT_SCAN_DIRS = (
 # must be linted for Mechanism D even though they're excluded from Mechanism C.
 FREEZE_SCAN_DIRS = DEFAULT_SCAN_DIRS + ('src/ui',)
 
+# Directories scanned for the `ctx.is_valid()` spelling ONLY. The exclusion of
+# src/ui/ above is about generic `tok.expired()`, whose false-positive case is a
+# main-thread observer callback. That case cannot arise here: a
+# ThumbnailLoadContext exists only to be handed to ThumbnailCache::fetch_*, and
+# those callbacks are invoked from an HttpExecutor worker or a
+# ThumbnailProcessor pool thread — never from an observer. So the pattern is
+# unambiguously background wherever it appears, and src/ui/ is exactly where it
+# appears (5 of the 7 sites in the tree). Excluding src/ui/ from this spelling
+# too is what kept ui_panel_print_select.cpp's callbacks unlinted (#960).
+CTX_ONLY_SCAN_DIRS = ('src/ui',)
+
 
 def discover_files(roots: Iterable[Path]) -> list[Path]:
     out: list[Path] = []
@@ -458,15 +567,23 @@ def main() -> int:
         mech_c_files = [f for f in staged
                         if f.exists()
                         and any(str(f).startswith(d) for d in DEFAULT_SCAN_DIRS)]
+        ctx_only_files = [f for f in staged
+                          if f.exists()
+                          and any(str(f).startswith(d) for d in CTX_ONLY_SCAN_DIRS)]
         freeze_files = [f for f in staged
                         if f.exists()
                         and any(str(f).startswith(d) for d in FREEZE_SCAN_DIRS)]
     elif args.files:
+        # An explicitly named file is checked for every pattern regardless of
+        # directory — naming it is the request. Keeps `<gate> src/ui/foo.cpp`
+        # useful for spot-checks without loosening the default scan.
         files = [Path(f) for f in args.files if Path(f).exists()]
         mech_c_files = files
+        ctx_only_files = []
         freeze_files = files
     else:
         mech_c_files = discover_files([Path(d) for d in DEFAULT_SCAN_DIRS])
+        ctx_only_files = discover_files([Path(d) for d in CTX_ONLY_SCAN_DIRS])
         freeze_files = discover_files([Path(d) for d in FREEZE_SCAN_DIRS])
 
     # Skip the detector implementation itself and the header that defines the API.
@@ -476,15 +593,17 @@ def main() -> int:
     freeze_files = [f for f in freeze_files if f not in skip]
 
     total = 0
-    for f in mech_c_files:
-        hits = scan_file(f)
-        for line_no, snippet, kind in hits:
+    scan_plan = ([(f, LIFETIME_CHECK_RES) for f in mech_c_files]
+                 + [(f, (CTX_VALID_CHECK_RE,)) for f in ctx_only_files])
+    for f, checks in scan_plan:
+        hits = scan_file(f, checks)
+        for line_no, snippet, kind, spelling in hits:
             if kind == 'uaf':
-                print(f"{f}:{line_no}: L081 Mechanism C: bg-thread tok.expired() "
+                print(f"{f}:{line_no}: L081 Mechanism C: bg-thread {spelling} "
                       f"followed by `this`/member access")
             else:  # 'redundant'
                 print(f"{f}:{line_no}: L081 Mechanism C (redundant guard): bg-thread "
-                      f"tok.expired() immediately before tok.defer() — bare check is "
+                      f"{spelling} immediately before tok.defer() — bare check is "
                       f"dead code and trips the runtime detector")
             for ln in snippet.split('\n'):
                 print(f"    {ln}")

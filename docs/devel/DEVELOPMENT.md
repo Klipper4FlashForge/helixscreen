@@ -259,10 +259,18 @@ HELIX_SCREENSHOT_OPEN=1 ./scripts/screenshot.sh helix-screen review home
 
 Output: `/tmp/ui-screenshot-[name].png`
 
+To bring up an arbitrary panel/overlay for debugging (the old `-p`/`--panel`
+flags are gone), drive a running instance with `helix-screen ctl` — see
+`docs/devel/HELIXCTL.md`.
+
 ## Icon & Font Workflow
 
 ```bash
-python3 scripts/generate-icon-consts.py  # After editing include/ui_fonts.h
+# Canonical path: regenerate MDI fonts + icon constants together
+make regen-fonts
+
+# Or run the icon-constant generator directly (parses include/ui_icon_codepoints.h)
+python3 scripts/gen_icon_consts.py
 make icon                                 # Generate platform icons
 ```
 
@@ -281,7 +289,7 @@ make compile_commands  # Generates compile_commands.json (requires bear)
 ## Daily Workflow
 
 1. **Edit code** in `src/` or `include/`
-2. **Edit XML** in `ui_xml/` — **no rebuild needed** (use hot reload or just relaunch)
+2. **Edit XML** in `ui_xml/` — **no rebuild, no restart needed** (hot reload is ON by default; see below)
 3. **Build** with `make -j` (only when C++ changes)
 4. **Test** with `./build/bin/helix-screen --test -vv [panel]`
 5. **Screenshot** with S key or `./scripts/screenshot.sh`
@@ -291,20 +299,31 @@ make compile_commands  # Generates compile_commands.json (requires bear)
 
 | Change Type | Location | Rebuild? | Hot Reload? |
 |-------------|----------|----------|-------------|
-| Layout, styling, colors | `ui_xml/*.xml` | **No** | **Yes** — auto-detected |
+| Layout, styling, colors | `ui_xml/*.xml` | **No** | **Yes** — ON by default for native builds |
 | Logic, bindings, handlers | `src/*.cpp`, `include/*.h` | Yes (`make -j`) | No |
 | Theme colors | `config/themes/*.json` | No — just restart | No |
-| Translations | `config/strings/*.yaml` | Yes (code generation step) | No |
+| Translations | `translations/*.yml` (e.g. `translations/en.yml`) | Yes (code generation step) | No |
 
 ### XML Hot Reload
 
-For the fastest UI iteration, use hot reload — edit XML, save, see updates without restarting:
+Hot reload is **ON by default for native (non-release) builds** — you don't need to set any env var. Just run the app, edit XML, save, and the active panel/overlay/modal rebuilds in place within ~500ms.
 
 ```bash
-HELIX_HOT_RELOAD=1 ./build/bin/helix-screen --test -vv
+./build/bin/helix-screen --test -vv
+# Edit ui_xml/home_panel.xml in another terminal, save, watch the UI update live.
 ```
 
-When enabled, a background thread watches all XML files for changes and re-registers modified components automatically. After a file changes, navigate away from the panel and back to see the new layout. See [HELIX_HOT_RELOAD](ENVIRONMENT_VARIABLES.md#helix_hot_reload) for details and limitations.
+What you'll see in the log on each save:
+
+```
+[HotReload] Detected change: home_panel
+[HotReload] Reloaded: home_panel (0.3ms)
+[PanelBase::rebuild] Home Panel — tearing down and re-creating
+```
+
+Robustness: if you save mid-write (truncated file, atomic-rename window) or the XML has a syntax error, the reloader silently skips that poll cycle — the existing UI stays live and the next poll retries. No crash, no stale state.
+
+Override the default with `HELIX_HOT_RELOAD=0` (force off, e.g. for benchmarking) or `HELIX_HOT_RELOAD=1` (force on, e.g. on a device running a release build for live debugging). See [HELIX_HOT_RELOAD](ENVIRONMENT_VARIABLES.md#helix_hot_reload) for full details.
 
 ---
 
@@ -314,9 +333,9 @@ For layout work, styling fixes, and alternate screen layouts, the **[UI Contribu
 
 Key points for UI contributors:
 
-- **XML layouts load at runtime** — no rebuild needed for layout/styling changes. Use `HELIX_HOT_RELOAD=1` for live editing without restarting
+- **XML layouts load at runtime + hot reload by default** — edit `ui_xml/*.xml`, save, see changes immediately without rebuilding or restarting
 - **Design tokens are mandatory** — use `#space_md`, `#card_bg`, `<text_body>` instead of hardcoded values
-- **5 breakpoint tiers** based on screen height: tiny (≤390px), small (391–460px), medium (461–550px), large (551–700px), xlarge (>700px)
+- **7 breakpoint tiers** based on screen height: micro (≤272px), tiny (≤390px), small (≤460px), medium (≤550px), large (≤700px), xlarge (701–1000px), xxlarge (>1000px)
 - **Layout overrides** let you provide alternate XML for ultrawide, portrait, or tiny screens without touching the standard layouts
 - **Test at multiple sizes** with `-s WIDTHxHEIGHT`:
   ```bash
@@ -418,7 +437,7 @@ _lv_obj_mark_dirty();  // ❌ Private (underscore prefix)
 
 **Copyright headers** (all new files):
 ```cpp
-// Copyright 2025 356C LLC
+// Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
 ```
 
@@ -474,7 +493,8 @@ scripts/
 ├── install.sh                    # Auto-generated for curl|sh (user-facing)
 ├── install-dev.sh                # Modular version (requires lib/installer/)
 ├── uninstall.sh                  # Standalone uninstaller
-├── lib/installer/                # Shared modules
+├── lib/installer/                # Shared modules (17 total; subset shown)
+│   ├── main.sh                   # Orchestrator: arg parsing, install flow
 │   ├── common.sh                 # Logging, colors, error handling
 │   ├── platform.sh               # Platform/firmware detection
 │   ├── permissions.sh            # Root/sudo handling
@@ -483,6 +503,13 @@ scripts/
 │   ├── competing_uis.sh          # Stop GuppyScreen, KlipperScreen, etc.
 │   ├── release.sh                # Download and extract
 │   ├── service.sh                # Systemd/SysV service management
+│   ├── moonraker.sh              # Moonraker update_manager config
+│   ├── klipper_include.sh        # Klipper config include management
+│   ├── printer_seed.sh           # Seed default printer config
+│   ├── audio.sh                  # Audio device setup
+│   ├── camera.sh                 # Camera setup
+│   ├── recovery.sh               # Recovery/rollback support
+│   ├── kiauh.sh                  # KIAUH extension install
 │   └── uninstall.sh              # Uninstall/clean functions
 └── bundle-installer.sh           # Generate install.sh from modules
 ```

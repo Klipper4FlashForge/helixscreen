@@ -30,6 +30,21 @@ class AmsBackendHappyHareTestHelper : public AmsBackendHappyHare {
      * @brief Initialize test gates with default SlotInfo
      * @param count Number of gates to create
      */
+    /// Feed a printer.mmu gate_spool_id array, as a v4 status update would.
+    void feed_mmu_gate_spool_ids(const std::vector<int>& ids) {
+        nlohmann::json mmu;
+        mmu["gate_spool_id"] = ids;
+        nlohmann::json params;
+        params["mmu"] = mmu;
+        nlohmann::json notification;
+        notification["params"] = nlohmann::json::array({params, 0.0});
+        handle_status_update(notification);
+    }
+
+    void clear_slot_override(int slot_index) {
+        AmsBackendHappyHare::clear_slot_override(slot_index);
+    }
+
     void initialize_test_gates(int count) {
         system_info_.units.clear();
 
@@ -740,47 +755,73 @@ TEST_CASE("Happy Hare eject_lane fails when not running", "[ams][happy_hare][eje
 }
 
 // ============================================================================
-// reset_lane() Tests
+// clear_fault() Tests
 // ============================================================================
 
-TEST_CASE("Happy Hare reset_lane sends MMU_RECOVER with gate", "[ams][happy_hare][reset]") {
+TEST_CASE("Happy Hare clear_fault re-syncs the gate via MMU_RECOVER",
+          "[ams][happy_hare][recovery]") {
+    // MMU_RECOVER is bookkeeping, not a filament move, so it is a fault clear
+    // rather than a position recovery. The gate index must be honoured — HH's
+    // fault clear is genuinely per-gate, unlike AFC's.
     AmsBackendHappyHareTestHelper helper;
     helper.initialize_test_gates(4);
     helper.set_running(true);
 
-    auto result = helper.reset_lane(0);
+    auto result = helper.clear_fault(2);
 
     REQUIRE(result.success());
-    REQUIRE(helper.has_gcode("MMU_RECOVER GATE=0"));
+    REQUIRE(helper.has_gcode("MMU_RECOVER GATE=2"));
 }
 
-TEST_CASE("Happy Hare reset_lane targets correct gate", "[ams][happy_hare][reset]") {
+TEST_CASE("Happy Hare clear_fault targets correct gate", "[ams][happy_hare][recovery]") {
     AmsBackendHappyHareTestHelper helper;
     helper.initialize_test_gates(4);
     helper.set_running(true);
 
-    auto result = helper.reset_lane(3);
+    auto result = helper.clear_fault(3);
 
     REQUIRE(result.success());
     REQUIRE(helper.has_gcode("MMU_RECOVER GATE=3"));
 }
 
-TEST_CASE("Happy Hare reset_lane validates slot index", "[ams][happy_hare][reset]") {
+TEST_CASE("Happy Hare clear_fault validates a genuinely out-of-range slot index",
+          "[ams][happy_hare][recovery]") {
+    // -1 is a documented sentinel ("no particular gate"), not an invalid index —
+    // see the dedicated -1 test below. An out-of-range positive index is still
+    // rejected.
     AmsBackendHappyHareTestHelper helper;
     helper.initialize_test_gates(4);
     helper.set_running(true);
 
-    auto result = helper.reset_lane(-1);
+    auto result = helper.clear_fault(99);
 
     REQUIRE_FALSE(result.success());
     REQUIRE(result.result == AmsResult::INVALID_SLOT);
 }
 
-TEST_CASE("Happy Hare reset_lane fails when not running", "[ams][happy_hare][reset]") {
+TEST_CASE("Happy Hare clear_fault honours -1 as \"no particular gate\"",
+          "[ams][happy_hare][recovery]") {
+    // The base contract (ams_backend.h) documents -1 as valid, and both UI
+    // callers (sidebar Reset, error-modal dismiss) pass current_slot, which is
+    // -1 whenever nothing is loaded — exactly the state Reset is pressed in.
+    // Bare MMU_RECOVER (no GATE=) re-syncs the whole selector, the system-scoped
+    // analogue of AFC's RESET_FAILURE.
+    AmsBackendHappyHareTestHelper helper;
+    helper.initialize_test_gates(4);
+    helper.set_running(true);
+
+    auto result = helper.clear_fault(-1);
+
+    REQUIRE(result.success());
+    REQUIRE(helper.has_gcode("MMU_RECOVER"));
+    REQUIRE_FALSE(helper.has_gcode_starting_with("MMU_RECOVER GATE="));
+}
+
+TEST_CASE("Happy Hare clear_fault fails when not running", "[ams][happy_hare][recovery]") {
     AmsBackendHappyHareTestHelper helper;
     helper.initialize_test_gates(4);
 
-    auto result = helper.reset_lane(0);
+    auto result = helper.clear_fault(0);
 
     REQUIRE_FALSE(result.success());
 }
@@ -794,11 +835,6 @@ TEST_CASE("Happy Hare supports_lane_eject returns true", "[ams][happy_hare][capa
     REQUIRE(helper.supports_lane_eject());
 }
 
-TEST_CASE("Happy Hare supports_lane_reset returns true", "[ams][happy_hare][capability]") {
-    AmsBackendHappyHareTestHelper helper;
-    REQUIRE(helper.supports_lane_reset());
-}
-
 // ============================================================================
 // Default AmsBackend capability tests (not supported)
 // ============================================================================
@@ -810,7 +846,6 @@ TEST_CASE("Default AmsBackend eject_lane returns not_supported", "[ams][capabili
     // This is tested via the HH-specific tests above; the base class default
     // is implicitly tested by backends that don't override it
     REQUIRE(helper.supports_lane_eject() == true);
-    REQUIRE(helper.supports_lane_reset() == true);
 }
 
 TEST_CASE("Happy Hare reset button is labeled 'Home'", "[ams][happy_hare][capability]") {
@@ -1801,7 +1836,82 @@ TEST_CASE("Happy Hare v3 data with no v4 fields works normally", "[ams][happy_ha
     auto slot2 = helper.get_slot_info(2);
     REQUIRE(slot2.color_rgb == 0x0000FF);
     REQUIRE(slot2.material == "ABS");
-    REQUIRE(slot2.status == SlotStatus::FROM_BUFFER); // gate_status=2 maps to FROM_BUFFER
+    // gate_status=2 maps to FROM_BUFFER, but gate 2 is also the gate Happy Hare
+    // reports loaded, and the loaded gate outranks its fill state (#1199). See
+    // test_ams_happy_hare_per_slot_loaded.cpp for the unloaded from_buffer case,
+    // which still reads FROM_BUFFER.
+    REQUIRE(slot2.status == SlotStatus::LOADED);
+}
+
+// --- has_bypass: the single flag behind the whole bypass UI ---
+
+// printer.mmu.has_bypass gates the sidebar toggle, the Device Operations bypass
+// section and the bypass node on the filament path. Happy Hare defaults it to 0
+// for mmu_vendor "Other" (which is what a Qidi Box under HH reports) and on
+// type-A selectors ANDs it with the calibrated bypass offset, so it is both
+// legitimately false on real hardware and able to turn true later.
+TEST_CASE("Happy Hare has_bypass drives supports_bypass", "[ams][happy_hare][bypass]") {
+    auto base_mmu = []() {
+        return nlohmann::json{{"gate", 0},
+                              {"tool", 0},
+                              {"filament", "Loaded"},
+                              {"action", "Idle"},
+                              {"filament_pos", 8},
+                              {"gate_status", {1, 0, 2, 1}},
+                              {"gate_material", {"PLA", "PETG", "ABS", "TPU"}},
+                              {"ttg_map", {0, 1, 2, 3}}};
+    };
+
+    SECTION("stays off until the firmware confirms, so the UI never flickers") {
+        AmsBackendHappyHareTestHelper helper;
+        REQUIRE(helper.get_system_info().supports_bypass == false);
+
+        nlohmann::json mmu = base_mmu();
+        mmu["has_bypass"] = false;
+        helper.test_parse_mmu_state(mmu);
+
+        REQUIRE(helper.get_system_info().supports_bypass == false);
+    }
+
+    SECTION("firmware true turns it on") {
+        AmsBackendHappyHareTestHelper helper;
+
+        nlohmann::json mmu = base_mmu();
+        mmu["has_bypass"] = true;
+        helper.test_parse_mmu_state(mmu);
+
+        REQUIRE(helper.get_system_info().supports_bypass == true);
+    }
+
+    SECTION("absent field assumes supported rather than removing the control") {
+        AmsBackendHappyHareTestHelper helper;
+        helper.test_parse_mmu_state(base_mmu());
+
+        REQUIRE(helper.get_system_info().supports_bypass == true);
+    }
+
+    SECTION("turns back on when the selector is calibrated mid-session") {
+        AmsBackendHappyHareTestHelper helper;
+
+        nlohmann::json mmu = base_mmu();
+        mmu["has_bypass"] = false;
+        helper.test_parse_mmu_state(mmu);
+        REQUIRE(helper.get_system_info().supports_bypass == false);
+
+        mmu["has_bypass"] = true;
+        helper.test_parse_mmu_state(mmu);
+        REQUIRE(helper.get_system_info().supports_bypass == true);
+    }
+
+    SECTION("a non-boolean value is ignored rather than coerced") {
+        AmsBackendHappyHareTestHelper helper;
+
+        nlohmann::json mmu = base_mmu();
+        mmu["has_bypass"] = nullptr;
+        helper.test_parse_mmu_state(mmu);
+
+        REQUIRE(helper.get_system_info().supports_bypass == true);
+    }
 }
 
 // --- v3+v4 mixed: some v4 fields with v3 base ---
@@ -3524,4 +3634,129 @@ TEST_CASE_METHOD(LVGLTestFixture,
     CHECK(lv_subject_get_int(ams.get_toolchange_step_subject()) == 6); // "purge" = index 6
 
     ams.set_backend(nullptr);
+}
+
+// ============================================================================
+// Override store — user identity Happy Hare's gate map cannot hold
+// ============================================================================
+//
+// Same rationale as AFC (see test_ams_backend_afc.cpp): Happy Hare's gate map
+// carries spool_id / material / colour, but not brand, spool_name,
+// total_weight_g, colour name or the Spoolman filament+vendor ids. Those live
+// only in the override store, and the store must use a PRIVATE namespace
+// because lane_data belongs to the Happy Hare plugin itself.
+//
+// NOTE: written blind — there is no Happy Hare hardware on hand. It deliberately
+// mirrors the AFC integration rather than inventing anything.
+
+TEST_CASE("HappyHare override survives a gate-map update that omits identity",
+          "[ams][happyhare][override]") {
+    AmsBackendHappyHareTestHelper helper;
+    helper.initialize_test_gates(4);
+
+    SlotInfo info;
+    info.brand = "Polymaker";
+    info.spool_name = "PolyLite Grey";
+    info.spoolman_id = 42;
+    info.total_weight_g = 1000.0f;
+    helper.set_slot_info(0, info);
+
+    // A gate-map refresh that clears the spool id upstream.
+    helper.feed_mmu_gate_spool_ids({0, 0, 0, 0});
+
+    const SlotInfo after = helper.get_slot_info(0);
+    CHECK(after.brand == "Polymaker");
+    CHECK(after.spool_name == "PolyLite Grey");
+    CHECK(after.spoolman_id == 42);
+    CHECK(after.total_weight_g == Catch::Approx(1000.0f));
+}
+
+TEST_CASE("HappyHare clear_slot_override drops the retained identity",
+          "[ams][happyhare][override]") {
+    AmsBackendHappyHareTestHelper helper;
+    helper.initialize_test_gates(4);
+
+    SlotInfo info;
+    info.brand = "Polymaker";
+    info.spoolman_id = 42;
+    helper.set_slot_info(0, info);
+
+    helper.clear_slot_override(0);
+
+    const SlotInfo after = helper.get_slot_info(0);
+    CHECK(after.brand.empty());
+    CHECK(after.spoolman_id == 0);
+}
+
+// ============================================================================
+// Bypass: Happy Hare has to answer for itself, same as AFC (#1229)
+// ============================================================================
+//
+// The twin of "AFC enable_bypass refuses while filament is at the toolhead" in
+// test_ams_backend_afc.cpp. allows_implicit_chaining() == false means the
+// sidebar sends one command and lets the backend refuse; execute_gcode() is
+// fire-and-forget (returns success before Klipper answers), so without this
+// precondition MMU_SELECT_BYPASS reports success and changes nothing.
+//
+// Happy Hare's own cmd_MMU_SELECT_BYPASS runs check_if_loaded(), which refuses
+// unless filament_pos is UNLOADED (0) or UNKNOWN (-1) and answers only with a
+// `!!` line. Mirroring that exact predicate — rather than system_info_
+// .filament_loaded, which is set solely from filament == "Loaded" — is what
+// makes an intermediate position refuse here instead of silently no-opping.
+
+TEST_CASE("Happy Hare enable_bypass refuses unless the filament is parked",
+          "[ams][happy_hare][bypass][1229]") {
+    auto mmu_at = [](int filament_pos, const char* filament_state) {
+        return nlohmann::json{{"gate", 0},
+                              {"tool", 0},
+                              {"filament", filament_state},
+                              {"action", "Idle"},
+                              {"has_bypass", true},
+                              {"filament_pos", filament_pos},
+                              {"gate_status", {1, 0, 2, 1}},
+                              {"ttg_map", {0, 1, 2, 3}}};
+    };
+
+    SECTION("loaded to the nozzle refuses and sends nothing") {
+        AmsBackendHappyHareTestHelper helper;
+        helper.set_running(true);
+        helper.initialize_test_gates(4);
+        helper.test_parse_mmu_state(mmu_at(10, "Loaded")); // FILAMENT_POS_LOADED
+        helper.clear_captured_gcodes();
+
+        AmsError err = helper.enable_bypass();
+
+        REQUIRE(err.result == AmsResult::WRONG_STATE);
+        REQUIRE_FALSE(err.user_msg.empty());
+        REQUIRE(helper.captured_gcodes.empty());
+    }
+
+    // The case system_info_.filament_loaded would miss: mid-bowden is not
+    // "Loaded", but Happy Hare still refuses, so we must too.
+    SECTION("mid-bowden refuses even though filament is not 'Loaded'") {
+        AmsBackendHappyHareTestHelper helper;
+        helper.set_running(true);
+        helper.initialize_test_gates(4);
+        helper.test_parse_mmu_state(mmu_at(3, "Unloading")); // FILAMENT_POS_IN_BOWDEN
+        helper.clear_captured_gcodes();
+
+        AmsError err = helper.enable_bypass();
+
+        REQUIRE(err.result == AmsResult::WRONG_STATE);
+        REQUIRE(helper.captured_gcodes.empty());
+    }
+
+    SECTION("parked at the gate sends MMU_SELECT_BYPASS") {
+        AmsBackendHappyHareTestHelper helper;
+        helper.set_running(true);
+        helper.initialize_test_gates(4);
+        helper.test_parse_mmu_state(mmu_at(0, "Unloaded")); // FILAMENT_POS_UNLOADED
+        helper.clear_captured_gcodes();
+
+        AmsError err = helper.enable_bypass();
+
+        REQUIRE(err.result == AmsResult::SUCCESS);
+        REQUIRE(std::find(helper.captured_gcodes.begin(), helper.captured_gcodes.end(),
+                          "MMU_SELECT_BYPASS") != helper.captured_gcodes.end());
+    }
 }

@@ -17,10 +17,12 @@
 
 #pragma once
 
+#include "moonraker_config_manager.h"
 #include "overlay_base.h"
 
 #include <lvgl/lvgl.h>
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -28,6 +30,7 @@
 
 // Forward declarations
 class IMoonrakerAPI;
+class SpoolmanOverlayTestAccess;
 
 namespace helix::ui {
 
@@ -116,6 +119,15 @@ class SpoolmanOverlay : public OverlayBase {
      */
     void on_activate() override;
 
+    /**
+     * @brief Release this overlay's Spoolman poll reference when it is dismissed
+     *
+     * The overlay takes a reference while sync is enabled; without giving it
+     * back on dismissal the manager's refcount can never reach zero and the
+     * poll timer runs for the life of the process.
+     */
+    void on_deactivate() override;
+
     //
     // === Public API ===
     //
@@ -198,6 +210,22 @@ class SpoolmanOverlay : public OverlayBase {
      */
     void update_ui_from_subjects();
 
+    /**
+     * @brief Take or release this overlay's single SpoolmanManager poll reference
+     *
+     * SpoolmanManager's polling is refcounted, so every start must be matched by
+     * exactly one stop. The sync setting is applied more than once per visit —
+     * load_from_database() re-runs on every show()/refresh() and its key-fallback
+     * chain can call apply_sync() again — so the calls have to be idempotent.
+     * Tracking ownership here means a repeated apply cannot take a second
+     * reference and a repeated release cannot steal another panel's.
+     *
+     * Mirrors AmsPanel's holds_poll_ref_ guard.
+     *
+     * @param want_ref true to hold a poll reference, false to release it
+     */
+    void set_poll_ref(bool want_ref);
+
     //
     // === Static Callbacks ===
     //
@@ -240,6 +268,27 @@ class SpoolmanOverlay : public OverlayBase {
     /// IMoonrakerAPI for database access (not owned)
     IMoonrakerAPI* api_ = nullptr;
 
+    /// True while this overlay holds one SpoolmanManager poll reference
+    bool holds_poll_ref_ = false;
+
+    /// Where Moonraker's loaded config lives, resolved from server.config before each
+    /// write. Defaults to the config root, which is correct on stock Klipper installs.
+    helix::ConfigPathInfo config_paths_{true, "", "moonraker.conf", ""};
+
+    /// How the [spoolman] section gets written.
+    enum class SpoolmanWriteMode {
+        IncludeFile, ///< Fresh setup: write helixscreen.conf + [include] it from the primary config
+        InPlace      ///< A loaded config already defines [spoolman]; update it where it lives
+    };
+    SpoolmanWriteMode write_mode_ = SpoolmanWriteMode::IncludeFile;
+
+    /// Config-root-relative path of the file holding [spoolman].
+    ///
+    /// Intentionally empty until resolve_spoolman_target() runs. Defaulting this to
+    /// "helixscreen.conf" is exactly the silent assumption that made Remove no-op
+    /// against a natively-configured Moonraker while reporting success.
+    std::string spoolman_config_path_;
+
     /// Default values
     static constexpr bool DEFAULT_SYNC_ENABLED = true;
     static constexpr int DEFAULT_REFRESH_INTERVAL_SECONDS = 30;
@@ -259,6 +308,90 @@ class SpoolmanOverlay : public OverlayBase {
 
     // === Server Setup Methods ===
     void probe_spoolman_server(const std::string& host, const std::string& port);
+
+    /**
+     * @brief Ask Moonraker where its config actually lives, then run configure_spoolman()
+     *
+     * Moonraker's file API root "config" maps to `<data_path>/config`, but the loaded
+     * moonraker.conf may live elsewhere (stock Creality K2 loads it from
+     * /usr/share/moonraker). Writing blind in that case produces a file Moonraker never
+     * reads while the UI reports success. Resolve first, and fail loudly if the real
+     * config is outside the uploadable root.
+     */
+    void resolve_config_location(const std::string& host, const std::string& port);
+
+  public:
+    /// Outcome of locating the config file that defines [spoolman].
+    struct SpoolmanConfigTarget {
+        enum class Status {
+            Defined,    ///< exactly one loaded, reachable file defines [spoolman]
+            Undefined,  ///< no loaded config file defines it — nothing is configured
+            Ambiguous,  ///< more than one loaded file defines it; refuse to guess
+            Unreachable ///< the relevant config cannot be read/written via the file API
+        };
+        Status status = Status::Unreachable;
+        std::string path;    ///< config-root-relative path of the target file
+        std::string content; ///< contents of `path` (Defined only)
+        std::string detail;  ///< operator-facing explanation for Ambiguous / Unreachable
+    };
+
+  private:
+    using SpoolmanTargetCallback = std::function<void(const SpoolmanConfigTarget&)>;
+
+    /**
+     * @brief Locate the config file that actually defines [spoolman]
+     *
+     * The single resolution step shared by setup, the URL display, and Remove. Queries
+     * server.config, picks the loaded file defining [spoolman] (counting a
+     * helixscreen.conf pulled in by an earlier run's [include]), proves that file is
+     * reachable through the file API, and screens for a stale duplicate.
+     *
+     * Every caller must go through this. Assuming helixscreen.conf without asking is
+     * what made Remove silently no-op on a natively-configured printer.
+     *
+     * @param on_done Invoked on the MAIN thread with the resolution.
+     */
+    void resolve_spoolman_target(SpoolmanTargetCallback on_done);
+
+    /// Shared error surface: log the detail, show a status line and a red toast.
+    void report_spoolman_error(const char* status_text, const char* toast_text,
+                               const std::string& detail);
+
+    /**
+     * @brief Confirm the config file Moonraker loaded is the one we would write to
+     *
+     * Most Moonraker builds never expose their config file's absolute path, so the path
+     * check alone cannot prove reachability. This downloads the candidate file through
+     * the file API's "config" root and confirms it defines every section Moonraker
+     * reported loading from it. A missing file — or one whose sections don't match —
+     * means the real config lives somewhere we cannot write, and setup aborts.
+     */
+    void verify_config_reachable(const std::string& target_path,
+                                 const std::vector<std::string>& required_sections, bool in_place,
+                                 SpoolmanTargetCallback on_done);
+
+    /**
+     * @brief Guard against a stale, not-yet-loaded helixscreen.conf before writing in place
+     *
+     * files[] only reveals sections in files Moonraker actually loaded. If an earlier run
+     * wrote [spoolman] into helixscreen.conf but its restart never took effect, that file
+     * is invisible to files[] — and writing [spoolman] into the native config would
+     * create the duplicate once the include finally loads. Only runs when the in-place
+     * target is some file other than helixscreen.conf itself.
+     */
+    void check_stale_helix_conf(const std::string& target_path, const std::string& content,
+                                SpoolmanTargetCallback on_done);
+
+    /// Upsert [spoolman] directly into the file that already defines it, then restart.
+    void write_spoolman_in_place(const std::string& content, const std::string& host,
+                                 const std::string& port);
+
+    /// Abort setup with a visible, actionable "config not writable" error.
+    void fail_config_unreachable(const std::string& detail);
+
+    /// Abort setup because more than one loaded config file defines [spoolman].
+    void fail_config_ambiguous(const std::string& detail);
+
     void configure_spoolman(const std::string& host, const std::string& port);
     void finish_configure(const std::string& helix_content,
                           const std::vector<std::pair<std::string, std::string>>& entries);
@@ -293,6 +426,8 @@ class SpoolmanOverlay : public OverlayBase {
     lv_obj_t* connect_btn_ = nullptr;
     lv_obj_t* setup_card_ = nullptr;
     lv_obj_t* status_card_ = nullptr;
+
+    friend class ::SpoolmanOverlayTestAccess;
 };
 
 /**

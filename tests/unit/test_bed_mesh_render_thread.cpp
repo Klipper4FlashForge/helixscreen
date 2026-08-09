@@ -121,12 +121,17 @@ TEST_CASE("BedMeshRenderThread frame ready callback is invocable", "[bed_mesh][s
     thread.set_frame_ready_callback([&callback_count]() { callback_count++; });
 
     thread.start(64, 64);
-    // No renderer, so callback won't fire, but setting it should be safe
+    REQUIRE(thread.is_running());
+
     thread.stop();
 
-    // Callback may or may not have been called (no renderer = render fails),
-    // but we should not have crashed.
-    SUCCEED("No crash during callback lifecycle");
+    // No renderer was ever attached, so every render attempt fails and the
+    // frame-ready callback must not fire once. A thread that signalled "frame
+    // ready" here would hand the UI a buffer nothing ever rendered into.
+    REQUIRE(callback_count.load() == 0);
+
+    // stop() joins the worker; it is not just a flag flip.
+    REQUIRE_FALSE(thread.is_running());
 }
 
 TEST_CASE("BedMeshRenderThread set_colors is safe while running", "[bed_mesh][slow]") {

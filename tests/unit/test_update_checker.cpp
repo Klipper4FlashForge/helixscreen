@@ -19,6 +19,8 @@
  * - Status enum transitions
  */
 
+#include "../test_helpers/live_thread_count.h"
+#include "../test_helpers/update_queue_test_access.h"
 #include "config.h"
 #include "lvgl.h"
 #include "version.h"
@@ -26,10 +28,14 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <string>
+#include <sys/stat.h>
 #include <thread>
+#include <unistd.h>
 
 #include "../catch_amalgamated.hpp"
 #include "hv/json.hpp"
@@ -509,18 +515,65 @@ TEST_CASE("UpdateChecker lifecycle", "[update_checker][lifecycle]") {
 }
 
 TEST_CASE("UpdateChecker callback is optional", "[update_checker][callback]") {
+    // Hermetic by construction: no real network. The dev channel already reads
+    // its endpoint from config (/update/dev_url) and is exempt from the rate
+    // limiter, so pointing it at a closed loopback port drives the full
+    // check_for_updates -> do_check -> fetch_dev_release -> report_result cycle
+    // on a fast, local, deterministic connection refusal. Hitting api.github.com
+    // instead made this test slow, network-dependent, and — because libhv's
+    // requests:: client spins event-loop threads on a successful TLS connection
+    // that outlive the call — the one test in the suite that leaked threads
+    // (prestonbrown/helixscreen#1212). The isolation listener's per-TEST_CASE
+    // reset_config_singleton() wipes these keys again for the next test.
+    auto* config = Config::get_instance();
+    REQUIRE(config != nullptr);
+    config->set<int>("/update/channel", 2); // Dev
+    config->set<std::string>("/update/dev_url", "http://127.0.0.1:1/");
+
     auto& checker = UpdateChecker::instance();
     checker.init();
     checker.clear_cache();
 
-    SECTION("nullptr callback is accepted") {
-        // This should not throw, even though it will try to make a network request
-        // The test may fail due to rate limiting or network issues, but shouldn't crash
+    const int threads_before = helix::test::live_thread_count();
+    REQUIRE(threads_before > 0);
+
+    SECTION("nullptr callback survives the whole check cycle") {
         REQUIRE_NOTHROW(checker.check_for_updates(nullptr));
 
-        // Give a tiny bit of time for thread to start, then shutdown cleanly
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        // Wait for the worker to publish a terminal status. report_result()
+        // stores status_ under the mutex BEFORE deferring to the LVGL thread,
+        // so this flips as soon as the check body has run. A refused loopback
+        // connect lands in ~10ms; the budget only has to exceed the request's
+        // own 30s timeout so a host that silently drops (rather than refuses)
+        // port 1 still reaches Error instead of flaking here.
+        constexpr int kPollIterations = 8000; // 8000 * 5ms = 40s
+        for (int i = 0;
+             i < kPollIterations && checker.get_status() == UpdateChecker::Status::Checking; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        // Pin that the check really ran end-to-end rather than short-circuiting
+        // (a future early-return in check_for_updates would otherwise silently
+        // gut this test): a refused connection lands on Status::Error.
+        REQUIRE(checker.get_status() == UpdateChecker::Status::Error);
+
+        // Run the deferred completion lambda on this (main) thread. That lambda
+        // is where `if (callback) callback(...)` lives — draining it is what
+        // actually exercises the nullptr-callback contract. Drop that guard and
+        // invoking the empty std::function throws std::bad_function_call, which
+        // process_pending() swallows by design; the exception counter is what
+        // makes it visible here.
+        const uint32_t exceptions_before =
+            helix::ui::UpdateQueueTestAccess::callback_exception_count();
+        helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+        CHECK(helix::ui::UpdateQueueTestAccess::callback_exception_count() == exceptions_before);
+
         checker.shutdown();
+
+        // The check must be thread-neutral. A synchronous HTTPS request through
+        // libhv's requests:: client spins up event-loop threads that outlive the
+        // call, and an unjoined loop later fires on freed state and crashes an
+        // unrelated test (prestonbrown/helixscreen#1212).
+        CHECK(helix::test::live_thread_count() == threads_before);
     }
 }
 
@@ -649,7 +702,6 @@ TEST_CASE("UpdateChecker subject initialization", "[update_checker][subjects]") 
 
     SECTION("all subject accessors return non-null after init") {
         REQUIRE(checker.status_subject() != nullptr);
-        REQUIRE(checker.checking_subject() != nullptr);
         REQUIRE(checker.version_text_subject() != nullptr);
         REQUIRE(checker.new_version_subject() != nullptr);
     }
@@ -657,7 +709,6 @@ TEST_CASE("UpdateChecker subject initialization", "[update_checker][subjects]") 
     SECTION("integer subjects have correct initial values") {
         REQUIRE(lv_subject_get_int(checker.status_subject()) ==
                 static_cast<int>(UpdateChecker::Status::Idle));
-        REQUIRE(lv_subject_get_int(checker.checking_subject()) == 0);
     }
 
     SECTION("string subjects start empty") {
@@ -681,14 +732,12 @@ TEST_CASE("UpdateChecker subject accessors remain stable after shutdown",
 
     // Verify subjects exist before shutdown
     REQUIRE(checker.status_subject() != nullptr);
-    REQUIRE(checker.checking_subject() != nullptr);
 
     checker.shutdown();
 
     // Accessors return member addresses, so they remain non-null even after shutdown.
     // (The subjects themselves are deinitialized, but the pointers are stable.)
     REQUIRE(checker.status_subject() != nullptr);
-    REQUIRE(checker.checking_subject() != nullptr);
     REQUIRE(checker.version_text_subject() != nullptr);
     REQUIRE(checker.new_version_subject() != nullptr);
 }
@@ -1479,8 +1528,8 @@ TEST_CASE("get_platform_key returns a known platform", "[update_checker][platfor
     // here — AND a matching #elif in get_platform_key — silently bricks
     // in-app updates for that platform (falls through to "pi", so the device
     // downloads the Pi tarball and ends up with missing shared libs).
-    std::vector<std::string> known_platforms = {"pi",  "pi32", "x86",           "ad5m", "k1",
-                                                "k2",  "ad5x", "cc1", "esp32", "snapmaker-u1"};
+    std::vector<std::string> known_platforms = {"pi", "pi32", "x86", "ad5m",  "k1",
+                                                "k2", "ad5x", "cc1", "esp32", "snapmaker-u1"};
     bool found = false;
     for (const auto& p : known_platforms) {
         if (platform == p) {
@@ -1532,8 +1581,8 @@ TEST_CASE("get_platform_display_name returns non-empty string for all known plat
     // Every key that get_platform_key() can return MUST have a display name.
     // Keep in sync with platform_canonical_model in debug_bundle_collector.cpp
     // (and UpdateChecker::get_platform_display_name once centralised).
-    std::vector<std::string> known_platforms = {"pi",  "pi32", "x86",           "ad5m", "k1",
-                                                "k2",  "ad5x", "cc1", "esp32", "snapmaker-u1"};
+    std::vector<std::string> known_platforms = {"pi", "pi32", "x86", "ad5m",  "k1",
+                                                "k2", "ad5x", "cc1", "esp32", "snapmaker-u1"};
 
     for (const auto& key : known_platforms) {
         INFO("platform key: " << key);
@@ -1557,4 +1606,549 @@ TEST_CASE("get_platform_display_name returns correct strings for known platforms
     REQUIRE(UpdateChecker::get_platform_display_name("esp32") == "BTT K-Touch");
     // Unknown keys fall back to the key itself.
     REQUIRE(UpdateChecker::get_platform_display_name("unknown-platform") == "unknown-platform");
+}
+
+// ============================================================================
+// Zip integrity verification (prestonbrown/helixscreen#993)
+//
+// Release archives ship as .zip, and `unzip -t` support depends on the
+// firmware's BusyBox vintage. Verified on-device:
+//
+//   BusyBox 1.29.3 (FlashForge AD5M)    no -t: "invalid option -- 't'"
+//   BusyBox 1.31.1 (Creality K1)        no -t: "invalid option -- 't'"
+//   BusyBox 1.36.1 (Elegoo Centauri)    -t present and correct
+//   info-zip 6.00  (Debian/Pi/desktop)  -t present and correct
+//
+// Using `unzip -t` as the primary check therefore failed every AD5M and K1
+// update on an intact download ("Error: Corrupt download").
+// verify_zip_integrity() prefers python3's zipfile.testzip(), which behaves
+// identically everywhere.
+//
+// NOTE: the Unverifiable path (python present but built without zlib, as on the
+// AD5M, or no tools at all) cannot be exercised here -- verify_zip_integrity
+// resolves python3/unzip from absolute system directories, so a test cannot
+// shadow them via PATH. That path is covered by the installer's bats suite
+// ("python has no zlib (AD5M)") and was verified on the device itself.
+// ============================================================================
+
+namespace {
+
+/// True when a python3 capable of building zip fixtures is on this system.
+bool zip_fixture_tooling_available() {
+    return std::system("python3 -c 'import zipfile, zlib' >/dev/null 2>&1") == 0;
+}
+
+/// Run a python snippet with `path` as argv[1]. Returns true on exit 0.
+bool run_python_fixture(const std::string& script, const std::string& path) {
+    // Fixture construction only — the code under test never uses a shell.
+    std::string cmd = "python3 -c \"" + script + "\" '" + path + "' >/dev/null 2>&1";
+    return std::system(cmd.c_str()) == 0;
+}
+
+/// Build a zip containing one deflated, incompressible member.
+bool make_valid_zip(const std::string& path) {
+    return run_python_fixture("import os,sys,zipfile;"
+                              "z=zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED);"
+                              "z.writestr('bin/helix-screen', b'\\x7fELF'+os.urandom(65536));"
+                              "z.close()",
+                              path);
+}
+
+/// Flip a byte in the middle of the compressed payload. The archive stays
+/// structurally valid, so only a real per-entry CRC test can catch it — this is
+/// exactly what BusyBox 1.36's no-op `-t` waves through.
+bool corrupt_zip_payload(const std::string& path) {
+    return run_python_fixture("import sys;"
+                              "p=sys.argv[1];"
+                              "d=bytearray(open(p,'rb').read());"
+                              "d[len(d)//2]^=0xFF;"
+                              "open(p,'wb').write(bytes(d))",
+                              path);
+}
+
+/// Truncate the file, destroying the end-of-central-directory record.
+bool truncate_zip(const std::string& path) {
+    return run_python_fixture("import sys;"
+                              "p=sys.argv[1];"
+                              "d=open(p,'rb').read();"
+                              "open(p,'wb').write(d[:len(d)//2])",
+                              path);
+}
+
+std::string zip_fixture_path(const char* name) {
+    return std::string("/tmp/helix_zip_fixture_") + name + ".zip";
+}
+
+} // namespace
+
+TEST_CASE("verify_zip_integrity accepts an intact zip", "[update_checker][zip][993]") {
+    if (!zip_fixture_tooling_available()) {
+        SKIP("python3 with zipfile/zlib required to build zip fixtures");
+    }
+    const auto path = zip_fixture_path("good");
+    REQUIRE(make_valid_zip(path));
+
+    REQUIRE(UpdateChecker::verify_zip_integrity(path) == UpdateChecker::ZipIntegrity::Ok);
+    std::remove(path.c_str());
+}
+
+TEST_CASE("verify_zip_integrity rejects a CRC-corrupt zip", "[update_checker][zip][993]") {
+    // The archive is structurally intact — catching this REQUIRES a real
+    // per-entry CRC test, not `unzip -t` on BusyBox 1.36.
+    if (!zip_fixture_tooling_available()) {
+        SKIP("python3 with zipfile/zlib required to build zip fixtures");
+    }
+    const auto path = zip_fixture_path("crc");
+    REQUIRE(make_valid_zip(path));
+    REQUIRE(corrupt_zip_payload(path));
+
+    REQUIRE(UpdateChecker::verify_zip_integrity(path) == UpdateChecker::ZipIntegrity::Corrupt);
+    std::remove(path.c_str());
+}
+
+TEST_CASE("verify_zip_integrity rejects a truncated zip", "[update_checker][zip][993]") {
+    if (!zip_fixture_tooling_available()) {
+        SKIP("python3 with zipfile/zlib required to build zip fixtures");
+    }
+    const auto path = zip_fixture_path("trunc");
+    REQUIRE(make_valid_zip(path));
+    REQUIRE(truncate_zip(path));
+
+    REQUIRE(UpdateChecker::verify_zip_integrity(path) == UpdateChecker::ZipIntegrity::Corrupt);
+    std::remove(path.c_str());
+}
+
+TEST_CASE("verify_zip_integrity rejects non-zip and missing files", "[update_checker][zip][993]") {
+    if (!zip_fixture_tooling_available()) {
+        SKIP("python3 with zipfile/zlib required to build zip fixtures");
+    }
+
+    SECTION("HTML error page saved with a .zip name") {
+        // What a CDN 404/504 actually leaves on disk — issue #993's original
+        // "File is not a zip file" report.
+        const auto path = zip_fixture_path("html");
+        std::ofstream f(path);
+        f << "<!DOCTYPE html><html><body>504 Gateway Timeout</body></html>";
+        f.close();
+
+        REQUIRE(UpdateChecker::verify_zip_integrity(path) == UpdateChecker::ZipIntegrity::Corrupt);
+        std::remove(path.c_str());
+    }
+
+    SECTION("empty file") {
+        const auto path = zip_fixture_path("empty");
+        std::ofstream f(path);
+        f.close();
+
+        REQUIRE(UpdateChecker::verify_zip_integrity(path) == UpdateChecker::ZipIntegrity::Corrupt);
+        std::remove(path.c_str());
+    }
+
+    SECTION("nonexistent path") {
+        REQUIRE(UpdateChecker::verify_zip_integrity("/tmp/helix_zip_fixture_does_not_exist.zip") ==
+                UpdateChecker::ZipIntegrity::Corrupt);
+    }
+}
+
+TEST_CASE("verify_zip_integrity never reports Unverifiable when python3 exists",
+          "[update_checker][zip][993]") {
+    // Unverifiable must be reserved for systems with neither python3 nor unzip.
+    // On such a system the caller falls back to SHA256 rather than failing the
+    // update — but a normal device must always get a definitive answer.
+    if (!zip_fixture_tooling_available()) {
+        SKIP("python3 with zipfile/zlib required to build zip fixtures");
+    }
+    const auto path = zip_fixture_path("definitive");
+    REQUIRE(make_valid_zip(path));
+
+    REQUIRE(UpdateChecker::verify_zip_integrity(path) != UpdateChecker::ZipIntegrity::Unverifiable);
+    std::remove(path.c_str());
+}
+
+// ============================================================================
+// Zip member extraction / tool availability
+//
+// Not every platform ships `unzip`: the Creality K2's OpenWrt firmware has no
+// unzip binary and no BusyBox unzip applet, only python3 with zipfile+zlib.
+// Demanding unzip made every in-app update there fail before downloading.
+//
+// NOTE: these tests exercise whichever tool the host actually has (unzip on
+// dev/CI machines). The python fallback cannot be forced here — the
+// implementation resolves tools from absolute system directories, so a test
+// cannot shadow them via PATH. That branch was verified on K2 hardware.
+// ============================================================================
+
+TEST_CASE("available_zip_tool finds a usable tool on this system", "[update_checker][zip]") {
+    // A dev/CI host has unzip, python3, or both; None would mean zip releases
+    // are uninstallable here.
+    REQUIRE(UpdateChecker::available_zip_tool() != UpdateChecker::ZipTool::None);
+}
+
+TEST_CASE("extract_zip_member extracts a member's exact contents", "[update_checker][zip]") {
+    if (!zip_fixture_tooling_available()) {
+        SKIP("python3 with zipfile/zlib required to build zip fixtures");
+    }
+    const auto zip = zip_fixture_path("extract");
+    const std::string dir = "/tmp/helix_zip_fixture_extract_dir";
+    std::system(("rm -rf '" + dir + "'").c_str());
+    REQUIRE(mkdir(dir.c_str(), 0750) == 0);
+
+    // Build a zip holding a shell member with known contents.
+    REQUIRE(run_python_fixture("import sys,zipfile;"
+                               "z=zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED);"
+                               "z.writestr('helixscreen/install.sh','#!/bin/sh\\necho hi\\n');"
+                               "z.close()",
+                               zip));
+
+    REQUIRE(UpdateChecker::extract_zip_member(zip, dir, "helixscreen/install.sh") == 0);
+
+    std::ifstream f(dir + "/helixscreen/install.sh");
+    REQUIRE(f.good());
+    std::string contents((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    f.close();
+    REQUIRE(contents == "#!/bin/sh\necho hi\n");
+
+    std::system(("rm -rf '" + dir + "'").c_str());
+    std::remove(zip.c_str());
+}
+
+TEST_CASE("extract_zip_member leaves an extracted installer executable", "[update_checker][zip]") {
+    // An install.sh or bin/helix-screen that lands without its exec bit is
+    // useless — the updater runs it straight after extraction.
+    if (!zip_fixture_tooling_available()) {
+        SKIP("python3 with zipfile/zlib required to build zip fixtures");
+    }
+    const auto zip = zip_fixture_path("mode");
+    const std::string dir = "/tmp/helix_zip_fixture_mode_dir";
+    std::system(("rm -rf '" + dir + "'").c_str());
+    REQUIRE(mkdir(dir.c_str(), 0750) == 0);
+
+    // Store the member with no mode bits at all, the hostile case for the
+    // python path (zipfile.extract() would leave it 0600).
+    REQUIRE(run_python_fixture("import sys,zipfile;"
+                               "z=zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED);"
+                               "z.writestr('bin/helix-screen','#!/bin/sh\\nexit 0\\n');"
+                               "z.close()",
+                               zip));
+
+    REQUIRE(UpdateChecker::extract_zip_member(zip, dir, "bin/helix-screen") == 0);
+    REQUIRE(access((dir + "/bin/helix-screen").c_str(), X_OK) == 0);
+
+    std::system(("rm -rf '" + dir + "'").c_str());
+    std::remove(zip.c_str());
+}
+
+TEST_CASE("extract_zip_member fails for a member that isn't in the archive",
+          "[update_checker][zip]") {
+    if (!zip_fixture_tooling_available()) {
+        SKIP("python3 with zipfile/zlib required to build zip fixtures");
+    }
+    const auto zip = zip_fixture_path("absent");
+    const std::string dir = "/tmp/helix_zip_fixture_absent_dir";
+    std::system(("rm -rf '" + dir + "'").c_str());
+    REQUIRE(mkdir(dir.c_str(), 0750) == 0);
+    REQUIRE(make_valid_zip(zip));
+
+    REQUIRE(UpdateChecker::extract_zip_member(zip, dir, "no/such/member") != 0);
+
+    std::system(("rm -rf '" + dir + "'").c_str());
+    std::remove(zip.c_str());
+}
+
+// ============================================================================
+// release_info.json self-repair (prestonbrown/helixscreen#993)
+// ============================================================================
+//
+// Moonraker's type:web updater downloads the release asset named by
+// release_info.json's asset_name. A missing or stale name makes Moonraker fall
+// back to the alphabetically-FIRST asset on the release -- never a zip -- and
+// extraction dies with "File is not a zip file". The file was written once at
+// install time and never revalidated, so a bad value permanently blocked the
+// very update that would have repaired it. UpdateChecker::repair_release_info()
+// re-derives asset_name from the platform key at every boot.
+
+namespace {
+
+std::string expected_asset_name() {
+    return "helixscreen-" + UpdateChecker::get_platform_key() + ".zip";
+}
+
+// Read a whole file; returns "" when it cannot be opened.
+std::string read_all(const std::string& path) {
+    std::ifstream in(path);
+    if (!in.is_open())
+        return "";
+    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+}
+
+nlohmann::json read_json(const std::string& path) {
+    std::ifstream in(path);
+    REQUIRE(in.is_open());
+    return nlohmann::json::parse(in, nullptr, /*allow_exceptions=*/false);
+}
+
+// Make <root> look like a deployed install so repair_release_info() is willing
+// to CREATE a missing release_info.json there.
+void make_deployed_layout(const std::string& root) {
+    REQUIRE(mkdir((root + "/bin").c_str(), 0755) == 0);
+    create_file(root + "/bin/helix-screen", "#!/bin/sh\nexit 0\n", true);
+}
+
+} // anonymous namespace
+
+TEST_CASE("repair_release_info: empty install root is a no-op", "[update_checker][release_info]") {
+    // Bind-mounted layouts resolve to "". Must not crash, must not guess a path.
+    REQUIRE(UpdateChecker::repair_release_info("") == UpdateChecker::ReleaseInfoRepair::Absent);
+}
+
+TEST_CASE("repair_release_info: missing file in a non-deployed tree is left alone",
+          "[update_checker][release_info]") {
+    // A dev build resolves its install root to the SOURCE CHECKOUT. Creating the
+    // file whenever it is absent would drop an untracked release_info.json into
+    // the repo on every run.
+    auto tmp = make_temp_dir("helix_relinfo_nodeploy");
+    REQUIRE(!tmp.empty());
+
+    REQUIRE(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::Absent);
+    REQUIRE_FALSE(std::filesystem::exists(tmp + "/release_info.json"));
+
+    remove_dir(tmp);
+}
+
+TEST_CASE("repair_release_info: missing file in a deployed install is created",
+          "[update_checker][release_info]") {
+    auto tmp = make_temp_dir("helix_relinfo_missing");
+    REQUIRE(!tmp.empty());
+    make_deployed_layout(tmp);
+
+    REQUIRE(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::Repaired);
+
+    auto j = read_json(tmp + "/release_info.json");
+    REQUIRE(j.is_object());
+    CHECK(j["asset_name"].get<std::string>() == expected_asset_name());
+    CHECK(j["project_name"].get<std::string>() == "helixscreen");
+    CHECK(j["project_owner"].get<std::string>() == "prestonbrown");
+    // No prior version to preserve -- reconstructed from the running build.
+    REQUIRE(j.contains("version"));
+    CHECK(j["version"].get<std::string>().rfind("v", 0) == 0);
+
+    remove_dir(tmp);
+}
+
+TEST_CASE("repair_release_info: empty file is rewritten", "[update_checker][release_info]") {
+    auto tmp = make_temp_dir("helix_relinfo_empty");
+    REQUIRE(!tmp.empty());
+    const std::string path = tmp + "/release_info.json";
+    create_file(path, "");
+
+    REQUIRE(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::Repaired);
+
+    auto j = read_json(path);
+    REQUIRE(j.is_object());
+    CHECK(j["asset_name"].get<std::string>() == expected_asset_name());
+
+    remove_dir(tmp);
+}
+
+TEST_CASE("repair_release_info: truncated/malformed JSON is rewritten",
+          "[update_checker][release_info]") {
+    auto tmp = make_temp_dir("helix_relinfo_malformed");
+    REQUIRE(!tmp.empty());
+    const std::string path = tmp + "/release_info.json";
+    // Power-cut mid-write: a real half-object, not just garbage bytes.
+    create_file(path, "{\"project_name\":\"helixscreen\",\"asset_na");
+
+    REQUIRE(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::Repaired);
+
+    auto j = read_json(path);
+    REQUIRE(j.is_object());
+    CHECK(j["asset_name"].get<std::string>() == expected_asset_name());
+    CHECK(j["project_name"].get<std::string>() == "helixscreen");
+
+    remove_dir(tmp);
+}
+
+TEST_CASE("repair_release_info: valid JSON that is not an object is rewritten",
+          "[update_checker][release_info]") {
+    auto tmp = make_temp_dir("helix_relinfo_array");
+    REQUIRE(!tmp.empty());
+    const std::string path = tmp + "/release_info.json";
+    // Parses fine, but every field lookup on it would be a type error.
+    create_file(path, "[\"helixscreen\"]");
+
+    REQUIRE(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::Repaired);
+
+    auto j = read_json(path);
+    REQUIRE(j.is_object());
+    CHECK(j["asset_name"].get<std::string>() == expected_asset_name());
+
+    remove_dir(tmp);
+}
+
+TEST_CASE("repair_release_info: asset_name absent is filled in, other fields preserved",
+          "[update_checker][release_info]") {
+    auto tmp = make_temp_dir("helix_relinfo_noasset");
+    REQUIRE(!tmp.empty());
+    const std::string path = tmp + "/release_info.json";
+    create_file(path, R"({"project_name":"helixscreen","project_owner":"prestonbrown",)"
+                      R"("version":"v0.99.84","extra_key":"keep me"})");
+
+    REQUIRE(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::Repaired);
+
+    auto j = read_json(path);
+    REQUIRE(j.is_object());
+    CHECK(j["asset_name"].get<std::string>() == expected_asset_name());
+    CHECK(j["version"].get<std::string>() == "v0.99.84");
+    CHECK(j["project_name"].get<std::string>() == "helixscreen");
+    CHECK(j["project_owner"].get<std::string>() == "prestonbrown");
+    // Unknown keys survive -- we repair one field, we do not reset the file.
+    CHECK(j["extra_key"].get<std::string>() == "keep me");
+
+    remove_dir(tmp);
+}
+
+TEST_CASE("repair_release_info: asset_name for the wrong platform is corrected",
+          "[update_checker][release_info]") {
+    auto tmp = make_temp_dir("helix_relinfo_wrong");
+    REQUIRE(!tmp.empty());
+    const std::string path = tmp + "/release_info.json";
+    // The reported field case: a name that matches no asset on this release, so
+    // Moonraker grabs ad5m.sym.zst instead.
+    const std::string wrong = expected_asset_name() == "helixscreen-ad5m.zip"
+                                  ? "helixscreen-k1.zip"
+                                  : "helixscreen-ad5m.zip";
+    create_file(path, R"({"project_name":"helixscreen","project_owner":"prestonbrown",)"
+                      R"("version":"v0.99.84","asset_name":")" +
+                          wrong + R"("})");
+
+    REQUIRE(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::Repaired);
+
+    auto j = read_json(path);
+    CHECK(j["asset_name"].get<std::string>() == expected_asset_name());
+    CHECK(j["version"].get<std::string>() == "v0.99.84");
+
+    remove_dir(tmp);
+}
+
+TEST_CASE("repair_release_info: empty and non-string asset_name are both repaired",
+          "[update_checker][release_info]") {
+    auto tmp = make_temp_dir("helix_relinfo_badtype");
+    REQUIRE(!tmp.empty());
+    const std::string path = tmp + "/release_info.json";
+
+    SECTION("empty string") {
+        create_file(path, R"({"asset_name":""})");
+    }
+    SECTION("null") {
+        create_file(path, R"({"asset_name":null})");
+    }
+    SECTION("number") {
+        create_file(path, R"({"asset_name":42})");
+    }
+
+    REQUIRE(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::Repaired);
+    auto j = read_json(path);
+    CHECK(j["asset_name"].get<std::string>() == expected_asset_name());
+
+    remove_dir(tmp);
+}
+
+TEST_CASE("repair_release_info: a correct file is not rewritten",
+          "[update_checker][release_info]") {
+    // No boot-time disk churn, and it keeps the repair log line diagnostic:
+    // if it appears in a field log, something really was wrong.
+    auto tmp = make_temp_dir("helix_relinfo_correct");
+    REQUIRE(!tmp.empty());
+    const std::string path = tmp + "/release_info.json";
+
+    // Deliberately pretty-printed with a trailing newline: a rewrite emits a
+    // compact dump, so byte-identity alone would catch a stray write.
+    const std::string original = "{\n    \"asset_name\": \"" + expected_asset_name() +
+                                 "\",\n    \"project_name\": \"helixscreen\",\n"
+                                 "    \"project_owner\": \"prestonbrown\",\n"
+                                 "    \"version\": \"v0.99.103\"\n}\n";
+    create_file(path, original);
+
+    // Backdate the mtime an hour so any rewrite is unmistakable regardless of
+    // filesystem timestamp granularity.
+    const auto backdated = std::filesystem::last_write_time(path) - std::chrono::hours(1);
+    std::filesystem::last_write_time(path, backdated);
+
+    REQUIRE(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::NotNeeded);
+
+    // Extra parens on purpose: they suppress Catch2's expression decomposition,
+    // which would otherwise try to stream a file_time_type. libc++ gives that
+    // clock an __int128 rep, and ostream has no unambiguous operator<< for it —
+    // the macOS build fails to compile, not to assert. Comparing as a plain bool
+    // keeps the check and costs only the operand values in the failure message.
+    CHECK((std::filesystem::last_write_time(path) == backdated));
+    CHECK(read_all(path) == original);
+    // And no temp file was left lying next to it.
+    CHECK_FALSE(std::filesystem::exists(path + ".tmp"));
+
+    remove_dir(tmp);
+}
+
+TEST_CASE("repair_release_info: writing through a symlink preserves the link (#1176)",
+          "[update_checker][release_info][regression]") {
+    // The installer symlinks install-dir files out to printer_data, and that
+    // link is the only thing keeping them alive through a Moonraker one-click
+    // update (rmtree unlinks a symlink rather than following it). rename(2) onto
+    // a symlink replaces THE SYMLINK -- so an atomic write that skips
+    // canonicalisation silently converts the link into a regular file and
+    // strands it in the doomed directory. Content assertions cannot see this:
+    // the JSON round-trips perfectly either way.
+    auto install = make_temp_dir("helix_relinfo_link_install");
+    auto real = make_temp_dir("helix_relinfo_link_real");
+    REQUIRE(!install.empty());
+    REQUIRE(!real.empty());
+
+    const std::string real_file = real + "/release_info.json";
+    const std::string link_path = install + "/release_info.json";
+    create_file(real_file, R"({"project_name":"helixscreen","version":"v0.99.84"})");
+
+    std::error_code ec;
+    std::filesystem::create_symlink(real_file, link_path, ec);
+    REQUIRE_FALSE(ec);
+    REQUIRE(std::filesystem::is_symlink(link_path));
+
+    REQUIRE(UpdateChecker::repair_release_info(install) ==
+            UpdateChecker::ReleaseInfoRepair::Repaired);
+
+    // The link must survive. Without symlink resolution this is a regular file.
+    CHECK(std::filesystem::is_symlink(link_path));
+    // ...and the write must have landed on the far side of it, not beside it.
+    auto j = read_json(real_file);
+    REQUIRE(j.is_object());
+    CHECK(j["asset_name"].get<std::string>() == expected_asset_name());
+    CHECK(j["version"].get<std::string>() == "v0.99.84");
+
+    CHECK_FALSE(std::filesystem::exists(link_path + ".tmp"));
+    CHECK_FALSE(std::filesystem::exists(real_file + ".tmp"));
+
+    remove_dir(install);
+    remove_dir(real);
+}
+
+TEST_CASE("repair_release_info: an unwritable install dir fails softly",
+          "[update_checker][release_info]") {
+    // Read-only rootfs / root-owned install dir. A failed repair must never be
+    // fatal -- the app boots, self-update just stays broken until the installer
+    // is re-run.
+    if (geteuid() == 0) {
+        SKIP("running as root: directory permissions are not enforced");
+    }
+    auto tmp = make_temp_dir("helix_relinfo_ro");
+    REQUIRE(!tmp.empty());
+    const std::string path = tmp + "/release_info.json";
+    const std::string original = R"({"asset_name":"helixscreen-wrong.zip"})";
+    create_file(path, original);
+    REQUIRE(chmod(tmp.c_str(), 0555) == 0);
+
+    CHECK(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::Failed);
+    // The original is left intact rather than truncated.
+    CHECK(read_all(path) == original);
+
+    REQUIRE(chmod(tmp.c_str(), 0755) == 0);
+    remove_dir(tmp);
 }

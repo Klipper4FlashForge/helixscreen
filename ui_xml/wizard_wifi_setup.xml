@@ -7,7 +7,9 @@
   <consts>
     <!-- Step metadata (read by wizard orchestrator) -->
     <str name="step_title" value="Printer Setup: Network" value_tag="Printer Setup: Network"/>
-    <str name="step_subtitle" value="Configure WiFi for this device, or skip if you're using Ethernet" value_tag="Configure WiFi for this device, or skip if you're using Ethernet"/>
+    <str name="step_subtitle"
+         value="Configure WiFi for this device, or skip if you're using Ethernet"
+         value_tag="Configure WiFi for this device, or skip if you're using Ethernet"/>
     <int name="step_order" value="1"/>
     <!-- WiFi status text constants -->
     <str name="wifi_status.disabled" value="WiFi Disabled" value_tag="WiFi Disabled"/>
@@ -27,18 +29,18 @@
             style_flex_cross_place="start">
       <!-- LEFT COLUMN: WiFi and Ethernet Cards (40%) -->
       <lv_obj height="100%"
-              flex_grow="4" scrollable="true" style_pad_all="0" style_pad_gap="#space_md"
-              flex_flow="column" style_flex_main_place="start" style_flex_cross_place="start">
+              flex_grow="4" scrollable="true" style_pad_all="0" style_pad_gap="#space_md" flex_flow="column"
+              style_flex_main_place="start" style_flex_cross_place="start">
         <!-- WiFi Card -->
         <ui_card width="100%"
-                 height="content" style_pad_all="#space_md" style_pad_gap="#space_sm" flex_flow="column" style_flex_main_place="start" style_flex_cross_place="start">
+                 height="content" style_pad_all="#space_md" style_pad_gap="#space_sm" flex_flow="column"
+                 style_flex_main_place="start" style_flex_cross_place="start">
           <!-- Disable card when WiFi hardware unavailable -->
           <bind_state_if_eq subject="wifi_hardware_available" state="disabled" ref_value="0"/>
           <!-- Label + Switch horizontal container -->
           <lv_obj width="100%"
-                  height="content" scrollable="false" style_pad_all="0"
-                  style_pad_right="#space_xs" flex_flow="row" style_flex_main_place="space_between"
-                  style_flex_cross_place="start">
+                  height="content" scrollable="false" style_pad_all="0" style_pad_right="#space_xs" flex_flow="row"
+                  style_flex_main_place="space_between" style_flex_cross_place="start">
             <text_heading text="WiFi"/>
             <!-- WiFi toggle: wired to wifi_enabled subject via C++ event handler -->
             <ui_switch name="wifi_toggle" size="small">
@@ -47,19 +49,16 @@
             </ui_switch>
           </lv_obj>
           <!-- WiFi Status label (shows connected SSID or status) -->
-          <text_small name="wifi_status"
-                      width="100%" bind_text="wifi_status" style_text_align="left"/>
+          <text_small name="wifi_status" width="100%" bind_text="wifi_status" style_text_align="left"/>
           <!-- WiFi IP address (shown when connected) -->
-          <text_small name="wifi_ip"
-                      width="100%" bind_text="wifi_ip" style_text_align="left"/>
+          <text_small name="wifi_ip" width="100%" bind_text="wifi_ip" style_text_align="left"/>
           <!-- WiFi MAC address (shown when connected) -->
-          <text_small name="wifi_mac"
-                      width="100%" bind_text="wifi_mac" style_text_align="left"/>
+          <text_small name="wifi_mac" width="100%" bind_text="wifi_mac" style_text_align="left"/>
         </ui_card>
         <!-- Ethernet Status Card -->
         <ui_card width="100%"
-                 flex_grow="1" style_pad_all="#space_md" style_pad_gap="#space_sm" flex_flow="column" style_flex_main_place="start"
-                 style_flex_cross_place="start">
+                 flex_grow="1" style_pad_all="#space_md" style_pad_gap="#space_sm" flex_flow="column"
+                 style_flex_main_place="start" style_flex_cross_place="start">
           <text_heading text="Ethernet"/>
           <!-- Ethernet Status label -->
           <text_small name="ethernet_status" width="100%" bind_text="ethernet_status" style_text_align="left"/>
@@ -77,15 +76,19 @@
         <!-- Also disable when hardware unavailable -->
         <bind_state_if_eq subject="wifi_hardware_available" state="disabled" ref_value="0"/>
         <!-- Title -->
-        <text_heading width="100%" text="Available Networks" translation_tag="Available Networks" style_pad_bottom="#space_sm"/>
+        <text_heading width="100%"
+                      text="Available Networks" translation_tag="Available Networks" style_pad_bottom="#space_sm"/>
         <!-- Scanning indicator (shown when wifi_scanning == 1) -->
-        <text_body name="network_list_scanning" width="100%" text="Scanning for networks..." translation_tag="Scanning for networks..." style_text_align="center">
+        <text_body name="network_list_scanning"
+                   width="100%" text="Scanning for networks..." translation_tag="Scanning for networks..."
+                   style_text_align="center">
           <!-- Show only when scanning (hide when wifi_scanning == 0) -->
           <bind_flag_if_eq subject="wifi_scanning" flag="hidden" ref_value="0"/>
         </text_body>
         <!-- Placeholder shown when WiFi is disabled (wifi_enabled == 0) -->
         <text_body name="network_list_placeholder"
-                   width="100%" text="Enable WiFi to scan for networks" translation_tag="Enable WiFi to scan for networks" style_text_align="center">
+                   width="100%" text="Enable WiFi to scan for networks"
+                   translation_tag="Enable WiFi to scan for networks" style_text_align="center">
           <!-- Show placeholder only when WiFi is disabled (hidden when enabled) -->
           <bind_flag_if_eq subject="wifi_enabled" flag="hidden" ref_value="1"/>
         </text_body>

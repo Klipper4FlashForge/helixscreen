@@ -39,7 +39,7 @@ ExcludeObjectSideList::~ExcludeObjectSideList() {
 }
 
 void ExcludeObjectSideList::create(lv_obj_t* parent, PrinterState* printer_state,
-                                   PrintExcludeObjectManager* manager, int width_pct) {
+                                   PrintExcludeObjectManager* manager, SideListGeometry geom) {
     if (root_) {
         spdlog::warn("[ExcludeObjectSideList] create() called but already active");
         return;
@@ -68,9 +68,25 @@ void ExcludeObjectSideList::create(lv_obj_t* parent, PrinterState* printer_state
         return;
     }
 
-    lv_obj_set_width(root_, lv_pct(width_pct));
-    lv_obj_set_height(root_, lv_pct(100));
-    lv_obj_set_align(root_, LV_ALIGN_RIGHT_MID);
+    lv_obj_set_width(root_, lv_pct(geom.width_pct));
+    // Bottom-anchored means portrait, which is supposed to arrive measured. The
+    // percentage fallback is a guess that cannot track the control stack — the
+    // exact failure this sizing replaced — so say so rather than silently
+    // shipping a list that eats the object map.
+    if (geom.anchor_bottom && geom.height_px <= 0) {
+        spdlog::warn("[ExcludeObjectSideList] Portrait list created without measurements; "
+                     "falling back to {}% of the column",
+                     geom.height_pct);
+    }
+    // A measured px height wins over the percentage. Portrait sizes the list to
+    // the control stack it covers; a percentage there cannot notice the stack
+    // shrinking and would keep eating the object map.
+    if (geom.height_px > 0) {
+        lv_obj_set_height(root_, geom.height_px);
+    } else {
+        lv_obj_set_height(root_, lv_pct(geom.height_pct));
+    }
+    lv_obj_set_align(root_, geom.anchor_bottom ? LV_ALIGN_BOTTOM_MID : LV_ALIGN_RIGHT_MID);
     // FLOATING removes us from the parent's flex/layout calculations so we
     // sit on top of sibling columns rather than displacing them.
     lv_obj_add_flag(root_, LV_OBJ_FLAG_FLOATING);
@@ -82,16 +98,20 @@ void ExcludeObjectSideList::create(lv_obj_t* parent, PrinterState* printer_state
         spdlog::error("[ExcludeObjectSideList] rows_container not found");
     }
 
-    // Force layout so we know the pixel width for the slide animation.
+    // Force layout so we know the pixel extent to travel for the slide.
     lv_obj_update_layout(parent);
-    int slide_distance = lv_obj_get_width(root_);
+    int slide_distance = geom.anchor_bottom ? lv_obj_get_height(root_) : lv_obj_get_width(root_);
     if (slide_distance <= 0) {
         slide_distance = 200; // fallback for unsized parent
     }
 
-    // Start off-screen right (positive x relative to LV_ALIGN_RIGHT_MID), then
-    // tween to x=0 (flush right).
-    lv_obj_set_x(root_, slide_distance);
+    // Start off-screen past the anchored edge (positive offset relative to
+    // RIGHT_MID or BOTTOM_MID), then tween to 0 to sit flush against it.
+    if (geom.anchor_bottom) {
+        lv_obj_set_y(root_, slide_distance);
+    } else {
+        lv_obj_set_x(root_, slide_distance);
+    }
 
     populate_rows();
 
@@ -110,13 +130,25 @@ void ExcludeObjectSideList::create(lv_obj_t* parent, PrinterState* printer_state
     lv_anim_set_var(&a, root_);
     lv_anim_set_values(&a, slide_distance, 0);
     lv_anim_set_duration(&a, kSlideInDurationMs);
-    lv_anim_set_exec_cb(&a,
-                        [](void* obj, int32_t v) { lv_obj_set_x(static_cast<lv_obj_t*>(obj), v); });
+    lv_anim_set_exec_cb(
+        &a, geom.anchor_bottom
+                ? [](void* obj, int32_t v) { lv_obj_set_y(static_cast<lv_obj_t*>(obj), v); }
+                : [](void* obj, int32_t v) { lv_obj_set_x(static_cast<lv_obj_t*>(obj), v); });
     lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
     lv_anim_start(&a);
 
-    spdlog::debug("[ExcludeObjectSideList] Created (width_pct={}, slide_distance={}px)", width_pct,
-                  slide_distance);
+    // Report the height that was actually applied, not both candidates — a line
+    // that always prints the percentage reads as "the percentage was used".
+    if (geom.height_px > 0) {
+        spdlog::debug("[ExcludeObjectSideList] Created ({}%x{}px measured, anchor={}, "
+                      "slide_distance={}px)",
+                      geom.width_pct, geom.height_px, geom.anchor_bottom ? "bottom" : "right",
+                      slide_distance);
+    } else {
+        spdlog::debug("[ExcludeObjectSideList] Created ({}x{}%, anchor={}, slide_distance={}px)",
+                      geom.width_pct, geom.height_pct, geom.anchor_bottom ? "bottom" : "right",
+                      slide_distance);
+    }
 }
 
 void ExcludeObjectSideList::destroy() {
@@ -247,23 +279,10 @@ void ExcludeObjectSideList::create_row(lv_obj_t* parent, int index, const std::s
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
 
         // L069: row was created via lv_obj_create (not lv_xml_create) so the
-        // user_data slot is ours to use. Free in LV_EVENT_DELETE handler.
-        char* name_copy = static_cast<char*>(lv_malloc(name.size() + 1));
-        if (name_copy) {
-            std::memcpy(name_copy, name.c_str(), name.size() + 1);
-            lv_obj_set_user_data(row, name_copy);
+        // user_data slot is ours to use. The helper owns the copy and frees it
+        // on LV_EVENT_DELETE.
+        if (helix::ui::set_owned_user_string(row, name)) {
             lv_obj_add_event_cb(row, on_row_clicked, LV_EVENT_CLICKED, this);
-            lv_obj_add_event_cb(
-                row,
-                [](lv_event_t* e) {
-                    lv_obj_t* obj = lv_event_get_target_obj(e);
-                    char* data = static_cast<char*>(lv_obj_get_user_data(obj));
-                    if (data) {
-                        lv_free(data);
-                        lv_obj_set_user_data(obj, nullptr);
-                    }
-                },
-                LV_EVENT_DELETE, nullptr);
         }
 
         lv_obj_set_style_bg_color(row, theme_manager_get_color("primary"), LV_STATE_PRESSED);
@@ -277,7 +296,7 @@ void ExcludeObjectSideList::on_row_clicked(lv_event_t* e) {
     if (!self || !self->manager_ || !target) {
         return;
     }
-    const char* name = static_cast<const char*>(lv_obj_get_user_data(target));
+    const char* name = helix::ui::get_owned_user_string(target);
     if (!name) {
         return;
     }

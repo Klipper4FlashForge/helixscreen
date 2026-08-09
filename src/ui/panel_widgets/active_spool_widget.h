@@ -63,6 +63,7 @@ class ActiveSpoolWidget : public PanelWidget {
 
     void update_spool_display();
     void resize_spool_canvases();
+    void apply_layout_visibility();
     void handle_clicked();
     void open_external_spool_edit();
 };

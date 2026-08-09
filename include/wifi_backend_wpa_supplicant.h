@@ -4,11 +4,44 @@
 #pragma once
 
 #include "wifi_backend.h" // Base class
+#include "wifi_interface.h"
 
 #include <functional>
 #include <map>
 #include <string>
 #include <vector>
+
+namespace helix::wifi::detail {
+/// Locate an existing network id for @p ssid in a raw LIST_NETWORKS reply
+/// ("network id / ssid / bssid / flags\n" header, then tab-separated
+/// "id\tssid\tbssid\tflags" per line). Returns "" when @p ssid has no saved
+/// entry (including when @p list_networks_reply is empty, e.g. the control
+/// connection is down). Splitting is tab-only — SSIDs may contain spaces, and
+/// splitting on generic whitespace would break "my home net" apart.
+///
+/// Used by connect_network() to reuse a saved entry instead of stacking a
+/// fresh ADD_NETWORK on every connect attempt: a real user's wpa_supplicant
+/// had reached network id 7 for a handful of networks, and duplicate
+/// all-enabled entries give wpa_supplicant more candidates to roam between
+/// after a reboot. Exposed for unit testing.
+std::string find_network_id(const std::string& list_networks_reply, const std::string& ssid);
+
+/// Character/length rules for a value that will be spliced into a
+/// wpa_supplicant SET_NETWORK command (SSID or PSK): no double quote,
+/// backslash, control character, and non-empty within 255 bytes. Pure
+/// predicate, no logging — this is the injection barrier between untrusted
+/// input and a command protocol, so it is the single rule set both
+/// validate_wpa_string() (below) and any PSK-only caller must share rather
+/// than reimplement. Exposed for unit testing.
+bool wpa_string_is_valid(const std::string& input);
+
+/// Validate @p input against wpa_string_is_valid() and additionally log the
+/// specific violation on failure — so this must only be called with values
+/// safe to echo into a log line (an SSID, never a PSK or other secret).
+/// Returns @p input unchanged on success, "" on failure. Exposed for unit
+/// testing.
+std::string validate_wpa_string(const std::string& input, const std::string& field_name);
+} // namespace helix::wifi::detail
 
 #ifndef __APPLE__
 // ============================================================================
@@ -22,6 +55,8 @@
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
+#include <optional>
+#include <utility>
 
 // Forward declaration - avoid including wpa_ctrl.h in header
 struct wpa_ctrl;
@@ -33,6 +68,30 @@ namespace helix::wifi::detail {
 // to honour `wpa_supplicant -c <conf>` launches whose ctrl_interface lives in
 // the config file rather than on the command line.
 std::string read_ctrl_interface_from_conf(const std::string& conf_path);
+
+/// True if @p config_contents declares a `network={...}` block whose `ssid=`
+/// matches @p ssid. Used to confirm a SAVE_CONFIG actually landed on disk.
+/// Exposed for unit testing.
+bool wpa_config_has_network(const std::string& config_contents, const std::string& ssid);
+
+enum class SavePersistence {
+    Persisted,    ///< Credentials are on disk; they will survive a reboot.
+    NotPersisted, ///< They are not. The user's WiFi dies at the next power-off.
+};
+
+/// Decide whether a SAVE_CONFIG actually persisted @p ssid.
+///
+/// An "OK" reply is NOT proof. The Snapmaker U1's wpa_supplicant answers OK to
+/// SAVE_CONFIG and never writes the file — device-verified 2026-07-29: reply
+/// "OK", config mtime unchanged, zero `network={` blocks, path provably
+/// writable. Trusting the reply is why WiFi there dies on every power-off.
+/// Only the config file's actual contents settle it.
+///
+/// @param save_reply       Raw SAVE_CONFIG reply ("OK\n", "FAIL\n", …).
+/// @param config_contents  The wpa config file re-read AFTER the save.
+/// @param ssid             The SSID that was supposed to be written.
+SavePersistence classify_save_result(const std::string& save_reply,
+                                     const std::string& config_contents, const std::string& ssid);
 } // namespace helix::wifi::detail
 
 /**
@@ -151,6 +210,9 @@ class WifiBackendWpaSupplicant : public WifiBackend, private hv::EventLoopThread
     WiFiError disconnect_network() override;
     ConnectionStatus get_status() override;
     bool supports_5ghz() const override;
+    WiFiError set_radio_enabled(bool on) override;
+    bool is_radio_enabled() const override;
+    WiFiError forget_network(const std::string& ssid) override;
 
   private:
     // ========================================================================
@@ -245,6 +307,31 @@ class WifiBackendWpaSupplicant : public WifiBackend, private hv::EventLoopThread
     std::string detect_security_type(const std::string& flags, bool& is_secured);
 
     /**
+     * @brief Re-read the wpa_supplicant config file after a SAVE_CONFIG
+     *
+     * Shared by connect_network() and forget_network() — both issue
+     * SAVE_CONFIG and then need the config path plus its just-written
+     * contents to judge whether the write actually reached disk (a reply of
+     * "OK" is not proof; see classify_save_result()).
+     *
+     * @return {conf_path, conf_contents}; conf_path is "" when it could not
+     *         be resolved, in which case conf_contents is also empty.
+     */
+    std::pair<std::string, std::string> read_wpa_conf_after_save();
+
+    /**
+     * @brief Mirror @p conf_path onto its remembered persistent target, if any
+     *
+     * A no-op unless @p conf_path lives on volatile storage AND
+     * remember_persistent_target() captured a durable target for it at
+     * startup (see wifi_saved_config.h). Shared by connect_network() (mirrors
+     * a newly-written credential) and forget_network() (mirrors a removal) —
+     * whichever side just confirmed the on-disk config matches what it
+     * expected calls this to propagate that state onto the durable copy.
+     */
+    void mirror_if_volatile(const std::string& conf_path);
+
+    /**
      * @brief Check if the libhv event loop thread is active
      *
      * Distinct from is_running() which checks if WiFi is logically enabled.
@@ -296,6 +383,46 @@ class WifiBackendWpaSupplicant : public WifiBackend, private hv::EventLoopThread
     // failed init (e.g. a fresh-boot race where wpa_supplicant's control socket
     // isn't up yet) does not read as "running" and does not block a later retry.
     std::atomic<bool> init_succeeded_{false};
+
+    // Resolved WiFi interface identity (netdev, ctrl socket, conf path, daemon
+    // pid, rfkill node) — computed once in init_wpa() via
+    // resolve_and_store_interface(). std::nullopt means resolution was
+    // inconclusive; callers fall back to legacy first-match detection.
+    mutable std::mutex iface_mutex_;
+    std::optional<helix::wifi::WifiInterface> iface_;
+
+    /// Resolve the managed interface and store it. Runs on the event loop
+    /// thread during init_wpa(), after the control connection is live.
+    void resolve_and_store_interface();
+
+    /// Re-add any network in HelixScreen's own store (helix::wifi::store)
+    /// that is missing from wpa_supplicant's LIST_NETWORKS, then re-issue
+    /// SAVE_CONFIG. Runs on the event loop thread during init_wpa(), after
+    /// interface resolution — the same thread connect_network() already does
+    /// blocking send_command() I/O on.
+    ///
+    /// This is the other half of the fix for credentials that SAVE_CONFIG
+    /// claims to persist but does not: connect_network() records every
+    /// successful connect in the store regardless of what happened to the
+    /// vendor's own config file, and this reconciliation restores them into
+    /// wpa_supplicant on the next boot even when the underlying persistence
+    /// problem (wrong daemon verified, or a write that lands somewhere
+    /// non-durable) was never diagnosed.
+    void reconcile_saved_networks();
+
+  public:
+    /// The resolved interface, or nullopt when resolution was inconclusive and
+    /// callers must fall back to legacy first-match behaviour.
+    std::optional<helix::wifi::WifiInterface> resolved_interface() const override;
+
+  private:
+    // Last state requested via set_radio_enabled(). Defaults to true (radio on).
+    std::atomic<bool> radio_enabled_{true};
+
+    /// Write "0"/"1" to the resolved rfkill node's `soft` attribute.
+    /// @return false when there is no node or the write failed (not fatal —
+    ///         DISCONNECT + DISABLE_NETWORK already stopped association).
+    bool set_rfkill_soft_block(bool blocked);
 
     // Shutdown coordination - prevents use-after-free when start() times out
     // (GitHub issue #8: thread still in wpa_ctrl_attach when destructor runs)

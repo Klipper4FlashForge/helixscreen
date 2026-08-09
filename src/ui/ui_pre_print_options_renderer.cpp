@@ -3,11 +3,9 @@
 
 #include "ui_pre_print_options_renderer.h"
 
-#include "ui_switch.h"
 #include "ui_utils.h"
 
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "theme_manager.h"
 
 #include <spdlog/spdlog.h>
 
@@ -86,10 +84,10 @@ PrePrintOptionsRenderer::~PrePrintOptionsRenderer() {
     clear();
 }
 
-std::string PrePrintOptionsRenderer::label_for(const PrePrintOption& opt) {
+std::string PrePrintOptionsRenderer::label_key_for(const PrePrintOption& opt) {
     // First preference: explicit i18n key from the DB.
     if (!opt.label_key.empty()) {
-        return std::string(lv_tr(opt.label_key.c_str()));
+        return opt.label_key;
     }
 
     // Second preference: existing baked-in labels for the original four
@@ -98,28 +96,31 @@ std::string PrePrintOptionsRenderer::label_for(const PrePrintOption& opt) {
     if (opt.id == "bed_mesh") {
         // Single toggle relabels when adaptive meshing is available for this
         // printer (set by PrinterState::apply_dynamic_options). No separate row.
-        return std::string(lv_tr(opt.adaptive_active ? "Adaptive Bed Mesh" : "Auto Bed Mesh"));
+        return opt.adaptive_active ? "Adaptive Bed Mesh" : "Auto Bed Mesh";
     }
     if (opt.id == "qgl") {
-        return std::string(lv_tr("Quad Gantry Level"));
+        return "Quad Gantry Level";
     }
     if (opt.id == "z_tilt") {
-        return std::string(lv_tr("Z-Tilt Adjust"));
+        return "Z-Tilt Adjust";
     }
     if (opt.id == "nozzle_clean") {
-        return std::string(lv_tr("Clean Nozzle"));
+        return "Clean Nozzle";
     }
     if (opt.id == "purge_line") {
-        return std::string(lv_tr("Nozzle Priming"));
+        return "Nozzle Priming";
     }
     if (opt.id == "timelapse") {
-        return std::string(lv_tr("Record Timelapse"));
+        return "Record Timelapse";
     }
 
-    // Fallback: humanize the id. Run through lv_tr in case a translator added
-    // an entry under the humanized form.
-    std::string humanized = humanize_id(opt.id);
-    return std::string(lv_tr(humanized.c_str()));
+    // Fallback: humanize the id. Run through lv_tr (in label_for()) in case a
+    // translator added an entry under the humanized form.
+    return humanize_id(opt.id);
+}
+
+std::string PrePrintOptionsRenderer::label_for(const PrePrintOption& opt) {
+    return std::string(lv_tr(label_key_for(opt).c_str()));
 }
 
 void PrePrintOptionsRenderer::populate(lv_obj_t* container, const PrePrintOptionSet& option_set,
@@ -227,26 +228,48 @@ void PrePrintOptionsRenderer::make_row(lv_obj_t* container, const PrePrintOption
     row.state_subject = std::make_unique<lv_subject_t>();
     lv_subject_init_int(row.state_subject.get(), opt.default_enabled ? 1 : 0);
 
-    // Row container: horizontal flex, label on left, switch on right.
-    row.row = lv_obj_create(container);
-    lv_obj_remove_style_all(row.row);
-    lv_obj_set_width(row.row, lv_pct(100));
-    lv_obj_set_height(row.row, LV_SIZE_CONTENT);
-    lv_obj_set_flex_flow(row.row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(row.row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_CENTER);
-    lv_obj_remove_flag(row.row, LV_OBJ_FLAG_SCROLLABLE);
+    // Row container + label + switch, built from the shared
+    // compact_toggle_row XML component (ui_xml/components/compact_toggle_row.xml)
+    // rather than hand-assembled here, so the appearance can't drift from the
+    // XML-authored rows that use the same component (e.g. sliced_colors_row
+    // in print_file_detail.xml).
+    //
+    // `subject` and `callback` are deliberately left unset (their XML "" default):
+    //  - subject="" makes the component's <bind_state_if_eq> skip installing an
+    //    observer (lv_xml_obj_parser.c empty-subject branch), so it doesn't
+    //    fight the imperative lv_subject_add_observer_obj binding below.
+    //  - callback="" resolves to the no-op event cb registered for the empty
+    //    name (xml_registration.cpp), leaving the real handler to be wired
+    //    imperatively via lv_obj_add_event_cb below, same as before.
+    //
+    // label_tag carries the untranslated i18n key (matching label_for()'s
+    // lv_tr() call) so the label can be re-resolved by
+    // lv_label_set_translation_tag() on a language change — passing "" here
+    // would make lv_translation_get() fall back to returning the tag itself
+    // ("") and blank the label out.
+    std::string label_key = label_key_for(opt);
+    std::string text = std::string(lv_tr(label_key.c_str()));
+    const char* attrs[] = {"label", text.c_str(), "label_tag", label_key.c_str(), nullptr};
+    lv_obj_t* row_obj =
+        static_cast<lv_obj_t*>(lv_xml_create(container, "compact_toggle_row", attrs));
+    if (!row_obj) {
+        spdlog::error("[PrePrintOptionsRenderer] lv_xml_create('compact_toggle_row') returned "
+                      "NULL for '{}'",
+                      opt.id);
+        // Subject was init'd above but never handed to a row widget — deinit
+        // now or its observer-list backing leaks (see ~PrePrintOptionsRenderer).
+        lv_subject_deinit(row.state_subject.get());
+        return;
+    }
+    row.row = row_obj;
 
-    // Label
-    lv_obj_t* label = lv_label_create(row.row);
-    std::string text = label_for(opt);
-    lv_label_set_text(label, text.c_str());
-    lv_obj_set_style_text_font(label, theme_manager_get_font("font_body"), 0);
-    lv_obj_set_style_text_color(label, theme_manager_get_color("text"), 0);
-
-    // Themed switch — same styling as <ui_switch size="small"/> from XML:
-    // theme colors, size preset, value-changed sound callback all applied.
-    lv_obj_t* sw = ui_switch_create_themed(row.row, "small");
+    lv_obj_t* sw = lv_obj_find_by_name(row_obj, "toggle");
+    if (!sw) {
+        spdlog::error(
+            "[PrePrintOptionsRenderer] compact_toggle_row missing 'toggle' child for '{}'", opt.id);
+        lv_subject_deinit(row.state_subject.get());
+        return;
+    }
     if (opt.default_enabled) {
         lv_obj_add_state(sw, LV_STATE_CHECKED);
     }

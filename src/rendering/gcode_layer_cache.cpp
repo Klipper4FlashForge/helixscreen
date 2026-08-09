@@ -21,22 +21,22 @@ GCodeLayerCache::GCodeLayerCache(size_t memory_budget_bytes) : memory_budget_(me
 
 size_t GCodeLayerCache::estimate_memory(const std::vector<ToolpathSegment>& segments) {
     // Base cost: vector overhead + segment data
-    // Each ToolpathSegment is approximately:
+    // Each ToolpathSegment is exactly 40 bytes (static_assert in gcode_parser.h):
     // - glm::vec3 start: 12 bytes
     // - glm::vec3 end: 12 bytes
-    // - bool is_extrusion: 1 byte (+ padding)
-    // - std::string object_name: 32 bytes (SSO buffer) + potential heap
     // - float extrusion_amount: 4 bytes
     // - float width: 4 bytes
-    // - int tool_index: 4 bytes
-    // Total: ~80 bytes base + string heap allocation
+    // - int16_t object_name_index: 2 bytes (interned — no string heap)
+    // - uint16_t layer_index: 2 bytes
+    // - int8_t tool_index, bool is_extrusion, FeatureType, padding: 4 bytes
 
     size_t base_cost = sizeof(std::vector<ToolpathSegment>) + 64; // Vector overhead + some slack
 
     size_t per_segment = BYTES_PER_SEGMENT;
 
-    // No string overhead: object names are interned as int16_t indices
-    return base_cost + (segments.size() * per_segment);
+    // Charge capacity, not size: a vector grown by repeated push_back (multi-sub-layer
+    // parses) can hold up to 2x the live element count.
+    return base_cost + (segments.capacity() * per_segment);
 }
 
 GCodeLayerCache::CacheResult
@@ -45,30 +45,78 @@ GCodeLayerCache::get_or_load(size_t layer_index,
     // Periodically check memory pressure and adapt budget (rate-limited internally)
     check_memory_pressure();
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_);
 
-    // Check if already cached
-    auto it = cache_.find(layer_index);
-    if (it != cache_.end()) {
-        hit_count_++;
-        touch(layer_index);
-        spdlog::trace("[LayerCache] Hit layer {} ({} segments)", layer_index,
-                      it->second.segments->size());
-        // Return shared_ptr - data stays alive even if entry is evicted
-        return CacheResult{it->second.segments, true, false};
+    // Resolve to one of three states: resident (return it), being loaded by
+    // someone else (wait for them), or ours to load (fall through).
+    for (;;) {
+        auto it = cache_.find(layer_index);
+        if (it != cache_.end()) {
+            hit_count_++;
+            touch(layer_index);
+            spdlog::trace("[LayerCache] Hit layer {} ({} segments)", layer_index,
+                          it->second.segments->size());
+            // Return shared_ptr - data stays alive even if entry is evicted
+            return CacheResult{it->second.segments, true, false};
+        }
+
+        if (loading_.find(layer_index) == loading_.end()) {
+            break; // nobody else is on it - we own this load
+        }
+
+        // Someone else is already parsing this exact layer. Wait on them rather
+        // than duplicating the work; wait() drops the lock, so every OTHER layer
+        // stays reachable throughout. Re-check on wake: the load may have
+        // landed, failed, or been evicted again.
+        load_done_.wait(lock);
     }
 
     // Cache miss - need to load
     miss_count_++;
     spdlog::debug("[LayerCache] Miss layer {}, loading...", layer_index);
 
-    // Load the layer data
+    // Load the layer data WITHOUT the cache lock held.
+    //
+    // The loader does a file seek and a G-code parse - tens of milliseconds on
+    // embedded flash. Holding mutex_ across it serialised every other thread
+    // against unrelated layers: the LVGL main thread reaches this from render()
+    // and from the touch hit-test, so a background ghost build (which walks all
+    // layers with a 1ms yield) made taps take seconds on a 2-core K2. Marking
+    // the layer in-flight is what keeps the unlocked window safe.
+    loading_.insert(layer_index);
+    lock.unlock();
+
     std::vector<ToolpathSegment> segments;
+    bool load_failed = false;
     try {
         segments = loader(layer_index);
     } catch (const std::exception& e) {
         spdlog::error("[LayerCache] Failed to load layer {}: {}", layer_index, e.what());
+        load_failed = true;
+    }
+
+    lock.lock();
+
+    // Release waiters on the way out of every path below.
+    struct LoadGuard {
+        GCodeLayerCache* self;
+        size_t index;
+        ~LoadGuard() {
+            self->loading_.erase(index);
+            self->load_done_.notify_all();
+        }
+    } load_guard{this, layer_index};
+
+    if (load_failed) {
         return CacheResult{nullptr, false, true};
+    }
+
+    // Another thread may have inserted this layer while we were unlocked (e.g.
+    // via insert() from the index builder). Prefer the resident copy over
+    // double-charging the budget for identical data.
+    if (auto existing = cache_.find(layer_index); existing != cache_.end()) {
+        touch(layer_index);
+        return CacheResult{existing->second.segments, true, false};
     }
 
     if (segments.empty()) {
@@ -114,6 +162,20 @@ GCodeLayerCache::get_or_load(size_t layer_index,
 
     // Return shared_ptr - data stays alive even if entry is evicted
     return CacheResult{inserted_it->second.segments, false, false};
+}
+
+std::shared_ptr<const std::vector<ToolpathSegment>> GCodeLayerCache::try_get(size_t layer_index) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    auto it = cache_.find(layer_index);
+    if (it == cache_.end()) {
+        miss_count_++;
+        return nullptr;
+    }
+
+    hit_count_++;
+    touch(layer_index);
+    return it->second.segments;
 }
 
 bool GCodeLayerCache::is_cached(size_t layer_index) const {
@@ -172,7 +234,17 @@ bool GCodeLayerCache::insert(size_t layer_index, std::vector<ToolpathSegment>&& 
 }
 
 void GCodeLayerCache::clear() {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_);
+
+    // Drain in-flight loads before wiping.
+    //
+    // Callers tear down the data source immediately after clearing (see
+    // GCodeStreamingController::close(), which resets data_source_ next), and a
+    // loader closure captures that source. While get_or_load() held mutex_
+    // across the load this barrier was implicit; now that the load runs
+    // unlocked, waiting here is what keeps a loader from outliving the file it
+    // is reading.
+    load_done_.wait(lock, [this] { return loading_.empty(); });
 
     cache_.clear();
     lru_order_.clear();
@@ -329,23 +401,34 @@ void GCodeLayerCache::set_adaptive_mode(bool enabled, int target_percent, size_t
 bool GCodeLayerCache::check_memory_pressure() {
     auto now = std::chrono::steady_clock::now();
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    // Phase 1: decide whether this call owns the check. Stamping the timestamp
+    // here claims it, so concurrent callers bail out instead of piling up on the
+    // procfs read below.
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
 
-    if (!adaptive_enabled_) {
-        return false;
+        if (!adaptive_enabled_) {
+            return false;
+        }
+
+        // Rate limit checks to avoid overhead
+        auto elapsed =
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - last_pressure_check_);
+        if (elapsed.count() < PRESSURE_CHECK_INTERVAL_MS) {
+            return false;
+        }
+
+        last_pressure_check_ = now;
     }
 
-    // Rate limit checks to avoid overhead
-    auto elapsed =
-        std::chrono::duration_cast<std::chrono::milliseconds>(now - last_pressure_check_);
-    if (elapsed.count() < PRESSURE_CHECK_INTERVAL_MS) {
-        return false;
-    }
-
-    last_pressure_check_ = now;
-
-    // Query system memory (reading /proc/meminfo is fast enough to hold the lock)
+    // Phase 2: query system memory WITHOUT the lock. get_system_memory_info()
+    // opens and parses /proc/meminfo - filesystem work, and this is the first
+    // statement of get_or_load(), so the mutex it would otherwise hold is the
+    // one on the renderer's draw and touch-hit-test paths.
     MemoryInfo mem = get_system_memory_info();
+
+    // Phase 3: apply the result.
+    std::lock_guard<std::mutex> lock(mutex_);
 
     size_t new_budget = calculate_adaptive_budget(mem);
 

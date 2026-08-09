@@ -318,67 +318,45 @@ void GCodeLayerRenderer::auto_fit() {
     // Get bounding box from either full file or streaming index stats
     AABB bb;
     if (streaming_controller_) {
-        // In streaming mode, compute actual X/Y bounds from layer data
-        // The index stats only have Z bounds, so we sample layers for X/Y
+        // The index scan accumulates true XY bounds over every extruding move,
+        // filtered the same way the full-file parser filters global_bounding_box.
+        // This used to sample three layers (first/middle/last) and union their
+        // segments, which framed spiral-vase prints against a 3-point hull
+        // (#1127) and mis-framed anything whose widest cross-section wasn't one
+        // of the three. Using the index also avoids loading three layers — no
+        // cache churn, no blocking reads, on the auto-fit path.
         const auto& stats = streaming_controller_->get_index_stats();
 
-        // Initialize with Z bounds from index
-        bb.min = {std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
-                  stats.min_z};
-        bb.max = {std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(),
-                  stats.max_z};
+        bb.min.z = stats.min_z;
+        bb.max.z = stats.max_z;
 
-        // Sample a few layers to compute X/Y bounds (first, middle, last)
-        size_t layer_count = streaming_controller_->get_layer_count();
-        std::vector<size_t> sample_layers;
-        if (layer_count > 0) {
-            sample_layers.push_back(0); // First layer
-            if (layer_count > 2) {
-                sample_layers.push_back(layer_count / 2); // Middle layer
-            }
-            if (layer_count > 1) {
-                sample_layers.push_back(layer_count - 1); // Last layer
-            }
-        }
-
-        bool found_bounds = false;
-        for (size_t layer_idx : sample_layers) {
-            auto segments = streaming_controller_->get_layer_segments(layer_idx);
-            if (segments && !segments->empty()) {
-                for (const auto& seg : *segments) {
-                    if (!seg.is_extrusion)
-                        continue;
-                    // Heuristic purge/wipe-tower filter: exclude these from
-                    // the auto-fit bounding box so the viewport zooms to the
-                    // actual print object. Segments are still rendered — only
-                    // the bbox calculation ignores them. See FeatureType in
-                    // include/gcode_parser.h.
-                    if (is_excluded_from_bounds(seg.feature_type))
-                        continue;
-                    bb.min.x = std::min(bb.min.x, std::min(seg.start.x, seg.end.x));
-                    bb.max.x = std::max(bb.max.x, std::max(seg.start.x, seg.end.x));
-                    bb.min.y = std::min(bb.min.y, std::min(seg.start.y, seg.end.y));
-                    bb.max.y = std::max(bb.max.y, std::max(seg.start.y, seg.end.y));
-                    found_bounds = true;
-                }
-            }
-        }
-
-        // Fallback to 200x200 if no layer data available yet
-        if (!found_bounds) {
+        if (stats.has_xy_bounds()) {
+            bb.min.x = stats.min_x;
+            bb.max.x = stats.max_x;
+            bb.min.y = stats.min_y;
+            bb.max.y = stats.max_y;
+            spdlog::info("[GCodeLayerRenderer] Streaming: index bounds X[{:.1f},{:.1f}] "
+                         "Y[{:.1f},{:.1f}]",
+                         bb.min.x, bb.max.x, bb.min.y, bb.max.y);
+        } else {
+            // No extruding move in the whole file (empty or metadata-only).
             bb.min.x = 0.0f;
             bb.min.y = 0.0f;
             bb.max.x = 200.0f;
             bb.max.y = 200.0f;
-            spdlog::debug(
-                "[GCodeLayerRenderer] Streaming: no layers loaded yet, using default 200x200");
-        } else {
-            spdlog::info("[GCodeLayerRenderer] Streaming: computed bounds X[{:.1f},{:.1f}] "
-                         "Y[{:.1f},{:.1f}] from {} layers",
-                         bb.min.x, bb.max.x, bb.min.y, bb.max.y, sample_layers.size());
+            spdlog::debug("[GCodeLayerRenderer] Streaming: index has no XY bounds, "
+                          "using default 200x200");
         }
     } else if (gcode_) {
         bb = gcode_->global_bounding_box;
+        if (bb.is_empty()) {
+            // Nothing passed the extrusion + feature filter. Left as-is the
+            // ±inf box yields NaN offsets in compute_auto_fit and every
+            // projected point becomes garbage.
+            spdlog::debug("[GCodeLayerRenderer] Empty global bbox, using default 200x200");
+            bb.min = {0.0f, 0.0f, 0.0f};
+            bb.max = {200.0f, 200.0f, 0.0f};
+        }
     } else {
         return;
     }
@@ -420,7 +398,12 @@ void GCodeLayerRenderer::fit_layer() {
     }
 
     // Use current layer's bounding box with shared auto-fit (always top-down for single layer)
-    const auto& bb = gcode_->layers[current_layer_].bounding_box;
+    AABB bb = gcode_->layers[current_layer_].bounding_box;
+    if (bb.is_empty()) {
+        // Layer holds only travel moves — same ±inf NaN trap as auto_fit().
+        bb.min = {0.0f, 0.0f, 0.0f};
+        bb.max = {200.0f, 200.0f, 0.0f};
+    }
 
     bounds_min_x_ = bb.min.x;
     bounds_max_x_ = bb.max.x;
@@ -1397,8 +1380,12 @@ std::optional<std::string> GCodeLayerRenderer::pick_object_at(int screen_x, int 
     const std::vector<ToolpathSegment>* segments = nullptr;
 
     if (streaming_controller_) {
+        // Cache-only: a hit-test must never seek and parse. We are picking
+        // against the layer already on screen, which render() has faulted in, so
+        // this is a hit in practice; a miss costs one unrecognised tap, whereas
+        // loading here froze the UI for seconds on a 2-core board (C2CP6ZAW).
         segments_holder =
-            streaming_controller_->get_layer_segments(static_cast<size_t>(current_layer_));
+            streaming_controller_->try_get_layer_segments(static_cast<size_t>(current_layer_));
         segments = segments_holder.get();
     } else if (gcode_) {
         segments = &gcode_->layers[static_cast<size_t>(current_layer_)].segments;
@@ -1818,8 +1805,20 @@ void GCodeLayerRenderer::copy_raw_to_ghost_buf() {
     ghost_cache_valid_ = true;
     ghost_thread_ready_.store(false); // Consumed
 
-    spdlog::debug("[GCodeLayerRenderer] Copied raw ghost buffer to LVGL ({}x{})", ghost_raw_width_,
-                  ghost_raw_height_);
+    const int copied_width = ghost_raw_width_;
+    const int copied_height = ghost_raw_height_;
+
+    // The pixels now live in ghost_buf_; the scratch buffer (w*h*4 bytes) is dead weight until
+    // the next ghost build, and start_background_ghost_render() reallocates when it is null.
+    // The background thread is finished with it — ghost_thread_ready_ is only set after its
+    // last write — and start_background_ghost_render() joins before touching these fields.
+    ghost_raw_buffer_.reset();
+    ghost_raw_width_ = 0;
+    ghost_raw_height_ = 0;
+    ghost_raw_stride_ = 0;
+
+    spdlog::debug("[GCodeLayerRenderer] Copied raw ghost buffer to LVGL ({}x{})", copied_width,
+                  copied_height);
 }
 
 void GCodeLayerRenderer::blend_pixel(int x, int y, uint32_t color) {

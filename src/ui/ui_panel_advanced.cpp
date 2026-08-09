@@ -15,9 +15,9 @@
 
 #include "app_globals.h"
 #include "config.h"
+#include "i_moonraker_api.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "macro_modification_manager.h"
-#include "i_moonraker_api.h"
 #include "moonraker_client.h"
 #include "moonraker_manager.h"
 #include "panel_widgets/shutdown_widget.h"
@@ -106,6 +106,7 @@ void AdvancedPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
     // compound-condition (subject_expr/cond) support. Compiled out on desktop →
     // zero desktop impact.
     if (auto* timelapse_row = lv_obj_find_by_name(panel_, "row_timelapse_videos")) {
+        // DECLARATIVE_OK: compile-time capability (#if), no runtime subject exists
         lv_obj_add_flag(timelapse_row, LV_OBJ_FLAG_HIDDEN);
     }
 #endif

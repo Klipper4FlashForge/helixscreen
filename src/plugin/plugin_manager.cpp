@@ -8,6 +8,7 @@
 #include "config.h"
 #include "helix_version.h"
 #include "injection_point_manager.h"
+#include "json_utils.h"
 #include "version.h"
 
 #include <spdlog/fmt/fmt.h>
@@ -503,16 +504,29 @@ bool PluginManager::parse_manifest(const std::string& manifest_path, PluginManif
 
         json j = json::parse(file);
 
+        // Every read below uses safe_* rather than .value(), which throws
+        // type_error.302 on a key that is PRESENT with a null value (a missing
+        // key is fine). The try does span these reads, so this was never a
+        // crash — but it reported the wrong thing, in two different ways:
+        //
+        //   - Required fields: a null `id` came back as "JSON parse error:
+        //     [json.exception.type_error.302] ..." when the manifest parses
+        //     fine and the real problem is an unusable id. Defaulting to ""
+        //     hands the case to validate_manifest, which says "Missing required
+        //     field: id". Still rejected, now accurately.
+        //   - Optional fields: a null `description` rejected the entire plugin.
+        //     That is plainly wrong for a field nothing requires.
+        //
         // Required fields
-        manifest.id = j.value("id", "");
-        manifest.name = j.value("name", "");
-        manifest.version = j.value("version", "");
+        manifest.id = helix::json_util::safe_string(j, "id");
+        manifest.name = helix::json_util::safe_string(j, "name");
+        manifest.version = helix::json_util::safe_string(j, "version");
 
         // Optional fields
-        manifest.helix_version = j.value("helix_version", "");
-        manifest.author = j.value("author", "");
-        manifest.description = j.value("description", "");
-        manifest.entry_point = j.value("entry_point", "helix_plugin_init");
+        manifest.helix_version = helix::json_util::safe_string(j, "helix_version");
+        manifest.author = helix::json_util::safe_string(j, "author");
+        manifest.description = helix::json_util::safe_string(j, "description");
+        manifest.entry_point = helix::json_util::safe_string(j, "entry_point", "helix_plugin_init");
 
         // Dependencies array
         if (j.contains("dependencies") && j["dependencies"].is_array()) {
@@ -526,8 +540,8 @@ bool PluginManager::parse_manifest(const std::string& manifest_path, PluginManif
         // UI config
         if (j.contains("ui") && j["ui"].is_object()) {
             const auto& ui = j["ui"];
-            manifest.ui.settings_page = ui.value("settings_page", false);
-            manifest.ui.navbar_panel = ui.value("navbar_panel", false);
+            manifest.ui.settings_page = helix::json_util::safe_bool(ui, "settings_page", false);
+            manifest.ui.navbar_panel = helix::json_util::safe_bool(ui, "navbar_panel", false);
 
             if (ui.contains("injection_points") && ui["injection_points"].is_array()) {
                 for (const auto& point : ui["injection_points"]) {

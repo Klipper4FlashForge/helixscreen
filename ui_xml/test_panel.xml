@@ -2,10 +2,148 @@
 <!-- Copyright (C) 2025-2026 356C LLC -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <!-- Test/Development Panel - Only accessible via -p test or -panel test flag -->
+<!-- i18n: skip-file — dev-only demo strings, never shown to end users -->
 <component>
+  <!-- Styles used by the XML Expression Demo (bind_style_if) -->
+  <styles>
+    <style name="demo_alarm_style" bg_color="#warning" bg_opa="255"/>
+  </styles>
+  <!-- Subjects for the XML Expression Demo. Inputs are driven by the sliders/switch
+       below; demo_alarm is a <subject_expr> computed from all three (boolean logic).
+       Input subjects MUST be declared before the subject_expr that references them. -->
+  <subjects>
+    <int name="demo_temp" value="50"/>
+    <int name="demo_threshold" value="70"/>
+    <int name="demo_error" value="0"/>
+    <subject_expr name="demo_alarm" expr="demo_error or demo_temp gt demo_threshold"/>
+    <!-- Subjects for the XML Repeat Demo (see below). demo_count drives the
+         subject-bound <repeat>; demo_slot_*_label are the indexed subjects each
+         repeated card self-wires to via ${i} composition. -->
+    <int name="demo_count" value="3"/>
+    <string name="demo_slot_0_label" value="Alpha"/>
+    <string name="demo_slot_1_label" value="Bravo"/>
+    <string name="demo_slot_2_label" value="Charlie"/>
+    <string name="demo_slot_3_label" value="Delta"/>
+    <string name="demo_slot_4_label" value="Echo"/>
+    <string name="demo_slot_5_label" value="Foxtrot"/>
+  </subjects>
   <view extends="lv_obj"
         width="100%" height="100%" style_pad_all="#space_lg" style_border_width="0" flex_flow="column"
         style_pad_gap="#space_md" scrollable="true" style_bg_opa="255" style_bg_color="#screen_bg">
+    <!-- ============================================================ -->
+    <!-- XML EXPRESSION DEMO  (subject_expr + inline cond= binds)     -->
+    <!-- Drive the sliders / Error switch and watch the widgets below -->
+    <!-- react via boolean-logic expressions over multiple subjects.  -->
+    <!-- ============================================================ -->
+    <text_heading text="XML Expression Demo"/>
+    <ui_card width="100%"
+             style_radius="#border_radius" style_pad_all="#space_lg" flex_flow="column" style_pad_gap="#space_md">
+      <!-- INPUTS (two-way bound: dragging/toggling writes the subject) -->
+      <lv_obj width="100%"
+              flex_flow="row" style_flex_main_place="space_between" style_flex_cross_place="center" style_bg_opa="0"
+              style_border_width="0" style_pad_all="0">
+        <text_body text="Temp"/>
+        <text_body bind_text="demo_temp"/>
+      </lv_obj>
+      <lv_slider width="100%" min_value="0" max_value="100" bind_value="demo_temp"/>
+      <lv_obj width="100%"
+              flex_flow="row" style_flex_main_place="space_between" style_flex_cross_place="center" style_bg_opa="0"
+              style_border_width="0" style_pad_all="0">
+        <text_body text="Threshold"/>
+        <text_body bind_text="demo_threshold"/>
+      </lv_obj>
+      <lv_slider width="100%" min_value="0" max_value="100" bind_value="demo_threshold"/>
+      <lv_obj width="100%"
+              flex_flow="row" style_flex_main_place="space_between" style_flex_cross_place="center" style_bg_opa="0"
+              style_border_width="0" style_pad_all="0">
+        <text_body text="Error switch"/>
+        <ui_switch bind_checked="demo_error"/>
+      </lv_obj>
+      <divider_horizontal/>
+      <!-- COMPUTED subject_expr: demo_alarm = demo_error OR demo_temp > demo_threshold -->
+      <lv_obj width="100%"
+              flex_flow="row" style_flex_main_place="space_between" style_flex_cross_place="center" style_bg_opa="0"
+              style_border_width="0" style_pad_all="0">
+        <text_body text="demo_alarm (subject_expr) ="/>
+        <text_heading bind_text="demo_alarm"/>
+      </lv_obj>
+    </ui_card>
+    <!-- WIDGETS driven by the conditions (binds on containers for widest support) -->
+    <ui_card width="100%"
+             style_radius="#border_radius" style_pad_all="#space_lg" flex_flow="column" style_pad_gap="#space_md">
+      <!-- bind_flag_if on the subject_expr: banner visible only while alarm -->
+      <lv_obj width="100%"
+              flex_flow="row" style_flex_cross_place="center" style_bg_opa="0" style_border_width="0" style_pad_all="0">
+        <bind_flag_if cond="demo_alarm" flag="hidden" invert="true"/>
+        <text_heading text="ALARM  (bind_flag_if on subject_expr)"/>
+      </lv_obj>
+      <!-- bind_flag_if on a DIRECT multi-subject expression -->
+      <lv_obj width="100%"
+              flex_flow="row" style_flex_cross_place="center" style_bg_opa="0" style_border_width="0" style_pad_all="0">
+        <bind_flag_if cond="demo_temp gt demo_threshold" flag="hidden" invert="true"/>
+        <text_body text="Temp is over threshold  (direct cond=)"/>
+      </lv_obj>
+      <!-- bind_state_if: button goes disabled while alarm -->
+      <ui_button text="Action  (disabled when alarm)">
+        <bind_state_if cond="demo_alarm" state="disabled"/>
+      </ui_button>
+      <!-- bind_style_if: card background turns warning-colored while alarm -->
+      <ui_card name="demo_alarm_card"
+               width="100%" height="56" style_radius="#border_radius" style_pad_all="#space_md" flex_flow="row"
+               style_flex_cross_place="center">
+        <bind_style_if name="demo_alarm_style" cond="demo_alarm"/>
+        <text_body text="Styled by bind_style_if"/>
+      </ui_card>
+    </ui_card>
+    <divider_horizontal/>
+    <!-- ============================================================ -->
+    <!-- XML REPEAT DEMO  (repeat count, $i, ${i})                    -->
+    <!-- Drag the slider to change demo_count and watch the SUBJECT   -->
+    <!-- BOUND card row below rebuild live. The FIXED card row above  -->
+    <!-- it never changes; count="4" is a literal, resolved once      -->
+    <!-- at load time.                                                -->
+    <!-- ============================================================ -->
+    <text_heading text="XML Repeat Demo" translation_tag="XML Repeat Demo"/>
+    <ui_card width="100%"
+             style_radius="#border_radius" style_pad_all="#space_lg" flex_flow="column" style_pad_gap="#space_md">
+      <lv_obj width="100%"
+              flex_flow="row" style_flex_main_place="space_between" style_flex_cross_place="center" style_bg_opa="0"
+              style_border_width="0" style_pad_all="0">
+        <text_body text="Count (demo_count)"/>
+        <text_body bind_text="demo_count"/>
+      </lv_obj>
+      <lv_slider width="100%" min_value="0" max_value="6" bind_value="demo_count"/>
+      <text_small text="FIXED count=&quot;4&quot; -- expands once at load time, $i is the index"
+                  translation_tag="FIXED count=&quot;4&quot; -- expands once at load time, $i is the index"/>
+      <lv_obj width="100%"
+              flex_flow="row" style_pad_gap="#space_sm" style_bg_opa="0" style_border_width="0" style_pad_all="0">
+        <repeat count="4">
+          <ui_card width="60"
+                   height="60" style_radius="#border_radius" flex_flow="column" style_flex_main_place="center"
+                   style_flex_cross_place="center">
+            <text_heading text="$i"/>
+          </ui_card>
+        </repeat>
+      </lv_obj>
+      <text_small text="SUBJECT-BOUND count=&quot;demo_count&quot; -- rebuilds on slider change, each card self-wires to its indexed subject (demo_slot_N_label)"
+                  translation_tag="SUBJECT-BOUND count=&quot;demo_count&quot; -- rebuilds on slider change, each card self-wires to its indexed subject (demo_slot_N_label)"/>
+      <!-- Dedicated container: the subject-bound repeat is its ONLY child.
+           A reactive repeat that shares a parent with later static siblings
+           mis-orders on rebuild (rebuilt items are always appended to the end
+           of the parent's child list); see LVGL9_XML_GUIDE.md, "Repeating
+           fragments with repeat", for why this container exists. -->
+      <lv_obj width="100%"
+              flex_flow="row" style_pad_gap="#space_sm" style_bg_opa="0" style_border_width="0" style_pad_all="0">
+        <repeat count="demo_count">
+          <ui_card width="80"
+                   height="60" style_radius="#border_radius" flex_flow="column" style_flex_main_place="center"
+                   style_flex_cross_place="center">
+            <text_body bind_text="demo_slot_${i}_label"/>
+          </ui_card>
+        </repeat>
+      </lv_obj>
+    </ui_card>
+    <divider_horizontal/>
     <!-- ============================================================ -->
     <!-- MARKDOWN VIEWER TEST                                         -->
     <!-- ============================================================ -->

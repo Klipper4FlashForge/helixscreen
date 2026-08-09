@@ -15,6 +15,8 @@
 #include "gcode_camera.h"
 #include "gcode_layer_renderer.h"
 #include "gcode_parser.h"
+#include "gcode_render_mode_policy.h"
+#include "gcode_ssao_policy.h"
 #include "gcode_streaming_config.h"
 #include "gcode_streaming_controller.h"
 #include "gcode_viewer_watchdog.h"
@@ -36,13 +38,17 @@ using GCode3DRenderer = helix::gcode::GCodeGLESRenderer;
 #endif
 
 // FPS tracking constants (for diagnostic logging, not mode selection)
-constexpr size_t GCODE_FPS_WINDOW_SIZE = 10;        // Rolling window of frame times
 constexpr float MIN_ACTUAL_RENDER_MS = 2.0f;        // Minimum render time to count as actual render
 constexpr float FPS_EMA_ALPHA = 0.1f;               // Exponential moving average smoothing factor
 constexpr int FPS_LOG_INTERVAL_FRAMES = 30;         // Log FPS every N frames
 constexpr float ROTATION_DEGREES_PER_PIXEL = 0.5f;  // Camera rotation sensitivity
 constexpr uint32_t DRAG_THROTTLE_MIN_FRAME_MS = 33; // ~30fps throttle during drag
 constexpr int CLICK_DISTANCE_THRESHOLD = 10;        // Pixels: distinguish click from drag
+
+// Lines parsed between cancellation polls in the background load. Small enough
+// that cancel_build()'s join returns promptly, large enough that the atomic load
+// is noise next to parsing that many lines.
+constexpr size_t CANCEL_POLL_LINES = 2048;
 
 #include <spdlog/spdlog.h>
 
@@ -81,29 +87,33 @@ class GCodeViewerState {
         spdlog::debug("[GCode Viewer] Using LVGL 2D renderer (3D disabled)");
 #endif
 
-        // Check HELIX_GCODE_MODE env var for render mode override
-        const char* mode_env = std::getenv("HELIX_GCODE_MODE");
-        if (mode_env) {
-            if (std::strcmp(mode_env, "3D") == 0) {
+        // HELIX_GCODE_MODE handling lives in decide_render_mode() (pure, unit
+        // tested); this only applies the result and logs why.
 #ifdef ENABLE_3D_RENDERER
-                render_mode_ = GcodeViewerRenderMode::Render3D;
-                spdlog::info("[GCode Viewer] HELIX_GCODE_MODE=3D: forcing 3D renderer");
+        constexpr bool kHave3DRenderer = true;
 #else
-                spdlog::warn(
-                    "[GCode Viewer] HELIX_GCODE_MODE=3D ignored: 3D renderer not available");
-                render_mode_ = GcodeViewerRenderMode::Layer2D;
+        constexpr bool kHave3DRenderer = false;
 #endif
-            } else if (std::strcmp(mode_env, "2D") == 0) {
-                render_mode_ = GcodeViewerRenderMode::Layer2D;
-                spdlog::info("[GCode Viewer] HELIX_GCODE_MODE=2D: using 2D layer renderer");
-            } else {
-                spdlog::warn("[GCode Viewer] Unknown HELIX_GCODE_MODE='{}', using 2D", mode_env);
-                render_mode_ = GcodeViewerRenderMode::Layer2D;
-            }
-        } else {
-            // Default: Auto (uses 3D if GLES available, 2D otherwise)
-            render_mode_ = GcodeViewerRenderMode::Auto;
+        const char* mode_env = std::getenv("HELIX_GCODE_MODE");
+        const auto rm = helix::gcode_viewer::decide_render_mode(mode_env, kHave3DRenderer);
+        render_mode_ = rm.mode;
+        switch (rm.reason) {
+        case helix::gcode_viewer::RenderModeReason::EnvForced3D:
+            spdlog::info("[GCode Viewer] HELIX_GCODE_MODE=3D: forcing 3D renderer");
+            break;
+        case helix::gcode_viewer::RenderModeReason::Env3DUnavailable:
+            spdlog::warn("[GCode Viewer] HELIX_GCODE_MODE=3D ignored: 3D renderer not available");
+            break;
+        case helix::gcode_viewer::RenderModeReason::EnvForced2D:
+            spdlog::info("[GCode Viewer] HELIX_GCODE_MODE=2D: using 2D layer renderer");
+            break;
+        case helix::gcode_viewer::RenderModeReason::EnvUnrecognized:
+            spdlog::warn("[GCode Viewer] Unknown HELIX_GCODE_MODE='{}', using 2D", mode_env);
+            break;
+        case helix::gcode_viewer::RenderModeReason::DefaultAuto:
+            // Auto: uses 3D if GLES available, 2D otherwise.
             spdlog::debug("[GCode Viewer] Default render mode: Auto");
+            break;
         }
 
         // Layer 2 backstop: a prior session that hard-faulted inside the GPU
@@ -117,12 +127,24 @@ class GCodeViewerState {
                          "driver crash) — using 2D renderer");
         }
 
-        // Enhanced shading is ON by default. Set HELIX_SSAO=0 to disable.
-        ssao_enabled_at_init_ = true;
-        const char* ssao_env = std::getenv("HELIX_SSAO");
-        if (ssao_env && std::strcmp(ssao_env, "0") == 0) {
-            ssao_enabled_at_init_ = false;
+        // Enhanced shading tiering lives in decide_ssao_enabled() (pure, unit
+        // tested); this only applies the result and logs why.
+        const auto ssao = helix::gcode_viewer::decide_ssao_enabled(
+            helix::get_system_memory_info().is_constrained_device(), std::getenv("HELIX_SSAO"));
+        ssao_enabled_at_init_ = ssao.enabled;
+        switch (ssao.reason) {
+        case helix::gcode_viewer::SsaoReason::ConstrainedOff:
+            spdlog::info("[GCode Viewer] Constrained device - enhanced shading off by default "
+                         "(HELIX_SSAO=1 to force on)");
+            break;
+        case helix::gcode_viewer::SsaoReason::EnvForcedOff:
             spdlog::info("[GCode Viewer] HELIX_SSAO=0: enhanced shading disabled");
+            break;
+        case helix::gcode_viewer::SsaoReason::EnvForcedOn:
+            spdlog::info("[GCode Viewer] HELIX_SSAO=1: enhanced shading forced on");
+            break;
+        case helix::gcode_viewer::SsaoReason::DefaultOn:
+            break;
         }
     }
 
@@ -365,37 +387,6 @@ class GCodeViewerState {
         // Without 3D renderer: only explicit Render3D would use 3D (but it's not available)
         return render_mode_ != GcodeViewerRenderMode::Render3D;
 #endif
-    }
-
-    // FPS tracking kept for debugging/diagnostics but not used for mode selection
-    float fps_samples_[GCODE_FPS_WINDOW_SIZE]{0};
-    size_t fps_sample_index_{0};
-    size_t fps_sample_count_{0};
-
-    /// Record a frame time for FPS tracking (diagnostic only)
-    void record_frame_time(float ms) {
-        fps_samples_[fps_sample_index_] = ms;
-        fps_sample_index_ = (fps_sample_index_ + 1) % GCODE_FPS_WINDOW_SIZE;
-        if (fps_sample_count_ < GCODE_FPS_WINDOW_SIZE) {
-            fps_sample_count_++;
-        }
-    }
-
-    /// Calculate average FPS from sample buffer (diagnostic only)
-    float get_average_fps() const {
-        if (fps_sample_count_ == 0)
-            return 0.0f;
-        float total_ms = 0.0f;
-        for (size_t i = 0; i < fps_sample_count_; i++) {
-            total_ms += fps_samples_[i];
-        }
-        float avg_ms = total_ms / static_cast<float>(fps_sample_count_);
-        return (avg_ms > 0.0f) ? (1000.0f / avg_ms) : 0.0f;
-    }
-
-    /// Check if we have enough FPS data (diagnostic only)
-    bool has_enough_fps_data() const {
-        return fps_sample_count_ >= GCODE_FPS_WINDOW_SIZE;
     }
 
     // Per-widget FPS logging state (avoid static variables that would be shared
@@ -742,13 +733,7 @@ static void gcode_viewer_draw_cb(lv_event_t* e) {
     auto render_duration_us =
         std::chrono::duration_cast<std::chrono::microseconds>(render_end - render_start).count();
 
-    // FPS tracking for AUTO mode evaluation
     float render_time_ms = render_duration_us / 1000.0f;
-
-    // Record frame time for AUTO mode evaluation (only count actual renders)
-    if (render_time_ms > MIN_ACTUAL_RENDER_MS) {
-        st->record_frame_time(render_time_ms);
-    }
 
     // Periodic FPS logging (every 30 frames) - use per-widget state to avoid
     // corruption when multiple gcode_viewer widgets exist
@@ -773,9 +758,11 @@ static void gcode_viewer_draw_cb(lv_event_t* e) {
     }
 }
 
-// Long-press threshold in milliseconds — shares the app-wide gesture timeout so
-// the 3D viewer's hold-to-context matches every other long-press in the UI.
-constexpr uint32_t LONG_PRESS_THRESHOLD_MS = AppConstants::Input::LONG_PRESS_MS;
+// Long-press threshold in milliseconds. Deliberately longer than the app-wide
+// gesture timeout (AppConstants::Input::LONG_PRESS_MS, 500ms): a hold here fires
+// EXCLUDE_OBJECT and cancels printing the object under the finger, so the gesture
+// is tuned to demand a deliberate hold and resist accidental cancels.
+constexpr uint32_t LONG_PRESS_THRESHOLD_MS = 1000;
 
 /**
  * @brief Timer callback for long-press detection
@@ -1455,14 +1442,22 @@ static void ui_gcode_viewer_load_file_async(lv_obj_t* obj, const char* file_path
         lv_obj_set_style_bg_opa(st->loading_container, 220, LV_PART_MAIN);
         lv_obj_set_style_border_width(st->loading_container, 0, LV_PART_MAIN);
         lv_obj_set_style_radius(st->loading_container, 8, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(st->loading_container, 24, LV_PART_MAIN);
-        lv_obj_set_style_pad_gap(st->loading_container, 12, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(st->loading_container, theme_manager_get_spacing("space_xl"),
+                                 LV_PART_MAIN);
+        lv_obj_set_style_pad_gap(st->loading_container, theme_manager_get_spacing("space_md"),
+                                 LV_PART_MAIN);
 
         st->loading_spinner = lv_spinner_create(st->loading_container);
-        lv_obj_set_size(st->loading_spinner, 48, 48);
+        int32_t spinner_size = theme_manager_get_spacing("spinner_lg");
+        if (spinner_size <= 0)
+            spinner_size = 48;
+        int32_t spinner_arc = theme_manager_get_spacing("spinner_arc_lg");
+        if (spinner_arc <= 0)
+            spinner_arc = 4;
+        lv_obj_set_size(st->loading_spinner, spinner_size, spinner_size);
         lv_color_t primary = theme_manager_get_color("primary");
         lv_obj_set_style_arc_color(st->loading_spinner, primary, LV_PART_INDICATOR);
-        lv_obj_set_style_arc_width(st->loading_spinner, 4, LV_PART_INDICATOR);
+        lv_obj_set_style_arc_width(st->loading_spinner, spinner_arc, LV_PART_INDICATOR);
         lv_obj_set_style_arc_opa(st->loading_spinner, LV_OPA_0, LV_PART_MAIN);
 
         st->loading_label = lv_label_create(st->loading_container);
@@ -1643,15 +1638,23 @@ static void ui_gcode_viewer_load_file_async(lv_obj_t* obj, const char* file_path
         lv_obj_set_style_bg_opa(st->loading_container, 220, LV_PART_MAIN);
         lv_obj_set_style_border_width(st->loading_container, 0, LV_PART_MAIN);
         lv_obj_set_style_radius(st->loading_container, 8, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(st->loading_container, 24, LV_PART_MAIN);
-        lv_obj_set_style_pad_gap(st->loading_container, 12, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(st->loading_container, theme_manager_get_spacing("space_xl"),
+                                 LV_PART_MAIN);
+        lv_obj_set_style_pad_gap(st->loading_container, theme_manager_get_spacing("space_md"),
+                                 LV_PART_MAIN);
 
         st->loading_spinner = lv_spinner_create(st->loading_container);
-        lv_obj_set_size(st->loading_spinner, 48, 48);
+        int32_t spinner_size = theme_manager_get_spacing("spinner_lg");
+        if (spinner_size <= 0)
+            spinner_size = 48;
+        int32_t spinner_arc = theme_manager_get_spacing("spinner_arc_lg");
+        if (spinner_arc <= 0)
+            spinner_arc = 4;
+        lv_obj_set_size(st->loading_spinner, spinner_size, spinner_size);
 
         lv_color_t primary = theme_manager_get_color("primary");
         lv_obj_set_style_arc_color(st->loading_spinner, primary, LV_PART_INDICATOR);
-        lv_obj_set_style_arc_width(st->loading_spinner, 4, LV_PART_INDICATOR);
+        lv_obj_set_style_arc_width(st->loading_spinner, spinner_arc, LV_PART_INDICATOR);
         lv_obj_set_style_arc_opa(st->loading_spinner, LV_OPA_0, LV_PART_MAIN);
 
         st->loading_label = lv_label_create(st->loading_container);
@@ -1675,11 +1678,33 @@ static void ui_gcode_viewer_load_file_async(lv_obj_t* obj, const char* file_path
                 helix::gcode::GCodeParser parser;
                 std::string line;
 
+                // Poll cancellation while parsing, not just after it.
+                // cancel_build() joins this thread FROM THE MAIN THREAD, so with
+                // the check only at the end, switching files blocked the LVGL
+                // loop for an entire parse — seconds for a multi-megabyte file
+                // on a 2-core board. Checked every CANCEL_POLL_LINES lines so the
+                // atomic load costs nothing next to the parse itself.
+                bool cancelled_mid_parse = false;
+                size_t lines_since_cancel_check = 0;
+
                 while (std::getline(file, line)) {
                     parser.parse_line(line);
+
+                    if (++lines_since_cancel_check >= CANCEL_POLL_LINES) {
+                        lines_since_cancel_check = 0;
+                        if (st->is_cancelled()) {
+                            cancelled_mid_parse = true;
+                            break;
+                        }
+                    }
                 }
 
                 file.close();
+
+                if (cancelled_mid_parse) {
+                    spdlog::debug("[GCode Viewer] Build cancelled mid-parse, discarding");
+                    return;
+                }
 
                 result->gcode_file =
                     std::make_unique<helix::gcode::ParsedGCodeFile>(parser.finalize());
@@ -1875,44 +1900,6 @@ void ui_gcode_viewer_set_load_callback(lv_obj_t* obj, gcode_viewer_load_callback
     spdlog::debug("[GCode Viewer] Load callback registered");
 }
 
-void ui_gcode_viewer_set_gcode_data(lv_obj_t* obj, void* gcode_data) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st || !gcode_data)
-        return;
-
-    // Tell the renderer to drop the streaming controller pointer — this cancels
-    // the background ghost thread before we destroy the controller object.
-    if (st->layer_renderer_2d_) {
-        st->layer_renderer_2d_->set_streaming_controller(nullptr);
-    }
-    // Now safe to destroy the controller (no background thread references it)
-    st->streaming_controller_.reset();
-
-    // Take ownership of the data (caller must use new to allocate)
-    st->gcode_file.reset(static_cast<helix::gcode::ParsedGCodeFile*>(gcode_data));
-
-    // Fit camera to model (uses current camera orientation from reset())
-    st->camera_->fit_to_bounds(st->gcode_file->global_bounding_box);
-
-    st->viewer_state = GcodeViewerState::Loaded;
-    helix::telemetry_context::gcode_renderer_loaded.store(true, std::memory_order_relaxed);
-
-    spdlog::info("[GCode Viewer] Set G-code data: {} layers, {} segments",
-                 st->gcode_file->layers.size(), st->gcode_file->total_segments);
-
-    // Auto-apply filament color if enabled and available
-    if (st->use_filament_color && st->gcode_file->filament_color_hex.length() >= 2) {
-        lv_color_t color = lv_color_hex(static_cast<uint32_t>(
-            std::strtol(st->gcode_file->filament_color_hex.c_str() + 1, nullptr, 16)));
-        st->renderer_->set_extrusion_color(color);
-        spdlog::info("[GCode Viewer] Auto-applied filament color: {}",
-                     st->gcode_file->filament_color_hex);
-    }
-
-    // Trigger redraw
-    lv_obj_invalidate(obj);
-}
-
 void ui_gcode_viewer_clear(lv_obj_t* obj) {
     gcode_viewer_state_t* st = get_state(obj);
     if (!st)
@@ -1974,11 +1961,6 @@ void ui_gcode_viewer_clear_all_active() {
             ui_gcode_viewer_clear(obj);
         }
     }
-}
-
-GcodeViewerState ui_gcode_viewer_get_state(lv_obj_t* obj) {
-    gcode_viewer_state_t* st = get_state(obj);
-    return st ? st->viewer_state : GcodeViewerState::Empty;
 }
 
 bool ui_gcode_viewer_has_content(lv_obj_t* obj) {
@@ -2059,10 +2041,6 @@ void ui_gcode_viewer_set_render_mode(lv_obj_t* obj, GcodeViewerRenderMode mode) 
 
     st->render_mode_ = mode;
 
-    // Reset FPS samples when switching modes (diagnostic tracking)
-    st->fps_sample_count_ = 0;
-    st->fps_sample_index_ = 0;
-
     const char* mode_names[] = {"AUTO", "3D", "2D_LAYER"};
     spdlog::debug("[GCode Viewer] Render mode set to {}", mode_names[static_cast<int>(mode)]);
 
@@ -2111,27 +2089,6 @@ void ui_gcode_viewer_set_render_mode(lv_obj_t* obj, GcodeViewerRenderMode mode) 
     lv_obj_invalidate(obj);
 }
 
-GcodeViewerRenderMode ui_gcode_viewer_get_render_mode(lv_obj_t* obj) {
-    gcode_viewer_state_t* st = get_state(obj);
-    return st ? st->render_mode_ : GcodeViewerRenderMode::Auto;
-}
-
-void ui_gcode_viewer_evaluate_render_mode(lv_obj_t* obj) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st)
-        return;
-
-    // No-op: AUTO mode now defaults to 2D without FPS-based detection
-    // This function is kept for API compatibility but does nothing
-    // Render mode is determined at widget creation based on HELIX_GCODE_MODE env var
-
-    if (st->has_enough_fps_data()) {
-        float avg_fps = st->get_average_fps();
-        spdlog::debug("[GCode Viewer] FPS diagnostic: avg {:.1f} (mode: {})", avg_fps,
-                      st->is_using_2d_mode() ? "2D" : "3D");
-    }
-}
-
 bool ui_gcode_viewer_is_using_2d_mode(lv_obj_t* obj) {
     gcode_viewer_state_t* st = get_state(obj);
     return st ? st->is_using_2d_mode() : false;
@@ -2144,39 +2101,9 @@ void ui_gcode_viewer_disable_streaming(lv_obj_t* obj) {
     }
 }
 
-void ui_gcode_viewer_set_show_supports(lv_obj_t* obj, bool show) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st)
-        return;
-
-    // Only affects 2D renderer
-    if (st->layer_renderer_2d_) {
-        st->layer_renderer_2d_->set_show_supports(show);
-        lv_obj_invalidate(obj);
-    }
-}
-
 // ==============================================
 // Camera Controls
 // ==============================================
-
-void ui_gcode_viewer_rotate(lv_obj_t* obj, float delta_azimuth, float delta_elevation) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st)
-        return;
-
-    st->camera_->rotate(delta_azimuth, delta_elevation);
-    lv_obj_invalidate(obj);
-}
-
-void ui_gcode_viewer_pan(lv_obj_t* obj, float delta_x, float delta_y) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st)
-        return;
-
-    st->camera_->pan(delta_x, delta_y);
-    lv_obj_invalidate(obj);
-}
 
 void ui_gcode_viewer_zoom(lv_obj_t* obj, float factor) {
     gcode_viewer_state_t* st = get_state(obj);
@@ -2282,39 +2209,6 @@ void ui_gcode_viewer_set_show_travels(lv_obj_t* obj, bool show) {
     }
 
     lv_obj_invalidate(obj);
-}
-
-void ui_gcode_viewer_set_show_extrusions(lv_obj_t* obj, bool show) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st)
-        return;
-
-    st->renderer_->set_show_extrusions(show);
-
-    // Also update 2D renderer if initialized
-    if (st->layer_renderer_2d_) {
-        st->layer_renderer_2d_->set_show_extrusions(show);
-    }
-
-    lv_obj_invalidate(obj);
-}
-
-void ui_gcode_viewer_set_layer_range(lv_obj_t* obj, int start_layer, int end_layer) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st)
-        return;
-
-    st->renderer_->set_layer_range(start_layer, end_layer);
-    lv_obj_invalidate(obj);
-}
-
-void ui_gcode_viewer_set_highlighted_object(lv_obj_t* obj, const char* object_name) {
-    // Legacy single-object API - convert to set and call multi-object version
-    std::unordered_set<std::string> objects;
-    if (object_name && object_name[0] != '\0') {
-        objects.insert(object_name);
-    }
-    ui_gcode_viewer_set_highlighted_objects(obj, objects);
 }
 
 void ui_gcode_viewer_set_highlighted_objects(lv_obj_t* obj,
@@ -2465,89 +2359,9 @@ bool ui_gcode_viewer_apply_ams_tool_colors(lv_obj_t* obj) {
     return true;
 }
 
-void ui_gcode_viewer_set_travel_color(lv_obj_t* obj, lv_color_t color) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st)
-        return;
-
-    st->renderer_->set_travel_color(color);
-    lv_obj_invalidate(obj);
-}
-
-void ui_gcode_viewer_use_filament_color(lv_obj_t* obj, bool enable) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st)
-        return;
-
-    st->use_filament_color = enable;
-
-    // External override (AMS/Spoolman) always takes priority when set
-    if (st->has_external_color_override) {
-        st->renderer_->set_extrusion_color(st->external_color_override);
-        if (st->layer_renderer_2d_) {
-            st->layer_renderer_2d_->set_extrusion_color(st->external_color_override);
-        }
-        lv_obj_invalidate(obj);
-        spdlog::debug("[GCode Viewer] Filament color toggle: external override active, keeping it");
-        return;
-    }
-
-    // If enabling and we have a loaded file with filament color, apply it now
-    if (enable && st->gcode_file && st->gcode_file->filament_color_hex.length() >= 2) {
-        lv_color_t color = lv_color_hex(static_cast<uint32_t>(
-            std::strtol(st->gcode_file->filament_color_hex.c_str() + 1, nullptr, 16)));
-        st->renderer_->set_extrusion_color(color);
-        lv_obj_invalidate(obj);
-        spdlog::debug("[GCode Viewer] Applied filament color: {}",
-                      st->gcode_file->filament_color_hex);
-    } else if (!enable) {
-        // Reset to theme default
-        st->renderer_->reset_colors();
-        lv_obj_invalidate(obj);
-    }
-}
-
-void ui_gcode_viewer_set_opacity(lv_obj_t* obj, lv_opa_t opacity) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st)
-        return;
-
-    st->renderer_->set_global_opacity(opacity);
-    lv_obj_invalidate(obj);
-}
-
-void ui_gcode_viewer_set_brightness(lv_obj_t* obj, float factor) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st)
-        return;
-
-    st->renderer_->set_brightness_factor(factor);
-    lv_obj_invalidate(obj);
-}
-
 // ==============================================
 // Layer Control Extensions
 // ==============================================
-
-void ui_gcode_viewer_set_single_layer(lv_obj_t* obj, int layer) {
-    ui_gcode_viewer_set_layer_range(obj, layer, layer);
-}
-
-int ui_gcode_viewer_get_current_layer_start(lv_obj_t* obj) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st)
-        return 0;
-
-    return st->renderer_->get_options().layer_start;
-}
-
-int ui_gcode_viewer_get_current_layer_end(lv_obj_t* obj) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st)
-        return -1;
-
-    return st->renderer_->get_options().layer_end;
-}
 
 // ==============================================
 // Print Progress / Ghost Layer Visualization
@@ -2590,15 +2404,6 @@ void ui_gcode_viewer_set_print_progress(lv_obj_t* obj, int current_layer) {
     lv_obj_invalidate(obj);
 }
 
-void ui_gcode_viewer_set_ghost_opacity(lv_obj_t* obj, lv_opa_t opacity) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st)
-        return;
-
-    st->renderer_->set_ghost_opacity(opacity);
-    lv_obj_invalidate(obj);
-}
-
 void ui_gcode_viewer_set_ghost_mode(lv_obj_t* obj, int mode) {
     gcode_viewer_state_t* st = get_state(obj);
     if (!st)
@@ -2610,29 +2415,6 @@ void ui_gcode_viewer_set_ghost_mode(lv_obj_t* obj, int mode) {
 
     st->renderer_->set_ghost_render_mode(render_mode);
     lv_obj_invalidate(obj);
-}
-
-void ui_gcode_viewer_set_ssao_enabled(lv_obj_t* obj, bool enable) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st)
-        return;
-
-    if (st->layer_renderer_2d_) {
-        st->layer_renderer_2d_->set_ssao_enabled(enable);
-    }
-    st->ssao_enabled_at_init_ = enable;
-    lv_obj_invalidate(obj);
-}
-
-bool ui_gcode_viewer_get_ssao_enabled(lv_obj_t* obj) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st)
-        return false;
-
-    if (st->layer_renderer_2d_) {
-        return st->layer_renderer_2d_->get_ssao_enabled();
-    }
-    return st->ssao_enabled_at_init_;
 }
 
 void ui_gcode_viewer_set_content_offset_y(lv_obj_t* obj, float offset_percent) {
@@ -2685,68 +2467,12 @@ int ui_gcode_viewer_get_max_layer(lv_obj_t* obj) {
 // Metadata Access
 // ==============================================
 
-const char* ui_gcode_viewer_get_filament_color(lv_obj_t* obj) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st || !st->gcode_file || st->gcode_file->filament_color_hex.empty())
-        return nullptr;
-
-    return st->gcode_file->filament_color_hex.c_str();
-}
-
 const char* ui_gcode_viewer_get_filament_type(lv_obj_t* obj) {
     gcode_viewer_state_t* st = get_state(obj);
     if (!st || !st->gcode_file || st->gcode_file->filament_type.empty())
         return nullptr;
 
     return st->gcode_file->filament_type.c_str();
-}
-
-const char* ui_gcode_viewer_get_printer_model(lv_obj_t* obj) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st || !st->gcode_file || st->gcode_file->printer_model.empty())
-        return nullptr;
-
-    return st->gcode_file->printer_model.c_str();
-}
-
-float ui_gcode_viewer_get_estimated_time_minutes(lv_obj_t* obj) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st || !st->gcode_file)
-        return 0.0f;
-
-    return st->gcode_file->estimated_print_time_minutes;
-}
-
-float ui_gcode_viewer_get_filament_weight_g(lv_obj_t* obj) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st || !st->gcode_file)
-        return 0.0f;
-
-    return st->gcode_file->filament_weight_g;
-}
-
-float ui_gcode_viewer_get_filament_length_mm(lv_obj_t* obj) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st || !st->gcode_file)
-        return 0.0f;
-
-    return st->gcode_file->total_filament_mm;
-}
-
-float ui_gcode_viewer_get_filament_cost(lv_obj_t* obj) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st || !st->gcode_file)
-        return 0.0f;
-
-    return st->gcode_file->filament_cost;
-}
-
-float ui_gcode_viewer_get_nozzle_diameter_mm(lv_obj_t* obj) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st || !st->gcode_file)
-        return 0.0f;
-
-    return st->gcode_file->nozzle_diameter_mm;
 }
 
 // ==============================================
@@ -2840,14 +2566,6 @@ int ui_gcode_viewer_get_layer_count(lv_obj_t* obj) {
     }
 
     return 0;
-}
-
-int ui_gcode_viewer_get_segments_rendered(lv_obj_t* obj) {
-    gcode_viewer_state_t* st = get_state(obj);
-    if (!st)
-        return 0;
-
-    return static_cast<int>(st->renderer_->get_segments_rendered());
 }
 
 // ==============================================
@@ -3123,13 +2841,12 @@ bool ui_gcode_viewer_apply_ams_tool_colors(lv_obj_t*) {
     return false;
 }
 
-void ui_gcode_viewer_set_highlighted_objects(lv_obj_t*,
-                                             const std::unordered_set<std::string>&) {}
+void ui_gcode_viewer_set_highlighted_objects(lv_obj_t*, const std::unordered_set<std::string>&) {}
 
 void ui_gcode_viewer_set_excluded_objects(lv_obj_t*, const std::unordered_set<std::string>&) {}
 
-void ui_gcode_viewer_set_object_tap_callback(lv_obj_t*, gcode_viewer_object_tap_callback_t,
-                                             void*) {}
+void ui_gcode_viewer_set_object_tap_callback(lv_obj_t*, gcode_viewer_object_tap_callback_t, void*) {
+}
 
 void ui_gcode_viewer_set_object_long_press_callback(lv_obj_t*,
                                                     gcode_viewer_object_long_press_callback_t,

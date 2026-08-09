@@ -15,9 +15,9 @@
 
 #include "ams_state.h"
 #include "data_root_resolver.h"
+#include "i_moonraker_api.h"
 #include "json_utils.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "i_moonraker_api.h"
 #include "printer_discovery.h"
 #include "state/subject_macros.h"
 #include "static_subject_registry.h"
@@ -47,8 +47,11 @@ void ToolState::init_subjects(bool register_xml) {
         return;
     }
 
-    // Persist tool_spools.json to the user-writable config dir.
-    config_dir_ = helix::get_user_config_dir();
+    // Persist tool_spools.json to the user-writable config dir, unless a
+    // caller already pinned one via set_config_dir().
+    if (!config_dir_explicit_) {
+        config_dir_ = helix::get_user_config_dir();
+    }
 
     spdlog::trace("[ToolState] Initializing subjects (register_xml={})", register_xml);
 
@@ -73,6 +76,10 @@ void ToolState::deinit_subjects() {
     }
 
     spdlog::debug("[ToolState] Deinitializing subjects");
+
+    // Expire the in-flight Moonraker-DB callbacks before the subjects they
+    // ultimately notify go away (#1165, #1146).
+    async_lifetime_.invalidate();
 
     tools_.clear();
     active_tool_index_ = 0;
@@ -639,6 +646,25 @@ void ToolState::save_spool_json() const {
         // Ensure directory exists
         fs::create_directories(config_dir_);
 
+        // Resolve symlinks so the atomic rename below targets the real file rather
+        // than replacing the link. The installer symlinks this file out to
+        // printer_data (HELIX_USER_CONFIG_FILES), and that link is the only thing
+        // keeping it alive through Moonraker's update, which rmtree()s the install
+        // dir. rename(2) onto a symlink replaces the symlink itself, so without
+        // this the first save silently strands the file in the doomed directory.
+        // Mirrors Config::save().
+        {
+            std::error_code ec;
+            if (fs::is_symlink(path, ec)) {
+                auto real = fs::canonical(path, ec);
+                if (!ec) {
+                    spdlog::debug("[ToolState] Resolved symlink {} -> {}", path.string(),
+                                  real.string());
+                    path = real;
+                }
+            }
+        }
+
         // Atomic save: write to temp file, then rename to avoid partial writes on crash/power loss
         auto tmp_path = path;
         tmp_path += ".tmp";
@@ -739,33 +765,33 @@ void ToolState::load_spool_assignments(IMoonrakerAPI* api) {
 
     // Try Moonraker DB first. Callbacks fire from WebSocket thread,
     // so we marshal back to UI thread via queue_update().
+    // bg_cb decays the callback argument into the deferred lambda by value, so
+    // it both marshals to the main thread and drops the body if the subjects
+    // were torn down while the request was in flight (#1165). That subsumes the
+    // manual unique_ptr payload copy this used to do by hand.
     api->database_get_item(
         MOONRAKER_DB_NAMESPACE, MOONRAKER_DB_KEY,
-        [this](const nlohmann::json& data) {
-            // Copy data for thread-safe transfer to UI thread
-            auto data_copy = std::make_unique<nlohmann::json>(data);
-            helix::ui::queue_update<nlohmann::json>(
-                std::move(data_copy), [this](nlohmann::json* d) {
-                    apply_spool_assignments(*d);
-                    save_spool_json();
-                    spool_assignments_loaded_ = true;
-                    // Re-sync AmsState so slot UI subjects reflect loaded assignments
-                    AmsState::instance().sync_from_backend();
-                    spdlog::info("[ToolState] Loaded spool assignments from Moonraker DB");
-                });
-        },
-        [this, api](const MoonrakerError& err) {
-            spdlog::debug("[ToolState] Moonraker DB load failed ({}), trying local JSON",
-                          err.user_message());
-            helix::ui::queue_update<int>(std::make_unique<int>(0), [this, api](int*) {
+        async_lifetime_.bg_cb("ToolState::load_spool_assignments",
+                              [this](const nlohmann::json& data) {
+                                  apply_spool_assignments(data);
+                                  save_spool_json();
+                                  spool_assignments_loaded_ = true;
+                                  // Re-sync AmsState so slot UI subjects reflect loaded assignments
+                                  AmsState::instance().sync_from_backend();
+                                  spdlog::info(
+                                      "[ToolState] Loaded spool assignments from Moonraker DB");
+                              }),
+        async_lifetime_.bg_cb(
+            "ToolState::load_spool_assignments_error", [this, api](const MoonrakerError& err) {
+                spdlog::debug("[ToolState] Moonraker DB load failed ({}), trying local JSON",
+                              err.user_message());
                 load_spool_json();
                 spool_assignments_loaded_ = true;
                 // Seed Moonraker DB so subsequent connections don't hit 404
                 save_spool_assignments(api);
                 // Re-sync AmsState so slot UI subjects reflect loaded assignments
                 AmsState::instance().sync_from_backend();
-            });
-        });
+            }));
 }
 
 } // namespace helix

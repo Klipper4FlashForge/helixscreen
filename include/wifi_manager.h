@@ -6,7 +6,9 @@
 #include "async_lifetime_guard.h"
 #include "lvgl/lvgl.h"
 #include "wifi_backend.h"
+#include "wifi_scan_scheduler.h"
 
+#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -42,6 +44,23 @@ class WiFiManager {
     explicit WiFiManager(bool silent = false);
 
     /**
+     * @brief Initialize WiFi manager with an injected backend (test seam)
+     *
+     * Bypasses WifiBackend::create() platform selection and runs the same
+     * callback-registration + start_async() bringup as the default
+     * constructor against the given backend. Lets tests exercise
+     * WiFiManager against a WifiBackendMock instance they retain a raw
+     * pointer to, instead of going through RuntimeConfig's mock-selection
+     * plumbing.
+     *
+     * @param backend Backend to own and drive; must be non-null
+     * @param silent  If true, suppress error modals (defaults to true here —
+     *                tests are the only caller and generally don't want
+     *                modal side effects)
+     */
+    explicit WiFiManager(std::unique_ptr<WifiBackend> backend, bool silent = true);
+
+    /**
      * @brief Destructor - ensures clean shutdown
      */
     ~WiFiManager();
@@ -64,7 +83,10 @@ class WiFiManager {
      * @brief Start periodic network scanning
      *
      * Scans for available networks and invokes callback with results.
-     * Scanning continues automatically every 7 seconds until stop_scan() called.
+     * Scanning continues automatically, on an interval that backs off from
+     * ScanScheduler::kBaseIntervalMs up to ScanScheduler::kMaxIntervalMs as
+     * results stay unchanged (and suppresses entirely once connected and
+     * stable), until stop_scan() is called. See ScanScheduler.
      *
      * @param on_networks_updated Callback invoked with scan results
      */
@@ -98,6 +120,22 @@ class WiFiManager {
      * @brief Disconnect from current network
      */
     void disconnect();
+
+    /**
+     * @brief Forget (permanently remove) a saved network
+     *
+     * Unlike the REMOVE_NETWORK cleanup issued internally elsewhere as a
+     * connect-failure rollback, this is a real, user-initiated forget:
+     * removes the credential from wherever the backend persists it (vendor
+     * config, HelixScreen's own credential store, or both), synchronously,
+     * then reports the outcome.
+     *
+     * @param ssid Network name to forget
+     * @param on_complete Callback with (success, error). error is empty on
+     *                     success.
+     */
+    void forget(const std::string& ssid,
+                std::function<void(bool success, const std::string& error)> on_complete);
 
     // ========================================================================
     // Status Queries
@@ -165,17 +203,53 @@ class WiFiManager {
     /**
      * @brief Check if WiFi is currently enabled
      *
-     * @return true if backend is running
+     * @return true if the backend is running AND the radio is on (not
+     *         rfkill-blocked / soft-disabled) — see WifiBackend::is_running()
+     *         and WifiBackend::is_radio_enabled().
      */
     bool is_enabled();
 
     /**
-     * @brief Enable or disable WiFi radio
+     * @brief Enable or disable WiFi radio (BLOCKING — not for UI callbacks)
+     *
+     * Runs the backend radio change on the calling thread. On wpa_supplicant
+     * that is two control commands per direction, each of which can spend up
+     * to 5s retrying the send and then up to 10s waiting for a reply, so this
+     * can stall its caller for tens of seconds. Anything reachable from an
+     * LVGL event callback must use set_enabled_async() instead.
      *
      * @param enabled true to enable, false to disable
      * @return true on success
      */
     bool set_enabled(bool enabled);
+
+    /**
+     * @brief Non-blocking radio on/off for UI callers
+     *
+     * Dispatches the blocking backend work to an HttpExecutor worker and
+     * returns immediately, so a switch can flip optimistically and reconcile
+     * when the real outcome lands (see helix::wifi::reconcile_radio_toggle).
+     *
+     * `on_complete` is invoked on the main/LVGL thread through `token`, so its
+     * body may touch widgets and subjects directly and needs no expired()
+     * check of its own. It receives:
+     *  - `success` — whether the backend reported the change as applied
+     *  - `actual_enabled` — the radio state read back afterwards, which is the
+     *    value the UI and the persisted setting must follow
+     *
+     * A failure is reported to the user by this method (the same toast
+     * set_enabled() raises, minus the suppression case for an unmanageable
+     * -but-up link), so callers only handle the state reconciliation.
+     *
+     * The manager's destructor blocks until any in-flight radio op finishes,
+     * so the worker can never outlive the backend it is driving.
+     *
+     * @param enabled     true to enable, false to disable
+     * @param token       Caller's LifetimeToken — expires with the owning object
+     * @param on_complete Invoked on the UI thread; may be null
+     */
+    void set_enabled_async(bool enabled, helix::LifetimeToken token,
+                           std::function<void(bool success, bool actual_enabled)> on_complete);
 
     /**
      * @brief Non-blocking re-attempt of backend bringup.
@@ -217,12 +291,34 @@ class WiFiManager {
      */
     void init_self_reference(std::shared_ptr<WiFiManager> self);
 
+    /**
+     * @brief True when this device has a working non-WiFi network path (wired
+     *        or otherwise) it could fall back to if the radio were turned off.
+     *
+     * The same safety check the backend's READY handler uses to decide
+     * whether a stored "off" is safe to reassert at startup (see
+     * register_backend_callbacks()) — exposed here so UI callers can gate a
+     * *live* radio-off toggle the same way and warn the user instead of
+     * silently stranding a WiFi-only device (the CC1 incident, Task 15).
+     * Returns false whenever interface resolution is inconclusive: fail
+     * safe, same as the startup path.
+     */
+    bool has_non_wifi_fallback();
+
   private:
     // Grants the auth-failure-debounce regression test direct access to the
     // connection handlers and grace-timer state (helixscreen#1050).
     friend class WiFiManagerTestAccess;
 
     std::unique_ptr<WifiBackend> backend_;
+
+    /// Expires the backend-swap callback deferred out of the NetworkManager init
+    /// worker thread. Declared after `backend_` so reverse-order member
+    /// destruction expires the guard before the backend that callback touches.
+    /// Like IMoonrakerAPI, this class has no deinit_subjects() — it owns no
+    /// subjects — so the destructor really is the only teardown point, and the
+    /// guard's own dtor covers it (#1165).
+    helix::AsyncLifetimeGuard async_lifetime_;
 
     // Self-reference for async callback safety
     // Weak pointers in async callbacks can safely check if manager still exists
@@ -239,14 +335,27 @@ class WiFiManager {
 
     // Scanning state
     lv_timer_t* scan_timer_;
-    std::function<void(const std::vector<WiFiNetwork>&)> scan_callback_; // guarded by callback_mutex_
+    std::function<void(const std::vector<WiFiNetwork>&)>
+        scan_callback_; // guarded by callback_mutex_
     bool scan_pending_; // guarded by callback_mutex_; true when scan triggered, cleared after first
-                        // SCAN_COMPLETE processed
+                        // SCAN_COMPLETE processed — dedupes duplicate SCAN_COMPLETE events for
+                        // the same trigger. Distinct concern from scan_scheduler_ below (which
+                        // decides whether to START a new scan); the two cannot disagree because
+                        // scan_pending_ is only ever read/written on the backend thread while
+                        // scan_scheduler_ is only ever touched on the main/LVGL thread.
+
+    // Scan cadence policy (no-overlap / backoff / suppression). Pure state
+    // machine — see wifi_scan_scheduler.h. Touched ONLY on the main/LVGL
+    // thread: from start_scan()/scan_timer_callback() directly (already
+    // main-thread), and from handle_scan_complete()/handle_disconnected()
+    // indirectly via helix::ui::queue_update() dispatch, since those two
+    // fire on the backend thread and scan_scheduler_ is not mutex-guarded.
+    helix::wifi::ScanScheduler scan_scheduler_;
 
     // Connection state
     std::function<void(bool, const std::string&)> connect_callback_; // guarded by callback_mutex_
-    bool connecting_in_progress_ = false; // guarded by callback_mutex_; true during connect attempt,
-                                          // prevents false failure on DISCONNECTED
+    bool connecting_in_progress_ = false; // guarded by callback_mutex_; true during connect
+                                          // attempt, prevents false failure on DISCONNECTED
 
     // Auth-failure debounce (helixscreen#1050). Some adapters' wpa_supplicant emit a
     // transient CTRL-EVENT-SSID-TEMP-DISABLED/WRONG_KEY mid-handshake on a connect that
@@ -301,6 +410,33 @@ class WiFiManager {
     // real sysfs/proc probe; tests inject a stub via WiFiManagerTestAccess.
     static std::function<bool()> os_link_probe_;
     static bool os_link_up();
+
+    // Drives the backend radio change. Blocking, and safe to call from any
+    // thread — it touches only backend_, which the destructor barrier below
+    // keeps alive for the duration.
+    WiFiError apply_radio_enabled(bool enabled);
+
+    // Surfaces a radio failure to the user. Static (and therefore free of any
+    // `this` access) so the async path can hand it to a deferred callback
+    // without tying that callback's safety to the manager's lifetime.
+    // Main-thread only — NOTIFY_ERROR builds widgets.
+    static void report_radio_result(bool enabled, const WiFiError& result);
+
+    // Barrier for set_enabled_async() workers. The worker runs on an
+    // HttpExecutor thread and dereferences `this` (backend_) for the whole of
+    // apply_radio_enabled(), so the destructor waits here before any member is
+    // torn down. Unbounded on purpose: a timeout that expired would hand the
+    // worker a freed backend, and the backend calls carry their own deadlines.
+    std::mutex radio_op_mutex_;
+    std::condition_variable radio_op_cv_;
+    int radio_ops_inflight_ = 0;
+    void wait_for_radio_ops();
+
+    // Sysfs root used by has_non_wifi_network_path() to gate the stored-radio
+    // -state reassert (Task 15: never disable the radio on a device whose
+    // only network path is that radio). Defaults to "/sys"; tests point it at
+    // a fixture tree via WiFiManagerTestAccess.
+    static std::string sys_root_;
 };
 
 /**

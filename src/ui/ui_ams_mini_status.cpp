@@ -17,6 +17,7 @@
 #include "helix-xml/src/xml/lv_xml_parser.h"
 #include "helix-xml/src/xml/parsers/lv_xml_obj_parser.h"
 #include "observer_factory.h"
+#include "panel_widget_size.h"
 #include "theme_manager.h"
 #include "ui/ams_drawing_utils.h"
 
@@ -42,8 +43,25 @@ static constexpr int32_t MAX_BAR_WIDTH_PX = 16;
 /** Border radius for bar corners in pixels (very rounded appearance) */
 static constexpr int32_t BAR_BORDER_RADIUS_PX = 8;
 
-/** Minimum width of a spool cell in the wide spool view (px) */
-static constexpr int SPOOL_CELL_MIN_PX = 80;
+/**
+ * Minimum width of one spool cell in the wide spool view (px), and the divisor
+ * used to derive how many spool cells fit across a row:
+ * visible = (avail_w + gap) / (MIN_SPOOL_W + gap).
+ *
+ * Replaces the old "one spool cell per grid column" rule (visible = colspan:
+ * 2 across at 2x, 4 at 4x), which cannot survive Plan 2's square-cell grid
+ * halving today's cell width. Chosen empirically against the span2/span4
+ * pixel table measured across all eight home-grid tiers
+ * (.superpowers/sdd/2026-08-05-grid-metrics-followups/span-pixel-table.md):
+ * no single constant reproduces every tier's count exactly, since narrow
+ * low-density tiers (Micro/Tiny/Small, ~65-70px column cells) and wide
+ * high-density tiers (Medium/Large/XLarge, ~107-134px column cells) pull in
+ * opposite directions. 60 reproduces today's count exactly on Micro, Tiny,
+ * and Small (the tightest, most common tiers) and on the roomier tiers shows
+ * MORE, smaller spools than before -- never fewer -- consistent with this
+ * migration's low-side bias elsewhere.
+ */
+static constexpr int MIN_SPOOL_W = 60;
 
 // ============================================================================
 // Per-widget user data
@@ -52,7 +70,7 @@ static constexpr int SPOOL_CELL_MIN_PX = 80;
 /** Magic number to identify ams_mini_status widgets ("AMS1" as ASCII) */
 static constexpr uint32_t AMS_MINI_STATUS_MAGIC = 0x414D5331;
 
-/** Render mode: narrow bars vs. wide spool cells (selected by colspan) */
+/** Render mode: narrow bars vs. wide spool cells (selected by width_px) */
 enum class AmsMiniMode { BAR, SPOOL };
 
 /**
@@ -64,15 +82,59 @@ struct SpoolCellData {
     int remaining_pct = -1;  // actual % remaining; -1 = unknown (blank label)
     std::string material;    // "" => render "--"
     bool present = false;
-    int lane_number = 1; // 1-based, for the badge
-    bool active = false; // currently-loaded lane (success-colored badge)
+    int lane_number = 1;   // 1-based, for the badge
+    bool active = false;   // actively-loaded lane (success-colored badge)
+    bool assigned = false; // lane still carries identity while ejected (#1071)
 
     bool operator==(const SpoolCellData& o) const {
         return color_rgb == o.color_rgb && fill_level == o.fill_level &&
                remaining_pct == o.remaining_pct && material == o.material && present == o.present &&
-               lane_number == o.lane_number && active == o.active;
+               lane_number == o.lane_number && active == o.active && assigned == o.assigned;
     }
 };
+
+/**
+ * @brief Is this lane the one firmware considers seated and loaded?
+ *
+ * SINGLE SOURCE OF TRUTH for the active-lane highlight: the per-slot
+ * active-loaded subject (AmsBackend::slot_is_actively_loaded(i)) — the same read
+ * apply_current_slot_highlight() makes in ui_ams_slot.cpp. Deriving it here from
+ * `i == current_slot` instead diverged from the AMS panel: after an idle unload
+ * the strip kept the lane badged while the panel's glow had already cleared, and
+ * on AFC/CFS — where firmware's current_slot can name a lane the per-slot parse
+ * disagrees with (#1194) — the two surfaces could light DIFFERENT lanes.
+ *
+ * Unlike the ams_slot widget (one lane, per-slot observer) this widget needs no
+ * per-slot observer: AmsState bumps slots_version on every slot_active_loaded
+ * delta (sync_from_backend and update_slot both do), and the slots_version
+ * observer re-reads every lane. A per-slot observer would race the wholesale
+ * rebuild — the same reasoning that keeps fill on the snapshot (#705/#776).
+ *
+ * Out-of-range lanes (beyond AmsState::MAX_SLOTS) have no subject and report
+ * inactive, matching ams_slot's fallback.
+ */
+static bool slot_is_active_loaded(int slot_index) {
+    lv_subject_t* subject = AmsState::instance().get_slot_active_loaded_subject(slot_index);
+    return subject && lv_subject_get_int(subject) != 0;
+}
+
+/**
+ * @brief Dim a spool visual to the "assigned but ejected" ghost strength.
+ *
+ * Mirrors apply_slot_status() in ui_ams_slot.cpp: an empty lane that still
+ * carries identity (Spoolman link, material, brand, or spool name — deliberately
+ * NOT cleared on eject, #1071) renders its retained spool at LV_OPA_20 so it
+ * reads as "assigned, not present" rather than "still loaded" (#1065). Call
+ * AFTER spool_visual_set_color(), which resets bg_opa to COVER.
+ */
+static void spool_visual_set_ghost_opa(const ams_draw::SpoolVisual& sv, lv_opa_t opa) {
+    if (sv.color_swatch)
+        lv_obj_set_style_bg_opa(sv.color_swatch, opa, LV_PART_MAIN);
+    if (sv.spool_outer)
+        lv_obj_set_style_bg_opa(sv.spool_outer, opa, LV_PART_MAIN);
+    if (sv.canvas)
+        lv_obj_set_style_opa(sv.canvas, opa, LV_PART_MAIN);
+}
 
 /** Map an integer fill percent (0-100) to the spool graphic's 0.0-1.0 level. */
 static inline float fill_level_from_pct(int fill_pct) {
@@ -116,13 +178,12 @@ struct AmsMiniStatusData {
 
     // Available pixel width for responsive sizing
     int width_px = 0; // 0 = unknown/default, set by set_width()
-    int colspan = 1;  // Grid columns spanned (>=2 = wide spool view), set by set_width()
 
     // Multi-unit support
     int unit_count = 0;       // Number of AMS units (0 or 1 = single row, 2+ = stacked rows)
     UnitRowInfo unit_rows[8]; // Max 8 units
 
-    // Render mode selection (BAR for narrow, SPOOL for colspan >= 2)
+    // Render mode selection (BAR for narrow, SPOOL for width_px >= W_NORMAL)
     AmsMiniMode mode = AmsMiniMode::BAR;
 
     // Child objects
@@ -142,7 +203,6 @@ struct AmsMiniStatusData {
     // avoiding constant canvas alloc/free churn on every AmsState sync.
     std::vector<SpoolCellData> rendered_cells;
     int rendered_width_px = -1;
-    int rendered_colspan = -1;
     bool rendered_3d = true;
     int rendered_height = -1;
 
@@ -212,11 +272,16 @@ static lv_obj_t* ensure_unit_row(AmsMiniStatusData* data, int unit_index) {
  * When squeezed into a narrow cell, bars shrink to stay proportional.
  */
 static int32_t effective_max_bar_width(const AmsMiniStatusData* data) {
-    if (data->width_px > 0 && data->width_px < 100)
+    // width_px <= 0 is the struct's default before ui_ams_mini_status_set_width()
+    // has ever run — set_slot_count()/set_slot_full() can trigger a rebuild in
+    // that state, so this is a real, reachable path, not just a >=150 fallback.
+    if (data->width_px <= 0)
+        return MAX_BAR_WIDTH_PX; // Default: 16
+    if (data->width_px < 100)
         return 8; // Tight layout: narrow bars
-    if (data->width_px > 0 && data->width_px < 150)
-        return 10;           // Medium layout: slightly reduced
-    return MAX_BAR_WIDTH_PX; // Default: 16
+    if (data->width_px < 150)
+        return 10; // Medium layout: slightly reduced
+    return MAX_BAR_WIDTH_PX;
 }
 
 /**
@@ -225,10 +290,16 @@ static int32_t effective_max_bar_width(const AmsMiniStatusData* data) {
  * In narrow cells, reduce visible slots to avoid overflow/clipping.
  */
 static int effective_max_visible(const AmsMiniStatusData* data) {
-    if (data->width_px > 0 && data->width_px < 100)
+    // width_px <= 0 is the struct's default before set_width() has ever run
+    // (see effective_max_bar_width) — falls through to the unclamped default,
+    // same as width_px >= 100.
+    if (data->width_px <= 0)
+        return data->max_visible;
+    if (data->width_px < 100)
         return std::min(data->max_visible, 6); // Tight: show max 6 bars
-    if (data->width_px > 0 && data->width_px < 150)
-        return std::min(data->max_visible, 8); // Medium: show all
+    // width_px >= 100 shows every configured slot: max_visible is already
+    // clamped to <= AMS_MINI_STATUS_MAX_VISIBLE (8) by the setter, so a
+    // second min(max_visible, 8) here was always a no-op.
     return data->max_visible;
 }
 
@@ -515,7 +586,7 @@ static void rebuild_bars(AmsMiniStatusData* data) {
 }
 
 /**
- * @brief Render the wide spool view (colspan >= 2).
+ * @brief Render the wide spool view (width_px >= W_NORMAL).
  *
  * Lazily creates the horizontally-scrollable spool container, then renders one
  * cell per entry in data->spool_cells (spool graphic with lane badge, material
@@ -562,10 +633,10 @@ static void rebuild_spools(AmsMiniStatusData* data) {
     lv_obj_t* sc = data->spools_container;
     lv_obj_remove_flag(sc, LV_OBJ_FLAG_HIDDEN);
 
-    // Give each visible spool an equal share of the width: colspan spools across
-    // (2 at 2x, 4 at 4x). Subtract the (visible-1) inter-cell gaps so they fit
-    // exactly — no sliver of the next spool, and no scrollbar until there are more
-    // than colspan spools. The spool+label group is centered within each share.
+    // Give each visible spool an equal share of the width. Subtract the
+    // (visible-1) inter-cell gaps so they fit exactly — no sliver of the next
+    // spool, and no scrollbar until there are more than `visible` spools. The
+    // spool+label group is centered within each share.
     lv_obj_update_layout(sc);
     int avail_h = lv_obj_get_content_height(sc);
     if (avail_h <= 0)
@@ -576,12 +647,16 @@ static void rebuild_spools(AmsMiniStatusData* data) {
     if (avail_w <= 0)
         avail_w = data->width_px; // before layout resolves
     int gap = theme_manager_get_spacing("space_xxs");
-    int visible = (data->colspan >= 1) ? data->colspan : 1;
+    // How many spool cells fit across the row at MIN_SPOOL_W each, capped to
+    // the actual number of slots so a wide, sparsely-filled widget doesn't
+    // reserve blank trailing columns for spools that don't exist.
+    int visible = (avail_w + gap) / (MIN_SPOOL_W + gap);
+    visible = std::clamp(visible, 1, std::max(1, data->slot_count));
     // -2px safety so sub-pixel rounding can't tip the row into a spurious scrollbar
     // (a real scrollbar still appears when there are MORE than `visible` spools).
     int cell_px = (avail_w - (visible - 1) * gap - 2) / visible;
-    if (cell_px < 48)
-        cell_px = 48;
+    if (cell_px < MIN_SPOOL_W)
+        cell_px = MIN_SPOOL_W;
     int spool_size = avail_h - 4; // square spool fits the row height
     if (spool_size > 56)
         spool_size = 56;
@@ -599,14 +674,14 @@ static void rebuild_spools(AmsMiniStatusData* data) {
         text_w = 20;
 
     // Dirty-check: the render is fully determined by the cell data, available
-    // width, colspan, and spool style. If none changed since the last real render
-    // and the cells already exist on screen, skip the costly clean+recreate (and
+    // width, and spool style. If none changed since the last real render and
+    // the cells already exist on screen, skip the costly clean+recreate (and
     // its transient 2x canvas-memory peak). The container was un-hidden above, so
     // a bar->spool switch with identical data still shows the existing cells.
-    bool unchanged =
-        (data->rendered_width_px == data->width_px) && (data->rendered_colspan == data->colspan) &&
-        (data->rendered_3d == cur_3d) && (data->rendered_height == avail_h) &&
-        (data->rendered_cells == data->spool_cells) && (lv_obj_get_child_count(sc) > 0);
+    bool unchanged = (data->rendered_width_px == data->width_px) && (data->rendered_3d == cur_3d) &&
+                     (data->rendered_height == avail_h) &&
+                     (data->rendered_cells == data->spool_cells) &&
+                     (lv_obj_get_child_count(sc) > 0);
     if (unchanged)
         return; // identical render already on screen — skip churn
 
@@ -652,10 +727,18 @@ static void rebuild_spools(AmsMiniStatusData* data) {
         lv_obj_set_style_border_width(wrap, 0, LV_PART_MAIN);
         lv_obj_remove_flag(wrap, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_add_flag(wrap, LV_OBJ_FLAG_EVENT_BUBBLE);
+        // Empty-lane presentation, ported from apply_slot_status() in
+        // ui_ams_slot.cpp so a lane reads the same on both surfaces:
+        //   present              -> full-strength spool, material text
+        //   ejected + assigned   -> spool KEPT, ghosted at LV_OPA_20, label
+        //                           ghosted with it ("assigned, not present")
+        //   ejected + unassigned -> spool hidden, dashed placeholder, "Empty"
+        const bool ghosted = !cd.present && cd.assigned;
         ams_draw::SpoolVisual sv = ams_draw::create_spool_visual(wrap, spool_size);
         ams_draw::spool_visual_set_color(sv, lv_color_hex(cd.color_rgb));
         ams_draw::spool_visual_set_fill(sv, cd.fill_level);
-        ams_draw::spool_visual_set_empty(sv, !cd.present);
+        ams_draw::spool_visual_set_empty(sv, !cd.present && !cd.assigned);
+        spool_visual_set_ghost_opa(sv, ghosted ? LV_OPA_20 : LV_OPA_COVER);
         lv_obj_t* badge =
             ams_draw::create_lane_badge(wrap, cd.lane_number, spool_size * 2 / 5, cd.active);
         if (badge) {
@@ -682,12 +765,21 @@ static void rebuild_spools(AmsMiniStatusData* data) {
         lv_label_set_long_mode(mat, LV_LABEL_LONG_WRAP);
         lv_obj_set_style_text_align(mat, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
         lv_obj_add_flag(mat, LV_OBJ_FLAG_EVENT_BUBBLE);
-        lv_label_set_text(mat,
-                          cd.material.empty() ? "--" : cd.material.c_str()); // material: no i18n
+        if (!cd.present && !cd.assigned) {
+            // Unassigned empty lane: name its purpose instead of showing "--",
+            // matching the ams_slot material label (translated; "Empty" is UI
+            // copy, not a material name).
+            lv_label_set_text(mat, lv_tr("Empty"));
+        } else {
+            lv_label_set_text(mat,
+                              cd.material.empty() ? "--"
+                                                  : cd.material.c_str()); // material: no i18n
+        }
         const lv_font_t* fs = theme_manager_get_font("font_small");
         if (fs)
             lv_obj_set_style_text_font(mat, fs, LV_PART_MAIN);
         lv_obj_set_style_text_color(mat, theme_manager_get_color("text"), LV_PART_MAIN);
+        lv_obj_set_style_text_opa(mat, ghosted ? LV_OPA_20 : LV_OPA_COVER, LV_PART_MAIN);
 
         lv_obj_t* pct = lv_label_create(col);
         snprintf(nm, sizeof(nm), "spool_pct_%d", i);
@@ -706,26 +798,31 @@ static void rebuild_spools(AmsMiniStatusData* data) {
         if (fxs)
             lv_obj_set_style_text_font(pct, fxs, LV_PART_MAIN);
         lv_obj_set_style_text_color(pct, theme_manager_get_color("text_muted"), LV_PART_MAIN);
+        // Ghost the whole text group together — a full-strength percent beside a
+        // dimmed material would read as two different lanes.
+        lv_obj_set_style_text_opa(pct, ghosted ? LV_OPA_20 : LV_OPA_COVER, LV_PART_MAIN);
     }
 
     // Record the rendered signature so an identical subsequent sync can be skipped.
     data->rendered_cells = data->spool_cells;
     data->rendered_width_px = data->width_px;
-    data->rendered_colspan = data->colspan;
     data->rendered_3d = cur_3d;
     data->rendered_height = avail_h;
 }
 
 /**
- * @brief Render dispatcher: select bar vs. spool mode by colspan.
+ * @brief Render dispatcher: select bar vs. spool mode by physical width.
  *
- * colspan >= 2 selects the wide spool view; otherwise the narrow bar view.
- * The inactive mode's container is hidden so only one is visible at a time.
+ * width_px >= W_NORMAL (the same "has room for two columns" threshold every
+ * other home widget migrated to) selects the wide spool view; otherwise the
+ * narrow bar view. The inactive mode's container is hidden so only one is
+ * visible at a time.
  */
 static void rebuild(AmsMiniStatusData* data) {
     if (!data)
         return;
-    data->mode = (data->colspan >= 2) ? AmsMiniMode::SPOOL : AmsMiniMode::BAR;
+    data->mode =
+        (data->width_px >= helix::widget_size::W_NORMAL) ? AmsMiniMode::SPOOL : AmsMiniMode::BAR;
     if (data->mode == AmsMiniMode::SPOOL) {
         if (data->bars_container)
             lv_obj_add_flag(data->bars_container, LV_OBJ_FLAG_HIDDEN);
@@ -871,7 +968,11 @@ lv_obj_t* ui_ams_mini_status_create(lv_obj_t* parent, int32_t height) {
         spdlog::debug("[AmsMiniStatus] Auto-bound to AmsState slots_version subject");
     }
 
-    // Observe current_slot to reactively update lane highlights
+    // Observe current_slot as a re-sync trigger. The highlight itself now comes
+    // from the per-slot active-loaded subject (slot_is_active_loaded above), and
+    // every delta on that subject bumps slots_version, so the observer above is
+    // what keeps the strip live; this one covers a current_slot move that leaves
+    // the active-loaded flags untouched.
     lv_subject_t* current_slot_subject = AmsState::instance().get_current_slot_subject();
     if (current_slot_subject) {
         data->current_slot_observer = observe_int_sync<lv_obj_t>(current_slot_subject, container,
@@ -941,6 +1042,10 @@ void ui_ams_mini_status_set_slot_full(lv_obj_t* obj, int slot_index, uint32_t co
     c.remaining_pct = remaining_pct;
     c.material = material ? material : "";
     c.present = present;
+    // This programmatic path carries no Spoolman/brand handles, so a retained
+    // material is the only "assigned" evidence it can offer (the AmsState path
+    // in sync_from_ams_state() sees the full predicate).
+    c.assigned = !c.material.empty();
     c.lane_number = slot_index + 1;
 }
 
@@ -988,19 +1093,18 @@ void ui_ams_mini_status_refresh(lv_obj_t* obj) {
     }
 }
 
-void ui_ams_mini_status_set_width(lv_obj_t* obj, int width_px, int colspan) {
+void ui_ams_mini_status_set_width(lv_obj_t* obj, int width_px) {
     auto* data = get_data(obj);
     if (!data)
         return;
 
-    if (data->width_px == width_px && data->colspan == colspan)
+    if (data->width_px == width_px)
         return;
 
     data->width_px = width_px;
-    data->colspan = colspan;
-    spdlog::debug("[AmsMiniStatus] Width set to {}px, colspan {}", width_px, colspan);
+    spdlog::debug("[AmsMiniStatus] Width set to {}px", width_px);
 
-    // Rebuild if we already have slots (width + colspan affect mode and bar width)
+    // Rebuild if we already have slots (width affects mode, bar width, and spool count)
     if (data->slot_count > 0)
         rebuild(data);
 }
@@ -1053,17 +1157,19 @@ static void sync_from_ams_state(AmsMiniStatusData* data) {
     // capped at AMS_MINI_STATUS_MAX_VISIBLE; the spool cache is uncapped (sized to
     // slot_count) so the wide spool view sees every lane on multi-unit systems.
     data->spool_cells.assign(slot_count, SpoolCellData{});
-    int current = lv_subject_get_int(AmsState::instance().get_current_slot_subject());
     for (int i = 0; i < slot_count; ++i) {
         SlotInfo slot = backend->get_slot_info(i);
         // Fill is read from this slots_version snapshot on purpose. This widget
         // rebuilds all bars/cells wholesale on every sync; a per-slot fill
         // subject observer (as in the ams_slot widget) would race that rebuild
         // and touch just-recreated objects — the #705/#776 family. Semantics are
-        // still unified: fill_percent_from_slot uses SlotInfo::display_fill_pct.
-        // -1 = "no data" → treat as empty (0) so the bar/spool renders empty
+        // still unified: fill_percent_from_slot uses SlotInfo::display_fill_pct,
+        // with the SHARED default min_pct so a present-but-spent lane keeps the
+        // same visible sliver the overview's mini bars give it (passing 0 here
+        // made the identical lane render empty on one surface and not the
+        // other). -1 = "no data" → floored to 0 so the bar/spool renders empty
         // rather than a phantom fill (was 100/full for weightless slots).
-        int fill_pct = ams_draw::fill_percent_from_slot(slot, 0);
+        int fill_pct = ams_draw::fill_percent_from_slot(slot);
         if (fill_pct < 0)
             fill_pct = 0;
         int rem = -1;
@@ -1071,13 +1177,21 @@ static void sync_from_ams_state(AmsMiniStatusData* data) {
         if (p >= 0.0f)
             rem = static_cast<int>(p + 0.5f);
 
+        const bool active = slot_is_active_loaded(i);
+        // "Assigned" = the lane still carries identity after an eject — the
+        // override is deliberately NOT cleared (#1071). Same predicate as
+        // apply_slot_status() in ui_ams_slot.cpp; brand/spool_name cover
+        // IFS-style backends with a user override but no Spoolman id.
+        const bool assigned = slot.spoolman_id > 0 || !slot.material.empty() ||
+                              !slot.brand.empty() || !slot.spool_name.empty();
+
         // Bar-mode cache (capped at MAX_VISIBLE).
         if (i < AMS_MINI_STATUS_MAX_VISIBLE) {
             SlotBarData* slot_bar = &data->slots[i];
             slot_bar->color_rgb = slot.color_rgb;
             slot_bar->fill_pct = fill_pct;
             slot_bar->present = slot.is_present();
-            slot_bar->loaded = (i == current);
+            slot_bar->loaded = active;
             slot_bar->has_error = (slot.status == SlotStatus::BLOCKED || slot.error.has_value());
             slot_bar->severity = slot.error.has_value() ? slot.error->severity : SlotError::INFO;
         }
@@ -1090,7 +1204,8 @@ static void sync_from_ams_state(AmsMiniStatusData* data) {
         c.material = slot.material;
         c.present = slot.is_present();
         c.lane_number = i + 1;
-        c.active = (i == current);
+        c.active = active;
+        c.assigned = assigned;
     }
 
     rebuild(data);
@@ -1200,7 +1315,11 @@ static void* ui_ams_mini_status_xml_create(lv_xml_parser_state_t* state, const c
         }
     }
 
-    // Observe current_slot to reactively update lane highlights
+    // Observe current_slot as a re-sync trigger. The highlight itself now comes
+    // from the per-slot active-loaded subject (slot_is_active_loaded above), and
+    // every delta on that subject bumps slots_version, so the observer above is
+    // what keeps the strip live; this one covers a current_slot move that leaves
+    // the active-loaded flags untouched.
     lv_subject_t* current_slot_subject = AmsState::instance().get_current_slot_subject();
     if (current_slot_subject) {
         data->current_slot_observer = observe_int_sync<lv_obj_t>(current_slot_subject, container,

@@ -230,28 +230,29 @@ void bed_mesh_renderer_set_bounds(bed_mesh_renderer_t* renderer, double bed_x_mi
 /**
  * @brief Set camera rotation angles
  *
+ * The renderer owns the camera orientation: angle_x is clamped to
+ * [BED_MESH_ANGLE_X_MIN, BED_MESH_ANGLE_X_MAX] and angle_z is normalized to
+ * [0, 360). Callers driving an interactive orbit should read the current angles
+ * from bed_mesh_renderer_get_view_state() and pass back the accumulated values
+ * rather than tracking their own copy.
+ *
  * @param renderer Renderer instance
- * @param angle_x Tilt angle in degrees (typically -85 to -10, negative = looking down)
- * @param angle_z Spin angle in degrees (horizontal rotation around vertical axis)
+ * @param angle_x Tilt angle in degrees (negative = looking down; clamped)
+ * @param angle_z Spin angle in degrees (horizontal rotation around vertical axis; wrapped)
  */
 void bed_mesh_renderer_set_rotation(bed_mesh_renderer_t* renderer, double angle_x, double angle_z);
 
 /**
  * @brief Get current view state (for interactive controls)
  *
+ * The returned pointer aliases the renderer's live state — it stays valid for
+ * the lifetime of the renderer and reflects later mutations (e.g. a subsequent
+ * bed_mesh_renderer_set_rotation() call).
+ *
  * @param renderer Renderer instance
  * @return Pointer to internal view state, or NULL if renderer is NULL
  */
 const bed_mesh_view_state_t* bed_mesh_renderer_get_view_state(bed_mesh_renderer_t* renderer);
-
-/**
- * @brief Set view state (for interactive controls)
- *
- * @param renderer Renderer instance
- * @param state New view state to apply
- */
-void bed_mesh_renderer_set_view_state(bed_mesh_renderer_t* renderer,
-                                      const bed_mesh_view_state_t* state);
 
 /**
  * @brief Set dragging state (affects rendering quality)
@@ -263,43 +264,6 @@ void bed_mesh_renderer_set_view_state(bed_mesh_renderer_t* renderer,
  * @param is_dragging true if user is currently dragging (fast render), false otherwise
  */
 void bed_mesh_renderer_set_dragging(bed_mesh_renderer_t* renderer, bool is_dragging);
-
-/**
- * @brief Set Z-scale multiplier (height amplification)
- *
- * @param renderer Renderer instance
- * @param z_scale Height multiplier (clamped to BED_MESH_MIN_Z_SCALE .. BED_MESH_MAX_Z_SCALE)
- */
-void bed_mesh_renderer_set_z_scale(bed_mesh_renderer_t* renderer, double z_scale);
-
-/**
- * @brief Set FOV scale (perspective zoom)
- *
- * @param renderer Renderer instance
- * @param fov_scale Field-of-view scale multiplier
- */
-void bed_mesh_renderer_set_fov_scale(bed_mesh_renderer_t* renderer, double fov_scale);
-
-/**
- * @brief Set explicit color range for height mapping
- *
- * By default, renderer auto-scales colors based on mesh data min/max.
- * Call this to override with explicit range.
- *
- * @param renderer Renderer instance
- * @param min_z Minimum Z value (maps to purple/blue colors)
- * @param max_z Maximum Z value (maps to yellow/red colors)
- */
-void bed_mesh_renderer_set_color_range(bed_mesh_renderer_t* renderer, double min_z, double max_z);
-
-/**
- * @brief Enable auto-scaling of color range (default)
- *
- * Automatically computes color range from mesh data min/max values.
- *
- * @param renderer Renderer instance
- */
-void bed_mesh_renderer_auto_color_range(bed_mesh_renderer_t* renderer);
 
 /**
  * @brief Set the layer offset used for screen-space positioning
@@ -409,21 +373,6 @@ bool bed_mesh_renderer_handle_touch(bed_mesh_renderer_t* renderer, int touch_x, 
                                     int canvas_width, int canvas_height);
 
 /**
- * @brief Get touched cell info for tooltip display
- *
- * After a successful handle_touch() call, returns info about the touched cell.
- * Only valid when is_using_2d() returns true.
- *
- * @param renderer Renderer instance
- * @param out_row Output: mesh row of touched cell (can be NULL)
- * @param out_col Output: mesh column of touched cell (can be NULL)
- * @param out_z Output: Z value of touched cell (can be NULL)
- * @return true if there's a valid touched cell, false otherwise
- */
-bool bed_mesh_renderer_get_touched_cell(bed_mesh_renderer_t* renderer, int* out_row, int* out_col,
-                                        float* out_z);
-
-/**
  * @brief Clear touched cell state
  *
  * Call this on touch release to clear the tooltip.
@@ -431,17 +380,6 @@ bool bed_mesh_renderer_get_touched_cell(bed_mesh_renderer_t* renderer, int* out_
  * @param renderer Renderer instance
  */
 void bed_mesh_renderer_clear_touch(bed_mesh_renderer_t* renderer);
-
-/**
- * @brief Get average FPS from recent renders
- *
- * Returns the rolling average FPS calculated from recent frame times.
- * Useful for debugging and settings display.
- *
- * @param renderer Renderer instance
- * @return Average FPS (60.0 if no samples yet)
- */
-float bed_mesh_renderer_get_average_fps(bed_mesh_renderer_t* renderer);
 
 /**
  * @brief Show or hide the zero reference plane
@@ -455,34 +393,6 @@ float bed_mesh_renderer_get_average_fps(bed_mesh_renderer_t* renderer);
  * @param visible true to show the zero plane, false to hide it
  */
 void bed_mesh_renderer_set_zero_plane_visible(bed_mesh_renderer_t* renderer, bool visible);
-
-/**
- * @brief Check if zero plane is currently visible
- *
- * @param renderer Renderer instance
- * @return true if zero plane is shown, false otherwise
- */
-bool bed_mesh_renderer_get_zero_plane_visible(bed_mesh_renderer_t* renderer);
-
-/**
- * @brief Set the Z-offset for the zero reference plane
- *
- * By default the plane is at mesh Z=0. If your printer has a Z-offset
- * (e.g., from probe calibration), set it here to position the plane
- * at the actual nozzle zero position.
- *
- * @param renderer Renderer instance
- * @param z_offset_mm Z-offset in millimeters (positive = plane above mesh Z=0)
- */
-void bed_mesh_renderer_set_zero_plane_offset(bed_mesh_renderer_t* renderer, double z_offset_mm);
-
-/**
- * @brief Get the current Z-offset for the zero reference plane
- *
- * @param renderer Renderer instance
- * @return Current Z-offset in millimeters
- */
-double bed_mesh_renderer_get_zero_plane_offset(bed_mesh_renderer_t* renderer);
 
 /**
  * @brief Set Z display offset for axis labels

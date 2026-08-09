@@ -441,17 +441,39 @@ jobs:
       run: |
         mkdir -p release-files/symbols
         # Flatten symbol artifacts (same logic as upload-r2 job)
+        #
+        # The GitHub-release copies are named `symbols-<platform>.sym.zst`, NOT
+        # `<platform>.sym.zst`. The prefix exists purely to lose an alphabetical
+        # race (prestonbrown/helixscreen#993): the GitHub API returns release
+        # assets sorted by name, and Moonraker's NetDeploy falls back to
+        # assets[0] whenever release_info.json's asset_name doesn't match — which
+        # is always, on any Moonraker predating commit 530f1c2016 (2025-01-19,
+        # first tagged v0.10.0), since those versions don't read asset_name at
+        # all. Unprefixed, `ad5m.sym.zst` sorted first and Moonraker downloaded a
+        # zstd symbol file, then died in zipfile with "File is not a zip file" —
+        # after `shutil.rmtree(self.path)` had already wiped the install dir.
+        # `symbols-` sorts after `helixscreen-`, so assets[0] is a real release
+        # artifact instead.
+        #
+        # This does not by itself make old Moonraker safe (a .tar.gz isn't a zip
+        # either) — the installer's asset_name capability probe is what actually
+        # prevents the wipe. This just stops a debug file being the first thing
+        # anyone's tooling reaches for.
+        #
+        # R2 naming is deliberately NOT changed: resolve-backtrace.sh's primary
+        # path is `${R2_BASE_URL}/symbols/v<ver>/<platform>.sym.zst` and R2 has no
+        # alphabetical-fallback problem.
         for dir in artifacts/symbols-*/; do
           [ -d "$dir" ] || continue
           platform=$(basename "$dir" | sed 's/symbols-//')
 
           # DRM symbols (not in -fbdev path)
           sym=$(find "$dir" -name 'helix-screen.sym' -not -path '*-fbdev*' | head -1)
-          [ -n "$sym" ] && cp "$sym" "release-files/${platform}.sym"
+          [ -n "$sym" ] && cp "$sym" "release-files/symbols-${platform}.sym"
 
           # fbdev symbols (Pi variants)
           sym_fb=$(find "$dir" -name 'helix-screen.sym' -path '*-fbdev*' | head -1)
-          [ -n "$sym_fb" ] && cp "$sym_fb" "release-files/${platform}-fbdev.sym"
+          [ -n "$sym_fb" ] && cp "$sym_fb" "release-files/symbols-${platform}-fbdev.sym"
         done
 
         # Compress the symbol maps before attaching them to the release.
@@ -462,9 +484,20 @@ jobs:
           zstd -19 --rm -q "$symfile"
         done
 
-        sym_count=$(find release-files -maxdepth 1 -name '*.sym.zst' 2>/dev/null | wc -l)
-        echo "Symbol files attached to release ($sym_count .sym.zst files):"
-        ls -lh release-files/*.sym.zst 2>/dev/null || echo "  (none)"
+        sym_count=$(find release-files -maxdepth 1 -name 'symbols-*.sym.zst' 2>/dev/null | wc -l)
+        echo "Symbol files attached to release ($sym_count symbols-*.sym.zst files):"
+        ls -lh release-files/symbols-*.sym.zst 2>/dev/null || echo "  (none)"
+
+        # Guard the alphabetical-ordering property this naming exists to hold.
+        # If a future asset ever sorts before the helixscreen-* artifacts, an old
+        # Moonraker's assets[0] fallback goes back to grabbing the wrong thing.
+        first_asset=$(cd release-files && ls -1 | sort | head -1)
+        case "$first_asset" in
+          helixscreen-*) echo "assets[0] = $first_asset (ok)" ;;
+          *) echo "::error::assets[0] would be '$first_asset', not a helixscreen-* artifact." \
+                  "Moonraker's NetDeploy falls back to assets[0]; see helixscreen#993."
+             exit 1 ;;
+        esac
 
     - name: Extract version from tag
       id: version
@@ -478,8 +511,17 @@ jobs:
     - name: Generate release notes
       id: notes
       run: |
-        # Try to get annotated tag message, fall back to auto-generated notes
-        TAG_MESSAGE=$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME" 2>/dev/null | head -50)
+        # Try to get annotated tag message, fall back to auto-generated notes.
+        #
+        # The cap is a runaway guard, NOT an expected limit. It used to be
+        # `head -50`, which silently truncated v0.99.105's notes to 51 of 99
+        # lines — the tail of ### Fixed and the whole of ### Changed vanished
+        # from the release page while the job still reported success. The tag
+        # annotation is authored deliberately at release time (the /release
+        # workflow writes the changelog entry into it), so a short cap discards
+        # exactly the content someone chose to publish. GitHub's own limit is
+        # 125,000 characters; 500 lines stays well inside it.
+        TAG_MESSAGE=$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME" 2>/dev/null | head -500)
 
         if [ -n "$TAG_MESSAGE" ] && [ "$TAG_MESSAGE" != "" ]; then
           echo "Using tag annotation for release notes"
@@ -814,11 +856,24 @@ jobs:
           s3cp "$tarball" "s3://${R2_BUCKET}/releases/v${RELEASE_VERSION}/${filename}"
         done
 
-        # 2. Generate and upload the per-channel manifests. This is the artifact
+        # 2. Upload the .zip artifacts, which the manifest now references as the
+        #    preferred asset (zip_url) for v0.99.31+ clients. Like the tarballs,
+        #    these MUST land before the manifest goes live so clients never 404
+        #    following zip_url. (The tarball url/sha256 stay as the legacy fallback
+        #    for pre-v0.99.31 clients, which never read zip_url.)
+        echo "=== Uploading zip artifacts to releases/v${RELEASE_VERSION}/ ==="
+        for zip in release-files/*.zip; do
+          [ -f "$zip" ] || continue
+          filename=$(basename "$zip")
+          echo "Uploading releases/v${RELEASE_VERSION}/${filename}..."
+          s3cp "$zip" "s3://${R2_BUCKET}/releases/v${RELEASE_VERSION}/${filename}"
+        done
+
+        # 3. Generate and upload the per-channel manifests. This is the artifact
         #    that makes a release visible to in-app updaters, so it is published as
-        #    early as possible — right after its referenced tarballs and BEFORE the
-        #    large .zip / symbol uploads, whose transient failures must never be able
-        #    to suppress release visibility (the v0.99.76 failure mode, .github#952).
+        #    early as possible — right after its referenced tarballs/zips and BEFORE
+        #    the install.sh / symbol uploads, whose transient failures must never be
+        #    able to suppress release visibility (the v0.99.76 failure mode, .github#952).
         for CHANNEL in $UPLOAD_CHANNELS; do
           echo "=== Generating ${CHANNEL} manifest ==="
 
@@ -860,22 +915,8 @@ jobs:
           echo "=== ${CHANNEL} manifest uploaded and verified (v${served}) ==="
         done
 
-        # 3. Upload the .zip artifacts and install.sh AFTER the manifest. The
-        #    manifest does not reference the .zip files — generate-manifest.sh omits
-        #    zip URLs so pre-v0.99.31 in-app updaters (which gunzip -t every download
-        #    regardless of format) don't report 'Corrupt download'. The .zip files
-        #    exist only for Moonraker Update Manager, which fetches them by direct
-        #    path. Re-enable manifest zip URLs with --include-zip once telemetry shows
-        #    adoption past v0.99.30 is complete.
-        echo "=== Uploading zip artifacts to releases/v${RELEASE_VERSION}/ ==="
-        for zip in release-files/*.zip; do
-          [ -f "$zip" ] || continue
-          filename=$(basename "$zip")
-          echo "Uploading releases/v${RELEASE_VERSION}/${filename}..."
-          s3cp "$zip" "s3://${R2_BUCKET}/releases/v${RELEASE_VERSION}/${filename}"
-        done
-
-        # Upload install.sh to R2 (served by dl-worker for HTTP install)
+        # 4. Upload install.sh AFTER the manifest — it is not manifest-referenced,
+        #    so a transient failure here must never gate release visibility.
         echo "Uploading install.sh..."
         s3cp scripts/install.sh "s3://${R2_BUCKET}/install.sh" \
           --content-type "text/x-shellscript"
@@ -1078,7 +1119,9 @@ jobs:
 
         # Symbol maps and debug info are version-keyed, not channel-specific.
         # Symbol maps are zstd-compressed (.sym.zst) — nm output compresses ~25:1.
-        # The resolver (scripts/resolve-backtrace.sh) fetches .sym.zst first.
+        # Both consumers read this single compressed copy: scripts/resolve-backtrace.sh
+        # fetches .sym.zst first, and the crash worker (server/crash-worker) decodes
+        # zstd in-Worker via a bundled pure-JS decompressor.
         echo "=== Uploading symbol maps (zstd compressed) ==="
         for symfile in symbol-files/*.sym; do
           [ -f "$symfile" ] || continue
@@ -1170,9 +1213,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: [release]
     if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
-    continue-on-error: true
 
     steps:
+    - name: Record dispatch time
+      id: dispatch_time
+      run: echo "since=$(date -u -d '-1 minute' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
     - name: Dispatch helixscreen-release event
       uses: peter-evans/repository-dispatch@v4
       with:
@@ -1184,3 +1230,42 @@ jobs:
             "ref": "${{ github.ref_name }}",
             "release_url": "${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
           }
+
+    # A successful dispatch only proves the event was accepted. v0.99.101 shipped
+    # with stale docs because the build failed in helixscreen-website while this
+    # job reported green, so confirm the run's actual conclusion. Only a docs run
+    # that genuinely failed fails this step; "cannot tell" warns instead, so a
+    # missing token scope or a slow run never reddens a release on its own.
+    - name: Wait for the docs deploy to finish
+      env:
+        GH_TOKEN: ${{ secrets.WEBSITE_DISPATCH_TOKEN }}
+        SINCE: ${{ steps.dispatch_time.outputs.since }}
+      run: |
+        repo=prestonbrown/helixscreen-website
+        for _ in $(seq 1 40); do
+          sleep 15
+          if ! runs=$(gh api "repos/$repo/actions/runs?event=repository_dispatch&per_page=10" 2>/dev/null); then
+            echo "::warning title=Docs deploy unverified::Cannot read Actions runs on $repo (WEBSITE_DISPATCH_TOKEN needs actions:read). The event was dispatched but its outcome is unknown."
+            exit 0
+          fi
+          latest=$(printf '%s' "$runs" | jq -c --arg since "$SINCE" \
+            '[.workflow_runs[] | select(.created_at >= $since)] | sort_by(.created_at) | last // empty')
+          if [ -z "$latest" ]; then
+            echo "no docs run visible yet"
+            continue
+          fi
+          status=$(printf '%s' "$latest" | jq -r .status)
+          url=$(printf '%s' "$latest" | jq -r .html_url)
+          if [ "$status" != "completed" ]; then
+            echo "docs deploy $status ..."
+            continue
+          fi
+          conclusion=$(printf '%s' "$latest" | jq -r '.conclusion // "unknown"')
+          if [ "$conclusion" = "success" ]; then
+            echo "Docs deploy succeeded: $url"
+            exit 0
+          fi
+          echo "::error title=Docs deploy failed::helixscreen.org was not updated for ${{ github.ref_name }} (conclusion=$conclusion). See $url"
+          exit 1
+        done
+        echo "::warning title=Docs deploy unverified::Timed out waiting for the docs deploy to finish. Check $repo."

@@ -28,7 +28,6 @@ static const spdlog::level::level_enum LOG_LEVEL_VALUES[] = {
     spdlog::level::trace,
 };
 static const int LOG_LEVEL_COUNT = sizeof(LOG_LEVEL_VALUES) / sizeof(LOG_LEVEL_VALUES[0]);
-static const char* LOG_LEVEL_OPTIONS_TEXT = "Warn\nInfo\nDebug\nTrace";
 
 // Config key strings matching the dropdown indices
 static const char* LOG_LEVEL_STRINGS[] = {"warn", "info", "debug", "trace"};
@@ -89,6 +88,13 @@ void SystemSettingsManager::init_subjects() {
                            "settings_telemetry_enabled", subjects_);
     spdlog::debug("[SystemSettingsManager] telemetry_enabled: {}", telemetry_enabled);
 
+    // WiFi radio on/off choice (default ON — a device that has never seen
+    // this setting must come up with WiFi enabled)
+    bool wifi_enabled = config->get<bool>("/wifi_enabled", true);
+    UI_MANAGED_SUBJECT_INT(wifi_enabled_subject_, wifi_enabled ? 1 : 0, "settings_wifi_enabled",
+                           subjects_);
+    spdlog::debug("[SystemSettingsManager] wifi_enabled: {}", wifi_enabled);
+
     // Log level (default from current spdlog level)
     std::string config_log_level = config->get<std::string>("/log_level", "");
     int log_level_index;
@@ -109,8 +115,8 @@ void SystemSettingsManager::init_subjects() {
         "SystemSettingsManager", []() { SystemSettingsManager::instance().deinit_subjects(); });
 
     spdlog::debug("[SystemSettingsManager] Subjects initialized: language={}, update_channel={}, "
-                  "telemetry={}",
-                  lang_code, update_channel, telemetry_enabled);
+                  "telemetry={}, wifi_enabled={}",
+                  lang_code, update_channel, telemetry_enabled, wifi_enabled);
 }
 
 void SystemSettingsManager::deinit_subjects() {
@@ -218,10 +224,6 @@ void SystemSettingsManager::set_update_channel(int channel) {
     UpdateChecker::instance().clear_cache();
 }
 
-const char* SystemSettingsManager::get_update_channel_options() {
-    return lv_tr("Stable\nBeta\nDev");
-}
-
 // =============================================================================
 // TELEMETRY SETTINGS
 // =============================================================================
@@ -243,6 +245,40 @@ void SystemSettingsManager::set_telemetry_enabled(bool enabled) {
 
     // Apply to TelemetryManager
     TelemetryManager::instance().set_enabled(enabled);
+}
+
+// =============================================================================
+// WIFI SETTINGS
+// =============================================================================
+
+bool SystemSettingsManager::get_wifi_enabled() const {
+    // CAUTION: if called before init_subjects() has run, wifi_enabled_subject_
+    // is still zero-initialized (LV_SUBJECT_TYPE_INVALID). lv_subject_get_int()
+    // on that returns 0, which reads as "off" — the INVERSE of this setting's
+    // documented true/on default. WiFiManager's READY handler calls this to
+    // decide whether to force the radio off, so correctness here depends on
+    // init_subjects() always running before any WiFiManager is constructed.
+    // That ordering is structural today (Application::run() initializes
+    // subjects at Phase 9c, constructs WiFiManager no earlier than Phase 14b),
+    // not incidental — but a future phase reorder that breaks it would
+    // silently switch WiFi off on a remote printer with no physical access.
+    return lv_subject_get_int(const_cast<lv_subject_t*>(&wifi_enabled_subject_)) != 0;
+}
+
+void SystemSettingsManager::set_wifi_enabled(bool enabled) {
+    spdlog::info("[SystemSettingsManager] set_wifi_enabled({})", enabled);
+
+    // Update subject (UI reacts)
+    lv_subject_set_int(&wifi_enabled_subject_, enabled ? 1 : 0);
+
+    // Persist to config
+    Config* config = Config::get_instance();
+    config->set<bool>("/wifi_enabled", enabled);
+    config->save();
+
+    // Deliberately does NOT call into WiFiManager. WiFiManager reasserts this
+    // stored value against the radio itself once its backend is ready; a call
+    // back into it from here would create a feedback loop.
 }
 
 // =============================================================================
@@ -268,8 +304,4 @@ void SystemSettingsManager::set_log_level_by_index(int index) {
     Config* config = Config::get_instance();
     config->set<std::string>("/log_level", LOG_LEVEL_STRINGS[clamped]);
     config->save();
-}
-
-const char* SystemSettingsManager::get_log_level_options() {
-    return lv_tr(LOG_LEVEL_OPTIONS_TEXT);
 }

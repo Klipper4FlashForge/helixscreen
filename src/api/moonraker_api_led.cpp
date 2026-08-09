@@ -18,7 +18,8 @@ using namespace moonraker_internal;
 // ============================================================================
 
 void MoonrakerAPI::set_led(const std::string& led, double red, double green, double blue,
-                           double white, SuccessCallback on_success, ErrorCallback on_error) {
+                           double white, SuccessCallback on_success, ErrorCallback on_error,
+                           SuccessCallback on_queued) {
     // Reject NaN/Inf before any G-code generation
     if (reject_non_finite({red, green, blue, white}, "set_led", on_error)) {
         return;
@@ -28,10 +29,8 @@ void MoonrakerAPI::set_led(const std::string& led, double red, double green, dou
     if (!is_safe_identifier(led)) {
         NOTIFY_ERROR("Invalid LED name '{}'. Contains unsafe characters.", led);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Invalid LED name contains illegal characters";
-            err.method = "set_led";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "set_led", "Invalid LED name contains illegal characters");
             on_error(err);
         }
         return;
@@ -66,15 +65,6 @@ void MoonrakerAPI::set_led(const std::string& led, double red, double green, dou
     spdlog::info("[Moonraker API] Setting LED {}: R={:.2f} G={:.2f} B={:.2f} W={:.2f}", led_name,
                  red, green, blue, white);
 
-    execute_gcode(gcode.str(), on_success, on_error);
-}
-
-void MoonrakerAPI::set_led_on(const std::string& led, SuccessCallback on_success,
-                              ErrorCallback on_error) {
-    set_led(led, 1.0, 1.0, 1.0, 1.0, on_success, on_error);
-}
-
-void MoonrakerAPI::set_led_off(const std::string& led, SuccessCallback on_success,
-                               ErrorCallback on_error) {
-    set_led(led, 0.0, 0.0, 0.0, 0.0, on_success, on_error);
+    execute_gcode(gcode.str(), std::move(on_success), std::move(on_error), 0, false,
+                  std::move(on_queued));
 }

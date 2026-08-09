@@ -25,14 +25,21 @@ ZONES=(
     America/Chicago
     America/New_York
     America/Halifax
+    America/St_Johns
     America/Sao_Paulo
+    Atlantic/Cape_Verde
     Europe/London
     Europe/Berlin
     Europe/Bucharest
     Europe/Moscow
+    Asia/Tehran
     Asia/Dubai
+    Asia/Kabul
+    Asia/Karachi
     Asia/Kolkata
+    Asia/Kathmandu
     Asia/Dhaka
+    Asia/Yangon
     Asia/Bangkok
     Asia/Shanghai
     Asia/Hong_Kong
@@ -40,6 +47,7 @@ ZONES=(
     Australia/Perth
     Australia/Adelaide
     Australia/Sydney
+    Pacific/Noumea
     Pacific/Auckland
 )
 

@@ -89,6 +89,34 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     static constexpr int TOOL_MAP_SIZE = 16;
     static constexpr int UNMAPPED_PORT = 5;
 
+    /// Cadence of the Adventurer5M.json freshness poll. Slower while printing:
+    /// FFMInfo holds only per-slot colour/type labels, and each poll is a
+    /// loopback HTTP GET on a 2-core board that is also feeding the MCU step
+    /// queue. PAUSED keeps the fast cadence — a pause is when a user actually
+    /// swaps a spool and relabels it.
+    static constexpr std::chrono::seconds kJsonPollIdle{5};
+    static constexpr std::chrono::seconds kJsonPollPrinting{30};
+
+    /// Should the JSON freshness poll fire now? (public for testing)
+    ///
+    /// True when the printing->not-printing edge was just crossed — so the
+    /// firmware's post-print FFMInfo revert (#965) is seen without waiting out
+    /// the slow interval — or when the cadence for the current state elapsed.
+    static bool should_poll_json(bool printing_now, bool was_printing,
+                                 std::chrono::steady_clock::duration since_last);
+
+    /**
+     * @brief Stock AD5X firmware material whitelist.
+     *
+     * Sending anything outside this list makes the firmware reject the command with
+     * "Invalid material type: X. Valid: PLA, PLA-CF, SILK, TPU, ABS, PETG, PETG-CF".
+     * get_supported_materials() seeds its result from here and appends user-defined
+     * types; the invariant and catalog-selector tests derive their expectations from
+     * this array rather than re-typing it, so a change here propagates to its guards.
+     */
+    static constexpr std::array<const char*, 7> kStockWhitelist{"PLA", "PLA-CF", "SILK",   "TPU",
+                                                                "ABS", "PETG",   "PETG-CF"};
+
     /**
      * @brief Bare filament-sensor names AD5X IFS owns.
      *
@@ -123,13 +151,49 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // the firmware still considers seated.
     [[nodiscard]] bool can_unload_from_toolhead(int slot_index) const override;
 
+    /// update_slot_from_state() stamps SlotStatus::LOADED on the seated lane
+    /// from the firmware's own active-lane pointer plus the head sensor — the
+    /// same two inputs system_info_.filament_loaded is assigned from — and it
+    /// re-runs on every path that moves either one, including the
+    /// FFMInfo.channel adoption in parse_adventurer_json. Reading that stamp
+    /// therefore never contradicts the aggregate pair, and it survives the #995
+    /// runout that drops a lane's port sensor while its filament is still at the
+    /// toolhead (prestonbrown/helixscreen#1199).
+    [[nodiscard]] bool has_per_slot_loaded_authority() const override {
+        return true;
+    }
+
+    /// AD5X IFS is the one backend whose filament macros home inside firmware.
+    ///
+    /// `_IFS_REMOVE_CURRENT_PRUTOK` (the unload HelixScreen dispatches for a
+    /// loaded toolhead) runs `_G28` itself before removing the filament — which
+    /// is why unload_filament() sends it via execute_gcode() rather than
+    /// ensure_homed_then(), to avoid homing twice
+    /// (ams_backend_ad5x_ifs.cpp "it homes itself (_G28)";
+    /// docs/devel/printer-research/FLASHFORGE_AD5X_IFS_ANALYSIS.md). The load
+    /// macro `INSERT_PRUTOK_IFS` is likewise home -> heat -> feed -> purge.
+    ///
+    /// The AD5X has a loadcell Z: that `_G28` probes the nozzle DOWN into the
+    /// bed. Issued while a job owns the toolhead it drives the nozzle into the
+    /// part, tripping ZMOD's ZCONTROL_AUTO force trip and shutting Klipper down
+    /// — recoverable only by a firmware restart (bundle XWPBR2DX, commit
+    /// 329e731e9). Layer 1 (reject_homing_during_active_print) cannot help: the
+    /// `_G28` is buried in the firmware macro and never crosses our gcode API.
+    ///
+    /// So this backend keeps refusing load/unload/change_tool while PAUSED as
+    /// well as while PRINTING. That protection was earned on a real shutdown and
+    /// must not be relaxed without evidence the macro stopped self-homing.
+    [[nodiscard]] bool filament_ops_self_home() const override {
+        return true;
+    }
+
     // Seated-channel-aware: a non-seated lane cold-ejects, so the menu reads
     // "Eject" even when the firmware dropped its active pointer. Mirrors
     // unload_filament()'s eject-vs-toolhead routing (drift-guarded by test).
     [[nodiscard]] bool slot_unloads_to_toolhead(int slot_index, bool loaded_hint) const override;
 
     AmsError load_filament(int slot_index) override;
-    AmsError unload_filament(int slot_index = -1) override;
+    AmsError unload_filament(int slot_index) override;
     AmsError select_slot(int slot_index) override;
     AmsError change_tool(int tool_number) override;
 
@@ -141,8 +205,10 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // routed it to eject_lane(-1) when the head read empty, silently dropping
     // the load (Vger1700, bundle Z5V4K3NL). Load straight through the macro,
     // exactly like the stock screen (zmod_color.py).
-    [[nodiscard]] bool needs_unload_before_load(const AmsSystemInfo& info) const override {
+    [[nodiscard]] bool needs_unload_before_load(const AmsSystemInfo& info,
+                                                int target_slot) const override {
         (void)info;
+        (void)target_slot;
         return false;
     }
 
@@ -320,6 +386,7 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
 
   private:
     friend class Ad5xIfsTestAccess;
+    friend class Ad5xPerSlotLoadedHelper;
 
     void parse_save_variables(const nlohmann::json& vars);
     void parse_port_sensor(int port_1based, bool detected);
@@ -434,6 +501,33 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // spoolman_*, weights, color_name), and fires clear_async on the override
     // store. Firmware-sourced fields are left untouched.
     void clear_override_locked(int slot_index, SlotInfo& slot);
+    // External-CHANGE_ZCOLOR counterpart to clear_override_locked. Caller must
+    // hold mutex_. An external CHANGE_ZCOLOR is a deliberate firmware edit of
+    // color/material — firmware truth must win for THOSE fields — but brand /
+    // spool_name / spoolman_id / spoolman_vendor_id / weights / color_name are
+    // HelixScreen-only metadata the firmware CANNOT carry. A routine AD5X LCD
+    // load emits a bare `CHANGE_ZCOLOR SLOT=N TYPE=<material>` (no brand), so a
+    // full clear_override_locked() would silently drop the user's saved vendor
+    // on every physical load (Bug B / #981 regression). This helper instead
+    // releases the color/material user-locks and strips the firmware-carryable
+    // override fields (color_set/color_rgb/color_name/material) so
+    // apply_overrides lets firmware truth through, while RETAINING the identity
+    // metadata — mirroring the #1071 insert/eject retention. If nothing but
+    // firmware fields were in the override (no identity to keep), it falls back
+    // to a full clear_override_locked() erase so the pre-existing #981 tests
+    // (locked-but-no-brand overrides) still see a clean wipe.
+    void release_locked_override_keep_identity_locked(int slot_index, SlotInfo& slot);
+    // Called on the empty->present (physical insert) edge for a lane. Drops the
+    // color/material user-lock flags on an AUTO-TRACKED override (one with no
+    // real Spoolman binding) so firmware truth for the freshly inserted spool
+    // refreshes through the OverwriteAlways auto-mirror. A physical insert emits
+    // no CHANGE_ZCOLOR, so the #981 external-edit clear never fires here — the
+    // insert itself is the "this lane's contents changed" signal. A lane with a
+    // deliberate Spoolman binding (spoolman_id > 0) is left untouched: #1071
+    // retains it across an eject/insert cycle. brand/spool_name/spoolman_id/
+    // weights are never modified — only the two lock flags. Caller holds mutex_.
+    // See docs/devel/FILAMENT_MANAGEMENT.md § "AD5X IFS material/color reconcile".
+    void unlock_auto_tracked_override_on_insert_locked(int slot_index);
     void parse_adventurer_json(const std::string& content);
     void read_adventurer_json();
     void register_zcolor_listener();
@@ -445,6 +539,16 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // echoes RUN_ZCOLOR/CHANGE_ZCOLOR tokens which would otherwise re-arm
     // schedule_zcolor_query() at ~2-4 Hz).
     bool on_gcode_response_line(const std::string& line);
+    // Apply a zmod COLOR-menu per-slot row as firmware truth. The root "Select
+    // print materials" dialog renders one row per slot carrying that slot's
+    // CURRENT color/material:
+    //   // action:prompt_button 1: SILK|RUN_ZCOLOR SLOT=1 HEX=F330F9 TYPE=SILK|primary|F330F9
+    // zmod re-renders it after every edit, so the row lands ~100ms after the
+    // user's tap — well ahead of the debounced GET_ZCOLOR, which can race the
+    // firmware write and return the pre-edit value (#1065, bundle 482NB943:
+    // a type change stayed stale on screen for 40s). Returns true if a row was
+    // recognised and applied. Caller must NOT hold mutex_.
+    bool apply_color_menu_slot_row(const std::string& line);
     void register_klippy_ready_listener();
     // Re-query `gcode_macro _ifs_vars` and update the latch + has_ifs_vars_.
     // Fired from notify_klippy_ready so a FIRMWARE_RESTART that adds or
@@ -519,6 +623,14 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
         bool seen_head_drop = false;      // head sensor true→false (cut/retract started)
         bool seen_head_rise = false;      // head sensor false→true (filament reached nozzle)
         int target_deci = 0;              // heat target in deci-degrees (×10), 0 = unknown
+        // Set when load_filament() dispatches while another lane is currently
+        // seated (seated_chan_ != target). INSERT_PRUTOK_IFS then runs an
+        // IMPLICIT UNLOAD of the seated lane before the actual load, which
+        // easily runs past the 90s LOADING budget (bundle NJB2U558: ch4 seated
+        // → load ch2 took ~2min total, timed out at 90s mid-swap). The flag
+        // extends LOADING to SWAP_LOADING_TIMEOUT_SECONDS in check_action_timeout.
+        // Cleared by end_phase_tracking_locked on op completion.
+        bool swap_expected = false;
     };
     IfsPhaseTracker phase_tracker_;
     int last_extruder_temp_deci_ = 0;   // deci-degrees (×10)
@@ -625,7 +737,17 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     std::vector<std::string> custom_material_types_;
     std::array<int, TOOL_MAP_SIZE> tool_map_;   // tool_map_[tool] = port (1-4, 5=unmapped)
     std::array<bool, NUM_PORTS> port_presence_; // Per-port filament sensor state
-    int active_tool_ = -1;                      // Current tool (-1 = none)
+    // Per-port instant of the last optimistic eject clear. On the constrained
+    // AD5X the RS-485 silk sensor lags ~1s after IFS_F11 cold-retracts a lane, so
+    // the eject follow-up IFS_STATUS/GET_ZCOLOR can still read the just-ejected
+    // lane present and resurrect it. Within kEjectPresenceSuppression of the
+    // stamp, a false->true presence transition for that lane is ignored so the
+    // optimistic clear survives the settling window (#1065 — the last-ejected
+    // lane had no later query to re-correct it and kept offering Unload). A
+    // present->absent transition and any transition after the window still apply.
+    std::array<std::chrono::steady_clock::time_point, NUM_PORTS> last_eject_time_{};
+    static constexpr std::chrono::milliseconds kEjectPresenceSuppression{4000};
+    int active_tool_ = -1; // Current tool (-1 = none)
     // Physically seated port from IFS_STATUS "Chan" (1-4; 0 = none). Persists at
     // the seated port while loaded-idle (when GET_ZCOLOR's "Extruder:" reads
     // None), so it is the seated-channel authority for unload routing. Stored
@@ -669,8 +791,8 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // Atomic: written under mutex_ in apply_zcolor_result, read unlocked in the
     // schedule/query gates.
     std::atomic<bool> ifs_status_ports_seen_{false};
-    bool external_mode_ = false;          // Bypass/external spool mode
-    bool head_filament_ = false;          // Head sensor state
+    bool external_mode_ = false; // Bypass/external spool mode
+    bool head_filament_ = false; // Head sensor state
     // Toolhead SWITCH-sensor authority, tracked separately from the conflated
     // head_filament_. parse_head_sensor() writes head_filament_ from BOTH the
     // switch AND the ifs_motion_sensor, and the motion sensor is device-confirmed
@@ -795,6 +917,15 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // effectively "time since filament last moved" — a long-but-healthy purge is
     // never falsely failed, a genuinely stalled one still surfaces ERROR.
     static constexpr int PURGING_TIMEOUT_SECONDS = 240;
+    // INSERT_PRUTOK_IFS with another lane currently seated runs an implicit
+    // UNLOAD first (heat → cut → retract, ~50-90s) before the actual load
+    // begins. The 90s LOADING budget fires mid-swap on bundle NJB2U558
+    // (load ch2 while ch4 seated → "Loading error, feeding filament to nozzle
+    // (timed out)" popup even though the op completed). 180s covers the full
+    // swap with margin; the head-drop reset in on_head_transition_locked is
+    // the primary defence, this is the belt-and-suspenders backstop for
+    // firmware variants where the head sensor doesn't transition reliably.
+    static constexpr int SWAP_LOADING_TIMEOUT_SECONDS = 180;
     std::chrono::steady_clock::time_point action_start_time_;
 
     // Indeterminate ("Working…") detector (#1065 row 14). Distinct from the
@@ -818,6 +949,12 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // Default-constructed time_point is the epoch, so the first status update
     // after backend start fires a poll immediately.
     std::chrono::steady_clock::time_point last_json_poll_kick_{};
+
+    // Was the printer in PrintJobState::PRINTING at the previous status update?
+    // Used to spot the printing->done edge and force an off-cadence poll there,
+    // so the slower in-print interval never delays seeing the firmware's
+    // post-print FFMInfo revert (#965).
+    bool json_poll_was_printing_ = false;
 
     // User-provided per-slot metadata (brand, spool name, spoolman IDs, remaining
     // weight, etc.) layered over firmware-reported state.

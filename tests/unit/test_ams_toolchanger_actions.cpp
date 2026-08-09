@@ -192,7 +192,7 @@ TEST_CASE("Lockout rejects operations during in-flight tool change",
         auto result1 = backend.change_tool(1);
         REQUIRE(result1);
 
-        auto result2 = backend.unload_filament();
+        auto result2 = backend.unload_active_filament();
         CHECK_FALSE(result2);
         CHECK(result2.result == AmsResult::BUSY);
 
@@ -217,7 +217,7 @@ TEST_CASE("load_filament delegates to change_tool in mock toolchanger mode",
 
     SECTION("load_filament succeeds and mounts the requested tool") {
         // Unload first so we can load a specific tool
-        backend.unload_filament();
+        backend.unload_active_filament();
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         REQUIRE(backend.get_current_action() == AmsAction::IDLE);
 
@@ -296,7 +296,7 @@ TEST_CASE("unload_filament works in mock toolchanger mode",
         // Mock starts with slot 0 loaded
         REQUIRE(backend.is_filament_loaded());
 
-        auto result = backend.unload_filament();
+        auto result = backend.unload_active_filament();
         REQUIRE(result);
 
         // Wait for completion
@@ -309,12 +309,12 @@ TEST_CASE("unload_filament works in mock toolchanger mode",
 
     SECTION("unload returns error when nothing is loaded") {
         // First unload
-        backend.unload_filament();
+        backend.unload_active_filament();
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         REQUIRE_FALSE(backend.is_filament_loaded());
 
         // Second unload should fail — nothing loaded
-        auto result = backend.unload_filament();
+        auto result = backend.unload_active_filament();
         CHECK_FALSE(result);
         CHECK(result.result == AmsResult::WRONG_STATE);
     }
@@ -429,7 +429,7 @@ TEST_CASE("Operations rejected when mock toolchanger backend not started",
     }
 
     SECTION("unload_filament fails when not started") {
-        auto result = backend.unload_filament();
+        auto result = backend.unload_active_filament();
         CHECK_FALSE(result);
         CHECK(result.result == AmsResult::NOT_CONNECTED);
     }

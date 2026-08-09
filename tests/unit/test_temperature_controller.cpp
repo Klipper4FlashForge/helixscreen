@@ -73,7 +73,9 @@ TEST_CASE("TemperatureController preset visibility honors configured max", "[tem
     REQUIRE(f.controller.preset_visible(HeaterType::Chamber, 40));
     REQUIRE(f.controller.preset_visible(HeaterType::Chamber, 50));
     REQUIRE_FALSE(f.controller.preset_visible(HeaterType::Chamber, 60));
-    REQUIRE(f.controller.presets(HeaterType::Chamber).abs == 60); // value still defined
+    // Slot 2 of the chamber's enclosure ladder is still 60 — hiding it above the
+    // configured max must not change the underlying value.
+    REQUIRE(f.controller.presets(HeaterType::Chamber).material[2] == 60);
 }
 
 TEST_CASE("TemperatureController set_target routes to the resolved name", "[temp_controller]") {
@@ -168,6 +170,99 @@ TEST_CASE("TemperatureController reports an error when the chamber heater is not
         REQUIRE_FALSE(success_fired);
         REQUIRE(f.client.gcode_script_history().empty());
         REQUIRE(f.client.last_send_method().empty());
+    }
+}
+
+// --------------------------------------------------------------------------
+// Swap-preheat guard: keep_previous_hot floors the nozzle target at the hotter
+// of the latched last-nonzero target and the current actual nozzle temp so a
+// filament switch never drops below what's needed to purge the old material.
+// --------------------------------------------------------------------------
+namespace {
+// Drive the latch + actual nozzle temp through the REAL status path. Feeding a
+// non-zero target latches last_nonzero_target; a later 0 clears the live target
+// but the latch survives. `temperature` sets the actual nozzle temp subject.
+void feed_nozzle(helix::PrinterState& state, double actual_c, double target_c) {
+    nlohmann::json status = {{"extruder", {{"temperature", actual_c}, {"target", target_c}}}};
+    state.update_from_status(status);
+}
+
+// The last temperature gcode the controller emitted (e.g. "SET_HEATER_TEMPERATURE
+// HEATER=extruder TARGET=250"). Empty if nothing was sent. Returned exactly as
+// it reached the wire — the send layer decorates nothing (test_gcode_verbatim.cpp).
+std::string last_temp_gcode(const MoonrakerClientMock& client) {
+    const auto& hist = client.gcode_script_history();
+    if (hist.empty()) {
+        return {};
+    }
+    return hist.back();
+}
+} // namespace
+
+TEST_CASE("TemperatureController swap-preheat guard holds the previous filament temp",
+          "[temp_controller][temperature][swap_preheat]") {
+    ControllerFixture f;
+    f.state.init_extruders({"extruder"});
+    f.state.set_klippy_state_sync(helix::KlippyState::READY);
+
+    SECTION("raises a lower request to the latched target when the nozzle is still hot") {
+        // ABS at 250 loaded/hot; switch to TPU at 230. Latch=250, actual=245.
+        feed_nozzle(f.state, /*actual=*/245.0, /*target=*/250.0);
+        REQUIRE(f.state.get_active_extruder_last_nonzero_target() == Catch::Approx(250.0));
+
+        f.client.clear_gcode_script_history();
+        f.controller.set_target(helix::HeaterType::Nozzle, 230.0,
+                                helix::SendOptions{.toast = false, .keep_previous_hot = true});
+
+        // Floor = max(latch 250, actual 245) = 250 → request 230 is raised to 250.
+        REQUIRE(last_temp_gcode(f.client) == "SET_HEATER_TEMPERATURE HEATER=extruder TARGET=250");
+    }
+
+    SECTION("raises to the current actual temp when it exceeds both request and latch") {
+        // Nozzle cooled to a live 0 target but is physically at 255; latch=250.
+        feed_nozzle(f.state, /*actual=*/255.0, /*target=*/250.0);
+        feed_nozzle(f.state, /*actual=*/255.0, /*target=*/0.0); // target→0, latch survives at 250
+
+        f.client.clear_gcode_script_history();
+        f.controller.set_target(helix::HeaterType::Nozzle, 230.0,
+                                helix::SendOptions{.toast = false, .keep_previous_hot = true});
+
+        // Floor = max(latch 250, actual 255) = 255.
+        REQUIRE(last_temp_gcode(f.client) == "SET_HEATER_TEMPERATURE HEATER=extruder TARGET=255");
+    }
+
+    SECTION("cold nozzle with no latch sends the requested target unchanged") {
+        // Never heated: latch=0, actual=25. Request 230 stands.
+        feed_nozzle(f.state, /*actual=*/25.0, /*target=*/0.0);
+        REQUIRE(f.state.get_active_extruder_last_nonzero_target() == Catch::Approx(0.0));
+
+        f.client.clear_gcode_script_history();
+        f.controller.set_target(helix::HeaterType::Nozzle, 230.0,
+                                helix::SendOptions{.toast = false, .keep_previous_hot = true});
+
+        REQUIRE(last_temp_gcode(f.client) == "SET_HEATER_TEMPERATURE HEATER=extruder TARGET=230");
+    }
+
+    SECTION("cooldown-to-0 without the flag is never guarded") {
+        // Latch=250 present, but keep_previous_hot is off → request 0 must send 0.
+        feed_nozzle(f.state, /*actual=*/245.0, /*target=*/250.0);
+
+        f.client.clear_gcode_script_history();
+        f.controller.set_target(helix::HeaterType::Nozzle, 0.0,
+                                helix::SendOptions{.toast = false, .keep_previous_hot = false});
+
+        REQUIRE(last_temp_gcode(f.client) == "SET_HEATER_TEMPERATURE HEATER=extruder TARGET=0");
+    }
+
+    SECTION("guard is nozzle-only: bed is unaffected by the nozzle latch") {
+        // Latch the nozzle at 250, then set the bed to 60 WITH keep_previous_hot.
+        feed_nozzle(f.state, /*actual=*/245.0, /*target=*/250.0);
+
+        f.client.clear_gcode_script_history();
+        f.controller.set_target(helix::HeaterType::Bed, 60.0,
+                                helix::SendOptions{.toast = false, .keep_previous_hot = true});
+
+        REQUIRE(last_temp_gcode(f.client) == "SET_HEATER_TEMPERATURE HEATER=heater_bed TARGET=60");
     }
 }
 

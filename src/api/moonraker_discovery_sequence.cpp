@@ -66,6 +66,30 @@ bool is_usable_snapshot_url(const std::string& snapshot_url) {
     return true;
 }
 
+bool probe_snapshot_reachable(const std::string& snapshot_url) {
+    auto req = std::make_shared<HttpRequest>();
+    req->method = HTTP_GET;
+    req->url = snapshot_url;
+    req->connect_timeout = kSnapshotProbeConnectTimeoutSec;
+    req->timeout = kSnapshotProbeTotalTimeoutSec;
+    auto resp = requests::request(req);
+    if (resp && resp->status_code == 200) {
+        return true;
+    }
+    // Distinguish the two failure shapes in the log: a status code means something
+    // answered and said no; "no response" means connect or the response budget ran
+    // out. The second is the one worth re-reading if a working camera is dropped.
+    if (resp) {
+        spdlog::debug("[Discovery] Snapshot probe of {} answered {}", snapshot_url,
+                      static_cast<int>(resp->status_code));
+    } else {
+        spdlog::debug("[Discovery] Snapshot probe of {} got no response within {}s "
+                      "(connect budget {}s)",
+                      snapshot_url, kSnapshotProbeTotalTimeoutSec, kSnapshotProbeConnectTimeoutSec);
+    }
+    return false;
+}
+
 MoonrakerDiscoverySequence::MoonrakerDiscoverySequence(MoonrakerClient& client) : client_(client) {}
 
 void MoonrakerDiscoverySequence::clear_cache() {
@@ -419,8 +443,8 @@ void MoonrakerDiscoverySequence::continue_discovery_objects(uint64_t seq) {
                                     if (response.contains("result")) {
                                         enabled = response["result"].value("enabled", false);
                                     }
-                                    spdlog::info(
-                                        "[Moonraker Client] Timelapse global enabled={}", enabled);
+                                    spdlog::info("[Moonraker Client] Timelapse global enabled={}",
+                                                 enabled);
                                     get_printer_state().set_timelapse_default_enabled(enabled);
                                 },
                                 [](const MoonrakerError& err) {
@@ -534,6 +558,29 @@ void MoonrakerDiscoverySequence::continue_discovery_objects(uint64_t seq) {
                                 }
                             }
                         }
+                        // Guard against a stale ABSOLUTE webcam URL — e.g. an
+                        // install-time-detected LAN IP that has since changed via
+                        // DHCP, or an IOT-subnet address unreachable from here. A
+                        // registered-but-dead entry otherwise wins over (and
+                        // suppresses) the localhost probe below, leaving the camera
+                        // silently broken. Probe the SNAPSHOT url only — it returns
+                        // and closes, unlike an MJPEG stream that would hang until
+                        // the timeout and read as a false negative. Relative URLs
+                        // are skipped: they resolve against the Moonraker base and
+                        // are the churn-immune case we don't need to second-guess.
+                        if (has_webcam && !snapshot_url.empty()) {
+                            auto is_absolute = [](const std::string& u) {
+                                return u.rfind("http://", 0) == 0 || u.rfind("https://", 0) == 0;
+                            };
+                            if (is_absolute(snapshot_url) &&
+                                !probe_snapshot_reachable(snapshot_url)) {
+                                spdlog::warn(
+                                    "[Discovery] Configured webcam '{}' unreachable at {} — "
+                                    "falling back to local camera probe",
+                                    chosen_name.empty() ? "<unnamed>" : chosen_name, snapshot_url);
+                                has_webcam = false;
+                            }
+                        }
                         if (has_webcam) {
                             spdlog::info("[Discovery] Webcam selected: name='{}' service='{}' "
                                          "stream={} snapshot={}",
@@ -549,8 +596,10 @@ void MoonrakerDiscoverySequence::continue_discovery_objects(uint64_t seq) {
                             // detached std::thread. Thread creation crashes on resource-
                             // constrained ARM devices (AD5M #724) — std::terminate is
                             // called even with try/catch, likely a GCC 10.3/ARM TLS bug.
-                            // Synchronous probing blocks the WS thread for up to 6s (3
-                            // URLs × 2s timeout) but only runs once during discovery.
+                            // Synchronous probing blocks the WS thread, but these are all
+                            // loopback addresses: an unbound port is refused immediately,
+                            // so the common "no local camera" path costs milliseconds, not
+                            // the full per-URL budget. Runs once during discovery.
                             spdlog::info(
                                 "[Discovery] No Moonraker webcam, probing local camera...");
                             bool found = false;
@@ -561,12 +610,11 @@ void MoonrakerDiscoverySequence::continue_discovery_objects(uint64_t seq) {
                             };
                             for (const char* url : probe_urls) {
                                 spdlog::info("[Discovery] Probing camera at {}", url);
-                                auto req = std::make_shared<HttpRequest>();
-                                req->method = HTTP_GET;
-                                req->url = url;
-                                req->timeout = 2;
-                                auto resp = requests::request(req);
-                                if (resp && resp->status_code == 200) {
+                                // Same two-budget probe as the configured-webcam case above.
+                                // A local go2rtc is just as capable of needing a keyframe
+                                // wait, and an unbound loopback port is refused instantly,
+                                // so the longer response budget costs nothing here.
+                                if (probe_snapshot_reachable(url)) {
                                     spdlog::info("[Discovery] Local camera found at {}", url);
                                     get_printer_state().set_webcam_available(true, "", url, false,
                                                                              false);
@@ -1014,9 +1062,14 @@ json MoonrakerDiscoverySequence::build_subscription_objects(
     // subscribed-field change, and several of these (toolhead, gcode_move,
     // motion_report) update on every motion step (~100Hz during a print) —
     // nullptr would have us receiving every internal field per step.
+    // power_loss: Creality-Klipper-fork-only Power-Loss-Recovery capability
+    // marker. Absent on mainline Klipper — Moonraker answers a subscribed field
+    // the firmware never populates with an explicit null, which the parser
+    // rejects (presence must mean present AND numeric). See
+    // docs/devel/POWER_LOSS_RECOVERY.md.
     subscription_objects["print_stats"] =
         json::array({"state", "filename", "filament_used", "print_duration", "total_duration",
-                     "estimated_time", "info", "message"});
+                     "estimated_time", "info", "message", "power_loss"});
     // virtual_sdcard.progress drives the progress bar. layer / layer_count
     // are the FALLBACK source for layer tracking — preferred source is
     // print_stats.info.{current_layer,total_layer} (slicer-supplied via
@@ -1026,8 +1079,11 @@ json MoonrakerDiscoverySequence::build_subscription_objects(
     // SD playback was deactivated" (Snapmaker U1 dirty-bed exception,
     // level-2 aborts, post-SDCARD_RESET_FILE). prepare_for_resume reads
     // it to decide between RESUME and "Restart from beginning?" UX.
+    // pl_env_valid / file_path: Snapmaker-fork Power-Loss-Recovery fields.
+    // Absent (harmless) on mainline Klipper — Moonraker sends explicit null
+    // for a subscribed field the connected firmware never populates.
     subscription_objects["virtual_sdcard"] =
-        json::array({"progress", "layer", "layer_count", "is_active"});
+        json::array({"progress", "layer", "layer_count", "is_active", "pl_env_valid", "file_path"});
     subscription_objects["toolhead"] =
         json::array({"position", "homed_axes", "kinematics", "extruder", "max_velocity",
                      "axis_minimum", "axis_maximum"});
@@ -1257,10 +1313,19 @@ json MoonrakerDiscoverySequence::build_subscription_objects(
         subscription_objects["save_variables"] = nullptr;
     }
 
-    // ACE (Anycubic ACE Pro — ValgACE/BunnyACE/DuckACE Klipper drivers)
-    // The ace object provides slot colors, materials, status, dryer state via get_status()
+    // ACE (Anycubic ACE Pro — ValgACE/BunnyACE/DuckACE Klipper drivers, native
+    // GoKlipper `filament_hub`, or the Kobra S1 mainline-Python fork's
+    // `ace_instance_N` objects, #1107). Subscribe the real detected object
+    // name(s) so slot colors, materials, status, and dryer state push live via
+    // get_status(). Falls back to `ace` if the name list is unexpectedly empty.
     if (hw.mmu_type() == AmsType::ACE) {
-        subscription_objects["ace"] = nullptr;
+        if (hw.ace_object_names().empty()) {
+            subscription_objects["ace"] = nullptr;
+        } else {
+            for (const auto& ace_obj : hw.ace_object_names()) {
+                subscription_objects[ace_obj] = nullptr;
+            }
+        }
     }
 
     // CFS (Creality Filament System) — K2 series with RS-485 CFS units

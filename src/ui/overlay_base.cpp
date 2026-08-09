@@ -123,15 +123,22 @@ bool OverlayBase::rebuild() {
     lv_obj_t* old_root = overlay_root_;
     overlay_root_ = nullptr;
 
+    // Condemn the old subtree BEFORE create(). The component was just
+    // re-registered, and lv_xml_component_unregister() freed every lv_style_t
+    // in the old scope — styles the old widgets still reference. Building the
+    // replacement on the same screen triggers a layout pass that would walk the
+    // old subtree and dereference them. safe_delete_subtree() detaches it
+    // synchronously into an off-tree, layout-less container first.
+    //
+    // Restoring the old widget on failure is therefore not an option: its
+    // styles are already gone.
+    helix::ui::safe_delete_subtree(old_root);
+
     lv_obj_t* new_root = create(parent_screen_);
     if (!new_root) {
-        spdlog::error("[OverlayBase::rebuild] {} — create() returned null, restoring old widget",
+        spdlog::error("[OverlayBase::rebuild] {} — create() returned null; overlay is now gone, "
+                      "restart to recover",
                       get_name());
-        overlay_root_ = old_root;
-        if (was_visible) {
-            visible_ = true;
-            on_activate();
-        }
         return false;
     }
 
@@ -147,7 +154,9 @@ bool OverlayBase::rebuild() {
 
     NavigationManager::instance().rekey_overlay_widget(old_root, new_root);
 
-    helix::ui::safe_delete_deferred(old_root);
+    // create() reproduces the XML; anything this overlay populated into the old
+    // tree from a separate entry point has to be re-applied by hand.
+    repopulate();
 
     if (was_visible) {
         on_activate();

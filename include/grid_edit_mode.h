@@ -3,6 +3,7 @@
 #pragma once
 
 #include "async_lifetime_guard.h"
+#include "grid_layout.h"
 #include "lvgl/lvgl.h"
 
 #include <functional>
@@ -14,6 +15,7 @@
 namespace helix {
 
 class PanelWidgetConfig;
+struct GridEditModeTestAccess; // test-only friend (tests/test_helpers/)
 
 /// Manages in-panel grid editing for the home dashboard.
 /// Handles enter/exit transitions, grid intersection dot overlay,
@@ -85,7 +87,8 @@ class GridEditMode {
     /// Map screen coordinates to grid cell (col, row). Clamps to valid range.
     static std::pair<int, int> screen_to_grid_cell(int screen_x, int screen_y, int container_x,
                                                    int container_y, int container_w,
-                                                   int container_h, int ncols, int nrows);
+                                                   int container_h, int ncols, int nrows,
+                                                   int gutter);
 
     /// Clamp desired colspan/rowspan to the min/max allowed by the widget registry.
     /// Returns {clamped_colspan, clamped_rowspan}.
@@ -105,7 +108,8 @@ class GridEditMode {
 
     /// Round a pixel position to the nearest grid cell boundary.
     /// Returns a cell boundary index (0 to ncells inclusive).
-    static int round_to_grid_cell(int px, int content_origin, int content_size, int ncells);
+    static int round_to_grid_cell(int px, int content_origin, int content_size, int ncells,
+                                  int gutter);
 
     /// Compute new widget position/span for a resize operation.
     /// @param edge Which edge is being dragged
@@ -120,6 +124,19 @@ class GridEditMode {
     ResizeEdge detect_resize_edge(int px, int py, const lv_area_t& widget_area) const;
 
   private:
+    friend struct helix::GridEditModeTestAccess;
+
+    /// Track geometry of the live grid container.
+    ///
+    /// The nine drag, resize, preview and lattice paths all need the same four
+    /// numbers. Deriving them in one place keeps the int-vs-float rounding and
+    /// the gutter handling consistent between the cell a drop is computed
+    /// against and the pixels the preview is drawn at.
+    ///
+    /// @param out_content  Optional; receives the container's content area.
+    /// @return Zeroed metrics when there is no container or it has no extent.
+    helix::CellMetrics current_metrics(lv_area_t* out_content = nullptr) const;
+
     void create_dots_overlay();
     void destroy_dots_overlay();
     void create_selection_chrome(lv_obj_t* widget);
@@ -143,8 +160,6 @@ class GridEditMode {
     // Drag helpers
     void handle_drag_move(lv_event_t* e);
     void handle_drag_end(lv_event_t* e);
-    void create_drag_ghost(int col, int row, int colspan, int rowspan);
-    void destroy_drag_ghost();
     void update_snap_preview(int col, int row, int colspan, int rowspan, bool valid);
     void destroy_snap_preview();
     void cleanup_drag_state();
@@ -188,7 +203,6 @@ class GridEditMode {
     int drag_orig_colspan_ = 1;
     int drag_orig_rowspan_ = 1;
     lv_point_t drag_offset_ = {0, 0};
-    lv_obj_t* drag_ghost_ = nullptr;
     lv_obj_t* snap_preview_ = nullptr;
     int snap_preview_col_ = -1;
     int snap_preview_row_ = -1;

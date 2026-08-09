@@ -128,6 +128,8 @@ void PrintStartCollector::start() {
         // seed layer_zero_seen_ from it — only a freshly observed current_layer<1
         // (post-reset) latches it. See MoonrakerManager::should_complete_preprint().
         layer_zero_seen_.store(false, std::memory_order_relaxed);
+        first_layer_observed_.store(-1, std::memory_order_relaxed);
+        layer_advanced_.store(false, std::memory_order_relaxed);
         // Snapshot stale subject values so fallbacks only trigger on real changes
         baseline_layer_ = lv_subject_get_int(state_.get_print_layer_current_subject());
         baseline_progress_ = lv_subject_get_int(state_.get_print_progress_subject());
@@ -239,21 +241,6 @@ void PrintStartCollector::start() {
                 return;
             }
         }
-
-        // Pass through display_status.message (M117) during preparation.
-        // Many firmware/macros send M117 messages like "Homing...", "Probing...",
-        // "Heating bed..." during startup that provide useful status info.
-        if (status.contains("display_status")) {
-            const auto& ds = status["display_status"];
-            if (ds.contains("message") && ds["message"].is_string()) {
-                const auto& msg = ds["message"].get_ref<const std::string&>();
-                if (!msg.empty()) {
-                    spdlog::debug("[PrintStartCollector] display_status.message: {}", msg);
-                    // Update message without changing the current phase
-                    self->update_message_only(msg);
-                }
-            }
-        }
     });
 
     registered_.store(true);
@@ -336,6 +323,8 @@ void PrintStartCollector::reset() {
         silent_progression_idx_ = 0;
         real_signal_seen_.store(false, std::memory_order_relaxed);
         layer_zero_seen_.store(false, std::memory_order_relaxed);
+        first_layer_observed_.store(-1, std::memory_order_relaxed);
+        layer_advanced_.store(false, std::memory_order_relaxed);
     }
     fallbacks_enabled_.store(false);
 
@@ -518,6 +507,28 @@ void PrintStartCollector::check_fallback_completion() {
         }
     }
 
+    // Heating-phase heater correction: a latched firmware heating signal
+    // (e.g. K2's M109) can leave us in HEATING_NOZZLE while the bed is the
+    // real long pole. Re-derive the shown heater from live temps, bed-first.
+    // Scoped to when we're ALREADY in a heating phase, so it can never
+    // relabel a firmware's ordered non-heating phase (e.g. Snapmaker U1
+    // PRINT_BED_DETECTING) as a heating phase.
+    if (current == PrintStartPhase::HEATING_BED || current == PrintStartPhase::HEATING_NOZZLE) {
+        PrintStartPhase resolved = bed_heating      ? PrintStartPhase::HEATING_BED
+                                   : nozzle_heating ? PrintStartPhase::HEATING_NOZZLE
+                                                    : current;
+        if (resolved != current) {
+            spdlog::info("[PrintStartCollector] Heating correction: phase {} -> {} "
+                         "(bed heating={}, nozzle heating={})",
+                         static_cast<int>(current), static_cast<int>(resolved), bed_heating,
+                         nozzle_heating);
+            // relabel_heating_phase re-checks current_phase_ under the lock, so a
+            // concurrent bg gcode signal that advanced past heating between the
+            // `current` snapshot above and here is never regressed.
+            relabel_heating_phase(resolved);
+        }
+    }
+
     // =========================================================================
     // SILENT-PHASE PROGRESSION: time-based phase advancement for firmwares
     // that run cleaning/purge as silent macros (no gcode echo between
@@ -661,6 +672,10 @@ void PrintStartCollector::on_gcode_response(const json& msg) {
         return;
     }
 
+    // I4: Type-check params[0] before extracting string reference
+    if (!msg["params"][0].is_string()) {
+        return;
+    }
     const std::string& line = msg["params"][0].get_ref<const std::string&>();
 
     // Skip empty lines and common noise
@@ -1276,18 +1291,45 @@ void PrintStartCollector::update_phase(PrintStartPhase phase, const std::string&
     }
 }
 
-void PrintStartCollector::update_message_only(const std::string& message) {
-    PrintStartPhase phase;
+void PrintStartCollector::relabel_heating_phase(PrintStartPhase resolved) {
     int progress;
+    bool has_predictions;
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
-        phase = current_phase_;
-        if (phase == PrintStartPhase::IDLE || phase == PrintStartPhase::COMPLETE) {
-            return; // Don't update message when not preparing
+        // CAS guard: only relabel while we are STILL in a heating phase. A
+        // background gcode signal may have advanced current_phase_ past heating
+        // (e.g. to QGL) between the caller's temperature snapshot and now —
+        // relabeling then would regress a newer, correct phase back to heating.
+        if (current_phase_ != PrintStartPhase::HEATING_BED &&
+            current_phase_ != PrintStartPhase::HEATING_NOZZLE) {
+            return;
+        }
+        if (current_phase_ == resolved) {
+            return; // already showing the right heater
+        }
+        current_phase_ = resolved;
+        detected_phases_.insert(resolved);
+        int phase_int = static_cast<int>(resolved);
+        if (phase_enter_times_.find(phase_int) == phase_enter_times_.end()) {
+            phase_enter_times_[phase_int] = std::chrono::steady_clock::now();
         }
         progress = calculate_progress_locked();
+        has_predictions = predictor_.has_predictions();
     }
-    state_.set_print_start_state(phase, message.c_str(), progress);
+
+    // When the predictor has data, time-based progress in update_eta_display() is
+    // the sole progress source — don't override it with phase-weight progress.
+    if (has_predictions) {
+        auto* subj = state_.get_print_start_progress_subject();
+        if (subj) {
+            progress = lv_subject_get_int(subj);
+        }
+    }
+
+    const char* message = resolved == PrintStartPhase::HEATING_BED ? lv_tr("Heating Bed...")
+                                                                   : lv_tr("Heating Nozzle...");
+    // Call PrinterState outside the lock to avoid potential deadlocks
+    state_.set_print_start_state(resolved, message, progress);
 }
 
 void PrintStartCollector::set_profile(std::shared_ptr<PrintStartProfile> profile) {

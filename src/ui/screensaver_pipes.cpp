@@ -4,6 +4,7 @@
 
 #include "screensaver_pipes.h"
 
+#include "ui_timer_guard.h" // lv_timer_cancel_safe
 #include "ui_utils.h"
 
 #include <spdlog/spdlog.h>
@@ -179,6 +180,23 @@ void PipesScreensaver::start() {
     spdlog::debug("[Screensaver] Pipes started ({}x{}, perspective camera)", screen_w_, screen_h_);
 }
 
+PipesScreensaver::~PipesScreensaver() {
+    // ScreensaverManager owns these in a unique_ptr and does not stop the active
+    // one before destroying it, so a screensaver torn down while running would
+    // otherwise leave tick_timer_cb armed on a freed `this`. lv_timer_cancel_safe()
+    // self-guards on lv_is_initialized() and neuters rather than unlinking, which
+    // is what makes it safe from a destructor and after lv_deinit has already
+    // reclaimed the timer (#750, #751, #1173).
+    cancel_timer();
+}
+
+void PipesScreensaver::cancel_timer() {
+    if (timer_) {
+        helix::ui::lv_timer_cancel_safe(timer_);
+        timer_ = nullptr;
+    }
+}
+
 void PipesScreensaver::stop() {
     if (!active_) {
         return;
@@ -186,10 +204,7 @@ void PipesScreensaver::stop() {
 
     spdlog::info("[Screensaver] Stopping 3D pipes");
 
-    if (timer_) {
-        lv_timer_delete(timer_);
-        timer_ = nullptr;
-    }
+    cancel_timer();
 
     // Free draw buffer BEFORE deleting overlay — the canvas (child of overlay)
     // may access the buffer during deletion

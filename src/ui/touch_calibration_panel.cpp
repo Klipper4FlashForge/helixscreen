@@ -13,6 +13,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <vector>
 
 namespace helix {
@@ -156,6 +157,47 @@ void TouchCalibrationPanel::capture_point(Point raw) {
             if (calibration_.axes_swapped) {
                 spdlog::warn("[TouchDebug]   axes were auto-swapped");
             }
+        }
+
+        // #943 always-on diagnostic. The captured touch points and the on-screen
+        // targets both live in panel-pixel space (touches arrive already coarse-
+        // scaled by lv_evdev_set_calibration). A user who taps on each target
+        // should produce a captured span that matches the target span, so the
+        // ratio is ~1.0 when the pipeline is healthy. When the coarse scale over-
+        // divides — the digitizer reports a wider ABS range than it actually emits
+        // (Goodix/Q2 class) — taps collapse into a fraction of the panel and this
+        // ratio drops well below 1.0. Emitted at warn once per completed
+        // calibration so it lands in a plain journalctl capture without
+        // HELIX_DEBUG_TOUCH; the single line that shows whether touch is
+        // compressed and by how much.
+        {
+            auto axis_ratio = [](const int s[3], const int t[3]) -> double {
+                int sd01 = std::abs(s[0] - s[1]);
+                int sd02 = std::abs(s[0] - s[2]);
+                int sd12 = std::abs(s[1] - s[2]);
+                int sspan, tspan;
+                if (sd01 >= sd02 && sd01 >= sd12) {
+                    sspan = sd01;
+                    tspan = std::abs(t[0] - t[1]);
+                } else if (sd02 >= sd12) {
+                    sspan = sd02;
+                    tspan = std::abs(t[0] - t[2]);
+                } else {
+                    sspan = sd12;
+                    tspan = std::abs(t[1] - t[2]);
+                }
+                return sspan > 0 ? static_cast<double>(tspan) / sspan : 0.0;
+            };
+            const int sx[3] = {screen_points_[0].x, screen_points_[1].x, screen_points_[2].x};
+            const int tx[3] = {touch_points_[0].x, touch_points_[1].x, touch_points_[2].x};
+            const int sy[3] = {screen_points_[0].y, screen_points_[1].y, screen_points_[2].y};
+            const int ty[3] = {touch_points_[0].y, touch_points_[1].y, touch_points_[2].y};
+            const double rx = axis_ratio(sx, tx);
+            const double ry = axis_ratio(sy, ty);
+            spdlog::warn("[TouchCal] #943 span check: captured/target ratio x={:.2f} y={:.2f} "
+                         "(~1.0 healthy; <0.85 => coarse scale over-divides / digitizer over-"
+                         "reports ABS range; >1.15 => under-scaled). target space {}x{}",
+                         rx, ry, screen_width_, screen_height_);
         }
 
         // Validate the matrix produces reasonable results

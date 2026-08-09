@@ -29,8 +29,8 @@ namespace ui {
 void show_feature_unavailable_toast() {
     // Single shared, translatable copy reused across every excluded-subsystem
     // affordance on the ESP32 v1 build. See ui_toast_manager.h.
-    ToastManager::instance().show(ToastSeverity::INFO,
-                                  lv_tr("Not yet available on this display"), 3000);
+    ToastManager::instance().show(ToastSeverity::INFO, lv_tr("Not yet available on this display"),
+                                  3000);
 }
 
 } // namespace ui
@@ -257,7 +257,17 @@ void ToastManager::deinit_subjects() {
 
 void ToastManager::ensure_stack_container() {
     const int32_t margin = xml_int_const("space_2xl", 24);
-    const int32_t stack_width = compute_toast_stack_width();
+    int32_t stack_width = compute_toast_stack_width();
+
+    // The breakpoint width table is calibrated for landscape; in portrait the
+    // cramped axis is the width, so clamp to the screen or the stack overflows
+    // the left edge (it is anchored TOP_RIGHT with a margin on each side).
+    if (auto* disp = lv_display_get_default()) {
+        const int32_t max_width = lv_display_get_horizontal_resolution(disp) - 2 * margin;
+        if (max_width > 0 && stack_width > max_width) {
+            stack_width = max_width;
+        }
+    }
 
     if (!toast_stack_ || !lv_obj_is_valid(toast_stack_)) {
         lv_obj_t* layer = lv_layer_top();
@@ -373,6 +383,12 @@ void ToastManager::create_toast_internal(ToastSeverity severity, const char* mes
         return;
     }
 
+    // Dedupe: rapid identical toasts refresh the existing one instead of
+    // stacking. Action toasts are excluded (callback/user_data may differ).
+    if (!with_action && refresh_duplicate(severity, message)) {
+        return;
+    }
+
     ensure_stack_container();
     if (!toast_stack_) {
         spdlog::error("[ToastManager] Failed to create stack container");
@@ -415,6 +431,8 @@ void ToastManager::create_toast_internal(ToastSeverity severity, const char* mes
     it->widget = widget;
     it->action_cb = with_action ? action_cb : nullptr;
     it->action_user_data = with_action ? action_user_data : nullptr;
+    it->severity = severity;
+    it->message = message;
 
     if (with_action) {
         lv_obj_t* action_btn = lv_obj_find_by_name(widget, "toast_action_btn");

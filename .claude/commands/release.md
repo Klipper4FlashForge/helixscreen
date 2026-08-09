@@ -74,6 +74,30 @@ Store the resolved version as `NEW_VERSION` (without `v` prefix) for all subsequ
 
 Run tests. This is mandatory and cannot be skipped.
 
+### Quality checks
+
+Same script CI's "Code Quality" workflow runs — single source of truth. Run it first so
+lint/validation failures surface before the long test build.
+
+```bash
+./scripts/quality-checks.sh
+```
+
+- If it exits 0 → continue
+- If it exits non-zero → STOP: "Quality checks failed — fix before releasing." Show the
+  failing check. Look for the `❌` lines; `⚠️` lines (clang-format / XML formatting) are
+  advisory and do NOT fail the script.
+
+Do not release on a red `main`. Before starting, also confirm CI is green for the commit
+being released:
+
+```bash
+gh run list --workflow="Code Quality" --limit 1 --json conclusion,headSha
+```
+
+If the latest run is a `failure`, treat it as a STOP — fix it first. (v0.99.92 shipped
+with Code Quality red for ~10 hours because this gate did not exist.)
+
 ### C++ tests
 ```bash
 make test-run
@@ -100,6 +124,25 @@ bash scripts/bundle-uninstaller.sh -o scripts/uninstall.sh
 - Run `git diff --name-only` to check if `scripts/install.sh` or `scripts/uninstall.sh` changed
 - If either changed, they will be staged and included in the release commit (Step 6)
 - This ensures bundled installers are always in sync with their source modules
+
+### Regenerate the XML linter schema
+
+`tools/xml-linter/schema/schema.json` is a committed snapshot of every constant and
+widget attribute the runtime can resolve. The pre-commit hook only regenerates it when a
+lint actually fails, so a snapshot can drift ahead of or behind the tree without any gate
+noticing — it ships stale. A release is the one point where it is worth forcing.
+
+```bash
+make regen-xml-schema
+make lint-xml
+```
+
+- If `make lint-xml` fails → STOP: "XML lint failed against a freshly regenerated schema."
+  These are real errors (a `#const` reference with no definition anywhere), not staleness.
+  Show the failing lines and fix before releasing.
+- If it passes and `git diff --name-only` shows `tools/xml-linter/schema/schema.json`
+  changed, stage it with the release commit (Step 6). A regenerated-but-unchanged snapshot
+  is the normal, expected outcome.
 
 ---
 
@@ -191,6 +234,8 @@ Per project conventions — NEVER `git add -A` or `git add .`. Stage only the fi
 
 ```bash
 git add VERSION.txt CHANGELOG.md
+# Plus, if Step 2's regeneration changed them:
+#   scripts/install.sh scripts/uninstall.sh tools/xml-linter/schema/schema.json
 # Plus any other files modified in Step 5
 ```
 
@@ -296,6 +341,7 @@ Show: "Undone. Commit removed (changes preserved as staged), tag deleted."
 | Not on main | STOP with message, do not offer to switch |
 | Dirty working tree | STOP with message, do not offer to stash |
 | Behind origin | STOP with message, do not offer to pull |
+| Quality checks fail | STOP with the `❌` output — do not release on a red `main` |
 | Tests fail | STOP with failure output |
 | Version not greater | STOP: "v{NEW_VERSION} is not greater than v{LAST_TAG}" |
 | User aborts at any checkpoint | STOP cleanly, no partial state |

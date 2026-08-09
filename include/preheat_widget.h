@@ -3,10 +3,12 @@
 
 #pragma once
 
+#include "ui_heater_icon_binder.h"
 #include "ui_observer_guard.h"
 
 #include "panel_widget.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -28,6 +30,21 @@ class PreheatWidget : public PanelWidget {
         return "preheat";
     }
 
+    /// Nozzle/bed targets this widget would apply for preset slot `slot`.
+    /// Pure function of the user's configured preset materials + the filament
+    /// database, so it is unit-testable without an attached widget.
+    struct PreheatTargets {
+        int nozzle = 0;
+        int bed = 0;
+    };
+    static PreheatTargets targets_for_slot(int slot);
+
+    /// The split-button caption for preset slot `slot`. `width_px` selects the
+    /// narrow (name only) vs wide (name + temps) form; 0 means unknown width.
+    /// Extracted from update_button_label() so a test can assert the rendered
+    /// text follows a reassigned preset slot.
+    static std::string label_for_slot(int slot, bool heaters_active, int32_t width_px);
+
   private:
     PrinterState& printer_state_;
     nlohmann::json config_;
@@ -38,8 +55,13 @@ class PreheatWidget : public PanelWidget {
     lv_obj_t* tool_target_btn_ = nullptr;
     lv_obj_t* tool_target_label_ = nullptr;
 
-    int selected_material_ = 0; // 0=PLA, 1=PETG, 2=ABS, 3=TPU
+    int selected_material_ = 0; // index into helix::presets slots, not a fixed material
     bool heaters_active_ = false;
+
+    // Thermal tint for the two heater glyphs. Each binder owns its own animator
+    // and temperature observers, so the tile's numbers and icons agree.
+    helix::ui::HeaterIconBinder nozzle_icon_binder_;
+    helix::ui::HeaterIconBinder bed_icon_binder_;
 
     // Observers for heater target temperatures
     ObserverGuard extruder_target_obs_;

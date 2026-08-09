@@ -190,7 +190,7 @@ void SystemSettingsOverlay::init_log_level_dropdown() {
 
     lv_obj_t* dropdown = lv_obj_find_by_name(row, "dropdown");
     if (dropdown) {
-        lv_dropdown_set_options(dropdown, SystemSettingsManager::get_log_level_options());
+        // Options are populated + translated by the XML options_tag on row_log_level.
         int index = SystemSettingsManager::instance().get_log_level_index();
         lv_dropdown_set_selected(dropdown, static_cast<uint32_t>(index));
         spdlog::trace("[{}] Log level dropdown initialized (index={})", get_name(), index);

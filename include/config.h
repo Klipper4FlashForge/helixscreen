@@ -16,6 +16,8 @@
 #include "config_storage.h"
 #include "json_fwd.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -57,15 +59,44 @@ struct MacroConfig {
  * ```
  */
 /// Current config schema version — bump when adding new migrations
-static constexpr int CURRENT_CONFIG_VERSION = 19;
+static constexpr int CURRENT_CONFIG_VERSION = 21;
 
 class Config {
   private:
     static Config* instance;
     std::string path;
-    std::string active_printer_id_; ///< Currently active printer slug ID
-    bool read_only_mode_ = false;   ///< Config directory is on a read-only filesystem
+    std::string active_printer_id_;          ///< Currently active printer slug ID
+    bool read_only_mode_ = false;            ///< Config directory is on a read-only filesystem
     std::unique_ptr<ConfigStorage> storage_; ///< Document-level persistence backend
+    /// True when storage_ was auto-created from `path` rather than injected by
+    /// set_storage(). Only an auto-created backend may be rebuilt when `path`
+    /// moves — an injected one is the caller's, and its target is not `path`.
+    bool storage_is_default_ = false;
+
+    /// Point storage_ at `path`, rebuilding a stale auto-created backend.
+    /// `path` moves whenever init() runs against a different file (printer
+    /// switch, and every test that re-points the singleton); without this the
+    /// first backend keeps writing to the original file forever.
+    void ensure_storage();
+
+    /**
+     * @brief Point active_printer_id_ at a printer that actually exists
+     *
+     * Reads /active_printer_id and falls back to the first entry of /printers
+     * that is an object (the map also holds plain settings keys). Leaves
+     * /active_printer_id untouched when no printer object exists at all.
+     *
+     * @return true if /active_printer_id was rewritten (config needs saving)
+     */
+    bool refresh_active_printer_id();
+
+    /// Epoch-seconds stamp for a new /removed_printers entry, forced strictly
+    /// newer than every existing stamp so ordering survives a coarse or
+    /// backwards-stepping clock.
+    int64_t next_archive_stamp() const;
+
+    /// Drop the oldest /removed_printers entries beyond MAX_ARCHIVED_PRINTERS
+    void prune_archived_printers();
 
   protected:
     json data;
@@ -111,6 +142,7 @@ class Config {
         path.clear();
         active_printer_id_.clear();
         storage_.reset();
+        storage_is_default_ = false;
     }
 
     /**
@@ -119,7 +151,10 @@ class Config {
      * Default when unset: make_file_config_storage(resolved path). Embedded
      * targets substitute NVS/LittleFS; tests substitute an in-memory mock.
      */
-    void set_storage(std::unique_ptr<ConfigStorage> storage) { storage_ = std::move(storage); }
+    void set_storage(std::unique_ptr<ConfigStorage> storage) {
+        storage_ = std::move(storage);
+        storage_is_default_ = false;
+    }
 
     /**
      * @brief Get configuration value at JSON pointer path
@@ -127,13 +162,16 @@ class Config {
      * Throws nlohmann::json::exception if path doesn't exist.
      * Use the overload with default_value for safer access.
      *
+     * Non-vivifying: uses at() rather than operator[], so a missing path
+     * throws instead of silently inserting nulls along the way (#1129).
+     *
      * @tparam T Value type to retrieve
      * @param json_ptr JSON pointer path (e.g., "/printer/moonraker_host")
      * @return Configuration value of type T
      * @throws nlohmann::json::exception if path not found
      */
-    template <typename T> T get(const std::string& json_ptr) {
-        return data[json::json_pointer(json_ptr)].template get<T>();
+    template <typename T> T get(const std::string& json_ptr) const {
+        return data.at(json::json_pointer(json_ptr)).template get<T>();
     };
 
     /**
@@ -146,10 +184,10 @@ class Config {
      * @param default_value Fallback value if path not found
      * @return Configuration value or default_value
      */
-    template <typename T> T get(const std::string& json_ptr, const T& default_value) {
+    template <typename T> T get(const std::string& json_ptr, const T& default_value) const {
         json::json_pointer ptr(json_ptr);
-        if (data.contains(ptr) && !data[ptr].is_null()) {
-            return data[ptr].template get<T>();
+        if (data.contains(ptr) && !data.at(ptr).is_null()) {
+            return data.at(ptr).template get<T>();
         }
         return default_value;
     };
@@ -160,7 +198,7 @@ class Config {
      * @param json_ptr JSON pointer path (e.g., "/display/rotate")
      * @return true if the key exists in the configuration
      */
-    bool exists(const std::string& json_ptr) {
+    bool exists(const std::string& json_ptr) const {
         return data.contains(json::json_pointer(json_ptr));
     }
 
@@ -180,14 +218,47 @@ class Config {
     };
 
     /**
-     * @brief Get JSON sub-object at path
+     * @brief Get a mutable JSON sub-object at path, CREATING it if absent
      *
-     * Returns mutable reference to JSON object for complex operations.
+     * @warning This vivifies. nlohmann's non-const `operator[](json_pointer)`
+     * calls get_and_create(), inserting a `null` at every missing component of
+     * the path — and Config::save() writes those nulls to settings.json
+     * verbatim (it does no pruning). A config full of authoritative-looking
+     * `"led": {"selected_strips": null}` garbage is exactly how #1129 cost a
+     * reporter hours of debugging.
+     *
+     * Use this ONLY when you are about to assign through the returned
+     * reference. For read-only access use try_get_json(), get_string_array(),
+     * get<T>(path, default) or exists() — all non-vivifying.
      *
      * @param json_path JSON pointer path
-     * @return Reference to JSON object at path
+     * @return Mutable reference to the JSON node at path (created if missing)
      */
     json& get_json(const std::string& json_path);
+
+    /**
+     * @brief Non-vivifying read-only lookup of a JSON sub-object
+     *
+     * The safe counterpart to get_json(): returns nullptr when the path is
+     * absent and never mutates the config (#1129).
+     *
+     * @param json_path JSON pointer path
+     * @return Pointer to the node at path, or nullptr if it doesn't exist
+     */
+    const json* try_get_json(const std::string& json_path) const;
+
+    /**
+     * @brief Read an array of strings at a JSON pointer path
+     *
+     * Non-vivifying. Returns an empty vector when the path is absent, is not
+     * an array, or holds no string elements; non-string elements are skipped.
+     * Collapses the "probe-then-iterate string array" block that was
+     * hand-rolled at ~10 call sites.
+     *
+     * @param json_path JSON pointer path
+     * @return String elements of the array at path (empty if absent/not an array)
+     */
+    std::vector<std::string> get_string_array(const std::string& json_path) const;
 
     /**
      * @brief Get macro configuration with label and G-code command
@@ -221,7 +292,7 @@ class Config {
      *
      * @return JSON pointer prefix ("/printer/")
      */
-    std::string df();
+    std::string df() const;
 
     /**
      * @brief Get configuration file path
@@ -241,16 +312,20 @@ class Config {
      */
     bool is_read_only() const;
 
-    /// Check if this config was loaded from a platform preset
+    /// Check if the ACTIVE PRINTER was configured from a platform preset
     bool has_preset() const;
 
-    /// Get the preset name (e.g., "ad5m"), or empty string if no preset
+    /// Get the active printer's preset name (e.g., "ad5m"), or empty if none.
+    /// Stored at df() + "preset"; a legacy root-level marker is lifted here by
+    /// init() and is never read directly, so each printer keeps its own value.
     std::string get_preset() const;
 
-    /// Set the preset name (written during auto-detection from printer database)
+    /// Set the active printer's preset name (written during auto-detection from
+    /// printer database)
     void set_preset(const std::string& preset_name);
 
-    /// Erase the top-level "preset" marker (set_preset("") is a no-op and cannot clear it)
+    /// Erase the active printer's preset marker, plus any legacy root-level one
+    /// (set_preset("") is a no-op and cannot clear it)
     void clear_preset();
 
     /**
@@ -377,6 +452,33 @@ class Config {
      * @param printer_id Slug ID of the printer to remove
      */
     void remove_printer(const std::string& printer_id);
+
+    /**
+     * @brief Move a printer configuration out of the active list, preserving it
+     *
+     * Used by automatic recovery paths, which remove printers the user never
+     * asked to delete. The node is copied to /removed_printers/<id> before it is
+     * erased, so a mistaken recovery costs the user a support round-trip rather
+     * than their heaters, fans, sensors, macros and Moonraker host.
+     *
+     * Prefer this over remove_printer() anywhere the removal is not an explicit
+     * user action.
+     *
+     * Each snapshot is stamped with ARCHIVED_AT_KEY and the archive is trimmed
+     * to the MAX_ARCHIVED_PRINTERS most recent entries.
+     *
+     * @param printer_id Slug ID of the printer to archive
+     */
+    void archive_printer(const std::string& printer_id);
+
+    /// How many archived printers /removed_printers keeps. Nothing reads the
+    /// archive back yet, so it is pure insurance — an unbounded one would grow
+    /// settings.json (and every rolling backup of it) without limit.
+    static constexpr size_t MAX_ARCHIVED_PRINTERS = 5;
+
+    /// Epoch-seconds field stamped into each /removed_printers entry, used to
+    /// decide which entries are the oldest when pruning.
+    static constexpr const char* ARCHIVED_AT_KEY = "archived_at";
 
     /**
      * @brief Get singleton instance

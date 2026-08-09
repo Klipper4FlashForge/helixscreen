@@ -3,6 +3,7 @@
 #include "clog_detection_config_modal.h"
 
 #include "ams_state.h"
+#include "ams_types.h"
 #include "app_globals.h"
 #include "i_moonraker_api.h"
 #include "moonraker_error.h"
@@ -55,6 +56,11 @@ void ClogDetectionConfigModal::init_subjects() {
     lv_subject_init_string(&det_length_text_subject_, det_length_text_buf_, nullptr,
                            sizeof(det_length_text_buf_), "---");
 
+    // Default 0 (hidden): on_show() raises it only once the active backend is
+    // known to take the detection-mode gcode. Failing closed keeps the controls
+    // out of the way when there is no backend at all.
+    lv_subject_init_int(&mode_supported_subject_, 0);
+
     // Per-button boolean subjects for bind_style selected/unselected
     lv_subject_init_int(&src_auto_active_, 1); // auto selected by default
     lv_subject_init_int(&src_encoder_active_, 0);
@@ -67,6 +73,7 @@ void ClogDetectionConfigModal::init_subjects() {
     lv_xml_register_subject(nullptr, "clog_cfg_mode", &mode_subject_);
     lv_xml_register_subject(nullptr, "clog_cfg_threshold_text", &threshold_text_subject_);
     lv_xml_register_subject(nullptr, "clog_cfg_det_length_text", &det_length_text_subject_);
+    lv_xml_register_subject(nullptr, "clog_cfg_mode_supported", &mode_supported_subject_);
     lv_xml_register_subject(nullptr, "clog_src_auto_active", &src_auto_active_);
     lv_xml_register_subject(nullptr, "clog_src_encoder_active", &src_encoder_active_);
     lv_xml_register_subject(nullptr, "clog_src_flowguard_active", &src_flowguard_active_);
@@ -83,6 +90,7 @@ void ClogDetectionConfigModal::deinit_subjects() {
     lv_subject_deinit(&mode_subject_);
     lv_subject_deinit(&threshold_text_subject_);
     lv_subject_deinit(&det_length_text_subject_);
+    lv_subject_deinit(&mode_supported_subject_);
     lv_subject_deinit(&src_auto_active_);
     lv_subject_deinit(&src_encoder_active_);
     lv_subject_deinit(&src_flowguard_active_);
@@ -112,6 +120,7 @@ void ClogDetectionConfigModal::on_show() {
     // Read current state from AmsState backend
     auto& ams = AmsState::instance();
     auto* backend = ams.get_backend();
+    AmsType backend_type = backend ? backend->get_type() : AmsType::NONE;
     if (backend) {
         auto info = backend->get_system_info();
         detection_mode_ = info.encoder_info.detection_mode;
@@ -154,6 +163,10 @@ void ClogDetectionConfigModal::on_show() {
 
     // Push state to subjects — XML bindings react automatically
     lv_subject_set_int(&mode_subject_, detection_mode_);
+    // Mode/length are written with MMU_TEST_CONFIG; hide them on backends that
+    // have no such command rather than let Save emit gcode they cannot run.
+    bool mode_supported = build_detection_mode_gcode(backend_type, 2, 0.0f).has_value();
+    lv_subject_set_int(&mode_supported_subject_, mode_supported ? 1 : 0);
     sync_threshold_text();
     sync_det_length_text();
 
@@ -237,12 +250,15 @@ void ClogDetectionConfigModal::sync_det_length_text() {
     lv_subject_copy_string(&det_length_text_subject_, det_length_text_buf_);
 }
 
-void ClogDetectionConfigModal::send_detection_mode_gcode(int mode, float det_length) {
-    auto* api = get_moonraker_api();
-    if (!api) {
-        spdlog::warn("[ClogConfig] No API available to send detection mode gcode");
-        return;
-    }
+std::optional<std::string>
+ClogDetectionConfigModal::build_detection_mode_gcode(AmsType type, int mode, float det_length) {
+    // MMU_TEST_CONFIG is a Happy Hare command. AFC, ACE, CFS, QIDI Box and the
+    // tool changers reach this modal too (the clog widget is offered whenever
+    // clog_meter_mode > 0, which includes AFC buffer fault detection), and would
+    // answer with "Unknown command".
+    if (type != AmsType::HAPPY_HARE)
+        return std::nullopt;
+
     char cmd[96];
     if (mode == 1 && det_length > 0) {
         snprintf(cmd, sizeof(cmd), "MMU_TEST_CONFIG clog_detection=%d detection_length=%.1f", mode,
@@ -250,8 +266,30 @@ void ClogDetectionConfigModal::send_detection_mode_gcode(int mode, float det_len
     } else {
         snprintf(cmd, sizeof(cmd), "MMU_TEST_CONFIG clog_detection=%d", mode);
     }
+    return std::string(cmd);
+}
+
+void ClogDetectionConfigModal::send_detection_mode_gcode(int mode, float det_length) {
+    // Re-read the backend rather than trust what on_show() saw: the UI gate hides
+    // these controls, but the send must refuse on its own too.
+    auto* backend = AmsState::instance().get_backend();
+    AmsType type = backend ? backend->get_type() : AmsType::NONE;
+
+    auto cmd = build_detection_mode_gcode(type, mode, det_length);
+    if (!cmd) {
+        spdlog::warn("[ClogConfig] Detection mode is Happy Hare only (MMU_TEST_CONFIG); "
+                     "active backend is {} — not sending",
+                     ams_type_to_string(type));
+        return;
+    }
+
+    auto* api = get_moonraker_api();
+    if (!api) {
+        spdlog::warn("[ClogConfig] No API available to send detection mode gcode");
+        return;
+    }
     api->execute_gcode(
-        cmd, [mode]() { spdlog::info("[ClogConfig] Detection mode set to {}", mode); },
+        *cmd, [mode]() { spdlog::info("[ClogConfig] Detection mode set to {}", mode); },
         [](const MoonrakerError& err) {
             spdlog::error("[ClogConfig] Detection mode gcode failed: {}", err.message);
         });

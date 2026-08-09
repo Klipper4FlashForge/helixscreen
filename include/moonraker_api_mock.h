@@ -49,10 +49,17 @@ class MockScrewsTiltState {
     void reset();
 
     /**
-     * @brief Simulate probing the bed and return results
-     * @return Vector of screw results with current deviations
+     * @brief Simulate probing the bed and return raw Klipper console lines
+     *
+     * Returns the "// screw_name : x=… : adjust CW TT:MM" text Klipper would
+     * emit, so callers must run it through helix::parse_screws_tilt_line() —
+     * the same parser the live collector uses. Returning pre-built structs is
+     * what let the mock drift to the opposite sign convention from Klipper
+     * and hid the level-verdict bug (prestonbrown/helixscreen#1225).
+     *
+     * @return One console line per screw, base screw first
      */
-    std::vector<ScrewTiltResult> probe();
+    std::vector<std::string> probe_lines();
 
     /**
      * @brief Simulate user making adjustments based on probe results
@@ -63,8 +70,16 @@ class MockScrewsTiltState {
     void simulate_user_adjustments();
 
     /**
-     * @brief Check if all screws are within tolerance
-     * @param tolerance_mm Maximum acceptable deviation (default 0.02mm)
+     * @brief Corner-to-corner error of the simulated bed, in mm
+     *
+     * Highest screw minus lowest, base included — the same quantity
+     * evaluate_screw_level() judges, not each screw's distance from the base.
+     */
+    [[nodiscard]] float spread_mm() const;
+
+    /**
+     * @brief Check whether the simulated bed has converged
+     * @param tolerance_mm Maximum acceptable corner-to-corner spread (default 0.02mm)
      * @return true if bed is considered level
      */
     [[nodiscard]] bool is_level(float tolerance_mm = 0.02f) const;
@@ -76,16 +91,25 @@ class MockScrewsTiltState {
         return probe_count_;
     }
 
+    /**
+     * @brief Convert a Klipper base-relative diff to a turns:minutes string
+     *
+     * Mirrors Klipper's screws_tilt_adjust.py exactly: the diff is
+     * `z_base - z`, a positive diff is CW on a CW-M* thread, diffs under 1
+     * micron are zeroed before the pitch divide, and a rounded-up 60 minutes is
+     * NOT carried into the turn count — Klipper really does print "00:60".
+     *
+     * Public so the arithmetic can be unit-tested directly; probe_lines() is
+     * the only production caller.
+     *
+     * @param diff_mm z_base minus this screw's probed z, in mm
+     * @return Adjustment string like "CW 01:15" or "CCW 00:30"
+     */
+    static std::string diff_to_adjustment(float diff_mm);
+
   private:
     std::vector<MockBedScrew> screws_;
     int probe_count_ = 0;
-
-    /**
-     * @brief Convert Z offset to turns:minutes adjustment string
-     * @param offset_mm Z deviation in mm (positive = too high, need CW)
-     * @return Adjustment string like "CW 01:15" or "CCW 00:30"
-     */
-    static std::string offset_to_adjustment(float offset_mm);
 };
 
 /**
@@ -734,6 +758,21 @@ class MoonrakerAPIMock : public MoonrakerAPI {
     nlohmann::json mock_get_db_value(const std::string& namespace_name,
                                      const std::string& key) const;
 
+    /// Number of times database_post_item() was called on this mock instance.
+    /// Counts every invocation — including calls later rejected via
+    /// mock_reject_next_db_post() or captured via mock_defer_next_db_post() — so
+    /// tests can assert "a write was attempted" or "no write happened".
+    [[nodiscard]] int mock_db_post_count() const {
+        return db_post_count_;
+    }
+
+    /// Number of times database_delete_item() was called on this mock instance.
+    /// Counts every invocation (see mock_db_post_count() for rejection/defer
+    /// semantics).
+    [[nodiscard]] int mock_db_delete_count() const {
+        return db_delete_count_;
+    }
+
     /// Cause the next database_post_item() call to fire its on_error callback
     /// with the given MoonrakerError, and skip writing to the mock DB. The
     /// rejection is consumed on the first call — subsequent posts succeed
@@ -814,6 +853,13 @@ class MoonrakerAPIMock : public MoonrakerAPI {
 
     /// Mock database storage: key = "namespace:key", value = JSON
     std::map<std::string, nlohmann::json> mock_db_;
+
+    /// Call counters for database write ops. Incremented at the top of each
+    /// override, before any rejection/defer branch, so a rejected or deferred
+    /// call still counts as an attempt. Exposed via mock_db_post_count() /
+    /// mock_db_delete_count().
+    int db_post_count_ = 0;
+    int db_delete_count_ = 0;
 
     /// One-shot rejection for database_post_item (set by mock_reject_next_db_post).
     std::optional<MoonrakerError> next_db_post_rejection_;

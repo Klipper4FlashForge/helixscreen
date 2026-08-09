@@ -35,16 +35,15 @@ When beta features are enabled, the following appear in the UI with an orange "B
 |---------|----------|-------------|--------|
 | **HelixPrint Plugin** | Advanced panel | Install/uninstall the HelixPrint Klipper plugin for advanced print start control | Functional; plugin manages bed mesh, QGL, z-tilt skipping |
 | **Configure PRINT_START** | Advanced panel | Make bed mesh and QGL skippable in your print start macro | Functional; needs only Beta Features enabled — writes your Klipper config directly via Moonraker, no plugin required |
-| **Sound System** | Settings panel | Sound effects with volume control and theme selection | Functional; multi-backend (SDL/PWM/M300) |
 | **Plugins** | Settings panel | View installed plugins and their status | Functional; plugin system is early-stage |
 | **Update Channel** | Settings panel | Switch between Stable, Beta, and Dev update channels | Functional; Beta/Dev channels may have less-tested releases |
 | **Macro Browser** | Advanced panel | Browse and execute custom Klipper macros | Functional; hides system macros, confirms dangerous ones |
-| **Z Calibration** | Controls panel | Quick-access Z calibration button | Functional; requires probe hardware |
+| **Z Calibration** | Controls panel | Quick-access `PROBE_CALIBRATE` button (probe Z endstop) — distinct from the graduated Z-Offset Calibration flow | Functional; requires probe hardware |
 | **MPC Calibration** | Heater Calibration panel | Model Predictive Control calibration as an alternative to PID | Functional; requires Kalico firmware |
 | **Belt Tension** | Advanced panel | Measure and compare belt path resonant frequencies for CoreXY/Cartesian | Functional; requires accelerometer; optional PWM LED strobe |
 | **Multi-Printer Management** | Settings panel, Navbar, Printer Manager | Add, switch between, and manage multiple Klipper printers from one touchscreen | Functional; switch/add/delete printers with one-tap switching |
 
-> **Graduated from beta:** PID Calibration, Input Shaper, the **Spool Wizard**, the **G-code Console**, **Probe Management**, **Z-Offset Calibration**, and **Timelapse** are now available to all users without enabling beta features.
+> **Graduated from beta:** the **Sound System**, PID Calibration, Input Shaper, the **Spool Wizard**, the **G-code Console**, **Probe Management**, **Z-Offset Calibration**, and **Timelapse** are now available to all users without enabling beta features.
 
 ---
 

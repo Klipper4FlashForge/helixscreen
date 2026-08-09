@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "ui_panel_ams_overview.h"
-#include "data_root_resolver.h"
 
 #include "ui_ams_context_menu.h"
 #include "ui_ams_detail.h"
@@ -28,13 +27,15 @@
 #include "ams_types.h"
 #include "app_globals.h"
 #include "color_utils.h"
+#include "data_root_resolver.h"
 #include "display_settings_manager.h"
 #include "helix-xml/src/xml/lv_xml.h"
-#include "lvgl/src/others/translation/lv_translation.h"
 #include "i_moonraker_api.h"
+#include "lvgl/src/others/translation/lv_translation.h"
 #include "observer_factory.h"
 #include "printer_detector.h"
 #include "static_panel_registry.h"
+#include "system/crash_handler.h"
 #include "theme_manager.h"
 #include "ui/ams_drawing_utils.h"
 
@@ -72,6 +73,27 @@ static constexpr int32_t DETAIL_ZOOM_SCALE_MAX = 256;
 
 // Global instance pointer for XML callback access (used by back button and animation callbacks)
 static std::atomic<AmsOverviewPanel*> g_overview_panel_instance{nullptr};
+
+/**
+ * @brief Is this lane the one firmware considers seated and loaded?
+ *
+ * SINGLE SOURCE OF TRUTH for the active-lane highlight: the per-slot
+ * active-loaded subject (AmsBackend::slot_is_actively_loaded(i)) — the same read
+ * apply_current_slot_highlight() makes in ui_ams_slot.cpp. The mini bars used to
+ * ask `global_idx == current_slot`, which disagreed with the slot widgets on the
+ * very same panel: an idle unload left the bar outlined after the detail view's
+ * glow had cleared, and on AFC/CFS a current_slot that names a lane the per-slot
+ * parse disagrees with (#1194) put the highlight on two different lanes.
+ *
+ * The bars are rebuilt wholesale on every refresh (see create_mini_bars), and
+ * AmsState bumps slots_version on every slot_active_loaded delta, so the panel's
+ * existing slots_version observer is what keeps this live — no per-slot observer,
+ * which would race the rebuild (#705/#776).
+ */
+static bool slot_is_active_loaded(int global_slot_index) {
+    lv_subject_t* subject = AmsState::instance().get_slot_active_loaded_subject(global_slot_index);
+    return subject && lv_subject_get_int(subject) != 0;
+}
 
 /// Set a label to "N slots" text, with null-safety
 static void set_slot_count_label(lv_obj_t* label, int slot_count) {
@@ -289,7 +311,7 @@ void AmsOverviewPanel::refresh_units() {
     } else {
         // Same number of units - update existing cards in place
         for (int i = 0; i < new_unit_count; ++i) {
-            update_unit_card(unit_cards_[i], info.units[i], current_slot);
+            update_unit_card(unit_cards_[i], info.units[i]);
         }
     }
 
@@ -311,8 +333,6 @@ void AmsOverviewPanel::create_unit_cards(const AmsSystemInfo& info) {
     helix::ui::safe_clean_children(cards_row_);
     unit_cards_.clear();
 
-    int current_slot = lv_subject_get_int(AmsState::instance().get_current_slot_subject());
-
     for (int i = 0; i < static_cast<int>(info.units.size()); ++i) {
         const AmsUnit& unit = info.units[i];
         UnitCard uc;
@@ -329,10 +349,10 @@ void AmsOverviewPanel::create_unit_cards(const AmsSystemInfo& info) {
         snprintf(s_vis, sizeof(s_vis), "ams_env_ind_%d_visible", i);
         snprintf(s_dry, sizeof(s_dry), "ams_env_ind_%d_drying_active", i);
         snprintf(s_drytxt, sizeof(s_drytxt), "ams_env_ind_%d_drying_text", i);
-        const char* attrs[] = {"temp_text",        s_temp,    "humidity_text",   s_hum,
-                               "humidity_status",  s_humstat, "humidity_visible", s_humvis,
-                               "visible",          s_vis,     "drying_active",    s_dry,
-                               "drying_text",      s_drytxt,  nullptr,            nullptr};
+        const char* attrs[] = {
+            "temp_text",        s_temp,   "humidity_text", s_hum,  "humidity_status", s_humstat,
+            "humidity_visible", s_humvis, "visible",       s_vis,  "drying_active",   s_dry,
+            "drying_text",      s_drytxt, nullptr,         nullptr};
         uc.card = static_cast<lv_obj_t*>(lv_xml_create(cards_row_, "ams_unit_card", attrs));
         if (!uc.card) {
             spdlog::error("[{}] Failed to create ams_unit_card XML for unit {}", get_name(), i);
@@ -371,7 +391,7 @@ void AmsOverviewPanel::create_unit_cards(const AmsSystemInfo& info) {
         set_slot_count_label(uc.slot_count_label, unit.slot_count);
 
         // Create the mini bars for this unit (dynamic — slot count varies)
-        create_mini_bars(uc, unit, current_slot);
+        create_mini_bars(uc, unit);
 
         // Create error badge (top-right of card, initially hidden)
         uc.error_badge = ams_draw::create_error_badge(uc.card, 12);
@@ -392,7 +412,7 @@ void AmsOverviewPanel::create_unit_cards(const AmsSystemInfo& info) {
                   static_cast<int>(unit_cards_.size()), info.supports_bypass);
 }
 
-void AmsOverviewPanel::update_unit_card(UnitCard& card, const AmsUnit& unit, int current_slot) {
+void AmsOverviewPanel::update_unit_card(UnitCard& card, const AmsUnit& unit) {
     if (!card.card) {
         return;
     }
@@ -413,7 +433,7 @@ void AmsOverviewPanel::update_unit_card(UnitCard& card, const AmsUnit& unit, int
     if (card.bars_container) {
         lv_obj_update_layout(card.bars_container);
         helix::ui::safe_clean_children(card.bars_container);
-        create_mini_bars(card, unit, current_slot);
+        create_mini_bars(card, unit);
     }
 
     // Update slot count
@@ -427,7 +447,7 @@ void AmsOverviewPanel::update_unit_card(UnitCard& card, const AmsUnit& unit, int
     }
 }
 
-void AmsOverviewPanel::create_mini_bars(UnitCard& card, const AmsUnit& unit, int current_slot) {
+void AmsOverviewPanel::create_mini_bars(UnitCard& card, const AmsUnit& unit) {
     if (!card.bars_container) {
         return;
     }
@@ -450,7 +470,7 @@ void AmsOverviewPanel::create_mini_bars(UnitCard& card, const AmsUnit& unit, int
     for (int s = 0; s < slot_count; ++s) {
         const SlotInfo& slot = unit.slots[s];
         int global_idx = unit.first_slot_global_index + s;
-        bool is_loaded = (global_idx == current_slot);
+        bool is_loaded = slot_is_active_loaded(global_idx);
 
         auto col = ams_draw::create_slot_column(card.bars_container, bar_width, MINI_BAR_HEIGHT_PX,
                                                 MINI_BAR_RADIUS_PX);
@@ -528,17 +548,25 @@ void AmsOverviewPanel::refresh_system_path(const AmsSystemInfo& info, int curren
     if (ext_spool) {
         bypass_color = ext_spool->color_rgb;
     }
-    ui_system_path_canvas_set_bypass(system_path_, info.supports_bypass, bypass_active,
-                                     bypass_color);
+    ui_system_path_canvas_set_bypass(
+        system_path_, helix::ui::bypass_node_visible_for(AmsState::instance().get_backend()),
+        bypass_active, bypass_color);
 
-    // Drive the shared BypassSpoolWidgets overlay from current state.
+    // Drive the shared BypassSpoolWidgets overlay from current state. On AFC the
+    // whole node disappears while bypass is disengaged — AFC reports a virtual
+    // bypass whether or not one exists, so leaving it on the path advertised a
+    // bypass the machine does not have (#1229).
+    const bool show_bypass = helix::ui::bypass_node_visible_for(AmsState::instance().get_backend());
     if (bypass_widgets_.valid()) {
-        bypass_spool_set_has_spool(bypass_widgets_, ext_spool.has_value());
-        bypass_spool_set_color(bypass_widgets_, bypass_color);
-        bypass_spool_set_material(bypass_widgets_, (ext_spool && !ext_spool->material.empty())
-                                                       ? ext_spool->material.c_str()
-                                                       : "");
-        update_bypass_widgets_position();
+        helix::ui::bypass_spool_set_visible(bypass_widgets_, show_bypass);
+        if (show_bypass) {
+            bypass_spool_set_has_spool(bypass_widgets_, ext_spool.has_value());
+            bypass_spool_set_color(bypass_widgets_, bypass_color);
+            bypass_spool_set_material(bypass_widgets_, (ext_spool && !ext_spool->material.empty())
+                                                           ? ext_spool->material.c_str()
+                                                           : "");
+            update_bypass_widgets_position();
+        }
     }
 
     // Compute physical tool layout (handles HUB units with unique per-lane mapped_tools)
@@ -580,20 +608,17 @@ void AmsOverviewPanel::refresh_system_path(const AmsSystemInfo& info, int curren
     ui_system_path_canvas_set_active_tool(system_path_, active_tool);
     ui_system_path_canvas_set_current_tool(system_path_, info.current_tool);
 
-    // Set virtual tool labels for badge display.
-    // For HUB units with an active slot, override the static hub_tool_label with the
-    // actual virtual tool number (e.g., show "T6" when AMS_1 slot 3 is loaded, not "T4").
-    if (!tool_layout.physical_to_virtual_label.empty()) {
-        auto labels = tool_layout.physical_to_virtual_label; // mutable copy
-        if (active_tool >= 0 && active_tool < static_cast<int>(labels.size()) &&
-            current_slot >= 0) {
-            const SlotInfo* active_slot_info = info.get_slot_global(current_slot);
-            if (active_slot_info && active_slot_info->mapped_tool >= 0) {
-                labels[active_tool] = active_slot_info->mapped_tool;
-            }
+    // Toolhead badges. With extruder identity these read "E<n>" and name the
+    // physical extruder; without it they fall back to the legacy AFC lane-alias
+    // "T<n>" labels. compute_tool_badge_labels() owns that decision.
+    {
+        const auto badges =
+            ams_draw::compute_tool_badge_labels(tool_layout, info, current_slot, active_tool);
+        if (!badges.numbers.empty()) {
+            ui_system_path_canvas_set_tool_label_prefix(system_path_, badges.prefix);
+            ui_system_path_canvas_set_tool_virtual_numbers(system_path_, badges.numbers.data(),
+                                                           static_cast<int>(badges.numbers.size()));
         }
-        ui_system_path_canvas_set_tool_virtual_numbers(system_path_, labels.data(),
-                                                       static_cast<int>(labels.size()));
     }
 
     // Set toolhead sensor state
@@ -1042,19 +1067,34 @@ static void ensure_overview_registered() {
     ui_ams_slot_register();
 
     // Register the XML components (dependencies must be registered before overview panel)
-    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/components/ams_unit_detail.xml").c_str());
-    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/components/ams_loaded_card.xml").c_str());
-    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/ams_context_menu.xml").c_str());
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/components/ams_unit_detail.xml").c_str());
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/components/ams_loaded_card.xml").c_str());
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/ams_context_menu.xml").c_str());
     // ams_unit_card.xml nests <ams_environment_indicator>, which is already
     // registered above via ensure_ams_env_indicator_registered().
-    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/ams_unit_card.xml").c_str());
-    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/components/ams_sidebar.xml").c_str());
-    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/ams_overview_panel.xml").c_str());
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/ams_unit_card.xml").c_str());
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/components/ams_sidebar.xml").c_str());
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/ams_overview_panel.xml").c_str());
 
     s_overview_registered = true;
     spdlog::debug("[AMS Overview] XML registration complete");
 }
 
+// NOTE: this deliberately does NOT call OverlayBase::destroy_overlay_ui().
+// AmsOverviewPanel derives from PanelBase, not OverlayBase — the two are
+// sibling IPanelLifecycle implementations, so the helper is not reachable from
+// here (there is no overlay_root_ and no on_ui_destroyed() on this hierarchy).
+// The sequence below mirrors the helper's, with two required deviations:
+//   1. clear_panel_reference() runs BEFORE deletion (the helper's
+//      on_ui_destroyed() runs after), because it destroys sub-objects that own
+//      widgets in this subtree.
+//   2. safe_delete_subtree() instead of safe_delete_deferred() — see #983.
 void destroy_ams_overview_panel_ui() {
     if (s_ams_overview_panel_obj) {
         spdlog::info("[AMS Overview] Destroying panel UI to free memory");
@@ -1069,6 +1109,11 @@ void destroy_ams_overview_panel_ui() {
 
         NavigationManager::instance().unregister_overlay_close_callback(s_ams_overview_panel_obj);
         NavigationManager::instance().unregister_overlay_instance(s_ams_overview_panel_obj);
+
+        // Breadcrumb the destroy so crashes in the close path can be pinned to
+        // which overlay was being torn down. Pairs with the "overlay+" crumb on
+        // push, and matches OverlayBase::destroy_overlay_ui().
+        crash_handler::breadcrumb::note("ovrl_dst", "AmsOverviewPanel");
 
         if (g_ams_overview_panel) {
             g_ams_overview_panel->clear_panel_reference();
@@ -1211,6 +1256,19 @@ void AmsOverviewPanel::show_detail_context_menu(int slot_index, lv_obj_t* near_w
             show_edit_modal(slot, /*open_on_picker=*/true);
             break;
 
+        case helix::ui::AmsContextMenu::MenuAction::RECOVER_POSITION:
+            if (!backend) {
+                NOTIFY_WARNING(lv_tr("Multi-Filament System not available"));
+                return;
+            }
+            {
+                AmsError error = backend->recover_lane_position(slot);
+                if (error.result != AmsResult::SUCCESS) {
+                    NOTIFY_ERROR(lv_tr("Recovery failed: {}"), error.user_msg);
+                }
+            }
+            break;
+
         case helix::ui::AmsContextMenu::MenuAction::SCAN_QR: {
 #if HELIX_HAS_CAMERA
             spdlog::info("[AmsOverview] SCAN_QR action for slot {}", slot);
@@ -1279,21 +1337,27 @@ void AmsOverviewPanel::refresh_bypass_display() {
             AmsSystemInfo info = backend->get_system_info();
             int current_slot = lv_subject_get_int(AmsState::instance().get_current_slot_subject());
             bool bypass_active = info.supports_bypass && (current_slot == -2);
-            ui_system_path_canvas_set_bypass(system_path_, info.supports_bypass, bypass_active,
-                                             ext_spool->color_rgb);
+            ui_system_path_canvas_set_bypass(system_path_,
+                                             helix::ui::bypass_node_visible_for(backend),
+                                             bypass_active, ext_spool->color_rgb);
         }
     }
 
+    // Same rule as the refresh path above (#1229).
+    const bool show_bypass2 =
+        helix::ui::bypass_node_visible_for(AmsState::instance().get_backend());
     if (bypass_widgets_.valid()) {
-        bypass_spool_set_has_spool(bypass_widgets_, ext_spool.has_value());
-        if (ext_spool) {
+        helix::ui::bypass_spool_set_visible(bypass_widgets_, show_bypass2);
+        bypass_spool_set_has_spool(bypass_widgets_, show_bypass2 && ext_spool.has_value());
+        if (show_bypass2 && ext_spool) {
             bypass_spool_set_color(bypass_widgets_, ext_spool->color_rgb);
         } else {
             bypass_spool_set_color(bypass_widgets_, 0x888888);
         }
-        bypass_spool_set_material(bypass_widgets_, (ext_spool && !ext_spool->material.empty())
-                                                       ? ext_spool->material.c_str()
-                                                       : "");
+        bypass_spool_set_material(bypass_widgets_,
+                                  (show_bypass2 && ext_spool && !ext_spool->material.empty())
+                                      ? ext_spool->material.c_str()
+                                      : "");
         update_bypass_widgets_position();
     }
 

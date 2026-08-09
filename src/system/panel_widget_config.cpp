@@ -7,6 +7,8 @@
 #include "data_root_resolver.h"
 #include "grid_layout.h"
 #include "helix-xml/src/xml/lv_xml.h"
+#include "json_utils.h"
+#include "layout_manager.h"
 #include "panel_widget_registry.h"
 #include "theme_manager.h"
 
@@ -15,7 +17,9 @@
 
 #include <algorithm>
 #include <fstream>
+#include <iterator>
 #include <set>
+#include <string>
 
 namespace helix {
 
@@ -153,17 +157,34 @@ void PanelWidgetConfig::load() {
 
     // Format detection: object with "pages" key = new multi-page format
     if (saved.is_object() && saved.contains("pages") && saved["pages"].is_array()) {
-        // New multi-page format
-        main_page_index_ = saved.value("main_page_index", 0);
-        next_page_id_ = saved.value("next_page_id", 0);
+        // New multi-page format.
+        //
+        // settings.json is hand-editable, so every read here goes through the
+        // safe_* helpers: .value() throws type_error.302 on a key that is
+        // PRESENT with a null value (missing keys are fine), and one such key
+        // would abort the whole panel load instead of costing one field.
+        main_page_index_ =
+            static_cast<size_t>(helix::json_util::safe_int(saved, "main_page_index"));
+        next_page_id_ = helix::json_util::safe_int(saved, "next_page_id");
 
         size_t page_idx = 0;
         for (const auto& page_json : saved["pages"]) {
+            // Degrade per-page, not per-dashboard. `"pages": ["main"]` — an
+            // easy hand-edit slip — makes page_json a string, and .value() on a
+            // non-object throws type_error.306.
+            if (!page_json.is_object()) {
+                spdlog::warn("[PanelWidgetConfig] Skipping non-object page entry at index {}",
+                             page_idx);
+                ++page_idx;
+                continue;
+            }
             PageConfig page;
-            page.id = page_json.value("id", "");
+            page.id = helix::json_util::safe_string(page_json, "id");
             if (page_json.contains("widgets") && page_json["widgets"].is_array()) {
-                // Only append registry defaults for the first page (main/default page)
-                bool append_defaults = (page_idx == 0);
+                // Only append registry defaults for the first page (main/default
+                // page). Keyed off pages_ rather than page_idx so a skipped
+                // leading entry doesn't cost the first real page its defaults.
+                bool append_defaults = pages_.empty();
                 page.widgets = parse_widget_array(page_json["widgets"], append_defaults);
             }
             pages_.push_back(std::move(page));
@@ -277,15 +298,26 @@ bool PanelWidgetConfig::try_populate_from_preset_seed() {
         return false;
     }
 
-    main_page_index_ = seed.value("main_page_index", 0);
-    next_page_id_ = seed.value("next_page_id", 0);
+    // The try above covers only json::parse — these reads were outside it. Same
+    // null/non-object hazard as the settings.json path in load(); see the
+    // comments there. A seed that fails here would otherwise unwind out of
+    // load(), taking dashboard construction with it.
+    main_page_index_ = static_cast<size_t>(helix::json_util::safe_int(seed, "main_page_index"));
+    next_page_id_ = helix::json_util::safe_int(seed, "next_page_id");
 
     size_t page_idx = 0;
     for (const auto& page_json : seed["pages"]) {
+        if (!page_json.is_object()) {
+            spdlog::warn("[PanelWidgetConfig] Preset seed '{}': skipping non-object page entry "
+                         "at index {}",
+                         seed_path, page_idx);
+            ++page_idx;
+            continue;
+        }
         PageConfig page;
-        page.id = page_json.value("id", "");
+        page.id = helix::json_util::safe_string(page_json, "id");
         if (page_json.contains("widgets") && page_json["widgets"].is_array()) {
-            bool append_defaults = (page_idx == 0);
+            bool append_defaults = pages_.empty();
             page.widgets = parse_widget_array(page_json["widgets"], append_defaults);
         }
         pages_.push_back(std::move(page));
@@ -498,8 +530,25 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
     UiBreakpoint breakpoint = bp_subj ? as_breakpoint(lv_subject_get_int(bp_subj))
                                       : UiBreakpoint::Medium; // Default MEDIUM
 
-    static const char* bp_names[] = {"micro", "tiny", "small", "medium", "large", "xlarge"};
+    // One name per UiBreakpoint tier. Indexed by the enum, so it must stay
+    // seven long: XXLarge is 6 and a six-entry table read past its end.
+    static const char* bp_names[] = {"micro", "tiny",   "small",  "medium",
+                                     "large", "xlarge", "xxlarge"};
+    static_assert(std::size(bp_names) == to_int(UiBreakpoint::XXLarge) + 1,
+                  "bp_names must cover every UiBreakpoint tier");
     const char* bp_name = bp_names[to_int(breakpoint)];
+
+    // Anchor tables are keyed by layout variant in the same most-specific-first
+    // order LayoutManager uses for ui_xml/ overrides: "variants": { "portrait":
+    // [...] } wins over the top-level (landscape) "anchors" on a portrait panel,
+    // and TINY_PORTRAIT falls through tiny_portrait → portrait → base.
+    //
+    // Without this a 480x800 portrait panel — cramped axis 480, i.e. breakpoint
+    // MEDIUM — got the LANDSCAPE medium anchors, authored against a 6-column
+    // grid. `tips` (col 2, colspan 4) and the col-3 temperature anchors do not
+    // exist on a 3-column portrait grid, so three of five anchors were
+    // unreachable and silently fell through to auto-place (#1216).
+    const bool portrait = is_portrait_layout(LayoutManager::instance().type());
 
     // Load anchor placements from config/default_layout.json (runtime-editable).
     // Falls back to registry defaults if file is missing or malformed.
@@ -513,25 +562,58 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
     if (layout_file.is_open()) {
         try {
             nlohmann::json layout = nlohmann::json::parse(layout_file);
-            for (const auto& anchor : layout.value("anchors", nlohmann::json::array())) {
-                std::string id = anchor.value("id", "");
+            // find + is_array rather than .value("anchors", array()): default_
+            // layout.json is runtime-editable, and .value() throws type_error
+            // .302 on a key present with a null value. The catch below would
+            // turn that into "no anchors at all" — every anchor lost to one bad
+            // key. Each read below degrades to its own default instead.
+            auto anchors_it = layout.is_object() ? layout.find("anchors") : layout.end();
+            const nlohmann::json empty_array = nlohmann::json::array();
+            const nlohmann::json* anchor_list =
+                (anchors_it != layout.end() && anchors_it->is_array()) ? &*anchors_it
+                                                                       : &empty_array;
+
+            // Most-specific variant table wins; the base "anchors" array is the
+            // final fallback, exactly as ui_xml/ resolves an override.
+            std::string variant_used = "base";
+            auto variants_it = layout.is_object() ? layout.find("variants") : layout.end();
+            if (variants_it != layout.end() && variants_it->is_object()) {
+                for (const auto& dir : LayoutManager::instance().variant_chain()) {
+                    auto v = variants_it->find(dir);
+                    if (v != variants_it->end() && v->is_array() && !v->empty()) {
+                        anchor_list = &*v;
+                        variant_used = dir;
+                        break;
+                    }
+                }
+            }
+            for (const auto& anchor : *anchor_list) {
+                if (!anchor.is_object())
+                    continue;
+                std::string id = helix::json_util::safe_string(anchor, "id");
                 if (id.empty() || !find_widget_def(id))
                     continue;
 
-                auto placements = anchor.value("placements", nlohmann::json::object());
+                auto placements_it = anchor.find("placements");
+                if (placements_it == anchor.end() || !placements_it->is_object())
+                    continue;
+                const nlohmann::json& placements = *placements_it;
 
                 // Fallback chain: micro→tiny→small, xlarge→large (matches theme_manager)
                 static const char* fallback_order[][3] = {
-                    {"micro", "tiny", "small"},   // bp=0
-                    {"tiny", "small", nullptr},   // bp=1
-                    {"small", nullptr},           // bp=2
-                    {"medium", nullptr},          // bp=3
-                    {"large", nullptr},           // bp=4
-                    {"xlarge", "large", nullptr}, // bp=5
+                    {"micro", "tiny", "small"},     // bp=0 Micro
+                    {"tiny", "small", nullptr},     // bp=1 Tiny
+                    {"small", nullptr},             // bp=2 Small
+                    {"medium", nullptr},            // bp=3 Medium
+                    {"large", nullptr},             // bp=4 Large
+                    {"xlarge", "large", nullptr},   // bp=5 XLarge
+                    {"xxlarge", "xlarge", "large"}, // bp=6 XXLarge
                 };
+                static_assert(std::size(fallback_order) == to_int(UiBreakpoint::XXLarge) + 1,
+                              "fallback_order must cover every UiBreakpoint tier");
                 const char* chosen_name = nullptr;
                 int bp_idx = to_int(breakpoint);
-                if (bp_idx >= 0 && bp_idx <= 5) {
+                if (bp_idx >= 0 && bp_idx < static_cast<int>(std::size(fallback_order))) {
                     for (int i = 0; i < 3 && fallback_order[bp_idx][i]; ++i) {
                         if (placements.contains(fallback_order[bp_idx][i])) {
                             chosen_name = fallback_order[bp_idx][i];
@@ -540,13 +622,22 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
                     }
                 }
                 if (chosen_name) {
-                    auto& p = placements[chosen_name];
-                    anchors.push_back({id, p.value("col", 0), p.value("row", 0),
-                                       p.value("colspan", 1), p.value("rowspan", 1)});
+                    // find, not operator[]: `placements` is a const reference
+                    // now, and const operator[] on a missing key is only
+                    // JSON_ASSERT-guarded — under NDEBUG it dereferences end().
+                    auto p_it = placements.find(chosen_name);
+                    if (p_it == placements.end() || !p_it->is_object())
+                        continue;
+                    const nlohmann::json& p = *p_it;
+                    anchors.push_back({id, helix::json_util::safe_int(p, "col", 0),
+                                       helix::json_util::safe_int(p, "row", 0),
+                                       helix::json_util::safe_int(p, "colspan", 1),
+                                       helix::json_util::safe_int(p, "rowspan", 1)});
                 }
             }
-            spdlog::debug("[PanelWidgetConfig] Loaded {} anchors from default_layout.json (bp={})",
-                          anchors.size(), bp_name);
+            spdlog::debug(
+                "[PanelWidgetConfig] Loaded {} anchors from default_layout.json (bp={}, table={})",
+                anchors.size(), bp_name, variant_used);
         } catch (const std::exception& e) {
             spdlog::warn("[PanelWidgetConfig] Failed to parse default_layout.json: {}", e.what());
             anchors.clear();
@@ -556,12 +647,23 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
     // Fallback: if no anchors loaded, use hardcoded defaults so the dashboard
     // always has printer_image, print_status, and tips placed sensibly.
     if (anchors.empty()) {
-        spdlog::debug("[PanelWidgetConfig] Using hardcoded anchor fallback (bp={})", bp_name);
-        anchors = {
-            {"printer_image", 0, 0, 2, 2},
-            {"print_status", 0, 2, 2, 2},
-            {"tips", 2, 0, 4, 2},
-        };
+        spdlog::debug("[PanelWidgetConfig] Using hardcoded anchor fallback (bp={}, {})", bp_name,
+                      portrait ? "portrait" : "landscape");
+        if (portrait) {
+            // No `tips`: it is authored 4 columns wide and a portrait grid is
+            // 2-3 wide, so anchoring it can only ever place a shrunken widget
+            // across a third of the screen.
+            anchors = {
+                {"printer_image", 0, 0, 2, 2},
+                {"print_status", 0, 2, 2, 2},
+            };
+        } else {
+            anchors = {
+                {"printer_image", 0, 0, 2, 2},
+                {"print_status", 0, 2, 2, 2},
+                {"tips", 2, 0, 4, 2},
+            };
+        }
     }
 
     // Build result: anchored widgets first, then all others with auto-placement
@@ -610,6 +712,22 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
             fil_it->enabled = false;
         if (ams_it != result.end())
             ams_it->enabled = true;
+    }
+
+    // Tips is a landscape-only default. It is authored 4 columns wide against a
+    // 6-column grid and cannot go below 2; a portrait grid is 2-3 columns, so
+    // even at its minimum it eats a third to a half of a row for rotating hints,
+    // and the widgets behind it are the ones that get dropped when the grid runs
+    // out (#1216). Portrait ships without it; the user can still add it back.
+    if (portrait) {
+        auto it = std::find_if(result.begin(), result.end(),
+                               [](const PanelWidgetEntry& e) { return e.id == "tips"; });
+        if (it != result.end() && it->enabled) {
+            it->enabled = false;
+            it->col = -1;
+            it->row = -1;
+            spdlog::debug("[PanelWidgetConfig] Portrait layout — 'tips' off by default");
+        }
     }
 
     // Bed temperature: always last, enabled conditionally.

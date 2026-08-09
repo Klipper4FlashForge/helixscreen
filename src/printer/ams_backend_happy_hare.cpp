@@ -3,6 +3,7 @@
 
 #include "ams_backend_happy_hare.h"
 
+#include "ams_bypass_policy.h"
 #include "ams_state.h"
 #include "config.h"
 #include "hh_defaults.h"
@@ -18,6 +19,16 @@
 
 using namespace helix;
 
+namespace {
+
+/// The two printer.mmu filament_pos values Happy Hare's own check_if_loaded()
+/// treats as "not loaded" (mmu.py FILAMENT_POS_UNKNOWN / FILAMENT_POS_UNLOADED).
+/// Every other position, including the intermediate ones, is refused.
+constexpr int kHappyHarePosUnknown = -1;
+constexpr int kHappyHarePosUnloaded = 0;
+
+} // namespace
+
 // ============================================================================
 // Construction / Destruction
 // ============================================================================
@@ -30,8 +41,12 @@ AmsBackendHappyHare::AmsBackendHappyHare(IMoonrakerAPI* api, IMoonrakerClient* c
     system_info_.supports_endless_spool = true;
     system_info_.supports_tool_mapping = true;
     // Bypass support is determined at runtime from mmu.has_bypass status field.
-    // Default to true; will be updated when first status arrives.
-    system_info_.supports_bypass = true;
+    // Starts false so the bypass UI stays absent until the firmware confirms it:
+    // an optimistic default shows the toggle, the Device Operations section and
+    // the path node on every connect, then withdraws all three a moment later on
+    // any machine that has no bypass. A control arriving late reads as loading;
+    // one that appears and vanishes reads as a bug.
+    system_info_.supports_bypass = false;
     // Happy Hare bypass is always positional (selector moves to bypass position), never a sensor
     system_info_.has_hardware_bypass_sensor = false;
     // Default to TIP_FORM -- Happy Hare's default macro is _MMU_FORM_TIP.
@@ -464,9 +479,30 @@ void AmsBackendHappyHare::parse_mmu_state(const nlohmann::json& mmu_data) {
 
     // Parse has_bypass: printer.mmu.has_bypass
     // Not all MMU types support bypass (e.g., ERCF/Tradrack do, BoxTurtle does not)
+    //
+    // Logged at info rather than trace, and on every change rather than never:
+    // false here removes the entire bypass UI (sidebar toggle, Device Operations
+    // section, path node) and this flag is the sole reason. Happy Hare derives it
+    // from [mmu_machine] has_bypass, which defaults to 0 for mmu_vendor "Other",
+    // and on type-A selectors ANDs it with the calibrated bypass offset — so an
+    // owner with a physical bypass can legitimately see false and have no way to
+    // tell that from a bug in us.
     if (mmu_data.contains("has_bypass") && mmu_data["has_bypass"].is_boolean()) {
-        system_info_.supports_bypass = mmu_data["has_bypass"].get<bool>();
-        spdlog::trace("[AMS HappyHare] Bypass supported: {}", system_info_.supports_bypass);
+        const bool has_bypass = mmu_data["has_bypass"].get<bool>();
+        if (!bypass_support_seen_ || has_bypass != system_info_.supports_bypass) {
+            spdlog::info("[AMS HappyHare] Bypass supported: {}", has_bypass);
+            bypass_support_seen_ = true;
+        }
+        system_info_.supports_bypass = has_bypass;
+    } else if (!bypass_support_seen_) {
+        // Field absent entirely. Every Happy Hare we know of publishes it, so this
+        // is a fork or a version we have not seen; assume supported rather than
+        // silently removing a control the machine may well have. Deliberately not
+        // the same as the pre-status default, which is false so that a system
+        // without a bypass never flashes the UI up and then withdraws it.
+        bypass_support_seen_ = true;
+        system_info_.supports_bypass = true;
+        spdlog::warn("[AMS HappyHare] No has_bypass field in mmu status; assuming supported");
     }
 
     // Parse num_units if available (multi-unit Happy Hare setups)
@@ -562,23 +598,16 @@ void AmsBackendHappyHare::parse_mmu_state(const nlohmann::json& mmu_data) {
             initialize_slots(gate_count);
         }
 
-        // Update gate status values via SlotRegistry
+        // Cache the raw values. The LOADED stamp is applied by
+        // refresh_gate_statuses_locked() at the end of this function rather than
+        // here, because it depends on gate/filament — which arrive in their own
+        // deltas, without gate_status (#1199).
+        if (gate_status_raw_.size() != gate_status.size()) {
+            gate_status_raw_.assign(gate_status.size(), -1);
+        }
         for (size_t i = 0; i < gate_status.size(); ++i) {
             if (gate_status[i].is_number_integer()) {
-                int hh_status = gate_status[i].get<int>();
-                SlotStatus status = slot_status_from_happy_hare(hh_status);
-
-                // Mark the currently loaded slot as LOADED instead of AVAILABLE
-                if (system_info_.filament_loaded &&
-                    static_cast<int>(i) == system_info_.current_slot &&
-                    status == SlotStatus::AVAILABLE) {
-                    status = SlotStatus::LOADED;
-                }
-
-                auto* entry = slots_.get_mut(static_cast<int>(i));
-                if (entry) {
-                    entry->info.status = status;
-                }
+                gate_status_raw_[i] = gate_status[i].get<int>();
             }
         }
     }
@@ -824,6 +853,12 @@ void AmsBackendHappyHare::parse_mmu_state(const nlohmann::json& mmu_data) {
                 }
             }
         }
+        // Re-supply user-attached identity the gate map cannot carry.
+        for (size_t i = 0; i < spool_ids.size(); ++i) {
+            if (auto* entry = slots_.get_mut(static_cast<int>(i))) {
+                apply_overrides(entry->info, static_cast<int>(i));
+            }
+        }
         spdlog::trace("[AMS HappyHare] Parsed gate_spool_id for {} gates", spool_ids.size());
     }
 
@@ -1024,6 +1059,40 @@ void AmsBackendHappyHare::parse_mmu_state(const nlohmann::json& mmu_data) {
             }
         }
     }
+
+    // Re-derive every gate's status from the cached gate_status array plus the
+    // gate/filament pair this frame may have moved. Unconditional, and last, so
+    // no ordering between the three keys can leave a stale stamp behind.
+    refresh_gate_statuses_locked();
+}
+
+void AmsBackendHappyHare::refresh_gate_statuses_locked() {
+    for (size_t i = 0; i < gate_status_raw_.size(); ++i) {
+        auto* entry = slots_.get_mut(static_cast<int>(i));
+        if (!entry) {
+            continue;
+        }
+
+        SlotStatus status = slot_status_from_happy_hare(gate_status_raw_[i]);
+
+        // The gate Happy Hare reports loaded reads LOADED whatever its fill
+        // state is — including gate_status 2 (from_buffer), which the old
+        // `status == AVAILABLE` precondition silently excluded, so a buffered
+        // gate never showed as seated while it was feeding the toolhead.
+        //
+        // gate_status 0 is the deliberate exception. An empty gate that Happy
+        // Hare still names as loaded is a runout: the filament it already fed is
+        // at the toolhead, but the gate has nothing left, and load_filament()'s
+        // "slot not available" refusal keys on EMPTY. That disagreement with the
+        // aggregate pair is also why this backend does not claim
+        // has_per_slot_loaded_authority() — see the comment there.
+        if (system_info_.filament_loaded && static_cast<int>(i) == system_info_.current_slot &&
+            status != SlotStatus::EMPTY) {
+            status = SlotStatus::LOADED;
+        }
+
+        entry->info.status = status;
+    }
 }
 
 // ============================================================================
@@ -1034,21 +1103,26 @@ std::vector<helix::RecoveryAction> AmsBackendHappyHare::build_recovery_actions()
     // Caller holds mutex_.
     std::vector<helix::RecoveryAction> actions;
 
-    // Resume after the user clears the fault (always offered, primary).
-    actions.push_back({lv_tr("Resume"), "RESUME", "hh::resume", "primary"});
+    // Resume after the user clears the fault (always offered, primary). Resuming
+    // a paused print extrudes on the next move, so it needs the hotend up.
+    actions.push_back({lv_tr("Resume"), "RESUME", "hh::resume", "primary",
+                       /*needs_hot_nozzle=*/true});
 
     // MMU_RECOVER re-syncs HH's filament state; the LOADED/UNLOADED arg must match
-    // reality (HH issue #729). Derive from the live loaded flag.
+    // reality (HH issue #729). Derive from the live loaded flag. State-only — it
+    // moves nothing, so it stays available on a cold nozzle.
     const bool loaded = system_info_.filament_loaded;
     actions.push_back({lv_tr("Recover"), loaded ? "MMU_RECOVER LOADED=1" : "MMU_RECOVER UNLOADED=1",
                        "hh::recover", ""});
 
-    // If filament is at the toolhead, offer an explicit unload.
+    // If filament is at the toolhead, offer an explicit unload. Pulls filament
+    // back out through the melt zone, so it needs heat.
     if (loaded) {
-        actions.push_back({lv_tr("Unload"), "MMU_UNLOAD", "hh::unload", ""});
+        actions.push_back({lv_tr("Unload"), "MMU_UNLOAD", "hh::unload", "",
+                           /*needs_hot_nozzle=*/true});
     }
 
-    // Force-clear the MMU pause lock (last resort).
+    // Force-clear the MMU pause lock (last resort). Lock state only, no motion.
     actions.push_back({lv_tr("Unlock"), "MMU_UNLOCK", "hh::unlock", "danger"});
     return actions;
 }
@@ -1295,6 +1369,20 @@ void AmsBackendHappyHare::query_tip_method_from_config() {
             token.defer("AmsBackendHappyHare::tip_method_apply", [this, response =
                                                                             std::move(response)]() {
                 try {
+                    // Guard every level before indexing. `response` is const in
+                    // this non-mutable lambda, so operator[] resolves to the
+                    // const overload — on a missing key that is a live
+                    // assert(), an uncatchable SIGABRT, NOT the json exception
+                    // the catch below is written for.
+                    if (!response.contains("result") || !response["result"].contains("status") ||
+                        !response["result"]["status"].contains("configfile") ||
+                        !response["result"]["status"]["configfile"].contains("settings") ||
+                        !response["result"]["status"]["configfile"]["settings"].is_object()) {
+                        spdlog::warn("[AMS HappyHare] configfile settings unavailable for tip "
+                                     "method query");
+                        return;
+                    }
+
                     const auto& settings = response["result"]["status"]["configfile"]["settings"];
 
                     if (!settings.contains("mmu") || !settings["mmu"].is_object()) {
@@ -1369,6 +1457,18 @@ void AmsBackendHappyHare::query_selector_type_from_config() {
             token.defer("AmsBackendHappyHare::selector_type_apply", [this, response = std::move(
                                                                                response)]() {
                 try {
+                    // See query_tip_method_from_config: const operator[] on a
+                    // missing key asserts rather than throws, so the chain must
+                    // be guarded level by level.
+                    if (!response.contains("result") || !response["result"].contains("status") ||
+                        !response["result"]["status"].contains("configfile") ||
+                        !response["result"]["status"]["configfile"].contains("settings") ||
+                        !response["result"]["status"]["configfile"]["settings"].is_object()) {
+                        spdlog::warn("[AMS HappyHare] configfile settings unavailable for selector "
+                                     "type query");
+                        return;
+                    }
+
                     const auto& settings = response["result"]["status"]["configfile"]["settings"];
 
                     if (!settings.contains("mmu_machine") || !settings["mmu_machine"].is_object()) {
@@ -1655,6 +1755,18 @@ void AmsBackendHappyHare::query_heater_config_from_config() {
             token.defer("AmsBackendHappyHare::heater_config_apply", [this, response = std::move(
                                                                                response)]() {
                 try {
+                    // See query_tip_method_from_config: const operator[] on a
+                    // missing key asserts rather than throws, so the chain must
+                    // be guarded level by level.
+                    if (!response.contains("result") || !response["result"].contains("status") ||
+                        !response["result"]["status"].contains("configfile") ||
+                        !response["result"]["status"]["configfile"].contains("settings") ||
+                        !response["result"]["status"]["configfile"]["settings"].is_object()) {
+                        spdlog::warn(
+                            "[AMS HappyHare] configfile settings unavailable for heater query");
+                        return;
+                    }
+
                     const auto& settings = response["result"]["status"]["configfile"]["settings"];
                     apply_heater_config(settings);
                     emit_event(EVENT_STATE_CHANGED);
@@ -1691,6 +1803,18 @@ void AmsBackendHappyHare::query_config_defaults() {
             token.defer("AmsBackendHappyHare::config_defaults_apply", [this, response = std::move(
                                                                                  response)]() {
                 try {
+                    // See query_tip_method_from_config: const operator[] on a
+                    // missing key asserts rather than throws, so the chain must
+                    // be guarded level by level.
+                    if (!response.contains("result") || !response["result"].contains("status") ||
+                        !response["result"]["status"].contains("configfile") ||
+                        !response["result"]["status"]["configfile"].contains("settings") ||
+                        !response["result"]["status"]["configfile"]["settings"].is_object()) {
+                        spdlog::warn(
+                            "[AMS HappyHare] configfile settings unavailable for config defaults");
+                        return;
+                    }
+
                     const auto& settings = response["result"]["status"]["configfile"]["settings"];
 
                     if (!settings.contains("mmu") || !settings["mmu"].is_object()) {
@@ -2126,7 +2250,15 @@ AmsError AmsBackendHappyHare::reset() {
     return execute_gcode("MMU_HOME");
 }
 
-AmsError AmsBackendHappyHare::reset_lane(int slot_index) {
+// MMU_RECOVER re-syncs Happy Hare's idea of gate state. It moves no filament, so
+// it is a fault clear rather than a position recovery.
+AmsError AmsBackendHappyHare::clear_fault(int slot_index) {
+    // -1 means "no particular gate". MMU_RECOVER without GATE re-syncs the whole
+    // selector, the natural system-scoped analogue of AFC's RESET_FAILURE, and
+    // the base contract documents -1 as valid. Both UI callers pass current_slot,
+    // which is -1 whenever nothing is loaded — the state Reset is pressed in.
+    const bool all_gates = (slot_index < 0);
+
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
@@ -2134,10 +2266,17 @@ AmsError AmsBackendHappyHare::reset_lane(int slot_index) {
             return AmsErrorHelper::not_connected("Happy Hare backend not started");
         }
 
-        AmsError slot_err = validate_slot_index(slot_index);
-        if (!slot_err) {
-            return slot_err;
+        if (!all_gates) {
+            AmsError slot_err = validate_slot_index(slot_index);
+            if (!slot_err) {
+                return slot_err;
+            }
         }
+    }
+
+    if (all_gates) {
+        spdlog::info("[AMS HappyHare] Recovering all gates");
+        return execute_gcode("MMU_RECOVER");
     }
 
     // MMU_RECOVER with GATE parameter recovers a specific gate's state
@@ -2263,6 +2402,101 @@ AmsError AmsBackendHappyHare::cancel() {
 // Configuration Operations
 // ============================================================================
 
+void AmsBackendHappyHare::apply_overrides(SlotInfo& slot, int slot_index) {
+    // Callers hold mutex_. Same merge policy as AFC/ACE: the override wins only
+    // where it carries a real value; sentinels fall through to firmware.
+    auto it = overrides_.find(slot_index);
+    if (it == overrides_.end()) {
+        return;
+    }
+    const auto& o = it->second;
+    if (!o.brand.empty())
+        slot.brand = o.brand;
+    if (!o.spool_name.empty())
+        slot.spool_name = o.spool_name;
+    if (o.spoolman_id > 0)
+        slot.spoolman_id = o.spoolman_id;
+    if (o.spoolman_vendor_id > 0)
+        slot.spoolman_vendor_id = o.spoolman_vendor_id;
+    if (o.remaining_weight_g >= 0.0f)
+        slot.remaining_weight_g = o.remaining_weight_g;
+    if (o.total_weight_g >= 0.0f)
+        slot.total_weight_g = o.total_weight_g;
+    if (o.color_set)
+        slot.color_rgb = o.color_rgb;
+    if (!o.color_name.empty())
+        slot.color_name = o.color_name;
+    if (!o.material.empty())
+        slot.material = o.material;
+    // Catalog product identity — same "override wins only when it carries a
+    // real value" rule as the strings above. Firmware never populates these
+    // (no AMS protocol has a notion of a branded product id), so a non-empty
+    // value here is always a user pick and always wins.
+    if (!o.catalog_id.empty())
+        slot.catalog_id = o.catalog_id;
+    if (!o.product_name.empty())
+        slot.product_name = o.product_name;
+}
+
+void AmsBackendHappyHare::persist_override(int slot_index, const SlotInfo& info) {
+    // Callers hold mutex_.
+    helix::ams::FilamentSlotOverride o;
+    o.brand = info.brand;
+    o.spool_name = info.spool_name;
+    o.spoolman_id = info.spoolman_id;
+    o.spoolman_vendor_id = info.spoolman_vendor_id;
+    o.remaining_weight_g = info.remaining_weight_g;
+    o.total_weight_g = info.total_weight_g;
+    o.color_name = info.color_name;
+    o.material = info.material;
+    // Catalog product identity — see apply_overrides(). Never auto-mirrored;
+    // a non-empty value is always a user pick.
+    o.catalog_id = info.catalog_id;
+    o.product_name = info.product_name;
+    if (info.color_rgb != 0 && info.color_rgb != AMS_DEFAULT_SLOT_COLOR) {
+        o.color_rgb = info.color_rgb;
+        o.color_set = true;
+    }
+    overrides_[slot_index] = o;
+
+    if (override_store_) {
+        override_store_->save_async(slot_index, o, [slot_index](bool ok, std::string err) {
+            if (!ok) {
+                spdlog::warn("[AMS HappyHare] override save failed for gate {}: {}", slot_index,
+                             err);
+            }
+        });
+    }
+}
+
+void AmsBackendHappyHare::clear_slot_override(int slot_index) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        overrides_.erase(slot_index);
+
+        // Reset the override-exclusive fields on the live slot too: Happy Hare's
+        // gate map has no concept of brand / spool_name / total weight / colour
+        // name, so no firmware update will ever clear them.
+        if (helix::printer::SlotEntry* entry = slots_.get_mut(slot_index)) {
+            entry->info.brand.clear();
+            entry->info.spool_name.clear();
+            entry->info.spoolman_id = 0;
+            entry->info.spoolman_vendor_id = 0;
+            entry->info.spoolman_filament_id = 0;
+            entry->info.remaining_weight_g = -1.0f;
+            entry->info.total_weight_g = -1.0f;
+            entry->info.color_name.clear();
+            // The catalog pick is override-exclusive on every backend — no AMS
+            // firmware carries a branded product id — so a clear always drops it.
+            // Leaving it would re-navigate the editor to the removed spool's
+            // product on the next open.
+            entry->info.catalog_id.clear();
+            entry->info.product_name.clear();
+        }
+    }
+    emit_event(EVENT_SLOT_CHANGED, std::to_string(slot_index));
+}
+
 AmsError AmsBackendHappyHare::set_slot_info(int slot_index, const SlotInfo& info, bool persist) {
     int old_spoolman_id = 0;
     int old_mapped_tool = -1;
@@ -2289,6 +2523,8 @@ AmsError AmsBackendHappyHare::set_slot_info(int slot_index, const SlotInfo& info
         // Detect whether anything actually changed
         bool changed = slot.color_name != info.color_name || slot.color_rgb != info.color_rgb ||
                        slot.material != info.material || slot.brand != info.brand ||
+                       slot.catalog_id != info.catalog_id ||
+                       slot.product_name != info.product_name ||
                        slot.spoolman_id != info.spoolman_id || slot.spool_name != info.spool_name ||
                        slot.remaining_weight_g != info.remaining_weight_g ||
                        slot.total_weight_g != info.total_weight_g ||
@@ -2301,6 +2537,11 @@ AmsError AmsBackendHappyHare::set_slot_info(int slot_index, const SlotInfo& info
         slot.color_rgb = info.color_rgb;
         slot.material = info.material;
         slot.brand = info.brand;
+        // Carry the catalog product identity through preview writes too — a
+        // persist=false preview that dropped it would make the editor snap
+        // back to a different variant on the next get_slot_info().
+        slot.catalog_id = info.catalog_id;
+        slot.product_name = info.product_name;
         slot.spoolman_id = info.spoolman_id;
         slot.spool_name = info.spool_name;
         slot.remaining_weight_g = info.remaining_weight_g;
@@ -2316,6 +2557,12 @@ AmsError AmsBackendHappyHare::set_slot_info(int slot_index, const SlotInfo& info
         if (changed) {
             spdlog::info("[AMS HappyHare] Updated slot {} info: {} {}", slot_index, info.material,
                          info.color_name);
+        }
+
+        // Record the user's identity in the override store: the gate map cannot
+        // hold brand / spool_name / total weight / colour name at all.
+        if (persist) {
+            persist_override(slot_index, info);
         }
     }
 
@@ -2421,9 +2668,28 @@ AmsError AmsBackendHappyHare::enable_bypass() {
             return precondition;
         }
 
-        if (!system_info_.supports_bypass) {
+        if (!helix::bypass_available_for(system_info_.supports_bypass)) {
             return AmsError(AmsResult::WRONG_STATE, "Bypass not supported",
                             "This Happy Hare system does not support bypass mode", "");
+        }
+
+        // Twin of the AFC guard in AmsBackendAfc::enable_bypass(), and required
+        // for the same reason: allows_implicit_chaining() == false means the
+        // sidebar sends one command and lets the backend refuse, but
+        // execute_gcode() is fire-and-forget (returns success before Klipper
+        // answers), so a refused MMU_SELECT_BYPASS would report success and
+        // change nothing. Happy Hare's cmd_MMU_SELECT_BYPASS runs
+        // check_if_loaded() and answers only with a `!!` line, which reaches the
+        // user as a bare "Operation not possible. Filament is loaded" toast
+        // contradicting the success we already reported.
+        //
+        // Keyed on filament_pos rather than system_info_.filament_loaded because
+        // that flag is set solely from filament == "Loaded" — Happy Hare refuses
+        // at every position except UNLOADED and UNKNOWN, so an intermediate
+        // position (mid-bowden, mid-unload) has to refuse here too.
+        if (filament_pos_ != kHappyHarePosUnloaded && filament_pos_ != kHappyHarePosUnknown) {
+            return AmsError(AmsResult::WRONG_STATE, "Unload filament first",
+                            "Filament is still loaded. Unload it before enabling bypass.", "");
         }
     }
 

@@ -26,6 +26,11 @@ interface GitHubTokenResponse {
   token: string;
 }
 
+/** Entry from the git/matching-refs API. */
+interface GitHubRef {
+  ref: string;
+}
+
 // =============================================================================
 // PEM → CryptoKey
 // =============================================================================
@@ -190,6 +195,41 @@ export async function getInstallationToken(
 
   const { token } = (await tokenRes.json()) as GitHubTokenResponse;
   return token;
+}
+
+/**
+ * Check whether `version` corresponds to a real release tag (`v<version>`).
+ *
+ * Uses git/matching-refs rather than a direct ref lookup because "no such tag"
+ * comes back as 200 with an empty array, which is distinguishable from a
+ * permission or transport failure. Every other outcome — non-2xx, a throw, a
+ * body that isn't an array — reports `true`, so a GitHub outage or a missing
+ * `contents: read` scope can never silently discard a genuine crash report.
+ *
+ * matching-refs is a prefix query, so v0.1.4 also matches v0.1.40; only an
+ * exact `refs/tags/v<version>` entry counts.
+ */
+export async function isKnownRelease(
+  token: string,
+  owner: string,
+  repo: string,
+  version: string
+): Promise<boolean> {
+  const tag = `v${version}`;
+  try {
+    const res = await githubFetch(
+      `/repos/${owner}/${repo}/git/matching-refs/tags/${encodeURIComponent(tag)}`,
+      token
+    );
+    if (!res.ok) return true;
+
+    const refs = await res.json();
+    if (!Array.isArray(refs)) return true;
+
+    return refs.some((r) => (r as GitHubRef)?.ref === `refs/tags/${tag}`);
+  } catch {
+    return true;
+  }
 }
 
 // =============================================================================

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025-2026 356C LLC
 
+#include "lvgl_test_fixture.h"
 #include "touch_calibration.h"
 #include "touch_calibration_panel.h"
+#include "touch_calibration_wrapper.h"
 
 #include "../catch_amalgamated.hpp"
 
@@ -1398,4 +1400,62 @@ TEST_CASE("TouchCalibration: should_invalidate_legacy_calibration truth table",
     // Non-resistive, no mismatch (e.g. generic HID range) → calibration was fine.
     REQUIRE(should_invalidate_legacy_calibration(/*recheck*/ true, /*resistive*/ false,
                                                  /*mismatch*/ false) == false);
+}
+
+// ============================================================================
+// Read-callback wrapper: context handle, not indev user_data
+// ============================================================================
+//
+// Regression for prestonbrown/helixscreen#1112 (bundle LG9X482B): the calibrated
+// read path used to fetch its CalibrationContext via lv_indev_get_user_data(),
+// and a stale/corrupted user_data slot (holding non-null garbage) crashed it. The
+// wrapper now keeps the context in its own static storage and must ignore
+// user_data entirely — so poisoning user_data must not affect the transform.
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "calibrated_read_cb: transforms via static handle, ignores indev user_data",
+                 "[touch-calibration][wrapper][regression]") {
+    lv_indev_t* indev = lv_indev_create();
+    REQUIRE(indev != nullptr);
+    lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+
+    // A valid affine calibration: screen_x = x + 100, screen_y = y + 50.
+    TouchCalibration cal;
+    cal.valid = true;
+    cal.a = 1.0f, cal.b = 0.0f, cal.c = 100.0f;
+    cal.d = 0.0f, cal.e = 1.0f, cal.f = 50.0f;
+
+    CalibrationContext ctx;
+    install_calibration_wrapper(indev, ctx, cal, 800, 480);
+
+    // The read callback must have been installed on the indev.
+    CHECK(lv_indev_get_read_cb(indev) == helix::calibrated_read_cb);
+
+    // Poison user_data with a non-null garbage value — the exact failure shape of
+    // #1112. The old code dereferenced this; the new code must ignore it.
+    lv_indev_set_user_data(indev, reinterpret_cast<void*>(0xDEADBEEFUL));
+
+    lv_indev_data_t data{};
+    data.point.x = 10;
+    data.point.y = 20;
+    data.state = LV_INDEV_STATE_PRESSED;
+    calibrated_read_cb(indev, &data);
+
+    const Point expected = transform_point(cal, {10, 20}, 799, 479);
+    CHECK(data.point.x == expected.x);
+    CHECK(data.point.y == expected.y);
+
+    // After uninstall the callback is silenced and the static handle is dropped,
+    // so a subsequent call is an inert passthrough (coordinates untouched).
+    uninstall_calibration_wrapper(indev, ctx);
+    CHECK(lv_indev_get_read_cb(indev) == nullptr);
+
+    lv_indev_data_t data2{};
+    data2.point.x = 10;
+    data2.point.y = 20;
+    calibrated_read_cb(indev, &data2);
+    CHECK(data2.point.x == 10);
+    CHECK(data2.point.y == 20);
+
+    lv_indev_delete(indev);
 }

@@ -11,11 +11,18 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
+#include <deque>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "../catch_amalgamated.hpp"
+
+// Tap-to-paste tests call the real ConsolePanel::find_entry_by_id, unlike the
+// replicated helpers below. ui_panel_console.o is linked into the test binary
+// (it is absent from the TEST_APP_OBJS filter-out list in mk/tests.mk).
+#include "ui_panel_console.h"
 
 // ============================================================================
 // Test is_error_message() detection logic
@@ -555,4 +562,125 @@ TEST_CASE("Console: parse_html_spans() quoted class attribute", "[ui][html_parse
     REQUIRE(segments.size() == 1);
     REQUIRE(segments[0].text == "OK");
     REQUIRE(segments[0].color_class == "success");
+}
+
+// ============================================================================
+// Tap-to-Paste: entry id resolution
+//
+// These exercise the REAL ConsolePanel::find_entry_by_id, not a replica. The
+// function is static and takes the container, so no panel instance is built —
+// see docs/devel/specs/2026-07-20-print-status-panel-test-isolation.md for why
+// constructing a panel in a test is unsafe.
+// ============================================================================
+
+namespace {
+
+using GcodeEntry = ConsolePanel::GcodeEntry;
+
+/// Append an entry the way ConsolePanel::add_entry does, assigning the next id.
+GcodeEntry& push(std::deque<GcodeEntry>& entries, uint64_t& next_id, const std::string& message,
+                 GcodeEntry::Type type = GcodeEntry::Type::COMMAND) {
+    GcodeEntry entry;
+    entry.message = message;
+    entry.type = type;
+    entries.push_back(entry);
+    entries.back().id = next_id++;
+    return entries.back();
+}
+
+} // namespace
+
+TEST_CASE("Console: find_entry_by_id resolves a live entry", "[ui][tap_to_paste]") {
+    std::deque<GcodeEntry> entries;
+    uint64_t next_id = 1;
+
+    push(entries, next_id, "G28");
+    uint64_t wanted = push(entries, next_id, "BED_MESH_CALIBRATE").id;
+    push(entries, next_id, "M104 S210");
+
+    const GcodeEntry* found = ConsolePanel::find_entry_by_id(entries, wanted);
+    REQUIRE(found != nullptr);
+    REQUIRE(found->message == "BED_MESH_CALIBRATE");
+}
+
+TEST_CASE("Console: find_entry_by_id rejects id 0", "[ui][tap_to_paste]") {
+    std::deque<GcodeEntry> entries;
+    uint64_t next_id = 1;
+    push(entries, next_id, "G28");
+
+    // An entry that never entered entries_ keeps id 0. A widget carrying 0 must
+    // never resolve, even though a default-constructed entry sits in the buffer.
+    GcodeEntry unassigned;
+    unassigned.message = "NEVER_TAPPABLE";
+    entries.push_back(unassigned);
+
+    REQUIRE(ConsolePanel::find_entry_by_id(entries, 0) == nullptr);
+}
+
+TEST_CASE("Console: find_entry_by_id returns null for an unknown id", "[ui][tap_to_paste]") {
+    std::deque<GcodeEntry> entries;
+    uint64_t next_id = 1;
+    push(entries, next_id, "G28");
+
+    REQUIRE(ConsolePanel::find_entry_by_id(entries, 9999) == nullptr);
+}
+
+TEST_CASE("Console: find_entry_by_id returns null once the entry is pruned", "[ui][tap_to_paste]") {
+    std::deque<GcodeEntry> entries;
+    uint64_t next_id = 1;
+
+    uint64_t oldest = push(entries, next_id, "G28").id;
+    push(entries, next_id, "M104 S210");
+
+    // add_entry() prunes from the front when over MAX_ENTRIES. A widget can
+    // outlive its entry, so the lookup must fail closed rather than resolve to
+    // whatever slid into that position.
+    entries.pop_front();
+
+    REQUIRE(ConsolePanel::find_entry_by_id(entries, oldest) == nullptr);
+}
+
+TEST_CASE("Console: pruned ids are never reused by later entries", "[ui][tap_to_paste]") {
+    std::deque<GcodeEntry> entries;
+    uint64_t next_id = 1;
+    constexpr size_t CAP = 4;
+
+    std::vector<uint64_t> retired;
+    for (int i = 0; i < 20; i++) {
+        push(entries, next_id, "CMD_" + std::to_string(i));
+        while (entries.size() > CAP) {
+            retired.push_back(entries.front().id);
+            entries.pop_front();
+        }
+    }
+
+    REQUIRE(entries.size() == CAP);
+    REQUIRE_FALSE(retired.empty());
+
+    // This is the safety property that makes an integer id safe where a raw
+    // pointer would not be: no retired id ever resolves again.
+    for (uint64_t gone : retired) {
+        REQUIRE(ConsolePanel::find_entry_by_id(entries, gone) == nullptr);
+    }
+
+    // ...and every surviving entry still resolves to its own text.
+    for (const auto& entry : entries) {
+        const GcodeEntry* found = ConsolePanel::find_entry_by_id(entries, entry.id);
+        REQUIRE(found != nullptr);
+        REQUIRE(found->message == entry.message);
+    }
+}
+
+TEST_CASE("Console: find_entry_by_id resolves responses too", "[ui][tap_to_paste]") {
+    // The lookup itself is type-agnostic; only create_entry_widget() decides what
+    // gets a click handler. Keeping the lookup general means a future "tap a
+    // response" feature does not need it changed.
+    std::deque<GcodeEntry> entries;
+    uint64_t next_id = 1;
+
+    uint64_t resp = push(entries, next_id, "ok", GcodeEntry::Type::RESPONSE).id;
+
+    const GcodeEntry* found = ConsolePanel::find_entry_by_id(entries, resp);
+    REQUIRE(found != nullptr);
+    REQUIRE(found->type == GcodeEntry::Type::RESPONSE);
 }

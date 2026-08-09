@@ -239,6 +239,12 @@ TEST_CASE("GCodeStreamingController prefetch", "[gcode][streaming]") {
     GCodeStreamingController controller;
     REQUIRE(controller.open_file(temp_file.path()));
 
+    // Prefetch runs on a worker thread — it used to run inline, which is exactly
+    // what put up to 2*radius+1 seek-and-parses on the LVGL main thread. The
+    // requested layer is still loaded synchronously; only the NEIGHBOURS are
+    // asynchronous, so these sections sync on wait_for_prefetch_idle() before
+    // asserting on them.
+
     SECTION("prefetch loads nearby layers") {
         // Clear any auto-prefetched layers
         controller.clear_cache();
@@ -246,8 +252,12 @@ TEST_CASE("GCodeStreamingController prefetch", "[gcode][streaming]") {
         // Access layer 10, which should prefetch layers 7-13
         controller.get_layer_segments(10);
 
-        // Nearby layers should be cached
+        // The requested layer is loaded before the call returns.
         REQUIRE(controller.is_layer_cached(10));
+
+        controller.wait_for_prefetch_idle();
+
+        // Nearby layers should be cached
         REQUIRE(controller.is_layer_cached(9));
         REQUIRE(controller.is_layer_cached(11));
 
@@ -259,6 +269,7 @@ TEST_CASE("GCodeStreamingController prefetch", "[gcode][streaming]") {
     SECTION("explicit prefetch works") {
         controller.clear_cache();
         controller.prefetch_around(5, 2);
+        controller.wait_for_prefetch_idle();
 
         // Layers 3-7 should be cached
         for (size_t i = 3; i <= 7; ++i) {
@@ -541,19 +552,59 @@ TEST_CASE("BackgroundGhostBuilder cancellation", "[gcode][streaming][ghost]") {
     }
 
     SECTION("destructor cancels automatically") {
+        // Each layer costs LAYER_COST_MS in the render callback, so a destructor
+        // that only joins (never signals cancel) has to drain every remaining
+        // layer. One that cancels first waits out at most the layer in flight.
+        constexpr int LAYER_COST_MS = 400;
+
         std::atomic<bool> callback_called{false};
+        std::atomic<size_t> layers_seen{0};
+        size_t total_layers = 0;
+        auto teardown_start = std::chrono::steady_clock::now();
+
         {
             BackgroundGhostBuilder builder;
             builder.start(&controller, [&](size_t, const std::vector<ToolpathSegment>&) {
                 callback_called = true;
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                layers_seen++;
+                std::this_thread::sleep_for(std::chrono::milliseconds(LAYER_COST_MS));
             });
-            // Let it start
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+            total_layers = builder.total_layers();
+
+            // Wait for the worker to actually enter the render callback. Polling
+            // beats a fixed sleep: it neither races a slow thread start nor
+            // burns time on a fast one.
+            auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            while (!callback_called.load() && std::chrono::steady_clock::now() < deadline) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+
+            teardown_start = std::chrono::steady_clock::now();
             // Destructor should cancel and join
         }
-        // If we get here without hanging, destructor worked correctly
-        REQUIRE(true);
+        auto teardown_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                               std::chrono::steady_clock::now() - teardown_start)
+                               .count();
+
+        // The worker reached the render callback at all - without this the two
+        // checks below would pass against a builder that never started a thread.
+        REQUIRE(callback_called);
+        REQUIRE(total_layers >= 2);
+
+        // A cancel-then-join waits out only the layer in flight (~400ms). A
+        // join-without-cancel waits out every remaining layer, and the fixture
+        // has ~100 of them, so it runs tens of seconds. The threshold sits at 2x
+        // the expected value - enough headroom that CI load will not trip it,
+        // and nowhere near a full drain.
+        INFO("teardown took " << teardown_ms << "ms");
+        REQUIRE(teardown_ms < LAYER_COST_MS * 2);
+
+        // Same property from the other side, and immune to how loaded the
+        // machine is: the destructor tore down mid-build, so the remaining
+        // layers were never rendered at all.
+        INFO("rendered " << layers_seen.load() << " of " << total_layers << " layers");
+        REQUIRE(layers_seen.load() < total_layers);
     }
 }
 

@@ -73,6 +73,19 @@ lv_subject_t* AmsBackend::get_operation_step_index_subject(StepOperationType op)
     return nullptr;
 }
 
+AmsError AmsBackend::unload_active_filament() {
+    // Single source of truth for "unload active slot". Reads current_slot ONCE
+    // from the same get_system_info() snapshot the caller would use, then
+    // forwards. Backends' unload_filament overrides no longer re-resolve -1 →
+    // current_slot themselves, so the UI's "is anything loaded?" check and the
+    // unload call can't diverge on different snapshots.
+    //
+    // If current_slot is -1 (no active tool), -1 is forwarded — each backend
+    // documents its own behavior for that case (Snapmaker: bare leaf macro,
+    // Toolchanger: not_loaded, AFC: bare TOOL_UNLOAD).
+    return unload_filament(get_system_info().current_slot);
+}
+
 std::string AmsBackend::normalize_material(const std::string& material) const {
     auto supported = get_supported_materials();
     if (!supported || supported->empty()) {

@@ -40,6 +40,15 @@ bool PageScrollController::attach(lv_obj_t* container) {
     }
     up_btn_ = lv_obj_find_by_name(gutter_, "up");
     down_btn_ = lv_obj_find_by_name(gutter_, "down");
+    if (up_btn_ == nullptr || down_btn_ == nullptr) {
+        spdlog::error("[PageScroll] page_scroll_gutter is missing its up/down buttons");
+        lv_obj_delete_async(gutter_);
+        gutter_ = nullptr;
+        up_btn_ = nullptr;
+        down_btn_ = nullptr;
+        container_ = nullptr;
+        return false;
+    }
 
     // Measure the gutter's natural width to size the reserved strip.
     lv_obj_update_layout(gutter_);
@@ -57,6 +66,11 @@ bool PageScrollController::attach(lv_obj_t* container) {
     lv_obj_add_event_cb(container_, container_event_cb, LV_EVENT_SCROLL, this);
     lv_obj_add_event_cb(container_, container_event_cb, LV_EVENT_SIZE_CHANGED, this);
     lv_obj_add_event_cb(container_, container_event_cb, LV_EVENT_DELETE, this);
+    // The gutter is a child of the container, so a repopulate that clears the
+    // container's children (lv_obj_clean) while the container survives destroys the
+    // gutter without firing the container's own LV_EVENT_DELETE. Watch the gutter's
+    // deletion directly so gutter_ can never dangle into refresh_reach_state (#1123).
+    lv_obj_add_event_cb(gutter_, gutter_event_cb, LV_EVENT_DELETE, this);
 
     refresh_reach_state();
     return true;
@@ -145,6 +159,9 @@ void PageScrollController::detach() {
     remove_reserved_padding();
     lv_obj_set_scrollbar_mode(container_, saved_scrollbar_mode_);
     if (gutter_ != nullptr) {
+        // Drop the gutter-death watcher before async-deleting so the deferred
+        // LV_EVENT_DELETE can't re-enter a controller that may already be gone.
+        lv_obj_remove_event_cb_with_user_data(gutter_, gutter_event_cb, this);
         lv_obj_delete_async(gutter_); // sanctioned escape route (L059/L081)
         gutter_ = nullptr;
     }
@@ -157,6 +174,15 @@ void PageScrollController::on_container_deleted() {
     // Container (and its gutter child) are being destroyed by LVGL. Do NOT touch
     // LVGL objects — just null out and notify the owner to prune us.
     // All pointer-nulling MUST happen before on_deleted_() runs (see warning below).
+    //
+    // LVGL fires the parent's LV_EVENT_DELETE *before* deleting children
+    // (obj_delete_core, lv_obj_tree.c), so the gutter is still alive here. Its
+    // still-registered delete watcher carries `this`; drop it now so the child
+    // deletion that follows can't re-enter a controller that on_deleted_() below
+    // may have already destroyed.
+    if (gutter_ != nullptr) {
+        lv_obj_remove_event_cb_with_user_data(gutter_, gutter_event_cb, this);
+    }
     gutter_ = up_btn_ = down_btn_ = nullptr;
     container_ = nullptr;
     pad_applied_ = false;
@@ -165,6 +191,37 @@ void PageScrollController::on_container_deleted() {
         // Nothing may run after it.
         on_deleted_();
     }
+}
+
+void PageScrollController::on_gutter_deleted() {
+    // The gutter was destroyed out from under us while the container survived — a
+    // repopulate cleared the container's children (lv_obj_clean) without deleting the
+    // container itself (#1123). A full container teardown never reaches here:
+    // on_container_deleted() fires first (parent DELETE precedes child deletion) and
+    // removes this watcher. So container_ is alive and safe to restore.
+    gutter_ = up_btn_ = down_btn_ = nullptr; // children of the dying gutter
+    if (container_ != nullptr) {
+        // Unhook from the surviving container and undo what attach() mutated, so it
+        // returns to its pre-attach state and can be cleanly re-injected later.
+        lv_obj_remove_event_cb_with_user_data(container_, container_event_cb, this);
+        remove_reserved_padding();
+        lv_obj_set_scrollbar_mode(container_, saved_scrollbar_mode_);
+        container_ = nullptr;
+    }
+    if (on_deleted_) {
+        // WARNING: on_deleted_() may synchronously destroy *this (owner prune).
+        // Nothing may run after it.
+        on_deleted_();
+    }
+}
+
+void PageScrollController::gutter_event_cb(lv_event_t* e) {
+    if (lv_event_get_code(e) != LV_EVENT_DELETE) {
+        return;
+    }
+    // self may be destroyed synchronously inside on_gutter_deleted() (owner-prune
+    // callback) — do not touch self after this call.
+    static_cast<PageScrollController*>(lv_event_get_user_data(e))->on_gutter_deleted();
 }
 
 void PageScrollController::container_event_cb(lv_event_t* e) {

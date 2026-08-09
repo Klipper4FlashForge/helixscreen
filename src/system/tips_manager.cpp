@@ -5,6 +5,7 @@
 
 #include "ui_error_reporting.h"
 
+#include "json_utils.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 
 #include <algorithm>
@@ -62,7 +63,7 @@ bool TipsManager::init(const std::string& tips_path) {
 
         spdlog::trace("[TipsManager] Loaded {} tips from {} categories (version: {})",
                       tips_cache.size(), data["categories"].size(),
-                      data.value("version", "unknown"));
+                      helix::json_util::safe_string(data, "version", "unknown"));
 
         return true;
     } catch (const json::parse_error& e) {
@@ -93,6 +94,13 @@ void TipsManager::build_tips_cache() {
 
         // Iterate through tips in this category
         for (const auto& tip_json : category_obj["tips"]) {
+            // A non-object entry would resolve to an all-empty tip that still
+            // occupies a slot in the random rotation — drop it instead.
+            if (!tip_json.is_object()) {
+                spdlog::warn("[TipsManager] Category '{}' has a non-object tip entry; skipping",
+                             category_key);
+                continue;
+            }
             PrintingTip tip = json_to_tip(tip_json, category_key);
             tips_cache.push_back(tip);
         }
@@ -104,11 +112,17 @@ void TipsManager::build_tips_cache() {
 PrintingTip TipsManager::json_to_tip(const json& tip_json, const std::string& category) {
     PrintingTip tip;
 
-    tip.id = tip_json.value("id", "");
-    tip.title = tip_json.value("title", "");
-    tip.content = tip_json.value("content", "");
-    tip.difficulty = tip_json.value("difficulty", "");
-    tip.priority = tip_json.value("priority", "");
+    // safe_string, not .value(): .value() throws type_error.302 on a key that is
+    // PRESENT with a null value (a missing key is fine). init()'s try/catch does
+    // span this call, so the old behaviour was not a crash — it was worse in a
+    // quieter way: one null field anywhere in the file aborted init() and the
+    // user lost the ENTIRE tips database. Per-field defaults keep the cost to
+    // the field.
+    tip.id = helix::json_util::safe_string(tip_json, "id");
+    tip.title = helix::json_util::safe_string(tip_json, "title");
+    tip.content = helix::json_util::safe_string(tip_json, "content");
+    tip.difficulty = helix::json_util::safe_string(tip_json, "difficulty");
+    tip.priority = helix::json_util::safe_string(tip_json, "priority");
     tip.category = category;
 
     // Parse tags array
@@ -410,5 +424,8 @@ size_t TipsManager::get_total_tips() {
 
 std::string TipsManager::get_version() {
     std::lock_guard<std::mutex> lock(tips_mutex);
-    return data.value("version", "unknown");
+    // No try/catch on this path at all — `data` is default-constructed (null)
+    // before a successful init(), which is exactly the non-object receiver
+    // .value() throws type_error.306 on.
+    return helix::json_util::safe_string(data, "version", "unknown");
 }

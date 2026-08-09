@@ -12,7 +12,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
-#include <sstream>
+#include <cstring>
 #include <thread>
 
 namespace helix {
@@ -211,6 +211,11 @@ void GCodeStreamingController::register_memory_responder() {
 }
 
 GCodeStreamingController::~GCodeStreamingController() {
+    // Join the prefetch worker first: it dereferences `this` on every iteration,
+    // so it must be gone before any member starts being destroyed. close() also
+    // stops it, but the destructor cannot rely on close() having been called.
+    stop_prefetch_worker(/*permanent=*/true);
+
     // Move sentinel into local — weak.lock() in the callback now returns
     // nullptr for NEW calls, but an already-in-flight lock() still holds
     // a strong reference via the same control block.
@@ -366,37 +371,6 @@ void GCodeStreamingController::open_file_async(const std::string& filepath,
     });
 }
 
-bool GCodeStreamingController::open_moonraker(const std::string& moonraker_url,
-                                              const std::string& gcode_path) {
-    close();
-
-    spdlog::info("[StreamingController] Opening via Moonraker: {} / {}", moonraker_url, gcode_path);
-
-    auto source = std::make_unique<MoonrakerDataSource>(moonraker_url, gcode_path);
-    if (!source->is_valid()) {
-        spdlog::error("[StreamingController] Failed to connect to Moonraker");
-        return false;
-    }
-
-    data_source_ = std::move(source);
-
-    // Ensure the source is ready for indexing (may download to temp file)
-    if (!data_source_->ensure_indexable()) {
-        spdlog::error("[StreamingController] Failed to prepare source for indexing");
-        data_source_.reset();
-        return false;
-    }
-
-    if (!build_index()) {
-        spdlog::error("[StreamingController] Failed to build index");
-        data_source_.reset();
-        return false;
-    }
-
-    is_open_.store(true);
-    return true;
-}
-
 bool GCodeStreamingController::open_source(std::unique_ptr<GCodeDataSource> source) {
     close();
 
@@ -418,6 +392,10 @@ bool GCodeStreamingController::open_source(std::unique_ptr<GCodeDataSource> sour
 }
 
 void GCodeStreamingController::close() {
+    // Join the prefetch worker before anything it touches is torn down - it
+    // holds `this` and reaches into cache_, index_ and data_source_.
+    stop_prefetch_worker();
+
     // Wait for async operations
     if (index_future_.valid()) {
         indexing_.store(false);
@@ -493,11 +471,22 @@ GCodeStreamingController::get_layer_segments(size_t layer_index) {
         return nullptr;
     }
 
-    // Trigger prefetch for nearby layers
-    prefetch_around(layer_index, prefetch_radius_);
+    // Warm the neighbours on the worker. Doing this inline meant a main-thread
+    // caller paid for up to 2*radius+1 extra seek-and-parses before returning.
+    schedule_prefetch(layer_index);
 
     // Return shared_ptr - data stays valid as long as caller holds the pointer
     return result.segments;
+}
+
+std::shared_ptr<const std::vector<ToolpathSegment>>
+GCodeStreamingController::try_get_layer_segments(size_t layer_index) {
+    if (!is_open() || layer_index >= index_.get_layer_count()) {
+        return nullptr;
+    }
+
+    // Deliberately no prefetch: this exists for callers that must not do work.
+    return cache_.try_get(layer_index);
 }
 
 void GCodeStreamingController::request_layer(size_t layer_index) {
@@ -505,8 +494,118 @@ void GCodeStreamingController::request_layer(size_t layer_index) {
         return;
     }
 
-    // Just trigger the load (get_or_load handles caching)
-    cache_.get_or_load(layer_index, make_loader());
+    schedule_prefetch(layer_index);
+}
+
+void GCodeStreamingController::schedule_prefetch(size_t center_layer) {
+    start_prefetch_worker();
+
+    {
+        std::lock_guard<std::mutex> lock(prefetch_mutex_);
+        if (stop_prefetch_) {
+            return;
+        }
+        // Overwrite rather than queue: only the newest centre is worth loading,
+        // so dragging through layers cannot build a backlog of stale work.
+        pending_prefetch_center_ = center_layer;
+    }
+    prefetch_cv_.notify_one();
+}
+
+void GCodeStreamingController::start_prefetch_worker() {
+    std::lock_guard<std::mutex> lock(prefetch_mutex_);
+    if (prefetch_thread_.joinable() || stop_prefetch_) {
+        return;
+    }
+    prefetch_thread_ = std::thread(&GCodeStreamingController::prefetch_worker, this);
+}
+
+void GCodeStreamingController::stop_prefetch_worker(bool permanent) {
+    {
+        std::lock_guard<std::mutex> lock(prefetch_mutex_);
+        stop_prefetch_ = true;
+        pending_prefetch_center_.reset();
+    }
+    prefetch_cv_.notify_all();
+
+    if (prefetch_thread_.joinable()) {
+        prefetch_thread_.join();
+    }
+
+    // close() rearms so the next open() gets a worker again. The destructor does
+    // not: leaving the flag set means a concurrent schedule_prefetch() cannot
+    // spawn a thread onto a half-destroyed `this`.
+    if (!permanent) {
+        std::lock_guard<std::mutex> lock(prefetch_mutex_);
+        stop_prefetch_ = false;
+    }
+}
+
+void GCodeStreamingController::wait_for_prefetch_idle() {
+    std::unique_lock<std::mutex> lock(prefetch_mutex_);
+    if (!prefetch_thread_.joinable()) {
+        return; // never started - nothing can be pending
+    }
+    prefetch_idle_cv_.wait(lock,
+                           [this] { return !prefetch_running_ && !pending_prefetch_center_; });
+}
+
+void GCodeStreamingController::prefetch_worker() {
+    spdlog::debug("[StreamingController] Prefetch worker started");
+
+    for (;;) {
+        size_t center = 0;
+        {
+            std::unique_lock<std::mutex> lock(prefetch_mutex_);
+            prefetch_cv_.wait(lock, [this] { return stop_prefetch_ || pending_prefetch_center_; });
+            if (stop_prefetch_) {
+                break;
+            }
+            center = *pending_prefetch_center_;
+            pending_prefetch_center_.reset();
+            prefetch_running_ = true;
+        }
+
+        // Marks this batch finished and wakes wait_for_prefetch_idle() on every
+        // exit path below, including the `continue`s.
+        struct BatchGuard {
+            GCodeStreamingController* self;
+            ~BatchGuard() {
+                {
+                    std::lock_guard<std::mutex> lock(self->prefetch_mutex_);
+                    self->prefetch_running_ = false;
+                }
+                self->prefetch_idle_cv_.notify_all();
+            }
+        } batch_guard{this};
+
+        if (!is_open()) {
+            continue;
+        }
+
+        const size_t layer_count = index_.get_layer_count();
+        if (layer_count == 0) {
+            continue;
+        }
+
+        const size_t radius = prefetch_radius_;
+        const size_t start = (center > radius) ? (center - radius) : 0;
+        const size_t end = std::min(center + radius, layer_count - 1);
+
+        for (size_t i = start; i <= end; ++i) {
+            // Bail out the moment a newer centre lands or we are shutting down -
+            // finishing a stale range wastes I/O the constrained devices need.
+            {
+                std::lock_guard<std::mutex> lock(prefetch_mutex_);
+                if (stop_prefetch_ || pending_prefetch_center_) {
+                    break;
+                }
+            }
+            cache_.get_or_load(i, make_loader());
+        }
+    }
+
+    spdlog::debug("[StreamingController] Prefetch worker stopped");
 }
 
 bool GCodeStreamingController::is_layer_cached(size_t layer_index) const {
@@ -518,12 +617,16 @@ void GCodeStreamingController::prefetch_around(size_t center_layer, size_t radiu
         return;
     }
 
-    size_t layer_count = index_.get_layer_count();
-    if (layer_count == 0) {
+    if (index_.get_layer_count() == 0) {
         return; // Nothing to prefetch
     }
 
-    cache_.prefetch(center_layer, radius, make_loader(), layer_count - 1);
+    // Delegates to the worker rather than loading inline. The radius argument is
+    // honoured by setting the worker's radius for subsequent runs; callers that
+    // want a one-shot synchronous load should use get_layer_segments() per layer
+    // and accept the cost explicitly.
+    prefetch_radius_ = radius;
+    schedule_prefetch(center_layer);
 }
 
 // =============================================================================
@@ -648,11 +751,36 @@ std::vector<ToolpathSegment> GCodeStreamingController::load_layer(size_t layer_i
     // prologue (purge under ;TYPE:Custom) get tagged Unknown and the bbox
     // filter in auto_fit can't exclude them from the viewport.
     parser.set_initial_feature_type(entry.start_feature_type);
-    std::istringstream stream(std::string(bytes.begin(), bytes.end()));
-    std::string line;
+    // Seed with the M82/M83 extrusion mode and running E value. Without this a
+    // fresh parser assumes absolute E and reads relative deltas as absolute
+    // positions, so its computed delta is the difference between consecutive
+    // deltas. Spiral-vase G-code repeats one E value for the whole spiral, which
+    // makes that difference exactly zero and classifies the entire model as
+    // travel (#1127); ordinary G-code just loses most of its extrusion flags.
+    parser.set_initial_extrusion_mode(entry.is_absolute_extrusion(), entry.start_e);
+    // Seed layer-marker mode. `;LAYER_CHANGE` lives at the end of the *previous*
+    // layer's byte range, so a chunk parse never sees one and would fall back to
+    // legacy "every Z change starts a layer" splitting — one Layer object per
+    // move for vase-mode G-code.
+    parser.set_use_layer_markers(index_.uses_layer_markers());
 
-    while (std::getline(stream, line)) {
+    // Walk lines directly out of the byte buffer into a reused scratch string. Feeding an
+    // istringstream instead would hold three copies of the layer bytes simultaneously
+    // (vector + temporary std::string + the stream's internal buffer).
+    // Line splitting matches std::getline: '\n' terminated and excluded, any trailing '\r'
+    // left on the line for the parser to trim, final line without a newline still parsed.
+    const char* data = reinterpret_cast<const char*>(bytes.data());
+    const size_t byte_count = bytes.size();
+    std::string line;
+    size_t pos = 0;
+
+    while (pos < byte_count) {
+        const void* nl = std::memchr(data + pos, '\n', byte_count - pos);
+        size_t line_end =
+            nl ? static_cast<size_t>(static_cast<const char*>(nl) - data) : byte_count;
+        line.assign(data + pos, line_end - pos);
         parser.parse_line(line);
+        pos = nl ? line_end + 1 : byte_count;
     }
 
     // Get parsed result
@@ -674,9 +802,14 @@ std::vector<ToolpathSegment> GCodeStreamingController::load_layer(size_t layer_i
     }
 
     // Collect all segments from all parsed layers
-    // (usually just one layer, but parser may split on Z changes)
-    for (const auto& layer : result.layers) {
-        segments.insert(segments.end(), layer.segments.begin(), layer.segments.end());
+    // (usually just one layer, but parser may split on Z changes).
+    // `result` dies with this call, so steal the single-layer vector rather than copying it.
+    if (result.layers.size() == 1) {
+        segments = std::move(result.layers[0].segments);
+    } else {
+        for (const auto& layer : result.layers) {
+            segments.insert(segments.end(), layer.segments.begin(), layer.segments.end());
+        }
     }
 
     // Remap local object name indices to the merged string table
@@ -696,8 +829,8 @@ bool GCodeStreamingController::build_index() {
     }
 
     // Use the virtual method to get an indexable file path
-    // This works for FileDataSource (returns original filepath) and
-    // MoonrakerDataSource (returns temp file path after download)
+    // FileDataSource returns its original filepath; sources that stage data on
+    // disk return the staged path once ensure_indexable() has materialized it
     std::string file_path = data_source_->indexable_file_path();
 
     if (!file_path.empty()) {

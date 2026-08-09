@@ -24,61 +24,6 @@ namespace helix {
 enum class ScreenSize { MICRO, TINY, SMALL, MEDIUM, LARGE, XLARGE };
 
 /**
- * @brief Overlay panel flags (grouped for clarity)
- */
-struct OverlayFlags {
-    bool motion = false;
-    bool nozzle_temp = false;
-    bool bed_temp = false;
-    bool fan = false;
-    bool print_status = false;
-    bool bed_mesh = false;
-    bool zoffset = false;
-    bool pid = false;
-    bool screws_tilt = false;
-    bool input_shaper = false;
-    bool file_detail = false;
-    bool print_select_list = false; // Start print-select in list view
-    bool keypad = false;
-    bool keyboard = false;
-    bool step_test = false;
-    bool test_panel = false;
-    bool gcode_test = false;
-    bool glyphs = false;
-    bool gradient_test = false;
-    bool history_dashboard = false;
-    bool ams = false;
-    bool ams_environment = false; // Filament Environment / dryer overlay
-    bool spoolman = false;
-    bool led = false;
-    bool wizard_ams_identify = false;
-    bool theme = false;      // Theme preview overlay (for testing/screenshots)
-    bool theme_edit = false; // Theme editor overlay
-
-    // Settings overlays (for CLI screenshot automation)
-    bool display_settings = false;
-    bool sensor_settings = false;
-    bool touch_calibration = false;
-    bool hardware_health = false;
-    bool network_settings = false;
-
-    // Advanced overlays
-    bool macros = false;
-    bool print_tune = false;
-    bool timelapse_videos = false;
-    bool about = false;
-
-    // Dev/test overlays
-    bool release_notes = false; // --release-notes: show update modal with sample markdown
-
-    /** @brief Check if any overlay requiring Moonraker data is requested */
-    bool needs_moonraker() const {
-        return motion || nozzle_temp || bed_temp || fan || print_status || bed_mesh || zoffset ||
-               pid || screws_tilt || input_shaper || file_detail || history_dashboard || spoolman;
-    }
-};
-
-/**
  * @brief Parsed command-line arguments
  *
  * Replaces 27+ function out-parameters with a clean struct.
@@ -92,19 +37,17 @@ struct CliArgs {
     int x_pos = -1;                 // -1 = not set
     int y_pos = -1;                 // -1 = not set
 
-    // Panel navigation
-    int initial_panel = -1; // -1 = auto-select based on screen size
-    bool panel_requested = false;
-
-    // Overlay flags
-    OverlayFlags overlays;
-
     // Wizard
     bool force_wizard = false;
-    int wizard_step = -1; // -1 = not set
+    int wizard_step = -1;     // -1 = not set
+    bool skip_wizard = false; // --skip-wizard: suppress the first-run wizard
+                              // (e.g. for screenshots/automation via helixctl)
 
     // Touch calibration
     bool calibrate_touch = false; ///< Force touch calibration on startup
+
+    // Standalone dev tools (no helixctl equivalent)
+    bool release_notes = false; ///< --release-notes: show update modal with fetched release notes
 
     // Automation
     bool screenshot_enabled = false;
@@ -136,10 +79,12 @@ struct CliArgs {
     std::string detect_host = "127.0.0.1";
     int detect_port = 7125;
 
-    /** @brief Check if any panels/overlays requiring Moonraker are requested */
-    bool needs_moonraker_data() const {
-        return overlays.needs_moonraker() || initial_panel >= 0;
-    }
+    // Remote control server
+    bool remote_control = false;                // --remote: enable remote control server
+    std::string remote_socket;                  // --remote-socket: override socket path
+    std::string remote_transport = "socket";    // --remote-transport: socket|http
+    std::string remote_http_bind = "127.0.0.1"; // --remote-http-bind: HTTP bind host
+    int remote_http_port = 7130;                // --remote-http-port: HTTP TCP port
 };
 
 /**
@@ -170,16 +115,6 @@ bool parse_cli_args(int argc, char** argv, CliArgs& args, int& screen_width, int
  */
 bool parse_screen_size_string(const char* size_str, int& out_width, int& out_height,
                               ScreenSize& out_size);
-
-/**
- * @brief Convert panel name string to panel ID
- *
- * Consolidates duplicated panel name mapping logic.
- *
- * @param name Panel name (e.g., "home", "controls", "bed-mesh")
- * @return Panel ID if valid, std::nullopt if unknown
- */
-std::optional<PanelId> panel_name_to_id(const char* name);
 
 /**
  * @brief Print test mode configuration banner

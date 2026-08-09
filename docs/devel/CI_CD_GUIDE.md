@@ -17,7 +17,7 @@ This guide documents the GitHub Actions CI/CD setup for HelixScreen, including p
 
 HelixScreen uses GitHub Actions for continuous integration across multiple platforms:
 
-- **Build Workflow** (`.github/workflows/build.yml`) - Multi-platform builds (Ubuntu 22.04, macOS 14)
+- **Build Workflow** (`.github/workflows/build.yml`) - Multi-platform builds (Ubuntu 22.04, macOS 14, Android) plus split unit/shell test jobs
 - **Quality Workflow** (`.github/workflows/quality.yml`) - Code quality checks via shared script
 
 Both workflows trigger on:
@@ -31,7 +31,7 @@ Both workflows trigger on:
 
 **File:** `.github/workflows/build.yml`
 
-The build workflow runs parallel builds on Ubuntu and macOS, then aggregates results:
+The build workflow runs parallel compile/test/build jobs on Ubuntu, macOS, and Android, then aggregates results:
 
 ```yaml
 name: Build
@@ -43,20 +43,35 @@ on:
     branches: [ main ]
 
 jobs:
-  build-ubuntu:
-    name: Build (Ubuntu 22.04)
+  compile-ubuntu:
+    name: Compile (Ubuntu 22.04)
     runs-on: ubuntu-22.04
     # ... build steps ...
+
+  test-ubuntu:
+    name: Unit Tests (Ubuntu 22.04)
+    runs-on: ubuntu-22.04
+    # ... test steps ...
 
   build-macos:
     name: Build (macOS 14)
     runs-on: macos-14
     # ... build steps ...
 
+  build-android:
+    name: Build (Android)
+    runs-on: ubuntu-22.04
+    # ... build steps ...
+
+  test-shell:
+    name: Shell Tests (bats)
+    runs-on: ubuntu-22.04
+    # ... bats steps ...
+
   build-status:
     name: Build Status
     runs-on: ubuntu-latest
-    needs: [build-ubuntu, build-macos]
+    needs: [compile-ubuntu, test-ubuntu, build-macos, build-android, test-shell]
     # ... aggregates results ...
 ```
 
@@ -92,10 +107,14 @@ on:
 jobs:
   quality-checks:
     name: Code Quality Checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+    - name: Install pinned tooling (clang-format) into .venv
+      run: |
+        python3 -m venv .venv
+        .venv/bin/pip install -r requirements.txt
     - name: Run quality checks
       run: |
         chmod +x scripts/quality-checks.sh
@@ -246,7 +265,7 @@ make -C wpa_supplicant/wpa_supplicant -j$(nproc) libwpa_client.a
 
 # Build project
 npm install
-npm run convert-fonts-ci
+./scripts/regen_mdi_fonts.sh
 make -j$(nproc)
 
 # Verify binary
@@ -322,7 +341,7 @@ s3://helixscreen-releases/
   dev/helixscreen-*.tar.gz     ← Legacy (bridge release only)
 ```
 
-> **Bridge release:** The `.tar.gz` glob ships alongside `.zip` during the current bridge release for backwards compatibility with older installed versions. It will be removed in the following release.
+> **Bridge release:** The manifest now advertises `zip_url`/`zip_sha256` as the **preferred** asset by default, so the `.zip` artifacts are manifest-referenced. The upload step puts both the `.tar.gz` and `.zip` artifacts up **before** the manifest goes live (clients following `zip_url` — or the legacy `url` — never 404 mid-download); `install.sh` and symbol maps upload *after* the manifest. The `.tar.gz` still ships alongside `.zip` during this bridge release — its `url`/`sha256` remain the fallback for pre-v0.99.31 clients, which never read `zip_url` — and will be removed in a following release. Pass `generate-manifest.sh --no-include-zip` to suppress the zip fields.
 
 ### Channel Upload Routing
 
@@ -353,11 +372,11 @@ If R2 upload fails during CI, you can manually upload from a local machine:
 
 ```bash
 # Download release assets from GitHub
-gh release download v0.9.5 -D release-files/
+gh release download v1.0.0 -D release-files/
 
 # Generate manifest for each channel
 scripts/generate-manifest.sh \
-  --version "0.9.5" --tag "v0.9.5" --notes "Release" \
+  --version "1.0.0" --tag "v1.0.0" --notes "Release" \
   --dir release-files \
   --base-url "https://releases.helixscreen.org/stable" \
   --output release-files/manifest-stable.json
@@ -468,6 +487,6 @@ To modify retention:
 ## See Also
 
 - [GitHub Actions Documentation](https://docs.github.com/en/actions)
-- [DEVELOPMENT.md](../DEVELOPMENT.md) - Build system and daily workflow
+- [DEVELOPMENT.md](DEVELOPMENT.md) - Build system and daily workflow
 - [BUILD_SYSTEM.md](BUILD_SYSTEM.md) - Makefile details and submodule patches
 - [COPYRIGHT_HEADERS.md](COPYRIGHT_HEADERS.md) - GPL v3 header templates

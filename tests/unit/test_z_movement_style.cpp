@@ -24,13 +24,3 @@ TEST_CASE("ZMovementStyle enum values", "[z_movement_style]") {
     REQUIRE(static_cast<int>(ZMovementStyle::BED_MOVES) == 1);
     REQUIRE(static_cast<int>(ZMovementStyle::NOZZLE_MOVES) == 2);
 }
-
-TEST_CASE("ZMovementStyle options string", "[z_movement_style]") {
-    const char* options = SettingsManager::get_z_movement_style_options();
-    REQUIRE(options != nullptr);
-    // Should contain all three options separated by newlines
-    std::string opts(options);
-    REQUIRE(opts.find("Auto") != std::string::npos);
-    REQUIRE(opts.find("Bed Moves") != std::string::npos);
-    REQUIRE(opts.find("Nozzle Moves") != std::string::npos);
-}

@@ -5,7 +5,7 @@
   <!-- Print File Detail View - Full overlay showing file details and print options -->
   <!-- Uses reactive subjects for file data (no API properties needed) -->
   <view name="detail_view_root"
-        extends="lv_obj" width="#overlay_panel_width" height="100%" align="right_mid" style_bg_opa="255"
+        extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_bg_opa="255"
         style_bg_color="#card_bg" style_border_width="0" style_pad_all="0" style_pad_gap="0" flex_flow="column"
         clickable="true">
     <event_cb trigger="clicked" callback="on_print_select_detail_backdrop"/>
@@ -31,11 +31,13 @@
         <ui_card name="detail_card"
                  width="100%" flex_grow="1" style_radius="#border_radius" style_pad_all="0" style_clip_corner="true">
           <!-- Pre-rendered gradient background (source updated by C++ on theme switch) -->
-          <!-- Hidden in 3D mode (value=1) so 3D viewer has clean black background -->
+          <!-- Hidden only in 3D mode (value=1) so the 3D viewer gets a clean black -->
+          <!-- background; shown behind the 2D viewer (mode=2) and thumbnail (mode=0). -->
           <ui_gradient_canvas name="gradient_bg" width="100%" height="100%">
             <bind_flag_if_eq subject="detail_gcode_viewer_mode" flag="hidden" ref_value="1"/>
           </ui_gradient_canvas>
-          <!-- 3D G-code viewer (hidden in thumbnail mode=0; no 2D fallback on this panel) -->
+          <!-- G-code viewer, shown whenever the viewer is active (mode 1=3D or 2=2D); -->
+          <!-- hidden only in thumbnail mode (0). -->
           <gcode_viewer name="detail_gcode_viewer" width="100%" height="100%">
             <bind_flag_if_eq subject="detail_gcode_viewer_mode" flag="hidden" ref_value="0"/>
           </gcode_viewer>
@@ -154,8 +156,8 @@
       <!-- RIGHT SECTION: Options and buttons (4/9 width)                    -->
       <!-- ================================================================== -->
       <lv_obj name="options_section"
-              height="100%" flex_grow="4" style_pad_hor="0" style_pad_ver="#space_sm" style_pad_gap="#space_lg"
-              flex_flow="column">
+              height="100%" flex_grow="4" style_pad_hor="0" style_pad_top="#space_sm" style_pad_bottom="0"
+              style_pad_gap="#space_sm" flex_flow="column" scrollable="false">
         <!-- Print history status display (hidden by default) -->
         <lv_obj name="history_status_row"
                 width="100%" height="content" flex_flow="row" style_pad_gap="#space_xs" style_flex_cross_place="center"
@@ -170,8 +172,7 @@
              warning icon next to the header is bound to the
              empty_tools_warning subject (published from update_color_swatches
              whenever any used tool's AMS slot is empty). -->
-        <ui_card name="color_requirements_card"
-                 width="100%" style_pad_all="0" style_border_width="0" flex_flow="column">
+        <ui_card name="color_requirements_card" width="100%" style_pad_all="0" style_border_width="0" flex_flow="column">
           <bind_flag_if_eq subject="color_swatches_visible" flag="hidden" ref_value="0"/>
           <lv_obj width="100%"
                   height="content" style_pad_all="0" style_pad_gap="#space_xs" flex_flow="row"
@@ -196,16 +197,37 @@
              subject. PrintSelectDetailView publishes 1/0 after each
              FilamentMappingCard::update(). -->
         <ui_card name="filament_mapping_card"
-                 width="100%" style_pad_hor="0" style_pad_ver="#space_md" style_border_width="0" flex_flow="column">
+                 width="100%" style_pad_hor="0" style_pad_ver="#space_md" style_pad_gap="#space_xs"
+                 style_border_width="0" flex_flow="column">
           <bind_flag_if_eq subject="filament_mapping_visible" flag="hidden" ref_value="0"/>
+          <!-- Header row: section title left, sliced-colors toggle right. The
+               toggle belongs to this card because it only has meaning relative
+               to the mapping shown below it. -->
           <lv_obj width="100%"
                   height="content" style_pad_all="0" style_pad_gap="#space_xs" flex_flow="row"
-                  style_flex_cross_place="center" scrollable="false" clickable="false" event_bubble="true">
-            <text_small text="FILAMENT MAPPING" translation_tag="FILAMENT_MAPPING" clickable="false" event_bubble="true"/>
-            <icon name="filament_mismatch_icon"
-                  src="alert" size="sm" variant="warning" clickable="false" event_bubble="true">
-              <bind_flag_if_eq subject="filament_mismatch" flag="hidden" ref_value="0"/>
-            </icon>
+                  style_flex_main_place="space_between" style_flex_cross_place="center" scrollable="false"
+                  clickable="false" event_bubble="true">
+            <lv_obj width="content"
+                    height="content" style_pad_all="0" style_pad_gap="#space_xs" flex_flow="row"
+                    style_flex_cross_place="center" scrollable="false" clickable="false" event_bubble="true">
+              <text_small text="MAPPING" translation_tag="MAPPING" clickable="false" event_bubble="true"/>
+              <icon name="filament_mismatch_icon"
+                    src="alert" size="sm" variant="warning" clickable="false" event_bubble="true">
+                <bind_flag_if_eq subject="filament_mismatch" flag="hidden" ref_value="0"/>
+              </icon>
+            </lv_obj>
+            <!-- Switch stays clickable (it is the control); the wrapper passes
+                 taps through so the rest of the header still reaches the card. -->
+            <lv_obj width="content"
+                    height="content" style_pad_all="0" style_pad_gap="#space_xs" flex_flow="row"
+                    style_flex_cross_place="center" scrollable="false" clickable="false" event_bubble="true">
+              <text_small name="sliced_colors_label"
+                          text="Sliced colors" translation_tag="Sliced colors" clickable="false" event_bubble="true"/>
+              <ui_switch name="sliced_colors_toggle" size="small">
+                <bind_state_if_eq subject="detail_prefer_sliced_colors" state="checked" ref_value="1"/>
+                <event_cb trigger="value_changed" callback="on_toggle_sliced_colors"/>
+              </ui_switch>
+            </lv_obj>
           </lv_obj>
           <lv_obj name="filament_mapping_rows"
                   width="100%" height="content" style_pad_all="0" style_pad_gap="#space_xs" flex_flow="column"
@@ -214,18 +236,10 @@
           </lv_obj>
         </ui_card>
 
-        <!-- Preview color mode: actual (loaded slot) vs sliced (slicer intent).
-             Only meaningful with an AMS mapping to compare against. -->
-        <setting_toggle_row name="sliced_colors_row"
-                            label="Show sliced colors"
-                            label_tag="Show sliced colors"
-                            subject="detail_prefer_sliced_colors"
-                            callback="on_toggle_sliced_colors">
-          <bind_flag_if_eq subject="filament_mapping_visible" flag="hidden" ref_value="0"/>
-        </setting_toggle_row>
-
-        <!-- Wrapper: zero-gap so spacer doesn't add extra space from parent's pad_gap -->
-        <lv_obj width="100%" flex_grow="1" style_pad_all="0" style_pad_gap="0" flex_flow="column">
+        <!-- Wrapper: zero-gap so the spacer doesn't inherit the parent's pad_gap.
+             Not scrollable — overflow here must be visible, not hidden behind a
+             scrollbar. -->
+        <lv_obj width="100%" flex_grow="1" style_pad_all="0" style_pad_gap="0" flex_flow="column" scrollable="false">
           <!-- Options card.
                Toggle rows are populated dynamically in C++ from the active
                printer's PrePrintOptionSet (see PrintSelectDetailView::
@@ -244,8 +258,12 @@
             </lv_obj>
           </ui_card>
 
-          <!-- Spacer pushes buttons to bottom when options card is hidden -->
-          <lv_obj flex_grow="1"/>
+
+          <!-- Pushes the action buttons to the bottom of the column. Styling is
+               stripped so it contributes flex growth only — a default lv_obj
+               carries theme padding, background and border. -->
+          <lv_obj width="100%"
+                  height="0" flex_grow="1" style_pad_all="0" style_bg_opa="0" style_border_width="0" scrollable="false"/>
 
           <!-- Pre-print time estimate (bound to string subject) -->
           <text_small name="prep_time_estimate"

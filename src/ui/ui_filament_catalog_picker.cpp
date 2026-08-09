@@ -58,6 +58,7 @@ void FilamentCatalogPickerModal::on_show() {
     lv_obj_t* fragment = lv_obj_find_by_name(dialog(), "catalog_selector");
     selector_.attach(fragment);
     selector_.configure(seed_type_, allowed_types_);
+    selector_.set_show_edit_affordances(true); // standalone picker allows catalog editing
     selector_.populate();
     apply_input_surface();
 

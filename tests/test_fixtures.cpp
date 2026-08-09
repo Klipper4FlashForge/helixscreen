@@ -3,6 +3,7 @@
 
 #include "test_fixtures.h"
 
+#include "ui_afc_fault_path.h"
 #include "ui_button.h"
 #include "ui_card.h"
 #include "ui_dialog.h"
@@ -12,6 +13,8 @@
 #include "ui_text.h"
 #include "ui_text_input.h"
 
+#include "material_settings_manager.h"
+#include "preset_materials.h"
 #include "spdlog/spdlog.h"
 
 // Forward declaration — defined in favorite_macro_widget.cpp, not exported in any header.
@@ -121,6 +124,14 @@ XMLTestFixture::XMLTestFixture() : LVGLTestFixture() {
     // pointers for the duration of this test.
     m_state.init_subjects(true);
 
+    // Quick-preset material subjects (preset_material_N_name/_temps). The
+    // filament panel, all three temp panels, the temp graph overlay and the PID
+    // panel bind these by name, so any XML test that builds one needs them
+    // registered or every preset button label silently renders empty.
+    helix::MaterialSettingsManager::instance().init();
+    helix::presets::init_subjects();
+    helix::presets::refresh_subjects();
+
     m_client = std::make_unique<MoonrakerClient>();
     m_api = std::make_unique<MoonrakerAPI>(*m_client, m_state);
 
@@ -194,17 +205,8 @@ void XMLTestFixture::setup_global_xml_registrations_once() {
     lv_xml_register_event_cb(nullptr, "", xml_test_noop_event_callback);
     lv_xml_register_event_cb(nullptr, "on_header_back_clicked", xml_test_noop_event_callback);
     // Nozzle temp panel callbacks
-    lv_xml_register_event_cb(nullptr, "on_nozzle_preset_off_clicked", xml_test_noop_event_callback);
-    lv_xml_register_event_cb(nullptr, "on_nozzle_preset_pla_clicked", xml_test_noop_event_callback);
-    lv_xml_register_event_cb(nullptr, "on_nozzle_preset_petg_clicked",
-                             xml_test_noop_event_callback);
-    lv_xml_register_event_cb(nullptr, "on_nozzle_preset_abs_clicked", xml_test_noop_event_callback);
     lv_xml_register_event_cb(nullptr, "on_nozzle_custom_clicked", xml_test_noop_event_callback);
     // Bed temp panel callbacks
-    lv_xml_register_event_cb(nullptr, "on_bed_preset_off_clicked", xml_test_noop_event_callback);
-    lv_xml_register_event_cb(nullptr, "on_bed_preset_pla_clicked", xml_test_noop_event_callback);
-    lv_xml_register_event_cb(nullptr, "on_bed_preset_petg_clicked", xml_test_noop_event_callback);
-    lv_xml_register_event_cb(nullptr, "on_bed_preset_abs_clicked", xml_test_noop_event_callback);
     lv_xml_register_event_cb(nullptr, "on_bed_custom_clicked", xml_test_noop_event_callback);
 
     // Register widgets needed by favorite_macro_config_modal
@@ -229,6 +231,11 @@ void XMLTestFixture::setup_global_xml_registrations_once() {
     lv_xml_register_component_from_file("A:ui_xml/modal_button_row.xml");
     lv_xml_register_component_from_file("A:ui_xml/components/filament_catalog_selector.xml");
     lv_xml_register_component_from_file("A:ui_xml/components/filament_catalog_picker.xml");
+
+    // <afc_fault_path> + the afc_fault_segment subject it binds. Embedded by
+    // ams_loading_error_modal.xml and action_prompt_modal.xml, both of which
+    // tests register directly (#1184).
+    helix::ui::afc_fault_path_register();
 
     s_global_registered = true;
 }
@@ -271,12 +278,7 @@ void app_request_quit() {
     spdlog::debug("[TestStub] app_request_quit() called - no-op in tests");
 }
 
-// Stubs for app lifecycle notifications called from lv_sdl_window.c.
-// The real implementations live in application.cpp which is excluded from the test build.
-extern "C" void helix_notify_app_backgrounded() {
-    spdlog::debug("[TestStub] helix_notify_app_backgrounded() called - no-op in tests");
-}
-
-extern "C" void helix_notify_app_foregrounded() {
-    spdlog::debug("[TestStub] helix_notify_app_foregrounded() called - no-op in tests");
-}
+// NOTE: helix_notify_app_backgrounded() / helix_notify_app_foregrounded() used to be
+// stubbed here because application.o was excluded from the test link. It no longer is
+// (see mk/tests.mk), so the real implementations are linked and these stubs are gone —
+// they would be duplicate definitions. Both real functions only flip an atomic and log.

@@ -8,8 +8,10 @@
 #include "color_utils.h"
 #include "config.h"
 #include "helix/xml/scoped_subject_registry.h"
-#include "i_moonraker_client.h"
 #include "i_moonraker_api.h"
+#include "i_moonraker_client.h"
+#include "led/led_color_utils.h"
+#include "led_wled_json.h"
 #include "moonraker_error.h"
 #include "observer_factory.h"
 #include "printer_discovery.h"
@@ -42,16 +44,6 @@ uint32_t parse_json_color(const nlohmann::json& j, uint32_t default_val) {
 } // anonymous namespace
 
 namespace helix::led {
-
-/// Strip "macro:" prefix from a strip ID, returning the raw macro name.
-/// If the ID doesn't have the prefix, returns it unchanged.
-static std::string strip_macro_name(const std::string& id) {
-    const std::string prefix = "macro:";
-    if (id.rfind(prefix, 0) == 0) {
-        return id.substr(prefix.size());
-    }
-    return id;
-}
 
 // ============================================================================
 // LedController
@@ -104,6 +96,23 @@ void LedController::init(IMoonrakerAPI* api, IMoonrakerClient* client) {
             }
         });
 
+    // Second half of the same safety net, for the case the observer above cannot
+    // see: printer_connection_state tracks the MOONRAKER WebSocket only. A Klipper
+    // restart (M112, FIRMWARE_RESTART, a klippy crash) leaves Moonraker itself up,
+    // so that subject never leaves CONNECTED and a leaked dispatch would stay
+    // pinned for the rest of the session — both light buttons greyed out for hours
+    // (#1129). Any exit from READY kills every RPC Klipper had in flight, so clear.
+    // force_clear_in_flight() is a no-op at count 0, so a simultaneous
+    // disconnect firing both observers is harmless.
+    // No paired SubjectLifetime: get_klippy_state_subject() is a static
+    // singleton-lifetime subject on PrinterState (no lifetime-token overload).
+    klippy_observer_ = helix::ui::observe_int_sync(
+        get_printer_state().get_klippy_state_subject(), this, [](LedController* self, int state) {
+            if (state != static_cast<int>(helix::KlippyState::READY)) {
+                self->force_clear_in_flight();
+            }
+        });
+
     initialized_ = true;
     load_config();
     publish_controllable_state();
@@ -113,9 +122,10 @@ void LedController::init(IMoonrakerAPI* api, IMoonrakerClient* client) {
 void LedController::deinit() {
     lifetime_.invalidate();
 
-    // Unsubscribe the connection-state observer before clearing in-flight state
-    // so any queued observer callbacks are neutralised before we reset.
+    // Unsubscribe the connection-state and klippy-state observers before clearing
+    // in-flight state so any queued observer callbacks are neutralised before we reset.
     conn_observer_.reset();
+    klippy_observer_.reset();
 
     // Clear any in-flight count so the subject is reset to 0 before the next
     // init. Deferred settle callbacks from the previous session are now dead
@@ -149,6 +159,10 @@ void LedController::deinit() {
     led_on_at_start_ = false;
     startup_brightness_ = 80;
     light_on_ = false;
+    // Re-arm the startup preference. deinit() only runs from
+    // Application::tear_down_printer_state() (printer switch, add-printer wizard)
+    // and shutdown — a rediscovery re-runs init() alone and must NOT re-arm it.
+    startup_preference_applied_ = false;
 
     spdlog::info("[LedController] Deinitialized");
 }
@@ -316,10 +330,9 @@ void LedController::discover_from_hardware(const helix::PrinterDiscovery& hardwa
                      discovered_led_macros_.size());
     }
 
-    // Populate macro backend from configured macro devices (loaded from config)
-    for (const auto& macro_cfg : configured_macros_) {
-        macro_.add_macro(macro_cfg);
-    }
+    // Repopulate the macro backend — the clear() above wiped what load_config()
+    // installed. Same single rebuild path, so the two lists cannot drift.
+    rebuild_macro_backend();
 
     if (macro_.is_available()) {
         spdlog::info("[LedController] Loaded {} configured macro device(s)",
@@ -336,14 +349,9 @@ void LedController::discover_from_hardware(const helix::PrinterDiscovery& hardwa
     // auto-select below save if it picks new strips instead.
     if (!selected_strips_.empty()) {
         auto all_strips = all_selectable_strips();
-        auto it = std::remove_if(selected_strips_.begin(), selected_strips_.end(),
-                                 [&all_strips](const std::string& id) {
-                                     for (const auto& s : all_strips) {
-                                         if (s.id == id)
-                                             return false;
-                                     }
-                                     return true;
-                                 });
+        auto it = std::remove_if(
+            selected_strips_.begin(), selected_strips_.end(),
+            [&all_strips](const std::string& id) { return find_strip(all_strips, id) == nullptr; });
         if (it != selected_strips_.end()) {
             std::vector<std::string> pruned(it, selected_strips_.end());
             selected_strips_.erase(it, selected_strips_.end());
@@ -392,15 +400,13 @@ void LedController::discover_wled_strips() {
     api_->rest().wled_get_strips(
         [this, token](const RestResponse& resp) {
             // === BG THREAD: parse, validate, build local strip list ===
-            // Response format: {"result": {strip_name: {details...}, ...}}
+            // Response format: {"result": {"strips": {strip_name: {details...}, ...}}}
             if (!resp.data.is_object()) {
                 spdlog::warn("[LedController] WLED strips response is not a JSON object");
                 return;
             }
 
-            // Moonraker wraps response in "result" key
-            const json& strips_data =
-                resp.data.contains("result") ? resp.data["result"] : resp.data;
+            const json& strips_data = detail::wled_strip_map(resp.data);
 
             std::vector<LedStripInfo> discovered;
             if (strips_data.is_object()) {
@@ -704,7 +710,8 @@ void NativeBackend::clear() {
 }
 
 void NativeBackend::set_color(const std::string& strip_id, double r, double g, double b, double w,
-                              SuccessCallback on_success, ErrorCallback on_error) {
+                              SuccessCallback on_success, ErrorCallback on_error,
+                              SuccessCallback on_queued) {
     if (!api_) {
         spdlog::warn("[NativeBackend] set_color called with no API (strip={})", strip_id);
         if (on_error) {
@@ -722,17 +729,14 @@ void NativeBackend::set_color(const std::string& strip_id, double r, double g, d
     // Determine if this strip is white-only based on actual pin configuration
     // (from configfile) or fall back to prefix-based detection.
     bool is_white_only = false;
-    for (const auto& s : strips_) {
-        if (s.id == strip_id) {
-            if (s.pin_config_known) {
-                // White-only if only white_pin is defined (no RGB pins)
-                is_white_only =
-                    s.has_white_pin && !s.has_red_pin && !s.has_green_pin && !s.has_blue_pin;
-            } else {
-                // Fall back: generic "led " prefix = white-only, neopixel/dotstar = RGB(W)
-                is_white_only = (strip_id.rfind("led ", 0) == 0);
-            }
-            break;
+    if (const auto* s = find_strip(strips_, strip_id)) {
+        if (s->pin_config_known) {
+            // White-only if only white_pin is defined (no RGB pins)
+            is_white_only =
+                s->has_white_pin && !s->has_red_pin && !s->has_green_pin && !s->has_blue_pin;
+        } else {
+            // Fall back: generic "led " prefix = white-only, neopixel/dotstar = RGB(W)
+            is_white_only = (strip_id.rfind("led ", 0) == 0);
         }
     }
 
@@ -751,16 +755,19 @@ void NativeBackend::set_color(const std::string& strip_id, double r, double g, d
     spdlog::debug("[NativeBackend] set_color: {} r={:.2f} g={:.2f} b={:.2f} w={:.2f}", strip_id, r,
                   g, b, w);
 
-    api_->set_led(strip_id, r, g, b, w, on_success, [on_error](const MoonrakerError& err) {
-        if (on_error) {
-            on_error(err.message);
-        }
-    });
+    api_->set_led(
+        strip_id, r, g, b, w, std::move(on_success),
+        [on_error](const MoonrakerError& err) {
+            if (on_error) {
+                on_error(err.message);
+            }
+        },
+        std::move(on_queued));
 }
 
 void NativeBackend::set_brightness(const std::string& strip_id, int brightness_pct, double r,
                                    double g, double b, double w, SuccessCallback on_success,
-                                   ErrorCallback on_error) {
+                                   ErrorCallback on_error, SuccessCallback on_queued) {
     if (!api_) {
         spdlog::warn("[NativeBackend] set_brightness called with no API (strip={})", strip_id);
         if (on_error) {
@@ -776,11 +783,12 @@ void NativeBackend::set_brightness(const std::string& strip_id, int brightness_p
     spdlog::debug("[NativeBackend] set_brightness: {} {}% (scale={:.2f})", strip_id, brightness_pct,
                   scale);
 
-    set_color(strip_id, r * scale, g * scale, b * scale, w * scale, on_success, on_error);
+    set_color(strip_id, r * scale, g * scale, b * scale, w * scale, std::move(on_success),
+              std::move(on_error), std::move(on_queued));
 }
 
 void NativeBackend::turn_on(const std::string& strip_id, SuccessCallback on_success,
-                            ErrorCallback on_error) {
+                            ErrorCallback on_error, SuccessCallback on_queued) {
     if (!api_) {
         spdlog::warn("[NativeBackend] turn_on called with no API (strip={})", strip_id);
         if (on_error) {
@@ -792,11 +800,12 @@ void NativeBackend::turn_on(const std::string& strip_id, SuccessCallback on_succ
     spdlog::debug("[NativeBackend] turn_on: {}", strip_id);
     // Use cached color if available, otherwise default to full white
     StripColor cached = get_strip_color(strip_id);
-    set_color(strip_id, cached.r, cached.g, cached.b, cached.w, on_success, on_error);
+    set_color(strip_id, cached.r, cached.g, cached.b, cached.w, std::move(on_success),
+              std::move(on_error), std::move(on_queued));
 }
 
 void NativeBackend::turn_off(const std::string& strip_id, SuccessCallback on_success,
-                             ErrorCallback on_error) {
+                             ErrorCallback on_error, SuccessCallback on_queued) {
     if (!api_) {
         spdlog::warn("[NativeBackend] turn_off called with no API (strip={})", strip_id);
         if (on_error) {
@@ -807,74 +816,66 @@ void NativeBackend::turn_off(const std::string& strip_id, SuccessCallback on_suc
 
     spdlog::debug("[NativeBackend] turn_off: {}", strip_id);
     // Set all channels to zero
-    set_color(strip_id, 0.0, 0.0, 0.0, 0.0, on_success, on_error);
+    set_color(strip_id, 0.0, 0.0, 0.0, 0.0, std::move(on_success), std::move(on_error),
+              std::move(on_queued));
 }
 
-uint32_t NativeBackend::StripColor::to_rgb() const {
-    uint8_t ri = static_cast<uint8_t>(std::clamp(r, 0.0, 1.0) * 255.0 + 0.5);
-    uint8_t gi = static_cast<uint8_t>(std::clamp(g, 0.0, 1.0) * 255.0 + 0.5);
-    uint8_t bi = static_cast<uint8_t>(std::clamp(b, 0.0, 1.0) * 255.0 + 0.5);
-    return (ri << 16) | (gi << 8) | bi;
-}
+void NativeBackend::StripColor::decompose(uint32_t& base_color, int& brightness_pct,
+                                          double& base_white) const {
+    const uint8_t ri = to_channel_byte(r);
+    const uint8_t gi = to_channel_byte(g);
+    const uint8_t bi = to_channel_byte(b);
+    const uint8_t wi = to_channel_byte(w);
 
-void NativeBackend::StripColor::decompose(uint32_t& base_color, int& brightness_pct) const {
-    uint8_t ri = static_cast<uint8_t>(std::clamp(r, 0.0, 1.0) * 255.0 + 0.5);
-    uint8_t gi = static_cast<uint8_t>(std::clamp(g, 0.0, 1.0) * 255.0 + 0.5);
-    uint8_t bi = static_cast<uint8_t>(std::clamp(b, 0.0, 1.0) * 255.0 + 0.5);
-    uint8_t max_c = std::max({ri, gi, bi});
+    // W participates in the brightness max. A Klipper white-only [led] section
+    // (white_pin only) puts its entire level in the 4th channel — color_data
+    // [[0.0, 0.0, 0.0, 0.15]] — so an RGB-only max reads back as 0%, and
+    // re-applying 0% writes the user's light off (#1129).
+    const uint8_t max_c = std::max({ri, gi, bi, wi});
 
-    brightness_pct = (max_c * 100 + 127) / 255;
-    if (brightness_pct < 1 && max_c > 0)
-        brightness_pct = 1;
+    brightness_pct = channel_to_percent(max_c);
 
-    if (max_c > 0 && max_c < 255) {
-        uint8_t fr = static_cast<uint8_t>(std::min(255, ri * 255 / max_c));
-        uint8_t fg = static_cast<uint8_t>(std::min(255, gi * 255 / max_c));
-        uint8_t fb = static_cast<uint8_t>(std::min(255, bi * 255 / max_c));
-        base_color = (fr << 16) | (fg << 8) | fb;
+    // base_white is the W level scaled back up to full brightness, so that
+    // base_white * (brightness_pct / 100) reproduces the reported W exactly.
+    base_white = static_cast<double>(scale_channel_to_full(wi, max_c)) / 255.0;
+
+    if (ri == 0 && gi == 0 && bi == 0 && wi > 0) {
+        // White-only output: there is no hue to recover from all-zero RGB.
+        // Report neutral white as the base so the swatch and the color presets
+        // show a dimmed white rather than black. The actual write still goes
+        // out on the W channel (see LedControlOverlay::apply_current_color).
+        base_color = 0xFFFFFFu;
     } else {
-        base_color = (ri << 16) | (gi << 8) | bi;
+        base_color = (static_cast<uint32_t>(scale_channel_to_full(ri, max_c)) << 16) |
+                     (static_cast<uint32_t>(scale_channel_to_full(gi, max_c)) << 8) |
+                     scale_channel_to_full(bi, max_c);
     }
 }
 
 void NativeBackend::update_from_status(const nlohmann::json& status) {
-    for (const auto& strip : strips_) {
+    // Non-const iteration: the RGBW capability fix-up below patches the very
+    // strip the loop is holding (it used to re-scan strips_ to find it again).
+    for (auto& strip : strips_) {
         if (!status.contains(strip.id))
             continue;
 
-        const auto& led = status[strip.id];
-        if (!led.contains("color_data") || !led["color_data"].is_array() ||
-            led["color_data"].empty())
-            continue;
-
-        const auto& first = led["color_data"][0];
-        if (!first.is_array() || first.size() < 3)
-            continue;
-        // Field-restricted Moonraker subscriptions can deliver null channel
-        // values for strips that don't expose a particular component; guard
-        // each get<double>() so a null doesn't throw type_error.302 and
-        // unwind into main() (#filament_motion_sensor / f75b961d8 family).
-        if (!first[0].is_number() || !first[1].is_number() || !first[2].is_number())
+        RgbwF parsed;
+        if (!parse_color_data(status[strip.id], parsed))
             continue;
 
         StripColor color;
-        color.r = first[0].get<double>();
-        color.g = first[1].get<double>();
-        color.b = first[2].get<double>();
-        color.w = (first.size() >= 4 && first[3].is_number()) ? first[3].get<double>() : 0.0;
+        color.r = parsed.r;
+        color.g = parsed.g;
+        color.b = parsed.b;
+        color.w = parsed.w;
         strip_colors_[strip.id] = color;
 
         // Detect RGBW capability from actual color_data size (overrides prefix guess)
-        bool has_white = (first.size() >= 4);
-        for (auto& s : strips_) {
-            if (s.id == strip.id) {
-                if (s.supports_white != has_white) {
-                    spdlog::info("[NativeBackend] Strip '{}' RGBW detection updated: {} -> {}",
-                                 s.id, s.supports_white, has_white);
-                    s.supports_white = has_white;
-                }
-                break;
-            }
+        const bool has_white = (parsed.channels >= 4);
+        if (strip.supports_white != has_white) {
+            spdlog::info("[NativeBackend] Strip '{}' RGBW detection updated: {} -> {}", strip.id,
+                         strip.supports_white, has_white);
+            strip.supports_white = has_white;
         }
 
         if (color_change_cb_) {
@@ -990,7 +991,8 @@ std::string LedEffectBackend::parse_klipper_led_target(const std::string& klippe
 
 void LedEffectBackend::activate_effect(const std::string& effect_name,
                                        NativeBackend::SuccessCallback on_success,
-                                       NativeBackend::ErrorCallback on_error) {
+                                       NativeBackend::ErrorCallback on_error,
+                                       NativeBackend::SuccessCallback on_queued) {
     if (!api_) {
         spdlog::warn("[LedEffectBackend] activate_effect called with no API (effect={})",
                      effect_name);
@@ -1010,15 +1012,19 @@ void LedEffectBackend::activate_effect(const std::string& effect_name,
     std::string gcode = "SET_LED_EFFECT EFFECT=" + bare_name;
     spdlog::debug("[LedEffectBackend] activate_effect: {} -> gcode: {}", effect_name, gcode);
 
-    api_->execute_gcode(gcode, on_success, [on_error](const MoonrakerError& err) {
-        if (on_error) {
-            on_error(err.message);
-        }
-    });
+    api_->execute_gcode(
+        gcode, std::move(on_success),
+        [on_error](const MoonrakerError& err) {
+            if (on_error) {
+                on_error(err.message);
+            }
+        },
+        /*timeout_ms=*/0, /*silent=*/false, std::move(on_queued));
 }
 
 void LedEffectBackend::stop_all_effects(NativeBackend::SuccessCallback on_success,
-                                        NativeBackend::ErrorCallback on_error) {
+                                        NativeBackend::ErrorCallback on_error,
+                                        NativeBackend::SuccessCallback on_queued) {
     if (!api_) {
         spdlog::warn("[LedEffectBackend] stop_all_effects called with no API");
         if (on_error) {
@@ -1029,16 +1035,20 @@ void LedEffectBackend::stop_all_effects(NativeBackend::SuccessCallback on_succes
 
     spdlog::debug("[LedEffectBackend] stop_all_effects: gcode: STOP_LED_EFFECTS");
 
-    api_->execute_gcode("STOP_LED_EFFECTS", on_success, [on_error](const MoonrakerError& err) {
-        if (on_error) {
-            on_error(err.message);
-        }
-    });
+    api_->execute_gcode(
+        "STOP_LED_EFFECTS", std::move(on_success),
+        [on_error](const MoonrakerError& err) {
+            if (on_error) {
+                on_error(err.message);
+            }
+        },
+        /*timeout_ms=*/0, /*silent=*/false, std::move(on_queued));
 }
 
 void LedEffectBackend::stop_effect(const std::string& effect_name,
                                    NativeBackend::SuccessCallback on_success,
-                                   NativeBackend::ErrorCallback on_error) {
+                                   NativeBackend::ErrorCallback on_error,
+                                   NativeBackend::SuccessCallback on_queued) {
     if (!api_) {
         spdlog::warn("[LedEffectBackend] stop_effect called with no API (effect={})", effect_name);
         if (on_error) {
@@ -1057,11 +1067,14 @@ void LedEffectBackend::stop_effect(const std::string& effect_name,
     std::string gcode = "SET_LED_EFFECT EFFECT=" + bare_name + " STOP=1";
     spdlog::debug("[LedEffectBackend] stop_effect: {} -> gcode: {}", effect_name, gcode);
 
-    api_->execute_gcode(gcode, on_success, [on_error](const MoonrakerError& err) {
-        if (on_error) {
-            on_error(err.message);
-        }
-    });
+    api_->execute_gcode(
+        gcode, std::move(on_success),
+        [on_error](const MoonrakerError& err) {
+            if (on_error) {
+                on_error(err.message);
+            }
+        },
+        /*timeout_ms=*/0, /*silent=*/false, std::move(on_queued));
 }
 
 std::string LedEffectBackend::icon_hint_for_effect(const std::string& effect_name) {
@@ -1296,8 +1309,7 @@ void WledBackend::poll_status(std::function<void()> on_complete) {
 
     api_->rest().wled_get_strips(
         [this, on_complete](const RestResponse& resp) {
-            const json& strips_data =
-                resp.data.contains("result") ? resp.data["result"] : resp.data;
+            const json& strips_data = detail::wled_strip_map(resp.data);
 
             if (strips_data.is_object()) {
                 for (auto it = strips_data.begin(); it != strips_data.end(); ++it) {
@@ -1366,7 +1378,6 @@ void MacroBackend::add_macro(const LedMacroInfo& macro) {
 
 void MacroBackend::clear() {
     macros_.clear();
-    macro_states_.clear();
 }
 
 void MacroBackend::execute_on(const std::string& macro_name,
@@ -1396,7 +1407,6 @@ void MacroBackend::execute_on(const std::string& macro_name,
                 return;
             }
             spdlog::debug("[MacroBackend] execute_on: {} -> {}", macro_name, gcode);
-            macro_states_[macro_name] = true;
             api_->execute_gcode(gcode, on_success, [on_error](const MoonrakerError& err) {
                 if (on_error) {
                     on_error(err.message);
@@ -1439,7 +1449,6 @@ void MacroBackend::execute_off(const std::string& macro_name,
                 return;
             }
             spdlog::debug("[MacroBackend] execute_off: {} -> {}", macro_name, gcode);
-            macro_states_[macro_name] = false;
             api_->execute_gcode(gcode, on_success, [on_error](const MoonrakerError& err) {
                 if (on_error) {
                     on_error(err.message);
@@ -1472,9 +1481,6 @@ void MacroBackend::execute_toggle(const std::string& macro_name,
             if (!macro.toggle_macro.empty()) {
                 spdlog::debug("[MacroBackend] execute_toggle: {} -> {}", macro_name,
                               macro.toggle_macro);
-                // Toggle macros flip state optimistically (but state is unknowable)
-                auto it = macro_states_.find(macro_name);
-                macro_states_[macro_name] = (it == macro_states_.end()) ? true : !it->second;
                 api_->execute_gcode(macro.toggle_macro, on_success,
                                     [on_error](const MoonrakerError& err) {
                                         if (on_error) {
@@ -1516,11 +1522,6 @@ void MacroBackend::execute_custom_action(const std::string& macro_gcode,
     });
 }
 
-bool MacroBackend::is_on(const std::string& macro_name) const {
-    auto it = macro_states_.find(macro_name);
-    return it != macro_states_.end() && it->second;
-}
-
 bool MacroBackend::has_known_state(const std::string& macro_name) const {
     for (const auto& macro : macros_) {
         if (macro.display_name == macro_name) {
@@ -1545,7 +1546,8 @@ void OutputPinBackend::clear() {
 
 void OutputPinBackend::set_value(const std::string& pin_id, double value,
                                  NativeBackend::SuccessCallback on_success,
-                                 NativeBackend::ErrorCallback on_error) {
+                                 NativeBackend::ErrorCallback on_error,
+                                 NativeBackend::SuccessCallback on_queued) {
     if (!api_) {
         spdlog::warn("[OutputPinBackend] set_value called with no API (pin={})", pin_id);
         if (on_error) {
@@ -1564,33 +1566,39 @@ void OutputPinBackend::set_value(const std::string& pin_id, double value,
 
     // Use spdlog's bundled fmt for locale-independent float formatting
     std::string gcode = fmt::format("SET_PIN PIN={} VALUE={:.4f}", pin_name, value);
-    api_->execute_gcode(gcode, on_success, [on_error](const MoonrakerError& err) {
-        if (on_error) {
-            on_error(err.message);
-        }
-    });
+    api_->execute_gcode(
+        gcode, std::move(on_success),
+        [on_error](const MoonrakerError& err) {
+            if (on_error) {
+                on_error(err.message);
+            }
+        },
+        /*timeout_ms=*/0, /*silent=*/false, std::move(on_queued));
 }
 
 void OutputPinBackend::turn_on(const std::string& pin_id, NativeBackend::SuccessCallback on_success,
-                               NativeBackend::ErrorCallback on_error) {
-    set_value(pin_id, 1.0, on_success, on_error);
+                               NativeBackend::ErrorCallback on_error,
+                               NativeBackend::SuccessCallback on_queued) {
+    set_value(pin_id, 1.0, std::move(on_success), std::move(on_error), std::move(on_queued));
 }
 
 void OutputPinBackend::turn_off(const std::string& pin_id,
                                 NativeBackend::SuccessCallback on_success,
-                                NativeBackend::ErrorCallback on_error) {
-    set_value(pin_id, 0.0, on_success, on_error);
+                                NativeBackend::ErrorCallback on_error,
+                                NativeBackend::SuccessCallback on_queued) {
+    set_value(pin_id, 0.0, std::move(on_success), std::move(on_error), std::move(on_queued));
 }
 
 void OutputPinBackend::set_brightness(const std::string& pin_id, int brightness_pct,
                                       NativeBackend::SuccessCallback on_success,
-                                      NativeBackend::ErrorCallback on_error) {
+                                      NativeBackend::ErrorCallback on_error,
+                                      NativeBackend::SuccessCallback on_queued) {
     double value = std::clamp(brightness_pct, 0, 100) / 100.0;
     // Non-PWM pins only accept 0 or 1 — clamp to avoid Klipper errors
     if (!is_pwm(pin_id)) {
         value = (value > 0.0) ? 1.0 : 0.0;
     }
-    set_value(pin_id, value, on_success, on_error);
+    set_value(pin_id, value, std::move(on_success), std::move(on_error), std::move(on_queued));
 }
 
 // Called from UI thread (via UpdateQueue dispatch in printer_state.cpp)
@@ -1600,11 +1608,7 @@ void OutputPinBackend::update_from_status(const nlohmann::json& status) {
             continue;
         const auto& pin_status = status[pin.id];
         if (pin_status.contains("value") && pin_status["value"].is_number()) {
-            double value = pin_status["value"].get<double>();
-            pin_values_[pin.id] = value;
-            if (value_change_cb_) {
-                value_change_cb_(pin.id, value);
-            }
+            pin_values_[pin.id] = pin_status["value"].get<double>();
         }
     }
 }
@@ -1614,28 +1618,18 @@ double OutputPinBackend::get_value(const std::string& pin_id) const {
     return (it != pin_values_.end()) ? it->second : 0.0;
 }
 
-bool OutputPinBackend::is_on(const std::string& pin_id) const {
-    return get_value(pin_id) > 0.0;
-}
-
 int OutputPinBackend::brightness_pct(const std::string& pin_id) const {
     return std::clamp(static_cast<int>(get_value(pin_id) * 100.0 + 0.5), 0, 100);
 }
 
 bool OutputPinBackend::is_pwm(const std::string& pin_id) const {
-    for (const auto& p : pins_) {
-        if (p.id == pin_id)
-            return p.is_pwm;
-    }
-    return false;
+    const auto* p = find_strip(pins_, pin_id);
+    return p != nullptr && p->is_pwm;
 }
 
 void OutputPinBackend::set_pin_pwm(const std::string& pin_id, bool is_pwm) {
-    for (auto& p : pins_) {
-        if (p.id == pin_id) {
-            p.is_pwm = is_pwm;
-            return;
-        }
+    if (auto* p = find_strip(pins_, pin_id)) {
+        p->is_pwm = is_pwm;
     }
 }
 
@@ -1652,66 +1646,33 @@ void LedController::load_config() {
         return;
     }
 
-    // === One-time migration from old /led/ paths ===
-    auto& old_strips = cfg->get_json("/led/selected_strips");
-    if (old_strips.is_array() && !old_strips.empty()) {
-        auto& new_strips = cfg->get_json(cfg->df() + "leds/selected_strips");
-        if (!new_strips.is_array() || new_strips.empty()) {
-            spdlog::info("[LedController] Migrating config from /led/ to active printer leds/");
-            cfg->set(cfg->df() + "leds/selected_strips", old_strips);
-
-            auto& old_color_json = cfg->get_json("/led/last_color");
-            if (old_color_json.is_number()) {
-                cfg->set(cfg->df() + "leds/last_color", old_color_json.get<int>());
-            }
-            auto& old_brightness_json = cfg->get_json("/led/last_brightness");
-            if (old_brightness_json.is_number()) {
-                cfg->set(cfg->df() + "leds/last_brightness", old_brightness_json.get<int>());
-            }
-            auto& old_presets = cfg->get_json("/led/color_presets");
-            if (old_presets.is_array() && !old_presets.empty()) {
-                cfg->set(cfg->df() + "leds/color_presets", old_presets);
-            }
-            auto& old_macros = cfg->get_json("/led/macro_devices");
-            if (old_macros.is_array() && !old_macros.empty()) {
-                cfg->set(cfg->df() + "leds/macro_devices", old_macros);
-            }
-            cfg->save();
-        }
-    }
+    // NOTE: the one-time fold of the legacy top-level /led block into the
+    // active printer's leds/ section lives in migrate_v19_to_v20() (config.cpp).
+    // It used to run here on every load_config(), and its get_json() probes
+    // re-created the /led orphan on every boot (#1129).
 
     // Selected strips
-    selected_strips_.clear();
-    auto& strips_json = cfg->get_json(cfg->df() + "leds/selected_strips");
-    if (strips_json.is_array()) {
-        for (const auto& s : strips_json) {
-            if (s.is_string()) {
-                selected_strips_.push_back(s.get<std::string>());
-            }
-        }
-    }
+    selected_strips_ = cfg->get_string_array(cfg->df() + "leds/selected_strips");
 
     // Legacy migration: leds/selected (JSON array from old SettingsManager)
     if (selected_strips_.empty()) {
-        auto& legacy_selected = cfg->get_json(cfg->df() + "leds/selected");
-        if (legacy_selected.is_array()) {
-            for (const auto& s : legacy_selected) {
-                if (s.is_string() && !s.get<std::string>().empty()) {
-                    selected_strips_.push_back(s.get<std::string>());
-                }
+        for (auto& s : cfg->get_string_array(cfg->df() + "leds/selected")) {
+            if (!s.empty()) {
+                selected_strips_.push_back(std::move(s));
             }
-            if (!selected_strips_.empty()) {
-                spdlog::info("[LedController] Migrated {} strip(s) from leds/selected",
-                             selected_strips_.size());
-            }
+        }
+        if (!selected_strips_.empty()) {
+            spdlog::info("[LedController] Migrated {} strip(s) from leds/selected",
+                         selected_strips_.size());
         }
     }
 
     // Legacy migration: leds/strip (single string, oldest format)
     if (selected_strips_.empty()) {
-        auto& legacy_strip_json = cfg->get_json(cfg->df() + "leds/strip");
-        std::string legacy_strip =
-            legacy_strip_json.is_string() ? legacy_strip_json.get<std::string>() : "";
+        const nlohmann::json* legacy_strip_json = cfg->try_get_json(cfg->df() + "leds/strip");
+        std::string legacy_strip = (legacy_strip_json != nullptr && legacy_strip_json->is_string())
+                                       ? legacy_strip_json->get<std::string>()
+                                       : "";
         if (!legacy_strip.empty()) {
             selected_strips_.push_back(legacy_strip);
             spdlog::info("[LedController] Migrated legacy single strip: {}", legacy_strip);
@@ -1719,19 +1680,22 @@ void LedController::load_config() {
     }
 
     // Last color & brightness
-    auto& color_json = cfg->get_json(cfg->df() + "leds/last_color");
-    last_color_.rgb = parse_json_color(color_json, 0xFFFFFF);
-    auto& brightness_json = cfg->get_json(cfg->df() + "leds/last_brightness");
-    last_brightness_ = brightness_json.is_number() ? brightness_json.get<int>() : 100;
-    auto& white_json = cfg->get_json(cfg->df() + "leds/last_white");
-    last_color_.white =
-        white_json.is_number() ? std::clamp(white_json.get<double>(), 0.0, 1.0) : 0.0;
+    const nlohmann::json* color_json = cfg->try_get_json(cfg->df() + "leds/last_color");
+    last_color_.rgb = color_json != nullptr ? parse_json_color(*color_json, 0xFFFFFF) : 0xFFFFFFu;
+    const nlohmann::json* brightness_json = cfg->try_get_json(cfg->df() + "leds/last_brightness");
+    last_brightness_ = (brightness_json != nullptr && brightness_json->is_number())
+                           ? brightness_json->get<int>()
+                           : 100;
+    const nlohmann::json* white_json = cfg->try_get_json(cfg->df() + "leds/last_white");
+    last_color_.white = (white_json != nullptr && white_json->is_number())
+                            ? std::clamp(white_json->get<double>(), 0.0, 1.0)
+                            : 0.0;
 
     // Color presets
     color_presets_.clear();
-    auto& presets_json = cfg->get_json(cfg->df() + "leds/color_presets");
-    if (presets_json.is_array()) {
-        for (const auto& p : presets_json) {
+    const nlohmann::json* presets_json = cfg->try_get_json(cfg->df() + "leds/color_presets");
+    if (presets_json != nullptr && presets_json->is_array()) {
+        for (const auto& p : *presets_json) {
             uint32_t c = parse_json_color(p, UINT32_MAX);
             if (c != UINT32_MAX) {
                 color_presets_.push_back(c);
@@ -1745,9 +1709,9 @@ void LedController::load_config() {
 
     // Configured macros
     configured_macros_.clear();
-    auto& macros_json = cfg->get_json(cfg->df() + "leds/macro_devices");
-    if (macros_json.is_array()) {
-        for (const auto& m : macros_json) {
+    const nlohmann::json* macros_json = cfg->try_get_json(cfg->df() + "leds/macro_devices");
+    if (macros_json != nullptr && macros_json->is_array()) {
+        for (const auto& m : *macros_json) {
             if (!m.is_object()) {
                 continue;
             }
@@ -1814,21 +1778,23 @@ void LedController::load_config() {
         }
     }
 
+    // The persisted list is the source of truth; mirror it into the backend now.
+    // Without this, macro devices exist for the overlay (which renders chips from
+    // configured_macros()) but not for MacroBackend, whose macros_ was only ever
+    // filled by discover_from_hardware(). Between init() and discovery — and
+    // forever on a printer where discovery never runs — every macro chip rendered
+    // a button whose execute_toggle() found nothing and silently no-opped.
+    rebuild_macro_backend();
+
     // Config migration: ensure macro strips have "macro:" prefix
     bool needs_resave = false;
     for (auto& s : selected_strips_) {
         // Check if this matches a configured macro display_name but lacks the prefix
-        if (s.rfind("macro:", 0) != 0) {
-            for (const auto& m : configured_macros_) {
-                if (m.display_name == s) {
-                    spdlog::info(
-                        "[LedController] Migrating unprefixed macro strip '{}' -> 'macro:{}'", s,
-                        s);
-                    s = "macro:" + s;
-                    needs_resave = true;
-                    break;
-                }
-            }
+        if (!is_macro_strip_id(s) && find_macro(configured_macros_, s) != nullptr) {
+            spdlog::info("[LedController] Migrating unprefixed macro strip '{}' -> 'macro:{}'", s,
+                         s);
+            s = MACRO_STRIP_PREFIX + s;
+            needs_resave = true;
         }
     }
 
@@ -1837,13 +1803,10 @@ void LedController::load_config() {
     selected_strips_.erase(
         std::remove_if(selected_strips_.begin(), selected_strips_.end(),
                        [this](const std::string& s) {
-                           if (s.rfind("macro:", 0) != 0)
+                           if (!is_macro_strip_id(s))
                                return false;
-                           std::string raw = s.substr(6);
-                           for (const auto& m : configured_macros_) {
-                               if (m.display_name == raw)
-                                   return false;
-                           }
+                           if (find_macro(configured_macros_, s) != nullptr)
+                               return false;
                            spdlog::info("[LedController] Removing stale macro strip '{}'", s);
                            return true;
                        }),
@@ -1865,13 +1828,16 @@ void LedController::load_config() {
     }
 
     // LED on at start preference
-    auto& on_at_start_json = cfg->get_json(cfg->df() + "leds/led_on_at_start");
-    led_on_at_start_ = on_at_start_json.is_boolean() ? on_at_start_json.get<bool>() : false;
+    const nlohmann::json* on_at_start_json = cfg->try_get_json(cfg->df() + "leds/led_on_at_start");
+    led_on_at_start_ = on_at_start_json != nullptr && on_at_start_json->is_boolean() &&
+                       on_at_start_json->get<bool>();
 
-    auto& startup_brightness_json = cfg->get_json(cfg->df() + "leds/startup_brightness");
-    startup_brightness_ = startup_brightness_json.is_number_integer()
-                              ? std::clamp(startup_brightness_json.get<int>(), 0, 100)
-                              : 80;
+    const nlohmann::json* startup_brightness_json =
+        cfg->try_get_json(cfg->df() + "leds/startup_brightness");
+    startup_brightness_ =
+        (startup_brightness_json != nullptr && startup_brightness_json->is_number_integer())
+            ? std::clamp(startup_brightness_json->get<int>(), 0, 100)
+            : 80;
 
     spdlog::debug("[LedController] Loaded config: {} strips, {} presets, {} macros",
                   selected_strips_.size(), color_presets_.size(), configured_macros_.size());
@@ -1961,9 +1927,8 @@ LedController::ScaledColor LedController::compute_scaled_last_color(int brightne
     // than silently falling back to white.
     const int effective = brightness_pct > 0 ? brightness_pct : 100;
     const double scale = effective / 100.0;
-    const double r = ((last_color_.rgb >> 16) & 0xFF) / 255.0;
-    const double g = ((last_color_.rgb >> 8) & 0xFF) / 255.0;
-    const double b = (last_color_.rgb & 0xFF) / 255.0;
+    double r = 0.0, g = 0.0, b = 0.0;
+    unpack_rgb(last_color_.rgb, r, g, b);
     return {r * scale, g * scale, b * scale, last_color_.white * scale};
 }
 
@@ -1992,19 +1957,45 @@ void LedController::toggle_all(bool on) {
     }
 
     // Factory for settle callbacks: increments the in-flight counter at dispatch
-    // and returns a (success, error) pair that each decrement it on the main thread
-    // via tok.defer() once the gcode ACK (or error) lands.
+    // and returns a (success, error, queued) triple that each decrement it on the
+    // main thread via tok.defer() once the gcode ACK (or error, or queue
+    // acceptance) lands.
+    //
+    // The third one is not decoration. SET_LED is discretionary, so while an
+    // external blocking op (BED_MESH_CALIBRATE, QGL, a manual probe) holds
+    // Klipper's gcode lock, IMoonrakerAPI queues the command fire-and-forget and
+    // drops its RPC response — neither of the first two will EVER fire, and the
+    // counter would stay pinned, greying both light buttons out for the whole
+    // session (#1129). on_queued is the only settle signal on that path.
+    //
+    // NATIVE and OUTPUT_PIN emit discretionary gcode (SET_LED, SET_PIN) below and
+    // pass cbs.queued. MACRO emits user-defined macros, which stay non-discretionary
+    // under the default-allow rule and get a real response; WLED goes over HTTP
+    // without touching the gcode lock at all. LED_EFFECT's case in this switch is a
+    // no-op — it emits nothing and bumps no counter here. Effects are driven
+    // separately via activate/stop, none of which hold this in-flight counter.
+    struct Settle {
+        NativeBackend::SuccessCallback done;
+        NativeBackend::ErrorCallback fail;
+        NativeBackend::SuccessCallback queued;
+    };
     auto tok = lifetime_.token();
     auto make_settle = [this, tok]() {
         note_command_dispatched();
-        NativeBackend::SuccessCallback on_done = [this, tok]() {
+        auto settle = [this, tok]() {
             tok.defer("LedController::led_cmd_settled", [this]() { note_command_settled(); });
         };
-        NativeBackend::ErrorCallback on_fail = [this, tok](const std::string& msg) {
+        NativeBackend::SuccessCallback on_done = settle;
+        NativeBackend::ErrorCallback on_fail = [settle](const std::string& msg) {
             spdlog::warn("[LedController] LED toggle command failed: {}", msg);
-            tok.defer("LedController::led_cmd_settled", [this]() { note_command_settled(); });
+            settle();
         };
-        return std::make_pair(on_done, on_fail);
+        NativeBackend::SuccessCallback on_queued = [settle]() {
+            spdlog::debug("[LedController] LED toggle queued behind a blocking op — settling "
+                          "without an ACK");
+            settle();
+        };
+        return Settle{on_done, on_fail, on_queued};
     };
 
     for (const auto& strip_id : selected_strips_) {
@@ -2017,61 +2008,58 @@ void LedController::toggle_all(bool on) {
                 // brightness==0-but-color-nonzero restore-at-100% semantics.
                 auto c = compute_scaled_last_color(last_brightness_);
                 auto cbs = make_settle();
-                native_.set_color(strip_id, c.r, c.g, c.b, c.w, cbs.first, cbs.second);
+                native_.set_color(strip_id, c.r, c.g, c.b, c.w, cbs.done, cbs.fail, cbs.queued);
             } else {
                 auto cbs = make_settle();
-                native_.turn_off(strip_id, cbs.first, cbs.second);
+                native_.turn_off(strip_id, cbs.done, cbs.fail, cbs.queued);
             }
             break;
 
         case LedBackendType::WLED: {
             auto cbs = make_settle();
             if (on) {
-                wled_.set_on(strip_id, cbs.first, cbs.second);
+                wled_.set_on(strip_id, cbs.done, cbs.fail);
             } else {
-                wled_.set_off(strip_id, cbs.first, cbs.second);
+                wled_.set_off(strip_id, cbs.done, cbs.fail);
             }
             break;
         }
 
         case LedBackendType::MACRO: {
-            // Find the macro device matching this strip_id (by display name)
-            std::string raw_name = strip_macro_name(strip_id);
-            if (raw_name.empty()) {
+            if (strip_macro_name(strip_id).empty()) {
                 spdlog::warn("[LedController] toggle_all: skipping macro strip with empty name");
                 break;
             }
-            for (const auto& macro : configured_macros_) {
-                if (macro.display_name == raw_name) {
-                    switch (macro.type) {
-                    case MacroLedType::ON_OFF: {
-                        auto cbs = make_settle();
-                        if (on) {
-                            macro_.execute_on(macro.display_name, cbs.first, cbs.second);
-                        } else {
-                            macro_.execute_off(macro.display_name, cbs.first, cbs.second);
-                        }
-                        break;
-                    }
-                    case MacroLedType::TOGGLE: {
-                        auto cbs = make_settle();
-                        macro_.execute_toggle(macro.display_name, cbs.first, cbs.second);
-                        break;
-                    }
-                    case MacroLedType::PRESET: {
-                        // For preset type, use on/off macros if available
-                        if (on && !macro.on_macro.empty()) {
-                            auto cbs = make_settle();
-                            macro_.execute_on(macro.display_name, cbs.first, cbs.second);
-                        } else if (!on && !macro.off_macro.empty()) {
-                            auto cbs = make_settle();
-                            macro_.execute_off(macro.display_name, cbs.first, cbs.second);
-                        }
-                        break;
-                    }
-                    }
-                    break;
+            const auto* macro = find_macro(configured_macros_, strip_id);
+            if (macro == nullptr) {
+                break;
+            }
+            switch (macro->type) {
+            case MacroLedType::ON_OFF: {
+                auto cbs = make_settle();
+                if (on) {
+                    macro_.execute_on(macro->display_name, cbs.done, cbs.fail);
+                } else {
+                    macro_.execute_off(macro->display_name, cbs.done, cbs.fail);
                 }
+                break;
+            }
+            case MacroLedType::TOGGLE: {
+                auto cbs = make_settle();
+                macro_.execute_toggle(macro->display_name, cbs.done, cbs.fail);
+                break;
+            }
+            case MacroLedType::PRESET: {
+                // For preset type, use on/off macros if available
+                if (on && !macro->on_macro.empty()) {
+                    auto cbs = make_settle();
+                    macro_.execute_on(macro->display_name, cbs.done, cbs.fail);
+                } else if (!on && !macro->off_macro.empty()) {
+                    auto cbs = make_settle();
+                    macro_.execute_off(macro->display_name, cbs.done, cbs.fail);
+                }
+                break;
+            }
             }
             break;
         }
@@ -2079,9 +2067,9 @@ void LedController::toggle_all(bool on) {
         case LedBackendType::OUTPUT_PIN: {
             auto cbs = make_settle();
             if (on) {
-                output_pin_.turn_on(strip_id, cbs.first, cbs.second);
+                output_pin_.turn_on(strip_id, cbs.done, cbs.fail, cbs.queued);
             } else {
-                output_pin_.turn_off(strip_id, cbs.first, cbs.second);
+                output_pin_.turn_off(strip_id, cbs.done, cbs.fail, cbs.queued);
             }
             break;
         }
@@ -2094,37 +2082,26 @@ void LedController::toggle_all(bool on) {
 }
 
 LedBackendType LedController::backend_for_strip(const std::string& strip_id) const {
-    // Check native strips
-    for (const auto& strip : native_.strips()) {
-        if (strip.id == strip_id) {
-            return LedBackendType::NATIVE;
-        }
+    if (find_strip(native_.strips(), strip_id) != nullptr) {
+        return LedBackendType::NATIVE;
     }
 
-    // Check WLED strips
-    for (const auto& strip : wled_.strips()) {
-        if (strip.id == strip_id) {
-            return LedBackendType::WLED;
-        }
+    if (find_strip(wled_.strips(), strip_id) != nullptr) {
+        return LedBackendType::WLED;
     }
 
-    // Check macro devices (matched by display name, with or without "macro:" prefix)
-    std::string raw_name = strip_macro_name(strip_id);
-    for (const auto& macro : configured_macros_) {
-        if (macro.display_name == raw_name) {
-            return LedBackendType::MACRO;
-        }
+    // Macro devices are matched by display name, with or without "macro:" prefix
+    if (find_macro(configured_macros_, strip_id) != nullptr) {
+        return LedBackendType::MACRO;
     }
 
-    // Check output_pin strips
-    for (const auto& p : output_pin_.pins()) {
-        if (p.id == strip_id)
-            return LedBackendType::OUTPUT_PIN;
+    if (find_strip(output_pin_.pins(), strip_id) != nullptr) {
+        return LedBackendType::OUTPUT_PIN;
     }
 
     // If strip has "macro:" prefix but macro was deleted, still classify as MACRO
     // to prevent the stale ID from hitting NATIVE's set_led() validation
-    if (strip_id.rfind("macro:", 0) == 0) {
+    if (is_macro_strip_id(strip_id)) {
         spdlog::debug("[LedController] Stale macro strip '{}' - no matching configured macro",
                       strip_id);
         return LedBackendType::MACRO;
@@ -2153,7 +2130,7 @@ std::vector<LedStripInfo> LedController::all_selectable_strips() const {
             continue;
         LedStripInfo info;
         info.name = macro.display_name;
-        info.id = "macro:" + macro.display_name;
+        info.id = MACRO_STRIP_PREFIX + macro.display_name;
         info.backend = LedBackendType::MACRO;
         info.supports_color = false;
         info.supports_white = false;
@@ -2186,7 +2163,7 @@ std::string LedController::first_available_strip() const {
     // Fall back to first non-PRESET macro
     for (const auto& macro : configured_macros_) {
         if (macro.type != MacroLedType::PRESET) {
-            return "macro:" + macro.display_name;
+            return MACRO_STRIP_PREFIX + macro.display_name;
         }
     }
 
@@ -2325,13 +2302,28 @@ void LedController::set_startup_brightness(int brightness_pct) {
 }
 
 void LedController::apply_startup_preference() {
-    if (!led_on_at_start_) {
-        spdlog::debug("[LedController] LED on at start disabled - skipping");
+    if (startup_preference_applied_) {
+        spdlog::debug("[LedController] Startup preference already applied this session - skipping");
         return;
     }
 
     if (selected_strips_.empty()) {
-        spdlog::debug("[LedController] LED on at start enabled but no strips selected");
+        // Not our shot yet. WLED strips are discovered asynchronously, so an early
+        // discovery can legitimately have nothing to act on — leave the latch clear
+        // so a later discovery still gets its one chance.
+        spdlog::debug("[LedController] No strips selected - startup preference deferred");
+        return;
+    }
+
+    // The startup opportunity for this printer session is now spent, whether or not
+    // the preference is enabled. This runs from the discovery-complete handler, and
+    // notify_klippy_ready re-triggers discovery unconditionally, so every
+    // FIRMWARE_RESTART / M112 / klippy crash used to switch the lights back on over
+    // the user's manual OFF. "At start" means at start.
+    startup_preference_applied_ = true;
+
+    if (!led_on_at_start_) {
+        spdlog::debug("[LedController] LED on at start disabled - skipping");
         return;
     }
 
@@ -2425,6 +2417,8 @@ void LedController::set_configured_macros(const std::vector<LedMacroInfo>& macro
             spdlog::warn("[LedController] Skipping macro with empty display name");
         }
     }
+    // Keep MacroBackend in lockstep so no caller can leave the two out of sync.
+    rebuild_macro_backend();
 }
 
 void LedController::rebuild_macro_backend() {

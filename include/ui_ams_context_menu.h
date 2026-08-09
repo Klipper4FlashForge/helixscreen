@@ -5,12 +5,16 @@
 
 #include "ui_context_menu.h"
 
+#include "ams_types.h"
+
 #include <functional>
 #include <lvgl.h>
+#include <optional>
 #include <string>
 
 // Forward declaration
 class AmsBackend;
+class AmsContextMenuTestAccess;
 
 namespace helix::ui {
 
@@ -42,19 +46,21 @@ namespace helix::ui {
  * @endcode
  */
 class AmsContextMenu : public ContextMenu {
+    friend class ::AmsContextMenuTestAccess;
+
   public:
     enum class MenuAction {
-        CANCELLED,   ///< User dismissed menu without action
-        LOAD,        ///< Load filament from this slot
-        UNLOAD,      ///< Unload filament from toolhead
-        EJECT,       ///< Eject filament from lane (release spool)
-        RESET_LANE,  ///< Reset lane to known-good state
-        SELECT_GATE, ///< Select this gate as the active gate (Happy Hare)
-        CHECK_GATE,  ///< Check filament state of this gate (Happy Hare)
-        EDIT,        ///< Edit slot properties
-        CLEAR_SPOOL, ///< Clear assigned spool from empty slot
-        SPOOLMAN,    ///< Assign Spoolman spool
-        SCAN_QR      ///< Scan QR code to assign spool
+        CANCELLED,        ///< User dismissed menu without action
+        LOAD,             ///< Load filament from this slot
+        UNLOAD,           ///< Unload filament from toolhead
+        EJECT,            ///< Eject filament from lane (release spool)
+        RECOVER_POSITION, ///< Retract filament stranded past the hub back into the lane
+        SELECT_GATE,      ///< Select this gate as the active gate (Happy Hare)
+        CHECK_GATE,       ///< Check filament state of this gate (Happy Hare)
+        EDIT,             ///< Edit slot properties
+        CLEAR_SPOOL,      ///< Clear assigned spool from empty slot
+        SPOOLMAN,         ///< Assign Spoolman spool
+        SCAN_QR           ///< Scan QR code to assign spool
     };
 
     using ActionCallback = std::function<void(MenuAction action, int slot_index)>;
@@ -139,17 +145,24 @@ class AmsContextMenu : public ContextMenu {
     // Gates BOTH the Unload action (enabled) and the Load action (suppressed) —
     // a slot the firmware considers seated should not offer Load.
     bool pending_is_loaded_ = false;
-    bool eject_mode_ = false; ///< True when showing "Eject" instead of "Unload"
-    /// True when showing a force-eject/recover affordance for an idle lane that reports EMPTY —
-    /// AD5X IFS cold retract, ignores presence (#996).
-    bool force_eject_mode_ = false;
+
+    /// Which operation the Unload button performs for the open slot. Selected in
+    /// on_created() from live backend state; drives both label and dispatch.
+    enum class UnloadMode {
+        Unload,          ///< Heated unload from the toolhead
+        RecoverPosition, ///< Retract filament stranded past the hub (AFC)
+        Eject,           ///< Cold retract of lane filament to the spool
+        ForceEject,      ///< Presence-ignoring retract of an empty lane (AD5X)
+        Unavailable,     ///< Nothing to do for this slot
+    };
+    UnloadMode unload_mode_ = UnloadMode::Unavailable;
+
     bool external_spool_mode_ = false; ///< True when showing menu for external spool (bypass)
 
     // === Event Handlers ===
     void handle_backdrop_clicked();
     void handle_load();
     void handle_unload();
-    void handle_reset_lane();
     void handle_gate_select();
     void handle_gate_check();
     void handle_edit();
@@ -170,6 +183,77 @@ class AmsContextMenu : public ContextMenu {
 
     // === Static Callback Registration ===
     static void register_callbacks();
+    // Pure: whether the context menu should offer "Clear Spool" for this slot.
+    //
+    // Deliberately independent of whether filament is physically present. The
+    // affordance was previously gated on an EMPTY slot, so it disappeared as soon
+    // as a spool went in — exactly when a stale assignment does damage, since that
+    // is when the wrong metadata is printed with and when an edit aims a Spoolman
+    // write at the previous spool. An empty lane's stale metadata is cosmetic.
+    static bool should_show_clear_spool(const SlotInfo& slot);
+
+    // Pure: selects the Unload button's operation for the open slot.
+    //
+    // Order encodes a deliberate priority ruling (see call site in on_created()):
+    // a confidently-attributed stranded lane outranks Eject, but an unattributed
+    // one (some backends share one physical sensor across every lane on a unit,
+    // so "can recover" can be true for every lane at once with no way to say
+    // whose filament tripped it) defers to Eject so a seated lane keeps its
+    // Eject button — the unattributed Recover only catches lanes with nothing
+    // left to eject.
+    //
+    // @param toolhead_unload      Slot unloads via the heated toolhead path
+    // @param can_recover          backend_->can_recover_lane_position(slot_index)
+    // @param recovery_attributed  backend_->lane_recovery_is_attributed()
+    // @param supports_eject       backend_->supports_lane_eject()
+    // @param slot_has_filament    SlotInfo::is_present() for this slot
+    // @param supports_force_eject backend_->supports_force_eject()
+    // @param slot_empty           !slot_has_filament
+    static UnloadMode decide_unload_mode(bool toolhead_unload, bool can_recover,
+                                         bool recovery_attributed, bool supports_eject,
+                                         bool slot_has_filament, bool supports_force_eject,
+                                         bool slot_empty);
+
+    // Pure: whether the Load button is offered for the open slot.
+    //
+    // A thin adapter over helix::ui::compute_op_button_gating() — the one rule
+    // the filament panel and the AMS sidebar answer from too. Kept as a named
+    // predicate because the menu's inputs need translating: `toolhead_unload` is
+    // the narrowed loaded signal (not the broadened recovery one), and presence
+    // arrives as a tri-state so an UNKNOWN lane is not read as empty.
+    //
+    // `print_blocks_op` is helix::ui::print_blocks_filament_op(), the mirror of
+    // AmsSubscriptionBackend::refuse_if_printing(). Do NOT pass the raw
+    // print_active subject: PRINTING always refuses, but a PAUSED print now
+    // ALLOWS the op on every backend whose filament macro does not home itself
+    // (only AD5X IFS does). Greying the paused case is the bug in both
+    // directions — offering what will be refused strands a runout-paused user
+    // (bundle JX2FVRB9), and refusing what the backend accepts hides the
+    // pause-then-swap recovery Klipper just told them to perform.
+    static bool decide_can_load(bool system_busy, bool toolhead_unload,
+                                std::optional<bool> slot_has_filament, bool print_blocks_op);
+
+    // Pure: whether the Unload button is offered for the open slot.
+    //
+    // Only the heated toolhead unload is subject to the print gate; the cold lane
+    // ops (Eject / RecoverPosition / ForceEject) do not move the toolhead and the
+    // backend permits them via check_preconditions(false), which never consults
+    // print state at all. Blocking the whole button would over-refuse and strand
+    // filament the user could have ejected. That asymmetry is expressed to the
+    // shared rule as OpButtonState::unload_is_cold_lane_op.
+    //
+    // `print_blocks_op`: see decide_can_load above — the computed predicate, not
+    // the raw print_active subject.
+    //
+    // `cold_ops_print_gated` is AmsBackend::cold_lane_ops_refused_during_print():
+    // true on a backend whose firmware refuses the cold ops mid-print too (AFC's
+    // cmd_LANE_UNLOAD has its own is_printing() guard), which withdraws the
+    // exemption above rather than offering a button into a certain refusal.
+    // Required, not defaulted — a silently omitted `false` re-offers exactly the
+    // dead-end button this parameter exists to remove.
+    static bool decide_unload_enabled(bool system_busy, UnloadMode mode, bool print_blocks_op,
+                                      bool cold_ops_print_gated);
+
     static bool callbacks_registered_;
 
     // === Static Callbacks ===
@@ -178,7 +262,6 @@ class AmsContextMenu : public ContextMenu {
     static void on_backdrop_cb(lv_event_t* e);
     static void on_load_cb(lv_event_t* e);
     static void on_unload_cb(lv_event_t* e);
-    static void on_reset_lane_cb(lv_event_t* e);
     static void on_gate_select_cb(lv_event_t* e);
     static void on_gate_check_cb(lv_event_t* e);
     static void on_edit_cb(lv_event_t* e);

@@ -29,6 +29,8 @@
 #endif
 
 // LVGL heap monitor
+#include "core/lv_obj_tree.h" // lv_obj_get_name() for delete crumbs
+#include "lv_init.h"          // lv_is_initialized() — guards the lv_mem_monitor read
 #include "misc/lv_types.h"
 #include "stdlib/lv_mem.h"
 
@@ -94,8 +96,34 @@ static volatile sig_atomic_t s_installed = 0;
 /// __atomic_compare_exchange_n is lock-free on every target we ship.
 static volatile sig_atomic_t s_crash_file_written = 0;
 
-/// Application start time (for uptime calculation)
-static time_t s_start_time = 0;
+/// Application start time, low 32 bits of CLOCK_MONOTONIC ms, captured at
+/// install(). MUST NOT be wall-clock: RTC-less devices (every Pi, the AD5M,
+/// the CC1) boot with a stale fake-hwclock time and NTP steps the clock
+/// forward minutes later, so a wall-clock delta reports whatever the step was.
+/// Bundle VP623KVU claimed `uptime:5035` for a process that had been alive
+/// ~128 seconds — an 82-minute NTP correction, not an 84-minute session. That
+/// sends triage looking for a slow leak when the real crash was 2 minutes in.
+static uint32_t s_start_mono_ms = 0;
+
+/// Async-signal-safe monotonic milliseconds (low 32 bits, wraps ~49.7 days).
+/// clock_gettime(CLOCK_MONOTONIC) is on POSIX's async-signal-safe list, so this
+/// is callable from the signal handler. Returns 0 only if the clock read fails.
+static uint32_t monotonic_ms_now() noexcept {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+        return 0;
+    uint64_t ms =
+        static_cast<uint64_t>(ts.tv_sec) * 1000 + static_cast<uint64_t>(ts.tv_nsec) / 1000000;
+    return static_cast<uint32_t>(ms);
+}
+
+/// Seconds since install(), from the monotonic clock. Wrap-safe.
+static long uptime_seconds() noexcept {
+    if (s_start_mono_ms == 0)
+        return 0;
+    return static_cast<long>(
+        crash_handler::detail::elapsed_ms(s_start_mono_ms, monotonic_ms_now()) / 1000u);
+}
 
 /// ELF load base address (ASLR offset), discovered at install time
 static uintptr_t s_load_base = 0;
@@ -183,7 +211,7 @@ static char s_current_event_target_name[32] = {0};
 
 /// Single breadcrumb slot. Size = 72 bytes.
 struct BreadcrumbSlot {
-    /// Monotonic ms since s_start_time. 0 means empty/uninitialized.
+    /// Low 32 bits of ms-since-boot (CLOCK_MONOTONIC). 0 = empty/uninitialized.
     /// Stored last with release semantics so readers see a complete slot.
     uint32_t ts_ms;
     char category[8]; // null-terminated, truncated
@@ -228,15 +256,29 @@ static struct sigaction s_old_sigabrt = {};
 static struct sigaction s_old_sigbus = {};
 static struct sigaction s_old_sigfpe = {};
 
-/// Cached pointer to glibc's private `__abort_msg` symbol. Glibc's
-/// `__libc_message()` writes the abort reason ("free(): invalid pointer",
-/// "double free or corruption", etc.) into a static buffer and stores the
-/// pointer here BEFORE calling `raise(SIGABRT)` — so reading `*s_abort_msg_ptr`
-/// in the SIGABRT branch surfaces the actual glibc diagnostic that issue #960
-/// was missing. Resolved once at install() via dlsym (not async-signal-safe);
+/// Mirror of glibc's private `struct abort_msg_s`. `__libc_message()` mmaps one
+/// of these, writes the abort reason ("free(): invalid pointer", "double free
+/// or corruption", ...) into `msg`, and stores the STRUCT POINTER in
+/// `__abort_msg` before calling `raise(SIGABRT)`.
+///
+/// The text therefore starts at `offsetof(msg)`, not at the pointer itself.
+/// Reading `__abort_msg` as a plain `char*` lands on `size` — which is the mmap
+/// length rounded up to a page, so its low byte is always 0x00 on little-endian
+/// — and every real abort reason reads back as an empty string. That shipped
+/// from v0.99.71 through v0.99.104: bundle VP623KVU (v0.99.100) was a glibc
+/// heap-corruption SIGABRT whose reason existed in memory and was reported as
+/// `abort_msg_state:empty`, leaving issue #960 with the exact diagnostic it had
+/// been closed waiting for.
+struct GlibcAbortMsg {
+    unsigned int size; ///< mmap length, page-rounded (NOT a string length)
+    char msg[1];       ///< NUL-terminated reason; real allocation is `size` bytes
+};
+
+/// Cached pointer to glibc's private `__abort_msg` symbol (i.e. a pointer to
+/// the pointer). Resolved once at install() via dlsym (not async-signal-safe);
 /// stays nullptr on non-glibc libcs — the field is then simply absent from the
 /// crash file.
-static char** s_abort_msg_ptr = nullptr;
+static GlibcAbortMsg** s_abort_msg_ptr = nullptr;
 
 /// Reason text stashed by the C++ std::terminate handler (main.cpp) before it
 /// does any fault-prone work (rethrow / exception::what() / writing the crash
@@ -590,11 +632,8 @@ static void crash_signal_handler(int sig, siginfo_t* info, void* ucontext) {
     safe_write(fd, int_to_str(num_buf, sizeof(num_buf), static_cast<long>(now)));
     safe_write(fd, "\n");
 
-    // Write uptime
-    long uptime = 0;
-    if (s_start_time > 0 && now >= s_start_time) {
-        uptime = static_cast<long>(now - s_start_time);
-    }
+    // Write uptime (monotonic — immune to the NTP step, see s_start_mono_ms)
+    long uptime = uptime_seconds();
     safe_write(fd, "uptime:");
     safe_write(fd, int_to_str(num_buf, sizeof(num_buf), uptime));
     safe_write(fd, "\n");
@@ -634,15 +673,23 @@ static void crash_signal_handler(int sig, siginfo_t* info, void* ucontext) {
         if (s_abort_msg_ptr == nullptr) {
             safe_write(fd, "abort_msg_state:unresolved\n");
         } else {
-            const char* msg = *s_abort_msg_ptr;
-            if (msg == nullptr || msg[0] == '\0') {
+            const GlibcAbortMsg* am = *s_abort_msg_ptr;
+            // The reason lives at `am->msg`, NOT at `am` — see GlibcAbortMsg.
+            // Bound the read by the struct's own allocation so a corrupt or
+            // garbage `size` can't walk us off the mapping while we are already
+            // inside a signal handler.
+            const size_t msg_cap = (am != nullptr && am->size > sizeof(unsigned int))
+                                       ? am->size - sizeof(unsigned int)
+                                       : 0;
+            const char* msg = (am == nullptr) ? nullptr : am->msg;
+            if (msg == nullptr || msg_cap == 0 || msg[0] == '\0') {
                 safe_write(fd, "abort_msg_state:empty\n");
             } else {
                 // Bounded copy + newline strip so the value stays a single
                 // line "key:value\n" in the crash file format.
                 char abort_msg_buf[256];
                 size_t n = 0;
-                for (; n + 1 < sizeof(abort_msg_buf) && msg[n] != '\0'; ++n) {
+                for (; n + 1 < sizeof(abort_msg_buf) && n < msg_cap && msg[n] != '\0'; ++n) {
                     char c = msg[n];
                     abort_msg_buf[n] = (c == '\n' || c == '\r') ? ' ' : c;
                 }
@@ -909,7 +956,29 @@ static void crash_signal_handler(int sig, siginfo_t* info, void* ucontext) {
     // Acquire pairs with the release-store of ts_ms in refresh_heap_snapshot().
     if (__atomic_load_n(&s_heap_snapshot.ts_ms, __ATOMIC_ACQUIRE) != 0) {
         const HeapSnapshot& h = s_heap_snapshot;
-        write_kv_long(fd, "heap_snapshot_age_ms:", static_cast<long>(h.ts_ms), num_buf,
+        // AGE, not the raw capture timestamp. Emitting ts_ms here meant a
+        // snapshot taken 17ms before the crash was reported as "snapshot age
+        // 144712ms" (bundle VP623KVU) — it was the monotonic-since-boot stamp,
+        // and every consumer (crash_reporter's `age_ms`, the issue body, the
+        // text summary) renders it as an age.
+        //
+        // Both raw stamps go out alongside the derived age, because the age
+        // alone cannot be diagnosed when it comes out wrong: bundle ED2YC336
+        // reported 120036989ms (33h) against a 9.8h uptime, which is impossible
+        // — the snapshot cannot predate the process. Two causes produce that,
+        // and only the raw pair distinguishes them: ts > now means the 32-bit
+        // monotonic counter folded (49.7 days of uptime), ts << now means the
+        // 10s refresh from the main loop genuinely stalled.
+        //
+        // One clock read, shared by the age and the emitted value, so the three
+        // numbers are always mutually consistent.
+        const uint32_t mono_now = monotonic_ms_now();
+        write_kv_long(fd, "heap_snapshot_age_ms:",
+                      static_cast<long>(crash_handler::detail::elapsed_ms(h.ts_ms, mono_now)),
+                      num_buf, sizeof(num_buf));
+        write_kv_long(fd, "heap_snapshot_ts_ms:", static_cast<long>(h.ts_ms), num_buf,
+                      sizeof(num_buf));
+        write_kv_long(fd, "heap_mono_ms_now:", static_cast<long>(mono_now), num_buf,
                       sizeof(num_buf));
         write_kv_long(fd, "heap_rss_kb:", static_cast<long>(h.rss_kb), num_buf, sizeof(num_buf));
         write_kv_long(fd, "heap_vsz_kb:", static_cast<long>(h.vsz_kb), num_buf, sizeof(num_buf));
@@ -1302,16 +1371,62 @@ extern "C" int helix_get_text_bounds(unsigned long* lo, unsigned long* hi) {
 }
 
 // C-ABI bridges for LVGL — see include/system/crash_handler.h.
-// Crumb subject is the class name; detail is the pointer (correlate with
-// the destructor's `obj` argument via addr2line on the next bundle resolve).
+//
+// Subject is "<class>:<name>" when the widget has an XML name, else just the
+// class; detail is the pointer. The bare class name was not enough to act on:
+// bundle 6F3QJLFG's final crumb before a heap abort was `async_d lv_obj
+// 57241184`, and "some plain container was being deleted" does not identify a
+// site — nearly every teardown crumb in that trace read the same. The name is
+// what the XML author wrote, so it points straight at a file
+// (prestonbrown/helixscreen#960).
+//
+// Read here rather than passed in from the patch: four patches already touch
+// lv_obj_tree.c, so widening that hook means the pristine-file regeneration
+// dance in patches/README.md. lv_obj_get_name() is a plain read of
+// spec_attr->name with no allocation, and this file already links LVGL for
+// lv_mem_monitor(). The name may be heap-owned by LVGL, so it is copied into
+// the fixed slot immediately — which breadcrumb::note() does.
+static void note_delete_crumb(const char* category, const void* obj,
+                              const char* class_name) noexcept {
+    const char* cls = class_name ? class_name : "?";
+
+    // Guard the LVGL call: teardown can reach here after lv_deinit(), where
+    // spec_attr is no longer safe to walk.
+    const char* name = nullptr;
+    if (obj && lv_is_initialized()) {
+        name = lv_obj_get_name(static_cast<const lv_obj_t*>(obj));
+    }
+
+    if (!name || !name[0]) {
+        crash_handler::breadcrumb::note(category, cls, reinterpret_cast<long>(obj));
+        return;
+    }
+
+    // "<class>:<name>" — breadcrumb::note truncates to the slot's 60 bytes.
+    char subject[60];
+    size_t n = copy_truncated(subject, sizeof(subject), cls);
+    if (n + 1 < sizeof(subject)) {
+        subject[n++] = ':';
+        copy_truncated(subject + n, sizeof(subject) - n, name);
+    }
+    crash_handler::breadcrumb::note(category, subject, reinterpret_cast<long>(obj));
+}
+
 extern "C" void helix_crash_note_async_del(const void* obj, const char* class_name) {
-    crash_handler::breadcrumb::note("async_d", class_name ? class_name : "?",
-                                    reinterpret_cast<long>(obj));
+    note_delete_crumb("async_d", obj, class_name);
 }
 
 extern "C" void helix_crash_note_sync_del(const void* obj, const char* class_name) {
-    crash_handler::breadcrumb::note("sync_d", class_name ? class_name : "?",
-                                    reinterpret_cast<long>(obj));
+    note_delete_crumb("sync_d", obj, class_name);
+}
+
+uint32_t crash_handler::detail::elapsed_ms(uint32_t start_ms, uint32_t now_ms) noexcept {
+    // Unsigned wraparound is well-defined and yields the correct delta across
+    // the ~49.7-day fold of the low 32 bits of CLOCK_MONOTONIC. Do NOT "fix"
+    // this with a now >= start guard — that reports 0 for any device up longer
+    // than the fold, which is exactly the class of long-uptime device whose
+    // crash durations matter most.
+    return now_ms - start_ms;
 }
 
 void crash_handler::refresh_heap_snapshot() noexcept {
@@ -1355,18 +1470,20 @@ void crash_handler::refresh_heap_snapshot() noexcept {
 #endif
 #endif
 
-    lv_mem_monitor_t mon = {};
-    lv_mem_monitor(&mon);
-    snap.lv_total_kb = mon.total_size / 1024;
-    snap.lv_used_pct = mon.used_pct;
-    snap.lv_frag_pct = mon.frag_pct;
-    snap.lv_free_biggest_kb = mon.free_biggest_size / 1024;
+    // Guard the LVGL read: this is noexcept diagnostic code that must never be
+    // the thing that crashes, and lv_mem_monitor() walks allocator state that
+    // does not exist before lv_init(). Production always has LVGL up by the
+    // time the main loop calls this; tests and early-boot callers may not.
+    if (lv_is_initialized()) {
+        lv_mem_monitor_t mon = {};
+        lv_mem_monitor(&mon);
+        snap.lv_total_kb = mon.total_size / 1024;
+        snap.lv_used_pct = mon.used_pct;
+        snap.lv_frag_pct = mon.frag_pct;
+        snap.lv_free_biggest_kb = mon.free_biggest_size / 1024;
+    }
 
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    uint64_t ms =
-        static_cast<uint64_t>(ts.tv_sec) * 1000 + static_cast<uint64_t>(ts.tv_nsec) / 1000000;
-    uint32_t publish_ts = static_cast<uint32_t>(ms);
+    uint32_t publish_ts = monotonic_ms_now();
     if (publish_ts == 0)
         publish_ts = 1;
 
@@ -1396,19 +1513,14 @@ void crash_handler::refresh_heap_snapshot() noexcept {
 
 namespace {
 
-/// Compute monotonic ms since s_start_time for breadcrumb timestamps.
-/// clock_gettime(CLOCK_MONOTONIC) is async-signal-safe on Linux.
-/// Returns 1+ms (never zero — zero is reserved for "empty slot").
+/// Breadcrumb timestamp: low 32 bits of ms-since-boot (CLOCK_MONOTONIC), never
+/// zero because zero is reserved for "empty slot". These are absolute stamps on
+/// the same clock as s_start_mono_ms — NOT offsets from process start — so
+/// crumb times are comparable to `/proc/uptime` on the reporter's device but
+/// are not directly comparable to the `uptime:` field. Wraps every ~49 days;
+/// deltas within a single crash bundle stay meaningful either way.
 static uint32_t breadcrumb_now_ms() noexcept {
-    struct timespec ts;
-    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
-        return 1;
-    // Use raw monotonic — s_start_time is wall-clock, they're not comparable.
-    // Low 32 bits of ms-since-boot: wraps every ~49 days but deltas within a
-    // crash bundle are always meaningful.
-    uint64_t ms =
-        static_cast<uint64_t>(ts.tv_sec) * 1000 + static_cast<uint64_t>(ts.tv_nsec) / 1000000;
-    uint32_t v = static_cast<uint32_t>(ms);
+    uint32_t v = monotonic_ms_now();
     return v == 0 ? 1 : v;
 }
 
@@ -1491,8 +1603,8 @@ void crash_handler::install(const std::string& crash_file_path) {
     std::memcpy(s_crash_path, crash_file_path.c_str(), copy_len);
     s_crash_path[copy_len] = '\0';
 
-    // Record start time for uptime calculation
-    s_start_time = time(nullptr);
+    // Record start time for uptime calculation (monotonic, not wall-clock)
+    s_start_mono_ms = monotonic_ms_now();
 
     // Discover ELF load base for ASLR address resolution
     // Must be done before signal handler runs (dl_iterate_phdr is NOT async-signal-safe)
@@ -1541,7 +1653,7 @@ void crash_handler::install(const std::string& crash_file_path) {
     // resolves it by name at runtime (the technique apport/coredumpctl/sentry
     // use). Stays null on musl/uclibc/Apple — field is then omitted.
 #ifdef HAVE_DLSYM
-    s_abort_msg_ptr = static_cast<char**>(dlsym(RTLD_DEFAULT, "__abort_msg"));
+    s_abort_msg_ptr = static_cast<GlibcAbortMsg**>(dlsym(RTLD_DEFAULT, "__abort_msg"));
     if (s_abort_msg_ptr != nullptr) {
         spdlog::debug("[CrashHandler] __abort_msg resolved — glibc abort reasons "
                       "will be captured in crash file");
@@ -1630,10 +1742,7 @@ void crash_handler::write_exception_record(const char* what) noexcept {
     safe_write(fd, int_to_str(num_buf, sizeof(num_buf), static_cast<long>(now)));
     safe_write(fd, "\n");
 
-    long uptime = 0;
-    if (s_start_time > 0 && now >= s_start_time) {
-        uptime = static_cast<long>(now - s_start_time);
-    }
+    long uptime = uptime_seconds();
     safe_write(fd, "uptime:");
     safe_write(fd, int_to_str(num_buf, sizeof(num_buf), uptime));
     safe_write(fd, "\n");

@@ -79,11 +79,11 @@ lv_xml_register_event_cb(nullptr, "on_my_button_clicked", on_my_button_clicked);
 
 ### My icon renders as tofu (□) or as a blank placeholder.
 
-**Cause:** You added a codepoint to `include/icons/codepoints.h` but didn't regenerate the icon fonts.
+**Cause:** You added a codepoint to `include/ui_icon_codepoints.h` but didn't regenerate the icon fonts.
 
 **Fix:** Three steps, all required:
 
-1. Add the icon name + codepoint to `codepoints.h`.
+1. Add the icon name + codepoint to `include/ui_icon_codepoints.h`.
 2. Add the icon to `scripts/regen_mdi_fonts.sh` (one line in the codepoints list).
 3. Run `make regen-fonts`, then rebuild.
 
@@ -107,11 +107,68 @@ Reference: lesson **L009**.
 
 **Fix:**
 
-- XML loads at runtime from `ui_xml/`. Just relaunch: `./build/bin/helix-screen --test -vv`.
-- For live reload without relaunching: `HELIX_HOT_RELOAD=1 ./build/bin/helix-screen --test -vv` — edit XML, save, switch panels, see changes.
+- XML loads at runtime from `ui_xml/`. Hot reload is ON by default for native builds — just edit + save; the active panel/overlay/modal rebuilds in place within ~500ms. No relaunch needed.
+- If hot reload isn't picking up the change, you can force a clean restart: `./build/bin/helix-screen --test -vv`.
 - If you truly see no change, confirm: (1) you saved the file, (2) it's in `ui_xml/` not a copy elsewhere, (3) the component is actually instantiated on the panel you're viewing.
 
 Reference: lesson **L031**.
+
+---
+
+### I wrote `cond="a && b"` in an XML expression and it's rejected / broken.
+
+**Cause:** `&&` and `<` are XML metacharacters. Written literally inside an attribute value, they either fail to parse as valid XML or get mangled before reaching the expression compiler.
+
+**Fix:** Use the word-form operators instead — they need no escaping and tokenize identically to the symbolic forms: `and`/`or`/`not` for `&&`/`||`/`!`, and `eq`/`ne`/`lt`/`le`/`gt`/`ge` for `==`/`!=`/`<`/`<=`/`>`/`>=`. This is house style for `cond=` and `<subject_expr expr=>`:
+
+```xml
+<!-- ✗ Needs escaping, easy to get wrong -->
+<bind_flag_if cond="demo_error &amp;&amp; demo_temp &gt; demo_threshold" flag="hidden"/>
+
+<!-- ✓ House style: word forms, no escaping -->
+<bind_flag_if cond="demo_error or demo_temp gt demo_threshold" flag="hidden" invert="true"/>
+```
+
+If you do need the symbolic form for some reason, escape it as XML entities (`&amp;&amp;`, `&lt;`, `&gt;`) — both forms compile to the same expression.
+
+See `LVGL9_XML_GUIDE.md` § "Expression Conditionals".
+
+---
+
+### My new `cond=`/`<subject_expr>` XML fails CI with `UNKNOWN_WIDGET` or `UNKNOWN_ATTRIBUTE`.
+
+**Cause:** The XML linter validates against a committed schema snapshot (`tools/xml-linter/schema/schema.json`), not against the C++ source directly. Adding a new tag or attribute (like `subject_expr`, `cond`, or any new custom widget) doesn't update that snapshot automatically.
+
+**Fix:** Regenerate and commit the schema:
+
+```bash
+make regen-xml-schema
+git add tools/xml-linter/schema/schema.json
+```
+
+`.github/workflows/lint-xml.yml` runs against the committed schema, so a stale one fails the first XML fixture that uses the new syntax — even though it works fine locally.
+
+Reference: lesson **L089**.
+
+---
+
+### My `<repeat>` label binds to nothing — `bind_text="slot_${i}_label"` shows the default text, or the linter warns `UNKNOWN_SUBJECT_REF`.
+
+**Cause:** Two independent things go wrong with embedded `${name}` composition:
+
+1. **Runtime shows the default.** `bind_text="slot_${i}_label"` composes a subject name per iteration (`slot_0_label`, `slot_1_label`, …). If the C++ side never registered those exact indexed subjects, each bind resolves against a non-existent subject and the widget keeps its default value. The XML is fine — the subjects are missing. Register `slot_0_label`…`slot_N_label` (matching the composed names exactly) in your panel's subject init.
+
+2. **CI warns `UNKNOWN_SUBJECT_REF`.** The linter cannot statically resolve a composed name (the loop index / prop is only known at runtime), so it must skip it. The `${...}` skip lives in `tools/xml-linter/src/helix_xml_linter/crossref.py` (`_check_subject_reference`). A brace-free name like `bind_text="typo_subject"` still warns — that skip only applies when the value contains `${`.
+
+**Fix:** Make sure the composed names and the registered subject names line up character-for-character, and keep the `${...}` skip in `crossref.py`. Remember `$i` is a whole-value substitution — `slot_$i` does **not** splice; you must write `slot_${i}` (see the [XML guide](LVGL9_XML_GUIDE.md#self-wiring-indexed-subjects-with-name)).
+
+---
+
+### My label shows `foo__bar` (a doubled underscore / missing word), or the log warns `xml_compose_indexed ... could not be resolved`.
+
+**Cause:** A literal `${...}` in visible text or an attribute value is not just decoration — it's a live composition sigil, and `xml_compose_indexed` tries to resolve it wherever it appears, not just inside a `<repeat>` body. If you write descriptive text like `text="each card binds to demo_slot_${i}_label"` outside a `<repeat>` (or referencing a name that isn't `i`/a component prop), there's no loop index or prop to resolve against, so it splices empty and logs a warning — the rendered text comes out mangled (`demo_slot__label`).
+
+**Fix:** There is no escape sequence for `${...}`. If you need to show the literal characters `${i}` or `${name}` in a label (e.g. explaining the syntax in a demo panel), don't put it in `text=`/`translation_tag=` — describe it in prose instead (e.g. "self-wires to its indexed subject (demo_slot_N_label)"). Only use `${...}` where you actually want composition to fire: inside a `<repeat>` body (`${i}`), or against a component prop that's genuinely in scope.
 
 ---
 
@@ -124,7 +181,7 @@ Reference: lesson **L031**.
 **Fix:**
 
 - **XML:** Use token names prefixed with `#` — e.g., `style_bg_color="#card_bg"`, `style_pad_all="#space_md"`.
-- **C++:** Use `ui_theme_get_color("card_bg")` for semantic tokens. Use `ui_theme_parse_color("#RRGGBB")` only when you're given a literal hex string that can't be tokenized (e.g., user-picked colors).
+- **C++:** Use `theme_manager_get_color("card_bg")` for semantic tokens. Use `theme_manager_parse_hex_color("#RRGGBB")` only when you're given a literal hex string that can't be tokenized (e.g., user-picked colors).
 
 Reference: lesson **L008**.
 
@@ -135,6 +192,16 @@ Reference: lesson **L008**.
 **Cause:** Semantic widgets like `ui_card`, `ui_button`, `divider_light` already apply their tokenized defaults. Re-specifying `style_radius` on `ui_card` or `button_height` on `ui_button` just duplicates the default and makes the XML noisier.
 
 **Fix:** Only override what you actually need to change. See `docs/devel/LVGL9_XML_GUIDE.md` "Custom Semantic Widgets" for each widget's built-in defaults.
+
+---
+
+### My `#token` resolves to nothing / the widget comes out 0px.
+
+**Cause:** The `_small`/`_medium`/`_large` declarations sit in a `ui_xml/` subdirectory — `ui_xml/components/`, `ui_xml/portrait/`, `ui_xml/micro/`. Token discovery is top-level-only: `theme_manager_find_xml_files()` skips directory entries, so only `ui_xml/*.xml` is ever scanned for `<px>` and `<string>` tokens. A suffixed token declared below the top level is never registered, and the `#reference` to it silently resolves to nothing. Neither side warns.
+
+**Fix:** Move the declarations to `ui_xml/globals.xml` (or another top-level token file) and keep the `#reference` where it was — referencing a global token from a variant file is exactly what variants are for. Recursing into subdirectories is not the fix: discovery is alphabetical last-wins, so a portrait-only `nav_width_small` would shadow the base token globally instead of only while the portrait variant is active.
+
+Gate: `scripts/check_responsive_token_scope.py` (prestonbrown/helixscreen#1211).
 
 ---
 
@@ -164,7 +231,7 @@ Reference: lesson **L070**.
 
 **Cause:** Translation artifacts weren't regenerated or weren't committed.
 
-**Fix:** After editing YAML translation files, rebuild — the build regenerates `src/generated/lv_i18n_translations.{c,h}` and `ui_xml/translations/translations.xml`. These are **tracked in git** (not gitignored), so you must `git add` them explicitly before committing.
+**Fix:** After editing YAML translation files, rebuild — the build regenerates `ui_xml/translations/translations.xml`. It is **tracked in git** (not gitignored), so you must `git add` it explicitly before committing. (The legacy `src/generated/lv_i18n_translations.{c,h}` files are no longer generated by default — only under `--emit-lv-i18n`; see TRANSLATION_SYSTEM.md.)
 
 Reference: lesson **L064**.
 
@@ -174,29 +241,25 @@ Reference: lesson **L064**.
 
 ### The app crashes on reconnect, or on panel rebuild, in an observer callback.
 
-**Cause:** You're observing a **dynamic** subject (per-fan, per-sensor, per-extruder) without a `SubjectLifetime` token — or with a local `SubjectLifetime` that dies before the observer.
+**Cause:** You're observing a **dynamic** subject (per-fan, per-sensor, per-extruder) and its `SubjectLifetime` token never reached the `observe_*` factory. The factory's `lifetime` parameter defaults to `{}`, so fetching a token and forgetting to pass it compiles silently — and then the guard has no way to learn the subject was freed, so `reset()` calls `lv_observer_remove()` on freed memory.
 
 **Fix:**
 
-- Pair your member `ObserverGuard` with a **member** `SubjectLifetime`. Never use a local.
-- When clearing, reset the lifetime **before** the observer (observer's `weak_ptr` only expires if the `shared_ptr` is destroyed first).
-- For per-item collections (carousels, slot lists), use parallel vectors: `std::vector<ObserverGuard>` and `std::vector<SubjectLifetime>`, kept aligned.
+- Pass the token as the factory's last argument. That is the part that makes it safe.
+- Whether the token lives in a local or a member does *not* decide correctness: the accessors hand you a **copy** of a `shared_ptr` the owner keeps, and the owner signals death by writing `*token = false`, not by dropping the refcount. Members are still the recommended shape — self-documenting, and correct under either ownership model.
+- For per-item collections (carousels, slot lists), use parallel vectors: `std::vector<ObserverGuard>` and `std::vector<SubjectLifetime>`, kept index-aligned.
 
 ```cpp
 // Header
-ObserverGuard temp_observer_;
 SubjectLifetime temp_lifetime_;
-
-// Clear
-temp_lifetime_.reset();    // FIRST
-temp_observer_.reset();    // SECOND
+ObserverGuard   temp_observer_;
 
 // Rebind
 auto* s = tsm.get_temp_subject(name, temp_lifetime_);
-temp_observer_ = observe_int_sync(s, ..., temp_lifetime_);
+temp_observer_ = observe_int_sync<Panel>(s, this, handler, temp_lifetime_);  // <- token, not omitted
 ```
 
-Reference: lessons **L077**, **L084**, and `include/ui_observer_guard.h`.
+Reference: lessons **L077**, **L084**, `include/ui_observer_guard.h`, and `docs/devel/THREADING.md` § 5 (which explains why the older "local lifetime = UAF" phrasing was wrong).
 
 ---
 
@@ -267,9 +330,9 @@ Run through this before opening a PR:
 - [ ] **Added a new XML component?** Registered in `src/xml_registration.cpp`.
 - [ ] **Added an event callback?** Registered with `lv_xml_register_event_cb()`.
 - [ ] **Any hardcoded colors or pixel values?** Swap for design tokens.
-- [ ] **Any new user-visible strings?** Wrapped in `lv_tr()` — *except* product names, URLs, material codes.
-- [ ] **Modified translation YAML?** Rebuild, then `git add` the regenerated `src/generated/lv_i18n_translations.*` and `ui_xml/translations/translations.xml`.
-- [ ] **Added an observer on a dynamic subject?** Paired with a member `SubjectLifetime`, not a local.
+- [ ] **Any new user-visible strings?** Wrapped for translation — `lv_tr()` in C++, or `translation_tag` in XML (the path most first contributions use) — *except* product names, URLs, material codes.
+- [ ] **Modified translation YAML?** Rebuild, then `git add` the regenerated `ui_xml/translations/translations.xml`.
+- [ ] **Added an observer on a dynamic subject?** The `SubjectLifetime` you fetched is passed to the `observe_*` factory, not left at its `{}` default.
 - [ ] **Tested at multiple sizes?** At minimum: `480x320`, `800x480`, `1024x600`. See `docs/devel/UI_CONTRIBUTOR_GUIDE.md` § Screen Breakpoints.
 - [ ] **`make test-run` passes.**
 

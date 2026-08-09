@@ -850,6 +850,49 @@ def _extract_special_elements(parsers_dir: Path, schema: dict[str, Any]) -> None
                 "attributes": {},
             }
 
+    # <subject_expr name="X" expr="..."> -- derived-subject sibling of <subject>
+    # inside a component's <subjects> block (lv_xml_component.c
+    # process_subject_expr_element). It's parsed directly by the <subjects>
+    # element handler, not registered via lv_xml_register_widget(), so it
+    # can't be auto-discovered the way lv_obj-* special elements are.
+    schema["widgets"]["subject_expr"] = {
+        "attributes": {
+            "name": {"type": "string"},
+            "expr": {"type": "string"},
+        },
+    }
+
+    # <repeat count="N">...body...</repeat> -- load-time looping construct handled
+    # directly in lv_xml.c's view element handlers (capture/replay), not registered
+    # via lv_xml_register_widget(). `count` is a literal, a #const, or a subject name.
+    schema["widgets"]["repeat"] = {
+        "attributes": {
+            "count": {"type": "string"},
+        },
+    }
+
+    # <if cond="expr">...<else/>...</if> -- load-time conditional handled in
+    # lv_xml.c view handlers (capture/replay), not via lv_xml_register_widget().
+    schema["widgets"]["if"] = {
+        "attributes": {
+            "cond": {"type": "string"},
+        },
+    }
+    schema["widgets"]["else"] = {
+        "attributes": {},
+    }
+
+    # Both of the above are validated by parse_registered_widgets() finding a
+    # lv_xml_register_widget("name", ...) call in lv_xml_init() -- neither
+    # goes through that call, so is_valid_widget() (registered_widgets or
+    # special_elements) would reject them as "Unknown widget type" wherever
+    # they appear outside a <subjects> block (subject_expr is skipped there
+    # as a definition tag, but <repeat> appears directly in view markup).
+    # Register both as special_elements explicitly.
+    for tag in ("subject_expr", "repeat", "if", "else"):
+        if tag not in schema["special_elements"]:
+            schema["special_elements"].append(tag)
+
     # Add special obj elements with their attributes
     _extract_obj_special_elements(schema)
 
@@ -984,6 +1027,36 @@ def _extract_obj_special_elements(schema: dict[str, Any]) -> None:
                 "ref_value": {"type": "int"},
             },
         }
+
+    # cond= expression-driven variants (lv_xml_obj_parser.c
+    # lv_obj_xml_bind_flag_if_apply / bind_state_if_apply / bind_style_if_apply)
+    # -- written in XML unprefixed as <bind_flag_if>/<bind_state_if>/
+    # <bind_style_if>; `cond` is a free-form expression string, not enum-validated.
+    schema["widgets"]["lv_obj-bind_flag_if"] = {
+        "attributes": {
+            "cond": {"type": "string"},
+            "flag": {"type": "enum", "enum": "flag"},
+            "invert": {"type": "bool"},
+        },
+    }
+
+    schema["widgets"]["lv_obj-bind_state_if"] = {
+        "attributes": {
+            "cond": {"type": "string"},
+            "state": {"type": "enum", "enum": "state"},
+            "invert": {"type": "bool"},
+        },
+    }
+
+    schema["widgets"]["lv_obj-bind_style_if"] = {
+        "attributes": {
+            "cond": {"type": "string"},
+            "name": {"type": "string"},
+            "selector": {"type": "string"},
+            "parts": {"type": "string"},
+            "invert": {"type": "bool"},
+        },
+    }
 
 
 # ---------------------------------------------------------------------------

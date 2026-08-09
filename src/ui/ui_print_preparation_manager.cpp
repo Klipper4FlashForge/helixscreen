@@ -14,7 +14,6 @@
 #include "gcode_tool_remapper.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "macro_modification_manager.h"
-#include "macro_param_cache.h"
 #include "memory_monitor.h"
 #include "memory_utils.h"
 #include "moonraker_manager.h"
@@ -77,8 +76,7 @@ PrePrintOptionState PrintPreparationManager::get_option_state(const std::string&
     // collect_pre_start_gcode_lines skips it. (e.g. K2 AI detect requires
     // LOAD_AI_RUN — only present on Creality OS variants.)
     if (const PrePrintOption* opt = opts.find(id)) {
-        if (!opt->requires_macro.empty() &&
-            !MacroParamCache::instance().has_macro(opt->requires_macro)) {
+        if (is_macro_gate_closed(*opt)) {
             return PrePrintOptionState::NOT_APPLICABLE;
         }
     }
@@ -802,6 +800,28 @@ bool PrintPreparationManager::is_print_in_progress() const {
 // Internal Methods
 // ============================================================================
 
+namespace {
+
+// The four pre-print ops that can be embedded directly in a sliced G-code file
+// (as opposed to being handled purely inside the START_PRINT macro). Disabling
+// one of these when the file embeds it forces a file modification. Single
+// source of truth shared by collect_ops_to_disable() and
+// disabling_option_requires_plugin() so the id->OperationType mapping can't
+// drift between them.
+std::optional<gcode::OperationType> file_embeddable_op_for_id(const std::string& id) {
+    if (id == "bed_mesh")
+        return gcode::OperationType::BED_MESH;
+    if (id == "qgl")
+        return gcode::OperationType::QGL;
+    if (id == "z_tilt")
+        return gcode::OperationType::Z_TILT;
+    if (id == "nozzle_clean")
+        return gcode::OperationType::NOZZLE_CLEAN;
+    return std::nullopt;
+}
+
+} // namespace
+
 std::vector<gcode::OperationType> PrintPreparationManager::collect_ops_to_disable() const {
     std::vector<gcode::OperationType> ops_to_disable;
 
@@ -812,40 +832,64 @@ std::vector<gcode::OperationType> PrintPreparationManager::collect_ops_to_disabl
     // Check each operation type: if file has it embedded AND user explicitly disabled it
     // Note: hidden (NOT_APPLICABLE) options are NOT candidates for disabling.
     // State resolution flows through the new framework via get_option_state(id).
-    auto is_disabled = [this](const std::string& id) {
-        return get_option_state(id) == PrePrintOptionState::DISABLED;
-    };
-
-    if (is_disabled("bed_mesh") &&
-        cached_scan_result_->has_operation(gcode::OperationType::BED_MESH)) {
-        ops_to_disable.push_back(gcode::OperationType::BED_MESH);
-        spdlog::debug("[PrintPreparationManager] User disabled bed mesh, file has it embedded");
-    }
-
-    if (is_disabled("qgl") && cached_scan_result_->has_operation(gcode::OperationType::QGL)) {
-        ops_to_disable.push_back(gcode::OperationType::QGL);
-        spdlog::debug("[PrintPreparationManager] User disabled QGL, file has it embedded");
-    }
-
-    if (is_disabled("z_tilt") && cached_scan_result_->has_operation(gcode::OperationType::Z_TILT)) {
-        ops_to_disable.push_back(gcode::OperationType::Z_TILT);
-        spdlog::debug("[PrintPreparationManager] User disabled Z-tilt, file has it embedded");
-    }
-
-    if (is_disabled("nozzle_clean") &&
-        cached_scan_result_->has_operation(gcode::OperationType::NOZZLE_CLEAN)) {
-        ops_to_disable.push_back(gcode::OperationType::NOZZLE_CLEAN);
-        spdlog::debug("[PrintPreparationManager] User disabled nozzle clean, file has it embedded");
+    for (const char* id : {"bed_mesh", "qgl", "z_tilt", "nozzle_clean"}) {
+        const std::optional<gcode::OperationType> op = file_embeddable_op_for_id(id);
+        if (get_option_state(id) == PrePrintOptionState::DISABLED &&
+            cached_scan_result_->has_operation(*op)) {
+            ops_to_disable.push_back(*op);
+            spdlog::debug("[PrintPreparationManager] User disabled '{}', file has it embedded", id);
+        }
     }
 
     return ops_to_disable;
+}
+
+bool PrintPreparationManager::disabling_option_requires_plugin(const PrePrintOption& opt) const {
+    const bool is_macro_param = (opt.strategy_kind == PrePrintStrategyKind::MacroParam);
+
+    // (a) Does disabling THIS option force a file modification because the op is
+    //     embedded in the currently-scanned file?
+    const std::optional<gcode::OperationType> embedded_op = file_embeddable_op_for_id(opt.id);
+    const bool file_embedded = embedded_op.has_value() && cached_scan_result_.has_value() &&
+                               cached_scan_result_->has_operation(*embedded_op);
+
+    // (b) is the MacroParam skip-rewrite path. If neither (a) nor a MacroParam
+    //     skip is in play, nothing about this option needs the plugin.
+    if (!is_macro_param && !file_embedded) {
+        return false;
+    }
+
+    // Would start_print() short-circuit into a plugin-free pre-start path BEFORE
+    // reaching check_modification_capability()? That happens when a pre-start
+    // gcode block is emitted:
+    //   - printer-level setup_gcode fires (it is gated on a MacroParam skip
+    //     being present — see emit_printer_setup in start_print()), OR
+    //   - any per-option PreStartGcode line is present.
+    // In that path, embedded-op removal goes through modify_and_print (streaming,
+    // no capability check) and the MacroParam skip is handled by the native
+    // setup_gcode macro — so the plugin is NOT required. This is exactly the K2
+    // Plus PREPARE case (MacroParam bed_mesh + setup_gcode): it must stay visible
+    // even without the plugin. Note this makes (a) narrower than "file-embedded
+    // always needs the plugin": a printer with a pre-start mechanism strips the
+    // embedded op without one.
+    const auto& option_set = get_cached_options();
+    const bool setup_gcode_fires = is_macro_param && !option_set.setup_gcode.empty();
+    const bool pre_start_lines_present = !collect_pre_start_gcode_lines().empty();
+    if (setup_gcode_fires || pre_start_lines_present) {
+        return false;
+    }
+
+    // No short-circuit: start_print() reaches check_modification_capability(),
+    // which warns "Requires HelixPrint plugin" and drops the modification when
+    // the plugin is absent. So disabling this option genuinely needs the plugin.
+    return true;
 }
 
 std::vector<std::pair<std::string, std::string>>
 PrintPreparationManager::collect_macro_skip_params() const {
     // THREADING: This method reads macro_analysis_ and checkbox states.
     // Must be called from the main LVGL thread (same thread that updates these via
-    // ui_async_call_safe callbacks). LVGL's single-threaded model ensures no races.
+    // ui_queue_update() callbacks). LVGL's single-threaded model ensures no races.
 
     std::vector<std::pair<std::string, std::string>> skip_params;
     std::set<std::string> handled_ids; // option ids already covered by DB
@@ -981,8 +1025,7 @@ std::vector<std::string> PrintPreparationManager::collect_pre_start_gcode_lines(
         // Skip options whose required macro isn't registered with Klipper
         // (e.g. K2 AI detect uses LOAD_AI_RUN, which only exists on Creality
         // OS variants — sending it on stock K2 fires "Unknown command:key61").
-        if (!opt.requires_macro.empty() &&
-            !MacroParamCache::instance().has_macro(opt.requires_macro)) {
+        if (is_macro_gate_closed(opt)) {
             spdlog::debug("[PrintPreparationManager] Skipping pre-start option '{}': "
                           "required macro '{}' not registered",
                           opt.id, opt.requires_macro);

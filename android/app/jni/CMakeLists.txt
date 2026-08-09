@@ -43,6 +43,10 @@ target_include_directories(lvgl PUBLIC
     "${PROJECT_ROOT}"              # For lv_conf.h at project root
     "${PROJECT_ROOT}/include"      # For lvgl_assert_handler.h
     "${PROJECT_ROOT}/lib/lvgl"     # For lvgl.h
+    "${PROJECT_ROOT}/lib/lvgl/src" # For <misc/lv_types.h> etc. — helix-xml's
+                                   # public headers include LVGL this way, so
+                                   # it must be PUBLIC, not private to lvgl.
+                                   # Mirrors -isystem $(LVGL_DIR)/src in LVGL_INC.
 )
 target_compile_definitions(lvgl PUBLIC LV_CONF_INCLUDE_SIMPLE HELIX_DISPLAY_SDL)
 # LVGL's SDL driver needs SDL headers
@@ -65,9 +69,10 @@ target_include_directories(helix_xml PUBLIC
 target_include_directories(helix_xml PRIVATE
     "${PROJECT_ROOT}"              # For lv_conf.h
     "${PROJECT_ROOT}/include"      # For lvgl_assert_handler.h
-    "${PROJECT_ROOT}/lib/lvgl"     # For lvgl.h
-    "${PROJECT_ROOT}/lib/lvgl/src" # For internal LVGL headers
 )
+# lib/lvgl and lib/lvgl/src arrive transitively as PUBLIC includes of the lvgl
+# target linked below — helix-xml's own headers need them, so they cannot be
+# private here.
 target_compile_definitions(helix_xml PUBLIC LV_CONF_INCLUDE_SIMPLE)
 target_link_libraries(helix_xml PUBLIC lvgl)
 
@@ -100,6 +105,11 @@ list(FILTER HELIX_SOURCES EXCLUDE REGEX ".*/helix_splash\\.cpp$")
 list(FILTER HELIX_SOURCES EXCLUDE REGEX ".*/helix_watchdog\\.cpp$")
 list(FILTER HELIX_SOURCES EXCLUDE REGEX ".*/lvgl-demo/.*")
 list(FILTER HELIX_SOURCES EXCLUDE REGEX ".*/bluetooth/.*\\.cpp$")
+# Remote-control subsystem (helixctl server + folded REPL client) is dev/test-only.
+# The Makefile ships it just for PLATFORM_TARGET=native (ENABLE_REMOTE_CONTROL); Android
+# never defines HELIX_ENABLE_REMOTE_CONTROL, so every call site is #ifdef'd out and these
+# translation units are dead weight — remote_client.cpp additionally needs lib/linenoise.
+list(FILTER HELIX_SOURCES EXCLUDE REGEX ".*/remote/.*\\.cpp$")
 
 # Also exclude Objective-C++ files (.mm) - they're macOS only
 # (CMake won't glob them with *.cpp anyway, but be explicit)

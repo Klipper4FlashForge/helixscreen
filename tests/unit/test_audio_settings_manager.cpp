@@ -128,12 +128,40 @@ TEST_CASE_METHOD(LVGLTestFixture, "AudioSettingsManager subject values match get
     AudioSettingsManager::instance().deinit_subjects();
 }
 
-TEST_CASE_METHOD(LVGLTestFixture, "AudioSettingsManager completion alert options string",
-                 "[audio_settings]") {
-    const char* options = AudioSettingsManager::get_completion_alert_options();
-    REQUIRE(options != nullptr);
-    REQUIRE(std::string(options) == "Off\nNotification\nAlert");
-}
-
 // Backward compat test removed: forwarding wrappers in SettingsManager have been eliminated.
 // All consumers now use AudioSettingsManager directly.
+
+// Volume's per-tick handler must not write settings.json. See the equivalent
+// brightness case in test_display_settings_manager.cpp for the full rationale;
+// the slider fires this on every drag tick and persists once on release.
+TEST_CASE_METHOD(LVGLTestFixture, "AudioSettingsManager preview_volume does not persist",
+                 "[audio_settings]") {
+    Config* config = Config::get_instance();
+    config->set<int>("/sounds/volume", 40);
+    AudioSettingsManager::instance().deinit_subjects();
+    AudioSettingsManager::instance().init_subjects();
+
+    SECTION("preview updates the subject, not the config") {
+        const int applied = AudioSettingsManager::instance().preview_volume(85);
+
+        CHECK(applied == 85);
+        CHECK(AudioSettingsManager::instance().get_volume() == 85);
+        CHECK(config->get<int>("/sounds/volume", -1) == 40);
+    }
+
+    SECTION("commit persists the final value") {
+        for (int v = 41; v <= 50; ++v) {
+            AudioSettingsManager::instance().preview_volume(v);
+        }
+        CHECK(config->get<int>("/sounds/volume", -1) == 40);
+
+        AudioSettingsManager::instance().set_volume(50);
+        CHECK(config->get<int>("/sounds/volume", -1) == 50);
+    }
+
+    SECTION("preview clamps like set_volume") {
+        CHECK(AudioSettingsManager::instance().preview_volume(-20) == 0);
+        CHECK(AudioSettingsManager::instance().preview_volume(300) == 100);
+        CHECK(config->get<int>("/sounds/volume", -1) == 40);
+    }
+}

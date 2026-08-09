@@ -6,6 +6,7 @@
 #include "app_globals.h"
 #include "moonraker_client_mock_internal.h"
 #include "printer_state.h"
+#include "rpc_error_correlation.h"
 
 #include <spdlog/spdlog.h>
 
@@ -34,7 +35,15 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
         // independently. Each line's std::stod/std::stoi is guarded so a parse
         // quirk surfaces as an error result, never a C++ exception escaping the
         // RPC layer (real Moonraker returns an error string, it doesn't crash).
+        //
+        // The error message is latched HERE, the moment a line fails, exactly as
+        // `result` is. gcode_script()'s latch is per-CALL (it clears on entry),
+        // but the RPC's error is per-SCRIPT: every jog is "G91\nG0 X..\nG90", so
+        // reading the latch after the loop returned whatever the trailing G90
+        // left behind — empty — and the caller rendered "An unknown error
+        // occurred." instead of the real rejection.
         int result = 0;
+        std::string script_error;
         size_t line_start = 0;
         while (line_start <= script.size()) {
             size_t nl = script.find('\n', line_start);
@@ -47,8 +56,13 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
             size_t first = line.find_first_not_of(' ');
             if (first != std::string::npos) {
                 try {
-                    if (self->gcode_script(line.substr(first)) != 0)
+                    if (self->gcode_script(line.substr(first)) != 0) {
                         result = 1;
+                        // Keep the FIRST failure: Klipper aborts the script at the
+                        // first rejected command, so later lines cannot supersede it.
+                        if (script_error.empty())
+                            script_error = self->get_last_gcode_error();
+                    }
                 } catch (const std::exception& ex) {
                     spdlog::debug("[MoonrakerClientMock] gcode_script parse skipped for '{}': {}",
                                   line, ex.what());
@@ -59,12 +73,21 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
             line_start = nl + 1;
         }
 
+        // Test injection: simulate a response that never comes back at all (Klippy
+        // restarted, connection stalled). Klipper still processed the gcode above;
+        // NEITHER callback fires, so any caller-side in-flight counter stays pinned.
+        if (self->take_forced_gcode_drop(script)) {
+            return true;
+        }
+
         // Test injection: simulate an RPC-layer failure (e.g. timeout) for this command
         // while Klipper still processed the gcode above. The collector-based APIs rely on
         // this to exercise paths where the RPC response is lost but Klipper keeps running.
         if (auto forced = self->take_forced_gcode_error(script)) {
-            if (error_cb)
+            if (error_cb) {
+                helix::rpc_error_correlation::record_caller_handled(forced->message);
                 error_cb(*forced);
+            }
             return true;
         }
 
@@ -72,10 +95,15 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
             // G-code execution failed (e.g., out-of-range move)
             // Return error like real Moonraker does
             if (error_cb) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::JSON_RPC_ERROR;
-                err.message = self->get_last_gcode_error();
-                err.method = "printer.gcode.script";
+                MoonrakerError err =
+                    MoonrakerError::json_rpc_error("printer.gcode.script", script_error);
+                // Mirror MoonrakerRequestTracker::route_response: a caller with its
+                // own error_cb is handling the error UI, so record the message and
+                // let the `!!` broadcast handler suppress its duplicate toast.
+                // send_jsonrpc() dispatches into this registry inline and never
+                // reaches the tracker, so without this the mock double-toasts every
+                // rejection that real hardware reports once.
+                helix::rpc_error_correlation::record_caller_handled(err.message);
                 error_cb(err);
             }
         } else if (success_cb) {
@@ -99,17 +127,13 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
                     success_cb(json::object());
                 }
             } else if (error_cb) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::VALIDATION_ERROR;
-                err.message = "Failed to start print";
-                err.method = "printer.print.start";
+                MoonrakerError err = MoonrakerError::validation_error("printer.print.start",
+                                                                      "Failed to start print");
                 error_cb(err);
             }
         } else if (error_cb) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Missing filename parameter";
-            err.method = "printer.print.start";
+            MoonrakerError err = MoonrakerError::validation_error("printer.print.start",
+                                                                  "Missing filename parameter");
             error_cb(err);
         }
         return true;
@@ -126,10 +150,8 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
                 success_cb(json::object());
             }
         } else if (error_cb) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Cannot pause - not currently printing";
-            err.method = "printer.print.pause";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "printer.print.pause", "Cannot pause - not currently printing");
             error_cb(err);
         }
         return true;
@@ -146,10 +168,8 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
                 success_cb(json::object());
             }
         } else if (error_cb) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Cannot resume - not currently paused";
-            err.method = "printer.print.resume";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "printer.print.resume", "Cannot resume - not currently paused");
             error_cb(err);
         }
         return true;
@@ -166,10 +186,8 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
                 success_cb(json::object());
             }
         } else if (error_cb) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Cannot cancel - no active print";
-            err.method = "printer.print.cancel";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "printer.print.cancel", "Cannot cancel - no active print");
             error_cb(err);
         }
         return true;

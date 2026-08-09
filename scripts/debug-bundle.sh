@@ -44,7 +44,7 @@ usage() {
     echo ""
     echo "Options:"
     echo "  --raw       Output raw JSON (for piping to jq, etc.)"
-    echo "  --save      Save JSON to debug-bundle-<code>.json"
+    echo "  --save      Save JSON to debug-bundle-<code>.json in the current dir (run from /tmp, not the repo)"
     echo "  --summary   Print one-line summary"
     echo ""
     echo "List options:"

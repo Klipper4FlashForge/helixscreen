@@ -3,13 +3,14 @@
 #pragma once
 
 #include "ams_types.h"
-#include "hv/json.hpp"
 #include "moonraker_error.h"
 #include "spoolman_types.h"
 
 #include <cmath>
 #include <functional>
 #include <string>
+
+#include "hv/json.hpp"
 
 class IMoonrakerAPI;
 
@@ -121,8 +122,35 @@ class SpoolmanSlotSaver {
      * @param on_complete Called with the SaveResult (success flag and any
      *                    new vendor/filament IDs assigned along the way)
      */
+    /**
+     * @brief What the user meant by this save.
+     *
+     * save() used to INFER create-vs-update from `if (!edited.spoolman_id)`.
+     * That is why a lane could never create a new spool once it carried a link —
+     * and lanes keep their link across an eject by design, so a user who put a
+     * genuinely different spool in a lane had no way to say so: the save patched
+     * the OLD spool instead. Nothing can detect a spool swap (no RFID, no colour
+     * sensing), so the user's answer is the only signal and it must be explicit.
+     */
+    enum class LinkIntent {
+        UpdateLinked,    ///< Correct the linked spool's details
+        CreateAndRebind, ///< Different physical spool: create a new one, leave the old alone
+        UnlinkLocalOnly, ///< Stop tracking in Spoolman; keep values lane-local
+    };
+
+    void save(const SlotInfo& original, const SlotInfo& edited, LinkIntent intent,
+              CompletionCallback on_complete);
+
+    /// Back-compat overload: infers the intent the old way (create only when the
+    /// slot is unlinked). Prefer the explicit form.
     void save(const SlotInfo& original, const SlotInfo& edited, CompletionCallback on_complete);
 
+  private:
+    /// The original state-inferring body, now reached through save().
+    void save_impl(const SlotInfo& original, const SlotInfo& edited,
+                   CompletionCallback on_complete);
+
+  public:
     /**
      * @brief Resolve a vendor name to a Spoolman vendor_id, creating a new vendor if none matches.
      *
@@ -152,12 +180,19 @@ class SpoolmanSlotSaver {
      * Match is: vendor_id exact; material exact (case-sensitive);
      * color_hex case-insensitive via normalize_color_hex() on both sides.
      *
-     * On create, POSTs `{vendor_id, material, color_hex, name=material}`.
+     * On create, POSTs `{vendor_id, material, color_hex, name}`, where `name`
+     * is `filament_name` when the slot carries one and falls back to `material`
+     * otherwise. Naming a new filament after its material alone produced
+     * Spoolman records literally called "PLA", which then round-trip back as
+     * SlotInfo::spool_name and get deduped straight back out of the card label.
      * On invalid color_hex, calls on_error immediately without API calls.
+     *
+     * @param filament_name The slot's filament name (SlotInfo::spool_name); may
+     *                      be empty. Never used for matching — only for create.
      */
     void find_or_create_filament(int vendor_id, const std::string& material,
-                                 const std::string& color_hex, FilamentCallback on_found,
-                                 ErrorCallback on_error);
+                                 const std::string& color_hex, const std::string& filament_name,
+                                 FilamentCallback on_found, ErrorCallback on_error);
 
     /**
      * @brief PATCH the spool's filament_id. Used for repointing a linked spool

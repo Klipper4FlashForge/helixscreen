@@ -58,6 +58,7 @@
 
 #include "ui_observer_guard.h"
 
+#include "async_lifetime_guard.h"
 #include "lvgl.h"
 #include "memory_monitor.h"
 #include "subject_managed_panel.h"
@@ -425,6 +426,20 @@ class TelemetryManager {
      * Must be called from the LVGL/main thread only.
      */
     void record_feature_adoption();
+
+    /**
+     * @brief Record an AsyncLifetimeGuard skip-rate snapshot
+     *
+     * Drains `helix::async_lifetime::take_snapshot()` and emits an
+     * `async_lifetime_skips` event with the per-tag breakdown. A hot producer
+     * in this event is the early signal that an owner is repeatedly dying with
+     * pending work — the shape of bug 5KNWUEKY before it crashed. Fires on the
+     * periodic snapshot timer and once at shutdown. No-op if telemetry is
+     * disabled.
+     *
+     * Must be called from the LVGL/main thread only.
+     */
+    void record_async_lifetime_snapshot();
 
     /**
      * @brief Notify that a user setting was changed
@@ -900,6 +915,15 @@ class TelemetryManager {
      */
     nlohmann::json build_settings_changes_event() const;
 
+    /**
+     * @brief Shape an already-drained skip snapshot as an event JSON
+     *
+     * Pure with respect to the counters — the caller owns the drain, so
+     * suppressing an event can never also swallow a window.
+     */
+    nlohmann::json
+    build_async_lifetime_snapshot_event(const helix::async_lifetime::SkipSnapshot& snap) const;
+
     /// Create and arm the periodic snapshot LVGL timer
     void start_snapshot_timer();
 
@@ -1044,6 +1068,12 @@ class TelemetryManager {
 
     /// RAII cleanup for the enabled subject
     SubjectManager subjects_;
+
+    /// Expires the deferred `enabled_subject_` write. Declared after `subjects_`
+    /// so reverse-order member destruction invalidates it before the subject it
+    /// protects; also invalidated by shutdown(), which is where the subject is
+    /// actually torn down (#1165, #1146).
+    helix::AsyncLifetimeGuard async_lifetime_;
 
     /// Guards against double-initialization of subjects
     bool subjects_initialized_{false};

@@ -8,6 +8,8 @@ Open it from **Advanced > Print History**.
 
 ## History Dashboard
 
+![Print History Dashboard](../../images/user/advanced-history.png)
+
 The dashboard opens with a summary across a selectable time range and two charts.
 
 ### Time filters
@@ -16,7 +18,7 @@ A row of filter buttons sets the time range for the statistics and charts:
 
 **Day · Week · Month · Year · All**
 
-All is the default (still all-time). For accurate lifetime totals, the All Time view uses Moonraker's server-side history totals rather than the recently cached jobs.
+All is the default. For accurate lifetime figures, the All Time view pulls Total Prints, Print Time, and Filament Used from Moonraker's server-side history totals rather than the recently cached jobs; the Success Rate and the charts are still based on your most recent jobs.
 
 ### Statistics
 
@@ -58,6 +60,8 @@ Each row shows the job's filename, status, and key details. When filters are act
 
 ## Print Details & Reprinting
 
+![Print Details](../../images/user/print-history-detail.png)
+
 Tap a job to open its detail view, which shows:
 
 - Filename and status (Completed / Cancelled / Failed / In Progress) with a matching icon
@@ -75,4 +79,4 @@ From the detail view you can:
 
 ---
 
-**Prev:** [Camera](camera.md) | [Back to User Guide](../USER_GUIDE.md)
+**Prev:** [Camera](camera.md) | **Next:** [Advanced Features](advanced.md) | [Back to User Guide](../USER_GUIDE.md)

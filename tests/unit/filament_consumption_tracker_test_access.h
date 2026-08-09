@@ -24,13 +24,19 @@ namespace helix {
 struct FilamentConsumptionTrackerTestAccess {
     /// Poke the ExternalSpoolSink's persist-interval throttle in the registry.
     /// Used by tests that want writes on every tick instead of every 60s.
-    static void set_persist_interval(FilamentConsumptionTracker& t, uint32_t ms) {
+    ///
+    /// The sink is installed by the first start() in the process, so this is a
+    /// no-op when called before then. Returns false in that case so callers can
+    /// REQUIRE the override actually landed instead of silently testing the
+    /// production 60s interval.
+    [[nodiscard]] static bool set_persist_interval(FilamentConsumptionTracker& t, uint32_t ms) {
         for (auto& s : t.sinks_) {
             if (s->kind() == SinkKind::ExternalSpool) {
                 static_cast<ExternalSpoolSink*>(s.get())->set_persist_interval_ms_override(ms);
-                return;
+                return true;
             }
         }
+        return false;
     }
 
     /// Drive the tracker's print-state observer directly, bypassing the

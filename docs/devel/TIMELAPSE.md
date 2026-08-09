@@ -2,8 +2,6 @@
 
 Integration with [moonraker-timelapse](https://github.com/mainsail-crew/moonraker-timelapse) plugin for automated timelapse recording during prints.
 
-**Design doc**: [archived](../../docs/archive/plans/2026-02-15-timelapse-feature.md) (phased plan, architecture decisions, future work)
-
 ---
 
 ## What It Provides
@@ -90,7 +88,7 @@ Settings are read via `GET /machine/timelapse/settings` and saved via `POST /mac
 `PrintLightTimelapseControls` manages the timelapse toggle button on the print status panel. It:
 - Shows a video/video-off icon with On/Off label via string subjects (`timelapse_button_icon`, `timelapse_button_label`)
 - Calls `api->set_timelapse_enabled(bool)` on click
-- Uses `ui_async_call()` to marshal UI updates from API callback thread to LVGL thread
+- Uses `ui_queue_update()` to marshal UI updates from API callback thread to LVGL thread
 
 This class also manages the light button (LED toggle) -- they share the same helper since both appear as action buttons on the print status panel.
 
@@ -98,7 +96,7 @@ This class also manages the light button (LED toggle) -- they share the same hel
 
 ## Moonraker API Methods
 
-All timelapse API methods are in `MoonrakerAPI` (declared in `moonraker_api.h`, implemented in `moonraker_api_history.cpp`):
+All timelapse API methods are in `MoonrakerAPI` (declared in `moonraker_api.h`, implemented in `moonraker_timelapse_api.cpp`):
 
 | Method | HTTP | Endpoint |
 |--------|------|----------|
@@ -225,13 +223,13 @@ The timelapse settings overlay (Phase 1) was extended with video management capa
 | `include/ui_print_light_timelapse.h` | Print status light + timelapse button helper |
 | `src/ui/ui_print_light_timelapse.cpp` | Toggle handlers, subject management |
 | `include/printer_capabilities_state.h` | `printer_has_timelapse` subject |
-| `src/printer/printer_capabilities_state.cpp` | Beta-gated capability setter |
+| `src/printer/printer_capabilities_state.cpp` | Capability-gated setter (`printer_has_timelapse`) |
 | `include/printer_discovery.h` | `has_timelapse()` detection from Moonraker objects |
 | `include/moonraker_types.h` | `TimelapseSettings` struct |
-| `src/api/moonraker_api_history.cpp` | HTTP API methods for timelapse |
-| `src/api/moonraker_api_motion.cpp` | Contains `restart_moonraker()` |
+| `src/api/moonraker_timelapse_api.cpp` | HTTP API methods for timelapse |
+| `src/api/moonraker_api_controls.cpp` | Contains `restart_moonraker()` |
 | `tests/unit/test_timelapse_install.cpp` | 23 tests for config parsing |
-| `ui_xml/advanced_panel.xml` | Timelapse/Setup rows (beta-gated) |
+| `ui_xml/advanced_panel.xml` | Timelapse/Setup rows (capability-gated on `printer_has_timelapse`) |
 | `ui_xml/beta_feature.xml` | Beta feature wrapper component |
 | `include/timelapse_state.h` | TimelapseState singleton class |
 | `src/printer/timelapse_state.cpp` | Event dispatch, subject management, render notifications |

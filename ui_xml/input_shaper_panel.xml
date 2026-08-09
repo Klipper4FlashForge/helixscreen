@@ -2,13 +2,13 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <component>
   <view name="input_shaper_panel"
-        extends="lv_obj" width="#overlay_panel_width" height="100%" align="right_mid" style_border_width="0"
+        extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_border_width="0"
         style_pad_all="0" style_bg_opa="255" style_bg_color="#card_bg" scrollable="false" flex_flow="column">
     <!-- Header Bar -->
     <header_bar name="overlay_header" title="Input Shaper" title_tag="Input Shaper"
                 hide_action_button="false" action_button_text="Calibrate All" action_button_text_tag="Calibrate All"
                 action_button_callback="input_shaper_calibrate_all_cb"
-                action_button_disabled_subject="is_calibrate_all_disabled"/>
+                action_button_disabled_cond="is_calibrate_all_disabled or nav_buttons_enabled eq 0"/>
     <!-- Content Area -->
     <lv_obj name="panel_content"
             width="100%" flex_grow="1" style_pad_all="#space_lg" style_pad_gap="#space_md" scrollable="true"
@@ -32,7 +32,7 @@
                   style_pad_gap="#space_sm" scrollable="false">
             <icon src="sine_wave" size="lg" variant="primary"/>
             <text_body text="Reduce vibration artifacts like ringing and ghosting" translation_tag="Reduce vibration artifacts like ringing and ghosting" flex_grow="1" style_text_color="#text_muted"/>
-            <ui_button name="btn_help" width="36" height="36" variant="ghost" icon="help_circle">
+            <ui_button name="btn_help" width="#icon_button_size_lg" height="#icon_button_size_lg" variant="ghost" icon="help_circle">
               <event_cb trigger="clicked" callback="input_shaper_help_cb"/>
             </ui_button>
           </lv_obj>

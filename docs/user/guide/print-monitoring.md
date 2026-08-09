@@ -23,6 +23,8 @@ For every tool the file uses (T0, T1, T2, …), HelixScreen compares the slot ma
 
 ### The Check filament dialog
 
+![Check filament dialog](../../images/user/preflight-check.png)
+
 The dialog appears **only when at least one required tool maps to an empty slot** — that's the one condition serious enough to stop a print. When it opens, you see one row per tool:
 
 - A **`Tx`** label (the tool number)
@@ -49,6 +51,23 @@ Below the rows, a short explanation calls out the first blocking problem, for ex
 
 ---
 
+## Filament Runout During a Print
+
+If the runout sensor stops detecting filament while a print is running, HelixScreen pauses the print and shows the **Filament Runout** modal so you can recover without dropping to the console.
+
+![Filament runout modal](../../images/user/runout-modal.png)
+
+| Button | Action |
+|--------|--------|
+| **Load** | Runs your load sequence (heat → feed → purge) to bring fresh filament to the nozzle. On an AMS system this loads from the active slot. |
+| **Unload** | Retracts the remaining filament so you can swap the spool before loading. |
+| **Purge** | Extrudes a little filament to clear the old color or confirm flow. |
+| **Close** | Dismisses the modal — resume the print from the status screen once filament is loaded. |
+
+On tool-changer and single-extruder printers (and any AMS in bypass), this same modal handles the recovery; hub-topology AMS systems that manage their own swaps suppress it.
+
+---
+
 ## Print-Failure Detection
 
 Some printers include their own camera-based failure detection that watches for problems like spaghetti (a print that has detached and turned into a tangle). When that hardware flags a defect, HelixScreen surfaces it on the touchscreen so you can decide what to do without walking over to a web interface.
@@ -67,7 +86,7 @@ When the U1's detector flags a spaghetti-type failure, the printer pauses the pr
 
 > **Note:** Only spaghetti-type failures are surfaced this way today. The U1's other defect codes (dirty bed, residue, dirty nozzle) are recognized internally but don't currently raise this dialog.
 
-> **Note:** A camera-frame preview is designed into this dialog but isn't wired up yet — for now the dialog shows the text description without a live still image.
+> **Note:** The dialog shows the text description of the detected issue; it does not include a live camera still.
 
 ### Is it always on?
 

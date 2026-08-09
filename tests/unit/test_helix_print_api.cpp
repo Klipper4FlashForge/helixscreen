@@ -148,7 +148,7 @@ class FallbackScriptedClient : public helix::MoonrakerClient {
 } // namespace
 
 TEST_CASE("HelixPrint API - falls back to printer.print.start when plugin print_modified fails",
-          "[print][api][slow]") {
+          "[print][api]") {
     FallbackScriptedClient client;
     PrinterState state;
     state.init_subjects(false);
@@ -310,7 +310,7 @@ TEST_CASE_METHOD(HelixPrintAPITestFixture,
 // ModifiedPrintResult Structure Tests
 // ============================================================================
 
-TEST_CASE("HelixPrint API - ModifiedPrintResult structure", "[slow][print][api]") {
+TEST_CASE("HelixPrint API - ModifiedPrintResult structure", "[print][api]") {
     ModifiedPrintResult result;
 
     SECTION("Default values are empty") {

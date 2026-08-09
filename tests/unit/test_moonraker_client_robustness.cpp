@@ -163,12 +163,29 @@ TEST_CASE_METHOD(MoonrakerRobustnessFixture,
     }
 
     SECTION("Concurrent send_jsonrpc with different methods") {
+        constexpr int NUM_SENDERS = 5;
+        constexpr int SENDS_PER_SENDER = 50;
+        constexpr int MIXED_TOTAL = NUM_SENDERS * SENDS_PER_SENDER;
+
         std::atomic<int> completed{0};
+        std::atomic<bool> connected{false};
         std::vector<std::string> methods = {"printer.info", "server.info", "printer.objects.list",
                                             "printer.gcode.script", "machine.update.status"};
 
+        // Catch2 SECTIONs are independent runs of the body, so this one has to
+        // establish its own connection. Without it every send is refused by
+        // ready_to_send() and the counter below would only prove that a
+        // synchronous rejection fires one callback.
+        client_->connect(
+            server_url().c_str(), [&connected]() { connected = true; },
+            []() { /* disconnected */ });
+        for (int i = 0; i < 50 && !connected; i++) {
+            std::this_thread::sleep_for(milliseconds(100));
+        }
+        REQUIRE(connected);
+
         auto send_mixed = [&]() {
-            for (int i = 0; i < 50; i++) {
+            for (int i = 0; i < SENDS_PER_SENDER; i++) {
                 const auto& method = methods[i % methods.size()];
                 client_->send_jsonrpc(
                     method, json(), [&completed](json) { completed++; },
@@ -177,7 +194,7 @@ TEST_CASE_METHOD(MoonrakerRobustnessFixture,
         };
 
         std::vector<std::thread> threads;
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < NUM_SENDERS; i++) {
             threads.emplace_back(send_mixed);
         }
 
@@ -185,13 +202,21 @@ TEST_CASE_METHOD(MoonrakerRobustnessFixture,
             thread.join();
         }
 
-        // Cleanup and verify
-        std::this_thread::sleep_for(milliseconds(500));
+        // Wait for responses, then flush anything the server never answered so the
+        // count is final either way: process_timeouts() fires the error callback for
+        // every request past its deadline.
+        for (int i = 0; i < 100 && completed < MIXED_TOTAL; i++) {
+            std::this_thread::sleep_for(milliseconds(50));
+        }
         client_->process_timeouts();
-        std::this_thread::sleep_for(milliseconds(500));
 
-        // Test passes if no crashes/races (ThreadSanitizer would detect)
-        REQUIRE(true);
+        INFO("completed: " << completed.load() << " of " << MIXED_TOTAL);
+
+        // Every request resolves exactly once - success or error, never dropped and
+        // never fired twice. Under contention that is what the request tracker's
+        // locking exists to guarantee, and it is checkable in a plain build rather
+        // than only under ThreadSanitizer.
+        REQUIRE(completed == MIXED_TOTAL);
     }
 }
 
@@ -707,11 +732,11 @@ TEST_CASE("MoonrakerClient callbacks not invoked after disconnect",
 TEST_CASE_METHOD(MoonrakerRobustnessFixture, "MoonrakerClient handles exceptions in user callbacks",
                  "[connection][edge][lifecycle][priority5][eventloop][slow]") {
     SECTION("Exception in success callback is caught") {
-        // This section verifies by code inspection that libhv's event loop
-        // catches exceptions from user callbacks. No runtime test is possible
-        // without a connected server — see the timeout callback test below
-        // for an actual runtime verification of exception safety.
-        SUCCEED("Verified by code inspection");
+        // Not covered. Reaching a success callback needs a connected server, and
+        // this suite has none, so the claim that libhv's event loop swallows a
+        // throwing user callback was only ever asserted by reading the code. The
+        // error-callback path below is the one with real runtime coverage.
+        SKIP("needs a connected Moonraker server to drive a success callback");
     }
 
     SECTION("Exception in error callback is caught during timeout") {
@@ -825,9 +850,11 @@ TEST_CASE("MoonrakerClient stress test - sustained load",
         CHECK(completed >= NUM_REQUESTS * 0.95); // At least 95% complete
 
         client->disconnect();
-        client.reset();
+        // Join BEFORE destroying the client — external loop means is_loop_owner is
+        // false, so ~WebSocketClient does not join for us (#1146).
         loop->stop();
         loop->join();
+        client.reset();
     }
 }
 
@@ -837,6 +864,38 @@ TEST_CASE("MoonrakerClient stress test - sustained load",
 
 TEST_CASE("MoonrakerClient memory safety", "[connection][edge][memory][eventloop][slow]") {
     SECTION("Rapid create/destroy cycles") {
+        // WHAT THIS DOES NOT COVER (#1146).
+        //
+        // The teardown UAF found while chasing #1146 is this: an externally
+        // supplied hv::EventLoop makes libhv set is_loop_owner=false, so
+        // TcpClientTmpl::stop() skips EventLoopThread::stop(wait).
+        // ~EventLoopThread does join eventually, but it is a private base of
+        // TcpClientTmpl and runs LAST - after ~WebSocketClient has already freed
+        // http_req_/http_parser_ and the onConnection/onMessage std::function
+        // members. A connect completing in that window runs the installed lambda
+        // against a freed object.
+        //
+        // The stop()/join()-before-reset() ordering below is the ordering that
+        // AVOIDS that window, so this section cannot exercise it. Reversing the
+        // ordering would not restore coverage either: the defect is in libhv's
+        // destruction order, it has no fix on our side, and a test written to hit
+        // it would simply be a crash we deliberately schedule. What actually
+        // closed the hole in the product was removing external loops from the
+        // construction path - MoonrakerManager::create_client default-constructs,
+        // and 28 test sites were converted to match (commit 2882c912e). The
+        // remaining fixtures that legitimately own a loop, this one included, use
+        // this ordering.
+        //
+        // What IS asserted here is that all 50 cycles reach production code:
+        // every client is unconnected, so ready_to_send() rejects each send and
+        // send_jsonrpc() invokes the error callback inline with CONNECTION_LOST
+        // (#909). Two sends per cycle, so exactly 100.
+        int pre_send_errors = 0;
+        auto count_error = [&pre_send_errors](const MoonrakerError& err) {
+            CHECK(err.type == MoonrakerErrorType::CONNECTION_LOST);
+            pre_send_errors++;
+        };
+
         for (int i = 0; i < 50; i++) {
             auto loop = std::make_shared<hv::EventLoopThread>();
             loop->start();
@@ -844,18 +903,16 @@ TEST_CASE("MoonrakerClient memory safety", "[connection][edge][memory][eventloop
             auto client = std::make_unique<MoonrakerClient>(loop->loop());
 
             // Send some requests
-            client->send_jsonrpc("printer.info", json(), [](json) {}, [](const MoonrakerError&) {});
-            client->send_jsonrpc("server.info", json(), [](json) {}, [](const MoonrakerError&) {});
+            client->send_jsonrpc("printer.info", json(), [](json) {}, count_error);
+            client->send_jsonrpc("server.info", json(), [](json) {}, count_error);
 
-            // Destroy immediately
-            client.reset();
-
+            // Join BEFORE destroying - see the note above.
             loop->stop();
             loop->join();
+            client.reset();
         }
 
-        // No leaks, no crashes
-        REQUIRE(true);
+        CHECK(pre_send_errors == 100);
     }
 
     SECTION("Large params don't cause memory issues") {
@@ -872,8 +929,10 @@ TEST_CASE("MoonrakerClient memory safety", "[connection][edge][memory][eventloop
 
         REQUIRE_NOTHROW(client->send_jsonrpc("test.method", large_params));
 
-        client.reset();
+        // Join BEFORE destroying the client (external loop → is_loop_owner is
+        // false → ~WebSocketClient does not join) (#1146).
         loop->stop();
         loop->join();
+        client.reset();
     }
 }

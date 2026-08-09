@@ -51,7 +51,7 @@ Run it right on your printer, or on a separate device — a spare Pi, a mini PC,
 | Disk Size | ~75-115MB | ~60-80MB | ~50MB |
 | Multi-Material | 7 backends | Limited | Basic |
 | Printer Database | 80+ models | — | Manual config |
-| Display Layouts | Auto-detecting (tiny to ultrawide) | Fixed | Configurable |
+| Display Layouts | Auto-detecting (480x320 to 1024x600; ultrawide/portrait alpha) | Fixed | Configurable |
 | Internationalization | 9 languages | — | 40+ languages |
 | Status | 1.0 (active) | Inactive | Mature (maintenance) |
 | Language | C++17 | C | Python 3 |
@@ -111,7 +111,7 @@ See [docs/devel/GALLERY.md](docs/devel/GALLERY.md) for the full gallery.
 
 **Integrations** — HelixPrint plugin, power devices with quick-toggle, print history, timelapse (Moonraker plugin), exclude objects with tap-to-exclude map view, LED control (5 backends), sound alerts (SDL/PWM/M300), Bluetooth label printing (Brother QL/PT, Niimbot, MakeID).
 
-**Display** — Auto-detecting layout system (480x320 to 1920x480 ultrawide), display rotation (0/90/180/270) with auto-detection, light/dark themes with 17 presets and live theme editor, GPU-accelerated backdrop blur, screensavers.
+**Display** — Auto-detecting layout system (480x320 through 1024x600; ultrawide and portrait orientations are **alpha** — see below), display rotation (0/90/180/270) with auto-detection, light/dark themes with 17 presets and live theme editor, GPU-accelerated backdrop blur, screensavers.
 
 **System** — First-run wizard with guided hardware discovery, 80+ printer models with auto-detection, 9 languages, opt-in crash reporting with debug bundles, KIAUH installer, versioned config migration.
 
@@ -158,10 +158,10 @@ curl -sSL https://raw.githubusercontent.com/prestonbrown/helixscreen/main/script
 
 To install or roll back to a specific release (e.g. a last-known-good version), pass `--version` with the tag:
 ```bash
-curl -sSL https://raw.githubusercontent.com/prestonbrown/helixscreen/main/scripts/install.sh | sh -s -- --version v0.99.84
+curl -sSL https://raw.githubusercontent.com/prestonbrown/helixscreen/main/scripts/install.sh | sh -s -- --version v0.99.106
 ```
 
-Add `--clean` to wipe HelixScreen's settings and start fresh (it asks for confirmation first; your Klipper/Moonraker config and G-code are untouched). Combine the two to reinstall a specific version with default settings: `--clean --version v0.99.84`.
+Add `--clean` to wipe HelixScreen's settings and start fresh (it asks for confirmation first; your Klipper/Moonraker config and G-code are untouched). Combine the two to reinstall a specific version with default settings: `--clean --version v0.99.106`.
 
 Also available through [KIAUH](https://github.com/dw-0/kiauh) as an extension.
 
@@ -184,8 +184,8 @@ make -j
 # Run with real printer
 ./build/bin/helix-screen
 
-# XML hot reload (edit XML, switch panels to see changes live)
-HELIX_HOT_RELOAD=1 ./build/bin/helix-screen --test -vv
+# XML hot reload is ON by default for native builds (edit XML, save, see changes live)
+./build/bin/helix-screen --test -vv
 
 # Run tests
 make test-run
@@ -193,7 +193,7 @@ make test-run
 
 **Controls:** Click navigation icons, press 'S' for screenshot, use `-v` (INFO), `-vv` (DEBUG), or `-vvv` (TRACE) for logging.
 
-**Test suite:** 5,000+ test cases across 460+ test files covering printer state, UI components, XML parsing, multi-material, and more.
+**Test suite:** 5,000+ test cases across 600+ test files covering printer state, UI components, XML parsing, multi-material, and more.
 
 See [docs/devel/DEVELOPMENT.md](docs/devel/DEVELOPMENT.md) for detailed setup, cross-compilation, and contributing guidelines.
 
@@ -209,7 +209,9 @@ Yes. Install it on any supported Linux device — a spare Pi, a mini PC, even yo
 Any Klipper + Moonraker printer. 80+ models in the auto-detection database spanning Voron, Creality, QIDI, Anycubic, Flashforge, Sovol, RatRig, FLSUN, Elegoo, Prusa, Snapmaker, and more. The wizard auto-discovers your printer's capabilities even if it's not in the database.
 
 **What screen sizes are supported?**
-480x320, 800x480, 1024x600, and 1920x480 (ultrawide) with auto-detecting layouts. Display rotation (0/90/180/270) with auto-detection.
+800x480 and 1024x600 are the well-tested landscape sizes; 480x320 runs but is tight in places. Display rotation (0/90/180/270) with auto-detection.
+
+**Ultrawide (e.g. 1920x480) and portrait (e.g. 480x800) are alpha at best.** The layout engine detects both and picks sensible grid sizing, but almost no panel has an ultrawide- or portrait-specific layout yet, so most screens fall back to the standard landscape layout and will look stretched or cramped. It will run — don't expect it to look right. Both are wide open for contributions; see the [UI Contributor Guide](docs/devel/UI_CONTRIBUTOR_GUIDE.md).
 
 **What multi-material systems work?**
 AFC (Box Turtle, ViViD), Happy Hare (ERCF, 3MS, Tradrack, Night Owl), ACE (Anycubic ACE Pro), AD5X IFS, Creality CFS, Snapmaker U1 (with RFID spool recognition), and tool changers (viesturz/klipper-toolchanger). Full Spoolman integration for spool management.
@@ -276,12 +278,19 @@ If you're interested, join the [Discord](https://discord.gg/RZCT2StKhr) and intr
 
 ## License
 
-GPL v3 — See [LICENSE](LICENSE) for details.
+GPL v3 — See [LICENSE](LICENSE) for details. Third-party components and their licenses are listed
+in [COPYRIGHT](COPYRIGHT).
+
+One exception: **[`lib/helix-xml/`](lib/helix-xml/) is MIT**, not GPL. It is a permanent fork of the
+declarative XML UI engine that shipped inside LVGL core until v9.5 removed it and moved it to the
+commercial LVGL Pro. We forked from the last MIT commit (`a15dcbeb5`, 2026-01-26) and keep our own
+contributions to it under MIT so the engine stays usable as a standalone library. See
+[`lib/helix-xml/README.md`](lib/helix-xml/README.md).
 
 ## Acknowledgments
 
 **Inspired by:** [GuppyScreen](https://github.com/ballaswag/guppyscreen) (general architecture, LVGL-based approach), [KlipperScreen](https://github.com/KlipperScreen/KlipperScreen) (feature inspiration)
 
-**Built with:** [LVGL 9.5](https://lvgl.io/), [Klipper](https://www.klipper3d.org/), [Moonraker](https://github.com/Arksine/moonraker), [libhv](https://github.com/ithewei/libhv), [spdlog](https://github.com/gabime/spdlog), [SDL2](https://www.libsdl.org/)
+**Built with:** [LVGL 9.5](https://lvgl.io/), [Klipper](https://www.klipper3d.org/), [Moonraker](https://github.com/Arksine/moonraker), [libhv](https://github.com/ithewei/libhv), [spdlog](https://github.com/gabime/spdlog), [SDL2](https://www.libsdl.org/), and `helix-xml` (our MIT fork of LVGL's XML engine)
 
 **AI-Assisted Development:** Built with [Claude Code](https://github.com/anthropics/claude-code) by [Anthropic](https://www.anthropic.com/)

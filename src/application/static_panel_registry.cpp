@@ -54,17 +54,23 @@ void StaticPanelRegistry::destroy_all() {
     // Set flag so helix::ui::safe_delete() skips deletion during this window
     s_destroying_all_.store(true, std::memory_order_release);
 
+    // Iterate a detached copy: a destroy callback that reaches through a lazy
+    // get_global_*_panel() getter re-registers a fresh entry, and a push_back
+    // into the vector being iterated would invalidate the loop's iterators.
+    // Re-registrations land in the (now empty) member vector instead, so a
+    // later destroy_all() pass can sweep them.
+    std::vector<DestroyEntry> entries = std::move(destroyers_);
+    destroyers_.clear();
+
     // Destroy in reverse registration order (LIFO)
     // This ensures dependencies are respected: panels created later
     // (which may depend on earlier ones) are destroyed first
-    for (auto it = destroyers_.rbegin(); it != destroyers_.rend(); ++it) {
+    for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
         spdlog::trace("[StaticPanelRegistry] Destroying: {}", it->name);
         if (it->destroy_fn) {
             it->destroy_fn();
         }
     }
-
-    destroyers_.clear();
     s_destroying_all_.store(false, std::memory_order_release);
     spdlog::trace("[StaticPanelRegistry] All panels destroyed");
 }

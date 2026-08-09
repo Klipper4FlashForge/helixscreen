@@ -8,6 +8,7 @@
 
 #include "bluetooth_loader.h"
 #include "bt_print_utils.h"
+#include "log_redact.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "phomemo_printer.h"
 #include "phomemo_protocol.h"
@@ -53,7 +54,8 @@ void PhomemoBluetoothPrinter::print(const LabelBitmap& bitmap, const LabelSize& 
     }
 
     auto commands = phomemo_build_raster(bitmap, size);
-    spdlog::warn("Phomemo BT: sending {} bytes to {} via {}", commands.size(), mac_, transport_);
+    spdlog::warn("Phomemo BT: sending {} bytes to {} via {}", commands.size(),
+                 helix::redact::mac(mac_), transport_);
 
     std::string mac = mac_;
     bool use_spp = (transport_ == "spp");

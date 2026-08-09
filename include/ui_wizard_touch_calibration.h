@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "touch_calibration_layout.h"
 #include "touch_calibration_panel.h"
 #include "touch_calibration_session.h"
 #include "wizard_step.h"
@@ -156,10 +157,15 @@ class WizardTouchCalibrationStep : public helix::wizard::Step {
     // re-enabled however the session ends (#943).
     helix::TouchCalibrationSession session_;
 
-    // Next/Skip group reparenting state (brought on top of touch overlay)
-    lv_obj_t* skip_btn_original_parent_ = nullptr;
-    lv_coord_t skip_btn_orig_w_ = 0;
-    lv_coord_t skip_btn_orig_h_ = 0;
+    // Calibration sink the session drives. Normally the live DisplayManager;
+    // overridable by unit tests (WizardTouchCalibrationTestAccess) so the retry
+    // revert path can be exercised without standing up a DisplayManager.
+    helix::ICalibrationSink* calibration_sink_override_ = nullptr;
+
+    // Next/Skip group lifted above the full-screen capture surface so it stays
+    // clickable during calibration. Restore state owned here (shared helper in
+    // touch_calibration_layout.h).
+    helix::ui::RaisedControl raised_skip_;
 
     // Event handlers (static trampolines)
     static void on_accept_clicked_static(lv_event_t* e);
@@ -167,6 +173,10 @@ class WizardTouchCalibrationStep : public helix::wizard::Step {
     static void on_screen_touched_static(lv_event_t* e);
     static void on_screen_released_static(lv_event_t* e);
     static void on_test_area_touched_static(lv_event_t* e);
+
+    // Resolves the calibration sink the session drives (test-overridable, else
+    // the live DisplayManager singleton). May return nullptr if no display.
+    helix::ICalibrationSink* calibration_sink();
 
     // Instance method handlers
     void handle_accept_clicked();
@@ -214,13 +224,6 @@ class WizardTouchCalibrationStep : public helix::wizard::Step {
  * @return Pointer to the singleton instance
  */
 WizardTouchCalibrationStep* get_wizard_touch_calibration_step();
-
-/**
- * @brief Destroy the global WizardTouchCalibrationStep instance
- *
- * Call during application shutdown to ensure proper cleanup.
- */
-void destroy_wizard_touch_calibration_step();
 
 /**
  * @brief Force touch calibration step to show (for visual testing)

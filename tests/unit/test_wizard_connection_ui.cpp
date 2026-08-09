@@ -9,6 +9,7 @@
 #include "../test_helpers/update_queue_test_access.h"
 #include "../ui_test_utils.h"
 #include "lvgl/lvgl.h"
+#include "misc/lv_timer_private.h" // timer_cb — assert the cancel neutered it
 #include "moonraker_client.h"
 
 #include <spdlog/spdlog.h>
@@ -83,13 +84,6 @@ class WizardConnectionUIFixture : public LVGLUITestFixture {
         }
     }
 
-    void require_interactive() {
-        require_ready();
-        // Interactive tests (type_text, click, wait_ms) need KeyboardManager
-        // and a mock mDNS backend. Skip until test infrastructure supports this.
-        SKIP("Interactive tests require KeyboardManager initialization");
-    }
-
     lv_obj_t* wizard = nullptr;
     bool ready_ = false;
 };
@@ -101,14 +95,16 @@ class WizardConnectionUIFixture : public LVGLUITestFixture {
 // =============================================================================
 // UI Integration Tests - Require XML component registration
 // =============================================================================
-// These tests are marked [.ui_integration] because they require:
-// 1. XML components to be registered (wizard_container.xml, etc.)
-// 2. LVGL filesystem driver to read ui_xml/ directory
+// These tests are marked [.ui_integration] (hidden from the default run)
+// because they need the ui_xml/ component tree readable from disk, which makes
+// them dependent on the working directory rather than on the build alone.
+// LVGLUITestFixture does register the components, so they pass when run from
+// the repo root:
+//   ./build/bin/helix-tests "[.ui_integration]"
 //
-// The test fixture's ensure_components_registered() is a stub that doesn't
-// actually register XML components. To run these tests, you need to either:
-// - Set up the XML filesystem driver in the test infrastructure
-// - Run tests with: ./build/bin/helix-tests "[ui_integration]"
+// They assert the wizard connection step's XML structure (widget names, title
+// text, flex layout). Nothing else in the suite covers that, and tests/ui/ has
+// no wizard coverage — the wizard is pre-first-boot, so ctl cannot reach it.
 // =============================================================================
 
 TEST_CASE_METHOD(WizardConnectionUIFixture, "Connection UI: All widgets exist",
@@ -130,37 +126,6 @@ TEST_CASE_METHOD(WizardConnectionUIFixture, "Connection UI: All widgets exist",
     REQUIRE(status_label != nullptr);
 }
 
-TEST_CASE_METHOD(WizardConnectionUIFixture, "Connection UI: Input field interaction",
-                 "[wizard][connection][ui][.ui_integration]") {
-    require_interactive();
-    lv_obj_t* ip_input = UITest::find_by_name(test_screen(), "ip_input");
-    REQUIRE(ip_input != nullptr);
-
-    lv_obj_t* port_input = UITest::find_by_name(test_screen(), "port_input");
-    REQUIRE(port_input != nullptr);
-
-    // Type IP address
-    UITest::type_text(ip_input, "192.168.1.100");
-    UITest::wait_ms(50);
-
-    // Verify text was entered
-    std::string entered_ip = UITest::get_text(ip_input);
-    REQUIRE(entered_ip == "192.168.1.100");
-
-    // Check default port value
-    std::string port_value = UITest::get_text(port_input);
-    REQUIRE(port_value == "7125");
-
-    // Modify port - clear by selecting all and typing over
-    lv_textarea_set_cursor_pos(port_input, 0);
-    lv_textarea_set_text(port_input, ""); // Clear existing text
-    UITest::type_text(port_input, "8080");
-    UITest::wait_ms(50);
-
-    port_value = UITest::get_text(port_input);
-    REQUIRE(port_value == "8080");
-}
-
 TEST_CASE_METHOD(WizardConnectionUIFixture, "Connection UI: Test button state",
                  "[wizard][connection][ui][.ui_integration]") {
     require_ready();
@@ -173,31 +138,6 @@ TEST_CASE_METHOD(WizardConnectionUIFixture, "Connection UI: Test button state",
 
     // Button should be visible
     REQUIRE(UITest::is_visible(test_btn) == true);
-}
-
-TEST_CASE_METHOD(WizardConnectionUIFixture, "Connection UI: Status label updates",
-                 "[wizard][connection][ui][.ui_integration]") {
-    require_interactive();
-    lv_obj_t* status_label = UITest::find_by_name(test_screen(), "connection_status");
-    REQUIRE(status_label != nullptr);
-
-    // Initially status should be empty or hidden
-    std::string initial_status = UITest::get_text(status_label);
-    REQUIRE(initial_status.empty());
-
-    // Enter invalid IP
-    lv_obj_t* ip_input = UITest::find_by_name(test_screen(), "ip_input");
-    lv_textarea_set_text(ip_input, ""); // Clear existing text
-    UITest::type_text(ip_input, "999.999.999.999");
-
-    // Click test button
-    lv_obj_t* test_btn = UITest::find_by_name(test_screen(), "btn_test_connection");
-    UITest::click(test_btn);
-    UITest::wait_ms(100);
-
-    // Status should show error
-    std::string error_status = UITest::get_text(status_label);
-    REQUIRE(error_status.find("Invalid") != std::string::npos);
 }
 
 TEST_CASE_METHOD(WizardConnectionUIFixture, "Connection UI: Navigation buttons",
@@ -311,55 +251,6 @@ TEST_CASE("Connection UI: Mock connection flow", "[wizard][connection][mock]") {
 }
 
 // ============================================================================
-// Input Validation UI Tests
-// ============================================================================
-
-TEST_CASE_METHOD(WizardConnectionUIFixture, "Connection UI: Input validation feedback",
-                 "[wizard][connection][ui][validation][.ui_integration]") {
-    require_interactive();
-    lv_obj_t* ip_input = UITest::find_by_name(test_screen(), "ip_input");
-    lv_obj_t* port_input = UITest::find_by_name(test_screen(), "port_input");
-    lv_obj_t* test_btn = UITest::find_by_name(test_screen(), "btn_test_connection");
-    lv_obj_t* status = UITest::find_by_name(test_screen(), "connection_status");
-
-    SECTION("Empty IP address") {
-        lv_textarea_set_text(ip_input, ""); // Clear text
-        UITest::click(test_btn);
-        UITest::wait_ms(100);
-
-        std::string status_text = UITest::get_text(status);
-        REQUIRE(status_text.find("enter") != std::string::npos);
-    }
-
-    SECTION("Invalid port") {
-        UITest::type_text(ip_input, "192.168.1.100");
-        lv_textarea_set_text(port_input, ""); // Clear text
-        UITest::type_text(port_input, "99999");
-        UITest::click(test_btn);
-        UITest::wait_ms(100);
-
-        std::string status_text = UITest::get_text(status);
-        REQUIRE(status_text.find("Invalid port") != std::string::npos);
-    }
-
-    SECTION("Valid inputs") {
-        lv_textarea_set_text(ip_input, ""); // Clear text
-        UITest::type_text(ip_input, "printer.local");
-        lv_textarea_set_text(port_input, ""); // Clear text
-        UITest::type_text(port_input, "7125");
-
-        // Status should allow testing with valid inputs
-        UITest::click(test_btn);
-        UITest::wait_ms(100);
-
-        std::string status_text = UITest::get_text(status);
-        // Should either be testing or show connection result
-        REQUIRE((status_text.find("Testing") != std::string::npos ||
-                 status_text.find("Connection") != std::string::npos));
-    }
-}
-
-// ============================================================================
 // Responsive Layout Tests
 // ============================================================================
 
@@ -458,4 +349,153 @@ TEST_CASE_METHOD(WizardConnectionLifetimeFixture,
 
     helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
     REQUIRE(callback_ran);
+}
+
+// ============================================================================
+// Klipper-down dead end (Moonraker up, Klippy in `error`)
+// ============================================================================
+// The connection step never skips, the Next/Finish buttons bind to
+// connection_test_passed, and this step raises no Skip button — so gating the
+// gate on hardware discovery made the single most common first-boot state
+// (Moonraker running, Klipper down on a bad printer.cfg) an unbypassable
+// full-screen wall: no Next, no Skip, Back hidden at the first visible step,
+// and no way into the app's own Klipper error surface. Only --skip-wizard or
+// hand-editing settings.json got the user out.
+
+extern lv_subject_t connection_test_passed;
+
+class WizardConnectionGateFixture : public LVGLTestFixture {
+  public:
+    WizardConnectionGateFixture() {
+        ui_wizard_init_subjects(); // defines connection_test_passed (idempotent)
+        step = get_wizard_connection_step();
+        step->init_subjects();
+    }
+    ~WizardConnectionGateFixture() override {
+        step->cleanup();
+    }
+    WizardConnectionStep* step = nullptr;
+};
+
+TEST_CASE_METHOD(WizardConnectionGateFixture, "Connection step: entering the step gates Next off",
+                 "[wizard][connection][gate]") {
+    REQUIRE(lv_subject_get_int(&connection_test_passed) == 0);
+}
+
+TEST_CASE_METHOD(WizardConnectionGateFixture,
+                 "Connection step: Moonraker up + Klipper down still allows Next",
+                 "[wizard][connection][gate][regression]") {
+    REQUIRE(lv_subject_get_int(&connection_test_passed) == 0);
+
+    // Reached only after the WebSocket connected, i.e. Moonraker answered on
+    // the entered address; discovery then aborted because klippy_state was
+    // "error"/"startup".
+    step->allow_continue_without_klipper();
+
+    REQUIRE(lv_subject_get_int(&connection_test_passed) == 1);
+
+    // Still explicitly NOT a full validation — discovery never ran, so the
+    // hardware lists are empty and nothing downstream should assume otherwise.
+    REQUIRE_FALSE(step->is_validated());
+}
+
+TEST_CASE_METHOD(WizardConnectionGateFixture, "Connection step: re-entering the step re-gates Next",
+                 "[wizard][connection][gate]") {
+    step->allow_continue_without_klipper();
+    REQUIRE(lv_subject_get_int(&connection_test_passed) == 1);
+
+    // Navigating away and back must not inherit the previous pass (same
+    // cleanup/re-init sequence the wizard framework runs on a revisit).
+    step->cleanup();
+    step->init_subjects();
+    REQUIRE(lv_subject_get_int(&connection_test_passed) == 0);
+}
+
+// ============================================================================
+// Silent-discovery dead end (#1161)
+// ============================================================================
+// The Klipper-down fix above only helps when discovery *reports* an error.
+// MoonrakerDiscoverySequence drops its own RPC replies whenever the connection
+// generation or the discovery sequence number has moved on (is_stale() /
+// is_current_sequence()), and continue_discovery() nulls on_complete_discovery_
+// on the error path — so there are live paths where NEITHER discover_printer()
+// callback ever fires. connection_discovering_ then stays 1: spinner forever,
+// Next disabled forever, on a step with no Skip and Back hidden. The timeout
+// has to be owned here, in the step, for exactly that reason.
+
+TEST_CASE_METHOD(WizardConnectionGateFixture,
+                 "Connection step: silent discovery times out and unblocks Next",
+                 "[wizard][connection][gate][watchdog][regression]") {
+    REQUIRE(lv_subject_get_int(&connection_test_passed) == 0);
+
+    // Real timer, real lv_timer_handler dispatch — only the window is shortened.
+    step->set_discovery_watchdog_ms_for_test(20);
+    step->start_discovery_watchdog();
+
+    // Nothing happens while the window is open.
+    REQUIRE(lv_subject_get_int(&connection_test_passed) == 0);
+
+    process_lvgl(60);
+
+    REQUIRE(lv_subject_get_int(&connection_test_passed) == 1);
+
+    // Same contract as the Klipper-down path: the gate opens, but discovery
+    // never produced hardware, so this is not a validated connection.
+    REQUIRE_FALSE(step->is_validated());
+}
+
+TEST_CASE_METHOD(WizardConnectionGateFixture,
+                 "Connection step: step teardown cancels the discovery watchdog",
+                 "[wizard][connection][gate][watchdog]") {
+    step->set_discovery_watchdog_ms_for_test(20);
+    step->start_discovery_watchdog();
+
+    // Navigating away mid-discovery. A watchdog that outlives the step would
+    // fire into a torn-down screen and re-open the gate behind the user.
+    step->cleanup();
+    step->init_subjects();
+
+    process_lvgl(60);
+
+    REQUIRE(lv_subject_get_int(&connection_test_passed) == 0);
+}
+
+TEST_CASE_METHOD(WizardConnectionGateFixture,
+                 "Connection step: watchdog expiry after discovery settled is a no-op",
+                 "[wizard][connection][gate][watchdog]") {
+    // A cancelled one-shot can still reach its handler in the same
+    // lv_timer_handler pass that cancelled it; that must not touch the gate.
+    step->discovery_watchdog_expired();
+    REQUIRE(lv_subject_get_int(&connection_test_passed) == 0);
+}
+
+// ============================================================================
+// Auto-probe timer must not outlive the step (#1173)
+// ============================================================================
+// cleanup() cancels the one-shot, so the normal navigation path is covered. A
+// teardown that destroys the step WITHOUT calling cleanup() first left it armed
+// on a freed `this` — and StaticPanelRegistry::destroy_all() runs before
+// lv_deinit() (application.cpp), so at destructor time the timer really is still
+// in LVGL's list. Same shape as the discovery watchdog's destructor cancel
+// (#1161), and the same UAF that auto_probe_timer_cb's own comment documents.
+
+TEST_CASE_METHOD(LVGLTestFixture, "Connection step: destructor cancels the auto-probe timer",
+                 "[wizard][connection][timer][regression]") {
+    auto step = std::make_unique<WizardConnectionStep>();
+    step->arm_auto_probe_timer_for_test();
+
+    lv_timer_t* timer = step->auto_probe_timer_for_test();
+    REQUIRE(timer != nullptr);
+    REQUIRE(timer->timer_cb != nullptr);
+
+    // Destroy without cleanup() — the path that used to leave it armed.
+    step.reset();
+
+    // Neutered, not deleted: lv_timer_cancel_safe() nulls the callback and lets
+    // lv_timer_handler reap the timer on its next pass. Reading it here is safe
+    // because the timer is LVGL-owned memory, not the step's.
+    REQUIRE(timer->timer_cb == nullptr);
+
+    // A still-armed one-shot would dispatch into the freed step here.
+    process_lvgl(150);
 }

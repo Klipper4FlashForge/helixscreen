@@ -419,7 +419,16 @@ start_service_snapmaker_u1() {
         exit 1
     fi
 
-    if ! $SUDO "$init_src" start; then
+    # A plain "start" is a no-op when an instance is already up, which would
+    # leave the OLD (pre-upgrade) binary running while we report success
+    # (prestonbrown/helixscreen#1106). Restart so the new binary takes over.
+    local action=start
+    if pidof helix-screen >/dev/null 2>&1; then
+        log_info "HelixScreen is already running -- restarting to load the new version..."
+        action=restart
+    fi
+
+    if ! $SUDO "$init_src" "$action"; then
         log_error "Failed to start HelixScreen."
         log_error "Check logs: /var/log/helixscreen/launcher.log or ${INSTALL_DIR}/logs/launcher.log"
         exit 1
@@ -455,9 +464,18 @@ start_service_systemd() {
         exit 1
     fi
 
-    if ! $SUDO systemctl start "$SERVICE_NAME"; then
+    # "systemctl start" is a no-op when the service is already active, which
+    # would leave the OLD (pre-upgrade) binary running while we report success
+    # (prestonbrown/helixscreen#1106). Restart so the new binary takes over.
+    local action=start
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        log_info "HelixScreen is already running -- restarting to load the new version..."
+        action=restart
+    fi
+
+    if ! $SUDO systemctl "$action" "$SERVICE_NAME"; then
         log_error "Failed to start ${SERVICE_NAME} service."
-        log_error "Check logs with: journalctl -u ${SERVICE_NAME} -n 50"
+        log_error "Check logs with: sudo journalctl -u ${SERVICE_NAME} -n 50"
         exit 1
     fi
 
@@ -490,7 +508,16 @@ start_service_sysv() {
         exit 1
     fi
 
-    if ! $SUDO "$INIT_SCRIPT_DEST" start; then
+    # A plain "start" is a no-op when an instance is already up, which would
+    # leave the OLD (pre-upgrade) binary running while we report success
+    # (prestonbrown/helixscreen#1106). Restart so the new binary takes over.
+    local action=start
+    if pidof helix-screen >/dev/null 2>&1; then
+        log_info "HelixScreen is already running -- restarting to load the new version..."
+        action=restart
+    fi
+
+    if ! $SUDO "$INIT_SCRIPT_DEST" "$action"; then
         log_error "Failed to start HelixScreen."
         log_error "Check logs: /var/log/helixscreen/launcher.log or ${INSTALL_DIR}/logs/launcher.log"
         exit 1

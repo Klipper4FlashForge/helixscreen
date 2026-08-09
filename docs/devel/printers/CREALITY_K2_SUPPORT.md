@@ -229,6 +229,19 @@ The `[box]` Klipper module exposes full CFS state via Moonraker's `printer.objec
 
 **Query**: `GET /printer/objects/query?box`
 
+#### Box schema variants
+
+There are **two** incompatible `box` shapes in the wild, with zero key overlap:
+
+| Schema | Shipped by | Shape |
+|--------|-----------|-------|
+| **Stock** | Creality's own `[box]` module (K1 and K2) | Per-unit `T1`–`T4` objects, each holding four parallel arrays; top-level `filament` / `map` / `same_material` / `auto_refill` |
+| **Flat** | Community Kalico ports carrying a reimplemented `box.py` | A single `slots[]` array of self-describing objects; top-level `loaded_slot` / `slot_filament_mask` / `load_path` / `materials` |
+
+`AmsBackendCfs::detect_schema()` picks between them **from the payload** — a `T{n}` key means Stock, otherwise a `slots` array means Flat, and anything ambiguous defaults to Stock. It deliberately does **not** consult `PrinterDetector`: the affected printers report as stock K2 Plus hardware by every model signal, so model detection cannot see the firmware swap.
+
+Everything from here to "Disconnected Units" describes the **stock** schema. The flat schema is documented under [Community Kalico port](#community-kalico-port) below.
+
 #### Top-Level Fields
 
 | Field | Type | Description |
@@ -301,6 +314,139 @@ Colors are 7-character hex strings with a leading `0`: `"0RRGGBB"`. Examples:
 
 Units that are not connected report all fields as `"None"` or `"-1"`.
 
+### Community Kalico port
+
+Some K2 Plus owners run a community Kalico (Danger-Klipper) port instead of Creality's firmware — [`Jacob10383/kalico`](https://github.com/Jacob10383/kalico), a fork of `KalicoCrew/kalico`, with Creality's closed CFS module replaced by a clean-room `box.py`. Moonraker reports the replacement modules as **untracked** files (`box.py`, `box_addr.py`, `box_catalog.py`, `box_change.py`, `box_protocol.py`): they are dropped in by the port's installer and are not committed to the kalico fork — searching GitHub for them finds nothing. They are, however, **downloadable**: see [Getting the module source](#getting-the-module-source). First seen in debug bundle QJKZEMTS on v0.99.106.
+
+**Identifying it.** The printer looks like stock K2 Plus hardware in every model signal, so identify it from the firmware:
+
+| Signal | Where | Value |
+|--------|-------|-------|
+| Klipper repo | `moonraker.log` git repo block | `Jacob10383/kalico`, branch `main` |
+| Klipper version | `printer.klipper_version` | CalVer, e.g. `v2026.08.00-0-g64af1fb2` (stock is `v0.12.x`) |
+| Box schema | `printer.box` | has `slots[]`, no `T1` |
+| Config | `printer.cfg` | `[box]` with `box_count = N` |
+
+Stock CFS macros are **entirely absent**: zero `CR_BOX_*`, zero `BOX_MODIFY_TN_DATA`, zero `M8200`.
+
+#### Getting the module source
+
+The port ships from `https://firmware.jacobean.xyz`, and every artifact is content-addressed, so the box modules can be read **without flashing anything and without pulling the 300 MB rootfs**. Do this before reviewing any Fork change — the command surface is not guessable and the modules are the only authority.
+
+```bash
+curl -sS -o install.py https://firmware.jacobean.xyz/install.py   # READ it, never run it
+grep -E '^(FIRMWARE_VERSION|HELIX_VERSION)' install.py           # pinned release + HelixScreen build
+curl -sS https://firmware.jacobean.xyz/<FIRMWARE_VERSION>/index  # rootfs/kernel/swap/bootstrap/extras digests
+```
+
+The index's `extras.manifest_sha256` points at a manifest listing every Klipper module with its own `sha256`. Objects live at `/<FIRMWARE_VERSION>/o/<sha256>`, so fetching one module is:
+
+```bash
+curl -sS -o box.py https://firmware.jacobean.xyz/<FIRMWARE_VERSION>/o/<box.py sha256 from the manifest>
+shasum -a 256 box.py   # must match the manifest digest
+```
+
+`install.py` is a **kernel and rootfs flasher**. Downloading and reading it is safe; executing it is not. Nothing in this workflow needs it to run.
+
+Re-verified 2026-08-07 against `FIRMWARE_VERSION = 6.18`: `box.py` 2776 lines, sha256 `4cf85e6d…2d28695a`, now declaring `API_VERSION = 1` and `LEGACY_WIDGET_VERSION = 2`, with `_BOX_SLOT_CLEAR` registered in `_register_commands`. The payload emits **both** `api_version` and `fluidd_widget_version`, so a module carrying the new field is still readable by a HelixScreen that keys on the old one.
+
+> **`FIRMWARE_VERSION` does not identify the module.** The 2026-08-06 fetch of the *same* `6.18` pin returned a 2754-line `box.py` with `WIDGET_VERSION = 2` and no `_BOX_SLOT_CLEAR`. The artifacts were republished in place without a version bump, so two printers can both report `6.18` and run different command surfaces. Trust the manifest digest, not the version string — and re-fetch before relying on any earlier reading here.
+
+`_register_commands` in `box.py` plus `_register_t_commands` (the per-slot `T<n>` handlers, registered only after bus enumeration) are the full command surface.
+
+#### Flat schema fields
+
+Top-level:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `slots` | array | Self-describing slot objects (see below) — includes one `external: true` entry for the external spool holder |
+| `loaded_slot` | int | Index into `slots[]`, `-1` when nothing is loaded |
+| `loaded_mask` | int | Bitmask of loaded slots |
+| `slot_filament_mask` | int | Bitmask of slots holding filament (`15` = all four bays) |
+| `temp_c` / `humidity_pct` | number | Unit environment — JSON **numbers**, not the stock schema's strings |
+| `state` / `state_code` | string / int | e.g. `"IDLE"` / `0` |
+| `status` / `status_code` | string / int | e.g. `"OK"` / `0` |
+| `runout` | null \| object | `null` while idle; a descriptor once tripped |
+| `runout_swap_enabled` | bool | Endless-spool equivalent |
+| `materials` | dict | `{"PLA": {"target_temp": 220}, ...}` — per-material recommended temps, keyed by the same string each slot reports. Stock has no equivalent. |
+| `load_path` | object | Shared feed path: `encoder`, `buffer`, `printhead_sensor`, `clog_detection` |
+| `data_ready` / `driver_ready` | bool | Module readiness |
+| `api_version` | int | Box command/status contract version; HelixScreen supports version 1. This is the dialect signal. |
+| `fluidd_widget_version` | int | The module's `LEGACY_WIDGET_VERSION`, still emitted alongside `api_version` for the port's own Fluidd widget. Not a command-set version — it stayed at 2 across a release that added commands. |
+
+Per-slot (`slots[i]`):
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `index` | int | Bay number. HelixScreen indexes by **vector position** instead, so a sparse payload cannot leave holes; a mismatch logs a warning. |
+| `name` | string | Spool name, e.g. `"2026_PETG"` |
+| `material` | string | Plain material name — **no code table**, unlike stock's `101001` |
+| `color` | string | Conventional `"#RRGGBB"` — **not** stock's leading-zero `"0RRGGBB"` |
+| `brand` | string | `"None"` is the absent-brand sentinel |
+| `present` / `loaded` | bool | Drive `SlotStatus` directly |
+| `external` | bool | `true` marks the external spool holder, excluded from the unit's bays |
+| `rfid_percent` / `rfid_reserve` | null \| … | Present but no per-slot UID — see gaps below |
+| `spoolman_id` | null \| int | Null until linked |
+
+#### Command dialect
+
+`CfsMacroVariant::Fork` — a **third** dialect, independent of the schema axis. The commands are high-level and self-contained: `box.py` owns the whole feed/purge/park sequence, so there is no envelope for HelixScreen to assemble and every operation is a single line.
+
+Signatures below are read from the module's own `_register_commands` / `cmd_*` handlers, not inferred:
+
+| Command | Signature | Notes |
+|---------|-----------|-------|
+| `BOX_LOAD` | `SLOT=<0..15>` | Low-level feed primitive. HelixScreen does not call it. |
+| `BOX_UNLOAD` | `[MANUAL=0\|1]` | **Rejects `SLOT`** outright: "BOX_UNLOAD no longer accepts SLOT". |
+| `T<n>` | `[FLUSH=0\|1]`, default 1 | Load/tool change. HelixScreen emits bare `T<n>`; the registered command owns the change engine (cut → retract → load → flush). |
+| `_BOX_SLOT_SET` | `SLOT=<n> MATERIAL="<str>" COLOR="#RRGGBB" BRAND="..." NAME="..." SPOOLMAN_ID=<id\|-1>` | SLOT, MATERIAL, and COLOR are **required**. The COLOR quotes are required because Kalico treats a bare `#` as a comment. Helix always sends the optional fields; `-1` clears the Spoolman link. Material is uppercased by the module. |
+| `_BOX_SLOT_CLEAR` | `SLOT=<n>` | Removes the persisted Box profile for the slot. |
+| `_BOX_MATERIAL_SET` | `MATERIAL=<str> TARGET_TEMP=<170..350>` | Edits the `materials` table. |
+| `_BOX_SET_RUNOUT_SWAP` | `ENABLE=0\|1` | Endless-spool equivalent. |
+| `BOX_CUT`, `NOZZLE_CLEAN`, `BOX_GO_TO_WASTEBIN`, `BOX_RUNOUT_CHECK`, `BOX_DEBUG`, `BOX_BUFFER_RETRACT` | no parameters | |
+
+> **There is no `BOX_CHANGE`.** The name appears only in user-written alias macros (e.g. `CFS_CHANGE` → `BOX_CHANGE {rawparams}`) that this firmware does not define — those aliases are dead. Tool change is `T<n>`.
+
+`state` and `status` arrive as **strings** already (`IDLE`/`PRELOAD`/`PRINT`/`RELOAD`/`ERROR`/`TEST`, and 22 status names including `RUNOUT`, `SLOT_EMPTY`, `FEED_TIMEOUT`, `ODOMETER_STALLED`, `BUFFER_REFILL_STALLED`). Use those; do not attempt to decode `state_code`/`status_code` numerically.
+
+#### Detection
+
+Two independent signals, both from the payload:
+
+- **Schema** → `detect_schema()`: a `T{n}` key means Stock; otherwise a `slots` array means Flat.
+- **Dialect** → `detect_fork_dialect()`: `api_version == 1` explicitly selects this Box command set; do not infer commands from the `slots[]` layout.
+
+The dialect signal deliberately is not `has_macro("BOX_LOAD")`: these commands are registered in Python via `gcode.register_command`, so they are **not** gcode_macros and never appear in `printer.objects.list`. A flat payload *without* a supported `api_version` parses fine but keeps the stock dialect and stays gated — a different flat-schema firmware must not inherit this one's command set.
+
+#### Current support status
+
+**Fork command paths enabled.** Slot display, materials, colors, environment and path sensors parse; load / unload / tool-change / slot-metadata writes all emit verified commands. `reject_if_flat_schema()` gates only a flat box whose API version we cannot identify.
+
+Remaining gaps, degraded rather than broken:
+
+| Stock feature | Flat behavior |
+|---------------|---------------|
+| RFID fingerprinting (`build_cfs_slot_uid`) for hardware-change detection | No per-slot UID in the schema; baseline/clear logic no-ops |
+| `set_tool_mapping` via TNN + `box.map` | No equivalent — the module maps tools to slots 1:1 |
+| Bypass / external spool load | The `external: true` entry is observable and `T<external>` exists, but the flow is untested here |
+
+Note `push_slot_color_to_firmware` is **not** a gap: its Fork counterpart is `_BOX_SLOT_SET`, which writes color, brand, name, and Spoolman link together. Because it requires a material, the backend reads the current slot profile to build the write. The explicit Clear Spool action emits `_BOX_SLOT_CLEAR`.
+
+Parse: `AmsBackendCfs::parse_flat_box_status()`. Builders: `load_gcode` / `unload_gcode` / `swap_gcode` / `slot_set_gcode`. Tests: `tests/unit/test_ams_cfs_flat_schema.cpp` (`[flat]`, `[fork]`), built on the real QJKZEMTS payload.
+
+#### Getting the module
+
+The firmware is installed from `https://firmware.jacobean.xyz/install.py`, which reads a content-addressed store. The Klipper extras are listed individually in an `extras` manifest, so a single module can be fetched without the 300 MB rootfs:
+
+```bash
+curl -s https://firmware.jacobean.xyz/6.18/index          # -> extras.manifest_sha256
+curl -s https://firmware.jacobean.xyz/6.18/o/<manifest_sha>   # -> {"files": {"box.py": {"sha256": ...}}}
+curl -s https://firmware.jacobean.xyz/6.18/o/<box_py_sha> -o box.py
+```
+
+Treat it as an **interface reference only** — command names, parameter names, JSON field names. Do not port its implementation.
+
 ### Moonraker Object: `filament_rack`
 
 External filament rack (non-CFS) state:
@@ -354,6 +500,8 @@ The K2 chamber is controlled by the `M141` macro, which coordinates two objects:
 Because the heater target reads 0 while maintaining, HelixScreen synthesizes a canonical display target and mode rather than displaying the raw heater target. See [MULTI_EXTRUDER_TEMPERATURE.md § Chamber Heating (M141)](../MULTI_EXTRUDER_TEMPERATURE.md#chamber-heating-m141) for the subject/binding details.
 
 ### GCode Commands (from `box_wrapper.so` decompilation)
+
+These are the **stock K2** commands (`CfsMacroVariant::K2`). Two other dialects exist: the K1 official CFS upgrade's non-prefixed `BOX_*_MATERIAL` set (`CfsMacroVariant::K1`, see `CREALITY_K1_SUPPORT.md`), and the community Kalico port's high-level `T<n>` / `BOX_UNLOAD` set (`CfsMacroVariant::Fork`, see [Community Kalico port](#community-kalico-port)). Dialect and box schema vary **independently** — do not infer one from the other.
 
 #### Filament Operations
 | Command | Description |
@@ -529,6 +677,10 @@ HelixScreen auto-detects K2 printers using heuristics from `config/printer_datab
 | Hostname `creality` | 60 | Hostname contains "creality" |
 | CoreXY kinematics | 40 | CoreXY motion system |
 
+These identify the **printer**, not its firmware. A community Kalico port trips every one of them — `box`, `motor_control`, `fan_feedback` and the hostname are all still present — so model detection reports a stock K2 Plus. Anything that varies with firmware rather than hardware (the CFS box schema, the macro dialect) must therefore be detected from the payload or the macro list, never from `PrinterDetector`. See [Community Kalico port](#community-kalico-port).
+
+Note that `chamber_temp` is **not** universal on K2 hardware either: the Kalico port drops `temperature_sensor chamber_temp` and exposes chamber temperature through `heater_generic chamber_heater` instead.
+
 ## Known Limitations
 
 ### Display
@@ -537,6 +689,7 @@ HelixScreen auto-detects K2 printers using heuristics from `config/printer_datab
 ### CFS
 - **Closed-source protocol** — CFS communication relies on `box_wrapper.cpython-39.so` binary blob. Protocol has been reverse-engineered from strings but full reimplementation is not yet available.
 - **Material database is cloud-fetched** — The material database at `/mnt/UDISK/creality/userdata/box/material_database.json` is downloaded from Creality's cloud. HelixScreen should include a fallback mapping for common material type codes.
+- **Community Kalico ports require Box API v1 for control** — the flat status layout still parses without it, but load/unload/tool-change stay gated until `api_version == 1` identifies the supported command dialect. See [Community Kalico port](#community-kalico-port).
 
 ### Platform
 - **Low CPU** — Dual Cortex-A7 at ~57 BogoMIPS. Performance-sensitive features (bed mesh 3D, animations) may need throttling.

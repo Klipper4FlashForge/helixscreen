@@ -36,6 +36,23 @@
 namespace helix {
 namespace gcode {
 
+namespace {
+
+/// Matrix that turns a raw quantized int16 position back into millimetres:
+/// `mm = q / scale_factor + min_bounds`. Composed into u_mvp / u_model_view so
+/// the GPU can consume PackedVertex positions directly and the vertex shader
+/// needs no knowledge of quantization. See PackedVertex in
+/// include/gcode_geometry_builder.h.
+glm::mat4 dequant_matrix(const QuantizationParams& q) {
+    // A zero scale would produce a degenerate matrix and collapse the model to a
+    // point; fall back to identity-scale rather than emit NaNs.
+    const float inv = (q.scale_factor != 0.0f) ? (1.0f / q.scale_factor) : 1.0f;
+    return glm::translate(glm::mat4(1.0f), q.min_bounds) *
+           glm::scale(glm::mat4(1.0f), glm::vec3(inv));
+}
+
+} // namespace
+
 // ============================================================
 // RAII GL Handle Destructors
 // ============================================================
@@ -852,31 +869,7 @@ void GCodeGLESRenderer::upload_geometry(const RibbonGeometry& geom, std::vector<
             buf.resize(buf_bytes);
         }
 
-        auto* out = reinterpret_cast<PackedVertex*>(buf.data());
-        for (size_t s = 0; s < strip_count; ++s) {
-            const auto& strip = geom.strips[first_strip + s];
-            // Strip order: BL(0), BR(1), TL(2), TR(3)
-            // Triangle 1: BL-BR-TL,  Triangle 2: BR-TR-TL
-            static constexpr int kTriIndices[6] = {0, 1, 2, 1, 3, 2};
-
-            for (int ti = 0; ti < 6; ++ti) {
-                const auto& vert = geom.vertices[strip[static_cast<size_t>(kTriIndices[ti])]];
-                glm::vec3 pos = geom.quantization.dequantize_vec3(vert.position);
-                const glm::vec3& normal = geom.normal_palette[vert.normal_index];
-
-                out->position[0] = pos.x;
-                out->position[1] = pos.y;
-                out->position[2] = pos.z;
-
-                uint32_t rgb = 0x26A69A; // Default teal
-                if (vert.color_index < geom.color_palette.size()) {
-                    rgb = geom.color_palette[vert.color_index];
-                }
-                PackedVertex::encode_color(rgb, out->color);
-                PackedVertex::encode_normal(normal, out->normal);
-                ++out;
-            }
-        }
+        geom.expand_strips(first_strip, strip_count, reinterpret_cast<PackedVertex*>(buf.data()));
 
         GLBufferHandle vbo_handle;
         glGenBuffers(1, &vbo_handle.id);
@@ -963,29 +956,8 @@ bool GCodeGLESRenderer::upload_geometry_chunk(const RibbonGeometry& geom,
                 buf.resize(buf_bytes);
             }
 
-            auto* out = reinterpret_cast<PackedVertex*>(buf.data());
-            for (size_t s = 0; s < strip_count; ++s) {
-                const auto& strip = geom.strips[first_strip + s];
-                static constexpr int kTriIndices[6] = {0, 1, 2, 1, 3, 2};
-
-                for (int ti = 0; ti < 6; ++ti) {
-                    const auto& vert = geom.vertices[strip[static_cast<size_t>(kTriIndices[ti])]];
-                    glm::vec3 pos = geom.quantization.dequantize_vec3(vert.position);
-                    const glm::vec3& normal = geom.normal_palette[vert.normal_index];
-
-                    out->position[0] = pos.x;
-                    out->position[1] = pos.y;
-                    out->position[2] = pos.z;
-
-                    uint32_t rgb = 0x26A69A;
-                    if (vert.color_index < geom.color_palette.size()) {
-                        rgb = geom.color_palette[vert.color_index];
-                    }
-                    PackedVertex::encode_color(rgb, out->color);
-                    PackedVertex::encode_normal(normal, out->normal);
-                    ++out;
-                }
-            }
+            geom.expand_strips(first_strip, strip_count,
+                               reinterpret_cast<PackedVertex*>(buf.data()));
 
             GLBufferHandle vbo_handle;
             glGenBuffers(1, &vbo_handle.id);
@@ -1099,7 +1071,7 @@ void GCodeGLESRenderer::render(lv_layer_t* layer, const ParsedGCodeFile& gcode,
             // the compact vertices/strips directly, so these aren't needed.
             size_t freed = 0;
             for (auto& pb : geometry_->prepared_buffers) {
-                freed += pb.data.capacity() * sizeof(float);
+                freed += pb.data.capacity(); // data is std::vector<uint8_t> — capacity is bytes
                 pb.data.clear();
                 pb.data.shrink_to_fit();
             }
@@ -1263,11 +1235,22 @@ void GCodeGLESRenderer::render_to_fbo(const ParsedGCodeFile& gcode, const GCodeC
     glm::mat4 view = camera.get_view_matrix();
     glm::mat3 normal_mat = glm::transpose(glm::inverse(glm::mat3(view * model)));
 
+    // Vertex positions arrive as raw quantized int16. Dequantization is affine
+    // (mm = q / scale_factor + min_bounds), so it composes into the matrices we
+    // already upload instead of costing a uniform and a shader edit. Applied on
+    // the right so it runs first, before model/view/projection.
+    //
+    // Normals are unaffected: they are a separate octahedral attribute, and this
+    // transform is a uniform positive scale plus a translation, which cannot
+    // skew a normal or flip winding.
+    const glm::mat4 dequant = dequant_matrix(active_geometry_->quantization);
+
     // Set uniforms
-    glUniformMatrix4fv(u_mvp_, 1, GL_FALSE, glm::value_ptr(mvp));
+    glm::mat4 mvp_dequant = mvp * dequant;
+    glUniformMatrix4fv(u_mvp_, 1, GL_FALSE, glm::value_ptr(mvp_dequant));
     glUniformMatrix3fv(u_normal_matrix_, 1, GL_FALSE, glm::value_ptr(normal_mat));
 
-    glm::mat4 model_view = view * model;
+    glm::mat4 model_view = view * model * dequant;
     glUniformMatrix4fv(u_model_view_, 1, GL_FALSE, glm::value_ptr(model_view));
 
     // Light 0: Camera-following directional light (tracks camera position)
@@ -1369,7 +1352,9 @@ void GCodeGLESRenderer::draw_layers(const std::vector<LayerVBO>& vbos, int layer
 
         glBindBuffer(GL_ARRAY_BUFFER, lv.vbo);
 
-        glVertexAttribPointer(static_cast<GLuint>(a_position_), 3, GL_FLOAT, GL_FALSE,
+        // Position: quantized int16, NOT normalized — the raw integer reaches the
+        // shader and u_mvp / u_model_view carry the dequantization.
+        glVertexAttribPointer(static_cast<GLuint>(a_position_), 3, GL_SHORT, GL_FALSE,
                               static_cast<GLsizei>(kStride),
                               reinterpret_cast<void*>(PackedVertex::position_offset()));
 
@@ -1823,7 +1808,7 @@ size_t GCodeGLESRenderer::get_memory_usage() const {
     if (geometry_) {
         total += geometry_->vertices.size() * sizeof(RibbonVertex);
         total += geometry_->strips.size() * sizeof(TriangleStrip);
-        total += geometry_->normal_palette.size() * sizeof(glm::vec3);
+        total += geometry_->strip_color_index.size() * sizeof(uint8_t);
     }
     if (draw_buf_) {
         total += static_cast<size_t>(draw_buf_width_ * draw_buf_height_ * 3);

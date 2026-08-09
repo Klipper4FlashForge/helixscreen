@@ -186,3 +186,216 @@ TEST_CASE("log_target_name: round-trip", "[logging][config]") {
     REQUIRE(std::string(log_target_name(LogTarget::File)) == "file");
     REQUIRE(std::string(log_target_name(LogTarget::Console)) == "console");
 }
+
+// ============================================================================
+// should_add_console() tests — the console sink gate (#1105)
+//
+// Regression cover for: `helix-screen --test -vv | tee log.txt` produced ZERO
+// spdlog output.  detect_best_target() returns Journal on any box with
+// /run/systemd/journal/socket, and the Journal branch attached the console sink
+// only when isatty(stdout) — so piping (the documented way to capture a
+// session) silently discarded every line at every -v level.
+//
+// The force must stay narrow: the shipped launcher synthesizes --log-level/-vv
+// from HELIX_LOG_LEVEL / HELIX_DEBUG (scripts/helix-launcher.sh), and
+// serve-local-update.sh writes HELIX_LOG_LEVEL=debug onto live devices — so
+// force_console IS reachable under systemd.  Forcing a console sink there would
+// double-log every line into the journal / launcher.log, which is exactly the
+// Snapmaker U1 tmpfs blowout (498 MB /tmp/helixscreen.log) the TTY gate exists
+// to prevent.  Hence: force on TTY/pipe, never on regular file or socket.
+// ============================================================================
+
+TEST_CASE("should_add_console: Console target always attaches console", "[logging][config]") {
+    // Console is the ONLY sink for this target — dropping it means no output at all.
+    for (bool force : {false, true}) {
+        REQUIRE(should_add_console(LogTarget::Console, true, force, false, StdoutKind::Tty));
+        REQUIRE(should_add_console(LogTarget::Console, true, force, false, StdoutKind::Pipe));
+        REQUIRE(should_add_console(LogTarget::Console, true, force, false, StdoutKind::File));
+        REQUIRE(should_add_console(LogTarget::Console, true, force, false, StdoutKind::Socket));
+        REQUIRE(should_add_console(LogTarget::Console, true, force, false, StdoutKind::Other));
+    }
+}
+
+TEST_CASE("should_add_console: Android target never attaches console", "[logging][config]") {
+    // stdout is invisible under logcat; android_sink carries the output.
+    for (bool force : {false, true}) {
+        REQUIRE_FALSE(should_add_console(LogTarget::Android, true, force, false, StdoutKind::Tty));
+        REQUIRE_FALSE(should_add_console(LogTarget::Android, true, force, false, StdoutKind::Pipe));
+        REQUIRE_FALSE(should_add_console(LogTarget::Android, true, force, false, StdoutKind::File));
+        REQUIRE_FALSE(
+            should_add_console(LogTarget::Android, true, force, false, StdoutKind::Socket));
+        REQUIRE_FALSE(
+            should_add_console(LogTarget::Android, true, force, false, StdoutKind::Other));
+    }
+}
+
+TEST_CASE("should_add_console: structured targets always attach on a TTY", "[logging][config]") {
+    // Interactive shell run -> user sees colored output alongside the journal.
+    // Unchanged behavior, with or without an explicit -v.
+    for (bool force : {false, true}) {
+        for (auto target : {LogTarget::Journal, LogTarget::Syslog, LogTarget::File}) {
+            REQUIRE(should_add_console(target, true, force, false, StdoutKind::Tty));
+        }
+    }
+}
+
+TEST_CASE("should_add_console: structured targets stay quiet without an explicit -v",
+          "[logging][config]") {
+    // No flag -> only a TTY gets a console. Preserves the daemon behavior.
+    for (auto target : {LogTarget::Journal, LogTarget::Syslog, LogTarget::File}) {
+        REQUIRE_FALSE(should_add_console(target, true, false, false, StdoutKind::Pipe));
+        REQUIRE_FALSE(should_add_console(target, true, false, false, StdoutKind::File));
+        REQUIRE_FALSE(should_add_console(target, true, false, false, StdoutKind::Socket));
+        REQUIRE_FALSE(should_add_console(target, true, false, false, StdoutKind::Other));
+    }
+}
+
+TEST_CASE("should_add_console: explicit -v forces console for a PIPE", "[logging][config]") {
+    // The #1105 fix: `--test -vv | tee run.log` on a journald box. A pipe means a
+    // human is watching, so honor the flag even though stdout is not a TTY.
+    for (auto target : {LogTarget::Journal, LogTarget::Syslog, LogTarget::File}) {
+        REQUIRE(should_add_console(target, true, true, false, StdoutKind::Pipe));
+    }
+}
+
+TEST_CASE("should_add_console: explicit -v does NOT force console for a regular file",
+          "[logging][config]") {
+    // The daemon redirect (`>> $LOGFILE 2>&1` in the U1/K1/K2/CC1/AD5M init
+    // scripts). stdout already lands in the file the structured sink writes, so a
+    // console sink here double-logs every line -> the U1 498 MB tmpfs blowout.
+    // Reachable because the launcher synthesizes --log-level from HELIX_LOG_LEVEL.
+    for (auto target : {LogTarget::Journal, LogTarget::Syslog, LogTarget::File}) {
+        REQUIRE_FALSE(should_add_console(target, true, true, false, StdoutKind::File));
+    }
+}
+
+TEST_CASE("should_add_console: explicit -v does NOT force console for a socket",
+          "[logging][config]") {
+    // systemd StandardOutput=journal hands the process a socket. Forcing a console
+    // sink writes every line into the journal a second time.
+    for (auto target : {LogTarget::Journal, LogTarget::Syslog, LogTarget::File}) {
+        REQUIRE_FALSE(should_add_console(target, true, true, false, StdoutKind::Socket));
+    }
+}
+
+TEST_CASE("should_add_console: unknown stdout kind is not forceable", "[logging][config]") {
+    // fstat() failed or an fd type we do not classify — fall back to the plain
+    // isatty-only behavior rather than risk double-logging a daemon.
+    for (auto target : {LogTarget::Journal, LogTarget::Syslog, LogTarget::File}) {
+        REQUIRE_FALSE(should_add_console(target, true, true, false, StdoutKind::Other));
+    }
+}
+
+TEST_CASE("should_add_console: enable_console=false vetoes every combination",
+          "[logging][config]") {
+    // Master switch — must beat force_console, a live TTY, and every target.
+    for (bool force : {false, true}) {
+        for (auto kind : {StdoutKind::Tty, StdoutKind::Pipe, StdoutKind::File, StdoutKind::Socket,
+                          StdoutKind::Other}) {
+            for (auto target : {LogTarget::Console, LogTarget::Journal, LogTarget::Syslog,
+                                LogTarget::File, LogTarget::Android}) {
+                REQUIRE_FALSE(should_add_console(target, false, force, false, kind));
+            }
+        }
+    }
+}
+
+// ============================================================================
+// test_mode dimension (#1105 gap closer)
+//
+// #1105's literal repro is `./build/bin/helix-screen --test -vv`. On a TTY that
+// always worked, so the reporter must have redirected stdout — and if they used
+// `> file` rather than `| tee`, the pipe-only force still leaves them with
+// nothing.  --test never runs in production (no systemd unit, init script, procd
+// shim, or launcher passes it), so attaching the console unconditionally in test
+// mode cannot reach a daemonized double-log path and carries no blowout risk.
+// ============================================================================
+
+TEST_CASE("should_add_console: test mode attaches console for ANY stdout kind",
+          "[logging][config]") {
+    // The gap closer: `--test -vv > file` and `--test -vv` under any redirect
+    // must produce output. No -v needed either — test mode alone is enough.
+    for (bool force : {false, true}) {
+        for (auto target : {LogTarget::Journal, LogTarget::Syslog, LogTarget::File}) {
+            REQUIRE(should_add_console(target, true, force, true, StdoutKind::Tty));
+            REQUIRE(should_add_console(target, true, force, true, StdoutKind::Pipe));
+            REQUIRE(should_add_console(target, true, force, true, StdoutKind::File));
+            REQUIRE(should_add_console(target, true, force, true, StdoutKind::Socket));
+            REQUIRE(should_add_console(target, true, force, true, StdoutKind::Other));
+        }
+    }
+}
+
+TEST_CASE("should_add_console: test mode does NOT override the Android rule", "[logging][config]") {
+    // Deliberate precedence call: Android + test mode is not a real configuration,
+    // and stdout is invisible under logcat regardless, so Android stays false.
+    for (bool force : {false, true}) {
+        for (auto kind : {StdoutKind::Tty, StdoutKind::Pipe, StdoutKind::File, StdoutKind::Socket,
+                          StdoutKind::Other}) {
+            REQUIRE_FALSE(should_add_console(LogTarget::Android, true, force, true, kind));
+        }
+    }
+}
+
+TEST_CASE("should_add_console: test mode is still vetoed by enable_console=false",
+          "[logging][config]") {
+    // Master switch outranks test mode too.
+    for (auto kind : {StdoutKind::Tty, StdoutKind::Pipe, StdoutKind::File, StdoutKind::Socket,
+                      StdoutKind::Other}) {
+        REQUIRE_FALSE(should_add_console(LogTarget::Journal, false, true, true, kind));
+    }
+}
+
+TEST_CASE("should_add_console: production guard intact when test mode is off",
+          "[logging][config]") {
+    // Regression fence for the blowout guard: with test_mode=false, an explicit
+    // -v must still NOT force a console onto a daemon's file/socket stdout.
+    for (auto target : {LogTarget::Journal, LogTarget::Syslog, LogTarget::File}) {
+        REQUIRE_FALSE(should_add_console(target, true, true, false, StdoutKind::File));
+        REQUIRE_FALSE(should_add_console(target, true, true, false, StdoutKind::Socket));
+        REQUIRE_FALSE(should_add_console(target, true, true, false, StdoutKind::Other));
+        // ...but a pipe still works (the #1105 fix for non-test runs).
+        REQUIRE(should_add_console(target, true, true, false, StdoutKind::Pipe));
+    }
+}
+
+// ============================================================================
+// Ring capacity scales with device RAM
+// ============================================================================
+
+TEST_CASE("ring_capacity_for_ram scales with the machine", "[logging][config][ring]") {
+    using helix::logging::ring_capacity_for_ram;
+
+    SECTION("small boards keep the historical floor, never regress") {
+        REQUIRE(ring_capacity_for_ram(107) == 2000); // AD5M
+        REQUIRE(ring_capacity_for_ram(128) == 2048); // CC1, just over the floor
+    }
+
+    SECTION("mid-range boards get proportionally more") {
+        // AD5X: 473 MB -> 7568 lines, ~4x the old fixed 2000.
+        REQUIRE(ring_capacity_for_ram(473) == 7568);
+        REQUIRE(ring_capacity_for_ram(473) > ring_capacity_for_ram(128));
+    }
+
+    SECTION("large machines are capped — more lines stop paying for themselves") {
+        REQUIRE(ring_capacity_for_ram(2048) == 20000);
+        REQUIRE(ring_capacity_for_ram(8192) == 20000);
+    }
+
+    SECTION("failed detection falls back to the floor rather than 0") {
+        REQUIRE(ring_capacity_for_ram(0) == 2000);
+    }
+
+    SECTION("monotonic in RAM") {
+        size_t prev = 0;
+        for (size_t mb : {0u, 64u, 107u, 128u, 256u, 473u, 512u, 1024u, 2048u, 4096u}) {
+            size_t cap = ring_capacity_for_ram(mb);
+            if (mb > 0) {
+                REQUIRE(cap >= prev);
+            }
+            REQUIRE(cap >= 2000);
+            REQUIRE(cap <= 20000);
+            prev = cap;
+        }
+    }
+}

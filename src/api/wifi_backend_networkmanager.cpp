@@ -4,6 +4,7 @@
 #include "wifi_backend_networkmanager.h"
 
 #include "app_globals.h"
+#include "log_redact.h"
 #include "spdlog/spdlog.h"
 
 #if !defined(__APPLE__) && !defined(__ANDROID__)
@@ -81,6 +82,14 @@ WiFiError WifiBackendNetworkManager::start() {
     // the reset a stale prev_connected_=true suppresses the CONNECTED event on
     // NetworkManager auto-reconnect, leaving the icon stale (#1059).
     prev_connected_.store(false);
+
+    // Seed the radio cache from reality rather than leaving it at the
+    // optimistic `true` default. is_radio_enabled() is read on the UI thread,
+    // so it can never shell out for itself.
+    if (std::optional<bool> radio = query_radio_enabled()) {
+        radio_enabled_.store(*radio);
+        spdlog::debug("[WifiBackend] NM: WiFi radio is {}", *radio ? "on" : "off");
+    }
 
     // Start background status polling thread. Wrap — EAGAIN throws ([L083]).
     status_running_ = true;
@@ -464,7 +473,10 @@ void WifiBackendNetworkManager::scan_thread_func() {
 
     // Get scan results
     std::string output =
-        exec_nmcli("-t -f IN-USE,SSID,SIGNAL,SECURITY device wifi list ifname " + wifi_interface_);
+        // FREQ is appended last so a build of nmcli that does not know the field
+        // simply yields a shorter row, which parse_scan_output still accepts.
+        exec_nmcli("-t -f IN-USE,SSID,SIGNAL,SECURITY,FREQ device wifi list ifname " +
+                   wifi_interface_);
 
     if (!scan_active_) {
         spdlog::debug("[WifiBackend] NM: Scan cancelled after fetch");
@@ -550,9 +562,9 @@ std::vector<WiFiNetwork> WifiBackendNetworkManager::parse_scan_output(const std:
             continue;
         }
 
-        // nmcli -t -f IN-USE,SSID,SIGNAL,SECURITY device wifi list
-        // Format: IN-USE:SSID:SIGNAL:SECURITY
-        // IN-USE is " " or "*"
+        // nmcli -t -f IN-USE,SSID,SIGNAL,SECURITY,FREQ device wifi list
+        // Format: IN-USE:SSID:SIGNAL:SECURITY:FREQ
+        // IN-USE is " " or "*"; FREQ looks like "2412 MHz" and may be absent.
         auto fields = split_nmcli_fields(line);
         if (fields.size() < 4) {
             spdlog::trace("[WifiBackend] NM: Skipping malformed scan line ({} fields): {}",
@@ -564,6 +576,7 @@ std::vector<WiFiNetwork> WifiBackendNetworkManager::parse_scan_output(const std:
         std::string ssid = fields[1];
         std::string signal_str = fields[2];
         std::string security = fields[3];
+        std::string freq_str = (fields.size() >= 5) ? fields[4] : "";
 
         // Skip hidden networks (empty SSID)
         if (ssid.empty()) {
@@ -604,30 +617,27 @@ std::vector<WiFiNetwork> WifiBackendNetworkManager::parse_scan_output(const std:
             security_type = security;
         }
 
-        networks.emplace_back(ssid, signal, is_secured, security_type);
-    }
-
-    // Deduplicate by SSID (keep strongest signal) - same as wpa_supplicant backend
-    if (networks.size() > 1) {
-        std::unordered_map<std::string, size_t> best_by_ssid;
-        for (size_t i = 0; i < networks.size(); ++i) {
-            auto it = best_by_ssid.find(networks[i].ssid);
-            if (it == best_by_ssid.end()) {
-                best_by_ssid[networks[i].ssid] = i;
-            } else if (networks[i].signal_strength > networks[it->second].signal_strength) {
-                it->second = i;
+        // nmcli renders FREQ as "<n> MHz"; stoi stops at the space.
+        int freq_mhz = 0;
+        if (!freq_str.empty()) {
+            try {
+                freq_mhz = std::stoi(freq_str);
+            } catch (const std::exception&) {
+                spdlog::trace("[WifiBackend] NM: Invalid frequency '{}'", freq_str);
             }
         }
 
-        if (best_by_ssid.size() < networks.size()) {
-            std::vector<WiFiNetwork> deduped;
-            deduped.reserve(best_by_ssid.size());
-            for (const auto& [ssid, idx] : best_by_ssid) {
-                deduped.push_back(networks[idx]);
-            }
+        networks.emplace_back(ssid, signal, is_secured, security_type, freq_mhz);
+    }
+
+    // Collapse per-BSS rows into one per SSID, keeping the union of their bands
+    // so a 5GHz twin that loses on RSSI is still advertised (helixscreen#1189).
+    if (networks.size() > 1) {
+        size_t raw_count = networks.size();
+        networks = wifi_merge_networks_by_ssid(networks);
+        if (networks.size() < raw_count) {
             spdlog::debug("[WifiBackend] NM: Deduplicated {} networks to {} unique SSIDs",
-                          networks.size(), deduped.size());
-            networks = std::move(deduped);
+                          raw_count, networks.size());
         }
     }
 
@@ -691,7 +701,7 @@ WiFiError WifiBackendNetworkManager::connect_network(const std::string& ssid,
         }
     }
 
-    spdlog::info("[WifiBackend] NM: Connecting to network '{}'", clean_ssid);
+    spdlog::info("[WifiBackend] NM: Connecting to network '{}'", helix::redact::ssid(clean_ssid));
 
     // Clean up existing connect thread
     connect_active_ = false;
@@ -836,7 +846,7 @@ bool WifiBackendNetworkManager::delete_connection_profile(const std::string& pro
 }
 
 void WifiBackendNetworkManager::connect_thread_func(std::string ssid, std::string password) {
-    spdlog::debug("[WifiBackend] NM: Connect thread started for '{}'", ssid);
+    spdlog::debug("[WifiBackend] NM: Connect thread started for '{}'", helix::redact::ssid(ssid));
 
     ConnectAttempt attempt = try_nmcli_connect(ssid, password);
 
@@ -859,10 +869,10 @@ void WifiBackendNetworkManager::connect_thread_func(std::string ssid, std::strin
         looks_like_stale_profile(attempt.stderr_out)) {
         spdlog::warn("[WifiBackend] NM: '{}' has a stale/malformed saved profile "
                      "(key-mgmt missing); deleting and retrying",
-                     ssid);
+                     helix::redact::ssid(ssid));
         if (delete_connection_profile(ssid)) {
             spdlog::info("[WifiBackend] NM: Deleted stale profile for '{}', retrying connect",
-                         ssid);
+                         helix::redact::ssid(ssid));
             attempt = try_nmcli_connect(ssid, password);
             if (!connect_active_) {
                 return;
@@ -870,19 +880,19 @@ void WifiBackendNetworkManager::connect_thread_func(std::string ssid, std::strin
         } else {
             spdlog::warn("[WifiBackend] NM: Could not delete stale profile for '{}' "
                          "(nmcli connection delete failed)",
-                         ssid);
+                         helix::redact::ssid(ssid));
         }
     }
 
     if (attempt.timed_out) {
-        spdlog::warn("[WifiBackend] NM: Connection to '{}' timed out", ssid);
+        spdlog::warn("[WifiBackend] NM: Connection to '{}' timed out", helix::redact::ssid(ssid));
         fire_event("DISCONNECTED", "Connection timed out");
         request_status_refresh();
         return;
     }
 
     if (attempt.exit_code == 0) {
-        spdlog::info("[WifiBackend] NM: Connected to '{}'", ssid);
+        spdlog::info("[WifiBackend] NM: Connected to '{}'", helix::redact::ssid(ssid));
         fire_event("CONNECTED");
         request_status_refresh();
         return;
@@ -890,8 +900,8 @@ void WifiBackendNetworkManager::connect_thread_func(std::string ssid, std::strin
 
     // Failure path
     if (is_polkit_permission_error(attempt.stderr_out)) {
-        spdlog::warn("[WifiBackend] NM: Permission denied connecting to '{}': {}", ssid,
-                     attempt.stderr_out);
+        spdlog::warn("[WifiBackend] NM: Permission denied connecting to '{}': {}",
+                     helix::redact::ssid(ssid), attempt.stderr_out);
         fire_event("AUTH_FAILED",
                    "Permission denied - check WiFi permissions. Re-run the HelixScreen "
                    "installer, or see Troubleshooting docs");
@@ -899,8 +909,8 @@ void WifiBackendNetworkManager::connect_thread_func(std::string ssid, std::strin
         return;
     }
 
-    spdlog::warn("[WifiBackend] NM: Connection to '{}' failed (exit code {}{})", ssid,
-                 attempt.exit_code,
+    spdlog::warn("[WifiBackend] NM: Connection to '{}' failed (exit code {}{})",
+                 helix::redact::ssid(ssid), attempt.exit_code,
                  attempt.stderr_out.empty() ? "" : ", stderr: " + attempt.stderr_out);
     // nmcli exit code 10 = connection timeout; doesn't cleanly distinguish auth
     // failure. Fire AUTH_FAILED as the best guess for secured networks.
@@ -928,6 +938,55 @@ WiFiError WifiBackendNetworkManager::disconnect_network() {
     fire_event("DISCONNECTED");
     request_status_refresh();
     return WiFiErrorHelper::success();
+}
+
+// ============================================================================
+// Radio power
+// ============================================================================
+
+std::optional<bool> WifiBackendNetworkManager::query_radio_enabled() {
+    return wifi_parse_nm_radio_state(exec_nmcli("radio wifi"));
+}
+
+WiFiError WifiBackendNetworkManager::set_radio_enabled(bool on) {
+    if (!running_) {
+        return WiFiError(WiFiResult::NOT_INITIALIZED, "Backend not started",
+                         "WiFi system not ready");
+    }
+
+    // `nmcli radio wifi on|off` is NetworkManager's own rfkill soft-block, so
+    // it stops association without taking the interface down — the one thing
+    // WifiBackend::set_radio_enabled() forbids, because a downed interface
+    // strands a WiFi-only printer.
+    spdlog::info("[WifiBackend] NM: Setting WiFi radio {}", on ? "on" : "off");
+    exec_nmcli(std::string("radio wifi ") + (on ? "on" : "off"));
+
+    // Trust the read-back, not the command's exit status: nmcli exits 0 for a
+    // request polkit silently refused. Without this, the UI would flip the
+    // switch and the radio would stay where it was.
+    std::optional<bool> observed = query_radio_enabled();
+    if (!observed.has_value()) {
+        return WiFiError(WiFiResult::BACKEND_ERROR,
+                         "nmcli radio wifi returned no usable state after the change",
+                         on ? "Could not turn WiFi radio on" : "Could not turn WiFi radio off");
+    }
+
+    radio_enabled_.store(*observed);
+    if (*observed != on) {
+        return WiFiError(WiFiResult::PERMISSION_DENIED,
+                         std::string("nmcli refused to turn the WiFi radio ") + (on ? "on" : "off"),
+                         on ? "Could not turn WiFi radio on" : "Could not turn WiFi radio off");
+    }
+
+    // A radio that just came back on may reassociate; a radio that just went
+    // off must stop reporting a connection. Either way the cached status is
+    // stale now.
+    request_status_refresh();
+    return WiFiErrorHelper::success();
+}
+
+bool WifiBackendNetworkManager::is_radio_enabled() const {
+    return radio_enabled_.load();
 }
 
 // ============================================================================
@@ -1063,6 +1122,12 @@ void WifiBackendNetworkManager::status_thread_func() {
         std::optional<ConnectionStatus> polled;
         if (running_) {
             polled = poll_status_now();
+            // Pick up a radio state someone changed behind our back (nmcli,
+            // a hardware kill switch, another UI). Keep the last-known value
+            // when the query is inconclusive.
+            if (std::optional<bool> radio = query_radio_enabled()) {
+                radio_enabled_.store(*radio);
+            }
         }
 
         if (polled) {

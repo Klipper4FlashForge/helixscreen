@@ -49,6 +49,7 @@
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <thread>
 
 namespace helix::ui {
 
@@ -125,8 +126,29 @@ class UpdateQueue {
         crash_handler::register_previous_tag_ring(previous_tag_ring_, previous_tag_count_ring_,
                                                   kPreviousTagRingSize, &previous_tag_next_);
 
+        // init() runs on the LVGL thread by construction — it creates an LVGL
+        // timer. Record that identity so callers can ask whether they are
+        // already on the main thread instead of marshalling unconditionally
+        // (see helix::ui::is_main_thread).
+        main_thread_id_ = std::this_thread::get_id();
+        main_thread_known_.store(true, std::memory_order_release);
+
         initialized_ = true;
         spdlog::debug("[UpdateQueue] Initialized - timer created for queue drain");
+    }
+
+    /**
+     * @brief Whether the calling thread is the LVGL main thread
+     *
+     * Before init() this answers true: the only code running that early is
+     * startup on the main thread, and answering false there would push work
+     * onto a queue that cannot drain yet.
+     */
+    static bool is_main_thread() {
+        if (!main_thread_known_.load(std::memory_order_acquire)) {
+            return true;
+        }
+        return std::this_thread::get_id() == main_thread_id_;
     }
 
     /**
@@ -194,14 +216,7 @@ class UpdateQueue {
         // Drain pending callbacks while panels are still alive, then gate off
         // new enqueues so background threads (libhv WebSocket) that arrive late
         // silently discard instead of pushing stale panel pointers.
-        process_pending();
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            initialized_ = false;
-            shut_down_ = true;
-            std::queue<TaggedCallback>().swap(pending_); // Discard any stragglers
-        }
-        timer_ = nullptr;
+        shutdown_internal(/*drain_pending=*/true);
     }
 
     /**
@@ -313,11 +328,69 @@ class UpdateQueue {
         }
     }
 
+    /**
+     * @brief The processing timer itself, for callers that pause LVGL timers
+     * en masse and must skip this one by identity.
+     *
+     * Pausing it stops all queued UI work — including remote-control
+     * dispatch, since RemoteControlServer::execute_on_ui_thread() posts
+     * through this same queue. See RemoteControlServer::handle_freeze().
+     */
+    lv_timer_t* timer() const {
+        return timer_;
+    }
+
+    /**
+     * @brief Number of callbacks waiting to run, including frozen ones.
+     *
+     * Frozen work counts: a ScopedFreeze buffers rather than drops, so those
+     * callbacks will fire on a later tick and the UI is not yet settled.
+     *
+     * This is "nothing enqueued after me", not "nothing left to run": inside
+     * process_pending(), pending_ is swapped into a local queue before its
+     * callbacks execute, so a call made mid-batch (e.g. from a callback that
+     * itself queues further work) can read 0 while callbacks from that same
+     * batch are still running.
+     */
+    size_t pending_count() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return pending_.size() + frozen_buffer_.size();
+    }
+
   private:
     friend class UpdateQueueTestAccess;
     UpdateQueue() = default;
     ~UpdateQueue() {
-        shutdown();
+        // Discard without draining. This runs from __run_exit_handlers, and the
+        // singleton is constructed during static initialization — earlier than
+        // PrinterState and spdlog's registry, so it is destroyed after them.
+        // Executing a queued callback here writes through pointers into objects
+        // that were already freed: a pending set_webcam_available assigns to a
+        // PrinterCapabilitiesState std::string whose buffer is gone, corrupting
+        // the allocator's bin metadata. Explicit shutdown() still drains,
+        // because there the panels are all alive.
+        shutdown_internal(/*drain_pending=*/false);
+    }
+
+    /**
+     * @brief Shared teardown for shutdown() and the destructor
+     *
+     * @param drain_pending Run queued callbacks first. Only safe while the
+     *                      objects those callbacks reference are still alive,
+     *                      which is true at explicit shutdown and false during
+     *                      static destruction.
+     */
+    void shutdown_internal(bool drain_pending) {
+        if (drain_pending) {
+            process_pending();
+        }
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            initialized_ = false;
+            shut_down_ = true;
+            std::queue<TaggedCallback>().swap(pending_); // Discard any stragglers
+        }
+        timer_ = nullptr;
     }
 
     // Non-copyable
@@ -352,8 +425,10 @@ class UpdateQueue {
                 current_tag_ = entry.tag;
                 entry.callback();
             } catch (const std::exception& e) {
+                callback_exception_count_.fetch_add(1, std::memory_order_relaxed);
                 spdlog::error("[UpdateQueue] Exception in queued callback: {}", e.what());
             } catch (...) {
+                callback_exception_count_.fetch_add(1, std::memory_order_relaxed);
                 spdlog::error("[UpdateQueue] Unknown exception in queued callback");
             }
             // Retain the N most-recently-completed tags so a post-callback
@@ -383,7 +458,7 @@ class UpdateQueue {
         }
     }
 
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::queue<TaggedCallback> pending_;
     // Callbacks enqueued while freeze_depth_ > 0 land here; ScopedFreeze::~
     // splices them back to pending_ when the depth returns to 0. Protected
@@ -412,6 +487,21 @@ class UpdateQueue {
     static inline volatile const char* previous_tag_ring_[kPreviousTagRingSize] = {};
     static inline volatile uint32_t previous_tag_count_ring_[kPreviousTagRingSize] = {};
     static inline volatile unsigned int previous_tag_next_ = 0;
+
+    /// Identity of the LVGL main thread, captured in init(). Read from any
+    /// thread via is_main_thread(); `main_thread_known_` orders the write so a
+    /// racing reader either sees "not yet known" (and assumes main, which is
+    /// correct that early) or a fully-published id.
+    static inline std::thread::id main_thread_id_{};
+    static inline std::atomic<bool> main_thread_known_{false};
+
+    /// Count of queued callbacks that threw. Swallowing the exception is
+    /// deliberate — one bad callback must not take down the whole batch — but
+    /// that also makes the failure invisible to every caller, including a test
+    /// asserting that the callback it queued ran cleanly. Counting it here is
+    /// the observable that lets a test tell "ran" from "threw and was
+    /// swallowed" (prestonbrown/helixscreen#1212).
+    static inline std::atomic<uint32_t> callback_exception_count_{0};
 
   public:
     /**
@@ -449,6 +539,38 @@ class UpdateQueue {
  *
  * @param callback Function to execute on the main thread
  */
+/**
+ * @brief Whether the caller is already on the LVGL main thread
+ */
+inline bool is_main_thread() {
+    return UpdateQueue::is_main_thread();
+}
+
+/**
+ * @brief Run @p fn on the main thread — now if already there, else queued
+ *
+ * For code that can be reached from either side of a thread boundary and must
+ * not care which. Running inline when already on the main thread preserves
+ * synchronous semantics for callers that have them today (a cache hit that
+ * applied in the same tick keeps applying in the same tick), while a background
+ * caller is marshalled instead of touching LVGL directly.
+ *
+ * Use this at a subsystem's PUBLIC boundary, so the guarantee holds for every
+ * internal path at once. Wrapping individual call sites is what let the
+ * ThumbnailCache download-error and processor-shutdown paths keep delivering on
+ * an HttpExecutor worker after the obvious ones were fixed (#960).
+ *
+ * @param tag String literal for crash diagnostics (see queue()).
+ * @param fn  Work to run on the main thread.
+ */
+inline void run_on_main(const char* tag, UpdateCallback fn) {
+    if (is_main_thread()) {
+        fn();
+        return;
+    }
+    UpdateQueue::instance().queue(tag, std::move(fn));
+}
+
 inline void queue_update(UpdateCallback callback) {
     UpdateQueue::instance().queue(std::move(callback));
 }

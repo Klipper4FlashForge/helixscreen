@@ -217,38 +217,24 @@ TEST_CASE("UI Utils: format_relative_time", "[ui_utils][format][i18n]") {
 // ui_get_header_content_padding() Tests
 // ============================================================================
 
-// NOTE: After the responsive spacing unification (Phase 7), ui_get_header_content_padding()
-// now uses the unified space_* token system. The function returns
-// theme_manager_get_spacing("space_lg"), which is a responsive value set at theme init time based
-// on the display breakpoint. These tests verify the function returns a consistent, positive value
-// (not screen-height dependent).
+// NOTE: ui_get_header_content_padding() returns theme_manager_get_spacing("space_lg"),
+// a responsive value the theme system scales per display breakpoint at theme init.
+// Responsiveness comes from the theme breakpoint, not a caller-supplied height — the
+// function takes no arguments.
 
 TEST_CASE("UI Utils: ui_get_header_content_padding - returns space_lg value",
           "[ui_utils][responsive]") {
-    // After unification, this function returns space_lg regardless of input height
-    // (the height parameter is kept for API stability but ignored)
-
     SECTION("Returns positive value") {
-        lv_coord_t padding = ui_get_header_content_padding(480);
+        lv_coord_t padding = ui_get_header_content_padding();
         REQUIRE(padding > 0);
     }
 
-    SECTION("Returns same value regardless of screen height") {
-        // All calls should return the same value now (space_lg token)
-        lv_coord_t p1 = ui_get_header_content_padding(320);
-        lv_coord_t p2 = ui_get_header_content_padding(480);
-        lv_coord_t p3 = ui_get_header_content_padding(800);
-        lv_coord_t p4 = ui_get_header_content_padding(1080);
-
-        REQUIRE(p1 == p2);
-        REQUIRE(p2 == p3);
-        REQUIRE(p3 == p4);
-    }
-
-    SECTION("Returns valid space_lg value (12, 16, or 20px)") {
-        // space_lg values at breakpoints: small=12, medium=16, large=20
-        lv_coord_t padding = ui_get_header_content_padding(600);
-        REQUIRE((padding == 12 || padding == 16 || padding == 20));
+    SECTION("Returns a valid space_lg value") {
+        // space_lg at breakpoints: tiny=8, small=12, medium=16, large=20,
+        // xlarge=24, xxlarge=32; fallback is 16 when the theme is uninitialized.
+        lv_coord_t padding = ui_get_header_content_padding();
+        REQUIRE((padding == 8 || padding == 12 || padding == 16 || padding == 20 || padding == 24 ||
+                 padding == 32));
     }
 }
 

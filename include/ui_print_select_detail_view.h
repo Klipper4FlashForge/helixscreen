@@ -4,6 +4,7 @@
 #pragma once
 
 #include "ui_filament_mapping_card.h"
+#include "ui_observer_guard.h"
 #include "ui_pre_print_options_renderer.h"
 #include "ui_print_preparation_manager.h"
 
@@ -12,7 +13,6 @@
 #include "preflight_validator.h"
 #include "print_file_data.h" // For FileHistoryStatus
 #include "subject_managed_panel.h"
-#include "ui_observer_guard.h"
 
 #include <functional>
 #include <lvgl.h>
@@ -328,6 +328,28 @@ class PrintSelectDetailView : public OverlayBase {
     [[nodiscard]] std::vector<helix::GcodeToolInfo> get_used_tool_info() const;
 
     /**
+     * @brief The mapping the print will actually use — display + gate source.
+     *
+     * Editable backends (AFC / Happy Hare / CFS / AD5X-IFS / toolchanger): the
+     * card seeds and owns mappings_, and user edits win, so this returns
+     * get_mappings() unchanged. Non-editable backends (Snapmaker U1 / ACE): the
+     * card is hidden and get_mappings() is empty, so we compute the effective
+     * mapping via FilamentMapper::effective_mappings() using
+     * effective_auto_match(). This is the single helper both the color swatches
+     * and the pre-flight gate consult so they resolve identically.
+     */
+    [[nodiscard]] std::vector<helix::ToolMapping> effective_mappings() const;
+
+    /**
+     * @brief Whether auto (color+type) matching applies for this backend.
+     *
+     * Non-editable-card backends (U1 / ACE) have no UI to flip the persisted
+     * auto-color preference, so they always auto-match. Editable backends honor
+     * SettingsManager::get_auto_color_map().
+     */
+    [[nodiscard]] bool effective_auto_match() const;
+
+    /**
      * @brief Logical tools the parsed gcode body actually uses.
      *
      * Returns ParsedGCodeFile::tools_used_indices from the gcode viewer's
@@ -623,22 +645,13 @@ class PrintSelectDetailView : public OverlayBase {
      */
     void show_gcode_viewer(bool show);
 
-    /**
-     * @brief Apply tool colors to the gcode viewer
-     *
-     * Reads AMS slot colors when available, falls back to file metadata colors.
-     */
-    void apply_tool_colors();
+    // Resolve the used tools' colors via the shared FilamentMapper color engine
+    // (effective_tool_colors) and push them to the viewer. The sliced/actual
+    // toggle selects the mappings fed in: effective_mappings() for actual (loaded,
+    // lane-matched) vs default/unmapped for sliced (the file's own palette).
+    void apply_preview_colors();
 
-    /**
-     * @brief Re-apply tool colors from user's filament mapping choices
-     */
-    void apply_mapped_tool_colors();
-
-    void apply_preview_colors();      // dispatch sliced vs actual by the subject
-    void apply_sliced_tool_colors();  // force slicer palette into the viewer
-
-    void on_ams_state_changed();               // AMS slots_version observer handler
+    void on_ams_state_changed();                // AMS slots_version observer handler
     void refresh_preview_colors_and_mismatch(); // shared by card-edit + AMS observer
 
     /**

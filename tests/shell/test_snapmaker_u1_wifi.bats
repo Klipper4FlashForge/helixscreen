@@ -78,7 +78,7 @@ EOF
 
     # It checked status but must NOT have reconfigured an already-up link.
     grep -q 'status' "$WPA_LOG"
-    ! grep -q 'add_network' "$WPA_LOG"
+    refute grep -q 'add_network' "$WPA_LOG"
     ! grep -q 'select_network' "$WPA_LOG"
 }
 

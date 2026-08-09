@@ -14,7 +14,7 @@
 // CRITICAL: Subject updates trigger lv_obj_invalidate() which asserts if called
 // during LVGL rendering. WebSocket callbacks run on libhv's event loop thread,
 // not the main LVGL thread. We must defer subject updates to the main thread
-// via ui_async_call to avoid the "Invalidate area not allowed during rendering"
+// via ui_queue_update() to avoid the "Invalidate area not allowed during rendering"
 // assertion.
 
 namespace helix::sensors {
@@ -244,8 +244,12 @@ void WidthSensorManager::load_config_from_file() {
     // Reuse load_config() to avoid deserialization drift (mirrors save_config_to_file)
     std::string base_path = config->df() + "width_sensors";
     try {
-        nlohmann::json& config_json = config->get_json(base_path);
-        load_config(config_json);
+        const nlohmann::json* config_json = config->try_get_json(base_path);
+        if (config_json != nullptr) {
+            load_config(*config_json);
+        } else {
+            spdlog::debug("[WidthSensorManager] No saved config found");
+        }
     } catch (const std::exception& e) {
         spdlog::debug("[WidthSensorManager] No saved config found: {}", e.what());
     }

@@ -216,7 +216,7 @@ BUGEOF
     install_service_sysv
 
     # Bad substring replaced
-    ! grep -q 'assets/config/platform/hooks\.sh' "$INIT_SCRIPT_DEST"
+    refute grep -q 'assets/config/platform/hooks\.sh' "$INIT_SCRIPT_DEST"
     # Correct path written
     grep -q 'PLATFORM_HOOKS="\${DAEMON_DIR}/platform/hooks.sh"' "$INIT_SCRIPT_DEST"
 }
@@ -625,10 +625,77 @@ case "\$1" in
 esac
 STARTEOF
     chmod +x "$INIT_SCRIPT_DEST"
+    # No instance running -> plain start, not restart
+    mock_command_script "pidof" 'exit 1'
 
     start_service_sysv
 
     [ -f "$start_called" ]
+}
+
+@test "start_service_sysv: restarts when an instance is already running (#1106)" {
+    unset HELIX_SELF_UPDATE
+    local start_called="$BATS_TEST_TMPDIR/sysv_start_called"
+    local restart_called="$BATS_TEST_TMPDIR/sysv_restart_called"
+    INIT_SCRIPT_DEST="$BATS_TEST_TMPDIR/etc/init.d/S99helixscreen"
+    cat > "$INIT_SCRIPT_DEST" << STARTEOF
+#!/bin/sh
+case "\$1" in
+    start) touch "$start_called" ;;
+    restart) touch "$restart_called" ;;
+    status) exit 0 ;;
+esac
+STARTEOF
+    chmod +x "$INIT_SCRIPT_DEST"
+    # Old instance still running: "start" would be a no-op and leave the old
+    # binary in place — the installer must restart instead
+    mock_command_script "pidof" 'exit 0'
+
+    start_service_sysv
+
+    [ -f "$restart_called" ]
+    [ ! -f "$start_called" ]
+}
+
+@test "start_service_snapmaker_u1: restarts when an instance is already running (#1106)" {
+    unset HELIX_SELF_UPDATE
+    local start_called="$BATS_TEST_TMPDIR/u1_start_called"
+    local restart_called="$BATS_TEST_TMPDIR/u1_restart_called"
+    cat > "$INSTALL_DIR/config/helixscreen.init" << STARTEOF
+#!/bin/sh
+case "\$1" in
+    start) touch "$start_called" ;;
+    restart) touch "$restart_called" ;;
+    status) exit 0 ;;
+esac
+STARTEOF
+    chmod +x "$INSTALL_DIR/config/helixscreen.init"
+    mock_command_script "pidof" 'exit 0'
+
+    start_service_snapmaker_u1
+
+    [ -f "$restart_called" ]
+    [ ! -f "$start_called" ]
+}
+
+@test "start_service_systemd: restarts when the service is already active (#1106)" {
+    unset HELIX_SELF_UPDATE
+    local start_called="$BATS_TEST_TMPDIR/systemd_start_called"
+    local restart_called="$BATS_TEST_TMPDIR/systemd_restart_called"
+    mock_command_script "systemctl" '
+        case "$*" in
+            *enable*) exit 0 ;;
+            *is-active*) exit 0 ;;
+            *restart*) touch "'"$restart_called"'"; exit 0 ;;
+            *start*) touch "'"$start_called"'"; exit 0 ;;
+            *) exit 0 ;;
+        esac
+    '
+
+    start_service_systemd
+
+    [ -f "$restart_called" ]
+    [ ! -f "$start_called" ]
 }
 
 @test "stop_service: systemd skips stop during self-update (NoNewPrivs fallback)" {

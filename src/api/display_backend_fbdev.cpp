@@ -73,14 +73,11 @@ bool has_direct_input_prop(int event_num) {
 DisplayBackendFbdev::DisplayBackendFbdev() = default;
 
 DisplayBackendFbdev::~DisplayBackendFbdev() {
-    // Clear calibration wrapper's user_data and read callback before
-    // calibration_context_ is destroyed. If LVGL's indev timer fires
-    // between our destruction and lv_deinit(), calibrated_read_cb would
-    // dereference freed memory (use-after-free / SIGSEGV).
-    if (touch_) {
-        lv_indev_set_read_cb(touch_, nullptr);
-        lv_indev_set_user_data(touch_, nullptr);
-    }
+    // Tear down the calibration read callback before calibration_context_ is
+    // destroyed. If LVGL's indev timer fires between our destruction and
+    // lv_deinit(), calibrated_read_cb would reach freed memory (use-after-free /
+    // SIGSEGV).
+    helix::uninstall_calibration_wrapper(touch_, calibration_context_);
 
     restore_console();
 }
@@ -451,6 +448,7 @@ lv_indev_t* DisplayBackendFbdev::create_input_pointer() {
     // Note: jitter filtering is applied generically in lvgl_init.cpp after this.
     helix::install_calibration_wrapper(touch_, calibration_context_, calibration_, screen_width_,
                                        screen_height_);
+    calibration_wrapper_installed_ = true;
 
     spdlog::info("[Fbdev Backend] Evdev touch input created on {}", touch_path);
 
@@ -883,59 +881,54 @@ bool DisplayBackendFbdev::set_calibration(const helix::TouchCalibration& cal) {
 
     // Update stored calibration
     calibration_ = cal;
+    // Update the owned context directly — calibrated_read_cb reads this same
+    // member. Never round-trip through lv_indev_get_user_data(touch_): that slot
+    // can be stale or corrupted (bundle LG9X482B held XML string bytes), and
+    // writing cal through a non-null garbage pointer faults.
+    calibration_context_.calibration = cal;
 
-    // If touch input exists with our custom callback, update the context
-    if (touch_) {
-        auto* ctx = static_cast<helix::CalibrationContext*>(lv_indev_get_user_data(touch_));
-        if (ctx) {
-            // Update existing context (points to our member variable)
-            ctx->calibration = cal;
-            spdlog::info("[Fbdev Backend] Calibration updated at runtime: "
-                         "a={:.4f} b={:.4f} c={:.4f} d={:.4f} e={:.4f} f={:.4f}",
-                         cal.a, cal.b, cal.c, cal.d, cal.e, cal.f);
-        } else {
-            // Need to install the callback wrapper for the first time.
-            // The current read_cb may be the jitter wrapper (from lvgl_init.cpp)
-            // which chains to the real backend callback.  We need to insert
-            // ourselves between the jitter wrapper and the backend callback so
-            // the chain is: jitter → calibrated → evdev.
-            //
-            // In practice this branch is unreachable because create_input_pointer()
-            // always installs the calibrated callback, but we handle it defensively.
-            spdlog::warn("[Fbdev Backend] Calibrated callback was not pre-installed — "
-                         "installing at runtime (unexpected code path)");
+    if (touch_ && !calibration_wrapper_installed_) {
+        // Need to install the callback wrapper for the first time.
+        // In practice this branch is unreachable because create_input_pointer()
+        // always installs the calibrated callback, but we handle it defensively.
+        spdlog::warn("[Fbdev Backend] Calibrated callback was not pre-installed — "
+                     "installing at runtime (unexpected code path)");
 
-            helix::install_calibration_wrapper(touch_, calibration_context_, cal, screen_width_,
-                                               screen_height_);
+        helix::install_calibration_wrapper(touch_, calibration_context_, calibration_,
+                                           screen_width_, screen_height_);
+        calibration_wrapper_installed_ = true;
 
-            spdlog::info("[Fbdev Backend] Calibration callback installed at runtime: "
-                         "a={:.4f} b={:.4f} c={:.4f} d={:.4f} e={:.4f} f={:.4f}",
-                         cal.a, cal.b, cal.c, cal.d, cal.e, cal.f);
-        }
+        spdlog::info("[Fbdev Backend] Calibration callback installed at runtime: "
+                     "a={:.4f} b={:.4f} c={:.4f} d={:.4f} e={:.4f} f={:.4f}",
+                     cal.a, cal.b, cal.c, cal.d, cal.e, cal.f);
+    } else {
+        spdlog::info("[Fbdev Backend] Calibration updated at runtime: "
+                     "a={:.4f} b={:.4f} c={:.4f} d={:.4f} e={:.4f} f={:.4f}",
+                     cal.a, cal.b, cal.c, cal.d, cal.e, cal.f);
     }
 
     return true;
 }
 
 void DisplayBackendFbdev::disable_affine_calibration() {
-    if (touch_) {
-        auto* ctx = static_cast<helix::CalibrationContext*>(lv_indev_get_user_data(touch_));
-        if (ctx) {
-            ctx->calibration.valid = false;
-            spdlog::debug("[Fbdev Backend] Affine calibration disabled for recalibration");
-        }
-    }
+    // Operate on the owned member, not lv_indev_get_user_data(touch_): the
+    // indev's user_data can be stale/corrupted and slip past an "if (ctx)" guard
+    // as a non-null garbage pointer, faulting on the write (bundle LG9X482B).
+    calibration_context_.calibration.valid = false;
+    spdlog::debug("[Fbdev Backend] Affine calibration disabled for recalibration");
 }
 
 void DisplayBackendFbdev::enable_affine_calibration() {
-    if (touch_) {
-        auto* ctx = static_cast<helix::CalibrationContext*>(lv_indev_get_user_data(touch_));
-        if (ctx) {
-            ctx->calibration = calibration_;
-            spdlog::debug("[Fbdev Backend] Affine calibration re-enabled (valid={})",
-                          calibration_.valid);
-        }
-    }
+    calibration_context_.calibration = calibration_;
+    spdlog::debug("[Fbdev Backend] Affine calibration re-enabled (valid={})", calibration_.valid);
+}
+
+void DisplayBackendFbdev::clear_calibration() {
+    // Both slots, so enable_affine_calibration() cannot bring the old matrix
+    // back. Operates on owned members for the same reason set_calibration does.
+    calibration_ = helix::TouchCalibration{};
+    calibration_context_.calibration = calibration_;
+    spdlog::info("[Fbdev Backend] Stored calibration cleared — device is uncalibrated");
 }
 
 void DisplayBackendFbdev::set_display_rotation(lv_display_rotation_t rot, int phys_w, int phys_h) {

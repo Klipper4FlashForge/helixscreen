@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <any>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <optional>
@@ -291,40 +292,135 @@ inline const char* ams_action_to_string(AmsAction action) {
 }
 
 /**
- * @brief Parse AMS action from Happy Hare action string
- * @param action_str Action string from printer.mmu.action
+ * @brief Normalize a firmware state string to a comparison token
+ *
+ * Lowercases and drops every non-alphanumeric character, so "Tool swap",
+ * "ToolSwap", "TOOL_SWAP" and "tool-swap" all collapse to "toolswap".
+ *
+ * Firmware state vocabularies get reworded without notice — AFC renamed its
+ * TOOL_SWAP value from "Tool swap" to "ToolSwap" in v1.2.0. Comparing
+ * normalized tokens makes that entire class of rename a non-event instead of a
+ * silent fall-through to IDLE.
+ */
+inline std::string ams_normalize_state_token(std::string_view s) {
+    std::string out;
+    out.reserve(s.size());
+    for (unsigned char c : s) {
+        if (std::isalnum(c) != 0) {
+            out.push_back(static_cast<char>(std::tolower(c)));
+        }
+    }
+    return out;
+}
+
+/**
+ * @brief Parse AMS action from a firmware action/state string
+ *
+ * Handles both Happy Hare (`printer.mmu.action`) and AFC
+ * (`printer.AFC.current_state`) vocabularies. Matching is done on the
+ * normalized token (see ams_normalize_state_token), then falls back to ordered
+ * substring matching so a reworded or previously-unseen state still resolves to
+ * a sensible action rather than silently reading as IDLE.
+ *
+ * @param action_str    Raw state string from the firmware
+ * @param out_recognized Optional; set true when the exact token is in our known
+ *                       vocabulary, false when the result came from the fuzzy
+ *                       fallback or no rule matched. Callers use this to log
+ *                       schema drift once per unseen string. An empty input
+ *                       reports true — "no state" is normal, not drift.
  * @return Corresponding AmsAction enum value
  */
-inline AmsAction ams_action_from_string(std::string_view action_str) {
-    if (action_str == "Idle")
+inline AmsAction ams_action_from_string(std::string_view action_str,
+                                        bool* out_recognized = nullptr) {
+    auto recognize = [&](bool ok) {
+        if (out_recognized != nullptr)
+            *out_recognized = ok;
+    };
+
+    const std::string t = ams_normalize_state_token(action_str);
+    if (t.empty()) {
+        recognize(true);
         return AmsAction::IDLE;
-    if (action_str == "Loading")
-        return AmsAction::LOADING;
-    if (action_str == "Unloading")
-        return AmsAction::UNLOADING;
-    if (action_str == "Selecting")
-        return AmsAction::SELECTING;
-    if (action_str == "Homing" || action_str == "Resetting")
-        return AmsAction::RESETTING;
-    if (action_str == "Cutting" || action_str == "Cutting Tip" || action_str == "Cutting Filament")
-        return AmsAction::CUTTING;
-    if (action_str == "Loading Ext")
-        return AmsAction::LOADING;
-    if (action_str == "Exiting Ext")
-        return AmsAction::UNLOADING;
-    if (action_str == "Forming Tip")
-        return AmsAction::FORMING_TIP;
-    if (action_str == "Heating")
-        return AmsAction::HEATING;
-    if (action_str == "Checking")
-        return AmsAction::CHECKING;
-    if (action_str == "Purging")
-        return AmsAction::PURGING;
-    // Happy Hare uses "Paused" for attention-required states
-    if (action_str.find("Pause") != std::string_view::npos)
-        return AmsAction::PAUSED;
-    if (action_str.find("Error") != std::string_view::npos)
+    }
+
+    struct Entry {
+        const char* token;
+        AmsAction action;
+    };
+    // Known vocabulary, normalized. Happy Hare and AFC share this table; a
+    // token appearing in only one firmware is harmless to the other.
+    static constexpr Entry kExact[] = {
+        {"idle", AmsAction::IDLE},
+        {"initialized", AmsAction::IDLE},
+        {"loading", AmsAction::LOADING},
+        {"loadingext", AmsAction::LOADING},
+        {"unloading", AmsAction::UNLOADING},
+        {"exitingext", AmsAction::UNLOADING},
+        {"ejecting", AmsAction::UNLOADING},
+        {"selecting", AmsAction::SELECTING},
+        // AFC toolchanger states (v1.2.0 #768). "Tool swap" was the pre-1.2.0
+        // spelling; both normalize to "toolswap".
+        {"toolswap", AmsAction::SELECTING},
+        {"tooldock", AmsAction::SELECTING},
+        {"toolpickup", AmsAction::SELECTING},
+        {"moving", AmsAction::SELECTING},
+        {"restoring", AmsAction::SELECTING},
+        {"homing", AmsAction::RESETTING},
+        {"resetting", AmsAction::RESETTING},
+        {"formingtip", AmsAction::FORMING_TIP},
+        {"cutting", AmsAction::CUTTING},
+        {"cuttingtip", AmsAction::CUTTING},
+        {"cuttingfilament", AmsAction::CUTTING},
+        {"heating", AmsAction::HEATING},
+        {"checking", AmsAction::CHECKING},
+        {"purging", AmsAction::PURGING},
+        {"paused", AmsAction::PAUSED},
+        {"error", AmsAction::ERROR},
+    };
+    for (const auto& e : kExact) {
+        if (t == e.token) {
+            recognize(true);
+            return e.action;
+        }
+    }
+
+    // Fuzzy fallback. Reaching here means the exact string is new to us, so
+    // report it as unrecognized even when a rule below matches — the caller
+    // logs it once and we still behave sensibly in the meantime.
+    recognize(false);
+    auto has = [&](const char* needle) { return t.find(needle) != std::string::npos; };
+
+    // Order is load-bearing: "unloading" contains "loading", so unload-ish
+    // words must be tested first. Error and pause outrank motion words because
+    // an errored move is an error, not a move.
+    if (has("error"))
         return AmsAction::ERROR;
+    if (has("pause"))
+        return AmsAction::PAUSED;
+    if (has("unload") || has("eject") || has("exiting"))
+        return AmsAction::UNLOADING;
+    if (has("toolswap") || has("tooldock") || has("toolpickup") || has("toolchange") || has("swap"))
+        return AmsAction::SELECTING;
+    if (has("load"))
+        return AmsAction::LOADING;
+    if (has("select"))
+        return AmsAction::SELECTING;
+    if (has("purg"))
+        return AmsAction::PURGING;
+    if (has("cut"))
+        return AmsAction::CUTTING;
+    if (has("heat"))
+        return AmsAction::HEATING;
+    if (has("tip"))
+        return AmsAction::FORMING_TIP;
+    if (has("home") || has("reset"))
+        return AmsAction::RESETTING;
+    if (has("restor") || has("moving"))
+        return AmsAction::SELECTING;
+    if (has("check"))
+        return AmsAction::CHECKING;
+    if (has("idle") || has("initial"))
+        return AmsAction::IDLE;
     return AmsAction::IDLE;
 }
 
@@ -399,6 +495,40 @@ enum class PathTopology {
     PARALLEL = 2, ///< Tool Changer: each slot is a separate toolhead
     MIXED = 3     ///< Direct + Hub: some lanes direct, some through hub to shared extruder
 };
+
+/**
+ * @brief Whether a toolhead is currently on the carriage.
+ *
+ * Distinct from "is any filament loaded". On a toolchanger every parked toolhead
+ * may hold filament while the shuttle carries none — a state `current_slot = -1`
+ * ("nothing loaded anywhere") cannot express. Without it, something is always
+ * elected current, and on #1229's machine the election latched onto a parked
+ * lane and never moved again.
+ *
+ * Only meaningful for backends that actually have a carriage. Single-extruder
+ * systems leave this UNKNOWN and are unaffected.
+ */
+enum class MountState {
+    UNKNOWN = 0,  ///< No carriage, or no signal yet — do not draw conclusions
+    NONE = 1,     ///< Carriage is empty. Parked filament does not make a slot current
+    CHANGING = 2, ///< Mid-toolchange; sources legitimately disagree, elect nothing
+    MOUNTED = 3   ///< A tool is on the carriage; see AmsSystemInfo::mounted_tool
+};
+
+/// Human-readable name for a MountState, for logs and diagnostics.
+inline const char* mount_state_to_string(MountState state) {
+    switch (state) {
+    case MountState::NONE:
+        return "none";
+    case MountState::CHANGING:
+        return "changing";
+    case MountState::MOUNTED:
+        return "mounted";
+    case MountState::UNKNOWN:
+    default:
+        return "unknown";
+    }
+}
 
 /**
  * @brief Get string name for path topology
@@ -599,6 +729,26 @@ struct BufferHealth {
     float error_sensitivity = 0.0f;       ///< AFC sensitivity (1-10), 0 = not reported
     std::string state;                    ///< Buffer state (e.g., "Advancing", "Trailing")
 
+    /// Lane the buffer is currently regulating. AFC only names one while the
+    /// buffer is enabled AND a lane is loaded; empty otherwise (AFC v1.2.0+).
+    std::string active_lane;
+
+    /// Rotation-distance trim the buffer is driving on the active lane's stepper.
+    /// AFC reports this only while enabled with a lane loaded; -1 = not reported.
+    float rotation_distance = -1.0f;
+
+    /// Rotation-distance multiplier the buffer last applied, and the configured
+    /// bounds it swings between (`multiplier_high`/`multiplier_low` in the AFC
+    /// buffer config). -1 = not reported. multiplier is AFC v1.2.0+; on older
+    /// firmware all three stay at -1.
+    float multiplier = -1.0f;
+    float multiplier_high = -1.0f;
+    float multiplier_low = -1.0f;
+
+    /// Seconds AFC waits after a buffer switch before declaring a fault.
+    /// -1 = not reported (fault detection off, or older firmware).
+    float fault_timer = -1.0f;
+
     /// Compute fault threshold from error_sensitivity: (11 - sensitivity) * 10 mm
     /// Returns 60mm fallback when sensitivity is 0 (not reported)
     /// Clamps sensitivity to 10 max to ensure threshold >= 10mm
@@ -644,6 +794,27 @@ struct SlotInfo {
     std::string material;                        ///< Material type (e.g., "PLA", "PETG", "ABS")
     std::string brand;                           ///< Brand name (e.g., "Polymaker", "eSUN")
 
+    // Catalog product identity — WHICH branded product, not just its material.
+    //
+    // `material` collapses every PLA product a vendor sells into one string, so
+    // brand + material cannot distinguish SUNLU "PLA+ 2.0" from SUNLU "PLA
+    // Marble". Both are stored because they answer different questions and can
+    // outlive each other:
+    //   - catalog_id resolves through FilamentCatalog::resolve_id() to seed the
+    //     editor's product list back to the exact row the user picked.
+    //   - product_name is the display string, and survives a catalog_id that no
+    //     longer resolves (a custom overlay product the user deleted, a bundled
+    //     id retired by an app update). Without it a dead id would leave the
+    //     lane with no record of what was chosen at all.
+    // Both empty = no catalog pick; the editor falls back to preselect-first.
+    //
+    // Deliberately NOT folded into spool_name: that carries a Spoolman /
+    // firmware-label meaning, is written behind our back by AFC/CFS/Snapmaker,
+    // is wiped by clear_spoolman_link(), and Snapmaker round-trips it to
+    // firmware as SUB_TYPE.
+    std::string catalog_id;   ///< assets/filaments.json product id ("sunlu-pla-plus-2-0")
+    std::string product_name; ///< Catalog display name ("PLA+ 2.0")
+
     // Temperature recommendations (from Spoolman or manual entry)
     int nozzle_temp_min = 0; ///< Minimum nozzle temp (°C)
     int nozzle_temp_max = 0; ///< Maximum nozzle temp (°C)
@@ -688,6 +859,13 @@ struct SlotInfo {
     /**
      * @brief Check if this slot has filament data configured
      * @return true if material or custom color is set
+     *
+     * catalog_id / product_name are deliberately NOT tested here. A catalog
+     * pick always writes `material` alongside them (the product's type is the
+     * material), so an extra clause could never change the answer — it would
+     * only imply a state that cannot occur. Same reasoning applies to the two
+     * ghost-slot predicates that mirror this one (ui_ams_slot.cpp,
+     * ui_ams_mini_status.cpp); keep all three in agreement.
      */
     [[nodiscard]] bool has_filament_info() const {
         return !material.empty() || color_rgb != AMS_DEFAULT_SLOT_COLOR;
@@ -707,6 +885,30 @@ struct SlotInfo {
      */
     [[nodiscard]] bool is_present() const {
         return status != SlotStatus::EMPTY && status != SlotStatus::UNKNOWN;
+    }
+
+    /**
+     * @brief Drop every Spoolman handle from this slot
+     *
+     * Unlink used to zero only spoolman_id, leaving spoolman_filament_id and
+     * spoolman_vendor_id behind. Those stale handles then fed
+     * SpoolmanSlotSaver's repoint comparison against a filament belonging to a
+     * spool this lane is no longer linked to.
+     *
+     * Locally-editable identity (brand / material / colour / weights) is
+     * deliberately KEPT: unlinking means "stop tracking this in Spoolman", not
+     * "forget what is in the lane". catalog_id / product_name fall on the KEPT
+     * side for the same reason and one stronger: the catalog pick comes from
+     * assets/filaments.json, which has no Spoolman record behind it at all —
+     * there is no handle here to go stale. Clearing it would drop the user back
+     * to the alphabetically-first variant of their material on the next open,
+     * which is precisely the failure these fields exist to prevent.
+     */
+    void clear_spoolman_link() {
+        spoolman_id = 0;
+        spoolman_filament_id = 0;
+        spoolman_vendor_id = 0;
+        spool_name.clear();
     }
 
     /**
@@ -926,12 +1128,26 @@ struct AmsSystemInfo {
     std::string version;   ///< System version string
 
     // Current state
-    int current_tool = -1;         ///< Active tool (-1=none, -2=bypass for HH)
-    int current_slot = -1;         ///< Active slot (-1=none, -2=bypass for HH)
+    int current_tool = -1; ///< Active tool (-1=none, -2=bypass for HH)
+    int current_slot = -1; ///< Active slot (-1=none, -2=bypass for HH)
+
+    /// Whether a toolhead is on the carriage. UNKNOWN on machines without one,
+    /// which is every backend except the toolchanger-capable ones — they are
+    /// unaffected by this field. See MountState (#1229).
+    MountState mount_state = MountState::UNKNOWN;
+    /// Tool number on the carriage when mount_state == MOUNTED, else -1.
+    int mounted_tool = -1;
+
     int pending_target_slot = -1;  ///< Target slot during tool change (-1=none)
     int current_toolchange = -1;   ///< Current tool change number (-1=none yet, 0-based)
     int number_of_toolchanges = 0; ///< Total expected tool changes this print
     bool filament_loaded = false;  ///< Filament at extruder
+
+    /// Slot the firmware has pre-staged for the NEXT toolchange (-1 = none).
+    /// AFC publishes this as `AFC.next_lane` during a multicolor print; resolved
+    /// to a slot index here. Distinct from pending_target_slot, which is the
+    /// destination of the toolchange already under way.
+    int next_slot = -1;
     bool filament_runout =
         false; ///< CFS: active path empty (box.filament_useup); UI gates display on paused state
     AmsAction action = AmsAction::IDLE; ///< Current operation
@@ -976,7 +1192,17 @@ struct AmsSystemInfo {
     // Happy Hare v4 extended status fields
     SpoolmanMode spoolman_mode = SpoolmanMode::OFF; ///< Spoolman integration mode
     int pending_spool_id = -1;                      ///< Pending spool assignment (v4)
-    std::string espooler_state;                     ///< eSpooler state: "rewind"/"assist"/""
+
+    /// Spoolman base URL the firmware itself is configured against, when it
+    /// publishes one (AFC `AFC.spoolman`). Empty = not reported / not configured.
+    /// Informational: HelixScreen resolves Spoolman through Moonraker, not this.
+    std::string spoolman_url;
+
+    /// Firmware has a saved toolhead position it can restore (AFC
+    /// `AFC.position_saved`). Set while an error interrupted a print mid-move.
+    bool position_saved = false;
+
+    std::string espooler_state;      ///< eSpooler state: "rewind"/"assist"/""
     std::string sync_feedback_state; ///< Sync feedback: "compressed"/"tension"/"neutral"/"disabled"
     bool sync_drive = false;         ///< Gear synced to extruder motor
     int clog_detection = 0;          ///< Clog detection: 0=off, 1=manual, 2=auto
@@ -1068,18 +1294,36 @@ struct AmsSystemInfo {
     }
 
     /**
+     * @brief Position in `units` of the unit that contains a global slot index
+     *
+     * Deliberately the POSITION, not AmsUnit::unit_index. Backends index
+     * get_unit_topology() by position — AFC sorts `units` alphabetically and
+     * matches by name inside that accessor — and several backends never assign
+     * unit_index at all, leaving it at its 0 default. Every existing caller
+     * (ams_drawing_utils, ui_panel_ams_overview) already passes a loop position.
+     *
+     * @param global_index Global slot index (0 to total_slots-1)
+     * @return Index into `units`, or -1 if no unit covers the slot
+     */
+    [[nodiscard]] int get_unit_position_for_slot(int global_index) const {
+        for (size_t i = 0; i < units.size(); ++i) {
+            const AmsUnit& unit = units[i];
+            if (global_index >= unit.first_slot_global_index &&
+                global_index < unit.first_slot_global_index + unit.slot_count) {
+                return static_cast<int>(i);
+            }
+        }
+        return -1;
+    }
+
+    /**
      * @brief Get the unit that contains a given global slot index
      * @param global_index Global slot index (0 to total_slots-1)
      * @return Pointer to containing AmsUnit or nullptr if out of range
      */
     [[nodiscard]] const AmsUnit* get_unit_for_slot(int global_index) const {
-        for (const auto& unit : units) {
-            if (global_index >= unit.first_slot_global_index &&
-                global_index < unit.first_slot_global_index + unit.slot_count) {
-                return &unit;
-            }
-        }
-        return nullptr;
+        const int pos = get_unit_position_for_slot(global_index);
+        return pos < 0 ? nullptr : &units[static_cast<size_t>(pos)];
     }
 
     /**
@@ -1088,13 +1332,8 @@ struct AmsSystemInfo {
      * @return Pointer to containing AmsUnit or nullptr if out of range
      */
     [[nodiscard]] AmsUnit* get_unit_for_slot(int global_index) {
-        for (auto& unit : units) {
-            if (global_index >= unit.first_slot_global_index &&
-                global_index < unit.first_slot_global_index + unit.slot_count) {
-                return &unit;
-            }
-        }
-        return nullptr;
+        const int pos = get_unit_position_for_slot(global_index);
+        return pos < 0 ? nullptr : &units[static_cast<size_t>(pos)];
     }
 
     /**
@@ -1122,6 +1361,73 @@ struct AmsSystemInfo {
         return unit->unit_index;
     }
 };
+
+namespace helix {
+
+/**
+ * @brief Decide whether enabling bypass must be preceded by an implicit unload.
+ *
+ * The AMS sidebar's bypass toggle used to unload whenever a slot was loaded,
+ * then enable bypass once the unload finished. On backends whose users have a
+ * console (AFC, Happy Hare) that ejects filament the user never asked to eject,
+ * so those backends report @p allows_implicit_chaining false and the UI sends
+ * only the bypass command, letting the firmware refuse it if it wants to
+ * (prestonbrown/helixscreen#1229). Backends with no console fallback keep the
+ * chaining.
+ *
+ * Pure so the policy is testable without LVGL; the sidebar calls this rather
+ * than restating the condition.
+ *
+ * @param info Current AMS system state
+ * @param allows_implicit_chaining AmsBackend::allows_implicit_chaining() for the active backend
+ * @return true if the UI should unload the active slot before enabling bypass
+ */
+[[nodiscard]] inline bool should_unload_before_bypass(const AmsSystemInfo& info,
+                                                      bool allows_implicit_chaining) {
+    return allows_implicit_chaining && info.current_slot >= 0 && info.filament_loaded;
+}
+
+/**
+ * @brief Tool number implied by a Klipper extruder name: "extruder" = 0, "extruderN" = N.
+ *
+ * A positional convention, and the third of three numbering systems that can all
+ * disagree on one machine: Klipper's `tool T<n>` objects, AFC's per-lane `map`
+ * aliases, and extruder-name position. On the reporter's toolchanger AFC maps T0
+ * to the `extruder5` lane while Klipper's `tool T0` is `extruder`
+ * (prestonbrown/helixscreen#1229).
+ *
+ * Returns nullopt rather than a fallback for anything that is not an
+ * `extruder`-prefixed name, so callers must decide what an unidentifiable
+ * extruder means. Badge rendering needs that distinction: silently mapping an
+ * empty name to 0 would label every toolhead "E0" on backends that never
+ * populate SlotInfo::extruder_name at all.
+ *
+ * @param ext_name Klipper extruder object name, e.g. "extruder" or "extruder5"
+ * @return Tool number, or nullopt if @p ext_name is not a valid extruder name
+ */
+[[nodiscard]] inline std::optional<int> tool_number_for_extruder(std::string_view ext_name) {
+    constexpr std::string_view kPrefix = "extruder";
+    if (ext_name == kPrefix) {
+        return 0;
+    }
+    if (ext_name.size() <= kPrefix.size() || ext_name.substr(0, kPrefix.size()) != kPrefix) {
+        return std::nullopt;
+    }
+    const std::string_view digits = ext_name.substr(kPrefix.size());
+    // No real machine has a four-digit extruder index; the bound also keeps the
+    // accumulate below well clear of overflow without pulling in <climits>.
+    if (digits.size() > 3 || !std::all_of(digits.begin(), digits.end(),
+                                          [](unsigned char c) { return std::isdigit(c) != 0; })) {
+        return std::nullopt;
+    }
+    int value = 0;
+    for (const char c : digits) {
+        value = value * 10 + (c - '0');
+    }
+    return value;
+}
+
+} // namespace helix
 
 /**
  * @brief Filament requirement from G-code analysis

@@ -322,16 +322,38 @@ _record_webcam_backup() {
         : > "$marker" 2>/dev/null || true
 }
 
-# Delete the stock iframe "Default" webcam (if present) and POST our ustreamer
-# webcam pointed at http://<lan_ip>:<port>/. Idempotent on the moonraker side:
-# POST /server/webcams/item upserts by name, so re-running just refreshes it.
-# Args: $1 = lan_ip, $2 = port. Returns non-zero only on hard python failure.
-_moonraker_migrate_webcams() {
-    local lan_ip="$1" port="$2"
+# Probe the K2's stock nginx webcam proxy (location /webcam/ -> 127.0.0.1:8080,
+# fronted on port 4408). When it serves an image, a RELATIVE stream URL
+# (/webcam/?action=stream) is preferable to an absolute http://<lan_ip>:8080 one:
+# the relative form resolves against whatever origin the client loaded fluidd from,
+# so it survives DHCP lease changes and multi-homed eth/wlan interface flips that
+# would otherwise strand a baked-in absolute IP (the "camera dead in fluidd after a
+# while" failure). Returns 0 only when the proxy returns an image snapshot.
+_k2_webcam_proxy_serves() {
     _has_python || return 1
-    "$_PY_BIN" - "$MOONRAKER_URL" "$lan_ip" "$port" "$HELIX_WEBCAM_NAME" <<'PYEOF' 2>/dev/null
+    "$_PY_BIN" - <<'PYEOF' 2>/dev/null
+import sys, urllib.request
+try:
+    with urllib.request.urlopen(
+            'http://127.0.0.1:4408/webcam/?action=snapshot', timeout=4) as r:
+        ct = (r.headers.get('Content-Type') or '').lower()
+        sys.exit(0 if r.status == 200 and ct.startswith('image/') else 1)
+except Exception:
+    sys.exit(1)
+PYEOF
+}
+
+# Delete the stock iframe "Default" webcam (if present) and POST our ustreamer
+# webcam pointed at the given stream/snapshot URLs. Idempotent on the moonraker
+# side: POST /server/webcams/item upserts by name, so re-running just refreshes it.
+# Args: $1 = stream_url, $2 = snapshot_url. Returns non-zero only on hard python
+# failure.
+_moonraker_migrate_webcams() {
+    local stream_url="$1" snap_url="$2"
+    _has_python || return 1
+    "$_PY_BIN" - "$MOONRAKER_URL" "$stream_url" "$snap_url" "$HELIX_WEBCAM_NAME" <<'PYEOF' 2>/dev/null
 import json, sys, urllib.request, urllib.parse
-base, lan_ip, port, name = sys.argv[1].rstrip('/'), sys.argv[2], sys.argv[3], sys.argv[4]
+base, stream, snap, name = sys.argv[1].rstrip('/'), sys.argv[2], sys.argv[3], sys.argv[4]
 
 def req(method, path, body=None):
     data = json.dumps(body).encode() if body is not None else None
@@ -360,8 +382,6 @@ try:
 except Exception:
     pass  # non-fatal; the POST below is what matters
 
-stream = 'http://%s:%s/stream' % (lan_ip, port)
-snap = 'http://%s:%s/snapshot' % (lan_ip, port)
 try:
     # 'mjpegstreamer-adaptive' (not 'ustreamer'): fluidd/mainsail render MJPEG by
     # service type and have no 'ustreamer' renderer — it shows "service not
@@ -508,20 +528,37 @@ install_camera_k2() {
         return 0
     fi
 
-    local lan_ip
-    lan_ip="$(detect_lan_ip)"
-    if [ -z "$lan_ip" ]; then
-        log_warn "Could not determine the K2's LAN IP — skipping webcam registration"
-        log_warn "ustreamer is running on :$port; add the webcam manually if needed."
-        return 0
+    # Choose the webcam URL form. Prefer a RELATIVE URL served through the K2's
+    # stock nginx /webcam/ proxy — it is immune to the DHCP lease changes and
+    # eth/wlan interface flips that strand an absolute http://<lan_ip>:8080 URL
+    # (fluidd resolves it against its own origin). Only fall back to the absolute
+    # LAN IP when that proxy isn't serving (non-stock nginx), which still needs a
+    # detected IP. Note: a remote HelixScreen consumer must reach the K2 through
+    # the same nginx front (port 4408) for the relative form to resolve.
+    local stream_url snap_url reg_desc
+    if _k2_webcam_proxy_serves; then
+        stream_url="/webcam/?action=stream"
+        snap_url="/webcam/?action=snapshot"
+        reg_desc="$stream_url (via nginx proxy)"
+    else
+        local lan_ip
+        lan_ip="$(detect_lan_ip)"
+        if [ -z "$lan_ip" ]; then
+            log_warn "Could not determine the K2's LAN IP and the nginx /webcam/ proxy is not serving — skipping webcam registration"
+            log_warn "ustreamer is running on :$port; add the webcam manually if needed."
+            return 0
+        fi
+        stream_url="http://${lan_ip}:${port}/stream"
+        snap_url="http://${lan_ip}:${port}/snapshot"
+        reg_desc="http://${lan_ip}:${port}/"
     fi
 
     # Record the pre-migration list ONCE (true stock state) for reversal.
     _record_webcam_backup "$cams_json"
 
-    log_info "Registering ustreamer webcam (http://${lan_ip}:${port}/) in Moonraker..."
+    log_info "Registering ustreamer webcam (${reg_desc}) in Moonraker..."
     local migrate_out
-    if migrate_out="$(_moonraker_migrate_webcams "$lan_ip" "$port")"; then
+    if migrate_out="$(_moonraker_migrate_webcams "$stream_url" "$snap_url")"; then
         log_success "Moonraker webcam configured for HelixScreen + fluidd"
         case "$migrate_out" in
             *CONFIG_DEFAULT_LEFT*)

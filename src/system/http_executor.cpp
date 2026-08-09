@@ -123,6 +123,7 @@ std::future<void> HttpExecutor::submit(HttpWork work) {
             // Reject: drop the promise → broken_promise on future::get().
             return fut;
         }
+        state->inflight.fetch_add(1, std::memory_order_relaxed);
         state->queue.emplace_back(std::move(work), std::move(promise));
     }
     state->cv.notify_one();
@@ -136,6 +137,11 @@ void HttpExecutor::run_sync(HttpWork work) {
 
 bool HttpExecutor::on_thread() const noexcept {
     return tls_current_executor_ == this;
+}
+
+std::size_t HttpExecutor::inflight() const noexcept {
+    auto state = std::atomic_load(&state_);
+    return state ? state->inflight.load(std::memory_order_relaxed) : 0;
 }
 
 void HttpExecutor::loop(std::shared_ptr<SharedState> state, HttpExecutor* owner, std::string name,
@@ -156,6 +162,16 @@ void HttpExecutor::loop(std::shared_ptr<SharedState> state, HttpExecutor* owner,
             item = std::move(state->queue.front());
             state->queue.pop_front();
         }
+
+        // Scope-guard the decrement so a throwing item still releases its
+        // inflight slot — wait_idle (and anyone else polling inflight())
+        // must never see a stuck counter because a job threw.
+        struct InflightGuard {
+            std::atomic<std::size_t>& c;
+            ~InflightGuard() {
+                c.fetch_sub(1, std::memory_order_relaxed);
+            }
+        } guard{state->inflight};
 
         try {
             item.first();

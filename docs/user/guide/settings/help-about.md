@@ -10,7 +10,7 @@ Five items in the Help & About category:
 |--------|--------------|
 | **Replay Welcome Tour** | Plays the guided first-run tour again (see below) |
 | **Upload Debug Bundle** | Collects logs and system info for support (see below) |
-| **Discord Community** | Join **discord.gg/helixscreen** for community help and feedback |
+| **Discord Community** | Join **discord.gg/RZCT2StKhr** for community help and feedback |
 | **Documentation** | Visit **helixscreen.org/docs** for guides and reference |
 | **About** | Version, updates, and printer info (see below) |
 

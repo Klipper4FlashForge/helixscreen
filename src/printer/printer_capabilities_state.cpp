@@ -62,6 +62,12 @@ void PrinterCapabilitiesState::deinit_subjects() {
     }
 
     spdlog::debug("[PrinterCapabilitiesState] Deinitializing subjects");
+
+    // Expire any setter callbacks still queued on the UpdateQueue. They capture
+    // `this` and write the subjects torn down below; without this the next drain
+    // notifies a freed observer list (#1165, #1146).
+    async_lifetime_.invalidate();
+
     subjects_.deinit_all();
     subjects_initialized_ = false;
 }
@@ -110,11 +116,9 @@ void PrinterCapabilitiesState::set_hardware(const PrinterDiscovery& hardware,
     // in the discovery sequence, so switching to a printer without timelapse
     // still clears correctly. A Klipper [timelapse] object, if one ever exists,
     // still enables it through hardware.has_timelapse().
-    lv_subject_set_int(&printer_has_timelapse_,
-                       (hardware.has_timelapse() ||
-                        lv_subject_get_int(&printer_has_timelapse_) != 0)
-                           ? 1
-                           : 0);
+    lv_subject_set_int(
+        &printer_has_timelapse_,
+        (hardware.has_timelapse() || lv_subject_get_int(&printer_has_timelapse_) != 0) ? 1 : 0);
 
     // Firmware retraction capability (for G10/G11 retraction settings)
     lv_subject_set_int(&printer_has_firmware_retraction_,
@@ -149,7 +153,7 @@ void PrinterCapabilitiesState::set_sound_backend_available(bool available) {
 
 void PrinterCapabilitiesState::set_spoolman_available(bool available) {
     // Thread-safe: Use ui_queue_update to update LVGL subject from any thread
-    helix::ui::queue_update([this, available]() {
+    async_lifetime_.defer("PrinterCapabilitiesState::set_spoolman_available", [this, available]() {
         lv_subject_set_int(&printer_has_spoolman_, available ? 1 : 0);
         spdlog::debug("[PrinterCapabilitiesState] Spoolman availability set: {}", available);
     });
@@ -159,8 +163,10 @@ void PrinterCapabilitiesState::set_webcam_available(bool available, const std::s
                                                     const std::string& snapshot_url, bool flip_h,
                                                     bool flip_v, int target_fps) {
     // Store URLs before queuing (captured by value for thread safety)
-    helix::ui::queue_update([this, available, stream_url, snapshot_url, flip_h, flip_v,
-                             target_fps]() {
+    async_lifetime_.defer("PrinterCapabilitiesState::set_webcam_available", [this, available,
+                                                                             stream_url,
+                                                                             snapshot_url, flip_h,
+                                                                             flip_v, target_fps]() {
         webcam_stream_url_ = available ? stream_url : "";
         webcam_snapshot_url_ = available ? snapshot_url : "";
         webcam_flip_h_ = flip_h;
@@ -175,7 +181,7 @@ void PrinterCapabilitiesState::set_webcam_available(bool available, const std::s
 
 void PrinterCapabilitiesState::set_timelapse_available(bool available) {
     // Thread-safe: Use ui_queue_update to update LVGL subject from any thread
-    helix::ui::queue_update([this, available]() {
+    async_lifetime_.defer("PrinterCapabilitiesState::set_timelapse_available", [this, available]() {
         lv_subject_set_int(&printer_has_timelapse_, available ? 1 : 0);
         spdlog::debug("[PrinterCapabilitiesState] Timelapse availability set: {}", available);
     });
@@ -213,7 +219,7 @@ void PrinterCapabilitiesState::update_has_chamber() {
 
 void PrinterCapabilitiesState::set_power_device_count(int count) {
     // Thread-safe: Use ui_queue_update to update LVGL subject from any thread
-    helix::ui::queue_update([this, count]() {
+    async_lifetime_.defer("PrinterCapabilitiesState::set_power_device_count", [this, count]() {
         lv_subject_set_int(&power_device_count_, count);
         spdlog::debug("[PrinterCapabilitiesState] Power device count set: {}", count);
     });
@@ -221,7 +227,7 @@ void PrinterCapabilitiesState::set_power_device_count(int count) {
 
 void PrinterCapabilitiesState::set_sensor_count(int count) {
     // Thread-safe: Use ui_queue_update to update LVGL subject from any thread
-    helix::ui::queue_update([this, count]() {
+    async_lifetime_.defer("PrinterCapabilitiesState::set_sensor_count", [this, count]() {
         lv_subject_set_int(&sensor_count_, count);
         spdlog::debug("[PrinterCapabilitiesState] Sensor count set: {}", count);
     });

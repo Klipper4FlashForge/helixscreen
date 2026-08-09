@@ -309,6 +309,14 @@ class CrossRefValidator:
         if not attr_value or attr_value.startswith(("#", "$")):
             return None
 
+        # Skip embedded ${name} composition (e.g. bind_text="demo_${i}_v"). The
+        # composed subject name is only known at runtime once the <repeat> loop
+        # index / component params are spliced in, so it cannot be statically
+        # resolved — the C++ side is responsible for registering the indexed
+        # subjects. A plain (brace-free) name still falls through and is checked.
+        if "${" in attr_value:
+            return None
+
         if (
             attr_value in self._definitions.subject_names
             or self._is_project_subject(attr_value)

@@ -30,6 +30,18 @@ enum class ToolheadStyle {
 };
 
 /**
+ * @brief Storage layer for the user-supplied console filter lists.
+ *
+ * The two layers are read together (the console applies their union) but are
+ * written independently, so a pattern the user only ever wants muted on one
+ * machine does not follow them to the next one.
+ */
+enum class ConsoleFilterScope {
+    Global,  ///< /console/filter_user_* — in force on every printer
+    Printer, ///< /printers/<active>/console/filter_user_* — active printer only
+};
+
+/**
  * @brief Application settings manager with reactive UI binding
  *
  * Coordinates persistence (Config), reactive subjects (lv_subject_t), immediate
@@ -117,9 +129,6 @@ class SettingsManager {
 
     /** @brief Set Z movement style override and apply to printer state */
     void set_z_movement_style(ZMovementStyle style);
-
-    /** @brief Get dropdown options string "Auto\nBed Moves\nNozzle Moves" */
-    static const char* get_z_movement_style_options();
 
     // =========================================================================
     // CHAMBER ASSIGNMENT (owned by SettingsManager — sensor/heater override)
@@ -308,6 +317,69 @@ class SettingsManager {
         return &afc_unload_after_print_subject_;
     }
 
+    /**
+     * @brief Whether to show the bypass spool even when bypass is disengaged.
+     *
+     * AFC publishes a virtual bypass whether or not the user has one wired, so
+     * the bypass node was drawn permanently — and painted with whatever the
+     * external spool slot held, which read as "a spool is on bypass" on machines
+     * that have no bypass at all (#1229). The node is now hidden on AFC while
+     * bypass is off; enable this to keep it visible anyway. Default false.
+     */
+    bool get_ams_always_show_bypass_spool() const;
+
+    /** @brief Set whether the bypass spool stays visible with bypass disengaged */
+    void set_ams_always_show_bypass_spool(bool enabled);
+
+    /** @brief Always-show-bypass-spool subject (integer: 0=off, 1=on) */
+    lv_subject_t* subject_ams_always_show_bypass_spool() {
+        return &ams_always_show_bypass_spool_subject_;
+    }
+
+    /**
+     * @brief Expose the bypass controls even though the firmware reports none.
+     *
+     * Distinct from get_ams_always_show_bypass_spool(), which only un-suppresses
+     * a node we hide ourselves on AFC. This one contradicts the firmware: Happy
+     * Hare defaults [mmu_machine] has_bypass to 0 for mmu_vendor "Other", which
+     * is what a Qidi Box reports, so owners who do feed filament past the unit
+     * get no bypass UI at all. Safe to honour because Happy Hare's own
+     * select_bypass() never consults has_bypass() — MMU_SELECT_BYPASS deselects
+     * the gear steppers and reports gate -2 regardless. Default false.
+     */
+    bool get_ams_force_bypass_controls() const;
+
+    /** @brief Set whether bypass controls appear despite a firmware "no bypass" */
+    void set_ams_force_bypass_controls(bool enabled);
+
+    /** @brief Force-bypass-controls subject (integer: 0=off, 1=on) */
+    lv_subject_t* subject_ams_force_bypass_controls() {
+        return &ams_force_bypass_controls_subject_;
+    }
+
+    // =========================================================================
+    // POST-OP COOLDOWN (owned by SettingsManager — per-printer filament behavior)
+    // =========================================================================
+
+    /**
+     * @brief Get whether the nozzle cools down after a filament load/unload.
+     *
+     * When enabled (default), PostOpCooldownManager turns the extruder heater
+     * off `filament/cooldown_delay_seconds` after an operation completes. Some
+     * filament systems — AFC, for one — implement their own post-operation
+     * cooldown, so users on those need to turn ours off to avoid two
+     * independent timers fighting over the heater.
+     */
+    bool get_filament_auto_cooldown() const;
+
+    /** @brief Set whether the nozzle cools down after a filament load/unload */
+    void set_filament_auto_cooldown(bool enabled);
+
+    /** @brief Post-op cooldown subject (integer: 0=off, 1=on) */
+    lv_subject_t* subject_filament_auto_cooldown() {
+        return &filament_auto_cooldown_subject_;
+    }
+
     // =========================================================================
     // CONSOLE FILTERS (owned by SettingsManager — gcode console noise toggles)
     // =========================================================================
@@ -331,21 +403,58 @@ class SettingsManager {
     }
 
     /**
-     * @brief Get user-supplied extra patterns to add to the active printer's preset.
+     * @brief Get every user-supplied extra pattern that applies to the active
+     *        printer's preset — the union of the global layer and the active
+     *        printer's own layer, global entries first, duplicates collapsed.
      *        Each entry is a `<type>:<text>` spec (`prefix:`, `substring:`, `regex:`).
      */
     std::vector<std::string> get_console_filter_user_add() const;
 
     /**
-     * @brief Get user-supplied patterns to drop from the active printer's preset.
-     *        Each entry must match a preset spec verbatim to take effect.
+     * @brief Get every user-supplied pattern to drop from the active printer's
+     *        preset — the union of the global and per-printer layers, global
+     *        entries first, duplicates collapsed. Each entry must match a preset
+     *        spec verbatim to take effect.
      */
     std::vector<std::string> get_console_filter_user_remove() const;
 
-    /** @brief Replace the additive user patterns. Persists immediately. */
-    void set_console_filter_user_add(const std::vector<std::string>& patterns);
-    /** @brief Replace the suppress-from-preset user patterns. Persists immediately. */
-    void set_console_filter_user_remove(const std::vector<std::string>& patterns);
+    /** @brief Read one storage layer of the additive user patterns, unmerged. */
+    std::vector<std::string> get_console_filter_user_add(ConsoleFilterScope scope) const;
+    /** @brief Read one storage layer of the suppress-from-preset patterns, unmerged. */
+    std::vector<std::string> get_console_filter_user_remove(ConsoleFilterScope scope) const;
+
+    /**
+     * @brief Replace the additive user patterns in one layer. Persists immediately.
+     *        The other layer is left as it is; the console sees both.
+     */
+    void set_console_filter_user_add(const std::vector<std::string>& patterns,
+                                     ConsoleFilterScope scope = ConsoleFilterScope::Global);
+    /**
+     * @brief Replace the suppress-from-preset patterns in one layer. Persists
+     *        immediately. The other layer is left as it is; the console sees both.
+     */
+    void set_console_filter_user_remove(const std::vector<std::string>& patterns,
+                                        ConsoleFilterScope scope = ConsoleFilterScope::Global);
+
+    // =========================================================================
+    // MACRO PANEL (owned by SettingsManager — per-printer hidden macro set)
+    // =========================================================================
+
+    /**
+     * @brief Get the set of macro names the user has hidden from the macro panel
+     *        on the active printer. Empty if never configured or malformed.
+     */
+    std::vector<std::string> get_hidden_macros() const;
+
+    /** @brief Replace the hidden-macro set for the active printer. Persists immediately. */
+    void set_hidden_macros(const std::vector<std::string>& names);
+
+    /**
+     * @brief Whether the hidden-macro key has ever been written for the active
+     *        printer. Lets callers distinguish "never configured" (seed
+     *        defaults) from "configured to an empty set" (user unhid everything).
+     */
+    bool hidden_macros_key_exists() const;
 
     // =========================================================================
     // SPAGHETTI DETECTION (owned by SettingsManager — master toggle + per-source policy)
@@ -432,6 +541,9 @@ class SettingsManager {
     lv_subject_t show_widget_labels_subject_;
     lv_subject_t auto_color_map_subject_;
     lv_subject_t afc_unload_after_print_subject_;
+    lv_subject_t ams_always_show_bypass_spool_subject_;
+    lv_subject_t ams_force_bypass_controls_subject_;
+    lv_subject_t filament_auto_cooldown_subject_;
     lv_subject_t console_filter_temps_subject_;
     lv_subject_t console_filter_firmware_noise_subject_;
     lv_subject_t detection_enabled_subject_;

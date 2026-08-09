@@ -60,7 +60,16 @@ StepContext build_context() {
     c.config = helix::Config::get_instance();
     c.api = get_moonraker_api();
     int n = c.config ? static_cast<int>(c.config->get_printer_ids().size()) : 1;
-    bool has_preset = c.config && c.config->has_preset();
+    // A preset marker written mid-wizard is provisional until the run finishes —
+    // otherwise an interrupted first run comes back with identify + every
+    // hardware step collapsed. wizard_preset_is_authoritative() keeps the
+    // install-time-seeded fast path and the in-run collapse intact.
+    bool preset_marker = c.config && c.config->has_preset();
+    bool provisional =
+        c.config && c.config->get<bool>(c.config->df() + helix::kWizardPresetProvisional, false);
+    bool wizard_completed = c.config && !c.config->is_wizard_required();
+    bool has_preset = helix::wizard_preset_is_authoritative(
+        preset_marker, provisional, wizard_completed, helix::wizard_preset_applied_this_session());
     c.preset = helix::wizard_preset_plan(has_preset, n);
     c.is_subsequent_printer = n > 1;
     return c;

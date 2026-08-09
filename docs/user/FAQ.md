@@ -17,7 +17,7 @@ HelixScreen is a touchscreen interface for Klipper 3D printers. It connects to y
 - First-run wizard with auto-detection of 80+ printer models
 - Theme editor with 17 presets (dark and light), 9 languages
 - Sound system, timelapse integration, label printing, exclude objects
-- Auto-detecting layout system for displays from 480x320 to 1920x480
+- Auto-detecting layout system for displays from 480x320 to 1024x600 (ultrawide and portrait orientations are alpha)
 - ~15MB RAM on embedded targets — designed for the modest hardware most people already own, no desktop required
 
 ### Which printers are supported?
@@ -31,8 +31,8 @@ HelixScreen works with any Klipper-based printer running Moonraker. Tested and s
 | FlashForge AD5M / 5M Pro | **Tested** | Requires Forge-X or Klipper Mod firmware |
 | QIDI Q2, Max 4 | **Supported** | Stock firmware works (runs standard Moonraker); community firmware like FreeDi or FreeQIDI also supported. Plus 4 uses a TJC serial display and is not supported for on-device install — only remote control via Moonraker. |
 | Creality K1 / K1C / K1 Max / K1 SE | **Supported** | Requires rooting or Guilouz firmware |
-| Creality K2 Pro / K2 Plus | **Tested** | Runs natively with CFS support |
-| Creality Sonic Pad | **Supported** | 32-bit ARM, dedicated build |
+| Creality K2 Pro / K2 Plus | **Tested** | Runs natively with CFS support, on stock firmware and on community builds with a rewritten CFS module — see [Filament → CFS](guide/filament.md#creality-filament-system-cfs) |
+| Creality Sonic Pad | **Supported** | 32-bit ARM, dedicated build. Tested only on [SonicPad-Debian](https://github.com/Jpe230/SonicPad-Debian); stock Creality firmware untested |
 | Creality Hi | **Preliminary** | Auto-detected; Cartesian bedslinger with optional CFS. Untested on our hardware. |
 | Anycubic Kobra 2 Pro / Kobra 3 / 3 V2 / 3 Max / S1 / S1 Max | **Community** | Auto-detected on [Rinkhals](https://github.com/jbatonnet/Rinkhals) firmware; native ACE (`filament_hub`) supported. Untested on our hardware. |
 | FlashForge AD5X | **Tested** | IFS filament system integrated |
@@ -63,13 +63,21 @@ Point it at Moonraker (port `7125`), not the Mainsail/Fluidd web interface — y
 
 **Should work but not yet tested:**
 - Official Raspberry Pi 7" DSI touchscreen
-- Creality K2 built-in 4.3" display (480x800, portrait — may need rotation)
+- Creality K2 built-in 4.3" display (480x800 — the panel is software-rotated to landscape; running it as portrait is alpha)
 - Other HDMI displays
 - SPI displays (with proper configuration)
 
-**Display sizes:** HelixScreen auto-detects the best layout for your display. 800x480, 1024x600, and 1920x480 (ultrawide) are fully supported. 480x320 displays will run but may have layout overlap issues — improved small-screen support is ongoing.
+**Display sizes:** HelixScreen auto-detects the best layout for your display. 800x480 and 1024x600 are fully supported. 480x320 displays will run but may have layout overlap issues — improved small-screen support is ongoing.
 
-**Display rotation:** All three binaries (main, splash, watchdog) support 0°, 90°, 180°, and 270° rotation via config or command line.
+**Ultrawide and portrait screens are alpha at best.** The layout engine detects an ultrawide screen (wider than about 2.5:1, e.g. 1920x480) or a portrait screen (narrower than about 0.8:1, e.g. 480x800) and adjusts the navigation bar and grid sizing accordingly. What does *not* exist yet is the per-panel artwork: there are no ultrawide panel layouts at all, and portrait has only the app shell and navigation bar. Everything else falls back to the standard landscape layout, so expect stretched, cramped, or clipped panels.
+
+The one part that does adapt is the **home dashboard**. Its widget grid is sized from the actual screen rather than a fixed table, so a 480x800 portrait panel gets a 3x6 grid and a 320x1480 one gets 2x12 — more usable cells than before. Portrait also has its own set of default widgets (Tips is left out, since it is too wide to be worth a row on a narrow grid), and buttons, inputs, and headers are sized from the screen's height, so a tall panel gets taller controls instead of cramped ones. Nothing outside the home dashboard changes.
+
+Treat both as "it boots and you can drive it", not "it looks right". Neither is tested on real hardware in those orientations. If you want to help, both are wide open for contributions and only need XML, not C++ — see the [UI Contributor Guide](../devel/UI_CONTRIBUTOR_GUIDE.md).
+
+You can force either mode to try it: `helix-screen --layout ultrawide` or `--layout portrait`, or set `"layout": "ultrawide"` in the `display` section of `settings.json`.
+
+**Display rotation:** All three binaries (main, splash, watchdog) support 0°, 90°, 180°, and 270° rotation via config or command line. Rotating a portrait panel to landscape (what the Creality K2 does) is well-trodden; leaving it in portrait and using the portrait layout is the alpha path described above.
 
 If you test on hardware not listed above, please let us know your results!
 
@@ -85,6 +93,10 @@ HelixScreen reads standard G-code, so most slicers work. But support is tiered:
 | Cura | **Not targeted** | We don't test against Cura and don't build features for it, but we don't go out of our way to break it. Output generally works; some features (exclude objects, filament sync) need extra setup or aren't available. |
 
 For the best results — accurate metadata, thumbnails, exclude-object support, and filament syncing — use **OrcaSlicer 2.3.2 or later**.
+
+### Why is my layer count or time remaining inaccurate?
+
+For an exact layer count and a reliable time-remaining estimate, HelixScreen needs your slicer to report layer info to Klipper via the `SET_PRINT_STATS_INFO` command in the printed G-code. Many stock slicer profiles don't emit it, so HelixScreen falls back to estimating from progress and Z-height — close, but not exact. Adding two short lines to your slicer's custom G-code fixes it. See [Troubleshooting → Layer count is wrong, stuck at 0, or total layers missing](TROUBLESHOOTING.md#layer-count-is-wrong-stuck-at-0-or-total-layers-missing) for the exact snippets per slicer.
 
 ### How is this different from KlipperScreen and GuppyScreen?
 
@@ -318,6 +330,12 @@ For layout customization, you can edit XML files in `ui_xml/` (no recompilation 
 ### Can I change which macro the Load / Unload / Purge buttons run?
 
 **Yes.** Go to **Settings > Printer > Macro Buttons** and scroll to the **Standard Macros** section. Each button has a dropdown where you can select any macro from your Klipper config, or choose **(Auto)** to let HelixScreen detect it automatically. This works with or without an AMS system — see the [Filament guide](guide/filament.md#customizing-which-macro-runs) for details.
+
+### Why does my nozzle cool down after a filament change?
+
+**That's deliberate.** A load or unload heats the nozzle to material temperature, and HelixScreen turns the heater back off two minutes later so it doesn't sit hot indefinitely. The delay lets you run several operations back to back, and a running print is never interfered with.
+
+If your filament system already does its own post-operation cooldown — AFC does — turn ours off at **Settings > Safety & Notifications > Cool nozzle after filament ops** so the two aren't both driving the heater. It's a per-printer setting, so your other machines keep the built-in behavior. See [Safety settings](guide/settings/safety.md#cool-nozzle-after-filament-ops).
 
 ### Can I customize the printer image on the home screen?
 

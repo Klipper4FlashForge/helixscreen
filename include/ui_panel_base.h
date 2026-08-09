@@ -307,16 +307,6 @@ class PanelBase : public IPanelLifecycle {
      */
     void cleanup_observers();
 
-    /**
-     * @brief Set panel width for overlay panels positioned after nav bar
-     *
-     * Calculates width as (screen_width - nav_width) and applies it to panel_.
-     * Call this in setup() for panels that use x="#nav_width" positioning.
-     *
-     * @note Requires panel_ and parent_screen_ to be set (call after PanelBase::setup())
-     */
-    void set_overlay_width();
-
   private:
     std::vector<lv_observer_t*> observers_;
 };

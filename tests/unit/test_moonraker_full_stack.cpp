@@ -22,6 +22,8 @@
  *   ./build/bin/helix-tests "[integration]"
  */
 
+#include "ui_update_queue.h"
+
 #include "../../include/moonraker_api.h"
 #include "../../include/moonraker_api_mock.h"
 #include "../../include/moonraker_client_mock.h"
@@ -109,6 +111,10 @@ class FullStackTestFixture {
     }
 
     ~FullStackTestFixture() {
+        // Drain while printer_state_ is still alive — discover_printer() in the
+        // ctor leaves PrinterCapabilitiesState's deferred setters queued (#1166).
+        helix::ui::UpdateQueue::instance().drain();
+
         client_.stop_temperature_simulation();
         client_.disconnect();
         api_.reset();
@@ -126,7 +132,7 @@ class FullStackTestFixture {
 // ============================================================================
 
 TEST_CASE_METHOD(FullStackTestFixture, "Full stack: Print workflow with object exclusion",
-                 "[connection][integration][exclude][slow]") {
+                 "[connection][integration][exclude]") {
     SECTION("Excluded objects sync from client to API") {
         // 1. Verify initial state is clean
         REQUIRE(api_->get_excluded_objects_from_mock().empty());
@@ -206,7 +212,7 @@ TEST_CASE_METHOD(FullStackTestFixture, "Full stack: Print workflow with object e
 // ============================================================================
 
 TEST_CASE_METHOD(FullStackTestFixture, "Full stack: Temperature control cycle",
-                 "[connection][integration][temperature][slow]") {
+                 "[connection][integration][temperature]") {
     SECTION("API set_temperature sends G-code command") {
         // Set bed target via API - this sends a G-code command
         bool success_called = false;
@@ -254,7 +260,7 @@ TEST_CASE_METHOD(FullStackTestFixture, "Full stack: Temperature control cycle",
 // ============================================================================
 
 TEST_CASE_METHOD(FullStackTestFixture, "Full stack: Bed mesh access through API",
-                 "[connection][integration][bedmesh][slow]") {
+                 "[connection][integration][bedmesh]") {
     SECTION("API reports bed mesh state correctly") {
         // Check bed mesh availability through API
         bool api_has_mesh = api_->advanced().has_bed_mesh();
@@ -323,6 +329,10 @@ class EventIntegrationFixture {
     }
 
     ~EventIntegrationFixture() {
+        // Drain while printer_state_ is still alive — discover_printer() in the
+        // ctor leaves PrinterCapabilitiesState's deferred setters queued (#1166).
+        helix::ui::UpdateQueue::instance().drain();
+
         client_.stop_temperature_simulation();
         client_.disconnect();
     }
@@ -374,7 +384,7 @@ class EventIntegrationFixture {
 };
 
 TEST_CASE_METHOD(EventIntegrationFixture, "Full stack: Event emission and handling",
-                 "[integration][state][slow]") {
+                 "[integration][state]") {
     SECTION("Registered handler receives events") {
         client_.register_event_handler(create_capture_handler());
 
@@ -437,7 +447,7 @@ TEST_CASE_METHOD(EventIntegrationFixture, "Full stack: Event emission and handli
 // ============================================================================
 
 TEST_CASE_METHOD(FullStackTestFixture, "Full stack: PrinterHardware guessing",
-                 "[integration][printer][slow]") {
+                 "[integration][printer]") {
     // Create PrinterHardware from the API's discovered hardware
     PrinterHardware hw(api_->hardware().heaters(), api_->hardware().sensors(),
                        api_->hardware().fans(), api_->hardware().leds());
@@ -473,7 +483,7 @@ TEST_CASE_METHOD(FullStackTestFixture, "Full stack: PrinterHardware guessing",
 // ============================================================================
 
 TEST_CASE("Full stack: All printer types work correctly",
-          "[connection][integration][all_printers][slow]") {
+          "[connection][integration][all_printers]") {
     PrinterState state;
     state.init_subjects(false);
 
@@ -531,7 +541,7 @@ TEST_CASE("Full stack: All printer types work correctly",
 // ============================================================================
 
 TEST_CASE_METHOD(FullStackTestFixture, "Full stack: Concurrent access to shared state",
-                 "[connection][integration][threading][slow]") {
+                 "[connection][integration][threading]") {
     SECTION("Concurrent excluded object operations are thread-safe") {
         std::atomic<bool> stop_flag{false};
         std::atomic<int> add_count{0};
@@ -619,7 +629,7 @@ TEST_CASE_METHOD(FullStackTestFixture, "Full stack: Concurrent access to shared 
 // ============================================================================
 
 TEST_CASE_METHOD(FullStackTestFixture, "Full stack: State reset and cleanup",
-                 "[integration][connection][slow]") {
+                 "[integration][connection]") {
     SECTION("MockPrinterState reset clears all state") {
         // Set up various state
         shared_state_->extruder_temp = 200.0;
@@ -660,8 +670,7 @@ TEST_CASE_METHOD(FullStackTestFixture, "Full stack: State reset and cleanup",
 // Test Case 9: API Error Handling Integration
 // ============================================================================
 
-TEST_CASE("Full stack: API error callbacks work correctly",
-          "[slow][connection][integration][errors]") {
+TEST_CASE("Full stack: API error callbacks work correctly", "[connection][integration][errors]") {
     PrinterState state;
     state.init_subjects(false);
 

@@ -82,3 +82,15 @@ def style_props_xml(fixtures_dir: Path) -> Path:
 def state_qualifiers_xml(fixtures_dir: Path) -> Path:
     """Return path to state_qualifiers.xml fixture."""
     return fixtures_dir / "state_qualifiers.xml"
+
+
+@pytest.fixture
+def new_syntax_xml(fixtures_dir: Path) -> Path:
+    """Return path to new_syntax.xml fixture (subject_expr, bind_*_if)."""
+    return fixtures_dir / "new_syntax.xml"
+
+
+@pytest.fixture
+def new_syntax_invalid_xml(fixtures_dir: Path) -> Path:
+    """Return path to new_syntax_invalid.xml fixture (genuinely unknown tag/attr)."""
+    return fixtures_dir / "new_syntax_invalid.xml"

@@ -149,6 +149,13 @@ void TempGraphOverlay::on_activate() {
     temp_control_panel_ =
         helix::PanelWidgetManager::instance().shared_resource<TemperatureService>();
 
+    // Thermal tint for the three size="xl" heater glyphs (one per control
+    // strip). Each binder owns its own observers, so this needs no hook into
+    // the graph/series machinery below.
+    nozzle_icon_binder_.bind(overlay_root_, *printer_state_, helix::HeaterType::Nozzle);
+    bed_icon_binder_.bind(overlay_root_, *printer_state_, helix::HeaterType::Bed);
+    chamber_icon_binder_.bind(overlay_root_, *printer_state_, helix::HeaterType::Chamber);
+
     // Discover series metadata (populates series_ with display info)
     discover_series();
 
@@ -204,6 +211,13 @@ void TempGraphOverlay::on_activate() {
 
 void TempGraphOverlay::on_deactivate() {
     OverlayBase::on_deactivate();
+
+    // Mirror the bind() calls in on_activate() — the icon widgets themselves
+    // survive (cached_overlay_ persists across pushes), but printer_state_ and
+    // the underlying subject lifetimes are only guaranteed valid while active.
+    nozzle_icon_binder_.unbind();
+    bed_icon_binder_.unbind();
+    chamber_icon_binder_.unbind();
 
     // Destroy controller (tears down observers, destroys graph)
     controller_.reset();
@@ -573,9 +587,19 @@ void TempGraphOverlay::configure_control_strip() {
         return;
     auto& heater = temp_control_panel_->heater(heater_type);
 
-    // Configure preset values for the callback
-    int preset_values[] = {heater.config.presets.off, heater.config.presets.pla,
-                           heater.config.presets.petg, heater.config.presets.abs};
+    // Configure preset values for the callback. Index 0 is "Off"; index i>=1 is
+    // user preset slot i-1 (helix::presets).
+    //
+    // Only the first TEMP_GRAPH_VISIBLE_PRESETS slots are surfaced here: this
+    // overlay's preset strip has no room for a fourth button. That is a layout
+    // constraint, not an oversight — see the constant's definition. Loop over
+    // TEMP_GRAPH_VISIBLE_PRESETS, never PRESET_COUNT, or this overruns the
+    // buttons that actually exist in temp_graph_overlay.xml.
+    int preset_values[MAX_PRESETS] = {};
+    preset_values[0] = heater.config.presets.off;
+    for (int i = 0; i < TEMP_GRAPH_VISIBLE_PRESETS; ++i) {
+        preset_values[i + 1] = heater.config.presets.material[static_cast<size_t>(i)];
+    }
 
     // Store preset values indexed by name suffix for lookup in callback
     // (cannot use lv_obj_set_user_data — ui_button owns that slot, L069)
@@ -778,11 +802,29 @@ void TempGraphOverlay::rebuild_extruder_selector() {
     std::sort(sorted.begin(), sorted.end(),
               [](const auto* a, const auto* b) { return a->name < b->name; });
 
+    // Touch-friendly pill sizing (esp. Tiny breakpoint / 480x320): the four tool
+    // pills share the narrow 33% control column. Grow each pill to fill the row
+    // equally and give it a real minimum touch height plus a body-size digit,
+    // instead of shrinking to the glyph (was font_small + content-size, ~18px
+    // tall and near-untappable). Mirrors tool_switcher_widget's pill sizing.
+    const int32_t pill_min_h = theme_manager_get_spacing("button_height_sm");
+    const int32_t pill_pad_ver = theme_manager_get_spacing("space_xxs");
+    const int32_t pill_pad_hor = theme_manager_get_spacing("space_xs");
+    // Rounded-rectangle radius + outline width, matching the preset buttons and
+    // dropdowns (both are breakpoint-aware theme consts, same values used in XML
+    // as #border_radius / #border_width).
+    const int32_t pill_radius = theme_manager_get_spacing("border_radius");
+    const int32_t pill_border_w = theme_manager_get_spacing("border_width");
+
     for (const auto* ext : sorted) {
         lv_obj_t* btn = lv_obj_create(extruder_selector_row_);
-        lv_obj_set_size(btn, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-        lv_obj_set_style_pad_all(btn, theme_manager_get_spacing("space_xs"), 0);
-        lv_obj_set_style_radius(btn, theme_manager_get_spacing("space_xs"), 0);
+        lv_obj_set_height(btn, LV_SIZE_CONTENT);
+        lv_obj_set_flex_grow(btn, 1); // share the column width equally across pills
+        lv_obj_set_style_min_height(btn, pill_min_h, 0);
+        lv_obj_set_style_pad_ver(btn, pill_pad_ver, 0);
+        lv_obj_set_style_pad_hor(btn, pill_pad_hor, 0);
+        // Rounded rectangle rather than a full-circle pill.
+        lv_obj_set_style_radius(btn, pill_radius, 0);
         lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
         lv_obj_remove_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_add_flag(btn, LV_OBJ_FLAG_CLICKABLE);
@@ -791,6 +833,13 @@ void TempGraphOverlay::rebuild_extruder_selector() {
         lv_obj_set_style_bg_color(
             btn,
             is_active ? theme_manager_get_color("primary") : theme_manager_get_color("card_bg"), 0);
+        // Inactive pills get an outline like the "Off" ghost button; the active
+        // pill stays a solid primary fill with no border.
+        lv_obj_set_style_border_width(btn, is_active ? 0 : pill_border_w, 0);
+        if (!is_active) {
+            lv_obj_set_style_border_color(btn, theme_manager_get_color("border"), 0);
+            lv_obj_set_style_border_opa(btn, LV_OPA_COVER, 0);
+        }
 
         lv_obj_t* label = lv_label_create(btn);
         // Compact pill label: show only the trailing number from "Nozzle N".
@@ -802,12 +851,13 @@ void TempGraphOverlay::rebuild_extruder_selector() {
                                     ? ext->display_name.substr(space_pos + 1)
                                     : ext->display_name;
         lv_label_set_text(label, pill_text.c_str());
-        lv_obj_set_style_text_font(label, theme_manager_get_font("font_small"), 0);
+        lv_obj_set_style_text_font(label, theme_manager_get_font("font_body"), 0);
         lv_obj_set_style_text_color(
             label,
             is_active ? theme_manager_get_color("on_primary") : theme_manager_get_color("text"), 0);
         lv_obj_remove_flag(label, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_flag(label, LV_OBJ_FLAG_EVENT_BUBBLE);
+        lv_obj_center(label); // center the digit within the grown pill
 
         // Store name as obj name for lookup in callback
         lv_obj_set_name(btn, ext->name.c_str());

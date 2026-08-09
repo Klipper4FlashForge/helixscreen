@@ -6,6 +6,7 @@
 
 #include "bluetooth_loader.h"
 #include "label_printer_settings.h"
+#include "log_redact.h"
 
 #include <spdlog/spdlog.h>
 
@@ -35,8 +36,8 @@ RfcommSendResult rfcomm_send(const std::string& mac, int fallback_channel,
             return result;
         }
 
-        spdlog::info("[{}] RFCOMM connect to {} ch{} (attempt {})", log_tag, mac, channel,
-                     attempt + 1);
+        spdlog::info("[{}] RFCOMM connect to {} ch{} (attempt {})", log_tag,
+                     helix::redact::mac(mac), channel, attempt + 1);
 
         auto* ctx = loader.get_or_create_context();
         if (!ctx) {
@@ -104,8 +105,8 @@ RfcommSendResult rfcomm_send_receive(const std::string& mac, int fallback_channe
             return result;
         }
 
-        spdlog::info("[{}] RFCOMM connect to {} ch{} (attempt {})", log_tag, mac, channel,
-                     attempt + 1);
+        spdlog::info("[{}] RFCOMM connect to {} ch{} (attempt {})", log_tag,
+                     helix::redact::mac(mac), channel, attempt + 1);
 
         auto* ctx = loader.get_or_create_context();
         if (!ctx) {
@@ -200,14 +201,15 @@ int resolve_label_printer_channel(const std::string& mac, int fallback_channel) 
     auto& settings = helix::LabelPrinterSettingsManager::instance();
     int cached = settings.get_bt_channel();
     if (cached >= kMinChannel && cached <= kMaxChannel) {
-        spdlog::debug("[BT] Using cached RFCOMM channel {} for {}", cached, mac);
+        spdlog::debug("[BT] Using cached RFCOMM channel {} for {}", cached,
+                      helix::redact::mac(mac));
         return cached;
     }
 
     auto& loader = helix::bluetooth::BluetoothLoader::instance();
     if (!loader.sdp_find_rfcomm_channel) {
         spdlog::warn("[BT] SDP symbol missing; using fallback channel {} for {}", fallback_channel,
-                     mac);
+                     helix::redact::mac(mac));
         return (fallback_channel >= kMinChannel && fallback_channel <= kMaxChannel)
                    ? fallback_channel
                    : -1;
@@ -217,13 +219,14 @@ int resolve_label_printer_channel(const std::string& mac, int fallback_channel) 
     int channel = -1;
     int r = loader.sdp_find_rfcomm_channel(ctx, mac.c_str(), kSppUuid16, &channel);
     if (r == 0 && channel >= kMinChannel && channel <= kMaxChannel) {
-        spdlog::info("[BT] SDP resolved RFCOMM channel {} for {} (caching)", channel, mac);
+        spdlog::info("[BT] SDP resolved RFCOMM channel {} for {} (caching)", channel,
+                     helix::redact::mac(mac));
         settings.set_bt_channel(channel);
         return channel;
     }
 
-    spdlog::warn("[BT] SDP lookup failed for {} (r={}, ch={}); falling back to {}", mac, r, channel,
-                 fallback_channel);
+    spdlog::warn("[BT] SDP lookup failed for {} (r={}, ch={}); falling back to {}",
+                 helix::redact::mac(mac), r, channel, fallback_channel);
     if (fallback_channel >= kMinChannel && fallback_channel <= kMaxChannel) {
         return fallback_channel; // do NOT cache fallback
     }

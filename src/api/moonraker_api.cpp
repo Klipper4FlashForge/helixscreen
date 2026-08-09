@@ -59,6 +59,12 @@ MoonrakerAPI::MoonrakerAPI(IMoonrakerClient& client, PrinterState& state)
 }
 
 MoonrakerAPI::~MoonrakerAPI() {
+    // Expire the deferred subject writes queued by notify_build_volume_changed()
+    // before the subject they touch goes away. Without this a callback still
+    // pending on the UpdateQueue is drained by whatever runs next and calls
+    // lv_subject_set_int() on freed memory (#1165, #1146).
+    async_lifetime_.invalidate();
+
     // Deinit LVGL subject before destruction to prevent dangling observer crashes
     // (same pattern as StaticSubjectRegistry — observers must be disconnected before lv_deinit)
     lv_subject_deinit(&build_volume_version_);
@@ -97,8 +103,9 @@ void MoonrakerAPI::notify_build_volume_changed() {
     // Counter is atomic since it's incremented from background thread and read from UI thread
     int new_version = ++build_volume_version_counter_;
     // Queue the subject update for the UI thread — lv_subject_set_int() is not thread-safe
-    helix::ui::queue_update(
-        [this, new_version]() { lv_subject_set_int(&build_volume_version_, new_version); });
+    async_lifetime_.defer("MoonrakerAPI::notify_build_volume_changed", [this, new_version]() {
+        lv_subject_set_int(&build_volume_version_, new_version);
+    });
     spdlog::debug("[MoonrakerAPI] Build volume changed, version={}", new_version);
 }
 
@@ -198,11 +205,7 @@ void MoonrakerAPI::set_phase_tracking_enabled(bool enabled,
                 }
                 spdlog::warn("[MoonrakerAPI] {} failed: {}", method, msg);
                 if (on_error) {
-                    MoonrakerError err;
-                    err.type = MoonrakerErrorType::JSON_RPC_ERROR;
-                    err.message = msg;
-                    err.method = method;
-                    err.details = result;
+                    MoonrakerError err = MoonrakerError::json_rpc_error(method, msg, result);
                     on_error(err);
                 } else if (on_success) {
                     on_success(false);

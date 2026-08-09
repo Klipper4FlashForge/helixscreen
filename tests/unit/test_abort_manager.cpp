@@ -121,6 +121,21 @@ class AbortManagerTestAccess {
         m.kalico_status_ = status;
     }
 
+    // Backdrop modal accessors — the modal is now created lazily by
+    // update_visibility() on the first visible state, not eagerly in
+    // init_subjects().
+    static lv_obj_t* backdrop(AbortManager& m) {
+        return m.backdrop_;
+    }
+
+    static void set_state(AbortManager& m, AbortManager::State state) {
+        m.abort_state_ = state;
+    }
+
+    static void call_update_visibility(AbortManager& m) {
+        m.update_visibility();
+    }
+
     static void on_print_state_during_cancel(AbortManager& m, PrintJobState state) {
         m.on_print_state_during_cancel(state);
     }
@@ -261,6 +276,47 @@ TEST_CASE_METHOD(AbortManagerTestFixture, "AbortManager: Singleton returns same 
     AbortManager& instance2 = AbortManager::instance();
 
     REQUIRE(&instance1 == &instance2);
+}
+
+// ============================================================================
+// Lazy Modal Creation Tests (crash fix: no eager GPU-blur backdrop at startup)
+// ============================================================================
+
+// init_subjects() must NOT eagerly build the abort backdrop. Building it runs
+// create_blurred_backdrop -> init_gpu_blur (EGL/Mali init), which hard-faults
+// inside the driver on some GPUs at cold startup. Deferring it to the first real
+// abort is the fix; this guards against the eager create_modal() call returning.
+TEST_CASE_METHOD(AbortManagerTestFixture,
+                 "AbortManager: init_subjects does not eagerly build modal", "[abort][lazy]") {
+    AbortManager& m = AbortManager::instance();
+    m.deinit_subjects(); // start from a known un-initialized state
+    m.init_subjects();
+
+    REQUIRE(AbortManagerTestAccess::backdrop(m) == nullptr);
+}
+
+// update_visibility() owns lazy creation now: it attempts create_modal() the
+// first time a visible (non-IDLE, non-COMPLETE) state is seen. In the headless
+// test fixture the default display has no driver data, so create_modal()
+// early-returns and backdrop_ stays null — but the lazy path must execute across
+// state transitions without crashing or leaving stale state.
+TEST_CASE_METHOD(AbortManagerTestFixture,
+                 "AbortManager: update_visibility lazily attempts modal creation",
+                 "[abort][lazy]") {
+    AbortManager& m = AbortManager::instance();
+    m.deinit_subjects();
+    m.init_subjects();
+    REQUIRE(AbortManagerTestAccess::backdrop(m) == nullptr);
+
+    // Visible state → lazy create_modal() attempt (no display driver data here).
+    AbortManagerTestAccess::set_state(m, AbortManager::State::SENT_CANCEL);
+    AbortManagerTestAccess::call_update_visibility(m);
+    REQUIRE(AbortManagerTestAccess::backdrop(m) == nullptr);
+
+    // Back to IDLE with no backdrop present must remain safe.
+    AbortManagerTestAccess::set_state(m, AbortManager::State::IDLE);
+    AbortManagerTestAccess::call_update_visibility(m);
+    REQUIRE(AbortManagerTestAccess::backdrop(m) == nullptr);
 }
 
 // ============================================================================

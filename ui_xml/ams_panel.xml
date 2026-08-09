@@ -7,98 +7,86 @@
        e.g. #ams_right_col_w — theme_manager picks the per-breakpoint value. -->
   <!-- Overlay panel - right-aligned, row layout so right column spans full height -->
   <view name="ams_panel"
-        extends="lv_obj" width="#overlay_panel_width" height="100%" align="right_mid" style_pad_all="0"
-        style_border_width="0" style_bg_opa="255" style_bg_color="#card_bg" scrollable="false"
-        flex_flow="row" style_pad_gap="0">
+        extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_pad_all="0"
+        style_border_width="0" style_bg_opa="255" style_bg_color="#card_bg" scrollable="false" flex_flow="row"
+        style_pad_gap="0">
     <!-- Left section: header + content (column) -->
     <lv_obj name="overlay_content"
-            height="100%" flex_grow="3" style_pad_all="0" style_pad_gap="0"
-            flex_flow="column" scrollable="false">
+            height="100%" flex_grow="3" style_pad_all="0" style_pad_gap="0" flex_flow="column" scrollable="false">
       <!-- Header Bar - left-column width only, with system logo + name -->
       <lv_obj name="overlay_header"
               width="100%" height="#header_height" style_pad_left="#space_xs" style_pad_right="#space_sm"
-              style_pad_top="#space_xs" style_pad_bottom="#space_xs" flex_flow="row"
-              style_flex_main_place="start" style_flex_cross_place="center"
-              style_flex_track_place="center" scrollable="false">
+              style_pad_top="#space_xs" style_pad_bottom="#space_xs" flex_flow="row" style_flex_main_place="start"
+              style_flex_cross_place="center" style_flex_track_place="center" scrollable="false">
         <!-- Back button: flex_grow region covers arrow + title = large touch target -->
-        <lv_obj name="back_button" flex_grow="1" height="100%"
-                style_pad_left="0" style_pad_right="0" style_pad_top="0" style_pad_bottom="0"
-                scrollable="false" clickable="true"
-                style_flex_cross_place="center" style_flex_track_place="center"
-                flex_flow="row" style_pad_gap="#space_xs">
+        <lv_obj name="back_button"
+                height="100%" flex_grow="1" style_pad_left="0" style_pad_right="0" style_pad_top="0"
+                style_pad_bottom="0" scrollable="false" clickable="true" style_flex_cross_place="center"
+                style_flex_track_place="center" flex_flow="row" style_pad_gap="#space_xs">
           <event_cb trigger="clicked" callback="on_header_back_clicked"/>
           <icon src="back" size="lg" variant="text" clickable="false" event_bubble="true"/>
           <!-- Title: "Multi-Filament" (colon lives with the backend suffix so it
                can be hidden together at MICRO/TINY) -->
           <text_heading name="header_title"
-                        text="Multi-Filament" translation_tag="Multi-Filament"
-                        text_transform="uppercase" long_mode="dots" style_text_align="left"
-                        clickable="false" event_bubble="true" scrollable="false"/>
+                        text="Multi-Filament" translation_tag="Multi-Filament" text_transform="uppercase"
+                        long_mode="dots" style_text_align="left" clickable="false" event_bubble="true"
+                        scrollable="false"/>
           <!-- Backend suffix (":" + logo + name) — hidden at MICRO/TINY where
                horizontal room is tight. -->
           <lv_obj name="header_backend_suffix"
-                  width="content" height="content" style_pad_all="0"
-                  flex_flow="row" style_flex_cross_place="center" style_pad_gap="#space_xs"
-                  scrollable="false" clickable="false" event_bubble="true">
+                  width="content" height="content" style_pad_all="0" flex_flow="row" style_flex_cross_place="center"
+                  style_pad_gap="#space_xs" scrollable="false" clickable="false" event_bubble="true">
             <bind_flag_if_lt subject="ui_breakpoint" flag="hidden" ref_value="2"/>
             <text_heading text=":" clickable="false" event_bubble="true" scrollable="false"/>
             <!-- System logo (bound to ams_system_logo subject) -->
-            <lv_image name="system_logo" width="20" height="20"
-                      bind_src="ams_system_logo" inner_align="contain"
-                      clickable="false" event_bubble="true"/>
+            <lv_image name="system_logo"
+                      width="20" height="20" bind_src="ams_system_logo" inner_align="contain" clickable="false"
+                      event_bubble="true"/>
             <!-- System name (bound to ams_system_name subject) -->
-            <text_heading name="system_name_label" bind_text="ams_system_name"
-                          text_transform="uppercase" long_mode="dots" clickable="false" event_bubble="true" scrollable="false"/>
+            <text_heading name="system_name_label"
+                          bind_text="ams_system_name" text_transform="uppercase" long_mode="dots" clickable="false"
+                          event_bubble="true" scrollable="false"/>
           </lv_obj>
         </lv_obj>
       </lv_obj>
       <!-- Left column content (unit visualization + path canvas) -->
       <lv_obj name="left_column"
-              width="100%" flex_grow="1" style_pad_all="#space_sm" style_pad_top="0"
-              style_pad_gap="#space_xs" flex_flow="column"
-              style_flex_main_place="start" style_flex_cross_place="center" scrollable="false">
+              width="100%" flex_grow="1" style_pad_all="#space_sm" style_pad_top="0" style_pad_gap="#space_xs"
+              flex_flow="column" style_flex_main_place="start" style_flex_cross_place="center" scrollable="false">
         <!-- Disable content when printer not connected or klippy not ready -->
         <bind_state_if_not_eq subject="nav_buttons_enabled" state="disabled" ref_value="1"/>
         <!-- Backend selector (hidden by default, shown when multiple backends present) -->
-        <lv_obj name="backend_selector_row" width="100%" height="content"
-                style_pad_all="0" style_pad_bottom="#space_sm"
-                flex_flow="row" style_flex_main_place="center" style_pad_gap="#space_xs"
-                scrollable="false" hidden="true">
+        <lv_obj name="backend_selector_row"
+                width="100%" height="content" style_pad_all="0" style_pad_bottom="#space_sm" flex_flow="row"
+                style_flex_main_place="center" style_pad_gap="#space_xs" scrollable="false" hidden="true">
           <!-- Segments created dynamically in C++ -->
         </lv_obj>
         <!-- System logo + name now displayed in header bar (setup_system_header) -->
         <!-- AMS Unit Card - contains the slot grid with tray effect -->
         <ui_card name="ams_unit_card"
-                 width="100%" height="content" style_radius="4" style_pad_all="#space_sm"
-                 style_border_width="0" scrollable="false">
+                 width="100%" height="content" style_radius="4" style_pad_all="#space_sm" style_border_width="0"
+                 scrollable="false">
           <!-- Wrapper for layered tray + slots - uses flex column for proper arrow placement -->
           <lv_obj name="slot_area"
-                  width="100%" height="content" style_pad_all="0" scrollable="false"
-                  flex_flow="column" style_flex_main_place="start" style_flex_cross_place="center">
+                  width="100%" height="content" style_pad_all="0" scrollable="false" flex_flow="column"
+                  style_flex_main_place="start" style_flex_cross_place="center">
             <!-- Endless Spool Arrows - shows backup relationships between slots
                  Positioned at TOP of slot area, ABOVE the slots.
                  Arrows show up-over-down connections between slots. -->
             <endless_spool_arrows name="endless_arrows"
                                   width="100%" height="45" clickable="false" scrollable="false" style_bg_opa="0"/>
             <!-- Slots wrapper - contains grid, tray, and labels with relative positioning -->
-            <lv_obj name="slots_wrapper"
-                    width="100%" height="content" style_pad_all="0" scrollable="false">
+            <lv_obj name="slots_wrapper" width="100%" height="content" style_pad_all="0" scrollable="false">
               <!-- Shared spool grid + tray + labels component -->
               <ams_unit_detail name="unit_detail"/>
-              <!-- Endless Spool Arrows - overlapping labels area
-                   Uses absolute positioning relative to slots_wrapper -->
-              <endless_spool_arrows name="endless_arrows"
-                                    width="100%" height="50" align="top_mid"
-                                    clickable="false" scrollable="false"
-                                    style_bg_opa="0"/>
             </lv_obj>
           </lv_obj>
         </ui_card>
         <!-- Path Canvas - shows routing from slots to nozzle (no card border)
              Uses flex_grow="1" to fill remaining vertical space in left column -->
         <lv_obj name="path_container"
-                width="100%" flex_grow="1" style_pad_all="0" style_margin_top="-8" flex_flow="column" style_flex_main_place="start"
-                style_flex_cross_place="center" scrollable="false">
+                width="100%" flex_grow="1" style_pad_all="0" style_margin_top="-8" flex_flow="column"
+                style_flex_main_place="start" style_flex_cross_place="center" scrollable="false">
           <!-- Filament Path Canvas
                Shows schematic view of filament routing:
                - Slots at top (entry points)
@@ -119,8 +107,8 @@
     </lv_obj>
     <!-- Right column (status + action buttons) - spans full panel height -->
     <lv_obj name="right_column"
-            height="100%" width="#ams_right_col_w" style_pad_all="#space_sm" style_pad_gap="#space_sm" flex_flow="column"
-            style_flex_main_place="start" style_flex_cross_place="start" scrollable="false">
+            width="#ams_right_col_w" height="100%" style_pad_all="#space_sm" style_pad_gap="#space_sm"
+            flex_flow="column" style_flex_main_place="start" style_flex_cross_place="start" scrollable="false">
       <bind_state_if_not_eq subject="nav_buttons_enabled" state="disabled" ref_value="1"/>
       <ams_sidebar name="ams_operation_sidebar"/>
     </lv_obj>

@@ -3,6 +3,7 @@
 #include "filament_mapper.h"
 
 #include "filament_database.h"
+#include "filament_variants.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 
 #include <algorithm>
@@ -68,30 +69,6 @@ bool FilamentMapper::colors_match(uint32_t color_a, uint32_t color_b) {
     return color_distance(color_a, color_b) <= COLOR_MATCH_TOLERANCE;
 }
 
-/// Extract the base material from a compound name like "PLA SnapSpeed" → "PLA".
-/// Tries progressively shorter prefixes against the filament database.
-static std::string_view extract_base_material(std::string_view name) {
-    // Already a known material?
-    if (filament::find_material(name).has_value()) {
-        return name;
-    }
-
-    // Try progressively shorter prefixes at word/separator boundaries.
-    // "PLA SnapSpeed" → try "PLA SnapSpee"... eventually "PLA"
-    // "PLA-CF" → try "PLA-C"... "PLA-"... "PLA"
-    for (size_t i = name.size(); i > 0; --i) {
-        char c = name[i - 1];
-        if (c == ' ' || c == '-' || c == '_') {
-            auto prefix = name.substr(0, i - 1);
-            if (!prefix.empty() && filament::find_material(prefix).has_value()) {
-                return prefix;
-            }
-        }
-    }
-
-    return name; // Return as-is if no known prefix found
-}
-
 bool FilamentMapper::materials_match(const std::string& a, const std::string& b) {
     // Empty vs non-empty is always a mismatch
     if (a.empty() != b.empty()) {
@@ -106,10 +83,11 @@ bool FilamentMapper::materials_match(const std::string& a, const std::string& b)
         return true;
     }
 
-    // Resolve compound names to base materials (e.g., "PLA SnapSpeed" → "PLA")
-    // then check compatibility groups
-    auto base_a = extract_base_material(a);
-    auto base_b = extract_base_material(b);
+    // Resolve compound names to base materials (e.g., "PLA SnapSpeed" → "PLA",
+    // "PLA-CF" → "PLA") then check compatibility groups. Shared with the
+    // catalog picker's family grouping — see filament_variants.h.
+    auto base_a = filament::extract_base_material(a);
+    auto base_b = filament::extract_base_material(b);
     return filament::are_materials_compatible(base_a, base_b);
 }
 
@@ -120,8 +98,17 @@ SlotKey FilamentMapper::find_closest_color_slot(uint32_t target_color,
     int best_distance = COLOR_MATCH_TOLERANCE + 1; // Must be within tolerance
 
     for (const auto& slot : slots) {
+        // Empty slots have no filament — their reported color is stale (left over
+        // from the last spool), so they must never attract a color match. Matching
+        // a tool to an empty lane paints the render in a color that can't print and
+        // routes the print to a lane the firmware will reject (the v0.91 "wrong
+        // filament" report: a white tool matched the empty white lane instead of
+        // being substituted to a loaded lane).
+        if (slot.is_empty) {
+            continue;
+        }
         // Skip slots with incompatible materials (unless either side has no info)
-        if (!slot.is_empty && !target_material.empty() && !slot.material.empty() &&
+        if (!target_material.empty() && !slot.material.empty() &&
             !materials_match(target_material, slot.material)) {
             continue;
         }
@@ -144,6 +131,18 @@ std::vector<ToolMapping> FilamentMapper::compute_defaults(const std::vector<Gcod
     // Track which slots have been claimed for positional fallback deduplication.
     // Color matching allows slot re-use, but positional fallback avoids it.
     std::vector<SlotKey> used_slots;
+
+    // A fallback must never auto-assign a lane whose material is KNOWN to be
+    // incompatible with the tool (e.g. a PLA tool into a PETG or TPU lane) — that
+    // misroutes the print on every backend. Unknown/empty materials can't be
+    // proven incompatible, so they stay eligible (backends that don't publish
+    // material keep the positional fallback). Explicit firmware mappings
+    // (Priority 1) are still honored with a mismatch warning; only the guesses
+    // here are gated.
+    auto material_blocked = [](const GcodeToolInfo& tool, const AvailableSlot& slot) {
+        return !tool.material.empty() && !slot.material.empty() &&
+               !materials_match(tool.material, slot.material);
+    };
 
     for (const auto& tool : tools) {
         ToolMapping mapping;
@@ -204,12 +203,18 @@ std::vector<ToolMapping> FilamentMapper::compute_defaults(const std::vector<Gcod
         {
             int tool_idx = tool.tool_index;
             for (const auto& slot : slots) {
-                if (slot.slot_index == tool_idx && slot.backend_index == 0) {
+                // Only a LOADED lane can serve as a substitute — an empty lane has
+                // no filament to route the tool to.
+                if (slot.slot_index == tool_idx && slot.backend_index == 0 && !slot.is_empty) {
                     auto key = slot.key();
                     if (std::find(used_slots.begin(), used_slots.end(), key) == used_slots.end()) {
                         mapping.mapped_slot = slot.slot_index;
                         mapping.mapped_backend = slot.backend_index;
                         mapping.reason = ToolMapping::MatchReason::COLOR_MATCH;
+                        // The tool's own positional lane is a deliberate default:
+                        // assign it but flag a material mismatch so PrintStartController
+                        // can warn. (Only the material-blind "any unclaimed lane"
+                        // fallback below refuses incompatible lanes.)
                         if (!tool.material.empty() && !slot.material.empty() &&
                             !materials_match(tool.material, slot.material)) {
                             mapping.material_mismatch = true;
@@ -219,18 +224,19 @@ std::vector<ToolMapping> FilamentMapper::compute_defaults(const std::vector<Gcod
                     break;
                 }
             }
-            // If positional slot was already taken, try any unclaimed slot
+            // No positional lane: rather than grab an arbitrary unclaimed lane (the
+            // old material-blind behavior that misrouted prints — a PLA tool into a
+            // PETG/TPU lane), take the first unclaimed lane that is not known to be
+            // incompatible. If none qualifies the tool stays unmatched for preflight.
             if (mapping.mapped_slot < 0) {
                 for (const auto& slot : slots) {
                     auto key = slot.key();
-                    if (std::find(used_slots.begin(), used_slots.end(), key) == used_slots.end()) {
+                    if (!slot.is_empty &&
+                        std::find(used_slots.begin(), used_slots.end(), key) == used_slots.end() &&
+                        !material_blocked(tool, slot)) {
                         mapping.mapped_slot = slot.slot_index;
                         mapping.mapped_backend = slot.backend_index;
                         mapping.reason = ToolMapping::MatchReason::COLOR_MATCH;
-                        if (!tool.material.empty() && !slot.material.empty() &&
-                            !materials_match(tool.material, slot.material)) {
-                            mapping.material_mismatch = true;
-                        }
                         used_slots.push_back(key);
                         break;
                     }
@@ -250,9 +256,10 @@ std::vector<ToolMapping> FilamentMapper::compute_defaults(const std::vector<Gcod
     return mappings;
 }
 
-std::vector<uint32_t> FilamentMapper::resolve_display_colors(
-    const std::vector<GcodeToolInfo>& tools, const std::vector<ToolMapping>& mappings,
-    const std::vector<AvailableSlot>& slots) {
+std::vector<uint32_t>
+FilamentMapper::resolve_display_colors(const std::vector<GcodeToolInfo>& tools,
+                                       const std::vector<ToolMapping>& mappings,
+                                       const std::vector<AvailableSlot>& slots) {
     std::vector<uint32_t> colors;
     colors.reserve(mappings.size());
 
@@ -272,6 +279,78 @@ std::vector<uint32_t> FilamentMapper::resolve_display_colors(
         colors.push_back(color);
     }
     return colors;
+}
+
+std::vector<ToolMapping> FilamentMapper::effective_mappings(const std::vector<GcodeToolInfo>& tools,
+                                                            const std::vector<AvailableSlot>& slots,
+                                                            bool auto_color_map) {
+    if (auto_color_map) {
+        // Color/type matching: clear firmware mappings so they don't pre-empt
+        // color matches (mirrors FilamentMappingCard's auto-match seeding).
+        auto slots_for_matching = slots;
+        for (auto& s : slots_for_matching) {
+            s.current_tool_mapping = -1;
+        }
+        return compute_defaults(tools, slots_for_matching);
+    }
+    return use_current_assignments(tools, slots);
+}
+
+std::vector<uint32_t> FilamentMapper::effective_tool_colors(const std::vector<GcodeToolInfo>& tools,
+                                                            const std::vector<AvailableSlot>& slots,
+                                                            bool auto_color_map) {
+    if (tools.empty()) {
+        return {};
+    }
+    return effective_tool_colors(tools, effective_mappings(tools, slots, auto_color_map), slots);
+}
+
+std::vector<uint32_t>
+FilamentMapper::effective_tool_colors(const std::vector<GcodeToolInfo>& tools,
+                                      const std::vector<ToolMapping>& mappings,
+                                      const std::vector<AvailableSlot>& slots) {
+    if (tools.empty()) {
+        return {};
+    }
+
+    // Align @p mappings to @p tools by tool_index — the card's mappings are not
+    // guaranteed parallel to the used-tool list, and resolve_display_colors pairs
+    // by position. A tool with no matching mapping stays default (unmapped) so it
+    // resolves to its own slicer color.
+    std::vector<ToolMapping> aligned;
+    aligned.reserve(tools.size());
+    for (const auto& t : tools) {
+        ToolMapping picked;
+        for (const auto& m : mappings) {
+            if (m.tool_index == t.tool_index) {
+                picked = m;
+                break;
+            }
+        }
+        aligned.push_back(picked);
+    }
+    auto per_tool = resolve_display_colors(tools, aligned, slots); // in `tools` order
+
+    // Scatter the tools-ordered colors into a dense vector indexed by logical
+    // tool number, so a print that uses e.g. only T0 and T2 lands T2's color at
+    // index 2 (the gcode viewer's tool_colors_ is tool-number-indexed). Tool
+    // numbers no used tool covers stay the neutral default.
+    int max_tool = -1;
+    for (const auto& t : tools) {
+        max_tool = std::max(max_tool, t.tool_index);
+    }
+    if (max_tool < 0) {
+        return {};
+    }
+
+    std::vector<uint32_t> out(static_cast<size_t>(max_tool) + 1, 0x808080);
+    for (size_t i = 0; i < tools.size() && i < per_tool.size(); ++i) {
+        int idx = tools[i].tool_index;
+        if (idx >= 0 && idx <= max_tool) {
+            out[static_cast<size_t>(idx)] = per_tool[i];
+        }
+    }
+    return out;
 }
 
 std::vector<ToolMapping>

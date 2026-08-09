@@ -6,12 +6,13 @@
 #include "ui_callback_helpers.h"
 #include "ui_fonts.h"
 #include "ui_nav_manager.h"
+#include "ui_screws_tilt_share_modal.h"
 #include "ui_update_queue.h"
 #include "ui_utils.h"
 
 #include "app_globals.h"
-#include "i_moonraker_client.h"
 #include "i_moonraker_api.h"
+#include "i_moonraker_client.h"
 #include "printer_state.h"
 #include "static_panel_registry.h"
 #include "theme_manager.h"
@@ -41,8 +42,13 @@ IMoonrakerAPI* get_moonraker_api();
 ScrewsTiltPanel& get_global_screws_tilt_panel() {
     if (!s_screws_tilt_panel) {
         s_screws_tilt_panel = std::make_unique<ScrewsTiltPanel>();
+        // Delegate to destroy_screws_tilt_panel() rather than resetting the
+        // pointer directly: it runs ScrewsTiltPanel::cleanup() first, which
+        // unregisters the overlay instance and sets the cleanup_called_ flag
+        // that the panel's deferred probe callbacks check before touching
+        // widgets.
         StaticPanelRegistry::instance().register_destroy("ScrewsTiltPanel",
-                                                         []() { s_screws_tilt_panel.reset(); });
+                                                         []() { destroy_screws_tilt_panel(); });
     }
     return *s_screws_tilt_panel;
 }
@@ -117,6 +123,8 @@ void ui_panel_screws_tilt_register_callbacks() {
          [](lv_event_t* /*e*/) { get_global_screws_tilt_panel().handle_reprobe_clicked(); }},
         {"screws_tilt_retry_cb",
          [](lv_event_t* /*e*/) { get_global_screws_tilt_panel().handle_retry_clicked(); }},
+        {"screws_tilt_share_cb",
+         [](lv_event_t* /*e*/) { get_global_screws_tilt_panel().handle_share_clicked(); }},
     });
 
     // Initialize subjects BEFORE XML creation (bindings resolve at parse time)
@@ -267,6 +275,10 @@ void ScrewsTiltPanel::on_activate() {
     lv_subject_set_int(&results_is_leveled_subject_, 0);
     set_state(State::IDLE);
     clear_results();
+
+    // Refresh the thread pitch each time: it decides how wide the level window
+    // is, and the answer arrives well before the first probe completes.
+    query_screw_thread();
 
     spdlog::info("[ScrewsTilt] Activated (probe count reset)");
 
@@ -457,10 +469,24 @@ void ScrewsTiltPanel::on_screws_tilt_results(const std::vector<ScrewTiltResult>&
     spdlog::info("[ScrewsTilt] Received {} screw results", results.size());
 
     screw_results_ = results;
+    level_report_ = evaluate_screw_level(results, screw_pitch_mm_);
+
+    // An unreadable adjustment used to skip the screw, which read as a level
+    // bed. Surface it instead — we cannot judge a bed we cannot parse.
+    if (level_report_.verdict == ScrewLevelVerdict::PARSE_ERROR) {
+        spdlog::error("[ScrewsTilt] Unreadable screw result ({}) — cannot judge level",
+                      level_report_.parse_error);
+        on_screws_tilt_error(lv_tr("Could not read the screw adjustments from the printer"));
+        return;
+    }
+
+    spdlog::info("[ScrewsTilt] Spread {} min vs {} min tolerance (pitch {:.1f}mm/turn)",
+                 level_report_.spread_minutes, level_report_.tolerance_minutes, screw_pitch_mm_);
+
     populate_results(results);
 
     // Always show RESULTS state — success banner shown via results_is_leveled subject
-    bool all_level = check_all_level();
+    bool all_level = level_report_.is_level();
     lv_subject_set_int(&results_is_leveled_subject_, all_level ? 1 : 0);
 
     if (all_level) {
@@ -488,23 +514,21 @@ void ScrewsTiltPanel::on_screws_tilt_error(const std::string& message) {
 void ScrewsTiltPanel::populate_results(const std::vector<ScrewTiltResult>& results) {
     clear_results();
 
-    // Store results first so find_worst_screw_index can access them
+    // Store results first so the level report lines up with them
     screw_results_ = results;
-
-    // Find the screw needing the most adjustment (to highlight it)
-    size_t worst_index = find_worst_screw_index();
 
     // Update subjects for reactive list rows (XML handles the UI)
     for (size_t i = 0; i < MAX_SCREWS; i++) {
         if (i < results.size()) {
             const auto& screw = results[i];
-            bool is_worst = (i == worst_index && !screw.is_reference && screw.needs_adjustment());
+            bool in_spec = i < level_report_.in_spec.size() && level_report_.in_spec[i];
+            bool is_worst = (i == level_report_.worst_index && !screw.is_reference && !in_spec);
 
             // Copy strings into fixed buffers (LVGL string subjects require stable storage)
             snprintf(screw_name_bufs_[i], SCREW_NAME_BUF_SIZE, "%s", screw.display_name().c_str());
             // Use friendly adjustment text (e.g., "Tighten 1/4 turn" instead of "CW 00:18")
             snprintf(screw_adj_bufs_[i], SCREW_ADJ_BUF_SIZE, "%s",
-                     screw.friendly_adjustment().c_str());
+                     screw.friendly_adjustment(in_spec).c_str());
 
             // Update subjects - this triggers XML binding updates
             lv_subject_set_int(&screw_visible_subjects_[i], 1); // Show row
@@ -513,11 +537,12 @@ void ScrewsTiltPanel::populate_results(const std::vector<ScrewTiltResult>& resul
 
             // Update dot color (not bindable via subject, so do directly)
             if (screw_dots_[i]) {
-                lv_obj_set_style_bg_color(screw_dots_[i], get_adjustment_color(screw, is_worst), 0);
+                lv_obj_set_style_bg_color(screw_dots_[i],
+                                          get_adjustment_color(screw, in_spec, is_worst), 0);
             }
 
             // Create bed diagram indicator (position varies, so still dynamic)
-            create_screw_indicator(i, screw, is_worst);
+            create_screw_indicator(i, screw, in_spec, is_worst);
         } else {
             // Hide unused rows
             lv_subject_set_int(&screw_visible_subjects_[i], 0);
@@ -553,7 +578,7 @@ static void rotation_anim_cb(void* var, int32_t value) {
 }
 
 void ScrewsTiltPanel::create_screw_indicator(size_t index, const ScrewTiltResult& screw,
-                                             bool is_worst) {
+                                             bool in_spec, bool is_worst) {
     if (!bed_diagram_container_) {
         return;
     }
@@ -570,7 +595,7 @@ void ScrewsTiltPanel::create_screw_indicator(size_t index, const ScrewTiltResult
     lv_obj_set_style_border_color(indicator, theme_manager_get_color("text"), 0);
 
     // Color based on adjustment severity (worst screw gets highlighted)
-    lv_color_t bg_color = get_adjustment_color(screw, is_worst);
+    lv_color_t bg_color = get_adjustment_color(screw, in_spec, is_worst);
     lv_obj_set_style_bg_color(indicator, bg_color, 0);
     lv_obj_set_style_bg_opa(indicator, LV_OPA_COVER, 0); // Must be AFTER bg_color
 
@@ -583,9 +608,9 @@ void ScrewsTiltPanel::create_screw_indicator(size_t index, const ScrewTiltResult
     lv_obj_set_style_text_color(label, theme_manager_get_color("text"), 0);
     lv_obj_center(label);
 
-    if (screw.is_within_tolerance()) {
-        // In-spec (reference, exactly level, or within SCREW_LEVEL_TOLERANCE_MINUTES):
-        // show static checkmark, no rotation animation
+    if (in_spec) {
+        // Inside the level window (reference screws always are): show a static
+        // checkmark, no rotation animation
         lv_obj_set_style_text_font(label, &mdi_icons_32, 0);
         // check icon (F012C)
         lv_label_set_text(label, "\xF3\xB0\x84\xAC");
@@ -685,7 +710,7 @@ void ScrewsTiltPanel::update_screw_diagram() {
     }
 }
 
-lv_color_t ScrewsTiltPanel::get_adjustment_color(const ScrewTiltResult& screw,
+lv_color_t ScrewsTiltPanel::get_adjustment_color(const ScrewTiltResult& screw, bool in_spec,
                                                  bool is_worst_screw) const {
     // Helper to get color from globals.xml constant
     auto get_theme_color = [](const char* const_name) -> lv_color_t {
@@ -696,73 +721,78 @@ lv_color_t ScrewsTiltPanel::get_adjustment_color(const ScrewTiltResult& screw,
         return theme_manager_get_color(const_name); // Fallback to direct token lookup
     };
 
-    if (screw.is_reference) {
+    if (screw.is_reference || in_spec) {
         return get_theme_color("success");
     }
 
-    if (!screw.needs_adjustment()) {
-        return get_theme_color("success");
+    if (is_worst_screw) {
+        // Highlight the worst screw with primary color (bright, attention-grabbing)
+        return get_theme_color("primary");
     }
 
-    // Parse adjustment severity
-    int turns = 0;
-    int minutes = 0;
-    if (sscanf(screw.adjustment.c_str(), "%*s %d:%d", &turns, &minutes) == 2) {
-        int total_minutes = turns * 60 + minutes;
-
-        if (total_minutes <= 5) {
-            return get_theme_color("success");
-        } else if (is_worst_screw) {
-            // Highlight the worst screw with primary color (bright, attention-grabbing)
-            return get_theme_color("primary");
-        } else if (total_minutes <= 30) {
-            return get_theme_color("warning");
-        }
+    // Both thresholds derive from the same pitch-aware helper, so a coarse
+    // thread never gets a wider window than a fine one.
+    if (screw.adjustment_minutes() <= screw_severe_adjustment_minutes(screw_pitch_mm_)) {
+        return get_theme_color("warning");
     }
 
     return get_theme_color("danger");
 }
 
-bool ScrewsTiltPanel::check_all_level(int tolerance_minutes) const {
-    for (const auto& screw : screw_results_) {
-        if (screw.is_reference) {
-            continue;
-        }
+// ============================================================================
+// CONFIG QUERY
+// ============================================================================
 
-        int turns = 0;
-        int minutes = 0;
-        if (sscanf(screw.adjustment.c_str(), "%*s %d:%d", &turns, &minutes) == 2) {
-            int total_minutes = turns * 60 + minutes;
-            if (total_minutes > tolerance_minutes) {
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
-size_t ScrewsTiltPanel::find_worst_screw_index() const {
-    size_t worst_index = 0;
-    int worst_minutes = 0;
-
-    for (size_t i = 0; i < screw_results_.size(); i++) {
-        const auto& screw = screw_results_[i];
-        if (screw.is_reference) {
-            continue;
-        }
-
-        int turns = 0;
-        int minutes = 0;
-        if (sscanf(screw.adjustment.c_str(), "%*s %d:%d", &turns, &minutes) == 2) {
-            int total_minutes = turns * 60 + minutes;
-            if (total_minutes > worst_minutes) {
-                worst_minutes = total_minutes;
-                worst_index = i;
-            }
-        }
+void ScrewsTiltPanel::query_screw_thread() {
+    if (!client_) {
+        return;
     }
 
-    return worst_index;
+    // Query configfile.settings.screws_tilt_adjust for the bed screw thread.
+    // `settings` (not `config`) so Klipper's own default is present even when
+    // the user never spelled screw_thread out in printer.cfg.
+    json params = {{"objects", json::object({{"configfile", {"settings"}}})}};
+
+    auto token = lifetime_.token();
+    client_->send_jsonrpc("printer.objects.query", params, [this, token](json response) {
+        // L081 Mechanism C: hop to the main thread before touching members.
+        token.defer("ScrewsTilt::screw_thread", [this, response = std::move(response)]() {
+            if (cleanup_called()) {
+                return;
+            }
+            // const operator[] on a missing key asserts rather than throws,
+            // so the chain has to be guarded level by level.
+            if (!response.contains("result") || !response["result"].contains("status") ||
+                !response["result"]["status"].contains("configfile") ||
+                !response["result"]["status"]["configfile"].contains("settings") ||
+                !response["result"]["status"]["configfile"]["settings"].is_object()) {
+                spdlog::debug("[ScrewsTilt] No configfile settings — assuming {:.1f}mm/turn",
+                              screw_pitch_mm_);
+                return;
+            }
+
+            const auto& settings = response["result"]["status"]["configfile"]["settings"];
+            if (!settings.contains("screws_tilt_adjust") ||
+                !settings["screws_tilt_adjust"].is_object()) {
+                spdlog::debug("[ScrewsTilt] No screws_tilt_adjust section — assuming "
+                              "{:.1f}mm/turn",
+                              screw_pitch_mm_);
+                return;
+            }
+
+            const auto& section = settings["screws_tilt_adjust"];
+            if (!section.contains("screw_thread") || !section["screw_thread"].is_string()) {
+                spdlog::debug("[ScrewsTilt] No screw_thread key — assuming {:.1f}mm/turn",
+                              screw_pitch_mm_);
+                return;
+            }
+
+            std::string thread = section["screw_thread"].get<std::string>();
+            screw_pitch_mm_ = screw_thread_pitch_mm(thread);
+            spdlog::info("[ScrewsTilt] screw_thread={} -> {:.1f}mm/turn, level window {} min",
+                         thread, screw_pitch_mm_, screw_level_tolerance_minutes(screw_pitch_mm_));
+        });
+    });
 }
 
 // ============================================================================
@@ -795,4 +825,14 @@ void ScrewsTiltPanel::handle_done_clicked() {
 void ScrewsTiltPanel::handle_retry_clicked() {
     spdlog::debug("[ScrewsTilt] Retry clicked");
     start_probing();
+}
+
+void ScrewsTiltPanel::handle_share_clicked() {
+    spdlog::debug("[ScrewsTilt] Share clicked ({} results)", screw_results_.size());
+    if (screw_results_.empty()) {
+        return;
+    }
+    // Self-deleting modal — it removes itself on hide.
+    auto* modal = new helix::ui::ScrewsTiltShareModal(screw_results_);
+    modal->show_modal(nullptr);
 }

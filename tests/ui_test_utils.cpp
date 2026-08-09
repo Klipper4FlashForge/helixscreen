@@ -10,8 +10,13 @@
 #include "spdlog/spdlog.h"
 #include "test_helpers/update_queue_test_access.h"
 
+#include <algorithm>
+#include <atomic>
+#include <cctype>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
+#include <string>
 #include <thread>
 
 using namespace helix;
@@ -267,13 +272,23 @@ bool send_key(uint32_t key) {
     return false;
 }
 
+// The test binary creates its display with a bare lv_display_create() — no
+// driver, so nothing ever calls lv_tick_set_cb() and lv_tick_get() returns only
+// what lv_tick_inc() has been fed. A wait that sleeps on the real clock without
+// advancing the tick leaves LVGL frozen: lv_timer_handler_safe() compares
+// `now - last_run >= period`, so zero-period one-shots (lv_async_call) still
+// fire, but any timer with a real period never comes due, however long you wait.
+// Both waits below therefore advance the virtual clock in step with the sleep.
+static constexpr uint32_t WAIT_POLL_MS = 5;
+
 void wait_ms(uint32_t ms) {
     auto start = std::chrono::steady_clock::now();
     auto end = start + std::chrono::milliseconds(ms);
 
     while (std::chrono::steady_clock::now() < end) {
+        lv_tick_inc(WAIT_POLL_MS);
         lv_timer_handler_safe(); // Process LVGL tasks
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        std::this_thread::sleep_for(std::chrono::milliseconds(WAIT_POLL_MS));
     }
 }
 
@@ -282,13 +297,14 @@ bool wait_until(std::function<bool()> condition, uint32_t timeout_ms) {
     auto end = start + std::chrono::milliseconds(timeout_ms);
 
     while (std::chrono::steady_clock::now() < end) {
+        lv_tick_inc(WAIT_POLL_MS);
         lv_timer_handler_safe(); // Process LVGL tasks
 
         if (condition()) {
             return true; // Condition met
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        std::this_thread::sleep_for(std::chrono::milliseconds(WAIT_POLL_MS));
     }
 
     spdlog::warn("[UITest] wait_until() timed out after {}ms", timeout_ms);
@@ -424,8 +440,18 @@ void set_moonraker_client(IMoonrakerClient* client) {
     g_test_moonraker_client = client;
 }
 
+// Settable for the same reason as the client above: code under test reaches the
+// API through this global, so a test that needs it to answer installs its own and
+// restores the previous value in a dtor. Defaults to nullptr, which is what every
+// test that does not care has always seen.
+static IMoonrakerAPI* g_test_moonraker_api = nullptr;
+
 IMoonrakerAPI* get_moonraker_api() {
-    return nullptr;
+    return g_test_moonraker_api;
+}
+
+void set_moonraker_api(IMoonrakerAPI* api) {
+    g_test_moonraker_api = api;
 }
 
 PrinterState& get_printer_state() {
@@ -441,12 +467,16 @@ helix::TemperatureController* get_temperature_controller() {
 // out in the test build, so warnings would otherwise be invisible).
 namespace {
 std::function<void(const std::string&)> g_test_warning_hook;
-}
+std::function<void(const std::string&)> g_test_error_hook;
+} // namespace
 
 namespace helix {
 namespace ui {
 void set_test_notification_warning_hook(std::function<void(const std::string&)> hook) {
     g_test_warning_hook = std::move(hook);
+}
+void set_test_notification_error_hook(std::function<void(const std::string&)> hook) {
+    g_test_error_hook = std::move(hook);
 }
 } // namespace ui
 } // namespace helix
@@ -498,6 +528,9 @@ void ui_notification_warning(const char* title, const char* message) {
 void ui_notification_error(const char* title, const char* message, bool modal) {
     spdlog::debug("[Test Stub] ui_notification_error: {} - {} (modal={})", title ? title : "(null)",
                   message ? message : "(null)", modal);
+    if (g_test_error_hook) {
+        g_test_error_hook(message ? message : "");
+    }
 }
 
 // Stub ToastManager class for tests
@@ -548,171 +581,9 @@ bool ToastManager::is_visible() const {
     return false;
 }
 
-// Stub implementations for EmergencyStopOverlay (tests don't use the overlay)
-#include "ui_emergency_stop.h"
-
-// The real EmergencyStopOverlay singleton is used - all methods are provided
-// as stubs that satisfy the linker. Tests that need real behavior should
-// call the methods directly (they're safe with LVGL initialized).
-
-EmergencyStopOverlay& EmergencyStopOverlay::instance() {
-    static EmergencyStopOverlay inst;
-    return inst;
-}
-
-void EmergencyStopOverlay::init(PrinterState& printer_state, IMoonrakerAPI* /* api */) {
-    printer_state_ = &printer_state;
-}
-
-void EmergencyStopOverlay::init_subjects() {
-    if (subjects_initialized_)
-        return;
-    UI_MANAGED_SUBJECT_INT(estop_visible_, 0, "estop_visible", subjects_);
-    UI_MANAGED_SUBJECT_STRING(recovery_title_subject_, recovery_title_buf_, "Printer Shutdown",
-                              "recovery_title", subjects_);
-    UI_MANAGED_SUBJECT_STRING(recovery_message_subject_, recovery_message_buf_, "",
-                              "recovery_message", subjects_);
-    UI_MANAGED_SUBJECT_INT(recovery_can_restart_, 1, "recovery_can_restart", subjects_);
-    subjects_initialized_ = true;
-}
-
-void EmergencyStopOverlay::deinit_subjects() {
-    if (!subjects_initialized_)
-        return;
-    // Reset dialog state — screen destruction invalidates these pointers
-    recovery_dialog_ = nullptr;
-    confirmation_dialog_ = nullptr;
-    recovery_reason_ = RecoveryReason::NONE;
-    suppress_recovery_until_ = 0;
-    restart_in_progress_ = false;
-    subjects_.deinit_all();
-    subjects_initialized_ = false;
-}
-void EmergencyStopOverlay::create() {}
-void EmergencyStopOverlay::update_visibility() {}
-void EmergencyStopOverlay::set_require_confirmation(bool /* require */) {}
-
-void EmergencyStopOverlay::show_recovery_for(RecoveryReason reason) {
-    if (is_recovery_suppressed())
-        return;
-
-    // If dialog already showing, update reason if connection dropped
-    if (recovery_dialog_) {
-        if (reason == RecoveryReason::DISCONNECTED &&
-            recovery_reason_ == RecoveryReason::SHUTDOWN) {
-            recovery_reason_ = RecoveryReason::DISCONNECTED;
-            helix::ui::async_call(
-                [](void*) { EmergencyStopOverlay::instance().update_recovery_dialog_content(); },
-                nullptr);
-        }
-        return;
-    }
-
-    recovery_reason_ = reason;
-    helix::ui::async_call(
-        [](void*) {
-            auto& inst = EmergencyStopOverlay::instance();
-            if (inst.recovery_dialog_)
-                return;
-            inst.show_recovery_dialog();
-            inst.update_recovery_dialog_content();
-        },
-        nullptr);
-}
-
-void EmergencyStopOverlay::suppress_recovery_dialog(uint32_t duration_ms) {
-    suppress_recovery_until_ = lv_tick_get() + duration_ms;
-}
-
-bool EmergencyStopOverlay::is_recovery_suppressed() const {
-    if (suppress_recovery_until_ == 0)
-        return false;
-    return lv_tick_elaps(suppress_recovery_until_) > (UINT32_MAX / 2);
-}
-
-bool EmergencyStopOverlay::is_expected_restart() const {
-    return is_recovery_suppressed() || restart_in_progress_;
-}
-
-void EmergencyStopOverlay::show_recovery_dialog() {
-    if (recovery_dialog_)
-        return;
-    // Use Modal system — backdrop is created programmatically
-    recovery_dialog_ = helix::ui::modal_show("klipper_recovery_dialog");
-    if (recovery_dialog_) {
-        // XML <view name="..."> is not applied by lv_xml_create — set explicitly for lookups
-        lv_obj_set_name(recovery_dialog_, "klipper_recovery_card");
-    }
-}
-
-void EmergencyStopOverlay::dismiss_recovery_dialog() {
-    if (recovery_dialog_) {
-        helix::ui::modal_hide(recovery_dialog_);
-        recovery_dialog_ = nullptr;
-        recovery_reason_ = RecoveryReason::NONE;
-    }
-}
-
-void EmergencyStopOverlay::update_recovery_dialog_content() {
-    // Determine title and default message based on reason
-    const char* title = "Printer Error";
-    const char* default_message = "An unexpected printer error occurred.";
-    bool use_state_message = false;
-
-    switch (recovery_reason_) {
-    case RecoveryReason::SHUTDOWN:
-        title = "Printer Shutdown";
-        default_message = "Klipper has entered shutdown state.";
-        use_state_message = true;
-        break;
-    case RecoveryReason::ERROR:
-        title = "Printer Error";
-        default_message = "Klipper has entered an error state.";
-        use_state_message = true;
-        break;
-    case RecoveryReason::DISCONNECTED:
-        title = "Printer Firmware Disconnected";
-        default_message = "Klipper firmware has disconnected from the host.";
-        break;
-    default:
-        break;
-    }
-
-    // Use actual Klipper state_message when available (e.g. "Max force exceeded...")
-    const char* message = default_message;
-    std::string state_msg_copy;
-    if (use_state_message && printer_state_) {
-        const auto& state_msg = printer_state_->get_klippy_state_message();
-        if (!state_msg.empty()) {
-            state_msg_copy = state_msg;
-            message = state_msg_copy.c_str();
-        }
-    }
-
-    lv_subject_copy_string(&recovery_title_subject_, title);
-    lv_subject_copy_string(&recovery_message_subject_, message);
-    lv_subject_set_int(&recovery_can_restart_,
-                       recovery_reason_ != RecoveryReason::DISCONNECTED ? 1 : 0);
-}
-
-// Remaining methods are no-ops (button handlers, etc.)
-void EmergencyStopOverlay::handle_click() {}
-void EmergencyStopOverlay::execute_emergency_stop() {}
-void EmergencyStopOverlay::show_confirmation_dialog() {}
-void EmergencyStopOverlay::dismiss_confirmation_dialog() {}
-void EmergencyStopOverlay::restart_klipper() {}
-void EmergencyStopOverlay::firmware_restart() {}
-
-void EmergencyStopOverlay::emergency_stop_clicked(lv_event_t*) {}
-void EmergencyStopOverlay::estop_dialog_cancel_clicked(lv_event_t*) {}
-void EmergencyStopOverlay::estop_dialog_confirm_clicked(lv_event_t*) {}
-void EmergencyStopOverlay::recovery_restart_klipper_clicked(lv_event_t*) {}
-void EmergencyStopOverlay::recovery_firmware_restart_clicked(lv_event_t*) {}
-void EmergencyStopOverlay::recovery_dismiss_clicked(lv_event_t*) {}
-void EmergencyStopOverlay::advanced_estop_clicked(lv_event_t*) {}
-void EmergencyStopOverlay::advanced_restart_klipper_clicked(lv_event_t*) {}
-void EmergencyStopOverlay::advanced_firmware_restart_clicked(lv_event_t*) {}
-void EmergencyStopOverlay::home_firmware_restart_clicked(lv_event_t*) {}
+// refresh_duplicate() is NOT stubbed here — it's defined inline in
+// include/ui_toast_manager.h so the test binary links the same
+// implementation the real app uses. See the comment on that declaration.
 
 // Text input widget implementation for tests
 // This is a full implementation, not a stub, because tests need to actually
@@ -750,6 +621,16 @@ void helix::ui::notification_update(NotificationStatus /* status */) {
 }
 
 void helix::ui::notification_update_count(size_t /* count */) {
+    // No-op in tests
+}
+
+// Application::tear_down_printer_state() calls both of these; ui_notification.o and
+// ui_notification_manager.o stay out of the test link (see mk/tests.mk Group 2).
+void ui_notification_deinit() {
+    spdlog::debug("[Test Stub] ui_notification_deinit: no-op in tests");
+}
+
+void helix::ui::notification_refresh_from_history() {
     // No-op in tests
 }
 
@@ -863,43 +744,141 @@ std::string app_get_config_dir() {
     return "";
 }
 
-// Stub for get_moonraker_manager (tests don't have manager)
-MoonrakerManager* get_moonraker_manager() {
-    return nullptr;
+// app_globals.o is excluded from the test link, so mirror the real
+// helix_parse_truthy_env / updates_externally_managed logic here (kept
+// byte-identical to src/app_globals.cpp) so the update-gate tests exercise
+// the genuine parse behavior rather than a hollow stub.
+bool helix_parse_truthy_env(const char* value) {
+    if (!value || value[0] == '\0') {
+        return false;
+    }
+    std::string v(value);
+    auto not_space = [](unsigned char c) { return !std::isspace(c); };
+    v.erase(v.begin(), std::find_if(v.begin(), v.end(), not_space));
+    v.erase(std::find_if(v.rbegin(), v.rend(), not_space).base(), v.end());
+    std::transform(v.begin(), v.end(), v.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return v == "1" || v == "true" || v == "yes" || v == "on";
 }
 
-// Stub for get_print_history_manager (tests don't have manager)
-class PrintHistoryManager;
-PrintHistoryManager* get_print_history_manager() {
-    return nullptr;
+bool compute_updates_externally_managed(const char* disable_auto_updates) {
+    return helix_parse_truthy_env(disable_auto_updates);
 }
 
-// Stub for get_temperature_history_manager (tests don't have manager)
-class TemperatureHistoryManager;
-TemperatureHistoryManager* get_temperature_history_manager() {
-    return nullptr;
+bool updates_externally_managed() {
+    static const bool cached =
+        compute_updates_externally_managed(std::getenv("HELIX_DISABLE_AUTO_UPDATES"));
+    return cached;
 }
 
-// Stub for get_job_queue_state (tests don't have state manager)
-class JobQueueState;
-JobQueueState* get_job_queue_state() {
-    return nullptr;
-}
-void set_job_queue_state(JobQueueState*) {}
+// Mirror of src/app_globals.cpp compute_self_update_supported / self_update_supported /
+// in_app_updates_suppressed (app_globals.o is excluded from the test link).
+#include "system/helix_paths.h"
 
-// Stub for MoonrakerManager::macro_analysis (never called since get_moonraker_manager returns null)
+#include <unistd.h> // geteuid
+bool compute_self_update_supported(const std::string& install_root, bool can_escalate) {
+    if (install_root.empty()) {
+        return true;
+    }
+    const std::string parent = std::filesystem::path(install_root).parent_path().string();
+    if (parent.empty()) {
+        return true;
+    }
+    if (helix::paths::is_writable_dir(parent)) {
+        return true;
+    }
+    return can_escalate;
+}
+
+// Deliberately NOT a mirror: the real probe forks `sudo -n true`, and a test
+// binary must not shell out to sudo. euid 0 is the one branch that is free to
+// evaluate honestly. The pure predicate above is what the update-gate tests
+// exercise for both escalation values, so this stub costs no coverage.
+bool root_escalation_available() {
+    return geteuid() == 0;
+}
+
+bool self_update_supported() {
+    static const bool cached = []() {
+        const std::string root = app_get_install_root();
+        if (compute_self_update_supported(root, /*can_escalate=*/false)) {
+            return true;
+        }
+        return compute_self_update_supported(root, root_escalation_available());
+    }();
+    return cached;
+}
+
+bool compute_in_app_updates_suppressed(bool externally_managed, bool self_update_ok) {
+    return externally_managed || !self_update_ok;
+}
+
+bool in_app_updates_suppressed() {
+    return compute_in_app_updates_suppressed(updates_externally_managed(), self_update_supported());
+}
+
+// Stubs for the manager accessors in app_globals.h. Each getter reads a file-static
+// that its matching setter writes, so a test (or production code linked into the test
+// binary, e.g. Application::tear_down_printer_state()) sees the value it installed.
+// Nothing installs one by default, so the default remains nullptr.
 #include "moonraker_manager.h"
-namespace helix {
-class MacroModificationManager;
+
+static MoonrakerManager* g_test_moonraker_manager = nullptr;
+MoonrakerManager* get_moonraker_manager() {
+    return g_test_moonraker_manager;
 }
-helix::MacroModificationManager* MoonrakerManager::macro_analysis() const {
-    return nullptr;
+void set_moonraker_manager(MoonrakerManager* manager) {
+    g_test_moonraker_manager = manager;
 }
 
-// Stub for MoonrakerManager::connect (never called since get_moonraker_manager returns null)
-int MoonrakerManager::connect(const std::string& /*websocket_url*/,
-                              const std::string& /*http_base_url*/) {
-    return -1;
+class PrintHistoryManager;
+static PrintHistoryManager* g_test_print_history_manager = nullptr;
+PrintHistoryManager* get_print_history_manager() {
+    return g_test_print_history_manager;
+}
+void set_print_history_manager(PrintHistoryManager* manager) {
+    g_test_print_history_manager = manager;
+}
+
+// Tests default to no temperature history manager, but a test can install a real one
+// via set_test_temperature_history_manager() to exercise history backfill paths (#1124).
+class TemperatureHistoryManager;
+static TemperatureHistoryManager* g_test_history_manager = nullptr;
+TemperatureHistoryManager* get_temperature_history_manager() {
+    return g_test_history_manager;
+}
+void set_temperature_history_manager(TemperatureHistoryManager* manager) {
+    g_test_history_manager = manager;
+}
+void set_test_temperature_history_manager(TemperatureHistoryManager* mgr) {
+    g_test_history_manager = mgr;
+}
+
+// get_job_queue_state defaults to nullptr (no state manager in most tests),
+// but is a real settable global — same pattern as get/set_print_history_manager
+// above — so a widget test can install one to exercise the rebuild path.
+class JobQueueState;
+static JobQueueState* g_test_job_queue_state = nullptr;
+JobQueueState* get_job_queue_state() {
+    return g_test_job_queue_state;
+}
+void set_job_queue_state(JobQueueState* state) {
+    g_test_job_queue_state = state;
+}
+
+// Restart/quit plumbing from app_globals.h. main.o owns the real implementations and
+// stays out of the test link, so tests get an in-process equivalent: the quit flag is
+// real (app_request_quit_signal_safe() sets what app_quit_requested() reads) and
+// app_store_argv() is a no-op because nothing in the test binary re-execs.
+static std::atomic<bool> g_test_quit_requested{false};
+bool app_quit_requested() {
+    return g_test_quit_requested.load();
+}
+void app_request_quit_signal_safe() {
+    g_test_quit_requested.store(true);
+}
+void app_store_argv(int /*argc*/, char** /*argv*/) {
+    // No-op in tests - nothing here re-execs the binary
 }
 
 // ============================================================================
@@ -911,12 +890,14 @@ int MoonrakerManager::connect(const std::string& /*websocket_url*/,
 // Stub for app_globals_init_subjects (creates test notification + edit mode subjects)
 static lv_subject_t s_test_notification_subject;
 static lv_subject_t s_test_home_edit_mode_subject;
+static lv_subject_t s_test_wizard_active_subject;
 static bool s_test_notification_subject_initialized = false;
 
 void app_globals_init_subjects() {
     if (!s_test_notification_subject_initialized) {
         lv_subject_init_pointer(&s_test_notification_subject, nullptr);
         lv_subject_init_int(&s_test_home_edit_mode_subject, 0);
+        lv_subject_init_int(&s_test_wizard_active_subject, 0);
         s_test_notification_subject_initialized = true;
         spdlog::debug("[Test Stub] app_globals_init_subjects: subjects initialized");
     }
@@ -926,6 +907,7 @@ void app_globals_deinit_subjects() {
     if (s_test_notification_subject_initialized) {
         lv_subject_deinit(&s_test_notification_subject);
         lv_subject_deinit(&s_test_home_edit_mode_subject);
+        lv_subject_deinit(&s_test_wizard_active_subject);
         s_test_notification_subject_initialized = false;
         spdlog::debug("[Test Stub] app_globals_deinit_subjects: subjects deinitialized");
     }
@@ -943,6 +925,13 @@ lv_subject_t& get_home_edit_mode_subject() {
         app_globals_init_subjects();
     }
     return s_test_home_edit_mode_subject;
+}
+
+lv_subject_t& get_wizard_active_subject() {
+    if (!s_test_notification_subject_initialized) {
+        app_globals_init_subjects();
+    }
+    return s_test_wizard_active_subject;
 }
 
 // Stub for ui_notification_init_subjects (creates test subjects for notification badge)

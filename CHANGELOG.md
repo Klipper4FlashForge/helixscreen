@@ -5,6 +5,522 @@ All notable changes to HelixScreen will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.99.107] - 2026-08-07
+
+Portrait screens get the rest of the treatment 0.99.106 started: print status, print tune,
+motion, bed mesh and the advanced panel each get an arrangement of their own rather than
+landscape's row squeezed narrower, and overlays now come down from the top, above the bottom
+navigation bar. Alongside that, WiFi gains a radio that actually turns off, a credential store
+of its own and a forget-network path; filament Load and Unload stop diverging across the four
+screens that can dispatch them; and the last 33 untranslated strings close out all eight
+locales.
+
+### Added
+
+- **The WiFi radio can be turned off for real** — the toggle previously detached from wpa_supplicant and left the radio powered and associating. It now drives rfkill, verifies the write, fails the toggle if the write fails, and remembers the choice across restarts. A live radio-off on a device whose only network path *is* the radio routes through a confirmation dialog first, since nothing else could turn it back on.
+- **Forget network** — saved networks could be joined but never removed. Removal now mirrors to persistent storage rather than lasting until the next restart.
+- **HelixScreen keeps its own WiFi credential store** — for the devices whose vendor wpa_supplicant config will not accept new credentials at all, which previously meant a network you joined was never saved.
+- **All eight locales are complete** — every non-English locale sat at 98.7%: three keys were absent entirely (the only ones the build warned about) and thirty were present but empty, which falls back to English with no warning at all. Most were AFC filament-path and fault strings, plus the WiFi forget flow, the hardware-detect prompt, and the power-loss recovery messages. ja and zh introduce no new CJK characters, so the embedded fonts are unchanged.
+- **Power-loss recovery on Creality's Klipper fork (K1, K1C, K1 Max, K2 Plus, V3, Hi, i7)** — recovery is exposed through a webhook Moonraker auto-registers, so it was always reachable from a third-party UI; only one undocumented parameter was missing. Mechanism verified against a physical K1C and K2 Plus. Resume is refused unless the detection probe confirmed, because that probe is also what arms the flag the stock sensorless-homing macro reads to choose a full Z clearance lift — without it, homing would drag the nozzle through a tall part.
+- **Screws tilt results can be shared by QR (#1226)** — every screw's name, probed Z and adjustment string, plus a QR encoding the same values as plain text. A printer has no OS clipboard, so the QR is how the numbers reach a phone.
+- **CFS support for the community Kalico firmware on K2 Plus** — the reimplemented box module shares zero keys with Creality's stock schema, so a fully populated 4-bay CFS rendered as an empty AMS panel. Schema and macro dialect are now detected independently, each read from the module's own registration table; a flat box whose module is unrecognized refuses control rather than emitting stock sequences it may not define.
+- **Heater icons carry the same thermal colour as the number beside them** — muted off, red heating, green at temp, blue cooling, across print status, the temperature card, the preheat tiles and the temperature-graph overlay. Previously an icon pulsed red while its own number sat blue. In Maintaining mode the chamber icon now follows the chamber's cooling-ceiling rule the way its label always has.
+- **Print status shows the heater icon and its label together** — they were exact breakpoint complements, so the card showed one or the other and never both.
+- **An Always Show Bypass Spool toggle for AFC (#1229)** — for anyone who wants the bypass node visible on a machine where it is now hidden by default.
+- **Portrait overlays slide down from the top** — anchored above the navigation bar that runs along the bottom in portrait, and full width rather than leaving an 8px sliver of backdrop down each edge.
+
+### Fixed
+
+- **A soft rfkill block locked the radio out permanently** — startup treated any rfkill block as a fatal preflight failure and bailed before the code that can clear a block ever ran, so a block set by HelixScreen's own radio-off became a self-inflicted lockout that survived a reboot. This stranded a real WiFi-only printer for days during this work's own hardware testing. A soft block is now a warning and startup proceeds; a hard block (a physical switch we genuinely cannot clear) stays fatal. A stale block found at startup is cleared outright rather than waiting for someone to walk over and toggle the switch.
+- **Typed characters reached the debug bundle** — the on-screen keyboard logged each pressed character at debug level, and a bundle ships the log ring verbatim with a debug floor regardless of configured verbosity, so a passphrase typed into a masked WiFi field left the device inside bundles shared in public channels. Keystrokes are redacted whenever the field is masked and demoted to trace, which also stops them evicting the diagnostic window — one bundle spent 1776 of its 2000 ring lines on this one handler, covering 3m50s.
+- **WiFi connect-failure toasts leaked the network name** — the first-run wizard passed raw SSIDs into an error notification, which reaches the log under the hood. The PII gate that catches this everywhere else never looked inside notification macros.
+- **A non-UTF-8 SSID grew the credential store without bound** — an SSID is a raw 802.11 octet string with no UTF-8 guarantee, and on every real ARM target such bytes passed validation, were mangled on write, and then never matched the raw SSID on the next connect. Deduplication silently stopped working and a fresh cleartext record was appended on every single connect to that network, forever. Stored values now round-trip losslessly.
+- **A saved network stacked a duplicate entry rather than reusing its own.**
+- **An IP address was shown while not actually associated with a network.**
+- **A failed WiFi scan trigger corrupted the scan suppression state.**
+- **The WiFi interface, its wpa_supplicant daemon and its rfkill switch were three independent guesses** — resolved once at init into one identity, with every daemon found logged.
+- **A failed radio change fed a false state back into the UI** — the result of the change was discarded and the *requested* on/off state persisted regardless of whether it applied, so a denied rfkill write left the toggle lying about the radio and the next startup reasserting the wrong thing.
+- **Load and Unload behaved differently on each of the four screens that can dispatch them** — the filament panel has always routed AMS backend → configured macro → raw G-code, but the AMS sidebar returned silently with no backend and both runout paths navigated away instead, so that ladder reached exactly one surface. All four now share one plan and one router. The sidebar's already-mounted toolchanger guard and its load-versus-swap rule reach the panel for the first time, and the unload-before-load question is answered per slot, so a mixed unit answers differently for a direct lane than a hub-routed one.
+- **A toolchanger Load spun for 120 seconds and refused every operation after it** — selecting the tool already mounted is a firmware no-op that never touches the toolchanger's status, so nothing ever cleared the optimistic in-progress state and the panel stayed busy until restart.
+- **Toolhead badges named the wrong toolhead on AFC (#1229)** — every T badge was an AFC per-lane map alias, which users read as a tool number; on the reporter's toolchanger AFC maps T0 to the extruder5 lane while Klipper's own T0 is extruder. T now means lane alias only, and toolheads carry Klipper extruder identity as E<n>.
+- **AFC drew a bypass spool on machines with no bypass (#1229)** — AFC publishes a virtual bypass sensor whether or not one is wired, so the node was drawn permanently and painted from the external-spool slot: the reporter saw a green ASA bypass spool on a machine that has no bypass at all. Other backends are untouched, where bypass is a real physical position.
+- **AFC's current slot froze on whichever writer got there first (#1229)** — every other writer was gated behind "no slot yet", so on a toolchanger a parked toolhead lane was named current with an empty carriage, driving a wrong header, a phantom node in the filament path render, and an unload nobody asked for. It is now derived from carriage mount state at the end of a status frame instead of negotiated across eight parser sites.
+- **One unparsed lane tipped a pure-hub AFC unit into mixed routing (#1229)** — Moonraker sends deltas and unit objects sort ahead of per-lane ones, so a frame can describe a unit whose lanes have not been seen yet, and unknown routing counted as direct. Users saw seven toolhead nodes for six extruders.
+- **The bypass toggle unloaded the active slot first on AFC and Happy Hare (#1229)** — two AFC users asked for the opposite: send the one command and let the firmware answer. Backends whose users have no console to fall back on keep the existing behaviour.
+- **A QIDI tool remap badged one lane and operated on another** — the mapping was written in one direction only, so with T0 remapped to slot 2 the AMS panel showed lane 2 while the filament panel gated and acted on lane 0. It was also the only mapping-capable backend that silently disabled the print-start remap snapshot.
+- **Every Load on a Snapmaker U1 seated the carriage and fed nothing** — the unload-before-load rule encodes a serial assumption about clearing one shared path. The U1 is parallel — four toolheads, each with its own extruder — so the rule was true always and routed every Load through a tool change.
+- **The filament strip and the AMS panel could show different lanes as loaded** — after an idle unload the embedded mini status kept a lane badged while the AMS panel had already cleared it.
+- **A crash while thumbnails were loading in the print file browser (#960)** — four thumbnail callbacks checked a liveness flag and then dereferenced the panel on a worker thread, and the call was virtual, so it dispatched through a freed vtable pointer. Fetch results are also now always delivered on the main thread: which thread they arrived on depended on which internal path produced them, and callers set image sources from them (#1202).
+- **A crash when the orientation changed with the bed mesh panel open** — the reactive portrait branch rebuilds the canvas in place and nothing nulled the panel's pointer to the old one, so every later use — including the async render thread's entry point — was a use-after-free.
+- **A crash shutting down while the printer was unreachable (#1212)** — a retry timer armed on every failed connect was never recorded, so it could not be cancelled, and the event loop nulls its handle on one thread while still draining timers on another.
+- **A language change overlapping a Moonraker error read freed memory (#1219)** — the event handler resolved its notification title on whichever thread raised it, while the translation table is freed and replaced from the main thread.
+- **A crash after a print-start preparation timeout (#1221)** — a null check, then a queue drain that ran an already-queued overlay dismissal, then a use of the pointer that dismissal had just nulled. The optimistic-navigation unwind is now gated on print status still being on top, since after a 60-second timeout you may be several screens away and popping blind closed the screen you were on.
+- **A modal dismissed through the static hide path leaked its object (#1230)** — its teardown hook never ran, its statics stayed non-null and its widget pointers dangled.
+- **A 16-bit PNG overran the decode buffer** — decode output is allocated as a fixed four bytes per pixel while the decoder writes the file's own bits per pixel, so 16-bit RGB and RGBA overran by 1.5x and 2x. Such files are now rejected at allocation.
+- **The recovery dialog did not reappear after a backdrop dismiss** — the next shutdown event was spent clearing a stale pointer and showed nothing; the dialog only returned on the event after that.
+- **Data races in WebSocket teardown (#1212)** — the connection-state callback had a mutex guarding only the read, so replacing it freed the old target's storage while it was being copied on another thread.
+- **A 36-point bed mesh counted to 72 on a Qidi Q2 (#1224)** — progress divided by a sample count read from the printer config, which only works when we recognise that printer's probe section, and the list of those is open-ended across firmware forks. Probe points are now deduplicated by position, which needs no configuration and absorbs retries a fixed divisor cannot.
+- **"Bed is Level!" on a bed that was not (#1225)** — Klipper reports every screw relative to the first one in config order, so a mid-range base let two corners sit inside tolerance in opposite directions while the real corner-to-corner error was their sum: 0.111 mm reported as level. The verdict now measures signed spread across all screws, and the tolerance is converted through the real screw thread pitch read from the printer config, so an M4 bed is no longer judged with M3 slack.
+- **WLED strips took an error on every action (#1241)** — Moonraker nests the strip map one level deeper than the code unwrapped, so it iterated a single entry named `strips`, posted that as the strip name, and read every polled state as off. The mock emitted the same flattened shape, so the parser and its test fixture agreed with each other and no test caught it.
+- **Power devices with hyphens in their name did nothing (#1241)** — Moonraker names power devices after their config section, and a name like `-Power-` was rejected by an identifier check before the request was ever built. The name is URL-encoded and never reaches G-code, so only control characters are rejected now. A rejection surfaces as a toast rather than a log line nobody sees.
+- **The four z-step buttons were 0 px wide at 272x480** — the print-tune z-offset row carried flat pixel literals from landscape: rendered, bound, impossible to tap. A non-wrapping help label also overflowed the section by 54-67 px at every portrait size.
+- **The header action button rendered taller than the bar containing it** — its height ladder exceeds the header's from the Large tier up, so at 480x800 an 80 px button sat in a 68 px header and clipped off the top of the screen.
+- **The advanced panel's E-Stop, Restart Klipper and Firmware Restart labels clipped mid-word in portrait** — three buttons sharing one flex row, each getting a third of the screen. They stack in portrait now; landscape is unchanged.
+- **The portrait exclude-object list crowded out the object map** — its height was a constant meaning "the controls take about 55% of the column". They take 14-34%, and because the list is a floating child its percentage never consults a measurement, so the surplus sat on top of a live tappable map: 43% of it at 480x800, and 636 px of empty list at 320x1480. Portrait now measures the controls; landscape keeps its existing rule.
+- **The portrait print-status preview reserved the wrong amount of space** — the metadata strip has two stable heights depending on whether the print sets an M117 message, so no fixed reservation was correct. The split is computed with flex now, which also replaces a hand-tuned offset in landscape that had been clipping the top of the artwork. Portrait controls compress into one row of temperature chips, two merged status rows and a single row of five buttons, which roughly doubles the artwork band at 480x800 and frees enough height for the fan row to return; the reclaimed slack carries a temperature mini-graph.
+- **The bed mesh panel stacked into a column that starved its canvas in portrait** — reserving height for both cards before sizing the canvas capped it at 117 px on a 480x640 screen. The two cards sit side by side in one row now and the canvas grows to 273 px. Max/Min coordinates round to whole millimetres and drop to an indented sub-line only where they still do not fit, instead of wrapping across three lines.
+- **The preparing overlay centred below the artwork, over the dimmed metadata strip** — and its progress bar cost 12 px plus a gap while showing zero.
+- **A large modal spinner was sized from the cramped axis** — a 320x1480 panel drew a 48 px spinner inside a 471 px card.
+- **A vertical icon layout was discarded when the icon came from a binding** — the button parsed the icon position but only reached the code using it when a static icon attribute was also present.
+- **Hot reload brought a component back live but inert** — reloading destroyed the component's scope and took C++-registered subjects with it, so every binding naming one resolved to nothing. Before a companion fix in the XML engine, the same path aborted on a heap error instead.
+- **A misleading 14m37s gap in the logs (#1218)** — wall-clock-only timestamps make a clock step look like a stall, and one bundle appeared to show a long Moonraker reconnect gap that was really an 874-second step on a printer with no RTC. It cost real triage effort. Every line now carries a monotonic column and any line the wall clock jumped across is annotated with the size of the jump.
+- **A heap snapshot age of 33 hours against a 9.8 hour uptime** — not stale but impossible, and the number was printed as fact with no way to tell which of two causes produced it. Raw clock stamps now ship alongside the age and the reporter says which explanation fits.
+- **The temperature chart evicted the entire diagnostic log** — one debug line per series per sample interval, so a bundle arrived with 2000 of its 2000 ring lines being that one message and nothing else from the incident.
+- **Crash reports auto-filed GitHub issues for builds that were never published (#1240)** — the ingest key is compiled into every binary and the repo is public, so any fork or local build could file an issue that can never be symbolicated, because no symbol file for that build exists anywhere. One arrived claiming a version this project has never held.
+- **Nightly test shards reported green with failures in them** — the sharded loop collected the exit status of a text filter in a pipeline rather than the test binary's, so a shard with 8 failing cases still passed the job.
+- **A submodule patch that existed only in a worktree was silently never applied** — and an unreadable patch file reported itself as already applied. Both now fail the build loudly.
+
+### Changed
+
+- **Slider settings persist when you let go, not on every tick of the drag** — brightness, volume and LED startup brightness each wrote the settings file per tick: serialize, two fsyncs and a rolling backup copy, plus a forked shell per tick for the backlight on Sonic Pad. Durability is unchanged; only how often the durable write happens.
+- **A tap on the object map no longer does unbounded disk I/O (bundle C2CP6ZAW)** — the G-code layer cache held its lock across a file seek and a parse, so work on one layer blocked every other, and the touch hit-test reached that path from inside a UI callback while a background builder walked all layers through it. On a two-core K2 Plus the reporter worked around it by forcing thumbnail-only rendering.
+- **Switching G-code files no longer freezes the UI for a whole parse** — the background load only checked for cancellation after the entire file was parsed, and the main thread waits for that thread, so switching files stalled everything for seconds on a multi-megabyte file.
+- **Thumbnail PNGs are read on a worker thread** — scrolling a G-code folder previously put a whole-file read on the main thread for every card, once per file as the listing populated.
+- **WiFi scans stop spending two thirds of their time off-channel.**
+- **Layouts can branch on orientation and on height** — orientation and the vertical size tier are published as bindable values, so a panel no longer has to infer either from the narrower of its two axes.
+
+## [0.99.106] - 2026-07-31
+
+Most of this release is about screens that are not 800x480. The 480x272 panels get a sweep
+through layouts that were drawing past their own edges — a PIN keypad whose bottom row was
+off-screen, a bed mesh list with no complete row in it, dryer controls and history amounts cut
+off at the card edge — and portrait gets grid sizing, pixel tokens and a default layout of its
+own instead of landscape's numbers rotated onto a taller screen. Alongside that, the print file
+browser stops cropping its thumbnails, and the thumbnail cache stops walking itself on every
+fetch.
+
+### Added
+
+- **An unreachable printer now offers Change Address** — a connection failure raised an OK-only alert, so acknowledging it returned you to the same dead end, and the setting itself is buried under Settings > System > Printer Host with nothing pointing there.
+- **Portrait overlays use the whole screen width** — overlay sizing subtracted the navigation bar from the horizontal axis, which only holds when the bar is a full-height strip down the side. In portrait it runs along the bottom, so a 320px Waveshare panel drew 266px overlays with a dead strip of backdrop beside them.
+- **The WiFi picker shows each network's band (#1189)** — a 2.4G / 5G / 2.4-5G badge, shown only when the scan actually spans bands.
+
+### Fixed
+
+- **Portrait dropped home widgets permanently on first open (#1215, #1216)** — auto-placement asked for each widget's authored column span unclamped, so anything wider than the grid failed a loop that never ran and was switched off and saved that way, with a toast blaming a grid that had free rows. Portrait also derived row heights from the width constant, rationing the axis with room to spare, and inherited landscape anchors authored for six columns. It now has its own default layout and falls back to a widget's minimum span rather than dropping it. (A widget the old bug switched off stays off — re-add it from the catalog.)
+- **Tall screens took their sizing from their narrow axis (#1209)** — every pixel token resolved from min(width, height), which is right for anything that has to fit across and wrong for anything that stacks, so a 1480px-tall panel inherited 32px buttons and 200px dialog bodies from its 320px width. Landscape and square displays are unchanged by construction.
+- **Type stayed sized for the startup screen size after a resize (#1210)** — font registration decided which tiers exist from the startup breakpoint and then early-returned forever after. The navigation bar had the same split brain: a 76px ultrawide strip became 132px after any resize.
+- **The PIN keypad could not be used at all on a 480x272 screen (#1204)** — it was a fixed 320x340 portrait card, so the bottom row sat off-screen and 0 and confirm were untappable. It now reflows to a landscape card, keeping the full-size touch targets.
+- **The bed mesh profile list showed no complete row at 480x272 (#1204)** — a hardcoded 44px row height left a 33px viewport. Axis letters also landed on top of the tick labels on a small canvas, because the gap between them is expressed in world units and shrinks with the plot while the labels do not.
+- **The print-status emergency stop was clipped top and bottom (#1204)** — a hardcoded 44px circle inside a header whose height is responsive.
+- **Filament-by-type amounts were clipped off the edge of history cards (#1204)** — the row needed 207px of fixed widths inside a card that is 170px wide at 480x272.
+- **The AMS dryer controls were clipped at 480x272 (#1192)** — 120px of controls in a 94px box, losing 13px off both the preset dropdown and the Start/Stop button.
+- **The fan percentage never appeared on 480x272** — the micro layout hid it on a condition that is always true there, on the one screen size where the slider position is the only other feedback.
+- **Print status did not fit in portrait** — the fan row measured its own container against its children, which only answers the fixed-budget question a landscape row poses, so it stayed hidden however much screen was free. The exclude-object list encoded its width as a fraction of a row that portrait does not have.
+- **Print file cards lost their metadata and cropped their thumbnails (#1208)** — the two metadata groups each sized themselves to the other, so both collapsed and the time and weight labels laid out past the bottom edge of the card at every screen size. Thumbnail targets also came from a resolution table that had drifted from what the grid lays out, so images overhung their cards and were cropped through the model.
+- **The print file grid always chose the narrowest card that would fit** — column count was maximized rather than fitted to the width cards are drawn for, so 800x480 showed 5 cards of 132px against a 170px design. It now shows 4 of 167px; 480x272 is unchanged.
+- **An AMS slot edit could be committed from a view that forbids it** — the micro header bar never declared the property that hides a per-view Save button, and an undeclared attribute is dropped in silence. The Macros header had the same permanently-visible dead Save.
+- **A crash on shutdown while thumbnails were still being processed (#1202)** — the thread pool was checked under a lock, the lock dropped, and only then used, racing the shutdown that clears it. Worse than a dangling read: a task landing after shutdown restarted the pool and spawned workers past teardown.
+- **One unreadable thumbnail could disable cache eviction entirely (#1207)** — eviction ran unsynchronized from the main thread and every download worker, and a single entry another thread had just deleted discarded the whole scan. The partial total then read as "nothing to evict", so the cache grew without bound.
+- **A working webcam was rejected as unreachable (#1205)** — the snapshot probe spent one 2s budget on both connecting and responding, so a go2rtc endpoint waiting for a keyframe before it can transcode (measured up to 2.9s on a Pi 5) failed exactly like a stale DHCP entry, and the reporter fell back to a local camera that does not exist. Connect still fails fast at 2s; the response now gets 6s.
+- **An unreachable printer reported itself as a halted Klipper** — the gate read only Klipper's state, which starts at SHUTDOWN and has no "unknown", so a session that never opened a WebSocket was indistinguishable from a genuine halt. Every command came back "Klipper is halted — restart firmware to continue", printed verbatim on the PID screen.
+- **A wrong or stale printer address retried silently forever** — both existing escalations only arm once you have connected at least once, so an address that never worked produced nothing but a disconnected icon that never names what it is dialing. After 60 seconds with no socket ever opening, the failure is surfaced with the host and port in it.
+- **Calibration Start buttons stayed live on a printer that could not be reached** — bed mesh, QGL, Z tilt and nozzle clean put Start in the header bar, which sits outside the container carrying the enable gate, so the body greyed out and the button did not.
+- **A dropped socket could kill reconnection permanently** — one transient failure to create a socket, under file-descriptor or memory pressure, left nothing to re-arm the retry. The backoff was also reset on the TCP connect rather than the WebSocket upgrade, so a proxy that answers with Moonraker down produced 25 reconnects in 2.5s where there should have been 5.
+- **A busy-printer toast appeared for filament operations you started yourself (#1206)** — the toast keyed on Klipper reporting activity, which an ordinary unload does. The safety gate that blocks late motion during a filament operation is untouched; only the toast changed.
+- **A recover prompt offered the wrong recovery (#1172)** — it never read the recovery actions the error itself carried, so every warning was offered the same MCU bounce whatever the fault. An action carrying gcode now runs its own, and a set of them escalates to the dialog that can show them. A button marked OK also no longer transmits "OK" to Klipper.
+- **Load was disabled on every tool of a generic toolchanger (#1199)** — the rule keyed on slot presence, which is true for every toolchanger slot forever since a slot there is a physical toolhead, and it offered unmount on tools sitting in their docks.
+- **Per-printer capability overrides survived a printer switch (#804)** — bed mesh, QGL, Z tilt, nozzle clean, heat soak, chamber and speaker settings were read once at startup and kept the first printer's values for the life of the process. The add-printer and cancel paths never invalidated anything at all.
+- **Removing a printer could delete the only one, or leave the app pointing at something that is not a printer** — the guard counted every key in the printers map, including the ones that are not printers. Toolhead style and U1 detection were also stored install-wide despite describing one machine, and scanner settings per-printer despite describing the host; a migration fans them out correctly.
+- **A rendering overflow on rounded-corner clipping** — the mask drawing never clipped its area to the layer buffer, so an overhang wrote past the end of a row.
+- **An emergency stop arriving from the network touched main-thread state from the wrong thread** — dialog creation was already deferred but the work in front of it was not.
+- **GitHub release notes were cut off partway through** — the release job piped the tag annotation through `head -50`, so anything longer lost its tail while the job still reported success. v0.99.105's notes were the first casualty and have been restored.
+- **A misleading log line for gcode held behind a blocking operation (#1206)** — it said the command was being queued, which cost a reporter a session hunting for a flush that never comes. HelixScreen keeps no such queue; what is dropped is the reply, not the request.
+
+### Changed
+
+- **Thumbnail fetches no longer scale with the size of the cache (#1207)** — eviction walked the whole directory with a stat per file on every fetch, from six call sites. Measured over a 40-file cache, 60 directory walks and 3300 stat calls become 0 and 30, and the numbers do not move at 400 files.
+- **The XML engine is now its own MIT-licensed project** — helix-xml, our fork of the engine LVGL removed in 9.5, has moved to github.com/prestonbrown/helix-xml and is consumed here as a submodule. Our contributions are relicensed MIT and every file carries per-file provenance against the fork point, so the library contains no GPL and is usable standalone. A fresh clone now needs `git submodule update --init --recursive`.
+- **Ultrawide and portrait layouts are documented as alpha** — the README, user guide and FAQ advertised 1920x480 as fully supported and said nothing about portrait. Detection, navigation bar sizing and grid tiers work; every other panel still falls back to the landscape layout.
+- **The Open Source Licenses list and COPYRIGHT agree again** — they had drifted apart five ways and both were wrong in places: OpenVDB is Apache-2.0, wpa_supplicant is BSD-3-Clause, and stb and GLM were understated.
+
+## [0.99.105] - 2026-07-29
+
+> **0.99.104 was skipped.** It was tagged but its release build failed on three
+> platforms, so no artifacts were ever published — 0.99.103 remained the latest
+> release. Everything intended for 0.99.104 ships here, plus the fixes for what
+> broke that build.
+
+Filament systems get a deep correctness pass — AFC and Spoolman especially, most of it verified
+against live BoxTurtle hardware — alongside a sweep through the crash class where a background
+callback outlives the thing it was going to update, and several paths where an update or a file
+permission could quietly destroy a working configuration.
+
+### Added
+
+- **A stalled AFC fault now offers the recovery that fits it (#1171)** — AFC was the only filament system whose faults reached you as a bare error with nothing to tap. It now gets the same Resume / Unload-or-Eject / Recover set the other backends have, chosen from where the filament actually is: a heated toolhead unload when filament is at the head, a cold lane eject when it is not.
+- **A lane's preheat target comes from the spool you linked to it (#1149)** — AFC has always published the recommended print temperature from the linked Spoolman spool, and it was the last field going unread. Preheat now uses it instead of falling back to the generic figure for the material.
+- **The fault-position diagram says where the filament stopped in words, not only in colour (#1196)** — the failing section was distinguished by red alone, which is exactly the red-against-green pairing a colour-blind user cannot separate, and which washes out on a printer screen in daylight. A caption names the failing gap outright, and it also carries the one case position cannot show: a jam at the toolhead rather than between two points.
+- **A lane keeps its spool identity across an eject** — brand, spool name, total weight, color name and the Spoolman IDs have nowhere to live in AFC's or Happy Hare's own records, so they are stored separately now. Pulling a spool for maintenance and putting the same one back no longer loses what you entered. (Happy Hare's half was written without hardware to test on and wants validation from an MMU owner.)
+- **"It's a new spool" is the primary answer when saving into a lane that is already linked** — putting a different physical spool in a linked lane could previously only overwrite the old spool's identity in Spoolman. It now creates a new spool and rebinds the lane, leaving the linked one untouched. Cancel stays a true abort.
+- **Clear Spool is offered whenever a slot carries an assignment**, not only when the lane is empty — a stale assignment does the most damage right after new filament goes in, which is exactly when the affordance used to disappear.
+- **Lane position recovery is a mode of the Unload button** — the per-lane Reset entry sent a physical filament move on AFC and a bookkeeping fix on Happy Hare, sharing one word and one icon with the system-wide sidebar Reset. Recovery is now picked from live state like Eject already was, and fault clearing lives on the sidebar.
+- **AFC's lane-fault messages get a readable filament-position diagram (#1184)** — AFC welds monospace bar art onto five of its fault messages, and in a proportional font the bars stop lining up with their labels, so the most diagnostic part of the message reads as noise. The art is stripped and the position drawn properly; an unrecognized message is passed through byte-for-byte and the graphic hides, so upstream rewording degrades to plain text.
+- **AFC v1.2.0's richer status is read directly (#1149)** — spool name, fill level, preheat bed target and multi-color swatches now come from AFC itself instead of a Spoolman round-trip, alongside the buffer's health fields and each lane's endstop and selector state.
+- **Transient overlays cast a shadow (#1178)** — the gap beside a stacked overlay showed the dimmed panel underneath with nothing to explain it, so it read as a rendering artifact rather than as a layer.
+
+### Fixed
+
+- **Load stayed available on a lane AFC already considered loaded, and the tap did nothing (#1194, #1183)** — the button read one aggregate "which lane is active" pointer instead of AFC's own per-lane state, so any disagreement between the two left Load enabled on a lane the firmware would refuse. Every affordance built on that reading was affected, including the active-lane highlight and the context menu offering Recover on a lane that had only reached the hub.
+- **Lane recovery could physically de-seat a working lane** — when AFC named no specific lane, recovery was offered on every lane sharing the hub, on the reasoning that a wrong guess costs one harmless refusal. It does not: the lane reset begins with an unconditional 50mm retract before it checks whether that lane's filament is even there, the hub-clear guard has already passed by the time we offer it, and the firmware's own toolhead guard logs its objection and then performs the moves anyway. A wrong guess dragged a seated lane back toward its drive gears. Recovery is now offered only on a lane AFC itself names, and only when that lane's load switch is actually triggered. (#1182, #1187)
+- **Tool selection was never sent on an AFC toolchanger** — the extruder list was read from a field AFC only publishes over an HTTP endpoint we never call, so multi-extruder machines looked like single-extruder ones and the tool-select command was silently skipped. It is now read from the list AFC does send.
+- **An ejected lane kept its old Spoolman spool when its record was re-read (#1195)** — the two code paths that read lane data disagreed about what a cleared spool means, so depending on which ran last a lane could keep showing the previous spool's name, colour and remaining weight, and a later edit would have written to it. Your own overrides were also being dropped on that path.
+- **Several queued AFC messages left a resolved error on screen (#1186)** — clearing a fault sent a fixed number of clears rather than draining until the queue was empty, and nothing else pops those entries, so warnings and already-resolved errors accumulated across a session and the oldest one stayed visible.
+- **One fault could produce two notifications (#1197)** — the same fault arrives through two independent observers, and the backstop that exists to catch faults nothing else surfaced could not see that the other had already shown a toast.
+- **Load and Unload were offered while a print owned the toolhead** — both are toolhead-motion operations and had no business being tappable mid-print.
+- **Per-slot load state is now believed on five more filament systems (#1199)** — AD5X, QIDI Box, CFS and ACE were deciding "is this slot loaded" from a single active-slot pointer. On CFS the consequence was concrete: because no slot was ever marked loaded, the AMS panel never offered Unload on a bay that had filament in it. On AD5X the fix also keeps the active-lane highlight through a runout, which previously dropped it at the moment you needed to recover. (Happy Hare deliberately keeps the existing rule — its own values already are the firmware's truth.)
+- **WiFi did not come up until you opened a screen that needed it** — it is now brought up at startup.
+- **Saved WiFi credentials could silently fail to persist** — the save was trusted rather than verified, and on devices where wpa_supplicant's config lands on a RAM-backed filesystem it was lost on reboot. The write is now confirmed to have reached disk, and a config that lands on tmpfs is restored.
+- **Shutdown did nothing when Moonraker could not reboot the host** — it now falls back to powering down locally.
+- **A pending Resume could stay stuck when Klipper rejected the macro** — the button stayed in its in-flight state with no way out.
+- **An `action:prompt` command arriving glued to its payload was dropped** — it is now recovered rather than ignored.
+- **`--version` failed when another instance was running** — the instance lock was claimed before arguments were parsed.
+- **Crash reports could arrive with no reason attached (#960)** — glibc's abort message was read as the wrong type, so the most useful line in a blank abort was missing.
+- **Uploaded logs carried network names and MAC addresses (#1191)** — the log ring is captured at debug regardless of your configured verbosity and leaves the machine three ways: the debug bundle, the crash reporter's automatic upload, and the `ctl` log RPC. It held the connected SSID, every neighbouring SSID in range with signal strengths, and the adapter MAC in cleartext. A set of nearby network names is a geolocation fingerprint, and a scan enumerates networks belonging to people who never consented to being in a bug report. Those values are now replaced at the log call site with a per-boot token that still correlates one network across lines.
+- **Moonraker one-click updates destroyed custom images, themes, per-printer database overrides and crash history (#1164)** — Moonraker deletes the install directory before extracting, and only the four symlinked config files survived it. Those directories get the same protection now, and existing installs are migrated into place.
+- **The first spool save after install stranded every per-tool spool assignment (#1176)** — the atomic save replaced the symlink instead of writing through it, so each later update destroyed the assignments while the relink afterwards made nothing look wrong. Found on a Pi where the surviving copy was three months stale.
+- **A read-only settings.json was treated as corrupt and reset to factory defaults** — config reads were opened for read/write, so a root-owned or `0444` file destroyed the entire setup while being perfectly readable.
+- **In-app updates marked configured users as needing first-boot setup again** — and on a multi-printer config that was silent data loss: stale-entry recovery then erased the active printer's heaters, fans, sensors, macros and Moonraker host with no prompt.
+- **An install with a stale asset name could never update again (#993)** — Moonraker resolves which asset to download from the installed `release_info.json` and falls back to the alphabetically-first asset when it matches nothing, so the fix could only ever arrive through the channel it had broken. That file is validated and repaired at startup now.
+- **Installer path overrides were fed to `rm -rf` and `mv` verbatim** — a mount root passed as `TMP_DIR` once wiped a device's `/mnt/UDISK`. Overrides are validated now, downloads are checked against the published SHA256 rather than a CRC alone, and the documented `curl | sh -s -- --clean` invocation no longer skips its delete-your-configuration prompt.
+- **First boot was a dead end when Moonraker was up and Klipper was in error** — one of the most common first-boot states. The step had no Skip, Back is hidden when it is first, and the gate stayed closed, so the only exits were `--skip-wizard` or hand-editing settings.json. You could not even reach the app to see the Klipper error.
+- **An interrupted wizard collapsed eight later steps on the next boot** — printer identification persisted its preset on Back too, and that marker was trusted as authoritative, with no in-app way back if the preset was wrong.
+- **Printer discovery could spin forever (#1161)** — a WebSocket drop mid-discovery left the spinner running and Next disabled with no path out. A 30-second watchdog now unblocks it with a distinct warning.
+- **Finishing the wizard with Klipper down flagged every fan, LED and filament sensor as newly appeared hardware on the next healthy boot (#1160)**, with no route back to the steps that were skipped. The snapshot is deferred until the first successful discovery, which then offers to re-run just those steps.
+- **Configuring a second printer overwrote the first one's preset marker (#1162)** — it lived at the root of the config rather than under the printer, so widget seeding and wizard step collapsing read a marker belonging to the wrong machine.
+- **A filament operation could spin forever (#1183)** — AFC answers a command it has nothing to do about ("lane3 already loaded") in 4ms without ever entering a toolchange, and the completion path keyed entirely on a state transition that therefore never happened. AFC now marks the operation at dispatch and resolves it on the macro's own acknowledgement.
+- **A stalled operation left its button stuck for the rest of the session (#1183)** — all eight operation guards shared a timeout that re-enabled the buttons without ever failing the operation, so the per-button spinner state never cleared and the next operation could not complete.
+- **An AFC operation that never finished hung the UI with no way out (#1188)** — AD5X was the only backend with a stuck-action timeout, so a silently hung macro, a WebSocket bounce mid-operation, or a Klipper shutdown mid-toolchange left the interface busy indefinitely.
+- **Filament recovery ran into a cold nozzle (#1193)** — Resume and Unload dispatched their gcode with no temperature check, so they failed the same way the operation that raised the error did. A post-op cooldown, a print error's heater shutoff, or Klipper's idle timeout can each zero the heater between the fault and the tap; the actions that push filament through the melt zone now preheat and wait.
+- **The filament error dialog outlived its fault (#1185)** — it was only ever torn down when the panel was destroyed. On a live printer a lane-reset failure from 19:23 was still offering Resume, Eject and Recover at 19:39 with the print recovered and running at 30%, none of the three buttons correct.
+- **A fault could stop the spinner while putting nothing on screen** — a backend can raise an error carrying no event and no `!!` line, which reads as success. A last-resort check now surfaces the backend's own description when no dialog took ownership of the fault.
+- **The toolchange step bar never advanced past cut and brush (#1183)** — AFC emits its load and unload narration with no `//` prefix while only the decorative steps carry one, so the most important progress marker could never fire. Separately, a macro that aborts on an undefined command is reported through a channel that still answers "ok", so a purge dying on line 4 of its own body finished with a green checkmark; those now fail the operation and name the missing command.
+- **AFC offered Reset on lanes where it could not work, and the refusal latched on screen** — `AFC_LANE_RESET` retracts filament from the bowden back to the hub and refuses unless the filament is at the hub with a free toolhead, but the entry appeared on every lane. Firing it on an ejected lane produced "Hub is already clear", which latched in AFC's message and kept re-firing error toasts hours later.
+- **AFC's hub sensor was attributed to every lane at once** — one sensor is shared across a unit, so a triggered hub proves filament is past it but says nothing about whose. Recovery now follows the lane AFC names as active, and falls back to every lane routed to that hub when AFC names none.
+- **A latched AFC field drove the filament path graphic and the reset gate** — `loaded_to_hub` is set when a lane is prepped and never clears, so it reads true on all four lanes at once. Both now read the real hub sensor.
+- **Pressing Reset left the error text on screen** — AFC's message is a queue and each clear pops a single entry, so clearing once could leave the next queued error showing, indistinguishable from Reset having done nothing. Reset now clears the fault and drains the queue.
+- **An ejected AFC lane kept showing the old spool and kept its Spoolman link** — AFC clears a lane itself on eject, but the parser could not express a clear at all, so only material ever went away. A later edit then aimed a Spoolman write at the wrong spool.
+- **Saving a spool needed two passes to stick on AFC** — the link write was emitted last, and AFC rewrites lane material, color, weight and temperatures from the linked spool, so one save set the data and then destroyed it.
+- **Spool edits were silently dropped on AFC installs reporting an old version** — the version was read from a database namespace nothing in AFC writes, so a current BoxTurtle reports 1.0.0 and every color, material, weight and spool-ID write was skipped with only a log hint.
+- **Spoolman was written before you answered the "different filament?" prompt** — the update ran ahead of the confirmation, so Cancel, documented as a true abort, could not retract it.
+- **A spool's total weight never reached Spoolman** — only remaining weight and the spool ID were compared, so the edit lit up Save, persisted locally, and Spoolman kept its old value indefinitely.
+- **Unlinking a spool and entering a weight in the same save emitted no weight at all**, forcing a second edit.
+- **Stale per-tool spool assignments were never cleared** — a lane that lost its spool left its old assignment behind, and those persist to disk and to Moonraker, so they outlived restarts.
+- **Turning Spoolman sync off left its poll timer running** — the Spoolman overlay took a polling reference every time it opened and never gave one back, so the toggle was largely decorative.
+- **The clog configuration modal sent a Happy Hare command on every backend (#1155)** — AFC's buffer fault detection also offers the clog widget, so an AFC user could pick a mode, press Save and get "Unknown command". ACE, CFS, QIDI Box and the tool changers had the same exposure; the controls are now hidden where they cannot work.
+- **Recover did nothing on the AMS overview panel** — the button rendered enabled and its action fell through to nothing.
+- **Happy Hare's system-wide fault clear sent nothing** — Reset is pressed when nothing is loaded, and exactly that state was rejected as an invalid slot.
+- **The AD5X color picker applied all 24 swatches in turn (#1065)** — zmod echoes every dialog button down the gcode console, and each one was read as an executed edit. One bundle showed 87 echoed buttons producing 162 phantom applies and a 40-second stale material label.
+- **Malformed filament-system data could abort the app outright** — a missing key read from a const JSON object is an uncatchable abort in this build, not a catchable error, so five guarded-looking chains could kill the process; on CFS a disconnected unit reports scalars where slot arrays are expected, which killed the whole frame every poll and left the AMS panel silently empty.
+- **One malformed field could take out a whole Moonraker response** — a null in file metadata aborted the entire listing, a null among power devices or timelapse settings emptied the list, and a wrongly-typed error field leaked the request until its 60-second timeout and surfaced as a bogus timeout toast.
+- **Background callbacks could run against a destroyed owner (#1165, #1146)** — a queued UI update runs at the next drain whether or not the object that queued it still exists, and the crash then lands somewhere unrelated. Every such site in the codebase now carries a lifetime guard, including a genuine one in the QR scanner and the build-volume notification behind #1146.
+- **Timers stayed armed on freed objects (#1173)** — the screensavers, print controls, PID calibration, the wizard's auto-probe and the update checker each cancelled their timer only on the normal teardown path, so any teardown that skipped it left the callback pointing at freed memory.
+- **Settings > Spoolman touched the UI from a network thread every time it opened**, including creating and deleting timers while LVGL might have been walking its timer list.
+- **The input shaper panel's subjects outlived the ordered shutdown pass (#1180)** — it was the one panel that never registered its teardown, so ordering was decided by panel destruction instead.
+- **The fan row could freeze at 0% and the wrong fan could be treated as the part fan (#1181)** — re-assigning fan roles zeroed every fan's live reading, and Moonraker only reports changes, so a fan holding a steady speed never restored what was zeroed. Recovery needed a speed change that a steady fan never produces.
+- **A paused printer showing an uncoded error had nothing to press (#1152)** — the modal offered no recovery actions at all. It now offers Resume plus a dismiss when the job is genuinely paused.
+- **Slow drags did nothing on the bed mesh (#1133)** — rotation accumulated as an integer and threw the remainder away, so a 1px-per-event drag over 200 events moved the mesh zero degrees. The tilt clamp also moved into the renderer, so the view can no longer be driven past the point where the depth sort inverts.
+- **Four error-recovery button labels were never translated (#1174).**
+- **A widget name repeated inside one layout file left the later one built but never configured (#1136)** — the AMS panel had exactly that, and a gate now catches it.
+- **`border_side="left|bottom"` silently removed the border** instead of drawing both sides — the combined form fell through to the unknown-value branch, which returns "no border".
+
+### Changed
+
+- **Backends now declare whether they carry per-slot load truth**, and the AMS layer believes that over its aggregate pointer where they do. Each backend that opted in derives its per-slot answer from the same signals the aggregate is built from, so the two cannot disagree — the benefit is that "can this slot be unloaded" finally reads correctly rather than any behaviour changing underneath you.
+- **Overlay width is decided by how you reached the overlay (#1178)** — a destination overlay is full width, a transient layer leaves the backdrop showing at its leading edge, and the same overlay can be either depending on where it was pushed from. Console Settings no longer renders wider than the Console it was pushed from.
+- **The transient-layer shadow is lighter on light themes**, where the same alpha rendered as a heavy black band rather than a gradient.
+- **AFC's version is read from its status object and lane vendor from `vendor_name`**, tracking changes agreed with upstream; both are inert until that firmware ships.
+- **`helixscreen ctl` gained freeze/unfreeze, `wait_idle`, `text`, `reset`, stable and widget-cropped screenshots and JSON output**, its two help listings are generated from one table so neither can drift, and every cross-compiled target can now build it in — the flag was silently dropped by all but one.
+- **An out-of-process UI test suite drives a live instance through `ctl` and compares screens against approved golden images**, wired into CI alongside the existing tests.
+- **Contributor gates and threading docs** — a wrong rule about lifetime tokens is corrected across five documents, and new gates catch background-thread anti-patterns, timers not cancelled in destructors, duplicate widget names, uncatchable const JSON reads and UI callbacks leaked between tests.
+
+## [0.99.103] - 2026-07-26
+
+### Added
+
+- **Speed, flow, message and LED-effect commands go through while the printer is busy (#1129)** — `M220`, `M221`, `M117`, `SET_LED_EFFECT` and `SET_PIN` are treated as discretionary now, so they are not held behind a long-running operation, and nudging an `output_pin` fan is no longer announced as an "LED change".
+
+### Fixed
+
+- **AFC lane colors and materials from the AFC database were silently unused (#1148)** — the reply to AFC's database query was read from the wrong level of the JSON-RPC envelope, so the guard was false on every successful response: the version stayed "unknown", the per-lane query was never issued, and every lane fell back to default grey. The query also asked for the wrong namespace and could not parse the `#RRGGBB` colors AFC writes there.
+- **A current AFC install could be nagged to upgrade** — AFC stopped writing its version to Moonraker in June 2025, so the string we read is either absent or frozen: a live BoxTurtle reports "1.0.0" while its payload proves 1.0.32-era. Nothing keys off that string any more — capabilities are feature-detected — and the version stays only for display and debug bundles.
+- **AFC 1.2.0 toolchanges showed a raw state token and lost their toasts** — upstream renamed "Tool swap" to "ToolSwap" and added ToolDock and ToolPickup; none were recognized, so the camelCase token reached the screen verbatim and the swap reported as idle, which also defeated toast suppression. Matching now ignores case, spacing and separators, and an unrecognized state is humanized rather than passed through. Per-extruder status, next pickup and standalone flags are parsed for toolchangers.
+- **In-app updates could not bootstrap the fix that repairs them (#993)** — BusyBox and OpenWrt printers (K1, AD5M, K2) verify a download with `unzip -t`, which their BusyBox is too old to have or which is missing entirely, so they rejected a byte-perfect zip as a corrupt download — including the release that fixes the verifier. Those platforms are served the `tar.gz` now, which they can verify with `gunzip -t`.
+- **Pressing update in Mainsail could delete a HelixScreen install (#993)** — Moonraker versions before v0.10.0 ignore `asset_name` and download the first release asset by name, after deleting the install directory, which meant a symbol archive rather than the release. Symbol assets are renamed so a real release sorts first, and the installer no longer writes the Moonraker update stanza on a Moonraker that cannot honor it, removing any stanza an earlier install left behind.
+- **Moonraker went undetected on Creality's nested layout (#993)** — on a K1/K2 the repo is cloned a level below the install dir, so the probe missed and returned undetermined on exactly the platforms the check exists for. Verified on a K1C.
+- **Belt-tension hardware was never detected (#1137)** — the objects list was read from the wrong level of the JSON-RPC envelope and returned its empty default with no error and no log line, so belted-Z and PWM-LED detection was dead code on every printer.
+- **Two malformed replies aborted the app rather than failing (#1139)** — a `/printer/info` response with no hostname killed printer detection outright, and a non-object `error` member in a remote-control reply reached `std::terminate`.
+- **Klipper-derived busy state survived a Klipper restart (#1129)** — idle-timeout and manual-probe state carried over across a Klippy transition because Moonraker only sends deltas; those subjects are cleared on the transition now.
+
+### Changed
+
+- **The jog pad's diagonal dividers read as gaps cut through the pad** instead of lines drawn over it.
+- **Release packages no longer ship the four developer showcase panels (#1135)** — their code was already excluded from release builds; the XML was not.
+- **Update telemetry reports self-update success per running version, and whether a device can read a zip at all (#993)** — the signal needed to tell when a platform is safe to serve zip-only. Update events previously had no handler, so the dashboard showed bare counts with no version or reason.
+- **Contributor docs and gates** — threading rules are consolidated into `docs/devel/THREADING.md`, the review bar is written down as a rubric, and new lint gates ratchet imperative-UI, logging and design-token debt so it can shrink but not grow.
+
+## [0.99.102] - 2026-07-26
+
+### Fixed
+
+- **In-app updates failed on printers with older BusyBox (#993)** — release zips were verified with `unzip -tqq`, but BusyBox only gained `unzip -t` in 1.32, so the AD5M (1.29.3) and K1 (1.31.1) rejected an intact download outright and every in-app update and Moonraker install failed. Validation now tries `python3 zipfile.testzip()` first, gated on zlib since the AD5M's Python 3.7 has none, and degrades to a structural `unzip -l` probe rather than declaring a good archive corrupt. Verified on K1, AD5M and CC1 hardware.
+- **The K2 could not install a zip release at all** — its OpenWrt firmware ships no `unzip` binary and no BusyBox applet, only `python3`, so the pre-download check rejected every update with an `apt-get` hint that does not apply there. The check now asks whether the system can read a zip by any means, extraction gained a Python fallback, and both paths force the exec bit on `install.sh` and `bin/` members so the extracted installer can actually run. Verified on K2 hardware.
+
+### Changed
+
+- **Sonic Pad documentation now states that SonicPad-Debian is the only tested firmware.**
+
+## [0.99.101] - 2026-07-25
+
+LED control gets a round of correctness work, the 3D G-code preview costs noticeably less
+memory on small boards, and a batch of null-tolerance fixes stop malformed config or
+printer data from taking out a whole screen.
+
+### Added
+
+- **The theme editor has its own preset palette** — picking colors no longer means starting from the active theme's swatches every time.
+- **Tap a sent command in the console to paste it back** — reruns and small edits no longer mean retyping. The composer's actions also moved inside the input field.
+- **Spoolman mark and spool number in the spool editor header** — you can tell at a glance which physical spool a slot is bound to.
+- **Post-operation nozzle cooldown can be switched off** — **Settings > Safety & Notifications > Cool nozzle after filament ops**, on by default and set per printer. AFC runs its own cooldown after a swap, so on those machines you can hand the job to AFC and keep a single timer in charge of the heater.
+- **Keyboard long-press and slide-to-select** — the accent/alternate hint now appears in the right place, and sliding onto a hint selects it instead of dismissing the popup.
+- **Side-by-side welcome text and language picker** in the setup wizard.
+- **`helixscreen ctl` gained screenshots, log tail, shutdown, subtree listing, glob widget targets, geometry and constant introspection, and a synthetic pointer for gesture testing** — the remote-control CLI used for driving and debugging a running instance.
+
+### Fixed
+
+- **LED strips (#1129)** — white-only strips read the W channel instead of showing nothing; a command queued while Klippy is busy now settles its caller callback instead of hanging; in-flight LED state is cleared when Klippy leaves READY; and the startup LED preference is applied once per session rather than re-firing on every rediscovery. Multi-strip selection is no longer collapsed by the overlay, and a macro card whose layout fails to build is skipped instead of taking the row with it.
+- **A metadata miss blanked an already-loaded 3D preview** — the preview went blank for the rest of the print whenever G-code metadata was unavailable but the file itself was not (a cached copy, a local path Moonraker cannot resolve, or a scan still in progress). The error is silent, so nothing explained the blank panel.
+- **The pre-print overlay never dismissed when layer 0 was never observed** — prints that skipped straight past the first layer left the overlay up.
+- **Streaming layer parses lost the extrusion mode (#1127)** — relative-extrusion files could render wrong when parsed incrementally.
+- **Spool editing on AMS units** — the filament type selector went missing in spool edit (#1128), the slot editor lost its contents after a rebuild, and `color_rgb` was dropped from in-memory records (#1138). A null sensor reading no longer aborts the whole AMS status frame.
+- **Malformed data no longer takes out a screen** — nulls in the config version, printer database and job history are survived rather than fatal; a loader failure is scoped to the offending item instead of discarding the file; read-only probes stopped writing null keys into `settings.json`; temperature limits keep loading when `position_endstop` is null; and the dashboard guards its widget rebuild against config exceptions.
+- **Crashes on shutdown and rebuild** — the update queue discards instead of draining in its destructor (#1132), subject deinit can no longer resurrect panel singletons, a rebuild condemns the old subtree before creating its replacement, and an empty size string no longer reads one byte out of bounds in the XML parser (#1121).
+- **Desktop/SDL builds** — no more segfault when no accelerated renderer is available, window decorations stop stealing resolution from the emulated panel, Wayland client-side-decoration compensation is bounded, and the SDL audio subsystem is released on shutdown.
+- **A cooldown delay of `0` cooled the nozzle immediately** — `filament/cooldown_delay_seconds` is documented as "0 disables auto-cooldown", but a zero delay instead cut the heater on the next tick. It now means off, as written.
+- **Smaller UI defects** — an accidental flex gap between the navbar and content, the home panel skipping its finalize pass after a rebuild, key press/release positions read from the wrong input device, and page-scroll setup silently succeeding with no gutter buttons.
+
+### Changed
+
+- **The 3D G-code preview uses less memory** — vertex positions upload as quantized int16 (20 bytes to 12), `RibbonVertex` shrank from 10 bytes to 8 with the normal palette dropped, and enhanced shading now defaults off on constrained devices, where its full-canvas cache was a third large buffer. `HELIX_SSAO=1` forces it back on.
+- **43 previously undocumented environment variables are now documented**, along with what a hot reload does and does not restore.
+
+## [0.99.100] - 2026-07-24
+
+Macros get an edit mode so you can hide the ones you never use, filament handling on
+multi-lane AMS units acts on the slot you actually picked, and fan selection tracks the
+fan that is really cooling the part. All nine translations reach 100% coverage.
+
+### Added
+
+- **Hide macros you don't use** — long-press the macros list to enter edit mode, uncheck the macros you want out of the way, and Save. The hidden set is remembered per printer, so each machine keeps its own list.
+- **Complete translations** — all nine languages are at 100% coverage. The 34 remaining untranslated strings across German, Spanish, French, Italian, Japanese, Portuguese, Russian and Chinese are filled in.
+- **More illustrated documentation** — the user guide now shows the screens it describes: fan control, sensors, camera, security and the PIN lock, barcode scanner, label printing, print history, the pre-print filament check and the runout recovery dialog.
+
+### Fixed
+
+- **Load and Unload acted on the wrong slot** — on a multi-lane AMS (AFC/BoxTurtle) where a lane other than your selection was loaded to the toolhead, Load operated on the loaded lane instead of the one picked in the dropdown. Both buttons now resolve the slot the same way the button gating does, so the operation can never disagree with what you see.
+- **Selecting a filament in the dropdown triggered a physical swap** — on a shared-extruder AMS the dropdown is now selection-only, and the explicit Load button performs the swap. Only a true parallel toolchanger still changes tools on select.
+- **Nozzle stayed hot after an AFC swap** — the post-operation cooldown was only scheduled on the gcode path, so a swap that completed through the AMS backend left the nozzle at material temperature indefinitely.
+- **Brand lost when saving a spool edit** — opening spool edit on an already-branded slot (say Sunlu) and saving without touching the vendor dropdown overwrote the brand with Generic.
+- **A vendor known only to Spoolman could not be selected** — the vendor dropdown was rebuilt from the bundled catalog alone, so a Spoolman-only brand showed as Generic and saved as Generic. Live Spoolman vendors are now merged into the list.
+- **AD5X: a routine load wiped your brand override** (#981) — the native LCD emits a material-only colour change on every physical load, which erased the entire per-slot override, reverting Sunlu PETG to Generic PETG and losing the temperatures that drive loading. Firmware truth now wins only for colour and material; brand, spool name and weights are kept.
+- **Print status showed 0% for a running part fan** (#1124) — Klipper's auto-controlled `controller_fan` and `temperature_fan` could be promoted ahead of the real toolhead fan (seen on the Sovol SV08). Auto-controlled fans are now excluded, the part-fan choice sticks to the fan that has actually run, and the auxiliary slot prefers a fan you can command over an idle chamber fan.
+- **Temperature graphs were empty until reopened** (#1124) — graphs built at startup ran their history backfill before the connection was up. Persistent graphs now refill once history arrives, and again after a reconnect.
+- **Pre-print filament check showed no rows** — the "Check filament" dialog collapsed to its one-line explanation instead of listing the per-tool colour swatches.
+- **Crash on shutdown** — a reactive row list left a dangling observer when a panel's subjects were torn down before its widgets.
+- **Macros empty state** — the empty-state message now uses the full panel area and is centred.
+
+### Changed
+
+- **Developer tooling: remote control** — a running instance can be driven with `helix-screen ctl` (navigate, click, ls, set_value, scroll, screenshot) or an interactive `helix-screen repl`, over a Unix socket or HTTP. This replaces the `-p`/`--panel` launch flags, which are removed, and a new `--skip-wizard` flag suppresses the first-run wizard. Dev and test builds only — shipped device builds do not include it.
+
+## [0.99.99] - 2026-07-22
+
+### Fixed
+
+- **AD5X filament type-then-colour edit** — choosing a filament type and then a colour dropped the new colour, and the button payload could poison the stored material. Both are corrected. (#1065)
+- **Pre-print heating label** — the heating-phase label now tracks the actual long-pole heater (the one that gates print start) instead of an arbitrary one, and is guarded against a background-signal race that could relabel it mid-transition.
+
+### Changed
+
+- **Update downloads use zip** — release manifests now advertise the zip archive as the preferred asset (the first phase of retiring tar.gz), and a downloaded update is staged with its platform and version in the filename.
+
+## [0.99.98] - 2026-07-21
+
+This release is largely about filament: a new on-printer product-edit workflow for
+building your own catalog, correct OrcaSlicer material matching so synced spools land on
+the right preset, and automatic repair of mislabeled slots. It also sharpens print-status
+reporting (M117 messages and layer/ETA accuracy), adds automatic ZMOD z-offset
+persistence, and clears a cluster of crashes and small-screen layout issues.
+
+### Added
+
+- **Build your own filament catalog** — a new product-edit modal lets you add and edit filament products right on the printer. Your entries live in a user overlay that survives catalog regeneration, so updates never wipe them. (#1120)
+- **Automatic ZMOD z-offset persistence** — on printers with a ZMOD probe, HelixScreen enables persistent z-offset on connect, so a calibrated offset survives restarts instead of resetting.
+- **M117 messages on more screens** — status messages set via M117 now appear on the idle card and during pre-print heating, QGL and purge, not only mid-print.
+
+### Fixed
+
+- **Filament synced to OrcaSlicer with the wrong material** — a slot set to a specific type like ASA-GF came across in OrcaSlicer as "Generic PLA", putting PLA temperatures on glass-filled ASA. OrcaSlicer matches a slot to a filament preset by its material name alone and quietly falls back to PLA whenever the name isn't one it recognizes. HelixScreen now sends OrcaSlicer the closest name it *does* recognize (ASA-GF → ASA), so it picks a correct preset, while your printer's own screen keeps showing the precise name. A truly unknown material syncs with its color and temperatures but no material selected, rather than a wrong guess. Existing slots are repaired automatically the next time HelixScreen starts.
+- **WiFi wizard crash during backend startup on Pi** (bundle WWZE4K9T) — `WifiBackendWpaSupplicant::stop()` captured a local `std::promise` by reference into a deferred `runInLoop` lambda, then returned and destroyed it when its wait timed out; the queued cleanup later called into freed memory and crashed at PC=0x0. The promise is now held in a `shared_ptr` captured by value, so it outlives the deferred completion regardless of whether `stop()` has already returned. This was the root cause behind the heap-corruption signature previously only mitigated in `WizardWifiStep::apply_ethernet_status`.
+- **Filament mapping showed unused tools** — the print filament-mapping card listed every tool on the palette; it now shows only the tools a print actually uses, and no longer suppresses the material-mismatch warning for used-but-unresolved slots.
+- **Garbage layer and ETA during print start** — fabricated layer/ETA figures are now gated on print duration, so they stop flashing nonsensical values during PRINT_START.
+- **M117 handling during prints** — messages are cleared at print end rather than print start, are no longer clobbered by routine status deltas, and no longer leak into the phase-label line.
+- **Camera stayed live across network changes** — the K2 webcam is registered with a relative URL, immune to DHCP lease changes and eth/wlan interface flips that previously stranded a baked-in IP.
+- **Several crashes** — scroll-container repopulate use-after-free (#1123), a temperature-graph observer race during deferred delete (#1117), hot-reload rebuild of the print-file detail overlay, and duplicated side-effects when reconnecting to unchanged hardware (#1117).
+- **AD5X filament loading** — corrected gcode-path TYPE=/HEX= extraction and made the loading-time budget swap-aware. (#1065)
+- **Small-screen history filter** — the history filter row collapses on small screens (Snapmaker U1) with an active-filter funnel indicator. (#1116)
+- **Pre-print options** — toggles gated on a macro that isn't installed are now hidden instead of doing nothing. (#1122)
+- **Touch, fans, installer** — released touch slots keep their coordinates instead of zeroing; a fan's `.part` role falls back to the front-most named fan; installer architecture validation reads the ELF header without `dd`.
+
+### Changed
+
+- **Inputs scale on larger screens** — text fields, dropdowns and toggles use a responsive height so they aren't cramped on big displays; small screens keep the compact 48px size.
+- **No more source comments on outgoing gcode** — HelixScreen no longer annotates M117/M118 and other commands with a "; from helixscreen" comment that some firmware echoed back into the console. (bundle A2TPH5V2)
+
+## [0.99.97] - 2026-07-19
+
+> **0.99.96 was withdrawn.** Its phantom-edge-tap fix broke touch input entirely on
+> Goodix-based controllers (Creality K2 and likely others), leaving the screen
+> unresponsive with SSH as the only recovery. That change is reverted here. If you
+> installed 0.99.96 and lost touch, updating to 0.99.97 restores it.
+
+### Added
+
+- **Material variants grouped under their base material** — the filament picker now lists ASA, ASA-CF and ASA-GF under a single ASA heading instead of three unrelated top-level entries, with a chip showing which variant a row selects. Variants remain distinct materials with their own temperatures; only the grouping changed.
+- **Missing filament types are selectable again** — ASA-GF, ABS-CF, PC-CF, PC-GF, PET-GF and PLA-GF existed in the material table but had no catalog entry, so they never appeared in the picker. Seventeen further types people actually buy (PLA+, ABS+, ASA+, PA6, PA12, PPA, TPU-95A, the decorative PLAs and others) were added alongside them.
+
+### Fixed
+
+- **CFS slot edits were silently discarded** — setting a slot's material on a Creality K2 wrote the colour to the box, and the next poll read that write back as a physical spool swap and deleted the edit. The material survived on screen until the next restart but never reached OrcaSlicer, which kept syncing stale firmware values.
+- **CFS slots never showed empty** — the box keeps reporting a remaining length after a spool is pulled, so an emptied bay stayed "available" indefinitely. Presence now follows the live vendor signal, and the stale record is cleared when a spool is removed.
+- **Spoolman configuration silently did nothing** — on stock Creality firmware the settings were written to a file Moonraker never reads, while the UI reported success. The target is now proven reachable before writing, changing an already-configured URL actually takes effect, and a configuration that cannot be written reports a clear error instead of claiming to have worked. Removing Spoolman no longer reports success while leaving it configured.
+- **Spool list ordering** — the Spoolman spool picker sorts by most recent activity, so a newly added spool appears at the top instead of below every previously used one.
+- **Preheat presets ignored reassigned materials** — reassigning a preset slot updated the filament panel but not the preheat widget, which kept showing and applying the original material's temperature.
+- **Filament drying temperatures were too low for some materials** — PET, PET-CF, PET-GF, PA66, PA6-CF and the PPA family were offered a drying profile derived from a different member of their group. Generic PET also shipped with no bed temperature at all.
+- **Labels for untracked spools** — a spool with no Spoolman entry printed a meaningless "#0" and a QR code pointing at a record that does not exist; both are now omitted. The Print Label button also appears as soon as a label printer is paired, rather than after reopening the panel.
+- **Markdown rendering** — bold text uses a real bold font and headings are visually distinct.
+- **Hot reload no longer crashes on mid-save files** — XML is validated before the old component is unregistered.
+
+### Changed
+
+- **Phantom edge tap fix reverted** — the 0.99.96 change required both touch axes to arrive for every new contact, but controllers that omit unchanged coordinates never satisfied that, dropping every touch. Holtek-based screens (BTT-HDMI5) may again see occasional edge taps until a safer fix ships.
+- **Hot reload defaults to on for native builds.**
+
+## [0.99.96] - 2026-07-19
+
+### Added
+
+- **More timezone offsets** — the timezone picker now covers previously missing zones: Newfoundland (−3:30), Cape Verde (−1:00), Iran (+3:30), Afghanistan (+4:30), Pakistan (+5:00), Nepal (+5:45), Myanmar (+6:30), and New Caledonia (+11:00). Each is bundled so it resolves on devices without system tzdata; existing saved timezones are unaffected.
+
+### Fixed
+
+- **Touch recalibration Accept button** (prestonbrown/helixscreen#1029) — the capture surface no longer covers the Accept/Retry buttons in the verify step, so recalibration can actually be completed.
+- **Phantom edge taps on some capacitive touchscreens** — Holtek-based controllers (such as the BTT-HDMI5) could intermittently emit a touch report carrying only one axis, landing as a phantom tap at a screen edge and navigating into the wrong menu. Single-axis glitch frames are now dropped until both X and Y coordinates arrive for a contact.
+- **Snapmaker U1 filament load/unload state** — load state is now derived from the firmware's `channel_state` rather than the per-tool motion sensor, which lingers "present" after an unload on current firmware. Unloaded lanes no longer render as loaded or offer Unload, the filament path is drawn to match the actual state, and the load/unload step display covers all firmware feed states.
+
+### Changed
+
+- **In-app updater suppressed when it can't apply** — on installations where the app physically cannot self-update (a read-only rootfs or a permission-mismatched install), the updater no longer offers a download that would fail to install, showing an "Updates aren't available on this installation" notice instead. Firmware-managed installs opt out via the single `HELIX_DISABLE_AUTO_UPDATES` flag.
+
+## [0.99.95] - 2026-07-18
+
+### Added
+
+- **Portrait-orientation layout foundation** (prestonbrown/helixscreen#1110) — min-dimension breakpoints and a bottom-navbar shell lay the groundwork for portrait displays; layouts now pick their sizing from the constrained screen axis (breakpoints, switch presets, navbar height) so they scale correctly on tall, narrow screens.
+- **Home button warns when the axes aren't homed** — the jog center home button is tinted as a warning until the printer is homed.
+
+### Fixed
+
+- **Touch recalibration capture area** (prestonbrown/helixscreen#1029) — recalibrating from Settings captures across the full screen.
+- **Temperature tool selector on Snapmaker U1** (prestonbrown/helixscreen#1114) — the tool selector is now touch-friendly on the U1.
+- **AMS slot material label** (prestonbrown/helixscreen#1065) — the slot material label updates reactively from its own per-slot subject.
+- **Log-level setting translation** — the Settings log-level option now translates correctly.
+- **Property-based conditional hiding** — `$prop|ref` params resolve correctly so `hidden_if_prop_eq` works in XML layouts.
+
+## [0.99.94] - 2026-07-17
+
+### Added
+
+- **Old filament purges cleanly on swap** — swapping filament holds the previous material's temperature while it purges, so the old filament clears before the new one loads.
+- **Touch calibration diagnostics** (prestonbrown/helixscreen#943) — a DRM touch-range env override plus calibration span/raw-sample logging, and a warning + telemetry when the DRM coarse touch scale is skipped.
+
+### Fixed
+
+- **Touch stops responding after a display rotation** (prestonbrown/helixscreen#1112) — input devices are rebuilt after a DRM→fbdev rotation swap so touch keeps working.
+- **Touch-calibration use-after-free crash** (prestonbrown/helixscreen#1102, prestonbrown/helixscreen#1112) — the calibration read path uses an owned calibration context instead of freed indev user_data, and the touch indev callback/user_data are cleared in the backend destructor.
+- **Wizard recalibration retry** (prestonbrown/helixscreen#943) — a retry reverts the previous affine transform first, so it recalibrates from raw coordinates.
+- **AD5X IFS false "hang" on load** (prestonbrown/helixscreen#1065) — a stalled load feed is driven by a sidebar watchdog so the "Working…" state clears instead of reading as a hang, and eject-settling / stale FFMInfo no longer mis-seat IFS lanes.
+- **AMS material label refresh** (prestonbrown/helixscreen#1065) — a type-only filament change refreshes the slot label (each slot now has its own material subject).
+- **Z-offset readback** — the live Z-offset is rounded instead of truncated.
+- **Spool swatch artifacts** — the spool canvas draw buffer is cleared before use.
+- **Chamber temperature labels** — chamber temp buffers are zero-initialized so labels don't bind garbage before the first reading.
+- **XML layout parser hardening** — style nodes are zeroed before init, component-name copies are bounds-checked with a null-guarded lookup, and parser state is initialized for globals-component registration, preventing garbage bindings and crashes.
+- **Redundant swap toast suppressed** — the filament-swap success toast is hidden when swap-preheat is only holding temperature.
+
+## [0.99.93] - 2026-07-16
+
+### Added
+
+- **XML `<if>` / `<else>` structural conditionals** — layouts can build one branch, another, or nothing based on a subject or expression, reactively rebuilding when it changes; only the matching branch is created. Rounds out conditional support alongside `<repeat>` and `${…}`.
+- **Integer expressions in `${…}`** — XML `${…}` composition can evaluate integer arithmetic and take numeric component params as operands, not just compose indexed subject names.
+- **2D toolpath preview on the print detail view** — devices that render a 2D toolpath (rather than a 3D model) show that preview on the file detail view instead of the flat thumbnail.
+- **Filament color routing follows the effective tool match** (Snapmaker U1) — on toolchangers, the gcode preview, spool swatches, and preflight checks color by each tool's effective filament match rather than assuming T0, and `SET_PRINT_EXTRUDER_MAP` is driven from that same match.
+
+### Fixed
+
+- **Power-loss recovery on AFC-modded Snapmaker U1** — the U1 resume offer now also reaches U1s running the AFC filament-system mod.
+- **Filament mis-routing on empty or incompatible lanes** — a tool is never matched to an empty lane (which had shown a stale color), the material-blind lane fallback no longer grabs incompatible filament, and lane data is keyed by tool on toolchangers (ingesting foreign keys and migrating stale `laneN` entries).
+- **AD5X IFS material and color on insert** (prestonbrown/helixscreen#1065) — physically inserting filament refreshes material and color for auto-tracked lanes.
+- **Kobra S1 ACE detection** (prestonbrown/helixscreen#1107) — the Kobra S1 mainline-Python firmware fork's `ace_instance_N` objects are detected.
+- **Render-thread crash on ARM64** (prestonbrown/helixscreen#1102) — a missing memory barrier in the software-render→main handoff could free a layer buffer still in use; the handoff is now barriered, and the subject-bound `<repeat>` observer lifetime is tied to its instance to close a related use-after-free.
+- **Recycled panel layout** (prestonbrown/helixscreen#1109) — print-status cards and the active-spool row re-apply their layout and visibility when a recycled widget instance is reused, instead of showing a stale layout.
+- **Decorative taps reach the button** (prestonbrown/helixscreen#1101) — taps on decorative children of a card or row route to the handler root instead of being swallowed.
+- **Blocking-op g-code queueing** (prestonbrown/helixscreen#1108) — benign discretionary commands are queued during blocking operations rather than rejected.
+- **Jog precision and toasts** (prestonbrown/helixscreen#1104) — jog axes are gated on an AxisMove epsilon and never emit scientific notation, a populated NOT_READY message beats the generic fallback, and duplicate RPC and gcode-stream toasts dedupe on Klipper's raw wording.
+- **Keyboard dismiss keeps the overlay open** — tapping the backdrop to dismiss the on-screen keyboard no longer also closes the overlay behind it.
+- **2D backdrop blur crash guard** — abort-modal GPU blur initialization is deferred with a crash-loop guard.
+
+### Changed
+
+- **Pre-print toggles hidden without HelixPrint** — pre-print toggles that require the HelixPrint plugin are hidden when the plugin isn't installed.
+
+## [0.99.92] - 2026-07-15
+
+### Added
+
+- **Jog move coalescing** — rapid jog taps merge into a single pending move instead of queueing one g-code per tap, so the toolhead keeps up with your finger; your own jogs no longer trip the "printer busy" guard, and rapid identical toasts refresh in place instead of stacking.
+- **Snapmaker U1 power-loss recovery** — after a power loss, HelixScreen offers to resume the interrupted print at connect time; a declined offer re-arms when it becomes relevant again.
+- **Anycubic Kobra S1 mainline fork** (prestonbrown/helixscreen#1069) — ACE filament systems on the Kobra S1's mainline-Python firmware fork work via a REST bridge.
+- **XML expressions** — layouts can derive subjects from expressions (`<subject_expr>`) and use inline `cond=` conditions on `bind_flag_if` / `bind_state_if` / `bind_style_if`.
+- **XML `<repeat>` looping** — `<repeat count>` expands a fragment with a `$i` index (fixed or subject-bound, reactively rebuilding); `${i}` composes indexed subject names for self-wiring repeated widgets.
+- **PAXX firmware-managed installs (Snapmaker U1)** — installs bundled by the PAXX Extended Firmware are supported (firmware owns updates), with a `HELIX_DISABLE_AUTO_UPDATES` opt-out.
+
+### Fixed
+
+- **Snapmaker U1 remote screen going blank** — the remote screen ("gui" webcam) no longer goes black a few minutes after boot: the early-boot splash is retired at UI handoff instead of lingering and clearing the shared framebuffer, and the UI paints a full frame at takeover. The mirror also handles 16-bit framebuffers.
+- **Installer upgrades now restart into the new version** (prestonbrown/helixscreen#1106) — installing over a running HelixScreen left the old binary running while reporting success; the installer now restarts when an instance is already up.
+- **Print status auto-opens for an active job** (prestonbrown/helixscreen#1099) — connecting while a print is already running opens the print status panel.
+- **Quieter no-audio devices** — a missing ALSA device logs a warning instead of an error.
+- **Snapmaker U1 uninstall leftover** — uninstall removes the `/oem/.debug` marker the installer created.
+
+### Changed
+
+- **Snapmaker U1 remote-screen setup docs** — enabling must go through the firmware settings web UI (a hand cfg edit doesn't register the "gui" webcam); setup docs corrected.
+- **Inline XML text translation** — inline element text in XML layouts participates in translation extraction and runtime language switching.
+
 ## [0.99.91] - 2026-07-13
 
 ### Added
@@ -4289,6 +4805,21 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.107]: https://github.com/prestonbrown/helixscreen/compare/v0.99.106...v0.99.107
+[0.99.106]: https://github.com/prestonbrown/helixscreen/compare/v0.99.105...v0.99.106
+[0.99.105]: https://github.com/prestonbrown/helixscreen/compare/v0.99.103...v0.99.105
+[0.99.103]: https://github.com/prestonbrown/helixscreen/compare/v0.99.102...v0.99.103
+[0.99.102]: https://github.com/prestonbrown/helixscreen/compare/v0.99.101...v0.99.102
+[0.99.101]: https://github.com/prestonbrown/helixscreen/compare/v0.99.100...v0.99.101
+[0.99.100]: https://github.com/prestonbrown/helixscreen/compare/v0.99.99...v0.99.100
+[0.99.99]: https://github.com/prestonbrown/helixscreen/compare/v0.99.98...v0.99.99
+[0.99.98]: https://github.com/prestonbrown/helixscreen/compare/v0.99.97...v0.99.98
+[0.99.97]: https://github.com/prestonbrown/helixscreen/compare/v0.99.96...v0.99.97
+[0.99.96]: https://github.com/prestonbrown/helixscreen/compare/v0.99.95...v0.99.96
+[0.99.95]: https://github.com/prestonbrown/helixscreen/compare/v0.99.94...v0.99.95
+[0.99.94]: https://github.com/prestonbrown/helixscreen/compare/v0.99.93...v0.99.94
+[0.99.93]: https://github.com/prestonbrown/helixscreen/compare/v0.99.92...v0.99.93
+[0.99.92]: https://github.com/prestonbrown/helixscreen/compare/v0.99.91...v0.99.92
 [0.99.91]: https://github.com/prestonbrown/helixscreen/compare/v0.99.90...v0.99.91
 [0.99.90]: https://github.com/prestonbrown/helixscreen/compare/v0.99.89...v0.99.90
 [0.99.89]: https://github.com/prestonbrown/helixscreen/compare/v0.99.88...v0.99.89

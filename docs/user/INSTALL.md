@@ -264,7 +264,7 @@ ZMOD installs HelixScreen into a chroot rooted at `/usr/data/.mod/.zmod/`. When 
 ssh root@<printer-ip>
 chroot /usr/data/.mod/.zmod
 # now you're in the same view HelixScreen runs from:
-curl -fsSL https://get.helixscreen.org | sh
+curl -fsSL https://releases.helixscreen.org/install.sh | sh
 ```
 
 The same applies to the uninstaller — run `sh /tmp/install.sh --uninstall` from inside the chroot.
@@ -335,6 +335,16 @@ config-manager ui screen_ui grumpyscreen   # or atomscreen, guppyscreen, helixsc
 
 The Creality Sonic Pad is a standalone 7" touchscreen that can run Klipper. It uses a 32-bit ARM userspace (armhf) despite having a 64-bit capable processor (Allwinner H616).
 
+> **Tested firmware: [SonicPad-Debian](https://github.com/Jpe230/SonicPad-Debian) only.**
+> This is the only Sonic Pad firmware HelixScreen has been tested on. It replaces
+> Creality's stock OpenWrt image with Debian 11 (bullseye), which is what gives the
+> Pad a normal systemd + GNU userspace for HelixScreen to install into.
+>
+> HelixScreen is **not** tested on Creality's stock Sonic Pad firmware. The stock
+> image is a heavily cut-down OpenWrt build, so the installer's assumptions about
+> systemd, package tooling, and archive utilities do not hold there. If you are on
+> stock firmware, flash SonicPad-Debian first.
+
 HelixScreen requires Klipper and Moonraker to already be installed and working on the Sonic Pad. This is typically done via [KIAUH](https://github.com/dw-0/kiauh) or a similar tool. HelixScreen replaces whatever touchscreen UI you're currently using (e.g., KlipperScreen).
 
 - **Hardware:**
@@ -342,6 +352,7 @@ HelixScreen requires Klipper and Moonraker to already be installed and working o
   - Network connection (Ethernet)
 
 - **Software:**
+  - [SonicPad-Debian](https://github.com/Jpe230/SonicPad-Debian) (Debian 11 bullseye) — see the note above
   - Klipper and Moonraker installed and working (via KIAUH or similar)
   - SSH access (`sonic@<pad-ip>`)
   - About 100MB free disk space
@@ -378,7 +389,7 @@ The Snapmaker U1 is an all-in-one printer with a built-in touchscreen. HelixScre
 
 **Notes:**
 - **Reinstall after a firmware update** — any firmware update (stock or PAXX) resets system files and can overwrite HelixScreen; re-run the installer afterward.
-- **Remote screen ("gui" camera) works on PAXX firmware** — the built-in "gui" webcam in Mainsail/Fluidd shows the live HelixScreen UI, and you can tap it to control the printer remotely. Enable the PAXX **remote screen** toggle and restart HelixScreen; until then the feed shows "No Signal" (expected). The physical "case" camera is unaffected. Stock firmware is not yet confirmed to expose the feed. Setup steps: [Supported Printers → Snapmaker U1](guide/supported-printers.md#snapmaker-u1-snapswap).
+- **Remote screen ("gui" camera) works on PAXX firmware** — the built-in "gui" webcam in Mainsail/Fluidd shows the live HelixScreen UI, and you can tap it to control the printer remotely. Enable **Remote Screen** in the firmware settings web UI at `http://<printer-ip>/firmware-config/` — it registers the "gui" webcam and restarts HelixScreen and Moonraker for you (hand-editing the config value alone is not enough). The physical "case" camera is unaffected. Stock firmware is not yet confirmed to expose the feed. Setup steps: [Supported Printers → Snapmaker U1](guide/supported-printers.md#snapmaker-u1-snapswap).
 - **Two harmless Moonraker warnings are expected** — after install, the Mainsail/Fluidd "Moonraker warnings found" banner may show *"Unable to find DBus PolKit Interface"* and *"Unable to initialize System Update Provider for distribution: buildroot"*. Both are inherent to Moonraker on the U1's buildroot firmware (no PolKit, no OS package manager) and do **not** affect HelixScreen or printing. They are not specific to HelixScreen — installing simply restarts Moonraker, which re-surfaces them. See [Troubleshooting](TROUBLESHOOTING.md).
 
 ---
@@ -731,7 +742,7 @@ The wizard will test the connection before proceeding.
 ### Step 5: Printer Identification
 HelixScreen will try to identify your printer from its configuration. You can:
 - Confirm the detected printer type
-- Select from a database of 80+ printers
+- Select from a database of 90+ printers
 - Enter custom settings
 
 ### Step 6: Heater Selection
@@ -823,7 +834,7 @@ Touch coordinates are automatically adjusted to match the rotation — no separa
 
 If you experience any display issues with rotation, you can also force the framebuffer backend manually by setting `HELIX_DISPLAY_BACKEND=fbdev` (see below).
 
-### GPU Rendering (Experimental)
+### GPU Rendering
 
 By default, HelixScreen uses GPU-accelerated rendering via DRM/KMS when available. On boards where DRM is not supported, it falls back to CPU-based software rendering (`fbdev` backend).
 
@@ -974,7 +985,7 @@ Or via SSH:
 # Path varies by platform:
 #   Pi: ~/helixscreen/bin/helix-screen (or /opt/helixscreen if no Klipper ecosystem)
 #   K1: /usr/data/helixscreen/bin/helix-screen
-#   K2: /opt/helixscreen/bin/helix-screen (assumed, untested)
+#   K2: /opt/helixscreen/bin/helix-screen
 #   AD5M Klipper Mod: /root/printer_software/helixscreen/bin/helix-screen
 ~/helixscreen/bin/helix-screen --version
 ```

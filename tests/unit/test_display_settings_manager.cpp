@@ -194,6 +194,26 @@ TEST_CASE_METHOD(LVGLTestFixture, "DisplaySettingsManager set/get round trips",
     DisplaySettingsManager::instance().deinit_subjects();
 }
 
+// An explicit render-mode pick is a clear "retry GPU features" signal, so it must
+// clear BOTH persistent crash-loop blocks (3D GLES viewer + 2D backdrop blur) so
+// a user isn't stuck on the CPU paths forever after one prior driver crash.
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "DisplaySettingsManager set_gcode_render_mode clears GPU crash-loop blocks",
+                 "[display_settings]") {
+    DisplaySettingsManager::instance().init_subjects();
+
+    Config* config = Config::get_instance();
+    config->set<bool>("/display/gpu_3d_blocked", true);
+    config->set<bool>("/display/gpu_blur_blocked", true);
+
+    DisplaySettingsManager::instance().set_gcode_render_mode(1);
+
+    REQUIRE(config->get<bool>("/display/gpu_3d_blocked", true) == false);
+    REQUIRE(config->get<bool>("/display/gpu_blur_blocked", true) == false);
+
+    DisplaySettingsManager::instance().deinit_subjects();
+}
+
 TEST_CASE_METHOD(LVGLTestFixture, "DisplaySettingsManager dim seconds to index conversion",
                  "[display_settings]") {
     // dim_seconds_to_index: 0=Never, 30=30sec, 60=1min, 120=2min, 300=5min, 600=10min
@@ -311,36 +331,48 @@ TEST_CASE_METHOD(LVGLTestFixture, "DisplaySettingsManager subject values match g
     DisplaySettingsManager::instance().deinit_subjects();
 }
 
-TEST_CASE_METHOD(LVGLTestFixture, "DisplaySettingsManager options strings", "[display_settings]") {
-    SECTION("dim options") {
-        const char* options = DisplaySettingsManager::get_display_dim_options();
-        REQUIRE(options != nullptr);
-        REQUIRE(std::string(options).find("Never") != std::string::npos);
-        REQUIRE(std::string(options).find("5 minutes") != std::string::npos);
+// ============================================================================
+// Slider preview vs commit (drag-tick persistence)
+//
+// set_brightness() writes settings.json — serialize, fsync the file, fsync the
+// directory, then copy a rolling backup — and on some platforms the backlight
+// backend additionally forks a shell. Running that per drag tick is what made
+// the brightness slider stutter on flash-backed hardware. preview_brightness()
+// is the per-tick half: it must apply everything the user can SEE and persist
+// nothing. The slider's `released` handler calls set_brightness() once.
+// ============================================================================
+
+TEST_CASE_METHOD(LVGLTestFixture, "DisplaySettingsManager preview_brightness does not persist",
+                 "[display_settings]") {
+    Config* config = Config::get_instance();
+    config->set<int>("/brightness", 55);
+    DisplaySettingsManager::instance().deinit_subjects();
+    DisplaySettingsManager::instance().init_subjects();
+
+    SECTION("preview applies to the subject but leaves config untouched") {
+        const int applied = DisplaySettingsManager::instance().preview_brightness(73);
+
+        CHECK(applied == 73);
+        // Visible to the UI immediately...
+        CHECK(DisplaySettingsManager::instance().get_brightness() == 73);
+        // ...but nothing was written.
+        CHECK(config->get<int>("/brightness", -1) == 55);
     }
 
-    SECTION("sleep options") {
-        const char* options = DisplaySettingsManager::get_display_sleep_options();
-        REQUIRE(options != nullptr);
-        REQUIRE(std::string(options).find("Never") != std::string::npos);
-        REQUIRE(std::string(options).find("30 minutes") != std::string::npos);
+    SECTION("a whole drag persists exactly once, on commit") {
+        // Simulate the per-tick handler firing repeatedly, then release.
+        for (int v = 60; v <= 70; ++v) {
+            DisplaySettingsManager::instance().preview_brightness(v);
+        }
+        CHECK(config->get<int>("/brightness", -1) == 55); // still the old value
+
+        DisplaySettingsManager::instance().set_brightness(70);
+        CHECK(config->get<int>("/brightness", -1) == 70);
     }
 
-    SECTION("bed mesh render mode options") {
-        const char* options = DisplaySettingsManager::get_bed_mesh_render_mode_options();
-        REQUIRE(options != nullptr);
-        REQUIRE(std::string(options) == "Auto\n3D View\n2D Heatmap");
-    }
-
-    SECTION("gcode render mode options") {
-        const char* options = DisplaySettingsManager::get_gcode_render_mode_options();
-        REQUIRE(options != nullptr);
-        REQUIRE(std::string(options) == "Auto\n3D View\n2D Layers\nThumbnail Only");
-    }
-
-    SECTION("time format options") {
-        const char* options = DisplaySettingsManager::get_time_format_options();
-        REQUIRE(options != nullptr);
-        REQUIRE(std::string(options) == "12 Hour\n24 Hour");
+    SECTION("preview clamps the same way set_brightness does") {
+        CHECK(DisplaySettingsManager::instance().preview_brightness(0) == 10);
+        CHECK(DisplaySettingsManager::instance().preview_brightness(500) == 100);
+        CHECK(config->get<int>("/brightness", -1) == 55);
     }
 }

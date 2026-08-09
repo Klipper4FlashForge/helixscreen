@@ -6,6 +6,8 @@
 #include "filament_mapper.h"
 
 #include <lvgl.h>
+#include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -67,6 +69,26 @@ class FilamentMappingCard {
      * handler.
      */
     void refresh_slot_data();
+
+    /**
+     * @brief Restrict the card to only the tools the gcode actually uses.
+     *
+     * The card is populated from the full slicer palette (all filaments of a
+     * project). A print that only uses tools 2 and 3 should show only T2 and
+     * T3, not all four chips. The detail view pushes the real used-tool set
+     * (`tools_used_effective()`) at the reliable post-parse hooks.
+     *
+     * Recompacts the card's `tool_info_` / `mappings_` in lockstep to the
+     * entries whose `.tool_index` is in `used` (preserving order and the real
+     * `.tool_index` used for the "T%d" label), then rebuilds the compact view.
+     * Mappings-preserving — no recompute (mirrors refresh_slot_data).
+     *
+     * `nullopt` OR an empty set ⇒ no filter (show all). This is the safety
+     * rule: it avoids blanking the card pre-parse, and avoids the headless
+     * single-extruder case (where the used set is empty forever) hiding
+     * everything.
+     */
+    void set_used_tools(std::optional<std::set<int>> used);
 
     /**
      * @brief Get current tool-to-slot mappings
@@ -179,6 +201,26 @@ class FilamentMappingCard {
     build_tool_info(const std::vector<std::string>& colors,
                     const std::vector<std::string>& materials);
 
+    /// Compact parallel tool_info / mappings vectors to only the used tools.
+    ///
+    /// Pure/stateless: filters BOTH vectors in lockstep, keeping only entries
+    /// whose `.tool_index` is in `used`, preserving order and `.tool_index`.
+    /// `nullopt` or an empty set ⇒ no-op (show all) — the safety rule that
+    /// prevents blanking the card pre-parse or on the headless single-extruder
+    /// path. Exposed static so the seam is unit-testable without LVGL/AMS state.
+    static void apply_used_tools_filter(std::vector<helix::GcodeToolInfo>& tool_info,
+                                        std::vector<helix::ToolMapping>& mappings,
+                                        const std::optional<std::set<int>>& used);
+
+    /// Find a tool by its real gcode `.tool_index`, not by vector position.
+    ///
+    /// `tool_info` may be used-filtered (compacted), so position no longer
+    /// equals `.tool_index`. Callers that have a `tool_index` (e.g. from a
+    /// ToolMapping or an unresolved-tools list) MUST look up through here rather
+    /// than `tool_info[tool_index]`. Returns nullptr if no entry matches.
+    static const helix::GcodeToolInfo*
+    find_by_tool_index(const std::vector<helix::GcodeToolInfo>& tool_info, int tool_index);
+
   private:
     /// Build compact swatch pair row in rows_container_
     void rebuild_compact_view();
@@ -195,6 +237,11 @@ class FilamentMappingCard {
     std::vector<helix::ToolMapping> mappings_;
     std::vector<helix::GcodeToolInfo> tool_info_;
     std::vector<helix::AvailableSlot> available_slots_;
+
+    /// Tools the gcode actually uses (pushed post-parse by the detail view).
+    /// nullopt / empty ⇒ show the full palette. Re-applied at the end of
+    /// update() so a set pushed before a later update() survives the rebuild.
+    std::optional<std::set<int>> used_tools_;
 
     FilamentMappingModal mapping_modal_;
     MappingsChangedCallback on_mappings_changed_;

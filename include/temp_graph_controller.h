@@ -123,6 +123,30 @@ class TempGraphController {
     void resume();
 
     /**
+     * @brief Re-read history from the manager and repopulate every series.
+     *
+     * Backfill runs once in the constructor, which is empty for graphs built
+     * before the WebSocket connects — persistent panels (filament mini graph,
+     * home dashboard widget) are constructed at app startup, so their
+     * construction-time backfill finds nothing and #944's post-discovery
+     * seed_from_store never reaches them. Calling this once history has been
+     * seeded pulls it in, matching how on-demand overlays backfill fresh on
+     * each open. Safe no-op when the history manager is unavailable or empty.
+     * See refresh_all_from_history() for the seed-time broadcast (#1124).
+     */
+    void refresh_from_history();
+
+    /**
+     * @brief Re-backfill every live controller from the history manager.
+     *
+     * Call right after the temperature history is (re)seeded — i.e. after
+     * seed_from_store — so persistent graphs built at startup pick up history
+     * that only became available post-connect. Idempotent for on-demand graphs
+     * that already backfilled at construction. Main-thread only (#1124).
+     */
+    static void refresh_all_from_history();
+
+    /**
      * @brief Tear down and recreate the graph from scratch
      *
      * Called on reconnect to re-resolve subjects (which may have been
@@ -184,6 +208,7 @@ class TempGraphController {
     AsyncLifetimeGuard lifetime_;
     uint32_t generation_ = 0;
     bool paused_ = false;
+    bool tearing_down_ = false; ///< Set by detach(); guards rebuild()/setup_observers()
     float y_axis_max_ = 100.0f;
 
     /// Debounce rapid rebuilds (e.g., reconnect flapping in Klipper error state)

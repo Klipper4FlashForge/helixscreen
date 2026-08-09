@@ -304,8 +304,11 @@ main() {
             continue
         fi
 
-        # Skip third-party code
-        if [[ "$file" == *"/lib/"* ]] || [[ "$file" == *"/node_modules/"* ]]; then
+        # Skip third-party code. Match a leading "lib/" too: paths passed on the
+        # command line are usually repo-relative, and lib/helix-xml/ is MIT —
+        # stamping GPL-3.0-or-later on it would misdeclare its license.
+        if [[ "$file" == *"/lib/"* ]] || [[ "$file" == lib/* ]] || \
+           [[ "$file" == *"/node_modules/"* ]] || [[ "$file" == node_modules/* ]]; then
             [[ $VERBOSE -eq 1 ]] && log_warning "Skipping third-party: $file"
             ((skipped++))
             continue

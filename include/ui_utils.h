@@ -10,6 +10,7 @@
 #include "static_panel_registry.h"
 
 #include <cstdint>
+#include <string_view>
 
 // ============================================================================
 // Responsive Layout Utilities
@@ -18,12 +19,13 @@
 /**
  * @brief Get responsive padding for content areas below headers
  *
- * Returns smaller padding on tiny/small screens for more compact layouts.
+ * Returns the current breakpoint's space_lg token, which the theme system
+ * scales per display size — smaller on tiny/small screens for more compact
+ * layouts.
  *
- * @param screen_height Current screen height in pixels
  * @return Padding value in pixels
  */
-lv_coord_t ui_get_header_content_padding(lv_coord_t screen_height);
+lv_coord_t ui_get_header_content_padding();
 
 /**
  * @brief Get responsive header height based on screen size
@@ -408,5 +410,41 @@ inline void clear_pressed_state_recursive(lv_obj_t* obj) {
         clear_pressed_state_recursive(lv_obj_get_child(obj, static_cast<int32_t>(i)));
     }
 }
+
+// ============================================================================
+// Owned user_data strings
+// ============================================================================
+
+/**
+ * @brief Attach an owned copy of @p s to @p obj's user_data, freed on LV_EVENT_DELETE
+ *
+ * Replaces the hand-rolled `lv_malloc` + `memcpy` + per-site LV_EVENT_DELETE
+ * lambda that dynamically-built rows/cards use to carry a per-instance key
+ * (filename, klipper name, object name) into their click handlers.
+ *
+ * Ownership rules (lesson L069 — user_data is a single shared slot):
+ * - The slot must be empty, or already hold a string set by this helper.
+ *   Anything else (an XML widget's own payload, ui_button's `button_data_t*`)
+ *   is left completely untouched and the call returns false.
+ * - Calling again on the same object frees the previous copy and reuses the
+ *   single registered cleanup handler.
+ * - The cleanup handler nulls the slot after freeing, so a repeated DELETE
+ *   delivery cannot double-free.
+ *
+ * @param obj Object to own the string (must be valid; nullptr returns false)
+ * @param s   Bytes to copy. Copied exactly; need not be NUL-terminated.
+ * @return true on success; false on allocation failure, an overlong length, a
+ *         null object, or a contested slot — in every failure case user_data is
+ *         left exactly as it was.
+ */
+bool set_owned_user_string(lv_obj_t* obj, std::string_view s);
+
+/**
+ * @brief Read back a string previously attached by set_owned_user_string()
+ *
+ * Returns nullptr for a null object, an empty slot, or a slot owned by anything
+ * other than this helper — it never casts a foreign user_data pointer to char*.
+ */
+const char* get_owned_user_string(lv_obj_t* obj);
 
 } // namespace helix::ui

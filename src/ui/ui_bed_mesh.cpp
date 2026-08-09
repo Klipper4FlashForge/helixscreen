@@ -28,15 +28,16 @@ using helix::mesh::BedMeshRenderThread;
 #include <cstring>
 #include <memory>
 
-// Canvas dimensions and rotation defaults are now in ui_bed_mesh.h
+// Canvas dimensions are in ui_bed_mesh.h; camera angles belong to the renderer.
 
 /**
  * Widget instance data stored in user_data
  */
 typedef struct {
-    bed_mesh_renderer_t* renderer; // 3D renderer instance
-    int rotation_x;                // Current tilt angle (degrees)
-    int rotation_z;                // Current spin angle (degrees)
+    // 3D renderer instance.  It owns the camera orientation (angle_x/angle_z in
+    // its bed_mesh_view_state_t) — the widget reads the current angles back via
+    // bed_mesh_renderer_get_view_state() rather than mirroring them here.
+    bed_mesh_renderer_t* renderer;
 
     // Touch drag state
     bool is_dragging;         // Currently in drag gesture
@@ -347,32 +348,35 @@ static void bed_mesh_pressing_cb(lv_event_t* e) {
     if (dx != 0 || dy != 0) {
         // Convert pixel movement to rotation angles
         // Scale factor: ~0.5 degrees per pixel (matching G-code viewer)
-        // Horizontal drag (dx) = spin rotation (rotation_z)
-        // Vertical drag (dy) = tilt rotation (rotation_x), inverted for intuitive control
-        data->rotation_z += (int)(dx * 0.5f);
-        data->rotation_x -= (int)(dy * 0.5f); // Flip Y for intuitive tilt
+        // Horizontal drag (dx) = spin rotation (angle_z)
+        // Vertical drag (dy) = tilt rotation (angle_x), inverted for intuitive control
+        const double delta_z = dx * 0.5;
+        const double delta_x = -dy * 0.5; // Flip Y for intuitive tilt
 
-        // Clamp tilt to configured range (use header-defined limits)
-        if (data->rotation_x < BED_MESH_ROTATION_X_MIN)
-            data->rotation_x = BED_MESH_ROTATION_X_MIN;
-        if (data->rotation_x > BED_MESH_ROTATION_X_MAX)
-            data->rotation_x = BED_MESH_ROTATION_X_MAX;
+        // Accumulate onto the renderer's own camera angles.  Clamping of the
+        // tilt and 360° wrapping of the spin happen inside set_rotation().
+        double angle_x = 0.0;
+        double angle_z = 0.0;
+        auto apply_rotation = [&]() {
+            const bed_mesh_view_state_t* view = bed_mesh_renderer_get_view_state(data->renderer);
+            if (!view) {
+                return;
+            }
+            bed_mesh_renderer_set_rotation(data->renderer, view->angle_x + delta_x,
+                                           view->angle_z + delta_z);
+            // view aliases the renderer's live state, so it now holds the
+            // clamped/wrapped result.
+            angle_x = view->angle_x;
+            angle_z = view->angle_z;
+        };
 
-        // Wrap spin around 360 degrees
-        data->rotation_z = data->rotation_z % 360;
-        if (data->rotation_z < 0)
-            data->rotation_z += 360;
-
-        // Update renderer rotation.
         // In async mode, lock the render mutex to prevent concurrent access
         // with the background render thread, then request a new frame.
-        if (data->renderer) {
-            if (data->async_mode && data->render_thread) {
-                std::lock_guard<std::mutex> lock(data->render_thread->render_mutex());
-                bed_mesh_renderer_set_rotation(data->renderer, data->rotation_x, data->rotation_z);
-            } else {
-                bed_mesh_renderer_set_rotation(data->renderer, data->rotation_x, data->rotation_z);
-            }
+        if (data->async_mode && data->render_thread) {
+            std::lock_guard<std::mutex> lock(data->render_thread->render_mutex());
+            apply_rotation();
+        } else {
+            apply_rotation();
         }
 
         // Trigger redraw (async mode: request new frame from render thread)
@@ -383,8 +387,8 @@ static void bed_mesh_pressing_cb(lv_event_t* e) {
 
         data->last_drag_pos = point;
 
-        spdlog::trace("[bed_mesh] Drag ({}, {}) -> rotation({}, {})", dx, dy, data->rotation_x,
-                      data->rotation_z);
+        spdlog::trace("[bed_mesh] Drag ({}, {}) -> rotation({:.1f}, {:.1f})", dx, dy, angle_x,
+                      angle_z);
     }
 }
 
@@ -424,8 +428,9 @@ static void bed_mesh_release_cb(lv_event_t* e) {
     // Force immediate redraw to switch back to gradient rendering
     lv_obj_invalidate(obj);
 
-    spdlog::trace("[bed_mesh] Release - final rotation({}, {}), switching to gradient",
-                  data->rotation_x, data->rotation_z);
+    const bed_mesh_view_state_t* view = bed_mesh_renderer_get_view_state(data->renderer);
+    spdlog::trace("[bed_mesh] Release - final rotation({:.1f}, {:.1f}), switching to gradient",
+                  view ? view->angle_x : 0.0, view ? view->angle_z : 0.0);
 }
 
 /**
@@ -535,10 +540,8 @@ static void* bed_mesh_xml_create(lv_xml_parser_state_t* state, const char** attr
         return nullptr; // unique_ptr automatically cleans up
     }
 
-    // Set default rotation angles
-    data_ptr->rotation_x = BED_MESH_ROTATION_X_DEFAULT;
-    data_ptr->rotation_z = BED_MESH_ROTATION_Z_DEFAULT;
-    bed_mesh_renderer_set_rotation(data_ptr->renderer, data_ptr->rotation_x, data_ptr->rotation_z);
+    // Camera starts at the renderer's own defaults (BED_MESH_DEFAULT_ANGLE_X/Z),
+    // set by bed_mesh_renderer_create() — no need to push them back in here.
 
     // Check for forced 2D mode via environment variable (for testing)
     const char* force_2d = std::getenv("HELIX_BED_MESH_2D");
@@ -702,40 +705,6 @@ void ui_bed_mesh_set_bounds(lv_obj_t* widget, double bed_x_min, double bed_x_max
 }
 
 /**
- * Set camera rotation angles
- */
-void ui_bed_mesh_set_rotation(lv_obj_t* widget, int angle_x, int angle_z) {
-    if (!widget) {
-        spdlog::error("[bed_mesh] ui_bed_mesh_set_rotation: NULL widget");
-        return;
-    }
-
-    bed_mesh_widget_data_t* data = (bed_mesh_widget_data_t*)lv_obj_get_user_data(widget);
-    if (!data || !data->renderer) {
-        spdlog::error("[bed_mesh] ui_bed_mesh_set_rotation: widget data or renderer not "
-                      "initialized");
-        return;
-    }
-
-    // Update stored rotation angles
-    data->rotation_x = angle_x;
-    data->rotation_z = angle_z;
-
-    // Update renderer
-    if (data->async_mode && data->render_thread) {
-        std::lock_guard<std::mutex> lock(data->render_thread->render_mutex());
-        bed_mesh_renderer_set_rotation(data->renderer, angle_x, angle_z);
-    } else {
-        bed_mesh_renderer_set_rotation(data->renderer, angle_x, angle_z);
-    }
-
-    spdlog::debug("[bed_mesh] Rotation updated: tilt={}°, spin={}°", angle_x, angle_z);
-
-    // Automatically redraw after rotation change
-    ui_bed_mesh_redraw(widget);
-}
-
-/**
  * Force redraw of mesh visualization
  */
 void ui_bed_mesh_redraw(lv_obj_t* widget) {
@@ -776,22 +745,6 @@ void ui_bed_mesh_evaluate_render_mode(lv_obj_t* widget) {
     }
 
     bed_mesh_renderer_evaluate_render_mode(data->renderer);
-}
-
-/**
- * Get current render mode for display in settings
- */
-BedMeshRenderMode ui_bed_mesh_get_render_mode(lv_obj_t* widget) {
-    if (!widget) {
-        return BedMeshRenderMode::Auto;
-    }
-
-    bed_mesh_widget_data_t* data = (bed_mesh_widget_data_t*)lv_obj_get_user_data(widget);
-    if (!data || !data->renderer) {
-        return BedMeshRenderMode::Auto;
-    }
-
-    return bed_mesh_renderer_get_render_mode(data->renderer);
 }
 
 /**

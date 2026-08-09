@@ -26,7 +26,7 @@ struct AfcCapabilities {
 /**
  * @brief Get the canonical AFC section definitions
  *
- * Returns the 8 standard AFC sections in display order.
+ * Returns the 7 standard AFC sections in display order.
  * Both AmsBackendAfc and AmsBackendMock use these as their
  * section definitions rather than duplicating them.
  *

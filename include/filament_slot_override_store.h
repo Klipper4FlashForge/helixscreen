@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include "ams_types.h"
 #include "filament_slot_override.h"
 
 #include <chrono>
@@ -9,18 +10,92 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
+
+#include "hv/json.hpp"
 
 class IMoonrakerAPI;
 class FilamentSlotOverrideStoreTestAccess;
 
 namespace helix::ams {
 
+// Outer Moonraker DB key convention for per-slot lane_data records. The two
+// styles carry the SAME 0-based inner "lane" field but different outer keys:
+//   - Lane: "laneN" (1-based, AFC/Happy Hare convention) — filament systems.
+//   - Tool: "T<n>"  (0-based, Orca/Mainsail tool convention) — tool changers.
+// A tool changer converging on the T<n> key style makes HelixScreen writes
+// overwrite Mainsail #2510's records instead of duplicating them (both readers
+// key off the inner "lane" field, so a shared outer key avoids Orca's no-dedup
+// collision). See docs/specs/filament_slots.md § "Interoperating readers and
+// writers".
+enum class LaneKeyStyle { Lane, Tool };
+
+// Maps an AmsType to its lane_data key style. Tool changers (Snapmaker, generic
+// TOOL_CHANGER) use T<n> keys; every filament-switching system uses laneN.
+// Deriving from is_tool_changer() keeps the policy in one place — never branch
+// on backend_id, and never use !is_filament_system() (it includes SNAPMAKER in
+// both lists, ams_types.h).
+inline LaneKeyStyle lane_key_style_for(AmsType t) {
+    return is_tool_changer(t) ? LaneKeyStyle::Tool : LaneKeyStyle::Lane;
+}
+
+// Counts of lane_data records that are inconsistent or invisible to other
+// readers. Detected read-only at load and logged once — we do NOT auto-rewrite
+// third-party/corrupt records (that would vandalize a shared namespace); the
+// one-shot laneN->T<n> migration only ever touches keys HelixScreen authored.
+// Note: out-of-range slots are intentionally NOT counted — the store does not
+// know NUM_PORTS (the caller range-checks), so it cannot honestly detect them.
+struct LaneDataAnomalies {
+    int int_typed_lane = 0;     ///< inner "lane" is an int, not a string — OrcaSlicer drops these
+    int key_inner_mismatch = 0; ///< key looks like laneN/T<n> but disagrees with the inner index
+    int unparseable = 0;        ///< non-"seated" object carrying no valid "lane" field
+    int duplicate_slot = 0;     ///< more than one record resolving to the same slot index
+    [[nodiscard]] int total() const {
+        return int_typed_lane + key_inner_mismatch + unparseable + duplicate_slot;
+    }
+};
+
+// Read-only scan of a raw lane_data namespace document. Pure: no DB access, no
+// mutation. Skips the "seated" sibling scalar. Used for the one-shot load-time
+// diagnostic; also unit-tested directly.
+[[nodiscard]] LaneDataAnomalies scan_lane_data_anomalies(const nlohmann::json& namespace_doc);
+
+// Parse AFC-shaped record (+ our extensions) back into FilamentSlotOverride.
+// This is the wire-format parser: the shared shape read by scan_lane_data_anomalies,
+// the migration helpers, and load_blocking, and exercised directly by tests to
+// verify round-tripping without going through the full async load/save path.
+// Returns (slot_index, override), or nullopt if the record is malformed (non-object
+// or missing/invalid "lane" field).
+[[nodiscard]] std::optional<std::pair<int, FilamentSlotOverride>>
+from_lane_data_record(const nlohmann::json& j);
+
 class FilamentSlotOverrideStore {
   public:
-    FilamentSlotOverrideStore(IMoonrakerAPI* api, std::string backend_id);
+    // key_style defaults to Lane so the many lane-based construction sites and
+    // tests need no change. Production sites pass lane_key_style_for(get_type())
+    // so the correct style is derived from the backend's AmsType.
+    // ns selects the Moonraker DB namespace. It defaults to the shared
+    // "lane_data" for the backends that legitimately live there (IFS, ACE, CFS,
+    // Snapmaker). AFC and Happy Hare MUST pass a private namespace: their own
+    // Klipper plugins own lane_data, AFC deletes that whole namespace on every
+    // boot and full-POSTs each lane record, and load_blocking() would otherwise
+    // ingest those foreign records as if they were user overrides.
+    FilamentSlotOverrideStore(IMoonrakerAPI* api, std::string backend_id,
+                              LaneKeyStyle key_style = LaneKeyStyle::Lane,
+                              std::string ns = "lane_data");
+
+    /// Test-only view of the configured namespace.
+    [[nodiscard]] const std::string& namespace_for_test() const {
+        return namespace_;
+    }
 
     // Blocking load from Moonraker database (called only at backend init time).
-    // Later tasks will add local-cache fallback.
+    // Falls back to the local read-cache when the DB round-trip fails.
+    //
+    // Never throws. lane_data is a namespace shared with AFC, Happy Hare,
+    // Mainsail and hand edits, so a malformed or null-bearing record is an
+    // expected input, not a bug — it costs at most the affected slots. See the
+    // exception-boundary comment on the definition.
     std::unordered_map<int, FilamentSlotOverride> load_blocking();
 
     using SaveCallback = std::function<void(bool success, std::string error)>;
@@ -55,11 +130,20 @@ class FilamentSlotOverrideStore {
     // setter. Per L065, prefer friend-class over test-only public methods.
     friend class ::FilamentSlotOverrideStoreTestAccess;
 
+    // Real body of load_blocking(). Split out so load_blocking() itself is a
+    // thin never-throws boundary that no caller has to remember to guard.
+    std::unordered_map<int, FilamentSlotOverride> load_blocking_impl();
+
     IMoonrakerAPI* api_;
     std::string backend_id_;
+    // Outer-key style for this backend's lane_data records (laneN vs T<n>). Set
+    // once at construction from the backend's AmsType via lane_key_style_for().
+    LaneKeyStyle key_style_;
     // Adopts the AFC/OrcaSlicer lane_data Moonraker convention. Each slot is
     // stored under key "laneN" where N is the 1-based slot index (lane1, lane2,
-    // ...). Slot index 0 in HelixScreen maps to "lane1" on disk.
+    // ...), or "T<n>" (0-based) on tool changers. Slot index 0 maps to "lane1"
+    // (Lane style) or "T0" (Tool style) on disk. See format_lane_key in the
+    // .cpp for the exact rule.
     std::string namespace_ = "lane_data";
     // Local timeout for load_blocking()'s cv.wait_for. Defaults to 5 seconds;
     // overridable by FilamentSlotOverrideStoreTestAccess for timeout tests.
@@ -82,16 +166,6 @@ class FilamentSlotOverrideStore {
     // Migration uses this to locate legacy "{backend_id}_slot_overrides.json"
     // files that pre-date the unified filament_slot_overrides.json format.
     std::filesystem::path cache_dir_effective() const;
-    // Returns the Moonraker DB key for a given slot.
-    //
-    // IMPORTANT: the DB key is 1-based (AFC convention: lane1, lane2, ...) but
-    // the "lane" field *inside* each record is 0-based (matches Orca's
-    // tool-index interpretation, written by to_lane_data_record in the .cpp).
-    // Easy to get wrong — changing one without the other silently breaks
-    // interop with AFC and Orca.
-    static std::string lane_key(int slot_index) {
-        return "lane" + std::to_string(slot_index + 1);
-    }
 };
 
 // =============================================================================
@@ -112,8 +186,9 @@ class FilamentSlotOverrideStore {
 //
 //   - IFS: set_slot_info writes to Adventurer5M.json — firmware re-reads it
 //     and reports the user's chosen color on the next status poll. The mirror
-//     can safely overwrite the override unconditionally because firmware-truth
-//     and user-truth converge.
+//     can safely overwrite the override with firmware values (except fields
+//     the user explicitly locked, per #965 — see MirrorPolicy::OverwriteAlways
+//     below) because firmware-truth and user-truth converge.
 //
 //   - CFS / Snapmaker: set_slot_info does NOT touch the firmware-side
 //     material_type / RFID values. If the mirror unconditionally overwrote
@@ -122,9 +197,10 @@ class FilamentSlotOverrideStore {
 //     fields the user hasn't explicitly set. clear_slot_override resets the
 //     entry, after which auto-mirror takes over again.
 enum class MirrorPolicy {
-    /// Overwrite ovr.color_rgb / ovr.material with firmware values
-    /// unconditionally. Use when user edits propagate back to firmware so the
-    /// two views stay in sync (AD5X IFS).
+    /// Overwrite ovr.color_rgb / ovr.material with firmware values, EXCEPT for
+    /// fields the user explicitly locked (user_locked_color /
+    /// user_locked_material — see #965). Use when user edits propagate back to
+    /// firmware so the two views stay in sync (AD5X IFS, Snapmaker paxx12).
     OverwriteAlways,
     /// Only fill ovr.color_rgb / ovr.material when they're currently UNSET
     /// (color_rgb == 0, empty material). Use when user edits don't reach
@@ -160,5 +236,76 @@ bool mirror_firmware_to_lane_data(FilamentSlotOverrideStore* store,
                                   int slot_index, uint32_t firmware_color,
                                   const std::string& firmware_material, bool slot_has_filament,
                                   MirrorPolicy policy, const std::string& log_tag);
+
+// =============================================================================
+// Shared per-slot firmware-observation baseline tracker
+// =============================================================================
+
+/// Classification of one firmware observation against the per-slot baseline.
+enum class FingerprintEvent {
+    /// Empty observation: no tag, unread reader, or the slot wasn't included in
+    /// this (incremental) status update. Baseline is left untouched — otherwise
+    /// a tag-less poll would overwrite a real prior value and mask a genuine
+    /// change on the next good read.
+    NoSignal,
+    /// First real observation for this slot. Establishes the baseline; NEVER an
+    /// event, even when a previously-loaded override disagrees with it.
+    Baseline,
+    /// Identical to the baseline — the same physical spool re-observed.
+    Unchanged,
+    /// Changed to exactly the value a prior expect() said to await, i.e. this
+    /// is the firmware echoing back a write HelixScreen itself made.
+    OwnWriteEcho,
+    /// Changed for some reason other than our own pending write — for the RFID
+    /// backends this means a physical spool swap.
+    Changed,
+};
+
+/// Per-slot "what did firmware last report for this slot?" tracker, shared by
+/// the RFID-fingerprint backends (CFS, Snapmaker). It owns only the
+/// bookkeeping — deciding what a given event *means* (clear the override, sync
+/// lane_data, log) stays in each backend, so their policies can differ.
+///
+/// Beyond the plain baseline compare it carries an `expect()` slot: backends
+/// that write a value back to firmware (CFS's BOX_MODIFY_TN_DATA color push)
+/// record the value they expect to see echoed. Because the write is
+/// asynchronous, firmware keeps reporting the OLD value for an unknown number
+/// of polls before the echo lands — so the expectation must SURVIVE those
+/// polls rather than overwrite the baseline immediately. Those intervening
+/// polls classify as Unchanged; the echo itself classifies as OwnWriteEcho.
+///
+/// The expectation is single-shot and is consumed by the first change of any
+/// kind, so a genuine physical swap that lands while a write is in flight is
+/// still reported as Changed and never permanently blinds swap detection for
+/// that slot.
+class SlotFingerprintTracker {
+  public:
+    /// Feed one observation. When the result is OwnWriteEcho or Changed and
+    /// `previous` is non-null, it receives the superseded baseline value (for
+    /// logging). The baseline is advanced BEFORE returning a change event so a
+    /// caller whose follow-up action fails doesn't re-fire on every poll.
+    FingerprintEvent observe(int slot_index, const std::string& observed,
+                             std::string* previous = nullptr);
+
+    /// Record the value this slot is expected to report once a write we just
+    /// issued reaches firmware. Replaces any prior unconsumed expectation.
+    void expect(int slot_index, std::string expected_value);
+
+    /// Drop a pending expectation (e.g. the write failed to dispatch, so no
+    /// echo is coming and the next change is genuinely external).
+    void forget_expected(int slot_index);
+
+    /// Current baseline for a slot, or nullopt when none observed yet.
+    [[nodiscard]] std::optional<std::string> baseline(int slot_index) const;
+
+    /// Whether an unconsumed expectation is pending for a slot.
+    [[nodiscard]] bool has_expected(int slot_index) const;
+
+    void clear();
+
+  private:
+    std::unordered_map<int, std::string> baseline_;
+    std::unordered_map<int, std::string> expected_;
+};
 
 } // namespace helix::ams

@@ -15,6 +15,7 @@
 #include "app_globals.h"
 #include "config.h"
 #include "filament_sensor_manager.h"
+#include "log_redact.h"
 #include "lvgl/lvgl.h"
 #include "static_panel_registry.h"
 #include "system_settings_manager.h"
@@ -134,7 +135,7 @@ void WizardSummaryStep::init_subjects() {
     std::string wifi_ssid =
         config ? config->get<std::string>(helix::wizard::WIFI_SSID, "Not configured")
                : "Not configured";
-    spdlog::debug("[{}] WiFi SSID from config: '{}'", get_name(), wifi_ssid);
+    spdlog::debug("[{}] WiFi SSID from config: '{}'", get_name(), helix::redact::ssid(wifi_ssid));
 
     // Moonraker connection (host:port)
     std::string moonraker_host =
@@ -361,8 +362,7 @@ lv_obj_t* WizardSummaryStep::create(lv_obj_t* parent) {
 void WizardSummaryStep::cleanup() {
     spdlog::debug("[{}] Cleaning up resources", get_name());
 
-    // NOTE: Wizard framework handles object deletion - we only null the pointer
-    // See HANDOFF.md Pattern #9: Wizard Screen Lifecycle
+    // NOTE: Wizard framework handles object deletion - we only null the pointer.
     screen_root_ = nullptr;
 }
 

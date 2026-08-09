@@ -546,6 +546,48 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     }
 
     /**
+     * @brief Report stepper_z position_endstop as JSON null
+     *
+     * Klipper emits `position_endstop: null` for any printer configured with
+     * `endstop_pin: probe:z_virtual_endstop` — i.e. most probe-equipped
+     * machines. Lets tests reproduce that payload, which is otherwise
+     * unrepresentable against the mock's hardcoded 235.0.
+     *
+     * @param null_endstop True to emit null instead of a number (default: false)
+     */
+    void set_stepper_z_endstop_null(bool null_endstop) {
+        stepper_z_endstop_null_ = null_endstop;
+    }
+
+    /**
+     * @brief Check whether stepper_z position_endstop is reported as null
+     */
+    [[nodiscard]] bool is_stepper_z_endstop_null() const {
+        return stepper_z_endstop_null_;
+    }
+
+    /**
+     * @brief Override the extruder max_temp reported in configfile.settings
+     *
+     * The default 300.0 sits below SafetyLimits::max_temperature_celsius (400.0),
+     * so parsing it produces no observable change — which makes it useless as a
+     * signal for "did the temperature-limit loop actually run?". Tests that need
+     * that signal raise this above 400.0.
+     *
+     * @param max_temp Extruder max_temp in celsius (default: 300.0)
+     */
+    void set_extruder_max_temp(double max_temp) {
+        extruder_max_temp_ = max_temp;
+    }
+
+    /**
+     * @brief Get the extruder max_temp reported in configfile.settings
+     */
+    [[nodiscard]] double get_extruder_max_temp() const {
+        return extruder_max_temp_;
+    }
+
+    /**
      * @brief Check if mock accelerometer is enabled
      * @return true if accelerometer should be reported as available
      */
@@ -989,6 +1031,31 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
         return err;
     }
 
+    /// Test helper: force the next matching printer.gcode.script RPC to invoke NEITHER
+    /// callback — the request is sent, Klipper still runs the gcode, but the RPC
+    /// response never arrives. This is the real-world wedge #1129 reported: a Klippy
+    /// restart (or any dropped response) leaves a caller's in-flight counter pinned
+    /// because neither on_success nor on_error ever fires. One-shot: cleared once it
+    /// fires. When @p script_substr is non-empty, only a gcode.script whose script
+    /// contains that substring has its response dropped.
+    void force_next_gcode_dropped_response(const std::string& script_substr = "") {
+        std::lock_guard<std::mutex> lock(forced_gcode_error_mutex_);
+        forced_gcode_drop_ = script_substr;
+    }
+
+    /// Consume a pending forced response-drop if it matches @p script. Returns true
+    /// (and clears the pending state) when the handler must return without invoking
+    /// either callback. Used by the gcode.script mock handler.
+    bool take_forced_gcode_drop(const std::string& script) {
+        std::lock_guard<std::mutex> lock(forced_gcode_error_mutex_);
+        if (!forced_gcode_drop_.has_value())
+            return false;
+        if (!forced_gcode_drop_->empty() && script.find(*forced_gcode_drop_) == std::string::npos)
+            return false;
+        forced_gcode_drop_.reset();
+        return true;
+    }
+
     /// Test inspection: every gcode script string passed through the
     /// printer.gcode.script handler, in order. Lets tests assert multi-step
     /// gcode sequences (e.g. the #991 split config-reassert + heat/feed chain).
@@ -1037,6 +1104,9 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
         std::string script_substr;
     };
     std::optional<ForcedGcodeError> forced_gcode_error_;
+    // One-shot forced response-drop for printer.gcode.script (test helper). Holds the
+    // script substring filter; empty string matches any script. Shares the mutex above.
+    std::optional<std::string> forced_gcode_drop_;
     mutable std::mutex forced_gcode_error_mutex_;
 
     // Temperature simulation state
@@ -1078,6 +1148,15 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     // G-code error tracking (for RPC handler to return proper errors)
     mutable std::mutex gcode_error_mutex_;
     std::string last_gcode_error_;
+
+    // M117 display message (needs mutex since std::string is not atomic).
+    // display_message_set_ distinguishes "user sent M117" (even to clear the
+    // text to "") from "no M117 has been sent yet" so the periodic status
+    // broadcast knows whether to keep showing the canned phase strings
+    // ("Heating...", "Purging nozzle") or the user's message.
+    mutable std::mutex display_message_mutex_;
+    std::string display_message_;
+    bool display_message_set_ = false;
 
     // Print simulation state (legacy - kept for backward compatibility)
     std::atomic<int> print_state_{
@@ -1177,6 +1256,10 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     std::vector<std::string> object_names_;  // Defined object names from gcode (local fallback)
     mutable std::mutex excluded_objects_mutex_; // Protects excluded_objects_ and object_names_
 
+    /// How many synthetic exclude_object entries to publish at print start, or 0
+    /// to publish only what the G-code declares. Set by HELIX_MOCK_EXCLUDE_OBJECTS.
+    int mock_exclude_object_count_{0};
+
     // Shared mock state for coordination with MoonrakerAPIMock
     // When set, state changes are propagated to this shared object
     std::shared_ptr<MockPrinterState> mock_state_;
@@ -1232,6 +1315,8 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     bool accelerometer_available_{true}; ///< Accelerometer available for input shaper tests
     bool input_shaper_configured_{true}; ///< Input shaper configured for config query tests
     bool shaper_csv_writable_{true};     ///< When false, SHAPER_CALIBRATE skips writing the CSV
+    bool stepper_z_endstop_null_{false}; ///< When true, position_endstop is reported as JSON null
+    double extruder_max_temp_{300.0};    ///< Extruder max_temp reported in configfile.settings
     bool mmu_enabled_{true};             ///< MMU available (default true for existing tests)
 
     // Additional objects for testing (e.g., "mmu", "AFC", "toolchanger")

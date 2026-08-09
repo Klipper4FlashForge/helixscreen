@@ -484,6 +484,16 @@ class DisplayBackend {
      */
     virtual void enable_affine_calibration() {}
 
+    /**
+     * @brief Discard the stored calibration, leaving the device uncalibrated
+     *
+     * Stronger than disable_affine_calibration(), which only stops the stored
+     * matrix from being applied: this forgets it, so enable_affine_calibration()
+     * cannot resurrect it. Used to put a never-calibrated device back the way an
+     * aborted calibration session found it.
+     */
+    virtual void clear_calibration() {}
+
     // ========================================================================
     // Factory Methods
     // ========================================================================

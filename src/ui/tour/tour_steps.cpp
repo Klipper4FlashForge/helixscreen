@@ -11,6 +11,11 @@ bool hardware_has_ams() {
     return AmsState::instance().backend_count() > 0;
 }
 
+// i18n: the tour.step.* literals below are translation keys, resolved
+// indirectly via lv_tr(step.title_key.c_str()) in tour_overlay.cpp. They are
+// live keys even though no lv_tr("...") call wraps them here — `translation_sync
+// obsolete` finds them through its reference scan, not the extractor patterns.
+// Renaming one here means renaming it in translations/*.yml too.
 std::vector<TourStep> build_tour_steps(bool has_ams) {
     std::vector<TourStep> steps;
     steps.reserve(8);

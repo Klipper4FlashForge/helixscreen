@@ -15,6 +15,7 @@
 #include "http_executor.h"
 #include "i_moonraker_api.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 #include "printer_state.h"
 #include "static_subject_registry.h"
 #include "subject_debug_registry.h"
@@ -253,9 +254,14 @@ void CameraWidget::on_deactivate() {
     }
 }
 
-void CameraWidget::on_size_changed(int colspan, int rowspan, int /*width_px*/, int /*height_px*/) {
+void CameraWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_px,
+                                   int /*height_px*/) {
     bool was_compact = compact_;
-    compact_ = (colspan <= 1 && rowspan <= 1);
+    // Width-only: the live view fills its cell edge-to-edge either way
+    // (LV_IMAGE_ALIGN_COVER), so extra height alone never earns the widget
+    // a stream it wouldn't otherwise get — only a second column does, same
+    // as fan_stack's row layout.
+    compact_ = (width_px < widget_size::W_NORMAL);
 
     // Ensure scale-to-cover after any resize
     if (camera_image_) {
@@ -288,6 +294,7 @@ void CameraWidget::on_size_changed(int colspan, int rowspan, int /*width_px*/, i
 }
 
 void CameraWidget::start_stream() {
+    ++start_stream_calls_;
     if (stream_ && stream_->is_running()) {
         spdlog::debug("[CameraWidget] start_stream: already running, skipping");
         return;
@@ -348,9 +355,12 @@ void CameraWidget::start_stream() {
                 if (target) {
                     lv_image_set_src(target, frame);
                     set_status_text("");
-                    // Hide spinner overlay on first frame
-                    if (camera_overlay_ && !lv_obj_has_flag(camera_overlay_, LV_OBJ_FLAG_HIDDEN)) {
-                        lv_obj_add_flag(camera_overlay_, LV_OBJ_FLAG_HIDDEN);
+                    // Hide the spinner overlay matching the active view on first frame.
+                    // In fullscreen the frame goes to fullscreen_image_, so the fullscreen
+                    // overlay's own spinner must be hidden — not the inline widget's.
+                    lv_obj_t* spinner = fullscreen_image_ ? fullscreen_spinner_ : camera_overlay_;
+                    if (spinner && !lv_obj_has_flag(spinner, LV_OBJ_FLAG_HIDDEN)) {
+                        lv_obj_add_flag(spinner, LV_OBJ_FLAG_HIDDEN);
                     }
                 }
             });
@@ -369,6 +379,7 @@ void CameraWidget::start_stream() {
 }
 
 void CameraWidget::stop_stream() {
+    ++stop_stream_calls_;
     if (!stream_) {
         spdlog::trace("[CameraWidget] stop_stream: no stream to stop");
         return;
@@ -547,6 +558,7 @@ void CameraWidget::open_fullscreen() {
 
     fullscreen_overlay_ = overlay;
     fullscreen_image_ = lv_obj_find_by_name(overlay, "fullscreen_camera_image");
+    fullscreen_spinner_ = lv_obj_find_by_name(overlay, "fullscreen_spinner");
     s_fullscreen_owner = this;
 
     if (fullscreen_image_) {
@@ -571,6 +583,7 @@ void CameraWidget::open_fullscreen() {
             lv_image_set_src(fullscreen_image_, nullptr);
         }
         fullscreen_image_ = nullptr;
+        fullscreen_spinner_ = nullptr;
         s_fullscreen_owner = nullptr;
 
         // Delete the overlay widget tree

@@ -17,6 +17,7 @@
 #include "ams_state.h"
 #include "app_constants.h"
 #include "app_globals.h"
+#include "first_run_tour.h"
 #include "observer_factory.h"
 #include "panel_widget_config.h"
 #include "panel_widget_manager.h"
@@ -28,9 +29,6 @@
 #include "spoolman_manager.h"
 #include "static_panel_registry.h"
 #include "theme_manager.h"
-
-// TEMPORARY — removed in Task 6
-#include "first_run_tour.h"
 
 #include <spdlog/spdlog.h>
 
@@ -720,6 +718,17 @@ void HomePanel::finalize_setup() {
     });
 
     spdlog::debug("[{}] Finalize complete", get_name());
+}
+
+void HomePanel::repopulate() {
+    // setup() only stores the new panel pointer — the carousel, the widget grid
+    // and every PanelWidget attachment are built by finalize_setup(). Its
+    // one-shot guard already fired during startup, so clear it and re-run the
+    // pass against the new tree. Without this the rebuilt panel renders empty
+    // and the recycled PanelWidget instances keep raw lv_obj_t* pointers into
+    // the old tree, which crashes as soon as an observer fires on them.
+    finalized_ = false;
+    finalize_setup();
 }
 
 void HomePanel::on_activate() {

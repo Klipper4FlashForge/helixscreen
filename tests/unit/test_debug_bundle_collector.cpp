@@ -1,10 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "../helix_test_fixture.h"
+#include "../lvgl_test_fixture.h"
+#include "app_globals.h"
+#include "config.h"
 #include "system/debug_bundle_collector.h"
+#include "system/update_checker.h"
 
+#include <spdlog/spdlog.h>
+
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <zlib.h>
 
@@ -586,4 +595,487 @@ TEST_CASE_METHOD(DebugBundleTestFixture,
     auto result = helix::DebugBundleCollector::collect_log_tail_from_paths(
         {"/nonexistent/a.log", "/nonexistent/b.log"}, 10);
     REQUIRE(result.empty());
+}
+
+// ============================================================================
+// log_tail / crash section sanitization [debug-bundle][privacy]
+//
+// These sections used to be inserted into the bundle verbatim while every
+// other text section went through the sanitizer — and log_tail is the section
+// densest in identifying data, because the ring captures at debug regardless
+// of the user's configured verbosity (#1191).
+// ============================================================================
+
+TEST_CASE("DebugBundleCollector: sanitize_value leaves an SSID-shaped string alone",
+          "[debug-bundle][privacy]") {
+    // Pins WHY the call-site redaction exists. An SSID is an arbitrary
+    // user-chosen string; no regex distinguishes it from ordinary log text, so
+    // the sanitizer cannot be the control for it. If someone later "fixes"
+    // this by adding an SSID regex, that regex will eat real log content and
+    // this test should make them think twice.
+    const std::string ssid_line = "Status: connected=true ssid='Pretzel Logic Cafe' signal=66%";
+    REQUIRE(helix::DebugBundleCollector::sanitize_value(ssid_line) == ssid_line);
+}
+
+TEST_CASE("DebugBundleCollector: sanitize_text_block redacts per line", "[debug-bundle][privacy]") {
+    // The 4 KB ReDoS guard in sanitize_value() would swallow a whole log as one
+    // [REDACTED_LONG_VALUE]; splitting per line is what keeps the log readable
+    // while still scrubbing each line.
+    const std::string body = "[10:04:30.373] [debug] iface=wlan0 mac=aa:bb:cc:dd:ee:ff\n"
+                             "[10:04:30.374] [debug] nothing sensitive here\n"
+                             "[10:04:30.375] [debug] peer AA-BB-CC-DD-EE-FF seen\n";
+
+    const auto out = helix::DebugBundleCollector::sanitize_text_block(body);
+
+    INFO("out=" << out);
+    REQUIRE(out.find("aa:bb:cc:dd:ee:ff") == std::string::npos);
+    REQUIRE(out.find("AA-BB-CC-DD-EE-FF") == std::string::npos);
+    // Surrounding content survives — a sanitizer that nuked the whole block
+    // would pass the two checks above and destroy the log's usefulness.
+    REQUIRE(out.find("nothing sensitive here") != std::string::npos);
+    REQUIRE(out.find("iface=wlan0") != std::string::npos);
+    REQUIRE(std::count(out.begin(), out.end(), '\n') == std::count(body.begin(), body.end(), '\n'));
+}
+
+TEST_CASE_METHOD(DebugBundleTestFixture,
+                 "DebugBundleCollector: collect_crash_report_txt sanitizes what it returns",
+                 "[debug-bundle][privacy]") {
+    // Crash text reaches the network twice: through the bundle and through the
+    // crash reporter's automatic upload. It used to be returned verbatim.
+    write_file("crash_report.txt", "=== HelixScreen Crash Report ===\nSignal: 11 (SIGSEGV)\n"
+                                   "wlan0 mac=aa:bb:cc:dd:ee:ff\n");
+
+    auto result = helix::DebugBundleCollector::collect_crash_report_txt(temp_dir_.string());
+
+    REQUIRE_FALSE(result.empty());
+    INFO("result=" << result);
+    REQUIRE(result.find("aa:bb:cc:dd:ee:ff") == std::string::npos);
+    REQUIRE(result.find("[REDACTED_MAC]") != std::string::npos);
+    REQUIRE(result.find("SIGSEGV") != std::string::npos);
+}
+
+TEST_CASE_METHOD(DebugBundleTestFixture,
+                 "DebugBundleCollector: collect_crash_txt sanitizes what it returns",
+                 "[debug-bundle][privacy]") {
+    write_file("crash.txt", "{\"signal\":11,\"iface\":\"wlan0\",\"mac\":\"aa:bb:cc:dd:ee:ff\"}\n");
+
+    auto result = helix::DebugBundleCollector::collect_crash_txt(temp_dir_.string());
+
+    REQUIRE_FALSE(result.empty());
+    INFO("result=" << result);
+    REQUIRE(result.find("aa:bb:cc:dd:ee:ff") == std::string::npos);
+    REQUIRE(result.find("[REDACTED_MAC]") != std::string::npos);
+}
+
+// ============================================================================
+// Update diagnostics [debug-bundle][update]
+//
+// Bundle 3Q2GB74K ("cannot update HelixScreen", pi32) was undiagnosable because
+// nothing in the bundle said whether the update rows were even rendered. The
+// About overlay binds both "Check for Updates" and "Install Update" to
+// show_update_settings = !in_app_updates_suppressed(); when that is true the
+// rows are absent and the user has no in-app path to an update at all.
+// ============================================================================
+
+namespace {
+
+// A fully-populated, everything-works baseline. Individual tests flip one field
+// so a failure names the field that broke rather than the whole struct.
+helix::UpdateDiagnostics healthy_diag() {
+    helix::UpdateDiagnostics d;
+    d.install_root = "/opt/helixscreen";
+    d.install_parent_writable = true;
+    d.self_update_supported = true;
+    d.externally_managed = false;
+    d.channel = "stable";
+    d.r2_base_url = "https://releases.helixscreen.org";
+    d.last_check_status = "up_to_date";
+    d.platform_asset_name = "helixscreen-pi32.zip";
+    return d;
+}
+
+} // namespace
+
+TEST_CASE("DebugBundleCollector: build_update_info reports a healthy install as not suppressed",
+          "[debug-bundle][update]") {
+    json upd = helix::DebugBundleCollector::build_update_info(healthy_diag());
+
+    REQUIRE(upd["install_root"].get<std::string>() == "/opt/helixscreen");
+    REQUIRE(upd["install_parent_writable"].get<bool>() == true);
+    REQUIRE(upd["self_update_supported"].get<bool>() == true);
+    REQUIRE(upd["externally_managed"].get<bool>() == false);
+    REQUIRE(upd["suppressed"].get<bool>() == false);
+    REQUIRE(upd["channel"].get<std::string>() == "stable");
+    REQUIRE(upd["r2_base_url"].get<std::string>() == "https://releases.helixscreen.org");
+    REQUIRE(upd["last_check_status"].get<std::string>() == "up_to_date");
+    REQUIRE(upd["platform_asset_name"].get<std::string>() == "helixscreen-pi32.zip");
+
+    // Optional fields must be ABSENT rather than empty strings — an empty
+    // "available_version" reads like a failed lookup, not "no update cached".
+    REQUIRE_FALSE(upd.contains("available_version"));
+    REQUIRE_FALSE(upd.contains("last_check_error"));
+}
+
+TEST_CASE("DebugBundleCollector: build_update_info marks a read-only install tree suppressed",
+          "[debug-bundle][update]") {
+    auto d = healthy_diag();
+    // Neither writable nor escalatable — a genuinely read-only rootfs.
+    d.install_parent_writable = false;
+    d.self_update_supported = false;
+
+    json upd = helix::DebugBundleCollector::build_update_info(d);
+
+    REQUIRE(upd["suppressed"].get<bool>() == true);
+    // Both causes must stay distinguishable: this is the physical-impossibility
+    // branch, NOT the firmware flag.
+    REQUIRE(upd["self_update_supported"].get<bool>() == false);
+    REQUIRE(upd["externally_managed"].get<bool>() == false);
+}
+
+TEST_CASE("DebugBundleCollector: build_update_info leaves a sudo-updatable install unsuppressed",
+          "[debug-bundle][update]") {
+    // The standard Pi shape: /opt is root-owned so the parent isn't writable by
+    // the service user, but install.sh escalates and the swap works. Reporting
+    // this as suppressed is what sent the last "updates are disabled" diagnosis
+    // down the wrong branch, so the two fields must not be conflated.
+    auto d = healthy_diag();
+    d.install_parent_writable = false;
+    d.self_update_supported = true;
+
+    json upd = helix::DebugBundleCollector::build_update_info(d);
+
+    REQUIRE(upd["suppressed"].get<bool>() == false);
+    REQUIRE(upd["install_parent_writable"].get<bool>() == false);
+    REQUIRE(upd["self_update_supported"].get<bool>() == true);
+}
+
+TEST_CASE("DebugBundleCollector: build_update_info marks a firmware-managed install suppressed",
+          "[debug-bundle][update]") {
+    auto d = healthy_diag();
+    d.externally_managed = true; // HELIX_DISABLE_AUTO_UPDATES
+
+    json upd = helix::DebugBundleCollector::build_update_info(d);
+
+    REQUIRE(upd["suppressed"].get<bool>() == true);
+    REQUIRE(upd["externally_managed"].get<bool>() == true);
+    // The tree is updatable; suppression is policy, not physics.
+    REQUIRE(upd["self_update_supported"].get<bool>() == true);
+}
+
+TEST_CASE("DebugBundleCollector: build_update_info suppressed matches the UI gate predicate",
+          "[debug-bundle][update]") {
+    // The bundle field and the subject the XML binds to must be the same
+    // function, not two copies that can drift.
+    for (bool managed : {false, true}) {
+        for (bool supported : {false, true}) {
+            auto d = healthy_diag();
+            d.externally_managed = managed;
+            d.self_update_supported = supported;
+            json upd = helix::DebugBundleCollector::build_update_info(d);
+            INFO("managed=" << managed << " self_update_supported=" << supported);
+            REQUIRE(upd["suppressed"].get<bool>() ==
+                    compute_in_app_updates_suppressed(managed, supported));
+        }
+    }
+}
+
+TEST_CASE("DebugBundleCollector: build_update_info carries the cached update and check error",
+          "[debug-bundle][update]") {
+    auto d = healthy_diag();
+    d.last_check_status = "error";
+    d.available_version = "0.99.107";
+    d.last_check_error = "HTTP 403 from manifest";
+
+    json upd = helix::DebugBundleCollector::build_update_info(d);
+
+    REQUIRE(upd["last_check_status"].get<std::string>() == "error");
+    REQUIRE(upd["available_version"].get<std::string>() == "0.99.107");
+    REQUIRE(upd["last_check_error"].get<std::string>() == "HTTP 403 from manifest");
+}
+
+TEST_CASE("DebugBundleCollector: build_update_info sanitizes the paths and URLs it emits",
+          "[debug-bundle][update][privacy]") {
+    auto d = healthy_diag();
+    // A self-hosted mirror can carry basic-auth credentials in the URL.
+    d.r2_base_url = "https://deploy:hunter2@mirror.example.com/releases";
+    // Home-dir installs keep their layout (that IS the diagnostic) but must
+    // still lose anything that matches a credential/email/MAC shape.
+    d.install_root = "/home/pi/helixscreen";
+
+    json upd = helix::DebugBundleCollector::build_update_info(d);
+
+    const auto url = upd["r2_base_url"].get<std::string>();
+    INFO("r2_base_url=" << url);
+    REQUIRE(url.find("hunter2") == std::string::npos);
+    REQUIRE(url.find("[REDACTED_CREDENTIALS]") != std::string::npos);
+
+    // Deliberately preserved: which root the install lives under is the whole
+    // point of the field, and the same path is already all over log_tail.
+    REQUIRE(upd["install_root"].get<std::string>() == "/home/pi/helixscreen");
+}
+
+TEST_CASE_METHOD(HelixTestFixture,
+                 "DebugBundleCollector: collect_update_info wires to the live predicates",
+                 "[debug-bundle][update]") {
+    // Production takes this snapshot in UpdateChecker::init(); take it here so
+    // the assertions below compare against the current (fixture-reset) Config.
+    UpdateChecker::instance().refresh_config_snapshot();
+
+    json upd = helix::DebugBundleCollector::collect_update_info();
+
+    // Every documented key must be present — a bundle missing one of these is
+    // exactly the hole that made 3Q2GB74K undiagnosable.
+    for (const char* key :
+         {"install_root", "install_parent_writable", "self_update_supported", "externally_managed",
+          "suppressed", "channel", "r2_base_url", "last_check_status", "platform_asset_name"}) {
+        INFO("missing key: " << key);
+        REQUIRE(upd.contains(key));
+    }
+
+    REQUIRE(upd["install_root"].is_string());
+    REQUIRE(upd["install_parent_writable"].get<bool>() ==
+            compute_self_update_supported(app_get_install_root(), /*can_escalate=*/false));
+    REQUIRE(upd["self_update_supported"].get<bool>() == self_update_supported());
+    // A writable parent must imply support; the reverse need not hold, since
+    // escalation covers the /opt + unprivileged-service layout.
+    if (upd["install_parent_writable"].get<bool>()) {
+        REQUIRE(upd["self_update_supported"].get<bool>());
+    }
+    REQUIRE(upd["externally_managed"].get<bool>() == updates_externally_managed());
+    REQUIRE(upd["suppressed"].get<bool>() == in_app_updates_suppressed());
+
+    // The exact artifact this device asks for — #993 was a drifted copy of it.
+    REQUIRE(upd["platform_asset_name"].get<std::string>() == UpdateChecker::platform_asset_name());
+
+    const auto channel = upd["channel"].get<std::string>();
+    INFO("channel=" << channel);
+    REQUIRE((channel == "stable" || channel == "beta" || channel == "dev"));
+    REQUIRE(channel == UpdateChecker::channel_name(UpdateChecker::instance().get_channel()));
+
+    // Effective URL must be resolved (default applied) and normalized, so a
+    // misconfigured /update/r2_url is visible as itself rather than as "".
+    const auto url = upd["r2_base_url"].get<std::string>();
+    INFO("r2_base_url=" << url);
+    REQUIRE_FALSE(url.empty());
+    REQUIRE(url.back() != '/');
+
+    const auto status = upd["last_check_status"].get<std::string>();
+    INFO("last_check_status=" << status);
+    REQUIRE((status == "idle" || status == "checking" || status == "update_available" ||
+             status == "up_to_date" || status == "error"));
+}
+
+TEST_CASE_METHOD(HelixTestFixture, "DebugBundleCollector: collect() includes the update section",
+                 "[debug-bundle][update]") {
+    json bundle = helix::DebugBundleCollector::collect();
+
+    REQUIRE(bundle.contains("update"));
+    REQUIRE(bundle["update"].is_object());
+    // Not an error stub — the collector must have actually produced the data.
+    REQUIRE_FALSE(bundle["update"].contains("error"));
+    REQUIRE(bundle["update"].contains("suppressed"));
+    REQUIRE(bundle["update"]["suppressed"].is_boolean());
+}
+
+TEST_CASE_METHOD(HelixTestFixture, "UpdateChecker: effective_r2_base_url defaults and normalizes",
+                 "[debug-bundle][update]") {
+    // HelixTestFixture resets Config to empty, so no /update/r2_url is set.
+    REQUIRE(UpdateChecker::effective_r2_base_url() ==
+            std::string(UpdateChecker::DEFAULT_R2_BASE_URL));
+
+    auto* config = helix::Config::get_instance();
+    REQUIRE(config != nullptr);
+    config->set<std::string>("/update/r2_url", "https://mirror.example.com/rel///");
+    REQUIRE(UpdateChecker::effective_r2_base_url() == "https://mirror.example.com/rel");
+}
+
+TEST_CASE("UpdateChecker: channel_name covers every channel", "[debug-bundle][update]") {
+    REQUIRE(std::string(UpdateChecker::channel_name(UpdateChecker::UpdateChannel::Stable)) ==
+            "stable");
+    REQUIRE(std::string(UpdateChecker::channel_name(UpdateChecker::UpdateChannel::Beta)) == "beta");
+    REQUIRE(std::string(UpdateChecker::channel_name(UpdateChecker::UpdateChannel::Dev)) == "dev");
+}
+
+TEST_CASE("app_globals: compute_in_app_updates_suppressed truth table", "[debug-bundle][update]") {
+    REQUIRE(compute_in_app_updates_suppressed(false, true) == false); // normal, updatable
+    REQUIRE(compute_in_app_updates_suppressed(true, true) == true);   // firmware-managed
+    REQUIRE(compute_in_app_updates_suppressed(false, false) == true); // read-only install tree
+    REQUIRE(compute_in_app_updates_suppressed(true, false) == true);  // both
+}
+
+// ----------------------------------------------------------------------------
+// The diagnostics snapshot must survive "no check has ever run"
+//
+// UpdateChecker keeps two Config-derived caches. cached_channel_ /
+// cached_r2_base_url_ are written once inside check_for_updates() before the
+// worker spawns and are read UNLOCKED by that worker, so they must never be
+// refreshed from anywhere else. config_snapshot_ is the separate, mutex-guarded
+// copy the debug bundle reads from HttpExecutor::slow(). Populating it only in
+// check_for_updates() would leave every bundle from a device that never checked
+// reporting an empty channel — which is precisely the device filing a "cannot
+// update" report.
+// ----------------------------------------------------------------------------
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "DebugBundleCollector: update section is populated by init() alone",
+                 "[debug-bundle][update]") {
+    auto& checker = UpdateChecker::instance();
+
+    // The checker is a process-wide singleton and other tests in this shard may
+    // already have snapshotted it. Cycle it down (init() first, since shutdown()
+    // no-ops when it was never initialised) so the snapshot is provably empty
+    // and only the init() below can have refilled it.
+    checker.init();
+    checker.shutdown();
+    REQUIRE(checker.config_snapshot().channel.empty());
+    REQUIRE(checker.config_snapshot().r2_base_url.empty());
+
+    checker.init(); // no check_for_updates() anywhere in this test
+
+    auto snap = checker.config_snapshot();
+    INFO("channel=" << snap.channel << " r2=" << snap.r2_base_url);
+    REQUIRE_FALSE(snap.channel.empty());
+    REQUIRE_FALSE(snap.r2_base_url.empty());
+
+    json upd = helix::DebugBundleCollector::collect_update_info();
+    REQUIRE(upd["channel"].get<std::string>() != "unknown");
+    REQUIRE(upd["r2_base_url"].get<std::string>() != "unknown");
+    REQUIRE(upd["channel"].get<std::string>() == snap.channel);
+    REQUIRE(upd["r2_base_url"].get<std::string>() == snap.r2_base_url);
+}
+
+TEST_CASE_METHOD(HelixTestFixture, "UpdateChecker: config snapshot tracks a channel change",
+                 "[debug-bundle][update]") {
+    auto* config = helix::Config::get_instance();
+    REQUIRE(config != nullptr);
+    auto& checker = UpdateChecker::instance();
+
+    config->set<int>("/update/channel", 1); // Beta
+    checker.refresh_config_snapshot();
+    REQUIRE(checker.config_snapshot().channel == "beta");
+
+    config->set<int>("/update/channel", 2); // Dev
+    checker.refresh_config_snapshot();
+    REQUIRE(checker.config_snapshot().channel == "dev");
+    REQUIRE(helix::DebugBundleCollector::collect_update_info()["channel"].get<std::string>() ==
+            "dev");
+
+    // The snapshot lives on the process-wide singleton, which the fixture does
+    // not reset. Put it back so a later test in this shard sees a clean value.
+    config->set<int>("/update/channel", 0);
+    checker.refresh_config_snapshot();
+}
+
+TEST_CASE("DebugBundleCollector: build_update_info reports an unsnapshotted updater as unknown",
+          "[debug-bundle][update]") {
+    // An empty snapshot means UpdateChecker::init() never ran. Emitting "" there
+    // is indistinguishable from a lookup failure; "unknown" is a fact.
+    auto d = healthy_diag();
+    d.channel.clear();
+    d.r2_base_url.clear();
+
+    json upd = helix::DebugBundleCollector::build_update_info(d);
+
+    REQUIRE(upd["channel"].get<std::string>() == "unknown");
+    REQUIRE(upd["r2_base_url"].get<std::string>() == "unknown");
+}
+
+// ============================================================================
+// condense_klipper_log — Stats padding removal
+// ============================================================================
+
+namespace {
+
+/// Build a synthetic klippy.log: `stats_before` Stats lines, an event, then
+/// `stats_after` more Stats lines.
+std::string make_klippy_log(int stats_before, const std::string& event, int stats_after) {
+    std::string s;
+    for (int i = 0; i < stats_before; ++i) {
+        s += "Stats " + std::to_string(i) + ".0: sysload=0.5 print_stall=7\n";
+    }
+    if (!event.empty()) {
+        s += event + "\n";
+    }
+    for (int i = 0; i < stats_after; ++i) {
+        s += "Stats " + std::to_string(1000 + i) + ".0: sysload=0.9 print_stall=7\n";
+    }
+    return s;
+}
+
+int count_lines_with(const std::string& hay, const std::string& needle) {
+    int n = 0;
+    std::istringstream st(hay);
+    std::string l;
+    while (std::getline(st, l)) {
+        if (l.find(needle) != std::string::npos)
+            ++n;
+    }
+    return n;
+}
+
+} // namespace
+
+TEST_CASE("DebugBundleCollector: condense_klipper_log keeps every event line",
+          "[debug-bundle][klippy]") {
+    // 5000 Stats lines burying two events — the real-world shape (bundle
+    // UJCCQP6S was 615 Stats to 20 events).
+    std::string raw = make_klippy_log(2500, "MCU 'mcu' shutdown: Timer too close", 0) +
+                      make_klippy_log(2500, "Transition to shutdown state", 0);
+
+    auto out = helix::DebugBundleCollector::condense_klipper_log(raw);
+
+    // Both events survive — this is the whole point of the filter.
+    REQUIRE(count_lines_with(out, "Timer too close") == 1);
+    REQUIRE(count_lines_with(out, "Transition to shutdown state") == 1);
+
+    // And the Stats padding is gone: 5000 in, at most context-per-event + tail out.
+    int stats_out = count_lines_with(out, "Stats ");
+    REQUIRE(stats_out <= 3 + 3 + 60);
+    REQUIRE(out.size() < raw.size() / 10);
+}
+
+TEST_CASE("DebugBundleCollector: condense_klipper_log keeps run-up Stats before an event",
+          "[debug-bundle][klippy]") {
+    std::string raw = make_klippy_log(50, "MCU 'mcu' shutdown: Timer too close", 0);
+
+    auto out = helix::DebugBundleCollector::condense_klipper_log(raw, /*stats_context=*/5,
+                                                                 /*stats_tail=*/0);
+
+    // Exactly the 5 Stats immediately preceding the event, in order, then the event.
+    REQUIRE(count_lines_with(out, "Stats ") == 5);
+    REQUIRE(count_lines_with(out, "Timer too close") == 1);
+    REQUIRE(out.find("Stats 45.0") != std::string::npos); // 5 before the event (0..49)
+    REQUIRE(out.find("Stats 44.0") == std::string::npos); // 6 before — dropped
+    // Ordering: context precedes the event it explains.
+    REQUIRE(out.find("Stats 49.0") < out.find("Timer too close"));
+}
+
+TEST_CASE("DebugBundleCollector: condense_klipper_log keeps a trailing Stats tail",
+          "[debug-bundle][klippy]") {
+    std::string raw = make_klippy_log(0, "", 500);
+
+    auto out = helix::DebugBundleCollector::condense_klipper_log(raw, /*stats_context=*/5,
+                                                                 /*stats_tail=*/10);
+
+    // Only the most recent 10, so the reader still sees load at bundle time.
+    REQUIRE(count_lines_with(out, "Stats ") == 10);
+    REQUIRE(out.find("Stats 1499.0") != std::string::npos); // last
+    REQUIRE(out.find("Stats 1489.0") == std::string::npos); // 11th from the end
+}
+
+TEST_CASE("DebugBundleCollector: condense_klipper_log handles degenerate input",
+          "[debug-bundle][klippy]") {
+    REQUIRE(helix::DebugBundleCollector::condense_klipper_log("").empty());
+
+    // Stats-only log with no tail requested collapses to nothing.
+    REQUIRE(helix::DebugBundleCollector::condense_klipper_log(make_klippy_log(0, "", 20), 5, 0)
+                .empty());
+
+    // A log with no Stats at all is passed through intact.
+    std::string events = "Extract filament 3 with length 90\nUnlocking filament 3";
+    REQUIRE(helix::DebugBundleCollector::condense_klipper_log(events) == events);
+
+    // "Statsomething" is not a Stats line — prefix match must require the space.
+    std::string tricky = "Statsomething happened";
+    REQUIRE(helix::DebugBundleCollector::condense_klipper_log(tricky, 0, 0) == tricky);
 }

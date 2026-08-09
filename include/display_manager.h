@@ -411,6 +411,11 @@ class DisplayManager : public helix::ICalibrationSink {
     void enable_affine() override {
         enable_affine_calibration();
     }
+    void clear_calibration() override {
+        if (m_backend) {
+            m_backend->clear_calibration();
+        }
+    }
 
     /**
      * @brief Mark whether a touch-calibration UI (overlay or wizard) is on screen
@@ -567,6 +572,12 @@ class DisplayManager : public helix::ICalibrationSink {
     // Original pointer read callback (before sleep-aware wrapper)
     lv_indev_read_cb_t m_original_pointer_read_cb = nullptr;
 
+    // Last scroll config applied to the pointer, remembered so a post-swap input
+    // rebuild (rotation fallback) can reapply it. Defaults match the clamped
+    // InputSettingsManager defaults.
+    int m_scroll_throw = 25;
+    int m_scroll_limit = 10;
+
     // Sleep/wake callbacks (e.g. camera stream suspend)
     std::vector<std::function<void(bool sleeping)>> m_sleep_callbacks;
 
@@ -622,6 +633,16 @@ class DisplayManager : public helix::ICalibrationSink {
      * @brief Configure scroll behavior on pointer device
      */
     void configure_scroll(int scroll_throw, int scroll_limit);
+
+    /**
+     * @brief Recreate input devices on the current backend after a backend swap
+     *
+     * Used by the DRM→fbdev rotation fallback when it runs post-init: the old
+     * indevs are bound to the freed DRM backend and the deleted display, so they
+     * are deleted and rebuilt (mirroring init()'s input setup) on the fbdev
+     * backend. No-op-safe to call with null input devices.
+     */
+    void rebuild_input_after_backend_swap();
 
     /**
      * @brief Set up keyboard input group

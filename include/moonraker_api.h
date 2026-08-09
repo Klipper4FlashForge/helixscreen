@@ -44,6 +44,7 @@
 
 #pragma once
 
+#include "async_lifetime_guard.h"
 #include "i_moonraker_api.h"
 #include "moonraker_advanced_api.h"
 #include "moonraker_client.h"
@@ -72,7 +73,8 @@
 #include <vector>
 
 namespace helix {
-struct SensorInfo; // Forward declaration for get_sensors()
+struct SensorInfo;      // Forward declaration for get_sensors()
+struct PlrDetectResult; // plr_backend.h — check_continue_print_state() result
 } // namespace helix
 
 /**
@@ -139,33 +141,14 @@ class MoonrakerAPI : public IMoonrakerAPI {
      * @param white Optional white component for RGBW LEDs (0.0-1.0, default 0.0)
      * @param on_success Success callback
      * @param on_error Error callback
+     * @param on_queued Optional "queued behind a blocking op" disposition — see
+     *        execute_gcode() for the full contract. SET_LED is discretionary, so
+     *        this is the LED path's only settle signal while Klipper's gcode lock
+     *        is held.
      */
     void set_led(const std::string& led, double red, double green, double blue, double white,
-                 SuccessCallback on_success, ErrorCallback on_error) override;
-
-    /**
-     * @brief Turn LED on (full white)
-     *
-     * Convenience method to turn LED on at full brightness.
-     *
-     * @param led LED name
-     * @param on_success Success callback
-     * @param on_error Error callback
-     */
-    void set_led_on(const std::string& led, SuccessCallback on_success,
-                    ErrorCallback on_error) override;
-
-    /**
-     * @brief Turn LED off
-     *
-     * Convenience method to turn LED off.
-     *
-     * @param led LED name
-     * @param on_success Success callback
-     * @param on_error Error callback
-     */
-    void set_led_off(const std::string& led, SuccessCallback on_success,
-                     ErrorCallback on_error) override;
+                 SuccessCallback on_success, ErrorCallback on_error,
+                 SuccessCallback on_queued = nullptr) override;
 
     // ========================================================================
     // Power Device Control Operations
@@ -218,12 +201,32 @@ class MoonrakerAPI : public IMoonrakerAPI {
     /**
      * @brief Execute custom G-code command
      *
+     * The command is sent VERBATIM — HelixScreen appends nothing to it. See
+     * src/api/moonraker_gcode_guards.h and tests/unit/test_gcode_verbatim.cpp.
+     *
      * @param gcode G-code command string
      * @param on_success Success callback
      * @param on_error Error callback
+     * @param timeout_ms Request timeout (0 = default)
+     * @param silent Suppress warning logs / error toasts on refusal
+     * @param on_queued Optional THIRD disposition, distinct from success and error.
+     *        Fires when a benign discretionary command (fan/temp/LED) was handed to
+     *        Klipper to run behind a blocking op and its RPC response was
+     *        deliberately dropped, so neither @p on_success nor @p on_error will
+     *        ever fire. It means "accepted for later execution", NOT "done" —
+     *        opt in only to release a caller-side in-flight counter, never to
+     *        report completion. Callers that omit it get nothing on that path.
+     *
+     *        THREADING: unlike @p on_success / @p on_error, which arrive on the
+     *        libhv response thread, @p on_queued runs SYNCHRONOUSLY on the calling
+     *        thread — typically the main thread inside an LVGL LV_EVENT_CLICKED
+     *        frame. A handler here must therefore obey the input-handler rules:
+     *        no synchronous widget deletion (lv_obj_delete / lv_obj_clean /
+     *        safe_delete); use the deferred forms. See CLAUDE.md § Threading.
      */
     void execute_gcode(const std::string& gcode, SuccessCallback on_success, ErrorCallback on_error,
-                       uint32_t timeout_ms = 0, bool silent = false) override;
+                       uint32_t timeout_ms = 0, bool silent = false,
+                       SuccessCallback on_queued = nullptr) override;
 
     // is_safe_gcode_param() is a static utility declared on IMoonrakerAPI
     // (inherited here) so consumers can validate without the concrete type.
@@ -335,6 +338,42 @@ class MoonrakerAPI : public IMoonrakerAPI {
      * @param on_error Error callback
      */
     void get_print_state(StringCallback on_result, ErrorCallback on_error) override;
+
+    // ========================================================================
+    // Power-Loss Recovery — Creality Klipper fork
+    // ========================================================================
+
+    /**
+     * @brief One-shot Creality power-loss-recovery probe.
+     *
+     * Calls the Klipper webhook endpoint
+     * `pause_resume/check_continue_print_state`, which Moonraker auto-registers
+     * as a JSON-RPC method.
+     *
+     * @warning SIDE-EFFECTFUL. On a JSON parse failure the Klipper handler
+     * DELETES the recovery sidecar; it clears exclude_object_info when the state
+     * is false; and it sets `print_stats.power_loss = 1` when both states are
+     * true and the printer is in standby. Call AT MOST ONCE per connection and
+     * only while `print_stats.state == "standby"`. NEVER poll it.
+     *
+     * That last effect is also why the call is mandatory before resuming: the
+     * stock sensorless-homing macro gates its pre-homing Z clearance lift on
+     * `power_loss == 1`. See docs/devel/POWER_LOSS_RECOVERY.md.
+     *
+     * @param on_result Receives the parsed result. `completed` is false when the
+     *                  response was malformed, which forbids resume.
+     * @param on_error  Transport/RPC error callback
+     */
+    void check_continue_print_state(std::function<void(const helix::PlrDetectResult&)> on_result,
+                                    ErrorCallback on_error) override;
+
+    /**
+     * @brief Discard the Creality power-loss recovery snapshot.
+     *
+     * JSON-RPC `printer.pause_resume.cancel_continue_print`. Touches no motion,
+     * so it is safe to expose regardless of the probe outcome.
+     */
+    void cancel_continue_print(SuccessCallback on_success, ErrorCallback on_error) override;
 
     // ========================================================================
     // Safety Limits Configuration
@@ -773,6 +812,15 @@ class MoonrakerAPI : public IMoonrakerAPI {
     /// Subject for notifying when build_volume changes (version counter)
     lv_subject_t build_volume_version_;
     std::atomic<int> build_volume_version_counter_{0};
+
+    /// Generation guard for the subject writes this class defers to the main
+    /// thread. Invalidated by the destructor *before* `build_volume_version_` is
+    /// deinited, so a callback still sitting in the UpdateQueue is dropped
+    /// instead of notifying a freed observer list — the exact failure that took
+    /// down the unsharded suite (#1165, #1146). Unlike the subject-owning state
+    /// classes there is no `deinit_subjects()` here: the subject is created in
+    /// the constructor and torn down only at destruction.
+    helix::AsyncLifetimeGuard async_lifetime_;
 
     SafetyLimits safety_limits_;
     bool limits_explicitly_set_ = false;

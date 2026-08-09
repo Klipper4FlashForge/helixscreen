@@ -6,7 +6,9 @@
 #include "runtime_config.h"
 #include "spdlog/spdlog.h"
 
+#include <cctype>
 #include <unistd.h>
+#include <unordered_map>
 #ifdef HELIX_ENABLE_MOCKS
 #include "wifi_backend_mock.h"
 #endif
@@ -20,6 +22,73 @@
 #include "wifi_backend_networkmanager.h"
 #include "wifi_backend_wpa_supplicant.h"
 #endif
+
+uint8_t wifi_band_flag_from_frequency(int frequency_mhz) {
+    // Channel 1 (2412) through channel 14 (2484), with slack for the channel width.
+    if (frequency_mhz >= 2400 && frequency_mhz <= 2500) {
+        return WIFI_BAND_2_4GHZ;
+    }
+    // 4900-5000 is the Japanese/public-safety 4.9GHz allocation, reported by
+    // wpa_supplicant as part of the 5GHz band; 5150-5895 covers UNII-1..UNII-4.
+    if (frequency_mhz >= 4900 && frequency_mhz <= 5895) {
+        return WIFI_BAND_5GHZ;
+    }
+    // Wi-Fi 6E: 5925-7125 MHz.
+    if (frequency_mhz >= 5925 && frequency_mhz <= 7125) {
+        return WIFI_BAND_6GHZ;
+    }
+    return WIFI_BAND_NONE;
+}
+
+std::optional<bool> wifi_parse_nm_radio_state(const std::string& output) {
+    // Trim whitespace and lowercase — nmcli pads non-terse output and always
+    // appends a newline.
+    const std::string ws = " \t\r\n";
+    const size_t first = output.find_first_not_of(ws);
+    if (first == std::string::npos) {
+        return std::nullopt;
+    }
+    const size_t last = output.find_last_not_of(ws);
+    std::string word = output.substr(first, last - first + 1);
+    for (char& c : word) {
+        c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
+    }
+
+    if (word == "enabled") {
+        return true;
+    }
+    if (word == "disabled") {
+        return false;
+    }
+    // "missing", "unavailable", an error string, or empty: inconclusive.
+    return std::nullopt;
+}
+
+std::vector<WiFiNetwork> wifi_merge_networks_by_ssid(const std::vector<WiFiNetwork>& networks) {
+    // First-seen order keeps the output deterministic; ssid -> index into `kept`.
+    std::unordered_map<std::string, size_t> slot_by_ssid;
+    std::vector<WiFiNetwork> kept;
+    kept.reserve(networks.size());
+
+    for (const auto& net : networks) {
+        auto [it, inserted] = slot_by_ssid.try_emplace(net.ssid, kept.size());
+        if (inserted) {
+            kept.push_back(net);
+            continue;
+        }
+
+        WiFiNetwork& existing = kept[it->second];
+        // The losing BSS still contributes its band: this is the whole point of
+        // the merge. Without it a 5GHz twin simply disappears (helixscreen#1189).
+        uint8_t merged_bands = static_cast<uint8_t>(existing.band_mask | net.band_mask);
+        if (net.signal_strength > existing.signal_strength) {
+            existing = net;
+        }
+        existing.band_mask = merged_bands;
+    }
+
+    return kept;
+}
 
 std::unique_ptr<WifiBackend> WifiBackend::create(bool silent) {
     // In test mode, always use mock unless --real-wifi was specified

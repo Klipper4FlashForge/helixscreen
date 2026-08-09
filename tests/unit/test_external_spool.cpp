@@ -1,6 +1,7 @@
 // Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "../helix_test_fixture.h"
 #include "ams_state.h"
 #include "ams_types.h"
 #include "app_constants.h"
@@ -21,7 +22,7 @@ using namespace helix;
 
 namespace {
 
-struct TempConfigFixture {
+struct TempConfigFixture : public HelixTestFixture {
     std::string temp_dir;
     std::string config_path;
 
@@ -86,6 +87,8 @@ TEST_CASE("set_external_spool_info stores and retrieves data", "[external_spool]
     info.spool_name = "My Spool";
     info.remaining_weight_g = 450;
     info.total_weight_g = 1000;
+    info.catalog_id = "sunlu-pla-plus-2-0";
+    info.product_name = "PLA+ 2.0";
 
     settings.set_external_spool_info(info);
 
@@ -101,6 +104,11 @@ TEST_CASE("set_external_spool_info stores and retrieves data", "[external_spool]
     CHECK(result->spool_name == "My Spool");
     CHECK(result->remaining_weight_g == Catch::Approx(450.0f));
     CHECK(result->total_weight_g == Catch::Approx(1000.0f));
+    // The external spool has no lane_data record — this get/set pair is its
+    // ONLY persistence, so the catalog product identity has to round-trip here
+    // or the external-spool editor reopens on the wrong variant.
+    CHECK(result->catalog_id == "sunlu-pla-plus-2-0");
+    CHECK(result->product_name == "PLA+ 2.0");
 }
 
 TEST_CASE("set_external_spool_info persists across config reload", "[external_spool][settings]") {

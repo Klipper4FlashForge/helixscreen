@@ -9,11 +9,12 @@
 #include "subject_managed_panel.h"
 
 #include <memory>
+#include <string>
+#include <vector>
 
 namespace helix {
 class PrinterState;
 }
-class IMoonrakerAPI;
 
 namespace helix::led {
 
@@ -53,10 +54,6 @@ class LedControlOverlay : public OverlayBase {
     void on_deactivate() override;
     void cleanup() override;
 
-    void set_api(IMoonrakerAPI* api) {
-        api_ = api;
-    }
-
   private:
     // Section population
     void populate_sections();
@@ -87,6 +84,22 @@ class LedControlOverlay : public OverlayBase {
 
     // Helpers
     void apply_current_color();
+    /// Selected strips a @p type backend's commands may address.
+    ///
+    /// The selection is mixed by design — tapping a chip front-inserts rather than
+    /// collapsing — so a backend must never fan out across the whole list. Sending
+    /// an output_pin id down the native path yields `SET_LED LED="enclosure"`
+    /// ("Unknown LED"), a `macro:` id is rejected outright by is_safe_identifier()
+    /// and toasts once per slider step, and the output_pin path would emit
+    /// `SET_PIN PIN=a` for a neopixel.
+    ///
+    /// Falls back to the first strip the backend owns when the selection contains
+    /// none of its strips, preserving the implicit target the color/turn-off paths
+    /// have always used. Returns empty when the backend owns nothing.
+    static std::vector<std::string> target_strips_for(LedBackendType type);
+
+    /// Native strips a color/turn-off action applies to.
+    static std::vector<std::string> native_target_strips();
     void send_color_to_strips(double r, double g, double b, double w);
     void update_brightness_text(int brightness);
     void update_wled_brightness_text(int brightness);
@@ -108,10 +121,6 @@ class LedControlOverlay : public OverlayBase {
     static void on_wled_toggle_cb(lv_event_t* e);
     static void on_color_preset_cb(lv_event_t* e);
     static void on_brightness_changed_cb(lv_event_t* e);
-
-    // Dependencies
-    helix::PrinterState& printer_state_;
-    IMoonrakerAPI* api_ = nullptr;
 
     // Widget references (owned by LVGL, not us)
     // Section visibility handled declaratively via bind_flag_if_eq subjects

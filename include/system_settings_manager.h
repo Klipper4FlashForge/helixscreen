@@ -17,6 +17,7 @@ namespace helix {
  * - language (index into language list)
  * - update_channel (Stable=0, Beta=1, Dev=2)
  * - telemetry_enabled (opt-in toggle)
+ * - wifi_enabled (radio on/off choice, survives restarts)
  *
  * Thread safety: Single-threaded, main LVGL thread only.
  */
@@ -85,9 +86,6 @@ class SystemSettingsManager {
     /** @brief Set update channel, persist, and clear update cache */
     void set_update_channel(int channel);
 
-    /** @brief Get dropdown options string "Stable\nBeta\nDev" */
-    static const char* get_update_channel_options();
-
     // =========================================================================
     // TELEMETRY SETTINGS
     // =========================================================================
@@ -99,6 +97,27 @@ class SystemSettingsManager {
     void set_telemetry_enabled(bool enabled);
 
     // =========================================================================
+    // WIFI SETTINGS
+    // =========================================================================
+
+    /**
+     * @brief Get stored WiFi radio on/off choice (default true — WiFi on)
+     *
+     * Requires init_subjects() to have run first — see the caveat on the
+     * definition in system_settings_manager.cpp.
+     */
+    bool get_wifi_enabled() const;
+
+    /**
+     * @brief Persist the WiFi radio on/off choice
+     *
+     * Persists only — deliberately does NOT call into WiFiManager. WiFiManager
+     * reasserts this stored value against the radio itself once its backend is
+     * ready; calling back into it from here would create a feedback loop.
+     */
+    void set_wifi_enabled(bool enabled);
+
+    // =========================================================================
     // LOG LEVEL SETTINGS
     // =========================================================================
 
@@ -107,9 +126,6 @@ class SystemSettingsManager {
 
     /** @brief Set log level by dropdown index, apply immediately, and persist */
     void set_log_level_by_index(int index);
-
-    /** @brief Get dropdown options string "Warn\nInfo\nDebug\nTrace" */
-    static const char* get_log_level_options();
 
     // =========================================================================
     // SUBJECT ACCESSORS (for XML binding)
@@ -130,6 +146,11 @@ class SystemSettingsManager {
         return &telemetry_enabled_subject_;
     }
 
+    /** @brief WiFi radio enabled subject (integer: 0=off, 1=on) */
+    lv_subject_t* subject_wifi_enabled() {
+        return &wifi_enabled_subject_;
+    }
+
     /** @brief Log level subject (integer: 0=Warn, 1=Info, 2=Debug, 3=Trace) */
     lv_subject_t* subject_log_level() {
         return &log_level_subject_;
@@ -144,6 +165,7 @@ class SystemSettingsManager {
     lv_subject_t language_subject_;
     lv_subject_t update_channel_subject_;
     lv_subject_t telemetry_enabled_subject_;
+    lv_subject_t wifi_enabled_subject_;
     lv_subject_t log_level_subject_;
 
     bool subjects_initialized_ = false;

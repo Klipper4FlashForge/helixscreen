@@ -73,6 +73,14 @@ class AmsBackendQidi : public AmsSubscriptionBackend {
     [[nodiscard]] AmsSystemInfo get_system_info() const override;
     [[nodiscard]] helix::printer::ToolMappingCapabilities
     get_tool_mapping_capabilities() const override;
+
+    /// Forward map (index = tool, value = global slot), derived from the
+    /// per-slot mapped_tool the save_variables read-path writes. The base
+    /// default returns {}, which — on a backend that advertises tool mapping —
+    /// silently disables the print-start remap snapshot/restore and the AMS
+    /// context menu's mapping read, and makes AmsState fall back to a 1:1
+    /// topology that contradicts a user remap.
+    [[nodiscard]] std::vector<int> get_tool_mapping() const override;
     // QIDI Box reassigns a logical tool to a physical slot by rewriting the
     // save_variables entry (value_t<N>="slot<M>") that the stock T<N> macros
     // read at load time — applied via set_tool_mapping(). Same shape as CFS, so
@@ -84,6 +92,18 @@ class AmsBackendQidi : public AmsSubscriptionBackend {
     }
     [[nodiscard]] SlotInfo get_slot_info(int slot_index) const override;
     [[nodiscard]] bool is_bypass_active() const override;
+
+    /// The Box publishes a per-slot state word (save_variables slot<N>, where 2
+    /// means loaded), which is its own statement about that slot and needs no
+    /// active-slot pointer to interpret. The aggregate pair by contrast is
+    /// written only from last_load_slot, so on a Box that never writes that
+    /// variable nothing would ever read as loaded despite slot<N>: 2 on the
+    /// wire. parse_save_variables() reconciles the two at the end of every pass
+    /// so the stamp cannot fall behind the aggregate either
+    /// (prestonbrown/helixscreen#1199).
+    [[nodiscard]] bool has_per_slot_loaded_authority() const override {
+        return true;
+    }
 
     // The box exposes a PTC dryer heater (heater_generic heater_box<N>) plus an
     // aht20_f humidity/temperature chip, so the per-unit environment indicator
@@ -101,7 +121,7 @@ class AmsBackendQidi : public AmsSubscriptionBackend {
     }
 
     AmsError load_filament(int slot_index) override;
-    AmsError unload_filament(int slot_index = -1) override;
+    AmsError unload_filament(int slot_index) override;
     AmsError select_slot(int slot_index) override;
     AmsError change_tool(int tool_number) override;
 
@@ -147,6 +167,23 @@ class AmsBackendQidi : public AmsSubscriptionBackend {
     /// Input is the inner `variables` object (already unwrapped from the
     /// `save_variables.variables` envelope).
     void parse_save_variables(const nlohmann::json& variables);
+
+    /// Re-derive system_info_.tool_to_slot_map from the per-slot mapped_tool
+    /// values, and write the normalised result back onto the slots.
+    ///
+    /// The Box states its mapping one way only — save_variables value_t<N>
+    /// names the slot tool N prints from — so the read-path naturally writes
+    /// only SlotInfo::mapped_tool. AmsSystemInfo carries the forward map as
+    /// well, and consumers split across the two: the AMS panel badges a lane
+    /// from mapped_tool, while the filament panel resolves which lane the
+    /// Load/Unload buttons act on through tool_to_slot_map. Publishing one
+    /// without the other gated the buttons on the wrong lane after a remap.
+    ///
+    /// Both directions are produced by a single SlotRegistry pass rather than
+    /// by two hand-written writers, so they cannot drift.
+    ///
+    /// Caller must hold mutex_.
+    void rebuild_tool_map_locked();
 
     /// Scan notification for `heater_generic heater_box<N>` and
     /// `aht20_f heater_box<N>` entries; update unit environment with the
@@ -206,9 +243,9 @@ class AmsBackendQidi : public AmsSubscriptionBackend {
     std::vector<QidiSlotRfid> slot_rfid_;
 
     // Dryer state for the box PTC heater (issue #1019).
-    std::vector<DryerInfo> dryer_info_;       ///< Per-unit (per-box) dryer state, index = unit
-    std::vector<std::time_t> dry_end_epoch_;  ///< Per-unit drying end time (epoch s), 0 = none
-    bool drying_timer_supported_ = false; ///< box_extras drying timer seen -> use ENABLE_BOX_DRY
+    std::vector<DryerInfo> dryer_info_;      ///< Per-unit (per-box) dryer state, index = unit
+    std::vector<std::time_t> dry_end_epoch_; ///< Per-unit drying end time (epoch s), 0 = none
+    bool drying_timer_supported_ = false;    ///< box_extras drying timer seen -> use ENABLE_BOX_DRY
     std::function<std::time_t()> now_fn_ = [] { return std::time(nullptr); };
 
   public:

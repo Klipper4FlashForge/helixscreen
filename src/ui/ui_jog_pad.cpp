@@ -70,6 +70,10 @@ typedef struct {
     bool pressed_is_inner;
     bool pressed_is_home;
 
+    // Homing state: when false (not all axes homed) the center home button is
+    // drawn in a warning color to signal that homing is required.
+    bool is_homed;
+
     // Theme-aware colors (loaded from component scope or fallbacks)
     lv_color_t jog_color_outer_ring;
     lv_color_t jog_color_inner_circle;
@@ -77,6 +81,8 @@ typedef struct {
     lv_color_t jog_color_home_bg;
     lv_color_t jog_color_home_border;
     lv_color_t jog_color_home_text;
+    lv_color_t jog_color_home_border_unhomed;
+    lv_color_t jog_color_home_text_unhomed;
     lv_color_t jog_color_boundary_lines;
     lv_color_t jog_color_distance_labels;
     lv_color_t jog_color_axis_labels;
@@ -106,10 +112,16 @@ static void load_colors(jog_pad_state_t* state, const char* /*component_scope_na
     state->jog_color_home_border = theme_manager_get_color("secondary");
     state->jog_color_home_text = theme_manager_get_color("text");
 
-    // Divider lines use a dark border color for subtle separation
-    lv_color_t border = theme_manager_get_color("border");
-    state->jog_color_grid_lines = border;
-    state->jog_color_boundary_lines = border;
+    // Not-homed variants: tint the ring + icon amber to signal homing is required.
+    state->jog_color_home_border_unhomed = theme_manager_get_color("warning");
+    state->jog_color_home_text_unhomed = theme_manager_get_color("warning");
+
+    // The two main quadrant dividers are drawn in the surrounding card background color
+    // so they read as gaps cut through the pad rather than lines painted on top of it.
+    state->jog_color_grid_lines = theme_manager_get_color("card_bg");
+
+    // The 8 zone boundaries stay a subtle dark border line
+    state->jog_color_boundary_lines = theme_manager_get_color("border");
 
     // Labels and highlight still need contrast against ring backgrounds
     lv_color_t ring_contrast = theme_manager_get_contrast_color(state->jog_color_outer_ring);
@@ -260,8 +272,8 @@ static void jog_pad_draw_cb(lv_event_t* e) {
     lv_draw_line_dsc_t line_dsc;
     lv_draw_line_dsc_init(&line_dsc);
     line_dsc.color = state->jog_color_grid_lines;
-    line_dsc.width = 4;
-    line_dsc.opa = LV_OPA_50;
+    line_dsc.width = 6;
+    line_dsc.opa = LV_OPA_COVER;
 
     // NE-SW diagonal (45°-225°)
     line_dsc.p1.x = center_x + radius * 0.707f;
@@ -292,10 +304,11 @@ static void jog_pad_draw_cb(lv_event_t* e) {
     home_bg_dsc.end_angle = 360;
     lv_draw_arc(layer, &home_bg_dsc);
 
-    // Draw visual ring border around home area
+    // Draw visual ring border around home area (warning-tinted when not homed)
     lv_draw_arc_dsc_t home_ring_dsc;
     lv_draw_arc_dsc_init(&home_ring_dsc);
-    home_ring_dsc.color = state->jog_color_home_border;
+    home_ring_dsc.color =
+        state->is_homed ? state->jog_color_home_border : state->jog_color_home_border_unhomed;
     home_ring_dsc.width = 3; // Border thickness
     home_ring_dsc.center.x = center_x;
     home_ring_dsc.center.y = center_y;
@@ -307,7 +320,8 @@ static void jog_pad_draw_cb(lv_event_t* e) {
     // Draw center home icon (scaled to jog pad size)
     lv_draw_label_dsc_t home_label_dsc;
     lv_draw_label_dsc_init(&home_label_dsc);
-    home_label_dsc.color = state->jog_color_home_text;
+    home_label_dsc.color =
+        state->is_homed ? state->jog_color_home_text : state->jog_color_home_text_unhomed;
     home_label_dsc.text = ICON_HOME;
     home_label_dsc.font = get_icon_font(radius);
     home_label_dsc.align = LV_TEXT_ALIGN_CENTER;
@@ -657,6 +671,7 @@ lv_obj_t* ui_jog_pad_create(lv_obj_t* parent) {
 
     // Initialize state
     state->current_mode = JogMode::Coarse;
+    state->is_homed = false; // Printer boots unhomed; observer updates this
 
     // Load colors from component scope (tries "motion_panel" first, falls back to defaults)
     load_colors(state, "motion_panel");
@@ -717,6 +732,14 @@ void ui_jog_pad_refresh_colors(lv_obj_t* obj) {
         load_colors(state, "motion_panel");
         lv_obj_invalidate(obj); // Trigger redraw
     }
+}
+
+void ui_jog_pad_set_homed(lv_obj_t* obj, bool homed) {
+    jog_pad_state_t* state = get_state(obj);
+    if (!state || state->is_homed == homed)
+        return; // No change — avoid a redundant redraw
+    state->is_homed = homed;
+    lv_obj_invalidate(obj); // Redraw the center home button in its new color
 }
 
 void ui_jog_pad_set_enabled(lv_obj_t* obj, bool enabled) {

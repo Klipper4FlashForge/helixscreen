@@ -40,20 +40,22 @@ helix_platform_reassert_wrappers() {
     # CC1/COSMOS only — presence of the COSMOS updater is the device fingerprint.
     [ -x /usr/bin/update-cosmos ] || return 0
 
-    local s target backup
-    for s in grumpyscreen guppyscreen atomscreen; do
-        target="/etc/init.d/${s}"
-        backup="/etc/init.d/${s}.helix-bak"
+    # Underscore-prefixed rather than `local`, which POSIX sh does not define.
+    # This file is SOURCED by the init script, so bare names would leak into its
+    # namespace; the prefix plus the unset below keeps that contained.
+    for _helix_s in grumpyscreen guppyscreen atomscreen; do
+        _helix_target="/etc/init.d/${_helix_s}"
+        _helix_backup="/etc/init.d/${_helix_s}.helix-bak"
 
         # Only repair siblings the installer already hijacked (backup present).
-        [ -e "$backup" ] || continue
+        [ -e "$_helix_backup" ] || continue
         # Already wrapped — nothing to repair.
-        if grep -q "HELIXSCREEN_WRAPPER" "$target" 2>/dev/null; then
+        if grep -q "HELIXSCREEN_WRAPPER" "$_helix_target" 2>/dev/null; then
             continue
         fi
 
-        echo "Re-asserting HelixScreen wrapper for /etc/init.d/${s} (clobbered by upgrade)"
-        cat > "$target" <<'WRAPPER_EOF'
+        echo "Re-asserting HelixScreen wrapper for /etc/init.d/${_helix_s} (clobbered by upgrade)"
+        cat > "$_helix_target" <<'WRAPPER_EOF'
 #!/bin/sh
 # HELIXSCREEN_WRAPPER (do not remove this marker — used for idempotency)
 # Re-asserted at boot by hooks-cc1.sh after a COSMOS upgrade clobbered the
@@ -61,14 +63,19 @@ helix_platform_reassert_wrappers() {
 # Original UI preserved at <name>.helix-bak and restored by the uninstaller.
 exec /etc/init.d/helixscreen "$@"
 WRAPPER_EOF
-        chmod +x "$target" 2>/dev/null || true
+        chmod +x "$_helix_target" 2>/dev/null || true
     done
+    unset _helix_s _helix_target _helix_backup
 }
 
 # Stop any competing screen UIs so HelixScreen has exclusive framebuffer access.
 platform_stop_competing_uis() {
+    _killed_any=0
+
     # Stop any known competing third-party UIs
     for ui in guppyscreen GuppyScreen KlipperScreen klipperscreen featherscreen FeatherScreen; do
+        pidof "$ui" >/dev/null 2>&1 || continue
+        _killed_any=1
         if command -v killall >/dev/null 2>&1; then
             killall "$ui" 2>/dev/null || true
         else
@@ -82,11 +89,20 @@ platform_stop_competing_uis() {
     # shellcheck disable=SC2009
     for pid in $(ps aux 2>/dev/null | grep -E 'python.*screen\.py' | grep -v grep | awk '{print $2}'); do
         echo "Killing KlipperScreen python process (PID $pid)"
+        _killed_any=1
         kill "$pid" 2>/dev/null || true
     done
 
-    # Brief pause to let processes exit
-    sleep 1
+    # Only pay the settle delay when something was actually signalled. On this
+    # platform HelixScreen IS the configured UI, so the usual case kills nothing
+    # and the wait is pure latency. That matters because the stock resonance
+    # macro restarts the UI through a Klipper shell command with a 5s budget
+    # (GUI_START -> gui-switcher start -> this init script), and a caller killed
+    # on timeout takes the whole process group with it.
+    if [ "$_killed_any" = "1" ]; then
+        sleep 1
+    fi
+    unset _killed_any
 }
 
 # The CC1 uses the Allwinner disp subsystem for backlight control.

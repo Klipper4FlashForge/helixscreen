@@ -304,4 +304,4 @@ If you are running Kalico firmware and have [beta features enabled](beta-feature
 
 ---
 
-**Next:** [Settings](settings.md) | **Prev:** [Label Printing](label-printing.md) | [Back to User Guide](../USER_GUIDE.md)
+**Next:** [Settings](settings.md) | **Prev:** [Barcode Scanner](barcode-scanner.md) | [Back to User Guide](../USER_GUIDE.md)

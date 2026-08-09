@@ -60,10 +60,8 @@ RequestId MoonrakerRequestTracker::send(hv::WebSocketClient& ws, const std::stri
 
     if (queue_full) {
         if (error_cb) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::CONNECTION_LOST;
-            err.method = method;
-            err.message = "Request queue full — too many pending requests";
+            MoonrakerError err = MoonrakerError::connection_lost(
+                method, "Request queue full — too many pending requests");
             try {
                 error_cb(err);
             } catch (const std::exception& e) {
@@ -175,10 +173,11 @@ bool MoonrakerRequestTracker::route_response(
             method_name = request.method;
             is_silent = request.silent;
 
-            // Check for JSON-RPC error
+            // Check for JSON-RPC error. Only the *classification* happens here —
+            // parsing the error payload is deliberately deferred until after the
+            // erase below, so a malformed payload cannot strand the entry.
             if (msg.contains("error")) {
                 has_error = true;
-                error = MoonrakerError::from_json_rpc(msg["error"], request.method);
                 error_cb = request.error_callback;
             } else {
                 success_cb = request.success_callback;
@@ -190,6 +189,14 @@ bool MoonrakerRequestTracker::route_response(
 
     if (!found) {
         return false;
+    }
+
+    // Parse the error payload only after the pending entry is gone and the lock
+    // is released. Everything it needs (method_name, msg) is already copied or
+    // outlives us, so a throw in here cannot leave the request pending until the
+    // 60s timeout fires a bogus "timed out" toast at the user.
+    if (has_error) {
+        error = MoonrakerError::from_json_rpc(msg["error"], method_name);
     }
 
     // Invoke callbacks outside the lock to avoid deadlock
@@ -361,6 +368,15 @@ void MoonrakerRequestTracker::check_timeouts(
     // the pending signature (count + oldest method + warn level) changes;
     // re-emit a still-stuck warn at most once per 10 s so the queue-stuck
     // indicator stays visible without flooding.
+    //
+    // The signature throttle alone does not quiet a queue that is draining
+    // normally: every count decrement is a fresh signature, so one healthy poll
+    // burst emits a line per in-flight request. On a Spoolman printer that ran
+    // to 1275 of the 2000 lines in a debug bundle's ring buffer, capping its
+    // reach at ~3.5 h of mostly nothing (bundle 3Q2GB74K). So the debug line
+    // additionally requires the oldest request to have aged past
+    // PENDING_LOG_MIN_AGE_MS — below that the queue is working, not stuck. The
+    // warn path is unaffected: a 30 s request always logs.
     if (pending_count > 0) {
         const bool warn = oldest_age_ms > 30000;
         const auto now = std::chrono::steady_clock::now();
@@ -368,8 +384,9 @@ void MoonrakerRequestTracker::check_timeouts(
                                        oldest_method != last_logged_oldest_method_ ||
                                        warn != last_logged_was_warn_;
         const bool warn_refresh = warn && now - last_warn_log_ >= std::chrono::seconds(10);
+        const bool old_enough = warn || oldest_age_ms >= PENDING_LOG_MIN_AGE_MS;
 
-        if (signature_changed || warn_refresh) {
+        if (old_enough && (signature_changed || warn_refresh)) {
             if (warn) {
                 spdlog::warn("[Request Tracker] {} pending request(s); oldest '{}' age {}ms",
                              pending_count, oldest_method, oldest_age_ms);

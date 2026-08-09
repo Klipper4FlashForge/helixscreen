@@ -5,11 +5,49 @@
 
 #include "ui_spool_canvas.h"
 
+#include "ams_backend.h"
+#include "ams_bypass_policy.h"
+#include "settings_manager.h"
 #include "theme_manager.h"
 
 #include <cstring>
 
 namespace helix::ui {
+
+bool bypass_node_visible_for(const AmsBackend* backend) {
+    if (backend == nullptr) {
+        return false;
+    }
+    return bypass_node_visible(
+        helix::bypass_available_for(backend->get_system_info().supports_bypass),
+        backend->is_bypass_active(), backend->is_afc_system(),
+        SettingsManager::instance().get_ams_always_show_bypass_spool());
+}
+
+void bypass_spool_set_visible(BypassSpoolWidgets& w, bool visible) {
+    // The labels are siblings of the card, not children, so each has to be
+    // hidden individually or a stray "Bypass" caption survives the card.
+    //
+    // Asymmetric on purpose: hiding covers material_label too, but showing does
+    // NOT unhide it — bypass_spool_set_material() owns that one and keeps it
+    // hidden while the material string is empty. Force-showing it here would
+    // resurrect an empty label the moment the node came back.
+    lv_obj_t* const always[] = {w.box, w.bypass_label};
+    for (lv_obj_t* part : always) {
+        if (part == nullptr || !lv_obj_is_valid(part)) {
+            continue;
+        }
+        if (visible) {
+            lv_obj_remove_flag(part, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(part, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (!visible && w.material_label != nullptr && lv_obj_is_valid(w.material_label)) {
+        lv_obj_add_flag(w.material_label, LV_OBJ_FLAG_HIDDEN);
+    }
+}
 
 namespace {
 constexpr int32_t BYPASS_SPOOL_SIZE = 48;

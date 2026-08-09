@@ -1130,9 +1130,23 @@ void GCodeParser::start_new_layer(float z) {
         return;
     }
 
+    // The layer just finished is never appended to again, but its segment vector still holds
+    // the geometric-growth tail (a 600-segment layer sits on capacity 1024). Release it.
+    size_t prev_segment_count = 0;
+    if (!layers_.empty()) {
+        layers_.back().segments.shrink_to_fit();
+        prev_segment_count = layers_.back().segments.size();
+    }
+
     Layer layer;
     layer.z_height = z;
     layers_.push_back(layer);
+
+    // Layers are near-uniform in segment count, so the previous layer is a good size hint
+    // and avoids the doubling series on the way up.
+    if (prev_segment_count > 0) {
+        layers_.back().segments.reserve(prev_segment_count);
+    }
 
     spdlog::trace("[GCode Parser] Started layer {} at Z={:.3f}", layers_.size() - 1, z);
 }
@@ -1171,6 +1185,12 @@ std::string GCodeParser::trim_line(const std::string& line) {
 }
 
 ParsedGCodeFile GCodeParser::finalize() {
+    // start_new_layer() shrinks each layer as it is closed out; the last one never gets that
+    // pass, so trim it here before the layers move into the result.
+    if (!layers_.empty()) {
+        layers_.back().segments.shrink_to_fit();
+    }
+
     ParsedGCodeFile result;
     result.filename = "";
     result.layers = std::move(layers_);

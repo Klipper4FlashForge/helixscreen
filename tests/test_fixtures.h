@@ -153,15 +153,9 @@ class UITestFixture : public LVGLTestFixture {
         return UITest::type_text(textarea, text);
     }
 
-    /**
-     * @brief Wait for condition with LVGL processing
-     * @param condition Function returning true when done
-     * @param timeout_ms Maximum wait time
-     * @return true if condition met, false if timeout
-     */
-    bool wait_until(std::function<bool()> condition, uint32_t timeout_ms = 5000) {
-        return UITest::wait_until(condition, timeout_ms);
-    }
+    // wait_until() is inherited from LVGLTestFixture. A wrapper here would have
+    // hidden the base version — and UITest::wait_until() is the weaker one, so
+    // the shadowing would silently cost you virtual-clock advance.
 };
 
 // ============================================================================
@@ -195,9 +189,7 @@ class FullMoonrakerTestFixture : public MoonrakerTestFixture {
     bool type_text(lv_obj_t* textarea, const std::string& text) {
         return UITest::type_text(textarea, text);
     }
-    bool wait_until(std::function<bool()> condition, uint32_t timeout_ms = 5000) {
-        return UITest::wait_until(condition, timeout_ms);
-    }
+    // wait_until() inherited from LVGLTestFixture — see UITestFixture.
 };
 
 // ============================================================================

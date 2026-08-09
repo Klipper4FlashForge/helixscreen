@@ -5,14 +5,20 @@
 
 #include "ui_temperature_utils.h"
 
+#include "ams_tool_map_sync.h"
 #include "filament_catalog.h"
 #include "filament_slot_override.h"
 #include "filament_slot_override_store.h"
+#include "json_utils.h"
 #include "moonraker_error.h"
 #include "post_op_cooldown_manager.h"
 #include "printer_detector.h"
 
 #include <spdlog/spdlog.h>
+
+#include <cctype>
+#include <string>
+#include <unordered_map>
 
 #include "hv/json.hpp"
 
@@ -111,6 +117,41 @@ std::string format_unit_only(const nlohmann::json& values) {
 /// spool is seated. Kept in one place so every comparison site stays in sync.
 bool is_vender_sentinel(const std::string& v) {
     return v.empty() || v == "none" || v == "None" || v == "-1";
+}
+
+/// True when a raw per-slot `material_type` string carries no RFID payload,
+/// i.e. the reader has no tag data for this bay. Adds `"unknown"` to the
+/// vender sentinel set: for `material_type` "unknown" means the reader has
+/// nothing for this bay, whereas for `vender` it means a tag IS seated but its
+/// vendor didn't resolve. That asymmetry is real hardware behavior, not an
+/// inconsistency — see prestonbrown/helixscreen#1077 and the presence rule in
+/// parse_box_status.
+///
+/// Deliberately NOT applied to `color_value`: that field is user-writable
+/// (push_slot_color_to_firmware / the stock LCD both issue BOX_MODIFY_TN_DATA
+/// PART=color_value) and reads a real color on untagged bays, so it cannot
+/// distinguish a tagged bay from an untagged one. `material_type` has no write
+/// path anywhere in the UI, so a non-sentinel value there means — and only
+/// means — that a tag was actually read.
+bool is_material_code_sentinel(const std::string& v) {
+    return v.empty() || v == "none" || v == "None" || v == "-1" || v == "unknown";
+}
+
+std::string quote_gcode_param(const std::string& value) {
+    std::string quoted;
+    quoted.reserve(value.size() + 2);
+    quoted += '"';
+    for (char c : value) {
+        if (c == '\n' || c == '\r') {
+            quoted += ' ';
+        } else {
+            if (c == '\\' || c == '"')
+                quoted += '\\';
+            quoted += c;
+        }
+    }
+    quoted += '"';
+    return quoted;
 }
 
 } // namespace
@@ -400,7 +441,8 @@ void AmsBackendCfs::on_started() {
     // lane_data happens automatically inside load_blocking the first time
     // lane_data is empty (Task 8).
     if (api_) {
-        override_store_ = std::make_unique<helix::ams::FilamentSlotOverrideStore>(api_, "cfs");
+        override_store_ = std::make_unique<helix::ams::FilamentSlotOverrideStore>(
+            api_, "cfs", helix::ams::lane_key_style_for(get_type()));
         // Do the (potentially 5s) MR DB round-trip OUTSIDE the lock, then swap
         // in under mutex_. Holding mutex_ during the swap ensures the parse
         // path sees a coherent map rather than a torn write.
@@ -445,7 +487,34 @@ void AmsBackendCfs::on_started() {
 
 // --- Static parser ---
 
+CfsSchema AmsBackendCfs::detect_schema(const nlohmann::json& box_json) {
+    if (!box_json.is_object()) {
+        return CfsSchema::Stock;
+    }
+    // A `T{n}` key is decisive for Stock: no flat payload carries one, and if a
+    // future firmware ever carried both, the stock parser has the richer decode
+    // (material codes, RFID UIDs, tool map) so it should win.
+    for (int n = 1; n <= 4; ++n) {
+        if (box_json.contains("T" + std::to_string(n))) {
+            return CfsSchema::Stock;
+        }
+    }
+    // is_array(), not contains(): a disconnected-unit sentinel could put a
+    // scalar "-1" here, and a string json has size() == 1, which would let a
+    // bounds-checked loop index into it and throw type_error.305.
+    auto it = box_json.find("slots");
+    if (it != box_json.end() && it->is_array()) {
+        return CfsSchema::Flat;
+    }
+    return CfsSchema::Stock;
+}
+
 AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
+    return detect_schema(box_json) == CfsSchema::Flat ? parse_flat_box_status(box_json)
+                                                      : parse_stock_box_status(box_json);
+}
+
+AmsSystemInfo AmsBackendCfs::parse_stock_box_status(const nlohmann::json& box_json) {
     AmsSystemInfo info;
     info.type = AmsType::CFS;
     info.type_name = "CFS";
@@ -453,8 +522,19 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
     info.supports_purge = true;
     info.supports_bypass = false;
 
-    // Parse auto_refill → endless spool support
-    info.supports_endless_spool = box_json.value("auto_refill", 0) != 0;
+    // Parse auto_refill → endless spool support.
+    //
+    // Top-level box fields (auto_refill, filament, enable, filament_useup) are
+    // documented as JSON ints, unlike the per-unit scalars further down, which are
+    // documented as strings (CREALITY_K2_SUPPORT.md § "Moonraker Object: box").
+    // safe_int is therefore belt-and-braces here rather than a known-shape fix:
+    // .value("auto_refill", 0) still throws type_error.302 on a null or a string,
+    // and that throw escapes parse_box_status and drops the entire box frame.
+    //
+    // Test for an explicit 1 rather than != 0 because safe_int parses numeric
+    // strings: were the box to ever report the "-1" sentinel here (the documented
+    // absence marker everywhere else in this object), != 0 would read it as TRUE.
+    info.supports_endless_spool = helix::json_util::safe_int(box_json, "auto_refill", 0) == 1;
     info.supports_tool_mapping = true;
 
     // box.filament is a stale active-lane SELECTION index, NOT a "filament
@@ -467,7 +547,10 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
     // Runout signal: box.filament_useup == 1 means no filament at the box gate.
     // Raw firmware value here; ams_state gates display on print-paused state to
     // avoid false positives at pre-load print start (see filament_useup decode).
-    info.filament_runout = box_json.value("filament_useup", 0) != 0;
+    // safe_int + "== 1" for the same reasons as auto_refill above: a null or
+    // wrong-typed value must not throw, and a "-1" must not read as a runout.
+    // "== 1" also matches this field's decode exactly, per the line above.
+    info.filament_runout = helix::json_util::safe_int(box_json, "filament_useup", 0) == 1;
 
     // Parse tool mapping from "map" object
     if (box_json.contains("map") && box_json["map"].is_object()) {
@@ -482,6 +565,14 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
         if (max_tool >= 0) {
             info.tool_to_slot_map.resize(max_tool + 1, -1);
             for (auto& [tnn_key, tnn_val] : box_json["map"].items()) {
+                // The map value is a "TnnA" string; anything else (null for an
+                // unmapped tool, or a number) would make get<std::string>()
+                // throw type_error.302 out of parse_box_status and drop the
+                // whole box frame. Skip the entry instead — same is_string()
+                // discipline as the same_material group parse below.
+                if (!tnn_val.is_string()) {
+                    continue;
+                }
                 int src = CfsMaterialDb::tnn_to_slot(tnn_key);
                 int dst = CfsMaterialDb::tnn_to_slot(tnn_val.get<std::string>());
                 if (src >= 0 && dst >= 0 && src < static_cast<int>(info.tool_to_slot_map.size())) {
@@ -516,7 +607,14 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
         }
 
         const auto& unit_json = box_json[key];
-        std::string state = unit_json.value("state", "None");
+        // safe_string, not .value(): the per-unit scalars below are documented as
+        // strings (CREALITY_K2_SUPPORT.md § "Per-Unit Fields"), but .value() with a
+        // string default THROWS type_error.302 on a JSON null or a numeric value,
+        // and that throw escapes parse_box_status and drops the whole box frame.
+        // safe_string returns the supplied default for null/wrong-type WITHOUT
+        // stringifying, so a numeric -1 yields the literal default rather than the
+        // string "-1" — the sentinel comparisons below stay exact either way.
+        std::string state = helix::json_util::safe_string(unit_json, "state", "None");
         if (state == "None" || state == "-1") {
             spdlog::debug("[AMS CFS] {} disconnected (state={})", key, state);
             continue; // Disconnected unit
@@ -534,18 +632,24 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
         unit.topology = PathTopology::HUB;
 
         // Firmware version and serial
-        std::string ver = unit_json.value("version", "-1");
+        std::string ver = helix::json_util::safe_string(unit_json, "version", "-1");
         if (ver != "-1" && ver != "None") {
             unit.firmware_version = ver;
         }
-        std::string sn = unit_json.value("sn", "-1");
+        std::string sn = helix::json_util::safe_string(unit_json, "sn", "-1");
         if (sn != "-1" && sn != "None") {
             unit.serial_number = sn;
         }
 
-        // Environment: temperature and humidity
-        std::string temp_str = unit_json.value("temperature", "None");
-        std::string humid_str = unit_json.value("dry_and_humidity", "None");
+        // Environment: temperature and humidity. Both are documented as STRINGS
+        // ("27", "48"), so safe_string is the faithful read. Note the residual: if
+        // a firmware variant ever sent these as numbers, safe_string yields "None"
+        // and the unit silently reports no environment data — better than today's
+        // throw, which discards every other field on the box too, but it is a
+        // silent loss. Switch to safe_float here if a numeric variant is ever seen.
+        std::string temp_str = helix::json_util::safe_string(unit_json, "temperature", "None");
+        std::string humid_str =
+            helix::json_util::safe_string(unit_json, "dry_and_humidity", "None");
         if (temp_str != "None" && temp_str != "-1" && humid_str != "None" && humid_str != "-1") {
             EnvironmentData env;
             try {
@@ -562,11 +666,30 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
             unit.environment = env;
         }
 
-        // Parse the 4 slots within this unit
-        auto color_arr = unit_json.value("color_value", nlohmann::json::array());
-        auto material_arr = unit_json.value("material_type", nlohmann::json::array());
-        auto remain_arr = unit_json.value("remain_len", nlohmann::json::array());
-        auto vender_arr = unit_json.value("vender", nlohmann::json::array());
+        // Parse the 4 slots within this unit.
+        //
+        // These four keys are array[4] on a connected unit, but a unit that drops
+        // out reports the SCALAR sentinel "-1"/"None" for the very same keys
+        // (CREALITY_K2_SUPPORT.md § "Disconnected Units"; the sibling
+        // `filament_rack` object is documented with exactly that scalar form).
+        // .value(key, json::array()) does not throw on a scalar — it round-trips
+        // through get<json> and hands back the string — but a string json has
+        // size() == 1, so the `i < size()` bounds check in the loop below passes
+        // for i == 0 and then operator[](size_type) throws type_error.305, BEFORE
+        // the .is_string() guard on that same line can run. Normalizing a
+        // non-array to an empty array makes every slot fall back to its sentinel
+        // default instead. Same is_array() discipline as build_cfs_slot_uid's
+        // `pick` lambda below.
+        auto array_field = [&unit_json](const char* field) -> nlohmann::json {
+            auto it = unit_json.find(field);
+            if (it == unit_json.end() || !it->is_array())
+                return nlohmann::json::array();
+            return *it;
+        };
+        auto color_arr = array_field("color_value");
+        auto material_arr = array_field("material_type");
+        auto remain_arr = array_field("remain_len");
+        auto vender_arr = array_field("vender");
 
         for (int i = 0; i < 4; ++i) {
             SlotInfo slot;
@@ -639,17 +762,48 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
                 }
             }
 
-            // Presence uses a COMBINED signal, not `vender` alone: an untagged
-            // 3rd-party spool has no RFID vendor (sentinel `vender`) yet reports
-            // a real `remain_len` from the measuring wheel — keying purely on
-            // `vender` would wrongly parse it EMPTY (the mirror of the ghost-slot
-            // bug). A bay is present when EITHER the vendor signal OR a positive
-            // remaining length says so; only when they BOTH read empty do we
-            // treat it as EMPTY. color_value/material_type are deliberately NOT
-            // consulted (they latch). A user override can still promote a
-            // firmware-EMPTY bay (see apply_overrides).
+            // Presence, in priority order. Each firmware field is used only
+            // where it is actually trustworthy:
+            //
+            //  1. `vender` is the LIVE occupancy signal for a TAGGED bay — it
+            //     reads a real vendor name (or the present-but-unresolved
+            //     "unknown") while a tag is seated and drops to a sentinel the
+            //     moment the spool is pulled. Non-sentinel => PRESENT.
+            //
+            //  2. `remain_len` is a FALLBACK that exists solely to cover
+            //     UNTAGGED 3rd-party spools: they have no RFID vendor, so
+            //     `vender` reads sentinel even though a spool is physically
+            //     seated, and the measuring wheel is the only evidence we get
+            //     (prestonbrown/helixscreen#1077, commit 65b3a1b8d).
+            //
+            //     But `remain_len` LATCHES: after a tagged spool is removed the
+            //     box keeps reporting its last length forever (observed on K2:
+            //     vender "none" alongside remain_len "50"). Applying the
+            //     untagged fallback there pins the bay AVAILABLE permanently.
+            //
+            //     A bay carrying a real latched RFID material code
+            //     (`material_type` past its sentinels) is by definition a
+            //     TAGGED bay, and the untagged fallback does not apply to it —
+            //     for those, `vender` alone decides. So the fallback is
+            //     consulted only when no tag was ever read, which is exactly
+            //     the untagged case it was written for.
+            //
+            //     `color_value` is deliberately NOT part of this test even
+            //     though it also latches. It is user-writable (the stock LCD
+            //     and our own push_slot_color_to_firmware both write it) and on
+            //     real K2 hardware it reads a real color on EVERY bay, tagged
+            //     or not — including bays whose material_type is "unknown".
+            //     Folding it in would make has_tag_payload permanently true,
+            //     silently disabling the untagged fallback and re-breaking
+            //     #1077. material_type has no write path, so it alone is a
+            //     trustworthy tagged/untagged discriminator.
+            //
+            // A user override can still promote a firmware-EMPTY bay back to
+            // AVAILABLE (see apply_overrides).
             const bool remain_present = slot.remaining_length_m > 0.0f;
-            if (vender_occupied || remain_present) {
+            const bool has_tag_payload = !is_material_code_sentinel(mat_code_raw);
+            const bool untagged_present = !has_tag_payload && remain_present;
+            if (vender_occupied || untagged_present) {
                 slot.status = SlotStatus::AVAILABLE;
             } else {
                 slot.status = SlotStatus::EMPTY;
@@ -664,29 +818,275 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
                 slot.remaining_length_m = 0.0f;
             }
 
-            // CFS slots map 1:1 to tools (slot 0 = tool 0, etc.)
-            slot.mapped_tool = slot.global_index;
+            // mapped_tool is deliberately NOT written here. box.map, parsed
+            // above into info.tool_to_slot_map, is the box's own statement of
+            // the mapping, and the single sync_tool_map_from_forward() pass at
+            // the end of this function derives every slot's mapped_tool from
+            // it. Stamping the identity here as well is what made a
+            // BOX_MODIFY_TN remap show the right op-button lane and the wrong
+            // lane badge — two writers, one of them ignoring firmware.
 
             unit.slots.push_back(std::move(slot));
         }
 
         // Parse active filament slot within this unit.
         // T1.filament = "A"/"B"/"C"/"D" when a slot is loaded, "None" otherwise.
-        std::string fil_letter = unit_json.value("filament", "None");
+        std::string fil_letter = helix::json_util::safe_string(unit_json, "filament", "None");
         if (fil_letter.size() == 1 && fil_letter[0] >= 'A' && fil_letter[0] <= 'D') {
             int active_local = fil_letter[0] - 'A';
             info.current_slot = (n - 1) * 4 + active_local;
-            // CFS slots map 1:1 to tools (slot.mapped_tool = slot.global_index above);
-            // current_tool must mirror current_slot so the print-status color dot
-            // labels the correct tool index.
-            info.current_tool = info.current_slot;
-            spdlog::debug("[AMS CFS] Active filament: {} (slot {}, tool {})", fil_letter,
-                          info.current_slot, info.current_tool);
+            spdlog::debug("[AMS CFS] Active filament: {} (slot {})", fil_letter, info.current_slot);
         }
 
         info.units.push_back(std::move(unit));
         info.total_slots += 4;
     }
+
+    // Publish both directions from the one source the box actually states —
+    // box.map. identity_fallback=true keeps the historical 1:1 default for
+    // every tool the payload leaves unmapped (and for the common case of no
+    // `map` key at all), so a box that has never been remapped parses exactly
+    // as it always did.
+    sync_tool_map_from_forward(info, /*identity_fallback=*/true);
+
+    // current_tool must name the tool that ROUTES THROUGH the seated lane, not
+    // the lane index: with T0 remapped onto lane 2 the print-status color dot
+    // has to read T0. Derived from the same pass above, so it cannot disagree
+    // with the badge.
+    //
+    // A seated lane that no tool maps to (possible from a PARTIAL box.map,
+    // where identity_fallback deliberately refuses to hand a claimed lane back)
+    // falls back to the lane index — the pre-remap answer — rather than
+    // publishing -1. -1 is a legitimate value of this field, but only in
+    // combination with "nothing loaded", and no consumer renders the
+    // seated-yet-toolless pair usefully: ams_current_tool.xml hides the whole
+    // indicator on `< 0`, taking the still-valid filament colour swatch with
+    // it, and ToolState::set_ams_topology() clamps a negative active_tool to 0,
+    // which lights T0 in the tool switcher and the nozzle label while a
+    // different lane is physically seated. A stale-but-plausible tool number
+    // beats both of those.
+    if (info.current_slot >= 0) {
+        const auto* seated = info.get_slot_global(info.current_slot);
+        const int seated_tool = seated ? seated->mapped_tool : -1;
+        info.current_tool = seated_tool >= 0 ? seated_tool : info.current_slot;
+    }
+
+    return info;
+}
+
+// --- Flat schema (community Kalico box.py reimplementations) ---------------
+
+// Parse a conventional "#RRGGBB" (or bare "RRGGBB") into 0xRRGGBB.
+//
+// NOT CfsMaterialDb::parse_color: that one owns Creality's leading-zero
+// "0RRGGBB" form and its "-1"/"None" sentinels. The flat schema uses the
+// ordinary web spelling, and marks "no color" with an empty string (the
+// external-spool entry). Anything unparseable — wrong length, non-hex digits,
+// empty — yields the default slot color rather than a partial read, so a
+// malformed field renders as "unknown color" instead of a plausible wrong one.
+static uint32_t parse_flat_slot_color(const std::string& raw) {
+    std::string s = raw;
+    if (!s.empty() && s[0] == '#') {
+        s.erase(0, 1);
+    }
+    if (s.size() != 6) {
+        return AMS_DEFAULT_SLOT_COLOR;
+    }
+    for (char c : s) {
+        if (std::isxdigit(static_cast<unsigned char>(c)) == 0) {
+            return AMS_DEFAULT_SLOT_COLOR;
+        }
+    }
+    return static_cast<uint32_t>(std::stoul(s, nullptr, 16));
+}
+
+AmsSystemInfo AmsBackendCfs::parse_flat_box_status(const nlohmann::json& box_json) {
+    AmsSystemInfo info;
+    info.type = AmsType::CFS;
+    info.type_name = "CFS";
+    info.tip_method = TipMethod::CUT;
+    info.supports_purge = true;
+
+    // Bypass stays unsupported even though slots[] carries an `external: true`
+    // entry for the spool holder. The entry is observable, but the port's
+    // box.py is unpublished, so no verified command drives a load from it —
+    // advertising bypass would put a button on screen that cannot work.
+    info.supports_bypass = false;
+
+    // runout_swap_enabled is the fork's endless-spool flag. safe_bool rather
+    // than .value(): every scalar in this object is nullable (`runout` itself
+    // ships as JSON null when idle).
+    info.supports_endless_spool =
+        helix::json_util::safe_bool(box_json, "runout_swap_enabled", false);
+    info.supports_tool_mapping = true;
+
+    // `runout` is null while idle and carries a slot descriptor once tripped;
+    // presence of any non-null value is the runout signal. filament_loaded is
+    // left false here for the same reason as the stock parse — the toolhead
+    // sensor branch in handle_status_update is its sole writer.
+    auto runout_it = box_json.find("runout");
+    info.filament_runout = runout_it != box_json.end() && !runout_it->is_null();
+    info.filament_loaded = false;
+
+    // Per-material recommended temps. The fork publishes a materials table the
+    // stock firmware has no equivalent for; it is keyed by the same material
+    // string each slot reports, so it resolves without a code table.
+    // A single target_temp is all the firmware gives, so min == max: a
+    // degenerate range is truthful, whereas leaving min at 0 would render as
+    // "0-300°C".
+    std::unordered_map<std::string, int> material_temps;
+    auto materials_it = box_json.find("materials");
+    if (materials_it != box_json.end() && materials_it->is_object()) {
+        for (const auto& [name, spec] : materials_it->items()) {
+            if (!spec.is_object()) {
+                continue;
+            }
+            int t = helix::json_util::safe_int(spec, "target_temp", 0);
+            if (t > 0) {
+                material_temps[name] = t;
+            }
+        }
+    }
+
+    AmsUnit unit;
+    unit.unit_index = 0;
+    unit.name = "CFS";
+    unit.display_name = "CFS Unit 1";
+    unit.first_slot_global_index = 0;
+    unit.connected = helix::json_util::safe_bool(box_json, "driver_ready", true);
+    unit.topology = PathTopology::HUB;
+
+    // Environment. Unlike the stock schema these are JSON numbers, not strings,
+    // but safe_float accepts either — so a firmware revision that switches
+    // spelling will not silently drop the readings.
+    float temp_c = helix::json_util::safe_float(box_json, "temp_c", -1.0f);
+    float humidity = helix::json_util::safe_float(box_json, "humidity_pct", -1.0f);
+    if (temp_c >= 0.0f || humidity >= 0.0f) {
+        EnvironmentData env;
+        env.temperature_c = temp_c >= 0.0f ? temp_c : 0.0f;
+        env.humidity_pct = humidity >= 0.0f ? humidity : 0.0f;
+        env.has_humidity = humidity >= 0.0f;
+        unit.environment = env;
+    }
+
+    // load_path describes the shared feed path: an encoder, a buffer, and a
+    // printhead sensor. Stock CFS reports none of these, so these flags light
+    // up path visualization that the stock backend cannot drive.
+    auto path_it = box_json.find("load_path");
+    if (path_it != box_json.end() && path_it->is_object()) {
+        const auto& path = *path_it;
+
+        auto encoder_it = path.find("encoder");
+        unit.has_encoder = encoder_it != path.end() && encoder_it->is_object();
+
+        auto sensor_it = path.find("printhead_sensor");
+        unit.has_toolhead_sensor = sensor_it != path.end() && sensor_it->is_object();
+
+        auto buffer_it = path.find("buffer");
+        if (buffer_it != path.end() && buffer_it->is_object()) {
+            BufferHealth buffer;
+            // `active` is the fork's enable flag. state_code/status_code are
+            // small enums whose meanings are NOT documented anywhere we can
+            // read (box.py is unpublished), so they are deliberately NOT
+            // decoded into a state string — an invented mapping would surface
+            // confident nonsense in the UI. Only the enable flag is trusted.
+            buffer.fault_detection_enabled =
+                helix::json_util::safe_bool(*buffer_it, "active", false);
+            unit.buffer_health = buffer;
+        }
+    }
+
+    // Slots. Each entry is self-describing — no parallel arrays, no material
+    // code table, no TNN letter math.
+    auto slots_it = box_json.find("slots");
+    if (slots_it != box_json.end() && slots_it->is_array()) {
+        for (const auto& slot_json : *slots_it) {
+            // A non-object entry (a "-1" sentinel, say) is skipped rather than
+            // aborting the frame — same discipline as the stock array_field
+            // guard. Skipping keeps later slots parseable.
+            if (!slot_json.is_object()) {
+                continue;
+            }
+            // The external-spool holder is not a CFS bay. Counting it renders a
+            // phantom extra slot on a 4-bay unit.
+            if (helix::json_util::safe_bool(slot_json, "external", false)) {
+                continue;
+            }
+
+            SlotInfo slot;
+            // Index by VECTOR POSITION, not the payload's `index`. Downstream
+            // slot-widget creation walks this vector and treats position as the
+            // bay, so a sparse or out-of-order payload must not leave holes. On
+            // every payload seen so far the two agree; warn if they ever stop,
+            // because a silent relabel would put a spool on the wrong bay.
+            slot.slot_index = static_cast<int>(unit.slots.size());
+            slot.global_index = slot.slot_index;
+            if (int reported = helix::json_util::safe_int(slot_json, "index", slot.slot_index);
+                reported != slot.slot_index) {
+                spdlog::warn("[AMS CFS] Flat slot reports index {} at position {} — "
+                             "using position; check for sparse or reordered slots",
+                             reported, slot.slot_index);
+            }
+            // mapped_tool comes from the sync pass at the end of this function,
+            // as in the stock parse — one writer for both directions. The flat
+            // schema states no map of its own, so that pass hands every lane
+            // the 1:1 default this line used to write.
+
+            // The literal string "None" means ABSENT on every one of these
+            // fields, and it is not a chosen value: the module builds each
+            // profile entry with `str(value.get(key, ""))`, so a key that is
+            // present but JSON null stringifies to Python's "None" rather than
+            // falling back to the "" default. Every text field can therefore
+            // arrive as "None", not just brand — surfacing it would put a spool
+            // named "None" made of "None" on screen.
+            auto text_field = [&slot_json](const char* key) -> std::string {
+                std::string v = helix::json_util::safe_string(slot_json, key);
+                return v == "None" ? std::string{} : v;
+            };
+            slot.material = text_field("material");
+            slot.brand = text_field("brand");
+            slot.spool_name = text_field("name");
+            // Colors need no such guard: "None" is not six hex digits, so
+            // parse_flat_slot_color already falls back to the default.
+            slot.color_rgb =
+                parse_flat_slot_color(helix::json_util::safe_string(slot_json, "color"));
+
+            if (auto temp_it = material_temps.find(slot.material);
+                temp_it != material_temps.end()) {
+                slot.nozzle_temp_min = temp_it->second;
+                slot.nozzle_temp_max = temp_it->second;
+            }
+
+            // Spoolman handles ship as null until the user links a spool.
+            slot.spoolman_id = helix::json_util::safe_int(slot_json, "spoolman_id", 0);
+
+            const bool present = helix::json_util::safe_bool(slot_json, "present", false);
+            const bool loaded = helix::json_util::safe_bool(slot_json, "loaded", false);
+            slot.status =
+                loaded ? SlotStatus::LOADED : (present ? SlotStatus::AVAILABLE : SlotStatus::EMPTY);
+
+            unit.slots.push_back(std::move(slot));
+        }
+    }
+
+    unit.slot_count = static_cast<int>(unit.slots.size());
+    info.total_slots = unit.slot_count;
+
+    // loaded_slot is -1 when nothing is loaded. It indexes the same slots[]
+    // array, so it needs no translation — but it can name the external entry,
+    // which is not in our vector, hence the bounds check.
+    int loaded_slot = helix::json_util::safe_int(box_json, "loaded_slot", -1);
+    if (loaded_slot >= 0 && loaded_slot < unit.slot_count) {
+        info.current_slot = loaded_slot;
+        info.current_tool = loaded_slot;
+    }
+
+    info.units.push_back(std::move(unit));
+
+    // Same single-writer pass as the stock parse. The flat payload carries no
+    // `map`, so tool_to_slot_map is empty here and identity_fallback supplies
+    // the 1:1 default in BOTH directions rather than in one of them.
+    sync_tool_map_from_forward(info, /*identity_fallback=*/true);
 
     return info;
 }
@@ -701,11 +1101,17 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
 // The fingerprint is intentionally stable across the same spool: CFS rewrites
 // both fields from a server-side RFID lookup, so the same physical tag yields
 // the same material_type code and the same color_value. A user swapping to a
-// different spool changes at least one of those fields. User edits via
-// set_slot_info DON'T touch firmware's material_type/color_value (those come
-// from the next parse), so a color edit in the UI can't accidentally mimic a
-// swap. CFS does NOT expose a dedicated CARD_UID field — this composite is the
-// documented surrogate.
+// different spool changes at least one of those fields. CFS does NOT expose a
+// dedicated CARD_UID field — this composite is the documented surrogate.
+//
+// color_value is NOT firmware-exclusive: push_slot_color_to_firmware writes it
+// via BOX_MODIFY_TN_DATA so the stock LCD shows the user's chosen color. That
+// write comes back around as a fingerprint change on a later poll, which reads
+// identically to a physical swap. push_ therefore registers the expected
+// post-write fingerprint with rfid_tracker_ (SlotFingerprintTracker::expect),
+// and check_hardware_event_clear classifies the echo as OwnWriteEcho rather
+// than a swap. material_type has no write path — nothing in the UI can set a
+// raw CFS material code.
 static std::string build_cfs_slot_uid(const nlohmann::json& unit_json, int local_index) {
     auto pick = [&](const char* field) -> std::string {
         if (!unit_json.contains(field) || !unit_json[field].is_array())
@@ -747,6 +1153,15 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
 
     bool changed = false;
 
+    // Drop the previous frame's derived LOADED stamp before anything below
+    // reads or rebuilds the slot vector, so the override/clear/mirror pass sees
+    // firmware truth. apply_seated_slot_stamp_locked() at the bottom re-derives
+    // it once both the box branch and the toolhead-sensor branch have run.
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        clear_seated_slot_stamp_locked();
+    }
+
     if (params.contains("box") && params["box"].is_object()) {
         const auto& box = params["box"];
         spdlog::debug("[AMS CFS] Received box data with {} keys", box.size());
@@ -759,10 +1174,18 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
         if (box.contains("filament_useup") && box["filament_useup"].is_number()) {
             int useup = box["filament_useup"].get<int>();
             if (useup != last_filament_useup_) {
+                // safe_int, not .value(): spdlog evaluates its arguments before it
+                // consults the log level, so a null or wrong-typed "filament"/
+                // "auto_refill"/"enable" would throw type_error.302 out of
+                // handle_status_update in a release build too, not just under -vv.
+                // NB these are the TOP-LEVEL box fields, documented as ints — not
+                // the same-named per-unit "filament" letter, which is a string.
                 spdlog::debug("[AMS CFS] filament_useup {} -> {} (box.filament={}, "
                               "auto_refill={}, enable={})",
-                              last_filament_useup_, useup, box.value("filament", -1),
-                              box.value("auto_refill", -1), box.value("enable", -1));
+                              last_filament_useup_, useup,
+                              helix::json_util::safe_int(box, "filament", -1),
+                              helix::json_util::safe_int(box, "auto_refill", -1),
+                              helix::json_util::safe_int(box, "enable", -1));
                 last_filament_useup_ = useup;
             }
         }
@@ -772,7 +1195,27 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
         bool has_top_level = box.contains("filament") || box.contains("map");
         bool has_unit_data =
             box.contains("T1") || box.contains("T2") || box.contains("T3") || box.contains("T4");
-        bool is_full_update = has_top_level || has_unit_data;
+        // Flat schema: a `slots` array is the payload that carries everything —
+        // there is no top-level/per-unit split to reason about, so its presence
+        // alone marks a full update.
+        const bool is_flat = detect_schema(box) == CfsSchema::Flat;
+        bool is_full_update = has_top_level || has_unit_data || is_flat;
+
+        if (is_flat && schema_ != CfsSchema::Flat) {
+            schema_ = CfsSchema::Flat;
+            // Select the command dialect from the explicit API version, not by
+            // assuming every `slots[]` payload implements the same commands.
+            if (detect_fork_dialect(box)) {
+                macro_variant_ = CfsMacroVariant::Fork;
+                spdlog::info("[AMS CFS] Flat box schema + fork dialect detected "
+                             "(community box.py, API v{}) — Fork control enabled",
+                             helix::json_util::safe_int(box, "api_version", 0));
+            } else {
+                spdlog::warn("[AMS CFS] Flat box schema without a supported API version — "
+                             "slot display active, control paths disabled (no verified "
+                             "command dialect)");
+            }
+        }
 
         if (is_full_update) {
             auto new_info = parse_box_status(box);
@@ -789,7 +1232,10 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
                 if (!box.contains(key) || !box[key].is_object())
                     continue;
                 const auto& unit_json = box[key];
-                std::string state = unit_json.value("state", "None");
+                // safe_string for the same reason as the parse_box_status unit
+                // loop: a null/wrong-typed `state` must degrade to "disconnected",
+                // not throw out of handle_status_update.
+                std::string state = helix::json_util::safe_string(unit_json, "state", "None");
                 if (state == "None" || state == "-1")
                     continue;
                 for (int i = 0; i < 4; ++i) {
@@ -813,8 +1259,10 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
             // filament_loaded — a box update lacking the sensor param must not
             // clobber the sensor-derived value.
 
-            // Update runout flag only when the field was actually present
-            if (box.contains("filament_useup")) {
+            // Update runout flag only when the field was actually present.
+            // Stock spells it filament_useup; the flat schema spells it runout
+            // (JSON null while idle, a descriptor once tripped).
+            if (box.contains("filament_useup") || (is_flat && box.contains("runout"))) {
                 system_info_.filament_runout = new_info.filament_runout;
             }
 
@@ -829,7 +1277,7 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
             if (new_info.current_slot >= 0) {
                 system_info_.current_slot = new_info.current_slot;
                 system_info_.current_tool = new_info.current_tool;
-            } else if (has_unit_data && system_info_.action != AmsAction::LOADING) {
+            } else if ((has_unit_data || is_flat) && system_info_.action != AmsAction::LOADING) {
                 system_info_.current_slot = -1;
                 system_info_.current_tool = -1;
             }
@@ -848,17 +1296,32 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
                     const std::string& observed_uid =
                         (uid_it != observed_uids.end()) ? uid_it->second : std::string{};
 
-                    check_hardware_event_clear(slot, global_idx, observed_uid);
+                    // Both clear paths run BEFORE apply_overrides so a clear's
+                    // field reset isn't masked by a stale override layer.
+                    bool cleared = check_hardware_event_clear(slot, global_idx, observed_uid);
+                    cleared |= clear_stale_override_on_removal_locked(slot, global_idx);
+
                     // Mirror firmware-truth color/material into lane_data so
                     // OrcaSlicer's MoonrakerPrinterAgent sees the spool. Runs
                     // BEFORE apply_overrides so the values reflect firmware,
                     // not the override-masked view. FillUnsetOnly: CFS user
                     // edits don't reach firmware, so we must not let firmware
                     // overwrite them — see mirror_firmware_to_lane_data docs.
-                    helix::ams::mirror_firmware_to_lane_data(
-                        override_store_.get(), overrides_, global_idx, slot.color_rgb,
-                        slot.material, slot.status == SlotStatus::AVAILABLE,
-                        helix::ams::MirrorPolicy::FillUnsetOnly, backend_log_tag());
+                    //
+                    // Skipped on a parse that cleared: a clear fires clear_async
+                    // (DELETE) and the mirror fires save_async (POST) against
+                    // the SAME lane_data key. Both are async and independently
+                    // ordered, so issuing them together is a write race whose
+                    // outcome depends on which reply Moonraker processes last —
+                    // a DELETE landing second silently drops the record we just
+                    // published. The next poll republishes from firmware truth
+                    // with the delete already settled.
+                    if (!cleared) {
+                        helix::ams::mirror_firmware_to_lane_data(
+                            override_store_.get(), overrides_, global_idx, slot.color_rgb,
+                            slot.material, slot.status == SlotStatus::AVAILABLE,
+                            helix::ams::MirrorPolicy::FillUnsetOnly, backend_log_tag());
+                    }
                     apply_overrides(slot, global_idx);
                 }
             }
@@ -869,9 +1332,18 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
 
     if (params.contains("filament_switch_sensor filament_sensor")) {
         const auto& sensor = params["filament_switch_sensor filament_sensor"];
-        if (sensor.contains("filament_detected")) {
+        // filament_detected: Klipper publishes this as null until the sensor
+        // takes its first reading. Use .find() + is_boolean() (per [L087])
+        // rather than a bare get<bool>(), which throws type_error.302 on that
+        // null — and because the throw escapes into UpdateQueue's catch, it
+        // would take the extruder-temp and motor_control blocks below down
+        // with it and skip the EVENT_STATE_CHANGED emit, freezing the UI on
+        // stale AMS state. A null means "no reading", not "no filament", so
+        // there is no safe default here: skip and keep the previous value.
+        auto fd_it = sensor.find("filament_detected");
+        if (fd_it != sensor.end() && fd_it->is_boolean()) {
             std::lock_guard<std::mutex> lock(mutex_);
-            bool detected = sensor["filament_detected"].get<bool>();
+            bool detected = fd_it->get<bool>();
             system_info_.filament_loaded = detected;
 
             // The filament_switch_sensor sits at the toolhead extruder. It
@@ -917,16 +1389,67 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
 
     if (params.contains("motor_control")) {
         const auto& motor = params["motor_control"];
-        if (motor.contains("motor_ready")) {
+        // Same null hazard as filament_detected above — .find() + is_boolean()
+        // so a null reading leaves motor_ready_ at its previous value instead
+        // of throwing out of the handler.
+        auto mr_it = motor.find("motor_ready");
+        if (mr_it != motor.end() && mr_it->is_boolean()) {
             std::lock_guard<std::mutex> lock(mutex_);
-            motor_ready_ = motor["motor_ready"].get<bool>();
+            motor_ready_ = mr_it->get<bool>();
         }
         changed = true;
+    }
+
+    // The lane letter and the toolhead switch arrive on independent branches
+    // above (and often on independent notifications), so the seated bay can
+    // only be resolved once both have been applied.
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        apply_seated_slot_stamp_locked();
     }
 
     if (changed) {
         emit_event(EVENT_STATE_CHANGED);
     }
+}
+
+void AmsBackendCfs::clear_seated_slot_stamp_locked() {
+    // Caller holds mutex_.
+    if (seated_stamp_slot_ < 0) {
+        return;
+    }
+
+    SlotInfo* slot = system_info_.get_slot_global(seated_stamp_slot_);
+    // A rebuilt slot vector has already written firmware truth here, so the
+    // saved status is stale — only restore over a stamp we can still see.
+    if (slot != nullptr && slot->status == SlotStatus::LOADED) {
+        slot->status = seated_stamp_prev_;
+    }
+
+    seated_stamp_slot_ = -1;
+    seated_stamp_prev_ = SlotStatus::UNKNOWN;
+}
+
+void AmsBackendCfs::apply_seated_slot_stamp_locked() {
+    // Caller holds mutex_.
+    clear_seated_slot_stamp_locked();
+
+    // Both halves are required. The T{n}.filament letter alone is a lane
+    // SELECTION — CFS reports it through a load that has not yet reached the
+    // extruder, and on K1 for a merely cassette-staged slot (#968) — so only
+    // the toolhead filament_switch_sensor makes it a seat.
+    if (!system_info_.filament_loaded || system_info_.current_slot < 0) {
+        return;
+    }
+
+    SlotInfo* slot = system_info_.get_slot_global(system_info_.current_slot);
+    if (slot == nullptr) {
+        return;
+    }
+
+    seated_stamp_slot_ = system_info_.current_slot;
+    seated_stamp_prev_ = slot->status;
+    slot->status = SlotStatus::LOADED;
 }
 
 // --- State queries ---
@@ -995,8 +1518,24 @@ PathSegment AmsBackendCfs::infer_error_segment() const {
 
 // --- Operations ---
 
+AmsError AmsBackendCfs::reject_if_flat_schema(const char* operation) const {
+    // A flat box paired with the Fork dialect is fully driveable — the command
+    // set is verified against the module's own registration table. Only a flat
+    // box we cannot identify stays gated: emitting the stock CR_BOX_*/BOX_*
+    // sequences at an unknown module sends commands it may not define.
+    if (schema_ != CfsSchema::Flat || macro_variant_ == CfsMacroVariant::Fork) {
+        return AmsErrorHelper::success();
+    }
+    spdlog::warn("[AMS CFS] {} refused — unrecognized flat box module, no verified dialect",
+                 operation);
+    return AmsErrorHelper::not_supported(std::string(operation) + " on this firmware's CFS module");
+}
+
 AmsError AmsBackendCfs::load_filament(int slot_index) {
-    auto err = check_preconditions(true);
+    auto err = reject_if_flat_schema("Load");
+    if (err.result != AmsResult::SUCCESS)
+        return err;
+    err = check_preconditions(true);
     if (err.result != AmsResult::SUCCESS)
         return err;
     auto gcode = load_gcode(slot_index, macro_variant_);
@@ -1009,12 +1548,18 @@ AmsError AmsBackendCfs::load_filament(int slot_index) {
         system_info_.current_slot = slot_index;
         begin_phase_tracking();
         apply_synthesized_action_locked();
+        // Optimistic current_slot move with no status frame behind it — keep
+        // the stamp on the same bay the aggregate now names.
+        apply_seated_slot_stamp_locked();
     }
     return dispatch_action_script(std::move(gcode));
 }
 
 AmsError AmsBackendCfs::unload_filament(int) {
-    auto err = check_preconditions(true);
+    auto err = reject_if_flat_schema("Unload");
+    if (err.result != AmsResult::SUCCESS)
+        return err;
+    err = check_preconditions(true);
     if (err.result != AmsResult::SUCCESS)
         return err;
     {
@@ -1031,7 +1576,10 @@ AmsError AmsBackendCfs::select_slot(int) {
 }
 
 AmsError AmsBackendCfs::change_tool(int tool) {
-    auto err = check_preconditions(true);
+    auto err = reject_if_flat_schema("Tool change");
+    if (err.result != AmsResult::SUCCESS)
+        return err;
+    err = check_preconditions(true);
     if (err.result != AmsResult::SUCCESS)
         return err;
 
@@ -1043,7 +1591,11 @@ AmsError AmsBackendCfs::change_tool(int tool) {
         // nozzle still empty, so the K1 override keys on filament_loaded only
         // (avoids the "hallucinated cut on an empty nozzle" the reporter saw,
         // #968). K2 retains the filament_loaded || current_slot >= 0 behavior.
-        needs_unload = needs_unload_before_load(system_info_);
+        //
+        // `tool` doubles as the target slot: CFS bays map 1:1 to tools. Safe
+        // under mutex_ — CFS does not override get_unit_topology(), so the
+        // base's per-lane arm reaches only the inline get_topology() constant.
+        needs_unload = needs_unload_before_load(system_info_, tool);
     }
 
     // Validate gcode before mutating state
@@ -1059,6 +1611,8 @@ AmsError AmsBackendCfs::change_tool(int tool) {
         system_info_.current_slot = tool;
         begin_phase_tracking();
         apply_synthesized_action_locked();
+        // Same as load_filament: the aggregate moved without a status frame.
+        apply_seated_slot_stamp_locked();
     }
     return dispatch_action_script(std::move(gcode));
 }
@@ -1114,6 +1668,11 @@ AmsError AmsBackendCfs::set_slot_info(int slot_index, const SlotInfo& info, bool
         target->color_name = info.color_name;
         target->material = info.material;
         target->brand = info.brand;
+        // Carry the catalog product identity through preview writes too — a
+        // persist=false preview that dropped it would make the editor snap
+        // back to a different variant on the next get_slot_info().
+        target->catalog_id = info.catalog_id;
+        target->product_name = info.product_name;
         target->spool_name = info.spool_name;
         target->spoolman_id = info.spoolman_id;
         target->spoolman_vendor_id = info.spoolman_vendor_id;
@@ -1126,13 +1685,18 @@ AmsError AmsBackendCfs::set_slot_info(int slot_index, const SlotInfo& info, bool
         // edits are in-memory only and will be overwritten by the next
         // firmware parse (expected preview contract).
         //
-        // NOTE on self-wipe: CFS's hardware-event check is RFID-fingerprint-based
-        // (material_type + color_value from firmware). The user cannot set
-        // those raw RFID strings through the UI — set_slot_info only touches
-        // display-level material/color_rgb fields, never the raw firmware
-        // material_type code. So last_rfid_uid_ stays at whatever firmware
-        // last reported and user edits don't race against the hardware-event
-        // detection. Same logic as Snapmaker.
+        // NOTE on self-wipe: CFS's hardware-event check is RFID-fingerprint-
+        // based (material_type + color_value from firmware), and one half of
+        // that fingerprint IS user-writable — push_slot_color_to_firmware
+        // (below, persist path only) rewrites color_value via
+        // BOX_MODIFY_TN_DATA. Firmware echoes that write back on a later poll,
+        // where it is indistinguishable from a physical spool swap and would
+        // erase the override we are staging right here.
+        //
+        // The self-wipe guard lives in push_slot_color_to_firmware, which
+        // registers the expected post-write fingerprint with rfid_tracker_
+        // before dispatching the gcode. material_type has no write path, so
+        // that half of the fingerprint remains pure firmware truth.
         if (persist) {
             helix::ams::FilamentSlotOverride ovr;
             ovr.brand = info.brand;
@@ -1145,6 +1709,13 @@ AmsError AmsBackendCfs::set_slot_info(int slot_index, const SlotInfo& info, bool
             ovr.color_set = true; // a user-edit always records a color, even pure black (#000000)
             ovr.color_name = info.color_name;
             ovr.material = info.material;
+            // Catalog product identity. Persisted so a reopen can restore the
+            // EXACT product rather than the alphabetically-first variant of the
+            // same vendor+material. Never auto-mirrored (firmware has no notion
+            // of a catalog product), so no user-lock flag is needed: a non-empty
+            // value can only have come from a user pick.
+            ovr.catalog_id = info.catalog_id;
+            ovr.product_name = info.product_name;
             // User-lock: CFS uses FillUnsetOnly so the locks are
             // belt-and-suspenders here, but they keep the on-disk schema
             // consistent across backends and protect against a future
@@ -1215,6 +1786,44 @@ void AmsBackendCfs::push_slot_color_to_firmware(int global_index, uint32_t color
         return;
     }
 
+    // The Fork module defines no BOX_MODIFY_TN_DATA. `_BOX_SLOT_SET` requires
+    // a material; explicit clears route through clear_box_slot_profile().
+    if (macro_variant_ == CfsMacroVariant::Fork) {
+        std::string material;
+        std::string brand;
+        std::string name;
+        int spoolman_id = 0;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (const auto& unit : system_info_.units) {
+                for (const auto& slot : unit.slots) {
+                    if (slot.global_index == global_index) {
+                        material = slot.material;
+                        brand = slot.brand;
+                        name = slot.spool_name;
+                        spoolman_id = slot.spoolman_id;
+                        break;
+                    }
+                }
+            }
+        }
+        std::string gcode =
+            slot_set_gcode(global_index, material, color_rgb, brand, name, spoolman_id);
+        if (gcode.empty()) {
+            spdlog::debug("{} slot-set skipped for slot {}", backend_log_tag(), global_index);
+            return;
+        }
+        execute_gcode(gcode);
+        return;
+    }
+
+    // A flat box we could not identify: no verified write command at all.
+    if (schema_ == CfsSchema::Flat) {
+        spdlog::debug("{} push_slot_color_to_firmware: unknown flat module — local override only",
+                      backend_log_tag());
+        return;
+    }
+
     const int unit = (global_index / 4) + 1;           // 1..4
     const char slot_letter = 'A' + (global_index % 4); // A..D
     char data[16];
@@ -1228,10 +1837,46 @@ void AmsBackendCfs::push_slot_color_to_firmware(int global_index, uint32_t color
                   "BOX_MODIFY_TN_DATA ADDR=%d NUM=%c PART=color_value DATA=%s", unit, slot_letter,
                   data);
 
+    // Self-wipe guard. Once firmware applies this write it reports the new
+    // color_value back to us, changing the RFID fingerprint that
+    // check_hardware_event_clear watches — which on its own reads exactly like
+    // a physical spool swap and erases the override the user just created.
+    //
+    // Register the fingerprint we expect to see once the write lands: the
+    // CURRENT material_type (this gcode does not touch it) paired with the
+    // color we're about to send. We deliberately do NOT overwrite the baseline
+    // outright: the gcode is queued asynchronously behind whatever else Klipper
+    // is running, so firmware keeps reporting the OLD color for an unknown
+    // number of polls first. Those polls must stay Unchanged, and only the
+    // eventual echo may consume the expectation.
+    //
+    // The expectation is single-shot and any non-matching change consumes it
+    // too, so a genuine spool swap that happens while this write is in flight
+    // is still detected and swap detection is never left permanently blinded.
+    //
+    // With no baseline yet there is nothing to build an expectation from — and
+    // none is needed: the first observation for a slot is always a baseline and
+    // never fires a clear.
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (auto base = rfid_tracker_.baseline(global_index)) {
+            const auto bar = base->find('|');
+            const std::string material = (bar == std::string::npos) ? *base : base->substr(0, bar);
+            rfid_tracker_.expect(global_index, material + "|" + data);
+        }
+    }
+
     auto err = execute_gcode(gcode);
     if (err.result != AmsResult::SUCCESS) {
         // Non-fatal — the override is already in lane_data so user data isn't
         // lost; only the firmware-side LCD won't reflect this edit.
+        //
+        // Drop the expectation: no echo is coming, so the next fingerprint
+        // change is genuinely external and must be treated as a swap.
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            rfid_tracker_.forget_expected(global_index);
+        }
         spdlog::warn("{} push_slot_color_to_firmware: gcode dispatch failed for slot {}: {}",
                      backend_log_tag(), global_index, err.technical_msg);
     }
@@ -1268,10 +1913,33 @@ AmsError AmsBackendCfs::set_tool_mapping(int tool_number, int slot_index) {
     // immediately for UI/restore-snapshot reads. The next box-status websocket
     // update will re-confirm (or correct, if Klipper rejected the BOX_MODIFY_TN
     // for some reason) — firmware remains the source of truth.
+    //
+    // Both directions move together (assign_tool_slot), because the AMS panel's
+    // lane badge reads mapped_tool while the filament panel's op buttons read
+    // tool_to_slot_map. Writing the forward entry alone left the badge on the
+    // lane the tool was moved AWAY from until the next box frame — and on K1,
+    // where BOX_MODIFY_TN is known to no-op, no such frame ever arrives.
+    //
+    // Only lanes the current parse actually knows about can be recorded: a
+    // forward entry naming a lane with no SlotInfo has no reverse counterpart
+    // to pair with, and resolve_op_button_slot() would hand the filament panel
+    // a slot index that get_slot_global() answers with nullptr. The command is
+    // still dispatched — firmware is the authority, the box may have a unit we
+    // have not parsed a frame for yet, and that frame is what will make the
+    // mapping real in both directions.
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (tool_number < static_cast<int>(system_info_.tool_to_slot_map.size())) {
-            system_info_.tool_to_slot_map[tool_number] = slot_index;
+        const int known_slots = system_info_.total_slots;
+        if (slot_index < known_slots) {
+            assign_tool_slot(system_info_, tool_number, slot_index);
+        } else if (known_slots > 0) {
+            spdlog::warn("[AMS CFS] Remap targets slot {} but only {} lanes are connected; "
+                         "sending the command, not recording it locally — the next box frame "
+                         "decides",
+                         slot_index, known_slots);
+        } else {
+            spdlog::debug("[AMS CFS] Remap issued before the first box frame; local map "
+                          "stays empty until one arrives");
         }
     }
 
@@ -1389,7 +2057,47 @@ std::string wrap_with_park(CfsMacroVariant variant, const std::string& body, boo
 
 } // namespace
 
+bool AmsBackendCfs::detect_fork_dialect(const nlohmann::json& box_json) {
+    return box_json.is_object() && helix::json_util::safe_int(box_json, "api_version", 0) == 1;
+}
+
+std::string AmsBackendCfs::slot_set_gcode(int global_slot_index, const std::string& material,
+                                          uint32_t color_rgb, const std::string& brand,
+                                          const std::string& name, int spoolman_id) {
+    constexpr int kCfsMaxSlots = 16; // 4 units × 4 slots
+    if (global_slot_index < 0 || global_slot_index >= kCfsMaxSlots) {
+        spdlog::error("[AMS CFS] Invalid slot index for slot-set: {}", global_slot_index);
+        return "";
+    }
+    // MATERIAL is required by cmd_slot_set — an empty one is a hard command
+    // error, so emit nothing rather than a rejected write.
+    if (material.empty()) {
+        spdlog::debug("[AMS CFS] slot_set: no material for slot {} — skipping write",
+                      global_slot_index);
+        return "";
+    }
+    std::string upper = material;
+    for (char& c : upper) {
+        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    }
+    char color[10];
+    std::snprintf(color, sizeof(color), "#%06X", color_rgb & 0xFFFFFFu);
+    return "_BOX_SLOT_SET SLOT=" + std::to_string(global_slot_index) +
+           " MATERIAL=" + quote_gcode_param(upper) + " COLOR=" + quote_gcode_param(color) +
+           " BRAND=" + quote_gcode_param(brand) + " NAME=" + quote_gcode_param(name) +
+           " SPOOLMAN_ID=" + std::to_string(spoolman_id > 0 ? spoolman_id : -1);
+}
+
 std::string AmsBackendCfs::load_gcode(int idx, CfsMacroVariant variant) {
+    if (variant == CfsMacroVariant::Fork) {
+        // The Box T command owns the complete load or change operation.
+        constexpr int kCfsMaxSlots = 16;
+        if (idx < 0 || idx >= kCfsMaxSlots) {
+            spdlog::error("[AMS CFS] Invalid slot index for load: {}", idx);
+            return "";
+        }
+        return "T" + std::to_string(idx);
+    }
     std::string tnn = CfsMaterialDb::slot_to_tnn(idx);
     if (tnn.empty()) {
         spdlog::error("[AMS CFS] Invalid slot index for load: {}", idx);
@@ -1425,6 +2133,13 @@ std::string AmsBackendCfs::load_gcode(int idx, CfsMacroVariant variant) {
 }
 
 std::string AmsBackendCfs::unload_gcode(CfsMacroVariant variant) {
+    if (variant == CfsMacroVariant::Fork) {
+        // Bare BOX_UNLOAD. It takes an optional MANUAL=0|1 (a user-driven
+        // unload that skips the automated path) and explicitly REJECTS SLOT —
+        // cmd_unload raises "BOX_UNLOAD no longer accepts SLOT". We always want
+        // the automated path, so no parameters at all.
+        return "BOX_UNLOAD";
+    }
     if (variant == CfsMacroVariant::K1) {
         // K1: mirror the firmware BOX_QUIT_MATERIAL step list:
         //   ERROR_CLEAR → CHECK_MATERIAL → CUT → RETRUDE → safe park.
@@ -1448,6 +2163,20 @@ std::string AmsBackendCfs::unload_gcode(CfsMacroVariant variant) {
 }
 
 std::string AmsBackendCfs::swap_gcode(int idx, CfsMacroVariant variant) {
+    if (variant == CfsMacroVariant::Fork) {
+        // T<n> — box.py registers one per physical slot plus the external bay
+        // (_register_t_commands) and routes it through its change engine, which
+        // cuts, retracts, loads and flushes as one operation. There is no
+        // BOX_CHANGE; that name appears only in a user-written alias macro that
+        // this firmware does not define.
+        //
+        constexpr int kCfsMaxSlots = 16;
+        if (idx < 0 || idx >= kCfsMaxSlots) {
+            spdlog::error("[AMS CFS] Invalid slot index for swap: {}", idx);
+            return "";
+        }
+        return "T" + std::to_string(idx);
+    }
     std::string tnn = CfsMaterialDb::slot_to_tnn(idx);
     if (tnn.empty()) {
         spdlog::error("[AMS CFS] Invalid slot index for swap: {}", idx);
@@ -1526,17 +2255,25 @@ AmsError AmsBackendCfs::dispatch_action_script(std::string gcode) {
                 // envelope ran BOX_SAVE_FAN). The K1 official CFS upgrade
                 // firmware lacks the macro and never saved fan state, so emitting
                 // it there just returns key61 — skip it on K1. (#968)
-                if (macro_variant_ != CfsMacroVariant::K1) {
+                if (macro_variant_ == CfsMacroVariant::K2) {
                     api_->execute_gcode(
                         "BOX_RESTORE_FAN", []() {}, [](const MoonrakerError&) {},
                         IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
                 }
-                api_->execute_gcode(
-                    "RESTORE_GCODE_STATE NAME=helix_cfs_load", []() {},
-                    [](const MoonrakerError&) {}, IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+                if (macro_variant_ != CfsMacroVariant::Fork) {
+                    api_->execute_gcode(
+                        "RESTORE_GCODE_STATE NAME=helix_cfs_load", []() {},
+                        [](const MoonrakerError&) {}, IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+                }
             }
         });
     };
+
+    if (macro_variant_ == CfsMacroVariant::Fork) {
+        api_->execute_gcode(gcode, std::move(on_complete), std::move(on_error),
+                            IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+        return AmsErrorHelper::success();
+    }
 
     // Homing-then-execute — same pattern as ensure_homed_then but with our
     // own completion callbacks that propagate to action-state cleanup.
@@ -1883,6 +2620,14 @@ void AmsBackendCfs::apply_overrides(SlotInfo& slot, int slot_index) {
         slot.color_name = o.color_name;
     if (!o.material.empty())
         slot.material = o.material;
+    // Catalog product identity — same "override wins only when it carries a
+    // real value" rule as the strings above. Firmware never populates these
+    // (no AMS protocol has a notion of a branded product id), so a non-empty
+    // value here is always a user pick and always wins.
+    if (!o.catalog_id.empty())
+        slot.catalog_id = o.catalog_id;
+    if (!o.product_name.empty())
+        slot.product_name = o.product_name;
 
     // Trust the user's assignment for presence. Untagged 3rd-party spools
     // always read RFID -1, so firmware reports the bay EMPTY even though a
@@ -1895,40 +2640,44 @@ void AmsBackendCfs::apply_overrides(SlotInfo& slot, int slot_index) {
     }
 }
 
-void AmsBackendCfs::check_hardware_event_clear(SlotInfo& slot, int slot_index,
+bool AmsBackendCfs::check_hardware_event_clear(SlotInfo& slot, int slot_index,
                                                const std::string& observed_uid) {
-    // Empty observed UID = no RFID tag / sentinel material_type / sentinel
-    // color_value. Treat as non-signal: don't update the baseline, don't
-    // clear. Without this guard every tag-less poll would overwrite a real
-    // prior fingerprint and mask a genuine hardware swap on the next good
-    // read. Matches Snapmaker's empty-UID semantics.
-    if (observed_uid.empty())
-        return;
+    std::string old_uid;
+    const auto event = rfid_tracker_.observe(slot_index, observed_uid, &old_uid);
 
-    auto it = last_rfid_uid_.find(slot_index);
-    if (it == last_rfid_uid_.end()) {
-        // First observation for this slot — establish baseline. Even if the
-        // override was previously saved against a different fingerprint, the
-        // first observation is NEVER a swap signal. apply_overrides still
-        // runs after us and the override wins.
-        last_rfid_uid_[slot_index] = observed_uid;
+    switch (event) {
+    case helix::ams::FingerprintEvent::NoSignal:
+        // No RFID tag / sentinel material_type / sentinel color_value, or the
+        // slot wasn't in this incremental update. Baseline untouched, no clear.
+        return false;
+
+    case helix::ams::FingerprintEvent::Baseline:
         spdlog::debug("{} Slot {} baseline RFID fingerprint: {}", backend_log_tag(), slot_index,
                       observed_uid);
-        return;
-    }
-    if (it->second == observed_uid)
-        return; // unchanged — no swap signal
+        return false;
 
-    // Fingerprint changed. Record the new value as the baseline FIRST so a
-    // failed clear_async doesn't make us re-fire on every subsequent poll.
-    const std::string old_uid = it->second;
-    it->second = observed_uid;
+    case helix::ams::FingerprintEvent::Unchanged:
+        return false;
+
+    case helix::ams::FingerprintEvent::OwnWriteEcho:
+        // Firmware just handed back the color_value we wrote in
+        // push_slot_color_to_firmware. The physical spool never moved, so the
+        // user's override stands. The baseline has already advanced to the
+        // echoed value, so the NEXT genuine swap is detected against it.
+        spdlog::debug("{} Slot {} RFID fingerprint {} -> {} matches our own color push — "
+                      "override retained",
+                      backend_log_tag(), slot_index, old_uid, observed_uid);
+        return false;
+
+    case helix::ams::FingerprintEvent::Changed:
+        break;
+    }
 
     auto ovr_it = overrides_.find(slot_index);
     if (ovr_it == overrides_.end()) {
         spdlog::debug("{} Slot {} RFID fingerprint changed {} -> {} (no override to clear)",
                       backend_log_tag(), slot_index, old_uid, observed_uid);
-        return;
+        return false;
     }
 
     spdlog::info("{} Slot {} RFID fingerprint changed {} -> {}, clearing override "
@@ -1940,6 +2689,56 @@ void AmsBackendCfs::check_hardware_event_clear(SlotInfo& slot, int slot_index,
     // policy. Caller already holds mutex_.
     (void)ovr_it;
     clear_override_locked(slot_index, slot);
+    return true;
+}
+
+bool AmsBackendCfs::clear_stale_override_on_removal_locked(SlotInfo& slot, int slot_index) {
+    if (slot.status != SlotStatus::EMPTY)
+        return false;
+
+    auto it = overrides_.find(slot_index);
+    if (it == overrides_.end())
+        return false;
+
+    // A deliberate user assignment survives an empty bay. The user told us what
+    // belongs in this slot; unloading it — or a reader that momentarily can't
+    // see the tag — must not throw that away. Locks are the authoritative
+    // "the user chose this" signal and they round-trip through lane_data, so
+    // this holds across restarts too. Legacy records load with locks defaulted
+    // to true wherever the field has a value, so pre-lock user data is covered.
+    const auto& o = it->second;
+    if (o.user_locked_color || o.user_locked_material) {
+        return false;
+    }
+
+    // Identity fields are equally authoritative, and locks alone don't cover
+    // them. The FillUnsetOnly auto-mirror writes ONLY color_rgb/color_set and
+    // material (see mirror_firmware_to_lane_data) — it can never populate a
+    // brand, spool name or Spoolman id. So an override carrying any of those
+    // came from a user assignment (or a Spoolman link), which must survive an
+    // empty bay exactly like a locked field does. Without this, a bay that
+    // reads EMPTY for one poll — a genuine unload, but equally a transient
+    // unreadable-tag read — silently destroys the user's Spoolman linkage.
+    //
+    // catalog_id belongs in the same list and is NOT redundant with brand: a
+    // Generic catalog product carries an empty brand, so a user who picked one
+    // leaves brand/spool_name/ids all empty and would fall through to the
+    // auto-mirror-residue verdict below. Nothing but a user pick can ever write
+    // it — the mirror has no notion of a catalog product.
+    if (!o.brand.empty() || !o.spool_name.empty() || o.spoolman_id != 0 ||
+        o.spoolman_vendor_id != 0 || !o.catalog_id.empty() || !o.product_name.empty()) {
+        return false;
+    }
+
+    // What's left in overrides_ for an empty bay is pure firmware auto-mirror
+    // residue — color/material describing a spool that is no longer seated.
+    // Erase it so the lane_data record stops advertising a stale color/material
+    // to OrcaSlicer and apply_overrides stops promoting the bay back to
+    // AVAILABLE.
+    spdlog::info("{} Slot {} reads EMPTY — clearing auto-mirrored override for the removed spool",
+                 backend_log_tag(), slot_index);
+    clear_override_locked(slot_index, slot);
+    return true;
 }
 
 void AmsBackendCfs::clear_override_locked(int slot_index, SlotInfo& slot) {
@@ -1960,6 +2759,12 @@ void AmsBackendCfs::clear_override_locked(int slot_index, SlotInfo& slot) {
     slot.spoolman_id = 0;
     slot.spoolman_vendor_id = 0;
     slot.remaining_weight_g = -1.0f;
+    // The catalog pick is override-exclusive on every backend — no AMS
+    // firmware carries a branded product id — so a clear always drops it.
+    // Leaving it would re-navigate the editor to the removed spool's
+    // product on the next open.
+    slot.catalog_id.clear();
+    slot.product_name.clear();
 
     if (override_store_) {
         // Capture by value — clear_async's Moonraker callback may fire after
@@ -1988,6 +2793,12 @@ void AmsBackendCfs::clear_slot_override(int slot_index) {
     }
 
     emit_event(EVENT_SLOT_CHANGED, std::to_string(slot_index));
+}
+
+void AmsBackendCfs::clear_box_slot_profile(int slot_index) {
+    if (macro_variant_ == CfsMacroVariant::Fork) {
+        execute_gcode("_BOX_SLOT_CLEAR SLOT=" + std::to_string(slot_index));
+    }
 }
 
 } // namespace helix::printer

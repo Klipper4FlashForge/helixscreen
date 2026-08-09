@@ -9,6 +9,7 @@
 #include "operation_timeout_guard.h"
 #include "overlay_base.h"
 #include "subject_managed_panel.h"
+#include "z_offset_utils.h"
 
 #include <string>
 
@@ -223,13 +224,34 @@ class ZOffsetCalibrationPanel : public OverlayBase {
     static constexpr uint32_t WARMING_TIMEOUT_MS = 300000; // 5 min for bed to reach temp
     static constexpr uint32_t PROBING_TIMEOUT_MS = 180000;
     static constexpr uint32_t SAVING_TIMEOUT_MS = 30000;
+
+    /// Arm (or re-arm) the SAVING-state timeout.
+    void arm_saving_timeout();
+
+    /// Start/stop watching klippy state for the duration of a save.
+    void begin_saving_restart_watch();
+    void end_saving_restart_watch();
+
+    /// SAVE_CONFIG restarts Klipper; some printers chain a second config write +
+    /// restart tens of seconds later. Each extension buys another
+    /// SAVING_TIMEOUT_MS, but only if this save actually restarted Klipper — so
+    /// a genuinely hung save still fails after one SAVING_TIMEOUT_MS.
+    static constexpr unsigned SAVING_TIMEOUT_MAX_EXTENSIONS = 4;
+    unsigned saving_timeout_extensions_ = 0;
+
+    /// Latches restart activity seen during a save. Reset on every entry to and
+    /// exit from State::SAVING so repeated saves in one session start clean.
+    helix::zoffset::SaveRestartLatch save_restart_latch_;
+
+    /// Watches klippy state while saving, to feed save_restart_latch_.
+    /// No paired SubjectLifetime: PrinterState::get_klippy_state_subject() is a
+    /// static singleton-lifetime subject (no lifetime-token overload), unlike the
+    /// per-sensor bed temp subject above.
+    ObserverGuard klippy_state_observer_;
 };
 
 // Global instance accessor
 ZOffsetCalibrationPanel& get_global_zoffset_cal_panel();
-
-// Destroy the global instance (call during shutdown)
-void destroy_zoffset_cal_panel();
 
 /**
  * @brief Initialize row click callback for opening from Advanced panel

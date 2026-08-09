@@ -6,25 +6,34 @@ This directory contains the testing infrastructure for the LVGL 9 UI prototype.
 
 ```
 tests/
-├── framework/           # Test framework dependencies
-│   └── catch.hpp       # Catch2 v2.x single-header (vendored)
-├── unit/               # Unit tests (no UI rendering required)
+├── catch_amalgamated.hpp / .cpp  # Catch2 v3.5.1 (vendored, amalgamated single-header build)
+├── unit/               # In-process Catch2 tests — build widgets inside the test
+│   │                   # binary (fast, fine-grained; can't reach app lifecycle,
+│   │                   # navigation, or async population)
 │   ├── test_main.cpp   # Test runner entry point
 │   └── test_*.cpp      # Individual test files
-├── integration/        # Integration tests (full UI simulation)
-│   └── test-navigation.sh  # Manual navigation testing script
-└── README.md           # This file
+├── ui/                 # Out-of-process pytest suite — drives a real running
+│   │                   # helix-screen instance via `helix-screen ctl --json`,
+│   │                   # covering app boot, navigation, and async population.
+│   │                   # See docs/devel/UI_TESTING.md § "Out-of-Process Tests".
+│   ├── conftest.py
+│   ├── helix/app.py    # HelixApp — wraps each ctl call as a subprocess
+│   ├── goldens/         # Committed reference screenshots
+│   └── test_*.py
+└── README.md           # This file (in-process Catch2 tests only — see tests/ui/
+                        # above and docs/devel/UI_TESTING.md for the pytest suite)
 ```
 
-## Test Framework: Catch2 v2.x
+## Test Framework: Catch2 v3.5.1
 
-We use **Catch2 v2.x** as a single-header vendored dependency. This is the recommended approach for Catch2 v2.x - no submodule or external build system required.
+We use **Catch2 v3.5.1**, amalgamated (single translation unit) rather than the
+CMake/submodule build, so `make test` stays a plain Makefile target.
 
-**Why Catch2 v2.x single-header?**
-- Simple: Just `#include "../framework/catch.hpp"` in test files
-- Lightweight: 642KB, no build complexity
-- Stable: v2.x is mature and won't require frequent updates
-- Standard practice: Most C++ projects vendor this header
+- Include: `#include "../catch_amalgamated.hpp"` in test files (not `../framework/catch.hpp` —
+  that path is from an earlier v2.x vendoring and no longer exists).
+- `TEST_CASE`/`SECTION`/`REQUIRE` all work the same as v2.x for the patterns below; a few
+  APIs changed between v2 and v3 (see Catch2's own migration notes if something doesn't
+  compile as shown).
 
 ## Running Tests
 
@@ -64,7 +73,7 @@ make test
 Create a new file in `tests/unit/test_<feature>.cpp`:
 
 ```cpp
-#include "../framework/catch.hpp"
+#include "../catch_amalgamated.hpp"
 #include "../../include/your_header.h"
 
 TEST_CASE("Feature description", "[tag]") {
@@ -196,41 +205,22 @@ TEST_CASE("Navigation system", "[navigation]") {
 
 Each `SECTION` runs independently with a fresh fixture.
 
-## Integration Tests
+## Out-of-Process / Integration Tests (`tests/ui/`)
 
-### Manual UI Testing
-
-The `integration/test-navigation.sh` script provides manual integration testing:
+`tests/integration/test-navigation.sh` — the old "launch it, click icons, eyeball it"
+manual script this section used to document — is gone. It's been replaced by
+`tests/ui/`: a real pytest suite that boots the actual `helix-screen` binary and drives
+it through `helix-screen ctl --json`, covering exactly what that manual checklist used
+to ask a human to verify (navigation, panel switching, screenshot capture) plus golden
+image regression, all scripted and re-runnable.
 
 ```bash
-# Run from project root
-./tests/integration/test-navigation.sh
-
-# Or directly
-cd tests/integration && ./test-navigation.sh
+make -j
+./.venv/bin/python -m pytest tests/ui/ -v
 ```
 
-This script:
-1. Builds the UI prototype
-2. Launches the app for 10 seconds
-3. Captures console output for navigation events
-4. Takes a screenshot
-5. Reports results
-
-**Manual test checklist:**
-- [ ] Click each navigation icon (Home, Controls, Filament, Settings, Advanced)
-- [ ] Verify active icon turns red, inactive icons are white
-- [ ] Verify correct panel content displays
-- [ ] Press 'S' to capture screenshots
-- [ ] Verify no click event errors in console
-
-### Writing Integration Tests
-
-Future integration tests should:
-- Test full XML component rendering
-- Verify Subject-Observer data binding
-- Test event handling (clicks, gestures)
-- Validate screenshot output matches expected UI
+Full detail — fixtures, `HelixApp`, golden mechanics, environment variables — lives in
+`docs/devel/UI_TESTING.md` § "Out-of-Process Tests", not duplicated here.
 
 ## Testing Best Practices
 
@@ -376,7 +366,7 @@ TEST_CASE("Debug example", "[debug]") {
 ### Adding a New Test File
 
 1. Create `tests/unit/test_<feature>.cpp`
-2. Include Catch2: `#include "../framework/catch.hpp"`
+2. Include Catch2: `#include "../catch_amalgamated.hpp"`
 3. Include headers under test
 4. Write test cases with tags
 5. Run `make test` - Makefile auto-detects new files
@@ -390,22 +380,27 @@ TEST_CASE("Debug example", "[debug]") {
 
 ### Updating Catch2
 
-If you need to update Catch2 v2.x (rare):
+Catch2 v3 ships its amalgamated single-TU build as two files
+(`catch_amalgamated.hpp` + `catch_amalgamated.cpp`) from the release's
+`extras/` directory — not a single header the way v2.x was:
 
 ```bash
-# Download latest v2.x release
-curl -L -o tests/framework/catch.hpp \
-  https://raw.githubusercontent.com/catchorg/Catch2/v2.x/single_include/catch2/catch.hpp
+# Replace both files with a newer v3.x release's extras/catch_amalgamated.*
+curl -L -o tests/catch_amalgamated.hpp \
+  https://github.com/catchorg/Catch2/releases/download/v3.5.1/catch_amalgamated.hpp
+curl -L -o tests/catch_amalgamated.cpp \
+  https://github.com/catchorg/Catch2/releases/download/v3.5.1/catch_amalgamated.cpp
 
 # Rebuild tests
 make clean && make test
 ```
 
-**Note:** Catch2 v3.x is a breaking change - stick with v2.x unless you have a compelling reason to upgrade.
+Swap `v3.5.1` for whichever release you're moving to. Check Catch2's migration notes
+for API changes between minor versions before assuming existing tests still compile.
 
 ## Resources
 
-- **Catch2 Documentation:** https://github.com/catchorg/Catch2/blob/v2.x/docs/Readme.md
+- **Catch2 Documentation:** https://github.com/catchorg/Catch2/blob/devel/docs/Readme.md
 - **LVGL Testing Guide:** https://docs.lvgl.io/master/others/testing.html
 - **Test-Driven Development:** https://martinfowler.com/bliki/TestDrivenDevelopment.html
 

@@ -2,7 +2,7 @@
 
 This document describes the HelixScreen prototype build system, including automatic patch application, multi-display support, and development workflows.
 
-**For common development tasks**, see **[DEVELOPMENT.md](../DEVELOPMENT.md)** - this document covers advanced build system internals.
+**For common development tasks**, see **[DEVELOPMENT.md](DEVELOPMENT.md)** - this document covers advanced build system internals.
 
 ## Cross-Compilation (Embedded Targets)
 
@@ -183,7 +183,10 @@ docker/
 ├── Dockerfile.cc1         # CC1 toolchain (Debian Bookworm, ARM GCC 10.3)
 ├── Dockerfile.k1          # K1 static toolchain (Bootlin mips32el-musl, GCC 12)
 ├── Dockerfile.k1-dynamic  # K1 dynamic toolchain (crosstool-NG, GCC 7.5, glibc 2.29)
-└── Dockerfile.k2          # K2 toolchain (Bootlin armv7-eabihf-musl, GCC 12)
+├── Dockerfile.k2          # K2 toolchain (Bootlin armv7-eabihf-musl, GCC 12)
+├── Dockerfile.ad5x        # AD5X toolchain (MIPS, ZMOD)
+├── Dockerfile.snapmaker-u1 # Snapmaker U1 toolchain
+└── Dockerfile.x86         # x86 native/container build
 ```
 
 The Dockerfiles handle:
@@ -463,21 +466,95 @@ cd .worktrees/my-feature
 The script optimizes for **fast builds** by sharing artifacts from the main tree:
 
 1. **Symlinks lib/** — all submodules symlinked (no clone/configure time)
-2. **Symlinks compiled libraries** — `libhv.a`, `libwpa_client.a` from main tree
-3. **Symlinks precompiled header** — `lvgl_pch.h.gch` (22MB saved)
-4. **Symlinks tools** — `node_modules/`, `.venv/`
-5. **Clones build objects** — copies `build/obj/` from the main tree (APFS clonefile on macOS; plain copy on Linux)
-6. **Configures ccache for cross-worktree reuse** — so the worktree builds against the *same* ccache the main tree populated (see below)
-7. **Validates architecture** — wrong-arch `.o`/`.a` files (left by a prior cross-compile) are detected and cleared so `make` rebuilds them correctly
-8. **Configures git** — `.git/info/exclude` + `--skip-worktree` keep `git status` clean despite the symlinks
+2. **Adopts the main tree's mtimes** for every byte-identical file — without this, nothing below actually saves you anything (see next section)
+3. **Clones compiled libraries** — `libhv.a`, `libwpa_client.a` from main tree
+4. **Clones the precompiled header** — `lvgl_pch.h.gch` (27MB)
+5. **Symlinks tools** — `node_modules/`, `.venv/`
+6. **Clones build objects** — copies `build/obj/` and `build/generated/` from the main tree (APFS clonefile on macOS; plain copy on Linux)
+7. **Configures ccache for cross-worktree reuse** — so the worktree builds against the *same* ccache the main tree populated, when ccache is installed (see below)
+8. **Validates architecture** — wrong-arch `.o`/`.a` files (left by a prior cross-compile) are detected and cleared so `make` rebuilds them correctly
+9. **Configures git** — `.git/info/exclude` + `--skip-worktree` keep `git status` clean despite the symlinks
 
 **Trade-off**: If you need to modify library code (`lib/`), un-symlink that specific directory first (`rm lib/<name> && cp -a $MAIN/lib/<name> lib/`).
 
-### Why worktree builds are fast (and the ccache config the script sets)
+> **Build outputs are cloned, never symlinked.** `libhv.a` and `lvgl_pch.h.gch` used to be
+> symlinks into the main tree. They are build *outputs*, so make rewrites them — and both `cp`
+> (the tail of `make libhv-build`) and `clang -o` follow a symlink, writing straight into the
+> main tree. Measured: one fresh-worktree build moved the main tree's `libhv.a` mtime forward
+> five days, which left the main tree's own PCH older than it and put ~1900 objects back on the
+> main tree's next build. On APFS `cp -c` is a clonefile, so a private copy costs nothing.
 
-A fresh `git worktree add` stamps **every** source file with the current mtime, so `make` sees all sources as newer than the cloned objects and wants to recompile the whole tree. The cloned `build/obj/` therefore does *not*, by itself, save you on Linux — the real speedup comes from **ccache**: those "recompiles" become near-instant cache hits instead of cold compiles.
+### Why worktree builds are fast
 
-But ccache only helps across worktrees if it's configured for it. The native build compiles with `-g` (debug info), and ccache's default `hash_dir=true` folds the absolute working directory into the cache key — so an object cached while building in the main tree never matches the same source compiled under `.worktrees/<name>/`. Every worktree would start stone cold.
+A fresh `git worktree add` stamps **every** file with the checkout mtime, so make sees the whole
+tree as newer than the cloned objects. It bites twice over:
+
+- `$(PCH)` lists `include/lvgl_pch.h` and `lv_conf.h` as prerequisites, and *every* C++ object
+  lists `$(PCH)` — one fresh header invalidates all ~1970 objects;
+- the `.d` files list `include/*.h` per object, and those are fresh too — so fixing only the PCH
+  would still leave every object out of date.
+
+Measured on a fresh worktree of an up-to-date main tree: **1945 of 1967 cloned objects
+recompiled**, 396s of wall clock, for a tree where nothing had changed.
+
+`setup-worktree.sh` fixes this by walking the checkout and, **for each file whose content is
+byte-identical to the main tree's file at the same path**, adopting that file's mtime
+(`scripts/sync-worktree-mtimes.py`, ~1s for the 3900-file tree). The build markers
+`build/.patches-applied` and `.fonts.stamp` get the same treatment — they are prerequisites of
+the PCH, libhv, and all 46 font objects, so stamping them `now` was on its own worth ~560
+recompiles *and* was what made every fresh worktree rebuild libhv over the main tree's copy.
+
+This is deliberately **not** blanket mtime back-dating, which is how you ship a stale build. The
+invariant is that for matching content the (source, object) mtime ordering in the worktree equals
+the ordering in the main tree, so make reaches the same up-to-date decision here that it reached
+there, against objects cloned from there. Anything that differs — a branch with real changes, an
+edit made after setup — keeps its fresh mtime and rebuilds normally:
+
+| Scenario | Objects rebuilt |
+|----------|-----------------|
+| Worktree at the same commit, clean | 0 (`make test -j` = 3.2s, link only) |
+| Worktree at an older commit (1 source differs) | 1 — and the binary carries the *old* code |
+| Source edited after setup | 1 |
+| `lv_conf.h` edited | PCH + 1888 |
+
+What it inherits rather than fixes: if the main tree's own build is stale, the worktree
+reproduces that staleness. The object clone always had that property.
+
+> **If a fresh worktree still takes minutes, this is almost always why.** `lib/` is symlinked
+> from the main tree, so the libhv submodule is *shared by every tree*. Rebuilding libhv anywhere
+> regenerates `lib/libhv/include/hv/json.hpp`, which is a `$(PCH)` prerequisite — so the PCH, and
+> with it all ~1970 objects, goes out of date in the main tree and in every worktree at once. The
+> mtime sync cannot repair it: the script deliberately never follows the `lib/` symlinks, and
+> `git ls-files` does not reach inside a submodule. Observed during this work: a worktree that
+> should have built in 5s took 462s (680 objects + PCH) purely because an unrelated tree had
+> rebuilt libhv twenty minutes earlier. The fix is to let one tree rebuild once — after that
+> every tree is fast again. Un-sharing `lib/` would remove the coupling entirely, but that is the
+> core of the current worktree design.
+
+### The ccache config the script sets
+
+ccache is optional (it is not installed on every dev box — check with `command -v ccache`), and
+with the mtime sync in place it is no longer what makes a *clean* worktree fast. Where it matters
+is every build that genuinely has to recompile — after touching `lv_conf.h`, or after another tree
+rebuilds libhv and re-invalidates the shared PCH (see the box above). That is the difference
+between ~400s and a few tens of seconds.
+
+> **`sloppiness` is not optional — without it ccache caches nothing here.** Every native build
+> compiles with `-include $(PCH)`, and ccache refuses to cache *any* compilation that uses a
+> precompiled header unless `sloppiness` permits it. Measured on a single `-include` compile:
+> `Uncacheable calls: 1/1 (100%)` before, `Cacheable calls: 1/1 (100%)` after, with the repeat
+> compile hitting. This was silently true for a long time — `base_dir` and `hash_dir` were being
+> set while the cache stayed empty, which is why this doc used to credit ccache for a speedup it
+> was never delivering. **Both** flags are required; `pch_defines` alone still measures 0%
+> cacheable. If ccache has been installed on a machine for a while, check `ccache --get-config
+> sloppiness` before assuming it has been doing anything.
+>
+> The cost of `time_macros` is that ccache stops hashing `__DATE__`/`__TIME__`. Exactly one site
+> uses them — `ui_settings_about.cpp` reads `__DATE__ + 7` for the About screen's copyright year —
+> so across a New Year that screen can show the previous year until the file is next recompiled.
+> Cosmetic, and the only such site in `src/`, `include/`, `lib/helix-xml/`, or the build flags.
+
+But it only helps across worktrees if it is configured for it. The native build compiles with `-g` (debug info), and ccache's default `hash_dir=true` folds the absolute working directory into the cache key — so an object cached while building in the main tree never matches the same source compiled under `.worktrees/<name>/`. Every worktree would start stone cold.
 
 `setup-worktree.sh` fixes this once, by writing global ccache config (only when unset, so it never clobbers a value you chose):
 
@@ -485,9 +562,12 @@ But ccache only helps across worktrees if it's configured for it. The native bui
 |----------------|--------|-----|
 | `base_dir` | `$HOME` | Rewrites absolute paths under `$HOME` to relative before hashing, so main-tree and worktree paths collapse to the same key |
 | `hash_dir` | `false` | Stops folding the cwd (the `-g` debug-path component) into the key |
+| `sloppiness` | `pch_defines,time_macros` | Without it ccache refuses to cache any `-include $(PCH)` compile — i.e. all of them. See the box above for the `__DATE__` tradeoff |
 | `max_size` | `25G` (raised, never lowered) | The default 5 GiB thrashes once several worktrees + cross-compile caches share it, re-causing cold misses |
 
-For the script's own initial build it also exports `CCACHE_BASEDIR` (the longest common ancestor of the main tree and the worktree, so it works even for out-of-tree paths like `/tmp/foo`) and `CCACHE_NOHASHDIR=1`.
+For the script's own initial build it also exports `CCACHE_BASEDIR` (the longest common ancestor of the main tree and the worktree, so it works even for out-of-tree paths like `/tmp/foo`), `CCACHE_NOHASHDIR=1`, and `CCACHE_SLOPPINESS`.
+
+These are global ccache settings, so they apply to normal main-tree builds too, not just worktrees — running `setup-worktree.sh` once is enough to fix a whole machine. Worth doing on every machine you build on, including remote build hosts: an existing ccache install with `base_dir`/`hash_dir` already set can still be caching nothing if `sloppiness` was never configured.
 
 > **Caveat:** `hash_dir=false` is global, so cached objects carry whichever `DW_AT_comp_dir` (debug source path) compiled them first. For throwaway dev worktrees this is cosmetic, but gdb inside a worktree may point at the main-tree paths. If you do serious in-worktree debugging, build that target with `CCACHE_DISABLE=1`.
 
@@ -505,8 +585,8 @@ ccache -p | grep -E 'base_dir|hash_dir|max_size'
 ./scripts/setup-worktree.sh feature/my-feature
 cd .worktrees/my-feature
 
-# 2. Iterate — XML-only changes need no rebuild (loaded at runtime)
-HELIX_HOT_RELOAD=1 ./build/bin/helix-screen --test -vv
+# 2. Iterate — XML-only changes need no rebuild (loaded at runtime + hot reload is ON by default)
+./build/bin/helix-screen --test -vv
 # ...C++ changes:
 make -j && ./build/bin/helix-screen --test -vv
 
@@ -553,7 +633,7 @@ git worktree remove --force .worktrees/my-feature
 ## Build System Overview
 
 The project uses **GNU Make** with a modular architecture:
-- **Modular design**: ~4,300 lines split across 14 files for maintainability
+- **Modular design**: ~9,100 lines split across the top-level `Makefile` plus 17 `mk/*.mk` modules for maintainability
 - **Color-coded output** for easy visual parsing
 - **Verbosity control** to show/hide full compiler commands
 - **Automatic dependency checking** before builds with smart canvas detection
@@ -569,21 +649,24 @@ The build system is organized into focused modules:
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `Makefile` | ~630 | Configuration, variables, platform detection, module includes |
-| `mk/tests.mk` | ~880 | All test targets (unit, integration, by-feature) |
-| `mk/cross.mk` | ~750 | Cross-compilation, toolchain setup, display backends |
-| `mk/deps.mk` | ~500 | Dependency checking, installation, libhv/wpa_supplicant |
-| `mk/rules.mk` | ~340 | Compilation rules, linking, main build targets |
-| `mk/remote.mk` | ~280 | Remote deployment (Pi, AD5M) |
-| `mk/images.mk` | ~200 | Image conversion (PNG, SVG) |
-| `mk/patches.mk` | ~130 | LVGL patch application |
-| `mk/fonts.mk` | ~120 | Font/icon generation, Material icons |
-| `mk/watchdog.mk` | ~120 | Hardware watchdog support |
+| `Makefile` | ~1095 | Configuration, variables, platform detection, module includes |
+| `mk/cross.mk` | ~2990 | Cross-compilation, toolchain setup, display backends |
+| `mk/tests.mk` | ~924 | All test targets (unit, integration, by-feature) |
+| `mk/deps.mk` | ~672 | Dependency checking, installation, libhv/wpa_supplicant |
+| `mk/patches.mk` | ~666 | LVGL patch application |
+| `mk/rules.mk` | ~561 | Compilation rules, linking, main build targets |
+| `mk/remote.mk` | ~297 | Remote deployment (Pi, AD5M) |
+| `mk/fonts.mk` | ~283 | Font/icon generation, Material icons |
+| `mk/images.mk` | ~264 | Image conversion (PNG, SVG) |
+| `mk/tools.mk` | ~251 | Development tool targets |
+| `mk/pi-dual-link.mk` | ~249 | Pi dual-link build (compile once, link DRM + fbdev) |
+| `mk/watchdog.mk` | ~198 | Hardware watchdog support |
+| `mk/splash.mk` | ~183 | Splash screen generation |
+| `mk/translations.mk` | ~168 | Translation string generation |
 | `mk/format.mk` | ~110 | Code and XML formatting |
-| `mk/splash.mk` | ~110 | Splash screen generation |
-| `mk/tools.mk` | ~110 | Development tool targets |
-| `mk/display-lib.mk` | ~60 | Display library configuration |
-| `mk/pi-dual-link.mk` | ~200 | Pi dual-link build (compile once, link DRM + fbdev) |
+| `mk/bluetooth.mk` | ~86 | Bluetooth support |
+| `mk/display-lib.mk` | ~77 | Display library configuration |
+| `mk/filaments.mk` | ~22 | Filament database generation |
 
 Each module is self-contained with GPL-3 copyright headers and clear separation of concerns.
 
@@ -844,12 +927,19 @@ apply-patches:
 To add a new submodule patch:
 
 1. **Make changes** in the submodule directory
-2. **Generate patch**:
+2. **Generate patch** — scope the diff to the files you touched, or you will capture every
+   other patch that is currently applied:
    ```bash
    cd lib/lvgl
-   git diff > ../../patches/my-new-patch.patch
+   git diff src/path/to/file.c > ../../patches/my-new-patch.patch
    ```
-3. **Update Makefile** to apply the patch in the `apply-patches` target
+   If more than one patch touches that file, even a scoped diff folds the others in. Sixteen
+   files are shared today (`src/misc/lv_event.c` by seven patches). Check with
+   `grep -l "diff --git a/<path>" patches/*.patch` and use the pristine-file method in
+   `patches/README.md` § "Regenerating a patch whose file is shared".
+3. **Update Makefile** to apply the patch in the `apply-patches` target. Use
+   `git -C $(LVGL_DIR) apply --check <patch>` as the apply condition rather than a
+   "is file X dirty?" test, which breaks as soon as another patch touches X.
 4. **Document** in `patches/README.md`
 
 ### Patch Gotchas (hard-won)
@@ -905,7 +995,7 @@ The prototype supports multi-monitor development workflows with automatic window
 ./build/bin/helix-screen -x 1500 -y -500  # Works with negative Y (display above)
 
 # Combined with other options
-./build/bin/helix-screen -d 1 -s small --panel home
+./build/bin/helix-screen -d 1 -s small --skip-splash
 ```
 
 ### Implementation Details
@@ -1070,10 +1160,10 @@ make validate-fonts
 **Manual font generation:**
 ```bash
 # Generate specific size
-npm run convert-font-24
+npm run convert-noto-24
 
 # Generate all fonts
-npm run convert-all-fonts
+npm run convert-noto-all
 ```
 
 ## Icon Generation
@@ -1239,7 +1329,7 @@ The Makefile is **self-documenting** — these help targets are the authoritativ
 | `make V=1 …` | Verbose (show full compiler commands) |
 | `make JOBS=N …` | Cap parallel job count |
 
-Run flags worth knowing: `./build/bin/helix-screen --test -vv` (mock printer + DEBUG), `HELIX_HOT_RELOAD=1 …` (live XML reload).
+Run flags worth knowing: `./build/bin/helix-screen --test -vv` (mock printer + DEBUG logs, hot reload ON by default for live XML editing).
 
 ### Tests
 
@@ -1254,7 +1344,16 @@ The build system has 30+ test targets by feature area; see **[TESTING.md](TESTIN
 | `make test-all` | All tests incl. `[slow]` |
 | `make test-asan` / `test-tsan` | Run under Address/Thread sanitizer |
 | `make test-list-tags` | List available tags |
+| `make test-xml` | Configure, build and run the helix-xml engine suite (CMake + Unity + ctest) - **not** part of `make test` |
 | `./build/bin/helix-tests "[tag]"` | Run a specific tag (e.g. `[ams]`, `[gcode]`) |
+
+`make test-xml` is the odd one out: it drives the standalone suite in the `lib/helix-xml/`
+submodule rather than `helix-tests`. Its build tree is `build/helix-xml-tests/` (outside the
+submodule) and LVGL comes from CMake `FetchContent` pinned at v9.5.0, so the **first**
+configure needs network and takes minutes; every run after that is a no-op configure plus a
+couple of seconds of ctest. Forward extra ctest args with
+`make test-xml HELIX_XML_CTEST_ARGS='-R test_expr'`. See
+**[TESTING.md](TESTING.md)** § "helix-xml Engine Tests".
 
 ### Code quality & IDE
 
@@ -1284,7 +1383,7 @@ Usually invoked after editing icons/images. See **[Font Generation](#font-genera
 
 | Target | What it does |
 |--------|--------------|
-| `make regen-fonts` | Regenerate MDI icon fonts from `codepoints.h` |
+| `make regen-fonts` | Regenerate MDI icon fonts via `scripts/regen_mdi_fonts.sh` |
 | `make regen-text-fonts` | Regenerate Noto Sans text fonts (incl. CJK) |
 | `make regen-icon-consts` | Regenerate icon string constants in `globals.xml` |
 | `make validate-fonts` | Verify every codepoint is present in the compiled fonts |
@@ -1413,7 +1512,9 @@ The project uses git submodules for external dependencies:
 - `spdlog` - Logging library
 - `wpa_supplicant` - WiFi control (Linux only, auto-built)
 
-Additionally, `lib/helix-xml/` contains the extracted XML engine (originally from LVGL 9.4, MIT licensed). This is **not** a submodule — it lives directly in the repository with XML patches baked in permanently.
+Additionally, `lib/helix-xml/` is the XML engine — a permanent MIT fork taken from LVGL at `a15dcbeb5` (`v9.4.0-358`), the last commit before v9.5 removed XML from core. It is a submodule, but **ours**: [prestonbrown/helix-xml](https://github.com/prestonbrown/helix-xml). That makes its workflow the opposite of every other submodule here — edit the files directly, commit and push inside `lib/helix-xml/`, then commit the bumped pointer in this repo. It gets no `patches/*.patch` entry, and it is excluded from clang-format. See `LVGL_XML_SITUATION.md`.
+
+Being its own repo, it also carries its own tests and its own CI. `lib/helix-xml/tests/` is a standalone CMake + Unity suite that builds the engine against a pinned upstream LVGL v9.5.0 rather than our patched `lib/lvgl`; run it with `make test-xml` (`make test` does not build it), and see **[TESTING.md](TESTING.md)** § "helix-xml Engine Tests". `.github/workflows/ci.yml` *inside* the submodule covers a gcc + clang matrix, ASAN/UBSAN, and a conf-guards job. `scripts/quality-checks.sh` runs the suite on commits that stage a `lib/helix-xml` change, but only once `build/helix-xml-tests/` has been configured by hand - the first configure fetches LVGL and is too slow for a commit hook.
 
 **Automatic handling**: Submodule dependencies are built automatically when missing. Patches are applied automatically before builds. Never commit changes directly to submodules - always create patches instead.
 
@@ -1565,6 +1666,145 @@ which sdl2-config
 sdl2-config --version
 ```
 
+## Makefile Variable & Target Reference
+
+Absorbed from the `helix-build` skill so there is one home for it. Values verified against
+`Makefile` and `mk/*.mk`.
+
+### Compiler and flags
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `CC` | clang > gcc | Auto-detected, with a stdlib test for clang |
+| `CXX` | clang++ > g++ | Auto-falls back on a broken libstdc++ |
+| `OPT` | `2` | Optimization level: 0 (dev), 1, 2 (release) |
+| `CXXFLAGS` | `-std=c++17 -Wall -Wextra -O{OPT} -g` | Extended per platform |
+| `SUBMODULE_CFLAGS` | `-std=c11 -O2 -g -D_GNU_SOURCE -w` | Third-party code, warnings suppressed |
+| `DEPFLAGS` | `-MMD -MP` | Header dependency tracking |
+
+### Version
+
+Read from `VERSION.txt` (MAJOR.MINOR.PATCH) and injected as `-DHELIX_VERSION="..."`:
+`HELIX_VERSION`, `HELIX_VERSION_MAJOR` / `_MINOR` / `_PATCH`, and `HELIX_GIT_HASH` (short hash).
+
+### Build directories
+
+| Variable | Default | Per-platform override |
+|----------|---------|-----------------------|
+| `BUILD_DIR` | `build` | `mk/cross.mk` sets per platform |
+| `BIN_DIR` | `build/bin` | e.g. `build/pi/bin` |
+| `OBJ_DIR` | `build/obj` | e.g. `build/pi/obj` |
+| `BUILD_SUBDIR` | (none) | Platform name: `pi`, `ad5m`, `k1` |
+
+### Cross-compile variables
+
+| Variable | Purpose |
+|----------|---------|
+| `TARGET_ARCH` | Target architecture for the active cross target |
+| `TARGET_TRIPLE` | Toolchain triple (e.g. `aarch64-linux-gnu`) |
+| `STRIP_BINARY` | Whether to strip the output binary for size |
+| `FONT_TIERS` | Which font size tiers to embed for the target — see below |
+
+#### FONT_TIERS
+
+Font faces are the largest single chunk of `.rodata`, so each target links only the
+tiers it can actually display. Legal values are `all` (the default, `mk/fonts.mk:107`)
+or any subset of `micro tiny small medium large xlarge xxlarge`. Assignments live per
+target in `mk/cross.mk`:
+
+| `PLATFORM_TARGET` | Tiers |
+|-------------------|-------|
+| `pi`, `pi-fbdev`, `pi-both`, `pi32`, `pi32-fbdev`, `pi32-both` | `all` |
+| `x86`, `x86-fbdev`, `x86-both`, `native` | `all` |
+| `ad5m`, `ad5m-br`, `ad5x` | `medium large` |
+| `mips` / `k1`, `k1-dynamic` | `small medium` |
+| `k2` | `large xlarge` |
+| `snapmaker-u1` | `tiny small` |
+| `cc1`, `yocto` | `micro tiny` |
+
+`HELIX_MAX_FONT_TIER` is derived from this (`mk/cross.mk:728-750`; `micro=0` …
+`xxlarge=6`). Two consumers read it: `theme_manager` uses it to distinguish an
+expected-missing font (pruned by tier) from an unexpected-missing one (a build bug),
+and `cjk_font_manager` uses it to pick its CJK face.
+
+The consequence for layout work: a `<string>` token naming a face outside the
+target's tiers silently fails to register on that target, and the token falls back
+down the ladder. If you add a font token for a large tier, check it against the
+tier list of the smallest device that will run it.
+
+### Feature gates
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `ENABLE_SDL` | yes (native) | SDL2 desktop display |
+| `ENABLE_OPENGLES` | per target | EGL/GLES GPU rendering |
+| `ENABLE_GLES_3D` | yes (Linux) | 3D gcode rendering |
+| `ENABLE_SCREENSAVER` | yes (desktop/Pi) | Flying toasters |
+| `ENABLE_MOCKS` | yes | Mock backends for development |
+| `ENABLE_SSL` | per target | OpenSSL for HTTPS/WSS |
+| `HELIX_HAS_LABEL_PRINTER` | 1 | Label printer feature |
+| `HELIX_HAS_CFS` | 1 | CFS feature |
+| `HELIX_HAS_IFS` | 1 | IFS feature |
+
+### Linker flags by platform
+
+```
+macOS          -lSDL2 -lhv -lz -lm -lpthread -liconv
+               -framework Foundation -framework CoreWLAN -framework CoreLocation …
+Linux native   -lSDL2 -lhv -lwpa_client -lusb-1.0 -lssl -lcrypto -ldl -lstdc++fs -lGLESv2
+Pi (aarch64)   -L/usr/lib/aarch64-linux-gnu -lhv -lwpa_client -lnl-genl-3 -lnl-3
+               -ldrm -linput -lEGL -lGLESv2 -lgbm -lusb-1.0 -lssl -lcrypto -lasound …
+K1 static      -lhv -lwpa_client -lnl-genl-3 -lnl-3 -latomic -ldl -lz -lm -lpthread
+K1 dynamic     -Wl,-Bstatic -lhv -lwpa_client -lnl-genl-3 -lnl-3 -lstdc++fs
+               -Wl,-Bdynamic -lstdc++ -lz -lm -lpthread -lrt -ldl -latomic -lgcc_s
+K2 (ARM musl)  -lhv -lwpa_client -lnl-genl-3 -lnl-3 -ldl -lz -lm -lpthread
+Yocto          preserves bitbake LDFLAGS, appends the project libs
+```
+
+### Source organization
+
+Application sources are `src/*.cpp` at up to three directory levels, plus `src/*.mm` for the
+macOS Objective-C++ WiFi code. `src/tools/*.cpp` and `src/bluetooth/*.cpp` build under separate
+rules.
+
+Excluded from the main binary: `test_*.cpp`, `src/helix_splash.cpp` and
+`src/helix_watchdog.cpp` (separate binaries), and `src/lvgl-demo/main.cpp`.
+
+Bundled libraries: `lib/lvgl/` (XML and expat sources excluded — those live in
+`lib/helix-xml/`), `lib/helix-xml/`, `lib/lv_markdown/`, `lib/quirc/`, `lib/cpp-terminal/`.
+LVGL's thorvg `.cpp` files compile separately.
+
+### Targets
+
+| Build | |
+|-------|-|
+| `all` | Default: main binary with dependency checks |
+| `build` | Clean parallel build with timing |
+| `dev` | `OPT=0 -j` fast development build |
+| `strict` | Build with `-Werror` |
+| `clean` | Remove all build artifacts |
+| `install` | Stage to `DESTDIR/opt/helixscreen/` |
+
+| Code quality | |
+|--------------|-|
+| `format` / `format-staged` | clang-format + xmllint, all or staged files |
+| `quality` | Run `scripts/quality-checks.sh` |
+| `check-deps` / `install-deps` | Verify, then interactively install dependencies |
+
+| Assets | |
+|--------|-|
+| `regen-fonts` / `generate-fonts` | Regenerate MDI icon fonts |
+| `validate-fonts` | Verify icons are present in the compiled fonts |
+| `icon` | Generate the app icon from the logo |
+| `apply-patches` / `reset-patches` | Apply or revert submodule patches |
+
+| Tools and debug | |
+|-----------------|-|
+| `compile_commands` / `compile_commands_full` | Merge `.ccj` fragments (~1-2s) or fully regenerate |
+| `moonraker-inspector` / `tools` | Diagnostic tools |
+| `symbols` / `strip` | Extract `.sym` + `.debug`, or strip for size (cross-compile only) |
+| `print-ldflags` / `print-target-cflags` / `print-cxxflags` / `print-strip` | Print computed values |
+
 ## Best Practices
 
 ### Development Workflow
@@ -1608,4 +1848,4 @@ Only use `make clean && make` when:
 - **[DEVELOPMENT.md](DEVELOPMENT.md)** - Development environment, workflow, and contributing
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - System design and technical patterns
 - **[CLAUDE.md](../CLAUDE.md)** - Development context and AI assistant guidelines
-- **[patches/README.md](../patches/README.md)** - Patch documentation
+- **[patches/README.md](../../patches/README.md)** - Patch documentation

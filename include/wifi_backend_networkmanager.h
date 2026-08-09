@@ -62,6 +62,8 @@ class WifiBackendNetworkManager : public WifiBackend {
     WiFiError get_scan_results(std::vector<WiFiNetwork>& networks) override;
     WiFiError connect_network(const std::string& ssid, const std::string& password) override;
     WiFiError disconnect_network() override;
+    WiFiError set_radio_enabled(bool on) override;
+    bool is_radio_enabled() const override;
     ConnectionStatus get_status() override;
     bool supports_5ghz() const override;
 
@@ -99,12 +101,20 @@ class WifiBackendNetworkManager : public WifiBackend {
     std::condition_variable status_cv_;
     std::atomic<bool> status_running_{false};
     std::atomic<bool> status_refresh_requested_{false};
-    ConnectionStatus cached_status_{}; // Protected by status_mutex_
+    ConnectionStatus cached_status_{};        // Protected by status_mutex_
     std::atomic<bool> prev_connected_{false}; // Track transitions for event firing
 
     // 5GHz support — computed once at start(), never changes
     std::atomic<bool> supports_5ghz_cached_{false};
     std::atomic<bool> supports_5ghz_resolved_{false};
+
+    // Cached `nmcli radio wifi` state. is_radio_enabled() is polled from the
+    // UI thread (WiFiManager::is_enabled), so it must not shell out; the cache
+    // is seeded at start(), written by set_radio_enabled(), and refreshed by
+    // the background status poll so an external `nmcli radio wifi off` is
+    // eventually reflected. Defaults to true — same as the base class — but
+    // start() replaces that guess with the real answer.
+    std::atomic<bool> radio_enabled_{true};
 
     // ========================================================================
     // Internal Helpers
@@ -221,6 +231,15 @@ class WifiBackendNetworkManager : public WifiBackend {
     // shell injection with caller-supplied SSIDs. Returns true if nmcli exited 0.
     bool delete_connection_profile(const std::string& profile_id);
 
+    /**
+     * @brief Ask NetworkManager whether the WiFi radio is on
+     *
+     * Blocking (popen). Returns nullopt when nmcli's answer is unparseable —
+     * a transient nmcli failure must not be mistaken for "radio on", which is
+     * how the inherited base default made the UI switch snap back.
+     */
+    std::optional<bool> query_radio_enabled();
+
     // Status polling
     void status_thread_func();
     // Actual nmcli calls (background thread only). Returns nullopt when the
@@ -229,7 +248,7 @@ class WifiBackendNetworkManager : public WifiBackend {
     // can keep the last-known status instead of reporting a false disconnect
     // (prestonbrown/helixscreen#1059).
     std::optional<ConnectionStatus> poll_status_now();
-    void request_status_refresh();      // Wake status thread for immediate poll
+    void request_status_refresh(); // Wake status thread for immediate poll
 };
 
 #endif // __APPLE__

@@ -6,11 +6,11 @@
 <component>
   <!-- Dialog card -->
   <view name="ams_loading_error_modal"
-        extends="ui_dialog" width="360" height="content" align="center" flex_flow="column" style_flex_main_place="start"
-        style_pad_gap="0">
+        extends="ui_dialog" width="70%" height="content" style_min_width="300" style_max_width="400" align="center"
+        flex_flow="column" style_flex_main_place="start" style_pad_gap="0">
     <!-- Header: danger icon + title + close. Close wired in C++ via wire_cancel_button("btn_close"). -->
-    <modal_header icon_src="alert_circle" icon_variant="danger"
-                  title="Loading Error" title_tag="Loading Error" hide_close="false"/>
+    <modal_header icon_src="alert_circle"
+                  icon_variant="danger" title="Loading Error" title_tag="Loading Error" hide_close="false"/>
     <!-- Horizontal divider -->
     <divider_horizontal/>
     <!-- Error message content -->
@@ -20,6 +20,9 @@
       <text_body name="error_message"
                  width="100%" text="An error occurred while loading filament."
                  translation_tag="An error occurred while loading filament." long_mode="wrap"/>
+      <!-- AFC filament position diagram — self-hides unless AmsPanel recognised
+           the fault message (prestonbrown/helixscreen#1184). -->
+      <afc_fault_path name="fault_path"/>
       <!-- Hint text -->
       <text_small name="error_hint"
                   width="100%" text="Check the filament path and try again."

@@ -1,0 +1,1470 @@
+{
+  "object_list": [
+    "toolchanger",
+    "tool T0",
+    "tool T1",
+    "tool T2",
+    "tool T3",
+    "tool T4",
+    "AFC",
+    "AFC_OAMS OAMS1",
+    "AFC_OpenAMS AMS_1",
+    "AFC_lane lane5",
+    "AFC_lane lane6",
+    "AFC_lane lane7",
+    "AFC_lane lane8",
+    "AFC_hub AMS_1",
+    "filament_switch_sensor FPS_buffer1_expanded",
+    "filament_switch_sensor FPS_buffer1_compressed",
+    "AFC_buffer FPS_buffer1",
+    "filament_switch_sensor extruder_tool_start",
+    "AFC_Toolchanger Tools",
+    "AFC_extruder extruder",
+    "AFC_extruder extruder1",
+    "filament_switch_sensor extruder2_tool_start",
+    "AFC_extruder extruder2",
+    "filament_switch_sensor extruder3_tool_start",
+    "AFC_extruder extruder3",
+    "filament_switch_sensor extruder4_tool_start",
+    "AFC_lane extruder4",
+    "AFC_extruder extruder4",
+    "filament_switch_sensor extruder5_tool_start",
+    "AFC_lane extruder5",
+    "AFC_extruder extruder5",
+    "filament_switch_sensor TN0_expanded",
+    "filament_switch_sensor TN0_compressed",
+    "AFC_buffer TN0",
+    "filament_switch_sensor TN1_expanded",
+    "filament_switch_sensor TN1_compressed",
+    "AFC_buffer TN1",
+    "filament_switch_sensor TN2_expanded",
+    "filament_switch_sensor TN2_compressed",
+    "AFC_buffer TN2",
+    "filament_switch_sensor TN3_expanded",
+    "filament_switch_sensor TN3_compressed",
+    "AFC_buffer TN3",
+    "filament_switch_sensor PSF_buffer1_expanded",
+    "filament_switch_sensor PSF_buffer1_compressed",
+    "AFC_buffer PSF_buffer1",
+    "filament_switch_sensor HTLF_1_home_pin",
+    "AFC_stepper HTLF_Drive",
+    "AFC_stepper HTLF_Selector",
+    "AFC_HTLF HTLF_1",
+    "filament_switch_sensor lane1_load",
+    "AFC_lane lane1",
+    "filament_switch_sensor lane2_load",
+    "AFC_lane lane2",
+    "filament_switch_sensor lane3_load",
+    "filament_switch_sensor HTLF_1_Hub",
+    "AFC_hub HTLF_1",
+    "AFC_lane lane3",
+    "filament_switch_sensor lane4_load",
+    "AFC_lane lane4",
+    "AFC_led AFC_Indicator_HTLF_1",
+    "filament_switch_sensor virtual_bypass",
+    "filament_switch_sensor quiet_mode"
+  ],
+  "status": {
+    "AFC": {
+      "buffers": [
+        "FPS_buffer1",
+        "TN0",
+        "TN1",
+        "TN2",
+        "TN3",
+        "PSF_buffer1"
+      ],
+      "bypass_state": false,
+      "current_lane": null,
+      "current_load": null,
+      "current_state": "Idle",
+      "current_toolchange": 0,
+      "error_state": false,
+      "extruders": [
+        "extruder",
+        "extruder1",
+        "extruder2",
+        "extruder3",
+        "extruder4",
+        "extruder5"
+      ],
+      "hubs": [
+        "AMS_1",
+        "HTLF_1"
+      ],
+      "lane_data_enabled": false,
+      "lanes": [
+        "lane5",
+        "lane6",
+        "lane7",
+        "lane8",
+        "extruder4",
+        "extruder5",
+        "lane1",
+        "lane2",
+        "lane3",
+        "lane4"
+      ],
+      "led_state": true,
+      "maps": [
+        "T7",
+        "T8",
+        "T9",
+        "T10",
+        "T2",
+        "T0",
+        "T1",
+        "T3",
+        "T6",
+        "T4"
+      ],
+      "message": {
+        "message": "",
+        "type": ""
+      },
+      "next_lane": null,
+      "number_of_toolchanges": 0,
+      "position_saved": false,
+      "quiet_mode": false,
+      "spoolman": "http://spoolman.invalid:7912/",
+      "td1_present": false,
+      "units": [
+        "HTLF HTLF_1",
+        "OpenAMS AMS_1",
+        "Toolchanger Tools"
+      ],
+      "version": "1.2.1"
+    },
+    "AFC_HTLF HTLF_1": {
+      "buffers": [
+        "PSF_buffer1",
+        "TN1",
+        "TN2"
+      ],
+      "extruders": [
+        "extruder",
+        "extruder1",
+        "extruder2"
+      ],
+      "hubs": [
+        "HTLF_1"
+      ],
+      "lanes": [
+        "lane1",
+        "lane2",
+        "lane3",
+        "lane4"
+      ]
+    },
+    "AFC_OAMS OAMS1": {
+      "current_spool": null,
+      "f1s_hes_value": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "fps_value": 0.0,
+      "hub_hes_value": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "last_load_failure_time": null,
+      "last_unload_failure_time": null,
+      "load_retry_failures": 0,
+      "unload_retry_failures": 0
+    },
+    "AFC_OpenAMS AMS_1": {
+      "buffers": [
+        "FPS_buffer1"
+      ],
+      "extruders": [
+        "extruder3"
+      ],
+      "hubs": [
+        "AMS_1"
+      ],
+      "lanes": [
+        "lane5",
+        "lane6",
+        "lane7",
+        "lane8"
+      ]
+    },
+    "AFC_Toolchanger Tools": {
+      "buffers": [],
+      "extruders": [
+        "extruder4",
+        "extruder5"
+      ],
+      "hubs": [],
+      "lanes": [
+        "extruder4",
+        "extruder5"
+      ]
+    },
+    "AFC_buffer FPS_buffer1": {
+      "active_lane": null,
+      "current_pos": 0.0,
+      "distance_to_fault": 80.0,
+      "enabled": false,
+      "error_sensitivity": 3.0,
+      "fault_detection_enabled": true,
+      "fault_timer": null,
+      "filament_error_pos": 80.0,
+      "fps_value": 0.0,
+      "lanes": [
+        "lane5",
+        "lane6",
+        "lane7",
+        "lane8"
+      ],
+      "multiplier": 1.0,
+      "multiplier_high": 1.15,
+      "multiplier_low": 0.85,
+      "rotation_distance": null,
+      "set_point": 0.5,
+      "smoothed_fps": 0.0,
+      "state": "Advancing"
+    },
+    "AFC_buffer PSF_buffer1": {
+      "active_lane": "lane1",
+      "current_pos": 0.0,
+      "distance_to_fault": 40.0,
+      "enabled": true,
+      "error_sensitivity": 7.0,
+      "fault_detection_enabled": true,
+      "fault_timer": "Running",
+      "filament_error_pos": 40.0,
+      "fps_value": 0.013,
+      "lanes": [
+        "lane1"
+      ],
+      "multiplier": 1.15,
+      "multiplier_high": 1.15,
+      "multiplier_low": 0.85,
+      "rotation_distance": 20.932541217391307,
+      "set_point": 0.5,
+      "smoothed_fps": 0.013,
+      "state": "Advancing"
+    },
+    "AFC_buffer TN0": {
+      "active_lane": null,
+      "distance_to_fault": null,
+      "enabled": false,
+      "error_sensitivity": 0,
+      "fault_detection_enabled": false,
+      "fault_timer": null,
+      "lanes": [],
+      "multiplier": 1,
+      "multiplier_high": 1.15,
+      "multiplier_low": 0.9,
+      "rotation_distance": null,
+      "state": "Advancing"
+    },
+    "AFC_buffer TN1": {
+      "active_lane": null,
+      "distance_to_fault": null,
+      "enabled": false,
+      "error_sensitivity": 0,
+      "fault_detection_enabled": false,
+      "fault_timer": null,
+      "lanes": [
+        "lane2"
+      ],
+      "multiplier": 1,
+      "multiplier_high": 1.15,
+      "multiplier_low": 0.9,
+      "rotation_distance": null,
+      "state": "Unknown"
+    },
+    "AFC_buffer TN2": {
+      "active_lane": null,
+      "distance_to_fault": null,
+      "enabled": false,
+      "error_sensitivity": 0,
+      "fault_detection_enabled": false,
+      "fault_timer": null,
+      "lanes": [
+        "lane3",
+        "lane4"
+      ],
+      "multiplier": 1,
+      "multiplier_high": 1.15,
+      "multiplier_low": 0.9,
+      "rotation_distance": null,
+      "state": "Trailing"
+    },
+    "AFC_buffer TN3": {
+      "active_lane": null,
+      "distance_to_fault": null,
+      "enabled": false,
+      "error_sensitivity": 0,
+      "fault_detection_enabled": false,
+      "fault_timer": null,
+      "lanes": [],
+      "multiplier": 1,
+      "multiplier_high": 1.15,
+      "multiplier_low": 0.9,
+      "rotation_distance": null,
+      "state": "Advancing"
+    },
+    "AFC_extruder extruder": {
+      "buffer": null,
+      "is_standalone": false,
+      "lane_loaded": "lane1",
+      "lanes": [
+        "lane1"
+      ],
+      "next_pickup": false,
+      "on_shuttle": false,
+      "status": "Idle",
+      "tool_end": null,
+      "tool_end_status": false,
+      "tool_load_speed": 25.0,
+      "tool_sensor_after_extruder": 0.0,
+      "tool_start": "nh36_0:gpio3",
+      "tool_start_status": true,
+      "tool_stn": 60.0,
+      "tool_stn_unload": 65.0,
+      "tool_unload_speed": 25.0
+    },
+    "AFC_extruder extruder1": {
+      "buffer": null,
+      "is_standalone": false,
+      "lane_loaded": null,
+      "lanes": [
+        "lane2"
+      ],
+      "next_pickup": false,
+      "on_shuttle": false,
+      "status": "Idle",
+      "tool_end": null,
+      "tool_end_status": false,
+      "tool_load_speed": 25.0,
+      "tool_sensor_after_extruder": 0.0,
+      "tool_start": "buffer",
+      "tool_start_status": false,
+      "tool_stn": 60.0,
+      "tool_stn_unload": 65.0,
+      "tool_unload_speed": 25.0
+    },
+    "AFC_extruder extruder2": {
+      "buffer": null,
+      "is_standalone": false,
+      "lane_loaded": null,
+      "lanes": [
+        "lane3",
+        "lane4"
+      ],
+      "next_pickup": false,
+      "on_shuttle": false,
+      "status": "Idle",
+      "tool_end": null,
+      "tool_end_status": false,
+      "tool_load_speed": 25.0,
+      "tool_sensor_after_extruder": 0.0,
+      "tool_start": "nh36_2:gpio3",
+      "tool_start_status": false,
+      "tool_stn": 60.0,
+      "tool_stn_unload": 65.0,
+      "tool_unload_speed": 25.0
+    },
+    "AFC_extruder extruder3": {
+      "buffer": null,
+      "is_standalone": false,
+      "lane_loaded": null,
+      "lanes": [
+        "lane5",
+        "lane6",
+        "lane7",
+        "lane8"
+      ],
+      "next_pickup": false,
+      "on_shuttle": false,
+      "status": "Idle",
+      "tool_end": null,
+      "tool_end_status": false,
+      "tool_load_speed": 25.0,
+      "tool_sensor_after_extruder": 0.0,
+      "tool_start": "nh36_3:gpio3",
+      "tool_start_status": false,
+      "tool_stn": 60.0,
+      "tool_stn_unload": 65.0,
+      "tool_unload_speed": 25.0
+    },
+    "AFC_extruder extruder4": {
+      "buffer": null,
+      "is_standalone": true,
+      "lane_loaded": null,
+      "lanes": [
+        "extruder4"
+      ],
+      "next_pickup": false,
+      "on_shuttle": false,
+      "status": "Idle",
+      "tool_end": null,
+      "tool_end_status": false,
+      "tool_load_speed": 25.0,
+      "tool_sensor_after_extruder": 0.0,
+      "tool_start": "nh36_4:gpio3",
+      "tool_start_status": false,
+      "tool_stn": 60.0,
+      "tool_stn_unload": 65.0,
+      "tool_unload_speed": 25.0
+    },
+    "AFC_extruder extruder5": {
+      "buffer": null,
+      "is_standalone": true,
+      "lane_loaded": null,
+      "lanes": [
+        "extruder5"
+      ],
+      "next_pickup": false,
+      "on_shuttle": false,
+      "status": "Idle",
+      "tool_end": null,
+      "tool_end_status": false,
+      "tool_load_speed": 25.0,
+      "tool_sensor_after_extruder": 0.0,
+      "tool_start": "nh36_5:gpio3",
+      "tool_start_status": false,
+      "tool_stn": 60.0,
+      "tool_stn_unload": 65.0,
+      "tool_unload_speed": 25.0
+    },
+    "AFC_hub AMS_1": {
+      "afc_bowden_length": 3000.0,
+      "cut": false,
+      "cut_clear": 120,
+      "cut_cmd": null,
+      "cut_dist": 50,
+      "cut_min_length": 200,
+      "cut_servo_clip_angle": 160,
+      "cut_servo_pass_angle": 0,
+      "cut_servo_prep_angle": 75,
+      "lanes": [
+        "lane5",
+        "lane6",
+        "lane7",
+        "lane8"
+      ],
+      "state": false
+    },
+    "AFC_hub HTLF_1": {
+      "afc_bowden_length": 1095.24,
+      "cut": false,
+      "cut_clear": 120,
+      "cut_cmd": "AFC",
+      "cut_dist": 50,
+      "cut_min_length": 200,
+      "cut_servo_clip_angle": 160,
+      "cut_servo_pass_angle": 0,
+      "cut_servo_prep_angle": 75,
+      "lanes": [
+        "lane3",
+        "lane4"
+      ],
+      "state": false
+    },
+    "AFC_lane extruder4": {
+      "bed_temp": 0,
+      "buffer": null,
+      "buffer_status": null,
+      "color": "",
+      "dist_hub": 60,
+      "extruder": "extruder4",
+      "extruder_temp": 0,
+      "filament_name": "",
+      "filament_status": "Not Ready",
+      "filament_status_led": "#ff0000",
+      "hub": "direct",
+      "initial_weight": 1000,
+      "lane": 0,
+      "load": false,
+      "loaded_to_hub": false,
+      "map": "T2",
+      "material": "",
+      "multi_color_hexes": [],
+      "name": "extruder4",
+      "prep": false,
+      "remember_spool": false,
+      "runout_lane": "lane4",
+      "spool_id": null,
+      "status": "None",
+      "td1_color": "",
+      "td1_scan_time": "",
+      "td1_td": "",
+      "tool_loaded": false,
+      "unit": "Tools",
+      "weight": 0
+    },
+    "AFC_lane extruder5": {
+      "bed_temp": 0,
+      "buffer": null,
+      "buffer_status": null,
+      "color": null,
+      "dist_hub": 60,
+      "extruder": "extruder5",
+      "extruder_temp": 0,
+      "filament_name": "",
+      "filament_status": "Not Ready",
+      "filament_status_led": "#ff0000",
+      "hub": "direct",
+      "initial_weight": 1000,
+      "lane": 0,
+      "load": false,
+      "loaded_to_hub": false,
+      "map": "T0",
+      "material": null,
+      "multi_color_hexes": [],
+      "name": "extruder5",
+      "prep": false,
+      "remember_spool": false,
+      "runout_lane": null,
+      "spool_id": null,
+      "status": "None",
+      "td1_color": "",
+      "td1_scan_time": "",
+      "td1_td": "",
+      "tool_loaded": false,
+      "unit": "Tools",
+      "weight": 0
+    },
+    "AFC_lane lane1": {
+      "bed_temp": 105,
+      "buffer": "PSF_buffer1",
+      "buffer_status": "Advancing",
+      "color": "#035301",
+      "dist_hub": 1560.5,
+      "extruder": "extruder",
+      "extruder_temp": 265,
+      "filament_name": "Armored Turtle Green",
+      "filament_status": "In Tool",
+      "filament_status_led": "#0000ff",
+      "hub": "direct",
+      "initial_weight": 1000.0,
+      "lane": 1,
+      "load": true,
+      "loaded_to_hub": true,
+      "map": "T1",
+      "material": "ASA",
+      "multi_color_hexes": [],
+      "name": "lane1",
+      "prep": true,
+      "remember_spool": false,
+      "runout_lane": null,
+      "spool_id": 66,
+      "status": "Tooled",
+      "td1_color": "",
+      "td1_scan_time": "",
+      "td1_td": "",
+      "tool_loaded": true,
+      "unit": "HTLF_1",
+      "weight": 453.24794156113035
+    },
+    "AFC_lane lane2": {
+      "bed_temp": 0,
+      "buffer": "TN1",
+      "buffer_status": "Unknown",
+      "color": "",
+      "dist_hub": 1533.86036207,
+      "extruder": "extruder1",
+      "extruder_temp": 0,
+      "filament_name": "",
+      "filament_status": "Not Ready",
+      "filament_status_led": "#ff0000",
+      "hub": "direct",
+      "initial_weight": 1000,
+      "lane": 2,
+      "load": false,
+      "loaded_to_hub": false,
+      "map": "T3",
+      "material": "",
+      "multi_color_hexes": [],
+      "name": "lane2",
+      "prep": false,
+      "remember_spool": false,
+      "runout_lane": "lane4",
+      "spool_id": null,
+      "status": "None",
+      "td1_color": "",
+      "td1_scan_time": "",
+      "td1_td": "",
+      "tool_loaded": false,
+      "unit": "HTLF_1",
+      "weight": 0
+    },
+    "AFC_lane lane3": {
+      "bed_temp": 0,
+      "buffer": "TN2",
+      "buffer_status": "Trailing",
+      "color": "",
+      "dist_hub": 619.08,
+      "extruder": "extruder2",
+      "extruder_temp": 0,
+      "filament_name": "",
+      "filament_status": "Not Ready",
+      "filament_status_led": "#ff0000",
+      "hub": "HTLF_1",
+      "initial_weight": 1000,
+      "lane": 3,
+      "load": false,
+      "loaded_to_hub": false,
+      "map": "T6",
+      "material": "",
+      "multi_color_hexes": [],
+      "name": "lane3",
+      "prep": false,
+      "remember_spool": false,
+      "runout_lane": "lane2",
+      "spool_id": null,
+      "status": "None",
+      "td1_color": "",
+      "td1_scan_time": "",
+      "td1_td": "",
+      "tool_loaded": false,
+      "unit": "HTLF_1",
+      "weight": 0
+    },
+    "AFC_lane lane4": {
+      "bed_temp": 0,
+      "buffer": "TN2",
+      "buffer_status": "Trailing",
+      "color": "",
+      "dist_hub": 765.0,
+      "extruder": "extruder2",
+      "extruder_temp": 0,
+      "filament_name": "",
+      "filament_status": "Not Ready",
+      "filament_status_led": "#ff0000",
+      "hub": "HTLF_1",
+      "initial_weight": 1000,
+      "lane": 4,
+      "load": false,
+      "loaded_to_hub": false,
+      "map": "T4",
+      "material": "",
+      "multi_color_hexes": [],
+      "name": "lane4",
+      "prep": false,
+      "remember_spool": false,
+      "runout_lane": null,
+      "spool_id": null,
+      "status": "None",
+      "td1_color": "",
+      "td1_scan_time": "",
+      "td1_td": "",
+      "tool_loaded": false,
+      "unit": "HTLF_1",
+      "weight": 0
+    },
+    "AFC_lane lane5": {
+      "bed_temp": 105,
+      "buffer": "FPS_buffer1",
+      "buffer_status": "Advancing",
+      "color": "#FF0000",
+      "dist_hub": 60,
+      "extruder": "extruder3",
+      "extruder_temp": 250,
+      "filament_name": "Red",
+      "filament_status": "Ready",
+      "filament_status_led": "#00cc00",
+      "hub": "AMS_1",
+      "initial_weight": 1000.0,
+      "lane": 1,
+      "load": true,
+      "loaded_to_hub": true,
+      "map": "T7",
+      "material": "ABS",
+      "multi_color_hexes": [],
+      "name": "lane5",
+      "prep": true,
+      "remember_spool": false,
+      "runout_lane": null,
+      "spool_id": 53,
+      "status": "Loaded",
+      "td1_color": "",
+      "td1_scan_time": "",
+      "td1_td": "",
+      "tool_loaded": false,
+      "unit": "AMS_1",
+      "weight": 553.9701359448763
+    },
+    "AFC_lane lane6": {
+      "bed_temp": null,
+      "buffer": "FPS_buffer1",
+      "buffer_status": "Advancing",
+      "color": "",
+      "dist_hub": 60,
+      "extruder": "extruder3",
+      "extruder_temp": null,
+      "filament_name": "",
+      "filament_status": "Not Ready",
+      "filament_status_led": "#ff0000",
+      "hub": "AMS_1",
+      "initial_weight": 1000,
+      "lane": 2,
+      "load": false,
+      "loaded_to_hub": false,
+      "map": "T8",
+      "material": "",
+      "multi_color_hexes": [],
+      "name": "lane6",
+      "prep": false,
+      "remember_spool": false,
+      "runout_lane": null,
+      "spool_id": null,
+      "status": "None",
+      "td1_color": "",
+      "td1_scan_time": "",
+      "td1_td": "",
+      "tool_loaded": false,
+      "unit": "AMS_1",
+      "weight": 0
+    },
+    "AFC_lane lane7": {
+      "bed_temp": null,
+      "buffer": "FPS_buffer1",
+      "buffer_status": "Advancing",
+      "color": "",
+      "dist_hub": 60,
+      "extruder": "extruder3",
+      "extruder_temp": null,
+      "filament_name": "",
+      "filament_status": "Not Ready",
+      "filament_status_led": "#ff0000",
+      "hub": "AMS_1",
+      "initial_weight": 1000,
+      "lane": 3,
+      "load": false,
+      "loaded_to_hub": false,
+      "map": "T9",
+      "material": "",
+      "multi_color_hexes": [],
+      "name": "lane7",
+      "prep": false,
+      "remember_spool": false,
+      "runout_lane": null,
+      "spool_id": null,
+      "status": "None",
+      "td1_color": "",
+      "td1_scan_time": "",
+      "td1_td": "",
+      "tool_loaded": false,
+      "unit": "AMS_1",
+      "weight": 0
+    },
+    "AFC_lane lane8": {
+      "bed_temp": null,
+      "buffer": "FPS_buffer1",
+      "buffer_status": "Advancing",
+      "color": "",
+      "dist_hub": 60,
+      "extruder": "extruder3",
+      "extruder_temp": null,
+      "filament_name": "",
+      "filament_status": "Not Ready",
+      "filament_status_led": "#ff0000",
+      "hub": "AMS_1",
+      "initial_weight": 1000,
+      "lane": 4,
+      "load": false,
+      "loaded_to_hub": false,
+      "map": "T10",
+      "material": "",
+      "multi_color_hexes": [],
+      "name": "lane8",
+      "prep": false,
+      "remember_spool": false,
+      "runout_lane": null,
+      "spool_id": null,
+      "status": "None",
+      "td1_color": "",
+      "td1_scan_time": "",
+      "td1_td": "",
+      "tool_loaded": false,
+      "unit": "AMS_1",
+      "weight": 0
+    },
+    "AFC_led AFC_Indicator_HTLF_1": {
+      "color_data": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.392,
+          0.161,
+          0.702,
+          0.0
+        ]
+      ]
+    },
+    "AFC_stepper HTLF_Drive": {
+      "bed_temp": null,
+      "buffer": null,
+      "buffer_status": "Advancing",
+      "color": "",
+      "dist_hub": 60,
+      "endstops": "tool_start,buffer_advance,buffer_trailing,lane1_load,lane1_tool,lane2_load,lane2_buffer,lane3_load,lane3_hub,lane3_buffer,lane3_tool,lane4_load,lane4_hub,lane4_buffer,lane4_tool",
+      "extruder": "extruder",
+      "extruder_temp": null,
+      "filament_name": "",
+      "filament_status": "Not Ready",
+      "filament_status_led": "#ff0000",
+      "hub": "direct",
+      "initial_weight": 1000,
+      "lane": 0,
+      "load": true,
+      "loaded_to_hub": false,
+      "map": null,
+      "material": null,
+      "multi_color_hexes": [],
+      "name": "HTLF_Drive",
+      "prep": false,
+      "remember_spool": false,
+      "runout_lane": null,
+      "spool_id": null,
+      "status": "None",
+      "td1_color": "",
+      "td1_scan_time": "",
+      "td1_td": "",
+      "tool_loaded": false,
+      "unit": "HTLF_1",
+      "weight": 0.0
+    },
+    "AFC_stepper HTLF_Selector": {
+      "bed_temp": null,
+      "buffer": null,
+      "buffer_status": "Advancing",
+      "color": "",
+      "dist_hub": 60,
+      "endstops": "tool_start,buffer_advance,buffer_trailing,HTLF_1_home",
+      "extruder": "extruder",
+      "extruder_temp": null,
+      "filament_name": "",
+      "filament_status": "Not Ready",
+      "filament_status_led": "#ff0000",
+      "hub": "direct",
+      "initial_weight": 1000,
+      "lane": 0,
+      "load": true,
+      "loaded_to_hub": false,
+      "map": null,
+      "material": null,
+      "multi_color_hexes": [],
+      "name": "HTLF_Selector",
+      "prep": false,
+      "remember_spool": false,
+      "runout_lane": null,
+      "spool_id": null,
+      "status": "None",
+      "td1_color": "",
+      "td1_scan_time": "",
+      "td1_td": "",
+      "tool_loaded": false,
+      "unit": "HTLF_1",
+      "weight": 0.0
+    },
+    "filament_switch_sensor FPS_buffer1_compressed": {
+      "enabled": false,
+      "filament_detected": true
+    },
+    "filament_switch_sensor FPS_buffer1_expanded": {
+      "enabled": false,
+      "filament_detected": false
+    },
+    "filament_switch_sensor HTLF_1_Hub": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": true,
+      "filament_detected": false,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "filament_switch_sensor HTLF_1_home_pin": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": false,
+      "filament_detected": false,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "filament_switch_sensor PSF_buffer1_compressed": {
+      "enabled": false,
+      "filament_detected": true
+    },
+    "filament_switch_sensor PSF_buffer1_expanded": {
+      "enabled": false,
+      "filament_detected": false
+    },
+    "filament_switch_sensor TN0_compressed": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": false,
+      "filament_detected": true,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "filament_switch_sensor TN0_expanded": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": false,
+      "filament_detected": false,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "filament_switch_sensor TN1_compressed": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": false,
+      "filament_detected": false,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "filament_switch_sensor TN1_expanded": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": false,
+      "filament_detected": false,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "filament_switch_sensor TN2_compressed": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": false,
+      "filament_detected": false,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "filament_switch_sensor TN2_expanded": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": false,
+      "filament_detected": true,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "filament_switch_sensor TN3_compressed": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": false,
+      "filament_detected": true,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "filament_switch_sensor TN3_expanded": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": false,
+      "filament_detected": false,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "filament_switch_sensor extruder2_tool_start": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": true,
+      "filament_detected": false,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "filament_switch_sensor extruder3_tool_start": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": true,
+      "filament_detected": false,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "filament_switch_sensor extruder4_tool_start": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": true,
+      "filament_detected": false,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "filament_switch_sensor extruder5_tool_start": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": true,
+      "filament_detected": false,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "filament_switch_sensor extruder_tool_start": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": true,
+      "filament_detected": true,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "filament_switch_sensor lane1_load": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": true,
+      "filament_detected": true,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "filament_switch_sensor lane2_load": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": true,
+      "filament_detected": false,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "filament_switch_sensor lane3_load": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": true,
+      "filament_detected": false,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "filament_switch_sensor lane4_load": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": true,
+      "filament_detected": false,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "filament_switch_sensor quiet_mode": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": false,
+      "filament_detected": false,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "filament_switch_sensor virtual_bypass": {
+      "always_fire_events": false,
+      "check_on_print_start": false,
+      "enabled": false,
+      "filament_detected": false,
+      "runout_distance": 0.0,
+      "runout_elapsed": 0.0,
+      "smart": false
+    },
+    "tool T0": {
+      "active": false,
+      "detect_state": "absent",
+      "extruder": "extruder",
+      "extruder_stepper": null,
+      "fan": "T0_partfan",
+      "gcode_x_offset": 0.0,
+      "gcode_y_offset": 0.0,
+      "gcode_z_offset": 0.0,
+      "heater": "extruder",
+      "name": "tool T0",
+      "params_close_y": 25,
+      "params_dropoff_path": [
+        {
+          "y": 4,
+          "z": 3.5
+        },
+        {
+          "y": 0,
+          "z": 0
+        },
+        {
+          "y": 0,
+          "z": -12
+        }
+      ],
+      "params_fast_speed": 30000,
+      "params_input_shaper_freq_x": 55.4,
+      "params_input_shaper_freq_y": 36.8,
+      "params_park_x": -1.0,
+      "params_park_y": 2.1,
+      "params_park_z": 318,
+      "params_path_speed": 1800,
+      "params_pickup_path": [
+        {
+          "y": 2,
+          "z": -12
+        },
+        {
+          "y": 0,
+          "z": -12
+        },
+        {
+          "f": 0.5,
+          "verify": 1,
+          "y": 0,
+          "z": 1.5
+        },
+        {
+          "f": 0.5,
+          "y": 2.5,
+          "z": 0.5
+        },
+        {
+          "y": 8,
+          "z": 6
+        }
+      ],
+      "params_safe_y": 120,
+      "tool_number": 0,
+      "toolchanger": "toolchanger"
+    },
+    "tool T1": {
+      "active": false,
+      "detect_state": "absent",
+      "extruder": "extruder1",
+      "extruder_stepper": null,
+      "fan": "T1_partfan",
+      "gcode_x_offset": 0.27,
+      "gcode_y_offset": 0.45,
+      "gcode_z_offset": -0.1109,
+      "heater": "extruder1",
+      "name": "tool T1",
+      "params_close_y": 25,
+      "params_dropoff_path": [
+        {
+          "y": 4,
+          "z": 3.5
+        },
+        {
+          "y": 0,
+          "z": 0
+        },
+        {
+          "y": 0,
+          "z": -12
+        }
+      ],
+      "params_fast_speed": 30000,
+      "params_input_shaper_freq_x": 55.4,
+      "params_input_shaper_freq_y": 36.8,
+      "params_park_x": 70.6,
+      "params_park_y": 2.7,
+      "params_park_z": 317.5,
+      "params_path_speed": 1800,
+      "params_pickup_path": [
+        {
+          "y": 2,
+          "z": -12
+        },
+        {
+          "y": 0,
+          "z": -12
+        },
+        {
+          "f": 0.5,
+          "verify": 1,
+          "y": 0,
+          "z": 1.5
+        },
+        {
+          "f": 0.5,
+          "y": 2.5,
+          "z": 0.5
+        },
+        {
+          "y": 8,
+          "z": 6
+        }
+      ],
+      "params_safe_y": 120,
+      "tool_number": 1,
+      "toolchanger": "toolchanger"
+    },
+    "tool T2": {
+      "active": false,
+      "detect_state": "absent",
+      "extruder": "extruder2",
+      "extruder_stepper": null,
+      "fan": "T2_partfan",
+      "gcode_x_offset": 0.1,
+      "gcode_y_offset": -0.12,
+      "gcode_z_offset": 0.1103,
+      "heater": "extruder2",
+      "name": "tool T2",
+      "params_close_y": 25,
+      "params_dropoff_path": [
+        {
+          "y": 4,
+          "z": 3.5
+        },
+        {
+          "y": 0,
+          "z": 0
+        },
+        {
+          "y": 0,
+          "z": -12
+        }
+      ],
+      "params_fast_speed": 30000,
+      "params_input_shaper_freq_x": 55.4,
+      "params_input_shaper_freq_y": 36.8,
+      "params_park_x": 140.5,
+      "params_park_y": 2.4,
+      "params_park_z": 317.5,
+      "params_path_speed": 1800,
+      "params_pickup_path": [
+        {
+          "y": 2,
+          "z": -12
+        },
+        {
+          "y": 0,
+          "z": -12
+        },
+        {
+          "f": 0.5,
+          "verify": 1,
+          "y": 0,
+          "z": 1.5
+        },
+        {
+          "f": 0.5,
+          "y": 2.5,
+          "z": 0.5
+        },
+        {
+          "y": 8,
+          "z": 6
+        }
+      ],
+      "params_safe_y": 120,
+      "tool_number": 2,
+      "toolchanger": "toolchanger"
+    },
+    "tool T3": {
+      "active": false,
+      "detect_state": "absent",
+      "extruder": "extruder3",
+      "extruder_stepper": null,
+      "fan": "T3_partfan",
+      "gcode_x_offset": -0.01,
+      "gcode_y_offset": -0.02,
+      "gcode_z_offset": -0.0272,
+      "heater": "extruder3",
+      "name": "tool T3",
+      "params_close_y": 25,
+      "params_dropoff_path": [
+        {
+          "y": 4,
+          "z": 3.5
+        },
+        {
+          "y": 0,
+          "z": 0
+        },
+        {
+          "y": 0,
+          "z": -12
+        }
+      ],
+      "params_fast_speed": 30000,
+      "params_input_shaper_freq_x": 55.4,
+      "params_input_shaper_freq_y": 36.8,
+      "params_park_x": 211.7,
+      "params_park_y": 2.4,
+      "params_park_z": 317.5,
+      "params_path_speed": 1800,
+      "params_pickup_path": [
+        {
+          "y": 2,
+          "z": -12
+        },
+        {
+          "y": 0,
+          "z": -12
+        },
+        {
+          "f": 0.5,
+          "verify": 1,
+          "y": 0,
+          "z": 1.5
+        },
+        {
+          "f": 0.5,
+          "y": 2.5,
+          "z": 0.5
+        },
+        {
+          "y": 8,
+          "z": 6
+        }
+      ],
+      "params_safe_y": 120,
+      "tool_number": 3,
+      "toolchanger": "toolchanger"
+    },
+    "tool T4": {
+      "active": false,
+      "detect_state": "absent",
+      "extruder": "extruder4",
+      "extruder_stepper": null,
+      "fan": "T4_partfan",
+      "gcode_x_offset": 0.19,
+      "gcode_y_offset": -0.57,
+      "gcode_z_offset": -0.2963,
+      "heater": "extruder4",
+      "name": "tool T4",
+      "params_close_y": 25,
+      "params_dropoff_path": [
+        {
+          "y": 4,
+          "z": 3.5
+        },
+        {
+          "y": 0,
+          "z": 0
+        },
+        {
+          "y": 0,
+          "z": -12
+        }
+      ],
+      "params_fast_speed": 30000,
+      "params_input_shaper_freq_x": 55.4,
+      "params_input_shaper_freq_y": 36.8,
+      "params_park_x": 282,
+      "params_park_y": 2.4,
+      "params_park_z": 317.5,
+      "params_path_speed": 1800,
+      "params_pickup_path": [
+        {
+          "y": 2,
+          "z": -12
+        },
+        {
+          "y": 0,
+          "z": -12
+        },
+        {
+          "f": 0.5,
+          "verify": 1,
+          "y": 0,
+          "z": 1.5
+        },
+        {
+          "f": 0.5,
+          "y": 2.5,
+          "z": 0.5
+        },
+        {
+          "y": 8,
+          "z": 6
+        }
+      ],
+      "params_safe_y": 120,
+      "tool_number": 4,
+      "toolchanger": "toolchanger"
+    },
+    "toolchanger": {
+      "detected_tool": null,
+      "detected_tool_number": -1,
+      "has_detection": true,
+      "name": "toolchanger",
+      "params_close_y": 25,
+      "params_dropoff_path": [
+        {
+          "y": 4,
+          "z": 3.5
+        },
+        {
+          "y": 0,
+          "z": 0
+        },
+        {
+          "y": 0,
+          "z": -12
+        }
+      ],
+      "params_fast_speed": 30000,
+      "params_input_shaper_freq_x": 55.4,
+      "params_input_shaper_freq_y": 36.8,
+      "params_path_speed": 1800,
+      "params_pickup_path": [
+        {
+          "y": 2,
+          "z": -12
+        },
+        {
+          "y": 0,
+          "z": -12
+        },
+        {
+          "f": 0.5,
+          "verify": 1,
+          "y": 0,
+          "z": 1.5
+        },
+        {
+          "f": 0.5,
+          "y": 2.5,
+          "z": 0.5
+        },
+        {
+          "y": 8,
+          "z": 6
+        }
+      ],
+      "params_safe_y": 120,
+      "status": "ready",
+      "tool": null,
+      "tool_names": [
+        "tool T0",
+        "tool T1",
+        "tool T2",
+        "tool T3",
+        "tool T4"
+      ],
+      "tool_number": -1,
+      "tool_numbers": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    }
+  }
+}

@@ -16,7 +16,9 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <unistd.h>
+#include <utility>
 
 #include "../catch_amalgamated.hpp"
 
@@ -65,10 +67,7 @@ class CfsTestAccess {
     }
     static std::optional<std::string> last_rfid_uid(const AmsBackendCfs& b, int slot_index) {
         std::lock_guard<std::mutex> lock(b.mutex_);
-        auto it = b.last_rfid_uid_.find(slot_index);
-        if (it == b.last_rfid_uid_.end())
-            return std::nullopt;
-        return it->second;
+        return b.rfid_tracker_.baseline(slot_index);
     }
     static helix::printer::CfsMacroVariant macro_variant(const AmsBackendCfs& b) {
         return b.macro_variant_;
@@ -84,10 +83,13 @@ class CfsTestAccess {
     }
     static void set_last_rfid_uid(AmsBackendCfs& b, int slot_index, const std::string& uid) {
         std::lock_guard<std::mutex> lock(b.mutex_);
-        b.last_rfid_uid_[slot_index] = uid;
+        b.rfid_tracker_.observe(slot_index, uid);
     }
     static void set_macro_variant_k1(AmsBackendCfs& b) {
         b.macro_variant_ = helix::printer::CfsMacroVariant::K1;
+    }
+    static void set_macro_variant_fork(AmsBackendCfs& b) {
+        b.macro_variant_ = helix::printer::CfsMacroVariant::Fork;
     }
     // Seed N connected CFS units (unit_index 0..N-1) so device-action code that
     // iterates system_info_.units (e.g. refresh_rfid → BOX_INFO_REFRESH) has
@@ -171,6 +173,19 @@ class CfsK1RemapHelper : public CfsRemapHelper {
     }
 };
 } // namespace
+
+TEST_CASE("CFS Box profile clear is Fork-only", "[ams][cfs][fork]") {
+    CfsRemapHelper backend;
+
+    backend.clear_box_slot_profile(2);
+    REQUIRE(backend.captured.empty());
+
+    CfsTestAccess::set_macro_variant_fork(backend);
+
+    backend.clear_box_slot_profile(2);
+
+    REQUIRE(backend.captured == std::vector<std::string>{"_BOX_SLOT_CLEAR SLOT=2"});
+}
 
 TEST_CASE("CFS type enum", "[ams][cfs]") {
     SECTION("CFS is a valid AmsType") {
@@ -1046,23 +1061,34 @@ TEST_CASE("PrinterDiscovery enables CFS for K1 box object (#968 gate)", "[ams][c
 }
 
 TEST_CASE("Material comfort ranges", "[filament]") {
-    auto* range = filament::get_comfort_range("PLA");
-    REQUIRE(range != nullptr);
+    auto range = filament::get_comfort_range("PLA");
+    REQUIRE(range.has_value());
     REQUIRE(range->max_humidity_good == Catch::Approx(50.0f));
     REQUIRE(range->max_humidity_warn == Catch::Approx(65.0f));
 
-    auto* petg = filament::get_comfort_range("PETG");
-    REQUIRE(petg != nullptr);
+    auto petg = filament::get_comfort_range("PETG");
+    REQUIRE(petg.has_value());
     REQUIRE(petg->max_humidity_good == Catch::Approx(40.0f));
 
-    REQUIRE(filament::get_comfort_range("UNKNOWN_MATERIAL") == nullptr);
+    REQUIRE_FALSE(filament::get_comfort_range("UNKNOWN_MATERIAL").has_value());
 }
 
 TEST_CASE("CFS backend has environment sensors", "[ams][cfs]") {
-    // CFS units have built-in temperature and humidity sensors
-    // Verify the capability is reported correctly at the type level
-    // (Cannot instantiate AmsBackendCfs without a real API, so test the header contract)
-    REQUIRE(true); // Compile-time check: has_environment_sensors() exists in header
+    // CFS units have built-in temperature and humidity sensors; every other
+    // backend inherits AmsBackend's default of false, and ui_ams_detail.cpp
+    // gates the whole environment card on this returning true.
+    //
+    // (The old body was REQUIRE(true) with a comment claiming a compile-time
+    // check. AmsBackendCfs is perfectly constructible with a null API - the
+    // rest of this file does it all over - so just ask the object.)
+    AmsBackendCfs backend(nullptr, nullptr);
+
+    static_assert(
+        std::is_same_v<decltype(std::declval<const AmsBackendCfs&>().has_environment_sensors()),
+                       bool>,
+        "ui_ams_detail.cpp branches on a bool from has_environment_sensors()");
+
+    REQUIRE(backend.has_environment_sensors());
 }
 
 // =============================================================================
@@ -1302,11 +1328,65 @@ TEST_CASE("CFS set_tool_mapping updates local tool_to_slot_map", "[ams][cfs][rem
     auto baseline = helper.get_tool_mapping();
     REQUIRE_FALSE(baseline.empty()); // box.map populated by handle_status
 
-    REQUIRE(helper.set_tool_mapping(1, 5).result == AmsResult::SUCCESS);
+    SECTION("a remap onto a connected lane moves BOTH directions") {
+        // This payload connects T1 only — T2 reports state "None" — so the box
+        // has four lanes, 0..3, and lane 3 is one of them.
+        REQUIRE(helper.set_tool_mapping(1, 3).result == AmsResult::SUCCESS);
 
-    auto after = helper.get_tool_mapping();
-    REQUIRE(after.size() == baseline.size());
-    REQUIRE(after[1] == 5);
+        auto after = helper.get_tool_mapping();
+        REQUIRE(after.size() == baseline.size());
+        REQUIRE(after[1] == 3);
+
+        // The reverse direction has to follow, or the AMS panel badges one lane
+        // while the filament panel's Load/Unload buttons act on another.
+        auto info = helper.get_system_info();
+        const auto* lane3 = info.get_slot_global(3);
+        REQUIRE(lane3 != nullptr);
+        CHECK(lane3->mapped_tool == 1);
+
+        // Both losing sides give up their claim: lane 1 no longer answers to
+        // T1, and T3 no longer resolves to the lane T1 just took.
+        const auto* lane1 = info.get_slot_global(1);
+        REQUIRE(lane1 != nullptr);
+        CHECK(lane1->mapped_tool == -1);
+        CHECK(after[3] == -1);
+    }
+
+    SECTION("a remap onto a lane the box has not reported is sent but not recorded") {
+        // Slot 5 lives in unit T2, which this payload reports as state "None" —
+        // not connected. The command still goes out, because firmware is the
+        // authority and a unit we have not yet parsed a frame for may well be
+        // there; the frame that describes it is what makes the mapping real.
+        //
+        // What must NOT happen is recording it locally. A forward entry naming
+        // a lane with no SlotInfo has no mapped_tool to pair with, so the two
+        // directions could never agree — and resolve_op_button_slot() would
+        // hand the filament panel slot 5, which get_slot_global() answers with
+        // nullptr. This assertion used to read `after[1] == 5`, from when the
+        // forward map was written on its own and nothing had to match it.
+        const size_t sent_before = helper.captured.size();
+        REQUIRE(helper.set_tool_mapping(1, 5).result == AmsResult::SUCCESS);
+
+        REQUIRE(helper.captured.size() == sent_before + 1);
+        CHECK(helper.captured.back() == "BOX_MODIFY_TN T1B=T2B");
+
+        auto after = helper.get_tool_mapping();
+        CHECK(after == baseline);
+
+        // The invariant, stated directly: every forward entry names a lane that
+        // exists and claims that tool back.
+        auto info = helper.get_system_info();
+        for (int t = 0; t < static_cast<int>(after.size()); ++t) {
+            int slot = after[static_cast<size_t>(t)];
+            if (slot < 0) {
+                continue;
+            }
+            INFO("T" << t << " resolves to slot " << slot);
+            const auto* lane = info.get_slot_global(slot);
+            REQUIRE(lane != nullptr);
+            CHECK(lane->mapped_tool == t);
+        }
+    }
 }
 
 TEST_CASE("CFS get_tool_mapping_capabilities advertises editable", "[ams][cfs][remap]") {
@@ -1381,7 +1461,7 @@ TEST_CASE("CFS has no per-slot prep sensors", "[ams][cfs]") {
 // ============================================================================
 
 TEST_CASE("CFS override loaded at init is applied over firmware data",
-          "[ams][cfs][filament_slot_override][slow]") {
+          "[ams][cfs][filament_slot_override]") {
     // Seed an override in-memory and verify apply_overrides layers it over
     // firmware-parsed slot data. CFS's firmware populates brand /
     // color_name / total_weight_g from the RFID material DB, but the
@@ -1422,7 +1502,7 @@ TEST_CASE("CFS override loaded at init is applied over firmware data",
 }
 
 TEST_CASE("CFS migrates from helix-screen:cfs_slot_overrides on first startup",
-          "[ams][cfs][filament_slot_override][migration][slow]") {
+          "[ams][cfs][filament_slot_override][migration]") {
     // Pre-Task-8 CFS wrote per-slot overrides to
     // helix-screen:cfs_slot_overrides. On first startup post-upgrade, the
     // store's load_blocking() migrates that data into lane_data and deletes
@@ -1471,8 +1551,7 @@ TEST_CASE("CFS migrates from helix-screen:cfs_slot_overrides on first startup",
     CHECK(api.mock_get_db_value("helix-screen", "cfs_slot_overrides").is_null());
 }
 
-TEST_CASE("CFS set_slot_info(persist=true) writes to store",
-          "[ams][cfs][filament_slot_override][slow]") {
+TEST_CASE("CFS set_slot_info(persist=true) writes to store", "[ams][cfs][filament_slot_override]") {
     CfsTmpCacheDir tmp("task14_persist_true");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -1520,7 +1599,7 @@ TEST_CASE("CFS set_slot_info(persist=true) writes to store",
 }
 
 TEST_CASE("CFS set_slot_info(persist=false) does NOT write to store",
-          "[ams][cfs][filament_slot_override][slow]") {
+          "[ams][cfs][filament_slot_override]") {
     CfsTmpCacheDir tmp("task14_persist_false");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -1573,7 +1652,7 @@ TEST_CASE("CFS set_slot_info(persist=false) does NOT write to store",
 }
 
 TEST_CASE("CFS RFID fingerprint change clears override (hardware swap detected)",
-          "[ams][cfs][filament_slot_override][slow]") {
+          "[ams][cfs][filament_slot_override]") {
     CfsTmpCacheDir tmp("task14_uid_swap_clears");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -1616,30 +1695,38 @@ TEST_CASE("CFS RFID fingerprint change clears override (hardware swap detected)"
     //   1. check_hardware_event_clear fires clear_override_locked, which
     //      erases the user-set override (brand, spool_name, spoolman_id,
     //      material, color) AND deletes the lane_data record.
-    //   2. mirror_firmware_to_lane_data (FillUnsetOnly) immediately
-    //      republishes the NEW firmware-truth color/material so OrcaSlicer's
-    //      MoonrakerPrinterAgent sees the new spool on the same parse.
-    //
-    // So the post-swap state is: override exists with ONLY firmware fields,
-    // lane_data contains the new color/material (no stale user metadata).
+    //   2. mirror_firmware_to_lane_data is SKIPPED on this parse. A clear_async
+    //      DELETE and a save_async POST against the same lane_data key are
+    //      independently ordered, so firing both in one pass races — a DELETE
+    //      landing second would drop the record we just published. The
+    //      republish happens on the next parse instead.
     json box2 = make_single_unit_box({"102001", "101001", "101001", "101001"},
                                      {"000FF00", "0FFFFFF", "00A2989", "0C12E1F"});
     CfsTestAccess::handle_status(backend, make_cfs_notification(box2));
 
     CHECK(CfsTestAccess::last_rfid_uid(backend, 0) == "102001|000FF00");
 
-    // Override should now hold the auto-mirrored firmware values (no user
-    // metadata): new color, no spool_name / spoolman_id / brand from the
-    // wiped user override.
+    // The swap parse leaves nothing behind: override erased, record deleted.
+    CHECK_FALSE(CfsTestAccess::get_override(backend, 0).has_value());
+    CHECK(api.mock_get_db_value("lane_data", "lane1").is_null());
+
+    // Next parse (same new spool, unchanged fingerprint) republishes firmware
+    // truth for the NEW spool.
+    CfsTestAccess::handle_status(backend, make_cfs_notification(box2));
+
+    // Override now holds the auto-mirrored firmware values (no user metadata):
+    // new color, no spool_name / spoolman_id / brand from the wiped override.
     auto post_swap = CfsTestAccess::get_override(backend, 0);
     REQUIRE(post_swap.has_value());
     CHECK(post_swap->color_rgb == 0x00FF00u);
     CHECK(post_swap->spool_name.empty());
     CHECK(post_swap->spoolman_id == 0);
     CHECK(post_swap->brand.empty());
+    // Auto-mirror writes must NOT claim to be user edits.
+    CHECK_FALSE(post_swap->user_locked_color);
+    CHECK_FALSE(post_swap->user_locked_material);
 
-    // lane_data was cleared by the swap and immediately republished with the
-    // new firmware truth — Orca sees the new spool's color, not stale data.
+    // Orca sees the new spool's color, not stale user data.
     auto stored = api.mock_get_db_value("lane_data", "lane1");
     REQUIRE(!stored.is_null());
     CHECK(stored["color"] == "#00FF00");
@@ -1660,7 +1747,7 @@ TEST_CASE("CFS RFID fingerprint change clears override (hardware swap detected)"
 }
 
 TEST_CASE("CFS first RFID observation does NOT clear override",
-          "[ams][cfs][filament_slot_override][slow]") {
+          "[ams][cfs][filament_slot_override]") {
     // Even when the override was saved against a different (now-stale)
     // fingerprint, the very first observation is a BASELINE and must never
     // fire a clear. Matches Snapmaker semantics.
@@ -1703,7 +1790,7 @@ TEST_CASE("CFS first RFID observation does NOT clear override",
 }
 
 TEST_CASE("CFS empty RFID fingerprint does not update baseline or clear",
-          "[ams][cfs][filament_slot_override][slow]") {
+          "[ams][cfs][filament_slot_override]") {
     // Sentinel material_type "-1" / color_value "-1" = no tag / reader
     // disabled / unreadable. Must not update the baseline and must not clear.
     // This is the contract that keeps transient tag-read failures from
@@ -1748,8 +1835,7 @@ TEST_CASE("CFS empty RFID fingerprint does not update baseline or clear",
     CHECK(!api.mock_get_db_value("lane_data", "lane1").is_null());
 }
 
-TEST_CASE("CFS override preserved across unchanged parses",
-          "[ams][cfs][filament_slot_override][slow]") {
+TEST_CASE("CFS override preserved across unchanged parses", "[ams][cfs][filament_slot_override]") {
     // When the RFID fingerprint is unchanged (same spool re-observed), the
     // override must be re-applied on every parse. This is the core behavior
     // that was broken pre-Task-14: firmware data overwrote user edits on
@@ -1923,9 +2009,13 @@ TEST_CASE("CFS: user override promotes an RFID-empty bay to AVAILABLE", "[ams][c
     FilamentSlotOverrideStoreTestAccess::set_cache_directory(*store, tmp.path);
     CfsTestAccess::inject_override_store(backend, std::move(store));
 
-    // User assigned PLA to slot 0 (untagged spool).
+    // User assigned PLA to slot 0 (untagged spool). Locked, exactly as
+    // set_slot_info(persist=true) records a user edit — an UNLOCKED record
+    // would be an auto-mirror leftover, which the empty bay is entitled to
+    // clear (clear_stale_override_on_removal_locked).
     helix::ams::FilamentSlotOverride ovr;
     ovr.material = "PLA";
+    ovr.user_locked_material = true;
     CfsTestAccess::seed_override(backend, 0, ovr);
 
     // Firmware reports slot 0 EMPTY (RFID -1 / no length), slots 1-3 EMPTY too.
@@ -1938,5 +2028,396 @@ TEST_CASE("CFS: user override promotes an RFID-empty bay to AVAILABLE", "[ams][c
     }
     SECTION("control: unassigned empty bay stays EMPTY") {
         REQUIRE(backend.get_slot_info(1).status == SlotStatus::EMPTY);
+    }
+}
+
+// =============================================================================
+// Self-wipe guard: firmware echoing back our own BOX_MODIFY_TN_DATA color push
+// must not read as a physical spool swap.
+//
+// set_slot_info(persist=true) both stages the user's override AND rewrites
+// firmware's color_value so the stock LCD agrees. color_value is half of the
+// RFID fingerprint check_hardware_event_clear watches, so without a guard the
+// echo of our own write cleared the override the user had just created — the
+// user's material silently vanished on the next restart. Because lane_data IS
+// the override store, that also fed OrcaSlicer stale filament info.
+// =============================================================================
+
+namespace {
+
+// Box builder with explicit control over `vender` and `remain_len`. The shared
+// make_single_unit_box() synthesizes those from material/color presence, which
+// is exactly the coupling these tests need to break: a REMOVED tagged spool has
+// sentinel vender alongside latched material/color/remain_len.
+json make_unit_box_explicit(const std::vector<std::string>& material_types,
+                            const std::vector<std::string>& color_values,
+                            const std::vector<std::string>& venders,
+                            const std::vector<std::string>& remain_lens) {
+    json box = json::parse(R"({
+        "state": "connect",
+        "filament": 0,
+        "auto_refill": 1,
+        "enable": 1,
+        "filament_useup": 1,
+        "map": {"T1A": "T1A", "T1B": "T1B", "T1C": "T1C", "T1D": "T1D"},
+        "T1": {
+            "state": "connect",
+            "filament": "None",
+            "temperature": "27",
+            "dry_and_humidity": "48",
+            "version": "1.1.3",
+            "sn": "SERIAL",
+            "change_color_num": ["-1", "-1", "-1", "-1"]
+        }
+    })");
+    box["T1"]["material_type"] = material_types;
+    box["T1"]["color_value"] = color_values;
+    box["T1"]["vender"] = venders;
+    box["T1"]["remain_len"] = remain_lens;
+    return box;
+}
+
+// Backend + store + tmp cache wired together — every override test repeats this.
+struct CfsOverrideRig {
+    CfsTmpCacheDir tmp;
+    MoonrakerClientMock client{MoonrakerClientMock::PrinterType::VORON_24};
+    helix::PrinterState state;
+    std::unique_ptr<MoonrakerAPIMock> api;
+    std::unique_ptr<AmsBackendCfs> backend;
+
+    explicit CfsOverrideRig(const std::string& name) : tmp(name) {
+        state.init_subjects(false);
+        api = std::make_unique<MoonrakerAPIMock>(client, state);
+        backend = std::make_unique<AmsBackendCfs>(api.get(), nullptr);
+        auto store = std::make_unique<helix::ams::FilamentSlotOverrideStore>(api.get(), "cfs");
+        FilamentSlotOverrideStoreTestAccess::set_cache_directory(*store, tmp.path);
+        CfsTestAccess::inject_override_store(*backend, std::move(store));
+    }
+
+    void poll(const json& box) {
+        CfsTestAccess::handle_status(*backend, make_cfs_notification(box));
+    }
+};
+
+} // namespace
+
+TEST_CASE("CFS user edit survives the firmware echo of our own color push",
+          "[ams][cfs][filament_slot_override][firmware_writeback]") {
+    CfsOverrideRig rig("cfs_echo_survives");
+
+    // Slot 0 holds a tagged spool: material 101001, color 0FF5500. First poll
+    // establishes the fingerprint baseline "101001|0FF5500".
+    json box_before = make_single_unit_box({"101001", "101001", "101001", "101001"},
+                                           {"0FF5500", "0FFFFFF", "00A2989", "0C12E1F"});
+    rig.poll(box_before);
+    REQUIRE(CfsTestAccess::last_rfid_uid(*rig.backend, 0) == "101001|0FF5500");
+
+    // User assigns ASA-CF / dark gray. This stages the override AND pushes
+    // BOX_MODIFY_TN_DATA ... DATA=01A1A1A to the box.
+    SlotInfo edit;
+    edit.material = "ASA-CF";
+    edit.color_name = "Dark Gray";
+    edit.color_rgb = 0x1A1A1A;
+    REQUIRE(rig.backend->set_slot_info(0, edit, /*persist=*/true).success());
+
+    auto staged = CfsTestAccess::get_override(*rig.backend, 0);
+    REQUIRE(staged.has_value());
+    REQUIRE(staged->material == "ASA-CF");
+    REQUIRE(staged->user_locked_color);
+    REQUIRE(staged->user_locked_material);
+
+    SECTION("polls before the echo lands leave the override untouched") {
+        // The gcode is queued asynchronously, so firmware keeps reporting the
+        // OLD color for an unknown number of polls. Those must read Unchanged —
+        // a guard that overwrote the baseline outright would instead see a
+        // change here and clear on the very first poll.
+        for (int i = 0; i < 3; ++i) {
+            rig.poll(box_before);
+            auto ovr = CfsTestAccess::get_override(*rig.backend, 0);
+            REQUIRE(ovr.has_value());
+            CHECK(ovr->material == "ASA-CF");
+            CHECK(ovr->color_rgb == 0x1A1A1Au);
+        }
+        CHECK(CfsTestAccess::last_rfid_uid(*rig.backend, 0) == "101001|0FF5500");
+    }
+
+    SECTION("the echo itself is not a swap and the edit survives every later poll") {
+        // Firmware applies the write: color_value becomes our pushed 01A1A1A.
+        // material_type is untouched — nothing writes it.
+        json box_echo = make_single_unit_box({"101001", "101001", "101001", "101001"},
+                                             {"01A1A1A", "0FFFFFF", "00A2989", "0C12E1F"});
+
+        // Survival across MANY polls, not just the first: the override backs
+        // lane_data, which is what OrcaSlicer reads.
+        for (int i = 0; i < 5; ++i) {
+            rig.poll(box_echo);
+
+            auto ovr = CfsTestAccess::get_override(*rig.backend, 0);
+            REQUIRE(ovr.has_value());
+            CHECK(ovr->material == "ASA-CF");
+            CHECK(ovr->color_rgb == 0x1A1A1Au);
+            CHECK(ovr->user_locked_color);
+            CHECK(ovr->user_locked_material);
+
+            auto info = rig.backend->get_slot_info(0);
+            CHECK(info.material == "ASA-CF");
+            CHECK(info.color_rgb == 0x1A1A1Au);
+        }
+
+        // The baseline advanced to the echoed fingerprint, so a LATER genuine
+        // swap is still measured against firmware truth.
+        CHECK(CfsTestAccess::last_rfid_uid(*rig.backend, 0) == "101001|01A1A1A");
+
+        // lane_data still carries the user's material + color for Orca.
+        auto stored = rig.api->mock_get_db_value("lane_data", "lane1");
+        REQUIRE(!stored.is_null());
+        CHECK(stored["material"] == "ASA-CF");
+        CHECK(stored["color"] == "#1A1A1A");
+    }
+
+    SECTION("a genuine swap after the echo still clears the override") {
+        json box_echo = make_single_unit_box({"101001", "101001", "101001", "101001"},
+                                             {"01A1A1A", "0FFFFFF", "00A2989", "0C12E1F"});
+        rig.poll(box_echo);
+        REQUIRE(CfsTestAccess::get_override(*rig.backend, 0).has_value());
+
+        // Different physical spool: different material code AND color.
+        json box_swap = make_single_unit_box({"102001", "101001", "101001", "101001"},
+                                             {"000FF00", "0FFFFFF", "00A2989", "0C12E1F"});
+        rig.poll(box_swap);
+        CHECK_FALSE(CfsTestAccess::get_override(*rig.backend, 0).has_value());
+    }
+}
+
+TEST_CASE("CFS genuine swap while a color push is in flight still clears the override",
+          "[ams][cfs][filament_slot_override][firmware_writeback]") {
+    // The echo guard must not blind swap detection during the window between
+    // dispatching BOX_MODIFY_TN_DATA and firmware acknowledging it.
+    CfsOverrideRig rig("cfs_swap_during_push");
+
+    json box_before = make_single_unit_box({"101001", "101001", "101001", "101001"},
+                                           {"0FF5500", "0FFFFFF", "00A2989", "0C12E1F"});
+    rig.poll(box_before);
+
+    SlotInfo edit;
+    edit.material = "ASA-CF";
+    edit.color_rgb = 0x1A1A1A;
+    REQUIRE(rig.backend->set_slot_info(0, edit, /*persist=*/true).success());
+    REQUIRE(CfsTestAccess::get_override(*rig.backend, 0).has_value());
+
+    // Before the echo arrives the user yanks the spool and inserts another one.
+    // The fingerprint changes to something we never asked for.
+    json box_swap = make_single_unit_box({"102001", "101001", "101001", "101001"},
+                                         {"000FF00", "0FFFFFF", "00A2989", "0C12E1F"});
+    rig.poll(box_swap);
+
+    CHECK_FALSE(CfsTestAccess::get_override(*rig.backend, 0).has_value());
+    CHECK(CfsTestAccess::last_rfid_uid(*rig.backend, 0) == "102001|000FF00");
+
+    // The pending expectation was consumed by that swap — it must not linger
+    // and swallow a subsequent change that happens to match the pushed color.
+    helix::ams::FilamentSlotOverride fresh;
+    fresh.material = "PETG";
+    fresh.color_rgb = 0x00FF00;
+    fresh.color_set = true;
+    fresh.user_locked_material = true;
+    CfsTestAccess::seed_override(*rig.backend, 0, fresh);
+
+    json box_late_echo = make_single_unit_box({"101001", "101001", "101001", "101001"},
+                                              {"01A1A1A", "0FFFFFF", "00A2989", "0C12E1F"});
+    rig.poll(box_late_echo);
+    CHECK_FALSE(CfsTestAccess::get_override(*rig.backend, 0).has_value());
+}
+
+// =============================================================================
+// Presence: `remain_len` LATCHES after a tagged spool is pulled, so it cannot
+// be an unconditional presence signal. It exists only to cover UNTAGGED spools,
+// which report no RFID payload at all — see parse_box_status.
+// =============================================================================
+
+TEST_CASE("CFS parse: tagged spool removal reads EMPTY despite latched remain_len",
+          "[ams][cfs][presence]") {
+    // Live K2 T1 slot 4 (index 3), physically empty: vender correctly reads the
+    // "none" sentinel while remain_len/color_value/material_type all stay
+    // latched at the removed spool's values.
+    json box = make_unit_box_explicit(
+        /*material_types=*/{"unknown", "unknown", "101001", "101001"},
+        /*color_values=*/{"0FFFFFF", "01A1A1A", "01A1A1A", "0C12E1F"},
+        /*venders=*/{"unknown", "unknown", "unknown", "none"},
+        /*remain_lens=*/{"100", "0", "46", "50"});
+
+    auto info = AmsBackendCfs::parse_box_status(box);
+    REQUIRE(info.units.size() == 1);
+
+    SECTION("removed tagged bay is EMPTY, not pinned AVAILABLE by latched length") {
+        CHECK(info.units[0].slots[3].status == SlotStatus::EMPTY);
+        // Latched display fields are scrubbed so the empty bay renders blank.
+        CHECK(info.units[0].slots[3].material.empty());
+        CHECK(info.units[0].slots[3].remaining_length_m == 0.0f);
+    }
+    SECTION("seated bays are unaffected") {
+        CHECK(info.units[0].slots[0].status == SlotStatus::AVAILABLE);
+        CHECK(info.units[0].slots[1].status == SlotStatus::AVAILABLE);
+        CHECK(info.units[0].slots[2].status == SlotStatus::AVAILABLE);
+    }
+    SECTION("a seated bay reporting remain_len 0 stays AVAILABLE on its vender") {
+        // Slot 1 is spooled out but still physically seated — vender says so.
+        CHECK(info.units[0].slots[1].status == SlotStatus::AVAILABLE);
+    }
+}
+
+TEST_CASE("CFS parse: untagged spool with remaining length stays PRESENT", "[ams][cfs][presence]") {
+    // Regression guard for 65b3a1b8d. An untagged 3rd-party spool has no RFID
+    // vendor and no RFID payload, but the measuring wheel reports real length.
+    // Keying presence on `vender` alone — or dropping remain_len outright —
+    // would wrongly parse these EMPTY.
+    SECTION("hard sentinels (-1) in material/color") {
+        json box =
+            make_unit_box_explicit({"-1", "-1", "-1", "-1"}, {"-1", "-1", "-1", "-1"},
+                                   {"none", "none", "none", "none"}, {"46", "-1", "-1", "-1"});
+        auto info = AmsBackendCfs::parse_box_status(box);
+        REQUIRE(info.units.size() == 1);
+        CHECK(info.units[0].slots[0].status == SlotStatus::AVAILABLE);
+        CHECK(info.units[0].slots[1].status == SlotStatus::EMPTY);
+    }
+
+    SECTION("'unknown' in material/color is also a no-payload sentinel") {
+        json box = make_unit_box_explicit(
+            {"unknown", "unknown", "-1", "-1"}, {"unknown", "unknown", "-1", "-1"},
+            {"none", "none", "none", "none"}, {"46", "0", "-1", "-1"});
+        auto info = AmsBackendCfs::parse_box_status(box);
+        REQUIRE(info.units.size() == 1);
+        CHECK(info.units[0].slots[0].status == SlotStatus::AVAILABLE);
+        CHECK(info.units[0].slots[1].status == SlotStatus::EMPTY);
+    }
+
+    SECTION("a genuinely empty never-tagged bay is EMPTY") {
+        json box =
+            make_unit_box_explicit({"-1", "-1", "-1", "-1"}, {"-1", "-1", "-1", "-1"},
+                                   {"none", "none", "none", "none"}, {"-1", "-1", "-1", "-1"});
+        auto info = AmsBackendCfs::parse_box_status(box);
+        REQUIRE(info.units.size() == 1);
+        CHECK(info.units[0].slots[0].status == SlotStatus::EMPTY);
+    }
+}
+
+TEST_CASE("CFS clears the stale lane_data record when a tagged spool is removed",
+          "[ams][cfs][presence][filament_slot_override]") {
+    CfsOverrideRig rig("cfs_removal_clears");
+
+    // Slot 3 seated with a tagged spool. The auto-mirror publishes firmware
+    // truth to lane4 so OrcaSlicer can see it.
+    json box_seated = make_unit_box_explicit(
+        {"unknown", "unknown", "101001", "101001"}, {"0FFFFFF", "01A1A1A", "01A1A1A", "0C12E1F"},
+        {"unknown", "unknown", "unknown", "unknown"}, {"100", "0", "46", "50"});
+    rig.poll(box_seated);
+
+    REQUIRE(rig.backend->get_slot_info(3).status == SlotStatus::AVAILABLE);
+    auto seated_record = rig.api->mock_get_db_value("lane_data", "lane4");
+    REQUIRE(!seated_record.is_null());
+
+    // Spool pulled. `vender` drops to the sentinel; everything else latches.
+    // The RFID fingerprint is therefore UNCHANGED — check_hardware_event_clear
+    // can never fire here, which is exactly why removal needs its own path.
+    json box_removed = make_unit_box_explicit(
+        {"unknown", "unknown", "101001", "101001"}, {"0FFFFFF", "01A1A1A", "01A1A1A", "0C12E1F"},
+        {"unknown", "unknown", "unknown", "none"}, {"100", "0", "46", "50"});
+    rig.poll(box_removed);
+
+    SECTION("slot reads EMPTY and is not promoted back by the stale override") {
+        CHECK(rig.backend->get_slot_info(3).status == SlotStatus::EMPTY);
+    }
+    SECTION("the auto-mirrored override is erased") {
+        CHECK_FALSE(CfsTestAccess::get_override(*rig.backend, 3).has_value());
+    }
+    SECTION("the lane_data record is deleted, and stays deleted across polls") {
+        CHECK(rig.api->mock_get_db_value("lane_data", "lane4").is_null());
+        for (int i = 0; i < 3; ++i) {
+            rig.poll(box_removed);
+            CHECK(rig.api->mock_get_db_value("lane_data", "lane4").is_null());
+            CHECK_FALSE(CfsTestAccess::get_override(*rig.backend, 3).has_value());
+        }
+    }
+    SECTION("neighbouring seated slots keep their records") {
+        CHECK_FALSE(rig.api->mock_get_db_value("lane_data", "lane3").is_null());
+    }
+}
+
+TEST_CASE("CFS removal keeps a user-locked assignment for an unloaded slot",
+          "[ams][cfs][presence][filament_slot_override]") {
+    // A deliberate user assignment means "this is what belongs in this slot".
+    // A slot that is merely unloaded must not lose it — only auto-mirrored
+    // records describe a spool that is definitionally gone. Matches the AD5X
+    // IFS policy of retaining the lane->Spoolman override across empty (#1071).
+    CfsOverrideRig rig("cfs_removal_keeps_locked");
+
+    json box_seated = make_unit_box_explicit(
+        {"unknown", "unknown", "101001", "101001"}, {"0FFFFFF", "01A1A1A", "01A1A1A", "0C12E1F"},
+        {"unknown", "unknown", "unknown", "unknown"}, {"100", "0", "46", "50"});
+    rig.poll(box_seated);
+
+    SlotInfo edit;
+    edit.material = "ASA-CF";
+    edit.color_name = "Dark Gray";
+    edit.color_rgb = 0x1A1A1A;
+    edit.spool_name = "My ASA";
+    REQUIRE(rig.backend->set_slot_info(3, edit, /*persist=*/true).success());
+
+    json box_removed = make_unit_box_explicit(
+        {"unknown", "unknown", "101001", "101001"}, {"0FFFFFF", "01A1A1A", "01A1A1A", "0C12E1F"},
+        {"unknown", "unknown", "unknown", "none"}, {"100", "0", "46", "50"});
+    for (int i = 0; i < 3; ++i) {
+        rig.poll(box_removed);
+    }
+
+    auto ovr = CfsTestAccess::get_override(*rig.backend, 3);
+    REQUIRE(ovr.has_value());
+    CHECK(ovr->material == "ASA-CF");
+    CHECK(ovr->spool_name == "My ASA");
+    CHECK(ovr->user_locked_material);
+
+    auto stored = rig.api->mock_get_db_value("lane_data", "lane4");
+    REQUIRE(!stored.is_null());
+    CHECK(stored["material"] == "ASA-CF");
+}
+
+TEST_CASE("FillUnsetOnly mirror does not overwrite user-locked fields",
+          "[ams][filament_slot_override]") {
+    std::unordered_map<int, helix::ams::FilamentSlotOverride> overrides;
+
+    SECTION("locked fields are left alone even when the value flags disagree") {
+        // color_set/material carry the locks' normal companions, but a legacy
+        // or third-party record can present a lock without them. The lock is
+        // the authoritative signal and must win on its own.
+        helix::ams::FilamentSlotOverride ovr;
+        ovr.user_locked_color = true;
+        ovr.user_locked_material = true;
+        ovr.color_set = false;
+        ovr.material.clear();
+        overrides[0] = ovr;
+
+        bool changed = helix::ams::mirror_firmware_to_lane_data(
+            /*store=*/nullptr, overrides, 0, 0x00FF00, "PETG", /*slot_has_filament=*/true,
+            helix::ams::MirrorPolicy::FillUnsetOnly, "[test]");
+
+        CHECK_FALSE(changed);
+        CHECK_FALSE(overrides[0].color_set);
+        CHECK(overrides[0].material.empty());
+    }
+
+    SECTION("unlocked unset fields are still bootstrapped from firmware") {
+        overrides[1] = helix::ams::FilamentSlotOverride{};
+
+        bool changed = helix::ams::mirror_firmware_to_lane_data(
+            nullptr, overrides, 1, 0x00FF00, "PETG", true, helix::ams::MirrorPolicy::FillUnsetOnly,
+            "[test]");
+
+        CHECK(changed);
+        CHECK(overrides[1].color_set);
+        CHECK(overrides[1].color_rgb == 0x00FF00u);
+        CHECK(overrides[1].material == "PETG");
+        // Auto-mirror writes never claim to be user edits.
+        CHECK_FALSE(overrides[1].user_locked_color);
+        CHECK_FALSE(overrides[1].user_locked_material);
     }
 }

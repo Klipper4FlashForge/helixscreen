@@ -79,9 +79,39 @@ class CfsErrorDecoder {
 /// BOX_GO_TO_EXTRUDE_POS, BOX_MOVE_TO_SAFE_POS. The K2-only fan-save and
 /// mode-wait helpers are absent. Selected when PrinterDetector reports a
 /// K1-series printer. Issue #968.
+///
+/// Fork — community Kalico ports of the K2 whose reimplemented `box` module
+/// replaces Creality's closed one. `T<n>` and `BOX_UNLOAD` are high-level and
+/// self-contained: box.py owns the whole feed/purge/park sequence, so
+/// HelixScreen sends no stock envelope. Detected by `api_version` in the box
+/// payload. See docs/devel/printers/CREALITY_K2_SUPPORT.md §
+/// "Community Kalico port".
 enum class CfsMacroVariant {
     K2,
     K1,
+    Fork,
+};
+
+/// Shape of the `box` Moonraker object, which varies INDEPENDENTLY of the macro
+/// dialect above.
+///
+/// Stock — Creality's own module (K1 and K2 both): per-unit `T1`..`T4` objects,
+/// each holding four parallel arrays (`color_value`, `material_type`, `vender`,
+/// `remain_len`), plus top-level `filament` / `map` / `same_material` /
+/// `auto_refill`. Material codes need the CfsMaterialDb/FilamentCatalog decode.
+///
+/// Flat — community Kalico ports carrying a reimplemented box.py: a single
+/// `slots[]` array of self-describing objects, plus `loaded_slot`,
+/// `slot_filament_mask`, `load_path`, `materials`, `temp_c`, `humidity_pct`.
+/// Zero key overlap with Stock. Materials and colors are already resolved, so
+/// no code table is involved.
+///
+/// Detected from the PAYLOAD, never from PrinterDetector: the affected printers
+/// report as stock K2 Plus hardware by every model signal, so the firmware swap
+/// is invisible to model detection. Bundle QJKZEMTS.
+enum class CfsSchema {
+    Stock,
+    Flat,
 };
 
 /// CFS (Creality Filament System) backend — K1 + K2 series printers with RS-485 CFS units
@@ -117,9 +147,19 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     [[nodiscard]] PathSegment get_slot_filament_segment(int slot_index) const override;
     [[nodiscard]] PathSegment infer_error_segment() const override;
 
+    /// handle_status_update() stamps SlotStatus::LOADED on the seated bay —
+    /// the lane a unit names in T{n}.filament, once the toolhead switch says
+    /// filament actually arrived — so the per-slot status carries the answer
+    /// the aggregate pair used to hold alone. Before that stamp existed the
+    /// parse wrote only AVAILABLE/EMPTY, which left the inherited
+    /// can_unload_from_toolhead() false on every CFS slot (#1199).
+    [[nodiscard]] bool has_per_slot_loaded_authority() const override {
+        return true;
+    }
+
     // Operations
     AmsError load_filament(int slot_index) override;
-    AmsError unload_filament(int slot_index = -1) override;
+    AmsError unload_filament(int slot_index) override;
     AmsError select_slot(int slot_index) override;
     AmsError change_tool(int tool_number) override;
     AmsError reset() override;
@@ -130,10 +170,16 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     // *preloaded* (cassette-staged) slot via current_slot with the nozzle still
     // empty, so on K1 only filament_loaded implies a cut-before-load is needed.
     // K2 keeps the base behavior (filament_loaded OR current_slot >= 0). (#968)
-    [[nodiscard]] bool needs_unload_before_load(const AmsSystemInfo& info) const override {
-        return macro_variant_ == CfsMacroVariant::K1
-                   ? info.filament_loaded
-                   : (info.filament_loaded || info.current_slot >= 0);
+    //
+    // Every CFS bay merges into one extruder, so the base class's per-lane
+    // independence arm can never fire here — deferring to it on K2 keeps that
+    // path in one place without changing the answer.
+    [[nodiscard]] bool needs_unload_before_load(const AmsSystemInfo& info,
+                                                int target_slot) const override {
+        if (macro_variant_ != CfsMacroVariant::K1) {
+            return AmsBackend::needs_unload_before_load(info, target_slot);
+        }
+        return info.filament_loaded;
     }
 
     // Slot management (user overrides persisted via shared FilamentSlotOverrideStore)
@@ -146,9 +192,11 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     // override_store_->clear_async. CFS firmware populates brand / color_name /
     // total_weight_g from its RFID material database, so those fields are
     // preserved. Only spool_name / spoolman_* / remaining_weight_g are zeroed.
-    // The hardware-event detector calls this internally once an RFID
-    // fingerprint change confirms a physical swap.
     void clear_slot_override(int slot_index) override;
+
+    // Explicit Clear Spool action. Fork firmware owns the persisted profile;
+    // stock CFS dialects have no equivalent command.
+    void clear_box_slot_profile(int slot_index);
 
     // Bypass (not supported)
     AmsError enable_bypass() override;
@@ -189,8 +237,43 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     AmsError execute_device_action(const std::string& action_id,
                                    const std::any& value = {}) override;
 
-    // Static parser (public for testing)
+    // Static parsers (public for testing)
+
+    /// Decide which `box` shape this payload is. Stock is the default for
+    /// anything ambiguous — every shipped CFS is stock, and misrouting one to
+    /// the flat parser would report zero slots.
+    [[nodiscard]] static CfsSchema detect_schema(const nlohmann::json& box_json);
+
+    /// Parse a `box` object, dispatching on detect_schema().
     static AmsSystemInfo parse_box_status(const nlohmann::json& box_json);
+
+    /// Stock (`T1`..`T4`) parse. Split out of parse_box_status when the flat
+    /// schema arrived; behavior unchanged.
+    static AmsSystemInfo parse_stock_box_status(const nlohmann::json& box_json);
+
+    /// Flat (`slots[]`) parse — community Kalico box.py reimplementations.
+    static AmsSystemInfo parse_flat_box_status(const nlohmann::json& box_json);
+
+    /// True when this `box` payload comes from the community box.py, i.e. the
+    /// firmware speaks CfsMacroVariant::Fork.
+    ///
+    /// Requires `api_version == 1`, the explicit version for this command
+    /// dialect. Do not infer commands from the `slots[]` status layout alone;
+    /// another firmware may expose the same flat layout. The Fork commands are
+    /// registered in Python, so PrinterDiscovery::has_macro() cannot see them.
+    [[nodiscard]] static bool detect_fork_dialect(const nlohmann::json& box_json);
+
+    /// `_BOX_SLOT_SET` — the Fork counterpart to the stock BOX_MODIFY_TN_DATA
+    /// color write. Returns "" when the module would reject the command.
+    ///
+    /// SLOT, MATERIAL and COLOR are all required by box.py's cmd_slot_set, so
+    /// unlike the stock path this cannot be a color-only write; the caller must
+    /// supply the slot's material. Material is uppercased here to match the
+    /// module's own `str(material).strip().upper()` normalization, so a later
+    /// status frame echoes back exactly what we sent.
+    static std::string slot_set_gcode(int global_slot_index, const std::string& material,
+                                      uint32_t color_rgb, const std::string& brand,
+                                      const std::string& name, int spoolman_id);
 
     // GCode helpers (public for testing)
     static std::string load_gcode(int global_slot_index,
@@ -243,6 +326,22 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     // is read on the script-build side, not in hot paths.
     CfsMacroVariant macro_variant_ = CfsMacroVariant::K2;
 
+    /// Box schema last seen on the wire, latched by handle_status_update.
+    ///
+    /// Separate axis from macro_variant_ above: the dialect is latched once in
+    /// the constructor from the printer model, but the schema cannot be — the
+    /// affected printers report as stock K2 hardware, so it is only knowable
+    /// from a payload. Stock until a payload says otherwise.
+    ///
+    /// Payload layout only. The command dialect is selected independently;
+    /// Flat + Fork is supported, while an unidentified Flat implementation is
+    /// kept off stock command paths.
+    CfsSchema schema_ = CfsSchema::Stock;
+
+    /// SUCCESS for stock schemas and the identified Fork dialect; returns
+    /// not_supported for an unidentified Flat implementation.
+    [[nodiscard]] AmsError reject_if_flat_schema(const char* operation) const;
+
     // Callback lifetime management
     helix::AsyncLifetimeGuard lifetime_;
 
@@ -259,6 +358,36 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     /// unload script (and the WITH/WITHOUT-material selection that produced it)
     /// without a live Moonraker connection.
     virtual AmsError dispatch_action_script(std::string gcode);
+
+    /// Undo the derived LOADED stamp, putting back whatever the last parse
+    /// wrote there. Caller must hold mutex_. Runs at the TOP of
+    /// handle_status_update so check_hardware_event_clear, the lane_data mirror
+    /// and apply_overrides all see firmware truth rather than a synthesized
+    /// seat; restoring the saved status (rather than assuming AVAILABLE) is
+    /// what keeps a bay firmware called EMPTY from acquiring a phantom spool
+    /// when the toolhead clears. A no-op when the slot vector was rebuilt
+    /// underneath the stamp, since the fresh parse already wrote truth there.
+    void clear_seated_slot_stamp_locked();
+
+    /// Re-derive the LOADED stamp from the aggregate pair and apply it. Caller
+    /// must hold mutex_. CFS publishes the seated bay across two signals that
+    /// arrive on separate frames — the per-unit T{n}.filament letter names the
+    /// lane, the toolhead filament_switch_sensor says whether anything reached
+    /// the nozzle — so this runs at the END of handle_status_update, after both
+    /// branches have had their say, and again after the optimistic current_slot
+    /// writes in load_filament()/change_tool().
+    ///
+    /// The stamp is applied even over an EMPTY bay: a spool pulled while still
+    /// threaded leaves filament at the toolhead that the user must be able to
+    /// unload, and refusing to stamp there would blank the active-lane
+    /// highlight in exactly that case.
+    void apply_seated_slot_stamp_locked();
+
+    /// Global index the LOADED stamp currently sits on, and the status the
+    /// parse had written there before it was overwritten. -1 / UNKNOWN when no
+    /// stamp is outstanding.
+    int seated_stamp_slot_ = -1;
+    SlotStatus seated_stamp_prev_ = SlotStatus::UNKNOWN;
 
     /// Layer a configured FilamentSlotOverride for `slot_index` over `slot`,
     /// mutating `slot` in place. Override wins for every non-default field;
@@ -288,8 +417,37 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     /// written firmware-truth for the newly-inserted spool. Only strictly
     /// override-exclusive fields (spool_name / spoolman_id /
     /// spoolman_vendor_id / remaining_weight_g) are reset.
-    void check_hardware_event_clear(SlotInfo& slot, int slot_index,
-                                    const std::string& observed_uid);
+    ///
+    /// One fingerprint component — color_value — is also WRITTEN by
+    /// push_slot_color_to_firmware, so firmware eventually echoes our own edit
+    /// back as a fingerprint change. That echo is not a swap. push_ therefore
+    /// registers the expected post-write fingerprint with rfid_tracker_, which
+    /// classifies the echo as OwnWriteEcho and leaves the override intact.
+    ///
+    /// Returns true iff the override was cleared, so the caller can skip the
+    /// lane_data mirror for this parse (a DELETE and a POST against the same
+    /// lane_data key in one pass is a write race — see handle_status_update).
+    [[nodiscard]] bool check_hardware_event_clear(SlotInfo& slot, int slot_index,
+                                                  const std::string& observed_uid);
+
+    /// Clear a stale auto-mirrored override when firmware reports the bay
+    /// EMPTY. CFS has no other ejection path: the RFID fingerprint LATCHES
+    /// after a spool is pulled, so check_hardware_event_clear sees Unchanged
+    /// forever and the lane_data record would keep advertising a spool that
+    /// isn't there (stale color/material published to OrcaSlicer, plus
+    /// apply_overrides promoting the empty bay back to AVAILABLE as a ghost
+    /// slot).
+    ///
+    /// User-locked overrides are RETAINED across an empty bay — a deliberate
+    /// assignment means "this is what lives in this slot", and a slot that is
+    /// merely unloaded must not lose it. Only unlocked records, which by
+    /// construction came from the firmware auto-mirror, are erased. Matches
+    /// the AD5X IFS policy of retaining the lane->Spoolman override across
+    /// empty (#1071).
+    ///
+    /// Caller must hold mutex_ and must call this BEFORE apply_overrides.
+    /// Returns true iff the override was cleared.
+    [[nodiscard]] bool clear_stale_override_on_removal_locked(SlotInfo& slot, int slot_index);
 
     // Shared helper used by every override-clear path (hardware event and
     // explicit user request). Caller must hold mutex_. Erases
@@ -307,10 +465,10 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     std::unordered_map<int, helix::ams::FilamentSlotOverride> overrides_;
 
     // Per-slot last-observed RFID fingerprint (material_type + "|" +
-    // color_value, using the raw pre-strip_code strings). Empty = first
-    // observation not yet made (or only sentinel / no-tag values seen so
-    // far). All access under mutex_.
-    std::unordered_map<int, std::string> last_rfid_uid_;
+    // color_value, using the raw pre-strip_code strings), plus the pending
+    // expected fingerprint for a color push we issued. Shared with the other
+    // RFID-fingerprint backend (Snapmaker). All access under mutex_.
+    helix::ams::SlotFingerprintTracker rfid_tracker_;
 
     // Sub-phase synthesis: CFS sets system_info_.action=LOADING/UNLOADING once
     // at gcode dispatch and leaves it there through cut/retract/feed/purge.

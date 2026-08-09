@@ -110,10 +110,8 @@ void register_queue_handlers(std::unordered_map<std::string, MethodHandler>& reg
         // Validate input — malformed params are a client bug, report and bail.
         if (!params.contains("filenames") || !params["filenames"].is_array()) {
             if (error_cb) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::VALIDATION_ERROR;
-                err.message = "post_job: 'filenames' must be a JSON array";
-                err.method = "server.job_queue.post_job";
+                MoonrakerError err = MoonrakerError::validation_error(
+                    "server.job_queue.post_job", "post_job: 'filenames' must be a JSON array");
                 error_cb(err);
             }
             return true;
@@ -143,10 +141,8 @@ void register_queue_handlers(std::unordered_map<std::string, MethodHandler>& reg
            std::function<void(const MoonrakerError&)> error_cb) -> bool {
         if (!params.contains("job_ids") || !params["job_ids"].is_array()) {
             if (error_cb) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::VALIDATION_ERROR;
-                err.message = "delete_job: 'job_ids' must be a JSON array";
-                err.method = "server.job_queue.delete_job";
+                MoonrakerError err = MoonrakerError::validation_error(
+                    "server.job_queue.delete_job", "delete_job: 'job_ids' must be a JSON array");
                 error_cb(err);
             }
             return true;

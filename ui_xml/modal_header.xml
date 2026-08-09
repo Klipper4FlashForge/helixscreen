@@ -31,10 +31,12 @@
     <bind_style_if_eq name="mh_pad_micro" subject="ui_breakpoint" ref_value="0"/>
     <bind_style_if_ge name="mh_pad_std" subject="ui_breakpoint" ref_value="1"/>
     <icon name="header_icon" src="$icon_src" size="md" variant="$icon_variant" hidden="$hide_icon"/>
-    <text_heading name="header_title" text="$title" translation_tag="$title_tag" bind_text="$title_subject"
-                  style_text_align="left" flex_grow="1"/>
-    <ui_button name="btn_close" hidden="$hide_close"
-               width="#button_height_sm" height="#button_height_sm" icon="close" variant="ghost" focusable="false">
+    <text_heading name="header_title"
+                  text="$title" translation_tag="$title_tag" bind_text="$title_subject" style_text_align="left"
+                  flex_grow="1"/>
+    <ui_button name="btn_close"
+               width="#button_height_sm" height="#button_height_sm" hidden="$hide_close" icon="close" variant="ghost"
+               focusable="false">
       <event_cb trigger="clicked" callback="$close_callback"/>
     </ui_button>
   </view>

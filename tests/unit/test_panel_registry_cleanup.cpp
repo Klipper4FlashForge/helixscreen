@@ -13,8 +13,13 @@
  * These tests verify the destroy-and-recreate pattern works correctly.
  */
 
+#include "ui_panel_calibration_pid.h"
+#include "ui_panel_macros.h"
+
 #include "../lvgl_test_fixture.h"
+#include "misc/lv_timer_private.h" // timer_cb — assert the cancel neutered it
 #include "static_panel_registry.h"
+#include "static_subject_registry.h"
 
 #include <memory>
 
@@ -200,6 +205,93 @@ TEST_CASE_METHOD(LVGLTestFixture, "Panel registry: destroy_all runs in reverse o
     REQUIRE(destruction_order[0] == "C");
     REQUIRE(destruction_order[1] == "B");
     REQUIRE(destruction_order[2] == "A");
+}
+
+// ============================================================================
+// Shutdown ordering: subject deinit must not resurrect a destroyed panel
+// ============================================================================
+//
+// Application::shutdown() runs StaticPanelRegistry::destroy_all() first, then
+// StaticSubjectRegistry::deinit_all(). A deinit callback written as
+//
+//     register_deinit("XPanel", []() { get_global_x_panel().deinit_subjects(); });
+//
+// reaches through the auto-creating getter, so it constructs a brand new panel
+// after the real one was already destroyed. That replacement is never destroyed
+// while LVGL and spdlog are alive — its destructor runs during static
+// destruction, where the panel's members (Modal backdrops, observers, log calls)
+// touch already-freed infrastructure. Panel getters register a destroy callback
+// on first call, so a resurrected panel is observable as a non-empty
+// StaticPanelRegistry after deinit_all().
+
+// deinit_one() rather than deinit_all(): in a test binary the registry also
+// holds entries from earlier fixtures, some of which capture already-destroyed
+// objects (see the XMLTestFixture note in tests/test_fixtures.cpp).
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "Panel registry: MacrosPanel is not resurrected by subject deinit",
+                 "[shutdown][registry][panel-lifecycle]") {
+    auto& panels = StaticPanelRegistry::instance();
+
+    // Start from a clean slate — earlier tests may have left registrations.
+    panels.destroy_all();
+
+    // Boot-equivalent: lazily create the panel and register its subjects.
+    get_global_macros_panel().init_subjects();
+    REQUIRE(panels.count() >= 1);
+
+    // Shutdown ordering: panels are destroyed first...
+    panels.destroy_all();
+    REQUIRE(panels.count() == 0);
+
+    // ...then the subject deinit callbacks run.
+    REQUIRE(StaticSubjectRegistry::instance().deinit_one("MacrosPanel"));
+
+    // A callback reaching through the auto-creating getter would have built a
+    // replacement panel, which registers a destroy callback of its own.
+    REQUIRE(panels.count() == 0);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "Panel registry: PIDCalibrationPanel is not resurrected by subject deinit",
+                 "[shutdown][registry][panel-lifecycle]") {
+    auto& panels = StaticPanelRegistry::instance();
+    panels.destroy_all();
+
+    get_global_pid_cal_panel().init_subjects();
+    REQUIRE(panels.count() >= 1);
+
+    panels.destroy_all();
+    REQUIRE(panels.count() == 0);
+
+    REQUIRE(StaticSubjectRegistry::instance().deinit_one("PIDCalibrationPanel"));
+
+    REQUIRE(panels.count() == 0);
+}
+
+// A panel destroyed mid-calibration never runs stop_progress_tracking(), and
+// StaticPanelRegistry::destroy_all() runs BEFORE lv_deinit() — so a live ETA tick
+// would dispatch into a freed `this`. Same shape as the wizard's auto-probe timer
+// (#1173); the destructor has to cancel it itself.
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "Panel registry: PIDCalibrationPanel destructor cancels the ETA timer",
+                 "[shutdown][registry][panel-lifecycle][timer][regression]") {
+    auto panel = std::make_unique<PIDCalibrationPanel>();
+    panel->arm_eta_timer_for_test();
+
+    lv_timer_t* timer = panel->eta_timer_for_test();
+    REQUIRE(timer != nullptr);
+    REQUIRE(timer->timer_cb != nullptr);
+
+    panel.reset();
+
+    // Neutered, not deleted: lv_timer_cancel_safe() nulls the callback and lets
+    // lv_timer_handler reap the timer on its next pass. Reading it here is safe
+    // because the timer is LVGL-owned memory, not the panel's.
+    REQUIRE(timer->timer_cb == nullptr);
+
+    // A still-armed tick would dispatch into the freed panel here.
+    process_lvgl(50);
 }
 
 TEST_CASE_METHOD(LVGLTestFixture, "Panel registry: clear does not run callbacks",

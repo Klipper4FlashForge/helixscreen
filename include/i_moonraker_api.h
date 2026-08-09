@@ -18,6 +18,7 @@
 
 namespace helix {
 struct SensorInfo;      // Forward declaration for get_sensors()
+struct PlrDetectResult; // plr_backend.h — check_continue_print_state() result
 class IMoonrakerClient; // returned by get_client()
 class PrinterState;     // returned by printer_state()
 class PrinterDiscovery; // returned by hardware()
@@ -180,25 +181,23 @@ class IMoonrakerAPI {
                                ErrorCallback on_error) = 0;
 
     /// @brief Set LED color/brightness
+    /// @param on_queued Optional "queued behind a blocking op" disposition — see
+    ///        execute_gcode() on MoonrakerAPI for the full contract.
     virtual void set_led(const std::string& led, double red, double green, double blue,
-                         double white, SuccessCallback on_success, ErrorCallback on_error) = 0;
-
-    /// @brief Turn LED on (full white)
-    virtual void set_led_on(const std::string& led, SuccessCallback on_success,
-                            ErrorCallback on_error) = 0;
-
-    /// @brief Turn LED off
-    virtual void set_led_off(const std::string& led, SuccessCallback on_success,
-                             ErrorCallback on_error) = 0;
+                         double white, SuccessCallback on_success, ErrorCallback on_error,
+                         SuccessCallback on_queued = nullptr) = 0;
 
     // ========================================================================
     // System Control
     // ========================================================================
 
     /// @brief Execute custom G-code command
+    /// @param on_queued Optional third disposition, fired when a discretionary
+    ///        command was accepted to run behind a blocking op and its RPC
+    ///        response was dropped. Runs SYNCHRONOUSLY on the calling thread.
     virtual void execute_gcode(const std::string& gcode, SuccessCallback on_success,
-                               ErrorCallback on_error, uint32_t timeout_ms = 0,
-                               bool silent = false) = 0;
+                               ErrorCallback on_error, uint32_t timeout_ms = 0, bool silent = false,
+                               SuccessCallback on_queued = nullptr) = 0;
 
     /// @brief Check if a string is safe to use as a G-code parameter
     static bool is_safe_gcode_param(const std::string& str);
@@ -206,6 +205,16 @@ class IMoonrakerAPI {
     /// @brief Exclude an object from the current print
     virtual void exclude_object(const std::string& object_name, SuccessCallback on_success,
                                 ErrorCallback on_error) = 0;
+
+    /// @brief Probe Creality's power-loss recovery snapshot. SIDE-EFFECTFUL —
+    ///        call at most once per connection, only in standby, never poll.
+    ///        See MoonrakerAPI for the full contract.
+    virtual void
+    check_continue_print_state(std::function<void(const helix::PlrDetectResult&)> on_result,
+                               ErrorCallback on_error) = 0;
+
+    /// @brief Discard the Creality power-loss recovery snapshot.
+    virtual void cancel_continue_print(SuccessCallback on_success, ErrorCallback on_error) = 0;
 
     /// @brief Emergency stop
     virtual void emergency_stop(SuccessCallback on_success, ErrorCallback on_error) = 0;

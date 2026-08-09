@@ -147,6 +147,20 @@ lv_subject_t& get_notification_subject();
 lv_subject_t& get_home_edit_mode_subject();
 
 /**
+ * @brief Get the global wizard-active subject
+ *
+ * Observable mirror of is_wizard_active(), updated inside set_wizard_active().
+ * Value 1 while the setup wizard owns the screen, 0 otherwise. Lets code that
+ * must react to the wizard opening/closing (e.g. the PLR offer controller
+ * re-evaluating once the wizard exits) observe an edge instead of polling a
+ * plain bool. Seeded from the current flag at init so it is correct even if
+ * set_wizard_active() ran before subject initialization.
+ *
+ * @return Reference to the wizard-active subject
+ */
+lv_subject_t& get_wizard_active_subject();
+
+/**
  * @brief Initialize all global subjects
  *
  * Must be called during app initialization after LVGL is initialized.
@@ -335,3 +349,78 @@ std::string app_get_runtime_dir();
 // Falls back to the relative "config" when install root is unknown.
 // Result is cached after first call.
 std::string app_get_config_dir();
+
+// Parses an environment-variable value as a boolean. Truthy values are
+// "1", "true", "yes", "on" (case-insensitive); everything else (including
+// nullptr, "", "0", "false") is false. Pure/side-effect-free so it can be
+// unit-tested without depending on the process environment.
+bool helix_parse_truthy_env(const char* value);
+
+// Pure predicate behind updates_externally_managed(), split out for testing so
+// the env input can be exercised without mutating the process env.
+// True only when the explicit HELIX_DISABLE_AUTO_UPDATES flag is truthy. No
+// environment inference: the update gate keys solely off this firmware-facing
+// flag. A future change will instead derive the state from whether self-update
+// can physically write the install tree.
+bool compute_updates_externally_managed(const char* disable_auto_updates);
+
+// Returns true when software updates are owned by the device firmware, in which
+// case HelixScreen must NOT run its in-app self-update: the periodic auto-check
+// is suppressed and manual check/download entry points short-circuit.
+//
+// Managed state is true ONLY when the explicit HELIX_DISABLE_AUTO_UPDATES flag
+// is truthy. No other environment variable participates — a firmware-managed
+// install must set this flag. A future change will derive the state from whether
+// self-update can physically write the install tree. Read once and cached (like
+// app_get_install_root()).
+bool updates_externally_managed();
+
+// Can this process obtain root for the install swap? True when already euid 0,
+// or when `sudo -n true` succeeds (passwordless sudo). This mirrors what
+// install.sh actually does: check_permissions() sets SUDO="sudo" on Pi-class
+// platforms and runs the privileged steps through it, and the app forks
+// install.sh with no tty, so non-interactive sudo is the exact capability.
+// Probed once and cached; the probe is bounded so a sudoers lookup that hangs
+// (network-backed sudoers) cannot stall the caller.
+bool root_escalation_available();
+
+// Pure predicate: can an in-app self-update PHYSICALLY be applied to this install
+// tree? Self-update swaps the install root by renaming it ("mv <root> <root>.old;
+// mv <new> <root>"), which requires write permission on the install root's PARENT
+// directory (rename mutates the parent's entries).
+//
+// True when the parent is writable outright (helix::paths::is_writable_dir), and
+// ALSO when it isn't but `can_escalate` says the swap can run as root anyway —
+// the standard Pi layout installs to /opt/helixscreen and runs the service as an
+// unprivileged user, so the parent (/opt) is root-owned even though install.sh
+// can and does sudo the swap. Without that second term the updater hides itself
+// on a perfectly updatable machine.
+//
+// An empty install_root (unresolvable/bind-mounted layout) or an empty parent
+// returns TRUE conservatively, deferring to the installer fallbacks and the
+// explicit flag rather than a false negative. Split out for testing so both the
+// path and the escalation input can be exercised without the cached process
+// install root or a real sudo probe.
+bool compute_self_update_supported(const std::string& install_root, bool can_escalate);
+
+// Cached wrapper over compute_self_update_supported(app_get_install_root(), ...).
+// False only when the install-root parent isn't writable AND root can't be
+// obtained — a genuinely read-only rootfs — so the in-app updater won't offer an
+// update it physically cannot apply. root_escalation_available() is consulted
+// lazily: an already-writable parent answers the question with no sudo probe at
+// all, which is every root-run embedded platform. Read once and cached (like
+// app_get_install_root()).
+bool self_update_supported();
+
+// Pure predicate behind in_app_updates_suppressed(), split out for testing so
+// both branches can be exercised without mutating the process-wide caches that
+// updates_externally_managed() and self_update_supported() sit behind.
+bool compute_in_app_updates_suppressed(bool externally_managed, bool self_update_ok);
+
+// Combined in-app-updater gate: true when the updater must NOT run, for EITHER
+// reason — updates are firmware-managed via the explicit HELIX_DISABLE_AUTO_UPDATES
+// flag (updates_externally_managed()), OR a self-update is physically impossible
+// because the install tree isn't writable (!self_update_supported()). Functional
+// update entry points (check/auto-check/download) gate on THIS; the "Managed by
+// your firmware" notice keeps keying off updates_externally_managed() alone.
+bool in_app_updates_suppressed();

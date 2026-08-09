@@ -19,6 +19,21 @@ namespace helix {
 inline constexpr std::array<const char*, 4> DEFAULT_PRESET_MATERIALS{"PLA", "PETG", "ABS", "TPU"};
 
 /**
+ * @brief DEFAULT_PRESET_MATERIALS as owning strings.
+ *
+ * Single source for every default-preset seed: the member initializer (which
+ * must hold before init() runs, since construction is defaulted) and
+ * assign_defaults(). Do not re-type the literals at either site.
+ */
+inline std::array<std::string, 4> default_preset_materials() {
+    std::array<std::string, 4> out;
+    for (size_t i = 0; i < out.size(); ++i) {
+        out[i] = DEFAULT_PRESET_MATERIALS[i];
+    }
+    return out;
+}
+
+/**
  * @brief Manages user overrides for material temperature settings
  *
  * Loads/saves sparse overrides from settings.json under "material_overrides".
@@ -100,7 +115,7 @@ class MaterialSettingsManager {
     void assign_defaults();
 
     std::unordered_map<std::string, filament::MaterialOverride> overrides_;
-    std::array<std::string, 4> preset_materials_ = {"PLA", "PETG", "ABS", "TPU"};
+    std::array<std::string, 4> preset_materials_ = default_preset_materials();
     std::array<std::optional<PresetFilament>, 4> preset_filaments_{};
     bool initialized_ = false;
 };

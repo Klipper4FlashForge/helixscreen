@@ -11,6 +11,9 @@
 #pragma once
 
 #include "lvgl/lvgl.h"
+#include "preset_materials.h"
+
+#include <array>
 
 /**
  * @brief Heater type enumeration
@@ -18,6 +21,19 @@
 namespace helix {
 enum class HeaterType { Nozzle = 0, Bed = 1, Chamber = 2 };
 constexpr int HEATER_TYPE_COUNT = 3;
+
+/**
+ * @brief Preset target temperatures (°C) for a single heater.
+ *
+ * `material[i]` is the target for quick-preset slot i, parallel to
+ * helix::presets::name(i). Slots are indexed, never material-named: the old
+ * `{int pla; int petg; int abs;}` layout hardcoded the assumption that slot 0
+ * is PLA, which stopped being true as soon as a user reassigned a slot.
+ */
+struct HeaterPresets {
+    int off = 0;
+    std::array<int, presets::PRESET_COUNT> material{};
+};
 } // namespace helix
 
 /**
@@ -34,12 +50,7 @@ typedef struct {
     float temp_range_max;   ///< Maximum temperature for graph Y-axis
     int y_axis_increment;   ///< Y-axis label increment (e.g., 50°C, 100°C)
 
-    struct {
-        int off;  ///< "Off" preset (0°C)
-        int pla;  ///< PLA preset
-        int petg; ///< PETG preset
-        int abs;  ///< ABS preset
-    } presets;
+    helix::HeaterPresets presets; ///< Off + one target per user preset slot
 
     struct {
         float min; ///< Minimum keypad input value

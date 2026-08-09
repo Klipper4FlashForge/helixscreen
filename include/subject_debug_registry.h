@@ -19,6 +19,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 /**
  * @brief Debug information for a registered subject
@@ -58,6 +59,17 @@ class SubjectDebugRegistry {
                           const std::string& file, int line);
 
     /**
+     * @brief Drop a subject's debug entry before its storage is freed
+     *
+     * Without this the registry keeps a key pointing at freed memory, and
+     * lookup_by_name() can hand back a dead subject when a later instance
+     * republishes the same name from a different address.
+     *
+     * @param subject Pointer to the subject being torn down (null is ignored)
+     */
+    void unregister_subject(lv_subject_t* subject);
+
+    /**
      * @brief Look up debug info for a subject
      * @param subject Pointer to the LVGL subject
      * @return Pointer to debug info, or nullptr if not registered
@@ -79,6 +91,19 @@ class SubjectDebugRegistry {
     void dump_all_subjects();
 
     /**
+     * @brief Look up a subject by its registered name
+     * @param name The human-readable name used during registration
+     * @return Pointer to the subject, or nullptr if not found
+     */
+    lv_subject_t* lookup_by_name(const std::string& name);
+
+    /**
+     * @brief List all registered subjects with their debug info
+     * @return Vector of (name, info) pairs
+     */
+    std::vector<std::pair<std::string, SubjectDebugInfo>> list_all();
+
+    /**
      * @brief Clear all registrations
      *
      * Primarily for testing. Removes all registered subjects.
@@ -86,12 +111,15 @@ class SubjectDebugRegistry {
     void clear();
 
   private:
-    SubjectDebugRegistry() = default;
-    ~SubjectDebugRegistry() = default;
+    // Defined out-of-line: they maintain the liveness flag that makes a late
+    // unregister_subject() during static destruction a no-op rather than an abort.
+    SubjectDebugRegistry();
+    ~SubjectDebugRegistry();
 
     SubjectDebugRegistry(const SubjectDebugRegistry&) = delete;
     SubjectDebugRegistry& operator=(const SubjectDebugRegistry&) = delete;
 
     std::unordered_map<lv_subject_t*, SubjectDebugInfo> subjects_;
-    mutable std::mutex mutex_; ///< Protects subjects_ map
+    std::unordered_map<std::string, lv_subject_t*> name_to_subject_; ///< Reverse lookup by name
+    mutable std::mutex mutex_;                                       ///< Protects both maps
 };

@@ -242,6 +242,135 @@ TEST_CASE("ThumbnailProcessor breakpoint selection", "[assets][processor]") {
     }
 }
 
+// ============================================================================
+// Card-fitted thumbnail targets (#1208)
+//
+// The resolution ladder above infers a card size from the display. Those guesses
+// drifted from what PrintSelectPanel actually lays out, so the pre-scaled .bin
+// overhung the card and LVGL cropped the model. get_target_for_card() derives the
+// target from the measured card instead.
+// ============================================================================
+
+namespace {
+
+// print_file_card.xml centres the art, then style_translate_y="#preview_offset_y"
+// (-12% of the image's own height) lifts it clear of the metadata overlay. Returns
+// the gap between the card's top edge and the art's top edge; negative means the
+// top of the model is cropped, which is the defect #1208 reported.
+double art_top_gap(int card_height, int side) {
+    return (card_height - side) / 2.0 - 0.12 * side;
+}
+
+} // namespace
+
+TEST_CASE("Card thumbnail target fits the measured card", "[assets][processor][1208]") {
+    SECTION("480x272 micro card (138x115) is height-bound and no longer crops") {
+        auto target = ThumbnailProcessor::get_target_for_card(138, 115);
+
+        // The old ladder handed this card a 120x120 .bin, which hung 17px off the top.
+        REQUIRE(art_top_gap(115, 120) < 0.0);
+
+        REQUIRE(target.width == target.height);
+        REQUIRE(target.height <= 115);
+        REQUIRE(target.width <= 138);
+        REQUIRE(art_top_gap(115, target.height) >= 0.0);
+    }
+
+    SECTION("800x480 card (132x205) is width-bound") {
+        auto target = ThumbnailProcessor::get_target_for_card(132, 205);
+
+        // The old ladder handed this card a 160x160 .bin — 28px wider than the card.
+        REQUIRE(target.width <= 132);
+        REQUIRE(art_top_gap(205, target.height) >= 0.0);
+    }
+
+    SECTION("Art stays inside the card across the whole layout range") {
+        for (int w = 130; w <= 230; w += 2) {
+            for (int h = 90; h <= 260; h += 2) {
+                auto target = ThumbnailProcessor::get_target_for_card(w, h);
+                INFO("card " << w << "x" << h << " -> " << target.width << "x" << target.height);
+                REQUIRE(target.width <= w);
+                REQUIRE(art_top_gap(h, target.height) >= 0.0);
+            }
+        }
+    }
+
+    SECTION("Sides snap to a multiple of 4 so the .bin cache stays small") {
+        for (int h = 100; h <= 200; h += 1) {
+            auto target = ThumbnailProcessor::get_target_for_card(230, h);
+            REQUIRE(target.width % 4 == 0);
+        }
+    }
+
+    SECTION("Oversized cards clamp to the 220px ceiling") {
+        auto target = ThumbnailProcessor::get_target_for_card(400, 600);
+        REQUIRE(target.width == 220);
+        REQUIRE(target.height == 220);
+    }
+
+    SECTION("Degenerate cards clamp to a usable floor rather than vanishing") {
+        auto target = ThumbnailProcessor::get_target_for_card(20, 20);
+        REQUIRE(target.width == 64);
+        REQUIRE(target.height == 64);
+    }
+
+    SECTION("Invalid dimensions fall back to the smallest ladder size") {
+        auto zero = ThumbnailProcessor::get_target_for_card(0, 0);
+        REQUIRE(zero.width == 120);
+        REQUIRE(zero.height == 120);
+
+        auto negative = ThumbnailProcessor::get_target_for_card(-138, -115);
+        REQUIRE(negative.width == 120);
+        REQUIRE(negative.height == 120);
+    }
+
+    SECTION("Always ARGB8888, like every other target") {
+        auto target = ThumbnailProcessor::get_target_for_card(138, 115);
+        REQUIRE(target.color_format == 0x10);
+    }
+}
+
+TEST_CASE("Card size hint steers Card-size lookups", "[assets][processor][1208]") {
+    // Restore the ladder for every other test in the binary.
+    struct HintReset {
+        ~HintReset() {
+            ThumbnailProcessor::set_card_size_hint(0, 0);
+        }
+    } reset;
+
+    SECTION("A measured card overrides the resolution ladder") {
+        ThumbnailProcessor::set_card_size_hint(138, 115);
+        auto target = ThumbnailProcessor::get_target_for_display(helix::ThumbnailSize::Card);
+        REQUIRE(target == ThumbnailProcessor::get_target_for_card(138, 115));
+        REQUIRE(target.height < 120); // strictly smaller than the ladder's guess
+    }
+
+    SECTION("Detail lookups ignore the card hint") {
+        ThumbnailProcessor::set_card_size_hint(138, 115);
+        auto detail = ThumbnailProcessor::get_target_for_display(helix::ThumbnailSize::Detail);
+        REQUIRE(detail.width >= 200);
+    }
+
+    SECTION("Clearing the hint restores the ladder") {
+        ThumbnailProcessor::set_card_size_hint(138, 115);
+        auto hinted = ThumbnailProcessor::get_target_for_display(helix::ThumbnailSize::Card);
+
+        ThumbnailProcessor::set_card_size_hint(0, 0);
+        auto unhinted = ThumbnailProcessor::get_target_for_display(helix::ThumbnailSize::Card);
+
+        REQUIRE_FALSE(hinted == unhinted);
+        REQUIRE(unhinted.width >= 120);
+    }
+
+    SECTION("A garbage hint is rejected, not stored") {
+        ThumbnailProcessor::set_card_size_hint(0, 0);
+        auto ladder = ThumbnailProcessor::get_target_for_display(helix::ThumbnailSize::Card);
+
+        ThumbnailProcessor::set_card_size_hint(-5, 115);
+        REQUIRE(ThumbnailProcessor::get_target_for_display(helix::ThumbnailSize::Card) == ladder);
+    }
+}
+
 TEST_CASE("ThumbnailProcessor color format is always ARGB8888", "[assets][processor]") {
     SECTION("Card size is ARGB8888 (0x10)") {
         auto target = ThumbnailProcessor::get_target_for_resolution(800, 480);

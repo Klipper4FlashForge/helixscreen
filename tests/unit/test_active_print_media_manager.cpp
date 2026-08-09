@@ -23,6 +23,7 @@
 #include "moonraker_file_api.h"
 #include "moonraker_file_transfer_api.h"
 #include "printer_state.h"
+#include "thumbnail_processor.h"
 
 #include <spdlog/sinks/null_sink.h>
 #include <spdlog/spdlog.h>
@@ -752,9 +753,11 @@ class CapturingFileAPI : public MoonrakerFileAPI {
 };
 
 /// Transfer API whose download_thumbnail synchronously "succeeds" without
-/// writing a file. ThumbnailCache::process_and_callback then fails to open the
-/// PNG and falls back to invoking on_success with the PNG path synchronously —
-/// giving tests a deterministic, thread-free path to a thumbnail load success.
+/// writing a file. ThumbnailCache::process_and_callback then hands the missing
+/// path to ThumbnailProcessor, whose worker reports the read failure and falls
+/// back to invoking on_success with the PNG path. That fallback crosses two
+/// async hops (pool task, then UpdateQueue), so tests must settle both — see
+/// ActivePrintMediaAsyncFixture::drain().
 class StubTransferAPI : public MoonrakerFileTransferAPI {
   public:
     explicit StubTransferAPI(helix::MoonrakerClient& client)
@@ -894,8 +897,32 @@ class ActivePrintMediaAsyncFixture {
         state_.update_from_status(status);
     }
 
+    /// Settle every hop a thumbnail load takes before asserting on its result.
+    ///
+    /// ThumbnailCache::process_and_callback() opens the PNG inside a
+    /// ThumbnailProcessor pool task, and that task reports back through
+    /// UpdateQueue. Draining the queue alone races the worker: the callback that
+    /// publishes print_thumbnail_path_ has usually not been queued yet, so the
+    /// subject still reads empty. Join the pool first, then drain — and repeat,
+    /// since a drained callback can commit further pool work.
+    ///
+    /// Test the settled condition BEFORE draining, never after. It is
+    /// drain_all() that commits the pool task (the metadata callback it runs
+    /// reaches process_file_async), and pending_tasks() is HThreadPool::taskNum()
+    /// — queue depth only. A worker that has already dequeued that task reports
+    /// zero while still running it, so a post-drain check reads "settled" and
+    /// returns before the result exists. wait_for_completion() is the accurate
+    /// join: it waits for in-flight tasks too.
     void drain() {
-        UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+        auto& processor = helix::ThumbnailProcessor::instance();
+        auto& queue = helix::ui::UpdateQueue::instance();
+        for (int pass = 0; pass < 4; ++pass) {
+            processor.wait_for_completion();
+            if (processor.pending_tasks() == 0 && UpdateQueueTestAccess::queue_empty(queue)) {
+                break;
+            }
+            UpdateQueueTestAccess::drain_all(queue);
+        }
     }
 
     int get_layer_total() {

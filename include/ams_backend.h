@@ -279,9 +279,36 @@ class AmsBackend {
 
     /// Map one `//` narration body (prefix already stripped) to a phase id.
     /// nullopt (default) => not a recognized phase line.
+    ///
+    /// A `//` body came from a macro's own respond_info, so implementations may
+    /// use loose substring needles here and tolerate upstream rewording. Do NOT
+    /// route bare console lines through this — see match_bare_narration_phase().
     [[nodiscard]] virtual std::optional<std::string>
     match_narration_phase(const std::string& /*narration*/) const {
         return std::nullopt;
+    }
+
+    /// Map one console line that arrived WITHOUT the `//` prefix to a phase id.
+    /// nullopt (default) => backend narrates nothing outside `//`.
+    ///
+    /// Separate from match_narration_phase() because the input is a different
+    /// kind of text: unprefixed responses are the printer's open console, mixing
+    /// M105 reports, `echo:` output and USER-CONTROLLED gcode filenames in with
+    /// any narration. Implementations must match anchored line shapes, never
+    /// loose substrings — a needle like `cut` would fire on `haircut.gcode`.
+    [[nodiscard]] virtual std::optional<std::string>
+    match_bare_narration_phase(const std::string& /*line*/) const {
+        return std::nullopt;
+    }
+
+    /// True when an UNMATCHED console line looks like this backend's narration,
+    /// i.e. is worth a drift hint in the log. Deliberately looser than the two
+    /// matchers — its whole job is catching wording this backend used to emit —
+    /// but it must exclude the lines the backend emits that have no phase by
+    /// design, or every operation reports itself as drift.
+    /// false (default) => backend opts out of drift hints.
+    [[nodiscard]] virtual bool is_narration_drift_candidate(const std::string& /*line*/) const {
+        return false;
     }
 
     // ========================================================================
@@ -430,18 +457,63 @@ class AmsBackend {
     }
 
     /**
+     * @brief Whether this backend's parse carries per-slot loaded truth.
+     *
+     * Answers "does get_slot_info(i).status carry the seated answer for slot
+     * i?" — either because the firmware publishes it per slot (AFC's
+     * tool_loaded) or because the parse derives it there on every frame (CFS,
+     * from the T{n}.filament letter plus the toolhead switch). Backends that
+     * answer true have their per-slot status believed over the aggregate pair;
+     * see slot_is_actively_loaded().
+     *
+     * Default false, and deliberately so. A backend that never marks the active
+     * slot LOADED would report every slot unloaded and blank the active-lane
+     * highlight — worse than the aggregate staleness this seam exists to fix.
+     * Opt in only once the backend's parse genuinely sets SlotStatus::LOADED on
+     * the seated slot, and cover it with a test that fails if the parse stops
+     * doing so.
+     *
+     * Staying false is a legitimate answer, not a gap. Happy Hare's mmu.gate /
+     * mmu.filament and Toolchanger's toolchanger.tool_number are firmware's own
+     * single-valued statements, parsed verbatim into the aggregate pair; their
+     * per-slot stamps are derived FROM it, so believing those back would only add
+     * staleness. Toolchanger has no filament signal of any kind for a per-slot
+     * rule to be authoritative about. See docs/devel/FILAMENT_MANAGEMENT.md
+     * § "Per-Slot Load Authority".
+     *
+     * @return true if get_slot_info(i).status is authoritative for "loaded"
+     */
+    [[nodiscard]] virtual bool has_per_slot_loaded_authority() const {
+        return false;
+    }
+
+    /**
      * @brief Firmware "seated & loaded" for this slot.
      *
      * The single source of truth for the active-lane highlight, replacing the
-     * divergent badge/top-right reads. Default derives from the aggregate
-     * current_slot + filament_loaded state; per-slot-aware backends (e.g. a
-     * toolchanger with per-tool LOADED status) override to report each slot
-     * independently.
+     * divergent badge/top-right reads, and (with
+     * slot_has_filament_at_toolhead()) the gate on the Load/Unload affordances.
+     *
+     * Two rules, selected by has_per_slot_loaded_authority():
+     *
+     *  - Per-slot backends read the slot's own LOADED status. This is the
+     *    truthful answer to a per-slot question and cannot disagree with itself
+     *    across slots.
+     *  - Everyone else derives it from the aggregate current_slot +
+     *    filament_loaded pair. That derivation is only as good as our tracking
+     *    of the active-slot pointer: when it names the wrong slot, or lags a
+     *    toolchange, every affordance built on this predicate inherits the wrong
+     *    answer (#1194 — Load stayed enabled on a lane AFC had already seated).
+     *
+     * Backends may still override outright where neither rule fits.
      *
      * @param slot_index Slot index (0 to total_slots-1)
      * @return true if firmware considers this slot seated and loaded
      */
     [[nodiscard]] virtual bool slot_is_actively_loaded(int slot_index) const {
+        if (has_per_slot_loaded_authority()) {
+            return get_slot_info(slot_index).status == SlotStatus::LOADED;
+        }
         return slot_index == get_current_slot() && is_filament_loaded();
     }
 
@@ -492,6 +564,49 @@ class AmsBackend {
     // ========================================================================
 
     /**
+     * @brief Does this backend's load/unload/tool-change macro home the toolhead
+     *        by itself, inside firmware, where HelixScreen cannot see the G28?
+     *
+     * Decides whether a toolhead-motion filament op is refused during a PAUSED
+     * print (see AmsSubscriptionBackend::refuse_if_printing). PRINTING is refused
+     * for every backend regardless of this answer.
+     *
+     * Pausing to swap filament is the runout / colour-change recovery workflow,
+     * not an edge case: Klipper's runout handler pauses and tells the user to
+     * load filament and press RESUME, and `pause_resume` saves the gcode state so
+     * the job resumes from where it left off. Mainsail offers unload on a paused
+     * print and it works. AFC goes further — its own `is_printing()` is
+     * `print_stats.state == "printing"` (paused is NOT printing, so AFC's
+     * firmware guards permit the op), and AFC_PAUSE Z-hops the nozzle clear of
+     * the part before handing off to the user's PAUSE macro
+     * (AFC-Klipper-Add-On `extras/AFC_error.py` cmd_AFC_PAUSE).
+     *
+     * What is NOT safe is a firmware macro that buries its own home. On
+     * loadcell-Z printers a G28 probes the nozzle DOWN into the bed; issued while
+     * a job owns the toolhead that is a collision, and on AD5X/ZMOD it trips
+     * ZCONTROL_AUTO into a Klipper shutdown needing a firmware restart to recover
+     * (bundle XWPBR2DX, commit 329e731e9).
+     *
+     * HelixScreen's OWN homing is already handled without this flag, in two
+     * layers that both remain in force:
+     *   - Layer 1: helix::api::reject_homing_during_active_print() refuses any
+     *     app-emitted G28 while PRINTING or PAUSED, in IMoonrakerAPI::execute_gcode
+     *     and MoonrakerMotionAPI::execute_gcode.
+     *   - AmsSubscriptionBackend::ensure_homed_then() only emits G28 when
+     *     toolhead.homed_axes lacks "xyz" — and a paused print is homed by
+     *     construction, so it emits nothing.
+     * This flag therefore covers exactly one thing: homes Layer 1 cannot see.
+     *
+     * Default: false. Override true ONLY with positive evidence that the specific
+     * firmware macro this backend dispatches homes on its own; "not sure" must
+     * stay false, because a permanent false refusal is its own broken workflow
+     * (bundle JX2FVRB9).
+     */
+    [[nodiscard]] virtual bool filament_ops_self_home() const {
+        return false;
+    }
+
+    /**
      * @brief Whether the UI should redirect to the AMS panel for slot selection
      *        before loading filament.
      *
@@ -519,9 +634,85 @@ class AmsBackend {
      *
      * Default: filament at nozzle OR a slot engaged. Override where the
      * current_slot signal does not imply filament at the nozzle.
+     *
+     * A slot on an independent path is answered false outright — see
+     * slot_has_independent_path(). The default rule encodes a SERIAL premise
+     * (one shared route to the nozzle, so clear it before another lane can feed)
+     * and a lane whose toolhead owns its own extruder shares nothing to clear.
+     * Loading tool 3 never requires unloading tool 1.
+     *
+     * That is not academic on either uniformly-PARALLEL backend, because both
+     * report current_slot from the mounted tool and so answered true permanently:
+     *   - Snapmaker: routed Load through change_tool() -> `T{n}`, which seats the
+     *     carriage and feeds nothing. load_filament() names that as its first
+     *     wrong answer; AUTO_FEEDING already targets any extruder directly.
+     *   - Toolchanger: the swap arm dispatches change_tool(mapped_tool), but
+     *     change_tool() validates its argument as a SLOT and emits
+     *     `SELECT_TOOL T={n}` precisely to bypass ASSIGN_TOOL remapping — so a
+     *     remapped tool would mount the wrong physical toolhead.
+     * This is the PARALLEL-appropriate rule deferred in #1199.
+     *
+     * @param info        Backend system info snapshot.
+     * @param target_slot Global index of the slot the user asked to load. Pass
+     *                    -1 when no slot is resolved; the per-lane refinement is
+     *                    skipped and the backend-wide topology answers.
      */
-    [[nodiscard]] virtual bool needs_unload_before_load(const AmsSystemInfo& info) const {
+    [[nodiscard]] virtual bool needs_unload_before_load(const AmsSystemInfo& info,
+                                                        int target_slot) const {
+        if (slot_has_independent_path(info, target_slot)) {
+            return false;
+        }
         return info.filament_loaded || info.current_slot >= 0;
+    }
+
+    /**
+     * @brief Does @p target_slot reach a nozzle by a route it shares with no
+     *        other lane?
+     *
+     * The question load-vs-swap actually turns on, and it is per-LANE, not
+     * per-backend. PathTopology::MIXED exists for exactly this: a unit with some
+     * lanes wired straight to their own extruder and others merged through a hub
+     * into a shared one. On such a unit the answer differs between two lanes of
+     * the same unit, so no backend-wide constant can express it.
+     *
+     * Three sources, most specific first:
+     *   1. AmsUnit::lane_is_hub_routed — AFC's per-lane `hub` field ("direct" /
+     *      "direct_load" vs a hub name). Consulted ONLY on a MIXED unit: the
+     *      vector stores `false` for lanes whose routing has not been parsed yet
+     *      (ams_backend_afc.cpp, #1229 defect 4), and on a uniform unit that
+     *      unknown would masquerade as "direct" and skip a swap the machine
+     *      needs. On a MIXED unit an out-of-range or unknown lane answers false
+     *      (shared), which is the conservative direction.
+     *   2. get_unit_topology(position) — the backend's own per-unit answer. Its
+     *      default falls back to get_topology(), so backends that never populate
+     *      AmsUnit::topology (ToolChanger) still answer correctly.
+     *   3. get_topology() — when no unit covers @p target_slot at all, including
+     *      target_slot < 0.
+     *
+     * @warning Reaches a virtual accessor that may take the backend's own mutex
+     *          (AmsBackendAfc::get_unit_topology does). Do not call it, or
+     *          needs_unload_before_load(), while holding that mutex.
+     *          AmsBackendCfs::change_tool() is the one backend-internal caller
+     *          and is safe: CFS does not override get_unit_topology(), and its
+     *          get_topology() is an inline constant.
+     */
+    [[nodiscard]] bool slot_has_independent_path(const AmsSystemInfo& info, int target_slot) const {
+        const int unit_pos = info.get_unit_position_for_slot(target_slot);
+        if (unit_pos < 0) {
+            return get_topology() == PathTopology::PARALLEL;
+        }
+
+        const PathTopology topology = get_unit_topology(unit_pos);
+        if (topology != PathTopology::MIXED) {
+            return topology == PathTopology::PARALLEL;
+        }
+
+        const AmsUnit& unit = info.units[static_cast<size_t>(unit_pos)];
+        const int lane = target_slot - unit.first_slot_global_index;
+        if (lane < 0 || lane >= static_cast<int>(unit.lane_is_hub_routed.size())) {
+            return false;
+        }
+        return !unit.lane_is_hub_routed[static_cast<size_t>(lane)];
     }
 
     /**
@@ -541,14 +732,17 @@ class AmsBackend {
     virtual AmsError load_filament(int slot_index) = 0;
 
     /**
-     * @brief Unload filament (async)
+     * @brief Unload filament from a specific slot (async)
      *
      * Initiates filament unload from extruder back to its slot.
      * Results delivered via EVENT_UNLOAD_COMPLETE or EVENT_ERROR.
      *
-     * @param slot_index Slot to unload (-1 = unload current/default).
-     *        On toolchangers, specifies which tool to unmount.
-     *        On single-extruder systems, ignored (only one thing loaded).
+     * @param slot_index Slot to unload. MUST be explicit — there is no default.
+     *        Callers that mean "whatever is active" should call
+     *        unload_active_filament() instead, which resolves current_slot once
+     *        (single source of truth) and forwards here. Backends may still
+     *        receive slot_index < 0 via that path when current_slot is unknown
+     *        (no active tool); each backend's override documents its -1 behavior.
      *
      * Requires:
      * - Filament currently loaded
@@ -557,7 +751,29 @@ class AmsBackend {
      *
      * @return AmsError indicating if operation was started successfully
      */
-    virtual AmsError unload_filament(int slot_index = -1) = 0;
+    virtual AmsError unload_filament(int slot_index) = 0;
+
+    /**
+     * @brief Unload whichever slot the backend currently considers active.
+     *
+     * Convenience that resolves the active slot from system_info_.current_slot
+     * ONCE in the base class and forwards to unload_filament(int). Single
+     * source of truth for the "unload active" semantic — eliminates the
+     * per-backend "if (slot_index < 0) slot = current_slot" fallback that
+     * previously lived in each unload_filament override.
+     *
+     * That fallback let a callsite's snapshot of current_slot (read for a
+     * "is anything loaded?" guard) diverge from the backend's re-read inside
+     * unload_filament — causing the U1 Filament-panel-unload wrong-tool bug
+     * (Helix sent EXTRUDER=0 because the backend's stale read won over the
+     * UI's fresh one).
+     *
+     * If current_slot is -1 (no active slot known), -1 is forwarded to the
+     * backend override, which keeps its own per-backend "trust the firmware"
+     * behavior (Snapmaker: bare INNER_FILAMENT_UNLOAD, Toolchanger: not_loaded
+     * error, AFC: bare TOOL_UNLOAD, etc).
+     */
+    AmsError unload_active_filament();
 
     /**
      * @brief Select tool/slot without loading (async)
@@ -608,24 +824,80 @@ class AmsBackend {
     virtual AmsError reset() = 0;
 
     /**
-     * @brief Reset a specific lane/slot
+     * @brief Clear a latched fault so the system stops reporting an error
      *
-     * Resets an individual lane to a known good state without affecting others.
-     * Default implementation returns NOT_SUPPORTED.
+     * Bookkeeping only — this never moves filament. Distinct from
+     * recover_lane_position(), which is a physical retract.
      *
-     * @param slot_index Lane to reset (0-based)
-     * @return AmsError indicating if operation was started
+     * Scope is backend-defined. AFC has no per-lane fault clear, so it ignores
+     * slot_index and clears system-wide (RESET_FAILURE + AFC_CLEAR_MESSAGE).
+     * Happy Hare clears per-gate (MMU_RECOVER GATE=n). Callers always pass the
+     * slot they mean and let the backend decide what it can honour.
+     *
+     * Must be safe to call from IDLE: a latched fault routinely outlives the
+     * operation that produced it, which is precisely when clearing matters.
+     *
+     * @param slot_index Slot the user acted on, or -1 for "no particular slot"
+     * @return AmsError indicating if the operation was started
      */
-    virtual AmsError reset_lane(int slot_index) {
+    virtual AmsError clear_fault(int slot_index) {
         (void)slot_index;
-        return AmsErrorHelper::not_supported("Per-lane reset not supported");
+        return cancel();
     }
 
     /**
-     * @brief Check if per-lane reset is supported
-     * @return true if reset_lane() is implemented
+     * @brief Retract a lane's filament back to its lane from the bowden
+     *
+     * A physical filament move, not a fault clear. Recovers a lane left stranded
+     * mid-path by a failed load or unload — filament past the lane but not at the
+     * toolhead, which plain unload() cannot address because it assumes the head.
+     *
+     * AFC: AFC_LANE_RESET LANE={name}, which retracts until the hub clears.
+     * Default implementation returns NOT_SUPPORTED.
+     *
+     * @param slot_index Lane to recover (0-based)
+     * @return AmsError indicating if the operation was started
      */
-    [[nodiscard]] virtual bool supports_lane_reset() const {
+    virtual AmsError recover_lane_position(int slot_index) {
+        (void)slot_index;
+        return AmsErrorHelper::not_supported("Lane position recovery not supported");
+    }
+
+    /**
+     * @brief Whether a lane-position recovery is possible for this slot right now
+     *
+     * Per-slot and per-state, not a static capability: offering a recovery the
+     * firmware will refuse produces an error the user cannot act on, and on AFC
+     * that error latches in printer.AFC.message and keeps re-firing toasts.
+     */
+    [[nodiscard]] virtual bool can_recover_lane_position(int slot_index) const {
+        (void)slot_index;
+        return false;
+    }
+
+    /**
+     * @brief Whether this backend currently knows WHICH lane needs recovery
+     *
+     * Distinct from can_recover_lane_position(), which answers "is recovery
+     * possible" per slot. This answers "do we know whose fault it is" — some
+     * backends share one physical sensor across every lane on a unit (AFC's hub
+     * sensor), so an unattributed trigger cannot say whose filament caused it.
+     * Callers use this to decide whether RecoverPosition should outrank Eject
+     * (attributed: confident, single lane) or defer to it (unattributed: a
+     * last-resort offer, since showing Recover on every lane would otherwise
+     * hide Eject from lanes that are simply seated, not stranded).
+     *
+     * A backend MAY choose to make can_recover_lane_position() imply this, by
+     * refusing recovery outright where it cannot attribute the strand. AFC does
+     * (prestonbrown/helixscreen#1182): its lane reset opens with a blind retract,
+     * so a wrong guess de-seats a working lane rather than refusing harmlessly.
+     * The unattributed arm in the caller's ranking stays valid for backends
+     * whose recovery is genuinely free to attempt.
+     *
+     * Default false: backends with a genuinely per-lane fault signal (or no
+     * lane-position recovery at all) have nothing to attribute.
+     */
+    [[nodiscard]] virtual bool lane_recovery_is_attributed() const {
         return false;
     }
 
@@ -670,6 +942,30 @@ class AmsBackend {
     }
 
     /**
+     * @brief Whether this backend's COLD lane ops are themselves refused mid-print
+     *
+     * The cold lane ops (Eject / Recover / ForceEject) move no toolhead, so the
+     * shared affordance rule deliberately exempts them from the print gate that
+     * blocks a heated unload — see OpButtonState::unload_is_cold_lane_op. That
+     * exemption is about OUR gate. It says nothing about whether the firmware on
+     * the other end will accept the command.
+     *
+     * AFC does not: `cmd_LANE_UNLOAD` opens with
+     * `if self.function.is_printing(): AFC_error(...); return` on every version
+     * shipped (v1.1.0 AFC.py:1112, v1.2.0 AFC.py:1331). A backend that answers
+     * true here keeps its cold ops greyed while the print gate is closed, so the
+     * button is not offered into a guaranteed refusal.
+     *
+     * Default false: for every other backend the exemption is correct, and the
+     * cold ops stay reachable mid-pause for clearing a snapped strand.
+     *
+     * @return true if a print blocks this backend's cold lane ops too
+     */
+    [[nodiscard]] virtual bool cold_lane_ops_refused_during_print() const {
+        return false;
+    }
+
+    /**
      * @brief Whether the slot can be unloaded from the toolhead.
      *
      * Gates the context-menu "Unload" action, and (inverted) also suppresses the
@@ -679,15 +975,23 @@ class AmsBackend {
      * The default rule is topology-aware so every backend behaves consistently
      * without per-backend duplication:
      *
-     *  - PARALLEL toolchangers (Snapmaker U1, generic ToolChanger) give each tool
-     *    its own independent toolhead, so any tool that currently holds filament
-     *    is independently unloadable. We key on is_present() — the same presence
-     *    signal the menu's Load button uses — so Load and Unload always agree.
+     *  - PARALLEL toolchangers give each tool its own independent toolhead, so
+     *    any tool that currently holds filament is independently unloadable. We
+     *    key on is_present() — the same presence signal the menu's Load button
+     *    uses — so Load and Unload always agree.
      *  - Selector / hub MMUs (Happy Hare, AFC, ACE, CFS, AD5X, QIDI) share one
      *    extruder, so only the slot actually seated at the toolhead (LOADED) can
      *    be unloaded.
      *
-     * AD5X IFS still overrides this so a runout that clears the head sensor
+     * Note that BOTH PARALLEL backends override the first arm, for opposite
+     * reasons, so it is a fallback rather than a rule in force today. Snapmaker
+     * U1 needs its channel_state latch because the per-tool motion sensor stays
+     * true after an unload. Generic ToolChanger needs the narrower
+     * `slot_index == current_tool`: its slots are physical toolheads that are
+     * never EMPTY, so is_present() read true everywhere, which suppressed Load on
+     * every tool and offered an unmount on tools sitting in their docks (#1199).
+     *
+     * AD5X IFS also overrides this so a runout that clears the head sensor
      * doesn't disable Unload on the slot the firmware reports as active — the
      * exact moment the user needs to recover (#995). Its base fallback is
      * unchanged: AD5X is a serial topology, so the rule below still yields
@@ -1275,25 +1579,17 @@ class AmsBackend {
     }
 
     /**
-     * @brief Whether the backend maintains a persistent message/error queue that the
-     *        UI must explicitly clear when the user dismisses an error.
-     *
-     * AFC keeps a persistent message_queue + error_state that won't clear until
-     * AFC_CLEAR_MESSAGE is sent; without it the error dialog reappears immediately
-     * because AFC keeps reporting ERROR (#497). Other backends have no such queue.
-     *
-     * @return true if clear_message_queue() does meaningful work
-     */
-    [[nodiscard]] virtual bool supports_clear_message_queue() const {
-        return false;
-    }
-
-    /**
      * @brief Clear the backend's persistent message/error queue.
      *
-     * Called by the UI when the user dismisses a backend error so the error does
-     * not immediately re-fire. Default is a no-op (NOT_SUPPORTED); backends with a
-     * persistent queue (AFC) override to send the clearing command.
+     * AFC keeps a persistent message queue that will not clear until
+     * AFC_CLEAR_MESSAGE is sent; without it the error dialog re-fires immediately
+     * because AFC keeps reporting ERROR (#497). Default is a no-op
+     * (NOT_SUPPORTED); backends with such a queue override it.
+     *
+     * Callers do not need to ask whether a backend has a queue first — the
+     * default is already a harmless no-op, which is why the former
+     * supports_clear_message_queue() capability query was removed once
+     * clear_fault() took over the dismiss path.
      *
      * @return AmsError indicating success/failure
      */
@@ -1340,6 +1636,28 @@ class AmsBackend {
      */
     [[nodiscard]] virtual bool supports_configurable_eject_params() const {
         return false;
+    }
+
+    /**
+     * @brief Whether the UI may synthesise a prerequisite operation on the
+     *        user's behalf to make a requested action succeed.
+     *
+     * When false, the UI issues exactly ONE command per user action and lets
+     * the backend refuse if the machine is not in a state to accept it. When
+     * true, the UI may chain — e.g. unload the loaded slot first, then enable
+     * bypass once the unload completes.
+     *
+     * AFC and Happy Hare users have a console and expect the screen to pass
+     * their commands straight through; a bypass toggle that quietly ejects the
+     * filament in the toolhead is a command they never issued
+     * (prestonbrown/helixscreen#1229). OEM backends (CFS, ACE, AD5X IFS,
+     * Snapmaker, QIDI) have no console fallback, so the chaining is the only
+     * way their users can reach the desired state and it stays enabled.
+     *
+     * @return true if the UI may issue an implicit prerequisite command
+     */
+    [[nodiscard]] virtual bool allows_implicit_chaining() const {
+        return true;
     }
 
     /**

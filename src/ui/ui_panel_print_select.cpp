@@ -34,14 +34,14 @@
 #include "ams_state.h"
 #include "app_globals.h"
 #include "config.h"
+#include "connection_state.h" // For ConnectionState enum
 #include "display_manager.h"
 #include "display_settings_manager.h"
 #include "format_utils.h"
 #include "gcode_parser.h" // For extract_thumbnails_from_content (USB thumbnail fallback)
 #include "helix-xml/src/xml/lv_xml.h"
-#include "lvgl/src/others/translation/lv_translation.h"
 #include "i_moonraker_api.h"
-#include "connection_state.h" // For ConnectionState enum
+#include "lvgl/src/others/translation/lv_translation.h"
 #include "observer_factory.h"
 #include "preprint_predictor.h"
 #include "print_history_manager.h"
@@ -58,6 +58,7 @@
 #include <algorithm>
 #include <cmath>
 #include <ctime>
+#include <fstream>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -76,6 +77,26 @@ using helix::ui::format_print_time;
 // ============================================================================
 // Global Instance
 // ============================================================================
+
+// Slurp a file into memory. Used to hand an on-disk thumbnail to the prescaler,
+// which takes PNG bytes rather than a path. Returns empty on any failure — every
+// caller treats that as "no thumbnail" rather than an error worth surfacing.
+static std::vector<uint8_t> read_file_bytes(const std::string& path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) {
+        return {};
+    }
+    std::streamsize size = file.tellg();
+    if (size <= 0) {
+        return {};
+    }
+    file.seekg(0, std::ios::beg);
+    std::vector<uint8_t> data(static_cast<size_t>(size));
+    if (!file.read(reinterpret_cast<char*>(data.data()), size)) {
+        return {};
+    }
+    return data;
+}
 
 static std::unique_ptr<PrintSelectPanel> g_print_select_panel;
 
@@ -632,75 +653,6 @@ void PrintSelectPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
                                         static_cast<size_t>(visible_end));
         });
     });
-    file_provider_->set_on_metadata_updated(
-        [self, token = self->lifetime_.token()](size_t index, const PrintFileData& updated) {
-            // CRITICAL: Defer all work to main thread
-            // WebSocket callbacks run on libhv thread - direct LVGL calls cause crashes
-            struct MetadataUpdateContext {
-                PrintSelectPanel* panel;
-                helix::LifetimeToken token;
-                size_t index;
-                PrintFileData updated; // Copy the data
-            };
-            auto ctx = std::make_unique<MetadataUpdateContext>(
-                MetadataUpdateContext{self, token, index, updated});
-            helix::ui::queue_update<MetadataUpdateContext>(
-                std::move(ctx), [](MetadataUpdateContext* c) {
-                    if (c->token.expired())
-                        return;
-                    auto* panel = c->panel;
-                    size_t idx = c->index;
-                    const auto& upd = c->updated;
-
-                    // Update file in list
-                    if (idx < panel->file_list_.size() &&
-                        panel->file_list_[idx].filename == upd.filename) {
-                        // Merge updated fields
-                        if (upd.print_time_minutes > 0) {
-                            panel->file_list_[idx].print_time_minutes = upd.print_time_minutes;
-                            panel->file_list_[idx].print_time_str = upd.print_time_str;
-                        }
-                        if (upd.filament_grams > 0) {
-                            panel->file_list_[idx].filament_grams = upd.filament_grams;
-                            panel->file_list_[idx].filament_str = upd.filament_str;
-                        }
-                        if (!upd.filament_type.empty()) {
-                            panel->file_list_[idx].filament_type = upd.filament_type;
-                        }
-                        if (upd.layer_count > 0) {
-                            panel->file_list_[idx].layer_count = upd.layer_count;
-                            panel->file_list_[idx].layer_count_str = upd.layer_count_str;
-                        }
-                        if (!upd.thumbnail_path.empty() &&
-                            !helix::ui::PrintSelectCardView::is_placeholder_thumbnail(
-                                upd.thumbnail_path)) {
-                            panel->file_list_[idx].thumbnail_path = upd.thumbnail_path;
-                        }
-
-                        // Schedule debounced view refresh
-                        panel->schedule_view_refresh();
-
-                        // Update detail view if this file is selected
-                        if (strcmp(panel->selected_filename_buffer_, upd.filename.c_str()) == 0) {
-                            // Use filament_name if available, otherwise filament_type
-                            const std::string& filament_display =
-                                !panel->file_list_[idx].filament_name.empty()
-                                    ? panel->file_list_[idx].filament_name
-                                    : panel->file_list_[idx].filament_type;
-                            panel->set_selected_file(
-                                upd.filename.c_str(), panel->file_list_[idx].thumbnail_path.c_str(),
-                                panel->file_list_[idx].original_thumbnail_url.c_str(),
-                                panel->file_list_[idx].print_time_str.c_str(),
-                                panel->file_list_[idx].filament_str.c_str(),
-                                panel->file_list_[idx].layer_count_str.c_str(),
-                                panel->file_list_[idx].print_height_str.c_str(),
-                                panel->file_list_[idx].modified_timestamp,
-                                panel->file_list_[idx].layer_height_str.c_str(),
-                                filament_display.c_str());
-                        }
-                    }
-                });
-        });
     file_provider_->set_on_error([self, token = self->lifetime_.token()](const std::string& error) {
         LOG_ERROR_INTERNAL("[{}] File list refresh error: {}", self->get_name(), error);
         token.defer([self, error]() {
@@ -1318,6 +1270,16 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
             // dereferencing the freed panel (use-after-free → glibc heap abort).
             auto panel_tok = self->lifetime_.token();
 
+            // Same hazard, for the pieces the bg-thread callbacks below need.
+            // get_name() is virtual, so calling it on a torn-down panel dispatches
+            // through a freed vtable pointer — and a bare `ctx.is_valid()` ahead of
+            // it does not close the window, it only narrows it (L081 Mechanism C).
+            // Both of these are stable for the panel's life and the name is a
+            // compile-time literal, so snapshot them here, on the main thread,
+            // and let the callbacks format and fetch without touching `self`.
+            const char* panel_name = self->get_name();
+            auto* panel_api = self->api_;
+
             // Update metadata fields (now on main thread - safe!)
             self->file_list_[d->index].print_time_minutes = d->print_time_minutes;
             self->file_list_[d->index].filament_grams = d->filament_grams;
@@ -1348,10 +1310,76 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                 self->file_list_[d->index].original_thumbnail_url = d->thumb_path;
 
                 if (d->thumb_is_local) {
-                    // Local file exists - use directly (mock mode)
-                    self->file_list_[d->index].thumbnail_path = "A:" + d->thumb_path;
-                    spdlog::debug("[{}] Using local thumbnail for {}: {}", self->get_name(),
-                                  d->filename, self->file_list_[d->index].thumbnail_path);
+                    // Local file (mock mode). Feed it through the same prescale pipeline
+                    // the remote and USB paths use rather than pointing the widget at the
+                    // raw PNG: the card sizes its image widget to the .bin target, so a
+                    // native-size 300x300 source gets drawn at 300x300 and cropped to the
+                    // widget box, showing a fragment of the model (#1208). Routing it
+                    // through the prescaler also keeps --test faithful to a real printer.
+                    ThumbnailLoadContext ctx;
+                    ctx.alive = self->thumbnail_alive_;
+                    ctx.generation = &self->nav_generation_;
+                    ctx.captured_gen = self->nav_generation_.load();
+
+                    size_t file_idx = d->index;
+                    std::string filename_copy = d->filename;
+                    std::string cache_key = d->thumb_path + "_local";
+
+                    // A refresh re-runs this for files that already have their .bin, and
+                    // re-reading plus re-staging every PNG to rediscover that is wasted IO.
+                    const std::string& existing = self->file_list_[d->index].thumbnail_path;
+                    bool already_prescaled = existing.size() > 4 &&
+                                             existing.compare(existing.size() - 4, 4, ".bin") == 0;
+
+                    std::vector<uint8_t> png_data =
+                        already_prescaled ? std::vector<uint8_t>{} : read_file_bytes(d->thumb_path);
+                    std::string cached_png =
+                        png_data.empty() ? std::string()
+                                         : get_thumbnail_cache().save_raw_png(cache_key, png_data);
+
+                    if (cached_png.empty()) {
+                        // Could not stage it for prescaling — the raw PNG still beats no
+                        // thumbnail at all, even though the card will crop it.
+                        self->file_list_[d->index].thumbnail_path = "A:" + d->thumb_path;
+                        spdlog::debug("[{}] Using local thumbnail unscaled for {}: {}",
+                                      self->get_name(), d->filename,
+                                      self->file_list_[d->index].thumbnail_path);
+                    } else {
+                        get_thumbnail_cache().fetch_for_card_view(
+                            self->api_, cache_key, ctx,
+                            [self, panel_tok, file_idx,
+                             filename_copy](const std::string& optimized) {
+                                struct LocalThumbUpdate {
+                                    PrintSelectPanel* panel;
+                                    helix::LifetimeToken token;
+                                    size_t index;
+                                    std::string filename;
+                                    std::string lvgl_path;
+                                };
+                                helix::ui::queue_update<LocalThumbUpdate>(
+                                    std::make_unique<LocalThumbUpdate>(LocalThumbUpdate{
+                                        self, panel_tok, file_idx, filename_copy, optimized}),
+                                    [](LocalThumbUpdate* t) {
+                                        if (t->token.expired()) {
+                                            return;
+                                        }
+                                        if (t->index < t->panel->file_list_.size() &&
+                                            t->panel->file_list_[t->index].filename ==
+                                                t->filename) {
+                                            t->panel->file_list_[t->index].thumbnail_path =
+                                                t->lvgl_path;
+                                            t->panel->schedule_view_refresh();
+                                        }
+                                    });
+                            },
+                            [panel_name, filename_copy](const std::string& error) {
+                                // HttpExecutor worker: no `self`, so nothing to
+                                // outlive us. panel_name is a literal snapshotted
+                                // on the main thread.
+                                spdlog::warn("[{}] Failed to prescale local thumbnail for {}: {}",
+                                             panel_name, filename_copy, error);
+                            });
+                    }
                 } else {
 #if !defined(HELIX_PLATFORM_ESP32)
                     // Remote path - use semantic API for card view thumbnails
@@ -1468,8 +1496,7 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                                  thumb = std::move(thumb)]() mutable {
                                     if (file_idx < self->file_list_.size() &&
                                         self->file_list_[file_idx].filename == filename_copy) {
-                                        self->file_list_[file_idx].esp_thumbnail =
-                                            std::move(thumb);
+                                        self->file_list_[file_idx].esp_thumbnail = std::move(thumb);
                                         self->schedule_view_refresh();
                                     }
                                 });
@@ -1517,15 +1544,19 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                     self->api_->transfers().download_file_partial(
                         "gcodes", gcode_path, THUMBNAIL_HEADER_SIZE,
                         // Success callback - extract thumbnails from gcode content
-                        [self, panel_tok, file_idx, filename_copy, gcode_path,
-                         ctx](const std::string& content) {
-                            if (!ctx.is_valid())
-                                return;
+                        [self, panel_tok, panel_name, panel_api, file_idx, filename_copy,
+                         gcode_path, ctx](const std::string& content) {
+                            // HttpExecutor worker. The parse and the cache write below
+                            // are deliberately left here — they are the expensive part
+                            // and touch no panel state. What must NOT happen on this
+                            // thread is a `self` dereference, so everything the body
+                            // needs from the panel (name, api, lifetime) was captured
+                            // by value on the main thread instead.
                             auto thumbnails =
                                 helix::gcode::extract_thumbnails_from_content(content);
 
                             if (thumbnails.empty()) {
-                                spdlog::debug("[{}] No embedded thumbnails in {}", self->get_name(),
+                                spdlog::debug("[{}] No embedded thumbnails in {}", panel_name,
                                               gcode_path);
                                 return;
                             }
@@ -1533,8 +1564,8 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                             // Use the largest thumbnail (already sorted largest-first)
                             const auto& best = thumbnails[0];
                             spdlog::debug("[{}] Extracted {}x{} thumbnail ({} bytes) from {}",
-                                          self->get_name(), best.width, best.height,
-                                          best.png_data.size(), gcode_path);
+                                          panel_name, best.width, best.height, best.png_data.size(),
+                                          gcode_path);
 
                             // Save to cache using the gcode path as identifier
                             std::string cache_key = gcode_path + "_extracted";
@@ -1543,18 +1574,19 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
 
                             if (lvgl_path.empty()) {
                                 spdlog::warn("[{}] Failed to cache extracted thumbnail for {}",
-                                             self->get_name(), gcode_path);
+                                             panel_name, gcode_path);
                                 return;
                             }
 
                             // Feed through prescale pipeline for .bin generation
                             // (avoids runtime 300x300→160x160 scaling on every frame)
                             get_thumbnail_cache().fetch_for_card_view(
-                                self->api_, cache_key, ctx,
-                                [self, panel_tok, file_idx, filename_copy,
-                                 ctx](const std::string& optimized) {
-                                    if (!ctx.is_valid())
-                                        return;
+                                panel_api, cache_key, ctx,
+                                [self, panel_tok, file_idx,
+                                 filename_copy](const std::string& optimized) {
+                                    // Everything that touches the panel happens in the
+                                    // queued apply below, which re-checks the token on
+                                    // the main thread.
                                     struct ExtractedThumbUpdate {
                                         PrintSelectPanel* panel;
                                         helix::LifetimeToken token;
@@ -1584,20 +1616,16 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                                             }
                                         });
                                 },
-                                [self, filename_copy, ctx](const std::string& error) {
-                                    if (!ctx.is_valid())
-                                        return;
+                                [panel_name, filename_copy](const std::string& error) {
                                     spdlog::warn(
                                         "[{}] Failed to prescale extracted thumbnail for {}: {}",
-                                        self->get_name(), filename_copy, error);
+                                        panel_name, filename_copy, error);
                                 });
                         },
                         // Error callback - silent fail (file might be too small or inaccessible)
-                        [self, gcode_path, ctx](const MoonrakerError& error) {
-                            if (!ctx.is_valid())
-                                return;
+                        [panel_name, gcode_path](const MoonrakerError& error) {
                             spdlog::debug("[{}] Failed to download gcode header for {}: {}",
-                                          self->get_name(), gcode_path, error.message);
+                                          panel_name, gcode_path, error.message);
                         });
                 }
             }
@@ -1854,12 +1882,19 @@ void PrintSelectPanel::on_deactivate() {
         return_home_activation_count_ = 0;
     }
 
-    // Clear detail view state so file notifications aren't deferred while panel is hidden.
-    // If user navigates away via navbar with detail view open, this flag would otherwise
-    // stay true and suppress all notify_filelist_changed updates until next detail close.
+    // A navbar switch already closes the overlay (NavigationManager tears it down
+    // before calling this), so is_visible() is false and clearing the flag is enough.
+    // A rebuild() calls on_deactivate() directly with no stack teardown, so a still-open
+    // overlay needs an explicit hide_detail_view()/go_back() here; gating on is_visible()
+    // keeps that from popping the wrong panel_stack_ entry in the navbar case.
     if (detail_view_open_) {
-        detail_view_open_ = false;
-        spdlog::debug("[{}] Cleared detail_view_open_ on deactivate", get_name());
+        if (detail_view_ && detail_view_->is_visible()) {
+            hide_detail_view();
+            spdlog::debug("[{}] Closed still-open detail view on deactivate", get_name());
+        } else {
+            detail_view_open_ = false;
+            spdlog::debug("[{}] Cleared detail_view_open_ on deactivate", get_name());
+        }
     }
 
     // Mark that the panel was fully deactivated so on_activate() knows to refresh
@@ -2054,9 +2089,17 @@ void PrintSelectPanel::set_print_status_panel(lv_obj_t* panel) {
 // ============================================================================
 
 CardDimensions PrintSelectPanel::calculate_card_dimensions() {
+    // Card thumbnails are pre-scaled to a fixed .bin size, so the processor has to know
+    // how big a card really is — its own resolution ladder guessed too large and LVGL
+    // cropped the art (#1208). Publish on every exit path, including the fallbacks.
+    auto publish = [](const CardDimensions& d) {
+        helix::ThumbnailProcessor::set_card_size_hint(d.card_width, d.card_height);
+        return d;
+    };
+
     if (!card_view_container_) {
         spdlog::error("[{}] Cannot calculate dimensions: container is null", get_name());
-        return {4, 2, CARD_MIN_WIDTH, CARD_DEFAULT_HEIGHT};
+        return publish({4, 2, CARD_MIN_WIDTH, CARD_DEFAULT_HEIGHT});
     }
 
     lv_coord_t container_width = lv_obj_get_content_width(card_view_container_);
@@ -2071,7 +2114,7 @@ CardDimensions PrintSelectPanel::calculate_card_dimensions() {
     lv_obj_t* panel_root = lv_obj_get_parent(card_view_container_);
     if (!panel_root) {
         spdlog::error("[{}] Cannot find panel root", get_name());
-        return {4, 2, CARD_MIN_WIDTH, CARD_DEFAULT_HEIGHT};
+        return publish({4, 2, CARD_MIN_WIDTH, CARD_DEFAULT_HEIGHT});
     }
 
     lv_coord_t panel_height = lv_obj_get_height(panel_root);
@@ -2107,20 +2150,16 @@ CardDimensions PrintSelectPanel::calculate_card_dimensions() {
                   get_name(), row_height, card_gap, dims.card_height, total_used,
                   available_height - total_used);
 
-    // Try different column counts
-    for (int cols = 10; cols >= 1; cols--) {
-        int total_gaps = (cols - 1) * card_gap;
-        int card_width = (container_width - total_gaps) / cols;
+    // Pick the column count whose card width lands nearest the size the card component
+    // was designed for, rather than the count that fits the most columns.
+    int best_cols = choose_card_columns(container_width, card_gap);
+    if (best_cols > 0) {
+        dims.num_columns = best_cols;
+        dims.card_width = card_width_for_columns(container_width, card_gap, best_cols);
 
-        if (card_width >= CARD_MIN_WIDTH && card_width <= CARD_MAX_WIDTH) {
-            dims.num_columns = cols;
-            dims.card_width = card_width;
-
-            spdlog::trace("[{}] Calculated card layout: {} rows x {} columns, card={}x{}",
-                          get_name(), dims.num_rows, dims.num_columns, dims.card_width,
-                          dims.card_height);
-            return dims;
-        }
+        spdlog::trace("[{}] Calculated card layout: {} rows x {} columns, card={}x{}", get_name(),
+                      dims.num_rows, dims.num_columns, dims.card_width, dims.card_height);
+        return publish(dims);
     }
 
     // Fallback
@@ -2131,7 +2170,7 @@ CardDimensions PrintSelectPanel::calculate_card_dimensions() {
 
     spdlog::warn("[{}] No optimal card layout found, using fallback: {} columns", get_name(),
                  dims.num_columns);
-    return dims;
+    return publish(dims);
 }
 
 void PrintSelectPanel::schedule_view_refresh() {
@@ -2453,6 +2492,12 @@ void PrintSelectPanel::update_sort_indicators() {
 }
 
 void PrintSelectPanel::create_detail_view() {
+    if (detail_view_) {
+        // The detail overlay lives under parent_screen_, not panel_, so it
+        // survives a panel rebuild. setup() is re-entrant; only the first
+        // call constructs the view.
+        return;
+    }
     detail_view_ = std::make_unique<helix::ui::PrintSelectDetailView>();
 
     // Initialize subjects BEFORE create() so XML bindings can find them [L004]

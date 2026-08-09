@@ -111,6 +111,7 @@ class NetworkSettingsOverlay : public OverlayBase {
      * - on_test_network_clicked
      * - on_add_other_clicked
      * - on_network_item_clicked
+     * - on_network_settings_forget
      */
     void register_callbacks() override;
 
@@ -247,15 +248,42 @@ class NetworkSettingsOverlay : public OverlayBase {
     char current_ssid_[64];
     bool current_network_is_secured_ = false;
 
+    // SSID awaiting confirmation in the forget-network dialog; cleared once
+    // the dialog resolves (confirm or cancel).
+    std::string pending_forget_ssid_;
+
+    // WLAN toggle switch awaiting confirmation before actually turning WiFi
+    // off (Task 15/I2: no-strand gate on a live toggle, not just startup).
+    // nullptr except while that confirmation dialog is up.
+    lv_obj_t* pending_wlan_toggle_switch_ = nullptr;
+
     // Cached networks for async UI update
     std::vector<WiFiNetwork> cached_networks_;
 
     // Event handler implementations
     void handle_wlan_toggle_changed(lv_event_t* e);
+    // Dispatches the radio on/off request (post no-strand confirmation, if one
+    // was needed). Flips the UI optimistically and returns immediately; the
+    // real outcome lands in finish_wlan_toggle().
+    void apply_wlan_toggle(bool enabled);
+    // Folds the radio's real state back into the subjects, settings and
+    // network list, reverting the optimistic flip when they disagree.
+    void finish_wlan_toggle(bool requested, bool success, bool actual);
+    // Backstop for a dispatch whose completion never arrives (e.g. the
+    // executor was stopped mid-flight): re-reads the radio and reconciles.
+    void arm_wlan_toggle_backstop();
+    void cancel_wlan_toggle_backstop();
+    lv_timer_t* wlan_toggle_backstop_ = nullptr;
+    bool wlan_toggle_requested_ = false;
+    void handle_wlan_toggle_off_confirm();
+    void handle_wlan_toggle_off_cancel();
     void handle_refresh_clicked();
     void handle_test_network_clicked();
     void handle_add_other_clicked();
     void handle_network_item_clicked(lv_event_t* e);
+    void handle_network_settings_forget();
+    void handle_network_forget_confirm();
+    void handle_network_forget_cancel();
 
     // Helper functions
     void update_wifi_status();
@@ -278,6 +306,13 @@ class NetworkSettingsOverlay : public OverlayBase {
     static void on_test_network_clicked(lv_event_t* e);
     static void on_add_other_clicked(lv_event_t* e);
     static void on_network_item_clicked(lv_event_t* e);
+    // Scoped per [L039] to avoid colliding with other overlays' forget flows
+    // (barcode scanner, label printer) in the flat XML callback namespace.
+    static void on_network_settings_forget(lv_event_t* e);
+    static void on_network_forget_confirm(lv_event_t* e);
+    static void on_network_forget_cancel(lv_event_t* e);
+    static void on_wlan_toggle_off_confirm(lv_event_t* e);
+    static void on_wlan_toggle_off_cancel(lv_event_t* e);
 
     // Network test modal callbacks
     static void on_network_test_close(lv_event_t* e);
@@ -312,10 +347,3 @@ class NetworkSettingsOverlay : public OverlayBase {
  * Creates the instance on first call. Singleton pattern.
  */
 NetworkSettingsOverlay& get_network_settings_overlay();
-
-/**
- * @brief Destroy the global NetworkSettingsOverlay instance
- *
- * Call during application shutdown.
- */
-void destroy_network_settings_overlay();

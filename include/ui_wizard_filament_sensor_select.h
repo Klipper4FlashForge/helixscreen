@@ -186,4 +186,3 @@ class WizardFilamentSensorSelectStep : public helix::wizard::Step {
 // ============================================================================
 
 WizardFilamentSensorSelectStep* get_wizard_filament_sensor_select_step();
-void destroy_wizard_filament_sensor_select_step();

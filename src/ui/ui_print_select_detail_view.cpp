@@ -21,11 +21,12 @@
 #include "config.h"
 #include "display_settings_manager.h"
 #include "gcode_parser.h"
+#include "i_moonraker_api.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "memory_utils.h"
-#include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "runtime_config.h"
+#include "settings_manager.h"
 #include "theme_manager.h"
 #include "tool_state.h"
 
@@ -105,8 +106,11 @@ PrintSelectDetailView::~PrintSelectDetailView() {
         confirmation_dialog_widget_ = nullptr;
     }
 
-    // Clean up main widget if created
-    helix::ui::safe_delete(overlay_root_);
+    // Destructors can run from inside a queue_update() batch (unique_ptr
+    // reassignment, owner reset()); a sync lv_obj_delete() there corrupts
+    // LVGL's event list if another sync delete lands in the same batch
+    // (#776, #190, #80). Deferred delete is safe outside a batch too.
+    helix::ui::safe_delete_deferred(overlay_root_);
 }
 
 // ============================================================================
@@ -191,13 +195,10 @@ lv_obj_t* PrintSelectDetailView::create(lv_obj_t* parent_screen) {
         return nullptr;
     }
 
-    // Set width to fill space after nav bar
-    ui_set_overlay_width(overlay_root_, parent_screen_);
-
     // Set responsive padding for content area
     lv_obj_t* content_container = lv_obj_find_by_name(overlay_root_, "content_container");
     if (content_container) {
-        lv_coord_t padding = ui_get_header_content_padding(lv_obj_get_height(parent_screen_));
+        lv_coord_t padding = ui_get_header_content_padding();
         lv_obj_set_style_pad_all(content_container, padding, 0);
     }
 
@@ -382,6 +383,14 @@ void PrintSelectDetailView::show(const std::string& filename, const std::string&
 
     // Clear cached metadata when file selection changes — the new async fetch will repopulate it
     cached_file_metadata_.reset();
+
+    // Clear any used-tools filter carried over from the previously-selected
+    // file BEFORE the pre-parse update() below. The card is repopulated from
+    // this file's full palette and must show all tools until this file's own
+    // gcode parse pushes its real used set (viewer-parse or headless hook).
+    // Without this reset a disjoint prior set would mis-filter — or blank — the
+    // new file's card pre-parse.
+    filament_mapping_card_.set_used_tools(std::nullopt);
 
     // Update filament mapping card (shown when AMS is available)
     filament_mapping_card_.update(filament_colors, filament_materials);
@@ -693,7 +702,7 @@ void PrintSelectDetailView::handle_resize(lv_obj_t* parent_screen) {
 
     lv_obj_t* content_container = lv_obj_find_by_name(overlay_root_, "content_container");
     if (content_container) {
-        lv_coord_t padding = ui_get_header_content_padding(lv_obj_get_height(parent_screen));
+        lv_coord_t padding = ui_get_header_content_padding();
         lv_obj_set_style_pad_all(content_container, padding, 0);
     }
 }
@@ -742,10 +751,9 @@ void PrintSelectDetailView::update_color_swatches(const std::set<int>& tool_indi
 
     const auto tools = get_used_tool_info(); // real tool_index, intended colors
     auto slots = AmsState::instance().collect_available_slots();
-    auto mappings = filament_mapping_card_.get_mappings();
-    if (mappings.empty()) {
-        mappings = helix::FilamentMapper::compute_defaults(tools, slots);
-    }
+    // Effective (toggle-aware) mapping: card edits win on editable backends;
+    // U1/ACE auto-match so the bottom band shows the matched lane, not identity.
+    auto mappings = effective_mappings();
 
     const lv_color_t neutral = theme_manager_get_color("text_muted");
 
@@ -899,14 +907,19 @@ void PrintSelectDetailView::update_history_status(FileHistoryStatus status, int 
 // ============================================================================
 
 void PrintSelectDetailView::show_gcode_viewer(bool show) {
-    // Mode 0 = thumbnail, 1 = 3D
-    // Detail panel only supports 3D viewer — fall back to thumbnail if 2D
+    // detail_gcode_viewer_mode_ drives the XML visibility bindings in
+    // print_file_detail.xml:
+    //   0 = thumbnail  (viewer hidden, gradient + thumbnail shown)
+    //   1 = 3D viewer  (viewer shown, gradient hidden for clean black bg,
+    //                   rotate hint shown)
+    //   2 = 2D viewer  (viewer shown over the gradient, rotate hint hidden —
+    //                   there's no rotate affordance for the flat 2D layer view)
+    // 2D-mode devices (no-GLES / GPU-blocked / budget-forced) now render the
+    // real toolpath preview instead of falling back to the thumbnail.
     int mode = 0;
     if (show) {
-        bool is_2d = gcode_viewer_ && ui_gcode_viewer_is_using_2d_mode(gcode_viewer_);
-        if (!is_2d) {
-            mode = 1;
-        }
+        const bool is_2d = gcode_viewer_ && ui_gcode_viewer_is_using_2d_mode(gcode_viewer_);
+        mode = is_2d ? 2 : 1;
     }
     lv_subject_set_int(&detail_gcode_viewer_mode_, mode);
 
@@ -927,54 +940,33 @@ void PrintSelectDetailView::show_gcode_viewer(bool show) {
     spdlog::trace("[DetailView] G-code viewer mode: {} ({})", mode, mode == 0 ? "thumbnail" : "3D");
 }
 
-void PrintSelectDetailView::apply_tool_colors() {
-    if (!gcode_viewer_ || !gcode_loaded_) {
-        return;
-    }
-
-    // Try AMS slot colors first
-    if (ui_gcode_viewer_apply_ams_tool_colors(gcode_viewer_)) {
-        return;
-    }
-
-    // Fallback: use file metadata colors (from slicer)
-    if (!current_filament_colors_.empty()) {
-        std::vector<uint32_t> tool_colors;
-        for (const auto& hex : current_filament_colors_) {
-            auto parsed = helix::parse_hex_color(hex);
-            if (parsed) {
-                tool_colors.push_back(*parsed);
-            }
-        }
-        if (!tool_colors.empty()) {
-            ui_gcode_viewer_set_tool_colors(gcode_viewer_, tool_colors);
-        }
-    }
-}
-
-void PrintSelectDetailView::apply_mapped_tool_colors() {
-    if (!gcode_viewer_ || !gcode_loaded_) {
-        return;
-    }
-
-    auto colors = filament_mapping_card_.get_mapped_colors();
-    if (!colors.empty()) {
-        ui_gcode_viewer_set_tool_colors(gcode_viewer_, colors);
-        lv_obj_invalidate(gcode_viewer_);
-        spdlog::debug("[DetailView] Applied {} mapped tool colors to gcode viewer", colors.size());
-    }
-}
-
 void PrintSelectDetailView::apply_preview_colors() {
     if (!gcode_viewer_ || !gcode_loaded_) {
         return;
     }
-    if (lv_subject_get_int(&detail_prefer_sliced_colors_) == 1) {
-        apply_sliced_tool_colors();
-    } else {
-        // Actual (loaded) colors: firmware/slicer base, then mapped overrides win.
-        apply_tool_colors();
-        apply_mapped_tool_colors();
+    const auto tools = get_used_tool_info();
+    if (tools.empty()) {
+        return;
+    }
+    const auto slots = AmsState::instance().collect_available_slots();
+
+    // Single color engine — the SAME FilamentMapper::effective_tool_colors the
+    // print-file swatches and the live print-status render use. The sliced/actual
+    // toggle only changes which MAPPINGS feed it:
+    //   - Actual (loaded): effective_mappings() — card edits win on editable
+    //     backends, auto color+type match otherwise. This is what colors each
+    //     tool by its MATCHED lane instead of the identity physical-slot position.
+    //   - Sliced: fully-default (unmapped) mappings, so resolve_display_colors
+    //     falls back to each tool's own slicer color — the file's intended look.
+    const std::vector<helix::ToolMapping> mappings =
+        (lv_subject_get_int(&detail_prefer_sliced_colors_) == 1)
+            ? std::vector<helix::ToolMapping>(tools.size())
+            : effective_mappings();
+
+    const auto colors = helix::FilamentMapper::effective_tool_colors(tools, mappings, slots);
+    if (!colors.empty()) {
+        ui_gcode_viewer_set_tool_colors(gcode_viewer_, colors);
+        lv_obj_invalidate(gcode_viewer_);
     }
 }
 
@@ -982,27 +974,6 @@ void PrintSelectDetailView::set_prefer_sliced_colors(bool prefer_sliced) {
     lv_subject_set_int(&detail_prefer_sliced_colors_, prefer_sliced ? 1 : 0);
     apply_preview_colors();
     if (gcode_viewer_) {
-        lv_obj_invalidate(gcode_viewer_);
-    }
-    ToastManager::instance().show(ToastSeverity::INFO,
-                                  prefer_sliced ? lv_tr("Showing sliced colors")
-                                                : lv_tr("Showing loaded colors"),
-                                  2000);
-}
-
-void PrintSelectDetailView::apply_sliced_tool_colors() {
-    if (!gcode_viewer_ || !gcode_loaded_ || current_filament_colors_.empty()) {
-        return;
-    }
-    std::vector<uint32_t> tool_colors;
-    for (const auto& hex : current_filament_colors_) {
-        auto parsed = helix::parse_hex_color(hex);
-        if (parsed) {
-            tool_colors.push_back(*parsed);
-        }
-    }
-    if (!tool_colors.empty()) {
-        ui_gcode_viewer_set_tool_colors(gcode_viewer_, tool_colors);
         lv_obj_invalidate(gcode_viewer_);
     }
 }
@@ -1069,6 +1040,11 @@ void PrintSelectDetailView::try_extract_gcode_colors(lv_obj_t* viewer) {
     // filament_mismatch_ + empty_tools_warning_). Extracted so the native
     // remap flow can re-evaluate the gate after the backend mapping changes.
     recompute_preflight();
+
+    // Restrict the mapping card to the tools this file actually uses. The card
+    // was populated from the full slicer palette; now that the viewer has parsed
+    // we know the real used set. Empty/unknown ⇒ show all (safe default).
+    filament_mapping_card_.set_used_tools(tools_used_effective());
 }
 
 std::vector<helix::GcodeToolInfo> PrintSelectDetailView::get_used_tool_info() const {
@@ -1089,6 +1065,32 @@ std::vector<helix::GcodeToolInfo> PrintSelectDetailView::get_used_tool_info() co
         }
     }
     return tools;
+}
+
+bool PrintSelectDetailView::effective_auto_match() const {
+    // Non-editable-card backends (U1 / ACE) have no card UI to flip the
+    // persisted auto-color preference, so they always auto-match (color+type);
+    // otherwise the persisted default (FALSE) would force positional matching
+    // and pick the wrong lane. Editable backends honor the user's setting.
+    bool card_editable = false;
+    if (auto* backend = AmsState::instance().get_backend()) {
+        card_editable = backend->get_tool_mapping_capabilities().editable;
+    }
+    return !card_editable || SettingsManager::instance().get_auto_color_map();
+}
+
+std::vector<helix::ToolMapping> PrintSelectDetailView::effective_mappings() const {
+    // Editable backends: the card seeds and owns mappings_, and user edits win.
+    auto m = filament_mapping_card_.get_mappings();
+    if (!m.empty()) {
+        return m;
+    }
+    // Non-editable backends (U1 / ACE): the card is hidden and get_mappings() is
+    // empty — resolve the effective (toggle-aware) mapping the same way the live
+    // render does, so swatches + preflight + render all agree.
+    return helix::FilamentMapper::effective_mappings(get_used_tool_info(),
+                                                     AmsState::instance().collect_available_slots(),
+                                                     effective_auto_match());
 }
 
 void PrintSelectDetailView::recompute_preflight() {
@@ -1130,13 +1132,11 @@ void PrintSelectDetailView::recompute_preflight() {
     // Happy Hare / CFS / AD5X-IFS / toolchanger) would never clear the block.
     //
     // Behavior-preserving at parse time: for editable backends the card seeds
-    // mappings_ with compute_defaults() until the user edits it (identical
-    // result); for U1/ACE the card is hidden and mappings_ is empty, so the
-    // fallback reproduces the original compute_defaults() path exactly.
-    auto mapping = filament_mapping_card_.get_mappings();
-    if (mapping.empty()) {
-        mapping = helix::FilamentMapper::compute_defaults(tools, slots);
-    }
+    // mappings_ with the effective defaults until the user edits it (identical
+    // result); for U1/ACE the card is hidden and mappings_ is empty, so
+    // effective_mappings() resolves the toggle-aware (auto color+type) match —
+    // the SAME mapping the color swatches and live render use.
+    auto mapping = effective_mappings();
     preflight_result_ = helix::PreflightValidator::validate(tools, slots, mapping);
 
     bool any_mismatch = false;
@@ -1181,11 +1181,18 @@ std::map<int, int> PrintSelectDetailView::get_effective_remap() const {
     auto default_head = [](int tool) { return (tool >= 0 && tool <= 3) ? tool : 0; };
 
     std::map<int, int> remap;
-    for (const auto& m : filament_mapping_card_.get_mappings()) {
+    // Source the mappings from effective_mappings() — the SAME toggle-aware match
+    // the render, swatches, and pre-flight use. On editable backends this is the
+    // card's mappings (user edits win); on non-editable backends (Snapmaker U1 /
+    // ACE), where the card is hidden and get_mappings() is empty, it is the auto
+    // color+type match. This is what turns the U1's emitted SET_PRINT_EXTRUDER_MAP
+    // from an empty identity into the real per-tool routing (each logical tool to
+    // the physical head holding its matched filament). mapped_slot is the physical
+    // head 0..3 on the U1 (slot_index == head).
+    for (const auto& m : effective_mappings()) {
         // Only include genuine remaps: a real slot assignment that differs from
         // the firmware-default head for this tool. Identity mappings are omitted
-        // (the firmware already routes them). On U1 today the card is hidden so
-        // get_mappings() is empty and this stays empty (Part A / identity).
+        // (the firmware already routes them).
         if (m.mapped_slot >= 0 && m.mapped_slot != default_head(m.tool_index)) {
             remap[m.tool_index] = m.mapped_slot;
         }
@@ -1356,6 +1363,11 @@ void PrintSelectDetailView::kick_off_headless_tools_scan() {
             // Refresh pre-flight using the headless set (no-op on full
             // platforms where the viewer parse already populated it).
             recompute_preflight();
+
+            // Restrict the mapping card to the tools this file actually uses,
+            // sourced from the headless scan result. Empty/unknown ⇒ show all.
+            filament_mapping_card_.set_used_tools(tools_used_effective());
+
             // Release any deferred print attempt waiting on readiness.
             fire_on_preflight_ready();
         });
@@ -1420,17 +1432,16 @@ void PrintSelectDetailView::load_gcode_for_preview() {
     // Show loading spinner over thumbnail
     lv_subject_set_int(&detail_gcode_loading_, 1);
 
-    // Check "Thumbnail Only" render mode - skip all gcode downloading/parsing
+    // Check "Thumbnail Only" render mode - skip all gcode downloading/parsing.
+    // This is the ONLY user-forced skip: past here we render whatever mode the
+    // viewer is in (3D on GLES devices, 2D-layer otherwise), just like the
+    // print-status panel. 2D-mode devices used to fall back to the thumbnail
+    // here; now they get the real toolpath preview — with the effective
+    // lane-matched colors (apply_preview_colors) — so the browser shows the
+    // colors the print will actually use. Oversized files still degrade to the
+    // thumbnail below via is_gcode_2d_streaming_safe().
     if (DisplaySettingsManager::instance().get_gcode_render_mode() == 3) {
         spdlog::info("[DetailView] G-code render mode is Thumbnail Only - skipping G-code load");
-        lv_subject_set_int(&detail_gcode_loading_, 0);
-        show_gcode_viewer(false);
-        return;
-    }
-
-    // Detail page only shows the 3D viewer — skip download/parse on 2D-only platforms
-    if (ui_gcode_viewer_is_using_2d_mode(gcode_viewer_)) {
-        spdlog::debug("[DetailView] 2D-only platform — skipping G-code preview (thumbnail only)");
         lv_subject_set_int(&detail_gcode_loading_, 0);
         show_gcode_viewer(false);
         return;
@@ -1546,12 +1557,9 @@ void PrintSelectDetailView::load_gcode_for_preview() {
                     "gcodes", file_path, temp_path,
                     [this, tok, temp_path](const std::string& path) {
                         // Runs on HTTP thread — no bg-thread tok.expired() check (L081 Mechanism
-                        // C). The inner main-thread guard below is what gates this (queue_update is
-                        // not lifetime-aware).
-                        helix::ui::queue_update([this, tok, path]() {
-                            if (tok.expired()) {
-                                return;
-                            }
+                        // C). tok.defer() marshals the body to the main thread and re-checks the
+                        // generation there, which is what gates the member access below.
+                        tok.defer("DetailView::gcode_downloaded", [this, path]() {
                             temp_gcode_path_ = path;
 
                             spdlog::debug("[DetailView] G-code downloaded, loading into viewer: {}",
@@ -1605,13 +1613,10 @@ void PrintSelectDetailView::load_gcode_for_preview() {
                     },
                     [this, tok](const MoonrakerError& err) {
                         // Runs on HTTP thread — no bg-thread tok.expired() check (L081 Mechanism
-                        // C).
+                        // C); tok.defer() re-checks on the main thread instead.
                         spdlog::warn("[DetailView] Failed to download G-code: {}", err.message);
-                        helix::ui::queue_update([this, tok]() {
-                            if (tok.expired())
-                                return;
-                            show_gcode_viewer(false);
-                        });
+                        tok.defer("DetailView::gcode_download_error",
+                                  [this]() { show_gcode_viewer(false); });
                     });
             });
         },
@@ -1676,11 +1681,10 @@ static void update_prep_time_label() {
 //
 // Per-row visibility: the renderer's `VisibilitySubjectLookup` callback is
 // invoked for each option; returning nullptr leaves the row unconditionally
-// visible. Today we always return nullptr — a printer's database entry
-// declaring an option is sufficient evidence that the option works on that
-// printer. The hook remains available for future plugin-/macro-gated options;
-// any new option needing gating should declare its own subject (the legacy
-// per-op can_show_* subjects were retired with no consumers).
+// visible. Today only the plugin-gated predicate returns a non-null subject
+// (the helix_plugin_installed tri-state); macro-gated options are filtered
+// out of the set BEFORE populate() is called (see
+// filter_macro_gated_options), so the lookup never sees them.
 
 void PrintSelectDetailView::populate_option_rows() {
     if (!pre_print_options_container_) {
@@ -1714,19 +1718,46 @@ void PrintSelectDetailView::populate_option_rows() {
     }
     last_rendered_printer_type_ = current_type;
 
-    // No visibility gating: a printer's database entry declaring an option in
-    // pre_print_options is sufficient evidence that the option works on that
-    // printer. The legacy plugin_installed && capabilities.X gate (used for
-    // the deprecated PrintStartCapabilities path) hid options like K2 Plus's
-    // bed_mesh because the K2 Plus doesn't ship with HelixPrint installed —
-    // but its native START_PRINT macro takes the PREPARE param directly, so
-    // no plugin is needed. If a future option DOES require the plugin, add a
-    // requires_plugin field to the option JSON and gate at parse/render.
-    auto visibility_lookup = [](const std::string& /*id*/) -> lv_subject_t* {
-        return nullptr; // Always visible for declared options
+    // Honor `PrePrintOption::requires_macro`: hide options whose required
+    // macro isn't registered with Klipper. Their toggles would be inert —
+    // collect_pre_start_gcode_lines() already drops their gcode at print
+    // start (see ui_print_preparation_manager.cpp), so showing the row only
+    // confuses users. e.g. K2 Plus "AI Detect" without LOAD_AI_RUN installed.
+    //
+    // MacroParamCache is populated once during connection discovery and
+    // lives until disconnect; this panel rebuilds on printer-type change, so
+    // a populate-time filter is correct (no reactive subject needed, unlike
+    // the plugin-gated visibility_lookup below).
+    PrePrintOptionSet rendered = filter_macro_gated_options(option_set);
+    if (rendered.options.size() != option_set.options.size()) {
+        spdlog::debug("[DetailView] Filtered {} macro-gated option row(s) (printer='{}')",
+                      option_set.options.size() - rendered.options.size(), current_type);
+    }
+
+    // Plugin-gated visibility: HIDE a toggle only when DISABLING it would
+    // require the HelixPrint plugin (see
+    // PrintPreparationManager::disabling_option_requires_plugin). For those
+    // options we bind the row to the helix_plugin_installed tri-state subject;
+    // the renderer hides the row when it reads 0 (plugin confirmed absent) and
+    // keeps it visible at -1 (still checking, startup window) and 1 (present).
+    //
+    // CAUTION — do NOT hide options the printer handles natively without the
+    // plugin. K2 Plus bed_mesh is a MacroParam whose START_PRINT/PRINT_PREPARED
+    // takes the skip directly (setup_gcode present), so the predicate returns
+    // false and it stays visible. Hiding it was a shipped regression; the
+    // predicate now enforces the distinction structurally.
+    auto visibility_lookup = [this](const std::string& id) -> lv_subject_t* {
+        if (!prep_manager_ || !printer_state_) {
+            return nullptr;
+        }
+        const PrePrintOption* opt = printer_state_->get_pre_print_option_set().find(id);
+        if (opt && prep_manager_->disabling_option_requires_plugin(*opt)) {
+            return printer_state_->get_helix_plugin_installed_subject();
+        }
+        return nullptr; // Not plugin-dependent: always visible for declared options.
     };
 
-    option_rows_renderer_.populate(pre_print_options_container_, option_set, visibility_lookup,
+    option_rows_renderer_.populate(pre_print_options_container_, rendered, visibility_lookup,
                                    [](const std::string& id, int new_state) {
                                        spdlog::debug("[DetailView] Option '{}' toggled: {}", id,
                                                      new_state);

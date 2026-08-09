@@ -12,9 +12,9 @@
 #include "ui_update_queue.h"
 
 #include "app_globals.h"
+#include "i_moonraker_api.h"
 #include "i_moonraker_client.h"
 #include "moonraker_advanced_api.h"
-#include "i_moonraker_api.h"
 #include "printer_state.h"
 #include "probe_sensor_manager.h"
 #include "probe_sensor_types.h"
@@ -899,7 +899,7 @@ void ProbeOverlay::load_config_values() {
                 lv_subject_copy_string(subject, buf);
             };
 
-            helix::ui::queue_update([this, section, set_cfg]() {
+            lifetime_.defer("ProbeOverlay::load_probe_config", [this, section, set_cfg]() {
                 set_cfg(section, "x_offset", probe_cfg_x_offset_buf_,
                         sizeof(probe_cfg_x_offset_buf_), &probe_cfg_x_offset_);
                 set_cfg(section, "y_offset", probe_cfg_y_offset_buf_,

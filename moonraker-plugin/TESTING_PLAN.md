@@ -66,7 +66,8 @@ pytest tests/test_helix_print.py -v
 Test the full flow using HelixScreen's mock Moonraker client:
 
 ```bash
-./build/bin/helix-screen --test -p print-select -vv
+./build/bin/helix-screen --test -vv &
+./build/bin/helix-screen ctl navigate print-select
 ```
 
 **Manual Test Steps:**

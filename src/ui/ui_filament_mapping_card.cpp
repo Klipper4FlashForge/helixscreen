@@ -14,6 +14,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
+
 namespace helix::ui {
 
 // Pills are instantiated from ui_xml/components/filament_mapping_pill.xml
@@ -115,6 +117,12 @@ void FilamentMappingCard::update(const std::vector<std::string>& gcode_colors,
         mappings_ = helix::FilamentMapper::use_current_assignments(tool_info_, available_slots_);
     }
 
+    // Restrict to the tools the gcode actually uses. update() rebuilds from the
+    // full palette, so re-apply the current set here — a used-tools set pushed
+    // before this (later) update() must survive the rebuild. nullopt/empty is a
+    // no-op (show all).
+    apply_used_tools_filter(tool_info_, mappings_, used_tools_);
+
     // Build the compact UI
     rebuild_compact_view();
 
@@ -135,6 +143,16 @@ void FilamentMappingCard::refresh_slot_data() {
     }
     // Refresh loaded colors + presence only; mappings_ and tool_info_ untouched.
     available_slots_ = AmsState::instance().collect_available_slots();
+    rebuild_compact_view();
+}
+
+void FilamentMappingCard::set_used_tools(std::optional<std::set<int>> used) {
+    used_tools_ = std::move(used);
+    // Compact the card's current tool_info_/mappings_ in lockstep. Mappings-
+    // preserving (no recompute) — mirrors refresh_slot_data. nullopt/empty is a
+    // no-op (show all). Does NOT touch the detail view's full-palette copies
+    // (current_filament_colors_/materials) — only the card's own vectors.
+    apply_used_tools_filter(tool_info_, mappings_, used_tools_);
     rebuild_compact_view();
 }
 
@@ -162,6 +180,16 @@ void FilamentMappingCard::rebuild_compact_view() {
     // batch we have to escape. safe_clean_children async-deletes via LVGL.
     auto freeze = helix::ui::UpdateQueue::instance().scoped_freeze();
     helix::ui::UpdateQueue::instance().drain();
+
+    // drain() runs whatever was already queued, and NavigationManager::go_back()
+    // is fully deferred — so a pop queued before we got here executes right on
+    // that line. Popping the print-detail overlay reaches on_ui_destroyed(),
+    // which nulls rows_container_ underneath us. The check above is stale from
+    // this point on; every use below must come after a fresh read (#1221).
+    if (!rows_container_) {
+        spdlog::debug("[FilamentMapping] Container destroyed during drain — skipping rebuild");
+        return;
+    }
     helix::ui::safe_clean_children(rows_container_);
 
     // Pill layout, sizing, padding, fonts all live in
@@ -324,6 +352,44 @@ FilamentMappingCard::build_tool_info(const std::vector<std::string>& colors,
     }
 
     return tools;
+}
+
+void FilamentMappingCard::apply_used_tools_filter(std::vector<helix::GcodeToolInfo>& tool_info,
+                                                  std::vector<helix::ToolMapping>& mappings,
+                                                  const std::optional<std::set<int>>& used) {
+    // nullopt OR empty set ⇒ no filter (show all). Safety rule: never blank the
+    // card pre-parse, and never hide everything on the headless single-extruder
+    // path (where the used set is empty forever).
+    if (!used || used->empty()) {
+        return;
+    }
+    const std::set<int>& keep = *used;
+
+    // Filter BOTH vectors independently by their own .tool_index — they are
+    // built parallel (mappings_[i].tool_index == tool_info_[i].tool_index), so
+    // the same predicate compacts them in lockstep. std::remove_if preserves
+    // order; .tool_index is retained (used for the "T%d" label + modal rows).
+    tool_info.erase(std::remove_if(tool_info.begin(), tool_info.end(),
+                                   [&keep](const helix::GcodeToolInfo& t) {
+                                       return keep.count(t.tool_index) == 0;
+                                   }),
+                    tool_info.end());
+    mappings.erase(std::remove_if(mappings.begin(), mappings.end(),
+                                  [&keep](const helix::ToolMapping& m) {
+                                      return keep.count(m.tool_index) == 0;
+                                  }),
+                   mappings.end());
+}
+
+const helix::GcodeToolInfo*
+FilamentMappingCard::find_by_tool_index(const std::vector<helix::GcodeToolInfo>& tool_info,
+                                        int tool_index) {
+    for (const auto& t : tool_info) {
+        if (t.tool_index == tool_index) {
+            return &t;
+        }
+    }
+    return nullptr;
 }
 
 } // namespace helix::ui

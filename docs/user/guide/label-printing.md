@@ -2,6 +2,8 @@
 
 Print spool labels directly from HelixScreen to a compatible thermal label printer. Labels include spool name, material type, color swatch, temperatures, and a QR code linking back to Spoolman.
 
+> **Two ways to print labels:** Most of this guide covers **thermal label printers** — dedicated devices (Brother, Phomemo, Niimbot, MakeID) that print one label at a time onto a roll or tape. If you don't own one, HelixScreen can also print onto **Avery-style sheet labels** using a normal networked office printer (inkjet or laser). See [Office-Printer (Sheet) Labels](#office-printer-sheet-labels) below.
+
 ---
 
 ## Supported Printers
@@ -26,6 +28,8 @@ HelixScreen supports five families of label printers:
 
 1. Go to **Settings → Hardware & Devices → Spoolman → Label Printer**
 2. Tap to open the Label Printer settings overlay
+
+![Label Printer Settings](../../images/user/settings-label-printer.png)
 
 ### Step 2: Select Connection Type
 
@@ -94,6 +98,70 @@ A toast notification confirms success or shows an error message.
 
 ---
 
+## Office-Printer (Sheet) Labels
+
+No thermal label printer? If you have an ordinary networked office printer (inkjet or laser), HelixScreen can print spool labels onto **Avery-style sheet labels** instead. It lays out multiple spool labels on a standard Letter or A4 sheet of peel-off labels, and prints over the network — no drivers or extra software required. Under the hood HelixScreen talks to the printer using IPP (Internet Printing Protocol), the same standard your computer uses for "driverless" printing.
+
+This is a completely separate path from the thermal label printers above — you configure it in the same **Label Printer** settings screen, but you pick your office printer instead of a thermal one.
+
+### Step 1: Set the Connection Type to Network
+
+1. Go to **Settings → Hardware & Devices → Spoolman → Label Printer**
+2. Under **Connection Type**, set **Type** to **Network**
+
+### Step 2: Pick Your Office Printer
+
+Under **Discovered Printers**, open the **Printer** dropdown. HelixScreen automatically scans your network for printers. Office printers that support driverless printing appear with an **[IPP]** tag after their name, for example:
+
+```
+Office HP LaserJet [IPP]
+```
+
+Select the printer with the **[IPP]** tag. HelixScreen fills in its address and sets the port automatically (IPP printers use port **631**).
+
+> **If your printer doesn't show up:** Make sure it's powered on, connected to the same network, and has driverless / AirPrint / IPP printing enabled (most modern printers do by default). You can also type the printer's IP address into the **Manual** field under the Network section, but selecting the discovered **[IPP]** entry is the reliable way to turn on IPP mode.
+
+### Step 3: Choose the Sheet (Label Size)
+
+Once an IPP printer is selected, the **Label Size** dropdown lists Avery-style sheet templates instead of thermal roll sizes. Pick the one that matches the label sheets you loaded in the printer:
+
+| Sheet | Layout |
+|-------|--------|
+| **Avery 5160** | 30 labels, 1" x 2-5/8" (Letter) |
+| **Avery 5163** | 10 labels, 2" x 4" (Letter) |
+| **Avery 5167** | 80 labels, 1/2" x 1-3/4" (Letter) |
+| **Avery 5195** | 60 labels, 2/3" x 1-3/4" (Letter) |
+| **Avery 5199** | 4 labels, 3-1/2" x 4" (Letter) |
+| **Avery 8126** | 2 labels, 8-1/2" x 5-1/2" (Letter) |
+| **Avery L7160 / L7159 / L7161 / L7163** | 14–24 labels per A4 sheet |
+
+Pick your **Preset** (Standard, Compact, or QR Only) the same way as for thermal printers.
+
+### Step 4: Print a Label onto a Sheet
+
+1. Navigate to the **Spoolman** panel (via the Filament tab)
+2. Find the spool you want to label and tap **Print Label**
+3. Because your printer is set to an office (IPP) printer, a **Sheet Label Print** dialog appears instead of printing right away:
+
+| Option | What it does |
+|--------|--------------|
+| **Template** | Shows the sheet you selected in settings (read-only) |
+| **Labels** | How many copies of this label to print on the sheet |
+| **Start at** | Which position on the sheet to begin at (**Position 1**, **Position 2**, …) |
+
+4. Tap **Print** to send the job, or **Cancel** to back out
+
+The **Start at** option lets you reuse a partially-used sheet: if you've already peeled off the first few labels, choose the position of the first blank label so HelixScreen skips the used ones and prints into the empty spots. HelixScreen remembers your **Labels** choice for next time.
+
+### Notes and Limits
+
+- Requires a networked printer that supports driverless (IPP) printing — most inkjet and laser printers made in the last several years do.
+- Only the Avery-style sheet sizes listed above are available in this mode. Thermal roll and tape sizes only apply to thermal label printers.
+- Bluetooth and USB connection types are for thermal printers only. Sheet printing is always over the network.
+- Use the **Test Print** button in Label Printer settings to confirm the printer responds before printing real spool labels.
+
+---
+
 ## Troubleshooting
 
 ### Bluetooth printer not found during scan
@@ -149,4 +217,4 @@ A toast notification confirms success or shows an error message.
 
 ---
 
-**Next:** [Calibration & Tuning](calibration.md) | **Prev:** [Filament Tracking & Spoolman](filament-tracking.md) | [Back to User Guide](../USER_GUIDE.md)
+**Next:** [Barcode Scanner](barcode-scanner.md) | **Prev:** [Bluetooth Setup](bluetooth-setup.md) | [Back to User Guide](../USER_GUIDE.md)

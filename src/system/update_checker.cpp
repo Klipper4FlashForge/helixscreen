@@ -20,12 +20,14 @@
 #include "ui_notification.h"
 #include "ui_panel_settings.h"
 #include "ui_settings_about.h"
+#include "ui_timer_guard.h"
 #include "ui_update_queue.h"
 
 #include "app_constants.h"
 #include "app_globals.h"
 #include "config.h"
 #include "hv/requests.h"
+#include "json_utils.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "printer_state.h"
 #include "spdlog/spdlog.h"
@@ -43,7 +45,9 @@
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fcntl.h>
+#include <filesystem>
 #include <fstream>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
@@ -372,6 +376,17 @@ void populate_release_urls_from_manifest(const json& platform_asset,
     }
 }
 
+/// Which half of in_app_updates_suppressed() actually fired. The two causes need
+/// completely different follow-up — one is a deliberate firmware opt-out, the
+/// other is a machine that cannot apply the swap — and a support report often has
+/// nothing but this log line to go on. Only call when suppressed.
+const char* suppression_reason() {
+    if (updates_externally_managed()) {
+        return "firmware-managed (HELIX_DISABLE_AUTO_UPDATES is set)";
+    }
+    return "install tree not writable and root not obtainable";
+}
+
 /**
  * @brief Execute a command safely via fork/exec (no shell interpretation)
  *
@@ -556,23 +571,26 @@ int extract_tar_member(const std::string& tarball_path, const std::string& extra
     return ret;
 }
 
-/**
- * @brief Extract a single member from a .zip archive.
- *
- * Uses the `unzip` binary (present on every BusyBox build we target).
- * Args: -q for quiet, -o to overwrite without prompting (no TTY in
- * systemd/in-app update contexts).
- *
- * @param zip_path    Path to the .zip file
- * @param extract_dir Directory to extract into
- * @param member      Archive member path (e.g., "helixscreen/install.sh")
- * @return 0 on success, non-zero on failure
- */
-int extract_zip_member(const std::string& zip_path, const std::string& extract_dir,
-                       const std::string& member) {
-    const std::string unzip_bin = resolve_tool("unzip");
-    return safe_exec({unzip_bin, "-q", "-o", zip_path, member, "-d", extract_dir});
-}
+/// python3 snippet: extract argv[2] from zip argv[1] into argv[3], restoring the
+/// member's unix mode bits (zipfile.extract() drops them) and forcing the exec
+/// bit on bin/* and *.sh so an extracted installer or binary is runnable.
+constexpr const char* kPyExtractScript =
+    "import os, stat, sys, zipfile\n"
+    "zip_path, member, destdir = sys.argv[1], sys.argv[2], sys.argv[3]\n"
+    "try:\n"
+    "    with zipfile.ZipFile(zip_path) as zf:\n"
+    "        info = zf.getinfo(member)\n"
+    "        zf.extract(info, destdir)\n"
+    "        target = os.path.join(destdir, info.filename)\n"
+    "        mode = (info.external_attr >> 16) & 0o777\n"
+    "        if mode:\n"
+    "            os.chmod(target, mode)\n"
+    "        parts = info.filename.split('/')\n"
+    "        if member.endswith('.sh') or (len(parts) > 1 and parts[0] == 'bin'):\n"
+    "            st = os.stat(target).st_mode\n"
+    "            os.chmod(target, st | stat.S_IXUSR)\n"
+    "except Exception:\n"
+    "    sys.exit(1)\n";
 
 /// True if path ends with ".zip" (case-sensitive — we only produce lowercase).
 bool path_is_zip(const std::string& path) {
@@ -633,6 +651,11 @@ UpdateChecker::~UpdateChecker() {
     download_cancelled_ = true;
     shutting_down_ = true;
 
+    // Application shutdown calls stop_auto_check() explicitly, so this only
+    // matters on a path that skips it. Silent (no spdlog) and self-guarding on
+    // lv_is_initialized(), which is what makes it safe from a static's destructor.
+    cancel_auto_check_timer();
+
     // MUST join threads if joinable, regardless of status.
     // A completed check still has a joinable thread.
     // Destroying a joinable std::thread without join() calls std::terminate()!
@@ -664,9 +687,20 @@ void UpdateChecker::init() {
     init_subjects();
     register_notify_callbacks();
 
+    // Snapshot the Config-derived settings while we are provably on the main
+    // thread, so the debug bundle can report channel/manifest URL from its
+    // worker thread even when no check has ever run.
+    refresh_config_snapshot();
+
     // Clean up stale .old backup from a previous in-app update that may have
     // failed to remove it (e.g., NoNewPrivileges blocked sudo rm).
     cleanup_stale_old_install();
+
+    // Repair a stale/missing asset_name in release_info.json before anything can
+    // ask Moonraker to update us. Self-healing is the point: an install with a
+    // bad asset_name cannot receive the fix through the channel it breaks
+    // (prestonbrown/helixscreen#993).
+    repair_release_info(app_get_install_root());
 
     spdlog::debug("[UpdateChecker] Initialized");
     initialized_ = true;
@@ -699,14 +733,20 @@ void UpdateChecker::shutdown() {
         download_thread_.join();
     }
 
-    // Clear callback to prevent stale references
+    // Clear callback to prevent stale references, and drop the diagnostics
+    // snapshot — once the checker is down, a stale channel/URL would read as
+    // live config in a debug bundle. init() takes a fresh one.
     {
         std::lock_guard<std::mutex> lock(mutex_);
         pending_callback_ = nullptr;
+        config_snapshot_ = {};
     }
 
     // Cleanup subjects
     if (subjects_initialized_) {
+        // Expire any worker-thread callback still queued on the UpdateQueue
+        // before the subjects it writes are torn down (#1165, #1146).
+        async_lifetime_.invalidate();
         subjects_.deinit_all();
         subjects_initialized_ = false;
     }
@@ -721,7 +761,6 @@ void UpdateChecker::init_subjects() {
 
     UI_MANAGED_SUBJECT_INT(status_subject_, static_cast<int>(Status::Idle), "update_status",
                            subjects_);
-    UI_MANAGED_SUBJECT_INT(checking_subject_, 0, "update_checking", subjects_);
     UI_MANAGED_SUBJECT_STRING(version_text_subject_, version_text_buf_, "", "update_version_text",
                               subjects_);
     UI_MANAGED_SUBJECT_STRING(new_version_subject_, new_version_buf_, "", "update_new_version",
@@ -749,9 +788,6 @@ void UpdateChecker::init_subjects() {
 
 lv_subject_t* UpdateChecker::status_subject() {
     return &status_subject_;
-}
-lv_subject_t* UpdateChecker::checking_subject() {
-    return &checking_subject_;
 }
 lv_subject_t* UpdateChecker::version_text_subject() {
     return &version_text_subject_;
@@ -991,10 +1027,156 @@ std::string UpdateChecker::get_download_path(DownloadPathDiag* diag,
     return best_dir + DOWNLOAD_FILENAME;
 }
 
-std::string UpdateChecker::get_platform_asset_name() const {
+std::string UpdateChecker::platform_asset_name() {
     // Unversioned zip matches the release.yml upload layout and the name
     // Moonraker Update Manager looks up via release_info.json's asset_name.
+    //
+    // Static and single-sourced on purpose. #993 was caused by this name being
+    // encoded in three places that drifted; repair_release_info() must compare
+    // against the same expression the rest of the code means by "our asset",
+    // not a copy of it.
     return "helixscreen-" + get_platform_key() + ".zip";
+}
+
+std::string UpdateChecker::get_platform_asset_name() const {
+    return platform_asset_name();
+}
+
+UpdateChecker::ReleaseInfoRepair
+UpdateChecker::repair_release_info(const std::string& install_root) {
+    if (install_root.empty()) {
+        return ReleaseInfoRepair::Absent;
+    }
+
+    const std::string path = install_root + "/release_info.json";
+    const std::string want = platform_asset_name();
+
+    // Parse defensively: this is on-disk, user-facing JSON that may be absent,
+    // empty, truncated, or not an object.
+    json existing = json::object();
+    bool have_file = false;
+    {
+        std::ifstream in(path);
+        if (in.is_open()) {
+            have_file = true;
+            json parsed = json::parse(in, nullptr, /*allow_exceptions=*/false);
+            if (parsed.is_discarded()) {
+                spdlog::info("[UpdateChecker] {} is not valid JSON — rewriting", path);
+            } else if (!parsed.is_object()) {
+                spdlog::info("[UpdateChecker] {} is not a JSON object — rewriting", path);
+            } else {
+                existing = std::move(parsed);
+            }
+        }
+    }
+
+    if (!have_file) {
+        // A dev build resolves its install root to the source checkout (the
+        // resolver accepts .../build/bin too), so creating the file whenever it
+        // is missing would drop an untracked release_info.json into the repo.
+        // Only a deployed layout — binary directly under <root>/bin — gets one.
+        const std::string deployed_bin = install_root + "/bin/helix-screen";
+        struct stat st {};
+        if (stat(deployed_bin.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
+            spdlog::debug("[UpdateChecker] No release_info.json at {} and no deployed "
+                          "install layout — nothing to repair",
+                          path);
+            return ReleaseInfoRepair::Absent;
+        }
+    }
+
+    std::string current;
+    if (auto it = existing.find("asset_name"); it != existing.end() && it->is_string()) {
+        current = it->get<std::string>();
+    }
+    if (current == want) {
+        // Already correct — do not touch the file. No boot-time disk churn, and
+        // it keeps the repair log line below meaningful when it does appear.
+        spdlog::debug("[UpdateChecker] release_info.json asset_name is correct ({})", want);
+        return ReleaseInfoRepair::NotNeeded;
+    }
+
+    // Preserve every other key (Moonraker tolerates extras), replacing only the
+    // fields that are missing or unusable.
+    auto sane_field = [&existing](const char* key, const std::string& fallback) {
+        const std::string v = helix::json_util::safe_string(existing, key, fallback);
+        return v.empty() ? fallback : v;
+    };
+    json repaired = existing;
+    repaired["project_name"] = sane_field("project_name", "helixscreen");
+    repaired["project_owner"] = sane_field("project_owner", "prestonbrown");
+    repaired["version"] = sane_field("version", std::string("v") + HELIX_VERSION);
+    repaired["asset_name"] = want;
+
+    spdlog::info("[UpdateChecker] Repairing release_info.json asset_name: '{}' -> '{}' ({})",
+                 current.empty() ? "<missing>" : current, want, path);
+
+    // Resolve symlinks BEFORE renaming. The installer symlinks install-dir files
+    // out to printer_data, and rename(2) onto a symlink replaces the symlink
+    // itself rather than writing through it (prestonbrown/helixscreen#1176).
+    std::string target_path = path;
+    {
+        std::error_code ec;
+        if (std::filesystem::is_symlink(path, ec)) {
+            auto real = std::filesystem::canonical(path, ec);
+            if (!ec) {
+                spdlog::debug("[UpdateChecker] Resolved symlink {} -> {}", path, real.string());
+                target_path = real.string();
+            }
+        }
+    }
+
+    const std::string tmp_path = target_path + ".tmp";
+    {
+        std::ofstream o(tmp_path);
+        if (!o.is_open()) {
+            // Read-only rootfs or a root-owned install dir. Never fatal: the app
+            // boots fine, self-update just stays broken until the installer runs.
+            spdlog::warn("[UpdateChecker] Cannot repair release_info.json — open {} failed: {}",
+                         tmp_path, strerror(errno));
+            return ReleaseInfoRepair::Failed;
+        }
+        o << repaired.dump() << std::endl;
+        o.flush();
+        if (!o.good()) {
+            spdlog::warn("[UpdateChecker] Cannot repair release_info.json — write {} failed: {}",
+                         tmp_path, strerror(errno));
+            o.close();
+            std::remove(tmp_path.c_str());
+            return ReleaseInfoRepair::Failed;
+        }
+    }
+
+    // fsync the temp file before the rename, and the parent dir after, so a
+    // power cut on flash-backed storage cannot leave a zero-length file (#943).
+    {
+        int fd = ::open(tmp_path.c_str(), O_RDONLY);
+        if (fd >= 0) {
+            (void)::fsync(fd);
+            ::close(fd);
+        }
+    }
+
+    if (std::rename(tmp_path.c_str(), target_path.c_str()) != 0) {
+        spdlog::warn("[UpdateChecker] Cannot repair release_info.json — rename {} -> {} failed: {}",
+                     tmp_path, target_path, strerror(errno));
+        std::remove(tmp_path.c_str());
+        return ReleaseInfoRepair::Failed;
+    }
+
+    {
+        const std::string dir = std::filesystem::path(target_path).parent_path().string();
+        if (!dir.empty()) {
+            int dfd = ::open(dir.c_str(), O_RDONLY | O_DIRECTORY);
+            if (dfd >= 0) {
+                (void)::fsync(dfd);
+                ::close(dfd);
+            }
+        }
+    }
+
+    spdlog::info("[UpdateChecker] Repaired release_info.json at {}", target_path);
+    return ReleaseInfoRepair::Repaired;
 }
 
 void UpdateChecker::report_download_status(DownloadStatus status, int progress,
@@ -1009,7 +1191,7 @@ void UpdateChecker::report_download_status(DownloadStatus status, int progress,
         download_error_ = error;
     }
 
-    helix::ui::queue_update([this, status, progress, text]() {
+    async_lifetime_.defer("UpdateChecker::set_download_status", [this, status, progress, text]() {
         if (subjects_initialized_) {
             lv_subject_set_int(&download_status_subject_, static_cast<int>(status));
             lv_subject_set_int(&download_progress_subject_, progress);
@@ -1025,6 +1207,16 @@ void UpdateChecker::report_download_status(DownloadStatus status, int progress,
 void UpdateChecker::start_download() {
     if (shutting_down_.load())
         return;
+
+    // Firmware-managed devices own updates via their own package pipeline, and a
+    // read-only / non-writable install tree can't be swapped at all. Never
+    // self-download/install in either case — it would fight the firmware's setup
+    // or fail the atomic directory rename.
+    if (in_app_updates_suppressed()) {
+        spdlog::info("[UpdateChecker] Update skipped: in-app updates are suppressed - {}",
+                     suppression_reason());
+        return;
+    }
 
     // Safety: refuse download while printing
     auto job_state = get_printer_state().get_print_job_state();
@@ -1095,16 +1287,15 @@ void UpdateChecker::do_download() {
         download_bytes = cached_info_->download_bytes;
     }
 
-    // `unzip` is required to install zip releases. Hard-fail with an actionable
-    // message instead of letting the verify step emit a misleading "Corrupt
-    // download" error. The shell installer apt-installs unzip on first run, so
-    // this should only fire on systems where apt isn't available or the user
-    // manually removed it.
-    if (path_is_zip(url) && !tool_available("unzip")) {
-        spdlog::error("[UpdateChecker] `unzip` is required to install updates "
-                      "but is not installed on this system");
+    // Installing a zip release needs *some* way to read a zip. `unzip` is the
+    // usual one, but the K2's OpenWrt firmware ships no unzip binary and no
+    // BusyBox unzip applet — only python3, which can do the job. Fail solely
+    // when neither exists, rather than demanding unzip specifically.
+    if (path_is_zip(url) && available_zip_tool() == ZipTool::None) {
+        spdlog::error("[UpdateChecker] Neither `unzip` nor a python3 with zipfile+zlib is "
+                      "available — cannot install zip releases on this system");
         report_download_status(DownloadStatus::Error, 0, lv_tr("Error: `unzip` not installed"),
-                               "Run: sudo apt-get install unzip — then retry the update");
+                               "Install unzip (or a python3 with zlib), then retry the update");
         TelemetryManager::instance().record_update_failure("missing_unzip", version,
                                                            get_platform_key());
         return;
@@ -1208,13 +1399,26 @@ void UpdateChecker::do_download() {
     report_download_status(DownloadStatus::Verifying, 100, lv_tr("Verifying download..."));
 
     // Verify archive integrity (fork/exec to avoid shell injection)
-    int ret;
+    bool corrupt = false;
     if (path_is_zip(download_path)) {
-        ret = safe_exec({resolve_tool("unzip"), "-tqq", download_path});
+        switch (verify_zip_integrity(download_path)) {
+        case ZipIntegrity::Ok:
+            break;
+        case ZipIntegrity::Corrupt:
+            corrupt = true;
+            break;
+        case ZipIntegrity::Unverifiable:
+            // Nothing on this system can test the archive. Don't fail the
+            // update on a missing tool — the SHA256 check below is the real
+            // integrity gate whenever the manifest supplies a hash.
+            spdlog::warn("[UpdateChecker] No tool available to test zip integrity; "
+                         "relying on SHA256 verification");
+            break;
+        }
     } else {
-        ret = safe_exec({resolve_tool("gunzip"), "-t", download_path});
+        corrupt = safe_exec({resolve_tool("gunzip"), "-t", download_path}) != 0;
     }
-    if (ret != 0) {
+    if (corrupt) {
         spdlog::error("[UpdateChecker] Archive verification failed");
         std::remove(download_path.c_str());
         report_download_status(DownloadStatus::Error, 0, lv_tr("Error: Corrupt download"),
@@ -1279,6 +1483,106 @@ void UpdateChecker::do_download() {
     }
 
     do_install(download_path);
+}
+
+UpdateChecker::ZipTool UpdateChecker::available_zip_tool() {
+    if (!find_tool_path("unzip").empty()) {
+        return ZipTool::Unzip;
+    }
+    // No unzip binary (K2's OpenWrt firmware). python3 can read zips itself,
+    // but only with zipfile AND zlib — release archives are deflated.
+    const std::string py_bin = find_tool_path("python3");
+    if (!py_bin.empty() && safe_exec({py_bin, "-c", "import zipfile, zlib"}) == 0) {
+        return ZipTool::Python;
+    }
+    return ZipTool::None;
+}
+
+namespace {
+
+/// Force the owner-exec bit on an extracted installer or binary. do_install()
+/// runs the extracted install.sh via execv(), which fails with EACCES if the
+/// archive stored the member without mode bits — so neither extraction path may
+/// rely on the zip carrying them.
+void ensure_member_executable(const std::string& extract_dir, const std::string& member) {
+    const bool is_script = member.size() >= 3 && member.compare(member.size() - 3, 3, ".sh") == 0;
+    const bool in_bin = member.rfind("bin/", 0) == 0 || member.find("/bin/") != std::string::npos;
+    if (!is_script && !in_bin) {
+        return;
+    }
+    const std::string path = extract_dir + "/" + member;
+    struct stat st {};
+    if (stat(path.c_str(), &st) == 0) {
+        chmod(path.c_str(), st.st_mode | S_IXUSR);
+    }
+}
+
+} // namespace
+
+int UpdateChecker::extract_zip_member(const std::string& zip_path, const std::string& extract_dir,
+                                      const std::string& member) {
+    // -q quiet, -o overwrite without prompting (no TTY during in-app updates).
+    const std::string unzip_bin = find_tool_path("unzip");
+    if (!unzip_bin.empty()) {
+        int ret = safe_exec({unzip_bin, "-q", "-o", zip_path, member, "-d", extract_dir});
+        if (ret == 0) {
+            ensure_member_executable(extract_dir, member);
+        }
+        return ret;
+    }
+
+    const std::string py_bin = find_tool_path("python3");
+    if (!py_bin.empty()) {
+        return safe_exec({py_bin, "-c", kPyExtractScript, zip_path, member, extract_dir});
+    }
+
+    spdlog::error("[UpdateChecker] No unzip binary and no python3 — cannot extract '{}'", member);
+    return -1;
+}
+
+UpdateChecker::ZipIntegrity UpdateChecker::verify_zip_integrity(const std::string& zip_path) {
+    // python3's zipfile does a real per-entry CRC test. Prefer it over
+    // `unzip -t`, which is either rejected outright or a silent no-op on the
+    // BusyBox builds we ship to (see the header comment for the specifics).
+    const std::string py_bin = find_tool_path("python3");
+    if (!py_bin.empty()) {
+        // Exit codes: 0 = intact, 1 = corrupt, 2 = this python cannot test zips.
+        // Code 2 matters on the AD5M, whose python3.7 is built without zlib:
+        // ZipFile() raises "Compression requires the (missing) zlib module" for
+        // a deflated release zip, which must NOT be read as corruption.
+        static constexpr const char* kTestScript =
+            "import sys\n"
+            "try:\n"
+            "    import zipfile, zlib\n"
+            "except Exception:\n"
+            "    sys.exit(2)\n"
+            "try:\n"
+            "    with zipfile.ZipFile(sys.argv[1]) as zf:\n"
+            "        sys.exit(1 if zf.testzip() is not None else 0)\n"
+            "except RuntimeError:\n"
+            "    sys.exit(2)\n"
+            "except Exception:\n"
+            "    sys.exit(1)\n";
+        int ret = safe_exec({py_bin, "-c", kTestScript, zip_path});
+        if (ret == 0) {
+            return ZipIntegrity::Ok;
+        }
+        if (ret == 1) {
+            return ZipIntegrity::Corrupt;
+        }
+        // ret == 2 (or a crashed interpreter): fall through to the unzip probe.
+    }
+
+    // No usable python zipfile. Fall back to `unzip -l`, which reads the central
+    // directory on both BusyBox and info-zip: it catches truncation and garbage
+    // without false-failing a valid archive the way `-t` does on BusyBox 1.31.
+    const std::string unzip_bin = find_tool_path("unzip");
+    if (!unzip_bin.empty()) {
+        int ret = safe_exec({unzip_bin, "-l", zip_path});
+        return (ret == 0) ? ZipIntegrity::Ok : ZipIntegrity::Corrupt;
+    }
+
+    return ZipIntegrity::Unverifiable;
 }
 
 bool UpdateChecker::validate_elf_architecture(const std::string& tarball_path) {
@@ -2024,6 +2328,16 @@ void UpdateChecker::check_for_updates(Callback callback) {
         return;
     }
 
+    // Firmware-managed devices own updates externally, and a non-writable install
+    // tree can't be updated in place — never check remotely in either case. Gating
+    // this top-level entry covers both manual and auto-check callers so no
+    // download/install path can ever proceed.
+    if (in_app_updates_suppressed()) {
+        spdlog::info("[UpdateChecker] Update skipped: in-app updates are suppressed - {}",
+                     suppression_reason());
+        return;
+    }
+
     // Use mutex for entire operation to prevent race conditions.
     // This is safe because we join the previous thread before spawning a new one,
     // so we won't deadlock with the worker thread.
@@ -2093,26 +2407,15 @@ void UpdateChecker::check_for_updates(Callback callback) {
     cached_channel_ = get_channel();
     auto* config = Config::get_instance();
     cached_dev_url_ = config ? config->get<std::string>("/update/dev_url", "") : "";
-    cached_r2_base_url_ = config ? config->get<std::string>("/update/r2_url", "") : "";
-    if (cached_r2_base_url_.empty()) {
-        cached_r2_base_url_ = DEFAULT_R2_BASE_URL;
-    }
-    // Normalize: strip trailing slash
-    if (!cached_r2_base_url_.empty() && cached_r2_base_url_.back() == '/') {
-        cached_r2_base_url_.pop_back();
-    }
+    cached_r2_base_url_ = effective_r2_base_url();
 
-    const char* channel_name = (cached_channel_ == UpdateChannel::Beta)  ? "beta"
-                               : (cached_channel_ == UpdateChannel::Dev) ? "dev"
-                                                                         : "stable";
     spdlog::debug("[UpdateChecker] check_for_updates: channel={} dev_url='{}' r2_base_url='{}'",
-                  channel_name, cached_dev_url_.empty() ? "(none)" : cached_dev_url_,
-                  cached_r2_base_url_);
+                  channel_name(cached_channel_),
+                  cached_dev_url_.empty() ? "(none)" : cached_dev_url_, cached_r2_base_url_);
 
     // Update subjects on LVGL thread (check_for_updates is public, could be called from any thread)
     if (subjects_initialized_) {
-        helix::ui::queue_update([this]() {
-            lv_subject_set_int(&checking_subject_, 1);
+        async_lifetime_.defer("UpdateChecker::check_for_updates", [this]() {
             lv_subject_set_int(&status_subject_, static_cast<int>(Status::Checking));
             lv_subject_copy_string(&version_text_subject_, lv_tr("Checking..."));
         });
@@ -2133,8 +2436,7 @@ void UpdateChecker::check_for_updates(Callback callback) {
         status_ = Status::Error;
         error_message_ = "system busy";
         if (subjects_initialized_) {
-            helix::ui::queue_update([this]() {
-                lv_subject_set_int(&checking_subject_, 0);
+            async_lifetime_.defer("UpdateChecker::check_for_updates_spawn_failed", [this]() {
                 lv_subject_set_int(&status_subject_, static_cast<int>(Status::Error));
             });
         }
@@ -2268,6 +2570,46 @@ UpdateChecker::UpdateChannel UpdateChecker::get_channel() const {
     }
 }
 
+const char* UpdateChecker::channel_name(UpdateChannel channel) {
+    switch (channel) {
+    case UpdateChannel::Beta:
+        return "beta";
+    case UpdateChannel::Dev:
+        return "dev";
+    case UpdateChannel::Stable:
+        break;
+    }
+    return "stable";
+}
+
+void UpdateChecker::refresh_config_snapshot() {
+    // Read Config on the caller's (main) thread, then publish under mutex_.
+    ConfigSnapshot snap;
+    snap.channel = channel_name(get_channel());
+    snap.r2_base_url = effective_r2_base_url();
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    config_snapshot_ = std::move(snap);
+}
+
+UpdateChecker::ConfigSnapshot UpdateChecker::config_snapshot() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_snapshot_;
+}
+
+std::string UpdateChecker::effective_r2_base_url() {
+    auto* config = Config::get_instance();
+    std::string url = config ? config->get<std::string>("/update/r2_url", std::string{}) : "";
+    if (url.empty()) {
+        url = DEFAULT_R2_BASE_URL;
+    }
+    // Normalize: strip trailing slashes so callers can join with "/<path>".
+    while (url.size() > 1 && url.back() == '/') {
+        url.pop_back();
+    }
+    return url;
+}
+
 std::string UpdateChecker::get_platform_key() {
 #ifdef HELIX_PLATFORM_AD5M
     return "ad5m";
@@ -2393,6 +2735,15 @@ void UpdateChecker::dismiss_current_version() {
 // ============================================================================
 
 void UpdateChecker::start_auto_check() {
+    // Firmware-managed devices own updates externally, and a non-writable install
+    // tree can't be updated in place — never schedule the periodic auto-check timer
+    // in either case, so the "update available" notification path can never fire.
+    if (in_app_updates_suppressed()) {
+        spdlog::info("[UpdateChecker] Auto-check disabled: in-app updates are suppressed - {}",
+                     suppression_reason());
+        return;
+    }
+
     if (auto_check_timer_) {
         spdlog::debug("[UpdateChecker] Auto-check timer already running");
         return;
@@ -2454,10 +2805,20 @@ void UpdateChecker::start_auto_check() {
     lv_timer_set_repeat_count(auto_check_timer_, -1); // infinite repeats
 }
 
+void UpdateChecker::cancel_auto_check_timer() {
+    // Neuter rather than delete: the timer's own callback runs inside
+    // lv_timer_handler, where deleting a timer can corrupt the list (#750, #751).
+    // lv_timer_cancel_safe() also no-ops once LVGL is gone, which is what makes
+    // this callable from the destructor.
+    if (auto_check_timer_ && lv_is_initialized()) {
+        helix::ui::lv_timer_cancel_safe(auto_check_timer_);
+    }
+    auto_check_timer_ = nullptr;
+}
+
 void UpdateChecker::stop_auto_check() {
     if (auto_check_timer_) {
-        lv_timer_delete(auto_check_timer_);
-        auto_check_timer_ = nullptr;
+        cancel_auto_check_timer();
         spdlog::debug("[UpdateChecker] Auto-check timer stopped");
     }
 }
@@ -2797,33 +3158,33 @@ void UpdateChecker::report_result(Status status, std::optional<ReleaseInfo> info
 
     // Dispatch to LVGL thread for subject updates and callback
     spdlog::debug("[UpdateChecker] Dispatching to LVGL thread");
-    helix::ui::queue_update([this, callback, status, info, error]() {
-        spdlog::debug("[UpdateChecker] Executing on LVGL thread");
+    async_lifetime_.defer(
+        "UpdateChecker::do_check_complete", [this, callback, status, info, error]() {
+            spdlog::debug("[UpdateChecker] Executing on LVGL thread");
 
-        // Update LVGL subjects
-        if (subjects_initialized_) {
-            lv_subject_set_int(&status_subject_, static_cast<int>(status));
-            lv_subject_set_int(&checking_subject_, 0); // Done checking
+            // Update LVGL subjects
+            if (subjects_initialized_) {
+                lv_subject_set_int(&status_subject_, static_cast<int>(status));
 
-            if (status == Status::UpdateAvailable && info) {
-                snprintf(version_text_buf_, sizeof(version_text_buf_), lv_tr("v%s available"),
-                         info->version.c_str());
-                lv_subject_copy_string(&version_text_subject_, version_text_buf_);
-                lv_subject_copy_string(&new_version_subject_, info->version.c_str());
-            } else if (status == Status::UpToDate) {
-                lv_subject_copy_string(&version_text_subject_, lv_tr("Up to date"));
-                lv_subject_copy_string(&new_version_subject_, "");
-            } else if (status == Status::Error) {
-                snprintf(version_text_buf_, sizeof(version_text_buf_), lv_tr("Error: %s"),
-                         error.c_str());
-                lv_subject_copy_string(&version_text_subject_, version_text_buf_);
-                lv_subject_copy_string(&new_version_subject_, "");
+                if (status == Status::UpdateAvailable && info) {
+                    snprintf(version_text_buf_, sizeof(version_text_buf_), lv_tr("v%s available"),
+                             info->version.c_str());
+                    lv_subject_copy_string(&version_text_subject_, version_text_buf_);
+                    lv_subject_copy_string(&new_version_subject_, info->version.c_str());
+                } else if (status == Status::UpToDate) {
+                    lv_subject_copy_string(&version_text_subject_, lv_tr("Up to date"));
+                    lv_subject_copy_string(&new_version_subject_, "");
+                } else if (status == Status::Error) {
+                    snprintf(version_text_buf_, sizeof(version_text_buf_), lv_tr("Error: %s"),
+                             error.c_str());
+                    lv_subject_copy_string(&version_text_subject_, version_text_buf_);
+                    lv_subject_copy_string(&new_version_subject_, "");
+                }
             }
-        }
 
-        // Execute callback if present
-        if (callback) {
-            callback(status, info);
-        }
-    });
+            // Execute callback if present
+            if (callback) {
+                callback(status, info);
+            }
+        });
 }

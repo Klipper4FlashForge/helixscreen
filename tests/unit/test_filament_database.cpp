@@ -4,6 +4,7 @@
 #include "filament_database.h"
 
 #include <set>
+#include <string_view>
 
 #include "../catch_amalgamated.hpp"
 
@@ -316,13 +317,32 @@ TEST_CASE("MaterialInfo::needs_drying - PLA needs drying", "[filament][database]
     CHECK(pla->needs_drying());
 }
 
-TEST_CASE("MaterialInfo::needs_drying - all materials need drying",
+TEST_CASE("MaterialInfo::needs_drying - every material except the known non-hygroscopic ones",
           "[filament][database][helpers]") {
-    // All materials in our database have dry_temp_c > 0
+    // Nearly every material in the database is hygroscopic enough to want
+    // drying. The two exceptions are deliberate and must be spelled out by
+    // name rather than tolerated generically, so that a dry_temp_c that gets
+    // zeroed by ACCIDENT on any other row still fails this test:
+    //
+    //   PE  — polyolefin, negligible moisture uptake; drying buys nothing.
+    //   EVA — low Vicat softening point makes oven drying actively risky.
+    const std::set<std::string_view> kIntentionallyNotDried{"PE", "EVA"};
+
+    std::set<std::string_view> seen_not_dried;
     for (const auto& mat : MATERIALS) {
         INFO("Checking material: " << mat.name);
-        CHECK(mat.needs_drying());
+        if (kIntentionallyNotDried.count(mat.name) > 0) {
+            // Pin the exception: if someone later gives PE or EVA a real dry
+            // temperature, this fires and the exception list must be updated.
+            CHECK_FALSE(mat.needs_drying());
+            seen_not_dried.insert(mat.name);
+        } else {
+            CHECK(mat.needs_drying());
+        }
     }
+
+    // Guard against the exception list rotting if a row is renamed or removed.
+    CHECK(seen_not_dried == kIntentionallyNotDried);
 }
 
 TEST_CASE("MaterialInfo::nozzle_recommended - returns midpoint", "[filament][database][helpers]") {
@@ -569,5 +589,109 @@ TEST_CASE("Phase 2 - get_default_drying_presets includes fan_pct",
         INFO("Checking preset: " << p.name);
         CHECK(p.fan_pct >= 0);
         CHECK(p.fan_pct <= 100);
+    }
+}
+
+// ============================================================================
+// Orphan-type closure: types that shipped in assets/filaments.json with no
+// filament_database.h entry, so they inherited nothing (0 °C bed, 0 density,
+// empty compat group) through filament_catalog.cpp::to_effective().
+// ============================================================================
+
+TEST_CASE("orphan catalog types now resolve with complete data", "[filament][database]") {
+    // Every one of these had >= 1 product in assets/filaments.json but no
+    // database row. Deleting any row fails this test.
+    static const char* kFormerOrphans[] = {
+        "ASA-AERO", "CoPE",  "EVA",   "PA6-CF", "PE",     "PET", "PHA",    "PLA-AERO",
+        "PP",       "PP-CF", "PP-GF", "PPA-CF", "PPA-GF", "PPS", "PPS-CF", "SBS",
+    };
+
+    for (const auto* name : kFormerOrphans) {
+        INFO("material: " << name);
+        auto mat = find_material(name);
+        REQUIRE(mat.has_value());
+        CHECK(mat->nozzle_min > 0);
+        CHECK(mat->nozzle_max > mat->nozzle_min);
+        CHECK(mat->bed_temp > 0);         // the actual bug: silently defaulted to 0
+        CHECK(mat->density_g_cm3 > 0.0f); // ditto
+        CHECK(mat->category != nullptr);
+        CHECK(std::string_view(mat->category) != "");
+        CHECK(mat->compat_group != nullptr);
+        CHECK(std::string_view(mat->compat_group) != "");
+    }
+}
+
+TEST_CASE("SILK catalog type resolves via the Silk alias", "[filament][database][alias]") {
+    // "Generic Silk PLA" ships with type "SILK" (an AD5X firmware whitelist name).
+    // resolve_alias() is case-insensitive, so the existing {"Silk", "Silk PLA"}
+    // alias already covers it — no separate SILK row is needed. Removing or
+    // renaming that alias would strand the product, so pin the behaviour here.
+    auto mat = find_material("SILK");
+    REQUIRE(mat.has_value());
+    CHECK(std::string_view(mat->name) == "Silk PLA");
+    CHECK(mat->bed_temp > 0);
+}
+
+TEST_CASE("polyolefins keep isolated compat groups", "[filament][database]") {
+    // PP and PE bond only to themselves. If they shared a group with PETG/PLA,
+    // endless spool would happily swap in a filament that will not stick.
+    CHECK_FALSE(are_materials_compatible("PP", "PETG"));
+    CHECK_FALSE(are_materials_compatible("PP", "PLA"));
+    CHECK_FALSE(are_materials_compatible("PE", "PP"));
+    CHECK(are_materials_compatible("PP", "PP-CF"));
+    CHECK(are_materials_compatible("PP-CF", "PP-GF"));
+}
+
+TEST_CASE("semi-flexibles are not interchangeable with TPU", "[filament][database]") {
+    CHECK_FALSE(are_materials_compatible("SBS", "TPU"));
+    CHECK_FALSE(are_materials_compatible("CoPE", "TPU"));
+    CHECK_FALSE(are_materials_compatible("EVA", "TPU"));
+}
+
+TEST_CASE("no duplicate material names in database", "[filament][database]") {
+    std::set<std::string> seen;
+    for (const auto& mat : MATERIALS) {
+        INFO("material: " << mat.name);
+        CHECK(seen.insert(mat.name).second);
+    }
+}
+
+TEST_CASE("every material row is internally consistent", "[filament][database]") {
+    for (const auto& mat : MATERIALS) {
+        INFO("material: " << mat.name);
+        CHECK(mat.nozzle_min > 0);
+        CHECK(mat.nozzle_max >= mat.nozzle_min);
+        CHECK(mat.bed_temp > 0);
+        CHECK(mat.density_g_cm3 > 0.0f);
+        CHECK(std::string_view(mat.category) != "");
+        CHECK(std::string_view(mat.compat_group) != "");
+        // dry_temp_c == 0 means "not hygroscopic"; then dry_time_min must be 0 too.
+        if (mat.dry_temp_c == 0)
+            CHECK(mat.dry_time_min == 0);
+        else
+            CHECK(mat.dry_time_min > 0);
+    }
+}
+
+TEST_CASE("no material alias shadows a real material name", "[filament][database][alias]") {
+    // An alias whose name also exists as a MATERIALS row would silently redirect
+    // lookups away from that row (resolve_alias runs first in find_material).
+    for (const auto& alias : MATERIAL_ALIASES) {
+        INFO("alias: " << alias.alias);
+        bool shadows = false;
+        for (const auto& mat : MATERIALS) {
+            std::string a(alias.alias), m(mat.name);
+            std::transform(a.begin(), a.end(), a.begin(), ::tolower);
+            std::transform(m.begin(), m.end(), m.begin(), ::tolower);
+            if (a == m)
+                shadows = true;
+        }
+        CHECK_FALSE(shadows);
+        // ...and every alias must point at something real.
+        bool resolves = false;
+        for (const auto& mat : MATERIALS)
+            if (std::string_view(mat.name) == std::string_view(alias.canonical))
+                resolves = true;
+        CHECK(resolves);
     }
 }

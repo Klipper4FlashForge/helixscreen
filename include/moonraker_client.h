@@ -437,7 +437,11 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      */
     void
     set_state_change_callback(std::function<void(ConnectionState, ConnectionState)> cb) override {
-        state_change_callback_ = cb;
+        // Under state_callback_mutex_: set_connection_state() copies this member
+        // on the libhv event loop thread, so assigning it unlocked frees the old
+        // target's storage while that thread is reading it.
+        std::lock_guard<std::mutex> lock(state_callback_mutex_);
+        state_change_callback_ = std::move(cb);
     }
 
     /**
@@ -499,8 +503,7 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      * @param handler_name Unique key for replace / remove
      * @param cb           Callback fired on each connection event
      */
-    void add_connected_observer(const std::string& handler_name,
-                                std::function<void()> cb) override;
+    void add_connected_observer(const std::string& handler_name, std::function<void()> cb) override;
 
     /**
      * @brief Remove a previously-registered on-connected observer
@@ -556,6 +559,19 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      */
     void set_default_request_timeout(uint32_t timeout_ms) override {
         tracker_.set_default_timeout(timeout_ms);
+    }
+
+    /**
+     * @brief How long an initial connection may keep failing before escalating
+     *
+     * Applies only to a client that has NEVER opened a socket. Once a session
+     * has been established, staleness is owned by the health timer's
+     * MAX_RECONNECT_STALL_MS check instead. Default 60000ms, matching it.
+     *
+     * @param timeout_ms Window measured from the connect() call
+     */
+    void set_initial_connect_failure_timeout(uint32_t timeout_ms) {
+        initial_connect_failure_ms_ = timeout_ms;
     }
 
     /**
@@ -783,10 +799,41 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
     // behavior — no duplicated reconn_setting_t construction.
     void apply_reconnect_settings();
 
-    // Reconnection staleness detection.
-    // Written/read only from the libhv event loop thread (onclose + health timer).
-    std::chrono::steady_clock::time_point reconnect_started_at_{};
+    // Both staleness anchors below are stored as raw tick counts rather than
+    // time_point. time_point is trivially copyable so std::atomic<time_point>
+    // is legal, but it is not guaranteed lock-free on every target we ship;
+    // the underlying rep is a plain 64-bit integer everywhere.
+    using SteadyTicks = std::chrono::steady_clock::rep;
+
+    /// Tick count of steady_clock::now(), for the anchors below. 0 means unset.
+    static SteadyTicks steady_ticks_now() {
+        return std::chrono::steady_clock::now().time_since_epoch().count();
+    }
+
+    /// Milliseconds elapsed since an anchor captured by steady_ticks_now().
+    static long long steady_ms_since(SteadyTicks anchor) {
+        const std::chrono::steady_clock::duration d{steady_ticks_now() - anchor};
+        return std::chrono::duration_cast<std::chrono::milliseconds>(d).count();
+    }
+
+    // Reconnection staleness detection. Read by the health timer on the libhv
+    // event loop thread, written by set_connection_state(), which any thread may
+    // call — force_reconnect() drives it from the main thread.
+    std::atomic<SteadyTicks> reconnect_started_at_{0};
     static constexpr int MAX_RECONNECT_STALL_MS = 60000;
+
+    // Initial-connection staleness detection — the never-connected counterpart
+    // of the above. The health timer cannot own this: it is started from
+    // on_ws_open(), which by definition never runs here. Anchor is set by
+    // connect(); the check runs on the onclose path, which libhv already drives
+    // once per retry, so this needs no timer of its own.
+    // Read on the libhv event loop thread; connect() sets the anchor from
+    // whichever thread called it. The latch below being atomic is not enough on
+    // its own — the anchor is read in the same expression and needs the same
+    // treatment.
+    std::atomic<SteadyTicks> connect_started_at_{0};
+    std::atomic<bool> initial_failure_notified_{false};
+    uint32_t initial_connect_failure_ms_{60000};
 
     // WebSocket callback cancellation guard. Reset on BOTH disconnect and
     // destruction so in-flight libhv callbacks (onopen/onmessage/onclose)

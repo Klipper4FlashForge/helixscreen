@@ -1090,7 +1090,13 @@ export default {
             await Promise.all(queries.map((q) => executeQuery(queryConfig, q)));
 
           const statsData = statsRes as {
-            data: Array<{ ver: string; total_sessions: number; total_crashes: number }>;
+            data: Array<{
+              ver: string;
+              total_sessions: number;
+              total_crashes: number;
+              update_failures: number;
+              update_successes: number;
+            }>;
           };
           const devicesData = devicesRes as {
             data: Array<{ ver: string; active_devices: number }>;
@@ -1121,6 +1127,16 @@ export default {
                 print_success_rate: prints.total > 0 ? prints.successes / prints.total : 0,
                 total_sessions: r.total_sessions,
                 total_crashes: r.total_crashes,
+                // Self-update health for devices RUNNING this version. A version
+                // whose update_success_rate collapses is one that cannot upgrade
+                // itself — the helixscreen#993 signature.
+                update_failures: r.update_failures ?? 0,
+                update_successes: r.update_successes ?? 0,
+                update_success_rate:
+                  (r.update_successes ?? 0) + (r.update_failures ?? 0) > 0
+                    ? (r.update_successes ?? 0) /
+                      ((r.update_successes ?? 0) + (r.update_failures ?? 0))
+                    : null,
               };
             }),
           });

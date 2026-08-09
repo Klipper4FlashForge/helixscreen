@@ -112,3 +112,149 @@ teardown() {
     [ "$status" -ne 0 ]
     [[ "$output" == *"empty"* ]]
 }
+
+# =============================================================================
+# --issue mode
+#
+# The worker emits the backtrace in two shapes: a table when symbols resolved
+# server-side, and a bare code block when they didn't (#1240). Register values
+# live in their own tables and are NOT code addresses — resolving SP or r0-r12
+# as if they were frames invents symbols that were never on the stack.
+# =============================================================================
+
+# Stub `gh issue view` so --issue mode reads a fixture instead of the network.
+stub_gh_issue() {
+    printf '%s' "$1" > "$TEST_DIR/issue-body.md"
+    mock_command_script "gh" "cat '$TEST_DIR/issue-body.md'"
+}
+
+# An unresolved report: bare addresses in a fenced block, plus a register table.
+UNRESOLVED_ISSUE='## Crash Summary
+
+| Field | Value |
+|-------|-------|
+| **Signal** | 11 (SIGSEGV) |
+| **Version** | 0.9.9 |
+
+## Registers
+
+| Register | Value |
+|----------|-------|
+| **LR** | `0x400410` |
+| **PC** | `0x400210` |
+| **SP** | `0x7fd4f57890` |
+
+## System Info
+
+| Field | Value |
+|-------|-------|
+| **Platform** | pi |
+
+## Backtrace
+
+```
+0x400210
+0x400410
+0x400810
+```
+
+<sub>No symbol file found for v0.9.9/pi</sub>
+'
+
+@test "--issue parses every frame from an unresolved code block" {
+    export HELIX_SYM_FILE="$TEST_DIR/test.sym"
+    stub_gh_issue "$UNRESOLVED_ISSUE"
+    run bash "$SCRIPT" --issue 1240 --repo owner/repo
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"3 addresses"* ]]
+    [[ "$output" == *"PrinterState::update()"* ]]
+    [[ "$output" == *"WebSocketClient::connect"* ]]
+    [[ "$output" == *"lv_obj_create"* ]]
+}
+
+@test "--issue does not treat the stack pointer as a frame" {
+    export HELIX_SYM_FILE="$TEST_DIR/test.sym"
+    stub_gh_issue "$UNRESOLVED_ISSUE"
+    run bash "$SCRIPT" --issue 1240 --repo owner/repo
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"0x7fd4f57890"* ]]
+}
+
+@test "--issue parses a resolved backtrace table without swallowing registers" {
+    export HELIX_SYM_FILE="$TEST_DIR/test.sym"
+    stub_gh_issue '## Registers
+
+| Register | Value |
+|----------|-------|
+| **LR** | `0x400410` |
+| **PC** | `0x400210` |
+| **SP** | `0x7e8017a8` |
+
+### All Registers
+
+| Register | Value |
+|----------|-------|
+| **r0** | `0x400810` |
+| **r1** | `0x4d1` |
+
+| Field | Value |
+|-------|-------|
+| **Version** | 0.9.9 |
+| **Platform** | pi |
+
+## Backtrace
+
+| # | Address | Symbol |
+|---|---------|--------|
+| 0 | `0x400210` | `PrinterState::update()` |
+| 1 | `0x400410` | `<shared library>` |
+'
+    run bash "$SCRIPT" --issue 1239 --repo owner/repo
+    [ "$status" -eq 0 ]
+    # Two table rows — not the four register cells above them
+    [[ "$output" == *"2 addresses"* ]]
+    [[ "$output" != *"0x4d1"* ]]
+}
+
+@test "--issue keeps stack-scan candidates separate from reliable frames" {
+    export HELIX_SYM_FILE="$TEST_DIR/test.sym"
+    stub_gh_issue '| **Version** | 0.9.9 |
+| **Platform** | pi |
+
+## Backtrace
+
+| # | Address | Symbol |
+|---|---------|--------|
+| 0 | `0x400210` | `PrinterState::update()` |
+
+## Stack Scan (likely call chain)
+
+| SP+offset | Address | Symbol |
+|-----------|---------|--------|
+| SP+0x10 | `0x400810` | `lv_obj_create` |
+'
+    run bash "$SCRIPT" --issue 1239 --repo owner/repo
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"2 addresses"* ]]
+    [[ "$output" == *"reliable frames"* ]]
+    [[ "$output" == *"stack-scan candidates"* ]]
+}
+
+@test "--issue falls back to PC/LR when there is no backtrace section" {
+    export HELIX_SYM_FILE="$TEST_DIR/test.sym"
+    stub_gh_issue '## Registers
+
+| Register | Value |
+|----------|-------|
+| **LR** | `0x400410` |
+| **PC** | `0x400210` |
+| **SP** | `0x7fd4f57890` |
+
+| **Version** | 0.9.9 |
+| **Platform** | pi |
+'
+    run bash "$SCRIPT" --issue 1239 --repo owner/repo
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"2 addresses"* ]]
+    [[ "$output" != *"0x7fd4f57890"* ]]
+}

@@ -20,20 +20,27 @@
 | **Printer Database** | 82 printer models with auto-detection |
 | **Filament Database** | 48 materials with temp/drying/compatibility data |
 | **Theme System** | Dynamic JSON themes with live preview |
-| **Layout System** | Auto-detection for ultrawide (1920x480) and small (480x320) displays |
-| **Sound System** | Multi-backend synthesizer (SDL, PWM, M300), JSON themes |
+| **Layout System** | Auto-detection for small (480x320) displays; ultrawide (1920x480) and portrait detection exists but the layouts themselves are alpha |
+| **Sound System** | Multi-backend synthesizer (SDL, ALSA, PWM, M300), JSON themes |
 | **Telemetry** | Opt-in crash reporting + session analytics + debug bundle upload |
 
 ---
 
 ## Recently Completed
 
+### XML `<repeat>` Looping ✅
+**Completed:** 2026-07-16
+
+Declarative repetition for the helix-xml engine: `<repeat count="N">…body…</repeat>` expands its body at load time with a zero-based `$i` iteration index, and `${name}` embedded composition self-wires repeated widgets to indexed subjects (`bind_text="demo_${i}_v"` → `demo_0_v`, `demo_1_v`, …). A subject-bound `count` (`count="row_count"`) reactively rebuilds the expansion when the subject changes, via async off-tree teardown (no synchronous deletion inside the count observer). Replaces C++ create-and-wire loops for fixed-N and subject-bound-count widget lists. Live demo in the test panel (`ui_xml/test_panel.xml`, "XML Repeat Demo" section).
+
+**Plan:** `docs/superpowers/plans/2026-07-15-xml-repeat-looping.md` | **Docs:** `docs/devel/LVGL9_XML_GUIDE.md` § "Repeating fragments with `<repeat>`"
+
 ### XML Engine Extraction & LVGL 9.5 Upgrade ✅
 **Completed:** 2026-02-18
 
 Extracted the LVGL XML engine into standalone `lib/helix-xml/` library and upgraded LVGL from 9.4-pre to v9.5.0, gaining 274 commits of improvements (blur, drop shadow, flex rounding fixes, memory leak fixes, gesture threshold API, slot support). XML patches baked permanently into helix-xml; LVGL patches regenerated for v9.5. New umbrella headers (`helix_xml.h`), standalone globals, and forward declaration files decouple helix-xml from LVGL internals.
 
-**Branch:** `feature/helix-xml` | **Plan:** `docs/devel/plans/2026-02-18-helix-xml-plan.md`
+**Branch:** `feature/helix-xml`
 
 ### Power Panel Integration ✅
 **Completed:** 2026-02-18
@@ -104,7 +111,7 @@ The plugin system launched with version checking, UI injection points, and async
 - [ ] Additional plugin examples for community
 - [ ] Plugin documentation refinement
 
-**Files:** `src/plugin_manager.cpp`, `docs/PLUGIN_DEVELOPMENT.md`
+**Files:** `src/plugin/plugin_manager.cpp`, `docs/devel/PLUGIN_DEVELOPMENT.md`
 
 ### 2. Production Hardening
 
@@ -112,7 +119,7 @@ The plugin system launched with version checking, UI injection points, and async
 
 Remaining items for production readiness:
 - [x] Structured logging with log rotation
-- [ ] Streaming file operations verified on AD5M with 50MB+ G-code files
+- [x] Streaming file operations on AD5M — accepted for 1.0 on field evidence (no crashes reported in this area at the large-file print sizes users are running; an explicit 50MB+ on-device spot-check is deferred post-1.0)
 
 ---
 
@@ -124,8 +131,8 @@ Remaining items for production readiness:
 - Design token system (no hardcoded colors/spacing)
 - RAII lifecycle management (PanelBase, ObserverGuard, SubscriptionGuard)
 - **Dynamic theme system** with JSON themes, live preview, and theme editor
-- **Layout system** with auto-detection for ultrawide and small displays
-- Responsive breakpoints (small/medium/large displays)
+- **Layout system** with auto-detection for ultrawide, portrait, and small displays (the ultrawide and portrait *layouts* are alpha — detection and grid sizing only, no panel overrides)
+- Seven responsive breakpoint tiers (micro through xxlarge)
 - Observer factory pattern (`observe_int_sync`, `observe_string_async`, etc.)
 - **Versioned config migration** for seamless upgrades between releases
 - **Moonraker API abstraction boundary** — 116 methods, UI decoupled from WebSocket layer
@@ -139,10 +146,11 @@ Remaining items for production readiness:
 - **First-Run Wizard:** Touch Cal → Language → WiFi → Moonraker → Printer ID → Heaters → Fans → AMS → LEDs → Filament Sensors → Probe Sensors → Input Shaper → Summary (13 steps, conditional skipping)
 - **Calibration Workflows:** PID tuning (live graph, fan control, material presets), Z-offset with live adjust, Screws Tilt, Input Shaper (frequency response charts, CSV parser, per-axis results)
 - **Bed Mesh:** 3D visualization with touch rotation, profile switching, 38 FPS optimized rendering
-- **Sound system:** Multi-backend audio (SDL, PWM, M300) with JSON themes and volume control
+- **Sound system:** Multi-backend audio (SDL, ALSA, PWM, M300) with JSON themes and volume control
 - **Timelapse:** Plugin detection, install wizard, settings UI, real-time event handling, render progress, video management
 - **Filament tracking:** Live consumption during printing, slicer estimate on completion
 - **Display rotation:** Support for 0/90/180/270 across all binaries
+- **Camera/Webcam:** Live MJPEG streaming — home/status-panel camera tiles (`CameraWidget`) plus a standalone fullscreen viewer from Settings → Hardware & Devices (shown only when `printer_has_webcam`), config modal for stream URLs (`src/system/camera_stream.cpp`, `src/ui/panel_widgets/camera_widget.cpp`, `src/ui/modals/camera_config_modal.cpp`)
 - **Telemetry:** Opt-in crash reporting, session analytics, and debug bundle upload via Cloudflare Worker backend
 - **Pre-print ETA prediction** using weighted-average historical timing data
 - **Exclude objects** with object list overlay, thumbnails, and confirmation flow
@@ -246,11 +254,10 @@ Remaining items for production readiness:
 
 | Feature | Effort | Notes |
 |---------|--------|-------|
-| **Camera/Webcam** | Low | Lower priority for local touchscreen use case |
 | **Belt tension visualization** | Future | Accelerometer-based CoreXY belt comparison; reuses frequency chart |
 | **OTA updates** | Future | UpdateChecker downloads + installs; needs auto-apply without user interaction |
 | ~~Update hash verification~~ | ~~Low~~ | ✅ Done — SHA256 verified from R2 manifest before install, graceful skip on GitHub fallback |
-| **Pre-migration config backup** | Low | Snapshot config before running versioned migrations, cleanup on success |
+| **Pre-migration config backup** | Low | Snapshot config *before* running versioned migrations, cleanup on success. Not yet built — `helix::config_backup::write_rolling_backup()` (`src/system/config_backup.cpp`) provides rolling primary+fallback backups on every save, but no migration-scoped snapshot exists. |
 | **Printer DB schema validation** | Low | Validate required fields in printer_database.json entries, detect duplicate IDs |
 | **Text overflow audit** | Medium | 226/282 XML files lack truncation/wrapping for long translated strings |
 | **Breakpoint coverage** | Medium | Only ~10 XML files implement responsive breakpoints; expand to more panels |
@@ -265,9 +272,28 @@ See `docs/devel/IDEAS.md` for additional ideas and design rationale.
 
 ---
 
-## Known Technical Debt
+## helix-xml Engine
 
-See `docs/ARCHITECTURAL_DEBT.md` for the full register.
+The XML engine lives in its own repository and keeps its roadmap there, on GitHub:
+
+**https://github.com/prestonbrown/helix-xml/issues**
+
+`lib/helix-xml/` in this tree is a submodule pointing at that repo — edit it in place, push from
+inside the submodule, then commit the bumped pointer here. It is MIT — a permanent
+fork of the engine LVGL removed from core in v9.5 — and it has no upstream. Anything LVGL Pro also
+has must be built clean-room from published docs; see `LVGL_XML_SITUATION.md`.
+
+Currently open:
+
+| Item | Why |
+|------|-----|
+| [#1 Real `<slot>` declarations](https://github.com/prestonbrown/helix-xml/issues/1) | The current slot support is a name-lookup lookalike whose failure mode reports a misleading "STALE BINARY" error. Blocks `SLOT_COMPONENT_DESIGNS.md` |
+| [#2 Multi-argument props (`<param>`)](https://github.com/prestonbrown/helix-xml/issues/2) | Already faked once as the hardcoded `bind_text-fmt`. Gives custom widgets real signatures |
+| [#3 `<enumdef>`](https://github.com/prestonbrown/helix-xml/issues/3) | Validates enum attributes on the 37 C++-registered widgets, and gives `tools/xml-linter` something to check |
+
+---
+
+## Known Technical Debt
 
 **Resolved (2026-01):**
 - ~~PrinterState god class~~ → Decomposed into 13 domain classes
@@ -304,7 +330,6 @@ HelixScreen is a **local touchscreen** UI - users are physically present at the 
 - Real-time tuning (speed, flow, firmware retraction)
 
 **Lower priority for this form factor:**
-- Camera (you can see the printer with your eyes)
 - Job queue (requires manual print removal between jobs)
 - System stats (CPU/memory) — not diagnosing remote issues
 - Remote access/monitoring features
@@ -332,10 +357,10 @@ Don't copy features from web UIs just because "competitors have it" — evaluate
 
 ## Contributing
 
-See `docs/DEVELOPMENT.md#contributing` for code standards and git workflow.
+See `docs/devel/DEVELOPMENT.md#contributing` for code standards and git workflow.
 
 **Key references:**
 - `CLAUDE.md` - Project patterns and critical rules
-- `docs/ARCHITECTURE.md` - System design and principles
-- `docs/LVGL9_XML_GUIDE.md` - XML layout reference
-- `docs/DEVELOPMENT.md` - Build and workflow guide
+- `docs/devel/ARCHITECTURE.md` - System design and principles
+- `docs/devel/LVGL9_XML_GUIDE.md` - XML layout reference
+- `docs/devel/DEVELOPMENT.md` - Build and workflow guide

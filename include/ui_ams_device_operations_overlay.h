@@ -139,6 +139,8 @@ class AmsDeviceOperationsOverlay : public OverlayBase {
 
     /// Callback for the AFC unload-after-print toggle (AFC backends only)
     static void on_afc_unload_after_print_toggled(lv_event_t* e);
+    static void on_always_show_bypass_spool_toggled(lv_event_t* e);
+    static void on_force_bypass_controls_toggled(lv_event_t* e);
 
     /// Callback for the QIDI eject distance slider (QIDI Box backends only)
     static void on_qidi_eject_distance_changed(lv_event_t* e);
@@ -171,8 +173,15 @@ class AmsDeviceOperationsOverlay : public OverlayBase {
     /// Buffer for status text
     char status_buf_[128] = {};
 
-    /// Subject for bypass support (0=not supported, 1=supported)
+    /// Subject for bypass support (0=not supported, 1=supported).
+    /// Folds in the force-bypass override, so this is what gates the controls.
     lv_subject_t supports_bypass_subject_;
+
+    /// Subject for the firmware's own bypass report, override NOT applied
+    /// (0=firmware says none, 1=firmware reports one). Gates the override row:
+    /// it appears only when the firmware says no, and stays visible once the
+    /// user turns the override on so they can turn it back off.
+    lv_subject_t fw_supports_bypass_subject_;
 
     /// Subject for bypass active state (0=inactive, 1=active)
     lv_subject_t bypass_active_subject_;

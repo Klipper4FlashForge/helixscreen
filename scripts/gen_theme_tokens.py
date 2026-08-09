@@ -65,10 +65,10 @@ def collect() -> dict:
 
 def render(tokens: dict) -> str:
     lines = [
+        "// SPDX-License-Identifier: GPL-3.0-or-later",
         "// GENERATED FILE — DO NOT EDIT. Regenerate with: make regen-tokens",
         "// Source of truth: ui_xml/*.xml (top level, sorted, last-wins).",
         "// Parity-gated against the runtime scanner by test_theme_token_table.cpp.",
-        "// SPDX-License-Identifier: GPL-3.0-or-later",
         '#include "theme_token_table.h"',
         "",
         "namespace helix::theme_tokens {",

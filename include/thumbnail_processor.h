@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "thumbnail_write_journal.h"
+
 #include <cstdint>
 #include <functional>
 #include <future>
@@ -27,6 +29,10 @@ class HThreadPool;
  *
  * @see docs/THUMBNAIL_OPTIMIZATION_PLAN.md for full architecture
  */
+
+/// Test-only accessor for the private constructor (tests/unit/). Forward
+/// declared so the friend declaration below has something to name.
+struct ThumbnailProcessorTestAccess;
 
 namespace helix {
 
@@ -132,6 +138,25 @@ class ThumbnailProcessor {
                        ProcessErrorCallback on_error);
 
     /**
+     * @brief Process a PNG file asynchronously, reading it on the worker thread
+     *
+     * Same contract as process_async(), but takes a path instead of bytes and
+     * performs the read inside the pool task. Prefer this from the main thread:
+     * the caller would otherwise slurp the whole PNG synchronously only to hand
+     * the bytes straight back to this pool, once per file while a file listing
+     * populates.
+     *
+     * @param png_path    Filesystem path to the PNG (no "A:" LVGL prefix)
+     * @param source_path Original thumbnail path (used for cache key generation)
+     * @param target      Target dimensions and format
+     * @param on_success  Called with path to .bin file on success (main thread)
+     * @param on_error    Called with error message on failure (main thread)
+     */
+    void process_file_async(const std::string& png_path, const std::string& source_path,
+                            const ThumbnailTarget& target, ProcessSuccessCallback on_success,
+                            ProcessErrorCallback on_error);
+
+    /**
      * @brief Process PNG data synchronously
      *
      * Blocks until processing is complete. Prefer process_async() for UI code.
@@ -190,6 +215,45 @@ class ThumbnailProcessor {
                                                      ThumbnailSize size = ThumbnailSize::Card);
 
     /**
+     * @brief Get the card thumbnail target that fits a card of the given size
+     *
+     * The resolution ladder in get_target_for_resolution() infers a card size from
+     * the display, and those guesses drifted from what the grid actually lays out —
+     * a 480x272 screen builds 138x115 cards, not the ~107px the ladder assumed, so a
+     * 120x120 .bin overhung the card and LVGL cropped the top off every model.
+     * This derives the target from the real card box instead.
+     *
+     * The card art is centred and then lifted by `preview_offset_y` (-12% of its own
+     * height) to clear the metadata overlay, so a square of side N needs
+     * (H - N)/2 - 0.12N >= 0 to stay inside a card of height H. Width is the other
+     * bound. The result is snapped down to a multiple of 4 to keep the number of
+     * distinct `{hash}_{w}x{h}_ARGB8888.bin` cache entries small.
+     *
+     * Pure function — no LVGL access, safe from any thread.
+     *
+     * @param card_width  Card width in pixels
+     * @param card_height Card height in pixels
+     * @return ThumbnailTarget that fits inside the card, clamped to [64, 220]
+     */
+    static ThumbnailTarget get_target_for_card(int card_width, int card_height);
+
+    /**
+     * @brief Publish the card grid's measured card size for Card-size lookups
+     *
+     * PrintSelectPanel calls this whenever it recomputes CardDimensions. Once set,
+     * get_target_for_display(ThumbnailSize::Card) returns get_target_for_card() for
+     * that size instead of the resolution ladder, so the pre-scaled .bin and the
+     * image widget agree on a size the card can actually hold. Passing 0,0 restores
+     * the ladder (used by callers with no card grid, e.g. the timelapse overlay).
+     *
+     * Thread-safe: the thumbnail worker threads read the hint while fetching.
+     *
+     * @param card_width  Card width in pixels, or 0 to clear the hint
+     * @param card_height Card height in pixels, or 0 to clear the hint
+     */
+    static void set_card_size_hint(int card_width, int card_height);
+
+    /**
      * @brief Get the cache directory path (thread-safe)
      * @return Path to thumbnail cache directory (e.g., /tmp/helix_thumbs)
      */
@@ -206,6 +270,26 @@ class ThumbnailProcessor {
      * @param path Directory path for cached .bin files
      */
     void set_cache_dir(const std::string& path);
+
+    /**
+     * @brief Register the listener told about every .bin this processor writes
+     *
+     * The processor writes its pre-scaled `.bin` files into ThumbnailCache's
+     * directory but has no reference to the cache, so the cache's in-memory
+     * eviction index cannot see them. Left unreported the index under-counts by
+     * most of the cache and eviction silently stops
+     * (prestonbrown/helixscreen#1207).
+     *
+     * Held weakly: a destroyed cache leaves nothing dangling, and an in-flight
+     * write simply finds no listener. Last registration wins, mirroring
+     * set_cache_dir() — the two are set together by ThumbnailCache's
+     * constructor and only ever describe the most recently constructed cache.
+     *
+     * Thread-safe. Pass an empty weak_ptr to unregister.
+     *
+     * @param journal Listener to notify after each successful write
+     */
+    void set_write_journal(std::weak_ptr<ThumbnailWriteJournal> journal);
 
     /**
      * @brief Clear all cached pre-scaled thumbnails
@@ -258,9 +342,22 @@ class ThumbnailProcessor {
      * 5. Write LVGL binary header + pixel data
      *
      * @param cache_dir Cache directory path (passed explicitly for thread safety)
+     * @param journal Write listener, or nullptr. Snapshotted by the caller
+     *        alongside @p cache_dir for the same reason: the pair must describe
+     *        one consistent destination even if set_cache_dir() /
+     *        set_write_journal() run before a queued task gets to execute.
+     *        Passing it in also keeps do_process() free of mutex_, so a pool
+     *        task can never contend with a shutdown() that is waiting on it.
      */
     ProcessResult do_process(const std::vector<uint8_t>& png_data, const std::string& source_path,
-                             const ThumbnailTarget& target, const std::string& cache_dir);
+                             const ThumbnailTarget& target, const std::string& cache_dir,
+                             const std::shared_ptr<ThumbnailWriteJournal>& journal);
+
+    /// Marshal a finished ProcessResult back to the main thread and fire the
+    /// caller's callback. Shared by process_async() and process_file_async() so
+    /// both keep identical main-thread-dispatch semantics.
+    static void deliver_result(const ProcessResult& result, const std::string& source,
+                               ProcessSuccessCallback on_success, ProcessErrorCallback on_error);
 
     /**
      * @brief Write LVGL binary file
@@ -270,10 +367,26 @@ class ThumbnailProcessor {
     bool write_lvbin(const std::string& path, int width, int height, uint8_t color_format,
                      const uint8_t* pixel_data, size_t data_size);
 
-    std::unique_ptr<HThreadPool> thread_pool_;
+    /// shared_ptr, not unique_ptr: wait_for_completion() must keep the pool
+    /// alive while it blocks OUTSIDE the lock, because shutdown() resets this
+    /// member under that same lock. Everything else uses it only while holding
+    /// mutex_ — see process_async() for why a strong reference alone is not
+    /// sufficient there (#1202).
+    std::shared_ptr<HThreadPool> thread_pool_;
     std::string cache_dir_;
+
+    /// Weak by design — see set_write_journal(). Guarded by mutex_ and
+    /// snapshotted into each task alongside cache_dir_.
+    std::weak_ptr<ThumbnailWriteJournal> write_journal_;
+
     mutable std::mutex mutex_;
     bool shutdown_ = false;
+
+    /// Lets tests construct a private, non-singleton instance so a
+    /// shutdown-race test does not tear down the process-wide one out from
+    /// under every other test. Lives in the global namespace (tests/), hence
+    /// the leading `::` — same convention as GcodeErrorRouterTestAccess.
+    friend struct ::ThumbnailProcessorTestAccess;
 };
 
 } // namespace helix

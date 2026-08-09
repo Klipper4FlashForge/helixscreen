@@ -24,7 +24,7 @@ The plugin will be built as `build/libhelix_led_effects.dylib` (macOS) or `build
 Run HelixScreen with the `--test` flag to use mock printer data:
 
 ```bash
-./build/bin/helix-screen --test -p home -vv
+./build/bin/helix-screen --test -vv
 ```
 
 You should see:

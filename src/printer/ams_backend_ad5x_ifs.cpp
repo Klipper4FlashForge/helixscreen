@@ -7,13 +7,16 @@
 #include "ui_temperature_utils.h"
 
 #include "ams_state.h"
+#include "app_globals.h"
 #include "config.h"
 #include "host_identity.h"
 #include "http_executor.h"
-#include "i_moonraker_client.h"
-#include "lvgl/src/others/translation/lv_translation.h"
 #include "i_moonraker_api.h"
+#include "i_moonraker_client.h"
+#include "json_utils.h"
+#include "lvgl/src/others/translation/lv_translation.h"
 #include "post_op_cooldown_manager.h"
+#include "printer_state.h"
 
 #include <spdlog/spdlog.h>
 
@@ -91,7 +94,8 @@ void AmsBackendAd5xIfs::on_started() {
     // on this (main) thread; the Moonraker DB callback fires on the libhv
     // event loop, so the two threads don't interfere.
     if (api_) {
-        override_store_ = std::make_unique<helix::ams::FilamentSlotOverrideStore>(api_, "ifs");
+        override_store_ = std::make_unique<helix::ams::FilamentSlotOverrideStore>(
+            api_, "ifs", helix::ams::lane_key_style_for(get_type()));
         // Do the (potentially 5s) MR DB round-trip OUTSIDE the lock, then swap in
         // under mutex_. AmsSubscriptionBackend::start() registers the WebSocket
         // notify subscription before on_started() is invoked, so a status
@@ -494,13 +498,40 @@ void AmsBackendAd5xIfs::handle_status_update(const json& notification) {
     // on connected printers (raza/DIEHARDave report on v0.99.51) and made the
     // Mainsail/Fluidd console unusable. Piggybacking on notify_status_update
     // gives us sub-second cadence; rate-limit via steady_clock so the actual
-    // download fires no more often than kJsonPollInterval.
-    constexpr auto kJsonPollInterval = std::chrono::seconds(5);
+    // download fires no more often than the interval below.
+    //
+    // The interval slows to 30s while actively printing. FFMInfo carries only
+    // per-slot colour and material labels — cosmetic metadata — and measured
+    // against a real AD5X session the tight cadence earned nothing: 3902
+    // downloads produced 3 content changes, two of which were the first poll
+    // after boot establishing its baseline. Meanwhile each fetch is a loopback
+    // HTTP GET on a 2-core board that is simultaneously feeding the MCU step
+    // queue, and 'Timer too close' shutdowns are exactly what host starvation
+    // there looks like. PAUSED deliberately keeps the 5s cadence: a pause is
+    // when a user actually swaps a spool and relabels it.
+    bool printing_now = false;
+    if (auto* print_subj = get_printer_state().get_print_state_enum_subject()) {
+        printing_now = static_cast<helix::PrintJobState>(lv_subject_get_int(print_subj)) ==
+                       helix::PrintJobState::PRINTING;
+    }
+
     auto now = std::chrono::steady_clock::now();
-    if (now - last_json_poll_kick_ >= kJsonPollInterval) {
+    if (should_poll_json(printing_now, json_poll_was_printing_, now - last_json_poll_kick_)) {
         last_json_poll_kick_ = now;
         poll_adventurer_json();
     }
+    json_poll_was_printing_ = printing_now;
+}
+
+bool AmsBackendAd5xIfs::should_poll_json(bool printing_now, bool was_printing,
+                                         std::chrono::steady_clock::duration since_last) {
+    // printing->anything else: poll immediately rather than waiting out the slow
+    // interval, so the firmware's post-print FFMInfo revert is seen as promptly
+    // as it was before the backoff existed.
+    if (was_printing && !printing_now) {
+        return true;
+    }
+    return since_last >= (printing_now ? kJsonPollPrinting : kJsonPollIdle);
 }
 
 void AmsBackendAd5xIfs::parse_save_variables(const json& vars) {
@@ -709,14 +740,22 @@ void AmsBackendAd5xIfs::update_slot_from_state(int slot_index) {
     bool is_active_slot = (system_info_.current_slot == slot_index);
     bool has_filament = port_presence_[idx];
 
-    // Native ZMOD IFS has no per-port sensors. For the active slot, infer
-    // presence from the head sensor so the UI doesn't show all slots as EMPTY.
-    if (!has_per_port_sensors_ && is_active_slot && head_filament_) {
-        has_filament = true;
-    }
-
     SlotStatus prev_status = entry->info.status;
-    if (has_filament && is_active_slot && head_filament_) {
+    // The seated lane is LOADED whenever the head sensor sees filament,
+    // WITHOUT requiring the lane's own port sensor. Two reasons:
+    //
+    //  - A runout drops port_presence_ while the filament that lane already fed
+    //    is still in the toolhead (#995) — the state can_unload_from_toolhead()
+    //    keeps the unload gate open for. Requiring the port sensor demoted the
+    //    lane to EMPTY at exactly the moment the user needs to recover it.
+    //  - Native ZMOD publishes no per-port sensors at all, so port_presence_ is
+    //    false for every lane; this is what keeps the seated one off EMPTY
+    //    (previously done by forcing has_filament true for that one case).
+    //
+    // head_filament_ is also what system_info_.filament_loaded is assigned from,
+    // so the per-slot status and the aggregate pair now agree by construction —
+    // the precondition for has_per_slot_loaded_authority().
+    if (is_active_slot && head_filament_) {
         entry->info.status = SlotStatus::LOADED;
     } else if (has_filament) {
         entry->info.status = SlotStatus::AVAILABLE;
@@ -811,6 +850,14 @@ void AmsBackendAd5xIfs::apply_overrides(SlotInfo& slot, int slot_index) {
         slot.color_name = o.color_name;
     if (!o.material.empty())
         slot.material = o.material;
+    // Catalog product identity — same "override wins only when it carries a
+    // real value" rule as the strings above. Firmware never populates these
+    // (no AMS protocol has a notion of a branded product id), so a non-empty
+    // value here is always a user pick and always wins.
+    if (!o.catalog_id.empty())
+        slot.catalog_id = o.catalog_id;
+    if (!o.product_name.empty())
+        slot.product_name = o.product_name;
 }
 
 bool AmsBackendAd5xIfs::check_external_color_change(int slot_index,
@@ -850,24 +897,30 @@ bool AmsBackendAd5xIfs::check_external_color_change(int slot_index,
     if (it->second == color)
         return false; // unchanged — no edit signal
 
-    // Observed color changed. Record the new color as the baseline before
-    // doing anything else so a failed save_async doesn't make us re-fire
-    // every poll.
+    // Observed color changed versus the baseline.
     const uint32_t old_color = it->second;
-    it->second = color;
 
     if (!slot_has_filament) {
-        // Empty slot reads back as the placeholder #808080 in parse_adventurer_json
-        // — that's not an "edit," it's the absence of a reading. Eject is
-        // handled separately by parse_adventurer_json dropping presence to false;
-        // the lane->Spoolman override is RETAINED across empty (#1071), not
-        // cleared. Just update the baseline so we don't repeat this branch every
-        // poll.
-        spdlog::debug("{} Slot {} firmware color changed #{:06X} -> #{:06X} "
-                      "(slot empty — sync skipped, eject handled by parse path)",
-                      backend_log_tag(), slot_index, old_color, color);
+        // Two sub-cases, both "not a real present-lane color":
+        //   - Empty slot: reads back the #808080 placeholder — the absence of a
+        //     reading, not an edit. Eject is handled by the parse path dropping
+        //     presence; the lane->Spoolman override is RETAINED across empty
+        //     (#1071), not cleared.
+        //   - Presence-lag insert: on modern ZMOD the firmware color can surface
+        //     one parse frame BEFORE IFS_STATUS Ports flips the slot present.
+        // Do NOT advance the baseline here. Advancing consumed the delta while
+        // the slot was still "absent", so when presence caught up the baseline
+        // already equalled the new color and the sync was swallowed entirely —
+        // the freshly inserted spool kept the previous color (#1065). Hold the
+        // last real color so the delta survives until a present-lane frame.
+        spdlog::debug("{} Slot {} color reading #{:06X} while slot not present — "
+                      "baseline held at #{:06X}, sync deferred to presence (#1065)",
+                      backend_log_tag(), slot_index, color, old_color);
         return false;
     }
+    // Present-lane real reading: advance the baseline before syncing so a failed
+    // save_async doesn't make us re-fire every poll.
+    it->second = color;
 
     spdlog::info("{} Slot {} firmware color changed #{:06X} -> #{:06X}, "
                  "syncing override + Moonraker DB lane_data (external edit detected)",
@@ -886,9 +939,9 @@ bool AmsBackendAd5xIfs::check_external_color_change(int slot_index,
 }
 
 bool AmsBackendAd5xIfs::check_external_type_change(int slot_index,
-                                                  const std::string& observed_material,
-                                                  std::optional<uint32_t> observed_color,
-                                                  bool slot_has_filament) {
+                                                   const std::string& observed_material,
+                                                   std::optional<uint32_t> observed_color,
+                                                   bool slot_has_filament) {
     // Track a material baseline across empty lanes — mirroring
     // check_external_color_change, which keeps a live baseline over an empty
     // lane (empty color parses to the #808080 placeholder). The prior top-level
@@ -926,20 +979,33 @@ bool AmsBackendAd5xIfs::check_external_type_change(int slot_index,
         return false; // unchanged — no edit signal
 
     const std::string old_material = it->second;
-    it->second = observed_material; // update baseline, including a transition to ""
 
     // Only a present slot reporting a real (non-empty) material is an external
-    // type edit worth syncing. An empty observation (eject) is baselined above
-    // — so the subsequent insert is a genuine "" -> MATERIAL delta — but it is
-    // not itself sync-worthy. The user-locked-material guard (#965) still lives
-    // inside sync_override_to_firmware_locked's OverwriteAlways mirror, so a
+    // type edit worth syncing. Two skip sub-cases, treated differently for the
+    // baseline (this asymmetry is the #1065 insert-swallow fix):
+    //   - EMPTY observation while the slot is empty == eject. Advance the
+    //     baseline to "" so the subsequent insert is a genuine "" -> MATERIAL
+    //     delta that syncs. (The top guard already returned for empty material
+    //     on a PRESENT slot / no-color-reading, so here empty implies eject.)
+    //   - NON-EMPTY material while the slot is not yet present == modern-ZMOD
+    //     presence-lag insert: the firmware type surfaced one parse frame before
+    //     IFS_STATUS Ports flipped the slot present. Do NOT advance the baseline
+    //     — hold the old value so the delta survives until a present-lane frame,
+    //     otherwise the sync is swallowed and the new type never reaches the
+    //     override (color updated on screen, material stuck — #981/#1065).
+    // The user-locked-material guard (#965) still lives inside
+    // sync_override_to_firmware_locked's OverwriteAlways mirror, so a
     // deliberately locked material is preserved through this path too.
     if (!slot_has_filament || observed_material.empty()) {
-        spdlog::debug("{} Slot {} firmware material changed '{}' -> '{}' "
-                      "(slot empty / no material — baseline updated, sync skipped)",
-                      backend_log_tag(), slot_index, old_material, observed_material);
+        if (observed_material.empty())
+            it->second = observed_material; // eject: baseline -> ""
+        spdlog::debug("{} Slot {} firmware material '{}' -> '{}' "
+                      "(slot empty / no material — {}, sync skipped)",
+                      backend_log_tag(), slot_index, old_material, observed_material,
+                      observed_material.empty() ? "baseline updated" : "baseline held (#1065)");
         return false;
     }
+    it->second = observed_material; // present-lane real delta: advance + sync below
 
     // The mirror inside sync_override_to_firmware_locked refreshes BOTH color
     // and material from the passed values, so we must hand it the real firmware
@@ -1014,6 +1080,12 @@ void AmsBackendAd5xIfs::clear_override_locked(int slot_index, SlotInfo& slot) {
     slot.remaining_weight_g = -1.0f;
     slot.total_weight_g = -1.0f;
     slot.color_name.clear();
+    // The catalog pick is override-exclusive on every backend — no AMS
+    // firmware carries a branded product id — so a clear always drops it.
+    // Leaving it would re-navigate the editor to the removed spool's
+    // product on the next open.
+    slot.catalog_id.clear();
+    slot.product_name.clear();
 
     if (override_store_) {
         // Capture by value only — clear_async's Moonraker callback can fire
@@ -1026,6 +1098,125 @@ void AmsBackendAd5xIfs::clear_override_locked(int slot_index, SlotInfo& slot) {
                 spdlog::warn("{} clear_async failed for slot {}: {}", tag, slot_index, err);
             }
         });
+    }
+}
+
+void AmsBackendAd5xIfs::release_locked_override_keep_identity_locked(int slot_index,
+                                                                     SlotInfo& slot) {
+    // Caller must hold mutex_. See the header for the full rationale. Short
+    // version: an external CHANGE_ZCOLOR legitimately re-authors color/material
+    // (firmware truth wins), but the firmware can't carry brand/spool_name/
+    // spoolman_id/weights — those are the user's identity metadata and must
+    // survive a routine physical load (Bug B / #981). Release the locks + strip
+    // the firmware-carryable fields so apply_overrides stops masking firmware
+    // truth for color/material, but keep the identity fields. When there is no
+    // identity to preserve, fall back to a full erase.
+    auto it = overrides_.find(slot_index);
+    if (it == overrides_.end())
+        return;
+    auto& ovr = it->second;
+
+    // Firmware-uncarryable identity/metadata worth preserving across the edit.
+    // Weights are consumption-tracker / Spoolman data, independent of color, so
+    // they ride along too. (>= 0.0f — the -1.0f default is "unknown".)
+    const bool has_identity = !ovr.brand.empty() || !ovr.spool_name.empty() ||
+                              ovr.spoolman_id > 0 || ovr.spoolman_vendor_id > 0 ||
+                              ovr.remaining_weight_g >= 0.0f || ovr.total_weight_g >= 0.0f;
+
+    if (!has_identity) {
+        // Nothing firmware-uncarryable to keep — behave exactly like the
+        // pre-existing #981 clear so those tests still see a clean wipe.
+        clear_override_locked(slot_index, slot);
+        return;
+    }
+
+    spdlog::info("{} External CHANGE_ZCOLOR for slot {} — releasing the color/material locks so "
+                 "firmware truth wins, but RETAINING the user's brand/spool metadata the firmware "
+                 "can't carry (#1071-style retention, Bug B)",
+                 backend_log_tag(), slot_index);
+
+    // Release the user-locks and strip the firmware-carryable override fields.
+    // apply_overrides only masks a field when the override still carries a real
+    // value (non-empty string / color_set / >0 id), so clearing these lets the
+    // firmware-truth color_rgb/material (refreshed by update_slot_from_state)
+    // show through. The identity fields (brand, spool_name, spoolman_id,
+    // spoolman_vendor_id, weights) stay put.
+    ovr.user_locked_color = false;
+    ovr.user_locked_material = false;
+    ovr.color_set = false;
+    ovr.color_rgb = 0;
+    ovr.color_name.clear();
+    ovr.material.clear();
+    // The catalog pick is scoped to a MATERIAL — "sunlu-pla-plus-2-0" only makes
+    // sense while the lane is PLA. This path exists because firmware just
+    // re-authored the material, so the pick goes with it. Keeping it would be
+    // worse than losing it: setup_details_selector() seeds the type dropdown
+    // from catalog_id first, so a stale id would drag the editor back to the old
+    // material family and contradict the firmware truth we just accepted.
+    // Deliberately NOT counted in has_identity above for the same reason — it is
+    // not firmware-uncarryable metadata like brand/spool_name, it is material-
+    // derived.
+    ovr.catalog_id.clear();
+    ovr.product_name.clear();
+
+    // Persist the trimmed override so a restart reloads the retained identity
+    // (and the released locks) instead of the pre-edit locked record. Capture
+    // by value — the callback can fire long after this returns.
+    if (override_store_) {
+        helix::ams::FilamentSlotOverride snapshot = ovr;
+        const std::string tag = backend_log_tag();
+        override_store_->save_async(slot_index, snapshot,
+                                    [tag, slot_index](bool ok, std::string err) {
+                                        if (!ok) {
+                                            spdlog::warn("{} identity-retain persist failed for "
+                                                         "slot {}: {}",
+                                                         tag, slot_index, err);
+                                        }
+                                    });
+    }
+}
+
+void AmsBackendAd5xIfs::unlock_auto_tracked_override_on_insert_locked(int slot_index) {
+    // Caller holds mutex_. See the header doc + FILAMENT_MANAGEMENT.md for the
+    // full model. Short version: a lane's material/color override can be
+    // user-locked either by a menu edit (set_slot_info) or by the pessimistic
+    // !material.empty() load default (from_lane_data_record). A locked field is
+    // never refreshed by the OverwriteAlways auto-mirror, so a freshly inserted
+    // spool keeps painting the PREVIOUS spool's type/color. Only an external
+    // CHANGE_ZCOLOR clears that lock (#981), and a physical insert emits none —
+    // so unlock here, on the insert edge itself.
+    auto it = overrides_.find(slot_index);
+    if (it == overrides_.end())
+        return; // auto-tracking already (no override) — nothing to unlock
+    auto& ovr = it->second;
+    // A real Spoolman binding is a deliberate identity the user attached; #1071
+    // retains it across an eject/insert cycle (same-spool maintenance
+    // re-insert). Leave a bound lane fully alone — its material/color came from
+    // the bound spool, not a stale guess.
+    if (ovr.spoolman_id > 0)
+        return;
+    if (!ovr.user_locked_material && !ovr.user_locked_color)
+        return; // already auto-tracking both fields
+    spdlog::info("{} Slot {} inserted (empty->present) with no Spoolman link — "
+                 "unlocking auto-tracked material/color so the new spool's firmware "
+                 "type/color refresh (#1065)",
+                 backend_log_tag(), slot_index);
+    ovr.user_locked_material = false;
+    ovr.user_locked_color = false;
+    // Persist the unlock so a restart doesn't reload the pessimistic
+    // !material.empty() lock default and re-stick the old type. The subsequent
+    // update_slot_from_state -> auto-mirror will save again once firmware truth
+    // refreshes the material/color; this first save just makes the unlock
+    // durable even if the same spool goes back in and no material delta follows.
+    if (override_store_) {
+        helix::ams::FilamentSlotOverride snapshot = ovr;
+        const std::string tag = backend_log_tag();
+        override_store_->save_async(
+            slot_index, snapshot, [tag, slot_index](bool success, const std::string& err) {
+                if (!success) {
+                    spdlog::warn("{} unlock persist failed for slot {}: {}", tag, slot_index, err);
+                }
+            });
     }
 }
 
@@ -1211,6 +1402,19 @@ AmsError AmsBackendAd5xIfs::load_filament(int slot_index) {
         system_info_.action = AmsAction::HEATING;
         action_start_time_ = std::chrono::steady_clock::now();
         begin_phase_tracking_locked(/*is_unload=*/false);
+        // Swap detection (#1065 v0.99.94, bundle NJB2U558): if another lane is
+        // currently seated, INSERT_PRUTOK_IFS will run an implicit UNLOAD of
+        // it before loading the new lane. The default 90s LOADING budget
+        // would fire mid-swap; flip swap_expected so check_action_timeout
+        // applies SWAP_LOADING_TIMEOUT_SECONDS, and on_head_transition_locked
+        // resets the LOADING clock when the implicit-unload head drop fires.
+        // seated_chan_ is the live seated-port authority (1-based; 0 = none).
+        if (seated_chan_ > 0 && seated_chan_ != port) {
+            phase_tracker_.swap_expected = true;
+            spdlog::info("{} Load slot {} while slot {} seated — swap_expected "
+                         "(extended LOADING budget + head-drop clock reset)",
+                         backend_log_tag(), slot_index, seated_chan_ - 1);
+        }
         apply_phase_action_locked();
     }
     // Publish the busy state immediately (lock released) so the sidebar action
@@ -1302,7 +1506,7 @@ AmsError AmsBackendAd5xIfs::unload_filament(int slot_index) {
         // slot. Passing -1 through to eject_lane() fails validate_slot_index()
         // and the swap path discarded that error, freezing the sidebar in
         // "Heating" (Vger1700, bundle Z5V4K3NL).
-        int eject_slot = slot_index >= 0 ? slot_index
+        int eject_slot = slot_index >= 0    ? slot_index
                          : seated_slot >= 0 ? seated_slot
                                             : current_slot;
         if (eject_slot < 0) {
@@ -1552,6 +1756,10 @@ AmsError AmsBackendAd5xIfs::eject_lane(int slot_index) {
                 port_presence_[slot_index] = false;
                 changed = true;
             }
+            // Stamp the eject so the follow-up query's stale silk-sensor read
+            // (the lane still settling clear of the port) can't resurrect it
+            // before the window elapses (#1065).
+            last_eject_time_[static_cast<size_t>(slot_index)] = std::chrono::steady_clock::now();
             if (changed) {
                 update_slot_from_state(slot_index);
             }
@@ -1644,6 +1852,8 @@ std::optional<helix::ErrorEvent> AmsBackendAd5xIfs::current_error() const {
                    ? std::string(lv_tr("Filament operation failed"))
                    : system_info_.operation_detail;
     e.sticky = true;
+    // IFS_UNLOCK releases the firmware's operation lock; it moves no filament,
+    // so it stays tappable on a cold nozzle (needs_hot_nozzle defaults false).
     e.recovery_actions = {{lv_tr("Recover"), "IFS_UNLOCK", "ifs::unlock", "primary"}};
     return e;
 }
@@ -1677,9 +1887,8 @@ lv_subject_t* AmsBackendAd5xIfs::get_operation_step_index_subject(StepOperationT
 // --- Configuration ---
 
 std::optional<std::vector<std::string>> AmsBackendAd5xIfs::get_supported_materials() const {
-    // Stock AD5X firmware whitelist — sending anything outside it causes
-    // "Invalid material type: X. Valid: PLA, PLA-CF, SILK, TPU, ABS, PETG, PETG-CF".
-    std::vector<std::string> result{"PLA", "PLA-CF", "SILK", "TPU", "ABS", "PETG", "PETG-CF"};
+    // Stock AD5X firmware whitelist — see kStockWhitelist in the header.
+    std::vector<std::string> result(kStockWhitelist.begin(), kStockWhitelist.end());
 
     // Append user-defined types from bambufy_custom_types (save_variables) and
     // [zmod_ifs] filament_<NAME> (mod_data/user.cfg). zmod's COLOR macro
@@ -1783,6 +1992,11 @@ AmsError AmsBackendAd5xIfs::set_slot_info(int slot_index, const SlotInfo& info, 
         entry->info.color_name = info.color_name;
         entry->info.material = normalized_material;
         entry->info.brand = info.brand;
+        // Carry the catalog product identity through preview writes too — a
+        // persist=false preview that dropped it would make the editor snap
+        // back to a different variant on the next get_slot_info().
+        entry->info.catalog_id = info.catalog_id;
+        entry->info.product_name = info.product_name;
         entry->info.spool_name = info.spool_name;
         entry->info.spoolman_id = info.spoolman_id;
         entry->info.spoolman_vendor_id = info.spoolman_vendor_id;
@@ -1812,6 +2026,13 @@ AmsError AmsBackendAd5xIfs::set_slot_info(int slot_index, const SlotInfo& info, 
             // materials_ copy; reuse it so the on-disk record carries the
             // firmware-valid value instead of the raw user-typed string.
             ovr.material = normalized_material;
+            // Catalog product identity. Persisted so a reopen can restore the
+            // EXACT product rather than the alphabetically-first variant of the
+            // same vendor+material. Never auto-mirrored (firmware has no notion
+            // of a catalog product), so no user-lock flag is needed: a non-empty
+            // value can only have come from a user pick.
+            ovr.catalog_id = info.catalog_id;
+            ovr.product_name = info.product_name;
             // User-lock signals: persist=true is a user edit, so tag both
             // fields user-locked. Material is only locked when the user
             // actually provided one — an explicit empty material is the user
@@ -2813,6 +3034,33 @@ bool AmsBackendAd5xIfs::on_gcode_response_line(const std::string& line) {
     // reaches this function on heavy-print response streams.
     if (line.find("RUN_ZCOLOR") != std::string::npos ||
         line.find("CHANGE_ZCOLOR") != std::string::npos) {
+        // Menu-definition echo vs. executed command (#1065, bundle 482NB943).
+        // zmod renders every COLOR dialog by echoing its buttons down the
+        // console as `// action:prompt_button <label>|<gcode>|<style>[|<hex>]`.
+        // Those payloads are the menu's OFFER LIST, not a record of anything
+        // the firmware did — the "Select color" grid alone carries 24 distinct
+        // CHANGE_ZCOLOR candidates. Running them through the extractor below
+        // applied all 24 in sequence, so the slot ended up on the LAST swatch
+        // (#161616) and the last material in the whitelist (PETG-CF) until the
+        // confirming GET_ZCOLOR corrected it ~1s later — a visible flicker,
+        // a false "external edit detected" delta, and a lane_data write per
+        // phantom apply (25 server.database.post_item requests queued in 300ms
+        // on a 473MB MIPS AD5X). 87 echoed buttons produced 162 phantom applies
+        // in a two-minute session.
+        //
+        // A real edit — the AD5X LCD, Mainsail, zmod's own macro, or the native
+        // screen's RESPOND MSG="…" re-echo — never carries the action:prompt_
+        // prefix, so the synchronous extraction added in v0.99.94 is untouched.
+        if (line.find("action:prompt_") != std::string::npos) {
+            // One shape IS load-bearing: the root menu's per-slot rows are a
+            // four-slot firmware snapshot, and the freshest one in the stream.
+            apply_color_menu_slot_row(line);
+            ++external_change_burst_count_;
+            schedule_json_reread();
+            schedule_zcolor_query("color_menu_render");
+            return false;
+        }
+
         // A CHANGE_ZCOLOR in the gcode stream is always a DELIBERATE external
         // edit: HelixScreen persists colors by writing Adventurer5M.json directly
         // and never emits CHANGE_ZCOLOR, so this command can only originate from
@@ -2833,39 +3081,189 @@ bool AmsBackendAd5xIfs::on_gcode_response_line(const std::string& line) {
         // #965 guards against (it rewrites the JSON WITHOUT emitting
         // CHANGE_ZCOLOR) never reach the clear, so the lock still protects the
         // user's material there.
+        //
+        // TYPE=/HEX= extraction (#1065 v0.99.94, bundle NJB2U558): the
+        // CHANGE_ZCOLOR token carries the user's intent at emission time:
+        //   CHANGE_ZCOLOR SLOT=N [TYPE=<material>] [HEX=<rgb>]
+        // Both parameters are OPTIONAL — zmod's "Change color" menu button omits
+        // HEX= (keeps current color, sets TYPE) and vice versa. The follow-up
+        // GET_ZCOLOR SILENT=1 query used to be the only path to refresh
+        // colors_/materials_, but it queues on Klipper's serial gcode line
+        // behind any running IFS op (INSERT_PRUTOK_IFS, IFS_F11 eject, even
+        // unrelated long macros) and can take 1-3 minutes to return — or hit
+        // the 60s RPC timeout and miss entirely. The user read that lag as
+        // "Failed to update material type" (mkleersn 07-18/07-20 sheets).
+        // Extracting TYPE=/HEX= directly from the gcode makes the refresh
+        // synchronous and lets GET_ZCOLOR degrade to a confirming no-op.
         if (line.find("CHANGE_ZCOLOR") != std::string::npos) {
             static const std::regex slot_re(R"(SLOT=(\d+))");
+            // Match TYPE= up to the next whitespace, a '|', or end of string.
+            // zmod's stock whitelist is single-token (PLA, PLA-CF, PETG, PETG-CF,
+            // SILK, ABS, TPU), and custom [zmod_ifs] filament_<NAME> entries are
+            // single-word by construction. No quoted/multiword form exists.
+            //
+            // The '|' stop is load-bearing: zmod's prompt-render macro echoes the
+            // per-slot buttons as RESPOND action:prompt_button lines whose payload
+            // is `label|gcode|color|hex`, e.g.
+            //   action:prompt_button Change color|CHANGE_ZCOLOR SLOT=4 TYPE=SILK|primary|F72224
+            // Those lines contain the CHANGE_ZCOLOR substring, so they reach this
+            // extractor, and a greedy `TYPE=(\S+)` captured `SILK|primary|F72224`
+            // — poisoning materials_/last_firmware_material_ with the button
+            // descriptor. The later clean GET_ZCOLOR read then saw a
+            // `SILK|primary|F72224 -> SILK` delta and fired a spurious
+            // sync_override_to_firmware_locked that pinned a stale color into a
+            // fresh auto-mirror override (#1065 raza616 07-22, bundle H2X5QMCU).
+            // HEX= is already `{6}`-bounded so it stops at the '|' on its own.
+            static const std::regex type_re(R"(TYPE=([^\s|]+))");
+            // HEX= is exactly 6 hex digits in zmod output. Tolerate lowercase
+            // (Mainsail console typing) — canonicalized to upper below.
+            static const std::regex hex_re(R"(HEX=([0-9A-Fa-f]{6}))");
             std::smatch m;
             if (std::regex_search(line, m, slot_re)) {
                 // zmod SLOT is 1-based; overrides_ is 0-based.
                 int slot0 = std::atoi(m[1].str().c_str()) - 1;
-                bool has_locked_override = false;
-                if (slot0 >= 0 && slot0 < NUM_PORTS) {
+
+                // Extract optional TYPE= / HEX= payloads BEFORE taking the lock
+                // (regex_search is the expensive part; do it once on the local
+                // line string). empty optional == "not present in this gcode".
+                std::optional<std::string> parsed_type;
+                std::smatch tm;
+                if (std::regex_search(line, tm, type_re)) {
+                    parsed_type = tm[1].str();
+                }
+                std::optional<std::string> parsed_hex;
+                std::smatch hm;
+                if (std::regex_search(line, hm, hex_re)) {
+                    parsed_hex = hm[1].str();
+                    // Canonicalize to upper-case so the follow-up GET_ZCOLOR
+                    // response (which parse_zcolor_silent also receives as
+                    // upper-case) compares equal — avoiding a spurious
+                    // "color changed" re-sync when the query finally returns.
+                    for (auto& c : *parsed_hex) {
+                        c = static_cast<char>(toupper(c));
+                    }
+                }
+
+                const bool slot_valid = (slot0 >= 0 && slot0 < NUM_PORTS);
+                const bool has_params = parsed_type.has_value() || parsed_hex.has_value();
+
+                // Decide under the lock whether there's real work: clearing a
+                // stale locked override (existing #981 path) and/or applying
+                // freshly-parsed TYPE=/HEX= parameters to colors_/materials_.
+                bool mutated = false;
+                if (slot_valid) {
                     std::lock_guard<std::mutex> lock(mutex_);
                     auto it = overrides_.find(slot0);
-                    has_locked_override =
+                    const bool has_locked_override =
                         (it != overrides_.end() &&
                          (it->second.user_locked_color || it->second.user_locked_material));
-                }
-                if (has_locked_override) {
-                    spdlog::info("{} External CHANGE_ZCOLOR for slot {} overrides an earlier "
-                                 "HelixScreen edit — clearing the stale locked override so the "
-                                 "new firmware color/type wins (#981)",
-                                 backend_log_tag(), slot0);
-                    {
-                        std::lock_guard<std::mutex> lock(mutex_);
+
+                    if (has_locked_override) {
+                        spdlog::info(
+                            "{} External CHANGE_ZCOLOR for slot {} overrides an earlier "
+                            "HelixScreen edit — releasing the stale color/material locks so "
+                            "the new firmware color/type wins (#981)",
+                            backend_log_tag(), slot0);
                         auto* entry = slots_.get_mut(slot0);
                         if (entry) {
-                            // Erase + persist the stale override, then re-run
+                            // Release the stale color/material locks + strip the
+                            // firmware-carryable override fields, then re-run
                             // update_slot_from_state so entry->info is refreshed
-                            // from firmware truth (colors_/materials_) NOW —
-                            // clear_override_locked deliberately leaves the baked
-                            // color/material for the next update to refresh, and
-                            // we don't want to wait on the async re-read below.
-                            clear_override_locked(slot0, entry->info);
-                            update_slot_from_state(slot0);
+                            // from firmware truth (colors_/materials_) NOW — we
+                            // don't want to wait on the async re-read below. The
+                            // firmware CAN'T carry brand/spool metadata, so this
+                            // RETAINS it (Bug B): a bare LCD-load CHANGE_ZCOLOR
+                            // must not drop the user's saved vendor. Falls back to
+                            // a full erase when there is no identity to keep.
+                            release_locked_override_keep_identity_locked(slot0, entry->info);
+                            mutated = true;
                         }
                     }
+
+                    if (has_params) {
+                        // Apply the user's intent directly to the firmware-truth
+                        // arrays. Baselines MUST advance too, so the next
+                        // check_external_*_change observation (e.g. from a
+                        // GET_ZCOLOR response or a parse_adventurer_json poll)
+                        // compares equal and doesn't fire a redundant
+                        // sync_override_to_firmware_locked round-trip.
+                        const auto idx = static_cast<size_t>(slot0);
+                        if (parsed_type) {
+                            materials_[idx] = *parsed_type;
+                            last_firmware_material_[slot0] = *parsed_type;
+                            spdlog::info("{} External CHANGE_ZCOLOR applied TYPE='{}' to slot {} "
+                                         "(#1065 gcode-path extraction)",
+                                         backend_log_tag(), *parsed_type, slot0);
+                            mutated = true;
+                        }
+                        if (parsed_hex) {
+                            colors_[idx] = *parsed_hex;
+                            try {
+                                const uint32_t color_value =
+                                    static_cast<uint32_t>(std::stoul(*parsed_hex, nullptr, 16));
+                                last_firmware_color_[slot0] = color_value;
+                                spdlog::info(
+                                    "{} External CHANGE_ZCOLOR applied HEX='{}' to slot {} "
+                                    "(#1065 gcode-path extraction)",
+                                    backend_log_tag(), *parsed_hex, slot0);
+                                mutated = true;
+                            } catch (...) {
+                                // std::stoul on a regex-validated 6-hex-digit
+                                // string can't realistically throw; defensive
+                                // only. Don't advance the baseline on the
+                                // off-chance the parse failed — the next
+                                // GET_ZCOLOR poll will recover.
+                            }
+                        }
+
+                        // Refresh a pre-existing NON-locked auto-mirror override
+                        // to match what we just wrote. Without this, the values
+                        // above land in colors_/materials_ but apply_overrides
+                        // (below, via update_slot_from_state) re-masks them with
+                        // the override's stale color_rgb / material — so the
+                        // just-tapped value never surfaces. Concretely: change a
+                        // slot's type then its color from back-to-back COLOR
+                        // macros and the new color never appeared, because an
+                        // earlier external edit had created an auto-mirror
+                        // override still pinning the previous color (#1065
+                        // raza616 07-22, bundle H2X5QMCU).
+                        //
+                        // Only refresh an override that ALREADY exists. Never
+                        // create one here: mirror_firmware_to_lane_data
+                        // default-constructs the map entry, and zmod floods the
+                        // stream with echoed CHANGE_ZCOLOR button-definition
+                        // lines on every prompt render — syncing on each would
+                        // fabricate auto-mirror overrides for slots the user
+                        // never edited. When no override exists, apply_overrides
+                        // is already a no-op and firmware truth shows unaided.
+                        //
+                        // The #981 clear above erases any locked override before
+                        // we get here, so a surviving entry is auto-mirror
+                        // (locks false); sync_override_to_firmware_locked diffs
+                        // both fields and honors user_locked_* regardless, so it
+                        // updates only the dimension that actually changed. Skip
+                        // when no real firmware color baseline exists yet, so we
+                        // don't pin black (0x000000) onto the override.
+                        if (mutated) {
+                            auto ovr_it = overrides_.find(slot0);
+                            auto color_it = last_firmware_color_.find(slot0);
+                            if (ovr_it != overrides_.end() &&
+                                color_it != last_firmware_color_.end()) {
+                                sync_override_to_firmware_locked(slot0, color_it->second,
+                                                                 materials_[idx]);
+                            }
+                        }
+                    }
+
+                    if (mutated) {
+                        // Re-run apply_overrides + slot-state derivation so the
+                        // UI-visible SlotInfo picks up the new values. If a
+                        // locked override was cleared above, apply_overrides is
+                        // now a no-op and the firmware-truth arrays win.
+                        update_slot_from_state(slot0);
+                    }
+                }
+                if (mutated) {
                     emit_event(EVENT_SLOT_CHANGED, std::to_string(slot0));
                 }
             }
@@ -2901,6 +3299,80 @@ bool AmsBackendAd5xIfs::on_gcode_response_line(const std::string& line) {
         return false;
     }
     return false;
+}
+
+bool AmsBackendAd5xIfs::apply_color_menu_slot_row(const std::string& line) {
+    // Shape (zmod _ZCOLOR_MENU render, one per slot):
+    //   // action:prompt_button 1: SILK|RUN_ZCOLOR SLOT=1 HEX=F330F9 TYPE=SILK|primary|F330F9
+    // The `<n>: ` label prefix is what separates a slot row from the action
+    // submenu's buttons (Load|IN_ZCOLOR …, Change color|CHANGE_ZCOLOR …), and
+    // RUN_ZCOLOR is display-only — it never mutates firmware state, so a row
+    // can be read as a snapshot with no risk of confusing it for a command.
+    static const std::regex slot_row_re(
+        R"(action:prompt_button\s+(\d+)\s*:[^|]*\|\s*RUN_ZCOLOR\b)");
+    std::smatch rm;
+    if (!std::regex_search(line, rm, slot_row_re))
+        return false;
+
+    // Same token grammar as the CHANGE_ZCOLOR extractor: TYPE stops at the '|'
+    // that begins the button's style/hex suffix, HEX is 6 digits.
+    static const std::regex slot_re(R"(SLOT=(\d+))");
+    static const std::regex type_re(R"(TYPE=([^\s|]+))");
+    static const std::regex hex_re(R"(HEX=([0-9A-Fa-f]{6}))");
+    std::smatch sm;
+    if (!std::regex_search(line, sm, slot_re))
+        return false;
+    // The label index and SLOT= must agree, or this isn't the row we think it
+    // is (a localized or restyled menu, a future zmod layout). Bail rather than
+    // write firmware-truth arrays from a line we don't actually understand.
+    if (rm[1].str() != sm[1].str())
+        return false;
+
+    const int slot0 = std::atoi(sm[1].str().c_str()) - 1; // zmod SLOT is 1-based
+    if (slot0 < 0 || slot0 >= NUM_PORTS)
+        return false;
+
+    std::smatch tm;
+    std::smatch hm;
+    const bool has_type = std::regex_search(line, tm, type_re);
+    const bool has_hex = std::regex_search(line, hm, hex_re);
+    if (!has_type && !has_hex)
+        return false;
+
+    std::string hex;
+    if (has_hex) {
+        hex = hm[1].str();
+        for (auto& c : hex) {
+            c = static_cast<char>(toupper(c));
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto idx = static_cast<size_t>(slot0);
+        const bool same =
+            (!has_type || materials_[idx] == tm[1].str()) && (!has_hex || colors_[idx] == hex);
+        if (same)
+            return false; // Nothing moved — the common case on a re-render.
+
+        if (has_type)
+            materials_[idx] = tm[1].str();
+        if (has_hex)
+            colors_[idx] = hex;
+
+        spdlog::info("{} Slot {} refreshed from COLOR-menu row (material='{}' color='{}')",
+                     backend_log_tag(), slot0, materials_[idx], colors_[idx]);
+
+        // Deliberately does NOT pre-advance last_firmware_* the way the
+        // CHANGE_ZCOLOR path does: this is a firmware READING, so it must flow
+        // through check_external_*_change exactly as a GET_ZCOLOR response
+        // would — refreshing a non-locked auto-mirror override and mirroring to
+        // lane_data, while honouring a user-locked one. It is the same data the
+        // debounced query returns, only ~500ms sooner.
+        update_slot_from_state(slot0);
+    }
+    emit_event(EVENT_SLOT_CHANGED, std::to_string(slot0));
+    return true;
 }
 
 void AmsBackendAd5xIfs::register_zcolor_listener() {
@@ -3305,6 +3777,19 @@ void AmsBackendAd5xIfs::apply_zcolor_result(const ZColorSilentResult& result) {
                 (chan > 0 && chan <= NUM_PORTS && result.ifs_ports.has_value() &&
                  !(*result.ifs_ports)[static_cast<size_t>(chan - 1)]);
 
+            // Same corroboration for FFMInfo.channel. It is sticky (only the ~5s
+            // JSON poll refreshes it, only an eject clears it), so right after a
+            // load into a DIFFERENT lane it still names the PREVIOUS lane. If that
+            // lane reads empty in THIS frame's Ports snapshot, the pointer is
+            // stale — do not adopt it as seated, or the load-complete frame flashes
+            // the previously-seated lane as loaded and repaints its retained
+            // override (#1065). Only trust THIS frame's Ports (never lagging
+            // port_presence_), mirroring chan_lane_empty; on a Ports-less frame
+            // the pointer is adopted as before.
+            const bool ffm_lane_empty =
+                (ffm_channel_ > 0 && ffm_channel_ <= NUM_PORTS && result.ifs_ports.has_value() &&
+                 !(*result.ifs_ports)[static_cast<size_t>(ffm_channel_ - 1)]);
+
             // Adventurer5M.json's FFMInfo.channel is the firmware's own persistent
             // record of the lane currently at the toolhead — the SAME field its
             // _IFS_REMOVE_CURRENT_PRUTOK unload macro resolves from. It stays put
@@ -3336,7 +3821,7 @@ void AmsBackendAd5xIfs::apply_zcolor_result(const ZColorSilentResult& result) {
                                   backend_log_tag(), ffm_channel_, seated_chan_);
                 }
                 seated_chan_ = 0;
-            } else if (ffm_channel_ > 0) {
+            } else if (ffm_channel_ > 0 && !ffm_lane_empty) {
                 if (seated_chan_ != ffm_channel_ || chan != ffm_channel_) {
                     spdlog::debug("{} Seated lane from FFMInfo.channel={} (IFS_STATUS Chan={} {})",
                                   backend_log_tag(), ffm_channel_, chan,
@@ -3372,11 +3857,12 @@ void AmsBackendAd5xIfs::apply_zcolor_result(const ZColorSilentResult& result) {
                 seated_chan_ = chan;
             }
 
-            // A known FFMInfo.channel, a real seated channel (Chan>0), or a
-            // confirmed-empty head resolves the seated state, so any later idle
+            // A known present-lane FFMInfo.channel, a real seated channel (Chan>0),
+            // or a confirmed-empty head resolves the seated state, so any later idle
             // Chan==0 is a genuine clear rather than post-reboot amnesia — close the
-            // cold-boot restore window.
-            if (ffm_channel_ > 0 || (chan > 0 && !chan_lane_empty) ||
+            // cold-boot restore window. A stale FFMInfo.channel pointing at an empty
+            // lane (#1065) does NOT resolve on its own — it isn't real seated truth.
+            if ((ffm_channel_ > 0 && !ffm_lane_empty) || (chan > 0 && !chan_lane_empty) ||
                 (chan == 0 && !head_filament_)) {
                 seated_resolved_since_boot_ = true;
             }
@@ -3422,6 +3908,21 @@ void AmsBackendAd5xIfs::apply_zcolor_result(const ZColorSilentResult& result) {
                     if (port_presence_[idx] == ports[idx]) {
                         continue;
                     }
+                    // Eject-settling suppression (#1065): a false->true transition
+                    // within kEjectPresenceSuppression of this lane's eject is the
+                    // silk sensor still settling clear of the just-retracted lane,
+                    // not a re-insert. Ignore it so the optimistic clear survives —
+                    // the last-ejected lane otherwise stayed "present" (offering
+                    // Unload) with no later query to re-correct it. true->false and
+                    // any transition after the window still apply.
+                    if (!port_presence_[idx] && ports[idx] &&
+                        (std::chrono::steady_clock::now() - last_eject_time_[idx]) <
+                            kEjectPresenceSuppression) {
+                        spdlog::debug("{} Slot {} IFS_STATUS Ports reads present within eject "
+                                      "settling window — ignoring as sensor lag (#1065)",
+                                      backend_log_tag(), i);
+                        continue;
+                    }
                     const bool was_present = port_presence_[idx];
                     port_presence_[idx] = ports[idx];
                     chan_changed = true;
@@ -3436,6 +3937,13 @@ void AmsBackendAd5xIfs::apply_zcolor_result(const ZColorSilentResult& result) {
                         spdlog::info("{} Slot {} went empty (IFS_STATUS Ports) — "
                                      "retaining the Spoolman link (#1071)",
                                      backend_log_tag(), i);
+                    }
+                    // absent->present: a spool was physically inserted. Unlock an
+                    // auto-tracked (no-Spoolman) override so the new spool's
+                    // firmware material/color refresh (#1065). update_slot_from_state
+                    // below then re-runs the reconcile with the locks cleared.
+                    if (!was_present && ports[idx]) {
+                        unlock_auto_tracked_override_on_insert_locked(i);
                     }
                 }
             }
@@ -3563,8 +4071,13 @@ void AmsBackendAd5xIfs::apply_zcolor_result(const ZColorSilentResult& result) {
             // same response carried IFS_STATUS Ports, which is the sensor-backed
             // authority and already set presence above; don't let the SILENT slot
             // lines fight it.
+            // Also skip once IFS_STATUS Ports has ever been the presence authority
+            // (ifs_status_ports_seen_): zmod's GET_ZCOLOR color latch survives an
+            // eject, so on a Ports-capable device it would resurrect an emptied
+            // lane from its retained color on a frame that happened to carry no
+            // Ports reading (#1065, mirrors the JSON-poll guard below).
             if (!has_per_port_sensors_ && !result.ifs_ports.has_value() &&
-                port_presence_[idx] != loaded) {
+                !ifs_status_ports_seen_.load() && port_presence_[idx] != loaded) {
                 const bool was_present = port_presence_[idx];
                 port_presence_[idx] = loaded;
                 changed = true;
@@ -3580,6 +4093,11 @@ void AmsBackendAd5xIfs::apply_zcolor_result(const ZColorSilentResult& result) {
                     spdlog::info("{} Slot {} went empty (GET_ZCOLOR present->absent) "
                                  "— retaining the Spoolman link (#1071)",
                                  backend_log_tag(), i);
+                }
+                // absent->present: physical insert on the GET_ZCOLOR-only path
+                // (no IFS_STATUS Ports this frame). Same unlock as the Ports edge.
+                if (!was_present && loaded) {
+                    unlock_auto_tracked_override_on_insert_locked(i);
                 }
             }
 
@@ -3779,7 +4297,12 @@ AmsBackendAd5xIfs::parse_zcolor_silent(const std::vector<std::string>& lines, co
                     result.saw_valid_response = true;
                     // Diagnostic: log the seated channel + presence view so the
                     // next field bundle proves Chan's loaded-idle behavior.
-                    int state = obj.value("State", -1);
+                    // safe_int, not .value(): the catch below is parse_error
+                    // only, so a line like {"Chan":1,"State":null} would throw
+                    // type_error.302 straight past it — breaking the promise
+                    // that comment makes. Every other read in this block is
+                    // already find + is_*() guarded; this was the lone gap.
+                    int state = helix::json_util::safe_int(obj, "State", -1);
                     std::string ports_str;
                     if (auto ports_it = obj.find("Ports"); ports_it != obj.end() &&
                                                            ports_it->is_array() &&
@@ -4050,6 +4573,7 @@ void AmsBackendAd5xIfs::parse_adventurer_json(const std::string& content) {
         // the next IFS_STATUS frame.
         auto chan_it = ffm.find("channel");
         if (chan_it != ffm.end() && chan_it->is_number_integer()) {
+            const int prev_current_slot = system_info_.current_slot;
             const int fw_chan = chan_it->get<int>();
             ffm_channel_ = (fw_chan >= 1 && fw_chan <= NUM_PORTS) ? fw_chan : 0;
             // Head-gate (#1065 row 28): the file's FFMInfo.channel is sticky and
@@ -4086,6 +4610,17 @@ void AmsBackendAd5xIfs::parse_adventurer_json(const std::string& content) {
                     persist_seated_slot_locked(seated_slot0);
                 }
                 log_seated_state_locked("adventurer_json");
+            }
+
+            // The per-slot loop above ran BEFORE this block moved the seated
+            // lane, so every slot's LOADED stamp is now keyed on the old
+            // current_slot. Re-derive them here rather than waiting for the next
+            // status frame: the stamp is what slot_is_actively_loaded() reads,
+            // and a stale one paints the highlight on the lane we just left.
+            if (system_info_.current_slot != prev_current_slot) {
+                for (int i = 0; i < NUM_PORTS; ++i) {
+                    update_slot_from_state(i);
+                }
             }
         }
 
@@ -4224,7 +4759,24 @@ void AmsBackendAd5xIfs::on_head_transition_locked(bool detected) {
         // apply_phase_action_locked advance HEATING -> UNLOADING.
         phase_tracker_.seen_head_drop = true;
         phase_tracker_.reached_target_once = true;
-        spdlog::info("{} Phase: head sensor dropped (cut/retract started)", backend_log_tag());
+        // Swap-aware LOADING clock reset (#1065 v0.99.94, bundle NJB2U558):
+        // INSERT_PRUTOK_IFS with another lane currently seated runs an IMPLICIT
+        // UNLOAD before the actual load. The implicit-unload head drop is real
+        // progress for a LOAD op — the swap has begun, the new lane's feed
+        // hasn't started yet. Without resetting here, the LOADING budget
+        // (90s default, 180s with swap_expected) starts counting at heat-
+        // complete and times out mid-swap, surfacing a false "Loading error,
+        // feeding filament to nozzle (timed out)" popup. apply_phase_action_locked
+        // only resets on a phase TRANSITION, but for a LOAD op the head drop
+        // doesn't transition the phase (still LOADING) — so we reset here.
+        // (For an UNLOAD op the head drop DOES transition CUTTING → UNLOADING,
+        // so apply_phase_action_locked's reset covers it and this is a no-op.)
+        if (!phase_tracker_.is_unload) {
+            action_start_time_ = std::chrono::steady_clock::now();
+        }
+        spdlog::info("{} Phase: head sensor dropped (cut/retract started{}"
+                     ")",
+                     backend_log_tag(), phase_tracker_.is_unload ? "" : " — LOAD swap clock reset");
     } else {
         // Head sensor tripped: filament reached the nozzle (load) — advance to
         // the purge phase.
@@ -4489,13 +5041,22 @@ void AmsBackendAd5xIfs::check_action_timeout() {
     // HEATING from cold legitimately takes ~158s (longer for high-temp
     // materials), so it gets a longer dedicated budget. PURGING likewise runs
     // well past 90s and its clock is reset on motion-sensor activity (#1065
-    // Bug 2). Every other phase has its clock reset on transition (see
+    // Bug 2). LOADING with swap_expected gets the extended swap budget so the
+    // implicit unload before the load doesn't blow the 90s default. Every
+    // other phase has its clock reset on transition (see
     // apply_phase_action_locked) and keeps the short 90s window.
     int limit = ACTION_TIMEOUT_SECONDS;
     if (a == AmsAction::HEATING) {
         limit = HEATING_TIMEOUT_SECONDS;
     } else if (a == AmsAction::PURGING) {
         limit = PURGING_TIMEOUT_SECONDS;
+    } else if (a == AmsAction::LOADING && phase_tracker_.swap_expected) {
+        // Belt-and-suspenders for the implicit-unload-before-load case. The
+        // primary defence is the head-drop reset in on_head_transition_locked;
+        // this covers firmware variants where the head sensor doesn't
+        // transition reliably during a swap (bundle NJB2U558 ch4→ch2 swap
+        // surfaced the false timeout at 90s).
+        limit = SWAP_LOADING_TIMEOUT_SECONDS;
     }
     auto elapsed = std::chrono::steady_clock::now() - action_start_time_;
     if (elapsed >= std::chrono::seconds(limit)) {

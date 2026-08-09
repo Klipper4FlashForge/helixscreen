@@ -10,7 +10,7 @@
 #include "bed_mesh_probe_parser.h"
 #include "json_utils.h"
 #include "moonraker_api.h"
-#include "printer_detector.h"
+#include "screws_tilt_parser.h"
 #include "shaper_csv_parser.h"
 #include "spdlog/spdlog.h"
 
@@ -419,10 +419,7 @@ class PIDCalibrateCollector : public std::enable_shared_from_this<PIDCalibrateCo
         spdlog::error("[PIDCalibrateCollector] Error: {}", message);
         unregister();
         if (on_error_) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::JSON_RPC_ERROR;
-            err.message = message;
-            err.method = "PID_CALIBRATE";
+            MoonrakerError err = MoonrakerError::json_rpc_error("PID_CALIBRATE", message);
             on_error_(err);
         }
     }
@@ -647,10 +644,7 @@ class MPCCalibrateCollector : public std::enable_shared_from_this<MPCCalibrateCo
         spdlog::error("[MPCCalibrateCollector] Error: {}", message);
         unregister();
         if (on_error_) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::JSON_RPC_ERROR;
-            err.message = message;
-            err.method = "MPC_CALIBRATE";
+            MoonrakerError err = MoonrakerError::json_rpc_error("MPC_CALIBRATE", message);
             on_error_(err);
         }
     }
@@ -795,99 +789,13 @@ class ScrewsTiltCollector : public std::enable_shared_from_this<ScrewsTiltCollec
 
   private:
     void parse_screw_line(const std::string& line) {
-        // Format: "// screw_name (base) : x=X, y=Y, z=Z" for reference
-        // Format: "// screw_name : x=X, y=Y, z=Z : adjust DIR TT:MM" for non-reference
-
+        // Shared with the mock printer and the unit tests — see
+        // screws_tilt_parser.h. Keep the parsing itself out of this collector so
+        // there is exactly one implementation of Klipper's sign convention.
         ScrewTiltResult result;
-
-        // Find the screw name (after "//" and any whitespace, before first " :" or " (")
-        size_t name_start = 2; // Skip "//"
-        // Skip any whitespace after "//"
-        while (name_start < line.length() && line[name_start] == ' ') {
-            name_start++;
+        if (parse_screws_tilt_line(line, result)) {
+            results_.push_back(std::move(result));
         }
-
-        size_t name_end = line.find(" :");
-        size_t base_pos = line.find(" (base)");
-
-        if (base_pos != std::string::npos &&
-            (name_end == std::string::npos || base_pos < name_end)) {
-            // Reference screw with "(base)" marker
-            result.screw_name = line.substr(name_start, base_pos - name_start);
-            result.is_reference = true;
-        } else if (name_end != std::string::npos) {
-            result.screw_name = line.substr(name_start, name_end - name_start);
-            result.is_reference = false;
-        } else {
-            // Can't parse - skip this line
-            spdlog::debug("[ScrewsTiltCollector] Could not parse line: {}", line);
-            return;
-        }
-
-        // Trim whitespace from screw name (leading and trailing)
-        while (!result.screw_name.empty() && result.screw_name.front() == ' ') {
-            result.screw_name.erase(0, 1);
-        }
-        while (!result.screw_name.empty() && result.screw_name.back() == ' ') {
-            result.screw_name.pop_back();
-        }
-
-        // Parse x, y, z values
-        // Look for "x=", "y=", "z="
-        auto parse_float = [&line](const std::string& prefix) -> float {
-            size_t pos = line.find(prefix);
-            if (pos == std::string::npos) {
-                return 0.0f;
-            }
-            pos += prefix.length();
-            // Find end of number (next comma, space, or end of line)
-            size_t end = line.find_first_of(", ", pos);
-            if (end == std::string::npos) {
-                end = line.length();
-            }
-            try {
-                return std::stof(line.substr(pos, end - pos));
-            } catch (...) {
-                return 0.0f;
-            }
-        };
-
-        result.x_pos = parse_float("x=");
-        result.y_pos = parse_float("y=");
-        result.z_height = parse_float("z=");
-
-        // Parse adjustment for non-reference screws
-        // Look for ": adjust CW 01:15" or ": adjust CCW 00:30"
-        if (!result.is_reference) {
-            size_t adjust_pos = line.find(": adjust ");
-            if (adjust_pos != std::string::npos) {
-                result.adjustment = line.substr(adjust_pos + 9); // Skip ": adjust "
-                // Trim any trailing whitespace
-                while (!result.adjustment.empty() &&
-                       std::isspace(static_cast<unsigned char>(result.adjustment.back()))) {
-                    result.adjustment.pop_back();
-                }
-
-                // The printer database may declare the correct physical
-                // tightening direction via `"screws_tilt_direction": "cw"` or
-                // `"ccw"`. When set to "ccw", it disagrees with Klipper's
-                // default CW-M* semantics, so flip CW↔CCW here to match
-                // the printer's physical reality. Used for vendors whose
-                // shipped screw_thread config disagrees with the actual
-                // screw response (e.g. FlashForge Adventurer 5M family).
-                // Raw Klipper output still appears in the klippy log; only
-                // the stored/display string is corrected.
-                if (PrinterDetector::screws_tilt_direction_override() == "ccw") {
-                    flip_screws_tilt_direction(result.adjustment);
-                }
-            }
-        }
-
-        spdlog::debug("[ScrewsTiltCollector] Parsed: {} at ({:.1f}, {:.1f}) z={:.3f} {}",
-                      result.screw_name, result.x_pos, result.y_pos, result.z_height,
-                      result.is_reference ? "(reference)" : result.adjustment);
-
-        results_.push_back(std::move(result));
     }
 
     void complete_success() {
@@ -914,10 +822,7 @@ class ScrewsTiltCollector : public std::enable_shared_from_this<ScrewsTiltCollec
         unregister();
 
         if (on_error_) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::JSON_RPC_ERROR;
-            err.message = message;
-            err.method = "SCREWS_TILT_CALCULATE";
+            MoonrakerError err = MoonrakerError::json_rpc_error("SCREWS_TILT_CALCULATE", message);
             on_error_(err);
         }
     }
@@ -1280,10 +1185,7 @@ class InputShaperCollector : public std::enable_shared_from_this<InputShaperColl
         unregister();
 
         if (on_error_) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::JSON_RPC_ERROR;
-            err.message = message;
-            err.method = "SHAPER_CALIBRATE";
+            MoonrakerError err = MoonrakerError::json_rpc_error("SHAPER_CALIBRATE", message);
             on_error_(err);
         }
     }
@@ -1465,10 +1367,7 @@ class NoiseCheckCollector : public std::enable_shared_from_this<NoiseCheckCollec
         unregister();
 
         if (on_error_) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::JSON_RPC_ERROR;
-            err.message = message;
-            err.method = "MEASURE_AXES_NOISE";
+            MoonrakerError err = MoonrakerError::json_rpc_error("MEASURE_AXES_NOISE", message);
             on_error_(err);
         }
     }
@@ -1510,7 +1409,7 @@ class BedMeshProgressCollector : public std::enable_shared_from_this<BedMeshProg
                              int probe_samples = 1)
         : client_(client), on_progress_(std::move(on_progress)),
           on_complete_(std::move(on_complete)), on_error_(std::move(on_error)),
-          expected_probes_(expected_probes), probe_samples_(std::max(probe_samples, 1)) {}
+          expected_probes_(expected_probes), point_counter_(probe_samples) {}
 
     ~BedMeshProgressCollector() {
         unregister();
@@ -1603,16 +1502,18 @@ class BedMeshProgressCollector : public std::enable_shared_from_this<BedMeshProg
         // Fallback: count "probe at X,Y is z=Z" lines (standard Klipper probe
         // output).  Some firmware variants don't emit the "Probing point X/Y"
         // progress line but do emit per-probe result lines.
-        // When probe samples > 1, each mesh point generates multiple "probe at"
-        // lines.  Divide to report mesh-point progress, not raw sample count.
-        if (helix::is_probe_result_line(line)) {
-            probe_at_count_++;
-            int mesh_point = (probe_at_count_ + probe_samples_ - 1) / probe_samples_;
-            spdlog::debug("[BedMeshProgressCollector] Probe result line #{} → point {}/{} "
-                          "(samples={})",
-                          probe_at_count_, mesh_point, expected_probes_, probe_samples_);
+        //
+        // These lines are per SAMPLE, not per mesh point, so they are deduped by
+        // position rather than divided by the configured sample count — the
+        // divisor only works when we recognise the printer's probe section name,
+        // and the Qidi Q2's is not one we enumerate, so a 36-point mesh counted
+        // to 72 (#1224). ProbePointCounter keeps the divisor as a fallback for
+        // lines whose coordinates do not parse.
+        if (auto mesh_point = point_counter_.feed(line)) {
+            spdlog::debug("[BedMeshProgressCollector] Probe sample line #{} → point {}/{}",
+                          point_counter_.sample_lines(), *mesh_point, expected_probes_);
             if (on_progress_) {
-                on_progress_(mesh_point, expected_probes_);
+                on_progress_(*mesh_point, expected_probes_);
             }
         }
     }
@@ -1640,10 +1541,7 @@ class BedMeshProgressCollector : public std::enable_shared_from_this<BedMeshProg
         unregister();
 
         if (on_error_) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::JSON_RPC_ERROR;
-            err.message = message;
-            err.method = "BED_MESH_CALIBRATE";
+            MoonrakerError err = MoonrakerError::json_rpc_error("BED_MESH_CALIBRATE", message);
             on_error_(err);
         }
     }
@@ -1658,9 +1556,11 @@ class BedMeshProgressCollector : public std::enable_shared_from_this<BedMeshProg
 
     int current_probe_ = 0;
     int total_probes_ = 0;
-    int probe_at_count_ = 0;  // fallback counter for "probe at X,Y is z=Z" lines
     int expected_probes_ = 0; // hint from configfile (0 = unknown)
-    int probe_samples_ = 1;   // samples per mesh point (from [probe]/[bltouch] config)
+    // Dedupes "probe at X,Y is z=Z" samples into mesh points. Seeded with the
+    // configured sample count, which it uses only when a line's coordinates
+    // cannot be parsed.
+    helix::ProbePointCounter point_counter_;
 };
 
 void MoonrakerAdvancedAPI::start_bed_mesh_calibrate(BedMeshProgressCallback on_progress,
@@ -1743,9 +1643,7 @@ void MoonrakerAdvancedAPI::calculate_screws_tilt(ScrewTiltCallback on_success,
 void MoonrakerAdvancedAPI::run_qgl(SuccessCallback /*on_success*/, ErrorCallback on_error) {
     spdlog::warn("[Moonraker API] run_qgl() not yet implemented");
     if (on_error) {
-        MoonrakerError err;
-        err.type = MoonrakerErrorType::UNKNOWN;
-        err.message = "QGL not yet implemented";
+        MoonrakerError err = MoonrakerError::unknown("QGL not yet implemented");
         on_error(err);
     }
 }
@@ -1754,9 +1652,7 @@ void MoonrakerAdvancedAPI::run_z_tilt_adjust(SuccessCallback /*on_success*/,
                                              ErrorCallback on_error) {
     spdlog::warn("[Moonraker API] run_z_tilt_adjust() not yet implemented");
     if (on_error) {
-        MoonrakerError err;
-        err.type = MoonrakerErrorType::UNKNOWN;
-        err.message = "Z-tilt adjust not yet implemented";
+        MoonrakerError err = MoonrakerError::unknown("Z-tilt adjust not yet implemented");
         on_error(err);
     }
 }
@@ -1799,9 +1695,7 @@ void MoonrakerAdvancedAPI::start_klippain_shaper_calibration(const std::string& 
                                                              ErrorCallback on_error) {
     spdlog::warn("[Moonraker API] start_klippain_shaper_calibration() not yet implemented");
     if (on_error) {
-        MoonrakerError err;
-        err.type = MoonrakerErrorType::UNKNOWN;
-        err.message = "Klippain Shake&Tune not yet implemented";
+        MoonrakerError err = MoonrakerError::unknown("Klippain Shake&Tune not yet implemented");
         on_error(err);
     }
 }
@@ -1913,9 +1807,8 @@ void MoonrakerAdvancedAPI::get_input_shaper_config(InputShaperConfigCallback on_
             } catch (const std::exception& e) {
                 spdlog::error("[Moonraker API] Failed to parse input shaper config: {}", e.what());
                 if (on_error) {
-                    MoonrakerError err;
-                    err.type = MoonrakerErrorType::UNKNOWN;
-                    err.message = std::string("Failed to parse input shaper config: ") + e.what();
+                    MoonrakerError err = MoonrakerError::unknown(
+                        std::string("Failed to parse input shaper config: ") + e.what());
                     on_error(err);
                 }
             }
@@ -1938,9 +1831,8 @@ void MoonrakerAdvancedAPI::get_machine_limits(MachineLimitsCallback on_success,
                     !response["result"]["status"].contains("toolhead")) {
                     spdlog::warn("[Moonraker API] Toolhead object not available in response");
                     if (on_error) {
-                        MoonrakerError err;
-                        err.type = MoonrakerErrorType::UNKNOWN;
-                        err.message = "Toolhead object not available";
+                        MoonrakerError err =
+                            MoonrakerError::unknown("Toolhead object not available");
                         on_error(err);
                     }
                     return;
@@ -1969,9 +1861,8 @@ void MoonrakerAdvancedAPI::get_machine_limits(MachineLimitsCallback on_success,
             } catch (const std::exception& e) {
                 spdlog::error("[Moonraker API] Failed to parse machine limits: {}", e.what());
                 if (on_error) {
-                    MoonrakerError err;
-                    err.type = MoonrakerErrorType::UNKNOWN;
-                    err.message = std::string("Failed to parse machine limits: ") + e.what();
+                    MoonrakerError err = MoonrakerError::unknown(
+                        std::string("Failed to parse machine limits: ") + e.what());
                     on_error(err);
                 }
             }
@@ -2017,9 +1908,8 @@ void MoonrakerAdvancedAPI::set_machine_limits(const MachineLimits& limits,
     if (!has_params) {
         spdlog::warn("[Moonraker API] set_machine_limits called with no valid parameters");
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "No valid machine limit parameters provided";
+            MoonrakerError err =
+                MoonrakerError::validation_error("", "No valid machine limit parameters provided");
             on_error(err);
         }
         return;
@@ -2042,10 +1932,8 @@ void MoonrakerAdvancedAPI::execute_macro(const std::string& name,
     if (name.empty()) {
         spdlog::error("[Moonraker API] execute_macro() called with empty name");
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Macro name cannot be empty";
-            err.method = "execute_macro";
+            MoonrakerError err =
+                MoonrakerError::validation_error("execute_macro", "Macro name cannot be empty");
             on_error(err);
         }
         return;
@@ -2056,10 +1944,8 @@ void MoonrakerAdvancedAPI::execute_macro(const std::string& name,
             spdlog::error("[Moonraker API] Invalid macro name '{}' contains illegal character '{}'",
                           name, c);
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::VALIDATION_ERROR;
-                err.message = "Macro name contains illegal characters";
-                err.method = "execute_macro";
+                MoonrakerError err = MoonrakerError::validation_error(
+                    "execute_macro", "Macro name contains illegal characters");
                 on_error(err);
             }
             return;
@@ -2139,11 +2025,8 @@ void MoonrakerAdvancedAPI::get_heater_pid_values(
                     !response["result"]["status"]["configfile"].contains("settings")) {
                     spdlog::debug("[Moonraker API] configfile.settings not available in response");
                     if (on_error) {
-                        on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN,
-                                                0,
-                                                "configfile.settings not available",
-                                                "get_pid_values",
-                                                {}});
+                        on_error(MoonrakerError::unknown("configfile.settings not available",
+                                                         "get_pid_values"));
                     }
                     return;
                 }
@@ -2152,11 +2035,8 @@ void MoonrakerAdvancedAPI::get_heater_pid_values(
 
                 if (!settings.contains(heater)) {
                     if (on_error) {
-                        on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN,
-                                                0,
-                                                "Heater '" + heater + "' not in config",
-                                                "get_pid_values",
-                                                {}});
+                        on_error(MoonrakerError::unknown("Heater '" + heater + "' not in config",
+                                                         "get_pid_values"));
                     }
                     return;
                 }
@@ -2174,21 +2054,15 @@ void MoonrakerAdvancedAPI::get_heater_pid_values(
                     }
                 } else {
                     if (on_error) {
-                        on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN,
-                                                0,
-                                                "No PID values for heater '" + heater + "'",
-                                                "get_pid_values",
-                                                {}});
+                        on_error(MoonrakerError::unknown(
+                            "No PID values for heater '" + heater + "'", "get_pid_values"));
                     }
                 }
             } catch (const std::exception& ex) {
                 spdlog::warn("[Moonraker API] Error parsing PID values: {}", ex.what());
                 if (on_error) {
-                    on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN,
-                                            0,
-                                            std::string("Parse error: ") + ex.what(),
-                                            "get_pid_values",
-                                            {}});
+                    on_error(MoonrakerError::unknown(std::string("Parse error: ") + ex.what(),
+                                                     "get_pid_values"));
                 }
             }
         },
@@ -2215,11 +2089,8 @@ void MoonrakerAdvancedAPI::get_heater_control_type(
                     spdlog::debug(
                         "[Moonraker API] configfile.settings not available for control type query");
                     if (on_error) {
-                        on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN,
-                                                0,
-                                                "configfile.settings not available",
-                                                "get_heater_control_type",
-                                                {}});
+                        on_error(MoonrakerError::unknown("configfile.settings not available",
+                                                         "get_heater_control_type"));
                     }
                     return;
                 }
@@ -2228,11 +2099,8 @@ void MoonrakerAdvancedAPI::get_heater_control_type(
 
                 if (!settings.contains(heater)) {
                     if (on_error) {
-                        on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN,
-                                                0,
-                                                "Heater '" + heater + "' not in config",
-                                                "get_heater_control_type",
-                                                {}});
+                        on_error(MoonrakerError::unknown("Heater '" + heater + "' not in config",
+                                                         "get_heater_control_type"));
                     }
                     return;
                 }
@@ -2246,11 +2114,8 @@ void MoonrakerAdvancedAPI::get_heater_control_type(
             } catch (const std::exception& ex) {
                 spdlog::warn("[Moonraker API] Error parsing heater control type: {}", ex.what());
                 if (on_error) {
-                    on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN,
-                                            0,
-                                            std::string("Parse error: ") + ex.what(),
-                                            "get_heater_control_type",
-                                            {}});
+                    on_error(MoonrakerError::unknown(std::string("Parse error: ") + ex.what(),
+                                                     "get_heater_control_type"));
                 }
             }
         },
@@ -2349,7 +2214,18 @@ void MoonrakerAdvancedAPI::detect_belt_hardware(BeltHardwareCallback on_complete
             helix::calibration::BeltTensionHardware hw;
 
             try {
-                auto objects = response.value("objects", json::array());
+                // The array lives under the JSON-RPC envelope's result member —
+                // send_jsonrpc hands the callback the whole envelope, not the
+                // unwrapped result. Reading "objects" off the top level always
+                // yielded the empty default, which left every flag below false on
+                // every printer (prestonbrown/helixscreen#1137).
+                json objects = json::array();
+                const auto result_it = response.find("result");
+                if (result_it != response.end() && result_it->is_object()) {
+                    const auto objects_it = result_it->find("objects");
+                    if (objects_it != result_it->end() && objects_it->is_array())
+                        objects = *objects_it;
+                }
 
                 // Use AccelSensorManager as the single source of truth for
                 // accelerometer detection (discovers from configfile.config,
@@ -2357,6 +2233,8 @@ void MoonrakerAdvancedAPI::detect_belt_hardware(BeltHardwareCallback on_complete
                 hw.has_adxl = helix::sensors::AccelSensorManager::instance().has_sensors();
 
                 for (const auto& obj : objects) {
+                    if (!obj.is_string())
+                        continue;
                     std::string name = obj.get<std::string>();
                     if (name == "quad_gantry_level") {
                         hw.has_belted_z = true;
@@ -2376,12 +2254,8 @@ void MoonrakerAdvancedAPI::detect_belt_hardware(BeltHardwareCallback on_complete
             } catch (const std::exception& e) {
                 spdlog::error("[MoonrakerAPI] Failed to parse object list: {}", e.what());
                 if (on_error)
-                    on_error(
-                        MoonrakerError{MoonrakerErrorType::JSON_RPC_ERROR,
-                                       0,
-                                       fmt::format("Failed to parse printer objects: {}", e.what()),
-                                       {},
-                                       {}});
+                    on_error(MoonrakerError::json_rpc_error(
+                        "", fmt::format("Failed to parse printer objects: {}", e.what())));
                 return;
             }
 
@@ -2424,12 +2298,8 @@ void MoonrakerAdvancedAPI::detect_belt_hardware(BeltHardwareCallback on_complete
                     } catch (const std::exception& e) {
                         spdlog::error("[MoonrakerAPI] Failed to parse kinematics: {}", e.what());
                         if (on_error)
-                            on_error(MoonrakerError{
-                                MoonrakerErrorType::JSON_RPC_ERROR,
-                                0,
-                                fmt::format("Failed to detect kinematics: {}", e.what()),
-                                {},
-                                {}});
+                            on_error(MoonrakerError::json_rpc_error(
+                                "", fmt::format("Failed to detect kinematics: {}", e.what())));
                     }
                 },
                 [on_error](const MoonrakerError& err) {
@@ -2548,22 +2418,16 @@ void MoonrakerAdvancedAPI::download_accel_csv(const std::string& name,
                 if (!response.contains("result")) {
                     spdlog::error("[MoonrakerAPI] File list response missing 'result' field");
                     if (on_error)
-                        on_error(MoonrakerError{MoonrakerErrorType::JSON_RPC_ERROR,
-                                                0,
-                                                "File list response missing 'result' field",
-                                                {},
-                                                {}});
+                        on_error(MoonrakerError::json_rpc_error(
+                            "", "File list response missing 'result' field"));
                     return;
                 }
                 const auto& result = response["result"];
                 if (!result.is_array()) {
                     spdlog::error("[MoonrakerAPI] File list 'result' is not an array");
                     if (on_error)
-                        on_error(MoonrakerError{MoonrakerErrorType::JSON_RPC_ERROR,
-                                                0,
-                                                "File list 'result' is not an array",
-                                                {},
-                                                {}});
+                        on_error(MoonrakerError::json_rpc_error(
+                            "", "File list 'result' is not an array"));
                     return;
                 }
                 for (const auto& file : result) {
@@ -2578,22 +2442,15 @@ void MoonrakerAdvancedAPI::download_accel_csv(const std::string& name,
             } catch (const std::exception& e) {
                 spdlog::error("[MoonrakerAPI] Failed to parse file list: {}", e.what());
                 if (on_error)
-                    on_error(MoonrakerError{MoonrakerErrorType::JSON_RPC_ERROR,
-                                            0,
-                                            "Failed to find CSV data file",
-                                            {},
-                                            {}});
+                    on_error(MoonrakerError::json_rpc_error("", "Failed to find CSV data file"));
                 return;
             }
 
             if (best_file.empty()) {
                 spdlog::error("[MoonrakerAPI] No CSV file found matching: {}", target_prefix);
                 if (on_error)
-                    on_error(MoonrakerError{MoonrakerErrorType::JSON_RPC_ERROR,
-                                            0,
-                                            "No accelerometer data file found",
-                                            {},
-                                            {}});
+                    on_error(
+                        MoonrakerError::json_rpc_error("", "No accelerometer data file found"));
                 return;
             }
 
@@ -2625,12 +2482,8 @@ void MoonrakerAdvancedAPI::download_accel_csv(const std::string& name,
                     } catch (const std::exception& e) {
                         spdlog::error("[MoonrakerAPI] Failed to read CSV data: {}", e.what());
                         if (on_error)
-                            on_error(
-                                MoonrakerError{MoonrakerErrorType::JSON_RPC_ERROR,
-                                               0,
-                                               fmt::format("Failed to read CSV data: {}", e.what()),
-                                               {},
-                                               {}});
+                            on_error(MoonrakerError::json_rpc_error(
+                                "", fmt::format("Failed to read CSV data: {}", e.what())));
                     }
                 },
                 [on_error](const MoonrakerError& err) {

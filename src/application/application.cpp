@@ -30,6 +30,7 @@
 #include "environment_config.h"
 #include "gcode_error_router.h"
 #include "gcode_narration_router.h"
+#include "hardware_fingerprint.h"
 #include "hardware_role_registry.h"
 #include "hardware_validator.h"
 #include "helix_version.h"
@@ -47,19 +48,26 @@
 #include "post_op_cooldown_manager.h"
 #include "power_device_state.h"
 #include "print_history_manager.h"
+#include "printer_cache_registry.h"
 #include "printer_recovery_service.h"
 #include "recovery_modal_presenter.h"
+#ifdef HELIX_ENABLE_REMOTE_CONTROL
+#include "remote_control_server.h"
+#endif
 #include "rpc_error_correlation.h"
 #include "screenshot.h"
 #include "sensor_state.h"
 #include "sound_manager.h"
+#include "spoolman_manager.h"
 #include "static_panel_registry.h"
 #include "static_subject_registry.h"
 #include "streaming_policy.h"
 #include "subject_initializer.h"
+#include "temp_graph_controller.h"
 #include "temperature_history_manager.h"
 #include "thermal_rate_model.h"
 #include "timelapse_state.h"
+#include "timezone_env.h"
 #include "translation_loader.h"
 #include "wizard_config_paths.h"
 
@@ -74,12 +82,14 @@
 #include "ui_dialog.h"
 #include "ui_emergency_stop.h"
 #include "ui_error_reporting.h"
+#include "ui_event_safety.h"
 #include "ui_fan_control_overlay.h"
 #include "ui_gcode_viewer.h"
 #include "ui_gradient_canvas.h"
 #include "ui_icon.h"
 #include "ui_icon_loader.h"
 #include "ui_keyboard_manager.h"
+#include "ui_lock_screen.h"
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
 #include "ui_notification.h"
@@ -94,8 +104,6 @@
 #include "ui_panel_calibration_pid.h"
 #include "ui_panel_calibration_zoffset.h"
 #include "ui_panel_filament.h"
-#include "ui_panel_gcode_test.h"
-#include "ui_panel_glyphs.h"
 #include "ui_panel_history_dashboard.h"
 #include "ui_panel_home.h"
 #include "ui_panel_input_shaper.h"
@@ -107,14 +115,18 @@
 #include "ui_panel_screws_tilt.h"
 #include "ui_panel_settings.h"
 #include "ui_panel_spoolman.h"
-#include "ui_panel_step_test.h"
-#include "ui_panel_test.h"
+#include "ui_preflight_check_modal.h"
 #include "ui_print_tune_overlay.h"
 #include "ui_printer_status_icon.h"
 #include "ui_probe_overlay.h"
+#include "ui_runout_guidance_modal.h"
 #include "ui_settings_about.h"
+#include "ui_settings_barcode_scanner.h"
 #include "ui_settings_display_sound.h"
+#include "ui_settings_fans.h"
 #include "ui_settings_hardware_health.h"
+#include "ui_settings_label_printer.h"
+#include "ui_settings_security.h"
 #include "ui_settings_sensors.h"
 #include "ui_severity_card.h"
 #include "ui_spaghetti_detection_modal.h"
@@ -130,6 +142,18 @@
 #include "ui_wizard_language_chooser.h"
 #include "ui_wizard_touch_calibration.h"
 #include "ui_wizard_wifi.h"
+
+#include "preflight_validator.h"
+
+// Developer-only showcase panels (ENABLE_DEV_PANELS, excluded from release
+// builds). Not wired into PanelFactory — kept as live testbeds for XML
+// bindings, wizard step progress, the 3D G-code viewer and icon-font coverage.
+#ifdef HELIX_ENABLE_DEV_PANELS
+#include "ui_panel_gcode_test.h"
+#include "ui_panel_glyphs.h"
+#include "ui_panel_step_test.h"
+#include "ui_panel_test.h"
+#endif
 
 #include "active_print_media_manager.h"
 #include "android_asset_extractor.h"
@@ -191,6 +215,7 @@
 #include "tips_manager.h"
 #include "tool_state.h"
 #include "xml_registration.h"
+#include "zmod_zoffset.h"
 
 #include <lvgl/src/misc/cache/instance/lv_image_cache.h>
 #include <spdlog/spdlog.h>
@@ -205,6 +230,7 @@
 #include <atomic>
 #include <cerrno>
 #include <chrono>
+#include <climits>
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
@@ -222,6 +248,15 @@
 #endif
 
 using namespace helix;
+
+#if HELIX_HAS_CAMERA
+// Defined in src/ui/panel_widgets/camera_widget.cpp; that directory is not on
+// application.cpp's include path, so forward-declare rather than including the
+// header (same pattern as ui_settings_hardware.cpp).
+namespace helix {
+void open_standalone_camera_fullscreen(lv_obj_t* parent_screen);
+}
+#endif
 
 // External globals for logging (defined in cli_args.cpp, populated by parse_cli_args)
 extern std::string g_log_dest_cli;
@@ -243,6 +278,14 @@ const std::string& crash_marker_path() {
     return p;
 }
 
+// Async-signal-safe copy of crash_marker_path(). The SIGTERM handler clears the
+// marker with unlink(2) and may not build the path itself: std::string, the
+// function-local static's guard, and std::filesystem::remove are all unsafe in
+// a handler. The path is snapshotted here once on the main thread at startup;
+// s_crash_marker_path_ready gates the handler until it is.
+char s_crash_marker_path[PATH_MAX] = {0};
+volatile sig_atomic_t s_crash_marker_path_ready = 0;
+
 // GPU 3D crash-loop guard file (issues #966 / #1084 / #1085). The 3D GLES
 // renderer writes this immediately before its first GPU draw and removes it
 // after the first successful frame. If the driver hard-faults inside the draw
@@ -252,6 +295,18 @@ const std::string& crash_marker_path() {
 // markers so it survives RO-rootfs platforms.
 const std::string& gpu_3d_guard_path() {
     static const std::string p = helix::writable_path("gpu_3d_guard");
+    return p;
+}
+
+// GPU 2D blur crash-loop guard file. The DRM+EGL backdrop-blur path writes this
+// immediately before its first Mali/EGL init and removes it once the pipeline is
+// up. If the driver hard-faults inside that init (an in-driver SIGSEGV the
+// reactive check_gl() guard cannot catch), the process dies with the file still
+// present; finding it here at startup means the last session crashed initializing
+// GPU blur, so we promote it to a persistent block. Routed through the writable
+// config dir like the other markers so it survives RO-rootfs platforms.
+const std::string& gpu_blur_guard_path() {
+    static const std::string p = helix::writable_path("gpu_blur_guard");
     return p;
 }
 
@@ -335,6 +390,15 @@ void invalidate_all_recursive(lv_obj_t* obj) {
  */
 void graceful_quit_signal_handler(int sig) {
     if (sig == SIGTERM) {
+        // A supervisor stop is not a crash. Because this path skips
+        // Application::shutdown() — the only other place the crash-restart
+        // marker is cleared — every SIGTERM used to leave its start timestamp
+        // behind. On the Elegoo CC1, COSMOS's resonance-calibration macro
+        // stops and starts the UI through gui-switcher (SIGTERM by pidfile);
+        // three of those inside the 120s window tripped "Crash loop detected"
+        // and HelixScreen refused to boot. unlink(2) is async-signal-safe;
+        // the path was cached at startup so nothing is constructed here.
+        helix::clear_crash_marker_signal_safe();
         static const char msg[] = "[Application] SIGTERM — fast exit\n";
         ssize_t n = write(STDERR_FILENO, msg, sizeof(msg) - 1);
         (void)n; // suppress unused-result warning
@@ -345,6 +409,30 @@ void graceful_quit_signal_handler(int sig) {
 }
 
 } // namespace
+
+namespace helix {
+
+bool cache_crash_marker_path_for_signal(const std::string& path) {
+    if (path.empty() || path.size() >= sizeof(s_crash_marker_path)) {
+        spdlog::warn("[Application] Crash marker path not signal-cacheable ({} bytes): '{}'",
+                     path.size(), path);
+        s_crash_marker_path_ready = 0;
+        return false;
+    }
+    std::memcpy(s_crash_marker_path, path.c_str(), path.size() + 1);
+    s_crash_marker_path_ready = 1;
+    return true;
+}
+
+void clear_crash_marker_signal_safe() {
+    if (s_crash_marker_path_ready == 0) {
+        return;
+    }
+    // ENOENT is the common case (no marker written, e.g. --test mode).
+    (void)::unlink(s_crash_marker_path);
+}
+
+} // namespace helix
 
 // C bridge functions called from SDL event handler (lv_sdl_window.c)
 extern "C" void helix_notify_app_backgrounded() {
@@ -426,15 +514,20 @@ int Application::run(int argc, char** argv) {
     // Ensure we're running from the project root
     ensure_project_root_cwd();
 
-    // Prevent multiple instances from running simultaneously.
-    // Two instances fighting for DRM causes 100% CPU (flush retry loop) and segfaults.
-    if (!acquire_instance_lock()) {
-        return 1;
-    }
-
     // Phase 1: Parse command line args
     if (!parse_args(argc, argv)) {
         return 0; // Help shown or parse error
+    }
+
+    // Prevent multiple instances from running simultaneously.
+    // Two instances fighting for DRM causes 100% CPU (flush retry loop) and segfaults.
+    //
+    // Claimed after arg parsing so the flags that print and exit (-V/--version,
+    // -h/--help) still work on a device where helix-screen is already running —
+    // taking the lock first made them fail with "another instance is running",
+    // which is exactly when you most want to ask the binary its version.
+    if (!acquire_instance_lock()) {
+        return 1;
     }
 
     // Install crash handler early (before other init that could crash)
@@ -468,8 +561,15 @@ int Application::run(int argc, char** argv) {
         return 1;
     }
 
-    // Crash loop detection: track rapid restarts via marker file
-    {
+    // Snapshot the marker path for the SIGTERM handler. init_config() has run,
+    // so writable_path() now resolves; the handler cannot construct this itself.
+    helix::cache_crash_marker_path_for_signal(crash_marker_path());
+
+    // Crash loop detection: track rapid restarts via marker file. Skipped in
+    // test mode — automation (screenshot pipeline, helixctl-driven runs) relaunches
+    // the binary rapidly by design, and this guard exists to protect users on a
+    // real device from an infinite restart loop, never a dev running --test.
+    if (!get_runtime_config()->is_test_mode()) {
         constexpr size_t MAX_CRASH_RESTARTS = 3;
         constexpr long long CRASH_WINDOW_SEC = 120;
         auto now_epoch = std::chrono::duration_cast<std::chrono::seconds>(
@@ -520,6 +620,22 @@ int Application::run(int argc, char** argv) {
         }
     }
 
+    // Promote a surviving GPU blur crash-loop guard to a persistent block. The
+    // guard file only survives if the last session died inside the Mali/EGL blur
+    // init mid-setup (backdrop_blur.cpp clears it once the pipeline is up). Set
+    // /display/gpu_blur_blocked so the backdrop uses the pure-CPU blur path, then
+    // remove the guard so a subsequent clean run can re-arm it.
+    {
+        std::error_code ec;
+        if (std::filesystem::exists(gpu_blur_guard_path(), ec)) {
+            spdlog::warn("[Application] GPU blur crash-loop guard survived — last session likely "
+                         "faulted inside the GPU driver; blocking GPU backdrop blur");
+            Config::get_instance()->set<bool>("/display/gpu_blur_blocked", true);
+            Config::get_instance()->save();
+            std::filesystem::remove(gpu_blur_guard_path(), ec);
+        }
+    }
+
     // Phase 3: Initialize logging
     if (!init_logging()) {
         return 1;
@@ -530,7 +646,6 @@ int Application::run(int argc, char** argv) {
     spdlog::debug("[Application] Target: {}x{}", m_screen_width, m_screen_height);
     spdlog::debug("[Application] DPI: {}{}", (m_args.dpi > 0 ? m_args.dpi : LV_DPI_DEF),
                   (m_args.dpi > 0 ? " (custom)" : " (default)"));
-    spdlog::debug("[Application] Initial Panel: {}", m_args.initial_panel);
 
     // Headless one-shot: detect printer via Moonraker REST, print JSON verdict, exit.
     // Must run after logging init but before any display/LVGL init.
@@ -807,7 +922,11 @@ int Application::run(int argc, char** argv) {
                 spdlog::info("[Application] Recovering from stale printer '{}' — "
                              "switching to completed printer '{}'",
                              active_id, fallback_id);
-                m_config->remove_printer(active_id);
+                // Archive rather than erase: the user never asked for this
+                // deletion, and a wizard_completed flag that got cleared by
+                // something other than a real interrupted setup would otherwise
+                // silently destroy a fully configured printer.
+                m_config->archive_printer(active_id);
                 m_config->set_active_printer(fallback_id);
                 m_config->save();
             }
@@ -820,9 +939,9 @@ int Application::run(int argc, char** argv) {
             set_wizard_active(true);
         }
 
-        // Phase 13: Create overlay panels (if not in wizard)
+        // Phase 13: Apply startup CLI actions (if not in wizard)
         if (!m_wizard_active) {
-            create_overlays();
+            apply_startup_cli_actions();
             // No wizard will run — finalize the home panel immediately so its
             // default layout reflects currently-connected hardware.
             get_global_home_panel().finalize_setup();
@@ -847,6 +966,25 @@ int Application::run(int argc, char** argv) {
 
         // Phase 14b: Check WiFi availability if expected
         check_wifi_availability();
+
+        // Phase 14c: Start remote control server (dev/test builds only)
+        // Auto-enabled in --test mode, opt-in via --remote otherwise
+#ifdef HELIX_ENABLE_REMOTE_CONTROL
+        if (m_args.remote_control || get_runtime_config()->test_mode) {
+            helix::RemoteConfig rc;
+            if (m_args.remote_transport == "http") {
+                rc.transport = helix::RemoteConfig::Transport::Http;
+                rc.http_bind = m_args.remote_http_bind;
+                rc.http_port = m_args.remote_http_port;
+            } else {
+                rc.transport = helix::RemoteConfig::Transport::UnixSocket;
+                rc.socket_path = helix::resolve_socket_path(m_args.remote_socket);
+            }
+            if (!helix::RemoteControlServer::instance().start(rc)) {
+                spdlog::warn("[Application] Remote control server failed to start (non-fatal)");
+            }
+        }
+#endif
 
         // Phase 15: Start memory monitoring (logs at TRACE level, -vvv)
         helix::MemoryMonitor::instance().start(5000);
@@ -1019,9 +1157,6 @@ bool Application::parse_args(int argc, char** argv) {
         return false;
     }
 
-    // Auto-configure mock state based on requested panel (after parsing args)
-    auto_configure_mock_state();
-
     // Apply environment variable overrides using type-safe EnvironmentConfig
     using EnvConfig = helix::config::EnvironmentConfig;
 
@@ -1066,41 +1201,6 @@ bool Application::parse_args(int argc, char** argv) {
     return true;
 }
 
-void Application::auto_configure_mock_state() {
-    RuntimeConfig* config = get_runtime_config();
-
-    if (config->test_mode && !config->use_real_moonraker) {
-        if (m_args.overlays.print_status) {
-            config->mock_auto_start_print = true;
-            if (!config->gcode_test_file) {
-                config->gcode_test_file = RuntimeConfig::get_default_test_file_path();
-            }
-            spdlog::info("[Auto] Mock will simulate active print with '{}'",
-                         config->gcode_test_file);
-        }
-
-        // When requesting the detail view (print-detail), honor an explicit
-        // --select-file if one was given; otherwise fall back to the default test
-        // file so the panel always has something to render. Never override a
-        // user-requested file with the default (or the first file in the list).
-        if (m_args.overlays.file_detail) {
-            if (!config->select_file) {
-                config->select_file = RuntimeConfig::DEFAULT_TEST_FILE;
-                spdlog::info("[Auto] Auto-selecting '{}' for print-detail panel",
-                             RuntimeConfig::DEFAULT_TEST_FILE);
-            } else {
-                spdlog::info("[Auto] Honoring requested --select-file '{}' for print-detail panel",
-                             config->select_file);
-            }
-        }
-
-        if (m_args.overlays.history_dashboard) {
-            config->mock_auto_history = true;
-            spdlog::info("[Auto] Mock will generate history data for history panel");
-        }
-    }
-}
-
 bool Application::init_config() {
     m_config = Config::get_instance();
 
@@ -1133,6 +1233,16 @@ bool Application::init_config() {
 bool Application::init_logging() {
     using namespace helix::logging;
 
+    // Apply the configured timezone BEFORE the first timestamped line. It is
+    // applied again later by DisplaySettingsManager::init_subjects() (which owns
+    // the setting and its subject) — idempotent, and by then the value already
+    // matches. Without this the log's wall clock jumps mid-startup on any device
+    // whose configured zone differs from the host's, which reads as a stall in a
+    // debug bundle (#1218: a 5-hour jump inside a single startup sequence).
+    // Unknown zones are left to glibc, which treats an unparseable TZ as UTC —
+    // the same fallback DisplaySettingsManager applies.
+    helix::timezone_env::apply(m_config->get<std::string>("/display/timezone", "UTC").c_str());
+
     LogConfig log_config;
 
     // Resolve log level with precedence: --log-level > -v flags > config file > defaults
@@ -1143,6 +1253,18 @@ bool Application::init_logging() {
         log_config.level =
             resolve_log_level(m_args.verbosity, config_level, get_runtime_config()->test_mode);
     }
+
+    // An explicit -v/--log-level means the user asked to watch the logs, so attach
+    // the console sink even when stdout is a pipe. Without this, `helix-screen -vv |
+    // tee run.log` on any box with a systemd journal socket produces no output at
+    // all — auto-detection picks the Journal target, whose console gate is
+    // isatty(stdout). A bare run with no flag keeps the journal-only behavior.
+    log_config.force_console = m_args.verbosity > 0 || !g_log_level_cli.empty();
+
+    // --test always gets a console sink, whatever stdout is (pipe, file, socket).
+    // Read here rather than inside logging_init.cpp because that TU is linked into
+    // the watchdog build, which does not link runtime_config.o.
+    log_config.test_mode = get_runtime_config()->test_mode;
 
     // Resolve log destination: CLI > config > auto
     std::string log_dest_str = g_log_dest_cli;
@@ -1287,41 +1409,13 @@ bool Application::init_display() {
         theme_manager_refresh_layout_constants(disp);
         layout.init(w, h);
 
-        // OverlayBase-derived overlays cache their root widget across show/hide
-        // cycles, so the width baked in at creation time stays stale when the
-        // canvas shrinks (e.g., Android Keep Navigation Bar pins a side bar
-        // that insets the LVGL surface). Walk the screen children and re-apply
-        // the current overlay_panel_width_full / overlay_panel_width to any
-        // widget named *_overlay so existing overlays reflow without needing
-        // to be destroyed and recreated.
-        const char* width_full_str = lv_xml_get_const(nullptr, "overlay_panel_width_full");
-        const char* width_str = lv_xml_get_const(nullptr, "overlay_panel_width");
-        if (width_full_str && width_str) {
-            int32_t width_full = std::atoi(width_full_str);
-            int32_t width_std = std::atoi(width_str);
-            lv_obj_t* screen = lv_screen_active();
-            if (screen) {
-                uint32_t n = lv_obj_get_child_count(screen);
-                for (uint32_t i = 0; i < n; i++) {
-                    lv_obj_t* child = lv_obj_get_child(screen, i);
-                    const char* name = lv_obj_get_name(child);
-                    if (!name)
-                        continue;
-                    size_t len = std::strlen(name);
-                    if (len < 8)
-                        continue;
-                    if (std::strcmp(name + len - 8, "_overlay") != 0)
-                        continue;
-                    int32_t cur = lv_obj_get_width(child);
-                    // Most overlays use _full; some narrower panels use the
-                    // standard variant. Decide by which is closer to current.
-                    int32_t target = std::abs(cur - width_std) < std::abs(cur - width_full)
-                                         ? width_std
-                                         : width_full;
-                    lv_obj_set_width(child, target);
-                }
-            }
-        }
+        // Overlays cache their root widget across show/hide cycles, so the
+        // width applied at push time goes stale when the canvas changes size
+        // (e.g., Android Keep Navigation Bar pins a side bar that insets the
+        // LVGL surface). NavigationManager remembers each live overlay's
+        // resolved width class, so this re-derives the pixel width from the
+        // constants just refreshed above (#941, #1178).
+        NavigationManager::instance().reapply_overlay_widths();
 
         spdlog::info("[Application] Resize: refreshed theme + layout for {}x{} ({})", w, h,
                      layout.name());
@@ -1379,7 +1473,8 @@ bool Application::init_theme() {
 
     // Register globals.xml first (required for theme constants, fonts, spacing tokens)
     // Note: fonts must be registered before this (done in init_assets phase)
-    lv_result_t globals_result = lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/globals.xml").c_str());
+    lv_result_t globals_result = lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/globals.xml").c_str());
     if (globals_result != LV_RESULT_OK) {
         spdlog::error("[Application] FATAL: Failed to load globals.xml - "
                       "all XML constants (fonts, colors, spacing) will be missing. "
@@ -1551,7 +1646,9 @@ bool Application::register_xml_components() {
     helix::register_xml_components();
     spdlog::debug("[Application] XML components registered");
 
-    // Start XML hot reloader if enabled (dev-only, HELIX_HOT_RELOAD=1)
+    // Start XML hot reloader if enabled. Default ON for native (non-release)
+    // builds so editing XML during dev Just Works; OFF for cross-compiled
+    // release targets. Env var HELIX_HOT_RELOAD={0,1} overrides either way.
     if (RuntimeConfig::hot_reload_enabled()) {
         m_hot_reloader = std::make_unique<helix::XmlHotReloader>();
         m_hot_reloader->set_after_reload_callback([](const std::string& component) {
@@ -1967,11 +2064,8 @@ bool Application::init_plugins() {
 }
 
 bool Application::run_wizard() {
-    bool wizard_required = (m_args.force_wizard || m_config->is_wizard_required()) &&
-                           !m_args.overlays.step_test && !m_args.overlays.test_panel &&
-                           !m_args.overlays.keypad && !m_args.overlays.keyboard &&
-                           !m_args.overlays.gcode_test && !m_args.overlays.wizard_ams_identify &&
-                           !m_args.panel_requested;
+    bool wizard_required =
+        (m_args.force_wizard || m_config->is_wizard_required()) && !m_args.skip_wizard;
 
     if (!wizard_required) {
         return false;
@@ -2036,7 +2130,7 @@ bool Application::run_wizard() {
     // Touch-calibration force must work even when the first-run wizard is
     // pending. Without this, the wizard's step-0 auto-skip (already-calibrated
     // check) wins and the request is silently ignored — the standalone
-    // overlay in create_overlays() is unreachable while m_wizard_active is
+    // overlay in apply_startup_cli_actions() is unreachable while m_wizard_active is
     // true. Pin the wizard to step 0 and disable the skip so users can
     // recalibrate from a stale-affine state. Mirror the three sources the
     // standalone-overlay handler accepts: --calibrate-touch CLI, the env
@@ -2076,265 +2170,11 @@ bool Application::run_wizard() {
     return true;
 }
 
-void Application::create_overlays() {
-    // Navigate to initial panel
-    if (m_args.initial_panel >= 0) {
-        NavigationManager::instance().set_active(static_cast<PanelId>(m_args.initial_panel));
-    }
-
-    // Create requested overlay panels
-    if (m_args.overlays.motion) {
-        auto& motion = get_global_motion_panel();
-
-        // Initialize subjects and callbacks if not already done
-        if (!motion.are_subjects_initialized()) {
-            motion.init_subjects();
-        }
-        motion.register_callbacks();
-
-        // Create overlay UI
-        auto* p = motion.create(m_screen);
-        if (p) {
-            m_overlay_panels.motion = p;
-            NavigationManager::instance().register_overlay_instance(p, &motion);
-            NavigationManager::instance().push_overlay(p);
-        }
-    }
-
-    if (m_args.overlays.nozzle_temp) {
-        if (auto* p = create_overlay_panel(m_screen, "nozzle_temp_panel", "nozzle temp")) {
-            m_overlay_panels.nozzle_temp = p;
-            m_subjects->temp_control_panel()->setup_nozzle_panel(p, m_screen);
-            NavigationManager::instance().push_overlay(p);
-        }
-    }
-
-    if (m_args.overlays.bed_temp) {
-        if (auto* p = create_overlay_panel(m_screen, "bed_temp_panel", "bed temp")) {
-            m_overlay_panels.bed_temp = p;
-            m_subjects->temp_control_panel()->setup_bed_panel(p, m_screen);
-            NavigationManager::instance().push_overlay(p);
-        }
-    }
-
-    if (m_args.overlays.fan) {
-        auto& overlay = get_fan_control_overlay();
-
-        // Initialize subjects and callbacks if not already done
-        if (!overlay.are_subjects_initialized()) {
-            overlay.init_subjects();
-        }
-        overlay.register_callbacks();
-
-        // Pass API reference for fan commands
-        overlay.set_api(get_moonraker_api());
-
-        // Create overlay UI
-        auto* p = overlay.create(m_screen);
-        if (p) {
-            NavigationManager::instance().register_overlay_instance(p, &overlay);
-            NavigationManager::instance().push_overlay(p);
-        }
-    }
-
-    if (m_args.overlays.led) {
-        auto& overlay = get_led_control_overlay();
-
-        // Initialize subjects and callbacks if not already done
-        if (!overlay.are_subjects_initialized()) {
-            overlay.init_subjects();
-        }
-        overlay.register_callbacks();
-
-        // Pass API reference for LED commands
-        overlay.set_api(get_moonraker_api());
-
-        // Create overlay UI
-        auto* p = overlay.create(m_screen);
-        if (p) {
-            NavigationManager::instance().register_overlay_instance(p, &overlay);
-            NavigationManager::instance().push_overlay(p);
-        }
-    }
-
-    if (m_args.overlays.print_status) {
-        PrintStatusPanel::push_overlay(m_screen);
-    }
-
-    if (m_args.overlays.bed_mesh) {
-        auto& overlay = get_global_bed_mesh_panel();
-
-        // Initialize subjects and callbacks if not already done
-        if (!overlay.are_subjects_initialized()) {
-            overlay.init_subjects();
-        }
-        overlay.register_callbacks();
-
-        // Create overlay UI
-        auto* p = overlay.create(m_screen);
-        if (p) {
-            m_overlay_panels.bed_mesh = p;
-            NavigationManager::instance().register_overlay_instance(p, &overlay);
-            NavigationManager::instance().push_overlay(p);
-        }
-    }
-
-    if (m_args.overlays.zoffset) {
-        auto& overlay = get_global_zoffset_cal_panel();
-        // init_subjects already called by SubjectInitializer
-        overlay.set_api(m_moonraker->api());
-        if (overlay.create(m_screen)) {
-            overlay.show();
-        }
-    }
-
-    if (m_args.overlays.pid) {
-        auto& overlay = get_global_pid_cal_panel();
-        // init_subjects already called by SubjectInitializer
-        overlay.set_api(m_moonraker->api());
-        if (get_runtime_config()->test_mode) {
-            overlay.request_demo_inject();
-        }
-        if (overlay.create(m_screen)) {
-            overlay.show();
-        }
-    }
-
-    if (m_args.overlays.screws_tilt) {
-        auto& overlay = get_global_screws_tilt_panel();
-        // init_subjects already called by SubjectInitializer
-        overlay.set_client(m_moonraker->client(), m_moonraker->api());
-        if (overlay.create(m_screen)) {
-            overlay.show();
-        }
-    }
-
-    if (m_args.overlays.input_shaper) {
-        auto& panel = get_global_input_shaper_panel();
-        panel.set_api(m_moonraker->client(), m_moonraker->api());
-        if (get_runtime_config()->test_mode) {
-            panel.request_demo_inject();
-        }
-        if (panel.create(m_screen)) {
-            panel.show();
-        }
-    }
-
-    if (m_args.overlays.history_dashboard) {
-        auto& overlay = get_global_history_dashboard_panel();
-        if (!overlay.are_subjects_initialized()) {
-            overlay.init_subjects();
-        }
-        overlay.register_callbacks();
-        auto* p = overlay.create(m_screen);
-        if (p) {
-            NavigationManager::instance().register_overlay_instance(p, &overlay);
-            NavigationManager::instance().push_overlay(p);
-        }
-    }
-
-    if (m_args.overlays.step_test) {
-        get_global_step_test_panel().init_subjects();
-        if (auto* p = create_overlay_panel(m_screen, "step_test_panel", "step progress")) {
-            get_global_step_test_panel().setup(p, m_screen);
-            NavigationManager::instance().push_overlay(p);
-        }
-    }
-
-    if (m_args.overlays.test_panel) {
-        if (auto* p = create_overlay_panel(m_screen, "test_panel", "test")) {
-            get_global_test_panel().setup(p, m_screen);
-        }
-    }
-
-    if (m_args.overlays.gcode_test) {
-        ui_panel_gcode_test_create(m_screen);
-    }
-
-    if (m_args.overlays.glyphs) {
-        ui_panel_glyphs_create(m_screen);
-    }
-
-    if (m_args.overlays.gradient_test) {
-        create_overlay_panel(m_screen, "gradient_test_panel", "gradient test");
-    }
-
-    if (m_args.overlays.ams) {
-        // Use multi-unit-aware navigation: shows overview for multi-unit,
-        // detail panel directly for single-unit
-        navigate_to_ams_panel();
-    }
-
-    if (m_args.overlays.ams_environment) {
-        // Filament Environment / dryer overlay for unit 0 (CLI screenshot/testing)
-        helix::ui::get_ams_environment_overlay().show(m_screen, 0);
-    }
-
-    if (m_args.overlays.spoolman) {
-        auto& spoolman = get_global_spoolman_panel();
-        if (!spoolman.are_subjects_initialized()) {
-            spoolman.init_subjects();
-        }
-        spoolman.register_callbacks();
-        lv_obj_t* panel_obj = spoolman.create(m_screen);
-        if (panel_obj) {
-            NavigationManager::instance().register_overlay_instance(panel_obj, &spoolman);
-            NavigationManager::instance().push_overlay(panel_obj);
-        }
-    }
-
-    if (m_args.overlays.wizard_ams_identify) {
-        auto* step = get_wizard_ams_identify_step();
-        step->init_subjects();
-        lv_obj_t* panel_obj = step->create(m_screen);
-        if (panel_obj) {
-            NavigationManager::instance().push_overlay(panel_obj);
-        }
-    }
-
-    if (m_args.overlays.theme) {
-        // Use the proper flow through DisplaySettingsOverlay which handles:
-        // - callback registration
-        // - dropdown population
-        // - theme preview creation
-        auto& display_settings = helix::settings::get_display_sound_settings_overlay();
-        display_settings.show_theme_preview(m_screen);
-        spdlog::info("[Application] Opened theme preview overlay via CLI");
-    }
-
-    if (m_args.overlays.theme_edit) {
-        // Push theme preview first, then theme editor on top
-        auto& display_settings = helix::settings::get_display_sound_settings_overlay();
-        display_settings.show_theme_preview(m_screen);
-
-        // Now push theme editor overlay on top
-        auto& theme_editor = get_theme_editor_overlay();
-        theme_editor.register_callbacks();
-        theme_editor.init_subjects();
-        lv_obj_t* editor_panel = theme_editor.create(m_screen);
-        if (editor_panel) {
-            // Load current theme for editing
-            std::string current_theme = DisplaySettingsManager::instance().get_theme_name();
-            theme_editor.set_editing_dark_mode(DisplaySettingsManager::instance().get_dark_mode());
-            theme_editor.load_theme(current_theme);
-            NavigationManager::instance().push_overlay(editor_panel);
-            spdlog::info("[Application] Opened theme editor overlay via CLI");
-        }
-    }
-
-    // Settings overlays (for CLI screenshot automation)
-    if (m_args.overlays.display_settings) {
-        auto& overlay = helix::settings::get_display_sound_settings_overlay();
-        overlay.show(m_screen);
-        spdlog::info("[Application] Opened display settings overlay via CLI");
-    }
-
-    if (m_args.overlays.sensor_settings) {
-        auto& overlay = helix::settings::get_sensor_settings_overlay();
-        overlay.show(m_screen);
-        spdlog::info("[Application] Opened sensor settings overlay via CLI");
-    }
-
+// Applies one-shot startup actions requested on the command line: force touch
+// calibration (--calibrate-touch / env / config), the --release-notes update
+// modal, and --select-file navigation. (Historically also launched panels/overlays
+// via -p, now removed — that job belongs to helixctl; see docs/devel/HELIXCTL.md.)
+void Application::apply_startup_cli_actions() {
     // Force touch calibration: --calibrate-touch flag, env var, OR config force_calibration option
     bool force_touch_cal = m_args.calibrate_touch;
     if (!force_touch_cal) {
@@ -2344,7 +2184,7 @@ void Application::create_overlays() {
         force_touch_cal = m_config->get<bool>("/input/force_calibration", false);
     }
 
-    if (force_touch_cal || m_args.overlays.touch_calibration) {
+    if (force_touch_cal) {
         auto& overlay = helix::ui::get_touch_calibration_overlay();
         overlay.init_subjects();
         overlay.register_callbacks();
@@ -2362,56 +2202,8 @@ void Application::create_overlays() {
         spdlog::info("[Application] Opened touch calibration overlay (force={})", force_touch_cal);
     }
 
-    if (m_args.overlays.hardware_health) {
-        auto& overlay = helix::settings::get_hardware_health_overlay();
-        overlay.show(m_screen);
-        spdlog::info("[Application] Opened hardware health overlay via CLI");
-    }
-
-    if (m_args.overlays.about) {
-        auto& overlay = helix::settings::get_about_settings_overlay();
-        overlay.show(m_screen);
-        spdlog::info("[Application] Opened about overlay via CLI");
-    }
-
-    if (m_args.overlays.network_settings) {
-        auto& overlay = get_network_settings_overlay();
-        overlay.init_subjects();
-        lv_obj_t* panel_obj = overlay.create(m_screen);
-        if (panel_obj) {
-            NavigationManager::instance().push_overlay(panel_obj);
-            spdlog::info("[Application] Opened network settings overlay via CLI");
-        }
-    }
-
-    if (m_args.overlays.macros) {
-        auto& overlay = get_global_macros_panel();
-        overlay.register_callbacks();
-        overlay.init_subjects();
-        lv_obj_t* panel_obj = overlay.create(m_screen);
-        if (panel_obj) {
-            NavigationManager::instance().push_overlay(panel_obj);
-            spdlog::info("[Application] Opened macros overlay via CLI");
-        }
-    }
-
-    if (m_args.overlays.print_tune) {
-        auto& overlay = get_print_tune_overlay();
-        overlay.init_subjects();
-        lv_obj_t* panel_obj = overlay.create(m_screen);
-        if (panel_obj) {
-            NavigationManager::instance().push_overlay(panel_obj);
-            spdlog::info("[Application] Opened print tune overlay via CLI");
-        }
-    }
-
-    if (m_args.overlays.timelapse_videos) {
-        open_timelapse_videos();
-        spdlog::info("[Application] Opened timelapse videos overlay via CLI");
-    }
-
     // Handle --release-notes flag: fetch latest release notes and show in modal
-    if (m_args.overlays.release_notes) {
+    if (m_args.release_notes) {
         auto& checker = UpdateChecker::instance();
         spdlog::info("[Application] Fetching latest release notes via CLI...");
         // check_for_updates callback runs on the LVGL thread (dispatched by report_result)
@@ -2450,8 +2242,112 @@ void Application::create_overlays() {
     }
 }
 
+#ifdef HELIX_ENABLE_REMOTE_CONTROL
+namespace helix {
+
+// Bring up a demo overlay/modal with representative sample data. These screens
+// only appear in response to a real printer event (pre-print check, runout,
+// active print) or configured state (lock PIN), so mock-mode navigation can't
+// reach them — the remote-control `demo` command uses this to capture them for
+// screenshots with the real widget lifecycle. Must run on the UI thread.
+bool show_demo_overlay(const std::string& name) {
+    lv_obj_t* screen = lv_screen_active();
+
+    if (name == "preflight-check") {
+        // Representative pre-print filament check: one matching tool, one color
+        // mismatch (advisory), one empty required slot (the blocking case).
+        helix::PreflightResult pf;
+        helix::ToolCheck ok;
+        ok.tool_index = 0;
+        ok.intended_material = "PLA";
+        ok.intended_color = 0x2E8B57;
+        ok.mapped_slot = 0;
+        ok.slot_present = true;
+        ok.severity = helix::ToolCheck::Severity::Ok;
+        helix::ToolCheck color;
+        color.tool_index = 1;
+        color.intended_material = "PLA";
+        color.intended_color = 0xE23B3B;
+        color.mapped_slot = 1;
+        color.slot_present = true;
+        color.color_ok = false;
+        color.severity = helix::ToolCheck::Severity::ColorMismatch;
+        helix::ToolCheck empty;
+        empty.tool_index = 2;
+        empty.intended_material = "PETG";
+        empty.intended_color = 0xF5A623;
+        empty.mapped_slot = -1;
+        empty.slot_present = false;
+        empty.severity = helix::ToolCheck::Severity::EmptySlot;
+        pf.checks = {ok, color, empty};
+        auto* modal = new helix::ui::PreflightCheckModal();
+        modal->set_checks(pf);
+        modal->show(screen);
+        return true;
+    }
+
+    if (name == "runout-modal") {
+        auto* modal = new RunoutGuidanceModal();
+        modal->set_autofeed_capable(false);
+        modal->set_resume_blocked(false);
+        modal->show(screen);
+        return true;
+    }
+
+    if (name == "lock-screen") {
+        helix::ui::LockScreenOverlay::instance().show();
+        return true;
+    }
+
+    if (name == "print-status") {
+        PrintStatusPanel::push_overlay(screen);
+        return true;
+    }
+
+    if (name == "print-tune") {
+        // show() is the real entry point (create() alone builds a hidden panel
+        // that never gets pushed) — it wires api + printer state and pushes.
+        get_print_tune_overlay().show(screen, get_moonraker_api(), get_printer_state());
+        return true;
+    }
+
+    if (name == "ams") {
+        // The filament panel's AMS row no-ops without a configured backend, so
+        // reach the dedicated AMS management panel directly (mock provides the
+        // backend in --test mode).
+        navigate_to_ams_panel();
+        return true;
+    }
+
+    if (name == "camera") {
+#if HELIX_HAS_CAMERA
+        // No-ops if no webcam is discovered yet; point at a live Moonraker with a
+        // webcam (--moonraker ws://host:7125) for a real feed.
+        open_standalone_camera_fullscreen(screen);
+        return true;
+#else
+        spdlog::warn("[demo] camera viewer requested but HELIX_HAS_CAMERA is off");
+        return false;
+#endif
+    }
+
+    // Fallback: show any registered XML component that is a self-contained
+    // modal. The cases above exist because they need state wired up first;
+    // a plain dialog needs none, so screenshotting one should not require
+    // adding an entry here. Unknown names return nullptr and fall through.
+    if (Modal::show(name.c_str()) != nullptr) {
+        spdlog::debug("[demo] shown as a plain modal component: {}", name);
+        return true;
+    }
+
+    return false;
+}
+
+} // namespace helix
+#endif // HELIX_ENABLE_REMOTE_CONTROL
+
 void Application::reapply_hardware_roles() {
-    helix::ui::queue_update("Application::reapply_hardware_roles", [this]() {
+    m_async_lifetime.defer("Application::reapply_hardware_roles", [this]() {
         IMoonrakerAPI* api = m_moonraker ? m_moonraker->api() : nullptr;
         if (!api) {
             return;
@@ -2459,14 +2355,108 @@ void Application::reapply_hardware_roles() {
         const auto& fans = api->hardware().fans();
         const auto& heaters = api->hardware().heaters();
         // Re-resolve + persist fan roles, then rebind fan UI to the new mapping.
+        // apply_roles, not init_fans: the wizard changed which fan plays which
+        // role, not which fans exist, so the discovered list comes from what
+        // discovery actually stored rather than being re-passed from here.
         auto roles = helix::FanRoleConfig::from_config(Config::get_instance(), fans);
-        get_printer_state().init_fans(fans, roles, api->hardware().fan_max_power());
+        get_printer_state().apply_fan_roles(roles);
         // Heater roles persist back to config (no dedicated runtime fan-style consumer).
         helix::resolve_role_from_config(helix::HardwareRoleId::HotendHeater, Config::get_instance(),
                                         heaters, /*persist_autoheal=*/true);
         helix::resolve_role_from_config(helix::HardwareRoleId::BedHeater, Config::get_instance(),
                                         heaters, /*persist_autoheal=*/true);
     });
+}
+
+void Application::settle_deferred_hardware_setup() {
+    Config* config = Config::get_instance();
+    if (!helix::wizard_clear_hardware_setup_deferred(config)) {
+        return;
+    }
+    if (!config->save()) {
+        spdlog::warn("[Application] Failed to persist deferred hardware setup decision");
+    }
+}
+
+void Application::launch_deferred_hardware_setup() {
+    auto steps = std::move(m_pending_hardware_setup_steps);
+    m_pending_hardware_setup_steps.clear();
+    if (steps.empty()) {
+        return;
+    }
+    spdlog::info("[Application] Launching deferred hardware setup ({} step(s))", steps.size());
+
+    ui_wizard_register_event_callbacks();
+    ui_wizard_container_register_responsive_constants();
+    ui_wizard_init_subjects();
+    // Back on the first targeted step has nothing to retreat to, so give it the
+    // same dismiss semantics as the reconfig wizard.
+    set_wizard_cancel_callback([]() {
+        ui_wizard_complete_targeted();
+        set_wizard_cancel_callback(nullptr);
+    });
+    Application* app = this;
+    ui_wizard_create_targeted(m_screen, std::move(steps), [app]() {
+        set_wizard_cancel_callback(nullptr);
+        // ui_wizard_complete_targeted() deliberately skips the expected-hardware
+        // population, so record the user's fresh picks here.
+        ui_wizard_record_expected_hardware(Config::get_instance());
+        app->reapply_hardware_roles();
+    });
+}
+
+void Application::prompt_deferred_hardware_setup(std::vector<helix::wizard::StepId> steps) {
+    // The steps to run are captured for the confirm callback. modal_show_confirmation
+    // takes a single void* user_data, so park them on the Application instance the
+    // callbacks already receive rather than heap-allocating a context.
+    m_pending_hardware_setup_steps = std::move(steps);
+    spdlog::info("[Application] Offering deferred hardware setup ({} step(s))",
+                 m_pending_hardware_setup_steps.size());
+
+    helix::ui::modal_show_confirmation(
+        lv_tr("Printer hardware detected"),
+        lv_tr("Your printer was offline during setup, so hardware options were skipped. "
+              "Set them up now?"),
+        ModalSeverity::Info, lv_tr("Set up"),
+        [](lv_event_t* e) {
+            LVGL_SAFE_EVENT_CB_BEGIN("[Application] deferred_hardware_setup_confirm");
+            auto* app = static_cast<Application*>(lv_event_get_user_data(e));
+            Modal::hide(Modal::get_top());
+            // Settle first: the wizard tears itself down asynchronously, and a
+            // crash mid-run must not leave the offer pending forever.
+            app->settle_deferred_hardware_setup();
+            // Build the wizard AFTER the modal's exit animation, not inside the
+            // click that started it: Modal::hide() only marks the backdrop
+            // exiting, so creating the full-screen wizard here would put it
+            // underneath a still-fading backdrop. The pending step list lives on
+            // the Application instance until the timer consumes it.
+            lv_timer_t* launch = lv_timer_create(
+                [](lv_timer_t* t) {
+                    auto* self = static_cast<Application*>(lv_timer_get_user_data(t));
+                    lv_timer_delete(t);
+                    self->launch_deferred_hardware_setup();
+                },
+                300, app);
+            lv_timer_set_repeat_count(launch, 1);
+            LVGL_SAFE_EVENT_CB_END();
+        },
+        [](lv_event_t* e) {
+            LVGL_SAFE_EVENT_CB_BEGIN("[Application] deferred_hardware_setup_decline");
+            auto* app = static_cast<Application*>(lv_event_get_user_data(e));
+            Modal::hide(Modal::get_top());
+            app->m_pending_hardware_setup_steps.clear();
+            // Declining is final for this printer. The offer is for optional
+            // role assignments the app already has working defaults for, the
+            // snapshot was written regardless so nothing is flagged either way,
+            // and re-asking on every boot is the exact nag the surrounding
+            // reconfig-wizard code records declines to avoid. `--wizard` still
+            // re-runs setup, and a saved role that later breaks still routes to
+            // the targeted reconfig wizard on its own.
+            app->settle_deferred_hardware_setup();
+            spdlog::info("[Application] Deferred hardware setup declined");
+            LVGL_SAFE_EVENT_CB_END();
+        },
+        this, lv_tr("Not now"));
 }
 
 void Application::setup_discovery_callbacks() {
@@ -2525,6 +2515,29 @@ void Application::setup_discovery_callbacks() {
             api->hardware() = *snapshot;
             crash_handler::breadcrumb::note("disc", "post_api_hw", n);
 
+            // Hardware-shape fingerprint: detect "reconnect with same hardware"
+            // so user-facing side-effects (LED chip population, hardware
+            // validation toasts, targeted reconfig wizard, telemetry snapshots)
+            // can skip. See compute_hardware_fingerprint() in
+            // hardware_fingerprint.h for rationale.
+            // Computed from api->hardware() (post-copy) — *snapshot is moved
+            // into set_hardware below and is empty after that point.
+            const size_t new_fingerprint = helix::compute_hardware_fingerprint(api->hardware());
+            const bool hw_changed = app->m_first_discovery_complete ||
+                                    (new_fingerprint != app->m_last_hardware_fingerprint);
+            app->m_last_hardware_fingerprint = new_fingerprint;
+            app->m_first_discovery_complete = false;
+            crash_handler::breadcrumb::note("disc", "hw_changed", hw_changed ? 1L : 0L);
+            if (hw_changed) {
+                spdlog::info("[Application] on_discovery_complete #{} — hardware shape changed "
+                             "(fingerprint=0x{:x}), running full pipeline",
+                             n, new_fingerprint);
+            } else {
+                spdlog::info("[Application] on_discovery_complete #{} — hardware shape unchanged "
+                             "(fingerprint=0x{:x}), skipping user-facing side-effects",
+                             n, new_fingerprint);
+            }
+
             // Mark discovery complete so splash can exit
             app->m_splash_manager.on_discovery_complete();
             spdlog::info("[Application] Moonraker discovery complete, splash can exit");
@@ -2559,6 +2572,39 @@ void Application::setup_discovery_callbacks() {
             crash_handler::breadcrumb::note("disc", "post_init_fans",
                                             static_cast<long>(hw.fans().size()));
 
+            // Enable ZMOD persistent z-offset reload once per session, only when
+            // idle. ZMOD saves any z-offset the user dials in, but reloading it on
+            // the next print is off by default — SAVE_ZMOD_DATA LOAD_ZOFFSET=1 turns
+            // it on so HelixScreen z-offset adjustments survive prints/reboots. The
+            // print_active subject is not yet applied from this discovery's status
+            // (see the reconfig-wizard gate below), so consult status_snapshot
+            // directly to avoid injecting gcode over a live print.
+            {
+                bool print_active =
+                    lv_subject_get_int(get_printer_state().get_print_active_subject()) != 0;
+                if (status_snapshot &&
+                    helix::PrinterPrintState::status_indicates_active_print(*status_snapshot)) {
+                    print_active = true;
+                }
+                if (helix::zmod::should_enable_persistent_zoffset(
+                        api->hardware().has_macro("SAVE_ZMOD_DATA"), print_active,
+                        app->m_zmod_zoffset_enabled)) {
+                    app->m_zmod_zoffset_enabled = true;
+                    spdlog::info("[ZMOD] Enabling persistent z-offset (SAVE_ZMOD_DATA "
+                                 "LOAD_ZOFFSET=1)");
+                    // Fire-and-forget: callbacks are LOG-ONLY and capture nothing that
+                    // can dangle, so the background response thread is lifetime-safe.
+                    api->execute_gcode(
+                        "SAVE_ZMOD_DATA LOAD_ZOFFSET=1",
+                        []() { spdlog::info("[ZMOD] Persistent z-offset enabled"); },
+                        [](const MoonrakerError& err) {
+                            spdlog::warn("[ZMOD] Failed to enable persistent z-offset: {}",
+                                         err.message);
+                        },
+                        0, /*silent=*/true);
+                }
+            }
+
             // Seed temperature graphs from Moonraker's cached history so they are
             // populated immediately instead of filling in live over several
             // minutes (#944). Fired after init_fans so heater/sensor subjects
@@ -2579,6 +2625,11 @@ void Application::setup_discovery_callbacks() {
                             duration_cast<milliseconds>(system_clock::now().time_since_epoch())
                                 .count();
                         mgr->seed_from_store(*store_copy, now_ms);
+                        // Persistent graphs (home dashboard widget, filament mini
+                        // graph) are built at startup before this seed arrives, so
+                        // their construction-time backfill was empty. Re-backfill
+                        // them now that history is available (#1124).
+                        helix::TempGraphController::refresh_all_from_history();
                     });
                 },
                 [](const MoonrakerError& err) {
@@ -2600,8 +2651,13 @@ void Application::setup_discovery_callbacks() {
                 get_printer_state().set_os_version(hw.os_version());
             }
 
-            // Populate LED chips now that hardware is discovered
-            get_global_settings_panel().populate_led_chips();
+            // Populate LED chips now that hardware is discovered.
+            // Gated on hw_changed — LED chip topology doesn't change reconnect-to-
+            // reconnect unless the hardware shape changed, and populate_led_chips
+            // fires LED capability subjects that cascade into panel rebuilds.
+            if (hw_changed) {
+                get_global_settings_panel().populate_led_chips();
+            }
             crash_handler::breadcrumb::note("disc", "post_led_chips", n);
 
             // Fetch print hours now that connection is live, and refresh on job changes
@@ -2668,15 +2724,22 @@ void Application::setup_discovery_callbacks() {
             // on PRINTER_TYPE already being set, so a user's manual pick in the identify
             // step (which writes PRINTER_TYPE on cleanup) won't be overwritten by a later
             // discovery callback.
+            //
+            // Gated on hw_changed — printer type detection is purely a function of the
+            // hardware shape, so re-running on a reconnect with unchanged hardware would
+            // produce the same result (and trigger config writes + subjects).
             // NOTE: use api->hardware() — snapshot was std::move'd into it above (#789).
             // Reading *snapshot here would pass an empty/moved-from PrinterDiscovery and
             // detection would fail with "0 sensors, 0 fans, hostname ''" (#802).
-            PrinterDetector::auto_detect_and_save(api->hardware(), Config::get_instance());
+            if (hw_changed) {
+                PrinterDetector::auto_detect_and_save(api->hardware(), Config::get_instance());
+            }
 
             // Auto-heal + persist heater roles (batched single save, symmetry with fan roles
             // above). Ensures the validator sees resolved heater names so it does not emit a
             // toast every boot for a stale saved role that has a confident replacement.
-            {
+            // Gated on hw_changed — healing is purely a function of heater hardware shape.
+            if (hw_changed) {
                 const auto& heaters = hw.heaters();
                 auto* cfg = Config::get_instance();
                 bool heater_changed = false;
@@ -2701,6 +2764,24 @@ void Application::setup_discovery_callbacks() {
                 }
             }
 
+            // Pay off a hardware snapshot the wizard deferred because Klipper was
+            // down during setup (#1160). Everything discovered now was present all
+            // along, so accepting it BEFORE validate() keeps this first successful
+            // discovery clean instead of reporting every fan, filament sensor and
+            // LED as newly appeared. The marker itself is cleared only once the
+            // user answers the offer below, so a session killed before answering
+            // still gets asked next boot.
+            const bool hardware_setup_deferred =
+                helix::wizard_hardware_setup_deferred(Config::get_instance());
+            if (hardware_setup_deferred && !Config::get_instance()->is_wizard_required() &&
+                !is_wizard_active()) {
+                size_t accepted = HardwareValidator::acknowledge_discovered_hardware(
+                    Config::get_instance(), api->hardware());
+                spdlog::info("[Application] Deferred wizard hardware snapshot written "
+                             "({} object(s) accepted)",
+                             accepted);
+            }
+
             // Hardware validation: check config expectations vs discovered hardware.
             // Now uses the post-preset config so preset-mapped fan/heater names are
             // checked against discovery, not the pre-preset scaffolded defaults.
@@ -2708,8 +2789,14 @@ void Application::setup_discovery_callbacks() {
             auto validation_result = validator.validate(Config::get_instance(), api->hardware());
             get_printer_state().set_hardware_validation_result(validation_result);
 
-            if (validation_result.has_issues() && !Config::get_instance()->is_wizard_required() &&
-                !is_wizard_active()) {
+            // Gated on hw_changed — without this guard, any hardware issue toast
+            // (e.g. "expected fan not found") would re-fire on every reconnect even
+            // when nothing has changed. validate() still runs (cheap, caches result,
+            // updates the validation_result subject for the UI); only the user-facing
+            // notify is suppressed on unchanged hardware. The validator's session
+            // snapshot below tracks state across runs regardless.
+            if (validation_result.has_issues() && hw_changed &&
+                !Config::get_instance()->is_wizard_required() && !is_wizard_active()) {
                 validator.notify_user(validation_result);
             }
 
@@ -2718,6 +2805,14 @@ void Application::setup_discovery_callbacks() {
             // affected step(s), not the full first-run wizard. Skipped while the first-run
             // wizard is required/active, and gated to once-per-connection so it does not
             // relaunch on reconnect churn within a single session.
+            //
+            // Also gated on hw_changed: unresolved guided steps are purely a function of
+            // (saved config, current hardware). If hardware is unchanged since the last
+            // discovery, the result is identical and re-launching the wizard would just
+            // harass the user. The wizard cancel callback persists the decline, so the
+            // next discovery with the SAME hardware would also see no unresolved steps —
+            // the hw_changed gate is defense-in-depth for the rare case where a prior
+            // session was killed before the decline could be persisted.
             auto reconfig_steps = helix::unresolved_guided_steps(Config::get_instance(), hw);
             // Idle gate: NEVER launch the reconfig wizard over a live print.
             // The print_active subject is NOT yet updated from this discovery's
@@ -2733,7 +2828,7 @@ void Application::setup_discovery_callbacks() {
                 helix::PrinterPrintState::status_indicates_active_print(*status_snapshot)) {
                 print_active = true;
             }
-            if (!reconfig_steps.empty() && !print_active &&
+            if (hw_changed && !reconfig_steps.empty() && !print_active &&
                 !Config::get_instance()->is_wizard_required() && !is_wizard_active() &&
                 !app->m_targeted_reconfig_shown) {
                 app->m_targeted_reconfig_shown = true;
@@ -2764,15 +2859,45 @@ void Application::setup_discovery_callbacks() {
                 });
             }
 
+            // Offer the hardware steps the Klipper-down wizard could not show
+            // (#1160). The user skipped them because their printer was broken,
+            // not because they had nothing to choose. Gated exactly like the
+            // reconfig wizard above (idle, no wizard running, once per session),
+            // plus reconfig_steps.empty() so the two never stack — if a reconfig
+            // session just launched, the offer waits for the next boot.
+            if (hardware_setup_deferred && hw_changed && !print_active &&
+                !Config::get_instance()->is_wizard_required() && !is_wizard_active() &&
+                reconfig_steps.empty() && !app->m_hardware_setup_prompt_shown) {
+                auto steps = ui_wizard_deferred_hardware_steps();
+                app->m_hardware_setup_prompt_shown = true;
+                if (steps.empty()) {
+                    // Nothing left to ask about (a preset already answers these,
+                    // or the printer has none of the optional hardware). Settle
+                    // the debt silently rather than showing a dead-end dialog.
+                    spdlog::info("[Application] Deferred hardware setup has no steps to offer; "
+                                 "settling silently");
+                    app->settle_deferred_hardware_setup();
+                } else {
+                    app->prompt_deferred_hardware_setup(std::move(steps));
+                }
+            }
+
             // Save session snapshot for next comparison (even if no issues)
             validator.save_session_snapshot(Config::get_instance(), api->hardware());
             crash_handler::breadcrumb::note("disc", "post_validate", n);
 
             // Record telemetry session event now that hardware data is available
-            // (hardware_profile is deferred until after build volume is fetched below)
+            // (hardware_profile is deferred until after build volume is fetched below).
+            // record_session always runs (counts sessions, including reconnects).
+            // settings_snapshot + memory_snapshot are gated on hw_changed — they
+            // capture a fingerprint of the current config + heap state for telemetry,
+            // and would just re-record identical data on a reconnect with unchanged
+            // hardware.
             TelemetryManager::instance().record_session();
-            TelemetryManager::instance().record_settings_snapshot();
-            TelemetryManager::instance().record_memory_snapshot("session_start");
+            if (hw_changed) {
+                TelemetryManager::instance().record_settings_snapshot();
+                TelemetryManager::instance().record_memory_snapshot("session_start");
+            }
             crash_handler::breadcrumb::note("disc", "post_telemetry", n);
 
             // Fetch safety limits and build volume from Klipper config (stepper ranges,
@@ -2858,12 +2983,23 @@ void Application::setup_discovery_callbacks() {
                                                                          std::string log_context) {
                 helix::ui::queue_update([spool, try_assign_active_spool_to_tool,
                                          log_context = std::move(log_context)]() {
+                    // This record is the freshest view of the spool we will get
+                    // — it arrives from the startup sync and from every
+                    // notify_active_spool_set. Refresh the identity side
+                    // channel from it (invalidate first: cache_identity() is
+                    // insert-if-absent, so a stale entry would win otherwise).
+                    SpoolmanManager::invalidate_identity(spool.id);
+                    SpoolmanManager::cache_identity(spool);
+
                     SlotInfo slot;
                     slot.slot_index = -2;
                     slot.global_index = -2;
+                    // apply_spool_to_slot() owns the whole identity copy,
+                    // multi-colour included. Overwriting spool_name with
+                    // display_name() here used to put "Polymaker PLA - Jet
+                    // Black" on a field the lane_data schema, AFC and Happy
+                    // Hare all read as the bare filament name.
                     apply_spool_to_slot(slot, spool);
-                    slot.spool_name = spool.display_name();
-                    slot.multi_color_hexes = spool.multi_color_hexes;
                     AmsState::instance().set_external_spool_info(slot);
                     try_assign_active_spool_to_tool(spool);
                     spdlog::info("[Application] External spool {}: {} (id={})", log_context,
@@ -3116,11 +3252,11 @@ void Application::init_action_prompt() {
         });
     }
 
-    // Wire on_show callback to display modal (uses ui_async_call for thread safety)
+    // Wire on_show callback to display modal (uses ui_queue_update() for thread safety)
     m_action_prompt_manager->set_on_show([this](const helix::PromptData& data) {
         spdlog::info("[ActionPrompt] Showing prompt: {}", data.title);
         // WebSocket callbacks run on background thread - must use ui_queue_update
-        helix::ui::queue_update([this, data]() {
+        m_async_lifetime.defer("Application::action_prompt_show", [this, data]() {
             lv_obj_t* screen = lv_screen_active();
             if (m_action_prompt_modal && screen) {
                 m_action_prompt_modal->show_prompt(screen, data);
@@ -3131,7 +3267,7 @@ void Application::init_action_prompt() {
     // Wire on_close callback to hide modal
     m_action_prompt_manager->set_on_close([this]() {
         spdlog::info("[ActionPrompt] Closing prompt");
-        helix::ui::queue_update([this]() {
+        m_async_lifetime.defer("Application::action_prompt_close", [this]() {
             if (m_action_prompt_modal) {
                 m_action_prompt_modal->hide();
             }
@@ -3355,11 +3491,24 @@ void Application::restore_flush_callback() {
 }
 
 void Application::check_wifi_availability() {
+    // Bring WiFi up at startup instead of waiting for a UI screen to construct
+    // the manager. get_wifi_manager() creates the silent global instance, whose
+    // constructor builds the backend (null when there is no hardware) and
+    // start_async()es it — which is also where credentials are re-applied on
+    // firmwares whose wpa_supplicant discards them.
+    //
+    // This used to be gated on is_wifi_expected(), which defaults to false and
+    // is absent from settings.json on a Snapmaker U1 — so that device never
+    // started WiFi at boot at all, and only ever connected once the user opened
+    // a WiFi screen. Bringup is not a user-intent question.
+    auto wifi = get_wifi_manager();
+
+    // wifi_expected keeps its original meaning: the user configured WiFi, so
+    // tell them if the hardware has since disappeared.
     if (!m_config || !m_config->is_wifi_expected()) {
-        return; // WiFi not expected, no need to check
+        return;
     }
 
-    auto wifi = get_wifi_manager();
     if (wifi && !wifi->has_hardware()) {
         NOTIFY_ERROR_MODAL(lv_tr("WiFi Unavailable"),
                            lv_tr("WiFi was configured but hardware is not available. "
@@ -3929,29 +4078,60 @@ void Application::check_timeouts() {
 // SOFT RESTART (printer switching)
 // ============================================================================
 
+namespace {
+
+/**
+ * @brief RAII latch for Application::m_soft_restart_in_progress.
+ *
+ * Every soft-restart path runs tear_down_printer_state() + init_printer_state(),
+ * a 16-step rebuild that includes a Moonraker connect and can throw. Clearing the
+ * re-entrancy flag by hand on each exit path leaves it stuck true whenever an exit
+ * is not the one that was hand-coded, and a stuck flag makes every later printer
+ * switch or add a silent no-op until the process restarts.
+ */
+class SoftRestartLatch {
+  public:
+    explicit SoftRestartLatch(bool& flag) : m_flag(flag) {
+        m_flag = true;
+    }
+    ~SoftRestartLatch() {
+        m_flag = false;
+    }
+
+    SoftRestartLatch(const SoftRestartLatch&) = delete;
+    SoftRestartLatch& operator=(const SoftRestartLatch&) = delete;
+    SoftRestartLatch(SoftRestartLatch&&) = delete;
+    SoftRestartLatch& operator=(SoftRestartLatch&&) = delete;
+
+  private:
+    bool& m_flag;
+};
+
+} // namespace
+
 void Application::switch_printer(const std::string& printer_id) {
     if (m_soft_restart_in_progress) {
         spdlog::warn("[Application] Ignoring switch_printer during active soft restart");
         return;
     }
-    m_soft_restart_in_progress = true;
+    SoftRestartLatch soft_restart(m_soft_restart_in_progress);
 
     spdlog::info("[Application] Switching to printer '{}'...", printer_id);
 
     // Validate printer exists in config
     if (!m_config->set_active_printer(printer_id)) {
         spdlog::error("[Application] Failed to switch — unknown printer '{}'", printer_id);
-        m_soft_restart_in_progress = false;
         return;
     }
     m_config->save();
 
-    // Per-printer widget layouts live at /printers/<active>/panel_widgets/<panel>.
-    // The active printer just changed, so Config::df() now points at the new
-    // printer — invalidate every cached PanelWidgetConfig (and the per-page
-    // derived caches) so Home re-reads the new printer's layout instead of
-    // serving the previous printer's cached one (#804 load() guard regression).
-    PanelWidgetManager::instance().clear_all_panel_configs();
+    // Per-printer state lives at /printers/<active>/… and is reached via Config::df().
+    // The active printer just changed, so df() now points at the new printer — fire every
+    // registered per-printer cache invalidator BEFORE teardown, while df() is already
+    // correct, so nothing keeps serving the previous printer's values. PanelWidgetManager's
+    // cached layouts (#804) were the first instance of this; the registry is what stops the
+    // next one from being a latent bug nobody remembers to wire up.
+    helix::PrinterCacheRegistry::instance().invalidate_all();
 
     tear_down_printer_state();
     init_printer_state();
@@ -3965,7 +4145,6 @@ void Application::switch_printer(const std::string& printer_id) {
     std::string toast_msg = fmt::format(fmt::runtime(lv_tr("Connected to {}")), printer_name);
     ToastManager::instance().show(ToastSeverity::INFO, toast_msg.c_str());
 
-    m_soft_restart_in_progress = false;
     spdlog::info("[Application] Switched to printer '{}'", printer_id);
 }
 
@@ -3974,7 +4153,7 @@ void Application::add_printer_via_wizard() {
         spdlog::warn("[Application] Ignoring add_printer_via_wizard during active soft restart");
         return;
     }
-    m_soft_restart_in_progress = true;
+    SoftRestartLatch soft_restart(m_soft_restart_in_progress);
 
     // Generate a unique ID for the new printer entry (loop to avoid collisions after deletes)
     auto existing_ids = m_config->get_printer_ids();
@@ -3998,6 +4177,10 @@ void Application::add_printer_via_wizard() {
     spdlog::info("[Application] Adding new printer '{}' via wizard (previous: '{}')", new_id,
                  previous_id);
 
+    // Same active-printer change as switch_printer(): Config::df() has moved to the new
+    // entry, so every per-printer cache must be dropped before teardown.
+    helix::PrinterCacheRegistry::instance().invalidate_all();
+
     // Soft restart and launch wizard for the new printer.
     // init_printer_state() calls run_wizard() internally when is_wizard_required() returns true
     // (which it does for the new empty printer entry with wizard_completed=false).
@@ -4009,8 +4192,6 @@ void Application::add_printer_via_wizard() {
     set_wizard_cancel_callback([this]() { cancel_add_printer_wizard(); });
 
     init_printer_state();
-
-    m_soft_restart_in_progress = false;
 }
 
 void Application::cancel_add_printer_wizard() {
@@ -4036,17 +4217,19 @@ void Application::cancel_add_printer_wizard() {
 
     // Defer wizard teardown + soft restart — we're called from a wizard button click handler,
     // so the wizard_container must survive until the event callback returns.
-    helix::ui::queue_update([this]() {
-        m_soft_restart_in_progress = true;
+    m_async_lifetime.defer("Application::cancel_add_printer_wizard", [this]() {
+        SoftRestartLatch soft_restart(m_soft_restart_in_progress);
 
         set_wizard_active(false);
         ui_wizard_deinit_subjects();
 
+        // set_active_printer() above restored the previous printer, so Config::df() moved
+        // again — drop every per-printer cache before teardown.
+        helix::PrinterCacheRegistry::instance().invalidate_all();
+
         tear_down_printer_state();
         init_printer_state();
         NavigationManager::instance().set_active(PanelId::Home);
-
-        m_soft_restart_in_progress = false;
     });
 }
 
@@ -4283,13 +4466,13 @@ void Application::init_printer_state() {
         set_wizard_active(true);
     }
 
-    // 7. Create CLI overlay panels (if any). Finalize the home panel here so
+    // 7. Apply startup CLI actions (if any). Finalize the home panel here so
     //    its carousel + widget grid get built — HomePanel::setup() is
     //    deliberately minimal; finalize_setup() is what creates the visible
     //    content. Mirrors run()'s startup path; without it the home panel
     //    renders blank after a printer switch.
     if (!m_wizard_active) {
-        create_overlays();
+        apply_startup_cli_actions();
         get_global_home_panel().finalize_setup();
     }
 
@@ -4322,6 +4505,10 @@ void Application::shutdown() {
     }
     m_shutdown_complete = true;
 
+    // Expire the callbacks this object deferred to the main thread before any of
+    // the subsystems they touch are torn down below (#1165).
+    m_async_lifetime.invalidate();
+
     // Clean shutdown means no crash loop -- remove the marker file
     std::filesystem::remove(crash_marker_path());
 
@@ -4335,7 +4522,12 @@ void Application::shutdown() {
         m_hot_reloader.reset();
     }
 
-    // Stop memory monitor first
+    // Stop remote control server first (before tearing down UI state)
+#ifdef HELIX_ENABLE_REMOTE_CONTROL
+    helix::RemoteControlServer::instance().stop();
+#endif
+
+    // Stop memory monitor
     helix::MemoryMonitor::instance().stop();
 
     spdlog::info("[Application] Shutting down...");
@@ -4480,6 +4672,13 @@ void Application::shutdown() {
     // cleanly without firing stale unsubscribe callbacks on corrupted linked lists.
     StaticSubjectRegistry::instance().deinit_all();
 
+    // Sweep any panel singleton a deinit callback lazily re-created on its way
+    // out (a callback reaching through an auto-creating get_global_*_panel()
+    // getter builds a replacement instance). Destroying it here, while LVGL and
+    // spdlog are still up, keeps its destructor off the static-destruction path
+    // where those subsystems are already gone. No-op when nothing resurrected.
+    StaticPanelRegistry::instance().destroy_all();
+
     // Destroy JobQueueState AFTER deinit_all() so its registered cleanup lambda runs
     // while the object is still alive. Must still be before m_moonraker.reset() so
     // client unregistration works. (Mirrors soft-restart path ordering.)
@@ -4488,9 +4687,8 @@ void Application::shutdown() {
     // Destroy runtime CJK fonts before LVGL shutdown
     helix::system::CjkFontManager::instance().shutdown();
 
-    // Deinitialize theme manager subjects (theme_changed_subject, swatch descriptions).
-    // These are file-scope statics not tracked by StaticSubjectRegistry.
-    theme_manager_deinit();
+    // NOTE: theme_manager_deinit() is deliberately NOT called here. It has to run
+    // after m_display.reset() — see the call below.
 
     // Invalidate all ObserverGuards so any reset() call in surviving destructors
     // releases instead of calling lv_observer_remove() on freed observer pointers.
@@ -4525,6 +4723,25 @@ void Application::shutdown() {
     // Shutdown display (calls lv_deinit). All observer callbacks were already
     // removed above, so widget deletion is clean — no observer linked list access.
     m_display.reset();
+
+    // Theme manager subjects (theme_changed_subject, swatch descriptions) are
+    // file-scope statics not tracked by StaticSubjectRegistry, so they are torn
+    // down by hand — and only HERE, after the display is gone.
+    //
+    // They must outlive m_display.reset(), because that is what runs
+    // lv_xml_deinit(): a component scope holding a <subject_expr> owns RAW
+    // lv_observer_t* pointers (lv_xml_subject_expr_t::observers) attached to
+    // these subjects, and releases them with lv_observer_remove(). Those raw
+    // pointers are not ObserverGuards, so ObserverGuard::invalidate_all() above
+    // does not cover them. Deinitialising the subjects first frees every
+    // observer on them (lv_subject_deinit -> lv_observer.c:468) and the later
+    // scope teardown then reads freed memory — a heap-use-after-free that
+    // aborted every single `ctl shutdown`.
+    //
+    // Running last is safe: lv_xml_deinit() detaches the <subject_expr>
+    // observers before lv_deinit(), and lv_deinit() removes the object-bound
+    // ones, so these subjects have no subscribers left by the time we get here.
+    theme_manager_deinit();
 
     // Uninstall crash handler last — clean shutdown reached this point, so a
     // SIGBUS/SIGSEGV after this is the kernel's problem, not ours.

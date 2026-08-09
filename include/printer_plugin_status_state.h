@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include "async_lifetime_guard.h"
 #include "subject_managed_panel.h"
 
 #include <lvgl.h>
@@ -108,6 +109,11 @@ class PrinterPluginStatusState {
 
     SubjectManager subjects_;
     bool subjects_initialized_ = false;
+
+    /// Expires the deferred setter below when the subjects go away. Declared
+    /// after `subjects_` so reverse-order member destruction invalidates it
+    /// before the subjects it protects (#1165, #1146).
+    AsyncLifetimeGuard async_lifetime_;
 
     // Plugin status subjects (tri-state: -1=unknown, 0=no, 1=yes)
     lv_subject_t helix_plugin_installed_{}; // HelixPrint Klipper plugin

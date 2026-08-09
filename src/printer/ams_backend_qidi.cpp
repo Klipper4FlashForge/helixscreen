@@ -5,6 +5,7 @@
 #include "ams_error.h"
 #include "macro_param_cache.h"
 #include "settings_manager.h"
+#include "slot_registry.h"
 
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
@@ -196,6 +197,11 @@ AmsBackendQidi::AmsBackendQidi(IMoonrakerAPI* api, helix::IMoonrakerClient* clie
     system_info_.tip_method = TipMethod::CUT;
 
     system_info_.units.push_back(make_qidi_unit(0));
+    // make_qidi_unit() seeds the identity mapping on the slots; publish the
+    // matching forward map so a pre-first-status snapshot is already
+    // self-consistent in both directions. No lock: nothing else can observe
+    // this instance until the constructor returns.
+    rebuild_tool_map_locked();
     slot_rfid_.resize(NUM_SLOTS);
 
     // Box PTC dryer capabilities (issue #1019). max_temp_c is the settable ceiling
@@ -252,18 +258,33 @@ void AmsBackendQidi::on_started() {
         client_->send_jsonrpc(
             "printer.objects.query", cfg_params,
             [this, cfg_token](nlohmann::json response) {
-                cfg_token.defer("AmsBackendQidi::apply_config_settings",
-                                [this, response = std::move(response)]() {
-                                    try {
-                                        const auto& settings =
-                                            response["result"]["status"]["configfile"]["settings"];
-                                        apply_config_settings(settings);
-                                        emit_event(EVENT_STATE_CHANGED);
-                                    } catch (const nlohmann::json::exception& e) {
-                                        spdlog::warn("{} configfile parse failed: {}",
-                                                     backend_log_tag(), e.what());
-                                    }
-                                });
+                cfg_token.defer("AmsBackendQidi::apply_config_settings", [this,
+                                                                          response = std::move(
+                                                                              response)]() {
+                    try {
+                        // Guard every level before indexing.
+                        // `response` is const in this
+                        // non-mutable lambda, so operator[]
+                        // resolves to the const overload — on a
+                        // missing key that is a live assert(),
+                        // an uncatchable SIGABRT, not the json
+                        // exception this catch is written for.
+                        if (!response.contains("result") ||
+                            !response["result"].contains("status") ||
+                            !response["result"]["status"].contains("configfile") ||
+                            !response["result"]["status"]["configfile"].contains("settings") ||
+                            !response["result"]["status"]["configfile"]["settings"].is_object()) {
+                            spdlog::warn("{} configfile settings unavailable", backend_log_tag());
+                            return;
+                        }
+                        const auto& settings =
+                            response["result"]["status"]["configfile"]["settings"];
+                        apply_config_settings(settings);
+                        emit_event(EVENT_STATE_CHANGED);
+                    } catch (const nlohmann::json::exception& e) {
+                        spdlog::warn("{} configfile parse failed: {}", backend_log_tag(), e.what());
+                    }
+                });
             },
             [this](const MoonrakerError& err) {
                 spdlog::warn("{} configfile query failed: {}", backend_log_tag(), err.message);
@@ -385,8 +406,7 @@ void AmsBackendQidi::apply_config_settings(const nlohmann::json& settings) {
         const std::string& key = it.key();
         // Max 4 dialect marker: a "[multi_color_controller]" section (bare or
         // instanced, e.g. "multi_color_controller box0") is Max 4-only. #1083
-        if (key == "multi_color_controller" ||
-            key.rfind("multi_color_controller ", 0) == 0) {
+        if (key == "multi_color_controller" || key.rfind("multi_color_controller ", 0) == 0) {
             has_multi_color = true;
         }
         if (!it->is_object()) {
@@ -523,6 +543,43 @@ void AmsBackendQidi::apply_heater_status(const nlohmann::json& notification) {
     }
 }
 
+void AmsBackendQidi::rebuild_tool_map_locked() {
+    // SlotRegistry::set_tool_mapping() is the canonical implementation of the
+    // "a tool maps to exactly one slot" bookkeeping — it maintains both
+    // directions in lockstep and evicts whichever side lost a contested tool
+    // number. QIDI keeps its slot state on system_info_ rather than in a
+    // registry, so run the mapping through a throwaway registry and read both
+    // directions back out of it instead of hand-writing the reverse map here.
+    const int slot_count = std::max(0, system_info_.total_slots);
+
+    helix::printer::SlotRegistry ledger;
+    std::vector<std::string> names;
+    names.reserve(static_cast<size_t>(slot_count));
+    for (int i = 0; i < slot_count; ++i) {
+        names.push_back("slot" + std::to_string(i));
+    }
+    ledger.initialize("QIDI Box", names);
+
+    for (int i = 0; i < slot_count; ++i) {
+        const auto* slot = system_info_.get_slot_global(i);
+        if (slot && slot->mapped_tool >= 0) {
+            ledger.set_tool_mapping(i, slot->mapped_tool);
+        }
+    }
+
+    // Write the registry's normalised view back onto the slots: if two slots
+    // claimed the same tool number, set_tool_mapping() already dropped the
+    // loser, and the badge must not keep showing a tool that no longer routes
+    // through that lane.
+    for (int i = 0; i < slot_count; ++i) {
+        if (auto* slot = system_info_.get_slot_global(i)) {
+            slot->mapped_tool = ledger.tool_for_slot(i);
+        }
+    }
+
+    system_info_.tool_to_slot_map = ledger.tool_map();
+}
+
 void AmsBackendQidi::parse_save_variables(const nlohmann::json& variables) {
     if (!variables.is_object()) {
         return;
@@ -575,6 +632,12 @@ void AmsBackendQidi::parse_save_variables(const nlohmann::json& variables) {
         }
     }
 
+    // Publish the forward map alongside the reverse mapped_tool the loop above
+    // just wrote — same pass, same source, so the two cannot disagree. Runs
+    // unconditionally because a box_count change earlier in this function
+    // resizes the slot vector and the map has to follow it.
+    rebuild_tool_map_locked();
+
     for (int i = 0; i < slot_count; ++i) {
         auto* slot = system_info_.get_slot_global(i);
         if (!slot) {
@@ -619,16 +682,16 @@ void AmsBackendQidi::parse_save_variables(const nlohmann::json& variables) {
     if (has_slot_or_action_key) {
         bool any_blocked = false;
         for (const auto& unit : system_info_.units) {
-            any_blocked = any_blocked || std::any_of(unit.slots.begin(), unit.slots.end(),
-                                                     [](const SlotInfo& s) {
-                                                         return s.status == SlotStatus::BLOCKED;
-                                                     });
+            any_blocked = any_blocked ||
+                          std::any_of(unit.slots.begin(), unit.slots.end(), [](const SlotInfo& s) {
+                              return s.status == SlotStatus::BLOCKED;
+                          });
         }
         const bool is_loading = tool_change_it != variables.end() &&
                                 tool_change_it->is_number_integer() &&
                                 tool_change_it->get<int>() != 0;
-        system_info_.action = any_blocked ? AmsAction::ERROR
-                                          : (is_loading ? AmsAction::LOADING : AmsAction::IDLE);
+        system_info_.action =
+            any_blocked ? AmsAction::ERROR : (is_loading ? AmsAction::LOADING : AmsAction::IDLE);
     }
 
     auto load_it = variables.find("last_load_slot");
@@ -698,6 +761,25 @@ void AmsBackendQidi::parse_save_variables(const nlohmann::json& variables) {
             auto v = vendor_names_.find(rfid.vendor_id);
             if (v != vendor_names_.end() && !v->second.empty()) {
                 slot->brand = v->second;
+            }
+        }
+    }
+
+    // Reconcile the LOADED stamp with the aggregate pair, after both writers.
+    // The slot<N> loop runs first and derives status from the per-slot state
+    // word alone, which carries no notion of "seated at the extruder"; only the
+    // last_load_slot block below it writes current_slot / filament_loaded. A
+    // payload that repeats slot<M> without repeating last_load_slot therefore
+    // demoted the seated slot to AVAILABLE while the aggregate still named it,
+    // which is the disagreement has_per_slot_loaded_authority() cannot tolerate
+    // (#1199).
+    //
+    // A negative state word (BLOCKED) wins: a slot the Box has faulted must not
+    // be painted healthy just because it is the seated one.
+    if (system_info_.filament_loaded && system_info_.current_slot >= 0) {
+        if (auto* seated = system_info_.get_slot_global(system_info_.current_slot)) {
+            if (seated->status != SlotStatus::BLOCKED) {
+                seated->status = SlotStatus::LOADED;
             }
         }
     }
@@ -886,6 +968,11 @@ AmsSystemInfo AmsBackendQidi::get_system_info() const {
 helix::printer::ToolMappingCapabilities AmsBackendQidi::get_tool_mapping_capabilities() const {
     // QIDI Box maps tools to slots via save_variables value_t<N> assignment.
     return {true, true, "Tool-to-slot mapping via save_variables"};
+}
+
+std::vector<int> AmsBackendQidi::get_tool_mapping() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return system_info_.tool_to_slot_map;
 }
 
 SlotInfo AmsBackendQidi::get_slot_info(int slot_index) const {
@@ -1157,10 +1244,11 @@ std::optional<helix::ErrorEvent> AmsBackendQidi::current_error() const {
     e.sticky = true;
     // A CRITICAL event with empty recovery_actions renders via RecoveryModalPresenter
     // as a button-less ActionPromptModal — non-dismissible UI trap. Provide one
-    // dismiss affordance. The gcode is a Klipper comment (no-op on execute_gcode).
+    // dismiss affordance. An empty gcode is the dismiss spelling: the modal
+    // closes and sends nothing (#1172; this used to need a Klipper comment).
     // Recovery gcode is absent: QIDI BLOCKED slot clearance is unknown; ships blind
     // (no QIDI hardware). (prestonbrown/helixscreen#1041)
-    e.recovery_actions = {{lv_tr("OK"), "; qidi-blocked-dismiss", "qidi::dismiss", ""}};
+    e.recovery_actions = {{lv_tr("OK"), "", "qidi::dismiss", ""}};
     return e;
 }
 

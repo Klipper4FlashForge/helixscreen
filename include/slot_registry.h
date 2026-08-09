@@ -22,10 +22,27 @@ struct SlotSensors {
     bool has_pre_gate_sensor = false;
     bool pre_gate_triggered = false;
 
+    // AFC selector sensor. Only units with a physical selector (HTLF,
+    // QuattroBox) publish `selector`; has_selector records whether the field
+    // was ever seen so a Box Turtle isn't rendered as "selector clear".
+    bool has_selector = false;
+    bool selector = false;
+
     // AFC buffer/readiness
     std::string buffer_status;
     std::string filament_status;
     float dist_hub = 0.0f;
+
+    /// Hex colour AFC drives the lane's status LED to. Firmware emits it as the
+    /// second half of the same `get_filament_status()` split that produces
+    /// filament_status, so it is that string's severity colour straight from
+    /// the firmware rather than one we re-derive.
+    std::string filament_status_led;
+
+    /// Comma-separated names of the homing endstops configured on this lane
+    /// (e.g. "load,hub,tool_start,tool_end,buffer_advance,buffer_trailing").
+    /// Absent on lanes with no `_endstops` — a per-lane capability list.
+    std::string endstops;
 };
 
 /// A single slot in the registry. Owns all per-slot state.
@@ -81,7 +98,16 @@ class SlotRegistry {
     int tool_for_slot(int global_index) const;
     int slot_for_tool(int tool_number) const;
     void set_tool_mapping(int global_index, int tool_number);
+    /// Clear a slot's tool mapping (mark unmapped). Also clears the reverse map
+    /// entry if it still points at this slot. set_tool_mapping() rejects negative
+    /// tool numbers, so this is the primitive for resetting to unmapped.
+    void clear_tool_mapping(int global_index);
     void set_tool_map(const std::vector<int>& tool_to_slot);
+    /// Forward map: tool_map()[tool] = global slot index, -1 for an unmapped
+    /// tool. This is the exact vector build_system_info() copies into
+    /// AmsSystemInfo::tool_to_slot_map; exposed on its own so a caller that only
+    /// needs the mapping doesn't have to build (and copy) a whole snapshot.
+    const std::vector<int>& tool_map() const;
 
     // === Endless spool ===
     int backup_for_slot(int global_index) const;

@@ -14,8 +14,8 @@
       </lv_obj>
       <!-- Scrollable content area -->
       <lv_obj width="100%"
-              flex_grow="1" scrollable="true" flex_flow="column" style_bg_color="#screen_bg"
-              style_pad_all="#space_lg" style_pad_row="#space_md">
+              flex_grow="1" scrollable="true" flex_flow="column" style_bg_color="#screen_bg" style_pad_all="#space_lg"
+              style_pad_row="#space_md">
         <!-- Glyph items will be added here dynamically from C++ -->
         <!-- Each item: [Icon] LV_SYMBOL_NAME -->
       </lv_obj>

@@ -14,6 +14,11 @@ _HELIX_MOONRAKER_SOURCED=1
 # ZMOD-on-AD5X notes:
 #   /opt/config is a symlink to /usr/data/config; printer_data lives under both.
 #   We list both forms so symlink-aware and -unaware path resolutions both hit.
+# COSMOS (OpenCentauri, Elegoo Centauri Carbon) note:
+#   /etc/klipper/config has no printer_data component at all. set_install_paths
+#   points KLIPPER_CONFIG_DIR there for platform=cc1, so the dynamic probe below
+#   normally wins; the static entry is the safety net for a COSMOS box that was
+#   not detected as cc1 (forced --platform, future Elegoo model, etc.).
 MOONRAKER_CONF_PATHS="
 /home/pi/printer_data/config/moonraker.conf
 /home/biqu/printer_data/config/moonraker.conf
@@ -24,14 +29,126 @@ MOONRAKER_CONF_PATHS="
 /opt/config/moonraker.conf
 /usr/data/config/printer_data/config/moonraker.conf
 /usr/data/printer_data/config/moonraker.conf
+/etc/klipper/config/moonraker.conf
 "
+
+# Common Moonraker SOURCE roots (the checkout/package that holds the Python
+# code, NOT printer_data). Mirrors the discovery list in
+# moonraker-plugin/install.sh, extended with the buildroot vendor layouts:
+#   /home/lava/moonraker        Snapmaker U1 (klipper runs as 'lava')
+#   /usr/data/moonraker         Creality K1 series
+#   /mnt/UDISK/moonraker        Creality K2 series
+#   /usr/share/moonraker        Creality stock (vendor-installed package)
+#   /root/printer_software/...  FlashForge AD5M Klipper Mod
+# Overridable so tests can point at a fixture tree, same as MOONRAKER_CONF_PATHS.
+MOONRAKER_SRC_PATHS="
+/home/pi/moonraker
+/home/biqu/moonraker
+/home/mks/moonraker
+/home/qidi/moonraker
+/home/klipper/moonraker
+/home/lava/moonraker
+/root/moonraker
+/root/printer_software/moonraker
+/usr/data/moonraker
+/usr/share/moonraker
+/mnt/UDISK/moonraker
+/userdata/moonraker
+/opt/moonraker
+"
+
+# Locate Moonraker's update_manager component package.
+# Three on-disk layouts are covered:
+#   <root>/moonraker/components/update_manager            -- git checkout (~/moonraker)
+#   <root>/components/update_manager                      -- the package dir itself
+#   <root>/moonraker/moonraker/components/update_manager  -- repo nested in an install dir
+#
+# The third form is Creality's. Measured on a K1C (192.168.30.182) running
+# Moonraker v0.10.0-10: the install dir is /usr/data/moonraker, the git repo is
+# cloned to /usr/data/moonraker/moonraker, and the python package is a further
+# level down, so the real path is
+#   /usr/data/moonraker/moonraker/moonraker/components/update_manager
+# Both of the first two forms miss that, which would have made the probe return
+# "undetermined" on every K1/K2 -- exactly the platforms the gate exists for.
+# Returns: path to the update_manager directory, or empty string.
+find_moonraker_update_manager_dir() {
+    local root
+    local sub
+
+    # Dynamic: the detected Klipper user's home first (same precedence as
+    # find_moonraker_conf), then the static fallback list.
+    for root in ${KLIPPER_HOME:+"${KLIPPER_HOME}/moonraker"} $MOONRAKER_SRC_PATHS; do
+        [ -n "$root" ] || continue
+        for sub in "$root/moonraker/components/update_manager" \
+                   "$root/components/update_manager" \
+                   "$root/moonraker/moonraker/components/update_manager"; do
+            if [ -d "$sub" ]; then
+                echo "$sub"
+                return 0
+            fi
+        done
+    done
+
+    echo ""
+}
+
+# Probe whether the installed Moonraker honours release_info.json's asset_name.
+#
+# Why a source probe and not a version string: Moonraker reports versions like
+# "v0.9.3-73-gfab6c5c1", which cannot be ordered reliably across branches and
+# vendor forks. The file layout is decisive instead. Moonraker commit
+# 530f1c2016 (2025-01-19, first tagged in v0.10.0) added asset_name support AND
+# renamed zip_deploy.py -> net_deploy.py, so the two facts travel together.
+#
+# Without asset_name support, NetDeploy/ZipDeploy seeds release_asset =
+# assets[0]. GitHub sorts release assets by name, so assets[0] for
+# prestonbrown/helixscreen is "ad5m.sym.zst" -- a zstd symbol file.
+# _extract_release() then does shutil.rmtree(self.path) + mkdir BEFORE opening
+# the zip, so pressing Update in Mainsail/Fluidd DELETES the install directory
+# and dies with "File is not a zip file" (prestonbrown/helixscreen#993).
+#
+# Echoes exactly one of: supported | unsupported | undetermined
+moonraker_asset_name_support() {
+    local um
+    um=$(find_moonraker_update_manager_dir)
+
+    if [ -z "$um" ]; then
+        # No Moonraker source anywhere we know to look (vendor layout we don't
+        # recognise, container, remote Moonraker...). Can't reason about it.
+        echo "undetermined"
+        return 0
+    fi
+
+    if [ -f "$um/net_deploy.py" ]; then
+        if grep -q 'asset_name' "$um/net_deploy.py" 2>/dev/null; then
+            echo "supported"
+        else
+            # Renamed but asset_name stripped/absent -- a fork we must not trust.
+            echo "unsupported"
+        fi
+        return 0
+    fi
+
+    # Pre-530f1c2016 module names: zip_deploy.py (2024-01-20 onward) and
+    # web_deploy.py (earlier still). Neither reads asset_name.
+    if [ -f "$um/zip_deploy.py" ] || [ -f "$um/web_deploy.py" ]; then
+        echo "unsupported"
+        return 0
+    fi
+
+    # Found the package but none of the modules we know. Don't guess.
+    echo "undetermined"
+}
 
 # Find moonraker.conf
 # Returns: path to moonraker.conf or empty string
 find_moonraker_conf() {
-    # Dynamic: check detected user's home first
-    if [ -n "${KLIPPER_HOME:-}" ]; then
-        local user_conf="${KLIPPER_HOME}/printer_data/config/moonraker.conf"
+    # Dynamic: the platform's own config dir first -- KLIPPER_CONFIG_DIR when a
+    # firmware declared one (COSMOS), else <KLIPPER_HOME>/printer_data/config.
+    local config_dir
+    config_dir="$(klipper_config_dir)"
+    if [ -n "$config_dir" ]; then
+        local user_conf="${config_dir}/moonraker.conf"
         if [ -f "$user_conf" ]; then
             echo "$user_conf"
             return 0
@@ -324,14 +441,21 @@ EOF
 
 # Ensure helixscreen is in moonraker.asvc (service allowlist)
 # Moonraker requires services to be listed here before it can manage them.
-# The asvc file lives in printer_data/, one level up from config/moonraker.conf.
-# Args: $1 = moonraker.conf path (used to derive printer_data path)
+#
+# The allowlist lives one directory above the config dir, so it is derived from
+# moonraker.conf rather than from any printer_data assumption. That derivation
+# holds on the non-printer_data layouts too:
+#   /home/pi/printer_data/config/moonraker.conf -> /home/pi/printer_data/moonraker.asvc
+#   /etc/klipper/config/moonraker.conf          -> /etc/klipper/moonraker.asvc  (COSMOS)
+# The COSMOS path was verified on a real CC1 -- that IS where its asvc file is.
+#
+# Args: $1 = moonraker.conf path (used to derive the data dir holding the asvc)
 ensure_moonraker_asvc() {
     local conf="$1"
-    # printer_data is two levels up from config/moonraker.conf
-    local printer_data
-    printer_data="$(dirname "$(dirname "$conf")")"
-    local asvc="${printer_data}/moonraker.asvc"
+    # The data dir is two levels up from <config dir>/moonraker.conf
+    local data_dir
+    data_dir="$(dirname "$(dirname "$conf")")"
+    local asvc="${data_dir}/moonraker.asvc"
 
     if [ ! -f "$asvc" ]; then
         log_info "No moonraker.asvc found at $asvc, skipping"
@@ -390,8 +514,10 @@ configure_moonraker_updates() {
 
     if [ -z "$conf" ]; then
         log_warn "Could not find moonraker.conf in any known location:"
-        if [ -n "${KLIPPER_HOME:-}" ]; then
-            log_warn "  ${KLIPPER_HOME}/printer_data/config/moonraker.conf"
+        local probed_dir
+        probed_dir="$(klipper_config_dir)"
+        if [ -n "$probed_dir" ]; then
+            log_warn "  ${probed_dir}/moonraker.conf"
         fi
         for tried in $MOONRAKER_CONF_PATHS; do
             log_warn "  $tried"
@@ -404,6 +530,58 @@ configure_moonraker_updates() {
     fi
 
     log_info "Using moonraker.conf at: $conf"
+
+    # Gate on Moonraker's asset_name support before arming the one-click
+    # updater (prestonbrown/helixscreen#993). On a Moonraker that ignores
+    # asset_name, the Update button in Mainsail/Fluidd rmtree()s the install
+    # directory and then fails on a non-zip asset -- strictly worse than no
+    # button at all.
+    local mr_support
+    mr_support=$(moonraker_asset_name_support)
+
+    if [ "$mr_support" = "unsupported" ]; then
+        log_warn "This Moonraker predates release_info.json asset_name support."
+        log_warn "Its update_manager would download the WRONG release asset and"
+        log_warn "DELETE ${INSTALL_DIR} before failing. Skipping the"
+        log_warn "[update_manager helixscreen] section for your own safety."
+        log_warn "To get the in-UI update button: upgrade Moonraker to v0.10.0 or"
+        log_warn "newer, then re-run this installer."
+        log_warn "Either way, HelixScreen's built-in updater is unaffected:"
+        log_warn "  Settings -> Updates, inside HelixScreen."
+
+        # The gun may already be loaded from an earlier install that ran before
+        # this gate existed -- unload it.
+        local removed_stale=0
+        if has_update_manager_section "$conf"; then
+            log_warn "Removing the existing [update_manager helixscreen] section."
+            remove_update_manager_section
+            removed_stale=1
+        fi
+
+        # These two are orthogonal to the updater and must not regress just
+        # because we skipped the stanza: the buildroot key silences a warning
+        # caused by ANY update_manager section (mainsail/fluidd have their own),
+        # and the asvc allowlist is what lets a user restart HelixScreen from
+        # Mainsail's service list.
+        disable_system_updates_on_buildroot "$conf"
+        ensure_moonraker_asvc "$conf"
+
+        if [ "$removed_stale" -eq 1 ]; then
+            restart_moonraker
+        fi
+        return 0
+    fi
+
+    # undetermined: no recognisable Moonraker source on disk (vendor layout we
+    # don't know, remote/containerised Moonraker). Deliberately preserve the
+    # pre-gate behaviour and write the stanza -- refusing here would regress
+    # every install we simply can't reason about.
+    if [ "$mr_support" = "undetermined" ]; then
+        log_warn "Could not locate the Moonraker source to verify asset_name support."
+        log_warn "Configuring the updater anyway. If Moonraker is older than v0.10.0,"
+        log_warn "use HelixScreen's built-in updater (Settings -> Updates) instead of"
+        log_warn "the Update button in Mainsail/Fluidd."
+    fi
 
     # Migrate old git_repo or zip config to type: web
     # (type: zip shows perpetual UP-TO-DATE in Mainsail — see mainsail-crew/mainsail#2444)

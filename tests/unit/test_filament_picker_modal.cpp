@@ -4,6 +4,7 @@
 
 #include "../test_fixtures.h"
 #include "../test_helpers/filament_picker_test_access.h"
+#include "filament_catalog.h"
 
 #include "../catch_amalgamated.hpp"
 
@@ -85,25 +86,6 @@ TEST_CASE_METHOD(XMLTestFixture, "picker reset row shown when reset callback set
     REQUIRE_FALSE(FilamentPickerTestAccess::reset_button_hidden(modal));
 }
 
-namespace {
-// Split a newline-separated dropdown options string into individual entries.
-std::vector<std::string> split_lines(const std::string& s) {
-    std::vector<std::string> out;
-    std::string cur;
-    for (char c : s) {
-        if (c == '\n') {
-            out.push_back(cur);
-            cur.clear();
-        } else {
-            cur += c;
-        }
-    }
-    if (!cur.empty())
-        out.push_back(cur);
-    return out;
-}
-} // namespace
-
 TEST_CASE_METHOD(XMLTestFixture, "picker allowed_types full match keeps every vendor type",
                  "[filament_picker]") {
     // Capture the UNFILTERED Type dropdown for the default (Generic) vendor.
@@ -116,7 +98,16 @@ TEST_CASE_METHOD(XMLTestFixture, "picker allowed_types full match keeps every ve
     REQUIRE_FALSE(unfiltered.empty());
 
     // allowed_types = the exact full type set -> a superset that must not drop anything.
-    std::vector<std::string> allowed = split_lines(unfiltered);
+    //
+    // The whitelist gates raw catalog TYPES, while the dropdown lists derived
+    // FAMILY headings, so the two are not interchangeable: Generic stocks
+    // PPA-CF and PPA-GF but no plain "PPA", so feeding the heading list back in
+    // would leave "PPA" matching no product and land it in the appended
+    // whitelist-only run at the end. Source the types from the catalog to
+    // exercise the superset claim this test actually makes.
+    std::vector<std::string> allowed =
+        helix::printer::FilamentCatalog::load_full().types_for_brand("Generic");
+    REQUIRE_FALSE(allowed.empty());
     FilamentCatalogPickerModal modal;
     modal.show(lv_screen_active(), std::nullopt, allowed, [](const EffectiveFilament&) {});
     helix::ui::UpdateQueue::instance().drain();

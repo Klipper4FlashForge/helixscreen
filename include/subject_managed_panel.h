@@ -105,9 +105,10 @@ class SubjectManager {
 
     // Movable (transfers subject ownership)
     SubjectManager(SubjectManager&& other) noexcept
-        : subjects_(std::move(other.subjects_)),
+        : subjects_(std::move(other.subjects_)), subject_names_(std::move(other.subject_names_)),
           properly_deinitialized_(other.properly_deinitialized_) {
         other.subjects_.clear();
+        other.subject_names_.clear();
         other.properly_deinitialized_ = false;
     }
 
@@ -115,8 +116,10 @@ class SubjectManager {
         if (this != &other) {
             deinit_all();
             subjects_ = std::move(other.subjects_);
+            subject_names_ = std::move(other.subject_names_);
             properly_deinitialized_ = other.properly_deinitialized_;
             other.subjects_.clear();
+            other.subject_names_.clear();
             other.properly_deinitialized_ = false;
         }
         return *this;
@@ -133,7 +136,11 @@ class SubjectManager {
      * @note Null pointers are safely ignored with a warning log
      * @note Duplicate registrations are ignored (no double-deinit)
      */
-    void register_subject(lv_subject_t* subject) {
+    /// @param xml_name The name this subject was published under in the XML scope,
+    ///        so deinit_all() can withdraw it. Kept here rather than looked up from
+    ///        SubjectDebugRegistry: deinit_all() can run during static destruction,
+    ///        where touching that singleton's std::mutex aborts the process.
+    void register_subject(lv_subject_t* subject, const char* xml_name = nullptr) {
         if (!subject) {
             spdlog::warn("[SubjectManager] Attempted to register null subject");
             return;
@@ -148,6 +155,7 @@ class SubjectManager {
         }
 
         subjects_.push_back(subject);
+        subject_names_.emplace_back(xml_name ? xml_name : "");
     }
 
     /**
@@ -159,10 +167,13 @@ class SubjectManager {
      * Safe to call multiple times - subsequent calls are no-ops.
      *
      * @note Checks lv_is_initialized() to handle static destruction order safely
-     * @note Subjects registered via lv_xml_register_subject() are NOT automatically
-     *       unregistered from the XML system. This is safe because panels are
-     *       destroyed via StaticPanelRegistry BEFORE lv_deinit() destroys the
-     *       XML registry. Do not destroy panels after lv_deinit().
+     * @note Each subject's XML-scope name is withdrawn before the subject is freed,
+     *       so a name can never outlive the storage it resolves to. Owners that do
+     *       not live for the whole process (a panel held by a stack-allocated test
+     *       fixture, a torn-down panel) depend on this: without it the registry
+     *       keeps handing out a pointer to freed memory and the next lv_xml_create()
+     *       binding that name reads it. Panels are still destroyed via
+     *       StaticPanelRegistry BEFORE lv_deinit(); do not destroy them after.
      */
     void deinit_all() {
         if (subjects_.empty()) {
@@ -180,6 +191,7 @@ class SubjectManager {
                     "deinitialized during shutdown)",
                     subjects_.size());
                 subjects_.clear();
+                subject_names_.clear();
                 return;
             }
 
@@ -204,18 +216,39 @@ class SubjectManager {
                     subjects_.size(), owner_info);
             }
             subjects_.clear();
+            subject_names_.clear();
             return;
         }
 
         spdlog::trace("[SubjectManager] Deinitializing {} subjects", subjects_.size());
 
-        for (auto* subject : subjects_) {
-            if (subject) {
-                lv_subject_deinit(subject);
+        for (size_t i = 0; i < subjects_.size(); ++i) {
+            auto* subject = subjects_[i];
+            if (!subject) {
+                continue;
             }
+            // Drop the XML-scope name BEFORE freeing the subject. The managed
+            // macros publish every subject into the process-wide XML registry,
+            // which keeps resolving the name after lv_subject_deinit() — so an
+            // owner that does not outlive the process (a panel held by a
+            // stack-allocated test fixture, a torn-down panel) leaves the name
+            // pointing at dead memory, and the next lv_xml_create() that binds
+            // it reads freed storage. Unregistering turns that into a clean
+            // "subject not found" instead.
+            if (i < subject_names_.size() && !subject_names_[i].empty()) {
+                helix::xml::unregister_subject_in_current_scope(subject_names_[i].c_str());
+            }
+            // Same reasoning for the debug registry, which is also keyed by a
+            // pointer that is about to dangle. Safe during static destruction:
+            // unregister_subject() checks a liveness flag that outlives the
+            // singleton, so a late call is a no-op rather than a locked-destroyed-
+            // mutex abort.
+            SubjectDebugRegistry::instance().unregister_subject(subject);
+            lv_subject_deinit(subject);
         }
 
         subjects_.clear();
+        subject_names_.clear();
 
         // Mark as properly deinitialized - future calls during static destruction
         // won't warn if subjects were re-added after this point
@@ -240,6 +273,9 @@ class SubjectManager {
 
   private:
     std::vector<lv_subject_t*> subjects_;
+    /// XML-scope name per entry in subjects_, same index. Empty when a subject was
+    /// registered without one (register_subject() called directly, not via a macro).
+    std::vector<std::string> subject_names_;
     bool properly_deinitialized_ = false; ///< Set when deinit_all() completes with LVGL running
 };
 
@@ -257,7 +293,7 @@ class SubjectManager {
     do {                                                                                           \
         lv_subject_init_int(&(subject), (initial_value));                                          \
         helix::xml::register_subject_in_current_scope((xml_name), &(subject));                     \
-        (manager).register_subject(&(subject));                                                    \
+        (manager).register_subject(&(subject), (xml_name));                                        \
         SubjectDebugRegistry::instance().register_subject(                                         \
             &(subject), (xml_name), LV_SUBJECT_TYPE_INT, __FILE__, __LINE__);                      \
     } while (0)
@@ -277,7 +313,7 @@ class SubjectManager {
     do {                                                                                           \
         lv_subject_init_string(&(subject), (buffer), nullptr, sizeof(buffer), (initial_value));    \
         helix::xml::register_subject_in_current_scope((xml_name), &(subject));                     \
-        (manager).register_subject(&(subject));                                                    \
+        (manager).register_subject(&(subject), (xml_name));                                        \
         SubjectDebugRegistry::instance().register_subject(                                         \
             &(subject), (xml_name), LV_SUBJECT_TYPE_STRING, __FILE__, __LINE__);                   \
     } while (0)
@@ -300,7 +336,7 @@ class SubjectManager {
         snprintf((buffer), (size), "%s", (initial_value));                                         \
         lv_subject_init_string(&(subject), (buffer), nullptr, (size), (buffer));                   \
         helix::xml::register_subject_in_current_scope((xml_name), &(subject));                     \
-        (manager).register_subject(&(subject));                                                    \
+        (manager).register_subject(&(subject), (xml_name));                                        \
         SubjectDebugRegistry::instance().register_subject(                                         \
             &(subject), (xml_name), LV_SUBJECT_TYPE_STRING, __FILE__, __LINE__);                   \
     } while (0)
@@ -319,7 +355,7 @@ class SubjectManager {
     do {                                                                                           \
         lv_subject_init_pointer(&(subject), (initial_value));                                      \
         helix::xml::register_subject_in_current_scope((xml_name), &(subject));                     \
-        (manager).register_subject(&(subject));                                                    \
+        (manager).register_subject(&(subject), (xml_name));                                        \
         SubjectDebugRegistry::instance().register_subject(                                         \
             &(subject), (xml_name), LV_SUBJECT_TYPE_POINTER, __FILE__, __LINE__);                  \
     } while (0)
@@ -338,7 +374,7 @@ class SubjectManager {
     do {                                                                                           \
         lv_subject_init_color(&(subject), (initial_value));                                        \
         helix::xml::register_subject_in_current_scope((xml_name), &(subject));                     \
-        (manager).register_subject(&(subject));                                                    \
+        (manager).register_subject(&(subject), (xml_name));                                        \
         SubjectDebugRegistry::instance().register_subject(                                         \
             &(subject), (xml_name), LV_SUBJECT_TYPE_COLOR, __FILE__, __LINE__);                    \
     } while (0)

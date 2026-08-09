@@ -271,14 +271,12 @@ see that shape, we can't confirm `ams_backend_ace.cpp` populates slots on this p
 > TODO items, highest-value first. The first two beat the pending print log for
 > integration purposes.
 
-- [ ] **TODO (highest value): obtain `moonraker/components/ace_status.py`** from this
-  printer. Defines the exact JSON fields / REST endpoints HelixScreen would consume.
-  Resolves whether our backend's `filament_hub`/`ace` parsing or a different shape
-  applies. Cross-check against research doc §9 assumed endpoints
-  (`/server/ace/info|status|slots`).
-- [ ] **TODO (high value): obtain a populated `saved_variables.cfg`**
-  (`/home/pi/printer_data/config/saved_variables.cfg`) to see a real `ace_inventory_0`
-  entry — concrete `sku`/`status` values and any additional per-slot fields.
+- [x] **DONE (via #1098): obtained `moonraker/components/ace_status.py`** — see the
+  [Sample files received](#sample-files-received-1098-2026-07-15) section below.
+  Sample committed at `kobra-s1-ace-1098/ace_status.py`.
+- [x] **DONE (via #1098): obtained a populated `saved_variables.cfg`** — sample at
+  `kobra-s1-ace-1098/saved_variables.cfg`. Shape differs from what was predicted here;
+  see corrections below.
 - [ ] **TODO: print-running log capture** (requested). Will surface: live status-push
   JSON, real tool-change sequencing/timing, feed-assist behavior under load,
   error/retry paths, and slicer-driven purge amounts.
@@ -295,4 +293,53 @@ see that shape, we can't confirm `ams_backend_ace.cpp` populates slots on this p
 
 ---
 
-*Generated from log analysis 2026-06-24. Logs were connect-only (no active print).*
+## Sample files received (#1098, 2026-07-15)
+
+A reporter supplied the two highest-value artifacts (raw copies in
+[`kobra-s1-ace-1098/`](kobra-s1-ace-1098/)). They resolve the status-surface unknown
+and correct two assumptions this doc made before seeing the source.
+
+### `ace_status.py` — confirmed surface
+
+The fork's `[ace_status]` Moonraker component is a **proxy**, not a new object model:
+
+- **REST endpoints:** `GET /server/ace/status`, `GET /server/ace/slots`,
+  `POST /server/ace/command`. This is the same `/server/ace/*` family our existing
+  ACE REST fallback speaks — **not** a `filament_hub` object. Note it does **not**
+  implement `/server/ace/info`.
+- **Websocket event:** `ace:status_update`.
+- **Backing Klipper objects:** `ace` is a *manager* (`ace_instances`, `current_index`,
+  **no `slots`**); per-unit slot data lives in `ace_instance_{N}` objects. Multi-unit
+  capable, selectable via `?instance=N`.
+- **Status shape:** `status`, `model`, `firmware`, `dryer{status,target_temp,duration,
+  remain_time}`, `temp`, `fan_speed`, `enable_rfid`, `slots[]` where each slot =
+  `{index, status, type, color[3], sku, rfid}`. **Caveat:** when live, the component
+  returns `ace_instance_{N}.get_status()` *verbatim* — the tidy slot struct above is
+  only its *fallback default*, so the real populated field names are still unconfirmed
+  (needs the print-running log or the `[ace]` extra source).
+- **Commands:** sanitized gcode via `klippy_apis.run_gcode`, so tool-change and dryer
+  control are reachable through the generic `command` endpoint.
+
+### `saved_variables.cfg` — corrections to this doc
+
+Predicted `ace_inventory_0`/`_1` with `{sku, status}` entries. Actual sample:
+
+- A single `ace_inventory_0 = [ {status, color[3], material, temp, rfid(bool)}, ×4 ]`,
+  plus `ace_filament_pos = 'bowden'`. **No `sku` key, no `ace_inventory_1`** (one 4-slot
+  unit in this sample). `sku` appears only in the *live status* slot shape, not in
+  persisted inventory. `rfid` is a per-slot bool.
+- HelixScreen does **not** parse `saved_variables.cfg`; it is informational only.
+
+### Integration status
+
+Shipped `ams_backend_ace.cpp` fixes for this path (#1069, commit `8a832d87b`): REST
+fallback now engages on the manager-only `ace` object, `/server/ace/info` is optional,
+the slot parser accepts `type` as a `material` alias, and slot-status vocabulary is
+shared between the object and REST paths. **Deferred:** the populated `ace_instance_{N}`
+slot-field mapping, pending a live-print `/server/ace/status` capture (avoids coding
+against the fallback-default struct).
+
+---
+
+*Generated from log analysis 2026-06-24. Logs were connect-only (no active print).
+Sample files + surface confirmation added 2026-07-15 (#1098).*

@@ -33,6 +33,10 @@ static void chip_delete_cb(lv_event_t* e) {
     delete data;
 }
 
+/// Apply a chip's selected/unselected styling. Chips are rebuilt wholesale by
+/// their owning panels, so the only caller is create_led_chip() below.
+static void update_led_chip_state(lv_obj_t* chip, bool selected);
+
 lv_obj_t* create_led_chip(lv_obj_t* parent, const std::string& led_name,
                           const std::string& display_name, bool selected,
                           std::function<void(const std::string&)> on_click) {
@@ -40,12 +44,13 @@ lv_obj_t* create_led_chip(lv_obj_t* parent, const std::string& led_name,
     lv_obj_t* chip = lv_button_create(parent);
     lv_obj_set_size(chip, LV_SIZE_CONTENT, 32);
     lv_obj_set_style_radius(chip, 16, 0); // Pill shape
-    lv_obj_set_style_pad_hor(chip, 12, 0);
-    lv_obj_set_style_pad_ver(chip, 4, 0);
+    int32_t chip_pad_tight = theme_manager_get_spacing("space_xxs");
+    lv_obj_set_style_pad_hor(chip, theme_manager_get_spacing("space_md"), 0);
+    lv_obj_set_style_pad_ver(chip, chip_pad_tight, 0);
     lv_obj_set_layout(chip, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(chip, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(chip, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_gap(chip, 4, 0);
+    lv_obj_set_style_pad_gap(chip, chip_pad_tight, 0);
     lv_obj_remove_flag(chip, LV_OBJ_FLAG_SCROLLABLE);
 
     // Remove from default input group to prevent focus shift on click
@@ -77,7 +82,7 @@ lv_obj_t* create_led_chip(lv_obj_t* parent, const std::string& led_name,
     return chip;
 }
 
-void update_led_chip_state(lv_obj_t* chip, bool selected) {
+static void update_led_chip_state(lv_obj_t* chip, bool selected) {
     lv_obj_t* icon = lv_obj_find_by_name(chip, "check_icon");
     auto& tm = ThemeManager::instance();
 

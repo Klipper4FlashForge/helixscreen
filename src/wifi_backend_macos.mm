@@ -4,6 +4,7 @@
 
 #include "wifi_backend_macos.h"
 
+#include "log_redact.h"
 #include "safe_log.h"
 
 #include <spdlog/spdlog.h>
@@ -222,8 +223,23 @@ void WifiBackendMacOS::scan_timer_callback([[maybe_unused]] lv_timer_t* timer) {
             wifi_net.security_type = extract_security_type((__bridge void*)network, is_secured);
             wifi_net.is_secured = is_secured;
 
+            // CoreWLAN reports the band directly; there is no centre frequency
+            // on CWChannel, so frequency_mhz stays 0 and only the band is known.
+            CWChannel* channel = [network wlanChannel];
+            if (channel) {
+                if ([channel channelBand] == kCWChannelBand5GHz) {
+                    wifi_net.band_mask = WIFI_BAND_5GHZ;
+                } else if ([channel channelBand] == kCWChannelBand2GHz) {
+                    wifi_net.band_mask = WIFI_BAND_2_4GHZ;
+                }
+            }
+
             discovered.push_back(wifi_net);
         }
+
+        // Collapse per-BSS rows to one per SSID, merging their bands, so the
+        // dev host behaves like a device (helixscreen#1189).
+        discovered = wifi_merge_networks_by_ssid(discovered);
 
         // Sort by signal strength (strongest first)
         std::sort(discovered.begin(), discovered.end(),
@@ -270,7 +286,7 @@ WiFiError WifiBackendMacOS::connect_network(const std::string& ssid, const std::
                          "Please wait for current connection to complete", "");
     }
 
-    spdlog::info("[WiFiMacOS] Connecting to network: {}", ssid);
+    spdlog::info("[WiFiMacOS] Connecting to network: {}", helix::redact::ssid(ssid));
 
     connecting_ssid_ = ssid;
     connecting_password_ = password;
@@ -320,7 +336,8 @@ void WifiBackendMacOS::connect_timer_callback([[maybe_unused]] lv_timer_t* timer
         NSSet<CWNetwork*>* networks = [iface scanForNetworksWithSSID:ssidData error:&error];
 
         if (error || !networks || [networks count] == 0) {
-            spdlog::error("[WiFiMacOS] Network not found: {}", connecting_ssid_);
+            spdlog::error("[WiFiMacOS] Network not found: {}",
+                          helix::redact::ssid(connecting_ssid_));
             connection_in_progress_ = false;
             fire_event("DISCONNECTED", connecting_ssid_);
             return;
@@ -339,7 +356,8 @@ void WifiBackendMacOS::connect_timer_callback([[maybe_unused]] lv_timer_t* timer
         BOOL success = [iface associateToNetwork:network password:password_ns error:&error];
 
         if (success) {
-            spdlog::info("[WiFiMacOS] Successfully connected to: {}", connecting_ssid_);
+            spdlog::info("[WiFiMacOS] Successfully connected to: {}",
+                         helix::redact::ssid(connecting_ssid_));
             fire_event("CONNECTED", connecting_ssid_);
         } else {
             spdlog::error("[WiFiMacOS] Connection failed: {}",
@@ -370,6 +388,54 @@ WiFiError WifiBackendMacOS::disconnect_network() {
     }
 
     return WiFiErrorHelper::success();
+}
+
+// ============================================================================
+// Radio Power
+// ============================================================================
+
+WiFiError WifiBackendMacOS::set_radio_enabled(bool on) {
+    if (!running_) {
+        return WiFiError(WiFiResult::NOT_INITIALIZED, "Backend not started",
+                         "WiFi system not initialized", "");
+    }
+
+    @autoreleasepool {
+        CWInterface* iface = (__bridge CWInterface*)interface_;
+        if (!iface) {
+            return WiFiError(WiFiResult::BACKEND_ERROR, "No WiFi interface",
+                             "WiFi interface unavailable", "");
+        }
+
+        // -setPower: is CoreWLAN's own soft radio switch: association stops and
+        // the interface stays present, which is what WifiBackend requires.
+        NSError* err = nil;
+        if (![iface setPower:(on ? YES : NO) error:&err]) {
+            std::string detail = err ? std::string([[err localizedDescription] UTF8String])
+                                     : std::string("setPower failed");
+            spdlog::warn("[WiFiMacOS] setPower:{} failed: {}", on, detail);
+            return WiFiError(WiFiResult::PERMISSION_DENIED, "CoreWLAN setPower failed: " + detail,
+                             on ? "Could not turn WiFi radio on" : "Could not turn WiFi radio off");
+        }
+
+        spdlog::info("[WiFiMacOS] Radio {}", on ? "enabled" : "disabled");
+    }
+
+    return WiFiErrorHelper::success();
+}
+
+bool WifiBackendMacOS::is_radio_enabled() const {
+    if (!interface_) {
+        // Nothing to ask. Report off rather than inheriting the base class's
+        // unconditional true, which would let the UI claim a radio it cannot
+        // see is on.
+        return false;
+    }
+
+    @autoreleasepool {
+        CWInterface* iface = (__bridge CWInterface*)interface_;
+        return [iface powerOn] == YES;
+    }
 }
 
 // ============================================================================

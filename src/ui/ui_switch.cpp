@@ -38,41 +38,49 @@ static SwitchSizePreset SIZE_LARGE;
 
 /**
  * Initialize size presets based on screen dimensions
- * Called once at startup from ui_switch_register()
+ *
+ * Runs at startup from ui_switch_register() and again from
+ * theme_manager_refresh_layout_constants() on every debounced resize, so the
+ * presets track a breakpoint that moves at runtime (#1210). Re-entrant: the
+ * presets are plain values with no widget state behind them, so a later call
+ * simply overwrites them. Widgets already sized from the old presets keep their
+ * old size — only switches created after this call pick up the new tier.
  */
-static void ui_switch_init_size_presets() {
-    // Use custom breakpoints optimized for our hardware
-    lv_display_t* display = lv_display_get_default();
-    int32_t ver_res = lv_display_get_vertical_resolution(display);
+void ui_switch_init_size_presets(lv_display_t* display) {
+    // Select the preset tier from the constrained axis (min of width/height), so
+    // portrait screens size switches to their narrow axis instead of their tall
+    // one. Landscape is unchanged: there the min axis is already the height this
+    // used before. Mirrors the responsive_dimension() convention in theme_manager.
+    int32_t resp_res = responsive_dimension(display);
 
     // Margin calculation: knob extends ~25% beyond track on each side
     // vert_margin = height * 0.25 (rounded up)
     // horiz_margin = similar, but knob extends horizontally too
-    if (ver_res <= UI_BREAKPOINT_MICRO_MAX) { // ≤272: 480x272
+    if (resp_res <= UI_BREAKPOINT_MICRO_MAX) { // ≤272: 480x272
         SIZE_TINY = {24, 12, 1, 3, 3};
         SIZE_SMALL = {32, 16, 1, 4, 4};
         SIZE_MEDIUM = {40, 20, 1, 5, 5};
         SIZE_LARGE = {48, 24, 2, 6, 6};
-        spdlog::trace("[Switch] Initialized MICRO screen presets (ver_res={}px)", ver_res);
-    } else if (ver_res <= UI_BREAKPOINT_SMALL_MAX) { // 273-460: 480x320, 480x400, 1920x440
+        spdlog::trace("[Switch] Initialized MICRO screen presets (min_dim={}px)", resp_res);
+    } else if (resp_res <= UI_BREAKPOINT_SMALL_MAX) { // 273-460: 480x320, 480x400, 1920x440
         // TINY/SMALL share presets — switch elements are too small to benefit from separate tiers
         SIZE_TINY = {32, 16, 1, 4, 4};
         SIZE_SMALL = {40, 20, 1, 5, 5};
         SIZE_MEDIUM = {48, 24, 2, 6, 6};
         SIZE_LARGE = {56, 28, 2, 7, 7};
-        spdlog::trace("[Switch] Initialized TINY/SMALL screen presets (ver_res={}px)", ver_res);
-    } else if (ver_res <= UI_BREAKPOINT_MEDIUM_MAX) { // 481-800: 800x480
+        spdlog::trace("[Switch] Initialized TINY/SMALL screen presets (min_dim={}px)", resp_res);
+    } else if (resp_res <= UI_BREAKPOINT_MEDIUM_MAX) { // 481-800: 800x480
         SIZE_TINY = {48, 24, 2, 6, 6};
         SIZE_SMALL = {64, 32, 2, 8, 8};
         SIZE_MEDIUM = {80, 40, 3, 10, 10};
         SIZE_LARGE = {88, 44, 3, 11, 11};
-        spdlog::trace("[Switch] Initialized MEDIUM screen presets (ver_res={}px)", ver_res);
+        spdlog::trace("[Switch] Initialized MEDIUM screen presets (min_dim={}px)", resp_res);
     } else { // >800: 1024x600+
         SIZE_TINY = {64, 32, 2, 8, 8};
         SIZE_SMALL = {88, 40, 3, 10, 10};
         SIZE_MEDIUM = {112, 48, 4, 12, 12};
         SIZE_LARGE = {128, 56, 4, 14, 14};
-        spdlog::trace("[Switch] Initialized LARGE screen presets (ver_res={}px)", ver_res);
+        spdlog::trace("[Switch] Initialized LARGE screen presets (min_dim={}px)", resp_res);
     }
 }
 
@@ -456,7 +464,7 @@ void ui_switch_register_responsive_constants() {
  * Register the ui_switch widget with LVGL's XML system
  */
 void ui_switch_register() {
-    ui_switch_init_size_presets();
+    ui_switch_init_size_presets(nullptr);
     lv_xml_register_widget("ui_switch", ui_switch_xml_create, ui_switch_xml_apply);
     spdlog::trace("[Switch] Registered ui_switch widget with XML system");
 }

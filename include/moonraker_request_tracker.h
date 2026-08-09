@@ -137,6 +137,12 @@ class MoonrakerRequestTracker {
     /// Default timeout for Moonraker requests (tool changes, moves, etc.)
     static constexpr uint32_t DEFAULT_REQUEST_TIMEOUT_MS = 60000; // 60s
 
+    /// Floor on the oldest pending request's age before check_timeouts() logs the
+    /// periodic pending-count line at debug. A request that has been in flight for
+    /// tens of milliseconds is simply working; only a queue that is failing to
+    /// drain is worth a line. See the throttle note in check_timeouts().
+    static constexpr uint32_t PENDING_LOG_MIN_AGE_MS = 1000; // 1s
+
   private:
     std::map<uint64_t, PendingRequest> pending_requests_;
     std::mutex requests_mutex_;

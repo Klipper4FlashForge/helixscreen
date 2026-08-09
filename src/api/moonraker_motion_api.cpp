@@ -8,7 +8,9 @@
 
 #include "gcode_classify.h"
 #include "gcode_homing.h"
+#include "jog_coalescer.h"
 #include "moonraker_client.h"
+#include "moonraker_gcode_guards.h"
 #include "moonraker_types.h"
 #include "printer_state.h"
 #include "spdlog/spdlog.h"
@@ -16,6 +18,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <iomanip>
 #include <sstream>
 
 #include "hv/json.hpp"
@@ -42,6 +45,32 @@ bool is_safe_feedrate(double feedrate, const SafetyLimits& limits) {
     return feedrate >= limits.min_feedrate_mm_min && feedrate <= limits.max_feedrate_mm_min;
 }
 
+/**
+ * Format a numeric value for G-code without ever emitting scientific notation.
+ *
+ * A bare `ostringstream << double` uses defaultfloat: roughly 6 significant
+ * digits, switching to scientific notation for small magnitudes. Klipper
+ * tolerates "X1e-17", but it is unreadable in logs and one clamp change away
+ * from a genuinely odd command — clamp_jog_delta can return a real sub-micron
+ * residual (predicted=199.9999995, +1, max=200 -> ~5e-7).
+ *
+ * Fixed notation with trailing zeros trimmed keeps ordinary values byte-identical
+ * to the old defaultfloat output ("4", "0.5", "-2", "6000") while making
+ * scientific output unrepresentable for anything that survives the epsilon gate.
+ */
+std::string format_gcode_value(double v) {
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(6) << v;
+    std::string s = ss.str();
+    // std::fixed always emits a decimal point for finite values (NaN/Inf are
+    // rejected upstream), so the trim is unconditional.
+    s.erase(s.find_last_not_of('0') + 1);
+    if (!s.empty() && s.back() == '.') {
+        s.pop_back();
+    }
+    return s;
+}
+
 bool reject_non_finite(std::initializer_list<double> values, const char* method,
                        const MoonrakerMotionAPI::ErrorCallback& on_error) {
     for (double v : values) {
@@ -50,43 +79,13 @@ bool reject_non_finite(std::initializer_list<double> values, const char* method,
                          "invalid value (NaN/Inf)",
                          method);
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::VALIDATION_ERROR;
-                err.message = "Parameter contains NaN or Inf value";
-                err.method = method;
-                on_error(err);
+                on_error(MoonrakerError::validation_error(method,
+                                                          "Parameter contains NaN or Inf value"));
             }
             return true;
         }
     }
     return false;
-}
-
-// Annotate G-code with source comment for traceability
-std::string annotate_gcode(const std::string& gcode) {
-    constexpr const char* GCODE_SOURCE_COMMENT = " ; from helixscreen";
-
-    std::string result;
-    result.reserve(gcode.size() + 20 * std::count(gcode.begin(), gcode.end(), '\n') + 20);
-
-    std::istringstream stream(gcode);
-    std::string line;
-    bool first = true;
-
-    while (std::getline(stream, line)) {
-        if (!first) {
-            result += '\n';
-        }
-        first = false;
-
-        if (!line.empty() && line.find_first_not_of(" \t\r") != std::string::npos) {
-            result += line + GCODE_SOURCE_COMMENT;
-        } else {
-            result += line;
-        }
-    }
-
-    return result;
 }
 
 } // namespace
@@ -111,10 +110,8 @@ void MoonrakerMotionAPI::home_axes(const std::string& axes, SuccessCallback on_s
             if (!is_valid_axis(axis)) {
                 NOTIFY_ERROR("Invalid axis '{}' in homing command. Must be X, Y, Z, or E.", axis);
                 if (on_error) {
-                    MoonrakerError err;
-                    err.type = MoonrakerErrorType::VALIDATION_ERROR;
-                    err.message = "Invalid axis character (must be X, Y, Z, or E)";
-                    err.method = "home_axes";
+                    MoonrakerError err = MoonrakerError::validation_error(
+                        "home_axes", "Invalid axis character (must be X, Y, Z, or E)");
                     on_error(err);
                 }
                 return;
@@ -139,10 +136,8 @@ void MoonrakerMotionAPI::move_axis(char axis, double distance, double feedrate,
     if (!is_valid_axis(axis)) {
         NOTIFY_ERROR("Invalid axis '{}'. Must be X, Y, Z, or E.", axis);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Invalid axis: " + std::string(1, axis) + " (must be X, Y, Z, or E)";
-            err.method = "move_axis";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "move_axis", "Invalid axis: " + std::string(1, axis) + " (must be X, Y, Z, or E)");
             on_error(err);
         }
         return;
@@ -153,12 +148,10 @@ void MoonrakerMotionAPI::move_axis(char axis, double distance, double feedrate,
         NOTIFY_ERROR("Move distance {:.1f}mm is too large. Maximum: {:.1f}mm.", std::abs(distance),
                      safety_limits_.max_relative_distance_mm);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Distance " + std::to_string(distance) + "mm exceeds safety limits (" +
-                          std::to_string(safety_limits_.min_relative_distance_mm) + "-" +
-                          std::to_string(safety_limits_.max_relative_distance_mm) + "mm)";
-            err.method = "move_axis";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "move_axis", "Distance " + std::to_string(distance) + "mm exceeds safety limits (" +
+                                 std::to_string(safety_limits_.min_relative_distance_mm) + "-" +
+                                 std::to_string(safety_limits_.max_relative_distance_mm) + "mm)");
             on_error(err);
         }
         return;
@@ -169,13 +162,11 @@ void MoonrakerMotionAPI::move_axis(char axis, double distance, double feedrate,
         NOTIFY_ERROR("Speed {:.0f}mm/min is too fast. Maximum: {:.0f}mm/min.", feedrate,
                      safety_limits_.max_feedrate_mm_min);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Feedrate " + std::to_string(feedrate) +
-                          "mm/min exceeds safety limits (" +
-                          std::to_string(safety_limits_.min_feedrate_mm_min) + "-" +
-                          std::to_string(safety_limits_.max_feedrate_mm_min) + "mm/min)";
-            err.method = "move_axis";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "move_axis", "Feedrate " + std::to_string(feedrate) +
+                                 "mm/min exceeds safety limits (" +
+                                 std::to_string(safety_limits_.min_feedrate_mm_min) + "-" +
+                                 std::to_string(safety_limits_.max_feedrate_mm_min) + "mm/min)");
             on_error(err);
         }
         return;
@@ -184,6 +175,57 @@ void MoonrakerMotionAPI::move_axis(char axis, double distance, double feedrate,
     std::string gcode = generate_move_gcode(axis, distance, feedrate);
     spdlog::info("[Motion API] Moving axis {} by {}mm (G-code: {})", axis, distance, gcode);
 
+    execute_gcode(gcode, on_success, on_error);
+}
+
+void MoonrakerMotionAPI::move_relative(double dx, double dy, double dz, double xy_feedrate,
+                                       double z_feedrate, SuccessCallback on_success,
+                                       ErrorCallback on_error) {
+    if (reject_non_finite({dx, dy, dz, xy_feedrate, z_feedrate}, "move_relative", on_error)) {
+        return;
+    }
+
+    // Per-axis distance safety (same limits as move_axis).
+    const struct {
+        char axis;
+        double dist;
+    } deltas[] = {{'X', dx}, {'Y', dy}, {'Z', dz}};
+    for (const auto& d : deltas) {
+        if (d.dist != 0.0 && !is_safe_distance(d.dist, safety_limits_)) {
+            NOTIFY_ERROR("Move distance {:.1f}mm is too large. Maximum: {:.1f}mm.",
+                         std::abs(d.dist), safety_limits_.max_relative_distance_mm);
+            if (on_error) {
+                MoonrakerError err = MoonrakerError::validation_error(
+                    "move_relative", "Distance " + std::to_string(d.dist) +
+                                         "mm exceeds safety limits on axis " +
+                                         std::string(1, d.axis));
+                on_error(err);
+            }
+            return;
+        }
+    }
+    for (double f : {xy_feedrate, z_feedrate}) {
+        if (f != 0 && !is_safe_feedrate(f, safety_limits_)) {
+            NOTIFY_ERROR("Speed {:.0f}mm/min is too fast. Maximum: {:.0f}mm/min.", f,
+                         safety_limits_.max_feedrate_mm_min);
+            if (on_error) {
+                MoonrakerError err = MoonrakerError::validation_error(
+                    "move_relative",
+                    "Feedrate " + std::to_string(f) + "mm/min exceeds safety limits");
+                on_error(err);
+            }
+            return;
+        }
+    }
+
+    std::string gcode = generate_relative_move_gcode(dx, dy, dz, xy_feedrate, z_feedrate);
+    if (gcode.empty()) {
+        if (on_success) {
+            on_success(); // nothing to do — treat as trivially complete
+        }
+        return;
+    }
+    spdlog::info("[Motion API] Relative move dx={} dy={} dz={} (G-code: {})", dx, dy, dz, gcode);
     execute_gcode(gcode, on_success, on_error);
 }
 
@@ -198,10 +240,8 @@ void MoonrakerMotionAPI::move_to_position(char axis, double position, double fee
     if (!is_valid_axis(axis)) {
         NOTIFY_ERROR("Invalid axis '{}'. Must be X, Y, Z, or E.", axis);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Invalid axis character (must be X, Y, Z, or E)";
-            err.method = "move_to_position";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "move_to_position", "Invalid axis character (must be X, Y, Z, or E)");
             on_error(err);
         }
         return;
@@ -213,12 +253,11 @@ void MoonrakerMotionAPI::move_to_position(char axis, double position, double fee
                      safety_limits_.min_absolute_position_mm,
                      safety_limits_.max_absolute_position_mm);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Position " + std::to_string(position) + "mm exceeds safety limits (" +
-                          std::to_string(safety_limits_.min_absolute_position_mm) + "-" +
-                          std::to_string(safety_limits_.max_absolute_position_mm) + "mm)";
-            err.method = "move_to_position";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "move_to_position",
+                "Position " + std::to_string(position) + "mm exceeds safety limits (" +
+                    std::to_string(safety_limits_.min_absolute_position_mm) + "-" +
+                    std::to_string(safety_limits_.max_absolute_position_mm) + "mm)");
             on_error(err);
         }
         return;
@@ -229,13 +268,11 @@ void MoonrakerMotionAPI::move_to_position(char axis, double position, double fee
         NOTIFY_ERROR("Speed {:.0f}mm/min is too fast. Maximum: {:.0f}mm/min.", feedrate,
                      safety_limits_.max_feedrate_mm_min);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Feedrate " + std::to_string(feedrate) +
-                          "mm/min exceeds safety limits (" +
-                          std::to_string(safety_limits_.min_feedrate_mm_min) + "-" +
-                          std::to_string(safety_limits_.max_feedrate_mm_min) + "mm/min)";
-            err.method = "move_to_position";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "move_to_position",
+                "Feedrate " + std::to_string(feedrate) + "mm/min exceeds safety limits (" +
+                    std::to_string(safety_limits_.min_feedrate_mm_min) + "-" +
+                    std::to_string(safety_limits_.max_feedrate_mm_min) + "mm/min)");
             on_error(err);
         }
         return;
@@ -279,6 +316,53 @@ std::string MoonrakerMotionAPI::generate_move_gcode(char axis, double distance, 
         gcode << " F" << feedrate;
     }
     gcode << "\nG90"; // Back to absolute positioning
+    return gcode.str();
+}
+
+std::string MoonrakerMotionAPI::generate_relative_move_gcode(double dx, double dy, double dz,
+                                                             double xy_feedrate,
+                                                             double z_feedrate) {
+    const double vals[] = {dx, dy, dz, xy_feedrate, z_feedrate};
+    for (double v : vals) {
+        if (std::isnan(v) || std::isinf(v)) {
+            spdlog::warn("[Motion API] generate_relative_move_gcode: Rejecting G-code "
+                         "generation: invalid value (NaN/Inf)");
+            return "";
+        }
+    }
+    // Gate each axis on the SAME epsilon that AxisMove::any() uses to decide
+    // whether a coalesced move is worth flushing at all. An exact != 0.0 test
+    // here disagreed with that gate: a cross-axis reversal nets ~1e-17 of float
+    // cancellation residue onto one axis while another carries a real delta, and
+    // the residue was serialized as a real term ("G0 X1e-17 Y2").
+    const bool move_x = std::abs(dx) > helix::AxisMove::kEpsilonMm;
+    const bool move_y = std::abs(dy) > helix::AxisMove::kEpsilonMm;
+    const bool move_z = std::abs(dz) > helix::AxisMove::kEpsilonMm;
+    if (!move_x && !move_y && !move_z) {
+        return ""; // includes the all-zero case
+    }
+
+    std::ostringstream gcode;
+    gcode << "G91";
+    if (move_x || move_y) {
+        gcode << "\nG0";
+        if (move_x) {
+            gcode << " X" << format_gcode_value(dx);
+        }
+        if (move_y) {
+            gcode << " Y" << format_gcode_value(dy);
+        }
+        if (xy_feedrate > 0) {
+            gcode << " F" << format_gcode_value(xy_feedrate);
+        }
+    }
+    if (move_z) {
+        gcode << "\nG0 Z" << format_gcode_value(dz);
+        if (z_feedrate > 0) {
+            gcode << " F" << format_gcode_value(z_feedrate);
+        }
+    }
+    gcode << "\nG90";
     return gcode.str();
 }
 
@@ -328,11 +412,7 @@ void MoonrakerMotionAPI::execute_gcode(const std::string& gcode, SuccessCallback
                              klippy, gcode.substr(0, 60));
             }
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::NOT_READY;
-                err.method = "printer.gcode.script";
-                err.message = "Printer is not ready";
-                on_error(err);
+                on_error(MoonrakerError::not_ready("printer.gcode.script", "Printer is not ready"));
             }
             return;
         }
@@ -342,55 +422,68 @@ void MoonrakerMotionAPI::execute_gcode(const std::string& gcode, SuccessCallback
     // calibration/mesh auto-homes route through here; a mid-print G28 drives the
     // nozzle into the part on loadcell-Z printers (see MoonrakerAPI::execute_gcode
     // for the full collision rationale). "Active" = PRINTING or PAUSED.
-    if (helix::is_homing_gcode(gcode)) {
-        const helix::PrintJobState pstate = state_.get_print_job_state();
-        if (pstate == helix::PrintJobState::PRINTING || pstate == helix::PrintJobState::PAUSED) {
-            if (!silent) {
-                spdlog::warn("[Motion API] Refusing homing G-code during active print "
-                             "(state={}): '{}'",
-                             static_cast<int>(pstate), gcode.substr(0, 60));
-            }
-            if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::NOT_READY;
-                err.method = "printer.gcode.script";
-                err.message = "Homing is disabled while a print is in progress";
-                on_error(err);
-            }
-            return;
-        }
+    if (helix::api::reject_homing_during_active_print(gcode, state_, silent, on_error,
+                                                      "[Motion API]")) {
+        return;
     }
 
-    // Refuse discretionary gcode (non-homing jog moves, etc.) while a blocking
-    // non-print operation holds Klipper's single-threaded gcode lock — it would
-    // otherwise queue and time out. Mirrors the guard in
-    // MoonrakerAPI::execute_gcode; homing/recovery/probe-control pass through.
-    if (helix::is_discretionary_gcode(gcode) && state_.is_blocking_operation_active()) {
+    // Refuse discretionary gcode (non-homing jog moves) while a blocking non-print
+    // operation holds Klipper's single-threaded gcode lock — a jog that fires late,
+    // after the user has moved on, is dangerous. This API only ever carries moves,
+    // so it always refuses; the benign fan/temp/LED half of the split (queue with a
+    // per-episode toast, #1108) lives in MoonrakerAPI::execute_gcode. Homing/recovery/
+    // probe-control pass through. Uses the attributed predicate: self-busy from our
+    // own recent jog passes (idle_timeout reports "Printing" during any move),
+    // external ops still refuse.
+    if (helix::is_discretionary_gcode(gcode) && state_.is_external_blocking_operation_active()) {
         if (!silent) {
             spdlog::warn("[Motion API] Refusing discretionary G-code while printer is "
                          "homing/leveling: '{}'",
                          gcode.substr(0, 60));
         }
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::NOT_READY;
-            err.method = "printer.gcode.script";
-            err.message = "Printer is busy — try again in a moment";
-            on_error(err);
+            on_error(MoonrakerError::not_ready("printer.gcode.script",
+                                               "Printer is busy — try again in a moment"));
         }
         return;
     }
 
-    std::string annotated = annotate_gcode(gcode);
-    json params = {{"script", annotated}};
+    // Transmitted VERBATIM — see moonraker_gcode_guards.h.
+    json params = {{"script", gcode}};
 
-    spdlog::trace("[Motion API] Executing G-code: {}", annotated);
+    spdlog::trace("[Motion API] Executing G-code: {}", gcode);
 
-    // Guard: only wrap on_success in lambda if non-null, otherwise pass nullptr.
-    std::function<void(const json&)> success_wrapper;
-    if (on_success) {
-        success_wrapper = [on_success](json) { on_success(); };
+    // Stamp app-initiated motion activity for discretionary (jog) gcode so the
+    // busy guard can attribute the resulting idle_timeout "Printing" to us.
+    // Both callbacks are wrapped: the request tracker guarantees exactly one
+    // fires (success, error, or timeout), keeping the inflight count balanced.
+    // NOTE: `silent` was computed from the CALLER's on_error before wrapping.
+    const bool stamp = helix::is_discretionary_gcode(gcode);
+    helix::PrinterState* ps = &state_;
+    if (stamp) {
+        ps->app_motion_activity().note_sent();
     }
-    client_.send_jsonrpc("printer.gcode.script", params, std::move(success_wrapper), on_error,
-                         timeout_ms, silent);
+
+    std::function<void(const json&)> success_wrapper;
+    if (on_success || stamp) {
+        success_wrapper = [on_success, ps, stamp](json) {
+            if (stamp) {
+                ps->app_motion_activity().note_done();
+            }
+            if (on_success) {
+                on_success();
+            }
+        };
+    }
+    ErrorCallback error_wrapper = on_error;
+    if (stamp) {
+        error_wrapper = [on_error, ps](const MoonrakerError& err) {
+            ps->app_motion_activity().note_done();
+            if (on_error) {
+                on_error(err);
+            }
+        };
+    }
+    client_.send_jsonrpc("printer.gcode.script", params, std::move(success_wrapper),
+                         std::move(error_wrapper), timeout_ms, silent);
 }

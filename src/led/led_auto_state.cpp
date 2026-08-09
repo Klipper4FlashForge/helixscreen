@@ -4,6 +4,7 @@
 
 #include "color_utils.h"
 #include "config.h"
+#include "led/led_color_utils.h"
 #include "led/led_controller.h"
 #include "observer_factory.h"
 #include "printer_state.h"
@@ -159,9 +160,8 @@ void LedAutoState::apply_action(const LedStateAction& action) {
     if (action.action_type == "off") {
         ctrl.turn_off_all();
     } else if (action.action_type == "color") {
-        double r = ((action.color >> 16) & 0xFF) / 255.0;
-        double g = ((action.color >> 8) & 0xFF) / 255.0;
-        double b = (action.color & 0xFF) / 255.0;
+        double r = 0.0, g = 0.0, b = 0.0;
+        unpack_rgb(action.color, r, g, b);
         double scale = action.brightness / 100.0;
         ctrl.set_color_all(r * scale, g * scale, b * scale, 0.0);
     } else if (action.action_type == "brightness") {
@@ -238,29 +238,19 @@ void LedAutoState::load_config() {
         return;
     }
 
-    // === One-time migration from old /led/auto_state/ paths ===
-    auto& old_enabled_json = cfg->get_json("/led/auto_state/enabled");
-    if (old_enabled_json.is_boolean()) {
-        auto& new_enabled_json = cfg->get_json(cfg->df() + "leds/auto_state/enabled");
-        if (!new_enabled_json.is_boolean()) {
-            spdlog::info("[LedAutoState] Migrating config from /led/auto_state/ to active printer");
-            cfg->set(cfg->df() + "leds/auto_state/enabled", old_enabled_json.get<bool>());
-            auto& old_mappings = cfg->get_json("/led/auto_state/mappings");
-            if (old_mappings.is_object()) {
-                cfg->set(cfg->df() + "leds/auto_state/mappings", old_mappings);
-            }
-            cfg->save();
-        }
-    }
+    // NOTE: the one-time fold of the legacy /led/auto_state/ block into the
+    // active printer lives in migrate_v19_to_v20() (config.cpp). It used to run
+    // here on every load_config(), and its get_json() probes re-created the
+    // /led orphan on every boot (#1129).
 
     // Enabled flag
     enabled_ = cfg->get<bool>(cfg->df() + "leds/auto_state/enabled", false);
 
     // Mappings
     mappings_.clear();
-    auto& mappings_json = cfg->get_json(cfg->df() + "leds/auto_state/mappings");
-    if (mappings_json.is_object()) {
-        for (auto it = mappings_json.begin(); it != mappings_json.end(); ++it) {
+    const nlohmann::json* mappings_json = cfg->try_get_json(cfg->df() + "leds/auto_state/mappings");
+    if (mappings_json != nullptr && mappings_json->is_object()) {
+        for (auto it = mappings_json->begin(); it != mappings_json->end(); ++it) {
             if (!it.value().is_object()) {
                 continue;
             }

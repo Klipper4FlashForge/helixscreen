@@ -120,3 +120,43 @@ TEST_CASE_METHOD(LVGLUITestFixture, "PageScrollController survives container del
     CHECK(ctl.gutter() == nullptr);
     CHECK(deleted_fired);
 }
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "PageScrollController survives gutter destruction via container repopulation",
+                 "[page_scroll_buttons][ui]") {
+    lv_obj_t* c = make_scroll_container(test_screen(), 20, 60);
+
+    PageScrollController ctl;
+    REQUIRE(ctl.attach(c));
+    REQUIRE(ctl.gutter() != nullptr);
+    // Container mutated by attach: native scrollbar suppressed while the gutter owns
+    // the right strip.
+    REQUIRE(lv_obj_get_scrollbar_mode(c) == LV_SCROLLBAR_MODE_OFF);
+
+    bool pruned = false;
+    ctl.set_on_container_deleted([&pruned]() { pruned = true; });
+
+    // Repopulate: wipe the container's children (the gutter among them) while the
+    // container object itself survives. This is the #1123 pattern — the gutter is a
+    // child of the container, so lv_obj_clean() destroys it, but the container's own
+    // LV_EVENT_DELETE never fires. Without a gutter-death subscription the controller
+    // keeps a dangling gutter_ and the next scroll drives refresh_reach_state() into a
+    // use-after-free (SIGBUS in lv_obj_get_screen while invalidating the freed gutter).
+    lv_obj_clean(c);
+    process_lvgl(20); // flush any async deletions
+
+    // The controller must have noticed its gutter died and detached cleanly.
+    CHECK(ctl.gutter() == nullptr); // no dangling gutter pointer
+    CHECK(ctl.up_button() == nullptr);
+    CHECK(ctl.down_button() == nullptr);
+    CHECK_FALSE(ctl.alive()); // owner notified to prune + allow re-inject
+    CHECK(pruned);
+    // Surviving container restored to its pre-attach state.
+    CHECK(lv_obj_get_style_pad_right(c, LV_PART_MAIN) == 0);
+    CHECK(lv_obj_get_scrollbar_mode(c) != LV_SCROLLBAR_MODE_OFF);
+
+    // Smoking gun: a scroll event after repopulation must not touch freed memory.
+    lv_obj_send_event(c, LV_EVENT_SCROLL, nullptr);
+    process_lvgl(20);
+    CHECK(ctl.gutter() == nullptr);
+}

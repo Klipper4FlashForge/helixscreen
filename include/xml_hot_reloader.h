@@ -4,14 +4,44 @@
 #include <atomic>
 #include <filesystem>
 #include <functional>
+#include <lvgl.h>
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 class XmlHotReloaderTestAccess;
 
 namespace helix {
+
+/// A subject a component scope only *borrows*: C++ owns the storage (a
+/// `static inline lv_subject_t` member, a field of a long-lived manager, …) and
+/// handed the scope a pointer via `lv_xml_register_subject()`.
+using BorrowedSubject = std::pair<std::string, lv_subject_t*>;
+
+/**
+ * @brief Snapshot every borrowed subject registered in a component's scope
+ *
+ * `lv_xml_component_unregister()` destroys the scope, taking these registrations
+ * with it. Re-registering the component from XML alone cannot bring them back —
+ * only the C++ that owns the storage knows about them, and it ran once at
+ * startup. Without a snapshot/restore the component reloads live but *inert*:
+ * every `bind_*` naming a borrowed subject silently resolves to nothing.
+ *
+ * @param component_name registered component name (e.g. "runout_guidance_modal")
+ * @return (name, subject) for each `owned == false` record; empty if no scope
+ */
+std::vector<BorrowedSubject> snapshot_borrowed_subjects(const char* component_name);
+
+/**
+ * @brief Re-register snapshotted borrowed subjects into a component's new scope
+ * @param component_name registered component name (scope must already exist)
+ * @param borrowed       result of a prior snapshot_borrowed_subjects() call
+ * @return number of subjects successfully re-registered
+ */
+size_t restore_borrowed_subjects(const char* component_name,
+                                 const std::vector<BorrowedSubject>& borrowed);
 
 /**
  * @brief Hot-reloads XML components when files change on disk
@@ -106,6 +136,16 @@ class XmlHotReloader {
 
     /// Map: absolute file path -> LVGL registration path ("A:ui_xml/...")
     std::unordered_map<std::string, std::string> file_to_lvgl_path_;
+
+    /// Map: absolute file path -> the path LayoutManager resolves against, i.e.
+    /// the file's location under the watch root with any leading layout-variant
+    /// directory stripped ("home_panel.xml", "components/progress_bar.xml").
+    std::unordered_map<std::string, std::string> file_to_logical_path_;
+
+    /// Map: absolute file path -> layout-variant directory the file lives in
+    /// ("micro", "portrait", …), or "" for the base copy. A file only reloads
+    /// while its variant is the one the active layout resolves to.
+    std::unordered_map<std::string, std::string> file_to_variant_;
 
     /// Optional test callback — if set, called instead of LVGL unregister/register
     ReloadCallback reload_callback_;

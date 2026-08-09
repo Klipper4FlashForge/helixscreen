@@ -7,6 +7,7 @@
 #include "printer_discovery.h"
 #include "printer_state.h"
 
+#include <optional>
 #include <thread>
 
 #include "../catch_amalgamated.hpp"
@@ -150,7 +151,7 @@ TEST_CASE("MacroManager - get_macro_content includes conditional operations", "[
     REQUIRE(content.find("Z_TILT_ADJUST") != std::string::npos);
 }
 
-TEST_CASE("MacroManager - get_macro_names returns expected macros", "[slow][config][content]") {
+TEST_CASE("MacroManager - get_macro_names returns expected macros", "[config][content]") {
     auto names = MacroManager::get_macro_names();
 
     // v2.0 has 14 public macros (excluding _HELIX_STATE which starts with _)
@@ -207,7 +208,7 @@ TEST_CASE("MacroManager - HELIX_BED_MESH_IF_NEEDED has age-based logic", "[confi
 // Version Tests
 // ============================================================================
 
-TEST_CASE("MacroManager - get_version returns valid semver", "[slow][config][version]") {
+TEST_CASE("MacroManager - get_version returns valid semver", "[config][version]") {
     std::string version = MacroManager::get_version();
 
     // Should not be empty
@@ -220,7 +221,7 @@ TEST_CASE("MacroManager - get_version returns valid semver", "[slow][config][ver
     REQUIRE(version >= "2.0.0");
 }
 
-TEST_CASE("MacroManager - filename constant is valid", "[slow][config][constants]") {
+TEST_CASE("MacroManager - filename constant is valid", "[config][constants]") {
     std::string filename = HELIX_MACROS_FILENAME;
 
     REQUIRE(filename == "helix_macros.cfg");
@@ -235,32 +236,101 @@ TEST_CASE("MacroManager - filename constant is valid", "[slow][config][constants
 // because the mock doesn't implement printer.restart. When HTTP file upload
 // is implemented, these tests should be updated to verify actual success.
 
-TEST_CASE_METHOD(MacroManagerTestFixture, "MacroManager - install initiates sequence",
+// Step 1 of both install() and update() is upload_macro_file(), which goes
+// through MoonrakerAPI::transfers() over HTTP - not over the websocket client -
+// so MoonrakerClientMock records nothing for these paths. What it does do is
+// fail SYNCHRONOUSLY on the calling thread, with err.method == "upload_file".
+// That error callback is the observable proof that install()/update() actually
+// reached the upload step: an implementation that returned early, or never
+// touched the API, leaves it unfired.
+//
+// err.type is what separates "reached the upload and could not reach a server"
+// from "was refused before a request was ever built". upload_macro_file() passes
+// path="" meaning "upload straight to the config root", and
+// upload_file_with_name() used to run reject_invalid_path() on that path -
+// is_safe_path("") is false, so every install/update on a real printer died with
+// VALIDATION_ERROR before the URL check. The fix scopes that guard to non-empty
+// paths (the directory component is optional) and validates the filename
+// instead. CONNECTION_LOST here is the assertion that the upload got past
+// validation and failed only for want of a configured server.
+
+TEST_CASE_METHOD(MacroManagerTestFixture, "MacroManager - install reaches the upload step",
                  "[config][install]") {
     set_no_helix_macros();
 
-    bool callback_received = false;
+    bool success_called = false;
+    std::optional<MoonrakerError> error;
 
-    // Install initiates the sequence but mock doesn't complete it
-    // (printer.restart not implemented in mock)
-    manager_.install([&callback_received]() { callback_received = true; },
-                     [&callback_received](const MoonrakerError&) { callback_received = true; });
+    manager_.install([&]() { success_called = true; },
+                     [&](const MoonrakerError& err) { error = err; });
 
-    // For now, just verify no crash occurs during the install sequence
-    // The callback won't fire because mock's printer.restart doesn't invoke callbacks
-    // This is expected behavior until HTTP file upload is fully implemented
-    SUCCEED("Install sequence initiated without crash");
+    REQUIRE_FALSE(success_called); // nothing can have succeeded without a server
+    REQUIRE(error.has_value());
+    CHECK(error->method == "upload_file"); // it got as far as the upload
+    // Not VALIDATION_ERROR: the empty config-root path must not be refused.
+    CHECK(error->type == MoonrakerErrorType::CONNECTION_LOST);
+    CHECK_FALSE(error->message.empty());
 }
 
-TEST_CASE_METHOD(MacroManagerTestFixture, "MacroManager - update initiates sequence",
+TEST_CASE_METHOD(MacroManagerTestFixture, "MacroManager - update reaches the upload step",
                  "[config][install]") {
     set_helix_macros_installed();
 
-    bool callback_received = false;
+    bool success_called = false;
+    std::optional<MoonrakerError> error;
 
-    // Same as install - mock doesn't complete the sequence
-    manager_.update([&callback_received]() { callback_received = true; },
-                    [&callback_received](const MoonrakerError&) { callback_received = true; });
+    manager_.update([&]() { success_called = true; },
+                    [&](const MoonrakerError& err) { error = err; });
 
-    SUCCEED("Update sequence initiated without crash");
+    REQUIRE_FALSE(success_called);
+    REQUIRE(error.has_value());
+    CHECK(error->method == "upload_file");
+    CHECK(error->type == MoonrakerErrorType::CONNECTION_LOST);
+    CHECK_FALSE(error->message.empty());
+}
+
+// Direct coverage of the validation contract that the two tests above depend on,
+// so a regression is attributable to upload_file_with_name() rather than to
+// MacroManager. The fixture's MoonrakerAPI has no HTTP base URL configured, so
+// anything that clears validation stops at CONNECTION_LOST - which is exactly
+// how we tell "accepted" from "refused" without a server.
+TEST_CASE_METHOD(MacroManagerTestFixture,
+                 "upload_file_with_name - empty path means the root of the root",
+                 "[config][install][upload][validation]") {
+    std::optional<MoonrakerError> error;
+
+    api_.transfers().upload_file_with_name("config", "", "helix_macros.cfg", "content", nullptr,
+                                           [&](const MoonrakerError& err) { error = err; });
+
+    REQUIRE(error.has_value());
+    CHECK(error->method == "upload_file");
+    CHECK(error->type == MoonrakerErrorType::CONNECTION_LOST);
+}
+
+TEST_CASE_METHOD(MacroManagerTestFixture,
+                 "upload_file_with_name - rejects an empty or traversing filename",
+                 "[config][install][upload][validation]") {
+    SECTION("empty filename is refused even though an empty path is allowed") {
+        std::optional<MoonrakerError> error;
+        api_.transfers().upload_file_with_name("config", "", "", "content", nullptr,
+                                               [&](const MoonrakerError& err) { error = err; });
+        REQUIRE(error.has_value());
+        CHECK(error->type == MoonrakerErrorType::VALIDATION_ERROR);
+    }
+
+    SECTION("filename is used verbatim in the form, so traversal must be refused") {
+        std::optional<MoonrakerError> error;
+        api_.transfers().upload_file_with_name("config", "", "../../etc/passwd", "content", nullptr,
+                                               [&](const MoonrakerError& err) { error = err; });
+        REQUIRE(error.has_value());
+        CHECK(error->type == MoonrakerErrorType::VALIDATION_ERROR);
+    }
+
+    SECTION("a traversing directory path is still refused") {
+        std::optional<MoonrakerError> error;
+        api_.transfers().upload_file_with_name("config", "../../etc", "passwd", "content", nullptr,
+                                               [&](const MoonrakerError& err) { error = err; });
+        REQUIRE(error.has_value());
+        CHECK(error->type == MoonrakerErrorType::VALIDATION_ERROR);
+    }
 }

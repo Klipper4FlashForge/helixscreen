@@ -33,10 +33,9 @@
   <!-- Uses shared backdrop from navigation system -->
   <view name="nozzle_temp_panel" extends="overlay_panel" title="Nozzle Temperature" title_tag="Nozzle Temperature">
     <!-- Extruder selector (shown when multiple extruders detected, populated in C++) -->
-    <lv_obj name="extruder_selector" width="100%" height="content"
-            style_pad_hor="#space_md" style_pad_top="#space_sm" style_pad_bottom="0"
-            style_border_opa="0" scrollable="false"
-            hidden="true"/>
+    <lv_obj name="extruder_selector"
+            width="100%" height="content" style_pad_hor="#space_md" style_pad_top="#space_sm" style_pad_bottom="0"
+            style_border_opa="0" scrollable="false" hidden="true"/>
     <!-- Content Area: Two Columns -->
     <lv_obj name="overlay_content"
             width="100%" flex_grow="1" style_pad_all="#space_lg" scrollable="false" style_border_opa="0" flex_flow="row"
@@ -93,17 +92,47 @@
           <ui_button name="preset_off"
                      width="48%" text="Off" translation_tag="Off" variant="ghost" style_border_width="#border_width"
                      style_border_color="#border" style_border_opa="255">
-            <event_cb trigger="clicked" callback="on_nozzle_preset_off_clicked"/>
+            <event_cb trigger="clicked" callback="on_heater_preset_clicked"/>
           </ui_button>
-          <ui_button name="preset_pla" width="48%" text="PLA">
-            <event_cb trigger="clicked" callback="on_nozzle_preset_pla_clicked"/>
+          <ui_button name="preset_m0" width="48%" bind_text="preset_material_0_name">
+            <event_cb trigger="clicked" callback="on_heater_preset_clicked"/>
           </ui_button>
-          <ui_button name="preset_petg" width="48%" text="PETG">
-            <event_cb trigger="clicked" callback="on_nozzle_preset_petg_clicked"/>
+          <ui_button name="preset_m1" width="48%" bind_text="preset_material_1_name">
+            <event_cb trigger="clicked" callback="on_heater_preset_clicked"/>
           </ui_button>
-          <ui_button name="preset_abs" width="48%" text="ABS">
-            <event_cb trigger="clicked" callback="on_nozzle_preset_abs_clicked"/>
+          <ui_button name="preset_m2" width="48%" bind_text="preset_material_2_name">
+            <event_cb trigger="clicked" callback="on_heater_preset_clicked"/>
           </ui_button>
+          <!-- ============================================================
+               ONLY THREE MATERIAL SLOTS ARE SHOWN HERE (slots 0-2), even
+               though helix::presets::PRESET_COUNT is 4. This is a LAYOUT
+               CONSTRAINT, NOT AN OVERSIGHT.
+
+               These buttons are width="48%" in a row_wrap grid, so "Off" + 3
+               slots fills exactly two rows. Adding slot 3 pushes the grid to a
+               third row, which does not fit in right_column at the smaller
+               breakpoints — it eats the flex spacer above and overflows.
+
+               Slot 3 is NOT disabled: it remains fully functional in the
+               filament panel, in the PID calibration panel, and in the
+               underlying preset data (TemperatureController still computes a
+               target for all 4 slots). This is display truncation in the three
+               temp panels only.
+
+               Yes, the visible count is inconsistent across screens on purpose:
+                 - temp graph overlay  -> 3 slots (TEMP_GRAPH_VISIBLE_PRESETS)
+                 - nozzle/bed/chamber  -> 3 slots (here)
+                 - filament panel      -> 4 slots
+                 - PID panel           -> 4 slots
+               Each screen shows as many as it has room for. If you want a 4th
+               slot visible here, FIND THE SPACE FIRST — do not just add the
+               button back, and do not "fix" the inconsistency by trimming the
+               filament or PID panels to match.
+
+               The C++ side is safe either way: temperature_service.cpp iterates
+               PRESETS_PER_HEATER and skips any button lv_obj_find_by_name()
+               cannot resolve, so a missing preset_m3 is a no-op there.
+               ============================================================ -->
           <!-- Dynamic spool preset (hidden by default, shown when active spool has novel material) -->
           <ui_button name="preset_spool" width="100%" text="" hidden="true">
             <event_cb trigger="clicked" callback="on_heater_preset_clicked"/>

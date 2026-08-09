@@ -28,12 +28,16 @@ any theme works with any layout.
 | Layout | Status | What Exists |
 |--------|--------|-------------|
 | `standard` | **Complete** | All panels — this is the default UI everyone uses today |
-| `ultrawide` | **Started** | `home_panel.xml` only (initial draft, needs refinement) |
-| `portrait` | Not started | Directory doesn't exist yet |
-| `micro` | **Started** | Controls panel, display settings, theme preview/editor, settings components |
-| `micro-portrait` | Not started | Directory exists (.gitkeep only) |
+| `ultrawide` | Not started | Directory doesn't exist yet |
+| `portrait` | **Started** | `app_layout.xml`, `navigation_bar.xml` |
+| `micro` | **Started** | `controls_panel.xml`, `header_bar.xml`, `theme_editor_overlay.xml`, `theme_preview_overlay.xml` |
+| `micro_portrait` | Not started | Directory exists (empty) |
 | `tiny` | Not started | Directory doesn't exist yet |
-| `tiny-portrait` | Not started | Directory doesn't exist yet |
+| `tiny_portrait` | Not started | Directory doesn't exist yet |
+
+The table above is about `ui_xml/` overrides only. The home panel's widget grid adapts to
+ultrawide and portrait geometry in C++ regardless of which override files exist — see
+[Home Widget Grid](#home-widget-grid).
 
 ## How It Works
 
@@ -45,17 +49,20 @@ When HelixScreen starts up, it detects your screen's aspect ratio and picks a la
 | `ultrawide` | Very wide (ratio > 2.5:1) | 1920x480, 1920x400 |
 | `portrait` | Tall/narrow (ratio < 0.8:1) | 480x800, 600x1024 |
 | `micro` | Very small landscape (max dimension ≤ 480 and min dimension ≤ 272) | 480x272 |
-| `micro-portrait` | Very small portrait (max dimension ≤ 480 and min dimension ≤ 272) | 272x480 |
+| `micro_portrait` | Very small portrait (max dimension ≤ 480 and min dimension ≤ 272) | 272x480 |
 | `tiny` | Small landscape (max dimension ≤ 480, min dimension > 272) | 480x320, 480x400 |
-| `tiny-portrait` | Small portrait (max dimension ≤ 480, min dimension > 272) | 320x480, 400x480 |
+| `tiny_portrait` | Small portrait (max dimension ≤ 480, min dimension > 272) | 320x480, 400x480 |
 
 You can also force a layout manually:
 - **CLI flag:** `--layout ultrawide`
 - **Config file:** Set `display.layout` to `"ultrawide"` in `settings.json`
 
-When a layout is active, HelixScreen checks for an override file in the layout's subdirectory.
-If it finds one, it uses it. If not, it falls back to the standard file. This means you can
-override one panel at a time — you don't have to recreate everything from scratch.
+When a layout is active, HelixScreen searches an ordered chain of override directories
+(most specific first) for each file. Portrait sub-classes look in their own dir, then the
+shared `portrait/` dir, then the standard file; other layouts check their one override dir,
+then the standard file. The first match wins. This means you can override one panel at a
+time — you don't have to recreate everything from scratch. See `variant_chain()` under the
+Developer Reference below.
 
 ## Directory Structure
 
@@ -65,17 +72,16 @@ ui_xml/
   app_layout.xml           ← Standard app chrome (navbar + content area)
   home_panel.xml           ← Standard home panel
   controls_panel.xml       ← Standard controls panel
-  settings_panel.xml       ← ...and ~50 more XML files
+  settings_panel.xml       ← ...and ~200 more XML files (226 total)
   ...
 
-  ultrawide/               ← Ultrawide overrides (only files that differ)
-    home_panel.xml         ← Ultrawide home panel (exists, needs work)
-
-  portrait/                ← Portrait overrides (doesn't exist yet — create it!)
+  portrait/                ← Portrait overrides (app_layout.xml, navigation_bar.xml)
   micro/                   ← Micro landscape overrides (480x272, e.g. Ender 3 V3 KE)
-  micro-portrait/          ← Micro portrait overrides (not started)
+  micro_portrait/          ← Micro portrait overrides (dir exists, empty)
+
+  ultrawide/               ← Doesn't exist yet — create it to override for ultrawide!
   tiny/                    ← Tiny landscape overrides (doesn't exist yet)
-  tiny-portrait/           ← Tiny portrait overrides (doesn't exist yet)
+  tiny_portrait/           ← Tiny portrait overrides (doesn't exist yet)
 ```
 
 **The rule is simple:** to override `controls_panel.xml` for ultrawide screens, create
@@ -92,7 +98,7 @@ know C++ — all layout work is pure XML.
 
 1. A clone of the HelixScreen repo
 2. A working build (see the project README)
-3. Familiarity with the XML layout system (see `docs/LVGL9_XML_GUIDE.md`)
+3. Familiarity with the XML layout system (see `LVGL9_XML_GUIDE.md`)
 
 ### Step-by-Step: Creating a New Layout Override
 
@@ -202,10 +208,17 @@ Event callbacks (`<event_cb trigger="clicked" callback="..."/>`) connect buttons
 Every callback in the standard file must appear in your override, attached to the appropriate
 widget.
 
-**4. Don't modify `globals.xml`**
+**4. Don't change existing values in `globals.xml`**
 
 Design tokens (colors, spacing, typography) are defined in `globals.xml` and shared across
-all layouts. Your layout XML should use these tokens — not hardcoded values:
+all layouts, so retuning an existing token changes every layout at once. *Adding* a new
+suffixed responsive token there is a different matter: it is correct, and it is the only
+place the declaration can live. Token discovery is top-level-only, so a `<px name="foo_small">`
+declared in `ui_xml/portrait/` is never registered and every `#foo` referencing it silently
+resolves to nothing. Declare in `globals.xml`, reference from the variant file. See
+[UI Contributor Guide](UI_CONTRIBUTOR_GUIDE.md) §2 and `scripts/check_responsive_token_scope.py`.
+
+Your layout XML should use these tokens — not hardcoded values:
 
 ```xml
 <!-- Good: uses design tokens -->
@@ -242,6 +255,10 @@ all layouts. Your layout XML should use these tokens — not hardcoded values:
 - Navigation bar probably needs to move to the bottom (override `navigation_bar.xml`)
 - Content stacks vertically naturally
 - Consider which elements can be stacked vs. side-by-side
+- Portrait is where narrow-axis breakpoint selection bites hardest: the tier comes from
+  `min(width, height)`, so a 320x1480 panel resolves to the Tiny tier from its 320px width,
+  not from its 1480px of height. Prefer height tokens over hardcoded pixels so vertical
+  sizes scale with the tier you actually land in.
 
 **Micro (480x272):**
 - Extremely height-constrained — only 272px vertical space
@@ -279,7 +296,7 @@ Not every panel needs a layout-specific version. Start with the ones that matter
 - **`width="50%"` / `height="100%"`** for fixed proportions.
 - **`scrollable="false"`** prevents unintended scroll behavior on containers.
 - **`hidden="true"`** + `bind_flag_if_*` = conditional visibility (driven by data).
-- See `docs/LVGL9_XML_GUIDE.md` for the full XML reference.
+- See `LVGL9_XML_GUIDE.md` for the full XML reference.
 
 ### Testing Your Layout
 
@@ -305,6 +322,162 @@ being resolved.
 
 ---
 
+## Home Widget Grid
+
+Everything above is about `ui_xml/` overrides. The home panel's dashboard is a *second*
+layout system that shares the same variant chain but does not live in XML at all: the grid
+is computed in C++ (`include/grid_layout.h`, `src/ui/grid_layout.cpp`) and the shipped
+default placements live in `assets/config/default_layout.json`. If you are adding a home
+widget or wondering why yours vanished on a portrait screen, this is the section.
+
+### How the grid is sized
+
+Start from a fixed per-breakpoint table, then let the layout type override one or both axes.
+
+```cpp
+// src/ui/grid_layout.cpp — GRID_DIMS, indexed by UiBreakpoint
+MICRO / TINY / SMALL / MEDIUM  → 6 cols x 4 rows
+LARGE / XLARGE                 → 8 cols x 5 rows
+```
+
+The table is `NUM_BREAKPOINTS == 6` long while there are seven tiers, so `XXLARGE` clamps
+onto the `XLARGE` row and also gets 8x5.
+
+The breakpoint itself comes from the **narrow** axis (`min(width, height)`), so a tall
+portrait panel is classified by its width. See `include/ui_breakpoint.h`.
+
+Then `GridLayout::get_dimensions()` consults `LayoutManager::type()`:
+
+| Layout type | Columns | Rows |
+|-------------|---------|------|
+| `STANDARD`, `MICRO`, `TINY` | table | table |
+| `ULTRAWIDE` | `clamp(width / TARGET_CELL_W_PX, MIN_DYNAMIC_COLS, MAX_DYNAMIC_COLS)` | table |
+| `PORTRAIT`, `TINY_PORTRAIT`, `MICRO_PORTRAIT` | `clamp(width / TARGET_CELL_W_PX, MIN_PORTRAIT_COLS, MAX_DYNAMIC_COLS)` | `clamp(height / TARGET_CELL_H_PX, MIN_DYNAMIC_ROWS, MAX_DYNAMIC_ROWS)` |
+
+Constants (all `static constexpr` on `GridLayout`):
+
+| Constant | Value | Meaning |
+|----------|-------|---------|
+| `TARGET_CELL_W_PX` | 160 | Target cell **width**; drives derived column counts |
+| `TARGET_CELL_H_PX` | 120 | Target cell **height**; drives derived row counts (portrait only) |
+| `MIN_DYNAMIC_COLS` / `MAX_DYNAMIC_COLS` | 4 / 16 | Column clamp for ultrawide |
+| `MIN_PORTRAIT_COLS` | 2 | Column floor for portrait, below the landscape floor of 4 |
+| `MIN_DYNAMIC_ROWS` / `MAX_DYNAMIC_ROWS` | 3 / 16 | Row clamp for portrait |
+
+The two cell targets are deliberately different numbers. Ultrawide has always kept the
+fixed 4-row table on a 480px panel — a 120px row — so 120 is the row height the dashboard
+is actually authored against. Portrait used to reuse the 160px *width* target for both
+axes, which handed the tall screen 164px rows: fewer, chunkier cells than the wide screen
+got (#1215).
+
+**Worked examples:**
+
+| Screen | Layout type | Narrow axis → tier | Table | Override applied | Final grid | Cell size |
+|--------|-------------|--------------------|-------|------------------|------------|-----------|
+| 800x480 | `STANDARD` | 480 → MEDIUM | 6x4 | none | **6x4** | 133 x 120 |
+| 1920x480 | `ULTRAWIDE` | 480 → MEDIUM | 6x4 | cols = `1920/160` = 12 | **12x4** | 160 x 120 |
+| 480x800 | `PORTRAIT` | 480 → MEDIUM | 6x4 | cols = `480/160` = 3, rows = `800/120` = 6 | **3x6** | 160 x 133 |
+| 320x1480 | `PORTRAIT` | 320 → TINY | 6x4 | cols = `clamp(2, 2, 16)` = 2, rows = `1480/120` = 12 | **2x12** | 160 x 123 |
+
+Columns are equal `LV_GRID_FR(1)` tracks (`make_col_dsc()` / `make_row_dsc()`), so the cell
+sizes above are what the fractions work out to, not fixed pixel values.
+
+### `assets/config/default_layout.json`
+
+The shipped default placements. The file is **two-dimensional** — layout variant, then
+breakpoint:
+
+```json
+{
+  "anchors": [
+    { "id": "printer_image",
+      "placements": {
+        "tiny":   { "col": 0, "row": 0, "colspan": 2, "rowspan": 2 },
+        "medium": { "col": 0, "row": 0, "colspan": 2, "rowspan": 2 },
+        "large":  { "col": 0, "row": 0, "colspan": 3, "rowspan": 3 }
+      }
+    }
+  ],
+  "variants": {
+    "portrait": [
+      { "id": "printer_image",
+        "placements": {
+          "tiny":   { "col": 0, "row": 0, "colspan": 2, "rowspan": 3 },
+          "medium": { "col": 0, "row": 0, "colspan": 3, "rowspan": 2 }
+        }
+      }
+    ]
+  }
+}
+```
+
+`PanelWidgetConfig::build_default_grid()` (`src/system/panel_widget_config.cpp`) picks the
+anchor table by walking `LayoutManager::variant_chain()` — the same most-specific-first
+search `ui_xml/` overrides use. `variants.portrait` wins over the base `anchors` on a
+portrait panel, and a `TINY_PORTRAIT` panel falls through `tiny_portrait` → `portrait` →
+base. The keys under `"variants"` are named exactly like the `ui_xml/` override directories.
+
+Widgets not named in the chosen table are auto-placed; the table only fixes the few that
+have a deliberate home.
+
+Inside a table, breakpoint keys are named rather than indexed — `micro`, `tiny`, `small`,
+`medium`, `large`, `xlarge`, `xxlarge` (seven, matching `UiBreakpoint`). A missing tier
+resolves by fallback (`micro`→`tiny`→`small`, `xlarge`→`large`, `xxlarge`→`xlarge`→`large`),
+which is why the landscape table defines no `micro` or `xxlarge` rows. If no tier in the
+chain matches, the anchor is dropped and that widget is auto-placed instead.
+
+The file is runtime-editable and read via `find_readable()`, so a malformed or missing file
+degrades to a small hardcoded fallback rather than an empty dashboard.
+
+**A bad hand-edit fails the build.** `tests/unit/test_default_layout.cpp` has a
+`[default_layout][portrait][shipped]` case that parses the *shipped* file and checks every
+portrait anchor fits the narrowest grid its breakpoint can produce (`col + colspan <=`
+the column budget for that tier). An anchor that overflows would silently fall through to
+auto-place, making the anchor decoration; the test catches that instead.
+
+### Widget span authoring
+
+`PanelWidgetDef` (`include/panel_widget_registry.h`, table in
+`src/ui/panel_widget_registry.cpp`) carries six span fields:
+
+| Field | Meaning |
+|-------|---------|
+| `colspan` / `rowspan` | **Authored default** — the size the widget was designed at |
+| `min_colspan` / `min_rowspan` | Smallest size the widget is still usable at (0 = fall back to the authored span) |
+| `max_colspan` / `max_rowspan` | Largest size the user may resize it to (0 = not scalable) |
+
+Auto-placement (`PanelWidgetManager`, `src/ui/panel_widget_manager.cpp`) runs two passes:
+
+1. **Authored** — every widget asks for its `colspan` x `rowspan`. If everyone fits, this
+   is the layout the dashboard was designed around, and a roomy grid ends up exactly where
+   it always did.
+2. **Minimum-first** — used only when pass 1 cannot seat everyone. Every widget is placed at
+   `effective_min_colspan()` x `effective_min_rowspan()`, maximising how many widgets
+   survive, and the leftover cells are handed back out by `GridLayout::grow_to_targets()`,
+   which grows each widget one step at a time, round-robin, toward its authored span.
+
+**This makes `min_colspan` the field that decides whether your widget survives on a narrow
+grid.** A portrait grid can be 2 columns wide. A widget that leaves `min_colspan` at 0 is
+declaring that its authored span is also its minimum, so a 4-wide widget on a 2-wide grid
+does not fit *at any size* — the manager gives up, disables it, and persists that disable to
+`settings.json`. That was exactly #1216: the widget did not come back on its own, and the
+user had to re-add it from the catalog by hand.
+
+So when adding a home widget:
+
+- Set `min_colspan` / `min_rowspan` to the smallest layout your XML actually degrades to.
+- Set `max_colspan` / `max_rowspan` if the widget can usefully grow; leaving them at 0 marks
+  it fixed-size and `is_scalable()` returns false.
+- If the widget genuinely cannot render below N columns, say so — being dropped on a narrow
+  grid is then correct behaviour, not a bug. `tips` is the honest example: authored 4 wide,
+  minimum 2, and deliberately absent from the portrait defaults because even at its minimum
+  it costs a third to a half of a portrait row for rotating hints.
+
+`GridLayout::PlacementFailure` distinguishes `GridFull` from `TooLargeForGrid` so the toast
+and the log say which condition actually failed.
+
+---
+
 ## Technical Reference
 
 This section is for developers working on the layout infrastructure itself (C++ code).
@@ -315,18 +488,39 @@ This section is for developers working on the layout infrastructure itself (C++ 
 class LayoutManager {
 public:
     static LayoutManager& instance();
-    void init(int display_width, int display_height);
-    void set_override(const std::string& layout_name);
+    void init(int width, int height);
+    void set_override(const std::string& name);
 
     LayoutType type() const;             // Enum value
     const std::string& name() const;     // "standard", "ultrawide", etc.
     bool is_standard() const;
     bool has_override(const std::string& filename) const;
+    int width() const;
+    int height() const;
 
-    // Returns "ui_xml/<layout>/filename.xml" if override exists,
-    // otherwise "ui_xml/filename.xml"
+    // Returns the first matching "ui_xml/<variant>/filename.xml" along the
+    // variant chain, otherwise "ui_xml/filename.xml"
     std::string resolve_xml_path(const std::string& filename) const;
+
+private:
+    LayoutType detect(int width, int height) const;      // aspect-ratio → LayoutType
+    std::vector<std::string> variant_chain() const;      // ordered override search
 };
+```
+
+`resolve_xml_path()` / `has_override()` walk `variant_chain()` — an ordered list of
+override directories, most specific first, with base `ui_xml/` as the final fallback.
+For portrait sub-classes the chain layers the shared `portrait/` dir before base:
+
+```cpp
+// LayoutManager::variant_chain(), src/layout_manager.cpp
+MICRO_PORTRAIT → {"micro_portrait", "portrait"}
+TINY_PORTRAIT  → {"tiny_portrait", "portrait"}
+PORTRAIT       → {"portrait"}
+ULTRAWIDE      → {"ultrawide"}
+MICRO          → {"micro"}
+TINY           → {"tiny"}
+STANDARD       → {}   // base ui_xml/ only
 ```
 
 ### How XML Registration Works
@@ -366,9 +560,9 @@ CLI flag `--layout <name>` overrides the config file.
 ratio = width / height
 
 if (max dimension ≤ 480 and min dimension ≤ 272)
-    → micro (landscape) or micro-portrait (portrait)
+    → micro (landscape) or micro_portrait (portrait)
 else if (max dimension ≤ 480)
-    → tiny (landscape) or tiny-portrait (portrait)
+    → tiny (landscape) or tiny_portrait (portrait)
 else if (ratio > 2.5)
     → ultrawide
 else if (ratio < 0.8)
@@ -384,5 +578,6 @@ else
 | Naming | "Layouts" | Distinct from "themes" (colors) and "profiles" (print start) |
 | Detection | Auto with override | Users shouldn't need to configure, but can |
 | Fallback | Per-file to standard | New layouts start empty, override incrementally |
-| globals.xml | Never overridden | Design tokens are universal across all layouts |
-| Runtime switching | Not supported | Would require full widget tree rebuild; startup-only is fine |
+| globals.xml | Never overridden; new responsive tokens still go there | Design tokens are universal across all layouts, and discovery only reads the top level of `ui_xml/` |
+| Runtime layout-variant switching | Not supported | Would require full widget tree rebuild; startup-only is fine |
+| Runtime breakpoint/token refresh | Supported on resize | `theme_manager_refresh_layout_constants()` re-registers tokens and moves the `ui_breakpoint` subject; driven by the resize callback in `src/application/application.cpp` (desktop SDL, Android fold/unfold). On-device rotation is fixed at startup, so nothing fires there |

@@ -1,8 +1,146 @@
 diff --git a/src/drivers/evdev/lv_evdev.c b/src/drivers/evdev/lv_evdev.c
-index 1b8319e04..52dd8dca2 100644
+index 1b8319e04..24c7d2971 100644
 --- a/src/drivers/evdev/lv_evdev.c
 +++ b/src/drivers/evdev/lv_evdev.c
-@@ -221,6 +221,18 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+@@ -12,6 +12,7 @@
+ #include <unistd.h>
+ #include <fcntl.h>
+ #include <errno.h>
++#include <stdlib.h> /* getenv — #943 touch-range diagnostic */
+ #include <string.h>
+ #include <sys/types.h>
+ #include <dirent.h>
+@@ -46,6 +47,15 @@
+ #define ABS_XY_MASK ((1 << ABS_X) | (1 << ABS_Y))
+ #define MAX_TOUCH_POINTS 5
+ 
++/* Safety valve for the per-slot coordinate-trust gate (see lv_evdev_t below).
++ * A slot can only be untrusted before it has ever received a coordinate, which
++ * by construction resolves as soon as the device reports one. If some device
++ * nonetheless keeps a pressed slot untrusted, give up after this many read
++ * cycles and emit the press anyway. The gate must never be able to make a
++ * touchscreen permanently unresponsive: a mispositioned tap is recoverable,
++ * a dead panel is not. */
++#define EVDEV_XY_TRUST_MAX_FRAMES 8
++
+ /**********************
+  *      TYPEDEFS
+  **********************/
+@@ -74,6 +84,36 @@ typedef struct {
+     uint8_t touch_count; /* Number of valid touch points */
+     uint8_t current_slot; /* Current touch point slot */
+     bool touch_data_changed; /* Flag to indicate if touch data has changed since last SYN_REPORT */
++    /* Per-slot coordinate trust.
++     *
++     * The kernel input core suppresses an EV_ABS event whose value equals the
++     * value already stored for that axis in that MT slot
++     * (input_handle_abs_event() returns INPUT_IGNORE_EVENT when *pold == *pval).
++     * For MT protocol B the stored value lives in mt->slots[slot].abs[] and is
++     * NOT reset when ABS_MT_TRACKING_ID goes to -1 — destroying a contact frees
++     * the slot but leaves its coordinates behind. A new contact landing on a
++     * coordinate the previous contact already occupied therefore arrives with
++     * ABS_MT_POSITION_X and/or ABS_MT_POSITION_Y simply absent. The kernel MT
++     * documentation states this directly: "Since only changes are propagated,
++     * the full state of each initiated contact has to reside in the receiving
++     * end", and its Protocol Example B shows a frame carrying POSITION_X with
++     * no POSITION_Y.
++     *
++     * So a single-axis press frame is normal traffic, not a hardware glitch,
++     * and the receiving end is required to retain the missing axis. Zeroing a
++     * released slot's coordinates (which this driver used to do) breaks that
++     * contract: the suppressed axis reads back 0 and the press lands at a
++     * screen edge — the phantom edge taps seen on Holtek 04d9:8030 / BTT-HDMI5.
++     * Released slots now keep their last reported position instead.
++     *
++     * These flags track the only genuinely untrustworthy state that remains: a
++     * slot that has never received a coordinate at all, whose point is still
++     * the zero-initialised (0,0). Such a slot is not emitted as PRESSED. They
++     * are set once per axis and never cleared, so the gate cannot re-engage
++     * after a slot has seen real data. */
++    bool touch_x_valid[MAX_TOUCH_POINTS];  /* ABS_MT_POSITION_X ever received for this slot */
++    bool touch_y_valid[MAX_TOUCH_POINTS];  /* ABS_MT_POSITION_Y ever received for this slot */
++    uint8_t touch_untrusted_frames[MAX_TOUCH_POINTS]; /* read cycles slot 0 has been gated */
+ #endif
+ } lv_evdev_t;
+ 
+@@ -147,9 +187,60 @@ static lv_point_t _evdev_process_pointer(lv_indev_t * indev, int x, int y)
+     lv_point_t p;
+     p.x = _evdev_calibrate(swapped_x, dsc->min_x, dsc->max_x, offset_x, offset_x + width - 1);
+     p.y = _evdev_calibrate(swapped_y, dsc->min_y, dsc->max_y, offset_y, offset_y + height - 1);
++
++    /* #943 diagnostic: observe the RAW digitizer coordinates actually emitted vs
++     * the ABS range the driver was configured with (dsc->min/max, set by
++     * lv_evdev_set_calibration). If a controller over-reports its range —
++     * advertises e.g. 0..800 via EVIOCGABS but only ever emits ~0..480 during real
++     * touches — the coarse scale over-divides and taps collapse into a fraction of
++     * the panel (Qidi Q2, #943). Surfacing the actual emitted range lets
++     * reported-vs-emitted be compared directly from a single log capture. Gated on
++     * HELIX_DEBUG_TOUCH so it is silent unless a reporter explicitly enables it;
++     * routed through LV_LOG_WARN, which is active at the configured WARN level and
++     * reaches journalctl via the spdlog print-cb bridge (LV_LOG_INFO/USER/TRACE are
++     * compiled out). Observed extremes accumulate for the process lifetime so the
++     * max converges on the true emitted range over a calibration session. */
++    {
++        static int touch_range_dbg = -1;
++        if(touch_range_dbg < 0) {
++            touch_range_dbg = (getenv("HELIX_DEBUG_TOUCH") || getenv("HELIX_DEBUG_TOUCHES"))
++                              ? 1 : 0;
++        }
++        if(touch_range_dbg) {
++            static int rx_min = (1 << 30), rx_max = -(1 << 30);
++            static int ry_min = (1 << 30), ry_max = -(1 << 30);
++            static unsigned sample_n = 0;
++            int extended = 0;
++            if(swapped_x < rx_min) { rx_min = swapped_x; extended = 1; }
++            if(swapped_x > rx_max) { rx_max = swapped_x; extended = 1; }
++            if(swapped_y < ry_min) { ry_min = swapped_y; extended = 1; }
++            if(swapped_y > ry_max) { ry_max = swapped_y; extended = 1; }
++            /* Log on every newly observed extreme, else every 60th sample. */
++            if(extended || (sample_n++ % 60 == 0)) {
++                LV_LOG_WARN("[TouchDebug/evdev] raw=(%d,%d) -> px=(%d,%d) | observed raw "
++                            "x[%d..%d] y[%d..%d] vs configured x[%d..%d] y[%d..%d]",
++                            swapped_x, swapped_y, p.x, p.y,
++                            rx_min, rx_max, ry_min, ry_max,
++                            dsc->min_x, dsc->max_x, dsc->min_y, dsc->max_y);
++            }
++        }
++    }
++
+     return p;
+ }
+ 
++#if LV_USE_GESTURE_RECOGNITION
++/* A slot holds a usable coordinate once both axes have been reported for it at
++ * least once. Until then its point is the zero-initialised (0,0), which would
++ * render as a tap in the top-left corner. Note this asks "has this slot ever
++ * held real data", NOT "did both axes arrive since the last TRACKING_ID" — the
++ * latter is unsatisfiable on any device that omits unchanged axes. */
++static bool _evdev_slot_has_coords(const lv_evdev_t * dsc, int slot)
++{
++    return dsc->touch_x_valid[slot] && dsc->touch_y_valid[slot];
++}
++#endif
++
+ static void _evdev_async_delete_cb(void * user_data)
+ {
+     lv_indev_t * indev = user_data;
+@@ -190,6 +281,7 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+ #if LV_USE_GESTURE_RECOGNITION
+                     if(in.code == ABS_MT_POSITION_X && dsc->current_slot < MAX_TOUCH_POINTS) {
+                         dsc->touch_data[dsc->current_slot].point.x = in.value;
++                        dsc->touch_x_valid[dsc->current_slot] = true;
+                         dsc->touch_data_changed = true;
+                         LV_LOG_TRACE("MT_X update: slot=%d, x=%d", dsc->current_slot, in.value);
+                     }
+@@ -200,6 +292,7 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+ #if LV_USE_GESTURE_RECOGNITION
+                     if(in.code == ABS_MT_POSITION_Y && dsc->current_slot < MAX_TOUCH_POINTS) {
+                         dsc->touch_data[dsc->current_slot].point.y = in.value;
++                        dsc->touch_y_valid[dsc->current_slot] = true;
+                         dsc->touch_data_changed = true;
+                         LV_LOG_TRACE("MT_Y update: slot=%d, y=%d", dsc->current_slot, in.value);
+                     }
+@@ -221,6 +314,18 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
                                      dsc->touch_count = i + 1;
                                  }
                              }
@@ -21,7 +159,7 @@ index 1b8319e04..52dd8dca2 100644
                          }
                      }
                      else {
-@@ -251,10 +263,24 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+@@ -251,10 +356,24 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
          }
  #if LV_USE_GESTURE_RECOGNITION
          else if(in.type == EV_SYN && in.code == SYN_REPORT) {
@@ -48,16 +186,25 @@ index 1b8319e04..52dd8dca2 100644
                      if(dsc->touch_data[i].state == LV_INDEV_STATE_PRESSED || dsc->touch_data[i].state == LV_INDEV_STATE_RELEASED) {
                          LV_LOG_TRACE("Slot %d: state=%s, raw(%d, %d)",
                                       i,
-@@ -268,7 +294,7 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+@@ -268,8 +387,15 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
  
                  int active_touches = 0;
  
 -                for(int i = 0; i < MAX_TOUCH_POINTS; i++) {
+-                    if(dsc->touch_data[i].state == LV_INDEV_STATE_PRESSED || dsc->touch_data[i].state == LV_INDEV_STATE_RELEASED) {
 +                for(int i = 0; i < dsc->touch_count; i++) {
-                     if(dsc->touch_data[i].state == LV_INDEV_STATE_PRESSED || dsc->touch_data[i].state == LV_INDEV_STATE_RELEASED) {
++                    /* Skip a PRESSED slot that has never received a coordinate: its
++                     * point is still (0,0) and would enter the recognizer as a
++                     * corner contact. RELEASED slots are always forwarded so lifts
++                     * still terminate gestures. */
++                    bool emittable = dsc->touch_data[i].state == LV_INDEV_STATE_RELEASED ||
++                                     (dsc->touch_data[i].state == LV_INDEV_STATE_PRESSED &&
++                                      _evdev_slot_has_coords(dsc, i));
++                    if(emittable) {
                          calibrated_touch_data[active_touches] = dsc->touch_data[i];
  
-@@ -288,18 +314,10 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+                         lv_point_t calib_point = _evdev_process_pointer(indev, dsc->touch_data[i].point.x, dsc->touch_data[i].point.y);
+@@ -288,18 +414,10 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
                  lv_indev_gesture_recognizers_update(indev, calibrated_touch_data, active_touches);
                  lv_indev_gesture_recognizers_set_data(indev, data);
  
@@ -80,23 +227,87 @@ index 1b8319e04..52dd8dca2 100644
  
                  dsc->touch_data_changed = false;
              }
-@@ -342,6 +360,22 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+@@ -324,14 +442,46 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+             data->state = dsc->state;
+             data->key = dsc->key;
+             break;
+-        case LV_INDEV_TYPE_POINTER:
++        case LV_INDEV_TYPE_POINTER: {
+ #if LV_USE_GESTURE_RECOGNITION
+-            if(dsc->touch_count > 0) {
++            /* Suppress a press from a slot that has never held a coordinate — it
++             * would report the zero-initialised (0,0) as a top-left tap. This can
++             * only happen before the slot's first ever ABS_MT_POSITION_X/Y, so it
++             * resolves itself as soon as the device reports one. The frame counter
++             * is a belt-and-braces guarantee that the gate can never wedge a panel
++             * permanently: after EVDEV_XY_TRUST_MAX_FRAMES read cycles the press is
++             * let through regardless, trading a possibly misplaced tap for
++             * certainty that input keeps working. */
++            bool slot0_untrusted = dsc->touch_count > 0 &&
++                                   dsc->touch_data[0].state == LV_INDEV_STATE_PRESSED &&
++                                   !_evdev_slot_has_coords(dsc, 0);
++            bool slot0_give_up = false;
++            if(slot0_untrusted) {
++                if(dsc->touch_untrusted_frames[0] < EVDEV_XY_TRUST_MAX_FRAMES) {
++                    dsc->touch_untrusted_frames[0]++;
++                }
++                else {
++                    LV_LOG_WARN("evdev: slot 0 pressed but never reported a coordinate for %d "
++                                "read cycles; falling back to ABS/root position to keep input "
++                                "responsive", EVDEV_XY_TRUST_MAX_FRAMES);
++                    slot0_give_up = true;
++                }
++            }
++            else {
++                dsc->touch_untrusted_frames[0] = 0;
++            }
++
++            if(dsc->touch_count > 0 && !slot0_untrusted) {
+                 data->state = dsc->touch_data[0].state;
+                 data->point = _evdev_process_pointer(indev, dsc->touch_data[0].point.x, dsc->touch_data[0].point.y);
+             }
+             else {
+-                data->state = dsc->state;
++                /* Untrusted slot 0 lands here. root_x/root_y are fed by BOTH ABS_X/ABS_Y
++                 * and ABS_MT_POSITION_X/Y and are never zeroed, so they are the best
++                 * position available — strictly better than the slot's (0,0). Until the
++                 * frame budget expires report RELEASED: TRACKING_ID/BTN_TOUCH say we are
++                 * pressed, but we have no trustworthy position to attach to that press. */
++                data->state = (slot0_untrusted && !slot0_give_up) ? LV_INDEV_STATE_RELEASED : dsc->state;
+                 data->point = _evdev_process_pointer(indev, dsc->root_x, dsc->root_y);
+             }
+ #else
+@@ -339,9 +489,36 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+             data->point = _evdev_process_pointer(indev, dsc->root_x, dsc->root_y);
+ #endif
+             break;
++        }
          default:
              break;
      }
 +
 +#if LV_USE_GESTURE_RECOGNITION
-+    /* Invalidate RELEASED touch slots AFTER the switch-case has read the final
-+     * coordinates.  This prevents stale RELEASED slots from being re-fed into
-+     * the gesture recognizer on subsequent frames while preserving correct
++    /* Retire RELEASED touch slots AFTER the switch-case has read the final
++     * coordinates.  Clearing the contact id prevents stale RELEASED slots from
++     * being re-fed into the gesture recognizer as live contacts on subsequent
++     * frames, while deferring it until after the switch-case preserves correct
 +     * release coordinates for pointer output (fixes dropdown mis-selection on
-+     * Protocol-A devices like GT9xx). */
++     * Protocol-A devices like GT9xx).
++     *
++     * The coordinates themselves are deliberately NOT zeroed. MT protocol B
++     * makes the reader responsible for retaining per-contact state: the kernel
++     * omits an axis whose value has not changed, and it does not reset a slot's
++     * stored coordinates when a contact is destroyed. A slot's last reported
++     * position is therefore the correct value for the next contact that reuses
++     * the slot on an axis the kernel elects not to resend. Zeroing here made
++     * that suppressed axis read back 0, emitting the press at a screen edge
++     * (missing Y -> top edge, missing X -> left edge) — the phantom edge taps
++     * reported on Holtek 04d9:8030 / BTT-HDMI5. */
 +    for(int i = 0; i < dsc->touch_count; i++) {
 +        if(dsc->touch_data[i].state == LV_INDEV_STATE_RELEASED) {
-+            dsc->touch_data[i].point.x = 0;
-+            dsc->touch_data[i].point.y = 0;
 +            dsc->touch_data[i].id = -1;
-+            LV_LOG_TRACE("Cleared released touch point slot %d", i);
++            LV_LOG_TRACE("Retired released touch point slot %d, keeping last position (%d, %d)",
++                         i, dsc->touch_data[i].point.x, dsc->touch_data[i].point.y);
 +        }
 +    }
 +#endif

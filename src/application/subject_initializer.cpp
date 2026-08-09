@@ -45,12 +45,17 @@
 #include "ams_state.h"
 #include "app_globals.h"
 #include "color_sensor_manager.h"
+#include "filament_catalog.h"
 #include "filament_sensor_manager.h"
+#include "filament_variants.h"
 #include "humidity_sensor_manager.h"
 #include "led/ui_led_control_overlay.h"
 #include "lock_manager.h"
 #include "lvgl/lvgl.h"
+#include "material_settings_manager.h"
 #include "panel_widget_manager.h"
+#include "plr_offer_controller.h"
+#include "preset_materials.h"
 #include "print_completion.h"
 #include "print_control_buttons.h"
 #include "print_start_navigation.h"
@@ -88,6 +93,18 @@ void SubjectInitializer::init_core_and_state() {
     // Phase 2: PrinterState subjects (panels depend on these)
     init_printer_state_subjects();
 
+    // Warm the Orca match tables on the main thread, before AmsState/backends
+    // start below — otherwise the first lane_data heal parses
+    // assets/filaments.json under g_orca_mutex on a WebSocket background
+    // thread (see filament_variants.h warm_orca_tables()).
+    filament::warm_orca_tables();
+
+    // Merge user-contributed Orca type overrides from config/user_filaments.json
+    // (object form, `orca_type_map` key). User entries win over shipped entries
+    // in orca_match_type() resolution. Same main-thread / pre-backend window as
+    // warm_orca_tables() above — see FILAMENT_MANAGEMENT.md § "User overlay format".
+    filament::merge_user_orca_overrides(helix::printer::FilamentCatalog::load_user_orca_type_map());
+
     // Phase 3: AMS and filament sensor subjects
     init_ams_subjects();
 
@@ -99,7 +116,8 @@ void SubjectInitializer::init_core_and_state() {
     spdlog::debug("[SubjectInitializer] Core and state subjects initialized");
 }
 
-void SubjectInitializer::init_panels(IMoonrakerAPI* api, const RuntimeConfig& /* runtime_config */) {
+void SubjectInitializer::init_panels(IMoonrakerAPI* api,
+                                     const RuntimeConfig& /* runtime_config */) {
     spdlog::debug("[SubjectInitializer] Initializing panel subjects (api={})...",
                   api ? "valid" : "nullptr");
 
@@ -129,6 +147,15 @@ void SubjectInitializer::init_core_subjects() {
     PrinterStatusIcon::instance().init_subjects();  // Printer icon state
     helix::ui::notification_init_subjects();        // Notification badge subjects
     helix::LockManager::instance().init_subjects(); // Lock screen pin_set subject
+
+    // Quick-preset material name/temperature subjects. MUST be here in core
+    // init: the filament panel, the three temp panels and the temp graph
+    // overlay all bind these by name, so they have to exist before ANY panel
+    // XML is created. MaterialSettingsManager::init() is idempotent and already
+    // ran via SettingsManager, but call it explicitly so preset identity is
+    // loaded even if subject init is driven directly by a test.
+    helix::MaterialSettingsManager::instance().init();
+    helix::presets::init_subjects();
 }
 
 void SubjectInitializer::init_printer_state_subjects() {
@@ -335,6 +362,12 @@ void SubjectInitializer::init_observers() {
 
     // Print start navigation observer (auto-navigate to print status)
     m_observers.push_back(helix::init_print_start_navigation_observer());
+
+    // Power-loss-recovery offer controller. Registered unconditionally — the
+    // pure plr_should_offer() self-guards non-Snapmaker printers (pl_env_valid
+    // stays false on every other backend). Owns its own observers; RAII cleanup
+    // on SubjectInitializer teardown.
+    m_plr_offer_controller = std::make_unique<helix::ui::PlrOfferController>();
 
     // Print outcome telemetry observer (records anonymous print stats when telemetry enabled)
     m_observers.push_back(TelemetryManager::instance().init_print_outcome_observer());

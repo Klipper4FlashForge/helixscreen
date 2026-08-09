@@ -28,6 +28,7 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <cstdlib>
 #include <ctime>
 #include <memory>
 #include <optional>
@@ -96,6 +97,66 @@ struct CardDimensions {
     int card_width;
     int card_height;
 };
+
+// Card width bounds, and the width a card wants to be. CARD_TARGET_WIDTH mirrors
+// card_base_width in print_file_card.xml — the size the component was drawn around.
+inline constexpr int CARD_WIDTH_MIN = 130;
+inline constexpr int CARD_WIDTH_MAX = 230;
+inline constexpr int CARD_WIDTH_TARGET = 170;
+
+/**
+ * @brief Choose how many card columns fit across a container.
+ *
+ * Considers every column count whose resulting card width is within
+ * [CARD_WIDTH_MIN, CARD_WIDTH_MAX] and keeps the one landing nearest
+ * CARD_WIDTH_TARGET. Ties keep the wider card (the lower column count wins).
+ *
+ * The previous rule walked column counts downward and took the first that fit,
+ * which always maximized columns and therefore always produced the narrowest
+ * legal card: an 800x480 screen (704px of content) got 5 cards of 132px when 4
+ * of 167px is what print_file_card.xml is designed for.
+ *
+ * Pure function so the rule can be tested without building a panel.
+ *
+ * @param container_width Content width available for cards, in pixels
+ * @param card_gap        Gap between columns, in pixels
+ * @return Column count, or 0 when no count yields a card within the bounds
+ */
+inline int choose_card_columns(int container_width, int card_gap) {
+    if (container_width <= 0 || card_gap < 0) {
+        return 0;
+    }
+
+    int best_cols = 0;
+    int best_distance = 0;
+
+    for (int cols = 1; cols <= 10; cols++) {
+        int total_gaps = (cols - 1) * card_gap;
+        int card_width = (container_width - total_gaps) / cols;
+
+        if (card_width < CARD_WIDTH_MIN || card_width > CARD_WIDTH_MAX) {
+            continue;
+        }
+
+        int distance = std::abs(card_width - CARD_WIDTH_TARGET);
+        if (best_cols == 0 || distance < best_distance) {
+            best_cols = cols;
+            best_distance = distance;
+        }
+    }
+
+    return best_cols;
+}
+
+/**
+ * @brief Card width for a given column count, matching choose_card_columns().
+ */
+inline int card_width_for_columns(int container_width, int card_gap, int columns) {
+    if (columns <= 0) {
+        return 0;
+    }
+    return (container_width - (columns - 1) * card_gap) / columns;
+}
 
 /**
  * @brief Decide whether a failed directory refresh should fall back to root.
@@ -489,9 +550,11 @@ class PrintSelectPanel : public PanelBase {
     // === Constants ===
     //
 
-    // Card layout constants (used by calculate_card_dimensions)
-    static constexpr int CARD_MIN_WIDTH = 130;
-    static constexpr int CARD_MAX_WIDTH = 230;
+    // Card layout constants (used by calculate_card_dimensions).
+    // Width bounds live at namespace scope as CARD_WIDTH_* so choose_card_columns()
+    // can share them; these aliases keep the existing call sites reading the same.
+    static constexpr int CARD_MIN_WIDTH = CARD_WIDTH_MIN;
+    static constexpr int CARD_MAX_WIDTH = CARD_WIDTH_MAX;
     static constexpr int CARD_DEFAULT_HEIGHT = 245;
     static constexpr int ROW_COUNT_3_MIN_HEIGHT = 520;
     static constexpr const char* FOLDER_UP_ICON = "A:assets/images/folder-up.png";

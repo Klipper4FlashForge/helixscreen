@@ -1,6 +1,6 @@
 # Developer Quick Reference
 
-Quick patterns and cheat sheets for developers working on the HelixScreen codebase. For system design and architectural rationale, see [ARCHITECTURE.md](ARCHITECTURE.md). For comprehensive XML syntax, see [LVGL9_XML_GUIDE.md](LVGL9_XML_GUIDE.md).
+Quick patterns and cheat sheets for developers working on the HelixScreen codebase. For system design and architectural rationale, see [ARCHITECTURE.md](ARCHITECTURE.md). For comprehensive XML syntax, see [LVGL9_XML_GUIDE.md](LVGL9_XML_GUIDE.md). For driving a running instance — navigate, click, set values, capture screenshots, or an interactive REPL via `helix-screen ctl`/`repl` — see [HELIXCTL.md](HELIXCTL.md).
 
 ---
 
@@ -10,7 +10,7 @@ HelixScreen uses class-based patterns for all new code. For architectural ration
 
 ### Panel Pattern
 
-**Canonical example:** `include/ui_panel_motion.h` + `src/ui_panel_motion.cpp`
+**Canonical example:** `include/ui_panel_motion.h` + `src/ui/ui_panel_motion.cpp`
 
 ```cpp
 class ExamplePanel : public PanelBase {  // Use SubjectManager subjects_; member for auto cleanup
@@ -27,6 +27,7 @@ private:
     void setup_observers();  // Wire reactive bindings
 
     lv_obj_t* root_ = nullptr;
+    SubjectManager subjects_;  // Owns subjects + observers, auto-cleans on destruction
     lv_subject_t my_subject_{};
     char buf_[128]{};  // Static storage for string subjects
 };
@@ -36,7 +37,7 @@ private:
 
 ### Manager Pattern (Backend)
 
-**Canonical example:** `include/wifi_manager.h` + `src/wifi_manager.cpp`
+**Canonical example:** `include/wifi_manager.h` + `src/api/wifi_manager.cpp`
 
 ```cpp
 class WiFiManager {
@@ -87,7 +88,7 @@ public:
     void reset_for_testing();   // Test reset
 
     lv_subject_t* nozzle_temp_subject();   // Accessor for binding
-    void set_nozzle_temp(int temp);        // Update via ui_async_call
+    void set_nozzle_temp(int temp);        // Update via helix::ui::queue_update
 
 private:
     lv_subject_t nozzle_temp_{};
@@ -158,11 +159,14 @@ add_observer(observe_string<MyPanel>(
     }
 ));
 
-// Connection state observer (special case)
+// Connection state observer (special case).
+// Signature: observe_connection_state(subject, panel, on_connected);
+// on_connected is void(Panel*) — fired when the state becomes CONNECTED.
 add_observer(observe_connection_state<MyPanel>(
+    &printer_connection_state_subject,
     this,
-    [](MyPanel* self, bool connected) {
-        self->set_controls_enabled(connected);
+    [](MyPanel* self) {
+        self->set_controls_enabled(true);
     }
 ));
 ```
@@ -233,17 +237,17 @@ void on_ws_message(const json& data) {
     lv_subject_set_int(&temp_subject_, data["temp"]);  // CRASH!
 }
 
-// ✅ CORRECT - queue to LVGL thread
+// ✅ CORRECT - queue to LVGL thread (helix::ui::queue_update)
 void on_ws_message(const json& data) {
     int temp = data["temp"];
-    ui_async_call([this, temp]() {
+    helix::ui::queue_update([this, temp]() {
         lv_subject_set_int(&temp_subject_, temp);
     });
 }
 
-// ✅ BETTER - use ui_queue_update for batching
+// The tagged overload names the work for logging/telemetry:
 void on_ws_message(const json& data) {
-    ui_queue_update([this, data]() {
+    helix::ui::queue_update("Panel::on_ws_message", [this, data]() {
         lv_subject_set_int(&temp_subject_, data["temp"]);
         lv_subject_set_int(&bed_subject_, data["bed"]);
     });
@@ -300,12 +304,16 @@ Screen-responsive switch with semantic sizes:
 <ui_switch size="medium" checked="true"/>
 ```
 
-| Size | SMALL screen | MEDIUM screen | LARGE screen |
-|------|--------------|---------------|--------------|
-| `tiny` | 32×16px | 48×24px | 64×32px |
-| `small` | 40×20px | 64×32px | 88×44px |
-| `medium` | 48×24px | 80×40px | 112×56px |
-| `large` | 56×28px | 88×44px | 128×64px |
+The preset tier comes from the narrow axis, `min(width, height)`, not the height.
+
+| Size | MICRO (≤272) | TINY/SMALL (273-460) | MEDIUM (461-550) | LARGE+ (>550) |
+|------|--------------|----------------------|------------------|---------------|
+| `tiny` | 24×12px | 32×16px | 48×24px | 64×32px |
+| `small` | 32×16px | 40×20px | 64×32px | 88×40px |
+| `medium` | 40×20px | 48×24px | 80×40px | 112×48px |
+| `large` | 48×24px | 56×28px | 88×44px | 128×56px |
+
+Only four preset tiers exist for seven breakpoints, deliberately: Tiny and Small share one preset (switches are too small to benefit from separate tiers), and Large, XLarge and XXLarge all share the widest one. See `ui_switch_init_size_presets()` in `src/ui/ui_switch.cpp`.
 
 ---
 
@@ -451,8 +459,8 @@ style_flex_cross_place="center"
 | `<lv_label><lv_label-bind_text subject="x"/></lv_label>` | `<lv_label bind_text="x"/>` (attribute, not child) | |
 | `lv_obj_add_event_cb()` in C++ | XML `<event_cb trigger="clicked" callback="name"/>` | [ARCHITECTURE.md - Reactive-First](ARCHITECTURE.md#critical-reactive-first-principle---the-helixscreen-way) |
 | `lv_label_set_text()` for reactive data | `bind_text` subject binding | [ARCHITECTURE.md - Reactive Patterns](ARCHITECTURE.md#reactive-patterns-for-common-ui-tasks) |
-| Hardcoded colors in C++ | `ui_theme_get_color("card_bg")` | [Responsive Design Tokens](#responsive-design-tokens) |
-| `lv_subject_set_*()` from WebSocket | `ui_async_call()` or `ui_queue_update()` | [Threading Model](#threading-model) |
+| Hardcoded colors in C++ | `theme_manager_get_color("card_bg")` | [Responsive Design Tokens](#responsive-design-tokens) |
+| `lv_subject_set_*()` from WebSocket | `helix::ui::queue_update()` | [Threading Model](#threading-model) |
 | Raw `lv_subject_add_observer_*()` | `observe_int_async<Panel>()` from factory | [Observer Factory](#observer-factory-critical) |
 
 ---
@@ -577,13 +585,13 @@ Unified modal system with RAII lifecycle, backdrop, stacking, and animations.
 lv_obj_t* dialog = Modal::show("print_cancel_confirm_modal");
 Modal::hide(dialog);
 
-// Confirmation dialog helper:
-ui_modal_show_confirmation("Delete?", "Cannot undo.",
+// Confirmation dialog helper (helix::ui):
+modal_show_confirmation("Delete?", "Cannot undo.",
     ModalSeverity::Warning, "Delete",
     on_confirm_cb, on_cancel_cb, this);
 
 // Alert (single OK button):
-ui_modal_show_alert("Done", "Operation complete.");
+modal_show_alert("Done", "Operation complete.");
 
 // Subclassed modal:
 class MyModal : public Modal {

@@ -46,9 +46,11 @@ The file lives at `<install dir>/config/helixscreen.env` (or `/etc/helixscreen/h
 
 ```bash
 sudo systemctl restart helixscreen        # Raspberry Pi
-/etc/init.d/S99helixscreen restart        # K1 / K2 / Snapmaker U1
-/etc/init.d/S80helixscreen restart        # AD5M
+/etc/init.d/S99helixscreen restart        # K1 / K2
+/etc/init.d/S80helixscreen restart        # AD5M (Klipper Mod)
+/etc/init.d/S90helixscreen restart        # AD5M (Forge-X)
 /etc/init.d/helixscreen restart           # CC1
+<install dir>/config/helixscreen.init restart   # Snapmaker U1
 ```
 
 Then tail the log:
@@ -109,7 +111,7 @@ Quick form, from a Mainsail Shell or SSH:
 ```bash
 ssh root@<printer-ip>
 chroot /usr/data/.mod/.zmod
-curl -fsSL https://get.helixscreen.org | sh -s -- --update
+curl -fsSL https://releases.helixscreen.org/install.sh | sh -s -- --update
 ```
 
 The `chroot` step is required — see UPGRADING.md for why.
@@ -400,6 +402,38 @@ sudo systemctl restart systemd-timesyncd
 
 ---
 
+### When the Printer Errors or Disconnects (Recovery Dialog)
+
+If Klipper shuts down, hits an error, or loses contact with the printer's control board, HelixScreen automatically pops up a full-screen **recovery dialog** with a warning icon, a short explanation, and one or more recovery buttons. You don't have to go looking for it — it appears on top of whatever you were doing.
+
+**What it looks like and when it appears:**
+
+| Dialog title | When it appears | What it usually means |
+|--------------|-----------------|-----------------------|
+| **Printer Shutdown** | Klipper has entered a shutdown state | An emergency stop was triggered, a thermal runaway was detected, or a configuration problem stopped the printer. When Klipper reports a specific reason (for example "Max force exceeded"), that exact message is shown instead of the generic text. |
+| **Printer Error** | Klipper has entered an error state | Usually the control board (MCU) lost its connection, or there's a configuration error. |
+| **Printer Firmware Disconnected** | The printer's firmware has disconnected from the host | The host software lost its link to the printer's control board. |
+
+**The buttons and when to use each:**
+
+| Button | What it does | When to use it |
+|--------|--------------|----------------|
+| **Restart Klipper** | Performs a soft restart of Klipper — it reloads your configuration and reconnects to the printer without power-cycling anything. | The quickest first thing to try after a **Printer Shutdown** or **Printer Error**. Good when nothing physical is wrong and you just need Klipper to come back to a ready state. |
+| **Firmware Restart** | Does everything Restart Klipper does, and also resets the printer's control board (MCU) firmware. | Use when a plain Restart Klipper isn't enough — for example after fixing a configuration error, or when the control board itself shut down or lost communication. |
+| **Dismiss** | Closes the dialog without doing anything. The printer stays exactly as it was — still shut down, errored, or disconnected. | When you want to read logs, check wiring, or fix a config file first, and you'll restart afterward. Dismiss does **not** fix anything on its own. |
+
+> **Note:** When the printer is fully disconnected, HelixScreen can't send restart commands to it, so only **Dismiss** is available. Once the connection comes back, the restart buttons return.
+
+**Common causes:**
+
+- **Thermal runaway** — a heater isn't reaching or holding the temperature Klipper expects (loose heater or thermistor, a fan blowing on the sensor, or a failing part). Klipper shuts down for safety.
+- **Configuration error** — a recent edit to your `printer.cfg` has a mistake. Klipper will shut down again immediately after a restart until the config is fixed.
+- **Lost control-board communication** — a USB/serial cable came loose, the board lost power, or the connection was interrupted.
+
+**Important:** A restart only sticks if the underlying problem is resolved. If a bad config or a wiring fault caused the shutdown, Klipper will just shut down again. Fix the root cause first — correct the `printer.cfg` (through Mainsail or Fluidd), reseat cables, or check heater and thermistor wiring — then use **Firmware Restart** to bring the printer back.
+
+---
+
 ## Display Issues
 
 ### Black screen on startup
@@ -544,6 +578,57 @@ sudo systemctl restart helixscreen
 Adjust in steps (e.g. 110, 100, 90 or 160, 200, 240) until the interface looks right. Lower DPI = tighter/smaller; higher DPI = larger/roomier.
 
 > **Tip:** If instead the *whole layout tier* is wrong — for example a compact phone-style layout on a big screen, or vice versa — the resolution rather than the DPI is being mis-detected. Force a layout size with `HELIX_SCREEN_SIZE` (named preset `micro`/`tiny`/`small`/`medium`/`large`/`xlarge`, or `WxH` like `1024x600`), which is the persistent equivalent of the `-s` flag covered in [Wrong screen size or resolution](#wrong-screen-size-or-resolution).
+
+---
+
+### Ultrawide or portrait screen looks stretched, cramped, or clipped
+
+**Symptoms:**
+- On a very wide screen (e.g. 1920x480), panels look stretched with large empty gaps
+- On a taller-than-wide screen (e.g. 480x800), content is cramped, clipped, or runs off the bottom
+
+**This is expected — ultrawide and portrait layouts are alpha at best.**
+
+HelixScreen detects both orientations and adjusts the navigation bar and grid sizing, but the per-panel layouts do not exist yet: there are no ultrawide panel layouts at all, and portrait has only the app shell and navigation bar. Every other panel falls back to the standard landscape layout, which is what you are seeing. Neither orientation has been tested on real hardware.
+
+**The home dashboard is the exception.** Its widget grid is sized from the actual screen — a 480x800 portrait panel gets a 3x6 grid, a 320x1480 one gets 2x12 — and portrait has its own default widget set (Tips is left out; it is too wide to earn a row on a narrow grid). Buttons, inputs, and headers on a portrait panel are sized from the screen's height, so they come out taller rather than cramped. Every other panel is still the landscape fallback.
+
+**What you can do:**
+
+- **On a portrait panel, rotate it to landscape.** This is the well-tested path and what the Creality K2 does out of the box. Set `"rotate": 90` (or `270`) in the `display` section of your config — see [Display upside down or rotated](#display-upside-down-or-rotated).
+- **On an ultrawide screen,** there is no better fallback today. Reducing DPI (`HELIX_DPI`) can claw back some usable density, but the layout will still be a landscape layout stretched wide.
+- **Force the standard layout** if the alpha layout is worse than the fallback: `--layout standard`, or `"layout": "standard"` in the `display` section.
+
+Contributions are very welcome here and only need XML, not C++ — see the [UI Contributor Guide](../devel/UI_CONTRIBUTOR_GUIDE.md).
+
+---
+
+### A widget disappeared from the home screen (portrait screens)
+
+**Symptoms:**
+
+- A widget vanished from the home screen and did not come back after a restart or an update
+- **Tips** in particular is missing on a portrait-mounted screen
+- You saw a message like *"'Tips' removed — grid full"* even though the grid looked far from full
+
+**Cause:** on older versions, a widget that was wider than a portrait screen's grid could not be placed anywhere, so HelixScreen switched it off — and *saved* that off state to your settings. Fixing the placement logic does not undo the saved setting, so the widget stays off until you put it back yourself. It is not lost: it is sitting in the Widget Catalog as an available widget.
+
+Note that **Tips is now deliberately off by default on portrait screens** — it is a wide widget and takes a third to a half of a row on a narrow grid. If Tips is the only thing missing, that may simply be the new default rather than the old bug.
+
+**Fix — put back a single widget:**
+
+1. **Long-press the widget grid** to enter Edit Mode
+2. **Long-press an empty area** of the grid — the Widget Catalog opens
+3. Tap the widget you want. Widgets already on your dashboard are dimmed and labelled "Placed"; the ones you lost will not be
+4. Tap **Done** to leave Edit Mode
+
+**Fix — put back everything at once:**
+
+Enter Edit Mode and tap **Reset**. This restores the default layout *and* the default set of enabled widgets, and because the defaults are now portrait-aware you get the corrected portrait layout. Your per-widget settings (display mode preferences and so on) are preserved.
+
+Reset is not free, though: it collapses **all pages back to a single page**, so any extra pages you created are removed, and every widget position and size goes back to default. If you have a layout you like and only lost one or two widgets, re-add them from the catalog instead.
+
+See [Home Panel](guide/home-panel.md) for the full Edit Mode walkthrough.
 
 ---
 
@@ -705,7 +790,7 @@ This keeps the normal sleep timeout but prevents the backlight from being cut, w
 Caveat: the panel stays fully lit 24/7 with this option. If long-term backlight wear is a concern, prefer Workaround 1 and manually power off the screen when not needed.
 
 **Helping us fix it:**
-If you are experiencing this and are willing to help, please send a debug bundle from **Settings → Help & About → Send Debug Bundle**. Include a note that mentions the sleep color issue so we can correlate configs and logs.
+If you are experiencing this and are willing to help, please send a debug bundle from **Settings → Help & About → Upload Debug Bundle**. Include a note that mentions the sleep color issue so we can correlate configs and logs.
 
 ---
 
@@ -1046,17 +1131,16 @@ This is common on devices where the touch controller is mounted at a different o
 
 **Solutions:**
 
-**1. Update to the latest version (recommended):**
+**1. Recalibrate (recommended):**
 
-HelixScreen v0.9+ automatically detects swapped touch axes during calibration and corrects them. Update and recalibrate:
+HelixScreen automatically detects swapped touch axes during calibration and corrects them. Just recalibrate:
 ```bash
-# Update HelixScreen, then recalibrate:
 # Settings > System > Recalibrate Touch
 ```
 
-**2. Manual workaround (older versions):**
+**2. Manual axis swap (fallback):**
 
-Set the axis swap environment variable, then recalibrate:
+If auto-detection doesn't resolve it, set the axis swap environment variable, then recalibrate:
 ```bash
 # Add to your helixscreen.env:
 HELIX_TOUCH_SWAP_AXES=1
@@ -1153,6 +1237,50 @@ curl -X POST http://localhost:7125/printer/print/cancel
 
 ---
 
+### Layer count is wrong, stuck at 0, or total layers missing
+
+**Symptoms:**
+- The layer counter on the Print Status panel doesn't match the real layer being printed
+- Total layers shows as missing, 0, or a placeholder
+- The current layer looks like a rough guess rather than an exact count
+
+**Cause:**
+For an exact layer count, HelixScreen reads the current and total layer directly from Klipper. Those values are only available if your slicer tells Klipper about them by emitting the `SET_PRINT_STATS_INFO` command in the printed G-code. Many stock slicer profiles don't do this. When the values are absent, HelixScreen falls back to *estimating* the layer from print progress and Z-height, which is close but not always exact.
+
+**Fix — have your slicer emit the layer info:**
+
+In **PrusaSlicer, SuperSlicer, or OrcaSlicer**, add these to your printer's custom G-code (Printer Settings → Custom G-code):
+
+- **Start G-code** — report the total layer count once, at the start:
+  ```
+  SET_PRINT_STATS_INFO TOTAL_LAYER=[total_layer_count]
+  ```
+- **Before layer change G-code** (some slicers call it "Layer change G-code") — report each new layer as it begins:
+  ```
+  SET_PRINT_STATS_INFO CURRENT_LAYER={layer_num + 1}
+  ```
+
+Re-slice your file after adding these — the commands are baked into the G-code at slice time, so existing files won't have them. Once present, HelixScreen shows the exact layer and total for every print.
+
+> **Cura users:** Cura doesn't expose these layer placeholders directly and needs a post-processing script to inject `SET_PRINT_STATS_INFO`. See the Klipper community docs and forums for a Cura post-processing plugin that adds it.
+
+> **Note:** Some noise in the layer count during the print-start phase (bed mesh, purge/prime line, Z-hop) is normal. HelixScreen holds the layer at 0 until real printing begins, so it no longer jumps ahead before the first layer. The estimate only matters mid-print when the slicer macros above are missing.
+
+### Time remaining is inaccurate or slow to settle
+
+**Symptoms:**
+- The estimated time remaining is off, especially early in a print
+- The ETA jumps around or takes a while to steady out during the first layers
+- Time remaining doesn't track the slicer's estimate
+
+**Cause:**
+Time remaining is most accurate when your slicer reports layer information to Klipper via `SET_PRINT_STATS_INFO` (the same commands as the layer-count fix above). Without it, HelixScreen estimates progress from other signals, which are noisier at the very start of a print before enough data has accumulated.
+
+**Fix:**
+Add the `SET_PRINT_STATS_INFO` commands described in [Layer count is wrong, stuck at 0, or total layers missing](#layer-count-is-wrong-stuck-at-0-or-total-layers-missing) above, then re-slice. Expect some ETA drift during the print-start phase (bed mesh, priming) even with the macros in place — the estimate tightens up once printing is underway.
+
+---
+
 ## AMS/Multi-Material Issues
 
 ### AMS slots not detected
@@ -1188,6 +1316,27 @@ sudo systemctl restart klipper
 sudo systemctl restart moonraker
 sudo systemctl restart helixscreen
 ```
+
+### CFS shows no slots (Creality K2)
+
+**Symptoms:**
+- The filament panel opens but the CFS is empty — no bays, no spools
+- Your CFS is populated and works fine in Fluidd or Mainsail
+- The home screen's multi-filament widget is greyed out or missing
+
+**Cause:** you're most likely running **community firmware** whose CFS module was rewritten from scratch. It reports the CFS in a completely different format than Creality's, and HelixScreen 0.99.106 and earlier only understood Creality's.
+
+**Check which one you have:**
+```bash
+curl -s 'http://localhost:7125/printer/objects/query?box' | grep -o 'slots\|T1'
+```
+
+- Prints `T1` → stock Creality format. This isn't your problem; work through *AMS slots not detected* above.
+- Prints `slots` → community format. **Update HelixScreen to any release newer than 0.99.106** and your slots will appear.
+
+Once updated, the community format is fully supported — display, loading, unloading and filament changes all work, with nothing to configure.
+
+> **If your firmware installed HelixScreen for you**, its installer may pin an older version than the one that added this support. Updating HelixScreen through Fluidd or Mainsail (rather than reinstalling the firmware) picks up the newer release.
 
 ### Load/Unload fails
 
@@ -1262,7 +1411,7 @@ sudo journalctl -u moonraker | grep -i spoolman
 HelixScreen currently fetches up to 1,000 spools from Spoolman in a single request. If you have more than 1,000 spools, the rest will not appear.
 
 **Workaround:**
-Archive or delete unused spools in Spoolman to stay under 1,000 active spools. A future release will add continuous scroll pagination to handle larger collections.
+Archive or delete unused spools in Spoolman to stay under 1,000 active spools.
 
 ---
 

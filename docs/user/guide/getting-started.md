@@ -62,7 +62,7 @@ When disconnected, a toast notification appears and HelixScreen attempts to reco
 
 ## First-Time Setup
 
-When you first start HelixScreen, the Setup Wizard guides you through initial configuration. You can re-run the wizard anytime via **Settings > Factory Reset**.
+When you first start HelixScreen, the Setup Wizard guides you through initial configuration. You can re-run the wizard anytime via **Settings > System > Factory Reset**.
 
 ### Setup Wizard
 
@@ -145,6 +145,36 @@ The keyboard appears automatically for text input:
 - **?123 button**: Switch to symbols
 - **XYZ button**: Switch to letters
 - **Shift**: Toggle uppercase
+
+### Long-press characters
+
+Every letter key has a second character on it, shown as a small grey glyph in the key's top-right corner. **Hold the key** to type it — you don't need to switch to the symbol layers.
+
+| Hold | Get | Hold | Get | Hold | Get |
+|------|-----|------|-----|------|-----|
+| `q` | `1` | `a` | `@` | `z` | `*` |
+| `w` | `2` | `s` | `#` | `x` | `"` |
+| `e` | `3` | `d` | `$` | `c` | `'` |
+| `r` | `4` | `f` | `_` | `v` | `:` |
+| `t` | `5` | `g` | `&` | `b` | `;` |
+| `y` | `6` | `h` | `-` | `n` | `!` |
+| `u` | `7` | `j` | `+` | `m` | `?` |
+| `i` | `8` | `k` | `(` |  |  |
+| `o` | `9` | `l` | `)` |  |  |
+| `p` | `0` |  |  |  |  |
+
+The two punctuation keys beside the spacebar carry **three** characters each:
+
+| Hold | Get | Also available by sliding |
+|------|-----|---------------------------|
+| `,` | `=` | `<` and `>` |
+| `.` | `/` | `[` and `]` |
+
+If you write Klipper macros, the ones worth memorising are **hold `f` for `_`**, **hold `h` for `-`**, **hold `j` for `+`**, and **hold `,` for `=`**. Those four cover most of what macro names and parameters need, and each is much faster than switching to `?123` and then `#+=`.
+
+While you're holding a key, its alternate characters pop up above it. You can **slide your finger onto one** to pick it, or just lift your finger where it is to get the first one. Slide well away from the key before lifting to cancel without typing anything.
+
+On the keys that offer several characters, **the one you pick becomes the new default**: hold `,` and slide to `<`, and from then on a plain hold of `,` gives you `<`, with the corner marking updated to match. The others stay available by sliding. This lasts for as long as HelixScreen is running — restarting restores the original order.
 
 ---
 

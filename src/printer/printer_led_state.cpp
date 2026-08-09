@@ -9,6 +9,7 @@
 
 #include "printer_led_state.h"
 
+#include "led/led_color_utils.h"
 #include "state/subject_macros.h"
 
 #include <spdlog/spdlog.h>
@@ -63,8 +64,10 @@ void PrinterLedState::update_from_status(const nlohmann::json& status) {
     if (!led.contains("color_data") && tracked_led_name_.rfind("output_pin ", 0) == 0) {
         if (led.contains("value") && led["value"].is_number()) {
             double val = led["value"].get<double>();
-            int brightness = std::clamp(static_cast<int>(val * 100.0 + 0.5), 0, 100);
-            int intensity = std::clamp(static_cast<int>(val * 255.0 + 0.5), 0, 255);
+            int intensity = led::to_channel_byte(val);
+            // Share the native path's conversion: a dim-but-lit pin (value 0.004)
+            // must not round to 0% while led_state below still reports ON.
+            int brightness = led::channel_to_percent(static_cast<uint8_t>(intensity));
 
             if (lv_subject_get_int(&led_r_) != intensity)
                 lv_subject_set_int(&led_r_, intensity);
@@ -90,33 +93,21 @@ void PrinterLedState::update_from_status(const nlohmann::json& status) {
         return;
     }
 
-    if (!led.contains("color_data") || !led["color_data"].is_array() || led["color_data"].empty()) {
-        return;
-    }
-
-    // color_data is array of [R, G, B, W] arrays (one per LED in strip)
     // For on/off, we check if any color component of the first LED is > 0
-    const auto& first_led = led["color_data"][0];
-    if (!first_led.is_array() || first_led.size() < 3 || !first_led[0].is_number() ||
-        !first_led[1].is_number() || !first_led[2].is_number()) {
+    led::RgbwF parsed;
+    if (!led::parse_color_data(led, parsed)) {
         return;
     }
-
-    double r = first_led[0].get<double>();
-    double g = first_led[1].get<double>();
-    double b = first_led[2].get<double>();
-    double w =
-        (first_led.size() >= 4 && first_led[3].is_number()) ? first_led[3].get<double>() : 0.0;
 
     // Convert 0.0-1.0 range to 0-255 integer range (clamp for safety)
-    int r_int = std::clamp(static_cast<int>(r * 255.0 + 0.5), 0, 255);
-    int g_int = std::clamp(static_cast<int>(g * 255.0 + 0.5), 0, 255);
-    int b_int = std::clamp(static_cast<int>(b * 255.0 + 0.5), 0, 255);
-    int w_int = std::clamp(static_cast<int>(w * 255.0 + 0.5), 0, 255);
+    int r_int = led::to_channel_byte(parsed.r);
+    int g_int = led::to_channel_byte(parsed.g);
+    int b_int = led::to_channel_byte(parsed.b);
+    int w_int = led::to_channel_byte(parsed.w);
 
     // Compute brightness as max of RGBW channels (0-100%)
     int max_channel = std::max({r_int, g_int, b_int, w_int});
-    int brightness = (max_channel * 100) / 255;
+    int brightness = led::channel_to_percent(static_cast<uint8_t>(max_channel));
 
     // Update RGBW subjects (skip if unchanged to avoid redundant observer notifications)
     if (lv_subject_get_int(&led_r_) != r_int)

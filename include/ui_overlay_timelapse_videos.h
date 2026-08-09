@@ -4,8 +4,8 @@
 #pragma once
 
 #include "async_lifetime_guard.h"
-#include "lvgl.h"
 #include "i_moonraker_api.h"
+#include "lvgl.h"
 #include "moonraker_types.h"
 #include "overlay_base.h"
 #include "thumbnail_cache.h"
@@ -62,7 +62,6 @@ class TimelapseVideosOverlay : public OverlayBase {
     static void on_render_now(lv_event_t* e);
     static void on_card_clicked(lv_event_t* e);
     static void on_card_long_pressed(lv_event_t* e);
-    static void on_card_delete(lv_event_t* e);
     static void on_delete_confirmed(lv_event_t* e);
     static void on_delete_cancelled(lv_event_t* e);
 

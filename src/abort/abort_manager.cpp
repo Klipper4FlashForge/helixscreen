@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "abort_manager.h"
-#include "data_root_resolver.h"
 
 #include "ui_callback_helpers.h"
 #include "ui_effects.h"
@@ -9,6 +8,7 @@
 #include "ui_update_queue.h"
 #include "ui_utils.h"
 
+#include "data_root_resolver.h"
 #include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "printer_recovery_service.h"
@@ -47,7 +47,8 @@ void AbortManager::init_subjects() {
     }
 
     // Register XML component for the modal
-    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/abort_progress_modal.xml").c_str());
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/abort_progress_modal.xml").c_str());
 
     // Register E-Stop button callback (unique name per L039)
     register_xml_callbacks({
@@ -73,9 +74,6 @@ void AbortManager::init_subjects() {
         "AbortManagerSubjects", []() { helix::AbortManager::instance().deinit_subjects(); });
 
     spdlog::debug("[AbortManager] Subjects initialized");
-
-    // Create modal on lv_layer_top() after subjects are ready
-    create_modal();
 }
 
 void AbortManager::deinit_subjects() {
@@ -813,13 +811,24 @@ void AbortManager::create_modal() {
 }
 
 void AbortManager::update_visibility() {
+    // Modal is visible when state is not IDLE and not COMPLETE
+    State current = abort_state_.load();
+    bool visible = (current != State::IDLE && current != State::COMPLETE);
+
+    // Lazily build the modal the first time it needs to become visible. This
+    // defers all backdrop/XML/GPU-blur work (init_gpu_blur EGL/Mali init) to the
+    // first real abort — main thread, real on-screen content, GPU warmed —
+    // instead of cold startup where the driver can hard-fault. update_visibility
+    // runs on the main/LVGL thread, so create_modal() here is thread-safe.
+    if (visible && !backdrop_) {
+        create_modal();
+    }
+
+    // create_modal() legitimately no-ops when there's no display driver data yet.
     if (!backdrop_) {
         return;
     }
 
-    // Modal is visible when state is not IDLE and not COMPLETE
-    State current = abort_state_.load();
-    bool visible = (current != State::IDLE && current != State::COMPLETE);
     if (visible) {
         lv_obj_remove_flag(backdrop_, LV_OBJ_FLAG_HIDDEN);
     } else {

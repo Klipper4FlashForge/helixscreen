@@ -56,22 +56,11 @@ using namespace helix;
 // Index: 0=Never, 1=30sec, 2=1min, 3=2min, 4=5min
 static const int DIM_OPTIONS[] = {0, 30, 60, 120, 300, 600};
 static const int DIM_OPTIONS_COUNT = sizeof(DIM_OPTIONS) / sizeof(DIM_OPTIONS[0]);
-static const char* DIM_OPTIONS_TEXT =
-    "Never\n30 seconds\n1 minute\n2 minutes\n5 minutes\n10 minutes";
 
 // Display sleep option values (seconds) - time before screen fully sleeps
 // Index: 0=Never, 1=1min, 2=5min, 3=10min, 4=30min
 static const int SLEEP_OPTIONS[] = {0, 60, 300, 600, 1200, 1800};
 static const int SLEEP_OPTIONS_COUNT = sizeof(SLEEP_OPTIONS) / sizeof(SLEEP_OPTIONS[0]);
-static const char* SLEEP_OPTIONS_TEXT =
-    "Never\n1 minute\n5 minutes\n10 minutes\n20 minutes\n30 minutes";
-
-// Bed mesh render mode options (Auto=0, 3D=1, 2D=2)
-static const char* BED_MESH_RENDER_MODE_OPTIONS_TEXT = "Auto\n3D View\n2D Heatmap";
-static const char* GCODE_RENDER_MODE_OPTIONS_TEXT = "Auto\n3D View\n2D Layers\nThumbnail Only";
-
-// Time format options (12H=0, 24H=1)
-static const char* TIME_FORMAT_OPTIONS_TEXT = "12 Hour\n24 Hour";
 
 // Timezone options: curated list of IANA timezones with friendly display names
 struct TimezoneEntry {
@@ -88,14 +77,21 @@ static const TimezoneEntry TIMEZONE_ENTRIES[] = {
     {"Central (-6:00)", "America/Chicago"},
     {"Eastern (-5:00)", "America/New_York"},
     {"Atlantic (-4:00)", "America/Halifax"},
+    {"Newfoundland (-3:30)", "America/St_Johns"},
     {"Sao Paulo (-3:00)", "America/Sao_Paulo"},
+    {"Cape Verde (-1:00)", "Atlantic/Cape_Verde"},
     {"London (+0:00)", "Europe/London"},
     {"Central Europe (+1:00)", "Europe/Berlin"},
     {"Eastern Europe (+2:00)", "Europe/Bucharest"},
     {"Moscow (+3:00)", "Europe/Moscow"},
+    {"Iran (+3:30)", "Asia/Tehran"},
     {"Gulf (+4:00)", "Asia/Dubai"},
+    {"Afghanistan (+4:30)", "Asia/Kabul"},
+    {"Pakistan (+5:00)", "Asia/Karachi"},
     {"India (+5:30)", "Asia/Kolkata"},
+    {"Nepal (+5:45)", "Asia/Kathmandu"},
     {"Bangladesh (+6:00)", "Asia/Dhaka"},
+    {"Myanmar (+6:30)", "Asia/Yangon"},
     {"Indochina (+7:00)", "Asia/Bangkok"},
     {"China/Singapore (+8:00)", "Asia/Shanghai"},
     {"Hong Kong (+8:00)", "Asia/Hong_Kong"},
@@ -103,6 +99,7 @@ static const TimezoneEntry TIMEZONE_ENTRIES[] = {
     {"Australia Western (+8:00)", "Australia/Perth"},
     {"Australia Central (+9:30)", "Australia/Adelaide"},
     {"Australia Eastern (+10:00)", "Australia/Sydney"},
+    {"New Caledonia (+11:00)", "Pacific/Noumea"},
     {"New Zealand (+12:00)", "Pacific/Auckland"},
 };
 static const int TIMEZONE_COUNT = sizeof(TIMEZONE_ENTRIES) / sizeof(TIMEZONE_ENTRIES[0]);
@@ -563,16 +560,25 @@ int DisplaySettingsManager::get_brightness() const {
     return lv_subject_get_int(const_cast<lv_subject_t*>(&brightness_subject_));
 }
 
-void DisplaySettingsManager::set_brightness(int percent) {
+int DisplaySettingsManager::preview_brightness(int percent) {
     // Clamp to valid range (10-100, minimum 10% to prevent black screen)
     int clamped = std::clamp(percent, 10, 100);
-    spdlog::info("[DisplaySettingsManager] set_brightness({})", clamped);
 
     lv_subject_set_int(&brightness_subject_, clamped);
 
     if (auto* dm = DisplayManager::instance()) {
         dm->set_backlight_brightness(clamped);
     }
+
+    // Deliberately no Config::save() — see the header. Logged at debug because a
+    // drag emits one of these per tick.
+    spdlog::debug("[DisplaySettingsManager] preview_brightness({})", clamped);
+    return clamped;
+}
+
+void DisplaySettingsManager::set_brightness(int percent) {
+    int clamped = preview_brightness(percent);
+    spdlog::info("[DisplaySettingsManager] set_brightness({})", clamped);
 
     Config* config = Config::get_instance();
     config->set<int>("/brightness", clamped);
@@ -705,10 +711,6 @@ void DisplaySettingsManager::set_bed_mesh_render_mode(int mode) {
                   clamped == 0 ? "Auto" : (clamped == 1 ? "3D" : "2D"));
 }
 
-const char* DisplaySettingsManager::get_bed_mesh_render_mode_options() {
-    return lv_tr(BED_MESH_RENDER_MODE_OPTIONS_TEXT);
-}
-
 int DisplaySettingsManager::get_gcode_render_mode() const {
     return lv_subject_get_int(const_cast<lv_subject_t*>(&gcode_render_mode_subject_));
 }
@@ -726,15 +728,14 @@ void DisplaySettingsManager::set_gcode_render_mode(int mode) {
     // persistent crash-loop block (issues #966 / #1084 / #1085) so the user can
     // retry 3D even after a prior driver crash promoted /display/gpu_3d_blocked.
     config->set<bool>("/display/gpu_3d_blocked", false);
+    // Mirror for the 2D backdrop-blur block: a deliberate render-mode change is a
+    // clear signal the user wants GPU features retried, so clear the blur block too.
+    config->set<bool>("/display/gpu_blur_blocked", false);
     config->save();
 
     static const char* MODE_NAMES[] = {"Auto", "3D", "2D", "Thumbnail Only"};
     spdlog::debug("[DisplaySettingsManager] G-code render mode set to {} ({})", clamped,
                   MODE_NAMES[clamped]);
-}
-
-const char* DisplaySettingsManager::get_gcode_render_mode_options() {
-    return lv_tr(GCODE_RENDER_MODE_OPTIONS_TEXT);
 }
 
 TimeFormat DisplaySettingsManager::get_time_format() const {
@@ -751,10 +752,6 @@ void DisplaySettingsManager::set_time_format(TimeFormat format) {
     Config* config = Config::get_instance();
     config->set<int>("/display/time_format", val);
     config->save();
-}
-
-const char* DisplaySettingsManager::get_time_format_options() {
-    return lv_tr(TIME_FORMAT_OPTIONS_TEXT);
 }
 
 // =============================================================================
@@ -834,10 +831,6 @@ void DisplaySettingsManager::set_screensaver_type(int type) {
     config->set<int>("/display/screensaver_type", type);
     config->save();
 }
-
-const char* DisplaySettingsManager::get_screensaver_type_options() {
-    return lv_tr("Off\nFlying Toasters\nStarfield\n3D Pipes");
-}
 #endif
 
 // =============================================================================
@@ -870,10 +863,6 @@ bool DisplaySettingsManager::get_bed_mesh_show_zero_plane() const {
 // DISPLAY DIM OPTIONS
 // =============================================================================
 
-const char* DisplaySettingsManager::get_display_dim_options() {
-    return lv_tr(DIM_OPTIONS_TEXT);
-}
-
 int DisplaySettingsManager::dim_seconds_to_index(int seconds) {
     for (int i = 0; i < DIM_OPTIONS_COUNT; i++) {
         if (DIM_OPTIONS[i] == seconds) {
@@ -894,10 +883,6 @@ int DisplaySettingsManager::index_to_dim_seconds(int index) {
 // =============================================================================
 // DISPLAY SLEEP OPTIONS
 // =============================================================================
-
-const char* DisplaySettingsManager::get_display_sleep_options() {
-    return lv_tr(SLEEP_OPTIONS_TEXT);
-}
 
 int DisplaySettingsManager::sleep_seconds_to_index(int seconds) {
     for (int i = 0; i < SLEEP_OPTIONS_COUNT; i++) {

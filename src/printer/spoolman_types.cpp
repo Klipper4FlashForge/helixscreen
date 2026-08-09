@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <ctime>
 #include <sstream>
 #include <vector>
 
@@ -119,9 +120,9 @@ std::vector<SpoolInfo> filter_spools(const std::vector<SpoolInfo>& spools,
     result.reserve(spools.size());
 
     for (const auto& spool : spools) {
-        // Build searchable text: "#ID vendor material color_name location"
+        // Build searchable text: "#ID vendor material filament_name location"
         std::string searchable = "#" + std::to_string(spool.id) + " " + spool.vendor + " " +
-                                 spool.material + " " + spool.color_name + " " + spool.location;
+                                 spool.material + " " + spool.filament_name + " " + spool.location;
 
         // Lowercase the searchable text
         std::transform(searchable.begin(), searchable.end(), searchable.begin(),
@@ -146,18 +147,76 @@ std::vector<SpoolInfo> filter_spools(const std::vector<SpoolInfo>& spools,
     return result;
 }
 
+std::optional<int64_t> parse_spool_timestamp(const std::string& ts) {
+    // Shortest accepted form is "YYYY-MM-DDTHH:MM:SS" (19 chars).
+    if (ts.size() < 19)
+        return std::nullopt;
+
+    std::tm tm{};
+    // strptime stops after seconds; the remainder (fractional seconds, zone) is
+    // handled below from the same offset.
+    const char* rest = strptime(ts.c_str(), "%Y-%m-%dT%H:%M:%S", &tm);
+    if (rest == nullptr)
+        return std::nullopt;
+
+    // timegm() interprets the fields as UTC; a trailing zone offset is applied
+    // afterwards. A naive timestamp (no zone) is treated as UTC — Spoolman is
+    // internally consistent, so every spool in one list gets the same treatment
+    // and relative ordering is preserved either way.
+    int64_t epoch = static_cast<int64_t>(timegm(&tm));
+
+    // Skip fractional seconds: ".123456"
+    if (*rest == '.') {
+        ++rest;
+        while (*rest != '\0' && std::isdigit(static_cast<unsigned char>(*rest)))
+            ++rest;
+    }
+
+    // Trailing zone: "Z" (already UTC) or "+HH:MM" / "-HH:MM" to subtract.
+    if (*rest == '+' || *rest == '-') {
+        const int sign = (*rest == '+') ? 1 : -1;
+        // Need at least "HH:MM" or "HHMM" after the sign.
+        const std::string zone(rest + 1);
+        if (zone.size() >= 4) {
+            const bool colon = (zone.size() >= 5 && zone[2] == ':');
+            const std::string hh = zone.substr(0, 2);
+            const std::string mm = colon ? zone.substr(3, 2) : zone.substr(2, 2);
+            if (std::all_of(hh.begin(), hh.end(),
+                            [](char c) { return std::isdigit(static_cast<unsigned char>(c)); }) &&
+                std::all_of(mm.begin(), mm.end(),
+                            [](char c) { return std::isdigit(static_cast<unsigned char>(c)); })) {
+                const int offset_s = ((std::stoi(hh) * 60) + std::stoi(mm)) * 60;
+                epoch -= sign * offset_s; // local -> UTC
+            }
+        }
+    }
+
+    return epoch;
+}
+
+int64_t spool_recency_key(const SpoolInfo& spool) {
+    const auto used = parse_spool_timestamp(spool.last_used);
+    const auto made = parse_spool_timestamp(spool.registered);
+
+    if (used && made)
+        return std::max(*used, *made);
+    if (used)
+        return *used;
+    if (made)
+        return *made;
+    return SPOOL_RECENCY_NONE;
+}
+
 void sort_spools_by_recency(std::vector<SpoolInfo>& spools) {
+    // Single descending key: the spool's most recent activity of either kind
+    // (#1071). A never-used spool ranks on its registration date rather than
+    // being pushed below every used spool, so a spool added today appears at the
+    // top even though it has never been printed with.
     std::sort(spools.begin(), spools.end(), [](const SpoolInfo& a, const SpoolInfo& b) {
-        const bool a_null = a.last_used.empty();
-        const bool b_null = b.last_used.empty();
-        if (a_null != b_null)
-            return !a_null; // used spools before never-used
-        if (!a_null && a.last_used != b.last_used)
-            return a.last_used > b.last_used; // newer use first
-        // Never-used spools: order by creation timestamp, newest first (#1071).
-        // Timestamps are ISO 8601, so string '>' is chronological.
-        if (a_null && a.registered != b.registered)
-            return a.registered > b.registered;
-        return a.id > b.id; // tie-break when timestamps absent/equal
+        const int64_t ka = spool_recency_key(a);
+        const int64_t kb = spool_recency_key(b);
+        if (ka != kb)
+            return ka > kb;
+        return a.id > b.id; // deterministic tie-break; no churn across refreshes
     });
 }

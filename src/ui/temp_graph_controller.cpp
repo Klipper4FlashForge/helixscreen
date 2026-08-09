@@ -15,6 +15,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <vector>
@@ -92,9 +93,23 @@ const lv_color_t TEMP_GRAPH_SERIES_COLORS[TEMP_GRAPH_PALETTE_SIZE] = {
 // Construction / Destruction
 // ============================================================================
 
+namespace {
+// Registry of live controllers so refresh_all_from_history() can re-backfill
+// every persistent graph after the history manager is (re)seeded. Main-thread
+// only: controllers are created, destroyed, and refreshed on the UI thread, so
+// no lock is needed. Function-local static keeps init order well-defined vs the
+// controllers that register into it (#1124).
+std::vector<TempGraphController*>& live_controllers() {
+    static std::vector<TempGraphController*> instances;
+    return instances;
+}
+} // namespace
+
 TempGraphController::TempGraphController(lv_obj_t* container,
                                          const TempGraphControllerConfig& config)
     : config_(config), container_(container) {
+    live_controllers().push_back(this);
+
     create_graph();
     if (!graph_) {
         spdlog::error("[TempGraphController] Failed to create graph");
@@ -110,6 +125,7 @@ TempGraphController::TempGraphController(lv_obj_t* container,
 }
 
 void TempGraphController::detach() {
+    tearing_down_ = true;
     lifetime_.invalidate();
 
     {
@@ -128,6 +144,9 @@ void TempGraphController::detach() {
 }
 
 TempGraphController::~TempGraphController() {
+    auto& reg = live_controllers();
+    reg.erase(std::remove(reg.begin(), reg.end(), this), reg.end());
+
     // Safe to call multiple times — idempotent (invalidate + reset are no-ops
     // if detach() was already called before deferred deletion)
     detach();
@@ -158,15 +177,31 @@ void TempGraphController::pause() {
 
 void TempGraphController::resume() {
     paused_ = false;
+    refresh_from_history();
+}
+
+void TempGraphController::refresh_from_history() {
     backfill_history();
+}
+
+void TempGraphController::refresh_all_from_history() {
+    // Copy the registry first: backfill_history() itself never mutates the
+    // registry, but keep this defensive against reentrancy during teardown.
+    auto snapshot = live_controllers();
+    for (auto* c : snapshot) {
+        if (c) {
+            c->refresh_from_history();
+        }
+    }
+    spdlog::debug("[TempGraphController] Refreshed {} live graph(s) from history", snapshot.size());
 }
 
 void TempGraphController::rebuild() {
     // Guard against stale container — if the parent widget was deleted while a
     // deferred reconnect observer callback was queued, container_ is dangling.
     // lv_obj_is_valid() is O(n) but acceptable here (rebuild is debounced to 2s).
-    if (!container_ || !lv_obj_is_valid(container_)) {
-        spdlog::warn("[TempGraphController] Rebuild skipped — container is null or freed");
+    if (tearing_down_ || !container_ || !lv_obj_is_valid(container_)) {
+        spdlog::warn("[TempGraphController] Rebuild skipped — tearing down or container freed");
         container_ = nullptr;
         return;
     }
@@ -290,6 +325,18 @@ void TempGraphController::setup_series() {
 // ============================================================================
 
 void TempGraphController::setup_observers() {
+    // Belt-and-suspenders against deferred-delete races (#1117): a queued
+    // connection-state observer can fire rebuild() → setup_observers() on a
+    // controller whose detach() has already started but whose memory hasn't
+    // been freed yet. lifetime_.invalidate() ran first, so the per-series
+    // observer tokens would early-return, but rebuild() pushes a new
+    // generation before reaching here — the tearing_down_ flag is the hard
+    // gate that survives across generations.
+    if (tearing_down_) {
+        spdlog::warn("[TempGraphController] setup_observers skipped — tearing down");
+        return;
+    }
+
     auto& ps = get_printer_state();
     auto token = lifetime_.token();
     uint32_t gen = generation_;
@@ -364,7 +411,12 @@ void TempGraphController::setup_observers() {
                     si.last_update_ms = now_ms;
 
                     float temp_deg = deci_to_degrees_f(temp_deci);
-                    spdlog::debug("[TempGraphController] live push series_id={} '{}' {:.1f}°C",
+                    // trace, not debug: one line per series per sample interval with
+                    // no decision content — the value is already in the subject and on
+                    // the chart. The bundle's ring buffer captures DEBUG by default
+                    // (ring_captures_debug()), so at debug this single line evicts
+                    // every other line: bundle ED2YC336 was 2000/2000 of these.
+                    spdlog::trace("[TempGraphController] live push series_id={} '{}' {:.1f}°C",
                                   si.series_id, si.klipper_name, temp_deg);
                     ui_temp_graph_update_series_with_time(self->graph_, si.series_id, temp_deg,
                                                           now_ms);
@@ -407,6 +459,12 @@ void TempGraphController::setup_observers() {
     // Observe printer connection state to clear chart on disconnect and rebuild on
     // REconnect. Only react to actual state changes, and only rebuild after a real
     // disconnect (not the initial connect at startup which would wipe backfilled history).
+    //
+    // Capture `conn_gen` by value and check it WITHOUT dereferencing `self` — if a
+    // queued callback fires after the controller is freed, `self` is dangling and
+    // `self->generation_` would UAF (#1117). The conn_token check (via shared_ptr
+    // to the generation atomic) is the real safety net; conn_gen is a secondary
+    // guard that catches rebuild-induced generation bumps without touching `self`.
     auto* conn_subj = ps.get_printer_connection_state_subject();
     if (conn_subj) {
         auto conn_token = lifetime_.token();
@@ -417,7 +475,12 @@ void TempGraphController::setup_observers() {
             conn_subj, this,
             [conn_token, conn_gen, prev_state, was_disconnected](TempGraphController* self,
                                                                  int state) {
-                if (conn_token.expired() || conn_gen != self->generation_)
+                if (conn_token.expired())
+                    return;
+                // Don't deref `self` until after the token check passes — the
+                // token is the authoritative lifetime signal, self->generation_
+                // is only safe to read once we know `self` is still alive.
+                if (conn_gen != self->generation_)
                     return;
                 if (state == *prev_state)
                     return;

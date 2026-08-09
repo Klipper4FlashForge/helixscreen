@@ -2884,3 +2884,193 @@ TEST_CASE("PrintPreparationManager: collect_pre_start_gcode_lines skips NOT_APPL
     auto lines = PrintPreparationManagerTestAccess::get_pre_start_gcode_lines(manager);
     REQUIRE(lines.empty());
 }
+
+// ============================================================================
+// disabling_option_requires_plugin — pre-print toggle plugin-gating predicate
+//
+// A pre-print toggle is hidden (via the renderer's visibility subject) when
+// DISABLING it would require the HelixPrint plugin. "Requires the plugin" means
+// start_print() would reach check_modification_capability() and be forced to
+// drop the modification with a "Requires HelixPrint plugin" warning when the
+// plugin is absent. That only happens when NO pre-start short-circuit fires:
+//
+//   (b) MacroParam option AND the printer has no pre-start mechanism
+//       (setup_gcode empty AND no PreStartGcode option emits a line), OR
+//   (a) a file-embeddable op (bed_mesh/qgl/z_tilt/nozzle_clean) is embedded in
+//       the sliced file — UNLESS the same short-circuit fires.
+//
+// The K2 Plus PREPARE case (MacroParam bed_mesh + setup_gcode) MUST stay
+// visible: its native START_PRINT/PRINT_PREPARED handles the skip without the
+// plugin. That is the shipped regression these tests guard against.
+// ============================================================================
+
+namespace {
+
+PrePrintOption make_macro_param_opt(const std::string& id) {
+    PrePrintOption o;
+    o.id = id;
+    o.category = PrePrintCategory::Mechanical;
+    o.default_enabled = true;
+    o.strategy_kind = PrePrintStrategyKind::MacroParam;
+    o.strategy = PrePrintStrategyMacroParam{"SKIP_" + id, "0", "1", "0"};
+    return o;
+}
+
+PrePrintOption make_pre_start_gcode_opt(const std::string& id) {
+    PrePrintOption o;
+    o.id = id;
+    o.category = PrePrintCategory::Monitoring;
+    o.default_enabled = true;
+    o.strategy_kind = PrePrintStrategyKind::PreStartGcode;
+    // Empty requires_macro -> never gated by MacroParamCache, so it always
+    // emits a line (making the printer "have a pre-start mechanism").
+    o.strategy = PrePrintStrategyPreStartGcode{"AI_RUN SWITCH={value}"};
+    return o;
+}
+
+PrePrintOption make_runtime_command_opt(const std::string& id) {
+    PrePrintOption o;
+    o.id = id;
+    o.category = PrePrintCategory::Monitoring;
+    o.default_enabled = true;
+    o.strategy_kind = PrePrintStrategyKind::RuntimeCommand;
+    o.strategy = PrePrintStrategyRuntimeCommand{id + ":on", id + ":off"};
+    return o;
+}
+
+gcode::ScanResult scan_with_embedded_op(gcode::OperationType type) {
+    gcode::ScanResult scan;
+    gcode::DetectedOperation op;
+    op.type = type;
+    op.embedding = gcode::OperationEmbedding::DIRECT_COMMAND;
+    op.line_number = 5;
+    scan.operations.push_back(op);
+    return scan;
+}
+
+// Fresh singleton PrinterState with the given option set injected (bypasses the
+// printer DB) and a manager wired to it.
+struct GateFixture {
+    PrinterState& ps = get_printer_state();
+    PrintPreparationManager manager;
+
+    explicit GateFixture(PrePrintOptionSet set) {
+        lv_init_safe();
+        PrinterStateTestAccess::reset(ps);
+        ps.init_subjects(false);
+        PrinterStateTestAccess::set_option_set(ps, std::move(set));
+        manager.set_dependencies(nullptr, &ps);
+    }
+
+    bool requires_plugin(const std::string& id) {
+        const PrePrintOption* opt = ps.get_pre_print_option_set().find(id);
+        REQUIRE(opt != nullptr);
+        return manager.disabling_option_requires_plugin(*opt);
+    }
+};
+
+} // namespace
+
+TEST_CASE(
+    "disabling_option_requires_plugin: K2 regression — MacroParam + setup_gcode stays visible",
+    "[print_preparation][preprint][plugin_gate]") {
+    // MOST IMPORTANT case. K2 Plus bed_mesh is a MacroParam (PREPARE-style)
+    // option and the printer ships setup_gcode (PRINT_PREPARED). Disabling it
+    // is honored by the native macro, NOT the plugin -> must NOT be hidden.
+    PrePrintOptionSet set;
+    set.macro_name = "START_PRINT";
+    set.setup_gcode = "PRINT_PREPARED";
+    set.options.push_back(make_macro_param_opt("bed_mesh"));
+    GateFixture fx(std::move(set));
+
+    SECTION("no embedded op in file") {
+        REQUIRE(fx.requires_plugin("bed_mesh") == false);
+    }
+
+    SECTION("file ALSO embeds bed_mesh — still not required (correction to naive "
+            "\"file-embedded => plugin\")") {
+        // start_print() emits the setup_gcode pre-start block (MacroParam skip
+        // present + setup_gcode present), then routes the embedded-op removal
+        // through modify_and_print, which streams WITHOUT a capability check.
+        // So even a file-embedded op does not require the plugin here.
+        fx.manager.set_cached_scan_result(scan_with_embedded_op(gcode::OperationType::BED_MESH),
+                                          "k2_file.gcode");
+        REQUIRE(fx.requires_plugin("bed_mesh") == false);
+    }
+}
+
+TEST_CASE("disabling_option_requires_plugin: Voron — MacroParam, no pre-start mechanism, hidden",
+          "[print_preparation][preprint][plugin_gate]") {
+    // MacroParam bed_mesh with no setup_gcode and no PreStartGcode siblings:
+    // disabling it means rewriting the START_PRINT call in the file, which
+    // needs the plugin for clean history -> hidden when plugin absent.
+    PrePrintOptionSet set;
+    set.macro_name = "START_PRINT";
+    set.options.push_back(make_macro_param_opt("bed_mesh"));
+    GateFixture fx(std::move(set));
+
+    SECTION("no embedded op") {
+        REQUIRE(fx.requires_plugin("bed_mesh") == true);
+    }
+    SECTION("with embedded op") {
+        fx.manager.set_cached_scan_result(scan_with_embedded_op(gcode::OperationType::BED_MESH),
+                                          "voron.gcode");
+        REQUIRE(fx.requires_plugin("bed_mesh") == true);
+    }
+}
+
+TEST_CASE("disabling_option_requires_plugin: file-embedded term isolated",
+          "[print_preparation][preprint][plugin_gate]") {
+    // Use a (synthetic) RuntimeCommand strategy on a file-embeddable id so the
+    // MacroParam term is off and no pre-start line is emitted — this isolates
+    // the "file has the op embedded" contribution to the predicate.
+    PrePrintOptionSet set;
+    set.macro_name = "START_PRINT";
+    set.options.push_back(make_runtime_command_opt("bed_mesh"));
+    GateFixture fx(std::move(set));
+
+    SECTION("file embeds the op -> requires plugin") {
+        fx.manager.set_cached_scan_result(scan_with_embedded_op(gcode::OperationType::BED_MESH),
+                                          "f.gcode");
+        REQUIRE(fx.requires_plugin("bed_mesh") == true);
+    }
+    SECTION("file does NOT embed the op -> not required") {
+        REQUIRE(fx.requires_plugin("bed_mesh") == false);
+    }
+}
+
+TEST_CASE("disabling_option_requires_plugin: MacroParam disable dropped when a PreStartGcode "
+          "sibling short-circuits",
+          "[print_preparation][preprint][plugin_gate]") {
+    // No setup_gcode, but a PreStartGcode sibling emits a line -> start_print()
+    // takes the pre-start path and never reaches the capability check. The
+    // MacroParam skip is silently dropped (a pre-existing quirk), but crucially
+    // NO plugin warning fires, so the toggle is not hidden.
+    PrePrintOptionSet set;
+    set.macro_name = "START_PRINT";
+    set.options.push_back(make_macro_param_opt("bed_mesh"));
+    set.options.push_back(make_pre_start_gcode_opt("ai_detect"));
+    GateFixture fx(std::move(set));
+
+    REQUIRE(fx.requires_plugin("bed_mesh") == false);
+}
+
+TEST_CASE("disabling_option_requires_plugin: PreStartGcode and RuntimeCommand never require plugin",
+          "[print_preparation][preprint][plugin_gate]") {
+    SECTION("PreStartGcode option (with setup_gcode present — must not matter)") {
+        PrePrintOptionSet set;
+        set.macro_name = "START_PRINT";
+        set.setup_gcode = "PRINT_PREPARED";
+        set.options.push_back(make_pre_start_gcode_opt("ai_detect"));
+        GateFixture fx(std::move(set));
+        REQUIRE(fx.requires_plugin("ai_detect") == false);
+    }
+
+    SECTION("RuntimeCommand option (timelapse-like, no embeddable op)") {
+        PrePrintOptionSet set;
+        set.macro_name = "START_PRINT";
+        set.options.push_back(make_runtime_command_opt("timelapse"));
+        GateFixture fx(std::move(set));
+        REQUIRE(fx.requires_plugin("timelapse") == false);
+    }
+}

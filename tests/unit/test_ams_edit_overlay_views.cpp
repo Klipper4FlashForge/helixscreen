@@ -5,17 +5,18 @@
 // view transitions. Uses the full-UI fixture (real XML tree) plus the
 // AmsEditOverlayViewTestAccess friend shim.
 
-#include "app_globals.h"
-#include "display_settings_manager.h"
 #include "ui_ams_edit_overlay.h"
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
 #include "ui_update_queue.h"
 
 #include "../lvgl_ui_test_fixture.h"
+#include "app_globals.h"
+#include "display_settings_manager.h"
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
 #include "printer_state.h"
+#include "spoolman_manager.h"
 #include "spoolman_slot_saver.h"
 
 #include "../catch_amalgamated.hpp"
@@ -146,6 +147,33 @@ SlotInfo tracked_slot() {
     return info;
 }
 
+// A slot as apply_spool_to_slot() leaves it: spool_name is the Spoolman
+// filament name alone, with brand and material in their own fields. Nothing
+// about the name repeats the other two, so the chip has to join all three.
+SlotInfo tracked_slot_spoolman_named() {
+    SlotInfo info;
+    info.slot_index = 0;
+    info.spoolman_id = 42;
+    info.brand = "Polymaker";
+    info.material = "PLA";
+    info.spool_name = "Ambrosia Pink";
+    info.color_rgb = 0xFFB6C1;
+    return info;
+}
+
+// A Spoolman-linked lane on AFC older than v1.2.0: the firmware publishes
+// spool_id but no filament_name, so the slot carries the link and nothing to
+// name it with. Seen live on a BoxTurtle at 192.168.1.112 (spool #106).
+SlotInfo tracked_slot_named_only_in_cache() {
+    SlotInfo info;
+    info.slot_index = 0;
+    info.spoolman_id = 106;
+    info.material = "PLA";
+    info.color_rgb = 0x333333;
+    // brand and spool_name deliberately empty — only the cache knows them.
+    return info;
+}
+
 // Copy of untracked_slot() with weights explicitly marked unknown (-1
 // sentinel, also SlotInfo's default) — models a slot with no Spoolman/manual
 // weight data on record.
@@ -161,8 +189,8 @@ SlotInfo untracked_slot_without_weights() {
 // can reach test_screen()/process_lvgl() (both LVGLUITestFixture members).
 void show_overlay_for_mock_slot_without_weights(LVGLUITestFixture& fixture) {
     auto& overlay = get_ams_edit_overlay();
-    REQUIRE(
-        overlay.show_for_slot(fixture.test_screen(), 0, untracked_slot_without_weights(), nullptr, nullptr));
+    REQUIRE(overlay.show_for_slot(fixture.test_screen(), 0, untracked_slot_without_weights(),
+                                  nullptr, nullptr));
     UpdateQueue::instance().drain();
     fixture.process_lvgl(10);
 }
@@ -289,6 +317,75 @@ TEST_CASE_METHOD(LVGLUITestFixture, "spool card shows spool name + mark for trac
     CHECK(access.widget("btn_change_spool") == nullptr);
 
     close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "spool card keeps brand and material around a bare Spoolman filament name",
+                 "[ams_edit_overlay][card][spoolman][regression]") {
+    // apply_spool_to_slot() writes the Spoolman filament name into spool_name
+    // rather than a synthesized "vendor material". Printing that field verbatim
+    // would reduce the chip to "Ambrosia Pink" — a colour with no vendor and no
+    // material, strictly less than the "Generic · PETG" the untracked branch
+    // shows. The chip joins the three fields through the same dedup helper the
+    // AMS card uses, so a name that already contains the brand or the material
+    // still prints once.
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    REQUIRE(
+        overlay.show_for_slot(test_screen(), 0, tracked_slot_spoolman_named(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* label = access.widget("card_identity_label");
+    REQUIRE(label != nullptr);
+    CHECK(std::string(lv_label_get_text(label)) == "Polymaker Ambrosia Pink PLA");
+    CHECK(access.is_managed() == 1);
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "spool card names a linked slot from the identity cache when AFC cannot",
+                 "[ams_edit_overlay][card][spoolman][regression]") {
+    // AFC below v1.2.0 publishes spool_id but no filament_name, so the slot
+    // carries the Spoolman link with nothing to name it. The loaded card
+    // resolves that through the identity cache; this card must too, or it
+    // silently degrades to the untracked "Elegoo · PLA" for a spool we can
+    // name. Reproduced live on a BoxTurtle (spool #106) before this fix.
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    // Seed through the real entry point the weight poll uses.
+    SpoolInfo spool;
+    spool.id = 106;
+    spool.vendor = "Elegoo";
+    spool.filament_name = "Black Rapid PLA+";
+    spool.material = "PLA";
+    SpoolmanManager::invalidate_identity(106); // insert-if-absent: start clean
+    SpoolmanManager::cache_identity(spool);
+    REQUIRE(SpoolmanManager::find_identity(106).has_value());
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot_named_only_in_cache(), nullptr,
+                                  nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* label = access.widget("card_identity_label");
+    REQUIRE(label != nullptr);
+    // "PLA" is dropped because "PLA+" already states it.
+    CHECK(std::string(lv_label_get_text(label)) == "Elegoo Black Rapid PLA+");
+
+    close_editor_overlay();
+    SpoolmanManager::invalidate_identity(106);
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture,
@@ -458,6 +555,152 @@ TEST_CASE_METHOD(LVGLUITestFixture, "spool-edit Save applies color locally with 
     CHECK(access.working_info().color_rgb == 0xE53935);
     CHECK(access.working_info().spoolman_id == 0); // stays untracked
     CHECK_FALSE(access.save_opt_in());             // Save will NOT write Spoolman
+
+    close_editor_overlay();
+}
+
+// Bug A — the spool-edit round-trip drops the user's existing brand.
+//
+// A slot already carries a non-Generic vendor (e.g. "Sunlu"). The user opens
+// spool-edit to tweak something unrelated and taps Save without ever touching
+// the vendor dropdown. setup_details_selector() seeds the catalog selector
+// with the MATERIAL only (no vendor), and populate_vendor_dropdown() forces the
+// vendor to index 0 = "Generic". preselect_first() then highlights the Generic
+// product, so handle_spool_edit_save() reads details_selector_.highlighted()
+// and overwrites working_info_.brand with that product's brand ("Generic").
+// The user's "Sunlu" is silently lost even though they never edited the vendor.
+//
+// The fix will seed the selector's vendor from the slot's existing brand so an
+// untouched Save round-trips it. This test opens the editor on a Sunlu slot,
+// enters spool-edit, saves without changing the dropdown, and asserts the brand
+// survives.
+TEST_CASE_METHOD(LVGLUITestFixture, "spool-edit Save preserves an existing non-Generic brand",
+                 "[ams_edit_overlay][spool_edit][brand]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    // Untracked slot whose vendor is a real non-Generic brand the user chose.
+    SlotInfo sunlu;
+    sunlu.slot_index = 0;
+    sunlu.spoolman_id = 0;
+    sunlu.brand = "Sunlu";
+    sunlu.material = "PLA";
+    sunlu.color_rgb = 0xFEF043;
+    sunlu.color_name = "Yellow";
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, sunlu, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Save WITHOUT touching the vendor dropdown — the user only meant to confirm.
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // REGRESSION: the brand must round-trip. Currently the selector forced
+    // vendor=Generic on open, so the highlighted Generic product clobbers it.
+    CHECK(access.working_info().brand == "Sunlu");
+    CHECK(access.working_info().material == "PLA"); // material unchanged
+
+    close_editor_overlay();
+}
+
+// Regression — a Spoolman-only vendor no longer reaches the vendor dropdown.
+//
+// A vendor can live on the Spoolman server without a matching entry in the
+// bundled assets/filaments.json catalog (e.g. "PolyTerra"). The branded rework
+// dropped the live vendor fetch, so populate_vendor_dropdown() built the vendor
+// list from the catalog ALONE: such a vendor never appeared, the dropdown
+// snapped it to "Generic" on open, and an untouched Save baked "Generic" in —
+// silently overwriting the user's saved vendor.
+//
+// The fix: when Spoolman is connected, the host fetches the live vendor list and
+// merges it into the selector (which stays Spoolman-agnostic — it just receives
+// the names). The seed vendor then resolves and the brand string round-trips.
+TEST_CASE_METHOD(LVGLUITestFixture, "spool-edit surfaces a Spoolman-only vendor and Save keeps it",
+                 "[ams_edit_overlay][spool_edit][brand][spoolman]") {
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+    api.spoolman_mock().set_mock_spoolman_enabled(true);
+    // A vendor that exists on the Spoolman server but NOT in the bundled catalog.
+    api.spoolman_mock().get_mock_spools().clear();
+    api.spoolman_mock().add_vendor(42, "PolyTerra");
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    // Untracked slot (spoolman_id = 0 keeps the open-time id-sync fetch out of
+    // it) whose brand is the Spoolman-only vendor.
+    SlotInfo slot;
+    slot.slot_index = 0;
+    slot.spoolman_id = 0;
+    slot.brand = "PolyTerra";
+    slot.material = "PLA";
+    slot.color_rgb = 0x66CC33;
+    slot.color_name = "Green";
+
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, &api, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain(); // resolve the async vendor fetch's tok.defer
+    process_lvgl(10);
+
+    // The Spoolman-only vendor is now in the dropdown AND selected (seed honored).
+    CHECK(access.details_selector().current_vendor() == "PolyTerra");
+
+    // Save WITHOUT touching the dropdown -> the brand string round-trips.
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(access.working_info().brand == "PolyTerra");
+
+    close_editor_overlay();
+}
+
+// Regression guard — with no Spoolman, a catalog-absent vendor stays Generic.
+//
+// This is the ACCEPTED behavior for a Spoolman-less printer: the dropdown is
+// catalog-only, so an unknown brand has nowhere to resolve and falls to Generic.
+// The fix must NOT start a doomed vendor fetch when Spoolman is not connected.
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "spool-edit without Spoolman leaves a catalog-absent vendor at Generic",
+                 "[ams_edit_overlay][spool_edit][brand]") {
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 0); // no Spoolman -> no vendor fetch
+
+    SlotInfo slot;
+    slot.slot_index = 0;
+    slot.spoolman_id = 0;
+    slot.brand = "PolyTerra"; // absent from the bundled catalog
+    slot.material = "PLA";
+    slot.color_rgb = 0x66CC33;
+
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // No fetch fired -> the dropdown stayed catalog-only -> Generic.
+    CHECK(access.details_selector().current_vendor() == "Generic");
 
     close_editor_overlay();
 }
@@ -818,8 +1061,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "picker pre-selects the first row for unlink
     close_editor_overlay();
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture,
-                 "picker-entry spool selection commits and closes the editor",
+TEST_CASE_METHOD(LVGLUITestFixture, "picker-entry spool selection commits and closes the editor",
                  "[ams_edit_overlay][picker][header_save]") {
     // Task #13: when the editor is opened directly on the picker (context-menu
     // "Select spool"), choosing a spool is a one-tap commit — apply + close the
@@ -835,12 +1077,13 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
     bool fired = false;
     AmsEditOverlay::EditResult captured;
-    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr,
-                                  [&](const AmsEditOverlay::EditResult& r) {
-                                      fired = true;
-                                      captured = r;
-                                  },
-                                  /*open_on_picker=*/true));
+    REQUIRE(overlay.show_for_slot(
+        test_screen(), 0, untracked_slot(), nullptr,
+        [&](const AmsEditOverlay::EditResult& r) {
+            fired = true;
+            captured = r;
+        },
+        /*open_on_picker=*/true));
     UpdateQueue::instance().drain();
     process_lvgl(10);
     REQUIRE(access.view() == AmsEditOverlay::kViewSpoolPicker);
@@ -897,12 +1140,13 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
     bool fired = false;
     AmsEditOverlay::EditResult captured;
-    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), &api,
-                                  [&](const AmsEditOverlay::EditResult& r) {
-                                      fired = true;
-                                      captured = r;
-                                  },
-                                  /*open_on_picker=*/true));
+    REQUIRE(overlay.show_for_slot(
+        test_screen(), 0, tracked_slot(), &api,
+        [&](const AmsEditOverlay::EditResult& r) {
+            fired = true;
+            captured = r;
+        },
+        /*open_on_picker=*/true));
     UpdateQueue::instance().drain();
     process_lvgl(10);
     REQUIRE(access.view() == AmsEditOverlay::kViewSpoolPicker);
@@ -1056,8 +1300,8 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     // modal is up (completion pending) or the fallback save fired against the
     // linked spool — but never a silent no-op relink close.
     const bool confirm_pending = !ModalStack::instance().stack_empty() && !fired;
-    const bool save_ran = !api.spoolman_mock().spool_updates.empty() ||
-                          !api.spoolman_mock().filament_updates.empty();
+    const bool save_ran =
+        !api.spoolman_mock().spool_updates.empty() || !api.spoolman_mock().filament_updates.empty();
     CHECK((confirm_pending || save_ran));
 
     // Dismiss any modal so teardown is clean.
@@ -1180,8 +1424,15 @@ TEST_CASE_METHOD(
 
     CHECK(fire_count == 1);
     CHECK(captured.saved);
-    CHECK((!api.spoolman_mock().spool_updates.empty() ||
-          !api.spoolman_mock().filament_updates.empty()));
+    // The primary action is now "It's a new spool": it CREATES and rebinds
+    // rather than patching the linked spool, so the previously linked spool
+    // must come through untouched. Reaching this outcome at all was the point
+    // of the change — before it, a different physical spool in a linked lane
+    // could only overwrite the old spool's identity.
+    CHECK(captured.slot_info.spoolman_id != 0);
+    for (const auto& rec : api.spoolman_mock().spool_updates) {
+        CHECK(rec.spool_id != 7); // linked_a.id — never patched
+    }
 
     get_printer_state().set_spoolman_available(false); // restore clean slate
     UpdateQueue::instance().drain();
@@ -1258,13 +1509,21 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     // Count every PATCH that set the remaining weight, across BOTH paths: the
     // combined update_spoolman_spool() body and the dedicated
     // update_spoolman_spool_weight() path.
-    int weight_patches = static_cast<int>(api.spoolman_mock().weight_updates.size());
-    for (const auto& rec : api.spoolman_mock().spool_updates) {
-        if (rec.patch.contains("remaining_weight")) {
-            weight_patches++;
-        }
+    // Confirming now creates a NEW spool instead of patching the linked one, so
+    // the invariant this test guards changes shape: the linked spool must
+    // receive NO weight PATCH at all. (The single-PATCH rule still applies to
+    // the update path, which the LinkIntent tests in
+    // test_spoolman_slot_saver.cpp cover directly.)
+    int linked_weight_patches = 0;
+    for (const auto& rec : api.spoolman_mock().weight_updates) {
+        if (rec.spool_id == 7)
+            linked_weight_patches++;
     }
-    CHECK(weight_patches == 1);
+    for (const auto& rec : api.spoolman_mock().spool_updates) {
+        if (rec.spool_id == 7 && rec.patch.contains("remaining_weight"))
+            linked_weight_patches++;
+    }
+    CHECK(linked_weight_patches == 0);
 
     get_printer_state().set_spoolman_available(false); // restore clean slate
     UpdateQueue::instance().drain();
@@ -1356,9 +1615,10 @@ TEST_CASE_METHOD(LVGLUITestFixture, "picker pre-selects the current spool when l
     close_editor_overlay();
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture,
-                 "spool-edit Save after a type change stages the checked product, not the old identity",
-                 "[ams_edit_overlay][catalog_selector]") {
+TEST_CASE_METHOD(
+    LVGLUITestFixture,
+    "spool-edit Save after a type change stages the checked product, not the old identity",
+    "[ams_edit_overlay][catalog_selector]") {
     // Regression for the silent-drop bug: user changes the Type dropdown, the
     // product list rebuilds, then taps header Save. Before the fix the rebuilt
     // list had nothing highlighted and Save skipped the identity entirely,
@@ -1400,18 +1660,24 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     close_editor_overlay();
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture,
-                 "spool-edit Save applies Generic identity when a whitelisted type has no catalog product",
-                 "[ams_edit_overlay][catalog_selector]") {
+TEST_CASE_METHOD(
+    LVGLUITestFixture,
+    "spool-edit Save applies Generic identity when a whitelisted type has no catalog product",
+    "[ams_edit_overlay][catalog_selector]") {
     // A firmware-whitelisted material with no seeded catalog product yields an
     // empty (all-unchecked) product list. Save must not silently no-op the
     // identity change: apply vendor Generic + the selected type string.
+    //
+    // PEEK is the example because Generic stocks no PEEK product at all, so it
+    // stands as its own appended heading. A stocked material would instead fold
+    // into its family heading (SILK -> "Silk PLA" -> the PLA heading) and would
+    // no longer exercise the empty-product-list path this test covers.
     auto& overlay = get_ams_edit_overlay();
     AmsEditOverlayViewTestAccess access(overlay);
 
     SlotInfo slot = untracked_slot();
-    slot.brand = "eSUN";     // prove the brand gets forced to Generic
-    slot.material = "PETG";  // differs from the selected SILK
+    slot.brand = "eSUN";    // prove the brand gets forced to Generic
+    slot.material = "PETG"; // differs from the selected PEEK
     REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, nullptr, nullptr));
     UpdateQueue::instance().drain();
     process_lvgl(10);
@@ -1421,19 +1687,20 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     process_lvgl(10);
 
     auto& sel = access.details_selector();
-    sel.configure(std::nullopt, std::vector<std::string>{"SILK"});
+    sel.configure(std::nullopt, std::vector<std::string>{"PEEK"});
     sel.populate();
-    REQUIRE(sel.current_type() == "SILK");
+    REQUIRE(sel.current_type() == "PEEK");
     REQUIRE(sel.highlighted() == nullptr);
 
     access.call_handle_spool_edit_save();
-    CHECK(access.working_info().material == "SILK");
+    CHECK(access.working_info().material == "PEEK");
     CHECK(access.working_info().brand == "Generic");
 
     close_editor_overlay();
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture, "header Save shows on overview + spool-edit, hides on picker/color",
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "header Save shows on overview + spool-edit, hides on picker/color",
                  "[ams_edit_overlay][views]") {
     auto& overlay = get_ams_edit_overlay();
     AmsEditOverlayViewTestAccess access(overlay);
@@ -1540,7 +1807,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     seed.filament_id = 3;
     seed.vendor = "Generic";
     seed.material = "PLA";
-    seed.color_name = "Navy";
+    seed.filament_name = "Navy";
     seed.color_hex = "#112233";
     seed.price = 19.99;
     seed.remaining_weight_g = 500.0;
@@ -1606,8 +1873,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     const auto& updates = api.spoolman_mock().spool_updates;
     bool price_patched = false;
     for (const auto& u : updates) {
-        if (u.patch.contains("price") &&
-            std::abs(u.patch["price"].get<double>() - 29.99) < 0.001) {
+        if (u.patch.contains("price") && std::abs(u.patch["price"].get<double>() - 29.99) < 0.001) {
             price_patched = true;
         }
     }
@@ -1628,8 +1894,8 @@ TEST_CASE_METHOD(LVGLUITestFixture, "weightless slot opens clean — no fabricat
     REQUIRE_FALSE(access.is_dirty());
     auto* save_dis = lv_xml_get_subject(nullptr, "ams_edit_save_disabled");
     REQUIRE(save_dis != nullptr);
-    REQUIRE(lv_subject_get_int(save_dis) == 1);          // Save stays disabled
-    REQUIRE(access.working_info().total_weight_g <= 0);  // untouched
+    REQUIRE(lv_subject_get_int(save_dis) == 1);             // Save stays disabled
+    REQUIRE(access.working_info().total_weight_g <= 0);     // untouched
     REQUIRE(access.working_info().remaining_weight_g <= 0); // untouched
 
     close_editor_overlay();
@@ -1682,7 +1948,6 @@ TEST_CASE("build_spool_patches splits spool-level vs filament-level fields",
     CHECK(empty_filament.empty());
 }
 
-
 TEST_CASE_METHOD(LVGLUITestFixture,
                  "ams edit overlay reclaims its widget tree on close and rebuilds on reopen",
                  "[ams_edit_overlay][lifecycle]") {
@@ -1734,7 +1999,12 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     lv_obj_t* root2 = overlay.get_root();
     REQUIRE(root2 != nullptr);
     REQUIRE(lv_obj_is_valid(root2));
-    CHECK(root2 != root1);
+    // Deliberately NOT CHECK(root2 != root1): the allocator reuses the block the
+    // first tree just released, so that comparison fails ~7 runs in 8 while the
+    // teardown is working perfectly. Freshness is already established above by
+    // CHECK_FALSE(lv_obj_is_valid(root1)) — the old tree really was reclaimed —
+    // and by the functional assertions below, neither of which depends on where
+    // the allocator happens to place the new root.
     AmsEditOverlayViewTestAccess access(overlay);
     access.call_enter_spool_edit();
     UpdateQueue::instance().drain();
@@ -1792,12 +2062,13 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
     bool fired = false;
     AmsEditOverlay::EditResult captured;
-    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), &api,
-                                  [&](const AmsEditOverlay::EditResult& r) {
-                                      fired = true;
-                                      captured = r;
-                                  },
-                                  /*open_on_picker=*/true));
+    REQUIRE(overlay.show_for_slot(
+        test_screen(), 0, untracked_slot(), &api,
+        [&](const AmsEditOverlay::EditResult& r) {
+            fired = true;
+            captured = r;
+        },
+        /*open_on_picker=*/true));
     UpdateQueue::instance().drain();
     process_lvgl(10);
     REQUIRE(access.view() == AmsEditOverlay::kViewSpoolPicker);
@@ -1828,4 +2099,145 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     get_printer_state().set_spoolman_available(false);
     UpdateQueue::instance().drain();
     process_lvgl(10);
+}
+
+// =============================================================================
+// Catalog product identity round-trip (bundle TDQCCQB3, AD5X v0.99.107)
+// =============================================================================
+//
+// The user edits an AMS slot, picks SUNLU "PLA+ 2.0", and Save reports success.
+// Reopening the editor shows "PLA Marble". Brand and material family DO persist,
+// which is what made it look like a reload bug — it is not. The catalog product
+// identity was never captured at SAVE:
+//
+//   - handle_spool_edit_save() read the highlighted EffectiveFilament but copied
+//     only type / brand / the three temps into working_info_. ef->name and
+//     ef->id were read nowhere.
+//   - clear_catalog() then wiped the selector-local highlighted_id_.
+//   - On reopen, setup_details_selector() seeded vendor + material family only,
+//     and preselect_first() took ordered_products_for().front(). All six SUNLU
+//     PLA products share variant_key "" and rank 1, so the tiebreak is
+//     lowercased-name alphabetical and "pla marble" always sorts first.
+//
+// Deterministic, which is why this test can assert an exact product id.
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "spool-edit Save persists the picked catalog product across a reopen",
+                 "[ams_edit_overlay][spool_edit][catalog_identity]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    SlotInfo slot;
+    slot.slot_index = 0;
+    slot.spoolman_id = 0;
+    slot.brand = "SUNLU";
+    slot.material = "PLA";
+    slot.color_rgb = 0xFEF043;
+    slot.color_name = "Yellow";
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Sanity: the vendor seed resolved, and the list really does put the wrong
+    // product first — so a passing assertion below cannot be an accident of
+    // ordering.
+    REQUIRE(access.details_selector().current_vendor() == "SUNLU");
+    REQUIRE(access.details_selector().current_type() == "PLA");
+    REQUIRE(access.details_selector().product_names_for_test().front() == "PLA Marble");
+
+    // The user taps the "PLA+ 2.0" row.
+    access.details_selector().select_product_for_test("sunlu-pla-plus-2-0");
+    REQUIRE(access.details_selector().highlighted() != nullptr);
+    REQUIRE(access.details_selector().highlighted()->name == "PLA+ 2.0");
+
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Save must capture the product identity, not just the material family.
+    const SlotInfo saved = access.working_info();
+    CHECK(saved.catalog_id == "sunlu-pla-plus-2-0");
+    CHECK(saved.product_name == "PLA+ 2.0");
+    CHECK(saved.material == "PLA"); // family still the firmware-facing string
+    CHECK(saved.brand == "SUNLU");
+
+    close_editor_overlay();
+
+    // --- Reopen with exactly what was persisted -------------------------------
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, saved, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // THE regression assertion: the same product is checked, not the
+    // alphabetically-first one.
+    REQUIRE(access.details_selector().highlighted() != nullptr);
+    CHECK(access.details_selector().highlighted()->id == "sunlu-pla-plus-2-0");
+    CHECK(access.details_selector().highlighted()->name == "PLA+ 2.0");
+    CHECK(access.details_selector().current_vendor() == "SUNLU");
+
+    // And an untouched Save round-trips it rather than re-collapsing to first.
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    CHECK(access.working_info().catalog_id == "sunlu-pla-plus-2-0");
+    CHECK(access.working_info().product_name == "PLA+ 2.0");
+
+    close_editor_overlay();
+}
+
+// A stored id that no longer resolves (a custom overlay product the user
+// deleted, or an id retired by an app update) must not strand the editor: the
+// selector falls back to preselect_first() so the list still shows a checked
+// row, and the SAVE overwrites the dead id with whatever the user confirms.
+// The old product_name is not preserved through such a save — the user is
+// looking at, and confirming, a different product.
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "spool-edit tolerates a stored catalog id that no longer resolves",
+                 "[ams_edit_overlay][spool_edit][catalog_identity]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    SlotInfo slot;
+    slot.slot_index = 0;
+    slot.spoolman_id = 0;
+    slot.brand = "SUNLU";
+    slot.material = "PLA";
+    slot.color_rgb = 0xFEF043;
+    slot.catalog_id = "sunlu-pla-plus-9-9-retired";
+    slot.product_name = "PLA+ 9.9";
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Fallback path: a checked row (the preselect_on_change invariant) on the
+    // right vendor+family, just not the dead id.
+    REQUIRE(access.details_selector().highlighted() != nullptr);
+    CHECK(access.details_selector().current_vendor() == "SUNLU");
+    CHECK(access.details_selector().highlighted()->id != "sunlu-pla-plus-9-9-retired");
+
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // The dead id is replaced by the product the user actually confirmed —
+    // never carried forward, or the lane would advertise an id nothing resolves
+    // for the rest of its life.
+    CHECK(access.working_info().catalog_id != "sunlu-pla-plus-9-9-retired");
+    CHECK_FALSE(access.working_info().catalog_id.empty());
+    CHECK(access.working_info().product_name != "PLA+ 9.9");
+
+    close_editor_overlay();
 }

@@ -631,7 +631,9 @@ enum RenderState {
 Run with `-vvv` (trace level) to see detailed performance metrics:
 
 ```bash
-./build/bin/helix-screen -p bed-mesh --test -vvv 2>&1 | grep "\[PERF\]"
+# Boot mock, then bring up the bed-mesh overlay (see docs/devel/HELIXCTL.md)
+./build/bin/helix-screen --test -vvv 2>&1 | grep "\[PERF\]" &
+./build/bin/helix-screen ctl navigate controls; ./build/bin/helix-screen ctl click btn_bed_mesh
 ```
 
 **Output:**
@@ -677,21 +679,24 @@ spdlog::trace("[PERF] Render: ...");
 
 **2. macOS Instruments**
 ```bash
-# Profile CPU usage
-instruments -t "Time Profiler" ./build/bin/helix-screen -p bed-mesh --test
+# Profile CPU usage — bring up the bed-mesh overlay via helix-screen ctl after launch
+instruments -t "Time Profiler" ./build/bin/helix-screen --test &
+./build/bin/helix-screen ctl navigate controls; ./build/bin/helix-screen ctl click btn_bed_mesh
 ```
 
 **3. Valgrind (Linux)**
 ```bash
-# Check for memory leaks
-valgrind --leak-check=full ./build/bin/helix-screen -p bed-mesh --test
+# Check for memory leaks — bring up the bed-mesh overlay via helix-screen ctl after launch
+valgrind --leak-check=full ./build/bin/helix-screen --test &
+./build/bin/helix-screen ctl navigate controls; ./build/bin/helix-screen ctl click btn_bed_mesh
 ```
 
 **4. gprof (GCC)**
 ```bash
 # Compile with profiling
 make CXXFLAGS="-pg" clean build
-./build/bin/helix-screen -p bed-mesh --test
+./build/bin/helix-screen --test &
+./build/bin/helix-screen ctl navigate controls; ./build/bin/helix-screen ctl click btn_bed_mesh
 gprof build/bin/helix-screen gmon.out > profile.txt
 ```
 
@@ -755,10 +760,19 @@ gprof build/bin/helix-screen gmon.out > profile.txt
 
 ### Default Rotation Angles
 
+The renderer owns the camera orientation (`bed_mesh_view_state_t::angle_x` /
+`angle_z`). The `<bed_mesh>` widget does not keep its own copy — the drag
+handler reads the current angles through `bed_mesh_renderer_get_view_state()`,
+adds the pixel delta, and writes back via `bed_mesh_renderer_set_rotation()`,
+which clamps the tilt and wraps the spin.
+
 ```cpp
-// ui_bed_mesh.h
-#define BED_MESH_ROTATION_X_DEFAULT 30.0  // Tilt angle (degrees)
-#define BED_MESH_ROTATION_Z_DEFAULT 45.0  // Spin angle (degrees)
+// bed_mesh_renderer.h
+#define BED_MESH_DEFAULT_ANGLE_X (-25.0) // Tilt: 25 degrees down from horizontal
+#define BED_MESH_DEFAULT_ANGLE_Z (-45.0) // Spin: 45 degrees clockwise from above
+
+#define BED_MESH_ANGLE_X_MIN (-89.0)     // Near top-down
+#define BED_MESH_ANGLE_X_MAX (0.0)       // Edge-on
 ```
 
 ---
@@ -774,9 +788,9 @@ gprof build/bin/helix-screen gmon.out > profile.txt
 
 ### Code Files
 
-- `src/bed_mesh_renderer.cpp` - Core 3D rendering engine
-- `src/ui_bed_mesh.cpp` - LVGL widget wrapper
-- `src/ui_panel_bed_mesh.cpp` - UI integration and data binding
+- `src/rendering/bed_mesh_renderer.cpp` - Core 3D rendering engine
+- `src/ui/ui_bed_mesh.cpp` - LVGL widget wrapper
+- `src/ui/ui_panel_bed_mesh.cpp` - UI integration and data binding
 - `include/bed_mesh_renderer.h` - Public API and data structures
 
 ### External Resources

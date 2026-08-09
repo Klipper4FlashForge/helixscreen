@@ -11,6 +11,28 @@ Power button handling varies significantly across different setups:
 
 The key insight: **there is no standard**. Each firmware/mod handles this differently.
 
+The sections below capture the original research. The confirmation-dialog flow described in that research has since **shipped** — see **As Built** immediately below.
+
+---
+
+## As Built (Shipped)
+
+HelixScreen ships the UI-initiated confirmation dialog — **Option C (Shutdown Panel, like KlipperScreen)** from the research in section 5. It is a UI shutdown/reboot flow, **not** a hardware power-button interceptor (Options B/D's evdev listener was not built).
+
+**Entry points** — both open the same dialog:
+- **Advanced panel Power row** — `AdvancedPanel::handle_power_clicked()` calls `helix::show_shutdown_dialog(...)` (`src/ui/ui_panel_advanced.cpp:244-246`).
+- **Home-panel "shutdown" widget** — the `ShutdownWidget` panel widget (`src/ui/panel_widgets/shutdown_widget.{h,cpp}`), registered as `"shutdown"` / "Shutdown/Reboot" in the panel widget registry (`src/ui/panel_widget_registry.cpp:59`, `register_shutdown_widget()`). Its click handler also routes through `show_shutdown_dialog(...)`.
+
+**Flow:**
+1. User taps the Power row (Advanced panel) or the home-panel Shutdown widget.
+2. `helix::show_shutdown_dialog(api, modal, lifetime, parent_screen)` (`src/ui/panel_widgets/shutdown_widget.h:53`, impl `shutdown_widget.cpp:329`) configures and shows a `ShutdownModal` confirmation dialog.
+3. Scope depends on host topology:
+   - **Same host as Moonraker:** single-scope Shutdown/Reboot. When Moonraker is connected these run `machine.shutdown` / `machine.reboot` via `MoonrakerAPI`; when it isn't, they fall back to a local `SystemPower` shutdown/reboot so the user isn't forced to the hardware switch.
+   - **Different host (screen-only setup):** dual-scope — separate "printer", "screen", or "both" actions. The "both" flows defer the local `SystemPower` call until the printer-side ack (hence the `AsyncLifetimeGuard`).
+4. Confirming executes the chosen action; cancelling dismisses the modal.
+
+Both entry points share one dialog implementation, so behavior is identical regardless of where it was launched.
+
 ---
 
 ## 1. Linux Kernel / Systemd Handling

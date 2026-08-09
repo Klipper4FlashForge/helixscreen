@@ -121,6 +121,15 @@ jobs:
         ./build/bin/helix-screen --help || true
         echo "Binary verified"
 
+    # Actually run the UI. --help only proves the binary links; this boots the
+    # real application headless (SDL dummy driver + software renderer), builds a
+    # few panels over the control socket, captures a screenshot and requires a
+    # clean exit. Catches startup/shutdown crashes and broken panels that a
+    # compile-only check cannot see.
+    - name: Headless smoke test
+      timeout-minutes: 5
+      run: ./scripts/smoke-headless.sh
+
     - name: Upload build artifacts
       uses: actions/upload-artifact@v7
       with:
@@ -145,10 +154,16 @@ jobs:
     - name: Initialize submodules
       uses: ./.github/actions/init-submodules
 
+    # This job only ever gets the -dev-free runtime closure, so every library the
+    # compile job picked up transitively via a -dev package has to be named here.
+    # libgles2 is the one that is easy to miss: ENABLE_GLES_3D links -lGLESv2 for
+    # the 3D G-code renderer, and on the compile runner libsdl2-dev drags it in.
+    # Without it helix-screen never reaches main() — ld.so exits 127 before the
+    # first log line, which surfaces as every pytest UI test erroring in setup.
     - name: Install runtime dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libsdl2-2.0-0 libfmt-dev libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libpng16-16 libjpeg8
+        sudo apt-get install -y libsdl2-2.0-0 libgles2 libfmt-dev libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libpng16-16 libjpeg8
 
     - name: Download build artifacts
       uses: actions/download-artifact@v8
@@ -159,6 +174,18 @@ jobs:
     - name: Make binaries executable
       run: chmod +x build/bin/helix-screen build/bin/helix-tests
 
+    # Fail here, with the library name, rather than 200 lines into a pytest run
+    # that reports 38 identical "exited with 127 during boot" setup errors.
+    - name: Verify the runtime library closure is complete
+      run: |
+        missing=$(ldd build/bin/helix-screen build/bin/helix-tests | grep 'not found' | sort -u || true)
+        if [ -n "$missing" ]; then
+          echo "::error::Missing runtime libraries — add the providing packages to 'Install runtime dependencies'"
+          echo "$missing"
+          exit 1
+        fi
+        echo "All shared libraries resolve"
+
     - name: Run unit tests
       timeout-minutes: 10
       run: |
@@ -166,7 +193,9 @@ jobs:
         echo "Running $NPROCS test shards in parallel..."
         pids=""
         for i in $(seq 0 $((NPROCS-1))); do
-          ./build/bin/helix-tests "~[.] ~[slow]" --shard-count $NPROCS --shard-index $i 2>&1 | sed "s/^/[shard $i] /" &
+          # Subshell + pipefail: without both, $! is the sed at the end of the
+          # pipeline and `wait` collects sed's status, so a failing shard exits 0.
+          (set -o pipefail; ./build/bin/helix-tests "~[.] ~[slow]" --shard-count $NPROCS --shard-index $i 2>&1 | sed "s/^/[shard $i] /") &
           pids="$pids $!"
         done
         failed=0
@@ -178,6 +207,36 @@ jobs:
           exit 1
         fi
         echo "All tests passed"
+
+    - name: Setup Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+
+    - name: Install Python test dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    # Invoked directly rather than through `make test-ui-pytest`: that target's
+    # .venv check exists to catch a local dev who forgot `make venv-setup`, which
+    # doesn't apply here — this runner's Python comes from actions/setup-python,
+    # not a repo-local .venv, so requiring one would just be a false failure.
+    #
+    # --ignore=tests/ui/test_screens.py excludes the 8 golden-image tests. The
+    # other 38 tests assert on behavior (navigation, wait_idle, text reading,
+    # capture mechanics, screen state) and are portable across machines; the
+    # goldens compare pixels, and cross-machine font rasterization is exactly the
+    # golden-portability risk the design spec calls out (see
+    # docs/devel/UI_TESTING.md § "Out-of-Process Tests" / the design spec's Risks
+    # section). Goldens stay a local-only gate until someone deliberately captures
+    # them inside a fixed container with pinned fonts — don't "fix" this by
+    # dropping the --ignore; that trades a green build for flaky pixel diffs
+    # unrelated to whatever change actually broke it.
+    - name: Run out-of-process UI tests (pytest, excluding goldens)
+      timeout-minutes: 5
+      run: pytest tests/ui/ -v --ignore=tests/ui/test_screens.py
 
   build-macos:
     name: Build (macOS 14)
@@ -318,6 +377,102 @@ jobs:
   # Runs per-PR/push so installer & lint regressions block merge instead of
   # surfacing in nightly hours later.
   # =========================================================================
+  # helix-splash and helix-watchdog link DISPLAY_LIB with -Wl,--whole-archive, so
+  # every object in that archive is a hard link dependency of both binaries even
+  # though neither calls into most of it. The embedded targets build -flto
+  # -ffunction-sections and drop the unreachable callers before symbol resolution;
+  # pi, pi32 and x86 do not, so a new call added to any DISPLAY_LIB source breaks
+  # exactly those three and nothing else. Nothing else in this workflow links
+  # either binary — the desktop build is SDL, which skips them outright — so
+  # before this job the release workflow was the first place they were ever
+  # linked, i.e. on tag push. v0.99.104 died that way (redact::mac, #1191).
+  #
+  # x86-fbdev is the cheapest configuration that reproduces it: native x86_64,
+  # no LTO, DISPLAY_BACKEND=fbdev so both binaries build, and no EGL/GLES/DRM
+  # packages needed. This is a link check, not a release artifact — the runner's
+  # glibc is newer than the Bullseye container the real x86 build uses.
+  link-aux-binaries:
+    name: Link splash + watchdog (non-LTO)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+      with:
+        submodules: false
+
+    - name: Initialize submodules
+      uses: ./.github/actions/init-submodules
+
+    - name: Install dependencies
+      uses: nick-fields/retry@v4
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        command: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            make \
+            python3 \
+            python3-venv \
+            npm \
+            libssl-dev \
+            pkg-config \
+            libfmt-dev \
+            libnl-3-dev \
+            libnl-genl-3-dev \
+            libusb-1.0-0-dev \
+            libsystemd-dev \
+            libbluetooth-dev \
+            ccache
+
+    - name: Cache ccache
+      uses: actions/cache@v5
+      with:
+        path: ~/.cache/ccache
+        key: ccache-x86-fbdev-${{ github.sha }}
+        restore-keys: |
+          ccache-x86-fbdev-
+
+    - name: Install Node.js dependencies
+      uses: nick-fields/retry@v4
+      with:
+        timeout_minutes: 2
+        max_attempts: 3
+        command: npm install
+
+    - name: Configure ccache
+      run: |
+        ccache --set-config=max_size=2G
+        ccache --set-config=compression=true
+
+    - name: Setup Python venv for translations
+      run: make venv-setup
+
+    - name: Link helix-splash and helix-watchdog
+      timeout-minutes: 45
+      env:
+        CC: ccache clang
+        CXX: ccache clang++
+      run: |
+        make PLATFORM_TARGET=x86-fbdev SKIP_OPTIONAL_DEPS=1 -j$(nproc) splash watchdog
+
+    - name: Verify both binaries were actually produced
+      run: |
+        # The splash/watchdog targets print "not built (SDL/desktop build)" and
+        # exit 0 when DISPLAY_BACKEND is neither drm nor fbdev. Without this
+        # check a misconfigured target would make the job pass by doing nothing.
+        for bin in helix-splash helix-watchdog; do
+          path="build/x86-fbdev/bin/$bin"
+          if [ ! -x "$path" ]; then
+            echo "::error::$path missing — the link check did not link anything"
+            exit 1
+          fi
+          echo "OK: $path ($(stat -c%s "$path") bytes)"
+        done
+
   test-shell:
     name: Shell Tests (BATS)
     runs-on: ubuntu-22.04
@@ -335,10 +490,36 @@ jobs:
     - name: Run shell tests
       run: bats tests/shell/
 
+  test-telemetry-worker:
+    name: Telemetry Worker Tests (vitest)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+      with:
+        submodules: false
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    # `npm install`, not `npm ci`: package-lock.json is gitignored repo-wide
+    # (.gitignore "Dependencies" block), so there is no lockfile to install
+    # from and nothing to key a cache on.
+    - name: Install dependencies
+      working-directory: server/telemetry-worker
+      run: npm install
+
+    - name: Run worker tests
+      working-directory: server/telemetry-worker
+      run: npm test
+
   build-status:
     name: Build Status
     runs-on: ubuntu-latest
-    needs: [compile-ubuntu, test-ubuntu, build-macos, build-android, test-shell]
+    needs: [compile-ubuntu, test-ubuntu, build-macos, build-android, link-aux-binaries, test-shell, test-telemetry-worker]
     if: always()
 
     steps:
@@ -362,6 +543,14 @@ jobs:
         fi
         if [ "${{ needs.test-shell.result }}" != "success" ]; then
           echo "Shell tests failed"
+          exit 1
+        fi
+        if [ "${{ needs.test-telemetry-worker.result }}" != "success" ]; then
+          echo "Telemetry worker tests failed"
+          exit 1
+        fi
+        if [ "${{ needs.link-aux-binaries.result }}" != "success" ]; then
+          echo "splash/watchdog link check failed"
           exit 1
         fi
         echo "All builds passed"

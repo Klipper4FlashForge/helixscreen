@@ -9,8 +9,8 @@
 #include "helix_version.h"
 #include "http_executor.h"
 #include "hv/requests.h"
-#include "logging_init.h"
 #include "i_moonraker_api.h"
+#include "logging_init.h"
 #include "platform_capabilities.h"
 #include "platform_info.h"
 #include "printer_state.h"
@@ -60,6 +60,16 @@ json DebugBundleCollector::collect(const BundleOptions& options) {
         bundle["system"] = json{{"error", e.what()}};
     }
 
+    // Why the in-app updater is (or isn't) usable on this device. Kept as a
+    // top-level sibling of `system` because the answer to "cannot update" is a
+    // handful of specific predicates, not general host facts.
+    try {
+        bundle["update"] = collect_update_info();
+    } catch (const std::exception& e) {
+        spdlog::warn("[DebugBundle] Failed to collect update info: {}", e.what());
+        bundle["update"] = json{{"error", e.what()}};
+    }
+
     try {
         bundle["printer"] = collect_printer_info();
     } catch (const std::exception& e) {
@@ -67,6 +77,10 @@ json DebugBundleCollector::collect(const BundleOptions& options) {
         bundle["printer"] = json{{"error", e.what()}};
     }
 
+    // Sanitized like klipper_log/moonraker_log below. This is defence in depth,
+    // not the primary control: it catches MACs, tokens and emails, but an SSID
+    // is an arbitrary string no regex can recognise, so SSIDs are kept out of
+    // the ring at the log call site instead (see include/log_redact.h).
     try {
         auto log_tail = collect_log_tail();
         if (!log_tail.empty()) {
@@ -117,7 +131,7 @@ json DebugBundleCollector::collect(const BundleOptions& options) {
 
         auto crash_history = CrashHistory::instance().to_json();
         if (!crash_history.empty()) {
-            bundle["crash_history"] = crash_history;
+            bundle["crash_history"] = sanitize_json(crash_history);
         }
 
         auto device_id = collect_device_id(config_dir);
@@ -225,6 +239,107 @@ json DebugBundleCollector::collect_system_info() {
 }
 
 // =============================================================================
+// Update diagnostics
+// =============================================================================
+
+// Readable name for the last check's status. The raw enum ordinal means nothing
+// to a human reading a bundle or to the dashboard rendering it.
+static const char* update_status_name(UpdateChecker::Status status) {
+    switch (status) {
+    case UpdateChecker::Status::Idle:
+        return "idle";
+    case UpdateChecker::Status::Checking:
+        return "checking";
+    case UpdateChecker::Status::UpdateAvailable:
+        return "update_available";
+    case UpdateChecker::Status::UpToDate:
+        return "up_to_date";
+    case UpdateChecker::Status::Error:
+        return "error";
+    }
+    return "unknown";
+}
+
+json DebugBundleCollector::build_update_info(const UpdateDiagnostics& diag) {
+    json upd;
+
+    // install_root is a filesystem path and can embed a username
+    // (/home/pi/helixscreen). It goes through sanitize_value() like every other
+    // string that leaves the machine, which catches credential/email/MAC shapes
+    // but deliberately leaves the directory layout intact: WHICH root the app
+    // installed into is the entire diagnostic value of this field, and the same
+    // path already appears verbatim throughout log_tail and crash_report.
+    upd["install_root"] = sanitize_value(diag.install_root);
+
+    // The predicates the update UI actually gates on. `suppressed` is the one
+    // that decides whether the "Check for Updates" / "Install Update" rows
+    // exist at all (show_update_settings = !in_app_updates_suppressed()); the
+    // rest say which cause fired.
+    //
+    // install_parent_writable is reported alongside self_update_supported (their
+    // OR with root escalation) because the pair distinguishes the two shapes that
+    // matter: false/false is a genuinely read-only install, while false/true is the
+    // ordinary /opt + unprivileged-service layout where install.sh sudoes the swap.
+    upd["install_parent_writable"] = diag.install_parent_writable;
+    upd["self_update_supported"] = diag.self_update_supported;
+    upd["externally_managed"] = diag.externally_managed;
+    upd["suppressed"] =
+        compute_in_app_updates_suppressed(diag.externally_managed, diag.self_update_supported);
+
+    // These two come from UpdateChecker's main-thread config snapshot, which is
+    // empty until init() runs. Report that as "unknown" rather than "" so a
+    // bundle reader can tell "updater never initialised" from "channel is
+    // stable" — an empty string reads like a failed lookup either way.
+    upd["channel"] = diag.channel.empty() ? "unknown" : diag.channel;
+    upd["r2_base_url"] =
+        diag.r2_base_url.empty() ? std::string("unknown") : sanitize_value(diag.r2_base_url);
+    upd["last_check_status"] = diag.last_check_status;
+    upd["platform_asset_name"] = diag.platform_asset_name;
+
+    if (!diag.available_version.empty()) {
+        upd["available_version"] = diag.available_version;
+    }
+    if (!diag.last_check_error.empty()) {
+        upd["last_check_error"] = sanitize_value(diag.last_check_error);
+    }
+
+    return upd;
+}
+
+json DebugBundleCollector::collect_update_info() {
+    UpdateDiagnostics diag;
+
+    diag.install_root = app_get_install_root();
+    // can_escalate=false isolates the raw writability term; self_update_supported()
+    // is the cached OR of it and root_escalation_available(). Reading them in this
+    // order means a writable parent still never triggers the sudo probe — the
+    // cached value is already decided by the time the bundle asks.
+    diag.install_parent_writable = compute_self_update_supported(diag.install_root, false);
+    diag.self_update_supported = self_update_supported();
+    diag.externally_managed = updates_externally_managed();
+
+    // upload_async() collects on HttpExecutor::slow(), so nothing here may touch
+    // LVGL or Config. get_status() is atomic; get_cached_update(),
+    // get_error_message() and config_snapshot() copy under UpdateChecker's own
+    // mutex; platform_asset_name() is pure. The channel and manifest URL come
+    // from the snapshot rather than get_channel()/effective_r2_base_url()
+    // because those two read Config, which is main-thread-only (config.h).
+    const auto& checker = UpdateChecker::instance();
+    const auto snapshot = checker.config_snapshot();
+    diag.channel = snapshot.channel;
+    diag.r2_base_url = snapshot.r2_base_url;
+    diag.last_check_status = update_status_name(checker.get_status());
+    diag.platform_asset_name = UpdateChecker::platform_asset_name();
+
+    if (auto cached = checker.get_cached_update()) {
+        diag.available_version = cached->version;
+    }
+    diag.last_check_error = checker.get_error_message();
+
+    return build_update_info(diag);
+}
+
+// =============================================================================
 // Printer info
 // =============================================================================
 
@@ -301,7 +416,10 @@ json DebugBundleCollector::collect_printer_info() {
 // =============================================================================
 
 std::string DebugBundleCollector::collect_log_tail(int num_lines) {
-    return helix::logs::tail_best(num_lines);
+    // Sanitized here rather than at the call site so every consumer of the log
+    // tail is covered. The ring captures at debug regardless of the user's
+    // configured verbosity, so this text leaves the machine on every bundle.
+    return sanitize_text_block(helix::logs::tail_best(num_lines));
 }
 
 // =============================================================================
@@ -364,7 +482,7 @@ std::string DebugBundleCollector::collect_crash_txt() {
 
             if (!result.empty()) {
                 spdlog::debug("[DebugBundle] Read {} from {}", suffix, path);
-                return result;
+                return sanitize_text_block(result);
             }
         }
     }
@@ -561,10 +679,12 @@ RawHttpResult http_get_raw(const std::string& base_url, const std::string& endpo
     return result;
 }
 
+} // namespace
+
 // Sanitize a multi-line text block by sanitize_value()-ing each line. Avoids
 // sanitize_value()'s 4 KB ReDoS guard kicking in on whole-file inputs (which
 // would redact the entire content as [REDACTED_LONG_VALUE]).
-std::string sanitize_text_block(const std::string& body) {
+std::string DebugBundleCollector::sanitize_text_block(const std::string& body) {
     std::string result;
     result.reserve(body.size());
     size_t pos = 0;
@@ -580,8 +700,6 @@ std::string sanitize_text_block(const std::string& body) {
     }
     return result;
 }
-
-} // namespace
 
 json DebugBundleCollector::moonraker_get(const std::string& base_url, const std::string& endpoint,
                                          int timeout_sec) {
@@ -891,9 +1009,54 @@ json DebugBundleCollector::collect_platform_files() {
 // Klipper / Moonraker log tails (via HTTP Range for memory safety)
 // =============================================================================
 
+std::string DebugBundleCollector::condense_klipper_log(const std::string& raw, int stats_context,
+                                                       int stats_tail) {
+    const size_t keep_ctx = stats_context < 0 ? 0 : static_cast<size_t>(stats_context);
+    const size_t keep_tail = stats_tail < 0 ? 0 : static_cast<size_t>(stats_tail);
+    const size_t ring_cap = std::max(keep_ctx, keep_tail);
+
+    std::istringstream stream(raw);
+    std::deque<std::string> pending_stats; // most recent Stats not yet emitted
+    std::string out;
+    std::string line;
+
+    auto emit = [&out](const std::string& s) {
+        if (!out.empty())
+            out += '\n';
+        out += s;
+    };
+
+    while (std::getline(stream, line)) {
+        if (line.rfind("Stats ", 0) == 0) {
+            if (ring_cap == 0)
+                continue;
+            pending_stats.push_back(std::move(line));
+            if (pending_stats.size() > ring_cap)
+                pending_stats.pop_front();
+            continue;
+        }
+        // Event line: emit the run-up Stats in order, then the event itself.
+        while (pending_stats.size() > keep_ctx)
+            pending_stats.pop_front();
+        for (const auto& s : pending_stats)
+            emit(s);
+        pending_stats.clear();
+        emit(line);
+    }
+
+    // Trailing Stats: keep the most recent few so a reader still sees the
+    // sysload/buffer_time picture at the moment the bundle was taken.
+    while (pending_stats.size() > keep_tail)
+        pending_stats.pop_front();
+    for (const auto& s : pending_stats)
+        emit(s);
+
+    return out;
+}
+
 std::string DebugBundleCollector::fetch_log_tail(const std::string& base_url,
                                                  const std::string& endpoint, int num_lines,
-                                                 int tail_bytes) {
+                                                 int tail_bytes, bool condense_klipper) {
     try {
         auto req = std::make_shared<HttpRequest>();
         req->method = HTTP_GET;
@@ -939,19 +1102,29 @@ std::string DebugBundleCollector::fetch_log_tail(const std::string& base_url,
             return {};
         }
 
+        std::string body = std::move(resp->body);
+
+        // If we got a partial response (206), the first line is likely truncated -- drop it
+        if (status == 206) {
+            size_t nl = body.find('\n');
+            body = (nl == std::string::npos) ? std::string{} : body.substr(nl + 1);
+        }
+
+        // Condense BEFORE the num_lines cap: the whole point is to spend the
+        // line budget on events rather than on Klipper's per-second Stats spam.
+        if (condense_klipper) {
+            size_t raw_bytes = body.size();
+            body = condense_klipper_log(body);
+            spdlog::debug("[DebugBundle] Condensed {} to {} bytes from {}", raw_bytes, body.size(),
+                          endpoint);
+        }
+
         // Take last N lines from the response
-        std::istringstream stream(resp->body);
+        std::istringstream stream(body);
         std::deque<std::string> lines;
         std::string line;
 
-        // If we got a partial response (206), the first line is likely truncated -- skip it
-        bool skip_first = (status == 206);
-
         while (std::getline(stream, line)) {
-            if (skip_first) {
-                skip_first = false;
-                continue;
-            }
             lines.push_back(std::move(line));
             if (static_cast<int>(lines.size()) > num_lines) {
                 lines.pop_front();
@@ -978,7 +1151,14 @@ std::string DebugBundleCollector::collect_klipper_log_tail(int num_lines) {
     std::string base_url = get_moonraker_url();
     if (base_url.empty())
         return {};
-    return fetch_log_tail(base_url, "/server/files/klippy.log", num_lines);
+    // 4 MiB of raw klippy.log is ~80 minutes of Klipper's 1-Stats-line-per-second
+    // output, versus ~10 minutes for the old 512 KiB tail. condense_klipper_log()
+    // then strips the Stats padding, so the retained payload stays in the same
+    // ballpark as before while reaching far enough back to contain the incident
+    // (bundle UJCCQP6S: 615 of 635 captured lines were Stats, and the MCU
+    // shutdown being investigated had scrolled off hours earlier).
+    return fetch_log_tail(base_url, "/server/files/klippy.log", num_lines,
+                          /*tail_bytes=*/4 * 1024 * 1024, /*condense_klipper=*/true);
 }
 
 std::string DebugBundleCollector::collect_moonraker_log_tail(int num_lines) {
@@ -1007,7 +1187,7 @@ std::string DebugBundleCollector::collect_crash_report_txt(const std::string& co
         if (!result.empty()) {
             spdlog::debug("[DebugBundle] Read crash_report.txt from {}", path);
         }
-        return result;
+        return sanitize_text_block(result);
     } catch (const std::exception& e) {
         spdlog::debug("[DebugBundle] Failed to read crash_report.txt: {}", e.what());
         return {};
@@ -1032,7 +1212,7 @@ std::string DebugBundleCollector::collect_crash_txt(const std::string& config_di
         if (!result.empty()) {
             spdlog::debug("[DebugBundle] Read crash.txt from {}", path);
         }
-        return result;
+        return sanitize_text_block(result);
     } catch (const std::exception& e) {
         spdlog::debug("[DebugBundle] Failed to read crash.txt: {}", e.what());
         return {};

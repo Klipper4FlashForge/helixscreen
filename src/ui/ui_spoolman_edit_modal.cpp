@@ -13,8 +13,8 @@
 #include "label_printer_settings.h"
 #include "label_printer_utils.h"
 #endif
-#include "lvgl/src/others/translation/lv_translation.h"
 #include "i_moonraker_api.h"
+#include "lvgl/src/others/translation/lv_translation.h"
 #include "spoolman_slot_saver.h"
 #include "theme_manager.h"
 
@@ -182,13 +182,17 @@ void SpoolEditModal::populate_fields() {
 
     lv_obj_t* color_label = find_widget("color_label");
     if (color_label) {
+        // Spoolman stores no colour name — only color_hex — so the human label
+        // is derived, the same way the AMS card derives it. Showing
+        // SpoolInfo::filament_name here (what this row used to do) put the
+        // filament's name under a "Colour" heading: "PLA Matte Charcoal".
         std::string color;
-        if (!working_spool_.color_name.empty()) {
-            color = working_spool_.color_name;
-        } else if (!working_spool_.color_hex.empty()) {
-            color = working_spool_.color_hex;
-        } else {
-            color = lv_tr("No color");
+        auto rgb = helix::parse_hex_color(working_spool_.color_hex);
+        if (rgb) {
+            color = helix::get_color_name_from_hex(*rgb);
+        }
+        if (color.empty()) {
+            color = working_spool_.color_hex.empty() ? lv_tr("No color") : working_spool_.color_hex;
         }
         lv_label_set_text(color_label, color.c_str());
     }
@@ -553,7 +557,10 @@ void SpoolEditModal::handle_color_clicked() {
         char hex_buf[8];
         snprintf(hex_buf, sizeof(hex_buf), "%06X", color_rgb);
         working_spool_.color_hex = std::string("#") + hex_buf;
-        working_spool_.color_name = color_name;
+        // color_hex is the only colour Spoolman stores, and the only one
+        // build_spool_patches() PATCHes. The picker's colour word is a display
+        // string; it must not land in filament_name, which is the user's own
+        // Spoolman filament name.
 
         // Update color label and spool preview
         lv_obj_t* color_label = find_widget("color_label");

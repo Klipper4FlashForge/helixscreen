@@ -19,6 +19,16 @@ class MoonrakerClientTestAccess {
         return c.ws_callbacks_installed_;
     }
 
+    // Force connection_state_ without a socket, so tests can exercise gates that
+    // read get_connection_state() (e.g. MoonrakerAPI::execute_gcode's klippy-halt
+    // gate, which may only speak for a printer we are actually connected to).
+    // Writes the atomic directly rather than calling set_connection_state(), which
+    // would emit events and fire the state-change callback — side effects a gate
+    // test does not want.
+    static void force_connection_state(MoonrakerClient& c, ConnectionState state) {
+        c.connection_state_.store(state);
+    }
+
     // Invoke all persistent method callbacks registered for `method`, as the
     // WebSocket onmessage dispatch would (copy under lock, invoke outside it).
     // Lets tests simulate Moonraker notifications (notify_filelist_changed,

@@ -12,5 +12,8 @@
     "@cloudflare/workers-types": "^4.20260218.0",
     "vitest": "^4.0.18",
     "wrangler": "^4.0.0"
+  },
+  "dependencies": {
+    "fzstd": "^0.1.1"
   }
 }

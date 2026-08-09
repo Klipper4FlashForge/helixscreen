@@ -27,4 +27,20 @@ TEST_CASE("WifiBackendMock satisfies WifiBackend interface", "[compile][drift]")
     (void)p->start();
     p->stop();
 }
+
+TEST_CASE("Mock backend tracks radio state independently of running state", "[wifi][radio]") {
+    WifiBackendMock backend;
+    REQUIRE(backend.start().success());
+
+    CHECK(backend.is_radio_enabled());
+
+    REQUIRE(backend.set_radio_enabled(false).success());
+    CHECK_FALSE(backend.is_radio_enabled());
+    // Radio off must NOT tear the backend down — the control path stays up so
+    // state can be reported and the radio switched back on.
+    CHECK(backend.is_running());
+
+    REQUIRE(backend.set_radio_enabled(true).success());
+    CHECK(backend.is_radio_enabled());
+}
 #endif

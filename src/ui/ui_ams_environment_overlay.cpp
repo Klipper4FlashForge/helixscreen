@@ -7,7 +7,6 @@
  */
 
 #include "ui_ams_environment_overlay.h"
-#include "data_root_resolver.h"
 
 #include "ui_error_reporting.h"
 #include "ui_event_safety.h"
@@ -18,10 +17,12 @@
 #include "ams_state.h"
 #include "ams_types.h"
 #include "config.h"
+#include "data_root_resolver.h"
 #include "filament_database.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "observer_factory.h"
+#include "preset_materials.h"
 #include "static_panel_registry.h"
 
 #include <spdlog/spdlog.h>
@@ -78,6 +79,16 @@ AmsEnvironmentOverlay::~AmsEnvironmentOverlay() {
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
+
+std::vector<std::string> AmsEnvironmentOverlay::fallback_comfort_materials() {
+    std::vector<std::string> out;
+    for (const auto& m : helix::presets::all()) {
+        if (!m.empty()) {
+            out.push_back(m);
+        }
+    }
+    return out;
+}
 
 void AmsEnvironmentOverlay::init_subjects() {
     init_subjects_guarded([this]() {
@@ -140,7 +151,8 @@ lv_obj_t* AmsEnvironmentOverlay::create(lv_obj_t* parent) {
     // overlay safe to open directly (e.g. CLI --ams-environment) without first
     // visiting the AMS panel, which is where lazy registration otherwise happens.
     if (!lv_xml_component_get_scope("ams_environment_overlay")) {
-        lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/ams_environment_overlay.xml").c_str());
+        lv_xml_register_component_from_file(
+            helix::asset_component_uri("ui_xml/ams_environment_overlay.xml").c_str());
     }
 
     overlay_ = static_cast<lv_obj_t*>(lv_xml_create(parent, "ams_environment_overlay", nullptr));
@@ -463,9 +475,11 @@ void AmsEnvironmentOverlay::update_comfort_text(float humidity_pct) {
         }
     }
 
-    // Fall back to common materials if no slots loaded
+    // Fall back to the user's configured quick-preset materials if no slots are
+    // loaded. Previously a fourth hardcoded list ({"PLA","PETG","ABS","PA"})
+    // that disagreed with every other preset copy in the codebase.
     if (loaded_materials.empty()) {
-        loaded_materials = {"PLA", "PETG", "ABS", "PA"};
+        loaded_materials = fallback_comfort_materials();
     }
 
     // Update subjects for each comfort row (up to MAX_COMFORT_ROWS)
@@ -474,7 +488,7 @@ void AmsEnvironmentOverlay::update_comfort_text(float humidity_pct) {
         if (row_idx >= MAX_COMFORT_ROWS)
             break;
 
-        const auto* range = filament::get_comfort_range(mat_name.c_str());
+        const auto range = filament::get_comfort_range(mat_name.c_str());
         if (!range)
             continue;
 
@@ -609,7 +623,7 @@ void AmsEnvironmentOverlay::auto_select_preset() {
         if (slot.material.empty())
             continue;
 
-        const auto* range = filament::get_comfort_range(slot.material);
+        const auto range = filament::get_comfort_range(slot.material);
         if (range && range->dry_temp_c > 0 && range->dry_temp_c < lowest_dry_temp) {
             lowest_dry_temp = static_cast<float>(range->dry_temp_c);
             best_match_name = slot.material;
@@ -747,14 +761,15 @@ void ensure_ams_env_indicator_registered() {
     // does no dedup), so the guard makes this happen exactly once per process.
     lv_xml_register_event_cb(nullptr, "on_env_indicator_clicked", [](lv_event_t* e) {
         auto* ind = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
-        int unit = ind ? static_cast<int>(reinterpret_cast<intptr_t>(lv_obj_get_user_data(ind)))
-                       : 0;
+        int unit =
+            ind ? static_cast<int>(reinterpret_cast<intptr_t>(lv_obj_get_user_data(ind))) : 0;
         spdlog::info("[AMS Environment] Indicator clicked — opening overlay for unit {}", unit);
         auto& overlay = get_ams_environment_overlay();
         overlay.show(lv_screen_active(), unit);
     });
 
-    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/components/ams_environment_indicator.xml").c_str());
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/components/ams_environment_indicator.xml").c_str());
 
     s_registered = true;
 }

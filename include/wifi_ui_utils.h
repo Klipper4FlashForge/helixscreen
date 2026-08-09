@@ -3,7 +3,11 @@
 
 #pragma once
 
+#include "wifi_backend.h"
+
+#include <cstdint>
 #include <string>
+#include <vector>
 
 /**
  * @brief WiFi UI utilities namespace
@@ -41,6 +45,30 @@ namespace wifi {
  * lv_obj_bind_flag_if_not_eq(icon_obj, state_subject, LV_OBJ_FLAG_HIDDEN, state);
  */
 int wifi_compute_signal_icon_state(int strength_percent, bool secured);
+
+/**
+ * @brief Render a WiFiNetwork::band_mask as a compact row badge
+ *
+ * Numeric, unit-suffixed and deliberately not translated — "2.4G" / "5G" read
+ * the same in every locale and fit a 480x272 list row.
+ *
+ * @param band_mask OR of WiFiBandFlag values
+ * @return "2.4G", "5G", "6G", "2.4/5G", … or "" when no band is known
+ */
+std::string wifi_format_band_label(uint8_t band_mask);
+
+/**
+ * @brief True when a scan saw APs on more than one band
+ *
+ * Drives whether per-row band badges are worth showing at all: on a 2.4GHz-only
+ * radio every row would say "2.4G", which is noise. Derived from the scan itself
+ * rather than adapter capability, so it stays right when capability detection
+ * fails but 5GHz APs are plainly visible.
+ *
+ * @param networks Scan results as handed to the picker
+ * @return true if the union of all band flags has more than one bit set
+ */
+bool wifi_scan_spans_multiple_bands(const std::vector<WiFiNetwork>& networks);
 
 /**
  * @brief Get device MAC address for specified network interface

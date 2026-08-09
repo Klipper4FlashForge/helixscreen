@@ -90,8 +90,8 @@ class MoonrakerFileTransferAPI : public ITransfersAPI {
      * @param on_success Callback with file content as string
      * @param on_error Error callback
      */
-    void download_file(const std::string& root, const std::string& path,
-                       StringCallback on_success, ErrorCallback on_error) override;
+    void download_file(const std::string& root, const std::string& path, StringCallback on_success,
+                       ErrorCallback on_error) override;
 
     /**
      * @brief Download only the first N bytes of a file (for scanning preambles)
@@ -105,9 +105,8 @@ class MoonrakerFileTransferAPI : public ITransfersAPI {
      * @param on_success Callback with partial file content as string
      * @param on_error Error callback
      */
-    void download_file_partial(const std::string& root, const std::string& path,
-                               size_t max_bytes, StringCallback on_success,
-                               ErrorCallback on_error) override;
+    void download_file_partial(const std::string& root, const std::string& path, size_t max_bytes,
+                               StringCallback on_success, ErrorCallback on_error) override;
 
     /**
      * @brief Download a file directly to disk (streaming, low memory)
@@ -164,9 +163,8 @@ class MoonrakerFileTransferAPI : public ITransfersAPI {
      * @param on_success Success callback
      * @param on_error Error callback
      */
-    void upload_file(const std::string& root, const std::string& path,
-                     const std::string& content, SuccessCallback on_success,
-                     ErrorCallback on_error) override;
+    void upload_file(const std::string& root, const std::string& path, const std::string& content,
+                     SuccessCallback on_success, ErrorCallback on_error) override;
 
     /**
      * @brief Upload file content with custom filename
@@ -177,8 +175,12 @@ class MoonrakerFileTransferAPI : public ITransfersAPI {
      * Virtual to allow mocking in tests (MoonrakerAPIMock logs but doesn't write).
      *
      * @param root Root directory ("gcodes", "config", etc.)
-     * @param path Destination path relative to root (e.g., ".helix_temp/foo.gcode")
-     * @param filename Filename for form (e.g., ".helix_temp/foo.gcode")
+     * @param path Destination path relative to root (e.g., ".helix_temp/foo.gcode").
+     *             Only its directory component is used; pass "" to upload straight
+     *             to the root of @p root (same empty-means-root convention as
+     *             list_files()/get_directory()).
+     * @param filename Filename for form (e.g., ".helix_temp/foo.gcode"). Must be
+     *                 non-empty and traversal-free - it is used verbatim.
      * @param content File content to upload
      * @param on_success Success callback
      * @param on_error Error callback

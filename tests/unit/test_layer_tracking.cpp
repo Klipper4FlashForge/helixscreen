@@ -208,8 +208,9 @@ TEST_CASE("Layer tracking: virtual_sdcard.layer updates subject",
     PrinterStateTestAccess::reset(state);
     state.init_subjects(false);
 
-    // Start printing
-    json printing = {{"print_stats", {{"state", "printing"}}}};
+    // Start printing. print_duration > 0 marks real printing (past PRINT_START),
+    // which the fallback layer tiers now require before estimating/deriving.
+    json printing = {{"print_stats", {{"state", "printing"}, {"print_duration", 120}}}};
     state.update_from_status(printing);
 
     SECTION("layer and layer_count update from virtual_sdcard") {
@@ -330,8 +331,9 @@ TEST_CASE("Layer tracking: progress-based estimation fallback", "[layer_tracking
     PrinterStateTestAccess::reset(state);
     state.init_subjects(false);
 
-    // Start printing
-    json printing = {{"print_stats", {{"state", "printing"}}}};
+    // Start printing. print_duration > 0 marks real printing (past PRINT_START),
+    // which the fallback layer tiers now require before estimating/deriving.
+    json printing = {{"print_stats", {{"state", "printing"}, {"print_duration", 120}}}};
     state.update_from_status(printing);
 
     // Set total layers from metadata (this is how it works in practice)
@@ -668,7 +670,9 @@ TEST_CASE("Layer tracking: Z-height derivation for non-reporting slicer",
     state.init_subjects(false);
 
     // Non-reporting printer: state=printing, no layer field anywhere.
-    state.update_from_status({{"print_stats", {{"state", "printing"}}}});
+    // print_duration > 0 marks real printing (past PRINT_START) so the Z-height
+    // derivation tier is allowed to run.
+    state.update_from_status({{"print_stats", {{"state", "printing"}, {"print_duration", 120}}}});
     state.set_print_layer_total(75);
     state.set_print_layer_heights(0.2, 0.2);
     UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
@@ -741,8 +745,9 @@ TEST_CASE("Layer tracking: progress estimate preserved when slice geometry unkno
     state.init_subjects(false);
 
     // Non-reporting printer with NO heights set (e.g. non-sliced job) — tier 4
-    // (progress fraction) must still apply.
-    state.update_from_status({{"print_stats", {{"state", "printing"}}}});
+    // (progress fraction) must still apply. print_duration > 0 marks real
+    // printing (past PRINT_START) so the progress-fraction tier is allowed to run.
+    state.update_from_status({{"print_stats", {{"state", "printing"}, {"print_duration", 120}}}});
     state.set_print_layer_total(75);
     UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
 
@@ -754,4 +759,115 @@ TEST_CASE("Layer tracking: progress estimate preserved when slice geometry unkno
     REQUIRE_FALSE(state.has_real_layer_data());
     // Progress-fraction guess is NOT accurate — the label keeps the "~".
     REQUIRE_FALSE(state.layer_is_accurate());
+}
+
+// ============================================================================
+// PRINT_START gate: fallback layer tiers must NOT fabricate a layer before
+// real printing begins (user Discord report).
+//
+// During the print-start gcode (bed mesh / purge line / Z-hop) Klipper reports
+// state="printing" but has NOT yet advanced print_duration (it only ticks once
+// real extrusion moves execute). Meanwhile gcode_move.gcode_position[2] is
+// driven high by bed probing / Z-hop (e.g. Z=2mm) and file-position progress
+// creeps up as the START_PRINT macro streams the file header. Without a gate the
+// Z-height derivation computed round((2.0-0.2)/0.2)+1 = 10 and — because it sets
+// layer_z_derived_ — presented that garbage as an ACCURATE layer (no "~"),
+// "freaking out" at 10/15 until real printing self-corrected it. The fallback
+// tiers now require print_duration > 0.
+// ============================================================================
+
+TEST_CASE("Layer tracking: fallback tiers do NOT fabricate a layer during PRINT_START",
+          "[layer_tracking][zheight][print_start]") {
+    lv_init_safe();
+
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    // Non-reporting slicer, print-start phase: state=printing but print_duration
+    // is still 0 (bed mesh / purge / Z-hop, no real extrusion time yet). Slice
+    // geometry + total layers are known from file metadata.
+    state.update_from_status({{"print_stats", {{"state", "printing"}, {"print_duration", 0}}}});
+    state.set_print_layer_total(75);
+    state.set_print_layer_heights(0.2, 0.2);
+    UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+
+    SECTION("Z-derivation is suppressed while print_duration==0 (no bogus layer 10)") {
+        // Z=2.0mm during a probe / Z-hop would derive round((2.0-0.2)/0.2)+1 = 10.
+        json status = {{"virtual_sdcard", {{"progress", 0.03}}},
+                       {"gcode_move", {{"gcode_position", {10.0, 10.0, 2.0, 0.0}}}}};
+        state.update_from_status(status);
+
+        // Holds at the pre-print default (0) rather than fabricating a layer...
+        REQUIRE(lv_subject_get_int(state.get_print_layer_current_subject()) == 0);
+        // ...and must NOT claim display-accuracy (would drop the "~" prefix).
+        REQUIRE_FALSE(state.layer_is_accurate());
+    }
+
+    SECTION("progress-fraction tier is suppressed while print_duration==0") {
+        // Unknown slice geometry routes to the progress-fraction tier instead.
+        state.set_print_layer_heights(0.0, 0.0);
+        UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+
+        // 12% of 75 = 9 would be fabricated without the gate.
+        json status = {{"virtual_sdcard", {{"progress", 0.12}}}};
+        state.update_from_status(status);
+
+        REQUIRE(lv_subject_get_int(state.get_print_layer_current_subject()) == 0);
+    }
+
+    SECTION("derivation resumes once print_duration>0 (feature not disabled)") {
+        // Same Z, but now real printing has started (print_duration > 0). The
+        // Z-height derivation must produce the correct layer, proving the gate
+        // only defers — it does not disable the tier.
+        json status = {{"print_stats", {{"print_duration", 30}}},
+                       {"virtual_sdcard", {{"progress", 0.12}}},
+                       {"gcode_move", {{"gcode_position", {1.0, 1.0, 1.0, 0.0}}}}};
+        state.update_from_status(status);
+
+        // Z=1.0mm, 0.2mm layers => round((1.0-0.2)/0.2)+1 = 5.
+        REQUIRE(lv_subject_get_int(state.get_print_layer_current_subject()) == 5);
+        REQUIRE(state.layer_is_accurate());
+    }
+}
+
+// ============================================================================
+// PRINT_START ETA gate: the remaining-time smoother must not seed from
+// progress-extrapolation while print_duration==0.
+//
+// The EMA smoother (smoothed_remaining_) seeds on the first extrapolation and
+// converges slowly (alpha ~0.06 at low progress). If it seeds on PRINT_START
+// noise — high file progress while print_duration is still 0 — it latches onto a
+// bogus estimate and "gets stuck". The extrapolation branch already requires
+// print_duration > 0; while print_duration==0 the slicer-estimate fallback is
+// used instead, so the ETA is a sane full-print estimate rather than a latched
+// noise value. This locks that invariant (mutation: dropping print_duration > 0
+// from the extrapolation branch seeds the smoother and this REQUIRE fails).
+// ============================================================================
+
+TEST_CASE("ETA: smoother not seeded from extrapolation while print_duration==0",
+          "[layer_tracking][eta][print_start]") {
+    lv_init_safe();
+
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    // Slicer estimate known from metadata; real printing not started yet.
+    state.set_estimated_print_time(3600); // 60 min
+    UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+    state.update_from_status({{"print_stats", {{"state", "printing"}}}});
+
+    // PRINT_START noise: file-position progress already at 10% (macro streamed the
+    // header) while print_duration is still 0. Establish progress in its own
+    // update — the remaining-time calc reads print_progress_ from the PRIOR value
+    // (virtual_sdcard is parsed AFTER the print_stats block within one update).
+    state.update_from_status({{"virtual_sdcard", {{"progress", 0.10}}}});
+
+    // total_duration present so the remaining-time block runs; print_duration 0.
+    state.update_from_status({{"print_stats", {{"print_duration", 0}, {"total_duration", 45}}}});
+
+    // With print_duration==0 the noisy extrapolation is NOT used and the smoother
+    // is NOT seeded. The slicer-estimate fallback applies: 3600 * (100-10)/100.
+    REQUIRE(lv_subject_get_int(state.get_print_time_left_subject()) == 3240);
 }

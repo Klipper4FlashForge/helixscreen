@@ -13,9 +13,9 @@
            border_width="#space_xs" border_side="left" border_color="#primary" bg_color="#elevated_bg"/>
   </styles>
   <view extends="lv_button"
-        width="100%" scrollable="false" clickable="true" style_bg_opa="0"
-        style_border_width="0" style_shadow_width="0" style_pad_ver="#space_sm" style_pad_hor="#space_md"
-        flex_flow="row" style_flex_main_place="start" style_flex_cross_place="center" style_pad_gap="#space_sm">
+        width="100%" scrollable="false" clickable="true" style_bg_opa="0" style_border_width="0" style_shadow_width="0"
+        style_pad_ver="#space_sm" style_pad_hor="#space_md" flex_flow="row" style_flex_main_place="start"
+        style_flex_cross_place="center" style_pad_gap="#space_sm">
     <style name="checked_style" selector="checked"/>
     <event_cb trigger="clicked" callback="on_network_item_clicked"/>
     <!-- Signal strength icons - 8 variants controlled by signal_icon_state subject -->
@@ -41,12 +41,21 @@
     </lv_obj>
     <!-- SSID and security type column (center) -->
     <lv_obj flex_grow="1"
-            style_pad_all="0" style_radius="0" style_pad_gap="#space_xs" scrollable="false" clickable="false" flex_flow="row"
-            style_flex_main_place="space_between" style_flex_cross_place="center">
+            style_pad_all="0" style_radius="0" style_pad_gap="#space_xs" scrollable="false" clickable="false"
+            flex_flow="row" style_flex_main_place="space_between" style_flex_cross_place="center">
       <!-- Network SSID - uses responsive font_body from theme -->
       <text_body name="ssid_label" clickable="false"/>
-      <!-- Security type (right-justified) -->
-      <text_small name="security_label" clickable="false"/>
+      <!-- Right-justified metadata: band badge then security type -->
+      <lv_obj width="content"
+              height="content" style_pad_all="0" style_radius="0" style_pad_gap="#space_xs" scrollable="false"
+              clickable="false" flex_flow="row" style_flex_cross_place="center">
+        <!-- Band badge ("2.4G" / "5G" / "2.4/5G"). Hidden unless the scan saw
+             more than one band; text and visibility are driven by per-item
+             subjects owned by the C++ list builder. -->
+        <text_small name="band_label" clickable="false" hidden="true"/>
+        <!-- Security type -->
+        <text_small name="security_label" clickable="false"/>
+      </lv_obj>
     </lv_obj>
   </view>
 </component>

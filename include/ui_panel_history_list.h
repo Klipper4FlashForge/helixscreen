@@ -20,6 +20,10 @@
 // Forward declarations
 struct FileInfo;
 
+namespace helix::ui {
+struct HistoryListPanelTestAccess; // test-only friend (tests/test_helpers/)
+}
+
 /**
  * @file ui_panel_history_list.h
  * @brief Print History List Panel - Scrollable list of print jobs with filter/sort
@@ -192,6 +196,8 @@ class HistoryListPanel : public OverlayBase {
     void associate_timelapse_files(const std::vector<FileInfo>& timelapse_files);
 
   private:
+    friend struct helix::ui::HistoryListPanelTestAccess;
+
     //
     // === Widget References ===
     //
@@ -261,7 +267,10 @@ class HistoryListPanel : public OverlayBase {
     // === Subject for panel state binding ===
     //
 
-    lv_subject_t subject_panel_state_; ///< 0 = LOADING, 1 = EMPTY, 2 = HAS_JOBS
+    lv_subject_t subject_panel_state_;      ///< 0 = LOADING, 1 = EMPTY, 2 = HAS_JOBS
+    lv_subject_t subject_filters_expanded_; ///< 0 = filter dropdowns collapsed, 1 = expanded
+    lv_subject_t subject_filter_active_; ///< 1 when a status/search/sort filter is active (drives
+                                         ///< funnel accent)
 
     // Empty state message subjects (for dynamic text based on filter state)
     lv_subject_t subject_empty_message_; ///< Empty state message text
@@ -482,6 +491,12 @@ class HistoryListPanel : public OverlayBase {
      * @param index Selected dropdown index
      */
     void on_sort_changed(int index);
+
+    /** @brief Toggle the collapsible filter dropdowns (funnel button). */
+    void toggle_filters();
+
+    /** @brief Accent the funnel icon when a status/search filter is active. */
+    void refresh_filter_indicator();
 
     // Search timer callback (private - not used for XML registration)
     static void on_search_timer_static(lv_timer_t* timer);

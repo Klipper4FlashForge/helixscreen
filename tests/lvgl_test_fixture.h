@@ -8,6 +8,7 @@
 #include "helix_test_fixture.h"
 #include "lvgl/lvgl.h"
 
+#include <functional>
 #include <mutex>
 
 /**
@@ -15,6 +16,35 @@
  */
 constexpr int TEST_DISPLAY_WIDTH = 800;
 constexpr int TEST_DISPLAY_HEIGHT = 480;
+
+/**
+ * @brief Drive a display to a size for the duration of a scope, then put it back
+ *
+ * A resize is the only production path that reaches
+ * theme_manager_refresh_layout_constants(), and the rest of the suite assumes
+ * the fixture's TEST_DISPLAY_WIDTH x TEST_DISPLAY_HEIGHT. Restoring the
+ * resolution does NOT restore the XML constants the refresh rewrote — call the
+ * refresh once more after the scope ends if the test moved them.
+ */
+class ScopedResolution {
+  public:
+    ScopedResolution(lv_display_t* disp, int32_t w, int32_t h)
+        : disp_(disp), w0_(lv_display_get_horizontal_resolution(disp)),
+          h0_(lv_display_get_vertical_resolution(disp)) {
+        lv_display_set_resolution(disp_, w, h);
+    }
+    ~ScopedResolution() {
+        lv_display_set_resolution(disp_, w0_, h0_);
+    }
+
+    ScopedResolution(const ScopedResolution&) = delete;
+    ScopedResolution& operator=(const ScopedResolution&) = delete;
+
+  private:
+    lv_display_t* disp_;
+    int32_t w0_;
+    int32_t h0_;
+};
 
 /**
  * @brief Shared LVGL test fixture base class for Catch2 tests
@@ -62,13 +92,40 @@ class LVGLTestFixture : public HelixTestFixture {
     LVGLTestFixture& operator=(LVGLTestFixture&&) = delete;
 
     /**
-     * @brief Process LVGL timers for specified duration
-     * @param ms Duration in milliseconds to process
+     * @brief Advance LVGL's VIRTUAL clock by @p ms and pump timers
+     * @param ms Duration of *simulated* time to advance
      *
-     * Runs lv_timer_handler() repeatedly, allowing animations,
-     * transitions, and async operations to complete.
+     * Drives animations, transitions, and anything else keyed off lv_tick_get()
+     * — the test binary has no tick source of its own (see below), so this is
+     * the only thing that makes LVGL's clock move.
+     *
+     * NOT a wall-clock wait, and NOT a way to wait on another thread. Real time
+     * elapsed is roughly `ms / 5` (one 1ms sleep per 5ms step) and exactly zero
+     * for `ms <= 50`, which skips the sleep entirely. A loop that accumulates
+     * the nominal `ms` toward a timeout therefore burns its whole budget in a
+     * fraction of the time and may never yield to the thread it is waiting on;
+     * the test then fails past the end of the fixture's lifetime, so teardown
+     * effects look like they happened mid-test. Use wait_until() for that, or
+     * better, join the worker (e.g. ThumbnailProcessor::wait_for_completion())
+     * and then drain.
      */
     void process_lvgl(int ms);
+
+    /**
+     * @brief Wait for @p condition, advancing virtual time AND yielding for real
+     * @param condition Predicate, re-evaluated after every pump
+     * @param timeout_ms Real-world budget, measured on steady_clock
+     * @param poll_ms Virtual tick step and real sleep per iteration
+     * @return true if the condition held before the timeout
+     *
+     * The correct helper for "a background thread will eventually publish this":
+     * each pass advances the tick by @p poll_ms, drains the UpdateQueue, runs
+     * ready timers, checks the predicate, then sleeps @p poll_ms of *real* time
+     * so the other thread can actually run. The condition is evaluated at least
+     * once even with a zero timeout.
+     */
+    bool wait_until(const std::function<bool()>& condition, uint32_t timeout_ms = 5000,
+                    uint32_t poll_ms = 5);
 
     /**
      * @brief Get the test screen for this fixture

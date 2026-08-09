@@ -7,6 +7,9 @@ Access via the **More** icon in the navigation bar.
 ---
 
 ## G-code Console
+
+![G-code Console](../../images/user/advanced-console.png)
+
 A full-featured G-code terminal for sending commands directly to your printer and viewing Klipper responses in real time.
 
 **Opening the console:**
@@ -20,10 +23,18 @@ A full-featured G-code terminal for sending commands directly to your printer an
 2. Press **Enter** on the keyboard or tap the **send button**
 3. The command appears with a `>` prefix, and Klipper's response streams in below
 
-**Command history:**
+**Reusing a command (tap to paste):**
 
-- Press **Up/Down arrow keys** to recall previously sent commands
-- Up to 20 recent commands are remembered within the session
+Tap any command in the console — the lines prefixed with `>` — and it drops straight back into the input field, ready to edit and send again. This is the quickest way to re-run a macro you use often, or to fix a typo without retyping the whole line.
+
+- Tapping **only fills the input**. Nothing is sent until you tap the send button or press Enter, so a stray tap can never re-run a command by accident.
+- Only commands are tappable. Klipper's responses (green) and errors (red) do nothing when tapped.
+- Commands sent from **Mainsail, Fluidd, or a terminal** appear in the console too, and they can be tapped just the same.
+- Scrolling still works normally — flicking the log to scroll won't paste anything.
+
+**Command history with a USB keyboard:**
+
+If you have a USB keyboard attached, press the **Up/Down arrow keys** in the input field to walk back through commands you've sent, the same way a terminal works. Up to 20 recent commands are remembered within the session. Tap to paste reaches further back — the log holds up to 200 lines — so on a touchscreen it's usually the better option.
 
 **Color coding:**
 
@@ -67,7 +78,7 @@ Browse and execute all of your Klipper macros.
 
 1. All macros from your Klipper configuration are listed alphabetically
 2. Names are prettified for readability: `CLEAN_NOZZLE` becomes "Clean Nozzle"
-3. System macros (starting with `_`) are hidden by default — use the toggle to show them
+3. System macros (starting with `_`) are hidden by default — reveal them using edit mode (below)
 4. Tap any macro to execute it
 
 **Macro parameters:**
@@ -88,6 +99,23 @@ These macros show a confirmation dialog before executing:
 - `FIRMWARE_RESTART` / `RESTART` — restarts Klipper
 - `SHUTDOWN` — shuts down the printer host
 - `M112` / `EMERGENCY_STOP` — emergency stop
+
+**Hiding macros you don't use:**
+
+<!-- Screenshot: macros panel in edit mode, showing checkboxes and the header Save button -->
+
+If your macro list is cluttered with macros you never run, you can hide them from the list:
+
+1. **Press and hold** any macro for about a second to enter edit mode
+2. Every macro now shows a **checkbox** on the left, and a **Save** button appears at the top of the panel
+   - **Checked** = the macro stays visible in the normal list
+   - **Unchecked** = the macro will be hidden
+3. System macros (the ones starting with `_`, normally hidden) also show up here unchecked, so you can reveal one if you need it
+4. Tap a macro's checkbox to change its state — tapping the row itself no longer runs the macro while you're in edit mode
+5. Tap **Save** to apply your changes. Hidden macros disappear from the normal list immediately
+6. To leave edit mode without saving, tap **Back** — your checkbox changes are discarded and the list is unchanged
+
+> **Note:** Your hidden-macro choices are saved per printer and stick around across restarts, so switching to a different printer profile shows that printer's own macro list.
 
 ---
 
@@ -225,25 +253,9 @@ When the print finishes (or if `locked_while_printing` isn't set for that device
 
 ![Print History](../../images/user/advanced-history.png)
 
-View past print jobs:
+HelixScreen keeps a record of your completed, failed, and cancelled prints, sourced from Moonraker's job history. Open it from **Advanced > Print History**. You get a dashboard of statistics and trend charts, a searchable and sortable list of past jobs, and per-job details with reprint and delete.
 
-**Dashboard view:**
-
-- Total prints, success rate
-- Print time and filament usage statistics
-- Trend graphs over time
-
-**List view:**
-
-- Search by filename
-- Filter by status (completed, failed, cancelled)
-- Sort by date, duration, or name
-
-**Detail view:**
-
-- Tap any job for full details
-- **Reprint**: Start the same file again
-- **Delete**: Remove from history
+See [Print History](print-history.md) for the full guide.
 
 ---
 
@@ -251,7 +263,7 @@ View past print jobs:
 
 Review past system notifications:
 
-1. Tap the **bell icon** in the status bar
+1. Tap the **Notifications** widget on the Home screen
 2. Scroll through history
 3. Tap **Clear All** to dismiss
 
@@ -317,4 +329,4 @@ When frames have been captured during a print, a **render section** appears abov
 
 ---
 
-**Next:** [Beta Features](beta-features.md) | **Prev:** [Settings](settings.md) | [Back to User Guide](../USER_GUIDE.md)
+**Next:** [Beta Features](beta-features.md) | **Prev:** [Print History](print-history.md) | [Back to User Guide](../USER_GUIDE.md)

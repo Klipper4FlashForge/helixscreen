@@ -7,6 +7,7 @@
 #include "format_utils.h"
 #include "observer_factory.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 #include "static_subject_registry.h"
 #include "theme_manager.h"
 #include "width_sensor_manager.h"
@@ -77,13 +78,13 @@ void WidthSensorWidget::detach() {
     }
 }
 
-void WidthSensorWidget::on_size_changed(int colspan, int rowspan, int /*width_px*/,
-                                        int /*height_px*/) {
+void WidthSensorWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_px,
+                                        int height_px) {
     if (!widget_obj_)
         return;
 
-    bool wide = (colspan >= 2);
-    bool tall = (rowspan >= 2);
+    bool wide = (width_px >= widget_size::W_NORMAL);
+    bool tall = (height_px >= widget_size::H_TALL);
 
     // Scale icon when tall or wide
     const lv_font_t* icon_font = (tall || wide) ? &mdi_icons_32 : &mdi_icons_24;

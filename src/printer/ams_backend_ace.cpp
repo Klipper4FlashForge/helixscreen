@@ -15,11 +15,13 @@
 #include "ui_toast_manager.h"
 #include "ui_update_queue.h"
 
-#include "lvgl/src/others/translation/lv_translation.h"
-#include "i_moonraker_client.h"
 #include "i_moonraker_api.h"
+#include "i_moonraker_client.h"
+#include "lvgl/src/others/translation/lv_translation.h"
 #include "post_op_cooldown_manager.h"
 #include "spdlog/spdlog.h"
+
+#include <spdlog/fmt/fmt.h>
 
 #include <chrono>
 
@@ -72,7 +74,8 @@ void AmsBackendAce::on_started() {
     // lane_data happens automatically inside load_blocking the first time
     // lane_data is empty (Task 8).
     if (api_) {
-        override_store_ = std::make_unique<helix::ams::FilamentSlotOverrideStore>(api_, "ace");
+        override_store_ = std::make_unique<helix::ams::FilamentSlotOverrideStore>(
+            api_, "ace", helix::ams::lane_key_style_for(get_type()));
         // Do the (potentially 5s) MR DB round-trip OUTSIDE the lock, then swap
         // in under mutex_. Holding mutex_ during the swap ensures the parse
         // path sees a coherent map rather than a torn write.
@@ -87,12 +90,19 @@ void AmsBackendAce::on_started() {
 
     auto token = lifetime_.token();
 
-    // Query both Klipper object names directly (works if driver has
+    // Query all known Klipper object names directly (works if driver has
     // get_status()). Native Anycubic GoKlipper registers the object as
-    // `filament_hub`; community ValgACE/BunnyACE/DuckACE register it as `ace`.
+    // `filament_hub`; community ValgACE/BunnyACE/DuckACE register it as `ace`;
+    // the Kobra S1 mainline-Python fork registers each unit as
+    // `ace_instance_N` (#1107). printer.objects.query tolerates unknown
+    // objects (absent from the result) and select_slot_bearing_object handles
+    // absent keys, so over-querying is safe.
     json objects_to_query = json::object();
     objects_to_query["filament_hub"] = nullptr;
     objects_to_query["ace"] = nullptr;
+    for (int i = 0; i < 4; ++i) {
+        objects_to_query[fmt::format("ace_instance_{}", i)] = nullptr;
+    }
 
     json params = {{"objects", objects_to_query}};
 
@@ -110,7 +120,7 @@ void AmsBackendAce::on_started() {
                 // manager-only object (Kobra S1 fork: ace_instances/current_index,
                 // no slots) must fall through to the REST bridge (#1069).
                 const json* ace_data = nullptr;
-                const char* matched_key = nullptr;
+                std::string matched_key;
                 if (response.contains("result") && response["result"].contains("status")) {
                     ace_data =
                         select_slot_bearing_object(response["result"]["status"], &matched_key);
@@ -165,7 +175,9 @@ void AmsBackendAce::handle_status_update(const json& notification) {
         return;
 
     // Native Anycubic GoKlipper publishes under `filament_hub`; community
-    // ValgACE under `ace`. Prefer filament_hub, fall back to ace.
+    // ValgACE under `ace`; the Kobra S1 mainline-Python fork under
+    // `ace_instance_N` (#1107). Preference order: filament_hub, ace, then the
+    // lowest-numbered ace_instance_N.
     const json* ace_data = nullptr;
     if (status->contains("filament_hub") && (*status)["filament_hub"].is_object() &&
         !(*status)["filament_hub"].empty()) {
@@ -173,6 +185,19 @@ void AmsBackendAce::handle_status_update(const json& notification) {
     } else if (status->contains("ace") && (*status)["ace"].is_object() &&
                !(*status)["ace"].empty()) {
         ace_data = &(*status)["ace"];
+    } else {
+        const std::string* best_key = nullptr;
+        for (auto it = status->begin(); it != status->end(); ++it) {
+            if (it.key().rfind("ace_instance", 0) == 0 && it.value().is_object() &&
+                !it.value().empty()) {
+                if (best_key == nullptr || it.key() < *best_key) {
+                    best_key = &it.key();
+                }
+            }
+        }
+        if (best_key) {
+            ace_data = &(*status)[*best_key];
+        }
     }
     if (!ace_data)
         return;
@@ -305,14 +330,9 @@ AmsError AmsBackendAce::load_filament(int slot_index) {
                     system_info_.current_tool = slot_index;
                     system_info_.filament_loaded = true;
 
-                    // Update individual slot status so the UI shows it as loaded
-                    if (!system_info_.units.empty()) {
-                        auto& unit = system_info_.units[0];
-                        auto si = static_cast<size_t>(slot_index);
-                        if (si < unit.slots.size()) {
-                            unit.slots[si].status = SlotStatus::LOADED;
-                        }
-                    }
+                    // Same derivation the parse paths use, so the next status
+                    // frame re-applies this stamp instead of erasing it.
+                    apply_seated_slot_stamp_locked();
                 }
                 PostOpCooldownManager::instance().schedule();
                 emit_event(EVENT_STATE_CHANGED);
@@ -364,19 +384,15 @@ AmsError AmsBackendAce::unload_filament(int /*slot_index*/) {
                 {
                     std::lock_guard<std::mutex> lock(mutex_);
 
-                    // Revert previously loaded slot to AVAILABLE
-                    if (!system_info_.units.empty() && system_info_.current_slot >= 0) {
-                        auto& unit = system_info_.units[0];
-                        auto si = static_cast<size_t>(system_info_.current_slot);
-                        if (si < unit.slots.size() && unit.slots[si].status == SlotStatus::LOADED) {
-                            unit.slots[si].status = SlotStatus::AVAILABLE;
-                        }
-                    }
-
                     system_info_.action = AmsAction::IDLE;
                     system_info_.current_slot = -1;
                     system_info_.current_tool = -1;
                     system_info_.filament_loaded = false;
+
+                    // Releases the stamp back to the status the parse wrote,
+                    // rather than assuming AVAILABLE for a slot firmware may
+                    // have called EMPTY.
+                    apply_seated_slot_stamp_locked();
                 }
                 PostOpCooldownManager::instance().schedule();
                 emit_event(EVENT_STATE_CHANGED);
@@ -462,6 +478,11 @@ AmsError AmsBackendAce::set_slot_info(int slot_index, const SlotInfo& info, bool
         slot.color_name = info.color_name;
         slot.material = info.material;
         slot.brand = info.brand;
+        // Carry the catalog product identity through preview writes too — a
+        // persist=false preview that dropped it would make the editor snap
+        // back to a different variant on the next get_slot_info().
+        slot.catalog_id = info.catalog_id;
+        slot.product_name = info.product_name;
         slot.spool_name = info.spool_name;
         slot.spoolman_id = info.spoolman_id;
         slot.spoolman_vendor_id = info.spoolman_vendor_id;
@@ -485,6 +506,13 @@ AmsError AmsBackendAce::set_slot_info(int slot_index, const SlotInfo& info, bool
             ovr.color_set = true; // a user-edit always records a color, even pure black (#000000)
             ovr.color_name = info.color_name;
             ovr.material = info.material;
+            // Catalog product identity. Persisted so a reopen can restore the
+            // EXACT product rather than the alphabetically-first variant of the
+            // same vendor+material. Never auto-mirrored (firmware has no notion
+            // of a catalog product), so no user-lock flag is needed: a non-empty
+            // value can only have come from a user pick.
+            ovr.catalog_id = info.catalog_id;
+            ovr.product_name = info.product_name;
             // SlotInfo carries the user's edit OR the bound Spoolman spool's
             // filament profile; the material-DB fallback for fields left at 0
             // is applied at emit time inside resolved_temps(). Centralized in
@@ -637,8 +665,60 @@ std::vector<DryingPreset> AmsBackendAce::get_drying_presets() const {
 // Combined ACE Object Parsing (WebSocket subscription path)
 // ============================================================================
 
+SlotInfo* AmsBackendAce::mutable_slot_locked(int slot_index) {
+    // Caller holds mutex_.
+    if (system_info_.units.empty() || slot_index < 0) {
+        return nullptr;
+    }
+    auto& slots = system_info_.units[0].slots;
+    if (static_cast<size_t>(slot_index) >= slots.size()) {
+        return nullptr;
+    }
+    return &slots[static_cast<size_t>(slot_index)];
+}
+
+void AmsBackendAce::clear_seated_slot_stamp_locked() {
+    // Caller holds mutex_.
+    if (seated_stamp_slot_ < 0) {
+        return;
+    }
+
+    SlotInfo* slot = mutable_slot_locked(seated_stamp_slot_);
+    // A resized/rebuilt slot vector has already written firmware truth here,
+    // so the saved status is stale — only restore over a stamp still visible.
+    if (slot != nullptr && slot->status == SlotStatus::LOADED) {
+        slot->status = seated_stamp_prev_;
+    }
+
+    seated_stamp_slot_ = -1;
+    seated_stamp_prev_ = SlotStatus::UNKNOWN;
+}
+
+void AmsBackendAce::apply_seated_slot_stamp_locked() {
+    // Caller holds mutex_.
+    clear_seated_slot_stamp_locked();
+
+    if (!system_info_.filament_loaded || system_info_.current_slot < 0) {
+        return;
+    }
+
+    SlotInfo* slot = mutable_slot_locked(system_info_.current_slot);
+    if (slot == nullptr) {
+        return;
+    }
+
+    seated_stamp_slot_ = system_info_.current_slot;
+    seated_stamp_prev_ = slot->status;
+    slot->status = SlotStatus::LOADED;
+}
+
 void AmsBackendAce::parse_ace_object(const json& data) {
     std::lock_guard<std::mutex> lock(mutex_);
+
+    // Drop the previous frame's derived seat before the slot loop rewrites
+    // statuses, so check_hardware_event_clear and prev_slot_status_ compare
+    // firmware against firmware. Re-derived at the bottom of this function.
+    clear_seated_slot_stamp_locked();
 
     // Parse system info (model, firmware)
     if (data.contains("model") && data["model"].is_string()) {
@@ -885,9 +965,15 @@ void AmsBackendAce::parse_ace_object(const json& data) {
             }
         }
     }
+
+    // All three seated signals (the ValgACE "loaded" scan, loaded_slot, and
+    // native current_filament) have now had their say and arbitrated to one
+    // slot; publish that as the slot's own status.
+    apply_seated_slot_stamp_locked();
 }
 
-const json* AmsBackendAce::select_slot_bearing_object(const json& status, const char** matched_key) {
+const json* AmsBackendAce::select_slot_bearing_object(const json& status,
+                                                      std::string* matched_key) {
     // Commit to the subscription path ONLY when the object actually carries
     // slot data (a non-empty "slots" array — the exact key parse_ace_object
     // reads). A manager-only object (Kobra S1 fork's `ace`: ace_instances /
@@ -898,6 +984,11 @@ const json* AmsBackendAce::select_slot_bearing_object(const json& status, const 
                !obj["slots"].empty();
     };
 
+    // Preference order: filament_hub (native GoKlipper), then ace (community
+    // ValgACE/BunnyACE), then ace_instance_N (Kobra S1 mainline-Python fork —
+    // #1107) in ascending name order. The object path is used only if the
+    // matched object carries a slots array; otherwise the caller falls through
+    // to the REST bridge.
     if (status.contains("filament_hub") && has_slot_data(status["filament_hub"])) {
         if (matched_key)
             *matched_key = "filament_hub";
@@ -907,6 +998,23 @@ const json* AmsBackendAce::select_slot_bearing_object(const json& status, const 
         if (matched_key)
             *matched_key = "ace";
         return &status["ace"];
+    }
+    // Kobra S1 fork registers each unit as `ace_instance_N`. Pick the
+    // lowest-numbered slot-bearing instance so the choice is deterministic.
+    if (status.is_object()) {
+        const std::string* best_key = nullptr;
+        for (auto it = status.begin(); it != status.end(); ++it) {
+            if (it.key().rfind("ace_instance", 0) == 0 && has_slot_data(it.value())) {
+                if (best_key == nullptr || it.key() < *best_key) {
+                    best_key = &it.key();
+                }
+            }
+        }
+        if (best_key) {
+            if (matched_key)
+                *matched_key = *best_key;
+            return &status[*best_key];
+        }
     }
     return nullptr;
 }
@@ -1287,6 +1395,11 @@ bool AmsBackendAce::parse_status_response(const json& data) {
         }
     }
 
+    // /status owns loaded_slot but never touches the slot vector; /slots owns
+    // the slot vector but carries no seated field. Both ends re-derive the
+    // stamp so whichever polled last leaves the two consistent.
+    apply_seated_slot_stamp_locked();
+
     return changed;
 }
 
@@ -1320,6 +1433,11 @@ bool AmsBackendAce::parse_slots_response(const json& data) {
         system_info_.total_slots = static_cast<int>(slots_data.size());
         changed = true;
     }
+
+    // Un-stamp before the per-slot compare below, or a seated slot would read
+    // as changed against firmware's "ready" on every 500 ms poll and emit a
+    // STATE_CHANGED event forever.
+    clear_seated_slot_stamp_locked();
 
     for (size_t i = 0; i < slots_data.size(); ++i) {
         const auto& slot_json = slots_data[i];
@@ -1375,6 +1493,11 @@ bool AmsBackendAce::parse_slots_response(const json& data) {
             slot.nozzle_temp_max = slot_json["temp_max"].get<int>();
         }
     }
+
+    // /slots carries no seated field, so re-apply what /status last resolved —
+    // otherwise this poll would silently demote the loaded slot to AVAILABLE
+    // and take can_unload_from_toolhead() with it.
+    apply_seated_slot_stamp_locked();
 
     return changed;
 }
@@ -1537,6 +1660,14 @@ void AmsBackendAce::apply_overrides(SlotInfo& slot, int slot_index) {
         slot.color_name = o.color_name;
     if (!o.material.empty())
         slot.material = o.material;
+    // Catalog product identity — same "override wins only when it carries a
+    // real value" rule as the strings above. Firmware never populates these
+    // (no AMS protocol has a notion of a branded product id), so a non-empty
+    // value here is always a user pick and always wins.
+    if (!o.catalog_id.empty())
+        slot.catalog_id = o.catalog_id;
+    if (!o.product_name.empty())
+        slot.product_name = o.product_name;
 }
 
 void AmsBackendAce::check_hardware_event_clear(SlotInfo& slot, int slot_index, SlotStatus prev,
@@ -1586,6 +1717,12 @@ void AmsBackendAce::clear_override_locked(int slot_index, SlotInfo& slot) {
     slot.remaining_weight_g = -1.0f;
     slot.total_weight_g = -1.0f;
     slot.color_name.clear();
+    // The catalog pick is override-exclusive on every backend — no AMS
+    // firmware carries a branded product id — so a clear always drops it.
+    // Leaving it would re-navigate the editor to the removed spool's
+    // product on the next open.
+    slot.catalog_id.clear();
+    slot.product_name.clear();
 
     if (override_store_) {
         // Capture by value — clear_async's Moonraker callback can fire after

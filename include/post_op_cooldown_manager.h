@@ -41,12 +41,22 @@ class PostOpCooldownManager {
     /// Shutdown — cancel timer, release resources. Call during app teardown.
     void shutdown();
 
+    /// True while a cooldown timer is pending. Test-observability only; read on
+    /// the LVGL main thread after draining the update queue (schedule()/cancel()
+    /// mutate timer_ from a queued main-thread lambda).
+    [[nodiscard]] bool has_pending_timer() const noexcept {
+        return timer_ != nullptr;
+    }
+
   private:
     PostOpCooldownManager() = default;
     ~PostOpCooldownManager() = default;
     PostOpCooldownManager(const PostOpCooldownManager&) = delete;
     PostOpCooldownManager& operator=(const PostOpCooldownManager&) = delete;
 
+    // TIMER_DTOR_OK: the callback reaches the owner through
+    // PostOpCooldownManager::instance() rather than a captured `this`, so
+    // destroying the manager cannot leave the timer holding freed memory.
     lv_timer_t* timer_ = nullptr;
     std::atomic<bool> initialized_{false};
 };

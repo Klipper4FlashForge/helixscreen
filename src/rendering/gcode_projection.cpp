@@ -80,6 +80,19 @@ AutoFitResult compute_auto_fit(const AABB& bb, ViewMode view_mode, int canvas_wi
                                int canvas_height, float padding) {
     AutoFitResult result;
 
+    // A default-constructed AABB is {+inf, -inf}: every range below goes to -inf,
+    // trips the degeneracy clamp, and — worse — the offsets become
+    // (inf + -inf) / 2 = NaN, which poisons every projected point and makes the
+    // int cast in project() undefined. Callers are expected to substitute a real
+    // box, but guard here too so no caller can produce NaN.
+    if (bb.is_empty()) {
+        result.scale = 1.0f;
+        result.offset_x = 0.0f;
+        result.offset_y = 0.0f;
+        result.offset_z = 0.0f;
+        return result;
+    }
+
     float range_x, range_y;
 
     switch (view_mode) {

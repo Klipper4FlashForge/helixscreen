@@ -3,7 +3,7 @@
 
 #include "xml_registration.h"
 
-#include "boot_yield.h"
+#include "ui_afc_fault_path.h"
 #include "ui_ams_current_tool.h"
 #include "ui_ams_device_operations_overlay.h"
 #include "ui_ams_device_section_detail_overlay.h"
@@ -34,6 +34,7 @@
 #include "ui_text_input.h"
 #include "ui_z_offset_indicator.h"
 
+#include "boot_yield.h"
 #include "layout_manager.h"
 #include "page_scroll_auto_inject.h"
 #include "static_subject_registry.h"
@@ -114,17 +115,27 @@ static void register_color_picker_responsive_constants() {
 }
 
 /**
- * Register responsive constants into the color_picker component scope.
- * Must be called AFTER register_xml("color_picker.xml") so the scope exists.
+ * Register the responsive HSV-picker constants into a component scope.
+ * Must be called AFTER register_xml() for that component so the scope exists.
+ *
+ * Takes the component name because consts are SCOPE-LOCAL: any component that
+ * instantiates <ui_hsv_picker sv_size="#sv_size"> needs its own registration.
+ * ams_edit_overlay embeds the picker and had none, so resolve_consts() dropped
+ * both attributes and the widget silently fell back to default_sv_size() — a
+ * fixed 128px on constrained devices, ignoring the breakpoint ladder entirely.
  */
-static void register_color_picker_component_constants() {
+static void register_color_picker_component_constants(const char* component_name) {
     lv_display_t* display = lv_display_get_default();
     int32_t ver_res = lv_display_get_vertical_resolution(display);
+    // Swatch is a square touch target — size it off the constrained axis so it
+    // stays tappable in portrait. The HSV picker below is genuinely vertical (it
+    // fills the modal's height), so that math deliberately keeps using ver_res.
+    const int32_t resp_res = responsive_dimension(display);
 
     // Swatch size: smaller on compact screens
-    const char* swatch_size = ver_res <= UI_BREAKPOINT_MICRO_MAX   ? "24"
-                              : ver_res <= UI_BREAKPOINT_SMALL_MAX ? "28"
-                                                                   : "32";
+    const char* swatch_size = resp_res <= UI_BREAKPOINT_MICRO_MAX   ? "24"
+                              : resp_res <= UI_BREAKPOINT_SMALL_MAX ? "28"
+                                                                    : "32";
 
     // HSV picker: size proportionally to screen height
     // On TINY (full-screen modal), chrome is ~142px (header+tabs+padding+dividers+buttons)
@@ -148,32 +159,47 @@ static void register_color_picker_component_constants() {
     snprintf(sv_buf, sizeof(sv_buf), "%d", computed_sv);
     snprintf(hue_buf, sizeof(hue_buf), "%d", computed_hue);
 
-    lv_xml_component_scope_t* scope = lv_xml_component_get_scope("color_picker");
+    lv_xml_component_scope_t* scope = lv_xml_component_get_scope(component_name);
     if (scope) {
-        lv_xml_register_const(scope, "swatch_size", swatch_size);
+        // swatch_size ONLY where the component declares a fallback <px> for it.
+        // register_const is first-write-wins, and <consts> are parsed during
+        // register_xml(), so the declaration in color_picker.xml already owns
+        // the name by the time we get here — the responsive 24/28/32 ladder was
+        // silently discarded and every screen got the declared 32. update_const
+        // overwrites, same reason register_swatch_grid_constants() uses it.
+        // Scopes without the declaration are skipped: update_const would log a
+        // "not found for update" warning on every boot for a name they never use.
+        if (lv_xml_get_const_silent(scope, "swatch_size") != nullptr) {
+            lv_xml_update_const(scope, "swatch_size", swatch_size);
+        }
+        // Never declared in XML anywhere, so register is silent and correct.
         lv_xml_register_const(scope, "sv_size", sv_buf);
         lv_xml_register_const(scope, "hue_height", hue_buf);
-        spdlog::debug("[Color Picker] Registered swatch_size={}, sv_size={}, hue_height={} "
+        spdlog::debug("[Color Picker] {}: swatch_size={}, sv_size={}, hue_height={} "
                       "for height {}px",
-                      swatch_size, sv_buf, hue_buf, ver_res);
+                      component_name, swatch_size, sv_buf, hue_buf, ver_res);
     }
 }
 
 /**
- * Register responsive constants into the color_swatch_grid component scope.
- * Must be called AFTER register_xml("components/color_swatch_grid.xml").
+ * Register responsive constants into a swatch-grid component scope.
+ * Must be called AFTER register_xml() for that component. Shared by
+ * color_swatch_grid (general/filament presets) and theme_swatch_grid (theme
+ * editor presets) — both are 6-column, 30-swatch grids with identical sizing.
  * Swatch size follows the color_picker ladder (24/28/32 by screen height);
  * grid width is computed as 6 columns so the 30 swatches always form 5 even
  * rows at every breakpoint.
  */
-static void register_color_swatch_grid_constants() {
+static void register_swatch_grid_constants(const char* component_name) {
     lv_display_t* display = lv_display_get_default();
-    int32_t ver_res = lv_display_get_vertical_resolution(display);
+    // Square-tile grid: size tiles + gap off the constrained axis so the grid
+    // fits a narrow portrait screen instead of overflowing off its tall axis.
+    int32_t resp_res = responsive_dimension(display);
 
-    int32_t swatch = ver_res <= UI_BREAKPOINT_MICRO_MAX   ? 24
-                     : ver_res <= UI_BREAKPOINT_SMALL_MAX ? 28
-                                                          : 32;
-    int32_t gap = ver_res <= UI_BREAKPOINT_MICRO_MAX ? 6 : 8;
+    int32_t swatch = resp_res <= UI_BREAKPOINT_MICRO_MAX   ? 24
+                     : resp_res <= UI_BREAKPOINT_SMALL_MAX ? 28
+                                                           : 32;
+    int32_t gap = resp_res <= UI_BREAKPOINT_MICRO_MAX ? 6 : 8;
     constexpr int32_t cols = 6;
     int32_t width = cols * swatch + (cols - 1) * gap;
 
@@ -184,13 +210,16 @@ static void register_color_swatch_grid_constants() {
     snprintf(gap_buf, sizeof(gap_buf), "%d", gap);
     snprintf(width_buf, sizeof(width_buf), "%d", width);
 
-    lv_xml_component_scope_t* scope = lv_xml_component_get_scope("color_swatch_grid");
+    lv_xml_component_scope_t* scope = lv_xml_component_get_scope(component_name);
     if (scope) {
-        lv_xml_register_const(scope, "grid_swatch_size", swatch_buf);
-        lv_xml_register_const(scope, "grid_gap", gap_buf);
-        lv_xml_register_const(scope, "grid_width", width_buf);
-        spdlog::debug("[SwatchGrid] Registered swatch={} gap={} width={} for height {}px",
-                      swatch_buf, gap_buf, width_buf, ver_res);
+        // update_, NOT register_: the component declares all three as fallback
+        // <consts>, and lv_xml_register_const() is a no-op once the name exists in
+        // the scope, which would pin the grid to those fallbacks at every breakpoint.
+        lv_xml_update_const(scope, "grid_swatch_size", swatch_buf);
+        lv_xml_update_const(scope, "grid_gap", gap_buf);
+        lv_xml_update_const(scope, "grid_width", width_buf);
+        spdlog::debug("[SwatchGrid] {}: registered swatch={} gap={} width={} for min_dim {}px",
+                      component_name, swatch_buf, gap_buf, width_buf, resp_res);
     }
 }
 
@@ -313,6 +342,10 @@ void register_xml_components() {
     ui_hsv_picker_register();         // HSV color picker for edit filament modal
     ui_z_offset_indicator_register(); // Z-offset nozzle indicator
     ui_ams_current_tool_init();       // AMS current tool indicator callbacks
+    // <afc_fault_path> + its afc_fault_segment subject. Both modals that can show
+    // an AFC lane fault embed it, and one of them (ams_loading_error_modal.xml) is
+    // registered lazily by AmsPanel — so this has to come first.
+    helix::ui::afc_fault_path_register();
     // NOTE: Other AMS widgets (ams_slot, filament_path_canvas) are
     // registered lazily in ui_panel_ams.cpp when the AMS panel is first accessed
 
@@ -322,16 +355,26 @@ void register_xml_components() {
     // AMS slot editor (single overlay, internal views — spec §13)
     helix::ui::get_ams_edit_overlay().register_callbacks();
     register_xml("components/color_swatch_grid.xml");
-    register_color_swatch_grid_constants();
+    register_swatch_grid_constants("color_swatch_grid");
+    // Theme-editor preset palette — surface ramp + hue families, sized by the
+    // same ladder as the general grid. Must precede color_picker.xml, whose
+    // <if> picks between the two.
+    register_xml("components/theme_swatch_grid.xml");
+    register_swatch_grid_constants("theme_swatch_grid");
     register_xml("ams_edit_overlay.xml");
+    // Embeds <ui_hsv_picker sv_size="#sv_size">; consts are scope-local.
+    register_color_picker_component_constants("ams_edit_overlay");
 
     // Spoolman components (MUST be after spool_canvas registration)
     register_xml("spoolman_spool_row.xml");
     register_xml("spoolman_context_menu.xml");
     register_xml("spoolman_edit_modal.xml");
     register_xml("spoolman_panel.xml");
+    register_xml("components/filament_catalog_row.xml");
+    register_xml("components/filament_catalog_add_row.xml");
     register_xml("components/filament_catalog_selector.xml");
     register_xml("components/filament_catalog_picker.xml");
+    register_xml("filament_product_edit_modal.xml");
 
     // Spool wizard components
     register_xml("wizard_vendor_row.xml");
@@ -350,6 +393,7 @@ void register_xml_components() {
     register_xml("filament_sensor_row.xml");
     register_xml("temp_display.xml");
     register_xml("components/nozzle_icon.xml");
+    register_xml("components/heater_icon.xml");
     // Shared progress arc widget — diameter-driven stroke thickness, see
     // include/ui_progress_arc.h for the C++ companion (attach_progress_arc).
     register_xml("components/helix_progress_arc.xml");
@@ -419,7 +463,7 @@ void register_xml_components() {
     register_xml("action_prompt_modal.xml");
     register_xml("info_qr_modal.xml");
     register_xml("color_picker.xml");
-    register_color_picker_component_constants();
+    register_color_picker_component_constants("color_picker");
 
     // Print file components
     register_xml("print_file_card.xml");
@@ -429,6 +473,7 @@ void register_xml_components() {
     register_xml("components/filament_swatch.xml");
     register_xml("components/filament_slot_picker_row.xml");
     register_xml("components/filament_mapping_tool_row.xml");
+    register_xml("components/compact_toggle_row.xml");
     register_xml("print_file_detail.xml");
 
     // Panel widget components (dynamic instantiation from PanelWidgetConfig)
@@ -501,6 +546,11 @@ void register_xml_components() {
     register_xml("navigation_bar.xml");
     register_xml("home_panel.xml");
     register_xml("controls_panel.xml");
+    // The X/Y/Z position card is shared between motion_panel.xml's landscape
+    // and portrait arrangements (see the <if>/<else> there), so it is its own
+    // component rather than markup duplicated per branch. Must be registered
+    // before motion_panel.xml, which uses it.
+    register_xml("components/motion_position_card.xml");
     register_xml("motion_panel.xml");
     // TODO: Remove these old per-heater overlays once application.cpp's
     // --overlays command-line paths and TemperatureService::xml_component_name()
@@ -553,6 +603,7 @@ void register_xml_components() {
     register_xml("power_device_row.xml");
     register_xml("power_panel.xml");
     register_xml("screws_tilt_panel.xml");
+    register_xml("screws_tilt_share_modal.xml");
     register_xml("input_shaper_panel.xml");
     register_xml("components/belt_result_card.xml");
     register_xml("panel_belt_tension.xml");
@@ -593,6 +644,14 @@ void register_xml_components() {
     register_xml("bed_mesh_calibrate_modal.xml");
     register_xml("bed_mesh_rename_modal.xml");
     register_xml("bed_mesh_save_config_modal.xml");
+    // The canvas band, and the stats/profiles cards, are shared between
+    // bed_mesh_panel's landscape and portrait arrangements (see the
+    // <if>/<else> in bed_mesh_panel.xml), so they are their own components
+    // rather than inline markup duplicated per branch. Must be registered
+    // before bed_mesh_panel which uses them.
+    register_xml("components/bed_mesh_canvas_band.xml");
+    register_xml("components/bed_mesh_current_mesh_card.xml");
+    register_xml("components/bed_mesh_profiles_card.xml");
     register_xml("bed_mesh_panel.xml");
 
     // Settings overlay panels
@@ -660,11 +719,17 @@ void register_xml_components() {
 
     // Additional panels
     register_xml("advanced_panel.xml");
-    register_xml("test_panel.xml");
     register_xml("print_select_panel.xml");
+
+    // Developer-only showcase panels (ENABLE_DEV_PANELS). Their C++ classes are
+    // excluded from release builds, so skip the component registration too —
+    // nothing navigates to them and the XML files are never instantiated.
+#ifdef HELIX_ENABLE_DEV_PANELS
+    register_xml("test_panel.xml");
     register_xml("gcode_test_panel.xml");
     register_xml("step_test_panel.xml");
     register_xml("glyphs_panel.xml");
+#endif
 
     // App layout
     register_xml("app_layout.xml");
@@ -673,7 +738,6 @@ void register_xml_components() {
     register_xml("wizard_touch_calibration.xml");
     register_xml("wizard_header_bar.xml");
     register_xml("wizard_container.xml");
-    register_xml("network_list_item.xml");
     register_xml("wifi_password_modal.xml");
     register_xml("wizard_wifi_setup.xml");
     register_xml("wizard_connection.xml");

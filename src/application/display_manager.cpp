@@ -123,8 +123,12 @@ bool DisplayManager::init(const Config& config) {
         spdlog::error("[DisplayManager] No display backend available");
         TelemetryManager::instance().record_error("display", "init_failed",
                                                   "no display backend available");
-        lv_xml_deinit();
+        // lv_deinit() first, then lv_xml_deinit() — the teardown order shutdown()
+        // documents. Nothing is registered yet on this path, so either order works
+        // today; keeping one order everywhere is what stops the shutdown ordering
+        // bug from being reintroduced by copying this block.
         lv_deinit();
+        lv_xml_deinit();
         return false;
     }
 
@@ -211,8 +215,9 @@ bool DisplayManager::init(const Config& config) {
         TelemetryManager::instance().record_error("display", "init_failed",
                                                   "all display backends exhausted");
         m_backend.reset();
-        lv_xml_deinit();
+        // Same teardown order as above and as shutdown().
         lv_deinit();
+        lv_xml_deinit();
         return false;
     }
 
@@ -341,8 +346,13 @@ bool DisplayManager::init(const Config& config) {
                                 suggestions, 30000);
 
             m_backend.reset();
-            lv_xml_deinit();
+            // Order matters here, unlike the two paths above: ui_show_fatal_error()
+            // has just built and shown a widget tree. Freeing the component scopes
+            // first would free styles those widgets still point at, and lv_deinit()
+            // runs layout passes while tearing them down — the use-after-free
+            // shutdown() hit. Destroy the widgets first, then the scopes.
             lv_deinit();
+            lv_xml_deinit();
             return false;
         }
 #else
@@ -592,13 +602,29 @@ void DisplayManager::shutdown() {
     lv_sdl_quit();
 #endif
 
-    // Deinitialize helix-xml engine before LVGL (frees component scopes, fonts, etc.)
-    lv_xml_deinit();
-
-    // Deinitialize LVGL (guard against static destruction order issues)
+    // Deinitialize LVGL FIRST, then the helix-xml engine.
+    //
+    // A component scope owns the styles its instances use: component_scope_free()
+    // clears scope->style_ll, freeing every lv_style_t in it. Widgets keep raw
+    // pointers to those styles, so freeing the scopes while the widget tree is
+    // still standing leaves live objects pointing at reclaimed style memory —
+    // and lv_deinit()'s own teardown runs layouts as it goes, so a flex pass
+    // reads a freed style before the object is deleted (heap-use-after-free in
+    // get_prop_core, via lv_obj_get_style_flex_grow).
+    //
+    // The reverse order is safe: lv_deinit() only needs the widget tree and its
+    // own allocator, neither of which the XML engine owns, and lv_free() here is
+    // plain free() (LV_USE_STDLIB_MALLOC = clib), so releasing scopes afterwards
+    // needs nothing from LVGL. The <subject_expr> observers detached below are
+    // attached to app-owned subjects, not objects, so lv_deinit() leaves them
+    // alone for lv_xml_deinit() to remove — which is why theme_manager_deinit()
+    // must run after all of this (see Application::shutdown()).
     if (lv_is_initialized()) {
         lv_deinit();
     }
+
+    // Frees component scopes, their styles, fonts and <subject_expr> observers.
+    lv_xml_deinit();
 
     m_width = 0;
     m_height = 0;
@@ -606,6 +632,10 @@ void DisplayManager::shutdown() {
 }
 
 void DisplayManager::configure_scroll(int scroll_throw, int scroll_limit) {
+    // Remember the values so a post-swap input rebuild (rotation fallback) can
+    // reapply them to the freshly-created pointer without re-reading config.
+    m_scroll_throw = scroll_throw;
+    m_scroll_limit = scroll_limit;
     if (!m_pointer) {
         return;
     }
@@ -613,6 +643,44 @@ void DisplayManager::configure_scroll(int scroll_throw, int scroll_limit) {
     lv_indev_set_scroll_throw(m_pointer, static_cast<uint8_t>(scroll_throw));
     lv_indev_set_scroll_limit(m_pointer, static_cast<uint8_t>(scroll_limit));
     spdlog::trace("[DisplayManager] Scroll config: throw={}, limit={}", scroll_throw, scroll_limit);
+}
+
+void DisplayManager::rebuild_input_after_backend_swap() {
+    // A backend swap (DRM→fbdev rotation fallback) deleted the display and freed
+    // the old backend. lv_display_delete() only detaches indevs (sets their
+    // display to NULL) — it does not free them — so m_pointer/m_keyboard still
+    // point at indevs bound to the gone backend, whose read_cb/user_data now
+    // reference freed memory. Delete them and recreate on the current backend,
+    // mirroring init()'s input setup so scroll/long-press/sleep-wrapper/keyboard
+    // behavior is preserved.
+    if (m_pointer) {
+        lv_indev_delete(m_pointer); // NOTE: swap, not shutdown
+        m_pointer = nullptr;
+    }
+    if (m_keyboard) {
+        lv_indev_delete(m_keyboard); // NOTE: swap, not shutdown
+        m_keyboard = nullptr;
+    }
+    // The saved read callback belonged to the deleted pointer; drop it so the
+    // sleep-aware wrapper re-captures the new pointer's callback on reinstall.
+    m_original_pointer_read_cb = nullptr;
+
+    m_pointer = m_backend->create_input_pointer();
+    if (m_pointer) {
+        configure_scroll(m_scroll_throw, m_scroll_limit);
+        lv_indev_set_long_press_time(m_pointer, AppConstants::Input::LONG_PRESS_MS);
+#ifndef HELIX_DISPLAY_SDL
+        install_sleep_aware_input_wrapper();
+#endif
+    }
+
+    m_keyboard = m_backend->create_input_keyboard();
+    if (m_keyboard) {
+        setup_keyboard_group();
+    }
+
+    spdlog::info("[DisplayManager] Input rebuilt after backend swap (pointer={}, keyboard={})",
+                 m_pointer ? "ok" : "null", m_keyboard ? "ok" : "null");
 }
 
 void DisplayManager::setup_keyboard_group() {
@@ -1282,6 +1350,13 @@ bool DisplayManager::try_drm_to_fbdev_fallback(lv_display_rotation_t rot, bool s
         return true; // No fallback needed
     }
 
+    // If input devices were already created (apply_rotation runs this fallback
+    // after init()), they are bound to the DRM backend we are about to free and
+    // to the display we are about to delete — they must be rebuilt on the fbdev
+    // backend below. At init time m_pointer is still null and init() creates the
+    // input devices after this returns, so nothing to rebuild there.
+    const bool had_input_devices = (m_pointer != nullptr);
+
     spdlog::warn("[DisplayManager] DRM lacks hardware rotation for {}°, "
                  "falling back to fbdev (flicker-free software rotation)",
                  static_cast<int>(rot) * 90);
@@ -1306,6 +1381,15 @@ bool DisplayManager::try_drm_to_fbdev_fallback(lv_display_rotation_t rot, bool s
     }
     spdlog::info("[DisplayManager] Fbdev fallback succeeded at {}x{}", m_width, m_height);
     warn_fbdev_high_dpi();
+
+    // Recreate the input devices on the new backend. lv_display_delete() only
+    // detached them (their display is now NULL) and m_backend.reset() freed the
+    // DRM backend their read_cb/user_data pointed into — leaving m_pointer as a
+    // display-less indev referencing freed memory and the fbdev backend with no
+    // input at all. Rebuild only when they already existed (post-init swap).
+    if (had_input_devices) {
+        rebuild_input_after_backend_swap();
+    }
     return true;
 }
 

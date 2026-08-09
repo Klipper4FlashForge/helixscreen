@@ -40,6 +40,20 @@ enum class PanelId {
     Advanced,    ///< Panel 5: Advanced
     Count        ///< Total number of panels
 };
+
+/**
+ * @brief Whether overlays pushed from a nav root are destinations by default.
+ *
+ * Settings is the one root users navigate *within* rather than launch things
+ * from: Settings > Network is a sub-screen of Settings, not a layer over it, so
+ * it renders at destination width (iOS push semantics). Every other root
+ * launches tools you return from, which get the gapped transient width.
+ *
+ * See include/overlay_class.h and prestonbrown/helixscreen#1178.
+ */
+constexpr bool nav_root_is_destination(PanelId id) {
+    return id == PanelId::Settings;
+}
 } // namespace helix
 
 // Legacy aliases for backward compatibility
@@ -64,6 +78,8 @@ constexpr int UI_PANEL_COUNT = static_cast<int>(helix::PanelId::Count);
  *   NavigationManager::instance().set_panels(panel_widgets);
  */
 class NavigationManager {
+    friend class NavigationManagerTestAccess;
+
   public:
     /**
      * @brief Get singleton instance
@@ -310,6 +326,13 @@ class NavigationManager {
     helix::PanelId get_active() const;
 
     /**
+     * @brief Names of the overlays currently stacked on top of the base panel,
+     *        bottom to top. Read-only; used by the remote-control breadcrumb.
+     * @return Resolved widget names of panel_stack_ entries above the base.
+     */
+    std::vector<std::string> overlay_stack_names() const;
+
+    /**
      * @brief Get the active panel subject for observation
      * @return Pointer to the LVGL subject tracking active panel ID
      */
@@ -345,6 +368,29 @@ class NavigationManager {
      * @param source_rect Screen coordinates of the source element to zoom from
      */
     void push_overlay_zoom_from(lv_obj_t* overlay_panel, lv_area_t source_rect);
+
+    /**
+     * @brief Re-apply every live overlay's width after a resolution change
+     *
+     * Overlays cache their root widget across show/hide cycles, so a width
+     * applied at push time goes stale when the canvas resizes (rotation, or an
+     * Android navigation bar insetting the LVGL surface — #941). Each overlay's
+     * resolved class is remembered, so this re-derives the pixel width from the
+     * freshly-registered constants rather than guessing it back from the
+     * current width. Call after theme_manager_refresh_layout_constants(). #1178
+     */
+    void reapply_overlay_widths();
+
+    /**
+     * @brief Exempt an overlay from push-time width management
+     *
+     * For overlays whose width is a deliberate design choice rather than one of
+     * the two navigation classes — widget_catalog_overlay is 70% so the grid
+     * stays visible behind it while you drag a widget out of the list. Call
+     * once after creating the widget; push_overlay() then leaves its width
+     * alone. #1178
+     */
+    void set_overlay_width_unmanaged(lv_obj_t* overlay);
 
     /**
      * @brief Register a callback to be called when an overlay is closed
@@ -384,10 +430,40 @@ class NavigationManager {
     bool is_panel_in_stack(lv_obj_t* panel) const;
 
     /**
+     * @brief Check if a panel is the top of the overlay stack
+     *
+     * Stronger than is_panel_in_stack(): answers "will go_back() pop THIS
+     * panel?". Any deferred callback that navigates on behalf of a screen it
+     * pushed earlier must ask this first — by the time it runs, the user may
+     * have navigated on, and a blind go_back() would pop whatever they are
+     * looking at now (#1221).
+     *
+     * @param panel Panel widget to check for
+     * @return true if panel is the topmost entry in the overlay stack
+     */
+    bool is_panel_on_top(lv_obj_t* panel) const;
+
+    /**
      * @brief Check if any overlays are currently open
      * @return true if there are overlay panels on the stack
      */
     bool has_open_overlays() const;
+
+    /**
+     * @brief Consume the "on-screen keyboard was visible when the dismiss-
+     * backdrop was pressed" latch.
+     *
+     * Overlays sit over a full-screen clickable dismiss-backdrop; a tap that
+     * lands on the backdrop while the keyboard is up should dismiss the keyboard
+     * only, not pop the overlay behind it. LVGL fires LV_EVENT_PRESSED before the
+     * click-focus DEFOCUS that hides the keyboard, so backdrop_click_event_cb
+     * latches visibility at PRESSED and consults it here at CLICKED (by which
+     * point is_visible() would already read false).
+     *
+     * @return true (once) if that tap should be consumed for the keyboard
+     *         dismiss; the caller must keep the overlay. Cleared on read.
+     */
+    bool take_backdrop_keyboard_dismiss();
 
     /**
      * @brief Shutdown navigation system during application exit
@@ -504,9 +580,35 @@ class NavigationManager {
     // Attach the LV_EVENT_DELETE scrub callback to a widget exactly once.
     void ensure_delete_hook(lv_obj_t* widget);
     static void overlay_delete_event_cb(lv_event_t* e);
+    // Create the darkened backdrop over `screen` and adopt it as
+    // overlay_backdrop_, wiring its click handlers and the delete scrub. The
+    // backdrop is a child of `screen`, so any path that deletes the screen frees
+    // it without going through go_back(); the scrub hook is what keeps
+    // overlay_backdrop_ from outliving it.
+    void adopt_overlay_backdrop(lv_obj_t* screen);
 
     // Event callbacks
     static void backdrop_click_event_cb(lv_event_t* e);
+
+    /**
+     * @brief Resolve and apply an overlay's width class at push time
+     *
+     * Destinations render full width, transient layers render gapped. Which one
+     * an overlay gets depends on how the user reached it — the same
+     * fan_control_overlay is a transient layer from Controls and a drill-down
+     * from Settings > Fans — so this cannot live in XML. See
+     * include/overlay_class.h and prestonbrown/helixscreen#1178.
+     *
+     * Must be called BEFORE the overlay is pushed onto panel_stack_, while
+     * panel_stack_.back() is still the widget beneath it.
+     *
+     * @param overlay          Widget being pushed.
+     * @param is_first_overlay True when nothing but the root panel is on the
+     *                         stack, so the class comes from the nav root.
+     * @return resolved class (true = destination), also stored in
+     *         overlay_is_destination_.
+     */
+    bool apply_overlay_width(lv_obj_t* overlay, bool is_first_overlay);
     static void nav_button_clicked_cb(lv_event_t* event);
 
     // Active panel tracking
@@ -555,11 +657,30 @@ class NavigationManager {
     // Shared overlay backdrop widget (for first overlay)
     lv_obj_t* overlay_backdrop_ = nullptr;
 
+    // Latched at the dismiss-backdrop's LV_EVENT_PRESSED with the on-screen
+    // keyboard's visibility. LVGL's click-focus DEFOCUS (which hides the
+    // keyboard) fires between PRESSED and CLICKED, so is_visible() is already
+    // false by the time backdrop_click_event_cb handles CLICKED — the visibility
+    // must be captured at press time. Consumed one-shot by
+    // take_backdrop_keyboard_dismiss(): a tap that hides the keyboard must not
+    // also dismiss the overlay behind it.
+    bool backdrop_press_keyboard_visible_ = false;
+
     // Dynamic backdrops for nested overlays (overlay → its backdrop)
     std::unordered_map<lv_obj_t*, lv_obj_t*> overlay_backdrops_;
 
     // Zoom animation source rects (overlay → source rect for reverse animation)
     std::unordered_map<lv_obj_t*, lv_area_t> zoom_source_rects_;
+
+    // Resolved width class per overlay (overlay → is_destination). Written by
+    // apply_overlay_width() on every push, read by the next push to inherit and
+    // by Application's resize handler to re-apply the right width without
+    // guessing from the current pixel width. #1178
+    std::unordered_map<lv_obj_t*, bool> overlay_is_destination_;
+
+    // Overlays exempt from push-time width management (deliberate custom
+    // widths, e.g. the 70% widget catalog). #1178
+    std::unordered_set<lv_obj_t*> overlay_width_unmanaged_;
 
     // Widgets that already have the LV_EVENT_DELETE scrub hook attached.
     // Prevents double-registering the callback and is itself scrubbed on delete.

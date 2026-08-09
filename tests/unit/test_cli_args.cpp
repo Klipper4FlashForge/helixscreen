@@ -5,219 +5,18 @@
  * @file test_cli_args.cpp
  * @brief Unit tests for CLI argument struct helpers
  *
- * Tests the OverlayFlags and CliArgs struct inline methods, and
- * parse_cli_args() for flags that do not require graphics or printer state.
+ * Tests the CliArgs struct defaults and parse_cli_args() for flags that do
+ * not require graphics or printer state.
  */
 
 #include "cli_args.h"
+#include "runtime_config.h"
+
+#include <vector>
 
 #include "../catch_amalgamated.hpp"
 
 using namespace helix;
-
-// ============================================================================
-// OverlayFlags Tests
-// ============================================================================
-
-TEST_CASE("OverlayFlags: needs_moonraker", "[cli_args]") {
-    SECTION("default flags don't need moonraker") {
-        OverlayFlags flags;
-        REQUIRE_FALSE(flags.needs_moonraker());
-    }
-
-    SECTION("motion overlay needs moonraker") {
-        OverlayFlags flags;
-        flags.motion = true;
-        REQUIRE(flags.needs_moonraker());
-    }
-
-    SECTION("nozzle_temp overlay needs moonraker") {
-        OverlayFlags flags;
-        flags.nozzle_temp = true;
-        REQUIRE(flags.needs_moonraker());
-    }
-
-    SECTION("bed_temp overlay needs moonraker") {
-        OverlayFlags flags;
-        flags.bed_temp = true;
-        REQUIRE(flags.needs_moonraker());
-    }
-
-    SECTION("fan overlay needs moonraker") {
-        OverlayFlags flags;
-        flags.fan = true;
-        REQUIRE(flags.needs_moonraker());
-    }
-
-    SECTION("print_status overlay needs moonraker") {
-        OverlayFlags flags;
-        flags.print_status = true;
-        REQUIRE(flags.needs_moonraker());
-    }
-
-    SECTION("bed_mesh overlay needs moonraker") {
-        OverlayFlags flags;
-        flags.bed_mesh = true;
-        REQUIRE(flags.needs_moonraker());
-    }
-
-    SECTION("zoffset overlay needs moonraker") {
-        OverlayFlags flags;
-        flags.zoffset = true;
-        REQUIRE(flags.needs_moonraker());
-    }
-
-    SECTION("pid overlay needs moonraker") {
-        OverlayFlags flags;
-        flags.pid = true;
-        REQUIRE(flags.needs_moonraker());
-    }
-
-    SECTION("screws_tilt overlay needs moonraker") {
-        OverlayFlags flags;
-        flags.screws_tilt = true;
-        REQUIRE(flags.needs_moonraker());
-    }
-
-    SECTION("input_shaper overlay needs moonraker") {
-        OverlayFlags flags;
-        flags.input_shaper = true;
-        REQUIRE(flags.needs_moonraker());
-    }
-
-    SECTION("file_detail overlay needs moonraker") {
-        OverlayFlags flags;
-        flags.file_detail = true;
-        REQUIRE(flags.needs_moonraker());
-    }
-
-    SECTION("history_dashboard overlay needs moonraker") {
-        OverlayFlags flags;
-        flags.history_dashboard = true;
-        REQUIRE(flags.needs_moonraker());
-    }
-
-    SECTION("spoolman overlay needs moonraker") {
-        OverlayFlags flags;
-        flags.spoolman = true;
-        REQUIRE(flags.needs_moonraker());
-    }
-
-    // Overlays that do NOT need moonraker
-    SECTION("keypad overlay does NOT need moonraker") {
-        OverlayFlags flags;
-        flags.keypad = true;
-        REQUIRE_FALSE(flags.needs_moonraker());
-    }
-
-    SECTION("keyboard overlay does NOT need moonraker") {
-        OverlayFlags flags;
-        flags.keyboard = true;
-        REQUIRE_FALSE(flags.needs_moonraker());
-    }
-
-    SECTION("glyphs overlay does NOT need moonraker") {
-        OverlayFlags flags;
-        flags.glyphs = true;
-        REQUIRE_FALSE(flags.needs_moonraker());
-    }
-
-    SECTION("theme overlay does NOT need moonraker") {
-        OverlayFlags flags;
-        flags.theme = true;
-        REQUIRE_FALSE(flags.needs_moonraker());
-    }
-
-    SECTION("theme_edit overlay does NOT need moonraker") {
-        OverlayFlags flags;
-        flags.theme_edit = true;
-        REQUIRE_FALSE(flags.needs_moonraker());
-    }
-
-    SECTION("test_panel overlay does NOT need moonraker") {
-        OverlayFlags flags;
-        flags.test_panel = true;
-        REQUIRE_FALSE(flags.needs_moonraker());
-    }
-
-    SECTION("step_test overlay does NOT need moonraker") {
-        OverlayFlags flags;
-        flags.step_test = true;
-        REQUIRE_FALSE(flags.needs_moonraker());
-    }
-
-    SECTION("gcode_test overlay does NOT need moonraker") {
-        OverlayFlags flags;
-        flags.gcode_test = true;
-        REQUIRE_FALSE(flags.needs_moonraker());
-    }
-
-    SECTION("gradient_test overlay does NOT need moonraker") {
-        OverlayFlags flags;
-        flags.gradient_test = true;
-        REQUIRE_FALSE(flags.needs_moonraker());
-    }
-
-    SECTION("print_select_list does NOT need moonraker") {
-        OverlayFlags flags;
-        flags.print_select_list = true;
-        REQUIRE_FALSE(flags.needs_moonraker());
-    }
-
-    SECTION("ams overlay does NOT need moonraker") {
-        OverlayFlags flags;
-        flags.ams = true;
-        REQUIRE_FALSE(flags.needs_moonraker());
-    }
-
-    SECTION("wizard_ams_identify does NOT need moonraker") {
-        OverlayFlags flags;
-        flags.wizard_ams_identify = true;
-        REQUIRE_FALSE(flags.needs_moonraker());
-    }
-
-    SECTION("display_settings does NOT need moonraker") {
-        OverlayFlags flags;
-        flags.display_settings = true;
-        REQUIRE_FALSE(flags.needs_moonraker());
-    }
-
-    SECTION("sensor_settings does NOT need moonraker") {
-        OverlayFlags flags;
-        flags.sensor_settings = true;
-        REQUIRE_FALSE(flags.needs_moonraker());
-    }
-
-    SECTION("touch_calibration does NOT need moonraker") {
-        OverlayFlags flags;
-        flags.touch_calibration = true;
-        REQUIRE_FALSE(flags.needs_moonraker());
-    }
-
-    SECTION("hardware_health does NOT need moonraker") {
-        OverlayFlags flags;
-        flags.hardware_health = true;
-        REQUIRE_FALSE(flags.needs_moonraker());
-    }
-
-    SECTION("network_settings does NOT need moonraker") {
-        OverlayFlags flags;
-        flags.network_settings = true;
-        REQUIRE_FALSE(flags.needs_moonraker());
-    }
-
-    SECTION("macros does NOT need moonraker") {
-        OverlayFlags flags;
-        flags.macros = true;
-        REQUIRE_FALSE(flags.needs_moonraker());
-    }
-
-    SECTION("print_tune does NOT need moonraker") {
-        OverlayFlags flags;
-        flags.print_tune = true;
-        REQUIRE_FALSE(flags.needs_moonraker());
-    }
-}
 
 // ============================================================================
 // CliArgs Tests
@@ -255,11 +54,6 @@ TEST_CASE("CliArgs: default values", "[cli_args]") {
         REQUIRE(args.y_pos == -1);
     }
 
-    SECTION("panel navigation defaults to auto") {
-        REQUIRE(args.initial_panel == -1);
-        REQUIRE_FALSE(args.panel_requested);
-    }
-
     SECTION("wizard defaults off") {
         REQUIRE_FALSE(args.force_wizard);
         REQUIRE(args.wizard_step == -1);
@@ -293,31 +87,6 @@ TEST_CASE("CliArgs: default values", "[cli_args]") {
     }
 }
 
-TEST_CASE("CliArgs: needs_moonraker_data", "[cli_args]") {
-    SECTION("default args don't need moonraker") {
-        CliArgs args;
-        REQUIRE_FALSE(args.needs_moonraker_data());
-    }
-
-    SECTION("specific panel request needs moonraker") {
-        CliArgs args;
-        args.initial_panel = 1; // Any panel ID >= 0
-        REQUIRE(args.needs_moonraker_data());
-    }
-
-    SECTION("overlay needing moonraker propagates") {
-        CliArgs args;
-        args.overlays.bed_mesh = true;
-        REQUIRE(args.needs_moonraker_data());
-    }
-
-    SECTION("overlay NOT needing moonraker doesn't trigger") {
-        CliArgs args;
-        args.overlays.theme = true;
-        REQUIRE_FALSE(args.needs_moonraker_data());
-    }
-}
-
 // ============================================================================
 // ScreenSize Enum Tests
 // ============================================================================
@@ -348,4 +117,184 @@ TEST_CASE("ScreenSize enum values", "[cli_args]") {
         CliArgs args;
         REQUIRE(args.screen_size == ScreenSize::MEDIUM);
     }
+}
+
+// ============================================================================
+// Remote-control flags
+// ============================================================================
+
+TEST_CASE("parse_cli_args: remote-control flag defaults", "[cli_args][remote]") {
+    CliArgs args;
+    REQUIRE_FALSE(args.remote_control);
+    REQUIRE(args.remote_transport == "socket");
+    REQUIRE(args.remote_http_bind == "127.0.0.1");
+    REQUIRE(args.remote_http_port == 7130);
+    REQUIRE(args.remote_socket.empty());
+    REQUIRE_FALSE(args.skip_wizard);
+}
+
+TEST_CASE("parse_cli_args: --remote enables the control server", "[cli_args][remote]") {
+    const char* argv[] = {"helix-screen", "--remote"};
+    CliArgs args;
+    int w = 0, h = 0;
+    REQUIRE(parse_cli_args(2, const_cast<char**>(argv), args, w, h));
+    REQUIRE(args.remote_control);
+    REQUIRE(args.remote_transport == "socket"); // unchanged default
+}
+
+TEST_CASE("parse_cli_args: --skip-wizard sets the flag", "[cli_args][remote]") {
+    const char* argv[] = {"helix-screen", "--skip-wizard"};
+    CliArgs args;
+    int w = 0, h = 0;
+    REQUIRE(parse_cli_args(2, const_cast<char**>(argv), args, w, h));
+    REQUIRE(args.skip_wizard);
+}
+
+TEST_CASE("parse_cli_args: --remote-socket overrides path and implies --remote",
+          "[cli_args][remote]") {
+    const char* argv[] = {"helix-screen", "--remote-socket", "/tmp/custom.sock"};
+    CliArgs args;
+    int w = 0, h = 0;
+    REQUIRE(parse_cli_args(3, const_cast<char**>(argv), args, w, h));
+    REQUIRE(args.remote_socket == "/tmp/custom.sock");
+    REQUIRE(args.remote_control);
+}
+
+TEST_CASE("parse_cli_args: --remote-transport validates socket|http", "[cli_args][remote]") {
+    SECTION("http is accepted") {
+        const char* argv[] = {"helix-screen", "--remote-transport", "http"};
+        CliArgs args;
+        int w = 0, h = 0;
+        REQUIRE(parse_cli_args(3, const_cast<char**>(argv), args, w, h));
+        REQUIRE(args.remote_transport == "http");
+    }
+    SECTION("an unknown transport is rejected") {
+        const char* argv[] = {"helix-screen", "--remote-transport", "carrierpigeon"};
+        CliArgs args;
+        int w = 0, h = 0;
+        REQUIRE_FALSE(parse_cli_args(3, const_cast<char**>(argv), args, w, h));
+    }
+}
+
+TEST_CASE("parse_cli_args: HTTP options imply http transport", "[cli_args][remote]") {
+    SECTION("--remote-http-bind implies http") {
+        const char* argv[] = {"helix-screen", "--remote-http-bind", "0.0.0.0"};
+        CliArgs args;
+        int w = 0, h = 0;
+        REQUIRE(parse_cli_args(3, const_cast<char**>(argv), args, w, h));
+        REQUIRE(args.remote_http_bind == "0.0.0.0");
+        REQUIRE(args.remote_transport == "http");
+        REQUIRE(args.remote_control);
+    }
+    SECTION("--remote-http-port sets port and implies http") {
+        const char* argv[] = {"helix-screen", "--remote-http-port", "8080"};
+        CliArgs args;
+        int w = 0, h = 0;
+        REQUIRE(parse_cli_args(3, const_cast<char**>(argv), args, w, h));
+        REQUIRE(args.remote_http_port == 8080);
+        REQUIRE(args.remote_transport == "http");
+    }
+}
+
+TEST_CASE("parse_cli_args: --remote-http-port rejects out-of-range values", "[cli_args][remote]") {
+    int w = 0, h = 0;
+    SECTION("zero is rejected") {
+        const char* argv[] = {"helix-screen", "--remote-http-port", "0"};
+        CliArgs args;
+        REQUIRE_FALSE(parse_cli_args(3, const_cast<char**>(argv), args, w, h));
+    }
+    SECTION("above 65535 is rejected") {
+        const char* argv[] = {"helix-screen", "--remote-http-port", "70000"};
+        CliArgs args;
+        REQUIRE_FALSE(parse_cli_args(3, const_cast<char**>(argv), args, w, h));
+    }
+    SECTION("a valid port is accepted") {
+        const char* argv[] = {"helix-screen", "--remote-http-port", "7130"};
+        CliArgs args;
+        REQUIRE(parse_cli_args(3, const_cast<char**>(argv), args, w, h));
+        REQUIRE(args.remote_http_port == 7130);
+    }
+}
+
+// --- wizard suppression under --test ------------------------------------
+//
+// Mock mode sets the active printer to "mock-printer", and the wizard gate
+// reads printers.<active>.wizard_completed — a key no real settings.json
+// carries. So a --test boot always landed on the first-run wizard, which
+// swallowed every ctl navigate/click while each command still reported
+// success. --test now implies --skip-wizard; -w/--wizard is the escape the
+// screenshot pipeline uses to capture the wizard itself.
+
+namespace {
+
+/// --test sets test_mode on the process-wide RuntimeConfig, which parse_cli_args
+/// never clears. Restore it so a later test parsing an argv *without* --test
+/// still sees a clean slate.
+struct TestModeGuard {
+    bool saved = get_runtime_config()->test_mode;
+    ~TestModeGuard() {
+        get_runtime_config()->test_mode = saved;
+    }
+};
+
+bool parse(std::vector<const char*> argv, CliArgs& args) {
+    int w = 0, h = 0;
+    return parse_cli_args(static_cast<int>(argv.size()), const_cast<char**>(argv.data()), args, w,
+                          h);
+}
+
+} // namespace
+
+TEST_CASE("parse_cli_args: --test implies --skip-wizard", "[cli_args][wizard]") {
+    TestModeGuard guard;
+    CliArgs args;
+    REQUIRE(parse({"helix-screen", "--test"}, args));
+    REQUIRE(args.skip_wizard);
+    REQUIRE_FALSE(args.force_wizard);
+}
+
+TEST_CASE("parse_cli_args: --wizard overrides the --test implication", "[cli_args][wizard]") {
+    TestModeGuard guard;
+    CliArgs args;
+    REQUIRE(parse({"helix-screen", "--test", "--wizard"}, args));
+    REQUIRE(args.force_wizard);
+    REQUIRE_FALSE(args.skip_wizard); // else the wizard capture path breaks
+}
+
+TEST_CASE("parse_cli_args: --wizard wins regardless of flag order", "[cli_args][wizard]") {
+    // The implication is applied after the whole parse, so -w before --test
+    // must behave identically to -w after it.
+    TestModeGuard guard;
+    CliArgs args;
+    REQUIRE(parse({"helix-screen", "-w", "--test"}, args));
+    REQUIRE(args.force_wizard);
+    REQUIRE_FALSE(args.skip_wizard);
+}
+
+TEST_CASE("parse_cli_args: --wizard-step still forces the wizard under --test",
+          "[cli_args][wizard]") {
+    TestModeGuard guard;
+    CliArgs args;
+    REQUIRE(parse({"helix-screen", "--test", "--wizard-step", "3"}, args));
+    REQUIRE(args.force_wizard);
+    REQUIRE(args.wizard_step == 3);
+    REQUIRE_FALSE(args.skip_wizard);
+}
+
+TEST_CASE("parse_cli_args: an explicit --skip-wizard is still honoured under --test",
+          "[cli_args][wizard]") {
+    TestModeGuard guard;
+    CliArgs args;
+    REQUIRE(parse({"helix-screen", "--test", "--skip-wizard"}, args));
+    REQUIRE(args.skip_wizard);
+    REQUIRE_FALSE(args.force_wizard);
+}
+
+TEST_CASE("parse_cli_args: without --test the wizard gate is untouched", "[cli_args][wizard]") {
+    TestModeGuard guard;
+    get_runtime_config()->test_mode = false; // isolate from a prior --test parse
+    CliArgs args;
+    REQUIRE(parse({"helix-screen"}, args));
+    REQUIRE_FALSE(args.skip_wizard);
+    REQUIRE_FALSE(args.force_wizard);
 }

@@ -16,7 +16,7 @@
         style_bg_opa="255" style_border_width="4" style_border_side="left" style_radius="#border_radius"
         scrollable="false" flex_flow="row" style_flex_main_place="start" style_flex_cross_place="start">
     <!-- Icon column (fixed width for icon) -->
-    <lv_obj width="28" style_pad_all="0" style_pad_top="#space_xxs">
+    <lv_obj width="28" style_pad_all="0" style_pad_top="#space_xxs" clickable="false" event_bubble="true">
       <!-- Severity icons - all hidden by default, finalize() shows the correct one -->
       <lv_label name="icon_info"
                 text="#icon_info_circle" hidden="true" style_text_font="mdi_icons_24" style_text_color="#info"/>
@@ -30,11 +30,12 @@
                 style_text_color="#danger"/>
     </lv_obj>
     <!-- Content column (flex grow) -->
-    <lv_obj flex_grow="1" style_pad_all="0" flex_flow="column" style_pad_gap="#space_xxs">
+    <lv_obj flex_grow="1"
+            style_pad_all="0" flex_flow="column" style_pad_gap="#space_xxs" clickable="false" event_bubble="true">
       <!-- Title row with timestamp -->
       <lv_obj width="100%"
               height="content" style_pad_all="0" flex_flow="row" style_flex_main_place="space_between"
-              style_flex_cross_place="center">
+              style_flex_cross_place="center" clickable="false" event_bubble="true">
         <text_body name="item_title" text="$title"/>
         <text_small name="item_timestamp" text="$timestamp"/>
       </lv_obj>

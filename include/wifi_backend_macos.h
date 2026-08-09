@@ -54,6 +54,11 @@ class WifiBackendMacOS : public WifiBackend {
     WiFiError get_scan_results(std::vector<WiFiNetwork>& networks) override;
     WiFiError connect_network(const std::string& ssid, const std::string& password) override;
     WiFiError disconnect_network() override;
+    // Real CoreWLAN radio power. Without these the base-class defaults apply —
+    // a silent-success no-op plus an is_radio_enabled() that always answers
+    // true — so the UI switch would flip off and immediately snap back on.
+    WiFiError set_radio_enabled(bool on) override;
+    bool is_radio_enabled() const override;
     ConnectionStatus get_status() override;
     bool supports_5ghz() const override;
 

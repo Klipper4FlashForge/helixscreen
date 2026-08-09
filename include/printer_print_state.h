@@ -3,6 +3,7 @@
 
 #include "ui_observer_guard.h" // SubjectLifetime
 
+#include "async_lifetime_guard.h"
 #include "subject_managed_panel.h"
 
 #include <atomic>
@@ -268,6 +269,48 @@ class PrinterPrintState {
         return print_exception_message_;
     }
 
+    /// virtual_sdcard.pl_env_valid — Snapmaker-fork Power-Loss-Recovery flag.
+    /// True only after the firmware validates a coherent power-loss snapshot
+    /// against MCU flash on boot; default 0, and stays 0 on mainline Klipper
+    /// (field absent). Main-thread only (updated by update_from_status).
+    lv_subject_t* get_pl_env_valid_subject() {
+        return &pl_env_valid_;
+    }
+
+    /// True when virtual_sdcard.pl_env_valid is set. See get_pl_env_valid_subject().
+    [[nodiscard]] bool is_pl_env_valid() const {
+        return lv_subject_get_int(const_cast<lv_subject_t*>(&pl_env_valid_)) != 0;
+    }
+
+    /// virtual_sdcard.file_path — the file a Power-Loss-Recovery restore would
+    /// resume. Only meaningful when is_pl_env_valid() is true. Main-thread only.
+    [[nodiscard]] const std::string& pl_recovery_file() const {
+        return pl_recovery_file_;
+    }
+
+    /// Clear the cached Power-Loss-Recovery file path. Used on the disconnect
+    /// edge alongside forcing pl_env_valid back to 0, so a reconnect starts from
+    /// a clean slate and re-derives both from the fresh status. Main-thread only.
+    void clear_pl_recovery_file() {
+        pl_recovery_file_.clear();
+    }
+
+    /// print_stats.power_loss PRESENCE — the Creality-Klipper-fork capability
+    /// marker for Power-Loss-Recovery. 1 once a status payload has carried the
+    /// key as a JSON number; mainline Klipper never emits it, and Moonraker's
+    /// explicit null for a subscribed-but-unpopulated field does not count.
+    /// Latches UP only (status arrives as deltas) and is reset by the offer
+    /// controller on the disconnect edge. See docs/devel/POWER_LOSS_RECOVERY.md.
+    lv_subject_t* get_creality_plr_capable_subject() {
+        return &creality_plr_capable_;
+    }
+
+    /// True when print_stats.power_loss has been seen. See
+    /// get_creality_plr_capable_subject().
+    [[nodiscard]] bool is_creality_plr_capable() const {
+        return lv_subject_get_int(const_cast<lv_subject_t*>(&creality_plr_capable_)) != 0;
+    }
+
     // ========================================================================
     // Setters
     // ========================================================================
@@ -484,10 +527,10 @@ class PrinterPrintState {
     /**
      * @brief Update display_message_visible_ derived subject
      *
-     * Visible when display_message is non-empty AND print_start_phase==IDLE. During
-     * pre-print, print_start_collector already pipes display_status.message into
-     * print_start_message, so showing display_message would duplicate it on the
-     * print-status widget.
+     * Visible whenever display_message is non-empty, including during pre-print:
+     * PRINT_START macros are where most M117 traffic originates, and the
+     * collector's phase label lives in a separate subject (print_start_message),
+     * so there is nothing here to duplicate.
      */
     void update_display_message_visible();
 
@@ -505,6 +548,14 @@ class PrinterPrintState {
     /// in `deinit_subjects()` so cross-singleton observers can detect subject
     /// death and skip `lv_observer_remove()` on freed observer nodes.
     SubjectLifetime static_subjects_lifetime_;
+
+    /// Generation guard for the setters that defer their subject writes to the
+    /// main thread. Invalidated by `deinit_subjects()` and by destruction, so a
+    /// callback still sitting in the UpdateQueue when the subjects go away is
+    /// dropped instead of notifying a freed observer list (#1165, #1146).
+    /// Distinct from `static_subjects_lifetime_`, which is a `shared_ptr<bool>`
+    /// read by observers and carries no deferral machinery.
+    AsyncLifetimeGuard async_lifetime_;
 
     // Print progress subjects
     lv_subject_t print_progress_{};         // Integer 0-100
@@ -619,6 +670,16 @@ class PrinterPrintState {
     // paused with is_active=false; see is_sdcard_active() docs). Main-thread
     // only, updated from update_from_status.
     bool sdcard_active_ = false;
+
+    // virtual_sdcard.pl_env_valid — Snapmaker-fork Power-Loss-Recovery flag.
+    lv_subject_t pl_env_valid_{}; // Integer: 1 when a validated PLR snapshot exists
+    // virtual_sdcard.file_path — companion to pl_env_valid_. Not a subject:
+    // no XML binding needed, read on the main thread by the resume dispatcher.
+    std::string pl_recovery_file_;
+
+    // print_stats.power_loss — Creality-fork PLR capability marker. Integer:
+    // 1 once the key has been seen as a JSON number (presence, not value).
+    lv_subject_t creality_plr_capable_{};
 
     // Slicer progress from display_status (M73 gcode command)
     // When active, preferred over virtual_sdcard file-position progress

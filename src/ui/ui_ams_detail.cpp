@@ -4,6 +4,7 @@
 #include "ui_ams_detail.h"
 
 #include "ui_ams_slot.h"
+#include "ui_bypass_spool_widget.h"
 #include "ui_effects.h"
 #include "ui_filament_path_canvas.h"
 #include "ui_utils.h"
@@ -16,6 +17,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 // ============================================================================
 // 3D Tray Box Drawing
@@ -469,8 +471,10 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
     // Hub-only mode: only draw slots -> hub, skip downstream
     ui_filament_path_canvas_set_hub_only(canvas, hub_only);
 
-    // Hide bypass path for backends that don't support it (e.g. tool changers)
-    ui_filament_path_canvas_set_show_bypass(canvas, info.supports_bypass);
+    // Hide the bypass path for backends that don't support it (e.g. tool
+    // changers) — and on AFC while bypass is disengaged, since AFC reports a
+    // virtual bypass whether or not one is wired (#1229).
+    ui_filament_path_canvas_set_show_bypass(canvas, helix::ui::bypass_node_visible_for(backend));
 
     // Determine slot count and offset for this unit
     int slot_count = info.total_slots;
@@ -534,17 +538,24 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
         ui_filament_path_canvas_set_slot_prep_sensor(canvas, i, has_prep);
     }
 
-    // Plumb per-slot metadata (mapped_tool, hub routing) to path canvas
+    // Plumb per-slot metadata (mapped_tool, extruder identity, hub routing) to
+    // path canvas. The extruder name is what actually names a toolhead; the
+    // mapped_tool alias stays as the fallback for backends that publish neither.
     if (unit_index >= 0 && unit_index < static_cast<int>(info.units.size())) {
         const auto& unit = info.units[unit_index];
+        std::vector<int> extruder_tools(static_cast<size_t>(slot_count), -1);
         for (int i = 0; i < slot_count; ++i) {
             int gi = slot_offset + i;
             SlotInfo slot = backend->get_slot_info(gi);
             ui_filament_path_canvas_set_slot_mapped_tool(canvas, i, slot.mapped_tool);
+            if (const auto n = helix::tool_number_for_extruder(slot.extruder_name)) {
+                extruder_tools[static_cast<size_t>(i)] = *n;
+            }
             if (i < static_cast<int>(unit.lane_is_hub_routed.size())) {
                 ui_filament_path_canvas_set_slot_hub_routed(canvas, i, unit.lane_is_hub_routed[i]);
             }
         }
+        ui_filament_path_canvas_set_extruder_tools(canvas, extruder_tools.data(), slot_count);
     }
 
     // Set per-slot filament states (using local indices for unit-scoped views)
@@ -625,10 +636,15 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
         ui_filament_path_canvas_set_buffer_bias(canvas, -2.0f); // discrete mode
     }
 
-    // Set external spool color and assignment state
+    // Set external spool color and assignment state. Only while bypass is
+    // actually engaged: an assigned external spool is not in the filament path
+    // until it is selected, and drawing it anyway put a loaded lane's material
+    // on the bypass node (#1229 defect 5).
     auto ext_spool = AmsState::instance().get_external_spool_info();
-    ui_filament_path_canvas_set_bypass_has_spool(canvas, ext_spool.has_value());
-    if (ext_spool.has_value()) {
+    const bool show_bypass_spool =
+        ext_spool.has_value() && helix::ui::bypass_node_visible_for(backend);
+    ui_filament_path_canvas_set_bypass_has_spool(canvas, show_bypass_spool);
+    if (show_bypass_spool) {
         ui_filament_path_canvas_set_bypass_color(canvas, ext_spool->color_rgb);
     }
 

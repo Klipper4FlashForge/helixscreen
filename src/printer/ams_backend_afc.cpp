@@ -10,8 +10,9 @@
 
 #include "action_prompt_manager.h"
 #include "afc_defaults.h"
-#include "lvgl/src/others/translation/lv_translation.h"
+#include "ams_bypass_policy.h"
 #include "i_moonraker_api.h"
+#include "lvgl/src/others/translation/lv_translation.h"
 #include "printer_discovery.h"
 #include "settings_manager.h"
 
@@ -21,6 +22,8 @@
 #include <algorithm>
 #include <cctype>
 #include <climits>
+#include <cmath>
+#include <cstring>
 #include <optional>
 #include <sstream>
 #include <vector>
@@ -47,6 +50,128 @@ bool natural_less(const std::string& a, const std::string& b) {
         return na < nb;
     return a < b;
 }
+
+// Read AFC's spool-vendor field into `out`, accepting every spelling the
+// ecosystem uses. Returns true when a value was found.
+//
+// Upstream settled on `vendor_name` (AFCProject/AFC-Klipper-Add-On #808) to match
+// Happy Hare's mmu_server.py, so a single spelling covers both backends. `vendor`
+// is the name we originally proposed, and the key our own to_lane_data_record()
+// still emits alongside vendor_name — that record lands in a PRIVATE namespace for
+// AFC today (#1158), so this reader does not meet it yet, but it will the moment
+// #1158 migrates AFC's overrides into lane_data proper. `brand` is a defensive
+// third spelling.
+//
+// Empty values are IGNORED rather than treated as a clear. That is deliberate and
+// differs from the color/material handling above: #808 is unimplemented, so we do
+// not know whether an unlinked lane will omit the key or publish "". Guessing
+// wrong in the clearing direction wipes a brand nothing re-supplies. A user's
+// override is safe either way — both callers run apply_overrides() after this
+// reader (#1195 closed that gap on the lane_data path) — so the exposure is lanes
+// with no override at all. Revisit once #808 ships and the payload is observable.
+bool read_vendor(const nlohmann::json& src, std::string& out) {
+    for (const char* key : {"vendor_name", "vendor", "brand"}) {
+        auto it = src.find(key);
+        if (it != src.end() && it->is_string()) {
+            std::string v = it->get<std::string>();
+            if (!v.empty()) {
+                out = std::move(v);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// Split a firmware state token into sentence-case words:
+//   "ToolSwap"        → "Tool swap"
+//   "SOME_LOUD_STATE" → "Some loud state"
+//   "purging_bucket"  → "Purging bucket"
+//
+// Used as the display fallback for states we have no translation for. AFC emits
+// camelCase state values (v1.2.0), and those must never reach the screen raw —
+// operation_detail is passed through to the UI verbatim.
+std::string humanize_state(std::string_view raw) {
+    std::string out;
+    out.reserve(raw.size() + 4);
+    bool word_start = true;
+    for (size_t i = 0; i < raw.size(); ++i) {
+        auto c = static_cast<unsigned char>(raw[i]);
+        if (std::isalnum(c) == 0) {
+            // Any separator run collapses to a single space.
+            if (!out.empty() && out.back() != ' ')
+                out.push_back(' ');
+            word_start = true;
+            continue;
+        }
+        // camelCase boundary: an uppercase letter that either follows a
+        // lowercase/digit ("ToolSwap") or begins a word after an acronym run
+        // ("HUBLoading" → "HUB loading").
+        if (std::isupper(c) != 0 && i > 0) {
+            auto prev = static_cast<unsigned char>(raw[i - 1]);
+            bool after_lower = std::isalnum(prev) != 0 && std::isupper(prev) == 0;
+            bool acronym_end = std::isupper(prev) != 0 && i + 1 < raw.size() &&
+                               std::islower(static_cast<unsigned char>(raw[i + 1])) != 0;
+            if (after_lower || acronym_end) {
+                if (!out.empty() && out.back() != ' ')
+                    out.push_back(' ');
+                word_start = true;
+            }
+        }
+        // Sentence case: capitalize only the very first character.
+        if (word_start && out.empty()) {
+            out.push_back(static_cast<char>(std::toupper(c)));
+        } else {
+            out.push_back(static_cast<char>(std::tolower(c)));
+        }
+        word_start = false;
+    }
+    // Trim a trailing separator-induced space.
+    while (!out.empty() && out.back() == ' ')
+        out.pop_back();
+    return out;
+}
+
+// Translated display text for AFC's known state vocabulary, keyed by normalized
+// token so a rewording (AFC's "Tool swap" → "ToolSwap") keeps its translation.
+// Unknown states fall back to humanize_state() — untranslated, but readable.
+std::string afc_state_detail(std::string_view raw) {
+    struct StateLabel {
+        const char* token;
+        const char* label;
+    };
+    static constexpr StateLabel kLabels[] = {
+        {"idle", "Idle"},
+        {"initialized", "Initialized"},
+        {"loading", "Loading"},
+        {"unloading", "Unloading"},
+        {"error", "Error"},
+        {"ejecting", "Ejecting"},
+        {"moving", "Moving lane"},
+        {"restoring", "Restoring position"},
+        {"toolswap", "Tool swap"},
+        {"tooldock", "Docking tool"},
+        {"toolpickup", "Picking up tool"},
+    };
+    const std::string token = ams_normalize_state_token(raw);
+    for (const auto& e : kLabels) {
+        if (token == e.token)
+            return lv_tr(e.label);
+    }
+    return humanize_state(raw);
+}
+
+// [L067] kLabels feeds lv_tr() through a variable, which the translation
+// extractor cannot see. Name each label literally here so it lands in the
+// catalogs. Keep in sync with kLabels above.
+// clang-format off
+void afc_state_translation_hints_() {
+    (void)lv_tr("Idle"); (void)lv_tr("Initialized"); (void)lv_tr("Loading");
+    (void)lv_tr("Unloading"); (void)lv_tr("Error"); (void)lv_tr("Ejecting");
+    (void)lv_tr("Moving lane"); (void)lv_tr("Restoring position");
+    (void)lv_tr("Tool swap"); (void)lv_tr("Docking tool"); (void)lv_tr("Picking up tool");
+}
+// clang-format on
 
 } // namespace
 
@@ -125,13 +250,30 @@ bool AmsBackendAfc::auto_unloads_after_print() const {
 // ============================================================================
 
 void AmsBackendAfc::on_started() {
-    // Detect AFC version (async - results come via callback)
-    // This will set has_lane_data_db_ for v1.0.32+
+    // Version is informational only (see apply_afc_version_response) — nothing
+    // below depends on the result, so this does not need to complete first.
+    // Load persisted per-slot overrides BEFORE any status callback can parse a
+    // lane, so the first frame already carries the user's identity. Private
+    // namespace: lane_data belongs to AFC's own plugin (it deletes that whole
+    // namespace on every boot), so sharing it would both lose our records and
+    // ingest AFC's as if the user had authored them.
+    if (api_) {
+        override_store_ = std::make_unique<helix::ams::FilamentSlotOverrideStore>(
+            api_, "afc", helix::ams::lane_key_style_for(get_type()), kOverrideNamespace);
+        auto loaded = override_store_->load_blocking();
+        const auto loaded_count = loaded.size();
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            overrides_ = std::move(loaded);
+        }
+        spdlog::info("[AMS AFC] Loaded {} slot overrides", loaded_count);
+    }
+
     detect_afc_version();
 
     // If we have discovered lanes (from PrinterCapabilities), initialize them now.
-    // This provides immediate lane data for ALL AFC versions (including < 1.0.32).
-    // For v1.0.32+, query_lane_data() may later supplement this with richer data.
+    // This provides immediate lane data for every AFC version. query_lane_data()
+    // may later supplement it with colors/materials/spool IDs from the database.
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!discovered_lane_names_.empty() && !slots_.is_initialized()) {
@@ -140,6 +282,20 @@ void AmsBackendAfc::on_started() {
             initialize_slots(discovered_lane_names_);
         }
     }
+
+    // Always attempt the lane_data query. There is no reliable capability flag to
+    // gate on: AFC's `lane_data_enabled` reports whether Moonraker has the (now
+    // unused) [lane_data] section, NOT whether the database namespace holds data —
+    // send_lane_data() writes to the database unconditionally. A live BoxTurtle on
+    // 2026-07-26 had lane_data_enabled=false with a fully populated namespace.
+    // Attempting and adapting is the only correct detection: a missing namespace
+    // just errors, and the probe is silent.
+    query_lane_data();
+
+    // AFC indexes toolheads by th_extruder_name, which no get_status() carries.
+    // configfile.settings is the only published source, so fetch it once here;
+    // parse_afc_extruder() falls back to the section name until it lands.
+    query_afc_configfile_topology();
 
     // Note: With the early hardware discovery callback architecture, this backend is
     // created and started BEFORE printer.objects.subscribe is called. The notification
@@ -208,6 +364,13 @@ void AmsBackendAfc::set_discovered_sensors(const std::vector<std::string>& senso
 AmsSystemInfo AmsBackendAfc::get_system_info() const {
     std::lock_guard<std::mutex> lock(mutex_);
 
+    // Check for stuck operations on every UI poll, not just on status updates.
+    // The sidebar's stall watchdog polls this whenever the action is non-IDLE,
+    // which is the only clock AFC has left when the printer goes silent
+    // mid-operation (network drop, Klipper shutdown). Must run BEFORE the
+    // uninitialized-registry early return below or that path skips it.
+    const_cast<AmsBackendAfc*>(this)->check_action_timeout();
+
     if (!slots_.is_initialized()) {
         return system_info_;
     }
@@ -226,6 +389,9 @@ AmsSystemInfo AmsBackendAfc::get_system_info() const {
     info.pending_target_slot = system_info_.pending_target_slot;
     info.current_toolchange = system_info_.current_toolchange;
     info.number_of_toolchanges = system_info_.number_of_toolchanges;
+    info.next_slot = system_info_.next_slot;
+    info.position_saved = system_info_.position_saved;
+    info.spoolman_url = system_info_.spoolman_url;
     info.filament_loaded = system_info_.filament_loaded;
     info.supports_endless_spool = system_info_.supports_endless_spool;
     info.supports_tool_mapping = system_info_.supports_tool_mapping;
@@ -264,6 +430,105 @@ AmsError AmsBackendAfc::clear_message_queue() {
     // failure here is non-fatal (the command may not be supported on older AFC).
     spdlog::debug("[AMS AFC] Clearing AFC message queue");
     return execute_gcode("AFC_CLEAR_MESSAGE");
+}
+
+AmsError AmsBackendAfc::clear_fault(int slot_index) {
+    // AFC has no per-lane fault clear; both commands are system-scoped.
+    (void)slot_index;
+
+    // Drop any queued LANE_UNLOAD requests, exactly as cancel() does. Clearing a
+    // fault means the user wants to stop, not to chain through a pile of pending
+    // ejects afterwards. eject_in_flight_ is deliberately NOT cleared — the
+    // in-flight LANE_UNLOAD's completion callback still fires and clears it once
+    // it sees the empty queue.
+    {
+        std::lock_guard<std::mutex> lock(eject_queue_mutex_);
+        if (!pending_eject_lanes_.empty()) {
+            spdlog::info("[AMS AFC] Clear fault: discarding {} queued LANE_UNLOAD request(s)",
+                         pending_eject_lanes_.size());
+            pending_eject_lanes_.clear();
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Arm the drain. printer.AFC.message is a FIFO head — one clear pops one
+        // entry, so a second queued error would otherwise stay on screen and look
+        // exactly like the Reset having done nothing. The drain runs until the
+        // queue reports empty; kMessageDrainMaxClears is only the runaway guard.
+        message_drain_budget_ = kMessageDrainMaxClears;
+        message_drain_pending_ = false;
+        // Bound the arm in wall-clock time. If the queue was already empty, no
+        // later delta will carry `message` at all, so the empty-message disarm
+        // below never fires and the budget would otherwise persist indefinitely.
+        message_drain_deadline_ = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+
+        // Drop the stuck-action latch: the user dismissed the error, so AFC's
+        // own state string drives the action again. If AFC is genuinely still
+        // stuck the clock restarts from here and re-fires after a full budget,
+        // which is bounded and correct.
+        if (timed_out_state_.has_value()) {
+            spdlog::debug("[AMS AFC] Clear fault: releasing stuck-action latch on '{}'",
+                          *timed_out_state_);
+            timed_out_state_.reset();
+            timed_out_detail_.clear();
+        }
+        action_start_time_ = std::chrono::steady_clock::now();
+    }
+
+    // Deliberately does NOT route through cancel(): cancel() returns early when
+    // the action is IDLE, which is the common case for a queued message — AFC
+    // keeps printer.AFC.message populated long after current_state returns to
+    // Idle, and AFC_RESET does not touch it.
+    spdlog::info("[AMS AFC] Clearing fault (draining message queue, max {} clears)",
+                 kMessageDrainMaxClears);
+    // execute_gcode_notify, matching cancel(): the user pressed a button, so a
+    // failed RESET_FAILURE must surface rather than being logged silently.
+    AmsError failure_reset = execute_gcode_notify(
+        "RESET_FAILURE", lv_tr("AFC failure reset complete"), lv_tr("AFC failure reset failed"));
+    AmsError message_clear = clear_message_queue();
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (message_drain_budget_ > 0) {
+            --message_drain_budget_;
+        }
+    }
+    return failure_reset.success() ? message_clear : failure_reset;
+}
+
+void AmsBackendAfc::maybe_drain_message_queue() {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!message_drain_pending_ || message_drain_budget_ <= 0) {
+            return;
+        }
+        // This is the ONLY place a stale arm is retired — parse_afc_state()'s
+        // re-arm has no expiry check of its own. It cannot: an arm goes stale
+        // precisely when the queue was already empty at clear_fault() time, and
+        // AFC then omits the unchanged `message` key forever, so the
+        // empty-message disarm there never runs. The firing decision therefore
+        // has to be made here, against the wall clock, or a months-old arm would
+        // pop the user's next unrelated error.
+        if (std::chrono::steady_clock::now() > message_drain_deadline_) {
+            message_drain_budget_ = 0;
+            message_drain_pending_ = false;
+            return;
+        }
+        message_drain_pending_ = false;
+        --message_drain_budget_;
+        if (message_drain_budget_ == 0) {
+            // Last permitted clear. If the queue is still non-empty after it,
+            // whatever the user sees next is residue we gave up on and this is
+            // the only trace of why — parse_afc_state() stops re-arming once
+            // the budget is spent, so nothing downstream records it.
+            spdlog::warn("[AMS AFC] Message drain reached its {}-clear cap; sending the "
+                         "last clear and stopping",
+                         kMessageDrainMaxClears);
+        }
+    }
+
+    spdlog::debug("[AMS AFC] Draining next queued message");
+    clear_message_queue();
 }
 
 SlotInfo AmsBackendAfc::get_slot_info(int slot_index) const {
@@ -327,10 +592,12 @@ PathSegment AmsBackendAfc::get_slot_filament_segment(int slot_index) const {
 
     const auto& sensors = entry->sensors;
 
-    // Check sensors from furthest to nearest
-    if (sensors.loaded_to_hub) {
-        return PathSegment::HUB; // Filament reached hub sensor
-    }
+    // Check sensors from furthest to nearest. PathSegment::HUB is deliberately
+    // unreachable here: AFC's per-lane loaded_to_hub is latched at prep and
+    // never updated, so it cannot distinguish "at hub" from "prepped once" —
+    // it read true on every prepped lane while the shared hub sensor read
+    // clear. There is no per-slot hub sensor to fall back on for a non-active
+    // slot, so below load/prep is the furthest this can honestly report.
     if (sensors.load) {
         return PathSegment::LANE; // Filament in lane (load sensor triggered)
     }
@@ -358,26 +625,101 @@ bool AmsBackendAfc::slot_has_prep_sensor(int slot_index) const {
     return slot_index >= 0 && slot_index < system_info_.total_slots;
 }
 
+bool AmsBackendAfc::slot_has_filament_at_toolhead(int slot_index) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    const std::string lane_name = slots_.name_of(slot_index);
+    if (lane_name.empty()) {
+        return false;
+    }
+
+    // The extruder sensors say something is at a toolhead; lane_loaded says
+    // whose. Without that pairing the trip is unattributable, and the base
+    // contract is explicit that an unknown signal reads false rather than being
+    // fabricated onto a lane. Scanning the map rather than indexing by tool
+    // number keeps this right when a lane feeds a non-default extruder.
+    for (const auto& [ext_name, sensors] : extruder_sensors_) {
+        if (sensors.lane_loaded == lane_name) {
+            return sensors.tool_start || sensors.tool_end;
+        }
+    }
+    return false;
+}
+
 std::vector<helix::RecoveryAction> AmsBackendAfc::build_recovery_actions() const {
     // Caller holds mutex_.
     std::vector<helix::RecoveryAction> actions;
 
-    // Resume after the user clears the jam (always offered).
-    actions.push_back({lv_tr("Resume"), "RESUME", "afc::resume", "primary"});
+    // Resume after the user clears the jam (always offered). Resuming a paused
+    // print extrudes on the next move, so it needs the hotend up.
+    actions.push_back({lv_tr("Resume"), "RESUME", "afc::resume", "primary",
+                       /*needs_hot_nozzle=*/true});
 
     const bool toolhead_loaded = tool_start_sensor_ || system_info_.filament_loaded;
     if (toolhead_loaded) {
         // Closes R1: unload from the toolhead before any eject is possible.
-        actions.push_back({lv_tr("Unload"), "TOOL_UNLOAD", "afc::tool_unload", ""});
+        // Retracts filament back out through the melt zone — cold, it snaps or
+        // leaves the plug behind.
+        actions.push_back({lv_tr("Unload"), "TOOL_UNLOAD", "afc::tool_unload", "",
+                           /*needs_hot_nozzle=*/true});
     } else if (!current_lane_name_.empty()) {
-        // Empty toolhead but a lane is selected — eject that lane.
+        // Empty toolhead but a lane is selected — eject that lane. Lane to spool
+        // only; the filament never reaches the nozzle, so no heat is required.
         actions.push_back(
             {lv_tr("Eject"), "LANE_UNLOAD LANE=" + current_lane_name_, "afc::lane_unload", ""});
     }
 
-    // Reset/re-prep all lanes (last resort).
+    // Reset/re-prep all lanes (last resort). Re-prep runs the lane motors up to
+    // the hub, not through the toolhead.
     actions.push_back({lv_tr("Recover"), "AFC_RESET", "afc::reset", "danger"});
     return actions;
+}
+
+std::optional<helix::ErrorEvent> AmsBackendAfc::current_error() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // error_state_ is the exact condition that produced the AmsAction::ERROR
+    // edge the bridge fired on. Upstream's AFC_error.py set_error_state() is the
+    // ONLY writer of afc.error_state, and it assigns current_state = State.ERROR
+    // on the very next line, so the two cannot diverge — "Error" reaching
+    // ams_action_from_string() and error_state_ being true are the same event.
+    //
+    // The stuck-action latch (apply_action_timeout_latch_locked) also drives the
+    // action to ERROR without AFC ever setting error_state. Returning nullopt
+    // there is deliberate: that fault is ours, not AFC's, and it keeps its
+    // existing last-resort toast rather than claiming a recovery set for a
+    // condition the firmware does not agree is an error.
+    if (!error_state_) {
+        return std::nullopt;
+    }
+
+    helix::ErrorEvent e;
+    e.source = helix::ErrorSource::AFC;
+    e.severity = helix::ErrorSeverity::CRITICAL;
+    e.title = lv_tr("Filament System Error");
+    e.sticky = true;
+
+    // AFC.message is a FIFO *peek* (_get_message(clear=False)) that
+    // RESET_FAILURE does not pop, so it can still hold the text of an
+    // already-resolved fault. Only trust it while AFC itself still types the
+    // queued message as an error; otherwise fall back to the action mapping's
+    // detail, which at minimum names what was being attempted.
+    if (last_message_type_ == "error" && !last_seen_message_.empty()) {
+        e.detail = last_seen_message_;
+    } else if (!system_info_.operation_detail.empty() &&
+               system_info_.operation_detail != last_seen_message_) {
+        // operation_detail is only a useful fallback when it describes the
+        // OPERATION. parse_afc_state overwrites it with the queued message text
+        // for any message type, so without this inequality the branch above
+        // would reject a warning-typed message and this one would hand the same
+        // string straight back.
+        e.detail = system_info_.operation_detail;
+    } else {
+        e.detail = lv_tr("The filament system reported an error");
+    }
+
+    e.recovery_actions = build_recovery_actions();
+    return e;
 }
 
 std::optional<helix::ErrorEvent>
@@ -437,27 +779,50 @@ AmsBackendAfc::classify_error(const std::string& raw_line,
 
 std::vector<AmsBackend::ToolchangePhase>
 AmsBackendAfc::toolchange_phase_template(StepOperationType op) const {
+    // Mirrors AFC's real CHANGE_TOOL, which is TOOL_UNLOAD(old) then
+    // TOOL_LOAD(new). The purge-to-bucket, kick and wipe all live in
+    // do_poop_kick_wipe(), which TOOL_LOAD calls only AFTER load_sequence()
+    // succeeds — the poop purges the old colour out THROUGH the newly fed
+    // filament, so it cannot precede the feed. Verified against upstream
+    // v1.1.0 and v1.2.0.
+    //
+    // AFC has exactly one purge (the poop macro, `poop_cmd`) and one wipe
+    // (`wipe_cmd`/AFC_BRUSH), so there is no "Purge" distinct from the poop and
+    // no "Clean nozzle" distinct from the brush.
+    //
+    // The wipe runs TWICE, straddling the kick. Upstream order is
+    // poop -> wipe -> kick -> wipe, unchanged across both releases:
+    // AFC.py do_poop_kick_wipe() v1.2.0:1390-1413, and the same sequence inline
+    // in TOOL_LOAD at v1.1.0:1417-1440. All four macros narrate at the shipped
+    // default `variable_verbose: 1` (config/AFC_Macro_Vars.cfg:17), so the
+    // router sees poop, brush, kick, brush.
+    //
+    // The phases are therefore ordered by FIRST occurrence — poop, brush, kick —
+    // not by the order a naive reading of the macro names suggests. Listing kick
+    // before brush made the published index run 4 -> 6 -> 5 -> 6 on every stock
+    // toolchange: the bar jumped to "Brush nozzle", snapped back to "Kick away",
+    // then forward again. The bar has no notion of a repeated step, so the
+    // trailing wipe re-reports the brush phase; AmsState::set_narration_phase()
+    // latches the high-water index and swallows it.
     switch (op) {
     case StepOperationType::LOAD_SWAP:
         return {
-            {"heat", "Heat nozzle", false},    {"cut", "Cut tip", true},
-            {"poop", "Purge to bucket", true}, {"kick", "Kick away", true},
-            {"feed", "Feed filament", false},  {"purge", "Purge", true},
-            {"brush", "Brush nozzle", true},   {"clean", "Clean nozzle", true},
-            {"load", "Load complete", false},
+            {"heat", "Heat nozzle", false},       {"cut", "Cut tip", true},
+            {"unload", "Unload filament", false}, {"feed", "Feed filament", false},
+            {"poop", "Purge to bucket", true},    {"brush", "Brush nozzle", true},
+            {"kick", "Kick away", true},          {"load", "Load complete", false},
         };
     case StepOperationType::LOAD_FRESH:
         return {
-            {"heat", "Heat nozzle", false},
-            {"feed", "Feed filament", false},
-            {"purge", "Purge", true},
-            {"load", "Load complete", false},
+            {"heat", "Heat nozzle", false},    {"feed", "Feed filament", false},
+            {"poop", "Purge to bucket", true}, {"brush", "Brush nozzle", true},
+            {"kick", "Kick away", true},       {"load", "Load complete", false},
         };
     case StepOperationType::UNLOAD:
         return {
             {"heat", "Heat nozzle", false},
             {"cut", "Cut tip", true},
-            {"retract", "Retract", false},
+            {"unload", "Retract filament", false},
         };
     }
     return {};
@@ -467,32 +832,163 @@ std::optional<std::string>
 AmsBackendAfc::match_narration_phase(const std::string& narration) const {
     if (narration.empty())
         return std::nullopt;
-    std::string s = narration;
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    // Normalize to lowercase words joined by single spaces. Punctuation and
+    // separator style then stop mattering, so "AFC_Brush: Clean Nozzle",
+    // "AFC Brush - Clean nozzle" and "[AFC_Brush] Clean Nozzle!" all match the
+    // same needle. This matcher IS the step-bar model and upstream owns the
+    // wording, so it has to tolerate rewording that keeps the same words.
+    std::string s;
+    s.reserve(narration.size());
+    for (unsigned char c : narration) {
+        if (std::isalnum(c) != 0) {
+            s.push_back(static_cast<char>(std::tolower(c)));
+        } else if (!s.empty() && s.back() != ' ') {
+            s.push_back(' ');
+        }
+    }
+    while (!s.empty() && s.back() == ' ')
+        s.pop_back();
+    if (s.empty())
+        return std::nullopt;
+
     auto has = [&](const char* needle) { return s.find(needle) != std::string::npos; };
     // Order matters: more specific phrases first.
-    if (has("is now loaded in toolhead") || has("load complete"))
+    if (has("is now loaded in toolhead") || has("load complete") || has("loaded in toolhead"))
         return "load";
-    if (has("clean nozzle") || has("afc_brush: clean"))
-        return "clean";
-    if (has("move to brush") || has("brush"))
+    // Must precede the "feed" needles below: AFC announces the old lane coming
+    // out as "Unloading lane1", and normalized "unloading lane1" CONTAINS the
+    // substring "loading lane" — checked later it would resolve to feed and the
+    // bar would skip forward over the unload.
+    if (has("unload"))
+        return "unload";
+    // AFC_BRUSH is the only wipe. It emits "AFC_Brush: Clean Nozzle" at the
+    // default variable_verbose=1 and "AFC_Brush: Move to Brush." only at
+    // verbose>1, so both spellings must land on the same phase or the step never
+    // lights on a stock install.
+    if (has("clean nozzle") || has("cleaning nozzle") || has("brush"))
         return "brush";
-    if (has("purg")) // S1: purge/purging is its own phase, not "feed"
-        return "purge";
+    // The poop macro IS the purge; it says "Starting poop" at verbose 1 and
+    // "Move To Purge Location" at verbose>1. One phase, both spellings.
+    if (has("purg") || has("poop"))
+        return "poop";
     if (has("kick"))
         return "kick";
-    if (has("poop"))
-        return "poop";
+    // Before the retract needle: AFC_Cut says "Retract Filament for Cut", which
+    // is part of the cut, not the old filament coming out of the toolhead.
     if (has("cut"))
         return "cut";
-    if (has("retract")) // UNLOAD ends on a retract step; keep it reachable (#1046)
-        return "retract";
+    if (has("retract")) // UNLOAD ends on this step; keep it reachable (#1046)
+        return "unload";
     if (has("to hub") || has("feed") || has("loading lane"))
         return "feed";
     if (has("heat"))
         return "heat";
     return std::nullopt;
+}
+
+namespace {
+
+/// Lowercase the line and split it on whitespace. Punctuation stays attached, so
+/// AFC's `t:0` and `lane3` each stay a single token and the token COUNT is a
+/// usable anchor.
+std::vector<std::string> split_lower_words(const std::string& line) {
+    std::vector<std::string> out;
+    std::string cur;
+    for (unsigned char c : line) {
+        if (std::isspace(c) != 0) {
+            if (!cur.empty()) {
+                out.push_back(cur);
+                cur.clear();
+            }
+        } else {
+            cur.push_back(static_cast<char>(std::tolower(c)));
+        }
+    }
+    if (!cur.empty())
+        out.push_back(cur);
+    return out;
+}
+
+std::string to_lower_copy(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (unsigned char c : s)
+        out.push_back(static_cast<char>(std::tolower(c)));
+    return out;
+}
+
+} // namespace
+
+std::optional<std::string>
+AmsBackendAfc::match_bare_narration_phase(const std::string& line) const {
+    // Unlike match_narration_phase(), this runs on the printer's OPEN console —
+    // M105 reports, `echo:` chatter and the gcode filename all land here, and the
+    // filename is user-controlled. So each shape below is anchored on fixed words
+    // AND on position/count; nothing is a free substring test. `File opened:
+    // haircut.gcode` must not read as a Cut-tip step.
+    //
+    // Shapes are verbatim from AFC's own logger calls, captured in
+    // tests/unit/test_afc_console_corpus.cpp, captured from a live BoxTurtle:
+    //
+    //   Loading lane3                          -> feed
+    //   Unloading lane1                        -> unload
+    //   lane3 is now loaded in toolhead t:0    -> load
+    //   Lane lane1 unload done t:0             -> unload
+    //
+    // Deliberately NOT mapped, because the step template has no phase for them:
+    // `Tool Change - lane1 -> lane3`, `Total change time: t:0`, and the #1183
+    // no-op `lane1 already loaded` — the last of which must especially not read
+    // as a completed load.
+    const std::vector<std::string> t = split_lower_words(line);
+    if (t.size() < 2)
+        return std::nullopt;
+
+    // Exactly the verb plus the lane name. AFC emits `'Loading ' + lane.name`,
+    // so any trailing words mean this is somebody else's line.
+    if (t.size() == 2) {
+        if (t[0] == "loading")
+            return "feed";
+        if (t[0] == "unloading")
+            return "unload";
+    }
+
+    // Five fixed words in fixed positions after the lane name. The trailing
+    // `t:<n>` is optional so pre-toolchanger AFC builds still match.
+    if (t.size() >= 6 && t[1] == "is" && t[2] == "now" && t[3] == "loaded" && t[4] == "in" &&
+        t[5] == "toolhead")
+        return "load";
+
+    if (t.size() >= 4 && t[0] == "lane" && t[2] == "unload" && t[3] == "done")
+        return "unload";
+
+    return std::nullopt;
+}
+
+bool AmsBackendAfc::is_narration_drift_candidate(const std::string& line) const {
+    const std::string s = to_lower_copy(line);
+
+    // Every AFC narration line either names the system (`AFC_Cut:`, `AFC_Brush:`)
+    // or names a lane. Looser than the matchers on purpose: the hint exists to
+    // catch upstream REWORDING, which by definition no matcher recognizes. A
+    // false positive costs one deduped debug line.
+    if (s.find("afc") == std::string::npos && s.find("lane") == std::string::npos)
+        return false;
+
+    // ...minus the lines AFC emits every toolchange that have no phase by design.
+    // Without this the log would report them as drift forever.
+    static constexpr const char* kKnownPhaseless[] = {
+        "tool change",
+        "toolchange",
+        "already loaded",
+        "total change time",
+        "rotation distance reset",
+    };
+    for (const char* known : kKnownPhaseless) {
+        if (s.find(known) != std::string::npos)
+            return false;
+    }
+    return true;
 }
 
 PathSegment AmsBackendAfc::compute_filament_segment_unlocked() const {
@@ -506,10 +1002,14 @@ PathSegment AmsBackendAfc::compute_filament_segment_unlocked() const {
     //   tool_end_sensor   → NOZZLE (filament at nozzle tip)
     //   tool_start_sensor → TOOLHEAD (filament entered toolhead)
     //   hub_sensor        → OUTPUT (filament past hub, heading to toolhead)
-    //   loaded_to_hub     → HUB (filament reached hub merger)
     //   load              → LANE (filament in lane between prep and hub)
     //   prep              → PREP (filament at prep sensor, past spool)
     //   (no sensors)      → NONE or SPOOL depending on context
+    //
+    // PathSegment::HUB is deliberately unreachable here. AFC's per-lane
+    // loaded_to_hub is latched at prep and never updated, so it cannot
+    // distinguish "at hub" from "prepped once"; the hub sensor already covers
+    // the real transition as OUTPUT. HUB stays in the enum for Happy Hare.
 
     // Check toolhead sensors first (furthest along path)
     if (tool_end_sensor_) {
@@ -540,10 +1040,6 @@ PathSegment AmsBackendAfc::compute_filament_segment_unlocked() const {
         if (entry) {
             const auto& sensors = entry->sensors;
 
-            if (sensors.loaded_to_hub) {
-                return PathSegment::HUB;
-            }
-
             if (sensors.load) {
                 return PathSegment::LANE;
             }
@@ -560,10 +1056,6 @@ PathSegment AmsBackendAfc::compute_filament_segment_unlocked() const {
         if (!entry)
             continue;
         const auto& sensors = entry->sensors;
-
-        if (sensors.loaded_to_hub) {
-            return PathSegment::HUB;
-        }
 
         if (sensors.load) {
             return PathSegment::LANE;
@@ -606,34 +1098,30 @@ void AmsBackendAfc::handle_status_update(const nlohmann::json& notification) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
-        // Check if AFC provides an explicit filament_loaded field — if so, the
-        // post-scan should not override it (newer AFC versions are authoritative)
-        bool has_explicit_filament_loaded = false;
-        if (params.contains("AFC") && params["AFC"].is_object()) {
-            const auto& afc = params["AFC"];
-            has_explicit_filament_loaded =
-                afc.contains("filament_loaded") && afc["filament_loaded"].is_boolean();
-        }
-        if (!has_explicit_filament_loaded && params.contains("afc") && params["afc"].is_object()) {
-            const auto& afc = params["afc"];
-            has_explicit_filament_loaded =
-                afc.contains("filament_loaded") && afc["filament_loaded"].is_boolean();
-        }
-
         // Track whether parse_afc_state set current_slot from current_load/current_lane.
         // When set, the reconciliation block must not overwrite it (tool changers have
         // ALL lanes loaded, so scanning for first loaded lane picks the wrong one).
         bool current_slot_set_by_afc_state = false;
 
+        // Distinct from the flag above, which is true whichever WAY the AFC object
+        // spoke — a named current_load sets it too. This one means specifically
+        // "AFC said nothing is at the toolhead", and only apply_mount_state()
+        // consults it. Both are per-frame locals on purpose: #1229 was a value
+        // latching and never moving again, and a variable reborn every frame
+        // cannot latch.
+        bool afc_stated_unloaded = false;
+
         // Parse global AFC state if present
         if (params.contains("AFC") && params["AFC"].is_object()) {
-            parse_afc_state(params["AFC"], deferred_error_event, current_slot_set_by_afc_state);
+            parse_afc_state(params["AFC"], deferred_error_event, current_slot_set_by_afc_state,
+                            afc_stated_unloaded);
             state_changed = true;
         }
 
         // Legacy: also check for lowercase "afc" (older AFC versions)
         if (params.contains("afc") && params["afc"].is_object()) {
-            parse_afc_state(params["afc"], deferred_error_event, current_slot_set_by_afc_state);
+            parse_afc_state(params["afc"], deferred_error_event, current_slot_set_by_afc_state,
+                            afc_stated_unloaded);
             state_changed = true;
         }
 
@@ -662,11 +1150,11 @@ void AmsBackendAfc::handle_status_update(const nlohmann::json& notification) {
             }
         }
 
-        // After processing lane updates, reconcile filament_loaded from slot
-        // statuses. Only needed on AFC versions that lack an explicit
-        // "filament_loaded" field — when present, parse_afc_state() already set
-        // the authoritative value and the post-scan must not override it.
-        if (lanes_updated && slots_.is_initialized() && !has_explicit_filament_loaded) {
+        // After processing lane updates, reconcile filament_loaded from the slot
+        // statuses. Unconditional: no AFC version publishes a filament_loaded
+        // key on the AFC object (AFC.py get_status, v1.1.0 and v1.2.0:2531-2564),
+        // so the per-lane scan is the only authority there has ever been.
+        if (lanes_updated && slots_.is_initialized()) {
             bool any_loaded = false;
             int loaded_slot = -1;
             for (int i = 0; i < slots_.slot_count(); ++i) {
@@ -765,6 +1253,36 @@ void AmsBackendAfc::handle_status_update(const nlohmann::json& notification) {
                     state_changed = true;
                 }
             }
+
+            // Record what is on the carriage as a fact. The derivation that acts
+            // on it runs once, after every parser has had its say (#1229).
+            // `status` gates the read: mid-change Klipper sets tool_number to the
+            // incoming tool before it is physically picked up, so a raw read
+            // would report MOUNTED during the swap.
+            const MountState previous_mount = system_info_.mount_state;
+            std::string tc_status;
+            if (tc_data.contains("status") && tc_data["status"].is_string()) {
+                tc_status = tc_data["status"].get<std::string>();
+            }
+
+            if (!tc_status.empty() && tc_status != "ready") {
+                system_info_.mount_state = MountState::CHANGING;
+                system_info_.mounted_tool = -1;
+            } else if (system_info_.current_tool >= 0) {
+                system_info_.mount_state = MountState::MOUNTED;
+                system_info_.mounted_tool = system_info_.current_tool;
+            } else {
+                system_info_.mount_state = MountState::NONE;
+                system_info_.mounted_tool = -1;
+            }
+
+            if (system_info_.mount_state != previous_mount) {
+                spdlog::debug("[AMS AFC] Mount state: {} -> {} (tool T{})",
+                              mount_state_to_string(previous_mount),
+                              mount_state_to_string(system_info_.mount_state),
+                              system_info_.mounted_tool);
+                state_changed = true;
+            }
         }
 
         // Tool changer reconciliation: when we have a live tool-to-slot
@@ -788,20 +1306,317 @@ void AmsBackendAfc::handle_status_update(const nlohmann::json& notification) {
                 system_info_.filament_loaded = true;
             }
         }
+
+        // Single authority for machines that have a carriage. Runs last, so it
+        // overrides whatever the individual parsers negotiated among themselves
+        // (#1229). No-op on every backend without a toolchanger.
+        apply_mount_state(extruder_set_active_slot, afc_stated_unloaded);
+
+        // Backstop for a frame that never terminates the operation. Runs with
+        // mutex_ held; the emit happens below, outside it. A flip to ERROR is
+        // itself a state change worth publishing even on a frame that touched
+        // nothing else.
+        const AmsAction action_before_timeout = system_info_.action;
+        check_action_timeout();
+        if (system_info_.action != action_before_timeout) {
+            state_changed = true;
+        }
     }
 
     // Emit events OUTSIDE the lock to avoid deadlock with callbacks
     if (!deferred_error_event.empty()) {
         emit_event(EVENT_ERROR, deferred_error_event);
     }
+
+    // Pop the next queued AFC message if a clear_fault() drain is in flight.
+    // Must be outside the lock — clear_message_queue() sends gcode.
+    maybe_drain_message_queue();
+
     if (state_changed) {
         emit_event(EVENT_STATE_CHANGED);
     }
 }
 
+void AmsBackendAfc::apply_state_string(const std::string& raw, const char* source) {
+    bool recognized = true;
+    system_info_.action = ams_action_from_string(raw, &recognized);
+    system_info_.operation_detail = afc_state_detail(raw);
+    // Keys the stuck-action latch. Deliberately the raw wire token, not the
+    // humanized detail: two different states can share a display label.
+    last_raw_state_ = raw;
+
+    // AFC reporting anything busy means it has taken the operation over, so its
+    // own state machine owns completion from here and the pending macro ack must
+    // keep its hands off — forcing IDLE underneath a live 67s toolchange would
+    // truncate it. A re-echoed "Idle" is deliberately NOT taking over: that is
+    // exactly the no-op this mechanism exists to catch (#1183), so it leaves the
+    // pending dispatch alone. (The ack's own value guard makes that case a
+    // no-op anyway, since the frame already produced the IDLE transition the UI
+    // needed.)
+    if (pending_dispatch_action_.has_value() && system_info_.action != AmsAction::IDLE) {
+        spdlog::debug("[AMS AFC] AFC took over the dispatched operation ({} from {} '{}')",
+                      ams_action_to_string(system_info_.action), source, raw);
+        pending_dispatch_action_.reset();
+    }
+
+    if (!recognized && !raw.empty() && unknown_state_warned_.insert(raw).second) {
+        // Schema drift: AFC reported a state outside our known vocabulary. The
+        // fuzzy fallback picked an action, but the mapping is a guess and the
+        // detail text is machine-humanized rather than translated. Logged once
+        // per distinct string so a rename shows up in logs instead of silently
+        // reading as IDLE.
+        spdlog::warn("[AMS AFC] Unrecognized {} '{}' — mapped to {} by fallback. AFC may have "
+                     "reworded its state vocabulary; update ams_action_from_string().",
+                     source, raw, ams_action_to_string(system_info_.action));
+    }
+
+    spdlog::trace("[AMS AFC] {}: {} ({} -> '{}')", source,
+                  ams_action_to_string(system_info_.action), raw, system_info_.operation_detail);
+}
+
+void AmsBackendAfc::apply_action_timeout_latch_locked() {
+    if (!timed_out_state_.has_value()) {
+        return;
+    }
+
+    if (*timed_out_state_ != last_raw_state_) {
+        // AFC moved on to a genuinely different state: the stuck operation
+        // resolved, or something replaced it. Stop overriding and let the
+        // firmware drive the action again.
+        spdlog::info("[AMS AFC] Stuck-action latch released: '{}' -> '{}'", *timed_out_state_,
+                     last_raw_state_);
+        timed_out_state_.reset();
+        timed_out_detail_.clear();
+        return;
+    }
+
+    // Same stuck string as when the budget blew. AFC re-derives the action from
+    // that string on every frame, so without this override the normal mapping
+    // would put the backend straight back into the busy action, the frame-level
+    // change would restart the clock, and the whole thing would flap between
+    // busy and ERROR for as long as AFC stays stuck.
+    system_info_.action = AmsAction::ERROR;
+    system_info_.operation_detail = timed_out_detail_;
+}
+
+void AmsBackendAfc::check_action_timeout() {
+    // Already latched: the budget has fired for this state string and the clock
+    // means nothing until AFC reports something else. apply_action_timeout_
+    // latch_locked() owns the state from here.
+    if (timed_out_state_.has_value()) {
+        return;
+    }
+
+    const AmsAction a = system_info_.action;
+    // IDLE has no operation to time out and ERROR is already the terminal state
+    // this would produce. PAUSED is legitimately indefinite — AFC is waiting on
+    // the user to clear a jam or swap a spool, and failing that into ERROR would
+    // discard a prompt they are in the middle of answering.
+    if (a == AmsAction::IDLE || a == AmsAction::ERROR || a == AmsAction::PAUSED) {
+        return;
+    }
+
+    int limit = ACTION_TIMEOUT_SECONDS;
+    if (a == AmsAction::SELECTING) {
+        limit = SELECTING_TIMEOUT_SECONDS;
+    } else if (a == AmsAction::HEATING) {
+        limit = HEATING_TIMEOUT_SECONDS;
+    } else if (a == AmsAction::PURGING) {
+        limit = PURGING_TIMEOUT_SECONDS;
+    } else if (a == AmsAction::LOADING || a == AmsAction::UNLOADING) {
+        limit = LOAD_UNLOAD_TIMEOUT_SECONDS;
+    }
+
+    const auto elapsed = std::chrono::steady_clock::now() - action_start_time_;
+    if (elapsed < std::chrono::seconds(limit)) {
+        return;
+    }
+
+    spdlog::warn("[AMS AFC] {} (state '{}') timed out after {}s of a {}s budget, surfacing ERROR",
+                 ams_action_to_string(a), last_raw_state_,
+                 std::chrono::duration_cast<std::chrono::seconds>(elapsed).count(), limit);
+
+    // Preserve what was happening as the error description so the error-center
+    // bridge shows more than a bare failure.
+    const std::string timeout_detail = system_info_.operation_detail.empty()
+                                           ? lv_tr("Filament operation timed out")
+                                           : system_info_.operation_detail + lv_tr(" (timed out)");
+    system_info_.action = AmsAction::ERROR;
+    system_info_.operation_detail = timeout_detail;
+
+    // Only latch when AFC itself is driving the action. The latch keys on
+    // last_raw_state_, and for an action this backend set optimistically at
+    // dispatch that token is still AFC's previous state — usually "Idle".
+    // Latching it would have apply_action_timeout_latch_locked() re-force ERROR
+    // on every subsequent "Idle" frame for the rest of the session. There is
+    // nothing to flap against in that case anyway: AFC is not re-deriving this
+    // action from a string, so the next frame simply maps "Idle" to IDLE and
+    // the operation ends.
+    if (pending_dispatch_action_.has_value() && a == *pending_dispatch_action_) {
+        pending_dispatch_action_.reset();
+        return;
+    }
+    timed_out_state_ = last_raw_state_;
+    timed_out_detail_ = timeout_detail;
+}
+
+uint64_t AmsBackendAfc::begin_dispatch_locked(AmsAction action) {
+    // A newer dispatch supersedes any older one whose ack is still in flight:
+    // that ack presents a stale generation and finalize_dispatch_after_macro()
+    // drops it, so it can never resolve the operation now running.
+    const uint64_t generation = ++dispatch_generation_;
+    pending_dispatch_action_ = action;
+
+    // The user starting a new operation supersedes the previous one's stuck
+    // state, exactly as clear_fault() does. Leaving the latch armed would have
+    // the next status frame re-force ERROR over the action just set and the new
+    // operation would never be visible at all. If AFC really is still wedged,
+    // the clock restarts here and the budget re-fires — bounded and correct.
+    if (timed_out_state_.has_value()) {
+        spdlog::debug("[AMS AFC] New dispatch: releasing stuck-action latch on '{}'",
+                      *timed_out_state_);
+        timed_out_state_.reset();
+        timed_out_detail_.clear();
+    }
+
+    system_info_.action = action;
+    // Otherwise the sidebar keeps showing the finished operation's detail until
+    // AFC's first frame, which for a no-op never comes.
+    switch (action) {
+    case AmsAction::UNLOADING:
+        system_info_.operation_detail = lv_tr("Unloading");
+        break;
+    case AmsAction::SELECTING:
+        system_info_.operation_detail = lv_tr("Tool swap");
+        break;
+    default:
+        system_info_.operation_detail = lv_tr("Loading");
+        break;
+    }
+
+    // parse_afc_state() stamps the action clock once per status frame; a
+    // dispatch happens outside any frame, so it has to stamp its own. Without
+    // this the new action inherits however long the previous one had already
+    // been running and check_action_timeout() can fire on its first poll.
+    action_start_time_ = std::chrono::steady_clock::now();
+
+    spdlog::debug("[AMS AFC] Dispatch #{}: action set optimistically to {}", generation,
+                  ams_action_to_string(action));
+    return generation;
+}
+
+void AmsBackendAfc::abandon_dispatch(uint64_t generation) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (generation != dispatch_generation_ || !pending_dispatch_action_.has_value()) {
+            return;
+        }
+        pending_dispatch_action_.reset();
+        system_info_.action = AmsAction::IDLE;
+        system_info_.operation_detail.clear();
+        action_start_time_ = std::chrono::steady_clock::now();
+    }
+    emit_event(EVENT_STATE_CHANGED);
+}
+
+void AmsBackendAfc::finalize_dispatch_after_macro(uint64_t generation) {
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        // "Is the action still mine?" — three ways it can be someone else's:
+        //   * a newer dispatch bumped the generation;
+        //   * AFC reported a busy state, so apply_state_string() handed the
+        //     operation to AFC's own state machine and cleared the pending mark;
+        //   * something moved the action off the value this dispatch set —
+        //     AFC echoing "Idle" (which already produced the transition the UI
+        //     needed), or the stuck-action timeout latching ERROR.
+        // In all three the operation is already resolved or is still legitimately
+        // running, and forcing IDLE would either lie or truncate it.
+        if (generation != dispatch_generation_ || !pending_dispatch_action_.has_value() ||
+            system_info_.action != *pending_dispatch_action_) {
+            spdlog::debug("[AMS AFC] Macro ack for dispatch #{} resolves nothing (current action "
+                          "{}, generation {})",
+                          generation, ams_action_to_string(system_info_.action),
+                          dispatch_generation_);
+            return;
+        }
+
+        // The macro ran to completion and AFC never reported doing anything —
+        // the "lane3 already loaded" no-op. The gcode ack is the only completion
+        // signal that exists for it (#1183).
+        spdlog::info("[AMS AFC] Macro complete (gcode ack) with no AFC state change -> IDLE");
+        pending_dispatch_action_.reset();
+        system_info_.action = AmsAction::IDLE;
+        system_info_.operation_detail.clear();
+        action_start_time_ = std::chrono::steady_clock::now();
+        changed = true;
+    }
+    if (changed) {
+        emit_event(EVENT_STATE_CHANGED);
+    }
+}
+
+AmsError AmsBackendAfc::dispatch_operation(std::string gcode, AmsAction action) {
+    uint64_t generation;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        generation = begin_dispatch_locked(action);
+    }
+    // Publish the optimistic action immediately: this is the transition the
+    // filament panel's completion observer needs to see start before it can
+    // ever see one end.
+    emit_event(EVENT_STATE_CHANGED);
+
+    auto token = lifetime_.token();
+    AmsError result = ensure_homed_then(std::move(gcode), [this, token, generation]() {
+        // L081 Mechanism C: the gcode ack lands on a background thread and the
+        // handler writes system_info_ under mutex_. Marshal to main.
+        token.defer("AmsBackendAfc::dispatch_macro_complete",
+                    [this, generation]() { finalize_dispatch_after_macro(generation); });
+    });
+
+    if (!result) {
+        // The gcode never left: no IMoonrakerAPI, or the send was refused. No ack
+        // will ever arrive, so undo the optimistic action instead of leaving the
+        // UI busy until the stuck-action budget expires.
+        spdlog::warn("[AMS AFC] Dispatch #{} failed to send ({}), reverting optimistic action",
+                     generation, result.technical_msg);
+        abandon_dispatch(generation);
+    }
+    return result;
+}
+
 void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
                                     std::string& deferred_error_event,
-                                    bool& current_slot_set_by_afc_state) {
+                                    bool& current_slot_set_by_afc_state,
+                                    bool& afc_stated_unloaded) {
+    // Stuck-action clock: captured here and compared at the very bottom of this
+    // function. See the tail block for why the comparison is frame-scoped.
+    const AmsAction action_at_frame_start = system_info_.action;
+
+    // Version, when upstream supplies it here. AFC is moving the signal into the
+    // status object (AFCProject/AFC-Klipper-Add-On PR #807 adds AFC.version to
+    // get_status()); the old afc-install DB namespace has been dead since their
+    // commit 7d20db7 and is not being repopulated. Prefer status when present and
+    // fall back to whatever detect_afc_version() found, so this is a no-op on
+    // releases that predate #807.
+    //
+    // INFORMATIONAL ONLY — do not gate behaviour on the value. AFC_VERSION is a
+    // hand-bumped literal that has already drifted from the release tag (it sat at
+    // 1.1.37 through the whole v1.2.0 release; #807 moves it to 1.2.1). Presence of
+    // the field is the only trustworthy signal. Capabilities stay feature-detected.
+    if (afc_data.contains("version") && afc_data["version"].is_string()) {
+        std::string v = afc_data["version"].get<std::string>();
+        if (!v.empty() && v != afc_version_) {
+            afc_version_ = v;
+            system_info_.version = v;
+            spdlog::info("[AMS AFC] AFC version from status: {} (informational; capabilities "
+                         "are feature-detected)",
+                         v);
+        }
+    }
+
     // Parse current lane — try "current_lane" first, fall back to "current_load".
     // An empty string is treated as absent (fall through to check the other field).
     std::string loaded_lane;
@@ -811,6 +1626,37 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
     if (loaded_lane.empty() && afc_data.contains("current_load") &&
         afc_data["current_load"].is_string()) {
         loaded_lane = afc_data["current_load"].get<std::string>();
+    }
+
+    // Delta semantics: only reconsider the active lane when AFC actually mentions
+    // it. A present string sets it, a present null clears it, and absence leaves
+    // it alone — AFC omits unchanged keys, and clearing on absence would drop the
+    // attribution on the next unrelated delta (message, state, toolchange count).
+    const bool mentions_lane = afc_data.contains("current_lane");
+    const bool mentions_load = afc_data.contains("current_load");
+    if (mentions_lane || mentions_load) {
+        active_load_lane_ = loaded_lane;
+    }
+
+    // Track current_load on its own, in addition to folding it into
+    // active_load_lane_ above. The two answer different questions and AFC
+    // publishes them from different variables:
+    //
+    //   current_load  = AFC.current          — set by set_loaded(), cleared by
+    //                                          set_unloaded(). The lane the
+    //                                          extruder is actually gripping.
+    //   current_lane  = AFC.current_loading  — set at the top of TOOL_LOAD and
+    //                                          TOOL_UNLOAD, cleared only on
+    //                                          success. The lane a toolchange
+    //                                          is WORKING ON, loaded or not.
+    //
+    // active_load_lane_ prefers current_lane because attribution wants the lane
+    // being worked. "Is the toolhead occupied" wants current_load and only
+    // current_load — see can_recover_lane_position()'s toolhead guard.
+    if (mentions_load) {
+        toolhead_lane_ = afc_data["current_load"].is_string()
+                             ? afc_data["current_load"].get<std::string>()
+                             : std::string();
     }
 
     if (!loaded_lane.empty()) {
@@ -834,65 +1680,41 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
         }
     }
 
-    // Explicit current_tool from firmware overrides derived value
-    if (afc_data.contains("current_tool") && afc_data["current_tool"].is_number_integer()) {
-        system_info_.current_tool = afc_data["current_tool"].get<int>();
-        spdlog::trace("[AMS AFC] Current tool (explicit): {}", system_info_.current_tool);
-    }
-
-    // Parse filament loaded state — try explicit field first, derive from current_load
-    if (afc_data.contains("filament_loaded") && afc_data["filament_loaded"].is_boolean()) {
-        bool explicit_loaded = afc_data["filament_loaded"].get<bool>();
-        system_info_.filament_loaded = explicit_loaded;
-        if (!explicit_loaded && !loaded_lane.empty()) {
-            spdlog::warn("[AMS AFC] Firmware says filament_loaded=false but current_lane='{}' "
-                         "— may indicate in-progress load; UI will not show loaded",
-                         loaded_lane);
-        } else {
-            spdlog::debug("[AMS AFC] Filament loaded={} (explicit)", explicit_loaded);
-        }
-    } else if (!loaded_lane.empty()) {
-        // AFC versions without "filament_loaded" field: best-effort derivation.
-        // current_load/current_lane being set to a lane name is treated as "loaded" —
-        // may briefly show loaded during in-progress operations on some firmware versions,
-        // but is the best signal available.
+    // Filament-loaded state is DERIVED. The AFC object has never published a
+    // "filament_loaded" key, nor a "current_tool" one — AFC.py get_status()
+    // (v1.2.0:2531-2564, and the v1.1.0 equivalent) publishes current_load,
+    // current_lane, next_lane, current_state, current_toolchange,
+    // number_of_toolchanges, spoolman, td1_present, lane_data_enabled,
+    // error_state, bypass_state, quiet_mode, position_saved, units, lanes, maps,
+    // extruders, hubs, buffers, message and led_state. The tool number therefore
+    // only ever comes from the slot→tool mapping resolved above.
+    if (!loaded_lane.empty()) {
+        // current_load/current_lane being set to a lane name is treated as
+        // "loaded" — it may briefly read loaded during an in-progress load,
+        // but it is the best signal the object carries.
         system_info_.filament_loaded = true;
         spdlog::debug("[AMS AFC] Filament loaded=true (derived from current_lane='{}')",
                       loaded_lane);
     } else if ((afc_data.contains("current_load") && afc_data["current_load"].is_null()) ||
                (afc_data.contains("current_lane") && afc_data["current_lane"].is_null())) {
         // current_load/current_lane went null (unloaded) — clear filament state.
-        // Preserve current_tool if explicitly provided (tool changer mid-swap:
-        // current_load goes null while current_tool already reflects new tool).
-        bool has_explicit_tool =
-            afc_data.contains("current_tool") && afc_data["current_tool"].is_number_integer();
         system_info_.filament_loaded = false;
         system_info_.current_slot = -1;
-        if (!has_explicit_tool) {
-            system_info_.current_tool = -1;
-        }
+        system_info_.current_tool = -1;
         current_slot_set_by_afc_state = true;
-        spdlog::debug("[AMS AFC] Filament unloaded (current lane/load=null, "
-                      "preserve_tool={})",
-                      has_explicit_tool);
+        // A mounted tool must not re-elect a slot behind this. The carriage still
+        // decides WHICH tool is current; it does not get to invent filament AFC
+        // just told us is not there.
+        afc_stated_unloaded = true;
+        spdlog::debug("[AMS AFC] Filament unloaded (current lane/load=null)");
     }
 
-    // Parse action/status
-    if (afc_data.contains("status") && afc_data["status"].is_string()) {
-        std::string status_str = afc_data["status"].get<std::string>();
-        system_info_.action = ams_action_from_string(status_str);
-        system_info_.operation_detail = status_str;
-        spdlog::trace("[AMS AFC] Status: {} ({})", ams_action_to_string(system_info_.action),
-                      status_str);
-    }
-
-    // Parse current_state field (preferred over status when present)
+    // Action comes from current_state, the only state key AFC publishes. (There
+    // was a second branch here reading a "status" key as a legacy spelling; no
+    // AFC version has ever emitted one on the AFC object — "status" exists only
+    // on AFC_lane and AFC_extruder, and those are parsed by their own handlers.)
     if (afc_data.contains("current_state") && afc_data["current_state"].is_string()) {
-        std::string state_str = afc_data["current_state"].get<std::string>();
-        system_info_.action = ams_action_from_string(state_str);
-        system_info_.operation_detail = state_str;
-        spdlog::trace("[AMS AFC] Current state: {} ({})", ams_action_to_string(system_info_.action),
-                      state_str);
+        apply_state_string(afc_data["current_state"].get<std::string>(), "current_state");
     }
 
     // Parse tool change progress (AFC tracks swap count during multi-color prints)
@@ -914,6 +1736,12 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
             std::string msg_text = msg["message"].get<std::string>();
             if (!msg_text.empty()) {
                 system_info_.operation_detail = msg_text;
+
+                // A message is still queued behind the one we just cleared. Ask
+                // the caller to pop another once it has released mutex_.
+                if (message_drain_budget_ > 0) {
+                    message_drain_pending_ = true;
+                }
             }
 
             // Get message type (error, warning, or empty)
@@ -927,10 +1755,16 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
 
             // Handle message text changes for toast/notification dispatch
             if (msg_text.empty()) {
-                // Error cleared - reset dedup tracking
+                // Error cleared - reset dedup tracking and the visible detail.
+                // operation_detail outranks the action-derived string in
+                // AmsState::recompute_action_detail(), so leaving it set pins the
+                // sidebar status label to a stale error indefinitely.
+                system_info_.operation_detail.clear();
                 last_seen_message_.clear();
                 last_error_msg_.clear();
                 last_message_type_.clear();
+                message_drain_budget_ = 0;
+                message_drain_pending_ = false;
             } else if (msg_text != last_seen_message_) {
                 // New or changed message - update dedup tracker
                 last_seen_message_ = msg_text;
@@ -1114,6 +1948,85 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
         }
         spdlog::debug("[AMS AFC] Discovered {} extruder names from AFC state",
                       extruder_names_.size());
+
+        // Derive the toolchanger shape from the names, because the status
+        // subscription is the ONLY surface that reaches us and it does not carry
+        // AFC.system. Upstream writes str["system"]['num_extruders'] in exactly
+        // two places — _webhooks_status() (the /printer/afc/status HTTP endpoint,
+        // which we never call) and save_vars() (the vars file) — while
+        // get_status() publishes current_load/current_lane/next_lane/
+        // current_state/spoolman/error_state/units/lanes and no system key.
+        //
+        // Without this, num_extruders_ stayed at its default 1 on every real
+        // printer, so `if (num_extruders_ > 1)` in load_filament() and
+        // select_tool() was never true and AFC_SELECT_TOOL was never dispatched
+        // on an actual AFC toolchanger. extruders_ stayed empty too, which the
+        // bounds checks turned into silence rather than a crash.
+        //
+        // Order is preserved verbatim: extruders_ is indexed POSITIONALLY as a
+        // tool number, and AFC emits the array in tool order.
+        if (!extruder_names_.empty()) {
+            num_extruders_ = static_cast<int>(extruder_names_.size());
+
+            // Seed only what is missing. A system-sourced record carries
+            // per-extruder lane_loaded and tool_stn distances that a bare name
+            // cannot, so never overwrite one that is already populated.
+            for (const auto& ext_name : extruder_names_) {
+                auto it =
+                    std::find_if(extruders_.begin(), extruders_.end(),
+                                 [&](const AfcExtruderInfo& e) { return e.name == ext_name; });
+                if (it == extruders_.end()) {
+                    AfcExtruderInfo info;
+                    info.name = ext_name;
+                    extruders_.push_back(std::move(info));
+                }
+            }
+        }
+    }
+
+    // Lane AFC has pre-staged for the NEXT toolchange (AFC.next_lane). Same
+    // delta rule as current_lane: a string resolves it, an explicit null clears
+    // it, and absence leaves the previous value alone. Resolution can fail while
+    // the slot registry is still empty; next_slot then stays -1 and the next
+    // frame that mentions the lane fixes it.
+    if (afc_data.contains("next_lane")) {
+        if (afc_data["next_lane"].is_string()) {
+            std::string next = afc_data["next_lane"].get<std::string>();
+            int next_idx = next.empty() ? -1 : slots_.index_of(next);
+            system_info_.next_slot = next_idx;
+            spdlog::trace("[AMS AFC] Next lane: '{}' (slot {})", next, next_idx);
+        } else if (afc_data["next_lane"].is_null()) {
+            system_info_.next_slot = -1;
+        }
+    }
+
+    // Firmware holds a restorable toolhead position (set when an error
+    // interrupted a print mid-move).
+    if (afc_data.contains("position_saved") && afc_data["position_saved"].is_boolean()) {
+        system_info_.position_saved = afc_data["position_saved"].get<bool>();
+    }
+
+    // Spoolman base URL the firmware is configured against. AFC publishes false
+    // (not null) when Spoolman is off, so only a string is meaningful.
+    if (afc_data.contains("spoolman") && afc_data["spoolman"].is_string()) {
+        system_info_.spoolman_url = afc_data["spoolman"].get<std::string>();
+    }
+
+    // T-commands AFC registered with Klipper (v1.2.0+). Consumed by the per-lane
+    // map cross-check in parse_afc_stepper; re-arm its dedup whenever the set
+    // changes so a genuinely new mismatch is not swallowed by an earlier warning.
+    if (afc_data.contains("maps") && afc_data["maps"].is_array()) {
+        std::vector<std::string> cmds;
+        for (const auto& m : afc_data["maps"]) {
+            if (m.is_string()) {
+                cmds.push_back(m.get<std::string>());
+            }
+        }
+        if (cmds != afc_tool_cmds_) {
+            afc_tool_cmds_ = std::move(cmds);
+            tool_cmd_missing_warned_.clear();
+            spdlog::debug("[AMS AFC] AFC registered {} tool commands", afc_tool_cmds_.size());
+        }
     }
 
     // Parse global quiet_mode and LED state
@@ -1213,6 +2126,26 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
             spdlog::trace("[AMS AFC] Bypass mode active");
         }
     }
+
+    // --- Stuck-action bookkeeping (see check_action_timeout) ----------------
+    //
+    // Re-assert the latch last so it outranks both the state->action mapping
+    // above and the AFC.message block, which also writes operation_detail.
+    apply_action_timeout_latch_locked();
+
+    // Stamp the action clock once per status frame, and only when the action
+    // actually changed across the WHOLE frame.
+    //
+    // This deliberately does NOT live in apply_state_string(). That helper runs
+    // on every frame AFC sends and up to twice within one (the legacy "status"
+    // field, then the authoritative "current_state"). An unconditional stamp
+    // there would restart the budget on every delta so it could never elapse;
+    // an "action changed" stamp there would misfire whenever those two fields
+    // disagree inside a single frame. Either way the timeout would never fire,
+    // which is the bug this whole mechanism exists to prevent.
+    if (system_info_.action != action_at_frame_start) {
+        action_start_time_ = std::chrono::steady_clock::now();
+    }
 }
 
 // ============================================================================
@@ -1257,24 +2190,53 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
     if (data.contains("filament_status") && data["filament_status"].is_string()) {
         sensors.filament_status = data["filament_status"].get<std::string>();
     }
+    // Severity colour for the lane's status LED. Firmware splits one
+    // get_filament_status() string into filament_status + this hex, so the two
+    // always describe the same condition and are parsed together.
+    if (data.contains("filament_status_led") && data["filament_status_led"].is_string()) {
+        sensors.filament_status_led = data["filament_status_led"].get<std::string>();
+    }
     if (data.contains("dist_hub") && data["dist_hub"].is_number()) {
         sensors.dist_hub = data["dist_hub"].get<float>();
+    }
+    // Selector sensor, published only by units that have one (HTLF, QuattroBox).
+    // Presence is latched: a lane that once reported a selector still has one,
+    // and a delta that omits the key must not read as "selector cleared".
+    if (data.contains("selector") && data["selector"].is_boolean()) {
+        sensors.has_selector = true;
+        sensors.selector = data["selector"].get<bool>();
+    }
+    // Homing endstops configured on this lane, comma-separated. A capability
+    // list, not a reading — AFC omits the key entirely on lanes with none.
+    if (data.contains("endstops") && data["endstops"].is_string()) {
+        sensors.endstops = data["endstops"].get<std::string>();
     }
 
     // Get slot info for filament data update
     auto& slot = entry->info;
 
-    // Parse color
+    // Parse color.
+    //
+    // An EMPTY value is a deliberate clear, not a parse failure. AFC's
+    // clear_values() sets color='' on eject, and SET_COLOR with an empty value
+    // stores the literal '#'. Both strip to "" here. Previously std::stoul("")
+    // threw and was swallowed as "keep existing", so an ejected lane kept
+    // painting the previous spool's colour. Genuinely malformed input still
+    // keeps the old value — only emptiness clears.
     if (data.contains("color") && data["color"].is_string()) {
         std::string color_str = data["color"].get<std::string>();
         // Remove '#' prefix if present
         if (!color_str.empty() && color_str[0] == '#') {
             color_str = color_str.substr(1);
         }
-        try {
-            slot.color_rgb = std::stoul(color_str, nullptr, 16);
-        } catch (...) {
-            // Keep existing color on parse failure
+        if (color_str.empty()) {
+            slot.color_rgb = AMS_DEFAULT_SLOT_COLOR;
+        } else {
+            try {
+                slot.color_rgb = std::stoul(color_str, nullptr, 16);
+            } catch (...) {
+                // Keep existing color on parse failure
+            }
         }
     }
 
@@ -1283,15 +2245,144 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
         slot.material = data["material"].get<std::string>();
     }
 
-    // Parse Spoolman ID
-    if (data.contains("spool_id") && data["spool_id"].is_number_integer()) {
-        slot.spoolman_id = data["spool_id"].get<int>();
+    // Filament name, as AFC copied it out of Spoolman's filament record
+    // (AFC v1.2.0+). Empty is a deliberate clear — clear_values() sets
+    // filament_name="" on eject — matching how `color` is handled above.
+    // apply_overrides() runs below, so a user-entered name still wins.
+    if (data.contains("filament_name") && data["filament_name"].is_string()) {
+        slot.spool_name = data["filament_name"].get<std::string>();
     }
 
-    // Parse weight
+    // Multi-colour hexes (AFC v1.2.0+). Firmware carries these as a list of BARE
+    // hex strings, having split Spoolman's comma-joined `multi_color_hexes` and
+    // then re-prefixed only the first one into `color`. Normalise back to the
+    // '#'-prefixed comma-joined form the swatch renderer and every other backend
+    // use. An empty list clears, which is what clear_values() does on eject.
+    if (data.contains("multi_color_hexes") && data["multi_color_hexes"].is_array()) {
+        std::string joined;
+        for (const auto& hex : data["multi_color_hexes"]) {
+            if (!hex.is_string()) {
+                continue;
+            }
+            std::string h = hex.get<std::string>();
+            if (h.empty()) {
+                continue;
+            }
+            if (!joined.empty()) {
+                joined += ',';
+            }
+            if (h[0] != '#') {
+                joined += '#';
+            }
+            joined += h;
+        }
+        slot.multi_color_hexes = joined;
+    }
+
+    // Recommended bed temperature (AFC v1.2.0+; v1.1.x carries it in lane_data
+    // only). Null is the eject clear, same rule as spool_id below.
+    if (data.contains("bed_temp")) {
+        if (data["bed_temp"].is_number()) {
+            slot.bed_temp = static_cast<int>(std::lround(data["bed_temp"].get<double>()));
+        } else if (data["bed_temp"].is_null()) {
+            slot.bed_temp = 0;
+        }
+    }
+
+    // Recommended nozzle temperature. AFC_lane.get_status() has carried this on
+    // every release since v1.1.0, and AFC_spool.py fills it from the linked
+    // spool's Spoolman `settings_extruder_temp` — so it is a single recommended
+    // print temperature, not a range, and it is None until a spool is linked.
+    //
+    // Both ends of the pair get it. SlotInfo models the nozzle as min/max because
+    // that is what RFID and the filament DB supply, and active_material_provider
+    // layers the pair over the DB as the tier-2 vendor preset. The value the UI
+    // then preheats to is MaterialInfo::nozzle_recommended(), the midpoint —
+    // so writing only the low end would target (spool + DB max) / 2, a
+    // temperature neither source asked for, and could invert the range whenever
+    // the spool prints hotter than its material's generic maximum.
+    //
+    // Null is the eject clear, same rule as bed_temp above: AFC_spool's
+    // clear_values() sets extruder_temp = None, and letting a stale value ride
+    // would preheat the next spool to the last one's temperature.
+    if (data.contains("extruder_temp")) {
+        if (data["extruder_temp"].is_number()) {
+            int temp = static_cast<int>(std::lround(data["extruder_temp"].get<double>()));
+            slot.nozzle_temp_min = temp;
+            slot.nozzle_temp_max = temp;
+        } else if (data["extruder_temp"].is_null()) {
+            slot.nozzle_temp_min = 0;
+            slot.nozzle_temp_max = 0;
+        }
+    }
+
+    // Parse Spoolman ID.
+    //
+    // JSON null is AFC telling us the link is GONE — clear_values() sets
+    // spool_id=None on eject. is_number_integer() is false for null, so this
+    // previously retained the old id and an ejected lane stayed "linked",
+    // which is what later aimed an edit's Spoolman write at the wrong spool.
+    // An ABSENT key still means "unchanged": these are deltas, not snapshots.
+    if (data.contains("spool_id")) {
+        if (data["spool_id"].is_number_integer()) {
+            slot.spoolman_id = data["spool_id"].get<int>();
+        } else if (data["spool_id"].is_null()) {
+            slot.spoolman_id = 0;
+        }
+    }
+
+    // Parse weight.
+    //
+    // This is the ONLY weight source for AFC. AFC_lane.get_status() has carried a
+    // live `weight` since v1.1.0, on every release, so no version gate is needed
+    // and none of the lane_data staleness (see parse_lane_data) can reach us here.
     if (data.contains("weight") && data["weight"].is_number()) {
         slot.remaining_weight_g = data["weight"].get<float>();
     }
+
+    // Full-spool weight (AFC v1.2.0+), ONLY for lanes with a Spoolman link.
+    //
+    // The field is espooler_values.full_weight, which is a configured unit-level
+    // constant (config `full_weight`, else the unit's) that Spoolman overwrites
+    // with the spool's real initial_weight when a spool is linked. Every lane
+    // reports it, empty ones included, so adopting it ungated would give an
+    // ejected lane a total_weight_g of 1000 and render it as "0 / 1000 g" —
+    // total_weight_g's convention is -1 for unknown. spool_id was parsed just
+    // above, so slot.spoolman_id is this frame's value.
+    //
+    // Deliberately does NOT clear on unlink: total_weight_g also comes from the
+    // Spoolman weight poll and from user overrides, and neither should be wiped
+    // because AFC dropped its own link.
+    if (slot.spoolman_id > 0 && data.contains("initial_weight") &&
+        data["initial_weight"].is_number()) {
+        float full = data["initial_weight"].get<float>();
+        if (full > 0.0f) {
+            slot.total_weight_g = full;
+        }
+    }
+
+    // Whether AFC itself retains this lane's spool metadata across an eject.
+    // When false, clear_values() wipes colour/material/weight in firmware and
+    // our override store is the only thing that puts the user's identity back.
+    if (data.contains("remember_spool") && data["remember_spool"].is_boolean()) {
+        lane_remember_spool_[lane_name] = data["remember_spool"].get<bool>();
+    }
+
+    // Vendor/brand — see read_vendor().
+    //
+    // Upstream #808 asked for the vendor on BOTH surfaces; jimmyjon711 accepted it
+    // as `vendor_name`. The status half is the one that matters to us: it is live
+    // and version-independent, where lane_data is a DB snapshot that only refreshes
+    // when AFC decides to push. Inert until #808 ships; harmless before then.
+    //
+    // apply_overrides() runs directly below, so a user's brand override still wins
+    // over whatever firmware reports. The lane_data path does the same since #1195.
+    read_vendor(data, slot.brand);
+
+    // Re-supply the user's attached identity on top of firmware truth. This is
+    // what keeps a lane's spool across an eject now that the parser honours
+    // AFC's clears.
+    apply_overrides(slot, slot.global_index >= 0 ? slot.global_index : slot.slot_index);
 
     // Derive slot status from sensors and status string.
     // Only recompute status when at least one status-related field is present
@@ -1304,12 +2395,23 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
         bool tool_loaded = has_tool_loaded && data["tool_loaded"].get<bool>();
         std::string status_str = has_status ? data["status"].get<std::string>() : "";
 
-        // AFC "Loaded" status means hub-loaded, not toolhead-loaded.
-        // Only tool_loaded == true means filament is at the extruder.
-        if (tool_loaded || status_str == "Tooled") {
+        // The lane `status` vocabulary is closed: AFCLaneState in
+        // AFC_lane.py:65-76 (v1.2.0; v1.1.0:55-64 is the same list minus
+        // "Infinite Runout"). Nothing outside it is ever published.
+        //
+        // "Loaded" means loaded to the HUB, not to the toolhead
+        // (AFC_lane.py:1497). The two that mean toolhead are "Tooled"
+        // (AFC_lane.py:1523) and "Tool Loaded", the latter set the moment
+        // filament trips the pre-extruder sensor (AFC.py v1.2.0:1633 and :1764,
+        // v1.1.0:1360). "Tool Loaded" used to fall through to the catch-all and
+        // read as EMPTY unless a cached prep/load sensor happened to rescue it.
+        //
+        // There is no "Ready" lane status in any AFC version. That belongs to
+        // the SEPARATE `filament_status` field, whose vocabulary is
+        // In Tool / Ready / Prep / Not Ready (AFC_functions.py:407-414).
+        if (tool_loaded || status_str == "Tooled" || status_str == "Tool Loaded") {
             slot.status = SlotStatus::LOADED;
-        } else if (status_str == "Loaded" || status_str == "Ready" || sensors.prep ||
-                   sensors.load) {
+        } else if (status_str == "Loaded" || sensors.prep || sensors.load) {
             slot.status = SlotStatus::AVAILABLE;
         } else if (status_str == "None" || status_str.empty()) {
             slot.status = SlotStatus::EMPTY;
@@ -1345,23 +2447,62 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
                   slot_index, sensors.prep, sensors.load, sensors.loaded_to_hub,
                   slot_status_to_string(slot.status));
 
-    // Parse tool mapping from "map" field (e.g., "T0", "T1")
-    if (data.contains("map") && data["map"].is_string()) {
-        std::string map_str = data["map"].get<std::string>();
-        // Parse "T{N}" format
-        if (map_str.size() >= 2 && map_str[0] == 'T') {
-            try {
-                int tool_num = std::stoi(map_str.substr(1));
-                if (tool_num >= 0 && tool_num <= 64) {
-                    // Update registry tool mapping (also sets slot.mapped_tool)
-                    slots_.set_tool_mapping(slot_index, tool_num);
-                    spdlog::trace("[AMS AFC] Lane {} mapped to tool T{}", lane_name, tool_num);
+    // Parse tool mapping from "map" field. This function receives Moonraker
+    // notify_status_update DELTAS (only changed fields), so an ABSENT "map" means
+    // "unchanged" and must NOT clear the mapping — same partial-delta rule the
+    // status block above applies. Only a PRESENT value is authoritative:
+    //   string "T0"    → map to that tool
+    //   null           → unmapped, clear
+    //   array/object   → speculative multi-tool shape (AFC #605), unsupported;
+    //                    clear + warn once per lane so it surfaces in logs.
+    if (data.contains("map")) {
+        bool mapped = false;
+        if (data["map"].is_string()) {
+            std::string map_str = data["map"].get<std::string>();
+            // Parse "T{N}" format
+            if (map_str.size() >= 2 && map_str[0] == 'T') {
+                try {
+                    int tool_num = std::stoi(map_str.substr(1));
+                    if (tool_num >= 0 && tool_num <= 64) {
+                        // Update registry tool mapping (also sets slot.mapped_tool)
+                        slots_.set_tool_mapping(slot_index, tool_num);
+                        spdlog::trace("[AMS AFC] Lane {} mapped to tool T{}", lane_name, tool_num);
+                        mapped = true;
+
+                        // Cross-check against the T-commands AFC actually registered
+                        // with Klipper (AFC.maps, v1.2.0+). A lane claiming a tool
+                        // that has no registered command means change_tool() would
+                        // send gcode the firmware does not know. Diagnostic only —
+                        // the lane's own map field stays authoritative, since maps
+                        // is absent entirely before v1.2.0.
+                        if (!afc_tool_cmds_.empty() &&
+                            std::find(afc_tool_cmds_.begin(), afc_tool_cmds_.end(), map_str) ==
+                                afc_tool_cmds_.end() &&
+                            tool_cmd_missing_warned_.insert(tool_num).second) {
+                            spdlog::warn("[AMS AFC] Lane {} maps to {} but AFC registered no such "
+                                         "command ({} registered) — a tool change to T{} would "
+                                         "fail",
+                                         lane_name, map_str, afc_tool_cmds_.size(), tool_num);
+                        }
+                    }
+                } catch (...) {
+                    // Invalid tool number format — fall through to reset
                 }
-            } catch (...) {
-                // Invalid tool number format
+            }
+        } else if (!data["map"].is_null()) {
+            // Present but not a string: array/object multi-tool shape (unsupported)
+            if (map_non_string_warned_lanes_.insert(lane_name).second) {
+                spdlog::warn("[AMS AFC] Lane {} 'map' field is not a string (got array/object); "
+                             "multi-tool map is not supported — see AFC #605",
+                             lane_name);
             }
         }
+        if (!mapped) {
+            // Present-but-null, present-non-string, or malformed → authoritative unmap
+            slots_.clear_tool_mapping(slot_index);
+        }
     }
+    // "map" absent → partial delta, keep existing mapping
 
     // Parse hub routing for this lane ("direct" or hub name like "HTLF_1")
     if (data.contains("hub") && data["hub"].is_string()) {
@@ -1463,10 +2604,53 @@ void AmsBackendAfc::parse_afc_buffer(const std::string& buffer_name, const nlohm
     //   "distance_to_fault": 25.5,
     //   "error_sensitivity": 7,
     //   "state": "Advancing",
-    //   "lanes": ["lane1", "lane2", "lane3", "lane4"]
+    //   "lanes": ["lane1", "lane2", "lane3", "lane4"],
+    //   "fault_timer": 1.5,
+    //   "rotation_distance": 22.67,
+    //   "active_lane": "lane2",                 // v1.2.0+
+    //   "multiplier": 1.1, "multiplier_high": 1.1, "multiplier_low": 0.9  // v1.2.0+
     // }
 
-    BufferHealth health;
+    // Remember which lanes this buffer serves. AFC rebuilds the whole status
+    // dict every poll but Moonraker forwards only the CHANGED keys, so a frame
+    // that moves `state` alone carries no `lanes` and could not otherwise be
+    // routed to a unit.
+    if (data.contains("lanes") && data["lanes"].is_array()) {
+        std::vector<std::string> lanes;
+        for (const auto& lane_json : data["lanes"]) {
+            if (lane_json.is_string()) {
+                lanes.push_back(lane_json.get<std::string>());
+            }
+        }
+        buffer_lane_names_[buffer_name] = std::move(lanes);
+    }
+
+    // Locate the owning unit first so the update is a read-modify-write. Building
+    // a fresh BufferHealth and assigning it wholesale would zero every field the
+    // delta happens not to mention.
+    AmsUnit* unit = nullptr;
+    std::string matched_lane;
+    auto lanes_it = buffer_lane_names_.find(buffer_name);
+    if (lanes_it != buffer_lane_names_.end()) {
+        for (const auto& lane_name : lanes_it->second) {
+            int lane_idx = slots_.index_of(lane_name);
+            if (lane_idx < 0) {
+                continue;
+            }
+            // One buffer per unit — first lane that resolves decides.
+            unit = system_info_.get_unit_for_slot(lane_idx);
+            if (unit) {
+                matched_lane = lane_name;
+                break;
+            }
+        }
+    }
+    if (!unit) {
+        spdlog::trace("[AMS AFC] Buffer {}: no unit resolved yet, dropping frame", buffer_name);
+        return;
+    }
+
+    BufferHealth health = unit->buffer_health.value_or(BufferHealth{});
 
     if (data.contains("fault_detection_enabled") && data["fault_detection_enabled"].is_boolean()) {
         health.fault_detection_enabled = data["fault_detection_enabled"].get<bool>();
@@ -1484,33 +2668,60 @@ void AmsBackendAfc::parse_afc_buffer(const std::string& buffer_name, const nlohm
         health.state = data["state"].get<std::string>();
     }
 
-    spdlog::trace("[AMS AFC] Buffer {}: fault_detect={} dist={} sensitivity={} state={}",
-                  buffer_name, health.fault_detection_enabled, health.distance_to_fault,
-                  health.error_sensitivity, health.state);
-
-    // Store buffer health at unit level (buffer sits between hub and toolhead, not per-lane)
-    // Find which unit this buffer belongs to by checking its lane list
-    if (data.contains("lanes") && data["lanes"].is_array()) {
-        for (const auto& lane_json : data["lanes"]) {
-            if (!lane_json.is_string()) {
-                continue;
-            }
-            std::string lane_name = lane_json.get<std::string>();
-            int lane_idx = slots_.index_of(lane_name);
-            if (lane_idx < 0) {
-                continue;
-            }
-
-            // Find the unit containing this lane and set buffer health on the unit
-            AmsUnit* unit = system_info_.get_unit_for_slot(lane_idx);
-            if (unit) {
-                unit->buffer_health = health;
-                spdlog::debug("[AMS AFC] Buffer {} health set on unit {} (via lane {})",
-                              buffer_name, unit->unit_index, lane_name);
-                break; // One buffer per unit — set once and done
-            }
+    // Lane the buffer is regulating (v1.2.0+). AFC publishes null whenever the
+    // buffer is disabled or no lane is loaded, which is a real transition to
+    // "none" rather than a missing field.
+    if (data.contains("active_lane")) {
+        if (data["active_lane"].is_string()) {
+            health.active_lane = data["active_lane"].get<std::string>();
+        } else if (data["active_lane"].is_null()) {
+            health.active_lane.clear();
         }
     }
+
+    // rotation_distance and fault_timer both go null when AFC has nothing to
+    // report (buffer disabled / no lane loaded / fault detection off). -1 is the
+    // struct's "not reported" sentinel, so map null onto it rather than keeping
+    // a stale reading.
+    if (data.contains("rotation_distance")) {
+        if (data["rotation_distance"].is_number()) {
+            health.rotation_distance = data["rotation_distance"].get<float>();
+        } else if (data["rotation_distance"].is_null()) {
+            health.rotation_distance = -1.0f;
+        }
+    }
+    if (data.contains("fault_timer")) {
+        if (data["fault_timer"].is_number()) {
+            health.fault_timer = data["fault_timer"].get<float>();
+        } else if (data["fault_timer"].is_null()) {
+            health.fault_timer = -1.0f;
+        }
+    }
+
+    // Rotation-distance multipliers (v1.2.0+). `multiplier` is the value last
+    // applied; the high/low pair is the configured swing it moves between.
+    // AFC seeds _last_multiplier with an int 1, so accept any number.
+    if (data.contains("multiplier") && data["multiplier"].is_number()) {
+        health.multiplier = data["multiplier"].get<float>();
+    }
+    if (data.contains("multiplier_high") && data["multiplier_high"].is_number()) {
+        health.multiplier_high = data["multiplier_high"].get<float>();
+    }
+    if (data.contains("multiplier_low") && data["multiplier_low"].is_number()) {
+        health.multiplier_low = data["multiplier_low"].get<float>();
+    }
+
+    spdlog::trace("[AMS AFC] Buffer {}: fault_detect={} dist={} sensitivity={} state={} "
+                  "active_lane={} mult={} rot_dist={} fault_timer={}",
+                  buffer_name, health.fault_detection_enabled, health.distance_to_fault,
+                  health.error_sensitivity, health.state, health.active_lane, health.multiplier,
+                  health.rotation_distance, health.fault_timer);
+
+    // Buffer health lives at unit level — the buffer sits between hub and
+    // toolhead, not per-lane.
+    unit->buffer_health = health;
+    spdlog::debug("[AMS AFC] Buffer {} health set on unit {} (via lane {})", buffer_name,
+                  unit->unit_index, matched_lane);
 }
 
 void AmsBackendAfc::parse_afc_extruder(const std::string& ext_name, const nlohmann::json& data) {
@@ -1521,12 +2732,56 @@ void AmsBackendAfc::parse_afc_extruder(const std::string& ext_name, const nlohma
     //   "lane_loaded": "lane1"       // Currently loaded lane
     // }
 
+    // Per-extruder copy, keyed so slot_has_filament_at_toolhead() can attribute a
+    // trip to the lane this extruder holds. Absent fields leave the previous
+    // value alone — Moonraker sends deltas, and a frame that carries only
+    // lane_loaded must not silently clear the sensors.
+    AfcExtruderSensors& sensors = extruder_sensors_[ext_name];
+
     if (data.contains("tool_start_status") && data["tool_start_status"].is_boolean()) {
         tool_start_sensor_ = data["tool_start_status"].get<bool>();
+        sensors.tool_start = tool_start_sensor_;
     }
 
     if (data.contains("tool_end_status") && data["tool_end_status"].is_boolean()) {
         tool_end_sensor_ = data["tool_end_status"].get<bool>();
+        sensors.tool_end = tool_end_sensor_;
+    }
+
+    // AFC's own carriage signal. Absent on older AFC, so has_on_shuttle records
+    // whether we may draw any conclusion at all — "not reported" and "reported
+    // false" mean very different things when deciding whether a slot is current.
+    if (data.contains("on_shuttle") && data["on_shuttle"].is_boolean()) {
+        sensors.on_shuttle = data["on_shuttle"].get<bool>();
+        sensors.has_on_shuttle = true;
+    }
+
+    // Explicit null is AFC saying "nothing seated here" (set_unloaded assigns
+    // ""), which is information — clear the attribution. Absent is silence.
+    if (data.contains("lane_loaded")) {
+        if (data["lane_loaded"].is_string()) {
+            sensors.lane_loaded = data["lane_loaded"].get<std::string>();
+        } else if (data["lane_loaded"].is_null()) {
+            sensors.lane_loaded.clear();
+        }
+    }
+
+    // Toolchanger state (AFC v1.2.0 #768). An entry is created for every
+    // AFC_extruder object we see so callers can distinguish "tool known, nothing
+    // happening" from "tool never reported". Older AFC omits all three fields
+    // and simply leaves the defaults in place.
+    {
+        AfcToolState& ts = tool_states_[ext_name];
+        if (data.contains("status") && data["status"].is_string()) {
+            ts.status = data["status"].get<std::string>();
+        }
+        if (data.contains("next_pickup") && data["next_pickup"].is_boolean()) {
+            ts.next_pickup = data["next_pickup"].get<bool>();
+        }
+        if (data.contains("is_standalone") && data["is_standalone"].is_boolean()) {
+            ts.is_standalone = data["is_standalone"].get<bool>();
+            ts.has_is_standalone = true;
+        }
     }
 
     if (data.contains("lane_loaded") && !data["lane_loaded"].is_null()) {
@@ -1534,24 +2789,30 @@ void AmsBackendAfc::parse_afc_extruder(const std::string& ext_name, const nlohma
             std::string lane = data["lane_loaded"].get<std::string>();
             int loaded_slot = slots_.index_of(lane);
             if (loaded_slot >= 0) {
-                // Derive tool number from extruder name:
-                // "extruder" = T0, "extruder1" = T1, "extruder2" = T2, etc.
-                int ext_tool = 0;
-                if (ext_name.size() > 8) { // longer than "extruder"
-                    try {
-                        ext_tool = std::stoi(ext_name.substr(8));
-                    } catch (const std::exception& e) {
-                        spdlog::warn("[AMS AFC] Failed to parse tool number from '{}': {}",
-                                     ext_name, e.what());
-                        ext_tool = 0;
-                    }
-                }
+                // Tool number comes from the extruder's th_extruder_name, NOT
+                // from the AFC_extruder SECTION name — AFC itself indexes on
+                // `config.get("extruder_name", <section name>)`
+                // (AFC_extruder.py:222-223, consumed at
+                // AFC_Toolchanger.py:231-232, both v1.2.0). The two coincide on
+                // `[AFC_extruder extruder1]` and diverge on anything else, e.g.
+                // `[AFC_extruder e1]\nextruder_name: extruder1`.
+                //
+                // The old substr(8) read the section name and threw on any name
+                // that was not `extruder<N>`; the catch then mapped EVERY
+                // toolhead to T0, so on such a machine each extruder in turn
+                // claimed to be the active tool. -1 now means "unknown", and an
+                // unknown tool makes no attribution claim at all.
+                const int ext_tool = tool_index_for_extruder_unlocked(ext_name);
 
                 // Only update current_slot if this extruder is the active tool
                 // or no authoritative source has set it yet
-                bool is_active_tool =
-                    (system_info_.current_tool >= 0) && (ext_tool == system_info_.current_tool);
-                if (system_info_.current_slot < 0 || is_active_tool) {
+                bool is_active_tool = (ext_tool >= 0) && (system_info_.current_tool >= 0) &&
+                                      (ext_tool == system_info_.current_tool);
+                if (ext_tool < 0) {
+                    spdlog::trace("[AMS AFC] Extruder {}: lane_loaded={} ignored (tool number "
+                                  "unresolved)",
+                                  ext_name, lane);
+                } else if (system_info_.current_slot < 0 || is_active_tool) {
                     current_lane_name_ = lane;
                     system_info_.current_slot = loaded_slot;
                     spdlog::trace("[AMS AFC] Extruder {} (T{}): lane_loaded={} -> slot {}",
@@ -1619,18 +2880,27 @@ void AmsBackendAfc::parse_afc_unit_object(AfcUnitInfo& unit_info, const nlohmann
 
     for (const auto& lane : unit_info.lanes) {
         auto it = lane_hub_routing_.find(lane);
-        bool is_hub = false;
-        if (it != lane_hub_routing_.end()) {
-            // AFC reports "direct" or "direct_load" for lanes that go straight
-            // to an extruder (no hub/merger). Any other value (e.g., "HTLF_1")
-            // indicates the lane is routed through a hub.
-            is_hub = (it->second.rfind("direct", 0) != 0);
+        if (it == lane_hub_routing_.end()) {
+            // Routing not known yet. Moonraker sends deltas and unit objects sort
+            // before AFC_lane ones, so a frame can carry a unit while some of its
+            // lanes have never been parsed. Counting that as `direct` is what
+            // flipped a pure-hub unit to MIXED and drew one lane straight into a
+            // toolhead of its own (#1229 defect 4) — a single unknown lane was
+            // enough. Unknown is not direct; it contributes to neither side.
+            unit_info.lane_is_hub_routed.push_back(false);
+            continue;
         }
+
+        // AFC reports "direct" or "direct_load" for lanes that go straight
+        // to an extruder (no hub/merger). Any other value (e.g., "HTLF_1")
+        // indicates the lane is routed through a hub.
+        const bool is_hub = (it->second.rfind("direct", 0) != 0);
         unit_info.lane_is_hub_routed.push_back(is_hub);
-        if (is_hub)
+        if (is_hub) {
             has_hub_routed = true;
-        else
+        } else {
             has_direct = true;
+        }
     }
 
     if (has_direct && has_hub_routed) {
@@ -1706,14 +2976,12 @@ void AmsBackendAfc::rebuild_unit_map_from_klipper() {
                     if (sys_unit.name == display_name) {
                         sys_unit.topology = ui.topology;
                         sys_unit.lane_is_hub_routed = ui.lane_is_hub_routed;
-                        // For HUB units, derive physical tool label from extruder name
+                        // For HUB units, derive physical tool label from extruder
+                        // name. An unrecognisable name leaves hub_tool_label at its
+                        // -1 "absent" default rather than inventing a number.
                         if (ui.topology == PathTopology::HUB && ui.extruders.size() == 1) {
-                            const auto& ext_name = ui.extruders[0];
-                            size_t pos = ext_name.find_last_not_of("0123456789");
-                            if (pos != std::string::npos && pos + 1 < ext_name.size()) {
-                                sys_unit.hub_tool_label = std::stoi(ext_name.substr(pos + 1));
-                            } else if (ext_name == "extruder") {
-                                sys_unit.hub_tool_label = 0;
+                            if (const auto n = helix::tool_number_for_extruder(ui.extruders[0])) {
+                                sys_unit.hub_tool_label = *n;
                             }
                         }
                         break;
@@ -1731,6 +2999,66 @@ void AmsBackendAfc::rebuild_unit_map_from_klipper() {
 // Version Detection
 // ============================================================================
 
+const nlohmann::json& AmsBackendAfc::database_item_value(const nlohmann::json& response) {
+    static const nlohmann::json kNull;
+    if (!response.is_object())
+        return kNull;
+
+    // send_jsonrpc delivers the whole JSON-RPC message, so the payload is at
+    // result.value: {"jsonrpc","id","result":{"namespace","key","value":…}}.
+    // Reading "value" off the top level found nothing, silently, on every reply
+    // (prestonbrown/helixscreen#1148).
+    //
+    // Deliberately strict about the envelope rather than also accepting a bare
+    // payload: a payload is an arbitrary object, so "envelope or payload?" is
+    // undecidable — the afc-install payload is {"version":…}, which carries no
+    // "value" key to key off. Callers that route through
+    // IMoonrakerAPI::database_get_item get the payload pre-unwrapped and must
+    // not pass it here.
+    const auto result = response.find("result");
+    if (result == response.end() || !result->is_object())
+        return kNull;
+    const auto value = result->find("value");
+    return value != result->end() ? *value : kNull;
+}
+
+bool AmsBackendAfc::apply_afc_version_response(const nlohmann::json& response) {
+    const nlohmann::json& value = database_item_value(response);
+    if (!value.is_object())
+        return false;
+
+    const auto version = value.find("version");
+    if (version == value.end() || !version->is_string())
+        return false;
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        afc_version_ = version->get<std::string>();
+        system_info_.version = afc_version_;
+    }
+    // Informational only — never gate behavior on this. AFC removed the code that
+    // writes the afc-install namespace (its commit 7d20db7, #451, 2025-06-16), so
+    // the value is either absent or frozen at whatever it was before that date. A
+    // live BoxTurtle reported "1.0.0" on 2026-07-26 while its payload proved
+    // 1.0.32-era. Capabilities are detected from the data itself instead.
+    spdlog::info("[AMS AFC] Reported AFC version: {} (informational; capabilities are "
+                 "feature-detected)",
+                 afc_version_);
+    return true;
+}
+
+bool AmsBackendAfc::apply_lane_data_response(const nlohmann::json& response) {
+    const nlohmann::json& value = database_item_value(response);
+    if (!value.is_object())
+        return false;
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        parse_lane_data(value);
+    }
+    return true;
+}
+
 void AmsBackendAfc::detect_afc_version() {
     if (!client_) {
         spdlog::warn("[AMS AFC] Cannot detect version: client is null");
@@ -1747,44 +3075,8 @@ void AmsBackendAfc::detect_afc_version() {
         "server.database.get_item", params,
         [this, token](const nlohmann::json& response) {
             // L081 Mechanism C: marshal member writes + downstream calls to main.
-            token.defer("AmsBackendAfc::detect_afc_version_success", [this, response]() {
-                bool should_query_lane_data = false;
-
-                if (response.contains("value") && response["value"].is_object()) {
-                    const auto& value = response["value"];
-                    if (value.contains("version") && value["version"].is_string()) {
-                        {
-                            std::lock_guard<std::mutex> lock(mutex_);
-                            afc_version_ = value["version"].get<std::string>();
-                            system_info_.version = afc_version_;
-
-                            // Set capability flags based on version
-                            has_lane_data_db_ = version_at_least("1.0.32");
-                            should_query_lane_data = has_lane_data_db_;
-                        }
-                        spdlog::info("[AMS AFC] Detected AFC version: {} (lane_data DB: {})",
-                                     afc_version_, has_lane_data_db_ ? "yes" : "no");
-
-                        // Warn if AFC version is older than minimum supported
-                        if (!version_at_least("1.0.35")) {
-                            auto warning =
-                                fmt::format(lv_tr("AFC version {} may have compatibility issues. "
-                                                  "Please upgrade to v1.0.35 or later."),
-                                            afc_version_);
-                            spdlog::warn("[AMS AFC] {}", warning);
-                            helix::ui::modal_show_alert(lv_tr("AFC Version Warning"),
-                                                        warning.c_str(), ModalSeverity::Warning,
-                                                        "OK");
-                        }
-                    }
-                }
-
-                // For v1.0.32+, query lane_data database for richer data
-                // This supplements the basic lane info from printer.objects.list
-                if (should_query_lane_data) {
-                    query_lane_data();
-                }
-            });
+            token.defer("AmsBackendAfc::detect_afc_version_success",
+                        [this, response]() { apply_afc_version_response(response); });
         },
         [this, token](const MoonrakerError& err) {
             // L081 Mechanism C: marshal member writes to main.
@@ -1799,32 +3091,6 @@ void AmsBackendAfc::detect_afc_version() {
         0,   // default timeout
         true // silent — probe only, don't show toast or log at error level
     );
-}
-
-bool AmsBackendAfc::version_at_least(const std::string& required) const {
-    // Parse semantic version strings (e.g., "1.0.32")
-    // Returns true if afc_version_ >= required
-
-    if (afc_version_ == "unknown" || afc_version_.empty()) {
-        return false;
-    }
-
-    auto parse_version = [](const std::string& v) -> std::tuple<int, int, int> {
-        int major = 0, minor = 0, patch = 0;
-        std::istringstream iss(v);
-        char dot;
-        iss >> major >> dot >> minor >> dot >> patch;
-        return {major, minor, patch};
-    };
-
-    auto [cur_maj, cur_min, cur_patch] = parse_version(afc_version_);
-    auto [req_maj, req_min, req_patch] = parse_version(required);
-
-    if (cur_maj != req_maj)
-        return cur_maj > req_maj;
-    if (cur_min != req_min)
-        return cur_min > req_min;
-    return cur_patch >= req_patch;
 }
 
 // ============================================================================
@@ -1919,10 +3185,18 @@ void AmsBackendAfc::query_lane_data() {
         return;
     }
 
-    // Query Moonraker database for AFC lane_data
-    // Method: server.database.get_item
-    // Params: { "namespace": "AFC", "key": "lane_data" }
-    nlohmann::json params = {{"namespace", "AFC"}, {"key", "lane_data"}};
+    // Query Moonraker database for AFC lane_data.
+    //
+    // The namespace is top-level "lane_data" with one key per lane — AFC's
+    // send_lane_data() POSTs {"namespace":"lane_data","key":<lane>,"value":{…}}.
+    // We previously asked for namespace "AFC" key "lane_data", which Moonraker
+    // answers with a 404 ("Key 'lane_data' in namespace 'AFC' not found"), so this
+    // query could never have succeeded. It went unnoticed because the version gate
+    // above it meant the call was almost never reached.
+    //
+    // No key: fetch the whole namespace so result.value is {lane → data}, which is
+    // the shape parse_lane_data expects.
+    nlohmann::json params = {{"namespace", "lane_data"}};
 
     auto token = lifetime_.token();
     client_->send_jsonrpc(
@@ -1930,12 +3204,9 @@ void AmsBackendAfc::query_lane_data() {
         [this, token](const nlohmann::json& response) {
             // L081 Mechanism C: parse_lane_data mutates members under lock; emit on main.
             token.defer("AmsBackendAfc::query_lane_data_success", [this, response]() {
-                if (response.contains("value") && response["value"].is_object()) {
-                    {
-                        std::lock_guard<std::mutex> lock(mutex_);
-                        parse_lane_data(response["value"]);
-                    }
-                    // Emit OUTSIDE the lock to avoid deadlock with callbacks
+                // apply_lane_data_response takes the lock; emit OUTSIDE it to
+                // avoid deadlock with callbacks.
+                if (apply_lane_data_response(response)) {
                     emit_event(EVENT_STATE_CHANGED);
                 }
             });
@@ -1943,6 +3214,159 @@ void AmsBackendAfc::query_lane_data() {
         [](const MoonrakerError& err) {
             spdlog::warn("[AMS AFC] Failed to query lane_data: {}", err.message);
         });
+}
+
+// ============================================================================
+// Toolchanger identity
+// ============================================================================
+
+bool AmsBackendAfc::has_toolchanger() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    // Signal 1: the config section that registers AFC_SELECT_TOOL.
+    if (configfile_has_toolchanger_) {
+        return true;
+    }
+    // Signal 2: a published Toolchanger unit. Only reachable when that unit
+    // owns at least one lane (AFC.py v1.2.0:2554), which is why signal 1 exists.
+    return std::any_of(unit_infos_.begin(), unit_infos_.end(), [](const AfcUnitInfo& u) {
+        // `type` is user-overridable (`config.get("type", "Toolchanger")`), so
+        // compare case-insensitively rather than pinning the exact spelling.
+        return to_lower_copy(u.type) == "toolchanger";
+    });
+}
+
+void AmsBackendAfc::query_afc_configfile_topology() {
+    if (!client_) {
+        return;
+    }
+
+    // configfile has no sub-field selector in Moonraker — asking for "settings"
+    // returns the entire resolved config. Accepted once at startup because it is
+    // the only place th_extruder_name and the [AFC_Toolchanger] section are
+    // observable.
+    nlohmann::json params = {{"objects", nlohmann::json::object({{"configfile", {"settings"}}})}};
+
+    auto token = lifetime_.token();
+    client_->send_jsonrpc(
+        "printer.objects.query", params,
+        [this, token](const nlohmann::json& response) {
+            // L081 Mechanism C: the body mutates members under mutex_.
+            token.defer("AmsBackendAfc::query_afc_configfile_topology_success", [this, response]() {
+                if (!response.contains("result") || !response["result"].contains("status") ||
+                    !response["result"]["status"].is_object()) {
+                    return;
+                }
+                const auto& status = response["result"]["status"];
+                if (!status.contains("configfile") || !status["configfile"].is_object() ||
+                    !status["configfile"].contains("settings") ||
+                    !status["configfile"]["settings"].is_object()) {
+                    spdlog::debug("[AMS AFC] configfile.settings absent — AFC_extruder tool "
+                                  "indices stay derived from section names");
+                    return;
+                }
+                const auto& settings = status["configfile"]["settings"];
+
+                // Klipper lowercases both section headers and option keys in
+                // configfile.settings, so `[AFC_extruder T1]` arrives as
+                // "afc_extruder t1". The section suffix is matched
+                // case-insensitively against the names AFC.extruders publishes.
+                static constexpr const char* kExtruderPrefix = "afc_extruder ";
+                static constexpr const char* kToolchangerPrefix = "afc_toolchanger ";
+                std::unordered_map<std::string, std::string> found;
+                bool saw_toolchanger = false;
+                for (auto it = settings.begin(); it != settings.end(); ++it) {
+                    const std::string key = to_lower_copy(it.key());
+                    if (key.rfind(kToolchangerPrefix, 0) == 0) {
+                        saw_toolchanger = true;
+                        continue;
+                    }
+                    if (key.rfind(kExtruderPrefix, 0) != 0 || !it.value().is_object()) {
+                        continue;
+                    }
+                    const auto& section = it.value();
+                    if (!section.contains("extruder_name") ||
+                        !section["extruder_name"].is_string()) {
+                        continue;
+                    }
+                    found[key.substr(std::strlen(kExtruderPrefix))] =
+                        section["extruder_name"].get<std::string>();
+                }
+
+                std::lock_guard<std::mutex> lock(mutex_);
+                extruder_klipper_names_ = std::move(found);
+                // A newly-arrived mapping can resolve a name that already
+                // warned; let it warn again if it still cannot be resolved.
+                extruder_tool_index_warned_.clear();
+                // Latch only on presence. A config we could not read, or one
+                // read before a section was added, must not be taken as proof
+                // that no toolchanger exists.
+                if (saw_toolchanger) {
+                    configfile_has_toolchanger_ = true;
+                }
+                spdlog::debug("[AMS AFC] configfile: {} AFC_extruder -> Klipper extruder names, "
+                              "toolchanger section {}",
+                              extruder_klipper_names_.size(),
+                              saw_toolchanger ? "present" : "absent");
+            });
+        },
+        [](const MoonrakerError& err) {
+            spdlog::debug("[AMS AFC] Failed to query configfile: {} — tool indices stay derived "
+                          "from section names and toolchanger detection falls back to AFC.units",
+                          err.message);
+        });
+}
+
+int AmsBackendAfc::tool_index_for_extruder_unlocked(const std::string& ext_name) const {
+    // Mirrors AFC_Toolchanger.py:231-232 (v1.2.0):
+    //     name = lane.extruder_obj.th_extruder_name
+    //     tool_index = 0 if name == "extruder" else int(name.replace("extruder", ""))
+    auto index_of = [](const std::string& klipper_name) -> int {
+        if (klipper_name == "extruder") {
+            return 0;
+        }
+        const auto pos = klipper_name.find("extruder");
+        if (pos == std::string::npos) {
+            return -1;
+        }
+        std::string rest = klipper_name;
+        rest.erase(pos, std::strlen("extruder"));
+        if (rest.empty() || rest.find_first_not_of("0123456789") != std::string::npos) {
+            return -1;
+        }
+        try {
+            return std::stoi(rest);
+        } catch (const std::exception&) {
+            return -1;
+        }
+    };
+
+    // configfile-sourced th_extruder_name is authoritative — it is what AFC
+    // itself indexes on, and the section name is free to be anything.
+    auto it = extruder_klipper_names_.find(to_lower_copy(ext_name));
+    if (it != extruder_klipper_names_.end()) {
+        const int idx = index_of(it->second);
+        if (idx >= 0) {
+            return idx;
+        }
+    }
+
+    // Fall back to the section name. `[AFC_extruder extruder1]` is what AFC's
+    // own docs show and what every published config uses, and on v1.1.0 (no
+    // extruder_name option at all) it is the ONLY thing that exists.
+    const int derived = index_of(ext_name);
+    if (derived >= 0) {
+        return derived;
+    }
+
+    if (extruder_tool_index_warned_.insert(ext_name).second) {
+        spdlog::warn("[AMS AFC] Cannot determine a tool number for AFC_extruder '{}': the "
+                     "section name carries no extruder index and configfile.settings has no "
+                     "extruder_name for it. Lane attribution for this toolhead is disabled "
+                     "(it is NOT being assumed to be T0). Set `extruder_name: extruder<N>` in "
+                     "the [AFC_extruder {}] section.",
+                     ext_name, ext_name);
+    }
+    return -1;
 }
 
 void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
@@ -1959,10 +3383,29 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
     }
     std::sort(new_lane_names.begin(), new_lane_names.end(), natural_less);
 
-    // Initialize lanes if this is the first time or count changed
-    if (!slots_.is_initialized() ||
-        static_cast<int>(new_lane_names.size()) != slots_.slot_count()) {
-        initialize_slots(new_lane_names);
+    // This payload is a supplement (colours, materials, spool ids), never the
+    // authority on WHICH lanes exist. Klipper's object list is. AFC empties the
+    // whole lane_data namespace at the start of every PREP (AFC.py
+    // delete_lane_data) and writes each lane's key back only as that lane's own
+    // prep finishes (AFC_BoxTurtle.py send_lane_data), which for a BoxTurtle
+    // means driving each lane motor in turn. The namespace is therefore
+    // partially populated for seconds on every boot, and query_lane_data() is
+    // one-shot and never retried. Resizing to match it once pinned a 4-lane
+    // BoxTurtle to a single slot for the whole session: initialize_slots()
+    // clears discovered_lane_names_, and the status handler only iterates slots
+    // that exist, so lanes 2-4 became permanently invisible.
+    //
+    // So: only ever bootstrap an empty registry, and prefer discovery when it
+    // has something to offer. Once the registry exists, leave its shape alone.
+    if (!slots_.is_initialized()) {
+        // By value: initialize_slots() clears discovered_lane_names_ on its way
+        // out, which would dangle a reference bound to it.
+        const std::vector<std::string> initial_lanes =
+            !discovered_lane_names_.empty() ? discovered_lane_names_ : new_lane_names;
+        if (initial_lanes.empty()) {
+            return; // Nothing names a lane yet; a later payload or discovery will.
+        }
+        initialize_slots(initial_lanes);
     }
 
     // Track whether any lane has tool_loaded — used to update filament_loaded
@@ -1986,9 +3429,15 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
         }
         auto& slot = entry->info;
 
-        // Parse color (AFC uses hex string without 0x prefix)
+        // Parse color. AFC writes "#RRGGBB" here (verified against a live
+        // BoxTurtle's lane_data namespace); std::stoul cannot parse the '#', so
+        // without stripping it every lane fell back to the default grey. Bare hex
+        // is also accepted. Matches the handling in parse_afc_stepper.
         if (lane.contains("color") && lane["color"].is_string()) {
             std::string color_str = lane["color"].get<std::string>();
+            if (!color_str.empty() && color_str[0] == '#') {
+                color_str = color_str.substr(1);
+            }
             try {
                 slot.color_rgb = static_cast<uint32_t>(std::stoul(color_str, nullptr, 16));
             } catch (...) {
@@ -2001,9 +3450,30 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
             slot.material = lane["material"].get<std::string>();
         }
 
-        // Parse loaded state
-        // AFC "loaded" means hub-loaded, not toolhead-loaded
-        // Only tool_loaded == true means filament is at the extruder
+        // Filament name, as AFC copied it out of Spoolman's filament record.
+        // Mirrors parse_afc_stepper(): an EMPTY value is a deliberate clear —
+        // clear_lane_data()/clear_values() write filament_name="" on eject — so
+        // it is adopted as-is rather than treated as "keep existing". Without
+        // this a lane whose data only ever arrived through the DB path had no
+        // name at all, and the loaded card fell back to the algorithmic colour
+        // description. apply_overrides() runs below, so a user-entered name
+        // still wins.
+        if (lane.contains("filament_name") && lane["filament_name"].is_string()) {
+            slot.spool_name = lane["filament_name"].get<std::string>();
+        }
+
+        // Parse loaded state.
+        // AFC "loaded" means hub-loaded, not toolhead-loaded — only
+        // tool_loaded == true means filament is at the extruder.
+        //
+        // AFC's real lane_data payload carries NONE of these keys (it is metadata
+        // only: color/material/temps/spool_id/td). Defaulting to AVAILABLE when no
+        // status key is present would clobber the status already derived from the
+        // AFC_stepper objects and show empty lanes as loaded. Absent means
+        // unchanged, matching how status deltas are treated elsewhere.
+        const bool has_status_key = lane.contains("tool_loaded") || lane.contains("loaded") ||
+                                    lane.contains("available") || lane.contains("empty");
+
         bool tool_loaded = false;
         if (lane.contains("tool_loaded") && lane["tool_loaded"].is_boolean()) {
             tool_loaded = lane["tool_loaded"].get<bool>();
@@ -2017,7 +3487,7 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
                    lane["loaded"].get<bool>()) {
             // Hub-loaded: filament is present and ready, not at toolhead
             slot.status = SlotStatus::AVAILABLE;
-        } else {
+        } else if (has_status_key) {
             if (lane.contains("available") && lane["available"].is_boolean() &&
                 lane["available"].get<bool>()) {
                 slot.status = SlotStatus::AVAILABLE;
@@ -2029,22 +3499,62 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
             }
         }
 
-        // Parse spool information if available
-        if (lane.contains("spool_id") && lane["spool_id"].is_number_integer()) {
-            slot.spoolman_id = lane["spool_id"].get<int>();
+        // Parse spool information if available.
+        //
+        // Mirrors parse_afc_stepper(): AFC writes spool_id=None on eject, and
+        // is_number_integer() is false for null, so guarding on that alone
+        // retained the old id and left an ejected lane looking linked — which is
+        // what aims a later edit's Spoolman write at the wrong spool. An ABSENT
+        // key still means "unchanged"; these are deltas, not snapshots.
+        if (lane.contains("spool_id")) {
+            if (lane["spool_id"].is_number_integer()) {
+                slot.spoolman_id = lane["spool_id"].get<int>();
+            } else if (lane["spool_id"].is_null()) {
+                slot.spoolman_id = 0;
+            }
         }
 
-        if (lane.contains("brand") && lane["brand"].is_string()) {
-            slot.brand = lane["brand"].get<std::string>();
-        }
+        // Vendor/brand — see read_vendor(). Inert until #808 ships.
+        read_vendor(lane, slot.brand);
 
-        if (lane.contains("remaining_weight") && lane["remaining_weight"].is_number()) {
-            slot.remaining_weight_g = lane["remaining_weight"].get<float>();
-        }
+        // Re-supply the user's attached identity on top of firmware truth, the
+        // same way parse_afc_stepper() does. Without this, which parser ran last
+        // decided whether an override was visible: the status path applied it,
+        // the DB path silently dropped it. Must follow every firmware read above
+        // so the override still wins.
+        apply_overrides(slot, slot.global_index >= 0 ? slot.global_index : slot.slot_index);
 
-        if (lane.contains("total_weight") && lane["total_weight"].is_number()) {
-            slot.total_weight_g = lane["total_weight"].get<float>();
-        }
+        // NO WEIGHT IS READ FROM lane_data, on any AFC version. This is deliberate.
+        //
+        // AFC's lane_data record carries exactly one weight key, `weight`, and it is
+        // never the best source:
+        //
+        //   v1.1.x     key absent entirely (added to send_lane_data in v1.2.0)
+        //   v1.2.0     present but STALE — cmd_SET_WEIGHT updated the lane object
+        //              without publishing, so the record only refreshed when an
+        //              unrelated command (SET_COLOR/SET_MATERIAL/SET_MAP/set_spoolID)
+        //              happened to push afterwards. clear_lane_data() also omitted
+        //              weight, so a cleared lane kept the old value forever.
+        //   post-#812  fixed upstream (AFCProject/AFC-Klipper-Add-On#805): SET_WEIGHT
+        //              publishes, and clearing writes weight: 0.
+        //
+        // The AFC_stepper subscription has carried a live `weight` since v1.1.0, and
+        // parse_afc_stepper() already reads it — so lane_data is redundant on every
+        // release and actively wrong on v1.2.0. Crucially, the stale and fixed forms
+        // are byte-identical on the wire, so no feature detection can tell them apart;
+        // it is a freshness problem, not a shape one, and AFC_VERSION is a hand-bumped
+        // literal that cannot support a floor (it sat at 1.1.37 through all of v1.2.0).
+        //
+        // Reading it here would also race: query_lane_data() and the subscription are
+        // independent async replies with no ordering guarantee, so a slow DB response
+        // can land after the first status snapshot and overwrite fresh with stale.
+        //
+        // Same reasoning the status block above uses — lane_data must not clobber
+        // AFC_stepper truth.
+        //
+        // (Two readers for `remaining_weight` / `total_weight` used to sit here. No AFC
+        // version ever emitted either key, and our own to_lane_data_record() writes
+        // them with a `_g` suffix, so they matched nothing and never fired.)
     }
 
     // Update filament_loaded from lane scan results.
@@ -2057,6 +3567,200 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
     // first tool_loaded lane is not necessarily the active one.
     if (any_tool_loaded && system_info_.current_slot < 0) {
         system_info_.current_slot = tool_loaded_slot;
+    }
+}
+
+void AmsBackendAfc::apply_mount_state(bool extruder_set_active_slot, bool afc_stated_unloaded) {
+    // --- AFC's own carriage signal, preferred where it exists ---
+    //
+    // Gated on more than one extruder. A Box Turtle has a single extruder and no
+    // carriage at all; if AFC publishes on_shuttle:false there, reading it would
+    // clear current_slot forever on every single-extruder machine. "No carriage"
+    // and "carriage empty" are not the same claim.
+    //
+    // num_extruders_ rather than extruder_sensors_.size(): it comes from
+    // AFC.extruders, which arrives complete in a single field and is what the
+    // AFC maintainers point to for "how many toolheads does this machine have".
+    // The sensor map is filled in one AFC_extruder object at a time, so early in
+    // a frame it can transiently hold 1 on a six-extruder machine.
+    //
+    // Not consulted mid-change: toolchanger.status is the only source that knows
+    // a swap is under way, and on_shuttle is momentarily false for both the
+    // outgoing and incoming tool.
+    if (num_extruders_ > 1 && system_info_.mount_state != MountState::CHANGING) {
+        int reporters = 0;
+        const AfcExtruderSensors* mounted = nullptr;
+        std::string mounted_name;
+        for (const auto& entry : extruder_sensors_) {
+            if (!entry.second.has_on_shuttle) {
+                continue;
+            }
+            ++reporters;
+            if (entry.second.on_shuttle && mounted == nullptr) {
+                mounted = &entry.second;
+                mounted_name = entry.first;
+            }
+        }
+
+        if (reporters > 0) {
+            if (mounted == nullptr) {
+                system_info_.mount_state = MountState::NONE;
+                system_info_.mounted_tool = -1;
+                system_info_.current_slot = -1;
+                system_info_.filament_loaded = false;
+                return;
+            }
+
+            system_info_.mount_state = MountState::MOUNTED;
+            // mounted_tool is an int for consumers that predate extruder-name
+            // identity; an unparseable name keeps the historical 0 fallback.
+            system_info_.mounted_tool = helix::tool_number_for_extruder(mounted_name).value_or(0);
+
+            // The mounted extruder names its own seated lane. Precise even where
+            // several lanes feed one extruder, which a lane→tool map cannot be.
+            if (!mounted->lane_loaded.empty()) {
+                const int slot = slots_.index_of(mounted->lane_loaded);
+                if (slot >= 0) {
+                    system_info_.current_slot = slot;
+                    const helix::printer::SlotEntry* entry = slots_.get(slot);
+                    if (entry != nullptr && entry->info.status != SlotStatus::UNKNOWN) {
+                        system_info_.filament_loaded = (entry->info.status == SlotStatus::LOADED);
+                    }
+                    return;
+                }
+            }
+
+            // Mounted but holding nothing: a real state, not a reason to keep a
+            // stale slot from whoever was mounted before.
+            system_info_.current_slot = -1;
+            system_info_.filament_loaded = false;
+            return;
+        }
+    }
+
+    // UNKNOWN means no carriage exists (every non-toolchanger machine) or no
+    // signal has arrived yet. Either way there is nothing to assert, and the
+    // negotiated value stands — this is what keeps single-extruder AFC, Box
+    // Turtle and friends behaving exactly as before.
+    if (system_info_.mount_state == MountState::UNKNOWN) {
+        return;
+    }
+
+    // Mid-change the sources legitimately disagree: Klipper has already advanced
+    // tool_number while the tool is still in flight. Elect nothing rather than
+    // flicker through a wrong slot.
+    if (system_info_.mount_state == MountState::CHANGING) {
+        return;
+    }
+
+    if (system_info_.mount_state == MountState::NONE) {
+        // Parked toolheads may well hold filament — that is normal on a
+        // toolchanger and does NOT make any of them current. Before #1229 the
+        // first such lane was elected and then latched, because the other
+        // writers are all guarded by `current_slot < 0`.
+        if (system_info_.current_slot != -1 || system_info_.filament_loaded) {
+            spdlog::debug("[AMS AFC] Carriage empty — clearing elected slot {} (filament_loaded "
+                          "was {})",
+                          system_info_.current_slot, system_info_.filament_loaded);
+        }
+        system_info_.current_slot = -1;
+        system_info_.filament_loaded = false;
+        return;
+    }
+
+    // MOUNTED: the tool on the carriage decides, every frame.
+    //
+    // One thing outranks the lane→tool map: an attribution made from the mounted
+    // extruder's own `lane_loaded` this frame. Several lanes can feed one
+    // extruder (extruder2 and extruder3 on #1229's machine take two and four),
+    // so the map cannot say which of them is seated — but the extruder can, and
+    // does. Overriding it with slot_for_tool() reintroduces exactly the
+    // wrong-lane selection #379 fixed.
+    //
+    // This is not the old latch returning: extruder_set_active_slot is recomputed
+    // per frame, so it cannot pin a stale value the way `current_slot < 0` did.
+    if (extruder_set_active_slot) {
+        return;
+    }
+
+    // AFC said, this frame, that nothing is at the toolhead. The carriage is still
+    // the authority on WHICH tool is current — mounted_tool and current_tool stand
+    // — but electing its lane here would manufacture filament the firmware just
+    // told us is absent. Same outcome as the "mounted but holding nothing" arm
+    // above, reached by a different route: a tool can be on the carriage with an
+    // empty melt zone, and current_slot = -1 is how that state is expressed
+    // (#1229). Frame-scoped, so the next frame elects normally.
+    //
+    // Deliberately BELOW the on_shuttle arm, which returns before reaching here.
+    // That arm already prefers the mounted extruder's own lane_loaded over the
+    // lane→tool map — several lanes can feed one extruder, so the extruder knows
+    // which is seated and a map cannot; overriding it is the wrong-lane selection
+    // #379 fixed. This check applies the SAME precedence one branch lower, where
+    // on_shuttle is absent and the map is otherwise the only voice.
+    if (afc_stated_unloaded) {
+        // ...unless the MOUNTED extruder names a lane of its own.
+        //
+        // These are not two signals. AFC.current_load is a property, not a stored
+        // field: AFC.py's `current` returns AFC_functions.get_current_lane(), which
+        // is `tools[get_current_extruder()].lane_loaded`. So the aggregate IS the
+        // mounted toolhead's lane_loaded, resolved through Klipper's active
+        // extruder. When the two disagree the specific one wins, because it is the
+        // same fact at a finer resolution — and a disagreement means Klipper's
+        // active extruder and the toolchanger's mounted tool have not converged yet.
+        //
+        // Asking instead whether ANY extruder holds filament answers a different
+        // question, wrongly: parked toolheads routinely grip filament on a
+        // toolchanger (the premise of #1229's own "parked toolheads may well hold
+        // filament" note), so that is true on essentially every real multi-tool
+        // machine. The suppression would never fire in production and only look
+        // fixed in a fixture with no per-extruder data.
+        const AfcExtruderSensors* mounted_sensors = nullptr;
+        for (const auto& entry : extruder_sensors_) {
+            const auto tool_num = helix::tool_number_for_extruder(entry.first);
+            if (tool_num && *tool_num == system_info_.mounted_tool) {
+                mounted_sensors = &entry.second;
+                break;
+            }
+        }
+
+        // No per-extruder evidence at all: nothing contradicts AFC, so believe it.
+        if (mounted_sensors == nullptr || mounted_sensors->lane_loaded.empty()) {
+            if (system_info_.current_slot != -1 || system_info_.filament_loaded) {
+                spdlog::debug("[AMS AFC] AFC reports nothing at the toolhead — mounted T{} elects "
+                              "no slot (was {})",
+                              system_info_.mounted_tool, system_info_.current_slot);
+            }
+            system_info_.current_slot = -1;
+            system_info_.filament_loaded = false;
+            return;
+        }
+    }
+
+    if (!slots_.is_initialized() || system_info_.mounted_tool < 0) {
+        return;
+    }
+    const int slot = slots_.slot_for_tool(system_info_.mounted_tool);
+    if (slot < 0 || slot >= slots_.slot_count()) {
+        // Tool is mounted but maps to no lane we know about. Say "unknown"
+        // rather than keeping a stale slot from a previous mount.
+        system_info_.current_slot = -1;
+        system_info_.filament_loaded = false;
+        return;
+    }
+    if (system_info_.current_slot != slot) {
+        spdlog::debug("[AMS AFC] Mounted T{} -> slot {} (was {})", system_info_.mounted_tool, slot,
+                      system_info_.current_slot);
+    }
+    system_info_.current_slot = slot;
+
+    // Only the mounted tool's own lane can put filament in the active path — but
+    // say so only when the lane's status is actually known. Deriving "not loaded"
+    // from UNKNOWN would be the same error as electing a slot from no
+    // information, and would clobber a value the parsers legitimately established
+    // on frames that carry no per-lane data.
+    const helix::printer::SlotEntry* entry = slots_.get(slot);
+    if (entry != nullptr && entry->info.status != SlotStatus::UNKNOWN) {
+        system_info_.filament_loaded = (entry->info.status == SlotStatus::LOADED);
     }
 }
 
@@ -2260,7 +3964,7 @@ AmsError AmsBackendAfc::execute_gcode_notify(const std::string& gcode,
 
     spdlog::info("[AMS AFC] Executing G-code: {}", gcode);
 
-    // Capture messages by value for async callbacks (thread-safe via ui_async_call)
+    // Capture messages by value for async callbacks (thread-safe via ui_queue_update())
     api_->execute_gcode(
         gcode,
         [success_msg]() {
@@ -2313,23 +4017,37 @@ AmsError AmsBackendAfc::load_filament(int slot_index) {
         }
     }
 
-    // Toolchanger mode: use AFC_SELECT_TOOL with extruder name
-    if (num_extruders_ > 1) {
+    // Toolchanger mode: use AFC_SELECT_TOOL with extruder name.
+    //
+    // Gated on a toolchanger EXISTING (see has_toolchanger() for the two
+    // signals), not on the extruder count. AFC_SELECT_TOOL is registered by
+    // AfcToolchanger.__init__ and nowhere else (AFC_Toolchanger.py:47-49), a
+    // file that exists only from v1.2.0 and that Klipper only loads for an
+    // `[AFC_Toolchanger <name>]` section. An IDEX or standalone-toolhead machine
+    // has several [AFC_extruder] sections and no toolchanger, so
+    // `num_extruders_ > 1` was true there and the command came back
+    // `// Unknown command:"AFC_SELECT_TOOL"` with the load never happening.
+    if (has_toolchanger()) {
         const auto* entry = slots_.get(slot_index);
         int tool = entry ? entry->info.mapped_tool : slot_index;
         if (tool >= 0 && tool < static_cast<int>(extruders_.size())) {
             std::string cmd = "AFC_SELECT_TOOL TOOL=" + extruders_[tool].name;
             spdlog::info("[AMS AFC] Loading slot {} via toolchanger: {}", slot_index, cmd);
-            return ensure_homed_then(std::move(cmd));
+            return dispatch_operation(std::move(cmd), AmsAction::LOADING);
         }
     }
 
-    // Standard mode: CHANGE_TOOL LANE={name}
+    // Standard mode: CHANGE_TOOL LANE={name}.
+    //
+    // Also the correct fallback for a multi-extruder machine with no toolchanger
+    // unit: CHANGE_TOOL resolves the lane's own extruder object
+    // (cur_lane.extruder_obj) and loads through it, so naming the LANE is
+    // sufficient and needs no per-tool selection verb.
     std::ostringstream cmd;
     cmd << "CHANGE_TOOL LANE=" << lane_name;
 
     spdlog::info("[AMS AFC] Loading from lane {} (slot {})", lane_name, slot_index);
-    return ensure_homed_then(cmd.str());
+    return dispatch_operation(cmd.str(), AmsAction::LOADING);
 }
 
 AmsError AmsBackendAfc::unload_filament(int slot_index) {
@@ -2366,7 +4084,7 @@ AmsError AmsBackendAfc::unload_filament(int slot_index) {
     }
 
     spdlog::info("[AMS AFC] Unloading: {}", cmd);
-    return ensure_homed_then(std::move(cmd));
+    return dispatch_operation(std::move(cmd), AmsAction::UNLOADING);
 }
 
 AmsError AmsBackendAfc::select_slot(int slot_index) {
@@ -2413,16 +4131,25 @@ AmsError AmsBackendAfc::change_tool(int tool_number) {
     }
 
     std::string cmd;
-    if (num_extruders_ > 1 && tool_number < static_cast<int>(extruders_.size())) {
-        // Toolchanger mode: use AFC_SELECT_TOOL with extruder name
+    if (has_toolchanger() && tool_number < static_cast<int>(extruders_.size())) {
+        // Toolchanger mode: use AFC_SELECT_TOOL with extruder name. See
+        // load_filament() for why the gate is the unit type and not the
+        // extruder count (AFC_Toolchanger.py:47-49, v1.2.0 only).
         cmd = "AFC_SELECT_TOOL TOOL=" + extruders_[tool_number].name;
     } else {
-        // Standard mode: use T{n}
+        // Standard mode: use T{n}. Correct for a multi-extruder machine with no
+        // toolchanger too — AFC's TcmdAssign registers a T-command per lane on
+        // every topology, and cmd_CHANGE_TOOL routes it through the lane's own
+        // extruder object.
         cmd = "T" + std::to_string(tool_number);
     }
 
     spdlog::info("[AMS AFC] Tool change: {}", cmd);
-    return ensure_homed_then(std::move(cmd));
+    // SELECTING, not LOADING: every AFC toolchanger state (ToolSwap, ToolDock,
+    // ToolPickup, Moving, Restoring) maps to SELECTING, so the optimistic value
+    // matches what AFC is about to echo and the operation carries the 300s
+    // toolchange budget rather than the 180s load one.
+    return dispatch_operation(std::move(cmd), AmsAction::SELECTING);
 }
 
 // ============================================================================
@@ -2460,7 +4187,302 @@ AmsError AmsBackendAfc::reset() {
                                 lv_tr("AFC reset failed"));
 }
 
-AmsError AmsBackendAfc::reset_lane(int slot_index) {
+void AmsBackendAfc::apply_overrides(SlotInfo& slot, int slot_index) {
+    // Callers hold mutex_ (the parse path does). Merge policy matches ACE/IFS:
+    // the override wins only where it carries a real value; default sentinels
+    // (empty string, id 0, weight -1, colour unset) fall through to firmware.
+    auto it = overrides_.find(slot_index);
+    if (it == overrides_.end()) {
+        return;
+    }
+    const auto& o = it->second;
+    if (!o.brand.empty())
+        slot.brand = o.brand;
+    if (!o.spool_name.empty())
+        slot.spool_name = o.spool_name;
+    if (o.spoolman_id > 0)
+        slot.spoolman_id = o.spoolman_id;
+    if (o.spoolman_vendor_id > 0)
+        slot.spoolman_vendor_id = o.spoolman_vendor_id;
+    if (o.remaining_weight_g >= 0.0f)
+        slot.remaining_weight_g = o.remaining_weight_g;
+    if (o.total_weight_g >= 0.0f)
+        slot.total_weight_g = o.total_weight_g;
+    if (o.color_set)
+        slot.color_rgb = o.color_rgb;
+    if (!o.color_name.empty())
+        slot.color_name = o.color_name;
+    if (!o.material.empty())
+        slot.material = o.material;
+    // Catalog product identity — same "override wins only when it carries a
+    // real value" rule as the strings above. Firmware never populates these
+    // (no AMS protocol has a notion of a branded product id), so a non-empty
+    // value here is always a user pick and always wins.
+    if (!o.catalog_id.empty())
+        slot.catalog_id = o.catalog_id;
+    if (!o.product_name.empty())
+        slot.product_name = o.product_name;
+}
+
+void AmsBackendAfc::persist_override(int slot_index, const SlotInfo& info) {
+    // Callers hold mutex_.
+    helix::ams::FilamentSlotOverride o;
+    o.brand = info.brand;
+    o.spool_name = info.spool_name;
+    o.spoolman_id = info.spoolman_id;
+    o.spoolman_vendor_id = info.spoolman_vendor_id;
+    o.remaining_weight_g = info.remaining_weight_g;
+    o.total_weight_g = info.total_weight_g;
+    o.color_name = info.color_name;
+    o.material = info.material;
+    // Catalog product identity — see apply_overrides(). Never auto-mirrored;
+    // a non-empty value is always a user pick.
+    o.catalog_id = info.catalog_id;
+    o.product_name = info.product_name;
+    if (info.color_rgb != 0 && info.color_rgb != AMS_DEFAULT_SLOT_COLOR) {
+        o.color_rgb = info.color_rgb;
+        o.color_set = true;
+    }
+    overrides_[slot_index] = o;
+
+    if (override_store_) {
+        override_store_->save_async(slot_index, o, [slot_index](bool ok, std::string err) {
+            if (!ok) {
+                spdlog::warn("[AMS AFC] override save failed for slot {}: {}", slot_index, err);
+            }
+        });
+    }
+}
+
+void AmsBackendAfc::clear_slot_override(int slot_index) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        overrides_.erase(slot_index);
+
+        // Also reset the override-exclusive fields on the live slot, so the
+        // clear shows up in the very next get_slot_info(). AFC has no concept
+        // of brand / spool_name / total weight / colour name, so no firmware
+        // update will ever clear them for us — dropping only the store entry
+        // would leave the previous spool's identity on screen indefinitely.
+        // colour and material are left alone: those DO come from the parse, so
+        // the lane's actual firmware values should surface.
+        if (helix::printer::SlotEntry* entry = slots_.get_mut(slot_index)) {
+            entry->info.brand.clear();
+            entry->info.spool_name.clear();
+            entry->info.spoolman_id = 0;
+            entry->info.spoolman_vendor_id = 0;
+            entry->info.spoolman_filament_id = 0;
+            entry->info.remaining_weight_g = -1.0f;
+            entry->info.total_weight_g = -1.0f;
+            entry->info.color_name.clear();
+            // The catalog pick is override-exclusive on every backend — no AMS
+            // firmware carries a branded product id — so a clear always drops it.
+            // Leaving it would re-navigate the editor to the removed spool's
+            // product on the next open.
+            entry->info.catalog_id.clear();
+            entry->info.product_name.clear();
+        }
+    }
+    emit_event(EVENT_SLOT_CHANGED, std::to_string(slot_index));
+    if (override_store_) {
+        override_store_->clear_async(slot_index, [slot_index](bool ok, std::string err) {
+            if (!ok) {
+                spdlog::warn("[AMS AFC] override clear failed for slot {}: {}", slot_index, err);
+            }
+        });
+    }
+}
+
+bool AmsBackendAfc::can_recover_lane_position(int slot_index) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // cmd_AFC_LANE_RESET (AFC_functions.py) retracts filament from the bowden
+    // back to the hub, so it needs the hub occupied — upstream rejects with
+    // "Hub is already clear while trying to reset '<lane>'" otherwise.
+    //
+    // SAFETY, NOT POLITENESS: the toolhead check below is broader than the
+    // upstream guard, and is not redundant with it on any version.
+    //
+    // Through v1.2.0 (a06f14d) upstream's toolhead guard was missing its
+    // `return`: it logged "Toolhead is loaded with '<lane>'" and then performed
+    // the reset moves anyway, retracting the lane while the extruder still
+    // gripped the filament. Reported as AFCProject/AFC-Klipper-Add-On#803,
+    // fixed by their PR #814 and shipping in 1.3.0. Installs predating that —
+    // including the .112 BoxTurtle as of 2026-07-29 — still fall through.
+    //
+    // Even against 1.3.0 this stays: upstream reads one signal (AFC.current),
+    // while toolhead_is_free_unlocked() reads three, and two of them catch the
+    // post-restart desync where AFC.current is null but the extruder still
+    // grips filament. See that function for the breakdown.
+    if (!toolhead_is_free_unlocked()) {
+        return false;
+    }
+
+    const std::string lane_name = slots_.name_of(slot_index);
+    if (lane_name.empty()) {
+        return false;
+    }
+
+    auto route = lane_hub_routing_.find(lane_name);
+    if (route == lane_hub_routing_.end() || route->second.empty() || route->second == "direct") {
+        // No hub in this lane's path — nothing to retract to.
+        return false;
+    }
+
+    // AFC_hub.state is the only signal that tracks hub occupancy. The per-lane
+    // loaded_to_hub field is latched at prep and never updated: it reads true on
+    // every lane at once, including while the hub is demonstrably clear.
+    auto hub = hub_sensors_.find(route->second);
+    const bool hub_occupied = hub != hub_sensors_.end() && hub->second;
+    if (!hub_occupied) {
+        return false;
+    }
+
+    // The lane's own load switch must be triggered (#1187).
+    //
+    // cmd_AFC_LANE_RESET does NOT check this up front. It opens with an
+    // unconditional move_to_hub(cur_lane, DISTANCE, MoveDirection.NEG, ...) —
+    // DISTANCE defaults to 50 — and only tests raw_load_state after that move
+    // plus one further short move inside the retract loop. Dispatching it at a
+    // lane whose filament already sits behind its load switch therefore drags
+    // that lane a further ~50mm back toward its prep sensor and drive gears
+    // before erroring out, which is real damage the in-loop guard runs too late
+    // to prevent. That is precisely the state a lane is left in by a failed
+    // reset, so without this gate the obvious follow-up — tapping Recover again
+    // on the lane that just failed — compounds it.
+    //
+    // It also matches cmd_AFC_RESET's own picker, which builds its candidate
+    // list from lanes with raw_load_state true. AFC publishes that as `load`.
+    const helix::printer::SlotEntry* entry = slots_.get(slot_index);
+    if (!entry || !entry->sensors.load) {
+        return false;
+    }
+
+    // The hub sensor is shared by every lane on the unit, so it cannot say whose
+    // filament is past it. Only offer the recovery on a lane AFC itself names.
+    //
+    // This deliberately offers NOTHING when AFC names no lane (#1182). The older
+    // all-lanes fallback assumed a wrong guess cost one harmless refusal; the
+    // blind opening retract documented above is why that was wrong. Nor does
+    // refusing strand the user: the sidebar Reset dispatches AFC_RESET, which is
+    // AFC's own lane picker (cmd_AFC_RESET), and its candidate list is a better
+    // answer than anything we could guess from a shared sensor.
+    //
+    // That picker is still not self-consistent, though, and #803 closing did not
+    // change it: cmd_AFC_RESET filters on raw_load_state while cmd_AFC_LANE_RESET
+    // requires hub_obj.state, so a lane at prep with a clear hub gets offered and
+    // then errors "Hub is already clear while trying to reset '<lane>'". That
+    // error latches in printer.AFC.message and re-fires for the session.
+    return lane_name == active_load_lane_ && recovery_attribution_valid_unlocked();
+}
+
+bool AmsBackendAfc::toolhead_is_free_unlocked() const {
+    // Callers hold mutex_.
+    //
+    // Deliberately does NOT read system_info_.filament_loaded. On every AFC
+    // build shipped so far the AFC object carries no "filament_loaded" key, so
+    // parse_afc_state() derives it from `loaded_lane` — which prefers
+    // current_lane (AFC.current_loading). That makes filament_loaded true for
+    // the entire duration of a toolchange, including a TOOL_LOAD that has not
+    // put anything in the extruder yet. Gating on it therefore reads "toolhead
+    // busy" across exactly the window where a lane can be stranded past the hub
+    // with the toolhead empty, which is the only window this predicate exists
+    // to serve. Three narrower signals say what filament_loaded only approximates.
+    //
+    // 1. The physical toolhead sensors. Strongest evidence and independent of
+    //    any AFC bookkeeping a restart or a desync could lose.
+    if (tool_start_sensor_ || tool_end_sensor_) {
+        return false;
+    }
+
+    // 2. AFC.current, published as current_load. This is precisely what
+    //    upstream's own toolhead guard reads — cmd_AFC_LANE_RESET does
+    //    `if (tool_load := self.get_current_lane_obj()) is not None`, and
+    //    get_current_lane_obj() resolves self.current. Matching it keeps us
+    //    aligned with the check the firmware means to make — the one that only
+    //    began to actually stop anything in 1.3.0
+    //    (AFCProject/AFC-Klipper-Add-On#803, their PR #814). Signals 1 and 3 are
+    //    what make this predicate broader than upstream's on every version.
+    if (!toolhead_lane_.empty()) {
+        return false;
+    }
+
+    // 3. Per-lane tool_loaded, surfaced as SlotStatus::LOADED. AFC persists it
+    //    through save_vars, so it still reads true after a restart that leaves
+    //    AFC.current null — covering the desync case signal 2 would miss.
+    for (int i = 0; i < slots_.slot_count(); ++i) {
+        const helix::printer::SlotEntry* entry = slots_.get(i);
+        if (entry && entry->info.status == SlotStatus::LOADED) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool AmsBackendAfc::recovery_attribution_valid_unlocked() const {
+    // Callers hold mutex_.
+    //
+    // Attribution means "AFC is telling us, right now, which lane needs help".
+    // Two different things can leave a name behind that is not that.
+    //
+    // 1. A toolchange that FAILED. active_load_lane_ prefers AFC.current_lane
+    //    (= AFC.current_loading), which upstream sets at the top of TOOL_LOAD
+    //    (AFC.py v1.2.0:1523) and TOOL_UNLOAD (:1948) and clears in exactly two
+    //    places — set_tool_loaded() and set_tool_unloaded() — both under
+    //    `if normal_toolchange:` (AFC_lane.py:1526, :1545). That is the SUCCESS
+    //    path only, so a failed toolchange pins the name until the next
+    //    successful one, which a user with a jammed lane cannot perform.
+    //
+    //    Left standing, that latch outranks Eject in decide_unload_mode(), where
+    //    can_recover && attributed wins. The failure that makes someone want to
+    //    eject is then the exact thing that removes the Eject button, swapping it
+    //    for a lane reset that retracts toward the hub and never returns the
+    //    filament to the spool.
+    //
+    //    The IDLE discrimination that follows from this lives in
+    //    lane_recovery_is_attributed(), NOT here — see the note below.
+    //
+    // 2. A lane rename or unit re-init can leave active_load_lane_ naming a lane
+    //    that no longer exists — initialize_slots() never touches it. A stale name
+    //    is not attribution, and both the recovery gate and the UI-facing flag must
+    //    read it that way or they disagree about the same lane.
+    return !active_load_lane_.empty() && slots_.index_of(active_load_lane_) >= 0;
+}
+
+bool AmsBackendAfc::lane_recovery_is_attributed() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // Narrower than can_recover_lane_position()'s use of the same name, because
+    // the two ask different questions of it.
+    //
+    //   can_recover_lane_position() asks MAY WE OFFER Recover for this lane. It
+    //   needs a name so a blind opening retract cannot land on the wrong lane
+    //   (#1182) — a safety gate, and a latched name still identifies the right
+    //   lane, so it must keep answering true here or a genuinely stranded lane
+    //   loses its recovery entirely.
+    //
+    //   This function asks SHOULD Recover OUTRANK Eject in decide_unload_mode().
+    //   That needs the diagnosis to be live, not residue. AFC.current_loading is
+    //   cleared only on the success path of a toolchange (AFC_lane.py:1526,
+    //   :1545), so a FAILED one pins the name until the next successful
+    //   toolchange — which a user with a jammed lane cannot perform. Treating
+    //   that as a confident diagnosis means the failure that makes someone want
+    //   Eject is the very thing that removes the Eject button, swapping it for a
+    //   lane reset that retracts toward the hub and never returns filament to
+    //   the spool.
+    //
+    // AFC's action discriminates: a toolchange genuinely under way (or faulted
+    // into ERROR) is non-IDLE and its name describes live work. Back at IDLE the
+    // name is residue, so the lane drops to the unattributed arm of the ranking —
+    // Recover stays available as a last resort, it just no longer displaces Eject.
+    if (system_info_.action == AmsAction::IDLE) {
+        return false;
+    }
+    return recovery_attribution_valid_unlocked();
+}
+
+AmsError AmsBackendAfc::recover_lane_position(int slot_index) {
     std::string lane_name;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -2496,18 +4518,180 @@ AmsError AmsBackendAfc::eject_lane(int slot_index) {
             return slot_err;
         }
 
-        if (system_info_.filament_loaded && system_info_.current_slot == slot_index) {
-            return AmsError(AmsResult::WRONG_STATE, "Lane is loaded in toolhead",
-                            "Unload from toolhead first", "Use Unload before Eject");
-        }
-
         lane_name = slots_.name_of(slot_index);
         if (lane_name.empty()) {
             return AmsErrorHelper::invalid_slot(slot_index, system_info_.total_slots - 1);
         }
+
+        AmsError refusal = lane_unload_refusal_unlocked(slot_index, lane_name);
+        if (!refusal) {
+            return refusal;
+        }
     }
 
     return enqueue_lane_unload(lane_name);
+}
+
+bool AmsBackendAfc::afc_reports_standalone_unlocked() const {
+    // Callers hold mutex_.
+    for (const auto& [ext_name, ts] : tool_states_) {
+        if (ts.has_is_standalone) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string AmsBackendAfc::extruder_for_lane_unlocked(int slot_index,
+                                                      const std::string& lane_name) const {
+    // Callers hold mutex_.
+    //
+    // AFC_stepper.extruder names the extruder a lane feeds whether or not that
+    // lane is currently seated, which is what the standalone check needs — the
+    // condition it models is precisely "this extruder holds nothing".
+    const helix::printer::SlotEntry* entry = slots_.get(slot_index);
+    if (entry && !entry->info.extruder_name.empty()) {
+        return entry->info.extruder_name;
+    }
+
+    // Fallback for a partial delta that has not carried AFC_stepper.extruder yet.
+    // Only a seated lane can be found this way, which is the case the caller's
+    // toolhead check has already handled — so this mostly returns empty, and an
+    // unknown extruder makes no claim rather than guessing "extruder".
+    for (const auto& [ext_name, sensors] : extruder_sensors_) {
+        if (sensors.lane_loaded == lane_name) {
+            return ext_name;
+        }
+    }
+    return {};
+}
+
+AmsError AmsBackendAfc::lane_unload_refusal_unlocked(int slot_index,
+                                                     const std::string& lane_name) const {
+    // Callers hold mutex_.
+    //
+    // Two upstream shapes are live in the field and they refuse on DIFFERENT
+    // conditions, so each guard below is scoped to the era that actually has it.
+    // v1.1.0 (AFC.py:1123-1157) keys on the global AFC.current and the lane's hub
+    // routing; v1.2.0 (AFC.py:1342-1378, unchanged on main) rewrote the body to
+    // key on the lane's own extruder and its is_standalone flag, dropping hub
+    // routing from the decision entirely. Applying either era's rule to the other
+    // is a defect in both directions — over-refusing an eject upstream would
+    // perform, or letting through one it silently discards.
+
+    // 1. Printing. Identical on every version: cmd_LANE_UNLOAD opens with
+    //    `if self.function.is_printing()` and returns after AFC_error(...,
+    //    pause=False). is_printing() is `print_stats.state == "printing"`
+    //    exactly (AFC_functions.py:308-323) — NOT in_print(), so a PAUSED job is
+    //    genuinely allowed. refuse_if_printing() already resolves to precisely
+    //    that for a backend which does not self-home, so this is the same rule,
+    //    not a second one.
+    if (AmsError printing = refuse_if_printing(); !printing) {
+        return printing;
+    }
+
+    // 2. The body's own if/elif chain. Transcribed per era rather than reduced to
+    //    a set of independent tests, because the ORDER carries meaning: on
+    //    v1.2.0 a standalone extruder that IS holding the lane takes the second
+    //    arm and performs a retract, so the "lane is at the toolhead" reading
+    //    that would refuse it never gets to run.
+    const AmsError loaded_here(AmsResult::WRONG_STATE, "Lane is loaded in toolhead",
+                               "Unload from toolhead first", "Use Unload before Eject");
+
+    // Set when the era's own authority had nothing to say for this lane — no
+    // extruder attribution on v1.2.0, no AFC.current on v1.1.0. Moonraker sends
+    // deltas, so a frame can reach here before the object that carries the
+    // signal has ever arrived. The aggregate fallback below covers that gap.
+    bool authority_silent = false;
+    AmsError era_refusal = AmsErrorHelper::success();
+
+    if (afc_reports_standalone_unlocked()) {
+        // v1.2.0 (AFC.py:1342-1378, unchanged on main):
+        //
+        //   if name != extruder.lane_loaded and not extruder.is_standalone(): ACT
+        //   elif extruder.is_standalone() and extruder.lane_loaded:           ACT
+        //   elif name == extruder.lane_loaded:                                refuse, logs
+        //   (no else)                                                         refuse, SILENT
+        //
+        // Both comparisons are against the lane's OWN extruder, not the global
+        // AFC.current v1.1.0 used — the distinction only matters on a
+        // toolchanger, and there the per-extruder answer is the correct one.
+        const std::string ext_name = extruder_for_lane_unlocked(slot_index, lane_name);
+        auto sensors = extruder_sensors_.find(ext_name);
+        auto ts = tool_states_.find(ext_name);
+
+        if (ext_name.empty() || sensors == extruder_sensors_.end()) {
+            // Nothing attributes this lane to an extruder yet, so neither arm can
+            // be evaluated against a real lane_loaded.
+            authority_silent = true;
+        } else {
+            const std::string& lane_loaded = sensors->second.lane_loaded;
+            const bool standalone = ts != tool_states_.end() && ts->second.is_standalone;
+
+            if (lane_name != lane_loaded && !standalone) {
+                // arm 1: the normal lane eject
+            } else if (standalone && !lane_loaded.empty()) {
+                // arm 2: the standalone retract
+            } else if (lane_name == lane_loaded) {
+                era_refusal = loaded_here; // arm 3: logged refusal
+            } else {
+                // Fell off the end: a standalone extruder holding nothing. AFC
+                // returns having logged NOTHING AT ALL — the only refusal in
+                // either era with no trace in klippy.log, and so the hardest to
+                // diagnose from a user report.
+                era_refusal =
+                    AmsError(AmsResult::WRONG_STATE, "Standalone extruder reports no lane loaded",
+                             "Nothing to eject on this toolhead",
+                             "Load the lane first, or unload from the toolhead");
+            }
+        }
+    } else {
+        // v1.1.0 (AFC.py:1123-1157):
+        //
+        //   if name != AFC.current and hub != 'direct': ACT
+        //   elif name == AFC.current:                   refuse, logs
+        //   elif hub == 'direct':                       refuse, logs
+        //
+        // v1.2.0 dropped hub routing from this decision entirely, which is why
+        // the direct-lane arm is confined to this branch: applying it to a 1.2.0
+        // install would refuse ejects upstream performs happily.
+        //
+        // Exact match on "direct", deliberately NOT the rfind("direct", 0) prefix
+        // used for topology derivation above — upstream compares `== 'direct'`,
+        // and "direct_load" appears nowhere in the AFC source at any version.
+        auto route = lane_hub_routing_.find(lane_name);
+        const bool is_direct = route != lane_hub_routing_.end() && route->second == "direct";
+        authority_silent = toolhead_lane_.empty();
+
+        if (lane_name != toolhead_lane_ && !is_direct) {
+            // the normal lane eject
+        } else if (lane_name == toolhead_lane_) {
+            era_refusal = loaded_here;
+        } else {
+            era_refusal = AmsError(AmsResult::WRONG_STATE, "Direct lane cannot be lane-ejected",
+                                   "Unload from the toolhead instead",
+                                   "This lane feeds the extruder directly — use Unload, not Eject");
+        }
+    }
+
+    if (!era_refusal) {
+        return era_refusal;
+    }
+
+    // 3. Last resort: the aggregate pair, used ONLY where the era's own authority
+    //    said nothing. These are derived signals — parse_afc_state() computes
+    //    filament_loaded from `loaded_lane`, which prefers AFC.current_loading and
+    //    so reads true across an entire toolchange (see toolhead_is_free_unlocked)
+    //    — which is exactly why they must not outrank a per-lane answer. But
+    //    before the AFC_extruder / AFC objects have landed they are the only thing
+    //    that knows a lane is at the head, and refusing with a clear message beats
+    //    firing a LANE_UNLOAD that upstream silently discards.
+    if (authority_silent && system_info_.filament_loaded &&
+        system_info_.current_slot == slot_index) {
+        return loaded_here;
+    }
+
+    return AmsErrorHelper::success();
 }
 
 AmsError AmsBackendAfc::enqueue_lane_unload(const std::string& lane_name) {
@@ -2636,6 +4820,8 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
         // Detect whether anything actually changed
         bool changed = slot.color_name != info.color_name || slot.color_rgb != info.color_rgb ||
                        slot.material != info.material || slot.brand != info.brand ||
+                       slot.catalog_id != info.catalog_id ||
+                       slot.product_name != info.product_name ||
                        slot.spoolman_id != info.spoolman_id || slot.spool_name != info.spool_name ||
                        slot.remaining_weight_g != info.remaining_weight_g ||
                        slot.total_weight_g != info.total_weight_g ||
@@ -2648,6 +4834,11 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
         slot.color_rgb = info.color_rgb;
         slot.material = info.material;
         slot.brand = info.brand;
+        // Carry the catalog product identity through preview writes too — a
+        // persist=false preview that dropped it would make the editor snap
+        // back to a different variant on the next get_slot_info().
+        slot.catalog_id = info.catalog_id;
+        slot.product_name = info.product_name;
         slot.spoolman_id = info.spoolman_id;
         slot.spool_name = info.spool_name;
         slot.remaining_weight_g = info.remaining_weight_g;
@@ -2674,16 +4865,38 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
         // sync_from_backend → refresh_spoolman_weights → set_slot_info again,
         // creating an infinite feedback loop that saturates the CPU.
         //
-        // Send gcode even when version is unknown — SET_SPOOL_ID has existed
-        // since well before v1.0.20. Silently skipping gcode for unknown
-        // versions caused issue #644 (spool assignment bypassed AFC).
-        if (persist &&
-            (version_at_least("1.0.20") || afc_version_ == "unknown" || afc_version_.empty())) {
-            if (afc_version_ == "unknown" || afc_version_.empty()) {
-                spdlog::debug("[AMS AFC] Version unknown, attempting gcode persistence anyway");
-            }
+        // Record the user's identity in the override store as well. AFC cannot
+        // hold brand / spool_name / total_weight / colour name / filament+vendor
+        // ids at all, and the fields it DOES hold get cleared by its own
+        // clear_values() on eject.
+        if (persist) {
+            persist_override(slot_index, info);
+        }
+
+        // Persistence is never version-gated. These SET_* commands have existed
+        // since well before any version we would recognize, and the version string
+        // is not a usable signal (AFC stopped writing it — see
+        // apply_afc_version_response). Skipping gcode on an unrecognized version
+        // caused issue #644, where spool assignment silently bypassed AFC.
+        if (persist) {
             std::string lane_name = slots_.name_of(slot_index);
             if (!lane_name.empty()) {
+                // Spoolman ID FIRST — both branches of AFC's set_spoolID() rewrite the
+                // lane's material/color/weight/temps, so this must precede our own
+                // writes or it clobbers them:
+                //   valid id  -> AFC fetches the spool from Spoolman and overwrites
+                //               material, color, weight, temps, density, diameter
+                //   empty id  -> AFC runs clear_values() and wipes all of the above
+                // Emitting it last made a single save set the data and then destroy it,
+                // which is why an edit needed two passes to stick.
+                if (info.spoolman_id > 0) {
+                    execute_gcode(fmt::format("SET_SPOOL_ID LANE={} SPOOL_ID={}", lane_name,
+                                              info.spoolman_id));
+                } else if (info.spoolman_id == 0 && old_spoolman_id > 0) {
+                    // Clear Spoolman link with empty string (not -1)
+                    execute_gcode(fmt::format("SET_SPOOL_ID LANE={} SPOOL_ID=", lane_name));
+                }
+
                 // Color (only if changed and valid - not 0 or default grey)
                 if (info.color_rgb != 0 && info.color_rgb != AMS_DEFAULT_SLOT_COLOR) {
                     char color_hex[8];
@@ -2706,15 +4919,6 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
                                               info.remaining_weight_g));
                 }
 
-                // Spoolman ID
-                if (info.spoolman_id > 0) {
-                    execute_gcode(fmt::format("SET_SPOOL_ID LANE={} SPOOL_ID={}", lane_name,
-                                              info.spoolman_id));
-                } else if (info.spoolman_id == 0 && old_spoolman_id > 0) {
-                    // Clear Spoolman link with empty string (not -1)
-                    execute_gcode(fmt::format("SET_SPOOL_ID LANE={} SPOOL_ID=", lane_name));
-                }
-
                 // Tool mapping (lane → tool number) via SET_MAP.
                 // Mirrors set_tool_mapping() but is reachable from the slot edit modal,
                 // which routes all changes through set_slot_info().
@@ -2723,10 +4927,6 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
                         fmt::format("SET_MAP LANE={} MAP=T{}", lane_name, info.mapped_tool));
                 }
             }
-        } else if (persist && afc_version_ != "unknown" && !afc_version_.empty()) {
-            spdlog::info("[AMS AFC] Version {} - slot changes stored locally only (upgrade to "
-                         "1.0.20+ for persistence)",
-                         afc_version_);
         }
     }
 
@@ -2784,9 +4984,21 @@ AmsError AmsBackendAfc::enable_bypass() {
             return precondition;
         }
 
-        if (!system_info_.supports_bypass) {
+        if (!helix::bypass_available_for(system_info_.supports_bypass)) {
             return AmsError(AmsResult::WRONG_STATE, "Bypass not supported",
                             "This AFC system does not support bypass mode", "");
+        }
+
+        // Explicit precondition, not a redundant guard. AmsSubscriptionBackend::
+        // execute_gcode() is fire-and-forget — it returns success before Klipper
+        // answers and passes silent=true — so a bypass request with filament at
+        // the toolhead would report success and change nothing. Refusing here is
+        // what makes allows_implicit_chaining() == false safe: the sidebar no
+        // longer unloads on AFC's behalf, so AFC has to give the answer (#1229).
+        if (system_info_.filament_loaded) {
+            return AmsError(AmsResult::WRONG_STATE, "Unload filament first",
+                            "Filament is loaded at the toolhead. Unload it before enabling bypass.",
+                            "");
         }
     }
 
@@ -3533,7 +5745,23 @@ AmsError AmsBackendAfc::execute_device_action(const std::string& action_id, cons
         std::lock_guard<std::mutex> lock(mutex_);
         return execute_gcode(afc_led_state_ ? "TURN_OFF_AFC_LED" : "TURN_ON_AFC_LED");
     } else if (action_id == "quiet_mode") {
-        return execute_gcode("AFC_QUIET_MODE");
+        std::lock_guard<std::mutex> lock(mutex_);
+        // ENABLE must be explicit. AFC's cmd_AFC_QUIET_MODE defaults the
+        // parameter to the CURRENT value — `gcmd.get_int("ENABLE",
+        // self._get_quiet_mode(), ...)` (AFC.py v1.2.0:934-953, identical at
+        // v1.1.0:736-756) — so a bare `AFC_QUIET_MODE` sets quiet mode to what
+        // it already was and the button did nothing.
+        //
+        // The `show_macros` wrapper does not supply one either: _create_options
+        // emits `{%set dummy=params.ENABLE|default('0')|int%}` followed by
+        // `_AFC_QUIET_MODE {rawparams}` (AFC_functions.py:637-644), and the
+        // `dummy` assignment is discarded — only rawparams reaches the real
+        // command, and rawparams is empty for a bare call.
+        //
+        // Same shape as led_toggle above: we hold the state, so we send the
+        // value we want rather than asking for a toggle AFC has no verb for.
+        return execute_gcode(afc_quiet_mode_ ? "AFC_QUIET_MODE ENABLE=0"
+                                             : "AFC_QUIET_MODE ENABLE=1");
     } else if (action_id.rfind("led_extruder_T", 0) == 0) {
         // Per-extruder toolhead LED toggle: led_extruder_T0, led_extruder_T1, etc.
         try {

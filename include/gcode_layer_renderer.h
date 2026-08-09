@@ -244,6 +244,12 @@ class GCodeLayerRenderer {
     void set_ssao_enabled(bool enable) {
         ssao_enabled_.store(enable, std::memory_order_relaxed);
         ssao_cache_valid_ = false;
+        if (!enable) {
+            // Release the full-canvas ARGB8888 scratch buffer; ensure_ssao_cache()
+            // recreates it if SSAO is switched back on. Main-thread only (waits for
+            // in-flight LVGL draw tasks) — all callers are widget/UI-thread code.
+            destroy_ssao_cache();
+        }
     }
 
     /** @brief Check if SSAO is enabled */

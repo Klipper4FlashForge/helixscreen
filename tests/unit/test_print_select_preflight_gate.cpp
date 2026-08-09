@@ -256,6 +256,198 @@ TEST_CASE("Swatch render: full platform keeps viewer-parse ownership",
     REQUIRE(m.rendered_tools == std::set<int>{0, 1}); // unchanged: viewer owns it
 }
 
+namespace {
+
+/// Minimal model of load_gcode_for_preview()'s "should we render the toolpath
+/// preview, or fall back to the thumbnail?" decision. Guards the change that let
+/// 2D-mode devices (no-GLES / GPU-blocked / budget-forced) render the detail-view
+/// preview instead of always showing the static thumbnail: the ONLY skips are the
+/// user-forced Thumbnail-Only mode and an oversized file. Being in 2D mode must
+/// NOT skip — that's the regression this pins.
+struct PreviewLoadModel {
+    static constexpr int RENDER_MODE_THUMBNAIL_ONLY = 3;
+
+    int gcode_render_mode = 0;  // 0 = Auto, 3 = Thumbnail Only
+    bool using_2d_mode = false; // viewer renders 2D (no-GLES etc.)
+    bool streaming_safe = true; // is_gcode_2d_streaming_safe(size)
+
+    enum class Outcome { RenderPreview, ThumbnailOnly };
+
+    /// Mirrors the post-guard skip logic in load_gcode_for_preview().
+    [[nodiscard]] Outcome decide() const {
+        if (gcode_render_mode == RENDER_MODE_THUMBNAIL_ONLY) {
+            return Outcome::ThumbnailOnly; // user forced thumbnail
+        }
+        if (!streaming_safe) {
+            return Outcome::ThumbnailOnly; // too large for available RAM
+        }
+        // NOTE: using_2d_mode intentionally does NOT gate here.
+        return Outcome::RenderPreview;
+    }
+};
+
+} // namespace
+
+TEST_CASE("Detail preview: 2D-mode device renders the toolpath, not just the thumbnail",
+          "[print_select][preflight][preview]") {
+    // The regression: 2D-mode devices (Snapmaker U1, AD5M, K1…) used to skip the
+    // detail-view preview and show only the thumbnail. They must now render.
+    PreviewLoadModel m;
+    m.using_2d_mode = true;  // no-GLES device
+    m.gcode_render_mode = 0; // Auto
+    m.streaming_safe = true;
+
+    REQUIRE(m.decide() == PreviewLoadModel::Outcome::RenderPreview);
+}
+
+TEST_CASE("Detail preview: 3D-capable device still renders", "[print_select][preflight][preview]") {
+    PreviewLoadModel m;
+    m.using_2d_mode = false; // GLES device (3D)
+    REQUIRE(m.decide() == PreviewLoadModel::Outcome::RenderPreview);
+}
+
+TEST_CASE("Detail preview: user-forced Thumbnail Only always wins",
+          "[print_select][preflight][preview]") {
+    PreviewLoadModel m;
+    m.gcode_render_mode = PreviewLoadModel::RENDER_MODE_THUMBNAIL_ONLY;
+    // Regardless of render capability, the user's Thumbnail-Only choice is honored.
+    m.using_2d_mode = true;
+    REQUIRE(m.decide() == PreviewLoadModel::Outcome::ThumbnailOnly);
+    m.using_2d_mode = false;
+    REQUIRE(m.decide() == PreviewLoadModel::Outcome::ThumbnailOnly);
+}
+
+TEST_CASE("Detail preview: oversized file degrades to thumbnail",
+          "[print_select][preflight][preview]") {
+    PreviewLoadModel m;
+    m.streaming_safe = false; // exceeds available RAM
+    m.using_2d_mode = true;
+    REQUIRE(m.decide() == PreviewLoadModel::Outcome::ThumbnailOnly);
+}
+
+namespace {
+
+/// Mirrors show_gcode_viewer()'s mapping to the detail_gcode_viewer_mode_ subject
+/// that drives print_file_detail.xml visibility: 0 = thumbnail, 1 = 3D viewer,
+/// 2 = 2D viewer. Guards the second half of the fix: loading the preview isn't
+/// enough — a 2D-mode device must resolve to mode 2 (viewer visible) and NOT
+/// mode 0, or the render stays hidden behind the thumbnail (the exact symptom
+/// observed on the U1).
+struct ViewerShowModeModel {
+    bool using_2d_mode = false;
+
+    [[nodiscard]] int mode_for(bool show) const {
+        if (!show) {
+            return 0; // thumbnail
+        }
+        return using_2d_mode ? 2 : 1; // 2 = 2D viewer, 1 = 3D viewer
+    }
+};
+
+} // namespace
+
+TEST_CASE("Detail viewer mode: 2D device resolves to the visible 2D mode, not thumbnail",
+          "[print_select][preflight][preview]") {
+    ViewerShowModeModel m;
+    m.using_2d_mode = true;
+    REQUIRE(m.mode_for(true) == 2); // viewer visible (NOT 0 = thumbnail)
+    REQUIRE(m.mode_for(false) == 0);
+}
+
+TEST_CASE("Detail viewer mode: 3D device uses 3D mode", "[print_select][preflight][preview]") {
+    ViewerShowModeModel m;
+    m.using_2d_mode = false;
+    REQUIRE(m.mode_for(true) == 1);
+    REQUIRE(m.mode_for(false) == 0);
+}
+
+namespace {
+
+/// Minimal model of the "which mapping does the print actually use?" decision
+/// shared by PrintSelectDetailView::effective_mappings()/effective_auto_match()
+/// and PrintStatusPanel's render path. The pure color/type matching itself is
+/// covered by test_filament_mapper.cpp's [effective] cases; this pins the UI-side
+/// SELECTION logic that feeds it — specifically the subtle contract that a
+/// non-editable-card backend (Snapmaker U1 / ACE) must auto-match even though the
+/// persisted auto-color preference defaults to FALSE (there is no card UI on
+/// those backends to turn it on). Regressing that reinstates the v0.91 "picks a
+/// random/wrong loaded lane" report.
+struct EffectiveMappingModel {
+    bool card_editable = false;     // active backend's tool-mapping capability
+    bool persisted_auto = false;    // SettingsManager::get_auto_color_map() (default FALSE)
+    bool card_has_mappings = false; // card seeded/user-edited mappings present
+
+    /// Mirrors effective_auto_match().
+    [[nodiscard]] bool effective_auto_match() const {
+        return !card_editable || persisted_auto;
+    }
+
+    enum class Source { CardMappings, AutoMatched, PositionalFallback };
+
+    /// Mirrors effective_mappings(): card edits win when present; otherwise the
+    /// shared helper runs with the effective auto flag (auto => color+type match,
+    /// else positional).
+    [[nodiscard]] Source resolved_source() const {
+        if (card_has_mappings) {
+            return Source::CardMappings;
+        }
+        return effective_auto_match() ? Source::AutoMatched : Source::PositionalFallback;
+    }
+};
+
+} // namespace
+
+TEST_CASE("Effective mapping: U1 auto-matches despite auto-color default OFF",
+          "[print_select][preflight][effective]") {
+    // Snapmaker U1: non-editable card, no UI to flip the preference, empty card.
+    // Must resolve via the color+type auto match — NOT the positional fallback
+    // that the persisted default (FALSE) would otherwise select.
+    EffectiveMappingModel m;
+    m.card_editable = false;
+    m.persisted_auto = false; // persisted default
+    m.card_has_mappings = false;
+
+    REQUIRE(m.effective_auto_match());
+    REQUIRE(m.resolved_source() == EffectiveMappingModel::Source::AutoMatched);
+}
+
+TEST_CASE("Effective mapping: editable backend honors persisted auto-color OFF",
+          "[print_select][preflight][effective]") {
+    // Editable backend, user left auto OFF, card not yet seeded/edited: positional
+    // fallback is preserved (behavior-preserving for AFC/CFS/HH/IFS/toolchanger).
+    EffectiveMappingModel m;
+    m.card_editable = true;
+    m.persisted_auto = false;
+    m.card_has_mappings = false;
+
+    REQUIRE_FALSE(m.effective_auto_match());
+    REQUIRE(m.resolved_source() == EffectiveMappingModel::Source::PositionalFallback);
+}
+
+TEST_CASE("Effective mapping: editable backend honors persisted auto-color ON",
+          "[print_select][preflight][effective]") {
+    EffectiveMappingModel m;
+    m.card_editable = true;
+    m.persisted_auto = true;
+    m.card_has_mappings = false;
+
+    REQUIRE(m.effective_auto_match());
+    REQUIRE(m.resolved_source() == EffectiveMappingModel::Source::AutoMatched);
+}
+
+TEST_CASE("Effective mapping: user card edits always win", "[print_select][preflight][effective]") {
+    // Once the card carries mappings (editable backend, user edited or seeded),
+    // effective_mappings returns them verbatim regardless of the auto flag.
+    EffectiveMappingModel m;
+    m.card_editable = true;
+    m.card_has_mappings = true;
+
+    m.persisted_auto = false;
+    REQUIRE(m.resolved_source() == EffectiveMappingModel::Source::CardMappings);
+    m.persisted_auto = true;
+    REQUIRE(m.resolved_source() == EffectiveMappingModel::Source::CardMappings);
+}
+
 TEST_CASE("Pre-flight gate: readiness fires exactly once", "[print_select][preflight][gate]") {
     // If both the headless scan and a (later) viewer parse complete, the deferred
     // print attempt must fire exactly once, not twice.

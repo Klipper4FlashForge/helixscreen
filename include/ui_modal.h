@@ -122,7 +122,12 @@ class Modal {
      *
      * Dev-only hook for XML hot-reload. Does nothing if no modal is visible.
      *
-     * @return true if a modal was rebuilt, false if no modal to rebuild
+     * An instance-backed modal (shown through a Modal subclass) is only hidden,
+     * never rebuilt: re-creating it from XML alone would skip on_show() and the
+     * subclass's button wiring, leaving a dialog whose buttons do nothing.
+     *
+     * @return true if a modal was rebuilt, false if there was nothing to rebuild
+     *         or the top modal is instance-backed and was hidden instead
      */
     static bool rebuild_top();
 
@@ -294,11 +299,22 @@ class ModalStack {
   public:
     static ModalStack& instance();
 
-    // Track a modal (called by Modal::create_and_show)
-    void push(lv_obj_t* backdrop, lv_obj_t* dialog, const std::string& component_name);
+    // Track a modal (called by Modal::create_and_show).
+    // `owner` is the Modal instance that shows and tears the dialog down, or
+    // nullptr for modals created through the static Modal::show() factory.
+    void push(lv_obj_t* backdrop, lv_obj_t* dialog, const std::string& component_name,
+              Modal* owner = nullptr);
 
     // Untrack a modal (called by Modal::destroy)
     void remove(lv_obj_t* backdrop);
+
+    /// Return the Modal instance that owns this dialog, or nullptr when the
+    /// dialog is untracked or was created through the static factory.
+    Modal* owner_for(lv_obj_t* dialog) const;
+
+    /// Point an existing entry at a different owner (nullptr = no owner).
+    /// No-op if the backdrop is not tracked.
+    void reassign_owner(lv_obj_t* backdrop, Modal* new_owner);
 
     // Get topmost dialog
     lv_obj_t* top_dialog() const;
@@ -365,6 +381,7 @@ class ModalStack {
         lv_obj_t* dialog;
         std::string component_name;
         bool exiting; /**< true = exit animation in progress, ignore hide() calls */
+        Modal* owner; /**< owning instance, or nullptr for static Modal::show() modals */
     };
 
     std::vector<ModalEntry> stack_;
@@ -440,11 +457,13 @@ void modal_register_keyboard(lv_obj_t* modal, lv_obj_t* textarea);
  * @param on_confirm Callback for confirm button (receives user_data)
  * @param on_cancel Callback for cancel button (receives user_data), or nullptr for no callback
  * @param user_data User data passed to callbacks
+ * @param cancel_text Secondary button text, or nullptr to default to "Cancel"
  * @return The created dialog widget, or nullptr on failure
  */
 lv_obj_t* modal_show_confirmation(const char* title, const char* message, ModalSeverity severity,
                                   const char* confirm_text, lv_event_cb_t on_confirm,
-                                  lv_event_cb_t on_cancel, void* user_data);
+                                  lv_event_cb_t on_cancel, void* user_data,
+                                  const char* cancel_text = nullptr);
 
 /**
  * @brief Show an info/alert dialog with single "OK" button

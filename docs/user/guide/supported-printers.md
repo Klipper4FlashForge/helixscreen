@@ -10,7 +10,7 @@ This page is the detailed breakdown of what actually works on those specially-su
 
 **1. You don't have to run it on the printer.** Some printers can run HelixScreen directly on their own built-in touchscreen (see the list below). But HelixScreen is a Moonraker client, so for *any* printer you can also run it on a separate Raspberry Pi, mini PC, or tablet with a touchscreen and control the printer over the network. See [Can I run HelixScreen on a separate device?](../FAQ.md#can-i-run-helixscreen-on-a-separate-device-instead-of-on-my-printer) and [Remote Screen Setup](../INSTALL.md#remote-screen-setup-run-on-a-separate-device).
 
-**2. Your printer is auto-detected.** The first-run setup wizard identifies your printer from a database of 80+ models — filling in the right name, image, bed size, probe type, and preset options automatically. If it guesses wrong, you can pick your model by hand, and if your printer isn't in the database at all, it still works fully via generic detection (see [Every Other Klipper Printer](#every-other-klipper-printer) below).
+**2. Your printer is auto-detected.** The first-run setup wizard identifies your printer from a database of 90+ models — filling in the right name, image, bed size, probe type, and preset options automatically. If it guesses wrong, you can pick your model by hand, and if your printer isn't in the database at all, it still works fully via generic detection (see [Every Other Klipper Printer](#every-other-klipper-printer) below).
 
 > **What the status labels mean:** Throughout this page and the FAQ, **Tested** = the HelixScreen team verified it on real hardware; **Supported** = works, with the noted firmware; **Community** = a community user confirmed it, but we haven't tested it ourselves; **Preliminary** = support exists from the printer's published config but isn't hardware-verified. If you run HelixScreen on hardware we haven't tested, [let us know](settings/help-about.md) — reports are how printers move up the list.
 
@@ -69,7 +69,7 @@ Runs on the K1's built-in screen. K1C and K1 Max are the most thoroughly tested 
 
 ---
 
-### Creality K2 Plus / K2 Pro / K2 SE
+### Creality K2 Plus / K2 Pro
 
 Runs on the K2's built-in screen and — unlike the K1 — **works with stock firmware and stock Moonraker**, no custom firmware required. This is the flagship CFS integration.
 
@@ -84,7 +84,9 @@ Runs on the K2's built-in screen and — unlike the K1 — **works with stock fi
 
 **Status:** Tested — runs natively with CFS support.
 
-> **Good to know:** The K2's portrait panel is software-rotated to landscape. On this lower-power CPU, animations and 3D bed-mesh rendering may be throttled. The CFS material database is fetched from Creality's cloud.
+> **Community firmware:** the list above describes **stock** Creality firmware. Some owners replace it with a community build that swaps in its own rewritten CFS module — those are auto-detected and fully supported, including load, unload and filament changes. See [Filament → CFS](filament.md#creality-filament-system-cfs).
+
+> **Good to know:** The K2's portrait panel is software-rotated to landscape — that is the supported configuration. Running it un-rotated with the portrait layout is alpha and mostly untested. On this lower-power CPU, animations and 3D bed-mesh rendering may be throttled. The CFS material database is fetched from Creality's cloud.
 
 ---
 
@@ -128,15 +130,16 @@ A true 4-toolhead changer, running on the U1's built-in 3.5" screen. Each of the
 
 To set it up:
 
-1. In the PAXX Extended Firmware settings, turn on the **remote screen** option (the `web remote_screen` toggle in the extended firmware config).
-2. Restart HelixScreen or reboot the printer so it picks up the setting.
+1. Open the firmware settings web UI at `http://<printer-ip>/firmware-config/` (log in with your Mainsail/Fluidd credentials) and set **Remote Screen** to **Enabled**.
+2. That's it — the setting restarts HelixScreen and Moonraker for you, registers the **"gui"** webcam, and starts the screen server.
 3. Open your printer in Mainsail or Fluidd (you must be logged in). The screen appears as the **"gui"** webcam — select it in the camera view.
 4. To control it, browse to `http://<printer-ip>/screen/` and tap the image. Taps, presses, and drags drive the HelixScreen UI live.
 
 Notes:
+- Use the firmware settings web UI, not a hand edit of the config file. Setting `web remote_screen` in `extended2.cfg` by hand is **not enough** — the "gui" webcam won't appear, because the web UI toggle also enables the `[webcam gui]` section in `extended/moonraker/04_remote_screen.cfg` and restarts Moonraker. If you must do it by hand, do all three, then restart HelixScreen and Moonraker.
 - The feed is a still-image snapshot refreshed a few times per second, not smooth video — fine for monitoring and tapping through menus, not for watching animations.
 - This is **PAXX-only** for now. Stock firmware is not yet confirmed to expose the feed.
-- Before HelixScreen feeds it, the "gui" webcam shows **"No Signal"** — that's expected until the remote-screen toggle is on and HelixScreen has restarted.
+- If the "gui" webcam shows **"No Signal"** or a stale/black frame, HelixScreen hasn't restarted since the toggle was turned on — restart HelixScreen or reboot the printer.
 
 ---
 
@@ -157,7 +160,7 @@ The **Anycubic ACE Pro** filament system is integrated on the Kobra 2 Pro, Kobra
 
 | Printer | What's special | Status |
 |---|---|---|
-| **Creality Sonic Pad** | Dedicated 32-bit ARM build for the Sonic Pad's screen | Supported |
+| **Creality Sonic Pad** | Dedicated 32-bit ARM build for the Sonic Pad's screen. Requires [SonicPad-Debian](https://github.com/Jpe230/SonicPad-Debian) — the only firmware tested; stock Creality OpenWrt is untested | Supported |
 | **Elegoo Centauri Carbon** | Runs on-device with [OpenCentauri COSMOS](https://docs.opencentauri.cc/klipper-conversion/cosmos/cosmos/) firmware; ships with factory white-balance camera calibration | Tested |
 | **Creality Hi** | Auto-detected Cartesian bedslinger with optional CFS | Preliminary |
 
@@ -188,7 +191,7 @@ If your printer isn't in the list above, it still works — it just uses generic
 - Firmware retraction, chamber heating, input shaper, exclude-objects, and [Spoolman](filament-tracking.md) — each when detected
 - Timelapse, when the Moonraker-Timelapse plugin is installed
 
-The printer database (80+ models across Voron, RatRig, Prusa-on-Klipper, Elegoo Neptune, Sovol, Anycubic, Artillery, FLSUN, Kingroon, Zero G, and more) adds the finishing touches — your printer's name, image, bed size, and preset options. A printer that isn't in the database misses only those cosmetic and preset details; every control above still works.
+The printer database (90+ models across Voron, RatRig, Prusa-on-Klipper, Elegoo Neptune, Sovol, Anycubic, Artillery, FLSUN, Kingroon, Zero G, and more) adds the finishing touches — your printer's name, image, bed size, and preset options. A printer that isn't in the database misses only those cosmetic and preset details; every control above still works.
 
 ---
 

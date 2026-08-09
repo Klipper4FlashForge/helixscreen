@@ -350,8 +350,13 @@ TEST_CASE("tracker throttles disk persist during print", "[filament][tracker]") 
     info.total_weight_g = 1000.0f;
     ams.set_external_spool_info(info);
 
-    FilamentConsumptionTrackerTestAccess::set_persist_interval(tracker, 1); // persist on every tick
+    // start() installs the ExternalSpoolSink on its first call in the process,
+    // so the throttle override has to come after it — otherwise the registry is
+    // empty, the override silently misses, and the test measures the production
+    // 60s interval (no flush, weight stays 1000g).
     tracker.start();
+    REQUIRE(FilamentConsumptionTrackerTestAccess::set_persist_interval(tracker,
+                                                                       1)); // every tick
     lv_subject_set_int(printer.get_print_filament_used_subject(), 0);
     lv_subject_set_int(printer.get_print_state_enum_subject(),
                        static_cast<int>(PrintJobState::PRINTING));
@@ -368,7 +373,9 @@ TEST_CASE("tracker throttles disk persist during print", "[filament][tracker]") 
     REQUIRE(persisted.has_value());
     REQUIRE(persisted->remaining_weight_g == Catch::Approx(970.18f).margin(0.1));
 
-    FilamentConsumptionTrackerTestAccess::set_persist_interval(tracker, 0);
+    // Restore the production interval for whatever test runs next — the sink is
+    // a process-lifetime singleton.
+    (void)FilamentConsumptionTrackerTestAccess::set_persist_interval(tracker, 0);
     tracker.stop();
     ams.clear_external_spool_info();
 }

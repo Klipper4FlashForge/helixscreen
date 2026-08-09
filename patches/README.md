@@ -8,16 +8,18 @@ Local patches applied to git submodules. Managed by `mk/patches.mk` — run `mak
 
 ## Upstream PR Status
 
-Several patches have been submitted upstream to [lvgl/lvgl](https://github.com/lvgl/lvgl). If merged, the corresponding local patches can be dropped on the next LVGL version bump.
+Several patches have been submitted upstream to [lvgl/lvgl](https://github.com/lvgl/lvgl), from the fork at [prestonbrown/lvgl-fork](https://github.com/prestonbrown/lvgl-fork) (the LVGL PR fork — not to be confused with `lib/helix-xml`). **Do not delete that fork while any PR below is open; deleting it closes them.**
 
-| PR | Title | Patches Included | CI |
-|----|-------|-----------------|-----|
-| [#9827](https://github.com/lvgl/lvgl/pull/9827) | fix(string): NULL guard for lv_strdup | `lvgl-strdup-null-guard` | All green |
-| [#9828](https://github.com/lvgl/lvgl/pull/9828) | fix(slider): block perpendicular scroll chain while dragging | `lvgl_slider_scroll_chain` | All green |
-| [#9829](https://github.com/lvgl/lvgl/pull/9829) | fix(evdev): Protocol-A multitouch release handling | `lvgl-evdev-protocol-a` | All green |
-| [#9830](https://github.com/lvgl/lvgl/pull/9830) | fix(arc): guard against negative inner radius | `lvgl_arc_draw_guard` | All green |
-| [#9831](https://github.com/lvgl/lvgl/pull/9831) | fix(draw): comprehensive NULL safety for SW draw pipeline | `lvgl_blend_null_guard`, `lvgl_blend_buf_bounds_clip`, `lvgl_blend_color_null_guard`, `lvgl-fix-signed-unsigned-draw-coords`, `lvgl_draw_sw_label_null_guard`, `lvgl_refr_reshape_null_guard`, `lvgl_img_null_guard`, `lvgl_blur_null_guard`, `lvgl_draw_buf_oom_guard` | All green |
-| [#9832](https://github.com/lvgl/lvgl/pull/9832) | fix(fbdev): stride-based bpp, BGR auto-detect, buffer alignment, skip-unblank | `lvgl_fbdev_stride_bpp`, `lvgl-fbdev-bgr-swap`, `lvgl-fbdev-buffer-align`, `lvgl_fbdev_skip_unblank` | All green |
+A patch here is droppable only when its PR is *merged*. **Closed does not mean merged** — read the status cell before dropping anything on a version bump.
+
+| PR | Title | Patches Included | Status |
+|----|-------|-----------------|--------|
+| [#9827](https://github.com/lvgl/lvgl/pull/9827) | fix(string): NULL guard for lv_strdup | `lvgl-strdup-null-guard` | **Closed, rejected.** LVGL keeps POSIX semantics (NULL to `strdup` is UB). Never droppable — keep permanently |
+| [#9828](https://github.com/lvgl/lvgl/pull/9828) | fix(slider): block perpendicular scroll chain while dragging | `lvgl_slider_scroll_chain` | **Closed, withdrawn** — upstream master grew an equivalent drag-scoped fix. Not in v9.5.0 though: its `LV_EVENT_PRESSING` has no scroll-chain removal, so the patch is still required at our pin. Re-check when bumping past v9.5.0 |
+| [#9829](https://github.com/lvgl/lvgl/pull/9829) | fix(evdev): Protocol-A multitouch release handling | `lvgl-evdev-protocol-a` | Open, CI green |
+| [#9830](https://github.com/lvgl/lvgl/pull/9830) | fix(arc): guard against negative inner radius | `lvgl_arc_draw_guard` | Open, CI green |
+| [#9831](https://github.com/lvgl/lvgl/pull/9831) | fix(draw): comprehensive NULL safety for SW draw pipeline | `lvgl_blend_null_guard`, `lvgl_blend_buf_bounds_clip`, `lvgl_blend_color_null_guard`, `lvgl-fix-signed-unsigned-draw-coords`, `lvgl_draw_sw_label_null_guard`, `lvgl_refr_reshape_null_guard`, `lvgl_img_null_guard`, `lvgl_blur_null_guard`, `lvgl_draw_buf_oom_guard` | Open, CI green |
+| [#9832](https://github.com/lvgl/lvgl/pull/9832) | fix(fbdev): stride-based bpp, BGR auto-detect, buffer alignment, skip-unblank | `lvgl_fbdev_stride_bpp`, `lvgl-fbdev-bgr-swap`, `lvgl-fbdev-buffer-align`, `lvgl_fbdev_skip_unblank` | Open, CI green |
 
 ## LVGL Patches
 
@@ -41,7 +43,7 @@ Applied in order by `mk/patches.mk`. Grouped by subsystem.
 | `lvgl_blend_null_guard.patch` | `lv_draw_sw_blend.c` | NULL check for layer/draw_buf at blend entry | PR #9831 |
 | `lvgl_blend_buf_bounds_clip.patch` | `lv_draw_sw_blend.c` | Clip blend_area to layer->buf_area | PR #9831 |
 | `lvgl_blend_color_null_guard.patch` | `lv_draw_sw_blend_to_*.c` (16 files) | NULL dest_buf checks in all per-format blend functions | PR #9831 |
-| `lvgl-fix-signed-unsigned-draw-coords.patch` | `lv_draw.c`, `lv_draw_buf.c`, `lv_draw_sw_mask_rect.c` | Fix signed→unsigned conversion in go_to_xy, downgrade OOB log to WARN | PR #9831 |
+| `lvgl-fix-signed-unsigned-draw-coords.patch` | `lv_draw_buf.c`, `lv_draw_sw_mask_rect.c` | Clip `draw_area` to the layer's `buf_area` in `lv_draw_sw_mask_rect`, so neither edge writes out of bounds; downgrade the OOB log to WARN | PR #9831 (proposed, awaiting agreement) |
 | `lvgl_draw_sw_label_null_guard.patch` | `lv_draw_sw_letter.c` | NULL check for font/glyph before all glyph format rendering | PR #9831 |
 | `lvgl_draw_buf_oom_guard.patch` | `lv_draw_buf.c` | Remove redundant LV_ASSERT_MALLOC before NULL check | PR #9831 |
 | `lvgl_refr_reshape_null_guard.patch` | `lv_refr.c` | NULL guard on draw_buf reshape failure, skip render gracefully | PR #9831 |
@@ -52,7 +54,7 @@ Applied in order by `mk/patches.mk`. Grouped by subsystem.
 
 | Patch | File(s) | Purpose | Upstream |
 |-------|---------|---------|----------|
-| `lvgl_slider_scroll_chain.patch` | `lv_slider.c` | Block perpendicular scroll chain during drag (touchscreen UX) | PR #9828 |
+| `lvgl_slider_scroll_chain.patch` | `lv_slider.c` | Block perpendicular scroll chain during drag (touchscreen UX) | PR #9828 closed — still needed at v9.5.0 |
 | `lvgl_arc_draw_guard.patch` | `lv_draw_arc.c`, `lv_arc.c` | Guard negative inner radius and zero-radius arc invalidation | PR #9830 |
 | `lvgl-evdev-protocol-a.patch` | `lv_evdev.c` | Protocol-A touch release synthesis for Goodix GT9xx | PR #9829 |
 
@@ -60,7 +62,7 @@ Applied in order by `mk/patches.mk`. Grouped by subsystem.
 
 | Patch | File(s) | Purpose | Upstream |
 |-------|---------|---------|----------|
-| `lvgl-strdup-null-guard.patch` | `lv_string_builtin.c`, `lv_string_clib.c` | NULL input guard for lv_strdup | PR #9827 |
+| `lvgl-strdup-null-guard.patch` | `lv_string_builtin.c`, `lv_string_clib.c` | NULL input guard for lv_strdup | PR #9827 rejected — permanent |
 | `lvgl_observer_debug.patch` | `lv_observer.c` | Enhanced error logging with pointer/type info | Project-specific |
 | `lvgl_observer_remove_null_guard.patch` | `lv_observer.c` | NULL guard for observer removal | Project-specific |
 | `lvgl_obj_delete_null_guards.patch` | `lv_global.h`, `lv_event.c`, `lv_obj.c`, `lv_obj_tree.c` | Event depth counter for corruption detection, NULL guards + alignment/depth-limit checks in event_mark_deleted, async cancel before child recursion in obj_delete_core | Pending |
@@ -100,6 +102,41 @@ make apply-patches
 # Force reset and reapply all
 make reapply-patches
 
-# Regenerate a patch after manual edits in lib/lvgl/
+# Regenerate a patch after manual edits in lib/lvgl/ — SEE THE WARNING BELOW FIRST
 git -C lib/lvgl diff src/path/to/file.c > patches/patch_name.patch
 ```
+
+### Regenerating a patch whose file is shared
+
+That `git diff` recipe is only safe when exactly one patch touches the file. **Sixteen files
+are touched by more than one patch**, so for those it silently folds every other patch's hunks
+into the one being regenerated. `src/misc/lv_event.c` has seven patches; `lv_obj_event.c`,
+`lv_obj_tree.c` and `lv_linux_fbdev.c` have four each.
+
+Check before regenerating:
+
+```bash
+# how many patches claim this file?
+grep -l "diff --git a/src/path/to/file.c" patches/*.patch
+```
+
+If more than one, do not use `git diff`. Take the pristine file, apply only this patch's own
+changes to it, and diff that:
+
+```bash
+git -C lib/lvgl show v9.5.0:src/path/to/file.c > /tmp/pristine.c
+cp /tmp/pristine.c /tmp/patched.c
+# edit /tmp/patched.c with only this patch's changes
+diff -u --label a/src/path/to/file.c --label b/src/path/to/file.c /tmp/pristine.c /tmp/patched.c \
+  | sed '1i\
+diff --git a/src/path/to/file.c b/src/path/to/file.c' > patches/patch_name.patch
+```
+
+Then `make reapply-patches` from clean and confirm every patch still reports as applied. A
+folded patch usually still applies on a clean tree, so the duplication only surfaces later as
+a conflict or a doubled hunk.
+
+**Apply-check sentinels:** each patch's block in `mk/patches.mk` decides whether to apply. Some
+older blocks test "is file X dirty?", which breaks when a patch stops touching X or when another
+patch dirties it first. Prefer `git -C $(LVGL_DIR) apply --check <patch>` as the condition — it
+asks the real question and does not depend on file ownership.

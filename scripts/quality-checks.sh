@@ -244,6 +244,334 @@ fi
 echo ""
 
 # ====================================================================
+# Duplicate XML widget names
+# ====================================================================
+# Background: lv_obj_find_by_name() returns the FIRST depth-first match and
+# warns about nothing, so a name declared twice in one file makes the second
+# element unreachable — built, then silently never configured (#1136,
+# ams_panel.xml name="endless_arrows" twice).
+#
+# Per-name ratcheting baseline lives in the script (DUPLICATE_NAME_BASELINE).
+# The pre-existing entries are settings/about rows whose label/value names are
+# only ever looked up with the ROW as search parent.
+echo "🏷️  Checking for duplicate XML widget names..."
+
+if [ -f "scripts/check_duplicate_xml_names.py" ]; then
+  if [ "$STAGED_ONLY" = true ]; then
+    DUP_NAME_ARGS="--staged-only"
+  else
+    DUP_NAME_ARGS=""
+  fi
+  # shellcheck disable=SC2086
+  if python3 scripts/check_duplicate_xml_names.py $DUP_NAME_ARGS --summary >/tmp/duplicate_xml_names.out 2>&1; then
+    cat /tmp/duplicate_xml_names.out
+  else
+    cat /tmp/duplicate_xml_names.out
+    echo "   Run: python3 scripts/check_duplicate_xml_names.py --list"
+    EXIT_CODE=1
+  fi
+else
+  echo "⚠️  check_duplicate_xml_names.py not found — skipping"
+fi
+
+echo ""
+
+# ====================================================================
+# helix-xml-linter (mirrors the "XML Lint" CI gate)
+# ====================================================================
+# The linter resolves every #const reference against a committed snapshot,
+# tools/xml-linter/schema/schema.json. Adding a <px>/<color>/<string> to an XML
+# file without regenerating that snapshot leaves the new name unknown, so every
+# reference to it is an unknown-const-ref on CI while the commit sails through
+# locally — three times now (#1204 most recently).
+#
+# Kept cheap (~0.7s) three ways, because this runs on every commit:
+#   - Triggers on staged ui_xml/ and tools/xml-linter/ only. src/ui/,
+#     lib/helix-xml/ and the theme JSON reach the linter ONLY through the
+#     schema, which the fast path does not regenerate — so for a commit that
+#     touches none of the XML, re-linting would just replay the previous
+#     result. CI's XML Lint job still covers the wider path set.
+#   - Lints against the COMMITTED snapshot first. That is precisely what CI
+#     does, so a pass here means CI passes and no regen is owed. It also stops
+#     schema.json churning on commits where staleness changes no outcome.
+#   - Regenerates only on the paths where the snapshot can actually be at
+#     fault: a failing lint, or a staged edit that deletes a const definition
+#     (which would otherwise leave dangling refs resolving against a stale
+#     snapshot). Only that rare path pays the 0.5s `make` startup.
+echo "🧩 Running helix-xml-linter..."
+
+XML_LINTER_SCHEMA_PATH="tools/xml-linter/schema/schema.json"
+
+# Mirrors `make lint-xml` (mk/tools.mk) but skips make's ~0.5s startup. Always
+# lints all of ui_xml/, never just the staged files: the linter builds its
+# cross-file component registry from the paths it is handed, so a staged-only
+# run reports every component defined in an unstaged file as unknown.
+run_xml_linter() {
+  PYTHONPATH=tools/xml-linter/src python3 -m helix_xml_linter.cli \
+    --schema "$XML_LINTER_SCHEMA_PATH" --severity error ui_xml/
+}
+
+if [ "$STAGED_ONLY" = true ]; then
+  XML_LINT_TRIGGERS=$(git diff --cached --name-only --diff-filter=ACM | \
+    grep -E '^(ui_xml/.*\.xml$|tools/xml-linter/)' || true)
+else
+  XML_LINT_TRIGGERS="all"
+fi
+
+if [ -z "$XML_LINT_TRIGGERS" ]; then
+  echo "ℹ️  No XML linter inputs staged"
+elif ! command -v python3 >/dev/null 2>&1; then
+  echo "⚠️  python3 not found — skipping XML lint"
+else
+  # A deleted const can leave a dangling ref that still resolves against the
+  # stale snapshot — the one staleness a passing lint cannot rule out.
+  XML_CONST_DELETED=false
+  if [ "$STAGED_ONLY" = true ]; then
+    if git diff --cached -U0 -- 'ui_xml/*.xml' | \
+       grep -qE '^-[[:space:]]*<(px|color|string|int|percentage|font|tiny_ttf|bin|const)[[:space:]][^>]*name='; then
+      XML_CONST_DELETED=true
+    fi
+  fi
+
+  if [ "$XML_CONST_DELETED" = false ] && run_xml_linter >/tmp/lint_xml.out 2>&1; then
+    echo "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
+  else
+    # Either the lint failed or a const was deleted. Refresh the snapshot and
+    # retry — `make` here (not the raw extractor) keeps mk/tools.mk the single
+    # source of truth for the extractor's argument list.
+    SCHEMA_DIRTY_BEFORE=false
+    git diff --quiet -- "$XML_LINTER_SCHEMA_PATH" || SCHEMA_DIRTY_BEFORE=true
+
+    if make regen-xml-schema >/tmp/regen_xml_schema.out 2>&1; then
+      SCHEMA_WAS_STALE=false
+      git diff --quiet -- "$XML_LINTER_SCHEMA_PATH" || SCHEMA_WAS_STALE=true
+
+      if run_xml_linter >/tmp/lint_xml.out 2>&1; then
+        if [ "$SCHEMA_WAS_STALE" = false ]; then
+          echo "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
+        # The snapshot was the problem. Stage it with the XML that made it
+        # stale — unless it was already dirty, in which case it belongs to
+        # unrelated WIP and is not ours to stage.
+        elif [ "$AUTO_FIX" = true ] && [ "$STAGED_ONLY" = true ] && [ "$SCHEMA_DIRTY_BEFORE" = false ]; then
+          git add "$XML_LINTER_SCHEMA_PATH"
+          echo "   ✓ Regenerated and staged $XML_LINTER_SCHEMA_PATH"
+          echo "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
+        else
+          echo "⚠️  $XML_LINTER_SCHEMA_PATH was stale — regenerated in place"
+          echo "   Commit it or CI's XML Lint job will fail:"
+          echo "   git add $XML_LINTER_SCHEMA_PATH"
+          EXIT_CODE=1
+        fi
+      else
+        cat /tmp/lint_xml.out
+        echo "   Run 'make lint-xml-all' to see warnings too"
+        EXIT_CODE=1
+      fi
+    else
+      # Regeneration is best-effort — fall back to the committed snapshot so a
+      # broken extractor can't block every commit, and fail only on real lint errors.
+      cat /tmp/regen_xml_schema.out
+      echo "⚠️  Schema regeneration failed — linting against the committed snapshot"
+      if run_xml_linter >/tmp/lint_xml.out 2>&1; then
+        echo "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
+      else
+        cat /tmp/lint_xml.out
+        echo "   Run 'make lint-xml-all' to see warnings too"
+        EXIT_CODE=1
+      fi
+    fi
+  fi
+fi
+
+echo ""
+
+# ====================================================================
+# helix-xml submodule test suite (CMake + Unity + ctest)
+# ====================================================================
+# lib/helix-xml is our own submodule and carries its own standalone suite,
+# which `make test` does NOT build: helix-tests only reaches the engine through
+# the app. A pointer bump that regresses the parser is therefore invisible to
+# every other gate here.
+#
+# Kept off the hot path three ways, because a first configure clones LVGL
+# (FetchContent, minutes, needs network) and that must never land on someone's
+# unrelated commit:
+#   - Triggers on staged lib/helix-xml only. The submodule's own files are not
+#     tracked by this repo, so the one thing that CAN be staged is the pointer
+#     itself — which is exactly the change that alters what the suite tests.
+#   - Never configures. If the build tree is absent this SKIPS with an
+#     instruction to run `make test-xml` once by hand, rather than blocking a
+#     commit on a network fetch. That also means CI mode (no staged files, no
+#     build tree) skips, leaving the fetch to a job that opts into it.
+#   - No cmake, no submodule checkout: skip with a note, same as bats/xmllint.
+# When it does run, a failing suite is a hard failure like any other test gate.
+SECTION_START=$(date +%s)
+echo -n "🧩 Checking helix-xml submodule tests..."
+
+HELIX_XML_TEST_BUILD_DIR="build/helix-xml-tests"
+
+if [ "$STAGED_ONLY" = true ]; then
+  HELIX_XML_TRIGGERS=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^lib/helix-xml' || true)
+else
+  # CI mode has no staged set; the build-tree check below is what keeps this
+  # from triggering a fetch.
+  HELIX_XML_TRIGGERS="all"
+fi
+
+section_time $SECTION_START
+echo ""
+
+if [ -z "$HELIX_XML_TRIGGERS" ]; then
+  echo "ℹ️  No lib/helix-xml changes staged — skipping submodule tests"
+elif [ ! -f "lib/helix-xml/tests/CMakeLists.txt" ]; then
+  echo "⚠️  lib/helix-xml/tests not found — skipping submodule tests"
+  echo "   Run: git submodule update --init --recursive"
+elif ! command -v cmake >/dev/null 2>&1; then
+  echo "⚠️  cmake not found — skipping helix-xml submodule tests"
+  echo "   Install with: brew install cmake (macOS) or apt install cmake (Linux)"
+elif [ ! -f "$HELIX_XML_TEST_BUILD_DIR/CMakeCache.txt" ]; then
+  echo "⚠️  helix-xml test build tree not configured — skipping"
+  echo "   The first configure clones LVGL (needs network, several minutes),"
+  echo "   which is too slow to run from a commit hook."
+  echo "   Run 'make test-xml' once by hand to enable this gate."
+else
+  SECTION_START=$(date +%s)
+  if make test-xml >/tmp/test_xml.out 2>&1; then
+    printf "✅ helix-xml submodule tests passed"
+    section_time $SECTION_START
+    echo ""
+  else
+    tail -30 /tmp/test_xml.out
+    echo "❌ helix-xml submodule tests failed"
+    echo "   Run: make test-xml"
+    EXIT_CODE=1
+  fi
+fi
+
+echo ""
+
+# ====================================================================
+# Overlay width is decided at push time, never in XML (#1178)
+# ====================================================================
+# The two width constants encode destination-vs-transient-layer, and which one
+# an overlay gets depends on how the user reached it — the same
+# fan_control_overlay is a transient layer from Controls and a drill-down from
+# Settings > Fans. Hand-picking a constant in XML is what left 20 panels gapped
+# and 36 full with no rule, and made console_settings_overlay render wider than
+# the console_panel it was pushed from.
+echo "📐 Checking overlay width declarations..."
+
+if [ -f "scripts/check_overlay_width.py" ]; then
+  if [ "$STAGED_ONLY" = true ]; then
+    OVERLAY_WIDTH_ARGS="--staged-only"
+  else
+    OVERLAY_WIDTH_ARGS=""
+  fi
+  # shellcheck disable=SC2086
+  if python3 scripts/check_overlay_width.py $OVERLAY_WIDTH_ARGS >/tmp/overlay_width.out 2>&1; then
+    echo "✅ No hand-picked overlay widths"
+  else
+    cat /tmp/overlay_width.out
+    EXIT_CODE=1
+  fi
+else
+  echo "⚠️  check_overlay_width.py not found — skipping"
+fi
+
+echo ""
+
+# ====================================================================
+# Spacing and sizing go through design tokens, not raw pixel literals
+# ====================================================================
+# HelixScreen ships on 480x272 through 1440p. A literal style_pad_all="12" is
+# 12px on all of them, so a layout tuned in a 1024x600 dev window is cramped on
+# a Snapmaker U1 and lost in whitespace on a 1280x720 panel. The ladders in
+# ui_xml/globals.xml resolve per breakpoint; a literal freezes one column of the
+# ladder forever.
+#
+# Ratcheting baseline. The remaining sites are real debt — mostly 2px hairline
+# gaps and two negative overlap margins with no token to name them. The number
+# may go DOWN (convert a site, then lower this baseline) but must never go up.
+# A reasoned exception is annotated SIZE_OK, the way ui_xml/color_picker.xml
+# walks its swatch-grid content floor.
+echo "📏 Checking design-token usage (hardcoded pixels)..."
+
+if [ -f "scripts/check_hardcoded_pixels.py" ]; then
+  if python3 scripts/check_hardcoded_pixels.py --max-allowed 162 --summary \
+      >/tmp/hardcoded_pixels.out 2>&1; then
+    tail -1 /tmp/hardcoded_pixels.out
+  else
+    cat /tmp/hardcoded_pixels.out
+    echo "   Run: python3 scripts/check_hardcoded_pixels.py --list"
+    echo "   Use a token; see CLAUDE.md § Design Tokens (MANDATORY)."
+    EXIT_CODE=1
+  fi
+else
+  echo "⚠️  check_hardcoded_pixels.py not found — skipping"
+fi
+
+echo ""
+
+echo "🪟 Checking layout-variant parity..."
+
+# A ui_xml/<variant>/ file replaces its base wholesale, so nothing else notices
+# when the base grows a binding the variant never gets. Those failures are
+# silent at runtime (prestonbrown/helixscreen#1203). Always whole-tree: parity
+# is a property of a file PAIR, so staging only one half still has to be checked.
+if [ -f "scripts/check_variant_parity.py" ]; then
+  if python3 scripts/check_variant_parity.py >/tmp/variant_parity.out 2>&1; then
+    echo "✅ Layout variants match their base wiring"
+  else
+    cat /tmp/variant_parity.out
+    EXIT_CODE=1
+  fi
+else
+  echo "⚠️  check_variant_parity.py not found — skipping"
+fi
+
+echo ""
+
+echo "🎭 Checking layout-variant content drift (warning only)..."
+
+# Wiring parity (above) doesn't catch a font bump, an icon src= swap, or an
+# edited translation_tag= in a base file whose ui_xml/<variant>/ sibling
+# didn't get the same edit -- check_variant_parity.py deliberately does not
+# compare attributes. WARNING ONLY, never fails: additive divergence (e.g.
+# portrait's temperature section, absent from the landscape base) is
+# legitimate, and this gate cannot tell that apart from rot -- only a human
+# glancing at the named file/attribute can. Staged-diff scoped by design: a
+# base+variant pair staged TOGETHER is the human already keeping them in sync.
+if [ -f "scripts/check_variant_content_drift.py" ]; then
+  python3 scripts/check_variant_content_drift.py
+  # NOTE: intentionally not gating -- see docstring in the script.
+  # EXIT_CODE=1
+else
+  echo "⚠️  check_variant_content_drift.py not found — skipping"
+fi
+
+echo ""
+
+echo "📏 Checking responsive token placement..."
+
+# theme_manager_find_xml_files() skips subdirectories, so a responsive token
+# declared below the top level of ui_xml/ is never registered and every #token
+# reading it resolves to nothing, silently (prestonbrown/helixscreen#1211).
+# Always whole-tree: the scan is a regex over ~330 small files, and the rule is
+# about where a file SITS, so a staged-only view buys nothing.
+if [ -f "scripts/check_responsive_token_scope.py" ]; then
+  if python3 scripts/check_responsive_token_scope.py >/tmp/responsive_token_scope.out 2>&1; then
+    echo "✅ Responsive tokens are all top-level"
+  else
+    cat /tmp/responsive_token_scope.out
+    EXIT_CODE=1
+  fi
+else
+  echo "⚠️  check_responsive_token_scope.py not found — skipping"
+fi
+
+echo ""
+
+# ====================================================================
 # Phase 2: Code Quality Checks
 # ====================================================================
 
@@ -343,11 +671,15 @@ fi
 echo ""
 
 # XML Formatting Check
+# ui_xml/translations/ is generator output (rewritten by every build), so it is
+# excluded from FORMATTING but not from the validation pass above - the generator
+# still has to emit well-formed XML. Same exclusion as mk/format.mk; format-xml.py
+# self-guards via GENERATED_DIRS, but the xmllint fallback below does not.
 echo "📐 Checking XML formatting..."
 if [ "$STAGED_ONLY" = true ]; then
-  XML_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep "\.xml$" || true)
+  XML_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep "\.xml$" | grep -v "^ui_xml/translations/" || true)
 else
-  XML_FILES=$(find ui_xml -name "*.xml" 2>/dev/null || true)
+  XML_FILES=$(find ui_xml -name "*.xml" -not -path "ui_xml/translations/*" 2>/dev/null || true)
 fi
 
 VENV_PYTHON=".venv/bin/python"
@@ -618,6 +950,265 @@ else
   section_time $SECTION_START
   echo ""
   echo "⚠️  check_l081_anti_pattern.py not found — skipping"
+fi
+
+echo ""
+
+# ====================================================================
+# Network PII: no SSID/BSSID/MAC logged above trace level
+# ====================================================================
+# Background: the in-memory log ring is captured at debug regardless of the
+# user's configured verbosity, and leaves the machine three ways — the debug
+# bundle, the crash reporter's automatic upload, and the `ctl log` RPC. A set
+# of nearby SSIDs with signal strengths is a geolocation fingerprint, and a
+# scan enumerates the neighbours' networks too. No downstream regex can catch
+# an SSID, so the control has to be at the log call site (#1191).
+SECTION_START=$(date +%s)
+echo -n "🔒 Checking network PII in log calls..."
+
+if [ -f "scripts/check_wifi_pii_logging.py" ]; then
+  if [ "$STAGED_ONLY" = true ]; then
+    PII_ARGS="--staged-only"
+  else
+    PII_ARGS=""
+  fi
+  if python3 scripts/check_wifi_pii_logging.py $PII_ARGS >/tmp/wifi_pii_check.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    echo "✅ No network identifiers logged above trace"
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/wifi_pii_check.out
+    echo "   Run: python3 scripts/check_wifi_pii_logging.py"
+    echo "   See include/log_redact.h for the redaction helpers."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_wifi_pii_logging.py not found — skipping"
+fi
+
+echo ""
+
+# ====================================================================
+# Declarative UI: no XML-owned widget driven imperatively from C++
+# ====================================================================
+SECTION_START=$(date +%s)
+echo -n "🎨 Checking declarative UI (imperative XML-widget mutation)..."
+
+if [ -f "scripts/check_imperative_ui.py" ]; then
+  # Ratcheting baseline. These are XML widgets fetched with lv_obj_find_by_name()
+  # and then mutated from C++ instead of bound to a subject. Some predate the gate
+  # as deliberate pragmatism (the XML engine couldn't express it at the time), some
+  # are plain mistakes — both are debt. The number may go DOWN (port a site, then
+  # lower this baseline) but must never go up.
+  if python3 scripts/check_imperative_ui.py --max-allowed 384 --summary >/tmp/imperative_ui.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    tail -1 /tmp/imperative_ui.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/imperative_ui.out
+    echo "   Run: python3 scripts/check_imperative_ui.py --list"
+    echo "   Bind subjects in XML; see CLAUDE.md § CRITICAL RULES - Declarative UI."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_imperative_ui.py not found — skipping"
+fi
+
+echo ""
+
+if [ -f "scripts/check_raw_this_queue_update.py" ]; then
+  # The ratchet has reached zero (#1165) — every queue_update() in src/ now routes
+  # through an AsyncLifetimeGuard, so this is a hard gate, not a baseline.
+  # queue_update([this, ...]) runs at the next drain whether or not the owner is
+  # still alive; if the body touches a member lv_subject_t, lv_subject_notify walks
+  # a freed observer list (#1146, #1165). Keep it at 0: guard new sites with
+  # lifetime_.bg_cb() / tok.defer(), or annotate a genuine exception with
+  # // QUEUE_RAW_THIS_OK: <reason>.
+  if python3 scripts/check_raw_this_queue_update.py --max-allowed 0 --summary >/tmp/raw_this_qu.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    tail -1 /tmp/raw_this_qu.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/raw_this_qu.out
+    echo "   Run: python3 scripts/check_raw_this_queue_update.py --list"
+    echo "   Guard with lifetime_.bg_cb() / tok.defer(); see docs/devel/THREADING.md §2."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_raw_this_queue_update.py not found — skipping"
+fi
+
+echo ""
+
+SECTION_START=$(date +%s)
+echo -n "⏱️  Checking timer destructor cancels..."
+
+if [ -f "scripts/check_timer_destructor_cancel.py" ]; then
+  # Ratcheting baseline. A raw lv_timer_t* cancelled only in cleanup()/stop_*()
+  # stays armed on any teardown that destroys the owner without that call, and
+  # StaticPanelRegistry::destroy_all() runs BEFORE lv_deinit() — so the callback
+  # fires into a freed `this` (#1173, twice: the wizard auto-probe timer and the
+  # PID ETA tick). The check is transitive, so a destructor that reaches the
+  # cancel through cleanup()/detach()/deinit_subjects() passes. Timers whose
+  # callback is LifetimeToken-guarded or routed through a singleton accessor are
+  # safe by another mechanism — annotate those `// TIMER_DTOR_OK: <reason>`.
+  if python3 scripts/check_timer_destructor_cancel.py --max-allowed 3 >/tmp/timer_dtor.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    tail -1 /tmp/timer_dtor.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/timer_dtor.out
+    echo "   Run: python3 scripts/check_timer_destructor_cancel.py --list"
+    echo "   Cancel from the destructor via lv_timer_cancel_safe(); see CLAUDE.md § Threading."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_timer_destructor_cancel.py not found — skipping"
+fi
+
+echo ""
+
+SECTION_START=$(date +%s)
+echo -n "⏱️  Checking grid cell-metrics single source..."
+
+if [ -f "scripts/check_grid_metrics_single_source.py" ]; then
+  # Every drag/resize/preview/lattice path needs the same cols/rows/cell size,
+  # and each independent computation is free to drift from the others on
+  # gutter handling or int-vs-float rounding. GridEditMode::current_metrics()
+  # is the one place allowed to ask GridLayout for the grid's dimensions; this
+  # caps GridLayout::get_cols/get_rows/get_dimensions call sites at 2 (the pair
+  # inside current_metrics() itself) so a new call site cannot grow a second copy.
+  if python3 scripts/check_grid_metrics_single_source.py >/tmp/grid_metrics.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    tail -1 /tmp/grid_metrics.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/grid_metrics.out
+    echo "   Take a helix::CellMetrics from GridEditMode::current_metrics() instead."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_grid_metrics_single_source.py not found — skipping"
+fi
+
+echo ""
+
+# ====================================================================
+# spdlog only: no printf/cout/cerr/LV_LOG_ outside CLI subcommands
+# ====================================================================
+SECTION_START=$(date +%s)
+echo -n "📢 Checking spdlog-only logging..."
+
+# stdout IS the product in these files (CLI subcommands, splash, demo, ctl client),
+# so printing there is correct. Everywhere else, logging goes through spdlog.
+LOG_ALLOW='src/system/cli_args.cpp|src/application/detect_printer_cmd.cpp|src/helix_splash.cpp|src/lvgl-demo/|src/remote/remote_client.cpp'
+LOG_HITS=$(grep -rnE '\bprintf\(|std::cout|std::cerr|\bLV_LOG_[A-Z]+\(' src include 2>/dev/null \
+             | grep -vE "$LOG_ALLOW" || true)
+if [ -z "$LOG_HITS" ]; then
+  section_time $SECTION_START
+  echo ""
+  echo "✅ spdlog-only: no stray printf/cout/LV_LOG_"
+else
+  section_time $SECTION_START
+  echo ""
+  echo "$LOG_HITS"
+  echo "❌ Use spdlog::info/debug/warn/error instead (docs/devel/LOGGING.md)."
+  echo "   stdout printing belongs only in CLI subcommands."
+  EXIT_CODE=1
+fi
+
+echo ""
+
+# ====================================================================
+# Design tokens + no private LVGL APIs
+# ====================================================================
+SECTION_START=$(date +%s)
+echo -n "🎨 Checking design tokens and LVGL API surface..."
+
+TOKEN_EXIT=0
+
+# Private LVGL internals. remote_control_server.cpp walks LVGL's XML subject
+# linked list for `ctl list_subjects` — there is no public API for that.
+PRIV=$(grep -rnoE '\b_lv_[a-z_]+\(' src include 2>/dev/null \
+         | grep -v 'src/remote/remote_control_server.cpp' || true)
+if [ -n "$PRIV" ]; then
+  echo ""
+  echo "$PRIV"
+  echo "❌ Private LVGL API (_lv_*) — use the public API."
+  TOKEN_EXIT=1
+fi
+
+# Hardcoded colors. Exempt: theme_manager (it parses hex into tokens, definitional),
+# procedural canvas renderers, and helix-splash (a separate binary that does not
+# link ThemeManager). Ratcheting baseline — port these to theme_manager_get_color().
+HEX_ALLOW='theme_manager|src/rendering/|canvas|confetti|glyph|src/helix_splash.cpp'
+HEX_BASELINE=34
+HEX_COUNT=$(grep -rn 'lv_color_hex(0x' src include 2>/dev/null | grep -vcE "$HEX_ALLOW" || true)
+if [ "$HEX_COUNT" -gt "$HEX_BASELINE" ]; then
+  echo ""
+  grep -rn 'lv_color_hex(0x' src include 2>/dev/null | grep -vE "$HEX_ALLOW" || true
+  echo "❌ Hardcoded colors: $HEX_COUNT exceeds baseline ($HEX_BASELINE)."
+  echo "   Use theme_manager_get_color(\"token\") or an XML design token."
+  TOKEN_EXIT=1
+fi
+
+section_time $SECTION_START
+if [ "$TOKEN_EXIT" -eq 0 ]; then
+  echo ""
+  if [ "$HEX_COUNT" -lt "$HEX_BASELINE" ]; then
+    echo "✅ Design tokens: $HEX_COUNT hardcoded colors (baseline $HEX_BASELINE — ratchet down)"
+  else
+    echo "✅ Design tokens: $HEX_COUNT == baseline ($HEX_BASELINE), no private LVGL APIs"
+  fi
+else
+  echo ""
+  EXIT_CODE=1
+fi
+
+echo ""
+
+# ====================================================================
+# Agent-facing docs: references resolve, doc index is complete
+# ====================================================================
+SECTION_START=$(date +%s)
+echo -n "📚 Checking doc references and index..."
+
+if [ -f "scripts/check_doc_refs.py" ]; then
+  if python3 scripts/check_doc_refs.py >/tmp/doc_refs.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/doc_refs.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/doc_refs.out
+    echo "   Run: python3 scripts/check_doc_refs.py"
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_doc_refs.py not found — skipping"
 fi
 
 echo ""

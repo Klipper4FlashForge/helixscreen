@@ -52,7 +52,6 @@ The top of every overlay XML looks like this:
 <component>
   <view name="retraction_settings_overlay"
         extends="overlay_panel"
-        width="#overlay_panel_width_full"
         title="Retraction Settings"
         title_tag="Retraction Settings"
         bg_color="#screen_bg">
@@ -69,7 +68,8 @@ Notes:
 
 - **`extends="overlay_panel"`** — inherits the standard overlay chrome: title bar, back button, backdrop. You almost always want this.
 - **`title_tag="..."`** — the translation key. `title` is the English source; `title_tag` is what gets looked up in other languages. Both must be present for user-visible strings.
-- **`#overlay_panel_width_full`, `#space_lg`, `#screen_bg`** — design tokens. Never hardcode pixel widths or hex colors.
+- **No `width`** — overlay width is not yours to set. `NavigationManager::push_overlay()` decides it from how the user reached the overlay: full width inside Settings, gapped when it is a tool opened over something else. See `include/overlay_class.h`.
+- **`#space_lg`, `#screen_bg`** — design tokens. Never hardcode pixel spacing or hex colors.
 - **Inner `<lv_obj name="overlay_content">`** — the scrollable content area. The `overlay_panel` base provides the frame; you provide what's inside.
 
 Inside the content area, each setting is structured consistently (lines 37–66 of the real file, slightly abbreviated):
@@ -375,7 +375,7 @@ AMS spans roughly 1700 lines of C++ (`src/ui/ui_panel_ams.cpp`) and 11 XML files
 | `ams_current_tool.xml` | "Currently loaded" display at the top |
 | `ams_device_section_detail.xml` | Detail pane showing humidity, temp, etc. |
 | `ams_device_operations.xml` | Action buttons (load, unload, purge) |
-| `ams_edit_modal.xml` | Edit filament assigned to a slot |
+| `ams_edit_overlay.xml` | Edit filament assigned to a slot |
 | `ams_context_menu.xml` | Long-press context menu |
 | `ams_loading_error_modal.xml` | Error state dialog |
 | `ams_environment_overlay.xml` | Humidity / temp details |
@@ -418,7 +418,7 @@ If you're adding a new filament backend, the pattern is: implement a backend cla
 
 ### 5. Modals and overlays are peers, not children
 
-`ams_edit_modal.xml` and `ams_environment_overlay.xml` are standalone classes (`Modal` subclass and `OverlayBase` subclass respectively). The main AMS panel launches them via `NavigationManager::push_overlay()` or `Modal::show()` — it doesn't own their widgets. This keeps each concern bounded.
+`ams_loading_error_modal.xml` and `ams_edit_overlay.xml` are standalone classes (`AmsLoadingErrorModal : Modal` and `AmsEditOverlay : OverlayBase` respectively). The main AMS panel launches them via `NavigationManager::push_overlay()` or `Modal::show()` — it doesn't own their widgets. This keeps each concern bounded.
 
 ---
 
@@ -446,11 +446,11 @@ make -j                              # build binary only
 make test-run                        # build and run the full test suite
 ```
 
-For UI iteration without rebuilding after every XML edit:
+For UI iteration without rebuilding after every XML edit — hot reload is ON by default for native builds, so just run:
 
 ```bash
-HELIX_HOT_RELOAD=1 ./build/bin/helix-screen --test -vv
-# edit XML → save → switch panels → see changes live
+./build/bin/helix-screen --test -vv
+# edit XML → save → active panel rebuilds in place within ~500ms
 ```
 
 Test at multiple breakpoints before submitting. At minimum: `-s 480x320`, `-s 800x480`, `-s 1024x600`. See `UI_CONTRIBUTOR_GUIDE.md` § Screen Breakpoints.

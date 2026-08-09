@@ -16,8 +16,8 @@
 #include "app_globals.h"
 #include "config.h"
 #include "format_utils.h"
-#include "lvgl/src/others/translation/lv_translation.h"
 #include "i_moonraker_api.h"
+#include "lvgl/src/others/translation/lv_translation.h"
 #include "observer_factory.h"
 #include "printer_state.h"
 #include "subject_managed_panel.h"
@@ -304,8 +304,25 @@ void MotionPanel::on_activate() {
 void MotionPanel::on_deactivate() {
     spdlog::debug("[{}] on_deactivate()", get_name());
 
+    // OverlayBase::on_deactivate() invalidates lifetime_, dropping any
+    // in-flight ack callback — fully reset the coalescer so it can't get
+    // stuck in_flight forever, and re-arm the edge warnings.
+    jog_coalescer_.reset();
+    x_edge_warned_ = false;
+    y_edge_warned_ = false;
+
     // Call base class
     OverlayBase::on_deactivate();
+}
+
+void MotionPanel::on_ui_destroyed() {
+    // Null raw child pointers so persistent observers (jog_ready_observer_
+    // dereferences jog_pad_ on every connection/klippy flap) can't UAF if the
+    // overlay widget tree is ever destroyed (destroy-on-close, parent screen
+    // teardown). Peers do the same — see BedMeshPanel::on_ui_destroyed.
+    jog_pad_ = nullptr;
+    parent_screen_ = nullptr;
+    jog_coalescer_.reset();
 }
 
 // ============================================================================
@@ -449,14 +466,18 @@ void MotionPanel::register_position_observers() {
                                             lv_subject_set_int(&self->motion_y_homed_, y);
                                         if (lv_subject_get_int(&self->motion_z_homed_) != z)
                                             lv_subject_set_int(&self->motion_z_homed_, z);
+
+                                        // Recolor the custom-drawn center home button:
+                                        // warning tint until all axes are homed.
+                                        if (self->jog_pad_)
+                                            ui_jog_pad_set_homed(self->jog_pad_, x && y && z);
                                     });
 
     // Dim/enable the jog pad to track connection + klippy readiness. The same
     // subject greys the surrounding panel content via motion_panel.xml, but the
     // custom-drawn jog pad has no XML binding, so drive it here.
     jog_ready_observer_ = observe_int_sync<MotionPanel>(
-        get_printer_state().get_nav_buttons_enabled_subject(), this,
-        [](MotionPanel* self, int) {
+        get_printer_state().get_nav_buttons_enabled_subject(), this, [](MotionPanel* self, int) {
             if (!self->subjects_initialized_)
                 return;
             self->update_jog_pad_enabled();
@@ -560,17 +581,7 @@ void MotionPanel::handle_z_button(const char* name) {
 
     spdlog::debug("[{}] Z jog: {:+.0f}mm (bed_moves={})", get_name(), distance, bed_moves_);
 
-    IMoonrakerAPI* api = get_moonraker_api();
-    if (api) {
-        // Z feedrate: 600 mm/min (10 mm/s) - slower for safety
-        constexpr double Z_FEEDRATE = 600.0;
-
-        api->motion().move_axis(
-            'Z', distance, Z_FEEDRATE, []() { spdlog::debug("[MotionPanel] Z jog complete"); },
-            [](const MoonrakerError& err) {
-                NOTIFY_ERROR(lv_tr("Z jog failed: {}"), clean_gcode_error(err.user_message()));
-            });
-    }
+    dispatch_jog({0.0, 0.0, distance});
 }
 
 // ============================================================================
@@ -658,56 +669,86 @@ void MotionPanel::jog(JogDirection direction, float distance_mm) {
         break;
     }
 
-    // Soft-stop: refuse moves that would exceed the kinematic envelope
-    // (toolhead.axis_minimum / axis_maximum). Skip when bounds aren't known
-    // yet (fresh connect) or the axis isn't homed — current_x/y is only
-    // meaningful after homing.
+    // Soft-stop: clamp against the PREDICTED position (current + uncommitted
+    // coalescer travel) so queued taps can't walk past the envelope. Skip when
+    // bounds aren't known yet (fresh connect) or the axis isn't homed.
     helix::AxisBounds bounds = get_printer_state().get_axis_bounds();
     const char* homed_axes = lv_subject_get_string(get_printer_state().get_homed_axes_subject());
     bool x_homed = homed_axes && strchr(homed_axes, 'x') != nullptr;
     bool y_homed = homed_axes && strchr(homed_axes, 'y') != nullptr;
-    if (dx != 0.0f && bounds.has_x && x_homed) {
-        float target = current_x_ + dx;
-        if (target < bounds.x_min || target > bounds.x_max) {
-            spdlog::debug("[{}] Suppressing X jog: {:.2f}+{:+.2f}={:.2f} outside [{:.2f},{:.2f}]",
-                          get_name(), current_x_, dx, target, bounds.x_min, bounds.x_max);
-            NOTIFY_WARNING(lv_tr("X jog blocked at bed edge"));
-            return;
+
+    double ddx = static_cast<double>(dx);
+    double ddy = static_cast<double>(dy);
+
+    if (ddx != 0.0 && bounds.has_x && x_homed) {
+        ddx = helix::clamp_jog_delta(current_x_, jog_coalescer_.uncommitted_x(), ddx, bounds.x_min,
+                                     bounds.x_max);
+        // Epsilon, not == 0.0: clamping against a predicted position that is a
+        // hair inside the envelope returns a sub-micron residual (199.9999995,
+        // +1, max=200 -> ~5e-7). That is a blocked jog, not a real move — an
+        // exact compare skipped the warning and dispatched a no-op instead.
+        if (std::abs(ddx) <= helix::AxisMove::kEpsilonMm) {
+            ddx = 0.0;
+            if (!x_edge_warned_) {
+                NOTIFY_WARNING(lv_tr("X jog blocked at bed edge"));
+                x_edge_warned_ = true;
+            }
+        } else {
+            x_edge_warned_ = false;
         }
     }
-    if (dy != 0.0f && bounds.has_y && y_homed) {
-        float target = current_y_ + dy;
-        if (target < bounds.y_min || target > bounds.y_max) {
-            spdlog::debug("[{}] Suppressing Y jog: {:.2f}+{:+.2f}={:.2f} outside [{:.2f},{:.2f}]",
-                          get_name(), current_y_, dy, target, bounds.y_min, bounds.y_max);
-            NOTIFY_WARNING(lv_tr("Y jog blocked at bed edge"));
-            return;
+    if (ddy != 0.0 && bounds.has_y && y_homed) {
+        ddy = helix::clamp_jog_delta(current_y_, jog_coalescer_.uncommitted_y(), ddy, bounds.y_min,
+                                     bounds.y_max);
+        if (std::abs(ddy) <= helix::AxisMove::kEpsilonMm) {
+            ddy = 0.0;
+            if (!y_edge_warned_) {
+                NOTIFY_WARNING(lv_tr("Y jog blocked at bed edge"));
+                y_edge_warned_ = true;
+            }
+        } else {
+            y_edge_warned_ = false;
         }
     }
 
-    // Send jog commands via Moonraker API
+    if (ddx == 0.0 && ddy == 0.0) {
+        return;
+    }
+    dispatch_jog({ddx, ddy, 0.0});
+}
+
+void MotionPanel::dispatch_jog(const helix::AxisMove& delta) {
+    if (auto immediate = jog_coalescer_.on_tap(delta)) {
+        send_jog_move(*immediate);
+    } else {
+        spdlog::debug("[{}] Jog coalesced: pending x={:+.2f} y={:+.2f} z={:+.2f}", get_name(),
+                      jog_coalescer_.uncommitted_x(), jog_coalescer_.uncommitted_y(),
+                      jog_coalescer_.uncommitted_z());
+    }
+}
+
+void MotionPanel::send_jog_move(const helix::AxisMove& move) {
     IMoonrakerAPI* api = get_moonraker_api();
-    if (api) {
-        // Default feedrate: 6000 mm/min (100 mm/s) for XY jog moves
-        constexpr double JOG_FEEDRATE = 6000.0;
-
-        if (dx != 0.0f) {
-            api->motion().move_axis(
-                'X', static_cast<double>(dx), JOG_FEEDRATE,
-                []() { spdlog::debug("[MotionPanel] X jog complete"); },
-                [](const MoonrakerError& err) {
-                    NOTIFY_ERROR(lv_tr("X jog failed: {}"), clean_gcode_error(err.user_message()));
-                });
-        }
-        if (dy != 0.0f) {
-            api->motion().move_axis(
-                'Y', static_cast<double>(dy), JOG_FEEDRATE,
-                []() { spdlog::debug("[MotionPanel] Y jog complete"); },
-                [](const MoonrakerError& err) {
-                    NOTIFY_ERROR(lv_tr("Y jog failed: {}"), clean_gcode_error(err.user_message()));
-                });
-        }
+    if (!api) {
+        jog_coalescer_.on_error();
+        return;
     }
+    // XY: 6000 mm/min (100 mm/s); Z: 600 mm/min (10 mm/s) — same as before.
+    constexpr double JOG_FEEDRATE = 6000.0;
+    constexpr double Z_FEEDRATE = 600.0;
+
+    api->motion().move_relative(
+        move.dx, move.dy, move.dz, JOG_FEEDRATE, Z_FEEDRATE,
+        lifetime_.bg_cb("MotionPanel::on_jog_ack",
+                        [this]() {
+                            if (auto flush = jog_coalescer_.on_ack()) {
+                                send_jog_move(*flush);
+                            }
+                        }),
+        lifetime_.bg_cb("MotionPanel::on_jog_error", [this](const MoonrakerError& err) {
+            jog_coalescer_.on_error();
+            NOTIFY_ERROR(lv_tr("Jog failed: {}"), clean_gcode_error(err.user_message()));
+        }));
 }
 
 void MotionPanel::home(char axis) {

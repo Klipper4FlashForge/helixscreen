@@ -44,6 +44,12 @@ class AmsOverviewPanel : public PanelBase {
     [[nodiscard]] const char* get_name() const override {
         return "AMS Overview";
     }
+
+    /// Multi-unit filament overview — same reasoning as AmsPanel: a place
+    /// users park, so full width, and its drill-downs inherit that. #1178
+    [[nodiscard]] bool is_destination() const override {
+        return true;
+    }
     [[nodiscard]] const char* get_xml_component_name() const override {
         return "ams_overview_panel";
     }
@@ -120,8 +126,10 @@ class AmsOverviewPanel : public PanelBase {
 
     // === Setup Helpers ===
     void create_unit_cards(const AmsSystemInfo& info);
-    void update_unit_card(UnitCard& card, const AmsUnit& unit, int current_slot);
-    void create_mini_bars(UnitCard& card, const AmsUnit& unit, int current_slot);
+    // The mini bars take no current_slot: the active-lane outline comes from the
+    // per-slot active-loaded subject, not from comparing against current_slot.
+    void update_unit_card(UnitCard& card, const AmsUnit& unit);
+    void create_mini_bars(UnitCard& card, const AmsUnit& unit);
     void refresh_system_path(const AmsSystemInfo& info, int current_slot);
 
     // === Detail View Helpers ===

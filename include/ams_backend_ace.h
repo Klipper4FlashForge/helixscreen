@@ -86,12 +86,22 @@ class AmsBackendAce : public AmsSubscriptionBackend {
     [[nodiscard]] PathSegment get_slot_filament_segment(int slot_index) const override;
     [[nodiscard]] PathSegment infer_error_segment() const override;
 
+    /// Every parse path that resolves the seated slot now stamps
+    /// SlotStatus::LOADED on it (see apply_seated_slot_stamp_locked), so the
+    /// per-slot status answers the per-slot question. Before that the only
+    /// LOADED write lived in load_filament()'s gcode-success callback and the
+    /// next status frame erased it, leaving the inherited
+    /// can_unload_from_toolhead() false on every ACE slot (#1199).
+    [[nodiscard]] bool has_per_slot_loaded_authority() const override {
+        return true;
+    }
+
     // ========================================================================
     // Filament Operations
     // ========================================================================
 
     AmsError load_filament(int slot_index) override;
-    AmsError unload_filament(int slot_index = -1) override;
+    AmsError unload_filament(int slot_index) override;
     AmsError select_slot(int slot_index) override;
     AmsError change_tool(int tool_number) override;
 
@@ -242,13 +252,17 @@ class AmsBackendAce : public AmsSubscriptionBackend {
      * of parsing zero slots off the manager (#1069).
      *
      * @param status The `result.status` object from printer.objects.query
-     * @param matched_key Out: set to the picked key ("filament_hub"/"ace") when
-     *        a slot-bearing object is found; untouched otherwise. May be null.
+     * @param matched_key Out: set to the picked key ("filament_hub"/"ace"/
+     *        "ace_instance_N") when a slot-bearing object is found; left
+     *        unchanged otherwise. May be null. Owned std::string so the key
+     *        stays valid regardless of the source json's lifetime (the
+     *        `ace_instance_N` keys are dynamic, not string literals).
      * @return Pointer to the slot-bearing object (borrowed from @p status), or
-     *         nullptr if neither filament_hub nor ace carries a slots array.
+     *         nullptr if no filament_hub/ace/ace_instance_N carries a slots
+     *         array.
      */
     static const nlohmann::json* select_slot_bearing_object(const nlohmann::json& status,
-                                                            const char** matched_key);
+                                                            std::string* matched_key);
 
     /**
      * @brief Map an ACE slot status string to a SlotStatus.
@@ -326,6 +340,42 @@ class AmsBackendAce : public AmsSubscriptionBackend {
     // ACE's single signal is too coarse to distinguish the two cases.
     void check_hardware_event_clear(SlotInfo& slot, int slot_index, SlotStatus previous_status,
                                     SlotStatus current_status);
+
+    /// Mutable slot lookup. ACE is always single-unit, and the two REST
+    /// parsers size units[0].slots independently, so index directly rather
+    /// than through AmsSystemInfo::get_slot_global() — that walks
+    /// first_slot_global_index/slot_count, which parse_slots_response only
+    /// refreshes when the slot count actually changes. Caller holds mutex_.
+    SlotInfo* mutable_slot_locked(int slot_index);
+
+    /// Undo the derived LOADED stamp, restoring the status the last parse
+    /// wrote. Caller holds mutex_. Runs at the TOP of every parse so
+    /// check_hardware_event_clear, prev_slot_status_ and
+    /// parse_slots_response's `status != slot.status` change detection all see
+    /// firmware truth — without it, /slots would report a change on every
+    /// 500 ms poll forever.
+    void clear_seated_slot_stamp_locked();
+
+    /// Re-derive the LOADED stamp from the arbitrated aggregate and apply it.
+    /// Caller holds mutex_. Runs at the BOTTOM of every parse, and after the
+    /// optimistic aggregate writes in load_filament()/unload_filament().
+    ///
+    /// Deliberately keyed on the aggregate rather than on the per-slot status
+    /// string. Native GoKlipper's per-slot vocabulary
+    /// (empty/ready/preload/running/runout) has no seated state at all — it
+    /// answers that with the separate top-level `current_filament` — and
+    /// community ValgACE's "loaded" sits in the same enumeration as
+    /// "available"/"ready", the same slot-local trap as AFC's lane status
+    /// "Loaded" meaning loaded-to-hub. slot_status_from_string() therefore
+    /// stays as it is; the seated slot is whichever one parse_ace_object /
+    /// parse_status_response arbitrated to, and a HUB backend has exactly one.
+    void apply_seated_slot_stamp_locked();
+
+    /// Slot index the LOADED stamp currently sits on, and the status the parse
+    /// had written there before it was overwritten. -1 / UNKNOWN when no stamp
+    /// is outstanding.
+    int seated_stamp_slot_ = -1;
+    SlotStatus seated_stamp_prev_ = SlotStatus::UNKNOWN;
 
     // Shared helper used by every override-clear path (hardware event and
     // explicit user request). Caller must hold mutex_. Erases

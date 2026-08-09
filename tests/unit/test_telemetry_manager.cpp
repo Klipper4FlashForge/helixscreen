@@ -13,6 +13,7 @@
 
 #include "ui_update_queue.h"
 
+#include "async_lifetime_guard.h"
 #include "config.h"
 #include "system/telemetry_manager.h"
 
@@ -90,6 +91,15 @@ class TelemetryTestFixture {
     }
 
     ~TelemetryTestFixture() {
+        // Drain BEFORE shutdown(), while the subject these callbacks write is
+        // still alive. set_enabled() defers its subject write, so the ctor's
+        // set_enabled(false) — plus any set_enabled() in the test body — is
+        // still queued at this point. Leaving them for whichever fixture
+        // drained next is what made TelemetryManager::set_enabled the single
+        // largest producer in the cross-test leak report: 185 callbacks across
+        // 96 tests, 21% of the suite total (#1166).
+        helix::ui::UpdateQueue::instance().drain();
+
         TelemetryManager::instance().shutdown();
 
         // Clean up temp directory - best effort
@@ -374,6 +384,53 @@ TEST_CASE_METHOD(TelemetryTestFixture, "Session event: has app section with vers
     REQUIRE(event["app"].contains("platform"));
     REQUIRE(event["app"]["version"].is_string());
     REQUIRE(event["app"]["platform"].is_string());
+}
+
+TEST_CASE_METHOD(TelemetryTestFixture, "Session event: app.zip_tool reports zip capability",
+                 "[telemetry][session]") {
+    auto& tm = TelemetryManager::instance();
+    tm.set_enabled(true);
+
+    tm.record_session();
+    REQUIRE(tm.queue_size() == 1);
+    auto event = tm.get_queue_snapshot()[0];
+
+    // Gates the .tar.gz retirement (#993): combined with app.version this says
+    // whether a device could survive a zip-only release. Must be present even
+    // in this test binary, which has no DisplayManager -- the field lives
+    // outside that guard on purpose.
+    REQUIRE(event.contains("app"));
+    REQUIRE(event["app"].contains("zip_tool"));
+    REQUIRE(event["app"]["zip_tool"].is_string());
+
+    const std::string zip_tool = event["app"]["zip_tool"];
+    const std::set<std::string> legal_values{"unzip", "python", "none"};
+    INFO("zip_tool was: " << zip_tool);
+    REQUIRE(legal_values.count(zip_tool) == 1);
+}
+
+TEST_CASE_METHOD(TelemetryTestFixture, "Session event: app.zip_tool is on EVERY session event",
+                 "[telemetry][session]") {
+    auto& tm = TelemetryManager::instance();
+    tm.set_enabled(true);
+
+    // The probe is cached in a function-local static so it runs at most once
+    // per process (it can exec python3, which is slow on MIPS). Caching must
+    // not turn the field into a first-session-only field, and both sessions
+    // must agree on the answer.
+    tm.record_session();
+    tm.record_session();
+
+    auto snapshot = tm.get_queue_snapshot();
+    REQUIRE(snapshot.size() == 2);
+
+    const std::set<std::string> legal_values{"unzip", "python", "none"};
+    for (const auto& event : snapshot) {
+        REQUIRE(event["app"].contains("zip_tool"));
+        const std::string zip_tool = event["app"]["zip_tool"];
+        REQUIRE(legal_values.count(zip_tool) == 1);
+    }
+    REQUIRE(snapshot[0]["app"]["zip_tool"] == snapshot[1]["app"]["zip_tool"]);
 }
 
 TEST_CASE_METHOD(TelemetryTestFixture, "Session event: does NOT contain PII fields",
@@ -2180,4 +2237,84 @@ TEST_CASE_METHOD(TelemetryTestFixture,
     // But the panels object should be empty (no valid panel name)
     REQUIRE(event.contains("panels"));
     REQUIRE(event["panels"].empty());
+}
+
+// ============================================================================
+// AsyncLifetime Skip Snapshot [telemetry][lifetime]
+// ============================================================================
+
+TEST_CASE_METHOD(TelemetryTestFixture, "AsyncLifetime snapshot: empty window is not enqueued",
+                 "[telemetry][lifetime]") {
+    auto& tm = TelemetryManager::instance();
+    tm.set_enabled(true);
+    tm.clear_queue();
+    // Drain whatever a prior test left in the counter store; take_snapshot()
+    // releases every slot, so discarding the result is the reset.
+    (void)helix::async_lifetime::take_snapshot();
+
+    tm.record_async_lifetime_snapshot();
+
+    // No callbacks were skipped — the event carries no signal, so it is
+    // suppressed rather than burning an upload slot.
+    REQUIRE(tm.queue_size() == 0);
+}
+
+TEST_CASE_METHOD(TelemetryTestFixture,
+                 "AsyncLifetime snapshot: window carries the per-tag breakdown",
+                 "[telemetry][lifetime]") {
+    auto& tm = TelemetryManager::instance();
+    tm.set_enabled(true);
+    tm.clear_queue();
+    // Drain whatever a prior test left in the counter store; take_snapshot()
+    // releases every slot, so discarding the result is the reset.
+    (void)helix::async_lifetime::take_snapshot();
+
+    helix::async_lifetime::note_skipped("HotProducer::cb");
+    helix::async_lifetime::note_skipped("HotProducer::cb");
+    helix::async_lifetime::note_skipped("QuietProducer::cb");
+
+    tm.record_async_lifetime_snapshot();
+
+    REQUIRE(tm.queue_size() == 1);
+    auto event = tm.get_queue_snapshot()[0];
+    REQUIRE(event["event"] == "async_lifetime_skips");
+    REQUIRE(event["total_skips"] == 3);
+    REQUIRE(event["other_count"] == 0);
+    REQUIRE(event["tags"].size() == 2);
+    // Sorted descending: the hot producer leads. Identifying *which* owner is
+    // dying with pending work is the entire point of the event.
+    REQUIRE(event["tags"][0]["tag"] == "HotProducer::cb");
+    REQUIRE(event["tags"][0]["count"] == 2);
+    REQUIRE(event["tags"][1]["tag"] == "QuietProducer::cb");
+    REQUIRE(event["tags"][1]["count"] == 1);
+}
+
+TEST_CASE_METHOD(TelemetryTestFixture,
+                 "AsyncLifetime snapshot: counters drain even while telemetry is disabled",
+                 "[telemetry][lifetime]") {
+    auto& tm = TelemetryManager::instance();
+    tm.set_enabled(false);
+    tm.clear_queue();
+    // Drain whatever a prior test left in the counter store; take_snapshot()
+    // releases every slot, so discarding the result is the reset.
+    (void)helix::async_lifetime::take_snapshot();
+
+    helix::async_lifetime::note_skipped("WhileDisabled::cb");
+    tm.record_async_lifetime_snapshot();
+    REQUIRE(tm.queue_size() == 0);
+
+    // Opting in must not inherit the disabled span's counts. If the drain were
+    // gated behind the enabled check, this first post-opt-in event would report
+    // a whole-session total mislabeled as one window.
+    tm.set_enabled(true);
+    tm.clear_queue();
+
+    helix::async_lifetime::note_skipped("AfterOptIn::cb");
+    tm.record_async_lifetime_snapshot();
+
+    REQUIRE(tm.queue_size() == 1);
+    auto event = tm.get_queue_snapshot()[0];
+    REQUIRE(event["total_skips"] == 1);
+    REQUIRE(event["tags"].size() == 1);
+    REQUIRE(event["tags"][0]["tag"] == "AfterOptIn::cb");
 }

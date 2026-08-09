@@ -22,101 +22,48 @@
     - Dynamic styling based on slot state (highlight, opacity)
   -->
   <view name="ams_slot_view"
-        extends="lv_obj"
-        width="content"
-        height="content"
-        flex_flow="column"
-        style_flex_main_place="start"
-        style_flex_cross_place="center"
-        style_flex_track_place="center"
-        style_pad_row="#space_xs"
-        style_pad_all="2"
-        style_bg_opa="0"
-        style_border_width="0"
-        clickable="true"
-        scrollable="false"
-        overflow_visible="true">
+        extends="lv_obj" width="content" height="content" flex_flow="column" style_flex_main_place="start"
+        style_flex_cross_place="center" style_flex_track_place="center" style_pad_row="#space_xs" style_pad_all="2"
+        style_bg_opa="0" style_border_width="0" clickable="true" scrollable="false" overflow_visible="true">
 
     <!-- Material label at top (PLA, PETG, etc.) -->
     <text_small name="material_label"
-                text="--"
-                style_text_color="#text"
-                style_text_letter_space="1"
-                clickable="true"
-                event_bubble="true"/>
+                text="--" style_text_color="#text" style_text_letter_space="1" clickable="true" event_bubble="true"/>
 
     <!-- Spool container - holds canvas (created in C++) and badges -->
     <!-- Size is set dynamically in C++ based on space_lg token -->
     <lv_obj name="spool_container"
-            width="72"
-            height="72"
-            style_bg_opa="0"
-            style_border_width="0"
-            style_pad_all="0"
-            scrollable="false"
-            overflow_visible="true"
-            event_bubble="true">
+            width="72" height="72" style_bg_opa="0" style_border_width="0" style_pad_all="0" scrollable="false"
+            overflow_visible="true" event_bubble="true">
 
       <!-- Status badge (bottom-right) - shows slot number with status color.
            clickable="false" so taps on the badge bubble up to the slot click
            handler (context menu) instead of being absorbed. -->
       <!-- Min 20px circle for single digits, auto-widens for 2+ digits -->
       <lv_obj name="status_badge"
-              width="content"
-              height="#ams_slot_status_badge_size"
-              style_min_width="#ams_slot_status_badge_size"
-              align="bottom_right"
-              style_translate_x="-2"
-              style_translate_y="-2"
-              style_radius="10"
-              style_bg_color="#ams_badge_bg"
-              style_bg_opa="255"
-              style_border_width="#ams_slot_badge_border_w"
-              style_border_color="#card_bg"
-              style_pad_left="#ams_slot_badge_pad_h"
-              style_pad_right="#ams_slot_badge_pad_h"
-              style_pad_top="0"
-              style_pad_bottom="0"
-              scrollable="false"
-              clickable="false"
-              event_bubble="true">
+              width="content" height="#ams_slot_status_badge_size" style_min_width="#ams_slot_status_badge_size"
+              align="bottom_right" style_translate_x="-2" style_translate_y="-2" style_radius="10"
+              style_bg_color="#ams_badge_bg" style_bg_opa="255" style_border_width="#ams_slot_badge_border_w"
+              style_border_color="#card_bg" style_pad_left="#ams_slot_badge_pad_h"
+              style_pad_right="#ams_slot_badge_pad_h" style_pad_top="0" style_pad_bottom="0" scrollable="false"
+              clickable="false" event_bubble="true">
         <!-- Slot number label (1, 2, 3, etc.) — text set in C++, no translation -->
         <text_small name="slot_badge_label"
-                    text="?"
-                    align="center"
-                    style_text_color="#text"
-                    clickable="false"
-                    event_bubble="true"/>
+                    text="?" align="center" style_text_color="#text" clickable="false" event_bubble="true"/>
       </lv_obj>
 
       <!-- Tool badge (top-left) - shows tool assignment (T0, T1), hidden by default.
            clickable="false" so taps bubble to the slot's click handler. -->
       <!-- Min 22px for single-digit tools, auto-widens for T10+ -->
       <lv_obj name="tool_badge"
-              width="content"
-              height="#ams_slot_tool_badge_h"
-              style_min_width="#ams_slot_tool_badge_min_w"
-              align="top_left"
-              style_translate_x="2"
-              style_translate_y="2"
-              style_radius="4"
-              style_bg_opa="200"
-              style_border_width="0"
-              style_pad_left="#ams_slot_badge_pad_h"
-              style_pad_right="#ams_slot_badge_pad_h"
-              style_pad_top="0"
-              style_pad_bottom="0"
-              scrollable="false"
-              clickable="false"
-              event_bubble="true"
+              width="content" height="#ams_slot_tool_badge_h" style_min_width="#ams_slot_tool_badge_min_w"
+              align="top_left" style_translate_x="2" style_translate_y="2" style_radius="4" style_bg_opa="200"
+              style_border_width="0" style_pad_left="#ams_slot_badge_pad_h" style_pad_right="#ams_slot_badge_pad_h"
+              style_pad_top="0" style_pad_bottom="0" scrollable="false" clickable="false" event_bubble="true"
               hidden="true">
         <!-- Tool number label (T0, T1, etc.) -->
         <text_small name="tool_badge_label"
-                    text=""
-                    align="center"
-                    style_text_color="#text"
-                    clickable="false"
-                    event_bubble="true"/>
+                    text="" align="center" style_text_color="#text" clickable="false" event_bubble="true"/>
       </lv_obj>
 
     </lv_obj>

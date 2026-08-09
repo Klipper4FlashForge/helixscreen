@@ -360,7 +360,7 @@ On Klipper-based platforms (Pi, AD5M, K1, K2, Snapmaker U1, etc.), `setup_config
 - Crash report (if recent)
 - `settings.json` (sanitized)
 
-Bundles are uploaded to `crash.helixscreen.org` with a 6-char share code. Retrieval: `./scripts/debug-bundle.sh <CODE> --save`.
+Bundles are uploaded to `crash.helixscreen.org` with a 6-char share code. Retrieval: `./scripts/debug-bundle.sh <CODE> --save`. Note that `--save` writes `debug-bundle-<code>.json` to the current working directory — run it from `/tmp` (`cd /tmp && …`) so bundles never land in the repo, and don't commit them.
 
 ---
 

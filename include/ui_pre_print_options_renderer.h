@@ -173,6 +173,14 @@ class PrePrintOptionsRenderer {
         std::unique_ptr<lv_subject_t> state_subject;
     };
 
+    /// Resolve the untranslated i18n key for an option's label — either the
+    /// DB's `label_key`, a hardcoded English default for the legacy
+    /// mechanical/quality toggles, or a humanized version of the id. Shared
+    /// by `label_for()` (translated text) and `make_row()` (which also needs
+    /// the raw key for the XML row's `label_tag`, so language changes can
+    /// re-resolve the label via `lv_label_set_translation_tag`).
+    static std::string label_key_for(const PrePrintOption& opt);
+
     /// Look up the i18n string for an option's label, falling back to a
     /// humanized version of the id when no `label_key` is set in the DB.
     static std::string label_for(const PrePrintOption& opt);

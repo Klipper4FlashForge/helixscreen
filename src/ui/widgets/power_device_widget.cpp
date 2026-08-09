@@ -4,6 +4,7 @@
 
 #include "ui_carousel.h"
 #include "ui_emergency_stop.h"
+#include "ui_error_reporting.h"
 #include "ui_event_safety.h"
 #include "ui_fonts.h"
 #include "ui_icon.h"
@@ -14,8 +15,8 @@
 
 #include "app_globals.h"
 #include "device_display_name.h"
-#include "lvgl/src/others/translation/lv_translation.h"
 #include "i_moonraker_api.h"
+#include "lvgl/src/others/translation/lv_translation.h"
 #include "observer_factory.h"
 #include "panel_widget_manager.h"
 #include "panel_widget_registry.h"
@@ -362,14 +363,20 @@ void PowerDeviceWidget::handle_clicked() {
     }
 
     spdlog::info("[PowerDeviceWidget] {} toggling device '{}'", instance_id_, device_name_);
+    auto token = lifetime_.token();
     api->set_device_power(
         device_name_, "toggle",
         [name = device_name_]() {
             spdlog::debug("[PowerDeviceWidget] Device '{}' toggled successfully", name);
         },
-        [name = device_name_](const MoonrakerError& err) {
+        [token, name = device_name_](const MoonrakerError& err) {
+            // Invoked on the calling thread for validation rejects and on an
+            // HttpExecutor worker for transport failures, so the notification —
+            // which touches LVGL — has to go through the lifetime token.
             spdlog::error("[PowerDeviceWidget] Failed to toggle device '{}': {}", name,
                           err.message);
+            token.defer("PowerDeviceWidget::toggle_error",
+                        [name]() { NOTIFY_ERROR("Failed to toggle {}", name); });
         });
 }
 
@@ -479,7 +486,7 @@ void PowerDeviceWidget::show_device_picker() {
     lv_obj_set_flex_grow(list, 1);
     lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_all(list, 0, 0);
-    lv_obj_set_style_pad_gap(list, 2, 0);
+    lv_obj_set_style_pad_gap(list, theme_manager_get_spacing("space_xxs"), 0);
     lv_obj_set_style_bg_opa(list, 0, 0);
     lv_obj_set_style_border_width(list, 0, 0);
 
@@ -593,7 +600,7 @@ void PowerDeviceWidget::show_device_picker() {
     lv_obj_set_flex_flow(icon_grid, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_flex_align(icon_grid, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_all(icon_grid, 0, 0);
-    lv_obj_set_style_pad_gap(icon_grid, 4, 0);
+    lv_obj_set_style_pad_gap(icon_grid, theme_manager_get_spacing("space_xxs"), 0);
     lv_obj_set_style_bg_opa(icon_grid, 0, 0);
     lv_obj_set_style_border_width(icon_grid, 0, 0);
     lv_obj_remove_flag(icon_grid, LV_OBJ_FLAG_SCROLLABLE);
@@ -971,15 +978,21 @@ void PowerDeviceWidget::handle_all_devices_toggle() {
     }
 
     spdlog::info("[PowerDeviceWidget] {} toggling all selected devices {}", instance_id_, action);
+    auto token = lifetime_.token();
     for (const auto& device : selected) {
         api->set_device_power(
             device, action,
             [device]() {
                 spdlog::debug("[PowerDeviceWidget] Power device '{}' set successfully", device);
             },
-            [device](const MoonrakerError& err) {
+            [token, device](const MoonrakerError& err) {
+                // See handle_clicked(): this callback runs on either the calling
+                // thread or an HttpExecutor worker, so defer the LVGL-touching
+                // notification through the token.
                 spdlog::error("[PowerDeviceWidget] Failed to set power device '{}': {}", device,
                               err.message);
+                token.defer("PowerDeviceWidget::all_toggle_error",
+                            [device]() { NOTIFY_ERROR("Failed to toggle {}", device); });
             });
     }
 
@@ -1109,8 +1122,9 @@ void PowerDeviceWidget::setup_carousel() {
         for (auto* child : existing_children) {
             lv_obj_set_parent(child, widget_obj_);
         }
-        lv_obj_delete(carousel_);
-        carousel_ = nullptr;
+        // Same indev-dispatch constraint as teardown_carousel(): setup_carousel()
+        // also runs from the sensor-chip click handler.
+        helix::ui::safe_delete_deferred(carousel_);
         return;
     }
 
@@ -1156,7 +1170,12 @@ void PowerDeviceWidget::teardown_carousel() {
             }
         }
 
-        lv_obj_delete(carousel_);
+        // Reached from the sensor-chip LV_EVENT_CLICKED handler, i.e. from inside
+        // LVGL's indev dispatch — a synchronous delete corrupts the parent's child
+        // iteration. safe_delete_deferred() detaches the carousel to lv_layer_top()
+        // right now (so the setup_carousel() that follows never sees it among
+        // widget_obj_'s children) and async-deletes it on the next tick.
+        helix::ui::safe_delete_deferred(carousel_);
     }
 
     energy_page_ = nullptr;

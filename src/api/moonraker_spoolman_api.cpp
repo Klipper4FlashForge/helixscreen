@@ -53,7 +53,7 @@ SpoolInfo helix::spoolman_detail::parse_spool_info(const nlohmann::json& spool_j
 
         info.filament_id = safe_int(filament, "id", 0);
         info.material = safe_string(filament, "material");
-        info.color_name = safe_string(filament, "name");
+        info.filament_name = safe_string(filament, "name");
         info.color_hex = safe_string(filament, "color_hex");
         info.multi_color_hexes = safe_string(filament, "multi_color_hexes");
 
@@ -62,6 +62,15 @@ SpoolInfo helix::spoolman_detail::parse_spool_info(const nlohmann::json& spool_j
         // whole list; safe_int null-guards each read.
         info.nozzle_temp_recommended = safe_int(filament, "settings_extruder_temp", 0);
         info.bed_temp_recommended = safe_int(filament, "settings_bed_temp", 0);
+
+        // The min/max pair is what apply_spool_to_slot() copies onto a slot's
+        // nozzle range; without it every Spoolman-linked slot reads 0/0 while
+        // the bed temperature is real. Same four keys parse_filament_info()
+        // reads off the filament endpoint.
+        info.nozzle_temp_min = safe_int(filament, "settings_extruder_temp_min", 0);
+        info.nozzle_temp_max = safe_int(filament, "settings_extruder_temp_max", 0);
+        info.bed_temp_min = safe_int(filament, "settings_bed_temp_min", 0);
+        info.bed_temp_max = safe_int(filament, "settings_bed_temp_max", 0);
 
         // Fallback: use filament definition weight when spool initial_weight is null/0.
         // Spoolman's initial_weight is optional; filament.weight is the canonical
@@ -97,7 +106,7 @@ static FilamentInfo parse_filament_info(const nlohmann::json& filament_json) {
     FilamentInfo info;
     info.id = safe_int(filament_json, "id", 0);
     info.material = safe_string(filament_json, "material");
-    info.color_name = safe_string(filament_json, "name");
+    info.filament_name = safe_string(filament_json, "name");
     info.color_hex = safe_string(filament_json, "color_hex");
     info.density = safe_float(filament_json, "density", 0.0f);
     info.diameter = safe_float(filament_json, "diameter", 1.75f);
@@ -246,9 +255,7 @@ void MoonrakerSpoolmanAPI::get_spool_usage_history(
     ErrorCallback on_error) {
     spdlog::warn("[SpoolmanAPI] get_spool_usage_history() not yet implemented");
     if (on_error) {
-        MoonrakerError err;
-        err.type = MoonrakerErrorType::UNKNOWN;
-        err.message = "Spoolman usage history not yet implemented";
+        MoonrakerError err = MoonrakerError::unknown("Spoolman usage history not yet implemented");
         on_error(err);
     }
 }
@@ -430,11 +437,8 @@ void MoonrakerSpoolmanAPI::create_spoolman_vendor(const nlohmann::json& vendor_d
             } else {
                 spdlog::error("[SpoolmanAPI] create_spoolman_vendor: unexpected response format");
                 if (on_error) {
-                    on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN,
-                                            0,
-                                            "Unexpected response format",
-                                            "create_spoolman_vendor",
-                                            {}});
+                    on_error(MoonrakerError::unknown("Unexpected response format",
+                                                     "create_spoolman_vendor"));
                 }
             }
         },
@@ -465,11 +469,8 @@ void MoonrakerSpoolmanAPI::create_spoolman_filament(const nlohmann::json& filame
             } else {
                 spdlog::error("[SpoolmanAPI] create_spoolman_filament: unexpected response format");
                 if (on_error) {
-                    on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN,
-                                            0,
-                                            "Unexpected response format",
-                                            "create_spoolman_filament",
-                                            {}});
+                    on_error(MoonrakerError::unknown("Unexpected response format",
+                                                     "create_spoolman_filament"));
                 }
             }
         },
@@ -498,11 +499,8 @@ void MoonrakerSpoolmanAPI::create_spoolman_spool(const nlohmann::json& spool_dat
             } else {
                 spdlog::error("[SpoolmanAPI] create_spoolman_spool: unexpected response format");
                 if (on_error) {
-                    on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN,
-                                            0,
-                                            "Unexpected response format",
-                                            "create_spoolman_spool",
-                                            {}});
+                    on_error(MoonrakerError::unknown("Unexpected response format",
+                                                     "create_spoolman_spool"));
                 }
             }
         },

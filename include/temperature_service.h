@@ -4,10 +4,11 @@
 #pragma once
 
 #include "ui_heater_config.h"
-#include "ui_heating_animator.h"
+#include "ui_heater_icon_binder.h"
 #include "ui_observer_guard.h"
 #include "ui_temp_graph.h"
 
+#include "async_lifetime_guard.h"
 #include "lvgl/lvgl.h"
 #include "panel_lifecycle.h"
 #include "subject_managed_panel.h"
@@ -67,8 +68,10 @@ struct HeaterState {
     // Panel widget (the overlay lv_obj)
     lv_obj_t* panel = nullptr;
 
-    // Heating icon animator (gradient color + pulse while heating)
-    HeatingIconAnimator animator;
+    // Heating icon binder (gradient color + pulse while heating). Bound from
+    // this heater's own overlay panel root, so it cannot pick up another
+    // heater's same-named icon. Owns its own temperature observers.
+    helix::ui::HeaterIconBinder icon_binder;
 
     // Graph widget
     ui_temp_graph_t* graph = nullptr;
@@ -256,15 +259,11 @@ class TemperatureService {
     static void on_heater_confirm_clicked(lv_event_t* e);
     static void on_heater_custom_clicked(lv_event_t* e);
 
-    // Backward-compat callbacks (still registered for old XML files during transition)
-    static void on_nozzle_preset_off_clicked(lv_event_t* e);
-    static void on_nozzle_preset_pla_clicked(lv_event_t* e);
-    static void on_nozzle_preset_petg_clicked(lv_event_t* e);
-    static void on_nozzle_preset_abs_clicked(lv_event_t* e);
-    static void on_bed_preset_off_clicked(lv_event_t* e);
-    static void on_bed_preset_pla_clicked(lv_event_t* e);
-    static void on_bed_preset_petg_clicked(lv_event_t* e);
-    static void on_bed_preset_abs_clicked(lv_event_t* e);
+    // The eight per-material preset callbacks (on_nozzle_preset_pla_clicked and
+    // friends) are gone: they were byte-identical bodies that all forwarded to
+    // send_temperature(type, data->preset_value). All three temp panels now use
+    // the single index-parameterized on_heater_preset_clicked, with the slot's
+    // temperature carried in the button's PresetButtonData.
     static void on_nozzle_custom_clicked(lv_event_t* e);
     static void on_bed_custom_clicked(lv_event_t* e);
 
@@ -332,6 +331,13 @@ class TemperatureService {
     SubjectManager subjects_;
     bool subjects_initialized_ = false;
 
+    /// Expires the deferred segment rebuild. Declared after `subjects_` so
+    /// reverse-order member destruction invalidates it before the subjects it
+    /// protects; also invalidated by deinit_subjects(). The in-lambda
+    /// `subjects_initialized_` test is not a substitute — reading that flag is
+    /// itself a member access on a possibly-freed `this` (#1165, #1146).
+    helix::AsyncLifetimeGuard async_lifetime_;
+
     // ── Lifecycle wrappers (owned by this object) ───────────────────────
     HeaterTempPanelLifecycle nozzle_lifecycle_{this, helix::HeaterType::Nozzle,
                                                "Nozzle Temperature"};
@@ -343,8 +349,43 @@ class TemperatureService {
     void setup_spool_preset(helix::HeaterType type, lv_obj_t* overlay_content);
 
     // ── Static preset button data (LVGL holds raw pointers) ─────────────
-    // 4 presets per heater × 3 heater types = 12 slots
-    static constexpr int PRESETS_PER_HEATER = 4;
+
+    /// Preset material slots the nozzle/bed/chamber temp panels have room to
+    /// DISPLAY. Deliberately 3, not helix::presets::PRESET_COUNT (4).
+    ///
+    /// This is a LAYOUT CONSTRAINT, NOT AN OVERSIGHT. Those panels render their
+    /// presets as width="48%" buttons in a row_wrap grid, so "Off" + 3 slots
+    /// fills exactly two rows. A 4th slot pushes the grid to a third row, which
+    /// does not fit in right_column at the smaller breakpoints — it eats the
+    /// flex spacer above it and overflows.
+    ///
+    /// Slot 3 is NOT disabled. It stays fully live in the filament panel, in the
+    /// PID calibration panel, and in the underlying preset data —
+    /// TemperatureController::compute_heater_presets() still computes a target
+    /// for all PRESET_COUNT slots. This is display truncation in these three
+    /// panels only.
+    ///
+    /// The visible count differs per screen ON PURPOSE, because each screen has
+    /// a different amount of room:
+    ///   - temp graph overlay -> 3 slots (TEMP_GRAPH_VISIBLE_PRESETS)
+    ///   - nozzle/bed/chamber -> 3 slots (here)
+    ///   - filament panel     -> 4 slots
+    ///   - PID panel          -> 4 slots
+    /// If you want a 4th slot visible here, FIND THE SPACE FIRST. Do not "fix"
+    /// the inconsistency by trimming the filament or PID panels to match.
+    ///
+    /// Matching prose lives in ui_xml/{nozzle,bed,chamber}_temp_panel.xml at the
+    /// spot the 4th button would occupy; this constant is what makes the
+    /// invariant compiler-enforced rather than comment-enforced.
+    static constexpr int TEMP_PANEL_VISIBLE_PRESETS = 3;
+    static_assert(TEMP_PANEL_VISIBLE_PRESETS <= helix::presets::PRESET_COUNT,
+                  "cannot surface more preset slots than exist");
+
+    /// "Off" + the visible material presets. This is the number of preset
+    /// buttons that actually EXIST in the temp panel XML, which is what every
+    /// use of this constant means: the preset_data_ sizing, the per-heater
+    /// base_idx stride, and both preset loops in temperature_service.cpp.
+    static constexpr int PRESETS_PER_HEATER = 1 + TEMP_PANEL_VISIBLE_PRESETS;
     std::array<PresetButtonData, helix::HEATER_TYPE_COUNT * PRESETS_PER_HEATER> preset_data_{};
 
     // Spool preset data (one per heater type: nozzle, bed)

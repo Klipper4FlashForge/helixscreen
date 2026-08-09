@@ -894,3 +894,132 @@ TEST_CASE_METHOD(CrashReporterTestFixture,
     REQUIRE(j.contains("memory_map"));
     REQUIRE(j["memory_map"].size() == 3);
 }
+
+// ============================================================================
+// Heap snapshot clock plausibility
+// ============================================================================
+//
+// The snapshot is taken by the running process, so its age can never exceed the
+// process uptime. Bundle ED2YC336 reported 120036989ms (33.3h) against a 9.8h
+// uptime and those heap figures were read as real data. The age alone cannot be
+// diagnosed, so the raw stamps it was derived from now ship alongside it.
+
+TEST_CASE("heap_snapshot_age_is_plausible accepts a normal fresh snapshot",
+          "[crash_reporter][heap_clock]") {
+    // Refresh runs every 10s, so a real age is small against any uptime.
+    REQUIRE(heap_snapshot_age_is_plausible(17, 35390));
+    REQUIRE(heap_snapshot_age_is_plausible(9998, 35390));
+    REQUIRE(heap_snapshot_age_is_plausible(0, 1));
+}
+
+TEST_CASE("heap_snapshot_age_is_plausible rejects an age older than the process",
+          "[crash_reporter][heap_clock]") {
+    // The ED2YC336 numbers.
+    REQUIRE_FALSE(heap_snapshot_age_is_plausible(120036989, 35390));
+}
+
+TEST_CASE("heap_snapshot_age_is_plausible tolerates second-truncated uptime",
+          "[crash_reporter][heap_clock]") {
+    // uptime is whole seconds, so an age a shade over uptime*1000 is rounding,
+    // not corruption. Both sides of the slack boundary.
+    REQUIRE(heap_snapshot_age_is_plausible(10 * 1000 + 1999, 10));
+    REQUIRE_FALSE(heap_snapshot_age_is_plausible(10 * 1000 + 2001, 10));
+}
+
+TEST_CASE("heap_snapshot_age_is_plausible rejects a negative age", "[crash_reporter][heap_clock]") {
+    REQUIRE_FALSE(heap_snapshot_age_is_plausible(-1, 3600));
+}
+
+TEST_CASE("heap_snapshot_age_is_plausible passes when there is no uptime to check",
+          "[crash_reporter][heap_clock]") {
+    // An absent/zero uptime gives us nothing to contradict — don't cry wolf.
+    REQUIRE(heap_snapshot_age_is_plausible(120036989, 0));
+    REQUIRE(heap_snapshot_age_is_plausible(500, -1));
+}
+
+TEST_CASE_METHOD(CrashReporterTestFixture,
+                 "CrashReporter: collect_report parses the raw heap snapshot stamps",
+                 "[crash_reporter][heap_clock]") {
+    std::ofstream ofs((temp_dir_ / "crash.txt").string());
+    ofs << "signal:6\nname:SIGABRT\nversion:0.99.100\ntimestamp:1785539401\nuptime:35390\n";
+    ofs << "heap_snapshot_age_ms:120036989\n";
+    ofs << "heap_snapshot_ts_ms:4288155000\n";
+    ofs << "heap_mono_ms_now:113190736\n";
+    ofs << "heap_rss_kb:96912\n";
+    ofs.close();
+
+    auto report = CrashReporter::instance().collect_report();
+    REQUIRE(report.heap.present);
+    REQUIRE(report.heap.age_ms == 120036989);
+    REQUIRE(report.heap.snapshot_ts_ms == 4288155000L);
+    REQUIRE(report.heap.mono_ms_now == 113190736);
+}
+
+TEST_CASE_METHOD(CrashReporterTestFixture,
+                 "CrashReporter: an impossible heap age is called out as a monotonic wrap",
+                 "[crash_reporter][heap_clock]") {
+    // ts ahead of the crash clock is only reachable by the low 32 bits folding.
+    std::ofstream ofs((temp_dir_ / "crash.txt").string());
+    ofs << "signal:6\nname:SIGABRT\nversion:0.99.100\ntimestamp:1785539401\nuptime:35390\n";
+    ofs << "heap_snapshot_age_ms:120036989\n";
+    ofs << "heap_snapshot_ts_ms:4288155000\n";
+    ofs << "heap_mono_ms_now:113190736\n";
+    ofs << "heap_rss_kb:96912\n";
+    ofs.close();
+
+    auto& cr = CrashReporter::instance();
+    auto report = cr.collect_report();
+    const std::string text = cr.report_to_text(report);
+    INFO(text);
+    REQUIRE(text.find("WARNING") != std::string::npos);
+    REQUIRE(text.find("exceeds process uptime") != std::string::npos);
+    REQUIRE(text.find("monotonic wrap") != std::string::npos);
+    REQUIRE(text.find("refresh stalled") == std::string::npos);
+
+    const json j = cr.report_to_json(report);
+    REQUIRE(j["heap"]["age_plausible"] == false);
+    REQUIRE(j["heap"]["snapshot_ts_ms"] == 4288155000L);
+    REQUIRE(j["heap"]["mono_ms_now"] == 113190736);
+}
+
+TEST_CASE_METHOD(CrashReporterTestFixture,
+                 "CrashReporter: an impossible heap age with ts behind now reads as a stall",
+                 "[crash_reporter][heap_clock]") {
+    // Same impossibility, other cause: the 10s refresh simply stopped running.
+    std::ofstream ofs((temp_dir_ / "crash.txt").string());
+    ofs << "signal:6\nname:SIGABRT\nversion:0.99.100\ntimestamp:1785539401\nuptime:100\n";
+    ofs << "heap_snapshot_age_ms:500000\n";
+    ofs << "heap_snapshot_ts_ms:1000\n";
+    ofs << "heap_mono_ms_now:501000\n";
+    ofs << "heap_rss_kb:96912\n";
+    ofs.close();
+
+    auto& cr = CrashReporter::instance();
+    auto report = cr.collect_report();
+    const std::string text = cr.report_to_text(report);
+    INFO(text);
+    REQUIRE(text.find("refresh stalled") != std::string::npos);
+    REQUIRE(text.find("monotonic wrap") == std::string::npos);
+}
+
+TEST_CASE_METHOD(CrashReporterTestFixture,
+                 "CrashReporter: a plausible heap age produces no warning at all",
+                 "[crash_reporter][heap_clock]") {
+    // The quiet half of the contract — a check that fires on healthy data is
+    // worse than no check.
+    std::ofstream ofs((temp_dir_ / "crash.txt").string());
+    ofs << "signal:6\nname:SIGABRT\nversion:0.99.100\ntimestamp:1785539401\nuptime:35390\n";
+    ofs << "heap_snapshot_age_ms:17\n";
+    ofs << "heap_snapshot_ts_ms:113190719\n";
+    ofs << "heap_mono_ms_now:113190736\n";
+    ofs << "heap_rss_kb:96912\n";
+    ofs.close();
+
+    auto& cr = CrashReporter::instance();
+    auto report = cr.collect_report();
+    const std::string text = cr.report_to_text(report);
+    INFO(text);
+    REQUIRE(text.find("WARNING") == std::string::npos);
+    REQUIRE(text.find("not trustworthy") == std::string::npos);
+    REQUIRE(cr.report_to_json(report)["heap"]["age_plausible"] == true);
+}

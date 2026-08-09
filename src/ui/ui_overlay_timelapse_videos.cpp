@@ -5,7 +5,6 @@
 
 #if HELIX_HAS_TIMELAPSE_VIEWER
 
-#include "app_globals.h"
 #include "ui_callback_helpers.h"
 #include "ui_format_utils.h"
 #include "ui_gradient_canvas.h"
@@ -14,6 +13,7 @@
 #include "ui_update_queue.h"
 #include "ui_utils.h"
 
+#include "app_globals.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "static_panel_registry.h"
@@ -414,16 +414,20 @@ void TimelapseVideosOverlay::populate_video_grid(const std::vector<FileInfo>& fi
             lv_image_set_src(gradient_bg, cached_gradient_);
         }
 
-        // Store filename in user_data for click handler (heap-allocated copy)
-        char* filename_copy = static_cast<char*>(lv_malloc(video.filename.size() + 1));
-        std::memcpy(filename_copy, video.filename.c_str(), video.filename.size() + 1);
-        lv_obj_set_user_data(card, filename_copy);
+        // Store filename in user_data for click handler (owned copy, freed on
+        // LV_EVENT_DELETE by the helper). L069: the card root is a ui_card, i.e.
+        // a plain lv_obj_create'd object — the XML engine never touches
+        // user_data — so the slot is ours. On allocation failure the card simply
+        // carries no filename and its handlers no-op, instead of crashing.
+        if (!helix::ui::set_owned_user_string(card, video.filename)) {
+            spdlog::warn("[{}] Could not attach filename to card for '{}'", get_name(),
+                         video.filename);
+        }
 
         // NOTE: lv_obj_add_event_cb used here (not XML event_cb) because each dynamically
         // created card needs per-instance user_data (filename) that XML bindings can't provide.
         lv_obj_add_event_cb(card, on_card_clicked, LV_EVENT_CLICKED, this);
         lv_obj_add_event_cb(card, on_card_long_pressed, LV_EVENT_LONG_PRESSED, this);
-        lv_obj_add_event_cb(card, on_card_delete, LV_EVENT_DELETE, nullptr);
 
         // Show/hide play overlay based on playback capability
         lv_obj_t* play_overlay = lv_obj_find_by_name(card, "play_overlay");
@@ -563,8 +567,7 @@ void TimelapseVideosOverlay::load_thumbnail_for_card(lv_obj_t* card, const std::
                         for (uint32_t i = 0; i < count; i++) {
                             lv_obj_t* child =
                                 lv_obj_get_child(video_grid_container_, static_cast<int32_t>(i));
-                            auto* stored_name =
-                                static_cast<const char*>(lv_obj_get_user_data(child));
+                            const char* stored_name = helix::ui::get_owned_user_string(child);
                             if (stored_name && filename_copy == stored_name) {
                                 lv_obj_t* thumb = lv_obj_find_by_name(child, "thumbnail");
                                 lv_obj_t* icon = lv_obj_find_by_name(child, "no_thumbnail_icon");
@@ -837,7 +840,7 @@ void TimelapseVideosOverlay::on_card_clicked(lv_event_t* e) {
         return;
 
     lv_obj_t* target = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
-    auto* filename = static_cast<const char*>(lv_obj_get_user_data(target));
+    const char* filename = helix::ui::get_owned_user_string(target);
     if (!filename)
         return;
 
@@ -854,22 +857,12 @@ void TimelapseVideosOverlay::on_card_long_pressed(lv_event_t* e) {
         return;
 
     lv_obj_t* target = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
-    auto* filename = static_cast<const char*>(lv_obj_get_user_data(target));
+    const char* filename = helix::ui::get_owned_user_string(target);
     if (!filename)
         return;
 
     spdlog::debug("[Timelapse Videos] Card long-pressed: {}", filename);
     self->confirm_delete(filename);
-}
-
-void TimelapseVideosOverlay::on_card_delete(lv_event_t* e) {
-    // Free the heap-allocated filename when the card is destroyed
-    lv_obj_t* target = static_cast<lv_obj_t*>(lv_event_get_target(e));
-    auto* filename = static_cast<char*>(lv_obj_get_user_data(target));
-    if (filename) {
-        lv_free(filename);
-        lv_obj_set_user_data(target, nullptr);
-    }
 }
 
 #else // !HELIX_HAS_TIMELAPSE_VIEWER

@@ -706,6 +706,10 @@ void ThemeEditorOverlay::show_color_picker(int palette_index) {
         color_picker_ = std::make_unique<helix::ui::ColorPicker>();
     }
 
+    // Theme tokens want theme presets — a dark-surface ramp and muted accents,
+    // not the filament/LED grid's Material 500s.
+    color_picker_->set_palette(helix::ui::ColorPicker::Palette::Theme);
+
     // Set callback to handle color selection
     color_picker_->set_color_callback([this](uint32_t color_rgb,
                                              const std::string& /* color_name */) {

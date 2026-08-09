@@ -13,21 +13,23 @@
 
 #include "ams_state.h"
 
-#include "data_root_resolver.h"
-
-#include "helix_psram_attr.h"
 #include "ui_color_picker.h"
 #include "ui_update_queue.h"
 
+#include "ams_bypass_policy.h"
 #include "app_globals.h"
+#include "data_root_resolver.h"
 #include "filament_database.h"
-#include "lvgl/src/others/translation/lv_translation.h"
+#include "filament_display_name.h"
+#include "helix_psram_attr.h"
 #include "i_moonraker_api.h"
+#include "lvgl/src/others/translation/lv_translation.h"
 #include "observer_factory.h"
 #include "printer_discovery.h"
 #include "printer_state.h"
 #include "runtime_config.h"
 #include "settings_manager.h"
+#include "spoolman_manager.h"
 #include "state/subject_macros.h"
 #include "static_subject_registry.h"
 #include "tool_state.h"
@@ -148,11 +150,35 @@ const char* AmsState::get_logo_path(const std::string& type_name) {
         {"bttvivid", asset_component_uri("assets/images/ams/btt_vivid_64.png")},
         {"vivid", asset_component_uri("assets/images/ams/btt_vivid_64.png")},
         {"kms", asset_component_uri("assets/images/ams/kms_64.png")},
+
+        // AFC unit types with no artwork of their own (Claymore is new in AFC
+        // v1.2.0; the rest predate it). They fall back to the AFC mark:
+        // wrong-but-related beats a blank slot, and the alternative is
+        // silently rendering nothing.
+        {"htlf", asset_component_uri("assets/images/ams/afc_64.png")},
+        {"open ams", asset_component_uri("assets/images/ams/afc_64.png")},
+        {"open_ams", asset_component_uri("assets/images/ams/afc_64.png")},
+        {"openams", asset_component_uri("assets/images/ams/afc_64.png")},
+        {"claymore", asset_component_uri("assets/images/ams/afc_64.png")},
+        {"emu", asset_component_uri("assets/images/ams/afc_64.png")},
     };
 
     auto it = logo_map.find(lower_name);
     if (it != logo_map.end()) {
         return it->second.c_str();
+    }
+
+    // AFC names a unit by type AND instance — "Box_Turtle Turtle_1" — so the
+    // whole string never matches a type key and every AFC unit fell through to
+    // the generic AFC mark, Box Turtles included. Retry on the leading token,
+    // which is the type. Only reached once the exact lookup has failed, so
+    // multi-word system names ("happy hare") keep their own entry.
+    const size_t space_pos = lower_name.find(' ');
+    if (space_pos != std::string::npos && space_pos > 0) {
+        it = logo_map.find(lower_name.substr(0, space_pos));
+        if (it != logo_map.end()) {
+            return it->second.c_str();
+        }
     }
     return nullptr;
 }
@@ -383,6 +409,14 @@ void AmsState::init_subjects(bool register_xml) {
             lv_xml_register_subject(nullptr, name_buf, &slot_remaining_[i]);
         }
 
+        lv_subject_init_string(&slot_materials_[i], slot_materials_buf_[i], nullptr,
+                               sizeof(slot_materials_buf_[i]), "");
+        subjects_.register_subject(&slot_materials_[i]);
+        if (register_xml) {
+            snprintf(name_buf, sizeof(name_buf), "ams_slot_%d_material", i);
+            lv_xml_register_subject(nullptr, name_buf, &slot_materials_[i]);
+        }
+
         // Per-slot fill percent (SlotInfo::display_fill_pct encoding: 0-100, -1
         // = unknown). Observed by the ams_slot widget so spool fill renders from
         // state on every panel. -1 initial → "no data yet, leave render as-is".
@@ -495,7 +529,8 @@ void AmsState::init_subjects(bool register_xml) {
                            ENV_IND_TEXT_BUF_SIZE, "---");
     subjects_.register_subject(&env_ind_detail_temp_text_);
     if (register_xml)
-        lv_xml_register_subject(nullptr, "ams_env_ind_detail_temp_text", &env_ind_detail_temp_text_);
+        lv_xml_register_subject(nullptr, "ams_env_ind_detail_temp_text",
+                                &env_ind_detail_temp_text_);
 
     lv_subject_init_string(&env_ind_detail_humidity_text_, env_ind_detail_humidity_text_buf_,
                            nullptr, ENV_IND_TEXT_BUF_SIZE, "---");
@@ -587,6 +622,11 @@ void AmsState::deinit_subjects() {
     }
 
     spdlog::trace("[AMS State] Deinitializing subjects");
+
+    // Expire the deferred setters still queued on the UpdateQueue. They capture
+    // `this` and write the subjects torn down below, so without this the next
+    // drain notifies a freed observer list (#1165, #1146).
+    async_lifetime_.invalidate();
 
     // Clear dangling API pointer — the IMoonrakerAPI is destroyed during teardown
     // before AmsState re-initializes. Without this, sync_from_backend() would
@@ -887,6 +927,13 @@ lv_subject_t* AmsState::get_slot_remaining_subject(int slot_index) {
         return nullptr;
     }
     return &slot_remaining_[slot_index];
+}
+
+lv_subject_t* AmsState::get_slot_material_subject(int slot_index) {
+    if (slot_index < 0 || slot_index >= MAX_SLOTS) {
+        return nullptr;
+    }
+    return &slot_materials_[slot_index];
 }
 
 lv_subject_t* AmsState::get_slot_fill_subject(int slot_index) {
@@ -1292,7 +1339,7 @@ void AmsState::sync_from_backend() {
     if (lv_subject_get_int(&bypass_active_) != new_bypass) {
         lv_subject_set_int(&bypass_active_, new_bypass);
     }
-    int new_supports_bypass = info.supports_bypass ? 1 : 0;
+    int new_supports_bypass = helix::bypass_available_for(info.supports_bypass) ? 1 : 0;
     if (lv_subject_get_int(&supports_bypass_) != new_supports_bypass) {
         lv_subject_set_int(&supports_bypass_, new_supports_bypass);
     }
@@ -1388,6 +1435,16 @@ void AmsState::sync_from_backend() {
                 lv_subject_copy_string(&slot_remaining_[i], remaining.c_str());
             }
 
+            // Material type. Unlike remaining, a material delta MUST bump
+            // slots_version: the panel's material label is re-read only by
+            // refresh_slots() (it has no direct binding), so a type change that
+            // leaves color/status unchanged would otherwise leave the label stale
+            // (#1065 — native ZMOD AD5X "color updates, material stuck").
+            if (strcmp(lv_subject_get_string(&slot_materials_[i]), slot->material.c_str()) != 0) {
+                lv_subject_copy_string(&slot_materials_[i], slot->material.c_str());
+                any_slot_changed = true;
+            }
+
             // Per-slot LIVE state: path segment, toolhead-present, active-loaded.
             // Sourced directly from the backend accessors so the panel observes
             // real-time sensor changes (path redraw + active-lane highlight).
@@ -1418,13 +1475,30 @@ void AmsState::sync_from_backend() {
         spdlog::debug("[AmsState] tool_to_slot_map changed, version now {}", v + 1);
     }
 
-    // Sync spool assignments to ToolState for slots with mapped tools
+    // Sync spool assignments to ToolState for slots with mapped tools.
+    //
+    // The clear branch matters as much as the assign one: this only ever
+    // assigned, so a lane that lost its spool (eject, or an explicit unlink)
+    // left the old assignment behind in ToolState — and ToolState persists to
+    // tool_spools.json plus a Moonraker DB key, so the stale spool outlived
+    // restarts. Observed on the .112 BoxTurtle: "Assigned spool 86 () to tool 0"
+    // fired during an EJECT, and ToolState::clear_spool() had no callers at all.
     for (int i = 0; i < std::min(info.total_slots, MAX_SLOTS); ++i) {
         const SlotInfo* slot = info.get_slot_global(i);
-        if (slot && slot->mapped_tool >= 0 && slot->spoolman_id > 0) {
+        if (!slot || slot->mapped_tool < 0) {
+            continue;
+        }
+        if (slot->spoolman_id > 0) {
             ToolState::instance().assign_spool(slot->mapped_tool, slot->spoolman_id,
                                                slot->spool_name, slot->remaining_weight_g,
                                                slot->total_weight_g);
+        } else if (backend->has_firmware_spool_persistence()) {
+            // Only clear when the SLOT is authoritative. For backends without
+            // firmware spool persistence (toolchanger) the flow runs the other
+            // way — ToolState is the source of truth and slots start empty — so
+            // clearing here would destroy the assignment the reverse sync below
+            // is about to propagate.
+            ToolState::instance().clear_spool(slot->mapped_tool);
         }
     }
 
@@ -1525,7 +1599,7 @@ void AmsState::sync_from_backend() {
                 int gi = unit.first_slot_global_index + si;
                 SlotInfo slot = backend->get_slot_info(gi);
                 if (!slot.material.empty()) {
-                    const auto* range = filament::get_comfort_range(slot.material);
+                    const auto range = filament::get_comfort_range(slot.material);
                     if (range) {
                         found_any_range = true;
                         if (range->max_humidity_good < most_restrictive_good) {
@@ -1633,6 +1707,11 @@ void AmsState::sync_from_backend() {
         if (strcmp(lv_subject_get_string(&slot_remaining_[i]), "") != 0) {
             lv_subject_copy_string(&slot_remaining_[i], "");
         }
+        // Clear material for unused slots — bump so the label clears (#1065)
+        if (strcmp(lv_subject_get_string(&slot_materials_[i]), "") != 0) {
+            lv_subject_copy_string(&slot_materials_[i], "");
+            any_slot_changed = true;
+        }
         // Reset per-slot LIVE state subjects for unused slots
         if (lv_subject_get_int(&slot_segments_[i]) != static_cast<int>(PathSegment::NONE)) {
             lv_subject_set_int(&slot_segments_[i], static_cast<int>(PathSegment::NONE));
@@ -1702,6 +1781,14 @@ void AmsState::update_slot(int slot_index) {
         }
         if (strcmp(lv_subject_get_string(&slot_remaining_[slot_index]), remaining.c_str()) != 0) {
             lv_subject_copy_string(&slot_remaining_[slot_index], remaining.c_str());
+        }
+
+        // Material type — a delta bumps slots_version so refresh_slots() re-reads
+        // the material label even when color/status are unchanged (#1065).
+        if (strcmp(lv_subject_get_string(&slot_materials_[slot_index]), slot.material.c_str()) !=
+            0) {
+            lv_subject_copy_string(&slot_materials_[slot_index], slot.material.c_str());
+            changed = true;
         }
 
         // Per-slot LIVE state: path segment, toolhead-present, active-loaded.
@@ -2228,6 +2315,7 @@ void AmsState::set_action(AmsAction action) {
         // directly too.
         if (action == AmsAction::IDLE) {
             last_narration_label_.clear();
+            narration_phase_high_water_ = -1;
             lv_subject_set_int(&toolchange_step_, -1);
         }
         // Action change must propagate to the displayed detail string (e.g.
@@ -2236,15 +2324,61 @@ void AmsState::set_action(AmsAction action) {
     }
 }
 
+void AmsState::set_active_step_operation(StepOperationType op) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    const StepOperationType prev = active_step_operation_.exchange(op, std::memory_order_relaxed);
+    if (prev != op) {
+        // Each operation kind has its own phase template, so an index carried
+        // over from the previous one is not comparable with the new one's.
+        // (The sidebar re-derives the operation whenever it (re)builds the step
+        // bar, so this is also the mid-operation UNLOAD -> LOAD_SWAP upgrade.)
+        narration_phase_high_water_ = -1;
+    }
+}
+
 void AmsState::set_narration_phase(int index, const std::string& label) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
+
+    // Firmware narration is not monotonic. AFC runs its wipe macro twice per
+    // toolchange, once before and once after the kick (AFC.py
+    // do_poop_kick_wipe(), v1.2.0:1390-1413; inline in TOOL_LOAD at
+    // v1.1.0:1417-1440), and both emit at the shipped default verbosity. The
+    // second one resolves to the same "brush" phase as the first, which sits
+    // BEFORE "kick" in the template — publishing it verbatim rewinds the bar.
+    //
+    // Latch the highest index instead. Reset points are the three places an
+    // index stops being comparable with its predecessor:
+    //   - index < 0        explicit clear (operation over / test baseline)
+    //   - index == 0       the template's first phase narrated again, i.e. the
+    //                      operation restarted from the top (an AFC retry after
+    //                      a resumed error re-runs TOOL_LOAD from the heat)
+    //   - set_action(IDLE) operation ended
+    //   - set_active_step_operation() the template itself changed
+    //
+    // A retry that resumes PAST the first phase (nozzle already hot, so no heat
+    // narration) is deliberately not detected: the bar then stays parked at its
+    // high-water mark until the operation ends. A stalled bar is a far cheaper
+    // wrong than one that ping-pongs, and every path out of the operation
+    // clears the latch.
+    if (index < 0) {
+        narration_phase_high_water_ = -1;
+    } else if (index == 0) {
+        narration_phase_high_water_ = 0;
+    } else if (index < narration_phase_high_water_) {
+        spdlog::trace("[AMS State] Narration phase {} ('{}') ignored — already past step {}", index,
+                      label, narration_phase_high_water_);
+        return;
+    } else {
+        narration_phase_high_water_ = index;
+    }
+
     lv_subject_set_int(&toolchange_step_, index);
     last_narration_label_ = label;
     recompute_action_detail();
 }
 
 void AmsState::set_pending_target_slot(int slot) {
-    helix::ui::queue_update([this, slot]() {
+    async_lifetime_.defer("AmsState::set_pending_target_slot", [this, slot]() {
         if (lv_subject_get_int(&pending_target_slot_) != slot) {
             lv_subject_set_int(&pending_target_slot_, slot);
         }
@@ -2253,7 +2387,7 @@ void AmsState::set_pending_target_slot(int slot) {
 
 void AmsState::set_active_tool_port_present(bool present) {
     // Marshal to the main thread — callable from the backend's WS status handler.
-    helix::ui::queue_update([this, present]() {
+    async_lifetime_.defer("AmsState::set_active_tool_port_present", [this, present]() {
         int v = present ? 1 : 0;
         if (lv_subject_get_int(&active_tool_port_present_) != v) {
             lv_subject_set_int(&active_tool_port_present_, v);
@@ -2431,23 +2565,14 @@ void AmsState::sync_current_loaded_from_backend(const AmsSystemInfo& primary_inf
                 lv_subject_set_int(&current_color_, ext_color);
             }
 
-            // Build label from spool info
-            std::string color_label;
-            if (ext.spoolman_id > 0 && !ext.color_name.empty()) {
-                color_label = ext.color_name;
-            } else {
-                color_label = helix::get_color_name_from_hex(ext.color_rgb);
-            }
-            std::string label;
-            if (!color_label.empty() && !ext.material.empty()) {
-                label = color_label + " " + ext.material;
-            } else if (!color_label.empty()) {
-                label = color_label;
-            } else if (!ext.material.empty()) {
-                label = ext.material;
-            } else {
-                label = lv_tr("External");
-            }
+            // Build label from spool info — same resolver as the loaded-slot
+            // card below. Precedence and brand/material dedup live in
+            // helix::resolve_filament_label(); the last resort stays the
+            // translated "External" this card has always shown.
+            auto ext_identity = SpoolmanManager::find_identity(ext.spoolman_id);
+            std::string label = helix::resolve_filament_label(
+                ext, ext_identity ? &*ext_identity : nullptr,
+                helix::get_color_name_from_hex(ext.color_rgb), lv_tr("External"));
             if (strcmp(lv_subject_get_string(&current_material_text_), label.c_str()) != 0) {
                 lv_subject_copy_string(&current_material_text_, label.c_str());
             }
@@ -2508,26 +2633,17 @@ void AmsState::sync_current_loaded_from_backend(const AmsSystemInfo& primary_inf
             lv_subject_set_int(&current_color_, slot_color);
         }
 
-        // Build material label - color name + material (e.g., "Red PLA")
-        // Use Spoolman color name if available, otherwise identify from hex
+        // Build the material label. The slot's own name/brand/material win, the
+        // cached Spoolman identity fills the gaps (it is the only source of a
+        // brand for AFC), and the algorithmic colour name is the last naming
+        // layer — which is the bug this replaced: AFC never populates
+        // color_name, so the old guard always fell through to "Light Pink PLA"
+        // while the real name sat unread in slot_info.spool_name.
         {
-            std::string color_label;
-            if (slot_info.spoolman_id > 0 && !slot_info.color_name.empty()) {
-                color_label = slot_info.color_name;
-            } else {
-                color_label = helix::get_color_name_from_hex(slot_info.color_rgb);
-            }
-
-            std::string label;
-            if (!color_label.empty() && !slot_info.material.empty()) {
-                label = color_label + " " + slot_info.material;
-            } else if (!color_label.empty()) {
-                label = color_label;
-            } else if (!slot_info.material.empty()) {
-                label = slot_info.material;
-            } else {
-                label = "Filament";
-            }
+            auto identity = SpoolmanManager::find_identity(slot_info.spoolman_id);
+            std::string label =
+                helix::resolve_filament_label(slot_info, identity ? &*identity : nullptr,
+                                              helix::get_color_name_from_hex(slot_info.color_rgb));
             if (strcmp(lv_subject_get_string(&current_material_text_), label.c_str()) != 0) {
                 lv_subject_copy_string(&current_material_text_, label.c_str());
             }

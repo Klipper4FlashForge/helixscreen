@@ -14,6 +14,7 @@
 #include "panel_widget.h"
 #include "panel_widget_config.h"
 #include "panel_widget_registry.h"
+#include "printer_cache_registry.h"
 #include "system/crash_handler.h"
 #include "system/telemetry_manager.h"
 #include "theme_manager.h"
@@ -54,6 +55,14 @@ void PanelWidgetManager::init_widget_subjects() {
     }
 
     widget_subjects_initialized_ = true;
+
+    // Self-register per-printer cache invalidation. panel_configs_ / active_configs_ /
+    // grid_descriptors_ all derive from /printers/<active>/panel_widgets/<panel>, so an
+    // active-printer change must drop them (#804). This manager is a process-lifetime
+    // singleton, so there is no matching unregister().
+    PrinterCacheRegistry::instance().register_invalidator(
+        "PanelWidgetManager", []() { PanelWidgetManager::instance().clear_all_panel_configs(); });
+
     spdlog::debug("[PanelWidgetManager] Widget subjects initialized");
 }
 
@@ -133,22 +142,32 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
         slot.widget_id = entry.id;
         slot.config = entry.config;
 
-        // Acquire instance: reuse existing or create via factory
-        auto reuse_it = reuse.find(entry.id);
-        if (reuse_it != reuse.end()) {
-            slot.instance = std::move(reuse_it->second);
-            reuse.erase(reuse_it);
-            spdlog::debug("[PanelWidgetManager] Reusing widget instance '{}'", entry.id);
-        } else if (def && def->factory) {
-            slot.instance = def->factory(entry.id);
-        }
+        // Build + configure the widget defensively: a malformed per-widget config
+        // (or a throwing factory/set_config) must skip only THIS widget, not abort
+        // the whole dashboard rebuild. Guard per-iteration so one bad entry never
+        // takes the page down with it.
+        try {
+            // Acquire instance: reuse existing or create via factory
+            auto reuse_it = reuse.find(entry.id);
+            if (reuse_it != reuse.end()) {
+                slot.instance = std::move(reuse_it->second);
+                reuse.erase(reuse_it);
+                spdlog::debug("[PanelWidgetManager] Reusing widget instance '{}'", entry.id);
+            } else if (def && def->factory) {
+                slot.instance = def->factory(entry.id);
+            }
 
-        if (slot.instance) {
-            slot.instance->set_panel_id(panel_id);
-            slot.instance->set_config(entry.config);
-            slot.component_name = slot.instance->get_component_name();
-        } else {
-            slot.component_name = "panel_widget_" + entry.id;
+            if (slot.instance) {
+                slot.instance->set_panel_id(panel_id);
+                slot.instance->set_config(entry.config);
+                slot.component_name = slot.instance->get_component_name();
+            } else {
+                slot.component_name = "panel_widget_" + entry.id;
+            }
+        } catch (const std::exception& e) {
+            spdlog::error("[PanelWidgetManager] Widget '{}' configuration failed: {}", entry.id,
+                          e.what());
+            continue;
         }
 
         slot.hardware_gated = gated;
@@ -268,6 +287,13 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
     struct PlacedSlot {
         size_t slot_index; // Index into enabled_widgets
         int col, row, colspan, rowspan;
+        // The span it would be honest to persist — the authored (auto-placed) or
+        // saved (anchored) span, as opposed to whatever this particular grid
+        // could seat. A reduction is a property of the current screen, not of the
+        // user's layout: writing it back would strand the widget at the portrait
+        // width after rotating to landscape (#1216).
+        int want_colspan = 1;
+        int want_rowspan = 1;
     };
     std::vector<PlacedSlot> placed;
     std::vector<size_t> auto_place_indices; // Widgets needing dynamic placement
@@ -282,8 +308,12 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
         if (entry_it != entries.end() && entry_it->has_grid_position()) {
             int col = entry_it->col;
             int row = entry_it->row;
-            int colspan = entry_it->colspan;
-            int rowspan = entry_it->rowspan;
+            // Clamp the SPAN to the grid before clamping the position. A span
+            // saved on a 6-column landscape grid cannot exist on a 2-column
+            // portrait one; leaving it unclamped made can_place() fail, dropped
+            // the widget into auto-place, and ultimately disabled it (#1216).
+            int colspan = std::clamp(entry_it->colspan, 1, grid.cols());
+            int rowspan = std::clamp(entry_it->rowspan, 1, grid.rows());
 
             // Clamp: if widget overflows the grid, push it to fit
             if (row + rowspan > grid.rows()) {
@@ -301,7 +331,8 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
             // TODO: replace with explicit "user_positioned" flag in config
 
             if (grid.place({slot.widget_id, col, row, colspan, rowspan})) {
-                placed.push_back({i, col, row, colspan, rowspan});
+                placed.push_back(
+                    {i, col, row, colspan, rowspan, entry_it->colspan, entry_it->rowspan});
             } else {
                 spdlog::warn("[PanelWidgetManager] Cannot place widget '{}' at ({},{} {}x{})",
                              slot.widget_id, col, row, colspan, rowspan);
@@ -328,97 +359,178 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
         }
     }
 
-    // Place multi-cell widgets first, scanning bottom-to-top
-    for (size_t slot_idx : multi_cell_indices) {
-        auto& slot = enabled_widgets[slot_idx];
-        const auto* def = find_widget_def(slot.widget_id);
-        int colspan = def ? def->colspan : 1;
-        int rowspan = def ? def->rowspan : 1;
+    // Disable a widget that could not be placed, sending it back to the catalog
+    // as an available widget, and tell the user WHICH condition failed — "grid
+    // full" is a lie when the widget is simply wider than the whole grid (#1216).
+    auto disable_unplaceable = [&](const std::string& widget_id,
+                                   GridLayout::PlacementFailure reason) {
+        auto& mut_entries = widget_config.page_entries_mut(page_index);
+        auto cfg_it = std::find_if(mut_entries.begin(), mut_entries.end(),
+                                   [&](const PanelWidgetEntry& e) { return e.id == widget_id; });
+        if (cfg_it != mut_entries.end()) {
+            cfg_it->enabled = false;
+            cfg_it->col = -1;
+            cfg_it->row = -1;
+        }
+        const char* why = GridLayout::failure_text(reason);
+        spdlog::info("[PanelWidgetManager] Disabled widget '{}' — {}", widget_id, why);
+        const auto* def = find_widget_def(widget_id);
+        const char* name = def ? def->display_name : widget_id.c_str();
+        ui_notification_warning(fmt::format("'{}' removed — {}", name, why).c_str());
+    };
 
-        auto pos = grid.find_available_bottom(colspan, rowspan);
-        if (pos && grid.place({slot.widget_id, pos->first, pos->second, colspan, rowspan})) {
-            placed.push_back({slot_idx, pos->first, pos->second, colspan, rowspan});
-        } else if (fw_restart_injected) {
-            // Grid is full only because the temporary firmware_restart widget
-            // is occupying a slot. Don't disable the widget or warn — it will
-            // get its space back once Klipper returns to READY.
+    // ---- Auto-placement -----------------------------------------------------
+    //
+    // Two span policies, tried in order.
+    //
+    //  1. AUTHORED — every widget asks for the span its registry definition
+    //     declares. When they all fit, this is the layout the dashboard was
+    //     designed around, so a roomy grid ends up exactly where it always did.
+    //  2. MINIMUM-FIRST — used only when (1) cannot seat everyone. Every widget
+    //     is placed at its declared MINIMUM, which maximises how many widgets
+    //     survive, and the cells left over are handed back out by growing each
+    //     widget toward its authored span (GridLayout::grow_to_targets).
+    //
+    // The old policy asked for the largest span that fit and stepped down from
+    // there. On a 3-column portrait grid that let `tips` take a reduced 3x2 — 6
+    // of 18 cells — and fan_stack, ams and notifications were then all disabled
+    // with "grid full": three widgets lost where main lost one (#1216).
+    const auto anchored_placements = grid.placements();
+    const size_t anchored_slots = placed.size();
+
+    struct AutoFailure {
+        std::string widget_id;
+        GridLayout::PlacementFailure reason;
+    };
+
+    auto run_auto_pass = [&](bool minimum_first) {
+        std::vector<AutoFailure> failures;
+
+        // Rewind to the anchored widgets. Anchors hold an explicit position the
+        // user (or the shipped default layout) chose, so they are never re-spanned
+        // by either policy.
+        grid.clear();
+        for (const auto& p : anchored_placements) {
+            grid.place(p);
+        }
+        placed.resize(anchored_slots);
+
+        std::vector<GridLayout::GrowthTarget> growth;
+
+        // Multi-cell widgets first — they need contiguous space.
+        for (size_t slot_idx : multi_cell_indices) {
+            auto& slot = enabled_widgets[slot_idx];
+            const auto* def = find_widget_def(slot.widget_id);
+            const int want_cols = def ? std::max(1, def->colspan) : 1;
+            const int want_rows = def ? std::max(1, def->rowspan) : 1;
+            // Growth stops at the authored span, and never past the declared
+            // maximum: a definition whose max sits below its default is a bug in
+            // the table, not a licence to overflow.
+            const int grow_cols = def ? std::min(want_cols, def->effective_max_colspan()) : 1;
+            const int grow_rows = def ? std::min(want_rows, def->effective_max_rowspan()) : 1;
+            const int min_cols = def ? std::min(def->effective_min_colspan(), want_cols) : 1;
+            const int min_rows = def ? std::min(def->effective_min_rowspan(), want_rows) : 1;
+
+            auto fit = minimum_first ? grid.find_available_bottom_min(min_cols, min_rows)
+                                     : grid.find_available_bottom_min(want_cols, want_rows);
+
+            if (fit.placed() &&
+                grid.place({slot.widget_id, fit.col, fit.row, fit.colspan, fit.rowspan})) {
+                placed.push_back(
+                    {slot_idx, fit.col, fit.row, fit.colspan, fit.rowspan, want_cols, want_rows});
+                if (minimum_first) {
+                    growth.push_back({slot.widget_id, grow_cols, grow_rows});
+                }
+            } else {
+                // A found-but-unplaceable position can only mean the free run
+                // vanished under us; report that, not a stale "None".
+                failures.push_back({slot.widget_id, fit.placed()
+                                                        ? GridLayout::PlacementFailure::GridFull
+                                                        : fit.failure});
+            }
+        }
+
+        // Pack 1x1 widgets into remaining free cells, bottom-right first.
+        {
+            std::vector<std::pair<int, int>> free_cells;
+            for (int r = grid.rows() - 1; r >= 0; --r) {
+                for (int c = grid.cols() - 1; c >= 0; --c) {
+                    if (!grid.is_occupied(c, r)) {
+                        free_cells.push_back({c, r});
+                    }
+                }
+            }
+
+            // Map: last widget -> bottom-right cell, first -> top-left of the block
+            size_t n_single = single_cell_indices.size();
+            size_t n_cells = free_cells.size();
+            for (size_t i = 0; i < n_single; ++i) {
+                size_t slot_idx = single_cell_indices[i];
+                auto& slot = enabled_widgets[slot_idx];
+
+                size_t cell_idx = n_single - 1 - i;
+                if (cell_idx < n_cells) {
+                    auto [col, row] = free_cells[cell_idx];
+                    if (grid.place({slot.widget_id, col, row, 1, 1})) {
+                        placed.push_back({slot_idx, col, row, 1, 1, 1, 1});
+                        continue;
+                    }
+                }
+
+                // Fallback
+                auto pos = grid.find_available_bottom(1, 1);
+                if (pos && grid.place({slot.widget_id, pos->first, pos->second, 1, 1})) {
+                    placed.push_back({slot_idx, pos->first, pos->second, 1, 1, 1, 1});
+                } else {
+                    // A 1x1 widget fits any grid by definition, so the only way
+                    // to get here is that every cell is taken.
+                    failures.push_back({slot.widget_id, GridLayout::PlacementFailure::GridFull});
+                }
+            }
+        }
+
+        // Hand the leftover cells back out, then re-read the grid: growth moves
+        // origins as well as spans, and `placed` is what actually builds the UI.
+        if (minimum_first && !growth.empty() && grid.grow_to_targets(growth) > 0) {
+            for (auto& p : placed) {
+                if (const auto* gp = grid.find_placement(enabled_widgets[p.slot_index].widget_id)) {
+                    p.col = gp->col;
+                    p.row = gp->row;
+                    p.colspan = gp->colspan;
+                    p.rowspan = gp->rowspan;
+                }
+            }
+        }
+        return failures;
+    };
+
+    auto failures = run_auto_pass(/*minimum_first=*/false);
+    if (!failures.empty()) {
+        spdlog::debug("[PanelWidgetManager] {} widget(s) do not fit at their authored span on a "
+                      "{}x{} grid — retrying minimum-first",
+                      failures.size(), grid.cols(), grid.rows());
+        failures = run_auto_pass(/*minimum_first=*/true);
+    }
+
+    for (const auto& f : failures) {
+        if (fw_restart_injected) {
+            // Grid is full only because the temporary firmware_restart widget is
+            // occupying a slot. Don't disable the widget or warn — it will get
+            // its space back once Klipper returns to READY.
             spdlog::info("[PanelWidgetManager] Skipping widget '{}' — grid full due to "
                          "temporary firmware_restart injection",
-                         slot.widget_id);
+                         f.widget_id);
         } else {
-            // Grid is full — disable the widget so it goes back to the catalog
-            // as an available widget. User can re-add it after freeing space.
-            auto& mut_entries = widget_config.page_entries_mut(page_index);
-            auto cfg_it =
-                std::find_if(mut_entries.begin(), mut_entries.end(),
-                             [&](const PanelWidgetEntry& e) { return e.id == slot.widget_id; });
-            if (cfg_it != mut_entries.end()) {
-                cfg_it->enabled = false;
-                cfg_it->col = -1;
-                cfg_it->row = -1;
-            }
-            spdlog::info("[PanelWidgetManager] Disabled widget '{}' — no grid space",
-                         slot.widget_id);
-            const auto* def = find_widget_def(slot.widget_id);
-            const char* name = def ? def->display_name : slot.widget_id.c_str();
-            ui_notification_warning(fmt::format("'{}' removed — grid full", name).c_str());
+            disable_unplaceable(f.widget_id, f.reason);
         }
     }
 
-    // Pack 1×1 widgets into remaining free cells, bottom-right first
-    {
-        int grid_cols = GridLayout::get_cols(breakpoint);
-        int grid_rows = GridLayout::get_rows(breakpoint);
-
-        std::vector<std::pair<int, int>> free_cells;
-        for (int r = grid_rows - 1; r >= 0; --r) {
-            for (int c = grid_cols - 1; c >= 0; --c) {
-                if (!grid.is_occupied(c, r)) {
-                    free_cells.push_back({c, r});
-                }
-            }
-        }
-
-        // Map: last widget → bottom-right cell, first → top-left of the block
-        size_t n_single = single_cell_indices.size();
-        size_t n_cells = free_cells.size();
-        for (size_t i = 0; i < n_single; ++i) {
-            size_t slot_idx = single_cell_indices[i];
-            auto& slot = enabled_widgets[slot_idx];
-
-            size_t cell_idx = n_single - 1 - i;
-            if (cell_idx < n_cells) {
-                auto [col, row] = free_cells[cell_idx];
-                if (grid.place({slot.widget_id, col, row, 1, 1})) {
-                    placed.push_back({slot_idx, col, row, 1, 1});
-                    continue;
-                }
-            }
-
-            // Fallback
-            auto pos = grid.find_available_bottom(1, 1);
-            if (pos && grid.place({slot.widget_id, pos->first, pos->second, 1, 1})) {
-                placed.push_back({slot_idx, pos->first, pos->second, 1, 1});
-            } else if (fw_restart_injected) {
-                spdlog::info("[PanelWidgetManager] Skipping widget '{}' — grid full due to "
-                             "temporary firmware_restart injection",
-                             slot.widget_id);
-            } else {
-                auto& mut_entries = widget_config.page_entries_mut(page_index);
-                auto cfg_it =
-                    std::find_if(mut_entries.begin(), mut_entries.end(),
-                                 [&](const PanelWidgetEntry& e) { return e.id == slot.widget_id; });
-                if (cfg_it != mut_entries.end()) {
-                    cfg_it->enabled = false;
-                    cfg_it->col = -1;
-                    cfg_it->row = -1;
-                }
-                spdlog::info("[PanelWidgetManager] Disabled widget '{}' — no grid space",
-                             slot.widget_id);
-                const auto* def = find_widget_def(slot.widget_id);
-                const char* name = def ? def->display_name : slot.widget_id.c_str();
-                ui_notification_warning(fmt::format("'{}' removed — grid full", name).c_str());
-            }
+    for (const auto& p : placed) {
+        if (p.colspan != p.want_colspan || p.rowspan != p.want_rowspan) {
+            spdlog::debug("[PanelWidgetManager] Widget '{}' placed at reduced span {}x{} "
+                          "(wanted {}x{}, grid is {}x{})",
+                          enabled_widgets[p.slot_index].widget_id, p.colspan, p.rowspan,
+                          p.want_colspan, p.want_rowspan, grid.cols(), grid.rows());
         }
     }
 
@@ -455,8 +567,14 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                 }
                 entry_it->col = p.col;
                 entry_it->row = p.row;
-                entry_it->colspan = p.colspan;
-                entry_it->rowspan = p.rowspan;
+                // Never persist a span that was cut down just to fit THIS grid.
+                // The reduction is a property of the current screen, not of the
+                // user's layout; writing it back would strand the widget at the
+                // portrait width after rotating to landscape (#1216).
+                if (p.colspan == p.want_colspan && p.rowspan == p.want_rowspan) {
+                    entry_it->colspan = p.colspan;
+                    entry_it->rowspan = p.rowspan;
+                }
             }
         }
         if (any_written) {
@@ -512,8 +630,9 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
     // synchronously triggers lv_obj_update_layout (e.g. PrintStatusWidget ->
     // lv_image_set_src -> update_align, see print_status_widget.cpp:331) cascade
     // a grid_update over a half-built grid, which crashes (#983).
-    lv_obj_set_style_pad_column(container, theme_manager_get_spacing("space_xs"), 0);
-    lv_obj_set_style_pad_row(container, theme_manager_get_spacing("space_xs"), 0);
+    const int gutter = GridLayout::gutter_px();
+    lv_obj_set_style_pad_column(container, gutter, 0);
+    lv_obj_set_style_pad_row(container, gutter, 0);
 
     // Compute cell pixel dimensions for size callbacks and card backgrounds.
     int cols = GridLayout::get_cols(breakpoint);
@@ -522,8 +641,9 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                   cols, grid_rows, to_int(breakpoint), cached_rows, panel_id);
     int container_w = lv_obj_get_content_width(container);
     int container_h = lv_obj_get_content_height(container);
-    int cell_w = (cols > 0) ? container_w / cols : 0;
-    int cell_h = (grid_rows > 0) ? container_h / grid_rows : 0;
+    CellMetrics metrics = grid_cell_metrics(container_w, container_h, cols, grid_rows, gutter);
+    int cell_w = static_cast<int>(metrics.cell_w);
+    int cell_h = static_cast<int>(metrics.cell_h);
 
     // Create merged card backgrounds behind adjacent 1x1 widgets.
     // BFS flood-fill finds connected components of 1x1 cells, then a single
@@ -663,7 +783,10 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                 // at approximately the right shape on the first frame, before the
                 // grid layout resolves. Grid STRETCH overrides once layout runs.
                 if (cell_w > 0 && cell_h > 0) {
-                    lv_obj_set_size(card_bg, cell_w * card_colspan, cell_h * card_rowspan);
+                    lv_obj_set_size(
+                        card_bg,
+                        static_cast<int>(grid_track_extent(metrics.cell_w, gutter, card_colspan)),
+                        static_cast<int>(grid_track_extent(metrics.cell_h, gutter, card_rowspan)));
                 }
                 lv_obj_set_grid_cell(card_bg, LV_GRID_ALIGN_STRETCH, start_col, card_colspan,
                                      LV_GRID_ALIGN_STRETCH, start_row, card_rowspan);
@@ -739,8 +862,10 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                 slot.instance->attach(widget, lv_scr_act());
 
                 // Notify widget of its grid allocation and approximate pixel size
-                slot.instance->on_size_changed(p.colspan, p.rowspan, cell_w * p.colspan,
-                                               cell_h * p.rowspan);
+                slot.instance->on_size_changed(
+                    p.colspan, p.rowspan,
+                    static_cast<int>(grid_track_extent(metrics.cell_w, metrics.gutter, p.colspan)),
+                    static_cast<int>(grid_track_extent(metrics.cell_h, metrics.gutter, p.rowspan)));
 
                 result.push_back(std::move(slot.instance));
             }
@@ -749,7 +874,9 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
             if (slot.widget_id == "ams") {
                 lv_obj_t* ams_child = lv_obj_get_child(widget, 0);
                 if (ams_child && ui_ams_mini_status_is_valid(ams_child)) {
-                    ui_ams_mini_status_set_width(ams_child, cell_w * p.colspan, p.colspan);
+                    ui_ams_mini_status_set_width(
+                        ams_child, static_cast<int>(grid_track_extent(metrics.cell_w,
+                                                                      metrics.gutter, p.colspan)));
                 }
             }
         } catch (const std::exception& e) {

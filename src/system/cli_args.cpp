@@ -29,22 +29,6 @@ std::string
 
 namespace helix {
 
-std::optional<PanelId> panel_name_to_id(const char* name) {
-    if (strcmp(name, "home") == 0)
-        return PanelId::Home;
-    if (strcmp(name, "controls") == 0)
-        return PanelId::Controls;
-    if (strcmp(name, "filament") == 0)
-        return PanelId::Filament;
-    if (strcmp(name, "settings") == 0)
-        return PanelId::Settings;
-    if (strcmp(name, "advanced") == 0)
-        return PanelId::Advanced;
-    if (strcmp(name, "print-select") == 0 || strcmp(name, "print_select") == 0)
-        return PanelId::PrintSelect;
-    return std::nullopt;
-}
-
 void print_test_mode_banner() {
     RuntimeConfig& config = *get_runtime_config();
 
@@ -112,11 +96,10 @@ static void print_help(const char* program_name) {
     printf("Options:\n");
     printf("  -s, --size <size>    Screen size: micro, tiny, small, medium, large, xlarge (or "
            "WxH)\n");
-    printf("  -p, --panel <panel>  Initial panel (default: home)\n");
-    printf("  -k, --keypad         Show numeric keypad for testing\n");
-    printf("  --keyboard           Show keyboard for testing (no textarea)\n");
-    printf("  -w, --wizard         Force first-run configuration wizard\n");
+    printf("  -w, --wizard         Force first-run configuration wizard (overrides the\n");
+    printf("                       --skip-wizard that --test implies)\n");
     printf("  --wizard-step <step> Jump to specific wizard step for testing\n");
+    printf("  --skip-wizard        Suppress the first-run wizard (implied by --test)\n");
     printf("  --calibrate-touch    Force touch calibration on startup\n");
     printf("  -d, --display <n>    Display number for window placement (0, 1, 2...)\n");
     printf("  -x, --x-pos <n>      X coordinate for window position\n");
@@ -140,6 +123,11 @@ static void print_help(const char* program_name) {
     printf("  --moonraker <url>    Override Moonraker URL (e.g., ws://192.168.1.112:7125)\n");
     printf("  --detect-printer     Detect printer via Moonraker REST, print JSON, exit\n");
     printf("                       (use with --host/--port; default 127.0.0.1:7125)\n");
+    printf("  --remote             Enable remote control server (auto in --test mode)\n");
+    printf("  --remote-socket <p>  Override remote control socket path\n");
+    printf("  --remote-transport <t>  Transport: socket (default) or http\n");
+    printf("  --remote-http-bind <h>  HTTP bind host (default 127.0.0.1; implies http)\n");
+    printf("  --remote-http-port <n>  HTTP port (default 7130; implies http)\n");
     printf("  --rotate <degrees>   Display rotation: 0, 90, 180, 270\n");
     printf("  --layout <type>      Override auto-detected layout (auto, standard, ultrawide, "
            "portrait, micro, micro-portrait, tiny, tiny-portrait)\n");
@@ -159,7 +147,7 @@ static void print_help(const char* program_name) {
     printf("    --mock-crash       Write synthetic crash.txt to test crash reporter UI\n");
     printf("    --select-file <name>  Auto-select file in print-select panel\n");
     printf("\nG-code Viewer Options (require --test):\n");
-    printf("  --gcode-file <path>  Load specific G-code file in gcode-test panel\n");
+    printf("  --gcode-file <path>  Preload a G-code file for the 3D print viewer (--test)\n");
     printf("  --camera <params>    Set camera params: \"az:90.5,el:4.0,zoom:15.5\"\n");
     printf("  --gcode-az <deg>     Set camera azimuth angle (degrees)\n");
     printf("  --gcode-el <deg>     Set camera elevation angle (degrees)\n");
@@ -167,14 +155,6 @@ static void print_help(const char* program_name) {
     printf("  --gcode-debug-colors Enable per-face debug coloring\n");
     printf("  --render-2d          Force 2D layer renderer (fast, no 3D)\n");
     printf("  --render-3d          Force 3D GLES renderer\n");
-    printf("\nAvailable panels:\n");
-    printf("  Base: home, controls, filament, settings, advanced\n");
-    printf("  Print: print-select (cards), print-select-list, print-detail\n");
-    printf("  Controls: motion, nozzle-temp, bed-temp, fan, led, bed-mesh, pid\n");
-    printf("  Settings: display, sensors, touch-cal, hardware-health, network, theme\n");
-    printf("  Advanced: zoffset, screws, input-shaper, spoolman, history-dashboard, macros\n");
-    printf("  Print: print-status, print-tune\n");
-    printf("  Dev: ams, step-test, test, gcode-test, glyphs\n");
     printf("\nScreen sizes:\n");
     printf("  micro    = %dx%d\n", UI_SCREEN_MICRO_W, UI_SCREEN_MICRO_H);
     printf("  tiny     = %dx%d\n", UI_SCREEN_TINY_W, UI_SCREEN_TINY_H);
@@ -196,132 +176,6 @@ static void print_help(const char* program_name) {
     printf("  %s --test --real-moonraker          # Test UI with real printer\n", program_name);
     printf("  %s --test --real-wifi --real-files  # Real WiFi and files, mock rest\n",
            program_name);
-}
-
-// Parse -p/--panel argument - handles overlays and base panels
-static bool parse_panel_arg(const char* panel_arg, CliArgs& args) {
-    args.panel_requested = true;
-
-    // Check for overlay panels first (these set flags)
-    if (strcmp(panel_arg, "motion") == 0) {
-        args.initial_panel = static_cast<int>(PanelId::Controls);
-        args.overlays.motion = true;
-    } else if (strcmp(panel_arg, "nozzle-temp") == 0) {
-        args.initial_panel = static_cast<int>(PanelId::Controls);
-        args.overlays.nozzle_temp = true;
-    } else if (strcmp(panel_arg, "bed-temp") == 0) {
-        args.initial_panel = static_cast<int>(PanelId::Controls);
-        args.overlays.bed_temp = true;
-    } else if (strcmp(panel_arg, "fan") == 0) {
-        args.initial_panel = static_cast<int>(PanelId::Controls);
-        args.overlays.fan = true;
-    } else if (strcmp(panel_arg, "led") == 0 || strcmp(panel_arg, "led-control") == 0) {
-        args.initial_panel = static_cast<int>(PanelId::Home);
-        args.overlays.led = true;
-    } else if (strcmp(panel_arg, "print-status") == 0 || strcmp(panel_arg, "printing") == 0) {
-        args.overlays.print_status = true;
-    } else if (strcmp(panel_arg, "print-select-list") == 0 ||
-               strcmp(panel_arg, "print_select_list") == 0) {
-        // Print select panel in LIST view
-        args.initial_panel = static_cast<int>(PanelId::PrintSelect);
-        args.overlays.print_select_list = true;
-        get_runtime_config()->print_select_list_mode = true;
-    } else if (strcmp(panel_arg, "print-detail") == 0 || strcmp(panel_arg, "file-detail") == 0 ||
-               strcmp(panel_arg, "print-file-detail") == 0) {
-        // Print file detail overlay
-        args.initial_panel = static_cast<int>(PanelId::PrintSelect);
-        args.overlays.file_detail = true;
-    } else if (strcmp(panel_arg, "step-test") == 0 || strcmp(panel_arg, "step_test") == 0) {
-        args.overlays.step_test = true;
-    } else if (strcmp(panel_arg, "test") == 0) {
-        args.overlays.test_panel = true;
-    } else if (strcmp(panel_arg, "gcode-test") == 0 || strcmp(panel_arg, "gcode_test") == 0) {
-        args.overlays.gcode_test = true;
-    } else if (strcmp(panel_arg, "bed-mesh") == 0 || strcmp(panel_arg, "bed_mesh") == 0) {
-        args.overlays.bed_mesh = true;
-    } else if (strcmp(panel_arg, "zoffset") == 0 || strcmp(panel_arg, "z-offset") == 0) {
-        args.overlays.zoffset = true;
-    } else if (strcmp(panel_arg, "pid") == 0) {
-        args.overlays.pid = true;
-    } else if (strcmp(panel_arg, "screws") == 0 || strcmp(panel_arg, "screws-tilt") == 0 ||
-               strcmp(panel_arg, "bed-leveling") == 0) {
-        args.overlays.screws_tilt = true;
-    } else if (strcmp(panel_arg, "input-shaper") == 0 || strcmp(panel_arg, "input_shaper") == 0 ||
-               strcmp(panel_arg, "shaper") == 0) {
-        args.overlays.input_shaper = true;
-    } else if (strcmp(panel_arg, "history-dashboard") == 0 ||
-               strcmp(panel_arg, "history_dashboard") == 0 ||
-               strcmp(panel_arg, "print-history") == 0) {
-        args.overlays.history_dashboard = true;
-    } else if (strcmp(panel_arg, "glyphs") == 0) {
-        args.overlays.glyphs = true;
-    } else if (strcmp(panel_arg, "gradient-test") == 0) {
-        args.overlays.gradient_test = true;
-    } else if (strcmp(panel_arg, "ams") == 0) {
-        args.overlays.ams = true;
-    } else if (strcmp(panel_arg, "ams-environment") == 0 ||
-               strcmp(panel_arg, "ams_environment") == 0 ||
-               strcmp(panel_arg, "filament-environment") == 0) {
-        args.overlays.ams_environment = true;
-    } else if (strcmp(panel_arg, "spoolman") == 0) {
-        args.overlays.spoolman = true;
-    } else if (strcmp(panel_arg, "wizard-ams-identify") == 0 ||
-               strcmp(panel_arg, "wizard_ams_identify") == 0) {
-        args.overlays.wizard_ams_identify = true;
-    } else if (strcmp(panel_arg, "theme") == 0 || strcmp(panel_arg, "theme-preview") == 0) {
-        args.initial_panel = static_cast<int>(PanelId::Settings);
-        args.overlays.theme = true;
-    } else if (strcmp(panel_arg, "edit-theme") == 0 || strcmp(panel_arg, "theme-edit") == 0) {
-        args.initial_panel = static_cast<int>(PanelId::Settings);
-        args.overlays.theme_edit = true;
-    }
-    // Settings overlays (for screenshot automation)
-    else if (strcmp(panel_arg, "display") == 0 || strcmp(panel_arg, "display-settings") == 0) {
-        args.initial_panel = static_cast<int>(PanelId::Settings);
-        args.overlays.display_settings = true;
-    } else if (strcmp(panel_arg, "sensors") == 0 || strcmp(panel_arg, "sensor-settings") == 0) {
-        args.initial_panel = static_cast<int>(PanelId::Settings);
-        args.overlays.sensor_settings = true;
-    } else if (strcmp(panel_arg, "touch-cal") == 0 || strcmp(panel_arg, "touch-calibration") == 0) {
-        args.initial_panel = static_cast<int>(PanelId::Settings);
-        args.overlays.touch_calibration = true;
-    } else if (strcmp(panel_arg, "hardware-health") == 0 || strcmp(panel_arg, "hardware") == 0) {
-        args.initial_panel = static_cast<int>(PanelId::Settings);
-        args.overlays.hardware_health = true;
-    } else if (strcmp(panel_arg, "network") == 0 || strcmp(panel_arg, "network-settings") == 0) {
-        args.initial_panel = static_cast<int>(PanelId::Settings);
-        args.overlays.network_settings = true;
-    }
-    // Advanced overlays
-    else if (strcmp(panel_arg, "macros") == 0) {
-        args.initial_panel = static_cast<int>(PanelId::Advanced);
-        args.overlays.macros = true;
-    } else if (strcmp(panel_arg, "print-tune") == 0 || strcmp(panel_arg, "tune") == 0) {
-        args.overlays.print_status = true; // Needs print running
-        args.overlays.print_tune = true;
-    } else if (strcmp(panel_arg, "about") == 0) {
-        args.initial_panel = static_cast<int>(PanelId::Settings);
-        args.overlays.about = true;
-    } else if (strcmp(panel_arg, "timelapse-videos") == 0 ||
-               strcmp(panel_arg, "timelapse_videos") == 0 || strcmp(panel_arg, "timelapse") == 0) {
-        args.initial_panel = static_cast<int>(PanelId::Advanced);
-        args.overlays.timelapse_videos = true;
-    } else {
-        // Try base panel lookup
-        auto panel_id = panel_name_to_id(panel_arg);
-        if (panel_id) {
-            args.initial_panel = static_cast<int>(*panel_id);
-        } else {
-            printf("Unknown panel: %s\n", panel_arg);
-            printf("Available panels: home, controls, motion, nozzle-temp, bed-temp, "
-                   "bed-mesh, zoffset, pid, screws, input-shaper, fan, led, ams, "
-                   "spoolman, print-status, filament, settings, advanced, print-history, "
-                   "print-select, timelapse, about, step-test, test, gcode-test, glyphs, "
-                   "gradient-test, wizard-ams-identify\n");
-            return false;
-        }
-    }
-    return true;
 }
 
 // Parse --camera argument (complex format: "az:90.5,el:4.0,zoom:15.5")
@@ -442,22 +296,11 @@ bool parse_cli_args(int argc, char** argv, CliArgs& args, int& screen_width, int
             }
             args.size_was_explicit = true;
         }
-        // Panel selection
-        else if (strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "--panel") == 0) {
-            if (i + 1 >= argc) {
-                printf("Error: -p/--panel requires an argument\n");
-                return false;
-            }
-            if (!parse_panel_arg(argv[++i], args))
-                return false;
-        }
-        // Simple boolean flags
-        else if (strcmp(argv[i], "-k") == 0 || strcmp(argv[i], "--keypad") == 0) {
-            args.overlays.keypad = true;
-        } else if (strcmp(argv[i], "--keyboard") == 0 || strcmp(argv[i], "--show-keyboard") == 0) {
-            args.overlays.keyboard = true;
-        } else if (strcmp(argv[i], "-w") == 0 || strcmp(argv[i], "--wizard") == 0) {
+        // Wizard
+        else if (strcmp(argv[i], "-w") == 0 || strcmp(argv[i], "--wizard") == 0) {
             args.force_wizard = true;
+        } else if (strcmp(argv[i], "--skip-wizard") == 0) {
+            args.skip_wizard = true;
         }
         // Touch calibration
         else if (strcmp(argv[i], "--calibrate-touch") == 0) {
@@ -710,7 +553,7 @@ bool parse_cli_args(int argc, char** argv, CliArgs& args, int& screen_width, int
         } else if (strcmp(argv[i], "--mock-crash") == 0) {
             config.mock_crash = true;
         } else if (strcmp(argv[i], "--release-notes") == 0) {
-            args.overlays.release_notes = true;
+            args.release_notes = true;
         } else if (strcmp(argv[i], "--no-sound") == 0) {
             config.disable_sound = true;
         } else if (strcmp(argv[i], "--debug-subjects") == 0) {
@@ -740,6 +583,73 @@ bool parse_cli_args(int argc, char** argv, CliArgs& args, int& screen_width, int
             if (args.moonraker_url.find("/websocket") == std::string::npos) {
                 args.moonraker_url += "/websocket";
             }
+        }
+        // Remote control
+        else if (strcmp(argv[i], "--remote") == 0) {
+            args.remote_control = true;
+        } else if (strcmp(argv[i], "--remote-socket") == 0 ||
+                   strncmp(argv[i], "--remote-socket=", 16) == 0) {
+            const char* value = nullptr;
+            if (strncmp(argv[i], "--remote-socket=", 16) == 0) {
+                value = argv[i] + 16;
+            } else if (i + 1 < argc) {
+                value = argv[++i];
+            } else {
+                printf("Error: --remote-socket requires a path argument\n");
+                return false;
+            }
+            args.remote_socket = value;
+            args.remote_control = true; // Implies --remote
+        } else if (strcmp(argv[i], "--remote-transport") == 0 ||
+                   strncmp(argv[i], "--remote-transport=", 19) == 0) {
+            const char* value = nullptr;
+            if (strncmp(argv[i], "--remote-transport=", 19) == 0) {
+                value = argv[i] + 19;
+            } else if (i + 1 < argc) {
+                value = argv[++i];
+            } else {
+                printf("Error: --remote-transport requires socket|http\n");
+                return false;
+            }
+            if (strcmp(value, "socket") != 0 && strcmp(value, "http") != 0) {
+                printf("Error: --remote-transport must be 'socket' or 'http'\n");
+                return false;
+            }
+            args.remote_transport = value;
+            args.remote_control = true; // Implies --remote
+        } else if (strcmp(argv[i], "--remote-http-bind") == 0 ||
+                   strncmp(argv[i], "--remote-http-bind=", 19) == 0) {
+            const char* value = nullptr;
+            if (strncmp(argv[i], "--remote-http-bind=", 19) == 0) {
+                value = argv[i] + 19;
+            } else if (i + 1 < argc) {
+                value = argv[++i];
+            } else {
+                printf("Error: --remote-http-bind requires a host argument\n");
+                return false;
+            }
+            args.remote_http_bind = value;
+            args.remote_transport = "http"; // Selecting an HTTP option implies http
+            args.remote_control = true;
+        } else if (strcmp(argv[i], "--remote-http-port") == 0 ||
+                   strncmp(argv[i], "--remote-http-port=", 19) == 0) {
+            const char* value = nullptr;
+            if (strncmp(argv[i], "--remote-http-port=", 19) == 0) {
+                value = argv[i] + 19;
+            } else if (i + 1 < argc) {
+                value = argv[++i];
+            } else {
+                printf("Error: --remote-http-port requires a port argument\n");
+                return false;
+            }
+            int port = atoi(value);
+            if (port < 1 || port > 65535) {
+                printf("Error: --remote-http-port must be 1..65535 (got '%s')\n", value);
+                return false;
+            }
+            args.remote_http_port = port;
+            args.remote_transport = "http"; // Selecting an HTTP option implies http
+            args.remote_control = true;
         }
         // Log destination
         else if (strcmp(argv[i], "--log-dest") == 0 || strncmp(argv[i], "--log-dest=", 11) == 0) {
@@ -800,26 +710,6 @@ bool parse_cli_args(int argc, char** argv, CliArgs& args, int& screen_width, int
             printf("helix-screen %s\n", helix_version_full());
             return false;
         }
-        // Legacy: first positional arg is panel name
-        else if (i == 1 && argv[i][0] != '-') {
-            const char* panel_arg = argv[i];
-            args.panel_requested = true;
-            if (strcmp(panel_arg, "motion") == 0) {
-                args.initial_panel = static_cast<int>(PanelId::Controls);
-                args.overlays.motion = true;
-            } else if (strcmp(panel_arg, "step-test") == 0 || strcmp(panel_arg, "step_test") == 0) {
-                args.overlays.step_test = true;
-            } else {
-                auto panel_id = panel_name_to_id(panel_arg);
-                if (panel_id) {
-                    args.initial_panel = static_cast<int>(*panel_id);
-                } else {
-                    printf("Unknown argument: %s\n", argv[i]);
-                    printf("Use --help for usage information\n");
-                    return false;
-                }
-            }
-        }
         // Unknown argument — warn but continue (don't crash-loop on forward-compat flags)
         else {
             fprintf(stderr, "Warning: ignoring unknown argument: %s\n", argv[i]);
@@ -848,6 +738,17 @@ bool parse_cli_args(int argc, char** argv, CliArgs& args, int& screen_width, int
     if (config.mock_crash && !config.test_mode) {
         printf("Error: --mock-crash requires --test mode\n");
         return false;
+    }
+
+    // --test implies --skip-wizard. Mock mode sets the active printer to
+    // "mock-printer", and the wizard gate reads
+    // printers.<active>.wizard_completed — a key no real settings.json carries,
+    // so a mock boot always landed on the wizard and silently swallowed every
+    // ctl navigate/click. Applied after the full parse so flag order does not
+    // matter; -w/--wizard still wins, which is how the screenshot pipeline
+    // captures the wizard itself.
+    if (config.test_mode && !args.force_wizard) {
+        args.skip_wizard = true;
     }
 
     // Print test mode banner if enabled

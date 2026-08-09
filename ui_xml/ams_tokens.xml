@@ -1,20 +1,6 @@
 <?xml version="1.0"?>
 <!-- Copyright (C) 2025-2026 356C LLC -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<!--
-  AMS feature tokens.
-
-  All ams_* responsive px tokens live here. Following the same convention as
-  fan_tokens.xml — feature-scoped tokens go in their own file rather than
-  bloating globals.xml or living inside a "consumer" panel like ams_panel.xml
-  (where they used to live, but were also referenced from ams_overview_panel.xml
-  and ams_slot_view.xml — backward-coupling).
-
-  theme_manager scans every file in ui_xml/ for responsive px tokens and
-  registers the bare base name (e.g. `ams_right_col_w`) into the globals scope
-  per current breakpoint, so any component can reference `#ams_right_col_w`
-  regardless of which file the *_tiny/*_small/etc. variants are defined in.
--->
 <component>
   <consts>
     <!-- ===================================================================== -->

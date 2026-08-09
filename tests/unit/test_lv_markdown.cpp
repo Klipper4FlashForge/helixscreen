@@ -1,8 +1,12 @@
 // Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "ui_markdown.h"
+
 #include "lv_markdown.h"
 #include "lvgl_test_fixture.h"
+#include "test_fixtures.h"
+#include "theme_manager.h"
 
 #include <spdlog/spdlog.h>
 
@@ -89,4 +93,23 @@ TEST_CASE_METHOD(LVGLTestFixture, "lv_markdown with multiple siblings in flex",
 
     // Second markdown should start after first ends (no overlap)
     REQUIRE(y2 >= y1 + h1);
+}
+
+TEST_CASE_METHOD(XMLTestFixture, "ui_markdown theme style wires bold font and distinct headings",
+                 "[markdown][style]") {
+    // XMLTestFixture is required because theme_manager_get_font/get_color need
+    // globals.xml parsed and AssetManager::register_fonts() run.
+    lv_markdown_style_t style{};
+    ui_markdown_get_theme_style(style);
+
+    // Bold runs use a real bold glyph, not the letter-spacing faux-bold fallback
+    REQUIRE(style.bold_font != nullptr);
+
+    // Each heading tier should differ from body so the hierarchy actually reads
+    REQUIRE(style.heading_font[0] != style.heading_font[1]); // H1 (font_xl) vs H2 (font_heading)
+    REQUIRE(style.heading_font[2] != style.body_font);       // H3 (font_body_bold) vs body
+    REQUIRE(style.heading_font[3] != style.body_font);       // H4 (font_body_bold) vs body
+
+    // H3 must not fade into body text — its color is distinct from body_color
+    REQUIRE_FALSE(lv_color_eq(style.heading_color[2], style.body_color));
 }

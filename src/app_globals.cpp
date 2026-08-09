@@ -22,8 +22,8 @@
 
 #include "config.h"
 #include "data_root_resolver.h"
-#include "i_moonraker_client.h"
 #include "i_moonraker_api.h"
+#include "i_moonraker_client.h"
 #include "panel_widget_manager.h"
 #include "printer_state.h"
 #include "static_subject_registry.h"
@@ -32,6 +32,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cerrno>
 #include <climits>
 #include <csignal>
@@ -41,9 +43,11 @@
 #include <string>
 #include <vector>
 
-// Platform-specific includes for process restart
+// Platform-specific includes for process restart and the sudo capability probe
 #if defined(__unix__) || defined(__APPLE__)
-#include <unistd.h> // fork, execv, usleep
+#include <fcntl.h>    // open (redirect the probe child to /dev/null)
+#include <sys/wait.h> // waitpid, WNOHANG
+#include <unistd.h>   // fork, execv, usleep
 using namespace helix;
 
 #endif
@@ -63,6 +67,7 @@ static lv_subject_t g_notification_subject;
 static lv_subject_t g_show_beta_features_subject;
 static lv_subject_t g_home_edit_mode_subject;
 static lv_subject_t g_platform_extras_subject;
+static lv_subject_t g_wizard_active_subject;
 
 // Application quit flag (volatile sig_atomic_t for async-signal-safety)
 static volatile sig_atomic_t g_quit_requested = 0;
@@ -147,6 +152,10 @@ lv_subject_t& get_home_edit_mode_subject() {
     return g_home_edit_mode_subject;
 }
 
+lv_subject_t& get_wizard_active_subject() {
+    return g_wizard_active_subject;
+}
+
 // Track if subjects are initialized
 static bool g_subjects_initialized = false;
 
@@ -191,6 +200,12 @@ void app_globals_init_subjects() {
 #endif
     g_subjects.register_subject(&g_platform_extras_subject);
     lv_xml_register_subject(nullptr, "platform_extras_available", &g_platform_extras_subject);
+
+    // Initialize wizard-active subject (observable mirror of is_wizard_active()).
+    // Seed from the current flag so it is correct even when set_wizard_active()
+    // ran before this init. Not XML-bound — observed programmatically only.
+    lv_subject_init_int(&g_wizard_active_subject, g_wizard_active ? 1 : 0);
+    g_subjects.register_subject(&g_wizard_active_subject);
 
     // Initialize modal dialog subjects (for modal_dialog.xml binding)
     helix::ui::modal_init_subjects();
@@ -326,6 +341,14 @@ void set_wizard_active(bool active) {
     bool was_active = g_wizard_active;
     g_wizard_active = active;
     spdlog::debug("[App Globals] Wizard active state set to: {}", active);
+
+    // Mirror into the observable subject so observers (e.g. the PLR offer
+    // controller) see the edge. Guard on init: set_wizard_active() can run
+    // before app_globals_init_subjects(), and init seeds the subject from the
+    // current flag, so skipping here loses nothing. Called on the main thread.
+    if (g_subjects_initialized) {
+        lv_subject_set_int(&g_wizard_active_subject, active ? 1 : 0);
+    }
 
     // Fire completion callback when wizard transitions from active to inactive
     if (was_active && !active && g_wizard_completion_cb) {
@@ -510,4 +533,149 @@ std::string app_get_config_dir() {
         return cfg; // best-effort relative fallback
     }();
     return cached;
+}
+
+bool helix_parse_truthy_env(const char* value) {
+    if (!value || value[0] == '\0') {
+        return false;
+    }
+    std::string v(value);
+    // Trim surrounding whitespace (helixscreen.env values can carry a stray space).
+    auto not_space = [](unsigned char c) { return !std::isspace(c); };
+    v.erase(v.begin(), std::find_if(v.begin(), v.end(), not_space));
+    v.erase(std::find_if(v.rbegin(), v.rend(), not_space).base(), v.end());
+    std::transform(v.begin(), v.end(), v.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return v == "1" || v == "true" || v == "yes" || v == "on";
+}
+
+bool compute_updates_externally_managed(const char* disable_auto_updates) {
+    // Explicit opt-out only. HELIX_DISABLE_AUTO_UPDATES is the firmware-facing flag.
+    return helix_parse_truthy_env(disable_auto_updates);
+}
+
+bool updates_externally_managed() {
+    static const bool cached =
+        compute_updates_externally_managed(std::getenv("HELIX_DISABLE_AUTO_UPDATES"));
+    return cached;
+}
+
+// Run `sudo -n true` and report whether it exited 0. `-n` is non-interactive:
+// with NOPASSWD sudoers it succeeds immediately, otherwise it fails immediately
+// rather than prompting, which matches how install.sh runs (forked with no tty).
+//
+// Bounded: sudoers can be backed by LDAP/SSSD, where a lookup against an
+// unreachable directory blocks for the resolver's own timeout. This is called
+// from the main thread during startup, so poll for the child instead of a
+// blocking waitpid() and treat "still running at the deadline" as no.
+static bool probe_passwordless_sudo() {
+    constexpr int kTimeoutMs = 2000;
+    constexpr int kPollIntervalMs = 20;
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        spdlog::warn("[Updates] fork() for sudo probe failed: {}", strerror(errno));
+        return false;
+    }
+
+    if (pid == 0) {
+        // Child — discard sudo's output; only the exit status matters.
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) {
+            dup2(devnull, STDOUT_FILENO);
+            dup2(devnull, STDERR_FILENO);
+            close(devnull);
+        }
+        // systemd services can start with PATH unset, which would break the
+        // execvp lookup and misreport a sudo-capable box as not.
+        const char* cur_path = std::getenv("PATH");
+        if (!cur_path || cur_path[0] == '\0') {
+            setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", 1);
+        }
+        char* const argv[] = {const_cast<char*>("sudo"), const_cast<char*>("-n"),
+                              const_cast<char*>("true"), nullptr};
+        execvp("sudo", argv);
+        _exit(127); // no sudo binary
+    }
+
+    for (int waited_ms = 0; waited_ms < kTimeoutMs; waited_ms += kPollIntervalMs) {
+        int status = 0;
+        const pid_t done = waitpid(pid, &status, WNOHANG);
+        if (done == pid) {
+            return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+        }
+        if (done < 0) {
+            return false; // child vanished (SIGCHLD reaped elsewhere) — assume no
+        }
+        usleep(kPollIntervalMs * 1000);
+    }
+
+    spdlog::warn("[Updates] sudo probe did not finish in {}ms — assuming no escalation",
+                 kTimeoutMs);
+    kill(pid, SIGKILL);
+    waitpid(pid, nullptr, 0);
+    return false;
+}
+
+bool root_escalation_available() {
+    static const bool cached = []() {
+        if (geteuid() == 0) {
+            return true; // already root — every embedded platform runs this way
+        }
+        const bool ok = probe_passwordless_sudo();
+        spdlog::info("[Updates] Passwordless sudo {}", ok ? "available" : "unavailable");
+        return ok;
+    }();
+    return cached;
+}
+
+bool compute_self_update_supported(const std::string& install_root, bool can_escalate) {
+    // Self-update swaps the install root via rename ("mv <root> <root>.old;
+    // mv <new> <root>"), which needs write permission on the PARENT directory —
+    // rename mutates the parent's directory entries, not the root itself.
+    if (install_root.empty()) {
+        // Unresolvable layout (bind-mounted binary). Conservative: assume
+        // supported — the installer's own fallbacks and the explicit
+        // HELIX_DISABLE_AUTO_UPDATES flag remain the deciding factors.
+        return true;
+    }
+    const std::string parent = std::filesystem::path(install_root).parent_path().string();
+    if (parent.empty()) {
+        return true; // no parent to test (e.g. a bare relative name) — don't block.
+    }
+    if (helix::paths::is_writable_dir(parent)) {
+        return true;
+    }
+    // Parent isn't writable by this user. That is NOT the same as impossible:
+    // install.sh escalates with sudo for exactly these steps, so the swap still
+    // runs on the common /opt/helixscreen + non-root service user layout. Only a
+    // box with neither write access nor root is genuinely stuck (read-only rootfs).
+    return can_escalate;
+}
+
+bool self_update_supported() {
+    static const bool cached = []() {
+        const std::string root = app_get_install_root();
+        // Ask without escalation first so the writable-parent case never pays for
+        // the sudo probe.
+        if (compute_self_update_supported(root, /*can_escalate=*/false)) {
+            return true;
+        }
+        const bool escalate = root_escalation_available();
+        if (!escalate) {
+            spdlog::info("[Updates] Self-update unsupported: parent of {} is not writable and "
+                         "root is not obtainable",
+                         root);
+        }
+        return compute_self_update_supported(root, escalate);
+    }();
+    return cached;
+}
+
+bool compute_in_app_updates_suppressed(bool externally_managed, bool self_update_ok) {
+    return externally_managed || !self_update_ok;
+}
+
+bool in_app_updates_suppressed() {
+    return compute_in_app_updates_suppressed(updates_externally_managed(), self_update_supported());
 }

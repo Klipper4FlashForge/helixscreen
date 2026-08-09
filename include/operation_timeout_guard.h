@@ -23,7 +23,7 @@ class SubjectManager;
  * // Before API call:
  * operation_guard_.begin(30000, [this] { NOTIFY_WARNING("Operation timed out"); });
  *
- * // In success/error callbacks (via ui_async_call):
+ * // In success/error callbacks (via ui_queue_update()):
  * operation_guard_.end();
  * @endcode
  */
@@ -80,6 +80,17 @@ class OperationTimeoutGuard {
      */
     lv_subject_t* subject() {
         return has_subject_ ? &subject_ : nullptr;
+    }
+
+    /**
+     * @brief The armed timeout timer, or nullptr when no operation is pending
+     *
+     * Test-observability only: lets a test fire the timeout immediately
+     * (lv_timer_set_period + lv_timer_ready) instead of waiting out the real
+     * budget, while still running the handler the production callsite installed.
+     */
+    [[nodiscard]] lv_timer_t* pending_timer() const noexcept {
+        return timer_;
     }
 
   private:

@@ -1,6 +1,6 @@
-# LVGL 9.4 XML Attributes Reference
+# LVGL 9.5 / helix-xml Attributes Reference
 
-**Source:** `lvgl/src/others/xml/parsers/*.c` | **Updated:** 2025-12-18
+**Source:** `lib/helix-xml/src/xml/parsers/*.c` | **Updated:** 2026-07-22
 
 ---
 
@@ -60,6 +60,70 @@ All widgets inherit these.
 ```
 
 **Operators:** `bind_flag_if_eq`, `bind_flag_if_not_eq`, `bind_flag_if_gt`, `bind_flag_if_ge`, `bind_flag_if_lt`, `bind_flag_if_le` (same for `bind_state_*`)
+
+**Expression-driven conditionals** (multi-subject / arithmetic conditions — see `LVGL9_XML_GUIDE.md` § "Expression Conditionals"):
+
+```xml
+<!-- Derived subject, kept in sync (declare inputs first) -->
+<subjects>
+    <int name="demo_temp" value="50"/>
+    <int name="demo_threshold" value="70"/>
+    <subject_expr name="demo_alarm" expr="demo_temp gt demo_threshold"/>
+</subjects>
+
+<lv_obj>
+    <bind_flag_if cond="demo_alarm" flag="hidden" invert="true"/>
+</lv_obj>
+<ui_button>
+    <bind_state_if cond="demo_alarm" state="disabled"/>
+</ui_button>
+<ui_card>
+    <bind_style_if name="demo_alarm_style" cond="demo_alarm"/>
+</ui_card>
+```
+
+| Tag/Attr | Notes |
+|----------|-------|
+| `<subject_expr name= expr=>` | Sibling of `<subject>`/`<int>` in `<subjects>`; derived int subject, inputs must be declared earlier |
+| `<bind_flag_if cond= flag= invert=>` | Reactive flag add/remove driven by expression |
+| `<bind_state_if cond= state= invert=>` | Reactive state add/remove driven by expression |
+| `<bind_style_if cond= name= selector= parts= invert=>` | Reactive style enable/disable driven by expression |
+
+**Grammar:** subject name, int literal, `( )` grouping; `== != < <= > >=` / word forms `eq ne lt le gt ge`; `&& \|\| !` / word forms `and or not`; `+ - * / %` (div/mod by zero → `0`). **House style = word forms** — `&&`/`<` need XML escaping (`&amp;&amp;`/`&lt;`), word forms don't.
+
+**Looping** (`LVGL9_XML_GUIDE.md` § "Repeating fragments with `<repeat>`"):
+
+```xml
+<!-- Expand the body N times at load time; $i is the zero-based index -->
+<lv_obj name="root">
+    <repeat count="4">
+        <lv_label name="lbl" text="$i"/>
+    </repeat>
+</lv_obj>
+```
+
+| Tag/Attr | Notes |
+|----------|-------|
+| `<repeat count=>` | Expands its body `count` times. `count` is a literal, a `#const`, or a subject name; a subject-bound `count` **reactively rebuilds** the expansion when the subject changes (async off-tree teardown — a reactive `<repeat>` must be its parent's last child or in its own container). Clamped to `[0, 256]`. Not nestable yet. |
+| `$i` / `${…}` | Zero-based iteration index inside a `<repeat>` body. Bare `$i` is a whole-value substitution (`text="$i"`); `${i}` / `${prop}` splices a name into a larger string (`bind_text="slot_${i}_label"`). `${…}` also evaluates an **integer expression** and splices the result (`${i + 1}`, `${i * 84}`, `${base * scale}`, `${cols * 2}`) — operands are `i`, integer literals, numeric props, and subjects. **Resolve-once**: subject operands are read at creation and do not update reactively (use `bind_*` for live values). |
+
+**Structural conditionals** (`LVGL9_XML_GUIDE.md` § "Structural conditionals with `<if>` / `<else>`"):
+
+```xml
+<!-- Creates ONLY the matching branch; false branch is never built -->
+<lv_obj name="root">
+    <if cond="c gt 0">
+        <lv_obj name="t"/>
+        <else/>
+        <lv_obj name="f"/>
+    </if>
+</lv_obj>
+```
+
+| Tag/Attr | Notes |
+|----------|-------|
+| `<if cond=>` | `cond` is an expression string, same word-form grammar as `cond=` on `bind_flag_if`/`<subject_expr>`. Creates only the matching body — no subjects referenced = static, expands once at load, no observer; subjects referenced = reactive, rebuilds on any operand change. Reactive `<if>` must be its parent's last child or in its own container (same ordering constraint as `<repeat>`). Not nestable yet. |
+| `<else>` | No attributes. Inline divider inside one `<if>…</if>`: everything before it is the true-body, everything after is the false-body. `<else/>` and `<else></else>` are identical. Optional — omitting it means "create nothing" for the false case. A second `<else/>` warns (first split wins); a stray `<else/>` outside any `<if>` warns and is ignored. |
 
 ---
 

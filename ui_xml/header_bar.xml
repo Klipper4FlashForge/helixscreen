@@ -12,10 +12,43 @@
        - Uses text_heading/text_body components for theme consistency
        - XML-controlled action button visibility via hide_action_button prop
   -->
+  <consts>
+    <!-- Cap for the header's action buttons.
+
+         These must fit INSIDE header_height, not merely be a comfortable
+         standalone touch target. button_height's own ladder exceeds
+         header_height from the LARGE tier up (72>60, 80>68, 96>80), so a
+         header passing #button_height gets a button taller than its own bar;
+         style_flex_cross_place centers the overflow and the top half clips off
+         the screen.
+
+         Applied as style_max_height rather than height, because the
+         action_button_height default is `content` and those self-sized buttons
+         are already correct — a cap leaves them alone and clamps only the
+         oversized ones.
+
+         Roughly 80% of the corresponding header_height at each tier. -->
+    <px name="header_button_height_micro" value="22"/>
+    <px name="header_button_height_tiny" value="26"/>
+    <px name="header_button_height_small" value="38"/>
+    <px name="header_button_height_medium" value="44"/>
+    <px name="header_button_height_large" value="48"/>
+    <px name="header_button_height_xlarge" value="54"/>
+    <px name="header_button_height_xxlarge" value="64"/>
+  </consts>
   <!-- API Properties -->
   <api>
     <prop name="title" type="string"/>
     <prop name="title_tag" type="string" default=""/>
+    <!-- Optional trailing badge: a small image plus a short label, for a screen
+         that needs to show WHICH record it is editing. Both parts are empty by
+         default and the group stays hidden unless title_badge_subject resolves
+         to 1, so a header that asks for nothing renders nothing. The label text
+         is left to the owning screen — bind "header_title_badge_text" with
+         lv_label_bind_text rather than adding a bind_text here, which would warn
+         on every header that has no badge subject. -->
+    <prop name="title_badge_image" type="string" default=""/>
+    <prop name="title_badge_subject" type="string" default=""/>
     <!-- Back button callback - defaults to standard navigation go_back -->
     <prop name="back_button_callback" type="string" default="on_header_back_clicked"/>
     <!-- Text-based action button (use action_button_text) -->
@@ -43,6 +76,14 @@
     <prop name="action_button_callback" type="string" default=""/>
     <!-- Subject name for reactive disabled state binding (empty = no binding) -->
     <prop name="action_button_disabled_subject" type="string" default=""/>
+    <!-- Expression form of the above, for buttons whose disabled state depends on
+         more than one subject (e.g. "busy OR printer not reachable"). Use EITHER
+         this or action_button_disabled_subject, never both: two bindings on the
+         same LVGL state clobber each other, since each observer asserts both
+         polarities on every fire. Default "0" is a constant (no subjects), so it
+         fires once at bind and never again — which is why the binding below is
+         ordered BEFORE the subject binding, letting the subject form win. -->
+    <prop name="action_button_disabled_cond" type="string" default="0"/>
     <!-- Optional int subject: 1 hides the action button entirely (per-view Save) -->
     <prop name="action_button_hidden_subject" type="string" default=""/>
     <!-- Second action button (appears to LEFT of primary action button) -->
@@ -53,36 +94,48 @@
     <prop name="hide_action_button_2" type="string" default="true"/>
   </api>
   <view extends="lv_obj"
-        width="100%" height="#header_height" style_pad_left="0" style_pad_right="#space_lg"
-        style_pad_top="0" style_pad_bottom="0" flex_flow="row" style_flex_main_place="space_between"
-        style_flex_track_place="center" style_flex_cross_place="center" scrollable="false">
+        width="100%" height="#header_height" style_pad_left="0" style_pad_right="#space_lg" style_pad_top="0"
+        style_pad_bottom="0" flex_flow="row" style_flex_main_place="space_between" style_flex_track_place="center"
+        style_flex_cross_place="center" scrollable="false">
     <!-- Back button: flex_grow region covers arrow + title = huge touch target -->
-    <lv_obj name="back_button" flex_grow="1" height="100%"
-            style_pad_left="#space_sm" style_pad_right="0" style_pad_top="0" style_pad_bottom="0"
-            scrollable="false" clickable="true"
-            style_flex_cross_place="center" style_flex_track_place="center"
-            flex_flow="row" style_pad_gap="#space_xs">
+    <lv_obj name="back_button"
+            height="100%" flex_grow="1" style_pad_left="#space_sm" style_pad_right="0" style_pad_top="0"
+            style_pad_bottom="0" scrollable="false" clickable="true" style_flex_cross_place="center"
+            style_flex_track_place="center" flex_flow="row" style_pad_gap="#space_xs">
       <event_cb trigger="clicked" callback="$back_button_callback"/>
       <icon src="back" size="lg" variant="text" clickable="false" event_bubble="true"/>
       <text_heading name="header_title"
-                    text="$title" translation_tag="$title_tag" text_transform="uppercase" flex_grow="1" style_text_align="left"
-                    clickable="false" event_bubble="true" scrollable="false"/>
+                    text="$title" translation_tag="$title_tag" text_transform="uppercase" flex_grow="1"
+                    style_text_align="left" clickable="false" event_bubble="true" scrollable="false"/>
+      <!-- Trailing badge (image + label), see the props above. Sits after the
+           title so the two parts read together as one mark. -->
+      <lv_obj name="header_title_badge"
+              width="content" height="content" style_pad_all="0" flex_flow="row" style_flex_cross_place="center"
+              style_pad_gap="#space_xs" hidden="true" clickable="false" event_bubble="true" scrollable="false">
+        <bind_flag_if_eq subject="$title_badge_subject" flag="hidden" ref_value="0"/>
+        <lv_image src="$title_badge_image"
+                  style_image_recolor="#text_muted" style_image_recolor_opa="255" clickable="false" event_bubble="true"/>
+        <text_body name="header_title_badge_text" style_text_color="#text_muted" clickable="false" event_bubble="true"/>
+      </lv_obj>
     </lv_obj>
     <!-- Secondary action button (left of primary, hidden by default) -->
     <ui_button name="action_button_2"
                width="content" height="$action_button_height" style_min_width="90"
-               style_bg_color="$action_button_2_bg_color" hidden="$hide_action_button_2" text="$action_button_2_text"
-               translation_tag="$action_button_2_text_tag">
+               style_max_height="#header_button_height" style_bg_color="$action_button_2_bg_color"
+               hidden="$hide_action_button_2" text="$action_button_2_text" translation_tag="$action_button_2_text_tag">
       <event_cb trigger="clicked" callback="$action_button_2_callback"/>
     </ui_button>
     <!-- Primary action button (hidden by default, pass hide_action_button="false" to show) -->
     <!-- Supports both text (action_button_text) and icon (action_button_icon) modes -->
     <!-- For icon-only buttons like E-stop, use circular radius and custom bg_color -->
     <ui_button name="action_button"
-               width="$action_button_width" height="$action_button_height" style_radius="$action_button_radius"
-               style_bg_color="$action_button_bg_color" hidden="$hide_action_button" icon="$action_button_icon"
-               icon_size="$action_button_icon_size"
+               width="$action_button_width" height="$action_button_height" style_max_height="#header_button_height"
+               style_radius="$action_button_radius" style_bg_color="$action_button_bg_color"
+               hidden="$hide_action_button" icon="$action_button_icon" icon_size="$action_button_icon_size"
                text="$action_button_text" translation_tag="$action_button_text_tag">
+      <!-- Expression-driven disabled binding. Must precede the subject binding below;
+           see the action_button_disabled_cond prop comment for why. -->
+      <bind_state_if cond="$action_button_disabled_cond" state="disabled"/>
       <!-- Reactive disabled state binding (enabled when subject exists and is non-empty) -->
       <bind_state_if_eq subject="$action_button_disabled_subject" state="disabled" ref_value="1"/>
       <!-- Reactive hidden binding: 1 hides the action button entirely (per-view Save) -->

@@ -11,6 +11,7 @@
 #include "../../include/pending_startup_warnings.h"
 #include "config.h"
 #include "drm_rotation_strategy.h"
+#include "helix_display_telemetry.h"
 #include "input_device_scanner.h"
 #include "touch_calibration_wrapper.h"
 
@@ -215,6 +216,12 @@ DisplayBackendDRM::DisplayBackendDRM() : drm_device_(auto_detect_drm_device()) {
 DisplayBackendDRM::DisplayBackendDRM(const std::string& drm_device) : drm_device_(drm_device) {}
 
 DisplayBackendDRM::~DisplayBackendDRM() {
+    // Tear down the calibration read callback before calibration_context_ (a value
+    // member) is destroyed. Nothing deletes indevs until lv_deinit(), so the
+    // pointer indev outlives this backend; if an indev read fired between our
+    // destruction and lv_deinit(), calibrated_read_cb would reach the freed
+    // calibration_context_ (use-after-free / SIGSEGV). Mirrors ~DisplayBackendFbdev.
+    helix::uninstall_calibration_wrapper(pointer_, calibration_context_);
     restore_console();
 }
 
@@ -555,6 +562,12 @@ lv_indev_t* DisplayBackendDRM::create_input_pointer() {
             // fbdev backend already does this (#943/#986); the DRM backend did not.
             struct input_absinfo abs_x = {}, abs_y = {};
             bool got_range = false;
+            // #943 diagnostics: did we actually install the coarse down-scale, and
+            // was calibration forced because the queried ABS range was unusable /
+            // mismatched? Used below to emit a loud signal when the scale is skipped
+            // on a panel that needs it.
+            bool coarse_scale_installed = false;
+            bool needs_cal_forced_by_abs = false;
             if (has_abs && screen_width_ > 0 && screen_height_ > 0) {
                 int fd = open(touch_path, O_RDONLY | O_NONBLOCK);
                 if (fd >= 0) {
@@ -582,6 +595,7 @@ lv_indev_t* DisplayBackendDRM::create_input_pointer() {
                     if (used_mt_fallback && got_range && abs_x.maximum > abs_x.minimum) {
                         lv_evdev_set_calibration(pointer_, abs_x.minimum, abs_y.minimum,
                                                  abs_x.maximum, abs_y.maximum);
+                        coarse_scale_installed = true;
                         spdlog::info("[DRM Backend] Applied MT axis range to LVGL calibration: "
                                      "X({}..{}) Y({}..{})",
                                      abs_x.minimum, abs_x.maximum, abs_y.minimum, abs_y.maximum);
@@ -595,11 +609,13 @@ lv_indev_t* DisplayBackendDRM::create_input_pointer() {
 
                         if (!needs_calibration_ && abs_x.maximum <= 0 && abs_y.maximum <= 0) {
                             needs_calibration_ = true;
+                            needs_cal_forced_by_abs = true;
                             spdlog::warn("[DRM Backend] ABS range is zero — forcing calibration");
                         } else if (!needs_calibration_ &&
                                    helix::has_abs_display_mismatch(abs_x.maximum, abs_y.maximum,
                                                                    screen_width_, screen_height_)) {
                             needs_calibration_ = true;
+                            needs_cal_forced_by_abs = true;
                             spdlog::warn("[DRM Backend] ABS range ({},{}) mismatches display "
                                          "({}x{}) — forcing calibration",
                                          abs_x.maximum, abs_y.maximum, screen_width_,
@@ -607,6 +623,65 @@ lv_indev_t* DisplayBackendDRM::create_input_pointer() {
                         }
                     }
                 }
+            }
+
+            // #943 diagnostic: if the coarse down-scale was never installed
+            // (lv_evdev_set_calibration skipped — e.g. the ABS/MT range query failed
+            // on this boot) but the panel is known to mismatch the digitizer, raw
+            // 0..max coords flow into the smaller panel UNSCALED and only the
+            // top-left corner registers. This was silent before; make it loud and
+            // grep-able so a failed-query boot is diagnosable from logs alone.
+            bool abs_mismatch =
+                got_range && helix::has_abs_display_mismatch(abs_x.maximum, abs_y.maximum,
+                                                             screen_width_, screen_height_);
+            if (!coarse_scale_installed && (abs_mismatch || needs_cal_forced_by_abs)) {
+                spdlog::warn(
+                    "[DRM Backend] Coarse touch scale NOT installed (lv_evdev_set_calibration "
+                    "skipped) but panel mismatches — raw touch coords will flow UNSCALED (touch "
+                    "may register only top-left). ABS X({}..{}) Y({}..{}) vs display {}x{} "
+                    "[abs_mismatch={} needs_cal_forced={} got_range={}]",
+                    abs_x.minimum, abs_x.maximum, abs_y.minimum, abs_y.maximum, screen_width_,
+                    screen_height_, abs_mismatch, needs_cal_forced_by_abs, got_range);
+
+                // Report a telemetry anomaly (rate-limited, best-effort). Stable slug
+                // so occurrences can be aggregated across devices/boots. Routed
+                // through the C bridge rather than TelemetryManager directly so
+                // this object (which is force-linked into helix-splash /
+                // helix-watchdog via --whole-archive) does not drag the telemetry
+                // singleton into those pipeline-less binaries. See
+                // helix_display_telemetry.h.
+                helix_display_telemetry_error("display", "touch-coarse-scale-skipped",
+                                              "drm_abs_range_query_unusable");
+            }
+
+            // Touch axis / range overrides via environment (parity with the fbdev
+            // backend, which has had these; the DRM backend did not — #943). These
+            // override the kernel-reported EVIOCGABS range, which some controllers
+            // over-report: the digitizer advertises a wider ABS range than it
+            // actually emits, so the auto-installed coarse scale over-divides and
+            // taps collapse into a fraction of the panel (Qidi Q2 class — the
+            // "captured/target ratio < 1.0" symptom from the span-check log).
+            // Setting the true emitted range here restores 1:1 mapping. To invert
+            // an axis, swap min/max (e.g. MIN_Y=3200 MAX_Y=900).
+            const char* swap_axes = std::getenv("HELIX_TOUCH_SWAP_AXES");
+            if (swap_axes != nullptr && strcmp(swap_axes, "1") == 0) {
+                spdlog::info("[DRM Backend] Touch axes swapped (HELIX_TOUCH_SWAP_AXES=1)");
+                lv_evdev_set_swap_axes(pointer_, true);
+            }
+
+            const char* env_min_x = std::getenv("HELIX_TOUCH_MIN_X");
+            const char* env_max_x = std::getenv("HELIX_TOUCH_MAX_X");
+            const char* env_min_y = std::getenv("HELIX_TOUCH_MIN_Y");
+            const char* env_max_y = std::getenv("HELIX_TOUCH_MAX_Y");
+            if (env_min_x && env_max_x && env_min_y && env_max_y) {
+                int min_x = std::atoi(env_min_x);
+                int max_x = std::atoi(env_max_x);
+                int min_y = std::atoi(env_min_y);
+                int max_y = std::atoi(env_max_y);
+                spdlog::info("[DRM Backend] Touch calibration range from env: X({}->{}) Y({}->{}) "
+                             "(overrides kernel EVIOCGABS)",
+                             min_x, max_x, min_y, max_y);
+                lv_evdev_set_calibration(pointer_, min_x, min_y, max_x, max_y);
             }
 
             // Load stored calibration.
@@ -658,6 +733,7 @@ lv_indev_t* DisplayBackendDRM::create_input_pointer() {
 
             helix::install_calibration_wrapper(pointer_, calibration_context_, calibration_,
                                                screen_width_, screen_height_);
+            calibration_wrapper_installed_ = true;
         }
     }
 
@@ -1179,44 +1255,46 @@ bool DisplayBackendDRM::set_calibration(const helix::TouchCalibration& cal) {
     }
 
     calibration_ = cal;
+    // Update the owned context directly — calibrated_read_cb reads this same
+    // member. Never round-trip through lv_indev_get_user_data(pointer_): that
+    // slot can be stale or corrupted (bundle LG9X482B held XML string bytes),
+    // and writing cal through a non-null garbage pointer faults.
+    calibration_context_.calibration = cal;
 
-    if (pointer_) {
-        auto* ctx = static_cast<helix::CalibrationContext*>(lv_indev_get_user_data(pointer_));
-        if (ctx) {
-            ctx->calibration = cal;
-            spdlog::info("[DRM Backend] Calibration updated: a={:.4f} b={:.4f} c={:.4f} d={:.4f} "
-                         "e={:.4f} f={:.4f}",
-                         cal.a, cal.b, cal.c, cal.d, cal.e, cal.f);
-        } else {
-            // Wrapper not yet installed — install it now
-            helix::install_calibration_wrapper(pointer_, calibration_context_, calibration_,
-                                               screen_width_, screen_height_);
-            spdlog::info("[DRM Backend] Calibration callback installed at runtime");
-        }
+    if (pointer_ && !calibration_wrapper_installed_) {
+        // Wrapper not yet installed — install it now
+        helix::install_calibration_wrapper(pointer_, calibration_context_, calibration_,
+                                           screen_width_, screen_height_);
+        calibration_wrapper_installed_ = true;
+        spdlog::info("[DRM Backend] Calibration callback installed at runtime");
+    } else {
+        spdlog::info("[DRM Backend] Calibration updated: a={:.4f} b={:.4f} c={:.4f} d={:.4f} "
+                     "e={:.4f} f={:.4f}",
+                     cal.a, cal.b, cal.c, cal.d, cal.e, cal.f);
     }
 
     return true;
 }
 
 void DisplayBackendDRM::disable_affine_calibration() {
-    if (pointer_) {
-        auto* ctx = static_cast<helix::CalibrationContext*>(lv_indev_get_user_data(pointer_));
-        if (ctx) {
-            ctx->calibration.valid = false;
-            spdlog::debug("[DRM Backend] Affine calibration disabled for recalibration");
-        }
-    }
+    // Operate on the owned member, not lv_indev_get_user_data(pointer_): the
+    // indev's user_data can be stale/corrupted and slip past an "if (ctx)" guard
+    // as a non-null garbage pointer, faulting on the write (bundle LG9X482B).
+    calibration_context_.calibration.valid = false;
+    spdlog::debug("[DRM Backend] Affine calibration disabled for recalibration");
 }
 
 void DisplayBackendDRM::enable_affine_calibration() {
-    if (pointer_) {
-        auto* ctx = static_cast<helix::CalibrationContext*>(lv_indev_get_user_data(pointer_));
-        if (ctx) {
-            ctx->calibration = calibration_;
-            spdlog::debug("[DRM Backend] Affine calibration re-enabled (valid={})",
-                          calibration_.valid);
-        }
-    }
+    calibration_context_.calibration = calibration_;
+    spdlog::debug("[DRM Backend] Affine calibration re-enabled (valid={})", calibration_.valid);
+}
+
+void DisplayBackendDRM::clear_calibration() {
+    // Both slots, so enable_affine_calibration() cannot bring the old matrix
+    // back. Operates on owned members for the same reason set_calibration does.
+    calibration_ = helix::TouchCalibration{};
+    calibration_context_.calibration = calibration_;
+    spdlog::info("[DRM Backend] Stored calibration cleared — device is uncalibrated");
 }
 
 #endif // HELIX_DISPLAY_DRM

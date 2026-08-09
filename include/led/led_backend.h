@@ -26,6 +26,45 @@ struct LedStripInfo {
     bool pin_config_known = false; // True if configfile was parsed for this strip
 };
 
+/// Find a strip by its Klipper/Moonraker ID. Returns nullptr when absent.
+/// Backends hold a handful of strips each, so the linear scan is the right
+/// shape — this exists so call sites stop hand-rolling the loop.
+inline const LedStripInfo* find_strip(const std::vector<LedStripInfo>& strips,
+                                      const std::string& id) {
+    for (const auto& s : strips) {
+        if (s.id == id) {
+            return &s;
+        }
+    }
+    return nullptr;
+}
+
+/// Mutable overload for the backends that patch capability flags in place.
+inline LedStripInfo* find_strip(std::vector<LedStripInfo>& strips, const std::string& id) {
+    for (auto& s : strips) {
+        if (s.id == id) {
+            return &s;
+        }
+    }
+    return nullptr;
+}
+
+/// Macro devices are addressed by a synthetic "macro:<display name>" strip ID
+/// so they can share the selection list with real strips.
+constexpr const char* MACRO_STRIP_PREFIX = "macro:";
+
+/// True when a strip ID refers to a macro device.
+inline bool is_macro_strip_id(const std::string& id) {
+    return id.rfind(MACRO_STRIP_PREFIX, 0) == 0;
+}
+
+/// Strip the "macro:" prefix from a strip ID, yielding the raw macro display
+/// name. IDs without the prefix are returned unchanged.
+inline std::string strip_macro_name(const std::string& id) {
+    constexpr size_t prefix_len = 6; // strlen("macro:")
+    return is_macro_strip_id(id) ? id.substr(prefix_len) : id;
+}
+
 struct LedEffectInfo {
     std::string name;         // Klipper config name (e.g., "led_effect breathing")
     std::string display_name; // Human-friendly (e.g., "Breathing")
@@ -46,6 +85,19 @@ struct LedMacroInfo {
     std::string toggle_macro;                 // TOGGLE type: single toggle macro
     std::vector<std::string> presets;         // PRESET type: Klipper macro names
 };
+
+/// Find a configured macro device by its display name. Returns nullptr when
+/// absent. Accepts either the raw display name or a "macro:"-prefixed strip ID.
+inline const LedMacroInfo* find_macro(const std::vector<LedMacroInfo>& macros,
+                                      const std::string& name_or_id) {
+    const std::string name = strip_macro_name(name_or_id);
+    for (const auto& m : macros) {
+        if (m.display_name == name) {
+            return &m;
+        }
+    }
+    return nullptr;
+}
 
 /// WLED preset info fetched from device
 struct WledPresetInfo {

@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstdint>
 #include <list>
+#include <string>
 
 /**
  * @brief Toast notification severity levels
@@ -81,6 +82,8 @@ class ToastManager {
         toast_action_callback_t action_cb = nullptr;
         void* action_user_data = nullptr;
         bool is_exiting = false;
+        ToastSeverity severity = ToastSeverity::INFO;
+        std::string message; // for dedupe of rapid identical toasts
     };
     using ToastList = std::list<ToastInstance>; // std::list → stable pointers
 
@@ -89,6 +92,35 @@ class ToastManager {
                                void* action_user_data, const char* action_text);
     void ensure_stack_container();
     ToastList::iterator find_by_widget(lv_obj_t* widget);
+    /** If a non-exiting, non-action toast with identical severity+message is
+     *  visible, reset its dismiss timer and return true (caller skips
+     *  creating a duplicate). Rapid-fire error paths (jog spam, reconnect
+     *  storms) otherwise stack N identical widgets in one queue drain.
+     *
+     *  Defined inline (header-only): mk/tests.mk excludes
+     *  ui_toast_manager.o from the test build and tests/ui_test_utils.cpp
+     *  supplies a stub ToastManager for the rest of the class, so an
+     *  out-of-line definition here would need a second copy in the stub —
+     *  and the unit test would end up exercising that copy, not this one.
+     *  Keeping the one real implementation in the header means both the
+     *  app binary and the test binary link the same code; only LVGL's
+     *  lv_timer_reset() is needed, which is available in both. Do not
+     *  move this back to ui_toast_manager.cpp or add a stub override. */
+    bool refresh_duplicate(ToastSeverity severity, const char* message) {
+        if (!message) {
+            return false;
+        }
+        for (auto& t : active_) {
+            if (!t.is_exiting && t.action_cb == nullptr && t.severity == severity &&
+                t.message == message) {
+                if (t.dismiss_timer) {
+                    lv_timer_reset(t.dismiss_timer);
+                }
+                return true;
+            }
+        }
+        return false;
+    }
     void begin_exit(ToastList::iterator it);
     void force_remove(ToastList::iterator it); // no animation
     void finalize_remove(lv_obj_t* widget);    // called from exit-anim completion
@@ -117,6 +149,8 @@ class ToastManager {
     ToastList active_;
     size_t max_visible_ = kMaxVisible;
     std::atomic<bool> initialized_{false};
+
+    friend class ToastManagerTestAccess;
 };
 
 namespace helix {

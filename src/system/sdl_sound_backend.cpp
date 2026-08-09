@@ -34,6 +34,9 @@ bool SDLSoundBackend::initialize() {
     device_id_ = SDL_OpenAudioDevice(nullptr, 0, &desired, &obtained, 0);
     if (device_id_ == 0) {
         spdlog::error("[SDLSound] SDL_OpenAudioDevice failed: {}", SDL_GetError());
+        // initialized_ is still false, so shutdown() early-returns and would
+        // never undo the SDL_InitSubSystem above. Release it here.
+        SDL_QuitSubSystem(SDL_INIT_AUDIO);
         return false;
     }
 
@@ -58,6 +61,14 @@ void SDLSoundBackend::shutdown() {
         SDL_CloseAudioDevice(device_id_);
         device_id_ = 0;
     }
+    // Match the SDL_InitSubSystem(SDL_INIT_AUDIO) in initialize(). Without this
+    // the audio subsystem stays up after shutdown() claims to have torn it down,
+    // and is only reaped later by the SDL_Quit() in lv_sdl_quit() — during
+    // *display* teardown, an unrelated subsystem's shutdown path. Closing the
+    // device does not stop the backend's own threads (SDL's PulseAudio backend
+    // keeps a mainloop thread), so leaving the subsystem initialized leaves
+    // those threads running against state the device close already freed.
+    SDL_QuitSubSystem(SDL_INIT_AUDIO);
     initialized_ = false;
     spdlog::info("[SDLSound] Audio shutdown");
 }

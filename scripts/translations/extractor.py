@@ -33,9 +33,52 @@ from typing import Set, Dict, List, Tuple, Optional
 # placeholders (IPs, numerics, URLs) are dropped later by the skip patterns.
 TEXT_ATTRIBUTES = {"text", "label", "description", "title", "subtitle", "placeholder_tag"}
 
+# Inline element text: <text_muted>Foo</text_muted>. The C parser
+# (lib/helix-xml/src/xml/lv_xml.c) applies this as text= + translation_tag=,
+# so it is translatable by default. Matches an open tag (capturing its
+# attribute blob) followed immediately by a text run. Deliberately does not
+# require the matching close tag so text-before-child mixed content is caught.
+INLINE_TEXT_RE = re.compile(
+    r"<([A-Za-z_][\w-]*)((?:\s+[\w:.-]+=\"[^\"]*\")*)\s*>([^<]+)<"
+)
+
+_WS_RUN_RE = re.compile(r"[ \t\r\n]+")
+
+# Attributes whose presence makes the parser DROP inline text (attribute wins).
+_INLINE_CONFLICT_RE = re.compile(r'(?<![\w])(?:text|bind_text|translation_tag)="')
+
+# XML comments, matched non-greedily across lines. Comment prose regularly
+# contains angle-bracket examples (e.g. "<WidthSensorRole>(index))") that
+# INLINE_TEXT_RE would otherwise mistake for a real open-tag + text run.
+_XML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+
+
+def _blank_xml_comments(content: str) -> str:
+    """Replace comment bodies with same-length filler (newlines kept) so
+    inline-text scanning ignores commented-out markup while match offsets
+    and line numbers still line up with the original file content."""
+    return _XML_COMMENT_RE.sub(
+        lambda m: "".join(c if c == "\n" else " " for c in m.group(0)), content
+    )
+
+
+def collapse_whitespace(text: str) -> str:
+    """Trim + collapse whitespace runs to single spaces.
+
+    MUST stay byte-identical to collapse_whitespace() in
+    lib/helix-xml/src/xml/lv_xml.c — the collapsed string is the translation
+    key on both sides.
+    """
+    return _WS_RUN_RE.sub(" ", text).strip(" ")
+
 # Patterns to skip
 VARIABLE_PATTERN = re.compile(r"\$\w+")  # $variable
-ICON_PATTERN = re.compile(r"^#icon_")  # #icon_xxx
+# XML constant reference: `#name` resolves against a <string>/<px>/<color> const
+# in globals.xml, so the literal is a lookup key and never user-facing text. The
+# icon fonts (`#icon_*`) are the bulk of these, but any const reaching a
+# translatable attribute matches — e.g. placeholder_text="#hex_placeholder".
+# Lowercase-only, so a real `#RRGGBB` hex color is left to HEX_COLOR_PATTERN.
+CONST_REF_PATTERN = re.compile(r"^#[a-z_][a-z0-9_]*$")
 NUMERIC_PATTERN = re.compile(r"^[\d.]+%?$")  # 123 or 100%
 # XML numeric character references: &#xF0026; or &#983078;
 XML_NUMERIC_ENTITY_PATTERN = re.compile(r"&#x([0-9A-Fa-f]+);|&#(\d+);")
@@ -81,6 +124,12 @@ I18N_DO_NOT_TRANSLATE_RE = re.compile(
     r"//[^\n]*\bi18n:[^\n]*do\s+not\s+translate", re.IGNORECASE
 )
 I18N_UNIVERSAL_RE = re.compile(r"//[^\n]*\bi18n:\s*universal", re.IGNORECASE)
+
+# File-level opt-out for XML files: an `i18n: skip-file` marker anywhere in an
+# XML comment excludes the whole file from extraction. Used by dev/test-only
+# panels (test_panel.xml, gcode_test_panel.xml, step_test_panel.xml) whose demo
+# strings are never shown to end users and shouldn't pollute the locale packs.
+I18N_SKIP_FILE_RE = re.compile(r"<!--[^>]*\bi18n:\s*skip-file", re.IGNORECASE)
 
 # Language names displayed in their native script (never translated)
 LANGUAGE_NAMES = {
@@ -202,8 +251,8 @@ def should_skip_text(text: str) -> bool:
     if text.startswith("@"):
         return True
 
-    # Skip icon font references
-    if ICON_PATTERN.match(text):
+    # Skip XML constant references (icon fonts, string consts)
+    if CONST_REF_PATTERN.match(text):
         return True
 
     # Skip pure numeric values
@@ -292,6 +341,24 @@ def should_skip_text(text: str) -> bool:
         return True
 
     return False
+
+
+def _iter_inline_texts(content: str):
+    """Yield (collapsed_text, match_start) for translatable inline text runs.
+
+    Positions are relative to the original ``content`` (comments are blanked,
+    not removed, so offsets and line numbers stay valid for the caller)."""
+    scanned = _blank_xml_comments(content)
+    for match in INLINE_TEXT_RE.finditer(scanned):
+        attr_blob = match.group(2) or ""
+        if _INLINE_CONFLICT_RE.search(attr_blob):
+            continue
+        text = collapse_whitespace(_decode_xml_entities(match.group(3)))
+        if not text or text.startswith("$") or text.startswith("#"):
+            continue
+        if should_skip_text(text):
+            continue
+        yield text, match.start(3)
 
 
 def should_skip_cpp_text(text: str) -> bool:
@@ -440,6 +507,10 @@ def extract_strings_from_xml(xml_path: Path) -> Set[str]:
         print(f"Warning: Failed to read {xml_path}: {e}")
         return result
 
+    # File-level opt-out: dev/test panels carry an `i18n: skip-file` marker.
+    if I18N_SKIP_FILE_RE.search(content):
+        return result
+
     # Check for bind_text on a per-element basis using regex
     # Elements with bind_text should not have their text extracted
     # Pattern: <tag ... bind_text="..." ... text="value" ...> or reverse order
@@ -500,6 +571,10 @@ def extract_strings_from_xml(xml_path: Path) -> Set[str]:
             if not should_skip_text(decoded):
                 result.add(decoded)
 
+    # Inline element text (parser-synthesized text= + translation_tag=)
+    for text, _pos in _iter_inline_texts(content):
+        result.add(text)
+
     return result
 
 
@@ -522,6 +597,10 @@ def extract_strings_with_locations(xml_path: Path) -> Dict[str, List[Tuple[str, 
             content = f.read()
     except IOError as e:
         print(f"Warning: Failed to read {xml_path}: {e}")
+        return result
+
+    # File-level opt-out: dev/test panels carry an `i18n: skip-file` marker.
+    if I18N_SKIP_FILE_RE.search(content):
         return result
 
     filename = str(xml_path.name)
@@ -580,6 +659,10 @@ def extract_strings_with_locations(xml_path: Path) -> Dict[str, List[Tuple[str, 
             if decoded not in result:
                 result[decoded] = []
             result[decoded].append((filename, line_num))
+
+    for text, pos in _iter_inline_texts(content):
+        line_num = content[:pos].count("\n") + 1
+        result.setdefault(text, []).append((filename, line_num))
 
     return result
 

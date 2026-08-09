@@ -30,7 +30,7 @@ TEST_CASE("DetectionKind maps the stock U1 code space", "[detection][source]") {
 }
 
 TEST_CASE_METHOD(XMLTestFixture, "U1StockSource emits Spaghetti on paused+code2",
-                 "[detection][u1][slow]") {
+                 "[detection][u1]") {
     helix::detection::U1StockSource src(&state());
     src.set_capable(true);
     helix::detection::DetectionEvent got;
@@ -72,7 +72,7 @@ TEST_CASE_METHOD(XMLTestFixture, "U1StockSource emits Spaghetti on paused+code2"
 }
 
 TEST_CASE_METHOD(XMLTestFixture, "U1StockSource ignores manual pause (no defect code)",
-                 "[detection][u1][slow]") {
+                 "[detection][u1]") {
     helix::detection::U1StockSource src(&state());
     src.set_capable(true);
     int fired = 0;
@@ -87,8 +87,7 @@ TEST_CASE_METHOD(XMLTestFixture, "U1StockSource ignores manual pause (no defect 
     REQUIRE(fired == 0);
 }
 
-TEST_CASE_METHOD(XMLTestFixture, "U1StockSource fires once per pause edge",
-                 "[detection][u1][slow]") {
+TEST_CASE_METHOD(XMLTestFixture, "U1StockSource fires once per pause edge", "[detection][u1]") {
     helix::detection::U1StockSource src(&state());
     src.set_capable(true);
     int fired = 0;

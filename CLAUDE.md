@@ -2,7 +2,7 @@
 
 ## Quick Start
 
-**HelixScreen**: LVGL 9.5 touchscreen UI for Klipper 3D printers. XML engine in `lib/helix-xml/` (extracted from LVGL). Pattern: XML → Subjects → C++.
+**HelixScreen**: LVGL 9.5 touchscreen UI for Klipper 3D printers. XML engine in `lib/helix-xml/` — our own MIT fork of the engine LVGL removed in 9.5, and its own repo ([prestonbrown/helix-xml](https://github.com/prestonbrown/helix-xml)), so a fresh clone needs `git submodule update --init --recursive`. Pattern: XML → Subjects → C++.
 
 **Before compiling:** Check for existing build processes (`pgrep -f 'make|c\+\+'`) — concurrent compilations thrash the machine.
 
@@ -10,6 +10,15 @@
 make -j                              # Build ONLY the program binary (NOT tests)
 ./build/bin/helix-screen --test -vv  # Mock printer + DEBUG logs
 # ALWAYS use verbosity: -v=INFO, -vv=DEBUG, -vvv=TRACE (default=WARN)
+
+# Verifying anything that needs an ACTIVE PRINT — use --sim-speed, don't wait.
+# A default mock run sits in Preparing ~95s before reaching Printing.
+HELIX_MOCK_AUTO_PRINT=1 ./build/bin/helix-screen --test --sim-speed 6 -vv
+#   --sim-speed <1.0-1000.0> fast-forwards the simulated clock (--test only).
+#   4-10x = reach Printing in ~15s, still slow enough to observe async UI work.
+#   50x+ = the print STARTS AND FINISHES in ~8s, outrunning async loads (e.g. the
+#   print-status gcode preview) — only use high factors to reach print completion.
+#   Confirm via log: "[MoonrakerManager] Creating MOCK client (<printer>, <n>x speed)"
 
 make test                            # Build tests only (does NOT run them)
 make test-run                        # Build AND run tests in parallel
@@ -20,9 +29,36 @@ make pi-test                         # Build on thelio + deploy + run
 scripts/setup-worktree.sh feature/my-branch  # Symlinks deps, builds fast
 ```
 
-**XML changes need no rebuild:** `ui_xml/*.xml` is loaded at runtime — edit XML, then **relaunch** the binary to see changes (no `make` needed). Live hot-reload-while-running is NOT implemented yet (planned future feature of the XML loader; see `docs/devel/plans/2026-02-23-xml-hot-reload.md`). `HELIX_HOT_RELOAD=1` currently does nothing.
+**XML changes need no rebuild:** `ui_xml/*.xml` is loaded at runtime — edit XML, then **relaunch** the binary to see changes (no `make` needed). For live editing without restarting, set `HELIX_HOT_RELOAD=1` and the running app will re-register components within ~500ms of a save and rebuild the active panel/overlay/modal in place. Invalid XML (mid-write truncation, syntax errors) is silently skipped on the polling thread — the existing UI stays live and the next poll retries.
 
-**Screenshots:** Press 'S' in UI, or `./scripts/screenshot.sh helix-screen output-name [panel]`
+**Screenshots:** Press 'S' in UI, or `./scripts/screenshot.sh helix-screen output-name [token]` (drives a fresh instance via `helix-screen ctl`; token = panel/overlay/`demo` screen from `scripts/screenshot-recipes.sh`).
+
+**Driving the UI (screenshots, debugging, bringing up any panel/overlay/modal):** `helix-screen ctl` remote-controls a running instance — `navigate`/`click`/`ls`/`text`/`geom`/`set_value`/`scroll`/`demo`/`screenshot`, or a `helix-screen repl` REPL. The server auto-starts in `--test` (or `--remote`). See `docs/devel/HELIXCTL.md`. (Replaces the removed `-p`/`--panel` flags.)
+
+> **Always pin the socket — never run a bare `ctl`.** The default path is per-user and
+> fixed, so with two instances up, `ctl` silently drives **whichever started first** and
+> still reports success. That is how you "verify" a change against another session's app.
+> Derive both the socket and the config dir from the worktree so parallel agents can't
+> collide — and you need *both*, since `--remote-socket` alone still contends on the
+> config flock:
+> ```bash
+> TREE=$(basename "$(git rev-parse --show-toplevel)")
+> export HELIX_SOCK="/tmp/helix-$TREE.sock" HELIX_CONFIG_DIR="/tmp/helix-config-$TREE"
+> mkdir -p "$HELIX_CONFIG_DIR"   # must exist — the app does not create it, it aborts
+> ./build/bin/helix-screen --test -vv --remote-socket "$HELIX_SOCK" > /tmp/helix-$TREE.log 2>&1 &
+> ./build/bin/helix-screen ctl -s "$HELIX_SOCK" navigate settings
+> ```
+> **An empty `HELIX_CONFIG_DIR` is isolated for the lock and socket, not for the printer
+> address.** Finding no `settings.json` there, `Config` bootstraps one from
+> `~/.helixscreen/settings.json.backup` — look for `[Config] Config missing — restoring
+> from backup:` in the log. That inherits the real `moonraker_host`, so a run **without**
+> `--test` opens a WebSocket to the actual printer. `--moonraker-url` does *not* override
+> the saved host. Keep `--test` (the mock client ignores the host entirely), or rewrite
+> `printers/<id>/moonraker_host` in the seeded `settings.json` before relying on the
+> instance being offline.
+>
+> Prefer `ctl text <name>` / `ctl geom <name>` over reading a screenshot — they are exact,
+> and a screenshot only proves what a scroll position happened to expose.
 
 ---
 
@@ -38,9 +74,21 @@ Most commonly needed:
 | `docs/devel/LVGL9_XML_GUIDE.md` | XML layouts, widgets, bindings, observer cleanup |
 | `docs/devel/MODAL_SYSTEM.md` | Modal architecture: ui_dialog, modal_button_row, Modal pattern |
 | `docs/devel/FILAMENT_MANAGEMENT.md` | AMS, AFC, Happy Hare, ACE, AD5X IFS, CFS, Tool Changer |
+| `docs/devel/REVIEW_RUBRIC.md` | Reviewing a change: crash families, silent-failure traps, what the gates already cover |
 | `docs/devel/ENVIRONMENT_VARIABLES.md` | Runtime env vars, mock config |
 | `docs/devel/LOGGING.md` | spdlog levels: info vs debug vs trace |
 | `docs/devel/BUILD_SYSTEM.md` | Makefile, cross-compilation |
+
+---
+
+## Above a Bugfix: Investigate, Then Scope
+
+Features, refactors, new panels/widgets/managers — **scope AFTER investigating, not before.**
+
+- Map what exists (call sites, subjects, tests) and read that subsystem's `docs/devel/` doc
+- Find the canonical implementation of each piece you're about to write
+- Extend the near-fit helper — never fork a twin. Copy-paste-modify = red flag
+- Say what you searched and what you're reusing; scope without that is a guess
 
 ---
 
@@ -53,17 +101,20 @@ Most commonly needed:
 | **RAII widgets** | `lv_malloc()` / `lv_free()` | `lvgl_make_unique<T>()` + `release()` |
 | **Class-based** | `ui_panel_*_init()` functions | Classes: `MotionPanel`, `WiFiManager` |
 | **Observer factory** | Static callback + `lv_observer_get_user_data()` | `observe_int_sync<Panel>()` from `observer_factory.h` |
-| **Icon sync** | Add icon, forget fonts | codepoints.h + `make regen-fonts` + rebuild |
+| **Icon sync** | Add icon, forget fonts | `include/ui_icon_codepoints.h` + `make regen-fonts` + rebuild |
 | **Formatting** | Manual formatting | Let pre-commit hook (clang-format) fix |
 | **No auto-mock** | `if(!start()) return Mock()` | Check `RuntimeConfig::should_mock_*()` |
 | **JSON include** | `#include <nlohmann/json.hpp>` | `#include "hv/json.hpp"` (libhv's bundled version) |
 | **Build system** | `cmake`, `ninja` | `make -j` (pure Makefile) |
-| **Bug commits** | `fix: thing` (no reference) | `fix(scope): thing (prestonbrown/helixscreen#123)` |
-| **Submodule mods** | Edit `lib/lvgl/...` / `lib/libhv/...` directly | Add/amend `patches/*.patch` — `mk/patches.mk` auto-applies. Only `lib/helix-xml/` is direct-edit (not a submodule). |
+| **Bug commits** | Filing an issue just so the commit can cite one | Cite the issue when one already exists: `fix(scope): thing (prestonbrown/helixscreen#123)`. No issue? `fix(scope): thing` is complete on its own — the commit body carries the explanation. |
+| **Commit body length** | 3-paragraph Tests / Verification / Mutation essay | Subject + ~4-line paragraph (cf. `feat(z-offset)` 25e1505e7). Reserve the long form for genuine state-machine fixes that touch multiple subsystems (cf. `fix(ams): DRY unload API` 504905a2). |
+| **Submodule mods** | Edit `lib/lvgl/...` / `lib/libhv/...` directly | Add/amend `patches/*.patch` — `mk/patches.mk` auto-applies. **Exception: `lib/helix-xml/` is our own submodule** ([prestonbrown/helix-xml](https://github.com/prestonbrown/helix-xml)) — edit it directly, commit and push *in the submodule*, then commit the bumped pointer in this repo. Never write a patch for it. |
 
 **ALWAYS:** Search the SAME FILE you're editing for similar patterns before implementing.
 
-**Submodule patch workflow:** Edit the file under `lib/<sub>/`, then `cd lib/<sub> && git diff > ../../patches/<name>.patch && git restore .`. The patch in `patches/` is the source of truth — direct edits get wiped on the next `git submodule update`. Check `mk/patches.mk` (`LVGL_PATCHED_FILES`, `LIBHV_PATCHED_FILES`, etc.) and existing `patches/*.patch` before creating a new one — amend an existing patch when the change is in the same area (e.g., `lvgl_sdl_window.patch` already owns `lv_sdl_window.c`).
+**Submodule patch workflow** — third-party submodules ONLY (`lib/lvgl/`, `lib/libhv/`, …). **Never run it on `lib/helix-xml/`**: that repo is ours, its edits are meant to be committed, and the `git restore .` below would destroy them.
+
+Edit the file under `lib/<sub>/`, then `cd lib/<sub> && git diff -- <the files you touched> > ../../patches/<name>.patch && git restore -- <those files>`. **Scope the diff** — a bare `git diff` captures every patch currently applied. And if two patches touch the same file (16 do; `src/misc/lv_event.c` has seven) even a scoped diff folds the others in, so use the pristine-file method in `patches/README.md` § "Regenerating a patch whose file is shared". The patch in `patches/` is the source of truth — direct edits get wiped on the next `git submodule update`. Check `mk/patches.mk` (`LVGL_PATCHED_FILES`, `LIBHV_PATCHED_FILES`, etc.) and existing `patches/*.patch` before creating a new one — amend an existing patch when the change is in the same area (e.g., `lvgl_sdl_window.patch` already owns `lv_sdl_window.c`).
 
 ---
 
@@ -71,18 +122,39 @@ Most commonly needed:
 
 **DATA in C++, APPEARANCE in XML, Subjects connect them.**
 
+**Absolute for new code.** The tree still has 387 sites that break these rules
+(`scripts/check_imperative_ui.py --list`). Some were deliberate pragmatism from when the XML
+engine could not express what was needed; some are plain mistakes that got through review.
+Both are debt, tracked in prestonbrown/helixscreen#1140 and being ported. **Existing imperative
+code is not precedent** — do not imitate a nearby site just because it is there, and do not
+opportunistically refactor one as a side effect of an unrelated change. The gate ratchets: the
+count may fall, never rise.
+
 | # | Rule | ❌ NEVER | ✅ ALWAYS |
 |---|------|----------|----------|
 | 1 | **NO lv_obj_add_event_cb()** | `lv_obj_add_event_cb(btn, cb)` | XML `<event_cb trigger="clicked" callback="name"/>` + `lv_xml_register_event_cb()` |
-| 2 | **NO imperative visibility** | `lv_obj_add_flag(obj, HIDDEN)` | XML `<bind_flag_if_eq subject="state" flag="hidden" ref_value="0"/>` |
+| 2 | **NO imperative visibility** | `lv_obj_add_flag(obj, HIDDEN)` | XML `<bind_flag_if_eq subject="state" flag="hidden" ref_value="0"/>` for cheap show/hide of an already-built subtree. `<if cond="X">…<else/>…</if>` is the structural sibling — use it when the *creation* itself is expensive (a whole card, an alternate layout); it builds only the matching branch instead of both. See `docs/devel/LVGL9_XML_GUIDE.md` § "Structural conditionals with `<if>` / `<else>`". |
 | 3 | **NO lv_label_set_text** | `lv_label_set_text(lbl, val)` | Subject binding: `<text_body bind_text="my_subject"/>` |
 | 4 | **NO C++ styling** | `lv_obj_set_style_bg_color()` | XML: `style_bg_color="#card_bg"` |
 | 5 | **NO manual LVGL cleanup** | `lv_display_delete()`, `lv_group_delete()` | Just `lv_deinit()` - handles everything |
 | 6 | **bind_style priority** | `style_bg_color` + `bind_style` | Inline attrs override - use TWO bind_styles |
-| 7 | **NO ad-hoc callback guards** | `shared_ptr<bool> alive_`, `callback_guard_`, `alive_guard_` | `lifetime_.token()` + `tok.defer(...)` via `AsyncLifetimeGuard` |
-| 8 | **NO lifetime_.defer from BG** | `lifetime_.defer([this](){...})` in API callbacks | `tok.defer([this](){...})` — token holds its own shared_ptr (#707) |
+| 7 | **NO C++ derived subject for compound conditions** | Hand-written observer that combines 2+ subjects (`a \|\| b > c`) | XML `<subject_expr name="x" expr="a or b gt c"/>` or inline `cond="a or b gt c"` on `bind_flag_if`/`bind_state_if`/`bind_style_if` (word forms — `&&`/`<` need XML escaping). |
+| 8 | **NO C++ create-and-wire loop for repeated fragments** | `for(int i=0;i<n;i++) { lv_obj_create(...); ... }` in C++ | XML `<repeat count="4">…$i…</repeat>` (fixed) or `<repeat count="a_subject">…${i}…</repeat>` (reactive rebuild on subject change) — see `docs/devel/LVGL9_XML_GUIDE.md` § "Repeating fragments with `<repeat>`". Measured layout, computed callbacks, and data population still belong in C++ — `<repeat>` only replaces the widget-creation loop itself. |
 
-**Exceptions:** DELETE cleanup, widget pool recycling, chart data, animations
+**Structural exceptions — C++ is correct here, permanently:**
+
+| Case | Why |
+|------|-----|
+| Custom XML widget implementations — the 30 files calling `lv_xml_register_widget` | The file *is* the widget; there is no XML beneath it to bind to |
+| `LV_EVENT_DELETE` cleanup, draw hooks (`DRAW_MAIN`/`DRAW_POST`), `SIZE_CHANGED`, gestures/scroll | No declarative equivalent exists |
+| Measured layout and computed fonts (`decide_nozzle_layout()`, breakpoint fonts) | Depends on runtime pixel measurement — see rule 8 |
+| Widgets created in C++ (`lv_*_create`) — canvas and procedural rendering | Never had an XML layer |
+| Per-item payload on generated collections | `lv_obj_set_user_data()` on a `ui_button` overwrites `UiButtonData*` (`temperature_service.cpp:667`) |
+| `helix-screen ctl` remote control (`remote_control_server.cpp`) | Its job is reaching into an arbitrary live widget tree on command |
+| CLI stdout (`cli_args.cpp`, `detect_printer_cmd.cpp`, `helix_splash.cpp`) | stdout *is* the product there; spdlog is for logging |
+| Widget pool recycling, chart data, animations | Churn or per-frame data that a subject would not model |
+
+Genuinely un-declarative site? Annotate it: `// DECLARATIVE_OK: <reason>`.
 
 ---
 
@@ -100,128 +172,59 @@ Note: `theme_manager_get_color()` for tokens, `theme_manager_parse_hex_color()` 
 
 ## Threading & Lifecycle
 
-> **Deep reference + code examples:** `.claude/skills/helix-threading/` (auto-triggers on src/ threading edits). The rules below are the always-loaded safety net — every rule exists because something crashed in production.
+> **Full rules: `docs/devel/THREADING.md`** (routed by the `helix-threading` skill). Read it
+> before writing code that crosses a thread boundary, observes a subject, or destroys a widget.
+> The invariants below are the always-loaded safety net — each one fails silently at compile
+> time and crashes later, usually on a customer's printer.
 
-WebSocket/libhv callbacks = background thread. **NEVER** call `lv_subject_set_*()` directly.
-Use `ui_queue_update()` from `ui_update_queue.h`. Pattern: `printer_state.cpp` `set_*_internal()`.
+1. **Never touch LVGL from a background thread.** WebSocket/libhv, HTTP, and timer callbacks
+   are background threads; `lv_subject_set_*()` counts, because it fires observers that call
+   widget APIs. Route through `ui_queue_update()` (`ui_update_queue.h`). Pattern:
+   `printer_state.cpp` `set_*_internal()`.
+2. **Never write bare `if (tok.expired()) return;` on a background thread** and then touch
+   `this` — TOCTOU use-after-free (L081 Mechanism C, #707). Use `lifetime_.bg_cb(tag, fn)`, or
+   `tok.defer(tag, fn)` when you have bg-side parsing worth keeping off the main thread.
+   `lifetime_.defer()` is main-thread only. Gate: `scripts/check_l081_anti_pattern.py`.
+3. **Never delete synchronously inside a queued callback.** `safe_delete()`,
+   `lv_obj_delete()`, and `lv_obj_clean()` corrupt LVGL's event list mid-batch (#776, #190,
+   #80). Use `safe_delete_deferred()`, `lv_obj_delete_async()`, `safe_clean_children()`.
+   **`lifetime_.defer` does NOT escape the batch** — it fires in the next `process_pending`
+   tick, which is still a batch.
+4. **If you fetch a `SubjectLifetime`, you must hand it to `observe_*`.** The factories take it
+   as a defaulted 4th parameter (`const SubjectLifetime& lifetime = {}`), so omitting it is
+   silent: the guard gets no token, never sees the subject die, and `reset()` calls
+   `lv_observer_remove()` on freed memory (#705). Local vs member is *not* what decides
+   correctness — the `get_*_subject(name, lifetime)` accessors assign the owner's own
+   `shared_ptr`, so a caller's copy dying never expires the guard.
+5. **A raw `lv_timer_t*` cancelled in `cleanup()` must also be cancelled in the destructor.**
+   `StaticPanelRegistry::destroy_all()` runs *before* `lv_deinit()`, so any teardown that
+   skips the explicit stop leaves the timer armed on a freed `this` (#1173, twice). Share one
+   `cancel_*_timer()` between both paths and use `lv_timer_cancel_safe()` — it self-guards on
+   `lv_is_initialized()` and neuters instead of unlinking, so it is safe from a destructor and
+   from inside `lv_timer_handler` (#750, #751). A `LifetimeToken`-guarded callback is the other
+   valid answer; annotate those `// TIMER_DTOR_OK: <reason>`. Gate:
+   `scripts/check_timer_destructor_cancel.py`.
 
-Use `ObserverGuard` for RAII cleanup. See `observer_factory.h` for `observe_int_sync`, `observe_int_async`, `observe_string`, `observe_string_async`.
-
-**Observer safety:** `observe_int_sync` and `observe_string` **defer callbacks** via `ui_queue_update()` to prevent re-entrant observer destruction crashes (#82). Use `*_immediate` variants ONLY if you're certain the callback won't modify observer lifecycle (no reassignment, no widget destruction).
-
-**UpdateQueue ScopedFreeze (MANDATORY for drain+destroy):** Closes the race window where the WebSocket background thread enqueues new callbacks between `drain()` and widget destruction. Pattern: `auto freeze = UpdateQueue::instance().scoped_freeze();` then drain + destroy. While the freeze is held, new `queue_update` / `tok.defer` enqueues land in `frozen_buffer_` instead of `pending_`; on the last `ScopedFreeze` destruction the buffer is spliced back so the work fires on the next `process_pending` tick — generation tokens on the apply side handle UAF if the owner died. There is no `defer_critical` / `queue_critical` variant; one path covers all cases. `shut_down_` still drops (post-shutdown enqueues are unrecoverable). See `include/ui_update_queue.h` and `.claude/skills/helix-threading/SKILL.md`.
-
-**Async callback safety (MANDATORY):** Background threads (WebSocket, HTTP, timers) updating UI must use `AsyncLifetimeGuard` to prevent UAF if the owner is dismissed. `Modal` / `OverlayBase` provide `lifetime_` automatically; standalone classes declare their own (`helix::AsyncLifetimeGuard lifetime_;`).
-
-- **From BG threads:** use `auto tok = lifetime_.token();` then capture `tok` and call `tok.defer(...)`. **NOT `lifetime_.defer()`** — that's a TOCTOU race (#707).
-- **From main thread:** `lifetime_.defer(...)` is safe (`this` guaranteed valid).
-- **Cancel-and-retry:** `lifetime_.invalidate();` then fresh `lifetime_.token()`.
-
-Do **NOT** use `shared_ptr<bool> alive_`, `callback_guard_`, `alive_guard_`, `weak_ptr<bool>`, or `shared_ptr<atomic<bool>>` for callback safety. Deprecated; replaced by `AsyncLifetimeGuard`. See `include/async_lifetime_guard.h`.
-
-**FORBIDDEN: bare `if (tok.expired()) return;` on a bg thread followed by `this`/member access (MANDATORY).** This is the L081 Mechanism C anti-pattern (cluster:pstat-async-delete) — TOCTOU race that causes UAF if the owner is destroyed between the check and the access. The `set_main_thread_id()` runtime detector emits a `cluster:pstat-async-delete Mechanism C` warning per first-fire callsite; native/dev builds running `HELIX_STRICT_BG_THREAD_CHECK=1` (and `HelixTestFixture` opts in by default) abort on hit so any new instance fails the test. **Release builds (`HELIX_RELEASE_BUILD` defined in `mk/cross.mk` cross-targets) compile out the abort branch and ignore the env var** — the detector still emits the telemetry anomaly + debug log, but never crashes a user (Snapmaker U1 dev=6d10417c hit a stray strict-mode abort 2026-05-14, sig 307b6f48, fixed by gating to non-release builds). The lint gate `scripts/check_l081_anti_pattern.py` blocks new instances at commit time. **Cleaned up across the codebase 2026-05-09 (107 sites swept).**
-
-| ❌ FORBIDDEN bg-thread idiom | ✅ Two correct forms |
-|---|---|
-| `[this, tok](const Resp& r) {`<br>`  if (tok.expired()) return;`<br>`  member_ = r;            // UAF risk`<br>`  emit_event(EVENT);     // UAF risk`<br>`}` | **Long-form (when bg-side parsing is worth keeping off main):**<br>`[this, tok](const Resp& r) {`<br>`  // bg: parse, validate, build LOCAL objects (no this!)`<br>`  Local out = parse(r);`<br>`  // main: only the mutation`<br>`  tok.defer("Class::on_resp_apply", [this, out = std::move(out)]() mutable {`<br>`    member_ = std::move(out);`<br>`    emit_event(EVENT);`<br>`  });`<br>`}`<br><br>**Short-form (when there's nothing to parse on bg):**<br>`api_->rest().get_x(`<br>`  lifetime_.bg_cb("Class::on_x", [this](const Resp& r) {`<br>`    member_ = r;`<br>`    emit_event(EVENT);`<br>`  }), …);` |
-
-`bg_cb(tag, fn)` returns a callable that auto-defers the body — the cleanest fix when you have no bg-only parsing to keep off the main thread. When you DO have heavy bg-side work to preserve (large JSON parse), use the long-form `tok.defer(...)` explicitly. Either way, **never write `if (tok.expired()) return;` on a bg thread** — the defer wrapper checks atomically on the main thread.
-
-Per-line opt-out (rare; only for dtor-joined worker threads with thread-private state): `if (tok.expired()) return; // L081_OK: <reason>`. See `src/system/camera_stream.cpp` for examples.
-
-**HTTP work runs on HttpExecutor, NOT raw `std::thread`.** Two process-wide lanes:
-`HttpExecutor::fast()` (4 workers) for REST/API/timelapse/thumbnails/small uploads,
-`HttpExecutor::slow()` (1 worker) for large file transfers. Submitted lambdas run on a
-worker thread — callbacks still need `ui_queue_update()` / `tok.defer()` for UI work.
-Never spawn a raw `std::thread` for HTTP — unbounded spawning crashed with EAGAIN under
-thread exhaustion on RatOS (#811-adjacent). See `docs/devel/MOONRAKER_ARCHITECTURE.md`
-§ "HTTP Work Execution (HttpExecutor)".
-
-**No `std::thread(...).detach()` for fire-and-forget work (MANDATORY):** On
-AD5M/CC1/MIPS32, `pthread_create` returns EAGAIN under thread exhaustion; the
-`std::thread` constructor then throws `std::system_error`, which — propagating through
-an LVGL C event-dispatch frame or a `noexcept` boundary — aborts the process with
-`std::terminate without active exception`. Crashes look like unrelated code paths
-(#724 wizard camera probe, #837 debug-bundle upload, #811-adjacent HTTP storm).
-
-| Workload | ✅ Use |
-|----------|-------|
-| HTTP (REST/thumbnails/small uploads) | `helix::http::HttpExecutor::fast().submit(fn)` |
-| HTTP (bundles/gcode/large transfers) | `helix::http::HttpExecutor::slow().submit(fn)` |
-| sd-bus / BlueZ DBus call | `helix::bluetooth::BusThread::run_sync(fn)` |
-| BT-over-RFCOMM / USB print / QR decode / device discovery | `try { std::thread([...]{}).detach(); } catch (const std::system_error& e) { /* toast + error callback */ }` |
-| Long-lived worker (member variable, joined in dtor) | `std::thread` is fine — the issue is one-shot detached spawns |
-
-Before adding a new `std::thread`, grep for an existing managed pool that covers that
-domain. Adding a raw detached spawn reintroduces the anti-pattern and will crash on the
-smallest device you ship to. See `include/http_executor.h`, `include/bt_bus_thread.h`,
-memory `feedback_no_bare_threads_arm.md`, lesson [L083].
-
-**No sync widget deletion in queued callbacks (MANDATORY):** Never call these synchronous deletion APIs from inside `queue_update()` / `async_call()` / `lifetime_.defer()` / `tok.defer()` / observer callbacks (`observe_int_sync`, `observe_string` — also deferred via queue_update since #82):
-
-| ❌ BANNED inside queued callbacks | ✅ USE INSTEAD |
-|-----------------------------------|-----------------|
-| `safe_delete(ptr)` | `safe_delete_deferred(ptr)` |
-| `lv_obj_delete(obj)` | `lv_obj_delete_async(obj)` |
-| `lv_obj_clean(container)` | `helix::ui::safe_clean_children(container)` |
-
-Multiple sync deletions in the same `UpdateQueue::process_pending()` batch corrupt LVGL's global event linked list → SIGSEGV in `lv_event_mark_deleted` (#776, #190, #80).
-
-**`lifetime_.defer` / `tok.defer` do NOT escape the batch.** They are thin wrappers around `queue_update` — the callback fires in the *next* `process_pending` tick, which is still a UpdateQueue batch that may contain other sync deletions. The generation guard protects against use-after-free of `this`, NOT against event-list corruption. If you see a comment claiming `lifetime_.defer` "runs outside process_pending", it's wrong — fix it.
-
-**Safe escape routes (truly outside UpdateQueue batches):** `safe_delete_deferred()`, `safe_delete_deferred_raw()`, `helix::ui::safe_clean_children()`, `helix::ui::safe_delete_subtree()` (teardown-safe deletion of a whole grid/flex subtree before a rebuild — synchronously detaches the subtree into an off-tree layout-less condemned container + `LV_LAYOUT_NONE`, then async-deletes; makes a `grid_update`/`flex_update` pass over a being-torn-down grid structurally impossible, #983 teardown counterpart), `lv_obj_delete_async()`, and raw `lv_async_call(cb, ud)`. Note: our wrapper `helix::ui::async_call` does NOT escape — it routes through `queue_update`. See `include/ui_utils.h` and `ARCHITECTURE.md` § "No safe_delete() Inside UpdateQueue Callbacks".
-
-**Subject shutdown safety (MANDATORY):** Any class creating LVGL subjects MUST self-register its cleanup inside `init_subjects()` via `StaticSubjectRegistry::instance().register_deinit(name, deinit_fn)`. Prevents observer removal on freed subjects during `lv_deinit`. **Never** register externally (e.g., in `SubjectInitializer`) — co-locating init+cleanup prevents forgotten registrations. See `static_subject_registry.h`.
-
-**Dynamic subject lifetime safety (MANDATORY):** Per-fan, per-sensor, and per-extruder subjects are **dynamic** — they can be destroyed and recreated during reconnection/rediscovery. Observing a dynamic subject without a `SubjectLifetime` token causes **use-after-free crashes** when `lv_subject_deinit()` frees observers but `ObserverGuard` still holds a dangling pointer.
-
-**The lifetime token MUST outlive the observer.** A local `SubjectLifetime lt;` paired with a member `ObserverGuard` is a UAF: when `lt` falls off the stack, the observer's `weak_ptr` is dead but the observer itself is still registered against the (potentially recreated) subject. **When you add a member `ObserverGuard` on a dynamic subject, add a paired member `SubjectLifetime` next to it in the header — do not use a local.** (Codebase-wide audit 2026-04-22 confirmed no existing violations; this rule applies to new code.)
-
-| ❌ CRASH (local lifetime + member observer) | ✅ SAFE (parallel members) |
-|---|---|
-| `// in .cpp function body:` | `// in header, alongside ObserverGuard:` |
-| `SubjectLifetime lt;` | `ObserverGuard temp_observer_;` |
-| `auto* s = tsm.get_temp_subject(n, lt);` | `SubjectLifetime temp_lifetime_;` |
-| `temp_observer_ = observe_int_sync(s,…lt);` | `// in .cpp:` |
-| `// lt dies at function exit → UAF on rediscover` | `temp_lifetime_.reset();` |
-| | `temp_observer_.reset();` |
-| | `auto* s = tsm.get_temp_subject(n, temp_lifetime_);` |
-| | `temp_observer_ = observe_int_sync(s,…temp_lifetime_);` |
-
-**For per-item observers (carousel pages, slot lists, etc.) use parallel vectors** — and keep them aligned (push/pop in lockstep):
-```cpp
-std::vector<ObserverGuard>     carousel_observers_;
-std::vector<SubjectLifetime>   carousel_lifetimes_;   // MUST clear before observers
-```
-
-**Read-only access is the only valid case for a local `SubjectLifetime`.** If you call `get_temp_subject(name, lt)` and never create an observer, the lifetime can be local — but prefer the no-lifetime overload (`tsm.get_temp_subject(name)`) which exists for exactly this case.
-
-**Dynamic subject sources** (always require lifetime token when observing):
-- `PrinterFanState::get_fan_speed_subject(name, lifetime)` — per-fan speeds
-- `TemperatureSensorManager::get_temp_subject(name, lifetime)` — per-sensor temps
-- `PrinterTemperatureState::get_extruder_temp_subject(name, lifetime)` / `get_extruder_target_subject(name, lifetime)` — per-extruder temps
-
-**Static subjects** (singleton lifetime, no token needed): `get_fan_speed_subject()` (no args), `get_bed_temp_subject()`, etc.
-
-**SubjectLifetime reset ordering (MANDATORY):** Reset the lifetime BEFORE the observer when rebinding. The observer guard's `weak_ptr` only expires if the `SubjectLifetime` is destroyed first. Wrong order = `lv_observer_remove()` on a freed subject (#705). Pattern: `speed_lifetime_.reset(); speed_observer_.reset();` — never the reverse.
-
-**`ObserverGuard::reset()` is the default — `release()` is NOT (MANDATORY).** Use `reset()` for all normal cleanup (panel teardown, widget `LV_EVENT_DELETE` callbacks, repopulate paths). `reset()` already handles the shutdown case via `s_subjects_valid` + `lv_is_initialized()` guards. `release()` is **only** for the very last pre-deinit cleanup (`StaticSubjectRegistry::register_deinit()` callbacks) where the subject is already destroyed. If you reason *"`release()` skips `lv_observer_remove()` so it's safer"* — that's the misconception that caused 17 #579 reports. Skipping the remove call leaks the `LambdaObserverContext` and corrupts rendering state. Don't write `release()` in new cleanup code. See `ui_observer_guard.h`.
-
-**No `lv_obj_delete()` in input event handlers:** Never delete container children synchronously inside `LV_EVENT_CLICKED`/`LV_EVENT_RELEASED` handlers — LVGL may be iterating the child list during `indev_proc_release`. If a rebuild (`lv_obj_clean`) follows, just null pointers and let the rebuild handle deletion. See `docs/devel/ARCHITECTURE.md` § "No Object Deletion During Input Event Processing".
+Also: no `std::thread(...).detach()` for one-shot work — `EAGAIN` → `std::terminate` on
+AD5M/CC1 (#724, #837); use `HttpExecutor::fast()/slow()` or `BusThread`. `ObserverGuard::reset()`
+for all normal cleanup, never `release()` (#579). Every `init_subjects()` self-registers its
+`deinit_subjects()` with `StaticSubjectRegistry`.
 
 ---
 
 ## Patterns
 
-| Pattern | Key Point |
-|---------|-----------|
-| Subject init order | Register components → init subjects → create XML |
-| Widget lookup | `lv_obj_find_by_name()` not `lv_obj_get_child()` |
-| Overlays | `ui_nav_push_overlay()`/`ui_nav_go_back()` |
-| Modals (simple) | `Modal::show("component_name")` / `Modal::hide(dialog)` |
-| Modals (subclass) | Extend `Modal`, implement `get_name()` + `component_name()`, override `on_ok()`/`on_cancel()` |
-| Confirmation dialog | `modal_show_confirmation(title, msg, severity, btn_text, on_confirm, on_cancel, data)` (in `helix::ui`) |
-| Modal buttons (XML) | `<modal_button_row primary_text="Save" primary_callback="on_save"/>` |
+| Pattern | Key Point | Exemplar |
+|---------|-----------|----------|
+| Subject init order | Register components → init subjects → create XML | `src/application/subject_initializer.cpp`, called from `Application::register_xml_components()` |
+| Widget lookup | `lv_obj_find_by_name()` not `lv_obj_get_child()` — indices break when layout changes | any panel; 1100+ call sites |
+| Overlays | `NavigationManager::instance().push_overlay(root)` / `.go_back()` (`ui_nav_manager.h`) — pair every push with `register_overlay_instance(root, this)` or `on_deactivate()` never fires (tests abort; `HELIX_STRICT_OVERLAY_CHECK=1`) | `src/ui/ui_settings_safety.cpp` |
+| Modals (simple) | `Modal::show("component_name")` / `Modal::hide(dialog)` | `src/ui/ui_job_queue_modal.cpp` |
+| Modals (subclass) | Extend `Modal`, implement `get_name()` + `component_name()`, override `on_ok()`/`on_cancel()` | `include/ui_info_qr_modal.h` + `src/ui/ui_info_qr_modal.cpp` (42 + 62 lines — the whole pattern, nothing else) |
+| Confirmation dialog | `modal_show_confirmation(title, msg, severity, btn_text, on_confirm, on_cancel, data)` (in `helix::ui`) | `src/ui/ui_panel_macros.cpp:370` |
+| Modal buttons (XML) | `<modal_button_row primary_text="Save" primary_callback="on_save"/>` | `ui_xml/bed_mesh_rename_modal.xml` |
+| Home-panel widget | Subclass `PanelWidget`; `attach()` + `on_size_changed()`. Instances are **recycled** across rebuilds, so any imperative apply must run from `attach()` too, not only on size change | `src/ui/panel_widgets/motion_widget.cpp` (64 lines) |
+| Background → UI | Never touch LVGL off the main thread; `ui_queue_update()` or `tok.defer()` | `src/printer/printer_state.cpp` `set_*_internal()` |
 
 ---
 
@@ -260,7 +263,7 @@ std::vector<SubjectLifetime>   carousel_lifetimes_;   // MUST clear before obser
 **NEVER debug without flags!** Use `-vv` minimum.
 Trust debug output. Impossible values = bug is UPSTREAM. Ask "what ELSE?" not "did first fix work?"
 
-**Debug bundles**: `./scripts/debug-bundle.sh <SHARE_CODE> --save` to download. Save to `/tmp/` for investigation (not in repo).
+**Debug bundles**: `--save` writes `debug-bundle-<code>.json` to the **current working directory** — run it from `/tmp` so the bundle never lands in the repo: `cd /tmp && <repo>/scripts/debug-bundle.sh <SHARE_CODE> --save`. Investigate there, never commit a bundle. (If one ends up in the repo, move it to `/tmp`.)
 
 ---
 
@@ -272,32 +275,6 @@ PrinterState, WebSocket/threading, shutdown, DisplayManager, XML processing
 
 ## Autonomous Sessions
 
-When given autonomous control, Claude works independently to improve HelixScreen with minimal interruption.
-
-**Scratchpad**: `.claude/scratchpad/` - Claude's workspace for:
-- Ideas and feature concepts
-- Research notes and findings
-- Work-in-progress designs
-- Lessons learned (like `animated_value_use_cases.md`)
-
-**Mission**: Make HelixScreen the best damn touchscreen UI for Klipper printers.
-
-**Autonomy Guidelines**:
-- Work independently on improvements that align with existing patterns
-- Commit working code with tests (don't leave broken state)
-- Ask user ONLY for: major architectural decisions, UX preference calls, or when truly blocked
-- Document findings in scratchpad for future sessions
-- Small failures are fine - learn and move on
-
-**Good autonomous work**:
-- Polish and micro-improvements
-- Code cleanup and consistency
-- Adding missing tests
-- Fixing obvious bugs
-- Implementing features from ROADMAP.md
-
-**Ask first**:
-- New architectural patterns
-- Removing/deprecating features
-- Changes to critical paths (see above)
-- Anything that changes user-facing behavior significantly
+Given autonomous control ("work independently", "minimal interruption"), load the
+`autonomous-session` skill — scratchpad workspace, autonomy guidelines, and what still
+requires asking first.

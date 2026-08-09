@@ -24,6 +24,11 @@ namespace {
 // Layer detection tolerance for Z changes
 constexpr float Z_EPSILON = 0.001f;
 
+// Minimum E delta that counts as extrusion rather than a travel/retract.
+// Matches the threshold GCodeParser::parse_movement_command() uses so the index
+// and the full-file parser agree on what "extruding" means.
+constexpr float EXTRUSION_EPSILON = 0.00001f;
+
 // Extract a single-letter float parameter (case-insensitive) from a G-code line.
 // Returns true if found. Skips over coordinates embedded inside identifier
 // tokens like "G1" by only matching at the start of a token (preceded by
@@ -99,19 +104,12 @@ bool is_movement_command(const char* line, size_t len) {
     return false;
 }
 
-// Check if line contains E parameter with positive value (extrusion)
-bool has_positive_extrusion(const char* line, size_t len) {
-    for (size_t i = 0; i < len; ++i) {
-        if ((line[i] == 'E' || line[i] == 'e') && i + 1 < len) {
-            char next = line[i + 1];
-            // Positive number (or number starting with digit)
-            if ((next >= '0' && next <= '9') || next == '+') {
-                return true;
-            }
-        }
-    }
-    return false;
-}
+// NOTE: a has_positive_extrusion() text heuristic used to live here and drive
+// the extrusion/travel stats. It scanned for an 'E' followed by a digit or '+',
+// which missed OrcaSlicer's leading-dot form (E.05482 — so every Orca file was
+// counted as ~100% travel) and could not distinguish a retraction from an
+// extrusion. build_from_file() now tracks M82/M83 and the running E value and
+// computes a real delta, which is both correct and what the XY bounds depend on.
 
 // Extract filament/extruder color from metadata comment
 // Thin wrapper over helix::gcode::parse_filament_color_palette() that also
@@ -191,6 +189,7 @@ bool GCodeLayerIndex::build_from_file(const std::string& filepath) {
     entries_.clear();
     stats_ = LayerIndexStats{};
     source_path_ = filepath;
+    uses_layer_markers_ = false;
 
     std::ifstream file(filepath, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
@@ -225,6 +224,17 @@ bool GCodeLayerIndex::build_from_file(const std::string& filepath) {
     // streaming parser can be seeded — without it, segments in the prologue
     // (purge) get tagged Unknown and the bbox filter can't exclude them.
     FeatureType current_feature_type = FeatureType::Unknown;
+    // Running extrusion state. M82/M83 appear once in the prologue, before every
+    // layer byte range, so each entry snapshots the mode and E value in effect at
+    // its offset for the per-layer parser to be seeded with (#1127). Tracking E
+    // here also lets the scan compute a real extrusion delta instead of the
+    // "is there an E followed by a digit" guess it used before — which is what
+    // makes the XY bounds below trustworthy.
+    bool absolute_extrusion = true;
+    float current_e = 0.0f;
+    // False until a move has established a real head position, so the implicit
+    // (0,0) origin never enters the XY bounds.
+    bool any_position_seen = false;
     uint64_t current_layer_start = 0;
     uint64_t current_offset = 0;
     uint16_t current_layer_lines = 0;
@@ -241,6 +251,22 @@ bool GCodeLayerIndex::build_from_file(const std::string& filepath) {
             use_layer_markers = true;
             pending_layer_start = true;
             // We'll start the new layer when we see the next Z move
+        }
+
+        // Track extrusion mode. M82/M83 are whole-line commands in the prologue.
+        if (line_len >= 3 && line[0] == 'M' && line[1] == '8' &&
+            (line[2] == '2' || line[2] == '3') &&
+            (line_len == 3 || line[3] == ' ' || line[3] == ';' || line[3] == '\t' ||
+             line[3] == '\r')) {
+            absolute_extrusion = (line[2] == '2');
+        }
+        // G92 sets the current position of an axis without moving; G92 E0 is the
+        // conventional absolute-mode extruder reset between layers/objects.
+        if (line_len >= 3 && line[0] == 'G' && line[1] == '9' && line[2] == '2') {
+            float e_reset;
+            if (extract_axis_param(line.c_str(), line_len, 'E', e_reset)) {
+                current_e = e_reset;
+            }
         }
 
         // Track ;TYPE: section via the shared helper (kept in sync with the
@@ -320,11 +346,13 @@ bool GCodeLayerIndex::build_from_file(const std::string& filepath) {
                     entry.z_height = z;
                     entry.byte_length = 0; // Will be filled when layer ends
                     entry.line_count = 0;  // Will be filled when layer ends
-                    entry.flags = 0;
+                    entry.flags = absolute_extrusion ? StreamingLayerEntry::FLAG_ABSOLUTE_EXTRUSION
+                                                     : uint16_t{0};
                     entry.start_x = current_x;
                     entry.start_y = current_y;
                     entry.start_z = current_seen_z;
                     entry.start_feature_type = current_feature_type;
+                    entry.start_e = current_e;
                     entries_.push_back(entry);
 
                     if (!first_layer_started) {
@@ -340,17 +368,55 @@ bool GCodeLayerIndex::build_from_file(const std::string& filepath) {
                 current_seen_z = z;
             }
 
-            // Update running X/Y from this move (for the next layer's snapshot).
+            // Resolve the real extrusion delta for this move, honouring the
+            // M82/M83 mode. The previous "E followed by a digit" heuristic
+            // mis-flagged whole files: it missed OrcaSlicer's leading-dot form
+            // (E.05482) and could not tell a retraction from an extrusion.
+            float e_param;
+            float e_delta = 0.0f;
+            if (extract_axis_param(line.c_str(), line_len, 'E', e_param)) {
+                const float new_e = absolute_extrusion ? e_param : current_e + e_param;
+                e_delta = new_e - current_e;
+                current_e = new_e;
+            }
+            const bool is_extruding = e_delta > EXTRUSION_EPSILON;
+
+            // Update running X/Y from this move (for the next layer's snapshot),
+            // and grow the model bounds over extruding moves only. Both the
+            // start and end point of an extruding move are inside the model, but
+            // the start is only valid once we have actually seen a prior move —
+            // otherwise the implicit (0,0) origin drags the box to the corner.
             float v;
+            const float prev_x = current_x;
+            const float prev_y = current_y;
+            bool moved = false;
             if (extract_axis_param(line.c_str(), line_len, 'X', v)) {
                 current_x = v;
+                moved = true;
             }
             if (extract_axis_param(line.c_str(), line_len, 'Y', v)) {
                 current_y = v;
+                moved = true;
+            }
+
+            if (is_extruding && !is_excluded_from_bounds(current_feature_type)) {
+                if (any_position_seen) {
+                    stats_.min_x = std::min(stats_.min_x, prev_x);
+                    stats_.max_x = std::max(stats_.max_x, prev_x);
+                    stats_.min_y = std::min(stats_.min_y, prev_y);
+                    stats_.max_y = std::max(stats_.max_y, prev_y);
+                }
+                stats_.min_x = std::min(stats_.min_x, current_x);
+                stats_.max_x = std::max(stats_.max_x, current_x);
+                stats_.min_y = std::min(stats_.min_y, current_y);
+                stats_.max_y = std::max(stats_.max_y, current_y);
+            }
+            if (moved) {
+                any_position_seen = true;
             }
 
             // Track extrusion vs travel
-            if (has_positive_extrusion(line.c_str(), line_len)) {
+            if (is_extruding) {
                 stats_.extrusion_moves++;
             } else {
                 stats_.travel_moves++;
@@ -370,6 +436,12 @@ bool GCodeLayerIndex::build_from_file(const std::string& filepath) {
     }
 
     stats_.total_layers = entries_.size();
+    uses_layer_markers_ = use_layer_markers;
+
+    // Release the slack left by the reserve(100) growth doubling. A 1200-layer
+    // print reserves 1600 entries; handing 400 × 40 bytes back matters on a
+    // 47MB-RAM AD5M.
+    entries_.shrink_to_fit();
 
     // If no filament color found in header, scan the file footer (OrcaSlicer puts metadata at end)
     if (stats_.filament_color.empty() && stats_.total_bytes > 0) {

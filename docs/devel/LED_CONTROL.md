@@ -128,12 +128,49 @@ Executes user-configured Klipper macros for LED control. Three device types:
 
 Controls Klipper `[output_pin]` devices used for chamber lights, enclosure LEDs, and other single-channel lighting. These are brightness-only (no color) — either PWM (0-100% brightness slider) or digital on/off.
 
-- **Discovery**: Auto-detected from `printer.objects.list` — `output_pin *` objects with "light", "led", or "lamp" in the name
+- **Discovery**: Auto-detected from `printer.objects.list` — `output_pin *` objects with "light", "led", or "lamp" in the name (see the safety note below)
 - **PWM detection**: Checks Klipper config object for `pwm: true` — determines slider vs toggle UI
 - **Control**: `SET_PIN PIN=<name> VALUE=<0.0-1.0>` via `MoonrakerAPI`
 - **State tracking**: Subscribes to `output_pin <name>` Moonraker status objects; reported `value` (0.0-1.0) maps to brightness percentage
 - **Value change callback**: Notifies UI when pin value changes from external sources (macros, other UIs)
 - **Strip info flags**: `supports_color = false`, `supports_white = false`, `is_pwm` determines brightness slider vs on/off toggle
+
+#### ⚠️ The `output_pin` name heuristic is safety logic — do not loosen it
+
+`[output_pin]` is a generic Klipper primitive. Users wire it to whatever they like, and
+the object name is the *only* signal we get about what a pin actually does. The full
+classifier lives in `PrinterDiscovery::parse_objects()` (`include/printer_discovery.h`)
+and is a deliberately narrow allowlist:
+
+| Pin name (upper-cased, after the `output_pin ` prefix) | Classified as |
+|---|---|
+| starts with `FAN` | fan |
+| contains `LIGHT`, `LED`, or `LAMP` | LED |
+| contains `BEEPER`, `BUZZER`, or `SPEAKER` | speaker (enables M300) |
+| anything else | **ignored entirely** |
+
+Anything we classify becomes writable from the UI via `SET_PIN PIN=<name> VALUE=<v>`.
+That is why the default is to ignore: a pin we do not recognise is a pin we never touch.
+
+Real hardware makes the stakes concrete. The Snapmaker U1 defines `output_pin e0_heat_sw`
+through `e3_heat_sw` — per-extruder **hotend heater power switches**. They fall through
+to "ignored" only because they match none of the patterns above. Widen the LED test to
+something like a bare `SW` substring and HelixScreen would list four heater switches as
+chamber lights and let a user toggle them from the LED overlay.
+
+`tests/unit/test_printer_discovery_real_hardware.cpp` guards this with object lists
+captured verbatim from real machines (K1C, Snapmaker U1, Voron V2.4). The U1 case exists
+specifically to fail if the heuristic ever stops excluding those heater switches. This
+was verified by mutation: adding `SW` to the LED patterns fails 5 assertions in that file.
+
+Synthetic fixtures cannot catch this class of regression, because whoever loosens the
+heuristic writes the synthetic fixture too. Re-capture with
+`curl -s http://<printer>:7125/printer/objects/list` if you add a machine.
+
+Note that the same `SET_PIN` command drives both categories — on the K1C, `output_pin LED`
+is a light while `output_pin fan0/1/2` are fans. Nothing but the name distinguishes them,
+which is also why `SET_PIN` carries the generic "change" noun rather than "LED change" in
+the busy-queue toast (see `include/gcode_classify.h`).
 
 ## Auto-State Lighting (LedAutoState)
 
@@ -267,11 +304,26 @@ Opened from Settings panel. Configures which strips HelixScreen controls and how
 ## Threading Model
 
 - **Discovery**: Runs on main thread during printer connection
-- **WLED discovery**: Async via Moonraker HTTP — results marshaled to main thread via `ui_async_call()`
+- **WLED discovery**: Async via Moonraker HTTP — results marshaled to main thread via `ui_queue_update()`
 - **LED commands**: Sent via `MoonrakerAPI` (through WebSocket, runs on libhv thread)
 - **Status updates**: `NativeBackend::update_from_status()`, `OutputPinBackend::update_from_status()`, and `WledBackend::update_strip_state()` called from Moonraker subscription handler (background thread), change callbacks dispatched to main thread
 - **UI updates**: All subject updates and widget manipulation on main thread only
 - **Auto-state lifecycle**: `LedAutoState::init()` / `deinit()` run on the main thread only (init via the `init_subsystems_from_hardware()` discovery path inside a `queue_update()` drain; deinit via `Application::tear_down_printer_state()`). Its `observe_int_sync` subscriptions defer callbacks through the UpdateQueue, so auto-state actions always apply on the main thread
+
+## In-Flight Command Tracking
+
+`led_command_in_flight` (an `lv_subject_t` on `LedController`) is the subject both light buttons — the home panel widget and the controls-panel toggle — disable on while a toggle command is outstanding.
+
+`LedController::toggle_all()` (`src/led/led_controller.cpp`) builds a per-dispatch `Settle{done, fail, queued}` triple via a `make_settle()` factory: `make_settle()` increments the in-flight counter immediately, and whichever of the three settle callbacks fires later decrements it. Not every backend branch in `toggle_all()`'s switch calls `make_settle()`:
+
+- **`NATIVE`** and **`OUTPUT_PIN`** emit discretionary G-code (`SET_LED`, `SET_PIN`) and pass `cbs.queued` — while an external blocking op holds Klipper's gcode lock, the command is queued fire-and-forget and its RPC response is dropped, so `on_queued` is the only settle signal that will ever fire on that path.
+- **`WLED`** goes over HTTP and never touches the gcode lock, so it only passes `cbs.done`/`cbs.fail`.
+- **`MACRO`** calls user-defined macros, which stay non-discretionary under the default-allow rule in `gcode_classify.h` and always get a real ACK, so it only passes `cbs.done`/`cbs.fail`.
+- **`LED_EFFECT`**'s case in that switch is a bare `break` — it emits no gcode and never calls `make_settle()`, so it never bumps the counter. Effects are driven separately via `activate`/`stop`, neither of which touches this counter.
+
+A new backend branch that emits gcode MUST pass `on_queued` (or route through something that does) — otherwise a command queued behind a blocking op wedges the counter and greys out both light buttons for the rest of the session (#1129, see `ARCHITECTURE.md` § "Klippy-Volatile Subjects" for the root cause and `MOONRAKER_ARCHITECTURE.md` § "MoonrakerAPI (Domain Logic Layer)" for the `execute_gcode()` contract).
+
+As a last-resort safety net, `LedController` also force-clears the counter (`force_clear_in_flight()`) on a Moonraker disconnect and on any Klippy state leaving `READY`, so a leaked dispatch cannot stay pinned across a reconnect or firmware restart.
 
 ## Home Panel Widget Integration
 

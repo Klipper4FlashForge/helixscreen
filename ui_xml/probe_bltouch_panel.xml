@@ -12,29 +12,27 @@
     <text_small text="BLTouch Controls" translation_tag="BLTouch Controls" style_text_color="#text_muted"/>
 
     <!-- Control buttons — 2x2 grid -->
-    <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="row"
-            style_pad_gap="#space_sm" scrollable="false">
+    <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="row" style_pad_gap="#space_sm" scrollable="false">
       <ui_button name="btn_bltouch_deploy"
-                 width="1" flex_grow="1" height="#button_height_sm" variant="outline" text="Deploy" translation_tag="Deploy"
-                 icon="arrow_down">
+                 width="1" height="#button_height_sm" flex_grow="1" variant="outline" text="Deploy"
+                 translation_tag="Deploy" icon="arrow_down">
         <event_cb trigger="clicked" callback="on_bltouch_deploy"/>
       </ui_button>
       <ui_button name="btn_bltouch_stow"
-                 width="1" flex_grow="1" height="#button_height_sm" variant="outline" text="Stow" translation_tag="Stow"
+                 width="1" height="#button_height_sm" flex_grow="1" variant="outline" text="Stow" translation_tag="Stow"
                  icon="arrow_up">
         <event_cb trigger="clicked" callback="on_bltouch_stow"/>
       </ui_button>
     </lv_obj>
-    <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="row"
-            style_pad_gap="#space_sm" scrollable="false">
+    <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="row" style_pad_gap="#space_sm" scrollable="false">
       <ui_button name="btn_bltouch_selftest"
-                 width="1" flex_grow="1" height="#button_height_sm" variant="outline" text="Self-Test" translation_tag="Self-Test"
-                 icon="check_circle">
+                 width="1" height="#button_height_sm" flex_grow="1" variant="outline" text="Self-Test"
+                 translation_tag="Self-Test" icon="check_circle">
         <event_cb trigger="clicked" callback="on_bltouch_selftest"/>
       </ui_button>
       <ui_button name="btn_bltouch_reset"
-                 width="1" flex_grow="1" height="#button_height_sm" variant="outline" text="Reset" translation_tag="Reset"
-                 icon="refresh">
+                 width="1" height="#button_height_sm" flex_grow="1" variant="outline" text="Reset"
+                 translation_tag="Reset" icon="refresh">
         <event_cb trigger="clicked" callback="on_bltouch_reset"/>
       </ui_button>
     </lv_obj>

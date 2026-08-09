@@ -73,10 +73,6 @@ WizardLanguageChooserStep* get_wizard_language_chooser_step() {
     return g_wizard_language_chooser_step.get();
 }
 
-void destroy_wizard_language_chooser_step() {
-    g_wizard_language_chooser_step.reset();
-}
-
 // ============================================================================
 // Constructor / Destructor
 // ============================================================================

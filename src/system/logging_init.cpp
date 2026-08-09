@@ -7,22 +7,29 @@
 #endif
 #include "lvgl_assert_handler.h"
 #include "lvgl_log_handler.h"
+#include "platform_capabilities.h"
 #include "system/helix_paths.h"
 #ifndef HELIX_WATCHDOG
 #include "system/crash_error_log_sink.h"
 #include "system/crash_handler.h"
 #endif
 
-#include <spdlog/sinks/ringbuffer_sink.h>
+#include "system/monotonic_ring_sink.h"
+
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
+#include <iterator>
 #include <lvgl.h>
 #include <memory>
 #include <sstream>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
 
@@ -43,31 +50,112 @@ helix_assert_callback_t g_helix_assert_cpp_callback = nullptr;
 namespace helix {
 namespace logging {
 
+// %* is our custom flag: the CLOCK_MONOTONIC offset since process start, plus a
+// CLOCK_STEP annotation on any line the wall clock jumped across. Every sink
+// carries it — a bundle may arrive from the ring buffer, the rotating file, or
+// /var/log/messages on a syslog-target device, and a wall-clock-only stamp is
+// untrustworthy in all three (#1218).
 const char* pattern_for_sink(SinkKind kind) {
     switch (kind) {
     case SinkKind::Console:
+        // ms timestamp, monotonic offset, colored level, thread id, message.
+        return "[%H:%M:%S.%e] [%*] [%^%l%$] [%t] %v";
     case SinkKind::File:
-        // ms timestamp, colored level (%^…%$ are no-ops on the non-color file
-        // sink, so the same string is safe for both), thread id, message.
-        return "[%H:%M:%S.%e] [%^%l%$] [%t] %v";
+        // As Console, plus the date: the file and the ring buffer are what a
+        // debug bundle carries, and a session crossing midnight is otherwise
+        // ambiguous. (%^…%$ are no-ops on the non-color file sink.)
+        return "[%Y-%m-%d %H:%M:%S.%e] [%*] [%^%l%$] [%t] %v";
     case SinkKind::Journald:
     case SinkKind::Syslog:
-        // No time token — journald/syslog stamp their own time. Keep the level
-        // text (grep-ability of /var/log/messages) and the thread id.
-        return "[%l] [%t] %v";
+        // No wall-clock token — journald/syslog stamp their own time, and a
+        // second one would double up. The monotonic offset is not a second
+        // clock reading, and it is the only field in these streams that a clock
+        // step cannot corrupt, so it stays.
+        return "[%*] [%l] [%t] %v";
     case SinkKind::Android:
         // logcat already prefixes its own timestamp/level/tag metadata.
-        return "[%t] %v";
+        return "[%*] [%t] %v";
     case SinkKind::CrashBreadcrumb:
         // Feeds crash context — keep a full line with thread id. The crash
         // ring reads msg.payload (the raw message), not this formatted output,
         // so the pattern is for any other consumer of this sink's stream.
-        return "[%H:%M:%S.%e] [%l] [%t] %v";
+        return "[%H:%M:%S.%e] [%*] [%l] [%t] %v";
     }
-    return "[%t] %v";
+    return "[%*] [%t] %v";
 }
 
 namespace {
+
+/// Raw CLOCK_MONOTONIC reading in seconds, or 0.0 if unavailable.
+double raw_monotonic_seconds() {
+#if defined(CLOCK_MONOTONIC)
+    struct timespec ts {};
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0) {
+        return static_cast<double>(ts.tv_sec) + static_cast<double>(ts.tv_nsec) / 1e9;
+    }
+#endif
+    return 0.0;
+}
+
+/// The anchor monotonic_seconds() subtracts. A function-local static so it is
+/// immune to static-init order; init_early() touches it at the top of main() so
+/// the anchor really is process start and not first-log-line.
+double process_start_monotonic() {
+    static const double t = raw_monotonic_seconds();
+    return t;
+}
+
+/// spdlog custom flag `%*`: the monotonic column, plus a CLOCK_STEP annotation
+/// on the line across which the wall clock diverged from monotonic time.
+///
+/// State is per-instance and each sink holds its own formatter, so no sink
+/// consumes another's annotation. Safe without additional locking: every sink
+/// we install formats under its own mutex — the base_sink<std::mutex> family
+/// (file, ring, syslog, journald, android, crash breadcrumb) and ansicolor_sink,
+/// which takes the shared console mutex around formatter_->format().
+class MonotonicFlagFormatter : public spdlog::custom_flag_formatter {
+  public:
+    void format(const spdlog::details::log_msg& msg, const std::tm& /*tm*/,
+                spdlog::memory_buf_t& dest) override {
+        // A ring dump replays the offset captured when the line was logged;
+        // every other sink formats on the logging thread, where reading the
+        // clock here IS the log time. reset_sequence makes each dump
+        // self-contained so its first line is not diffed against whatever this
+        // formatter saw on a previous dump.
+        auto& replay = detail::monotonic_replay();
+        double mono = monotonic_seconds();
+        if (replay.active) {
+            mono = replay.value;
+            if (replay.reset_sequence) {
+                have_prev_ = false;
+                replay.reset_sequence = false;
+            }
+        }
+        const double wall = std::chrono::duration<double>(msg.time.time_since_epoch()).count();
+
+        std::string out = format_monotonic(mono);
+        if (have_prev_ && is_clock_step(wall - prev_wall_, mono - prev_mono_)) {
+            // The delta between the two deltas IS the step size — the amount of
+            // apparent elapsed time in this log that never actually elapsed.
+            fmt::format_to(std::back_inserter(out), " CLOCK_STEP{:+.3f}s",
+                           (wall - prev_wall_) - (mono - prev_mono_));
+        }
+        prev_wall_ = wall;
+        prev_mono_ = mono;
+        have_prev_ = true;
+
+        dest.append(out.data(), out.data() + out.size());
+    }
+
+    std::unique_ptr<spdlog::custom_flag_formatter> clone() const override {
+        return spdlog::details::make_unique<MonotonicFlagFormatter>();
+    }
+
+  private:
+    double prev_wall_ = 0.0;
+    double prev_mono_ = 0.0;
+    bool have_prev_ = false;
+};
 
 // Snapshot of the resolved log destination after init(), used by
 // effective_destination() to surface the active sink in the About panel.
@@ -78,27 +166,38 @@ std::string g_effective_file_path;
 // platform by init() and read by tail_ring_buffer() (debug-bundle log_tail).
 // Rebuilt on each init() — a shared_ptr so a logger swap never frees it out
 // from under a concurrent tail read. Null in the watchdog build / before init.
-std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> g_ring_sink;
+std::shared_ptr<MonotonicRingSink> g_ring_sink;
 
 // The user-configured level the persistent sinks run at (the logger floor may
 // be lower so the ring captures debug). Recorded for the bundle's log_meta.
 spdlog::level::level_enum g_effective_log_level = spdlog::level::warn;
 
-// Default ring capacity (messages). Tunable via HELIX_LOG_RING_LINES so a
-// constrained device can shrink it. ~2000 lines ≈ a few hundred KB at typical
-// line lengths — well within budget even on the 14 MB-diet AD5M.
-constexpr size_t kDefaultRingLines = 2000;
+// Floor ring capacity (messages), and the fallback when RAM detection fails.
+// Capacity otherwise scales with the device — see ring_capacity_for_ram(). This
+// is the historical fixed size, kept as the floor so the smallest boards (AD5M
+// at ~107 MB) keep exactly what they had: ~2000 lines ≈ 300 KB at typical line
+// lengths. Tunable in both directions via HELIX_LOG_RING_LINES.
+constexpr size_t kMinRingLines = 2000;
+
+/// Upper bound: past a few thousand lines a bundle reader is scrolling, not
+/// diagnosing, and the memory stops paying for itself.
+constexpr size_t kMaxRingLines = 20000;
+
+/// ~150 bytes per retained line (≈119 bytes of text plus std::string overhead,
+/// measured against real AD5X bundles), so 16 lines/MB budgets ~0.24% of RAM.
+constexpr size_t kRingLinesPerMb = 16;
 
 size_t resolve_ring_capacity() {
-    size_t lines = kDefaultRingLines;
+    // Explicit override always wins — a constrained board can pin it down and a
+    // developer chasing something can pin it up.
     if (const char* env = std::getenv("HELIX_LOG_RING_LINES")) {
         char* end = nullptr;
         unsigned long long v = std::strtoull(env, &end, 10);
         if (end != env && v > 0) {
-            lines = static_cast<size_t>(v);
+            return static_cast<size_t>(v);
         }
     }
-    return lines;
+    return ring_capacity_for_ram(PlatformCapabilities::detect().total_ram_mb);
 }
 
 // Whether the ring buffer captures DEBUG (the diagnostic win) or matches the
@@ -130,7 +229,7 @@ bool is_path_writable(const std::string& path) {
 /// outlives every logger swap, keeping the crash-handler pointers valid).
 spdlog::sink_ptr crash_error_log_sink() {
     auto& sink = CrashErrorLogSink::instance();
-    sink.set_pattern(pattern_for_sink(SinkKind::CrashBreadcrumb));
+    sink.set_formatter(make_formatter(SinkKind::CrashBreadcrumb));
     return spdlog::sink_ptr(&sink, [](spdlog::sinks::sink*) {});
 }
 #endif
@@ -193,7 +292,7 @@ void add_system_sink(std::vector<spdlog::sink_ptr>& sinks, LogTarget target,
 #ifdef HELIX_HAS_SYSTEMD
     case LogTarget::Journal: {
         auto sink = std::make_shared<spdlog::sinks::systemd_sink_mt>("helix-screen");
-        sink->set_pattern(pattern_for_sink(SinkKind::Journald));
+        sink->set_formatter(make_formatter(SinkKind::Journald));
         sinks.push_back(std::move(sink));
         break;
     }
@@ -201,7 +300,7 @@ void add_system_sink(std::vector<spdlog::sink_ptr>& sinks, LogTarget target,
     case LogTarget::Syslog: {
         auto sink = std::make_shared<spdlog::sinks::syslog_sink_mt>("helix-screen", LOG_PID,
                                                                     LOG_USER, false);
-        sink->set_pattern(pattern_for_sink(SinkKind::Syslog));
+        sink->set_formatter(make_formatter(SinkKind::Syslog));
         sinks.push_back(std::move(sink));
         break;
     }
@@ -229,14 +328,14 @@ void add_system_sink(std::vector<spdlog::sink_ptr>& sinks, LogTarget target,
         }
         auto sink =
             std::make_shared<spdlog::sinks::rotating_file_sink_mt>(path, max_bytes, max_files);
-        sink->set_pattern(pattern_for_sink(SinkKind::File));
+        sink->set_formatter(make_formatter(SinkKind::File));
         sinks.push_back(std::move(sink));
         break;
     }
 #ifdef HELIX_PLATFORM_ANDROID
     case LogTarget::Android: {
         auto sink = std::make_shared<spdlog::sinks::android_sink_mt>("HelixScreen");
-        sink->set_pattern(pattern_for_sink(SinkKind::Android));
+        sink->set_formatter(make_formatter(SinkKind::Android));
         sinks.push_back(std::move(sink));
         break;
     }
@@ -253,7 +352,7 @@ void add_system_sink(std::vector<spdlog::sink_ptr>& sinks, LogTarget target,
         if (target == LogTarget::Journal) {
             auto sink = std::make_shared<spdlog::sinks::syslog_sink_mt>("helix-screen", LOG_PID,
                                                                         LOG_USER, false);
-            sink->set_pattern(pattern_for_sink(SinkKind::Syslog));
+            sink->set_formatter(make_formatter(SinkKind::Syslog));
             sinks.push_back(std::move(sink));
         }
         break;
@@ -292,14 +391,60 @@ void lvgl_assert_spdlog_callback(const char* file, int line, const char* func) {
 
 } // namespace
 
+double monotonic_seconds() {
+    const double now = raw_monotonic_seconds();
+    const double start = process_start_monotonic();
+    // Guard the no-CLOCK_MONOTONIC case: both reads are 0.0, so the offset is
+    // 0.0 rather than a nonsense negative.
+    return now > start ? now - start : 0.0;
+}
+
+std::string format_monotonic(double seconds) {
+    // Width 10 = '+' + 5 integer digits + '.' + 3 fractional. Past 99999.999 s
+    // (27 h) the integer field grows; alignment degrades gracefully rather than
+    // the value being truncated.
+    return fmt::format("+{:09.3f}", seconds);
+}
+
+namespace detail {
+
+MonotonicReplay& monotonic_replay() {
+    thread_local MonotonicReplay state;
+    return state;
+}
+
+} // namespace detail
+
+bool is_clock_step(double wall_delta_s, double mono_delta_s) {
+    // adjtime() slews at most ~500 ppm, so over any interval the honest
+    // wall-vs-monotonic disagreement stays under 0.05% of the interval. One
+    // full second is orders of magnitude beyond that and cannot be slew.
+    constexpr double kStepThresholdSeconds = 1.0;
+    return std::fabs(wall_delta_s - mono_delta_s) > kStepThresholdSeconds;
+}
+
+std::unique_ptr<spdlog::formatter> make_formatter(SinkKind kind) {
+    auto formatter = std::make_unique<spdlog::pattern_formatter>();
+    // add_flag must precede set_pattern — the pattern is compiled against the
+    // custom-flag table as it is parsed, so registering afterwards leaves the
+    // already-compiled '%*' emitting itself literally.
+    formatter->add_flag<MonotonicFlagFormatter>('*').set_pattern(pattern_for_sink(kind));
+    return formatter;
+}
+
 void init_early() {
+    // Anchor the monotonic column here rather than on the first log line, so
+    // "+00000.000" means process start. init_early() is the first statement in
+    // Application::run(); the watchdog anchors in its own init() call below.
+    process_start_monotonic();
+
     // Create minimal console logger at WARN level so early startup code can log
     // without crashing. Attach the crash error-log sink too, so errors during
     // boot (before init()) are still captured for crash diagnostics (#987).
     std::vector<spdlog::sink_ptr> sinks;
     {
         auto console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-        console->set_pattern(pattern_for_sink(SinkKind::Console));
+        console->set_formatter(make_formatter(SinkKind::Console));
         sinks.push_back(std::move(console));
     }
 #ifndef HELIX_WATCHDOG
@@ -310,7 +455,72 @@ void init_early() {
     spdlog::set_default_logger(logger);
 }
 
+StdoutKind classify_stdout() {
+    if (isatty(STDOUT_FILENO) != 0)
+        return StdoutKind::Tty;
+
+    struct stat st {};
+    if (fstat(STDOUT_FILENO, &st) != 0)
+        return StdoutKind::Other; // conservative: not forceable
+
+    if (S_ISFIFO(st.st_mode))
+        return StdoutKind::Pipe;
+    if (S_ISREG(st.st_mode))
+        return StdoutKind::File;
+    if (S_ISSOCK(st.st_mode))
+        return StdoutKind::Socket;
+    return StdoutKind::Other;
+}
+
+bool should_add_console(LogTarget effective_target, bool enable_console, bool force_console,
+                        bool test_mode, StdoutKind stdout_kind) {
+    if (!enable_console)
+        return false;
+
+    switch (effective_target) {
+    case LogTarget::Console:
+        // Console is the only sink for this target — always attach.
+        return true;
+    case LogTarget::Android:
+        // stdout is invisible under logcat; android_sink carries the output.
+        // Deliberately checked BEFORE test_mode: Android + --test is not a real
+        // configuration, and a console sink would be unreadable there anyway, so
+        // test mode does not override this.
+        return false;
+    default:
+        // Journal/Syslog/File already capture output structurally. Attach the
+        // console for interactive shell runs so dev boxes and `ssh -t` still see
+        // colored output, but not for daemonized launches where stdout is
+        // redirected into that same journal/file — that double-logs every line
+        // (root cause of the Snapmaker U1 tmpfs blowout: /tmp/helixscreen.log
+        // grew to 498 MB at trace level).
+        //
+        // force_console (explicit -v/--log-level) additionally attaches the
+        // console for a PIPE — a human watching via `| tee` — but never for a
+        // regular file or socket, which are the daemon redirect and the systemd
+        // journal. The shipped launcher synthesizes --log-level/-vv from
+        // HELIX_LOG_LEVEL / HELIX_DEBUG, so force_console IS reachable under
+        // systemd; forcing there would reintroduce the blowout. See the full
+        // rationale on should_add_console() in logging_init.h.
+        //
+        // test_mode attaches the console for ANY stdout kind, closing the gap for
+        // `--test -vv > file` (#1105's literal repro, which a reporter may well
+        // have redirected rather than piped). Safe because --test never runs in
+        // production: no systemd unit, init script, procd shim, or launcher
+        // passes it, so test mode cannot reach a daemonized double-log path.
+        if (test_mode)
+            return true;
+        if (stdout_kind == StdoutKind::Tty)
+            return true;
+        return force_console && stdout_kind == StdoutKind::Pipe;
+    }
+}
+
 void init(const LogConfig& config) {
+    // No-op when init_early() already ran; anchors the watchdog build, which
+    // calls init() directly.
+    process_start_monotonic();
+
     std::vector<spdlog::sink_ptr> sinks;
 
     // Resolve auto-detection first so we can decide about console
@@ -324,34 +534,14 @@ void init(const LogConfig& config) {
         (effective_target == LogTarget::File) ? resolve_log_file_path(config.file_path) : "";
 
     // Console sink — added when enabled AND the target benefits from it.
-    //
-    // Behavior by target:
-    //   - Console: console is the ONLY sink, always add.
-    //   - Android: stdout is invisible; android_sink handles output. Skip.
-    //   - Syslog/Journal/File: structured destination already captures output.
-    //     Add console ONLY when stdout is a TTY (interactive run from a shell),
-    //     so dev workstations and `ssh -t` sessions still see colored output.
-    //     Daemonized launches under SysV/systemd have stdout redirected to a
-    //     file or the journal — adding a stdout sink there double-logs every
-    //     line (was the root cause of the Snapmaker U1 tmpfs blowout where
-    //     /tmp/helixscreen.log grew to 498 MB at trace level).
-    bool add_console = false;
-    if (config.enable_console) {
-        switch (effective_target) {
-        case LogTarget::Console:
-            add_console = true;
-            break;
-        case LogTarget::Android:
-            add_console = false;
-            break;
-        default:
-            add_console = (isatty(STDOUT_FILENO) != 0);
-            break;
-        }
-    }
+    // Decision lives in should_add_console() so it is unit-testable without a TTY;
+    // classify_stdout() is the only part that touches the real fd.
+    bool add_console =
+        should_add_console(effective_target, config.enable_console, config.force_console,
+                           config.test_mode, classify_stdout());
     if (add_console) {
         auto console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-        console->set_pattern(pattern_for_sink(SinkKind::Console));
+        console->set_formatter(make_formatter(SinkKind::Console));
         sinks.push_back(std::move(console));
     }
 
@@ -388,8 +578,8 @@ void init(const LogConfig& config) {
     // value; HELIX_BUNDLE_LOG_DEBUG=0 reverts the ring to the configured level.
     const spdlog::level::level_enum ring_level =
         ring_captures_debug() ? spdlog::level::debug : config.level;
-    g_ring_sink = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(resolve_ring_capacity());
-    g_ring_sink->set_pattern(pattern_for_sink(SinkKind::File));
+    g_ring_sink = std::make_shared<MonotonicRingSink>(resolve_ring_capacity());
+    g_ring_sink->set_formatter(make_formatter(SinkKind::File));
     g_ring_sink->set_level(ring_level);
     sinks.push_back(g_ring_sink);
 
@@ -407,6 +597,16 @@ void init(const LogConfig& config) {
     // normal volume; only the ring buffer gains the extra detail.
     auto logger = std::make_shared<spdlog::logger>("helix", sinks.begin(), sinks.end());
     logger->set_level(std::min(config.level, ring_level));
+
+    // Flush warnings and worse immediately instead of waiting for spdlog's
+    // buffer to fill. The UI is routinely SIGKILLed rather than shut down
+    // cleanly — an init script escalating `kill` to `kill -9`, or a firmware
+    // helper stopping the GUI to free RAM — and anything still buffered at that
+    // moment is lost. The lost lines are exactly the ones describing why the
+    // process was in trouble, which is what makes such a failure undiagnosable
+    // after the fact. Levels below warn stay buffered so ordinary logging on
+    // flash-backed boards keeps its write batching.
+    logger->flush_on(spdlog::level::warn);
 
     // Set as default logger
     spdlog::set_default_logger(logger);
@@ -426,6 +626,16 @@ void init(const LogConfig& config) {
     // Log what we configured (at debug level so it's not noisy)
     spdlog::debug("[Logging] Initialized: target={}, console={}, backtrace=32 messages",
                   log_target_name(effective_target), config.enable_console ? "yes" : "no");
+}
+
+size_t ring_capacity_for_ram(size_t total_ram_mb) {
+    // total_ram_mb == 0 means detection failed (non-Linux, unreadable
+    // /proc/meminfo); fall back to the historical size rather than guessing.
+    if (total_ram_mb == 0) {
+        return kMinRingLines;
+    }
+    const size_t scaled = total_ram_mb * kRingLinesPerMb;
+    return std::clamp(scaled, kMinRingLines, kMaxRingLines);
 }
 
 LogTarget parse_log_target(const std::string& str) {

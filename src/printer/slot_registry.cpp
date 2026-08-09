@@ -230,6 +230,21 @@ void SlotRegistry::set_tool_mapping(int global_index, int tool_number) {
     tool_to_slot_[tool_number] = global_index;
 }
 
+void SlotRegistry::clear_tool_mapping(int global_index) {
+    if (!is_valid_index(global_index))
+        return;
+
+    // Drop the reverse-map entry only if it still points at this slot; another
+    // slot may have already claimed the tool number.
+    int old_tool = slots_[global_index].info.mapped_tool;
+    if (old_tool >= 0 && old_tool < static_cast<int>(tool_to_slot_.size()) &&
+        tool_to_slot_[old_tool] == global_index) {
+        tool_to_slot_[old_tool] = -1;
+    }
+
+    slots_[global_index].info.mapped_tool = -1;
+}
+
 void SlotRegistry::set_tool_map(const std::vector<int>& tool_to_slot) {
     // Clear all existing mappings
     for (auto& slot : slots_) {
@@ -245,6 +260,10 @@ void SlotRegistry::set_tool_map(const std::vector<int>& tool_to_slot) {
             slots_[slot_idx].info.mapped_tool = t;
         }
     }
+}
+
+const std::vector<int>& SlotRegistry::tool_map() const {
+    return tool_to_slot_;
 }
 
 int SlotRegistry::backup_for_slot(int global_index) const {

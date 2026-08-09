@@ -207,8 +207,8 @@ void FavoriteMacroConfigModal::populate_macro_list() {
         lv_obj_t* row = lv_obj_create(macro_list_);
         lv_obj_set_width(row, LV_PCT(100));
         lv_obj_set_height(row, LV_SIZE_CONTENT);
-        lv_obj_set_style_pad_all(row, 6, 0);
-        lv_obj_set_style_pad_gap(row, 4, 0);
+        lv_obj_set_style_pad_all(row, theme_manager_get_spacing("space_xs"), 0);
+        lv_obj_set_style_pad_gap(row, theme_manager_get_spacing("space_xxs"), 0);
         lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);

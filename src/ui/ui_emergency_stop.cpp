@@ -125,6 +125,18 @@ void EmergencyStopOverlay::deinit_subjects() {
     }
     subjects_.deinit_all();
     subjects_initialized_ = false;
+
+    // Both dialogs live on the active screen and are owned by ModalStack; neither
+    // survives the display teardown this runs ahead of (shutdown, or the soft
+    // restart after Add Printer). Deleting them here is not our job — the screen
+    // and the stack are torn down right after — but keeping the raw pointers is a
+    // dangling-reference hazard: show_recovery_for_main() and
+    // show_confirmation_dialog() both branch on non-null, so a stale pointer
+    // suppresses the next dialog on the rebuilt display.
+    recovery_dialog_ = nullptr;
+    confirmation_dialog_ = nullptr;
+    recovery_reason_ = RecoveryReason::NONE;
+
     spdlog::debug("[EmergencyStop] Subjects deinitialized");
 }
 
@@ -334,12 +346,24 @@ void EmergencyStopOverlay::dismiss_recovery_dialog() {
 }
 
 void EmergencyStopOverlay::show_recovery_for(RecoveryReason reason) {
-    // Check suppression
+    // Suppression is checked here rather than on the main thread because the
+    // deadline is atomic and a suppressed event should cost nothing — an
+    // intentional restart bursts these, and queueing each one only to drop it
+    // later is waste.
     if (is_recovery_suppressed()) {
         spdlog::info("[KlipperRecovery] Suppressing recovery dialog (suppression active)");
         return;
     }
 
+    // Everything below reads or writes recovery_dialog_ and recovery_reason_ and
+    // queries ModalStack — main-thread state with no locking. Callers reach this
+    // from the libhv event-loop thread (MoonrakerClient's event handler) and from
+    // AbortManager, both of which already rely on this deferring for them, so the
+    // hop belongs here where every caller gets it.
+    helix::ui::queue_update([reason]() { instance().show_recovery_for_main(reason); });
+}
+
+void EmergencyStopOverlay::show_recovery_for_main(RecoveryReason reason) {
     // Don't show during wizard
     if (is_wizard_active()) {
         spdlog::debug("[KlipperRecovery] Ignoring {} during setup wizard",
@@ -361,16 +385,23 @@ void EmergencyStopOverlay::show_recovery_for(RecoveryReason reason) {
         return;
     }
 
-    // If dialog is already showing, update reason if it's worse (SHUTDOWN -> DISCONNECTED means
+    // A backdrop tap dismisses the dialog through Modal::hide() without going
+    // through dismiss_recovery_dialog(), so recovery_dialog_ can still point at a
+    // modal that already left the stack. Drop the stale pointer first and let the
+    // rest of this function build a fresh dialog — the next SHUTDOWN or
+    // DISCONNECTED after a manual dismiss must still reach the user.
+    if (recovery_dialog_ && !ModalStack::instance().backdrop_for(recovery_dialog_)) {
+        spdlog::debug("[KlipperRecovery] Previous dialog was dismissed externally, "
+                      "clearing stale reference");
+        recovery_dialog_ = nullptr;
+        recovery_reason_ = RecoveryReason::NONE;
+    }
+
+    // If dialog is still showing, update reason if it's worse (SHUTDOWN -> DISCONNECTED means
     // can't restart)
     if (recovery_dialog_) {
-        // Check if dialog was dismissed externally (backdrop click, etc.)
-        if (!ModalStack::instance().backdrop_for(recovery_dialog_)) {
-            recovery_dialog_ = nullptr;
-            recovery_reason_ = RecoveryReason::NONE;
-            // Fall through to show new dialog
-        } else if (reason == RecoveryReason::DISCONNECTED &&
-                   recovery_reason_ == RecoveryReason::SHUTDOWN) {
+        if (reason == RecoveryReason::DISCONNECTED &&
+            recovery_reason_ == RecoveryReason::SHUTDOWN) {
             spdlog::info("[KlipperRecovery] Connection dropped while SHUTDOWN dialog showing, "
                          "updating buttons");
             recovery_reason_ = RecoveryReason::DISCONNECTED;
@@ -386,7 +417,10 @@ void EmergencyStopOverlay::show_recovery_for(RecoveryReason reason) {
 
     recovery_reason_ = reason;
 
-    // Defer to main thread - may be called from WebSocket thread
+    // Already on the main thread (show_recovery_for marshalled us here), so this
+    // is no longer the thread hop it once was — it is kept because the dialog is
+    // built one tick later, after any modal currently mid-teardown has finished
+    // leaving the stack. The re-entrancy guard below covers the gap.
     helix::ui::async_call(
         [](void*) {
             auto& inst = EmergencyStopOverlay::instance();
@@ -407,19 +441,29 @@ void EmergencyStopOverlay::show_recovery_for(RecoveryReason reason) {
 }
 
 void EmergencyStopOverlay::suppress_recovery_dialog(uint32_t duration_ms) {
-    suppress_recovery_until_ = lv_tick_get() + duration_ms;
+    // Callable from the WebSocket background thread (Moonraker gcode callbacks) —
+    // the deadline is atomic so main-thread readers never see a torn value.
+    suppress_recovery_until_.store(lv_tick_get() + duration_ms, std::memory_order_relaxed);
     spdlog::info("[KlipperRecovery] Suppressing recovery dialog for {}ms", duration_ms);
 }
 
 bool EmergencyStopOverlay::is_recovery_suppressed() const {
-    if (suppress_recovery_until_ == 0) {
+    // Single load — re-reading the member would let a concurrent
+    // suppress_recovery_dialog() change the value between the zero check and the
+    // elapsed comparison.
+    const uint32_t deadline = suppress_recovery_until_.load(std::memory_order_relaxed);
+    if (deadline == 0) {
         return false;
     }
-    return lv_tick_elaps(suppress_recovery_until_) > (UINT32_MAX / 2);
+    return lv_tick_elaps(deadline) > (UINT32_MAX / 2);
 }
 
 bool EmergencyStopOverlay::is_expected_restart() const {
-    return is_recovery_suppressed() || restart_in_progress_;
+    // Load the restart flag first: a writer that sets restart_in_progress_ and
+    // then the deadline can otherwise slip between the two reads and produce a
+    // false negative for a restart that is genuinely in flight.
+    const bool restarting = restart_in_progress_.load(std::memory_order_relaxed);
+    return restarting || is_recovery_suppressed();
 }
 
 void EmergencyStopOverlay::update_recovery_dialog_content() {

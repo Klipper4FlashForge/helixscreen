@@ -205,6 +205,49 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: fill renders from subject without
     lv_obj_delete(slot);
 }
 
+// Structural regression guard for #1065 (native ZMOD AD5X: "material type
+// stuck, color updates"). The widget must render MATERIAL from its per-slot
+// subject WITHOUT any panel re-reading it imperatively — the same structural
+// fix fill got. This is what makes every ams_slot consumer (AmsPanel,
+// AmsOverviewPanel, AmsDetail) reactive on a material-only change; before it,
+// material only repainted as a side effect of a color change or a container
+// that happened to rebuild on slots_version, so surfaces without that path
+// (AmsDetail) — and any lane whose type changed with its color unchanged —
+// kept showing the stale material.
+TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: material renders from subject without panel push",
+                 "[ui][ams_slot][material][1065]") {
+    ui_ams_slot_register();
+    // The widget observes via the C++ accessor, not an XML name, so
+    // register_xml=false is fine (mirrors the fill test).
+    AmsState::instance().init_subjects(false);
+
+    // Seed the per-slot material subject exactly as sync_from_backend would.
+    lv_subject_t* mat = AmsState::instance().get_slot_material_subject(0);
+    REQUIRE(mat != nullptr);
+    lv_subject_copy_string(mat, "PLA");
+
+    // Creating the widget runs setup_slot_observers, which applies the CURRENT
+    // subject value synchronously — no panel pushes material.
+    lv_obj_t* slot = create_ams_slot(test_screen(), 0);
+    REQUIRE(slot != nullptr);
+    lv_obj_t* material_label = UITest::find_by_name(slot, "material_label");
+    REQUIRE(material_label != nullptr);
+    CHECK(std::string(UITest::get_text(material_label)) == "PLA");
+
+    // A material-ONLY change (color unchanged, no refresh_slots, no
+    // slots_version rebuild) must repaint the label through the observer.
+    lv_subject_copy_string(mat, "PETG");
+    process_lvgl(50);
+    CHECK(std::string(UITest::get_text(material_label)) == "PETG");
+
+    // Empty material falls back to the "--" placeholder.
+    lv_subject_copy_string(mat, "");
+    process_lvgl(50);
+    CHECK(std::string(UITest::get_text(material_label)) == "--");
+
+    lv_obj_delete(slot);
+}
+
 TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: set_layout_info does not crash",
                  "[ui][ams_slot][api]") {
     ui_ams_slot_register();
@@ -720,7 +763,7 @@ lv_obj_t* create_empty_slot(lv_obj_t* parent, AmsBackendMock* mock_ptr) {
 } // namespace
 
 TEST_CASE_METHOD(LVGLUITestFixture, "AMS slot ghosts empty slot with brand-only metadata",
-                 "[ui][ams_slot][filament_slot_override][slow]") {
+                 "[ui][ams_slot][filament_slot_override]") {
     ui_ams_slot_register();
     AmsState::instance().init_subjects(true);
 
@@ -749,7 +792,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "AMS slot ghosts empty slot with brand-only 
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture, "AMS slot ghosts empty slot with spool_name-only metadata",
-                 "[ui][ams_slot][filament_slot_override][slow]") {
+                 "[ui][ams_slot][filament_slot_override]") {
     ui_ams_slot_register();
     AmsState::instance().init_subjects(true);
 
@@ -776,7 +819,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "AMS slot ghosts empty slot with spool_name-
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture, "AMS slot hides empty slot with no metadata at all",
-                 "[ui][ams_slot][filament_slot_override][slow]") {
+                 "[ui][ams_slot][filament_slot_override]") {
     ui_ams_slot_register();
     AmsState::instance().init_subjects(true);
 

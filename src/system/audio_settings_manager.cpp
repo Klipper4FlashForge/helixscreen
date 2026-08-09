@@ -12,9 +12,6 @@
 
 using namespace helix;
 
-// Completion alert options (Off=0, Notification=1, Alert=2)
-static const char* COMPLETION_ALERT_OPTIONS_TEXT = "Off\nNotification\nAlert";
-
 AudioSettingsManager& AudioSettingsManager::instance() {
     static AudioSettingsManager instance;
     return instance;
@@ -117,11 +114,18 @@ float AudioSettingsManager::get_volume_scaled() const {
     return normalized * normalized; // Quadratic curve for perceptual loudness
 }
 
-void AudioSettingsManager::set_volume(int volume) {
+int AudioSettingsManager::preview_volume(int volume) {
     volume = std::clamp(volume, 0, 100);
-    spdlog::info("[AudioSettingsManager] set_volume({})", volume);
+    // Debug, not info: a drag emits one of these per tick.
+    spdlog::debug("[AudioSettingsManager] preview_volume({})", volume);
 
     lv_subject_set_int(&volume_subject_, volume);
+    return volume;
+}
+
+void AudioSettingsManager::set_volume(int volume) {
+    volume = preview_volume(volume);
+    spdlog::info("[AudioSettingsManager] set_volume({})", volume);
 
     Config* config = Config::get_instance();
     if (config) {
@@ -168,8 +172,4 @@ void AudioSettingsManager::set_completion_alert_mode(CompletionAlertMode mode) {
     Config* config = Config::get_instance();
     config->set<int>("/completion_alert", val);
     config->save();
-}
-
-const char* AudioSettingsManager::get_completion_alert_options() {
-    return lv_tr(COMPLETION_ALERT_OPTIONS_TEXT);
 }

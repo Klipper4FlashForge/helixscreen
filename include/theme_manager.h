@@ -101,6 +101,81 @@ struct ThemePalette {
 namespace helix {
 /// Style configure function type - applies palette colors to a style.
 using StyleConfigureFn = void (*)(lv_style_t* style, const ThemePalette& palette);
+
+/**
+ * @brief Breakpoint suffix for the nav_width token, e.g. "_small".
+ *
+ * Not the general breakpoint ladder: the nav bar is a full-height vertical strip
+ * whose width tracks horizontal resolution, with two exceptions — vertical
+ * resolution distinguishes micro from tiny (they share a width), and ultrawide
+ * panels cap the strip so it does not eat the horizontal space the grid wants.
+ *
+ * Shared by startup registration and the resize refresh; they were separate
+ * copies and the refresh one lacked the ultrawide branch.
+ */
+const char* nav_width_suffix(int32_t hor_res, int32_t ver_res);
+
+/// The two overlay widths registered as XML consts (#1178).
+struct OverlayWidths {
+    int32_t transient;   ///< A layer you will return from — leaves the leading-edge gap.
+    int32_t destination; ///< A place you park — occludes the backdrop entirely.
+};
+
+/**
+ * @brief Compute overlay widths for a screen geometry.
+ *
+ * Both widths give up the horizontal extent the navigation bar occupies.
+ * Landscape puts the bar on the leading edge as a full-height vertical strip,
+ * so that is nav_width px. Portrait puts it along the bottom at width="100%"
+ * (ui_xml/portrait/navigation_bar.xml), where it costs an overlay nothing
+ * horizontally — reserving nav_width there strands a column of dead backdrop
+ * beside every overlay, 54px of 320 on the Waveshare 11.9".
+ *
+ * The transient class's "you will return from this" gap follows the same
+ * rule: it is spent on whichever axis the nav bar occupies. In landscape
+ * that is here (gap subtracted from the leading edge, alongside nav_width).
+ * In portrait the nav bar is vertical, so the gap moves to
+ * compute_overlay_heights() instead and both widths here are full-width.
+ *
+ * Pure so the formula can be tested without the XML const registry, which
+ * ignores duplicate registrations and therefore cannot be re-registered at a
+ * second resolution within one process.
+ *
+ * @param hor_res   Display width in px
+ * @param ver_res   Display height in px
+ * @param nav_width Registered nav_width const for this breakpoint
+ * @param gap       Leading-edge gap for the transient class (space_lg).
+ *                  Landscape only — see above.
+ */
+OverlayWidths compute_overlay_widths(int32_t hor_res, int32_t ver_res, int32_t nav_width,
+                                     int32_t gap);
+
+/**
+ * @brief Overlay heights for a screen geometry.
+ *
+ * The vertical twin of OverlayWidths. In landscape the navigation bar is a
+ * full-height vertical strip, so it consumes no vertical extent and both
+ * classes span the whole display. In portrait it is a full-width bottom strip
+ * (ui_xml/portrait/navigation_bar.xml), so both classes must stop short of it.
+ */
+struct OverlayHeights {
+    int32_t transient;   ///< A layer you will return from — leaves the gap above the nav bar.
+    int32_t destination; ///< A place you park — flush to the nav bar.
+};
+
+/**
+ * @brief Compute overlay heights for a screen geometry.
+ *
+ * Shares detect_layout_type() with compute_overlay_widths() so the two can
+ * never disagree about which axis the navigation bar occupies.
+ *
+ * @param hor_res    Display horizontal resolution.
+ * @param ver_res    Display vertical resolution.
+ * @param nav_height Height of the portrait bottom nav strip (#button_height_lg).
+ * @param gap        Leading-edge gap for transient overlays (#space_lg).
+ */
+OverlayHeights compute_overlay_heights(int32_t hor_res, int32_t ver_res, int32_t nav_height,
+                                       int32_t gap);
 } // namespace helix
 
 /// Style entry - binds a role to its style and configure function.
@@ -111,7 +186,9 @@ struct StyleEntry {
 };
 
 #include <array>
+#include <string>
 #include <string_view>
+#include <unordered_map>
 
 /// Unified theme manager - singleton managing all styles and colors.
 /// Replaces theme_core.c + old theme_manager.cpp with table-driven approach.
@@ -261,11 +338,75 @@ void theme_manager_deinit();
  * Returns the suffix string used to select responsive variants from globals.xml.
  * Useful for testing and debugging responsive behavior.
  *
- * @param resolution Screen height (vertical resolution)
+ * @param resolution Screen dimension in pixels (typically responsive_dimension(display) —
+ *                   the smaller of width and height, so portrait orientations pick a
+ *                   breakpoint matched to the cramped axis).
  * @return "_tiny" (≤390), "_small" (391-460), "_medium" (461-550), "_large" (551-700), or "_xlarge"
  * (>700)
  */
 const char* theme_manager_get_breakpoint_suffix(int32_t resolution);
+
+/**
+ * @brief Return the smaller dimension of the display (width or height).
+ *
+ * Used for responsive breakpoint selection so portrait layouts pick a breakpoint
+ * suited to the cramped axis. Landscape: typically returns height. Portrait:
+ * returns width. Pass nullptr to use the default display.
+ *
+ * @param display LVGL display instance, or nullptr for the default display
+ * @return min(horizontal_resolution, vertical_resolution), or 600 as a safe fallback
+ */
+int32_t responsive_dimension(lv_display_t* display);
+
+/**
+ * @brief Return the vertical resolution of the display.
+ *
+ * The second responsive ladder. responsive_dimension() answers "how much room
+ * does the cramped axis have", which is what fonts, horizontal padding and
+ * column counts must fit into; this answers "how much room is there to stack
+ * things", which is what row heights must fit into. On landscape and square
+ * displays min(w,h) == h and the two agree exactly, so only portrait geometry
+ * sees a difference (#1209).
+ *
+ * Feed it to the same breakpoint_for() / theme_manager_get_breakpoint_suffix()
+ * the cramped axis uses — the ladder is shared, only the scalar differs.
+ *
+ * @param display LVGL display instance, or nullptr for the default display
+ * @return vertical_resolution, or 600 as a safe fallback
+ */
+int32_t responsive_vertical_dimension(lv_display_t* display);
+
+/**
+ * @brief Does this responsive px token resolve from the vertical axis?
+ *
+ * The single classification list for #1209 — every registration site consults
+ * this rather than keeping its own copy. Exact base names, not a naming
+ * convention: `dialog_content_max` is a vertical maximum but does not end in
+ * `_height`, and `button_height_lg` would need the convention to understand
+ * modifier suffixes.
+ *
+ * @param base_name Token base name with no tier suffix (e.g. "button_height")
+ * @return true for vertical tokens, false for horizontal and axis-neutral ones
+ */
+bool theme_manager_token_uses_vertical_axis(const char* base_name);
+
+/**
+ * @brief Resolve every responsive px token to its value for a given display
+ *
+ * The single source of truth for "what should each px token be at this size",
+ * shared by startup registration (theme_manager_register_responsive_spacing)
+ * and the resize path (theme_manager_refresh_layout_constants) so a token can
+ * never get one tier at boot and another after a rotation.
+ *
+ * Applies the per-token axis policy: nav_width follows its own horizontal
+ * ladder, the tokens theme_manager_token_uses_vertical_axis() names follow the
+ * vertical resolution, and everything else follows the cramped axis. Tokens
+ * without a complete _small/_medium/_large triplet are skipped.
+ *
+ * @param display LVGL display instance, or nullptr for the default display
+ * @return Map of base_name → value (decimal string, as XML consts are stored)
+ */
+std::unordered_map<std::string, std::string> theme_manager_resolve_px_tokens(lv_display_t* display);
 
 /**
  * @brief Register responsive spacing tokens (space_* system)
@@ -379,10 +520,14 @@ lv_subject_t* theme_manager_get_changed_subject();
  * @brief Get the breakpoint index subject for reactive responsive visibility
  *
  * Returns an LVGL int subject holding the current breakpoint index:
- *   0=TINY, 1=SMALL, 2=MEDIUM, 3=LARGE, 4=XLARGE
+ *   0=MICRO, 1=TINY, 2=SMALL, 3=MEDIUM, 4=LARGE, 5=XLARGE, 6=XXLARGE
+ *
+ * These are the UiBreakpoint enum values (ui_breakpoint.h) — XML ref_values are
+ * written against them, so they must not be renumbered.
  *
  * Use with bind_flag_if_eq in XML to reactively show/hide elements based on
- * screen size. Example: <bind_flag_if_eq subject="ui_breakpoint" flag="hidden" ref_value="0"/>
+ * screen size. Example, hiding an element on the smallest tier only:
+ *   <bind_flag_if_eq subject="ui_breakpoint" flag="hidden" ref_value="0"/>
  *
  * @return Pointer to the breakpoint subject (valid after theme_manager_init)
  */
@@ -595,15 +740,16 @@ void theme_manager_apply_bg_color(lv_obj_t* obj, const char* base_name,
 int32_t theme_manager_get_font_height(const lv_font_t* font);
 
 /**
- * @brief Set overlay widget width to fill space after nav bar
+ * @brief Apply an overlay's navigation geometry at push time.
  *
- * Utility for overlay panels/widgets that use x="#nav_width" positioning.
- * Sets width to (screen_width - nav_width).
+ * Sets width always. In portrait also sets height and top alignment, because
+ * ui_xml/portrait/navigation_bar.xml is a bottom strip that a full-height
+ * overlay would cover. Landscape leaves height and alignment to the XML.
  *
- * @param obj Widget to resize (typically an overlay panel or detail view)
- * @param screen Parent screen to calculate width from
+ * The sole writer of overlay geometry — see OverlayClass for why the class is
+ * resolved at push time rather than baked into XML.
  */
-void ui_set_overlay_width(lv_obj_t* obj, lv_obj_t* screen);
+void ui_set_overlay_geometry(lv_obj_t* obj, bool is_destination);
 
 /**
  * @brief Get spacing value from unified space_* system

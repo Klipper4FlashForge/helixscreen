@@ -9,6 +9,7 @@
 
 #include "ams_types.h"
 #include "overlay_base.h"
+#include "spoolman_slot_saver.h"
 #include "spoolman_types.h"
 #include "subject_managed_panel.h"
 
@@ -84,6 +85,10 @@ class AmsEditOverlay : public OverlayBase {
     void on_activate() override;
     void on_deactivate() override;
     void on_ui_destroyed() override;
+    /// The catalog selector's options, the color swatch and the logistics field
+    /// text are populated on view entry, not by the XML — re-apply them for the
+    /// view that is showing when a hot-reload rebuilds the tree.
+    void repopulate() override;
 
     /**
      * @brief Open the editor for a specific slot (pushes the overlay)
@@ -123,7 +128,7 @@ class AmsEditOverlay : public OverlayBase {
     bool opened_on_picker_ = false;
     IMoonrakerAPI* api_ = nullptr;
     CompletionCallback completion_callback_;
-    bool completion_fired_ = false;  ///< Guards single-fire completion
+    bool completion_fired_ = false; ///< Guards single-fire completion
 
     /// Cached overlay widget for lazy_create_and_push_overlay
     lv_obj_t* cached_overlay_widget_ = nullptr;
@@ -148,6 +153,8 @@ class AmsEditOverlay : public OverlayBase {
     uint32_t custom_color_ = 0x808080;
 
     void open_color_view();
+    /// Paint the HSV picker, preview swatch and hex field from custom_color_.
+    void populate_color_view();
     void apply_color(uint32_t rgb);
     void handle_color_swatch(lv_obj_t* swatch);
     void handle_custom_color_changed(uint32_t rgb);
@@ -163,13 +170,15 @@ class AmsEditOverlay : public OverlayBase {
     lv_subject_t temp_nozzle_subject_;
     lv_subject_t temp_bed_subject_;
     lv_subject_t remaining_pct_subject_;
-    lv_subject_t view_mode_subject_;      ///< kView* ("ams_edit_view")
-    lv_subject_t picker_state_subject_;   ///< 0=loading, 1=empty, 2=content
-    lv_subject_t save_disabled_subject_;  ///< 1=Save disabled ("ams_edit_save_disabled")
-    lv_subject_t save_hidden_subject_;    ///< 1=header Save hidden ("ams_edit_save_hidden")
-    lv_subject_t is_managed_subject_;     ///< 1=linked Spoolman spool ("ams_edit_is_managed")
-    lv_subject_t chip_text_subject_;      ///< card identity label text
+    lv_subject_t view_mode_subject_;     ///< kView* ("ams_edit_view")
+    lv_subject_t picker_state_subject_;  ///< 0=loading, 1=empty, 2=content
+    lv_subject_t save_disabled_subject_; ///< 1=Save disabled ("ams_edit_save_disabled")
+    lv_subject_t save_hidden_subject_;   ///< 1=header Save hidden ("ams_edit_save_hidden")
+    lv_subject_t is_managed_subject_;    ///< 1=linked Spoolman spool ("ams_edit_is_managed")
+    lv_subject_t chip_text_subject_;     ///< card identity label text
+    lv_subject_t spoolman_id_subject_;   ///< "#19" beside the Spoolman mark, "" when untracked
     char chip_text_buf_[96] = {0};
+    char spoolman_id_buf_[16] = {0};
 
     char slot_indicator_buf_[32] = {0};
     char temp_nozzle_buf_[32] = {0};
@@ -188,13 +197,18 @@ class AmsEditOverlay : public OverlayBase {
     lv_obj_t* find_widget(const char* name) const;
 
     // === View switching ===
-    void set_view(int view); ///< Sole writer of view_mode_subject_; also drives save_hidden_subject_
+    void
+    set_view(int view); ///< Sole writer of view_mode_subject_; also drives save_hidden_subject_
     void switch_to_picker();
     void switch_to_form();
     void populate_picker();
     void render_spool_list(const std::string& filter);
     void handle_spool_selected(int spool_id);
     void enter_spool_edit();
+    /// Apply the spool-edit view's non-XML content (catalog selector options,
+    /// color swatch, logistics fields) from state this object already holds.
+    /// @return false if the catalog fragment is missing from the tree
+    bool populate_spool_edit_view();
     // Apply the spool-edit view's identity/color/logistics edits to the slot.
     // finish=true (header Save) completes + closes the editor on a successful
     // apply; finish=false returns to the overview (tests / non-terminal calls).
@@ -215,9 +229,9 @@ class AmsEditOverlay : public OverlayBase {
     friend class ::AmsEditOverlayViewTestAccess;
 
     // === Event Handlers ===
-    void handle_back(); ///< Header back: per-view routing (cancel on overview)
-    void handle_card_clicked();      ///< Card tap: opens the spool-edit view
-    void handle_change_filament();   ///< Row tap: picker (Spoolman) or spool-edit
+    void handle_back();            ///< Header back: per-view routing (cancel on overview)
+    void handle_card_clicked();    ///< Card tap: opens the spool-edit view
+    void handle_change_filament(); ///< Row tap: picker (Spoolman) or spool-edit
     void handle_setup_entry();
     void handle_save();
 
@@ -230,14 +244,49 @@ class AmsEditOverlay : public OverlayBase {
 
     static bool is_material_identity_change(const SlotInfo& original, const SlotInfo& edited);
 
+    // Which weight fields the untracked branch of handle_spool_edit_save() may
+    // stage into working_info_.
+    struct WeightStaging {
+        bool stage_remaining = false;
+        bool stage_total = false;
+    };
+
+    // Pure. `entered_tracked` is spool_edit_entered_tracked_ — whether the editor
+    // was OPENED on a Spoolman-linked slot; the *_filled flags are "the textarea
+    // is non-empty" (blank means unchanged).
+    //
+    // remaining_weight_g is unambiguous: it means the same thing whether or not
+    // the slot arrived linked, so a filled field always stages. Dropping it on an
+    // unlink-in-place is what suppressed AFC's SET_WEIGHT (gated on
+    // remaining_weight_g > 0) and forced the user to save a second time.
+    //
+    // total_weight_g is ambiguous: when the editor was opened on a LINKED slot the
+    // on-screen "Spool wt" came from Spoolman's spool_weight — the empty-spool CORE
+    // weight, not the filament total — so staging it would clobber a correct total.
+    static WeightStaging decide_weight_staging(bool entered_tracked, bool remaining_filled,
+                                               bool total_filled);
+
     // Pure: true when saving would push a changed filament identity onto a
     // LINKED Spoolman spool — material change or color beyond match tolerance
     // on a slot that stays linked. Generalized to ALL Spoolman backends
     // (spec §6; formerly AD5X-only).
     static bool needs_identity_confirmation(const SlotInfo& original, const SlotInfo& edited);
 
-    void do_spoolman_save();
+    // Pure. False when this save is going to raise the "Different filament?"
+    // prompt, and therefore must not write to Spoolman yet.
+    //
+    // The logistics two-PATCH in handle_spool_edit_save() runs well before
+    // commit_and_close() evaluates the prompt, so without this gate a save that
+    // was about to ask had already written — and Cancel, documented as a true
+    // abort, could not take it back.
+    static bool may_write_spoolman_now(const SlotInfo& original, const SlotInfo& edited);
+
+    /// @param intent What the user chose in the identity prompt. Defaults to the
+    /// legacy inference for the paths that never prompt.
+    void do_spoolman_save(helix::SpoolmanSlotSaver::LinkIntent intent =
+                              helix::SpoolmanSlotSaver::LinkIntent::UpdateLinked);
     void prompt_identity_change_then_save();
+    /// Primary action: "It's a new spool" — create + rebind, old spool untouched.
     static void on_identity_confirm_cb(lv_event_t* e);
     static void on_identity_cancel_cb(lv_event_t* e);
     // Re-bind + repopulate details_selector_ against the still-open spool-edit
@@ -257,6 +306,15 @@ class AmsEditOverlay : public OverlayBase {
     // reattach path deliberately must not (re-seeding would make the
     // "Different filament?" dialog vanish on re-Save).
     bool setup_details_selector();
+    // When Spoolman is connected, fetch the live vendor list and merge it into
+    // details_selector_ so a Spoolman-only vendor (one present on the server but
+    // absent from the bundled filaments.json catalog) reaches the vendor
+    // dropdown and a seeded brand round-trips instead of snapping to "Generic".
+    // No-op when Spoolman is not connected. The fetch is async (HTTP/bg thread):
+    // the dropdown is catalog-only until the vendors arrive, then re-populates
+    // and re-runs the seed selection. Keeps the selector Spoolman-agnostic — the
+    // fetch lives here and only hands the selector a list of vendor names.
+    void maybe_merge_spoolman_vendors();
 #if HELIX_HAS_LABEL_PRINTER
     void handle_print_label();
 #endif

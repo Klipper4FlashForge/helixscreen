@@ -115,14 +115,14 @@ bool HistoryManagerTestFixture::queue_initialized = false;
 // ============================================================================
 
 TEST_CASE_METHOD(HistoryManagerTestFixture, "PrintHistoryManager starts unloaded",
-                 "[history_manager][slow]") {
+                 "[history_manager]") {
     REQUIRE_FALSE(manager_->is_loaded());
     REQUIRE(manager_->get_jobs().empty());
     REQUIRE(manager_->get_filename_stats().empty());
 }
 
 TEST_CASE_METHOD(HistoryManagerTestFixture, "PrintHistoryManager fetches history from API",
-                 "[history_manager][slow]") {
+                 "[history_manager]") {
     // When: fetch is called
     manager_->fetch();
 
@@ -135,7 +135,7 @@ TEST_CASE_METHOD(HistoryManagerTestFixture, "PrintHistoryManager fetches history
 }
 
 TEST_CASE_METHOD(HistoryManagerTestFixture, "PrintHistoryManager builds filename stats map",
-                 "[history_manager][slow]") {
+                 "[history_manager]") {
     // When: fetch completes
     manager_->fetch();
     REQUIRE(wait_for_loaded());
@@ -158,8 +158,7 @@ TEST_CASE_METHOD(HistoryManagerTestFixture, "PrintHistoryManager builds filename
 // ============================================================================
 
 TEST_CASE_METHOD(HistoryManagerTestFixture,
-                 "PrintHistoryManager aggregates success count correctly",
-                 "[history_manager][slow]") {
+                 "PrintHistoryManager aggregates success count correctly", "[history_manager]") {
     // When: fetch completes
     manager_->fetch();
     REQUIRE(wait_for_loaded());
@@ -186,8 +185,7 @@ TEST_CASE_METHOD(HistoryManagerTestFixture,
 }
 
 TEST_CASE_METHOD(HistoryManagerTestFixture,
-                 "PrintHistoryManager aggregates failure count correctly",
-                 "[history_manager][slow]") {
+                 "PrintHistoryManager aggregates failure count correctly", "[history_manager]") {
     // When: fetch completes
     manager_->fetch();
     REQUIRE(wait_for_loaded());
@@ -213,7 +211,7 @@ TEST_CASE_METHOD(HistoryManagerTestFixture,
 }
 
 TEST_CASE_METHOD(HistoryManagerTestFixture, "PrintHistoryManager tracks most recent job status",
-                 "[history_manager][slow]") {
+                 "[history_manager]") {
     // When: fetch completes
     manager_->fetch();
     REQUIRE(wait_for_loaded());
@@ -253,7 +251,7 @@ TEST_CASE_METHOD(HistoryManagerTestFixture, "PrintHistoryManager tracks most rec
 
 TEST_CASE_METHOD(HistoryManagerTestFixture,
                  "PrintHistoryManager strips path from filename for aggregation",
-                 "[history_manager][slow]") {
+                 "[history_manager]") {
     // When: fetch completes
     manager_->fetch();
     REQUIRE(wait_for_loaded());
@@ -271,7 +269,7 @@ TEST_CASE_METHOD(HistoryManagerTestFixture,
 // ============================================================================
 
 TEST_CASE_METHOD(HistoryManagerTestFixture, "PrintHistoryManager notifies observers on fetch",
-                 "[history_manager][slow]") {
+                 "[history_manager]") {
     std::atomic<int> callback_count{0};
 
     // Given: an observer is registered (store in variable, pass pointer)
@@ -287,7 +285,7 @@ TEST_CASE_METHOD(HistoryManagerTestFixture, "PrintHistoryManager notifies observ
 }
 
 TEST_CASE_METHOD(HistoryManagerTestFixture, "PrintHistoryManager supports multiple observers",
-                 "[history_manager][slow]") {
+                 "[history_manager]") {
     std::atomic<int> callback1_count{0};
     std::atomic<int> callback2_count{0};
 
@@ -308,7 +306,7 @@ TEST_CASE_METHOD(HistoryManagerTestFixture, "PrintHistoryManager supports multip
 
 TEST_CASE_METHOD(HistoryManagerTestFixture,
                  "PrintHistoryManager skips observers removed during notification",
-                 "[history_manager][slow]") {
+                 "[history_manager]") {
     // Regression: notify_observers() iterated a snapshot of the observer list
     // and called through each raw HistoryChangedCallback* without re-checking it
     // against the live set. If an observer's backing object was destroyed during
@@ -341,7 +339,7 @@ TEST_CASE_METHOD(HistoryManagerTestFixture,
 // ============================================================================
 
 TEST_CASE_METHOD(HistoryManagerTestFixture, "PrintHistoryManager invalidate clears loaded state",
-                 "[history_manager][slow]") {
+                 "[history_manager]") {
     // Given: manager has loaded data
     manager_->fetch();
     REQUIRE(wait_for_loaded());
@@ -355,7 +353,7 @@ TEST_CASE_METHOD(HistoryManagerTestFixture, "PrintHistoryManager invalidate clea
 }
 
 TEST_CASE_METHOD(HistoryManagerTestFixture, "PrintHistoryManager can re-fetch after invalidate",
-                 "[history_manager][slow]") {
+                 "[history_manager]") {
     // Given: manager was loaded then invalidated
     manager_->fetch();
     REQUIRE(wait_for_loaded());
@@ -375,7 +373,7 @@ TEST_CASE_METHOD(HistoryManagerTestFixture, "PrintHistoryManager can re-fetch af
 // ============================================================================
 
 TEST_CASE_METHOD(HistoryManagerTestFixture, "PrintHistoryManager handles concurrent fetch calls",
-                 "[history_manager][slow]") {
+                 "[history_manager]") {
     std::atomic<int> callback_count{0};
     HistoryChangedCallback callback = [&callback_count]() { callback_count++; };
     manager_->add_observer(&callback);
@@ -400,7 +398,7 @@ TEST_CASE_METHOD(HistoryManagerTestFixture, "PrintHistoryManager handles concurr
 }
 
 TEST_CASE_METHOD(HistoryManagerTestFixture, "PrintHistoryManager handles empty history",
-                 "[history_manager][slow]") {
+                 "[history_manager]") {
     // Note: Mock returns 20 jobs by default, so this test verifies
     // that the manager handles the case gracefully
     manager_->fetch();
@@ -449,7 +447,7 @@ TEST_CASE("PrintHistoryStats has size_bytes field", "[history][uuid]") {
 }
 
 TEST_CASE_METHOD(HistoryManagerTestFixture, "UUID field is populated from history response",
-                 "[history][uuid][slow]") {
+                 "[history][uuid]") {
     manager_->fetch();
     REQUIRE(wait_for_loaded());
 
@@ -468,7 +466,7 @@ TEST_CASE_METHOD(HistoryManagerTestFixture, "UUID field is populated from histor
 }
 
 TEST_CASE_METHOD(HistoryManagerTestFixture, "size_bytes field is populated from history response",
-                 "[history][uuid][slow]") {
+                 "[history][uuid]") {
     manager_->fetch();
     REQUIRE(wait_for_loaded());
 
@@ -487,7 +485,7 @@ TEST_CASE_METHOD(HistoryManagerTestFixture, "size_bytes field is populated from 
 }
 
 TEST_CASE_METHOD(HistoryManagerTestFixture, "PrintHistoryStats includes uuid from most recent job",
-                 "[history][uuid][slow]") {
+                 "[history][uuid]") {
     manager_->fetch();
     REQUIRE(wait_for_loaded());
 
@@ -506,8 +504,7 @@ TEST_CASE_METHOD(HistoryManagerTestFixture, "PrintHistoryStats includes uuid fro
 }
 
 TEST_CASE_METHOD(HistoryManagerTestFixture,
-                 "PrintHistoryStats includes size_bytes from most recent job",
-                 "[history][uuid][slow]") {
+                 "PrintHistoryStats includes size_bytes from most recent job", "[history][uuid]") {
     manager_->fetch();
     REQUIRE(wait_for_loaded());
 

@@ -8,6 +8,7 @@
 #include "ui_overlay_network_settings.h"
 
 #include "ethernet_manager.h"
+#include "log_redact.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "panel_widget_registry.h"
 #include "static_subject_registry.h"
@@ -194,7 +195,7 @@ void NetworkWidget::detect_network_type(bool force) {
     auto apply_wifi_fallback = [this]() {
         if (wifi_manager_ && wifi_manager_->is_connected()) {
             spdlog::info("[NetworkWidget] Detected WiFi connection ({})",
-                         wifi_manager_->get_connected_ssid());
+                         helix::redact::ssid(wifi_manager_->get_connected_ssid()));
             set_network(NetworkType::Wifi);
         } else {
             spdlog::info("[NetworkWidget] No network connection detected");

@@ -9,6 +9,7 @@
  * that changes are detected and the correct component names are derived.
  */
 
+#include "layout_manager.h"
 #include "xml_hot_reloader.h"
 
 #include <chrono>
@@ -557,4 +558,247 @@ TEST_CASE_METHOD(HotReloadFixture, "after_reload callback fires with component n
     std::lock_guard<std::mutex> lock(m);
     REQUIRE(reload_log == std::vector<std::string>{"motion_panel"});
     REQUIRE(after_log == std::vector<std::string>{"motion_panel"});
+}
+
+// ============================================================================
+// Parse-then-swap failure handling [hot-reload]
+// ============================================================================
+
+/// Overwrite a tracked XML file with new content + guarantee mtime changes
+/// (some filesystems have 1s granularity, so we sleep to be safe).
+static void overwrite_xml(const fs::path& path, const std::string& content) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    std::ofstream f(path, std::ios::trunc);
+    f << content;
+}
+
+TEST_CASE_METHOD(HotReloadFixture, "invalid XML is skipped without firing reload", "[hot-reload]") {
+    create_xml("motion_panel.xml", "<component/>");
+
+    std::atomic<int> reload_count{0};
+    std::atomic<int> after_count{0};
+    helix::XmlHotReloader hr;
+    hr.set_reload_callback([&](const std::string&, const std::string&) { reload_count++; });
+    hr.set_after_reload_callback([&](const std::string&) { after_count++; });
+
+    hr.start({temp_dir_.string()}, 10000);
+
+    // Overwrite with malformed XML — should be deferred, not reloaded.
+    overwrite_xml(temp_dir_ / "motion_panel.xml",
+                  "<?xml version=\"1.0\"?>\n"
+                  "<!-- comment before root is fine, but unterminated:\n"
+                  "<component>");
+
+    hr.scan_and_reload();
+    hr.stop();
+
+    REQUIRE(reload_count.load() == 0);
+    REQUIRE(after_count.load() == 0);
+}
+
+TEST_CASE_METHOD(HotReloadFixture, "invalid XML does not update mtime cache (retry on next poll)",
+                 "[hot-reload]") {
+    create_xml("my_panel.xml", "<component/>");
+
+    std::atomic<int> reload_count{0};
+    helix::XmlHotReloader hr;
+    hr.set_reload_callback([&](const std::string&, const std::string&) { reload_count++; });
+
+    hr.start({temp_dir_.string()}, 10000);
+
+    // First overwrite: invalid XML — should be deferred.
+    overwrite_xml(temp_dir_ / "my_panel.xml", "<component"); // unterminated
+    hr.scan_and_reload();
+    REQUIRE(reload_count.load() == 0);
+
+    // Second overwrite: valid XML — must trigger reload (mtime cache wasn't
+    // updated on the failed attempt, so this new change is visible).
+    overwrite_xml(temp_dir_ / "my_panel.xml", "<component><view/></component>");
+    hr.scan_and_reload();
+    REQUIRE(reload_count.load() == 1);
+
+    hr.stop();
+}
+
+TEST_CASE_METHOD(HotReloadFixture, "empty file is deferred (editor mid-write)", "[hot-reload]") {
+    create_xml("home_panel.xml", "<component/>");
+
+    std::atomic<int> reload_count{0};
+    helix::XmlHotReloader hr;
+    hr.set_reload_callback([&](const std::string&, const std::string&) { reload_count++; });
+
+    hr.start({temp_dir_.string()}, 10000);
+
+    // Simulate an editor's atomic-rename window: file briefly empty.
+    overwrite_xml(temp_dir_ / "home_panel.xml", "");
+    hr.scan_and_reload();
+    REQUIRE(reload_count.load() == 0);
+
+    // Editor finishes the write: valid content lands. Reload fires.
+    overwrite_xml(temp_dir_ / "home_panel.xml", "<component><view/></component>");
+    hr.scan_and_reload();
+    REQUIRE(reload_count.load() == 1);
+
+    hr.stop();
+}
+
+// ============================================================================
+// Breakpoint-variant resolution [hot-reload]
+// ============================================================================
+
+// Note: LayoutManagerTestAccess is also defined in test_layout_manager.cpp and
+// test_grid_layout.cpp, but Catch2 amalgamated builds compile each test file
+// separately, so no ODR conflict.
+class LayoutManagerTestAccess {
+  public:
+    static void reset(helix::LayoutManager& lm) {
+        lm.type_ = helix::LayoutType::STANDARD;
+        lm.name_ = "standard";
+        lm.override_name_.clear();
+        lm.initialized_ = false;
+        lm.width_ = 0;
+        lm.height_ = 0;
+    }
+};
+
+/// Stands up a miniature ui_xml/ tree holding both a base component and a
+/// micro/ override of it, and makes the temp root the process CWD.
+/// LayoutManager resolves variant paths relative to the CWD, so the reloader
+/// and the layout resolver must be looking at the same tree for these tests to
+/// mean anything.
+class HotReloadVariantFixture {
+  public:
+    HotReloadVariantFixture() {
+        prev_cwd_ = fs::current_path();
+        root_ = fs::temp_directory_path() /
+                ("helix_hot_reload_variant_" +
+                 std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+        fs::create_directories(root_ / "ui_xml" / "micro");
+        overwrite_xml(base_path(), "<component><view name=\"controls_panel\"/></component>");
+        overwrite_xml(micro_path(), "<component><view name=\"controls_panel\"/></component>");
+        fs::current_path(root_);
+        LayoutManagerTestAccess::reset(helix::LayoutManager::instance());
+    }
+
+    ~HotReloadVariantFixture() {
+        LayoutManagerTestAccess::reset(helix::LayoutManager::instance());
+        std::error_code ec;
+        fs::current_path(prev_cwd_, ec);
+        fs::remove_all(root_, ec);
+    }
+
+    fs::path base_path() const {
+        return root_ / "ui_xml" / "controls_panel.xml";
+    }
+    fs::path micro_path() const {
+        return root_ / "ui_xml" / "micro" / "controls_panel.xml";
+    }
+
+    fs::path root_;
+    fs::path prev_cwd_;
+};
+
+TEST_CASE_METHOD(HotReloadVariantFixture,
+                 "micro layout reloads the micro copy and ignores the shadowed base",
+                 "[hot-reload]") {
+    helix::LayoutManager::instance().init(480, 272); // MICRO
+
+    std::vector<std::string> reloaded;
+    helix::XmlHotReloader hr;
+    hr.set_reload_callback(
+        [&](const std::string& name, const std::string&) { reloaded.push_back(name); });
+    hr.start({"ui_xml"}, 10000);
+
+    // The base copy is shadowed by micro/ — reloading it would swap the live
+    // component for a layout this display is not using.
+    overwrite_xml(base_path(), "<component><view name=\"controls_panel\"/><!--base--></component>");
+    hr.scan_and_reload();
+    REQUIRE(reloaded.empty());
+
+    // The micro copy is the one in effect, so it reloads.
+    overwrite_xml(micro_path(),
+                  "<component><view name=\"controls_panel\"/><!--micro--></component>");
+    hr.scan_and_reload();
+    REQUIRE(reloaded.size() == 1);
+    REQUIRE(reloaded[0] == "controls_panel");
+
+    hr.stop();
+}
+
+TEST_CASE_METHOD(HotReloadVariantFixture,
+                 "standard layout reloads the base copy and ignores the micro override",
+                 "[hot-reload]") {
+    helix::LayoutManager::instance().init(800, 480); // STANDARD
+
+    std::vector<std::string> reloaded;
+    helix::XmlHotReloader hr;
+    hr.set_reload_callback(
+        [&](const std::string& name, const std::string&) { reloaded.push_back(name); });
+    hr.start({"ui_xml"}, 10000);
+
+    overwrite_xml(micro_path(),
+                  "<component><view name=\"controls_panel\"/><!--micro--></component>");
+    hr.scan_and_reload();
+    REQUIRE(reloaded.empty());
+
+    overwrite_xml(base_path(), "<component><view name=\"controls_panel\"/><!--base--></component>");
+    hr.scan_and_reload();
+    REQUIRE(reloaded.size() == 1);
+    REQUIRE(reloaded[0] == "controls_panel");
+
+    hr.stop();
+}
+
+// ============================================================================
+// Non-reloadable components [hot-reload]
+// ============================================================================
+
+TEST_CASE_METHOD(HotReloadFixture, "globals.xml is never reloaded", "[hot-reload]") {
+    // globals owns every XML subject and the runtime theme constants;
+    // unregistering it frees storage LVGL does not own.
+    create_xml("globals.xml", "<component><view/></component>");
+    create_xml("home_panel.xml", "<component><view/></component>");
+
+    std::vector<std::string> reloaded;
+    helix::XmlHotReloader hr;
+    hr.set_reload_callback(
+        [&](const std::string& name, const std::string&) { reloaded.push_back(name); });
+    hr.start({temp_dir_.string()}, 10000);
+
+    overwrite_xml(temp_dir_ / "globals.xml", "<component><view/><!--edited--></component>");
+    hr.scan_and_reload();
+    REQUIRE(reloaded.empty());
+
+    // A normal component in the same scan still reloads.
+    overwrite_xml(temp_dir_ / "home_panel.xml", "<component><view/><!--edited--></component>");
+    hr.scan_and_reload();
+    REQUIRE(reloaded.size() == 1);
+    REQUIRE(reloaded[0] == "home_panel");
+
+    // The skip is permanent, not a one-poll deferral.
+    overwrite_xml(temp_dir_ / "globals.xml", "<component><view/><!--again--></component>");
+    hr.scan_and_reload();
+    REQUIRE(reloaded.size() == 1);
+
+    hr.stop();
+}
+
+TEST_CASE_METHOD(HotReloadFixture, "components with C++-injected constants are never reloaded",
+                 "[hot-reload]") {
+    create_xml("color_picker.xml", "<component><view/></component>");
+    create_sub_xml("color_swatch_grid.xml", "<component><view/></component>");
+
+    std::vector<std::string> reloaded;
+    helix::XmlHotReloader hr;
+    hr.set_reload_callback(
+        [&](const std::string& name, const std::string&) { reloaded.push_back(name); });
+    hr.start({temp_dir_.string()}, 10000);
+
+    overwrite_xml(temp_dir_ / "color_picker.xml", "<component><view/><!--edited--></component>");
+    overwrite_xml(sub_dir_ / "color_swatch_grid.xml",
+                  "<component><view/><!--edited--></component>");
+    hr.scan_and_reload();
+    REQUIRE(reloaded.empty());
+
+    hr.stop();
 }

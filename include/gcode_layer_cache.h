@@ -7,6 +7,7 @@
 #include "memory_utils.h"
 
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <functional>
 #include <list>
@@ -14,6 +15,7 @@
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace helix {
 namespace gcode {
@@ -39,7 +41,7 @@ class GCodeDataSource;
  *   }
  * @endcode
  *
- * Memory usage: ~80 bytes per segment + cache bookkeeping
+ * Memory usage: 40 bytes per segment (BYTES_PER_SEGMENT) + cache bookkeeping
  */
 class GCodeLayerCache {
   public:
@@ -100,6 +102,23 @@ class GCodeLayerCache {
      */
     CacheResult get_or_load(size_t layer_index,
                             const std::function<std::vector<ToolpathSegment>(size_t)>& loader);
+
+    /**
+     * @brief Get a layer only if it is already resident — never loads, never blocks on I/O
+     *
+     * The non-blocking counterpart to get_or_load(). Takes the cache lock only
+     * long enough for a map lookup and an LRU touch, and returns nullptr on a
+     * miss rather than reaching for the data source.
+     *
+     * Use this from any main-thread path where a stall is worse than a miss —
+     * above all the touch hit-test, which picks against the layer already on
+     * screen and so is served by the cache in practice. A miss there costs one
+     * unrecognised tap; a load costs a frozen UI (bundle C2CP6ZAW).
+     *
+     * @param layer_index Zero-based layer index
+     * @return Segments if resident, nullptr on a miss
+     */
+    std::shared_ptr<const std::vector<ToolpathSegment>> try_get(size_t layer_index);
 
     /**
      * @brief Check if a layer is currently cached
@@ -310,6 +329,14 @@ class GCodeLayerCache {
 
     // Thread safety
     mutable std::mutex mutex_;
+
+    /// Layers with a load in flight right now. get_or_load() drops mutex_ across
+    /// the loader call so unrelated layers stay reachable; this set is what stops
+    /// concurrent requests for the SAME layer from each doing the parse.
+    std::unordered_set<size_t> loading_;
+
+    /// Signalled whenever a layer leaves loading_ (loaded, failed, or superseded).
+    std::condition_variable load_done_;
 
     // Adaptive memory management
     bool adaptive_enabled_{false};

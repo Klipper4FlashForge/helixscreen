@@ -22,6 +22,7 @@
 #include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 #include "printer_fan_state.h"
 #include "printer_state.h"
 #include "theme_manager.h"
@@ -225,16 +226,23 @@ void FanStackWidget::detach() {
     spdlog::debug("[FanStackWidget] Detached");
 }
 
-void FanStackWidget::on_size_changed(int colspan, int rowspan, int /*width_px*/,
-                                     int /*height_px*/) {
+void FanStackWidget::on_size_changed(int colspan, int rowspan, int width_px, int height_px) {
     // Size adaptation only applies to stack mode
     if (!widget_obj_ || is_carousel_mode())
         return;
 
-    // Size tiers:
-    //   1x1 (compact):  xs fonts, single-letter labels (P, H, C)
-    //   2x1+ (bigger):  sm fonts, resolved display names from PrinterFanState
-    bool bigger = (colspan >= 2 || rowspan >= 2);
+    // Size tiers, decided from physical pixels rather than grid span so the
+    // same authored layout reads correctly on every panel:
+    //   compact: xs fonts, single-letter labels (P, H, C)
+    //   bigger:  sm fonts, resolved display names from PrinterFanState
+    //
+    // Width-only: each row is icon + name + speed laid out horizontally
+    // (panel_widget_fan_stack.xml), so a resolved name ("Hotend") only ever
+    // competes for room along the width axis. Extra height centers the same
+    // three rows with more breathing space but never widens one — gating on
+    // height too would read a plain 1x1 as "bigger" on Large/XLarge, where a
+    // single grid row (141px, 169px) already clears H_TALL on its own.
+    bool bigger = (width_px >= widget_size::W_NORMAL);
 
     const char* font_token = bigger ? "font_small" : "font_xs";
     const lv_font_t* text_font = theme_manager_get_font(font_token);
@@ -250,13 +258,12 @@ void FanStackWidget::on_size_changed(int colspan, int rowspan, int /*width_px*/,
             lv_obj_set_style_text_font(label, text_font, 0);
     }
 
-    // Apply icon font to fan icons
+    // Apply icon font to fan icons. The icon widget (ui_icon_xml_create,
+    // ui_icon.cpp) is itself an lv_label — there is no child glyph object to
+    // reach through.
     for (auto* icon : {part_icon_, hotend_icon_, aux_icon_}) {
-        if (icon) {
-            lv_obj_t* glyph = lv_obj_get_child(icon, 0);
-            if (glyph)
-                lv_obj_set_style_text_font(glyph, icon_font, 0);
-        }
+        if (icon)
+            lv_obj_set_style_text_font(icon, icon_font, 0);
     }
 
     // Name labels: 1x1 = single letter, 2x1+ = resolved display name
@@ -541,7 +548,7 @@ void FanStackWidget::bind_carousel_fans() {
 
         // Shrink knob for compact carousel display
         if (cp.arc) {
-            lv_obj_set_style_pad_all(cp.arc, 2, LV_PART_KNOB);
+            lv_obj_set_style_pad_all(cp.arc, theme_manager_get_spacing("space_xxs"), LV_PART_KNOB);
         }
 
         // Auto-controlled fans: hide knob, disable arc interaction
@@ -985,7 +992,7 @@ void FanStackWidget::show_fan_picker() {
     lv_obj_set_flex_flow(icon_grid, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_flex_align(icon_grid, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_all(icon_grid, 0, 0);
-    lv_obj_set_style_pad_gap(icon_grid, 4, 0);
+    lv_obj_set_style_pad_gap(icon_grid, theme_manager_get_spacing("space_xxs"), 0);
     lv_obj_set_style_bg_opa(icon_grid, 0, 0);
     lv_obj_set_style_border_width(icon_grid, 0, 0);
     lv_obj_remove_flag(icon_grid, LV_OBJ_FLAG_SCROLLABLE);

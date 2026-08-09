@@ -7,6 +7,7 @@
 
 #include "safe_log.h"
 #include "spdlog/spdlog.h"
+#include "wifi_saved_config.h"
 
 #include <algorithm>
 #include <chrono>
@@ -140,12 +141,15 @@ WiFiError WifiBackendMock::get_scan_results(std::vector<WiFiNetwork>& networks) 
     // Add some realism - vary signal strengths slightly
     vary_signal_strengths();
 
-    // Extract public WiFiNetwork objects (without passwords) and sort by signal strength
-    networks.clear();
-    networks.reserve(mock_networks_.size());
+    // Extract public WiFiNetwork objects (without passwords), collapse per-BSS
+    // rows to one per SSID, then sort by signal strength
+    std::vector<WiFiNetwork> raw;
+    raw.reserve(mock_networks_.size());
     for (const auto& mock_net : mock_networks_) {
-        networks.push_back(mock_net.network);
+        raw.push_back(mock_net.network);
     }
+
+    networks = wifi_merge_networks_by_ssid(raw);
 
     std::sort(networks.begin(), networks.end(), [](const WiFiNetwork& a, const WiFiNetwork& b) {
         return a.signal_strength > b.signal_strength;
@@ -186,23 +190,31 @@ WiFiError WifiBackendMock::connect_network(const std::string& ssid, const std::s
         [&ssid](const MockWiFiNetwork& mock_net) { return mock_net.network.ssid == ssid; });
 
     if (it == mock_networks_.end()) {
-        LOG_WARN_INTERNAL("[WifiBackend] Mock: Network '{}' not found in scan results", ssid);
+        LOG_WARN_INTERNAL("[WifiBackend] Mock: Network '{}' not found in scan results",
+                          ssid); // PII_OK: mock backend, fixture SSIDs
         return WiFiErrorHelper::network_not_found(ssid);
     }
 
     // Validate password for secured networks
     if (it->network.is_secured && password.empty()) {
         LOG_WARN_INTERNAL("[WifiBackend] Mock: No password provided for secured network '{}'",
-                          ssid);
+                          ssid); // PII_OK: mock backend, fixture SSIDs
         return WiFiError(
             WiFiResult::INVALID_PARAMETERS, "Password required for secured network: " + ssid,
             "This network requires a password", "Enter the network password and try again");
     }
 
-    spdlog::info("[WifiBackend] Mock: Connecting to '{}'...", ssid);
+    spdlog::info("[WifiBackend] Mock: Connecting to '{}'...",
+                 ssid); // PII_OK: mock backend, fixture SSIDs
 
     connecting_ssid_ = ssid;
     connecting_password_ = password;
+
+    // Record the network as saved immediately, mirroring the real backend's
+    // SAVE_CONFIG happening before the CONNECTED event fires — a test does not
+    // have to wait out the simulated connect delay to see forget_network()
+    // find this SSID.
+    saved_networks_.insert(ssid);
 
     // Cancel and wait for any existing connect thread
     // IMPORTANT: Must join, not detach - detached threads cause use-after-free during destruction
@@ -224,7 +236,8 @@ WiFiError WifiBackendMock::disconnect_network() {
         return WiFiErrorHelper::success(); // Not an error - idempotent operation
     }
 
-    spdlog::info("[WifiBackend] Mock: Disconnecting from '{}'", connected_ssid_);
+    spdlog::info("[WifiBackend] Mock: Disconnecting from '{}'",
+                 connected_ssid_); // PII_OK: mock backend, fixture SSIDs
 
     connected_ = false;
     std::string old_ssid = connected_ssid_;
@@ -233,6 +246,61 @@ WiFiError WifiBackendMock::disconnect_network() {
     connected_signal_ = 0;
 
     fire_event("DISCONNECTED", "reason=user_request");
+    return WiFiErrorHelper::success();
+}
+
+WiFiError WifiBackendMock::set_radio_enabled(bool on) {
+    radio_enabled_ = on;
+    if (!on) {
+        connected_ = false;
+        connected_ssid_.clear();
+        connected_ip_.clear();
+        connected_signal_ = 0;
+        fire_event("DISCONNECTED", "");
+    }
+    return WiFiErrorHelper::success();
+}
+
+bool WifiBackendMock::is_radio_enabled() const {
+    return radio_enabled_;
+}
+
+WiFiError WifiBackendMock::forget_network(const std::string& ssid) {
+    if (!running_) {
+        LOG_WARN_INTERNAL("[WifiBackend] Mock: forget_network called but not running");
+        return WiFiError(WiFiResult::NOT_INITIALIZED, "Mock backend not running",
+                         "WiFi system not ready", "Initialize the WiFi system first");
+    }
+
+    const bool had_local = saved_networks_.erase(ssid) > 0;
+
+    // Also check HelixScreen's own credential store — real devices can have a
+    // credential ONLY there (SAVE_CONFIG never reached the vendor's config,
+    // see wifi_saved_config.h), so a real forget must clear it too, not just
+    // whatever this mock happens to track locally.
+    const auto stored = helix::wifi::store::load();
+    const bool had_store =
+        std::any_of(stored.begin(), stored.end(), [&](const auto& n) { return n.ssid == ssid; });
+
+    if (!had_local && !had_store) {
+        LOG_WARN_INTERNAL("[WifiBackend] Mock: forget_network — no saved entry for '{}'",
+                          ssid); // PII_OK: mock backend, fixture SSIDs
+        return WiFiErrorHelper::network_not_found(ssid);
+    }
+
+    if (had_store)
+        helix::wifi::store::remove(ssid);
+
+    if (connected_ && connected_ssid_ == ssid) {
+        connected_ = false;
+        connected_ssid_.clear();
+        connected_ip_.clear();
+        connected_signal_ = 0;
+        fire_event("DISCONNECTED", "reason=forgotten");
+    }
+
+    spdlog::info("[WifiBackend] Mock: Forgot network '{}'",
+                 ssid); // PII_OK: mock backend, fixture SSIDs
     return WiFiErrorHelper::success();
 }
 
@@ -270,7 +338,7 @@ void WifiBackendMock::connect_thread_func() {
 
     if (it == mock_networks_.end()) {
         LOG_ERROR_INTERNAL("[WifiBackend] Mock: Network '{}' disappeared during connection",
-                           connecting_ssid_);
+                           connecting_ssid_); // PII_OK: mock backend, fixture SSIDs
         fire_event("DISCONNECTED", "reason=network_not_found");
         return;
     }
@@ -279,7 +347,7 @@ void WifiBackendMock::connect_thread_func() {
     if (it->network.is_secured) {
         if (connecting_password_.empty()) {
             spdlog::info("[WifiBackend] Mock: Auth failed - no password for secured network '{}'",
-                         connecting_ssid_);
+                         connecting_ssid_); // PII_OK: mock backend, fixture SSIDs
             fire_event("AUTH_FAILED", "reason=no_password");
             return;
         }
@@ -287,12 +355,13 @@ void WifiBackendMock::connect_thread_func() {
         // Check if password matches expected password
         if (connecting_password_ != it->password) {
             spdlog::debug("[WifiBackend] Mock: Auth failed - wrong password for '{}'",
-                          connecting_ssid_);
+                          connecting_ssid_); // PII_OK: mock backend, fixture SSIDs
             fire_event("AUTH_FAILED", "reason=wrong_password");
             return;
         }
 
-        spdlog::debug("[WifiBackend] Mock: Password correct for '{}'", connecting_ssid_);
+        spdlog::debug("[WifiBackend] Mock: Password correct for '{}'",
+                      connecting_ssid_); // PII_OK: mock backend, fixture SSIDs
     }
 
     // Connection successful!
@@ -304,7 +373,8 @@ void WifiBackendMock::connect_thread_func() {
     int subnet = 100 + (rng_() % 155); // 192.168.1.100-255
     connected_ip_ = "192.168.1." + std::to_string(subnet);
 
-    spdlog::info("[WifiBackend] Mock: Connected to '{}', IP: {}", connected_ssid_, connected_ip_);
+    spdlog::info("[WifiBackend] Mock: Connected to '{}', IP: {}", connected_ssid_,
+                 connected_ip_); // PII_OK: mock backend, fixture SSIDs
 
     fire_event("CONNECTED", "ip=" + connected_ip_);
 }
@@ -338,8 +408,13 @@ void WifiBackendMock::set_connected_state(bool connected, const std::string& ssi
 }
 
 bool WifiBackendMock::supports_5ghz() const {
-    // Mock simulates typical embedded hardware which is 2.4GHz only
-    return false;
+    // Mock simulates a dual-band adapter (AD5X, K2 Plus, Pi 4+): its scan list
+    // contains 5GHz BSSes, which a 2.4GHz-only radio could not have seen.
+    return true;
+}
+
+std::optional<helix::wifi::WifiInterface> WifiBackendMock::resolved_interface() const {
+    return resolved_interface_;
 }
 
 // ============================================================================
@@ -347,17 +422,22 @@ bool WifiBackendMock::supports_5ghz() const {
 // ============================================================================
 
 void WifiBackendMock::init_mock_networks() {
+    // Frequencies model a realistic mixed-band neighbourhood. "Office-Main"
+    // deliberately appears twice — once per band, the 5GHz BSS weaker — which is
+    // the dual-band-single-SSID case that used to erase the 5GHz AP entirely
+    // (helixscreen#1189). get_scan_results() merges it back to one row.
     mock_networks_ = {
-        MockWiFiNetwork("HomeNetwork-5G", 92, true, "WPA2", "12345678"), // Strong, encrypted
-        MockWiFiNetwork("Office-Main", 78, true, "WPA2", "12345678"),    // Strong, encrypted
-        MockWiFiNetwork("Printers-WiFi", 85, true, "WPA2", "12345678"),  // Strong, encrypted
-        MockWiFiNetwork("CoffeeShop_Free", 68, false, "Open", ""),   // Medium, open (no password)
-        MockWiFiNetwork("IoT-Devices", 55, true, "WPA", "12345678"), // Medium, encrypted
-        MockWiFiNetwork("Guest-Access", 48, false, "Open", ""),      // Medium, open (no password)
-        MockWiFiNetwork("Neighbor-Network", 38, true, "WPA3", "12345678"), // Weak, encrypted
-        MockWiFiNetwork("Public-Hotspot", 25, false, "Open", ""),       // Weak, open (no password)
-        MockWiFiNetwork("SmartHome-Net", 32, true, "WPA3", "12345678"), // Weak, encrypted
-        MockWiFiNetwork("Distant-Router", 18, true, "WPA2", "12345678") // Weak, encrypted
+        MockWiFiNetwork("HomeNetwork-5G", 92, true, "WPA2", "12345678", 5180), // Strong, encrypted
+        MockWiFiNetwork("Office-Main", 78, true, "WPA2", "12345678", 2437),    // Strong, encrypted
+        MockWiFiNetwork("Office-Main", 61, true, "WPA2", "12345678", 5745),    // Same SSID, 5GHz
+        MockWiFiNetwork("Printers-WiFi", 85, true, "WPA2", "12345678", 2412),  // Strong, encrypted
+        MockWiFiNetwork("CoffeeShop_Free", 68, false, "Open", "", 2462),       // Medium, open
+        MockWiFiNetwork("IoT-Devices", 55, true, "WPA", "12345678", 2412),     // Medium, encrypted
+        MockWiFiNetwork("Guest-Access", 48, false, "Open", "", 5200),          // Medium, open
+        MockWiFiNetwork("Neighbor-Network", 38, true, "WPA3", "12345678", 2432), // Weak, encrypted
+        MockWiFiNetwork("Public-Hotspot", 25, false, "Open", "", 2417),          // Weak, open
+        MockWiFiNetwork("SmartHome-Net", 32, true, "WPA3", "12345678", 2452),    // Weak, encrypted
+        MockWiFiNetwork("Distant-Router", 18, true, "WPA2", "12345678", 5220)    // Weak, encrypted
     };
 
     spdlog::debug("[WifiBackend] Mock: Initialized {} mock networks", mock_networks_.size());

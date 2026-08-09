@@ -5,7 +5,7 @@
 <!-- Steps: 0=Select Vendor, 1=Select Filament, 2=Spool Details -->
 <component>
   <view name="spool_wizard"
-        extends="lv_obj" width="#overlay_panel_width" height="100%" align="right_mid" style_border_width="0"
+        extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_border_width="0"
         style_pad_all="0" style_bg_opa="255" style_bg_color="#card_bg" scrollable="false" flex_flow="column">
 
     <!-- ==================== HEADER ==================== -->
@@ -13,9 +13,8 @@
 
     <!-- ==================== CONTENT AREA ==================== -->
     <lv_obj name="overlay_content"
-            width="100%" flex_grow="1" style_pad_left="#space_lg" style_pad_right="#space_lg"
-            style_pad_top="0" style_pad_bottom="#space_sm" style_pad_gap="#space_md" scrollable="false"
-            flex_flow="column">
+            width="100%" flex_grow="1" style_pad_left="#space_lg" style_pad_right="#space_lg" style_pad_top="0"
+            style_pad_bottom="#space_sm" style_pad_gap="#space_md" scrollable="false" flex_flow="column">
 
       <!-- ==================== STEP 0: SELECT VENDOR ==================== -->
       <lv_obj name="step_vendor"
@@ -31,17 +30,15 @@
                       flex_grow="1" placeholder_text="Search vendors..." placeholder_tag="Search vendors...">
             <event_cb trigger="value_changed" callback="on_wizard_vendor_search_changed"/>
           </text_input>
-          <ui_button name="add_vendor_btn" variant="secondary" text="+ New"
-                     translation_tag="+ New" width="content">
+          <ui_button name="add_vendor_btn" width="content" variant="secondary" text="+ New" translation_tag="+ New">
             <event_cb trigger="clicked" callback="on_wizard_show_create_vendor_modal"/>
           </ui_button>
         </lv_obj>
 
         <!-- Vendor list (scrollable) -->
         <lv_obj name="vendor_list"
-                width="100%" flex_grow="1" scrollable="true" flex_flow="column"
-                style_pad_left="#space_xs" style_pad_right="#space_xs" style_pad_top="0" style_pad_bottom="0"
-                style_pad_gap="#space_sm"/>
+                width="100%" flex_grow="1" scrollable="true" flex_flow="column" style_pad_left="#space_xs"
+                style_pad_right="#space_xs" style_pad_top="0" style_pad_bottom="0" style_pad_gap="#space_sm"/>
 
         <!-- Empty state for vendor list -->
         <centered_column name="vendor_empty_state" flex_grow="1" hidden="true">
@@ -66,9 +63,10 @@
         <bind_flag_if_not_eq subject="spool_wizard_step" flag="hidden" ref_value="1"/>
 
         <!-- Instruction text -->
-        <text_small text="Choose an existing filament, or tap + New to create one."
+        <text_small width="100%"
+                    text="Choose an existing filament, or tap + New to create one."
                     translation_tag="Choose an existing filament, or tap + New to create one."
-                    style_text_color="#text_muted" width="100%"/>
+                    style_text_color="#text_muted"/>
 
         <!-- Selected vendor display + New button -->
         <lv_obj width="100%"
@@ -76,17 +74,15 @@
                 style_pad_gap="#space_sm" scrollable="false">
           <text_small text="Vendor:" translation_tag="Vendor:" style_text_color="#text_muted"/>
           <text_body name="selected_vendor_label" bind_text="wizard_selected_vendor_name" flex_grow="1"/>
-          <ui_button name="add_filament_btn" variant="secondary" text="+ New"
-                     translation_tag="+ New" width="content">
+          <ui_button name="add_filament_btn" width="content" variant="secondary" text="+ New" translation_tag="+ New">
             <event_cb trigger="clicked" callback="on_wizard_show_create_filament_modal"/>
           </ui_button>
         </lv_obj>
 
         <!-- Filament list (scrollable) -->
         <lv_obj name="filament_list"
-                width="100%" flex_grow="1" scrollable="true" flex_flow="column"
-                style_pad_left="#space_xs" style_pad_right="#space_xs" style_pad_top="0" style_pad_bottom="0"
-                style_pad_gap="#space_xs"/>
+                width="100%" flex_grow="1" scrollable="true" flex_flow="column" style_pad_left="#space_xs"
+                style_pad_right="#space_xs" style_pad_top="0" style_pad_bottom="0" style_pad_gap="#space_xs"/>
 
         <!-- Empty state for filament list -->
         <centered_column name="filament_empty_state" flex_grow="1" hidden="true">
@@ -113,13 +109,13 @@
 
         <!-- Summary: color swatch left, vendor + filament right -->
         <ui_card name="summary_card"
-                 width="100%" height="content" style_pad_all="#space_sm" flex_flow="row"
-                 style_pad_gap="#space_sm" style_flex_cross_place="center">
+                 width="100%" height="content" style_pad_all="#space_sm" flex_flow="row" style_pad_gap="#space_sm"
+                 style_flex_cross_place="center">
           <lv_obj name="summary_color_swatch"
                   width="28" height="28" style_radius="14" style_bg_color="#card_bg" style_bg_opa="255"
                   style_border_width="1" style_border_color="#border"/>
-          <lv_obj height="content" flex_grow="1" flex_flow="column" style_pad_all="0" style_pad_gap="0"
-                  scrollable="false">
+          <lv_obj height="content"
+                  flex_grow="1" flex_flow="column" style_pad_all="0" style_pad_gap="0" scrollable="false">
             <text_small name="summary_vendor" bind_text="wizard_summary_vendor"/>
             <text_small name="summary_filament" bind_text="wizard_summary_filament" style_text_color="#text_muted"/>
           </lv_obj>
@@ -130,7 +126,8 @@
                 height="content" flex_flow="row" style_pad_all="0" style_pad_gap="#space_sm" scrollable="false">
           <lv_obj height="content"
                   flex_grow="1" flex_flow="column" style_pad_all="0" style_pad_gap="2" scrollable="false">
-            <text_small text="Remaining Weight (g)" translation_tag="Remaining Weight (g)" style_text_color="#text_muted"/>
+            <text_small text="Remaining Weight (g)"
+                        translation_tag="Remaining Weight (g)" style_text_color="#text_muted"/>
             <text_input name="remaining_weight" width="100%" placeholder_text="1000" keyboard_hint="numeric">
               <event_cb trigger="value_changed" callback="on_wizard_remaining_weight_changed"/>
             </text_input>
@@ -158,8 +155,7 @@
           <lv_obj height="content"
                   flex_grow="1" flex_flow="column" style_pad_all="0" style_pad_gap="2" scrollable="false">
             <text_small text="Notes (optional)" translation_tag="Notes (optional)" style_text_color="#text_muted"/>
-            <text_input name="spool_notes"
-                        width="100%" placeholder_text="Any notes..." placeholder_tag="Any notes...">
+            <text_input name="spool_notes" width="100%" placeholder_text="Any notes..." placeholder_tag="Any notes...">
               <event_cb trigger="value_changed" callback="on_wizard_notes_changed"/>
             </text_input>
           </lv_obj>
@@ -178,7 +174,8 @@
     <!-- ==================== FOOTER: NAVIGATION BUTTONS ==================== -->
     <lv_obj name="wizard_footer"
             width="100%" height="content" flex_flow="row" style_flex_main_place="space_between"
-            style_flex_cross_place="center" style_pad_hor="#space_lg" style_pad_top="#space_xs" style_pad_bottom="#space_md" scrollable="false">
+            style_flex_cross_place="center" style_pad_hor="#space_lg" style_pad_top="#space_xs"
+            style_pad_bottom="#space_md" scrollable="false">
 
       <!-- Back button: hidden on step 0 -->
       <ui_button name="back_btn" variant="secondary" text="Back" translation_tag="Back" hidden="true">

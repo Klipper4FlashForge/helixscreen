@@ -4,6 +4,7 @@
 #pragma once
 
 #include "ui_heater_config.h"
+#include "ui_heater_icon_binder.h"
 #include "ui_temp_graph.h"
 
 #include "overlay_base.h"
@@ -117,7 +118,19 @@ class TempGraphOverlay : public OverlayBase {
         TempGraphOverlay* overlay;
         int preset_value;
     };
-    static constexpr int MAX_PRESETS = 4;
+    /// How many of the user's preset material slots this overlay surfaces.
+    ///
+    /// DELIBERATELY 3, not helix::presets::PRESET_COUNT. This overlay's preset
+    /// strip has no room for a fourth button — it is a layout constraint, not an
+    /// oversight, and not something a DRY pass should "fix". The temp PANELS
+    /// (nozzle/bed/chamber) do show all four slots; this compact overlay shows
+    /// the first three. If you widen it, you must first find the space.
+    static constexpr int TEMP_GRAPH_VISIBLE_PRESETS = 3;
+    static_assert(TEMP_GRAPH_VISIBLE_PRESETS <= helix::presets::PRESET_COUNT,
+                  "cannot surface more preset slots than exist");
+
+    /// "Off" + the visible material presets.
+    static constexpr int MAX_PRESETS = 1 + TEMP_GRAPH_VISIBLE_PRESETS;
     std::array<PresetData, MAX_PRESETS> preset_data_{};
 
     // State
@@ -131,6 +144,15 @@ class TempGraphOverlay : public OverlayBase {
     lv_obj_t* chamber_strip_ = nullptr;
     lv_obj_t* extruder_selector_row_ = nullptr;
     std::vector<SeriesInfo> series_;
+
+    // Thermal tint for the largest heater glyphs in the product (size="xl", one
+    // per control strip). Bound in on_activate(), unbound in on_deactivate() —
+    // cached_overlay_ persists across pushes, but the printer_state_ pointer and
+    // subject lifetimes are only valid while active, same pattern as
+    // PrintStatusWidget's binders (ui_panel_print_status.cpp).
+    helix::ui::HeaterIconBinder nozzle_icon_binder_;
+    helix::ui::HeaterIconBinder bed_icon_binder_;
+    helix::ui::HeaterIconBinder chamber_icon_binder_;
 
     // Dependencies (resolved on open)
     helix::PrinterState* printer_state_ = nullptr;

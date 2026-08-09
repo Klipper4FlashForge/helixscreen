@@ -79,6 +79,10 @@ The Moonraker integration is split into three distinct layers with clean separat
 - Object exclusion state queries
 - Print control (pause, resume, cancel)
 
+**`execute_gcode()`'s three dispositions:** `on_success`, `on_error`, and `on_queued` (see `include/moonraker_api.h`). `on_queued` is not decoration — when a script is discretionary (see `include/gcode_classify.h`) and an external blocking op (`G28`, `BED_MESH_CALIBRATE`, a manual probe) holds Klipper's gcode lock, `execute_gcode()` queues the command fire-and-forget and DROPS its RPC response: neither `on_success` nor `on_error` will ever fire. `on_queued` means "accepted for later execution", never "the printer did it" — a caller that needs to know the command actually ran must not treat it as completion, only as a signal to release a caller-side in-flight counter.
+
+Before adding a command to `detail::categorize_gcode_token()` in `gcode_classify.h`, verify every caller that emits it either holds no in-flight counter or passes `on_queued`. Skipping this check is exactly how #1129 happened — a cached `idle_timeout_printing` made the app treat an idle printer as busy, routed a `SET_LED` down the fire-and-forget path, and left the LED in-flight counter pinned for the session. `SET_GCODE_OFFSET` is deliberately excluded from the discretionary set: it CONTROLS a blocking op (z-offset calibration sends it mid-probe), so queuing it behind that op would break calibration.
+
 ### PrinterDiscovery (Hardware Data)
 
 **Location:** `include/printer_discovery.h`, `src/printer/printer_discovery.cpp`
@@ -459,6 +463,5 @@ Each AMS backend manages its own Moonraker subscriptions independently. When `Am
 
 ## See Also
 
-- `docs/TESTING_MOONRAKER_API.md` - Manual testing procedures
-- `docs/TESTING.md` - General testing guide
+- `docs/devel/TESTING.md` - General testing guide
 - `include/moonraker_api.h` - Full API documentation (Doxygen)

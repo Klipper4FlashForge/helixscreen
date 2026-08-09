@@ -59,6 +59,12 @@ This works whether or not you have an AMS system. If a slot is left empty (no ma
 
 For manual control without macros, use the **Extrude** and **Retract** buttons on the extrusion widget with selectable amounts (5mm, 10mm, 25mm, 50mm) and speeds.
 
+### What happens to the nozzle afterward
+
+Loading or unloading heats the nozzle to material temperature. Two minutes after the operation finishes, HelixScreen turns the extruder heater back off — the delay lets you run several operations in a row without the nozzle cooling in between, and a running print is never touched.
+
+If your filament system already handles this (AFC does), turn off **Settings > Safety & Notifications > Cool nozzle after filament ops** so only one of them is driving the heater. It's a per-printer setting. See [Safety settings](settings/safety.md#cool-nozzle-after-filament-ops).
+
 ---
 
 ## AMS / Multi-Material Systems
@@ -192,7 +198,9 @@ When you edit spool info in HelixScreen — on any supported filament system (AD
 
 Either way, your printer's filament info and OrcaSlicer stay in sync. The sync is one-way (your printer → OrcaSlicer): editing in OrcaSlicer doesn't change what's loaded in your AMS.
 
-> **Tip:** For the cleanest match, use material names OrcaSlicer recognizes (PLA, PETG, ABS, TPU, etc.). OrcaSlicer matches your slot to a filament preset by material name, so a slot set to "PLA" auto-selects a PLA preset.
+**Precise names on-screen, matchable names in OrcaSlicer.** You can name your filament as specifically as you like — "ASA-GF", "PLA Silk", "PPS-CF" — and HelixScreen keeps showing that exact name on the printer. OrcaSlicer only recognizes broader material families, so when HelixScreen syncs it automatically translates your precise name to the closest one OrcaSlicer knows. That's why a slot showing "ASA-GF" on your printer may appear as "ASA" in OrcaSlicer. This is expected — the color and temperatures still come across correctly, and OrcaSlicer now picks a real ASA preset instead of falling back to a generic PLA one.
+
+> **Tip:** For an unusual material OrcaSlicer doesn't recognize at all, the slot may sync with its color and temperatures but no material selected, rather than a wrong guess. Just pick the filament yourself in OrcaSlicer that one time — your printer keeps showing the precise name.
 
 > **Requirements:** OrcaSlicer 2.3.2 or newer, connected to the same printer's Moonraker. Nothing to enable on the HelixScreen side — it's automatic.
 
@@ -261,9 +269,11 @@ Single-backend setups are unaffected — the panel works exactly as before with 
 
 ## Creality Filament System (CFS)
 
-The CFS is an enclosed filament storage and delivery system for **Creality** printers. It ships on the **K2 series**, and is also supported on the **K1, K1C, and K1 Max** once you install Creality's official CFS upgrade kit and firmware. Each CFS unit holds 4 spools of filament, and up to 4 units can be connected (16 total slots). HelixScreen auto-detects CFS — and the correct macro dialect for your printer (K2 uses `CR_BOX_*` macros, K1 series uses `BOX_*`) — when connected.
+The CFS is an enclosed filament storage and delivery system for **Creality** printers. It ships on the **K2 series**, and is also supported on the **K1, K1C, and K1 Max** once you install Creality's official CFS upgrade kit and firmware. Each CFS unit holds 4 spools of filament, and up to 4 units can be connected (16 total slots). HelixScreen auto-detects CFS when connected, along with the set of commands your printer's firmware actually understands — there are three, and it works this out from the firmware itself rather than assuming based on your printer model.
 
-> **K1 series note:** CFS on the K1, K1C, and K1 Max requires Creality's official CFS upgrade firmware (v2.3.5.33 or newer). HelixScreen detects the K1 macro dialect automatically; no manual configuration is needed.
+> **K1 series note:** CFS on the K1, K1C, and K1 Max requires Creality's official CFS upgrade firmware (v2.3.5.33 or newer). Detection is automatic; no manual configuration is needed.
+
+> **Running community firmware?** Some K2 Plus owners replace Creality's firmware with a community build that has its own rewritten CFS module. HelixScreen recognizes those automatically and supports them fully — slots, spools, colors, humidity and temperature all display, and loading, unloading and filament changes all work from the touchscreen. Nothing to configure.
 
 ### Slot Layout
 
@@ -388,8 +398,6 @@ Filament that has been stored open for a long time may need the longer end of th
 ### Multi-Unit Setups
 
 If you have multiple Box units connected, each unit has its own dryer with independent controls. The panel shows which unit you are controlling. You can run dryers on multiple units at the same time — each unit heats independently.
-
----
 
 ---
 

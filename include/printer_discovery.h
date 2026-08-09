@@ -298,12 +298,25 @@ class PrinterDiscovery {
             // (as shipped by Rinkhals firmware) registers the status object as
             // `filament_hub` even though the config section is `[ace]`. The
             // community drivers (ValgACE/BunnyACE/DuckACE) register it as `ace`.
-            // Match both so real Anycubic hardware is detected.
-            else if ((name == "ace" || name == "filament_hub") && !has_mmu_) {
-                has_mmu_ = true;
-                mmu_type_ = AmsType::ACE;
-                spdlog::info("[PrinterDiscovery] Detected ACE (Anycubic ACE Pro) via '{}' object",
-                             name);
+            // The Anycubic Kobra S1 "mainline-Python ACE fork" registers each
+            // unit as `ace_instance_N` (has get_status()) and exposes NO
+            // top-level `ace`/`filament_hub` object — its config is `[ace]`
+            // with `ace_count`, but only `ace_instance_N` appears in
+            // objects.list (#1107). Match all three forms.
+            //
+            // Collect EVERY matched ACE object name (the discovery sequence
+            // subscribes the real object names), but only the first ACE match
+            // flips has_mmu_/mmu_type_ — with multiple `ace_instance_N` objects
+            // the name-collection must NOT be gated behind the !has_mmu_ guard.
+            else if (name == "ace" || name == "filament_hub" ||
+                     name.rfind("ace_instance", 0) == 0) {
+                ace_object_names_.push_back(name);
+                if (!has_mmu_) {
+                    has_mmu_ = true;
+                    mmu_type_ = AmsType::ACE;
+                    spdlog::info(
+                        "[PrinterDiscovery] Detected ACE (Anycubic ACE Pro) via '{}' object", name);
+                }
             }
             // MMU encoder discovery (Happy Hare)
             else if (name.rfind("mmu_encoder ", 0) == 0) {
@@ -648,6 +661,7 @@ class PrinterDiscovery {
         width_sensor_objects_.clear();
         mmu_encoder_names_.clear();
         mmu_servo_names_.clear();
+        ace_object_names_.clear();
 
         // Macros
         macros_.clear();
@@ -976,6 +990,16 @@ class PrinterDiscovery {
         return mmu_encoder_names_;
     }
 
+    /// @brief Klipper object names of every detected ACE unit.
+    ///
+    /// One of `filament_hub` (native GoKlipper), `ace` (community drivers), or
+    /// one-or-more `ace_instance_N` (Kobra S1 mainline-Python fork, #1107).
+    /// The discovery sequence subscribes each of these so the ACE backend gets
+    /// live status. Empty when mmu_type() != AmsType::ACE.
+    [[nodiscard]] const std::vector<std::string>& ace_object_names() const {
+        return ace_object_names_;
+    }
+
     [[nodiscard]] const std::vector<std::string>& mmu_servo_names() const {
         return mmu_servo_names_;
     }
@@ -1269,7 +1293,7 @@ class PrinterDiscovery {
         // Air-quality penalty: names carrying a gas/particulate/humidity token
         // describe air quality, not chamber temperature.
         static const char* const kAirQualityTokens[] = {
-            "TVOC", "VOC", "CO2", "GAS",  "HUMIDITY",    "IAQ",
+            "TVOC", "VOC",  "CO2",  "GAS",         "HUMIDITY", "IAQ",
             "AQI",  "PM25", "PM10", "PARTICULATE", "PRESSURE"};
         for (const char* tok : kAirQualityTokens) {
             if (has_standalone_token(upper, tok)) {
@@ -1356,6 +1380,7 @@ class PrinterDiscovery {
     std::vector<std::string> width_sensor_objects_;
     std::vector<std::string> mmu_encoder_names_;
     std::vector<std::string> mmu_servo_names_;
+    std::vector<std::string> ace_object_names_; // filament_hub / ace / ace_instance_N (#1107)
 
     // Macros
     std::unordered_set<std::string> macros_;

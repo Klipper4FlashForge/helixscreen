@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "../helix_test_fixture.h"
+#include "data_root_resolver.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "helix-xml/src/xml/lv_xml_component.h"
+#include "layout_manager.h"
 #include "panel_widget_config.h"
 #include "panel_widget_registry.h"
 #include "theme_manager.h"
@@ -14,6 +16,7 @@ extern "C" void lv_xml_component_init(void);
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <set>
 #include <string>
 #include <unistd.h>
@@ -801,4 +804,198 @@ TEST_CASE_METHOD(HelixTestFixture, "default_layout: reset_all clears leaked ams_
     reset_all();
 
     REQUIRE(lv_subject_get_int(lv_xml_get_subject(nullptr, "ams_slot_count")) == 0);
+}
+
+// ============================================================================
+// Portrait anchor variants (#1216)
+// ============================================================================
+//
+// default_layout.json used to key placements by BREAKPOINT ONLY. A 480x800
+// portrait panel has a cramped axis of 480, i.e. breakpoint MEDIUM, so it got
+// the LANDSCAPE medium anchors — authored against a 6-column grid. `tips` at
+// col 2 colspan 4 and `temperature`/`bed_temperature` at col 3 simply do not
+// exist on a 3-column portrait grid, so three of five anchors were unreachable
+// and fell through to auto-place.
+//
+// Anchor tables are now keyed by layout variant in the same most-specific-first
+// order LayoutManager::variant_chain() uses for ui_xml/ overrides.
+
+namespace {
+
+/// A layout file with a distinguishable base anchor and portrait variant.
+constexpr const char* kVariantLayout = R"({
+    "anchors": [
+        {
+            "id": "printer_image",
+            "placements": { "micro": { "col": 4, "row": 0, "colspan": 2, "rowspan": 2 } }
+        },
+        {
+            "id": "tips",
+            "placements": { "micro": { "col": 0, "row": 0, "colspan": 4, "rowspan": 2 } }
+        }
+    ],
+    "variants": {
+        "portrait": [
+            {
+                "id": "printer_image",
+                "placements": { "micro": { "col": 0, "row": 0, "colspan": 2, "rowspan": 3 } }
+            }
+        ]
+    }
+})";
+
+class LayoutTypeGuard {
+  public:
+    LayoutTypeGuard(int w, int h) {
+        helix::LayoutManager::instance().init(w, h);
+    }
+    ~LayoutTypeGuard() {
+        helix::LayoutManager::instance().init(800, 480); // back to STANDARD
+    }
+};
+
+} // namespace
+
+TEST_CASE("default_layout: portrait uses the portrait anchor variant",
+          "[default_layout][portrait]") {
+    TempCwdGuard guard;
+    guard.write_layout(kVariantLayout);
+    LayoutTypeGuard portrait(480, 800);
+    REQUIRE(helix::LayoutManager::instance().type() == helix::LayoutType::PORTRAIT);
+
+    auto entries = PanelWidgetConfig::build_default_grid();
+
+    auto* pi = find_entry(entries, "printer_image");
+    REQUIRE(pi);
+    CHECK(pi->col == 0); // portrait variant, not the base anchor's col 4
+    CHECK(pi->rowspan == 3);
+
+    // tips is absent from the portrait variant, so it must NOT inherit the
+    // base 4-wide anchor — a 4-column widget cannot exist on a portrait grid.
+    auto* tips = find_entry(entries, "tips");
+    REQUIRE(tips);
+    CHECK(tips->col == -1);
+    CHECK(tips->row == -1);
+}
+
+TEST_CASE("default_layout: landscape ignores the portrait anchor variant",
+          "[default_layout][portrait]") {
+    TempCwdGuard guard;
+    guard.write_layout(kVariantLayout);
+    LayoutTypeGuard landscape(800, 480);
+    REQUIRE(helix::LayoutManager::instance().type() == helix::LayoutType::STANDARD);
+
+    auto entries = PanelWidgetConfig::build_default_grid();
+
+    auto* pi = find_entry(entries, "printer_image");
+    REQUIRE(pi);
+    CHECK(pi->col == 4); // base anchor
+    CHECK(pi->rowspan == 2);
+
+    auto* tips = find_entry(entries, "tips");
+    REQUIRE(tips);
+    CHECK(tips->col == 0);
+    CHECK(tips->colspan == 4);
+}
+
+TEST_CASE("default_layout: portrait sub-classes inherit the shared portrait variant",
+          "[default_layout][portrait]") {
+    TempCwdGuard guard;
+    guard.write_layout(kVariantLayout);
+    // 320x480 is TINY_PORTRAIT, whose variant chain is {tiny_portrait, portrait}
+    // — exactly like ui_xml/ overrides. With no tiny_portrait table it must fall
+    // through to portrait, not to the landscape base.
+    LayoutTypeGuard tiny_portrait(320, 480);
+    REQUIRE(helix::LayoutManager::instance().type() == helix::LayoutType::TINY_PORTRAIT);
+
+    auto entries = PanelWidgetConfig::build_default_grid();
+    auto* pi = find_entry(entries, "printer_image");
+    REQUIRE(pi);
+    CHECK(pi->col == 0);
+    CHECK(pi->rowspan == 3);
+}
+
+TEST_CASE("default_layout: portrait falls back to the base anchors when no variant exists",
+          "[default_layout][portrait]") {
+    TempCwdGuard guard;
+    guard.write_layout(R"({
+        "anchors": [
+            {
+                "id": "printer_image",
+                "placements": { "micro": { "col": 1, "row": 1, "colspan": 2, "rowspan": 2 } }
+            }
+        ]
+    })");
+    LayoutTypeGuard portrait(480, 800);
+
+    auto entries = PanelWidgetConfig::build_default_grid();
+    auto* pi = find_entry(entries, "printer_image");
+    REQUIRE(pi);
+    CHECK(pi->col == 1);
+    CHECK(pi->row == 1);
+}
+
+TEST_CASE("default_layout: portrait disables tips by default", "[default_layout][portrait]") {
+    TempCwdGuard guard;
+    guard.write_layout(kVariantLayout);
+
+    {
+        LayoutTypeGuard portrait(480, 800);
+        auto entries = PanelWidgetConfig::build_default_grid();
+        auto* tips = find_entry(entries, "tips");
+        REQUIRE(tips);
+        // tips is authored 4 columns wide against a 6-column landscape grid.
+        // Portrait grids are 2-3 wide, so it can only ever appear shrunk, and
+        // its minimum of 2 columns costs a third of a portrait row.
+        CHECK_FALSE(tips->enabled);
+    }
+    {
+        LayoutTypeGuard landscape(800, 480);
+        auto entries = PanelWidgetConfig::build_default_grid();
+        auto* tips = find_entry(entries, "tips");
+        REQUIRE(tips);
+        CHECK(tips->enabled); // …but it stays a landscape default
+    }
+}
+
+// The shipped table itself, not a synthetic one: every portrait anchor has to
+// fit the narrowest grid its breakpoint can produce, or it silently falls
+// through to auto-place and the anchor is decoration.
+TEST_CASE("default_layout: the shipped portrait anchors fit a portrait grid",
+          "[default_layout][portrait][shipped]") {
+    std::string path = helix::find_readable("default_layout.json");
+    std::ifstream in(path);
+    REQUIRE(in.is_open());
+    nlohmann::json layout = nlohmann::json::parse(in);
+
+    REQUIRE(layout.contains("variants"));
+    REQUIRE(layout["variants"].contains("portrait"));
+    const auto& portrait = layout["variants"]["portrait"];
+    REQUIRE(portrait.is_array());
+    REQUIRE_FALSE(portrait.empty());
+
+    // Column budget per breakpoint name, from GridLayout's portrait rules:
+    // cols = clamp(width / 160, 2, 16) and width is the cramped axis, so the
+    // narrowest panel in each tier sets the budget.
+    const std::map<std::string, int> max_cols = {
+        {"micro", 2}, {"tiny", 2},   {"small", 2},   {"medium", 3},
+        {"large", 3}, {"xlarge", 4}, {"xxlarge", 6},
+    };
+
+    for (const auto& anchor : portrait) {
+        std::string id = anchor.value("id", std::string{});
+        INFO("anchor " << id);
+        CHECK(id != "tips"); // explicitly out of the portrait default layout
+        REQUIRE(helix::find_widget_def(id) != nullptr);
+        REQUIRE(anchor.contains("placements"));
+        for (auto it = anchor["placements"].begin(); it != anchor["placements"].end(); ++it) {
+            auto budget = max_cols.find(it.key());
+            INFO("anchor " << id << " breakpoint " << it.key());
+            REQUIRE(budget != max_cols.end());
+            int col = it.value().value("col", 0);
+            int colspan = it.value().value("colspan", 1);
+            CHECK(col >= 0);
+            CHECK(col + colspan <= budget->second);
+        }
+    }
 }

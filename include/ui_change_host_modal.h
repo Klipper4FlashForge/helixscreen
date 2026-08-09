@@ -26,6 +26,39 @@
  * modal->show_modal(lv_screen_active());
  * @endcode
  */
+namespace helix::ui {
+
+/**
+ * @brief Show the Change Host modal from anywhere, with the standard reconnect
+ *
+ * ChangeHostModal keeps a static active_instance_, so exactly one owner may
+ * exist; this holds it. The reconnect sequence (suppress the recovery dialog,
+ * disconnect, rebuild ws:// and http:// URLs, reconnect through the discovery
+ * pipeline) lives here rather than at each call site so the settings row and
+ * the connection-failed prompt cannot drift apart.
+ *
+ * @param extra_on_complete Optional caller-specific work, run on save only
+ *                          (e.g. the settings panel refreshing its host label)
+ */
+void show_change_host_modal(std::function<void(bool changed)> extra_on_complete = nullptr);
+
+/**
+ * @brief Prompt that the printer is unreachable, offering to fix the address
+ *
+ * Replaces an OK-only error modal for CONNECTION_FAILED: on a stale address,
+ * acknowledging the error leaves the user exactly where they started, and the
+ * setting itself is buried under Settings > System > Printer Host.
+ *
+ * Safe to call from any thread — marshals itself to the main thread, which the
+ * libhv event-loop thread relies on.
+ *
+ * @param title   Dialog title
+ * @param message Body text; should name the host:port that could not be reached
+ */
+void show_connection_failed_modal(const std::string& title, const std::string& message);
+
+} // namespace helix::ui
+
 class ChangeHostModal : public Modal {
   public:
     using CompletionCallback = std::function<void(bool changed)>;

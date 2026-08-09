@@ -14,13 +14,14 @@
 #include "device_display_name.h"
 #include "favorite_macro_config.h"
 #include "favorite_macro_config_modal.h"
+#include "i_moonraker_api.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "macro_executor.h"
 #include "macro_param_cache.h"
-#include "i_moonraker_api.h"
 #include "panel_widget_config.h"
 #include "panel_widget_manager.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 #include "safety_settings_manager.h"
 #include "theme_manager.h"
 
@@ -211,13 +212,13 @@ void FavoriteMacroWidget::detach() {
     spdlog::debug("[FavoriteMacroWidget] Detached");
 }
 
-void FavoriteMacroWidget::on_size_changed(int colspan, int rowspan, int /*width_px*/,
-                                          int /*height_px*/) {
+void FavoriteMacroWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_px,
+                                          int height_px) {
     if (!widget_obj_)
         return;
 
-    bool tall = (rowspan >= 2);
-    bool wide = (colspan >= 2);
+    bool tall = (height_px >= widget_size::H_TALL);
+    bool wide = (width_px >= widget_size::W_NORMAL);
 
     // Scale badge and icon: 48px/md at 1×1, 64px/lg when tall or 2×2
     int badge_size = tall ? 64 : 48;

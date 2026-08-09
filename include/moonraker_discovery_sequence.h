@@ -328,4 +328,35 @@ class MoonrakerDiscoverySequence {
  */
 [[nodiscard]] bool is_usable_snapshot_url(const std::string& snapshot_url);
 
+/// Seconds allowed for the TCP connect phase of a snapshot reachability probe.
+/// This is the budget that decides "is anything listening at this address" —
+/// the stale-DHCP / wrong-subnet case the probe exists to catch.
+inline constexpr int kSnapshotProbeConnectTimeoutSec = 2;
+
+/// Seconds allowed for the whole snapshot reachability probe.
+/// Deliberately longer than the connect budget: a go2rtc-style endpoint that
+/// transcodes H.264 must wait for the next keyframe before it can emit a JPEG,
+/// measured at up to ~2.9s on a Pi 5. Raising this does not slow the dead-address
+/// case down — that one loses on the connect budget above.
+inline constexpr int kSnapshotProbeTotalTimeoutSec = 6;
+
+/**
+ * @brief Probe an absolute snapshot URL to decide whether the webcam is live.
+ *
+ * Guards against a stale ABSOLUTE webcam URL — e.g. an install-time-detected LAN
+ * IP that has since changed via DHCP, or an IOT-subnet address unreachable from
+ * here. A registered-but-dead entry otherwise wins over (and suppresses) the
+ * local camera probe, leaving the camera silently broken.
+ *
+ * Two separate budgets, because "nothing is listening" and "listening but slow"
+ * are different answers. A single total timeout conflates them: libhv clamps the
+ * connect phase to MIN(connect_timeout, timeout), so one short budget covers both
+ * phases and a live endpoint that needs three seconds to produce a frame is
+ * rejected exactly like a dead host (prestonbrown/helixscreen#1205).
+ *
+ * @param snapshot_url Absolute http(s) snapshot URL to probe.
+ * @return true if the endpoint answered 200 within the budget.
+ */
+[[nodiscard]] bool probe_snapshot_reachable(const std::string& snapshot_url);
+
 } // namespace helix

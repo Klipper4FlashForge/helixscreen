@@ -29,14 +29,13 @@
     <prop name="hide_badge" type="string" default="true"/>
   </api>
   <styles>
-    <style name="pad_standard" pad_left="#space_lg" pad_right="#space_lg"
-           pad_top="#space_lg" pad_bottom="#space_xs" pad_gap="0"/>
-    <style name="pad_micro" pad_left="#space_md" pad_right="#space_md"
-           pad_top="#space_sm" pad_bottom="#space_xxs" pad_gap="0"/>
+    <style name="pad_standard"
+           pad_left="#space_lg" pad_right="#space_lg" pad_top="#space_lg" pad_bottom="#space_xs" pad_gap="0"/>
+    <style name="pad_micro"
+           pad_left="#space_md" pad_right="#space_md" pad_top="#space_sm" pad_bottom="#space_xxs" pad_gap="0"/>
   </styles>
   <view extends="lv_obj"
-        width="100%" height="content" style_bg_opa="0" style_border_width="0" flex_flow="column"
-        scrollable="false">
+        width="100%" height="content" style_bg_opa="0" style_border_width="0" flex_flow="column" scrollable="false">
     <bind_style_if_eq name="pad_micro" subject="ui_breakpoint" ref_value="0"/>
     <bind_style_if_ge name="pad_standard" subject="ui_breakpoint" ref_value="1"/>
     <!-- Section title row with optional icon -->

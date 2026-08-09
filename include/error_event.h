@@ -30,6 +30,15 @@ struct RecoveryAction {
     std::string gcode;   ///< G-code to run on tap
     std::string log_tag; ///< spdlog tag on tap
     std::string style;   ///< "" (neutral) | "primary" | "danger" — maps to PromptButton.color
+    /// True when running @ref gcode pushes filament through the nozzle, so it
+    /// needs the hotend at or above Klipper's min_extrude_temp. The presenter
+    /// preheats and defers the send instead of firing into a cold nozzle: the
+    /// heater can be off by the time the user taps (the post-op cooldown timer
+    /// armed by an earlier operation, TURN_OFF_HEATERS on a print ERROR, or
+    /// Klipper's idle_timeout), and a cold recovery fails exactly like the
+    /// operation that raised the error. False for anything that moves filament
+    /// only between the lane and the spool, or that just clears state.
+    bool needs_hot_nozzle = false;
 };
 
 /// Result of classifying one gcode-response line. Produced by the pure
@@ -39,7 +48,15 @@ struct ErrorEvent {
     ErrorSeverity severity = ErrorSeverity::WARNING;
     std::string title;  ///< short, already-translated; "" -> presenter default
     std::string detail; ///< FULL, untruncated, translated message text
-    std::string code;   ///< Klipper error code if any ("key840"), else ""
+    /// FULL, untruncated, UN-translated text exactly as Klipper sent it (the
+    /// `!!`/`Error:` prefix stripped, nothing else). This is the cross-channel
+    /// dedup identity: the RPC channel records Klipper's raw wording, while
+    /// `detail` may have been rewritten by clean_error_text() ("Must home axis
+    /// first" -> "Must home axes first"). Comparing raw-to-raw keeps both sides
+    /// in the same normalization. Empty when a classifier doesn't populate it,
+    /// in which case `detail` is already the raw text.
+    std::string raw_detail;
+    std::string code; ///< Klipper error code if any ("key840"), else ""
     std::vector<RecoveryAction> recovery_actions;
     bool sticky = false;
 };

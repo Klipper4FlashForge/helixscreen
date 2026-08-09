@@ -3,6 +3,34 @@
 
 #pragma once
 
+#include <string>
+
+namespace helix::test {
+
+/// Absolute path of this process's private config sandbox.
+///
+/// Created by a static initializer before main() and torn down at exit. The
+/// same initializer points the rolling-backup tiers
+/// (AppConstants::Update::state_dir() / backup_fallback_dir()) into it, so a
+/// test binary structurally cannot write the developer's $HOME/.helixscreen/
+/// or /var/lib/helixscreen/ backups.
+///
+/// HELIX_CONFIG_DIR is deliberately NOT redirected — it is an authoritative
+/// override that replaces the directory of any path passed to Config::init(),
+/// so setting it process-wide would rewrite every config.init(<temp path>) in
+/// the suite to one file. See the rationale in helix_test_fixture.cpp.
+/// Path-shaped isolation is done per-subsystem in reset_config_singleton().
+const std::string& config_sandbox_dir();
+
+/// Return the Config singleton to a clean, sandboxed state: path inside the
+/// sandbox, empty data, no active printer, not read-only, and no leftover
+/// settings file on disk. Called before every TEST_CASE by the isolation
+/// listener and by every HelixTestFixture ctor/dtor (which also covers each
+/// SECTION leaf).
+void reset_config_singleton();
+
+} // namespace helix::test
+
 // Base fixture for every HelixScreen test. Deterministically resets
 // process-wide singletons tests are known to mutate so ordering cannot
 // mask bugs. Expand reset_all() reactively as flakiness surfaces.

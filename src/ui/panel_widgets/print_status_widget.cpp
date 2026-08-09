@@ -3,6 +3,7 @@
 
 #include "print_status_widget.h"
 
+#include "ui_error_reporting.h"
 #include "ui_event_safety.h"
 #include "ui_nav_manager.h"
 #include "ui_overlay_temp_graph.h"
@@ -12,18 +13,25 @@
 #include "ui_update_queue.h"
 #include "ui_utils.h"
 
+#include "ams_backend.h"
 #include "ams_state.h"
 #include "app_constants.h"
 #include "app_globals.h"
 #include "data_root_resolver.h"
+#include "filament_op_dispatch.h"
+#include "filament_op_router.h"
 #include "filament_sensor_manager.h"
+#include "lvgl/src/others/translation/lv_translation.h"
+#include "moonraker_api.h"
 #include "moonraker_client.h"
 #include "observer_factory.h"
 #include "panel_widget_manager.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 #include "print_history_manager.h"
 #include "printer_state.h"
 #include "runtime_config.h"
+#include "standard_macros.h"
 #include "static_subject_registry.h"
 #include "subject_managed_panel.h"
 #include "theme_manager.h"
@@ -101,9 +109,9 @@ void PrintStatusWidget::init_static_subjects() {
     lv_subject_init_int(&column_mode_subject_, 0);
     lv_xml_register_subject(nullptr, "print_status_column_mode", &column_mode_subject_);
     column_mode_subject_initialized_ = true;
-    lv_subject_init_int(&colspan_subject_, 2);
-    lv_xml_register_subject(nullptr, "print_status_colspan", &colspan_subject_);
-    colspan_subject_initialized_ = true;
+    lv_subject_init_int(&width_band_subject_, 1); // 1 = normal, matches the old colspan=2 default
+    lv_xml_register_subject(nullptr, "print_status_width_band", &width_band_subject_);
+    width_band_subject_initialized_ = true;
 
     lv_subject_init_int(&title_hidden_subject_, 0);
     lv_xml_register_subject(nullptr, "print_status_title_hidden", &title_hidden_subject_);
@@ -170,9 +178,9 @@ void PrintStatusWidget::init_static_subjects() {
             lv_subject_deinit(&actions_hidden_subject_);
             visibility_subjects_initialized_ = false;
         }
-        if (colspan_subject_initialized_ && lv_is_initialized()) {
-            lv_subject_deinit(&colspan_subject_);
-            colspan_subject_initialized_ = false;
+        if (width_band_subject_initialized_ && lv_is_initialized()) {
+            lv_subject_deinit(&width_band_subject_);
+            width_band_subject_initialized_ = false;
         }
         if (column_mode_subject_initialized_ && lv_is_initialized()) {
             lv_subject_deinit(&column_mode_subject_);
@@ -252,6 +260,17 @@ void PrintStatusWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
         if (arc)
             s_formatter_->attach_arc(arc);
     }
+
+    // Nozzle reads the tool-pin-aware proxy subjects rather than the raw
+    // active-extruder ones, so the icon tracks whichever tool the card is
+    // showing. Bed and chamber use the PrinterState defaults. The proxy
+    // subjects live on s_formatter_, which production code never resets once
+    // created (see ~PrintStatusWidget), so they genuinely outlive this binder.
+    nozzle_icon_binder_.bind_subjects(widget_obj_, "nozzle_icon_glyph",
+                                      lv_xml_get_subject(nullptr, "print_status_nozzle_current"),
+                                      lv_xml_get_subject(nullptr, "print_status_nozzle_target"));
+    bed_icon_binder_.bind(widget_obj_, printer_state_, helix::HeaterType::Bed);
+    chamber_icon_binder_.bind(widget_obj_, printer_state_, helix::HeaterType::Chamber);
 
     // Set up observers (after widget references are cached and widget_obj_ is set)
     print_state_observer_ =
@@ -379,6 +398,12 @@ void PrintStatusWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
     update_idle_compact_mode();
     update_active_layout_mode();
 
+    // Sync the imperative print-card flex layout to the persisted is_column_.
+    // Instances are recycled across rebuilds onto a fresh component whose default
+    // flow is column; without this a recycled row-layout card whose colspan
+    // matches is_column_ would keep the default column layout (see #1109 pattern).
+    apply_card_layout();
+
     spdlog::debug("[PrintStatusWidget] Attached (layout_style={})", layout_style_);
 }
 
@@ -403,6 +428,12 @@ void PrintStatusWidget::detach() {
     job_queue_count_observer_.reset();
     connection_observer_.reset();
     breakpoint_observer_.reset();
+
+    // Heater icon animators — per-instance, so unbinding here cannot disturb
+    // a recycled successor widget's binders.
+    nozzle_icon_binder_.unbind();
+    bed_icon_binder_.unbind();
+    chamber_icon_binder_.unbind();
 
     // Clear widget references
     print_card_thumb_ = nullptr;
@@ -439,24 +470,40 @@ void PrintStatusWidget::detach() {
 // Size-Dependent Layout
 // ============================================================================
 
-void PrintStatusWidget::on_size_changed(int colspan, int rowspan, int /*width_px*/,
-                                        int /*height_px*/) {
-    last_rowspan_ = rowspan;
-    lv_subject_set_int(&colspan_subject_, colspan);
+void PrintStatusWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_px,
+                                        int height_px) {
+    last_width_px_ = width_px;
+    last_height_px_ = height_px;
 
-    // Derive layout_effective: detailed only when user opted in AND colspan >= 2
+    // Width band from physical pixels, not colspan — see panel_widget_size.h. Three
+    // bands (0=compact, 1=normal, 2=wide) mirror the old colspan<=1 / ==2 / >=3
+    // taxonomy closely enough to drive the same predicates below. Published to XML:
+    // library_body's two bind_style entries (panel_widget_print_status.xml) key off
+    // this band, not the raw pixel count, which wouldn't mean anything to a ref_value
+    // comparison.
+    int width_band;
+    if (width_px < widget_size::W_NORMAL) {
+        width_band = 0; // compact
+    } else if (width_px < widget_size::W_WIDE) {
+        width_band = 1; // normal
+    } else {
+        width_band = 2; // wide
+    }
+    lv_subject_set_int(&width_band_subject_, width_band);
+
+    // Derive layout_effective: detailed only when user opted in AND width clears the normal floor
     int user_pref = (layout_style_ == "detailed") ? 1 : 0;
     lv_subject_set_int(&layout_mode_subject_, user_pref);
-    int effective = (user_pref == 1 && colspan >= 2) ? 1 : 0;
+    int effective = (user_pref == 1 && width_band >= 1) ? 1 : 0;
     lv_subject_set_int(&layout_effective_subject_, effective);
-    // Combined gate: only show the filament line at colspan>=3 AND when actual
+    // Combined gate: only show the filament line at the wide band AND when actual
     // filament has been extruded. update_filament_text() also writes this
     // subject on used_mm changes, keeping both inputs in sync.
     int used_mm = lv_subject_get_int(printer_state_.get_print_filament_used_subject());
-    lv_subject_set_int(&show_filament_active_subject_, (colspan >= 3 && used_mm > 0) ? 1 : 0);
+    lv_subject_set_int(&show_filament_active_subject_, (width_band >= 2 && used_mm > 0) ? 1 : 0);
 
-    // Compact mode: 1-column — not enough horizontal space for thumbnail + action rows
-    bool compact = (colspan <= 1);
+    // Compact mode: narrow — not enough horizontal space for thumbnail + action rows
+    bool compact = (width_band == 0);
     if (compact != is_compact_) {
         is_compact_ = compact;
         update_idle_compact_mode();
@@ -467,13 +514,32 @@ void PrintStatusWidget::on_size_changed(int colspan, int rowspan, int /*width_px
         return;
     }
 
-    // 2x2: column layout (thumbnail on top, info below)
-    // 1x2, 3x2: row layout (thumbnail left, info right)
-    bool use_column = (colspan == 2 && rowspan >= 2);
+    // Normal band + tall enough: column layout (thumbnail on top, info below)
+    // Compact or wide band: row layout (thumbnail left, info right)
+    bool use_column = (width_band == 1 && height_px >= widget_size::H_TALL);
     if (use_column == is_column_) {
         return;
     }
     is_column_ = use_column;
+    apply_card_layout();
+
+    spdlog::debug("[PrintStatusWidget] on_size_changed {}x{}px -> {} (compact={})", width_px,
+                  height_px, use_column ? "column" : "row", is_compact_);
+}
+
+// Apply the imperative print-card flex layout (thumbnail row vs column) for the
+// current is_column_ state. Split out of on_size_changed so attach() can re-apply
+// it: widget instances are recycled across rebuilds, but a fresh XML component
+// starts at the default flow (column). Without an attach()-time apply, a card
+// whose new colspan matches the persisted is_column_ makes on_size_changed
+// early-return (use_column == is_column_) and the imperative layout is never
+// established on the fresh component — leaving a row-layout card (1x2/3x2) stuck
+// in the default column arrangement. Same recycled-instance class as #1109.
+void PrintStatusWidget::apply_card_layout() {
+    if (!print_card_layout_ || !print_card_thumb_wrap_)
+        return;
+
+    const bool use_column = is_column_;
 
     // Update subject for declarative icon visibility in XML
     lv_subject_set_int(&column_mode_subject_, use_column ? 1 : 0);
@@ -504,9 +570,6 @@ void PrintStatusWidget::on_size_changed(int colspan, int rowspan, int /*width_px
     }
     apply_info_layout(print_card_preparing_info_);
     apply_info_layout(print_card_info_);
-
-    spdlog::debug("[PrintStatusWidget] on_size_changed {}x{} -> {} (compact={})", colspan, rowspan,
-                  use_column ? "column" : "row", is_compact_);
 
     // Re-fit the Detailed-layout progress arc to a square sized from its
     // (now-known) parent column dimensions.
@@ -667,17 +730,6 @@ void PrintStatusWidget::on_print_state_changed(PrintJobState state) {
     // The 5 card-body siblings are subject-driven (bind_flag_if_not_eq on
     // print_status_view). Recompute that subject; XML handles visibility.
     update_view_subject();
-
-    // print_card_printing is the active-state WRAPPER (holds preparing_info,
-    // print_card_layout, print_card_printing_detailed). Its padding occupies
-    // layout space even when its children are hidden, so the wrapper stays
-    // imperatively toggled. detach() nulls this pointer (no L075 needed).
-    if (print_card_printing_) {
-        if (is_active_)
-            lv_obj_remove_flag(print_card_printing_, LV_OBJ_FLAG_HIDDEN);
-        else
-            lv_obj_add_flag(print_card_printing_, LV_OBJ_FLAG_HIDDEN);
-    }
 
     if (is_active_) {
         spdlog::debug("[PrintStatusWidget] Print active - state updated via subject bindings");
@@ -965,9 +1017,17 @@ void PrintStatusWidget::show_idle_runout_modal() {
         return;
     }
 
-    runout_modal_.set_on_load_filament([this]() {
+    // The widget is recycled by the panel manager (attach A -> detach A ->
+    // attach B) and destroyed on dashboard rebuild, while RunoutGuidanceModal
+    // retains this callback until it is overwritten. Guard with the same
+    // AsyncLifetimeGuard token FilamentRunoutHandler uses; the press arrives on
+    // the main thread, so a plain expired() check is correct here.
+    auto token = lifetime_.token();
+    runout_modal_.set_on_load_filament([this, token]() {
+        if (token.expired())
+            return;
         spdlog::info("[PrintStatusWidget] User chose to load filament (idle)");
-        NavigationManager::instance().set_active(PanelId::Filament);
+        dispatch_load();
     });
 
     runout_modal_.set_on_resume([]() {
@@ -979,6 +1039,95 @@ void PrintStatusWidget::show_idle_runout_modal() {
     });
 
     runout_modal_.show(parent_screen_);
+}
+
+void PrintStatusWidget::dispatch_load() {
+    AmsBackend* backend = AmsState::instance().get_backend();
+    // Nothing is printing, so there is no "currently feeding" lane to infer from
+    // a print job — the backend's own active slot is the only target available,
+    // and this dialog has no slot picker.
+    const int slot = backend ? backend->get_current_slot() : -1;
+
+    AmsSystemInfo sys;
+    helix::ui::BackendCaps caps;
+    if (backend) {
+        sys = backend->get_system_info();
+        caps.present = true;
+        caps.requires_slot_selection_for_load = backend->requires_slot_selection_for_load();
+        caps.needs_unload_before_load = backend->needs_unload_before_load(sys, slot);
+        caps.is_tool_changer = backend->get_type() == AmsType::TOOL_CHANGER;
+    }
+
+    const auto& load_info = StandardMacros::instance().get(StandardMacroSlot::LoadFilament);
+    const helix::ui::FilamentOpPlan plan =
+        helix::ui::plan_load(sys, caps, slot, !load_info.is_empty());
+
+    switch (plan.tier) {
+    case helix::ui::FilamentTier::AmsBackend: {
+        spdlog::info("[PrintStatusWidget] Idle runout load via AMS backend (slot {})", slot);
+        AmsError err = (plan.ams_call == helix::ui::AmsCall::ChangeTool)
+                           ? backend->change_tool(plan.ams_arg)
+                           : backend->load_filament(plan.ams_arg);
+        if (!err.success()) {
+            spdlog::error("[PrintStatusWidget] Load filament failed: {}", err.technical_msg);
+            NOTIFY_ERROR(lv_tr("Failed to load filament: {}"), err.user_msg);
+        }
+        return;
+    }
+
+    case helix::ui::FilamentTier::Refused:
+        // Never navigate: PanelId::Filament was the old behaviour and it tore
+        // the dialog out from under the user. Say what happened and stay put.
+        if (plan.refusal == helix::ui::FilamentRefusal::AlreadyMounted) {
+            spdlog::info("[PrintStatusWidget] Load refused — tool {} already mounted", slot);
+            NOTIFY_INFO(lv_tr("That tool is already loaded"));
+        } else {
+            spdlog::info("[PrintStatusWidget] Load refused — no slot resolved");
+            NOTIFY_WARNING(lv_tr("Select a filament slot to load"));
+        }
+        return;
+
+    case helix::ui::FilamentTier::Macro: {
+        auto* api = get_moonraker_api();
+        if (!api) {
+            return;
+        }
+        const std::string macro_name = load_info.get_macro();
+        spdlog::info("[PrintStatusWidget] Idle runout load via StandardMacros: {}", macro_name);
+        // ParamPolicy::Suppress runs the callback synchronously, so nothing here
+        // outlives this call and no token capture is needed inside it.
+        helix::ui::dispatch_filament_macro(
+            macro_name, helix::ui::ParamPolicy::Suppress,
+            [api](const helix::MacroParamResult& result) {
+                StandardMacros::instance().execute(
+                    StandardMacroSlot::LoadFilament, api, result.params,
+                    []() { spdlog::info("[PrintStatusWidget] Load filament started"); },
+                    [](const MoonrakerError& err) {
+                        spdlog::error("[PrintStatusWidget] Failed to load filament: {}",
+                                      err.message);
+                        NOTIFY_ERROR(lv_tr("Failed to load filament: {}"), err.user_message());
+                    });
+            });
+        return;
+    }
+
+    case helix::ui::FilamentTier::RawGcode: {
+        auto* api = get_moonraker_api();
+        if (!api) {
+            return;
+        }
+        spdlog::info("[PrintStatusWidget] No backend and no load macro — raw gcode fallback");
+        api->execute_gcode(
+            helix::ui::filament_load_fallback_gcode(),
+            []() { spdlog::info("[PrintStatusWidget] Load fallback gcode sent"); },
+            [](const MoonrakerError& err) {
+                spdlog::error("[PrintStatusWidget] Load fallback failed: {}", err.message);
+                NOTIFY_ERROR(lv_tr("Failed to load filament: {}"), err.user_message());
+            },
+            IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
+        return;
+    }
+    }
 }
 
 // ============================================================================
@@ -1318,8 +1467,7 @@ void PrintStatusWidget::dismiss_configure_picker() {
     // After the user changed layout_style, re-run width gating so the change
     // takes effect immediately on the visible widget.
     if (widget_obj_) {
-        int colspan = lv_subject_get_int(&colspan_subject_);
-        on_size_changed(colspan, last_rowspan_, 0, 0);
+        on_size_changed(0, 0, last_width_px_, last_height_px_);
     }
 }
 
@@ -1697,10 +1845,10 @@ void PrintStatusWidget::DetailedFormatter::update_filament_text() {
     lv_subject_copy_string(&filament_text_subject_, filament_text_buf_);
 
     // Keep the show_filament_active gate honest as filament accumulates.
-    // on_size_changed handles the colspan side; this side handles the
+    // on_size_changed handles the width-band side; this side handles the
     // used-mm transition (e.g., first extrusion of the print).
-    int colspan = lv_subject_get_int(&PrintStatusWidget::colspan_subject_);
-    int show = (colspan >= 3 && used_mm > 0) ? 1 : 0;
+    int width_band = lv_subject_get_int(&PrintStatusWidget::width_band_subject_);
+    int show = (width_band >= 2 && used_mm > 0) ? 1 : 0;
     if (lv_subject_get_int(&PrintStatusWidget::show_filament_active_subject_) != show) {
         lv_subject_set_int(&PrintStatusWidget::show_filament_active_subject_, show);
     }
@@ -1787,10 +1935,15 @@ bool PrintStatusWidget::DetailedFormatter::set_nozzle_tool_override(
     }
 
     current_nozzle_override_ = override_name;
+    // Per-extruder subjects are dynamic — the lifetime token must be handed to the
+    // observer too, or its guard never learns the subject was deinitialized when
+    // PrinterTemperatureState::init_extruders() re-runs on heater rediscovery (#705).
     nozzle_temp_observer_ = observe_int_sync<DetailedFormatter>(
-        temp_sub, this, [](DetailedFormatter* self, int) { self->update_nozzle_text(); });
+        temp_sub, this, [](DetailedFormatter* self, int) { self->update_nozzle_text(); },
+        nozzle_temp_lifetime_);
     nozzle_target_observer_ = observe_int_sync<DetailedFormatter>(
-        tgt_sub, this, [](DetailedFormatter* self, int) { self->update_nozzle_text(); });
+        tgt_sub, this, [](DetailedFormatter* self, int) { self->update_nozzle_text(); },
+        nozzle_target_lifetime_);
     update_nozzle_text();
     update_tool_label();
     return true;

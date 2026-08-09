@@ -8,6 +8,7 @@
 #include "ams_backend.h"
 #include "ams_step_operation.h"
 #include "ams_types.h"
+#include "async_lifetime_guard.h"
 #include "filament_consumption_tracker.h"
 #include "filament_mapper.h"
 #include "lvgl/lvgl.h"
@@ -869,6 +870,22 @@ class AmsState {
     [[nodiscard]] lv_subject_t* get_slot_remaining_subject(int slot_index);
 
     /**
+     * @brief Get per-slot material-type subject (primary backend).
+     *
+     * Holds the last-synced material string ("PLA", "PETG", …, or "" when the
+     * lane has no material). Written by the status-sync path; a delta bumps
+     * slots_version so the panel's refresh_slots() re-reads the material label
+     * even when the color/status did not change (#1065 — native ZMOD AD5X where
+     * a type change keeps the same color and previously left the label stale).
+     * Primary backend only; secondary-backend material labels refresh via the
+     * color observer's re-read.
+     *
+     * @param slot_index Slot index (0 to MAX_SLOTS-1)
+     * @return Subject pointer or nullptr if out of range
+     */
+    [[nodiscard]] lv_subject_t* get_slot_material_subject(int slot_index);
+
+    /**
      * @brief Get per-slot fill-level subject (primary backend).
      *
      * Holds the fill percent as an int using the SlotInfo::display_fill_pct
@@ -1142,13 +1159,20 @@ class AmsState {
     }
 
     /// @brief Set the active toolchange operation kind.
-    void set_active_step_operation(StepOperationType op) {
-        active_step_operation_.store(op, std::memory_order_relaxed);
-    }
+    ///
+    /// Out-of-line because a change of operation also has to drop the narration
+    /// high-water mark: phase indices are template-relative, and each
+    /// StepOperationType has its own template.
+    void set_active_step_operation(StepOperationType op);
 
     /// Set the current toolchange narration phase index (MAIN THREAD ONLY).
     /// Also mirrors the human label into ams_action_detail for the status line.
     /// index = -1 clears.
+    ///
+    /// The published index is LATCHED so it can only move forwards within one
+    /// operation — see the implementation for why a firmware may legitimately
+    /// re-narrate an earlier phase. index = 0 (the template's first phase) and
+    /// index = -1 both reset the latch.
     void set_narration_phase(int index, const std::string& label);
 
     /**
@@ -1271,6 +1295,13 @@ class AmsState {
     // Subject manager for automatic cleanup
     SubjectManager subjects_;
 
+    /// Expires the setters that marshal themselves to the main thread. Declared
+    /// after `subjects_` so reverse-order member destruction invalidates it
+    /// before the subjects it protects; also invalidated by deinit_subjects(),
+    /// which is the teardown that actually happens on a live instance between
+    /// tests (#1165, #1146).
+    helix::AsyncLifetimeGuard async_lifetime_;
+
     // Backend selector subjects
     lv_subject_t backend_count_;
     lv_subject_t active_backend_;
@@ -1289,6 +1320,10 @@ class AmsState {
     /// Active toolchange operation for the narration router to resolve a phase
     /// index without a sidebar pointer. Defaults to a swap (most common case).
     std::atomic<StepOperationType> active_step_operation_{StepOperationType::LOAD_SWAP};
+    /// Highest phase index published since the current operation began. Guards
+    /// toolchange_step_ against firmware that narrates one phase more than once
+    /// per operation (AFC wipes before AND after the kick). -1 = no phase yet.
+    int narration_phase_high_water_{-1};
     lv_subject_t current_slot_;
     lv_subject_t pending_target_slot_;
     lv_subject_t ams_current_tool_;
@@ -1415,7 +1450,11 @@ class AmsState {
 
     // Currently Loaded display subjects (reactive binding for "Currently Loaded" card)
     lv_subject_t current_material_text_;
-    char current_material_text_buf_[48];
+    // Holds a full filament identity — brand, Spoolman filament name and
+    // material concatenated. lv_subject_copy_string() truncates with
+    // lv_strlcpy and reports nothing, so an undersized buffer clips the label
+    // silently; real Spoolman names run past 50 characters on their own.
+    char current_material_text_buf_[128];
     lv_subject_t current_slot_text_;
     char current_slot_text_buf_[64];
     lv_subject_t current_weight_text_;
@@ -1428,6 +1467,8 @@ class AmsState {
     lv_subject_t slot_statuses_[MAX_SLOTS];
     lv_subject_t slot_remaining_[MAX_SLOTS]; // string: "52m" or "432g" or ""
     char slot_remaining_buf_[MAX_SLOTS][16]; // buffers for remaining strings
+    lv_subject_t slot_materials_[MAX_SLOTS]; // string: "PLA", "PETG", … or "" (last synced type)
+    char slot_materials_buf_[MAX_SLOTS][24]; // buffers for material strings (holds "PETG-CF" etc.)
     lv_subject_t slot_fills_[MAX_SLOTS];     // int: fill percent 0-100, -1 = unknown/no-data
                                              // (SlotInfo::display_fill_pct encoding)
 

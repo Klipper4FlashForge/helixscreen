@@ -19,6 +19,7 @@
 #include <spdlog/spdlog.h>
 
 #include <cstring>
+#include <unordered_set>
 
 using namespace helix;
 
@@ -42,6 +43,14 @@ struct UiButtonData {
     lv_obj_t* label;    // Label widget (always present)
     bool icon_on_right; // true if icon is after text
 
+    // Declared icon placement, recorded at create time. The icon itself may not
+    // exist yet: a button with bind_icon but no static icon= attribute has its
+    // icon created later, during the apply pass, and that pass has no access to
+    // the XML attributes. Without these, a late-created icon always ends up in a
+    // row and icon_position="top"/"bottom" is silently ignored.
+    bool icon_vertical{false};  // icon_position top/bottom, or layout="column"
+    bool icon_on_bottom{false}; // icon comes after the label in a vertical stack
+
     // op-state (bind_op_state): 0=idle, 1=busy (spinner), 2=done (check glyph).
     // op_spinner is an lv_arc lazily created in the icon slot the first time the
     // button goes busy; it is shown/hidden as state changes so the button width
@@ -56,6 +65,21 @@ struct UiButtonData {
 uint64_t next_button_id() {
     static uint64_t n = 1;
     return n++;
+}
+
+// Set of addresses that are currently one of OUR live ui_buttons. A deferred
+// contrast recompute captures a raw lv_obj_t*; by the time it fires the button
+// may have been freed and its address reused. lv_obj_is_valid() only proves the
+// address is *some* live object — it can be a foreign widget whose user_data is
+// a small non-pointer sentinel (e.g. 0x2), and dereferencing that as a
+// UiButtonData* crashes (#1111). Membership here is the missing precondition:
+// only if btn is still a tracked ui_button is its user_data guaranteed to be a
+// real UiButtonData safe to dereference. Function-local static (not namespace
+// scope) to avoid static-init-order issues; main-thread only (create, delete,
+// and queue drain all run on the UI thread), so no locking is needed.
+std::unordered_set<const lv_obj_t*>& live_ui_buttons() {
+    static std::unordered_set<const lv_obj_t*> s;
+    return s;
 }
 
 /**
@@ -287,21 +311,28 @@ void update_button_text_contrast(lv_obj_t* btn) {
     }
 }
 
-// Defer a contrast recompute that survives widget address reuse (#924).
-// lv_obj_is_valid() only confirms the address is *a* live object; a freed
-// button's address can be reallocated to a different ui_button before the
-// deferred tick fires, passing both lv_obj_is_valid and the magic check.
-// Capture the button's unique id at defer time and re-verify identity on the
-// main thread before touching style/state.
+// Defer a contrast recompute that survives widget address reuse.
+// The button may be freed and its address reused before the deferred tick
+// fires. Two independent hazards:
+//   1. Reused by a foreign (non-ui_button) widget whose user_data is a small
+//      non-pointer sentinel (e.g. 0x2). lv_obj_is_valid() passes (a live object
+//      occupies the address) and !d passes, so dereferencing d->magic faults at
+//      the sentinel address (#1111). Guard: reject btn unless it is still one of
+//      our tracked live ui_buttons — only then is user_data a real UiButtonData.
+//   2. Reused by a *different* ui_button. It passes the registry + magic checks,
+//      so re-verify the per-button identity token captured at defer time (#924).
 void defer_button_contrast_update(lv_obj_t* btn) {
     UiButtonData* data = static_cast<UiButtonData*>(lv_obj_get_user_data(btn));
     if (!data || data->magic != UiButtonData::MAGIC)
         return;
     const uint64_t gen = data->id;
     helix::ui::queue_update([btn, gen]() {
-        if (!lv_obj_is_valid(btn))
+        // Hazard 1: never dereference user_data unless btn is still a live
+        // ui_button we own (guards against foreign-widget address reuse, #1111).
+        if (!live_ui_buttons().count(btn))
             return;
         UiButtonData* d = static_cast<UiButtonData*>(lv_obj_get_user_data(btn));
+        // Hazard 2: same address, different ui_button — identity token differs.
         if (!d || d->magic != UiButtonData::MAGIC || d->id != gen)
             return;
         update_button_text_contrast(btn);
@@ -350,6 +381,9 @@ void button_clicked_sound_cb(lv_event_t* e) {
  */
 void button_delete_cb(lv_event_t* e) {
     lv_obj_t* btn = lv_event_get_target_obj(e);
+    // Stop tracking this address before it is freed and possibly reused, so a
+    // pending deferred contrast update rejects the stale pointer (#1111).
+    live_ui_buttons().erase(btn);
     UiButtonData* data = static_cast<UiButtonData*>(lv_obj_get_user_data(btn));
     // Only delete if magic matches - user_data may have been overwritten
     // by Modal::wire_button with a Modal* pointer
@@ -422,7 +456,8 @@ lv_obj_t* create_button_icon(lv_obj_t* btn, const char* icon_name,
  * - variant: Button style (primary/secondary/danger/success/tertiary/warning/ghost/outline)
  * - text: Button label text
  * - icon: Optional icon name (e.g., "settings", "heat_wave")
- * - icon_position: "left" (default) or "right"
+ * - icon_position: "left" (default), "right", "top" or "bottom". Honoured whether
+ *   the icon comes from the static icon= attribute or from a bind_icon subject.
  *
  * @param state XML parser state
  * @param attrs XML attributes
@@ -525,7 +560,9 @@ void* ui_button_create(lv_xml_parser_state_t* state, const char** attrs) {
                                           .id = next_button_id(),
                                           .icon = nullptr,
                                           .label = nullptr,
-                                          .icon_on_right = icon_on_right};
+                                          .icon_on_right = icon_on_right,
+                                          .icon_vertical = vertical_layout,
+                                          .icon_on_bottom = icon_on_bottom};
 
     bool has_icon = (icon_name && strlen(icon_name) > 0);
     const char* bind_text_create = lv_xml_get_value_of(attrs, "bind_text");
@@ -628,6 +665,9 @@ void* ui_button_create(lv_xml_parser_state_t* state, const char** attrs) {
 
     // Store user data on button
     lv_obj_set_user_data(btn, data);
+    // Track this address as a live ui_button so deferred work can verify the
+    // button hasn't been freed and its address reused (#1111).
+    live_ui_buttons().insert(btn);
 
     // Register event handlers
     lv_obj_add_event_cb(btn, button_style_changed_cb, LV_EVENT_STYLE_CHANGED, nullptr);
@@ -925,17 +965,33 @@ void ui_button_apply(lv_xml_parser_state_t* state, const char** attrs) {
 
                 // Position icon appropriately
                 if (data->label) {
-                    // Icon + text: set up flex layout
-                    lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_ROW);
-                    lv_obj_set_flex_align(btn, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
-                                          LV_FLEX_ALIGN_CENTER);
-                    lv_obj_set_style_pad_column(btn, theme_manager_get_spacing("space_xs"),
-                                                LV_PART_MAIN);
+                    // Icon + text: set up flex layout matching the position the
+                    // button declared at create time. Mirrors the static-icon
+                    // layout in ui_button_create().
                     // Clear any centering on the label (it was centered when text-only)
                     lv_obj_set_align(data->label, LV_ALIGN_DEFAULT);
-                    // Position icon before or after text based on icon_on_right
-                    lv_obj_move_to_index(data->icon, data->icon_on_right ? -1 : 0);
-                    spdlog::trace("[ui_button] bind_icon: created icon with flex layout");
+                    lv_obj_set_flex_align(btn, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+                                          LV_FLEX_ALIGN_CENTER);
+
+                    if (data->icon_vertical) {
+                        lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_COLUMN);
+                        // No pad_row - the label carries pad_top instead
+                        lv_obj_set_style_pad_row(btn, 0, LV_PART_MAIN);
+                        lv_obj_move_to_index(data->icon, data->icon_on_bottom ? -1 : 0);
+                        // Small font for vertical layout labels (matches text_small)
+                        lv_obj_set_style_text_font(
+                            data->label, theme_manager_get_font("font_small"), LV_PART_MAIN);
+                        lv_obj_set_style_pad_top(
+                            data->label, theme_manager_get_spacing("space_xxs"), LV_PART_MAIN);
+                    } else {
+                        lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_ROW);
+                        lv_obj_set_style_pad_column(btn, theme_manager_get_spacing("space_xs"),
+                                                    LV_PART_MAIN);
+                        // Position icon before or after text based on icon_on_right
+                        lv_obj_move_to_index(data->icon, data->icon_on_right ? -1 : 0);
+                    }
+                    spdlog::trace("[ui_button] bind_icon: created icon with {} flex layout",
+                                  data->icon_vertical ? "column" : "row");
                 } else {
                     // Icon only: center it
                     lv_obj_center(data->icon);

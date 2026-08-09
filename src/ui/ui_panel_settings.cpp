@@ -59,11 +59,11 @@
 #include "format_utils.h"
 #include "hardware_validator.h"
 #include "helix_version.h"
-#include "input_settings_manager.h"
+#include "i_moonraker_api.h"
 #include "i_moonraker_client.h"
+#include "input_settings_manager.h"
 #include "led/led_controller.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "i_moonraker_api.h"
 #include "moonraker_manager.h"
 #include "observer_factory.h"
 #include "platform_info.h"
@@ -136,24 +136,6 @@ static void on_cancel_escalation_timeout_changed(lv_event_t* e) {
     spdlog::info("[SettingsPanel] Cancel escalation timeout changed: {}s (index {})", seconds,
                  index);
     SafetySettingsManager::instance().set_cancel_escalation_timeout_seconds(seconds);
-}
-
-// Static callback for display dim dropdown
-static void on_display_dim_dropdown_changed(lv_event_t* e) {
-    lv_obj_t* dropdown = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
-    int index = static_cast<int>(lv_dropdown_get_selected(dropdown));
-    int seconds = DisplaySettingsManager::index_to_dim_seconds(index);
-    spdlog::info("[SettingsPanel] Display dim changed: index {} = {}s", index, seconds);
-    DisplaySettingsManager::instance().set_display_dim_sec(seconds);
-}
-
-// Static callback for display sleep dropdown
-static void on_display_sleep_dropdown_changed(lv_event_t* e) {
-    lv_obj_t* dropdown = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
-    int index = static_cast<int>(lv_dropdown_get_selected(dropdown));
-    int seconds = DisplaySettingsManager::index_to_sleep_seconds(index);
-    spdlog::info("[SettingsPanel] Display sleep changed: index {} = {}s", index, seconds);
-    DisplaySettingsManager::instance().set_display_sleep_sec(seconds);
 }
 
 // Static callback for bed mesh render mode dropdown
@@ -353,10 +335,25 @@ void SettingsPanel::init_subjects() {
     lv_xml_register_subject(nullptr, "show_network_settings", &show_network_settings_subject_);
 
     // Update checker runs on all platforms — on Android, "Install Update"
-    // redirects to the Play Store instead of self-updating.
-    lv_subject_init_int(&show_update_settings_subject_, 1);
+    // redirects to the Play Store instead of self-updating. In-app updates are
+    // suppressed for EITHER reason: firmware-managed (explicit flag) OR a
+    // physically-impossible self-update (install tree not writable). Hide the
+    // check/install controls whenever suppressed; show the firmware notice only for
+    // the flag, and a neutral "not available" notice for the physical case.
+    bool externally_managed = updates_externally_managed();
+    bool suppressed = in_app_updates_suppressed();
+    lv_subject_init_int(&show_update_settings_subject_, suppressed ? 0 : 1);
     subjects_.register_subject(&show_update_settings_subject_);
     lv_xml_register_subject(nullptr, "show_update_settings", &show_update_settings_subject_);
+
+    lv_subject_init_int(&updates_firmware_managed_subject_, externally_managed ? 1 : 0);
+    subjects_.register_subject(&updates_firmware_managed_subject_);
+    lv_xml_register_subject(nullptr, "updates_firmware_managed",
+                            &updates_firmware_managed_subject_);
+
+    lv_subject_init_int(&updates_unavailable_subject_, (suppressed && !externally_managed) ? 1 : 0);
+    subjects_.register_subject(&updates_unavailable_subject_);
+    lv_xml_register_subject(nullptr, "updates_unavailable", &updates_unavailable_subject_);
 
     lv_subject_init_int(&show_backlight_settings_subject_, on_android ? 0 : 1);
     subjects_.register_subject(&show_backlight_settings_subject_);
@@ -374,8 +371,6 @@ void SettingsPanel::init_subjects() {
     register_xml_callbacks({
         // Dropdowns
         {"on_completion_alert_changed", on_completion_alert_dropdown_changed},
-        {"on_display_dim_changed", on_display_dim_dropdown_changed},
-        {"on_display_sleep_changed", on_display_sleep_dropdown_changed},
         {"on_bed_mesh_mode_changed", on_bed_mesh_mode_changed},
         {"on_gcode_mode_changed", on_gcode_mode_changed},
         {"on_z_movement_style_changed", on_z_movement_style_changed},
@@ -805,12 +800,6 @@ void SettingsPanel::handle_animations_changed(bool enabled) {
     DisplaySettingsManager::instance().set_animations_enabled(enabled);
 }
 
-void SettingsPanel::handle_display_sleep_changed(int index) {
-    int seconds = DisplaySettingsManager::index_to_sleep_seconds(index);
-    spdlog::info("[{}] Display sleep changed: index {} = {}s", get_name(), index, seconds);
-    DisplaySettingsManager::instance().set_display_sleep_sec(seconds);
-}
-
 void SettingsPanel::handle_led_light_changed(bool enabled) {
     spdlog::info("[{}] LED light toggled: {}", get_name(), enabled ? "ON" : "OFF");
     SettingsManager::instance().set_led_enabled(enabled);
@@ -1011,45 +1000,20 @@ void SettingsPanel::handle_material_temps_clicked() {
 void SettingsPanel::handle_change_host_clicked() {
     spdlog::debug("[{}] Change Host clicked", get_name());
 
-    if (!change_host_modal_) {
-        change_host_modal_ = std::make_unique<ChangeHostModal>();
-    }
-
-    change_host_modal_->set_completion_callback([this](bool changed) {
-        if (!changed)
-            return;
-
-        // Update host display subject from config
-        Config* config = Config::get_instance();
-        std::string host = config->get<std::string>(config->df() + "moonraker_host", "");
-        int port = config->get<int>(config->df() + "moonraker_port", 7125);
-        std::string host_display = host + ":" + std::to_string(port);
-        lv_subject_copy_string(&printer_host_value_subject_, host_display.c_str());
-
-        // Reconnect to the new host
-        IMoonrakerClient* client = get_moonraker_client();
-        MoonrakerManager* manager = get_moonraker_manager();
-
-        if (!client || !manager) {
-            spdlog::error("[{}] Cannot reconnect - client or manager not available", get_name());
+    // Ownership and the reconnect sequence live in show_change_host_modal();
+    // this panel contributes only its own host label refresh. The connection-
+    // failed prompt reaches the same modal, and duplicating the reconnect here
+    // is how the two would drift.
+    helix::ui::show_change_host_modal([this](bool changed) {
+        if (!changed) {
             return;
         }
-
-        // Suppress recovery modal during intentional switch
-        EmergencyStopOverlay::instance().suppress_recovery_dialog(RecoverySuppression::SHORT);
-
-        // Disconnect current connection
-        client->disconnect();
-
-        // Build new URLs and connect with full discovery pipeline
-        std::string ws_url = "ws://" + host + ":" + std::to_string(port) + "/websocket";
-        std::string http_url = "http://" + host + ":" + std::to_string(port);
-
-        spdlog::info("[{}] Reconnecting to {}:{}", get_name(), host, port);
-        manager->connect(ws_url, http_url);
+        Config* config = Config::get_instance();
+        const std::string host = config->get<std::string>(config->df() + "moonraker_host", "");
+        const int port = config->get<int>(config->df() + "moonraker_port", 7125);
+        const std::string host_display = host + ":" + std::to_string(port);
+        lv_subject_copy_string(&printer_host_value_subject_, host_display.c_str());
     });
-
-    change_host_modal_->show_modal(lv_screen_active());
 }
 
 void SettingsPanel::handle_network_clicked() {
@@ -1298,14 +1262,6 @@ void SettingsPanel::on_animations_changed(lv_event_t* e) {
     LVGL_SAFE_EVENT_CB_END();
 }
 
-void SettingsPanel::on_display_sleep_changed(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[SettingsPanel] on_display_sleep_changed");
-    auto* dropdown = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
-    int index = static_cast<int>(lv_dropdown_get_selected(dropdown));
-    get_global_settings_panel().handle_display_sleep_changed(index);
-    LVGL_SAFE_EVENT_CB_END();
-}
-
 void SettingsPanel::on_led_light_changed(lv_event_t* e) {
     LVGL_SAFE_EVENT_CB_BEGIN("[SettingsPanel] on_led_light_changed");
     auto* toggle = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
@@ -1492,11 +1448,25 @@ void SettingsPanel::on_plugins_clicked(lv_event_t* /*e*/) {
 
 void SettingsPanel::on_system_performance_clicked(lv_event_t* /*e*/) {
     LVGL_SAFE_EVENT_CB_BEGIN("[SettingsPanel] on_system_performance_clicked");
-    auto* overlay = helix::ui::UiOverlayPerformance::instance().create(lv_screen_active());
-    if (overlay) {
-        NavigationManager::instance().push_overlay(overlay);
-    }
+    get_global_settings_panel().handle_performance_clicked();
     LVGL_SAFE_EVENT_CB_END();
+}
+
+void SettingsPanel::handle_performance_clicked() {
+    spdlog::debug("[{}] Performance clicked - opening overlay", get_name());
+
+    auto* overlay = helix::ui::UiOverlayPerformance::instance().create(lv_screen_active());
+    if (!overlay) {
+        spdlog::error("[{}] Failed to create Performance overlay", get_name());
+        return;
+    }
+
+    // UiOverlayPerformance carries no IPanelLifecycle, so it registers with a null
+    // lifecycle: that is what separates an intentional lifecycle-less overlay from a
+    // caller who forgot to register. Without it the push is recorded as "unreg" in
+    // panel telemetry and crash breadcrumbs, and strict mode aborts.
+    NavigationManager::instance().register_overlay_instance(overlay, nullptr);
+    NavigationManager::instance().push_overlay(overlay);
 }
 
 void SettingsPanel::on_restart_helix_settings_clicked(lv_event_t* /*e*/) {

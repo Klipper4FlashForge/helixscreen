@@ -191,7 +191,7 @@ JSON status arrives (background thread)
         │
         ▼
 PrinterState::set_*_internal()
-  Posts to LVGL thread via ui_async_call
+  Posts to LVGL thread via ui_queue_update()
         │
         ▼
 PrinterTemperatureState::update_from_status(status)

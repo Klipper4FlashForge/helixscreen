@@ -53,10 +53,13 @@ void populate_discovery(helix::PrinterDiscovery& disc, const nlohmann::json& obj
     disc.parse_objects(objects);
 
     // Hostname from /printer/info result object — guard against null values.
+    // Looked up with find() rather than operator[]: on a const json the subscript
+    // is only JSON_ASSERT-guarded, so a response that omits "hostname" aborts
+    // where asserts are live and is undefined behaviour where they are not.
     if (info.is_object()) {
-        const auto& h = info["hostname"];
-        if (h.is_string())
-            disc.set_hostname(h.get<std::string>());
+        const auto h = info.find("hostname");
+        if (h != info.end() && h->is_string())
+            disc.set_hostname(h->get<std::string>());
     }
 
     // configfile.settings block: kinematics + build volume.

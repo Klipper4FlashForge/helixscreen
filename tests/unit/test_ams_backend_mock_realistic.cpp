@@ -65,8 +65,7 @@ TEST_CASE("AmsBackendMock realistic mode defaults", "[ams][mock][realistic]") {
     }
 }
 
-TEST_CASE("AmsBackendMock realistic mode load operation phases",
-          "[ams][mock][realistic][load][slow]") {
+TEST_CASE("AmsBackendMock realistic mode load operation phases", "[ams][mock][realistic][load]") {
     FastTimingScope timing_guard; // RAII: 1000x speedup, auto-restored
 
     // Declare before backend so they outlive it (backend destructor joins threads)
@@ -89,7 +88,7 @@ TEST_CASE("AmsBackendMock realistic mode load operation phases",
 
     SECTION("load shows HEATING then LOADING then IDLE sequence") {
         // Start with slot 1 (slot 0 is pre-loaded in mock)
-        auto result = backend.unload_filament();
+        auto result = backend.unload_active_filament();
         REQUIRE(result);
 
         // Wait for unload to complete (with 1000x speedup: ~20ms total)
@@ -136,7 +135,7 @@ TEST_CASE("AmsBackendMock realistic mode load operation phases",
 }
 
 TEST_CASE("AmsBackendMock realistic mode unload operation phases",
-          "[ams][mock][realistic][unload][slow]") {
+          "[ams][mock][realistic][unload]") {
     FastTimingScope timing_guard; // RAII: 1000x speedup, auto-restored
 
     // Declare before backend so they outlive it (backend destructor joins threads)
@@ -159,7 +158,7 @@ TEST_CASE("AmsBackendMock realistic mode unload operation phases",
 
     SECTION("unload shows HEATING then CUTTING then UNLOADING sequence") {
         // Slot 0 is pre-loaded, so we can unload directly
-        auto result = backend.unload_filament();
+        auto result = backend.unload_active_filament();
         REQUIRE(result);
 
         // Wait for operation to complete (with 1000x speedup: ~15ms total)
@@ -217,7 +216,7 @@ TEST_CASE("AmsBackendMock simple mode skips extra phases", "[ams][mock][realisti
     });
 
     SECTION("unload in simple mode shows only UNLOADING") {
-        auto result = backend.unload_filament();
+        auto result = backend.unload_active_filament();
         REQUIRE(result);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -256,7 +255,7 @@ TEST_CASE("AmsBackendMock realistic mode completes to IDLE",
 
     SECTION("load completes to IDLE state") {
         // Unload first
-        backend.unload_filament();
+        backend.unload_active_filament();
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
         // Load
@@ -272,7 +271,7 @@ TEST_CASE("AmsBackendMock realistic mode completes to IDLE",
     }
 
     SECTION("unload completes to IDLE state") {
-        backend.unload_filament();
+        backend.unload_active_filament();
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
         auto action = backend.get_current_action();
@@ -286,8 +285,7 @@ TEST_CASE("AmsBackendMock realistic mode completes to IDLE",
     backend.stop();
 }
 
-TEST_CASE("AmsBackendMock realistic mode can be cancelled",
-          "[ams][mock][realistic][cancel][slow]") {
+TEST_CASE("AmsBackendMock realistic mode can be cancelled", "[ams][mock][realistic][cancel]") {
     FastTimingScope timing_guard; // RAII: 1000x speedup, auto-restored
 
     AmsBackendMock backend(4);
@@ -296,7 +294,7 @@ TEST_CASE("AmsBackendMock realistic mode can be cancelled",
     REQUIRE(backend.start());
 
     SECTION("cancel during heating phase") {
-        backend.unload_filament();
+        backend.unload_active_filament();
 
         // Give it a moment to start
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -372,7 +370,7 @@ TEST_CASE("AmsBackendMock tool change shows SELECTING phase",
     backend.stop();
 }
 
-TEST_CASE("AmsBackendMock PAUSED state handling", "[ams][mock][realistic][paused][slow]") {
+TEST_CASE("AmsBackendMock PAUSED state handling", "[ams][mock][realistic][paused]") {
     FastTimingScope timing_guard; // RAII: 1000x speedup, auto-restored
 
     AmsBackendMock backend(4);
@@ -412,7 +410,7 @@ TEST_CASE("AmsBackendMock PAUSED state handling", "[ams][mock][realistic][paused
     backend.stop();
 }
 
-TEST_CASE("AmsBackendMock error recovery sequence", "[ams][mock][realistic][recovery][slow]") {
+TEST_CASE("AmsBackendMock error recovery sequence", "[ams][mock][realistic][recovery]") {
     FastTimingScope timing_guard; // RAII: 1000x speedup, auto-restored
 
     // Declare before backend so they outlive it (backend destructor joins threads)

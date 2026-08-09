@@ -36,6 +36,10 @@ class HomePanel : public PanelBase {
     /// has had a chance to report ams_slot_count), or immediately after setup
     /// when no wizard will run. Idempotent.
     void finalize_setup();
+    /// setup() is deliberately minimal, so a rebuild leaves the fresh widget
+    /// tree empty and the recycled panel widgets still bound to the old one.
+    /// Re-run the finalize pass on the new tree.
+    void repopulate() override;
     void on_activate() override;
     void on_deactivate() override;
     const char* get_name() const override {

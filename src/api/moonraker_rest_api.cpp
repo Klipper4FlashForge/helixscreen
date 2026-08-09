@@ -61,7 +61,8 @@ bool is_safe_endpoint(const std::string& endpoint) {
 // MoonrakerRestAPI Implementation
 // ============================================================================
 
-MoonrakerRestAPI::MoonrakerRestAPI(helix::IMoonrakerClient& client, const std::string& http_base_url)
+MoonrakerRestAPI::MoonrakerRestAPI(helix::IMoonrakerClient& client,
+                                   const std::string& http_base_url)
     : client_(client), http_base_url_(http_base_url) {}
 
 MoonrakerRestAPI::~MoonrakerRestAPI() = default;
@@ -306,7 +307,7 @@ void MoonrakerRestAPI::wled_get_strips(RestCallback on_success, ErrorCallback on
         } else {
             spdlog::debug("[MoonrakerRestAPI] WLED get_strips failed: {}", resp.error);
             if (on_error) {
-                on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN, 0, resp.error, "wled", {}});
+                on_error(MoonrakerError::unknown(resp.error, "wled"));
             }
         }
     });
@@ -323,7 +324,7 @@ void MoonrakerRestAPI::wled_get_status(RestCallback on_success, ErrorCallback on
         } else {
             spdlog::debug("[MoonrakerRestAPI] WLED get_status failed: {}", resp.error);
             if (on_error) {
-                on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN, 0, resp.error, "wled", {}});
+                on_error(MoonrakerError::unknown(resp.error, "wled"));
             }
         }
     });
@@ -340,8 +341,7 @@ void MoonrakerRestAPI::get_server_config(RestCallback on_success, ErrorCallback 
         } else {
             spdlog::warn("[MoonrakerRestAPI] get_server_config failed: {}", resp.error);
             if (on_error) {
-                on_error(MoonrakerError{
-                    MoonrakerErrorType::UNKNOWN, 0, resp.error, "server_config", {}});
+                on_error(MoonrakerError::unknown(resp.error, "server_config"));
             }
         }
     });
@@ -364,19 +364,18 @@ void MoonrakerRestAPI::wled_set_strip(const std::string& strip, const std::strin
     spdlog::debug("[MoonrakerRestAPI] WLED set_strip: strip={} action={} brightness={} preset={}",
                   strip, action, brightness, preset);
 
-    call_rest_post(
-        "/machine/wled/strip", body, [on_success, on_error, strip](const RestResponse& resp) {
-            if (resp.success) {
-                if (on_success) {
-                    on_success();
-                }
-            } else {
-                spdlog::warn("[MoonrakerRestAPI] WLED set_strip '{}' failed: {}", strip,
-                             resp.error);
-                if (on_error) {
-                    on_error(
-                        MoonrakerError{MoonrakerErrorType::UNKNOWN, 0, resp.error, "wled", {}});
-                }
-            }
-        });
+    call_rest_post("/machine/wled/strip", body,
+                   [on_success, on_error, strip](const RestResponse& resp) {
+                       if (resp.success) {
+                           if (on_success) {
+                               on_success();
+                           }
+                       } else {
+                           spdlog::warn("[MoonrakerRestAPI] WLED set_strip '{}' failed: {}", strip,
+                                        resp.error);
+                           if (on_error) {
+                               on_error(MoonrakerError::unknown(resp.error, "wled"));
+                           }
+                       }
+                   });
 }

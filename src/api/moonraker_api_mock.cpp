@@ -7,8 +7,10 @@
 
 #include "../tests/mocks/mock_printer_state.h"
 #include "gcode_parser.h"
+#include "moonraker_client_mock_internal.h"
 #include "power_device_state.h"
 #include "runtime_config.h"
+#include "screws_tilt_parser.h"
 #include "sensor_state.h"
 #include "timelapse_state.h"
 
@@ -157,9 +159,7 @@ void MoonrakerAPIMock::database_get_item(const std::string& namespace_name, cons
         }
     } else {
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::UNKNOWN;
-            err.message = "Key not found in mock DB";
+            MoonrakerError err = MoonrakerError::unknown("Key not found in mock DB");
             on_error(err);
         }
     }
@@ -179,10 +179,7 @@ nlohmann::json MoonrakerAPIMock::mock_get_db_value(const std::string& namespace_
 }
 
 void MoonrakerAPIMock::mock_reject_next_db_post() {
-    MoonrakerError err;
-    err.type = MoonrakerErrorType::UNKNOWN;
-    err.message = "Mock: database_post_item rejected";
-    next_db_post_rejection_ = std::move(err);
+    next_db_post_rejection_ = MoonrakerError::unknown("Mock: database_post_item rejected");
 }
 
 void MoonrakerAPIMock::mock_reject_next_db_post(MoonrakerError err) {
@@ -190,10 +187,7 @@ void MoonrakerAPIMock::mock_reject_next_db_post(MoonrakerError err) {
 }
 
 void MoonrakerAPIMock::mock_reject_next_db_delete() {
-    MoonrakerError err;
-    err.type = MoonrakerErrorType::UNKNOWN;
-    err.message = "Mock: database_delete_item rejected";
-    next_db_delete_rejection_ = std::move(err);
+    next_db_delete_rejection_ = MoonrakerError::unknown("Mock: database_delete_item rejected");
 }
 
 void MoonrakerAPIMock::mock_reject_next_db_delete(MoonrakerError err) {
@@ -201,10 +195,7 @@ void MoonrakerAPIMock::mock_reject_next_db_delete(MoonrakerError err) {
 }
 
 void MoonrakerAPIMock::mock_reject_next_db_get() {
-    MoonrakerError err;
-    err.type = MoonrakerErrorType::UNKNOWN;
-    err.message = "Mock: database_get_namespace rejected";
-    next_db_get_rejection_ = std::move(err);
+    next_db_get_rejection_ = MoonrakerError::unknown("Mock: database_get_namespace rejected");
 }
 
 void MoonrakerAPIMock::mock_reject_next_db_get(MoonrakerError err) {
@@ -292,6 +283,7 @@ void MoonrakerAPIMock::set_database_empty(const std::string& namespace_name,
 void MoonrakerAPIMock::database_post_item(const std::string& namespace_name, const std::string& key,
                                           const json& value, std::function<void()> on_success,
                                           ErrorCallback on_error) {
+    ++db_post_count_;
     if (next_db_post_rejection_.has_value()) {
         MoonrakerError err = std::move(*next_db_post_rejection_);
         next_db_post_rejection_.reset();
@@ -358,6 +350,7 @@ void MoonrakerAPIMock::database_delete_item(const std::string& namespace_name,
                                             const std::string& key,
                                             std::function<void()> on_success,
                                             ErrorCallback on_error) {
+    ++db_delete_count_;
     if (next_db_delete_rejection_.has_value()) {
         MoonrakerError err = std::move(*next_db_delete_rejection_);
         next_db_delete_rejection_.reset();
@@ -475,10 +468,8 @@ void MoonrakerFileTransferAPIMock::download_file(const std::string& root, const 
         spdlog::warn("[MoonrakerAPIMock] File not found in test directories: {}", filename);
 
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::FILE_NOT_FOUND;
-            err.message = "Mock file not found: " + filename;
-            err.method = "download_file";
+            MoonrakerError err =
+                MoonrakerError::file_not_found("download_file", "Mock file not found: " + filename);
             on_error(err);
         }
         return;
@@ -501,10 +492,8 @@ void MoonrakerFileTransferAPIMock::download_file(const std::string& root, const 
         spdlog::error("[MoonrakerAPIMock] Failed to read file that exists: {}", local_path);
 
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::FILE_NOT_FOUND;
-            err.message = "Failed to read test file: " + filename;
-            err.method = "download_file";
+            MoonrakerError err = MoonrakerError::file_not_found(
+                "download_file", "Failed to read test file: " + filename);
             on_error(err);
         }
     }
@@ -530,10 +519,8 @@ void MoonrakerFileTransferAPIMock::download_file_partial(const std::string& root
     if (local_path.empty()) {
         spdlog::warn("[MoonrakerAPIMock] File not found in test directories: {}", filename);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::FILE_NOT_FOUND;
-            err.message = "Mock file not found: " + filename;
-            err.method = "download_file_partial";
+            MoonrakerError err = MoonrakerError::file_not_found("download_file_partial",
+                                                                "Mock file not found: " + filename);
             on_error(err);
         }
         return;
@@ -557,10 +544,8 @@ void MoonrakerFileTransferAPIMock::download_file_partial(const std::string& root
     } else {
         spdlog::error("[MoonrakerAPIMock] Failed to read file: {}", local_path);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::FILE_NOT_FOUND;
-            err.message = "Failed to read test file: " + filename;
-            err.method = "download_file_partial";
+            MoonrakerError err = MoonrakerError::file_not_found(
+                "download_file_partial", "Failed to read test file: " + filename);
             on_error(err);
         }
     }
@@ -606,10 +591,8 @@ void MoonrakerFileTransferAPIMock::download_file_to_path(
         spdlog::warn("[MoonrakerAPIMock] File not found in test directories: {}", filename);
 
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::FILE_NOT_FOUND;
-            err.message = "Mock file not found: " + filename;
-            err.method = "download_file_to_path";
+            MoonrakerError err = MoonrakerError::file_not_found("download_file_to_path",
+                                                                "Mock file not found: " + filename);
             on_error(err);
         }
         return;
@@ -620,10 +603,8 @@ void MoonrakerFileTransferAPIMock::download_file_to_path(
     if (!src) {
         spdlog::error("[MoonrakerAPIMock] Failed to open source file: {}", local_path);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::FILE_NOT_FOUND;
-            err.message = "Failed to read test file: " + filename;
-            err.method = "download_file_to_path";
+            MoonrakerError err = MoonrakerError::file_not_found(
+                "download_file_to_path", "Failed to read test file: " + filename);
             on_error(err);
         }
         return;
@@ -633,10 +614,8 @@ void MoonrakerFileTransferAPIMock::download_file_to_path(
     if (!dst) {
         spdlog::error("[MoonrakerAPIMock] Failed to create destination file: {}", dest_path);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::UNKNOWN;
-            err.message = "Failed to create destination file: " + dest_path;
-            err.method = "download_file_to_path";
+            MoonrakerError err = MoonrakerError::unknown(
+                "Failed to create destination file: " + dest_path, "download_file_to_path");
             on_error(err);
         }
         return;
@@ -690,10 +669,26 @@ void MoonrakerFileTransferAPIMock::download_thumbnail(const std::string& thumbna
                                                       const std::string& cache_path,
                                                       StringCallback on_success,
                                                       ErrorCallback on_error) {
-    (void)on_error; // Unused - mock falls back to placeholder on failure
-
     spdlog::debug("[MoonrakerAPIMock] download_thumbnail: path='{}' -> cache='{}'", thumbnail_path,
                   cache_path);
+
+    // HELIX_MOCK_REMOTE_THUMBS=1 — go through the REAL transfer implementation
+    // so the request actually crosses HTTP to MockHttpFileServer. Resolving the
+    // file locally here is faster and is the right default, but it means the
+    // download → HttpExecutor worker → decode → prescale → evict pipeline is
+    // never executed under --test, which is the pipeline bundle 6F3QJLFG
+    // implicates (#960). This is the only way to reach it without a printer.
+    static const bool remote_thumbs = [] {
+        const char* v = std::getenv("HELIX_MOCK_REMOTE_THUMBS");
+        return v && v[0] && std::string(v) != "0";
+    }();
+    if (remote_thumbs) {
+        MoonrakerFileTransferAPI::download_thumbnail(thumbnail_path, cache_path,
+                                                     std::move(on_success), std::move(on_error));
+        return;
+    }
+
+    (void)on_error; // Unused below - mock falls back to placeholder on failure
 
     namespace fs = std::filesystem;
 
@@ -930,17 +925,21 @@ void MoonrakerRestAPIMock::wled_get_strips(RestCallback on_success, ErrorCallbac
         RestResponse resp;
         resp.success = true;
         resp.status_code = 200;
+        // Moonraker nests the strip map under result.strips — reproduce that envelope
+        // exactly, or parser bugs that read the wrapper key as a strip name go
+        // undetected (prestonbrown/helixscreen#1241).
         resp.data = {{"result",
-                      {{"printer_led",
-                        {{"strip", "printer_led"},
-                         {"status", mock_wled_states_["printer_led"] ? "on" : "off"},
-                         {"brightness", mock_wled_brightness_["printer_led"]},
-                         {"preset", mock_wled_presets_["printer_led"]}}},
-                       {"enclosure_led",
-                        {{"strip", "enclosure_led"},
-                         {"status", mock_wled_states_["enclosure_led"] ? "on" : "off"},
-                         {"brightness", mock_wled_brightness_["enclosure_led"]},
-                         {"preset", mock_wled_presets_["enclosure_led"]}}}}}};
+                      {{"strips",
+                        {{"printer_led",
+                          {{"strip", "printer_led"},
+                           {"status", mock_wled_states_["printer_led"] ? "on" : "off"},
+                           {"brightness", mock_wled_brightness_["printer_led"]},
+                           {"preset", mock_wled_presets_["printer_led"]}}},
+                         {"enclosure_led",
+                          {{"strip", "enclosure_led"},
+                           {"status", mock_wled_states_["enclosure_led"] ? "on" : "off"},
+                           {"brightness", mock_wled_brightness_["enclosure_led"]},
+                           {"preset", mock_wled_presets_["enclosure_led"]}}}}}}}};
         on_success(resp);
     }
 }
@@ -1005,25 +1004,27 @@ void MoonrakerRestAPIMock::wled_get_status(RestCallback on_success, ErrorCallbac
         RestResponse resp;
         resp.success = true;
         resp.status_code = 200;
+        // Same endpoint as wled_get_strips(), same result.strips envelope.
         resp.data = {{"result",
-                      {{"printer_led",
-                        {{"strip", "printer_led"},
-                         {"status", mock_wled_states_["printer_led"] ? "on" : "off"},
-                         {"chain_count", 30},
-                         {"preset", mock_wled_presets_["printer_led"]},
-                         {"brightness", mock_wled_brightness_["printer_led"]},
-                         {"intensity", -1},
-                         {"speed", -1},
-                         {"error", nullptr}}},
-                       {"enclosure_led",
-                        {{"strip", "enclosure_led"},
-                         {"status", mock_wled_states_["enclosure_led"] ? "on" : "off"},
-                         {"chain_count", 60},
-                         {"preset", mock_wled_presets_["enclosure_led"]},
-                         {"brightness", mock_wled_brightness_["enclosure_led"]},
-                         {"intensity", -1},
-                         {"speed", -1},
-                         {"error", nullptr}}}}}};
+                      {{"strips",
+                        {{"printer_led",
+                          {{"strip", "printer_led"},
+                           {"status", mock_wled_states_["printer_led"] ? "on" : "off"},
+                           {"chain_count", 30},
+                           {"preset", mock_wled_presets_["printer_led"]},
+                           {"brightness", mock_wled_brightness_["printer_led"]},
+                           {"intensity", -1},
+                           {"speed", -1},
+                           {"error", nullptr}}},
+                         {"enclosure_led",
+                          {{"strip", "enclosure_led"},
+                           {"status", mock_wled_states_["enclosure_led"] ? "on" : "off"},
+                           {"chain_count", 60},
+                           {"preset", mock_wled_presets_["enclosure_led"]},
+                           {"brightness", mock_wled_brightness_["enclosure_led"]},
+                           {"intensity", -1},
+                           {"speed", -1},
+                           {"error", nullptr}}}}}}}};
         on_success(resp);
     }
 }
@@ -1084,56 +1085,72 @@ MockScrewsTiltState::MockScrewsTiltState() {
 void MockScrewsTiltState::reset() {
     probe_count_ = 0;
 
-    // Initialize 4-corner bed with realistic out-of-level deviations
-    // Positive offset = screw too high, needs CW to lower
-    // Negative offset = screw too low, needs CCW to raise
+    // Initialize 4-corner bed with realistic out-of-level deviations.
+    //
+    // Offsets are mm above (positive) or below (negative) the nominal plane.
+    // Klipper reports diff = z_base - z, so a screw *above* the base prints a
+    // negative diff, which is CCW on a CW-M3 thread. The adjustments below are
+    // what probe_lines() emits at reset for the 0.5 mm M3 pitch the mock
+    // advertises (mock_internal::MOCK_SCREW_THREAD).
+    //
+    // The base deliberately sits mid-range (-18 .. +10 minutes around it): that
+    // is the prestonbrown/helixscreen#1225 shape, where every screw is small on
+    // its own but the corner-to-corner spread is 28 minutes.
     screws_ = {
-        {"front_left", 30.0f, 30.0f, 0.0f, true},      // Reference screw (always 0)
-        {"front_right", 200.0f, 30.0f, 0.15f, false},  // Too high: CW ~3 turns
-        {"rear_right", 200.0f, 200.0f, -0.08f, false}, // Too low: CCW ~1.5 turns
-        {"rear_left", 30.0f, 200.0f, 0.12f, false}     // Too high: CW ~2.5 turns
+        {"front_left", 30.0f, 30.0f, 0.0f, true},      // Base screw (Klipper's reference)
+        {"front_right", 200.0f, 30.0f, 0.15f, false},  // Above base: adjust CCW 00:18
+        {"rear_right", 200.0f, 200.0f, -0.08f, false}, // Below base: adjust CW 00:10
+        {"rear_left", 30.0f, 200.0f, 0.12f, false}     // Above base: adjust CCW 00:14
     };
 
     spdlog::debug("[MockScrewsTilt] Reset bed to initial out-of-level state");
 }
 
-std::vector<ScrewTiltResult> MockScrewsTiltState::probe() {
+std::vector<std::string> MockScrewsTiltState::probe_lines() {
     probe_count_++;
 
-    std::vector<ScrewTiltResult> results;
-    results.reserve(screws_.size());
+    std::vector<std::string> lines;
+    lines.reserve(screws_.size() + 1);
+
+    // Klipper prints this legend before every set of screw lines. It carries no
+    // " :" separator, so parse_screws_tilt_line() must reject it — keeping it in
+    // the mock output means --test exercises that skip path.
+    lines.emplace_back(
+        "// 01:20 means 1 full turn and 20 minutes, CW=clockwise, CCW=counter-clockwise");
 
     // Reference Z height (simulated probe at reference screw)
     const float base_z = 2.50f;
-
+    // Klipper takes the FIRST screw in config order as the base, so its probed
+    // z is the reference every other screw's diff is measured against.
+    float z_base = base_z;
     for (const auto& screw : screws_) {
-        ScrewTiltResult result;
-        result.screw_name = screw.name;
-        result.x_pos = screw.x_pos;
-        result.y_pos = screw.y_pos;
-        result.z_height = base_z + screw.current_offset;
-        result.is_reference = screw.is_reference;
-
         if (screw.is_reference) {
-            // Reference screw shows no adjustment
-            result.adjustment = "";
-        } else {
-            result.adjustment = offset_to_adjustment(screw.current_offset);
-        }
-
-        results.push_back(result);
-    }
-
-    spdlog::info("[MockScrewsTilt] Probe #{}: {} screws measured", probe_count_, results.size());
-    for (const auto& r : results) {
-        if (r.is_reference) {
-            spdlog::debug("  {} (base): z={:.3f}", r.screw_name, r.z_height);
-        } else {
-            spdlog::debug("  {}: z={:.3f}, adjust {}", r.screw_name, r.z_height, r.adjustment);
+            z_base = base_z + screw.current_offset;
+            break;
         }
     }
 
-    return results;
+    char buf[160];
+    for (const auto& screw : screws_) {
+        const float z = base_z + screw.current_offset;
+        if (screw.is_reference) {
+            snprintf(buf, sizeof(buf), "// %s (base) : x=%.1f, y=%.1f, z=%.5f", screw.name.c_str(),
+                     screw.x_pos, screw.y_pos, z);
+        } else {
+            snprintf(buf, sizeof(buf), "// %s : x=%.1f, y=%.1f, z=%.5f : adjust %s",
+                     screw.name.c_str(), screw.x_pos, screw.y_pos, z,
+                     diff_to_adjustment(z_base - z).c_str());
+        }
+        lines.emplace_back(buf);
+    }
+
+    spdlog::info("[MockScrewsTilt] Probe #{}: {} screws measured, bed spread {:.3f}mm ({})",
+                 probe_count_, screws_.size(), spread_mm(), is_level() ? "level" : "out of level");
+    for (const auto& line : lines) {
+        spdlog::debug("  {}", line);
+    }
+
+    return lines;
 }
 
 void MockScrewsTiltState::simulate_user_adjustments() {
@@ -1162,36 +1179,51 @@ void MockScrewsTiltState::simulate_user_adjustments() {
     }
 }
 
-bool MockScrewsTiltState::is_level(float tolerance_mm) const {
-    for (const auto& screw : screws_) {
-        if (screw.is_reference) {
-            continue;
-        }
-        if (std::abs(screw.current_offset) > tolerance_mm) {
-            return false;
-        }
+float MockScrewsTiltState::spread_mm() const {
+    if (screws_.empty()) {
+        return 0.0f;
     }
-    return true;
+    float highest = screws_.front().current_offset;
+    float lowest = screws_.front().current_offset;
+    for (const auto& screw : screws_) {
+        highest = std::max(highest, screw.current_offset);
+        lowest = std::min(lowest, screw.current_offset);
+    }
+    return highest - lowest;
 }
 
-std::string MockScrewsTiltState::offset_to_adjustment(float offset_mm) {
-    // Standard bed screw: M3 with 0.5mm pitch
-    // 1 full turn = 0.5mm of Z change
-    // "Minutes" = 1/60 of a turn (like clock face)
-    const float MM_PER_TURN = 0.5f;
+bool MockScrewsTiltState::is_level(float tolerance_mm) const {
+    // Corner-to-corner spread, not each screw's distance from the base: the base
+    // can sit mid-range, which is exactly how a tilted bed read as level in
+    // prestonbrown/helixscreen#1225. Mirrors evaluate_screw_level().
+    return spread_mm() <= tolerance_mm;
+}
 
-    float abs_offset = std::abs(offset_mm);
-    float turns = abs_offset / MM_PER_TURN;
-    int full_turns = static_cast<int>(turns);
-    int minutes = static_cast<int>((turns - full_turns) * 60.0f);
+std::string MockScrewsTiltState::diff_to_adjustment(float diff_mm) {
+    // Klipper (screws_tilt_adjust.py) computes diff = z_base - z and emits CW
+    // for a positive diff on a CW-M* thread, CCW for a negative one. The mock
+    // must match: emitting the opposite sign is what made --test unable to
+    // reproduce the level-verdict bug (prestonbrown/helixscreen#1225).
+    const float mm_per_turn = screw_thread_pitch_mm(mock_internal::MOCK_SCREW_THREAD);
 
-    // CW (clockwise) lowers the bed corner (reduces positive offset)
-    // CCW (counter-clockwise) raises the bed corner (reduces negative offset)
-    const char* direction = (offset_mm > 0) ? "CW" : "CCW";
+    // Klipper zeroes the adjustment inside a 1 micron deadband *before* dividing
+    // by the pitch, so probe noise never prints as a fraction of a turn.
+    const float adjust = (std::abs(diff_mm) < 0.001f) ? 0.0f : diff_mm / mm_per_turn;
+
+    // Direction is taken from the zeroed value, so a deadbanded diff always
+    // reads CW 00:00 regardless of which side of zero it landed on.
+    const char* direction = (adjust >= 0.0f) ? "CW" : "CCW";
+
+    // math.trunc() + round(decimal * 60) with NO carry into full_turns: real
+    // Klipper genuinely emits "00:60" for a near-full turn, and the mock has to
+    // reproduce that so the parser is tested against what printers actually say.
+    const int full_turns = static_cast<int>(adjust);
+    const float decimal_part = adjust - static_cast<float>(full_turns);
+    const int minutes = static_cast<int>(std::lround(decimal_part * 60.0f));
 
     // Format as "CW 01:15" or "CCW 00:30"
     char buf[24];
-    snprintf(buf, sizeof(buf), "%s %02d:%02d", direction, full_turns, minutes);
+    snprintf(buf, sizeof(buf), "%s %02d:%02d", direction, std::abs(full_turns), std::abs(minutes));
     return std::string(buf);
 }
 
@@ -1204,7 +1236,16 @@ void MoonrakerAdvancedAPIMock::calculate_screws_tilt(ScrewTiltCallback on_succes
     spdlog::info("[MoonrakerAdvancedAPIMock] calculate_screws_tilt called (probe #{})",
                  mock_bed_state_.get_probe_count() + 1);
 
-    auto results = mock_bed_state_.probe();
+    // Feed the simulated console output through the SAME parser the live
+    // collector uses, so --test exercises the line parser and the printer-database
+    // screws_tilt_direction override instead of bypassing both.
+    std::vector<ScrewTiltResult> results;
+    for (const auto& line : mock_bed_state_.probe_lines()) {
+        ScrewTiltResult result;
+        if (helix::parse_screws_tilt_line(line, result)) {
+            results.push_back(std::move(result));
+        }
+    }
 
     // After showing results, simulate user making adjustments
     mock_bed_state_.simulate_user_adjustments();
@@ -1295,7 +1336,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool1.id = 1;
     spool1.vendor = "Polymaker";
     spool1.material = "PLA";
-    spool1.color_name = "Jet Black";
+    spool1.filament_name = "Jet Black";
     spool1.color_hex = "1A1A2E";
     spool1.remaining_weight_g = 850.0;
     spool1.initial_weight_g = 1000.0;
@@ -1311,7 +1352,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool2.id = 2;
     spool2.vendor = "eSUN";
     spool2.material = "Silk PLA";
-    spool2.color_name = "Silk Blue";
+    spool2.filament_name = "Silk Blue";
     spool2.color_hex = "26DCD9";
     spool2.remaining_weight_g = 750.0;
     spool2.initial_weight_g = 1000.0;
@@ -1327,7 +1368,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool3.id = 3;
     spool3.vendor = "Elegoo";
     spool3.material = "ASA";
-    spool3.color_name = "Pop Blue";
+    spool3.filament_name = "Pop Blue";
     spool3.color_hex = "00AEFF";
     spool3.remaining_weight_g = 500.0;
     spool3.initial_weight_g = 1000.0;
@@ -1343,7 +1384,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool4.id = 4;
     spool4.vendor = "Flashforge";
     spool4.material = "ABS";
-    spool4.color_name = "Fire Engine Red";
+    spool4.filament_name = "Fire Engine Red";
     spool4.color_hex = "D20000";
     spool4.remaining_weight_g = 100.0;
     spool4.initial_weight_g = 1000.0;
@@ -1359,7 +1400,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool5.id = 5;
     spool5.vendor = "Kingroon";
     spool5.material = "PETG";
-    spool5.color_name = "Signal Yellow";
+    spool5.filament_name = "Signal Yellow";
     spool5.color_hex = "F4E111";
     spool5.remaining_weight_g = 1000.0;
     spool5.initial_weight_g = 1000.0;
@@ -1375,7 +1416,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool6.id = 6;
     spool6.vendor = "Overture";
     spool6.material = "TPU";
-    spool6.color_name = "Clear";
+    spool6.filament_name = "Clear";
     spool6.color_hex = "E8E8E8";
     spool6.remaining_weight_g = 600.0;
     spool6.initial_weight_g = 1000.0;
@@ -1393,7 +1434,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool7.id = 7;
     spool7.vendor = "Bambu Lab";
     spool7.material = "ASA";
-    spool7.color_name = "Gray ASA";
+    spool7.filament_name = "Gray ASA";
     spool7.color_hex = "8A949E";
     spool7.remaining_weight_g = 1000.0;
     spool7.initial_weight_g = 1000.0;
@@ -1409,7 +1450,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool8.id = 8;
     spool8.vendor = "Polymaker";
     spool8.material = "PC";
-    spool8.color_name = "PolyMax PC Grey";
+    spool8.filament_name = "PolyMax PC Grey";
     spool8.color_hex = "A2AAAD";
     spool8.remaining_weight_g = 500.0;
     spool8.initial_weight_g = 750.0;
@@ -1425,7 +1466,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool9.id = 9;
     spool9.vendor = "Polymaker";
     spool9.material = "PA-CF";
-    spool9.color_name = "Fiberon PA12-CF15 Black";
+    spool9.filament_name = "Fiberon PA12-CF15 Black";
     spool9.color_hex = "000000";
     spool9.remaining_weight_g = 500.0;
     spool9.initial_weight_g = 500.0;
@@ -1441,7 +1482,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool10.id = 10;
     spool10.vendor = "Tinmorry";
     spool10.material = "TPU";
-    spool10.color_name = "Blue TPU";
+    spool10.filament_name = "Blue TPU";
     spool10.color_hex = "435FCC";
     spool10.remaining_weight_g = 900.0;
     spool10.initial_weight_g = 1000.0;
@@ -1457,7 +1498,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool11.id = 11;
     spool11.vendor = "eSUN";
     spool11.material = "ABS";
-    spool11.color_name = "Black ABS+HS";
+    spool11.filament_name = "Black ABS+HS";
     spool11.color_hex = "000000";
     spool11.remaining_weight_g = 400.0;
     spool11.initial_weight_g = 1000.0;
@@ -1473,7 +1514,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool12.id = 12;
     spool12.vendor = "Flashforge";
     spool12.material = "ASA";
-    spool12.color_name = "Dark Green Sparkle ASA";
+    spool12.filament_name = "Dark Green Sparkle ASA";
     spool12.color_hex = "276E27";
     spool12.remaining_weight_g = 350.0;
     spool12.initial_weight_g = 1000.0;
@@ -1489,7 +1530,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool13.id = 13;
     spool13.vendor = "Bambu Lab";
     spool13.material = "PETG";
-    spool13.color_name = "Translucent Green PETG";
+    spool13.filament_name = "Translucent Green PETG";
     spool13.color_hex = "29A261";
     spool13.remaining_weight_g = 1000.0;
     spool13.initial_weight_g = 1000.0;
@@ -1505,7 +1546,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool14.id = 14;
     spool14.vendor = "Eryone";
     spool14.material = "Silk PLA";
-    spool14.color_name = "Gold/Silver/Copper Tri-Color";
+    spool14.filament_name = "Gold/Silver/Copper Tri-Color";
     spool14.color_hex = "D4AF37";                          // Primary color (gold)
     spool14.multi_color_hexes = "#D4AF37,#C0C0C0,#B87333"; // Gold, Silver, Copper
     spool14.remaining_weight_g = 494.0;
@@ -1522,7 +1563,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool15.id = 15;
     spool15.vendor = "Bambu Lab";
     spool15.material = "PLA";
-    spool15.color_name = "Red PLA";
+    spool15.filament_name = "Red PLA";
     spool15.color_hex = "C12E1F";
     spool15.remaining_weight_g = 1000.0;
     spool15.initial_weight_g = 1000.0;
@@ -1538,7 +1579,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool16.id = 16;
     spool16.vendor = "Polymaker";
     spool16.material = "ABS";
-    spool16.color_name = "PolyLite ABS Metallic Blue";
+    spool16.filament_name = "PolyLite ABS Metallic Blue";
     spool16.color_hex = "333C64";
     spool16.remaining_weight_g = 174.0;
     spool16.initial_weight_g = 1000.0;
@@ -1554,7 +1595,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool17.id = 17;
     spool17.vendor = "Sunlu";
     spool17.material = "PETG";
-    spool17.color_name = "Black PETG";
+    spool17.filament_name = "Black PETG";
     spool17.color_hex = "000000";
     spool17.remaining_weight_g = 550.0;
     spool17.initial_weight_g = 1000.0;
@@ -1570,7 +1611,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool18.id = 18;
     spool18.vendor = "eSUN";
     spool18.material = "PLA+";
-    spool18.color_name = "PLA+ White";
+    spool18.filament_name = "PLA+ White";
     spool18.color_hex = "FFFFFF";
     spool18.remaining_weight_g = 300.0;
     spool18.initial_weight_g = 1000.0;
@@ -1586,7 +1627,7 @@ void MoonrakerSpoolmanAPIMock::init_mock_spools() {
     spool19.id = 19;
     spool19.vendor = "TTYT3D";
     spool19.material = "Marble PLA";
-    spool19.color_name = "Black/White Marble";
+    spool19.filament_name = "Black/White Marble";
     spool19.color_hex = "202020";                  // Primary color (dark base)
     spool19.multi_color_hexes = "#202020,#F0F0F0"; // Black, White
     spool19.remaining_weight_g = 850.0;
@@ -1606,10 +1647,8 @@ void MoonrakerSpoolmanAPIMock::fail_spoolman_unavailable(const std::string& meth
     spdlog::debug("[MoonrakerAPIMock] {}() -> Spoolman disabled, failing like the real proxy",
                   method);
     if (on_error) {
-        MoonrakerError err;
-        err.type = MoonrakerErrorType::JSON_RPC_ERROR;
-        err.message = "Spoolman component not available";
-        err.method = method;
+        MoonrakerError err =
+            MoonrakerError::json_rpc_error(method, "Spoolman component not available");
         on_error(err);
     }
 }
@@ -1755,7 +1794,7 @@ void MoonrakerSpoolmanAPIMock::update_spoolman_spool(int spool_id, const nlohman
                 for (const auto& f : mock_filaments_) {
                     if (f.id == spool.filament_id) {
                         spool.material = f.material;
-                        spool.color_name = f.color_name;
+                        spool.filament_name = f.filament_name;
                         spool.color_hex = f.color_hex;
                         spool.vendor_id = f.vendor_id;
                         spool.vendor = f.vendor_name;
@@ -1881,7 +1920,7 @@ void MoonrakerSpoolmanAPIMock::get_spoolman_filaments(FilamentListCallback on_su
         filaments.push_back(mf);
         seen_ids.insert(mf.id);
         // Track by key to avoid duplicates with spool-synthesized entries
-        std::string key = mf.vendor_name + "|" + mf.material + "|" + mf.color_name;
+        std::string key = mf.vendor_name + "|" + mf.material + "|" + mf.filament_name;
         seen.insert(key);
         // Ensure auto-assigned IDs don't collide
         if (mf.id >= next_id) {
@@ -1891,14 +1930,14 @@ void MoonrakerSpoolmanAPIMock::get_spoolman_filaments(FilamentListCallback on_su
 
     // Synthesize filaments from spools (skip duplicates already covered above)
     for (const auto& spool : mock_spools_) {
-        std::string key = spool.vendor + "|" + spool.material + "|" + spool.color_name;
+        std::string key = spool.vendor + "|" + spool.material + "|" + spool.filament_name;
         if (seen.find(key) == seen.end()) {
             seen.insert(key);
             FilamentInfo f;
             f.id = next_id++;
             f.vendor_name = spool.vendor;
             f.material = spool.material;
-            f.color_name = spool.color_name;
+            f.filament_name = spool.filament_name;
             f.color_hex = spool.color_hex;
             f.diameter = 1.75f;
             f.weight = static_cast<float>(spool.initial_weight_g);
@@ -1963,7 +2002,7 @@ void MoonrakerSpoolmanAPIMock::create_spoolman_filament(const nlohmann::json& fi
     FilamentInfo filament;
     filament.id = next_created_filament_id > 0 ? next_created_filament_id : next_filament_id_++;
     filament.material = filament_data.value("material", "");
-    filament.color_name = filament_data.value("color_name", "");
+    filament.filament_name = filament_data.value("name", "");
     filament.color_hex = filament_data.value("color_hex", "");
     filament.diameter = filament_data.value("diameter", 1.75f);
     filament.weight = filament_data.value("weight", 0.0f);
@@ -2015,7 +2054,7 @@ void MoonrakerSpoolmanAPIMock::create_spoolman_spool(const nlohmann::json& spool
         for (const auto& f : mock_filaments_) {
             if (f.id == spool.filament_id) {
                 spool.material = f.material;
-                spool.color_name = f.color_name;
+                spool.filament_name = f.filament_name;
                 spool.color_hex = f.color_hex;
                 spool.vendor_id = f.vendor_id;
                 spool.vendor = f.vendor_name;
@@ -2115,7 +2154,7 @@ void MoonrakerSpoolmanAPIMock::get_spoolman_external_filaments(const std::string
     f1.id = 1;
     f1.vendor_name = vendor_name;
     f1.material = "PLA";
-    f1.color_name = "Black";
+    f1.filament_name = "Black";
     f1.color_hex = "000000";
     f1.diameter = 1.75f;
     f1.weight = 1000.0f;
@@ -2129,7 +2168,7 @@ void MoonrakerSpoolmanAPIMock::get_spoolman_external_filaments(const std::string
     f2.id = 2;
     f2.vendor_name = vendor_name;
     f2.material = "PLA";
-    f2.color_name = "White";
+    f2.filament_name = "White";
     f2.color_hex = "FFFFFF";
     f2.diameter = 1.75f;
     f2.weight = 1000.0f;
@@ -2143,7 +2182,7 @@ void MoonrakerSpoolmanAPIMock::get_spoolman_external_filaments(const std::string
     f3.id = 3;
     f3.vendor_name = vendor_name;
     f3.material = "PETG";
-    f3.color_name = "Blue";
+    f3.filament_name = "Blue";
     f3.color_hex = "0000FF";
     f3.diameter = 1.75f;
     f3.weight = 1000.0f;
@@ -2187,7 +2226,7 @@ void MoonrakerSpoolmanAPIMock::get_spoolman_filaments(int vendor_id,
         f.id = next_id++;
         f.vendor_name = spool.vendor;
         f.material = spool.material;
-        f.color_name = spool.color_name;
+        f.filament_name = spool.filament_name;
         f.color_hex = spool.color_hex;
         f.diameter = 1.75f;
         f.weight = static_cast<float>(spool.initial_weight_g);
@@ -2352,7 +2391,7 @@ void MoonrakerSpoolmanAPIMock::assign_spool_to_slot(int slot_index, int spool_id
 
     slot_spool_map_[slot_index] = spool_id;
     spdlog::info("[MoonrakerAPIMock] Assigned spool {} ({} {}) to slot {}", spool_id, spool->vendor,
-                 spool->color_name, slot_index);
+                 spool->filament_name, slot_index);
 }
 
 void MoonrakerSpoolmanAPIMock::unassign_spool_from_slot(int slot_index) {
@@ -2413,7 +2452,7 @@ void MoonrakerSpoolmanAPIMock::consume_filament(float grams, int slot_index) {
 
             spdlog::debug(
                 "[MoonrakerAPIMock] Consumed {:.1f}g from spool {} ({}): {:.1f}g -> {:.1f}g", grams,
-                spool_id, spool.color_name, old_weight, spool.remaining_weight_g);
+                spool_id, spool.filament_name, old_weight, spool.remaining_weight_g);
             return;
         }
     }

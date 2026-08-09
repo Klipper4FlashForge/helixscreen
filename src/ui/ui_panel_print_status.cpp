@@ -10,6 +10,7 @@
 #include "ui_event_safety.h"
 #include "ui_exclude_object_map_view.h"
 #include "ui_fan_control_overlay.h"
+#include "ui_filament_mapping_card.h"
 #include "ui_filename_utils.h"
 #include "ui_gcode_viewer.h"
 #include "ui_modal.h"
@@ -29,22 +30,28 @@
 #include "config.h"
 #include "display_manager.h"
 #include "display_settings_manager.h"
+#include "filament_mapper.h"
 #include "filament_sensor_manager.h"
 #include "format_utils.h"
+#include "gcode_parser.h"
 #include "helix-xml/src/xml/lv_xml.h"
+#include "i_moonraker_api.h"
 #include "injection_point_manager.h"
+#include "layout_manager.h"
 #include "led/led_controller.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "memory_monitor.h"
 #include "memory_utils.h"
-#include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "preprint_predictor.h"
+#include "print_status_layout_decision.h"
 #include "print_status_preview_decision.h"
 #include "printer_state.h"
 #include "runtime_config.h"
+#include "settings_manager.h"
 #include "static_panel_registry.h"
 #include "system/crash_handler.h"
+#include "temp_graph_controller.h"
 #include "theme_manager.h"
 #include "thumbnail_cache.h"
 #include "thumbnail_processor.h"
@@ -63,6 +70,7 @@ using helix::gcode::resolve_gcode_filename;
 #include <fstream>
 #include <memory>
 #include <set>
+#include <sstream>
 #include <vector>
 
 // Global instance for legacy API and resize callback
@@ -198,11 +206,6 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, IMoonrakerAPI* a
     print_start_phase_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_print_start_phase_subject(), this,
         [](PrintStatusPanel* self, int phase) { self->on_print_start_phase_changed(phase); });
-    print_start_message_observer_ =
-        observe_string<PrintStatusPanel>(printer_state_.get_print_start_message_subject(), this,
-                                         [](PrintStatusPanel* self, const char* message) {
-                                             self->on_print_start_message_changed(message);
-                                         });
     print_start_progress_observer_ =
         observe_int_sync<PrintStatusPanel>(printer_state_.get_print_start_progress_subject(), this,
                                            [](PrintStatusPanel* self, int progress) {
@@ -316,6 +319,12 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, IMoonrakerAPI* a
 }
 
 PrintStatusPanel::~PrintStatusPanel() {
+    // Before deinit_subjects(): the mini-graph's observers are attached to
+    // PrinterState subjects, and detaching them after those are freed is the
+    // exact use-after-free ObserverGuard exists to prevent. Synchronous delete —
+    // nothing will drain the async queue on the way out.
+    destroy_temp_graph(/*defer_delete=*/false);
+
     deinit_subjects();
 
     // Expire all outstanding async callback tokens before destroying resources
@@ -402,8 +411,6 @@ void PrintStatusPanel::init_subjects() {
 
     // Preparing state subjects
     UI_MANAGED_SUBJECT_INT(preparing_visible_subject_, 0, "preparing_visible", subjects_);
-    UI_MANAGED_SUBJECT_STRING(preparing_operation_subject_, preparing_operation_buf_,
-                              "Preparing...", "preparing_operation", subjects_);
     UI_MANAGED_SUBJECT_INT(preparing_progress_subject_, 0, "preparing_progress", subjects_);
 
     // Progress bar subject (integer 0-100 for XML bind_value)
@@ -417,6 +424,12 @@ void PrintStatusPanel::init_subjects() {
     // and bind_fan_speeds respectively; default to 0 so the row stays hidden
     // until the first recompute fires after attach).
     UI_MANAGED_SUBJECT_INT(fans_fit_subject_, 0, "print_status_fans_fit", subjects_);
+
+    // Portrait temperature mini-graph fit (set by recompute_graph_fits from the
+    // slack the preview aspect cap parks in the absorber). Defaults to 0 so the
+    // graph stays hidden until the first measured recompute after attach —
+    // landscape and every non-capped portrait size never leave that state.
+    UI_MANAGED_SUBJECT_INT(graph_fits_subject_, 0, "print_status_graph_fits", subjects_);
     UI_MANAGED_SUBJECT_INT(aux_fan_present_subject_, 0, "print_status_aux_fan_present", subjects_);
 
     // Density + composite subjects for 3-tier adaptive content.
@@ -428,12 +441,23 @@ void PrintStatusPanel::init_subjects() {
     UI_MANAGED_SUBJECT_INT(aux_short_visible_subject_, 0, "print_status_aux_short_visible",
                            subjects_);
 
-    // Fan classification refresh on discovery
+    // Fan classification refresh: on discovery (structural, fans_version) and on
+    // runtime part-fan reassignment as fans start/stop (primary_fans_version, #1124).
     {
         auto token = lifetime_.token();
         fans_version_observer_ =
             observe_int_sync<PrintStatusPanel>(printer_state_.get_fans_version_subject(), this,
                                                [token](PrintStatusPanel* self, int /*v*/) {
+                                                   if (token.expired())
+                                                       return;
+                                                   self->bind_fan_observers();
+                                               });
+    }
+    {
+        auto token = lifetime_.token();
+        primary_fans_version_observer_ =
+            observe_int_sync<PrintStatusPanel>(printer_state_.get_primary_fans_version_subject(),
+                                               this, [token](PrintStatusPanel* self, int /*v*/) {
                                                    if (token.expired())
                                                        return;
                                                    self->bind_fan_observers();
@@ -598,6 +622,7 @@ void PrintStatusPanel::init_subjects() {
         {"on_print_status_tune", on_tune_clicked},
         {"on_print_status_reprint", on_reprint_clicked},
         {"on_temp_card_clicked", on_temp_card_clicked},
+        {"on_print_status_graph_clicked", on_temp_graph_clicked},
         {"on_print_status_objects", on_objects_clicked},
         {"on_view_toggle", on_view_toggle_clicked},
         {"on_print_status_dismiss_overlay", on_dismiss_overlay_clicked},
@@ -629,8 +654,6 @@ void PrintStatusPanel::init_subjects() {
     int initial_phase = lv_subject_get_int(printer_state_.get_print_start_phase_subject());
     if (initial_phase != 0) {
         on_print_start_phase_changed(initial_phase);
-        auto* msg = lv_subject_get_string(printer_state_.get_print_start_message_subject());
-        on_print_start_message_changed(msg);
         int prog = lv_subject_get_int(printer_state_.get_print_start_progress_subject());
         on_print_start_progress_changed(prog);
         spdlog::debug("[{}] Synced initial preparation state: phase={}, progress={}%", get_name(),
@@ -663,6 +686,7 @@ void PrintStatusPanel::deinit_subjects() {
 
     // Fan-row observers — lifetimes BEFORE observer guards per [L084]
     fans_version_observer_.reset();
+    primary_fans_version_observer_.reset();
     animations_enabled_observer_.reset();
     breakpoint_observer_.reset();
     filament_sensor_count_observer_.reset();
@@ -697,7 +721,8 @@ lv_obj_t* PrintStatusPanel::create(lv_obj_t* parent) {
 
     spdlog::debug("[{}] Setting up panel...", get_name());
 
-    // Panel width is set via XML using #overlay_panel_width_large (same as print_file_detail)
+    // Width comes from NavigationManager::push_overlay() — this panel declares
+    // is_destination() so it renders full width from every entry point (#1178).
     // Use standard overlay panel setup for header/content/back button
     ui_overlay_panel_setup_standard(overlay_root_, parent_screen_, "overlay_header",
                                     "overlay_content");
@@ -926,6 +951,12 @@ lv_obj_t* PrintStatusPanel::create(lv_obj_t* parent) {
         spdlog::warn("[{}] controls_section not found — SIZE_CHANGED not wired", get_name());
     }
 
+    // Thermal tint for the temp-card heater icons. The binder owns its own
+    // observers, so this needs no hook into on_temperature_changed().
+    nozzle_icon_binder_.bind(overlay_root_, printer_state_, helix::HeaterType::Nozzle);
+    bed_icon_binder_.bind(overlay_root_, printer_state_, helix::HeaterType::Bed);
+    chamber_icon_binder_.bind(overlay_root_, printer_state_, helix::HeaterType::Chamber);
+
     // Initial density + fit recompute is scheduled from on_activate() — running
     // it here is futile because overlay_root_ is HIDDEN until activation, and a
     // hidden subtree has 0-width layout in LVGL (so measurement returns 0).
@@ -993,11 +1024,26 @@ void PrintStatusPanel::on_activate() {
     // non-zero widths for the row. Deferred so layout has at least one tick to
     // settle after on_activate() un-hides the panel.
     {
+        // Re-resolve which fan owns each slot and re-seed the labels. Seeding
+        // alone is not enough: the compact row can be stale because the *name* is
+        // stale, not just the value — classify_primary_fans() is runtime-adaptive
+        // (#1124), so re-reading part_fan_name_'s subject would faithfully
+        // re-display the wrong fan. bind_fan_observers() refreshes the names and
+        // ends each rebind with a seed, which covers both (#1181).
+        bind_fan_observers();
+
         auto token = lifetime_.token();
         token.defer("PrintStatusPanel::on_activate_fan_row_recompute", [this]() {
             recompute_fans_density();
             recompute_fans_fit();
         });
+    }
+
+    // Resume the mini-graph and pull in whatever landed while we were off-screen.
+    // resume() backfills, so the trace is continuous rather than starting a fresh
+    // segment at re-entry.
+    if (temp_graph_controller_) {
+        temp_graph_controller_->resume();
     }
 
     crash_handler::breadcrumb::note("pstat_act", "exit");
@@ -1048,6 +1094,13 @@ void PrintStatusPanel::on_deactivate() {
     if (runout_handler_) {
         runout_handler_->hide_modal();
     }
+
+    // Stop feeding the mini-graph while it is off-screen — same reasoning as
+    // pausing the G-code viewer above. History keeps accumulating in the manager,
+    // so on_activate()'s resume() backfills the gap.
+    if (temp_graph_controller_) {
+        temp_graph_controller_->pause();
+    }
 }
 
 void PrintStatusPanel::cleanup() {
@@ -1085,6 +1138,16 @@ void PrintStatusPanel::on_ui_destroyed() {
         exclude_manager_.reset();
     }
 
+    // Tear the mini-graph down while its container is still addressable, and
+    // drop the fit decision with it: a rebuilt tree starts with no controller,
+    // so leaving the subject at 1 would un-hide an empty container until the
+    // first post-activate recompute.
+    destroy_temp_graph();
+    preview_slack_h_ = 0;
+    if (subjects_initialized_) {
+        lv_subject_set_int(&graph_fits_subject_, 0);
+    }
+
     // Null all child widget pointers (widget tree is already deleted by base class)
     progress_bar_ = nullptr;
     preparing_progress_bar_ = nullptr;
@@ -1101,6 +1164,15 @@ void PrintStatusPanel::on_ui_destroyed() {
     cancel_badge_ = nullptr;
     error_badge_ = nullptr;
     overlay_header_ = nullptr;
+
+    // Heater icon animators — at this point the widget tree is only hidden
+    // and reparented to the top layer (destroy_overlay_ui() defers the actual
+    // deletion to the next tick, see overlay_base.h), so the icons are still
+    // valid and the binders are still bound. Unbind explicitly here rather
+    // than relying on the eventual deferred LV_EVENT_DELETE.
+    nozzle_icon_binder_.unbind();
+    bed_icon_binder_.unbind();
+    chamber_icon_binder_.unbind();
 
     // Reset widget-dependent state
     resize_registered_ = false;
@@ -1322,14 +1394,31 @@ void PrintStatusPanel::show_exclude_map_view() {
         }
     }
 
-    // right_section is 4/9 ≈ 44% of overlay_content; side list at the same
-    // percentage exactly covers the controls column.
-    constexpr int kSideListWidthPct = 44;
+    // Which edge the list covers depends on where the controls are: the right
+    // column in landscape, the bottom of the stack in portrait. Landscape is
+    // exact from the flex_grow ratio and needs no measurement; portrait sizes
+    // the list to the control stack it has to cover, so measure it here — the
+    // panel is already laid out by the time the map view opens. See
+    // helix::ui::exclude_side_list_geometry().
+    const bool portrait = helix::is_portrait_layout(helix::LayoutManager::instance().type());
+    int32_t controls_h = 0;
+    int32_t content_h = 0;
+    int32_t list_gap = 0;
+    if (portrait) {
+        lv_obj_update_layout(overlay_content);
+        if (lv_obj_t* controls = lv_obj_find_by_name(overlay_content, "controls_section")) {
+            controls_h = lv_obj_get_height(controls);
+        }
+        content_h = lv_obj_get_content_height(overlay_content);
+        list_gap = lv_obj_get_style_pad_row(overlay_content, LV_PART_MAIN);
+    }
+    const auto list_geom =
+        helix::ui::exclude_side_list_geometry(portrait, controls_h, content_h, list_gap);
 
     side_list_ = std::make_unique<helix::ui::ExcludeObjectSideList>();
     side_list_->set_close_callback([this]() { hide_exclude_map_view(); });
     side_list_->set_gcode_viewer(gcode_viewer_);
-    side_list_->create(overlay_content, &printer_state_, exclude_manager_.get(), kSideListWidthPct);
+    side_list_->create(overlay_content, &printer_state_, exclude_manager_.get(), list_geom);
 
     // Tapping an object in the viewer should request exclude, mirroring the
     // side list's row taps. Installed regardless of current view mode so that
@@ -1726,6 +1815,16 @@ void PrintStatusPanel::on_temp_card_clicked(lv_event_t* e) {
     LVGL_SAFE_EVENT_CB_END();
 }
 
+// The mini-graph is a summary; the full overlay is the detail view. Tapping it
+// opens exactly what tapping the temp chips opens, so both entry points land on
+// one code path rather than two that can drift.
+void PrintStatusPanel::on_temp_graph_clicked(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[PrintStatusPanel] on_temp_graph_clicked");
+    (void)e;
+    get_global_print_status_panel().handle_temp_card_click();
+    LVGL_SAFE_EVENT_CB_END();
+}
+
 void PrintStatusPanel::on_dismiss_overlay_clicked(lv_event_t* e) {
     LVGL_SAFE_EVENT_CB_BEGIN("[PrintStatusPanel] on_dismiss_overlay_clicked");
     (void)e;
@@ -2109,12 +2208,222 @@ void PrintStatusPanel::recompute_fans_density() {
     }
 }
 
+// DECLARATIVE_OK: the ceiling is a function of the card's MEASURED width, which
+// no style attribute can express — the measured-layout structural exception.
+void PrintStatusPanel::apply_preview_height_cap() {
+    if (!overlay_root_) {
+        return;
+    }
+    // Portrait only. The landscape card sits in a row at roughly 380x392
+    // (aspect ~1.03), so it could never reach a 1.30 ceiling anyway — but the
+    // landscape XML has no absorber to size either, so bail before touching it.
+    // There is no slack in landscape by construction, which is exactly what the
+    // graph gate needs to hear: report zero rather than leaving a portrait
+    // reading latched after a rotation.
+    if (!helix::is_portrait_layout(helix::LayoutManager::instance().type())) {
+        note_preview_slack(0);
+        return;
+    }
+    lv_obj_t* card = lv_obj_find_by_name(overlay_root_, "thumbnail_section");
+    lv_obj_t* strip = lv_obj_find_by_name(overlay_root_, "metadata_clip");
+    lv_obj_t* slack = lv_obj_find_by_name(overlay_root_, "preview_slack");
+    if (!card || !strip || !slack) {
+        return;
+    }
+
+    lv_obj_t* content = lv_obj_find_by_name(overlay_root_, "overlay_content");
+    lv_obj_update_layout(content ? content : card);
+
+    // The band is the card's CONTENT width; the card's own border/padding is
+    // chrome and rides along with the strip in the ceiling.
+    const int32_t band_w = lv_obj_get_content_width(card);
+    const int32_t chrome_h =
+        lv_obj_get_height(strip) + (lv_obj_get_height(card) - lv_obj_get_content_height(card));
+    const int32_t max_h = helix::ui::portrait_preview_card_max_height(band_w, chrome_h);
+    if (max_h <= 0) {
+        return; // not measurable yet; leave the layout alone
+    }
+
+    const char* space_md_str = lv_xml_get_const(nullptr, "space_md");
+    const int32_t gap = space_md_str ? std::atoi(space_md_str) : 8;
+
+    // Space the card and the absorber share. Invariant under the absorber's own
+    // state, which is what makes re-running this a fixed point: when the
+    // absorber is visible it costs its height plus one gap, and both come back.
+    const bool shown = !lv_obj_has_flag(slack, LV_OBJ_FLAG_HIDDEN);
+    const int32_t avail = lv_obj_get_height(card) + (shown ? lv_obj_get_height(slack) + gap : 0);
+
+    const int32_t want = helix::ui::portrait_preview_slack(max_h, avail, gap);
+
+    // The absorber's visibility is not application state, it is the same measured
+    // layout decision as its height: hidden is how a fixed-size flex child costs
+    // ZERO, because LVGL's flex pass skips hidden children's size AND their gap.
+    // A subject here would be a second name for `want > 0` with no other reader.
+    if (want != (shown ? lv_obj_get_height(slack) : 0)) {
+        if (want > 0) {
+            lv_obj_set_height(slack, want);
+            // DECLARATIVE_OK: measured-layout absorber; visibility is `want > 0`.
+            lv_obj_remove_flag(slack, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_set_height(slack, 0);
+            // DECLARATIVE_OK: measured-layout absorber; hidden is how it costs zero.
+            lv_obj_add_flag(slack, LV_OBJ_FLAG_HIDDEN);
+        }
+        // Settle the absorber before measuring its content width below — the
+        // graph's ceiling is a function of that width, and a just-unhidden child
+        // has no resolved percentage size until the layout pass runs.
+        lv_obj_update_layout(content ? content : slack);
+    }
+
+    // Cap the graph, not the absorber. The absorber must keep the WHOLE slack or
+    // the preview card grows straight back into it; the leftover under the graph
+    // is transparent and reads as background between the graph and the controls.
+    // Sized BEFORE note_preview_slack() publishes the fit subject, so the
+    // container is never un-hidden at a height nobody chose.
+    const int32_t graph_h = helix::ui::portrait_graph_height(lv_obj_get_content_width(slack), want);
+    if (graph_h > 0) {
+        if (lv_obj_t* graph = lv_obj_find_by_name(slack, "temp_graph_container")) {
+            // DECLARATIVE_OK: measured-layout ceiling, same reason as the absorber.
+            lv_obj_set_height(graph, graph_h);
+        }
+    }
+
+    note_preview_slack(want);
+    spdlog::debug("[{}] preview cap: band_w={} chrome_h={} max_h={} avail={} slack={} graph_h={}",
+                  get_name(), band_w, chrome_h, max_h, avail, want, graph_h);
+}
+
+void PrintStatusPanel::note_preview_slack(int32_t slack_h) {
+    preview_slack_h_ = slack_h;
+    recompute_graph_fits();
+}
+
+void PrintStatusPanel::recompute_graph_fits() {
+    if (!subjects_initialized_) {
+        return;
+    }
+    const int current = lv_subject_get_int(&graph_fits_subject_);
+    const bool next = helix::ui::portrait_graph_fits(preview_slack_h_, current == 1);
+
+    // Build BEFORE publishing, never after: the subject is what un-hides the
+    // container, so flipping it first would show an empty box for however many
+    // frames the controller takes to draw its first trace.
+    if (next) {
+        ensure_temp_graph();
+    }
+
+    if (static_cast<int>(next) != current) {
+        spdlog::debug("[{}] graph_fits {} -> {} (slack={}, needed={})", get_name(), current,
+                      static_cast<int>(next), preview_slack_h_, helix::ui::kMinTempGraphHeightPx);
+        lv_subject_set_int(&graph_fits_subject_, next ? 1 : 0);
+    }
+}
+
+void PrintStatusPanel::ensure_temp_graph() {
+    if (temp_graph_controller_) {
+        return; // already live — keep the backfilled trace
+    }
+    if (!overlay_root_) {
+        return;
+    }
+    lv_obj_t* container = lv_obj_find_by_name(overlay_root_, "temp_graph_container");
+    if (!container) {
+        return; // landscape variant has no absorber, so no container either
+    }
+
+    helix::TempGraphControllerConfig cfg;
+    // 180 points, not the 1200-point default. This graph is on screen DURING a
+    // print, which is the worst moment to spend redraw time — 1200 points across
+    // N series is what froze the K2 Plus touch UI in #979. At 1 Hz sampling 180
+    // points is still three minutes of trace, more than the band can resolve.
+    cfg.point_count = 180;
+    cfg.axis_size = "xs";
+    // Lines and target lines only. The band is ~300px wide: axis labels would eat
+    // most of the plot, a legend would eat the rest, and gradients are pure fill
+    // cost for a strip this short.
+    cfg.initial_features = TEMP_GRAPH_FEATURE_LINES | TEMP_GRAPH_FEATURE_TARGET_LINES;
+
+    helix::TempGraphSeriesSpec nozzle;
+    nozzle.klipper_name = printer_state_.temperature_state().active_extruder_name();
+    nozzle.display_name = lv_tr("Nozzle");
+    nozzle.color = helix::TEMP_GRAPH_SERIES_COLORS[0];
+    nozzle.show_target = true;
+
+    helix::TempGraphSeriesSpec bed;
+    bed.klipper_name = "heater_bed";
+    bed.display_name = lv_tr("Bed");
+    bed.color = helix::TEMP_GRAPH_SERIES_COLORS[1];
+    bed.show_target = true;
+
+    cfg.series = {std::move(nozzle), std::move(bed)};
+
+    // Chamber only when the printer actually has one. printer_has_chamber is the
+    // union of heater and sensor.
+    //
+    // The name must be the DISCOVERED Klipper object ("heater_generic chamber"),
+    // not the literal "chamber": TempGraphController::setup_observers() routes to
+    // the chamber subjects on the `heater_generic` / `temperature_fan` prefix, and
+    // anything else falls through to a TemperatureSensorManager lookup that finds
+    // nothing — a series that resolves to no subject renders as a blank line with
+    // no error. Prefer the heater (it has a target to draw); fall back to the
+    // sensor so sensor-only chambers still graph.
+    lv_subject_t* chamber_gate = lv_xml_get_subject(nullptr, "printer_has_chamber");
+    if (chamber_gate && lv_subject_get_int(chamber_gate) != 0) {
+        const auto& temp_state = printer_state_.temperature_state();
+        const std::string& heater = temp_state.chamber_heater_name();
+        const std::string& sensor = temp_state.chamber_sensor_name();
+        const std::string& klipper = !heater.empty() ? heater : sensor;
+        if (!klipper.empty()) {
+            helix::TempGraphSeriesSpec chamber;
+            chamber.klipper_name = klipper;
+            chamber.display_name = lv_tr("Chamber");
+            chamber.color = helix::TEMP_GRAPH_SERIES_COLORS[2];
+            chamber.show_target = !heater.empty();
+            cfg.series.push_back(std::move(chamber));
+        }
+    }
+
+    temp_graph_container_ = container;
+    temp_graph_controller_ = std::make_unique<helix::TempGraphController>(container, cfg);
+    // The controller backfills from TemperatureHistoryManager in its constructor,
+    // so the trace is populated the moment the container un-hides rather than
+    // growing from blank at the next sample.
+    spdlog::debug("[{}] Temperature mini-graph created ({} series, {} points)", get_name(),
+                  cfg.series.size(), cfg.point_count);
+}
+
+void PrintStatusPanel::destroy_temp_graph(bool defer_delete) {
+    temp_graph_container_ = nullptr;
+    if (!temp_graph_controller_) {
+        return;
+    }
+
+    // Detach observers SYNCHRONOUSLY, then defer only the deallocation. The
+    // widget tree is already queued for async deletion by the time this runs, so
+    // the controller's destructor will find its chart gone (chart_delete_cb nulls
+    // it) — but its observers still point at live subjects and must come off
+    // before anything else can fire them (#726). Deferring the delete itself
+    // keeps it out of the current UpdateQueue batch (#696).
+    temp_graph_controller_->detach();
+    auto* old = temp_graph_controller_.release();
+    if (defer_delete && lv_is_initialized()) {
+        lv_async_call([](void* p) { delete static_cast<helix::TempGraphController*>(p); }, old);
+    } else {
+        delete old;
+    }
+    spdlog::debug("[{}] Temperature mini-graph torn down", get_name());
+}
+
 void PrintStatusPanel::recompute_fans_fit() {
     spdlog::debug("[{}] recompute_fans_fit: entry", get_name());
     if (!overlay_root_) {
         spdlog::debug("[{}] recompute_fans_fit: overlay_root_ is null", get_name());
         return;
     }
+    // Cap the preview before measuring: the fan-row budget reads overlay_content
+    // and the controls, and both must be measured against the settled column.
+    apply_preview_height_cap();
+
     lv_obj_t* controls = lv_obj_find_by_name(overlay_root_, "controls_section");
     lv_obj_t* fan_row = lv_obj_find_by_name(overlay_root_, "print_status_fan_row");
     if (!controls || !fan_row) {
@@ -2142,7 +2451,17 @@ void PrintStatusPanel::recompute_fans_fit() {
         }
     }
 
+    // Portrait stacks overlay_content into a column and sizes controls_section
+    // to its content, which removes the slack the landscape formula measures
+    // against. See helix::ui::fan_row_budget().
+    const bool portrait = helix::is_portrait_layout(helix::LayoutManager::instance().type());
+    lv_obj_t* content = lv_obj_find_by_name(overlay_root_, "overlay_content");
+    if (portrait && content) {
+        lv_obj_update_layout(content);
+    }
+
     int controls_h = lv_obj_get_height(controls);
+    int content_h = content ? lv_obj_get_height(content) : 0;
     int used = 0;
     int visible_count = 0;
 
@@ -2154,8 +2473,9 @@ void PrintStatusPanel::recompute_fans_fit() {
         ++visible_count;
     };
     add_child_height("temp_card");
+    // Portrait merged the filament/AMS cluster INTO speed_flow_row, so the next
+    // line already counts it; landscape never had it as a controls child at all.
     add_child_height("speed_flow_row");
-    add_child_height("filament_ams_status_row");
 
     // button_grid is flex_grow=1 so its OWN height is stretched. Sum the
     // visible button-row children directly to get the natural content height.
@@ -2187,7 +2507,7 @@ void PrintStatusPanel::recompute_fans_fit() {
     if (visible_count >= 1)
         used += visible_count * space_md; // (visible_count - 1) for existing + 1 for fan row
 
-    int available = controls_h - used;
+    int available = helix::ui::fan_row_budget(portrait, controls_h, content_h, used);
     int current = lv_subject_get_int(&fans_fit_subject_);
     int next = current;
     if (current == 1) {
@@ -2198,8 +2518,9 @@ void PrintStatusPanel::recompute_fans_fit() {
             next = 1;
     }
     if (next != current) {
-        spdlog::debug("[{}] fans_fit {} -> {} (controls_h={}, used={}, available={}, needed={})",
-                      get_name(), current, next, controls_h, used, available,
+        spdlog::debug("[{}] fans_fit {} -> {} (portrait={}, controls_h={}, content_h={}, used={}, "
+                      "available={}, needed={})",
+                      get_name(), current, next, portrait, controls_h, content_h, used, available,
                       fan_row_natural_height_);
         lv_subject_set_int(&fans_fit_subject_, next);
     }
@@ -2750,20 +3071,6 @@ void PrintStatusPanel::on_print_start_phase_changed(int phase) {
     spdlog::debug("[{}] Print start phase changed: {} (visible={})", get_name(), phase, preparing);
 }
 
-void PrintStatusPanel::on_print_start_message_changed(const char* message) {
-    // Guard: subjects may not be initialized if called from constructor's observer setup
-    if (!subjects_initialized_) {
-        return;
-    }
-
-    if (message) {
-        strncpy(preparing_operation_buf_, message, sizeof(preparing_operation_buf_) - 1);
-        preparing_operation_buf_[sizeof(preparing_operation_buf_) - 1] = '\0';
-        lv_subject_copy_string(&preparing_operation_subject_, preparing_operation_buf_);
-        spdlog::trace("[{}] Print start message: {}", get_name(), message);
-    }
-}
-
 void PrintStatusPanel::on_print_start_progress_changed(int progress) {
     // Guard: subjects may not be initialized if called from constructor's observer setup
     if (!subjects_initialized_) {
@@ -2824,9 +3131,12 @@ void PrintStatusPanel::on_preprint_elapsed_changed(int seconds) {
 }
 
 void PrintStatusPanel::update_view_toggle_position(bool objects_visible) {
-    if (!gcode_viewer_)
+    if (!overlay_root_)
         return;
-    lv_obj_t* card = lv_obj_get_parent(gcode_viewer_);
+    // Resolve the card by name, not by walking up from the viewer: the previews
+    // live one level down inside preview_clear_area, while both corner buttons
+    // are direct children of thumbnail_section.
+    lv_obj_t* card = lv_obj_find_by_name(overlay_root_, "thumbnail_section");
     if (!card)
         return;
     lv_obj_t* btn = lv_obj_find_by_name(card, "btn_view_toggle");
@@ -3016,6 +3326,10 @@ void PrintStatusPanel::load_thumbnail_for_file(const std::string& filename) {
                 }
 
                 // Note: Layer count from metadata is now set by ActivePrintMediaManager
+
+                // Cache the per-tool slicer palette so the live render can resolve
+                // the effective tool→lane match (build_and_apply_tool_colors).
+                store_filament_metadata(metadata);
 
                 // Store slicer's estimated print time for remaining time fallback
                 if (metadata.estimated_time > 0) {
@@ -3218,20 +3532,36 @@ void PrintStatusPanel::load_gcode_for_viewing(const std::string& filename) {
         download_to_viewer(root, download_target);
     };
 
-    auto load_existing_gcode_path = [this, token, filename,
-                                     stream_if_safe](const std::string& metadata_target,
-                                                     const std::string& root,
-                                                     const std::string& download_target) {
+    auto load_existing_gcode_path = [this, token, filename, stream_if_safe](
+                                        const std::string& metadata_target, const std::string& root,
+                                        const std::string& download_target) {
         api_->files().get_file_metadata(
             metadata_target,
             [this, token, root, download_target, stream_if_safe](const FileMetadata& metadata) {
                 token.defer("PrintStatusPanel::gcode_metadata_ok",
                             [this, root, download_target, metadata, stream_if_safe]() {
+                                // Cache per-tool palette before the render loads so
+                                // build_and_apply_tool_colors resolves matched lanes.
+                                store_filament_metadata(metadata);
                                 stream_if_safe(root, download_target, metadata.size);
                             });
             },
             [this, token, filename](const MoonrakerError& err) {
                 token.defer("PrintStatusPanel::gcode_metadata_err", [this, filename, err]() {
+                    // Metadata only decides whether we need to DOWNLOAD the file.
+                    // If the viewer already has geometry — loaded from the cached
+                    // copy, or from a local path that Moonraker cannot resolve —
+                    // a metadata miss must not tear down a working render. Also
+                    // reachable on a transient failure while the file is still
+                    // being scanned. This error is silent (no toast), so hiding
+                    // the viewer here just left a blank preview for the rest of
+                    // the print.
+                    if (gcode_viewer_ && ui_gcode_viewer_has_content(gcode_viewer_)) {
+                        spdlog::debug("[{}] G-code metadata unavailable for '{}': {} - keeping "
+                                      "already-loaded render",
+                                      get_name(), filename, err.message);
+                        return;
+                    }
                     spdlog::debug(
                         "[{}] Failed to get G-code metadata for '{}': {} - skipping 3D render",
                         get_name(), filename, err.message);
@@ -3242,8 +3572,7 @@ void PrintStatusPanel::load_gcode_for_viewing(const std::string& filename) {
         );
     };
 
-    auto use_existing_download_path = [metadata_filename, filename,
-                                       load_existing_gcode_path]() {
+    auto use_existing_download_path = [metadata_filename, filename, load_existing_gcode_path]() {
         load_existing_gcode_path(metadata_filename, "gcodes", filename);
     };
 
@@ -3294,10 +3623,9 @@ void PrintStatusPanel::load_gcode_for_viewing(const std::string& filename) {
                                     return;
                                 }
 
-                                spdlog::debug(
-                                    "[{}] No QIDI native 3MF shadow G-code found; "
-                                    "falling back to active filename",
-                                    get_name());
+                                spdlog::debug("[{}] No QIDI native 3MF shadow G-code found; "
+                                              "falling back to active filename",
+                                              get_name());
                                 use_existing_download_path();
                             });
             },
@@ -3346,11 +3674,81 @@ void PrintStatusPanel::apply_filament_color_override(uint32_t color_rgb) {
     }
 }
 
+void PrintStatusPanel::store_filament_metadata(const FileMetadata& metadata) {
+    // Per-tool hex colors, as sliced ("#RRGGBB" per tool).
+    filament_colors_ = metadata.filament_colors;
+
+    // filament_type is a ';'-joined list ("PLA;PLA;PETG"); split to per-tool.
+    filament_materials_.clear();
+    if (!metadata.filament_type.empty()) {
+        std::istringstream stream(metadata.filament_type);
+        std::string token;
+        while (std::getline(stream, token, ';')) {
+            filament_materials_.push_back(token);
+        }
+    }
+}
+
+std::vector<helix::GcodeToolInfo> PrintStatusPanel::build_print_tool_info() const {
+    if (!gcode_viewer_ || filament_colors_.empty()) {
+        return {};
+    }
+    const auto* parsed = ui_gcode_viewer_get_parsed_file(gcode_viewer_);
+    if (!parsed || parsed->tools_used_indices.empty()) {
+        return {};
+    }
+
+    // Full slicer palette from the stored metadata, then filter to the tools this
+    // file actually uses (real tool_index preserved) — mirrors
+    // PrintSelectDetailView::get_used_tool_info().
+    const auto all_tool_info =
+        helix::ui::FilamentMappingCard::build_tool_info(filament_colors_, filament_materials_);
+
+    std::vector<helix::GcodeToolInfo> tools;
+    tools.reserve(parsed->tools_used_indices.size());
+    for (int tool : parsed->tools_used_indices) {
+        if (tool >= 0 && static_cast<size_t>(tool) < all_tool_info.size()) {
+            auto info = all_tool_info[static_cast<size_t>(tool)];
+            info.tool_index = tool;
+            tools.push_back(info);
+        }
+    }
+    return tools;
+}
+
+bool PrintStatusPanel::effective_auto_match() const {
+    // Non-editable-card backends (U1 / ACE) have no card UI to flip the persisted
+    // auto-color preference, so they always auto-match; editable backends honor
+    // the user setting. Mirrors PrintSelectDetailView::effective_auto_match().
+    bool card_editable = false;
+    if (auto* backend = AmsState::instance().get_backend()) {
+        card_editable = backend->get_tool_mapping_capabilities().editable;
+    }
+    return !card_editable || SettingsManager::instance().get_auto_color_map();
+}
+
 bool PrintStatusPanel::build_and_apply_tool_colors() {
     if (!gcode_viewer_ || !ui_gcode_viewer_has_content(gcode_viewer_)) {
         return false;
     }
 
+    // Preferred path: resolve each used tool to the EFFECTIVE (toggle-aware)
+    // matched lane's color — the same match the print-select swatches and
+    // pre-flight use — and push a logical-tool-indexed color vector directly to
+    // the viewer. This bypasses apply_ams_tool_colors' identity tool_to_slot_map,
+    // which on a true toolchanger (Snapmaker U1) colors the whole model by T0.
+    const auto tools = build_print_tool_info();
+    if (!tools.empty()) {
+        const auto colors = helix::FilamentMapper::effective_tool_colors(
+            tools, AmsState::instance().collect_available_slots(), effective_auto_match());
+        if (!colors.empty()) {
+            ui_gcode_viewer_set_tool_colors(gcode_viewer_, colors);
+            return true;
+        }
+    }
+
+    // Fallback: no stored metadata yet (or no lanes) — use the backend's own
+    // per-tool color mapping (correct for single-nozzle multi-material backends).
     return ui_gcode_viewer_apply_ams_tool_colors(gcode_viewer_);
 }
 

@@ -201,8 +201,8 @@ ResultActive=yes
 PKLA_EOF
         grep -q "unix-user:${user}" "$pkla_dest"
         # Inline heredoc expansion CANNOT leave template placeholders
-        ! grep -q "@@HELIX_USER@@" "$pkla_dest"
-        ! grep -q "@@" "$pkla_dest"
+        refute grep -q "@@HELIX_USER@@" "$pkla_dest"
+        refute grep -q "@@" "$pkla_dest"
     done
 }
 
@@ -265,7 +265,7 @@ polkit.addRule(function(action, subject) {
 });
 POLKIT_EOF
 
-        ! grep -q "@@HELIX_USER@@" "$rules_dest"
+        refute grep -q "@@HELIX_USER@@" "$rules_dest"
         grep -q "\"${user}\"" "$rules_dest"
     done
 }
@@ -315,7 +315,7 @@ polkit.addRule(function(action, subject) {
     }
 });
 POLKIT_EOF
-        ! grep -q "@@" "$js_dest"
+        refute grep -q "@@" "$js_dest"
         grep -q "\"${user}\"" "$js_dest"
 
         # PKLA format
@@ -328,7 +328,7 @@ ResultAny=yes
 ResultInactive=yes
 ResultActive=yes
 PKLA_EOF
-        ! grep -q "@@" "$pkla_dest"
+        refute grep -q "@@" "$pkla_dest"
         grep -q "unix-user:${user}" "$pkla_dest"
     done
 }
@@ -338,7 +338,7 @@ PKLA_EOF
     # that caused @@HELIX_USER@@ to leak into deployed files.
     local script="$WORKTREE_ROOT/scripts/lib/installer/permissions.sh"
     # Must NOT copy the template file to the deploy destination
-    ! grep -q 'cp.*pkla_src.*pkla_dest' "$script"
+    refute grep -q 'cp.*pkla_src.*pkla_dest' "$script"
     # Must NOT sed @@HELIX_USER@@ in pkla files (inline generation doesn't need it)
     ! grep -q 'sed.*@@HELIX_USER@@.*pkla_dest' "$script"
 }
@@ -424,7 +424,7 @@ SUDOEOF
     # The pkla file should have been generated inline with the correct user
     [ -f "$pkla_dir/helixscreen-network.pkla" ]
     grep -q "unix-user:biqu" "$pkla_dir/helixscreen-network.pkla"
-    ! grep -q "@@HELIX_USER@@" "$pkla_dir/helixscreen-network.pkla"
+    refute grep -q "@@HELIX_USER@@" "$pkla_dir/helixscreen-network.pkla"
     ! grep -q "@@" "$pkla_dir/helixscreen-network.pkla"
 }
 

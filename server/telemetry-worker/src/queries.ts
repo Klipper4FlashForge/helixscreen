@@ -716,11 +716,20 @@ export function releasesQueries(versions: string[]): string[] {
   const cleanVersions = versions.map((v) => v.replace(/^v/, ""));
   const versionList = cleanVersions.map((v) => `'${v}'`).join(", ");
   return [
-    // Per-version stats: sessions, crashes
+    // Per-version stats: sessions, crashes, self-update outcomes.
+    //
+    // This groups by blob2 across event types, which only works because blob2
+    // means "the version the device is RUNNING" everywhere — including the
+    // update events (see analytics.ts). For update_failed that is from_version:
+    // keying on the target would bucket every failure under the newest release
+    // and hide which deployed versions are actually broken
+    // (prestonbrown/helixscreen#993).
     `SELECT
       blob2 as ver,
       sumIf(1, index1 = 'session') as total_sessions,
-      sumIf(1, index1 = 'crash') as total_crashes
+      sumIf(1, index1 = 'crash') as total_crashes,
+      sumIf(1, index1 = 'update_failed') as update_failures,
+      sumIf(1, index1 = 'update_success') as update_successes
     FROM ${dataset}
     WHERE blob2 IN (${versionList})
     GROUP BY ver`,

@@ -7,8 +7,10 @@
 
 #include <spdlog/spdlog.h>
 
+#include <atomic>
 #include <filesystem>
 #include <fstream>
+#include <unistd.h>
 
 namespace helix {
 
@@ -33,8 +35,20 @@ bool write_lvgl_bin(const std::string& path, int width, int height, uint8_t colo
     return false;
 #else
     // Use atomic write: write to temp file, then rename
-    // This prevents partial/corrupted files if process crashes mid-write
-    std::string temp_path = path + ".tmp";
+    // This prevents partial/corrupted files if process crashes mid-write.
+    //
+    // The staging name must be unique PER WRITER, not per destination. The
+    // thumbnail pool runs two workers over one cache directory, and two
+    // requests for the same source at the same target size produce the same
+    // output path — so a fixed "<path>.tmp" had both interleaving their bytes
+    // into one file before both renamed it. Identical inputs made that benign
+    // in practice, but it is a data race on a file, and the failure it would
+    // produce (a half-and-half .bin that still passes the header check) is
+    // exactly the kind of thing that reads as heap corruption downstream.
+    static std::atomic<uint64_t> seq{0};
+    const std::string temp_path = path + "." + std::to_string(::getpid()) + "." +
+                                  std::to_string(seq.fetch_add(1, std::memory_order_relaxed)) +
+                                  ".tmp";
 
     std::ofstream file(temp_path, std::ios::binary);
     if (!file) {

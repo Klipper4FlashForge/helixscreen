@@ -132,4 +132,3 @@ class WizardLedSelectStep : public helix::wizard::Step {
 // ============================================================================
 
 WizardLedSelectStep* get_wizard_led_select_step();
-void destroy_wizard_led_select_step();

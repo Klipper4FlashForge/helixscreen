@@ -4,10 +4,12 @@
 #include "ui_panel_common.h"
 
 #include "ui_component_header_bar.h"
+#include "ui_icon.h"
 #include "ui_nav_manager.h"
 #include "ui_utils.h"
 
 #include "display_manager.h"
+#include "layout_manager.h"
 #include "theme_manager.h"
 
 #include <spdlog/spdlog.h>
@@ -46,8 +48,7 @@ lv_obj_t* ui_panel_setup_content_padding(lv_obj_t* panel, lv_obj_t* parent_scree
 
     lv_obj_t* content = lv_obj_find_by_name(panel, content_name);
     if (content) {
-        lv_coord_t vertical_padding =
-            ui_get_header_content_padding(lv_obj_get_height(parent_screen));
+        lv_coord_t vertical_padding = ui_get_header_content_padding();
 
         // Set vertical padding (top/bottom) responsively, keep horizontal at space_md
         lv_obj_set_style_pad_top(content, vertical_padding, 0);
@@ -76,8 +77,7 @@ static void panel_resize_callback_wrapper(ui_panel_resize_context_t* context) {
 
     lv_obj_t* content = lv_obj_find_by_name(context->panel, context->content_name);
     if (content) {
-        lv_coord_t vertical_padding =
-            ui_get_header_content_padding(lv_obj_get_height(context->parent_screen));
+        lv_coord_t vertical_padding = ui_get_header_content_padding();
 
         // Update vertical padding (top/bottom) responsively, keep horizontal at space_md
         lv_obj_set_style_pad_top(content, vertical_padding, 0);
@@ -176,6 +176,23 @@ void ui_overlay_panel_setup_standard(lv_obj_t* panel, lv_obj_t* parent_screen,
             inited = true;
         }
         lv_obj_add_style(back_btn, &back_pressed, LV_PART_MAIN | LV_STATE_PRESSED);
+
+        // Portrait overlays drop from the top (ui_set_overlay_geometry +
+        // overlay_animate_slide_in), so a left-pointing chevron would point the
+        // wrong way out. chevron_up is the exact mirror of `back`. This is the
+        // ONLY place this swap runs: every real overlay panel (bed mesh, AMS,
+        // motion, power, ...) goes through here via
+        // OverlayBase/ui_overlay_panel_setup_standard.
+        // ui_component_header_bar.cpp's ui_component_header_bar_setup() is a
+        // separate, unreachable path (no caller of ui_panel_setup_header()
+        // above exists) — it does not carry this swap.
+        if (helix::is_portrait_layout(helix::detect_layout_type(
+                lv_obj_get_width(parent_screen), lv_obj_get_height(parent_screen)))) {
+            lv_obj_t* icon = lv_obj_get_child(back_btn, 0);
+            if (icon) {
+                ui_icon_set_source(icon, "chevron_up");
+            }
+        }
     }
 
     // 2. Setup content padding (responsive vertical, fixed horizontal)

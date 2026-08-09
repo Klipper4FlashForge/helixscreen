@@ -11,10 +11,12 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <future>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -221,17 +223,6 @@ class GCodeStreamingController {
                          std::function<void(bool)> on_complete = nullptr);
 
     /**
-     * @brief Open a G-code file via Moonraker API
-     *
-     * Uses HTTP range requests for efficient streaming access.
-     *
-     * @param moonraker_url Base Moonraker URL (e.g., "http://192.168.1.100:7125")
-     * @param gcode_path G-code file path on printer
-     * @return true if successful
-     */
-    bool open_moonraker(const std::string& moonraker_url, const std::string& gcode_path);
-
-    /**
      * @brief Open from an existing data source
      *
      * Takes ownership of the data source. Useful for custom sources.
@@ -290,10 +281,23 @@ class GCodeStreamingController {
     std::shared_ptr<const std::vector<ToolpathSegment>> get_layer_segments(size_t layer_index);
 
     /**
+     * @brief Get a layer only if it is already resident - never loads, never blocks
+     *
+     * Returns nullptr instead of touching the data source. Intended for
+     * main-thread callers that must not stall: the touch hit-test picks against
+     * the layer currently on screen, which render() has already faulted in, so a
+     * miss here is rare and costs one unrecognised tap rather than a frozen UI.
+     *
+     * @param layer_index Zero-based layer index
+     * @return Segments if resident, nullptr on a miss
+     */
+    std::shared_ptr<const std::vector<ToolpathSegment>> try_get_layer_segments(size_t layer_index);
+
+    /**
      * @brief Request a layer to be loaded (non-blocking)
      *
-     * If layer is not cached, queues it for background loading.
-     * Check is_layer_ready() or get_layer_segments() later.
+     * Hands the layer to the prefetch worker and returns immediately. Check
+     * is_layer_cached() or call get_layer_segments() later to consume it.
      *
      * @param layer_index Zero-based layer index
      */
@@ -317,6 +321,18 @@ class GCodeStreamingController {
      * @param radius Number of layers on each side (default: 3)
      */
     void prefetch_around(size_t center_layer, size_t radius = DEFAULT_PREFETCH_RADIUS);
+
+    /**
+     * @brief Block until the prefetch worker has no queued or in-flight work
+     *
+     * Prefetch is asynchronous, so the cache reaches its post-prefetch state
+     * some time after get_layer_segments() / prefetch_around() return. Callers
+     * that need a deterministic cache state - chiefly tests - use this as the
+     * sync point instead of assuming the fetch already happened.
+     *
+     * Returns immediately if no worker is running.
+     */
+    void wait_for_prefetch_idle();
 
     // =========================================================================
     // Layer Information
@@ -442,6 +458,42 @@ class GCodeStreamingController {
      * @return Loader lambda
      */
     std::function<std::vector<ToolpathSegment>(size_t)> make_loader();
+
+    /**
+     * @brief Hand a prefetch centre to the worker thread and return immediately
+     *
+     * Only the most recent centre matters, so a pending request is overwritten
+     * rather than queued - scrubbing layers cannot build a backlog.
+     */
+    void schedule_prefetch(size_t center_layer);
+
+    /// Prefetch worker body: drains prefetch requests until stop_prefetch_ is set.
+    void prefetch_worker();
+
+    /// Start the prefetch worker if it is not already running.
+    void start_prefetch_worker();
+
+    /**
+     * @brief Signal and join the prefetch worker. Safe to call when not running.
+     * @param permanent Leave the stop flag set so no new worker can start.
+     *                  True only from the destructor.
+     */
+    void stop_prefetch_worker(bool permanent = false);
+
+    // Background prefetch. get_layer_segments() used to run the prefetch loop
+    // inline, so a single main-thread call did up to 2*radius+1 seek-and-parses
+    // inside an LVGL draw or touch callback. The worker moves that off the main
+    // thread; the cache's in-flight tracking dedups against foreground loads.
+    std::thread prefetch_thread_;
+    std::mutex prefetch_mutex_;
+    std::condition_variable prefetch_cv_;
+    std::optional<size_t> pending_prefetch_center_;
+    bool stop_prefetch_{false};
+
+    /// True while the worker is mid-batch. Together with an empty
+    /// pending_prefetch_center_ this is what "idle" means.
+    bool prefetch_running_{false};
+    std::condition_variable prefetch_idle_cv_;
 
     // Components (order matters for destruction)
     std::unique_ptr<GCodeDataSource> data_source_;

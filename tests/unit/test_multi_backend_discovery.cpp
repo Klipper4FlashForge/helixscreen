@@ -1,6 +1,8 @@
 // Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "../helix_test_fixture.h"
+#include "../test_helpers/update_queue_test_access.h"
 #include "../ui_test_utils.h"
 #include "ams_backend.h"
 #include "ams_state.h"
@@ -8,7 +10,20 @@
 
 #include "../catch_amalgamated.hpp"
 
-TEST_CASE("PrinterDiscovery: single MMU detected as one system", "[ams][multi-backend]") {
+/// This file had no fixture, so nothing drained the UpdateQueue. The AmsState
+/// tests below add backends and sync them, and AmsState defers its subject
+/// writes; each test returned with that work queued and handed it to whichever
+/// test drained next (prestonbrown/helixscreen#1169). The drain sits in the
+/// derived destructor body so it runs while AmsState's subjects are still alive,
+/// before HelixTestFixture's own teardown.
+struct MultiBackendFixture : public HelixTestFixture {
+    ~MultiBackendFixture() override {
+        helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+    }
+};
+
+TEST_CASE_METHOD(MultiBackendFixture, "PrinterDiscovery: single MMU detected as one system",
+                 "[ams][multi-backend]") {
     helix::PrinterDiscovery hw;
     nlohmann::json objects = nlohmann::json::array(
         {"mmu", "mmu_encoder mmu_encoder", "extruder", "heater_bed", "gcode_move"});
@@ -20,7 +35,8 @@ TEST_CASE("PrinterDiscovery: single MMU detected as one system", "[ams][multi-ba
     REQUIRE(hw.mmu_type() == AmsType::HAPPY_HARE);
 }
 
-TEST_CASE("PrinterDiscovery: toolchanger only detected as one system", "[ams][multi-backend]") {
+TEST_CASE_METHOD(MultiBackendFixture, "PrinterDiscovery: toolchanger only detected as one system",
+                 "[ams][multi-backend]") {
     helix::PrinterDiscovery hw;
     nlohmann::json objects = nlohmann::json::array(
         {"toolchanger", "tool T0", "tool T1", "extruder", "extruder1", "heater_bed", "gcode_move"});
@@ -31,8 +47,9 @@ TEST_CASE("PrinterDiscovery: toolchanger only detected as one system", "[ams][mu
     REQUIRE(systems[0].type == AmsType::TOOL_CHANGER);
 }
 
-TEST_CASE("PrinterDiscovery: toolchanger + Happy Hare prefers MMU backend",
-          "[ams][multi-backend]") {
+TEST_CASE_METHOD(MultiBackendFixture,
+                 "PrinterDiscovery: toolchanger + Happy Hare prefers MMU backend",
+                 "[ams][multi-backend]") {
     helix::PrinterDiscovery hw;
     nlohmann::json objects = nlohmann::json::array({"toolchanger", "tool T0", "tool T1", "mmu",
                                                     "mmu_encoder mmu_encoder", "extruder",
@@ -47,7 +64,8 @@ TEST_CASE("PrinterDiscovery: toolchanger + Happy Hare prefers MMU backend",
     REQUIRE(hw.has_tool_changer());
 }
 
-TEST_CASE("PrinterDiscovery: AFC + toolchanger prefers AFC backend", "[ams][multi-backend]") {
+TEST_CASE_METHOD(MultiBackendFixture, "PrinterDiscovery: AFC + toolchanger prefers AFC backend",
+                 "[ams][multi-backend]") {
     helix::PrinterDiscovery hw;
     nlohmann::json objects = nlohmann::json::array(
         {"toolchanger", "tool T0", "tool T1", "AFC", "AFC_stepper lane1", "AFC_stepper lane2",
@@ -62,7 +80,8 @@ TEST_CASE("PrinterDiscovery: AFC + toolchanger prefers AFC backend", "[ams][mult
     REQUIRE(hw.has_tool_changer());
 }
 
-TEST_CASE("PrinterDiscovery: no AMS detected returns empty", "[ams][multi-backend]") {
+TEST_CASE_METHOD(MultiBackendFixture, "PrinterDiscovery: no AMS detected returns empty",
+                 "[ams][multi-backend]") {
     helix::PrinterDiscovery hw;
     nlohmann::json objects = nlohmann::json::array({"extruder", "heater_bed", "gcode_move"});
     hw.parse_objects(objects);
@@ -71,11 +90,60 @@ TEST_CASE("PrinterDiscovery: no AMS detected returns empty", "[ams][multi-backen
     REQUIRE(hw.mmu_type() == AmsType::NONE);
 }
 
+// #1107: Anycubic Kobra S1 "mainline-Python ACE fork" registers its filament
+// system as `ace_instance_0` (has get_status()), NOT `ace`/`filament_hub`. The
+// config section is [ace] with ace_count=1, but only ace_instance_N appears in
+// printer.objects.list. Detection must match the ace_instance_N prefix and
+// record the object name(s) so the discovery sequence can subscribe them.
+TEST_CASE_METHOD(MultiBackendFixture,
+                 "PrinterDiscovery: ace_instance_0 (Kobra S1 fork) detected as ACE",
+                 "[ams][ace][multi-backend]") {
+    helix::PrinterDiscovery hw;
+    nlohmann::json objects =
+        nlohmann::json::array({"ace_instance_0", "extruder", "heater_bed", "gcode_move"});
+    hw.parse_objects(objects);
+
+    const auto& systems = hw.detected_ams_systems();
+    REQUIRE(systems.size() == 1);
+    REQUIRE(systems[0].type == AmsType::ACE);
+    REQUIRE(hw.mmu_type() == AmsType::ACE);
+    REQUIRE(hw.ace_object_names() == std::vector<std::string>{"ace_instance_0"});
+}
+
+TEST_CASE_METHOD(MultiBackendFixture,
+                 "PrinterDiscovery: multiple ace_instance_N objects all recorded",
+                 "[ams][ace][multi-backend]") {
+    helix::PrinterDiscovery hw;
+    // Two ACE units — the first sets has_mmu_/ACE, but BOTH names must be
+    // collected (name-collection is not gated by the !has_mmu_ guard).
+    nlohmann::json objects = nlohmann::json::array(
+        {"ace_instance_0", "ace_instance_1", "extruder", "heater_bed", "gcode_move"});
+    hw.parse_objects(objects);
+
+    const auto& systems = hw.detected_ams_systems();
+    REQUIRE(systems.size() == 1);
+    REQUIRE(systems[0].type == AmsType::ACE);
+    REQUIRE(hw.mmu_type() == AmsType::ACE);
+    REQUIRE(hw.ace_object_names() == std::vector<std::string>{"ace_instance_0", "ace_instance_1"});
+}
+
+TEST_CASE_METHOD(MultiBackendFixture,
+                 "PrinterDiscovery: classic ace object still recorded in ace_object_names",
+                 "[ams][ace][multi-backend]") {
+    helix::PrinterDiscovery hw;
+    nlohmann::json objects = nlohmann::json::array({"ace", "extruder", "heater_bed", "gcode_move"});
+    hw.parse_objects(objects);
+
+    REQUIRE(hw.mmu_type() == AmsType::ACE);
+    REQUIRE(hw.ace_object_names() == std::vector<std::string>{"ace"});
+}
+
 // ============================================================================
 // Task 2: Multi-backend storage tests
 // ============================================================================
 
-TEST_CASE("AmsState: add_backend stores multiple backends", "[ams][multi-backend]") {
+TEST_CASE_METHOD(MultiBackendFixture, "AmsState: add_backend stores multiple backends",
+                 "[ams][multi-backend]") {
     lv_init_safe();
     AmsState& ams = AmsState::instance();
     ams.clear_backends();
@@ -96,7 +164,8 @@ TEST_CASE("AmsState: add_backend stores multiple backends", "[ams][multi-backend
     ams.deinit_subjects();
 }
 
-TEST_CASE("AmsState: set_backend replaces all backends", "[ams][multi-backend]") {
+TEST_CASE_METHOD(MultiBackendFixture, "AmsState: set_backend replaces all backends",
+                 "[ams][multi-backend]") {
     lv_init_safe();
     AmsState& ams = AmsState::instance();
     ams.clear_backends();
@@ -113,7 +182,8 @@ TEST_CASE("AmsState: set_backend replaces all backends", "[ams][multi-backend]")
     ams.deinit_subjects();
 }
 
-TEST_CASE("AmsState: clear_backends removes all", "[ams][multi-backend]") {
+TEST_CASE_METHOD(MultiBackendFixture, "AmsState: clear_backends removes all",
+                 "[ams][multi-backend]") {
     lv_init_safe();
     AmsState& ams = AmsState::instance();
     ams.deinit_subjects();
@@ -133,7 +203,8 @@ TEST_CASE("AmsState: clear_backends removes all", "[ams][multi-backend]") {
 // Task 3: Per-backend slot subject accessor tests
 // ============================================================================
 
-TEST_CASE("AmsState: primary backend uses flat slot subjects", "[ams][multi-backend]") {
+TEST_CASE_METHOD(MultiBackendFixture, "AmsState: primary backend uses flat slot subjects",
+                 "[ams][multi-backend]") {
     lv_init_safe();
     AmsState& ams = AmsState::instance();
     ams.deinit_subjects();
@@ -149,7 +220,8 @@ TEST_CASE("AmsState: primary backend uses flat slot subjects", "[ams][multi-back
     ams.deinit_subjects();
 }
 
-TEST_CASE("AmsState: secondary backend gets separate slot subjects", "[ams][multi-backend]") {
+TEST_CASE_METHOD(MultiBackendFixture, "AmsState: secondary backend gets separate slot subjects",
+                 "[ams][multi-backend]") {
     lv_init_safe();
     AmsState& ams = AmsState::instance();
     ams.deinit_subjects();
@@ -185,7 +257,8 @@ TEST_CASE("AmsState: secondary backend gets separate slot subjects", "[ams][mult
 // Task 4: Per-backend event routing and sync tests
 // ============================================================================
 
-TEST_CASE("AmsState: sync_backend updates correct subjects", "[ams][multi-backend]") {
+TEST_CASE_METHOD(MultiBackendFixture, "AmsState: sync_backend updates correct subjects",
+                 "[ams][multi-backend]") {
     lv_init_safe();
     AmsState& ams = AmsState::instance();
     ams.deinit_subjects();
@@ -206,7 +279,8 @@ TEST_CASE("AmsState: sync_backend updates correct subjects", "[ams][multi-backen
     ams.deinit_subjects();
 }
 
-TEST_CASE("AmsState: update_slot_for_backend delegates to primary", "[ams][multi-backend]") {
+TEST_CASE_METHOD(MultiBackendFixture, "AmsState: update_slot_for_backend delegates to primary",
+                 "[ams][multi-backend]") {
     lv_init_safe();
     AmsState& ams = AmsState::instance();
     ams.deinit_subjects();
@@ -223,7 +297,8 @@ TEST_CASE("AmsState: update_slot_for_backend delegates to primary", "[ams][multi
     ams.deinit_subjects();
 }
 
-TEST_CASE("AmsState: get_backend negative index returns nullptr", "[ams][multi-backend]") {
+TEST_CASE_METHOD(MultiBackendFixture, "AmsState: get_backend negative index returns nullptr",
+                 "[ams][multi-backend]") {
     lv_init_safe();
     AmsState& ams = AmsState::instance();
     ams.deinit_subjects();
@@ -239,7 +314,8 @@ TEST_CASE("AmsState: get_backend negative index returns nullptr", "[ams][multi-b
 // Task 5: Multi-backend init flow tests
 // ============================================================================
 
-TEST_CASE("AmsState: init_backends_from_hardware with single system", "[ams][multi-backend]") {
+TEST_CASE_METHOD(MultiBackendFixture, "AmsState: init_backends_from_hardware with single system",
+                 "[ams][multi-backend]") {
     lv_init_safe();
     AmsState& ams = AmsState::instance();
     ams.deinit_subjects();
@@ -256,7 +332,8 @@ TEST_CASE("AmsState: init_backends_from_hardware with single system", "[ams][mul
     ams.deinit_subjects();
 }
 
-TEST_CASE("AmsState: init_backends skips when no systems detected", "[ams][multi-backend]") {
+TEST_CASE_METHOD(MultiBackendFixture, "AmsState: init_backends skips when no systems detected",
+                 "[ams][multi-backend]") {
     lv_init_safe();
     AmsState& ams = AmsState::instance();
     ams.deinit_subjects();
@@ -276,7 +353,7 @@ TEST_CASE("AmsState: init_backends skips when no systems detected", "[ams][multi
 // Task 8: Integration and lifecycle tests
 // ============================================================================
 
-TEST_CASE("Multi-backend: full lifecycle", "[ams][multi-backend]") {
+TEST_CASE_METHOD(MultiBackendFixture, "Multi-backend: full lifecycle", "[ams][multi-backend]") {
     lv_init_safe();
 
     AmsState& ams = AmsState::instance();
@@ -318,7 +395,8 @@ TEST_CASE("Multi-backend: full lifecycle", "[ams][multi-backend]") {
     REQUIRE(lv_subject_get_int(ams.get_backend_count_subject()) == 0);
 }
 
-TEST_CASE("Multi-backend: deinit then re-init is safe", "[ams][multi-backend]") {
+TEST_CASE_METHOD(MultiBackendFixture, "Multi-backend: deinit then re-init is safe",
+                 "[ams][multi-backend]") {
     lv_init_safe();
 
     AmsState& ams = AmsState::instance();
@@ -338,7 +416,8 @@ TEST_CASE("Multi-backend: deinit then re-init is safe", "[ams][multi-backend]") 
     ams.deinit_subjects();
 }
 
-TEST_CASE("Multi-backend: active backend resets on clear", "[ams][multi-backend]") {
+TEST_CASE_METHOD(MultiBackendFixture, "Multi-backend: active backend resets on clear",
+                 "[ams][multi-backend]") {
     lv_init_safe();
 
     AmsState& ams = AmsState::instance();

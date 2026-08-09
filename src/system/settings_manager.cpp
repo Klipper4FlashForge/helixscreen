@@ -29,9 +29,6 @@
 
 using namespace helix;
 
-// Z movement style options (Auto=0, Bed Moves=1, Nozzle Moves=2)
-static const char* Z_MOVEMENT_STYLE_OPTIONS_TEXT = "Auto\nBed Moves\nNozzle Moves";
-
 // Aftermarket toolhead styles shown in dropdown (Auto + user overrides only)
 // Native styles (DEFAULT, CREALITY_K1, CREALITY_K2) are auto-detected and not shown.
 static const char* TOOLHEAD_STYLE_OPTIONS_TEXT = "Auto\nStealthburner\nA4T\nAntHead\nJabberWocky";
@@ -139,8 +136,10 @@ void SettingsManager::init_subjects() {
     UI_MANAGED_SUBJECT_INT(qidi_eject_velocity_subject_, qidi_eject_velocity,
                            "settings_qidi_eject_velocity", subjects_);
 
-    // Toolhead style (default: 0 = Auto)
-    int toolhead_style = config->get<int>("/appearance/toolhead_style", 0);
+    // Toolhead style (default: 0 = Auto). Per-printer: the AUTO case already
+    // resolves from this printer's type, so the manual override has to follow
+    // the same printer or two machines share one toolhead rendering.
+    int toolhead_style = config->get<int>(config->df() + "appearance/toolhead_style", 0);
     toolhead_style = std::clamp(toolhead_style, 0, 7);
     UI_MANAGED_SUBJECT_INT(toolhead_style_subject_, toolhead_style, "settings_toolhead_style",
                            subjects_);
@@ -167,6 +166,32 @@ void SettingsManager::init_subjects() {
     UI_MANAGED_SUBJECT_INT(afc_unload_after_print_subject_, afc_unload_after_print ? 1 : 0,
                            "afc_unload_after_print", subjects_);
 
+    // Always show the bypass spool on the Multi-Filament panel, even with bypass
+    // disengaged (default: off). AFC exposes a virtual bypass whether or not the
+    // user has one wired, so the node was drawn permanently — and painted with
+    // the loaded lane's filament, which read as "there is a spool on bypass" on
+    // machines that have none (#1229). Per-printer setting.
+    bool ams_always_show_bypass_spool =
+        config->get<bool>(config->df() + "ams/always_show_bypass_spool", false);
+    UI_MANAGED_SUBJECT_INT(ams_always_show_bypass_spool_subject_,
+                           ams_always_show_bypass_spool ? 1 : 0, "ams_always_show_bypass_spool",
+                           subjects_);
+
+    // Show the bypass controls even when the firmware reports no bypass (default:
+    // off). Happy Hare's [mmu_machine] has_bypass defaults to 0 for mmu_vendor
+    // "Other" — what a Qidi Box under Happy Hare reports — so machines that can
+    // feed filament straight to the extruder still advertise none. Per-printer.
+    bool ams_force_bypass_controls =
+        config->get<bool>(config->df() + "ams/force_bypass_controls", false);
+    UI_MANAGED_SUBJECT_INT(ams_force_bypass_controls_subject_, ams_force_bypass_controls ? 1 : 0,
+                           "ams_force_bypass_controls", subjects_);
+
+    // Post-filament-operation nozzle cooldown (default: on). Filament systems that
+    // run their own cooldown (AFC) want ours out of the way. Per-printer setting.
+    bool filament_auto_cooldown = config->get<bool>(config->df() + "filament/auto_cooldown", true);
+    UI_MANAGED_SUBJECT_INT(filament_auto_cooldown_subject_, filament_auto_cooldown ? 1 : 0,
+                           "filament_auto_cooldown", subjects_);
+
     // Console filters (defaults: both on — keeps the gcode console clean by default)
     bool filter_temps = config->get<bool>("/console/filter_temps", true);
     UI_MANAGED_SUBJECT_INT(console_filter_temps_subject_, filter_temps ? 1 : 0,
@@ -180,8 +205,10 @@ void SettingsManager::init_subjects() {
     UI_MANAGED_SUBJECT_INT(detection_enabled_subject_, detection_enabled ? 1 : 0,
                            "detection_enabled", subjects_);
 
-    // Per-source policy for Snapmaker U1 built-in detector (default: 2 = DeferToSource)
-    int detection_policy_u1 = config->get<int>("/detection/policy_u1", 2);
+    // Per-source policy for Snapmaker U1 built-in detector (default: 2 =
+    // DeferToSource). Per-printer: the U1's detector only exists on the U1, so
+    // the policy belongs to that machine and is inert everywhere else.
+    int detection_policy_u1 = config->get<int>(config->df() + "detection/policy_u1", 2);
     detection_policy_u1 = std::clamp(detection_policy_u1, 0, 2);
     UI_MANAGED_SUBJECT_INT(detection_policy_u1_subject_, detection_policy_u1, "detection_policy_u1",
                            subjects_);
@@ -194,21 +221,22 @@ void SettingsManager::init_subjects() {
     chamber_sensor_assignment_ =
         config->get<std::string>(config->df() + wizard::CHAMBER_SENSOR, "auto");
 
-    // Load scanner device selection
-    scanner_device_id_ = config->get<std::string>(config->df() + "scanner/usb_vendor_product", "");
-    scanner_device_name_ = config->get<std::string>(config->df() + "scanner/usb_device_name", "");
+    // Load scanner device selection. Global: the scanner is plugged into the
+    // host running HelixScreen, not into any one printer.
+    scanner_device_id_ = config->get<std::string>("/scanner/usb_vendor_product", "");
+    scanner_device_name_ = config->get<std::string>("/scanner/usb_device_name", "");
     if (!scanner_device_id_.empty()) {
         spdlog::info("[SettingsManager] Loaded scanner device: {} ({})", scanner_device_name_,
                      scanner_device_id_);
     }
 
-    scanner_bt_address_ = config->get<std::string>(config->df() + "scanner/bt_address", "");
+    scanner_bt_address_ = config->get<std::string>("/scanner/bt_address", "");
     if (!scanner_bt_address_.empty()) {
         spdlog::info("[SettingsManager] Loaded scanner BT address: {}", scanner_bt_address_);
     }
 
     // Scanner keymap layout — default "qwerty" (US). Valid: qwerty|qwertz|azerty.
-    scanner_keymap_ = config->get<std::string>(config->df() + "scanner/keymap", "qwerty");
+    scanner_keymap_ = config->get<std::string>("/scanner/keymap", "qwerty");
     if (scanner_keymap_ != "qwerty" && scanner_keymap_ != "qwertz" && scanner_keymap_ != "azerty") {
         spdlog::warn("[SettingsManager] Invalid scanner keymap '{}' — defaulting to qwerty",
                      scanner_keymap_);
@@ -303,10 +331,6 @@ void SettingsManager::set_z_movement_style(ZMovementStyle style) {
     get_printer_state().apply_effective_bed_moves();
 }
 
-const char* SettingsManager::get_z_movement_style_options() {
-    return lv_tr(Z_MOVEMENT_STYLE_OPTIONS_TEXT);
-}
-
 // =============================================================================
 // TOOLHEAD STYLE
 // =============================================================================
@@ -359,7 +383,7 @@ void SettingsManager::set_toolhead_style(ToolheadStyle style) {
     auto old_val = std::to_string(lv_subject_get_int(&toolhead_style_subject_));
     lv_subject_set_int(&toolhead_style_subject_, val);
     Config* config = Config::get_instance();
-    config->set<int>("/appearance/toolhead_style", val);
+    config->set<int>(config->df() + "appearance/toolhead_style", val);
     config->save();
     TelemetryManager::instance().notify_setting_changed("toolhead_style", old_val,
                                                         std::to_string(val));
@@ -513,6 +537,43 @@ void SettingsManager::set_afc_unload_after_print(bool enabled) {
     config->save();
 }
 
+bool SettingsManager::get_ams_always_show_bypass_spool() const {
+    return lv_subject_get_int(const_cast<lv_subject_t*>(&ams_always_show_bypass_spool_subject_)) !=
+           0;
+}
+
+void SettingsManager::set_ams_always_show_bypass_spool(bool enabled) {
+    spdlog::info("[SettingsManager] set_ams_always_show_bypass_spool({})", enabled);
+    lv_subject_set_int(&ams_always_show_bypass_spool_subject_, enabled ? 1 : 0);
+    Config* config = Config::get_instance();
+    config->set<bool>(config->df() + "ams/always_show_bypass_spool", enabled);
+    config->save();
+}
+
+bool SettingsManager::get_ams_force_bypass_controls() const {
+    return lv_subject_get_int(const_cast<lv_subject_t*>(&ams_force_bypass_controls_subject_)) != 0;
+}
+
+void SettingsManager::set_ams_force_bypass_controls(bool enabled) {
+    spdlog::info("[SettingsManager] set_ams_force_bypass_controls({})", enabled);
+    lv_subject_set_int(&ams_force_bypass_controls_subject_, enabled ? 1 : 0);
+    Config* config = Config::get_instance();
+    config->set<bool>(config->df() + "ams/force_bypass_controls", enabled);
+    config->save();
+}
+
+bool SettingsManager::get_filament_auto_cooldown() const {
+    return lv_subject_get_int(const_cast<lv_subject_t*>(&filament_auto_cooldown_subject_)) != 0;
+}
+
+void SettingsManager::set_filament_auto_cooldown(bool enabled) {
+    spdlog::info("[SettingsManager] set_filament_auto_cooldown({})", enabled);
+    lv_subject_set_int(&filament_auto_cooldown_subject_, enabled ? 1 : 0);
+    Config* config = Config::get_instance();
+    config->set<bool>(config->df() + "filament/auto_cooldown", enabled);
+    config->save();
+}
+
 // ============================================================================
 // Console Filters
 // ============================================================================
@@ -542,38 +603,110 @@ void SettingsManager::set_console_filter_firmware_noise(bool enabled) {
     config->save();
 }
 
-std::vector<std::string> SettingsManager::get_console_filter_user_add() const {
+namespace {
+
+/// Config pointer holding one layer of a user filter list.
+///
+/// Global lives at the root and is in force whichever printer is selected;
+/// Printer lives under df() so a pattern that only makes sense on one machine
+/// stays there. Both layers are read on every console rebuild.
+std::string console_filter_path(const char* leaf, ConsoleFilterScope scope) {
+    Config* config = Config::get_instance();
+    if (scope == ConsoleFilterScope::Printer) {
+        return config->df() + "console/" + leaf;
+    }
+    return std::string("/console/") + leaf;
+}
+
+/// Read one layer, treating a malformed list as absent rather than propagating.
+std::vector<std::string> read_console_filter_layer(const char* leaf, ConsoleFilterScope scope) {
+    const std::string path = console_filter_path(leaf, scope);
     try {
-        return Config::get_instance()->get<std::vector<std::string>>("/console/filter_user_add",
+        return Config::get_instance()->get<std::vector<std::string>>(path,
                                                                      std::vector<std::string>{});
     } catch (const std::exception& e) {
-        spdlog::warn("[SettingsManager] /console/filter_user_add malformed, ignoring: {}",
-                     e.what());
+        spdlog::warn("[SettingsManager] {} malformed, ignoring: {}", path, e.what());
         return {};
     }
+}
+
+/// Global entries first, then the active printer's, with exact duplicates
+/// collapsed so a pattern present in both layers is applied once.
+std::vector<std::string> merged_console_filter(const char* leaf) {
+    std::vector<std::string> merged = read_console_filter_layer(leaf, ConsoleFilterScope::Global);
+    for (const auto& entry : read_console_filter_layer(leaf, ConsoleFilterScope::Printer)) {
+        if (std::find(merged.begin(), merged.end(), entry) == merged.end()) {
+            merged.push_back(entry);
+        }
+    }
+    return merged;
+}
+
+void write_console_filter_layer(const char* leaf, ConsoleFilterScope scope,
+                                const std::vector<std::string>& patterns) {
+    Config* config = Config::get_instance();
+    config->set<std::vector<std::string>>(console_filter_path(leaf, scope), patterns);
+    config->save();
+}
+
+constexpr const char* FILTER_USER_ADD_LEAF = "filter_user_add";
+constexpr const char* FILTER_USER_REMOVE_LEAF = "filter_user_remove";
+
+} // namespace
+
+std::vector<std::string> SettingsManager::get_console_filter_user_add() const {
+    return merged_console_filter(FILTER_USER_ADD_LEAF);
 }
 
 std::vector<std::string> SettingsManager::get_console_filter_user_remove() const {
+    return merged_console_filter(FILTER_USER_REMOVE_LEAF);
+}
+
+std::vector<std::string>
+SettingsManager::get_console_filter_user_add(ConsoleFilterScope scope) const {
+    return read_console_filter_layer(FILTER_USER_ADD_LEAF, scope);
+}
+
+std::vector<std::string>
+SettingsManager::get_console_filter_user_remove(ConsoleFilterScope scope) const {
+    return read_console_filter_layer(FILTER_USER_REMOVE_LEAF, scope);
+}
+
+void SettingsManager::set_console_filter_user_add(const std::vector<std::string>& patterns,
+                                                  ConsoleFilterScope scope) {
+    write_console_filter_layer(FILTER_USER_ADD_LEAF, scope, patterns);
+}
+
+void SettingsManager::set_console_filter_user_remove(const std::vector<std::string>& patterns,
+                                                     ConsoleFilterScope scope) {
+    write_console_filter_layer(FILTER_USER_REMOVE_LEAF, scope, patterns);
+}
+
+// ============================================================================
+// Macro Panel (per-printer hidden macro set)
+// ============================================================================
+
+std::vector<std::string> SettingsManager::get_hidden_macros() const {
+    Config* config = Config::get_instance();
     try {
-        return Config::get_instance()->get<std::vector<std::string>>("/console/filter_user_remove",
-                                                                     std::vector<std::string>{});
+        return config->get<std::vector<std::string>>(config->df() + "macros/hidden",
+                                                     std::vector<std::string>{});
     } catch (const std::exception& e) {
-        spdlog::warn("[SettingsManager] /console/filter_user_remove malformed, ignoring: {}",
+        spdlog::warn("[SettingsManager] {} malformed, ignoring: {}", config->df() + "macros/hidden",
                      e.what());
         return {};
     }
 }
 
-void SettingsManager::set_console_filter_user_add(const std::vector<std::string>& patterns) {
+void SettingsManager::set_hidden_macros(const std::vector<std::string>& names) {
     Config* config = Config::get_instance();
-    config->set<std::vector<std::string>>("/console/filter_user_add", patterns);
+    config->set<std::vector<std::string>>(config->df() + "macros/hidden", names);
     config->save();
 }
 
-void SettingsManager::set_console_filter_user_remove(const std::vector<std::string>& patterns) {
+bool SettingsManager::hidden_macros_key_exists() const {
     Config* config = Config::get_instance();
-    config->set<std::vector<std::string>>("/console/filter_user_remove", patterns);
-    config->save();
+    return config->exists(config->df() + "macros/hidden");
 }
 
 // ============================================================================
@@ -605,7 +738,7 @@ void SettingsManager::set_detection_policy_u1(int policy) {
     auto old_val = std::to_string(lv_subject_get_int(&detection_policy_u1_subject_));
     lv_subject_set_int(&detection_policy_u1_subject_, policy);
     Config* config = Config::get_instance();
-    config->set<int>("/detection/policy_u1", policy);
+    config->set<int>(config->df() + "detection/policy_u1", policy);
     config->save();
     TelemetryManager::instance().notify_setting_changed("detection_policy_u1", old_val,
                                                         std::to_string(policy));
@@ -638,6 +771,13 @@ std::optional<SlotInfo> SettingsManager::get_external_spool_info() const {
                                                static_cast<int>(AMS_DEFAULT_SLOT_COLOR)));
     info.material = config->get<std::string>(config->df() + "filament/external_spool/material", "");
     info.brand = config->get<std::string>(config->df() + "filament/external_spool/brand", "");
+    // The external spool has no lane_data record, so this get/set pair is its
+    // ONLY persistence — the catalog product identity has to round-trip here or
+    // the editor reopens on the alphabetically-first variant of the material.
+    info.catalog_id =
+        config->get<std::string>(config->df() + "filament/external_spool/catalog_id", "");
+    info.product_name =
+        config->get<std::string>(config->df() + "filament/external_spool/product_name", "");
     info.nozzle_temp_min =
         config->get<int>(config->df() + "filament/external_spool/nozzle_temp_min", 0);
     info.nozzle_temp_max =
@@ -661,6 +801,9 @@ void SettingsManager::set_external_spool_info(const SlotInfo& info) {
                      static_cast<int>(info.color_rgb));
     config->set<std::string>(config->df() + "filament/external_spool/material", info.material);
     config->set<std::string>(config->df() + "filament/external_spool/brand", info.brand);
+    config->set<std::string>(config->df() + "filament/external_spool/catalog_id", info.catalog_id);
+    config->set<std::string>(config->df() + "filament/external_spool/product_name",
+                             info.product_name);
     config->set<int>(config->df() + "filament/external_spool/nozzle_temp_min",
                      info.nozzle_temp_min);
     config->set<int>(config->df() + "filament/external_spool/nozzle_temp_max",
@@ -709,13 +852,11 @@ void SettingsManager::set_chamber_sensor_assignment(const std::string& value) {
 
 void SettingsManager::clear_external_spool_info() {
     Config* config = Config::get_instance();
-    try {
-        auto& filament = config->get_json(config->df() + "filament");
-        if (filament.is_object() && filament.contains("external_spool")) {
-            filament.erase("external_spool");
-        }
-    } catch (...) {
-        // /filament doesn't exist or isn't an object, nothing to clear
+    // Probe first: get_json() would vivify "filament": null on every call and
+    // the unconditional save() below would persist it (#1129).
+    const json* existing = config->try_get_json(config->df() + "filament");
+    if (existing != nullptr && existing->is_object() && existing->contains("external_spool")) {
+        config->get_json(config->df() + "filament").erase("external_spool");
     }
     config->save();
 }
@@ -732,7 +873,7 @@ void SettingsManager::set_scanner_device_id(const std::string& vendor_product) {
     spdlog::info("[SettingsManager] set_scanner_device_id({})", vendor_product);
     scanner_device_id_ = vendor_product;
     Config* config = Config::get_instance();
-    config->set<std::string>(config->df() + "scanner/usb_vendor_product", vendor_product);
+    config->set<std::string>("/scanner/usb_vendor_product", vendor_product);
     config->save();
 }
 
@@ -744,7 +885,7 @@ void SettingsManager::set_scanner_device_name(const std::string& name) {
     spdlog::info("[SettingsManager] set_scanner_device_name({})", name);
     scanner_device_name_ = name;
     Config* config = Config::get_instance();
-    config->set<std::string>(config->df() + "scanner/usb_device_name", name);
+    config->set<std::string>("/scanner/usb_device_name", name);
     config->save();
 }
 
@@ -756,7 +897,7 @@ void SettingsManager::set_scanner_bt_address(const std::string& address) {
     spdlog::info("[SettingsManager] set_scanner_bt_address({})", address);
     scanner_bt_address_ = address;
     Config* config = Config::get_instance();
-    config->set<std::string>(config->df() + "scanner/bt_address", address);
+    config->set<std::string>("/scanner/bt_address", address);
     config->save();
 }
 
@@ -772,6 +913,6 @@ void SettingsManager::set_scanner_keymap(const std::string& keymap) {
     spdlog::info("[SettingsManager] set_scanner_keymap({})", keymap);
     scanner_keymap_ = keymap;
     Config* config = Config::get_instance();
-    config->set<std::string>(config->df() + "scanner/keymap", keymap);
+    config->set<std::string>("/scanner/keymap", keymap);
     config->save();
 }

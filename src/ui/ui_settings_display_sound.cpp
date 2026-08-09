@@ -112,6 +112,7 @@ void DisplaySoundSettingsOverlay::register_callbacks() {
         // Display
         {"on_dark_mode_changed", on_dark_mode_changed},
         {"on_brightness_changed", on_brightness_changed},
+        {"on_brightness_commit", on_brightness_commit},
         {"on_widget_labels_changed", on_widget_labels_changed},
         {"on_page_scroll_buttons_changed", on_page_scroll_buttons_changed},
         {"on_bed_mesh_mode_changed", on_bed_mesh_mode_changed},
@@ -137,6 +138,7 @@ void DisplaySoundSettingsOverlay::register_callbacks() {
         // Sound
         {"on_sounds_changed", on_sounds_changed},
         {"on_volume_changed", on_volume_changed},
+        {"on_volume_commit", on_volume_commit},
         {"on_ui_sounds_changed", on_ui_sounds_changed},
         {"on_sound_theme_changed", on_sound_theme_changed},
         {"on_audio_device_changed", on_audio_device_changed},
@@ -642,10 +644,17 @@ void DisplaySoundSettingsOverlay::handle_dark_mode_changed(bool enabled) {
 }
 
 void DisplaySoundSettingsOverlay::handle_brightness_changed(int value) {
-    DisplaySettingsManager::instance().set_brightness(value);
+    // Per drag tick: apply to the backlight and update the readout, but do NOT
+    // persist. handle_brightness_commit() saves once, on release.
+    DisplaySettingsManager::instance().preview_brightness(value);
 
     helix::format::format_percent(value, brightness_value_buf_, sizeof(brightness_value_buf_));
     lv_subject_copy_string(&brightness_value_subject_, brightness_value_buf_);
+}
+
+void DisplaySoundSettingsOverlay::handle_brightness_commit(int value) {
+    spdlog::info("[{}] Brightness committed: {}%", get_name(), value);
+    DisplaySettingsManager::instance().set_brightness(value);
 }
 
 void DisplaySoundSettingsOverlay::handle_widget_labels_changed(bool enabled) {
@@ -950,8 +959,7 @@ void DisplaySoundSettingsOverlay::apply_preview_palette_to_screen_popups() {
 
     lv_obj_t* modal_dialog = lv_obj_find_by_name(lv_screen_active(), "modal_dialog");
     if (modal_dialog) {
-        const char* suffix =
-            theme_manager_get_breakpoint_suffix(lv_display_get_vertical_resolution(nullptr));
+        const char* suffix = theme_manager_get_breakpoint_suffix(responsive_dimension(nullptr));
         int radius_px =
             helix::BorderRadiusSizes::pixels(theme.properties.border_radius_size, suffix);
         lv_obj_set_style_radius(modal_dialog, radius_px, LV_PART_MAIN);
@@ -977,8 +985,14 @@ void DisplaySoundSettingsOverlay::handle_sounds_changed(bool enabled) {
     }
 }
 
-void DisplaySoundSettingsOverlay::handle_volume_changed(int value) {
+void DisplaySoundSettingsOverlay::handle_volume_commit(int value) {
+    spdlog::info("[{}] Volume committed: {}%", get_name(), value);
     AudioSettingsManager::instance().set_volume(value);
+}
+
+void DisplaySoundSettingsOverlay::handle_volume_changed(int value) {
+    // Per drag tick: subject + readout only. handle_volume_commit() persists.
+    AudioSettingsManager::instance().preview_volume(value);
 
     helix::format::format_percent(value, volume_value_buf_, sizeof(volume_value_buf_));
     lv_subject_copy_string(&volume_value_subject_, volume_value_buf_);
@@ -1102,6 +1116,14 @@ void DisplaySoundSettingsOverlay::on_brightness_changed(lv_event_t* e) {
     auto* slider = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
     int value = lv_slider_get_value(slider);
     get_display_sound_settings_overlay().handle_brightness_changed(value);
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+void DisplaySoundSettingsOverlay::on_brightness_commit(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[DisplaySoundSettingsOverlay] on_brightness_commit");
+    auto* slider = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
+    int value = lv_slider_get_value(slider);
+    get_display_sound_settings_overlay().handle_brightness_commit(value);
     LVGL_SAFE_EVENT_CB_END();
 }
 
@@ -1255,6 +1277,14 @@ void DisplaySoundSettingsOverlay::on_volume_changed(lv_event_t* e) {
     auto* slider = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
     int value = lv_slider_get_value(slider);
     get_display_sound_settings_overlay().handle_volume_changed(value);
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+void DisplaySoundSettingsOverlay::on_volume_commit(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[DisplaySoundSettingsOverlay] on_volume_commit");
+    auto* slider = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
+    int value = lv_slider_get_value(slider);
+    get_display_sound_settings_overlay().handle_volume_commit(value);
     LVGL_SAFE_EVENT_CB_END();
 }
 

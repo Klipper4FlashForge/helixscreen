@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "../helix_test_fixture.h"
 #include "../ui_test_utils.h"
 #include "config.h"
 #include "led/led_controller.h"
@@ -17,7 +18,7 @@ using namespace helix;
 // Fixture for tests that need mock API + configurable LED strips
 // ============================================================================
 
-struct LedPinConfigFixture {
+struct LedPinConfigFixture : public HelixTestFixture {
     MoonrakerClientMock mock_client{MoonrakerClientMock::PrinterType::VORON_24};
     helix::PrinterState state;
     std::unique_ptr<MoonrakerAPIMock> mock_api;
@@ -560,4 +561,168 @@ TEST_CASE_METHOD(LedPinConfigFixture,
     ctrl.load_config();
 
     REQUIRE(ctrl.get_startup_brightness() == 60);
+}
+
+// ============================================================================
+// StripColor::decompose — the W channel carries the level on white-only strips
+//
+// Klipper's white-only `[led main_led]` (white_pin only, no RGB pins) reports
+// its level in the 4th color_data slot: [[0.0, 0.0, 0.0, 0.15]].  Excluding W
+// from the brightness max reads that back as 0%, and re-applying 0% then wrote
+// the user's light OFF (#1129).
+// ============================================================================
+
+TEST_CASE("StripColor::decompose: white-only level comes from the W channel",
+          "[led][native][decompose][white_only]") {
+    helix::led::NativeBackend::StripColor color;
+    color.r = 0.0;
+    color.g = 0.0;
+    color.b = 0.0;
+    color.w = 0.15;
+
+    uint32_t base_color = 0;
+    int brightness = 0;
+    double base_white = 0.0;
+    color.decompose(base_color, brightness, base_white);
+
+    REQUIRE(brightness == 15);
+    // Base color is the full-brightness form; W scaled to full is 1.0.
+    REQUIRE(base_white == Catch::Approx(1.0).margin(0.01));
+    // A white-only strip has no meaningful hue — report neutral white so the
+    // swatch shows dimmed white rather than black.
+    REQUIRE(base_color == 0xFFFFFFu);
+}
+
+TEST_CASE("StripColor::decompose: full white RGBW reads as 100%",
+          "[led][native][decompose][white_only]") {
+    helix::led::NativeBackend::StripColor color;
+    color.w = 1.0;
+
+    uint32_t base_color = 0;
+    int brightness = 0;
+    double base_white = 0.0;
+    color.decompose(base_color, brightness, base_white);
+
+    REQUIRE(brightness == 100);
+    REQUIRE(base_white == Catch::Approx(1.0).margin(0.01));
+}
+
+TEST_CASE("StripColor::decompose: RGB-only decomposition is unchanged",
+          "[led][native][decompose]") {
+    SECTION("saturated color at full brightness") {
+        helix::led::NativeBackend::StripColor color;
+        color.r = 1.0;
+        color.g = 0.5;
+        color.b = 0.0;
+        color.w = 0.0;
+
+        uint32_t base_color = 0;
+        int brightness = 0;
+        double base_white = 0.0;
+        color.decompose(base_color, brightness, base_white);
+
+        REQUIRE(brightness == 100);
+        REQUIRE(base_color == 0xFF8000u);
+        REQUIRE(base_white == Catch::Approx(0.0).margin(0.001));
+    }
+
+    SECTION("dimmed color scales back up to a full-brightness base") {
+        helix::led::NativeBackend::StripColor color;
+        color.r = 0.5;
+        color.g = 0.25;
+        color.b = 0.0;
+        color.w = 0.0;
+
+        uint32_t base_color = 0;
+        int brightness = 0;
+        double base_white = 0.0;
+        color.decompose(base_color, brightness, base_white);
+
+        REQUIRE(brightness == 50);
+        REQUIRE(base_color == 0xFF7F00u);
+        REQUIRE(base_white == Catch::Approx(0.0).margin(0.001));
+    }
+
+    SECTION("black decomposes to zero brightness") {
+        helix::led::NativeBackend::StripColor color;
+
+        uint32_t base_color = 0xABCDEF;
+        int brightness = 42;
+        double base_white = 1.0;
+        color.decompose(base_color, brightness, base_white);
+
+        REQUIRE(brightness == 0);
+        REQUIRE(base_color == 0x000000u);
+        REQUIRE(base_white == Catch::Approx(0.0).margin(0.001));
+    }
+}
+
+TEST_CASE_METHOD(LedPinConfigFixture,
+                 "NativeBackend: white-only status round-trip does not turn the light off",
+                 "[led][native][decompose][white_only]") {
+    setup_white_only_led();
+    auto& backend = helix::led::LedController::instance().native();
+
+    // Exactly what a Klipper white-only [led] reports at 15%
+    nlohmann::json status = {{"led case_light", {{"color_data", {{0.0, 0.0, 0.0, 0.15}}}}}};
+    backend.update_from_status(status);
+
+    auto reported = backend.get_strip_color("led case_light");
+    REQUIRE(reported.w == Catch::Approx(0.15).margin(0.001));
+
+    uint32_t base_color = 0;
+    int brightness = 0;
+    double base_white = 0.0;
+    reported.decompose(base_color, brightness, base_white);
+    REQUIRE(brightness == 15);
+
+    // Mirror LedControlOverlay::apply_current_color(): white path sends
+    // base_white scaled by brightness. This is the damaging half of #1129 —
+    // it used to send exactly 0.0 and physically switch the user's light off.
+    const double bf = static_cast<double>(brightness) / 100.0;
+    backend.set_color("led case_light", 0.0, 0.0, 0.0, base_white * bf);
+
+    auto sent = backend.get_strip_color("led case_light");
+    REQUIRE(sent.w > 0.0);
+    REQUIRE(sent.w == Catch::Approx(0.15).margin(0.01));
+}
+
+// ============================================================================
+// The two color_data parsers (NativeBackend + PrinterLedState) must agree
+// ============================================================================
+
+TEST_CASE_METHOD(LedPinConfigFixture,
+                 "color_data parsers agree on brightness between NativeBackend and PrinterLedState",
+                 "[led][native][decompose][parser_parity]") {
+    setup_white_only_led("led parity_light", "led parity_light");
+    auto& backend = helix::led::LedController::instance().native();
+
+    state.set_tracked_led("led parity_light");
+
+    struct Payload {
+        const char* label;
+        double r, g, b, w;
+    };
+    const Payload payloads[] = {
+        {"white-only at 15%", 0.0, 0.0, 0.0, 0.15}, {"white-only at full", 0.0, 0.0, 0.0, 1.0},
+        {"mixed RGB", 0.5, 0.25, 0.75, 0.0},        {"saturated red", 1.0, 0.0, 0.0, 0.0},
+        {"all channels off", 0.0, 0.0, 0.0, 0.0},
+    };
+
+    for (const auto& p : payloads) {
+        INFO("payload: " << p.label);
+        nlohmann::json status = {{"led parity_light", {{"color_data", {{p.r, p.g, p.b, p.w}}}}}};
+
+        backend.update_from_status(status);
+        state.update_from_status(status);
+
+        uint32_t base_color = 0;
+        int native_brightness = 0;
+        double base_white = 0.0;
+        backend.get_strip_color("led parity_light")
+            .decompose(base_color, native_brightness, base_white);
+
+        int printer_brightness = lv_subject_get_int(state.get_led_brightness_subject());
+        REQUIRE(native_brightness == printer_brightness);
+    }
 }

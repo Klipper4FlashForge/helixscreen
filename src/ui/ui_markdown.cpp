@@ -21,76 +21,6 @@
 namespace {
 
 /**
- * @brief Build a theme-aware markdown style from current design tokens
- *
- * Maps our theme system's responsive fonts, colors, and spacing to the
- * lv_markdown_style_t fields so the markdown renderer matches the app's
- * look and feel across screen sizes and light/dark themes.
- */
-void build_theme_style(lv_markdown_style_t& style) {
-    lv_markdown_style_init(&style);
-
-    // Body text — responsive body font + theme text color
-    style.body_font = theme_manager_get_font("font_body");
-    style.body_color = theme_manager_get_color("text");
-
-    // Headings — H1/H2 use heading font, H3/H4 use body, H5/H6 use small
-    // H1/H2 get primary accent color, H3/H4 get bright text, H5/H6 get muted
-    const lv_font_t* font_heading = theme_manager_get_font("font_heading");
-    const lv_font_t* font_body = theme_manager_get_font("font_body");
-    const lv_font_t* font_small = theme_manager_get_font("font_small");
-
-    style.heading_font[0] = font_heading; // H1
-    style.heading_font[1] = font_heading; // H2
-    style.heading_font[2] = font_body;    // H3
-    style.heading_font[3] = font_body;    // H4
-    style.heading_font[4] = font_small;   // H5
-    style.heading_font[5] = font_small;   // H6
-
-    lv_color_t primary = theme_manager_get_color("primary");
-    lv_color_t secondary = theme_manager_get_color("secondary");
-    lv_color_t text_color = theme_manager_get_color("text");
-    lv_color_t text_muted = theme_manager_get_color("text_muted");
-
-    style.heading_color[0] = primary;    // H1 — primary accent
-    style.heading_color[1] = secondary;  // H2 — secondary accent
-    style.heading_color[2] = text_color; // H3 — bright
-    style.heading_color[3] = text_color; // H4 — bright
-    style.heading_color[4] = text_muted; // H5 — muted
-    style.heading_color[5] = text_muted; // H6 — muted
-
-    // Emphasis — NULL triggers faux bold (letter spacing) and underline fallbacks
-    // We don't ship separate bold/italic font files, so rely on the fallbacks
-    style.bold_font = nullptr;
-    style.italic_font = nullptr;
-    style.bold_italic_font = nullptr;
-
-    // Inline code — small font, muted text on elevated surface
-    style.code_font = font_small;
-    style.code_color = theme_manager_get_color("text");
-    style.code_bg_color = theme_manager_get_color("elevated_bg");
-    style.code_corner_radius = theme_manager_get_spacing("space_xxs");
-
-    // Fenced code blocks — same elevated surface, with padding
-    style.code_block_bg_color = theme_manager_get_color("elevated_bg");
-    style.code_block_corner_radius = theme_manager_get_spacing("space_xs");
-    style.code_block_pad = theme_manager_get_spacing("space_sm");
-
-    // Blockquotes — left border in muted color
-    style.blockquote_border_color = theme_manager_get_color("primary");
-    style.blockquote_border_width = 3;
-    style.blockquote_pad_left = theme_manager_get_spacing("space_md");
-
-    // Horizontal rules
-    style.hr_color = theme_manager_get_color("text_muted");
-
-    // Spacing — use themed spacing tokens for responsive values
-    style.paragraph_spacing = theme_manager_get_spacing("space_sm");
-    style.line_spacing = theme_manager_get_spacing("space_xxs");
-    style.list_indent = theme_manager_get_spacing("space_lg");
-}
-
-/**
  * @brief Observer callback for bind_text subject changes
  *
  * Updates the markdown content when the bound string subject changes.
@@ -138,7 +68,7 @@ void* ui_markdown_create(lv_xml_parser_state_t* state, const char** /*attrs*/) {
 
     // Build theme-aware style and apply — style is copied into the widget's internal data
     lv_markdown_style_t style{};
-    build_theme_style(style);
+    ui_markdown_get_theme_style(style);
     lv_markdown_set_style(obj, &style);
 
     spdlog::trace("[ui_markdown] Created markdown widget");
@@ -184,4 +114,70 @@ void ui_markdown_apply(lv_xml_parser_state_t* state, const char** attrs) {
 void ui_markdown_init() {
     lv_xml_register_widget("ui_markdown", ui_markdown_create, ui_markdown_apply);
     spdlog::trace("[ui_markdown] Registered markdown widget");
+}
+
+void ui_markdown_get_theme_style(lv_markdown_style_t& style) {
+    lv_markdown_style_init(&style);
+
+    // Body text — responsive body font + theme text color
+    style.body_font = theme_manager_get_font("font_body");
+    style.body_color = theme_manager_get_color("text");
+
+    // Heading fonts — each tier uses a distinct font so the hierarchy reads
+    // at a glance even before color is applied
+    const lv_font_t* font_xl = theme_manager_get_font("font_xl");
+    const lv_font_t* font_heading = theme_manager_get_font("font_heading");
+    const lv_font_t* font_body_bold = theme_manager_get_font("font_body_bold");
+    const lv_font_t* font_small = theme_manager_get_font("font_small");
+
+    style.heading_font[0] = font_xl;        // H1 — large bold display
+    style.heading_font[1] = font_heading;   // H2 — section heading
+    style.heading_font[2] = font_body_bold; // H3 — bold body (e.g. "### Added")
+    style.heading_font[3] = font_body_bold; // H4 — bold body
+    style.heading_font[4] = font_small;     // H5
+    style.heading_font[5] = font_small;     // H6
+
+    // Heading colors — primary/secondary accents for the top tiers, then a
+    // step down through text_subtle and text_muted so each level is distinct
+    lv_color_t primary = theme_manager_get_color("primary");
+    lv_color_t secondary = theme_manager_get_color("secondary");
+    lv_color_t text_subtle = theme_manager_get_color("text_subtle");
+    lv_color_t text_muted = theme_manager_get_color("text_muted");
+
+    style.heading_color[0] = primary;     // H1 — primary accent
+    style.heading_color[1] = secondary;   // H2 — secondary accent
+    style.heading_color[2] = secondary;   // H3 — secondary accent, bold body font
+    style.heading_color[3] = text_subtle; // H4 — dimmer than H3, still distinct from body
+    style.heading_color[4] = text_muted;  // H5 — muted
+    style.heading_color[5] = text_muted;  // H6 — muted
+
+    // Emphasis — bold uses a real bold glyph (faux-bold fallback disabled).
+    // Italic ships no font files, so the renderer falls back to underline.
+    style.bold_font = font_body_bold;
+    style.italic_font = nullptr;
+    style.bold_italic_font = nullptr;
+
+    // Inline code — small font, muted text on elevated surface
+    style.code_font = font_small;
+    style.code_color = theme_manager_get_color("text");
+    style.code_bg_color = theme_manager_get_color("elevated_bg");
+    style.code_corner_radius = theme_manager_get_spacing("space_xxs");
+
+    // Fenced code blocks — same elevated surface, with padding
+    style.code_block_bg_color = theme_manager_get_color("elevated_bg");
+    style.code_block_corner_radius = theme_manager_get_spacing("space_xs");
+    style.code_block_pad = theme_manager_get_spacing("space_sm");
+
+    // Blockquotes — left border in muted color
+    style.blockquote_border_color = theme_manager_get_color("primary");
+    style.blockquote_border_width = 3;
+    style.blockquote_pad_left = theme_manager_get_spacing("space_md");
+
+    // Horizontal rules
+    style.hr_color = theme_manager_get_color("text_muted");
+
+    // Spacing — use themed spacing tokens for responsive values
+    style.paragraph_spacing = theme_manager_get_spacing("space_sm");
+    style.line_spacing = theme_manager_get_spacing("space_xxs");
+    style.list_indent = theme_manager_get_spacing("space_lg");
 }

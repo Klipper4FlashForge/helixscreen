@@ -219,8 +219,7 @@ TEST_CASE_METHOD(TempStoreSeedTestFixture, "seed_from_store caps at HISTORY_SIZE
 // RPC — mock returns an empty store; direct parse of a populated payload
 // ============================================================================
 
-TEST_CASE("get_temperature_store returns a realistic populated store via mock",
-          "[temp][seed][slow]") {
+TEST_CASE("get_temperature_store returns a realistic populated store via mock", "[temp][seed]") {
     MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
     mock.connect("ws://mock/websocket", []() {}, []() {});
 

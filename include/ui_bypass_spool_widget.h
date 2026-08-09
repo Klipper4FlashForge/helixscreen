@@ -7,7 +7,50 @@
 
 #include <cstdint>
 
+class AmsBackend;
+
 namespace helix::ui {
+
+/**
+ * @brief Whether the bypass node belongs on the filament path at all.
+ *
+ * AFC publishes a virtual bypass sensor whether or not the user has a bypass
+ * wired, so `supports_bypass` is effectively always true there and the node was
+ * drawn permanently — then painted from the external-spool slot, which put the
+ * currently-loaded lane's material and colour on it. The green "ASA / Bypass" in
+ * #1229 was lane1's spool on a machine with no bypass at all.
+ *
+ * On AFC the node is therefore hidden while bypass is disengaged, unless the
+ * user opts back in via the AMS setting. Other backends are unaffected: their
+ * bypass is a real physical position, so it stays visible whenever supported.
+ *
+ * Pure by design. The render sites are LVGL-bound and previously carried this
+ * condition inline in four places, where it could neither be tested nor kept
+ * consistent — three of the four had already drifted apart.
+ *
+ * @param supports_bypass Backend reports a bypass position at all
+ * @param bypass_active Bypass is currently engaged (firmware state, not a proxy)
+ * @param is_afc Backend is AFC — the only one with a phantom virtual bypass
+ * @param always_show User setting: keep it visible even when disengaged
+ * @return true when the bypass node should be rendered
+ */
+[[nodiscard]] constexpr bool bypass_node_visible(bool supports_bypass, bool bypass_active,
+                                                 bool is_afc, bool always_show) {
+    if (!supports_bypass) {
+        return false;
+    }
+    if (bypass_active) {
+        return true;
+    }
+    if (!is_afc) {
+        return true;
+    }
+    return always_show;
+}
+
+/// Gather bypass_node_visible()'s inputs from the live backend and settings.
+/// Returns false when no backend is attached.
+[[nodiscard]] bool bypass_node_visible_for(const AmsBackend* backend);
 
 /// Bag of widget pointers that make up the bypass-spool overlay: a small card
 /// containing the spool icon, with a material label above and "Bypass" label
@@ -59,5 +102,10 @@ void bypass_spool_set_material(BypassSpoolWidgets& w, const char* material);
 /// Position the spool box so its center sits at (`cx`, `cy`) in parent-relative
 /// coordinates. The material label is placed above, the "Bypass" label below.
 void bypass_spool_set_position(BypassSpoolWidgets& w, int32_t cx, int32_t cy);
+
+/// Show or hide the whole bypass overlay — card, spool and both labels. Used
+/// when the bypass node does not belong on the path at all; see
+/// bypass_node_visible().
+void bypass_spool_set_visible(BypassSpoolWidgets& w, bool visible);
 
 } // namespace helix::ui

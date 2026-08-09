@@ -5,11 +5,15 @@
 #include "data_root_resolver.h"
 #include "filament_database.h"
 #include "filament_slot_override.h"
+#include "filament_variants.h"
 #include "i_moonraker_api.h"
+#include "json_utils.h"
 #include "moonraker_error.h"
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
@@ -17,16 +21,30 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <sstream>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 namespace helix::ams {
 
 namespace {
+
+// Outer Moonraker DB key for a slot. NOTE the two styles have DIFFERENT bases:
+//   Lane -> "lane<i+1>"  (1-based, AFC/Happy Hare convention)
+//   Tool -> "T<i>"       (0-based, Orca/Mainsail tool convention)
+// Both carry the SAME 0-based inner "lane" field (to_lane_data_record above).
+// IMPORTANT: changing the base of one style without the other silently breaks
+// interop — the outer key and inner "lane" field are deliberately offset for
+// Lane style (1-based key, 0-based field) and aligned for Tool style.
+std::string format_lane_key(int slot_index, LaneKeyStyle style) {
+    return style == LaneKeyStyle::Tool ? "T" + std::to_string(slot_index)
+                                       : "lane" + std::to_string(slot_index + 1);
+}
 
 std::string format_iso8601(std::chrono::system_clock::time_point tp) {
     auto t = std::chrono::system_clock::to_time_t(tp);
@@ -35,6 +53,23 @@ std::string format_iso8601(std::chrono::system_clock::time_point tp) {
     std::ostringstream os;
     os << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
     return os.str();
+}
+
+// Read `primary`, falling back to `alias` when primary is absent or JSON null.
+//
+// Both reads go through safe_string because nlohmann's .value("k", def) THROWS
+// type_error.302 when the key is PRESENT with a null value — a shape AFC, Happy
+// Hare and Mainsail all emit legitimately into this shared namespace. Nesting
+// one .value() as another's default argument (the shape this replaces) is
+// strictly worse: arguments are evaluated eagerly, so the inner call throws
+// before the outer default can ever be used.
+//
+// A null primary falls through to the alias, which is what "no value here"
+// should mean. A primary present as a non-string yields the alias too.
+std::string string_with_alias(const nlohmann::json& j, const char* primary, const char* alias) {
+    if (j.contains(primary) && !j[primary].is_null())
+        return helix::json_util::safe_string(j, primary);
+    return helix::json_util::safe_string(j, alias);
 }
 
 std::chrono::system_clock::time_point parse_iso8601(const std::string& s) {
@@ -60,10 +95,11 @@ std::chrono::system_clock::time_point parse_iso8601(const std::string& s) {
 // plus our extension fields (prefixed comment fields are HelixScreen-only, silently
 // ignored by Orca 2.3.2 which only reads the top 5 required fields).
 //
-// NOTE on indexing: the Moonraker DB key is 1-based (AFC convention: lane1,
-// lane2, ...) but the "lane" field inside the record is 0-based (matches Orca's
-// tool-index interpretation). The 1-based key is produced by lane_key() in the
-// header; this function writes the 0-based inner field.
+// NOTE on indexing: the outer Moonraker DB key style varies (laneN 1-based for
+// filament systems, T<n> 0-based for tool changers) but the "lane" field inside
+// the record is ALWAYS 0-based (matches Orca's tool-index interpretation). The
+// outer key is produced by format_lane_key() above; this function writes the
+// 0-based inner field.
 nlohmann::json to_lane_data_record(int slot_index, const FilamentSlotOverride& o) {
     nlohmann::json j;
     j["lane"] = std::to_string(slot_index); // REQUIRED by Orca (0-based)
@@ -77,8 +113,30 @@ nlohmann::json to_lane_data_record(int slot_index, const FilamentSlotOverride& o
         std::snprintf(buf, sizeof(buf), "#%06X", o.color_rgb & 0x00FFFFFFu);
         j["color"] = buf;
     }
-    if (!o.material.empty())
-        j["material"] = o.material;
+    // Two strings, deliberately. OrcaSlicer reads `material` and matches it by
+    // exact string equality against its filament library; a string it cannot
+    // match does NOT degrade gracefully — it resolves to a PLA preset
+    // (Preset.cpp:3300), which means PLA temps on whatever is really loaded. So
+    // `material` carries a conservative, matchable string.
+    //
+    // `helix_material` carries our precise identity ("ASA-GF"), which Orca
+    // ignores. Without it, load_blocking would read back the degraded string
+    // and permanently forget what the user actually loaded.
+    if (!o.material.empty()) {
+        const std::string match = filament::orca_match_type(o.material);
+        if (!match.empty())
+            j["material"] = match;
+        j["helix_material"] = o.material;
+    }
+    // Catalog product identity. HelixScreen-only (Orca and the AMS plugins have
+    // no notion of a branded product id), hence the helix_ prefix in this shared
+    // namespace. Emitted independently: a pick whose id later stops resolving
+    // still has a name worth keeping, and a name with no id is a legitimate
+    // half-record rather than a reason to drop both.
+    if (!o.catalog_id.empty())
+        j["helix_catalog_id"] = o.catalog_id;
+    if (!o.product_name.empty())
+        j["helix_product_name"] = o.product_name;
     // helix_locked_* are HelixScreen-internal markers. Always emit both (even
     // when false) so a future re-load can distinguish "explicit auto-mirror,
     // safe to track" from "missing key, fall back to pessimistic default."
@@ -119,72 +177,6 @@ nlohmann::json to_lane_data_record(int slot_index, const FilamentSlotOverride& o
     if (!o.color_name.empty())
         j["color_name"] = o.color_name;
     return j;
-}
-
-// Parse AFC-shaped record (+ our extensions) back into FilamentSlotOverride.
-// Returns (slot_index, override) where slot_index comes from the "lane" field
-// (which Orca requires). nullopt if the record is malformed (non-object or
-// missing/invalid "lane" field).
-std::optional<std::pair<int, FilamentSlotOverride>> from_lane_data_record(const nlohmann::json& j) {
-    if (!j.is_object() || !j.contains("lane"))
-        return std::nullopt;
-    int slot_index = 0;
-    if (j["lane"].is_string()) {
-        try {
-            slot_index = std::stoi(j["lane"].get<std::string>());
-        } catch (...) {
-            return std::nullopt;
-        }
-    } else if (j["lane"].is_number_integer()) {
-        slot_index = j["lane"].get<int>();
-    } else {
-        return std::nullopt;
-    }
-    // Matches OrcaSlicer's MoonrakerPrinterAgent.cpp:796 — negative lane
-    // values are never valid slot indices.
-    if (slot_index < 0)
-        return std::nullopt;
-
-    FilamentSlotOverride o;
-    if (j.contains("color") && j["color"].is_string()) {
-        std::string s = j["color"].get<std::string>();
-        if (!s.empty() && s[0] == '#') {
-            s = s.substr(1);
-        } else if (s.size() >= 2 && (s.substr(0, 2) == "0x" || s.substr(0, 2) == "0X")) {
-            s = s.substr(2);
-        }
-        try {
-            o.color_rgb = static_cast<uint32_t>(std::stoul(s, nullptr, 16));
-            o.color_set = true;
-        } catch (...) {
-            // Leave color_rgb at default + color_set=false on parse failure.
-        }
-    }
-    o.material = j.value("material", "");
-    // Pessimistic legacy-default: pre-fix records have no helix_locked_* key.
-    // Assume the field IS user-locked when it carries a value — protects
-    // existing overrides from auto-mirror clobber after upgrade. New records
-    // (post-fix) carry the explicit flag and round-trip exactly. See struct
-    // doc + #965 for rationale.
-    o.user_locked_color = j.value("helix_locked_color", o.color_set);
-    o.user_locked_material = j.value("helix_locked_material", !o.material.empty());
-    // Prefer our own `vendor` key; fall back to Happy Hare's `vendor_name` so
-    // alias-only records (e.g. written by HH's mmu_server push_lane_data) read
-    // correctly. Round-trips of our own records stay exact.
-    o.brand = j.value("vendor", j.value("vendor_name", std::string()));
-    o.spoolman_id = j.value("spool_id", 0);
-    o.bed_temp = j.value("bed_temp", 0);
-    o.nozzle_temp = j.value("nozzle_temp", 0);
-    if (j.contains("scan_time") && j["scan_time"].is_string()) {
-        o.updated_at = parse_iso8601(j["scan_time"].get<std::string>());
-    }
-    // Prefer `spool_name`; fall back to Happy Hare's `name` alias.
-    o.spool_name = j.value("spool_name", j.value("name", std::string()));
-    o.spoolman_vendor_id = j.value("spoolman_vendor_id", 0);
-    o.remaining_weight_g = j.value("remaining_weight_g", -1.0f);
-    o.total_weight_g = j.value("total_weight_g", -1.0f);
-    o.color_name = j.value("color_name", "");
-    return std::make_pair(slot_index, o);
 }
 
 // Update the on-disk cache file with the current state of one slot.
@@ -238,6 +230,10 @@ void write_cache_slot(const std::filesystem::path& cache_path, const std::string
         doc[backend_id]["slots"] = nlohmann::json::object();
     }
 
+    // The local cache is keyed by the slot_index string ("0", "1", ...),
+    // independent of the DB key style (laneN vs T<n>). Key style is invisible
+    // here — there is nothing to migrate in the cache when a backend switches
+    // styles; only the Moonraker DB carries the outer key convention.
     const std::string key = std::to_string(slot_index);
     if (ovr != nullptr) {
         doc[backend_id]["slots"][key] = to_json(*ovr);
@@ -360,12 +356,178 @@ std::unordered_map<int, FilamentSlotOverride> read_cache(const std::filesystem::
             continue;
         if (!it.value().is_object())
             continue;
-        result[slot_index] = from_json(it.value());
+        // Per-record, not per-file. The try above covers only json::parse, so
+        // without this a single unreadable slot would abort the whole cache read
+        // and silently discard every other slot the user has configured. from_
+        // json is null-tolerant on its own; this is the structural backstop that
+        // keeps that property from being a precondition of the caller.
+        try {
+            result[slot_index] = from_json(it.value());
+        } catch (const std::exception& e) {
+            spdlog::warn("[FilamentSlotOverrideStore] skipping unreadable cache slot {}: {}",
+                         it.key(), e.what());
+        }
     }
     return result;
 }
 
+// Slot index implied by a HelixScreen-style outer key, or nullopt if the key is
+// not one of our shapes. "laneN" is 1-based (slot N-1); "T<n>" is 0-based (slot
+// n). Foreign keys (e.g. "gate_0", "metadata") return nullopt and are never
+// treated as inconsistent — only a key that LOOKS like ours but disagrees with
+// its inner "lane" field is a mismatch.
+std::optional<int> implied_slot_from_key(const std::string& key) {
+    auto all_digits = [](const std::string& s) {
+        return !s.empty() &&
+               std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isdigit(c); });
+    };
+    if (key.rfind("lane", 0) == 0) {
+        const std::string num = key.substr(4);
+        if (all_digits(num)) {
+            try {
+                const int n = std::stoi(num);
+                if (n >= 1)
+                    return n - 1; // laneN is 1-based; lane0 is not a shape we write
+            } catch (...) {
+            }
+        }
+    } else if (!key.empty() && key[0] == 'T') {
+        const std::string num = key.substr(1);
+        if (all_digits(num)) {
+            try {
+                return std::stoi(num);
+            } catch (...) {
+            }
+        }
+    }
+    return std::nullopt;
+}
+
 } // namespace
+
+// Parse AFC-shaped record (+ our extensions) back into FilamentSlotOverride.
+// Returns (slot_index, override) where slot_index comes from the "lane" field
+// (which Orca requires). nullopt if the record is malformed (non-object or
+// missing/invalid "lane" field).
+//
+// Namespace-scope (not anonymous) rather than static: this is the wire-format
+// parser and tests need to reach it directly to verify round-tripping without
+// going through the full save_async/load_blocking async machinery. Production
+// callers in this file keep calling it unqualified.
+std::optional<std::pair<int, FilamentSlotOverride>> from_lane_data_record(const nlohmann::json& j) {
+    if (!j.is_object() || !j.contains("lane"))
+        return std::nullopt;
+    int slot_index = 0;
+    if (j["lane"].is_string()) {
+        try {
+            slot_index = std::stoi(j["lane"].get<std::string>());
+        } catch (...) {
+            return std::nullopt;
+        }
+    } else if (j["lane"].is_number_integer()) {
+        slot_index = j["lane"].get<int>();
+    } else {
+        return std::nullopt;
+    }
+    // Matches OrcaSlicer's MoonrakerPrinterAgent.cpp:796 — negative lane
+    // values are never valid slot indices.
+    if (slot_index < 0)
+        return std::nullopt;
+
+    FilamentSlotOverride o;
+    if (j.contains("color") && j["color"].is_string()) {
+        std::string s = j["color"].get<std::string>();
+        if (!s.empty() && s[0] == '#') {
+            s = s.substr(1);
+        } else if (s.size() >= 2 && (s.substr(0, 2) == "0x" || s.substr(0, 2) == "0X")) {
+            s = s.substr(2);
+        }
+        try {
+            o.color_rgb = static_cast<uint32_t>(std::stoul(s, nullptr, 16));
+            o.color_set = true;
+        } catch (...) {
+            // Leave color_rgb at default + color_set=false on parse failure.
+        }
+    }
+    // Prefer our precise identity; fall back to `material` for foreign records
+    // (Mainsail, AFC, Happy Hare) and for records written before helix_material
+    // existed.
+    o.material = string_with_alias(j, "helix_material", "material");
+    // Pessimistic legacy-default: pre-fix records have no helix_locked_* key.
+    // Assume the field IS user-locked when it carries a value — protects
+    // existing overrides from auto-mirror clobber after upgrade. New records
+    // (post-fix) carry the explicit flag and round-trip exactly. See struct
+    // doc + #965 for rationale. A null on the wire falls to the same
+    // pessimistic default as a missing key, which is the safe direction.
+    o.user_locked_color = helix::json_util::safe_bool(j, "helix_locked_color", o.color_set);
+    o.user_locked_material =
+        helix::json_util::safe_bool(j, "helix_locked_material", !o.material.empty());
+    // Prefer our own `vendor` key; fall back to Happy Hare's `vendor_name` so
+    // alias-only records (e.g. written by HH's mmu_server push_lane_data) read
+    // correctly. Round-trips of our own records stay exact.
+    o.brand = string_with_alias(j, "vendor", "vendor_name");
+    o.spoolman_id = helix::json_util::safe_int(j, "spool_id", 0);
+    o.bed_temp = helix::json_util::safe_int(j, "bed_temp", 0);
+    o.nozzle_temp = helix::json_util::safe_int(j, "nozzle_temp", 0);
+    if (j.contains("scan_time") && j["scan_time"].is_string()) {
+        o.updated_at = parse_iso8601(j["scan_time"].get<std::string>());
+    }
+    // Prefer `spool_name`; fall back to Happy Hare's `name` alias.
+    o.spool_name = string_with_alias(j, "spool_name", "name");
+    o.spoolman_vendor_id = helix::json_util::safe_int(j, "spoolman_vendor_id", 0);
+    o.remaining_weight_g = helix::json_util::safe_float(j, "remaining_weight_g", -1.0f);
+    o.total_weight_g = helix::json_util::safe_float(j, "total_weight_g", -1.0f);
+    o.color_name = helix::json_util::safe_string(j, "color_name");
+    // No alias fallback and no legacy default: these keys are ours alone, so a
+    // record without them simply had no catalog pick. safe_string (not .value())
+    // because a hand-edited or third-party record can carry them as JSON null,
+    // which .value() would throw type_error.302 on.
+    o.catalog_id = helix::json_util::safe_string(j, "helix_catalog_id");
+    o.product_name = helix::json_util::safe_string(j, "helix_product_name");
+    return std::make_pair(slot_index, o);
+}
+
+LaneDataAnomalies scan_lane_data_anomalies(const nlohmann::json& namespace_doc) {
+    LaneDataAnomalies a;
+    if (!namespace_doc.is_object())
+        return a;
+    std::unordered_map<int, int> slot_counts; // inner slot idx -> record count
+    for (auto it = namespace_doc.begin(); it != namespace_doc.end(); ++it) {
+        const std::string& key = it.key();
+        if (key == "seated")
+            continue; // sibling scalar, never a lane record
+        if (!it.value().is_object())
+            continue; // other scalar siblings are not our concern
+        const auto& v = it.value();
+        // A record this scan cannot read is exactly what "unparseable" means, so
+        // a throw and a nullopt land in the same bucket. Scoping it per-record
+        // keeps a purely diagnostic pass from ever costing the caller data.
+        std::optional<std::pair<int, FilamentSlotOverride>> parsed;
+        try {
+            parsed = from_lane_data_record(v);
+        } catch (const std::exception&) {
+            ++a.unparseable;
+            continue;
+        }
+        if (!parsed) {
+            ++a.unparseable; // object with no valid "lane" field
+            continue;
+        }
+        const int idx = parsed->first;
+        ++slot_counts[idx];
+        if (v.contains("lane") && v["lane"].is_number_integer())
+            ++a.int_typed_lane; // OrcaSlicer's is_string() guard drops these
+        const auto implied = implied_slot_from_key(key);
+        if (implied && *implied != idx)
+            ++a.key_inner_mismatch;
+    }
+    for (const auto& [idx, n] : slot_counts) {
+        (void)idx;
+        if (n > 1)
+            ++a.duplicate_slot;
+    }
+    return a;
+}
 
 nlohmann::json to_json(const FilamentSlotOverride& o) {
     return {
@@ -379,6 +541,11 @@ nlohmann::json to_json(const FilamentSlotOverride& o) {
         {"color_set", o.color_set},
         {"color_name", o.color_name},
         {"material", o.material},
+        // Bare names: this file is HelixScreen-private, so there is nothing to
+        // disambiguate against (same convention as user_locked_color below,
+        // which is helix_locked_color on the shared wire).
+        {"catalog_id", o.catalog_id},
+        {"product_name", o.product_name},
         {"user_locked_color", o.user_locked_color},
         {"user_locked_material", o.user_locked_material},
         {"bed_temp", o.bed_temp},
@@ -389,24 +556,41 @@ nlohmann::json to_json(const FilamentSlotOverride& o) {
 
 FilamentSlotOverride from_json(const nlohmann::json& j) {
     FilamentSlotOverride o;
-    o.brand = j.value("brand", "");
-    o.spool_name = j.value("spool_name", "");
-    o.spoolman_id = j.value("spoolman_id", 0);
-    o.spoolman_vendor_id = j.value("spoolman_vendor_id", 0);
-    o.remaining_weight_g = j.value("remaining_weight_g", -1.0f);
-    o.total_weight_g = j.value("total_weight_g", -1.0f);
-    o.color_rgb = j.value("color_rgb", 0u);
+    o.brand = helix::json_util::safe_string(j, "brand");
+    o.spool_name = helix::json_util::safe_string(j, "spool_name");
+    o.spoolman_id = helix::json_util::safe_int(j, "spoolman_id", 0);
+    o.spoolman_vendor_id = helix::json_util::safe_int(j, "spoolman_vendor_id", 0);
+    o.remaining_weight_g = helix::json_util::safe_float(j, "remaining_weight_g", -1.0f);
+    o.total_weight_g = helix::json_util::safe_float(j, "total_weight_g", -1.0f);
+    // Read color_rgb through the u64 helper rather than safe_int: the field is a
+    // full 24-bit RGB value and a hand-edited or third-party record can carry the
+    // high byte set, which a narrowing get<int>() would mangle. The helper also
+    // accepts a signed integer, which matters because nlohmann only tags a value
+    // unsigned when it was built from an unsigned C++ type — a record assembled
+    // in memory from an int literal arrives as number_integer and an
+    // is_number_unsigned() gate silently drops the color.
+    const std::uint64_t color_raw = helix::json_util::safe_uint64(j, "color_rgb", o.color_rgb);
+    if (color_raw <= 0xFFFFFFFFu) {
+        o.color_rgb = static_cast<std::uint32_t>(color_raw);
+    }
     // Pre-fix caches don't have color_set; reconstruct from the old "0 = unset"
     // convention so a returning user's pre-existing overrides keep their
     // intended meaning. New caches always emit the explicit boolean.
-    o.color_set = j.value("color_set", o.color_rgb != 0u);
-    o.color_name = j.value("color_name", "");
-    o.material = j.value("material", "");
+    o.color_set = helix::json_util::safe_bool(j, "color_set", o.color_rgb != 0u);
+    o.color_name = helix::json_util::safe_string(j, "color_name");
+    o.material = helix::json_util::safe_string(j, "material");
+    // Absent in a pre-upgrade cache -> empty, which is exactly "no catalog
+    // pick". No schema bump: these are purely additive optional fields and
+    // read_cache's version gate would discard the whole file if we bumped it
+    // (an older build would then truncate a newer cache on its next save).
+    o.catalog_id = helix::json_util::safe_string(j, "catalog_id");
+    o.product_name = helix::json_util::safe_string(j, "product_name");
     // Pessimistic legacy-default — see from_lane_data_record + #965.
-    o.user_locked_color = j.value("user_locked_color", o.color_set);
-    o.user_locked_material = j.value("user_locked_material", !o.material.empty());
-    o.bed_temp = j.value("bed_temp", 0);
-    o.nozzle_temp = j.value("nozzle_temp", 0);
+    o.user_locked_color = helix::json_util::safe_bool(j, "user_locked_color", o.color_set);
+    o.user_locked_material =
+        helix::json_util::safe_bool(j, "user_locked_material", !o.material.empty());
+    o.bed_temp = helix::json_util::safe_int(j, "bed_temp", 0);
+    o.nozzle_temp = helix::json_util::safe_int(j, "nozzle_temp", 0);
     if (j.contains("updated_at") && j["updated_at"].is_string()) {
         o.updated_at = parse_iso8601(j["updated_at"].get<std::string>());
     }
@@ -443,8 +627,10 @@ void populate_temps_from_slot_info(FilamentSlotOverride& ovr, const SlotInfo& in
 // class shape now.
 // ============================================================================
 
-FilamentSlotOverrideStore::FilamentSlotOverrideStore(IMoonrakerAPI* api, std::string backend_id)
-    : api_(api), backend_id_(std::move(backend_id)) {}
+FilamentSlotOverrideStore::FilamentSlotOverrideStore(IMoonrakerAPI* api, std::string backend_id,
+                                                     LaneKeyStyle key_style, std::string ns)
+    : api_(api), backend_id_(std::move(backend_id)), key_style_(key_style),
+      namespace_(std::move(ns)) {}
 
 std::filesystem::path FilamentSlotOverrideStore::cache_dir_effective() const {
     return cache_dir_.empty() ? std::filesystem::path(helix::get_user_config_dir()) : cache_dir_;
@@ -491,7 +677,8 @@ namespace {
 //   there for the next attempt. That's correct conservative behavior.
 std::unordered_map<int, FilamentSlotOverride>
 try_migrate_legacy(IMoonrakerAPI* api, const std::string& backend_id,
-                   std::chrono::milliseconds timeout, const std::filesystem::path& cache_dir) {
+                   std::chrono::milliseconds timeout, const std::filesystem::path& cache_dir,
+                   LaneKeyStyle key_style) {
     std::unordered_map<int, FilamentSlotOverride> empty_result;
     if (!api)
         return empty_result;
@@ -569,9 +756,19 @@ try_migrate_legacy(IMoonrakerAPI* api, const std::string& backend_id,
         if (!it.value().is_object())
             continue; // malformed entry → skip
 
-        FilamentSlotOverride o = from_json(it.value());
-        o.updated_at = std::chrono::system_clock::now();
-        migrated[slot_index] = o;
+        // Same per-record scoping as read_cache: an unreadable legacy entry is
+        // one lost slot, never an aborted migration. Skipping here still counts
+        // it in legacy_entries_seen, so an all-unreadable blob takes the
+        // "dropped N malformed legacy entries" path below and gets cleaned up
+        // rather than re-scanned on every subsequent startup.
+        try {
+            FilamentSlotOverride o = from_json(it.value());
+            o.updated_at = std::chrono::system_clock::now();
+            migrated[slot_index] = o;
+        } catch (const std::exception& e) {
+            spdlog::warn("[FilamentSlotOverrideStore:{}] skipping unreadable legacy entry {}: {}",
+                         backend_id, it.key(), e.what());
+        }
     }
 
     // All-malformed case: legacy had entries but none survived parsing. We
@@ -607,9 +804,11 @@ try_migrate_legacy(IMoonrakerAPI* api, const std::string& backend_id,
     // retry path has full data.
     for (const auto& [slot_index, override_val] : migrated) {
         auto post_state = std::make_shared<SyncState>();
-        // Local name is `lane_data_key` (NOT `lane_key`) to avoid shadowing
-        // the static member FilamentSlotOverrideStore::lane_key().
-        const std::string lane_data_key = "lane" + std::to_string(slot_index + 1);
+        // ACE/CFS are Lane style, so this resolves to "laneN"; threading the
+        // style through format_lane_key keeps the one key-formatting rule in one
+        // place (and closes the trap of a future toolchanger reaching this path
+        // with the wrong keys).
+        const std::string lane_data_key = format_lane_key(slot_index, key_style);
         api->database_post_item(
             "lane_data", lane_data_key, to_lane_data_record(slot_index, override_val),
             [post_state]() {
@@ -669,9 +868,184 @@ try_migrate_legacy(IMoonrakerAPI* api, const std::string& backend_id,
     return migrated;
 }
 
+// Synchronous key-migration helper: rewrite our own stale "laneN" records to
+// the "T<n>" tool-key style. Called from load_blocking AFTER the parse loop,
+// gated on key_style_ == Tool.
+//
+// Unlike try_migrate_legacy this runs on a NON-EMPTY lane_data — that is
+// precisely when there is something to migrate. It reuses the already-fetched
+// namespace_doc (no extra GET); load_blocking only reaches here with
+// got_copy == true, so MR DB reachability is already proven, and the offline
+// cache-fallback branch returns before this point so a network blip never
+// attempts destructive key moves.
+//
+// Self-idempotent via the delete: once the stale laneN keys are gone, the next
+// boot sees only T<n> and this no-ops at the classify step. Classification:
+//   - key != format_lane_key(idx, Lane) -> not a key WE wrote, skip. Renaming a
+//     third party's arbitrary key would vandalize a shared namespace.
+//   - format_lane_key(idx, Tool) already present -> DROP the stale laneN only.
+//     Never POST laneN's body over T<n>: T<n> may be Mainsail's newer record,
+//     so overwriting it would regress data. The reader already picked T<n> as
+//     canonical for this slot, so the drop makes the DB agree with what we
+//     returned — migration is consistent with the reader by construction.
+//   - else -> MOVE: write T<n>, then delete laneN.
+//
+// Writes go in ascending slot order (test determinism), all-or-nothing: on ANY
+// write failure, warn and return WITHOUT deleting anything (including to_drop),
+// so an aborted migration stays atomic and trivially reasoned about.
+//
+// Lifetime: runs synchronously via shared_ptr<SyncState> + cv.wait_for, so it
+// completes before load_blocking returns. Delete callbacks capture backend_id
+// and key BY VALUE, never `this` (matches try_migrate_legacy).
+void try_migrate_lane_keys_to_tool_keys(IMoonrakerAPI* api, const std::string& backend_id,
+                                        const nlohmann::json& namespace_doc,
+                                        std::chrono::milliseconds timeout) {
+    if (!api || !namespace_doc.is_object())
+        return;
+
+    // Step 1 — classify. to_move is ordered (std::map) so writes go in ascending
+    // slot order; to_drop holds stale laneN keys whose canonical T<n> exists.
+    std::map<int, std::string> to_move; // slot idx -> laneN key
+    std::vector<std::string> to_drop;   // laneN keys to delete without rewriting
+    for (auto it = namespace_doc.begin(); it != namespace_doc.end(); ++it) {
+        const std::string& key = it.key();
+        if (key == "seated")
+            continue;
+        if (!it.value().is_object())
+            continue;
+        // A record we cannot read is a record we cannot prove we authored, so
+        // skipping it is the same conservative answer as the key check below.
+        // Scoped per-record so an unreadable third-party entry can't abort the
+        // migration — or, worse, unwind into load_blocking's boundary and throw
+        // away the overrides that were already parsed successfully.
+        std::optional<std::pair<int, FilamentSlotOverride>> parsed;
+        try {
+            parsed = from_lane_data_record(it.value());
+        } catch (const std::exception& e) {
+            spdlog::warn("[FilamentSlotOverrideStore:{}] key migration skipping unreadable "
+                         "record {}: {}",
+                         backend_id, key, e.what());
+            continue;
+        }
+        if (!parsed)
+            continue;
+        const int idx = parsed->first;
+        if (key != format_lane_key(idx, LaneKeyStyle::Lane))
+            continue; // not a key we wrote — leave it alone
+        if (namespace_doc.contains(format_lane_key(idx, LaneKeyStyle::Tool)))
+            to_drop.push_back(key); // canonical already present → drop the stale laneN
+        else
+            to_move[idx] = key;
+    }
+
+    // Step 2 — idempotence guard: nothing of ours to migrate.
+    if (to_move.empty() && to_drop.empty())
+        return;
+
+    // Step 3 — write T<n> for every move, ascending slot order, all-or-nothing.
+    struct SyncState {
+        std::mutex m;
+        std::condition_variable cv;
+        bool done{false};
+        bool got{false};
+    };
+    for (const auto& [idx, lane_data_key] : to_move) {
+        // Copy the RAW record — preserving unmodeled third-party fields (Happy
+        // Hare's filament_id, AFC extras) that round-tripping through
+        // FilamentSlotOverride would silently drop. Normalize only the inner
+        // "lane" to a string so the written record satisfies Orca's is_string()
+        // contract even if the source had an integer lane.
+        nlohmann::json moved = namespace_doc[lane_data_key];
+        moved["lane"] = std::to_string(idx);
+        const std::string tool_key = format_lane_key(idx, LaneKeyStyle::Tool);
+
+        auto post_state = std::make_shared<SyncState>();
+        api->database_post_item(
+            "lane_data", tool_key, moved,
+            [post_state]() {
+                std::lock_guard<std::mutex> lk(post_state->m);
+                post_state->got = true;
+                post_state->done = true;
+                post_state->cv.notify_one();
+            },
+            [post_state](const MoonrakerError&) {
+                std::lock_guard<std::mutex> lk(post_state->m);
+                post_state->done = true;
+                post_state->cv.notify_one();
+            });
+
+        bool write_ok = false;
+        {
+            std::unique_lock<std::mutex> lk(post_state->m);
+            post_state->cv.wait_for(lk, timeout, [post_state] { return post_state->done; });
+            write_ok = post_state->got;
+        }
+        if (!write_ok) {
+            spdlog::warn("[FilamentSlotOverrideStore:{}] key migration aborted: failed to write "
+                         "{} to lane_data (laneN preserved for retry)",
+                         backend_id, tool_key);
+            return; // abort WITHOUT deleting anything (incl. to_drop) — stays atomic
+        }
+    }
+
+    // Step 4 — all writes succeeded; destination reachability is proven. Delete
+    // every stale laneN (moved + dropped). Fire-and-forget: a silently-failed
+    // delete just re-migrates next boot (self-idempotent). Capture backend_id
+    // and the key BY VALUE, never `this`.
+    for (const auto& [idx, lane_data_key] : to_move) {
+        (void)idx;
+        const std::string deleted_key = lane_data_key;
+        api->database_delete_item(
+            "lane_data", deleted_key, nullptr,
+            [backend_id, deleted_key](const MoonrakerError& err) {
+                spdlog::warn("[FilamentSlotOverrideStore:{}] failed to delete migrated "
+                             "lane_data:{}: {} (non-fatal, re-migrates next boot)",
+                             backend_id, deleted_key, err.message);
+            });
+    }
+    for (const auto& deleted_key : to_drop) {
+        api->database_delete_item("lane_data", deleted_key, nullptr,
+                                  [backend_id, deleted_key](const MoonrakerError& err) {
+                                      spdlog::warn(
+                                          "[FilamentSlotOverrideStore:{}] failed to delete stale "
+                                          "lane_data:{}: {} (non-fatal, re-migrates next boot)",
+                                          backend_id, deleted_key, err.message);
+                                  });
+    }
+
+    spdlog::info("[FilamentSlotOverrideStore:{}] migrated {} lane_data key(s) to T<n> style "
+                 "({} moved, {} dropped)",
+                 backend_id, to_move.size() + to_drop.size(), to_move.size(), to_drop.size());
+}
+
 } // namespace
 
+// Exception boundary for AMS initialization.
+//
+// lane_data is a SHARED Moonraker namespace: AFC, Happy Hare, Mainsail and the
+// user's own hand edits all write records into it, and every one of them can
+// produce a field that is present-but-null. nlohmann throws type_error.302 on
+// such a field (it does NOT throw for a missing key), and none of the four AMS
+// backends that call this wraps the call — so before this boundary existed, one
+// null "material" written by somebody else's plugin unwound the entire backend
+// init instead of costing a single slot.
+//
+// The per-record handlers inside load_blocking_impl scope the common cases to
+// one lost slot. This catch is the backstop for everything else: worst case the
+// user sees no overrides, which is the fresh-install state and fully
+// recoverable, rather than an AMS subsystem that failed to come up.
 std::unordered_map<int, FilamentSlotOverride> FilamentSlotOverrideStore::load_blocking() {
+    try {
+        return load_blocking_impl();
+    } catch (const std::exception& e) {
+        spdlog::warn("[FilamentSlotOverrideStore:{}] load aborted ({}); continuing with no "
+                     "overrides",
+                     backend_id_, e.what());
+        return {};
+    }
+}
+
+std::unordered_map<int, FilamentSlotOverride> FilamentSlotOverrideStore::load_blocking_impl() {
     std::unordered_map<int, FilamentSlotOverride> result;
     if (!api_)
         return result;
@@ -756,23 +1130,208 @@ std::unordered_map<int, FilamentSlotOverride> FilamentSlotOverrideStore::load_bl
     if (!received_copy.is_object())
         return result;
 
+    // One-shot diagnostic: surface lane_data records that are inconsistent or
+    // invisible to other readers (OrcaSlicer drops int-typed lanes; key/inner
+    // mismatches and residual duplicates confuse interop). Read-only — we do NOT
+    // rewrite third-party/corrupt records here; the migration below only touches
+    // keys we authored. This just turns silent field weirdness into one log line.
+    if (const auto anomalies = scan_lane_data_anomalies(received_copy); anomalies.total() > 0) {
+        spdlog::info("[FilamentSlotOverrideStore:{}] lane_data has {} anomalous record(s): "
+                     "{} int-typed lane, {} key/inner mismatch, {} unparseable, {} duplicate slot",
+                     backend_id_, anomalies.total(), anomalies.int_typed_lane,
+                     anomalies.key_inner_mismatch, anomalies.unparseable, anomalies.duplicate_slot);
+    }
+
+    // Key-agnostic ingest with canonical-key duplicate reconciliation. The
+    // outer key is NOT a filter anymore — Mainsail writes "T0", AFC "lane1",
+    // Happy Hare its own — so we ingest any well-formed lane record and let
+    // from_lane_data_record adjudicate. The inner "lane" field is now the only
+    // gate.
+    //
+    // On duplicate slots (two writers under two keys) prefer the record whose
+    // key is canonical for OUR key style: first canonical wins, a canonical
+    // always beats a non-canonical, otherwise the incumbent stays. This is
+    // order-independent (no reliance on nlohmann's byte-sorted iteration),
+    // converges (load->save->load is a fixed point since save writes the
+    // canonical key), and agrees with Orca's alphabetical first-wins in every
+    // case that can occur. warn, not debug: two writers disagreeing about one
+    // slot is an ops signal.
+    std::unordered_map<int, bool> canonical_seen; // slot idx -> incumbent was canonical
     for (auto it = received_copy.begin(); it != received_copy.end(); ++it) {
         const std::string& key = it.key();
-        // Only consider lane-prefixed keys (AFC convention). Ignore any
-        // unrelated data that may live in the lane_data namespace.
-        if (key.rfind("lane", 0) != 0) {
-            spdlog::debug("[FilamentSlotOverrideStore:{}] skipping non-lane key: {}", backend_id_,
+        // "seated" is a known sibling scalar (the 0-based seated-lane index),
+        // never a lane record — named-skip so the intent survives a future
+        // where it grows into an object.
+        if (key == "seated")
+            continue;
+        // Non-objects are namespace siblings, not malformed records — a separate
+        // debug line so genuine parse failures below stay distinguishable.
+        if (!it.value().is_object()) {
+            spdlog::debug("[FilamentSlotOverrideStore:{}] skipping non-object key: {}", backend_id_,
                           key);
             continue;
         }
-        auto parsed = from_lane_data_record(it.value());
+        // Per-record, not per-namespace: a record we cannot read costs that one
+        // slot. Anything wider would let a co-author's malformed entry erase
+        // every override the user has on the printer. warn (not debug) because
+        // unlike the nullopt case below this means the record threw, which is
+        // worth surfacing even though we recover from it.
+        std::optional<std::pair<int, FilamentSlotOverride>> parsed;
+        try {
+            parsed = from_lane_data_record(it.value());
+        } catch (const std::exception& e) {
+            spdlog::warn("[FilamentSlotOverrideStore:{}] skipping unreadable lane_data record "
+                         "{}: {}",
+                         backend_id_, key, e.what());
+            continue;
+        }
         if (!parsed) {
             spdlog::debug("[FilamentSlotOverrideStore:{}] from_lane_data_record failed for {}",
                           backend_id_, key);
             continue;
         }
-        result[parsed->first] = parsed->second;
+        const int idx = parsed->first;
+        const bool canonical = (key == format_lane_key(idx, key_style_));
+        auto seen = canonical_seen.find(idx);
+        if (seen == canonical_seen.end()) {
+            result[idx] = std::move(parsed->second);
+            canonical_seen[idx] = canonical;
+        } else if (canonical && !seen->second) {
+            spdlog::warn("[FilamentSlotOverrideStore:{}] duplicate lane_data records for slot {}; "
+                         "preferring canonical key {}",
+                         backend_id_, idx, key);
+            result[idx] = std::move(parsed->second);
+            seen->second = true;
+        } else {
+            spdlog::warn("[FilamentSlotOverrideStore:{}] duplicate lane_data record for slot {} "
+                         "under key {}; keeping the incumbent",
+                         backend_id_, idx, key);
+        }
     }
+
+    // One-shot heal: records written before orca_match_type existed (or whose
+    // match has drifted since — see below) carry a `material` OrcaSlicer
+    // cannot match, which it silently resolves to a PLA preset — PLA
+    // temperatures on whatever is really loaded. Rewrite them so the fix
+    // reaches existing installs without requiring the user to re-edit every
+    // slot.
+    //
+    // ONLY records we authored, proven by a helix_locked_* key. AFC, Happy
+    // Hare and Mainsail share this namespace and their records are not ours to
+    // rewrite — same rule scan_lane_data_anomalies follows (see this file's
+    // header comment on LaneDataAnomalies).
+    //
+    // Deliberately NOT gated on "already has helix_material". The trigger is
+    // "the record resolves to a different match string than it carries" —
+    // that also covers drift: a later Orca-table regeneration can drop a type
+    // we previously matched, so a record healed on an earlier boot needs to be
+    // healable again. Self-limiting instead via `orca_match_type(current) ==
+    // current`, which terminates because every override target is itself
+    // asserted to be in orca_library_types (see the Python-side idempotency
+    // test) — so a record this loop just wrote is never re-written on the
+    // next boot. The one case that check doesn't cover on its own — a record
+    // whose `material` was omitted because nothing was safely matchable — is
+    // covered by the `current.empty()` skip just below.
+    //
+    // Gated on orca_tables_available(): a missing or pre-change
+    // assets/filaments.json makes orca_match_type() return "" for EVERY
+    // input, which would make the gate below ("current == match") false for
+    // every helix-authored record and strip `material` from all of them in
+    // one pass. Skip the whole pass rather than heal against an empty table.
+    if (!filament::orca_tables_available()) {
+        spdlog::warn("[FilamentSlotOverrideStore:{}] Orca tables unavailable; skipping "
+                     "lane_data heal",
+                     backend_id_);
+    } else {
+        for (auto it = received_copy.begin(); it != received_copy.end(); ++it) {
+            const std::string& key = it.key();
+            if (key == "seated" || !it.value().is_object())
+                continue;
+            // Non-const: healed below via direct mutation, not a copy — see
+            // the in-place-mutation comment further down.
+            auto& rec = it.value();
+            const bool ours =
+                rec.contains("helix_locked_color") || rec.contains("helix_locked_material");
+            if (!ours)
+                continue; // not ours to rewrite
+            // safe_string, not .value(): a record whose `material` was written
+            // as JSON null is exactly the shape a co-author or a hand edit
+            // produces, and .value() throws type_error.302 on it. Null reads as
+            // "no material recorded", which correctly falls through the
+            // empty-skip below — there is nothing to heal on such a record.
+            const std::string current = helix::json_util::safe_string(rec, "material");
+            if (current.empty())
+                continue;
+            if (filament::orca_match_type(current) == current)
+                continue; // already the canonical matchable string — nothing to heal
+            // Per-record scope: the heal is opportunistic maintenance, so a
+            // record it cannot read is skipped rather than allowed to abort the
+            // pass over the records that follow it.
+            std::optional<std::pair<int, FilamentSlotOverride>> parsed;
+            try {
+                parsed = from_lane_data_record(rec);
+            } catch (const std::exception& e) {
+                spdlog::warn("[FilamentSlotOverrideStore:{}] skipping heal of unreadable "
+                             "record {}: {}",
+                             backend_id_, key, e.what());
+                continue;
+            }
+            if (!parsed)
+                continue;
+            // `identity` prefers helix_material, falling back to material,
+            // exactly like from_lane_data_record — so a record already healed
+            // once (which now drifted) is re-keyed off our own prior identity,
+            // not the possibly-stale `material` string.
+            const std::string identity = parsed->second.material;
+            const std::string matched = filament::orca_match_type(identity);
+
+            spdlog::info(
+                "[FilamentSlotOverrideStore:{}] healing lane_data {}: material '{}' is not "
+                "Orca-matchable, rewriting with helix_material",
+                backend_id_, key, current);
+
+            // Heal by mutating `rec` in place — a reference into
+            // received_copy itself — rather than regenerating the record via
+            // to_lane_data_record/save_async. Two things fall out of this:
+            //   1. scan_time and any field this store doesn't model (a
+            //      foreign co-author's key) survive untouched, instead of
+            //      being dropped by a full round-trip through
+            //      FilamentSlotOverride.
+            //   2. received_copy is what the Tool-key migration below reads.
+            //      Mutating it here means a stale laneN record is healed
+            //      BEFORE the migration moves it to T<n>, so the migration's
+            //      write carries the healed body — no unordered double-write
+            //      to T<n> between this heal and that migration (H2).
+            rec["helix_material"] = identity;
+            if (matched.empty())
+                rec.erase("material");
+            else
+                rec["material"] = matched;
+
+            // POST to the SAME key we read (not the key_style_-derived key
+            // save_async would compute) so a stale laneN record is healed at
+            // laneN, leaving the Tool-key migration below to move the
+            // already-healed body — this store never writes T<n> directly
+            // for a record it read under laneN.
+            const std::string backend_id_copy = backend_id_;
+            api_->database_post_item(
+                namespace_, key, rec, []() {},
+                [backend_id_copy, key](const MoonrakerError& err) {
+                    spdlog::warn("[FilamentSlotOverrideStore:{}] heal failed for {}: {}",
+                                 backend_id_copy, key, err.message);
+                });
+        }
+    }
+
+    // Tool-changer backends converge on Mainsail's T<n> key. If we (or an older
+    // HelixScreen build) previously wrote laneN records, rewrite them to T<n>
+    // now — the DB round-trip just proved reachability (got_copy == true). This
+    // runs on a NON-EMPTY lane_data, before the legacy block below (they are
+    // mutually exclusive: legacy is ace/cfs-only and result-empty-gated, this is
+    // Tool-only). The returned `result` already reflects the canonical choice,
+    // so the migration only reconciles the DB with what we return.
+    if (key_style_ == LaneKeyStyle::Tool)
+        try_migrate_lane_keys_to_tool_keys(api_, backend_id_, received_copy, load_timeout_);
 
     // lane_data returned empty-but-reachable — the MR DB is authoritative
     // ("no overrides configured"). Before accepting that verdict, give the
@@ -789,7 +1348,8 @@ std::unordered_map<int, FilamentSlotOverride> FilamentSlotOverrideStore::load_bl
     // fallback branch above we explicitly do NOT migrate — a transient
     // network blip should not attempt destructive namespace moves.
     if (result.empty() && (backend_id_ == "ace" || backend_id_ == "cfs")) {
-        auto migrated = try_migrate_legacy(api_, backend_id_, load_timeout_, cache_dir_effective());
+        auto migrated =
+            try_migrate_legacy(api_, backend_id_, load_timeout_, cache_dir_effective(), key_style_);
         if (!migrated.empty())
             return migrated;
     }
@@ -821,7 +1381,7 @@ void FilamentSlotOverrideStore::save_async(int slot_index, const FilamentSlotOve
 
     // Per-slot keys mean no read-modify-write: each slot is its own DB entry.
     // Avoids racing concurrent edits on different slots.
-    const std::string key = lane_key(slot_index);
+    const std::string key = format_lane_key(slot_index, key_style_);
 
     // Lifetime safety: Moonraker's request tracker can fire the error callback
     // well after save_async returns (default ~60s timeout). The store may be
@@ -868,7 +1428,7 @@ void FilamentSlotOverrideStore::clear_async(int slot_index, SaveCallback cb) {
         return;
     }
 
-    const std::string key = lane_key(slot_index);
+    const std::string key = format_lane_key(slot_index, key_style_);
 
     // Lifetime safety mirrors save_async: Moonraker's request tracker can fire
     // the error callback ~60s after this returns, well after the store may have
@@ -906,9 +1466,9 @@ void FilamentSlotOverrideStore::clear_async(int slot_index, SaveCallback cb) {
 //
 // The "seated" key is a sibling scalar in the lane_data namespace holding the
 // 0-based index of the lane currently loaded to the toolhead. It is NOT
-// per-lane, so it does not go through lane_key()/to_lane_data_record() and is
-// NOT mirrored into the local per-slot read-cache. The value on disk is a
-// plain JSON integer.
+// per-lane, so it does not go through format_lane_key()/to_lane_data_record()
+// and is NOT mirrored into the local per-slot read-cache. The value on disk is
+// a plain JSON integer.
 
 void FilamentSlotOverrideStore::save_seated_slot_async(int slot_index, SaveCallback cb) {
     if (!api_) {
@@ -1084,12 +1644,20 @@ bool mirror_firmware_to_lane_data(FilamentSlotOverrideStore* store,
         // set, otherwise every status poll would erase the user's choice.
         // The escape hatch is clear_slot_override, which erases the entry
         // and lets auto-mirror take over again.
-        if (!ovr.color_set) {
+        //
+        // The user-lock checks are redundant with the unset checks in the
+        // common path (set_slot_info sets color_set together with
+        // user_locked_color), but they are the authoritative "the user chose
+        // this" signal and every mirror policy honors them. Keeping both
+        // policies lock-aware means a record whose locks and value-set flags
+        // ever disagree — a legacy record, a hand-edited lane_data entry, a
+        // third-party writer — still cannot lose the user's choice here.
+        if (!ovr.user_locked_color && !ovr.color_set) {
             ovr.color_rgb = firmware_color;
             ovr.color_set = true;
             changed = true;
         }
-        if (ovr.material.empty() && !firmware_material.empty()) {
+        if (!ovr.user_locked_material && ovr.material.empty() && !firmware_material.empty()) {
             ovr.material = firmware_material;
             changed = true;
         }
@@ -1116,6 +1684,67 @@ bool mirror_firmware_to_lane_data(FilamentSlotOverrideStore* store,
                           });
     }
     return true;
+}
+
+// =============================================================================
+// SlotFingerprintTracker
+// =============================================================================
+
+FingerprintEvent SlotFingerprintTracker::observe(int slot_index, const std::string& observed,
+                                                 std::string* previous) {
+    if (observed.empty())
+        return FingerprintEvent::NoSignal;
+
+    auto it = baseline_.find(slot_index);
+    if (it == baseline_.end()) {
+        baseline_[slot_index] = observed;
+        return FingerprintEvent::Baseline;
+    }
+    if (it->second == observed)
+        return FingerprintEvent::Unchanged;
+
+    if (previous)
+        *previous = it->second;
+    // Advance the baseline BEFORE classifying, so a caller whose follow-up
+    // action fails (a rejected clear_async, say) doesn't re-fire the same event
+    // on every subsequent poll.
+    it->second = observed;
+
+    auto exp = expected_.find(slot_index);
+    if (exp == expected_.end())
+        return FingerprintEvent::Changed;
+
+    // Single-shot: any change consumes the expectation, matching or not. A
+    // non-matching change means the slot moved somewhere we did not send it, so
+    // whatever echo was outstanding is no longer meaningful — and swap
+    // detection returns to normal immediately rather than staying suppressed.
+    const bool matched = (exp->second == observed);
+    expected_.erase(exp);
+    return matched ? FingerprintEvent::OwnWriteEcho : FingerprintEvent::Changed;
+}
+
+void SlotFingerprintTracker::expect(int slot_index, std::string expected_value) {
+    expected_[slot_index] = std::move(expected_value);
+}
+
+void SlotFingerprintTracker::forget_expected(int slot_index) {
+    expected_.erase(slot_index);
+}
+
+std::optional<std::string> SlotFingerprintTracker::baseline(int slot_index) const {
+    auto it = baseline_.find(slot_index);
+    if (it == baseline_.end())
+        return std::nullopt;
+    return it->second;
+}
+
+bool SlotFingerprintTracker::has_expected(int slot_index) const {
+    return expected_.find(slot_index) != expected_.end();
+}
+
+void SlotFingerprintTracker::clear() {
+    baseline_.clear();
+    expected_.clear();
 }
 
 } // namespace helix::ams

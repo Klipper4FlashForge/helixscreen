@@ -16,10 +16,48 @@
 
 namespace helix {
 
-// Track previous state to detect transitions TO printing
+// Track previous state to detect inactive→active print transitions
 static PrintJobState prev_print_state = PrintJobState::STANDBY;
 
-// Callback for print state changes - auto-navigates to print status on print start.
+bool is_active_print_state(PrintJobState s) {
+    return s == PrintJobState::PRINTING || s == PrintJobState::PAUSED;
+}
+
+bool print_start_nav_should_navigate(PrintJobState prev, PrintJobState current) {
+    return !is_active_print_state(prev) && is_active_print_state(current);
+}
+
+// Queue the print status overlay push on the UI thread. Shared by the
+// state-change observer (which may fire on the WebSocket background thread)
+// and the init-time level check — push_overlay() creates LVGL widgets which
+// must run on the UI thread, so both paths defer via queue_update.
+//
+// Skip if print status is already on the nav stack. The observer fires on
+// every inactive→active transition, including the completion→retry cycle
+// (finished print → error/standby → new print) where the user may still be
+// viewing print status from the previous job. Without this guard, every
+// retry produced a "[NavigationManager] Overlay ... already in stack"
+// warning (bundle J3WD5GQJ saw 9 of these in 11 hours). The
+// is_panel_in_stack() check has to run on the UI thread, so it lives
+// inside the queue_update lambda.
+static void queue_push_print_status_overlay() {
+    helix::ui::queue_update([]() {
+        auto* cached = PrintStatusPanel::get_cached_overlay();
+        if (cached && NavigationManager::instance().is_panel_in_stack(cached)) {
+            spdlog::debug("[PrintStartNav] Print status already on stack — skip auto-nav");
+            return;
+        }
+        PrintStatusPanel::push_overlay(lv_display_get_screen_active(nullptr));
+    });
+}
+
+// Callback for print state changes - auto-navigates to print status when a print
+// job becomes active. The gate fires on any inactive→active edge, not just
+// →PRINTING: firmware power-loss recovery surfaces the restored job as PAUSED at
+// initial connect (#1099), and that deserves the same auto-navigation as a normal
+// print start. Active→active edges (pause, resume) never navigate, so a user who
+// deliberately left the print status screen mid-print isn't yanked back on resume.
+//
 // This observer fires synchronously from lv_subject_set_int which may be called on
 // the WebSocket background thread. All LVGL widget creation MUST happen on the UI
 // thread, so we defer push_overlay via queue_update. This fixes the thumbnail race
@@ -32,12 +70,7 @@ static void on_print_state_changed_for_navigation(lv_observer_t* observer, lv_su
     spdlog::trace("[PrintStartNav] State change: {} -> {}", static_cast<int>(prev_print_state),
                   static_cast<int>(current));
 
-    // Check for transition TO printing from a non-printing state
-    bool was_not_printing =
-        (prev_print_state != PrintJobState::PRINTING && prev_print_state != PrintJobState::PAUSED);
-    bool is_now_printing = (current == PrintJobState::PRINTING);
-
-    if (was_not_printing && is_now_printing) {
+    if (print_start_nav_should_navigate(prev_print_state, current)) {
         // Don't auto-navigate while the setup wizard is running
         if (is_wizard_active()) {
             spdlog::debug(
@@ -46,26 +79,8 @@ static void on_print_state_changed_for_navigation(lv_observer_t* observer, lv_su
             return;
         }
 
-        // Defer to UI thread — this observer may fire on the WebSocket background
-        // thread, and push_overlay() creates LVGL widgets which must be on UI thread.
-        //
-        // Skip if print status is already on the nav stack. This observer fires
-        // on every non-printing→PRINTING transition, including the completion→
-        // retry cycle (finished print → error/standby → new print) where the user
-        // may still be viewing print status from the previous job. Without this
-        // guard, every retry produced a "[NavigationManager] Overlay ... already
-        // in stack" warning (bundle J3WD5GQJ saw 9 of these in 11 hours). The
-        // is_panel_in_stack() check has to run on the UI thread, so it lives
-        // inside the queue_update lambda.
-        spdlog::info("[PrintStartNav] Auto-navigating to print status (print started)");
-        helix::ui::queue_update([]() {
-            auto* cached = PrintStatusPanel::get_cached_overlay();
-            if (cached && NavigationManager::instance().is_panel_in_stack(cached)) {
-                spdlog::debug("[PrintStartNav] Print status already on stack — skip auto-nav");
-                return;
-            }
-            PrintStatusPanel::push_overlay(lv_display_get_screen_active(nullptr));
-        });
+        spdlog::info("[PrintStartNav] Auto-navigating to print status (print job active)");
+        queue_push_print_status_overlay();
     }
 
     prev_print_state = current;
@@ -77,6 +92,19 @@ ObserverGuard init_print_start_navigation_observer() {
         lv_subject_get_int(get_printer_state().get_print_state_enum_subject()));
     spdlog::debug("[PrintStartNav] Observer registered (initial state={})",
                   static_cast<int>(prev_print_state));
+
+    // Level check: if the print state is ALREADY active when the observer is
+    // registered, the edge observer never fires — the subject was set before we
+    // subscribed. This happens after firmware power-loss recovery, where the
+    // restored job can be PAUSED/PRINTING by the time initial connect completes
+    // (#1099). Navigate now so the user lands on the running job.
+    if (is_active_print_state(prev_print_state) && !is_wizard_active()) {
+        spdlog::info("[PrintStartNav] Print already active at init (state={}) — "
+                     "auto-navigating to print status",
+                     static_cast<int>(prev_print_state));
+        queue_push_print_status_overlay();
+    }
+
     return ObserverGuard(get_printer_state().get_print_state_enum_subject(),
                          on_print_state_changed_for_navigation, nullptr);
 }

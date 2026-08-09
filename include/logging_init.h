@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include <spdlog/pattern_formatter.h>
 #include <spdlog/spdlog.h>
 
+#include <memory>
 #include <string>
 
 namespace helix {
@@ -37,13 +39,96 @@ enum class SinkKind {
  *
  * Invariants enforced by tests/unit/test_log_pattern.cpp:
  *   - every pattern contains %t (thread id)
+ *   - every pattern contains %* (the monotonic column — see make_formatter())
  *   - Console and File contain a time token; the system sinks do not
+ *   - File carries a full date, so a session crossing midnight is unambiguous
  *   - Console keeps the colored-level tokens %^ / %$
+ *
+ * Patterns using %* must be installed with make_formatter(), NOT set_pattern():
+ * a plain set_pattern() has no handler for the custom flag and emits it
+ * literally.
  *
  * @param kind Which sink the pattern is for
  * @return A static pattern string (valid for process lifetime)
  */
 const char* pattern_for_sink(SinkKind kind);
+
+/**
+ * @brief Seconds elapsed since process start, from CLOCK_MONOTONIC
+ *
+ * Immune to clock steps and timezone changes, which the wall-clock timestamp is
+ * not. Anchored on first call; init_early() forces that to happen at the top of
+ * main() so the offset really is since-start. Returns 0.0 where CLOCK_MONOTONIC
+ * is unavailable.
+ */
+double monotonic_seconds();
+
+/**
+ * @brief Render a monotonic offset as the fixed-width log column
+ *
+ * `+00057.398` — zero-padded to 5 integer digits (27 hours) so the column stays
+ * aligned and a real gap is visible by eye, growing rather than truncating past
+ * that. Pure; unit-tested.
+ */
+std::string format_monotonic(double seconds);
+
+/**
+ * @brief Did the wall clock step between two log lines?
+ *
+ * Compares how far CLOCK_REALTIME moved against how far CLOCK_MONOTONIC moved
+ * over the same interval. NTP slew is bounded at ~500 ppm by adjtime(), so a
+ * divergence of a full second cannot be slew — it is a step (or a suspend).
+ * Catches backward steps too, which are worse: they interleave lines out of
+ * chronological order with nothing to show for it.
+ *
+ * Pure; unit-tested. See issue #1218 — bundle XRK8KPTF showed a fabricated
+ * 14m37s "reconnect stall" that was a +874 s clock step on an RTC-less printer.
+ */
+bool is_clock_step(double wall_delta_s, double mono_delta_s);
+
+namespace detail {
+
+/**
+ * @brief Thread-local replay state for formatting stored log entries
+ *
+ * `%*` normally reads the clock as it formats, which is right for a sink that
+ * formats on the logging thread. A ring buffer does not: it stores raw messages
+ * and formats them later, so every line in a dump would receive the dump
+ * instant. MonotonicRingSink records the real offset per entry and replays it
+ * here while formatting.
+ *
+ * Thread-local, so a live sink formatting concurrently on another thread is
+ * unaffected and keeps reading the clock. `reset_sequence` clears the flag
+ * formatter's step-detection memory at the start of a dump, so a dump is
+ * self-contained: the first line is never diffed against whatever that
+ * formatter last saw (debug_bundle_collector probes the ring with a 1-line
+ * tail before log_collector takes the real dump, which would otherwise open
+ * every bundle with a fabricated CLOCK_STEP).
+ */
+struct MonotonicReplay {
+    bool active = false;
+    double value = 0.0;
+    bool reset_sequence = false;
+};
+
+/// Accessor for the calling thread's replay state.
+MonotonicReplay& monotonic_replay();
+
+} // namespace detail
+
+/**
+ * @brief Build the formatter for a sink kind
+ *
+ * pattern_for_sink() plus the `%*` custom flag that renders the monotonic
+ * column and annotates any line across which the wall clock stepped
+ * (`CLOCK_STEP+874.000s`). Each call returns an independent formatter with its
+ * own step-detection state, which is what sinks need: they format the same
+ * message independently, each under its own mutex.
+ *
+ * Use this everywhere a log sink is configured. sink->set_pattern() is not
+ * equivalent — it cannot resolve the custom flag.
+ */
+std::unique_ptr<spdlog::formatter> make_formatter(SinkKind kind);
 
 /**
  * @brief Log destination targets
@@ -73,7 +158,98 @@ struct LogConfig {
         true; ///< Enable console sink (only attached when target is Console or stdout is a TTY)
     LogTarget target = LogTarget::Auto; ///< System log destination
     std::string file_path;              ///< Override file path (empty = auto)
+    bool force_console = false;         ///< Attach console sink even when stdout is not a TTY
+                                        ///< (set when the user explicitly passed -v/--log-level)
+    bool test_mode = false;             ///< Running under --test: always attach the console sink.
+                                        ///< Sourced from RuntimeConfig by the CALLER, not read
+                                        ///< here: logging_init.o is linked into the watchdog
+                                        ///< build, which deliberately does not link
+                                        ///< runtime_config.o (mk/watchdog.mk
+                                        ///< WATCHDOG_EXTRA_OBJS). Reading it here would be an
+                                        ///< undefined symbol at watchdog link time.
 };
+
+/**
+ * @brief What kind of file descriptor stdout currently is
+ *
+ * Distinguishes "a human is watching" from "this is a daemon redirect", which
+ * the console gate cannot tell from isatty() alone. See should_add_console().
+ */
+enum class StdoutKind {
+    Tty,    ///< Interactive terminal — a human is definitely watching
+    Pipe,   ///< FIFO/pipe — a human is watching through `| tee` / `| grep`
+    File,   ///< Regular file — daemon redirect (`>> launcher.log`)
+    Socket, ///< Socket — systemd's StandardOutput=journal
+    Other   ///< Unknown, or fstat() failed — treated conservatively as not forceable
+};
+
+/**
+ * @brief Classify the process's real stdout file descriptor
+ *
+ * isatty() first, then fstat() to tell a pipe from a file/socket. A failed
+ * fstat() yields StdoutKind::Other, which should_add_console() treats as
+ * non-forceable — i.e. it falls back to the plain isatty-only behavior.
+ */
+StdoutKind classify_stdout();
+
+/**
+ * @brief Decide whether the console sink should be attached
+ *
+ * Pure function (no spdlog/isatty/fstat dependency) so the gate is unit-testable
+ * without a real TTY. Called by init() with the already-resolved target and the
+ * stdout kind from classify_stdout().
+ *
+ * Rules:
+ *   - Console target: console is the ONLY sink, always add.
+ *   - Android target: stdout is invisible (logcat handles output), never add.
+ *   - Journal/Syslog/File: a structured destination already captures output.
+ *     Add the console when stdout is a TTY (interactive run from a shell), so
+ *     dev workstations and `ssh -t` sessions still see colored output.
+ *
+ *     `force_console` (an explicit -v/--log-level) additionally attaches the
+ *     console when stdout is a PIPE, but deliberately NOT when it is a regular
+ *     file or a socket:
+ *
+ *       - A pipe means a human is watching through `tee`/`grep` — the documented
+ *         way to capture a session — so the output must not be discarded (#1105).
+ *       - A regular file is the daemon redirect (`>> $LOGFILE 2>&1` in the
+ *         U1/K1/K2/CC1/AD5M init scripts) and a socket is systemd's
+ *         StandardOutput=journal. In both cases stdout already lands in the same
+ *         place the structured sink writes, so a console sink double-logs every
+ *         line. That is not hypothetical: it caused the Snapmaker U1 tmpfs
+ *         blowout where /tmp/helixscreen.log grew to 498 MB at trace level, and
+ *         the shipped launcher DOES synthesize --log-level/-vv from the
+ *         HELIX_LOG_LEVEL / HELIX_DEBUG env vars (scripts/helix-launcher.sh),
+ *         which serve-local-update.sh writes onto live devices — so force_console
+ *         is reachable under systemd and must stay off for file/socket.
+ *
+ *   - test_mode (--test) attaches the console for ANY stdout kind, including a
+ *     regular file or socket. This is safe precisely because --test never runs
+ *     in production: no systemd unit, init script, procd shim, or launcher
+ *     passes it, so test mode cannot reach a daemonized double-log path. It
+ *     closes the gap left by the pipe-only force — issue #1105's literal repro
+ *     is `helix-screen --test -vv`, and a reporter redirecting with `> file`
+ *     rather than `| tee` would otherwise still see nothing.
+ *
+ *     Deliberate precedence: test_mode does NOT override the Android rule.
+ *     Android + test mode is not a real configuration, and stdout is invisible
+ *     under logcat either way, so Android keeps returning false.
+ *
+ *     Accepted tradeoff (production only): `helix-screen -vv > out.log` stays
+ *     silent, because a plain redirect is indistinguishable from the daemon
+ *     redirect. Unchanged from previous behavior, so not a regression; use
+ *     `| tee out.log` instead.
+ *   - enable_console is the master switch and vetoes every case.
+ *
+ * @param effective_target Target after Auto detection has been resolved
+ * @param enable_console   Master switch from LogConfig::enable_console
+ * @param force_console    User explicitly requested console output (-v/--log-level)
+ * @param test_mode        Running under --test (see LogConfig::test_mode)
+ * @param stdout_kind      What stdout is (see classify_stdout())
+ * @return true if a stdout console sink should be attached
+ */
+bool should_add_console(LogTarget effective_target, bool enable_console, bool force_console,
+                        bool test_mode, StdoutKind stdout_kind);
 
 /**
  * @brief Initialize minimal logging for early startup
@@ -93,6 +269,26 @@ void init_early();
  * @param config Logging configuration
  */
 void init(const LogConfig& config);
+
+/**
+ * @brief Ring-buffer capacity for a device with `total_ram_mb` of RAM
+ *
+ * The debug ring is the only place a bundle can recover live DEBUG context on a
+ * device whose persistent sinks run at WARN, so its useful size is "how far back
+ * can we see" — and that should scale with the machine rather than being one
+ * number chosen for the smallest board. Roughly 0.24% of RAM (~16 lines/MB at
+ * ~150 bytes a line), floored at the historical 2000 so no device regresses and
+ * capped so a desktop does not hoard megabytes it will never read.
+ *
+ * Deliberately keyed on TOTAL ram, not available: MemAvailable at logging-init
+ * time depends on boot ordering, which would give the same printer a different
+ * ring every boot and shrink it hardest under memory pressure — precisely when
+ * the diagnostics matter most.
+ *
+ * @param total_ram_mb Total system RAM in MB (0 = detection failed, use floor)
+ * @return Ring capacity in lines
+ */
+size_t ring_capacity_for_ram(size_t total_ram_mb);
 
 /**
  * @brief Parse log target from string

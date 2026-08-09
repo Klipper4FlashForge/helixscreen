@@ -7,6 +7,7 @@
 
 #include "display_settings_manager.h"
 #include "format_utils.h"
+#include "json_utils.h"
 #include "locale_formats.h"
 #include "moonraker_api_internal.h"
 #include "moonraker_client.h"
@@ -78,10 +79,15 @@ template <typename T> T json_number_or(const nlohmann::json& j, const char* key,
 PrintHistoryJob parse_history_job(const json& job_json) {
     PrintHistoryJob job;
 
-    // String fields (use value() - safe for null since it returns default for missing)
-    job.job_id = job_json.value("job_id", "");
-    job.filename = job_json.value("filename", "");
-    job.status = parse_job_status(job_json.value("status", "unknown"));
+    // String fields. json::value() is safe for a MISSING key but NOT for a key
+    // present with a null value — it calls get<std::string>() on the null and
+    // throws type_error.302. Moonraker writes a null "filename" for jobs whose
+    // source file has since been deleted, and there is no try/catch on this
+    // path: one such row would abort the whole server.history.list parse, so
+    // on_success never fires and the history panel spins forever.
+    job.job_id = helix::json_util::safe_string(job_json, "job_id", "");
+    job.filename = helix::json_util::safe_string(job_json, "filename", "");
+    job.status = parse_job_status(helix::json_util::safe_string(job_json, "status", "unknown"));
 
     // Numeric fields - use json_number_or() for null-safety
     // end_time is notably null for in-progress jobs
@@ -91,8 +97,9 @@ PrintHistoryJob parse_history_job(const json& job_json) {
     job.total_duration = json_number_or(job_json, "total_duration", 0.0);
     job.filament_used = json_number_or(job_json, "filament_used", 0.0);
 
-    // Boolean - value() is safe here since we check for existence first
-    job.exists = job_json.value("exists", false);
+    // Boolean. There is no existence check here (the old comment claimed one),
+    // and value() throws on a present-but-null "exists" just as it does above.
+    job.exists = helix::json_util::safe_bool(job_json, "exists", false);
 
     // Metadata (may be nested or null)
     if (job_json.contains("metadata") && job_json["metadata"].is_object()) {
@@ -108,9 +115,11 @@ PrintHistoryJob parse_history_job(const json& job_json) {
             int best_pixels = 0;
             for (const auto& t : meta["thumbnails"]) {
                 ThumbnailInfo info;
-                info.relative_path = t.value("relative_path", "");
-                info.width = t.value("width", 0);
-                info.height = t.value("height", 0);
+                info.relative_path = helix::json_util::safe_string(t, "relative_path", "");
+                // safe_int also coerces the string-encoded dimensions some
+                // slicers emit ("400" rather than 400).
+                info.width = helix::json_util::safe_int(t, "width", 0);
+                info.height = helix::json_util::safe_int(t, "height", 0);
                 if (!info.relative_path.empty()) {
                     job.thumbnails.push_back(info);
                     if (info.pixel_count() > best_pixels) {
@@ -122,7 +131,7 @@ PrintHistoryJob parse_history_job(const json& job_json) {
         }
 
         // UUID and file size for precise history matching
-        job.uuid = meta.value("uuid", "");
+        job.uuid = helix::json_util::safe_string(meta, "uuid", "");
         job.size_bytes = json_number_or(meta, "size", static_cast<size_t>(0));
     }
 

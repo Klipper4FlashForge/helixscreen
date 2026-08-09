@@ -207,19 +207,70 @@ describe("isSharedLibAddr", () => {
 // ---------- resolveBacktrace ----------
 
 describe("resolveBacktrace", () => {
-  function createMockBucket(files: Record<string, string> = {}): R2Bucket {
+  // Values may be a string (served via .text(), for uncompressed .sym keys) or a
+  // Uint8Array (served via .arrayBuffer(), for compressed .sym.zst keys).
+  function createMockBucket(files: Record<string, string | Uint8Array> = {}): R2Bucket {
     return {
       async get(key: string) {
         const content = files[key];
-        if (!content) return null;
+        if (content == null) return null;
+        if (typeof content === "string") {
+          return { text: async () => content };
+        }
         return {
-          text: async () => content,
+          arrayBuffer: async () =>
+            content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength),
         };
       },
     } as unknown as R2Bucket;
   }
 
   const symFileContent = SAMPLE_NM_OUTPUT;
+
+  // zstd -19 of SAMPLE_NM_OUTPUT (base64) — the release pipeline publishes maps
+  // only as .sym.zst, so this is the format the worker actually fetches. The
+  // zstd test below decodes this and asserts the expected symbols resolve; if
+  // SAMPLE_NM_OUTPUT's addresses change, regenerate with:
+  //   zstd -19 -c sample.txt | base64 -w0
+  const SAMPLE_NM_ZSTD_B64 =
+    "KLUv/WQiAH0FAEIKIBhg1wOLeRgdJGRS9KbUB/CfP5gvn4aBYQ7AILyc7lUWgzCfqUyDcD4/ZOd72yfx2i/njfdOrkH4mYqUp0or5xzBX6/SXZKnaF0tg3B5b8XWl3ODkPrrJOO9Bcpe9Y2TUs7WI4PgmoXQaz/LplnGFN6MFe1NAG/5b3SRe+894r0XFCDAQtwNklBsdM+82tussr4w6+1emXO32yVs+QRMMBZXjEFGeUmb8aqWhgETRGlc";
+  const symFileZstd = Uint8Array.from(atob(SAMPLE_NM_ZSTD_B64), (c) => c.charCodeAt(0));
+
+  it("resolves from a zstd-compressed .sym.zst (the published format)", async () => {
+    const bucket = createMockBucket({
+      "symbols/v0.9.9/pi.sym.zst": symFileZstd,
+    });
+
+    const report = {
+      app_version: "0.9.9",
+      platform: "pi",
+      load_base: "0x0",
+      backtrace: ["0x00020200", "0x00020000", "0x00010000"],
+    };
+
+    const result = await resolveBacktrace(bucket, report);
+    expect(result.symbolFileFound).toBe(true);
+    expect(result.frames[0].symbol).toBe("Application::run()+0x0");
+    expect(result.frames[1].symbol).toBe("main+0x0");
+    expect(result.frames[2].symbol).toBe("_start+0x0");
+  });
+
+  it("prefers .sym.zst over an uncompressed .sym when both exist", async () => {
+    const bucket = createMockBucket({
+      "symbols/v0.9.9/pi.sym.zst": symFileZstd,
+      "symbols/v0.9.9/pi.sym": "00099999 T should_not_be_used\n",
+    });
+
+    const report = {
+      app_version: "0.9.9",
+      platform: "pi",
+      load_base: "0x0",
+      backtrace: ["0x00020000"],
+    };
+
+    const result = await resolveBacktrace(bucket, report);
+    expect(result.frames[0].symbol).toBe("main+0x0");
+  });
 
   it("resolves backtrace with explicit load_base", async () => {
     const bucket = createMockBucket({

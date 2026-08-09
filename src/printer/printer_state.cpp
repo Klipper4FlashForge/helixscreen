@@ -19,6 +19,7 @@
 #include "async_helpers.h"
 #include "capability_overrides.h"
 #include "color_sensor_manager.h"
+#include "connection_state.h" // For ConnectionState enum
 #include "device_display_name.h"
 #include "filament_sensor_manager.h"
 #include "hardware_validator.h"
@@ -27,7 +28,7 @@
 #include "lvgl.h"
 #include "lvgl/src/display/lv_display_private.h" // For rendering_in_progress check
 #include "lvgl_debug_invalidate.h"
-#include "connection_state.h" // For ConnectionState enum
+#include "printer_cache_registry.h"
 #include "probe_sensor_manager.h"
 #include "runtime_config.h"
 #include "settings_manager.h"
@@ -122,6 +123,17 @@ void PrinterState::deinit_subjects() {
     }
 
     spdlog::trace("[PrinterState] deinit_subjects: Deinitializing all subjects");
+
+    // Expire any setter callbacks still queued on the UpdateQueue. They capture
+    // `this` and touch the subjects torn down below (directly or through
+    // apply_dynamic_options()); without this the next drain notifies a freed
+    // observer list (#1165, #1146).
+    async_lifetime_.invalidate();
+
+    // Drop the per-printer cache invalidator registered by init_subjects(). It captures
+    // `this`, and the registry outlives non-singleton instances (test fixtures own their
+    // own PrinterState), so leaving it registered would hold a callback over freed memory.
+    helix::PrinterCacheRegistry::instance().unregister("PrinterState");
 
     // Deinit all sub-component subjects
     temperature_state_.deinit_subjects();
@@ -278,7 +290,21 @@ void PrinterState::init_subjects(bool register_xml) {
     StaticSubjectRegistry::instance().register_deinit("PrinterState",
                                                       [this]() { deinit_subjects(); });
 
+    // Self-register per-printer cache invalidation. capability_overrides_ is loaded from
+    // Config::df() in the constructor only, and this object outlives every printer switch,
+    // so without this the map keeps the startup printer's enable/disable choices.
+    helix::PrinterCacheRegistry::instance().register_invalidator(
+        "PrinterState", [this]() { reload_capability_overrides(); });
+
     spdlog::trace("[PrinterState] Subjects initialized and registered successfully");
+}
+
+void PrinterState::reload_capability_overrides() {
+    // Only the override map is refreshed. The effective capability subjects are re-derived
+    // from set_hardware(discovery_, capability_overrides_) when the new printer's discovery
+    // lands; deriving them here would pair the new printer's overrides with the OLD
+    // printer's still-cached discovery_.
+    capability_overrides_.load_from_config();
 }
 
 void PrinterState::update_from_notification(const json& notification) {
@@ -301,7 +327,7 @@ void PrinterState::update_from_notification(const json& notification) {
     // when subject updates trigger lv_obj_invalidate() during rendering
     auto params = notification["params"];
     if (params.is_array() && !params.empty()) {
-        helix::ui::queue_update([this, state_json = params[0]]() {
+        async_lifetime_.defer("PrinterState::on_status_update", [this, state_json = params[0]]() {
             // Debug check: log if we're somehow in render phase (should never happen)
             if (lvgl_is_rendering()) {
                 spdlog::error("[PrinterState] async status update running during render phase!");
@@ -456,7 +482,7 @@ void PrinterState::update_from_status(const json& state) {
                 new_state = KlippyState::ERROR;
             }
 
-            network_state_.set_klippy_state_internal(new_state);
+            set_klippy_state_internal(new_state);
         }
 
         // Capture state_message (error/shutdown reason text)
@@ -476,6 +502,17 @@ void PrinterState::update_from_status(const json& state) {
     // Delegate calibration updates (manual probe, motor state, firmware retraction)
     // to calibration_state_ component
     calibration_state_.update_from_status(state);
+
+    // Re-arm the once-per-episode busy-queue toast when the COMPOSITE blocking
+    // condition has cleared — never on an individual signal's falling edge. A
+    // manual-probe session whose idle_timeout bounces to "Ready" between TESTZ moves
+    // is still one blocking episode; keying off idle_timeout alone would re-toast
+    // mid-episode (#1108 review). is_blocking_operation_active() sees the just-updated
+    // manual_probe / idle_timeout / print-job subjects. The store is idempotent, so
+    // gating on the predicate needs no separate edge tracking.
+    if (!is_blocking_operation_active()) {
+        calibration_state_.arm_busy_queue_toast();
+    }
 
     // Forward filament sensor updates to FilamentSensorManager
     // The manager handles all sensor types: filament_switch_sensor and filament_motion_sensor
@@ -501,8 +538,9 @@ void PrinterState::reset_for_new_print() {
 void PrinterState::set_printer_connection_state(int state, const char* message) {
     // Thread-safe wrapper: defer LVGL subject updates to main thread
     std::string msg = message ? message : "";
-    helix::ui::queue_update(
-        [this, state, msg]() { set_printer_connection_state_internal(state, msg.c_str()); });
+    async_lifetime_.defer("PrinterState::set_printer_connection_state", [this, state, msg]() {
+        set_printer_connection_state_internal(state, msg.c_str());
+    });
 }
 
 void PrinterState::set_printer_connection_state_internal(int state, const char* message) {
@@ -526,8 +564,20 @@ void PrinterState::set_klippy_state_sync(KlippyState state) {
 }
 
 void PrinterState::set_klippy_state_internal(KlippyState state) {
-    // Delegate to network_state_ component
-    network_state_.set_klippy_state_internal(state);
+    // Single chokepoint for every Klippy state change: the webhooks JSON parse, the
+    // helix::async::call_method wrapper, and set_klippy_state_sync all land here.
+    const bool changed = network_state_.set_klippy_state_internal(state);
+    if (!changed) {
+        return;
+    }
+
+    // Any transition invalidates state cached from Klipper's DELTA-only status
+    // fields. Both directions matter: READY -> dead means nothing it was doing
+    // survives; dead -> READY means a fresh Klipper with nothing blocking yet.
+    // Without this, an idle_timeout captured mid-G28 outlived the restart and made
+    // the app queue discretionary G-code fire-and-forget against an idle printer,
+    // wedging the LED in-flight counter for the whole session (#1129).
+    calibration_state_.reset_klippy_volatile();
 }
 
 void PrinterState::update_nav_buttons_enabled() {
@@ -684,7 +734,7 @@ void PrinterState::set_timelapse_available(bool available) {
     // Resynthesize the option set (timelapse is appended dynamically when
     // available) and recompute aggregate visibility — both must run on the
     // main thread.
-    helix::ui::queue_update([this]() {
+    async_lifetime_.defer("PrinterState::set_timelapse_available", [this]() {
         apply_dynamic_options();
         update_gcode_modification_visibility();
     });
@@ -694,7 +744,7 @@ void PrinterState::set_timelapse_default_enabled(bool enabled) {
     // Seed the timelapse pre-print option's default from the global
     // moonraker-timelapse `enabled` setting. Both the member write and the
     // resynthesis must run on the main thread (#1094).
-    helix::ui::queue_update([this, enabled]() {
+    async_lifetime_.defer("PrinterState::set_timelapse_default_enabled", [this, enabled]() {
         timelapse_default_enabled_ = enabled;
         apply_dynamic_options();
         update_gcode_modification_visibility();
@@ -704,7 +754,7 @@ void PrinterState::set_timelapse_default_enabled(bool enabled) {
 void PrinterState::set_helix_plugin_installed(bool installed) {
     // Thread-safe: Use ui_queue_update to update LVGL subject from any thread
     // We handle the async dispatch here because we need to update composite subjects after
-    helix::ui::queue_update([this, installed]() {
+    async_lifetime_.defer("PrinterState::set_helix_plugin_installed", [this, installed]() {
         plugin_status_state_.set_installed(installed);
 
         // Update composite subjects for G-code modification options
@@ -764,6 +814,21 @@ bool PrinterState::is_blocking_operation_active() {
 
     const PrintJobState pstate = get_print_job_state();
     return pstate != PrintJobState::PRINTING && pstate != PrintJobState::PAUSED;
+}
+
+bool PrinterState::is_external_blocking_operation_active() {
+    // Manual probe is an absolute block: TESTZ sessions must never accept
+    // jog gcode regardless of how recently the app itself sent motion.
+    if (lv_subject_get_int(calibration_state_.get_manual_probe_active_subject()) != 0) {
+        return true;
+    }
+    if (!is_blocking_operation_active()) {
+        return false;
+    }
+    // idle_timeout == "Printing" during any move, including our own jog. If the
+    // app has motion in flight (or acked within the grace window), the busy-ness
+    // is self-inflicted — let discretionary gcode through so jogs don't self-block.
+    return !app_motion_activity_.recently_active();
 }
 
 bool PrinterState::can_start_new_print() const {

@@ -7,6 +7,8 @@
 
 #include "test_helpers/update_queue_test_access.h"
 
+#include <spdlog/spdlog.h>
+
 #include <chrono>
 #include <thread>
 
@@ -103,6 +105,9 @@ lv_obj_t* LVGLTestFixture::create_test_screen() {
     return m_test_screen;
 }
 
+// Advances LVGL's virtual clock. Real elapsed time is ~ms/5, and zero below the
+// 50ms sleep threshold — never build a wall-clock wait out of this. wait_until()
+// is the helper that also yields to other threads.
 void LVGLTestFixture::process_lvgl(int ms) {
     if (ms <= 0) {
         return;
@@ -128,4 +133,36 @@ void LVGLTestFixture::process_lvgl(int ms) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
+}
+
+bool LVGLTestFixture::wait_until(const std::function<bool()>& condition, uint32_t timeout_ms,
+                                 uint32_t poll_ms) {
+    if (poll_ms == 0) {
+        poll_ms = 1;
+    }
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+
+    for (;;) {
+        // Advance the virtual clock so timers and animations can come due, then
+        // drain the queue and run whatever is ready. Without the tick the test
+        // binary's clock never moves — nothing but zero-period one-shots fires.
+        lv_tick_inc(poll_ms);
+        lv_timer_handler_safe();
+
+        if (condition()) {
+            return true;
+        }
+
+        // Checked after the pump so a zero timeout still gets one full pass.
+        if (std::chrono::steady_clock::now() >= deadline) {
+            break;
+        }
+
+        // Real time, so the thread we are waiting on gets to run.
+        std::this_thread::sleep_for(std::chrono::milliseconds(poll_ms));
+    }
+
+    spdlog::warn("[LVGLTestFixture] wait_until() timed out after {}ms", timeout_ms);
+    return false;
 }

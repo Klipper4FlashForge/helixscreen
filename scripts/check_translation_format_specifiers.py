@@ -156,6 +156,14 @@ def check(verbose: bool) -> int:
             val = trans.get(tag)
             if not isinstance(val, str):
                 continue
+            # An untranslated (empty) value is not a mismatch: at runtime LVGL
+            # falls back to the tag itself (the English source), so every
+            # specifier is present and snprintf reads no missing arg. Flagging
+            # empty here is a false positive — the first untranslated %d key
+            # would otherwise fail the gate the moment translation-sync adds it.
+            # The {fmt} loop below already tolerates empty (0 fields <= source).
+            if not val.strip():
+                continue
             src = specifiers(tag)
             tr = specifiers(val)
             src_types = [t for _, t in src]

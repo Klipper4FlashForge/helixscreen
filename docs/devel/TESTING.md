@@ -1,7 +1,7 @@
 # Testing Infrastructure
 
 **Status:** Active
-**Last Updated:** 2026-02-06
+**Last Updated:** 2026-08-08
 
 ---
 
@@ -91,7 +91,7 @@ These validate fundamental functionality:
 
 **Print Start** (`test_print_start_collector.cpp`): PRINT_START marker, completion marker, homing/heating phase detection
 
-**UI** (`test_ui_temp_graph.cpp`): Graph create/destroy
+**UI** (`test_temp_graph.cpp`, `test_temp_graph_controller.cpp`, `test_temp_graph_overlay.cpp`, `test_temp_graph_scaling.cpp`, `test_panel_widget_temp_graph.cpp`): Graph create/destroy
 
 ---
 
@@ -137,6 +137,9 @@ These validate fundamental functionality:
 
 Sanitizers add ~2-5x overhead. Use for debugging, not regular runs.
 
+Not a Catch2 target: `make test-xml` builds and runs the separate helix-xml engine
+suite (CMake + Unity). See [helix-xml Engine Tests](#helix-xml-engine-tests-separate-suite).
+
 ---
 
 ## Parallel Execution
@@ -159,6 +162,39 @@ wait
 
 Use `make test-serial` when debugging failures or reading output.
 
+### When a shard fails, crashes, or times out
+
+The harness diagnoses it for you instead of leaving you to re-run by hand. For
+each suspect shard it prints:
+
+```
+── shard diagnostics ──
+logs preserved: /tmp/helix-shards-TINI6P
+
+shard 95
+  ran 194 test case(s) → /tmp/helix-shards-TINI6P/95.tests
+  failing assertion(s): tests/unit/test_foo.cpp:27
+  reproduce: build/bin/helix-tests "~[.] ~[slow]" --shard-count 96 --shard-index 95
+  re-running alone…
+  → REPRODUCED alone (exit 1): a real fault, not a flake
+```
+
+- **Logs are kept** (`$SHARD_ARTIFACT_ROOT`, default `/tmp`) whenever anything
+  goes wrong, and deleted only on a fully clean run. `<n>.log` is the shard's
+  output, `<n>.tests` the test cases it ran, `<n>.retry.log` the isolation re-run.
+  Set `SHARD_ARTIFACT_ROOT=$(PWD)/build` in CI to collect them as artifacts.
+- **Each suspect shard is re-run alone.** Green in isolation but red under the
+  full parallel run means a load/timing flake, not a fault in the diff under
+  review. Red both times is real.
+- **A shard that dies with no `FAILED` marker** crashed *after* its assertions
+  passed — a teardown or static-destructor fault. It is reported as a warning
+  and does not fail the run, but the log survives so it can be investigated.
+
+> **Shard numbers are not stable.** Catch2 distributes test cases across shards
+> by position, so adding or removing *any* test reshuffles every shard's
+> contents. A failure moving from shard 51 to shard 85 between runs is not
+> evidence that your change caused it — the isolation re-run is.
+
 ---
 
 ## Excluded Tests Breakdown
@@ -169,26 +205,30 @@ The default `make test-run` uses filter `~[.] ~[slow]` to exclude tests that wou
 
 | Category | Count | Notes |
 |----------|------:|-------|
-| **Test files** | 203 | All in `tests/unit/` |
-| **TEST_CASE macros** | ~2,050 | Individual test definitions |
-| **SECTION blocks** | ~4,680 | Subsections within test cases |
-| **Total test paths** | ~6,700+ | Each section path is a unique test run |
-| **Slow tests** `[slow]` | ~185 | Excluded from `test-run` |
-| **Hidden tests** `[.]` | ~57 | Require explicit invocation |
+| **Test files** | 627 | All in `tests/unit/` |
+| **TEST_CASE macros** | thousands | Individual test definitions |
+| **SECTION blocks** | thousands | Subsections within test cases |
+| **Slow tests** `[slow]` | ~200 | Excluded from `test-run` |
+| **Hidden tests** `[.]` | dozens | Require explicit invocation |
+
+*Counts drift as the suite grows — regenerate with `grep -rc` if you need exact figures.*
 
 *Note: Some overlap exists between [slow] and [.]*
 
-### Hidden Tests `[.]` (~57 tests)
+### Hidden Tests `[.]` (90 tests)
 
-Hidden tests never run automatically. They require explicit invocation.
+Hidden tests never run automatically. They require explicit invocation, and the
+`ui_xml/`-dependent ones must be run **from the repo root**. Full inventory and
+per-file coverage notes: `HIDDEN_TESTS_TRACKER.md`.
 
 | Category | Count | Purpose |
 |----------|------:|---------|
-| `[.][application][integration]` | ~15 | Full app integration tests |
-| `[.][xml_required]` | ~25 | UI tests needing XML components |
-| `[.][ui_integration]` | ~6 | Full LVGL UI integration |
-| `[.][disabled]` | ~4 | Known broken (macOS WiFi, etc.) |
-| `[.][stress]` | ~2 | Stress/threading tests |
+| `[.xml_required]` | 41 | Panel subject-binding tests needing XML components |
+| `[.ui_integration]` | 17 | Real widget tree built from `ui_xml/` |
+| `[.disabled]` | 11 | Known broken (macOS WiFi Location permission) |
+| `[.]` (generic) | 9 | Destructive global state, event-loop concurrency |
+| `[.skip]` | 7 | Superseded `ams_slot` binding tests |
+| `[.slow]` / `[.benchmark]` / `[.memprobe]` / `[.integration]` | 5 | Stress, timing, memory probe |
 
 ### Slow Tests `[slow]` (~185 tests)
 
@@ -340,11 +380,110 @@ tests/
 ├── integration/                # Integration tests (mocks)
 │   └── test_mock_example.cpp
 └── mocks/                      # Mock implementations
-    ├── mock_lvgl.cpp
-    └── mock_moonraker_client.cpp
+    ├── mock_websocket_server.{h,cpp}
+    ├── mock_mdns_discovery.h
+    └── mock_printer_state.h
 
 experimental/src/              # Standalone test binaries
 ```
+
+---
+
+## helix-xml Engine Tests (separate suite)
+
+Engine-level XML coverage does **not** live in `tests/`. `lib/helix-xml/` is our own MIT
+fork of the XML engine and its own repo
+([prestonbrown/helix-xml](https://github.com/prestonbrown/helix-xml)), so it carries a
+standalone CMake + Unity suite under `lib/helix-xml/tests/`. `make test` never builds it -
+`helix-tests` only reaches the engine through the app, so a submodule pointer bump that
+regresses the parser is invisible to every Catch2 gate here.
+
+The suite builds the engine against a **pinned upstream LVGL v9.5.0** pulled by CMake
+`FetchContent`, not against our patched `lib/lvgl`. That is the point: the engine is a
+library, and its tests must not depend on the consuming application.
+
+### Running it
+
+From this repo:
+
+```bash
+make test-xml                                        # configure + build + ctest
+make test-xml HELIX_XML_CTEST_ARGS='-R test_expr'    # one executable
+```
+
+The build tree is `build/helix-xml-tests/`, outside the submodule. The **first** configure
+clones LVGL (needs network, several minutes); every run after that is a no-op configure plus
+a couple of seconds of ctest. `make test-xml` reports the real Unity case count rather than
+ctest's executable count.
+
+From a bare clone of the submodule, with no HelixScreen around it:
+
+```bash
+cmake -S tests -B build
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+Offline, point it at an LVGL checkout you already have:
+
+```bash
+cmake -S tests -B build -DLVGL_DIR=/path/to/lvgl
+```
+
+`LVGL_DIR` must be a **pristine** upstream checkout. Aiming it at HelixScreen's `lib/lvgl`
+fails at configure time with an explanation: our `patches/*.patch` inject calls to app-side
+symbols (`helix_crash_note_*`) that a standalone build cannot link. Do not unpatch the
+submodule to work around it - the application needs those patches.
+
+### Gates
+
+`scripts/quality-checks.sh` runs the suite, but only when staged changes touch
+`lib/helix-xml/` - in practice the pointer bump itself, which is exactly the change that
+alters what the suite tests. It **never configures**: if `build/helix-xml-tests/CMakeCache.txt`
+is missing it skips with an instruction to run `make test-xml` once by hand, so a multi-minute
+LVGL fetch never fires from a commit hook. Once the build tree exists, a failing suite is a
+hard failure like any other test gate.
+
+The submodule has its own CI too (`.github/workflows/ci.yml` **inside** `lib/helix-xml/`, not
+this repo's): a gcc + clang matrix, an ASAN/UBSAN job, and a conf-guards job that
+compile-checks `LV_USE_XML=0`, `LV_USE_TRANSLATION=0` and `LV_USE_OBJ_NAME=0` to prove the
+library's `#if` guards hold.
+
+### What goes where
+
+| Here, in Catch2 | There, in Unity |
+|-----------------|-----------------|
+| HelixScreen tooling built *around* XML: the hot reloader, the attribute validator, the card hit-test sweep | Parser, loader, component and widget registries, `<if>`/`<else>`, `<repeat>`, `subject_expr`, translation, styles, malformed input |
+| Widget contracts our XML depends on: semantic-widget text forwarding, borrowed-subject snapshot/restore | Anything that would still be true with HelixScreen deleted |
+
+Seventeen engine-level `tests/unit/test_xml_*.cpp` files migrated into the submodule and were
+deleted here. What stayed: `test_xml_hot_reloader.cpp`, `test_xml_attribute_validator.cpp` and
+`test_xml_card_hittest_sweep.cpp` (HelixScreen tooling, not the engine), plus two preserved
+cases extracted into `test_ui_text_inline_content.cpp` (semantic-widget text forwarding) and
+`test_xml_hot_reload_borrowed_subjects.cpp` (`snapshot_borrowed_subjects` /
+`restore_borrowed_subjects`).
+
+### Adding a test to the submodule suite
+
+Drop a `.c` file in `lib/helix-xml/tests/cases/`. A CMake glob picks it up and it becomes its
+own executable and its own ctest entry - no `CMakeLists.txt` edit (21 executables today).
+Fixtures go in `tests/assets/`, reached through the `HELIX_TEST_ASSET_DIR` define rather than
+the shell's cwd. Shared setup lives in `tests/helpers/` (`helix_test_env.h`,
+`helix_test_pump.h`, `helix_log_capture.h`) and assertions in `helpers/xml_assert.h`. Test
+code is compiled `-Wall -Wextra`; only the vendored engine and Unity sources get `-w`.
+
+**Assertions are structural only.** There is no `ASSERT_WIDTH`, `ASSERT_POS` or
+`ASSERT_TEXT_WIDTH` in `xml_assert.h`, and none may be added: `tests/lv_conf.h` picks a color
+depth, default font, widget set and theme that no real device runs, so a geometry assertion
+would encode the test config instead of the engine's behavior. Assert on tree shape, names,
+child counts, label text, flags, states, and style properties the XML under test declared. To
+prove a layout behavior, assert the property the XML set (`lv_obj_get_style_flex_flow`),
+never the pixels that came out of it. There is no screenshot or pixel comparison anywhere in
+the suite.
+
+Remember the inverted submodule workflow: edit in place, commit and push **inside**
+`lib/helix-xml/`, then commit the bumped pointer here. Never write a `patches/*.patch` for it.
+See `LVGL_XML_SITUATION.md`.
 
 ---
 
@@ -409,7 +548,7 @@ The Makefile auto-discovers test files in `tests/unit/` and `tests/integration/`
 ### MoonrakerClientMock
 
 ```cpp
-#include "tests/mocks/moonraker_client_mock.h"
+#include "moonraker_client_mock.h"
 
 MoonrakerClientMock client;
 client.connect(url, on_connected, on_disconnected);
@@ -420,9 +559,9 @@ client.reset();               // Reset for next test
 
 ### Available Mocks
 
-- **MoonrakerClientMock:** WebSocket simulation
-- **MockLVGL:** Minimal LVGL stubs for integration tests
-- **MockPrintFiles:** Filesystem operations
+- **MoonrakerClientMock:** WebSocket simulation (`include/moonraker_client_mock.h`)
+- **mock_websocket_server** (`tests/mocks/mock_websocket_server.{h,cpp}`): WebSocket server stub
+- **mock_mdns_discovery** / **mock_printer_state** (`tests/mocks/`): discovery and printer-state stubs
 
 ### Mock Drift Protection
 
@@ -434,14 +573,21 @@ Covered: `AmsBackend`, `EthernetBackend`, `UsbBackend`, `WifiBackend` (already p
 
 ## UI Testing Utilities
 
-```cpp
-#include "../ui_test_utils.h"
+The real API is the `UITest::` namespace in `tests/ui_test_utils.h`:
 
-void setup_lvgl_for_testing();
-lv_display_t* create_test_display(int width, int height);
-void simulate_click(lv_obj_t* obj);
-void simulate_swipe(lv_obj_t* obj, lv_dir_t direction);
+```cpp
+#include "ui_test_utils.h"
+
+UITest::init(screen);                      // Set up the test indev on a screen
+lv_obj_t* w = UITest::find_by_name(root, "my_button");
+UITest::click(w);                          // Simulate a click/touch on a widget
+UITest::click_at(x, y);                    // Or at explicit coordinates
+UITest::type_text(textarea, "hello");
+UITest::wait_until([]{ return done; });    // Pump timers until a condition
+UITest::cleanup();
 ```
+
+See UI_TESTING.md for the full utility list and the mandated base fixtures.
 
 ---
 
@@ -505,4 +651,5 @@ lldb build/bin/helix-tests
 
 - **[ARCHITECTURE.md](ARCHITECTURE.md):** Thread safety patterns
 - **[BUILD_SYSTEM.md](BUILD_SYSTEM.md):** Build configuration
+- **[LVGL_XML_SITUATION.md](LVGL_XML_SITUATION.md):** Why the XML engine is its own repo, with its own tests and CI
 - **[DEVELOPMENT.md#contributing](DEVELOPMENT.md#contributing):** Code standards

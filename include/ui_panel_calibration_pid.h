@@ -187,6 +187,15 @@ class PIDCalibrationPanel : public OverlayBase {
     void on_calibration_result(bool success, float kp = 0, float ki = 0, float kd = 0,
                                const std::string& error_message = "");
 
+    /// Test-only: arm the ETA refresh timer without running a calibration, so the
+    /// teardown paths that must cancel it can be exercised directly.
+    void arm_eta_timer_for_test();
+
+    /// Test-only: the armed ETA timer, or nullptr when none is armed.
+    lv_timer_t* eta_timer_for_test() const {
+        return eta_update_timer_;
+    }
+
   private:
     // Client/API references
     // Note: overlay_root_ inherited from OverlayBase
@@ -337,6 +346,11 @@ class PIDCalibrationPanel : public OverlayBase {
 
     void start_progress_tracking();
     void stop_progress_tracking();
+
+    /// Cancel the ETA refresh timer. Safe to call when none is armed, and safe
+    /// from the destructor — unlike stop_progress_tracking(), it touches only
+    /// the timer, not the observer guards.
+    void cancel_eta_timer();
     void on_progress_temperature(int temp_tenths);
     void update_progress_display();
     static void on_eta_timer_tick(lv_timer_t* timer);
@@ -431,19 +445,13 @@ class PIDCalibrationPanel : public OverlayBase {
     static void on_fan_detailed_clicked(lv_event_t* e);
     static void on_fan_thorough_clicked(lv_event_t* e);
     // Material preset trampolines (extruder)
-    static void on_pid_preset_pla(lv_event_t* e);
-    static void on_pid_preset_petg(lv_event_t* e);
-    static void on_pid_preset_abs(lv_event_t* e);
-    static void on_pid_preset_pa(lv_event_t* e);
-    static void on_pid_preset_tpu(lv_event_t* e);
-    // Material preset trampolines (bed)
-    static void on_pid_preset_bed_pla(lv_event_t* e);
-    static void on_pid_preset_bed_petg(lv_event_t* e);
-    static void on_pid_preset_bed_abs(lv_event_t* e);
+    // One handler per heater; the preset slot is parsed from the clicked
+    // button's name ("btn_preset_mN" / "btn_preset_bed_mN") and resolved to a
+    // material through helix::presets. Replaces the eight per-material
+    // trampolines that hardcoded PLA/PETG/ABS/PA/TPU.
+    static void on_pid_preset_material(lv_event_t* e);
+    static void on_pid_preset_bed_material(lv_event_t* e);
 };
 
 // Global instance accessor
 PIDCalibrationPanel& get_global_pid_cal_panel();
-
-// Destroy the global instance (call during shutdown)
-void destroy_pid_cal_panel();

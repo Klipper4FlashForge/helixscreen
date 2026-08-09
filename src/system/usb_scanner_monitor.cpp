@@ -2,6 +2,7 @@
 #include "usb_scanner_monitor.h"
 
 #include "input_device_scanner.h"
+#include "log_redact.h"
 #include "qr_decoder.h"
 #include "settings_manager.h"
 
@@ -233,7 +234,7 @@ std::vector<UsbScannerMonitor::ScannerSource> UsbScannerMonitor::find_scanner_de
             return {ScannerSource{bt_dev->path, true}};
         }
         spdlog::debug("UsbScannerMonitor: paired BT scanner {} not present, falling back to USB",
-                      bt_mac);
+                      helix::redact::mac(bt_mac));
     }
 
     // USB fallback. Caller-configured VID:PID disambiguates from regular keyboards.
