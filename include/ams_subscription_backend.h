@@ -97,6 +97,19 @@ class AmsSubscriptionBackend : public AmsBackend {
                                uint32_t timeout_ms = MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS,
                                bool skip_homing = false, bool silent = true);
 
+    /// See AmsBackend::arm_home_preconfirmed(). Consumed single-shot by the
+    /// NEXT ensure_homed_then() call that finds the toolhead genuinely
+    /// unhomed -- does not skip that call's G28, only its confirmation prompt.
+    void arm_home_preconfirmed() final {
+        home_preconfirmed_ = true;
+    }
+
+    /// See AmsBackend::clear_home_preconfirmed(). Idempotent no-op if nothing
+    /// is currently armed.
+    void clear_home_preconfirmed() final {
+        home_preconfirmed_ = false;
+    }
+
   protected:
     // --- Hooks for derived classes ---
 
@@ -167,6 +180,11 @@ class AmsSubscriptionBackend : public AmsBackend {
   private:
     EventCallback event_callback_;
     SubscriptionGuard subscription_;
+
+    /// Set by arm_home_preconfirmed(), consumed single-shot by ensure_homed_then().
+    /// Main-thread only -- both the setter (a UI-surface click handler) and the
+    /// consuming read happen on the main thread, same as toolhead_homed() itself.
+    bool home_preconfirmed_ = false;
 
     /// Send the payload gcode, honouring the 1-arg/2-arg execute_gcode split.
     /// ~20 test fixtures override ONLY the 1-arg form; calling the 2-arg form

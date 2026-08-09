@@ -194,6 +194,151 @@ TEST_CASE("with no prompter installed the home proceeds silently", "[ams][homing
 }
 
 // =====================================================================
+// arm_home_preconfirmed() / clear_home_preconfirmed() -- the pre-preheat
+// confirmation seam (toolhead-homing-dry, option B)
+// =====================================================================
+// A UI surface that preheats before dispatching (FilamentPanel::LOAD,
+// AmsOperationSidebar::handle_load_with_preheat) asks "home printer first?"
+// BEFORE it starts heating, so a decline never wastes a heat cycle. On
+// confirm it arms this flag and starts the preheat; ensure_homed_then() -
+// called later, after the preheat, right before the tier-1 dispatch - must
+// then skip asking AGAIN, but the physical G28 still fires exactly where it
+// always has: nothing here is a substitute for toolhead_homed(), only for
+// the prompt.
+
+TEST_CASE("arm_home_preconfirmed is consumed single-shot", "[ams][homing][preconfirm]") {
+    LVGLTestFixture fixture;
+    HomingProbeBackend backend;
+    backend.homed = false;
+
+    int prompts = 0;
+    ScopedHomeConfirmPrompter guard(
+        [&prompts](std::function<void()> confirm, std::function<void()>) {
+            ++prompts;
+            confirm();
+        });
+
+    backend.arm_home_preconfirmed();
+
+    // First dispatch: pre-confirmed, so no prompt -- but G28 still fires,
+    // unchanged, because the toolhead is genuinely unhomed.
+    backend.ensure_homed_then("CHANGE_TOOL LANE=lane1");
+    CHECK(prompts == 0);
+    REQUIRE(backend.captured.size() == 2);
+    CHECK(backend.captured[0] == "G28");
+    CHECK(backend.captured[1] == "CHANGE_TOOL LANE=lane1");
+
+    // Second dispatch, still unhomed: the flag was consumed by the first
+    // call, so this one DOES prompt again.
+    backend.captured.clear();
+    backend.ensure_homed_then("CHANGE_TOOL LANE=lane2");
+    CHECK(prompts == 1);
+    REQUIRE(backend.captured.size() == 2);
+    CHECK(backend.captured[0] == "G28");
+    CHECK(backend.captured[1] == "CHANGE_TOOL LANE=lane2");
+}
+
+TEST_CASE("arm_home_preconfirmed is NOT consumed by a dispatch on an already-homed toolhead",
+          "[ams][homing][preconfirm]") {
+    // The ordering trap: a guard written as
+    //   skip_homing || std::exchange(home_preconfirmed_, false) || toolhead_homed()
+    // consumes the flag on ANY call, homed or not, because operator|| evaluates
+    // left to right. The correct guard checks toolhead_homed() first, so the
+    // homed branch short-circuits before ever touching the flag.
+    LVGLTestFixture fixture;
+    HomingProbeBackend backend;
+    backend.homed = true;
+
+    int prompts = 0;
+    ScopedHomeConfirmPrompter guard(
+        [&prompts](std::function<void()> confirm, std::function<void()>) {
+            ++prompts;
+            confirm();
+        });
+
+    backend.arm_home_preconfirmed();
+
+    // Homed: dispatches straight through the toolhead_homed() branch, which
+    // must leave the armed flag untouched.
+    backend.ensure_homed_then("CHANGE_TOOL LANE=lane1");
+    CHECK(prompts == 0);
+    REQUIRE(backend.captured.size() == 1);
+    CHECK(backend.captured[0] == "CHANGE_TOOL LANE=lane1");
+
+    // Now go unhomed. If the homed call above had wrongly consumed the flag,
+    // this one would prompt. It must not -- the still-armed flag from before
+    // is what should skip the prompt here (and it's the one that gets
+    // consumed by THIS call).
+    backend.captured.clear();
+    backend.homed = false;
+    backend.ensure_homed_then("CHANGE_TOOL LANE=lane2");
+    CHECK(prompts == 0);
+    REQUIRE(backend.captured.size() == 2);
+    CHECK(backend.captured[0] == "G28");
+    CHECK(backend.captured[1] == "CHANGE_TOOL LANE=lane2");
+}
+
+TEST_CASE("clear_home_preconfirmed undoes an armed-but-abandoned confirmation",
+          "[ams][homing][preconfirm]") {
+    // Models a UI surface that armed consent, then abandoned the load before
+    // it ever dispatched (preheat cancelled, panel torn down, op aborted).
+    // Without an explicit clear, the armed flag would leak forward into a
+    // later, completely unrelated dispatch on the same backend.
+    LVGLTestFixture fixture;
+    HomingProbeBackend backend;
+    backend.homed = false;
+
+    int prompts = 0;
+    ScopedHomeConfirmPrompter guard(
+        [&prompts](std::function<void()> confirm, std::function<void()>) {
+            ++prompts;
+            confirm();
+        });
+
+    backend.arm_home_preconfirmed();
+    backend.clear_home_preconfirmed();
+
+    backend.ensure_homed_then("CHANGE_TOOL LANE=lane1");
+    CHECK(prompts == 1); // the abandoned confirmation must not have leaked forward
+    REQUIRE(backend.captured.size() == 2);
+    CHECK(backend.captured[0] == "G28");
+    CHECK(backend.captured[1] == "CHANGE_TOOL LANE=lane1");
+}
+
+TEST_CASE("declining before a dispatch never arms anything for a later one",
+          "[ams][homing][preconfirm]") {
+    LVGLTestFixture fixture;
+    HomingProbeBackend backend;
+    backend.homed = false;
+
+    int prompts = 0;
+    ScopedHomeConfirmPrompter guard(
+        [&prompts](std::function<void()> confirm, std::function<void()> cancel) {
+            ++prompts;
+            if (prompts == 1) {
+                cancel(); // first dispatch: user declines
+            } else {
+                confirm(); // second dispatch: user confirms this time
+            }
+        });
+
+    // Declined: no G28, no payload -- "commands no heat" at the backend
+    // contract level (the UI-surface preheat call is covered by the live
+    // ctl transcript, since FilamentPanel/AmsOperationSidebar are not
+    // unit-instantiable -- see test_filament_load_preheat.cpp).
+    backend.ensure_homed_then("CHANGE_TOOL LANE=lane1");
+    CHECK(backend.captured.empty());
+    CHECK(backend.get_system_info().action == AmsAction::IDLE);
+
+    // A later, unrelated dispatch must still ask -- the decline armed nothing.
+    backend.ensure_homed_then("CHANGE_TOOL LANE=lane2");
+    CHECK(prompts == 2);
+    REQUIRE(backend.captured.size() == 2);
+    CHECK(backend.captured[0] == "G28");
+    CHECK(backend.captured[1] == "CHANGE_TOOL LANE=lane2");
+}
+
+// =====================================================================
 // A dismissal that never resolves synchronously must still unwedge
 // dispatch_operation's optimistic action (Task 8 review fix)
 // =====================================================================

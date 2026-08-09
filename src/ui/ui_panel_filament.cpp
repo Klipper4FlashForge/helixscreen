@@ -45,6 +45,7 @@
 #include "temperature_service.h"
 #include "theme_manager.h"
 #include "tool_state.h"
+#include "toolhead_homing.h"
 
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
@@ -347,6 +348,10 @@ void FilamentPanel::deinit_subjects() {
     if (pending_preheat_op_ != PreheatOp::NONE) {
         pending_preheat_op_ = PreheatOp::NONE;
         pending_preheat_target_ = 0;
+        // Same leak this abandonment path guards against in cancel_pending_preheat().
+        if (AmsBackend* backend = AmsState::instance().get_backend()) {
+            backend->clear_home_preconfirmed();
+        }
         // Don't schedule delayed cooldown during teardown — just cool down immediately
         if (prior_nozzle_target_ == 0) {
             if (auto* c = get_temperature_controller()) {
@@ -1233,6 +1238,28 @@ void FilamentPanel::handle_load_button() {
     snapshot_prior_heater_target();
 
     if (!is_extrusion_allowed()) {
+        // Ask "home printer first?" BEFORE the preheat, not after: the
+        // physical G28 still fires later, inside
+        // AmsSubscriptionBackend::ensure_homed_then() right before the tier-1
+        // dispatch (unchanged) -- only the confirmation moves earlier, so a
+        // decline never wastes a preheat cycle (#1235-adjacent).
+        if (!helix::toolhead_is_homed(printer_state_)) {
+            spdlog::info("[{}] Toolhead not homed -- asking before starting preheat for load",
+                         get_name());
+            // FilamentPanel is an immortal singleton [L012] -- capturing
+            // [this] directly is safe with no AsyncLifetimeGuard token.
+            helix::ui::request_home_confirmation(
+                [this]() {
+                    if (AmsBackend* backend = AmsState::instance().get_backend()) {
+                        backend->arm_home_preconfirmed();
+                    }
+                    start_preheat_for_op(PreheatOp::LOAD);
+                },
+                [this]() {
+                    spdlog::info("[{}] User declined pre-load home; no heat commanded", get_name());
+                });
+            return;
+        }
         start_preheat_for_op(PreheatOp::LOAD);
         return;
     }
@@ -2501,6 +2528,14 @@ void FilamentPanel::cancel_pending_preheat() {
     spdlog::info("[{}] Preheat cancelled", get_name());
     pending_preheat_op_ = PreheatOp::NONE;
     pending_preheat_target_ = 0;
+
+    // A confirmed-then-abandoned load must not leave home consent armed for a
+    // later, unrelated dispatch on this backend. Harmless no-op when nothing
+    // was armed (e.g. cancelling an UNLOAD/EXTRUDE/RETRACT/PURGE preheat,
+    // which never arms this).
+    if (AmsBackend* backend = AmsState::instance().get_backend()) {
+        backend->clear_home_preconfirmed();
+    }
 
     // Cancel any pending cooldown timer
     PostOpCooldownManager::instance().cancel();
