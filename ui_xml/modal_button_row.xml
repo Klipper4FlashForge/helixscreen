@@ -5,8 +5,11 @@
     <prop name="secondary_text" type="string" default="Cancel"/>
     <prop name="primary_tag" type="string" default=""/>
     <prop name="secondary_tag" type="string" default=""/>
-    <prop name="primary_callback" type="string"/>
-    <prop name="secondary_callback" type="string"/>
+    <!-- Optional: Modal subclasses wire btn_primary/btn_secondary in on_show()
+         via wire_ok_button()/wire_cancel_button() instead. default="" resolves to
+         the registered no-op callback, matching tertiary_callback below. -->
+    <prop name="primary_callback" type="string" default=""/>
+    <prop name="secondary_callback" type="string" default=""/>
     <prop name="primary_icon" type="string" default=""/>
     <prop name="secondary_icon" type="string" default=""/>
     <prop name="primary_variant" type="string" default="primary"/>

@@ -23,8 +23,9 @@
                   long_mode="wrap" style_text_align="center"/>
     </lv_obj>
     <!-- Button row -->
-    <modal_button_row secondary_text="Keep Printing"
-                      secondary_callback="on_print_cancel_dismiss" primary_text="Stop"
-                      primary_callback="on_print_cancel_confirm" primary_variant="danger"/>
+    <!-- Buttons are wired in PrintCancelModal::on_show() via wire_ok_button()/
+         wire_cancel_button(); no XML callback names to resolve. -->
+    <modal_button_row secondary_text="Keep Printing" primary_text="Stop"
+                      primary_variant="danger"/>
   </view>
 </component>
