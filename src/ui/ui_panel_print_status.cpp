@@ -3823,51 +3823,6 @@ void PrintStatusPanel::set_thumbnail_source(const std::string& filename) {
     }
 }
 
-void PrintStatusPanel::set_progress(int percent) {
-    lifecycle_.on_progress_changed(percent);
-    if (!subjects_initialized_)
-        return;
-    helix::format::format_percent(lifecycle_.progress(), progress_text_buf_,
-                                  sizeof(progress_text_buf_));
-    lv_subject_copy_string(&progress_text_subject_, progress_text_buf_);
-}
-
-void PrintStatusPanel::set_layer(int current, int total) {
-    lifecycle_.on_layer_changed(current, total, printer_state_.has_real_layer_data());
-    if (!subjects_initialized_)
-        return;
-    const char* layer_fmt =
-        printer_state_.has_real_layer_data() ? "Layer %d / %d" : "Layer ~%d / %d";
-    std::snprintf(layer_text_buf_, sizeof(layer_text_buf_), layer_fmt, lifecycle_.current_layer(),
-                  lifecycle_.total_layers());
-    lv_subject_copy_string(&layer_text_subject_, layer_text_buf_);
-}
-
-void PrintStatusPanel::set_times(int elapsed_secs, int remaining_secs) {
-    // Use NONE outcome so lifecycle doesn't guard against it
-    lifecycle_.on_duration_changed(elapsed_secs, PrintOutcome::NONE);
-    lifecycle_.on_time_left_changed(remaining_secs, PrintOutcome::NONE);
-    if (!subjects_initialized_)
-        return;
-    if (lifecycle_.state() != PrintState::Preparing && lifecycle_.state() != PrintState::Complete) {
-        format_time(lifecycle_.elapsed_seconds(), elapsed_buf_, sizeof(elapsed_buf_));
-        lv_subject_copy_string(&elapsed_subject_, elapsed_buf_);
-        format_time(lifecycle_.remaining_seconds(), remaining_buf_, sizeof(remaining_buf_));
-        lv_subject_copy_string(&remaining_subject_, remaining_buf_);
-    }
-}
-
-void PrintStatusPanel::set_speeds(int speed_pct, int flow_pct) {
-    lifecycle_.on_speed_changed(speed_pct);
-    lifecycle_.on_flow_changed(flow_pct);
-    if (!subjects_initialized_)
-        return;
-    helix::format::format_percent(lifecycle_.speed_percent(), speed_buf_, sizeof(speed_buf_));
-    lv_subject_copy_string(&speed_subject_, speed_buf_);
-    helix::format::format_percent(lifecycle_.flow_percent(), flow_buf_, sizeof(flow_buf_));
-    lv_subject_copy_string(&flow_subject_, flow_buf_);
-}
-
 void PrintStatusPanel::set_state(PrintState state) {
     // Map PrintState back to PrintJobState so lifecycle can process the transition
     PrintJobState mapped = PrintJobState::STANDBY;

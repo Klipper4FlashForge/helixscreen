@@ -215,42 +215,6 @@ class PrintStatusPanel : public OverlayBase {
     void set_thumbnail_source(const std::string& filename);
 
     /**
-     * @brief Set print progress percentage
-     * @param percent Progress 0-100 (clamped to valid range)
-     */
-    void set_progress(int percent);
-
-    /**
-     * @brief Set layer progress
-     * @param current Current layer number
-     * @param total Total layers in print
-     */
-    void set_layer(int current, int total);
-
-    /**
-     * @brief Set elapsed and remaining time
-     * @param elapsed_secs Elapsed time in seconds
-     * @param remaining_secs Estimated remaining time in seconds
-     */
-    void set_times(int elapsed_secs, int remaining_secs);
-
-    /**
-     * @brief Set temperature readings
-     * @param nozzle_cur Current nozzle temperature
-     * @param nozzle_tgt Target nozzle temperature
-     * @param bed_cur Current bed temperature
-     * @param bed_tgt Target bed temperature
-     */
-    void set_temperatures(int nozzle_cur, int nozzle_tgt, int bed_cur, int bed_tgt);
-
-    /**
-     * @brief Set speed and flow percentages
-     * @param speed_pct Speed multiplier percentage
-     * @param flow_pct Flow multiplier percentage
-     */
-    void set_speeds(int speed_pct, int flow_pct);
-
-    /**
      * @brief Set print state
      * @param state New print state
      */
