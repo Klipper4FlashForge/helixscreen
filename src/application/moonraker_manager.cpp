@@ -442,8 +442,9 @@ void MoonrakerManager::present_event(const MoonrakerEvent& evt) {
     const bool within_grace_period = (std::chrono::steady_clock::now() - m_startup_time) <
                                      AppConstants::Startup::NOTIFICATION_GRACE_PERIOD;
 
-    const auto decision = helix::decide_moonraker_event(evt.type, evt.is_error, within_grace_period,
-                                                        is_wizard_active());
+    const auto decision =
+        helix::decide_moonraker_event(evt.type, evt.is_error, within_grace_period,
+                                      is_wizard_active(), !ModalStack::instance().empty());
 
     switch (decision.route) {
     case helix::MoonrakerEventRoute::Ignore:
