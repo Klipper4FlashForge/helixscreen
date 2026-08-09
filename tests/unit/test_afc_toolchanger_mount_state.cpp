@@ -26,7 +26,9 @@
 #include "ui_bypass_spool_widget.h"
 
 #include "ams_backend_afc.h"
+#include "ams_bypass_policy.h"
 #include "ams_types.h"
+#include "settings_manager.h"
 
 #include <spdlog/spdlog.h>
 
@@ -437,6 +439,40 @@ TEST_CASE("Bypass node visibility rule", "[ams][afc][1229][toolchanger][bypass]"
 
     SECTION("non-AFC backends are unaffected — their bypass is a real position") {
         CHECK(bypass_node_visible(true, /*active=*/false, /*is_afc=*/false, /*always_show=*/false));
+    }
+}
+
+// ============================================================================
+// Firmware may report no bypass on a machine that has one
+// ============================================================================
+
+// Happy Hare defaults [mmu_machine] has_bypass to 0 for mmu_vendor "Other" — what
+// a Qidi Box under Happy Hare reports — so the owner of a working PTFE bypass gets
+// no bypass UI. The override contradicts that report on purpose. It is safe
+// because Happy Hare's select_bypass() never consults has_bypass(): the command
+// deselects the gear steppers and reports gate -2 either way.
+TEST_CASE("Bypass availability override", "[ams][bypass][override]") {
+    using helix::bypass_available;
+
+    SECTION("firmware saying yes needs no override") {
+        CHECK(bypass_available(true, /*force=*/false));
+        CHECK(bypass_available(true, /*force=*/true));
+    }
+
+    SECTION("firmware saying no hides the controls by default") {
+        CHECK_FALSE(bypass_available(false, /*force=*/false));
+    }
+
+    SECTION("the override is the only thing that contradicts the firmware") {
+        CHECK(bypass_available(false, /*force=*/true));
+    }
+
+    SECTION("with the override off, the resolver is exactly the firmware value") {
+        // Guards the short-circuit in bypass_available_for(): a machine that
+        // reports a bypass must never depend on a setting to keep it.
+        REQUIRE_FALSE(SettingsManager::instance().get_ams_force_bypass_controls());
+        CHECK(helix::bypass_available_for(true));
+        CHECK_FALSE(helix::bypass_available_for(false));
     }
 }
 

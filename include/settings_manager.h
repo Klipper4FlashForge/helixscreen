@@ -336,6 +336,27 @@ class SettingsManager {
         return &ams_always_show_bypass_spool_subject_;
     }
 
+    /**
+     * @brief Expose the bypass controls even though the firmware reports none.
+     *
+     * Distinct from get_ams_always_show_bypass_spool(), which only un-suppresses
+     * a node we hide ourselves on AFC. This one contradicts the firmware: Happy
+     * Hare defaults [mmu_machine] has_bypass to 0 for mmu_vendor "Other", which
+     * is what a Qidi Box reports, so owners who do feed filament past the unit
+     * get no bypass UI at all. Safe to honour because Happy Hare's own
+     * select_bypass() never consults has_bypass() — MMU_SELECT_BYPASS deselects
+     * the gear steppers and reports gate -2 regardless. Default false.
+     */
+    bool get_ams_force_bypass_controls() const;
+
+    /** @brief Set whether bypass controls appear despite a firmware "no bypass" */
+    void set_ams_force_bypass_controls(bool enabled);
+
+    /** @brief Force-bypass-controls subject (integer: 0=off, 1=on) */
+    lv_subject_t* subject_ams_force_bypass_controls() {
+        return &ams_force_bypass_controls_subject_;
+    }
+
     // =========================================================================
     // POST-OP COOLDOWN (owned by SettingsManager — per-printer filament behavior)
     // =========================================================================
@@ -521,6 +542,7 @@ class SettingsManager {
     lv_subject_t auto_color_map_subject_;
     lv_subject_t afc_unload_after_print_subject_;
     lv_subject_t ams_always_show_bypass_spool_subject_;
+    lv_subject_t ams_force_bypass_controls_subject_;
     lv_subject_t filament_auto_cooldown_subject_;
     lv_subject_t console_filter_temps_subject_;
     lv_subject_t console_filter_firmware_noise_subject_;

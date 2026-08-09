@@ -177,6 +177,15 @@ void SettingsManager::init_subjects() {
                            ams_always_show_bypass_spool ? 1 : 0, "ams_always_show_bypass_spool",
                            subjects_);
 
+    // Show the bypass controls even when the firmware reports no bypass (default:
+    // off). Happy Hare's [mmu_machine] has_bypass defaults to 0 for mmu_vendor
+    // "Other" — what a Qidi Box under Happy Hare reports — so machines that can
+    // feed filament straight to the extruder still advertise none. Per-printer.
+    bool ams_force_bypass_controls =
+        config->get<bool>(config->df() + "ams/force_bypass_controls", false);
+    UI_MANAGED_SUBJECT_INT(ams_force_bypass_controls_subject_, ams_force_bypass_controls ? 1 : 0,
+                           "ams_force_bypass_controls", subjects_);
+
     // Post-filament-operation nozzle cooldown (default: on). Filament systems that
     // run their own cooldown (AFC) want ours out of the way. Per-printer setting.
     bool filament_auto_cooldown = config->get<bool>(config->df() + "filament/auto_cooldown", true);
@@ -538,6 +547,18 @@ void SettingsManager::set_ams_always_show_bypass_spool(bool enabled) {
     lv_subject_set_int(&ams_always_show_bypass_spool_subject_, enabled ? 1 : 0);
     Config* config = Config::get_instance();
     config->set<bool>(config->df() + "ams/always_show_bypass_spool", enabled);
+    config->save();
+}
+
+bool SettingsManager::get_ams_force_bypass_controls() const {
+    return lv_subject_get_int(const_cast<lv_subject_t*>(&ams_force_bypass_controls_subject_)) != 0;
+}
+
+void SettingsManager::set_ams_force_bypass_controls(bool enabled) {
+    spdlog::info("[SettingsManager] set_ams_force_bypass_controls({})", enabled);
+    lv_subject_set_int(&ams_force_bypass_controls_subject_, enabled ? 1 : 0);
+    Config* config = Config::get_instance();
+    config->set<bool>(config->df() + "ams/force_bypass_controls", enabled);
     config->save();
 }
 

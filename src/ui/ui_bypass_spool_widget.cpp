@@ -6,6 +6,7 @@
 #include "ui_spool_canvas.h"
 
 #include "ams_backend.h"
+#include "ams_bypass_policy.h"
 #include "settings_manager.h"
 #include "theme_manager.h"
 
@@ -17,9 +18,10 @@ bool bypass_node_visible_for(const AmsBackend* backend) {
     if (backend == nullptr) {
         return false;
     }
-    return bypass_node_visible(backend->get_system_info().supports_bypass,
-                               backend->is_bypass_active(), backend->is_afc_system(),
-                               SettingsManager::instance().get_ams_always_show_bypass_spool());
+    return bypass_node_visible(
+        helix::bypass_available_for(backend->get_system_info().supports_bypass),
+        backend->is_bypass_active(), backend->is_afc_system(),
+        SettingsManager::instance().get_ams_always_show_bypass_spool());
 }
 
 void bypass_spool_set_visible(BypassSpoolWidgets& w, bool visible) {

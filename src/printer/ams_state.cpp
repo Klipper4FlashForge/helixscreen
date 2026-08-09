@@ -16,6 +16,7 @@
 #include "ui_color_picker.h"
 #include "ui_update_queue.h"
 
+#include "ams_bypass_policy.h"
 #include "app_globals.h"
 #include "filament_database.h"
 #include "filament_display_name.h"
@@ -1334,7 +1335,7 @@ void AmsState::sync_from_backend() {
     if (lv_subject_get_int(&bypass_active_) != new_bypass) {
         lv_subject_set_int(&bypass_active_, new_bypass);
     }
-    int new_supports_bypass = info.supports_bypass ? 1 : 0;
+    int new_supports_bypass = helix::bypass_available_for(info.supports_bypass) ? 1 : 0;
     if (lv_subject_get_int(&supports_bypass_) != new_supports_bypass) {
         lv_subject_set_int(&supports_bypass_, new_supports_bypass);
     }

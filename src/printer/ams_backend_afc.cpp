@@ -3,6 +3,8 @@
 
 #include "ams_backend_afc.h"
 
+#include "ams_bypass_policy.h"
+
 #include "ui_error_reporting.h"
 #include "ui_modal.h"
 #include "ui_notification.h"
@@ -4963,7 +4965,7 @@ AmsError AmsBackendAfc::enable_bypass() {
             return precondition;
         }
 
-        if (!system_info_.supports_bypass) {
+        if (!helix::bypass_available_for(system_info_.supports_bypass)) {
             return AmsError(AmsResult::WRONG_STATE, "Bypass not supported",
                             "This AFC system does not support bypass mode", "");
         }

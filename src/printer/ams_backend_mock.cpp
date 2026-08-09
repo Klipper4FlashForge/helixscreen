@@ -3,6 +3,8 @@
 
 #include "ams_backend_mock.h"
 
+#include "ams_bypass_policy.h"
+
 #include "afc_defaults.h"
 #include "filament_database.h"
 #include "hh_defaults.h"
@@ -1010,7 +1012,7 @@ AmsError AmsBackendMock::enable_bypass() {
             return AmsErrorHelper::not_connected("Mock backend not started");
         }
 
-        if (!system_info_.supports_bypass) {
+        if (!helix::bypass_available_for(system_info_.supports_bypass)) {
             return AmsError(AmsResult::WRONG_STATE, "Bypass not supported",
                             "This system does not support bypass mode", "");
         }

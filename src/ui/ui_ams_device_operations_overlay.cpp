@@ -16,6 +16,7 @@
 #include "ui_utils.h"
 
 #include "ams_backend.h"
+#include "ams_bypass_policy.h"
 #include "ams_state.h"
 #include "ams_types.h"
 #include "lvgl/src/others/translation/lv_translation.h"
@@ -56,6 +57,7 @@ AmsDeviceOperationsOverlay::~AmsDeviceOperationsOverlay() {
         lv_subject_deinit(&system_info_subject_);
         lv_subject_deinit(&status_subject_);
         lv_subject_deinit(&supports_bypass_subject_);
+        lv_subject_deinit(&fw_supports_bypass_subject_);
         lv_subject_deinit(&bypass_active_subject_);
         lv_subject_deinit(&hw_bypass_sensor_subject_);
         lv_subject_deinit(&supports_auto_heat_subject_);
@@ -92,6 +94,10 @@ void AmsDeviceOperationsOverlay::init_subjects() {
     // Capability subjects
     lv_subject_init_int(&supports_bypass_subject_, 0);
     lv_xml_register_subject(nullptr, "ams_device_ops_supports_bypass", &supports_bypass_subject_);
+
+    lv_subject_init_int(&fw_supports_bypass_subject_, 0);
+    lv_xml_register_subject(nullptr, "ams_device_ops_fw_supports_bypass",
+                            &fw_supports_bypass_subject_);
 
     lv_subject_init_int(&bypass_active_subject_, 0);
     lv_xml_register_subject(nullptr, "ams_device_ops_bypass_active", &bypass_active_subject_);
@@ -138,6 +144,8 @@ void AmsDeviceOperationsOverlay::register_callbacks() {
                              on_afc_unload_after_print_toggled);
     lv_xml_register_event_cb(nullptr, "on_ams_always_show_bypass_spool_toggled",
                              on_always_show_bypass_spool_toggled);
+    lv_xml_register_event_cb(nullptr, "on_ams_force_bypass_controls_toggled",
+                             on_force_bypass_controls_toggled);
     lv_xml_register_event_cb(nullptr, "on_ams_qidi_eject_distance_changed",
                              on_qidi_eject_distance_changed);
     lv_xml_register_event_cb(nullptr, "on_ams_qidi_eject_velocity_changed",
@@ -221,6 +229,7 @@ void AmsDeviceOperationsOverlay::update_from_backend() {
         spdlog::warn("[{}] No backend available", get_name());
         lv_subject_set_int(&has_backend_subject_, 0);
         lv_subject_set_int(&supports_bypass_subject_, 0);
+        lv_subject_set_int(&fw_supports_bypass_subject_, 0);
         lv_subject_set_int(&bypass_active_subject_, 0);
         lv_subject_set_int(&hw_bypass_sensor_subject_, 0);
         lv_subject_set_int(&supports_auto_heat_subject_, 0);
@@ -254,7 +263,9 @@ void AmsDeviceOperationsOverlay::update_from_backend() {
                  info.type_name.c_str(), info.version.c_str());
     }
     lv_subject_copy_string(&system_info_subject_, system_info_buf_);
-    lv_subject_set_int(&supports_bypass_subject_, info.supports_bypass ? 1 : 0);
+    lv_subject_set_int(&supports_bypass_subject_,
+                       helix::bypass_available_for(info.supports_bypass) ? 1 : 0);
+    lv_subject_set_int(&fw_supports_bypass_subject_, info.supports_bypass ? 1 : 0);
     lv_subject_set_int(&bypass_active_subject_, backend->is_bypass_active() ? 1 : 0);
     lv_subject_set_int(&hw_bypass_sensor_subject_, info.has_hardware_bypass_sensor ? 1 : 0);
 
@@ -588,6 +599,28 @@ void AmsDeviceOperationsOverlay::on_always_show_bypass_spool_toggled(lv_event_t*
         spdlog::info("[AmsDeviceOperationsOverlay] Always-show-bypass-spool toggle: {}",
                      is_checked ? "enabled" : "disabled");
         SettingsManager::instance().set_ams_always_show_bypass_spool(is_checked);
+    }
+
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+void AmsDeviceOperationsOverlay::on_force_bypass_controls_toggled(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[AmsDeviceOperationsOverlay] on_force_bypass_controls_toggled");
+
+    auto* toggle = static_cast<lv_obj_t*>(lv_event_get_target(e));
+    if (!toggle || !lv_obj_is_valid(toggle)) {
+        spdlog::warn("[AmsDeviceOperationsOverlay] Stale callback - toggle no longer valid");
+    } else {
+        bool is_checked = lv_obj_has_state(toggle, LV_STATE_CHECKED);
+        spdlog::info("[AmsDeviceOperationsOverlay] Force-bypass-controls toggle: {}",
+                     is_checked ? "enabled" : "disabled");
+        SettingsManager::instance().set_ams_force_bypass_controls(is_checked);
+        // Both gating subjects are recomputed from the backend rather than from
+        // the setting, so neither moves on its own when the override flips.
+        // AmsState drives the sidebar toggle and the path node; this overlay
+        // drives its own section.
+        AmsState::instance().sync_from_backend();
+        get_ams_device_operations_overlay().update_from_backend();
     }
 
     LVGL_SAFE_EVENT_CB_END();
