@@ -323,6 +323,49 @@ int MoonrakerClientMock::connect(const char* url, std::function<void()> on_conne
         on_connected();
     }
 
+    // Seed AmsBackendHappyHare's initial "mmu" status (--real-ams only — see
+    // should_mock_ams() guard below). Real Moonraker delivers gate data as part
+    // of the printer.objects.subscribe response, which Application::
+    // on_discovery_complete re-broadcasts via dispatch_status_update() AFTER
+    // init_subsystems_from_hardware() creates the AMS backend (both in the same
+    // queued callback — see application.cpp). The mock's own discovery path
+    // (just above, via on_connected() -> discover_printer()) reports an empty
+    // status snapshot instead, so nothing ever primes the backend's
+    // notify_status_update listener with gate_status. Queuing here — strictly
+    // AFTER discover_printer() already queued Application's discovery-complete
+    // handler — relies on FIFO draining of UpdateQueue::pending_ so the backend
+    // (and its notify subscription) exists by the time this callback runs.
+    // Gated on test_mode + !should_mock_ams(): AmsState only creates a real
+    // AmsSubscriptionBackend (the thing that would ever consume this) when
+    // should_mock_ams() is false (src/printer/ams_state.cpp
+    // init_backends_from_hardware()); the plain --test default builds
+    // AmsBackendMock instead, which never subscribes to "mmu" at all.
+    // should_mock_ams() alone is not a safe gate here: it also reads false
+    // when test_mode is false, which is the case for most unit tests that
+    // construct a MoonrakerClientMock directly without setting --test — that
+    // unconditional read leaked a pending UpdateQueue callback into every
+    // other unit test connecting a mock client with MMU hardware and not
+    // draining the queue before teardown (#seed_mmu_status isolation leak).
+    // Requiring test_mode explicitly scopes this to real --test runs.
+    if (discovery_.hardware().has_mmu() && get_runtime_config()->test_mode &&
+        !get_runtime_config()->should_mock_ams()) {
+        // Guard with lifetime_weak() (same idiom SubscriptionGuard uses) rather than
+        // a bare `this` capture: the queue drains on a later main-loop tick, and a
+        // printer switch / reconnect can destroy this MoonrakerClientMock before
+        // then. Both queuing and draining are main-thread-only here, so a plain
+        // expired() check (no AsyncLifetimeGuard token) is sufficient -- this isn't
+        // the bg-thread TOCTOU L081 Mechanism C targets.
+        std::weak_ptr<bool> alive = lifetime_weak();
+        helix::ui::queue_update(
+            "MoonrakerClientMock::seed_mmu_status",
+            [this, alive]() { // QUEUE_RAW_THIS_OK: guarded by alive.expired() below
+                if (alive.expired()) {
+                    return;
+                }
+                dispatch_status_update({{"mmu", mock_internal::get_mock_mmu_status()}});
+            });
+    }
+
     // Store disconnect callback (never invoked in mock, but stored for consistency)
     // Note: Not needed for this simple mock implementation
 
