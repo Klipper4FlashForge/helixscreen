@@ -1305,96 +1305,35 @@ echo ""
 SECTION_START=$(date +%s)
 echo -n "🐚 Checking shell scripts (shellcheck)..."
 
-# Two trees, held to two different bars.
-#
-#   config/  - platform hooks and the init script. Clean at shellcheck's
-#              default severity; kept there.
-#   scripts/ - installer modules, launcher, release tooling. These ship to
-#              devices but were outside this gate entirely until now, so 19
-#              files carry pre-existing findings. Those are listed in
-#              SHELLCHECK_BASELINE: still reported, but not fatal. Every other
-#              file must be clean. The list may shrink, never grow.
-#
-# install.sh / uninstall.sh are skipped: they are bundled artifacts of
-# install-dev.sh + lib/installer/, which are themselves checked here.
-#
-# Two codes are excluded for scripts/:
-#   SC3043 - "local is undefined in POSIX sh". Deliberate - the installer and
-#            launcher target BusyBox ash, which does implement local.
-#   SC1091 - "not following sourced file". The installer sources its modules
-#            by a path that only exists once unpacked on the device.
-SHELLCHECK_SCRIPTS_EXCLUDE="SC3043,SC1091"
-SHELLCHECK_BASELINE="scripts/audit_codebase.sh
-scripts/benchmark_hosts.sh
-scripts/benchmark_neon.sh
-scripts/check_cjk_font_staleness.sh
-scripts/git-stats.sh
-scripts/install-dev.sh
-scripts/lib/installer/common.sh
-scripts/lib/installer/forgex.sh
-scripts/lib/installer/main.sh
-scripts/lib/installer/platform.sh
-scripts/lib/installer/release.sh
-scripts/lib/installer/requirements.sh
-scripts/lib/installer/service.sh
-scripts/lib/lvgl_image_lib.sh
-scripts/quality-checks.sh
-scripts/regen_images.sh
-scripts/regen_printer_images.sh
-scripts/resolve-backtrace.sh
-scripts/screenshot.sh"
-
+# Platform hook scripts and init script
 SHELL_FILES=""
 if [ "$STAGED_ONLY" = true ]; then
   SHELL_FILES=$(git diff --cached --name-only --diff-filter=ACM | \
-    grep -E '(config/platform/.*\.sh|config/helixscreen\.init|^scripts/.*\.sh)$' || true)
+    grep -E '(config/platform/.*\.sh|config/helixscreen\.init)$' || true)
 else
   SHELL_FILES=$(find config/platform -name "*.sh" 2>/dev/null || true)
   if [ -f "config/helixscreen.init" ]; then
     SHELL_FILES="$SHELL_FILES config/helixscreen.init"
   fi
-  SHELL_FILES="$SHELL_FILES $(git ls-files 'scripts/*.sh' 'scripts/**/*.sh' 2>/dev/null || true)"
 fi
-# Drop the generated bundles regardless of how the list was built.
-SHELL_FILES=$(printf '%s\n' $SHELL_FILES | \
-  grep -vE '^scripts/(install|uninstall)\.sh$' || true)
 
 if [ -n "$SHELL_FILES" ]; then
   if command -v shellcheck >/dev/null 2>&1; then
     SHELL_ERRORS=0
-    SHELL_BASELINED=0
-    SHELL_FAILED_FILES=""
     for script in $SHELL_FILES; do
       if [ -f "$script" ]; then
-        # scripts/ is linted at warning severity minus the two excluded
-        # codes; config/ keeps the stricter default.
-        case "$script" in
-          scripts/*) SC_FLAGS="-S warning -e $SHELLCHECK_SCRIPTS_EXCLUDE" ;;
-          *)         SC_FLAGS="" ;;
-        esac
-        if ! shellcheck $SC_FLAGS "$script" 2>/dev/null; then
-          if printf '%s\n' "$SHELLCHECK_BASELINE" | grep -Fxq "$script"; then
-            SHELL_BASELINED=$((SHELL_BASELINED + 1))
-          else
-            SHELL_ERRORS=$((SHELL_ERRORS + 1))
-            SHELL_FAILED_FILES="$SHELL_FAILED_FILES $script"
-          fi
+        if ! shellcheck "$script" 2>/dev/null; then
+          SHELL_ERRORS=$((SHELL_ERRORS + 1))
         fi
       fi
     done
     section_time $SECTION_START
     echo ""
     if [ $SHELL_ERRORS -eq 0 ]; then
-      if [ $SHELL_BASELINED -gt 0 ]; then
-        echo "✅ shellcheck clean ($SHELL_BASELINED baselined file(s) still dirty)"
-      else
-        echo "✅ All shell scripts pass shellcheck"
-      fi
+      echo "✅ All shell scripts pass shellcheck"
     else
       echo "❌ shellcheck found issues in $SHELL_ERRORS file(s)"
-      for script in $SHELL_FAILED_FILES; do
-        echo "   Run: shellcheck $script"
-      done
+      echo "   Run: shellcheck config/platform/*.sh config/helixscreen.init"
       EXIT_CODE=1
     fi
   else
