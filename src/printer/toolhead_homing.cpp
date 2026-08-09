@@ -15,6 +15,11 @@
 namespace helix {
 
 bool toolhead_is_homed(const PrinterState& ps) {
+    // get_homed_axes_subject() is non-const (it mirrors PrinterState's other
+    // subject accessors, none of which are const), but this call only reads
+    // the subject's string value and never mutates it, so the const_cast is
+    // safe here despite @p ps being a const reference.
+    //
     // Klipper reports homed_axes as a subset of "xyz". Anything short of all
     // three is not homed for our purposes: every caller needs full XYZ before
     // it can move the toolhead safely.

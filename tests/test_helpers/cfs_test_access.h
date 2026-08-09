@@ -8,7 +8,6 @@
 #include "filament_slot_override.h"
 #include "filament_slot_override_store.h"
 
-#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <optional>
