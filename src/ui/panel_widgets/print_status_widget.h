@@ -128,18 +128,23 @@ class PrintStatusWidget : public PanelWidget {
         // only the formatter, so make sure those subjects are alive too — the
         // formatter writes to multi_tool_subject_ and tests assert on it.
         init_static_subjects();
-        if (s_formatter_refcount_++ == 0) {
-            s_formatter_ = std::make_unique<DetailedFormatter>();
-        }
+        acquire_formatter();
     }
     // Initializes the widget's static-inline subjects + their StaticSubjectRegistry
     // deinit callback. Idempotent — guarded by *_initialized_ flags inside.
     // Called from the ctor in production, AND from ensure_formatter_for_test so
     // tests that only construct the formatter still get the subjects.
     static void init_static_subjects();
+    // Take a reference on the shared DetailedFormatter, building it if this is
+    // the first. Shared by the ctor and ensure_formatter_for_test() so both go
+    // through the same replacement ordering (see the definition).
+    static void acquire_formatter();
 
+    // Floor at zero: destroy_formatter_for_test() zeroes the count outright, so a
+    // release_ that follows one would otherwise drive the count negative and leave
+    // the next acquire unable to recognise itself as the first.
     static void release_formatter_for_test() {
-        if (--s_formatter_refcount_ == 0) {
+        if (s_formatter_refcount_ > 0 && --s_formatter_refcount_ == 0) {
             s_formatter_.reset();
         }
     }

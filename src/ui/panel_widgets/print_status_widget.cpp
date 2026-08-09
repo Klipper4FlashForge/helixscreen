@@ -181,16 +181,31 @@ PrintStatusWidget::PrintStatusWidget() : printer_state_(get_printer_state()) {
     // Constructing the formatter here (before the ctor returns, and well
     // before attach() runs lv_xml_create) ensures the subjects exist when the
     // XML tree is built.
-    if (s_formatter_refcount_++ == 0) {
-        s_formatter_ = std::make_unique<DetailedFormatter>();
+    acquire_formatter();
+}
+
+void PrintStatusWidget::acquire_formatter() {
+    if (s_formatter_refcount_++ != 0) {
+        return;
     }
+    // Release the parked predecessor BEFORE building the replacement. Both
+    // formatters publish the same thirteen names into helix-xml's process-wide
+    // scope, and ~DetailedFormatter withdraws them by name — so constructing
+    // first would have the outgoing formatter's teardown delete the scope
+    // records that now point at the incoming one's subjects, leaving every
+    // bind_text on the Detailed card resolving to nothing for the rest of the
+    // session. Reached whenever the last print-status widget leaves the
+    // dashboard and one is added back.
+    s_formatter_.reset();
+    s_formatter_ = std::make_unique<DetailedFormatter>();
 }
 
 PrintStatusWidget::~PrintStatusWidget() {
     detach();
-    // Pair the eager ctor refcount bump. We never reset s_formatter_ even at
-    // refcount==0 (see detach() — destroying the formatter would dangle the
-    // helix-xml scope's subject pointers).
+    // Pair the eager ctor refcount bump, but leave s_formatter_ standing at
+    // refcount==0: destroying it here would dangle the helix-xml scope's subject
+    // pointers for any XML still bound to them. It is released in
+    // acquire_formatter(), where a replacement is about to take over the names.
     if (s_formatter_refcount_ > 0)
         --s_formatter_refcount_;
 }
@@ -246,8 +261,9 @@ void PrintStatusWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
     // Nozzle reads the tool-pin-aware proxy subjects rather than the raw
     // active-extruder ones, so the icon tracks whichever tool the card is
     // showing. Bed and chamber use the PrinterState defaults. The proxy
-    // subjects live on s_formatter_, which production code never resets once
-    // created (see ~PrintStatusWidget), so they genuinely outlive this binder.
+    // subjects live on s_formatter_, which is only ever replaced from
+    // acquire_formatter() — i.e. while no widget is attached — so they genuinely
+    // outlive this binder.
     nozzle_icon_binder_.bind_subjects(widget_obj_, "nozzle_icon_glyph",
                                       lv_xml_get_subject(nullptr, "print_status_nozzle_current"),
                                       lv_xml_get_subject(nullptr, "print_status_nozzle_target"));
@@ -1960,10 +1976,12 @@ bool PrintStatusWidget::DetailedFormatter::set_nozzle_tool_override(
         current_nozzle_override_ = "auto";
         nozzle_temp_observer_ = observe_int_sync<DetailedFormatter>(
             ps.get_active_extruder_temp_subject(), this,
-            [](DetailedFormatter* self, int) { self->update_nozzle_text(); });
+            [](DetailedFormatter* self, int) { self->update_nozzle_text(); },
+            ps.get_subjects_lifetime());
         nozzle_target_observer_ = observe_int_sync<DetailedFormatter>(
             ps.get_active_extruder_target_subject(), this,
-            [](DetailedFormatter* self, int) { self->update_nozzle_text(); });
+            [](DetailedFormatter* self, int) { self->update_nozzle_text(); },
+            ps.get_subjects_lifetime());
         update_nozzle_text();
         update_tool_label();
     };
@@ -2136,30 +2154,39 @@ PrintStatusWidget::DetailedFormatter::DetailedFormatter() {
     auto& ps = get_printer_state();
     progress_observer_ = observe_int_sync<DetailedFormatter>(
         ps.get_print_progress_subject(), this,
-        [](DetailedFormatter* self, int) { self->update_progress_pct(); });
+        [](DetailedFormatter* self, int) { self->update_progress_pct(); },
+        ps.get_subjects_lifetime());
     layer_current_observer_ = observe_int_sync<DetailedFormatter>(
         ps.get_print_layer_current_subject(), this,
-        [](DetailedFormatter* self, int) { self->update_layer_text(); });
+        [](DetailedFormatter* self, int) { self->update_layer_text(); },
+        ps.get_subjects_lifetime());
     layer_total_observer_ = observe_int_sync<DetailedFormatter>(
         ps.get_print_layer_total_subject(), this,
-        [](DetailedFormatter* self, int) { self->update_layer_text(); });
+        [](DetailedFormatter* self, int) { self->update_layer_text(); },
+        ps.get_subjects_lifetime());
     elapsed_observer_ = observe_int_sync<DetailedFormatter>(
         ps.get_print_elapsed_subject(), this,
-        [](DetailedFormatter* self, int) { self->update_time_text(); });
+        [](DetailedFormatter* self, int) { self->update_time_text(); }, ps.get_subjects_lifetime());
     time_left_observer_ = observe_int_sync<DetailedFormatter>(
         ps.get_print_time_left_subject(), this,
-        [](DetailedFormatter* self, int) { self->update_time_text(); });
+        [](DetailedFormatter* self, int) { self->update_time_text(); }, ps.get_subjects_lifetime());
     filament_used_observer_ = observe_int_sync<DetailedFormatter>(
         ps.get_print_filament_used_subject(), this,
-        [](DetailedFormatter* self, int) { self->update_filament_text(); });
+        [](DetailedFormatter* self, int) { self->update_filament_text(); },
+        ps.get_subjects_lifetime());
 
-    // Auto-tool nozzle: observe static active_extruder subjects (no lifetime needed)
+    // Auto-tool nozzle: the active_extruder subjects are static members of
+    // PrinterState, but its lifetime token still has to be handed over — the
+    // guard is what learns the subjects died when PrinterState deinits, instead
+    // of leaving that to StaticSubjectRegistry ordering.
     nozzle_temp_observer_ = observe_int_sync<DetailedFormatter>(
         ps.get_active_extruder_temp_subject(), this,
-        [](DetailedFormatter* self, int) { self->update_nozzle_text(); });
+        [](DetailedFormatter* self, int) { self->update_nozzle_text(); },
+        ps.get_subjects_lifetime());
     nozzle_target_observer_ = observe_int_sync<DetailedFormatter>(
         ps.get_active_extruder_target_subject(), this,
-        [](DetailedFormatter* self, int) { self->update_nozzle_text(); });
+        [](DetailedFormatter* self, int) { self->update_nozzle_text(); },
+        ps.get_subjects_lifetime());
     // Bed and chamber temp_display widgets bind directly to bed_temp / bed_target /
     // chamber_temp / chamber_target in the XML — no formatter mirroring needed
     // for those. The nozzle path still mirrors because pinning rebinds it.
@@ -2191,11 +2218,13 @@ PrintStatusWidget::DetailedFormatter::DetailedFormatter() {
     // attach_arc(), so a non-null pointer here is always live (L075: no
     // lv_obj_is_valid in observer cbs).
     arc_value_observer_ = observe_int_sync<DetailedFormatter>(
-        ps.get_print_progress_subject(), this, [](DetailedFormatter* self, int pct) {
+        ps.get_print_progress_subject(), this,
+        [](DetailedFormatter* self, int pct) {
             if (self->arc_widget_) {
                 lv_arc_set_value(self->arc_widget_, pct);
             }
-        });
+        },
+        ps.get_subjects_lifetime());
 
     // Idle hero — populate from print history and refresh on history-changed notifications.
     // PrintHistoryManager fires observers on the main thread (defer-wrapped in on_history_fetched),
