@@ -137,6 +137,12 @@ class ContextMenu {
     bool show_below_widget(lv_obj_t* parent, int item_index, lv_obj_t* anchor,
                            AnchorAlign align = AnchorAlign::Center);
 
+    /** @brief show_below_widget() for a menu that is not about an indexed item */
+    bool show_below_widget(lv_obj_t* parent, lv_obj_t* anchor,
+                           AnchorAlign align = AnchorAlign::Center) {
+        return show_below_widget(parent, -1, anchor, align);
+    }
+
     /**
      * @brief Set the click point for positioning (call before show)
      * Captures the display-coordinate click point from the triggering event.
@@ -147,6 +153,10 @@ class ContextMenu {
 
     /**
      * @brief Hide the context menu
+     *
+     * The widget is deleted asynchronously, but `menu_` is cleared synchronously —
+     * `safe_delete_deferred()` takes its pointer by reference. So is_visible() is
+     * false the moment this returns, which is what the `show_*()` guards rely on.
      */
     void hide();
 
@@ -234,12 +244,24 @@ class ContextMenu {
     void dispatch_action(int action);
 
     // Accessors for subclass use
+    /** @brief The backdrop — the whole menu, card included */
     [[nodiscard]] lv_obj_t* menu() const {
         return menu_;
     }
+    /** @brief The card inside the backdrop, or nullptr if the XML has no such name */
+    [[nodiscard]] lv_obj_t* card() const;
     [[nodiscard]] lv_obj_t* parent() const {
         return parent_;
     }
+
+    /**
+     * @brief `pct` percent of the height of the screen this menu is on
+     *
+     * The measurement every picker needs to cap a scrolling list, and one that is
+     * easy to get wrong: the backdrop's own height reads 0 until it has been laid
+     * out, so the fraction must come off the screen.
+     */
+    [[nodiscard]] int32_t screen_height_pct(int pct) const;
 
   private:
     lv_obj_t* menu_ = nullptr;

@@ -253,6 +253,18 @@ void ContextMenu::apply_card_width(lv_obj_t* menu_card) {
 // Protected Helpers
 // ============================================================================
 
+lv_obj_t* ContextMenu::card() const {
+    return menu_ ? lv_obj_find_by_name(menu_, menu_card_name()) : nullptr;
+}
+
+int32_t ContextMenu::screen_height_pct(int pct) const {
+    if (!menu_) {
+        return 0;
+    }
+    lv_obj_t* screen = lv_obj_get_screen(menu_);
+    return screen ? lv_obj_get_height(screen) * pct / 100 : 0;
+}
+
 void ContextMenu::on_backdrop_clicked() {
     dispatch_action(kActionCancelled);
 }
