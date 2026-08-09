@@ -32,6 +32,10 @@ bool parse_test_args(const std::vector<std::string>& args) {
             cfg->use_real_moonraker = true;
         } else if (args[i] == "--real-files") {
             cfg->use_real_files = true;
+        } else if (args[i] == "--real-ams") {
+            cfg->use_real_ams = true;
+        } else if (args[i] == "--real-sensors") {
+            cfg->use_real_sensors = true;
         } else {
             return false; // Unknown argument
         }
@@ -39,7 +43,7 @@ bool parse_test_args(const std::vector<std::string>& args) {
 
     // Validate: --real-* flags require --test mode
     if ((cfg->use_real_wifi || cfg->use_real_ethernet || cfg->use_real_moonraker ||
-         cfg->use_real_files) &&
+         cfg->use_real_files || cfg->use_real_ams || cfg->use_real_sensors) &&
         !cfg->test_mode) {
         return false; // Invalid configuration
     }
@@ -192,11 +196,29 @@ TEST_CASE("Command-line argument parsing", "[test_config]") {
         REQUIRE(cfg->should_use_test_files() == true);
     }
 
+    SECTION("Test mode with real AMS") {
+        REQUIRE(parse_test_args({"--test", "--real-ams"}) == true);
+        RuntimeConfig* cfg = get_runtime_config();
+        REQUIRE(cfg->test_mode == true);
+        REQUIRE(cfg->should_mock_ams() == false);
+        REQUIRE(cfg->should_mock_wifi() == true);
+    }
+
+    SECTION("Test mode with real sensors") {
+        REQUIRE(parse_test_args({"--test", "--real-sensors"}) == true);
+        RuntimeConfig* cfg = get_runtime_config();
+        REQUIRE(cfg->test_mode == true);
+        REQUIRE(cfg->should_mock_sensors() == false);
+        REQUIRE(cfg->should_mock_wifi() == true);
+    }
+
     SECTION("Real flags without test mode should fail") {
         REQUIRE(parse_test_args({"--real-wifi"}) == false);
         REQUIRE(parse_test_args({"--real-ethernet"}) == false);
         REQUIRE(parse_test_args({"--real-moonraker"}) == false);
         REQUIRE(parse_test_args({"--real-files"}) == false);
+        REQUIRE(parse_test_args({"--real-ams"}) == false);
+        REQUIRE(parse_test_args({"--real-sensors"}) == false);
     }
 
     SECTION("Unknown arguments should fail") {

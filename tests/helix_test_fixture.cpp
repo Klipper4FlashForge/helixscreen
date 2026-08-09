@@ -14,6 +14,7 @@
 #include "display_settings_manager.h"
 #include "fault_surface_correlation.h"
 #include "helix-xml/src/xml/lv_xml.h"
+#include "runtime_config.h"
 #include "src/ui/panel_widgets/print_status_widget.h"
 #include "system_settings_manager.h"
 #include "test_helpers/config_test_access.h"
@@ -188,6 +189,31 @@ void HelixTestFixture::reset_all() {
     helix::test::reset_config_singleton();
     helix::SystemSettingsManager::instance().init_subjects();
     helix::SystemSettingsManager::instance().set_language("en");
+
+    // Global RuntimeConfig's --real-*/--no-ams/--disconnected opt-out flags back
+    // to their off-by-default state. Every test that exercises RuntimeConfig
+    // today constructs its own local `RuntimeConfig config;` (test_runtime_config.cpp,
+    // test_subject_initializer.cpp) rather than touching this global, so nothing
+    // currently relies on these persisting across tests — but the global is what
+    // MoonrakerClientMock::connect() reads to gate its --real-ams "mmu" status seed
+    // (test_mode && (use_real_ams || disable_mock_ams) && has_mmu()), and
+    // use_real_ams/disable_mock_ams default to false while has_mmu()'s backing
+    // field (mmu_enabled_) defaults to true. Nothing in the suite sets
+    // use_real_ams/disable_mock_ams globally today, so this is a no-op in
+    // practice — it exists to stop the first --no-ams behaviour test that DOES
+    // set it globally from leaking a queued UpdateQueue callback into every
+    // later test that connects a mock client with MMU hardware. test_mode itself
+    // is intentionally left alone: several tests set it directly on the global
+    // (test_printer_capabilities_char.cpp, test_wizard_input_shaper_step.cpp) and
+    // expect it to stick for the duration of their TEST_CASE.
+    get_runtime_config()->use_real_wifi = false;
+    get_runtime_config()->use_real_ethernet = false;
+    get_runtime_config()->use_real_moonraker = false;
+    get_runtime_config()->use_real_files = false;
+    get_runtime_config()->use_real_ams = false;
+    get_runtime_config()->disable_mock_ams = false;
+    get_runtime_config()->use_real_sensors = false;
+    get_runtime_config()->simulate_disconnect = false;
 
     // Delete any tracked modal widgets and clear the modal stack.
     ModalStack::instance().clear();
