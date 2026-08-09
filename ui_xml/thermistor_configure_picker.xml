@@ -18,7 +18,8 @@
               style_pad_all="0" scrollable="false" clickable="false" event_bubble="true">
         <text_small text="Select Sensors" translation_tag="Select Sensors" clickable="false" event_bubble="true"/>
         <ui_button name="btn_done"
-                   width="content" height="content" variant="ghost" text="Done" translation_tag="Done" icon="check">
+                   width="content" height="content" variant="ghost" text="Done" translation_tag="Done" icon="check"
+                   style_pad_right="0">
           <event_cb trigger="clicked" callback="context_menu_close_cb"/>
         </ui_button>
       </lv_obj>

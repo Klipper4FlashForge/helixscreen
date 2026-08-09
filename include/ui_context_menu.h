@@ -93,6 +93,17 @@ class ContextMenu {
     [[nodiscard]] static ContextMenu* active();
 
     /**
+     * @brief The menu currently on screen, if it is a `T`
+     *
+     * The downcast every subclass callback needs: the registry holds a base
+     * pointer, but a menu's own XML callbacks act on their own type. One helper
+     * rather than a `dynamic_cast` open-coded at each of the ~40 callback sites.
+     */
+    template <typename T> [[nodiscard]] static T* active_as() {
+        return dynamic_cast<T*>(active());
+    }
+
+    /**
      * @brief Register the shared XML event callbacks
      *
      * Wires `context_menu_backdrop_cb` and `context_menu_close_cb`, which every

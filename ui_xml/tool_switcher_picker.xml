@@ -3,31 +3,30 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <component>
   <!-- Full-screen backdrop overlay - tap to dismiss -->
-  <view name="context_backdrop"
+  <view name="tool_switcher_picker"
         extends="lv_obj" width="100%" height="100%" style_bg_opa="128" style_bg_color="0x000000" style_border_width="0"
         style_pad_all="0" style_radius="0" clickable="true">
     <event_cb trigger="clicked" callback="context_menu_backdrop_cb"/>
-    <!-- Context menu card - positioned by C++ -->
+    <!-- Context menu card - width matched to the widget tile, positioned by ContextMenu -->
     <lv_obj name="context_menu"
             width="content" height="content" style_bg_color="#elevated_bg" style_bg_opa="255"
-            style_radius="#border_radius" style_pad_all="#space_sm" style_pad_gap="#space_sm" flex_flow="column"
-            style_flex_main_place="start" style_flex_cross_place="start" scrollable="false" clickable="true">
-      <!-- Header row: title + close. Backdrop tap still dismisses. -->
+            style_radius="#border_radius" style_pad_all="#space_xs" style_pad_gap="#space_xs" flex_flow="column"
+            style_flex_main_place="start" scrollable="false" clickable="true">
+      <!-- Header row: title + close. The card is as narrow as the widget tile, so
+           the title is one word and the X carries the dismiss. -->
       <lv_obj width="100%"
               height="content" flex_flow="row" style_flex_main_place="space_between" style_flex_cross_place="center"
               style_pad_all="0" scrollable="false" clickable="false" event_bubble="true">
-        <text_body text="Select Sensor" translation_tag="Select Sensor" clickable="false" event_bubble="true"/>
+        <text_small text="Tool" translation_tag="Tool" clickable="false" event_bubble="true"/>
         <ui_button name="btn_close" width="content" height="content" variant="ghost" icon="close" style_pad_right="0">
           <event_cb trigger="clicked" callback="context_menu_close_cb"/>
         </ui_button>
       </lv_obj>
-      <lv_obj width="100%"
-              height="1" style_bg_color="#text_muted" style_bg_opa="38" style_pad_all="0" scrollable="false"/>
-      <!-- Sensor rows populated dynamically by C++ -->
-      <!-- max_height set dynamically by C++ to ~2/3 screen height -->
-      <lv_obj name="sensor_list"
-              width="100%" height="content" flex_flow="column" style_pad_all="#space_xs" style_pad_gap="0"
-              scrollable="true"/>
+      <!-- Tool buttons populated dynamically by C++ -->
+      <!-- max_height set dynamically by C++ to ~60% screen height -->
+      <lv_obj name="tool_list"
+              width="100%" height="content" flex_flow="column" style_pad_all="0" style_pad_gap="#space_xs"
+              scrollable="true" clickable="false"/>
     </lv_obj>
   </view>
 </component>

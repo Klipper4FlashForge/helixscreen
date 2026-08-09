@@ -529,6 +529,8 @@ void register_xml_components() {
     register_xml("components/buffer_status_modal.xml");
     register_xml("job_queue_modal.xml");
     register_xml("fan_picker.xml");
+    register_xml("fan_stack_picker.xml");
+    register_xml("tool_switcher_picker.xml");
     register_xml("thermistor_sensor_picker.xml");
     register_xml("thermistor_configure_picker.xml");
     register_xml("print_status_configure_picker.xml");

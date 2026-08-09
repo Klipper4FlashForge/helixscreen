@@ -26,8 +26,9 @@ namespace helix::ui {
  * callback (SelectorAction). It does NOT invoke the backend directly — the
  * canvas→panel→menu→backend dispatch wiring lives elsewhere.
  *
- * Mirrors AmsContextMenu (the per-slot menu): static-instance callback
- * dispatch, capability gating in on_created(), and ContextMenu positioning.
+ * Mirrors AmsContextMenu (the per-slot menu): callbacks dispatched through
+ * ContextMenu::active(), capability gating in on_created(), and ContextMenu
+ * positioning.
  *
  * ## Usage:
  * @code
@@ -94,18 +95,20 @@ class AmsSelectorMenu : public ContextMenu {
         return "selector_menu";
     }
     void on_created(lv_obj_t* menu_obj) override;
+    /// A tap outside a single-select action menu chooses nothing, so it reports
+    /// CANCELLED through this menu's own callback rather than the base's.
+    void on_backdrop_clicked() override;
 
   private:
     ActionCallback action_callback_;
     AmsBackend* backend_ = nullptr;
 
     /**
-     * @brief Common pattern: clear static instance, hide, invoke callback
+     * @brief Common pattern: hide, then invoke the callback with the action
      */
     void dispatch_selector_action(SelectorAction action);
 
     // === Event Handlers ===
-    void handle_backdrop_clicked();
     void handle_home();
     void handle_check_slots();
     void handle_servo_up();
@@ -120,10 +123,10 @@ class AmsSelectorMenu : public ContextMenu {
     static void register_callbacks();
     static bool callbacks_registered_;
 
-    // === Static Callbacks (instance lookup via static pointer) ===
-    static AmsSelectorMenu* s_active_instance_;
+    // === Static Callbacks (instance lookup via ContextMenu::active()) ===
+    /// The menu on screen as an AmsSelectorMenu, or nullptr. Thin wrapper over
+    /// ContextMenu::active_as() that also logs the unexpected empty case.
     static AmsSelectorMenu* get_active_instance();
-    static void on_backdrop_cb(lv_event_t* e);
     static void on_home_cb(lv_event_t* e);
     static void on_check_cb(lv_event_t* e);
     static void on_servo_up_cb(lv_event_t* e);
