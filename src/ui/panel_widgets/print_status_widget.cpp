@@ -59,6 +59,8 @@ void register_print_status_widget() {
     lv_xml_register_event_cb(nullptr, "library_queue_cb", PrintStatusWidget::library_queue_cb);
     lv_xml_register_event_cb(nullptr, "print_status_picker_backdrop_cb",
                              PrintStatusWidget::print_status_picker_backdrop_cb);
+    lv_xml_register_event_cb(nullptr, "print_status_picker_done_cb",
+                             PrintStatusWidget::print_status_picker_done_cb);
     lv_xml_register_event_cb(nullptr, "print_status_nozzle_picker_backdrop_cb",
                              PrintStatusWidget::print_status_nozzle_picker_backdrop_cb);
     lv_xml_register_event_cb(nullptr, "print_status_nozzle_chevron_cb",
@@ -1482,6 +1484,16 @@ void PrintStatusWidget::dismiss_configure_picker() {
 
 void PrintStatusWidget::print_status_picker_backdrop_cb(lv_event_t* e) {
     LVGL_SAFE_EVENT_CB_BEGIN("[PrintStatusWidget] print_status_picker_backdrop_cb");
+    (void)e;
+    if (s_active_picker_) {
+        s_active_picker_->apply_picker_state();
+        s_active_picker_->dismiss_configure_picker();
+    }
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+void PrintStatusWidget::print_status_picker_done_cb(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[PrintStatusWidget] print_status_picker_done_cb");
     (void)e;
     if (s_active_picker_) {
         s_active_picker_->apply_picker_state();

@@ -100,7 +100,7 @@ translations:
   ACTIONS: AKTIONEN
   ADXL: ADXL
   AFC: AFC
-  AFC Update Available: ''
+  AFC Update Available: AFC-Update verfügbar
   AFC failure reset complete: AFC-Fehler zurückgesetzt
   AFC failure reset failed: AFC-Fehler-Reset fehlgeschlagen
   AFC recovery complete: AFC-Wiederherstellung abgeschlossen
@@ -325,7 +325,9 @@ translations:
   Bypass controlled by sensor: Bypass durch Sensor gesteuert
   Bypass disabled: Bypass deaktiviert
   Bypass enabled: Bypass aktiviert
+  Bypass failed: Bypass fehlgeschlagen
   'Bypass failed: {}': 'Bypass fehlgeschlagen: {}'
+  Bypass toggle failed: Bypass-Umschaltung fehlgeschlagen
   'Bypass toggle failed: {}': 'Bypass-Umschaltung fehlgeschlagen: {}'
   C: K
   CALIBRATION: KALIBRIERUNG
@@ -434,6 +436,8 @@ translations:
   Change LED color based on printer state: LED-Farbe basierend auf Druckerstatus ändern
   Change PIN: PIN ändern
   Change Printer Host: Drucker-Host ändern
+  Change Tool: Werkzeug wechseln
+  Change Tool While Paused: Werkzeug während Pause wechseln
   Changes apply immediately. Adjust during print for tuning.: Änderungen werden sofort
     angewendet. Während des Drucks zur Feinabstimmung anpassen.
   Changes are temporary and reset on printer reboot: Änderungen sind temporär und
@@ -444,8 +448,10 @@ translations:
   Check filament: Filament prüfen
   Check for Updates: Nach Updates suchen
   Check slot: Slot prüfen
+  Check slot failed: Slot prüfen fehlgeschlagen
   'Check slot failed: {}': 'Slot prüfen fehlgeschlagen: {}'
   Check slots: Slots prüfen
+  Check slots failed: Slots prüfen fehlgeschlagen
   'Check slots failed: {}': 'Slots prüfen fehlgeschlagen: {}'
   Check the filament path and try again.: Prüfen Sie den Filamentpfad und versuchen
     Sie es erneut.
@@ -483,6 +489,7 @@ translations:
   Clear All Events: Alle Ereignisse löschen
   Clear Console?: Konsole leeren?
   Clear Spool: Spule entfernen
+  Clear failed: Löschen fehlgeschlagen
   'Clear failed: {}': 'Löschen fehlgeschlagen: {}'
   Cleared from settings — system unpair failed, may need OS Bluetooth: Aus Einstellungen
     entfernt – System-Entkopplung fehlgeschlagen, ggf. OS-Bluetooth nötig
@@ -753,6 +760,7 @@ translations:
   Eject: Auswerfen
   Eject Distance: Auswurfstrecke
   Eject Velocity: Auswurfgeschwindigkeit
+  Eject failed: Auswerfen fehlgeschlagen
   'Eject failed: {}': 'Auswerfen fehlgeschlagen: {}'
   Eject needs [force_move] enabled in printer config: Auswerfen erfordert [force_move]
     aktiviert in der Druckerkonfiguration
@@ -767,7 +775,7 @@ translations:
   Empty slots disable the associated functionality: Leere Slots deaktivieren die zugehörige
     Funktionalität
   Enable: Aktivieren
-  Enable Bypass Controls: ''
+  Enable Bypass Controls: Bypass-Steuerung aktivieren
   Enable Monitoring: Überwachung aktivieren
   Enable Retraction: Retraktion aktivieren
   Enable Timelapse: Zeitraffer aktivieren
@@ -1020,7 +1028,7 @@ translations:
   Finish: Fertig
   Finishing up...: Wird abgeschlossen...
   Firmware Restart: Firmware-Neustart
-  Firmware reports no bypass. Enable if you feed filament straight to the extruder: ''
+  Firmware reports no bypass. Enable if you feed filament straight to the extruder: Firmware meldet keinen Bypass. Aktivieren Sie dies, wenn Sie das Filament direkt zum Extruder führen
   Firmware restarting...: Firmware wird neu gestartet...
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
@@ -1369,6 +1377,7 @@ translations:
   'MCU: ': 'MCU: '
   MDI Icons: MDI-Icons
   MISSING CONFIGURED: KONFIGURIERT FEHLT
+  MMU command failed: MMU-Befehl fehlgeschlagen
   'MMU command failed: {}': 'MMU-Befehl fehlgeschlagen: {}'
   MPC: MPC
   Machine Limits: Maschinenlimits
@@ -1478,7 +1487,7 @@ translations:
   Must home axes first: Achsen müssen zuerst referenziert werden
   My Custom Theme: Mein benutzerdefiniertes Thema
   My Panel: Mein Panel
-  My Printer: ''
+  My Printer: Mein Drucker
   NEWLY DISCOVERED: NEU ENTDECKT
   Name: Name
   Name (optional): Name (optional)
@@ -1979,6 +1988,7 @@ translations:
   Reset Speed & Flow to 100%: Geschwindigkeit & Fluss auf 100% zurücksetzen
   Reset all settings and restart wizard: Alle Einstellungen zurücksetzen und Assistenten
     neu starten
+  Reset failed: Zurücksetzen fehlgeschlagen
   'Reset failed: {}': 'Zurücksetzen fehlgeschlagen: {}'
   Reset to Default: Auf Standard zurücksetzen
   Reset to defaults: Auf Standardwerte zurücksetzen
@@ -2009,6 +2019,7 @@ translations:
   Resume Print: Druck fortsetzen
   Resume interrupted print?: Unterbrochenen Druck fortsetzen?
   Resume macro not configured: Fortsetzen-Makro nicht konfiguriert
+  Resume preparation failed: Vorbereitung zum Fortsetzen fehlgeschlagen
   'Resume preparation failed: {}': 'Vorbereitung zum Fortsetzen fehlgeschlagen: {}'
   Resuming...: Fortsetzen...
   Retract: Einziehen
@@ -2151,6 +2162,7 @@ translations:
   Select material to begin: Material auswählen, um zu beginnen
   Select sensor: Sensor auswählen
   Select slot: Slot auswählen
+  Select slot failed: Slot auswählen fehlgeschlagen
   'Select slot failed: {}': 'Slot auswählen fehlgeschlagen: {}'
   Select the heaters Klipper uses for your bed and hotend: Wählen Sie die Heizungen,
     die Klipper für Bett und Hotend verwendet
@@ -2434,6 +2446,10 @@ translations:
     die Resonanzfrequenz gefunden.\n\nVerwenden Sie die Frequenztasten, um die Werte
     durchzugehen, bis der Riemen stillzustehen scheint, und fixieren Sie dann den
     Messwert.
+  ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
+  : Der Druck ist pausiert. Ein Werkzeugwechsel bewegt jetzt den Werkzeugkopf und
+    tauscht das Filament an der Düse. Setzen Sie den Druck fort, sobald der Wechsel
+    abgeschlossen ist.
   The printer halted this print and cannot resume it. Restart from the beginning?: Der
     Drucker hat diesen Druck angehalten und kann ihn nicht fortsetzen. Von vorne neu
     starten?
@@ -2552,6 +2568,7 @@ translations:
   Tool: Werkzeug
   Tool Changer: Werkzeugwechsler
   'Tool change failed: {}': 'Werkzeugwechsel fehlgeschlagen: {}'
+  Tool mapping failed: Werkzeugzuordnung fehlgeschlagen
   Tool swap: Werkzeugwechsel
   'Tool {} → Lane {}: no filament loaded.': 'Werkzeug {} → Spur {}: kein Filament
     geladen.'
@@ -2651,7 +2668,8 @@ translations:
   Updates aren't available on this installation.: Updates sind bei dieser Installation
     nicht verfügbar.
   Updating Configuration...: Konfiguration wird aktualisiert...
-  Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: ''
+  Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: Aktualisieren
+    Sie auf AFC 1.2.0 oder neuer für Filamentnamen und mehrfarbige Spulen.
   Upload: Hochladen
   Upload Debug Bundle: Debug-Paket hochladen
   Upload Failed: Hochladen fehlgeschlagen
