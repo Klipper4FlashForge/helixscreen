@@ -642,7 +642,7 @@ int Application::run(int argc, char** argv) {
     }
 
     spdlog::info("[Application] ========================");
-    spdlog::info("[Application] HelixScreen {} ({})", helix_version(), HELIX_GIT_HASH);
+    spdlog::info("[Application] HelixScreen {} ({})", helix_version(), helix_git_hash());
     spdlog::debug("[Application] Target: {}x{}", m_screen_width, m_screen_height);
     spdlog::debug("[Application] DPI: {}{}", (m_args.dpi > 0 ? m_args.dpi : LV_DPI_DEF),
                   (m_args.dpi > 0 ? " (custom)" : " (default)"));

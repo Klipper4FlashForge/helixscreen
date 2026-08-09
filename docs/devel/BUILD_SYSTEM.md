@@ -1685,7 +1685,17 @@ Absorbed from the `helix-build` skill so there is one home for it. Values verifi
 ### Version
 
 Read from `VERSION.txt` (MAJOR.MINOR.PATCH) and injected as `-DHELIX_VERSION="..."`:
-`HELIX_VERSION`, `HELIX_VERSION_MAJOR` / `_MINOR` / `_PATCH`, and `HELIX_GIT_HASH` (short hash).
+`HELIX_VERSION`, `HELIX_VERSION_MAJOR` / `_MINOR` / `_PATCH`.
+
+The short git hash is **not** a global define. It changes on every commit, and
+`VERSION_DEFINES` lands on every translation unit's command line, which ccache's
+direct mode hashes — so a global `-DHELIX_GIT_HASH` invalidated the whole
+project's cache on every push (measured: 86% direct hits on a sha matching the
+restored cache, 43.7% on any other, and a 12-minute build became two hours).
+`scripts/gen-git-hash.sh` writes it to `build/generated/helix_git_hash.h`
+instead, rewriting only when the hash changes, and only
+`src/system/helix_version.cpp` includes it. Read it through `helix_git_hash()`
+from `helix_version.h`; the macro is not visible anywhere else.
 
 ### Build directories
 
