@@ -186,10 +186,17 @@ class ContextMenu {
 
     /**
      * @brief Called after the menu XML is created, before positioning
-     * Subclasses override to configure menu-specific widgets (dropdowns, headers, etc.)
+     *
+     * Subclasses override to configure menu-specific widgets (dropdowns, headers,
+     * generated rows). The argument is the **backdrop**, not the card — reach the
+     * card and everything under it with `lv_obj_find_by_name()`.
+     *
+     * The backdrop has been laid out by the time this runs, so measuring against it
+     * is safe. The card has not been positioned yet, and its final height is not
+     * known until the rows added here have been measured.
      */
-    virtual void on_created(lv_obj_t* menu) {
-        (void)menu;
+    virtual void on_created(lv_obj_t* backdrop) {
+        (void)backdrop;
     }
 
     /**

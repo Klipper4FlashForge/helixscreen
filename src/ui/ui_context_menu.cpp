@@ -152,6 +152,13 @@ bool ContextMenu::show_impl(lv_obj_t* parent, int item_index, lv_obj_t* anchor, 
     // Hide any existing menu first
     hide();
 
+    // ...including one belonging to a different instance. Two widgets of the same
+    // kind on one page would otherwise stack two backdrops, and only the newer one
+    // would answer the shared callbacks, leaving the older stranded on screen.
+    if (ContextMenu* other = s_active_) {
+        other->hide();
+    }
+
     if (!parent || !anchor) {
         spdlog::warn("[ContextMenu] Cannot show - missing parent or widget");
         return false;
@@ -173,6 +180,11 @@ bool ContextMenu::show_impl(lv_obj_t* parent, int item_index, lv_obj_t* anchor, 
 
     s_active_ = this;
     install_delete_hook();
+
+    // The backdrop is width/height 100% and nothing has resolved that yet. Everything
+    // below reads 0 without this: the width policy collapses to its minimum, and any
+    // measuring a subclass does in on_created() sizes against nothing.
+    lv_obj_update_layout(menu_);
 
     lv_obj_t* menu_card = lv_obj_find_by_name(menu_, menu_card_name());
 
