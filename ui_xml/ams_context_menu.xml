@@ -28,71 +28,112 @@
       <text_body name="slot_header" text="Slot 1" translation_tag="Slot 1"/>
       <!-- Header Divider -->
       <lv_obj width="100%"
-              height="1" style_bg_color="#text_muted" style_bg_opa="38" style_pad_all="0" scrollable="false"/>
-      <!-- Load Button -->
-      <ui_button name="btn_load"
-                 height="#button_height_sm" icon="z_closer" text="Load" translation_tag="Load"
-                 variant="ghost" clickable="true" style_flex_main_place="start">
-        <bind_state_if_eq subject="ams_slot_can_load" state="disabled" ref_value="0"/>
-        <event_cb trigger="clicked" callback="ams_context_load_cb"/>
-      </ui_button>
-      <!-- Unload Button (disabled when slot is not loaded) -->
-      <ui_button name="btn_unload"
-                 height="#button_height_sm" icon="z_farther" text="Unload" translation_tag="Unload"
-                 variant="ghost" clickable="true" style_flex_main_place="start">
-        <bind_state_if_eq subject="ams_slot_is_loaded" state="disabled" ref_value="0"/>
-        <event_cb trigger="clicked" callback="ams_context_unload_cb"/>
-      </ui_button>
-      <!-- Eject hint (QIDI Box): a lane has ejectable filament but
-           [force_move] enable_force_move is off, so eject is unavailable.
-           Revealed from C++ instead of silently omitting the action (#1041). -->
-      <text_small name="eject_force_move_hint"
-                  width="100%" long_mode="wrap"
-                  text="Eject needs [force_move] enabled in printer config"
-                  translation_tag="Eject needs [force_move] enabled in printer config"
-                  style_text_color="#text_muted" hidden="true"/>
-      <!-- Select Slot Button (hidden unless backend supports direct slot select, e.g. Happy Hare MMU_SELECT) -->
-      <ui_button name="btn_gate_select"
-                 height="#button_height_sm" icon="target" text="Select slot" translation_tag="Select slot"
-                 variant="ghost" clickable="true" style_flex_main_place="start" hidden="true">
-        <event_cb trigger="clicked" callback="ams_context_gate_select_cb"/>
-      </ui_button>
-      <!-- Check Slot Button (hidden unless backend supports slot check, e.g. Happy Hare MMU_CHECK_GATE) -->
-      <ui_button name="btn_gate_check"
-                 height="#button_height_sm" icon="refresh" text="Check slot" translation_tag="Check slot"
-                 variant="ghost" clickable="true" style_flex_main_place="start" hidden="true">
-        <event_cb trigger="clicked" callback="ams_context_gate_check_cb"/>
-      </ui_button>
-      <!-- Select Spool Button (Spoolman quick-assign, hidden by default) -->
-      <ui_button name="btn_spoolman"
-                 height="#button_height_sm" icon="spoolman" text="Select Spool"
-                 translation_tag="Select Spool" variant="ghost" clickable="true" style_flex_main_place="start"
-                 hidden="true">
-        <event_cb trigger="clicked" callback="ams_context_spoolman_cb"/>
-      </ui_button>
-      <!-- Scan QR Code Button (hidden by default, shown when Spoolman enabled) -->
-      <ui_button name="btn_scan_qr"
-                 height="#button_height_sm" icon="qrcode_scan" text="Scan QR Code"
-                 translation_tag="Scan QR Code" variant="ghost" clickable="true" style_flex_main_place="start"
-                 hidden="true">
-        <event_cb trigger="clicked" callback="ams_context_scan_qr_cb"/>
-      </ui_button>
-      <!-- Spool Info Button — always opens edit modal -->
-      <ui_button name="btn_edit"
-                 height="#button_height_sm" icon="tune" text="Spool Info" translation_tag="Spool Info"
-                 variant="ghost" clickable="true" style_flex_main_place="start">
-        <event_cb trigger="clicked" callback="ams_context_edit_cb"/>
-      </ui_button>
-      <!-- Clear Spool Button — shown only when the slot has a Spoolman assignment -->
-      <ui_button name="btn_clear_spool"
-                 height="#button_height_sm" icon="close" text="Clear Spool" translation_tag="Clear Spool"
-                 variant="ghost" clickable="true" style_flex_main_place="start" hidden="true">
-        <event_cb trigger="clicked" callback="ams_context_clear_spool_cb"/>
-      </ui_button>
+              height="1" style_bg_color="#text_muted" style_bg_opa="38" style_pad_all="0" scrollable="false"
+              clickable="false"/>
+      <!-- Action columns. Stacked (flex_flow="column") by default so a short menu
+           reads as one list; ContextMenu::fit_card_to_screen() flips this to a row
+           when the stacked card would not fit the screen, at which point the two
+           groups sit side by side. Same widget tree either way - only this
+           container's flow changes - so nothing is rebuilt to switch layouts. -->
+      <lv_obj name="menu_columns"
+              width="content" height="content" style_pad_all="0" style_pad_gap="#space_md"
+              flex_flow="column" style_flex_main_place="start" scrollable="false">
+        <!-- Lane/filament motion actions -->
+        <lv_obj name="col_filament"
+                width="content" height="content" style_pad_all="0" style_pad_gap="#space_md"
+                flex_flow="column" style_flex_main_place="start" scrollable="false">
+          <!-- Group heading. ContextMenu hides this when only one group survives:
+               with no sibling group to tell it apart from, the heading just repeats
+               what the card header already said. -->
+          <lv_obj name="col_heading" width="100%" height="content" style_pad_all="0"
+                  style_pad_gap="#space_xs" flex_flow="column" scrollable="false" clickable="false">
+            <text_small name="col_filament_label" text="Filament" translation_tag="Filament"
+                        style_text_color="#text_muted"/>
+            <lv_obj width="100%"
+                    height="1" style_bg_color="#text_muted" style_bg_opa="38" style_pad_all="0"
+                    scrollable="false" clickable="false"/>
+          </lv_obj>
+          <!-- Load Button -->
+          <ui_button name="btn_load"
+                     height="#button_height_sm" icon="z_closer" text="Load" translation_tag="Load"
+                     variant="ghost" clickable="true" style_flex_main_place="start">
+            <bind_state_if_eq subject="ams_slot_can_load" state="disabled" ref_value="0"/>
+            <event_cb trigger="clicked" callback="ams_context_load_cb"/>
+          </ui_button>
+          <!-- Unload Button (disabled when slot is not loaded) -->
+          <ui_button name="btn_unload"
+                     height="#button_height_sm" icon="z_farther" text="Unload" translation_tag="Unload"
+                     variant="ghost" clickable="true" style_flex_main_place="start">
+            <bind_state_if_eq subject="ams_slot_is_loaded" state="disabled" ref_value="0"/>
+            <event_cb trigger="clicked" callback="ams_context_unload_cb"/>
+          </ui_button>
+          <!-- Eject hint (QIDI Box): a lane has ejectable filament but
+               [force_move] enable_force_move is off, so eject is unavailable.
+               Revealed from C++ instead of silently omitting the action (#1041). -->
+          <text_small name="eject_force_move_hint"
+                      width="100%" long_mode="wrap"
+                      text="Eject needs [force_move] enabled in printer config"
+                      translation_tag="Eject needs [force_move] enabled in printer config"
+                      style_text_color="#text_muted" hidden="true"/>
+          <!-- Select Slot Button (hidden unless backend supports direct slot select, e.g. Happy Hare MMU_SELECT) -->
+          <ui_button name="btn_gate_select"
+                     height="#button_height_sm" icon="target" text="Select slot" translation_tag="Select slot"
+                     variant="ghost" clickable="true" style_flex_main_place="start" hidden="true">
+            <event_cb trigger="clicked" callback="ams_context_gate_select_cb"/>
+          </ui_button>
+          <!-- Check Slot Button (hidden unless backend supports slot check, e.g. Happy Hare MMU_CHECK_GATE) -->
+          <ui_button name="btn_gate_check"
+                     height="#button_height_sm" icon="refresh" text="Check slot" translation_tag="Check slot"
+                     variant="ghost" clickable="true" style_flex_main_place="start" hidden="true">
+            <event_cb trigger="clicked" callback="ams_context_gate_check_cb"/>
+          </ui_button>
+        </lv_obj>
+        <!-- Spool identity / Spoolman actions -->
+        <lv_obj name="col_spool"
+                width="content" height="content" style_pad_all="0" style_pad_gap="#space_md"
+                flex_flow="column" style_flex_main_place="start" scrollable="false">
+          <!-- Group heading — see col_filament's. -->
+          <lv_obj name="col_heading" width="100%" height="content" style_pad_all="0"
+                  style_pad_gap="#space_xs" flex_flow="column" scrollable="false" clickable="false">
+            <text_small name="col_spool_label" text="Spool" translation_tag="Spool"
+                        style_text_color="#text_muted"/>
+            <lv_obj width="100%"
+                    height="1" style_bg_color="#text_muted" style_bg_opa="38" style_pad_all="0"
+                    scrollable="false" clickable="false"/>
+          </lv_obj>
+          <!-- Select Spool Button (Spoolman quick-assign, hidden by default) -->
+          <ui_button name="btn_spoolman"
+                     height="#button_height_sm" icon="spoolman" text="Select Spool"
+                     translation_tag="Select Spool" variant="ghost" clickable="true" style_flex_main_place="start"
+                     hidden="true">
+            <event_cb trigger="clicked" callback="ams_context_spoolman_cb"/>
+          </ui_button>
+          <!-- Scan QR Code Button (hidden by default, shown when Spoolman enabled) -->
+          <ui_button name="btn_scan_qr"
+                     height="#button_height_sm" icon="qrcode_scan" text="Scan QR Code"
+                     translation_tag="Scan QR Code" variant="ghost" clickable="true" style_flex_main_place="start"
+                     hidden="true">
+            <event_cb trigger="clicked" callback="ams_context_scan_qr_cb"/>
+          </ui_button>
+          <!-- Spool Info Button — always opens edit modal -->
+          <ui_button name="btn_edit"
+                     height="#button_height_sm" icon="tune" text="Spool Info" translation_tag="Spool Info"
+                     variant="ghost" clickable="true" style_flex_main_place="start">
+            <event_cb trigger="clicked" callback="ams_context_edit_cb"/>
+          </ui_button>
+          <!-- Clear Spool Button — shown only when the slot has a Spoolman assignment -->
+          <ui_button name="btn_clear_spool"
+                     height="#button_height_sm" icon="close" text="Clear Spool" translation_tag="Clear Spool"
+                     variant="ghost" clickable="true" style_flex_main_place="start" hidden="true">
+            <event_cb trigger="clicked" callback="ams_context_clear_spool_cb"/>
+          </ui_button>
+        </lv_obj>
+      </lv_obj>
       <!-- Divider before dropdowns -->
       <lv_obj name="dropdown_divider"
               width="100%" height="1" style_bg_color="#text_muted" style_bg_opa="38" style_pad_all="0"
-              style_margin_top="#space_xs" style_margin_bottom="#space_xs" scrollable="false" hidden="true"/>
+              style_margin_top="#space_xs" style_margin_bottom="#space_xs" scrollable="false" hidden="true"
+              clickable="false"/>
       <!-- Tool Mapping Dropdown -->
       <lv_obj name="tool_dropdown_row"
               width="100%" height="content" style_pad_all="0" style_pad_left="#space_sm" style_pad_right="#space_sm"

@@ -140,11 +140,48 @@ class ContextMenu {
     ActionCallback action_callback_;
 
     /**
-     * @brief Widen every tappable row to the card's content width
+     * @brief Name of the optional column-group container inside a menu card
+     *
+     * A card that wants the side-by-side fallback wraps its action groups in a
+     * container with this name, one child per group. Cards without it are simply
+     * never reflowed.
+     */
+    static constexpr const char* kColumnsName = "menu_columns";
+
+    /** @brief Name of a column group's heading block (label + rule), if it has one */
+    static constexpr const char* kColumnHeadingName = "col_heading";
+
+    /** @brief Shortest a row can be and still plausibly be a tap target, in px */
+    static constexpr int32_t kMinTappableH = 8;
+
+    /**
+     * @brief Widen every tappable row to the width of the container holding it
      * Makes a row clickable across the full menu width rather than only across the
      * width of its own text. Runs after on_created() so it sees the final row set.
      */
     static void stretch_rows_to_card(lv_obj_t* menu_card);
+
+    /** @brief stretch_rows_to_card() for one container's direct children */
+    static void stretch_rows_in(lv_obj_t* container);
+
+    /**
+     * @brief Keep the card inside the screen, going side-by-side if it must
+     *
+     * Stacked column groups are the default. If the stacked card would not fit the
+     * backdrop (less a margin top and bottom), the group container flips to a row so
+     * the groups sit side by side; if even that overflows, the card is capped and
+     * made scrollable.
+     */
+    static void fit_card_to_screen(lv_obj_t* menu_card);
+
+    /**
+     * @brief Hide column groups left with no visible action, and lone headings
+     *
+     * A group whose actions were all hidden becomes a heading over nothing. And a
+     * group heading only earns its space when a sibling group is showing too —
+     * alone it just restates the card header.
+     */
+    static void tidy_column_groups(lv_obj_t* columns);
 
     /**
      * @brief Position the menu card near the target widget
