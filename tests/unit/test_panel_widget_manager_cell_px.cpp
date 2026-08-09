@@ -16,7 +16,6 @@
 #include "grid_layout.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "helix-xml/src/xml/lv_xml_component.h"
-#include "layout_manager.h"
 #include "panel_widget.h"
 #include "panel_widget_config.h"
 #include "panel_widget_manager.h"
@@ -31,40 +30,7 @@
 
 using namespace helix;
 
-// Access LayoutManager internals for test setup.
-// Note: LayoutManagerTestAccess is also defined in test_layout_manager.cpp,
-// test_grid_layout.cpp and test_panel_widget_portrait_span.cpp with an identical
-// body — Catch2 amalgamated builds compile each test file separately, so no ODR
-// conflict.
-class LayoutManagerTestAccess {
-  public:
-    static void reset(helix::LayoutManager& lm) {
-        lm.type_ = helix::LayoutType::STANDARD;
-        lm.name_ = "standard";
-        lm.override_name_.clear();
-        lm.initialized_ = false;
-        lm.width_ = 0;
-        lm.height_ = 0;
-    }
-};
-
 namespace {
-
-/// Restores LayoutManager to its pristine uninitialized state on scope exit.
-/// GridLayout::get_dimensions() divides the live LayoutManager panel size by the
-/// breakpoint's track edge, so a test that sizes it must hand it back — a REQUIRE
-/// throws past a plain trailing reset() call and would leak the size into
-/// whatever test Catch2 runs next.
-struct ScopedLayoutManagerSize {
-    explicit ScopedLayoutManagerSize(int w, int h) {
-        auto& lm = helix::LayoutManager::instance();
-        LayoutManagerTestAccess::reset(lm);
-        lm.init(w, h);
-    }
-    ~ScopedLayoutManagerSize() {
-        LayoutManagerTestAccess::reset(helix::LayoutManager::instance());
-    }
-};
 
 /// Records the pixel size populate_widgets() promised, alongside the LVGL
 /// object it was promised for, so the promise can be checked against the
@@ -293,9 +259,10 @@ TEST_CASE_METHOD(XMLTestFixture,
     // below reads 0 and the remainder check passes for the wrong reason.
     lv_obj_update_layout(container);
 
-    const int cols = GridLayout::get_cols(UiBreakpoint::Medium);
     const int gutter = theme_manager_get_spacing("space_xs");
     const int content_w = lv_obj_get_content_width(container);
+    const int content_h = lv_obj_get_content_height(container);
+    const int cols = GridLayout::get_cols(UiBreakpoint::Medium, content_w, content_h);
     INFO("content_w=" << content_w << " cols=" << cols << " gutter=" << gutter);
     REQUIRE((content_w - (cols - 1) * gutter) % cols != 0);
 
@@ -318,7 +285,8 @@ TEST_CASE_METHOD(XMLTestFixture,
     mgr.clear_panel_config(panel_id);
 }
 
-TEST_CASE_METHOD(XMLTestFixture, "grid rows come from the panel, not from the widget footprint",
+TEST_CASE_METHOD(XMLTestFixture,
+                 "grid rows come from the container's content box, not from the widget footprint",
                  "[panel_widget_manager][square]") {
     helix::init_widget_registrations();
     lv_xml_register_component_from_data(
@@ -328,16 +296,12 @@ TEST_CASE_METHOD(XMLTestFixture, "grid rows come from the panel, not from the wi
 
     ScopedOracleFactory oracle("shutdown");
 
-    // get_dimensions() divides the live LayoutManager panel size by the
-    // breakpoint's track edge, so without a real size behind it every axis
-    // collapses to MIN_TRACKS and the row/footprint distinction this test turns
-    // on disappears. 800x480 against Medium's 60px track gives 12x8.
-    ScopedLayoutManagerSize panel_size(800, 480);
-
     // A single 1x1 widget in the top-left cell must still build the full row
-    // count the breakpoint declares. Sizing the row axis to the widgets'
-    // footprint stretches every track to fill the container height, so a
-    // sparse page never gets square cells.
+    // count the container's content box earns. Sizing the row axis to the
+    // widgets' footprint stretches every track to fill the container height, so
+    // a sparse page never gets square cells; sizing it from the panel
+    // resolution instead of the content box measures a rectangle the tracks
+    // never occupy.
     const std::string panel_id = "test_row_track_from_grid";
     auto* cfg = Config::get_instance();
     cfg->set<nlohmann::json>(
@@ -374,7 +338,12 @@ TEST_CASE_METHOD(XMLTestFixture, "grid rows come from the panel, not from the wi
     auto widgets = mgr.populate_widgets(panel_id, container, /*page_index=*/1);
     REQUIRE(SizeOracleWidget::s_obj != nullptr);
 
-    const int expected_rows = helix::GridLayout::get_rows(UiBreakpoint::Medium);
+    // Same content box the manager measures, so the oracle is the rule under
+    // test applied to the real container rather than a second guess at it.
+    lv_obj_update_layout(container);
+    const int expected_rows =
+        helix::GridLayout::get_rows(UiBreakpoint::Medium, lv_obj_get_content_width(container),
+                                    lv_obj_get_content_height(container));
     // Guard the premise: if the grid were only as tall as the one widget on the
     // page, the assertion below would be comparing a number against itself and
     // would pass no matter how the row axis is derived.

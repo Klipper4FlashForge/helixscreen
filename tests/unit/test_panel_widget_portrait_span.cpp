@@ -165,6 +165,21 @@ UiBreakpoint active_breakpoint() {
     return subject ? as_breakpoint(lv_subject_get_int(subject)) : UiBreakpoint::Medium;
 }
 
+/// The grid PanelWidgetManager will build inside a container of this outer
+/// size. Track counts come from the CONTENT box, and lv_obj's default padding
+/// and border sit between that and the outer size, so a premise stated against
+/// the outer size describes a different grid than the code under test uses.
+/// Measures a throwaway container rather than assuming the inset.
+GridDimensions grid_for_container(lv_obj_t* parent, int w, int h) {
+    lv_obj_t* probe = lv_obj_create(parent);
+    lv_obj_set_size(probe, w, h);
+    lv_obj_update_layout(probe);
+    const GridDimensions dims = GridLayout::get_dimensions(
+        active_breakpoint(), lv_obj_get_content_width(probe), lv_obj_get_content_height(probe));
+    lv_obj_delete(probe);
+    return dims;
+}
+
 /// Register the dependency-free XML component the spy resolves to.
 void register_spy_component() {
     lv_xml_register_component_from_data(
@@ -241,15 +256,16 @@ class PortraitSpanFixture : public XMLTestFixture {
 TEST_CASE_METHOD(PortraitSpanFixture,
                  "Portrait auto-place shrinks an over-wide widget to its minimum",
                  "[panel_widget][manager][regression][1216]") {
-    // Premise: `tips` is authored wider than this grid but its declared minimum
-    // exactly fills it. Read off the live grid rather than a dimension table —
-    // track counts come from the panel, so a hardcoded number would either fail
+    // Premise: `tips` is authored wider than this grid, but its declared
+    // minimum fits, so it must be seated at a reduced span rather than
+    // disabled. Read off the live grid rather than a dimension table — track
+    // counts come from the container, so a hardcoded number would either fail
     // or, worse, describe a grid where nothing is over-wide and prove nothing.
-    const auto grid = GridLayout::get_dimensions(active_breakpoint());
+    const auto grid = grid_for_container(test_screen(), 320, 1480);
     const auto* tips_def = helix::find_widget_def("tips");
     REQUIRE(tips_def != nullptr);
     REQUIRE(tips_def->colspan > grid.cols);                  // authored for landscape
-    REQUIRE(tips_def->effective_min_colspan() == grid.cols); // …but its minimum fits
+    REQUIRE(tips_def->effective_min_colspan() <= grid.cols); // …but its minimum fits
 
     ScopedFactoryOverride factory("tips", [](const std::string&) -> std::unique_ptr<PanelWidget> {
         return std::make_unique<SpanSpyWidget>();
@@ -353,7 +369,7 @@ TEST_CASE_METHOD(PortraitSpanFixture, "Portrait saved-position pass clamps an ov
     auto* cfg = Config::get_instance();
     const std::string panel_path = cfg->df() + "panel_widgets/" + panel_id;
     // Explicit saved position from a landscape session: (0,0) at the authored span.
-    const auto grid = GridLayout::get_dimensions(active_breakpoint());
+    const auto grid = grid_for_container(test_screen(), 320, 1480);
     const auto* tips_def = helix::find_widget_def("tips");
     REQUIRE(tips_def != nullptr);
     REQUIRE(tips_def->colspan > grid.cols);
@@ -393,7 +409,7 @@ TEST_CASE_METHOD(PortraitSpanFixture, "Portrait still disables a widget that can
                  "[panel_widget][manager][regression][1216]") {
     // A minimum wider than the whole grid — unplaceable at any span. Derived
     // from the live track count so the scenario cannot become satisfiable.
-    const auto grid = GridLayout::get_dimensions(active_breakpoint());
+    const auto grid = grid_for_container(test_screen(), 320, 1480);
     const int too_wide = grid.cols + GridLayout::TRACKS_PER_CELL;
     ScopedSpanOverride span("tips", /*colspan=*/too_wide, /*rowspan=*/2,
                             /*min_colspan=*/too_wide, /*min_rowspan=*/2);
@@ -428,7 +444,7 @@ TEST_CASE_METHOD(PortraitSpanFixture, "Portrait still disables a widget that can
 
     // …and the reason is reported as "too large", not "grid full" — the grid was
     // completely empty.
-    GridLayout empty_grid(active_breakpoint());
+    GridLayout empty_grid(active_breakpoint(), grid);
     auto fit = empty_grid.find_available_bottom_min(too_wide, 2);
     CHECK(fit.failure == GridLayout::PlacementFailure::TooLargeForGrid);
 
@@ -567,7 +583,7 @@ TEST_CASE_METHOD(LandscapeFixture, "Landscape auto-place ends at the authored de
     // Premise: the authored spans leave room to spare, so nothing has any
     // excuse to shrink. Computed from the live grid — a hardcoded dimension
     // would silently turn this into the scarce case it is the counterpart to.
-    const auto grid = GridLayout::get_dimensions(active_breakpoint());
+    const auto grid = grid_for_container(test_screen(), 800, 480);
     int authored_tracks = 0;
     for (const auto& id : ids) {
         const auto* def = helix::find_widget_def(id);
@@ -635,7 +651,7 @@ TEST_CASE_METHOD(Portrait480x800Fixture,
         "temperature",   "network",      "temp_stack", "bed_temperature", "tool_switcher"};
     ScopedRecordingFactories factories(ids);
 
-    const auto grid = GridLayout::get_dimensions(active_breakpoint());
+    const auto grid = grid_for_container(test_screen(), 480, 800);
     const int capacity = grid.cols * grid.rows;
     int authored_tracks = 0;
     int minimum_tracks = 0;

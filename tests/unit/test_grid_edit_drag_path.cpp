@@ -121,16 +121,21 @@ TEST_CASE_METHOD(XMLTestFixture, "GridEditMode: real drag lands on the gutter-aw
     lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
     REQUIRE(bp_subj != nullptr);
     REQUIRE(as_breakpoint(lv_subject_get_int(bp_subj)) == UiBreakpoint::Medium);
-    const int ncols = GridLayout::get_cols(UiBreakpoint::Medium);
-    const int nrows = GridLayout::get_rows(UiBreakpoint::Medium);
-    REQUIRE(ncols > 0);
-    REQUIRE(nrows > 0);
-
-    // Container sized so every track is an exact 30px cell (no LVGL remainder
-    // distribution to muddy the arithmetic): content = cols*cell + (cols-1)*gutter.
-    constexpr int kCellPx = 30;
-    const int content_w = ncols * kCellPx + (ncols - 1) * gutter;
-    const int content_h = nrows * kCellPx + (nrows - 1) * gutter;
+    // The content box decides the track count, so it is fixed first and the
+    // grid derived from it. 715x475 is the one geometry near this fixture's
+    // display that gives Medium a 12x8 grid AND divides into exact 55px tracks,
+    // so there is no LVGL remainder distribution to muddy the arithmetic:
+    // content = tracks*cell + (tracks-1)*gutter, both axes.
+    constexpr int kCellPx = 55;
+    constexpr int content_w = 715;
+    constexpr int content_h = 475;
+    const auto dims = GridLayout::get_dimensions(UiBreakpoint::Medium, content_w, content_h);
+    const int ncols = dims.cols;
+    const int nrows = dims.rows;
+    REQUIRE(ncols == 12);
+    REQUIRE(nrows == 8);
+    REQUIRE(content_w == ncols * kCellPx + (ncols - 1) * gutter);
+    REQUIRE(content_h == nrows * kCellPx + (nrows - 1) * gutter);
 
     lv_obj_t* container = lv_obj_create(test_screen());
     lv_obj_remove_flag(container, LV_OBJ_FLAG_SCROLLABLE);
@@ -145,8 +150,8 @@ TEST_CASE_METHOD(XMLTestFixture, "GridEditMode: real drag lands on the gutter-aw
     // the descriptor for that), but so LVGL's own grid engine positions our
     // child widget for real, which is what the press points below are read
     // from.
-    auto col_dsc = GridLayout::make_col_dsc(UiBreakpoint::Medium);
-    auto row_dsc = GridLayout::make_row_dsc(UiBreakpoint::Medium);
+    auto col_dsc = GridLayout::make_col_dsc(ncols);
+    auto row_dsc = GridLayout::make_row_dsc(nrows);
     lv_obj_set_grid_dsc_array(container, col_dsc.data(), row_dsc.data());
     lv_obj_set_style_pad_column(container, gutter, 0);
     lv_obj_set_style_pad_row(container, gutter, 0);
@@ -302,9 +307,12 @@ TEST_CASE_METHOD(XMLTestFixture,
     lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
     REQUIRE(bp_subj != nullptr);
     REQUIRE(as_breakpoint(lv_subject_get_int(bp_subj)) == UiBreakpoint::Medium);
-    const int ncols = GridLayout::get_cols(UiBreakpoint::Medium);
-    const int breakpoint_rows = GridLayout::get_rows(UiBreakpoint::Medium);
-    REQUIRE(ncols > 0);
+    // Same 12-column content width as the test above; the row axis is the point
+    // of divergence, so the container gets a single row track regardless.
+    constexpr int kContentW = 715;
+    const int ncols = GridLayout::get_cols(UiBreakpoint::Medium, kContentW, kContentW);
+    const int breakpoint_rows = GridLayout::get_rows(UiBreakpoint::Medium, kContentW, kContentW);
+    REQUIRE(ncols == 12);
     // The whole point of this test: the container we are about to build has
     // fewer rows than the breakpoint table, so a fix that still reads
     // GridLayout::get_rows() would not diverge from this test's expectation.
@@ -320,7 +328,7 @@ TEST_CASE_METHOD(XMLTestFixture,
     constexpr int kCellPx = 80;
     constexpr int kColspan = 2;
     constexpr int kRowspan = 1;
-    const int content_w = ncols * kCellPx + (ncols - 1) * gutter;
+    const int content_w = kContentW;
     // Exactly one row's worth of content — no interior gutter since there is
     // only one track.
     const int content_h = kCellPx;
@@ -336,7 +344,7 @@ TEST_CASE_METHOD(XMLTestFixture,
     // cached_rows) — cols always come from GridLayout::get_cols()). Row
     // descriptor is deliberately a single track, standing in for a page whose
     // widgets only occupy row 0.
-    auto col_dsc = GridLayout::make_col_dsc(UiBreakpoint::Medium);
+    auto col_dsc = GridLayout::make_col_dsc(ncols);
     std::vector<int32_t> row_dsc = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
     lv_obj_set_grid_dsc_array(container, col_dsc.data(), row_dsc.data());
     lv_obj_set_style_pad_column(container, gutter, 0);

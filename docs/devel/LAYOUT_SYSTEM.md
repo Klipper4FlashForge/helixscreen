@@ -332,55 +332,79 @@ widget or wondering why yours vanished on a portrait screen, this is the section
 
 ### How the grid is sized
 
-Start from a fixed per-breakpoint table, then let the layout type override one or both axes.
+The grid is square-cell: both axes are divided by the same per-breakpoint cell edge, so a
+rotated panel gets (near enough) the transpose of its landscape grid and a widget's colspan
+and rowspan mean the same physical thing.
 
 ```cpp
-// src/ui/grid_layout.cpp — GRID_DIMS, indexed by UiBreakpoint
-MICRO / TINY / SMALL / MEDIUM  → 6 cols x 4 rows
-LARGE / XLARGE                 → 8 cols x 5 rows
+// include/grid_layout.h
+TRACKS_PER_CELL = 2                              // a track is HALF a cell
+GRID_CELL[NUM_BREAKPOINTS] = {34, 40, 40, 60, 60, 72}   // target track edge, px
 ```
 
-The table is `NUM_BREAKPOINTS == 6` long while there are seven tiers, so `XXLARGE` clamps
-onto the `XLARGE` row and also gets 8x5.
+`GridLayout::get_dimensions(bp, content_w, content_h)` divides the container's **content
+box** — not the panel resolution — by `TRACKS_PER_CELL * GRID_CELL[bp]`, rounds each axis
+to the **nearest** whole cell, and multiplies back up to tracks:
 
-The breakpoint itself comes from the **narrow** axis (`min(width, height)`), so a tall
-portrait panel is classified by its width. See `include/ui_breakpoint.h`.
+```
+cells  = round(content / (TRACKS_PER_CELL * GRID_CELL[bp]))
+tracks = TRACKS_PER_CELL * clamp(cells, MIN_TRACKS/2, MAX_TRACKS/2)
+```
 
-Then `GridLayout::get_dimensions()` consults `LayoutManager::type()`:
+Two details do the work here:
 
-| Layout type | Columns | Rows |
-|-------------|---------|------|
-| `STANDARD`, `MICRO`, `TINY` | table | table |
-| `ULTRAWIDE` | `clamp(width / TARGET_CELL_W_PX, MIN_DYNAMIC_COLS, MAX_DYNAMIC_COLS)` | table |
-| `PORTRAIT`, `TINY_PORTRAIT`, `MICRO_PORTRAIT` | `clamp(width / TARGET_CELL_W_PX, MIN_PORTRAIT_COLS, MAX_DYNAMIC_COLS)` | `clamp(height / TARGET_CELL_H_PX, MIN_DYNAMIC_ROWS, MAX_DYNAMIC_ROWS)` |
+- **The content box, not the panel.** Panel chrome takes a different bite out of each axis
+  and out of each orientation — 480x272 insets to 430x264, but 272x480 insets to 264x394 —
+  so dividing the panel extent sizes every track against a rectangle the grid never
+  occupies, and delivers tracks 8-23% narrower than `GRID_CELL`. `PanelWidgetManager`
+  measures the container (with an explicit `lv_obj_update_layout` first, because a
+  freshly-created container reports a zero content box) and passes it in.
+- **Nearest, not largest-that-fits.** Flooring discards up to a full cell and LVGL spreads
+  the remainder across the tracks that survive, inflating every one of them — micro's 264px
+  height is 3.88 cells, and taking 3 leaves 60px of a 68px cell to redistribute. Rounding
+  keeps each track within half a cell of its target.
 
-Constants (all `static constexpr` on `GridLayout`):
+Because the count is always a whole number of cells, the track count is always even: no
+trailing half-cell that a whole-cell widget could never occupy, and edit mode's `TRACKS_PER_CELL`
+snap step can always restore a size the user dragged past.
 
-| Constant | Value | Meaning |
-|----------|-------|---------|
-| `TARGET_CELL_W_PX` | 160 | Target cell **width**; drives derived column counts |
-| `TARGET_CELL_H_PX` | 120 | Target cell **height**; drives derived row counts (portrait only) |
-| `MIN_DYNAMIC_COLS` / `MAX_DYNAMIC_COLS` | 4 / 16 | Column clamp for ultrawide |
-| `MIN_PORTRAIT_COLS` | 2 | Column floor for portrait, below the landscape floor of 4 |
-| `MIN_DYNAMIC_ROWS` / `MAX_DYNAMIC_ROWS` | 3 / 16 | Row clamp for portrait |
+`MIN_TRACKS` (4) and `MAX_TRACKS` (64) are both whole cells, so clamping cannot produce an
+odd count either. Neither is reached by any measured geometry; `MIN_TRACKS` exists for a
+container that has not been laid out yet.
 
-The two cell targets are deliberately different numbers. Ultrawide has always kept the
-fixed 4-row table on a 480px panel — a 120px row — so 120 is the row height the dashboard
-is actually authored against. Portrait used to reuse the 160px *width* target for both
-axes, which handed the tall screen 164px rows: fewer, chunkier cells than the wide screen
-got (#1215).
+The breakpoint comes from the **narrow** axis (`min(width, height)`), so a tall portrait
+panel is classified by its width and keeps the same cell edge after rotation. See
+`include/ui_breakpoint.h`.
 
-**Worked examples:**
+**Measured grids.** Content boxes read off a live instance
+(`HELIX_SCREEN_SIZE=<WxH> helix-screen --test -vv`, then the `[PanelWidgetManager] Grid
+layout:` / `Track geometry:` lines); pinned in `tests/unit/test_grid_square_cells.cpp`.
 
-| Screen | Layout type | Narrow axis → tier | Table | Override applied | Final grid | Cell size |
-|--------|-------------|--------------------|-------|------------------|------------|-----------|
-| 800x480 | `STANDARD` | 480 → MEDIUM | 6x4 | none | **6x4** | 133 x 120 |
-| 1920x480 | `ULTRAWIDE` | 480 → MEDIUM | 6x4 | cols = `1920/160` = 12 | **12x4** | 160 x 120 |
-| 480x800 | `PORTRAIT` | 480 → MEDIUM | 6x4 | cols = `480/160` = 3, rows = `800/120` = 6 | **3x6** | 160 x 133 |
-| 320x1480 | `PORTRAIT` | 320 → TINY | 6x4 | cols = `clamp(2, 2, 16)` = 2, rows = `1480/120` = 12 | **2x12** | 160 x 123 |
+| Panel | Tier | Content box | Gutter | Grid | Track (w x h) | Aspect |
+|-------|------|-------------|--------|------|---------------|--------|
+| 480x272 | MICRO | 430x264 | 2 | **12x8** | 34.00 x 31.25 | 1.09 |
+| 272x480 | MICRO | 264x394 | 2 | **8x12** | 31.25 x 31.00 | 1.01 |
+| 480x320 | TINY | 418x312 | 2 | **10x8** | 40.00 x 37.25 | 1.07 |
+| 320x480 | TINY | 312x394 | 2 | **8x10** | 37.25 x 37.60 | 0.99 |
+| 480x400 | SMALL | 414x388 | 4 | **10x10** | 37.80 x 35.20 | 1.07 |
+| 800x480 | MEDIUM | 710x466 | 5 | **12x8** | 54.58 x 53.88 | 1.01 |
+| 480x800 | MEDIUM | 466x664 | 5 | **8x12** | 53.88 x 50.75 | 1.06 |
+| 1024x600 | LARGE | 904x584 | 6 | **16x10** | 50.88 x 53.00 | 0.96 |
+| 1280x720 | XLARGE | 1128x700 | 8 | **16x10** | 63.00 x 62.80 | 1.00 |
+| 1920x440 | SMALL | 1832x428 | 4 | **46x10** | 35.91 x 39.20 | 0.92 |
+| 320x1480 | TINY | 312x1332 | 2 | **8x34** | 37.25 x 37.24 | 1.00 |
 
-Columns are equal `LV_GRID_FR(1)` tracks (`make_col_dsc()` / `make_row_dsc()`), so the cell
-sizes above are what the fractions work out to, not fixed pixel values.
+**Rotation is a transpose to within one cell, not exactly.** The sizing rule transposes
+exactly — feed it a transposed content box and you get a transposed grid. Real panels do
+not, because the chrome is not symmetric: 1024x600 insets to 904x584 but 600x1024 insets to
+584x**868**, and 868 falls just below the cell boundary 904 clears, giving 14 rows against
+16 columns. Every measured rotation pair agrees within `TRACKS_PER_CELL`.
+
+Tracks are equal `LV_GRID_FR(1)` entries (`make_col_dsc(ncols)` / `make_row_dsc(nrows)`), so
+the track sizes above are what the fractions work out to after gutters, not fixed pixels.
+`grid_cell_metrics(content_w, content_h, cols, rows, gutter)` is the single helper that
+converts a content box into track pixels — the gutters sit *between* tracks and are not part
+of any track, so dividing content by the track count overstates every one of them.
 
 ### `assets/config/default_layout.json`
 

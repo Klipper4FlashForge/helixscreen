@@ -24,7 +24,6 @@
 #include "ui_breakpoint.h"
 
 #include "grid_layout.h"
-#include "layout_manager.h"
 #include "panel_widget_registry.h"
 #include "panel_widget_size.h"
 
@@ -39,45 +38,18 @@
 using namespace helix;
 using namespace helix::widget_size;
 
-// Access LayoutManager internals for test setup.
-// Note: LayoutManagerTestAccess is also defined in test_layout_manager.cpp,
-// test_grid_layout.cpp and test_panel_widget_portrait_span.cpp with an identical
-// body — Catch2 amalgamated builds compile each test file separately, so no ODR
-// conflict.
-class LayoutManagerTestAccess {
-  public:
-    static void reset(helix::LayoutManager& lm) {
-        lm.type_ = helix::LayoutType::STANDARD;
-        lm.name_ = "standard";
-        lm.override_name_.clear();
-        lm.initialized_ = false;
-        lm.width_ = 0;
-        lm.height_ = 0;
-    }
-};
-
 namespace {
-
-/// GridLayout::get_dimensions() divides the LIVE LayoutManager panel size, so a
-/// geometry has to be installed before any track count is asked for. An
-/// uninitialised LayoutManager collapses both axes to MIN_TRACKS and every
-/// assertion below would silently compare against a degenerate 4x4 grid.
-struct ScopedLayoutManagerSize {
-    explicit ScopedLayoutManagerSize(int w, int h) {
-        auto& lm = helix::LayoutManager::instance();
-        LayoutManagerTestAccess::reset(lm);
-        lm.init(w, h);
-    }
-    ~ScopedLayoutManagerSize() {
-        LayoutManagerTestAccess::reset(helix::LayoutManager::instance());
-    }
-};
 
 /// Measured container content boxes and gutters, one per shipping tier.
 /// content_w/content_h are the home grid container's content box, which is a
 /// property of the panel chrome and does not change with the track count; the
-/// gutter is the space_xs token at that breakpoint. Measured live per tier and
-/// recorded in .superpowers/sdd/2026-08-05-grid-metrics-followups.
+/// gutter is the space_xs token at that breakpoint. Both are what
+/// GridLayout::get_dimensions() and grid_cell_metrics() divide, so a tier is
+/// fully described by them plus the breakpoint its resolution selects.
+///
+/// Read off a live instance per tier: `HELIX_SCREEN_SIZE=<WxH> helix-screen
+/// --test -vv`, then the `[PanelWidgetManager] Grid layout:` and
+/// `Track geometry:` lines.
 struct Geometry {
     const char* name;
     int panel_w, panel_h;
@@ -120,7 +92,8 @@ int height_band(int px) {
 /// Track geometry for one tier, taken from the same helpers PanelWidgetManager
 /// uses so the two cannot drift.
 CellMetrics metrics_for(const Geometry& g) {
-    auto d = GridLayout::get_dimensions(breakpoint_for(std::min(g.panel_w, g.panel_h)));
+    const UiBreakpoint bp = breakpoint_for(std::min(g.panel_w, g.panel_h));
+    auto d = GridLayout::get_dimensions(bp, g.content_w, g.content_h);
     return grid_cell_metrics(g.content_w, g.content_h, d.cols, d.rows, g.gutter);
 }
 
@@ -139,10 +112,9 @@ TEST_CASE("registry spans: no authored span exceeds the narrowest grid",
     // A widget wider or taller at its declared MINIMUM than the grid is
     // TooLargeForGrid and gets disabled at boot with a toast. 272x480 is the
     // narrowest column axis of any shipping panel.
-    ScopedLayoutManagerSize panel(272, 480);
-    auto d = GridLayout::get_dimensions(UiBreakpoint::Micro);
+    auto d = GridLayout::get_dimensions(UiBreakpoint::Micro, 264, 394);
     REQUIRE(d.cols == 8);
-    REQUIRE(d.rows == 14);
+    REQUIRE(d.rows == 12);
 
     for (const auto& def : get_all_widget_defs()) {
         INFO("widget " << def.id << " min " << def.effective_min_colspan() << "x"
@@ -184,25 +156,23 @@ TEST_CASE("registry spans: authored spans land in the intended pixel band",
     // Keyed by registry id. Widgets compiled out on this build (camera, behind
     // HELIX_HAS_CAMERA) simply never get looked up.
     //
-    // Where the zeroes at micro come from. A track is half a cell, so a span of
-    // n tracks on a grid of 2m tracks covers the same fraction of the content
-    // box as a span of n/2 on a grid of m cells — exactly, gutters included.
-    // Six of the eight geometries below have exactly twice the track count the
-    // grid used to have cells, so every extent there is pixel-identical to what
-    // the same widget occupied before. The two that are not are `micro 480x272`,
-    // which gains a seventh column, and `micro portrait 272x480`, which gains
-    // four; on those two a two-cell widget is proportionally narrower than it
-    // was and lands below W_NORMAL. Widening the authored span to compensate
-    // would widen it on the six geometries that are already correct, by 26% to
-    // 51%, so the span stays and the loss is recorded here instead.
+    // Where the zeroes at micro portrait come from. A track is half a cell, so
+    // a span of n tracks on a grid of 2m tracks covers the same fraction of the
+    // content box as a span of n/2 on a grid of m cells — exactly, gutters
+    // included. `micro portrait 272x480` is the one geometry whose column count
+    // is not simply twice what the grid used to have in cells: it gains a
+    // column, so a two-cell widget is proportionally narrower there than it was
+    // and lands below W_NORMAL. Widening the authored span to compensate would
+    // widen it on every geometry that is already correct, so the span stays and
+    // the loss is recorded here instead.
     //
-    // Consequence on those two panels, for the widgets that read a band:
-    // print_status, job_queue, camera and clock select their compact layout
-    // where they previously selected the next one up.
+    // Consequence on that panel, for the widgets that read a band: print_status,
+    // job_queue, camera and clock select their compact layout where they
+    // previously selected the next one up.
     using Bands = std::vector<std::pair<int, int>>;
     const std::map<std::string, Bands> expected = {
-        {"printer_image", {{0, 1}, {1, 1}, {1, 1}, {2, 2}, {2, 2}, {2, 2}, {0, 0}, {2, 2}}},
-        {"print_status", {{0, 1}, {1, 1}, {1, 1}, {2, 2}, {2, 2}, {2, 2}, {0, 0}, {2, 2}}},
+        {"printer_image", {{1, 1}, {1, 1}, {1, 1}, {2, 2}, {2, 2}, {2, 2}, {0, 0}, {2, 2}}},
+        {"print_status", {{1, 1}, {1, 1}, {1, 1}, {2, 2}, {2, 2}, {2, 2}, {0, 0}, {2, 2}}},
         {"shutdown", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
         {"lock", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
         {"power_device", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
@@ -219,8 +189,8 @@ TEST_CASE("registry spans: authored spans land in the intended pixel band",
         {"chamber_temperature", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
         {"temp_stack", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
         {"thermistor", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"temp_graph", {{0, 1}, {1, 1}, {1, 1}, {2, 2}, {2, 2}, {2, 2}, {0, 0}, {2, 2}}},
-        {"preheat", {{1, 0}, {2, 0}, {2, 0}, {2, 0}, {2, 0}, {2, 1}, {1, 0}, {2, 0}}},
+        {"temp_graph", {{1, 1}, {1, 1}, {1, 1}, {2, 2}, {2, 2}, {2, 2}, {0, 0}, {2, 2}}},
+        {"preheat", {{2, 0}, {2, 0}, {2, 0}, {2, 0}, {2, 0}, {2, 1}, {1, 0}, {2, 0}}},
         {"ams", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
         {"active_spool", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
         {"filament", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
@@ -229,20 +199,19 @@ TEST_CASE("registry spans: authored spans land in the intended pixel band",
         {"favorite_macro", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
         {"macros", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
         {"motion", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"clock", {{0, 0}, {1, 0}, {1, 0}, {2, 0}, {2, 0}, {2, 1}, {0, 0}, {2, 0}}},
-        {"control_buttons", {{0, 0}, {1, 0}, {1, 0}, {2, 0}, {2, 0}, {2, 1}, {0, 0}, {2, 0}}},
-        {"job_queue", {{0, 1}, {1, 1}, {1, 1}, {2, 2}, {2, 2}, {2, 2}, {0, 0}, {2, 2}}},
+        {"clock", {{1, 0}, {1, 0}, {1, 0}, {2, 0}, {2, 0}, {2, 1}, {0, 0}, {2, 0}}},
+        {"control_buttons", {{1, 0}, {1, 0}, {1, 0}, {2, 0}, {2, 0}, {2, 1}, {0, 0}, {2, 0}}},
+        {"job_queue", {{1, 1}, {1, 1}, {1, 1}, {2, 2}, {2, 2}, {2, 2}, {0, 0}, {2, 2}}},
         {"tips", {{2, 1}, {2, 1}, {2, 1}, {2, 2}, {2, 2}, {2, 2}, {2, 0}, {2, 2}}},
         {"clog_detection", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"print_stats", {{0, 1}, {1, 1}, {1, 1}, {2, 2}, {2, 2}, {2, 2}, {0, 0}, {2, 2}}},
+        {"print_stats", {{1, 1}, {1, 1}, {1, 1}, {2, 2}, {2, 2}, {2, 2}, {0, 0}, {2, 2}}},
         {"gcode_console", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
-        {"camera", {{0, 1}, {1, 1}, {1, 1}, {2, 2}, {2, 2}, {2, 2}, {0, 0}, {2, 2}}},
+        {"camera", {{1, 1}, {1, 1}, {1, 1}, {2, 2}, {2, 2}, {2, 2}, {0, 0}, {2, 2}}},
         {"notifications", {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 1}, {0, 0}, {0, 0}}},
     };
 
     for (size_t gi = 0; gi < kGeometries.size(); ++gi) {
         const auto& g = kGeometries[gi];
-        ScopedLayoutManagerSize panel(g.panel_w, g.panel_h);
         const CellMetrics m = metrics_for(g);
 
         for (const auto& def : get_all_widget_defs()) {
