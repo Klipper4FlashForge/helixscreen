@@ -424,6 +424,38 @@ class PrinterState {
      */
     void set_print_thumbnail_path(const std::string& path);
 
+#if defined(HELIX_PLATFORM_ESP32)
+    /**
+     * @brief Get the PSRAM thumbnail generation subject for UI binding
+     *
+     * Integer subject bumped whenever the current print's PSRAM-resident
+     * thumbnail is replaced. ESP32 has no disk thumbnail cache, so
+     * print_thumbnail_path stays empty there and consumers observe this
+     * counter, then read get_print_psram_thumbnail().
+     */
+    lv_subject_t* get_print_psram_thumb_gen_subject() {
+        return print_domain_.get_print_psram_thumb_gen_subject();
+    }
+
+    /**
+     * @brief Get the current print's PSRAM-resident thumbnail (may be nullptr)
+     *
+     * Main thread only. Hold the returned shared_ptr for as long as a widget's
+     * image src points at its descriptor.
+     */
+    [[nodiscard]] std::shared_ptr<helix::ui::EspPsramThumbnail> get_print_psram_thumbnail() const {
+        return print_domain_.get_print_psram_thumbnail();
+    }
+
+    /**
+     * @brief Install the current print's PSRAM-resident thumbnail
+     *
+     * Main thread only — bumps the generation subject and may destroy the
+     * previous thumbnail (which calls lv_image_cache_drop()).
+     */
+    void set_print_psram_thumbnail(std::shared_ptr<helix::ui::EspPsramThumbnail> thumb);
+#endif
+
     /**
      * @brief Get print job state enum subject
      *

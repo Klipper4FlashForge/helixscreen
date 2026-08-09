@@ -214,6 +214,7 @@ PrintStatusWidget::~PrintStatusWidget() {
 }
 
 void PrintStatusWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
+    using helix::ui::observe_int_immediate;
     using helix::ui::observe_int_sync;
     using helix::ui::observe_print_state;
     using helix::ui::observe_string_immediate;
@@ -293,6 +294,23 @@ void PrintStatusWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
             self->on_print_thumbnail_path_changed(path);
         });
 
+#if defined(HELIX_PLATFORM_ESP32)
+    // ESP32 has no disk thumbnail cache, so print_thumbnail_path stays empty and
+    // the image arrives as a PSRAM buffer instead. Observe the generation counter
+    // ActivePrintMediaManager bumps when it installs one. observe_int_immediate
+    // for the same reason as the path observer above: the handler only does
+    // lv_image_set_src plus a shared_ptr swap (no observer lifecycle changes, no
+    // widget destruction), and the setter always runs on the UI thread — so the
+    // extra deferral would only add a frame and a stale-read window.
+    print_psram_thumb_observer_ =
+        observe_int_immediate<PrintStatusWidget>(printer_state_.get_print_psram_thumb_gen_subject(),
+                                                 this, [](PrintStatusWidget* self, int /*gen*/) {
+                                                     if (!self->widget_obj_)
+                                                         return;
+                                                     self->apply_esp_psram_thumbnail();
+                                                 });
+#endif
+
     auto& fsm = helix::FilamentSensorManager::instance();
     filament_runout_observer_ = observe_int_sync<PrintStatusWidget>(
         fsm.get_any_runout_subject(), this, [](PrintStatusWidget* self, int any_runout) {
@@ -365,6 +383,14 @@ void PrintStatusWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
             lv_subject_get_int(printer_state_.get_print_state_enum_subject()));
         if (state == PrintJobState::PRINTING || state == PrintJobState::PAUSED) {
             on_print_state_changed(state);
+#if defined(HELIX_PLATFORM_ESP32)
+            // Widget instances are recycled across page rebuilds, so a fresh
+            // attach lands on a print that already has its thumbnail loaded and
+            // no further generation bump coming. Re-apply from the held buffer;
+            // on other platforms the print_thumbnail_path observer's initial
+            // notification covers this.
+            apply_esp_psram_thumbnail();
+#endif
         } else {
             // Defer the initial idle reset: synchronous reset_print_card_to_idle
             // cascades lv_image_set_src → update_align → lv_obj_update_layout up
@@ -424,6 +450,12 @@ void PrintStatusWidget::detach() {
     // Release observers
     print_state_observer_.reset();
     print_thumbnail_path_observer_.reset();
+#if defined(HELIX_PLATFORM_ESP32)
+    print_psram_thumb_observer_.reset();
+    // Release our reference now that no widget of ours points at the buffer.
+    // detach() is main-thread, which EspPsramThumbnail's destructor requires.
+    esp_thumbnail_.reset();
+#endif
     filament_runout_observer_.reset();
     job_queue_count_observer_.reset();
     connection_observer_.reset();
@@ -755,6 +787,26 @@ void PrintStatusWidget::on_print_thumbnail_path_changed(const char* path) {
         spdlog::debug("[PrintStatusWidget] Active print thumbnail cleared (empty path)");
     }
 }
+
+#if defined(HELIX_PLATFORM_ESP32)
+void PrintStatusWidget::apply_esp_psram_thumbnail() {
+    if (!widget_obj_ || !print_card_active_thumb_) {
+        return;
+    }
+    auto thumb = printer_state_.get_print_psram_thumbnail();
+    if (!thumb) {
+        return;
+    }
+    // `previous` keeps the outgoing buffer alive until after the widget stops
+    // pointing at it — otherwise the last release could free the descriptor the
+    // widget's src still names. Both releases happen here, on the main thread,
+    // which is what EspPsramThumbnail's destructor requires.
+    auto previous = std::move(esp_thumbnail_);
+    esp_thumbnail_ = std::move(thumb);
+    lv_image_set_src(print_card_active_thumb_, esp_thumbnail_->dsc());
+    spdlog::info("[PrintStatusWidget] Active print PSRAM thumbnail applied");
+}
+#endif
 
 std::string PrintStatusWidget::get_last_print_thumbnail_path() const {
     auto* history = get_print_history_manager();

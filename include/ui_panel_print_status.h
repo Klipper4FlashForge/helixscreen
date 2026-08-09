@@ -448,6 +448,14 @@ class PrintStatusPanel : public OverlayBase {
     std::string cached_thumbnail_path_;  ///< Local cache path for downloaded thumbnail
     uint32_t thumbnail_load_generation_ = 0; ///< Generation counter for async callback safety
 
+#if defined(HELIX_PLATFORM_ESP32)
+    /// PSRAM-resident thumbnail currently shown in print_thumbnail_. There is
+    /// no cache file on this platform, so cached_thumbnail_path_ stays empty
+    /// and this shared_ptr is what keeps the image src's buffer alive.
+    /// Main-thread only (its destructor drops the LVGL image cache entry).
+    std::shared_ptr<helix::ui::EspPsramThumbnail> esp_thumbnail_;
+#endif
+
     // Child widgets
     lv_obj_t* progress_bar_ = nullptr;
     lv_obj_t* preparing_progress_bar_ = nullptr;
@@ -581,6 +589,13 @@ class PrintStatusPanel : public OverlayBase {
     void show_gcode_viewer(bool show);
     void load_gcode_file(const char* file_path);
     void load_thumbnail_for_file(const std::string& filename); ///< Fetch and display thumbnail
+
+#if defined(HELIX_PLATFORM_ESP32)
+    /// Pull the current PSRAM thumbnail from PrinterState, hold a reference,
+    /// and point print_thumbnail_ at its descriptor. Main thread only; no-op
+    /// when the widget is absent or no thumbnail has been fetched yet.
+    void apply_esp_psram_thumbnail();
+#endif
     void
     load_gcode_for_viewing(const std::string& filename); ///< Download and load G-code into viewer
     void update_button_states(); ///< Enable/disable buttons based on current print state
@@ -711,6 +726,9 @@ class PrintStatusPanel : public OverlayBase {
     ObserverGuard active_tool_observer_;  ///< Refreshes nozzle temp display with tool name prefix
     ObserverGuard chamber_temp_observer_; ///< Updates chamber status text
     ObserverGuard print_thumbnail_path_observer_; ///< Updates print_thumbnail_ from shared subject
+#if defined(HELIX_PLATFORM_ESP32)
+    ObserverGuard print_psram_thumb_observer_; ///< Ditto, via the PSRAM generation counter
+#endif
     ObserverGuard gcode_render_mode_observer_; ///< Watches settings changes to update viewer mode
     ObserverGuard print_outcome_observer_;     ///< Drives show_{complete,cancelled,error}_overlay
     ObserverGuard end_overlay_dismissed_observer_; ///< Ditto; second input to the same recompute

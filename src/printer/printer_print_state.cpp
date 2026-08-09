@@ -62,6 +62,9 @@ void PrinterPrintState::init_subjects(bool register_xml) {
     INIT_SUBJECT_INT(print_show_progress, 0, subjects_, register_xml);
     INIT_SUBJECT_STRING(print_display_filename, "", subjects_, register_xml);
     INIT_SUBJECT_STRING(print_thumbnail_path, "", subjects_, register_xml);
+#if defined(HELIX_PLATFORM_ESP32)
+    INIT_SUBJECT_INT(print_psram_thumb_gen, 0, subjects_, register_xml);
+#endif
 
     // Layer tracking subjects
     INIT_SUBJECT_INT(print_layer_current, 0, subjects_, register_xml);
@@ -150,6 +153,13 @@ void PrinterPrintState::deinit_subjects() {
         }
     }
     extruder_filament_used_.clear();
+
+#if defined(HELIX_PLATFORM_ESP32)
+    // Release the PSRAM thumbnail while LVGL is still initialized — the
+    // destructor calls lv_image_cache_drop(), which is only valid before
+    // lv_deinit(). StaticSubjectRegistry runs this on the main thread.
+    print_psram_thumbnail_.reset();
+#endif
 
     subjects_.deinit_all();
     subjects_initialized_ = false;
@@ -944,6 +954,18 @@ void PrinterPrintState::set_print_thumbnail_path(const std::string& path) {
         lv_subject_copy_string(&print_thumbnail_path_, path.c_str());
     }
 }
+
+#if defined(HELIX_PLATFORM_ESP32)
+void PrinterPrintState::set_print_psram_thumbnail(
+    std::shared_ptr<helix::ui::EspPsramThumbnail> thumb) {
+    // Main thread only (see header). The assignment below may run the previous
+    // thumbnail's destructor, which calls lv_image_cache_drop().
+    print_psram_thumbnail_ = std::move(thumb);
+    spdlog::debug("[PrinterPrintState] PSRAM thumbnail {}",
+                  print_psram_thumbnail_ ? "installed" : "cleared");
+    lv_subject_set_int(&print_psram_thumb_gen_, lv_subject_get_int(&print_psram_thumb_gen_) + 1);
+}
+#endif
 
 void PrinterPrintState::set_print_display_filename(const std::string& name) {
     // Display filename is set from PrintStatusPanel's main-thread callback.

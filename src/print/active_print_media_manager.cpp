@@ -14,6 +14,10 @@
 #include "thumbnail_cache.h"
 #include "thumbnail_processor.h"
 
+#if defined(HELIX_PLATFORM_ESP32)
+#include "esp_psram_thumbnail.h"
+#endif
+
 #include <spdlog/spdlog.h>
 
 #include <memory>
@@ -175,6 +179,12 @@ void ActivePrintMediaManager::process_filename(const char* raw_filename) {
         // existing thumbnail was intentionally pre-set (e.g., USB/PrintStartController).
         if (!last_loaded_thumbnail_filename_.empty()) {
             printer_state_.set_print_thumbnail_path("");
+#if defined(HELIX_PLATFORM_ESP32)
+            // Same reason on ESP32, where the image lives in PSRAM rather than
+            // at a path. Main thread: process_filename runs from an immediate
+            // observer on print_filename, which PrinterState only sets there.
+            printer_state_.set_print_psram_thumbnail(nullptr);
+#endif
         }
         // New file: drop any pending retry for the previous file and reset
         // the per-filename retry budget.
@@ -349,6 +359,95 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
 
                 spdlog::debug("[ActivePrintMediaManager] Found thumbnail: {}", thumbnail_rel_path);
 
+#if defined(HELIX_PLATFORM_ESP32)
+                // ESP32 (Task 11 R2): no disk thumbnail cache on this platform
+                // (Task 10 R6), so ThumbnailCache/ThumbnailProcessor are
+                // bypassed entirely. Fetch the PNG bytes over the HTTP lane and
+                // decode them into a PSRAM-backed lv_image_dsc_t instead of a
+                // cache file — same shape as the print-select card fetch in
+                // ui_panel_print_select.cpp. print_thumbnail_path_ stays empty
+                // here; consumers observe print_psram_thumb_gen instead.
+                //
+                // Moonraker's thumbnail relative_path is relative to the gcode
+                // file's PARENT directory, so a print from a subdirectory needs
+                // that directory prepended before the path can be downloaded.
+                std::string gcode_dir;
+                const auto slash_pos = metadata_filename.find_last_of('/');
+                if (slash_pos != std::string::npos) {
+                    gcode_dir = metadata_filename.substr(0, slash_pos);
+                }
+                const std::string resolved_thumb_path =
+                    resolve_thumbnail_path(thumbnail_rel_path, gcode_dir);
+                constexpr size_t kEsp32ThumbnailMaxBytes = 512 * 1024;
+
+                // MANDATORY threading: EspHttpLane invokes on_success/on_error
+                // directly on its own worker thread with no marshaling. Both
+                // callbacks below do only local byte-copy/PSRAM work there and
+                // route every member touch through tok.defer(). `this` is
+                // captured only to pass into the deferred body, never
+                // dereferenced on the worker.
+                api_->transfers().download_file_partial(
+                    "gcodes", resolved_thumb_path, kEsp32ThumbnailMaxBytes,
+                    [this, tok = lifetime_.token(), current_gen,
+                     resolved_thumb_path](const std::string& png_bytes) {
+                        // lane worker: PSRAM copy only, no LVGL, no members.
+                        auto thumb = helix::ui::EspPsramThumbnail::create(png_bytes);
+                        if (!thumb) {
+                            spdlog::warn("[ActivePrintMediaManager] PSRAM alloc failed for "
+                                         "thumbnail: {}",
+                                         resolved_thumb_path);
+                            return;
+                        }
+                        // The last shared_ptr release must happen on the UI
+                        // thread — see esp_psram_thumbnail.h. If tok is already
+                        // expired, defer() drops the lambda on this worker and
+                        // the destructor's on_main_thread() guard skips the
+                        // cache drop, which is the safe degenerate case.
+                        tok.defer("ActivePrintMediaManager::on_psram_thumbnail",
+                                  [this, current_gen, resolved_thumb_path,
+                                   thumb = std::move(thumb)]() mutable {
+                                      if (current_gen != thumbnail_load_generation_.load(
+                                                             std::memory_order_relaxed)) {
+                                          spdlog::trace("[ActivePrintMediaManager] Stale PSRAM "
+                                                        "thumbnail callback, ignoring");
+                                          return;
+                                      }
+                                      printer_state_.set_print_psram_thumbnail(std::move(thumb));
+                                      if (thumbnail_retry_count_ > 0) {
+                                          spdlog::info("[ActivePrintMediaManager] PSRAM thumbnail "
+                                                       "loaded after {} retries: {}",
+                                                       thumbnail_retry_count_, resolved_thumb_path);
+                                      } else {
+                                          spdlog::info("[ActivePrintMediaManager] PSRAM thumbnail "
+                                                       "loaded: {}",
+                                                       resolved_thumb_path);
+                                      }
+                                      thumbnail_loaded_ = true;
+                                      thumbnail_retry_count_ = 0;
+                                      cancel_thumbnail_retry();
+                                      helix::MemoryMonitor::log_now("thumbnail_loaded",
+                                                                    spdlog::level::debug);
+                                  });
+                    },
+                    [this, tok = lifetime_.token(), current_gen,
+                     filename](const MoonrakerError& error) {
+                        // lane worker: copy the message, marshal ALL member
+                        // access (retry bookkeeping) to main.
+                        std::string message = error.message;
+                        tok.defer("ActivePrintMediaManager::on_thumbnail_error",
+                                  [this, current_gen, filename, message = std::move(message)]() {
+                                      if (current_gen != thumbnail_load_generation_.load(
+                                                             std::memory_order_relaxed)) {
+                                          return; // superseded by a newer load
+                                      }
+                                      spdlog::warn("[ActivePrintMediaManager] PSRAM thumbnail "
+                                                   "download failed for '{}' (attempt {}/{}): {}",
+                                                   filename, thumbnail_retry_count_ + 1,
+                                                   kMaxThumbnailAttempts, message);
+                                      schedule_thumbnail_retry(filename);
+                                  });
+                    });
+#else
                 // Use detail-sized thumbnails (200-400px) — works for both card and detail
                 // views since LVGL scales down efficiently. We do NOT hand the thumbnail
                 // cache a lifetime/alive guard: its on_success fires on a bg thread, so we
@@ -405,6 +504,7 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
                                       schedule_thumbnail_retry(filename);
                                   });
                     });
+#endif
             });
         },
         [this, tok = lifetime_.token(), current_gen, filename,
@@ -683,6 +783,12 @@ void ActivePrintMediaManager::clear_print_info() {
     PrinterState* state = &printer_state_;
     helix::ui::queue_update([state]() {
         state->set_print_thumbnail_path("");
+#if defined(HELIX_PLATFORM_ESP32)
+        // Releases the PSRAM buffer once the UI widgets have dropped their own
+        // references; this lambda runs on the main thread, which the thumbnail's
+        // destructor requires.
+        state->set_print_psram_thumbnail(nullptr);
+#endif
         state->set_print_display_filename("");
         spdlog::debug("[ActivePrintMediaManager] Cleared print info subjects");
     });

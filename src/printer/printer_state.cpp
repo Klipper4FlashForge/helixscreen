@@ -912,6 +912,12 @@ void PrinterState::set_print_thumbnail_path(const std::string& path) {
     print_domain_.set_print_thumbnail_path(path);
 }
 
+#if defined(HELIX_PLATFORM_ESP32)
+void PrinterState::set_print_psram_thumbnail(std::shared_ptr<helix::ui::EspPsramThumbnail> thumb) {
+    print_domain_.set_print_psram_thumbnail(std::move(thumb));
+}
+#endif
+
 void PrinterState::set_print_display_filename(const std::string& name) {
     print_domain_.set_print_display_filename(name);
 }
