@@ -155,9 +155,16 @@ json get_mock_gcode_macro_config();
 /**
  * @brief Get mock Happy Hare "mmu" status (--real-ams)
  *
- * Minimal static 4-gate setup with a mix of loaded/empty gates. Used by the
- * objects.query/subscribe handlers and by MoonrakerClientMock's post-discovery
- * dispatch that seeds AmsBackendHappyHare's initial state.
+ * Minimal static 4-gate setup with a mix of loaded/empty gates. The only
+ * reachable caller today is MoonrakerClientMock's post-discovery dispatch
+ * that seeds AmsBackendHappyHare's initial state (moonraker_client_mock.cpp).
+ * The objects.query and printer.objects.subscribe handlers in
+ * moonraker_client_mock_objects.cpp also call this for a requested "mmu"
+ * object, but neither is reached in practice: AmsBackendHappyHare's
+ * printer.objects.query sites all request "configfile", never "mmu", and
+ * printer.objects.subscribe is issued only by MoonrakerDiscoverySequence,
+ * which MoonrakerClientMock::discover_printer() overrides and never calls.
+ * Those branches are reserved for a future caller, not dead code to remove.
  */
 json get_mock_mmu_status();
 
