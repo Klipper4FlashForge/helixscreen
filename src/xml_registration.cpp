@@ -11,6 +11,7 @@
 #include "ui_button.h"
 #include "ui_carousel.h"
 #include "ui_confetti.h"
+#include "ui_context_menu.h"
 #include "ui_event_safety.h"
 #include "ui_fan_dial.h"
 #include "ui_fonts.h"
@@ -320,6 +321,10 @@ void register_xml_components() {
                              [](lv_event_t*) { get_global_home_panel().exit_grid_edit_mode(); });
     lv_xml_register_event_cb(nullptr, "on_edit_add_widget_clicked",
                              [](lv_event_t*) { get_global_home_panel().open_widget_catalog(); });
+
+    // Backdrop tap and close/Done for every context menu — one pair, routed through
+    // ContextMenu::active(), rather than a callback per menu.
+    helix::ui::ContextMenu::register_shared_callbacks();
     lv_subject_init_int(&s_noop_subject, 0);
     lv_xml_register_subject(nullptr, "", &s_noop_subject);
     s_noop_subject_initialized = true;
