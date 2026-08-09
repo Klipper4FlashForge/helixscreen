@@ -19,6 +19,16 @@ helix::PrinterState& get_printer_state() {
     return instance;
 }
 
+// Update UX gating (app_globals.cpp on Linux). ESP32 updates ship as firmware
+// OTA, never through the in-app updater, so both answers are constant-true:
+// the settings UI hides its update affordances.
+bool updates_externally_managed() {
+    return true;
+}
+bool in_app_updates_suppressed() {
+    return true;
+}
+
 // --- crash_handler seam (Task 2 bucket D: ucontext.h) ----------------------
 // Signal-context register dumps are the Linux crash pipeline; ESP32 gets
 // esp coredump instead. UpdateQueue/observer code registers diagnostic tag
@@ -75,6 +85,12 @@ lv_subject_t& get_notification_subject() {
 lv_subject_t& get_home_edit_mode_subject() {
     return g_home_edit_mode_subject;
 }
+// Wizard-active gate (app_globals.cpp on Linux). ESP32 has no first-run wizard
+// flow driving it, so it initializes to 0 and only PLR/offer code observes it.
+static lv_subject_t g_wizard_active_subject;
+lv_subject_t& get_wizard_active_subject() {
+    return g_wizard_active_subject;
+}
 
 void app_globals_deinit_subjects();
 
@@ -89,6 +105,7 @@ void app_globals_init_subjects() {
     lv_xml_register_subject(nullptr, "show_beta_features", &g_show_beta_features_subject);
     lv_subject_init_int(&g_home_edit_mode_subject, 0);
     lv_xml_register_subject(nullptr, "home_edit_mode", &g_home_edit_mode_subject);
+    lv_subject_init_int(&g_wizard_active_subject, 0); // not XML-bound, observed programmatically
     helix::ui::modal_init_subjects();
     g_subjects_initialized = true;
     StaticSubjectRegistry::instance().register_deinit("AppGlobals", app_globals_deinit_subjects);

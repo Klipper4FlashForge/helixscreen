@@ -66,6 +66,7 @@ idf_component_register(
         ${CMAKE_CURRENT_LIST_DIR}      # adapted lv_conf.h (RGB565)
         ${CMAKE_CURRENT_LIST_DIR}/simd # esp_lvgl_port_lv_blend.h (ASM_CUSTOM)
         ${REPO_ROOT}/lib/lvgl          # lvgl.h, lvgl_private.h
+        ${REPO_ROOT}/lib/lvgl/src      # helix-xml submodule includes <misc/lv_types.h>, <lv_conf_internal.h> (desktop parity: LVGL_INC has both)
         ${REPO_ROOT}/lib/helix-xml     # helix_xml.h
     PRIV_REQUIRES pthread esp_timer)
 

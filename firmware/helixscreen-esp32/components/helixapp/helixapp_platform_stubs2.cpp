@@ -118,6 +118,7 @@ lv_obj_t* SpoolmanOverlay::create(lv_obj_t*) {
 }
 void SpoolmanOverlay::on_ui_destroyed() {}
 void SpoolmanOverlay::on_activate() {}
+void SpoolmanOverlay::on_deactivate() {}
 void SpoolmanOverlay::show(lv_obj_t*) {}
 SpoolmanOverlay& get_spoolman_overlay() {
     static SpoolmanOverlay overlay;
@@ -392,6 +393,13 @@ namespace helix {
 // storage lives in wifi_manager.cpp itself, so no stub is needed here.
 
 // --- ThumbnailProcessor, third batch (see round 2) ----------------------------
+void ThumbnailProcessor::set_write_journal(std::weak_ptr<ThumbnailWriteJournal>) {}
+void ThumbnailProcessor::set_card_size_hint(int, int) {}
+// Callbacks intentionally never invoked — same contract as process_async above.
+void ThumbnailProcessor::process_file_async(const std::string&, const std::string&,
+                                            const ThumbnailTarget&,
+                                            std::function<void(const std::string&)>,
+                                            std::function<void(const std::string&)>) {}
 ThumbnailTarget ThumbnailProcessor::get_target_for_resolution(int, int, ThumbnailSize) {
     return {};
 }
@@ -507,6 +515,7 @@ std::atomic<bool> gcode_renderer_loaded{false};
 
 // --- UpdateChecker, third batch (see round 2) ---------------------------------
 // The status callback is never invoked.
+void UpdateChecker::refresh_config_snapshot() {}
 void UpdateChecker::check_for_updates(Callback) {}
 void UpdateChecker::report_download_status(DownloadStatus, int, const std::string&,
                                            const std::string&) {}

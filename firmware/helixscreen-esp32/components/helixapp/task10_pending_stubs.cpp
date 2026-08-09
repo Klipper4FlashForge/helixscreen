@@ -26,7 +26,6 @@
 // esp32p4-task-5-report.md.
 
 #include "esp_log.h"
-
 #include "moonraker_api.h"
 #include "moonraker_timelapse_api.h"
 
@@ -94,7 +93,7 @@ void MoonrakerAPI::get_sensors(SensorsCallback, ErrorCallback err) {
 }
 
 void MoonrakerAPI::execute_gcode(const std::string&, SuccessCallback, ErrorCallback err, uint32_t,
-                                 bool) {
+                                 bool, SuccessCallback) {
     task10_unimplemented_err("MoonrakerAPI::execute_gcode", err);
 }
 

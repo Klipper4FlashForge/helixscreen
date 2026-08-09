@@ -62,7 +62,9 @@ lib/lv_markdown/src/lv_markdown_style.c
 src/abort/abort_manager.cpp
 src/application/asset_manager.cpp
 src/application/data_root_resolver.cpp
+src/application/moonraker_event_routing.cpp
 src/application/panel_factory.cpp
+src/application/printer_cache_registry.cpp
 src/application/static_panel_registry.cpp
 src/application/static_subject_registry.cpp
 src/application/subject_initializer.cpp
@@ -76,6 +78,7 @@ src/plugin/injection_point_manager.cpp
 src/print/active_print_media_manager.cpp
 src/print/filament_sensor_manager.cpp
 src/print/preprint_predictor.cpp
+src/print/thumbnail_write_journal.cpp
 src/print/print_completion.cpp
 src/print/print_file_data.cpp
 src/print/print_history_manager.cpp
@@ -86,12 +89,14 @@ src/print/thumbnail_cache.cpp
 src/printer/active_material_provider.cpp
 src/printer/afc_config_manager.cpp
 src/printer/afc_defaults.cpp
+src/printer/afc_fault_position.cpp
 src/printer/ams_backend.cpp
 src/printer/ams_backend_ace.cpp
 src/printer/ams_backend_ad5x_ifs.cpp
 src/printer/ams_backend_afc.cpp
 src/printer/ams_backend_cfs.cpp
 src/printer/ams_backend_happy_hare.cpp
+src/printer/ams_bypass_policy.cpp
 src/printer/ams_backend_qidi.cpp
 src/printer/ams_backend_snapmaker.cpp
 src/printer/ams_backend_toolchanger.cpp
@@ -100,7 +105,9 @@ src/printer/ams_subscription_backend.cpp
 src/printer/consumption_sink.cpp
 src/printer/filament_catalog.cpp
 src/printer/filament_consumption_tracker.cpp
+src/printer/filament_display_name.cpp
 src/printer/filament_mapper.cpp
+src/printer/filament_variants.cpp
 src/printer/hardware_role_registry.cpp
 src/printer/hardware_validator.cpp
 src/printer/hh_defaults.cpp
@@ -132,6 +139,8 @@ src/printer/printer_versions_state.cpp
 src/printer/sensor_state.cpp
 src/printer/slot_registry.cpp
 src/printer/snapmaker_resume.cpp
+src/printer/plr_backend.cpp
+src/printer/plr_offer.cpp
 src/printer/spoolman_manager.cpp
 src/printer/spoolman_types.cpp
 src/printer/standard_macros.cpp
@@ -170,6 +179,8 @@ src/system/pending_startup_warnings.cpp
 src/system/performance_state.cpp
 src/system/platform_capabilities.cpp
 src/system/post_op_cooldown_manager.cpp
+src/system/log_redact.cpp
+src/system/preset_materials.cpp
 src/system/prerendered_images.cpp
 src/system/printer_image_manager.cpp
 src/system/printer_name_sync.cpp
@@ -193,6 +204,7 @@ src/ui/ams_drawing_utils.cpp
 src/ui/backdrop_blur.cpp
 src/ui/console_filter_engine.cpp
 src/ui/fan_spin_animation.cpp
+src/ui/filament_op_router.cpp
 src/ui/filament_path_geometry.cpp
 src/ui/filament_tube_stroker.cpp
 src/ui/grid_layout.cpp
@@ -251,6 +263,7 @@ src/ui/temperature_service.cpp
 src/ui/theme_loader.cpp
 src/ui/theme_manager_new.cpp
 src/ui/touch_calibration.cpp
+src/ui/touch_calibration_layout.cpp
 src/ui/touch_calibration_panel.cpp
 src/ui/touch_calibration_session.cpp
 src/ui/tour/first_run_tour.cpp
@@ -265,6 +278,7 @@ src/ui/ui_ams_environment_overlay.cpp
 src/ui/ui_ams_loading_error_modal.cpp
 src/ui/ui_ams_mini_status.cpp
 src/ui/ui_ams_selector_menu.cpp
+src/ui/ui_afc_fault_path.cpp
 src/ui/ui_ams_sidebar.cpp
 src/ui/ui_ams_slot.cpp
 src/ui/ui_buffer_meter.cpp
@@ -296,6 +310,8 @@ src/ui/ui_filament_catalog_picker.cpp
 src/ui/ui_filament_catalog_selector.cpp
 src/ui/ui_filament_mapping_card.cpp
 src/ui/ui_filament_mapping_modal.cpp
+src/ui/filament_product_form.cpp
+src/ui/ui_filament_product_edit_modal.cpp
 src/ui/ui_filament_path_anim.cpp
 src/ui/ui_filament_path_canvas.cpp
 src/ui/ui_filament_path_glyphs.cpp
@@ -306,6 +322,7 @@ src/ui/ui_filament_slot_picker.cpp
 src/ui/ui_filename_utils.cpp
 src/ui/ui_format_utils.cpp
 src/ui/ui_gradient_canvas.cpp
+src/ui/ui_heater_icon_binder.cpp
 src/ui/ui_heating_animator.cpp
 src/ui/ui_history_list_view.cpp
 src/ui/ui_icon.cpp
@@ -349,6 +366,8 @@ src/ui/ui_panel_power.cpp
 src/ui/ui_panel_print_select.cpp
 src/ui/ui_panel_print_status.cpp
 src/ui/ui_panel_settings.cpp
+src/ui/ui_plr_offer_controller.cpp
+src/ui/ui_plr_prompt.cpp
 src/ui/ui_panel_spoolman.cpp
 src/ui/ui_pin_entry_modal.cpp
 src/ui/ui_pin_utils.cpp
@@ -429,6 +448,7 @@ src/ui/widgets/favorite_macro_widget.cpp
 src/ui/widgets/power_device_widget.cpp
 src/ui/wizard_step_registry.cpp
 src/ui/z_offset_utils.cpp
+src/util/indexed_subject_pool.cpp
 src/util/scoped_subject_registry.cpp
 src/utils/network_validation.cpp
 src/xml_registration.cpp
@@ -446,12 +466,16 @@ src/api/wifi_ui_utils.cpp
 # helixapp_platform_stubs2.cpp) through Task 12 — now real, backed by
 # wifi_backend_esp.cpp (LOCAL_SRCS, CMakeLists.txt) against esp_wifi.
 src/api/wifi_manager.cpp
+src/api/wifi_interface.cpp
+src/api/wifi_scan_scheduler.cpp
 src/api/wifi_backend.cpp
 src/api/moonraker_api.cpp
 src/api/moonraker_api_config.cpp
 src/api/moonraker_api_led.cpp
 src/api/moonraker_api_print.cpp
+src/api/moonraker_gcode_guards.cpp
 src/api/moonraker_api_validation.cpp
+src/api/screws_tilt_parser.cpp
 src/api/moonraker_advanced_api.cpp
 src/api/moonraker_file_api.cpp
 src/api/moonraker_history_api.cpp

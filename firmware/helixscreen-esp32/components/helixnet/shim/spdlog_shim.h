@@ -24,6 +24,11 @@
 
 namespace spdlog {
 
+// Parity with real spdlog/common.h, which forward-declares the formatter base
+// class: logging_init.h names std::unique_ptr<spdlog::formatter> in a
+// declaration ESP32 TUs see but never call (logging_init.cpp is excluded).
+class formatter;
+
 namespace level {
 enum level_enum : int {
     trace = 0,
@@ -57,7 +62,8 @@ template <typename T> inline void log(level::level_enum lvl, const T& msg) {
 
 #else // HELIX_SHIM_NAIVE_FMT: compile-only, ignores arguments
 
-template <typename S, typename... Args> inline void log(level::level_enum lvl, const S& f, Args&&...) {
+template <typename S, typename... Args>
+inline void log(level::level_enum lvl, const S& f, Args&&...) {
     helix_shim_log(static_cast<int>(lvl), "[unformatted]");
     (void)f;
 }
@@ -66,7 +72,7 @@ template <typename S, typename... Args> inline void log(level::level_enum lvl, c
 
 #define HELIX_SHIM_LEVEL_FN(name, lvl)                                                             \
     template <typename... Args> inline void name(Args&&... args) {                                 \
-        ::spdlog::log(lvl, std::forward<Args>(args)...);                                            \
+        ::spdlog::log(lvl, std::forward<Args>(args)...);                                           \
     }
 
 #if CONFIG_HELIX_LOG_STRIP_DEBUG
@@ -93,7 +99,9 @@ class logger {
   public:
     void flush() {}
     void set_level(level::level_enum) {}
-    level::level_enum level() const { return level::info; }
+    level::level_enum level() const {
+        return level::info;
+    }
     std::vector<sink_ptr>& sinks() {
         static std::vector<sink_ptr> s;
         return s;
@@ -106,8 +114,12 @@ inline std::shared_ptr<logger> default_logger() {
 }
 inline void set_default_logger(std::shared_ptr<logger>) {}
 inline void set_level(level::level_enum) {}
-inline level::level_enum get_level() { return level::info; }
-inline bool should_log(level::level_enum) { return true; }
+inline level::level_enum get_level() {
+    return level::info;
+}
+inline bool should_log(level::level_enum) {
+    return true;
+}
 inline void enable_backtrace(size_t) {}
 inline void dump_backtrace() {}
 inline void flush_on(level::level_enum) {}
