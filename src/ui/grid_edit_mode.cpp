@@ -602,11 +602,11 @@ helix::CellMetrics GridEditMode::current_metrics(lv_area_t* out_content) const {
     UiBreakpoint breakpoint =
         bp_subj ? as_breakpoint(lv_subject_get_int(bp_subj)) : UiBreakpoint::Medium;
 
-    // Prefer the descriptor the container is actually laid out with. The manager
-    // sizes the row axis from the rows in use (max_row_used, floored by a cached
-    // count), not from the breakpoint table, so asking GridLayout for rows can
-    // yield a track count this grid does not have — a whole-track error on any
-    // page that does not fill the grid.
+    // Prefer the descriptor the container is actually laid out with, and fall back
+    // to the breakpoint table only when it is absent. The two agree today, but the
+    // descriptor is what the widgets were placed against, so reading it keeps the
+    // hit-testing correct even if a panel is ever laid out on a grid it did not
+    // get from GridLayout.
     //
     // Safe here because GridEditMode is only ever entered from a user long-press,
     // long after populate_widgets() installed the descriptor. During a rebuild the
