@@ -6,7 +6,9 @@
 #include "../../lvgl/lvgl.h"
 #include "../ui_test_utils.h"
 
+#include <atomic>
 #include <chrono>
+#include <memory>
 #include <thread>
 
 #include "../catch_amalgamated.hpp"
@@ -1033,39 +1035,89 @@ TEST_CASE("MoonrakerClient destructor clears callbacks",
     SECTION("Destroy client with pending requests") {
         auto client = std::make_unique<MoonrakerClient>();
 
-        bool error_callback_called = false;
+        int error_callback_called = 0;
 
-        // Send request that will never complete (no connection)
+        // Send request on a client that never connected. ready_to_send() is
+        // false, so send_jsonrpc() invokes the error callback SYNCHRONOUSLY and
+        // returns INVALID_REQUEST_ID (#909) - the request is never handed to the
+        // tracker. That, not destruction, is what sets the flag below; the
+        // destructor deliberately drops pending requests WITHOUT invoking their
+        // error callbacks, because the callback targets may already be gone.
         client->send_jsonrpc(
             "printer.info", json(), [](json) { /* Success - should not be called */ },
             [&error_callback_called](const MoonrakerError& err) {
-                error_callback_called = true;
+                error_callback_called++;
                 REQUIRE(err.type == MoonrakerErrorType::CONNECTION_LOST);
             });
 
-        // Destroy client (should invoke error callbacks for pending requests)
+        REQUIRE(error_callback_called == 1); // fired inline, before the reset below
+
         client.reset();
 
-        // Error callback should have been invoked during cleanup
-        REQUIRE(error_callback_called);
+        // Still exactly one invocation - the destructor did not re-run it.
+        REQUIRE(error_callback_called == 1);
     }
 
     SECTION("Multiple rapid create/destroy cycles") {
-        // Stress test: rapid allocation and deallocation
+        // Stress test: rapid allocation and deallocation.
+        //
+        // The observable is ownership of the caller's callbacks, not a crash.
+        // connect() copies on_connected/on_disconnected into last_on_connected_/
+        // last_on_disconnected_ under reconnect_mutex_ so the install-once
+        // trampolines can snapshot them per invocation instead of capturing them
+        // (see MoonrakerClient::connect). A shared_ptr captured by those lambdas
+        // therefore has use_count > 1 for exactly as long as the client lives,
+        // and drops back to our single local reference when it is destroyed.
+        // A copy escaping into libhv's reconnect machinery, a detached timer, or
+        // any global would keep the count above 1 here.
+        struct Counters {
+            std::atomic<int> opened{0};
+            std::atomic<int> closed{0};
+        };
+        auto sentinel = std::make_shared<Counters>();
+        int connects_started = 0;
+
         for (int i = 0; i < 10; i++) {
             auto client = std::make_unique<MoonrakerClient>();
 
-            // Start connection
-            client->connect(
-                "ws://127.0.0.1:9999/websocket", []() { /* connected */ },
-                []() { /* disconnected */ });
+            int rc = client->connect(
+                "ws://127.0.0.1:9999/websocket",
+                [sentinel]() { sentinel->opened.fetch_add(1, std::memory_order_relaxed); },
+                [sentinel]() { sentinel->closed.fetch_add(1, std::memory_order_relaxed); });
+
+            // open() returning 0 means the connect was actually initiated -
+            // without this the loop could silently stop reaching the code below.
+            CHECK(rc == 0);
+            connects_started++;
+
+            // The live client holds both copies.
+            CHECK(sentinel.use_count() > 1);
 
             // Destroy immediately
             client.reset();
+
+            // ...and released them. Only our local reference is left. This is
+            // deterministic despite the live event-loop thread: the client is
+            // default-constructed, so is_loop_owner is true and ~WebSocketClient
+            // joins the loop before returning. Any snapshot copy on_ws_close()
+            // took under reconnect_mutex_ is therefore already gone.
+            CHECK(sentinel.use_count() == 1);
         }
 
-        // If callbacks were not cleared, this would likely crash
-        REQUIRE(true); // Reaching here means no crash
+        CHECK(connects_started == 10);
+
+        // Port 9999 refuses the connection, so the WebSocket can never open.
+        // A non-zero count here means a callback ran that had no business
+        // running - the wrong trampoline branch, or a stale callback from an
+        // already-destroyed cycle.
+        CHECK(sentinel->opened.load() == 0);
+
+        // The DISCONNECT side is deliberately not asserted on. Loopback refuses
+        // the connect fast enough that on_ws_close() usually invokes it before
+        // client.reset() lands (10/10 locally), but that is a race against the
+        // event-loop thread, not a contract - under load reset() can win and the
+        // callback never fires. Reported, not required.
+        INFO("disconnect callbacks observed: " << sentinel->closed.load() << "/10");
     }
 
     SECTION("Destroy client during active connection (mock)") {

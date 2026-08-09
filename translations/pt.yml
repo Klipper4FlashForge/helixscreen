@@ -98,7 +98,6 @@ translations:
   ACTIONS: AÇÕES
   ADXL: ADXL
   AFC: AFC
-  AFC Version Warning: Aviso de versão AFC
   AFC failure reset complete: Reinício de falha AFC concluído
   AFC failure reset failed: Falha ao reiniciar erro AFC
   AFC recovery complete: Recuperação AFC concluída
@@ -107,9 +106,6 @@ translations:
   AFC reset failed: Falha no reinício AFC
   AFC retracts filament from the toolhead at end of print: AFC retrai o filamento
     do cabeçote ao final da impressão
-  AFC version {} may have compatibility issues. Please upgrade to v1.0.35 or later.: A
-    versão {} do AFC pode ter problemas de compatibilidade. Atualize para a v1.0.35
-    ou posterior.
   ALL DEVICES: TODOS OS DISPOSITIVOS
   AMS: AMS
   'AMS Active: ': 'AMS Ativo: '
@@ -170,6 +166,7 @@ translations:
   Allwinner: Allwinner
   Already connecting — wait a moment and try again: Já está conectando — aguarde um
     momento e tente novamente
+  Always Show Bypass Spool: Sempre Mostrar Carretel de Bypass
   Always show Android navigation bar instead of using gestures: Mostrar sempre a barra
     de navegação Android em vez de usar gestos
   Ambient Transfer: Transferência Ambiente
@@ -352,12 +349,14 @@ translations:
   Calibration & Tools: Calibração e Ferramentas
   Calibration Complete!: Calibração Concluída!
   Calibration Failed: Calibração Falhou
+  Calibration cancelled.: Calibração cancelada.
   Calibration complete: Calibração concluída
   Calibration complete!: Calibração concluída!
   Calibration complete! Press 'Next' to continue.: Calibração concluída! Pressione
     'Próximo' para continuar.
   Calibration failed - touch targets more precisely.: Calibração falhou – toque nos
     alvos com mais precisão.
+  Calibration kept timing out. Your previous settings were kept.: A calibração expirou repetidamente. Suas configurações anteriores foram mantidas.
   Calibration may still be running — response timed out: A calibração pode ainda estar
     em execução — tempo esgotado
   Calibration move may still be running — response timed out: O movimento de calibração
@@ -402,6 +401,7 @@ translations:
     não conectado à impressora'
   'Cannot start print: printer is {}': 'Não é possível iniciar impressão: impressora
     está {}'
+  Cannot unload while a print is active: Não é possível descarregar enquanto uma impressão está ativa
   'Capabilities: ': 'Capacidades: '
   Cartographer scan calibrate sent — use Z-Offset panel to adjust: Cartographer calibração
     de varredura enviada — use o painel Z-Offset para ajustar
@@ -598,6 +598,7 @@ translations:
   Could not load printer database: Não foi possível carregar o banco de dados de impressoras
   Could not parse tips database: Não foi possível analisar o banco de dados de dicas
   Could not reach Spoolman at: Não foi possível alcançar o Spoolman em
+  Could not read the screw adjustments from the printer: Não foi possível ler os ajustes dos parafusos da impressora
   Could not resolve printer RFCOMM channel: Não foi possível resolver o canal RFCOMM
     da impressora
   Could not save filament: Não foi possível salvar o filamento
@@ -1112,7 +1113,7 @@ translations:
   Hide Firmware Noise: Ocultar Ruído do Firmware
   Hide Temperature Reports: Ocultar Relatórios de Temperatura
   High Water Mark: Marca de Pico
-  Hold anywhere to cancel: ''
+  Hold anywhere to cancel: Segure em qualquer lugar para cancelar
   Holding nozzle at {}°C to purge previous filament.: Mantendo o bico a {}°C para purgar
     o filamento anterior.
   Home: Início
@@ -1237,6 +1238,7 @@ translations:
   Keep Navigation Bar: Manter barra de navegação
   Keep Printing: Continuar Imprimindo
   Keep Required: Manter Obrigatório
+  Keep the bypass spool visible when bypass is off: Manter o carretel de bypass visível quando o bypass estiver desligado
   Kinematics: Cinemática
   Klipper: Klipper
   Klipper Error: Erro do Klipper
@@ -1682,6 +1684,7 @@ translations:
   Path Similarity: Similaridade de caminho
   Pause: Pausar
   Pause macro not configured: Macro de pausa não configurado
+  Pause the print first, then load, unload, or change filament: Pause a impressão primeiro, depois carregue, descarregue ou troque o filamento
   Paused: Pausado
   Paused (attention needed): Pausado (atenção necessária)
   Pausing...: Pausando...
@@ -2403,6 +2406,7 @@ translations:
     anônimos ajudam a melhorar o HelixScreen.
   Thanks! TOTALLY anonymous usage data helps improve HelixScreen.: Obrigado! Dados
     de uso TOTALMENTE anônimos ajudam a melhorar o HelixScreen.
+  That tool is already loaded: Essa ferramenta já está carregada
   ? The HelixPrint plugin enables fast G-code modifications directly on your printer—like
     skipping bed mesh for quick reprints.
   : O plugin HelixPrint permite modificações rápidas de G-code diretamente na sua
@@ -2455,6 +2459,7 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: Esta calibração
     usa o método de fricção de papel para definir seu Z-offset.
   This cannot be undone.: Isso não pode ser desfeito.
+  This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: Este dispositivo não tem conexão de rede com fio. Se você desligar o WiFi, só será possível ligá-lo novamente nesta tela.
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
   : 'Este dispositivo tem apenas {} MB de RAM. A calibração de ressonância consome muita
     memória e pode fazer o firmware da impressora reportar um erro \"Timer Too Close\"
@@ -2469,9 +2474,6 @@ translations:
     enviados
   This is what data would be sent if enabled: Estes são os dados que seriam enviados
     se habilitado
-  This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?: Isto
-    parece um filamento diferente do carretel do Spoolman vinculado. Atualizar o carretel
-    do Spoolman para corresponder?
   This may take up to 30 seconds: Isso pode levar até 30 segundos
   ? This plugin lets HelixScreen control print start options like bed mesh and QGL.
     Once installed, use Configure PRINT_START below to enable optional steps.
@@ -2557,6 +2559,7 @@ translations:
   Touch Jitter Filter: Filtro de tremulação do toque
   Touch anywhere to test calibration: Toque em qualquer lugar para testar a calibração
   Touch anywhere to verify accuracy: Toque em qualquer lugar para verificar a precisão
+  Touch input did not track the new calibration. Your previous settings were kept.: A entrada de toque não acompanhou a nova calibração. Suas configurações anteriores foram mantidas.
   Touch screen to wake from sleep: Toque na tela para acordar da suspensão
   Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: Toque no alvo
     (ponto %1$d de 3) \xe2\x80\x94 toque %2$d de %3$d
@@ -2570,6 +2573,7 @@ translations:
     uma impressão para testar
   Turbo: Turbo
   Turn Off: Desligar
+  Turn Off WiFi?: Desligar WiFi?
   Turn On: Ligar
   Turn on LEDs when printer starts: Ligar LEDs quando a impressora iniciar
   Turn the extruder heater off after a load or unload finishes: Desliga o aquecedor do extrusor ao concluir um carregamento ou descarregamento
@@ -2631,7 +2635,6 @@ translations:
   Update Channel: Canal de Atualização
   Update Failed: Atualização Falhou
   Update Success: Atualização Bem-sucedida
-  Update anyway: Atualizar Mesmo Assim
   Update installed!: Atualização instalada!
   Update your security PIN: Atualize seu PIN de segurança
   Updates aren't available on this installation.: As atualizações não estão disponíveis
@@ -2684,6 +2687,7 @@ translations:
   WLED Preset: Predefinição WLED
   WPA/WPA2: 'WPA/WPA2'
   WPA3: 'WPA3'
+  Wait for the current filament operation to finish: Aguarde a operação de filamento atual terminar
   Waiting for Moonraker...: Aguardando Moonraker...
   Waiting for bed to reach temperature for accurate calibration.: Aguardando a mesa
     atingir a temperatura para calibração precisa.
@@ -2723,6 +2727,7 @@ translations:
   WiFi and Ethernet configuration: Configuração de WiFi e Ethernet
   WiFi control unavailable: Controle WiFi indisponível
   WiFi hardware unavailable: Hardware WiFi indisponível
+  WiFi radio did not change state: O rádio WiFi não mudou de estado
   WiFi unavailable: WiFi indisponível
   WiFi was configured but hardware is not available. Check system configuration.: O
     WiFi foi configurado mas o hardware não está disponível. Verifique a configuração

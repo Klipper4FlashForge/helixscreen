@@ -92,12 +92,16 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     [[nodiscard]] PathSegment infer_error_segment() const override;
     [[nodiscard]] bool slot_has_prep_sensor(int slot_index) const override;
 
-    // Operations
-    AmsError load_filament(int slot_index) override;
-    AmsError unload_filament(int slot_index) override;
-    AmsError select_slot(int slot_index) override;
-    AmsError change_tool(int tool_number) override;
+  protected:
+    // Operations. Gated by AmsSubscriptionBackend's NVI wrapper.
+    // select_slot_moves_toolhead() stays false: MMU_SELECT drives the gate
+    // selector and never touches the carriage.
+    AmsError do_load_filament(int slot_index) override;
+    AmsError do_unload_filament(int slot_index) override;
+    AmsError do_select_slot(int slot_index) override;
+    AmsError do_change_tool(int tool_number) override;
 
+  public:
     // Recovery
     AmsError recover() override;
     AmsError reset() override;

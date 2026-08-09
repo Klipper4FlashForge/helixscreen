@@ -864,6 +864,38 @@ TEST_CASE("MoonrakerClient stress test - sustained load",
 
 TEST_CASE("MoonrakerClient memory safety", "[connection][edge][memory][eventloop][slow]") {
     SECTION("Rapid create/destroy cycles") {
+        // WHAT THIS DOES NOT COVER (#1146).
+        //
+        // The teardown UAF found while chasing #1146 is this: an externally
+        // supplied hv::EventLoop makes libhv set is_loop_owner=false, so
+        // TcpClientTmpl::stop() skips EventLoopThread::stop(wait).
+        // ~EventLoopThread does join eventually, but it is a private base of
+        // TcpClientTmpl and runs LAST - after ~WebSocketClient has already freed
+        // http_req_/http_parser_ and the onConnection/onMessage std::function
+        // members. A connect completing in that window runs the installed lambda
+        // against a freed object.
+        //
+        // The stop()/join()-before-reset() ordering below is the ordering that
+        // AVOIDS that window, so this section cannot exercise it. Reversing the
+        // ordering would not restore coverage either: the defect is in libhv's
+        // destruction order, it has no fix on our side, and a test written to hit
+        // it would simply be a crash we deliberately schedule. What actually
+        // closed the hole in the product was removing external loops from the
+        // construction path - MoonrakerManager::create_client default-constructs,
+        // and 28 test sites were converted to match (commit 2882c912e). The
+        // remaining fixtures that legitimately own a loop, this one included, use
+        // this ordering.
+        //
+        // What IS asserted here is that all 50 cycles reach production code:
+        // every client is unconnected, so ready_to_send() rejects each send and
+        // send_jsonrpc() invokes the error callback inline with CONNECTION_LOST
+        // (#909). Two sends per cycle, so exactly 100.
+        int pre_send_errors = 0;
+        auto count_error = [&pre_send_errors](const MoonrakerError& err) {
+            CHECK(err.type == MoonrakerErrorType::CONNECTION_LOST);
+            pre_send_errors++;
+        };
+
         for (int i = 0; i < 50; i++) {
             auto loop = std::make_shared<hv::EventLoopThread>();
             loop->start();
@@ -871,19 +903,16 @@ TEST_CASE("MoonrakerClient memory safety", "[connection][edge][memory][eventloop
             auto client = std::make_unique<MoonrakerClient>(loop->loop());
 
             // Send some requests
-            client->send_jsonrpc("printer.info", json(), [](json) {}, [](const MoonrakerError&) {});
-            client->send_jsonrpc("server.info", json(), [](json) {}, [](const MoonrakerError&) {});
+            client->send_jsonrpc("printer.info", json(), [](json) {}, count_error);
+            client->send_jsonrpc("server.info", json(), [](json) {}, count_error);
 
-            // Join BEFORE destroying — with an external loop is_loop_owner is
-            // false, so ~WebSocketClient skips the join and would free the
-            // client's std::function members under a live thread (#1146).
+            // Join BEFORE destroying - see the note above.
             loop->stop();
             loop->join();
             client.reset();
         }
 
-        // No leaks, no crashes
-        REQUIRE(true);
+        CHECK(pre_send_errors == 100);
     }
 
     SECTION("Large params don't cause memory issues") {

@@ -73,7 +73,12 @@ def collapse_whitespace(text: str) -> str:
 
 # Patterns to skip
 VARIABLE_PATTERN = re.compile(r"\$\w+")  # $variable
-ICON_PATTERN = re.compile(r"^#icon_")  # #icon_xxx
+# XML constant reference: `#name` resolves against a <string>/<px>/<color> const
+# in globals.xml, so the literal is a lookup key and never user-facing text. The
+# icon fonts (`#icon_*`) are the bulk of these, but any const reaching a
+# translatable attribute matches — e.g. placeholder_text="#hex_placeholder".
+# Lowercase-only, so a real `#RRGGBB` hex color is left to HEX_COLOR_PATTERN.
+CONST_REF_PATTERN = re.compile(r"^#[a-z_][a-z0-9_]*$")
 NUMERIC_PATTERN = re.compile(r"^[\d.]+%?$")  # 123 or 100%
 # XML numeric character references: &#xF0026; or &#983078;
 XML_NUMERIC_ENTITY_PATTERN = re.compile(r"&#x([0-9A-Fa-f]+);|&#(\d+);")
@@ -246,8 +251,8 @@ def should_skip_text(text: str) -> bool:
     if text.startswith("@"):
         return True
 
-    # Skip icon font references
-    if ICON_PATTERN.match(text):
+    # Skip XML constant references (icon fonts, string consts)
+    if CONST_REF_PATTERN.match(text):
         return True
 
     # Skip pure numeric values

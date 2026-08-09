@@ -50,9 +50,15 @@
  *     auto ctx = ThumbnailLoadContext::create(lifetime_);
  *     auto tok = lifetime_.token();
  *
- *     get_thumbnail_cache().fetch_for_detail_view(
- *         api_, path, ctx,
- *         [this, tok](const std::string& lvgl_path) {
+ *     ThumbnailRequest req;
+ *     req.key = path;
+ *     req.target = helix::ThumbnailProcessor::get_target_for_display(
+ *         helix::ThumbnailSize::Detail);
+ *     req.api = api_;
+ *
+ *     get_thumbnail_cache().fetch(
+ *         req, ctx,
+ *         [this, tok](const std::string& lvgl_path, bool degraded) {
  *             // Marshal, then touch members — never check-then-deref.
  *             tok.defer("MyPanel::apply_thumbnail", [this, lvgl_path]() {
  *                 lv_image_set_src(thumb_, lvgl_path.c_str());
@@ -66,8 +72,7 @@
  * auto ctx = ThumbnailLoadContext::create(m_alive, &thumbnail_gen_);
  * ```
  *
- * @see ThumbnailCache::fetch_for_detail_view
- * @see ThumbnailCache::fetch_for_card_view
+ * @see ThumbnailCache::fetch(const ThumbnailRequest&, ThumbnailLoadContext, ...)
  */
 struct ThumbnailLoadContext {
     /// Shared flag indicating if the owner object is still alive (legacy pattern)

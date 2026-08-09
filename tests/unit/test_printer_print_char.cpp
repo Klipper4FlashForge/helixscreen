@@ -336,16 +336,17 @@ TEST_CASE("Print characterization: file info API methods", "[characterization][p
         REQUIRE(std::string(val) == "Clean Model Name");
     }
 
-    SECTION("set_print_thumbnail_path updates subject") {
-        state.set_print_thumbnail_path("A:/tmp/thumbnail_abc123.bin");
+    SECTION("set_print_thumbnail updates subject") {
+        state.set_print_thumbnail("model.gcode", "A:/tmp/thumbnail_abc123.bin");
 
         const char* val = lv_subject_get_string(state.get_print_thumbnail_path_subject());
         REQUIRE(std::string(val) == "A:/tmp/thumbnail_abc123.bin");
+        REQUIRE(state.get_print_thumbnail_file() == "model.gcode");
     }
 
     SECTION("empty thumbnail path clears subject") {
-        state.set_print_thumbnail_path("A:/tmp/thumbnail.bin");
-        state.set_print_thumbnail_path("");
+        state.set_print_thumbnail("model.gcode", "A:/tmp/thumbnail.bin");
+        state.set_print_thumbnail("model.gcode", "");
 
         const char* val = lv_subject_get_string(state.get_print_thumbnail_path_subject());
         REQUIRE(std::string(val) == "");

@@ -220,7 +220,7 @@ void dispatch_prepared_resume(MoonrakerAPI* api, std::string log_prefix,
         }
         if (!err.success()) {
             spdlog::error("{} prepare_for_resume failed: {}", log_prefix, err.technical_msg);
-            NOTIFY_ERROR(lv_tr("Resume preparation failed: {}"), err.user_msg);
+            helix::ui::notify_ams_error(err, lv_tr("Resume preparation failed"));
             if (on_failure)
                 on_failure();
             return;

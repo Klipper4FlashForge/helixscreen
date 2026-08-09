@@ -1359,13 +1359,10 @@ PathSegment AmsBackendAd5xIfs::infer_error_segment() const {
 
 // --- Filament operations ---
 
-AmsError AmsBackendAd5xIfs::load_filament(int slot_index) {
+AmsError AmsBackendAd5xIfs::do_load_filament(int slot_index) {
     if (!validate_slot_index(slot_index)) {
         return AmsErrorHelper::invalid_slot(slot_index, NUM_PORTS - 1);
     }
-    auto err = check_preconditions(true);
-    if (!err.success())
-        return err;
 
     int port = slot_index + 1;
     {
@@ -1407,11 +1404,7 @@ AmsError AmsBackendAd5xIfs::load_filament(int slot_index) {
     });
 }
 
-AmsError AmsBackendAd5xIfs::unload_filament(int slot_index) {
-    auto err = check_preconditions(true);
-    if (!err.success())
-        return err;
-
+AmsError AmsBackendAd5xIfs::do_unload_filament(int slot_index) {
     bool head_loaded;
     int current_slot;
     int seated_slot; // 0-based slot of the IFS_STATUS-seated port (-1 = none)
@@ -1599,26 +1592,20 @@ void AmsBackendAd5xIfs::finalize_op_after_macro(bool is_unload) {
     }
 }
 
-AmsError AmsBackendAd5xIfs::select_slot(int slot_index) {
+AmsError AmsBackendAd5xIfs::do_select_slot(int slot_index) {
     if (!validate_slot_index(slot_index)) {
         return AmsErrorHelper::invalid_slot(slot_index, NUM_PORTS - 1);
     }
-    auto err = check_preconditions();
-    if (!err.success())
-        return err;
 
     int port = slot_index + 1;
     spdlog::info("{} Selecting port {}", backend_log_tag(), port);
     return execute_gcode("SET_EXTRUDER_SLOT SLOT=" + std::to_string(port));
 }
 
-AmsError AmsBackendAd5xIfs::change_tool(int tool_number) {
+AmsError AmsBackendAd5xIfs::do_change_tool(int tool_number) {
     if (tool_number < 0 || tool_number >= TOOL_MAP_SIZE) {
         return AmsErrorHelper::invalid_slot(tool_number, TOOL_MAP_SIZE - 1);
     }
-    auto err = check_preconditions(true);
-    if (!err.success())
-        return err;
 
     int port;
     {

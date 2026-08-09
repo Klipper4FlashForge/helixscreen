@@ -96,7 +96,6 @@ translations:
   ACTIONS: ДЕЙСТВИЯ
   ADXL: ADXL
   AFC: AFC
-  AFC Version Warning: Предупреждение о версии AFC
   AFC failure reset complete: Сброс ошибки AFC завершён
   AFC failure reset failed: Ошибка сброса ошибки AFC
   AFC recovery complete: Восстановление AFC завершено
@@ -105,8 +104,6 @@ translations:
   AFC reset failed: Ошибка сброса AFC
   AFC retracts filament from the toolhead at end of print: AFC выгружает филамент
     из печатающей головки по завершении печати
-  AFC version {} may have compatibility issues. Please upgrade to v1.0.35 or later.: Версия
-    AFC {} может иметь проблемы совместимости. Обновите до v1.0.35 или новее.
   ALL DEVICES: ВСЕ УСТРОЙСТВА
   AMS: AMS
   'AMS Active: ': 'AMS активен: '
@@ -166,6 +163,7 @@ translations:
   Allwinner: Allwinner
   Already connecting — wait a moment and try again: Подключение уже выполняется —
     подождите и попробуйте снова
+  Always Show Bypass Spool: Всегда показывать катушку байпаса
   Always show Android navigation bar instead of using gestures: Всегда показывать
     панель навигации Android вместо жестов
   Ambient Transfer: Теплообмен с окружающей средой
@@ -346,12 +344,14 @@ translations:
   Calibration & Tools: Калибровка и инструменты
   Calibration Complete!: Калибровка завершена!
   Calibration Failed: Ошибка калибровки
+  Calibration cancelled.: Калибровка отменена.
   Calibration complete: Калибровка завершена
   Calibration complete!: Калибровка завершена!
   Calibration complete! Press 'Next' to continue.: Калибровка завершена! Нажмите «Далее»
     для продолжения.
   Calibration failed - touch targets more precisely.: Калибровка не удалась – нажимайте
     на цели точнее.
+  Calibration kept timing out. Your previous settings were kept.: Калибровка постоянно завершалась по тайм-ауту. Прежние настройки сохранены.
   Calibration may still be running — response timed out: Калибровка может ещё выполняться
     — время ожидания истекло
   Calibration move may still be running — response timed out: Движение калибровки
@@ -394,6 +394,7 @@ translations:
   'Cannot start print: not connected to printer': 'Невозможно начать печать: не подключено
     к принтеру'
   'Cannot start print: printer is {}': 'Невозможно начать печать: принтер {}'
+  Cannot unload while a print is active: Нельзя выгрузить во время печати
   'Capabilities: ': 'Возможности: '
   Cartographer scan calibrate sent — use Z-Offset panel to adjust: Cartographer сканирующая
     калибровка отправлена — используйте панель Z-Offset для настройки
@@ -585,6 +586,7 @@ translations:
   Could not load printer database: Не удалось загрузить базу данных принтеров
   Could not parse tips database: Не удалось разобрать базу данных советов
   Could not reach Spoolman at: Не удалось связаться со Spoolman по адресу
+  Could not read the screw adjustments from the printer: Не удалось получить данные регулировки винтов от принтера
   Could not resolve printer RFCOMM channel: Не удалось определить RFCOMM-канал принтера
   Could not save filament: Не удалось сохранить филамент
   Could not start Bluetooth discovery: Не удалось запустить поиск Bluetooth
@@ -1093,7 +1095,7 @@ translations:
   Hide Firmware Noise: Скрыть служебные сообщения прошивки
   Hide Temperature Reports: Скрыть отчёты о температуре
   High Water Mark: Пиковое значение
-  Hold anywhere to cancel: ''
+  Hold anywhere to cancel: Удерживайте в любом месте для отмены
   Holding nozzle at {}°C to purge previous filament.: Удержание сопла при {}°C для очистки от предыдущего филамента.
   Home: Главная
   Home failed: Парковка не удалась
@@ -1217,6 +1219,7 @@ translations:
   Keep Navigation Bar: Сохранить панель навигации
   Keep Printing: Продолжить печать
   Keep Required: Оставить обязательным
+  Keep the bypass spool visible when bypass is off: Показывать катушку байпаса, даже когда байпас выключен
   Kinematics: Кинематика
   Klipper: Klipper
   Klipper Error: Ошибка Klipper
@@ -1657,6 +1660,7 @@ translations:
   Path Similarity: Сходство путей
   Pause: Пауза
   Pause macro not configured: Макрос паузы не настроен
+  Pause the print first, then load, unload, or change filament: Сначала приостановите печать, затем загружайте, выгружайте или меняйте филамент
   Paused: Приостановлено
   Paused (attention needed): Приостановлено (требует внимания)
   Pausing...: Приостановка...
@@ -2366,6 +2370,7 @@ translations:
     использования помогают улучшить HelixScreen.
   Thanks! TOTALLY anonymous usage data helps improve HelixScreen.: Спасибо! ПОЛНОСТЬЮ
     анонимные данные использования помогают улучшить HelixScreen.
+  That tool is already loaded: Этот инструмент уже загружен
   ? The HelixPrint plugin enables fast G-code modifications directly on your printer—like
     skipping bed mesh for quick reprints.
   : Плагин HelixPrint позволяет быстро модифицировать G-code прямо на принтере — например,
@@ -2415,6 +2420,7 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: Эта калибровка
     использует метод трения бумаги об сопло для установки Z-смещения.
   This cannot be undone.: Это действие нельзя отменить.
+  This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: У этого устройства нет проводного подключения к сети. Если выключить WiFi, включить его обратно можно будет только с этого экрана.
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
   : На этом устройстве всего {} МБ ОЗУ. Калибровка резонансов требует много памяти и может
     привести к тому, что прошивка принтера сообщит об ошибке \"Timer Too Close\" или перезапустится
@@ -2428,9 +2434,6 @@ translations:
   This is exactly the data that will be sent: Это именно те данные, которые будут
     отправлены
   This is what data would be sent if enabled: Эти данные были бы отправлены при включении
-  This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?: Похоже,
-    это другой филамент, чем у привязанной катушки Spoolman. Обновить катушку Spoolman
-    в соответствии?
   This may take up to 30 seconds: Это может занять до 30 секунд
   ? This plugin lets HelixScreen control print start options like bed mesh and QGL.
     Once installed, use Configure PRINT_START below to enable optional steps.
@@ -2513,6 +2516,7 @@ translations:
   Touch Jitter Filter: Фильтр дрожания касания
   Touch anywhere to test calibration: Коснитесь в любом месте для проверки калибровки
   Touch anywhere to verify accuracy: Коснитесь в любом месте для проверки точности
+  Touch input did not track the new calibration. Your previous settings were kept.: Сенсорный ввод не соответствовал новой калибровке. Прежние настройки сохранены.
   Touch screen to wake from sleep: Коснитесь экрана для выхода из сна
   Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: Коснитесь цели
     (точка %1$d из 3) \xe2\x80\x94 касание %2$d из %3$d
@@ -2526,6 +2530,7 @@ translations:
     печать для теста
   Turbo: Турбо
   Turn Off: Выключить
+  Turn Off WiFi?: Выключить WiFi?
   Turn On: Включить
   Turn on LEDs when printer starts: Включать LED при запуске принтера
   Turn the extruder heater off after a load or unload finishes: Выключать нагреватель экструдера после загрузки или выгрузки
@@ -2587,7 +2592,6 @@ translations:
   Update Channel: Канал обновлений
   Update Failed: Ошибка обновления
   Update Success: Обновление успешно
-  Update anyway: Всё равно обновить
   Update installed!: Обновление установлено!
   Update your security PIN: Обновите ваш PIN-код
   Updates aren't available on this installation.: Обновления недоступны в этой установке.
@@ -2638,6 +2642,7 @@ translations:
   WLED Preset: Пресет WLED
   WPA/WPA2: 'WPA/WPA2'
   WPA3: 'WPA3'
+  Wait for the current filament operation to finish: Дождитесь завершения текущей операции с филаментом
   Waiting for Moonraker...: Ожидание Moonraker...
   Waiting for bed to reach temperature for accurate calibration.: Ожидание нагрева
     стола для точной калибровки.
@@ -2676,6 +2681,7 @@ translations:
   WiFi and Ethernet configuration: Настройка WiFi и Ethernet
   WiFi control unavailable: Управление WiFi недоступно
   WiFi hardware unavailable: Оборудование WiFi недоступно
+  WiFi radio did not change state: Состояние модуля WiFi не изменилось
   WiFi unavailable: WiFi недоступен
   WiFi was configured but hardware is not available. Check system configuration.: WiFi
     был настроен, но оборудование недоступно. Проверьте конфигурацию системы.

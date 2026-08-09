@@ -482,8 +482,11 @@ void ToolState::request_tool_change(int tool_index, MoonrakerAPI* api,
                 if (on_success)
                     on_success();
             } else {
+                // display_text(), not user_msg: this callback is the only thing
+                // the caller ever sees, so dropping the suggestion here means no
+                // UI downstream can render it however good its toast is.
                 if (on_error)
-                    on_error(::fmt::format("Backend tool change failed: {}", result.user_msg));
+                    on_error(result.display_text());
             }
             return;
         }

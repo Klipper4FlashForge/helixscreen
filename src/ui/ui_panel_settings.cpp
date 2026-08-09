@@ -1439,11 +1439,25 @@ void SettingsPanel::on_plugins_clicked(lv_event_t* /*e*/) {
 
 void SettingsPanel::on_system_performance_clicked(lv_event_t* /*e*/) {
     LVGL_SAFE_EVENT_CB_BEGIN("[SettingsPanel] on_system_performance_clicked");
-    auto* overlay = helix::ui::UiOverlayPerformance::instance().create(lv_screen_active());
-    if (overlay) {
-        NavigationManager::instance().push_overlay(overlay);
-    }
+    get_global_settings_panel().handle_performance_clicked();
     LVGL_SAFE_EVENT_CB_END();
+}
+
+void SettingsPanel::handle_performance_clicked() {
+    spdlog::debug("[{}] Performance clicked - opening overlay", get_name());
+
+    auto* overlay = helix::ui::UiOverlayPerformance::instance().create(lv_screen_active());
+    if (!overlay) {
+        spdlog::error("[{}] Failed to create Performance overlay", get_name());
+        return;
+    }
+
+    // UiOverlayPerformance carries no IPanelLifecycle, so it registers with a null
+    // lifecycle: that is what separates an intentional lifecycle-less overlay from a
+    // caller who forgot to register. Without it the push is recorded as "unreg" in
+    // panel telemetry and crash breadcrumbs, and strict mode aborts.
+    NavigationManager::instance().register_overlay_instance(overlay, nullptr);
+    NavigationManager::instance().push_overlay(overlay);
 }
 
 void SettingsPanel::on_restart_helix_settings_clicked(lv_event_t* /*e*/) {

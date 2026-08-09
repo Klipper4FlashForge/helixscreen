@@ -265,7 +265,7 @@ void PrintStatusWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
         printer_state_.get_subjects_lifetime());
 
     // Use observe_string_immediate: the thumbnail handler only calls lv_image_set_src
-    // (no observer lifecycle changes), and set_print_thumbnail_path is always called
+    // (no observer lifecycle changes), and set_print_thumbnail is always called
     // from the UI thread via queue_update. Immediate avoids the double-deferral that
     // caused stale reads when the subject changed between notification and handler.
     print_thumbnail_path_observer_ = observe_string_immediate<PrintStatusWidget>(
@@ -732,13 +732,11 @@ void PrintStatusWidget::on_print_thumbnail_path_changed(const char* path) {
         return;
     }
 
-    if (path && path[0] != '\0') {
-        lv_image_set_src(print_card_active_thumb_, path);
-        spdlog::info("[PrintStatusWidget] Active print thumbnail updated: {}", path);
-    } else {
-        lv_image_set_src(print_card_active_thumb_, "A:assets/images/benchy_thumbnail_white.png");
-        spdlog::debug("[PrintStatusWidget] Active print thumbnail cleared (empty path)");
-    }
+    // No empty-path branch: ActivePrintMediaManager is the subject's sole writer
+    // and publishes kNoThumbnailPlaceholder — the very image this used to
+    // substitute — when a file has no thumbnail, so the value is always an image.
+    lv_image_set_src(print_card_active_thumb_, path);
+    spdlog::info("[PrintStatusWidget] Active print thumbnail updated: {}", path);
 }
 
 std::string PrintStatusWidget::get_last_print_thumbnail_path() const {
@@ -784,6 +782,22 @@ std::string PrintStatusWidget::get_last_print_thumbnail_path() const {
     return job.thumbnail_path;
 }
 
+time_t PrintStatusWidget::get_last_print_source_modified() const {
+    auto* history = get_print_history_manager();
+    if (!history || !history->is_loaded()) {
+        return 0;
+    }
+
+    const auto& jobs = history->get_jobs();
+    if (jobs.empty()) {
+        return 0;
+    }
+
+    // Same head entry get_last_print_thumbnail_path() picks its key from, so the
+    // freshness stamp always describes the key it is validating.
+    return static_cast<time_t>(jobs.front().modified);
+}
+
 void PrintStatusWidget::defer_reset_print_card_to_idle() {
     // Raw lv_async_call escapes the UpdateQueue::process_pending() batch (see
     // CLAUDE.md "Safe escape routes"). live_instances() + widget_obj_ guard UAF
@@ -819,18 +833,11 @@ void PrintStatusWidget::reset_print_card_to_idle() {
         return;
     }
 
-    // Update Library-mode thumbs (imperative — they don't bind_src), AND publish
-    // to print_status_idle_thumb_path so the detailed idle hero's bind_src
-    // picks it up automatically.
-    auto set_thumb_on_widgets = [this](const char* src) {
-        if (print_card_thumb_ && lv_obj_is_valid(print_card_thumb_)) {
-            lv_image_set_src(print_card_thumb_, src);
-        }
-        if (print_card_thumb_compact_ && lv_obj_is_valid(print_card_thumb_compact_)) {
-            lv_image_set_src(print_card_thumb_compact_, src);
-        }
-        lv_subject_copy_string(&idle_thumb_path_subject_, src);
-    };
+    // Every idle reset supersedes whatever thumbnail load is still in flight for
+    // the previous history head. Created here rather than at the fetch below so
+    // it also covers the cache-hit exit: that path publishes synchronously, and
+    // an older fetch completing afterwards would otherwise overwrite it.
+    auto ctx = ThumbnailLoadContext::create(lifetime_, &idle_thumb_generation_);
 
     // Try to show the last printed file's thumbnail instead of benchy
     std::string thumb_rel_path = get_last_print_thumbnail_path();
@@ -846,8 +853,18 @@ void PrintStatusWidget::reset_print_card_to_idle() {
     auto target = helix::ThumbnailProcessor::get_target_for_resolution(
         widget_w, widget_h, helix::ThumbnailSize::Detail);
 
-    // Check if we already have a pre-scaled BIN version
-    auto cached = get_thumbnail_cache().get_if_optimized(thumb_rel_path, target);
+    // One request describes both the synchronous probe and the async fetch
+    // below, so the two cannot disagree about what they are looking for. In
+    // particular source_modified applies to BOTH: the probe answers first, and
+    // without it a render from a previous slice of the same filename is served
+    // indefinitely and the guarded fetch is never reached.
+    ThumbnailRequest req;
+    req.key = thumb_rel_path;
+    req.target = target;
+    req.source_modified = get_last_print_source_modified();
+
+    // Check if we already have a fresh pre-scaled BIN version
+    auto cached = get_thumbnail_cache().get_if_cached(req);
     if (!cached.empty()) {
         set_thumb_on_widgets(cached.c_str());
         spdlog::debug("[PrintStatusWidget] Idle thumbnail from cache: {}", cached);
@@ -857,38 +874,45 @@ void PrintStatusWidget::reset_print_card_to_idle() {
     // Set benchy as placeholder while we fetch
     set_thumb_on_widgets("A:assets/images/benchy_thumbnail_white.png");
 
-    // Fetch async from Moonraker
     auto* api = get_moonraker_api();
     if (!api) {
         spdlog::debug("[PrintStatusWidget] Idle thumbnail: benchy (no API)");
         return;
     }
 
-    // Use lifetime token to prevent use-after-free if widget is destroyed during fetch
-    lv_obj_t* thumb_widget = print_card_thumb_;
-    lv_obj_t* thumb_compact = print_card_thumb_compact_;
+    // Fetch async from Moonraker. ctx carries both the lifetime token and the
+    // generation, so ThumbnailCache drops a result a later reset has superseded
+    // before it ever reaches this callback.
+    req.api = api;
+
     auto token = lifetime_.token();
 
-    get_thumbnail_cache().fetch_optimized(
-        api, thumb_rel_path, target,
-        [thumb_widget, thumb_compact, token](const std::string& lvgl_path) {
-            if (token.expired())
-                return;
-            helix::ui::queue_update<std::string>(
-                std::make_unique<std::string>(lvgl_path),
-                [thumb_widget, thumb_compact](std::string* path) {
-                    if (lv_obj_is_valid(thumb_widget)) {
-                        lv_image_set_src(thumb_widget, path->c_str());
-                    }
-                    if (thumb_compact && lv_obj_is_valid(thumb_compact)) {
-                        lv_image_set_src(thumb_compact, path->c_str());
-                    }
-                    spdlog::info("[PrintStatusWidget] Idle thumbnail loaded: {}", *path);
-                });
+    get_thumbnail_cache().fetch(
+        req, ctx,
+        [this, token](const std::string& lvgl_path, bool /*degraded*/) {
+            // Marshal first, then touch members — a bare expired() check
+            // followed by a `this` dereference is L081 Mechanism C.
+            token.defer("PrintStatusWidget::apply_idle_thumb", [this, lvgl_path]() {
+                set_thumb_on_widgets(lvgl_path.c_str());
+                spdlog::info("[PrintStatusWidget] Idle thumbnail loaded: {}", lvgl_path);
+            });
         },
         [](const std::string& error) {
             spdlog::debug("[PrintStatusWidget] Idle thumbnail fetch failed: {}", error);
         });
+}
+
+void PrintStatusWidget::set_thumb_on_widgets(const char* src) {
+    // Library-mode thumbs are imperative (they don't bind_src); the subject is
+    // what drives the detailed-idle hero. All three must move together or the
+    // hero shows a different image from the thumbs next to it.
+    if (print_card_thumb_ && lv_obj_is_valid(print_card_thumb_)) {
+        lv_image_set_src(print_card_thumb_, src);
+    }
+    if (print_card_thumb_compact_ && lv_obj_is_valid(print_card_thumb_compact_)) {
+        lv_image_set_src(print_card_thumb_compact_, src);
+    }
+    lv_subject_copy_string(&idle_thumb_path_subject_, src);
 }
 
 void PrintStatusWidget::update_last_print_availability() {
@@ -1055,7 +1079,7 @@ void PrintStatusWidget::dispatch_load() {
                            : backend->load_filament(plan.ams_arg);
         if (!err.success()) {
             spdlog::error("[PrintStatusWidget] Load filament failed: {}", err.technical_msg);
-            NOTIFY_ERROR(lv_tr("Failed to load filament: {}"), err.user_msg);
+            helix::ui::notify_ams_error(err);
         }
         return;
     }

@@ -226,6 +226,9 @@ class SettingsPanel : public PanelBase {
     // Called by plugin failure toast action to open plugins overlay
     void handle_plugins_clicked();
 
+    // Opens the Performance overlay (System settings row)
+    void handle_performance_clicked();
+
     // Note: handle_hardware_action() moved to HardwareHealthOverlay
     // See ui_settings_hardware_health.h
 

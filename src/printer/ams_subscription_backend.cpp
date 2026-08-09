@@ -139,13 +139,137 @@ bool AmsSubscriptionBackend::is_filament_loaded() const {
     return system_info_.filament_loaded;
 }
 
-AmsError AmsSubscriptionBackend::check_preconditions(bool requires_toolhead_motion) const {
+bool AmsSubscriptionBackend::op_moves_toolhead(FilamentOp op) const {
+    switch (op) {
+    case FilamentOp::Load:
+    case FilamentOp::Unload:
+    case FilamentOp::ChangeTool:
+        // Pushing or pulling filament through the hotend, and swapping what is
+        // on the carriage, are toolhead motion on every backend there is. No
+        // override path exists for these on purpose.
+        return true;
+    case FilamentOp::SelectSlot:
+        // The one genuinely per-backend answer. See select_slot_moves_toolhead().
+        return select_slot_moves_toolhead();
+    }
+    return true; // Unreachable; fail closed if the enum ever grows.
+}
+
+AmsError AmsSubscriptionBackend::claim_filament_op(FilamentOp op, bool check_state) {
+    AmsAction pending = AmsAction::LOADING;
+    switch (op) {
+    case FilamentOp::Load:
+        pending = AmsAction::LOADING;
+        break;
+    case FilamentOp::Unload:
+        pending = AmsAction::UNLOADING;
+        break;
+    case FilamentOp::SelectSlot:
+    case FilamentOp::ChangeTool:
+        pending = AmsAction::SELECTING;
+        break;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    // The started/busy read and the claim share ONE critical section. Split
+    // across two, a second op could read IDLE between the first op's read and
+    // its claim.
+    //
+    // The read is under mutex_ for the same reason every other system_info_ read
+    // in this class is: it is the field's declared discipline. Every writer today
+    // happens to land on the main thread — handle_status_update() and the gcode
+    // acks all marshal through token.defer() — so an unlocked read here was
+    // formally a race and practically quiet. Do not take that as licence to skip
+    // the lock; the next background writer would make it loud.
+    if (check_state) {
+        if (auto e = state_preconditions_unlocked(); !e.success()) {
+            return e;
+        }
+    }
+    if (filament_op_in_flight_) {
+        return AmsErrorHelper::busy(ams_action_to_string(filament_op_claimed_action_));
+    }
+    filament_op_in_flight_ = true;
+    filament_op_claimed_action_ = pending;
+    return AmsErrorHelper::success();
+}
+
+void AmsSubscriptionBackend::release_filament_op_claim() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    filament_op_in_flight_ = false;
+    filament_op_claimed_action_ = AmsAction::IDLE;
+}
+
+AmsError AmsSubscriptionBackend::run_filament_op(FilamentOp op, int arg) {
+    // Order of refusals is load-bearing and matches what check_preconditions()
+    // has always produced: not-started, then busy, then print-active.
+    if (auto e = claim_filament_op(op, filament_op_gate() == FilamentOpGate::Standard);
+        !e.success()) {
+        return e;
+    }
+    // Owns the claim from here. Every return below releases it, including the
+    // print refusal — a claim that outlived a refused op would wedge the backend
+    // into a permanent busy with no action to explain it.
+    FilamentOpClaim claim(this);
+
+    // Deliberately NOT under mutex_: this reads PrinterState, which has its own
+    // synchronization and nothing in system_info_ to be atomic with, and the
+    // claim already excludes a second op for the whole window.
+    if (op_moves_toolhead(op)) {
+        if (auto e = refuse_if_printing(); !e.success()) {
+            return e;
+        }
+    }
+
+    // mutex_ is NOT held across the hook. The hooks issue gcode and Moonraker
+    // JSON-RPC, several call emit_event() (which takes mutex_ to copy the
+    // callback), and AD5X's unload re-enters eject_lane() which locks — holding
+    // it here would deadlock on the first two and serialize the network on the
+    // third. The claim is a flag, not a lock: a contending op is refused
+    // immediately rather than blocked behind the send.
+    switch (op) {
+    case FilamentOp::Load:
+        return do_load_filament(arg);
+    case FilamentOp::Unload:
+        return do_unload_filament(arg);
+    case FilamentOp::SelectSlot:
+        return do_select_slot(arg);
+    case FilamentOp::ChangeTool:
+        return do_change_tool(arg);
+    }
+    return AmsErrorHelper::success(); // Unreachable; the enum is exhaustive.
+}
+
+AmsError AmsSubscriptionBackend::load_filament(int slot_index) {
+    return run_filament_op(FilamentOp::Load, slot_index);
+}
+
+AmsError AmsSubscriptionBackend::unload_filament(int slot_index) {
+    return run_filament_op(FilamentOp::Unload, slot_index);
+}
+
+AmsError AmsSubscriptionBackend::select_slot(int slot_index) {
+    return run_filament_op(FilamentOp::SelectSlot, slot_index);
+}
+
+AmsError AmsSubscriptionBackend::change_tool(int tool_number) {
+    return run_filament_op(FilamentOp::ChangeTool, tool_number);
+}
+
+AmsError AmsSubscriptionBackend::state_preconditions_unlocked() const {
     if (!running_) {
         return AmsErrorHelper::not_connected(std::string(backend_log_tag()) +
                                              " backend not started");
     }
     if (system_info_.is_busy()) {
         return AmsErrorHelper::busy(ams_action_to_string(system_info_.action));
+    }
+    return AmsErrorHelper::success();
+}
+
+AmsError AmsSubscriptionBackend::check_preconditions(bool requires_toolhead_motion) const {
+    if (auto e = state_preconditions_unlocked(); !e.success()) {
+        return e;
     }
     // Toolhead-motion ops (load/unload/tool-change) additionally refuse while a
     // print is active — no-motion ops (eject_lane, select, unlock) pass false.
