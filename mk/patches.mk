@@ -715,6 +715,7 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 			echo "$(GREEN)✓ DNS resolver fallback patch applied$(RESET)"; \
 		else \
 			echo "$(RED)✗ Cannot apply DNS resolver fallback patch (conflicts) — embedded DNS will be BROKEN$(RESET)"; \
+			exit 1; \
 		fi \
 	else \
 		echo "$(GREEN)✓ libhv DNS resolver fallback patch already applied$(RESET)"; \
@@ -724,6 +725,14 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	@# matching an old marker would report "already applied" and silently drop
 	@# the newer hunks, and libhv headers are -isystem so nothing rebuilds to
 	@# reveal it. The fix for that red line is `make reapply-patches`.
+	@#
+	@# A failed apply must `exit 1` rather than warn and carry on. The recipe
+	@# ends in `touch $@`, so a warning-only branch stamps the tree as fully
+	@# patched: the red line scrolls past once and every later build reports
+	@# "Nothing to be done for 'apply-patches'". That is how the #1212 null-hloop
+	@# guard sat missing from this tree for hours while `make test` — which skips
+	@# apply-patches entirely — kept building a binary that segfaulted on the
+	@# regression test written to catch exactly that.
 	$(Q)if ! grep -q "reconn_timer_id" "$(LIBHV_DIR)/evpp/TcpClient.h" 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying libhv TcpClient reconnect resilience patch...$(RESET)"; \
 		if git -C $(LIBHV_DIR) apply --check $(PATCH_DIR)/libhv-tcpclient-reconnect-resilience.patch 2>/dev/null; then \
@@ -731,6 +740,7 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 			echo "$(GREEN)✓ libhv TcpClient reconnect resilience patch applied$(RESET)"; \
 		else \
 			echo "$(RED)✗ Cannot apply TcpClient reconnect patch — run 'make reapply-patches'. Until then a pending auto-reconnect can fault in createsocket() during teardown (#1212)$(RESET)"; \
+			exit 1; \
 		fi \
 	else \
 		echo "$(GREEN)✓ libhv TcpClient reconnect resilience patch already applied$(RESET)"; \
@@ -742,6 +752,7 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 			echo "$(GREEN)✓ libhv WebSocket backoff patch applied$(RESET)"; \
 		else \
 			echo "$(RED)✗ Cannot apply WebSocket backoff patch (conflicts) — a failed WS upgrade will reconnect at 5Hz$(RESET)"; \
+			exit 1; \
 		fi \
 	else \
 		echo "$(GREEN)✓ libhv WebSocket backoff patch already applied$(RESET)"; \
