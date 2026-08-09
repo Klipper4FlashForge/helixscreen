@@ -289,9 +289,7 @@ translations:
   Bypass disabled: バイパス無効
   Bypass enabled: バイパス有効
   Bypass failed: バイパスに失敗しました
-  'Bypass failed: {}': 'バイパスに失敗しました: {}'
   Bypass toggle failed: バイパス切替に失敗しました
-  'Bypass toggle failed: {}': 'バイパス切替に失敗しました: {}'
   C: C
   CALIBRATION: キャリブレーション
   CAPABILITIES: 機能
@@ -389,10 +387,8 @@ translations:
   Check for Updates: 更新を確認
   Check slot: スロットを確認
   Check slot failed: スロットの確認に失敗しました
-  'Check slot failed: {}': 'スロットの確認に失敗しました: {}'
   Check slots: スロットを確認
   Check slots failed: スロットの確認に失敗しました
-  'Check slots failed: {}': 'スロットの確認に失敗しました: {}'
   Check the filament path and try again.: フィラメント経路を確認して、もう一度お試しください。
   Check your heater's rating (typically 40-60W for hotends): ヒーターの定格を確認してください（ホットエンドは通常40〜60W）
   Checking: 確認中
@@ -423,7 +419,6 @@ translations:
   Clear Console?: コンソールをクリアしますか？
   Clear Spool: スプールを解除
   Clear failed: クリアに失敗しました
-  'Clear failed: {}': 'クリアに失敗しました: {}'
   Cleared from settings — system unpair failed, may need OS Bluetooth: 設定から削除しました。システムのペアリング解除に失敗、OS
     の Bluetooth 設定が必要な場合があります
   Clipboard unavailable - use SSH: クリップボード利用不可 - SSHを使用してください
@@ -677,7 +672,6 @@ translations:
   Eject Distance: 取り出し距離
   Eject Velocity: 取り出し速度
   Eject failed: イジェクトに失敗しました
-  'Eject failed: {}': 'イジェクトに失敗しました: {}'
   Eject needs [force_move] enabled in printer config: 取り出しにはプリンター設定で [force_move]
     を有効にする必要があります
   Ejecting: 排出中
@@ -895,7 +889,6 @@ translations:
   'Filament load failed: {}': 'フィラメントの装填に失敗しました: {}'
   Filament loaded: フィラメントを装填しました
   Filament operation failed: フィラメント操作に失敗しました
-  'Filament operation failed: {}': 'フィラメント操作に失敗しました: {}'
   Filament operation timed out: フィラメント操作がタイムアウトしました
   Filament runout: フィラメント切れ
   Filament runout and motion detection sensors: フィラメント切れとモーション検出センサー
@@ -1224,7 +1217,6 @@ translations:
   MDI Icons: MDI アイコン
   MISSING CONFIGURED: 設定済みが見つかりません
   MMU command failed: MMU コマンドに失敗しました
-  'MMU command failed: {}': 'MMU コマンドに失敗しました: {}'
   MPC: MPC
   Machine Limits: 機械制限
   Macro: マクロ
@@ -1789,7 +1781,6 @@ translations:
   Reset Speed & Flow to 100%: 速度とフローを100%にリセット
   Reset all settings and restart wizard: すべての設定をリセットしてウィザードを再開
   Reset failed: リセットに失敗しました
-  'Reset failed: {}': 'リセットに失敗しました: {}'
   Reset to Default: デフォルトにリセット
   Reset to defaults: デフォルトに戻す
   Reset to original values: 元の値にリセット
@@ -1820,7 +1811,6 @@ translations:
   Resume interrupted print?: 中断した印刷を再開しますか？
   Resume macro not configured: 再開マクロが未設定です
   Resume preparation failed: 再開準備に失敗しました
-  'Resume preparation failed: {}': '再開準備に失敗しました: {}'
   Resuming...: 再開中...
   Retract: 引き戻し
   Retract Distance: リトラクト距離
@@ -1944,7 +1934,6 @@ translations:
   Select sensor: センサーを選択
   Select slot: スロットを選択
   Select slot failed: スロットの選択に失敗しました
-  'Select slot failed: {}': 'スロットの選択に失敗しました: {}'
   Select the heaters Klipper uses for your bed and hotend: Klipper がベッドとホットエンドに使用するヒーターを選択してください
   Select which devices the home screen power button controls: ホーム画面の電源ボタンで制御するデバイスを選択
   Select which sensor triggers pause on filament runout: フィラメント切れ時に一時停止するセンサーを選択してください
@@ -2346,7 +2335,6 @@ translations:
   Unknown error: 不明なエラー
   Unload: 排出
   Unload Filament: フィラメントを排出
-  'Unload failed: {}': 'アンロードに失敗しました: {}'
   Unload macro not configured: アンロードマクロが未設定です
   Unload may still be running — response timed out: 排出がまだ実行中の可能性があります — 応答タイムアウト
   Unloading: アンロード中

@@ -319,9 +319,7 @@ translations:
   Bypass disabled: Bypass desativado
   Bypass enabled: Bypass ativado
   Bypass failed: Falha no bypass
-  'Bypass failed: {}': 'Falha no bypass: {}'
   Bypass toggle failed: Falha ao alternar bypass
-  'Bypass toggle failed: {}': 'Falha ao alternar bypass: {}'
   C: C
   CALIBRATION: CALIBRAÇÃO
   CAPABILITIES: CAPACIDADES
@@ -443,10 +441,8 @@ translations:
   Check for Updates: Verificar Atualizações
   Check slot: Verificar slot
   Check slot failed: Falha ao verificar slot
-  'Check slot failed: {}': 'Falha ao verificar slot: {}'
   Check slots: Verificar slots
   Check slots failed: Falha ao verificar slots
-  'Check slots failed: {}': 'Falha ao verificar slots: {}'
   Check the filament path and try again.: Verifique o caminho do filamento e tente
     novamente.
   Check your heater's rating (typically 40-60W for hotends): Verifique a potência
@@ -483,7 +479,6 @@ translations:
   Clear Console?: Limpar Console?
   Clear Spool: Remover bobina
   Clear failed: Falha ao limpar
-  'Clear failed: {}': 'Falha ao limpar: {}'
   Cleared from settings — system unpair failed, may need OS Bluetooth: Removido das
     configurações; falha ao desemparelhar no sistema, pode ser necessário o Bluetooth
     do SO
@@ -756,7 +751,6 @@ translations:
   Eject Distance: Distância de Ejeção
   Eject Velocity: Velocidade de Ejeção
   Eject failed: Falha ao ejetar
-  'Eject failed: {}': 'Falha ao ejetar: {}'
   Eject needs [force_move] enabled in printer config: A ejeção precisa de [force_move]
     habilitado na configuração da impressora
   Ejecting: Ejetando
@@ -994,7 +988,6 @@ translations:
   'Filament load failed: {}': 'Falha ao carregar filamento: {}'
   Filament loaded: Filamento carregado
   Filament operation failed: Falha na operação de filamento
-  'Filament operation failed: {}': 'Falha na operação de filamento: {}'
   Filament operation timed out: Operação de filamento — tempo esgotado
   Filament runout: Fim de filamento
   Filament runout and motion detection sensors: Sensores de detecção de fim de filamento
@@ -1371,7 +1364,6 @@ translations:
   MDI Icons: Ícones MDI
   MISSING CONFIGURED: CONFIGURAÇÃO FALTANDO
   MMU command failed: Falha no comando MMU
-  'MMU command failed: {}': 'Falha no comando MMU: {}'
   MPC: MPC
   Machine Limits: Limites da Máquina
   Macro: Macro
@@ -1984,7 +1976,6 @@ translations:
   Reset all settings and restart wizard: Resetar todas as configurações e reiniciar
     assistente
   Reset failed: Falha ao redefinir
-  'Reset failed: {}': 'Falha ao redefinir: {}'
   Reset to Default: Restaurar Padrão
   Reset to defaults: Restaurar padrões
   Reset to original values: Restaurar valores originais
@@ -2015,7 +2006,6 @@ translations:
   Resume interrupted print?: Retomar impressão interrompida?
   Resume macro not configured: Macro de retomada não configurado
   Resume preparation failed: Falha na preparação para retomar
-  'Resume preparation failed: {}': 'Falha na preparação para retomar: {}'
   Resuming...: Retomando...
   Retract: Retrair
   Retract Distance: Distância de Retração
@@ -2157,7 +2147,6 @@ translations:
   Select sensor: Selecionar sensor
   Select slot: Selecionar slot
   Select slot failed: Falha ao selecionar slot
-  'Select slot failed: {}': 'Falha ao selecionar slot: {}'
   Select the heaters Klipper uses for your bed and hotend: Selecione os aquecedores
     que o Klipper usa para a mesa e o hotend
   Select which devices the home screen power button controls: Selecione quais dispositivos
@@ -2640,7 +2629,6 @@ translations:
   Unknown error: Erro desconhecido
   Unload: Descarregar
   Unload Filament: Descarregar Filamento
-  'Unload failed: {}': 'Falha ao descarregar: {}'
   Unload macro not configured: Macro de descarga não configurado
   Unload may still be running — response timed out: A descarga pode ainda estar em
     execução — tempo esgotado

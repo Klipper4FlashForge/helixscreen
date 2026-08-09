@@ -285,9 +285,7 @@
   <translation tag="Bypass disabled" ja="バイパス無効"/>
   <translation tag="Bypass enabled" ja="バイパス有効"/>
   <translation tag="Bypass failed" ja="バイパスに失敗しました"/>
-  <translation tag="Bypass failed: {}" ja="バイパスに失敗しました: {}"/>
   <translation tag="Bypass toggle failed" ja="バイパス切替に失敗しました"/>
-  <translation tag="Bypass toggle failed: {}" ja="バイパス切替に失敗しました: {}"/>
   <translation tag="C" ja="C"/>
   <translation tag="CALIBRATION" ja="キャリブレーション"/>
   <translation tag="CAPABILITIES" ja="機能"/>
@@ -382,10 +380,8 @@
   <translation tag="Check for Updates" ja="更新を確認"/>
   <translation tag="Check slot" ja="スロットを確認"/>
   <translation tag="Check slot failed" ja="スロットの確認に失敗しました"/>
-  <translation tag="Check slot failed: {}" ja="スロットの確認に失敗しました: {}"/>
   <translation tag="Check slots" ja="スロットを確認"/>
   <translation tag="Check slots failed" ja="スロットの確認に失敗しました"/>
-  <translation tag="Check slots failed: {}" ja="スロットの確認に失敗しました: {}"/>
   <translation tag="Check the filament path and try again." ja="フィラメント経路を確認して、もう一度お試しください。"/>
   <translation tag="Check your heater&apos;s rating (typically 40-60W for hotends)" ja="ヒーターの定格を確認してください（ホットエンドは通常40〜60W）"/>
   <translation tag="Checking" ja="確認中"/>
@@ -416,7 +412,6 @@
   <translation tag="Clear Console?" ja="コンソールをクリアしますか？"/>
   <translation tag="Clear Spool" ja="スプールを解除"/>
   <translation tag="Clear failed" ja="クリアに失敗しました"/>
-  <translation tag="Clear failed: {}" ja="クリアに失敗しました: {}"/>
   <translation tag="Cleared from settings — system unpair failed, may need OS Bluetooth" ja="設定から削除しました。システムのペアリング解除に失敗、OS の Bluetooth 設定が必要な場合があります"/>
   <translation tag="Clipboard unavailable - use SSH" ja="クリップボード利用不可 - SSHを使用してください"/>
   <translation tag="Clog Detection" ja="詰まり検出"/>
@@ -661,7 +656,6 @@
   <translation tag="Eject Distance" ja="取り出し距離"/>
   <translation tag="Eject Velocity" ja="取り出し速度"/>
   <translation tag="Eject failed" ja="イジェクトに失敗しました"/>
-  <translation tag="Eject failed: {}" ja="イジェクトに失敗しました: {}"/>
   <translation tag="Eject needs [force_move] enabled in printer config" ja="取り出しにはプリンター設定で [force_move] を有効にする必要があります"/>
   <translation tag="Ejecting" ja="排出中"/>
   <translation tag="Elegoo Centauri Carbon" ja="Elegoo Centauri Carbon"/>
@@ -878,7 +872,6 @@
   <translation tag="Filament load failed: {}" ja="フィラメントの装填に失敗しました: {}"/>
   <translation tag="Filament loaded" ja="フィラメントを装填しました"/>
   <translation tag="Filament operation failed" ja="フィラメント操作に失敗しました"/>
-  <translation tag="Filament operation failed: {}" ja="フィラメント操作に失敗しました: {}"/>
   <translation tag="Filament operation timed out" ja="フィラメント操作がタイムアウトしました"/>
   <translation tag="Filament runout" ja="フィラメント切れ"/>
   <translation tag="Filament runout and motion detection sensors" ja="フィラメント切れとモーション検出センサー"/>
@@ -1190,7 +1183,6 @@
   <translation tag="MDI Icons" ja="MDI アイコン"/>
   <translation tag="MISSING CONFIGURED" ja="設定済みが見つかりません"/>
   <translation tag="MMU command failed" ja="MMU コマンドに失敗しました"/>
-  <translation tag="MMU command failed: {}" ja="MMU コマンドに失敗しました: {}"/>
   <translation tag="MPC" ja="MPC"/>
   <translation tag="Machine Limits" ja="機械制限"/>
   <translation tag="Macro" ja="マクロ"/>
@@ -1740,7 +1732,6 @@
   <translation tag="Reset Speed &amp; Flow to 100%" ja="速度とフローを100%にリセット"/>
   <translation tag="Reset all settings and restart wizard" ja="すべての設定をリセットしてウィザードを再開"/>
   <translation tag="Reset failed" ja="リセットに失敗しました"/>
-  <translation tag="Reset failed: {}" ja="リセットに失敗しました: {}"/>
   <translation tag="Reset to Default" ja="デフォルトにリセット"/>
   <translation tag="Reset to defaults" ja="デフォルトに戻す"/>
   <translation tag="Reset to original values" ja="元の値にリセット"/>
@@ -1771,7 +1762,6 @@
   <translation tag="Resume interrupted print?" ja="中断した印刷を再開しますか？"/>
   <translation tag="Resume macro not configured" ja="再開マクロが未設定です"/>
   <translation tag="Resume preparation failed" ja="再開準備に失敗しました"/>
-  <translation tag="Resume preparation failed: {}" ja="再開準備に失敗しました: {}"/>
   <translation tag="Resuming..." ja="再開中..."/>
   <translation tag="Retract" ja="引き戻し"/>
   <translation tag="Retract Distance" ja="リトラクト距離"/>
@@ -1889,7 +1879,6 @@
   <translation tag="Select sensor" ja="センサーを選択"/>
   <translation tag="Select slot" ja="スロットを選択"/>
   <translation tag="Select slot failed" ja="スロットの選択に失敗しました"/>
-  <translation tag="Select slot failed: {}" ja="スロットの選択に失敗しました: {}"/>
   <translation tag="Select the heaters Klipper uses for your bed and hotend" ja="Klipper がベッドとホットエンドに使用するヒーターを選択してください"/>
   <translation tag="Select which devices the home screen power button controls" ja="ホーム画面の電源ボタンで制御するデバイスを選択"/>
   <translation tag="Select which sensor triggers pause on filament runout" ja="フィラメント切れ時に一時停止するセンサーを選択してください"/>
@@ -2251,7 +2240,6 @@
   <translation tag="Unknown error" ja="不明なエラー"/>
   <translation tag="Unload" ja="排出"/>
   <translation tag="Unload Filament" ja="フィラメントを排出"/>
-  <translation tag="Unload failed: {}" ja="アンロードに失敗しました: {}"/>
   <translation tag="Unload macro not configured" ja="アンロードマクロが未設定です"/>
   <translation tag="Unload may still be running — response timed out" ja="排出がまだ実行中の可能性があります — 応答タイムアウト"/>
   <translation tag="Unloading" ja="アンロード中"/>
