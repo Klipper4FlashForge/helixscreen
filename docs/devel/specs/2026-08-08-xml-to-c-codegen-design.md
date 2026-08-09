@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-08
 **Status:** CLOSED, not proceeding. Every justification was measured and none held:
-CPU is 2.7% of create time, flash gets worse, and the K-Touch has 3.94 MB of PSRAM free
+CPU is 2.7% of create time, flash gets worse, and the K-Touch has 3.11 MB of PSRAM free
 against a 1.05 MB prize. Kept as the record of why. The phase 1 resolver refactor is
 independent and still worth doing.
 **Author:** Preston Brown (with Claude)
@@ -117,14 +117,15 @@ Console capture from the K-Touch over its CH340 (`/dev/ttyUSB0`, 115200) across 
 | `translations-up` | 5,997,720 |
 | `xml-registered` | **4,948,672** |
 | `subjects-up` | 4,797,476 |
-| `home-panel-up` | **3,944,320** |
+| `home-panel-up` | 3,944,320 |
+| `steady-60s` (everything up) | **3,106,192** |
 
 **Registering all 303 components costs 1,049,048 bytes of PSRAM** (`translations-up`
 minus `xml-registered`). That is the entire prize, and it is smaller than the 1.47 MB the
 native-side static count suggested.
 
-**With the UI fully up the device still has 3.94 MB of its 8 MB free.** Reclaiming the
-markup would take that to roughly 5.0 MB. Nothing needs it.
+**At steady state the device still has 3.11 MB of its 8 MB free.** Reclaiming the markup
+would take that to roughly 4.2 MB. Nothing needs it.
 
 ### Conclusion: do not build this
 
@@ -136,7 +137,7 @@ Every justification has now been measured and none survives.
 | Per-navigation CPU | Wrong premise. Panels are built once and retained. |
 | Per-create CPU | 2.7% of create time is expat. The rest is work codegen keeps. |
 | Flash | Negative. Relocates compressed data into the tighter partition, charged twice for OTA A/B. |
-| PSRAM | 1.05 MB, against 3.94 MB already free. |
+| PSRAM | 1.05 MB, against 3.11 MB already free at steady state. |
 
 Phases 2 through 5 are **closed**. This document stands as the record of why, so the idea
 does not get proposed again from first principles.
