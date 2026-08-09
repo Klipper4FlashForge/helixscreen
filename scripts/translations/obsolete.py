@@ -15,6 +15,7 @@ from .extractor import (
 )
 from .yaml_manager import (
     load_yaml_file,
+    require_ruamel,
     _entry_spans,
     _absorb_leading_comments,
     _render_entry_lines,
@@ -192,6 +193,9 @@ def mark_obsolete_keys(
     if not obsolete_keys:
         return 0
 
+    if not dry_run:
+        require_ruamel("Marking obsolete keys")
+
     marked = 0
 
     for yaml_path in yaml_dir.glob("*.yml"):
@@ -241,6 +245,9 @@ def delete_obsolete_keys(
     if not obsolete_keys:
         return 0
 
+    if not dry_run:
+        require_ruamel("Deleting obsolete keys")
+
     deleted = 0
 
     for yaml_path in yaml_dir.glob("*.yml"):
@@ -254,19 +261,24 @@ def delete_obsolete_keys(
         if not to_delete:
             continue
 
-        deleted += len(to_delete)
+        if dry_run:
+            deleted += len(to_delete)
+            continue
 
-        if not dry_run:
-            raw = yaml_path.read_text(encoding="utf-8").splitlines(keepends=True)
-            spans = _entry_spans(translations, len(raw))
-            # Remove each entry's lines bottom-up so earlier deletes don't shift
-            # the indices of later ones. Absorb any source comment above the key.
-            for key in sorted(to_delete, key=lambda k: spans.get(k, (-1,))[0], reverse=True):
-                if key not in spans:
-                    continue
-                start, end = spans[key]
-                start = _absorb_leading_comments(raw, start)
-                del raw[start:end]
-            yaml_path.write_text("".join(raw), encoding="utf-8")
+        raw = yaml_path.read_text(encoding="utf-8").splitlines(keepends=True)
+        spans = _entry_spans(translations, len(raw))
+        # Remove each entry's lines bottom-up so earlier deletes don't shift
+        # the indices of later ones. Absorb any source comment above the key.
+        # Count spliced entries rather than matched ones: _entry_spans needs
+        # ruamel's line numbers, and under plain PyYAML it returns nothing, so
+        # counting matches reported a full delete for a file left untouched.
+        for key in sorted(to_delete, key=lambda k: spans.get(k, (-1,))[0], reverse=True):
+            if key not in spans:
+                continue
+            start, end = spans[key]
+            start = _absorb_leading_comments(raw, start)
+            del raw[start:end]
+            deleted += 1
+        yaml_path.write_text("".join(raw), encoding="utf-8")
 
     return deleted

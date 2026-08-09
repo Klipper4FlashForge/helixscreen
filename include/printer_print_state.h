@@ -139,6 +139,34 @@ class PrinterPrintState {
         return &print_thumbnail_path_;
     }
 
+    /**
+     * @brief Image the print-thumbnail subject carries when there is no thumbnail
+     *
+     * The subject is NEVER the empty string — not at init, and not for a file
+     * with no thumbnail of its own. `""` reaches lv_image_set_src with a first
+     * byte of 0x00, which lv_image_src_get_type() classifies as
+     * LV_IMAGE_SRC_VARIABLE (lv_draw_image.c:211), so LVGL then dereferences the
+     * one-byte literal as an lv_image_dsc_t. Every consumer used to carry its
+     * own guard against that; publishing an explicit placeholder removes the
+     * input instead of the guards' need to disagree about it.
+     *
+     * Re-exported as ActivePrintMediaManager::kNoThumbnailPlaceholder, which is
+     * the name the sole writer of this subject publishes it under.
+     */
+    static constexpr const char* kNoThumbnailPlaceholder =
+        "A:assets/images/benchy_thumbnail_white.png";
+
+    /**
+     * @brief Gcode filename the current thumbnail path was produced for
+     *
+     * Written by set_print_thumbnail() BEFORE the path subject is published, so an
+     * observer of get_print_thumbnail_path_subject() can trust this describes the
+     * path it is holding. Empty when no thumbnail identity has been set.
+     */
+    [[nodiscard]] const std::string& get_print_thumbnail_file() const {
+        return print_thumbnail_file_;
+    }
+
     /// Current layer number (0-based)
     lv_subject_t* get_print_layer_current_subject() {
         return &print_layer_current_;
@@ -322,10 +350,14 @@ class PrinterPrintState {
     void set_print_outcome(PrintOutcome outcome);
 
     /**
-     * @brief Set the current print's thumbnail path
-     * @param path LVGL-compatible path (e.g., "A:/tmp/thumbnail_xxx.bin")
+     * @brief Set the current print's thumbnail, tagged with the file it is for
+     *
+     * Main thread only — publishing the path fires observers synchronously.
+     *
+     * @param for_file Gcode filename this path was produced for ("" to clear identity)
+     * @param path LVGL-compatible path (e.g., "A:/tmp/thumbnail_xxx.bin"), "" to clear
      */
-    void set_print_thumbnail_path(const std::string& path);
+    void set_print_thumbnail(const std::string& for_file, const std::string& path);
 
     /**
      * @brief Set display-ready print filename for UI binding
@@ -708,6 +740,9 @@ class PrinterPrintState {
     char print_filename_buf_[256]{};
     char print_display_filename_buf_[128]{};
     char print_thumbnail_path_buf_[512]{};
+    // Identity for print_thumbnail_path_: the gcode filename that path was
+    // produced for. Plain member (no XML binding), written before the subject.
+    std::string print_thumbnail_file_;
     char print_state_buf_[32]{};
     char print_start_message_buf_[64]{};
     char print_start_time_left_buf_[32]{};

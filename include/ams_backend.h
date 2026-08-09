@@ -715,6 +715,17 @@ class AmsBackend {
         return !unit.lane_is_hub_routed[static_cast<size_t>(lane)];
     }
 
+    // ========================================================================
+    // Filament Operations
+    //
+    // Every real backend derives from AmsSubscriptionBackend, which implements
+    // these four as a non-virtual interface: it marks them `final`, runs the
+    // print-active gate, and dispatches to a protected do_* hook the backend
+    // writes instead. So a subscription backend does not implement these
+    // directly and cannot skip the gate. Only AmsBackendMock, which has no
+    // MoonrakerAPI and therefore no print state to consult, overrides them here.
+    // ========================================================================
+
     /**
      * @brief Load filament from specified slot (async)
      *

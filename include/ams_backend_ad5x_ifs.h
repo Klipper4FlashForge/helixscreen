@@ -176,11 +176,17 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // unload_filament()'s eject-vs-toolhead routing (drift-guarded by test).
     [[nodiscard]] bool slot_unloads_to_toolhead(int slot_index, bool loaded_hint) const override;
 
-    AmsError load_filament(int slot_index) override;
-    AmsError unload_filament(int slot_index) override;
-    AmsError select_slot(int slot_index) override;
-    AmsError change_tool(int tool_number) override;
+  protected:
+    // Gated by AmsSubscriptionBackend's NVI wrapper. filament_ops_self_home()
+    // above is what makes that gate refuse while PAUSED too.
+    // select_slot_moves_toolhead() stays false: SET_EXTRUDER_SLOT only points
+    // the IFS at a port.
+    AmsError do_load_filament(int slot_index) override;
+    AmsError do_unload_filament(int slot_index) override;
+    AmsError do_select_slot(int slot_index) override;
+    AmsError do_change_tool(int tool_number) override;
 
+  public:
     // ZMOD's INSERT_PRUTOK_IFS self-swaps: _INSERT_PRUTOK_IFS runs
     // IFS_REMOVE_CURRENT_PRUTOK first, which no-ops on an empty head sensor and
     // otherwise heats to the seated lane's configured temp before backing it

@@ -108,10 +108,18 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
     [[nodiscard]] PathSegment get_slot_filament_segment(int slot_index) const override;
     [[nodiscard]] PathSegment infer_error_segment() const override;
 
-    // Operations
-    AmsError load_filament(int slot_index) override;
-    AmsError unload_filament(int slot_index) override;
-    AmsError select_slot(int slot_index) override;
+  protected:
+    // Operations. Gated by AmsSubscriptionBackend's NVI wrapper.
+    AmsError do_load_filament(int slot_index) override;
+    AmsError do_unload_filament(int slot_index) override;
+    AmsError do_select_slot(int slot_index) override;
+
+    /// On a tool changer, selecting a slot means mounting that toolhead —
+    /// do_select_slot() forwards to do_change_tool(), which emits SELECT_TOOL
+    /// and swaps what is on the carriage.
+    [[nodiscard]] bool select_slot_moves_toolhead() const override {
+        return true;
+    }
 
     /**
      * @brief Mount a physical toolhead. The argument is a SLOT INDEX.
@@ -127,8 +135,9 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
      * the tool map (AmsSystemInfo::tool_to_slot_map / SlotInfo::mapped_tool),
      * never by assuming they are equal.
      */
-    AmsError change_tool(int tool_number) override;
+    AmsError do_change_tool(int tool_number) override;
 
+  public:
     /**
      * @brief Offer Unload only for the tool currently on the carriage.
      *

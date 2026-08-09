@@ -62,11 +62,20 @@
 #include <spdlog/spdlog.h>
 
 #include <atomic>
+#include <cstddef>
 #include <cstdlib>
 #include <functional>
 #include <string>
 #include <thread>
 #include <vector>
+
+// Heap accounting for the leak check below. <cstdlib> is what defines
+// __GLIBC__, so this block has to follow it.
+#if defined(__APPLE__)
+#include <malloc/malloc.h>
+#elif defined(__GLIBC__)
+#include <malloc.h>
+#endif
 
 #include "../catch_amalgamated.hpp"
 
@@ -96,6 +105,135 @@ helix::PromptData make_prompt(const std::string& title, int n_buttons) {
         data.buttons.push_back(std::move(btn));
     }
     return data;
+}
+
+// ---------------------------------------------------------------------------
+// Observable end-state helpers
+//
+// The defect class this file exists for — safe_delete_deferred_raw corrupting
+// LVGL's async-delete list — is invisible in a plain build unless something
+// actually inspects the wreckage once the burst is over. Every stress case
+// below now ends on the same three observables.
+//
+// 1. WIDGET CENSUS back to its pre-loop baseline.
+//
+//    This is the sharp instrument, and getting it right means knowing where a
+//    stranded dialog actually ends up. safe_delete_deferred_raw()
+//    (include/ui_utils.h) does NOT delete in place: it hides the object,
+//    defocuses it, REPARENTS it to lv_layer_top(), and only then calls
+//    lv_obj_delete_async(). So a dropped or corrupted async delete leaves the
+//    whole dialog tree alive on the TOP LAYER, not on the screen — an
+//    assertion that only counted lv_screen_active()'s children would be green
+//    through exactly the bug this file hunts. The census therefore walks the
+//    screen, lv_layer_top() and lv_layer_sys() recursively. It is exact, has no
+//    noise floor at all, and covers both failure shapes: the early-return paths
+//    in safe_delete_deferred_raw (object stays on the screen) and the dropped
+//    async delete (object stays on the top layer).
+//
+// 2. The modal reports itself hidden with a null dialog. Modal::hide() nulls
+//    both synchronously, so this goes red if hide() took an early-return branch
+//    (already-exiting, backdrop untracked) it should not have.
+//
+// 3. HEAP GROWTH under a ceiling — the backstop for a leak that is not an
+//    lv_obj at all (PromptData copies, ButtonCallbackData, style arrays held by
+//    something the census cannot see).
+//
+//    It deliberately does NOT use lv_mem_monitor(): lv_conf.h sets
+//    LV_USE_STDLIB_MALLOC = LV_STDLIB_CLIB, and lv_mem_monitor_core() for CLIB
+//    is a literal no-op ("/*Not supported*/", lib/lvgl/src/stdlib/clib/
+//    lv_mem_core_clib.c) that leaves lv_mem_monitor_t zeroed — free_size would
+//    read 0 on both samples and the check would pass against any leak
+//    whatsoever. The number comes from the C allocator instead. Treat it as a
+//    coarse backstop: see kHeapGrowthLimitBytes for the measured noise.
+size_t heap_bytes() {
+#if defined(__APPLE__)
+    return static_cast<size_t>(mstats().bytes_used);
+#elif defined(__GLIBC__)
+#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 33)
+    return static_cast<size_t>(mallinfo2().uordblks);
+#else
+    // Pre-2.33 mallinfo() reports an int that wraps past 2 GiB. These bursts
+    // allocate far less than that, and the value is only ever differenced.
+    return static_cast<size_t>(static_cast<unsigned int>(mallinfo().uordblks));
+#endif
+#else
+    return 0; // unsupported libc — the heap check self-disables
+#endif
+}
+
+// Ceiling on heap growth between the mid-loop sample and the post-burst sample.
+//
+// This number is empirical, and it is deliberately loose, because the measured
+// noise floor of the underlying counter is large. On macOS heap_bytes() reads
+// mstats().bytes_used, which aggregates every malloc zone and is subject to the
+// magazine allocator's caching; running one case in isolation at 1x / 2x / 4x
+// its default iteration count produced deltas of -1.1 MB, +0.39 MB, +0.00 MB
+// (burst) and +1.08 MB, +0.72 MB, +2.55 MB (alternating shapes) — non-monotonic
+// in both directions and unrelated to cycle count. Across full-suite runs the
+// largest clean-tree delta observed was +3.0 MB (pstat racer), and the smallest
+// was -0.39 MB (stacked). A tight byte budget here would be a flake generator,
+// not a test.
+//
+// 8 MB sits at ~2.5x the worst clean-tree reading — enough headroom that a
+// green run stays green — while still catching a gross runaway: a full dialog
+// tree is a dozen-plus lv_obj_t with their style arrays, so a per-cycle leak
+// over the 100-600 post-baseline cycles these loops run lands in the tens of MB.
+//
+// The exact detector is the widget census below; this is only the backstop for
+// a leak that is not an lv_obj. If you are hunting a byte-level regression, run
+// the file under ASan (see the header comment) rather than tightening this.
+constexpr long kHeapGrowthLimitBytes = 8L * 1024L * 1024L;
+
+void require_no_heap_growth(size_t before, size_t after, const char* what) {
+    if (before == 0 || after == 0) {
+        WARN("heap accounting unavailable on this libc — leak check skipped for " << what);
+        return;
+    }
+    const long delta = static_cast<long>(after) - static_cast<long>(before);
+    spdlog::info("[action_prompt-stress/{}] heap delta {} bytes (limit {})", what, delta,
+                 kHeapGrowthLimitBytes);
+    INFO("heap grew " << delta << " bytes across the " << what << " burst (limit "
+                      << kHeapGrowthLimitBytes << ")");
+    REQUIRE(delta < kHeapGrowthLimitBytes);
+}
+
+uint32_t count_descendants(lv_obj_t* obj) {
+    if (!obj)
+        return 0;
+    const uint32_t n = lv_obj_get_child_count(obj);
+    uint32_t total = n;
+    for (uint32_t i = 0; i < n; ++i) {
+        total += count_descendants(lv_obj_get_child(obj, i));
+    }
+    return total;
+}
+
+// Snapshot of every place a stranded ActionPromptModal widget can survive.
+struct TreeBaseline {
+    uint32_t screen_children = 0; // direct children of the active screen
+    uint32_t census = 0;          // recursive: screen + top layer + sys layer
+};
+
+TreeBaseline tree_baseline(lv_obj_t* screen) {
+    TreeBaseline b;
+    b.screen_children = lv_obj_get_child_count(screen);
+    b.census = count_descendants(screen) + count_descendants(lv_layer_top()) +
+               count_descendants(lv_layer_sys());
+    return b;
+}
+
+// Everything the modal built is gone. Call only after a drain (process_lvgl).
+void require_tree_settled(const helix::ui::ActionPromptModal& modal, lv_obj_t* screen,
+                          const TreeBaseline& base) {
+    CHECK_FALSE(modal.is_visible());
+    CHECK(modal.dialog() == nullptr);
+
+    const TreeBaseline now = tree_baseline(screen);
+    INFO("screen children " << now.screen_children << " (baseline " << base.screen_children
+                            << "), widget census " << now.census << " (baseline " << base.census
+                            << ")");
+    CHECK(now.screen_children == base.screen_children);
+    REQUIRE(now.census == base.census);
 }
 
 class ActionPromptStressFixture : public LVGLUITestFixture {
@@ -132,17 +270,38 @@ TEST_CASE_METHOD(ActionPromptStressFixture, "ActionPromptModal stress: rapid sho
     const int iterations = env_iterations(200);
     spdlog::info("[action_prompt-stress] rapid show/hide × {}", iterations);
 
+    const TreeBaseline baseline = tree_baseline(test_screen());
+    // The heap baseline is taken at the first drain AT OR PAST the loop's
+    // halfway point, and every other case below follows the same rule. Two
+    // reasons, both measured rather than assumed:
+    //
+    //   - it must land on a drain, never mid-burst, or it counts dialog trees
+    //     that are legitimately still sitting on the async-delete list;
+    //   - it must land late. Sampling at cycle 25 charges the check for LVGL's
+    //     one-time caches (style, glyph, XML component) still filling: measured
+    //     growth from cycle 25 is 1.4 MB by cycle 75 but only 2.3 MB by cycle
+    //     775, i.e. strongly saturating, which is warm-up and not a leak. From
+    //     the midpoint on, both samples are steady state and a per-cycle leak
+    //     is the only thing that can separate them.
+    //
+    // Stays 0 — check self-disables — if the iteration count is overridden
+    // below the drain interval.
+    size_t heap_warm = 0;
+
     auto data = make_prompt("Rapid", 3);
     for (int i = 0; i < iterations; ++i) {
         REQUIRE(modal_.show_prompt(test_screen(), data));
         modal_.hide();
         if ((i + 1) % 25 == 0) {
             process_lvgl(40);
+            if (heap_warm == 0 && (i + 1) * 2 >= iterations)
+                heap_warm = heap_bytes();
             spdlog::info("[action_prompt-stress] iter {}/{}", i + 1, iterations);
         }
     }
     process_lvgl(120);
-    SUCCEED("Completed " << iterations << " rapid show/hide cycles without crash");
+    require_tree_settled(modal_, test_screen(), baseline);
+    require_no_heap_growth(heap_warm, heap_bytes(), "rapid");
 }
 
 TEST_CASE_METHOD(ActionPromptStressFixture, "ActionPromptModal stress: burst pattern from #877",
@@ -151,6 +310,9 @@ TEST_CASE_METHOD(ActionPromptStressFixture, "ActionPromptModal stress: burst pat
     const int pairs_per_burst = 6;
     spdlog::info("[action_prompt-stress] {} bursts × {} pairs", bursts, pairs_per_burst);
 
+    const TreeBaseline baseline = tree_baseline(test_screen());
+    size_t heap_warm = 0;
+
     auto data = make_prompt("Burst", 2);
     for (int b = 0; b < bursts; ++b) {
         for (int p = 0; p < pairs_per_burst; ++p) {
@@ -158,11 +320,15 @@ TEST_CASE_METHOD(ActionPromptStressFixture, "ActionPromptModal stress: burst pat
             modal_.hide();
         }
         process_lvgl(50);
+        if (heap_warm == 0 && (b + 1) * 2 >= bursts)
+            heap_warm = heap_bytes();
         if ((b + 1) % 5 == 0) {
             spdlog::info("[action_prompt-stress] burst {}/{}", b + 1, bursts);
         }
     }
-    SUCCEED("Completed " << bursts << " bursts without crash");
+    process_lvgl(120);
+    require_tree_settled(modal_, test_screen(), baseline);
+    require_no_heap_growth(heap_warm, heap_bytes(), "burst");
 }
 
 TEST_CASE_METHOD(ActionPromptStressFixture, "ActionPromptModal stress: alternating prompt shapes",
@@ -170,16 +336,22 @@ TEST_CASE_METHOD(ActionPromptStressFixture, "ActionPromptModal stress: alternati
     const int iterations = env_iterations(120);
     spdlog::info("[action_prompt-stress] alternating shapes × {}", iterations);
 
+    const TreeBaseline baseline = tree_baseline(test_screen());
+    size_t heap_warm = 0;
+
     for (int i = 0; i < iterations; ++i) {
         auto data = make_prompt("Shape" + std::to_string(i), 1 + (i % 5));
         REQUIRE(modal_.show_prompt(test_screen(), data));
         modal_.hide();
         if ((i + 1) % 30 == 0) {
             process_lvgl(40);
+            if (heap_warm == 0 && (i + 1) * 2 >= iterations)
+                heap_warm = heap_bytes();
         }
     }
     process_lvgl(120);
-    SUCCEED("Completed " << iterations << " alternating-shape cycles without crash");
+    require_tree_settled(modal_, test_screen(), baseline);
+    require_no_heap_growth(heap_warm, heap_bytes(), "alternating-shapes");
 }
 
 // ============================================================================
@@ -203,6 +375,10 @@ TEST_CASE_METHOD(ActionPromptStressFixture,
     // simpler always-available component that goes through the same Modal
     // machinery: ums_action_modal or any registered backdrop is fine. Fall
     // back to any registered component if the chosen one isn't available.
+    // Baseline is taken BEFORE the base modal exists, so the final check also
+    // proves the depth-1 modal tore down and not just the depth-2 ones.
+    const TreeBaseline baseline = tree_baseline(test_screen());
+
     lv_obj_t* base = Modal::show("print_completion_modal");
     if (!base) {
         SKIP("Base modal component not available in test fixture");
@@ -214,6 +390,7 @@ TEST_CASE_METHOD(ActionPromptStressFixture,
     spdlog::info("[action_prompt-stress/stacked] {} bursts × {} pairs (depth-2 cycles)", bursts,
                  pairs_per_burst);
 
+    size_t heap_warm = 0;
     auto data = make_prompt("Stacked", 3);
     for (int b = 0; b < bursts; ++b) {
         for (int p = 0; p < pairs_per_burst; ++p) {
@@ -221,11 +398,14 @@ TEST_CASE_METHOD(ActionPromptStressFixture,
             modal_.hide();
         }
         process_lvgl(50);
+        if (heap_warm == 0 && (b + 1) * 2 >= bursts)
+            heap_warm = heap_bytes();
     }
 
     Modal::hide(base);
-    process_lvgl(80);
-    SUCCEED("Completed " << bursts << " stacked bursts without crash");
+    process_lvgl(120);
+    require_tree_settled(modal_, test_screen(), baseline);
+    require_no_heap_growth(heap_warm, heap_bytes(), "stacked");
 }
 
 // Trigger hide() through a real button click instead of calling hide()
@@ -258,6 +438,9 @@ TEST_CASE_METHOD(ActionPromptStressFixture,
         return nullptr;
     };
 
+    const TreeBaseline baseline = tree_baseline(test_screen());
+    size_t heap_warm = 0;
+
     auto data = make_prompt("Click", 4);
     int click_attempts = 0;
     for (int i = 0; i < iterations; ++i) {
@@ -283,6 +466,8 @@ TEST_CASE_METHOD(ActionPromptStressFixture,
 
         if ((i + 1) % 25 == 0) {
             process_lvgl(40);
+            if (heap_warm == 0 && (i + 1) * 2 >= iterations)
+                heap_warm = heap_bytes();
         }
     }
     spdlog::info("[action_prompt-stress/click] click attempts: {}/{}", click_attempts, iterations);
@@ -290,7 +475,8 @@ TEST_CASE_METHOD(ActionPromptStressFixture,
     spdlog::info("[action_prompt-stress/click] {} gcode_callbacks invoked of {} iterations",
                  clicks_observed, iterations);
     REQUIRE(clicks_observed > iterations / 2); // most iterations should fire a click
-    SUCCEED("Completed " << iterations << " click-driven cycles without crash");
+    require_tree_settled(modal_, test_screen(), baseline);
+    require_no_heap_growth(heap_warm, heap_bytes(), "click-driven");
 }
 
 // The closest x86 approximation of the AD5X tick cadence: queue many
@@ -311,6 +497,9 @@ TEST_CASE_METHOD(ActionPromptStressFixture,
     spdlog::info("[action_prompt-stress/single-tick] {} bursts × {} pairs (single drain each)",
                  bursts, pairs_per_burst);
 
+    const TreeBaseline baseline = tree_baseline(test_screen());
+    size_t heap_warm = 0;
+
     for (int b = 0; b < bursts; ++b) {
         for (int p = 0; p < pairs_per_burst; ++p) {
             auto data =
@@ -324,9 +513,15 @@ TEST_CASE_METHOD(ActionPromptStressFixture,
         // ticks but without our 5ms slicing.
         lv_tick_inc(30); // simulate a single MIPS-class tick
         lv_timer_handler_safe();
+        if (heap_warm == 0 && (b + 1) * 2 >= bursts)
+            heap_warm = heap_bytes();
     }
     process_lvgl(120);
-    SUCCEED("Completed " << bursts << " single-tick-drain bursts without crash");
+    require_tree_settled(modal_, test_screen(), baseline);
+    // Nothing here goes through UpdateQueue, but a corrupted drain that left
+    // work stranded would show up here too, and it costs nothing to say so.
+    REQUIRE(helix::ui::UpdateQueue::instance().pending_count() == 0);
+    require_no_heap_growth(heap_warm, heap_bytes(), "single-tick-drain");
 }
 
 // Interleave queue_update() lambdas (the path websocket-driven prompts take
@@ -342,6 +537,8 @@ TEST_CASE_METHOD(ActionPromptStressFixture,
     spdlog::info("[action_prompt-stress/racer] {} bursts × {} pairs (queued show + direct hide)",
                  bursts, pairs_per_burst);
 
+    const TreeBaseline baseline = tree_baseline(test_screen());
+    size_t heap_warm = 0;
     auto data = make_prompt("Race", 2);
 
     for (int b = 0; b < bursts; ++b) {
@@ -355,10 +552,17 @@ TEST_CASE_METHOD(ActionPromptStressFixture,
         // Drain UpdateQueue + LVGL async list together
         lv_tick_inc(30);
         lv_timer_handler_safe();
+        if (heap_warm == 0 && (b + 1) * 2 >= bursts)
+            heap_warm = heap_bytes();
     }
     // Final flush
     process_lvgl(120);
-    SUCCEED("Completed " << bursts << " queue-update racer bursts without crash");
+    require_tree_settled(modal_, test_screen(), baseline);
+    // Every queued show/hide must have run. A non-zero count here means the
+    // drain stopped early — the exact shape a corrupted async-delete walk
+    // produces when it aborts mid-batch.
+    REQUIRE(helix::ui::UpdateQueue::instance().pending_count() == 0);
+    require_no_heap_growth(heap_warm, heap_bytes(), "queue-update-racer");
 }
 
 // Reproducer for cluster:pstat-async-delete (#906 canonical, dups #913/#915/
@@ -393,6 +597,11 @@ TEST_CASE_METHOD(ActionPromptStressFixture,
     const int transient_children = 6;
     spdlog::info("[action_prompt-stress/pstat] {} bursts × {} pairs (modal hide + sibling mutate)",
                  bursts, pairs_per_burst);
+
+    // Baseline is taken BEFORE the host subtree exists, so the final check
+    // covers the host's own async teardown as well as the modal's.
+    const TreeBaseline baseline = tree_baseline(test_screen());
+    size_t heap_warm = 0;
 
     // Sibling subtree representing the Print Status overlay's reactivation
     // surface. Stays alive across iterations; its children churn each cycle.
@@ -444,6 +653,8 @@ TEST_CASE_METHOD(ActionPromptStressFixture,
         // between drains.
         lv_tick_inc(30);
         lv_timer_handler_safe();
+        if (heap_warm == 0 && (b + 1) * 2 >= bursts)
+            heap_warm = heap_bytes();
         if ((b + 1) % 5 == 0) {
             spdlog::info("[action_prompt-stress/pstat] burst {}/{}", b + 1, bursts);
         }
@@ -452,6 +663,10 @@ TEST_CASE_METHOD(ActionPromptStressFixture,
     // Tear the host down through the same async path so the destructor walk
     // gets one more shot at landing on a corrupted list.
     lv_obj_delete_async(host);
-    process_lvgl(80);
-    SUCCEED("Completed " << bursts << " pstat-reactivation racer bursts without crash");
+    process_lvgl(120);
+    // Both the modal dialogs and the whole host subtree must be gone: an
+    // async-delete list that lost entries mid-walk leaves either one parented.
+    require_tree_settled(modal_, test_screen(), baseline);
+    REQUIRE(helix::ui::UpdateQueue::instance().pending_count() == 0);
+    require_no_heap_growth(heap_warm, heap_bytes(), "pstat-racer");
 }

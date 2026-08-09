@@ -100,7 +100,6 @@ translations:
   ACTIONS: AKTIONEN
   ADXL: ADXL
   AFC: AFC
-  AFC Version Warning: AFC-Versionswarnung
   AFC failure reset complete: AFC-Fehler zurückgesetzt
   AFC failure reset failed: AFC-Fehler-Reset fehlgeschlagen
   AFC recovery complete: AFC-Wiederherstellung abgeschlossen
@@ -109,9 +108,6 @@ translations:
   AFC reset failed: AFC-Reset fehlgeschlagen
   AFC retracts filament from the toolhead at end of print: AFC zieht das Filament
     am Druckende aus dem Werkzeugkopf zurück
-  AFC version {} may have compatibility issues. Please upgrade to v1.0.35 or later.: AFC-Version
-    {} kann Kompatibilitätsprobleme haben. Bitte aktualisieren Sie auf v1.0.35 oder
-    neuer.
   ALL DEVICES: ALLE GERÄTE
   AMS: AMS
   'AMS Active: ': 'AMS aktiv: '
@@ -172,6 +168,7 @@ translations:
   Allwinner: Allwinner
   Already connecting — wait a moment and try again: Verbindung wird bereits hergestellt
     — bitte einen Moment warten und erneut versuchen
+  Always Show Bypass Spool: Bypass-Spule immer anzeigen
   Always show Android navigation bar instead of using gestures: Android-Navigationsleiste
     immer anzeigen statt Gesten zu nutzen
   Ambient Transfer: Umgebungswärmeübertragung
@@ -358,12 +355,14 @@ translations:
   Calibration & Tools: Kalibrierung & Werkzeuge
   Calibration Complete!: Kalibrierung abgeschlossen!
   Calibration Failed: Kalibrierung fehlgeschlagen
+  Calibration cancelled.: Kalibrierung abgebrochen.
   Calibration complete: Kalibrierung abgeschlossen
   Calibration complete!: Kalibrierung abgeschlossen!
   Calibration complete! Press 'Next' to continue.: Kalibrierung abgeschlossen! Drücken
     Sie 'Weiter' um fortzufahren.
   Calibration failed - touch targets more precisely.: Kalibrierung fehlgeschlagen
     – Ziele präziser berühren.
+  Calibration kept timing out. Your previous settings were kept.: Bei der Kalibrierung kam es wiederholt zu einer Zeitüberschreitung. Ihre vorherigen Einstellungen wurden beibehalten.
   Calibration may still be running — response timed out: Kalibrierung läuft möglicherweise
     noch — Zeitüberschreitung
   Calibration move may still be running — response timed out: Kalibrierungsbewegung
@@ -409,6 +408,7 @@ translations:
     nicht mit Drucker verbunden'
   'Cannot start print: printer is {}': 'Druck kann nicht gestartet werden: Drucker
     ist {}'
+  Cannot unload while a print is active: Entladen während eines aktiven Drucks nicht möglich
   'Capabilities: ': 'Fähigkeiten: '
   Cartographer scan calibrate sent — use Z-Offset panel to adjust: Cartographer Scan-Kalibrierung
     gesendet — Z-Offset-Panel zum Anpassen verwenden
@@ -601,6 +601,7 @@ translations:
   Could not load printer database: Druckerdatenbank konnte nicht geladen werden
   Could not parse tips database: Tipps-Datenbank konnte nicht ausgelesen werden
   Could not reach Spoolman at: 'Spoolman nicht erreichbar unter:'
+  Could not read the screw adjustments from the printer: Schraubeneinstellungen konnten nicht vom Drucker gelesen werden
   Could not resolve printer RFCOMM channel: RFCOMM-Kanal des Druckers konnte nicht
     ermittelt werden
   Could not save filament: Filament konnte nicht gespeichert werden
@@ -1123,7 +1124,7 @@ translations:
   Hide Firmware Noise: Firmware-Rauschen ausblenden
   Hide Temperature Reports: Temperaturberichte ausblenden
   High Water Mark: Höchststand
-  Hold anywhere to cancel: ''
+  Hold anywhere to cancel: Zum Abbrechen an beliebiger Stelle gedrückt halten
   Holding nozzle at {}°C to purge previous filament.: Düse wird bei {}°C gehalten, um
     vorheriges Filament auszuspülen.
   Home: Home
@@ -1247,6 +1248,7 @@ translations:
   Keep Navigation Bar: Navigationsleiste behalten
   Keep Printing: Weiter drucken
   Keep Required: Erforderlich behalten
+  Keep the bypass spool visible when bypass is off: Bypass-Spule sichtbar halten, wenn Bypass deaktiviert ist
   Kinematics: Kinematik
   Klipper: Klipper
   Klipper Error: Klipper-Fehler
@@ -1691,6 +1693,7 @@ translations:
   Path Similarity: Pfadähnlichkeit
   Pause: Pause
   Pause macro not configured: Pause-Makro nicht konfiguriert
+  Pause the print first, then load, unload, or change filament: Pausieren Sie zuerst den Druck, um Filament zu laden, zu entladen oder zu wechseln
   Paused: Pausiert
   Paused (attention needed): Pausiert (Aufmerksamkeit erforderlich)
   Pausing...: Pausiert...
@@ -2404,6 +2407,7 @@ translations:
     helfen, HelixScreen zu verbessern.
   Thanks! TOTALLY anonymous usage data helps improve HelixScreen.: Danke! VÖLLIG anonyme
     Nutzungsdaten helfen, HelixScreen zu verbessern.
+  That tool is already loaded: Dieses Werkzeug ist bereits geladen
   ? The HelixPrint plugin enables fast G-code modifications directly on your printer—like
     skipping bed mesh for quick reprints.
   : Das HelixPrint-Plugin ermöglicht schnelle G-Code-Modifikationen direkt auf Ihrem
@@ -2458,6 +2462,7 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: Diese Kalibrierung
     verwendet die Papierreibungsmethode zur Einstellung Ihres Z-Offsets.
   This cannot be undone.: Dies kann nicht rückgängig gemacht werden.
+  This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: Dieses Gerät hat keine kabelgebundene Netzwerkverbindung. Wenn Sie WiFi ausschalten, kann es nur über diesen Bildschirm wieder eingeschaltet werden.
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
   : 'Dieses Gerät hat nur {} MB RAM. Die Resonanzkalibrierung ist speicherintensiv und
     kann dazu führen, dass die Drucker-Firmware einen \"Timer Too Close\"-Fehler meldet
@@ -2471,9 +2476,6 @@ translations:
   This is exactly the data that will be sent: Dies sind genau die Daten, die gesendet
     werden
   This is what data would be sent if enabled: Diese Daten würden bei Aktivierung gesendet
-  This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?: Dies
-    scheint ein anderes Filament als die verknüpfte Spoolman-Spule zu sein. Spoolman-Spule
-    entsprechend aktualisieren?
   This may take up to 30 seconds: Dies kann bis zu 30 Sekunden dauern
   ? This plugin lets HelixScreen control print start options like bed mesh and QGL.
     Once installed, use Configure PRINT_START below to enable optional steps.
@@ -2561,6 +2563,7 @@ translations:
     testen
   Touch anywhere to verify accuracy: Berühren Sie irgendwo, um die Genauigkeit zu
     überprüfen
+  Touch input did not track the new calibration. Your previous settings were kept.: Die Touch-Eingabe folgte der neuen Kalibrierung nicht. Ihre vorherigen Einstellungen wurden beibehalten.
   Touch screen to wake from sleep: Touchscreen berühren zum Aufwecken
   Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: Ziel berühren
     (Punkt %1$d von 3) \xe2\x80\x94 Berührung %2$d von %3$d
@@ -2574,6 +2577,7 @@ translations:
     einen Druck zum Testen
   Turbo: Turbo
   Turn Off: Ausschalten
+  Turn Off WiFi?: WiFi ausschalten?
   Turn On: Einschalten
   Turn on LEDs when printer starts: LEDs beim Druckerstart einschalten
   Turn the extruder heater off after a load or unload finishes: Extruder-Heizung nach Laden oder Entladen ausschalten
@@ -2635,7 +2639,6 @@ translations:
   Update Channel: Update-Kanal
   Update Failed: Update fehlgeschlagen
   Update Success: Update erfolgreich
-  Update anyway: Trotzdem aktualisieren
   Update installed!: Update installiert!
   Update your security PIN: Sicherheits-PIN aktualisieren
   Updates aren't available on this installation.: Updates sind bei dieser Installation
@@ -2687,6 +2690,7 @@ translations:
   WLED Preset: WLED-Voreinstellung
   WPA/WPA2: 'WPA/WPA2'
   WPA3: 'WPA3'
+  Wait for the current filament operation to finish: Warten Sie, bis der aktuelle Filamentvorgang abgeschlossen ist
   Waiting for Moonraker...: Warte auf Moonraker...
   Waiting for bed to reach temperature for accurate calibration.: Warte auf Bett-Temperatur
     für genaue Kalibrierung.
@@ -2727,6 +2731,7 @@ translations:
   WiFi and Ethernet configuration: WiFi- und Ethernet-Konfiguration
   WiFi control unavailable: WiFi-Steuerung nicht verfügbar
   WiFi hardware unavailable: WiFi-Hardware nicht verfügbar
+  WiFi radio did not change state: WiFi-Funkmodul hat den Status nicht geändert
   WiFi unavailable: WiFi nicht verfügbar
   WiFi was configured but hardware is not available. Check system configuration.: WiFi
     wurde konfiguriert, aber die Hardware ist nicht verfügbar. Prüfen Sie die Systemkonfiguration.

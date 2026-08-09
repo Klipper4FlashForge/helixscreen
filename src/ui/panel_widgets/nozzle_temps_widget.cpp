@@ -81,7 +81,8 @@ void NozzleTempsWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
             if (version == initial_version)
                 return; // Skip initial callback — rows already built in attach()
             self->rebuild_rows();
-        });
+        },
+        printer_state_.get_subjects_lifetime());
 
     spdlog::debug("[NozzleTempsWidget] Attached with {} extruder rows", extruder_rows_.size());
 }

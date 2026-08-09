@@ -166,17 +166,20 @@ void AmsPanel::init_subjects() {
     using helix::ui::observe_int_sync;
 
     slots_version_observer_ = observe_int_sync<AmsPanel>(
-        AmsState::instance().get_slots_version_subject(), this, [](AmsPanel* self, int) {
+        AmsState::instance().get_slots_version_subject(), this,
+        [](AmsPanel* self, int) {
             if (!self->subjects_initialized_ || !self->panel_)
                 return;
             spdlog::trace("[AmsPanel] Gates version changed - refreshing slots");
             self->refresh_slots();
-        });
+        },
+        AmsState::instance().get_subjects_lifetime());
 
     // Simplified action observer - only handles panel-specific concerns
     // (path canvas heat glow and error modal). Step progress is handled by sidebar_.
     action_observer_ = observe_int_sync<AmsPanel>(
-        AmsState::instance().get_ams_action_subject(), this, [](AmsPanel* self, int action_int) {
+        AmsState::instance().get_ams_action_subject(), this,
+        [](AmsPanel* self, int action_int) {
             // Record the previous value before any early return so the
             // ERROR-exit edge below stays accurate across ticks that bail out.
             const int prev_action = self->prev_ams_action_;
@@ -216,7 +219,8 @@ void AmsPanel::init_subjects() {
                     self->dismiss_error_modal_silently("AMS action left ERROR");
                 }
             }
-        });
+        },
+        AmsState::instance().get_subjects_lifetime());
 
     // A resumed print is the second signal that a filament fault is over. The
     // user may have recovered by a route this panel never observes, leaving the
@@ -255,7 +259,8 @@ void AmsPanel::init_subjects() {
         printer_state_.get_static_print_subjects_lifetime());
 
     current_slot_observer_ = observe_int_sync<AmsPanel>(
-        AmsState::instance().get_current_slot_subject(), this, [](AmsPanel* self, int slot) {
+        AmsState::instance().get_current_slot_subject(), this,
+        [](AmsPanel* self, int slot) {
             if (!self->subjects_initialized_ || !self->panel_)
                 return;
             spdlog::debug("[AmsPanel] Current slot changed: {}", slot);
@@ -282,7 +287,8 @@ void AmsPanel::init_subjects() {
                     }
                 }
             }
-        });
+        },
+        AmsState::instance().get_subjects_lifetime());
 
     // Slot count observer for dynamic slot creation (non-scoped mode only).
     // Deferred via lifetime_ to avoid deleting children during LVGL layout refresh (#563).
@@ -318,10 +324,12 @@ void AmsPanel::init_subjects() {
             });
         }
     };
-    path_segment_observer_ = observe_int_sync<AmsPanel>(
-        AmsState::instance().get_path_filament_segment_subject(), this, path_handler);
-    path_topology_observer_ = observe_int_sync<AmsPanel>(
-        AmsState::instance().get_path_topology_subject(), this, path_handler);
+    path_segment_observer_ =
+        observe_int_sync<AmsPanel>(AmsState::instance().get_path_filament_segment_subject(), this,
+                                   path_handler, AmsState::instance().get_subjects_lifetime());
+    path_topology_observer_ =
+        observe_int_sync<AmsPanel>(AmsState::instance().get_path_topology_subject(), this,
+                                   path_handler, AmsState::instance().get_subjects_lifetime());
 
     // Backend count observer for multi-backend selector
     backend_count_observer_ = observe_int_sync<AmsPanel>(
@@ -358,7 +366,8 @@ void AmsPanel::init_subjects() {
 
             // Update bypass spool holder (3D spool in left column)
             self->update_bypass_spool_from_state();
-        });
+        },
+        AmsState::instance().get_subjects_lifetime());
 
     // UI module subjects are now encapsulated in their respective classes:
     // - helix::ui::AmsEditOverlay
@@ -1343,7 +1352,7 @@ void AmsPanel::dispatch_selector_action(helix::ui::AmsSelectorMenu::SelectorActi
         return;
     }
     if (err.result != AmsResult::SUCCESS) {
-        NOTIFY_ERROR(lv_tr("MMU command failed: {}"), err.user_msg);
+        helix::ui::notify_ams_error(err, lv_tr("MMU command failed"));
     }
 }
 
@@ -1447,7 +1456,7 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
             } else {
                 AmsError error = backend->unload_filament(slot);
                 if (error.result != AmsResult::SUCCESS) {
-                    NOTIFY_ERROR(lv_tr("Unload failed: {}"), error.user_msg);
+                    helix::ui::notify_ams_error(error);
                 }
             }
             break;
@@ -1463,7 +1472,7 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
                 }
                 AmsError error = backend->eject_lane(slot);
                 if (error.result != AmsResult::SUCCESS) {
-                    NOTIFY_ERROR(lv_tr("Eject failed: {}"), error.user_msg);
+                    helix::ui::notify_ams_error(error, lv_tr("Eject failed"));
                     if (path_canvas_) {
                         ui_filament_path_canvas_set_eject_mode(path_canvas_, false);
                     }
@@ -1479,7 +1488,7 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
             {
                 AmsError error = backend->recover_lane_position(slot);
                 if (error.result != AmsResult::SUCCESS) {
-                    NOTIFY_ERROR(lv_tr("Recovery failed: {}"), error.user_msg);
+                    helix::ui::notify_ams_error(error, lv_tr("Recovery failed"));
                 }
             }
             break;
@@ -1492,7 +1501,7 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
             {
                 AmsError error = backend->select_gate(slot);
                 if (error.result != AmsResult::SUCCESS) {
-                    NOTIFY_ERROR(lv_tr("Select slot failed: {}"), error.user_msg);
+                    helix::ui::notify_ams_error(error, lv_tr("Select slot failed"));
                 }
             }
             break;
@@ -1505,7 +1514,7 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
             {
                 AmsError error = backend->check_gate(slot);
                 if (error.result != AmsResult::SUCCESS) {
-                    NOTIFY_ERROR(lv_tr("Check slot failed: {}"), error.user_msg);
+                    helix::ui::notify_ams_error(error, lv_tr("Check slot failed"));
                 }
             }
             break;
@@ -1529,7 +1538,7 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
                 apply_spool_to_slot(info, spool);
                 AmsError err = be->set_slot_info(slot, info);
                 if (!err.success()) {
-                    NOTIFY_ERROR("{}", err.user_msg);
+                    helix::ui::notify_ams_error(err);
                     return;
                 }
                 AmsState::instance().sync_from_backend();
@@ -1568,7 +1577,7 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
                     AmsState::instance().sync_from_backend();
                     NOTIFY_INFO(lv_tr("Slot {} spool cleared"), slot + 1);
                 } else {
-                    NOTIFY_ERROR(lv_tr("Clear failed: {}"), error.user_msg);
+                    helix::ui::notify_ams_error(error, lv_tr("Clear failed"));
                 }
             }
             break;
@@ -1643,7 +1652,7 @@ void AmsPanel::show_edit_modal(int slot_index, bool open_on_picker) {
                 if (backend) {
                     AmsError err = backend->set_slot_info(result.slot_index, result.slot_info);
                     if (!err.success()) {
-                        NOTIFY_ERROR("{}", err.user_msg);
+                        helix::ui::notify_ams_error(err);
                         return;
                     }
 

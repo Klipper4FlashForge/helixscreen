@@ -1531,11 +1531,8 @@ AmsError AmsBackendCfs::reject_if_flat_schema(const char* operation) const {
     return AmsErrorHelper::not_supported(std::string(operation) + " on this firmware's CFS module");
 }
 
-AmsError AmsBackendCfs::load_filament(int slot_index) {
+AmsError AmsBackendCfs::do_load_filament(int slot_index) {
     auto err = reject_if_flat_schema("Load");
-    if (err.result != AmsResult::SUCCESS)
-        return err;
-    err = check_preconditions(true);
     if (err.result != AmsResult::SUCCESS)
         return err;
     auto gcode = load_gcode(slot_index, macro_variant_);
@@ -1555,11 +1552,8 @@ AmsError AmsBackendCfs::load_filament(int slot_index) {
     return dispatch_action_script(std::move(gcode));
 }
 
-AmsError AmsBackendCfs::unload_filament(int) {
+AmsError AmsBackendCfs::do_unload_filament(int) {
     auto err = reject_if_flat_schema("Unload");
-    if (err.result != AmsResult::SUCCESS)
-        return err;
-    err = check_preconditions(true);
     if (err.result != AmsResult::SUCCESS)
         return err;
     {
@@ -1571,15 +1565,12 @@ AmsError AmsBackendCfs::unload_filament(int) {
     return dispatch_action_script(unload_gcode(macro_variant_));
 }
 
-AmsError AmsBackendCfs::select_slot(int) {
+AmsError AmsBackendCfs::do_select_slot(int) {
     return AmsErrorHelper::not_supported("CFS loads directly");
 }
 
-AmsError AmsBackendCfs::change_tool(int tool) {
+AmsError AmsBackendCfs::do_change_tool(int tool) {
     auto err = reject_if_flat_schema("Tool change");
-    if (err.result != AmsResult::SUCCESS)
-        return err;
-    err = check_preconditions(true);
     if (err.result != AmsResult::SUCCESS)
         return err;
 

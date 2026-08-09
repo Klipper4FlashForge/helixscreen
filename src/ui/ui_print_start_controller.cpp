@@ -277,7 +277,12 @@ void PrintStartController::execute_print_start() {
                     // If we have a pre-extracted thumbnail (USB/embedded), set it directly
                     // This bypasses Moonraker metadata lookup which doesn't have USB file info
                     if (!thumbnail_path.empty()) {
-                        helix::get_active_print_media_manager().set_thumbnail_path(thumbnail_path);
+                        // Tag it with the same identity handed to
+                        // set_thumbnail_source() above: the manager cannot infer
+                        // it here, since Moonraker may not have reported the
+                        // print filename yet.
+                        helix::get_active_print_media_manager().set_thumbnail_path(full_path,
+                                                                                   thumbnail_path);
                         spdlog::debug("[PrintStartController] Set extracted thumbnail path: {}",
                                       thumbnail_path);
                     }

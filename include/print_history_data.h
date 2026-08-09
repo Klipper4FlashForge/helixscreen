@@ -52,6 +52,10 @@ struct PrintHistoryJob {
     std::vector<ThumbnailInfo> thumbnails; ///< All available thumbnails with dimensions
     std::string uuid;                      ///< Slicer-generated UUID (from metadata.uuid)
     size_t size_bytes = 0;                 ///< File size in bytes (from metadata.size)
+    /// Source gcode mtime (metadata.modified), Unix timestamp. 0 when Moonraker
+    /// omitted it — consumers treat 0 as "no freshness information", which is
+    /// what ThumbnailCache's source_modified == 0 already means.
+    double modified = 0.0;
 
     // Pre-formatted strings for display (set during parsing)
     std::string duration_str; ///< "2h 15m"

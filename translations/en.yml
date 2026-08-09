@@ -92,7 +92,6 @@ translations:
   ACTIONS: ACTIONS
   ADXL: ADXL
   AFC: AFC
-  AFC Version Warning: AFC Version Warning
   AFC failure reset complete: AFC failure reset complete
   AFC failure reset failed: AFC failure reset failed
   AFC recovery complete: AFC recovery complete
@@ -101,8 +100,6 @@ translations:
   AFC reset failed: AFC reset failed
   AFC retracts filament from the toolhead at end of print: AFC retracts filament from
     the toolhead at end of print
-  AFC version {} may have compatibility issues. Please upgrade to v1.0.35 or later.: AFC
-    version {} may have compatibility issues. Please upgrade to v1.0.35 or later.
   ALL DEVICES: ALL DEVICES
   AMS: AMS
   'AMS Active: ': 'AMS Active: '
@@ -162,6 +159,7 @@ translations:
   Allwinner: Allwinner
   Already connecting — wait a moment and try again: Already connecting — wait a moment
     and try again
+  Always Show Bypass Spool: Always Show Bypass Spool
   Always show Android navigation bar instead of using gestures: Always show Android
     navigation bar instead of using gestures
   Ambient Transfer: Ambient Transfer
@@ -338,12 +336,14 @@ translations:
   Calibration & Tools: Calibration & Tools
   Calibration Complete!: Calibration Complete!
   Calibration Failed: Calibration Failed
+  Calibration cancelled.: Calibration cancelled.
   Calibration complete: Calibration complete
   Calibration complete!: Calibration complete!
   Calibration complete! Press 'Next' to continue.: Calibration complete! Press 'Next'
     to continue.
   Calibration failed - touch targets more precisely.: Calibration failed - touch targets
     more precisely.
+  Calibration kept timing out. Your previous settings were kept.: Calibration kept timing out. Your previous settings were kept.
   Calibration may still be running — response timed out: Calibration may still be
     running — response timed out
   Calibration move may still be running — response timed out: Calibration move may
@@ -570,6 +570,7 @@ translations:
   Could not load printer database: Could not load printer database
   Could not parse tips database: Could not parse tips database
   Could not reach Spoolman at: Could not reach Spoolman at
+  Could not read the screw adjustments from the printer: Could not read the screw adjustments from the printer
   Could not resolve printer RFCOMM channel: Could not resolve printer RFCOMM channel
   Could not save filament: Could not save filament
   Could not start Bluetooth discovery: Could not start Bluetooth discovery
@@ -1197,6 +1198,7 @@ translations:
   Keep Navigation Bar: Keep Navigation Bar
   Keep Printing: Keep Printing
   Keep Required: Keep Required
+  Keep the bypass spool visible when bypass is off: Keep the bypass spool visible when bypass is off
   Kinematics: Kinematics
   Klipper: Klipper
   Klipper Error: Klipper Error
@@ -2381,6 +2383,7 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: This calibration
     uses the paper friction method to set your Z-offset.
   This cannot be undone.: This cannot be undone.
+  This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
   : This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
   ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
@@ -2391,8 +2394,6 @@ translations:
   This is exactly the data that will be sent: This is exactly the data that will be
     sent
   This is what data would be sent if enabled: This is what data would be sent if enabled
-  This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?: This
-    looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?
   This may take up to 30 seconds: This may take up to 30 seconds
   ? This plugin lets HelixScreen control print start options like bed mesh and QGL.
     Once installed, use Configure PRINT_START below to enable optional steps.
@@ -2475,6 +2476,7 @@ translations:
   Touch Jitter Filter: Touch Jitter Filter
   Touch anywhere to test calibration: Touch anywhere to test calibration
   Touch anywhere to verify accuracy: Touch anywhere to verify accuracy
+  Touch input did not track the new calibration. Your previous settings were kept.: Touch input did not track the new calibration. Your previous settings were kept.
   Touch screen to wake from sleep: Touch screen to wake from sleep
   Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: Touch the target
     (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d
@@ -2488,6 +2490,7 @@ translations:
     to test
   Turbo: Turbo
   Turn Off: Turn Off
+  Turn Off WiFi?: Turn Off WiFi?
   Turn On: Turn On
   Turn on LEDs when printer starts: Turn on LEDs when printer starts
   Turn the extruder heater off after a load or unload finishes: Turn the extruder heater off after a load or unload finishes
@@ -2548,7 +2551,6 @@ translations:
   Update Channel: Update Channel
   Update Failed: Update Failed
   Update Success: Update Success
-  Update anyway: Update anyway
   Update installed!: Update installed!
   Update your security PIN: Update your security PIN
   Updates aren't available on this installation.: Updates aren't available on this installation.
@@ -2640,6 +2642,7 @@ translations:
   WiFi and Ethernet configuration: WiFi and Ethernet configuration
   WiFi control unavailable: WiFi control unavailable
   WiFi hardware unavailable: WiFi hardware unavailable
+  WiFi radio did not change state: WiFi radio did not change state
   WiFi unavailable: WiFi unavailable
   WiFi was configured but hardware is not available. Check system configuration.: WiFi
     was configured but hardware is not available. Check system configuration.

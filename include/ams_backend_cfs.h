@@ -157,11 +157,16 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
         return true;
     }
 
-    // Operations
-    AmsError load_filament(int slot_index) override;
-    AmsError unload_filament(int slot_index) override;
-    AmsError select_slot(int slot_index) override;
-    AmsError change_tool(int tool_number) override;
+  protected:
+    // Operations. Gated by AmsSubscriptionBackend's NVI wrapper.
+    // select_slot_moves_toolhead() stays false: CFS has no select at all
+    // (do_select_slot returns not_supported — it loads directly).
+    AmsError do_load_filament(int slot_index) override;
+    AmsError do_unload_filament(int slot_index) override;
+    AmsError do_select_slot(int slot_index) override;
+    AmsError do_change_tool(int tool_number) override;
+
+  public:
     AmsError reset() override;
     AmsError recover() override;
     AmsError cancel() override;

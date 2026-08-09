@@ -103,7 +103,8 @@ void SpoolmanManager::init_subjects() {
                     static_cast<int>(print_state));
                 self->refresh_spoolman_weights();
             }
-        });
+        },
+        get_printer_state().get_subjects_lifetime());
 
     // Observe Spoolman availability — force-stop polling when Spoolman disappears
     auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");

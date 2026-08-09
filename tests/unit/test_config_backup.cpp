@@ -248,7 +248,13 @@ TEST_CASE("restore_from_backup falls back to second backup", "[config_backup]") 
 // ─── backup_fallback_dir (app_constants.h) ────────────────────────────────────
 
 TEST_CASE("backup_fallback_dir uses HOME env var", "[config_backup]") {
-    const char* original = std::getenv("HOME");
+    // Copy the value out. setenv()/unsetenv() free the buffer getenv() returned,
+    // so restoring through the raw pointer at the end of the test reads freed
+    // memory — ASAN flags it as heap-use-after-free. has_original distinguishes
+    // "HOME was unset" from "HOME was empty".
+    const char* original_raw = std::getenv("HOME");
+    const bool has_original = original_raw != nullptr;
+    const std::string original = has_original ? original_raw : "";
     // Restore the PREVIOUS ref, not a freshly computed $HOME/.helixscreen:
     // the test binary deliberately points this at its own sandbox, and
     // recomputing would silently aim every later test in the shard at the
@@ -261,15 +267,18 @@ TEST_CASE("backup_fallback_dir uses HOME env var", "[config_backup]") {
     std::string dir = AppConstants::Update::backup_fallback_dir();
     REQUIRE(dir == "/tmp/fake_home/.helixscreen");
 
-    if (original)
-        setenv("HOME", original, 1);
+    if (has_original)
+        setenv("HOME", original.c_str(), 1);
     else
         unsetenv("HOME");
     AppConstants::Update::detail::backup_fallback_dir_ref() = prev_ref;
 }
 
 TEST_CASE("backup_fallback_dir falls back to /tmp when HOME unset", "[config_backup]") {
-    const char* original = std::getenv("HOME");
+    // Same copy-don't-alias rule as the test above: unsetenv() frees the buffer.
+    const char* original_raw = std::getenv("HOME");
+    const bool has_original = original_raw != nullptr;
+    const std::string original = has_original ? original_raw : "";
     const std::string prev_ref = AppConstants::Update::detail::backup_fallback_dir_ref();
     unsetenv("HOME");
     AppConstants::Update::detail::backup_fallback_dir_ref() =
@@ -278,8 +287,8 @@ TEST_CASE("backup_fallback_dir falls back to /tmp when HOME unset", "[config_bac
     std::string dir = AppConstants::Update::backup_fallback_dir();
     REQUIRE(dir == "/tmp/.helixscreen");
 
-    if (original)
-        setenv("HOME", original, 1);
+    if (has_original)
+        setenv("HOME", original.c_str(), 1);
     AppConstants::Update::detail::backup_fallback_dir_ref() = prev_ref;
 }
 

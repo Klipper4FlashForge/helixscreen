@@ -17,6 +17,23 @@
 namespace helix {
 
 /**
+ * @brief Where the currently published print thumbnail path came from
+ *
+ * "A path is present" and "there is nothing left to fetch" are different
+ * questions, and conflating them is what turns a wrong thumbnail into a
+ * permanent one: the recovery ladder (backoff retries, notify_filelist_changed,
+ * notify_klippy_ready) all key off "are we done".
+ *
+ * - None:    nothing published for the current file yet.
+ * - PreSet:  an externally supplied path (USB / embedded G-code, via
+ *            PrintStartController). Skips the thumbnail FETCH — never disarms
+ *            RECOVERY.
+ * - Fetched: this manager completed a load for the current file. The only
+ *            state that disarms recovery.
+ */
+enum class ThumbnailOrigin { None, PreSet, Fetched };
+
+/**
  * @brief Manages display info for the active print (thumbnail, display filename)
  *
  * Decouples shared print media from PrintStatusPanel so that:
@@ -36,6 +53,17 @@ class ActivePrintMediaManager {
   public:
     explicit ActivePrintMediaManager(PrinterState& printer_state);
     ~ActivePrintMediaManager();
+
+    /**
+     * @brief Path published when the current file has no thumbnail
+     *
+     * This manager is the sole writer of print_thumbnail_path, and it never
+     * publishes the empty string — "there is no thumbnail" is said with an
+     * explicit image. See PrinterPrintState::kNoThumbnailPlaceholder for why
+     * the empty string is not merely untidy but unsafe to hand a consumer.
+     */
+    static constexpr const char* kNoThumbnailPlaceholder =
+        PrinterPrintState::kNoThumbnailPlaceholder;
 
     // Non-copyable
     ActivePrintMediaManager(const ActivePrintMediaManager&) = delete;
@@ -79,11 +107,22 @@ class ActivePrintMediaManager {
      * (e.g., from USB drive or embedded in G-code). This sets the thumbnail
      * path subject directly without going through the Moonraker metadata API.
      *
+     * The caller must supply the identity: this runs at print-start-confirmed
+     * time, which can precede the Moonraker print_stats update, so the manager
+     * has no reliable filename of its own to attribute the path to. Pass the
+     * same full path handed to set_thumbnail_source() for this print.
+     *
+     * @param for_file Gcode filename this thumbnail is for (e.g., "usb/model.gcode")
      * @param path Path to the thumbnail file (e.g., "/tmp/helix/thumbnails/extracted.png")
      */
-    void set_thumbnail_path(const std::string& path);
+    void set_thumbnail_path(const std::string& for_file, const std::string& path);
 
   private:
+    /// The ONLY place this manager writes print_thumbnail_path. Every publish
+    /// routes through here so the "never empty" invariant has a single
+    /// enforcement point rather than one guard per consumer.
+    void publish_thumbnail(const std::string& for_file, const std::string& path);
+
     void process_filename(const char* raw_filename);
     void load_thumbnail_for_file(const std::string& filename);
     void clear_print_info();
@@ -122,6 +161,12 @@ class ActivePrintMediaManager {
     /// if one is set and the thumbnail hasn't successfully loaded yet.
     void retrigger_thumbnail_load(const char* reason);
 
+    /// True when the published thumbnail path was produced for @p filename and
+    /// is non-empty — i.e. the fetch for that file can be skipped. Reads the
+    /// identity PrinterState stores alongside the path, so a leftover from a
+    /// different print never counts. Main thread only.
+    [[nodiscard]] bool has_thumbnail_for(const std::string& filename);
+
     PrinterState& printer_state_;
     MoonrakerAPI* api_ = nullptr;
     ObserverGuard print_filename_observer_;
@@ -144,16 +189,24 @@ class ActivePrintMediaManager {
     int thumbnail_retry_count_ = 0;         ///< Retries scheduled for the current filename
     std::string retry_filename_;            ///< Filename the pending retry is for
     uint32_t retry_generation_ = 0;         ///< Load generation the pending retry belongs to
-    bool thumbnail_loaded_ = false;         ///< Thumbnail successfully loaded for current filename
+
+    /// Provenance of the published thumbnail path for the current filename.
+    /// Only ThumbnailOrigin::Fetched disarms the retry ladder and the Moonraker
+    /// re-triggers; a PreSet path skips the fetch with recovery still armed.
+    ThumbnailOrigin thumbnail_origin_ = ThumbnailOrigin::None;
 
     MoonrakerAPI* listener_api_ = nullptr; ///< API the method callbacks are registered on
     std::string filelist_handler_name_;
     std::string klippy_ready_handler_name_;
 
-    /// Generation counter for stale-callback detection. Bumped on the main thread
-    /// each time a new load starts; read on the main thread inside deferred applies.
-    /// Atomic because the value is captured by background-thread callbacks (even
-    /// though the re-check itself always runs on the main thread via tok.defer).
+    /// Generation counter for stale-callback detection. Owned by the
+    /// ThumbnailLoadContext that load_thumbnail_for_file() creates per load:
+    /// creating the context bumps this on the main thread, and every deferred
+    /// apply asks that context whether it is still current instead of comparing
+    /// by hand. Atomic because the context is captured by background-thread
+    /// callbacks (the check itself always runs on the main thread via tok.defer).
+    /// Distinct from retry_generation_, which pins a scheduled retry to the load
+    /// that asked for it rather than gating an in-flight callback.
     std::atomic<uint32_t> thumbnail_load_generation_{0};
 
     /// Async callback safety guard. Invalidated on destruction, so any in-flight

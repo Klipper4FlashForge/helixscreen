@@ -414,15 +414,28 @@ class PrinterState {
     }
 
     /**
-     * @brief Set the current print's thumbnail path
+     * @brief Gcode filename the current thumbnail path was produced for
      *
-     * Called by PrintStatusPanel after successfully loading a thumbnail.
-     * This allows other UI components (e.g., HomePanel) to display the
-     * same thumbnail without duplicating the loading logic.
+     * Set before the path subject is published, so an observer of
+     * get_print_thumbnail_path_subject() can trust it describes the path it sees.
      *
-     * @param path LVGL-compatible path (e.g., "A:/tmp/thumbnail_xxx.bin")
+     * @return Filename, or "" when no thumbnail identity has been set
      */
-    void set_print_thumbnail_path(const std::string& path);
+    [[nodiscard]] const std::string& get_print_thumbnail_file() const {
+        return print_domain_.get_print_thumbnail_file();
+    }
+
+    /**
+     * @brief Set the current print's thumbnail, tagged with the file it is for
+     *
+     * The path alone carries no identity, so consumers cannot tell a fresh
+     * thumbnail from a previous job's. Pairing it with @p for_file makes
+     * staleness decidable. Main thread only — publishing fires observers.
+     *
+     * @param for_file Gcode filename this path was produced for ("" to clear identity)
+     * @param path LVGL-compatible path (e.g., "A:/tmp/thumbnail_xxx.bin"), "" to clear
+     */
+    void set_print_thumbnail(const std::string& for_file, const std::string& path);
 
     /**
      * @brief Get print job state enum subject
@@ -446,6 +459,30 @@ class PrinterState {
      */
     [[nodiscard]] SubjectLifetime get_static_print_subjects_lifetime() const {
         return print_domain_.get_static_subjects_lifetime();
+    }
+
+    /**
+     * @brief Lifetime token covering EVERY subject reachable through PrinterState.
+     *
+     * The per-domain tokens above are narrower — one component's subjects, or a
+     * single dynamic subject. This one is flipped false at the top of
+     * `deinit_subjects()`, before any component tears its subjects down, so it
+     * covers the whole tree: temperature, motion, fan, LED, print, capabilities,
+     * excluded objects, and PrinterState's own.
+     *
+     * Any observer whose owner can outlive a `deinit_subjects()` cycle MUST pass
+     * this (or a narrower token for the same subject) to `observe_*`. Panels held
+     * in process-lifetime singletons are exactly that case: `deinit_subjects()`
+     * runs `lv_subject_deinit()`, which frees every observer node, and an
+     * ObserverGuard that never learned the subject died then calls
+     * `lv_observer_remove()` on freed memory the next time it resets.
+     *
+     * Prefer the narrower per-subject token where one exists (dynamic per-fan and
+     * per-extruder subjects die independently of a full deinit); use this for the
+     * static subjects that only die with the whole PrinterState.
+     */
+    [[nodiscard]] SubjectLifetime get_subjects_lifetime() const {
+        return subjects_lifetime_;
     }
 
     /**
@@ -2187,6 +2224,17 @@ class PrinterState {
     /// the `SubjectLifetime` tokens handed to observers, which are
     /// `shared_ptr<bool>` death signals and carry no deferral machinery.
     AsyncLifetimeGuard async_lifetime_;
+
+    /// Death signal covering EVERY subject reachable through this PrinterState,
+    /// including the per-domain components. See get_subjects_lifetime().
+    ///
+    /// Created here rather than in init_subjects(), and REPLACED (never left
+    /// null) by deinit_subjects(), so the accessor can never hand out an empty
+    /// token. An empty one is not a harmless no-op: ObserverGuard::reset() reads
+    /// `!alive_token_.lock()` as "subject already dead" and SKIPS
+    /// lv_observer_remove(), which orphans a live observer node whose context is
+    /// about to be freed — the failure mode behind bundles 449TVQ82 / X3RA4252.
+    SubjectLifetime subjects_lifetime_ = std::make_shared<bool>(true);
 
     // Cached display pointer to detect LVGL reinitialization (for test isolation)
     lv_display_t* cached_display_ = nullptr;

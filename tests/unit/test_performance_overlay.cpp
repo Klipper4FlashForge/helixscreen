@@ -11,7 +11,9 @@
  * and asserts the mcu_card child count matches the MCU count in the sample.
  */
 
+#include "ui_nav_manager.h"
 #include "ui_overlay_performance.h"
+#include "ui_panel_settings.h"
 #include "ui_update_queue.h"
 
 #include "../test_fixtures.h"
@@ -20,6 +22,8 @@
 #include "../test_helpers/update_queue_test_access.h"
 #include "helix_sparkline.h"
 #include "performance_state.h"
+
+#include <array>
 
 #include "../catch_amalgamated.hpp"
 
@@ -317,4 +321,45 @@ TEST_CASE_METHOD(PerfOverlayFixture,
 
     // Reaching here without a crash is the regression assertion.
     REQUIRE(UiOverlayPerformance::instance().root() == nullptr);
+}
+
+// ============================================================================
+// Overlay lifecycle registration
+//
+// The System settings Performance row pushed its overlay straight onto the nav
+// stack without register_overlay_instance(). NavigationManager resolved no
+// lifecycle for it, so every open was filed as "unreg" in panel telemetry and in
+// the crash breadcrumb ring — and a genuine missing registration elsewhere became
+// indistinguishable from this known-benign one in user logs. Bundle 3Q2GB74K
+// carried the resulting warning pair from a live printer.
+//
+// UiOverlayPerformance implements no IPanelLifecycle, so a null lifecycle is the
+// correct registration: it marks the overlay as deliberately lifecycle-less.
+// Tests run with strict registration, which aborts on an unregistered push — so
+// completing this test at all is half the assertion.
+// ============================================================================
+TEST_CASE_METHOD(PerfOverlayFixture, "PerformanceOverlay registers with the nav stack when pushed",
+                 "[performance][navigation][overlay]") {
+    auto& nav = NavigationManager::instance();
+
+    // panel_stack_[0] must hold a root panel — overlay code reads panel_stack_.back()
+    // to find what sits beneath it.
+    std::array<lv_obj_t*, static_cast<size_t>(UI_PANEL_COUNT)> panels{};
+    for (auto& p : panels) {
+        p = lv_obj_create(lv_screen_active());
+    }
+    nav.set_panels(panels.data());
+    nav.set_active(helix::PanelId::Settings);
+    UpdateQueueTestAccess::drain(UpdateQueue::instance());
+
+    REQUIRE_FALSE(nav.has_open_overlays());
+
+    // The real production path behind the System settings Performance row.
+    get_global_settings_panel().handle_performance_clicked();
+
+    // push_overlay() queues its whole body through UpdateQueue.
+    UpdateQueueTestAccess::drain(UpdateQueue::instance());
+
+    REQUIRE(UiOverlayPerformance::instance().root() != nullptr);
+    REQUIRE(nav.has_open_overlays());
 }

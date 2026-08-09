@@ -169,6 +169,11 @@ bool lazy_push_overlay(lv_obj_t*& cache, CreateFunc create_func, lv_obj_t* paren
     }
 
     if (cache) {
+        // Register before pushing, mirroring lazy_create_and_push_overlay(). The
+        // caller supplies a bare widget with no lifecycle object, so a null
+        // lifecycle is the correct registration — it marks the overlay as
+        // intentionally lifecycle-less rather than accidentally unregistered.
+        NavigationManager::instance().register_overlay_instance(cache, nullptr);
         NavigationManager::instance().push_overlay(cache);
         return true;
     }
