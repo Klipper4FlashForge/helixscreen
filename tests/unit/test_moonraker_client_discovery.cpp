@@ -12,6 +12,7 @@
  */
 
 #include "../../include/moonraker_client_mock.h"
+#include "../helix_test_fixture.h"
 
 #include <atomic>
 #include <chrono>
@@ -26,8 +27,8 @@ using namespace std::chrono;
 // Discovery Error Callback Tests
 // ============================================================================
 
-TEST_CASE("MoonrakerClientMock: discover_printer error callback",
-          "[moonraker][discovery][callback]") {
+TEST_CASE_METHOD(HelixTestFixture, "MoonrakerClientMock: discover_printer error callback",
+                 "[moonraker][discovery][callback]") {
     SECTION("Error callback invoked when Klippy in STARTUP state") {
         // Create mock client
         MoonrakerClientMock client;
@@ -151,8 +152,8 @@ TEST_CASE("MoonrakerClientMock: discover_printer error callback",
 // Regression Tests
 // ============================================================================
 
-TEST_CASE("MoonrakerClientMock: discover_printer regression tests",
-          "[moonraker][discovery][regression]") {
+TEST_CASE_METHOD(HelixTestFixture, "MoonrakerClientMock: discover_printer regression tests",
+                 "[moonraker][discovery][regression]") {
     SECTION("Discovery completes normally without error callback (backwards compatibility)") {
         MoonrakerClientMock client;
         client.set_klippy_state(MoonrakerClientMock::KlippyState::READY);

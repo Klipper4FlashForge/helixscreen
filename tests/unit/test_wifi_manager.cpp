@@ -16,6 +16,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <thread>
 
 #include "../catch_amalgamated.hpp"
@@ -76,17 +77,22 @@ struct SysFixture {
  *
  * Tests verify instance-based WiFiManager with pluggable backend system:
  * - Instance creation and destruction (no static methods)
- * - Backend initialization (starts disabled by default)
+ * - Backend initialization (factory returns a constructed-but-idle backend)
  * - Scan lifecycle with callback preservation
  * - Connection management
  * - Status queries
  * - Edge cases and error handling
  *
- * Note: On macOS, tests use mock backend. On Linux, may use real wpa_supplicant.
+ * Every case that asserts on backend DATA calls the fixture's
+ * use_mock_backend() first. WifiBackend::create() otherwise picks the platform
+ * backend — CoreWLAN on macOS, wpa_supplicant/NetworkManager on Linux — and
+ * neither can serve the seeded network list these assertions are written
+ * against, nor start at all on a dev machine or a CI runner.
  *
  * CRITICAL BUGS CAUGHT:
  * - Callback clearing bug: stop_scan() was clearing scan_callback_
- * - Backend initialization bug: Mock backend started by factory (should be disabled)
+ * - Backend initialization bug: backend started by the factory instead of by
+ *   WiFiManager after its event callbacks are registered
  * - No callback registration: Networks weren't populating
  */
 
@@ -108,6 +114,29 @@ static LVGLInitializer lvgl_init;
 // ============================================================================
 // Test Fixtures
 // ============================================================================
+
+namespace {
+
+// Forces WifiBackend::create() down its mock branch (test_mode && !use_real_wifi)
+// and restores the previous runtime config on destruction.
+struct MockWifiGuard {
+    bool prev_test_mode;
+    bool prev_use_real_wifi;
+    MockWifiGuard() {
+        auto* cfg = get_runtime_config();
+        prev_test_mode = cfg->test_mode;
+        prev_use_real_wifi = cfg->use_real_wifi;
+        cfg->test_mode = true;
+        cfg->use_real_wifi = false;
+    }
+    ~MockWifiGuard() {
+        auto* cfg = get_runtime_config();
+        cfg->test_mode = prev_test_mode;
+        cfg->use_real_wifi = prev_use_real_wifi;
+    }
+};
+
+} // namespace
 
 class WiFiManagerTestFixture {
   public:
@@ -145,12 +174,39 @@ class WiFiManagerTestFixture {
         connection_error = error;
     }
 
+    // Rebuild the manager on the mock backend.
+    //
+    // WifiBackend::create() picks the platform backend (CoreWLAN on macOS,
+    // wpa_supplicant/NM on Linux) unless the runtime config says to mock. Every
+    // case that asserts on backend *data* — 10 seeded networks, scan results
+    // arriving, a radio that actually toggles — is asserting mock-backend
+    // behaviour and can only ever pass against the mock. On a developer Mac the
+    // real backend refuses to start at all ("Location permission not
+    // determined"); in CI there is no wpa_supplicant socket. Same pattern the
+    // observer tests below use.
+    //
+    // The guard is a member so it outlives the rebuild: WifiBackend::create()
+    // reads the runtime config at construction time, but WiFiManager's
+    // wpa_supplicant fallback path consults it again later.
+    void use_mock_backend() {
+        mock_guard_.emplace();
+        wifi_manager.reset();
+        wifi_manager = std::make_shared<WiFiManager>(/*silent=*/true);
+        wifi_manager->init_self_reference(wifi_manager);
+    }
+
     // Helper: Wait for condition with timeout (WiFi backend uses std::thread, not LVGL timers)
+    //
+    // Drains the UpdateQueue each pass: WiFiManager hands scan results and state
+    // transitions to the main thread through queue_update(), so a poll loop that
+    // never drains waits forever on a callback that is already sitting in the
+    // queue.
     bool wait_for_condition(std::function<bool()> condition, int timeout_ms = 5000) {
         auto start = std::chrono::steady_clock::now();
         auto end = start + std::chrono::milliseconds(timeout_ms);
 
         while (std::chrono::steady_clock::now() < end) {
+            helix::ui::UpdateQueue::instance().drain();
             if (condition()) {
                 return true; // Condition met
             }
@@ -164,6 +220,9 @@ class WiFiManagerTestFixture {
     // Test instance (shared_ptr for init_self_reference support)
     std::shared_ptr<WiFiManager> wifi_manager;
 
+    // Set by use_mock_backend(); must outlive wifi_manager's rebuild.
+    std::optional<MockWifiGuard> mock_guard_;
+
     // Test state
     int scan_callback_count = 0;
     std::vector<WiFiNetwork> last_networks;
@@ -176,7 +235,7 @@ class WiFiManagerTestFixture {
 // ============================================================================
 
 TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFiManager instance creation",
-                 "[.disabled][macos-wifi][network][instance]") {
+                 "[.slow][macos-wifi][network][instance]") {
     SECTION("Instance created successfully") {
         REQUIRE(wifi_manager != nullptr);
     }
@@ -209,33 +268,29 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFiManager instance creation",
 // ============================================================================
 
 TEST_CASE_METHOD(WiFiManagerTestFixture, "Backend initialization state",
-                 "[.disabled][macos-wifi][network][backend][init]") {
-    SECTION("Backend starts disabled by default") {
-// CRITICAL: This catches the bug where mock backend was auto-started
-#ifdef __APPLE__
-        // macOS uses mock backend - should start disabled
-        REQUIRE_FALSE(wifi_manager->is_enabled());
+                 "[.slow][macos-wifi][network][backend][init]") {
+#ifndef HELIX_ENABLE_MOCKS
+    SKIP("Mocks disabled in this build — no backend to assert against");
 #else
-        // Linux may have different behavior depending on system state
-        INFO("Backend enabled: " << wifi_manager->is_enabled());
-#endif
+    use_mock_backend();
+
+    SECTION("Factory does not auto-start the backend") {
+        // CRITICAL: catches the bug where the factory started the backend
+        // itself. WifiBackend::create() must hand back a constructed-but-idle
+        // backend; WiFiManager registers its event callbacks and only THEN
+        // calls start_async(), so no READY / INIT_FAILED event can be missed.
+        auto backend = WifiBackend::create(/*silent=*/true);
+        REQUIRE(backend != nullptr);
+        REQUIRE_FALSE(backend->is_running());
     }
 
     SECTION("Explicit enable starts backend") {
-        // Skip if no WiFi hardware available (e.g., Mac Mini without WiFi)
-        if (!wifi_manager->has_hardware()) {
-            SKIP("No WiFi hardware available on this machine");
-        }
         bool success = wifi_manager->set_enabled(true);
         REQUIRE(success);
         REQUIRE(wifi_manager->is_enabled());
     }
 
     SECTION("Explicit disable stops backend") {
-        // Skip if no WiFi hardware available (e.g., Mac Mini without WiFi)
-        if (!wifi_manager->has_hardware()) {
-            SKIP("No WiFi hardware available on this machine");
-        }
         // Enable first
         wifi_manager->set_enabled(true);
         REQUIRE(wifi_manager->is_enabled());
@@ -247,11 +302,10 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "Backend initialization state",
     }
 
     SECTION("Backend lifecycle: start → stop → start") {
-        // Skip if no WiFi hardware available (e.g., Mac Mini without WiFi)
-        if (!wifi_manager->has_hardware()) {
-            SKIP("No WiFi hardware available on this machine");
-        }
-        // Initial: disabled
+        // WiFiManager starts its backend from the constructor and the radio
+        // comes up on, so establish the disabled starting point explicitly
+        // rather than assuming it.
+        wifi_manager->set_enabled(false);
         REQUIRE_FALSE(wifi_manager->is_enabled());
 
         // First start
@@ -266,6 +320,7 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "Backend initialization state",
         wifi_manager->set_enabled(true);
         REQUIRE(wifi_manager->is_enabled());
     }
+#endif // HELIX_ENABLE_MOCKS
 }
 
 // ============================================================================
@@ -273,7 +328,14 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "Backend initialization state",
 // ============================================================================
 
 TEST_CASE_METHOD(WiFiManagerTestFixture, "Scan callback preservation",
-                 "[.disabled][macos-wifi][network][scan][callback]") {
+                 "[.slow][macos-wifi][network][scan][callback]") {
+#ifndef HELIX_ENABLE_MOCKS
+    SKIP("Mocks disabled in this build — no scan results to assert against");
+#else
+    // Mock backend: trigger_scan() sleeps 2s on a worker before firing
+    // SCAN_COMPLETE, so every wait below needs headroom past that.
+    use_mock_backend();
+
     SECTION("start_scan registers callback") {
         wifi_manager->set_enabled(true);
 
@@ -283,14 +345,11 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "Scan callback preservation",
 
         wifi_manager->start_scan(callback);
 
-// Trigger LVGL timer processing to fire scan event
-#ifdef __APPLE__
-        bool got_callback = wait_for_condition([this]() { return scan_callback_count > 0; }, 3000);
+        bool got_callback = wait_for_condition([this]() { return scan_callback_count > 0; }, 5000);
 
         REQUIRE(got_callback);
         REQUIRE(scan_callback_count == 1);
         REQUIRE(last_networks.size() > 0);
-#endif
     }
 
     SECTION("stop_scan clears callback to prevent stale-pointer crashes") {
@@ -310,12 +369,10 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "Scan callback preservation",
         // Re-starting with the same callback re-registers it
         wifi_manager->start_scan(callback);
 
-#ifdef __APPLE__
-        bool got_callback = wait_for_condition([this]() { return scan_callback_count > 0; }, 3000);
+        bool got_callback = wait_for_condition([this]() { return scan_callback_count > 0; }, 5000);
 
         REQUIRE(got_callback);
         REQUIRE(scan_callback_count >= 1);
-#endif
     }
 
     SECTION("Callback works across multiple stop/start cycles") {
@@ -336,11 +393,9 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "Scan callback preservation",
         // Third scan cycle
         wifi_manager->start_scan(callback);
 
-#ifdef __APPLE__
-        bool got_callback = wait_for_condition([this]() { return scan_callback_count > 0; }, 3000);
+        bool got_callback = wait_for_condition([this]() { return scan_callback_count > 0; }, 5000);
 
         REQUIRE(got_callback);
-#endif
     }
 
     SECTION("Multiple start_scan calls with different callbacks") {
@@ -362,11 +417,9 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "Scan callback preservation",
         // First scan with callback1
         wifi_manager->start_scan(callback1);
 
-#ifdef __APPLE__
-        wait_for_condition([&callback1_count]() { return callback1_count > 0; }, 3000);
+        wait_for_condition([&callback1_count]() { return callback1_count > 0; }, 5000);
         REQUIRE(callback1_count >= 1);
         REQUIRE(callback2_count == 0);
-#endif
 
         // Stop and restart with callback2
         wifi_manager->stop_scan();
@@ -374,12 +427,11 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "Scan callback preservation",
 
         wifi_manager->start_scan(callback2);
 
-#ifdef __APPLE__
-        wait_for_condition([&callback2_count]() { return callback2_count > 0; }, 3000);
+        wait_for_condition([&callback2_count]() { return callback2_count > 0; }, 5000);
         REQUIRE(callback1_count == 0); // Old callback not invoked
         REQUIRE(callback2_count >= 1); // New callback invoked
-#endif
     }
+#endif // HELIX_ENABLE_MOCKS
 }
 
 // ============================================================================
@@ -387,32 +439,29 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "Scan callback preservation",
 // ============================================================================
 
 TEST_CASE_METHOD(WiFiManagerTestFixture, "Network scanning lifecycle",
-                 "[.disabled][macos-wifi][network][scan]") {
-    SECTION("Synchronous scan returns networks") {
-        if (!wifi_manager->has_hardware()) {
-            SKIP("No WiFi hardware available");
-        }
+                 "[.slow][macos-wifi][network][scan]") {
+#ifndef HELIX_ENABLE_MOCKS
+    SKIP("Mocks disabled in this build — no scan results to assert against");
+#else
+    use_mock_backend();
 
+    SECTION("Synchronous scan returns networks") {
         wifi_manager->set_enabled(true);
 
         auto networks = wifi_manager->scan_once();
 
-#ifdef __APPLE__
-        // Mock backend should return 10 networks
+        // The mock seeds 11 BSS rows, two of which share the SSID "Office-Main"
+        // (2.4 + 5GHz). get_scan_results() merges per SSID, so 10 rows out.
         REQUIRE(networks.size() == 10);
-#else
-        INFO("Networks found: " << networks.size());
-#endif
     }
 
     SECTION("Scan with backend disabled returns empty/fails") {
-        // Backend starts disabled - scan should fail gracefully
-        auto networks = wifi_manager->scan_once();
+        wifi_manager->set_enabled(false);
 
-#ifdef __APPLE__
-        // Mock backend may still return data when disabled (test implementation detail)
-        INFO("Networks found with disabled backend: " << networks.size());
-#endif
+        // Radio off is not backend-stopped: get_scan_results() still serves the
+        // last-known list rather than throwing. The contract under test is only
+        // that it returns rather than crashing.
+        REQUIRE_NOTHROW(wifi_manager->scan_once());
     }
 
     SECTION("Stop scan is idempotent") {
@@ -427,7 +476,7 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "Network scanning lifecycle",
         REQUIRE_NOTHROW(wifi_manager->start_scan([](const std::vector<WiFiNetwork>&) {}));
     }
 
-    SECTION("Periodic scan triggers callback multiple times") {
+    SECTION("Periodic scan delivers at least the first result") {
         wifi_manager->set_enabled(true);
 
         auto callback = [this](const std::vector<WiFiNetwork>& networks) {
@@ -436,16 +485,12 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "Network scanning lifecycle",
 
         wifi_manager->start_scan(callback);
 
-#ifdef __APPLE__
-        // Wait for at least 2 scan callbacks (periodic scanning every 7s)
-        // First scan: ~2s, second scan: ~9s total
-        bool got_multiple =
-            wait_for_condition([this]() { return scan_callback_count >= 2; }, 10000);
-
-        // Note: May only get 1 callback if test runs too fast
-        REQUIRE(scan_callback_count >= 1);
-#endif
+        // start_scan() triggers the first scan immediately; subsequent ones ride
+        // an LVGL timer this fixture does not pump, so only the first is
+        // guaranteed. Mock scan worker sleeps 2s before SCAN_COMPLETE.
+        REQUIRE(wait_for_condition([this]() { return scan_callback_count >= 1; }, 5000));
     }
+#endif // HELIX_ENABLE_MOCKS
 }
 
 // ============================================================================
@@ -453,7 +498,12 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "Network scanning lifecycle",
 // ============================================================================
 
 TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi connection management",
-                 "[.disabled][macos-wifi][network][connection]") {
+                 "[.slow][macos-wifi][network][connection]") {
+#ifndef HELIX_ENABLE_MOCKS
+    SKIP("Mocks disabled in this build — no network to connect to");
+#else
+    use_mock_backend();
+
     SECTION("Initial connection state is disconnected") {
         REQUIRE_FALSE(wifi_manager->is_connected());
         REQUIRE(wifi_manager->get_connected_ssid().empty());
@@ -462,34 +512,35 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi connection management",
     }
 
     SECTION("Connect to network (mock)") {
-#ifdef __APPLE__
         wifi_manager->set_enabled(true);
 
         auto callback = [this](bool success, const std::string& error) {
             this->connection_callback(success, error);
         };
 
-        // Get available networks first — skip if WiFi unavailable (no location permission in CI)
         auto networks = wifi_manager->scan_once();
-        if (networks.empty()) {
-            SKIP("WiFi scanning unavailable (no location permission)");
-        }
+        REQUIRE_FALSE(networks.empty());
 
-        // Try connecting to first network
-        wifi_manager->connect(networks[0].ssid, "test_password", callback);
+        // Every secured entry in the mock's seed list shares this password, and
+        // networks[0] is the strongest (so it cannot take the <20%-signal
+        // random-timeout branch). The wrong-password path is deliberately NOT
+        // exercised here: AUTH_FAILED resolves through a 4s LVGL grace timer
+        // (start_auth_fail_grace) and this fixture pumps no LVGL timers.
+        wifi_manager->connect(networks[0].ssid, "12345678", callback);
 
-        // Wait for connection result
+        // Mock connect_thread_func sleeps 2000+rng()%1000ms before resolving.
         bool got_result = wait_for_condition(
-            [this]() { return !connection_error.empty() || connection_success; }, 5000);
+            [this]() { return !connection_error.empty() || connection_success; }, 6000);
 
-        REQUIRE(got_result);
         INFO("Connection result: success=" << connection_success << ", error=" << connection_error);
-#endif
+        REQUIRE(got_result);
+        REQUIRE(connection_success);
     }
 
     SECTION("Disconnect is safe when not connected") {
         REQUIRE_NOTHROW(wifi_manager->disconnect());
     }
+#endif // HELIX_ENABLE_MOCKS
 }
 
 // ============================================================================
@@ -497,7 +548,7 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi connection management",
 // ============================================================================
 
 TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi status queries",
-                 "[.disabled][macos-wifi][network][status]") {
+                 "[.slow][macos-wifi][network][status]") {
     SECTION("Hardware detection") {
         bool has_wifi = wifi_manager->has_hardware();
 
@@ -538,7 +589,12 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi status queries",
 // ============================================================================
 
 TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi edge cases",
-                 "[.disabled][macos-wifi][network][edge-cases]") {
+                 "[.slow][macos-wifi][network][edge-cases]") {
+#ifndef HELIX_ENABLE_MOCKS
+    SKIP("Mocks disabled in this build — no backend to toggle");
+#else
+    use_mock_backend();
+
     SECTION("Rapid enable/disable cycles") {
         for (int i = 0; i < 5; i++) {
             wifi_manager->set_enabled(true);
@@ -550,9 +606,6 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi edge cases",
     }
 
     SECTION("Idempotent enable") {
-        if (!wifi_manager->has_hardware()) {
-            SKIP("No WiFi hardware available on this machine");
-        }
         wifi_manager->set_enabled(true);
         wifi_manager->set_enabled(true); // Second call is no-op
         REQUIRE(wifi_manager->is_enabled());
@@ -569,9 +622,6 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi edge cases",
     }
 
     SECTION("Destructor cleanup during active scan") {
-        if (!wifi_manager->has_hardware()) {
-            SKIP("No WiFi hardware available on this machine");
-        }
         wifi_manager->set_enabled(true);
         wifi_manager->start_scan([](const std::vector<WiFiNetwork>&) {});
 
@@ -580,33 +630,31 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi edge cases",
     }
 
     SECTION("Destructor cleanup during active connection") {
-#ifdef __APPLE__
-        if (!wifi_manager->has_hardware()) {
-            SKIP("No WiFi hardware available on this machine");
-        }
         wifi_manager->set_enabled(true);
 
         auto networks = wifi_manager->scan_once();
-        if (networks.size() > 0) {
-            wifi_manager->connect(networks[0].ssid, "password", [](bool, const std::string&) {});
+        REQUIRE_FALSE(networks.empty());
+        wifi_manager->connect(networks[0].ssid, "password", [](bool, const std::string&) {});
 
-            // Destroy while connecting - should cleanup safely
-            REQUIRE_NOTHROW(wifi_manager.reset());
-        }
-#endif
+        // Destroy while connecting - should cleanup safely
+        REQUIRE_NOTHROW(wifi_manager.reset());
     }
+#endif // HELIX_ENABLE_MOCKS
 }
 
 // ============================================================================
 // Network Information Tests
 // ============================================================================
 
-// DISABLED: scan_once() doesn't wait for scan completion - needs to be rewritten to use
-// async scan with callback or explicitly wait for thread completion (2s delay)
-TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi network information",
-                 "[network][networks][.disabled]") {
+// Asserts on the mock backend's seeded network list, so it runs against the mock
+// on every platform rather than whatever the machine's real radio can see.
+TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi network information", "[network][networks][.slow]") {
+#ifndef HELIX_ENABLE_MOCKS
+    SKIP("Mocks disabled in this build — no seeded network list to assert against");
+#else
+    use_mock_backend();
+
     SECTION("Network data validity") {
-#ifdef __APPLE__
         wifi_manager->set_enabled(true);
         auto networks = wifi_manager->scan_once();
 
@@ -625,11 +673,9 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi network information",
                 REQUIRE_FALSE(net.security_type.empty());
             }
         }
-#endif
     }
 
     SECTION("Networks sorted by signal strength") {
-#ifdef __APPLE__
         wifi_manager->set_enabled(true);
         auto networks = wifi_manager->scan_once();
 
@@ -637,11 +683,9 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi network information",
         for (size_t i = 1; i < networks.size(); i++) {
             REQUIRE(networks[i - 1].signal_strength >= networks[i].signal_strength);
         }
-#endif
     }
 
     SECTION("Network security mix") {
-#ifdef __APPLE__
         wifi_manager->set_enabled(true);
         auto networks = wifi_manager->scan_once();
 
@@ -658,8 +702,8 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi network information",
         // Mock should provide mix of secured/unsecured networks
         REQUIRE(has_secured);
         REQUIRE(has_open);
-#endif
     }
+#endif // HELIX_ENABLE_MOCKS
 }
 
 // ============================================================================
@@ -674,27 +718,10 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "WiFi network information",
 //
 // These tests use the mock backend's connect flow — slow (2-3s per test
 // because connect_thread_func sleeps 2000+rng()%1000ms), which is why
-// they're tagged [.disabled] alongside the other wifi_manager integration
+// they're tagged [.slow] alongside the other wifi_manager integration
 // tests. Run locally with './build/bin/helix-tests [observers]'.
 
 namespace {
-
-struct MockWifiGuard {
-    bool prev_test_mode;
-    bool prev_use_real_wifi;
-    MockWifiGuard() {
-        auto* cfg = get_runtime_config();
-        prev_test_mode = cfg->test_mode;
-        prev_use_real_wifi = cfg->use_real_wifi;
-        cfg->test_mode = true;
-        cfg->use_real_wifi = false;
-    }
-    ~MockWifiGuard() {
-        auto* cfg = get_runtime_config();
-        cfg->test_mode = prev_test_mode;
-        cfg->use_real_wifi = prev_use_real_wifi;
-    }
-};
 
 // Pick a secured network with strong signal from the mock backend's seed list.
 // See WifiBackendMock::init_mock_networks — all secured entries share password
@@ -721,7 +748,7 @@ NetworkPick pick_strong_secured_network(WiFiManager& wifi) {
 } // namespace
 
 TEST_CASE_METHOD(WiFiManagerTestFixture, "State observer fires when backend dispatches CONNECTED",
-                 "[.disabled][macos-wifi][network][observers][slow]") {
+                 "[.slow][macos-wifi][network][observers]") {
 #ifdef HELIX_ENABLE_MOCKS
     MockWifiGuard mock_guard;
 
@@ -758,7 +785,7 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "State observer fires when backend disp
 }
 
 TEST_CASE_METHOD(WiFiManagerTestFixture, "State observer with expired token is not invoked",
-                 "[.disabled][macos-wifi][network][observers][slow]") {
+                 "[.slow][macos-wifi][network][observers]") {
 #ifdef HELIX_ENABLE_MOCKS
     MockWifiGuard mock_guard;
 
@@ -804,7 +831,7 @@ TEST_CASE_METHOD(WiFiManagerTestFixture, "State observer with expired token is n
 // fails first.
 TEST_CASE_METHOD(WiFiManagerTestFixture,
                  "State observer added after READY is not replayed the READY",
-                 "[.disabled][macos-wifi][network][observers][slow]") {
+                 "[.slow][macos-wifi][network][observers]") {
 #ifdef HELIX_ENABLE_MOCKS
     MockWifiGuard mock_guard;
 

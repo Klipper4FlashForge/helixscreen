@@ -12,10 +12,13 @@
 #include "memory_monitor.h"
 #include "observer_factory.h"
 #include "thumbnail_cache.h"
+#include "thumbnail_load_context.h"
 #include "thumbnail_processor.h"
 
 #include <spdlog/spdlog.h>
 
+#include <cassert>
+#include <cstring>
 #include <memory>
 #include <stdexcept>
 
@@ -110,13 +113,37 @@ void ActivePrintMediaManager::clear_thumbnail_source() {
     spdlog::debug("[ActivePrintMediaManager] Thumbnail source cleared");
 }
 
-void ActivePrintMediaManager::set_thumbnail_path(const std::string& path) {
-    // Set the thumbnail path directly (bypasses Moonraker API lookup)
-    printer_state_.set_print_thumbnail_path(path);
-    // A pre-extracted thumbnail (USB / embedded G-code) counts as loaded for
-    // retry purposes; an empty path clears that state.
-    thumbnail_loaded_ = !path.empty();
-    spdlog::debug("[ActivePrintMediaManager] Thumbnail path set directly: {}", path);
+void ActivePrintMediaManager::publish_thumbnail(const std::string& for_file,
+                                                const std::string& path) {
+    assert(!path.empty() && "never publish an empty thumbnail path - use kNoThumbnailPlaceholder");
+    printer_state_.set_print_thumbnail(for_file, path);
+}
+
+void ActivePrintMediaManager::set_thumbnail_path(const std::string& for_file,
+                                                 const std::string& path) {
+    // Set the thumbnail path directly (bypasses Moonraker API lookup). The
+    // caller owns the identity: this lands at print-start-confirmed time, which
+    // can arrive before Moonraker reports the filename, so neither
+    // thumbnail_source_filename_ nor last_effective_filename_ is trustworthy
+    // here — the latter may still name the PREVIOUS print.
+    // An empty path is the caller saying "no pre-extracted thumbnail"; that is
+    // published as the placeholder, never as "".
+    publish_thumbnail(for_file, path.empty() ? kNoThumbnailPlaceholder : path);
+    // A pre-extracted thumbnail (USB / embedded G-code) skips the fetch, but it
+    // is NOT a completed load: recovery stays armed.
+    thumbnail_origin_ = path.empty() ? ThumbnailOrigin::None : ThumbnailOrigin::PreSet;
+    spdlog::debug("[ActivePrintMediaManager] Thumbnail path set directly for '{}': {}", for_file,
+                  path);
+}
+
+bool ActivePrintMediaManager::has_thumbnail_for(const std::string& filename) {
+    const char* current = lv_subject_get_string(printer_state_.get_print_thumbnail_path_subject());
+    // The placeholder is what "no thumbnail" looks like on the wire now that the
+    // empty string is never published. It must NOT read as a thumbnail here, or
+    // the clear below would make load_thumbnail_for_file() skip its own fetch
+    // and every print would stop at the placeholder.
+    return current && current[0] != '\0' && strcmp(current, kNoThumbnailPlaceholder) != 0 &&
+           !filename.empty() && printer_state_.get_print_thumbnail_file() == filename;
 }
 
 void ActivePrintMediaManager::process_filename(const char* raw_filename) {
@@ -167,38 +194,48 @@ void ActivePrintMediaManager::process_filename(const char* raw_filename) {
 
     // Load thumbnail if filename changed
     if (!effective_filename.empty() && effective_filename != last_loaded_thumbnail_filename_) {
-        // Clear stale thumbnail path from the previous print so load_thumbnail_for_file()
-        // doesn't short-circuit with the old thumbnail. This fixes the bug where starting
-        // a new print via Mainsail would show the previous print's thumbnail.
-        // Only clear if we previously loaded a thumbnail for a different file — if
-        // last_loaded_thumbnail_filename_ is empty, this is the first print and any
-        // existing thumbnail was intentionally pre-set (e.g., USB/PrintStartController).
-        if (!last_loaded_thumbnail_filename_.empty()) {
-            printer_state_.set_print_thumbnail_path("");
+        // Whether the published path survives is decided by the path's own
+        // identity, not by this manager's history. A path published FOR this
+        // file (USB / PrintStartController pre-set) is kept; anything else is
+        // cleared so load_thumbnail_for_file() can't short-circuit on it.
+        //
+        // The old guard asked "have WE loaded a thumbnail before?" and skipped
+        // the clear when we hadn't. A manager that never processed the previous
+        // print — fresh after a reconnect or a restart mid-print — therefore
+        // adopted that print's path as if it were ours.
+        const bool preset_for_this_file = has_thumbnail_for(effective_filename);
+        if (!preset_for_this_file) {
+            // The clear belongs to the file we are about to load for: "nothing
+            // yet for effective_filename", not "nothing for the previous print".
+            publish_thumbnail(effective_filename, kNoThumbnailPlaceholder);
         }
         // New file: drop any pending retry for the previous file and reset
         // the per-filename retry budget.
         cancel_thumbnail_retry();
         thumbnail_retry_count_ = 0;
-        thumbnail_loaded_ = false;
+        thumbnail_origin_ = preset_for_this_file ? ThumbnailOrigin::PreSet : ThumbnailOrigin::None;
         load_thumbnail_for_file(effective_filename);
         last_loaded_thumbnail_filename_ = effective_filename;
     }
 }
 
 void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filename) {
-    // Check if thumbnail is already set (e.g., PrintStartController set it from USB).
-    // We still need metadata for layer_count and estimated_time, so don't early-return.
-    const char* current_thumb =
-        lv_subject_get_string(printer_state_.get_print_thumbnail_path_subject());
-    bool skip_thumbnail = (current_thumb && current_thumb[0] != '\0');
+    // A path already published FOR THIS FILE (e.g., PrintStartController set it
+    // from USB) makes the thumbnail download unnecessary. We still need metadata
+    // for layer_count and estimated_time, so don't early-return. A path
+    // published for some OTHER file is not ours to reuse, so it does not skip
+    // anything.
+    const bool skip_thumbnail = has_thumbnail_for(filename);
     if (skip_thumbnail) {
         spdlog::debug(
-            "[ActivePrintMediaManager] Thumbnail already set ({}), will fetch metadata only",
-            current_thumb);
-        // A pre-set path (USB / PrintStartController) counts as loaded — the
-        // notification re-triggers only care about a MISSING thumbnail.
-        thumbnail_loaded_ = true;
+            "[ActivePrintMediaManager] Thumbnail already set for '{}', will fetch metadata only",
+            filename);
+        // Record the provenance WITHOUT claiming the load finished: a pre-set
+        // path skips the fetch but must leave the retry ladder and the
+        // notification re-triggers armed. Only a completed fetch sets Fetched.
+        if (thumbnail_origin_ != ThumbnailOrigin::Fetched) {
+            thumbnail_origin_ = ThumbnailOrigin::PreSet;
+        }
     }
 
     // Skip if no API available
@@ -207,11 +244,15 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
         return;
     }
 
-    // Increment generation to invalidate any in-flight async operations
-    // (only after early-return checks to avoid incrementing when no async op starts).
-    // Relaxed: the value is only compared for equality across loads; the actual
-    // happens-before ordering of the apply is provided by the UpdateQueue.
-    uint32_t current_gen = thumbnail_load_generation_.fetch_add(1, std::memory_order_relaxed) + 1;
+    // One staleness context per load. Creating it bumps thumbnail_load_generation_,
+    // so every callback still in flight from an earlier load now reports stale.
+    // Created only after the early-return checks, so no generation is burned when
+    // no async op starts. The context also carries our lifetime token, which is
+    // what lets it be handed straight to the thumbnail cache below.
+    //
+    // NOTE: is_valid() consults that token, so it is NOT a thread guard — every
+    // check below sits inside an already-marshalled tok.defer() body (L081 Mech C).
+    ThumbnailLoadContext ctx = ThumbnailLoadContext::create(lifetime_, &thumbnail_load_generation_);
 
     // Resolve to original filename if this is a modified temp file
     // (Moonraker only has metadata for original files, not modified copies)
@@ -224,24 +265,20 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
     // THREADING: get_file_metadata invokes its success callback on the Moonraker
     // WebSocket background thread. The ONLY work allowed on that thread is
     // this-free local parsing — everything that touches `this`, `printer_state_`,
-    // `api_`, the generation counter, or any subject is marshalled to the main
-    // thread via tok.defer(). The metadata struct is copied by value into the
-    // deferred body so the bg-thread reference can't dangle.
+    // `api_`, the load context, or any subject is marshalled to the main thread
+    // via tok.defer(). The metadata struct is copied by value into the deferred
+    // body so the bg-thread reference can't dangle.
     api_->files().get_file_metadata(
         metadata_filename,
-        [this, tok = lifetime_.token(), current_gen, skip_thumbnail, filename,
+        [this, tok = lifetime_.token(), ctx, skip_thumbnail, filename,
          metadata_filename](const FileMetadata& metadata) {
             // bg thread: copy the metadata, then marshal ALL member access to main.
-            tok.defer("ActivePrintMediaManager::on_metadata", [this, current_gen, skip_thumbnail,
-                                                               filename, metadata_filename,
-                                                               metadata]() {
+            tok.defer("ActivePrintMediaManager::on_metadata", [this, ctx, skip_thumbnail, filename,
+                                                               metadata_filename, metadata]() {
                 // main thread, `this` valid + lifetime-checked.
                 // Drop stale callbacks superseded by a newer load.
-                if (current_gen != thumbnail_load_generation_.load(std::memory_order_relaxed)) {
-                    spdlog::trace("[ActivePrintMediaManager] Stale metadata callback (gen {} != "
-                                  "{}), ignoring",
-                                  current_gen,
-                                  thumbnail_load_generation_.load(std::memory_order_relaxed));
+                if (!ctx.is_valid()) {
+                    spdlog::trace("[ActivePrintMediaManager] Stale metadata callback, ignoring");
                     return;
                 }
 
@@ -276,16 +313,15 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
                     bool need_est_time = (metadata.estimated_time <= 0);
                     api_->transfers().download_file_partial(
                         "gcodes", metadata_filename, 16 * 1024,
-                        [this, tok = lifetime_.token(), current_gen,
+                        [this, tok = lifetime_.token(), ctx,
                          need_est_time](const std::string& content) {
                             // bg thread (HttpExecutor::slow worker): parse locally only.
                             auto header =
                                 helix::gcode::extract_header_metadata_from_content(content);
-                            // main thread: re-check generation + apply.
+                            // main thread: re-check staleness + apply.
                             tok.defer("ActivePrintMediaManager::on_gcode_header",
-                                      [this, current_gen, need_est_time, header]() {
-                                          if (current_gen != thumbnail_load_generation_.load(
-                                                                 std::memory_order_relaxed)) {
+                                      [this, ctx, need_est_time, header]() {
+                                          if (!ctx.is_valid()) {
                                               return;
                                           }
                                           if (header.layer_count > 0) {
@@ -349,30 +385,37 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
 
                 spdlog::debug("[ActivePrintMediaManager] Found thumbnail: {}", thumbnail_rel_path);
 
-                // Use detail-sized thumbnails (200-400px) — works for both card and detail
-                // views since LVGL scales down efficiently. We do NOT hand the thumbnail
-                // cache a lifetime/alive guard: its on_success fires on a bg thread, so we
-                // marshal back ourselves via tok.defer() and do the generation + lifetime
-                // re-check there. An empty ctx would make fetch_for_detail_view's internal
-                // ctx.is_valid() guard reject every result, so capture our lifetime token
-                // (its expired() check is benign — it only short-circuits the cache's call
-                // into our already-self-guarding success callback).
-                ThumbnailLoadContext ctx = ThumbnailLoadContext::capture(lifetime_);
+                // Detail-sized thumbnails (200-400px) — works for both card and detail
+                // views since LVGL scales down efficiently. The load's own context goes
+                // to the cache, so a result superseded by a newer load is dropped at the
+                // cache boundary; our success callback re-checks it after marshalling
+                // because the cache's guard alone says nothing about `this`.
+                ThumbnailRequest req;
+                req.key = thumbnail_rel_path;
+                req.target =
+                    helix::ThumbnailProcessor::get_target_for_display(helix::ThumbnailSize::Detail);
+                req.api = api_;
+                // Moonraker's mtime for the gcode file this thumbnail came out
+                // of. Without it the cache serves whatever it rendered the first
+                // time this filename was printed, so a re-slice under the same
+                // name shows the old model for the entire job. Zero (metadata
+                // that omits it) degrades to skipping validation, as before.
+                req.source_modified = static_cast<time_t>(metadata.modified);
 
-                get_thumbnail_cache().fetch_for_detail_view(
-                    api_, thumbnail_rel_path, ctx,
-                    [this, tok = lifetime_.token(), current_gen](const std::string& lvgl_path) {
+                get_thumbnail_cache().fetch(
+                    req, ctx,
+                    [this, tok = lifetime_.token(), ctx, filename](const std::string& lvgl_path,
+                                                                   bool /*degraded*/) {
                         // bg thread (thumbnail prescale worker): no member access here.
                         std::string path = lvgl_path;
-                        tok.defer("ActivePrintMediaManager::on_thumbnail", [this, current_gen,
+                        tok.defer("ActivePrintMediaManager::on_thumbnail", [this, ctx, filename,
                                                                             path]() {
-                            if (current_gen !=
-                                thumbnail_load_generation_.load(std::memory_order_relaxed)) {
+                            if (!ctx.is_valid()) {
                                 spdlog::trace("[ActivePrintMediaManager] Stale thumbnail "
                                               "callback, ignoring");
                                 return;
                             }
-                            printer_state_.set_print_thumbnail_path(path);
+                            publish_thumbnail(filename, path);
                             if (thumbnail_retry_count_ > 0) {
                                 spdlog::info("[ActivePrintMediaManager] Thumbnail loaded after "
                                              "{} retries: {}",
@@ -381,21 +424,19 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
                                 spdlog::info("[ActivePrintMediaManager] Thumbnail path set: {}",
                                              path);
                             }
-                            thumbnail_loaded_ = true;
+                            thumbnail_origin_ = ThumbnailOrigin::Fetched;
                             thumbnail_retry_count_ = 0;
                             cancel_thumbnail_retry();
                             helix::MemoryMonitor::log_now("thumbnail_loaded", spdlog::level::debug);
                         });
                     },
-                    [this, tok = lifetime_.token(), current_gen,
-                     filename](const std::string& error) {
+                    [this, tok = lifetime_.token(), ctx, filename](const std::string& error) {
                         // bg thread (HTTP worker): copy the message, marshal
                         // ALL member access (retry bookkeeping) to main.
                         std::string message = error;
                         tok.defer("ActivePrintMediaManager::on_thumbnail_error",
-                                  [this, current_gen, filename, message = std::move(message)]() {
-                                      if (current_gen != thumbnail_load_generation_.load(
-                                                             std::memory_order_relaxed)) {
+                                  [this, ctx, filename, message = std::move(message)]() {
+                                      if (!ctx.is_valid()) {
                                           return; // superseded by a newer load
                                       }
                                       spdlog::warn("[ActivePrintMediaManager] Thumbnail download "
@@ -407,25 +448,24 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
                     });
             });
         },
-        [this, tok = lifetime_.token(), current_gen, filename,
+        [this, tok = lifetime_.token(), ctx, filename,
          metadata_filename](const MoonrakerError& err) {
             // bg thread (WebSocket response router): copy the message, marshal
             // ALL member access (retry bookkeeping) to main. Happens when
             // Moonraker hasn't finished scanning a just-uploaded file
             // (OrcaSlicer upload-and-print) or on transient RPC failures.
             std::string message = err.message;
-            tok.defer(
-                "ActivePrintMediaManager::on_metadata_error",
-                [this, current_gen, filename, metadata_filename, message = std::move(message)]() {
-                    if (current_gen != thumbnail_load_generation_.load(std::memory_order_relaxed)) {
-                        return; // superseded by a newer load
-                    }
-                    spdlog::warn("[ActivePrintMediaManager] Thumbnail metadata fetch failed "
-                                 "for '{}' (attempt {}/{}): {}",
-                                 metadata_filename, thumbnail_retry_count_ + 1,
-                                 kMaxThumbnailAttempts, message);
-                    schedule_thumbnail_retry(filename);
-                });
+            tok.defer("ActivePrintMediaManager::on_metadata_error",
+                      [this, ctx, filename, metadata_filename, message = std::move(message)]() {
+                          if (!ctx.is_valid()) {
+                              return; // superseded by a newer load
+                          }
+                          spdlog::warn("[ActivePrintMediaManager] Thumbnail metadata fetch failed "
+                                       "for '{}' (attempt {}/{}): {}",
+                                       metadata_filename, thumbnail_retry_count_ + 1,
+                                       kMaxThumbnailAttempts, message);
+                          schedule_thumbnail_retry(filename);
+                      });
         },
         true // silent - don't trigger RPC_ERROR event/toast
     );
@@ -505,8 +545,8 @@ void ActivePrintMediaManager::on_retry_timer_fired() {
         spdlog::debug("[ActivePrintMediaManager] Stale retry (superseded load), skipping");
         return;
     }
-    if (thumbnail_loaded_) {
-        return; // loaded in the meantime (e.g., set_thumbnail_path)
+    if (thumbnail_origin_ == ThumbnailOrigin::Fetched) {
+        return; // a fetch completed in the meantime
     }
     spdlog::info("[ActivePrintMediaManager] Retrying thumbnail load for '{}' (attempt {}/{})",
                  retry_filename_, thumbnail_retry_count_ + 1, kMaxThumbnailAttempts);
@@ -610,7 +650,7 @@ void ActivePrintMediaManager::handle_filelist_changed(const std::string& action,
                                                       const std::string& item_path,
                                                       const std::string& source_path) {
     // Main thread (marshalled via token.defer).
-    if (thumbnail_loaded_ || last_effective_filename_.empty()) {
+    if (thumbnail_origin_ == ThumbnailOrigin::Fetched || last_effective_filename_.empty()) {
         return;
     }
 
@@ -661,7 +701,7 @@ void ActivePrintMediaManager::handle_filelist_changed(const std::string& action,
 
 void ActivePrintMediaManager::retrigger_thumbnail_load(const char* reason) {
     // Main thread (marshalled via token.defer).
-    if (thumbnail_loaded_ || last_effective_filename_.empty()) {
+    if (thumbnail_origin_ == ThumbnailOrigin::Fetched || last_effective_filename_.empty()) {
         return;
     }
     spdlog::info("[ActivePrintMediaManager] {} - reloading thumbnail for '{}'", reason,
@@ -677,13 +717,17 @@ void ActivePrintMediaManager::clear_print_info() {
     last_loaded_thumbnail_filename_.clear();
     cancel_thumbnail_retry();
     thumbnail_retry_count_ = 0;
-    thumbnail_loaded_ = false;
+    thumbnail_origin_ = ThumbnailOrigin::None;
 
-    // Thread-safe clear of shared subjects (capture printer_state_ for testability)
-    PrinterState* state = &printer_state_;
-    helix::ui::queue_update([state]() {
-        state->set_print_thumbnail_path("");
-        state->set_print_display_filename("");
+    // Thread-safe clear of shared subjects. Deferred through the lifetime guard
+    // rather than a bare queue_update so the publish can route through
+    // publish_thumbnail() — the one enforcement point for the never-empty
+    // invariant — without a raw `this` outliving the manager.
+    lifetime_.defer("ActivePrintMediaManager::clear_print_info", [this]() {
+        // Everything for the previous print is being dropped, including the
+        // identity — there is no file this clear is "for".
+        publish_thumbnail("", kNoThumbnailPlaceholder);
+        printer_state_.set_print_display_filename("");
         spdlog::debug("[ActivePrintMediaManager] Cleared print info subjects");
     });
 }

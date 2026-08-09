@@ -15,6 +15,7 @@
  * - guess_main_led_strip()
  */
 
+#include "../helix_test_fixture.h"
 #include "moonraker_client_mock.h"
 #include "printer_hardware.h"
 
@@ -719,7 +720,8 @@ TEST_CASE("PrinterHardware::guess_main_led_strip", "[printer][guessing]") {
 // Real-world Mock Data Tests
 // ============================================================================
 
-TEST_CASE("PrinterHardware with MoonrakerClientMock data", "[printer][guessing][mock]") {
+TEST_CASE_METHOD(HelixTestFixture, "PrinterHardware with MoonrakerClientMock data",
+                 "[printer][guessing][mock]") {
     SECTION("VORON_24 mock data") {
         MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
         mock.discover_printer([]() {}); // Populate hardware

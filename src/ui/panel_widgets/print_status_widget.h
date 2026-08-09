@@ -13,6 +13,8 @@
 #include "print_history_manager.h"
 #include "subject_managed_panel.h"
 
+#include <atomic>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_set>
@@ -243,6 +245,14 @@ class PrintStatusWidget : public PanelWidget {
     // Guards async thumbnail callbacks and history observer from use-after-free
     helix::AsyncLifetimeGuard lifetime_;
 
+    // Supersedes in-flight idle thumbnail loads. Bumped by every
+    // reset_print_card_to_idle() through ThumbnailLoadContext, so a load started
+    // for the previous history head can no longer land on top of a newer one.
+    // Per-instance, unlike the static-inline subjects above: two dashboard
+    // widgets resolve independently, and a shared counter would have each
+    // cancelling the other's fetch.
+    std::atomic<uint32_t> idle_thumb_generation_{0};
+
     // Thermal tint for the detailed-active heater icons. Plain by-value members
     // of THIS instance — never on the shared/refcounted s_formatter_ below.
     // Dashboard widget instances are recycled by the panel manager: attach A ->
@@ -362,10 +372,21 @@ class PrintStatusWidget : public PanelWidget {
 
     // Print card update methods
     [[nodiscard]] std::string get_last_print_thumbnail_path() const;
+    /// Source gcode mtime for the history entry get_last_print_thumbnail_path()
+    /// resolved from, or 0 when history is unavailable or Moonraker omitted it.
+    /// Feeds ThumbnailRequest::source_modified so a re-slice under the same
+    /// filename invalidates the cached render instead of being served forever.
+    [[nodiscard]] time_t get_last_print_source_modified() const;
     void handle_print_card_clicked();
     void on_print_state_changed(PrintJobState state);
     void on_print_thumbnail_path_changed(const char* path);
     void reset_print_card_to_idle();
+    // Publish one resolved idle thumbnail everywhere it is shown: the two
+    // imperative Library-mode thumbs and idle_thumb_path_subject_, which the
+    // detailed-idle hero reads through bind_src. A member rather than a lambda
+    // inside reset_print_card_to_idle() so the async fetch completion publishes
+    // to all three too, instead of leaving the hero on the placeholder.
+    void set_thumb_on_widgets(const char* src);
     // Schedule reset_print_card_to_idle() on the next LVGL tick via lv_async_call.
     // Required when called from UpdateQueue::process_pending() contexts (subject
     // observers, token.defer bodies): reset_print_card_to_idle() does synchronous

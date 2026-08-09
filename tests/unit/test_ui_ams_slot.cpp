@@ -297,10 +297,18 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: move_label_to_layer reparents lab
 // Subject Binding Tests - Verify reactive updates from AmsState
 // ============================================================================
 
+// Covers the BACKEND -> subject leg of the material chain, which the widget-level
+// "[1065]" test above does not: sync_from_backend() must copy SlotInfo::material
+// into the per-slot material subject, from where the widget's own observer paints
+// the label. Together the two tests pin backend -> subject -> label end to end.
 TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: material label binds to subject",
-                 "[ui][ams_slot][binding][.skip][.skip]") {
-    // SKIP: sync_from_backend() hangs in test environment - needs investigation
+                 "[ui][ams_slot][binding][.skip]") {
     ui_ams_slot_register();
+    // LVGLUITestFixture does not init AmsState subjects. Without this the
+    // per-slot material subject is raw memory, sync_from_backend()'s
+    // lv_subject_copy_string lands nowhere, and the label stays at "--".
+    // register_xml=false is enough — the widget observes via the C++ accessor.
+    AmsState::instance().init_subjects(false);
 
     // Set up mock backend with known data
     auto mock = AmsBackend::create_mock(4);

@@ -27,8 +27,15 @@ class ActivePrintMediaManagerTestAccess {
         return m.thumbnail_retry_count_;
     }
 
+    /// Provenance of the published thumbnail path (None / PreSet / Fetched).
+    static ThumbnailOrigin thumbnail_origin(const ActivePrintMediaManager& m) {
+        return m.thumbnail_origin_;
+    }
+
+    /// True only when a fetch this manager ran completed — the state that
+    /// disarms the retry ladder. A PreSet (USB) path is deliberately NOT this.
     static bool thumbnail_loaded(const ActivePrintMediaManager& m) {
-        return m.thumbnail_loaded_;
+        return m.thumbnail_origin_ == ThumbnailOrigin::Fetched;
     }
 
     static std::string retry_filename(const ActivePrintMediaManager& m) {

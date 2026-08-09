@@ -75,14 +75,19 @@ template <typename Panel> class PositionObserverBundle {
                     YPosHandler&& on_y_pos, ZPosHandler&& on_z_pos) {
         clear();
 
+        // PrinterState-owned subjects: a panel outliving a deinit_subjects()
+        // cycle needs the death signal, or clear() calls lv_observer_remove()
+        // on observer nodes lv_subject_deinit() already freed.
+        const SubjectLifetime lifetime = state.get_subjects_lifetime();
+
         x_pos_observer_ = observe_int_sync<Panel>(state.get_gcode_position_x_subject(), panel,
-                                                  std::forward<XPosHandler>(on_x_pos));
+                                                  std::forward<XPosHandler>(on_x_pos), lifetime);
 
         y_pos_observer_ = observe_int_sync<Panel>(state.get_gcode_position_y_subject(), panel,
-                                                  std::forward<YPosHandler>(on_y_pos));
+                                                  std::forward<YPosHandler>(on_y_pos), lifetime);
 
         z_pos_observer_ = observe_int_sync<Panel>(state.get_gcode_position_z_subject(), panel,
-                                                  std::forward<ZPosHandler>(on_z_pos));
+                                                  std::forward<ZPosHandler>(on_z_pos), lifetime);
     }
 
     /**
@@ -109,17 +114,20 @@ template <typename Panel> class PositionObserverBundle {
         // (forwarding an rvalue multiple times would move-from it)
         auto update_copy = update_handler;
 
+        // See setup_sync(): PrinterState-owned subjects need the death signal.
+        const SubjectLifetime lifetime = state.get_subjects_lifetime();
+
         x_pos_observer_ =
             observe_int_async<Panel>(state.get_gcode_position_x_subject(), panel,
-                                     std::forward<CacheXPos>(cache_x_pos), update_copy);
+                                     std::forward<CacheXPos>(cache_x_pos), update_copy, lifetime);
 
         y_pos_observer_ =
             observe_int_async<Panel>(state.get_gcode_position_y_subject(), panel,
-                                     std::forward<CacheYPos>(cache_y_pos), update_copy);
+                                     std::forward<CacheYPos>(cache_y_pos), update_copy, lifetime);
 
-        z_pos_observer_ =
-            observe_int_async<Panel>(state.get_gcode_position_z_subject(), panel,
-                                     std::forward<CacheZPos>(cache_z_pos), std::move(update_copy));
+        z_pos_observer_ = observe_int_async<Panel>(state.get_gcode_position_z_subject(), panel,
+                                                   std::forward<CacheZPos>(cache_z_pos),
+                                                   std::move(update_copy), lifetime);
     }
 
     /**

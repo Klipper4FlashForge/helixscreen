@@ -136,9 +136,26 @@ class DispatchSurfaceFixture : public LVGLTestFixture {
         return false;
     }
 
-    /// Total callbacks dropped by an expired LifetimeToken since the last drain.
+    /// Callbacks dropped by an expired LifetimeToken since the last drain,
+    /// counting ONLY the sidebar's own macro dispatch tags.
+    ///
+    /// take_snapshot().total is process-global: every AsyncLifetimeGuard in the
+    /// binary feeds it, including background workers still in flight from an
+    /// earlier test (AmsBackendAd5xIfs's 500ms zcolor debounce is the known
+    /// one). Under load those land inside this test's measurement window and
+    /// the total reads 5 where the sidebar contributed 1. Filtering to the tag
+    /// under test is what makes the assertion deterministic — and it is a
+    /// stronger claim than the total was, because it also pins WHICH producer
+    /// skipped rather than accepting any skip as proof.
     [[nodiscard]] static uint64_t drain_skip_total() {
-        return helix::async_lifetime::take_snapshot().total;
+        uint64_t n = 0;
+        for (const auto& e : helix::async_lifetime::take_snapshot().entries) {
+            if (e.tag == "AmsOperationSidebar::load_macro" ||
+                e.tag == "AmsOperationSidebar::unload_macro") {
+                n += e.count;
+            }
+        }
+        return n;
     }
 
     MoonrakerClientMock mock_client;
