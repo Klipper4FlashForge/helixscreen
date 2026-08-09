@@ -139,6 +139,16 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, MoonrakerAPI* ap
     // Pre-init local subject used by observer callback below (fires immediately on subscribe)
     lv_subject_init_int(&exclude_objects_available_subject_, 0);
 
+    // Death signal for every PrinterState-owned subject observed below. This panel
+    // is a process-lifetime singleton (get_global_print_status_panel()), so it
+    // routinely outlives a PrinterState::deinit_subjects() cycle — printer
+    // switching in production, per-fixture teardown in tests. Without the token
+    // each guard keeps a pointer to an observer node that lv_subject_deinit()
+    // already freed, and the next reset() calls lv_observer_remove() on freed
+    // memory: SIGSEGV at lv_observer.c:584 dereferencing observer->subject.
+    // Subjects owned by this panel or by other singletons take no token here.
+    const SubjectLifetime ps_subjects = printer_state_.get_subjects_lifetime();
+
     // Subscribe to temperature subjects using bundle (replaces 4 individual observers)
     temp_observers_.setup_sync(
         this, printer_state_, [](PrintStatusPanel* self, int) { self->on_temperature_changed(); },
@@ -149,72 +159,87 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, MoonrakerAPI* ap
     // Subscribe to active tool changes (refreshes nozzle temp with tool name prefix)
     active_tool_observer_ = observe_int_sync<PrintStatusPanel>(
         helix::ToolState::instance().get_active_tool_subject(), this,
-        [](PrintStatusPanel* self, int) { self->on_temperature_changed(); });
+        [](PrintStatusPanel* self, int) { self->on_temperature_changed(); },
+        helix::ToolState::instance().get_subjects_lifetime());
 
     // Chamber status text: observe chamber temp to compute Heating/Cooling/Holding status
     chamber_temp_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_chamber_temp_subject(), this,
-        [](PrintStatusPanel* self, int) { self->update_chamber_status(); });
+        [](PrintStatusPanel* self, int) { self->update_chamber_status(); }, ps_subjects);
 
     // Subscribe to print progress and state
     print_progress_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_print_progress_subject(), this,
-        [](PrintStatusPanel* self, int progress) { self->on_print_progress_changed(progress); });
+        [](PrintStatusPanel* self, int progress) { self->on_print_progress_changed(progress); },
+        ps_subjects);
     print_state_observer_ = observe_print_state<PrintStatusPanel>(
         printer_state_.get_print_state_enum_subject(), this,
-        [](PrintStatusPanel* self, PrintJobState state) { self->on_print_state_changed(state); });
-    print_filename_observer_ =
-        observe_string<PrintStatusPanel>(printer_state_.get_print_filename_subject(), this,
-                                         [](PrintStatusPanel* self, const char* filename) {
-                                             self->on_print_filename_changed(filename);
-                                         });
+        [](PrintStatusPanel* self, PrintJobState state) { self->on_print_state_changed(state); },
+        ps_subjects);
+    print_filename_observer_ = observe_string<PrintStatusPanel>(
+        printer_state_.get_print_filename_subject(), this,
+        [](PrintStatusPanel* self, const char* filename) {
+            self->on_print_filename_changed(filename);
+        },
+        ps_subjects);
 
     // Subscribe to speed/flow factors
     speed_factor_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_speed_factor_subject(), this,
-        [](PrintStatusPanel* self, int speed) { self->on_speed_factor_changed(speed); });
+        [](PrintStatusPanel* self, int speed) { self->on_speed_factor_changed(speed); },
+        ps_subjects);
     flow_factor_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_flow_factor_subject(), this,
-        [](PrintStatusPanel* self, int flow) { self->on_flow_factor_changed(flow); });
+        [](PrintStatusPanel* self, int flow) { self->on_flow_factor_changed(flow); }, ps_subjects);
     gcode_z_offset_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_gcode_z_offset_subject(), this,
-        [](PrintStatusPanel* self, int microns) { self->on_gcode_z_offset_changed(microns); });
+        [](PrintStatusPanel* self, int microns) { self->on_gcode_z_offset_changed(microns); },
+        ps_subjects);
 
     // Subscribe to layer tracking for G-code viewer ghost layer updates
     print_layer_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_print_layer_current_subject(), this,
-        [](PrintStatusPanel* self, int layer) { self->on_print_layer_changed(layer); });
+        [](PrintStatusPanel* self, int layer) { self->on_print_layer_changed(layer); },
+        ps_subjects);
 
     // Re-render layer text when Z position changes (Z updates more frequently than layer count)
     z_position_observer_ = observe_int_sync<PrintStatusPanel>(
-        printer_state_.get_gcode_position_z_subject(), this, [](PrintStatusPanel* self, int) {
+        printer_state_.get_gcode_position_z_subject(), this,
+        [](PrintStatusPanel* self, int) {
             int layer = lv_subject_get_int(self->printer_state_.get_print_layer_current_subject());
             self->on_print_layer_changed(layer);
-        });
+        },
+        ps_subjects);
 
     // Subscribe to wall-clock elapsed time (total_duration includes prep time)
     print_duration_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_print_elapsed_subject(), this,
-        [](PrintStatusPanel* self, int seconds) { self->on_print_duration_changed(seconds); });
+        [](PrintStatusPanel* self, int seconds) { self->on_print_duration_changed(seconds); },
+        ps_subjects);
     print_time_left_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_print_time_left_subject(), this,
-        [](PrintStatusPanel* self, int seconds) { self->on_print_time_left_changed(seconds); });
+        [](PrintStatusPanel* self, int seconds) { self->on_print_time_left_changed(seconds); },
+        ps_subjects);
 
     // Subscribe to print start preparation phase subjects
     print_start_phase_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_print_start_phase_subject(), this,
-        [](PrintStatusPanel* self, int phase) { self->on_print_start_phase_changed(phase); });
-    print_start_progress_observer_ =
-        observe_int_sync<PrintStatusPanel>(printer_state_.get_print_start_progress_subject(), this,
-                                           [](PrintStatusPanel* self, int progress) {
-                                               self->on_print_start_progress_changed(progress);
-                                           });
+        [](PrintStatusPanel* self, int phase) { self->on_print_start_phase_changed(phase); },
+        ps_subjects);
+    print_start_progress_observer_ = observe_int_sync<PrintStatusPanel>(
+        printer_state_.get_print_start_progress_subject(), this,
+        [](PrintStatusPanel* self, int progress) {
+            self->on_print_start_progress_changed(progress);
+        },
+        ps_subjects);
     preprint_remaining_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_preprint_remaining_subject(), this,
-        [](PrintStatusPanel* self, int seconds) { self->on_preprint_remaining_changed(seconds); });
+        [](PrintStatusPanel* self, int seconds) { self->on_preprint_remaining_changed(seconds); },
+        ps_subjects);
     preprint_elapsed_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_preprint_elapsed_subject(), this,
-        [](PrintStatusPanel* self, int seconds) { self->on_preprint_elapsed_changed(seconds); });
+        [](PrintStatusPanel* self, int seconds) { self->on_preprint_elapsed_changed(seconds); },
+        ps_subjects);
 
     // Subscribe to defined objects changes (for objects list button visibility + count)
     exclude_objects_observer_ = observe_int_sync<PrintStatusPanel>(
@@ -224,24 +249,27 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, MoonrakerAPI* ap
             lv_subject_set_int(&self->exclude_objects_available_subject_, available);
             self->update_objects_text();
             self->update_view_toggle_position(available != 0);
-        });
+        },
+        ps_subjects);
 
     // Subscribe to excluded objects changes (for "X of Y obj" count updates)
     excluded_objects_version_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_excluded_objects_version_subject(), this,
-        [](PrintStatusPanel* self, int) { self->update_objects_text(); });
+        [](PrintStatusPanel* self, int) { self->update_objects_text(); }, ps_subjects);
 
     // Subscribe to AMS current filament color for gcode viewer color override
     // When a known filament color is available (from Spoolman spool or AMS lane),
     // use it instead of the gcode metadata color for the 2D/3D render
     ams_color_observer_ = observe_int_sync<PrintStatusPanel>(
         AmsState::instance().get_current_color_subject(), this,
-        [](PrintStatusPanel* self, int /*color_rgb*/) { self->build_and_apply_tool_colors(); });
+        [](PrintStatusPanel* self, int /*color_rgb*/) { self->build_and_apply_tool_colors(); },
+        AmsState::instance().get_subjects_lifetime());
 
     // Also refresh gcode viewer colors when tool_to_slot_map changes (user remap)
     tool_map_version_observer_ = observe_int_sync<PrintStatusPanel>(
         AmsState::instance().get_tool_map_version_subject(), this,
-        [](PrintStatusPanel* self, int /*version*/) { self->build_and_apply_tool_colors(); });
+        [](PrintStatusPanel* self, int /*version*/) { self->build_and_apply_tool_colors(); },
+        AmsState::instance().get_subjects_lifetime());
 
     // Subscribe to the shared print thumbnail path. ActivePrintMediaManager is
     // its sole writer; this panel only reads it.
@@ -279,7 +307,8 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, MoonrakerAPI* ap
                 // were on screen.
                 self->displayed_file_ = for_file;
             }
-        });
+        },
+        ps_subjects);
 
     spdlog::debug("[{}] Subscribed to PrinterState subjects", get_name());
 
@@ -288,7 +317,7 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, MoonrakerAPI* ap
     // LED state observer is set up on first on_activate() when strips are available.
     led_state_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_led_state_subject(), this,
-        [](PrintStatusPanel* self, int state) { self->on_led_state_changed(state); });
+        [](PrintStatusPanel* self, int state) { self->on_led_state_changed(state); }, ps_subjects);
     spdlog::debug("[{}] LED state observer registered (strips read lazily)", get_name());
 
     // Subscribe to G-code render mode changes from settings panel
@@ -312,7 +341,8 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, MoonrakerAPI* ap
                     }
                 }
             }
-        });
+        },
+        DisplaySettingsManager::instance().get_subjects_lifetime());
     spdlog::debug("[{}] G-code render mode observer registered", get_name());
 
     // End-overlay visibility: derive three show_* bool subjects from print_outcome
@@ -321,7 +351,7 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, MoonrakerAPI* ap
     // pop at startup when end_overlay_dismissed==0 unhide-raced the outcome check.
     print_outcome_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_print_outcome_subject(), this,
-        [](PrintStatusPanel* self, int) { self->recompute_end_overlay_visibility(); });
+        [](PrintStatusPanel* self, int) { self->recompute_end_overlay_visibility(); }, ps_subjects);
     recompute_end_overlay_visibility();
 
     // Create filament runout handler (extracted from PrintStatusPanel)
@@ -456,23 +486,25 @@ void PrintStatusPanel::init_subjects() {
     // runtime part-fan reassignment as fans start/stop (primary_fans_version, #1124).
     {
         auto token = lifetime_.token();
-        fans_version_observer_ =
-            observe_int_sync<PrintStatusPanel>(printer_state_.get_fans_version_subject(), this,
-                                               [token](PrintStatusPanel* self, int /*v*/) {
-                                                   if (token.expired())
-                                                       return;
-                                                   self->bind_fan_observers();
-                                               });
+        fans_version_observer_ = observe_int_sync<PrintStatusPanel>(
+            printer_state_.get_fans_version_subject(), this,
+            [token](PrintStatusPanel* self, int /*v*/) {
+                if (token.expired())
+                    return;
+                self->bind_fan_observers();
+            },
+            printer_state_.get_subjects_lifetime());
     }
     {
         auto token = lifetime_.token();
-        primary_fans_version_observer_ =
-            observe_int_sync<PrintStatusPanel>(printer_state_.get_primary_fans_version_subject(),
-                                               this, [token](PrintStatusPanel* self, int /*v*/) {
-                                                   if (token.expired())
-                                                       return;
-                                                   self->bind_fan_observers();
-                                               });
+        primary_fans_version_observer_ = observe_int_sync<PrintStatusPanel>(
+            printer_state_.get_primary_fans_version_subject(), this,
+            [token](PrintStatusPanel* self, int /*v*/) {
+                if (token.expired())
+                    return;
+                self->bind_fan_observers();
+            },
+            printer_state_.get_subjects_lifetime());
     }
 
     // Density + fit recompute on breakpoint change
@@ -579,7 +611,8 @@ void PrintStatusPanel::init_subjects() {
                     return;
                 self->animations_enabled_ = (enabled != 0);
                 self->refresh_fan_animations();
-            });
+            },
+            DisplaySettingsManager::instance().get_subjects_lifetime());
     }
 
     end_overlay_dismissed_observer_ = observe_int_sync<PrintStatusPanel>(
@@ -605,14 +638,16 @@ void PrintStatusPanel::init_subjects() {
                            subjects_);
     print_message_observer_ = observe_string<PrintStatusPanel>(
         printer_state_.get_print_message_subject(), this,
-        [](PrintStatusPanel* self, const char*) { self->recompute_paused_overlay_visibility(); });
+        [](PrintStatusPanel* self, const char*) { self->recompute_paused_overlay_visibility(); },
+        printer_state_.get_subjects_lifetime());
 
     // Re-evaluate the paused overlay whenever the shared controller's pending
     // action flips (optimistic Pausing/Resuming) — decoupled from our own
     // print_state_enum observer to avoid an ordering race between the two.
     pending_action_observer_ = observe_int_sync<PrintStatusPanel>(
         helix::ui::PrintControlButtons::instance().pending_action_subject(), this,
-        [](PrintStatusPanel* self, int) { self->recompute_paused_overlay_visibility(); });
+        [](PrintStatusPanel* self, int) { self->recompute_paused_overlay_visibility(); },
+        helix::ui::PrintControlButtons::instance().get_subjects_lifetime());
 
     // Button enable states driven declaratively from XML (see update_button_states).
     UI_MANAGED_SUBJECT_INT(print_controls_enabled_subject_, 0, "print_controls_enabled", subjects_);

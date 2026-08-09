@@ -44,6 +44,7 @@
  * - can_start_new_print(): returns false when print_in_progress_ == 1 OR print_active_ == 1
  */
 
+#include "../helix_test_fixture.h"
 #include "../test_helpers/printer_state_test_access.h"
 #include "../ui_test_utils.h"
 #include "app_globals.h"
@@ -1526,8 +1527,9 @@ TEST_CASE("Print characterization: print_job_state_to_string function",
 // Slicer Estimated Print Time Fallback Tests
 // ============================================================================
 
-TEST_CASE("Print characterization: slicer estimated_print_time used as fallback",
-          "[characterization][print][time][slicer]") {
+TEST_CASE_METHOD(HelixTestFixture,
+                 "Print characterization: slicer estimated_print_time used as fallback",
+                 "[characterization][print][time][slicer]") {
     lv_init_safe();
 
     PrinterState& state = get_printer_state();

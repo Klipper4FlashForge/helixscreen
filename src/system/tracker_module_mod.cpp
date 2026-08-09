@@ -8,6 +8,7 @@
 
 #include <cmath>
 #include <fstream>
+#include <string_view>
 
 namespace helix::audio {
 
@@ -112,7 +113,13 @@ std::optional<TrackerModule> parse_mod(const uint8_t* data, size_t size) {
                        (magic[0] == 'F' && magic[1] == 'L' && magic[2] == 'T' && magic[3] == '8');
 
     if (!valid_magic) {
-        spdlog::debug("tracker: unrecognised MOD magic '{:.4s}'", magic);
+        // Bound the view explicitly. `magic` points 1080 bytes into the file
+        // buffer at a fixed-width, NOT NUL-terminated field, and fmt resolves a
+        // `const char*` to a string_view via strlen BEFORE applying the `.4`
+        // precision — so the scan runs past the end of the buffer on any file
+        // whose tail happens to contain no NUL. ASAN: heap-buffer-overflow READ
+        // of 1003 bytes, reached from any malformed .mod with debug logging on.
+        spdlog::debug("tracker: unrecognised MOD magic '{}'", std::string_view(magic, 4));
         return std::nullopt;
     }
 

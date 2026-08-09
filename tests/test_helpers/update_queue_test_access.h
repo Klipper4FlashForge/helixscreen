@@ -25,7 +25,15 @@ class UpdateQueueTestAccess {
     /// singleton (AmsState::…) is benign unflushed work, while one closing over
     /// a per-test object is a real use-after-free waiting for the next drain.
     /// Untagged callbacks report as "<untagged>".
-    static std::vector<const char*> discard_pending(UpdateQueue& q) {
+    /// One dropped callback: its producer tag, plus the call site recorded for
+    /// untagged enqueues (file == nullptr when the producer passed a tag).
+    struct DroppedCallback {
+        const char* tag = nullptr; ///< "<untagged>" when the producer passed none
+        const char* file = nullptr;
+        int line = 0;
+    };
+
+    static std::vector<DroppedCallback> discard_pending(UpdateQueue& q) {
         std::queue<TaggedCallback> dropped;
         {
             std::lock_guard<std::mutex> lock(q.mutex_);
@@ -33,14 +41,15 @@ class UpdateQueueTestAccess {
         }
         // Collect tags and destroy the callbacks outside the lock. They are never
         // invoked, so the state they capture is only released, never dereferenced.
-        std::vector<const char*> tags;
-        tags.reserve(dropped.size());
+        std::vector<DroppedCallback> out;
+        out.reserve(dropped.size());
         while (!dropped.empty()) {
-            const char* t = dropped.front().tag;
-            tags.push_back(t != nullptr ? t : "<untagged>");
+            const TaggedCallback& e = dropped.front();
+            out.push_back({e.tag != nullptr ? e.tag : "<untagged>",
+                           e.tag != nullptr ? nullptr : e.file, e.line});
             dropped.pop();
         }
-        return tags;
+        return out;
     }
 
     /// Number of queued callbacks that have thrown since process start.

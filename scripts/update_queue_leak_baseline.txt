@@ -16,47 +16,4 @@
 # The ceiling below catches an EXTRA untagged callback appearing inside a test
 # that is already listed, which the key set alone would miss. Untagged callbacks
 # totalled exactly 717 across four identical runs; the tagged total flapped.
-max-untagged-callbacks: 85
-tag:Ad5xIfsBackend::reread_apply
-tag:Ad5xIfsBackend::zcolor_debounce_apply
-tag:PrinterCapabilitiesState::set_power_device_count
-tag:PrinterCapabilitiesState::set_spoolman_available
-tag:PrinterCapabilitiesState::set_webcam_available
-tag:PrinterPrintState::set_estimated_print_time
-tag:PrinterState::on_status_update
-tag:UpdateChecker::check_for_updates
-tag:UpdateChecker::set_download_status
-test:All panels are accessible
-test:FirstRunTour: advance past last step finishes
-test:FirstRunTour: skip writes tour.completed
-test:FirstRunTour: start() sets is_running
-test:Invalid panel handling
-test:Navigation initialization
-test:Panel switching
-test:PrePrint adaptive: disabled emits SKIP_LEVELING=1 and no ADAPTIVE
-test:PrePrint adaptive: enabled + active emits SKIP_LEVELING=0 and ADAPTIVE=1
-test:PrePrint adaptive: honors custom adaptive param name + value
-test:PrePrint adaptive: non-adaptive printer enabled emits no params
-test:PrintPreparationManager: K2 Plus DB-driven bed_mesh emits PREPARE=1 when disabled
-test:PrintPreparationManager: build_capability_matrix
-test:PrintPreparationManager: capabilities come from PrinterState
-test:PrintPreparationManager: capabilities update when PrinterState type changes
-test:PrintPreparationManager: capability priority ordering
-test:PrintPreparationManager: collect_macro_skip_params drives off provider when set
-test:PrintPreparationManager: collect_macro_skip_params with matrix
-test:PrintPreparationManager: collect_ops_to_disable returns ops user disabled
-test:PrintPreparationManager: collect_pre_start_gcode_lines (K2 Plus ai_detect)
-test:PrintPreparationManager: collect_pre_start_gcode_lines emits ai_detect for K2 Plus
-test:PrintPreparationManager: collect_pre_start_gcode_lines empty for printer w/o PreStartGcode options
-test:PrintPreparationManager: collect_pre_start_gcode_lines skips NOT_APPLICABLE
-test:PrintPreparationManager: get_option_state(id) falls back to DB default_enabled
-test:PrintPreparationManager: timelapse option synthesized when plugin available
-test:PrinterHardware with MoonrakerClientMock data
-test:Repeated panel selection
-test:disabling_option_requires_plugin: K2 regression — MacroParam + setup_gcode stays visible
-test:disabling_option_requires_plugin: MacroParam disable dropped when a PreStartGcode sibling short-circuits
-test:disabling_option_requires_plugin: PreStartGcode and RuntimeCommand never require plugin
-test:disabling_option_requires_plugin: Voron — MacroParam, no pre-start mechanism, hidden
-test:disabling_option_requires_plugin: file-embedded term isolated
-test:lv_indev_reset(NULL, NULL) clears in-flight press
-test:registry: step_by_id stays valid after panel teardown (3rd-printer UAF)
+max-untagged-callbacks: 0

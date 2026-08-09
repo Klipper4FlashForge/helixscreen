@@ -326,7 +326,7 @@ void defer_button_contrast_update(lv_obj_t* btn) {
     if (!data || data->magic != UiButtonData::MAGIC)
         return;
     const uint64_t gen = data->id;
-    helix::ui::queue_update([btn, gen]() {
+    helix::ui::queue_update("ui_button::contrast_update", [btn, gen]() {
         // Hazard 1: never dereference user_data unless btn is still a live
         // ui_button we own (guards against foreign-widget address reuse, #1111).
         if (!live_ui_buttons().count(btn))

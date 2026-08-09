@@ -462,6 +462,30 @@ class PrinterState {
     }
 
     /**
+     * @brief Lifetime token covering EVERY subject reachable through PrinterState.
+     *
+     * The per-domain tokens above are narrower — one component's subjects, or a
+     * single dynamic subject. This one is flipped false at the top of
+     * `deinit_subjects()`, before any component tears its subjects down, so it
+     * covers the whole tree: temperature, motion, fan, LED, print, capabilities,
+     * excluded objects, and PrinterState's own.
+     *
+     * Any observer whose owner can outlive a `deinit_subjects()` cycle MUST pass
+     * this (or a narrower token for the same subject) to `observe_*`. Panels held
+     * in process-lifetime singletons are exactly that case: `deinit_subjects()`
+     * runs `lv_subject_deinit()`, which frees every observer node, and an
+     * ObserverGuard that never learned the subject died then calls
+     * `lv_observer_remove()` on freed memory the next time it resets.
+     *
+     * Prefer the narrower per-subject token where one exists (dynamic per-fan and
+     * per-extruder subjects die independently of a full deinit); use this for the
+     * static subjects that only die with the whole PrinterState.
+     */
+    [[nodiscard]] SubjectLifetime get_subjects_lifetime() const {
+        return subjects_lifetime_;
+    }
+
+    /**
      * @brief Get print active subject for UI binding
      *
      * Integer subject: 1 when PRINTING or PAUSED, 0 otherwise.
@@ -2200,6 +2224,17 @@ class PrinterState {
     /// the `SubjectLifetime` tokens handed to observers, which are
     /// `shared_ptr<bool>` death signals and carry no deferral machinery.
     AsyncLifetimeGuard async_lifetime_;
+
+    /// Death signal covering EVERY subject reachable through this PrinterState,
+    /// including the per-domain components. See get_subjects_lifetime().
+    ///
+    /// Created here rather than in init_subjects(), and REPLACED (never left
+    /// null) by deinit_subjects(), so the accessor can never hand out an empty
+    /// token. An empty one is not a harmless no-op: ObserverGuard::reset() reads
+    /// `!alive_token_.lock()` as "subject already dead" and SKIPS
+    /// lv_observer_remove(), which orphans a live observer node whose context is
+    /// about to be freed — the failure mode behind bundles 449TVQ82 / X3RA4252.
+    SubjectLifetime subjects_lifetime_ = std::make_shared<bool>(true);
 
     // Cached display pointer to detect LVGL reinitialization (for test isolation)
     lv_display_t* cached_display_ = nullptr;

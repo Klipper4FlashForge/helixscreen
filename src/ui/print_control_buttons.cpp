@@ -3,7 +3,7 @@
 #include "print_control_buttons.h"
 
 #include "ui_error_reporting.h" // NOTIFY_WARNING / NOTIFY_ERROR
-#include "ui_event_safety.h" // LVGL_SAFE_EVENT_CB_BEGIN / END
+#include "ui_event_safety.h"    // LVGL_SAFE_EVENT_CB_BEGIN / END
 #include "ui_resume_dispatch.h"
 #include "ui_timer_guard.h" // lv_timer_cancel_safe
 
@@ -62,9 +62,7 @@ void PrintControlButtons::init_subjects() {
         // release() (NOT reset()) is correct here: this runs pre-lv_deinit when
         // the observed subject is already being destroyed by its own owner.
         self.print_state_observer_.release();
-        self.cancel_pending_action_timer();
-        self.subjects_.deinit_all();
-        self.subjects_initialized_ = false;
+        self.teardown_subjects();
     });
 
     subjects_initialized_ = true;
@@ -202,6 +200,23 @@ PrintControlButtons::~PrintControlButtons() {
     // `this`. lv_timer_cancel_safe() self-guards on lv_is_initialized(), which is
     // what makes it safe from a static's destructor (#750, #751, #1173).
     cancel_pending_action_timer();
+}
+
+void PrintControlButtons::teardown_subjects() {
+    // Death signal BEFORE deinit_all(), which frees every observer node on these
+    // subjects. Outside holders — PrintStatusPanel's pending_action_observer_ —
+    // read it in ObserverGuard::reset() and skip the removal instead of
+    // dereferencing a freed observer. Replace rather than clear: an empty token
+    // reads as "dead" and would suppress removal for observers registered after
+    // this teardown, orphaning live nodes.
+    if (subjects_lifetime_) {
+        *subjects_lifetime_ = false;
+    }
+    subjects_lifetime_ = std::make_shared<bool>(true);
+
+    cancel_pending_action_timer();
+    subjects_.deinit_all();
+    subjects_initialized_ = false;
 }
 
 void PrintControlButtons::cancel_pending_action_timer() {
