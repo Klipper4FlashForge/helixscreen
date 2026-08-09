@@ -45,19 +45,43 @@ included. There is nothing here worth optimizing.
 so navigating does not re-parse. First visit and revisit both measure ~9 ms, which is
 `ctl` process spawn, not panel construction.
 
-The repeated-create cost is real but lives elsewhere: modals (`ui_modal.cpp:602`, `:912`
-create on every show), toasts, overlays, panel widgets, and `<repeat>` rebuilds. **How
-much that costs is still unmeasured.** The external IPC floor swamps it, so quantifying
-it needs a counter and a timer around `lv_xml_create_in_scope`, which is the one piece of
-instrumentation phase 0 could not avoid. Nobody should cite a per-create number until
-that exists.
+The repeated-create cost is real and lives elsewhere: modals (`ui_modal.cpp:602`, `:912`
+create on every show), toasts, overlays, panel widgets, and `<repeat>` rebuilds.
+
+**Measured (Gate A, `LV_XML_PROFILE=1`, 216 `ctl` steps over every reachable panel,
+overlay and modal three times):**
+
+| | |
+|---|---|
+| Creates | 150 |
+| View bytes parsed | 713 KB |
+| Total create time | 100.2 ms |
+| Inside element handlers | 97.5 ms |
+| **expat / SAX dispatch** | **2.7 ms (2.7%)** |
+
+Since `XML_Parse` drives the handlers, the two have to be timed separately or the parse
+timer swallows the widget build. The handler bucket is `resolve_params`,
+`resolve_consts`, `create_cb` and `apply_cb` — everything codegen keeps. Only the 2.7%
+goes away.
+
+That figure is a **floor**. Nested component creates run inside an enclosing handler
+frame, so their expat time is counted as handler time; the 713 KB is outer views only
+(4.75 KB per create) against 1.47 MB of view bodies in the tree. Per-parse self-time
+accounting would give the exact number. It was not worth building, because even several
+times 2.7% leaves the conclusion unchanged.
+
+**So the CPU argument is dead in both halves**: 10 ms at boot, and low single-digit
+percent of create time thereafter.
 
 ### Consequence for scope
 
-This is now an **ESP32-motivated** change justified by flash and resident RAM, with an
-unquantified CPU bonus on modal-heavy interaction. If the K-Touch port turns out not to
-be flash or PSRAM constrained, the honest conclusion is to not do this at all. Phase 5's
-re-measurement is what settles it, and phase 1 is worth doing either way.
+This is an **ESP32-motivated** change justified by flash and resident RAM, and by nothing
+else. Both CPU arguments are measured and gone.
+
+That leaves a single open question, and it decides the whole project: **is the K-Touch
+actually short of flash or PSRAM?** If it has room for 1.47 MB of markup, there is no
+case for phases 2 through 5 and this spec should be closed as a record of why not.
+Phase 1 is worth doing regardless, on its own merits.
 
 ## The seam this targets
 
@@ -292,10 +316,9 @@ the ESP32 build has to boot to the home panel on the K-Touch.
 
 ## Phasing
 
-0. **Baseline. Done 2026-08-08**, see the measurements above. One gap remains: a counter
-   and timer around `lv_xml_create_in_scope` to quantify the modal/overlay/widget create
-   cost, which cannot be measured from outside the process. Do that before phase 1, it
-   is a dozen lines and it decides how much of the CPU argument is real.
+0. **Baseline. Done 2026-08-08**, including Gate A. See the measurements above.
+   Nothing further to measure on the native side; what remains is the K-Touch
+   flash and PSRAM budget, which decides whether phases 2-5 happen at all.
 1. **Attribute resolution refactor.** `lv_xml_resolve()` as a pure function, arena
    ownership, `dropped` bit, with unit tests on the resolver in isolation. Then extract
    `lv_xml_emit_element()` from `view_start_element_handler` on top of it. Both steps
