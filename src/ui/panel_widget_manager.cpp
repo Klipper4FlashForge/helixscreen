@@ -582,41 +582,19 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
         }
     }
 
-    // Compute the actual number of rows used (not the full breakpoint row count)
-    int max_row_used = 0;
-    for (const auto& p : placed) {
-        int bottom = p.row + p.rowspan;
-        if (bottom > max_row_used) {
-            max_row_used = bottom;
-        }
-    }
-    if (max_row_used == 0) {
-        max_row_used = 1; // At least 1 row if any widgets placed
-    }
+    // Row track count comes from the grid, exactly like the column count. The
+    // grid's tracks are square by construction, so a page that uses only the
+    // top half of them leaves the bottom half empty rather than stretching
+    // every widget to fill the height.
+    const int cols = GridLayout::get_cols(breakpoint);
+    const int grid_rows = GridLayout::get_rows(breakpoint);
 
-    // Use the cached row count as a floor so the grid starts at the right size
-    // even before all hardware-gated widgets have been detected. This prevents
-    // the grid from starting as e.g. 3 rows then jumping to 4 when hardware
-    // gates fire. The cache is updated whenever the row count increases.
-    auto* cfg = Config::get_instance();
-    std::string cache_key_rows = "/ui/cached_grid/" + panel_id + "/rows";
-    int cached_rows = cfg->get(cache_key_rows, 0);
-    int grid_rows = std::max(max_row_used, cached_rows);
-    if (max_row_used != cached_rows) {
-        cfg->set(cache_key_rows, max_row_used);
-        cfg->save();
-    }
+    spdlog::debug("[PanelWidgetManager] Grid layout: {}cols x {}rows (bp={}) for '{}'", cols,
+                  grid_rows, to_int(breakpoint), panel_id);
 
-    // Generate grid descriptors sized to actual content
-    // Columns: use breakpoint column count (fills available width)
-    // Rows: use max of current and cached row count for stable sizing
     auto& dsc = grid_descriptors_[make_cache_key(panel_id, page_index)];
     dsc.col_dsc = GridLayout::make_col_dsc(breakpoint);
-    dsc.row_dsc.clear();
-    for (int r = 0; r < grid_rows; ++r) {
-        dsc.row_dsc.push_back(LV_GRID_FR(1));
-    }
-    dsc.row_dsc.push_back(LV_GRID_TEMPLATE_LAST);
+    dsc.row_dsc = GridLayout::make_row_dsc(breakpoint);
 
     // Configure grid padding now, but DEFER activating LV_LAYOUT_GRID and
     // installing the grid descriptor array until all children have been created
@@ -635,10 +613,6 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
     lv_obj_set_style_pad_row(container, gutter, 0);
 
     // Compute cell pixel dimensions for size callbacks and card backgrounds.
-    int cols = GridLayout::get_cols(breakpoint);
-
-    spdlog::debug("[PanelWidgetManager] Grid layout: {}cols x {}rows (bp={}, cached={}) for '{}'",
-                  cols, grid_rows, to_int(breakpoint), cached_rows, panel_id);
     int container_w = lv_obj_get_content_width(container);
     int container_h = lv_obj_get_content_height(container);
     CellMetrics metrics = grid_cell_metrics(container_w, container_h, cols, grid_rows, gutter);

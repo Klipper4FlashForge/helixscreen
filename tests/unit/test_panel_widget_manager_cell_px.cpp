@@ -31,7 +31,40 @@
 
 using namespace helix;
 
+// Access LayoutManager internals for test setup.
+// Note: LayoutManagerTestAccess is also defined in test_layout_manager.cpp,
+// test_grid_layout.cpp and test_panel_widget_portrait_span.cpp with an identical
+// body — Catch2 amalgamated builds compile each test file separately, so no ODR
+// conflict.
+class LayoutManagerTestAccess {
+  public:
+    static void reset(helix::LayoutManager& lm) {
+        lm.type_ = helix::LayoutType::STANDARD;
+        lm.name_ = "standard";
+        lm.override_name_.clear();
+        lm.initialized_ = false;
+        lm.width_ = 0;
+        lm.height_ = 0;
+    }
+};
+
 namespace {
+
+/// Restores LayoutManager to its pristine uninitialized state on scope exit.
+/// GridLayout::get_dimensions() divides the live LayoutManager panel size by the
+/// breakpoint's track edge, so a test that sizes it must hand it back — a REQUIRE
+/// throws past a plain trailing reset() call and would leak the size into
+/// whatever test Catch2 runs next.
+struct ScopedLayoutManagerSize {
+    explicit ScopedLayoutManagerSize(int w, int h) {
+        auto& lm = helix::LayoutManager::instance();
+        LayoutManagerTestAccess::reset(lm);
+        lm.init(w, h);
+    }
+    ~ScopedLayoutManagerSize() {
+        LayoutManagerTestAccess::reset(helix::LayoutManager::instance());
+    }
+};
 
 /// Records the pixel size populate_widgets() promised, alongside the LVGL
 /// object it was promised for, so the promise can be checked against the
@@ -281,6 +314,75 @@ TEST_CASE_METHOD(XMLTestFixture,
     INFO("promised=" << SpanOracleWidget::s_width_px << " rendered=" << rendered_w
                      << " gutter=" << gutter);
     REQUIRE(std::abs(SpanOracleWidget::s_width_px - rendered_w) <= 2);
+
+    mgr.clear_panel_config(panel_id);
+}
+
+TEST_CASE_METHOD(XMLTestFixture, "grid rows come from the panel, not from the widget footprint",
+                 "[panel_widget_manager][square]") {
+    helix::init_widget_registrations();
+    lv_xml_register_component_from_data(
+        "test_size_oracle_widget",
+        "<component><view extends=\"lv_obj\" width=\"100%\" height=\"100%\"/></component>");
+    SizeOracleWidget::reset();
+
+    ScopedOracleFactory oracle("shutdown");
+
+    // get_dimensions() divides the live LayoutManager panel size by the
+    // breakpoint's track edge, so without a real size behind it every axis
+    // collapses to MIN_TRACKS and the row/footprint distinction this test turns
+    // on disappears. 800x480 against Medium's 60px track gives 12x8.
+    ScopedLayoutManagerSize panel_size(800, 480);
+
+    // A single 1x1 widget in the top-left cell must still build the full row
+    // count the breakpoint declares. Sizing the row axis to the widgets'
+    // footprint stretches every track to fill the container height, so a
+    // sparse page never gets square cells.
+    const std::string panel_id = "test_row_track_from_grid";
+    auto* cfg = Config::get_instance();
+    cfg->set<nlohmann::json>(
+        cfg->df() + "panel_widgets/" + panel_id,
+        nlohmann::json{{"main_page_index", 0},
+                       {"next_page_id", 2},
+                       {"pages",
+                        {{{"id", "main"}, {"widgets", nlohmann::json::array()}},
+                         {{"id", "spy"},
+                          {"widgets",
+                           {{{"id", "shutdown"},
+                             {"enabled", true},
+                             {"col", 0},
+                             {"row", 0},
+                             {"colspan", 1},
+                             {"rowspan", 1}}}}}}}});
+
+    auto& mgr = PanelWidgetManager::instance();
+    mgr.get_widget_config(panel_id).mark_dirty();
+    mgr.clear_panel_config(panel_id);
+
+    lv_obj_t* container = lv_obj_create(test_screen());
+    lv_obj_set_size(container, 710, 466);
+    process_lvgl(10);
+
+    // populate_widgets() reads the breakpoint off the theme manager's subject,
+    // not off the container, so the expected row count below is only the right
+    // oracle while that subject says Medium. Assert it rather than assume it —
+    // a different tier would silently compare against the wrong number.
+    lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
+    REQUIRE(bp_subj != nullptr);
+    REQUIRE(lv_subject_get_int(bp_subj) == static_cast<int>(UiBreakpoint::Medium));
+
+    auto widgets = mgr.populate_widgets(panel_id, container, /*page_index=*/1);
+    REQUIRE(SizeOracleWidget::s_obj != nullptr);
+
+    const int expected_rows = helix::GridLayout::get_rows(UiBreakpoint::Medium);
+    // Guard the premise: if the grid were only as tall as the one widget on the
+    // page, the assertion below would be comparing a number against itself and
+    // would pass no matter how the row axis is derived.
+    REQUIRE(expected_rows > GridLayout::TRACKS_PER_CELL);
+
+    const int32_t* rows = lv_obj_get_style_grid_row_dsc_array(container, LV_PART_MAIN);
+    INFO("expected_rows=" << expected_rows << " built=" << helix::grid_count_tracks(rows));
+    CHECK(helix::grid_count_tracks(rows) == expected_rows);
 
     mgr.clear_panel_config(panel_id);
 }
