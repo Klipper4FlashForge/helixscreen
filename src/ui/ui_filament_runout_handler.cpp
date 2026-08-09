@@ -172,7 +172,8 @@ void FilamentRunoutHandler::show_runout_guidance_modal() {
                     if (!self->runout_modal_.is_visible())
                         return;
                     self->runout_modal_.set_resume_blocked(port_present == 0);
-                });
+                },
+                AmsState::instance().get_subjects_lifetime());
         } else {
             runout_modal_.set_resume_blocked(false);
         }
@@ -360,7 +361,7 @@ void FilamentRunoutHandler::dispatch_load() {
         }
         if (!err.success()) {
             spdlog::error("[FilamentRunoutHandler] Load filament failed: {}", err.technical_msg);
-            NOTIFY_ERROR(lv_tr("Failed to load filament: {}"), err.user_msg);
+            helix::ui::notify_ams_error(err);
         }
         return;
     }
@@ -465,7 +466,7 @@ void FilamentRunoutHandler::dispatch_unload() {
         AmsError err = backend->unload_filament(plan.ams_arg);
         if (!err.success()) {
             spdlog::error("[FilamentRunoutHandler] Unload filament failed: {}", err.technical_msg);
-            NOTIFY_ERROR(lv_tr("Failed to unload: {}"), err.user_msg);
+            helix::ui::notify_ams_error(err);
         }
         return;
     }

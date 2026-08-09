@@ -674,7 +674,7 @@ void AmsEnvironmentOverlay::on_start_stop_clicked(lv_event_t* e) {
             if (result.success()) {
                 NOTIFY_INFO("{}", lv_tr("Drying stopped"));
             } else {
-                NOTIFY_ERROR("{}: {}", lv_tr("Stop failed"), result.user_msg);
+                helix::ui::notify_ams_error(result, lv_tr("Stop failed"));
             }
         } else {
             // Start drying with textarea values, clamped to backend limits.
@@ -721,7 +721,7 @@ void AmsEnvironmentOverlay::on_start_stop_clicked(lv_event_t* e) {
                 config->save();
                 NOTIFY_INFO("{}", lv_tr("Drying started"));
             } else {
-                NOTIFY_ERROR("{}: {}", lv_tr("Start failed"), result.user_msg);
+                helix::ui::notify_ams_error(result, lv_tr("Start failed"));
             }
         }
 
@@ -759,8 +759,8 @@ void ensure_ams_env_indicator_registered() {
     // does no dedup), so the guard makes this happen exactly once per process.
     lv_xml_register_event_cb(nullptr, "on_env_indicator_clicked", [](lv_event_t* e) {
         auto* ind = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
-        int unit = ind ? static_cast<int>(reinterpret_cast<intptr_t>(lv_obj_get_user_data(ind)))
-                       : 0;
+        int unit =
+            ind ? static_cast<int>(reinterpret_cast<intptr_t>(lv_obj_get_user_data(ind))) : 0;
         spdlog::info("[AMS Environment] Indicator clicked — opening overlay for unit {}", unit);
         auto& overlay = get_ams_environment_overlay();
         overlay.show(lv_screen_active(), unit);

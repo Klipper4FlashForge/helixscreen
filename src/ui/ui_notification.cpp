@@ -369,6 +369,82 @@ void ui_notification_warning(const char* title, const char* message) {
     show_notification(title, message, ToastSeverity::WARNING, 5000);
 }
 
+namespace {
+
+struct DetailNotification {
+    ToastSeverity severity;
+    std::string message;
+    std::string detail;
+    uint32_t duration_ms;
+};
+
+/// Two-line toast + a joined history row.
+///
+/// Uses queue_update() rather than the is_main_thread() fork the single-line
+/// paths use: the payload is two variable-length strings, and the fixed 64/256
+/// char arrays those paths marshal through exist only to avoid a malloc per
+/// toast on the hot single-line path. Everything below the queue therefore runs
+/// on the main thread unconditionally, which is what NotificationHistory and
+/// lv_tick_get() need.
+void show_detail_notification(ToastSeverity severity, const char* message, const char* detail,
+                              uint32_t duration_ms) {
+    if (!message || !*message) {
+        spdlog::warn("[Notification] Attempted to show detail notification with empty message");
+        return;
+    }
+    if (!detail || !*detail) {
+        // Nothing to add — fall through to the ordinary single-line paths so
+        // there is exactly one implementation of "toast with just a message".
+        if (severity == ToastSeverity::ERROR) {
+            ui_notification_error(nullptr, message, false);
+        } else {
+            ui_notification_warning(message);
+        }
+        return;
+    }
+
+    auto params = std::make_unique<DetailNotification>(
+        DetailNotification{severity, message, detail, duration_ms});
+
+    helix::ui::queue_update<DetailNotification>(std::move(params), [](DetailNotification* p) {
+        // A history row is one line, and the pre-init startup queue only carries
+        // one string, so both get the halves joined.
+        const std::string joined = p->message + " - " + p->detail;
+
+        if (try_defer_to_startup_queue(p->severity, joined.c_str()))
+            return;
+
+        ToastManager::instance().show_with_detail(p->severity, p->message.c_str(),
+                                                  p->detail.c_str(), p->duration_ms);
+
+        NotificationHistoryEntry entry = {};
+        entry.timestamp_ms = lv_tick_get();
+        entry.severity = p->severity;
+        entry.was_modal = false;
+        entry.was_read = false;
+        entry.title[0] = '\0';
+        strncpy(entry.message, joined.c_str(), sizeof(entry.message) - 1);
+        entry.message[sizeof(entry.message) - 1] = '\0';
+
+        NotificationHistory::instance().add(entry);
+        helix::ui::notification_refresh_from_history();
+
+        if (p->severity == ToastSeverity::ERROR) {
+            helix::ui::notification_update(NotificationStatus::ERROR);
+        }
+    });
+}
+
+} // namespace
+
+void ui_notification_error_with_detail(const char* message, const char* detail) {
+    show_detail_notification(ToastSeverity::ERROR, message, detail, 8000);
+}
+
+void ui_notification_warning_with_detail(const char* message, const char* detail) {
+    show_detail_notification(ToastSeverity::WARNING, message, detail, 8000);
+}
+
 void ui_notification_error(const char* title, const char* message, bool modal) {
     if (!message) {
         spdlog::warn("[Notification] Attempted to show error notification with null message");

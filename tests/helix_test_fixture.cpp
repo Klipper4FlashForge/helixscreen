@@ -11,6 +11,7 @@
 #include "app_constants.h"
 #include "async_lifetime_guard.h"
 #include "config.h"
+#include "display_settings_manager.h"
 #include "fault_surface_correlation.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "src/ui/panel_widgets/print_status_widget.h"
@@ -248,8 +249,19 @@ void HelixTestFixture::reset_all() {
     // (test_ams_edit_overlay_views.cpp). Forcing animations off here makes modal
     // teardown synchronous and removes a whole class of modal-timing flakiness.
     // Set the subject directly (not set_animations_enabled(), which also writes
-    // Config) to avoid Config side effects. No-op when no test has initialized
-    // the subject yet — an uninitialized subject already reads 0/false.
+    // Config) to avoid Config side effects.
+    //
+    // init_subjects() first, for the same reason SystemSettingsManager gets it
+    // above: it is idempotent, and without it this force silently does nothing
+    // whenever a previous test left the manager torn down. deinit_subjects()
+    // withdraws the name from the XML registry, so the lookup finds nothing, the
+    // force is skipped, and the NEXT fixture's init restores the platform
+    // default (animations ON on desktop). Modal exits then animate over
+    // MODAL_EXIT_DURATION_MS instead of completing synchronously, and any modal
+    // test that pumps less than 150ms starts reading the OUTGOING dialog —
+    // lv_obj_find_by_name() returns the stale subtree because it is still parented
+    // to the screen (test_afc_fault_path_modal.cpp read a previous fault's text).
+    helix::DisplaySettingsManager::instance().init_subjects();
     if (lv_subject_t* anim = lv_xml_get_subject(nullptr, "settings_animations_enabled")) {
         lv_subject_set_int(anim, 0);
     }

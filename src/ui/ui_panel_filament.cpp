@@ -45,6 +45,7 @@
 #include "temperature_service.h"
 #include "theme_manager.h"
 #include "tool_state.h"
+#include "toolhead_homing.h"
 
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
@@ -155,20 +156,24 @@ FilamentPanel::FilamentPanel(PrinterState& printer_state, MoonrakerAPI* api)
     // Note: We check are_subjects_initialized() because observers may fire immediately
     // upon registration, but subjects aren't initialized until init_subjects() is called.
     chamber_temp_observer_ = observe_int_sync<FilamentPanel>(
-        printer_state_.get_chamber_temp_subject(), this, [](FilamentPanel* self, int raw) {
+        printer_state_.get_chamber_temp_subject(), this,
+        [](FilamentPanel* self, int raw) {
             self->chamber_current_ = deci_to_degrees(raw);
             if (self->are_subjects_initialized()) {
                 self->update_chamber_temp_display();
                 self->update_status();
             }
-        });
+        },
+        printer_state_.get_subjects_lifetime());
     chamber_target_observer_ = observe_int_sync<FilamentPanel>(
-        printer_state_.get_chamber_target_subject(), this, [](FilamentPanel* self, int raw) {
+        printer_state_.get_chamber_target_subject(), this,
+        [](FilamentPanel* self, int raw) {
             self->chamber_target_ = raw; // Store decidegrees (matches PrinterState format)
             if (self->are_subjects_initialized()) {
                 self->update_chamber_temp_display();
             }
-        });
+        },
+        printer_state_.get_subjects_lifetime());
 
     // Subscribe to active tool changes for dynamic nozzle label + dropdown sync.
     // Also rebind TemperatureService to the new tool's extruder — otherwise
@@ -192,7 +197,8 @@ FilamentPanel::FilamentPanel(PrinterState& printer_state, MoonrakerAPI* api)
             }
             // Re-evaluate Load/Unload/Purge gating for the newly-selected tool.
             self->update_filament_op_buttons();
-        });
+        },
+        helix::ToolState::instance().get_subjects_lifetime());
     update_nozzle_label();
 
     // Re-evaluate Load/Unload/Purge gating whenever live AMS load state changes
@@ -200,10 +206,12 @@ FilamentPanel::FilamentPanel(PrinterState& printer_state, MoonrakerAPI* api)
     // Both are static AmsState subjects — no SubjectLifetime token needed.
     ams_loaded_observer_ = observe_int_sync<FilamentPanel>(
         AmsState::instance().get_filament_loaded_subject(), this,
-        [](FilamentPanel* self, int) { self->update_filament_op_buttons(); });
+        [](FilamentPanel* self, int) { self->update_filament_op_buttons(); },
+        AmsState::instance().get_subjects_lifetime());
     ams_current_slot_observer_ = observe_int_sync<FilamentPanel>(
         AmsState::instance().get_current_slot_subject(), this,
-        [](FilamentPanel* self, int) { self->update_filament_op_buttons(); });
+        [](FilamentPanel* self, int) { self->update_filament_op_buttons(); },
+        AmsState::instance().get_subjects_lifetime());
 
     // The same gating depends on print state: a runout pause arrives while the
     // panel is already open, so without this the buttons keep the pre-pause
@@ -347,6 +355,10 @@ void FilamentPanel::deinit_subjects() {
     if (pending_preheat_op_ != PreheatOp::NONE) {
         pending_preheat_op_ = PreheatOp::NONE;
         pending_preheat_target_ = 0;
+        // Same leak this abandonment path guards against in cancel_pending_preheat().
+        if (AmsBackend* backend = AmsState::instance().get_backend()) {
+            backend->clear_home_preconfirmed();
+        }
         // Don't schedule delayed cooldown during teardown — just cool down immediately
         if (prior_nozzle_target_ == 0) {
             if (auto* c = get_temperature_controller()) {
@@ -433,29 +445,32 @@ void FilamentPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
     update_filament_op_buttons();
 
     // Rebuild dropdown if tool list changes
-    tools_version_observer_ =
-        observe_int_sync<FilamentPanel>(helix::ToolState::instance().get_tools_version_subject(),
-                                        this, [](FilamentPanel* self, int) {
-                                            self->populate_extruder_dropdown();
-                                            self->update_multi_filament_card_visibility();
-                                        });
+    tools_version_observer_ = observe_int_sync<FilamentPanel>(
+        helix::ToolState::instance().get_tools_version_subject(), this,
+        [](FilamentPanel* self, int) {
+            self->populate_extruder_dropdown();
+            self->update_multi_filament_card_visibility();
+        },
+        helix::ToolState::instance().get_subjects_lifetime());
 
     // Subscribe to AMS type to update card row visibility. Graph vs spool
     // sizing is owned by apply_left_column_sizing() (called from
     // update_multi_filament_card_visibility). At MICRO/TINY with no AMS the
     // spool card has almost no content, so the graph becomes the flex filler.
-    ams_type_observer_ =
-        observe_int_sync<FilamentPanel>(AmsState::instance().get_ams_type_subject(), this,
-                                        [](FilamentPanel* self, int /*ams_type*/) {
-                                            self->update_multi_filament_card_visibility();
-                                        });
+    ams_type_observer_ = observe_int_sync<FilamentPanel>(
+        AmsState::instance().get_ams_type_subject(), this,
+        [](FilamentPanel* self, int /*ams_type*/) {
+            self->update_multi_filament_card_visibility();
+        },
+        AmsState::instance().get_subjects_lifetime());
 
     // End the operation guard when the AMS action reaches a terminal state. IDLE
     // means the backend finished; ERROR means it gave up — AFC's stuck-action
     // backstop resolves to ERROR and nothing else, so accepting only IDLE left the
     // guard armed and the button spinning until the 120s timeout (#1183).
     ams_action_observer_ = observe_int_sync<FilamentPanel>(
-        AmsState::instance().get_ams_action_subject(), this, [](FilamentPanel* self, int action) {
+        AmsState::instance().get_ams_action_subject(), this,
+        [](FilamentPanel* self, int action) {
             const bool idle = (action == static_cast<int>(AmsAction::IDLE));
             const bool failed = (action == static_cast<int>(AmsAction::ERROR));
             // AmsSystemInfo::is_busy() is exactly "action is neither IDLE nor
@@ -502,7 +517,8 @@ void FilamentPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
                 // nozzle holds the material temp indefinitely after a swap.
                 self->restore_heater_after_preheat();
             }
-        });
+        },
+        AmsState::instance().get_subjects_lifetime());
 
     // Load persisted preset-material assignments (default PLA/PETG/ABS/TPU if unset)
     helix::MaterialSettingsManager::instance().init(); // idempotent
@@ -1233,6 +1249,28 @@ void FilamentPanel::handle_load_button() {
     snapshot_prior_heater_target();
 
     if (!is_extrusion_allowed()) {
+        // Ask "home printer first?" BEFORE the preheat, not after: the
+        // physical G28 still fires later, inside
+        // AmsSubscriptionBackend::ensure_homed_then() right before the tier-1
+        // dispatch (unchanged) -- only the confirmation moves earlier, so a
+        // decline never wastes a preheat cycle (#1235-adjacent).
+        if (!helix::toolhead_is_homed(printer_state_)) {
+            spdlog::info("[{}] Toolhead not homed -- asking before starting preheat for load",
+                         get_name());
+            // FilamentPanel is an immortal singleton [L012] -- capturing
+            // [this] directly is safe with no AsyncLifetimeGuard token.
+            helix::ui::request_home_confirmation(
+                [this]() {
+                    if (AmsBackend* backend = AmsState::instance().get_backend()) {
+                        backend->arm_home_preconfirmed();
+                    }
+                    start_preheat_for_op(PreheatOp::LOAD);
+                },
+                [this]() {
+                    spdlog::info("[{}] User declined pre-load home; no heat commanded", get_name());
+                });
+            return;
+        }
         start_preheat_for_op(PreheatOp::LOAD);
         return;
     }
@@ -1634,12 +1672,13 @@ void FilamentPanel::setup_external_spool_display() {
     update_external_spool_from_state();
 
     // Observe external spool color changes to reactively update display
-    external_spool_observer_ =
-        observe_int_sync<FilamentPanel>(AmsState::instance().get_external_spool_color_subject(),
-                                        this, [](FilamentPanel* self, int /*color_int*/) {
-                                            self->update_external_spool_from_state();
-                                            self->update_spool_preset();
-                                        });
+    external_spool_observer_ = observe_int_sync<FilamentPanel>(
+        AmsState::instance().get_external_spool_color_subject(), this,
+        [](FilamentPanel* self, int /*color_int*/) {
+            self->update_external_spool_from_state();
+            self->update_spool_preset();
+        },
+        AmsState::instance().get_subjects_lifetime());
 
     spdlog::debug("[{}] External spool display initialized", get_name());
 }
@@ -2502,6 +2541,14 @@ void FilamentPanel::cancel_pending_preheat() {
     pending_preheat_op_ = PreheatOp::NONE;
     pending_preheat_target_ = 0;
 
+    // A confirmed-then-abandoned load must not leave home consent armed for a
+    // later, unrelated dispatch on this backend. Harmless no-op when nothing
+    // was armed (e.g. cancelling an UNLOAD/EXTRUDE/RETRACT/PURGE preheat,
+    // which never arms this).
+    if (AmsBackend* backend = AmsState::instance().get_backend()) {
+        backend->clear_home_preconfirmed();
+    }
+
     // Cancel any pending cooldown timer
     PostOpCooldownManager::instance().cancel();
 
@@ -2610,7 +2657,7 @@ void FilamentPanel::execute_load() {
             backend_op_active_ = false;
             op_in_flight_.reset();
             op_failed(FilamentOp::Load);
-            NOTIFY_ERROR("{}", err.user_msg);
+            helix::ui::notify_ams_error(err);
         }
         return;
     }
@@ -2739,7 +2786,7 @@ void FilamentPanel::execute_unload() {
             backend_op_active_ = false;
             op_in_flight_.reset();
             op_failed(FilamentOp::Unload);
-            NOTIFY_ERROR(lv_tr("Unload failed: {}"), err.user_msg);
+            helix::ui::notify_ams_error(err);
         }
         // Guard ends via ams_action_observer_ (AmsAction IDLE/ERROR) or timeout.
         return;

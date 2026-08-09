@@ -3,8 +3,12 @@
 
 #include "ams_subscription_backend.h"
 
+#include "filament_op_router.h"
 #include "moonraker_error.h"
 #include "printer_state.h"
+#include "toolhead_homing.h"
+
+#include <utility>
 
 #include "hv/json.hpp"
 
@@ -139,13 +143,137 @@ bool AmsSubscriptionBackend::is_filament_loaded() const {
     return system_info_.filament_loaded;
 }
 
-AmsError AmsSubscriptionBackend::check_preconditions(bool requires_toolhead_motion) const {
+bool AmsSubscriptionBackend::op_moves_toolhead(FilamentOp op) const {
+    switch (op) {
+    case FilamentOp::Load:
+    case FilamentOp::Unload:
+    case FilamentOp::ChangeTool:
+        // Pushing or pulling filament through the hotend, and swapping what is
+        // on the carriage, are toolhead motion on every backend there is. No
+        // override path exists for these on purpose.
+        return true;
+    case FilamentOp::SelectSlot:
+        // The one genuinely per-backend answer. See select_slot_moves_toolhead().
+        return select_slot_moves_toolhead();
+    }
+    return true; // Unreachable; fail closed if the enum ever grows.
+}
+
+AmsError AmsSubscriptionBackend::claim_filament_op(FilamentOp op, bool check_state) {
+    AmsAction pending = AmsAction::LOADING;
+    switch (op) {
+    case FilamentOp::Load:
+        pending = AmsAction::LOADING;
+        break;
+    case FilamentOp::Unload:
+        pending = AmsAction::UNLOADING;
+        break;
+    case FilamentOp::SelectSlot:
+    case FilamentOp::ChangeTool:
+        pending = AmsAction::SELECTING;
+        break;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    // The started/busy read and the claim share ONE critical section. Split
+    // across two, a second op could read IDLE between the first op's read and
+    // its claim.
+    //
+    // The read is under mutex_ for the same reason every other system_info_ read
+    // in this class is: it is the field's declared discipline. Every writer today
+    // happens to land on the main thread — handle_status_update() and the gcode
+    // acks all marshal through token.defer() — so an unlocked read here was
+    // formally a race and practically quiet. Do not take that as licence to skip
+    // the lock; the next background writer would make it loud.
+    if (check_state) {
+        if (auto e = state_preconditions_unlocked(); !e.success()) {
+            return e;
+        }
+    }
+    if (filament_op_in_flight_) {
+        return AmsErrorHelper::busy(ams_action_to_string(filament_op_claimed_action_));
+    }
+    filament_op_in_flight_ = true;
+    filament_op_claimed_action_ = pending;
+    return AmsErrorHelper::success();
+}
+
+void AmsSubscriptionBackend::release_filament_op_claim() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    filament_op_in_flight_ = false;
+    filament_op_claimed_action_ = AmsAction::IDLE;
+}
+
+AmsError AmsSubscriptionBackend::run_filament_op(FilamentOp op, int arg) {
+    // Order of refusals is load-bearing and matches what check_preconditions()
+    // has always produced: not-started, then busy, then print-active.
+    if (auto e = claim_filament_op(op, filament_op_gate() == FilamentOpGate::Standard);
+        !e.success()) {
+        return e;
+    }
+    // Owns the claim from here. Every return below releases it, including the
+    // print refusal — a claim that outlived a refused op would wedge the backend
+    // into a permanent busy with no action to explain it.
+    FilamentOpClaim claim(this);
+
+    // Deliberately NOT under mutex_: this reads PrinterState, which has its own
+    // synchronization and nothing in system_info_ to be atomic with, and the
+    // claim already excludes a second op for the whole window.
+    if (op_moves_toolhead(op)) {
+        if (auto e = refuse_if_printing(); !e.success()) {
+            return e;
+        }
+    }
+
+    // mutex_ is NOT held across the hook. The hooks issue gcode and Moonraker
+    // JSON-RPC, several call emit_event() (which takes mutex_ to copy the
+    // callback), and AD5X's unload re-enters eject_lane() which locks — holding
+    // it here would deadlock on the first two and serialize the network on the
+    // third. The claim is a flag, not a lock: a contending op is refused
+    // immediately rather than blocked behind the send.
+    switch (op) {
+    case FilamentOp::Load:
+        return do_load_filament(arg);
+    case FilamentOp::Unload:
+        return do_unload_filament(arg);
+    case FilamentOp::SelectSlot:
+        return do_select_slot(arg);
+    case FilamentOp::ChangeTool:
+        return do_change_tool(arg);
+    }
+    return AmsErrorHelper::success(); // Unreachable; the enum is exhaustive.
+}
+
+AmsError AmsSubscriptionBackend::load_filament(int slot_index) {
+    return run_filament_op(FilamentOp::Load, slot_index);
+}
+
+AmsError AmsSubscriptionBackend::unload_filament(int slot_index) {
+    return run_filament_op(FilamentOp::Unload, slot_index);
+}
+
+AmsError AmsSubscriptionBackend::select_slot(int slot_index) {
+    return run_filament_op(FilamentOp::SelectSlot, slot_index);
+}
+
+AmsError AmsSubscriptionBackend::change_tool(int tool_number) {
+    return run_filament_op(FilamentOp::ChangeTool, tool_number);
+}
+
+AmsError AmsSubscriptionBackend::state_preconditions_unlocked() const {
     if (!running_) {
         return AmsErrorHelper::not_connected(std::string(backend_log_tag()) +
                                              " backend not started");
     }
     if (system_info_.is_busy()) {
         return AmsErrorHelper::busy(ams_action_to_string(system_info_.action));
+    }
+    return AmsErrorHelper::success();
+}
+
+AmsError AmsSubscriptionBackend::check_preconditions(bool requires_toolhead_motion) const {
+    if (auto e = state_preconditions_unlocked(); !e.success()) {
+        return e;
     }
     // Toolhead-motion ops (load/unload/tool-change) additionally refuse while a
     // print is active — no-motion ops (eject_lane, select, unlock) pass false.
@@ -204,83 +332,204 @@ AmsError AmsSubscriptionBackend::refuse_if_printing() const {
     return AmsErrorHelper::print_active(is_paused, /*pause_allows_ops=*/!self_homes);
 }
 
-AmsError AmsSubscriptionBackend::ensure_homed_then(std::string gcode,
-                                                   std::function<void()> on_complete) {
-    // When no completion callback is wanted, route the final gcode through the
-    // 1-arg execute_gcode so subclasses that override only that form (test
-    // fixtures, AFC/ACE/CFS) keep capturing it — exact legacy behavior.
-    if (!client_) {
-        spdlog::debug("{} No client for homing query, executing directly", backend_log_tag());
+void AmsSubscriptionBackend::on_home_confirmation_declined() {
+    spdlog::info("{} User declined the pre-op home; operation cancelled", backend_log_tag());
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        system_info_.action = AmsAction::IDLE;
+    }
+    emit_event(EVENT_STATE_CHANGED);
+}
+
+bool AmsSubscriptionBackend::toolhead_homed() const {
+    if (!api_) {
+        // No connection: callers fall back to dispatching directly, so the
+        // answer is not consulted. Report homed so no G28 is ever synthesized
+        // against a printer we cannot talk to.
+        return true;
+    }
+    return helix::toolhead_is_homed(api_->printer_state());
+}
+
+AmsError
+AmsSubscriptionBackend::ensure_homed_then(std::string gcode, std::function<void()> on_complete,
+                                          std::function<void(const MoonrakerError&)> on_error,
+                                          uint32_t timeout_ms, bool skip_homing, bool silent) {
+    // The homed answer comes from the live homed_axes subject, not an RPC:
+    // toolhead is in the standing objects.subscribe set, so querying it again
+    // was a redundant round trip. skip_homing short-circuits the check
+    // entirely -- toolhead_homed() is never called -- for firmware macros that
+    // home themselves (CFS Fork variant).
+    //
+    // home_preconfirmed_ is intentionally NOT consulted here: it must never
+    // substitute for the toolhead_homed() answer (that would skip the G28
+    // itself, changing what the printer does), only for the PROMPT below. See
+    // the std::exchange() consume further down, which only runs once this
+    // branch has already proven the toolhead genuinely needs a G28.
+    if (skip_homing || toolhead_homed()) {
+        return dispatch_payload(std::move(gcode), std::move(on_complete), std::move(on_error),
+                                timeout_ms, silent);
+    }
+
+    auto gcode_copy = std::move(gcode);
+
+    // The confirmation always resolves through on_confirm/on_cancel below,
+    // never back through this function's return value: with a real prompter
+    // installed the answer arrives on a later main-thread tick (a modal
+    // button tap), so there is nothing left here to return synchronously.
+    // request_home_confirmation() is what makes on_confirm fire immediately
+    // and synchronously when no prompter is installed -- the default every
+    // pre-existing test relies on -- so the two branches below still run in
+    // this same call for all of them.
+    auto token = lifetime_.token();
+    auto send_g28_then_dispatch = [this, token, gcode_copy, on_complete, on_error, timeout_ms,
+                                   silent]() {
+        // Runs either inline in this call (no prompter, or a synchronous
+        // test prompter) or later from an LVGL confirm-button event
+        // callback. Both cases are on the main thread -- the modal only
+        // ever fires its callbacks from lv_timer_handler() -- so this is
+        // not the bg-thread TOCTOU the bare expired()-then-`this` pattern
+        // usually flags.
+        if (token.expired()) { // L081_OK: main-thread only, see comment above
+            return;
+        }
+        spdlog::info("{} Sending G28 before operation", backend_log_tag());
+
+        // No API: emit the G28 through the VIRTUAL execute_gcode rather
+        // than skipping it. api_ is null only in fixtures, and they
+        // override the virtual to capture - routing around it here would
+        // make the unhomed branch untestable and silently drop the G28
+        // from the recorded sequence. The real path below cannot use the
+        // virtual because it needs an error callback and
+        // HOMING_TIMEOUT_MS, which the virtual forms do not take.
+        // Fixtures are synchronous (no real RPC), so the AmsError the
+        // virtual returns IS the only failure signal available here --
+        // there is no async MoonrakerError to forward, so a failure is
+        // translated into one.
+        if (!api_) {
+            AmsError g28_result = execute_gcode("G28");
+            if (!g28_result.success()) {
+                MoonrakerError synthetic;
+                synthetic.type = MoonrakerErrorType::UNKNOWN;
+                synthetic.message = g28_result.technical_msg;
+                handle_dispatch_error(synthetic, on_error);
+                return;
+            }
+            dispatch_payload(gcode_copy, on_complete, on_error, timeout_ms, silent);
+            return;
+        }
+
+        // MoonrakerAPI::execute_gcode() returns void (it's inherently
+        // async); dispatch_payload()'s result on the success leg mirrors
+        // the pre-refactor behavior of the query path this replaces (it
+        // never returned the send_jsonrpc() call either).
+        api_->execute_gcode(
+            "G28",
+            [this, token, gcode_copy, on_complete, on_error, timeout_ms, silent]() {
+                // L081 Mechanism C: the ack lands on a bg thread and
+                // dispatch_payload touches api_/members. Marshal to main.
+                token.defer("AmsSubscriptionBackend::ensure_homed_then_g28_success",
+                            [this, gcode_copy, on_complete, on_error, timeout_ms, silent]() {
+                                dispatch_payload(gcode_copy, on_complete, on_error, timeout_ms,
+                                                 silent);
+                            });
+            },
+            [this, token, on_error](const MoonrakerError& err) {
+                token.defer("AmsSubscriptionBackend::ensure_homed_then_g28_error",
+                            [this, err, on_error]() { handle_dispatch_error(err, on_error); });
+            },
+            MoonrakerAPI::HOMING_TIMEOUT_MS);
+    };
+
+    // Single-shot consume: a UI surface that already asked "home printer
+    // first?" before its own preheat (FilamentPanel / AmsOperationSidebar)
+    // arms this so we don't ask AGAIN here -- but the toolhead is still
+    // genuinely unhomed at this point (nothing sends G28 early), so the G28
+    // itself still fires, unprompted, exactly where it always has. Consuming
+    // AFTER the toolhead_homed() branch above (never reached via short-circuit
+    // when already homed) is what keeps a later, genuinely-unprompted dispatch
+    // asking normally.
+    if (std::exchange(home_preconfirmed_, false)) {
+        spdlog::info("{} Not homed, but pre-confirmed by an earlier prompt -- sending G28 without "
+                     "asking again",
+                     backend_log_tag());
+        send_g28_then_dispatch();
+        return AmsErrorHelper::success();
+    }
+
+    spdlog::info("{} Not homed -- asking before sending G28", backend_log_tag());
+    helix::ui::request_home_confirmation(send_g28_then_dispatch, [this, token]() {
+        // Same main-thread-only reasoning as send_g28_then_dispatch above.
+        if (token.expired()) { // L081_OK: main-thread only, see comment above
+            return;
+        }
+        on_home_confirmation_declined();
+    });
+
+    return AmsErrorHelper::success();
+}
+
+void AmsSubscriptionBackend::handle_dispatch_error(
+    const MoonrakerError& err, const std::function<void(const MoonrakerError&)>& on_error) {
+    if (on_error) {
+        on_error(err);
+        return;
+    }
+    // Historical behaviour, preserved exactly for the 8 pre-existing callers
+    // (none of which pass on_error): log and reset to IDLE so the UI doesn't
+    // get stuck on a "loading" spinner after a failed G28/payload.
+    spdlog::error("{} G-code failed: {}", backend_log_tag(), err.message);
+    std::lock_guard<std::mutex> lock(mutex_);
+    system_info_.action = AmsAction::IDLE;
+}
+
+AmsError
+AmsSubscriptionBackend::dispatch_payload(std::string gcode, std::function<void()> on_complete,
+                                         std::function<void(const MoonrakerError&)> on_error,
+                                         uint32_t timeout_ms, bool silent) {
+    // Legacy shape: dispatch through the SAME two virtuals as before this
+    // method grew these parameters. ~20 fixtures override ONLY
+    // execute_gcode(gcode) / execute_gcode(gcode, on_complete) (see the
+    // dispatch_payload() doc comment in the header); a payload with no
+    // on_complete must reach the 1-arg override or those tests silently stop
+    // capturing anything. All 8 pre-existing callers never pass
+    // on_error/timeout_ms/silent, so they always land here, byte-for-byte the
+    // pre-widening behaviour.
+    if (!on_error && timeout_ms == MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS && silent) {
         return on_complete ? execute_gcode(gcode, std::move(on_complete)) : execute_gcode(gcode);
     }
 
+    // A caller asked for its own error/timeout/toast policy -- the hardcoded
+    // virtuals above can't carry that (they fix AMS_OPERATION_TIMEOUT_MS and
+    // silent=true, and their error handling only logs). Talk to MoonrakerAPI
+    // directly, the same way AmsBackendCfs::dispatch_action_script used to
+    // before this method existed to replace its fork.
+    if (!api_) {
+        MoonrakerError synthetic;
+        synthetic.type = MoonrakerErrorType::CONNECTION_LOST;
+        synthetic.message = "MoonrakerAPI not available";
+        handle_dispatch_error(synthetic, on_error);
+        return AmsErrorHelper::not_connected("MoonrakerAPI not available");
+    }
+
+    const char* tag = backend_log_tag();
     auto token = lifetime_.token();
-    auto gcode_copy = std::move(gcode);
-    client_->send_jsonrpc(
-        "printer.objects.query", json{{"objects", json{{"toolhead", json::array({"homed_axes"})}}}},
-        [this, token, gcode_copy, on_complete](const json& response) {
-            // L081 Mechanism C: this branches into api_->execute_gcode() (member access)
-            // and execute_gcode() (member call); marshal to main.
-            token.defer("AmsSubscriptionBackend::ensure_homed_then_query_success", [this, token,
-                                                                                    gcode_copy,
-                                                                                    response,
-                                                                                    on_complete]() {
-                bool needs_home = true;
-                if (response.contains("result") && response["result"].contains("status")) {
-                    const auto& status = response["result"]["status"];
-                    if (status.contains("toolhead") && status["toolhead"].contains("homed_axes") &&
-                        status["toolhead"]["homed_axes"].is_string()) {
-                        std::string axes = status["toolhead"]["homed_axes"].get<std::string>();
-                        needs_home = (axes.find("xyz") == std::string::npos);
-                    }
-                }
-
-                if (needs_home) {
-                    spdlog::info("{} Not homed, sending G28 before operation", backend_log_tag());
-                    api_->execute_gcode(
-                        "G28",
-                        [this, token, gcode_copy, on_complete]() {
-                            // L081 Mechanism C: execute_gcode touches api_/members.
-                            token.defer("AmsSubscriptionBackend::ensure_homed_then_g28_success",
-                                        [this, gcode_copy, on_complete]() {
-                                            spdlog::info("{} Homing complete, proceeding with: {}",
-                                                         backend_log_tag(), gcode_copy);
-                                            if (on_complete) {
-                                                execute_gcode(gcode_copy, on_complete);
-                                            } else {
-                                                execute_gcode(gcode_copy);
-                                            }
-                                        });
-                        },
-                        [this, token](const MoonrakerError& err) {
-                            // L081 Mechanism C: system_info_ write under lock.
-                            token.defer("AmsSubscriptionBackend::ensure_homed_then_g28_error",
-                                        [this, message = err.message]() {
-                                            spdlog::error("{} Homing failed: {}", backend_log_tag(),
-                                                          message);
-                                            std::lock_guard<std::mutex> lock(mutex_);
-                                            system_info_.action = AmsAction::IDLE;
-                                        });
-                        },
-                        MoonrakerAPI::HOMING_TIMEOUT_MS);
-                } else if (on_complete) {
-                    execute_gcode(gcode_copy, on_complete);
-                } else {
-                    execute_gcode(gcode_copy);
-                }
-            });
+    api_->execute_gcode(
+        gcode,
+        [tag, on_complete = std::move(on_complete)]() {
+            spdlog::debug("{} G-code executed successfully", tag);
+            if (on_complete) {
+                on_complete();
+            }
         },
-        [this, token](const MoonrakerError& err) {
-            // L081 Mechanism C: system_info_ write under lock.
-            token.defer("AmsSubscriptionBackend::ensure_homed_then_query_error",
-                        [this, message = err.message]() {
-                            spdlog::error("{} Homed axes query failed: {}", backend_log_tag(),
-                                          message);
-                            std::lock_guard<std::mutex> lock(mutex_);
-                            system_info_.action = AmsAction::IDLE;
-                        });
-        });
-
+        [this, token, on_error](const MoonrakerError& err) {
+            // L081 Mechanism C: this lands on the libhv response thread and
+            // touches system_info_/mutex_ (default path) or arbitrary caller
+            // logic (on_error). Marshal to main either way.
+            token.defer("AmsSubscriptionBackend::dispatch_payload_error",
+                        [this, err, on_error]() { handle_dispatch_error(err, on_error); });
+        },
+        timeout_ms, silent);
     return AmsErrorHelper::success();
 }
 

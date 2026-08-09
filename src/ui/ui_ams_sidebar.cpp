@@ -29,6 +29,7 @@
 #include "standard_macros.h"
 #include "static_subject_registry.h"
 #include "temperature_controller.h"
+#include "toolhead_homing.h"
 #include "ui/ui_cleanup_helpers.h"
 
 #include <spdlog/spdlog.h>
@@ -39,6 +40,12 @@
 namespace helix::ui {
 
 namespace {
+
+/// UpdateQueue tags for the guarded home-confirm callbacks in
+/// handle_load_with_preheat(). String literals: the skip counter interns by
+/// pointer identity.
+constexpr const char* kHomeConfirmLoadTag = "AmsOperationSidebar::home_confirm_load";
+constexpr const char* kHomeConfirmLoadDeclineTag = "AmsOperationSidebar::home_confirm_load_decline";
 
 /**
  * @brief Drives the sidebar Unload button's disabled state (1 = disabled).
@@ -296,7 +303,7 @@ void AmsOperationSidebar::init_observers() {
                     if (err.result == AmsResult::SUCCESS) {
                         NOTIFY_INFO(lv_tr("Bypass enabled"));
                     } else {
-                        NOTIFY_ERROR(lv_tr("Bypass failed: {}"), err.user_msg);
+                        helix::ui::notify_ams_error(err, lv_tr("Bypass failed"));
                     }
                 }
             }
@@ -309,19 +316,21 @@ void AmsOperationSidebar::init_observers() {
             self->refresh_unload_gating();
 
             self->prev_ams_action_ = action;
-        });
+        },
+        AmsState::instance().get_subjects_lifetime());
 
     // Current slot observer: updates loaded card display and reset button label
-    current_slot_observer_ =
-        observe_int_sync<AmsOperationSidebar>(AmsState::instance().get_current_slot_subject(), this,
-                                              [](AmsOperationSidebar* self, int /*slot_index*/) {
-                                                  if (!self->active_ || !self->sidebar_root_)
-                                                      return;
-                                                  self->update_current_loaded_display();
-                                                  self->sync_reset_button_label();
-                                                  self->update_check_gates_visibility();
-                                                  self->refresh_unload_gating();
-                                              });
+    current_slot_observer_ = observe_int_sync<AmsOperationSidebar>(
+        AmsState::instance().get_current_slot_subject(), this,
+        [](AmsOperationSidebar* self, int /*slot_index*/) {
+            if (!self->active_ || !self->sidebar_root_)
+                return;
+            self->update_current_loaded_display();
+            self->sync_reset_button_label();
+            self->update_check_gates_visibility();
+            self->refresh_unload_gating();
+        },
+        AmsState::instance().get_subjects_lifetime());
 
     // The two terms the sidebar never had. ams_filament_loaded is what the XML
     // used to bind on its own; print state is the one whose absence let Unload
@@ -334,7 +343,8 @@ void AmsOperationSidebar::init_observers() {
     // observer takes the lifetime token (#705); AmsState's does not.
     filament_loaded_observer_ = observe_int_sync<AmsOperationSidebar>(
         AmsState::instance().get_filament_loaded_subject(), this,
-        [](AmsOperationSidebar* self, int) { self->refresh_unload_gating(); });
+        [](AmsOperationSidebar* self, int) { self->refresh_unload_gating(); },
+        AmsState::instance().get_subjects_lifetime());
     print_state_observer_ = observe_int_sync<AmsOperationSidebar>(
         printer_state_.get_print_state_enum_subject(), this,
         [](AmsOperationSidebar* self, int) { self->refresh_unload_gating(); },
@@ -348,7 +358,8 @@ void AmsOperationSidebar::init_observers() {
                 return;
             self->sync_reset_button_label();
             self->update_check_gates_visibility();
-        });
+        },
+        AmsState::instance().get_subjects_lifetime());
 
     // Bypass spool color observer: refreshes loaded card when external spool changes
     bypass_spool_observer_ = observe_int_sync<AmsOperationSidebar>(
@@ -357,7 +368,8 @@ void AmsOperationSidebar::init_observers() {
             if (!self->active_ || !self->sidebar_root_)
                 return;
             self->update_current_loaded_display();
-        });
+        },
+        AmsState::instance().get_subjects_lifetime());
 
     // Color observer: reactively updates loaded card swatch color
     color_observer_ = observe_int_sync<AmsOperationSidebar>(
@@ -371,7 +383,8 @@ void AmsOperationSidebar::init_observers() {
                 lv_obj_set_style_bg_color(swatch, color, 0);
                 lv_obj_set_style_border_color(swatch, color, 0);
             }
-        });
+        },
+        AmsState::instance().get_subjects_lifetime());
 
     // Extruder temp observer: checks pending preheat load + refreshes heat step
     extruder_temp_observer_ = observe_int_sync<AmsOperationSidebar>(
@@ -381,7 +394,8 @@ void AmsOperationSidebar::init_observers() {
                 return;
             self->check_pending_load();
             self->refresh_heat_step_display();
-        });
+        },
+        printer_state_.get_subjects_lifetime());
 
     // Extruder target observer: refreshes heat step when target temp changes
     // (the macro raises the target before any visible action change)
@@ -391,7 +405,8 @@ void AmsOperationSidebar::init_observers() {
             if (!self->active_)
                 return;
             self->refresh_heat_step_display();
-        });
+        },
+        printer_state_.get_subjects_lifetime());
 
     // Indeterminate "Working…" observer: when the backend flags a stalled
     // progress feed (frozen live-temp number), re-render the Heat step so it
@@ -403,7 +418,8 @@ void AmsOperationSidebar::init_observers() {
             if (!self->active_)
                 return;
             self->refresh_heat_step_display();
-        });
+        },
+        AmsState::instance().get_subjects_lifetime());
 
     // The backend-driven step-index observer (step_index_observer_) is created
     // lazily in recreate_step_progress_for_operation() once the active backend's
@@ -457,11 +473,17 @@ void AmsOperationSidebar::cleanup() {
     // trigger callbacks on already-null widget pointers.
     clog_meter_.reset();
 
-    // Clear all pending state
+    // Clear all pending state. clear_home_preconfirmed() undoes a confirmed
+    // but now-abandoned pre-load home prompt (panel closing mid-preheat) so
+    // consent doesn't leak into a later, unrelated operation on this backend
+    // -- idempotent no-op when nothing was armed.
     pending_bypass_enable_ = false;
     pending_load_slot_ = -1;
     pending_load_target_temp_ = 0;
     ui_initiated_heat_ = false;
+    if (AmsBackend* backend = AmsState::instance().get_backend()) {
+        backend->clear_home_preconfirmed();
+    }
     prev_ams_action_ = AmsAction::IDLE;
     step_index_subject_ = nullptr;
     live_temp_step_index_ = -1;
@@ -901,7 +923,7 @@ void AmsOperationSidebar::start_operation(StepOperationType op_type, int target_
 void AmsOperationSidebar::fail_started_operation(const AmsError& error) {
     spdlog::warn("[AmsSidebar] Operation dispatch failed: {} ({})", error.user_msg,
                  error.technical_msg);
-    NOTIFY_ERROR(lv_tr("Filament operation failed: {}"), error.user_msg);
+    helix::ui::notify_ams_error(error, lv_tr("Filament operation failed"));
     target_load_slot_ = -1;
     AmsState::instance().set_pending_target_slot(-1);
     // Backend never left IDLE; pull its truth back into the UI so the action
@@ -1164,7 +1186,7 @@ void AmsOperationSidebar::handle_unload(int slot_index) {
     AmsBackend* backend = AmsState::instance().get_backend();
     AmsError error = backend->unload_filament(slot_index);
     if (error.result != AmsResult::SUCCESS) {
-        NOTIFY_ERROR(lv_tr("Unload failed: {}"), error.user_msg);
+        helix::ui::notify_ams_error(error);
     }
 }
 
@@ -1187,7 +1209,7 @@ void AmsOperationSidebar::handle_reset() {
 
     AmsError error = backend->reset();
     if (error.result != AmsResult::SUCCESS) {
-        NOTIFY_ERROR(lv_tr("Reset failed: {}"), error.user_msg);
+        helix::ui::notify_ams_error(error, lv_tr("Reset failed"));
     }
 }
 
@@ -1202,7 +1224,7 @@ void AmsOperationSidebar::handle_check_gates() {
 
     AmsError error = backend->check_all_gates();
     if (error.result != AmsResult::SUCCESS) {
-        NOTIFY_ERROR(lv_tr("Check slots failed: {}"), error.user_msg);
+        helix::ui::notify_ams_error(error, lv_tr("Check slots failed"));
     }
 }
 
@@ -1246,7 +1268,7 @@ void AmsOperationSidebar::handle_bypass_toggle() {
                 NOTIFY_INFO(lv_tr("Unloading before bypass..."));
             } else {
                 pending_bypass_enable_ = false;
-                NOTIFY_ERROR(lv_tr("Unload failed: {}"), error.user_msg);
+                helix::ui::notify_ams_error(error);
             }
             return;
         }
@@ -1259,7 +1281,7 @@ void AmsOperationSidebar::handle_bypass_toggle() {
     }
 
     if (error.result != AmsResult::SUCCESS) {
-        NOTIFY_ERROR(lv_tr("Bypass toggle failed: {}"), error.user_msg);
+        helix::ui::notify_ams_error(error, lv_tr("Bypass toggle failed"));
     }
 }
 
@@ -1368,20 +1390,55 @@ void AmsOperationSidebar::handle_load_with_preheat(int slot_index) {
         return;
     }
 
-    // Start preheating
-    pending_load_slot_ = slot_index;
-    pending_load_target_temp_ = effective_target;
-    ui_initiated_heat_ = true;
+    // Start preheating. get_temperature_controller() captured by value below
+    // since it's a plain accessor, not a stashed pointer across the async gap.
+    auto start_preheat = [this, slot_index, target, effective_target, latch]() {
+        pending_load_slot_ = slot_index;
+        pending_load_target_temp_ = effective_target;
+        ui_initiated_heat_ = true;
 
-    if (auto* c = get_temperature_controller()) {
-        c->set_target(helix::HeaterType::Nozzle, static_cast<double>(target),
-                      {.toast = false, .keep_previous_hot = true});
+        if (auto* c = get_temperature_controller()) {
+            c->set_target(helix::HeaterType::Nozzle, static_cast<double>(target),
+                          {.toast = false, .keep_previous_hot = true});
+        }
+
+        show_preheat_feedback(slot_index, effective_target);
+
+        spdlog::info(
+            "[AmsSidebar] Starting preheat to {}C (requested {}, latch {}) for slot {} load",
+            effective_target, target, latch, slot_index);
+    };
+
+    // Ask "home printer first?" BEFORE the preheat, not after: the physical
+    // G28 still fires later, inside AmsSubscriptionBackend::ensure_homed_then()
+    // right before the tier-1 dispatch (unchanged) -- only the confirmation
+    // moves earlier, so a decline never wastes a preheat cycle.
+    if (!helix::toolhead_is_homed(printer_state_)) {
+        spdlog::info("[AmsSidebar] Toolhead not homed -- asking before starting preheat for "
+                     "slot {} load",
+                     slot_index);
+        // The shared MacroParamModal comment above explains why this sidebar
+        // is NOT immortal (dies with the AMS panel) -- route through
+        // lifetime_.token()/defer() rather than a bare captured [this].
+        auto token = lifetime_.token();
+        helix::ui::request_home_confirmation(
+            [this, token, start_preheat]() {
+                token.defer(kHomeConfirmLoadTag, [this, start_preheat]() {
+                    if (AmsBackend* backend = AmsState::instance().get_backend()) {
+                        backend->arm_home_preconfirmed();
+                    }
+                    start_preheat();
+                });
+            },
+            [this, token]() {
+                token.defer(kHomeConfirmLoadDeclineTag, [this]() {
+                    spdlog::info("[AmsSidebar] User declined pre-load home; no heat commanded");
+                });
+            });
+        return;
     }
 
-    show_preheat_feedback(slot_index, effective_target);
-
-    spdlog::info("[AmsSidebar] Starting preheat to {}C (requested {}, latch {}) for slot {} load",
-                 effective_target, target, latch, slot_index);
+    start_preheat();
 }
 
 void AmsOperationSidebar::check_pending_load() {

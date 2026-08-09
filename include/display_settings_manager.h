@@ -3,9 +3,12 @@
 
 #pragma once
 
+#include "ui_observer_guard.h" // SubjectLifetime
+
 #include "lvgl/lvgl.h"
 #include "subject_managed_panel.h"
 
+#include <memory>
 #include <string>
 
 namespace helix {
@@ -348,6 +351,18 @@ class DisplaySettingsManager {
     }
 
     /** @brief G-code render mode subject (integer: 0=auto, 1=3D, 2=2D, 3=thumbnail only) */
+    /**
+     * @brief Death signal for the subjects this singleton owns.
+     *
+     * Panels that outlive a deinit_subjects() cycle and observe these settings
+     * subjects — PrintStatusPanel watches subject_gcode_render_mode() to reapply
+     * the viewer mode live — must pass this to observe_*(). Without it their
+     * ObserverGuards keep pointers to observer nodes deinit_all() freed.
+     */
+    [[nodiscard]] SubjectLifetime get_subjects_lifetime() const {
+        return subjects_lifetime_;
+    }
+
     lv_subject_t* subject_gcode_render_mode() {
         return &gcode_render_mode_subject_;
     }
@@ -374,6 +389,10 @@ class DisplaySettingsManager {
     ~DisplaySettingsManager() = default;
 
     SubjectManager subjects_;
+    /// See get_subjects_lifetime(). Created with the object and REPLACED (never
+    /// nulled) by deinit_subjects(): an empty token reads as "dead" and would
+    /// suppress removal for live observers.
+    SubjectLifetime subjects_lifetime_ = std::make_shared<bool>(true);
 
     lv_subject_t dark_mode_subject_;
     lv_subject_t dark_mode_available_subject_;

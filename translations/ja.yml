@@ -1008,7 +1008,9 @@ translations:
   Hold anywhere to cancel: どこかを長押ししてキャンセル
   Holding nozzle at {}°C to purge previous filament.: 前のフィラメントをパージするためノズルを {}°C に保持しています。
   Home: ホーム
+  Home & Continue: ホーミングして続行
   Home failed: ホーミング失敗
+  Home printer first?: 先にプリンターをホーミングしますか？
   Home selector: セレクターをホーミング
   Homing AFC system...: AFCシステムをホーミング中...
   Homing X...: X軸をホーミング中...
@@ -2179,6 +2181,7 @@ translations:
     then lock the reading.
   : モーターがベルトを振動させ、ストロボライトが同じ周波数で点滅します。ベルトが静止して(止まって)見えたとき、共振周波数を見つけたことになります。\n\n周波数ボタンで値を変化させ、ベルトが静止して見えたらその値を固定してください。
   The printer halted this print and cannot resume it. Restart from the beginning?: プリンターはこの印刷を停止し、再開できません。最初からやり直しますか？
+  The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear.: プリンターがホーミングされていません。続行すると全軸がホーミングされ、ツールヘッドが移動します。ベッドに物がないことを確認してください。
   The printer lost power during a print. It can resume where it left off.: 印刷中にプリンターの電源が失われました。中断した箇所から再開できます。
   The printer lost power during a print. The resumed layer may not line up exactly.: 印刷中にプリンターの電源が失われました。再開したレイヤーがわずかにずれる可能性があります。
   The printer lost power while printing {}. Resume where it left off?: '{} の印刷中にプリンターの電源が失われました。中断した箇所から再開しますか？'

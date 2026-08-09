@@ -62,6 +62,7 @@
 #include "../../include/moonraker_client_mock.h"
 #include "../../include/printer_hardware.h"
 #include "../../include/printer_state.h"
+#include "../helix_test_fixture.h"
 #include "moonraker_api.h"
 
 #include <atomic>
@@ -769,7 +770,8 @@ TEST_CASE("MoonrakerClientMock G-code temperature parsing", "[connection][slow][
 // Hardware Discovery Tests
 // ============================================================================
 
-TEST_CASE("MoonrakerClientMock hardware discovery", "[connection][hardware_discovery]") {
+TEST_CASE_METHOD(HelixTestFixture, "MoonrakerClientMock hardware discovery",
+                 "[connection][hardware_discovery]") {
     SECTION("VORON_24 has correct hardware") {
         MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
         auto hw = mock.hardware();
@@ -1376,7 +1378,8 @@ TEST_CASE("MoonrakerClientMock send_jsonrpc methods", "[connection][jsonrpc]") {
 // Guessing Methods Tests (Use PrinterHardware with mock hardware data)
 // ============================================================================
 
-TEST_CASE("PrinterHardware guessing methods work with mock hardware data", "[printer]") {
+TEST_CASE_METHOD(HelixTestFixture, "PrinterHardware guessing methods work with mock hardware data",
+                 "[printer]") {
     SECTION("guess_bed_heater returns heater_bed") {
         MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
         mock.discover_printer([]() {});

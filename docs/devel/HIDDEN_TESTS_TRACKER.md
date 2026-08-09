@@ -1,6 +1,6 @@
 # Hidden Tests Tracker
 
-**Last Updated:** 2026-08-08
+**Last Updated:** 2026-08-09
 **Total Hidden Tests:** 89 (Catch2's own count — `./build/bin/helix-tests "[.]" --list-tests | tail -1`)
 
 Hidden tests are excluded from normal runs using Catch2's `[.]` tag prefix. They exist for legitimate reasons (benchmarks, stress tests, destructive global-state cycles, tests that need the `ui_xml/` tree on disk) and should be run manually when relevant.
@@ -19,7 +19,7 @@ make test-hidden-list                             # inventory without running
 
 > **Run from the repo root.** Every `[.ui_integration]` and `[.xml_required]` test reads `ui_xml/` by relative path. From any other cwd they fail or skip en masse, which reads as a regression. `make test-hidden` `cd`s to `$(CURDIR)` for exactly this reason.
 
-> **`make test-hidden` is not wired into `make test-run` or `scripts/quality-checks.sh`.** Making the hidden set runnable is a separate decision from making it mandatory.
+> **`make test-hidden` is not part of `make test-run`** — these tests cannot share that run's sharded, parallel, arbitrary-cwd execution. It *is* gated in `scripts/quality-checks.sh`, but only when the test binary is already current: the gate never builds one, so a cold checkout and the CI Code Quality runner both skip it with an instruction rather than eating a ten-minute build on a commit hook. Broad `src/` coverage of this set therefore still belongs in nightly.
 
 > **Scope:** this tracker counts `[.]`-prefixed hidden tests in compiled `tests/**/*.cpp`. Two other categories are tracked separately and are NOT in the count below: `[!mayfail]` tests (which run but are allowed to fail) and any `*.cpp.disabled` files (excluded from the build entirely).
 
@@ -30,19 +30,19 @@ make test-hidden-list                             # inventory without running
 Measured on macOS (Darwin 24.3.0, arm64), serial, from the repo root, ~65s:
 
 ```
-test cases:   89 |   41 passed |  6 failed | 42 skipped
+test cases:   89 |   48 passed | 41 skipped
 ```
 
-The 42 "skipped" are `SKIP()` calls inside otherwise-passing cases (absent hardware, absent XML component, platform guards) — not silent failures.
+The 41 "skipped" are `SKIP()` calls inside otherwise-passing cases (absent hardware, absent XML component, platform guards) — not silent failures.
 
-The 6 failures are pre-existing and environmental. Both reproduce **in isolation**, so neither is an ordering artefact:
+**The set is green, which is what makes it gateable.** It was not always: six cases were red, and both groups reproduced in isolation, so neither was an ordering artefact. What they turned out to be:
 
-| Test(s) | File | Why it fails |
-|---------|------|--------------|
-| 5 cases: *Backend initialization state*, *Network scanning lifecycle*, *Scan callback preservation*, *WiFi edge cases*, *WiFi network information* | `test_wifi_manager.cpp` (`[.disabled]`) | macOS CoreWLAN refuses to start without Location Services permission: `[WiFiMacOS] System prerequisites check failed: Location permission not determined`. This is exactly why the file is tagged `[.disabled]`. Grant the permission or run on Linux. |
-| *ams_slot: material label binds to subject* | `test_ui_ams_slot.cpp:336` (`[.skip]`) | The label renders `"--"` where the test expects `"PLA"`. These are the superseded `ams_slot` binding tests (see the row in the summary table); the assertion has drifted from the shipped widget. |
+| Test(s) | File | What was actually wrong |
+|---------|------|-------------------------|
+| 5 cases: *Backend initialization state*, *Network scanning lifecycle*, *Scan callback preservation*, *WiFi edge cases*, *WiFi network information* | `test_wifi_manager.cpp` (`[.disabled]`) | They assert **mock-backend** data (10 seeded networks, a 2s simulated scan) but ran against whatever `WifiBackend::create()` picked — CoreWLAN on macOS, which refuses to start without Location Services. Not a permission problem to skip around: against a *granted* permission they would have failed too, on `networks.size() == 10`. Fixed by pointing them at the mock the way the `[observers]` cases in the same file already did (`use_mock_backend()`), so they now run on every platform. Their `wait_for_condition` also had to drain the `UpdateQueue` — scan results reach the caller through `queue_update()`. |
+| *ams_slot: material label binds to subject* | `test_ui_ams_slot.cpp` (`[.skip]`) | Missing arrangement, not a superseded assertion: the case never called `AmsState::init_subjects()`, so `sync_from_backend()`'s `lv_subject_copy_string` landed on an uninitialised subject and the label stayed `"--"`. It is the only coverage of the **backend → subject** leg; the `[1065]` widget test next to it seeds the subject directly and covers subject → label. Mutating away the `slot_materials_` write in `sync_from_backend()` reds this case and leaves `[1065]` green, which is the proof the two are not duplicates. |
 
-**`make test-hidden` is therefore red today, on purpose.** The filter was not narrowed to hide these and the two known-bad groups were not gated out — a hidden test that no longer passes is a finding, and burying it in an exclusion list is how it stays buried. Fix or retire them before anyone considers making this target mandatory.
+Both groups were left red rather than filtered out on purpose while they were red — a hidden test that no longer passes is a finding, and burying it in an exclusion list is how it stays buried.
 
 ---
 
@@ -52,9 +52,9 @@ The 6 failures are pre-existing and environmental. Both reproduce **in isolation
 |-----|------:|---------|-------------|
 | `[.xml_required]` | 41 | `test_ui_panel_bindings.cpp` | Panel subject-binding assertions needing the XML tree |
 | `[.ui_integration]` | 17 | 5 files (below) | Real widget tree built from `ui_xml/` |
-| `[.disabled]` | 11 | `test_wifi_manager.cpp` | macOS WiFi backend needs Location permission |
+| `[.disabled]` | 11 | `test_wifi_manager.cpp` | WiFiManager integration against the mock backend; slow (2-3s simulated scan/connect per case) |
 | `[.]` (generic) | 9 | `test_config.cpp`, `test_moonraker_client_robustness.cpp`, `test_moonraker_api_exclude_object.cpp`, `test_nozzle_render_gallery.cpp` | Destructive global state, event-loop concurrency, BMP-writing gallery |
-| `[.skip]` | 7 | `test_ui_ams_slot.cpp` | Superseded `ams_slot` binding tests |
+| `[.skip]` | 7 | `test_ui_ams_slot.cpp` | `ams_slot` binding/cleanup tests (all passing; tag predates the fix) |
 | `[.slow]` | 2 | `test_async_callback_safety.cpp` | Stress tests, too slow for CI |
 | `[.memprobe]` | 1 | `test_gcode_memory_probe.cpp` | Memory measurement probe |
 | `[.integration]` | 1 | `test_moonraker_client_security.cpp` | Timeout-callback deadlock check |

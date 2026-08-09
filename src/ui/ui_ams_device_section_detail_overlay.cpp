@@ -503,7 +503,7 @@ void AmsDeviceSectionDetailOverlay::on_action_clicked(lv_event_t* e) {
                 if (result.success()) {
                     NOTIFY_INFO("{} {}", lv_tr(label.c_str()), lv_tr("started"));
                 } else {
-                    NOTIFY_ERROR("{}", result.user_msg);
+                    helix::ui::notify_ams_error(result);
                 }
             }
         }
@@ -550,7 +550,7 @@ void AmsDeviceSectionDetailOverlay::on_toggle_changed(lv_event_t* e) {
                     NOTIFY_INFO("{} {}", lv_tr(label.c_str()),
                                 new_value ? lv_tr("enabled") : lv_tr("disabled"));
                 } else {
-                    NOTIFY_ERROR("{}", result.user_msg);
+                    helix::ui::notify_ams_error(result);
                     // Revert the toggle state on failure
                     if (new_value) {
                         lv_obj_remove_state(sw, LV_STATE_CHECKED);
@@ -645,7 +645,7 @@ void AmsDeviceSectionDetailOverlay::on_slider_released(lv_event_t* e) {
                         NOTIFY_INFO("{} {} {}", lv_tr(label.c_str()), lv_tr("set to"), int_val);
                     }
                 } else {
-                    NOTIFY_ERROR("{}", result.user_msg);
+                    helix::ui::notify_ams_error(result);
                 }
             }
         }
@@ -731,7 +731,7 @@ void AmsDeviceSectionDetailOverlay::on_value_input_ready(lv_event_t* e) {
                                         static_cast<int32_t>(val));
                         }
                     } else {
-                        NOTIFY_ERROR("{}", result.user_msg);
+                        helix::ui::notify_ams_error(result);
                     }
                 }
             }
@@ -784,7 +784,7 @@ void AmsDeviceSectionDetailOverlay::on_dropdown_changed(lv_event_t* e) {
                 if (result.success()) {
                     NOTIFY_INFO("{} {} {}", lv_tr(label.c_str()), lv_tr("set to"), selected_str);
                 } else {
-                    NOTIFY_ERROR("{}", result.user_msg);
+                    helix::ui::notify_ams_error(result);
                 }
             }
         }

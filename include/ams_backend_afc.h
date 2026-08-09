@@ -279,12 +279,16 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// bookkeeping), which would otherwise log on every single toolchange.
     [[nodiscard]] bool is_narration_drift_candidate(const std::string& line) const override;
 
-    // Operations
-    AmsError load_filament(int slot_index) override;
-    AmsError unload_filament(int slot_index) override;
-    AmsError select_slot(int slot_index) override;
-    AmsError change_tool(int tool_number) override;
+  protected:
+    // Operations. Gated by AmsSubscriptionBackend's NVI wrapper.
+    // select_slot_moves_toolhead() stays false: an AFC select positions a lane,
+    // it does not drive the toolhead.
+    AmsError do_load_filament(int slot_index) override;
+    AmsError do_unload_filament(int slot_index) override;
+    AmsError do_select_slot(int slot_index) override;
+    AmsError do_change_tool(int tool_number) override;
 
+  public:
     // Recovery
     AmsError recover() override;
     AmsError reset() override;
@@ -509,6 +513,13 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     const char* backend_log_tag() const override {
         return "[AMS AFC]";
     }
+
+    /// dispatch_operation() sets the optimistic action (begin_dispatch_locked)
+    /// BEFORE calling ensure_homed_then() -- on decline, the base class's
+    /// generic IDLE reset alone leaves pending_dispatch_action_ armed and
+    /// operation_detail stale, so route through abandon_dispatch() instead,
+    /// the same unwind dispatch_operation()'s own `if (!result)` net uses.
+    void on_home_confirmation_declined() override;
 
   private:
     // === User-attached slot identity (FilamentSlotOverrideStore) =============

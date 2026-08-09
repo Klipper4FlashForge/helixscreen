@@ -13,11 +13,13 @@
  */
 
 #include "ui_update_queue.h"
+
 #include "../../include/moonraker_api.h"
 #include "../../include/moonraker_client.h"
 #include "../../include/moonraker_client_mock.h"
 #include "../../include/printer_hardware.h"
 #include "../../lvgl/lvgl.h"
+#include "../helix_test_fixture.h"
 #include "../ui_test_utils.h"
 
 #include <chrono>
@@ -158,8 +160,8 @@ TEST_CASE_METHOD(MoonrakerAPIDomainTestFixture, "PrinterHardware::guess_main_led
 // Hardware Guessing - Multiple Printer Types
 // ============================================================================
 
-TEST_CASE("PrinterHardware guessing works for multiple printer types",
-          "[printer][guessing][printers]") {
+TEST_CASE_METHOD(HelixTestFixture, "PrinterHardware guessing works for multiple printer types",
+                 "[printer][guessing][printers]") {
     PrinterState state;
     state.init_subjects(false);
 
@@ -245,8 +247,7 @@ TEST_CASE_METHOD(MoonrakerAPIDomainTestFixture,
 }
 
 TEST_CASE_METHOD(MoonrakerAPIDomainTestFixture,
-                 "MoonrakerAPI::get_bed_mesh_profiles returns profile list",
-                 "[api][bedmesh]") {
+                 "MoonrakerAPI::get_bed_mesh_profiles returns profile list", "[api][bedmesh]") {
     std::vector<std::string> profiles = api->advanced().get_bed_mesh_profiles();
 
     // Verify profiles list is reasonable
@@ -262,8 +263,7 @@ TEST_CASE_METHOD(MoonrakerAPIDomainTestFixture,
 // ============================================================================
 
 TEST_CASE_METHOD(MoonrakerAPIDomainTestFixture,
-                 "MoonrakerAPI::get_excluded_objects handles empty response",
-                 "[api][exclude]") {
+                 "MoonrakerAPI::get_excluded_objects handles empty response", "[api][exclude]") {
     bool callback_called = false;
     std::set<std::string> result;
 
@@ -281,8 +281,7 @@ TEST_CASE_METHOD(MoonrakerAPIDomainTestFixture,
 }
 
 TEST_CASE_METHOD(MoonrakerAPIDomainTestFixture,
-                 "MoonrakerAPI::get_available_objects handles empty response",
-                 "[api][exclude]") {
+                 "MoonrakerAPI::get_available_objects handles empty response", "[api][exclude]") {
     bool callback_called = false;
     std::vector<std::string> result;
 
@@ -349,8 +348,9 @@ TEST_CASE("BedMeshProfile struct initialization", "[api][bedmesh]") {
 // All Printer Types Tests
 // ============================================================================
 
-TEST_CASE("PrinterHardware and MoonrakerAPI domain methods work for all printer types",
-          "[printer][api][domain][all_printers]") {
+TEST_CASE_METHOD(HelixTestFixture,
+                 "PrinterHardware and MoonrakerAPI domain methods work for all printer types",
+                 "[printer][api][domain][all_printers]") {
     PrinterState state;
     state.init_subjects(false);
 
@@ -408,8 +408,9 @@ TEST_CASE("PrinterHardware and MoonrakerAPI domain methods work for all printer 
 // Hardware Discovery Access via MoonrakerAPI Tests
 // ============================================================================
 
-TEST_CASE("MoonrakerAPI hardware() returns discovery data after discovery completes",
-          "[api][hardware]") {
+TEST_CASE_METHOD(HelixTestFixture,
+                 "MoonrakerAPI hardware() returns discovery data after discovery completes",
+                 "[api][hardware]") {
     PrinterState state;
     state.init_subjects(false);
 
@@ -442,7 +443,8 @@ TEST_CASE("MoonrakerAPI hardware() returns discovery data after discovery comple
     mock.disconnect();
 }
 
-TEST_CASE("MoonrakerAPI hardware() accessor provides const access", "[api][hardware]") {
+TEST_CASE_METHOD(HelixTestFixture, "MoonrakerAPI hardware() accessor provides const access",
+                 "[api][hardware]") {
     PrinterState state;
     state.init_subjects(false);
 

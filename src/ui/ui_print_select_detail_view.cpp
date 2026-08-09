@@ -167,7 +167,8 @@ void PrintSelectDetailView::init_subjects() {
     // lifetime token. Handler no-ops while the view is closed.
     slots_version_observer_ = observe_int_sync<PrintSelectDetailView>(
         AmsState::instance().get_slots_version_subject(), this,
-        [](PrintSelectDetailView* self, int /*version*/) { self->on_ams_state_changed(); });
+        [](PrintSelectDetailView* self, int /*version*/) { self->on_ams_state_changed(); },
+        AmsState::instance().get_subjects_lifetime());
 
     subjects_initialized_ = true;
     spdlog::debug("[DetailView] Initialized pre-print option subjects");
@@ -1088,9 +1089,9 @@ std::vector<helix::ToolMapping> PrintSelectDetailView::effective_mappings() cons
     // Non-editable backends (U1 / ACE): the card is hidden and get_mappings() is
     // empty — resolve the effective (toggle-aware) mapping the same way the live
     // render does, so swatches + preflight + render all agree.
-    return helix::FilamentMapper::effective_mappings(
-        get_used_tool_info(), AmsState::instance().collect_available_slots(),
-        effective_auto_match());
+    return helix::FilamentMapper::effective_mappings(get_used_tool_info(),
+                                                     AmsState::instance().collect_available_slots(),
+                                                     effective_auto_match());
 }
 
 void PrintSelectDetailView::recompute_preflight() {

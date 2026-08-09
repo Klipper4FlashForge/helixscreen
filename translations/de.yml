@@ -1131,7 +1131,9 @@ translations:
   Holding nozzle at {}°C to purge previous filament.: Düse wird bei {}°C gehalten, um
     vorheriges Filament auszuspülen.
   Home: Home
+  Home & Continue: Referenzieren & Fortfahren
   Home failed: Referenzfahrt fehlgeschlagen
+  Home printer first?: Drucker zuerst referenzieren?
   Home selector: Selektor referenzieren
   Homing AFC system...: AFC-Referenzfahrt...
   Homing X...: Referenzfahrt X...
@@ -2435,6 +2437,7 @@ translations:
   The printer halted this print and cannot resume it. Restart from the beginning?: Der
     Drucker hat diesen Druck angehalten und kann ihn nicht fortsetzen. Von vorne neu
     starten?
+  The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear.: Der Drucker ist nicht referenziert. Wenn Sie fortfahren, werden alle Achsen referenziert und der Werkzeugkopf bewegt sich. Stellen Sie sicher, dass das Heizbett frei ist.
   The printer lost power during a print. It can resume where it left off.: Der Drucker
     hatte während eines Drucks einen Stromausfall. Er kann dort fortsetzen, wo er aufgehört
     hat.

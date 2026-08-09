@@ -19,6 +19,7 @@
 #include "probe_sensor_manager.h"
 #include "probe_sensor_types.h"
 #include "static_panel_registry.h"
+#include "toolhead_homing.h"
 
 #include <spdlog/spdlog.h>
 
@@ -569,8 +570,7 @@ void ProbeOverlay::handle_probe_accuracy() {
 
     // Check homing state — PROBE_ACCURACY requires all axes homed
     PrinterState& ps = get_printer_state();
-    const char* homed = lv_subject_get_string(ps.get_homed_axes_subject());
-    bool all_homed = homed && std::string(homed).find("xyz") != std::string::npos;
+    const bool all_homed = helix::toolhead_is_homed(ps);
 
     // PROBE_ACCURACY defaults to 10 samples (not the [probe] config's samples= which is for
     // regular probing). We pass SAMPLES= explicitly so progress tracking matches.
@@ -578,7 +578,10 @@ void ProbeOverlay::handle_probe_accuracy() {
 
     std::string gcode;
     if (!all_homed) {
-        spdlog::info("[Probe] Axes not homed (homed_axes='{}'), homing first", homed ? homed : "");
+        // Diagnostic-only re-fetch — all_homed above already decided the branch.
+        const char* homed_dbg = lv_subject_get_string(ps.get_homed_axes_subject());
+        spdlog::info("[Probe] Axes not homed (homed_axes='{}'), homing first",
+                     homed_dbg ? homed_dbg : "");
         gcode = "G28\n";
     }
 

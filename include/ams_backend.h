@@ -607,6 +607,33 @@ class AmsBackend {
     }
 
     /**
+     * @brief Record that the user has already agreed to a pre-operation home for
+     *        the NEXT dispatch, so ensure_homed_then() does not ask a second
+     *        time.
+     *
+     * Armed by a UI surface that asks before starting its own preheat (moving
+     * the "home printer first?" question ahead of the preheat instead of after
+     * it, so a decline never wastes a heat cycle). Single-shot: the backend
+     * consumes it on the very next ensure_homed_then() call that finds the
+     * toolhead genuinely unhomed. Does NOT skip the G28 itself -- only the
+     * prompt. Default no-op for backends that don't route through
+     * AmsSubscriptionBackend::ensure_homed_then().
+     */
+    virtual void arm_home_preconfirmed() {}
+
+    /**
+     * @brief Clear a previously armed pre-confirmation without consuming it via
+     *        a dispatch.
+     *
+     * Call when a confirmed-but-not-yet-dispatched load is abandoned --
+     * preheat cancelled, the panel torn down, the operation aborted -- so
+     * consent does not leak forward into a later, unrelated operation on this
+     * backend. Safe to call whether or not anything is currently armed.
+     * Default no-op, mirroring arm_home_preconfirmed().
+     */
+    virtual void clear_home_preconfirmed() {}
+
+    /**
      * @brief Whether the UI should redirect to the AMS panel for slot selection
      *        before loading filament.
      *
@@ -714,6 +741,17 @@ class AmsBackend {
         }
         return !unit.lane_is_hub_routed[static_cast<size_t>(lane)];
     }
+
+    // ========================================================================
+    // Filament Operations
+    //
+    // Every real backend derives from AmsSubscriptionBackend, which implements
+    // these four as a non-virtual interface: it marks them `final`, runs the
+    // print-active gate, and dispatches to a protected do_* hook the backend
+    // writes instead. So a subscription backend does not implement these
+    // directly and cannot skip the gate. Only AmsBackendMock, which has no
+    // MoonrakerAPI and therefore no print state to consult, overrides them here.
+    // ========================================================================
 
     /**
      * @brief Load filament from specified slot (async)

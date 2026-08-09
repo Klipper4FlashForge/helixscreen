@@ -7,8 +7,10 @@
 #include "ams_types.h"
 #include "config.h"
 #include "error_event.h"
+#include "filament_op_router.h"
 #include "moonraker_api.h"
 #include "settings_manager.h"
+#include "test_helpers/scoped_home_confirm_prompter.h"
 
 #include <algorithm>
 #include <chrono>
@@ -6899,6 +6901,25 @@ class AfcDispatchAckHelper : public AmsBackendAfc {
         pending_acks_.push_back(std::move(on_complete));
         return AmsErrorHelper::success();
     }
+    bool toolhead_homed() const override {
+        return homed;
+    }
+
+    bool homed = true;
+
+    /// Whether an optimistic dispatch is still armed and awaiting resolution
+    /// -- mirrors ToolChangerTestAccess::has_pending_dispatch(). Reachable
+    /// directly here since AfcDispatchAckHelper is already a declared friend
+    /// of AmsBackendAfc.
+    [[nodiscard]] bool has_pending_dispatch() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return pending_dispatch_action_.has_value();
+    }
+
+    [[nodiscard]] std::string operation_detail() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return system_info_.operation_detail;
+    }
 
     /// Fire the ack for the Nth dispatched gcode, then drain the UpdateQueue —
     /// the production callback arrives on a background thread and hops to the
@@ -6994,6 +7015,40 @@ TEST_CASE("AFC no-op load resolves on the macro ack", "[ams][afc][dispatch][1183
     // this started. The busy leg is the load-bearing half.
     REQUIRE(trace_contains(h.trace(), AmsAction::LOADING));
     REQUIRE(h.trace().back() == AmsAction::IDLE);
+}
+
+TEST_CASE("AFC declining the pre-load home confirmation fully unwinds the optimistic dispatch "
+          "(final-review I2)",
+          "[ams][afc][dispatch][homing][confirm]") {
+    // dispatch_operation() calls begin_dispatch_locked() (arming
+    // pending_dispatch_action_ + operation_detail + the optimistic action)
+    // BEFORE ensure_homed_then() ever runs. On decline,
+    // AmsBackendAfc::on_home_confirmation_declined() must route through
+    // abandon_dispatch() -- the SAME unwind dispatch_operation()'s own
+    // `if (!result) abandon_dispatch()` net uses -- not just reset the
+    // action to IDLE. A partial unwind leaves pending_dispatch_action_
+    // armed, so the next macro ack (or a newer dispatch) resolves against a
+    // generation nothing is tracking, and leaves operation_detail stale
+    // (the sidebar keeps showing "Loading" under an IDLE action).
+    AfcDispatchAckHelper h;
+    h.homed = false;
+
+    ScopedHomeConfirmPrompter guard(
+        [](std::function<void()>, std::function<void()> cancel) { cancel(); });
+
+    REQUIRE(h.load_filament(2).success());
+
+    CHECK(h.sent().empty());
+    CHECK(h.action() == AmsAction::IDLE);
+    CHECK_FALSE(h.has_pending_dispatch());
+    CHECK(h.operation_detail().empty());
+
+    // Not wedged: a subsequent load still dispatches normally.
+    h.homed = true;
+    REQUIRE(h.load_filament(1).success());
+    REQUIRE(h.sent().size() == 1);
+    CHECK(h.sent()[0] == "CHANGE_TOOL LANE=lane2");
+    CHECK(h.action() == AmsAction::LOADING);
 }
 
 TEST_CASE("AFC unload and tool change dispatch their own actions", "[ams][afc][dispatch][1183]") {

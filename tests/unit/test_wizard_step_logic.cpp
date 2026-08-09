@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "../../src/ui/wizard_step_registry.h"
+#include "../helix_test_fixture.h"
 #include "static_panel_registry.h"
 #include "wizard_step.h"
 #include "wizard_step_logic.h"
@@ -315,8 +316,9 @@ TEST_CASE("registry: first-run preset printer skips summary, shows telemetry",
     REQUIRE_FALSE(helix::wizard::step_by_id(StepId::Telemetry)->should_skip(ctx));
 }
 
-TEST_CASE("registry: step_by_id stays valid after panel teardown (3rd-printer UAF)",
-          "[wizard][step_logic][regression]") {
+TEST_CASE_METHOD(HelixTestFixture,
+                 "registry: step_by_id stays valid after panel teardown (3rd-printer UAF)",
+                 "[wizard][step_logic][regression]") {
     // First wizard session: fetch a step and exercise its vtable.
     helix::wizard::Step* before = helix::wizard::step_by_id(StepId::HeaterSelect);
     REQUIRE(before != nullptr);

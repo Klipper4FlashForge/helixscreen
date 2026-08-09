@@ -2538,6 +2538,12 @@ The `AmsBackendMock` simulates any of the supported backend types for UI develop
 
 Mock mode is activated when `RuntimeConfig::should_mock_ams()` returns true (typically via the `--test` CLI flag). The factory method `AmsBackend::create()` automatically returns a mock backend in this case.
 
+Pass `--real-ams` alongside `--test` to opt back out and drive a real backend (e.g. `AmsBackendHappyHare`) against the mock Moonraker client instead of `AmsBackendMock`. This is what makes backend-specific chokepoints reachable under `--test` — for example `AmsSubscriptionBackend::ensure_homed_then()`'s "Home printer first?" confirmation, which `AmsBackendMock` never goes near since it doesn't inherit `AmsSubscriptionBackend`. The mock Moonraker client only simulates a minimal, static `mmu` status for Happy Hare (`moonraker_client_mock_objects.cpp`'s `get_mock_mmu_status()`: 4 gates, a mix of loaded/empty, no operation state machine) — it is a plumbing harness for exercising backend code paths, not a UI development tool. Use plain `--test` + `HELIX_MOCK_AMS` (below) for that.
+
+```bash
+./build/bin/helix-screen --test --real-ams -vv
+```
+
 ### Environment Variables
 
 | Variable | Values | Default | Description |

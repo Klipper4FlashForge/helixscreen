@@ -1120,7 +1120,9 @@ translations:
   Holding nozzle at {}°C to purge previous filament.: Mantendo o bico a {}°C para purgar
     o filamento anterior.
   Home: Início
+  Home & Continue: Fazer home e continuar
   Home failed: Homing falhou
+  Home printer first?: Fazer home da impressora primeiro?
   Home selector: Fazer home do seletor
   Homing AFC system...: Homing do sistema AFC...
   Homing X...: Posicionando X...
@@ -2432,6 +2434,7 @@ translations:
     então trave a leitura.
   The printer halted this print and cannot resume it. Restart from the beginning?: A
     impressora parou esta impressão e não pode retomá-la. Reiniciar do início?
+  The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear.: A impressora não fez home. Continuar fará home em todos os eixos, movendo o cabeçote. Certifique-se de que a mesa esteja livre.
   The printer lost power during a print. It can resume where it left off.: A impressora
     perdeu energia durante uma impressão. Ela pode retomar de onde parou.
   The printer lost power during a print. The resumed layer may not line up exactly.: A impressora perdeu energia durante uma impressão. A camada retomada pode não se alinhar exatamente.

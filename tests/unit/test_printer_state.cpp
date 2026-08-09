@@ -1,6 +1,7 @@
 // Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "../helix_test_fixture.h"
 #include "../test_helpers/printer_state_test_access.h"
 #include "../ui_test_utils.h"
 #include "app_globals.h"
@@ -955,7 +956,9 @@ TEST_CASE("PrintJobState: Enum values match expected integers", "[state][enum]")
     REQUIRE(static_cast<int>(PrintJobState::ERROR) == 5);
 }
 
-TEST_CASE("PrinterState: Print state enum subject updates from notification", "[state][enum]") {
+TEST_CASE_METHOD(HelixTestFixture,
+                 "PrinterState: Print state enum subject updates from notification",
+                 "[state][enum]") {
     lv_init_safe();
     PrinterState& state = get_printer_state();
     state.init_subjects();

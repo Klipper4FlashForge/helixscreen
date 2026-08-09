@@ -23,6 +23,7 @@
 
 #include "ui_print_preparation_manager.h"
 
+#include "../helix_test_fixture.h"
 #include "../test_helpers/printer_state_test_access.h"
 
 // Friend accessors (mirror test_print_preparation_manager.cpp).
@@ -164,8 +165,9 @@ TEST_CASE("PrePrint adaptive: bed_mesh label reflects adaptive_active", "[adapti
 // Emission: ENABLED + adaptive_active -> enable param AND adaptive token
 // ============================================================================
 
-TEST_CASE("PrePrint adaptive: enabled + active emits SKIP_LEVELING=0 and ADAPTIVE=1",
-          "[adaptive][preprint]") {
+TEST_CASE_METHOD(HelixTestFixture,
+                 "PrePrint adaptive: enabled + active emits SKIP_LEVELING=0 and ADAPTIVE=1",
+                 "[adaptive][preprint]") {
     lv_init_safe();
     PrinterState& ps = get_printer_state();
     PrinterStateTestAccess::reset(ps);
@@ -182,7 +184,8 @@ TEST_CASE("PrePrint adaptive: enabled + active emits SKIP_LEVELING=0 and ADAPTIV
     REQUIRE(has_param(params, "ADAPTIVE", "1"));
 }
 
-TEST_CASE("PrePrint adaptive: honors custom adaptive param name + value", "[adaptive][preprint]") {
+TEST_CASE_METHOD(HelixTestFixture, "PrePrint adaptive: honors custom adaptive param name + value",
+                 "[adaptive][preprint]") {
     lv_init_safe();
     PrinterState& ps = get_printer_state();
     PrinterStateTestAccess::reset(ps);
@@ -204,8 +207,9 @@ TEST_CASE("PrePrint adaptive: honors custom adaptive param name + value", "[adap
 // Non-adaptive printer: unchanged behavior (no ADAPTIVE)
 // ============================================================================
 
-TEST_CASE("PrePrint adaptive: non-adaptive printer enabled emits no params",
-          "[adaptive][preprint]") {
+TEST_CASE_METHOD(HelixTestFixture,
+                 "PrePrint adaptive: non-adaptive printer enabled emits no params",
+                 "[adaptive][preprint]") {
     lv_init_safe();
     PrinterState& ps = get_printer_state();
     PrinterStateTestAccess::reset(ps);
@@ -228,8 +232,9 @@ TEST_CASE("PrePrint adaptive: non-adaptive printer enabled emits no params",
 // Disabled: skip param only, never ADAPTIVE (adaptive or not)
 // ============================================================================
 
-TEST_CASE("PrePrint adaptive: disabled emits SKIP_LEVELING=1 and no ADAPTIVE",
-          "[adaptive][preprint]") {
+TEST_CASE_METHOD(HelixTestFixture,
+                 "PrePrint adaptive: disabled emits SKIP_LEVELING=1 and no ADAPTIVE",
+                 "[adaptive][preprint]") {
     lv_init_safe();
     PrinterState& ps = get_printer_state();
     PrinterStateTestAccess::reset(ps);

@@ -440,9 +440,11 @@ test-all: test-build
 # are timing-sensitive stress harnesses; sharding buys little here and muddies
 # attribution when something goes red.
 #
-# Deliberately NOT wired into test-run or scripts/quality-checks.sh. Making the
-# hidden set *runnable* is a separate decision from making it *mandatory* — see
-# docs/devel/HIDDEN_TESTS_TRACKER.md for the current pass/fail inventory.
+# Still NOT part of test-run — these cannot share that run's sharded, parallel,
+# arbitrary-cwd execution. scripts/quality-checks.sh does gate on this target
+# now that the set is green, but only when the test binary is already current
+# (it never builds one) — see the "Hidden test set" block there and
+# docs/devel/HIDDEN_TESTS_TRACKER.md for the inventory.
 #
 # Override the filter to run one slice: make test-hidden HIDDEN_FILTER='[.ui_integration]'
 HIDDEN_FILTER ?= [.]
