@@ -157,8 +157,7 @@ MoonrakerConfigManager::add_section(const std::string& content, const std::strin
 
 std::string MoonrakerConfigManager::upsert_section(
     const std::string& content, const std::string& section_name,
-    const std::vector<std::pair<std::string, std::string>>& entries,
-    const std::string& comment) {
+    const std::vector<std::pair<std::string, std::string>>& entries, const std::string& comment) {
     // Section absent: fall back to plain append (also handles empty content).
     if (!has_section(content, section_name))
         return add_section(content, section_name, entries, comment);
@@ -224,8 +223,7 @@ std::string MoonrakerConfigManager::upsert_section(
                         continue;
                     // Preserve the original line's leading indentation.
                     size_t first = line.find_first_not_of(" \t");
-                    std::string lead =
-                        (first == std::string::npos) ? "" : line.substr(0, first);
+                    std::string lead = (first == std::string::npos) ? "" : line.substr(0, first);
                     out.push_back(lead + key + ": " + entries[i].second);
                     applied[i] = true;
                     replaced = true;
@@ -279,7 +277,8 @@ MoonrakerConfigManager::resolve_config_upload_location(const std::string& config
 
     // Split the config file into directory + base name.
     size_t last_slash = config_file.rfind('/');
-    std::string config_dir = (last_slash == std::string::npos) ? "" : config_file.substr(0, last_slash);
+    std::string config_dir =
+        (last_slash == std::string::npos) ? "" : config_file.substr(0, last_slash);
     info.config_filename =
         (last_slash == std::string::npos) ? config_file : config_file.substr(last_slash + 1);
 

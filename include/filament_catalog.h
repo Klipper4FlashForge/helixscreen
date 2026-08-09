@@ -23,7 +23,7 @@ struct EffectiveFilament {
     int dry_time_min = 0;
     float density_g_cm3 = 0.0f;
     std::string compat_group;
-    std::map<std::string, std::string> codes;  ///< scheme -> code
+    std::map<std::string, std::string> codes; ///< scheme -> code
 };
 
 /// Transient, on-demand filament catalog. NO resident singleton: construct via a
@@ -55,8 +55,7 @@ class FilamentCatalog {
     /// shipped-asset concept. See FILAMENT_MANAGEMENT.md § "User overlay format".
     static std::map<std::string, std::string> load_user_orca_type_map();
     /// Explicit-path variant for tests / non-default locations.
-    static std::map<std::string, std::string>
-    load_user_orca_type_map_from(const std::string& path);
+    static std::map<std::string, std::string> load_user_orca_type_map_from(const std::string& path);
 
     /// Atomically replace the user overlay's `filaments` section with
     /// `products`, preserving any existing `orca_type_map`. Legacy bare-array
@@ -100,8 +99,7 @@ class FilamentCatalog {
     /// were removed. Used by the edit UI's Delete / Restore-Defaults action.
     static bool remove_product(std::vector<nlohmann::json>& products, const std::string& id);
 
-    const EffectiveFilament* resolve_code(const std::string& scheme,
-                                          const std::string& code) const;
+    const EffectiveFilament* resolve_code(const std::string& scheme, const std::string& code) const;
     const EffectiveFilament* resolve_id(const std::string& id) const;
     std::vector<const EffectiveFilament*> products_for_type(const std::string& type) const;
     std::vector<const EffectiveFilament*> products_for_brand(const std::string& brand) const;
@@ -120,4 +118,4 @@ class FilamentCatalog {
     void index();
 };
 
-}  // namespace helix::printer
+} // namespace helix::printer

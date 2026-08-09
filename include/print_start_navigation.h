@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
-#include "printer_state.h"
 #include "ui_observer_guard.h"
+
+#include "printer_state.h"
 
 namespace helix {
 

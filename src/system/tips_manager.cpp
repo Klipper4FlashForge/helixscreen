@@ -3,9 +3,9 @@
 
 #include "tips_manager.h"
 
-#include "json_utils.h"
 #include "ui_error_reporting.h"
 
+#include "json_utils.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 
 #include <algorithm>

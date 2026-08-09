@@ -60,11 +60,11 @@ void PrinterPluginStatusState::set_installed(bool installed) {
 
 void PrinterPluginStatusState::set_phase_tracking_enabled(bool enabled) {
     // Thread-safe: Use ui_queue_update to update LVGL subject from any thread
-    async_lifetime_.defer("PrinterPluginStatusState::set_phase_tracking_enabled", [this,
-                                                                                  enabled]() {
-        lv_subject_set_int(&phase_tracking_enabled_, enabled ? 1 : 0);
-        spdlog::info("[PrinterPluginStatusState] Phase tracking enabled: {}", enabled);
-    });
+    async_lifetime_.defer(
+        "PrinterPluginStatusState::set_phase_tracking_enabled", [this, enabled]() {
+            lv_subject_set_int(&phase_tracking_enabled_, enabled ? 1 : 0);
+            spdlog::info("[PrinterPluginStatusState] Phase tracking enabled: {}", enabled);
+        });
 }
 
 } // namespace helix

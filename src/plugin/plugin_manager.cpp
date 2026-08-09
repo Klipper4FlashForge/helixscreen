@@ -524,8 +524,7 @@ bool PluginManager::parse_manifest(const std::string& manifest_path, PluginManif
         manifest.helix_version = helix::json_util::safe_string(j, "helix_version");
         manifest.author = helix::json_util::safe_string(j, "author");
         manifest.description = helix::json_util::safe_string(j, "description");
-        manifest.entry_point =
-            helix::json_util::safe_string(j, "entry_point", "helix_plugin_init");
+        manifest.entry_point = helix::json_util::safe_string(j, "entry_point", "helix_plugin_init");
 
         // Dependencies array
         if (j.contains("dependencies") && j["dependencies"].is_array()) {

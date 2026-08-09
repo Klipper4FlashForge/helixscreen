@@ -307,7 +307,6 @@ class PanelBase : public IPanelLifecycle {
      */
     void cleanup_observers();
 
-
   private:
     std::vector<lv_observer_t*> observers_;
 };

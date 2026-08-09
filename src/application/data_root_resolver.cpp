@@ -84,7 +84,8 @@ std::string find_readable(const std::string& relpath) {
     std::string user = writable_path(relpath);
     if (path_exists(user))
         return user;
-    std::string seed = helix::paths::strip_trailing_slash(get_data_dir()) + "/assets/config/" + relpath;
+    std::string seed =
+        helix::paths::strip_trailing_slash(get_data_dir()) + "/assets/config/" + relpath;
     if (path_exists(seed))
         return seed;
     return user;

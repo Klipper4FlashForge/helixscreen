@@ -34,13 +34,13 @@ class Fb0MailboxSink : public RemoteScreenSink {
     explicit Fb0MailboxSink(std::string dev = "/dev/fb0");
     ~Fb0MailboxSink() override;
 
-    Fb0MailboxSink(const Fb0MailboxSink&)            = delete;
+    Fb0MailboxSink(const Fb0MailboxSink&) = delete;
     Fb0MailboxSink& operator=(const Fb0MailboxSink&) = delete;
 
-    bool        start() override;
-    void        stop() override;
-    bool        wants_frames() const override;
-    void        on_frame(const RemoteScreenFrame& frame) override;
+    bool start() override;
+    void stop() override;
+    bool wants_frames() const override;
+    void on_frame(const RemoteScreenFrame& frame) override;
     const char* name() const override;
 
     /**
@@ -57,28 +57,28 @@ class Fb0MailboxSink : public RemoteScreenSink {
 
     std::string dev_;
 
-    int      fd_        = -1;
-    uint8_t* map_       = nullptr;
-    size_t   map_size_  = 0;
-    int      fb_w_      = 0;
-    int      fb_h_      = 0;
+    int fd_ = -1;
+    uint8_t* map_ = nullptr;
+    size_t map_size_ = 0;
+    int fb_w_ = 0;
+    int fb_h_ = 0;
     uint32_t fb_stride_ = 0;
-    int      fb_bpp_    = 0;
+    int fb_bpp_ = 0;
 
     bool active_ = false;
     bool warned_ = false;
 
     // One-shot diagnostics (first few frames + first OOB skip).
-    int  log_count_  = 0;
-    int  log_done_   = 0;
+    int log_count_ = 0;
+    int log_done_ = 0;
     bool oob_warned_ = false;
 
     // Configured fallback geometry (used only when ioctls fail).
-    bool     has_cfg_    = false;
-    int      cfg_w_      = 0;
-    int      cfg_h_      = 0;
+    bool has_cfg_ = false;
+    int cfg_w_ = 0;
+    int cfg_h_ = 0;
     uint32_t cfg_stride_ = 0;
-    int      cfg_bpp_    = 0;
+    int cfg_bpp_ = 0;
 };
 
 } // namespace helix

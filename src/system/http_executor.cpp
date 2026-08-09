@@ -168,7 +168,9 @@ void HttpExecutor::loop(std::shared_ptr<SharedState> state, HttpExecutor* owner,
         // must never see a stuck counter because a job threw.
         struct InflightGuard {
             std::atomic<std::size_t>& c;
-            ~InflightGuard() { c.fetch_sub(1, std::memory_order_relaxed); }
+            ~InflightGuard() {
+                c.fetch_sub(1, std::memory_order_relaxed);
+            }
         } guard{state->inflight};
 
         try {

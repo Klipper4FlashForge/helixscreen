@@ -21,8 +21,7 @@ namespace {
 // Search paths for the built-in catalog (mirrors the old CFS loader).
 const char* kBuiltinPaths[] = {"assets/filaments.json", "../assets/filaments.json",
                                "/opt/helixscreen/assets/filaments.json"};
-const char* kUserPaths[] = {"config/user_filaments.json",
-                            "../config/user_filaments.json"};
+const char* kUserPaths[] = {"config/user_filaments.json", "../config/user_filaments.json"};
 
 int get_int(const nlohmann::json& j, const char* key, int def) {
     auto it = j.find(key);
@@ -45,7 +44,7 @@ EffectiveFilament to_effective(const nlohmann::json& p) {
     e.name = helix::json_util::safe_string(p, "name");
     e.type = helix::json_util::safe_string(p, "type");
 
-    auto base = filament::find_material(e.type);  // std::optional<MaterialInfo>
+    auto base = filament::find_material(e.type); // std::optional<MaterialInfo>
     const int type_min = base ? base->nozzle_min : 0;
     const int type_max = base ? base->nozzle_max : 0;
 
@@ -98,7 +97,7 @@ std::vector<nlohmann::json> read_products(const char* const* paths, size_t n) {
             auto doc = nlohmann::json::parse(f);
             if (doc.is_object() && doc.contains("filaments") && doc["filaments"].is_array())
                 return object_entries(doc["filaments"], paths[i]);
-            if (doc.is_array())  // user overlay is a bare array
+            if (doc.is_array()) // user overlay is a bare array
                 return object_entries(doc, paths[i]);
         } catch (const std::exception& e) {
             spdlog::warn("[filament] parse failed {}: {}", paths[i], e.what());
@@ -107,7 +106,7 @@ std::vector<nlohmann::json> read_products(const char* const* paths, size_t n) {
     return {};
 }
 
-}  // namespace
+} // namespace
 
 void FilamentCatalog::index() {
     by_id_.clear();
@@ -154,7 +153,7 @@ FilamentCatalog FilamentCatalog::load_with_overlay(const std::string& builtin_pa
             order.push_back(id);
             merged[id] = jp;
         } else {
-            merged[id].merge_patch(jp);  // field-level override
+            merged[id].merge_patch(jp); // field-level override
         }
     }
     FilamentCatalog cat;
@@ -193,7 +192,7 @@ std::string first_existing(const char* const* paths, size_t n) {
     return "";
 }
 
-}  // namespace
+} // namespace
 
 FilamentCatalog FilamentCatalog::load_full() {
     return load_with_overlay(first_existing(kBuiltinPaths, std::size(kBuiltinPaths)),
@@ -267,7 +266,7 @@ bool FilamentCatalog::upsert_product(std::vector<nlohmann::json>& products,
     if (!id.empty()) {
         for (auto& p : products) {
             if (p.is_object() && helix::json_util::safe_string(p, "id") == id) {
-                p = product;  // replace in place, preserving list order
+                p = product; // replace in place, preserving list order
                 return true;
             }
         }
@@ -276,8 +275,7 @@ bool FilamentCatalog::upsert_product(std::vector<nlohmann::json>& products,
     return false;
 }
 
-bool FilamentCatalog::remove_product(std::vector<nlohmann::json>& products,
-                                     const std::string& id) {
+bool FilamentCatalog::remove_product(std::vector<nlohmann::json>& products, const std::string& id) {
     const size_t before = products.size();
     products.erase(std::remove_if(products.begin(), products.end(),
                                   [&](const nlohmann::json& p) {
@@ -320,9 +318,8 @@ bool FilamentCatalog::save_user_products_to(const std::vector<nlohmann::json>& p
                 // recoverable, then start fresh with an empty object.
                 const std::string bak = path + ".bak";
                 std::error_code bak_ec;
-                std::filesystem::copy_file(path, bak,
-                                           std::filesystem::copy_options::overwrite_existing,
-                                           bak_ec);
+                std::filesystem::copy_file(
+                    path, bak, std::filesystem::copy_options::overwrite_existing, bak_ec);
                 spdlog::warn("[filament] existing overlay parse failed on save ({}): {}; {} to {}",
                              path, e.what(), bak_ec ? "could not back up" : "backed up", bak);
             }
@@ -364,12 +361,12 @@ bool FilamentCatalog::save_user_products_to(const std::vector<nlohmann::json>& p
             std::filesystem::remove(tmp, rm_ec);
             return false;
         }
-    }  // ofstream closed here, buffers flushed, before rename
+    } // ofstream closed here, buffers flushed, before rename
 
     std::filesystem::rename(tmp, target, ec);
     if (ec) {
-        spdlog::warn("[filament] save_user_products: rename failed ({} -> {}): {}",
-                     tmp.string(), target.string(), ec.message());
+        spdlog::warn("[filament] save_user_products: rename failed ({} -> {}): {}", tmp.string(),
+                     target.string(), ec.message());
         std::error_code rm_ec;
         std::filesystem::remove(tmp, rm_ec);
         return false;
@@ -411,8 +408,9 @@ FilamentCatalog::products_for_brand(const std::string& brand) const {
 
 std::vector<std::string> FilamentCatalog::all_brands() const {
     std::set<std::string> seen;
-    for (const auto& p : products_) seen.insert(p.brand);
-    return {seen.begin(), seen.end()};  // sorted + deduped
+    for (const auto& p : products_)
+        seen.insert(p.brand);
+    return {seen.begin(), seen.end()}; // sorted + deduped
 }
 
 std::vector<const EffectiveFilament*> FilamentCatalog::all_products() const {
@@ -446,8 +444,8 @@ std::vector<std::string> FilamentCatalog::brands_for_type(const std::string& typ
     return out;
 }
 
-std::vector<const EffectiveFilament*> FilamentCatalog::products_for(
-    const std::string& brand, const std::string& type) const {
+std::vector<const EffectiveFilament*> FilamentCatalog::products_for(const std::string& brand,
+                                                                    const std::string& type) const {
     std::vector<const EffectiveFilament*> out;
     for (const auto& p : products_) {
         if (p.brand == brand && p.type == type) {
@@ -457,4 +455,4 @@ std::vector<const EffectiveFilament*> FilamentCatalog::products_for(
     return out;
 }
 
-}  // namespace helix::printer
+} // namespace helix::printer

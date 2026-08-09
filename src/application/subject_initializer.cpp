@@ -54,10 +54,10 @@
 #include "lvgl/lvgl.h"
 #include "material_settings_manager.h"
 #include "panel_widget_manager.h"
+#include "plr_offer_controller.h"
 #include "preset_materials.h"
 #include "print_completion.h"
 #include "print_control_buttons.h"
-#include "plr_offer_controller.h"
 #include "print_start_navigation.h"
 #include "printer_state.h"
 #include "probe_sensor_manager.h"
@@ -103,8 +103,7 @@ void SubjectInitializer::init_core_and_state() {
     // (object form, `orca_type_map` key). User entries win over shipped entries
     // in orca_match_type() resolution. Same main-thread / pre-backend window as
     // warm_orca_tables() above — see FILAMENT_MANAGEMENT.md § "User overlay format".
-    filament::merge_user_orca_overrides(
-        helix::printer::FilamentCatalog::load_user_orca_type_map());
+    filament::merge_user_orca_overrides(helix::printer::FilamentCatalog::load_user_orca_type_map());
 
     // Phase 3: AMS and filament sensor subjects
     init_ams_subjects();
@@ -143,9 +142,9 @@ void SubjectInitializer::init_post(const RuntimeConfig& runtime_config) {
 
 void SubjectInitializer::init_core_subjects() {
     spdlog::trace("[SubjectInitializer] Initializing core subjects");
-    app_globals_init_subjects();                   // Global subjects (notification subject, etc.)
-    PrinterStatusIcon::instance().init_subjects(); // Printer icon state
-    helix::ui::notification_init_subjects();       // Notification badge subjects
+    app_globals_init_subjects();                    // Global subjects (notification subject, etc.)
+    PrinterStatusIcon::instance().init_subjects();  // Printer icon state
+    helix::ui::notification_init_subjects();        // Notification badge subjects
     helix::LockManager::instance().init_subjects(); // Lock screen pin_set subject
 
     // Quick-preset material name/temperature subjects. MUST be here in core

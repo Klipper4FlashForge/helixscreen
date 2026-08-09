@@ -22,9 +22,9 @@ namespace helix::macros {
 // (`key_exists == false`), the default is to hide every `_`-prefixed system
 // macro. Once the user has saved a choice (`key_exists == true`), the saved
 // set is authoritative — even if empty (they un-hid everything).
-inline std::set<std::string> compute_effective_hidden(const std::vector<std::string>& all_macros,
-                                                      bool key_exists,
-                                                      const std::vector<std::string>& saved_hidden) {
+inline std::set<std::string>
+compute_effective_hidden(const std::vector<std::string>& all_macros, bool key_exists,
+                         const std::vector<std::string>& saved_hidden) {
     if (!key_exists) {
         std::set<std::string> seeded;
         for (const auto& m : all_macros) {

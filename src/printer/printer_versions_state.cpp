@@ -28,9 +28,8 @@ namespace {
 // to show, so collapse them (and empty strings) to a translated "Unknown" label.
 std::string display_version(const std::string& version) {
     std::string trimmed = version;
-    trimmed.erase(trimmed.begin(),
-                  std::find_if(trimmed.begin(), trimmed.end(),
-                               [](unsigned char c) { return !std::isspace(c); }));
+    trimmed.erase(trimmed.begin(), std::find_if(trimmed.begin(), trimmed.end(),
+                                                [](unsigned char c) { return !std::isspace(c); }));
     trimmed.erase(std::find_if(trimmed.rbegin(), trimmed.rend(),
                                [](unsigned char c) { return !std::isspace(c); })
                       .base(),

@@ -17,6 +17,7 @@
 #include "ams_state.h"
 #include "app_constants.h"
 #include "app_globals.h"
+#include "first_run_tour.h"
 #include "observer_factory.h"
 #include "panel_widget_config.h"
 #include "panel_widget_manager.h"
@@ -28,8 +29,6 @@
 #include "spoolman_manager.h"
 #include "static_panel_registry.h"
 #include "theme_manager.h"
-
-#include "first_run_tour.h"
 
 #include <spdlog/spdlog.h>
 

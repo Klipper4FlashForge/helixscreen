@@ -267,9 +267,9 @@ class PrinterFanState {
     bool subjects_initialized_ = false;
 
     // Static fan subjects
-    lv_subject_t fan_speed_{};             ///< Main part-cooling fan, 0-100%
-    lv_subject_t fans_version_{};          ///< Increments on fan list (structural) changes
-    lv_subject_t primary_fans_version_{};  ///< Increments on primary-role reassignment (#1124)
+    lv_subject_t fan_speed_{};            ///< Main part-cooling fan, 0-100%
+    lv_subject_t fans_version_{};         ///< Increments on fan list (structural) changes
+    lv_subject_t primary_fans_version_{}; ///< Increments on primary-role reassignment (#1124)
 
     /// Object names exactly as discovery handed them over — before the bare-[fan]
     /// shadowing rule filters them into fans_. apply_roles() re-runs that filter,

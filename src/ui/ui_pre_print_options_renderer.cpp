@@ -266,8 +266,7 @@ void PrePrintOptionsRenderer::make_row(lv_obj_t* container, const PrePrintOption
     lv_obj_t* sw = lv_obj_find_by_name(row_obj, "toggle");
     if (!sw) {
         spdlog::error(
-            "[PrePrintOptionsRenderer] compact_toggle_row missing 'toggle' child for '{}'",
-            opt.id);
+            "[PrePrintOptionsRenderer] compact_toggle_row missing 'toggle' child for '{}'", opt.id);
         lv_subject_deinit(row.state_subject.get());
         return;
     }

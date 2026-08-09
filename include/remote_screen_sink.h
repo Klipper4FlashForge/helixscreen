@@ -35,15 +35,16 @@ enum class RemoteScreenPixelFormat {
  */
 struct RemoteScreenFrame {
     const uint8_t* px_map = nullptr; ///< Source pixels for this dirty area.
-    int32_t        x1     = 0;       ///< Inclusive left of the dirty area.
-    int32_t        y1     = 0;       ///< Inclusive top of the dirty area.
-    int32_t        x2     = 0;       ///< Inclusive right of the dirty area.
-    int32_t        y2     = 0;       ///< Inclusive bottom of the dirty area.
-    int32_t        disp_w = 0;       ///< Full display horizontal resolution.
-    int32_t        disp_h = 0;       ///< Full display vertical resolution.
-    int            color_format = 0; ///< lv_color_format_t as int (raw, for logging).
-    uint32_t       src_stride   = 0; ///< Bytes per row of `px_map`.
-    RemoteScreenPixelFormat src_format = RemoteScreenPixelFormat::Unknown; ///< Pixel layout of px_map.
+    int32_t x1 = 0;                  ///< Inclusive left of the dirty area.
+    int32_t y1 = 0;                  ///< Inclusive top of the dirty area.
+    int32_t x2 = 0;                  ///< Inclusive right of the dirty area.
+    int32_t y2 = 0;                  ///< Inclusive bottom of the dirty area.
+    int32_t disp_w = 0;              ///< Full display horizontal resolution.
+    int32_t disp_h = 0;              ///< Full display vertical resolution.
+    int color_format = 0;            ///< lv_color_format_t as int (raw, for logging).
+    uint32_t src_stride = 0;         ///< Bytes per row of `px_map`.
+    RemoteScreenPixelFormat src_format =
+        RemoteScreenPixelFormat::Unknown; ///< Pixel layout of px_map.
 };
 
 /**

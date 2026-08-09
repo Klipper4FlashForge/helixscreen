@@ -367,8 +367,8 @@ TEST_CASE("ring_capacity_for_ram scales with the machine", "[logging][config][ri
     using helix::logging::ring_capacity_for_ram;
 
     SECTION("small boards keep the historical floor, never regress") {
-        REQUIRE(ring_capacity_for_ram(107) == 2000);  // AD5M
-        REQUIRE(ring_capacity_for_ram(128) == 2048);  // CC1, just over the floor
+        REQUIRE(ring_capacity_for_ram(107) == 2000); // AD5M
+        REQUIRE(ring_capacity_for_ram(128) == 2048); // CC1, just over the floor
     }
 
     SECTION("mid-range boards get proportionally more") {

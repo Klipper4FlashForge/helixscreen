@@ -344,9 +344,8 @@ bool GCodeLayerIndex::build_from_file(const std::string& filepath) {
                     entry.z_height = z;
                     entry.byte_length = 0; // Will be filled when layer ends
                     entry.line_count = 0;  // Will be filled when layer ends
-                    entry.flags = absolute_extrusion
-                                      ? StreamingLayerEntry::FLAG_ABSOLUTE_EXTRUSION
-                                      : uint16_t{0};
+                    entry.flags = absolute_extrusion ? StreamingLayerEntry::FLAG_ABSOLUTE_EXTRUSION
+                                                     : uint16_t{0};
                     entry.start_x = current_x;
                     entry.start_y = current_y;
                     entry.start_z = current_seen_z;

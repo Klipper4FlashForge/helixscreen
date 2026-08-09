@@ -73,11 +73,11 @@ struct StreamingLayerEntry {
  * @brief Statistics collected during index building
  */
 struct LayerIndexStats {
-    size_t total_layers{0};     ///< Number of layers found
-    size_t total_lines{0};      ///< Total G-code lines processed
-    size_t total_bytes{0};      ///< Total file size
-    float min_z{0.0f};          ///< Minimum Z height
-    float max_z{0.0f};          ///< Maximum Z height
+    size_t total_layers{0}; ///< Number of layers found
+    size_t total_lines{0};  ///< Total G-code lines processed
+    size_t total_bytes{0};  ///< Total file size
+    float min_z{0.0f};      ///< Minimum Z height
+    float max_z{0.0f};      ///< Maximum Z height
     /// Model XY extents, accumulated over extruding moves during the index scan
     /// and filtered by is_excluded_from_bounds() exactly like the full-file
     /// parser's global_bounding_box. Empty (min > max) if no extrusion was seen.
@@ -92,8 +92,8 @@ struct LayerIndexStats {
     float max_x{std::numeric_limits<float>::lowest()};
     float min_y{std::numeric_limits<float>::max()};
     float max_y{std::numeric_limits<float>::lowest()};
-    size_t extrusion_moves{0};  ///< Count of extruding moves (real E delta > 0)
-    size_t travel_moves{0};     ///< Count of G0/G1 without extrusion
+    size_t extrusion_moves{0}; ///< Count of extruding moves (real E delta > 0)
+    size_t travel_moves{0};    ///< Count of G0/G1 without extrusion
 
     /// True when the scan accumulated at least one extruding move, i.e. min/max
     /// XY describe real geometry.

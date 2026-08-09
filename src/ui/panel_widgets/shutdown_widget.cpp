@@ -111,8 +111,8 @@ bool invoke_local_power(bool is_reboot) {
                      "would have {} the dev host",
                      is_reboot ? "reboot" : "shutdown", is_reboot ? "rebooted" : "powered off");
         ToastManager::instance().show(
-            ToastSeverity::INFO, is_reboot ? "TEST: would reboot screen" : "TEST: would shut down screen",
-            4000);
+            ToastSeverity::INFO,
+            is_reboot ? "TEST: would reboot screen" : "TEST: would shut down screen", 4000);
         return true;
     }
     return is_reboot ? helix::SystemPower::reboot_local() : helix::SystemPower::shutdown_local();
@@ -124,11 +124,12 @@ bool invoke_local_power(bool is_reboot) {
 void queue_machine_power_failure(const MoonrakerError& err, bool is_reboot,
                                  bool allow_local_fallback) {
     const std::string message = err.message;
-    helix::ui::queue_update("ShutdownDialog::power_failed", [message, is_reboot,
-                                                             allow_local_fallback]() {
-        helix::handle_machine_power_failure(message, is_reboot, allow_local_fallback,
-                                            [is_reboot]() { return invoke_local_power(is_reboot); });
-    });
+    helix::ui::queue_update("ShutdownDialog::power_failed",
+                            [message, is_reboot, allow_local_fallback]() {
+                                helix::handle_machine_power_failure(
+                                    message, is_reboot, allow_local_fallback,
+                                    [is_reboot]() { return invoke_local_power(is_reboot); });
+                            });
 }
 
 // @p allow_local_fallback is set only when Moonraker runs on this same host —
@@ -361,9 +362,8 @@ bool handle_machine_power_failure(const std::string& err_message, bool is_reboot
         spdlog::error("[ShutdownDialog] Local {} fallback also failed", action);
     }
 
-    ToastManager::instance().show(ToastSeverity::ERROR,
-                                  is_reboot ? lv_tr("Reboot failed") : lv_tr("Shutdown failed"),
-                                  6000);
+    ToastManager::instance().show(
+        ToastSeverity::ERROR, is_reboot ? lv_tr("Reboot failed") : lv_tr("Shutdown failed"), 6000);
     return false;
 }
 

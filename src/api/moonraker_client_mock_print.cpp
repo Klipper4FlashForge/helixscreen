@@ -186,8 +186,8 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
                 success_cb(json::object());
             }
         } else if (error_cb) {
-            MoonrakerError err = MoonrakerError::validation_error("printer.print.cancel",
-                                                                  "Cannot cancel - no active print");
+            MoonrakerError err = MoonrakerError::validation_error(
+                "printer.print.cancel", "Cannot cancel - no active print");
             error_cb(err);
         }
         return true;

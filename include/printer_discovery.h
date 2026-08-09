@@ -1293,7 +1293,7 @@ class PrinterDiscovery {
         // Air-quality penalty: names carrying a gas/particulate/humidity token
         // describe air quality, not chamber temperature.
         static const char* const kAirQualityTokens[] = {
-            "TVOC", "VOC", "CO2", "GAS",  "HUMIDITY",    "IAQ",
+            "TVOC", "VOC",  "CO2",  "GAS",         "HUMIDITY", "IAQ",
             "AQI",  "PM25", "PM10", "PARTICULATE", "PRESSURE"};
         for (const char* tok : kAirQualityTokens) {
             if (has_standalone_token(upper, tok)) {

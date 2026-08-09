@@ -16,7 +16,6 @@
 
 // SDL2 headers
 #include <SDL.h>
-
 #include <string_view>
 
 bool DisplayBackendSDL::is_available() const {

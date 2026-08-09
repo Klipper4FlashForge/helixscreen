@@ -255,8 +255,8 @@ std::string PrinterFanState::resolve_part_fan(const std::string& configured) con
     }
 
     if (!configured.empty())
-        return configured;     // (3a) keep canonical part fan (never ran, or no commandable peer)
-    return first_candidate;    // (3b) no configured part fan -> front-most commandable, may be empty
+        return configured;  // (3a) keep canonical part fan (never ran, or no commandable peer)
+    return first_candidate; // (3b) no configured part fan -> front-most commandable, may be empty
 }
 
 std::string PrinterFanState::resolve_aux_fan(const std::string& part,
@@ -296,8 +296,7 @@ void PrinterFanState::refresh_primary_fans_selection() {
     PrimaryFans now = classify_primary_fans();
     if (now != primary_fans_cache_) {
         primary_fans_cache_ = now;
-        lv_subject_set_int(&primary_fans_version_,
-                           lv_subject_get_int(&primary_fans_version_) + 1);
+        lv_subject_set_int(&primary_fans_version_, lv_subject_get_int(&primary_fans_version_) + 1);
         spdlog::debug("[PrinterFanState] Primary fans reassigned: part='{}' hotend='{}' aux='{}'",
                       now.part, now.hotend, now.aux);
     }

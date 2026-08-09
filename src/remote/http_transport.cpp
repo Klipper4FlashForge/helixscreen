@@ -6,17 +6,16 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <arpa/inet.h>
 #include <cctype>
 #include <cerrno>
 #include <cstring>
-#include <string>
-#include <utility>
-
-#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <string>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <utility>
 
 static constexpr size_t MAX_HTTP_REQUEST = 1024 * 1024; // 1MB request cap.
 
@@ -35,7 +34,7 @@ int HttpTransport::create_listener() {
     int one = 1;
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 
-    struct sockaddr_in addr{};
+    struct sockaddr_in addr {};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(static_cast<uint16_t>(port_));
     if (inet_pton(AF_INET, bind_host_.c_str(), &addr.sin_addr) != 1) {
@@ -151,7 +150,8 @@ void HttpTransport::serve_client(int client_fd) {
     std::string method, path;
     {
         size_t sp1 = request_line.find(' ');
-        size_t sp2 = (sp1 == std::string::npos) ? std::string::npos : request_line.find(' ', sp1 + 1);
+        size_t sp2 =
+            (sp1 == std::string::npos) ? std::string::npos : request_line.find(' ', sp1 + 1);
         if (sp1 != std::string::npos && sp2 != std::string::npos) {
             method = request_line.substr(0, sp1);
             path = request_line.substr(sp1 + 1, sp2 - sp1 - 1);

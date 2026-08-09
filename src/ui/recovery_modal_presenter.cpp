@@ -214,8 +214,8 @@ void RecoveryModalPresenter::dispatch_recovery(const std::string& gcode, const s
         gcode, [tag]() { spdlog::info("[Recovery] {} completed", tag); },
         [tag](const MoonrakerError& err) {
             spdlog::error("[Recovery] {} failed: {}", tag, err.message);
-            ToastManager::instance().show(
-                ToastSeverity::ERROR, ("Recovery failed: " + err.user_message()).c_str(), 6000);
+            ToastManager::instance().show(ToastSeverity::ERROR,
+                                          ("Recovery failed: " + err.user_message()).c_str(), 6000);
         },
         MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
 }
@@ -240,8 +240,8 @@ int RecoveryModalPresenter::resolve_preheat_target() const {
     //    this gate covers. Same value TemperatureController floors against for
     //    keep_previous_hot, so a deferred recovery reheats to where the failed
     //    operation was running rather than to a guess.
-    int target =
-        static_cast<int>(std::lround(get_printer_state().get_active_extruder_last_nonzero_target()));
+    int target = static_cast<int>(
+        std::lround(get_printer_state().get_active_extruder_last_nonzero_target()));
 
     // 2. Nothing latched (the operation failed before it ever heated, or this is
     //    a fresh session): ask the loaded filament. get_active_material() is the
@@ -278,8 +278,8 @@ void RecoveryModalPresenter::begin_preheat(const std::string& gcode, const std::
     pending_tag_ = tag;
     pending_label_ = label;
     pending_target_c_ = target;
-    polls_remaining_ = std::max<int32_t>(1, static_cast<int32_t>(preheat_budget_ms_ /
-                                                                PREHEAT_POLL_MS));
+    polls_remaining_ =
+        std::max<int32_t>(1, static_cast<int32_t>(preheat_budget_ms_ / PREHEAT_POLL_MS));
 
     if (auto* c = get_temperature_controller()) {
         c->set_target(helix::HeaterType::Nozzle, static_cast<double>(target),

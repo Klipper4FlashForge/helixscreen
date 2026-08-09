@@ -8,10 +8,9 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <sys/statvfs.h>
 #include <system_error>
 #include <thread>
-
-#include <sys/statvfs.h>
 #include <unistd.h>
 
 namespace helix::paths {

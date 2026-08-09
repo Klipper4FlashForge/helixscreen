@@ -6,11 +6,10 @@
 #include <spdlog/spdlog.h>
 
 #include <cstring>
-#include <utility>
-
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <utility>
 
 // The fbdev ioctl geometry probe is Linux-only. Everything else (mmap blit,
 // RGB565->BGRA conversion) is portable POSIX, so non-Linux native/dev builds
@@ -30,11 +29,11 @@ Fb0MailboxSink::~Fb0MailboxSink() {
 }
 
 void Fb0MailboxSink::configure_geometry(int w, int h, uint32_t stride, int bpp) {
-    has_cfg_    = true;
-    cfg_w_      = w;
-    cfg_h_      = h;
+    has_cfg_ = true;
+    cfg_w_ = w;
+    cfg_h_ = h;
     cfg_stride_ = stride;
-    cfg_bpp_    = bpp;
+    cfg_bpp_ = bpp;
 }
 
 void Fb0MailboxSink::warn_once(const char* what) {
@@ -68,9 +67,9 @@ bool Fb0MailboxSink::start() {
                  ::ioctl(fd_, FBIOGET_FSCREENINFO, &finfo) == 0;
 
     if (have_ioctl) {
-        fb_w_      = static_cast<int>(vinfo.xres);
-        fb_h_      = static_cast<int>(vinfo.yres);
-        fb_bpp_    = static_cast<int>(vinfo.bits_per_pixel);
+        fb_w_ = static_cast<int>(vinfo.xres);
+        fb_h_ = static_cast<int>(vinfo.yres);
+        fb_bpp_ = static_cast<int>(vinfo.bits_per_pixel);
         fb_stride_ = static_cast<uint32_t>(finfo.line_length);
     }
 #endif
@@ -79,9 +78,9 @@ bool Fb0MailboxSink::start() {
         if (has_cfg_) {
             // Test path (and all non-Linux builds): fall back to configured
             // geometry so the blit math is exercisable without a device.
-            fb_w_      = cfg_w_;
-            fb_h_      = cfg_h_;
-            fb_bpp_    = cfg_bpp_;
+            fb_w_ = cfg_w_;
+            fb_h_ = cfg_h_;
+            fb_bpp_ = cfg_bpp_;
             fb_stride_ = cfg_stride_;
         } else {
             warn_once("no fbdev ioctls and no configured geometry");
@@ -106,7 +105,7 @@ bool Fb0MailboxSink::start() {
     }
 
     map_size_ = static_cast<size_t>(fb_stride_) * static_cast<size_t>(fb_h_);
-    void* m   = ::mmap(nullptr, map_size_, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0);
+    void* m = ::mmap(nullptr, map_size_, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0);
     if (m == MAP_FAILED) {
         warn_once("mmap failed");
         map_size_ = 0;
@@ -115,17 +114,17 @@ bool Fb0MailboxSink::start() {
         return false;
     }
 
-    map_    = static_cast<uint8_t*>(m);
+    map_ = static_cast<uint8_t*>(m);
     active_ = true;
-    spdlog::info("[RemoteScreen] fb0 sink active: dev={} {}x{} stride={} bpp={}", dev_, fb_w_, fb_h_,
-                 fb_stride_, fb_bpp_);
+    spdlog::info("[RemoteScreen] fb0 sink active: dev={} {}x{} stride={} bpp={}", dev_, fb_w_,
+                 fb_h_, fb_stride_, fb_bpp_);
     return true;
 }
 
 void Fb0MailboxSink::stop() {
     if (map_) {
         ::munmap(map_, map_size_);
-        map_      = nullptr;
+        map_ = nullptr;
         map_size_ = 0;
     }
     if (fd_ >= 0) {
@@ -148,9 +147,14 @@ void Fb0MailboxSink::on_frame(const RemoteScreenFrame& f) {
     // mirrored as garbage.
     int src_bpp = 0;
     switch (f.src_format) {
-    case RemoteScreenPixelFormat::BGRA8888: src_bpp = 4; break;
-    case RemoteScreenPixelFormat::RGB565:   src_bpp = 2; break;
-    case RemoteScreenPixelFormat::Unknown:  break;
+    case RemoteScreenPixelFormat::BGRA8888:
+        src_bpp = 4;
+        break;
+    case RemoteScreenPixelFormat::RGB565:
+        src_bpp = 2;
+        break;
+    case RemoteScreenPixelFormat::Unknown:
+        break;
     }
 
     // Destination bytes-per-pixel: 4 (32bpp BGRA) or 2 (16bpp RGB565). All four
@@ -177,9 +181,9 @@ void Fb0MailboxSink::on_frame(const RemoteScreenFrame& f) {
         spdlog::info("[RemoteScreen] on_frame ENTER #{}: area=({},{})-({},{}) "
                      "disp={}x{} src_stride={} src_bpp={} cf={} fb={}x{} fb_bpp={} dst_bpp={} "
                      "fb_stride={} map_size={}",
-                     log_count_, f.x1, f.y1, f.x2, f.y2, f.disp_w, f.disp_h,
-                     f.src_stride, src_bpp, f.color_format, fb_w_, fb_h_, fb_bpp_, dst_bpp,
-                     fb_stride_, static_cast<unsigned long>(map_size_));
+                     log_count_, f.x1, f.y1, f.x2, f.y2, f.disp_w, f.disp_h, f.src_stride, src_bpp,
+                     f.color_format, fb_w_, fb_h_, fb_bpp_, dst_bpp, fb_stride_,
+                     static_cast<unsigned long>(map_size_));
     }
 
     if (f.src_stride == 0 || src_bpp == 0 || (fb_bpp_ != 16 && fb_bpp_ != 32)) {
@@ -189,10 +193,18 @@ void Fb0MailboxSink::on_frame(const RemoteScreenFrame& f) {
     // Clamp the dirty rect into the fb0 mapping. Source and destination share the
     // same coordinate system (px_map is buffer-origin), so no source skip is
     // needed — clamped x1/y1/x2/y2 index both.
-    if (x1 < 0) { x1 = 0; }
-    if (y1 < 0) { y1 = 0; }
-    if (x2 > fb_w_ - 1) { x2 = fb_w_ - 1; }
-    if (y2 > fb_h_ - 1) { y2 = fb_h_ - 1; }
+    if (x1 < 0) {
+        x1 = 0;
+    }
+    if (y1 < 0) {
+        y1 = 0;
+    }
+    if (x2 > fb_w_ - 1) {
+        x2 = fb_w_ - 1;
+    }
+    if (y2 > fb_h_ - 1) {
+        y2 = fb_h_ - 1;
+    }
     const int32_t w = x2 - x1 + 1;
     const int32_t h = y2 - y1 + 1;
     if (w <= 0 || h <= 0) {
@@ -204,31 +216,32 @@ void Fb0MailboxSink::on_frame(const RemoteScreenFrame& f) {
     // read within that bound is safe; anything beyond means our area/stride view
     // disagrees with the renderer, so skip rather than risk a segfault (which on
     // the render thread would wedge the UI -> watchdog kill).
-    const size_t  src_stride    = f.src_stride;
-    const size_t  src_row_bytes = static_cast<size_t>(w) * static_cast<size_t>(src_bpp);
-    const int32_t bound_h       = f.disp_h > 0 ? f.disp_h : fb_h_;
-    const size_t  src_bound     = src_stride * static_cast<size_t>(bound_h);
-    const size_t  last_src =
-        static_cast<size_t>(y2) * src_stride + static_cast<size_t>(x2 + 1) * static_cast<size_t>(src_bpp);
+    const size_t src_stride = f.src_stride;
+    const size_t src_row_bytes = static_cast<size_t>(w) * static_cast<size_t>(src_bpp);
+    const int32_t bound_h = f.disp_h > 0 ? f.disp_h : fb_h_;
+    const size_t src_bound = src_stride * static_cast<size_t>(bound_h);
+    const size_t last_src = static_cast<size_t>(y2) * src_stride +
+                            static_cast<size_t>(x2 + 1) * static_cast<size_t>(src_bpp);
     if (src_row_bytes > src_stride || last_src > src_bound) {
         if (!oob_warned_) {
             oob_warned_ = true;
-            spdlog::warn("[RemoteScreen] frame out of source bounds "
-                         "(src_row_bytes={} src_stride={} last_src={} bound={}) — skipping mirror",
-                         static_cast<unsigned long>(src_row_bytes), static_cast<unsigned long>(src_stride),
-                         static_cast<unsigned long>(last_src), static_cast<unsigned long>(src_bound));
+            spdlog::warn(
+                "[RemoteScreen] frame out of source bounds "
+                "(src_row_bytes={} src_stride={} last_src={} bound={}) — skipping mirror",
+                static_cast<unsigned long>(src_row_bytes), static_cast<unsigned long>(src_stride),
+                static_cast<unsigned long>(last_src), static_cast<unsigned long>(src_bound));
         }
         return;
     }
 
     for (int32_t row = 0; row < h; ++row) {
-        const int32_t abs_y   = y1 + row;
-        const size_t  dst_off = static_cast<size_t>(abs_y) * fb_stride_ +
+        const int32_t abs_y = y1 + row;
+        const size_t dst_off = static_cast<size_t>(abs_y) * fb_stride_ +
                                static_cast<size_t>(x1) * static_cast<size_t>(dst_bpp);
         // Same absolute (x1, abs_y) into the buffer-origin source.
-        const size_t  src_off = static_cast<size_t>(abs_y) * src_stride +
-                                static_cast<size_t>(x1) * static_cast<size_t>(src_bpp);
-        uint8_t*       dst = map_ + dst_off;
+        const size_t src_off = static_cast<size_t>(abs_y) * src_stride +
+                               static_cast<size_t>(x1) * static_cast<size_t>(src_bpp);
+        uint8_t* dst = map_ + dst_off;
         const uint8_t* src = f.px_map + src_off;
 
         if (dst_bpp == 4) {
@@ -265,8 +278,8 @@ void Fb0MailboxSink::on_frame(const RemoteScreenFrame& f) {
                     const uint8_t g = src[1];
                     const uint8_t r = src[2];
                     src += 4;
-                    const uint16_t p = static_cast<uint16_t>(((r >> 3) << 11) |
-                                                             ((g >> 2) << 5) | (b >> 3));
+                    const uint16_t p =
+                        static_cast<uint16_t>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
                     dst[0] = static_cast<uint8_t>(p & 0xFF);        // low byte (little-endian)
                     dst[1] = static_cast<uint8_t>((p >> 8) & 0xFF); // high byte
                     dst += 2;
@@ -277,8 +290,9 @@ void Fb0MailboxSink::on_frame(const RemoteScreenFrame& f) {
 
     if (log_count_ <= 3 && log_done_ < 3) {
         ++log_done_;
-        spdlog::info("[RemoteScreen] on_frame DONE #{} (copied {}x{} at ({},{}) src_bpp={} dst_bpp={})",
-                     log_done_, w, h, x1, y1, src_bpp, dst_bpp);
+        spdlog::info(
+            "[RemoteScreen] on_frame DONE #{} (copied {}x{} at ({},{}) src_bpp={} dst_bpp={})",
+            log_done_, w, h, x1, y1, src_bpp, dst_bpp);
     }
 }
 

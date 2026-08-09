@@ -3,10 +3,11 @@
 
 #include "gcode_narration_router.h"
 
+#include "ui_panel_filament.h"
+
 #include "ams_backend.h"
 #include "ams_state.h"
 #include "moonraker_client.h"
-#include "ui_panel_filament.h"
 
 #include <spdlog/spdlog.h>
 
@@ -121,8 +122,8 @@ void GcodeNarrationRouter::process_line(const std::string& line) {
     if (!backend)
         return;
 
-    auto id = prefixed ? backend->match_narration_phase(body)
-                       : backend->match_bare_narration_phase(body);
+    auto id =
+        prefixed ? backend->match_narration_phase(body) : backend->match_bare_narration_phase(body);
     if (!id) {
         // Drift hint: a line the backend recognizes as its own but that matches
         // no phase is the fingerprint of an upstream rewording. The backend

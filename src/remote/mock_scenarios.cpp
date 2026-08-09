@@ -7,9 +7,8 @@
 
 #include <spdlog/spdlog.h>
 
-#include <lvgl.h>
-
 #include <chrono>
+#include <lvgl.h>
 #include <thread>
 
 // LVGL XML subject lookup
@@ -207,12 +206,13 @@ static std::vector<MockScenario> build_scenarios() {
     // 2s comfortably exceeds subprocess-spawn latency even under heavy load
     // (confirmed via this test's own investigation: ~100-200ms round trips
     // at load average 60+, nowhere near 2s).
-    scenarios.push_back(
-        {"http_busy", "Synthetic HttpExecutor busy state (test-only, not a printer condition)",
-         []() {
-             helix::http::HttpExecutor::fast().submit(
-                 []() { std::this_thread::sleep_for(std::chrono::milliseconds(2000)); });
-         }});
+    scenarios.push_back({"http_busy",
+                         "Synthetic HttpExecutor busy state (test-only, not a printer condition)",
+                         []() {
+                             helix::http::HttpExecutor::fast().submit([]() {
+                                 std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+                             });
+                         }});
 
     return scenarios;
 }
