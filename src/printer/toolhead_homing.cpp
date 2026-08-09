@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "toolhead_homing.h"
 
+#include "app_globals.h"
+#include "async_lifetime_guard.h"
+#include "moonraker_api.h"
+#include "moonraker_error.h"
 #include "printer_state.h"
+
+#include <spdlog/spdlog.h>
 
 #include <cstring>
 #include <string>
@@ -20,6 +26,48 @@ bool toolhead_is_homed(const PrinterState& ps) {
     const std::string s(axes);
     return s.find('x') != std::string::npos && s.find('y') != std::string::npos &&
            s.find('z') != std::string::npos;
+}
+
+void ensure_homed_then(MoonrakerAPI* api, AsyncLifetimeGuard& guard, std::function<void()> then,
+                       std::function<void(const MoonrakerError&)> on_error) {
+    if (toolhead_is_homed(get_printer_state())) {
+        spdlog::debug("[ensure_homed_then] Already homed, proceeding");
+        if (then) {
+            then();
+        }
+        return;
+    }
+
+    if (!api) {
+        spdlog::error(
+            "[ensure_homed_then] Not homed and no MoonrakerAPI available — cannot send G28");
+        if (on_error) {
+            MoonrakerError err;
+            err.type = MoonrakerErrorType::CONNECTION_LOST;
+            err.message = "MoonrakerAPI unavailable";
+            on_error(err);
+        }
+        return;
+    }
+
+    spdlog::info("[ensure_homed_then] Not fully homed, sending G28");
+    api->execute_gcode("G28",
+                       guard.bg_cb("ensure_homed_then::g28_done",
+                                   [then = std::move(then)]() {
+                                       spdlog::info("[ensure_homed_then] G28 complete, proceeding");
+                                       if (then) {
+                                           then();
+                                       }
+                                   }),
+                       guard.bg_cb("ensure_homed_then::g28_error",
+                                   [on_error = std::move(on_error)](const MoonrakerError& err) {
+                                       spdlog::warn("[ensure_homed_then] G28 failed: {}",
+                                                    err.message);
+                                       if (on_error) {
+                                           on_error(err);
+                                       }
+                                   }),
+                       MoonrakerAPI::HOMING_TIMEOUT_MS);
 }
 
 } // namespace helix
