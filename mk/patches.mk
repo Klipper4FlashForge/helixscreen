@@ -119,19 +119,52 @@ LIBHV_HEAD_CANDIDATE := $(GIT_COMMON_DIR)/modules/libhv/HEAD
 LVGL_HEAD := $(wildcard $(LVGL_HEAD_CANDIDATE))
 LIBHV_HEAD := $(wildcard $(LIBHV_HEAD_CANDIDATE))
 
-# Reset all patched files in LVGL submodule to upstream state
-reset-patches:
-	$(ECHO) "$(YELLOW)Resetting LVGL patches to upstream state...$(RESET)"
-	$(Q)for file in $(LVGL_PATCHED_FILES); do \
-		if ! git -C $(LVGL_DIR) diff --quiet $$file 2>/dev/null; then \
+# Restore one submodule's patched files to upstream state.
+#   $(1) submodule dir, $(2) file list (paths relative to it)
+#
+# Two cases, and the second is why a plain `git checkout` loop is not enough: a
+# patch that CREATES a file leaves that file untracked, where checkout fails with
+# "did not match any file(s) known to git". It has to be deleted instead, or the
+# re-apply then fails the other way with "already exists".
+define reset_submodule_patches
+	$(Q)for file in $(2); do \
+		if ! git -C $(1) ls-files --error-unmatch "$$file" >/dev/null 2>&1; then \
+			if [ -e "$(1)/$$file" ]; then \
+				echo "$(YELLOW)→ Removing (patch-created):$(RESET) $$file"; \
+				rm -f "$(1)/$$file"; \
+			else \
+				echo "$(DIM)  (absent) $$file$(RESET)"; \
+			fi; \
+		elif ! git -C $(1) diff --quiet "$$file" 2>/dev/null; then \
 			echo "$(YELLOW)→ Resetting:$(RESET) $$file"; \
-			git -C $(LVGL_DIR) checkout $$file; \
+			git -C $(1) checkout "$$file"; \
 		else \
 			echo "$(DIM)  (clean) $$file$(RESET)"; \
 		fi \
 	done
+endef
+
+# Reset all patched files in both submodules to upstream state.
+#
+# libhv used to be missing here, which made `make reapply-patches` unable to fix
+# the one thing it is advertised to fix. A tree carrying an older revision of a
+# libhv patch fails `git apply --check` on the newer one, and the recipe tells you
+# to run reapply-patches — which reset only LVGL, left the stale libhv hunks in
+# place, and failed identically next time. That is how the #1212 null-hloop guard
+# stayed out of a tree with no way to get it back short of editing by hand.
+#
+# Deliberately NOT reset: config.mk and hconfig.h. Both are dirty in a built tree
+# but neither is patched — libhv's own ./configure writes them, and the libhv
+# build regenerates them.
+reset-patches:
+	$(ECHO) "$(YELLOW)Resetting LVGL patches to upstream state...$(RESET)"
+	$(call reset_submodule_patches,$(LVGL_DIR),$(LVGL_PATCHED_FILES))
+	@# Not in LVGL_PATCHED_FILES: the backport patch creates it, so there is no
+	@# tracked version to compare against.
 	$(Q)rm -f $(LVGL_DIR)/src/misc/lv_check_arg.h
-	$(ECHO) "$(GREEN)✓ All LVGL patches reset$(RESET)"
+	$(ECHO) "$(YELLOW)Resetting libhv patches to upstream state...$(RESET)"
+	$(call reset_submodule_patches,$(LIBHV_DIR),$(LIBHV_PATCHED_FILES))
+	$(ECHO) "$(GREEN)✓ All patches reset$(RESET)"
 
 # Force reapply all patches (reset first, then apply)
 reapply-patches: reset-patches force-apply-patches
