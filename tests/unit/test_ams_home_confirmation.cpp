@@ -5,6 +5,7 @@
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
 #include "printer_state.h"
+#include "test_helpers/cfs_test_access.h"
 #include "test_helpers/update_queue_test_access.h"
 
 #include "../catch_amalgamated.hpp"
@@ -168,23 +169,10 @@ TEST_CASE("ensure_homed_then custom timeout/silent bypass the hardcoded virtuals
 // exactly like that one: a null-api_ probe would short-circuit dispatch_payload
 // before it ever reaches MoonrakerAPI::execute_gcode(), and the payload gcode
 // would never be recorded.
-namespace {
-// Exposes AmsBackendCfs's protected homing-dispatch surface for direct test
-// calls. Deliberately does NOT override dispatch_action_script -- unlike
-// CfsRemapHelper in test_ams_backend_cfs.cpp (which captures instead of
-// dispatching), this probe exercises the REAL production implementation.
-class CfsHomingProbe : public helix::printer::AmsBackendCfs {
-  public:
-    CfsHomingProbe(MoonrakerAPI* api, helix::MoonrakerClient* client)
-        : AmsBackendCfs(api, client) {}
-
-    using AmsBackendCfs::dispatch_action_script;
-
-    void set_macro_variant_for_test(helix::printer::CfsMacroVariant variant) {
-        macro_variant_ = variant;
-    }
-};
-} // namespace
+//
+// dispatch_action_script stays private in AmsBackendCfs -- these tests reach
+// the REAL production implementation through the ::CfsTestAccess friend shim
+// (tests/test_helpers/cfs_test_access.h), not by subclassing to widen access.
 
 TEST_CASE("CFS dispatch_action_script routes through ensure_homed_then and homes when unhomed",
           "[ams][homing][cfs]") {
@@ -194,9 +182,9 @@ TEST_CASE("CFS dispatch_action_script routes through ensure_homed_then and homes
     MoonrakerAPIMock api(client, state);
 
     // homed_axes defaults to "" (not homed) -- exercises the G28-then-payload leg.
-    CfsHomingProbe backend(&api, nullptr);
+    helix::printer::AmsBackendCfs backend(&api, nullptr);
 
-    auto err = backend.dispatch_action_script("BOX_LOAD LANE=1");
+    auto err = CfsTestAccess::call_dispatch_action_script(backend, "BOX_LOAD LANE=1");
     REQUIRE(err.success());
 
     // G28's success callback is marshalled through token.defer() (L081
@@ -221,13 +209,13 @@ TEST_CASE("CFS Fork variant never homes via dispatch_action_script", "[ams][homi
     state.init_subjects(false);
     MoonrakerAPIMock api(client, state);
 
-    CfsHomingProbe backend(&api, nullptr);
-    backend.set_macro_variant_for_test(helix::printer::CfsMacroVariant::Fork);
+    helix::printer::AmsBackendCfs backend(&api, nullptr);
+    CfsTestAccess::set_macro_variant_fork(backend);
 
     // homed_axes is STILL "" (not homed) here -- proves the skip comes from
     // skip_homing=true (Fork maps to it), not from the toolhead happening to
     // already be homed.
-    auto err = backend.dispatch_action_script("BOX_LOAD LANE=1");
+    auto err = CfsTestAccess::call_dispatch_action_script(backend, "BOX_LOAD LANE=1");
     REQUIRE(err.success());
 
     helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
