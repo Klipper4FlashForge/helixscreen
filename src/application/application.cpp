@@ -4681,9 +4681,8 @@ void Application::shutdown() {
     // Destroy runtime CJK fonts before LVGL shutdown
     helix::system::CjkFontManager::instance().shutdown();
 
-    // Deinitialize theme manager subjects (theme_changed_subject, swatch descriptions).
-    // These are file-scope statics not tracked by StaticSubjectRegistry.
-    theme_manager_deinit();
+    // NOTE: theme_manager_deinit() is deliberately NOT called here. It has to run
+    // after m_display.reset() — see the call below.
 
     // Invalidate all ObserverGuards so any reset() call in surviving destructors
     // releases instead of calling lv_observer_remove() on freed observer pointers.
@@ -4718,6 +4717,25 @@ void Application::shutdown() {
     // Shutdown display (calls lv_deinit). All observer callbacks were already
     // removed above, so widget deletion is clean — no observer linked list access.
     m_display.reset();
+
+    // Theme manager subjects (theme_changed_subject, swatch descriptions) are
+    // file-scope statics not tracked by StaticSubjectRegistry, so they are torn
+    // down by hand — and only HERE, after the display is gone.
+    //
+    // They must outlive m_display.reset(), because that is what runs
+    // lv_xml_deinit(): a component scope holding a <subject_expr> owns RAW
+    // lv_observer_t* pointers (lv_xml_subject_expr_t::observers) attached to
+    // these subjects, and releases them with lv_observer_remove(). Those raw
+    // pointers are not ObserverGuards, so ObserverGuard::invalidate_all() above
+    // does not cover them. Deinitialising the subjects first frees every
+    // observer on them (lv_subject_deinit -> lv_observer.c:468) and the later
+    // scope teardown then reads freed memory — a heap-use-after-free that
+    // aborted every single `ctl shutdown`.
+    //
+    // Running last is safe: lv_xml_deinit() detaches the <subject_expr>
+    // observers before lv_deinit(), and lv_deinit() removes the object-bound
+    // ones, so these subjects have no subscribers left by the time we get here.
+    theme_manager_deinit();
 
     // Uninstall crash handler last — clean shutdown reached this point, so a
     // SIGBUS/SIGSEGV after this is the kernel's problem, not ours.

@@ -592,13 +592,29 @@ void DisplayManager::shutdown() {
     lv_sdl_quit();
 #endif
 
-    // Deinitialize helix-xml engine before LVGL (frees component scopes, fonts, etc.)
-    lv_xml_deinit();
-
-    // Deinitialize LVGL (guard against static destruction order issues)
+    // Deinitialize LVGL FIRST, then the helix-xml engine.
+    //
+    // A component scope owns the styles its instances use: component_scope_free()
+    // clears scope->style_ll, freeing every lv_style_t in it. Widgets keep raw
+    // pointers to those styles, so freeing the scopes while the widget tree is
+    // still standing leaves live objects pointing at reclaimed style memory —
+    // and lv_deinit()'s own teardown runs layouts as it goes, so a flex pass
+    // reads a freed style before the object is deleted (heap-use-after-free in
+    // get_prop_core, via lv_obj_get_style_flex_grow).
+    //
+    // The reverse order is safe: lv_deinit() only needs the widget tree and its
+    // own allocator, neither of which the XML engine owns, and lv_free() here is
+    // plain free() (LV_USE_STDLIB_MALLOC = clib), so releasing scopes afterwards
+    // needs nothing from LVGL. The <subject_expr> observers detached below are
+    // attached to app-owned subjects, not objects, so lv_deinit() leaves them
+    // alone for lv_xml_deinit() to remove — which is why theme_manager_deinit()
+    // must run after all of this (see Application::shutdown()).
     if (lv_is_initialized()) {
         lv_deinit();
     }
+
+    // Frees component scopes, their styles, fonts and <subject_expr> observers.
+    lv_xml_deinit();
 
     m_width = 0;
     m_height = 0;
@@ -628,11 +644,11 @@ void DisplayManager::rebuild_input_after_backend_swap() {
     // mirroring init()'s input setup so scroll/long-press/sleep-wrapper/keyboard
     // behavior is preserved.
     if (m_pointer) {
-        lv_indev_delete(m_pointer);
+        lv_indev_delete(m_pointer); // NOTE: swap, not shutdown
         m_pointer = nullptr;
     }
     if (m_keyboard) {
-        lv_indev_delete(m_keyboard);
+        lv_indev_delete(m_keyboard); // NOTE: swap, not shutdown
         m_keyboard = nullptr;
     }
     // The saved read callback belonged to the deleted pointer; drop it so the
