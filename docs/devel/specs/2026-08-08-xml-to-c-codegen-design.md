@@ -69,7 +69,7 @@ typedef void * (*lv_xml_widget_create_cb_t)(lv_xml_parser_state_t *, const char 
 typedef void   (*lv_xml_widget_apply_cb_t) (lv_xml_parser_state_t *, const char ** attrs);
 ```
 
-`view_start_element_handler()` (`lv_xml.c:2043`) does a fixed sequence per element:
+`view_start_element_handler()` (`lv_xml.c:2194`) does a fixed sequence per element:
 push pcdata, resolve the parent, `resolve_params()`, `resolve_consts()`, look up the
 processor by name, `create_cb()`, `apply_cb()`, push the new parent.
 
@@ -162,7 +162,7 @@ generate time and cost nothing at runtime.
 Codegen cannot sit on top of the resolver as it stands, and the reason is worth fixing
 properly rather than working around.
 
-`resolve_params()` (`lv_xml.c:1015`) and `resolve_consts()` (`:1138`) **mutate the
+`resolve_params()` (`lv_xml.c:1111`) and `resolve_consts()` (`:1244`) **mutate the
 caller's attribute array in place**, repointing value slots at parameter or const
 storage. Generated arrays are `const` and shared across every instantiation of a
 component, so the mutation is not merely unsafe, it would corrupt the template on the
@@ -176,12 +176,12 @@ Four other things fall out of the same design:
   borrowed repoints (params, consts), owned allocations in `state->composed_strings`,
   and per-expansion transients in `idx_strings`. The defensive comments at
   `lv_xml_parser.h:117-127` exist to hold this together by hand.
-- **"Drop this attribute" is encoded by poisoning both slots with `""`** (`:1111`,
-  `:1167`), so every downstream `apply_cb` iterates over dead entries.
+- **"Drop this attribute" is encoded by poisoning both slots with `""`** (`:1178`,
+  `:1273`), so every downstream `apply_cb` iterates over dead entries.
 - **`#` is ambiguous**, meaning both "const reference" and "hex color", disambiguated by
-  `is_hex_color()` counting six hex digits (`:1123`). A const named `ABCDEF` is
+  `is_hex_color()` counting six hex digits (`:1229`). A const named `ABCDEF` is
   unreachable.
-- **`$prop|ref` packs two values into one attribute string** (`:1048-1070`) because only
+- **`$prop|ref` packs two values into one attribute string** (`:1151` onward) because only
   whole-value substitution exists, and the obj parser splits on the pipe downstream.
 
 ### The change
