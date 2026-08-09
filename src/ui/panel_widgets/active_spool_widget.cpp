@@ -70,7 +70,8 @@ void ActiveSpoolWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
             if (token.expired())
                 return;
             self->update_spool_display();
-        });
+        },
+        AmsState::instance().get_subjects_lifetime());
 
     // AMS backend active slot changes
     current_slot_observer_ = helix::ui::observe_int_sync<ActiveSpoolWidget>(
@@ -79,7 +80,8 @@ void ActiveSpoolWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
             if (token.expired())
                 return;
             self->update_spool_display();
-        });
+        },
+        AmsState::instance().get_subjects_lifetime());
 
     // AMS slot info changes (material/color edits)
     slots_version_observer_ = helix::ui::observe_int_sync<ActiveSpoolWidget>(
@@ -88,7 +90,8 @@ void ActiveSpoolWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
             if (token.expired())
                 return;
             self->update_spool_display();
-        });
+        },
+        AmsState::instance().get_subjects_lifetime());
 
     // Size spool canvases to match responsive icon size
     resize_spool_canvases();

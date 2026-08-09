@@ -119,18 +119,21 @@ void LedWidget::bind_led() {
         // Create state/brightness observers
         auto token = lifetime_.token();
         led_state_observer_ = helix::ui::observe_int_sync<LedWidget>(
-            printer_state_.get_led_state_subject(), this, [token](LedWidget* self, int state) {
+            printer_state_.get_led_state_subject(), this,
+            [token](LedWidget* self, int state) {
                 if (token.expired())
                     return;
                 self->on_led_state_changed(state);
-            });
+            },
+            printer_state_.get_subjects_lifetime());
         led_brightness_observer_ = helix::ui::observe_int_sync<LedWidget>(
             printer_state_.get_led_brightness_subject(), this,
             [token](LedWidget* self, int /*brightness*/) {
                 if (token.expired())
                     return;
                 self->update_light_icon();
-            });
+            },
+            printer_state_.get_subjects_lifetime());
 
         // Sync light_on_ from current subject value immediately rather than
         // waiting for the deferred observer callback chain.  This ensures

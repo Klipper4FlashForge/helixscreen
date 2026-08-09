@@ -94,11 +94,13 @@ void ToolSwitcherWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
 
     // Observe active tool changes
     active_tool_observer_ = helix::ui::observe_int_sync<ToolSwitcherWidget>(
-        tool_state.get_active_tool_subject(), this, [token](ToolSwitcherWidget* self, int tool) {
+        tool_state.get_active_tool_subject(), this,
+        [token](ToolSwitcherWidget* self, int tool) {
             if (token.expired())
                 return;
             self->on_active_tool_changed(tool);
-        });
+        },
+        tool_state.get_subjects_lifetime());
 
     // Observe tool count changes to trigger rebuild
     tool_count_observer_ = helix::ui::observe_int_sync<ToolSwitcherWidget>(
@@ -111,7 +113,8 @@ void ToolSwitcherWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
             } else {
                 self->rebuild_pills();
             }
-        });
+        },
+        tool_state.get_subjects_lifetime());
 
     // Re-grey on every print-state transition. PanelWidget instances are
     // RECYCLED across home-panel rebuilds, so registering here (rather than

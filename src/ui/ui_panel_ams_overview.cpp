@@ -185,7 +185,8 @@ void AmsOverviewPanel::init_subjects() {
             [](AmsOverviewPanel* self, int /*color_int*/) {
                 // Delegate to existing refresh helper which reads full spool info
                 self->refresh_bypass_display();
-            });
+            },
+            AmsState::instance().get_subjects_lifetime());
     });
 }
 

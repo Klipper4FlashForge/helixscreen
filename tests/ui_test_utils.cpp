@@ -71,7 +71,24 @@ uint32_t lv_timer_handler_safe() {
                     if (t->repeat_count > 0) {
                         t->repeat_count--;
                     }
+                    const bool exhausted = t->repeat_count == 0;
                     t->timer_cb(t);
+                    // Match lv_timer_handler(): it deletes a timer whose repeat
+                    // count reached 0 (lv_timer.c:369). Leaving it behind parks
+                    // a spent lv_timer_t in LVGL's list holding the callback's
+                    // user_data, so an owner destroyed later cannot free what it
+                    // no longer has a handle to. Re-find it rather than reusing
+                    // `t`: the callback may already have deleted it (the common
+                    // one-shot pattern nulls its own handle and returns).
+                    if (exhausted) {
+                        for (lv_timer_t* s = lv_timer_get_next(nullptr); s != nullptr;
+                             s = lv_timer_get_next(s)) {
+                            if (s == t) {
+                                lv_timer_delete(t);
+                                break;
+                            }
+                        }
+                    }
                     found = true;
                     break; // Restart iteration since list may have changed
                 }

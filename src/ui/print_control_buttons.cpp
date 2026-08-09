@@ -44,17 +44,18 @@ void PrintControlButtons::init_subjects() {
     lv_xml_register_event_cb(nullptr, "on_print_control_stop", on_stop_clicked);
 
     // print_state_enum is a static global subject — no SubjectLifetime needed.
-    print_state_observer_ =
-        observe_int_sync<PrintControlButtons>(get_printer_state().get_print_state_enum_subject(),
-                                              this, [](PrintControlButtons* self, int) {
-                                                  // A real state change clears any optimistic
-                                                  // pending action; the new state is authoritative.
-                                                  // Otherwise just recompute the buttons.
-                                                  if (self->pending_action_ != PendingAction::None)
-                                                      self->clear_pending_action();
-                                                  else
-                                                      self->recompute();
-                                              });
+    print_state_observer_ = observe_int_sync<PrintControlButtons>(
+        get_printer_state().get_print_state_enum_subject(), this,
+        [](PrintControlButtons* self, int) {
+            // A real state change clears any optimistic
+            // pending action; the new state is authoritative.
+            // Otherwise just recompute the buttons.
+            if (self->pending_action_ != PendingAction::None)
+                self->clear_pending_action();
+            else
+                self->recompute();
+        },
+        get_printer_state().get_subjects_lifetime());
 
     // Self-register cleanup so subjects/observer are torn down before lv_deinit().
     StaticSubjectRegistry::instance().register_deinit("PrintControlButtons", []() {

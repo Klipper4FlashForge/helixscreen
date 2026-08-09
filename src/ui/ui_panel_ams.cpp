@@ -166,17 +166,20 @@ void AmsPanel::init_subjects() {
     using helix::ui::observe_int_sync;
 
     slots_version_observer_ = observe_int_sync<AmsPanel>(
-        AmsState::instance().get_slots_version_subject(), this, [](AmsPanel* self, int) {
+        AmsState::instance().get_slots_version_subject(), this,
+        [](AmsPanel* self, int) {
             if (!self->subjects_initialized_ || !self->panel_)
                 return;
             spdlog::trace("[AmsPanel] Gates version changed - refreshing slots");
             self->refresh_slots();
-        });
+        },
+        AmsState::instance().get_subjects_lifetime());
 
     // Simplified action observer - only handles panel-specific concerns
     // (path canvas heat glow and error modal). Step progress is handled by sidebar_.
     action_observer_ = observe_int_sync<AmsPanel>(
-        AmsState::instance().get_ams_action_subject(), this, [](AmsPanel* self, int action_int) {
+        AmsState::instance().get_ams_action_subject(), this,
+        [](AmsPanel* self, int action_int) {
             // Record the previous value before any early return so the
             // ERROR-exit edge below stays accurate across ticks that bail out.
             const int prev_action = self->prev_ams_action_;
@@ -216,7 +219,8 @@ void AmsPanel::init_subjects() {
                     self->dismiss_error_modal_silently("AMS action left ERROR");
                 }
             }
-        });
+        },
+        AmsState::instance().get_subjects_lifetime());
 
     // A resumed print is the second signal that a filament fault is over. The
     // user may have recovered by a route this panel never observes, leaving the
@@ -255,7 +259,8 @@ void AmsPanel::init_subjects() {
         printer_state_.get_static_print_subjects_lifetime());
 
     current_slot_observer_ = observe_int_sync<AmsPanel>(
-        AmsState::instance().get_current_slot_subject(), this, [](AmsPanel* self, int slot) {
+        AmsState::instance().get_current_slot_subject(), this,
+        [](AmsPanel* self, int slot) {
             if (!self->subjects_initialized_ || !self->panel_)
                 return;
             spdlog::debug("[AmsPanel] Current slot changed: {}", slot);
@@ -282,7 +287,8 @@ void AmsPanel::init_subjects() {
                     }
                 }
             }
-        });
+        },
+        AmsState::instance().get_subjects_lifetime());
 
     // Slot count observer for dynamic slot creation (non-scoped mode only).
     // Deferred via lifetime_ to avoid deleting children during LVGL layout refresh (#563).
@@ -318,10 +324,12 @@ void AmsPanel::init_subjects() {
             });
         }
     };
-    path_segment_observer_ = observe_int_sync<AmsPanel>(
-        AmsState::instance().get_path_filament_segment_subject(), this, path_handler);
-    path_topology_observer_ = observe_int_sync<AmsPanel>(
-        AmsState::instance().get_path_topology_subject(), this, path_handler);
+    path_segment_observer_ =
+        observe_int_sync<AmsPanel>(AmsState::instance().get_path_filament_segment_subject(), this,
+                                   path_handler, AmsState::instance().get_subjects_lifetime());
+    path_topology_observer_ =
+        observe_int_sync<AmsPanel>(AmsState::instance().get_path_topology_subject(), this,
+                                   path_handler, AmsState::instance().get_subjects_lifetime());
 
     // Backend count observer for multi-backend selector
     backend_count_observer_ = observe_int_sync<AmsPanel>(
@@ -358,7 +366,8 @@ void AmsPanel::init_subjects() {
 
             // Update bypass spool holder (3D spool in left column)
             self->update_bypass_spool_from_state();
-        });
+        },
+        AmsState::instance().get_subjects_lifetime());
 
     // UI module subjects are now encapsulated in their respective classes:
     // - helix::ui::AmsEditOverlay

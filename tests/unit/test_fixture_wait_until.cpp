@@ -129,12 +129,17 @@ TEST_CASE_METHOD(LVGLTestFixture, "wait_until advances the virtual clock so time
 
     const bool ok = wait_until([] { return fired.load() > 0; }, 2000);
 
-    // lv_timer_handler_safe() decrements repeat_count itself and never deletes,
-    // so the exhausted timer would otherwise outlive the test.
-    lv_timer_delete(timer);
-
     CHECK(ok);
     CHECK(fired.load() == 1);
+
+    // lv_timer_handler_safe() now reaps a timer whose repeat count reached 0,
+    // exactly as lv_timer_handler() does (lv_timer.c). Deleting it here would be
+    // a double free. Assert the reap instead: an exhausted one-shot left in the
+    // list keeps its callback's user_data alive past its owner, which is how a
+    // spent timer ends up firing on freed memory in a later test.
+    for (lv_timer_t* t = lv_timer_get_next(nullptr); t != nullptr; t = lv_timer_get_next(t)) {
+        CHECK(t != timer);
+    }
 }
 
 TEST_CASE_METHOD(LVGLTestFixture, "wait_until evaluates its condition at least once",

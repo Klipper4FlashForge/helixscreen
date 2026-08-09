@@ -245,7 +245,8 @@ void FanControlOverlay::on_activate() {
                 // Refresh auto fan card animations
                 self->refresh_all_auto_fan_animations();
             }
-        });
+        },
+        DisplaySettingsManager::instance().get_subjects_lifetime());
 
     // Subscribe to per-fan speed subjects for reactive updates
     subscribe_to_fan_speeds();

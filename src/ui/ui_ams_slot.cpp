@@ -804,7 +804,8 @@ static void setup_slot_observers(AmsSlotData* data) {
     if (filament_loaded_subject) {
         // When filament_loaded changes, re-evaluate highlight using current_slot value
         data->filament_loaded_observer = observe_int_sync<lv_obj_t>(
-            filament_loaded_subject, obj, [](lv_obj_t* o, int /*loaded*/) {
+            filament_loaded_subject, obj,
+            [](lv_obj_t* o, int /*loaded*/) {
                 auto* d = get_slot_data(o);
                 if (!d)
                     return;
@@ -812,7 +813,8 @@ static void setup_slot_observers(AmsSlotData* data) {
                 if (slot_subject) {
                     apply_current_slot_highlight(d, lv_subject_get_int(slot_subject));
                 }
-            });
+            },
+            AmsState::instance().get_subjects_lifetime());
     }
 
     // Per-slot active-loaded observer: the SINGLE source driving the active-lane

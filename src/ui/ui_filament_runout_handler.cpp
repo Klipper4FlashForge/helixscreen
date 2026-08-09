@@ -172,7 +172,8 @@ void FilamentRunoutHandler::show_runout_guidance_modal() {
                     if (!self->runout_modal_.is_visible())
                         return;
                     self->runout_modal_.set_resume_blocked(port_present == 0);
-                });
+                },
+                AmsState::instance().get_subjects_lifetime());
         } else {
             runout_modal_.set_resume_blocked(false);
         }
