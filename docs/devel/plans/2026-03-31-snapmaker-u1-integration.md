@@ -1,5 +1,14 @@
 # Snapmaker U1 Integration Implementation Plan
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions.**
+> **Status: SHIPPED.** The 41 `- [ ]` boxes were never ticked and do not mean the work is
+> outstanding. Evidence: `AmsBackendSnapmaker` and the `print_task_config` command surface
+> (`src/printer/ams_backend_snapmaker.cpp`, `include/ams_backend_snapmaker.h`).
+>
+> Code line numbers and file paths below may have drifted. Follow the **symbol**, not
+> the number, and verify every predicate against current code before relying on
+> anything here.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a dedicated `AmsBackendSnapmaker` that enables toolchanger support, RFID filament detection, and tool switching for the Snapmaker U1 4-toolhead printer.

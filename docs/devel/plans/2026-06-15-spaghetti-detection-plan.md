@@ -1,5 +1,19 @@
 # Spaghetti Detection (DetectionSource + U1 Stock Adapter) Implementation Plan
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions.**
+> **Status: SHIPPED.** The 44 `- [ ]` boxes were never ticked and do not mean the work is
+> outstanding. Evidence: `include/detection_manager.h`, `include/detection_source.h`,
+> `include/ui_spaghetti_detection_modal.h`.
+>
+> Note the companion docs are a different story: `2026-06-16-coral-voron-failure-detection-spec.md`
+> and `2026-06-16-self-hosted-failure-detection-sidecar.md` describe a sidecar
+> (`SidecarDetectionSource`, `notify_agent_event`, `detection_policy_sidecar`) that has
+> **never been built** - zero hits in the tree.
+>
+> Code line numbers and file paths below may have drifted. Follow the **symbol**, not
+> the number, and verify every predicate against current code before relying on
+> anything here.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Surface Snapmaker U1 stock-firmware spaghetti detections in HelixScreen — when the U1's on-device detector pauses a print, explain why, show the camera frame, and offer Resume / Abort / Tune — behind a pluggable `DetectionSource` interface so cloud/Paxx sources can slot in later.

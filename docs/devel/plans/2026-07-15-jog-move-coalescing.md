@@ -1,5 +1,13 @@
 # Jog Move Coalescing Implementation Plan
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions.**
+> **Status: SHIPPED.** The 34 `- [ ]` boxes were never ticked and do not mean the work is
+> outstanding. Evidence: `JogCoalescer`, `AppMotionActivity`, `AxisMove`.
+>
+> Code line numbers and file paths below may have drifted. Follow the **symbol**, not
+> the number, and verify every predicate against current code before relying on
+> anything here.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Rapid jog-wheel taps coalesce into pending distance instead of bouncing off the busy guard with error toasts; plus two crash hardenings (MotionPanel widget-pointer nulling, toast dedupe).

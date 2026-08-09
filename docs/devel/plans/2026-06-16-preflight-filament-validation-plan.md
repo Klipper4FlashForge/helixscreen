@@ -1,5 +1,17 @@
 # Pre-flight Filament Validation & Remap Implementation Plan
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions. Status: SHIPPED.** The 62
+> `- [ ]` boxes were never ticked and do **not** mean the work is outstanding. Evidence:
+> `PreflightValidator` (`src/printer/preflight_validator.cpp`), `GcodeToolRemapper`
+> (`include/gcode_tool_remapper.h`), `RemapStrategy` on the backends, and the
+> pre-flight check modal.
+>
+> **One prescription the shipped code deliberately rejected:** this plan calls for a standalone
+> `include/snapmaker_task_config.h` / `src/printer/snapmaker_task_config.cpp` /
+> `tests/unit/test_snapmaker_task_config.cpp`. None exist. `print_task_config` parsing lives
+> inline in `src/printer/ams_backend_snapmaker.cpp`. Do not extract it on the strength of this
+> plan alone.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Stop multi-color prints from running out mid-print by validating required tools against actually-loaded filament *before* the print starts, showing an honest color/head mapping, and letting the user remap — including on Snapmaker U1/ACE which have no native remap API.
