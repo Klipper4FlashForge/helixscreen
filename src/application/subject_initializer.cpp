@@ -112,7 +112,7 @@ class HomeConfirmModal : public Modal {
         : on_confirm_(std::move(on_confirm)), on_cancel_(std::move(on_cancel)) {}
 
     const char* get_name() const override {
-        return "HomeConfirm";
+        return "HomeConfirm"; // i18n: do not translate, internal modal identifier
     }
     const char* component_name() const override {
         return "modal_dialog";

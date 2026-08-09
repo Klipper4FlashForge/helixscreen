@@ -1078,7 +1078,9 @@ translations:
   Hold anywhere to cancel: Hold anywhere to cancel
   Holding nozzle at {}°C to purge previous filament.: Holding nozzle at {}°C to purge previous filament.
   Home: Home
+  Home & Continue: Home & Continue
   Home failed: Home failed
+  Home printer first?: Home printer first?
   Home selector: Home selector
   Homing AFC system...: Homing AFC system...
   Homing X...: Homing X...
@@ -2357,6 +2359,7 @@ translations:
     then lock the reading.
   The printer halted this print and cannot resume it. Restart from the beginning?: The
     printer halted this print and cannot resume it. Restart from the beginning?
+  The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear.: The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear.
   The printer lost power during a print. It can resume where it left off.: The printer lost power during a print. It can resume where it left off.
   The printer lost power during a print. The resumed layer may not line up exactly.: The printer lost power during a print. The resumed layer may not line up exactly.
   The printer lost power while printing {}. Resume where it left off?: The printer lost power while printing {}. Resume where it left off?
