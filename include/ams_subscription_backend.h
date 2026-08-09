@@ -134,4 +134,9 @@ class AmsSubscriptionBackend : public AmsBackend {
   private:
     EventCallback event_callback_;
     SubscriptionGuard subscription_;
+
+    /// Send the payload gcode, honouring the 1-arg/2-arg execute_gcode split.
+    /// ~20 test fixtures override ONLY the 1-arg form; calling the 2-arg form
+    /// with a null callback would fall through to the base and stop capturing.
+    AmsError dispatch_payload(std::string gcode, std::function<void()> on_complete);
 };

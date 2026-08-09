@@ -217,82 +217,57 @@ bool AmsSubscriptionBackend::toolhead_homed() const {
 
 AmsError AmsSubscriptionBackend::ensure_homed_then(std::string gcode,
                                                    std::function<void()> on_complete) {
-    // When no completion callback is wanted, route the final gcode through the
-    // 1-arg execute_gcode so subclasses that override only that form (test
-    // fixtures, AFC/ACE/CFS) keep capturing it — exact legacy behavior.
-    if (!client_) {
-        spdlog::debug("{} No client for homing query, executing directly", backend_log_tag());
-        return on_complete ? execute_gcode(gcode, std::move(on_complete)) : execute_gcode(gcode);
+    // The homed answer comes from the live homed_axes subject, not an RPC:
+    // toolhead is in the standing objects.subscribe set, so querying it again
+    // was a redundant round trip.
+    if (toolhead_homed()) {
+        return dispatch_payload(std::move(gcode), std::move(on_complete));
+    }
+
+    auto gcode_copy = std::move(gcode);
+    spdlog::info("{} Not homed, sending G28 before operation", backend_log_tag());
+
+    // No API: emit the G28 through the VIRTUAL execute_gcode rather than
+    // skipping it. api_ is null only in fixtures, and they override the virtual
+    // to capture - routing around it here would make the unhomed branch
+    // untestable and silently drop the G28 from the recorded sequence.
+    // The real path below cannot use the virtual because it needs an error
+    // callback and HOMING_TIMEOUT_MS, which the virtual forms do not take.
+    if (!api_) {
+        execute_gcode("G28");
+        return dispatch_payload(std::move(gcode_copy), std::move(on_complete));
     }
 
     auto token = lifetime_.token();
-    auto gcode_copy = std::move(gcode);
-    client_->send_jsonrpc(
-        "printer.objects.query", json{{"objects", json{{"toolhead", json::array({"homed_axes"})}}}},
-        [this, token, gcode_copy, on_complete](const json& response) {
-            // L081 Mechanism C: this branches into api_->execute_gcode() (member access)
-            // and execute_gcode() (member call); marshal to main.
-            token.defer("AmsSubscriptionBackend::ensure_homed_then_query_success", [this, token,
-                                                                                    gcode_copy,
-                                                                                    response,
-                                                                                    on_complete]() {
-                bool needs_home = true;
-                if (response.contains("result") && response["result"].contains("status")) {
-                    const auto& status = response["result"]["status"];
-                    if (status.contains("toolhead") && status["toolhead"].contains("homed_axes") &&
-                        status["toolhead"]["homed_axes"].is_string()) {
-                        std::string axes = status["toolhead"]["homed_axes"].get<std::string>();
-                        needs_home = (axes.find("xyz") == std::string::npos);
-                    }
-                }
-
-                if (needs_home) {
-                    spdlog::info("{} Not homed, sending G28 before operation", backend_log_tag());
-                    api_->execute_gcode(
-                        "G28",
-                        [this, token, gcode_copy, on_complete]() {
-                            // L081 Mechanism C: execute_gcode touches api_/members.
-                            token.defer("AmsSubscriptionBackend::ensure_homed_then_g28_success",
-                                        [this, gcode_copy, on_complete]() {
-                                            spdlog::info("{} Homing complete, proceeding with: {}",
-                                                         backend_log_tag(), gcode_copy);
-                                            if (on_complete) {
-                                                execute_gcode(gcode_copy, on_complete);
-                                            } else {
-                                                execute_gcode(gcode_copy);
-                                            }
-                                        });
-                        },
-                        [this, token](const MoonrakerError& err) {
-                            // L081 Mechanism C: system_info_ write under lock.
-                            token.defer("AmsSubscriptionBackend::ensure_homed_then_g28_error",
-                                        [this, message = err.message]() {
-                                            spdlog::error("{} Homing failed: {}", backend_log_tag(),
-                                                          message);
-                                            std::lock_guard<std::mutex> lock(mutex_);
-                                            system_info_.action = AmsAction::IDLE;
-                                        });
-                        },
-                        MoonrakerAPI::HOMING_TIMEOUT_MS);
-                } else if (on_complete) {
-                    execute_gcode(gcode_copy, on_complete);
-                } else {
-                    execute_gcode(gcode_copy);
-                }
-            });
+    // MoonrakerAPI::execute_gcode() returns void (it's inherently async), so
+    // this call cannot be returned directly - success is reported immediately
+    // below, matching the pre-refactor behavior of the query path this
+    // replaces (it never returned the send_jsonrpc() call either).
+    api_->execute_gcode(
+        "G28",
+        [this, token, gcode_copy, on_complete]() {
+            // L081 Mechanism C: the ack lands on a bg thread and
+            // dispatch_payload touches api_/members. Marshal to main.
+            token.defer(
+                "AmsSubscriptionBackend::ensure_homed_then_g28_success",
+                [this, gcode_copy, on_complete]() { dispatch_payload(gcode_copy, on_complete); });
         },
         [this, token](const MoonrakerError& err) {
-            // L081 Mechanism C: system_info_ write under lock.
-            token.defer("AmsSubscriptionBackend::ensure_homed_then_query_error",
+            token.defer("AmsSubscriptionBackend::ensure_homed_then_g28_error",
                         [this, message = err.message]() {
-                            spdlog::error("{} Homed axes query failed: {}", backend_log_tag(),
-                                          message);
+                            spdlog::error("{} Homing failed: {}", backend_log_tag(), message);
                             std::lock_guard<std::mutex> lock(mutex_);
                             system_info_.action = AmsAction::IDLE;
                         });
-        });
+        },
+        MoonrakerAPI::HOMING_TIMEOUT_MS);
 
     return AmsErrorHelper::success();
+}
+
+AmsError AmsSubscriptionBackend::dispatch_payload(std::string gcode,
+                                                  std::function<void()> on_complete) {
+    return on_complete ? execute_gcode(gcode, std::move(on_complete)) : execute_gcode(gcode);
 }
 
 AmsError AmsSubscriptionBackend::execute_gcode(const std::string& gcode) {

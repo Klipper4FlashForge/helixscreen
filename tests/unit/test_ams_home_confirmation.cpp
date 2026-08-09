@@ -43,3 +43,15 @@ TEST_CASE("ensure_homed_then dispatches directly when already homed", "[ams][hom
     REQUIRE(backend.captured.size() == 1);
     CHECK(backend.captured[0] == "CHANGE_TOOL LANE=lane1");
 }
+
+TEST_CASE("ensure_homed_then sends G28 before the payload when unhomed", "[ams][homing]") {
+    LVGLTestFixture fixture;
+    HomingProbeBackend backend;
+    backend.homed = false;
+
+    backend.ensure_homed_then("CHANGE_TOOL LANE=lane1");
+
+    REQUIRE(backend.captured.size() == 2);
+    CHECK(backend.captured[0] == "G28");
+    CHECK(backend.captured[1] == "CHANGE_TOOL LANE=lane1");
+}
