@@ -215,13 +215,18 @@ bool AmsSubscriptionBackend::toolhead_homed() const {
     return helix::toolhead_is_homed(api_->printer_state());
 }
 
-AmsError AmsSubscriptionBackend::ensure_homed_then(std::string gcode,
-                                                   std::function<void()> on_complete) {
+AmsError
+AmsSubscriptionBackend::ensure_homed_then(std::string gcode, std::function<void()> on_complete,
+                                          std::function<void(const MoonrakerError&)> on_error,
+                                          uint32_t timeout_ms, bool skip_homing, bool silent) {
     // The homed answer comes from the live homed_axes subject, not an RPC:
     // toolhead is in the standing objects.subscribe set, so querying it again
-    // was a redundant round trip.
-    if (toolhead_homed()) {
-        return dispatch_payload(std::move(gcode), std::move(on_complete));
+    // was a redundant round trip. skip_homing short-circuits the check
+    // entirely -- toolhead_homed() is never called -- for firmware macros that
+    // home themselves (CFS Fork variant).
+    if (skip_homing || toolhead_homed()) {
+        return dispatch_payload(std::move(gcode), std::move(on_complete), std::move(on_error),
+                                timeout_ms, silent);
     }
 
     auto gcode_copy = std::move(gcode);
@@ -233,9 +238,20 @@ AmsError AmsSubscriptionBackend::ensure_homed_then(std::string gcode,
     // untestable and silently drop the G28 from the recorded sequence.
     // The real path below cannot use the virtual because it needs an error
     // callback and HOMING_TIMEOUT_MS, which the virtual forms do not take.
+    // Fixtures are synchronous (no real RPC), so the AmsError the virtual
+    // returns IS the only failure signal available here -- there is no async
+    // MoonrakerError to forward, so a failure is translated into one.
     if (!api_) {
-        execute_gcode("G28");
-        return dispatch_payload(std::move(gcode_copy), std::move(on_complete));
+        AmsError g28_result = execute_gcode("G28");
+        if (!g28_result.success()) {
+            MoonrakerError synthetic;
+            synthetic.type = MoonrakerErrorType::UNKNOWN;
+            synthetic.message = g28_result.technical_msg;
+            handle_dispatch_error(synthetic, on_error);
+            return g28_result;
+        }
+        return dispatch_payload(std::move(gcode_copy), std::move(on_complete), std::move(on_error),
+                                timeout_ms, silent);
     }
 
     auto token = lifetime_.token();
@@ -245,29 +261,85 @@ AmsError AmsSubscriptionBackend::ensure_homed_then(std::string gcode,
     // replaces (it never returned the send_jsonrpc() call either).
     api_->execute_gcode(
         "G28",
-        [this, token, gcode_copy, on_complete]() {
+        [this, token, gcode_copy, on_complete, on_error, timeout_ms, silent]() {
             // L081 Mechanism C: the ack lands on a bg thread and
             // dispatch_payload touches api_/members. Marshal to main.
-            token.defer(
-                "AmsSubscriptionBackend::ensure_homed_then_g28_success",
-                [this, gcode_copy, on_complete]() { dispatch_payload(gcode_copy, on_complete); });
-        },
-        [this, token](const MoonrakerError& err) {
-            token.defer("AmsSubscriptionBackend::ensure_homed_then_g28_error",
-                        [this, message = err.message]() {
-                            spdlog::error("{} Homing failed: {}", backend_log_tag(), message);
-                            std::lock_guard<std::mutex> lock(mutex_);
-                            system_info_.action = AmsAction::IDLE;
+            token.defer("AmsSubscriptionBackend::ensure_homed_then_g28_success",
+                        [this, gcode_copy, on_complete, on_error, timeout_ms, silent]() {
+                            dispatch_payload(gcode_copy, on_complete, on_error, timeout_ms, silent);
                         });
+        },
+        [this, token, on_error](const MoonrakerError& err) {
+            token.defer("AmsSubscriptionBackend::ensure_homed_then_g28_error",
+                        [this, err, on_error]() { handle_dispatch_error(err, on_error); });
         },
         MoonrakerAPI::HOMING_TIMEOUT_MS);
 
     return AmsErrorHelper::success();
 }
 
-AmsError AmsSubscriptionBackend::dispatch_payload(std::string gcode,
-                                                  std::function<void()> on_complete) {
-    return on_complete ? execute_gcode(gcode, std::move(on_complete)) : execute_gcode(gcode);
+void AmsSubscriptionBackend::handle_dispatch_error(
+    const MoonrakerError& err, const std::function<void(const MoonrakerError&)>& on_error) {
+    if (on_error) {
+        on_error(err);
+        return;
+    }
+    // Historical behaviour, preserved exactly for the 8 pre-existing callers
+    // (none of which pass on_error): log and reset to IDLE so the UI doesn't
+    // get stuck on a "loading" spinner after a failed G28/payload.
+    spdlog::error("{} G-code failed: {}", backend_log_tag(), err.message);
+    std::lock_guard<std::mutex> lock(mutex_);
+    system_info_.action = AmsAction::IDLE;
+}
+
+AmsError
+AmsSubscriptionBackend::dispatch_payload(std::string gcode, std::function<void()> on_complete,
+                                         std::function<void(const MoonrakerError&)> on_error,
+                                         uint32_t timeout_ms, bool silent) {
+    // Legacy shape: dispatch through the SAME two virtuals as before this
+    // method grew these parameters. ~20 fixtures override ONLY
+    // execute_gcode(gcode) / execute_gcode(gcode, on_complete) (see the
+    // dispatch_payload() doc comment in the header); a payload with no
+    // on_complete must reach the 1-arg override or those tests silently stop
+    // capturing anything. All 8 pre-existing callers never pass
+    // on_error/timeout_ms/silent, so they always land here, byte-for-byte the
+    // pre-widening behaviour.
+    if (!on_error && timeout_ms == MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS && silent) {
+        return on_complete ? execute_gcode(gcode, std::move(on_complete)) : execute_gcode(gcode);
+    }
+
+    // A caller asked for its own error/timeout/toast policy -- the hardcoded
+    // virtuals above can't carry that (they fix AMS_OPERATION_TIMEOUT_MS and
+    // silent=true, and their error handling only logs). Talk to MoonrakerAPI
+    // directly, the same way AmsBackendCfs::dispatch_action_script used to
+    // before this method existed to replace its fork.
+    if (!api_) {
+        MoonrakerError synthetic;
+        synthetic.type = MoonrakerErrorType::CONNECTION_LOST;
+        synthetic.message = "MoonrakerAPI not available";
+        handle_dispatch_error(synthetic, on_error);
+        return AmsErrorHelper::not_connected("MoonrakerAPI not available");
+    }
+
+    const char* tag = backend_log_tag();
+    auto token = lifetime_.token();
+    api_->execute_gcode(
+        gcode,
+        [tag, on_complete = std::move(on_complete)]() {
+            spdlog::debug("{} G-code executed successfully", tag);
+            if (on_complete) {
+                on_complete();
+            }
+        },
+        [this, token, on_error](const MoonrakerError& err) {
+            // L081 Mechanism C: this lands on the libhv response thread and
+            // touches system_info_/mutex_ (default path) or arbitrary caller
+            // logic (on_error). Marshal to main either way.
+            token.defer("AmsSubscriptionBackend::dispatch_payload_error",
+                        [this, err, on_error]() { handle_dispatch_error(err, on_error); });
+        },
+        timeout_ms, silent);
+    return AmsErrorHelper::success();
 }
 
 AmsError AmsSubscriptionBackend::execute_gcode(const std::string& gcode) {

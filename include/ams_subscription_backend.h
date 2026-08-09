@@ -79,7 +79,19 @@ class AmsSubscriptionBackend : public AmsBackend {
     /// @p on_complete (optional) fires when the final gcode command finishes
     /// (Klipper acks the script), on a background thread; the caller hops to the
     /// main thread. Use when the gcode's macro completion is the terminal signal.
-    AmsError ensure_homed_then(std::string gcode, std::function<void()> on_complete = nullptr);
+    /// @param on_error   Fires on G28 or payload failure. When null the failure
+    ///                   is logged and the action is reset to IDLE, matching
+    ///                   the historical behaviour.
+    /// @param timeout_ms Payload timeout. G28 always uses HOMING_TIMEOUT_MS.
+    /// @param skip_homing Dispatch the payload without homing, whatever the
+    ///                   toolhead reports. For firmware macros that home
+    ///                   themselves (CFS Fork variant).
+    /// @param silent     Suppress REQUEST_TIMEOUT toasts on the payload. True
+    ///                   matches every backend except CFS, which passes false.
+    AmsError ensure_homed_then(std::string gcode, std::function<void()> on_complete = nullptr,
+                               std::function<void(const MoonrakerError&)> on_error = nullptr,
+                               uint32_t timeout_ms = MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS,
+                               bool skip_homing = false, bool silent = true);
 
   protected:
     // --- Hooks for derived classes ---
@@ -138,5 +150,24 @@ class AmsSubscriptionBackend : public AmsBackend {
     /// Send the payload gcode, honouring the 1-arg/2-arg execute_gcode split.
     /// ~20 test fixtures override ONLY the 1-arg form; calling the 2-arg form
     /// with a null callback would fall through to the base and stop capturing.
-    AmsError dispatch_payload(std::string gcode, std::function<void()> on_complete);
+    ///
+    /// When @p on_error, @p timeout_ms, and @p silent are all left at their
+    /// ensure_homed_then() defaults, dispatch stays on the same two virtuals
+    /// referenced above — required for fixture compatibility. Any non-default
+    /// combination needs a live @p api_: it talks to MoonrakerAPI directly (the
+    /// hardcoded virtuals can't carry a caller's own error/timeout/toast
+    /// policy), the same way AmsBackendCfs::dispatch_action_script used to
+    /// before this method existed to replace it.
+    AmsError dispatch_payload(std::string gcode, std::function<void()> on_complete,
+                              std::function<void(const MoonrakerError&)> on_error = nullptr,
+                              uint32_t timeout_ms = MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS,
+                              bool silent = true);
+
+    /// Report a gcode failure through @p on_error when set, else fall back to
+    /// the historical behaviour: log at error level and reset the action to
+    /// IDLE. Callers on a background thread must already have marshalled to
+    /// main (see dispatch_payload()/ensure_homed_then()'s token.defer() calls)
+    /// before reaching this -- it touches system_info_ under mutex_ directly.
+    void handle_dispatch_error(const MoonrakerError& err,
+                               const std::function<void(const MoonrakerError&)>& on_error);
 };
