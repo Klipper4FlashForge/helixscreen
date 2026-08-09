@@ -187,8 +187,9 @@ TEST_CASE("GridEditMode: clamp_span respects min/max from registry", "[grid_edit
     REQUIRE(def != nullptr);
     REQUIRE(def->is_scalable());
 
-    // Over max — clamp down
-    auto [c, r] = GridEditMode::clamp_span("printer_image", 5, 4);
+    // Over max — clamp down. The input has to clear 8x6 tracks, not the 4x3
+    // cells the same widget was authored at before spans became half-cells.
+    auto [c, r] = GridEditMode::clamp_span("printer_image", 9, 7);
     CHECK(c == def->effective_max_colspan());
     CHECK(r == def->effective_max_rowspan());
 
