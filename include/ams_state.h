@@ -1348,6 +1348,30 @@ class AmsState {
     lv_subject_t ams_current_tool_;
     lv_subject_t filament_loaded_;
     lv_subject_t filament_runout_;
+    /// Edge tracking behind `ams_filament_runout`. `AmsSystemInfo::filament_runout`
+    /// is a LEVEL on some backends and a sticky latch on at least one (the CFS
+    /// mirrors `box.filament_useup`, which is only ever cleared by a successful
+    /// extrude, not by the print ending), so the level alone cannot say whether a
+    /// runout happened during THIS job. sync_from_backend() therefore looks for a
+    /// false->true transition seen while a job was running, not for the level.
+    /// All three are written only under mutex_ and reset by clear_backends().
+    ///
+    /// Last raw level, for edge detection.
+    bool prev_backend_runout_{false};
+    /// A rising edge was seen while the job was PRINTING or PAUSED, and the
+    /// episode it belongs to is not over. This is what makes the indicator
+    /// legitimate.
+    bool runout_edge_armed_{false};
+    /// Previous PAUSED-ness, so a PAUSED->anything-else transition (the user
+    /// resumed or cancelled) can end the episode. Needed because the arm is
+    /// usually made while PRINTING, one frame before the firmware's pause lands
+    /// — "not paused" therefore cannot mean "disarm" on its own.
+    bool runout_prev_paused_{false};
+    /// prev_backend_runout_ has no meaning yet, so the first sample seeds it
+    /// instead of counting as an edge — a flag that was already true when we
+    /// connected (or when a backend was swapped in) describes no transition we
+    /// witnessed. Same reasoning as AmsBackendAd5xIfs's head-switch edge gate.
+    bool runout_level_seeded_{false};
     lv_subject_t bypass_active_;
     lv_subject_t external_spool_color_;
     lv_subject_t supports_bypass_;

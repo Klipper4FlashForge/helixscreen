@@ -998,6 +998,11 @@ translations:
   Filament operation failed: Falló la operación de filamento
   'Filament operation failed: {}': 'Falló la operación de filamento: {}'
   Filament operation timed out: Operación de filamento — tiempo de espera agotado
+  Filament ran out - nothing at the toolhead and the print is paused.: ''
+  ? Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume.
+  : ''
+  Filament ran out at the toolhead: ''
+  Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: ''
   Filament runout: Filamento agotado
   Filament runout and motion detection sensors: Sensores de detección de agotamiento
     y movimiento de filamento
@@ -1525,6 +1530,8 @@ translations:
   No Spools: Sin Bobinas
   No USB printer detected: No se detectó impresora USB
   No USB printers found: No se encontraron impresoras USB
+  ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
+  : ''
   No buffer data available: Sin datos de búfer disponibles
   No camera — use USB barcode scanner: Sin cámara — use un escáner de código de barras
     USB
@@ -1571,6 +1578,7 @@ translations:
   No prints yet: Sin impresiones aún
   No profiles available: No hay perfiles disponibles
   No sensors detected: No se detectaron sensores
+  No slot currently matches.: ''
   No spool assigned: Sin bobina asignada
   No spools found — tap to retry: No se encontraron bobinas — toque para reintentar
   No tape detected in printer: No se detectó cinta en la impresora
@@ -2822,6 +2830,8 @@ translations:
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
   \"%s\" failed to load: '"%s" no se pudo cargar'
+  ? backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
+  : ''
   bed: cama
   by Preston Brown: por Preston Brown
   chamber heater: calentador de cámara
@@ -2842,8 +2852,11 @@ translations:
   fans: ventiladores
   heated bed: cama caliente
   idle: inactivo
+  is installed but its backup-spool switching is turned off, so no automatic swap will happen.: ''
+  is installed, but its backup-spool setting could not be read - do not count on an automatic swap.: ''
   layers: capas
   left: restante
+  matches.: ''
   mm before clog: mm antes de obstrucción
   needs: necesita
   not detected: no detectado

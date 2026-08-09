@@ -995,6 +995,11 @@ translations:
   Filament operation failed: Operazione filamento fallita
   'Filament operation failed: {}': 'Operazione filamento fallita: {}'
   Filament operation timed out: Operazione filamento — tempo scaduto
+  Filament ran out - nothing at the toolhead and the print is paused.: ''
+  ? Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume.
+  : ''
+  Filament ran out at the toolhead: ''
+  Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: ''
   Filament runout: Esaurimento filamento
   Filament runout and motion detection sensors: Sensori esaurimento filamento e rilevamento
     movimento
@@ -1524,6 +1529,8 @@ translations:
   No Spools: Nessuna bobina
   No USB printer detected: Nessuna stampante USB rilevata
   No USB printers found: Nessuna stampante USB trovata
+  ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
+  : ''
   No buffer data available: Nessun dato buffer disponibile
   No camera — use USB barcode scanner: Nessuna telecamera — usa scanner USB per codici
     a barre
@@ -1570,6 +1577,7 @@ translations:
   No prints yet: Nessuna stampa
   No profiles available: Nessun profilo disponibile
   No sensors detected: Nessun sensore rilevato
+  No slot currently matches.: ''
   No spool assigned: Nessuna bobina assegnata
   No spools found — tap to retry: Nessuna bobina trovata — tocca per riprovare
   No tape detected in printer: Nessun nastro rilevato nella stampante
@@ -2817,6 +2825,8 @@ translations:
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
   \"%s\" failed to load: Caricamento di \"%s\" non riuscito
+  ? backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
+  : ''
   bed: piano
   by Preston Brown: di Preston Brown
   chamber heater: riscaldatore camera
@@ -2837,8 +2847,11 @@ translations:
   fans: ventole
   heated bed: piano riscaldato
   idle: inattivo
+  is installed but its backup-spool switching is turned off, so no automatic swap will happen.: ''
+  is installed, but its backup-spool setting could not be read - do not count on an automatic swap.: ''
   layers: layer
   left: rimanente
+  matches.: ''
   mm before clog: mm prima dell'intasamento
   needs: richiede
   not detected: non rilevato

@@ -880,6 +880,10 @@
   <translation tag="Filament operation failed" en="Filament operation failed"/>
   <translation tag="Filament operation failed: {}" en="Filament operation failed: {}"/>
   <translation tag="Filament operation timed out" en="Filament operation timed out"/>
+  <translation tag="Filament ran out - nothing at the toolhead and the print is paused." en="Filament ran out - nothing at the toolhead and the print is paused."/>
+  <translation tag="Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume." en="Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume."/>
+  <translation tag="Filament ran out at the toolhead" en="Filament ran out at the toolhead"/>
+  <translation tag="Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume." en="Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume."/>
   <translation tag="Filament runout" en="Filament runout"/>
   <translation tag="Filament runout and motion detection sensors" en="Filament runout and motion detection sensors"/>
   <translation tag="Filament saved" en="Filament saved"/>
@@ -1331,6 +1335,7 @@
   <translation tag="No Spools" en="No Spools"/>
   <translation tag="No USB printer detected" en="No USB printer detected"/>
   <translation tag="No USB printers found" en="No USB printers found"/>
+  <translation tag="No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own." en="No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own."/>
   <translation tag="No buffer data available" en="No buffer data available"/>
   <translation tag="No camera — use USB barcode scanner" en="No camera — use USB barcode scanner"/>
   <translation tag="No changes selected.\n\nClick Cancel to close." en="No changes selected.\n\nClick Cancel to close."/>
@@ -1371,6 +1376,7 @@
   <translation tag="No prints yet" en="No prints yet"/>
   <translation tag="No profiles available" en="No profiles available"/>
   <translation tag="No sensors detected" en="No sensors detected"/>
+  <translation tag="No slot currently matches." en="No slot currently matches."/>
   <translation tag="No spool assigned" en="No spool assigned"/>
   <translation tag="No spools found — tap to retry" en="No spools found — tap to retry"/>
   <translation tag="No tape detected in printer" en="No tape detected in printer"/>
@@ -2406,6 +2412,7 @@
   <translation tag="Z:" en="Z:"/>
   <translation tag="Z: 0.000" en="Z: 0.000"/>
   <translation tag="\&quot;%s\&quot; failed to load" en="\&quot;%s\&quot; failed to load"/>
+  <translation tag="backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present." en="backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present."/>
   <translation tag="bed" en="bed"/>
   <translation tag="by Preston Brown" en="by Preston Brown"/>
   <translation tag="chamber heater" en="chamber heater"/>
@@ -2426,8 +2433,11 @@
   <translation tag="fans" en="fans"/>
   <translation tag="heated bed" en="heated bed"/>
   <translation tag="idle" en="idle"/>
+  <translation tag="is installed but its backup-spool switching is turned off, so no automatic swap will happen." en="is installed but its backup-spool switching is turned off, so no automatic swap will happen."/>
+  <translation tag="is installed, but its backup-spool setting could not be read - do not count on an automatic swap." en="is installed, but its backup-spool setting could not be read - do not count on an automatic swap."/>
   <translation tag="layers" en="layers"/>
   <translation tag="left" en="left"/>
+  <translation tag="matches." en="matches."/>
   <translation tag="mm before clog" en="mm before clog"/>
   <translation tag="needs" en="needs"/>
   <translation tag="not detected" en="not detected"/>

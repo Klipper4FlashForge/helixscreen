@@ -893,6 +893,11 @@ translations:
   Filament operation failed: 耗材操作失败
   'Filament operation failed: {}': '耗材操作失败: {}'
   Filament operation timed out: 耗材操作超时
+  Filament ran out - nothing at the toolhead and the print is paused.: ''
+  ? Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume.
+  : ''
+  Filament ran out at the toolhead: ''
+  Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: ''
   Filament runout: 耗材用尽
   Filament runout and motion detection sensors: 耗材用尽和运动检测传感器
   Filament saved: 耗材已保存
@@ -1364,6 +1369,8 @@ translations:
   No Spools: 无料盘
   No USB printer detected: 未检测到 USB 打印机
   No USB printers found: 未找到 USB 打印机
+  ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
+  : ''
   No buffer data available: 无可用缓冲区数据
   No camera — use USB barcode scanner: 无摄像头 — 请使用 USB 条码扫描器
   No changes selected.\n\nClick Cancel to close.: 未选择任何更改。\n\n点击取消以关闭。
@@ -1404,6 +1411,7 @@ translations:
   No prints yet: 暂无打印记录
   No profiles available: 无可用配置
   No sensors detected: 未检测到传感器
+  No slot currently matches.: ''
   No spool assigned: 未分配料盘
   No spools found — tap to retry: 未找到料盘 - 点击重试
   No tape detected in printer: 打印机中未检测到标签带
@@ -2503,6 +2511,8 @@ translations:
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
   \"%s\" failed to load: \"%s\" 加载失败
+  ? backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
+  : ''
   bed: 热床
   by Preston Brown: by Preston Brown
   chamber heater: 腔体加热器
@@ -2523,8 +2533,11 @@ translations:
   fans: 风扇
   heated bed: 热床
   idle: 空闲
+  is installed but its backup-spool switching is turned off, so no automatic swap will happen.: ''
+  is installed, but its backup-spool setting could not be read - do not count on an automatic swap.: ''
   layers: 层
   left: 剩余
+  matches.: ''
   mm before clog: 毫米后堵料
   needs: 需要
   not detected: 未检测到

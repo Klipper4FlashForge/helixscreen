@@ -812,6 +812,13 @@ void AmsState::clear_backends() {
     }
     backends_.clear();
 
+    // The runout edge state describes a specific backend's flag history. A new
+    // backend's first sample must re-seed rather than read as a transition.
+    prev_backend_runout_ = false;
+    runout_edge_armed_ = false;
+    runout_prev_paused_ = false;
+    runout_level_seeded_ = false;
+
     // Drop AMS-derived tool topology so the UI doesn't show stale tool pills
     // between backend disappearance and the next reconnect's init_tools().
     helix::ToolState::instance().clear_ams_topology();
@@ -1332,17 +1339,59 @@ void AmsState::sync_from_backend() {
         lv_subject_set_int(&filament_loaded_, new_loaded);
     }
 
-    // Gate the runout indicator on a paused print. `box.filament_useup` is not a
-    // runout signal on its own: the CFS asserts it whenever no filament sits at
-    // the extrude position, which includes plain idle with no print running.
-    // Observed live on a K2 Plus over Moonraker HTTP, printer idle:
-    //   "box": {"filament":1, "state":"connect", "auto_refill":1, "enable":1,
-    //           "filament_useup":1, ...}
-    // The paused gate is what turns the flag into a runout. Box state polls
-    // sub-second, so this stays fresh without observing print state.
-    bool paused = get_printer_state().get_print_job_state() == PrintJobState::PAUSED;
-    int new_runout = (info.filament_runout && paused) ? 1 : 0;
+    // The runout indicator needs an EDGE, not a level, plus a paused print.
+    //
+    // `AmsSystemInfo::filament_runout` is a sticky latch on the CFS: it mirrors
+    // `box.filament_useup`, which BoxAction::send_data sets when the box reports
+    // the spool used up and which ONLY BoxAction::extruder_extrude clears, on a
+    // successful extrude. It is not print-scoped and nothing resets it when a job
+    // ends. A live K2 Plus read `filament_useup: 1` at `print_stats.state:
+    // standby`. Level-and-paused therefore lit the warning icon on ANY unrelated
+    // pause afterwards — a user pause, an M600, a CFS fault pausing via
+    // BoxError.handle_event — for a runout that may have been days earlier.
+    //
+    // Requiring a false->true transition witnessed while the job was PRINTING or
+    // PAUSED fixes that without needing per-backend knowledge, and is correct for
+    // AD5X IFS too: its detector only ever raises the flag while paused, which is
+    // one of the two states that arm the edge here. The cost is the same one
+    // AmsBackendAd5xIfs::evaluate_runout_locked() already accepts deliberately —
+    // a printer that boots into a job already paused on a runout reports nothing,
+    // because we witnessed no transition.
+    const PrintJobState job_state = get_printer_state().get_print_job_state();
+    const bool paused = job_state == PrintJobState::PAUSED;
+    const bool job_running = paused || job_state == PrintJobState::PRINTING;
+
+    if (!runout_level_seeded_) {
+        // Seed only; a flag that was already set before we started watching
+        // describes no transition of ours.
+        prev_backend_runout_ = info.filament_runout;
+        runout_level_seeded_ = true;
+    } else if (info.filament_runout && !prev_backend_runout_) {
+        runout_edge_armed_ = job_running;
+    } else if (!info.filament_runout) {
+        // Backend withdrew the flag: the fault is over regardless of print state.
+        runout_edge_armed_ = false;
+    }
+    prev_backend_runout_ = info.filament_runout;
+
+    // End of episode. Two ways out, and neither can be simplified to "not
+    // paused": the arm is normally made while PRINTING, one status frame before
+    // the firmware's pause lands, so disarming on !paused would throw away every
+    // real runout before it could be shown.
+    //   - the job stopped running at all (STANDBY / COMPLETE / CANCELLED)
+    //   - the job left PAUSED, i.e. the user resumed or cancelled
+    // The second is what the sticky latch makes necessary: on the CFS the level
+    // can stay true forever, so leaving PAUSED is the only evidence that the
+    // runout was dealt with.
+    if (!job_running || (runout_prev_paused_ && !paused)) {
+        runout_edge_armed_ = false;
+    }
+    runout_prev_paused_ = paused;
+
+    int new_runout = (runout_edge_armed_ && info.filament_runout && paused) ? 1 : 0;
     if (lv_subject_get_int(&filament_runout_) != new_runout) {
+        spdlog::debug("[AmsState] filament runout indicator -> {} (level={}, armed={}, paused={})",
+                      new_runout, info.filament_runout, runout_edge_armed_, paused);
         lv_subject_set_int(&filament_runout_, new_runout);
     }
     int new_bypass = info.current_slot == -2 ? 1 : 0;

@@ -238,14 +238,24 @@ class AmsBackend {
     }
 
     /**
-     * @brief Backend-specific error classification hook.
+     * @brief Channel A: backend-specific classification of one gcode-response
+     *        line.
      *
-     * Called by GcodeErrorRouter::handle_gcode_response()
-     * (gcode_error_router.cpp) before the generic error_classify::classify(),
-     * so domain-aware backends can recognize their own error lines and attach
-     * accurate severity + recovery actions. Return nullopt to defer to the
-     * generic classifier; return an ErrorEvent to short-circuit it. AFC and
-     * Happy Hare override today; both guard on the `!!` prefix themselves.
+     * Called from GcodeErrorRouter::process_line() (gcode_error_router.cpp),
+     * before the generic error_classify::classify(), so domain-aware backends
+     * can recognize their own error lines and attach accurate severity +
+     * recovery actions. Return nullopt to defer to the generic classifier;
+     * return an ErrorEvent to short-circuit it.
+     *
+     * @warning The router applies **no line filtering at all** — every response
+     *          line reaches every backend, `!!` or not. Each override must gate
+     *          itself. AFC and Happy Hare take only `!!` lines
+     *          (helix::is_bang_line); CFS deliberately takes only NON-`!!`
+     *          lines, because its give-up messages arrive via respond_info while
+     *          its coded faults belong to the generic key8xx path.
+     *
+     * See docs/devel/FILAMENT_MANAGEMENT.md § "Two error channels" for the
+     * per-backend gate and recovery table.
      *
      * @param raw_line  Unmodified gcode-response line to classify
      * @param ctx       Printer state at the time the line arrived
@@ -256,10 +266,18 @@ class AmsBackend {
         return std::nullopt;
     }
 
-    /// Current actionable fault for STATUS-driven backends (no `!!` line).
+    /// Channel B: the current actionable fault, derived from backend STATUS
+    /// rather than from a console line. Consulted only by AmsErrorBridge, and
+    /// only on the rising edge into AmsAction::ERROR — a backend that never
+    /// assigns that action can override this and still never be asked.
+    ///
     /// Returns nullopt when there is no actionable error, or when a bespoke
-    /// dialog owns the fault. `!!`-driven backends leave the default and use
-    /// classify_error() instead.
+    /// dialog owns the fault.
+    ///
+    /// The two channels are independent, not alternatives: AFC overrides BOTH
+    /// (its `!!` lands before AFC pauses, so the line and the status edge each
+    /// catch cases the other misses — #1171). Happy Hare and CFS are channel A
+    /// only; AD5X IFS and QIDI are channel B only.
     [[nodiscard]] virtual std::optional<helix::ErrorEvent> current_error() const {
         return std::nullopt;
     }

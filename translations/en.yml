@@ -962,6 +962,11 @@ translations:
   Filament operation failed: Filament operation failed
   'Filament operation failed: {}': 'Filament operation failed: {}'
   Filament operation timed out: Filament operation timed out
+  Filament ran out - nothing at the toolhead and the print is paused.: Filament ran out - nothing at the toolhead and the print is paused.
+  ? Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume.
+  : Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume.
+  Filament ran out at the toolhead: Filament ran out at the toolhead
+  Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.
   Filament runout: Filament runout
   Filament runout and motion detection sensors: Filament runout and motion detection
     sensors
@@ -1478,6 +1483,8 @@ translations:
   No Spools: No Spools
   No USB printer detected: No USB printer detected
   No USB printers found: No USB printers found
+  ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
+  : No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
   No buffer data available: No buffer data available
   No camera — use USB barcode scanner: No camera — use USB barcode scanner
   No changes selected.\n\nClick Cancel to close.: No changes selected.\n\nClick Cancel
@@ -1522,6 +1529,7 @@ translations:
   No prints yet: No prints yet
   No profiles available: No profiles available
   No sensors detected: No sensors detected
+  No slot currently matches.: No slot currently matches.
   No spool assigned: No spool assigned
   No spools found — tap to retry: No spools found — tap to retry
   No tape detected in printer: No tape detected in printer
@@ -2737,6 +2745,8 @@ translations:
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
   \"%s\" failed to load: \"%s\" failed to load
+  ? backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
+  : backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
   bed: bed
   by Preston Brown: by Preston Brown
   chamber heater: chamber heater
@@ -2757,8 +2767,11 @@ translations:
   fans: fans
   heated bed: heated bed
   idle: idle
+  is installed but its backup-spool switching is turned off, so no automatic swap will happen.: is installed but its backup-spool switching is turned off, so no automatic swap will happen.
+  is installed, but its backup-spool setting could not be read - do not count on an automatic swap.: is installed, but its backup-spool setting could not be read - do not count on an automatic swap.
   layers: layers
   left: left
+  matches.: matches.
   mm before clog: mm before clog
   needs: needs
   not detected: not detected
