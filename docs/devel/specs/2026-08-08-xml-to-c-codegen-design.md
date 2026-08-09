@@ -16,28 +16,48 @@ same XML files and a differential test proves they produce identical trees.
 
 ## Why
 
-Measured against the tree as it stands:
+### Phase 0 measurements (2026-08-08, native SDL build, `--test -vvv`)
 
-| Fact | Number |
-|------|--------|
-| XML files under `ui_xml/` | 338 |
-| Bytes of markup | 1.58 MB |
-| Components registered in `xml_registration.cpp` | 300 |
-| Widgets registered from C++ via `lv_xml_register_widget` | 37 calls across 31 files |
-| Vendored expat source | 435 KB |
+| Fact | Number | Source |
+|------|--------|--------|
+| XML files under `ui_xml/` | 338 | filesystem |
+| Component markup (excl. translations) | 1.72 MB | `ui_xml` + `components` + `micro` + `portrait` |
+| `<view>` bodies held resident in `scope->view_def` | **1.47 MB** | static extraction over 314 files |
+| Translation XML (**not addressed by this spec**) | 2.78 MB | `ui_xml/translations`, 10 files |
+| Components registered | 303 | `ctl list_components` |
+| Registration of all 303, including file I/O | **10 ms** | log `+00000.362` to `+00000.372` |
+| Panel navigation, first visit vs revisit | indistinguishable | see below |
+| `lv_xml_create*` call sites | 205 across 125 files | source |
+| Widgets registered via `lv_xml_register_widget` | 37 calls across 31 files | source |
+| Idle RSS, native | ~117 MB | `MemoryMonitor` |
 
-Three separate costs fall out of that:
+### What survived contact with the numbers
 
-1. **Flash.** All 1.58 MB ships on the device. On the K-Touch ESP32-S3 port it lands in
-   the frogfs image alongside assets.
-2. **RAM, permanently.** `lv_xml_register_component_from_file()` keeps the `<view>` body
-   as a heap copy for process lifetime (`scope->view_def`, `lv_xml_component.c:218`),
-   for all 300 components.
-3. **CPU, repeatedly.** `lv_xml_create_in_scope()` runs a full `XML_Parse()` over
-   `scope->view_def` on *every* instantiation (`lv_xml.c:348`). Navigating to a panel
-   ten times parses it ten times.
+**Flash and resident RAM: the case holds.** 1.47 MB of markup sits on the heap for
+process lifetime and ships in the frogfs image on the K-Touch. That is the real payoff,
+and it is an ESP32 payoff. On a Pi-class board with hundreds of MB it is noise.
 
-Codegen removes all three at once for release builds.
+**Boot CPU: the case is dead.** Registering all 303 components takes **10 ms**, file I/O
+included. There is nothing here worth optimizing.
+
+**Per-navigation CPU: the original claim was wrong.** Panels are built once and retained
+(`PanelBase::rebuild` at `ui_panel_base.cpp:155`, panels held by `StaticPanelRegistry`),
+so navigating does not re-parse. First visit and revisit both measure ~9 ms, which is
+`ctl` process spawn, not panel construction.
+
+The repeated-create cost is real but lives elsewhere: modals (`ui_modal.cpp:602`, `:912`
+create on every show), toasts, overlays, panel widgets, and `<repeat>` rebuilds. **How
+much that costs is still unmeasured.** The external IPC floor swamps it, so quantifying
+it needs a counter and a timer around `lv_xml_create_in_scope`, which is the one piece of
+instrumentation phase 0 could not avoid. Nobody should cite a per-create number until
+that exists.
+
+### Consequence for scope
+
+This is now an **ESP32-motivated** change justified by flash and resident RAM, with an
+unquantified CPU bonus on modal-heavy interaction. If the K-Touch port turns out not to
+be flash or PSRAM constrained, the honest conclusion is to not do this at all. Phase 5's
+re-measurement is what settles it, and phase 1 is worth doing either way.
 
 ## The seam this targets
 
@@ -272,8 +292,10 @@ the ESP32 build has to boot to the home panel on the K-Touch.
 
 ## Phasing
 
-0. **Measure the baseline first.** Boot time to first panel, per-navigation parse time,
-   RSS, flash. Without numbers there is no way to tell whether this was worth doing.
+0. **Baseline. Done 2026-08-08**, see the measurements above. One gap remains: a counter
+   and timer around `lv_xml_create_in_scope` to quantify the modal/overlay/widget create
+   cost, which cannot be measured from outside the process. Do that before phase 1, it
+   is a dozen lines and it decides how much of the CPU argument is real.
 1. **Attribute resolution refactor.** `lv_xml_resolve()` as a pure function, arena
    ownership, `dropped` bit, with unit tests on the resolver in isolation. Then extract
    `lv_xml_emit_element()` from `view_start_element_handler` on top of it. Both steps
