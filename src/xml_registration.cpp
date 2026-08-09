@@ -325,6 +325,9 @@ void register_xml_components() {
     // Backdrop tap and close/Done for every context menu — one pair, routed through
     // ContextMenu::active(), rather than a callback per menu.
     helix::ui::ContextMenu::register_shared_callbacks();
+    // <context_menu_backdrop> shared dimmed backdrop root. Every context menu
+    // extends it, so it must be registered before any of them.
+    register_xml("components/context_menu_backdrop.xml");
     lv_subject_init_int(&s_noop_subject, 0);
     lv_xml_register_subject(nullptr, "", &s_noop_subject);
     s_noop_subject_initialized = true;
