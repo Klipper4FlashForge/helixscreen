@@ -1,9 +1,10 @@
 # XML to C Code Generation (build-time component compiler) - Design Spec
 
 **Date:** 2026-08-08
-**Status:** On hold pending one measurement. Both CPU arguments are dead and the
-flash argument inverts on the K-Touch; only PSRAM headroom can still justify it. See
-"Gate B" below.
+**Status:** CLOSED, not proceeding. Every justification was measured and none held:
+CPU is 2.7% of create time, flash gets worse, and the K-Touch has 3.94 MB of PSRAM free
+against a 1.05 MB prize. Kept as the record of why. The phase 1 resolver refactor is
+independent and still worth doing.
 **Author:** Preston Brown (with Claude)
 **Component:** `lib/helix-xml` (the generator ships in the fork's own repo, not here)
 
@@ -104,21 +105,46 @@ That kills the flash case, and worse than kills it:
 roomy partition for a larger volume of uncompressed data in the tightest one, charged
 twice.
 
-### What is actually left
+### What was left: PSRAM. Measured on the device, and it is not tight.
 
-PSRAM, and only PSRAM. `app_boot.cpp:741` calls the same `register_xml_components()`, so
-all 303 `scope->view_def` bodies (1.47 MB) are held resident on the device exactly as
-they are natively. On an ESP32-S3 with octal PSRAM that is real memory.
+Console capture from the K-Touch over its CH340 (`/dev/ttyUSB0`, 115200) across a cold
+`rst:0x1 (POWERON)`. The part reports `octal_psram: density 0x03 (64 Mbit)`, so **8 MB**.
 
-**This is unmeasured and I cannot measure it here** — it needs free-PSRAM figures from a
-running K-Touch. That single number is now the whole decision:
+| Boot stage | PSRAM free |
+|------------|------------|
+| `boot-ui-start` | 6,780,900 |
+| `theme-up` | 6,203,568 |
+| `translations-up` | 5,997,720 |
+| `xml-registered` | **4,948,672** |
+| `subjects-up` | 4,797,476 |
+| `home-panel-up` | **3,944,320** |
 
-- If PSRAM headroom is comfortable, **close this spec**. Phases 2-5 would cost weeks,
-  make flash worse, and buy memory that is not needed.
-- If PSRAM is tight, the design stands, but it must be paired with a plan for the app
-  image growth, because the flash math does not work as-is.
+**Registering all 303 components costs 1,049,048 bytes of PSRAM** (`translations-up`
+minus `xml-registered`). That is the entire prize, and it is smaller than the 1.47 MB the
+native-side static count suggested.
 
-Phase 1 is worth doing on its own merits either way, and does not depend on this answer.
+**With the UI fully up the device still has 3.94 MB of its 8 MB free.** Reclaiming the
+markup would take that to roughly 5.0 MB. Nothing needs it.
+
+### Conclusion: do not build this
+
+Every justification has now been measured and none survives.
+
+| Claim | Verdict |
+|-------|---------|
+| Boot CPU | 10 ms. Nothing to win. |
+| Per-navigation CPU | Wrong premise. Panels are built once and retained. |
+| Per-create CPU | 2.7% of create time is expat. The rest is work codegen keeps. |
+| Flash | Negative. Relocates compressed data into the tighter partition, charged twice for OTA A/B. |
+| PSRAM | 1.05 MB, against 3.94 MB already free. |
+
+Phases 2 through 5 are **closed**. This document stands as the record of why, so the idea
+does not get proposed again from first principles.
+
+**Phase 1 is unaffected and still worth doing.** The resolver defects are real on their
+own terms: in-place mutation of the caller's attribute array, three ownership regimes
+with nothing marking which is which, and attribute removal encoded as `""` poisoning.
+None of that needed a compiler to justify fixing.
 
 ## The seam this targets
 
