@@ -653,14 +653,21 @@ ObserverGuard observe_connection_state(lv_subject_t* subject, Panel* panel,
  * @param subject Print state enum subject (print_state_enum)
  * @param panel Panel instance
  * @param handler Lambda called with panel and typed PrintJobState
+ * @param lifetime Death signal for @p subject. Required whenever the observing
+ *        object can outlive the subject's owner — see observe_int_sync().
+ *        print_state_enum belongs to PrinterState, so every caller that is not
+ *        itself owned by PrinterState wants one.
  * @return ObserverGuard for RAII cleanup
  */
 template <typename Panel, typename Handler>
-ObserverGuard observe_print_state(lv_subject_t* subject, Panel* panel, Handler&& handler) {
+ObserverGuard observe_print_state(lv_subject_t* subject, Panel* panel, Handler&& handler,
+                                  const SubjectLifetime& lifetime = {}) {
     return observe_int_sync<Panel>(
-        subject, panel, [handler = std::forward<Handler>(handler)](Panel* p, int state_int) {
+        subject, panel,
+        [handler = std::forward<Handler>(handler)](Panel* p, int state_int) {
             handler(p, static_cast<PrintJobState>(state_int));
-        });
+        },
+        lifetime);
 }
 
 } // namespace helix::ui

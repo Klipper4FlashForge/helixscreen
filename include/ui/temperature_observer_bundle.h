@@ -83,19 +83,28 @@ template <typename Panel> class TemperatureObserverBundle {
                     BedTargetHandler&& on_bed_target) {
         clear();
 
+        // These four are PrinterState's own static subjects, and panels holding
+        // this bundle routinely outlive a PrinterState::deinit_subjects() cycle
+        // (printer switch in production, per-fixture teardown in tests). Without
+        // the token, deinit frees the observer nodes and the next clear() calls
+        // lv_observer_remove() on freed memory.
+        const SubjectLifetime lifetime = state.get_subjects_lifetime();
+
         nozzle_temp_observer_ =
             observe_int_sync<Panel>(state.get_active_extruder_temp_subject(), panel,
-                                    std::forward<NozzleTempHandler>(on_nozzle_temp));
+                                    std::forward<NozzleTempHandler>(on_nozzle_temp), lifetime);
 
         nozzle_target_observer_ =
             observe_int_sync<Panel>(state.get_active_extruder_target_subject(), panel,
-                                    std::forward<NozzleTargetHandler>(on_nozzle_target));
+                                    std::forward<NozzleTargetHandler>(on_nozzle_target), lifetime);
 
-        bed_temp_observer_ = observe_int_sync<Panel>(state.get_bed_temp_subject(), panel,
-                                                     std::forward<BedTempHandler>(on_bed_temp));
+        bed_temp_observer_ =
+            observe_int_sync<Panel>(state.get_bed_temp_subject(), panel,
+                                    std::forward<BedTempHandler>(on_bed_temp), lifetime);
 
-        bed_target_observer_ = observe_int_sync<Panel>(
-            state.get_bed_target_subject(), panel, std::forward<BedTargetHandler>(on_bed_target));
+        bed_target_observer_ =
+            observe_int_sync<Panel>(state.get_bed_target_subject(), panel,
+                                    std::forward<BedTargetHandler>(on_bed_target), lifetime);
     }
 
     /**
@@ -124,21 +133,24 @@ template <typename Panel> class TemperatureObserverBundle {
         // (forwarding an rvalue multiple times would move-from it)
         auto update_copy = update_handler;
 
-        nozzle_temp_observer_ =
-            observe_int_async<Panel>(state.get_active_extruder_temp_subject(), panel,
-                                     std::forward<CacheNozzleTemp>(cache_nozzle_temp), update_copy);
+        // See setup_sync(): PrinterState-owned subjects need the death signal.
+        const SubjectLifetime lifetime = state.get_subjects_lifetime();
+
+        nozzle_temp_observer_ = observe_int_async<Panel>(
+            state.get_active_extruder_temp_subject(), panel,
+            std::forward<CacheNozzleTemp>(cache_nozzle_temp), update_copy, lifetime);
 
         nozzle_target_observer_ = observe_int_async<Panel>(
             state.get_active_extruder_target_subject(), panel,
-            std::forward<CacheNozzleTarget>(cache_nozzle_target), update_copy);
+            std::forward<CacheNozzleTarget>(cache_nozzle_target), update_copy, lifetime);
 
-        bed_temp_observer_ =
-            observe_int_async<Panel>(state.get_bed_temp_subject(), panel,
-                                     std::forward<CacheBedTemp>(cache_bed_temp), update_copy);
+        bed_temp_observer_ = observe_int_async<Panel>(state.get_bed_temp_subject(), panel,
+                                                      std::forward<CacheBedTemp>(cache_bed_temp),
+                                                      update_copy, lifetime);
 
         bed_target_observer_ = observe_int_async<Panel>(
             state.get_bed_target_subject(), panel, std::forward<CacheBedTarget>(cache_bed_target),
-            std::move(update_copy));
+            std::move(update_copy), lifetime);
     }
 
     /**

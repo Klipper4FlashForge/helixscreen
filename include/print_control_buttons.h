@@ -9,6 +9,7 @@
 #include "subject_managed_panel.h"
 
 #include <lvgl.h>
+#include <memory>
 #include <string>
 
 class MoonrakerAPI;
@@ -37,6 +38,24 @@ class PrintControlButtons {
 
     lv_subject_t* pending_action_subject() {
         return &pending_action_subject_;
+    }
+
+    /**
+     * @brief Death signal for the subjects this singleton owns.
+     *
+     * pending_action_subject() is read by other long-lived objects —
+     * PrintStatusPanel observes it to re-derive the paused overlay — and this
+     * singleton's subjects are torn down mid-process: by the StaticSubjectRegistry
+     * entry at shutdown, and in tests by HelixTestFixture::reset_all() on EVERY
+     * fixture construction. deinit_all() frees every observer node on them, so an
+     * ObserverGuard held by an observer that outlives the teardown must carry this
+     * token or its next reset() calls lv_observer_remove() on freed memory.
+     *
+     * Never empty: an empty token reads as "already dead" and would suppress
+     * removal for live observers instead.
+     */
+    [[nodiscard]] SubjectLifetime get_subjects_lifetime() const {
+        return subjects_lifetime_;
     }
 
     void handle_primary_button();
@@ -81,6 +100,15 @@ class PrintControlButtons {
     /// on a freed `this` on the others.
     void cancel_pending_action_timer();
 
+    /// Tear the owned subjects down, signalling death first.
+    ///
+    /// Shared by the StaticSubjectRegistry entry and by
+    /// PrintControlButtonsTestAccess::reset() for the same reason
+    /// cancel_pending_action_timer() is shared: a teardown path that skips the
+    /// death signal leaves every outside ObserverGuard pointing at observer
+    /// nodes deinit_all() just freed.
+    void teardown_subjects();
+
     static void on_primary_clicked(lv_event_t* e);
     static void on_stop_clicked(lv_event_t* e);
 
@@ -90,6 +118,9 @@ class PrintControlButtons {
     lv_timer_t* pending_action_timeout_ = nullptr;
 
     SubjectManager subjects_;
+    /// See get_subjects_lifetime(). Created with the object and REPLACED (never
+    /// nulled) by teardown, so the accessor always hands out a live token.
+    SubjectLifetime subjects_lifetime_ = std::make_shared<bool>(true);
     lv_subject_t primary_icon_subject_;
     lv_subject_t primary_label_subject_;
     lv_subject_t primary_enabled_subject_;
