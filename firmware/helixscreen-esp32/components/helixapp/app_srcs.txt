@@ -145,6 +145,7 @@ src/printer/spoolman_manager.cpp
 src/printer/spoolman_types.cpp
 src/printer/standard_macros.cpp
 src/printer/timelapse_state.cpp
+src/printer/toolhead_homing.cpp
 src/printer/tool_state.cpp
 src/sensors/accel_sensor_manager.cpp
 src/sensors/color_sensor_manager.cpp
