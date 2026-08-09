@@ -13,6 +13,7 @@
 #include "ams_backend_mock.h"
 #include "ams_state.h"
 #include "config.h"
+#include "grid_layout.h"
 #include "panel_widget_registry.h"
 #include "theme_manager.h"
 
@@ -22,7 +23,10 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams registry: scalable to 4x wide",
                  "[ui][ams_mini][registry]") {
     const PanelWidgetDef* def = find_widget_def("ams");
     REQUIRE(def != nullptr);
-    REQUIRE(def->max_colspan == 4);
+    // Spans are authored in tracks, and a track is half a cell, so four cells
+    // of width is 4 * TRACKS_PER_CELL. Derived rather than written out so the
+    // widget's authored reach stays four cells if the track resolution changes.
+    REQUIRE(def->max_colspan == 4 * helix::GridLayout::TRACKS_PER_CELL);
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini: set_width applies its width argument",
