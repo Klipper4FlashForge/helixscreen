@@ -1,5 +1,13 @@
 # ESP32 Native Port Feasibility Audit Plan — Phase 0
 
+> 🚧 **Work in flight (as of 2026-08-09) - coordinate before executing.**
+>
+> Unchecked boxes here do NOT mean "not started". The ESP-IDF sources and build output live
+> in `firmware/` at the repo root, which is deliberately untracked, and the active work is on
+> the `esp32/port-4-app` branch. A grep of the tracked tree finds none of the symbols this
+> plan prescribes and will wrongly suggest nothing has happened. Check the branch and
+> `firmware/` before concluding anything, and ask before picking up a task.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
 > **Nature of this plan:** This is an AUDIT, not a feature. The deliverable is a measurement report with a go/no-go recommendation — `docs/devel/ESP32_NATIVE_AUDIT.md` — per Phase 0 of `docs/devel/specs/2026-06-10-esp32-display-device-design.md`. Timebox: 2-4 weeks. Audit scaffolding lives in `firmware/native-audit/` and is throwaway-quality by design (committed for reproducibility, never shipped). **Do not fix the app to make it compile on ESP32 in this phase** — categorize and count; fixing is Phase 2's job.
