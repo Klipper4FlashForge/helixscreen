@@ -82,6 +82,13 @@ class DebugBundleCollector {
     static std::string collect_crash_txt();
     static nlohmann::json collect_sanitized_settings();
     static std::string collect_klipper_log_tail(int num_lines = 2000);
+
+    /// Read klippy.log / moonraker.log straight off the local disk, for when
+    /// Moonraker cannot serve them. Only for a same-host printer; the paths come
+    /// from the daemons' own argv (see candidate_log_paths()), so an unknown
+    /// platform layout returns empty rather than a guess.
+    static std::string collect_local_log_tail(const std::string& log_name, int num_lines,
+                                              bool condense_klipper = false);
     static std::string collect_moonraker_log_tail(int num_lines = 2000);
 
     /// Read crash_report.txt from config_dir (persists after crash.txt consumed)
@@ -102,6 +109,15 @@ class DebugBundleCollector {
 
     /// Collect Moonraker state via REST (server info, printer state, config)
     static nlohmann::json collect_moonraker_info();
+
+    /// Local evidence about a same-host Moonraker, gathered from /proc rather
+    /// than from Moonraker. Everything in collect_moonraker_info() goes through
+    /// Moonraker's own HTTP API, so a bundle uploaded while Moonraker is down
+    /// carries only "No response" and cannot distinguish "not running" from
+    /// "running, bound to an address we did not dial" (AD5X bundles TAU4PW4H /
+    /// 865DXBQ7). Returns `{"same_host": false}` for a remote printer, where our
+    /// own /proc says nothing about it.
+    static nlohmann::json collect_moonraker_local_probe();
 
     /// Collect filament system data (AFC, Happy Hare, ACE, Spoolman, tool changers)
     static nlohmann::json collect_filament_system_info();
