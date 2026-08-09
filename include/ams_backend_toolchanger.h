@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+class ToolChangerTestAccess;
+
 /**
  * @file ams_backend_toolchanger.h
  * @brief Physical tool changer backend implementation
@@ -193,6 +195,7 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
   protected:
     // Allow test helper access to private members
     friend class ToolChangerCharHelper;
+    friend class ToolChangerTestAccess;
 
     // --- AmsSubscriptionBackend hooks ---
     AmsError additional_start_checks() override;

@@ -6,7 +6,6 @@
 #include "ui_component_keypad.h"
 #include "ui_emergency_stop.h"
 #include "ui_error_reporting.h"
-#include "ui_event_safety.h"
 #include "ui_fan_control_overlay.h"
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
@@ -83,49 +82,97 @@
 namespace {
 
 // The one live installation of helix::ui::HomeConfirmPrompter (Task 8). Every
-// other caller of set_home_confirm_prompter() is a test. modal_show_confirmation()
-// takes a C-style lv_event_cb_t, not a std::function, so the pending
-// on_confirm/on_cancel from AmsSubscriptionBackend::ensure_homed_then() can't
-// be captured in a lambda passed to it -- they're stashed here instead and
-// read back by the two static callbacks below. Same idiom as
-// MacrosPanel::pending_dangerous_macro_ (ui_panel_macros.cpp), just file-local
-// because this prompter is a free function, not a panel method.
+// other caller of set_home_confirm_prompter() is a test.
 //
-// Only one home-confirmation dialog is ever showing at a time (the AMS
-// dispatch chokepoint is synchronous up to the point it raises this modal),
-// so a single pending pair is enough -- a second request_home_confirmation()
-// call before this one resolves would overwrite it, but nothing in the
-// dispatch chain issues one without waiting on the first.
-std::function<void()> g_pending_home_confirm;
-std::function<void()> g_pending_home_cancel;
+// Built on the Modal INSTANCE API (helix::ui::Modal subclass), not the static
+// modal_show_confirmation() factory used by the first cut of this code. The
+// static factory's dialog is created via the plain Modal::show("modal_dialog", ...)
+// path, and on that path Modal::show() unconditionally wires the backdrop-tap
+// and ESC handlers with a null Modal* user_data (ui_modal.cpp's
+// backdrop_click_cb/esc_key_cb "static modal" branch) -- both just call
+// Modal::hide(dialog) directly and never touch the confirm/cancel
+// lv_event_cb_t at all. Since AmsBackendAfc/AmsBackendToolChanger arm their
+// optimistic AmsAction *before* calling ensure_homed_then(), and
+// ensure_homed_then()'s unhomed branch now always returns success() once it
+// decides to prompt (no more synchronous failure return for `!result` to
+// catch), a backdrop-tap or ESC dismissal that never resolves either callback
+// left those two backends permanently stuck busy -- ToolChanger has no
+// stuck-action watchdog at all, so that was an unrecoverable lockout short of
+// an app restart.
+//
+// The instance API's on_hide() hook, by contrast, fires on every exit path:
+// Ok/Cancel buttons and ESC all route through on_ok()/on_cancel() (which
+// default to hide()), and backdrop-tap calls hide() directly. HomeConfirmModal
+// uses on_hide() as a fallback net -- resolve() below is idempotent, so
+// whichever path got there first (button, ESC, or the backdrop-tap fallback)
+// is the only one that fires a callback.
+class HomeConfirmModal : public Modal {
+  public:
+    HomeConfirmModal(std::function<void()> on_confirm, std::function<void()> on_cancel)
+        : on_confirm_(std::move(on_confirm)), on_cancel_(std::move(on_cancel)) {}
 
-void on_home_confirm_cb(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[SubjectInitializer] home_confirm_cb");
-    (void)e;
-    // Custom on_confirm replaces the dialog's default close handler, so this
-    // must dismiss it explicitly.
-    helix::ui::modal_hide(helix::ui::modal_get_top());
-    auto confirm = std::move(g_pending_home_confirm);
-    g_pending_home_confirm = nullptr;
-    g_pending_home_cancel = nullptr;
-    if (confirm) {
-        confirm();
+    const char* get_name() const override {
+        return "HomeConfirm";
     }
-    LVGL_SAFE_EVENT_CB_END();
-}
+    const char* component_name() const override {
+        return "modal_dialog";
+    }
 
-void on_home_cancel_cb(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[SubjectInitializer] home_cancel_cb");
-    (void)e;
-    helix::ui::modal_hide(helix::ui::modal_get_top());
-    auto cancel = std::move(g_pending_home_cancel);
-    g_pending_home_confirm = nullptr;
-    g_pending_home_cancel = nullptr;
-    if (cancel) {
-        cancel();
+  protected:
+    void on_show() override {
+        wire_ok_button();
+        wire_cancel_button();
     }
-    LVGL_SAFE_EVENT_CB_END();
-}
+
+    void on_ok() override {
+        resolve(on_confirm_);
+        Modal::on_ok(); // hides
+    }
+
+    void on_cancel() override {
+        resolve(on_cancel_);
+        Modal::on_cancel(); // hides
+    }
+
+    void on_hide() override {
+        // Fallback net: only fires if neither on_ok() nor on_cancel() already
+        // resolved this dialog -- i.e. it was dismissed by backdrop-tap (which
+        // calls hide() directly, bypassing on_cancel()) or any other exit that
+        // skips both. Every dismissal must land the backend at IDLE the same
+        // way the Cancel button does, so the fallback treats it as cancel.
+        resolve(on_cancel_);
+        // Heap-allocated, self-deleting instance (same idiom as
+        // InfoQrModal::on_hide()) -- deferred via async_call so the delete
+        // doesn't run synchronously inside the exit-animation machinery.
+        helix::ui::async_call([](void* data) { delete static_cast<HomeConfirmModal*>(data); },
+                              this);
+    }
+
+  public:
+    // Same fallback-as-cancel contract as on_hide(), for the one path that
+    // never reaches it: show() itself failing (no active screen). Called by
+    // install_home_confirm_prompter() right before deleting an unshown
+    // instance -- without this, a failed show() would silently drop both
+    // callbacks and wedge the backend exactly like the bug this class fixes.
+    void resolve_unshown_as_cancelled() {
+        resolve(on_cancel_);
+    }
+
+  private:
+    void resolve(std::function<void()>& cb) {
+        if (resolved_) {
+            return;
+        }
+        resolved_ = true;
+        if (cb) {
+            cb();
+        }
+    }
+
+    std::function<void()> on_confirm_;
+    std::function<void()> on_cancel_;
+    bool resolved_ = false;
+};
 
 /// Installs the modal-backed HomeConfirmPrompter used by every real run of
 /// the app. Must run after DisplayManager has created the LVGL display (so
@@ -140,14 +187,29 @@ void on_home_cancel_cb(lv_event_t* e) {
 void install_home_confirm_prompter() {
     helix::ui::set_home_confirm_prompter(
         [](std::function<void()> on_confirm, std::function<void()> on_cancel) {
-            g_pending_home_confirm = std::move(on_confirm);
-            g_pending_home_cancel = std::move(on_cancel);
-            helix::ui::modal_show_confirmation(
-                lv_tr("Home printer first?"),
+            // Same subjects the static modal_show_confirmation() helper
+            // configures (severity/button text) -- "modal_dialog" is a shared
+            // XML component bound to these, regardless of which API shows it.
+            // modal_configure() leaves a null cancel_text's subject untouched
+            // (stale from whichever dialog configured it last), unlike
+            // modal_show_confirmation() which defaults it -- pass it explicitly.
+            helix::ui::modal_configure(ModalSeverity::Warning, /*show_cancel=*/true,
+                                       lv_tr("Home & Continue"), lv_tr("Cancel"));
+            const char* attrs[] = {
+                "title", lv_tr("Home printer first?"), "message",
                 lv_tr("The printer is not homed. Continuing will home all axes, moving the "
                       "toolhead. Make sure the bed is clear."),
-                ModalSeverity::Warning, lv_tr("Home & Continue"), on_home_confirm_cb,
-                on_home_cancel_cb, nullptr);
+                nullptr};
+            auto* modal = new HomeConfirmModal(std::move(on_confirm), std::move(on_cancel));
+            // show(lv_obj_t*, const char**) -- the instance overload (parent is
+            // ignored internally; it always uses lv_screen_active()). A bare
+            // nullptr is ambiguous against the static show(const char*, const
+            // char**) overload in the same class, hence the explicit cast.
+            if (!modal->show(static_cast<lv_obj_t*>(nullptr), attrs)) {
+                spdlog::error("[SubjectInitializer] Failed to show home-confirm modal");
+                modal->resolve_unshown_as_cancelled();
+                delete modal;
+            }
         });
 }
 

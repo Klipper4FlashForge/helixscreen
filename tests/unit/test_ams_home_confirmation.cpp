@@ -2,11 +2,13 @@
 #include "../lvgl_test_fixture.h"
 #include "ams_backend_afc.h"
 #include "ams_backend_cfs.h"
+#include "ams_backend_toolchanger.h"
 #include "filament_op_router.h"
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
 #include "printer_state.h"
 #include "test_helpers/cfs_test_access.h"
+#include "test_helpers/toolchanger_test_access.h"
 #include "test_helpers/update_queue_test_access.h"
 
 #include "../catch_amalgamated.hpp"
@@ -189,6 +191,105 @@ TEST_CASE("with no prompter installed the home proceeds silently", "[ams][homing
 
     REQUIRE(backend.captured.size() == 2);
     CHECK(backend.captured[0] == "G28");
+}
+
+// =====================================================================
+// A dismissal that never resolves synchronously must still unwedge
+// dispatch_operation's optimistic action (Task 8 review fix)
+// =====================================================================
+// The tests above all use ensure_homed_then() directly on a HomingProbeBackend
+// whose AmsAction starts and stays IDLE -- ensure_homed_then() itself never
+// touches system_info_.action except on its own cancel/failure branches, so
+// none of them can express the bug a reviewer found in the first cut of the
+// real prompter (src/application/subject_initializer.cpp): it wired
+// modal_show_confirmation() through the STATIC Modal::show() path, and on
+// that path backdrop-tap and ESC call Modal::hide(dialog) directly --
+// bypassing the confirm/cancel lv_event_cb_t entirely. Neither callback ever
+// fired, so a dismissal by anything other than the two dialog buttons left
+// whichever AmsBackend that had called dispatch_operation() stuck: its
+// begin_dispatch_locked() sets the AmsAction optimistically *before*
+// ensure_homed_then() ever runs, and only the confirm/cancel callback can
+// resolve it -- ensure_homed_then() always returns success() once it decides
+// to prompt, so dispatch_operation()'s own `if (!result) abandon_dispatch()`
+// safety net can't fire either. AmsBackendToolChanger has no other watchdog
+// at all (unlike AFC's stuck-action timeout), so this was a permanent lockout
+// short of an app restart.
+//
+// A prompter that truly never calls back, ever, cannot be expressed as a
+// terminating test -- the busy state would really be permanent, by
+// construction, with or without a fix. So this models what a real dialog
+// does instead: request_home_confirmation() returns having invoked NEITHER
+// callback synchronously (exactly what showing a modal does -- resolution
+// comes later, from an LVGL event), and the test holds onto the callback pair
+// itself, standing in for "the dialog is still open." Resolving it later
+// proves the same unwind the Cancel button uses also runs for a dismissal
+// that isn't a direct, synchronous confirm()/cancel() call in the same
+// stack frame -- which is exactly the shape backdrop-tap/ESC/the fixed
+// HomeConfirmModal's on_hide() fallback net all have.
+class ToolChangerHomingProbeBackend : public AmsBackendToolChanger {
+  public:
+    ToolChangerHomingProbeBackend() : AmsBackendToolChanger(nullptr, nullptr) {}
+
+    AmsError execute_gcode(const std::string& gcode) override {
+        captured.push_back(gcode);
+        return AmsErrorHelper::success();
+    }
+    AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+        captured.push_back(gcode);
+        if (on_complete) {
+            on_complete();
+        }
+        return AmsErrorHelper::success();
+    }
+    bool toolhead_homed() const override {
+        return homed;
+    }
+
+    bool homed = true;
+    std::vector<std::string> captured;
+};
+
+TEST_CASE("a dismissal that resolves asynchronously still unwedges dispatch_operation's "
+          "optimistic action, exactly like the Cancel button",
+          "[ams][homing][confirm]") {
+    LVGLTestFixture fixture;
+    ToolChangerHomingProbeBackend backend;
+    backend.homed = false;
+
+    std::function<void()> pending_cancel;
+    helix::ui::set_home_confirm_prompter(
+        [&pending_cancel](std::function<void()>, std::function<void()> cancel) {
+            // Neither callback is invoked here -- the dialog is "open" and
+            // will resolve later, from an LVGL event (button, ESC, or
+            // backdrop-tap), not from this call.
+            pending_cancel = std::move(cancel);
+        });
+
+    ToolChangerTestAccess::call_dispatch_operation(backend, "SELECT_TOOL T=1",
+                                                   AmsAction::SELECTING);
+
+    // The prompter didn't resolve synchronously, so the optimistic action
+    // dispatch_operation() set before ever reaching ensure_homed_then() is
+    // still busy -- expected while the dialog is open, not the bug.
+    REQUIRE(pending_cancel);
+    CHECK(backend.get_system_info().action == AmsAction::SELECTING);
+    CHECK(backend.captured.empty());
+
+    // Resolve it -- standing in for backdrop-tap/ESC/Cancel, all of which
+    // reach this same callback through HomeConfirmModal's fallback net.
+    pending_cancel();
+
+    CHECK(backend.get_system_info().action == AmsAction::IDLE);
+    CHECK(backend.captured.empty());
+
+    // Not wedged: a subsequent dispatch still works.
+    backend.homed = true;
+    helix::ui::set_home_confirm_prompter({});
+    auto err = ToolChangerTestAccess::call_dispatch_operation(backend, "SELECT_TOOL T=2",
+                                                              AmsAction::SELECTING);
+    REQUIRE(err.success());
+    REQUIRE(backend.captured.size() == 1);
+    CHECK(backend.captured[0] == "SELECT_TOOL T=2");
 }
 
 // =====================================================================
