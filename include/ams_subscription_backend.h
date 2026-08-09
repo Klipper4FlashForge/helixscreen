@@ -87,12 +87,47 @@ class AmsSubscriptionBackend : public AmsBackend {
     /// macro's completion is the reliable terminal signal for an operation.
     virtual AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete);
 
+    /// Whether the toolhead is homed. Virtual purely as a test seam: fixtures
+    /// override it to exercise the homed and unhomed branches of
+    /// ensure_homed_then() without a live Moonraker connection or a PrinterState.
+    /// Production implementation reads the live homed_axes subject via api_.
+    [[nodiscard]] virtual bool toolhead_homed() const;
+
     /// Query homing status and auto-home (G28) if needed before executing gcode.
     /// Returns immediately — homing and gcode execution happen asynchronously.
     /// @p on_complete (optional) fires when the final gcode command finishes
     /// (Klipper acks the script), on a background thread; the caller hops to the
     /// main thread. Use when the gcode's macro completion is the terminal signal.
-    AmsError ensure_homed_then(std::string gcode, std::function<void()> on_complete = nullptr);
+    /// @param on_error   Fires on G28 or payload failure. When null the failure
+    ///                   is logged and the action is reset to IDLE, matching
+    ///                   the historical behaviour.
+    /// @param timeout_ms Payload timeout. G28 always uses HOMING_TIMEOUT_MS.
+    /// @param skip_homing Dispatch the payload without homing, whatever the
+    ///                   toolhead reports. For firmware macros that home
+    ///                   themselves (CFS Fork variant).
+    /// @param silent     Suppress REQUEST_TIMEOUT toasts on the payload. True
+    ///                   matches every backend except CFS, which passes false.
+    ///
+    /// @warning Call from the main thread only — checks toolhead_homed(),
+    /// which (in the production override) reads an LVGL subject, and may
+    /// synchronously create a confirmation modal.
+    AmsError ensure_homed_then(std::string gcode, std::function<void()> on_complete = nullptr,
+                               std::function<void(const MoonrakerError&)> on_error = nullptr,
+                               uint32_t timeout_ms = MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS,
+                               bool skip_homing = false, bool silent = true);
+
+    /// See AmsBackend::arm_home_preconfirmed(). Consumed single-shot by the
+    /// NEXT ensure_homed_then() call that finds the toolhead genuinely
+    /// unhomed -- does not skip that call's G28, only its confirmation prompt.
+    void arm_home_preconfirmed() final {
+        home_preconfirmed_ = true;
+    }
+
+    /// See AmsBackend::clear_home_preconfirmed(). Idempotent no-op if nothing
+    /// is currently armed.
+    void clear_home_preconfirmed() final {
+        home_preconfirmed_ = false;
+    }
 
   protected:
     // --- Hooks for derived classes ---
@@ -104,6 +139,23 @@ class AmsSubscriptionBackend : public AmsBackend {
     /// Called before stop() releases the subscription.
     /// Lock IS held.
     virtual void on_stopping() {}
+
+    /// Called when the user declines the pre-operation home prompt raised by
+    /// ensure_homed_then(). Default resets system_info_.action to IDLE (under
+    /// mutex_) and emits EVENT_STATE_CHANGED -- exactly what a plain Cancel
+    /// looked like before the confirmation prompt existed.
+    ///
+    /// Override when the backend arms additional optimistic state BEFORE
+    /// calling ensure_homed_then() (a phase tracker, a pending-dispatch
+    /// generation, ...): the default only clears system_info_.action, so any
+    /// such state is left active. A backend whose apply-loop lacks an
+    /// explicit `!= IDLE` guard (AmsBackendAd5xIfs's phase tracker did) then
+    /// gets re-armed busy by the very next status frame -- the user declines
+    /// a home and the backend wedges for a full timeout window before
+    /// latching a fabricated error. Unwind exactly what was armed before the
+    /// prompt, then call the base implementation (or replicate its IDLE
+    /// reset) to finish the cancel.
+    virtual void on_home_confirmation_declined();
 
     /// Extra checks before subscribing (e.g., ToolChanger requires tools discovered).
     /// Return error to abort start. Lock IS held.
@@ -263,4 +315,33 @@ class AmsSubscriptionBackend : public AmsBackend {
 
     EventCallback event_callback_;
     SubscriptionGuard subscription_;
+
+    /// Set by arm_home_preconfirmed(), consumed single-shot by ensure_homed_then().
+    /// Main-thread only -- both the setter (a UI-surface click handler) and the
+    /// consuming read happen on the main thread, same as toolhead_homed() itself.
+    bool home_preconfirmed_ = false;
+
+    /// Send the payload gcode, honouring the 1-arg/2-arg execute_gcode split.
+    /// ~20 test fixtures override ONLY the 1-arg form; calling the 2-arg form
+    /// with a null callback would fall through to the base and stop capturing.
+    ///
+    /// When @p on_error, @p timeout_ms, and @p silent are all left at their
+    /// ensure_homed_then() defaults, dispatch stays on the same two virtuals
+    /// referenced above — required for fixture compatibility. Any non-default
+    /// combination needs a live @p api_: it talks to MoonrakerAPI directly (the
+    /// hardcoded virtuals can't carry a caller's own error/timeout/toast
+    /// policy), the same way AmsBackendCfs::dispatch_action_script used to
+    /// before this method existed to replace it.
+    AmsError dispatch_payload(std::string gcode, std::function<void()> on_complete,
+                              std::function<void(const MoonrakerError&)> on_error = nullptr,
+                              uint32_t timeout_ms = MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS,
+                              bool silent = true);
+
+    /// Report a gcode failure through @p on_error when set, else fall back to
+    /// the historical behaviour: log at error level and reset the action to
+    /// IDLE. Callers on a background thread must already have marshalled to
+    /// main (see dispatch_payload()/ensure_homed_then()'s token.defer() calls)
+    /// before reaching this -- it touches system_info_ under mutex_ directly.
+    void handle_dispatch_error(const MoonrakerError& err,
+                               const std::function<void(const MoonrakerError&)>& on_error);
 };

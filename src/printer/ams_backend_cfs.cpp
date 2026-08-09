@@ -2260,64 +2260,13 @@ AmsError AmsBackendCfs::dispatch_action_script(std::string gcode) {
         });
     };
 
-    if (macro_variant_ == CfsMacroVariant::Fork) {
-        api_->execute_gcode(gcode, std::move(on_complete), std::move(on_error),
-                            MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
-        return AmsErrorHelper::success();
-    }
-
-    // Homing-then-execute — same pattern as ensure_homed_then but with our
-    // own completion callbacks that propagate to action-state cleanup.
-    if (!client_) {
-        api_->execute_gcode(gcode, std::move(on_complete), std::move(on_error),
-                            MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
-        return AmsErrorHelper::success();
-    }
-
-    auto gcode_copy = std::move(gcode);
-    client_->send_jsonrpc(
-        "printer.objects.query",
-        nlohmann::json{
-            {"objects", nlohmann::json{{"toolhead", nlohmann::json::array({"homed_axes"})}}}},
-        [this, token, gcode_copy, on_complete = std::move(on_complete),
-         on_error = on_error](const nlohmann::json& response) {
-            // L081 Mechanism C: defer member access (api_->execute_gcode dispatch)
-            // to main thread. The inner G28-completion lambda is itself invoked
-            // on a bg thread, so it also routes its api_ call through token.defer.
-            token.defer("AmsBackendCfs::homing_query_apply", [this, token, gcode_copy, on_complete,
-                                                              on_error, response]() {
-                bool needs_home = true;
-                if (response.contains("result") && response["result"].contains("status")) {
-                    const auto& status = response["result"]["status"];
-                    if (status.contains("toolhead") && status["toolhead"].contains("homed_axes") &&
-                        status["toolhead"]["homed_axes"].is_string()) {
-                        std::string axes = status["toolhead"]["homed_axes"].get<std::string>();
-                        needs_home = (axes.find("xyz") == std::string::npos);
-                    }
-                }
-
-                if (needs_home) {
-                    spdlog::info("[AMS CFS] Not homed, sending G28 before action script");
-                    api_->execute_gcode(
-                        "G28",
-                        [this, token, gcode_copy, on_complete, on_error]() {
-                            // L081 Mechanism C: defer member access (api_) to main.
-                            token.defer("AmsBackendCfs::g28_done", [this, gcode_copy, on_complete,
-                                                                    on_error]() {
-                                api_->execute_gcode(gcode_copy, on_complete, on_error,
-                                                    MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
-                            });
-                        },
-                        on_error, MoonrakerAPI::HOMING_TIMEOUT_MS);
-                } else {
-                    api_->execute_gcode(gcode_copy, on_complete, on_error,
-                                        MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
-                }
-            });
-        },
-        on_error);
-
-    return AmsErrorHelper::success();
+    // Homing, timeout, error plumbing and the Fork bypass all live in the base
+    // helper now. What stays here is CFS's own unwind: phase tracking, the K2
+    // fan restore, and RESTORE_GCODE_STATE.
+    return ensure_homed_then(std::move(gcode), std::move(on_complete), std::move(on_error),
+                             MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS,
+                             /*skip_homing=*/macro_variant_ == CfsMacroVariant::Fork,
+                             /*silent=*/false);
 }
 
 // ============================================================================

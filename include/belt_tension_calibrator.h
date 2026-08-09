@@ -178,8 +178,6 @@ class BeltTensionCalibrator {
     }
 
   private:
-    /// Must be called from main thread (reads lv_subject)
-    void ensure_homed_then(std::function<void()> then, BeltErrorCallback on_error);
     void execute_resonance_test(BeltPath path, BeltProgressCallback on_progress,
                                 BeltMeasurementCallback on_complete, BeltErrorCallback on_error);
     void process_csv_data(const std::string& csv_data, BeltMeasurementCallback on_complete,

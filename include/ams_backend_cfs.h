@@ -361,7 +361,9 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     /// UI told the user the load was idle.
     /// Marked virtual so test subclasses can capture the assembled load/swap/
     /// unload script (and the WITH/WITHOUT-material selection that produced it)
-    /// without a live Moonraker connection.
+    /// without a live Moonraker connection. Private -- test access to call the
+    /// real implementation directly goes through the ::CfsTestAccess friend
+    /// shim (tests/test_helpers/cfs_test_access.h), not a `using` declaration.
     virtual AmsError dispatch_action_script(std::string gcode);
 
     /// Undo the derived LOADED stamp, putting back whatever the last parse

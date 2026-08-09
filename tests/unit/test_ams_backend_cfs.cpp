@@ -11,6 +11,7 @@
 #include "moonraker_client_mock.h"
 #include "printer_discovery.h"
 #include "printer_state.h"
+#include "test_helpers/cfs_test_access.h"
 
 #include <filesystem>
 #include <memory>
@@ -39,74 +40,9 @@ class FilamentSlotOverrideStoreTestAccess {
     }
 };
 
-// Friend-class shim for AmsBackendCfs — declared as friend in the backend
-// header. Gives tests narrow accessors for private override state without
-// going through the public get_slot_info path (which layers apply_overrides
-// on top and obscures what the internal maps actually hold).
-class CfsTestAccess {
-  public:
-    static void handle_status(AmsBackendCfs& b, const json& n) {
-        b.handle_status_update(n);
-    }
-    static void seed_override(AmsBackendCfs& b, int slot_index,
-                              const helix::ams::FilamentSlotOverride& ovr) {
-        std::lock_guard<std::mutex> lock(b.mutex_);
-        b.overrides_[slot_index] = ovr;
-    }
-    static std::optional<helix::ams::FilamentSlotOverride> get_override(const AmsBackendCfs& b,
-                                                                        int slot_index) {
-        std::lock_guard<std::mutex> lock(b.mutex_);
-        auto it = b.overrides_.find(slot_index);
-        if (it == b.overrides_.end())
-            return std::nullopt;
-        return it->second;
-    }
-    static void inject_override_store(AmsBackendCfs& b,
-                                      std::unique_ptr<helix::ams::FilamentSlotOverrideStore> s) {
-        b.override_store_ = std::move(s);
-    }
-    static std::optional<std::string> last_rfid_uid(const AmsBackendCfs& b, int slot_index) {
-        std::lock_guard<std::mutex> lock(b.mutex_);
-        return b.rfid_tracker_.baseline(slot_index);
-    }
-    static helix::printer::CfsMacroVariant macro_variant(const AmsBackendCfs& b) {
-        return b.macro_variant_;
-    }
-    // Seed the nozzle-loaded signal + preloaded-slot index used by change_tool's
-    // WITH/WITHOUT-material selection (#968 Phase 2). filament_loaded reflects
-    // filament physically at the nozzle; current_slot can be a *preloaded*
-    // (cassette) slot with the nozzle still empty on K1 CFS.
-    static void set_loaded_state(AmsBackendCfs& b, bool filament_loaded, int current_slot) {
-        std::lock_guard<std::mutex> lock(b.mutex_);
-        b.system_info_.filament_loaded = filament_loaded;
-        b.system_info_.current_slot = current_slot;
-    }
-    static void set_last_rfid_uid(AmsBackendCfs& b, int slot_index, const std::string& uid) {
-        std::lock_guard<std::mutex> lock(b.mutex_);
-        b.rfid_tracker_.observe(slot_index, uid);
-    }
-    static void set_macro_variant_k1(AmsBackendCfs& b) {
-        b.macro_variant_ = helix::printer::CfsMacroVariant::K1;
-    }
-    static void set_macro_variant_fork(AmsBackendCfs& b) {
-        b.macro_variant_ = helix::printer::CfsMacroVariant::Fork;
-    }
-    // Seed N connected CFS units (unit_index 0..N-1) so device-action code that
-    // iterates system_info_.units (e.g. refresh_rfid → BOX_INFO_REFRESH) has
-    // addressable units without a live Moonraker parse.
-    static void set_connected_units(AmsBackendCfs& b, int count) {
-        std::lock_guard<std::mutex> lock(b.mutex_);
-        b.system_info_.units.clear();
-        for (int u = 0; u < count; ++u) {
-            AmsUnit unit;
-            unit.unit_index = u;
-            unit.connected = true;
-            unit.slot_count = 4;
-            unit.first_slot_global_index = u * 4;
-            b.system_info_.units.push_back(std::move(unit));
-        }
-    }
-};
+// CfsTestAccess (friend shim for AmsBackendCfs) now lives in
+// tests/test_helpers/cfs_test_access.h so test_ams_home_confirmation.cpp can
+// share it instead of duplicating the class.
 
 namespace {
 // Per-test tmp cache dir — same idiom as test_ams_backend_snapmaker.cpp /

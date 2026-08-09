@@ -53,6 +53,26 @@ json get_mock_gcode_macro_config() {
     return cfg;
 }
 
+// Minimal Happy Hare "mmu" status for --real-ams: a static 4-gate setup with a
+// mix of loaded/empty gates. gate_status is the load-bearing field — it's what
+// AmsBackendHappyHare::parse_mmu_state() uses to size the slot registry and
+// flip slots_.is_initialized(); the rest just refines what the AMS panel shows.
+// Values proven correct against AmsBackendHappyHare's own unit test fixture
+// (tests/unit/test_ams_backend_happy_hare.cpp, "v3 data with no v4 fields").
+json get_mock_mmu_status() {
+    return {{"gate", 2},
+            {"tool", 2},
+            {"filament", "Loaded"},
+            {"action", "Idle"},
+            {"filament_pos", 8},
+            {"has_bypass", true},
+            {"gate_status", {1, 0, 2, 1}},
+            {"gate_color_rgb", {0xFF0000, 0x00FF00, 0x0000FF, 0xFFFF00}},
+            {"gate_material", {"PLA", "PETG", "ABS", "TPU"}},
+            {"ttg_map", {0, 1, 2, 3}},
+            {"endless_spool_groups", {0, 0, 1, 1}}};
+}
+
 void register_object_handlers(std::unordered_map<std::string, MethodHandler>& registry) {
     // printer.objects.list - List available printer objects
     // When Klippy is in STARTUP or ERROR state, Klipper returns JSON-RPC error -32601
@@ -284,6 +304,11 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
                 status_obj["idle_timeout"] = {{"state", idle_state}};
             }
 
+            // mmu (Happy Hare MMU status — --real-ams)
+            if (objects.contains("mmu")) {
+                status_obj["mmu"] = get_mock_mmu_status();
+            }
+
             // MCU objects (for discovery - chip type and firmware version)
             for (const auto& [key, val] : objects.items()) {
                 if (key == "mcu" || key.rfind("mcu ", 0) == 0) {
@@ -471,6 +496,11 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
                                               {"fan4_speed", 0.0}, {"fan5_speed", 0.0},
                                               {"fan6_speed", 0.0}, {"fan7_speed", 0.0},
                                               {"fan8_speed", 0.0}, {"fan9_speed", 0.0}};
+            }
+
+            // mmu (Happy Hare MMU status — --real-ams)
+            if (objects.contains("mmu")) {
+                status_obj["mmu"] = get_mock_mmu_status();
             }
 
             // Width sensors (hall_filament_width_sensor, tsl1401cl_filament_width_sensor)

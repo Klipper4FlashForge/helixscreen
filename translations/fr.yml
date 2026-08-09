@@ -1132,7 +1132,9 @@ translations:
   Holding nozzle at {}°C to purge previous filament.: Maintien de la buse à {}°C pour
     purger le filament précédent.
   Home: Origine
+  Home & Continue: Référencer et continuer
   Home failed: Échec de la référence
+  Home printer first?: Référencer l'imprimante d'abord ?
   Home selector: Origine du sélecteur
   Homing AFC system...: Référence du système AFC...
   Homing X...: Référence X...
@@ -2453,6 +2455,7 @@ translations:
   The printer halted this print and cannot resume it. Restart from the beginning?: L'imprimante
     a arrêté cette impression et ne peut pas la reprendre. Redémarrer depuis le début
     ?
+  The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear.: L'imprimante n'est pas référencée. Continuer référencera tous les axes et déplacera la tête d'outil. Assurez-vous que le plateau est dégagé.
   The printer lost power during a print. It can resume where it left off.: 'L''imprimante
     a été mise hors tension pendant une impression. Elle peut reprendre là où elle
     s''est arrêtée.'
