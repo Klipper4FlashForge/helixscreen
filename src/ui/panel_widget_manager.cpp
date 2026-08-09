@@ -630,8 +630,9 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
     // synchronously triggers lv_obj_update_layout (e.g. PrintStatusWidget ->
     // lv_image_set_src -> update_align, see print_status_widget.cpp:331) cascade
     // a grid_update over a half-built grid, which crashes (#983).
-    lv_obj_set_style_pad_column(container, theme_manager_get_spacing("space_xs"), 0);
-    lv_obj_set_style_pad_row(container, theme_manager_get_spacing("space_xs"), 0);
+    const int gutter = GridLayout::gutter_px();
+    lv_obj_set_style_pad_column(container, gutter, 0);
+    lv_obj_set_style_pad_row(container, gutter, 0);
 
     // Compute cell pixel dimensions for size callbacks and card backgrounds.
     int cols = GridLayout::get_cols(breakpoint);
@@ -640,8 +641,9 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                   cols, grid_rows, to_int(breakpoint), cached_rows, panel_id);
     int container_w = lv_obj_get_content_width(container);
     int container_h = lv_obj_get_content_height(container);
-    int cell_w = (cols > 0) ? container_w / cols : 0;
-    int cell_h = (grid_rows > 0) ? container_h / grid_rows : 0;
+    CellMetrics metrics = grid_cell_metrics(container_w, container_h, cols, grid_rows, gutter);
+    int cell_w = static_cast<int>(metrics.cell_w);
+    int cell_h = static_cast<int>(metrics.cell_h);
 
     // Create merged card backgrounds behind adjacent 1x1 widgets.
     // BFS flood-fill finds connected components of 1x1 cells, then a single
@@ -781,7 +783,10 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                 // at approximately the right shape on the first frame, before the
                 // grid layout resolves. Grid STRETCH overrides once layout runs.
                 if (cell_w > 0 && cell_h > 0) {
-                    lv_obj_set_size(card_bg, cell_w * card_colspan, cell_h * card_rowspan);
+                    lv_obj_set_size(
+                        card_bg,
+                        static_cast<int>(grid_track_extent(metrics.cell_w, gutter, card_colspan)),
+                        static_cast<int>(grid_track_extent(metrics.cell_h, gutter, card_rowspan)));
                 }
                 lv_obj_set_grid_cell(card_bg, LV_GRID_ALIGN_STRETCH, start_col, card_colspan,
                                      LV_GRID_ALIGN_STRETCH, start_row, card_rowspan);
@@ -857,8 +862,10 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                 slot.instance->attach(widget, lv_scr_act());
 
                 // Notify widget of its grid allocation and approximate pixel size
-                slot.instance->on_size_changed(p.colspan, p.rowspan, cell_w * p.colspan,
-                                               cell_h * p.rowspan);
+                slot.instance->on_size_changed(
+                    p.colspan, p.rowspan,
+                    static_cast<int>(grid_track_extent(metrics.cell_w, metrics.gutter, p.colspan)),
+                    static_cast<int>(grid_track_extent(metrics.cell_h, metrics.gutter, p.rowspan)));
 
                 result.push_back(std::move(slot.instance));
             }
@@ -867,7 +874,9 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
             if (slot.widget_id == "ams") {
                 lv_obj_t* ams_child = lv_obj_get_child(widget, 0);
                 if (ams_child && ui_ams_mini_status_is_valid(ams_child)) {
-                    ui_ams_mini_status_set_width(ams_child, cell_w * p.colspan, p.colspan);
+                    ui_ams_mini_status_set_width(
+                        ams_child, static_cast<int>(grid_track_extent(metrics.cell_w,
+                                                                      metrics.gutter, p.colspan)));
                 }
             }
         } catch (const std::exception& e) {

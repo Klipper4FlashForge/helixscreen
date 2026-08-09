@@ -63,12 +63,16 @@ fi
 killall display-sleep.sh 2>/dev/null || true
 
 # Hide the Linux console text cursor (visible as a blinking block on fbdev)
-setterm --cursor off 2>/dev/null || printf '\033[?25l' > /dev/tty1 2>/dev/null || true
+# The redirect target may exist but be unwritable, and the shell reports that
+# failure on whatever stderr is current when it *opens* the target — a trailing
+# 2>/dev/null is applied too late to catch it. Wrap in a group so stderr is
+# already silenced before the inner redirect is attempted.
+{ setterm --cursor off || printf '\033[?25l' > /dev/tty1; } 2>/dev/null || true
 
 # Unbind the kernel console from the framebuffer so it doesn't paint text
 # over the UI. This affects vtcon1 (the fbcon driver); vtcon0 is the dummy.
 for vtcon in /sys/class/vtconsole/vtcon*/bind; do
-    [ -f "$vtcon" ] && echo 0 > "$vtcon" 2>/dev/null || true
+    { [ -f "$vtcon" ] && echo 0 > "$vtcon"; } 2>/dev/null || true
 done
 
 # Parse launcher-specific arguments (POSIX-compatible, no arrays)

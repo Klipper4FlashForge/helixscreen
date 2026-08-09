@@ -91,7 +91,6 @@
   <translation tag="ACTIONS" zh="操作"/>
   <translation tag="ADXL" zh="ADXL"/>
   <translation tag="AFC" zh="AFC"/>
-  <translation tag="AFC Version Warning" zh="AFC版本警告"/>
   <translation tag="AFC failure reset complete" zh="AFC故障重置完成"/>
   <translation tag="AFC failure reset failed" zh="AFC故障重置失败"/>
   <translation tag="AFC recovery complete" zh="AFC恢复完成"/>
@@ -99,7 +98,6 @@
   <translation tag="AFC reset complete" zh="AFC重置完成"/>
   <translation tag="AFC reset failed" zh="AFC重置失败"/>
   <translation tag="AFC retracts filament from the toolhead at end of print" zh="AFC 在打印结束时将耗材从工具头退出"/>
-  <translation tag="AFC version {} may have compatibility issues. Please upgrade to v1.0.35 or later." zh="AFC 版本 {} 可能存在兼容性问题。请升级到 v1.0.35 或更高版本。"/>
   <translation tag="ALL DEVICES" zh="所有设备"/>
   <translation tag="AMS" zh="AMS"/>
   <translation tag="AMS Active: " zh="AMS 已激活: "/>
@@ -152,6 +150,7 @@
   <translation tag="Allow display to sleep during active prints" zh="打印时允许屏幕休眠"/>
   <translation tag="Allwinner" zh="Allwinner"/>
   <translation tag="Already connecting — wait a moment and try again" zh="正在连接中 — 请稍候再试"/>
+  <translation tag="Always Show Bypass Spool" zh="始终显示旁路料盘"/>
   <translation tag="Always show Android navigation bar instead of using gestures" zh="始终显示 Android 导航栏而不使用手势"/>
   <translation tag="Ambient Transfer" zh="环境传热"/>
   <translation tag="AmsIdentify" zh="识别 AMS"/>
@@ -313,10 +312,12 @@
   <translation tag="Calibration &amp; Tools" zh="校准与工具"/>
   <translation tag="Calibration Complete!" zh="校准完成！"/>
   <translation tag="Calibration Failed" zh="校准失败"/>
+  <translation tag="Calibration cancelled." zh="校准已取消。"/>
   <translation tag="Calibration complete" zh="校准完成"/>
   <translation tag="Calibration complete!" zh="校准完成！"/>
   <translation tag="Calibration complete! Press &apos;Next&apos; to continue." zh="校准完成！按“下一步”继续。"/>
   <translation tag="Calibration failed - touch targets more precisely." zh="校准失败 – 请更精确地触摸目标。"/>
+  <translation tag="Calibration kept timing out. Your previous settings were kept." zh="校准反复超时，已保留您之前的设置。"/>
   <translation tag="Calibration may still be running — response timed out" zh="校准可能仍在运行 — 响应超时"/>
   <translation tag="Calibration move may still be running — response timed out" zh="校准移动可能仍在运行 — 响应超时"/>
   <translation tag="Calibration saved but cannot apply on SDL display" zh="校准已保存，但无法在 SDL 显示上应用"/>
@@ -344,6 +345,7 @@
   <translation tag="Cannot start print: internal error" zh="无法开始打印: 内部错误"/>
   <translation tag="Cannot start print: not connected to printer" zh="无法开始打印: 未连接打印机"/>
   <translation tag="Cannot start print: printer is {}" zh="无法开始打印: 打印机状态为 {}"/>
+  <translation tag="Cannot unload while a print is active" zh="打印时无法卸载"/>
   <translation tag="Capabilities: " zh="功能: "/>
   <translation tag="Cartographer scan calibrate sent — use Z-Offset panel to adjust" zh="Cartographer扫描校准已发送 — 使用Z偏移面板进行调整"/>
   <translation tag="Cartographer touch calibrate sent" zh="Cartographer触摸校准已发送"/>
@@ -509,6 +511,7 @@
   <translation tag="Could not load printer database" zh="无法加载打印机数据库"/>
   <translation tag="Could not parse tips database" zh="无法解析提示数据库"/>
   <translation tag="Could not reach Spoolman at" zh="无法连接 Spoolman："/>
+  <translation tag="Could not read the screw adjustments from the printer" zh="无法从打印机读取螺丝调整数据"/>
   <translation tag="Could not resolve printer RFCOMM channel" zh="无法解析打印机 RFCOMM 通道"/>
   <translation tag="Could not save filament" zh="无法保存耗材"/>
   <translation tag="Could not start Bluetooth discovery" zh="无法启动蓝牙发现"/>
@@ -974,7 +977,7 @@
   <translation tag="Hide Firmware Noise" zh="隐藏固件噪声"/>
   <translation tag="Hide Temperature Reports" zh="隐藏温度报告"/>
   <translation tag="High Water Mark" zh="峰值标记"/>
-  <translation tag="Hold anywhere to cancel"/>
+  <translation tag="Hold anywhere to cancel" zh="长按任意位置取消"/>
   <translation tag="Holding nozzle at {}°C to purge previous filament." zh="将喷嘴保持在 {}°C 以清洗之前的耗材。"/>
   <translation tag="Home" zh="归位"/>
   <translation tag="Home failed" zh="归位失败"/>
@@ -1075,6 +1078,7 @@
   <translation tag="Keep Navigation Bar" zh="保留导航栏"/>
   <translation tag="Keep Printing" zh="继续打印"/>
   <translation tag="Keep Required" zh="保持必需"/>
+  <translation tag="Keep the bypass spool visible when bypass is off" zh="旁路关闭时保持料盘可见"/>
   <translation tag="Kinematics" zh="运动学"/>
   <translation tag="Klipper" zh="Klipper"/>
   <translation tag="Klipper Error" zh="Klipper 错误"/>
@@ -1472,6 +1476,7 @@
   <translation tag="Path Similarity" zh="路径相似度"/>
   <translation tag="Pause" zh="暂停"/>
   <translation tag="Pause macro not configured" zh="暂停宏未配置"/>
+  <translation tag="Pause the print first, then load, unload, or change filament" zh="请先暂停打印，然后再加载、卸载或更换耗材"/>
   <translation tag="Paused" zh="已暂停"/>
   <translation tag="Paused (attention needed)" zh="已暂停（需要处理）"/>
   <translation tag="Pausing..." zh="暂停中..."/>
@@ -2089,6 +2094,7 @@
   <translation tag="Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining" zh="测试旋转: %d\xc2\xb0 (%d/%d) - 剩余%ds"/>
   <translation tag="Thanks! Anonymous usage data helps improve HelixScreen." zh="感谢！匿名使用数据有助于改进 HelixScreen。"/>
   <translation tag="Thanks! TOTALLY anonymous usage data helps improve HelixScreen." zh="感谢！完全匿名的使用数据有助于改进 HelixScreen。"/>
+  <translation tag="That tool is already loaded" zh="该工具已加载耗材"/>
   <translation tag="The HelixPrint plugin enables fast G-code modifications directly on your printer—like skipping bed mesh for quick reprints." zh="HelixPrint 插件可在打印机上直接进行快速 G-code 修改——例如跳过热床网格以快速重新打印。"/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." zh="为防止动画屏保干扰打印，已在此设备上将其关闭。您可以在设置 &gt; 显示中重新启用。"/>
   <translation tag="The filament system reported an error" zh="耗材系统报告错误"/>
@@ -2114,13 +2120,13 @@
   <translation tag="These tools have no matching filament loaded:" zh="以下工具未加载匹配的耗材："/>
   <translation tag="This calibration uses the paper friction method to set your Z-offset." zh="此校准使用纸张摩擦法设置 Z 偏移。"/>
   <translation tag="This cannot be undone." zh="此操作无法撤销。"/>
+  <translation tag="This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen." zh="此设备没有有线网络连接。关闭 WiFi 后，只能在此界面重新开启。"/>
   <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?" zh="此设备仅有 {} MB 内存。共振校准会占用大量内存，可能导致打印机固件报告 \&quot;Timer Too Close\&quot; 错误或在测试中途重启。仍要继续吗？"/>
   <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a \&quot;Timer Too Close\&quot; error. Continue anyway?" zh="此设备内存极少。共振校准会占用大量内存，可能导致 \&quot;Timer Too Close\&quot; 错误。仍要继续吗？"/>
   <translation tag="This doesn&apos;t match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?" zh="这与关联的 Spoolman 料盘不匹配。是否添加为新料盘，或更新关联料盘以匹配？"/>
   <translation tag="This file was sliced for {} but {} is loaded." zh="此文件为 {} 切片，但当前加载的是 {}。"/>
   <translation tag="This is exactly the data that will be sent" zh="这正是将要发送的数据"/>
   <translation tag="This is what data would be sent if enabled" zh="这是启用后将发送的数据"/>
-  <translation tag="This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?" zh="这看起来与关联的 Spoolman 料盘中的耗材不同。是否更新 Spoolman 料盘以匹配？"/>
   <translation tag="This may take up to 30 seconds" zh="这可能需要 30 秒"/>
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." zh="此插件让 HelixScreen 控制打印启动选项，如热床网格和 QGL。安装后，使用下面的配置 PRINT_START 启用可选步骤。"/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" zh="本次打印需要约 %.0fg，但料盘仅剩约 %.0fg。仍要开始吗？"/>
@@ -2181,6 +2187,7 @@
   <translation tag="Touch Jitter Filter" zh="触摸抖动过滤"/>
   <translation tag="Touch anywhere to test calibration" zh="触摸任意位置测试校准"/>
   <translation tag="Touch anywhere to verify accuracy" zh="触摸任意位置验证精度"/>
+  <translation tag="Touch input did not track the new calibration. Your previous settings were kept." zh="触摸输入未能跟随新的校准，已保留您之前的设置。"/>
   <translation tag="Touch screen to wake from sleep" zh="触摸屏幕唤醒"/>
   <translation tag="Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d" zh="触摸目标（第 %1$d 个点，共 3 个）\xe2\x80\x94 触摸 %2$d / %3$d"/>
   <translation tag="TouchCalibration" zh="触摸校准"/>
@@ -2192,6 +2199,7 @@
   <translation tag="Tuning tower enabled - start a print to test" zh="调优塔已启用 - 开始打印以测试"/>
   <translation tag="Turbo" zh="极速"/>
   <translation tag="Turn Off" zh="关闭"/>
+  <translation tag="Turn Off WiFi?" zh="关闭 WiFi？"/>
   <translation tag="Turn On" zh="开启"/>
   <translation tag="Turn on LEDs when printer starts" zh="打印机启动时开启 LED"/>
   <translation tag="Turn the extruder heater off after a load or unload finishes" zh="加载或卸载完成后关闭挤出机加热器"/>
@@ -2241,7 +2249,6 @@
   <translation tag="Update Channel" zh="更新通道"/>
   <translation tag="Update Failed" zh="更新失败"/>
   <translation tag="Update Success" zh="更新成功"/>
-  <translation tag="Update anyway" zh="仍要更新"/>
   <translation tag="Update installed!" zh="更新已安装！"/>
   <translation tag="Update your security PIN" zh="更新您的安全 PIN"/>
   <translation tag="Updates aren&apos;t available on this installation." zh="此安装版本无法使用更新。"/>
@@ -2291,6 +2298,7 @@
   <translation tag="WLED Preset" zh="WLED 预设"/>
   <translation tag="WPA/WPA2" zh="WPA/WPA2"/>
   <translation tag="WPA3" zh="WPA3"/>
+  <translation tag="Wait for the current filament operation to finish" zh="请等待当前耗材操作完成"/>
   <translation tag="Waiting for Moonraker..." zh="正在等待 Moonraker..."/>
   <translation tag="Waiting for bed to reach temperature for accurate calibration." zh="等待热床达到温度以进行精确校准。"/>
   <translation tag="Warm Bed" zh="预热热床"/>
@@ -2317,6 +2325,7 @@
   <translation tag="WiFi and Ethernet configuration" zh="WiFi 和以太网配置"/>
   <translation tag="WiFi control unavailable" zh="WiFi 控制不可用"/>
   <translation tag="WiFi hardware unavailable" zh="WiFi 硬件不可用"/>
+  <translation tag="WiFi radio did not change state" zh="WiFi 状态未改变"/>
   <translation tag="WiFi unavailable" zh="WiFi 不可用"/>
   <translation tag="WiFi was configured but hardware is not available. Check system configuration." zh="已配置 WiFi 但硬件不可用。请检查系统配置。"/>
   <translation tag="Widget Labels" zh="小组件标签"/>

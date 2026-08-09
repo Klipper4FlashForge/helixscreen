@@ -95,13 +95,14 @@ TEST_CASE("GridEditMode: screen_to_grid_cell maps coordinates correctly", "[grid
     auto cell = GridEditMode::screen_to_grid_cell(150, 50,  // point inside col 0, row 0
                                                   100, 0,   // container origin
                                                   600, 400, // container size
-                                                  6, 4      // cols, rows
+                                                  6, 4,     // cols, rows
+                                                  0         // gutter
     );
     REQUIRE(cell.first == 0);  // col 0
     REQUIRE(cell.second == 0); // row 0
 
     // Bottom-right corner area: col 5, row 3
-    auto cell2 = GridEditMode::screen_to_grid_cell(690, 390, 100, 0, 600, 400, 6, 4);
+    auto cell2 = GridEditMode::screen_to_grid_cell(690, 390, 100, 0, 600, 400, 6, 4, 0);
     REQUIRE(cell2.first == 5);
     REQUIRE(cell2.second == 3);
 }
@@ -110,14 +111,14 @@ TEST_CASE("GridEditMode: screen_to_grid_cell clamps out-of-bounds coordinates",
           "[grid_edit][drag]") {
     // Point before container origin — should clamp to (0, 0)
     auto cell = GridEditMode::screen_to_grid_cell(50, 10, // before container at (100, 20)
-                                                  100, 20, 600, 400, 6, 4);
+                                                  100, 20, 600, 400, 6, 4, 0);
     CHECK(cell.first == 0);
     CHECK(cell.second == 0);
 
     // Point beyond container extent — should clamp to (ncols-1, nrows-1)
     auto cell2 =
         GridEditMode::screen_to_grid_cell(800, 500, // beyond container at (100,20) size 600x400
-                                          100, 20, 600, 400, 6, 4);
+                                          100, 20, 600, 400, 6, 4, 0);
     CHECK(cell2.first == 5);
     CHECK(cell2.second == 3);
 }
@@ -129,13 +130,36 @@ TEST_CASE("GridEditMode: screen_to_grid_cell center of each cell", "[grid_edit][
         for (int c = 0; c < 4; ++c) {
             int cx = c * 100 + 50;
             int cy = r * 100 + 50;
-            auto cell = GridEditMode::screen_to_grid_cell(cx, cy, 0, 0, 400, 300, 4, 3);
+            auto cell = GridEditMode::screen_to_grid_cell(cx, cy, 0, 0, 400, 300, 4, 3, 0);
             INFO("Testing center of cell (" << c << "," << r << ") at screen (" << cx << "," << cy
                                             << ")");
             CHECK(cell.first == c);
             CHECK(cell.second == r);
         }
     }
+}
+
+TEST_CASE("screen_to_grid_cell: gutters shift the cell boundaries",
+          "[grid_edit][drag][grid_metrics]") {
+    // 6 columns in 480px with 4px gutters -> track 76.67px, pitch 80.67px.
+    // x=79 is inside track 0 (which ends at 76.67, then 4px of gutter to 80.67).
+    // The gutter-blind form has a pitch of exactly 80, so it would call this
+    // track 0 too -- pick a point where the two disagree instead.
+    // Track 3 starts at 3 * 80.67 = 242. Gutter-blind puts track 3 at 240.
+    // x = 241 is still track 2's gutter under the correct math.
+    auto [col, row] = helix::GridEditMode::screen_to_grid_cell(241, 10, 0, 0, 480, 272, 6, 4, 4);
+    INFO("col=" << col);
+    REQUIRE(col == 2);
+
+    auto [col2, row2] = helix::GridEditMode::screen_to_grid_cell(243, 10, 0, 0, 480, 272, 6, 4, 4);
+    REQUIRE(col2 == 3);
+}
+
+TEST_CASE("screen_to_grid_cell: zero gutter matches the historical behavior",
+          "[grid_edit][drag][grid_metrics]") {
+    // Every pre-existing expectation must survive when gutter == 0.
+    auto [col, row] = helix::GridEditMode::screen_to_grid_cell(240, 10, 0, 0, 480, 272, 6, 4, 0);
+    REQUIRE(col == 3);
 }
 
 // =============================================================================
@@ -750,14 +774,14 @@ TEST_CASE("screen_to_grid_cell accurately maps widget centers to grid cells", "[
     // Widget at grid cell (3, 2) — its screen top-left would be at (400, 250)
     // Center of first cell: (400 + 50, 250 + 50) = (450, 300)
     auto cell = GridEditMode::screen_to_grid_cell(450, 300, container_x, container_y, container_w,
-                                                  container_h, ncols, nrows);
+                                                  container_h, ncols, nrows, 0);
     CHECK(cell.first == 3);
     CHECK(cell.second == 2);
 
     // Widget at grid cell (5, 1) — screen top-left at (600, 150)
     // Center of first cell: (650, 200)
     auto cell2 = GridEditMode::screen_to_grid_cell(650, 200, container_x, container_y, container_w,
-                                                   container_h, ncols, nrows);
+                                                   container_h, ncols, nrows, 0);
     CHECK(cell2.first == 5);
     CHECK(cell2.second == 1);
 }
@@ -927,17 +951,17 @@ TEST_CASE("screen_to_grid_cell boundary: cell edges map correctly", "[grid_edit]
     int cw = 600, ch = 400, ncols = 6, nrows = 4;
 
     // Exactly at cell (1,0) left edge: x=100
-    auto cell = GridEditMode::screen_to_grid_cell(100, 50, 0, 0, cw, ch, ncols, nrows);
+    auto cell = GridEditMode::screen_to_grid_cell(100, 50, 0, 0, cw, ch, ncols, nrows, 0);
     CHECK(cell.first == 1);
     CHECK(cell.second == 0);
 
     // Just before cell (1,0) left edge: x=99 should be cell (0,0)
-    auto cell2 = GridEditMode::screen_to_grid_cell(99, 50, 0, 0, cw, ch, ncols, nrows);
+    auto cell2 = GridEditMode::screen_to_grid_cell(99, 50, 0, 0, cw, ch, ncols, nrows, 0);
     CHECK(cell2.first == 0);
     CHECK(cell2.second == 0);
 
     // Exactly at the right edge of the container: x=599
-    auto cell3 = GridEditMode::screen_to_grid_cell(599, 50, 0, 0, cw, ch, ncols, nrows);
+    auto cell3 = GridEditMode::screen_to_grid_cell(599, 50, 0, 0, cw, ch, ncols, nrows, 0);
     CHECK(cell3.first == 5);
     CHECK(cell3.second == 0);
 }
@@ -1070,7 +1094,7 @@ TEST_CASE("Drag: center-based targeting for multi-cell widgets", "[grid_edit][dr
     int widget_cy = widget_top + half_h;
 
     auto cell =
-        GridEditMode::screen_to_grid_cell(widget_cx, widget_cy, cx, cy, cw, ch, ncols, nrows);
+        GridEditMode::screen_to_grid_cell(widget_cx, widget_cy, cx, cy, cw, ch, ncols, nrows, 0);
     CHECK(cell.first == 3); // center maps to (3,2)
     CHECK(cell.second == 2);
 
@@ -1080,7 +1104,7 @@ TEST_CASE("Drag: center-based targeting for multi-cell widgets", "[grid_edit][dr
     int cx_1x1 = 200 + half_w_1x1;           // 250
     int cy_1x1 = 100 + half_h_1x1;           // 150
 
-    auto cell2 = GridEditMode::screen_to_grid_cell(cx_1x1, cy_1x1, cx, cy, cw, ch, ncols, nrows);
+    auto cell2 = GridEditMode::screen_to_grid_cell(cx_1x1, cy_1x1, cx, cy, cw, ch, ncols, nrows, 0);
     CHECK(cell2.first == 2); // center of 1x1 at (200,100) → (250,150) → cell (2,1)
     CHECK(cell2.second == 1);
 }
@@ -1437,42 +1461,52 @@ TEST_CASE("detect_resize_edge: 18+18 hit zone boundaries", "[grid_edit][resize]"
 TEST_CASE("round_to_grid_cell: exact cell boundary", "[grid_edit][resize]") {
     // 6 cells in 600px container starting at x=0
     // Cell boundaries: 0, 100, 200, 300, 400, 500, 600
-    CHECK(GridEditMode::round_to_grid_cell(0, 0, 600, 6) == 0);
-    CHECK(GridEditMode::round_to_grid_cell(100, 0, 600, 6) == 1);
-    CHECK(GridEditMode::round_to_grid_cell(300, 0, 600, 6) == 3);
-    CHECK(GridEditMode::round_to_grid_cell(600, 0, 600, 6) == 6);
+    CHECK(GridEditMode::round_to_grid_cell(0, 0, 600, 6, 0) == 0);
+    CHECK(GridEditMode::round_to_grid_cell(100, 0, 600, 6, 0) == 1);
+    CHECK(GridEditMode::round_to_grid_cell(300, 0, 600, 6, 0) == 3);
+    CHECK(GridEditMode::round_to_grid_cell(600, 0, 600, 6, 0) == 6);
 }
 
 TEST_CASE("round_to_grid_cell: midpoint rounding", "[grid_edit][resize]") {
     // Cell size = 100px. Midpoint of cell 0 = 50px.
     // 49px → rounds to boundary 0 (cell 0)
-    CHECK(GridEditMode::round_to_grid_cell(49, 0, 600, 6) == 0);
+    CHECK(GridEditMode::round_to_grid_cell(49, 0, 600, 6, 0) == 0);
     // 50px → rounds to boundary 1 (std::round rounds 0.5 up)
-    CHECK(GridEditMode::round_to_grid_cell(50, 0, 600, 6) == 1);
+    CHECK(GridEditMode::round_to_grid_cell(50, 0, 600, 6, 0) == 1);
     // 51px → rounds to boundary 1
-    CHECK(GridEditMode::round_to_grid_cell(51, 0, 600, 6) == 1);
+    CHECK(GridEditMode::round_to_grid_cell(51, 0, 600, 6, 0) == 1);
 
     // Just past midpoint of cell 2 (250px)
-    CHECK(GridEditMode::round_to_grid_cell(249, 0, 600, 6) == 2);
-    CHECK(GridEditMode::round_to_grid_cell(251, 0, 600, 6) == 3);
+    CHECK(GridEditMode::round_to_grid_cell(249, 0, 600, 6, 0) == 2);
+    CHECK(GridEditMode::round_to_grid_cell(251, 0, 600, 6, 0) == 3);
 }
 
 TEST_CASE("round_to_grid_cell: with content origin offset", "[grid_edit][resize]") {
     // Container starts at x=100, 600px wide, 6 cells
-    CHECK(GridEditMode::round_to_grid_cell(100, 100, 600, 6) == 0);
-    CHECK(GridEditMode::round_to_grid_cell(200, 100, 600, 6) == 1);
-    CHECK(GridEditMode::round_to_grid_cell(700, 100, 600, 6) == 6);
+    CHECK(GridEditMode::round_to_grid_cell(100, 100, 600, 6, 0) == 0);
+    CHECK(GridEditMode::round_to_grid_cell(200, 100, 600, 6, 0) == 1);
+    CHECK(GridEditMode::round_to_grid_cell(700, 100, 600, 6, 0) == 6);
 
     // Midpoint: 100 + 50 = 150 → rounds to 1
-    CHECK(GridEditMode::round_to_grid_cell(150, 100, 600, 6) == 1);
-    CHECK(GridEditMode::round_to_grid_cell(149, 100, 600, 6) == 0);
+    CHECK(GridEditMode::round_to_grid_cell(150, 100, 600, 6, 0) == 1);
+    CHECK(GridEditMode::round_to_grid_cell(149, 100, 600, 6, 0) == 0);
 }
 
 TEST_CASE("round_to_grid_cell: clamps to valid range", "[grid_edit][resize]") {
     // Below origin → clamps to 0
-    CHECK(GridEditMode::round_to_grid_cell(-50, 0, 600, 6) == 0);
+    CHECK(GridEditMode::round_to_grid_cell(-50, 0, 600, 6, 0) == 0);
     // Above maximum → clamps to ncells
-    CHECK(GridEditMode::round_to_grid_cell(800, 0, 600, 6) == 6);
+    CHECK(GridEditMode::round_to_grid_cell(800, 0, 600, 6, 0) == 6);
+}
+
+TEST_CASE("round_to_grid_cell: rounds against the gutter-aware pitch",
+          "[grid_edit][resize][grid_metrics]") {
+    // pitch = 80.67. Boundary 3 sits at 242; the midpoint before it is ~201.7.
+    REQUIRE(helix::GridEditMode::round_to_grid_cell(202, 0, 480, 6, 4) == 3);
+    REQUIRE(helix::GridEditMode::round_to_grid_cell(201, 0, 480, 6, 4) == 2);
+    // Clamps still hold at both ends.
+    REQUIRE(helix::GridEditMode::round_to_grid_cell(-500, 0, 480, 6, 4) == 0);
+    REQUIRE(helix::GridEditMode::round_to_grid_cell(9999, 0, 480, 6, 4) == 6);
 }
 
 // ============================================================================

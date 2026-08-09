@@ -91,7 +91,6 @@
   <translation tag="ACTIONS" ja="アクション"/>
   <translation tag="ADXL" ja="ADXL"/>
   <translation tag="AFC" ja="AFC"/>
-  <translation tag="AFC Version Warning" ja="AFCバージョン警告"/>
   <translation tag="AFC failure reset complete" ja="AFCエラーリセット完了"/>
   <translation tag="AFC failure reset failed" ja="AFCエラーリセット失敗"/>
   <translation tag="AFC recovery complete" ja="AFC復旧完了"/>
@@ -99,7 +98,6 @@
   <translation tag="AFC reset complete" ja="AFCリセット完了"/>
   <translation tag="AFC reset failed" ja="AFCリセット失敗"/>
   <translation tag="AFC retracts filament from the toolhead at end of print" ja="AFCは印刷終了時にツールヘッドからフィラメントを引き戻します"/>
-  <translation tag="AFC version {} may have compatibility issues. Please upgrade to v1.0.35 or later." ja="AFC バージョン {} には互換性の問題がある可能性があります。v1.0.35 以降にアップグレードしてください。"/>
   <translation tag="ALL DEVICES" ja="すべてのデバイス"/>
   <translation tag="AMS" ja="AMS"/>
   <translation tag="AMS Active: " ja="AMS 有効: "/>
@@ -152,6 +150,7 @@
   <translation tag="Allow display to sleep during active prints" ja="印刷中のスリープを許可"/>
   <translation tag="Allwinner" ja="Allwinner"/>
   <translation tag="Already connecting — wait a moment and try again" ja="接続処理中です — 少し待ってからもう一度お試しください"/>
+  <translation tag="Always Show Bypass Spool" ja="バイパススプールを常に表示"/>
   <translation tag="Always show Android navigation bar instead of using gestures" ja="ジェスチャーの代わりにAndroidナビゲーションバーを常に表示"/>
   <translation tag="Ambient Transfer" ja="環境熱伝達"/>
   <translation tag="AmsIdentify" ja="AMSを識別"/>
@@ -313,10 +312,12 @@
   <translation tag="Calibration &amp; Tools" ja="キャリブレーションとツール"/>
   <translation tag="Calibration Complete!" ja="キャリブレーション完了！"/>
   <translation tag="Calibration Failed" ja="キャリブレーション失敗"/>
+  <translation tag="Calibration cancelled." ja="キャリブレーションをキャンセルしました。"/>
   <translation tag="Calibration complete" ja="キャリブレーション完了"/>
   <translation tag="Calibration complete!" ja="キャリブレーション完了！"/>
   <translation tag="Calibration complete! Press &apos;Next&apos; to continue." ja="&quot;キャリブレーション完了！「次へ」を押して続行してください。&quot;"/>
   <translation tag="Calibration failed - touch targets more precisely." ja="キャリブレーション失敗 – ターゲットをより正確にタッチしてください。"/>
+  <translation tag="Calibration kept timing out. Your previous settings were kept." ja="キャリブレーションが繰り返しタイムアウトしました。以前の設定を維持しました。"/>
   <translation tag="Calibration may still be running — response timed out" ja="キャリブレーションがまだ実行中の可能性があります — 応答タイムアウト"/>
   <translation tag="Calibration move may still be running — response timed out" ja="キャリブレーション移動がまだ実行中の可能性があります — 応答タイムアウト"/>
   <translation tag="Calibration saved but cannot apply on SDL display" ja="キャリブレーションは保存されましたが SDL ディスプレイには適用できません"/>
@@ -344,6 +345,7 @@
   <translation tag="Cannot start print: internal error" ja="印刷を開始できません: 内部エラー"/>
   <translation tag="Cannot start print: not connected to printer" ja="印刷を開始できません: プリンター未接続"/>
   <translation tag="Cannot start print: printer is {}" ja="印刷を開始できません: プリンターは {} 状態です"/>
+  <translation tag="Cannot unload while a print is active" ja="印刷中は排出できません"/>
   <translation tag="Capabilities: " ja="機能: "/>
   <translation tag="Cartographer scan calibrate sent — use Z-Offset panel to adjust" ja="Cartographerスキャンキャリブレーション送信済み — Z-Offsetパネルで調整してください"/>
   <translation tag="Cartographer touch calibrate sent" ja="Cartographerタッチキャリブレーション送信済み"/>
@@ -509,6 +511,7 @@
   <translation tag="Could not load printer database" ja="プリンターデータベースを読み込めませんでした"/>
   <translation tag="Could not parse tips database" ja="ヒントデータベースを解析できませんでした"/>
   <translation tag="Could not reach Spoolman at" ja="Spoolman に接続できません:"/>
+  <translation tag="Could not read the screw adjustments from the printer" ja="プリンターからネジ調整を読み取れませんでした"/>
   <translation tag="Could not resolve printer RFCOMM channel" ja="プリンターの RFCOMM チャンネルを解決できませんでした"/>
   <translation tag="Could not save filament" ja="フィラメントを保存できませんでした"/>
   <translation tag="Could not start Bluetooth discovery" ja="Bluetooth の検出を開始できませんでした"/>
@@ -974,7 +977,7 @@
   <translation tag="Hide Firmware Noise" ja="ファームウェアノイズを非表示"/>
   <translation tag="Hide Temperature Reports" ja="温度レポートを非表示"/>
   <translation tag="High Water Mark" ja="最大値"/>
-  <translation tag="Hold anywhere to cancel"/>
+  <translation tag="Hold anywhere to cancel" ja="どこかを長押ししてキャンセル"/>
   <translation tag="Holding nozzle at {}°C to purge previous filament." ja="前のフィラメントをパージするためノズルを {}°C に保持しています。"/>
   <translation tag="Home" ja="ホーム"/>
   <translation tag="Home failed" ja="ホーミング失敗"/>
@@ -1075,6 +1078,7 @@
   <translation tag="Keep Navigation Bar" ja="ナビゲーションバーを維持"/>
   <translation tag="Keep Printing" ja="印刷を続行"/>
   <translation tag="Keep Required" ja="必須を維持"/>
+  <translation tag="Keep the bypass spool visible when bypass is off" ja="バイパスオフ時もバイパススプールの表示を維持"/>
   <translation tag="Kinematics" ja="キネマティクス"/>
   <translation tag="Klipper" ja="Klipper"/>
   <translation tag="Klipper Error" ja="Klipper エラー"/>
@@ -1472,6 +1476,7 @@
   <translation tag="Path Similarity" ja="パス類似度"/>
   <translation tag="Pause" ja="一時停止"/>
   <translation tag="Pause macro not configured" ja="一時停止マクロが未設定です"/>
+  <translation tag="Pause the print first, then load, unload, or change filament" ja="先に印刷を一時停止してから、装填・排出・フィラメント交換を行ってください"/>
   <translation tag="Paused" ja="一時停止"/>
   <translation tag="Paused (attention needed)" ja="一時停止（対応が必要）"/>
   <translation tag="Pausing..." ja="一時停止中..."/>
@@ -2089,6 +2094,7 @@
   <translation tag="Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining" ja="回転テスト: %d\xc2\xb0 (%d/%d) - %ds残り"/>
   <translation tag="Thanks! Anonymous usage data helps improve HelixScreen." ja="ご協力ありがとうございます！匿名の使用データが HelixScreen の改善に役立ちます。"/>
   <translation tag="Thanks! TOTALLY anonymous usage data helps improve HelixScreen." ja="ご協力ありがとうございます！完全匿名の使用データが HelixScreen の改善に役立ちます。"/>
+  <translation tag="That tool is already loaded" ja="そのツールはすでに装填されています"/>
   <translation tag="The HelixPrint plugin enables fast G-code modifications directly on your printer—like skipping bed mesh for quick reprints." ja="HelixPrint プラグインは、クイック再印刷のためのベッドメッシュスキップなど、プリンター上で直接高速 G-code 修正を可能にします。"/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." ja="アニメーション付きスクリーンセーバーが印刷に干渉しないよう、このデバイスではオフになっています。設定 &gt; ディスプレイで再度有効にできます。"/>
   <translation tag="The filament system reported an error" ja="フィラメントシステムがエラーを報告しました"/>
@@ -2114,13 +2120,13 @@
   <translation tag="These tools have no matching filament loaded:" ja="これらのツールに一致するフィラメントが装填されていません:"/>
   <translation tag="This calibration uses the paper friction method to set your Z-offset." ja="このキャリブレーションは紙の摩擦方式を使用して Z-offset を設定します。"/>
   <translation tag="This cannot be undone." ja="この操作は元に戻せません。"/>
+  <translation tag="This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen." ja="このデバイスには有線ネットワーク接続がありません。WiFiをオフにすると、この画面からのみオンに戻せます。"/>
   <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?" ja="このデバイスの RAM は {} MB しかありません。共振キャリブレーションはメモリを大量に消費し、プリンターのファームウェアが \&quot;Timer Too Close\&quot; エラーを報告したり、テスト中に再起動したりする可能性があります。それでも続行しますか？"/>
   <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a \&quot;Timer Too Close\&quot; error. Continue anyway?" ja="このデバイスの RAM は非常に少ないです。共振キャリブレーションはメモリを大量に消費し、\&quot;Timer Too Close\&quot; エラーを引き起こす可能性があります。それでも続行しますか？"/>
   <translation tag="This doesn&apos;t match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?" ja="リンクされた Spoolman のスプールと一致しません。新しいスプールとして追加しますか、それともリンク先を一致するよう更新しますか？"/>
   <translation tag="This file was sliced for {} but {} is loaded." ja="このファイルは {} 用にスライスされていますが、{} がロードされています。"/>
   <translation tag="This is exactly the data that will be sent" ja="これが送信されるデータです"/>
   <translation tag="This is what data would be sent if enabled" ja="これは有効にした場合に送信されるデータです"/>
-  <translation tag="This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?" ja="リンクされた Spoolman スプールとは異なるフィラメントのようです。Spoolman スプールを一致するように更新しますか？"/>
   <translation tag="This may take up to 30 seconds" ja="最大30秒かかる場合があります"/>
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." ja="このプラグインにより、HelixScreen がベッドメッシュや QGL などの印刷開始オプションを制御できます。インストール後、以下の「PRINT_START を設定」を使用してオプションの手順を有効にしてください。"/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" ja="この印刷には約 %.0fg 必要ですが、スプールの残量は約 %.0fg です。それでも開始しますか？"/>
@@ -2181,6 +2187,7 @@
   <translation tag="Touch Jitter Filter" ja="タッチジッターフィルター"/>
   <translation tag="Touch anywhere to test calibration" ja="どこでもタッチしてキャリブレーションをテスト"/>
   <translation tag="Touch anywhere to verify accuracy" ja="どこかをタッチして精度を確認"/>
+  <translation tag="Touch input did not track the new calibration. Your previous settings were kept." ja="タッチ入力が新しいキャリブレーションに追従しませんでした。以前の設定を維持しました。"/>
   <translation tag="Touch screen to wake from sleep" ja="画面をタッチしてスリープ解除"/>
   <translation tag="Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d" ja="ターゲットをタッチ（ポイント %1$d / 3）\xe2\x80\x94 タッチ %2$d / %3$d"/>
   <translation tag="TouchCalibration" ja="タッチキャリブレーション"/>
@@ -2192,6 +2199,7 @@
   <translation tag="Tuning tower enabled - start a print to test" ja="チューニングタワー有効 - 印刷を開始してテストしてください"/>
   <translation tag="Turbo" ja="ターボ"/>
   <translation tag="Turn Off" ja="オフにする"/>
+  <translation tag="Turn Off WiFi?" ja="WiFiをオフにしますか？"/>
   <translation tag="Turn On" ja="オンにする"/>
   <translation tag="Turn on LEDs when printer starts" ja="プリンター起動時に LED を点灯"/>
   <translation tag="Turn the extruder heater off after a load or unload finishes" ja="装填または排出の完了後にエクストルーダーヒーターをオフにします"/>
@@ -2241,7 +2249,6 @@
   <translation tag="Update Channel" ja="更新チャンネル"/>
   <translation tag="Update Failed" ja="更新失敗"/>
   <translation tag="Update Success" ja="更新成功"/>
-  <translation tag="Update anyway" ja="それでも更新"/>
   <translation tag="Update installed!" ja="アップデートをインストールしました！"/>
   <translation tag="Update your security PIN" ja="セキュリティ PIN を更新"/>
   <translation tag="Updates aren&apos;t available on this installation." ja="このインストールでは更新は利用できません。"/>
@@ -2291,6 +2298,7 @@
   <translation tag="WLED Preset" ja="WLED プリセット"/>
   <translation tag="WPA/WPA2" ja="WPA/WPA2"/>
   <translation tag="WPA3" ja="WPA3"/>
+  <translation tag="Wait for the current filament operation to finish" ja="現在のフィラメント操作が完了するまでお待ちください"/>
   <translation tag="Waiting for Moonraker..." ja="Moonraker を待機中..."/>
   <translation tag="Waiting for bed to reach temperature for accurate calibration." ja="正確なキャリブレーションのためにベッド温度到達を待機中。"/>
   <translation tag="Warm Bed" ja="ベッドを予熱"/>
@@ -2317,6 +2325,7 @@
   <translation tag="WiFi and Ethernet configuration" ja="WiFi とイーサネットの設定"/>
   <translation tag="WiFi control unavailable" ja="WiFi 制御は利用できません"/>
   <translation tag="WiFi hardware unavailable" ja="WiFi ハードウェアが利用できません"/>
+  <translation tag="WiFi radio did not change state" ja="WiFiの状態が変わりませんでした"/>
   <translation tag="WiFi unavailable" ja="WiFi が利用できません"/>
   <translation tag="WiFi was configured but hardware is not available. Check system configuration." ja="WiFi は設定されていますが、ハードウェアが利用できません。システム設定を確認してください。"/>
   <translation tag="Widget Labels" ja="ウィジェットラベル"/>

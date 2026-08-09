@@ -25,7 +25,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams registry: scalable to 4x wide",
     REQUIRE(def->max_colspan == 4);
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini: set_width applies its colspan argument",
+TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini: set_width applies its width argument",
                  "[ui][ams_mini]") {
     ui_ams_mini_status_init();
     lv_obj_t* w = ui_ams_mini_status_create(test_screen(), 40);
@@ -39,33 +39,32 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini: set_width applies its colspan arg
     ui_ams_mini_status_set_slot_full(w, 1, 0x00FF00, 40, true, "PETG", 40);
 
     // Note: set_width does NOT resize the widget object itself (the manager
-    // owns the grid cell); width_px/colspan are render hints. The observable
-    // effect of the 3-arg call is therefore the rebuild it triggers, and the
-    // colspan argument is what picks the render mode. Drive it high->low->high
-    // so a set_width that ignored its arguments (or only ever built one mode)
-    // cannot pass.
-    ui_ams_mini_status_set_width(w, 260, 2);
+    // owns the grid cell); width_px is a render hint. The observable effect of
+    // the call is therefore the rebuild it triggers, and the width is what
+    // picks the render mode. Drive it high->low->high so a set_width that
+    // ignored its argument (or only ever built one mode) cannot pass.
+    ui_ams_mini_status_set_width(w, 260);
     helix::ui::UpdateQueue::instance().drain();
     lv_obj_t* spools = UITest::find_by_name(w, "ams_spools_container");
     REQUIRE(spools != nullptr);
     REQUIRE_FALSE(lv_obj_has_flag(spools, LV_OBJ_FLAG_HIDDEN));
 
-    // Dropping to colspan 1 hides the spool view rather than deleting it (the
+    // Dropping below W_NORMAL hides the spool view rather than deleting it (the
     // container is built once and recycled), so assert on the flag.
-    ui_ams_mini_status_set_width(w, 130, 1);
+    ui_ams_mini_status_set_width(w, 130);
     helix::ui::UpdateQueue::instance().drain();
     REQUIRE(UITest::find_by_name(w, "ams_spools_container") == spools);
     REQUIRE(lv_obj_has_flag(spools, LV_OBJ_FLAG_HIDDEN));
 
     // ...and coming back up shows it again.
-    ui_ams_mini_status_set_width(w, 260, 2);
+    ui_ams_mini_status_set_width(w, 260);
     helix::ui::UpdateQueue::instance().drain();
     REQUIRE_FALSE(lv_obj_has_flag(spools, LV_OBJ_FLAG_HIDDEN));
 
     lv_obj_delete(w);
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini: colspan>=2 selects spool mode",
+TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini: width_px >= W_NORMAL selects spool mode",
                  "[ui][ams_mini][mode]") {
     ui_ams_mini_status_init();
     lv_obj_t* w = ui_ams_mini_status_create(test_screen(), 60);
@@ -77,11 +76,11 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini: colspan>=2 selects spool mode",
     ui_ams_mini_status_set_slot_full(w, 0, 0xFF0000, 70, true, "PLA", 70);
     ui_ams_mini_status_set_slot_full(w, 1, 0x00FF00, 40, true, "PETG", 40);
 
-    ui_ams_mini_status_set_width(w, 130, 1); // 1x -> bar mode, no spools container
+    ui_ams_mini_status_set_width(w, 130); // narrow -> bar mode, no spools container
     helix::ui::UpdateQueue::instance().drain();
     REQUIRE(UITest::find_by_name(w, "ams_spools_container") == nullptr);
 
-    ui_ams_mini_status_set_width(w, 260, 2); // 2x -> spool mode
+    ui_ams_mini_status_set_width(w, 260); // wide -> spool mode
     helix::ui::UpdateQueue::instance().drain();
     lv_obj_t* spools = UITest::find_by_name(w, "ams_spools_container");
     REQUIRE(spools != nullptr);
@@ -97,7 +96,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini spool mode: cell has spool + mater
     helix::ui::UpdateQueue::instance().drain(); // flush stray auto-sync
     ui_ams_mini_status_set_slot_count(w, 1);
     ui_ams_mini_status_set_slot_full(w, 0, 0xFF0000, 73, true, "PLA", 73);
-    ui_ams_mini_status_set_width(w, 260, 2);
+    ui_ams_mini_status_set_width(w, 260);
     helix::ui::UpdateQueue::instance().drain();
     lv_obj_t* mat = UITest::find_by_name(w, "spool_material_0");
     lv_obj_t* pct = UITest::find_by_name(w, "spool_pct_0");
@@ -118,7 +117,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini spool mode: unassigned empty slot 
     helix::ui::UpdateQueue::instance().drain();
     ui_ams_mini_status_set_slot_count(w, 1);
     ui_ams_mini_status_set_slot_full(w, 0, 0x808080, 0, false, "", -1);
-    ui_ams_mini_status_set_width(w, 260, 2);
+    ui_ams_mini_status_set_width(w, 260);
     helix::ui::UpdateQueue::instance().drain();
     REQUIRE(std::string(lv_label_get_text(UITest::find_by_name(w, "spool_material_0"))) ==
             std::string(lv_tr("Empty")));
@@ -134,7 +133,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini spool mode: all slots present incl
     ui_ams_mini_status_set_slot_count(w, 12); // > MAX_VISIBLE(8): uncapped vector
     for (int i = 0; i < 12; ++i)
         ui_ams_mini_status_set_slot_full(w, i, 0xFF0000, 50, true, "PLA", 50);
-    ui_ams_mini_status_set_width(w, 520, 4);
+    ui_ams_mini_status_set_width(w, 520);
     helix::ui::UpdateQueue::instance().drain();
     lv_obj_t* spools = UITest::find_by_name(w, "ams_spools_container");
     REQUIRE(spools != nullptr);
@@ -176,7 +175,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini spool mode: sync_from_ams_state fe
 
     ui_ams_mini_status_init();
     lv_obj_t* w = ui_ams_mini_status_create(test_screen(), 60);
-    ui_ams_mini_status_set_width(w, 260, 2);    // spool mode
+    ui_ams_mini_status_set_width(w, 260);       // spool mode
     helix::ui::UpdateQueue::instance().drain(); // flush create-time auto-sync
 
     // Canonical path: bump slots_version -> widget observer -> sync_from_ams_state.
@@ -233,7 +232,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini spool mode: active lane badge uses
 
     ui_ams_mini_status_init();
     lv_obj_t* w = ui_ams_mini_status_create(test_screen(), 60);
-    ui_ams_mini_status_set_width(w, 260, 2); // spool mode
+    ui_ams_mini_status_set_width(w, 260); // spool mode
     helix::ui::UpdateQueue::instance().drain();
 
     ams.sync_from_backend();
@@ -265,7 +264,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini spool mode: unchanged sync skips c
     ui_ams_mini_status_set_slot_count(w, 2);
     ui_ams_mini_status_set_slot_full(w, 0, 0xFF0000, 70, true, "PLA", 70);
     ui_ams_mini_status_set_slot_full(w, 1, 0x00FF00, 40, true, "PETG", 40);
-    ui_ams_mini_status_set_width(w, 260, 2);
+    ui_ams_mini_status_set_width(w, 260);
     helix::ui::UpdateQueue::instance().drain();
     lv_obj_t* sc = UITest::find_by_name(w, "ams_spools_container");
     REQUIRE(sc != nullptr);
@@ -297,9 +296,9 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini: 2x->1x restores bar view", "[ui][
     ui_ams_mini_status_set_slot_full(w, 0, 0xFF0000, 70, true, "PLA", 70);
     ui_ams_mini_status_set_slot_full(w, 1, 0x00FF00, 40, true, "PETG", 40);
 
-    ui_ams_mini_status_set_width(w, 260, 2); // -> SPOOL (hides bars_container)
+    ui_ams_mini_status_set_width(w, 260); // -> SPOOL (hides bars_container)
     helix::ui::UpdateQueue::instance().drain();
-    ui_ams_mini_status_set_width(w, 130, 1); // -> back to BAR
+    ui_ams_mini_status_set_width(w, 130); // -> back to BAR
     helix::ui::UpdateQueue::instance().drain();
 
     lv_obj_t* spools = UITest::find_by_name(w, "ams_spools_container");

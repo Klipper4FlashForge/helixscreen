@@ -91,7 +91,6 @@
   <translation tag="ACTIONS" ru="ДЕЙСТВИЯ"/>
   <translation tag="ADXL" ru="ADXL"/>
   <translation tag="AFC" ru="AFC"/>
-  <translation tag="AFC Version Warning" ru="Предупреждение о версии AFC"/>
   <translation tag="AFC failure reset complete" ru="Сброс ошибки AFC завершён"/>
   <translation tag="AFC failure reset failed" ru="Ошибка сброса ошибки AFC"/>
   <translation tag="AFC recovery complete" ru="Восстановление AFC завершено"/>
@@ -99,7 +98,6 @@
   <translation tag="AFC reset complete" ru="Сброс AFC завершён"/>
   <translation tag="AFC reset failed" ru="Ошибка сброса AFC"/>
   <translation tag="AFC retracts filament from the toolhead at end of print" ru="AFC выгружает филамент из печатающей головки по завершении печати"/>
-  <translation tag="AFC version {} may have compatibility issues. Please upgrade to v1.0.35 or later." ru="Версия AFC {} может иметь проблемы совместимости. Обновите до v1.0.35 или новее."/>
   <translation tag="ALL DEVICES" ru="ВСЕ УСТРОЙСТВА"/>
   <translation tag="AMS" ru="AMS"/>
   <translation tag="AMS Active: " ru="AMS активен: "/>
@@ -152,6 +150,7 @@
   <translation tag="Allow display to sleep during active prints" ru="Разрешить спящий режим дисплея во время печати"/>
   <translation tag="Allwinner" ru="Allwinner"/>
   <translation tag="Already connecting — wait a moment and try again" ru="Подключение уже выполняется — подождите и попробуйте снова"/>
+  <translation tag="Always Show Bypass Spool" ru="Всегда показывать катушку байпаса"/>
   <translation tag="Always show Android navigation bar instead of using gestures" ru="Всегда показывать панель навигации Android вместо жестов"/>
   <translation tag="Ambient Transfer" ru="Теплообмен с окружающей средой"/>
   <translation tag="AmsIdentify" ru="Определить AMS"/>
@@ -313,10 +312,12 @@
   <translation tag="Calibration &amp; Tools" ru="Калибровка и инструменты"/>
   <translation tag="Calibration Complete!" ru="Калибровка завершена!"/>
   <translation tag="Calibration Failed" ru="Ошибка калибровки"/>
+  <translation tag="Calibration cancelled." ru="Калибровка отменена."/>
   <translation tag="Calibration complete" ru="Калибровка завершена"/>
   <translation tag="Calibration complete!" ru="Калибровка завершена!"/>
   <translation tag="Calibration complete! Press &apos;Next&apos; to continue." ru="Калибровка завершена! Нажмите «Далее» для продолжения."/>
   <translation tag="Calibration failed - touch targets more precisely." ru="Калибровка не удалась – нажимайте на цели точнее."/>
+  <translation tag="Calibration kept timing out. Your previous settings were kept." ru="Калибровка постоянно завершалась по тайм-ауту. Прежние настройки сохранены."/>
   <translation tag="Calibration may still be running — response timed out" ru="Калибровка может ещё выполняться — время ожидания истекло"/>
   <translation tag="Calibration move may still be running — response timed out" ru="Движение калибровки может ещё выполняться — время ожидания истекло"/>
   <translation tag="Calibration saved but cannot apply on SDL display" ru="Калибровка сохранена, но не может быть применена на SDL дисплее"/>
@@ -344,6 +345,7 @@
   <translation tag="Cannot start print: internal error" ru="Невозможно начать печать: внутренняя ошибка"/>
   <translation tag="Cannot start print: not connected to printer" ru="Невозможно начать печать: не подключено к принтеру"/>
   <translation tag="Cannot start print: printer is {}" ru="Невозможно начать печать: принтер {}"/>
+  <translation tag="Cannot unload while a print is active" ru="Нельзя выгрузить во время печати"/>
   <translation tag="Capabilities: " ru="Возможности: "/>
   <translation tag="Cartographer scan calibrate sent — use Z-Offset panel to adjust" ru="Cartographer сканирующая калибровка отправлена — используйте панель Z-Offset для настройки"/>
   <translation tag="Cartographer touch calibrate sent" ru="Cartographer тактильная калибровка отправлена"/>
@@ -509,6 +511,7 @@
   <translation tag="Could not load printer database" ru="Не удалось загрузить базу данных принтеров"/>
   <translation tag="Could not parse tips database" ru="Не удалось разобрать базу данных советов"/>
   <translation tag="Could not reach Spoolman at" ru="Не удалось связаться со Spoolman по адресу"/>
+  <translation tag="Could not read the screw adjustments from the printer" ru="Не удалось получить данные регулировки винтов от принтера"/>
   <translation tag="Could not resolve printer RFCOMM channel" ru="Не удалось определить RFCOMM-канал принтера"/>
   <translation tag="Could not save filament" ru="Не удалось сохранить филамент"/>
   <translation tag="Could not start Bluetooth discovery" ru="Не удалось запустить поиск Bluetooth"/>
@@ -974,7 +977,7 @@
   <translation tag="Hide Firmware Noise" ru="Скрыть служебные сообщения прошивки"/>
   <translation tag="Hide Temperature Reports" ru="Скрыть отчёты о температуре"/>
   <translation tag="High Water Mark" ru="Пиковое значение"/>
-  <translation tag="Hold anywhere to cancel"/>
+  <translation tag="Hold anywhere to cancel" ru="Удерживайте в любом месте для отмены"/>
   <translation tag="Holding nozzle at {}°C to purge previous filament." ru="Удержание сопла при {}°C для очистки от предыдущего филамента."/>
   <translation tag="Home" ru="Главная"/>
   <translation tag="Home failed" ru="Парковка не удалась"/>
@@ -1075,6 +1078,7 @@
   <translation tag="Keep Navigation Bar" ru="Сохранить панель навигации"/>
   <translation tag="Keep Printing" ru="Продолжить печать"/>
   <translation tag="Keep Required" ru="Оставить обязательным"/>
+  <translation tag="Keep the bypass spool visible when bypass is off" ru="Показывать катушку байпаса, даже когда байпас выключен"/>
   <translation tag="Kinematics" ru="Кинематика"/>
   <translation tag="Klipper" ru="Klipper"/>
   <translation tag="Klipper Error" ru="Ошибка Klipper"/>
@@ -1472,6 +1476,7 @@
   <translation tag="Path Similarity" ru="Сходство путей"/>
   <translation tag="Pause" ru="Пауза"/>
   <translation tag="Pause macro not configured" ru="Макрос паузы не настроен"/>
+  <translation tag="Pause the print first, then load, unload, or change filament" ru="Сначала приостановите печать, затем загружайте, выгружайте или меняйте филамент"/>
   <translation tag="Paused" ru="Приостановлено"/>
   <translation tag="Paused (attention needed)" ru="Приостановлено (требует внимания)"/>
   <translation tag="Pausing..." ru="Приостановка..."/>
@@ -2089,6 +2094,7 @@
   <translation tag="Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining" ru="Тест поворота: %d\xc2\xb0 (%d/%d) - осталось %ds"/>
   <translation tag="Thanks! Anonymous usage data helps improve HelixScreen." ru="Спасибо! Анонимные данные использования помогают улучшить HelixScreen."/>
   <translation tag="Thanks! TOTALLY anonymous usage data helps improve HelixScreen." ru="Спасибо! ПОЛНОСТЬЮ анонимные данные использования помогают улучшить HelixScreen."/>
+  <translation tag="That tool is already loaded" ru="Этот инструмент уже загружен"/>
   <translation tag="The HelixPrint plugin enables fast G-code modifications directly on your printer—like skipping bed mesh for quick reprints." ru="Плагин HelixPrint позволяет быстро модифицировать G-code прямо на принтере — например, пропускать сетку стола для быстрых перепечаток."/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." ru="Анимированная заставка была отключена на данном устройстве, чтобы она не мешала печати. Вы можете снова включить её в Настройки &gt; Дисплей."/>
   <translation tag="The filament system reported an error" ru="Система филамента сообщила об ошибке"/>
@@ -2114,13 +2120,13 @@
   <translation tag="These tools have no matching filament loaded:" ru="В этих инструментах нет подходящего филамента:"/>
   <translation tag="This calibration uses the paper friction method to set your Z-offset." ru="Эта калибровка использует метод трения бумаги об сопло для установки Z-смещения."/>
   <translation tag="This cannot be undone." ru="Это действие нельзя отменить."/>
+  <translation tag="This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen." ru="У этого устройства нет проводного подключения к сети. Если выключить WiFi, включить его обратно можно будет только с этого экрана."/>
   <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?" ru="На этом устройстве всего {} МБ ОЗУ. Калибровка резонансов требует много памяти и может привести к тому, что прошивка принтера сообщит об ошибке \&quot;Timer Too Close\&quot; или перезапустится во время теста. Всё равно продолжить?"/>
   <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a \&quot;Timer Too Close\&quot; error. Continue anyway?" ru="На этом устройстве очень мало ОЗУ. Калибровка резонансов требует много памяти и может вызвать ошибку \&quot;Timer Too Close\&quot;. Всё равно продолжить?"/>
   <translation tag="This doesn&apos;t match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?" ru="Это не совпадает с привязанной катушкой Spoolman. Добавить как новую катушку или обновить привязанную?"/>
   <translation tag="This file was sliced for {} but {} is loaded." ru="Файл нарезан для {}, но загружен {}."/>
   <translation tag="This is exactly the data that will be sent" ru="Это именно те данные, которые будут отправлены"/>
   <translation tag="This is what data would be sent if enabled" ru="Эти данные были бы отправлены при включении"/>
-  <translation tag="This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?" ru="Похоже, это другой филамент, чем у привязанной катушки Spoolman. Обновить катушку Spoolman в соответствии?"/>
   <translation tag="This may take up to 30 seconds" ru="Это может занять до 30 секунд"/>
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." ru="Этот плагин позволяет HelixScreen управлять опциями начала печати, такими как сетка стола и QGL. После установки используйте «Настроить PRINT_START» ниже для включения опциональных шагов."/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" ru="Для этой печати нужно около %.0fг, но на катушке осталось около %.0fг. Всё равно начать?"/>
@@ -2181,6 +2187,7 @@
   <translation tag="Touch Jitter Filter" ru="Фильтр дрожания касания"/>
   <translation tag="Touch anywhere to test calibration" ru="Коснитесь в любом месте для проверки калибровки"/>
   <translation tag="Touch anywhere to verify accuracy" ru="Коснитесь в любом месте для проверки точности"/>
+  <translation tag="Touch input did not track the new calibration. Your previous settings were kept." ru="Сенсорный ввод не соответствовал новой калибровке. Прежние настройки сохранены."/>
   <translation tag="Touch screen to wake from sleep" ru="Коснитесь экрана для выхода из сна"/>
   <translation tag="Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d" ru="Коснитесь цели (точка %1$d из 3) \xe2\x80\x94 касание %2$d из %3$d"/>
   <translation tag="TouchCalibration" ru="Калибровка касания"/>
@@ -2192,6 +2199,7 @@
   <translation tag="Tuning tower enabled - start a print to test" ru="Башня настройки включена — начните печать для теста"/>
   <translation tag="Turbo" ru="Турбо"/>
   <translation tag="Turn Off" ru="Выключить"/>
+  <translation tag="Turn Off WiFi?" ru="Выключить WiFi?"/>
   <translation tag="Turn On" ru="Включить"/>
   <translation tag="Turn on LEDs when printer starts" ru="Включать LED при запуске принтера"/>
   <translation tag="Turn the extruder heater off after a load or unload finishes" ru="Выключать нагреватель экструдера после загрузки или выгрузки"/>
@@ -2241,7 +2249,6 @@
   <translation tag="Update Channel" ru="Канал обновлений"/>
   <translation tag="Update Failed" ru="Ошибка обновления"/>
   <translation tag="Update Success" ru="Обновление успешно"/>
-  <translation tag="Update anyway" ru="Всё равно обновить"/>
   <translation tag="Update installed!" ru="Обновление установлено!"/>
   <translation tag="Update your security PIN" ru="Обновите ваш PIN-код"/>
   <translation tag="Updates aren&apos;t available on this installation." ru="Обновления недоступны в этой установке."/>
@@ -2291,6 +2298,7 @@
   <translation tag="WLED Preset" ru="Пресет WLED"/>
   <translation tag="WPA/WPA2" ru="WPA/WPA2"/>
   <translation tag="WPA3" ru="WPA3"/>
+  <translation tag="Wait for the current filament operation to finish" ru="Дождитесь завершения текущей операции с филаментом"/>
   <translation tag="Waiting for Moonraker..." ru="Ожидание Moonraker..."/>
   <translation tag="Waiting for bed to reach temperature for accurate calibration." ru="Ожидание нагрева стола для точной калибровки."/>
   <translation tag="Warm Bed" ru="Прогреть стол"/>
@@ -2317,6 +2325,7 @@
   <translation tag="WiFi and Ethernet configuration" ru="Настройка WiFi и Ethernet"/>
   <translation tag="WiFi control unavailable" ru="Управление WiFi недоступно"/>
   <translation tag="WiFi hardware unavailable" ru="Оборудование WiFi недоступно"/>
+  <translation tag="WiFi radio did not change state" ru="Состояние модуля WiFi не изменилось"/>
   <translation tag="WiFi unavailable" ru="WiFi недоступен"/>
   <translation tag="WiFi was configured but hardware is not available. Check system configuration." ru="WiFi был настроен, но оборудование недоступно. Проверьте конфигурацию системы."/>
   <translation tag="Widget Labels" ru="Подписи виджетов"/>

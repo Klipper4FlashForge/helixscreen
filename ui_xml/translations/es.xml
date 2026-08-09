@@ -91,7 +91,6 @@
   <translation tag="ACTIONS" es="ACCIONES"/>
   <translation tag="ADXL" es="ADXL"/>
   <translation tag="AFC" es="AFC"/>
-  <translation tag="AFC Version Warning" es="Advertencia de versión AFC"/>
   <translation tag="AFC failure reset complete" es="Reinicio de fallo AFC completado"/>
   <translation tag="AFC failure reset failed" es="Error al reiniciar fallo AFC"/>
   <translation tag="AFC recovery complete" es="Recuperación AFC completada"/>
@@ -99,7 +98,6 @@
   <translation tag="AFC reset complete" es="Reinicio AFC completado"/>
   <translation tag="AFC reset failed" es="Error en reinicio AFC"/>
   <translation tag="AFC retracts filament from the toolhead at end of print" es="AFC retrae el filamento del cabezal al finalizar la impresión"/>
-  <translation tag="AFC version {} may have compatibility issues. Please upgrade to v1.0.35 or later." es="La versión {} de AFC puede tener problemas de compatibilidad. Actualice a v1.0.35 o posterior."/>
   <translation tag="ALL DEVICES" es="TODOS LOS DISPOSITIVOS"/>
   <translation tag="AMS" es="AMS"/>
   <translation tag="AMS Active: " es="AMS activo: "/>
@@ -152,6 +150,7 @@
   <translation tag="Allow display to sleep during active prints" es="Permitir que la pantalla se apague durante impresiones activas"/>
   <translation tag="Allwinner" es="Allwinner"/>
   <translation tag="Already connecting — wait a moment and try again" es="Ya se está conectando — espera un momento e inténtalo de nuevo"/>
+  <translation tag="Always Show Bypass Spool" es="Mostrar siempre la bobina de bypass"/>
   <translation tag="Always show Android navigation bar instead of using gestures" es="Mostrar siempre la barra de navegación de Android en lugar de usar gestos"/>
   <translation tag="Ambient Transfer" es="Transferencia ambiente"/>
   <translation tag="AmsIdentify" es="Identificar AMS"/>
@@ -313,10 +312,12 @@
   <translation tag="Calibration &amp; Tools" es="Calibración y herramientas"/>
   <translation tag="Calibration Complete!" es="¡Calibración Completa!"/>
   <translation tag="Calibration Failed" es="Calibración Fallida"/>
+  <translation tag="Calibration cancelled." es="Calibración cancelada."/>
   <translation tag="Calibration complete" es="Calibración completa"/>
   <translation tag="Calibration complete!" es="¡Calibración completa!"/>
   <translation tag="Calibration complete! Press &apos;Next&apos; to continue." es="¡Calibración completa! Presione &apos;Siguiente&apos; para continuar."/>
   <translation tag="Calibration failed - touch targets more precisely." es="Calibración fallida – toca los objetivos con más precisión."/>
+  <translation tag="Calibration kept timing out. Your previous settings were kept." es="La calibración siguió agotando el tiempo de espera. Se conservó su configuración anterior."/>
   <translation tag="Calibration may still be running — response timed out" es="La calibración puede seguir en curso — tiempo de espera agotado"/>
   <translation tag="Calibration move may still be running — response timed out" es="El movimiento de calibración puede seguir en curso — tiempo de espera agotado"/>
   <translation tag="Calibration saved but cannot apply on SDL display" es="Calibración guardada pero no se puede aplicar en pantalla SDL"/>
@@ -344,6 +345,7 @@
   <translation tag="Cannot start print: internal error" es="No se puede iniciar impresión: error interno"/>
   <translation tag="Cannot start print: not connected to printer" es="No se puede iniciar impresión: no conectado a la impresora"/>
   <translation tag="Cannot start print: printer is {}" es="No se puede iniciar impresión: la impresora está {}"/>
+  <translation tag="Cannot unload while a print is active" es="No se puede descargar mientras hay una impresión activa"/>
   <translation tag="Capabilities: " es="Capacidades: "/>
   <translation tag="Cartographer scan calibrate sent — use Z-Offset panel to adjust" es="Cartographer calibración de escaneo enviada — use el panel de Z-Offset para ajustar"/>
   <translation tag="Cartographer touch calibrate sent" es="Cartographer calibración táctil enviada"/>
@@ -509,6 +511,7 @@
   <translation tag="Could not load printer database" es="No se pudo cargar la base de datos de impresoras"/>
   <translation tag="Could not parse tips database" es="No se pudo analizar la base de datos de consejos"/>
   <translation tag="Could not reach Spoolman at" es="No se pudo conectar a Spoolman en"/>
+  <translation tag="Could not read the screw adjustments from the printer" es="No se pudieron leer los ajustes de los tornillos desde la impresora"/>
   <translation tag="Could not resolve printer RFCOMM channel" es="No se pudo resolver el canal RFCOMM de la impresora"/>
   <translation tag="Could not save filament" es="No se pudo guardar el filamento"/>
   <translation tag="Could not start Bluetooth discovery" es="No se pudo iniciar el descubrimiento Bluetooth"/>
@@ -974,7 +977,7 @@
   <translation tag="Hide Firmware Noise" es="Ocultar Ruido del Firmware"/>
   <translation tag="Hide Temperature Reports" es="Ocultar Reportes de Temperatura"/>
   <translation tag="High Water Mark" es="Marca de máximo histórico"/>
-  <translation tag="Hold anywhere to cancel"/>
+  <translation tag="Hold anywhere to cancel" es="Mantén pulsado en cualquier lugar para cancelar"/>
   <translation tag="Holding nozzle at {}°C to purge previous filament." es="Manteniendo la boquilla a {}°C para purgar el filamento anterior."/>
   <translation tag="Home" es="Inicio"/>
   <translation tag="Home failed" es="Error en referencia"/>
@@ -1075,6 +1078,7 @@
   <translation tag="Keep Navigation Bar" es="Mantener barra de navegación"/>
   <translation tag="Keep Printing" es="Continuar Imprimiendo"/>
   <translation tag="Keep Required" es="Mantener Requerido"/>
+  <translation tag="Keep the bypass spool visible when bypass is off" es="Mantener visible la bobina de bypass cuando el bypass está desactivado"/>
   <translation tag="Kinematics" es="Cinemática"/>
   <translation tag="Klipper" es="Klipper"/>
   <translation tag="Klipper Error" es="Error de Klipper"/>
@@ -1472,6 +1476,7 @@
   <translation tag="Path Similarity" es="Similitud de ruta"/>
   <translation tag="Pause" es="Pausar"/>
   <translation tag="Pause macro not configured" es="Macro de pausa no configurado"/>
+  <translation tag="Pause the print first, then load, unload, or change filament" es="Pause primero la impresión y luego cargue, descargue o cambie el filamento"/>
   <translation tag="Paused" es="Pausado"/>
   <translation tag="Paused (attention needed)" es="Pausado (requiere atención)"/>
   <translation tag="Pausing..." es="Pausando..."/>
@@ -2089,6 +2094,7 @@
   <translation tag="Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining" es="Probando rotación: %d\xc2\xb0 (%d/%d) - %ds restantes"/>
   <translation tag="Thanks! Anonymous usage data helps improve HelixScreen." es="¡Gracias! Los datos de uso anónimos ayudan a mejorar HelixScreen."/>
   <translation tag="Thanks! TOTALLY anonymous usage data helps improve HelixScreen." es="¡Gracias! Los datos de uso TOTALMENTE anónimos ayudan a mejorar HelixScreen."/>
+  <translation tag="That tool is already loaded" es="Esa herramienta ya está cargada"/>
   <translation tag="The HelixPrint plugin enables fast G-code modifications directly on your printer—like skipping bed mesh for quick reprints." es="El plugin HelixPrint permite modificaciones rápidas de G-code directamente en su impresora, como omitir la malla de cama para reimpresiones rápidas."/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." es="El salvapantallas animado se ha desactivado en este dispositivo para evitar que interfiera con las impresiones. Puede volver a activarlo en Ajustes &gt; Pantalla."/>
   <translation tag="The filament system reported an error" es="El sistema de filamento informó un error"/>
@@ -2114,13 +2120,13 @@
   <translation tag="These tools have no matching filament loaded:" es="Estas herramientas no tienen filamento compatible cargado:"/>
   <translation tag="This calibration uses the paper friction method to set your Z-offset." es="Esta calibración usa el método de fricción de papel para establecer su Z-offset."/>
   <translation tag="This cannot be undone." es="Esta acción no se puede deshacer."/>
+  <translation tag="This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen." es="Este dispositivo no tiene conexión de red por cable. Si desactiva WiFi, solo podrá volver a activarlo desde esta pantalla."/>
   <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?" es="Este dispositivo solo tiene {} MB de RAM. La calibración de resonancia consume mucha memoria y puede hacer que el firmware de la impresora informe un error \&quot;Timer Too Close\&quot; o se reinicie a mitad de la prueba. ¿Continuar de todos modos?"/>
   <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a \&quot;Timer Too Close\&quot; error. Continue anyway?" es="Este dispositivo tiene muy poca RAM. La calibración de resonancia consume mucha memoria y puede causar un error \&quot;Timer Too Close\&quot;. ¿Continuar de todos modos?"/>
   <translation tag="This doesn&apos;t match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?" es="Esto no coincide con la bobina de Spoolman vinculada. ¿Añadirla como bobina nueva o actualizar la vinculada para que coincida?"/>
   <translation tag="This file was sliced for {} but {} is loaded." es="Este archivo fue laminado para {} pero se ha cargado {}."/>
   <translation tag="This is exactly the data that will be sent" es="Estos son exactamente los datos que se enviarán"/>
   <translation tag="This is what data would be sent if enabled" es="Estos son los datos que se enviarían si se activa"/>
-  <translation tag="This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?" es="Esto parece un filamento diferente al de la bobina de Spoolman vinculada. ¿Actualizar la bobina de Spoolman para que coincida?"/>
   <translation tag="This may take up to 30 seconds" es="Esto puede tardar hasta 30 segundos"/>
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." es="Este plugin permite que HelixScreen controle opciones de inicio de impresión como malla de cama y QGL. Una vez instalado, use Configurar PRINT_START abajo para habilitar pasos opcionales."/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" es="Esta impresión necesita aproximadamente %.0fg pero la bobina tiene aproximadamente %.0fg restantes. ¿Iniciar de todos modos?"/>
@@ -2181,6 +2187,7 @@
   <translation tag="Touch Jitter Filter" es="Filtro de jitter táctil"/>
   <translation tag="Touch anywhere to test calibration" es="Toque en cualquier lugar para probar la calibración"/>
   <translation tag="Touch anywhere to verify accuracy" es="Toca en cualquier lugar para verificar la precisión"/>
+  <translation tag="Touch input did not track the new calibration. Your previous settings were kept." es="La entrada táctil no siguió la nueva calibración. Se conservó su configuración anterior."/>
   <translation tag="Touch screen to wake from sleep" es="Toque la pantalla para despertar de la suspensión"/>
   <translation tag="Touch the target (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d" es="Toca el objetivo (punto %1$d de 3) \xe2\x80\x94 toque %2$d de %3$d"/>
   <translation tag="TouchCalibration" es="Calibración táctil"/>
@@ -2192,6 +2199,7 @@
   <translation tag="Tuning tower enabled - start a print to test" es="Torre de ajuste activada - inicie una impresión para probar"/>
   <translation tag="Turbo" es="Turbo"/>
   <translation tag="Turn Off" es="Apagar"/>
+  <translation tag="Turn Off WiFi?" es="¿Desactivar WiFi?"/>
   <translation tag="Turn On" es="Encender"/>
   <translation tag="Turn on LEDs when printer starts" es="Encender LEDs cuando la impresora inicia"/>
   <translation tag="Turn the extruder heater off after a load or unload finishes" es="Apagar el calentador del extrusor al terminar una carga o descarga"/>
@@ -2241,7 +2249,6 @@
   <translation tag="Update Channel" es="Canal de actualización"/>
   <translation tag="Update Failed" es="Actualización fallida"/>
   <translation tag="Update Success" es="Actualización correcta"/>
-  <translation tag="Update anyway" es="Actualizar de todos modos"/>
   <translation tag="Update installed!" es="¡Actualización instalada!"/>
   <translation tag="Update your security PIN" es="Actualice su PIN de seguridad"/>
   <translation tag="Updates aren&apos;t available on this installation." es="Las actualizaciones no están disponibles en esta instalación."/>
@@ -2291,6 +2298,7 @@
   <translation tag="WLED Preset" es="Preajuste WLED"/>
   <translation tag="WPA/WPA2" es="WPA/WPA2"/>
   <translation tag="WPA3" es="WPA3"/>
+  <translation tag="Wait for the current filament operation to finish" es="Espere a que termine la operación de filamento actual"/>
   <translation tag="Waiting for Moonraker..." es="Esperando a Moonraker..."/>
   <translation tag="Waiting for bed to reach temperature for accurate calibration." es="Esperando que la cama alcance la temperatura para una calibración precisa."/>
   <translation tag="Warm Bed" es="Calentar cama"/>
@@ -2317,6 +2325,7 @@
   <translation tag="WiFi and Ethernet configuration" es="Configuración de WiFi y Ethernet"/>
   <translation tag="WiFi control unavailable" es="Control de WiFi no disponible"/>
   <translation tag="WiFi hardware unavailable" es="Hardware WiFi no disponible"/>
+  <translation tag="WiFi radio did not change state" es="La radio WiFi no cambió de estado"/>
   <translation tag="WiFi unavailable" es="WiFi no disponible"/>
   <translation tag="WiFi was configured but hardware is not available. Check system configuration." es="WiFi fue configurado pero el hardware no está disponible. Revise la configuración del sistema."/>
   <translation tag="Widget Labels" es="Etiquetas de Widgets"/>

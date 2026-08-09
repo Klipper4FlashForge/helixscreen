@@ -23,10 +23,10 @@ struct ToolInfo;
 /// Tools with no extruder_name are dropped.
 [[nodiscard]] std::vector<std::string> distinct_extruder_names(const std::vector<ToolInfo>& tools);
 
-/// Panel widget showing per-extruder temperature rows with progress bars.
+/// Panel widget showing per-extruder temperature rows.
 /// Gated on show_tool_badge (multi-tool printers only). Displays each
-/// extruder's current/target temperature and a colored progress bar,
-/// plus a bed temperature row at the bottom.
+/// extruder's current/target temperature, plus a bed temperature row
+/// at the bottom.
 class NozzleTempsWidget : public PanelWidget {
   public:
     explicit NozzleTempsWidget(PrinterState& printer_state);
@@ -52,7 +52,6 @@ class NozzleTempsWidget : public PanelWidget {
         lv_obj_t* tool_label = nullptr;
         lv_obj_t* temp_label = nullptr;
         lv_obj_t* target_label = nullptr;
-        lv_obj_t* progress_bar = nullptr;
         // Lifetimes MUST be declared before observers: C++ destroys members in
         // reverse order, so observers are destroyed first (calling lv_observer_remove
         // while the lifetime shared_ptr is still alive and the subject is valid).
@@ -72,7 +71,6 @@ class NozzleTempsWidget : public PanelWidget {
     lv_obj_t* bed_icon_ = nullptr;
     lv_obj_t* bed_temp_label_ = nullptr;
     lv_obj_t* bed_target_label_ = nullptr;
-    lv_obj_t* bed_progress_bar_ = nullptr;
     // Lifetimes MUST be declared before observers (same pattern as ExtruderRow)
     SubjectLifetime bed_temp_lifetime_;
     SubjectLifetime bed_target_lifetime_;
@@ -85,8 +83,15 @@ class NozzleTempsWidget : public PanelWidget {
     int rebuild_gen_ = 0;     // Generation counter to break infinite rebuild cycles (L074)
     bool rebuilding_ = false; // Re-entrancy guard: drain() inside clear_rows() can fire
                               // version_observer_ which calls rebuild_rows() again (#723)
-    int current_colspan_ =
-        1; // Last colspan from on_size_changed; rows pick short/long label off this
+    // decide_nozzle_layout()'s last verdict on whether the long label form
+    // ("Nozzle 1") fits, as opposed to the short one ("T0"). A row built by a
+    // *later* rebuild_rows() (e.g. late tool discovery bumping the extruder
+    // version after the widget already knows its real pixel width) picks its
+    // initial label off this instead of re-deriving from colspan, so it never
+    // disagrees with the pixel-based decision already applied to existing
+    // rows. Defaults true to match decide_nozzle_layout()'s own degenerate-
+    // width default and the pre-layout fallback branch below.
+    bool use_long_label_ = true;
 
     // MUST stay declared LAST: reverse-declaration destruction makes this the
     // first member torn down, invalidating every captured token before any
@@ -101,8 +106,8 @@ class NozzleTempsWidget : public PanelWidget {
     void clear_rows();
     void create_extruder_row(lv_obj_t* container, ExtruderRow& row);
     void create_bed_row(lv_obj_t* container);
-    void update_row_display(lv_obj_t* temp_label, lv_obj_t* target_label, lv_obj_t* progress_bar,
-                            int temp_deci, int target_deci, bool is_bed);
+    void update_row_display(lv_obj_t* temp_label, lv_obj_t* target_label, int temp_deci,
+                            int target_deci, bool is_bed);
 };
 
 void register_nozzle_temps_widget();

@@ -177,9 +177,12 @@ class PrintStatusWidget : public PanelWidget {
     static inline lv_subject_t column_mode_subject_;
     static inline bool column_mode_subject_initialized_ = false;
 
-    // Current colspan (widget grid width), exposed for breakpoint-style XML bindings
-    static inline lv_subject_t colspan_subject_;
-    static inline bool colspan_subject_initialized_ = false;
+    // Physical width band (0=compact, 1=normal, 2=wide) derived from width_px in
+    // on_size_changed — see panel_widget_size.h. Exposed to XML so library_body's
+    // per-tier gap (panel_widget_print_status.xml bind_style entries) can react to
+    // it; the raw pixel value isn't meaningful to XML the way a small band enum is.
+    static inline lv_subject_t width_band_subject_;
+    static inline bool width_band_subject_initialized_ = false;
 
     // Per-element visibility subjects — 1 = hidden, 0 = visible. XML binds via
     // <bind_flag_if_eq ... ref_value="1"/>. apply_visibility_config() computes
@@ -198,7 +201,7 @@ class PrintStatusWidget : public PanelWidget {
     // Detailed-layout subjects (static inline — shared across all widget instances)
     static inline lv_subject_t layout_mode_subject_{};      // 0=library, 1=detailed (user pref)
     static inline lv_subject_t layout_effective_subject_{}; // after width gating
-    // Combined gate: (colspan >= 3) AND (filament_used > 0). Avoids the
+    // Combined gate: (width band == wide) AND (filament_used > 0). Avoids the
     // phantom-row gap when filament hasn't started extruding yet.
     static inline lv_subject_t show_filament_active_subject_{};
     static inline lv_subject_t multi_tool_subject_{}; // 1 when tool_count > 1
@@ -222,7 +225,11 @@ class PrintStatusWidget : public PanelWidget {
     bool is_compact_ = false;
     bool is_column_ = false;
     bool last_print_available_ = false;
-    int last_rowspan_ = 1; // Cached for picker-dismiss re-gating
+    // Cached granted pixel size, for picker-dismiss re-gating (dismiss_configure_picker
+    // re-runs on_size_changed after a layout_style change, and needs the widget's last
+    // known real size — colspan/rowspan are no longer read).
+    int last_width_px_ = 0;
+    int last_height_px_ = 0;
 
     // PrinterState reference for subject access
     PrinterState& printer_state_;

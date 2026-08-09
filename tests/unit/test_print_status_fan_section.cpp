@@ -317,7 +317,14 @@ struct FanPanelFixture : public HelixTestFixture {
     FanPanelFixture() : panel(get_printer_state(), nullptr) {
         panel.init_subjects();
     }
-    ~FanPanelFixture() override = default;
+    // `panel` is a member of a Catch2 fixture, which is constructed on the stack.
+    // init_subjects() publishes its subjects into LVGL's process-wide XML registry
+    // by name, so letting the fixture die without deinit leaves those names
+    // resolving into this frame after it returns. The next test that builds XML
+    // binding a print_status_* name then reads a dead stack slot.
+    ~FanPanelFixture() override {
+        panel.deinit_subjects();
+    }
 
     PrintStatusPanel panel;
 };

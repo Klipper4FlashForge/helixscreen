@@ -9,6 +9,7 @@
 #include "job_queue_state.h"
 #include "observer_factory.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 #include "static_subject_registry.h"
 #include "subject_debug_registry.h"
 #include "theme_manager.h"
@@ -158,13 +159,14 @@ void JobQueueWidget::on_deactivate() {
     // Nothing needed — no timer to stop
 }
 
-void JobQueueWidget::on_size_changed(int colspan, int rowspan, int /*width_px*/,
-                                     int /*height_px*/) {
-    // Determine size mode based on grid span
+void JobQueueWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_px,
+                                     int height_px) {
+    // Determine size mode from the widget's real granted pixels, not its
+    // unitless grid span — see panel_widget_size.h for why.
     int mode;
-    if (colspan < 2 || rowspan < 2) {
+    if (width_px < widget_size::W_NORMAL || height_px < widget_size::H_TALL) {
         mode = 0; // compact: header + summary only
-    } else if (colspan <= 2 && rowspan <= 2) {
+    } else if (width_px < widget_size::W_WIDE && height_px < widget_size::H_TALLER) {
         mode = 1; // normal: header + summary + compact job list
     } else {
         mode = 2; // expanded: full details with timestamps
@@ -176,7 +178,7 @@ void JobQueueWidget::on_size_changed(int colspan, int rowspan, int /*width_px*/,
     // Rebuild list since mode affects what is shown
     rebuild_job_list();
 
-    spdlog::trace("[JobQueueWidget] Size changed: {}x{} -> mode {}", colspan, rowspan, mode);
+    spdlog::trace("[JobQueueWidget] Size changed: {}x{}px -> mode {}", width_px, height_px, mode);
 }
 
 void JobQueueWidget::rebuild_job_list() {

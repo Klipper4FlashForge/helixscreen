@@ -451,6 +451,62 @@ fi
 echo ""
 
 # ====================================================================
+# Hidden test set (make test-hidden)
+# ====================================================================
+# The 89 [.]-tagged tests are excluded from `make test-run`: they need ui_xml/
+# on a relative path, own destructive global state, or are timing-sensitive
+# stress harnesses. Nothing else runs them, which is how six of them rotted red
+# without anyone noticing. See docs/devel/HIDDEN_TESTS_TRACKER.md.
+#
+# Kept off the hot path the same two ways the helix-xml block above is:
+#   - Triggers only on staged code. A docs/installer/asset commit skips.
+#   - NEVER builds. A cold test build is ten minutes, which must not land on a
+#     commit hook, so this runs only when the test binary is already current
+#     (`make -q`) — i.e. the author has built tests anyway and the marginal
+#     cost is the ~65s run itself. Stale or absent binary skips with an
+#     instruction. That also means CI mode skips: the Code Quality runner
+#     never builds the binary. The hidden set belongs in nightly there.
+# When it does run, a failure blocks like any other test gate.
+SECTION_START=$(date +%s)
+echo -n "🙈 Checking hidden test set..."
+
+if [ "$STAGED_ONLY" = true ]; then
+  HIDDEN_TRIGGERS=$(git diff --cached --name-only --diff-filter=ACM | \
+    grep -E '^(src/|include/|ui_xml/|tests/)' || true)
+else
+  # CI mode has no staged set; the up-to-date check below is what keeps this
+  # from triggering a ten-minute build on a runner that has no test binary.
+  HIDDEN_TRIGGERS="all"
+fi
+
+section_time $SECTION_START
+echo ""
+
+if [ -z "$HIDDEN_TRIGGERS" ]; then
+  echo "ℹ️  No src/include/ui_xml/tests changes staged — skipping hidden tests"
+elif [ ! -x "build/bin/helix-tests" ]; then
+  echo "⚠️  build/bin/helix-tests not built — skipping hidden tests"
+  echo "   Run 'make test-hidden' by hand to enable this gate."
+elif ! make -q _PARALLEL_GUARD=1 build/bin/helix-tests >/dev/null 2>&1; then
+  echo "⚠️  Test binary is stale — skipping hidden tests"
+  echo "   A test build is too slow for a commit hook. Run: make test-hidden"
+else
+  SECTION_START=$(date +%s)
+  if make test-hidden >/tmp/test_hidden.out 2>&1; then
+    printf "✅ Hidden tests passed (%s)" "$(grep -E '^test cases:' /tmp/test_hidden.out | tail -1)"
+    section_time $SECTION_START
+    echo ""
+  else
+    grep -E '^(tests/|  |test cases:|assertions:)' /tmp/test_hidden.out | tail -40
+    echo "❌ Hidden tests failed"
+    echo "   Run: make test-hidden"
+    EXIT_CODE=1
+  fi
+fi
+
+echo ""
+
+# ====================================================================
 # Overlay width is decided at push time, never in XML (#1178)
 # ====================================================================
 # The two width constants encode destination-vs-transient-layer, and which one
@@ -1112,6 +1168,35 @@ fi
 
 echo ""
 
+SECTION_START=$(date +%s)
+echo -n "⏱️  Checking grid cell-metrics single source..."
+
+if [ -f "scripts/check_grid_metrics_single_source.py" ]; then
+  # Every drag/resize/preview/lattice path needs the same cols/rows/cell size,
+  # and each independent computation is free to drift from the others on
+  # gutter handling or int-vs-float rounding. GridEditMode::current_metrics()
+  # is the one place allowed to ask GridLayout for the grid's dimensions; this
+  # caps GridLayout::get_cols/get_rows/get_dimensions call sites at 2 (the pair
+  # inside current_metrics() itself) so a new call site cannot grow a second copy.
+  if python3 scripts/check_grid_metrics_single_source.py >/tmp/grid_metrics.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    tail -1 /tmp/grid_metrics.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/grid_metrics.out
+    echo "   Take a helix::CellMetrics from GridEditMode::current_metrics() instead."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_grid_metrics_single_source.py not found — skipping"
+fi
+
+echo ""
+
 # ====================================================================
 # spdlog only: no printf/cout/cerr/LV_LOG_ outside CLI subcommands
 # ====================================================================
@@ -1252,35 +1337,96 @@ echo ""
 SECTION_START=$(date +%s)
 echo -n "🐚 Checking shell scripts (shellcheck)..."
 
-# Platform hook scripts and init script
+# Two trees, held to two different bars.
+#
+#   config/  - platform hooks and the init script. Clean at shellcheck's
+#              default severity; kept there.
+#   scripts/ - installer modules, launcher, release tooling. These ship to
+#              devices but were outside this gate entirely until now, so 19
+#              files carry pre-existing findings. Those are listed in
+#              SHELLCHECK_BASELINE: still reported, but not fatal. Every other
+#              file must be clean. The list may shrink, never grow.
+#
+# install.sh / uninstall.sh are skipped: they are bundled artifacts of
+# install-dev.sh + lib/installer/, which are themselves checked here.
+#
+# Two codes are excluded for scripts/:
+#   SC3043 - "local is undefined in POSIX sh". Deliberate - the installer and
+#            launcher target BusyBox ash, which does implement local.
+#   SC1091 - "not following sourced file". The installer sources its modules
+#            by a path that only exists once unpacked on the device.
+SHELLCHECK_SCRIPTS_EXCLUDE="SC3043,SC1091"
+SHELLCHECK_BASELINE="scripts/audit_codebase.sh
+scripts/benchmark_hosts.sh
+scripts/benchmark_neon.sh
+scripts/check_cjk_font_staleness.sh
+scripts/git-stats.sh
+scripts/install-dev.sh
+scripts/lib/installer/common.sh
+scripts/lib/installer/forgex.sh
+scripts/lib/installer/main.sh
+scripts/lib/installer/platform.sh
+scripts/lib/installer/release.sh
+scripts/lib/installer/requirements.sh
+scripts/lib/installer/service.sh
+scripts/lib/lvgl_image_lib.sh
+scripts/quality-checks.sh
+scripts/regen_images.sh
+scripts/regen_printer_images.sh
+scripts/resolve-backtrace.sh
+scripts/screenshot.sh"
+
 SHELL_FILES=""
 if [ "$STAGED_ONLY" = true ]; then
   SHELL_FILES=$(git diff --cached --name-only --diff-filter=ACM | \
-    grep -E '(config/platform/.*\.sh|config/helixscreen\.init)$' || true)
+    grep -E '(config/platform/.*\.sh|config/helixscreen\.init|^scripts/.*\.sh)$' || true)
 else
   SHELL_FILES=$(find config/platform -name "*.sh" 2>/dev/null || true)
   if [ -f "config/helixscreen.init" ]; then
     SHELL_FILES="$SHELL_FILES config/helixscreen.init"
   fi
+  SHELL_FILES="$SHELL_FILES $(git ls-files 'scripts/*.sh' 'scripts/**/*.sh' 2>/dev/null || true)"
 fi
+# Drop the generated bundles regardless of how the list was built.
+SHELL_FILES=$(printf '%s\n' $SHELL_FILES | \
+  grep -vE '^scripts/(install|uninstall)\.sh$' || true)
 
 if [ -n "$SHELL_FILES" ]; then
   if command -v shellcheck >/dev/null 2>&1; then
     SHELL_ERRORS=0
+    SHELL_BASELINED=0
+    SHELL_FAILED_FILES=""
     for script in $SHELL_FILES; do
       if [ -f "$script" ]; then
-        if ! shellcheck "$script" 2>/dev/null; then
-          SHELL_ERRORS=$((SHELL_ERRORS + 1))
+        # scripts/ is linted at warning severity minus the two excluded
+        # codes; config/ keeps the stricter default.
+        case "$script" in
+          scripts/*) SC_FLAGS="-S warning -e $SHELLCHECK_SCRIPTS_EXCLUDE" ;;
+          *)         SC_FLAGS="" ;;
+        esac
+        if ! shellcheck $SC_FLAGS "$script" 2>/dev/null; then
+          if printf '%s\n' "$SHELLCHECK_BASELINE" | grep -Fxq "$script"; then
+            SHELL_BASELINED=$((SHELL_BASELINED + 1))
+          else
+            SHELL_ERRORS=$((SHELL_ERRORS + 1))
+            SHELL_FAILED_FILES="$SHELL_FAILED_FILES $script"
+          fi
         fi
       fi
     done
     section_time $SECTION_START
     echo ""
     if [ $SHELL_ERRORS -eq 0 ]; then
-      echo "✅ All shell scripts pass shellcheck"
+      if [ $SHELL_BASELINED -gt 0 ]; then
+        echo "✅ shellcheck clean ($SHELL_BASELINED baselined file(s) still dirty)"
+      else
+        echo "✅ All shell scripts pass shellcheck"
+      fi
     else
       echo "❌ shellcheck found issues in $SHELL_ERRORS file(s)"
-      echo "   Run: shellcheck config/platform/*.sh config/helixscreen.init"
+      for script in $SHELL_FAILED_FILES; do
+        echo "   Run: shellcheck $script"
+      done
       EXIT_CODE=1
     fi
   else

@@ -9,6 +9,7 @@
 #include "helix-xml/src/xml/lv_xml.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "panel_widget_registry.h"
+#include "panel_widget_size.h"
 #include "printer_state.h"
 #include "temperature_sensor_manager.h"
 #include "theme_manager.h"
@@ -84,10 +85,25 @@ void TempGraphWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
                      instance_id_);
     }
 
+    // Seed features from the measured 800x480 two-span (colspan=2/rowspan=2)
+    // extents — a stand-in until the first real on_size_changed() call
+    // supplies this instance's actual pixel size. At 233x230 both width and
+    // height clear every threshold in features_for_size(), so this seed
+    // yields the full feature mask (LINES | TARGET_LINES | LEGEND | Y_AXIS |
+    // X_AXIS | GRADIENTS | READOUTS | TARGET_HISTORY, i.e. TEMP_GRAPH_ALL_FEATURES),
+    // where the old colspan=2/rowspan=2 default withheld READOUTS (needed
+    // colspan>=3). The difference never reaches the screen: PanelWidgetManager
+    // calls on_size_changed() with this instance's real pixel extents
+    // immediately after attach() returns, in the same synchronous loop
+    // iteration and before any paint (panel_widget_manager.cpp:862-868), so
+    // this seed only lives for the width of that one function call.
+    constexpr int kSeedWidthPx = 233;
+    constexpr int kSeedHeightPx = 230;
+
     TempGraphControllerConfig ctrl_config;
     ctrl_config.point_count = 300; // 5-minute window at 1Hz (matches mini graph)
     ctrl_config.axis_size = "xs";
-    ctrl_config.initial_features = features_for_size(current_colspan_, current_rowspan_);
+    ctrl_config.initial_features = features_for_size(kSeedWidthPx, kSeedHeightPx);
     // Uses default TempGraphScaleParams (same as mini graph and overlay)
     ctrl_config.series = build_series_from_config();
     applied_visibility_signature_ = current_visibility_signature();
@@ -100,8 +116,8 @@ void TempGraphWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
         lv_obj_set_style_bg_opa(widget_obj_, LV_OPA_COVER, 0);
     }
 
-    spdlog::debug("[TempGraphWidget] Attached '{}' ({}x{})", instance_id_, current_colspan_,
-                  current_rowspan_);
+    spdlog::debug("[TempGraphWidget] Attached '{}' (seed {}x{}px)", instance_id_, kSeedWidthPx,
+                  kSeedHeightPx);
 }
 
 void TempGraphWidget::detach() {
@@ -116,16 +132,12 @@ void TempGraphWidget::detach() {
     spdlog::debug("[TempGraphWidget] Detached '{}'", instance_id_);
 }
 
-void TempGraphWidget::on_size_changed(int colspan, int rowspan, int /*width_px*/,
-                                      int /*height_px*/) {
-    current_colspan_ = colspan;
-    current_rowspan_ = rowspan;
-
+void TempGraphWidget::on_size_changed(int colspan, int rowspan, int width_px, int height_px) {
     if (controller_) {
-        uint32_t features = features_for_size(colspan, rowspan);
+        uint32_t features = features_for_size(width_px, height_px);
         controller_->set_features(features);
-        spdlog::debug("[TempGraphWidget] '{}' resized to {}x{}, features=0x{:x}", instance_id_,
-                      colspan, rowspan, features);
+        spdlog::debug("[TempGraphWidget] '{}' resized to {}x{} ({}x{}px), features=0x{:x}",
+                      instance_id_, colspan, rowspan, width_px, height_px, features);
     }
 }
 
@@ -172,16 +184,16 @@ bool TempGraphWidget::on_edit_configure() {
 // Feature mapping
 // ============================================================================
 
-uint32_t TempGraphWidget::features_for_size(int colspan, int rowspan) {
+uint32_t TempGraphWidget::features_for_size(int width_px, int height_px) {
     // Gradients always enabled — the draw callback auto-disables when >3 series visible
     uint32_t features = TEMP_GRAPH_FEATURE_LINES | TEMP_GRAPH_FEATURE_GRADIENTS;
 
-    if (colspan >= 2 || rowspan >= 2) {
+    if (width_px >= widget_size::W_NORMAL || height_px >= widget_size::H_TALL) {
         // Medium: add target lines (with history trace — time-varying dashed line)
         features |= TEMP_GRAPH_FEATURE_TARGET_LINES | TEMP_GRAPH_FEATURE_TARGET_HISTORY;
     }
 
-    if (rowspan >= 2) {
+    if (height_px >= widget_size::H_TALL) {
         // Tall: legend chips, Y-axis labels, and X-axis time labels — all
         // need vertical room (legend above/below curves, Y to the side,
         // X below). The 5-min window only renders 1–3 time labels so
@@ -191,7 +203,7 @@ uint32_t TempGraphWidget::features_for_size(int colspan, int rowspan) {
         features |= TEMP_GRAPH_FEATURE_X_AXIS;
     }
 
-    if (colspan >= 3 && rowspan >= 2) {
+    if (width_px >= widget_size::W_WIDE && height_px >= widget_size::H_TALL) {
         // Extra large: add readouts
         features |= TEMP_GRAPH_FEATURE_READOUTS;
     }

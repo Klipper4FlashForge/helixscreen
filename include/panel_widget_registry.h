@@ -24,16 +24,26 @@ struct PanelWidgetDef {
     const char* description;           // Short description for settings overlay
     const char* translation_tag;       // For i18n
     const char* hardware_gate_subject; // nullptr = always available
-    const char* hardware_gate_hint;  // Human-readable reason, e.g., "Requires AMS or MMU hardware"
-    bool default_enabled = true;     // Whether enabled in fresh/default config
-    int colspan = 1;                 // Default grid columns spanned
-    int rowspan = 1;                 // Default grid rows spanned
-    int min_colspan = 0;             // Minimum columns (0 = use colspan)
-    int min_rowspan = 0;             // Minimum rows (0 = use rowspan)
-    int max_colspan = 0;             // Maximum columns (0 = use colspan, i.e. not scalable)
-    int max_rowspan = 0;             // Maximum rows (0 = use rowspan, i.e. not scalable)
-    bool multi_instance = false;     // Allows dynamic instance creation with base_id:N IDs
-    WidgetFactory factory = nullptr; // nullptr = pure XML or externally managed
+    const char* hardware_gate_hint; // Human-readable reason, e.g., "Requires AMS or MMU hardware"
+    bool default_enabled = true;    // Whether enabled in fresh/default config
+    int colspan = 1;                // Default grid columns spanned
+    int rowspan = 1;                // Default grid rows spanned
+    int min_colspan = 0;            // Minimum columns (0 = use colspan)
+    int min_rowspan = 0;            // Minimum rows (0 = use rowspan)
+    int max_colspan = 0;            // Maximum columns (0 = use colspan, i.e. not scalable)
+    int max_rowspan = 0;            // Maximum rows (0 = use rowspan, i.e. not scalable)
+    bool multi_instance = false;    // Allows dynamic instance creation with base_id:N IDs
+
+    /// True when this widget may occupy half a cell on that axis (#1126).
+    ///
+    /// The home grid lays out half-cell tracks, so an authored colspan of 1 is
+    /// GridLayout::TRACKS_PER_CELL tracks wide. A widget with the flag set may
+    /// also be placed and sized at odd track counts; edit mode snaps everything
+    /// else to even boundaries so a whole-cell widget can never straddle two.
+    bool supports_half_col = false;
+    bool supports_half_row = false;
+
+    WidgetFactory factory = nullptr;       // nullptr = pure XML or externally managed
     SubjectInitFn init_subjects = nullptr; // Called once before XML creation
 
     // Resolved accessors (0 = "use default colspan/rowspan")

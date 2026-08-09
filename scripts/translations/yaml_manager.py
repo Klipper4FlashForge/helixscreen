@@ -50,6 +50,23 @@ def get_yaml_instance():
     return yaml
 
 
+def require_ruamel(operation: str) -> None:
+    """
+    Refuse a mutating operation when ruamel.yaml is missing.
+
+    Every edit path splices raw lines at positions taken from ruamel's ``.lc``
+    line numbers. Under the PyYAML fallback those positions do not exist, so a
+    splice removes nothing (or appends out of alphabetical order) while the
+    caller still reports the full count as edited. Failing here keeps a missing
+    dependency from reading as a completed edit.
+    """
+    if not RUAMEL_AVAILABLE:
+        raise RuntimeError(
+            f"{operation} needs ruamel.yaml to locate each key's source line. "
+            "Run it with .venv/bin/python3 (create the venv with 'make venv-setup')."
+        )
+
+
 def load_yaml_file(yaml_path: Path) -> Dict[str, Any]:
     """
     Load a YAML translation file.
@@ -236,6 +253,9 @@ def merge_new_keys(
     Returns:
         MergeResult with statistics
     """
+    if not dry_run:
+        require_ruamel("Merging new keys")
+
     result = MergeResult()
 
     for yaml_path in sorted(yaml_dir.glob("*.yml")):
@@ -277,6 +297,9 @@ def merge_new_keys_with_sources(
     Returns:
         MergeResult with statistics
     """
+    if not dry_run:
+        require_ruamel("Merging new keys")
+
     result = MergeResult()
 
     for yaml_path in sorted(yaml_dir.glob("*.yml")):
