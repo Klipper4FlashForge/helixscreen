@@ -9363,3 +9363,43 @@ TEST_CASE("AD5X IFS execute_gcode dispatches silent with the AMS timeout ceiling
         REQUIRE(client.last_send_timeout_ms() == 300000u);
     }
 }
+
+// ============================================================================
+// Adventurer5M.json freshness-poll cadence
+// ============================================================================
+
+TEST_CASE("AD5X IFS: JSON poll backs off to 30s while printing", "[ams][ad5x][ifs][poll]") {
+    using namespace std::chrono;
+    using B = AmsBackendAd5xIfs;
+
+    SECTION("idle cadence is 5s") {
+        REQUIRE_FALSE(B::should_poll_json(false, false, seconds(4)));
+        REQUIRE(B::should_poll_json(false, false, seconds(5)));
+    }
+
+    SECTION("printing cadence is 30s — 5s and 29s must NOT fire") {
+        REQUIRE_FALSE(B::should_poll_json(true, true, seconds(5)));
+        REQUIRE_FALSE(B::should_poll_json(true, true, seconds(29)));
+        REQUIRE(B::should_poll_json(true, true, seconds(30)));
+    }
+
+    SECTION("a pause keeps the fast cadence — that is when spools get relabelled") {
+        // printing_now=false covers PAUSED as well as idle/complete.
+        REQUIRE(B::should_poll_json(false, false, seconds(5)));
+    }
+}
+
+TEST_CASE("AD5X IFS: print end forces an off-cadence poll", "[ams][ad5x][ifs][poll][965]") {
+    using namespace std::chrono;
+    using B = AmsBackendAd5xIfs;
+
+    // printing -> not printing: fire immediately even with no elapsed time, so the
+    // firmware's post-print FFMInfo revert isn't delayed by the slow interval.
+    REQUIRE(B::should_poll_json(false, true, seconds(0)));
+
+    // The edge is one-shot: once was_printing clears, normal cadence resumes.
+    REQUIRE_FALSE(B::should_poll_json(false, false, seconds(0)));
+
+    // Entering a print is NOT an edge — no reason to poll off-cadence there.
+    REQUIRE_FALSE(B::should_poll_json(true, false, seconds(0)));
+}

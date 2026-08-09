@@ -7,6 +7,7 @@
 #include "ui_temperature_utils.h"
 
 #include "ams_state.h"
+#include "app_globals.h"
 #include "config.h"
 #include "host_identity.h"
 #include "http_executor.h"
@@ -15,6 +16,7 @@
 #include "moonraker_api.h"
 #include "moonraker_client.h"
 #include "post_op_cooldown_manager.h"
+#include "printer_state.h"
 
 #include <spdlog/spdlog.h>
 
@@ -496,13 +498,40 @@ void AmsBackendAd5xIfs::handle_status_update(const json& notification) {
     // on connected printers (raza/DIEHARDave report on v0.99.51) and made the
     // Mainsail/Fluidd console unusable. Piggybacking on notify_status_update
     // gives us sub-second cadence; rate-limit via steady_clock so the actual
-    // download fires no more often than kJsonPollInterval.
-    constexpr auto kJsonPollInterval = std::chrono::seconds(5);
+    // download fires no more often than the interval below.
+    //
+    // The interval slows to 30s while actively printing. FFMInfo carries only
+    // per-slot colour and material labels — cosmetic metadata — and measured
+    // against a real AD5X session the tight cadence earned nothing: 3902
+    // downloads produced 3 content changes, two of which were the first poll
+    // after boot establishing its baseline. Meanwhile each fetch is a loopback
+    // HTTP GET on a 2-core board that is simultaneously feeding the MCU step
+    // queue, and 'Timer too close' shutdowns are exactly what host starvation
+    // there looks like. PAUSED deliberately keeps the 5s cadence: a pause is
+    // when a user actually swaps a spool and relabels it.
+    bool printing_now = false;
+    if (auto* print_subj = get_printer_state().get_print_state_enum_subject()) {
+        printing_now = static_cast<helix::PrintJobState>(lv_subject_get_int(print_subj)) ==
+                       helix::PrintJobState::PRINTING;
+    }
+
     auto now = std::chrono::steady_clock::now();
-    if (now - last_json_poll_kick_ >= kJsonPollInterval) {
+    if (should_poll_json(printing_now, json_poll_was_printing_, now - last_json_poll_kick_)) {
         last_json_poll_kick_ = now;
         poll_adventurer_json();
     }
+    json_poll_was_printing_ = printing_now;
+}
+
+bool AmsBackendAd5xIfs::should_poll_json(bool printing_now, bool was_printing,
+                                         std::chrono::steady_clock::duration since_last) {
+    // printing->anything else: poll immediately rather than waiting out the slow
+    // interval, so the firmware's post-print FFMInfo revert is seen as promptly
+    // as it was before the backoff existed.
+    if (was_printing && !printing_now) {
+        return true;
+    }
+    return since_last >= (printing_now ? kJsonPollPrinting : kJsonPollIdle);
 }
 
 void AmsBackendAd5xIfs::parse_save_variables(const json& vars) {

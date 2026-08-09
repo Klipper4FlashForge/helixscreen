@@ -89,6 +89,22 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     static constexpr int TOOL_MAP_SIZE = 16;
     static constexpr int UNMAPPED_PORT = 5;
 
+    /// Cadence of the Adventurer5M.json freshness poll. Slower while printing:
+    /// FFMInfo holds only per-slot colour/type labels, and each poll is a
+    /// loopback HTTP GET on a 2-core board that is also feeding the MCU step
+    /// queue. PAUSED keeps the fast cadence — a pause is when a user actually
+    /// swaps a spool and relabels it.
+    static constexpr std::chrono::seconds kJsonPollIdle{5};
+    static constexpr std::chrono::seconds kJsonPollPrinting{30};
+
+    /// Should the JSON freshness poll fire now? (public for testing)
+    ///
+    /// True when the printing->not-printing edge was just crossed — so the
+    /// firmware's post-print FFMInfo revert (#965) is seen without waiting out
+    /// the slow interval — or when the cadence for the current state elapsed.
+    static bool should_poll_json(bool printing_now, bool was_printing,
+                                 std::chrono::steady_clock::duration since_last);
+
     /**
      * @brief Stock AD5X firmware material whitelist.
      *
@@ -933,6 +949,12 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // Default-constructed time_point is the epoch, so the first status update
     // after backend start fires a poll immediately.
     std::chrono::steady_clock::time_point last_json_poll_kick_{};
+
+    // Was the printer in PrintJobState::PRINTING at the previous status update?
+    // Used to spot the printing->done edge and force an off-cadence poll there,
+    // so the slower in-print interval never delays seeing the firmware's
+    // post-print FFMInfo revert (#965).
+    bool json_poll_was_printing_ = false;
 
     // User-provided per-slot metadata (brand, spool name, spoolman IDs, remaining
     // weight, etc.) layered over firmware-reported state.
