@@ -6,8 +6,8 @@
   <view name="print_status_configure_picker"
         extends="lv_obj" width="100%" height="100%" style_bg_opa="128" style_bg_color="0x000000" style_border_width="0"
         style_pad_all="0" style_radius="0" clickable="true">
-    <event_cb trigger="clicked" callback="print_status_picker_backdrop_cb"/>
-    <!-- Context menu card - positioned by C++ -->
+    <event_cb trigger="clicked" callback="context_menu_backdrop_cb"/>
+    <!-- Context menu card - positioned and height-capped by ContextMenu -->
     <lv_obj name="context_menu"
             width="content" height="content" style_bg_color="#elevated_bg" style_bg_opa="255"
             style_radius="#border_radius" style_pad_all="#space_sm" style_pad_gap="#space_sm" flex_flow="column"
@@ -19,7 +19,7 @@
         <text_small text="Layout" translation_tag="Layout" clickable="false" event_bubble="true"/>
         <ui_button name="btn_done"
                    width="content" height="content" variant="ghost" text="Done" translation_tag="Done" icon="check">
-          <event_cb trigger="clicked" callback="print_status_picker_done_cb"/>
+          <event_cb trigger="clicked" callback="context_menu_close_cb"/>
         </ui_button>
       </lv_obj>
       <lv_obj width="100%"

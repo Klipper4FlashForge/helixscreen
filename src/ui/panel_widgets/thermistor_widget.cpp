@@ -654,7 +654,7 @@ void ThermistorWidget::show_sensor_picker() {
 
     // The card hangs under the widget tile, centred on it, flipping above when the
     // tile sits low on the screen.
-    sensor_picker_.show_below_widget(parent_screen_, -1, widget_obj_,
+    sensor_picker_.show_below_widget(parent_screen_, widget_obj_,
                                      helix::ui::ContextMenu::AnchorAlign::Center);
 }
 
@@ -673,8 +673,7 @@ void ThermistorWidget::SensorPicker::on_created(lv_obj_t* backdrop) {
 
     // Cap the list at a share of the screen so a printer with a dozen sensors
     // scrolls the list instead of growing the card past the panel.
-    int screen_h = lv_obj_get_height(lv_obj_get_screen(backdrop));
-    lv_obj_set_style_max_height(sensor_list, screen_h * 35 / 100, 0);
+    lv_obj_set_style_max_height(sensor_list, screen_height_pct(35), 0);
 
     for (const auto& sensor : sensors) {
         bool is_selected = (sensor.klipper_name == owner_.selected_sensor_);
@@ -727,7 +726,7 @@ void ThermistorWidget::show_configure_picker() {
         return;
     }
 
-    configure_picker_.show_below_widget(parent_screen_, -1, widget_obj_,
+    configure_picker_.show_below_widget(parent_screen_, widget_obj_,
                                         helix::ui::ContextMenu::AnchorAlign::Center);
 }
 
@@ -746,8 +745,7 @@ void ThermistorWidget::ConfigurePicker::on_created(lv_obj_t* backdrop) {
 
     // Cap the list at a share of the screen so the icon grid below it stays on
     // screen however many sensors the printer reports.
-    int screen_h = lv_obj_get_height(lv_obj_get_screen(backdrop));
-    lv_obj_set_style_max_height(sensor_list, screen_h * 35 / 100, 0);
+    lv_obj_set_style_max_height(sensor_list, screen_height_pct(35), 0);
 
     // Build set of currently selected sensors
     std::set<std::string> selected_set(owner_.sensors_.begin(), owner_.sensors_.end());
@@ -794,7 +792,7 @@ void ThermistorWidget::ConfigurePicker::on_created(lv_obj_t* backdrop) {
     }
 
     // Icon picker section - the divider above it comes from the XML
-    lv_obj_t* context_menu = lv_obj_find_by_name(backdrop, "context_menu");
+    lv_obj_t* context_menu = card();
     if (context_menu) {
         // Icon section title
         lv_obj_t* icon_title = lv_label_create(context_menu);

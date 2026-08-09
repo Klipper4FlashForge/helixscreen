@@ -282,7 +282,7 @@ void FanWidget::show_fan_picker() {
 
     // The card hangs under the widget tile, centred on it, flipping above when the
     // tile sits low on the screen.
-    picker_.show_below_widget(parent_screen_, -1, widget_obj_,
+    picker_.show_below_widget(parent_screen_, widget_obj_,
                               helix::ui::ContextMenu::AnchorAlign::Center);
 }
 
@@ -298,10 +298,9 @@ void FanWidget::FanPicker::on_created(lv_obj_t* menu_obj) {
     int space_xs = resolve_space_token("space_xs", 4);
     int space_sm = resolve_space_token("space_sm", 6);
 
-    // Measure the screen, not the backdrop: the backdrop's 100% height has not
-    // resolved this early, and a 0 max-height collapses the list to nothing.
-    int screen_h = lv_obj_get_height(lv_obj_get_screen(menu_obj));
-    lv_obj_set_style_max_height(fan_list, screen_h * 2 / 3, 0);
+    // Cap the list at a share of the screen so a printer with a dozen fans
+    // scrolls the list instead of growing the card past the panel.
+    lv_obj_set_style_max_height(fan_list, screen_height_pct(66), 0);
 
     for (const auto& fan : fans) {
         bool is_selected = (fan.object_name == owner_.selected_fan_);
