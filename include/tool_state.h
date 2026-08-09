@@ -114,6 +114,24 @@ class ToolState {
         return tools_.size() > 1;
     }
 
+    /// Number of distinct physical extruders backing the current tool list.
+    ///
+    /// NOT interchangeable with tool_count(): set_ams_topology() expands tools_
+    /// to one entry per filament SLOT, so a 4-slot AMS on a single-hotend
+    /// printer reports 4 tools and 1 extruder. Only tools carrying an extruder
+    /// name count, and duplicates collapse — the AMS rebuild leaves slots past
+    /// the real extruder list with no mapping at all.
+    [[nodiscard]] int extruder_count() const;
+
+    /// Whether the printer physically has more than one hotend/extruder.
+    ///
+    /// The predicate for anything annotating a single nozzle with which tool it
+    /// is (the nozzle_icon tool badge). is_multi_tool() is the wrong test there:
+    /// it counts AMS slots fed into one hotend, which need no badge.
+    [[nodiscard]] bool has_multiple_extruders() const {
+        return extruder_count() > 1;
+    }
+
     /// Returns "Nozzle" for single-tool, "Nozzle T0" for multi-tool (active tool).
     [[nodiscard]] std::string nozzle_label() const;
 
