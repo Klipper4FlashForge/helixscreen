@@ -3687,3 +3687,76 @@ TEST_CASE("HappyHare clear_slot_override drops the retained identity",
     CHECK(after.brand.empty());
     CHECK(after.spoolman_id == 0);
 }
+
+// ============================================================================
+// Bypass: Happy Hare has to answer for itself, same as AFC (#1229)
+// ============================================================================
+//
+// The twin of "AFC enable_bypass refuses while filament is at the toolhead" in
+// test_ams_backend_afc.cpp. allows_implicit_chaining() == false means the
+// sidebar sends one command and lets the backend refuse; execute_gcode() is
+// fire-and-forget (returns success before Klipper answers), so without this
+// precondition MMU_SELECT_BYPASS reports success and changes nothing.
+//
+// Happy Hare's own cmd_MMU_SELECT_BYPASS runs check_if_loaded(), which refuses
+// unless filament_pos is UNLOADED (0) or UNKNOWN (-1) and answers only with a
+// `!!` line. Mirroring that exact predicate — rather than system_info_
+// .filament_loaded, which is set solely from filament == "Loaded" — is what
+// makes an intermediate position refuse here instead of silently no-opping.
+
+TEST_CASE("Happy Hare enable_bypass refuses unless the filament is parked",
+          "[ams][happy_hare][bypass][1229]") {
+    auto mmu_at = [](int filament_pos, const char* filament_state) {
+        return nlohmann::json{{"gate", 0},
+                              {"tool", 0},
+                              {"filament", filament_state},
+                              {"action", "Idle"},
+                              {"has_bypass", true},
+                              {"filament_pos", filament_pos},
+                              {"gate_status", {1, 0, 2, 1}},
+                              {"ttg_map", {0, 1, 2, 3}}};
+    };
+
+    SECTION("loaded to the nozzle refuses and sends nothing") {
+        AmsBackendHappyHareTestHelper helper;
+        helper.set_running(true);
+        helper.initialize_test_gates(4);
+        helper.test_parse_mmu_state(mmu_at(10, "Loaded")); // FILAMENT_POS_LOADED
+        helper.clear_captured_gcodes();
+
+        AmsError err = helper.enable_bypass();
+
+        REQUIRE(err.result == AmsResult::WRONG_STATE);
+        REQUIRE_FALSE(err.user_msg.empty());
+        REQUIRE(helper.captured_gcodes.empty());
+    }
+
+    // The case system_info_.filament_loaded would miss: mid-bowden is not
+    // "Loaded", but Happy Hare still refuses, so we must too.
+    SECTION("mid-bowden refuses even though filament is not 'Loaded'") {
+        AmsBackendHappyHareTestHelper helper;
+        helper.set_running(true);
+        helper.initialize_test_gates(4);
+        helper.test_parse_mmu_state(mmu_at(3, "Unloading")); // FILAMENT_POS_IN_BOWDEN
+        helper.clear_captured_gcodes();
+
+        AmsError err = helper.enable_bypass();
+
+        REQUIRE(err.result == AmsResult::WRONG_STATE);
+        REQUIRE(helper.captured_gcodes.empty());
+    }
+
+    SECTION("parked at the gate sends MMU_SELECT_BYPASS") {
+        AmsBackendHappyHareTestHelper helper;
+        helper.set_running(true);
+        helper.initialize_test_gates(4);
+        helper.test_parse_mmu_state(mmu_at(0, "Unloaded")); // FILAMENT_POS_UNLOADED
+        helper.clear_captured_gcodes();
+
+        AmsError err = helper.enable_bypass();
+
+        REQUIRE(err.result == AmsResult::SUCCESS);
+        REQUIRE(std::find(helper.captured_gcodes.begin(), helper.captured_gcodes.end(),
+                          "MMU_SELECT_BYPASS") != helper.captured_gcodes.end());
+    }
+}

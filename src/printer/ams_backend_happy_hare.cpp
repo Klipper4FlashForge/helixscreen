@@ -19,6 +19,16 @@
 
 using namespace helix;
 
+namespace {
+
+/// The two printer.mmu filament_pos values Happy Hare's own check_if_loaded()
+/// treats as "not loaded" (mmu.py FILAMENT_POS_UNKNOWN / FILAMENT_POS_UNLOADED).
+/// Every other position, including the intermediate ones, is refused.
+constexpr int kHappyHarePosUnknown = -1;
+constexpr int kHappyHarePosUnloaded = 0;
+
+} // namespace
+
 // ============================================================================
 // Construction / Destruction
 // ============================================================================
@@ -2661,6 +2671,25 @@ AmsError AmsBackendHappyHare::enable_bypass() {
         if (!helix::bypass_available_for(system_info_.supports_bypass)) {
             return AmsError(AmsResult::WRONG_STATE, "Bypass not supported",
                             "This Happy Hare system does not support bypass mode", "");
+        }
+
+        // Twin of the AFC guard in AmsBackendAfc::enable_bypass(), and required
+        // for the same reason: allows_implicit_chaining() == false means the
+        // sidebar sends one command and lets the backend refuse, but
+        // execute_gcode() is fire-and-forget (returns success before Klipper
+        // answers), so a refused MMU_SELECT_BYPASS would report success and
+        // change nothing. Happy Hare's cmd_MMU_SELECT_BYPASS runs
+        // check_if_loaded() and answers only with a `!!` line, which reaches the
+        // user as a bare "Operation not possible. Filament is loaded" toast
+        // contradicting the success we already reported.
+        //
+        // Keyed on filament_pos rather than system_info_.filament_loaded because
+        // that flag is set solely from filament == "Loaded" — Happy Hare refuses
+        // at every position except UNLOADED and UNKNOWN, so an intermediate
+        // position (mid-bowden, mid-unload) has to refuse here too.
+        if (filament_pos_ != kHappyHarePosUnloaded && filament_pos_ != kHappyHarePosUnknown) {
+            return AmsError(AmsResult::WRONG_STATE, "Unload filament first",
+                            "Filament is still loaded. Unload it before enabling bypass.", "");
         }
     }
 
