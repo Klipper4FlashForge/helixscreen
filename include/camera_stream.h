@@ -174,6 +174,8 @@ class CameraStream {
     ScaledSize compute_scaled_size(int src_w, int src_h) const;
 
   private:
+    friend class CameraStreamTestAccess;
+
     int process_stream_data();
     void stream_thread_func();
     void snapshot_poll_loop();
