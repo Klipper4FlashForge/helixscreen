@@ -7,6 +7,7 @@
 #include "app_globals.h"
 #include "data_root_resolver.h"
 #include "helix_version.h"
+#include "host_identity.h"
 #include "http_executor.h"
 #include "hv/requests.h"
 #include "logging_init.h"
@@ -16,6 +17,7 @@
 #include "printer_state.h"
 #include "system/crash_history.h"
 #include "system/log_collector.h"
+#include "system/moonraker_local_probe.h"
 #include "system/telemetry_manager.h"
 #include "system/update_checker.h"
 
@@ -154,6 +156,15 @@ json DebugBundleCollector::collect(const BundleOptions& options) {
     } catch (const std::exception& e) {
         spdlog::warn("[DebugBundle] Failed to collect moonraker info: {}", e.what());
         bundle["moonraker"] = json{{"error", e.what()}};
+    }
+
+    // Always, not only when the REST calls failed: knowing Moonraker was up AND
+    // where it was bound is the control case that makes the down-case readable.
+    try {
+        bundle["moonraker_local"] = collect_moonraker_local_probe();
+    } catch (const std::exception& e) {
+        spdlog::warn("[DebugBundle] Failed to probe local moonraker: {}", e.what());
+        bundle["moonraker_local"] = json{{"error", e.what()}};
     }
 
     try {
@@ -783,6 +794,60 @@ json DebugBundleCollector::collect_moonraker_info() {
     return mr;
 }
 
+json DebugBundleCollector::collect_moonraker_local_probe() {
+    json probe;
+
+    // The endpoint comes from the API's base URL, NOT from Config: this runs on
+    // HttpExecutor::slow() and Config is main-thread-only (see the note in
+    // collect_update_info()). get_moonraker_url() is the same accessor
+    // collect_moonraker_info() already uses from this thread.
+    std::string host;
+    uint16_t port = 7125;
+    const std::string base_url = get_moonraker_url();
+    if (!helix::diag::split_host_port(base_url, host, port)) {
+        probe["probed"] = false;
+        probe["reason"] = "no moonraker endpoint configured";
+        return probe;
+    }
+
+    const bool same_host = helix::is_moonraker_on_same_host(host);
+    probe["same_host"] = same_host;
+    probe["port"] = port;
+    if (!same_host) {
+        // Deliberately no listener/process data: those would describe THIS
+        // machine, and a reader would take them for the printer's.
+        return probe;
+    }
+
+    try {
+        const auto listeners = helix::diag::listeners_on_port(port);
+        probe["listening"] = !listeners.empty();
+        json addrs = json::array();
+        for (const auto& a : listeners) {
+            addrs.push_back(a);
+        }
+        probe["listen_addrs"] = addrs;
+    } catch (const std::exception& e) {
+        spdlog::debug("[DebugBundle] listener probe failed: {}", e.what());
+        probe["listen_error"] = e.what();
+    }
+
+    try {
+        const auto procs = helix::diag::find_moonraker_processes();
+        json arr = json::array();
+        for (const auto& p : procs) {
+            arr.push_back(json{{"pid", p.pid}, {"cmdline", sanitize_value(p.cmdline)}});
+        }
+        probe["processes"] = arr;
+        probe["process_count"] = static_cast<int>(procs.size());
+    } catch (const std::exception& e) {
+        spdlog::debug("[DebugBundle] process probe failed: {}", e.what());
+        probe["process_error"] = e.what();
+    }
+
+    return probe;
+}
+
 // =============================================================================
 // Filament system info (AFC, Happy Hare, ACE, Spoolman, tool changers)
 // =============================================================================
@@ -1147,25 +1212,65 @@ std::string DebugBundleCollector::fetch_log_tail(const std::string& base_url,
     }
 }
 
+// Both log collectors fetch through Moonraker, which is unavailable in exactly
+// the case where these logs matter most: AD5X bundles TAU4PW4H / 865DXBQ7 carry
+// no klipper_log and no moonraker_log because the HTTP endpoint serving them was
+// refused, while both files sat on the local disk the whole time. moonraker.log
+// in particular is the one artefact that would say why Moonraker stopped.
+std::string DebugBundleCollector::collect_local_log_tail(const std::string& log_name, int num_lines,
+                                                         bool condense_klipper) {
+    std::string host;
+    uint16_t port = 7125;
+    if (!helix::diag::split_host_port(get_moonraker_url(), host, port))
+        return {};
+    // A remote printer's logs are not on our disk, and reading a same-named file
+    // here would attribute this machine's logs to the printer.
+    if (!helix::is_moonraker_on_same_host(host))
+        return {};
+
+    const auto paths =
+        helix::diag::candidate_log_paths(helix::diag::find_moonraker_processes(), log_name);
+    if (paths.empty()) {
+        spdlog::debug("[DebugBundle] No local path found for {} (no daemon argv to derive it from)",
+                      log_name);
+        return {};
+    }
+
+    std::string body = collect_log_tail_from_paths(paths, num_lines);
+    if (body.empty())
+        return {};
+    spdlog::info("[DebugBundle] Read {} from local disk ({} candidate path(s))", log_name,
+                 paths.size());
+    // Defaults, as at the HTTP call site: the second parameter is stats_context,
+    // not a line count.
+    return condense_klipper ? condense_klipper_log(body) : body;
+}
+
 std::string DebugBundleCollector::collect_klipper_log_tail(int num_lines) {
     std::string base_url = get_moonraker_url();
     if (base_url.empty())
-        return {};
+        return collect_local_log_tail("klippy.log", num_lines, /*condense_klipper=*/true);
     // 4 MiB of raw klippy.log is ~80 minutes of Klipper's 1-Stats-line-per-second
     // output, versus ~10 minutes for the old 512 KiB tail. condense_klipper_log()
     // then strips the Stats padding, so the retained payload stays in the same
     // ballpark as before while reaching far enough back to contain the incident
     // (bundle UJCCQP6S: 615 of 635 captured lines were Stats, and the MCU
     // shutdown being investigated had scrolled off hours earlier).
-    return fetch_log_tail(base_url, "/server/files/klippy.log", num_lines,
-                          /*tail_bytes=*/4 * 1024 * 1024, /*condense_klipper=*/true);
+    auto body = fetch_log_tail(base_url, "/server/files/klippy.log", num_lines,
+                               /*tail_bytes=*/4 * 1024 * 1024, /*condense_klipper=*/true);
+    if (body.empty())
+        body = collect_local_log_tail("klippy.log", num_lines, /*condense_klipper=*/true);
+    return body;
 }
 
 std::string DebugBundleCollector::collect_moonraker_log_tail(int num_lines) {
     std::string base_url = get_moonraker_url();
     if (base_url.empty())
-        return {};
-    return fetch_log_tail(base_url, "/server/files/moonraker.log", num_lines);
+        return collect_local_log_tail("moonraker.log", num_lines);
+    auto body = fetch_log_tail(base_url, "/server/files/moonraker.log", num_lines);
+    if (body.empty())
+        body = collect_local_log_tail("moonraker.log", num_lines);
+    return body;
 }
 
 // =============================================================================

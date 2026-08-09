@@ -441,6 +441,26 @@ void show_connection_failed_modal(const std::string& title, const std::string& m
     // this mirrors what ui_notification_error() does internally for the
     // OK-only path this replaces.
     helix::ui::queue_update([title, message]() {
+        // On a printer that runs HelixScreen itself, the address is not the
+        // fault and "Change Address" is a trap: it walks the user into editing
+        // a correct 127.0.0.1 while the real problem is a Moonraker service
+        // that did not start. Offer plain acknowledgement there.
+        //
+        // Only when we POSITIVELY know the printer is this machine. The default
+        // is deliberately "" rather than "localhost": an unconfigured host is
+        // the one case where changing the address is exactly the right action,
+        // and defaulting to a loopback literal would take that action away from
+        // every user who has not set a host yet.
+        std::string host;
+        if (Config* cfg = Config::get_instance()) {
+            host = cfg->get<std::string>(cfg->df() + "moonraker_host", "");
+        }
+        if (!host.empty() && helix::is_moonraker_on_same_host(host)) {
+            helix::ui::modal_show_alert(title.c_str(), message.c_str(), ModalSeverity::Error,
+                                        lv_tr("OK"));
+            return;
+        }
+
         helix::ui::modal_show_confirmation(
             title.c_str(), message.c_str(), ModalSeverity::Error, lv_tr("Change Address"),
             [](lv_event_t*) {

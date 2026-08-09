@@ -22,8 +22,12 @@
  * contents are the only authority on whether credentials will survive a reboot.
  */
 
+using helix::wifi::detail::classify_removal_result;
 using helix::wifi::detail::classify_save_result;
+using helix::wifi::detail::classify_scan_reply;
+using helix::wifi::detail::RemovalPersistence;
 using helix::wifi::detail::SavePersistence;
+using helix::wifi::detail::ScanTrigger;
 using helix::wifi::detail::wpa_config_has_network;
 using helix::wifi::detail::wpa_string_is_valid;
 
@@ -176,6 +180,81 @@ TEST_CASE("wpa_string_is_valid rejects command-injection characters",
 
     SECTION("spaces are allowed — SSIDs may contain them") {
         REQUIRE(wpa_string_is_valid("My Home Net"));
+    }
+}
+
+/**
+ * Forget-network removal verification.
+ *
+ * AD5X bundles TAU4PW4H / 865DXBQ7 (v0.99.107): the app cannot read the vendor
+ * config at /usr/prog/wifi/wpa_supplicant.conf, so the post-save re-read handed
+ * the old check an empty string. "SSID not in these contents" then read as a
+ * confirmed removal, and the same session logged both "Removal verified on disk"
+ * and "did not record this network" about that one file. The user's forgotten
+ * 5 GHz AP was the associated network again after the next reboot.
+ *
+ * The rule these pin: absence only counts as removal when we actually read the
+ * file.
+ */
+TEST_CASE("classify_removal_result separates verified absence from an unread config",
+          "[wifi][unit][persistence]") {
+    SECTION("read the config and the SSID is gone — verified") {
+        REQUIRE(classify_removal_result(true, true, kEmptyConfig, "HomeNet") ==
+                RemovalPersistence::Verified);
+    }
+
+    SECTION("read the config and the SSID is still there — it comes back at boot") {
+        REQUIRE(classify_removal_result(true, true, kConfigWithNetwork, "HomeNet") ==
+                RemovalPersistence::StillListed);
+    }
+
+    SECTION("config unreadable — unverifiable, NOT verified") {
+        // The AD5X case: path resolved, open failed, contents empty.
+        REQUIRE(classify_removal_result(true, false, "", "HomeNet") ==
+                RemovalPersistence::Unverifiable);
+    }
+
+    SECTION("unreadable is unverifiable even for an SSID that was never there") {
+        // Guards the specific inversion: with no readability check, ANY ssid
+        // "verifies" against empty contents.
+        REQUIRE(classify_removal_result(true, false, "", "NeverConfigured") ==
+                RemovalPersistence::Unverifiable);
+    }
+
+    SECTION("no -c path for the daemon — unverifiable") {
+        REQUIRE(classify_removal_result(false, false, "", "HomeNet") ==
+                RemovalPersistence::Unverifiable);
+    }
+
+    SECTION("a genuinely empty-but-read config verifies (not conflated with unreadable)") {
+        // readable=true with zero-length contents is a real state — a config
+        // wpa_supplicant truncated to nothing. Absence there IS observed.
+        REQUIRE(classify_removal_result(true, true, "", "HomeNet") == RemovalPersistence::Verified);
+    }
+}
+
+/**
+ * SCAN reply classification.
+ *
+ * Bundle TAU4PW4H: forgetting the connected AP disassociates, the overlay
+ * restarts scanning immediately, and the user got "WiFi scan failed. Try again."
+ * 48 ms after their own Forget tap. FAIL-BUSY means a scan is already running
+ * and its SCAN_COMPLETE still arrives, so there is nothing to report.
+ */
+TEST_CASE("classify_scan_reply treats FAIL-BUSY as a scan in flight, not a failure",
+          "[wifi][unit][ad5x]") {
+    REQUIRE(classify_scan_reply("OK\n") == ScanTrigger::Started);
+    REQUIRE(classify_scan_reply("FAIL-BUSY\n") == ScanTrigger::AlreadyBusy);
+    REQUIRE(classify_scan_reply("FAIL\n") == ScanTrigger::Failed);
+    REQUIRE(classify_scan_reply("") == ScanTrigger::NoReply);
+
+    SECTION("FAIL-BUSY is not matched by a prefix of a different FAIL reply") {
+        REQUIRE(classify_scan_reply("FAIL-BUSYNESS\n") == ScanTrigger::AlreadyBusy);
+        REQUIRE(classify_scan_reply("FAIL-B\n") == ScanTrigger::Failed);
+    }
+
+    SECTION("an unrecognised reply is a failure, not silently a success") {
+        REQUIRE(classify_scan_reply("UNKNOWN COMMAND\n") == ScanTrigger::Failed);
     }
 }
 

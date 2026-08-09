@@ -47,6 +47,16 @@ bool WiFiManager::os_link_up() {
     return os_link_probe_ && os_link_probe_();
 }
 
+void WiFiManager::mark_association_change() {
+    last_association_change_ = std::chrono::steady_clock::now();
+}
+
+bool WiFiManager::in_association_grace() const {
+    if (last_association_change_.time_since_epoch().count() == 0)
+        return false;
+    return (std::chrono::steady_clock::now() - last_association_change_) < kAssociationGrace;
+}
+
 // Overridable in tests via WiFiManagerTestAccess so has_non_wifi_network_path()
 // can be pointed at a fixture tree instead of the real /sys.
 std::string WiFiManager::sys_root_ = "/sys";
@@ -366,6 +376,11 @@ void WiFiManager::start_scan(
         // scanning permanently — exactly backwards for the case this exists
         // to diagnose.
         scan_scheduler_.on_scan_failed();
+        // Keep the backend's own account of the failure. NOTIFY_WARNING logs
+        // only the user-facing string, so before this the actual wpa_supplicant
+        // reply never reached the log — the AD5X bundles carry the toast with no
+        // way to tell FAIL-BUSY from a wedged control socket.
+        spdlog::warn("[WiFiManager] Scan trigger failed: {}", scan_result.technical_msg);
         // If the OS reports the wireless link is actually up, the managed
         // backend simply can't reach its control socket (the link is system-
         // managed and live). Nagging the user with a failure toast is wrong —
@@ -373,6 +388,10 @@ void WiFiManager::start_scan(
         if (os_link_up()) {
             spdlog::debug("[WiFiManager] Scan trigger failed but OS link is up "
                           "(system-managed) — suppressing user warning");
+        } else if (in_association_grace()) {
+            spdlog::debug("[WiFiManager] Scan trigger failed within {}s of an association change "
+                          "we initiated — suppressing user warning",
+                          kAssociationGrace.count());
         } else {
             NOTIFY_WARNING("WiFi scan failed. Try again.");
         }
@@ -458,6 +477,9 @@ void WiFiManager::connect(const std::string& ssid, const std::string& password,
     }
 
     spdlog::info("[WiFiManager] Connecting to '{}'", helix::redact::ssid(ssid));
+    // Selecting a network disassociates from the current one; any scan trigger
+    // that lands in the gap is collateral, not a user-actionable failure.
+    mark_association_change();
 
     // Drop any grace timer left over from a prior attempt so it can't deliver a stale
     // failure against this new connect (helixscreen#1050).
@@ -497,6 +519,7 @@ void WiFiManager::disconnect() {
     }
 
     spdlog::info("[WiFiManager] Disconnecting");
+    mark_association_change();
     WiFiError result = backend_->disconnect_network();
     if (!result.success()) {
         NOTIFY_WARNING("Could not disconnect from WiFi");
@@ -514,6 +537,9 @@ void WiFiManager::forget(const std::string& ssid,
     }
 
     spdlog::info("[WiFiManager] Forgetting '{}'", helix::redact::ssid(ssid));
+    // Forgetting the CONNECTED network disassociates as a side effect, and the
+    // overlay restarts scanning immediately afterwards.
+    mark_association_change();
 
     WiFiError result = backend_->forget_network(ssid);
     if (!result.success()) {
