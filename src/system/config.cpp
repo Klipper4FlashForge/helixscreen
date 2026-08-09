@@ -1433,26 +1433,36 @@ Config* Config::get_instance() {
     return instance;
 }
 
+// HELIX_CONFIG_DIR override: redirect settings into a caller-chosen
+// directory. Lets a read-only baseline install (e.g., the cosmos .ipk
+// under /usr/share/helixscreen) persist user settings into a writable
+// path — typically ~/printer_data/config/helixscreen — without first
+// requiring the in-app updater to relocate the install itself. The env
+// var supplies the DIRECTORY; we keep the caller's filename so the
+// settings.json / settings-test.json distinction is preserved.
+std::string Config::resolve_path(const std::string& config_path) {
+    const char* env_dir = std::getenv("HELIX_CONFIG_DIR");
+    if (env_dir == nullptr || env_dir[0] == '\0')
+        return config_path;
+    return (fs::path(env_dir) / fs::path(config_path).filename()).string();
+}
+
 void Config::init(const std::string& config_path) {
-    // HELIX_CONFIG_DIR override: redirect settings into a caller-chosen
-    // directory. Lets a read-only baseline install (e.g., the cosmos .ipk
-    // under /usr/share/helixscreen) persist user settings into a writable
-    // path — typically ~/printer_data/config/helixscreen — without first
-    // requiring the in-app updater to relocate the install itself. The env
-    // var supplies the DIRECTORY; we keep the caller's filename so the
-    // settings.json / settings-test.json distinction is preserved.
-    std::string resolved_path = config_path;
+    std::string resolved_path = resolve_path(config_path);
+    // Keyed off the env var, not off resolved_path != config_path: pointing
+    // HELIX_CONFIG_DIR at the default "config" resolves to the same string and
+    // must still get the directory created.
     if (const char* env_dir = std::getenv("HELIX_CONFIG_DIR");
         env_dir != nullptr && env_dir[0] != '\0') {
         std::error_code ec;
         fs::path base(env_dir);
         fs::create_directories(base, ec);
         if (fs::is_directory(base, ec)) {
-            resolved_path = (base / fs::path(config_path).filename()).string();
             spdlog::info("[Config] HELIX_CONFIG_DIR override: using {}", resolved_path);
         } else {
             spdlog::warn("[Config] HELIX_CONFIG_DIR={} unusable ({}); falling back to {}", env_dir,
                          ec ? ec.message() : "not a directory", config_path);
+            resolved_path = config_path;
         }
     }
     path = resolved_path;

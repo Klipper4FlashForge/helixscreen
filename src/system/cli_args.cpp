@@ -4,6 +4,7 @@
 #include "cli_args.h"
 
 #include "app_globals.h"
+#include "config.h"
 #include "helix_version.h"
 #include "logging_init.h"
 #include "runtime_config.h"
@@ -63,7 +64,10 @@ void print_test_mode_banner() {
     if (config.disable_mock_ams)
         printf("  Mock AMS DISABLED (runout modal enabled)\n");
 
-    printf("  Config: %s\n", RuntimeConfig::TEST_CONFIG_PATH);
+    // Resolved, not the raw constant: with HELIX_CONFIG_DIR set the app reads
+    // and writes the override path, and a banner naming config/ instead sends
+    // you editing a file the run never touches.
+    printf("  Config: %s\n", Config::resolve_path(RuntimeConfig::TEST_CONFIG_PATH).c_str());
 
     printf("\n");
 }

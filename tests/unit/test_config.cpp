@@ -3930,6 +3930,64 @@ TEST_CASE("Config::save() does refresh the rolling backup once the wizard is com
     REQUIRE(env.read_primary_backup().value("active_printer_id", "") == "fresh");
 }
 
+TEST_CASE("Config::resolve_path applies HELIX_CONFIG_DIR without losing the filename",
+          "[core][config]") {
+    ConfigDirEnvGuard config_dir_guard; // start from a known-unset env
+
+    // ConfigDirEnvGuard only restores a value that already existed, so it
+    // cannot clean up what this test sets on a shard where the var was unset.
+    // Without this the override leaks into every later test in the shard.
+    struct UnsetOnExit {
+        ~UnsetOnExit() {
+            unsetenv("HELIX_CONFIG_DIR");
+        }
+    } unset_on_exit;
+
+    SECTION("unset env returns the caller's path verbatim") {
+        REQUIRE(Config::resolve_path("config/settings.json") == "config/settings.json");
+        REQUIRE(Config::resolve_path("config/settings-test.json") == "config/settings-test.json");
+    }
+
+    SECTION("empty env is treated as unset") {
+        setenv("HELIX_CONFIG_DIR", "", 1);
+        REQUIRE(Config::resolve_path("config/settings.json") == "config/settings.json");
+    }
+
+    SECTION("override swaps the directory and keeps the filename") {
+        setenv("HELIX_CONFIG_DIR", "/tmp/helix-resolve-path", 1);
+        // The test/prod distinction rides on the filename, so it must survive.
+        REQUIRE(Config::resolve_path("config/settings.json") ==
+                "/tmp/helix-resolve-path/settings.json");
+        REQUIRE(Config::resolve_path("config/settings-test.json") ==
+                "/tmp/helix-resolve-path/settings-test.json");
+    }
+
+    SECTION("a trailing slash on the override does not double the separator") {
+        setenv("HELIX_CONFIG_DIR", "/tmp/helix-resolve-path/", 1);
+        REQUIRE(Config::resolve_path("config/settings.json") ==
+                "/tmp/helix-resolve-path/settings.json");
+    }
+
+    SECTION("resolve_path agrees with the path init() actually persists to") {
+        // The banner and init() must never disagree about where settings live.
+        std::filesystem::path dir =
+            std::filesystem::temp_directory_path() / "helix-resolve-path-init";
+        std::filesystem::remove_all(dir);
+        setenv("HELIX_CONFIG_DIR", dir.string().c_str(), 1);
+
+        Config cfg;
+        cfg.init("config/settings-test.json");
+        cfg.set("/brightness", 5);
+        REQUIRE(cfg.save());
+
+        std::string expected = Config::resolve_path("config/settings-test.json");
+        REQUIRE(expected == (dir / "settings-test.json").string());
+        REQUIRE(std::filesystem::exists(expected));
+
+        std::filesystem::remove_all(dir);
+    }
+}
+
 // ============================================================================
 // init() must persist migrations through save()'s atomic temp-file + rename
 // path, not a bare truncate-in-place ofstream.
