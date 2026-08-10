@@ -5,6 +5,7 @@
 
 #include "ui_error_reporting.h"
 #include "ui_event_safety.h"
+#include "ui_format_utils.h"
 #include "ui_nav_manager.h"
 #include "ui_overlay_temp_graph.h"
 #include "ui_panel_print_select.h"
@@ -22,6 +23,7 @@
 #include "filament_op_dispatch.h"
 #include "filament_op_router.h"
 #include "filament_sensor_manager.h"
+#include "format_utils.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
 #include "moonraker_client.h"
@@ -186,7 +188,7 @@ void PrintStatusWidget::init_static_subjects() {
 PrintStatusWidget::PrintStatusWidget() : printer_state_(get_printer_state()) {
     init_static_subjects();
 
-    // Eager DetailedFormatter creation — its subjects (print_status_progress_pct,
+    // Eager DetailedFormatter creation — its subjects (print_status_layer_text,
     // print_status_bed_text, etc.) MUST be registered BEFORE lv_xml_create
     // parses the widget XML. helix-xml's bind_text/bind_flag_if_eq parser
     // permanently skips bindings whose subject doesn't exist at parse time.
@@ -1769,21 +1771,13 @@ int cd_to_c(int cd) {
 }
 } // namespace
 
-void PrintStatusWidget::DetailedFormatter::update_progress_pct() {
-    int pct = lv_subject_get_int(get_printer_state().get_print_progress_subject());
-    snprintf(progress_pct_buf_, sizeof(progress_pct_buf_), "%d%%", pct);
-    lv_subject_copy_string(&progress_pct_subject_, progress_pct_buf_);
-}
-
 void PrintStatusWidget::DetailedFormatter::update_layer_text() {
     auto& ps = get_printer_state();
     int cur = lv_subject_get_int(ps.get_print_layer_current_subject());
     int tot = lv_subject_get_int(ps.get_print_layer_total_subject());
-    if (tot <= 0) {
-        snprintf(layer_text_buf_, sizeof(layer_text_buf_), "Layer %d", cur);
-    } else {
-        snprintf(layer_text_buf_, sizeof(layer_text_buf_), "Layer %d / %d", cur, tot);
-    }
+    std::string text = helix::ui::format_layer_progress(
+        cur, tot, ps.layer_is_accurate(), lv_subject_get_int(ps.get_gcode_position_z_subject()));
+    snprintf(layer_text_buf_, sizeof(layer_text_buf_), "%s", text.c_str());
     lv_subject_copy_string(&layer_text_subject_, layer_text_buf_);
 }
 
@@ -1792,8 +1786,9 @@ void PrintStatusWidget::DetailedFormatter::update_time_text() {
     int elapsed = lv_subject_get_int(ps.get_print_elapsed_subject());
     int remain = lv_subject_get_int(ps.get_print_time_left_subject());
     int total = elapsed + remain;
-    snprintf(time_text_buf_, sizeof(time_text_buf_), "%dh %02dm / %dh %02dm", elapsed / 3600,
-             (elapsed % 3600) / 60, total / 3600, (total % 3600) / 60);
+    std::string text =
+        helix::format::duration_padded(elapsed) + " / " + helix::format::duration_padded(total);
+    snprintf(time_text_buf_, sizeof(time_text_buf_), "%s", text.c_str());
     lv_subject_copy_string(&time_text_subject_, time_text_buf_);
 }
 
@@ -1802,8 +1797,9 @@ void PrintStatusWidget::DetailedFormatter::update_filament_text() {
     if (used_mm <= 0) {
         filament_text_buf_[0] = '\0';
     } else {
-        snprintf(filament_text_buf_, sizeof(filament_text_buf_), "Filament: %.1fm",
-                 used_mm / 1000.0);
+        std::string text = std::string(lv_tr("Filament")) + ": " +
+                           helix::format::format_filament_length(static_cast<double>(used_mm));
+        snprintf(filament_text_buf_, sizeof(filament_text_buf_), "%s", text.c_str());
     }
     lv_subject_copy_string(&filament_text_subject_, filament_text_buf_);
 
@@ -1991,8 +1987,6 @@ void PrintStatusWidget::DetailedFormatter::update_idle_fields() {
 }
 
 PrintStatusWidget::DetailedFormatter::DetailedFormatter() {
-    UI_MANAGED_SUBJECT_STRING(progress_pct_subject_, progress_pct_buf_, "0%",
-                              "print_status_progress_pct", subjects_);
     UI_MANAGED_SUBJECT_STRING(layer_text_subject_, layer_text_buf_, "", "print_status_layer_text",
                               subjects_);
     UI_MANAGED_SUBJECT_STRING(time_text_subject_, time_text_buf_, "0h 00m / 0h 00m",
@@ -2026,7 +2020,6 @@ PrintStatusWidget::DetailedFormatter::DetailedFormatter() {
         if (auto* hm = get_print_history_manager()) {
             hm->remove_observer(&s_formatter_->history_cb_);
         }
-        s_formatter_->progress_observer_.reset();
         s_formatter_->layer_current_observer_.reset();
         s_formatter_->layer_total_observer_.reset();
         s_formatter_->elapsed_observer_.reset();
@@ -2044,9 +2037,6 @@ PrintStatusWidget::DetailedFormatter::DetailedFormatter() {
 
     using helix::ui::observe_int_sync;
     auto& ps = get_printer_state();
-    progress_observer_ = observe_int_sync<DetailedFormatter>(
-        ps.get_print_progress_subject(), this,
-        [](DetailedFormatter* self, int) { self->update_progress_pct(); });
     layer_current_observer_ = observe_int_sync<DetailedFormatter>(
         ps.get_print_layer_current_subject(), this,
         [](DetailedFormatter* self, int) { self->update_layer_text(); });
@@ -2075,7 +2065,6 @@ PrintStatusWidget::DetailedFormatter::DetailedFormatter() {
     // for those. The nozzle path still mirrors because pinning rebinds it.
 
     // Seed initial values from current subject state
-    update_progress_pct();
     update_layer_text();
     update_time_text();
     update_filament_text();
@@ -2136,7 +2125,6 @@ PrintStatusWidget::DetailedFormatter::~DetailedFormatter() {
     if (auto* hm = get_print_history_manager()) {
         hm->remove_observer(&history_cb_);
     }
-    progress_observer_.reset();
     layer_current_observer_.reset();
     layer_total_observer_.reset();
     elapsed_observer_.reset();

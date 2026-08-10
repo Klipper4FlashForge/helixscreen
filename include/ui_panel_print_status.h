@@ -215,42 +215,6 @@ class PrintStatusPanel : public OverlayBase {
     void set_thumbnail_source(const std::string& filename);
 
     /**
-     * @brief Set print progress percentage
-     * @param percent Progress 0-100 (clamped to valid range)
-     */
-    void set_progress(int percent);
-
-    /**
-     * @brief Set layer progress
-     * @param current Current layer number
-     * @param total Total layers in print
-     */
-    void set_layer(int current, int total);
-
-    /**
-     * @brief Set elapsed and remaining time
-     * @param elapsed_secs Elapsed time in seconds
-     * @param remaining_secs Estimated remaining time in seconds
-     */
-    void set_times(int elapsed_secs, int remaining_secs);
-
-    /**
-     * @brief Set temperature readings
-     * @param nozzle_cur Current nozzle temperature
-     * @param nozzle_tgt Target nozzle temperature
-     * @param bed_cur Current bed temperature
-     * @param bed_tgt Target bed temperature
-     */
-    void set_temperatures(int nozzle_cur, int nozzle_tgt, int bed_cur, int bed_tgt);
-
-    /**
-     * @brief Set speed and flow percentages
-     * @param speed_pct Speed multiplier percentage
-     * @param flow_pct Flow multiplier percentage
-     */
-    void set_speeds(int speed_pct, int flow_pct);
-
-    /**
      * @brief Set print state
      * @param state New print state
      */
@@ -314,7 +278,6 @@ class PrintStatusPanel : public OverlayBase {
 
     SubjectManager subjects_; ///< RAII manager for automatic subject cleanup
 
-    lv_subject_t progress_text_subject_;
     lv_subject_t layer_text_subject_;
     lv_subject_t filament_used_text_subject_;
     lv_subject_t elapsed_subject_;
@@ -417,7 +380,6 @@ class PrintStatusPanel : public OverlayBase {
     lv_subject_t print_controls_enabled_subject_; ///< 1 when lifecycle.is_active()
 
     // Subject storage buffers
-    char progress_text_buf_[32] = "0%";
     char layer_text_buf_[80] = "Layer 0 / 0";
     char filament_used_text_buf_[32] = "";
     char elapsed_buf_[32] = "0h 00m";
@@ -586,6 +548,12 @@ class PrintStatusPanel : public OverlayBase {
     void recompute_aux_composites(); ///< Compute 3 aux_*_visible from aux_present + density
     void recompute_aux_composites_for_measurement(int density,
                                                   bool aux_present); ///< Measurement helper
+
+    /// Render print_layer_text from the lifecycle's layer counters.
+    void update_layer_text();
+
+    /// Render print_filament_used_text from the current filament_used subject.
+    void update_filament_used_text();
 
     void update_all_displays();
     void show_gcode_viewer(bool show);

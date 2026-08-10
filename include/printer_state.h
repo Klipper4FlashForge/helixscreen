@@ -393,6 +393,12 @@ class PrinterState {
     lv_subject_t* get_print_progress_subject() {
         return print_domain_.get_print_progress_subject();
     } // 0-100
+    lv_subject_t* get_print_progress_display_subject() {
+        return print_domain_.get_print_progress_display_subject();
+    } // 0-100, frozen after a print ends
+    lv_subject_t* get_print_progress_text_subject() {
+        return print_domain_.get_print_progress_text_subject();
+    } // "N%" for the display value
     lv_subject_t* get_print_filename_subject() {
         return print_domain_.get_print_filename_subject();
     }

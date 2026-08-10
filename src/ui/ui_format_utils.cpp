@@ -13,6 +13,26 @@
 
 namespace helix::ui {
 
+std::string format_layer_progress(int current, int total, bool accurate, int z_centimm) {
+    // "~" marks a count guessed from the progress fraction. Slicer/Moonraker
+    // fields and Z-height-derived layers are both accurate (Mainsail parity).
+    const char* marker = accurate ? "" : "~";
+    char buf[64];
+    if (total > 0) {
+        snprintf(buf, sizeof(buf), "%s %s%d / %d", lv_tr("Layer"), marker, current, total);
+    } else {
+        snprintf(buf, sizeof(buf), "%s %s%d", lv_tr("Layer"), marker, current);
+    }
+
+    std::string out(buf);
+    if (z_centimm > 0) {
+        char z_buf[24];
+        snprintf(z_buf, sizeof(z_buf), " (%.1fmm)", z_centimm / 100.0);
+        out += z_buf;
+    }
+    return out;
+}
+
 std::string format_print_time(int minutes) {
     return helix::format::duration_from_minutes(minutes);
 }
