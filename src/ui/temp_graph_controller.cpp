@@ -134,6 +134,8 @@ void TempGraphController::detach() {
         helix::ui::UpdateQueue::instance().drain();
 
         connection_observer_.reset();
+        discovery_observer_.reset();
+        sensor_discovery_observer_.reset();
         for (auto& s : series_) {
             s.temp_obs.reset();
             s.target_obs.reset();
@@ -337,12 +339,90 @@ void TempGraphController::setup_observers() {
         return;
     }
 
+    int unresolved = 0;
+    for (size_t i = 0; i < series_.size(); ++i) {
+        // A provisional binding counts as unresolved: it is producing data, but
+        // from a stand-in subject that discovery will replace.
+        if (!attach_series_observers(i) || series_[i].provisional) {
+            ++unresolved;
+        }
+    }
+
+    // A series whose subject did not exist yet has no observer and would sit
+    // frozen on backfilled history for the whole session — the home temp_graph
+    // widget is built at app startup, before discovery creates the per-extruder
+    // and per-sensor subjects. Watch the discovery version subjects so those
+    // series can attach late. Only when something is actually unresolved: a
+    // fully-wired graph must not re-resolve on every discovery bump.
+    if (unresolved > 0) {
+        auto& ps = get_printer_state();
+        spdlog::debug("[TempGraphController] {} of {} series unresolved — watching discovery",
+                      unresolved, series_.size());
+
+        if (auto* extruder_version = ps.get_extruder_version_subject()) {
+            discovery_observer_ = observe_int_sync<TempGraphController>(
+                extruder_version, this,
+                [token = lifetime_.token(), gen = generation_](TempGraphController* self, int) {
+                    if (token.expired() || gen != self->generation_)
+                        return;
+                    self->resolve_pending_series();
+                });
+        }
+
+        auto& sensor_mgr = sensors::TemperatureSensorManager::instance();
+        if (auto* sensor_count = sensor_mgr.get_sensor_count_subject()) {
+            sensor_discovery_observer_ = observe_int_sync<TempGraphController>(
+                sensor_count, this,
+                [token = lifetime_.token(), gen = generation_](TempGraphController* self, int) {
+                    if (token.expired() || gen != self->generation_)
+                        return;
+                    self->resolve_pending_series();
+                });
+        }
+    }
+
+    setup_connection_observer();
+}
+
+void TempGraphController::resolve_pending_series() {
+    if (tearing_down_ || !graph_)
+        return;
+
+    int resolved = 0;
+    for (size_t i = 0; i < series_.size(); ++i) {
+        auto& s = series_[i];
+        if (s.temp_obs && !s.provisional)
+            continue; // already bound to its real subject
+        if (s.provisional) {
+            // Drop the stand-in before re-resolving, or the series ends up with
+            // two observers pushing into the same chart slot.
+            s.temp_obs.reset();
+            s.target_obs.reset();
+        }
+        if (attach_series_observers(i) && !series_[i].provisional)
+            ++resolved;
+    }
+
+    if (resolved == 0)
+        return;
+
+    // The history for these objects only became reachable now too (it is keyed
+    // by the same Klipper names), so pull it in rather than waiting for the
+    // trace to redraw itself one live sample at a time.
+    spdlog::debug("[TempGraphController] Resolved {} series after discovery", resolved);
+    backfill_history();
+    apply_auto_range();
+}
+
+bool TempGraphController::attach_series_observers(size_t i) {
     auto& ps = get_printer_state();
     auto token = lifetime_.token();
     uint32_t gen = generation_;
+    bool resolved = false;
 
-    for (size_t i = 0; i < series_.size(); ++i) {
+    {
         auto& s = series_[i];
+        s.provisional = false;
 
         lv_subject_t* temp_subj = nullptr;
         lv_subject_t* target_subj = nullptr;
@@ -356,20 +436,30 @@ void TempGraphController::setup_observers() {
             temp_subj = ps.get_chamber_temp_subject();
             target_subj = ps.get_chamber_target_subject();
         } else if (s.klipper_name.find("extruder") == 0) {
-            if (ps.extruder_count() <= 1) {
-                // Single extruder: use active (static) subjects
+            // Always prefer this extruder's OWN subject — update_from_status
+            // publishes one per discovered head, single-tool printers included.
+            // The active-extruder subject carries whichever tool is mounted, so
+            // binding a named series to it plots the active tool's trace under
+            // another tool's label (a changer printing on T4 showed 230°C under
+            // "Nozzle 1").
+            temp_subj = ps.get_extruder_temp_subject(s.klipper_name, s.lifetime);
+            target_subj = ps.get_extruder_target_subject(s.klipper_name, s.lifetime);
+
+            // Nothing discovered yet: the generic "extruder" series can ride the
+            // active subject until init_extruders() runs. A numbered head cannot
+            // — it stays unresolved so the discovery watcher retries it.
+            if (!temp_subj && s.klipper_name == "extruder" && ps.extruder_count() == 0) {
                 temp_subj = ps.get_active_extruder_temp_subject();
                 target_subj = ps.get_active_extruder_target_subject();
-            } else {
-                // Multi-extruder: use per-extruder (dynamic) subjects
-                temp_subj = ps.get_extruder_temp_subject(s.klipper_name, s.lifetime);
-                target_subj = ps.get_extruder_target_subject(s.klipper_name, s.lifetime);
+                s.provisional = (temp_subj != nullptr);
             }
         } else {
             // Auxiliary sensor from TemperatureSensorManager
             auto& sensor_mgr = sensors::TemperatureSensorManager::instance();
             temp_subj = sensor_mgr.get_temp_subject(s.klipper_name, s.lifetime);
         }
+
+        resolved = (temp_subj != nullptr);
 
         if (temp_subj) {
             size_t idx = i;
@@ -455,6 +545,12 @@ void TempGraphController::setup_observers() {
                 s.lifetime);
         }
     }
+
+    return resolved;
+}
+
+void TempGraphController::setup_connection_observer() {
+    auto& ps = get_printer_state();
 
     // Observe printer connection state to clear chart on disconnect and rebuild on
     // REconnect. Only react to actual state changes, and only rebuild after a real
