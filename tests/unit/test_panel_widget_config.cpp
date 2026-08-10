@@ -1191,34 +1191,32 @@ TEST_CASE("PanelWidgetConfig: build_default_grid produces correct layout",
         return nullptr;
     };
 
-    // Printer image: top-left, 2×2
+    // Printer image: top-left, 4×4 tracks (2×2 cells)
     auto* pi = find_entry("printer_image");
     REQUIRE(pi);
     REQUIRE(pi->enabled);
     REQUIRE(pi->col == 0);
     REQUIRE(pi->row == 0);
-    REQUIRE(pi->colspan == 2);
-    REQUIRE(pi->rowspan == 2);
+    REQUIRE(pi->colspan == 4);
+    REQUIRE(pi->rowspan == 4);
 
-    // Print status: below printer image, 2×2
+    // Print status: right of printer image at micro, 4×4 tracks
     auto* ps = find_entry("print_status");
     REQUIRE(ps);
     REQUIRE(ps->enabled);
-    REQUIRE(ps->col == 0);
-    REQUIRE(ps->row == 2);
-    REQUIRE(ps->colspan == 2);
-    REQUIRE(ps->rowspan == 2);
+    REQUIRE(ps->col == 4);
+    REQUIRE(ps->row == 0);
+    REQUIRE(ps->colspan == 4);
+    REQUIRE(ps->rowspan == 4);
 
-    // Tips: right of printer image, dimensions depend on breakpoint
-    // In tests, breakpoint subject is uninitialized (0 = tiny), so layout uses tiny breakpoint
+    // Tips: right of print status, 4×4 tracks at micro
     auto* tips = find_entry("tips");
     REQUIRE(tips);
     REQUIRE(tips->enabled);
-    REQUIRE(tips->col == 2);
+    REQUIRE(tips->col == 8);
     REQUIRE(tips->row == 0);
-    // Tiny breakpoint from default_layout.json: 2×2
-    REQUIRE(tips->colspan == 2);
-    REQUIRE(tips->rowspan == 2);
+    REQUIRE(tips->colspan == 4);
+    REQUIRE(tips->rowspan == 4);
 
     // Non-anchor enabled widgets should NOT have grid positions (auto-placed at populate time)
     const std::set<std::string> anchors = {"printer_image", "print_status", "tips", "temperature",
@@ -1230,16 +1228,16 @@ TEST_CASE("PanelWidgetConfig: build_default_grid produces correct layout",
         REQUIRE_FALSE(e.has_grid_position());
     }
 
-    // New temperature anchors: nozzle at (2,2), bed stacked below at (2,3) on tiny.
+    // Temperature anchors: nozzle at (0,4), bed at (2,4) at micro — 2×2 tracks each.
     auto* nozzle = find_entry("temperature");
     REQUIRE(nozzle);
     REQUIRE(nozzle->enabled);
-    REQUIRE(nozzle->col == 2);
-    REQUIRE(nozzle->row == 2);
+    REQUIRE(nozzle->col == 0);
+    REQUIRE(nozzle->row == 4);
     auto* bed_anchor = find_entry("bed_temperature");
     REQUIRE(bed_anchor);
     REQUIRE(bed_anchor->col == 2);
-    REQUIRE(bed_anchor->row == 3);
+    REQUIRE(bed_anchor->row == 4);
 
     // Disabled widgets should have no grid position
     for (const auto& e : disabled) {

@@ -649,14 +649,18 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
     spdlog::debug("[PanelWidgetManager] Track geometry: {:.2f}x{:.2f}px, gutter {}px",
                   metrics.cell_w, metrics.cell_h, gutter);
 
-    // Create merged card backgrounds behind adjacent 1x1 widgets.
-    // BFS flood-fill finds connected components of 1x1 cells, then a single
-    // card object spans each component's bounding rectangle.
+    // Create merged card backgrounds behind adjacent single-cell widgets.
+    // A "single cell" widget spans TRACKS_PER_CELL × TRACKS_PER_CELL tracks.
+    // BFS flood-fill finds connected components of single-cell widgets, then a
+    // single card object spans each component's bounding rectangle.
+    // All analysis happens in CELL coordinates (track ÷ TRACKS_PER_CELL); card
+    // positions are converted back to track coordinates for grid assignment.
     // Use ALL enabled config entries (not just currently-placed ones) so that
     // cards for hardware-gated widgets appear from the first frame, preventing
     // the grid from visually jumping when hardware gates fire.
     {
-        // Collect all enabled 1x1 cells and cells occupied by larger widgets
+        const int TPC = GridLayout::TRACKS_PER_CELL;
+        // Collect all enabled single-cell widgets and cells occupied by larger widgets
         struct CellHash {
             size_t operator()(const std::pair<int, int>& p) const {
                 return std::hash<int>()(p.first) ^ (std::hash<int>()(p.second) << 16);
@@ -668,12 +672,14 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
             if (!entry.enabled || !entry.has_grid_position()) {
                 continue;
             }
-            if (entry.colspan == 1 && entry.rowspan == 1) {
-                single_cells.insert({entry.col, entry.row});
+            if (entry.colspan == TPC && entry.rowspan == TPC) {
+                single_cells.insert({entry.col / TPC, entry.row / TPC});
             } else {
                 // Mark all cells covered by this multi-cell widget
-                for (int r = entry.row; r < entry.row + entry.rowspan; r++) {
-                    for (int c = entry.col; c < entry.col + entry.colspan; c++) {
+                for (int r = entry.row / TPC; r < (entry.row + entry.rowspan + TPC - 1) / TPC;
+                     r++) {
+                    for (int c = entry.col / TPC; c < (entry.col + entry.colspan + TPC - 1) / TPC;
+                         c++) {
                         occupied_by_large.insert({c, r});
                     }
                 }
@@ -775,6 +781,12 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                 int card_colspan = end_col - start_col + 1;
                 int card_rowspan = end_row - start_row + 1;
 
+                // Convert cell coordinates back to track coordinates for placement
+                int track_col = start_col * TPC;
+                int track_row = start_row * TPC;
+                int track_colspan = card_colspan * TPC;
+                int track_rowspan = card_rowspan * TPC;
+
                 // Create a plain lv_obj with Card styling as the background
                 lv_obj_t* card_bg = lv_obj_create(container);
                 lv_obj_remove_style(card_bg, nullptr, LV_PART_MAIN);
@@ -783,20 +795,20 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                 lv_obj_set_style_pad_all(card_bg, 0, 0);
                 lv_obj_remove_flag(card_bg, LV_OBJ_FLAG_CLICKABLE);
                 lv_obj_remove_flag(card_bg, LV_OBJ_FLAG_SCROLLABLE);
-                // Set initial size from cached cell dimensions so the card renders
+                // Set initial size from cached track dimensions so the card renders
                 // at approximately the right shape on the first frame, before the
                 // grid layout resolves. Grid STRETCH overrides once layout runs.
                 if (cell_w > 0 && cell_h > 0) {
                     lv_obj_set_size(
                         card_bg,
-                        static_cast<int>(grid_track_extent(metrics.cell_w, gutter, card_colspan)),
-                        static_cast<int>(grid_track_extent(metrics.cell_h, gutter, card_rowspan)));
+                        static_cast<int>(grid_track_extent(metrics.cell_w, gutter, track_colspan)),
+                        static_cast<int>(grid_track_extent(metrics.cell_h, gutter, track_rowspan)));
                 }
-                lv_obj_set_grid_cell(card_bg, LV_GRID_ALIGN_STRETCH, start_col, card_colspan,
-                                     LV_GRID_ALIGN_STRETCH, start_row, card_rowspan);
+                lv_obj_set_grid_cell(card_bg, LV_GRID_ALIGN_STRETCH, track_col, track_colspan,
+                                     LV_GRID_ALIGN_STRETCH, track_row, track_rowspan);
 
-                spdlog::debug("[PanelWidgetManager] Card background at ({},{} {}x{})", start_col,
-                              start_row, card_colspan, card_rowspan);
+                spdlog::debug("[PanelWidgetManager] Card background at ({},{} {}x{} tracks)",
+                              track_col, track_row, track_colspan, track_rowspan);
             }
         }
     }

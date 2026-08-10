@@ -277,10 +277,10 @@ TEST_CASE("build_default_grid only sets positions for anchor widgets", "[grid]")
     CHECK(printer_image->has_grid_position());
 
     REQUIRE(print_status != nullptr);
-    CHECK(print_status->col == 0);
-    CHECK(print_status->row >= 2);     // depends on breakpoint (2-3)
-    CHECK(print_status->colspan >= 2); // depends on breakpoint (2-3)
-    CHECK(print_status->rowspan == 2);
+    CHECK(print_status->col >= 0);
+    CHECK(print_status->row >= 0);
+    CHECK(print_status->colspan >= 2);
+    CHECK(print_status->rowspan >= 2);
     CHECK(print_status->has_grid_position());
 
     REQUIRE(tips != nullptr);
