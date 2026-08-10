@@ -13,7 +13,7 @@
 #include "camera_config_modal.h"
 #include "display_manager.h"
 #include "http_executor.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "panel_widget_registry.h"
 #include "panel_widget_size.h"
 #include "printer_state.h"

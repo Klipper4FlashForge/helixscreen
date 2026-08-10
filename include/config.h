@@ -13,10 +13,12 @@
 
 #pragma once
 
+#include "config_storage.h"
 #include "json_fwd.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -63,8 +65,19 @@ class Config {
   private:
     static Config* instance;
     std::string path;
-    std::string active_printer_id_; ///< Currently active printer slug ID
-    bool read_only_mode_ = false;   ///< Config directory is on a read-only filesystem
+    std::string active_printer_id_;          ///< Currently active printer slug ID
+    bool read_only_mode_ = false;            ///< Config directory is on a read-only filesystem
+    std::unique_ptr<ConfigStorage> storage_; ///< Document-level persistence backend
+    /// True when storage_ was auto-created from `path` rather than injected by
+    /// set_storage(). Only an auto-created backend may be rebuilt when `path`
+    /// moves — an injected one is the caller's, and its target is not `path`.
+    bool storage_is_default_ = false;
+
+    /// Point storage_ at `path`, rebuilding a stale auto-created backend.
+    /// `path` moves whenever init() runs against a different file (printer
+    /// switch, and every test that re-points the singleton); without this the
+    /// first backend keeps writing to the original file forever.
+    void ensure_storage();
 
     /**
      * @brief Point active_printer_id_ at a printer that actually exists
@@ -143,6 +156,19 @@ class Config {
     void clear_path() {
         path.clear();
         active_printer_id_.clear();
+        storage_.reset();
+        storage_is_default_ = false;
+    }
+
+    /**
+     * @brief Inject a persistence backend (call BEFORE init()).
+     *
+     * Default when unset: make_file_config_storage(resolved path). Embedded
+     * targets substitute NVS/LittleFS; tests substitute an in-memory mock.
+     */
+    void set_storage(std::unique_ptr<ConfigStorage> storage) {
+        storage_ = std::move(storage);
+        storage_is_default_ = false;
     }
 
     /**

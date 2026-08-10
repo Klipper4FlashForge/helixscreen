@@ -234,8 +234,17 @@ void DisplaySettingsManager::init_subjects() {
     UI_MANAGED_SUBJECT_INT(use_system_keyboard_subject_, sys_kb ? 1 : 0,
                            "settings_use_system_keyboard", subjects_);
 
-    // Page-scroll buttons (default: off — opt-in)
-    bool page_scroll = config->get<bool>("/display/page_scroll_buttons", false);
+    // Page-scroll buttons. Desktop/embedded-Linux default: off (opt-in). ESP32
+    // default: on — finger-drag scrolling is too slow on that panel, so the
+    // buttons are the usable path. An explicit user setting always wins.
+#if defined(ESP_PLATFORM)
+    constexpr bool page_scroll_default = true;
+#else
+    constexpr bool page_scroll_default = false;
+#endif
+    bool page_scroll = config->exists("/display/page_scroll_buttons")
+                           ? config->get<bool>("/display/page_scroll_buttons", page_scroll_default)
+                           : page_scroll_default;
     UI_MANAGED_SUBJECT_INT(page_scroll_buttons_subject_, page_scroll ? 1 : 0,
                            "settings_page_scroll_buttons", subjects_);
 

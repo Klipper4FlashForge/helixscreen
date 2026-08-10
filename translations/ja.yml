@@ -42,7 +42,17 @@ translations:
   0 = computed: 0 = 自動計算
   0 events queued: 待機中のイベントなし
   0 slots: '{0} スロット'
+  # Source: calibration_pid_panel.xml:368
+  0.0000 J/K: ''
+  # Source: calibration_pid_panel.xml:374
+  0.000000 K/s/K: ''
+  # Source: calibration_pid_panel.xml:380
+  0.000000 W/K: ''
   0.4-2mm direct drive, 4-6mm bowden: 0.4-2mm ダイレクトドライブ、4-6mm ボーデン
+  # Source: history_dashboard_panel.xml:83
+  0h: ''
+  # Source: history_dashboard_panel.xml:89, print_status_panel.xml:252, print_status_panel.xml:254
+  0m: ''
   0°: 0°
   1 day ago: 1日前
   1 event queued: 1件のイベント待機中
@@ -89,6 +99,8 @@ translations:
   ABS: ABS
   ACCELEROMETERS: 加速度センサー
   ACE Moonraker bridge not found. Install ace_status.py for full support.: ACE Moonraker ブリッジが見つかりません。完全なサポートには ace_status.py をインストールしてください。
+  ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: ACE
+    Moonraker ブリッジが見つかりません。完全なサポートには ValgACE から ace_status.py をインストールしてください。
   ACTIONS: アクション
   ADXL: ADXL
   AFC: AFC
@@ -162,6 +174,8 @@ translations:
   An error occurred during measurement.: 測定中にエラーが発生しました。
   An error occurred during probing.: プローブ中にエラーが発生しました。
   An error occurred while loading filament.: フィラメントの装填中にエラーが発生しました。
+  # Source: probe_accuracy_modal.xml:90
+  An error occurred.: ''
   An internal error occurred. The app continues running — please send a debug bundle from Settings > About if it repeats.: 内部エラーが発生しました。アプリは引き続き動作します。問題が繰り返される場合は、設定
     > バージョン情報 からデバッグバンドルを送信してください。
   An unexpected printer error occurred.: 予期しないプリンターエラーが発生しました。
@@ -1135,6 +1149,8 @@ translations:
   'Klipper: ': 'Klipper: '
   Klippy Errors: Klippy エラー
   Klippy Shutdowns: Klippy シャットダウン
+  # Source: led_control_overlay.xml:31
+  LED: ''
   LED SELECTION: LED選択
   LED Settings: LED設定
   LED Strip: LEDストリップ
@@ -1155,10 +1171,14 @@ translations:
   Language: 言語
   Language, theme, brightness, and sound: 言語、テーマ、明るさ、サウンド
   Last: 最後
+  # Source: history_dashboard_panel.xml:114
+  Last 7 days: ''
   Last print cancelled: 前回の印刷がキャンセルされました
   Last print failed: 前回の印刷が失敗しました
   Later: 後で
   Layer: レイヤー
+  # Source: print_status_panel.xml:234
+  Layer 0 / 0: ''
   Layer Height: レイヤー高さ
   Layer Macro captures one frame per layer change. Best for most prints.: レイヤーマクロはレイヤーが変わるごとに
     1 フレームを撮影します。ほとんどの印刷に最適です。
@@ -1431,6 +1451,7 @@ translations:
   Not found (use phone app): 見つかりません (スマホアプリを使用)
   Not in your spools? Set it up: スプールにない？登録する
   Not now: 後で
+  Not yet available on this display: ''
   Not yet calibrated: 未キャリブレーション
   Notes: メモ
   Notes (optional): メモ（オプション）
@@ -1469,6 +1490,7 @@ translations:
   'Off:': 'オフ:'
   'On': オン
   On and Off macros must be different: オンとオフのマクロは異なるものにしてください
+  On your phone or computer, join the WiFi network \"{}\", then open http://{} in a browser to finish setup.: ''
   On/Off: オン/オフ
   On/Off (state-aware): オン/オフ（状態追跡）
   'On:': 'オン:'
@@ -1690,6 +1712,8 @@ translations:
   Probing Bed...: ベッドをプローブ中...
   Probing Failed: プローブ失敗
   Proceed: 続行
+  # Source: abort_progress_modal.xml:20
+  Processing...: ''
   Profile deleted: プロファイルを削除しました
   Profile name (e.g., default): 'プロファイル名（例: default）'
   Profile renamed: プロファイル名を変更しました
@@ -1967,6 +1991,7 @@ translations:
   'Set ': '設定 '
   Set Active: アクティブに設定
   Set PIN: PIN を設定
+  Set Up WiFi: ''
   ? 'Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt
     appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS:
     Strobe Light Tachometer, myStroboscope'
@@ -2000,6 +2025,9 @@ translations:
   Show text labels on icon-only home screen widgets: アイコンのみのホーム画面ウィジェットにテキストラベルを表示
   Show up/down buttons on long lists: 長いリストに上下ボタンを表示
   Show whatever curves you last had visible on the full graph.: フルグラフで最後に表示していた曲線を表示します。
+  Showing loaded colors: ''
+  Showing sliced colors: ''
+  Showing the 50 newest files. See more in the printer's web UI.: ''
   Shutdown: シャットダウン
   Shutdown / Reboot: シャットダウン / 再起動
   Shutdown failed: シャットダウンに失敗しました
@@ -2129,6 +2157,8 @@ translations:
   T%d has no filament loaded — this print will run out.: T%d にフィラメントが装填されていません — この印刷は途中で切れます。
   T%d needs filament in slot %d, which is empty — this print will run out.: T%d はスロット
     %d のフィラメントを必要としますが、空です — この印刷は途中で切れます。
+  # Source: ams_current_tool.xml:38
+  T0: ''
   TD-1 filament color detection: TD-1 フィラメント色検出
   TEMPERATURE SENSORS: 温度センサー
   THEME COLORS: テーマカラー
@@ -2158,6 +2188,8 @@ translations:
   Temp °C (%d–%d): 温度 °C (%d〜%d)
   Temperature: 温度
   Temperature Graph Config: 温度グラフ設定
+  # Source: calibration_pid_panel.xml:333
+  Temperature control has been optimized.: ''
   Temperatures: 温度
   Temperatures saved: 温度を保存しました
   Template: テンプレート
@@ -2373,6 +2405,7 @@ translations:
   Uptime: 稼働時間
   Use Android native keyboard for text input: テキスト入力に Android ネイティブキーボードを使用
   Use G10/G11 firmware retraction: G10/G11 ファームウェアリトラクションを使用
+  Use Settings Instead: ''
   Use printer type to select image: プリンタータイプで画像を選択
   VM Peak: VM ピーク
   VM Size: VM サイズ
@@ -2512,6 +2545,8 @@ translations:
   ? backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
   : ''
   bed: ベッド
+  # Source: print_status_panel.xml:242
+  benchy.gcode: ''
   by Preston Brown: by Preston Brown
   chamber heater: チャンバーヒーター
   complete: 完了

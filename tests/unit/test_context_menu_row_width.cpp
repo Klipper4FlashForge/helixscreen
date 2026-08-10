@@ -26,6 +26,7 @@
 
 #include "ui_context_menu.h"
 
+#include "../test_fixtures.h"
 #include "ams_state.h"
 #include "theme_manager.h"
 
@@ -33,7 +34,6 @@
 #include <vector>
 
 #include "../catch_amalgamated.hpp"
-#include "../test_fixtures.h"
 
 using namespace helix;
 

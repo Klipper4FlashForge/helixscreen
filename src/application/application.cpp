@@ -1496,7 +1496,8 @@ bool Application::init_theme() {
 
     // Register globals.xml first (required for theme constants, fonts, spacing tokens)
     // Note: fonts must be registered before this (done in init_assets phase)
-    lv_result_t globals_result = lv_xml_register_component_from_file("A:ui_xml/globals.xml");
+    lv_result_t globals_result = lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/globals.xml").c_str());
     if (globals_result != LV_RESULT_OK) {
         spdlog::error("[Application] FATAL: Failed to load globals.xml - "
                       "all XML constants (fonts, colors, spacing) will be missing. "
@@ -1820,7 +1821,7 @@ bool Application::init_panel_subjects() {
     spdlog::debug("[Application] TemperatureHistoryManager created");
 
     // Initialize PerformanceState subjects and wire the data source.
-    // Must happen after MoonrakerAPI is up (m_moonraker->api() is valid here)
+    // Must happen after IMoonrakerAPI is up (m_moonraker->api() is valid here)
     // and before XML panels are created so subjects exist when bindings resolve.
     helix::perf::PerformanceState::instance().init_subjects();
     if (get_runtime_config()->should_mock_moonraker()) {
@@ -2002,6 +2003,7 @@ bool Application::init_moonraker() {
 }
 
 bool Application::init_plugins() {
+#if HELIX_HAS_PLUGINS
     spdlog::debug("[Application] Initializing plugin system");
 
     m_plugin_manager = std::make_unique<helix::plugin::PluginManager>();
@@ -2078,6 +2080,10 @@ bool Application::init_plugins() {
 
     helix::MemoryMonitor::log_now("after_plugins_loaded");
     return all_loaded;
+#else
+    spdlog::debug("[Application] Plugin system compiled out (HELIX_HAS_PLUGINS=0)");
+    return true;
+#endif
 }
 
 bool Application::run_wizard() {
@@ -2375,7 +2381,7 @@ bool show_demo_overlay(const std::string& name) {
 
 void Application::reapply_hardware_roles() {
     m_async_lifetime.defer("Application::reapply_hardware_roles", [this]() {
-        MoonrakerAPI* api = m_moonraker ? m_moonraker->api() : nullptr;
+        IMoonrakerAPI* api = m_moonraker ? m_moonraker->api() : nullptr;
         if (!api) {
             return;
         }
@@ -2487,8 +2493,8 @@ void Application::prompt_deferred_hardware_setup(std::vector<helix::wizard::Step
 }
 
 void Application::setup_discovery_callbacks() {
-    MoonrakerClient* client = m_moonraker->client();
-    MoonrakerAPI* api = m_moonraker->api();
+    IMoonrakerClient* client = m_moonraker->client();
+    IMoonrakerAPI* api = m_moonraker->api();
 
     Application* app = this;
 
@@ -2931,7 +2937,7 @@ void Application::setup_discovery_callbacks() {
             // min_extrude_temp, max_temp, etc.) — runs for ALL discovery completions
             // (normal startup AND post-wizard) so we don't duplicate this in callers
             if (api) {
-                MoonrakerAPI* api_ptr = api;
+                IMoonrakerAPI* api_ptr = api;
                 api_ptr->update_safety_limits_from_printer(
                     [api_ptr]() {
                         const auto& limits = api_ptr->get_safety_limits();
@@ -3038,7 +3044,7 @@ void Application::setup_discovery_callbacks() {
             // This ensures the filament panel shows the correct spool on startup,
             // even if the active spool was changed via Spoolman's web UI or another client
             {
-                MoonrakerAPI* api_for_spool = api;
+                IMoonrakerAPI* api_for_spool = api;
                 api_for_spool->spoolman().get_spoolman_status(
                     [api_for_spool, sync_external_spool](bool connected, int active_spool_id) {
                         if (!connected || active_spool_id <= 0) {
@@ -3087,7 +3093,7 @@ void Application::setup_discovery_callbacks() {
             // Listen for Moonraker active spool changes (user changes spool in
             // Spoolman web UI or another client while HelixScreen is running)
             {
-                MoonrakerAPI* api_for_notify = api;
+                IMoonrakerAPI* api_for_notify = api;
                 client->register_method_callback(
                     "notify_active_spool_set", "external_spool_sync",
                     [api_for_notify, sync_external_spool](const nlohmann::json& data) {
@@ -3145,7 +3151,7 @@ void Application::setup_discovery_callbacks() {
             // (e.g., PROBE_CALIBRATE started from Mainsail or console before HelixScreen launched)
             // Deferred one tick: status updates from the subscription response are queued
             // via ui_queue_update and may not have landed yet at this point.
-            MoonrakerAPI* api_ptr_zoffset = api;
+            IMoonrakerAPI* api_ptr_zoffset = api;
             lv_obj_t* screen = app->m_screen;
             helix::ui::queue_update([api_ptr_zoffset, screen]() {
                 auto& ps = get_printer_state();
@@ -3207,7 +3213,7 @@ bool Application::connect_moonraker() {
     // Discovery callbacks are already registered (setup_discovery_callbacks in init_moonraker)
 
     // Set HTTP base URL for API
-    MoonrakerAPI* api = m_moonraker->api();
+    IMoonrakerAPI* api = m_moonraker->api();
     api->set_http_base_url(http_base_url);
 
     // Connect
@@ -3245,8 +3251,8 @@ lv_obj_t* Application::create_overlay_panel(lv_obj_t* screen, const char* compon
 }
 
 void Application::init_action_prompt() {
-    MoonrakerClient* client = m_moonraker->client();
-    MoonrakerAPI* api = m_moonraker->api();
+    IMoonrakerClient* client = m_moonraker->client();
+    IMoonrakerAPI* api = m_moonraker->api();
 
     if (!client) {
         spdlog::warn("[Application] Cannot init action prompt - no client");
@@ -3275,7 +3281,7 @@ void Application::init_action_prompt() {
                 [gcode](const MoonrakerError& err) {
                     spdlog::error("[ActionPrompt] Gcode execution failed: {}", err.message);
                 },
-                MoonrakerAPI::MACRO_TIMEOUT_MS);
+                IMoonrakerAPI::MACRO_TIMEOUT_MS);
         });
     }
 

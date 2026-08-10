@@ -3,8 +3,9 @@
 
 #include "ui_context_menu.h"
 
-#include "theme_manager.h"
 #include "ui_utils.h"
+
+#include "theme_manager.h"
 
 #include <spdlog/spdlog.h>
 

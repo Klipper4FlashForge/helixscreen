@@ -22,7 +22,7 @@
 #include "ui/temperature_observer_bundle.h"
 
 // Forward declaration
-class MoonrakerAPI;
+class IMoonrakerAPI;
 namespace helix {
 class TempGraphController;
 }
@@ -55,9 +55,9 @@ class PrintStatusPanel : public OverlayBase {
      * @brief Construct PrintStatusPanel with injected dependencies
      *
      * @param printer_state Reference to helix::PrinterState
-     * @param api Pointer to MoonrakerAPI (for pause/cancel commands)
+     * @param api Pointer to IMoonrakerAPI (for pause/cancel commands)
      */
-    PrintStatusPanel(helix::PrinterState& printer_state, MoonrakerAPI* api);
+    PrintStatusPanel(helix::PrinterState& printer_state, IMoonrakerAPI* api);
 
     ~PrintStatusPanel() override;
 
@@ -180,10 +180,10 @@ class PrintStatusPanel : public OverlayBase {
     }
 
     /**
-     * @brief Update MoonrakerAPI pointer
+     * @brief Update IMoonrakerAPI pointer
      * @param api New API pointer (may be nullptr)
      */
-    void set_api(MoonrakerAPI* api) {
+    void set_api(IMoonrakerAPI* api) {
         api_ = api;
         if (exclude_manager_) {
             exclude_manager_->set_api(api);
@@ -303,7 +303,7 @@ class PrintStatusPanel : public OverlayBase {
     //
 
     helix::PrinterState& printer_state_;
-    MoonrakerAPI* api_;
+    IMoonrakerAPI* api_;
     lv_obj_t* parent_screen_ = nullptr;
 
     //
@@ -449,6 +449,14 @@ class PrintStatusPanel : public OverlayBase {
     /// on_activate() can re-apply it without a refetch.
     std::string cached_thumbnail_path_;
 
+#if defined(HELIX_PLATFORM_ESP32)
+    /// PSRAM-resident thumbnail currently shown in print_thumbnail_. There is
+    /// no cache file on this platform, so cached_thumbnail_path_ stays empty
+    /// and this shared_ptr is what keeps the image src's buffer alive.
+    /// Main-thread only (its destructor drops the LVGL image cache entry).
+    std::shared_ptr<helix::ui::EspPsramThumbnail> esp_thumbnail_;
+#endif
+
     // Child widgets
     lv_obj_t* progress_bar_ = nullptr;
     lv_obj_t* preparing_progress_bar_ = nullptr;
@@ -582,6 +590,12 @@ class PrintStatusPanel : public OverlayBase {
     void update_all_displays();
     void show_gcode_viewer(bool show);
     void load_gcode_file(const char* file_path);
+#if defined(HELIX_PLATFORM_ESP32)
+    /// Pull the current PSRAM thumbnail from PrinterState, hold a reference,
+    /// and point print_thumbnail_ at its descriptor. Main thread only; no-op
+    /// when the widget is absent or no thumbnail has been fetched yet.
+    void apply_esp_psram_thumbnail();
+#endif
     void
     load_gcode_for_viewing(const std::string& filename); ///< Download and load G-code into viewer
     void update_button_states(); ///< Enable/disable buttons based on current print state
@@ -712,6 +726,9 @@ class PrintStatusPanel : public OverlayBase {
     ObserverGuard active_tool_observer_;  ///< Refreshes nozzle temp display with tool name prefix
     ObserverGuard chamber_temp_observer_; ///< Updates chamber status text
     ObserverGuard print_thumbnail_path_observer_; ///< Updates print_thumbnail_ from shared subject
+#if defined(HELIX_PLATFORM_ESP32)
+    ObserverGuard print_psram_thumb_observer_; ///< Ditto, via the PSRAM generation counter
+#endif
     ObserverGuard gcode_render_mode_observer_; ///< Watches settings changes to update viewer mode
     ObserverGuard print_outcome_observer_;     ///< Drives show_{complete,cancelled,error}_overlay
     ObserverGuard end_overlay_dismissed_observer_; ///< Ditto; second input to the same recompute

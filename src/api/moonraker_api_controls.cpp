@@ -608,9 +608,9 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
                          std::move(error_wrapper), timeout_ms, silent);
 }
 
-bool MoonrakerAPI::is_safe_gcode_param(const std::string& str) {
-    return moonraker_internal::is_safe_identifier(str);
-}
+// IMoonrakerAPI::is_safe_gcode_param() lives in moonraker_api_validation.cpp —
+// an HTTP-free TU so ESP32 builds can compile the real validator instead of
+// stubbing it (this file pulls in hv/requests.h for the REST calls below).
 
 // ============================================================================
 // Object Exclusion Operations

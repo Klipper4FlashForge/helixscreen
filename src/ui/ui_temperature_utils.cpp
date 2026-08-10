@@ -205,7 +205,7 @@ HeaterDisplayResult heater_display(int current_deci, int target_deci) {
     return result;
 }
 
-// Used by cooldown's multi-line gcode batch and MoonrakerAPI::set_temperature().
+// Used by cooldown's multi-line gcode batch and IMoonrakerAPI::set_temperature().
 const char* build_heater_gcode(const std::string& heater_full_name, int target_deci, char* buffer,
                                size_t buffer_size, bool use_m141) {
     if (heater_full_name.empty()) {

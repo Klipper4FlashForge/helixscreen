@@ -68,7 +68,7 @@ EmergencyStopOverlay& EmergencyStopOverlay::instance() {
     return instance;
 }
 
-void EmergencyStopOverlay::init(PrinterState& printer_state, MoonrakerAPI* api) {
+void EmergencyStopOverlay::init(PrinterState& printer_state, IMoonrakerAPI* api) {
     printer_state_ = &printer_state;
     api_ = api;
     spdlog::debug("[EmergencyStop] Initialized with dependencies");

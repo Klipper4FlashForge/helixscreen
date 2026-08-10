@@ -3,9 +3,8 @@
 
 #include "ams_backend_mock.h"
 
-#include "ams_bypass_policy.h"
-
 #include "afc_defaults.h"
+#include "ams_bypass_policy.h"
 #include "filament_database.h"
 #include "hh_defaults.h"
 #include "runtime_config.h"
