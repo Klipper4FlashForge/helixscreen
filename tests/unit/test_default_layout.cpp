@@ -253,26 +253,26 @@ TEST_CASE("default_layout: missing file falls back to hardcoded defaults", "[def
     CHECK(pi->has_grid_position());
     CHECK(pi->col == 0);
     CHECK(pi->row == 0);
-    CHECK(pi->colspan == 2);
-    CHECK(pi->rowspan == 2);
+    CHECK(pi->colspan == 4);
+    CHECK(pi->rowspan == 4);
 
     auto* ps = find_entry(entries, "print_status");
     REQUIRE(ps);
     CHECK(ps->enabled);
     CHECK(ps->has_grid_position());
     CHECK(ps->col == 0);
-    CHECK(ps->row == 2);
-    CHECK(ps->colspan == 2);
-    CHECK(ps->rowspan == 2);
+    CHECK(ps->row == 4);
+    CHECK(ps->colspan == 4);
+    CHECK(ps->rowspan == 4);
 
     auto* tips = find_entry(entries, "tips");
     REQUIRE(tips);
     CHECK(tips->enabled);
     CHECK(tips->has_grid_position());
-    CHECK(tips->col == 2);
+    CHECK(tips->col == 4);
     CHECK(tips->row == 0);
     CHECK(tips->colspan == 4);
-    CHECK(tips->rowspan == 2);
+    CHECK(tips->rowspan == 4);
 }
 
 TEST_CASE("default_layout: malformed JSON falls back gracefully", "[default_layout]") {
@@ -312,8 +312,8 @@ TEST_CASE("default_layout: empty anchors array falls back to hardcoded defaults"
     CHECK(pi->has_grid_position());
     CHECK(pi->col == 0);
     CHECK(pi->row == 0);
-    CHECK(pi->colspan == 2);
-    CHECK(pi->rowspan == 2);
+    CHECK(pi->colspan == 4);
+    CHECK(pi->rowspan == 4);
 
     auto* ps = find_entry(entries, "print_status");
     REQUIRE(ps);
@@ -382,8 +382,8 @@ TEST_CASE("default_layout: missing breakpoint in placements causes fallback", "[
     CHECK(pi->has_grid_position());
     CHECK(pi->col == 0);
     CHECK(pi->row == 0);
-    CHECK(pi->colspan == 2);
-    CHECK(pi->rowspan == 2);
+    CHECK(pi->colspan == 4);
+    CHECK(pi->rowspan == 4);
 }
 
 TEST_CASE("default_layout: partial breakpoint match does not trigger fallback",
@@ -517,8 +517,8 @@ TEST_CASE("default_layout: JSON with missing anchors key falls back to hardcoded
     CHECK(pi->has_grid_position());
     CHECK(pi->col == 0);
     CHECK(pi->row == 0);
-    CHECK(pi->colspan == 2);
-    CHECK(pi->rowspan == 2);
+    CHECK(pi->colspan == 4);
+    CHECK(pi->rowspan == 4);
 }
 
 TEST_CASE("default_layout: anchor placements default col/row/span values when omitted",
@@ -700,34 +700,6 @@ TEST_CASE("default_layout: bed_temperature enabled at small breakpoint without A
     auto* bed = find_entry(entries, "bed_temperature");
     REQUIRE(bed);
     CHECK(bed->enabled);
-    CHECK(entries.back().id == "bed_temperature");
-}
-
-TEST_CASE("default_layout: bed_temperature disabled at small breakpoint with AMS",
-          "[default_layout]") {
-    TempCwdGuard guard;
-    BreakpointGuard bp(UiBreakpoint::Small); // small
-    AmsSubjectGuard ams(4);                  // 4 slots → AMS present
-    guard.write_layout(R"({ "anchors": [] })");
-
-    auto entries = PanelWidgetConfig::build_default_grid();
-    auto* bed = find_entry(entries, "bed_temperature");
-    REQUIRE(bed);
-    CHECK_FALSE(bed->enabled);
-    CHECK(entries.back().id == "bed_temperature");
-}
-
-TEST_CASE("default_layout: bed_temperature disabled at medium breakpoint with AMS",
-          "[default_layout]") {
-    TempCwdGuard guard;
-    BreakpointGuard bp(UiBreakpoint::Medium); // medium
-    AmsSubjectGuard ams(4);
-    guard.write_layout(R"({ "anchors": [] })");
-
-    auto entries = PanelWidgetConfig::build_default_grid();
-    auto* bed = find_entry(entries, "bed_temperature");
-    REQUIRE(bed);
-    CHECK_FALSE(bed->enabled);
     CHECK(entries.back().id == "bed_temperature");
 }
 
@@ -935,7 +907,7 @@ TEST_CASE("default_layout: portrait falls back to the base anchors when no varia
     CHECK(pi->row == 1);
 }
 
-TEST_CASE("default_layout: portrait disables tips by default", "[default_layout][portrait]") {
+TEST_CASE("default_layout: portrait keeps tips enabled", "[default_layout][portrait]") {
     TempCwdGuard guard;
     guard.write_layout(kVariantLayout);
 
@@ -944,17 +916,17 @@ TEST_CASE("default_layout: portrait disables tips by default", "[default_layout]
         auto entries = PanelWidgetConfig::build_default_grid();
         auto* tips = find_entry(entries, "tips");
         REQUIRE(tips);
-        // tips is authored 4 columns wide against a 6-column landscape grid.
-        // Portrait grids are 2-3 wide, so it can only ever appear shrunk, and
-        // its minimum of 2 columns costs a third of a portrait row.
-        CHECK_FALSE(tips->enabled);
+        // The square-cell grid gives every portrait tier at least 8 tracks,
+        // so tips (authored 8 wide, minimum 4) fits without shrinking and
+        // the landscape-only suppression is gone.
+        CHECK(tips->enabled);
     }
     {
         LayoutTypeGuard landscape(800, 480);
         auto entries = PanelWidgetConfig::build_default_grid();
         auto* tips = find_entry(entries, "tips");
         REQUIRE(tips);
-        CHECK(tips->enabled); // …but it stays a landscape default
+        CHECK(tips->enabled);
     }
 }
 
@@ -974,18 +946,16 @@ TEST_CASE("default_layout: the shipped portrait anchors fit a portrait grid",
     REQUIRE(portrait.is_array());
     REQUIRE_FALSE(portrait.empty());
 
-    // Column budget per breakpoint name, from GridLayout's portrait rules:
-    // cols = clamp(width / 160, 2, 16) and width is the cramped axis, so the
-    // narrowest panel in each tier sets the budget.
+    // Track budget per portrait breakpoint, from GridLayout's square-cell
+    // sizing on measured content boxes (see test_grid_square_cells.cpp).
     const std::map<std::string, int> max_cols = {
-        {"micro", 2}, {"tiny", 2},   {"small", 2},   {"medium", 3},
-        {"large", 3}, {"xlarge", 4}, {"xxlarge", 6},
+        {"micro", 8},  {"tiny", 8},    {"small", 10},   {"medium", 8},
+        {"large", 10}, {"xlarge", 10}, {"xxlarge", 10},
     };
 
     for (const auto& anchor : portrait) {
         std::string id = anchor.value("id", std::string{});
         INFO("anchor " << id);
-        CHECK(id != "tips"); // explicitly out of the portrait default layout
         REQUIRE(helix::find_widget_def(id) != nullptr);
         REQUIRE(anchor.contains("placements"));
         for (auto it = anchor["placements"].begin(); it != anchor["placements"].end(); ++it) {
@@ -997,5 +967,40 @@ TEST_CASE("default_layout: the shipped portrait anchors fit a portrait grid",
             CHECK(col >= 0);
             CHECK(col + colspan <= budget->second);
         }
+    }
+}
+
+// The shipped landscape anchors must tile each breakpoint's grid: every anchor
+// fits within the column budget AND the widest one reaches the right edge.
+// Col counts are measured from the real content box per geometry — see
+// test_grid_square_cells.cpp kMeasured. micro/tiny/small/medium are all
+// distinct and must each have their own key.
+TEST_CASE("default_layout: the shipped landscape anchors tile their grid",
+          "[default_layout][shipped]") {
+    const std::map<std::string, int> cols = {
+        {"micro", 12}, {"tiny", 10}, {"small", 10}, {"medium", 12}, {"large", 16}, {"xlarge", 16},
+    };
+
+    std::string path = helix::find_readable("default_layout.json");
+    std::ifstream in(path);
+    REQUIRE(in.is_open());
+    nlohmann::json layout = nlohmann::json::parse(in);
+    REQUIRE(layout.contains("anchors"));
+
+    for (const auto& [bp_name, budget] : cols) {
+        int widest_right_edge = 0;
+        for (const auto& anchor : layout["anchors"]) {
+            REQUIRE(anchor.contains("placements"));
+            INFO("anchor " << anchor.value("id", std::string{}) << " bp " << bp_name);
+            REQUIRE(anchor["placements"].contains(bp_name));
+            const auto& p = anchor["placements"][bp_name];
+            const int col = p.value("col", 0);
+            const int colspan = p.value("colspan", 1);
+            CHECK(col >= 0);
+            CHECK(col + colspan <= budget);
+            widest_right_edge = std::max(widest_right_edge, col + colspan);
+        }
+        INFO("bp " << bp_name);
+        CHECK(widest_right_edge == budget);
     }
 }

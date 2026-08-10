@@ -650,18 +650,15 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
         spdlog::debug("[PanelWidgetConfig] Using hardcoded anchor fallback (bp={}, {})", bp_name,
                       portrait ? "portrait" : "landscape");
         if (portrait) {
-            // No `tips`: it is authored 4 columns wide and a portrait grid is
-            // 2-3 wide, so anchoring it can only ever place a shrunken widget
-            // across a third of the screen.
             anchors = {
-                {"printer_image", 0, 0, 2, 2},
-                {"print_status", 0, 2, 2, 2},
+                {"printer_image", 0, 0, 8, 4},
+                {"print_status", 0, 4, 8, 4},
             };
         } else {
             anchors = {
-                {"printer_image", 0, 0, 2, 2},
-                {"print_status", 0, 2, 2, 2},
-                {"tips", 2, 0, 4, 2},
+                {"printer_image", 0, 0, 4, 4},
+                {"print_status", 0, 4, 4, 4},
+                {"tips", 4, 0, 4, 4},
             };
         }
     }
@@ -714,31 +711,11 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
             ams_it->enabled = true;
     }
 
-    // Tips is a landscape-only default. It is authored 4 columns wide against a
-    // 6-column grid and cannot go below 2; a portrait grid is 2-3 columns, so
-    // even at its minimum it eats a third to a half of a row for rotating hints,
-    // and the widgets behind it are the ones that get dropped when the grid runs
-    // out (#1216). Portrait ships without it; the user can still add it back.
-    if (portrait) {
-        auto it = std::find_if(result.begin(), result.end(),
-                               [](const PanelWidgetEntry& e) { return e.id == "tips"; });
-        if (it != result.end() && it->enabled) {
-            it->enabled = false;
-            it->col = -1;
-            it->row = -1;
-            spdlog::debug("[PanelWidgetConfig] Portrait layout — 'tips' off by default");
-        }
-    }
-
-    // Bed temperature: always last, enabled conditionally.
-    // Large/xlarge: always enabled. Small/medium: only when no AMS present (no room).
+    // Bed temperature: move to end so it is the last widget placed.
     {
         auto it = std::find_if(result.begin(), result.end(),
                                [](const PanelWidgetEntry& e) { return e.id == "bed_temperature"; });
         if (it != result.end()) {
-            bool is_large = (to_int(breakpoint) >= to_int(UiBreakpoint::Large));
-            it->enabled = is_large || !ams_present;
-            // Move to end so it's the last widget placed
             auto entry = std::move(*it);
             result.erase(it);
             result.push_back(std::move(entry));
