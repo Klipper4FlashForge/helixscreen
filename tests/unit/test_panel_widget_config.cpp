@@ -1203,20 +1203,20 @@ TEST_CASE("PanelWidgetConfig: build_default_grid produces correct layout",
     REQUIRE(pi->colspan == 4);
     REQUIRE(pi->rowspan == 4);
 
-    // Print status: right of printer image at micro, 4×4 tracks
+    // Print status: below printer image at micro, 4×4 tracks
     auto* ps = find_entry("print_status");
     REQUIRE(ps);
     REQUIRE(ps->enabled);
-    REQUIRE(ps->col == 4);
-    REQUIRE(ps->row == 0);
+    REQUIRE(ps->col == 0);
+    REQUIRE(ps->row == 4);
     REQUIRE(ps->colspan == 4);
     REQUIRE(ps->rowspan == 4);
 
-    // Tips: right of print status, 4×4 tracks at micro
+    // Tips: right of printer image, 4×4 tracks at micro
     auto* tips = find_entry("tips");
     REQUIRE(tips);
     REQUIRE(tips->enabled);
-    REQUIRE(tips->col == 8);
+    REQUIRE(tips->col == 4);
     REQUIRE(tips->row == 0);
     REQUIRE(tips->colspan == 4);
     REQUIRE(tips->rowspan == 4);
@@ -1231,16 +1231,16 @@ TEST_CASE("PanelWidgetConfig: build_default_grid produces correct layout",
         REQUIRE_FALSE(e.has_grid_position());
     }
 
-    // Temperature anchors: nozzle at (0,4), bed at (2,4) at micro — 2×2 tracks each.
+    // Temperature at (4,4), bed at (4,6) at micro — right column.
     auto* nozzle = find_entry("temperature");
     REQUIRE(nozzle);
     REQUIRE(nozzle->enabled);
-    REQUIRE(nozzle->col == 0);
+    REQUIRE(nozzle->col == 4);
     REQUIRE(nozzle->row == 4);
     auto* bed_anchor = find_entry("bed_temperature");
     REQUIRE(bed_anchor);
-    REQUIRE(bed_anchor->col == 2);
-    REQUIRE(bed_anchor->row == 4);
+    REQUIRE(bed_anchor->col == 4);
+    REQUIRE(bed_anchor->row == 6);
 
     // Disabled widgets should have no grid position
     for (const auto& e : disabled) {
