@@ -3,6 +3,7 @@
 
 #include "../lvgl_ui_test_fixture.h"
 #include "../test_helpers/gcode_error_router_test_access.h"
+#include "../test_helpers/recovery_modal_presenter_test_access.h"
 #include "../ui_test_utils.h"
 #include "ams_backend_mock.h"
 #include "ams_error_bridge.h"
@@ -585,5 +586,69 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
     presenter.dismiss();
     process_lvgl(20);
+    ams.set_backend(nullptr);
+}
+
+// Without the ams_action_detail observer, a fault whose text changes while
+// AmsAction stays ERROR never re-presents and the user keeps reading the first
+// message. The bridge now re-consults current_error() on a detail change, and
+// RecoveryModalPresenter::present() dedups so an unchanged fault is a no-op.
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "AmsErrorBridge re-presents when fault detail changes mid-ERROR",
+                 "[error-center][ams-bridge]") {
+    auto& ams = AmsState::instance();
+    ams.init_subjects(true);
+    auto backend = std::make_unique<ErrorReportingBackend>(4);
+    auto* raw = backend.get();
+
+    helix::ErrorEvent first;
+    first.source = helix::ErrorSource::IFS;
+    first.severity = helix::ErrorSeverity::CRITICAL;
+    first.detail = "IFS unload timed out";
+    first.recovery_actions = {{"Recover", "IFS_UNLOCK", "ifs::unlock", "primary"}};
+    raw->set_error(first);
+    raw->set_operation_detail(first.detail);
+    ams.set_backend(std::move(backend));
+
+    park_action_idle(*this);
+
+    helix::ui::RecoveryModalPresenter presenter(nullptr);
+    helix::AmsErrorBridge bridge(presenter);
+    bridge.start();
+
+    // Rising edge: present the first fault.
+    ams.set_action(AmsAction::ERROR);
+    helix::ui::UpdateQueue::instance().drain();
+    process_lvgl(20);
+    REQUIRE(presenter.is_visible());
+    REQUIRE(RecoveryModalPresenterTestAccess::shown_detail(presenter) == first.detail);
+
+    // Mid-ERROR: the backend's fault text moves on while action stays ERROR.
+    helix::ErrorEvent second;
+    second.source = helix::ErrorSource::IFS;
+    second.severity = helix::ErrorSeverity::CRITICAL;
+    second.detail = "IFS load failed at extruder";
+    second.recovery_actions = {{"Recover", "IFS_UNLOCK", "ifs::unlock", "primary"}};
+    raw->set_error(second);
+    raw->set_operation_detail(second.detail);
+    // Drive the ams_action_detail subject the way sync_from_backend() does in
+    // production when the backend's operation_detail moves on — without re-
+    // reading the backend's action (the mock still reports IDLE, which would
+    // reset the action subject and falsely dismiss).
+    ams.set_action_detail(second.detail);
+    helix::ui::UpdateQueue::instance().drain();
+    process_lvgl(20);
+
+    // The stale read: without the detail observer this would still be first.detail.
+    REQUIRE(presenter.is_visible()); // same ERROR episode
+    REQUIRE(RecoveryModalPresenterTestAccess::shown_detail(presenter) == second.detail);
+
+    // Falling edge still dismisses.
+    raw->set_error(std::nullopt);
+    ams.set_action(AmsAction::IDLE);
+    helix::ui::UpdateQueue::instance().drain();
+    process_lvgl(20);
+    CHECK_FALSE(presenter.is_visible());
+
     ams.set_backend(nullptr);
 }
