@@ -37,16 +37,16 @@
 
 #include "wifi_backend_esp.h"
 
-#include "wifi_backend.h"
-
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
+#include "log_redact.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "sdkconfig.h"
+#include "wifi_backend.h"
 
 #include <spdlog/spdlog.h>
 
@@ -75,9 +75,9 @@ constexpr uint64_t kAssocTimeoutUs = 15'000'000; // 15s
 // R4: bounded backoff between reconnect attempts after a disconnect. Doubles
 // from the floor up to the cap, then holds — never a permanent giving-up
 // (graceful degradation keeps retrying in the background indefinitely).
-constexpr uint64_t kRetryBackoffFloorUs = 2'000'000;  // 2s
-constexpr uint64_t kRetryBackoffCapUs = 30'000'000;   // 30s
-constexpr int kRetryBackoffMaxShift = 4;              // 2s * 2^4 = 32s (clamped to cap)
+constexpr uint64_t kRetryBackoffFloorUs = 2'000'000; // 2s
+constexpr uint64_t kRetryBackoffCapUs = 30'000'000;  // 30s
+constexpr int kRetryBackoffMaxShift = 4;             // 2s * 2^4 = 32s (clamped to cap)
 
 // Bounds internal RAM for scan-result caching regardless of how many APs are
 // in range (R constraint: "no unbounded scan-result accumulation").
@@ -273,10 +273,9 @@ class WifiBackendEsp : public WifiBackend {
 
         if (!handlers_registered_) {
             ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
-                                                        &WifiBackendEsp::wifi_event_handler,
-                                                        this));
-            ESP_ERROR_CHECK(esp_event_handler_register(
-                IP_EVENT, IP_EVENT_STA_GOT_IP, &WifiBackendEsp::ip_event_handler, this));
+                                                       &WifiBackendEsp::wifi_event_handler, this));
+            ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
+                                                       &WifiBackendEsp::ip_event_handler, this));
             handlers_registered_ = true;
         }
 
@@ -397,7 +396,7 @@ class WifiBackendEsp : public WifiBackend {
                              "Invalid network name or password");
         }
 
-        spdlog::info("[WifiBackend] esp32: connecting to '{}'", ssid);
+        spdlog::info("[WifiBackend] esp32: connecting to '{}'", helix::redact::ssid(ssid));
 
         {
             std::lock_guard<std::mutex> lock(cfg_mutex_);
@@ -518,16 +517,18 @@ class WifiBackendEsp : public WifiBackend {
                 nvs_commit(h);
                 spdlog::info("[WifiBackend] esp32: seeded first-boot WiFi SSID from Kconfig "
                              "default ('{}')",
-                             ssid);
+                             helix::redact::ssid(ssid));
             } else {
                 spdlog::info("[WifiBackend] esp32: no stored WiFi credentials and no Kconfig "
                              "seed — station will wait for Settings > Network");
             }
         } else if (ssid_rc == ESP_OK) {
             nvs_read_string(h, kNvsKeyPsk, psk); // best-effort; empty = open network
-            spdlog::info("[WifiBackend] esp32: using stored WiFi SSID '{}' from NVS", ssid);
+            spdlog::info("[WifiBackend] esp32: using stored WiFi SSID '{}' from NVS",
+                         helix::redact::ssid(ssid));
         } else {
             spdlog::warn("[WifiBackend] esp32: nvs_get_str(ssid) failed: {}",
+                         // PII_OK: an esp_err_t name, not the SSID itself
                          esp_err_to_name(ssid_rc));
         }
         nvs_close(h);
@@ -602,7 +603,7 @@ class WifiBackendEsp : public WifiBackend {
             cb(data);
         } catch (const std::exception& e) {
             spdlog::error("[WifiBackend] esp32: exception in callback '{}': {}", event_name,
-                         e.what());
+                          e.what());
         }
     }
 
@@ -743,8 +744,8 @@ class WifiBackendEsp : public WifiBackend {
                 cached_status_.frequency_mhz = channel_to_mhz(ap_info.primary);
                 char bssid_str[18];
                 std::snprintf(bssid_str, sizeof(bssid_str), "%02x:%02x:%02x:%02x:%02x:%02x",
-                             ap_info.bssid[0], ap_info.bssid[1], ap_info.bssid[2],
-                             ap_info.bssid[3], ap_info.bssid[4], ap_info.bssid[5]);
+                              ap_info.bssid[0], ap_info.bssid[1], ap_info.bssid[2],
+                              ap_info.bssid[3], ap_info.bssid[4], ap_info.bssid[5]);
                 cached_status_.bssid = bssid_str;
             }
         }
@@ -752,8 +753,8 @@ class WifiBackendEsp : public WifiBackend {
         uint8_t mac[6] = {};
         if (esp_wifi_get_mac(WIFI_IF_STA, mac) == ESP_OK) {
             char mac_str[18];
-            std::snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x", mac[0],
-                         mac[1], mac[2], mac[3], mac[4], mac[5]);
+            std::snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1],
+                          mac[2], mac[3], mac[4], mac[5]);
             std::lock_guard<std::mutex> lock(status_mutex_);
             cached_status_.mac_address = mac_str;
         }
