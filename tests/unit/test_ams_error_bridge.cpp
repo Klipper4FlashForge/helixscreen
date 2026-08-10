@@ -13,10 +13,10 @@
 #include "printer_state.h"
 #include "recovery_modal_presenter.h"
 
-#include "../catch_amalgamated.hpp"
-
 #include <string>
 #include <vector>
+
+#include "../catch_amalgamated.hpp"
 
 namespace {
 class ErrorReportingBackend : public AmsBackendMock {
@@ -393,8 +393,8 @@ TEST_CASE_METHOD(LVGLUITestFixture, "AmsErrorBridge does not toast on non-ERROR 
     bridge.start();
 
     ToastCapture toasts;
-    for (auto action : {AmsAction::LOADING, AmsAction::HEATING, AmsAction::UNLOADING,
-                        AmsAction::IDLE}) {
+    for (auto action :
+         {AmsAction::LOADING, AmsAction::HEATING, AmsAction::UNLOADING, AmsAction::IDLE}) {
         ams.set_action(action);
         helix::ui::UpdateQueue::instance().drain();
         process_lvgl(20);
@@ -556,8 +556,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     // toast" as reason enough to skip the modal would drop the only thing the
     // user can act on. Paused + uncoded `!!` classifies CRITICAL and, since
     // #1152, carries a generic Resume action -> MODAL_WITH_RECOVER.
-    get_printer_state().update_from_status(
-        nlohmann::json{{"pause_resume", {{"is_paused", true}}}});
+    get_printer_state().update_from_status(nlohmann::json{{"pause_resume", {{"is_paused", true}}}});
     REQUIRE(get_printer_state().is_paused());
 
     auto& ams = AmsState::instance();

@@ -21,9 +21,9 @@
 #include "config.h"
 #include "display_settings_manager.h"
 #include "gcode_parser.h"
+#include "i_moonraker_api.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "memory_utils.h"
-#include "moonraker_api.h"
 #include "observer_factory.h"
 #include "runtime_config.h"
 #include "settings_manager.h"
@@ -335,7 +335,7 @@ lv_obj_t* PrintSelectDetailView::create(lv_obj_t* parent_screen) {
     return overlay_root_;
 }
 
-void PrintSelectDetailView::set_dependencies(MoonrakerAPI* api, PrinterState* printer_state) {
+void PrintSelectDetailView::set_dependencies(IMoonrakerAPI* api, PrinterState* printer_state) {
     api_ = api;
     printer_state_ = printer_state;
 

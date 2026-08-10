@@ -2641,6 +2641,8 @@ std::string UpdateChecker::get_platform_key() {
     return "snapmaker-u1";
 #elif defined(HELIX_PLATFORM_PI32)
     return "pi32";
+#elif defined(HELIX_PLATFORM_ESP32)
+    return "esp32";
 #else
     return "pi";
 #endif
@@ -2667,6 +2669,8 @@ std::string UpdateChecker::get_platform_display_name(const std::string& key) {
         return "Elegoo Centauri Carbon";
     if (key == "snapmaker-u1")
         return "Snapmaker U1";
+    if (key == "esp32")
+        return "BTT K-Touch";
     return key;
 }
 

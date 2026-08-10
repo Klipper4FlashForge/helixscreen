@@ -19,7 +19,7 @@
 #include "display_settings_manager.h"
 #include "format_utils.h"
 #include "helix-xml/src/xml/lv_xml.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "panel_widget_registry.h"
 #include "panel_widget_size.h"

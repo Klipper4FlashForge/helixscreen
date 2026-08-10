@@ -35,13 +35,13 @@
 #include "format_utils.h"
 #include "gcode_parser.h"
 #include "helix-xml/src/xml/lv_xml.h"
+#include "i_moonraker_api.h"
 #include "injection_point_manager.h"
 #include "layout_manager.h"
 #include "led/led_controller.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "memory_monitor.h"
 #include "memory_utils.h"
-#include "moonraker_api.h"
 #include "observer_factory.h"
 #include "preprint_predictor.h"
 #include "print_status_layout_decision.h"
@@ -134,7 +134,7 @@ static void try_reclaim_cached_print_status() {
     });
 }
 
-PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, MoonrakerAPI* api)
+PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, IMoonrakerAPI* api)
     : printer_state_(printer_state), api_(api) {
     // Pre-init local subject used by observer callback below (fires immediately on subscribe)
     lv_subject_init_int(&exclude_objects_available_subject_, 0);
@@ -309,6 +309,20 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, MoonrakerAPI* ap
             }
         },
         ps_subjects);
+
+#if defined(HELIX_PLATFORM_ESP32)
+    // ESP32 has no disk thumbnail cache, so print_thumbnail_path stays empty and
+    // the image arrives as a PSRAM buffer instead. Observe the generation counter
+    // ActivePrintMediaManager bumps when it installs one. observe_int_immediate
+    // for the same reason as the path observer above: the handler only does
+    // lv_image_set_src plus a shared_ptr swap (no observer lifecycle changes, no
+    // widget destruction), and the setter always runs on the UI thread — so the
+    // extra deferral would only add a frame and a stale-read window.
+    print_psram_thumb_observer_ = ui::observe_int_immediate<PrintStatusPanel>(
+        printer_state_.get_print_psram_thumb_gen_subject(), this,
+        [](PrintStatusPanel* self, int /*gen*/) { self->apply_esp_psram_thumbnail(); },
+        ps_subjects);
+#endif
 
     spdlog::debug("[{}] Subscribed to PrinterState subjects", get_name());
 
@@ -958,10 +972,16 @@ lv_obj_t* PrintStatusPanel::create(lv_obj_t* parent) {
 
     // Restore cached thumbnail if a print was already in progress before panel was displayed
     // This handles the case where a print was started from Mainsail while on the Home panel
+#if defined(HELIX_PLATFORM_ESP32)
+    // cached_thumbnail_path_ is always empty here (no disk cache) — restore from
+    // the PSRAM buffer PrinterState is holding instead.
+    apply_esp_psram_thumbnail();
+#else
     if (print_thumbnail_ && !cached_thumbnail_path_.empty()) {
         lv_image_set_src(print_thumbnail_, cached_thumbnail_path_.c_str());
         spdlog::info("[{}] Restored cached thumbnail: {}", get_name(), cached_thumbnail_path_);
     }
+#endif
 
     // Register plugin injection point for print status widgets
     lv_obj_t* extras_container = lv_obj_find_by_name(overlay_root_, "print_status_extras");
@@ -1346,12 +1366,21 @@ void PrintStatusPanel::show_gcode_viewer(bool show) {
     // When falling back to thumbnail mode, ensure the image source is applied.
     // During async gcode reload the gradient covers the area — the user should
     // at least see the cached thumbnail underneath.
+#if defined(HELIX_PLATFORM_ESP32)
+    if (mode == 0 && print_thumbnail_ && esp_thumbnail_) {
+        const void* current_src = lv_image_get_src(print_thumbnail_);
+        if (!current_src) {
+            lv_image_set_src(print_thumbnail_, esp_thumbnail_->dsc());
+        }
+    }
+#else
     if (mode == 0 && print_thumbnail_ && !cached_thumbnail_path_.empty()) {
         const void* current_src = lv_image_get_src(print_thumbnail_);
         if (!current_src) {
             lv_image_set_src(print_thumbnail_, cached_thumbnail_path_.c_str());
         }
     }
+#endif
 
     // Pause/resume rendering based on visibility mode (CPU optimization)
     if (gcode_viewer_) {
@@ -2739,6 +2768,24 @@ void PrintStatusPanel::on_print_state_changed(PrintJobState job_state) {
             }
             thumbnail_source_filename_.clear();
             cached_thumbnail_path_.clear();
+#if defined(HELIX_PLATFORM_ESP32)
+            // Release our reference to the PSRAM buffer. Main thread (job-state
+            // handler), as EspPsramThumbnail's destructor requires.
+            //
+            // The src must stop naming the descriptor BEFORE the release: for a
+            // variable source lv_image stores the raw pointer (it only strdups
+            // paths), and ours can be the last reference — PrinterState drops
+            // its own the moment the filename changes, and no replacement
+            // arrives at all when the next file has no thumbnail or the fetch
+            // fails. The placeholder is what the shared path subject publishes
+            // for a file with no thumbnail, so it is a valid src here.
+            if (esp_thumbnail_ && print_thumbnail_ &&
+                lv_image_get_src(print_thumbnail_) == esp_thumbnail_->dsc()) {
+                lv_image_set_src(print_thumbnail_,
+                                 helix::PrinterPrintState::kNoThumbnailPlaceholder);
+            }
+            esp_thumbnail_.reset();
+#endif
             pending_gcode_filename_.clear();
             // The print is over. lifecycle_ already reset its own gcode_loaded
             // flag inside on_job_state_changed() (result.clear_gcode_loaded). The
@@ -3312,6 +3359,40 @@ void PrintStatusPanel::animate_print_error() {
 // Tune panel handlers delegated to PrintTuneOverlay singleton:
 // See get_print_tune_overlay() and handle_*() methods in ui_print_tune_overlay.cpp
 // XML callbacks are registered in ui_print_tune_overlay.cpp on first show()
+
+// ============================================================================
+// THUMBNAIL LOADING
+// ============================================================================
+
+#if defined(HELIX_PLATFORM_ESP32)
+void PrintStatusPanel::apply_esp_psram_thumbnail() {
+    auto thumb = printer_state_.get_print_psram_thumbnail();
+    if (!thumb) {
+        return;
+    }
+    // Hold the reference for as long as print_thumbnail_'s src points at the
+    // descriptor. `previous` keeps the outgoing buffer alive until after the
+    // widget stops pointing at it — otherwise the last release could free the
+    // descriptor the widget's src still names. Both releases happen here, on
+    // the main thread, which is what EspPsramThumbnail's destructor requires.
+    auto previous = std::move(esp_thumbnail_);
+    esp_thumbnail_ = std::move(thumb);
+    if (!print_thumbnail_) {
+        spdlog::info("[{}] PSRAM thumbnail held (panel not yet displayed)", get_name());
+        return;
+    }
+    lv_image_set_src(print_thumbnail_, esp_thumbnail_->dsc());
+    spdlog::info("[{}] PSRAM thumbnail displayed", get_name());
+    // Fallback content for the current print is now on screen; record it so
+    // ensure_preview_current() treats the thumbnail as current (mirrors the
+    // print_thumbnail_path observer on other platforms).
+    std::string effective =
+        thumbnail_source_filename_.empty() ? current_print_filename_ : thumbnail_source_filename_;
+    if (!effective.empty()) {
+        displayed_file_ = effective;
+    }
+}
+#endif
 
 // ============================================================================
 // G-CODE VIEWER LOADING

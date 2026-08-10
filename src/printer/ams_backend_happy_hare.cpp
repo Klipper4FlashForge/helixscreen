@@ -9,7 +9,7 @@
 #include "config.h"
 #include "hh_defaults.h"
 #include "humidity_sensor_types.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "operation_patterns.h" // helix::contains_ci
 
 #include <spdlog/fmt/fmt.h>
@@ -35,7 +35,7 @@ constexpr int kHappyHarePosUnloaded = 0;
 // Construction / Destruction
 // ============================================================================
 
-AmsBackendHappyHare::AmsBackendHappyHare(MoonrakerAPI* api, MoonrakerClient* client)
+AmsBackendHappyHare::AmsBackendHappyHare(IMoonrakerAPI* api, IMoonrakerClient* client)
     : AmsSubscriptionBackend(api, client) {
     // Initialize system info with Happy Hare defaults
     system_info_.type = AmsType::HAPPY_HARE;
@@ -2552,7 +2552,7 @@ AmsError AmsBackendHappyHare::set_slot_info(int slot_index, const SlotInfo& info
         }
 
         // Material (validate to prevent command injection)
-        if (!info.material.empty() && MoonrakerAPI::is_safe_gcode_param(info.material)) {
+        if (!info.material.empty() && IMoonrakerAPI::is_safe_gcode_param(info.material)) {
             cmd += fmt::format(" MATERIAL={}", info.material);
             has_changes = true;
         } else if (!info.material.empty()) {

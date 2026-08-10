@@ -17,8 +17,8 @@
 #include "app_constants.h"
 #include "app_globals.h"
 #include "error_event.h"
+#include "i_moonraker_api.h"
 #include "lvgl.h"
-#include "moonraker_api.h"
 #include "moonraker_error.h"
 #include "moonraker_types.h"
 #include "printer_state.h"
@@ -39,7 +39,7 @@ constexpr uint32_t PREHEAT_POLL_MS = 250;
 /// How long to wait for the nozzle before giving up. Same 300s budget the AFC
 /// and AD5X backends give their own heating phases (HEATING_TIMEOUT_SECONDS),
 /// so a recovery preheat abandons a dead heater on the same schedule the
-/// backends do. MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS is numerically identical
+/// backends do. IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS is numerically identical
 /// but means "how long may an RPC take"; this is a physical heating budget.
 constexpr uint32_t PREHEAT_TIMEOUT_MS = 300000;
 
@@ -86,7 +86,7 @@ int nozzle_current_c() {
 
 namespace helix::ui {
 
-RecoveryModalPresenter::RecoveryModalPresenter(MoonrakerAPI* api)
+RecoveryModalPresenter::RecoveryModalPresenter(IMoonrakerAPI* api)
     : api_(api), preheat_budget_ms_(PREHEAT_TIMEOUT_MS) {}
 
 RecoveryModalPresenter::~RecoveryModalPresenter() {
@@ -226,7 +226,7 @@ void RecoveryModalPresenter::dispatch_recovery(const std::string& gcode, const s
             ToastManager::instance().show(ToastSeverity::ERROR,
                                           ("Recovery failed: " + err.user_message()).c_str(), 6000);
         },
-        MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+        IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
 }
 
 bool RecoveryModalPresenter::nozzle_ready_for_extrusion() const {

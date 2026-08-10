@@ -25,7 +25,10 @@
 #include "wifi_interface.h"
 #include "wifi_ui_utils.h"
 
-#if !defined(__APPLE__) && !defined(__ANDROID__)
+#if !defined(__APPLE__) && !defined(__ANDROID__) && !defined(ESP_PLATFORM)
+// NetworkManager/wpa_supplicant fallback (handle_init_failed, below) is a
+// Linux-desktop-only concern — ESP32 has a single esp_wifi backend with no
+// fallback path (see wifi_backend_esp.cpp).
 #include "wifi_backend_networkmanager.h"
 #include "wifi_backend_wpa_supplicant.h"
 #endif
@@ -204,7 +207,7 @@ void WiFiManager::handle_init_failed(bool silent, const std::string& msg) {
     // but NM daemon masked/dead), transparently fall back to wpa_supplicant
     // so users aren't left WiFi-less because of a dormant NM install. Guarded
     // by tried_fallback_ to avoid infinite loops if wpa_supplicant also fails.
-#if !defined(__APPLE__) && !defined(__ANDROID__)
+#if !defined(__APPLE__) && !defined(__ANDROID__) && !defined(ESP_PLATFORM)
     if (!tried_fallback_ && backend_ &&
         dynamic_cast<WifiBackendNetworkManager*>(backend_.get()) != nullptr) {
         tried_fallback_ = true;

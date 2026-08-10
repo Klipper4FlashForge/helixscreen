@@ -517,3 +517,12 @@ class WifiBackend {
   protected:
     bool silent_ = false; ///< When true, suppress error modals on startup
 };
+
+namespace helix {
+/**
+ * Platform-provided backend factory for embedded targets. NOT defined in
+ * the desktop build — the ESP32 firmware tree implements it against
+ * esp_wifi (WifiBackend::create() calls it when ESP_PLATFORM is defined).
+ */
+std::unique_ptr<WifiBackend> create_platform_wifi_backend(bool silent);
+} // namespace helix

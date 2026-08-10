@@ -390,7 +390,7 @@ std::optional<AmsAlert> CfsErrorDecoder::decode(const std::string& key_code, int
 // AmsBackendCfs — Main CFS backend class
 // =============================================================================
 
-AmsBackendCfs::AmsBackendCfs(MoonrakerAPI* api, helix::MoonrakerClient* client)
+AmsBackendCfs::AmsBackendCfs(IMoonrakerAPI* api, helix::IMoonrakerClient* client)
     : AmsSubscriptionBackend(api, client) {
     system_info_.type = AmsType::CFS;
     system_info_.type_name = "CFS";
@@ -2207,7 +2207,7 @@ std::string AmsBackendCfs::swap_gcode(int idx, CfsMacroVariant variant) {
 
 AmsError AmsBackendCfs::dispatch_action_script(std::string gcode) {
     if (!api_) {
-        return AmsErrorHelper::not_connected("MoonrakerAPI not available");
+        return AmsErrorHelper::not_connected("IMoonrakerAPI not available");
     }
 
     auto on_complete = [this]() {
@@ -2252,12 +2252,12 @@ AmsError AmsBackendCfs::dispatch_action_script(std::string gcode) {
                 if (macro_variant_ == CfsMacroVariant::K2) {
                     api_->execute_gcode(
                         "BOX_RESTORE_FAN", []() {}, [](const MoonrakerError&) {},
-                        MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+                        IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
                 }
                 if (macro_variant_ != CfsMacroVariant::Fork) {
                     api_->execute_gcode(
                         "RESTORE_GCODE_STATE NAME=helix_cfs_load", []() {},
-                        [](const MoonrakerError&) {}, MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+                        [](const MoonrakerError&) {}, IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
                 }
             }
         });
@@ -2267,7 +2267,7 @@ AmsError AmsBackendCfs::dispatch_action_script(std::string gcode) {
     // helper now. What stays here is CFS's own unwind: phase tracking, the K2
     // fan restore, and RESTORE_GCODE_STATE.
     return ensure_homed_then(std::move(gcode), std::move(on_complete), std::move(on_error),
-                             MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS,
+                             IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS,
                              /*skip_homing=*/macro_variant_ == CfsMacroVariant::Fork,
                              /*silent=*/false);
 }
