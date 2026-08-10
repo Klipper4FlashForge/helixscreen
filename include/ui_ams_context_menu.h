@@ -117,13 +117,16 @@ class AmsContextMenu : public ContextMenu {
         return "ams_context_menu";
     }
     void on_created(lv_obj_t* menu_obj) override;
+    /// A tap outside a single-select action menu chooses nothing, so it reports
+    /// CANCELLED through this menu's own callback rather than the base's.
+    void on_backdrop_clicked() override;
 
   private:
     // === AMS-specific state ===
     ActionCallback action_callback_;
 
     /**
-     * @brief Common pattern: clear static instance, hide, invoke callback
+     * @brief Common pattern: hide, then invoke the callback with the slot index
      */
     void dispatch_ams_action(MenuAction action);
 
@@ -160,7 +163,6 @@ class AmsContextMenu : public ContextMenu {
     bool external_spool_mode_ = false; ///< True when showing menu for external spool (bypass)
 
     // === Event Handlers ===
-    void handle_backdrop_clicked();
     void handle_load();
     void handle_unload();
     void handle_gate_select();
@@ -257,9 +259,9 @@ class AmsContextMenu : public ContextMenu {
     static bool callbacks_registered_;
 
     // === Static Callbacks ===
-    static AmsContextMenu* s_active_instance_;
+    /// The menu on screen as an AmsContextMenu, or nullptr. Thin wrapper over
+    /// ContextMenu::active_as() that also logs the unexpected empty case.
     static AmsContextMenu* get_active_instance();
-    static void on_backdrop_cb(lv_event_t* e);
     static void on_load_cb(lv_event_t* e);
     static void on_unload_cb(lv_event_t* e);
     static void on_gate_select_cb(lv_event_t* e);

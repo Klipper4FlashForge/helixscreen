@@ -3,11 +3,10 @@
 
 #include "esp_moonraker_client.h"
 
-#include "helix_version.h" // HELIX_VERSION for server.connection.identify
-
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "helix_version.h" // HELIX_VERSION for server.connection.identify
 
 #include <utility>
 #include <vector>
@@ -255,8 +254,8 @@ void EspMoonrakerClient::emit_event(MoonrakerEventType type, const std::string& 
 // WebSocket event handling (runs on the websocket_task)
 // ---------------------------------------------------------------------------
 
-void EspMoonrakerClient::ws_event_trampoline(void* arg, esp_event_base_t /*base*/,
-                                             int32_t event_id, void* event_data) {
+void EspMoonrakerClient::ws_event_trampoline(void* arg, esp_event_base_t /*base*/, int32_t event_id,
+                                             void* event_data) {
     auto* self = static_cast<EspMoonrakerClient*>(arg);
     if (!self || !self->alive_.load()) {
         return;
@@ -411,8 +410,7 @@ void EspMoonrakerClient::on_ws_data(const esp_websocket_event_data_t* d) {
         if (rx_skip_) {
             ESP_LOGE(TAG, "dropping %d-byte message (cap 256KB)", d->payload_len);
         } else {
-            rx_buf_.reserve(
-                std::min(static_cast<size_t>(d->payload_len), kMaxMessageBytes));
+            rx_buf_.reserve(std::min(static_cast<size_t>(d->payload_len), kMaxMessageBytes));
         }
     }
 
@@ -421,8 +419,7 @@ void EspMoonrakerClient::on_ws_data(const esp_websocket_event_data_t* d) {
     }
 
     // Message complete when this chunk reaches the declared payload length.
-    const bool complete =
-        (d->payload_offset + d->data_len) >= d->payload_len;
+    const bool complete = (d->payload_offset + d->data_len) >= d->payload_len;
     if (complete) {
         if (!rx_skip_ && !rx_buf_.empty()) {
             dispatch_message(rx_buf_.data(), rx_buf_.size());
@@ -584,8 +581,8 @@ void EspMoonrakerClient::housekeeping_trampoline(void* arg) {
     }
     if (to_failed) {
         self->set_state(ConnectionState::FAILED);
-        self->emit_event(MoonrakerEventType::CONNECTION_FAILED,
-                         "Reconnection has not succeeded", true);
+        self->emit_event(MoonrakerEventType::CONNECTION_FAILED, "Reconnection has not succeeded",
+                         true);
     }
 
     self->timer_in_flight_.store(false);
@@ -656,8 +653,7 @@ void EspMoonrakerClient::process_timeouts() {
         // since this intent was scheduled, it belongs to a connection nothing
         // is waiting on anymore — drop it instead of restarting on top of
         // whatever the manual path already did.
-        const bool current =
-            (reconnect_generation_.load() == connection_generation_.load());
+        const bool current = (reconnect_generation_.load() == connection_generation_.load());
         if (current && auto_reconnect_.load() && ws_) {
             connection_generation_.fetch_add(1);
             discovery_in_flight_.store(false);
@@ -677,8 +673,7 @@ int EspMoonrakerClient::send_envelope(const json& envelope) {
         return -1;
     }
     std::string payload = envelope.dump();
-    int sent = esp_websocket_client_send_text(ws_, payload.data(),
-                                              static_cast<int>(payload.size()),
+    int sent = esp_websocket_client_send_text(ws_, payload.data(), static_cast<int>(payload.size()),
                                               pdMS_TO_TICKS(connection_timeout_ms_));
     return sent;
 }
@@ -899,8 +894,8 @@ json build_subscription_objects(const PrinterDiscovery& hw) {
     objs["virtual_sdcard"] = json::array({"progress", "layer", "layer_count", "is_active"});
     objs["toolhead"] = json::array({"position", "homed_axes", "kinematics", "extruder",
                                     "max_velocity", "axis_minimum", "axis_maximum"});
-    objs["gcode_move"] = json::array(
-        {"gcode_position", "speed", "speed_factor", "extrude_factor", "homing_origin"});
+    objs["gcode_move"] =
+        json::array({"gcode_position", "speed", "speed_factor", "extrude_factor", "homing_origin"});
     objs["motion_report"] = json::array({"live_extruder_velocity"});
     objs["display_status"] = json::array({"message", "progress"});
     objs["webhooks"] = json::array({"state", "state_message"});
@@ -987,34 +982,82 @@ json build_subscription_objects(const PrinterDiscovery& hw) {
     if (hw.has_mmu()) {
         // Happy Hare mmu object — narrowed to the fields the AMS backends read
         // (nullptr would flood notifications, #388).
-        objs["mmu"] = json::array(
-            {"gate",           "tool",           "filament",       "action",
-             "reason_for_pause", "filament_pos", "gate_status",    "gate_color_rgb",
-             "gate_color",     "gate_material",  "gate_name",      "gate_filament_name",
-             "gate_spool_id",  "gate_temperature", "has_bypass",   "num_units",
-             "num_gates",      "unit_gate_counts", "unit",         "ttg_map",
-             "endless_spool_groups", "sensors",  "bowden_progress", "clog_detection_enabled",
-             "encoder",        "flowguard",      "drying_state",   "sync_feedback_state",
-             "sync_feedback_bias_modelled", "sync_feedback_bias_raw", "sync_feedback_flow_rate",
-             "sync_drive",     "spoolman_support", "pending_spool_id", "espooler_active",
-             "num_toolchanges", "slicer_tool_map", "toolchange_purge_volume", "leds"});
+        objs["mmu"] = json::array({"gate",
+                                   "tool",
+                                   "filament",
+                                   "action",
+                                   "reason_for_pause",
+                                   "filament_pos",
+                                   "gate_status",
+                                   "gate_color_rgb",
+                                   "gate_color",
+                                   "gate_material",
+                                   "gate_name",
+                                   "gate_filament_name",
+                                   "gate_spool_id",
+                                   "gate_temperature",
+                                   "has_bypass",
+                                   "num_units",
+                                   "num_gates",
+                                   "unit_gate_counts",
+                                   "unit",
+                                   "ttg_map",
+                                   "endless_spool_groups",
+                                   "sensors",
+                                   "bowden_progress",
+                                   "clog_detection_enabled",
+                                   "encoder",
+                                   "flowguard",
+                                   "drying_state",
+                                   "sync_feedback_state",
+                                   "sync_feedback_bias_modelled",
+                                   "sync_feedback_bias_raw",
+                                   "sync_feedback_flow_rate",
+                                   "sync_drive",
+                                   "spoolman_support",
+                                   "pending_spool_id",
+                                   "espooler_active",
+                                   "num_toolchanges",
+                                   "slicer_tool_map",
+                                   "toolchange_purge_volume",
+                                   "leds"});
     }
 
     // AFC objects come from the raw printer-object list — the typed PrinterDiscovery
     // accessors don't expose the full AFC_* set. parse_objects() populates
     // printer_objects() before this runs. Field lists mirror the desktop
     // AmsBackendAfc parsers.
-    static const json afc_state_fields = json::array(
-        {"connected",  "bypass_state", "quiet_mode",  "current_load",  "current_lane",
-         "current_state", "current_tool", "current_toolchange", "error_state", "filament_loaded",
-         "lane_loaded", "led_state",    "message",     "name",          "number_of_toolchanges",
-         "num_extruders", "status",     "system",      "tool_sensor_after_extruder", "tool_stn",
-         "tool_stn_unload", "type",     "units",       "lanes",         "hubs",
-         "extruders",   "buffers"});
-    static const json afc_stepper_fields = json::array(
-        {"buffer_status", "color", "dist_hub", "extruder", "filament_status", "hub", "load",
-         "loaded_to_hub", "map", "material", "prep", "runout_lane", "spool_id", "status",
-         "tool_loaded", "weight"});
+    static const json afc_state_fields = json::array({"connected",
+                                                      "bypass_state",
+                                                      "quiet_mode",
+                                                      "current_load",
+                                                      "current_lane",
+                                                      "current_state",
+                                                      "current_tool",
+                                                      "current_toolchange",
+                                                      "error_state",
+                                                      "filament_loaded",
+                                                      "lane_loaded",
+                                                      "led_state",
+                                                      "message",
+                                                      "name",
+                                                      "number_of_toolchanges",
+                                                      "num_extruders",
+                                                      "status",
+                                                      "system",
+                                                      "tool_sensor_after_extruder",
+                                                      "tool_stn",
+                                                      "tool_stn_unload",
+                                                      "type",
+                                                      "units",
+                                                      "lanes",
+                                                      "hubs",
+                                                      "extruders",
+                                                      "buffers"});
+    static const json afc_stepper_fields =
+        json::array({"buffer_status", "color", "dist_hub", "extruder", "filament_status", "hub",
+                     "load", "loaded_to_hub", "map", "material", "prep", "runout_lane", "spool_id",
+                     "status", "tool_loaded", "weight"});
     static const json afc_hub_fields = json::array({"state", "afc_bowden_length"});
     static const json afc_buffer_fields = json::array(
         {"state", "distance_to_fault", "error_sensitivity", "fault_detection_enabled", "lanes"});

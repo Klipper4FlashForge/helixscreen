@@ -6,10 +6,10 @@
 #include "connection_state.h"
 #include "json_fwd.h"
 #include "moonraker_error.h"
-#include "moonraker_events.h"           // for helix::MoonrakerEventCallback
-#include "moonraker_request_tracker.h"  // for helix::RequestId
-#include "moonraker_types.h"            // for ::GcodeStoreEntry
-#include "printer_discovery.h"          // for helix::PrinterDiscovery
+#include "moonraker_events.h"          // for helix::MoonrakerEventCallback
+#include "moonraker_request_tracker.h" // for helix::RequestId
+#include "moonraker_types.h"           // for ::GcodeStoreEntry
+#include "printer_discovery.h"         // for helix::PrinterDiscovery
 
 #include <cstdint>
 #include <functional>
@@ -212,8 +212,7 @@ class IMoonrakerClient {
 
     /// @brief Configure timeout and reconnection parameters
     virtual void configure_timeouts(uint32_t connection_timeout_ms, uint32_t request_timeout_ms,
-                                    uint32_t keepalive_interval_ms,
-                                    uint32_t reconnect_min_delay_ms,
+                                    uint32_t keepalive_interval_ms, uint32_t reconnect_min_delay_ms,
                                     uint32_t reconnect_max_delay_ms) = 0;
 
     /// @brief Process timeout checks for pending requests

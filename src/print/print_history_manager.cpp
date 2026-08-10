@@ -5,8 +5,8 @@
 
 #include "ui_update_queue.h"
 
-#include "i_moonraker_client.h"
 #include "i_moonraker_api.h"
+#include "i_moonraker_client.h"
 
 #include <spdlog/spdlog.h>
 

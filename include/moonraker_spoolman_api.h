@@ -83,8 +83,7 @@ class MoonrakerSpoolmanAPI : public ISpoolmanAPI {
      * @param on_success Called with spool list
      * @param on_error Called on failure
      */
-    void get_spoolman_spools(helix::SpoolListCallback on_success,
-                             ErrorCallback on_error) override;
+    void get_spoolman_spools(helix::SpoolListCallback on_success, ErrorCallback on_error) override;
 
     /**
      * @brief Get a single spool's details by ID
@@ -93,8 +92,8 @@ class MoonrakerSpoolmanAPI : public ISpoolmanAPI {
      * @param on_success Called with spool info (empty optional if not found)
      * @param on_error Called on failure
      */
-    void get_spoolman_spool(int spool_id, helix::SpoolCallback on_success,
-                            ErrorCallback on_error, bool silent = false) override;
+    void get_spoolman_spool(int spool_id, helix::SpoolCallback on_success, ErrorCallback on_error,
+                            bool silent = false) override;
 
     /**
      * @brief Set the active spool for filament tracking
@@ -131,8 +130,7 @@ class MoonrakerSpoolmanAPI : public ISpoolmanAPI {
      * @param on_error Called on failure
      */
     void update_spoolman_spool_weight(int spool_id, double remaining_weight_g,
-                                      SuccessCallback on_success,
-                                      ErrorCallback on_error) override;
+                                      SuccessCallback on_success, ErrorCallback on_error) override;
 
     /**
      * @brief Update a spool's properties in Spoolman

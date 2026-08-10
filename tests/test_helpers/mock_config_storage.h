@@ -30,17 +30,23 @@ class MockConfigStorage : public helix::ConfigStorage {
         return doc;
     }
     bool store(const std::string& bytes) override {
-        if (ro) return false;
+        if (ro)
+            return false;
         doc = bytes;
         store_calls++;
         return true;
     }
     void preserve_corrupt() override {
-        if (doc) corrupt_stash = *doc;
+        if (doc)
+            corrupt_stash = *doc;
         doc.reset();
     }
-    bool read_only() override { return ro; }
-    std::string describe() const override { return "mock://config"; }
+    bool read_only() override {
+        return ro;
+    }
+    std::string describe() const override {
+        return "mock://config";
+    }
 };
 
 } // namespace helix::test

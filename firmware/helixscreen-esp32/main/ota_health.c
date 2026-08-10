@@ -5,11 +5,11 @@
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 
-static const char *TAG = "ota";
+static const char* TAG = "ota";
 
 void ota_health_confirm(void) {
-    const esp_partition_t *running = esp_ota_get_running_partition();
-    const esp_app_desc_t *desc = esp_app_get_description();
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    const esp_app_desc_t* desc = esp_app_get_description();
     ESP_LOGI(TAG, "running slot=%s version=%s", running->label, desc->version);
 
     esp_ota_img_states_t state;

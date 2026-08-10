@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "lvgl_glue.h"
-#include "board_display.h"
-#include "ktouch.h"
-#include "ota_health.h"
-#include "touch_input.h"
 
+#include "board_display.h"
 #include "esp_attr.h"
 #include "esp_heap_caps.h"
 #include "esp_lcd_panel_rgb.h"
@@ -14,14 +11,17 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "ktouch.h"
 #include "lvgl.h"
+#include "ota_health.h"
 #include "src/xml/lv_xml.h"
+#include "touch_input.h"
 
 #include <pthread.h>
 #include <stdint.h>
 #include <string.h>
 
-static const char *TAG = "lvgl_glue";
+static const char* TAG = "lvgl_glue";
 static esp_lcd_panel_handle_t s_panel;
 static void (*s_ui_build)(void);
 static void (*s_ui_tick)(void);
@@ -74,8 +74,8 @@ static void (*s_ui_tick)(void);
 #define UI_BAND_LINES 10
 #define UI_BAND_BYTES ((size_t)UI_BAND_LINES * FB_STRIDE)
 
-static uint8_t *s_shadow; // full-frame PSRAM shadow (LVGL chunks land here)
-static uint8_t *s_band;   // internal-DRAM two-hop staging band (NULL => direct blit)
+static uint8_t* s_shadow; // full-frame PSRAM shadow (LVGL chunks land here)
+static uint8_t* s_band;   // internal-DRAM two-hop staging band (NULL => direct blit)
 
 // vsync semaphore: given by the on_vsync ISR every frame, taken by the presenter
 // to align each blit to a fresh frame top.
@@ -95,7 +95,7 @@ static int32_t s_cur_y1;
 static int32_t s_cur_y2;
 
 static bool flush_on_vsync(esp_lcd_panel_handle_t panel,
-                           const esp_lcd_rgb_panel_event_data_t *edata, void *user_ctx) {
+                           const esp_lcd_rgb_panel_event_data_t* edata, void* user_ctx) {
     (void)panel;
     (void)edata;
     (void)user_ctx;
@@ -147,7 +147,7 @@ static uint64_t s_cyc_px;
 static int64_t s_cyc_t0_us;
 #define CYCLE_LOG_MS 100
 
-static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
+static void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     // Stage this chunk into the PSRAM shadow at its screen offset (internal
     // partial buffer -> PSRAM, row by row: the chunk is w*h tightly packed, the
     // shadow is full-width). Then extend the cycle's dirty union and return —
@@ -161,8 +161,8 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
     s_cyc_px += (uint64_t)w * (uint64_t)h;
     size_t row_bytes = (size_t)w * FB_BPP;
     for (int32_t r = 0; r < h; r++) {
-        uint8_t *dst = s_shadow + (size_t)(area->y1 + r) * FB_STRIDE + (size_t)area->x1 * FB_BPP;
-        const uint8_t *src = px_map + (size_t)r * row_bytes;
+        uint8_t* dst = s_shadow + (size_t)(area->y1 + r) * FB_STRIDE + (size_t)area->x1 * FB_BPP;
+        const uint8_t* src = px_map + (size_t)r * row_bytes;
         memcpy(dst, src, row_bytes);
     }
 
@@ -230,7 +230,7 @@ static void present_blit(int32_t y1, int32_t y2) {
 
 // Presenter task: blits completed shadow frames to the FB, each aligned to a
 // fresh vsync so the copy starts at frame top and outruns the beam.
-static void present_task(void *arg) {
+static void present_task(void* arg) {
     (void)arg;
     while (true) {
         portENTER_CRITICAL(&s_present_mux);
@@ -267,7 +267,9 @@ static void present_task(void *arg) {
     }
 }
 
-static uint32_t tick_cb(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
+static uint32_t tick_cb(void) {
+    return (uint32_t)(esp_timer_get_time() / 1000);
+}
 
 // The UI thread body. Runs on the pthread created in lvgl_glue_start. Owns the
 // ENTIRE display + LVGL bring-up (panel, lv_init, buffers, touch) plus the app
@@ -276,7 +278,7 @@ static uint32_t tick_cb(void) { return (uint32_t)(esp_timer_get_time() / 1000); 
 // first is the pthread stack), so its pre-alloc heap is logged inside
 // board_display_init. Keeping it all on one thread also keeps LVGL access
 // sequential (LV_OS_NONE, no locking).
-static void *ui_thread_main(void *arg) {
+static void* ui_thread_main(void* arg) {
     (void)arg;
 
     // Panel first (RGB init + bounce buffers). Thread-agnostic hardware setup.
@@ -310,12 +312,11 @@ static void *ui_thread_main(void *arg) {
     // PSRAM->PSRAM blit (slower, but correct).
     s_band = heap_caps_aligned_alloc(16, UI_BAND_BYTES, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!s_band) {
-        ESP_LOGW(TAG, "no internal for %uB band; direct blit (largest=%u)",
-                 (unsigned)UI_BAND_BYTES,
+        ESP_LOGW(TAG, "no internal for %uB band; direct blit (largest=%u)", (unsigned)UI_BAND_BYTES,
                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
     }
 
-    lv_display_t *disp = lv_display_create(BOARD_LCD_H_RES, BOARD_LCD_V_RES);
+    lv_display_t* disp = lv_display_create(BOARD_LCD_H_RES, BOARD_LCD_V_RES);
     lv_display_set_buffers(disp, s_draw_buf1, NULL, UI_DRAW_BUF_BYTES,
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(disp, flush_cb);
@@ -324,8 +325,8 @@ static void *ui_thread_main(void *arg) {
     touch_input_init();
 
     // Presenter task — the only writer of the panel FB.
-    if (xTaskCreate(present_task, "present", PRESENT_STACK_BYTES, NULL, PRESENT_TASK_PRIO,
-                    NULL) != pdPASS) {
+    if (xTaskCreate(present_task, "present", PRESENT_STACK_BYTES, NULL, PRESENT_TASK_PRIO, NULL) !=
+        pdPASS) {
         ESP_LOGE(TAG, "FATAL: no presenter task");
         abort();
     }

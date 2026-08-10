@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "board_display.h"
-#include "ktouch.h"
 
 #include "driver/gpio.h"
 #include "driver/ledc.h"
@@ -9,12 +8,12 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "ktouch.h"
 
-static const char *TAG = "board_display";
+static const char* TAG = "board_display";
 
 esp_lcd_panel_handle_t board_display_init(void) {
-    gpio_config_t rst = {.pin_bit_mask = 1ULL << BOARD_LCD_PIN_RESET,
-                         .mode = GPIO_MODE_OUTPUT};
+    gpio_config_t rst = {.pin_bit_mask = 1ULL << BOARD_LCD_PIN_RESET, .mode = GPIO_MODE_OUTPUT};
     ESP_ERROR_CHECK(gpio_config(&rst));
     gpio_set_level(BOARD_LCD_PIN_RESET, 0);
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -23,18 +22,19 @@ esp_lcd_panel_handle_t board_display_init(void) {
 
     esp_lcd_rgb_panel_config_t cfg = {
         .clk_src = LCD_CLK_SRC_DEFAULT,
-        .timings = {
-            .pclk_hz = BOARD_LCD_PCLK_HZ,
-            .h_res = BOARD_LCD_H_RES,
-            .v_res = BOARD_LCD_V_RES,
-            .hsync_pulse_width = BOARD_LCD_HSYNC_PW,
-            .hsync_back_porch = BOARD_LCD_HSYNC_BP,
-            .hsync_front_porch = BOARD_LCD_HSYNC_FP,
-            .vsync_pulse_width = BOARD_LCD_VSYNC_PW,
-            .vsync_back_porch = BOARD_LCD_VSYNC_BP,
-            .vsync_front_porch = BOARD_LCD_VSYNC_FP,
-            .flags = {.pclk_active_neg = 1},
-        },
+        .timings =
+            {
+                .pclk_hz = BOARD_LCD_PCLK_HZ,
+                .h_res = BOARD_LCD_H_RES,
+                .v_res = BOARD_LCD_V_RES,
+                .hsync_pulse_width = BOARD_LCD_HSYNC_PW,
+                .hsync_back_porch = BOARD_LCD_HSYNC_BP,
+                .hsync_front_porch = BOARD_LCD_HSYNC_FP,
+                .vsync_pulse_width = BOARD_LCD_VSYNC_PW,
+                .vsync_back_porch = BOARD_LCD_VSYNC_BP,
+                .vsync_front_porch = BOARD_LCD_VSYNC_FP,
+                .flags = {.pclk_active_neg = 1},
+            },
         .data_width = 16,
         .bits_per_pixel = 16,
         // DO NOT set num_fbs > 1 with this bounce-buffer config. Tried it (LVGL
@@ -95,7 +95,8 @@ esp_lcd_panel_handle_t board_display_init(void) {
 }
 
 void board_display_backlight(uint8_t percent) {
-    if (percent > 100) percent = 100;
+    if (percent > 100)
+        percent = 100;
     uint32_t duty = ((uint32_t)percent * ((1 << 11) - 1)) / 100;
     ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);

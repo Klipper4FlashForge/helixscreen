@@ -16,11 +16,10 @@
 
 #pragma once
 
-#include "i_moonraker_client.h"
-#include "reconnect_backoff.h"
-
 #include "esp_timer.h"
 #include "esp_websocket_client.h"
+#include "i_moonraker_client.h"
+#include "reconnect_backoff.h"
 
 #include <atomic>
 #include <cstdint>
@@ -66,15 +65,17 @@ class EspMoonrakerClient final : public IMoonrakerClient {
                                std::function<void(const MoonrakerError&)> on_error) override;
 
     // --- Discovery (Plan 4 fills the real sequence) ---
-    void discover_printer(std::function<void()> on_complete,
-                          std::function<void(const std::string& reason)> on_error = nullptr) override;
+    void
+    discover_printer(std::function<void()> on_complete,
+                     std::function<void(const std::string& reason)> on_error = nullptr) override;
     PrinterDiscovery hardware() const override;
     void parse_objects(const json& objects) override;
     void clear_discovery_cache() override;
-    void set_on_hardware_discovered(
-        std::function<void(const helix::PrinterDiscovery&)> cb) override;
+    void
+    set_on_hardware_discovered(std::function<void(const helix::PrinterDiscovery&)> cb) override;
     void set_on_discovery_complete(
-        std::function<void(const helix::PrinterDiscovery&, const json& initial_status)> cb) override;
+        std::function<void(const helix::PrinterDiscovery&, const json& initial_status)> cb)
+        override;
     void set_bed_mesh_callback(std::function<void(const json&)> callback) override;
 
     // --- Subscriptions & method callbacks ---
@@ -88,8 +89,7 @@ class EspMoonrakerClient final : public IMoonrakerClient {
 
     // --- Connection state & observers ---
     ConnectionState get_connection_state() const override;
-    void add_connected_observer(const std::string& handler_name,
-                                std::function<void()> cb) override;
+    void add_connected_observer(const std::string& handler_name, std::function<void()> cb) override;
     bool remove_connected_observer(const std::string& handler_name) override;
     void force_reconnect() override;
 
@@ -102,8 +102,8 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     bool cancel_request(RequestId id) override;
 
     // --- Owner wiring & configuration ---
-    void set_state_change_callback(
-        std::function<void(ConnectionState, ConnectionState)> cb) override;
+    void
+    set_state_change_callback(std::function<void(ConnectionState, ConnectionState)> cb) override;
     void set_connection_timeout(uint32_t timeout_ms) override;
     void set_default_request_timeout(uint32_t timeout_ms) override;
     void configure_timeouts(uint32_t connection_timeout_ms, uint32_t request_timeout_ms,

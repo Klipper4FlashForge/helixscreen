@@ -10,13 +10,15 @@ namespace {
 // assertion mid-test leaks the non-default root into every later test case.
 struct AssetRootGuard {
     std::string saved = helix::asset_root();
-    ~AssetRootGuard() { helix::set_asset_root(saved); }
+    ~AssetRootGuard() {
+        helix::set_asset_root(saved);
+    }
 };
 
 } // namespace
 
 TEST_CASE("asset_path is identity under the default root", "[paths][asset_root]") {
-    helix::set_asset_root("");  // reset to default
+    helix::set_asset_root(""); // reset to default
     REQUIRE(helix::asset_root() == ".");
     REQUIRE(helix::asset_path("ui_xml") == "ui_xml");
     REQUIRE(helix::asset_path("assets/filaments.json") == "assets/filaments.json");
@@ -24,9 +26,9 @@ TEST_CASE("asset_path is identity under the default root", "[paths][asset_root]"
 
 TEST_CASE("asset_path joins under an explicit root", "[paths][asset_root]") {
     AssetRootGuard guard;
-    helix::set_asset_root("/littlefs/");  // trailing slash must be stripped
+    helix::set_asset_root("/littlefs/"); // trailing slash must be stripped
     REQUIRE(helix::asset_root() == "/littlefs");
     REQUIRE(helix::asset_path("ui_xml") == "/littlefs/ui_xml");
-    helix::set_asset_root("");  // restore for other tests (guard is the backstop)
+    helix::set_asset_root(""); // restore for other tests (guard is the backstop)
     REQUIRE(helix::asset_path("ui_xml") == "ui_xml");
 }

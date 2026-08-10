@@ -14,17 +14,15 @@
 
 #if CONFIG_HELIX_NET_HIL
 
-#include "esp_moonraker_client.h"
-#include "wifi_backend.h"
-#include "wifi_backend_esp.h"
-
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_moonraker_client.h"
 #include "esp_timer.h"
-
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "wifi_backend.h"
+#include "wifi_backend_esp.h"
 
 #include <atomic>
 #include <cstring>
@@ -85,8 +83,7 @@ void wifi_init_station(void) {
     WiFiError connect_err =
         s_wifi_backend->connect_network(CONFIG_HELIX_HIL_WIFI_SSID, CONFIG_HELIX_HIL_WIFI_PASS);
     if (!connect_err.success()) {
-        ESP_LOGE(TAG, "wifi backend connect_network failed: %s",
-                 connect_err.technical_msg.c_str());
+        ESP_LOGE(TAG, "wifi backend connect_network failed: %s", connect_err.technical_msg.c_str());
     }
 
     ESP_LOGI(TAG, "waiting for wifi connection (ssid=\"%s\")...", CONFIG_HELIX_HIL_WIFI_SSID);
@@ -103,8 +100,7 @@ int64_t timed_printer_info() {
     int64_t t0 = esp_timer_get_time();
 
     s_client->send_jsonrpc(
-        "printer.info", json::object(),
-        [done](const json&) { xSemaphoreGive(done); },
+        "printer.info", json::object(), [done](const json&) { xSemaphoreGive(done); },
         [done](const MoonrakerError& err) {
             ESP_LOGW(TAG, "printer.info error: %s", err.message.c_str());
             s_drops.fetch_add(1, std::memory_order_relaxed);
@@ -134,7 +130,7 @@ void on_temp_notify(const json& msg) {
     uint32_t prev_max = s_max_msg.load(std::memory_order_relaxed);
     while (approx_size > prev_max &&
            !s_max_msg.compare_exchange_weak(prev_max, static_cast<uint32_t>(approx_size),
-                                             std::memory_order_relaxed)) {
+                                            std::memory_order_relaxed)) {
     }
 
     if (!msg.contains("params") || !msg["params"].is_array() || msg["params"].empty()) {
@@ -185,8 +181,8 @@ void* hil_thread_main(void*) {
                 resp.value(json::json_pointer("/result/klippy_state"), std::string("?"));
             std::string moonraker_version =
                 resp.value(json::json_pointer("/result/moonraker_version"), std::string("?"));
-            ESP_LOGI(TAG, "server.info klippy_state=%s moonraker_version=%s",
-                     klippy_state.c_str(), moonraker_version.c_str());
+            ESP_LOGI(TAG, "server.info klippy_state=%s moonraker_version=%s", klippy_state.c_str(),
+                     moonraker_version.c_str());
             xSemaphoreGive(info_done);
         });
         if (xSemaphoreTake(info_done, pdMS_TO_TICKS(10000)) != pdTRUE) {
@@ -239,8 +235,7 @@ void* hil_thread_main(void*) {
     // Baseline heap AFTER connect + server.info so setup allocations (WS
     // buffers, request tracker) don't skew the 60s flatness check.
     uint32_t heap_baseline = esp_get_free_heap_size();
-    uint32_t psram_baseline =
-        static_cast<uint32_t>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    uint32_t psram_baseline = static_cast<uint32_t>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 
     json sub_params = {
         {"objects", {{"extruder", {"temperature"}}, {"heater_bed", {"temperature"}}}}};
@@ -278,14 +273,13 @@ void* hil_thread_main(void*) {
 
     uint32_t heap_now = esp_get_free_heap_size();
     uint32_t psram_now = static_cast<uint32_t>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
-    int64_t heap_delta =
-        static_cast<int64_t>(heap_now) - static_cast<int64_t>(heap_baseline);
+    int64_t heap_delta = static_cast<int64_t>(heap_now) - static_cast<int64_t>(heap_baseline);
     if (heap_delta < 0) {
         heap_delta = -heap_delta;
     }
     if (static_cast<uint32_t>(heap_delta) > kHeapFlatToleranceBytes) {
-        ESP_LOGE(TAG, "FAIL heap drift=%lldB baseline=%u now=%u", static_cast<long long>(heap_delta),
-                 heap_baseline, heap_now);
+        ESP_LOGE(TAG, "FAIL heap drift=%lldB baseline=%u now=%u",
+                 static_cast<long long>(heap_delta), heap_baseline, heap_now);
     } else {
         ESP_LOGI(TAG, "heap flat: baseline=%u now=%u delta=%lldB", heap_baseline, heap_now,
                  static_cast<long long>(heap_delta));

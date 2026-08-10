@@ -50,13 +50,10 @@ bool provisioning_run_portal() {
 
 #else // !CONFIG_HELIX_MOCK_PRINTER
 
-#include "config.h"
 #include "ui_modal.h"
 #include "ui_update_queue.h"
-#include "utils/network_validation.h"
-#include "wifi_backend_esp.h"
-#include "wifi_manager.h"
 
+#include "config.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_mac.h"
@@ -65,11 +62,14 @@ bool provisioning_run_portal() {
 #include "esp_wifi_default.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "nvs.h"
-
+#include "log_redact.h"
 #include "lwip/inet.h"
 #include "lwip/sockets.h"
 #include "lwip/sys.h"
+#include "nvs.h"
+#include "utils/network_validation.h"
+#include "wifi_backend_esp.h"
+#include "wifi_manager.h"
 
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
@@ -197,9 +197,9 @@ void show_instructions_modal(std::string ssid, std::string ip) {
             fmt::format(lv_tr("On your phone or computer, join the WiFi network \"{}\", then "
                               "open http://{} in a browser to finish setup."),
                         ssid, ip);
-        lv_obj_t* dialog = helix::ui::modal_show_alert(
-            title.c_str(), message.c_str(), ModalSeverity::Info, lv_tr("Use Settings Instead"),
-            on_dismiss_clicked, nullptr);
+        lv_obj_t* dialog =
+            helix::ui::modal_show_alert(title.c_str(), message.c_str(), ModalSeverity::Info,
+                                        lv_tr("Use Settings Instead"), on_dismiss_clicked, nullptr);
         if (dialog) {
             s_alert_dialog = dialog;
             lv_obj_add_event_cb(dialog, on_modal_deleted, LV_EVENT_DELETE, nullptr);
@@ -427,8 +427,8 @@ esp_err_t save_post_handler(httpd_req_t* req) {
     extract_field(body, "port", port_str);
 
     auto respond_with_error = [&](const std::string& err, const std::string& host_prefill) {
-        std::string page =
-            render_form_page(s_ap_ssid, s_scan_results, err, host_prefill, current_moonraker_port());
+        std::string page = render_form_page(s_ap_ssid, s_scan_results, err, host_prefill,
+                                            current_moonraker_port());
         httpd_resp_set_type(req, "text/html");
         httpd_resp_send(req, page.c_str(), static_cast<ssize_t>(page.size()));
     };
@@ -455,8 +455,8 @@ esp_err_t save_post_handler(httpd_req_t* req) {
         config->save();
     }
 
-    spdlog::info("[provisioning] portal: attempting join to '{}' (password {})", ssid,
-                 password.empty() ? "none" : "provided");
+    spdlog::info("[provisioning] portal: attempting join to '{}' (password {})",
+                 helix::redact::ssid(ssid), password.empty() ? "none" : "provided");
 
     s_connect_state.store(JoinState::PENDING);
     auto wifi = helix::get_wifi_manager();
@@ -579,11 +579,11 @@ int open_dns_socket() {
         ESP_LOGE(TAG, "dns: socket() failed: errno %d", errno);
         return -1;
     }
-    struct timeval tv{};
+    struct timeval tv {};
     tv.tv_sec = 0;
     tv.tv_usec = kDnsRecvTimeoutMs * 1000;
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    struct sockaddr_in addr{};
+    struct sockaddr_in addr {};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
     addr.sin_port = htons(kDnsPort);
@@ -602,10 +602,10 @@ void dns_pump_once(int sock, uint32_t ap_ip_be) {
     // IPv4 only (the socket is AF_INET/SOCK_DGRAM) — this build's lwIP config
     // doesn't compile in IPv6 support, so sockaddr_in6 is an incomplete type
     // here; sockaddr_in is the correct (and sufficient) peer-address type.
-    struct sockaddr_in from{};
+    struct sockaddr_in from {};
     socklen_t fromlen = sizeof(from);
-    int len = recvfrom(sock, rx, sizeof(rx) - 1, 0, reinterpret_cast<struct sockaddr*>(&from),
-                       &fromlen);
+    int len =
+        recvfrom(sock, rx, sizeof(rx) - 1, 0, reinterpret_cast<struct sockaddr*>(&from), &fromlen);
     if (len <= static_cast<int>(sizeof(DnsHeader))) {
         return; // timeout, error, or too short to be a real query
     }
@@ -698,7 +698,8 @@ bool provisioning_run_portal() {
     // running, esp_wifi_start() just re-applies config and returns ESP_OK.
     esp_err_t start_rc = esp_wifi_start();
     if (start_rc != ESP_OK) {
-        ESP_LOGW(TAG, "esp_wifi_start (AP add) returned %s — continuing", esp_err_to_name(start_rc));
+        ESP_LOGW(TAG, "esp_wifi_start (AP add) returned %s — continuing",
+                 esp_err_to_name(start_rc));
     }
 
     esp_netif_ip_info_t ip_info{};

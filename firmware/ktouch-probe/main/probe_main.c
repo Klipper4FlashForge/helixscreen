@@ -11,9 +11,6 @@
 // Intentionally NO LVGL: raw esp_lcd + raw I2C so a failure points at exactly
 // one layer. Throwaway-quality by design, committed for reproducibility.
 
-#include <string.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "driver/gpio.h"
 #include "driver/i2c.h"
 #include "driver/ledc.h"
@@ -21,8 +18,12 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_rgb.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
-static const char *TAG = "ktouch_probe";
+#include <string.h>
+
+static const char* TAG = "ktouch_probe";
 
 // ---- Pin map under test (PandaTouch_PlatformIO pt_board.h) ----
 #define LCD_PCLK_PIN 5
@@ -30,9 +31,9 @@ static const char *TAG = "ktouch_probe";
 #define LCD_RESET_PIN 46
 #define LCD_BL_PIN 21
 // data_gpio_nums order per esp_lcd HAL: B3-B7, G2-G7, R3-R7
-static const int LCD_DATA_PINS[16] = {17, 18, 48, 47, 39,          // B3-B7
-                                      11, 12, 13, 14, 15, 16,      // G2-G7
-                                      6,  7,  8,  9,  10};         // R3-R7
+static const int LCD_DATA_PINS[16] = {17, 18, 48, 47, 39,     // B3-B7
+                                      11, 12, 13, 14, 15, 16, // G2-G7
+                                      6,  7,  8,  9,  10};    // R3-R7
 
 #define LCD_H_RES 800
 #define LCD_V_RES 480
@@ -48,14 +49,14 @@ static const int LCD_DATA_PINS[16] = {17, 18, 48, 47, 39,          // B3-B7
 #define I2C_SDA_PIN 2
 #define GT911_IRQ_PIN 40
 #define GT911_RST_PIN 41
-#define GT911_ADDR 0x5D  // selected by holding IRQ low through reset
+#define GT911_ADDR 0x5D // selected by holding IRQ low through reset
 
 // GT911 registers (16-bit big-endian addressing)
 #define GT911_REG_PRODUCT_ID 0x8140
 #define GT911_REG_STATUS 0x814E
 #define GT911_REG_POINT0 0x814F
 
-static esp_err_t gt911_read(uint16_t reg, uint8_t *buf, size_t len) {
+static esp_err_t gt911_read(uint16_t reg, uint8_t* buf, size_t len) {
     uint8_t addr[2] = {reg >> 8, reg & 0xFF};
     return i2c_master_write_read_device(I2C_NUM_0, GT911_ADDR, addr, 2, buf, len,
                                         pdMS_TO_TICKS(100));
@@ -80,7 +81,7 @@ static void backlight_on(void) {
         .speed_mode = LEDC_LOW_SPEED_MODE,
         .channel = LEDC_CHANNEL_0,
         .timer_sel = LEDC_TIMER_1,
-        .duty = (1 << 11) - 1,  // 100%
+        .duty = (1 << 11) - 1, // 100%
         .hpoint = 0,
     };
     ESP_ERROR_CHECK(ledc_channel_config(&channel));
@@ -98,23 +99,24 @@ static esp_lcd_panel_handle_t panel_init(void) {
 
     esp_lcd_rgb_panel_config_t cfg = {
         .clk_src = LCD_CLK_SRC_DEFAULT,
-        .timings = {
-            .pclk_hz = LCD_PCLK_HZ,
-            .h_res = LCD_H_RES,
-            .v_res = LCD_V_RES,
-            .hsync_pulse_width = LCD_HSYNC_PW,
-            .hsync_back_porch = LCD_HSYNC_BP,
-            .hsync_front_porch = LCD_HSYNC_FP,
-            .vsync_pulse_width = LCD_VSYNC_PW,
-            .vsync_back_porch = LCD_VSYNC_BP,
-            .vsync_front_porch = LCD_VSYNC_FP,
-            .flags = {.pclk_active_neg = 1},
-        },
+        .timings =
+            {
+                .pclk_hz = LCD_PCLK_HZ,
+                .h_res = LCD_H_RES,
+                .v_res = LCD_V_RES,
+                .hsync_pulse_width = LCD_HSYNC_PW,
+                .hsync_back_porch = LCD_HSYNC_BP,
+                .hsync_front_porch = LCD_HSYNC_FP,
+                .vsync_pulse_width = LCD_VSYNC_PW,
+                .vsync_back_porch = LCD_VSYNC_BP,
+                .vsync_front_porch = LCD_VSYNC_FP,
+                .flags = {.pclk_active_neg = 1},
+            },
         .data_width = 16,
         .bits_per_pixel = 16,
         .num_fbs = 1,
-        .bounce_buffer_size_px = 10 * LCD_H_RES,  // matches stock; eases PSRAM/WiFi contention
-        .hsync_gpio_num = -1,  // DE-only mode, HSYNC/VSYNC not wired
+        .bounce_buffer_size_px = 10 * LCD_H_RES, // matches stock; eases PSRAM/WiFi contention
+        .hsync_gpio_num = -1,                    // DE-only mode, HSYNC/VSYNC not wired
         .vsync_gpio_num = -1,
         .de_gpio_num = LCD_DE_PIN,
         .pclk_gpio_num = LCD_PCLK_PIN,
@@ -133,9 +135,9 @@ static esp_lcd_panel_handle_t panel_init(void) {
 }
 
 static void draw_test_pattern(esp_lcd_panel_handle_t panel) {
-    void *fb = NULL;
+    void* fb = NULL;
     ESP_ERROR_CHECK(esp_lcd_rgb_panel_get_frame_buffer(panel, 1, &fb));
-    uint16_t *px = fb;
+    uint16_t* px = fb;
 
     // 5 vertical bars: red, green, blue, white, black (RGB565)
     const uint16_t bars[5] = {0xF800, 0x07E0, 0x001F, 0xFFFF, 0x0000};
@@ -171,8 +173,7 @@ static void i2c_bus_scan(void) {
         esp_err_t err = i2c_master_cmd_begin(I2C_NUM_0, cmd, pdMS_TO_TICKS(50));
         i2c_cmd_link_delete(cmd);
         if (err == ESP_OK) {
-            ESP_LOGI(TAG, "  device ACK at 0x%02X%s", a,
-                     a == 0x5D || a == 0x14 ? " (GT911)" : "");
+            ESP_LOGI(TAG, "  device ACK at 0x%02X%s", a, a == 0x5D || a == 0x14 ? " (GT911)" : "");
             found++;
         }
     }
@@ -215,12 +216,12 @@ static bool gt911_init(void) {
                  esp_err_to_name(err));
         return false;
     }
-    ESP_LOGI(TAG, "GT911 product ID: '%c%c%c' (raw %02x %02x %02x %02x)", id[0], id[1],
-             id[2], id[0], id[1], id[2], id[3]);
+    ESP_LOGI(TAG, "GT911 product ID: '%c%c%c' (raw %02x %02x %02x %02x)", id[0], id[1], id[2],
+             id[0], id[1], id[2], id[3]);
     return true;
 }
 
-static void touch_poll_task(void *arg) {
+static void touch_poll_task(void* arg) {
     (void)arg;
     while (true) {
         uint8_t status = 0;

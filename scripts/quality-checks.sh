@@ -54,11 +54,23 @@ echo -n "📝 Checking copyright headers..."
 
 if [ "$STAGED_ONLY" = true ]; then
   # Pre-commit mode: check only staged files (git-ignored files can't be staged)
+  # The firmware/ exclusions mirror the ones above it, which exist because a
+  # generated or vendored file is not ours to license. Under firmware/ the same
+  # three categories just sit at a different prefix: LVGL font-converter output
+  # (as in assets/fonts/), vendored lv_conf.h, and files vendored from
+  # espressif/esp-bsp that carry their own Apache-2.0 SPDX line. Stamping
+  # GPL-3.0 on any of those would be a false licence claim on third-party code.
+  # firmware/native-audit is the Phase 0 feasibility audit, self-described
+  # throwaway scaffolding committed only for reproducibility.
   FILES=$(git diff --cached --name-only --diff-filter=ACM | \
     grep -E '\.(cpp|c|h|mm)$' | \
     grep -v '^lib/' | \
     grep -v '^assets/fonts/' | \
+    grep -v '/fonts/' | \
     grep -v '^lv_conf\.h$' | \
+    grep -v '/lv_conf\.h$' | \
+    grep -v '/simd/esp_lvgl_port_' | \
+    grep -v '^firmware/native-audit/' | \
     grep -v '^node_modules/' | \
     grep -v '^build/' | \
     grep -v '/\.' || true)
@@ -553,7 +565,16 @@ echo ""
 echo "📏 Checking design-token usage (hardcoded pixels)..."
 
 if [ -f "scripts/check_hardcoded_pixels.py" ]; then
-  if python3 scripts/check_hardcoded_pixels.py --max-allowed 162 --summary \
+  # Pre-commit: scan the post-commit tree (index + HEAD), not the dirty working
+  # tree — so another session's unstaged WIP cannot trip the ratchet on a clean
+  # commit. CI and manual runs use the whole-working-tree scan (no flag).
+  if [ "$STAGED_ONLY" = true ]; then
+    PIXELS_ARGS="--staged-only"
+  else
+    PIXELS_ARGS=""
+  fi
+  # shellcheck disable=SC2086
+  if python3 scripts/check_hardcoded_pixels.py --max-allowed 162 --summary $PIXELS_ARGS \
       >/tmp/hardcoded_pixels.out 2>&1; then
     tail -1 /tmp/hardcoded_pixels.out
   else

@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "lvgl/lvgl.h"
 #include "data_root_resolver.h"
+#include "lvgl/lvgl.h"
 #include "prerendered_images.h"
 #include "printer_detector.h"
 

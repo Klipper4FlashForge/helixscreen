@@ -4,8 +4,8 @@
 #include "klipper_config_editor.h"
 
 #include "http_executor.h"
-#include "klipper_config_includes.h"
 #include "i_moonraker_api.h"
+#include "klipper_config_includes.h"
 
 #include <spdlog/spdlog.h>
 

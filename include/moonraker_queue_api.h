@@ -83,7 +83,7 @@ class MoonrakerQueueAPI : public IQueueAPI {
      * @param on_error Error callback
      */
     void add_job(const std::string& filename, SuccessCallback on_success,
-                ErrorCallback on_error) override;
+                 ErrorCallback on_error) override;
 
     /**
      * @brief Remove jobs from the queue by ID

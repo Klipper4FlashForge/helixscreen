@@ -30,9 +30,8 @@
 // it into a firmware TU is the whole point. (Note: in LVGL 9 lv_color_t itself
 // is a fixed 3-byte RGB888 struct regardless of depth, so this MACRO check --
 // not sizeof(lv_color_t) -- is what actually distinguishes the two configs.)
-HELIX_ABI_ASSERT(LV_COLOR_DEPTH == 16,
-                 "LV_COLOR_DEPTH mismatch: this TU is compiling against the "
-                 "wrong lv_conf.h (desktop repo-root copy is 32bpp).");
+HELIX_ABI_ASSERT(LV_COLOR_DEPTH == 16, "LV_COLOR_DEPTH mismatch: this TU is compiling against the "
+                                       "wrong lv_conf.h (desktop repo-root copy is 32bpp).");
 
 // The sentinel field this flag adds is lv_style_t's first member; it must be
 // off (and identical) everywhere or lv_style_reset() overruns.

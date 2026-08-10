@@ -10,7 +10,6 @@
 #include "esp_log.h"
 
 #include <pthread.h>
-
 #include <utility>
 
 namespace helix::http {

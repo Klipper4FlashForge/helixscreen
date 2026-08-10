@@ -4,8 +4,8 @@
 #include "helix_plugin_installer.h"
 
 #include "config.h"
-#include "lvgl/src/others/translation/lv_translation.h"
 #include "i_moonraker_api.h"
+#include "lvgl/src/others/translation/lv_translation.h"
 
 #include <spdlog/spdlog.h>
 

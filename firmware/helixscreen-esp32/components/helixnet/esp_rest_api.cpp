@@ -61,12 +61,10 @@
 //     gracefully on failure and stays out of Task 15's scope (that flag only
 //     covers the two HTTP-*polling* backends, ACE and AD5X IFS).
 
+#include "esp_http_lane.h"
+#include "esp_log.h"
 #include "moonraker_file_transfer_api.h"
 #include "moonraker_rest_api.h"
-
-#include "esp_http_lane.h"
-
-#include "esp_log.h"
 
 #include <algorithm>
 #include <cctype>
@@ -115,8 +113,8 @@ bool esp_is_safe_path(const std::string& path) {
 bool esp_is_safe_file_root(const std::string& root) {
     auto is_plain = [](const std::string& s) {
         return !s.empty() && std::all_of(s.begin(), s.end(), [](unsigned char c) {
-                   return std::isalnum(c) || c == '_' || c == ' ';
-               });
+            return std::isalnum(c) || c == '_' || c == ' ';
+        });
     };
     if (is_plain(root)) {
         return true;
@@ -243,7 +241,7 @@ void MoonrakerFileTransferAPI::download_file_partial(const std::string& root,
 
     if (http_base_url_.empty()) {
         esp_report_error(on_error, MoonrakerErrorType::CONNECTION_LOST, "download_file_partial",
-                        "HTTP base URL not configured");
+                         "HTTP base URL not configured");
         return;
     }
 
@@ -259,12 +257,12 @@ void MoonrakerFileTransferAPI::download_file_partial(const std::string& root,
         },
         [on_error](const std::string& message) {
             esp_report_error(on_error, MoonrakerErrorType::UNKNOWN, "download_file_partial",
-                            message);
+                             message);
         });
 
     if (!queued) {
         esp_report_error(on_error, MoonrakerErrorType::UNKNOWN, "download_file_partial",
-                        "HTTP lane queue full — try again");
+                         "HTTP lane queue full — try again");
     }
 }
 
@@ -272,8 +270,8 @@ void MoonrakerFileTransferAPI::download_file_partial(const std::string& root,
 // file header). download_file_to_path is additionally hard-banned by R3
 // regardless of reachability: its contract IS file materialization. ---
 
-void MoonrakerFileTransferAPI::download_file(const std::string&, const std::string&,
-                                             StringCallback, ErrorCallback on_error) {
+void MoonrakerFileTransferAPI::download_file(const std::string&, const std::string&, StringCallback,
+                                             ErrorCallback on_error) {
     esp_rest_unimplemented_err("MoonrakerFileTransferAPI::download_file", on_error);
 }
 
@@ -360,8 +358,7 @@ void MoonrakerRestAPI::call_rest_get(const std::string& endpoint, RestCallback o
                                                       reinterpret_cast<const char*>(data) + size);
                 } catch (const nlohmann::json::exception&) {
                     resp.data = nlohmann::json::object();
-                    resp.data["_raw_body"] =
-                        std::string(reinterpret_cast<const char*>(data), size);
+                    resp.data["_raw_body"] = std::string(reinterpret_cast<const char*>(data), size);
                 }
             }
             if (on_complete) {

@@ -3,8 +3,8 @@
 
 #include "job_queue_state.h"
 
-#include "i_moonraker_client.h"
 #include "i_moonraker_api.h"
+#include "i_moonraker_client.h"
 #include "static_subject_registry.h"
 #include "subject_debug_registry.h"
 

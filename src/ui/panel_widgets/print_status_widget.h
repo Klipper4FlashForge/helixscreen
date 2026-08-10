@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "ui_context_menu.h"
 #include "ui_heater_icon_binder.h"
 #include "ui_job_queue_modal.h"
 #include "ui_observer_guard.h"
@@ -64,16 +65,9 @@ class PrintStatusWidget : public PanelWidget {
     static void library_recent_cb(lv_event_t* e);
     static void library_queue_cb(lv_event_t* e);
 
-    /// Configure picker callbacks — backdrop tap and the explicit Done button
-    static void print_status_picker_backdrop_cb(lv_event_t* e);
-    static void print_status_picker_done_cb(lv_event_t* e);
-
     /// XML event callbacks — layout selector in configure picker
     static void print_status_layout_library_cb(lv_event_t* e);
     static void print_status_layout_detailed_cb(lv_event_t* e);
-
-    /// XML event callback — backdrop dismiss for nozzle picker
-    static void print_status_nozzle_picker_backdrop_cb(lv_event_t* e);
 
     /// XML event callback — chevron tap on nozzle temp opens tool picker
     static void print_status_nozzle_chevron_cb(lv_event_t* e);
@@ -154,6 +148,76 @@ class PrintStatusWidget : public PanelWidget {
     }
 
   private:
+    /// Layout selector plus the Show Sections checkbox list, raised from edit
+    /// mode. Every control applies live, so both the Done button and a tap on
+    /// the backdrop commit the card rather than discarding it.
+    class ConfigurePicker : public helix::ui::ContextMenu {
+      public:
+        explicit ConfigurePicker(PrintStatusWidget& owner) : owner_(owner) {}
+
+        /// Adopt a layout style, repaint the selector and apply it to the live
+        /// widget behind the card. Driven by the two XML layout buttons.
+        void select_layout(const char* style);
+
+        /// Read the checkbox rows back into the widget's config, save, and apply
+        /// the new visibility. Idempotent, so every toggle can call it.
+        void apply_state();
+
+      protected:
+        const char* xml_component_name() const override {
+            return "print_status_configure_picker";
+        }
+        /// 30% of the screen, clamped so the option rows stay readable on a 480px
+        /// panel and the card does not sprawl on a 1024px one.
+        CardWidth card_width() const override {
+            return {30, 160, 240};
+        }
+        void on_created(lv_obj_t* backdrop) override;
+        /// A tap outside the card commits the toggles and re-gates the widget.
+        /// on_close_clicked() inherits this, so Done takes the same path.
+        void on_backdrop_clicked() override;
+
+      private:
+        /// Paint the selected layout button with the primary accent and hide the
+        /// Show Sections group in Detailed mode. Visuals only - no checkbox read,
+        /// no save, so opening the card cannot rewrite the config.
+        void apply_visuals();
+
+        PrintStatusWidget& owner_;
+    };
+
+    /// Single-select list of the printer's tools, raised by a tap on the nozzle
+    /// readout in the detailed-active footer. Picking a row pins the temperature
+    /// display to that tool; a tap outside it chooses nothing.
+    class NozzleToolPicker : public helix::ui::ContextMenu {
+      public:
+        explicit NozzleToolPicker(PrintStatusWidget& owner) : owner_(owner) {}
+
+      protected:
+        const char* xml_component_name() const override {
+            return "print_status_nozzle_tool_picker";
+        }
+        /// The card is width="content" in XML but its option_list is width="100%",
+        /// which cannot resolve against a still-empty content area (L082). The base
+        /// applies this policy before on_created() builds the rows, so they size
+        /// against a real width instead of collapsing to zero.
+        CardWidth card_width() const override {
+            return {30, 160, 240};
+        }
+        void on_created(lv_obj_t* backdrop) override;
+
+      private:
+        /// What a row needs to act on a tap: which tool it names, and the picker
+        /// that owns it. Heap-allocated per row, hung off the row's user_data and
+        /// freed by that row's own LV_EVENT_DELETE handler.
+        struct RowPayload {
+            NozzleToolPicker* picker;
+            std::string tool_key;
+        };
+
+        PrintStatusWidget& owner_;
+    };
+
     lv_obj_t* widget_obj_ = nullptr;
     lv_obj_t* parent_screen_ = nullptr;
 
@@ -229,7 +293,7 @@ class PrintStatusWidget : public PanelWidget {
     bool is_compact_ = false;
     bool is_column_ = false;
     bool last_print_available_ = false;
-    // Cached granted pixel size, for picker-dismiss re-gating (dismiss_configure_picker
+    // Cached granted pixel size, for picker-dismiss re-gating (regate_after_configure
     // re-runs on_size_changed after a layout_style change, and needs the widget's last
     // known real size — colspan/rowspan are no longer read).
     int last_width_px_ = 0;
@@ -454,27 +518,22 @@ class PrintStatusWidget : public PanelWidget {
     bool show_recent_prints_ = true;
     bool show_job_queue_ = true;
 
-    // Configure picker
-    lv_obj_t* picker_backdrop_ = nullptr;
     void show_configure_picker();
-    void dismiss_configure_picker();
     void apply_visibility_config();
     void recompute_actions_visibility();
-    void apply_picker_state();
-    // Idempotent visual feedback only — paints the selected layout button
-    // primary, hides Show Sections in Detailed mode. No checkbox read, no save.
-    void apply_picker_visuals();
+    // Re-run width gating against the last granted size, so a layout_style change
+    // made in the configure picker reaches the visible widget the moment the card
+    // closes.
+    void regate_after_configure();
     // Recompute the view subject from (is_active_, layout_style_, is_compact_).
     // Drives bind_flag_if_not_eq on the five card-body siblings.
     void update_view_subject();
 
-    static PrintStatusWidget* s_active_picker_;
-
-    // Nozzle tool picker
-    lv_obj_t* nozzle_picker_backdrop_ = nullptr;
     void show_nozzle_tool_picker(lv_obj_t* anchor);
-    void dismiss_nozzle_tool_picker();
-    static PrintStatusWidget* s_active_nozzle_picker_;
+
+    // The two context menus this widget raises
+    ConfigurePicker configure_picker_{*this};
+    NozzleToolPicker nozzle_picker_{*this};
 };
 
 } // namespace helix

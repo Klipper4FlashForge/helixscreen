@@ -141,8 +141,7 @@ TEST_CASE("Cap at exactly the limit changes nothing", "[print_select][cap]") {
 TEST_CASE("Cap drops the tail (oldest) files, keeps the newest N", "[print_select][cap]") {
     // Assumes caller already sorted newest-first (PrintSelectFileSorter::apply_sort
     // contract) — this fixture mimics that ordering directly.
-    std::vector<PrintFileData> files{make_file("newest"), make_file("middle"),
-                                     make_file("oldest")};
+    std::vector<PrintFileData> files{make_file("newest"), make_file("middle"), make_file("oldest")};
     REQUIRE(cap_print_file_list_to_newest(files, 2) == true);
     REQUIRE(files.size() == 2);
     REQUIRE(files[0].filename == "newest");

@@ -19,12 +19,12 @@ LV_FONT_DECLARE(mdi_icons_80);  // Large hero icons (XLARGE displays)
 // small .rodata->.data move. This de-const covers exactly the medium-tier
 // faces moved to runtime .bin (Plan A); do NOT widen it to faces that stay
 // compiled (80/96/128/14).
-extern lv_font_t mdi_icons_64;  // Navigation bar icons
-extern lv_font_t mdi_icons_48;  // Status card icons (large displays)
-extern lv_font_t mdi_icons_32;  // Status card icons (small displays)
-extern lv_font_t mdi_icons_24;  // General UI icons (tiny displays)
-extern lv_font_t mdi_icons_16;  // Metadata icons (small inline)
-LV_FONT_DECLARE(mdi_icons_14);  // Metadata icons (small inline for tiny)
+extern lv_font_t mdi_icons_64; // Navigation bar icons
+extern lv_font_t mdi_icons_48; // Status card icons (large displays)
+extern lv_font_t mdi_icons_32; // Status card icons (small displays)
+extern lv_font_t mdi_icons_24; // General UI icons (tiny displays)
+extern lv_font_t mdi_icons_16; // Metadata icons (small inline)
+LV_FONT_DECLARE(mdi_icons_14); // Metadata icons (small inline for tiny)
 
 // Noto Sans - Regular weight with extended Unicode (©®™€£¥°±•…)
 // Declared mutable (not const) so CjkFontManager can set fallback pointers at runtime

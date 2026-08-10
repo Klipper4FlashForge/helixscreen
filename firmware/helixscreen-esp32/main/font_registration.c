@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "font_registration.h"
 
-#include <stdbool.h>
-#include <stddef.h>
-
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "lvgl.h"
 #include "src/xml/lv_xml.h"
 
-static const char *TAG = "font_registration";
+#include <stdbool.h>
+#include <stddef.h>
+
+static const char* TAG = "font_registration";
 
 // Font symbols come from LV_FONT_CUSTOM_DECLARE in lv_conf.h (extern
 // lv_font_t declarations), backed by the .c sources compiled into helixcore
@@ -22,7 +22,7 @@ static const char *TAG = "font_registration";
 // in main/CMakeLists.txt: do not remove that flag unless a real call site
 // exists AND the font symbols are re-verified present post-link (nm/readelf).
 static struct {
-    const char *name;
+    const char* name;
     int64_t ms;
     bool ok;
 } s_load_results[10];
@@ -31,11 +31,13 @@ static struct {
 // Called from app_boot at home-panel-up.
 void helix_fonts_log_summary(void) {
     for (size_t i = 0; i < sizeof(s_load_results) / sizeof(s_load_results[0]); i++) {
-        if (!s_load_results[i].name) continue;
+        if (!s_load_results[i].name)
+            continue;
         if (s_load_results[i].ok) {
             ESP_LOGI(TAG, "fonts: %s .bin %lld ms", s_load_results[i].name, s_load_results[i].ms);
         } else {
-            ESP_LOGW(TAG, "fonts: %s .bin LOAD FAILED (noto_sans_18 fallback)", s_load_results[i].name);
+            ESP_LOGW(TAG, "fonts: %s .bin LOAD FAILED (noto_sans_18 fallback)",
+                     s_load_results[i].name);
         }
     }
 }
@@ -54,24 +56,27 @@ void helix_fonts_register(void) {
     // the immediate log lines below land in a dead serial window on every boot
     // with the radio on, so app_boot re-logs the summary at home-panel-up.
     static const struct {
-        const char *name;
-        const char *path;
-        lv_font_t *shim;
+        const char* name;
+        const char* path;
+        lv_font_t* shim;
     } moved_faces[] = {
         {"noto_sans_bold_28", "A:/assets/assets/fonts/noto_sans_bold_28.bin", &noto_sans_bold_28},
-        {"noto_sans_light_16", "A:/assets/assets/fonts/noto_sans_light_16.bin", &noto_sans_light_16},
-        {"noto_sans_light_12", "A:/assets/assets/fonts/noto_sans_light_12.bin", &noto_sans_light_12},
+        {"noto_sans_light_16", "A:/assets/assets/fonts/noto_sans_light_16.bin",
+         &noto_sans_light_16},
+        {"noto_sans_light_12", "A:/assets/assets/fonts/noto_sans_light_12.bin",
+         &noto_sans_light_12},
         {"mdi_icons_48", "A:/assets/assets/fonts/mdi_icons_48.bin", &mdi_icons_48},
         {"mdi_icons_64", "A:/assets/assets/fonts/mdi_icons_64.bin", &mdi_icons_64},
         {"noto_sans_26", "A:/assets/assets/fonts/noto_sans_26.bin", &noto_sans_26},
-        {"source_code_pro_14", "A:/assets/assets/fonts/source_code_pro_14.bin", &source_code_pro_14},
+        {"source_code_pro_14", "A:/assets/assets/fonts/source_code_pro_14.bin",
+         &source_code_pro_14},
         {"mdi_icons_16", "A:/assets/assets/fonts/mdi_icons_16.bin", &mdi_icons_16},
         {"mdi_icons_24", "A:/assets/assets/fonts/mdi_icons_24.bin", &mdi_icons_24},
         {"mdi_icons_32", "A:/assets/assets/fonts/mdi_icons_32.bin", &mdi_icons_32},
     };
     for (size_t i = 0; i < sizeof(moved_faces) / sizeof(moved_faces[0]); i++) {
         int64_t t0 = esp_timer_get_time();
-        lv_font_t *loaded = lv_binfont_create(moved_faces[i].path);
+        lv_font_t* loaded = lv_binfont_create(moved_faces[i].path);
         int64_t dt_ms = (esp_timer_get_time() - t0) / 1000;
         s_load_results[i].name = moved_faces[i].name;
         s_load_results[i].ms = dt_ms;

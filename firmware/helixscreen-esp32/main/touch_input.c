@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "touch_input.h"
-#include "ktouch.h"
 
 #include "driver/i2c_master.h"
-#include "esp_lcd_touch_gt911.h"
 #include "esp_lcd_panel_io.h"
+#include "esp_lcd_touch_gt911.h"
 #include "esp_log.h"
+#include "ktouch.h"
 #include "lvgl.h"
 
-static const char *TAG = "touch";
+static const char* TAG = "touch";
 static esp_lcd_touch_handle_t s_touch;
 
-static void indev_read(lv_indev_t *indev, lv_indev_data_t *data) {
+static void indev_read(lv_indev_t* indev, lv_indev_data_t* data) {
     (void)indev;
     esp_lcd_touch_read_data(s_touch);
     uint16_t x, y;
@@ -48,7 +48,7 @@ void touch_input_init(void) {
     };
     ESP_ERROR_CHECK(esp_lcd_touch_new_i2c_gt911(io, &tp_cfg, &s_touch));
 
-    lv_indev_t *indev = lv_indev_create();
+    lv_indev_t* indev = lv_indev_create();
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(indev, indev_read);
     ESP_LOGI(TAG, "GT911 indev registered");

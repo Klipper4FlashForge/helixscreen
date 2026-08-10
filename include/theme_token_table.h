@@ -11,8 +11,8 @@ namespace helix::theme_tokens {
 /// last-wins across alphabetically-sorted files (same semantics as the
 /// runtime scanner in theme_manager.cpp).
 struct TokenEntry {
-    const char* type;   // "color" | "px" | "string"
-    const char* name;   // full token name (suffix included)
+    const char* type; // "color" | "px" | "string"
+    const char* name; // full token name (suffix included)
     const char* value;
 };
 

@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "lvgl.h"
 #include "i_moonraker_api.h"
+#include "lvgl.h"
 #include "moonraker_types.h"
 #include "overlay_base.h"
 

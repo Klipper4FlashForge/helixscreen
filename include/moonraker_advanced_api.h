@@ -206,9 +206,9 @@ class MoonrakerAdvancedAPI : public IAdvancedAPI {
      *        or [bltouch] config).  Used to divide the fallback "probe at" line
      *        count back to mesh points.  Default 1.
      */
-    void start_bed_mesh_calibrate(BedMeshProgressCallback on_progress,
-                                  SuccessCallback on_complete, ErrorCallback on_error,
-                                  int expected_probes = 0, int probe_samples = 1) override;
+    void start_bed_mesh_calibrate(BedMeshProgressCallback on_progress, SuccessCallback on_complete,
+                                  ErrorCallback on_error, int expected_probes = 0,
+                                  int probe_samples = 1) override;
 
     /**
      * @brief Calculate screw adjustments for manual bed leveling
@@ -339,8 +339,7 @@ class MoonrakerAdvancedAPI : public IAdvancedAPI {
      * @param on_complete Called with control type string ("pid", "mpc", etc.)
      * @param on_error Called if the heater cannot be found in config
      */
-    void get_heater_control_type(const std::string& heater,
-                                 HeaterControlTypeCallback on_complete,
+    void get_heater_control_type(const std::string& heater, HeaterControlTypeCallback on_complete,
                                  ErrorCallback on_error) override;
 
     /**
@@ -428,8 +427,8 @@ class MoonrakerAdvancedAPI : public IAdvancedAPI {
      * @param on_error Called on failure
      */
     void execute_macro(const std::string& name, const std::map<std::string, std::string>& params,
-                       SuccessCallback on_success, ErrorCallback on_error,
-                       uint32_t timeout_ms = 0, bool suppress_auto_toast = false) override;
+                       SuccessCallback on_success, ErrorCallback on_error, uint32_t timeout_ms = 0,
+                       bool suppress_auto_toast = false) override;
 
     /**
      * @brief Get list of user-visible macros

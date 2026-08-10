@@ -12,6 +12,7 @@
 #include "ui_panel_print_select.h"
 #include "ui_panel_print_status.h"
 #include "ui_panel_settings.h"
+#include "ui_utils.h" // safe_delete_deferred (deferred-panel loading scrim teardown)
 
 #include "app_globals.h"
 #include "boot_yield.h"
@@ -19,7 +20,6 @@
 #include "lvgl/lvgl.h"
 #include "overlay_base.h"
 #include "printer_state.h"
-#include "ui_utils.h" // safe_delete_deferred (deferred-panel loading scrim teardown)
 
 #include <spdlog/spdlog.h>
 
@@ -112,8 +112,8 @@ void PanelFactory::build_deferred_panel(int panel_id) {
         m_panels[panel_id] = obj;
         NavigationManager::instance().replace_panel_widget(static_cast<PanelId>(panel_id), obj);
         setup_one_panel(panel_id);
-        auto ms = std::chrono::duration<double, std::milli>(
-                      std::chrono::steady_clock::now() - build_start)
+        auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() -
+                                                            build_start)
                       .count();
         spdlog::info("[PanelFactory] Deferred panel '{}' built in {:.0f}ms", PANEL_NAMES[panel_id],
                      ms);

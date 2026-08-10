@@ -13,10 +13,9 @@
 // RGB/ARGB pre-decode or separate API call is needed here.
 #if defined(HELIX_PLATFORM_ESP32)
 
-#include "lvgl.h"
-
 #include "async_lifetime_guard.h" // for helix::internal::on_main_thread()
 #include "esp_heap_caps.h"
+#include "lvgl.h"
 
 #include <lvgl/src/misc/cache/instance/lv_image_cache.h> // lv_image_cache_drop()
 

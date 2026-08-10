@@ -11,8 +11,8 @@
 #include "ui_z_offset_indicator.h"
 
 #include "format_utils.h"
-#include "lvgl/src/others/translation/lv_translation.h"
 #include "i_moonraker_api.h"
+#include "lvgl/src/others/translation/lv_translation.h"
 #include "observer_factory.h"
 #include "printer_state.h"
 #include "static_panel_registry.h"

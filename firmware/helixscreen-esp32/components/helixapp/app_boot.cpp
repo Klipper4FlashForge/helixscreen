@@ -32,22 +32,36 @@
 
 #include "app_boot.h"
 
-#include "esp_heap_caps.h"
-#include "esp_log.h"
-#include "esp_timer.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "sdkconfig.h"
+#include "ui_ams_mini_status.h"
+#include "ui_bed_mesh.h"
+#include "ui_card.h"
+#include "ui_component_header_bar.h"
+#include "ui_dialog.h"
+#include "ui_gcode_viewer.h"
+#include "ui_gradient_canvas.h"
+#include "ui_icon.h"
+#include "ui_keyboard_manager.h"
+#include "ui_nav_manager.h"
+#include "ui_panel_home.h"
+#include "ui_severity_card.h"
+#include "ui_status_pill.h"
+#include "ui_switch.h"
+#include "ui_temp_display.h"
+#include "ui_update_queue.h"
 
-#include "app_globals.h"
 #include "ams_state.h"
+#include "app_globals.h"
 #include "asset_manager.h"
 #include "config.h"
 #include "config_storage.h"
-#include "wizard_config_paths.h"
 #include "connection_state.h"
 #include "data_root_resolver.h"
+#include "esp_heap_caps.h"
+#include "esp_log.h"
+#include "esp_timer.h"
 #include "filament_sensor_manager.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "helix_sparkline.h"
 #include "i_moonraker_client.h"
 #include "moonraker_api.h" // complete MoonrakerAPI : IMoonrakerAPI for the init_panels upcast
@@ -57,33 +71,18 @@
 #include "printer_discovery.h" // helix::PrinterDiscovery + init_subsystems (discovery callback args)
 #include "printer_fan_state.h" // helix::FanRoleConfig for the non-mock fan-role resolve
 #include "printer_state.h"
-#include "temperature_sensor_manager.h"
-#include "tool_state.h"
-#include "ui_keyboard_manager.h"
 #include "runtime_config.h"
+#include "sdkconfig.h"
 #include "setting_group.h"
+#include "src/xml/lv_xml.h"
 #include "subject_initializer.h"
+#include "temperature_sensor_manager.h"
 #include "theme_manager.h"
 #include "tips_manager.h"
+#include "tool_state.h"
 #include "translation_loader.h"
-#include "ui_ams_mini_status.h"
-#include "ui_bed_mesh.h"
-#include "ui_card.h"
-#include "ui_component_header_bar.h"
-#include "ui_dialog.h"
-#include "ui_gcode_viewer.h"
-#include "ui_gradient_canvas.h"
-#include "ui_icon.h"
-#include "ui_nav_manager.h"
-#include "ui_panel_home.h"
-#include "ui_severity_card.h"
-#include "ui_status_pill.h"
-#include "ui_switch.h"
-#include "ui_temp_display.h"
-#include "ui_update_queue.h"
+#include "wizard_config_paths.h"
 #include "xml_registration.h"
-
-#include "src/xml/lv_xml.h"
 
 #include <spdlog/spdlog.h>
 
@@ -426,67 +425,66 @@ void setup_discovery_callbacks_esp(MoonrakerManager& manager) {
                           initial_status.is_object() ? initial_status.size() : 0);
             auto snapshot = std::make_shared<helix::PrinterDiscovery>(hardware);
             auto status_snapshot = std::make_shared<const nlohmann::json>(initial_status);
-            helix::ui::queue_update(
-                "app_boot::on_discovery_complete", [mgr, snapshot, status_snapshot]() {
-                    helix::PrinterState& ps = get_printer_state();
+            helix::ui::queue_update("app_boot::on_discovery_complete", [mgr, snapshot,
+                                                                        status_snapshot]() {
+                helix::PrinterState& ps = get_printer_state();
 
-                    // Hardware into PrinterState first — init_fans / init_extruders
-                    // build their subjects from it, and set_hardware seeds the
-                    // capability flags the home/motion panels read.
-                    ps.set_hardware(*snapshot);
+                // Hardware into PrinterState first — init_fans / init_extruders
+                // build their subjects from it, and set_hardware seeds the
+                // capability flags the home/motion panels read.
+                ps.set_hardware(*snapshot);
 
-                    const auto& fans = snapshot->fans();
-                    ps.init_fans(fans,
-                                 helix::FanRoleConfig::from_config(helix::Config::get_instance(),
-                                                                   fans),
-                                 snapshot->fan_max_power());
-                    ps.init_extruders(snapshot->heaters());
+                const auto& fans = snapshot->fans();
+                ps.init_fans(fans,
+                             helix::FanRoleConfig::from_config(helix::Config::get_instance(), fans),
+                             snapshot->fan_max_power());
+                ps.init_extruders(snapshot->heaters());
 
-                    ps.set_klipper_version(snapshot->software_version());
-                    ps.set_moonraker_version(snapshot->moonraker_version());
+                ps.set_klipper_version(snapshot->software_version());
+                ps.set_moonraker_version(snapshot->moonraker_version());
 
-                    IMoonrakerAPI* api = mgr->api();
-                    helix::IMoonrakerClient* c = mgr->client();
+                IMoonrakerAPI* api = mgr->api();
+                helix::IMoonrakerClient* c = mgr->client();
 
-                    // Task 15 R1: AMS-relevant subset of desktop's
-                    // init_subsystems_from_hardware() (src/printer/printer_discovery.cpp,
-                    // excluded from the ESP image) — backend construction, filament
-                    // sensors, tool state. Runs here (after the fan/extruder subjects
-                    // above, before the dispatch below) to keep the same "subjects
-                    // before dispatch" invariant Task 8 established. LED, standard
-                    // macros, probe/humidity/width sensors, and camera-adjacent
-                    // subsystems stay deferred (Task 8 review's enumeration).
-                    AmsState::instance().init_backend_from_hardware(*snapshot, api, c);
-                    if (snapshot->has_filament_sensors()) {
-                        auto& fsm = helix::FilamentSensorManager::instance();
-                        fsm.discover_sensors(snapshot->filament_sensor_names());
-                        fsm.load_config_from_file();
-                    }
-                    helix::ToolState::instance().init_tools(*snapshot);
-                    helix::ToolState::instance().load_spool_assignments(api);
+                // Task 15 R1: AMS-relevant subset of desktop's
+                // init_subsystems_from_hardware() (src/printer/printer_discovery.cpp,
+                // excluded from the ESP image) — backend construction, filament
+                // sensors, tool state. Runs here (after the fan/extruder subjects
+                // above, before the dispatch below) to keep the same "subjects
+                // before dispatch" invariant Task 8 established. LED, standard
+                // macros, probe/humidity/width sensors, and camera-adjacent
+                // subsystems stay deferred (Task 8 review's enumeration).
+                AmsState::instance().init_backend_from_hardware(*snapshot, api, c);
+                if (snapshot->has_filament_sensors()) {
+                    auto& fsm = helix::FilamentSensorManager::instance();
+                    fsm.discover_sensors(snapshot->filament_sensor_names());
+                    fsm.load_config_from_file();
+                }
+                helix::ToolState::instance().init_tools(*snapshot);
+                helix::ToolState::instance().load_spool_assignments(api);
 
-                    // Dispatch the initial subscription status LAST, after the
-                    // fan/sensor/extruder/AMS subjects exist. dispatch_status_update
-                    // wraps it in a notify_status_update envelope and fans out to
-                    // MoonrakerManager's notify handler → notification queue →
-                    // process_notifications() (pumped from app_boot_tick) →
-                    // update_from_status() + ToolState — exactly the path an
-                    // inbound live notification takes. Same call the desktop
-                    // handler makes (application.cpp:2593).
-                    if (c && status_snapshot->is_object() && !status_snapshot->empty()) {
-                        c->dispatch_status_update(*status_snapshot);
-                    }
+                // Dispatch the initial subscription status LAST, after the
+                // fan/sensor/extruder/AMS subjects exist. dispatch_status_update
+                // wraps it in a notify_status_update envelope and fans out to
+                // MoonrakerManager's notify handler → notification queue →
+                // process_notifications() (pumped from app_boot_tick) →
+                // update_from_status() + ToolState — exactly the path an
+                // inbound live notification takes. Same call the desktop
+                // handler makes (application.cpp:2593).
+                if (c && status_snapshot->is_object() && !status_snapshot->empty()) {
+                    c->dispatch_status_update(*status_snapshot);
+                }
 
-                    spdlog::info("[app_boot] discovery applied: {} heaters, {} fans, {} sensors, "
-                                 "{} initial-status keys",
-                                 snapshot->heaters().size(), snapshot->fans().size(),
-                                 snapshot->sensors().size(),
-                                 status_snapshot->is_object() ? status_snapshot->size() : 0);
+                spdlog::info("[app_boot] discovery applied: {} heaters, {} fans, {} sensors, "
+                             "{} initial-status keys",
+                             snapshot->heaters().size(), snapshot->fans().size(),
+                             snapshot->sensors().size(),
+                             status_snapshot->is_object() ? status_snapshot->size() : 0);
 
 #if CONFIG_HELIX_HTTP_HIL
-                    run_http_hil_probe(mgr);
+                run_http_hil_probe(mgr);
 #endif
-                });
+            });
         });
 
     spdlog::info("[app_boot] discovery callbacks registered (real connect path)");
@@ -747,8 +745,7 @@ extern "C" void app_boot_ui(void) {
     // badge still exists on the home widget, so register a no-op for its event
     // (BEFORE app_layout XML is created in build_shell) to silence the
     // "callback not found" warning; opening history is a later stage.
-    lv_xml_register_event_cb(nullptr, "status_notification_history_clicked",
-                             [](lv_event_t*) {});
+    lv_xml_register_event_cb(nullptr, "status_notification_history_clicked", [](lv_event_t*) {});
 
     // Phase 8: core subjects (PrinterState / AmsState).
     static SubjectInitializer subjects;

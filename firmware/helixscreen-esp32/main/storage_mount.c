@@ -3,18 +3,17 @@
 
 #include "esp_littlefs.h"
 #include "esp_log.h"
-
 #include "frogfs/frogfs.h"
 #include "frogfs/vfs.h"
 
 #include <stdbool.h>
 
-static const char *TAG = "storage_mount";
+static const char* TAG = "storage_mount";
 
 // Kept alive for the process lifetime (never deinit'd — assets are read for
 // as long as the app runs); frogfs_init() mmaps the `storage` partition
 // directly, so this costs no RAM beyond the frogfs_fs_t bookkeeping struct.
-static frogfs_fs_t *s_assets_fs;
+static frogfs_fs_t* s_assets_fs;
 
 static esp_err_t mount_assets(void) {
     // storage: a read-only packed frogfs container (see

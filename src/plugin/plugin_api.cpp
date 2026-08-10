@@ -5,8 +5,8 @@
 
 #include "ui_update_queue.h"
 
-#include "lvgl.h"
 #include "i_moonraker_client.h"
+#include "lvgl.h"
 #include "plugin_registry.h"
 #include "printer_state.h"
 #include "spdlog/spdlog.h"
