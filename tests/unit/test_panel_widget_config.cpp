@@ -3,13 +3,16 @@
 
 #include "../test_helpers/config_test_access.h"
 #include "config.h"
+#include "data_root_resolver.h"
 #include "panel_widget_config.h"
 #include "panel_widget_registry.h"
 #include "theme_manager.h"
 
+#include <fstream>
 #include <set>
 
 #include "../catch_amalgamated.hpp"
+#include "hv/json.hpp"
 
 using namespace helix;
 
@@ -1902,4 +1905,63 @@ TEST_CASE_METHOD(PanelWidgetConfigFixture,
     REQUIRE(ams->col == -1);
     REQUIRE(fil->enabled);
     REQUIRE(fil->col == 3);
+}
+
+// =============================================================================
+// Preset seed layouts: every placed widget fits the grid and none overlap.
+// Presets ship on 800x480 = medium = 12x8 tracks.
+// =============================================================================
+
+TEST_CASE("preset seeds: placed widgets fit the medium grid", "[panel_widget_config][preset]") {
+    // Medium 800x480 = 12 cols x 8 rows (measured, see test_grid_square_cells.cpp)
+    const int cols = 12, rows = 8;
+    for (const char* preset : {"ad5x", "ad5x_zmod", "cc1"}) {
+        std::string rel = std::string("panel_widgets/") + preset + "/home.json";
+        std::ifstream in(find_readable(rel));
+        INFO("preset " << preset);
+        REQUIRE(in.is_open());
+        nlohmann::json seed = nlohmann::json::parse(in);
+        REQUIRE(seed.contains("pages"));
+        for (const auto& page : seed["pages"]) {
+            for (const auto& w : page["widgets"]) {
+                int col = w.value("col", -1);
+                int row = w.value("row", -1);
+                if (col < 0 || row < 0)
+                    continue;
+                INFO("preset " << preset << " widget " << w.value("id", std::string{}));
+                CHECK(col + w.value("colspan", 1) <= cols);
+                CHECK(row + w.value("rowspan", 1) <= rows);
+            }
+        }
+    }
+}
+
+TEST_CASE("preset seeds: placed widgets do not overlap", "[panel_widget_config][preset]") {
+    for (const char* preset : {"ad5x", "ad5x_zmod", "cc1"}) {
+        std::ifstream in(find_readable(std::string("panel_widgets/") + preset + "/home.json"));
+        REQUIRE(in.is_open());
+        nlohmann::json seed = nlohmann::json::parse(in);
+        struct Rect {
+            int col, row, colspan, rowspan;
+        };
+        std::vector<Rect> placed;
+        for (const auto& w : seed["pages"][0]["widgets"]) {
+            int col = w.value("col", -1);
+            int row = w.value("row", -1);
+            if (col < 0 || row < 0 || !w.value("enabled", false))
+                continue;
+            placed.push_back({col, row, w.value("colspan", 1), w.value("rowspan", 1)});
+        }
+        for (size_t i = 0; i < placed.size(); i++) {
+            for (size_t j = i + 1; j < placed.size(); j++) {
+                const auto& a = placed[i];
+                const auto& b = placed[j];
+                bool overlap = !(a.col + a.colspan <= b.col || b.col + b.colspan <= a.col ||
+                                 a.row + a.rowspan <= b.row || b.row + b.rowspan <= a.row);
+                INFO("preset " << preset << " widgets at (" << a.col << "," << a.row << ") and ("
+                               << b.col << "," << b.row << ")");
+                CHECK_FALSE(overlap);
+            }
+        }
+    }
 }
