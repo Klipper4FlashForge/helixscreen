@@ -1,5 +1,15 @@
 # AD5X IFS: IFS_STATUS as seated-channel authority + unload phase fix
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions. Status: SHIPPED**
+> as `4520e1e23` in v0.99.84, then **substantially revised** by field data. Read
+> `2026-06-25-ad5x-ifs-seated-chan-robustness.md` next: it falsifies this plan's core
+> assumption about `IFS_STATUS Chan` lifetime, and `seated_chan_` in
+> `src/printer/ams_backend_ad5x_ifs.cpp` now prefers `FFMInfo.channel`, head-gates a sticky
+> channel, and has a persisted cold-boot floor that this plan does not describe.
+>
+> **`head_filament_` is not an RS-485 signal** (see the correction in "Root cause" below).
+> Verify predicates and line numbers against current code before acting on anything here.
+
 Bug source: raza616 bundle **D8Z7DAA6** (v0.99.79, 2026-06-15). Fresh ring-buffer log.
 
 ## Symptoms (field)
@@ -18,7 +28,21 @@ view (nothing actively feeding; last channel 4). `apply_zcolor_result` derives
 `active_tool_`/`current_slot` only from the `N:` active-feed form (`extruder_slot`); "None"
 → `extruder_slot=nullopt` → `active_tool_=-1` → `current_slot=-1` (:2802-2811 → :367-375).
 The `(4)` is parsed into `current_channel` but **never used**. Meanwhile `head_filament_`
-(RS-485) stays true. That `head_filament_=true` + `current_slot=-1` combination:
+stays true. That `head_filament_=true` + `current_slot=-1` combination:
+
+> **Correction (2026-08-09): `head_filament_` is not an RS-485 reading.** It comes from
+> Klipper sensor objects in the status stream, written by `parse_head_sensor()` from **two**
+> different branches of `AmsBackendAd5xIfs::handle_status_update()`
+> (`src/printer/ams_backend_ad5x_ifs.cpp`): the motion sensor
+> (`filament_motion_sensor ifs_motion_sensor` / `zmod_ifs_motion_sensor ifs_motion_sensor`)
+> and the switch sensor (`filament_switch_sensor head_switch_sensor` /
+> `zmod_ifs_switch_sensor head_switch_sensor`). RS-485 is how the IFS board reports **port
+> presence** (`IFS_STATUS "Ports"`), which is a different field. The distinction matters:
+> because the motion sensor also writes `head_filament_` and reads false while a lane is
+> loaded but idle, `head_filament_ == false` is **not** evidence the toolhead is empty. The
+> authoritative empty-head test is `head_switch_seen_ && !head_switch_present_` - see the
+> member comments in `include/ams_backend_ad5x_ifs.h`.
+
 - makes `can_unload_from_toolhead(any)` true via the `(head_filament_ && current_slot<0)`
   recovery branch (:957-959) → Unload on every slot;
 - defeats the non-active→eject guard (`current_slot>=0` false, :1059) → `_IFS_REMOVE_CURRENT_PRUTOK`

@@ -69,16 +69,20 @@ std::string color_for_style(const std::string& style) {
     return ""; // neutral / theme default
 }
 
-/// Title for a plain CRITICAL modal (no recovery action). Preserves the prior
-/// per-source behavior: CFS faults read "Filament System Error", anything else
-/// the event's own title, falling back to "Printer Error". The classifier
-/// leaves title empty, so the choice is derived from the source here.
+/// Title for a plain CRITICAL modal (no recovery action): the event's own
+/// title, falling back to "Filament System Error" for an untitled CFS fault and
+/// "Printer Error" otherwise. error_classify::classify() leaves title empty for
+/// every key8xx code, which is what the CFS fallback is for; a backend that does
+/// name its fault (AmsBackendCfs::classify_error's "Filament runout") keeps that
+/// name rather than being relabelled a generic system error.
 /// NOTE: twin of modal_title_for() in recovery_modal_presenter.cpp (the
 /// MODAL_WITH_RECOVER arm) — keep the CFS title rule in sync across both.
 const char* modal_title_for(const ErrorEvent& e) {
+    if (!e.title.empty())
+        return e.title.c_str();
     if (e.source == ErrorSource::CFS)
         return lv_tr("Filament System Error");
-    return e.title.empty() ? lv_tr("Printer Error") : e.title.c_str();
+    return lv_tr("Printer Error");
 }
 
 /// Replay age gate: a latched `!!` older than this in the gcode_store is

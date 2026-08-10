@@ -880,6 +880,10 @@
   <translation tag="Filament loaded" es="Filamento cargado"/>
   <translation tag="Filament operation failed" es="Falló la operación de filamento"/>
   <translation tag="Filament operation timed out" es="Operación de filamento — tiempo de espera agotado"/>
+  <translation tag="Filament ran out - nothing at the toolhead and the print is paused."/>
+  <translation tag="Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume."/>
+  <translation tag="Filament ran out at the toolhead"/>
+  <translation tag="Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume."/>
   <translation tag="Filament runout" es="Filamento agotado"/>
   <translation tag="Filament runout and motion detection sensors" es="Sensores de detección de agotamiento y movimiento de filamento"/>
   <translation tag="Filament saved" es="Filamento guardado"/>
@@ -1333,6 +1337,7 @@
   <translation tag="No Spools" es="Sin Bobinas"/>
   <translation tag="No USB printer detected" es="No se detectó impresora USB"/>
   <translation tag="No USB printers found" es="No se encontraron impresoras USB"/>
+  <translation tag="No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own."/>
   <translation tag="No buffer data available" es="Sin datos de búfer disponibles"/>
   <translation tag="No camera — use USB barcode scanner" es="Sin cámara — use un escáner de código de barras USB"/>
   <translation tag="No changes selected.\n\nClick Cancel to close." es="No se seleccionaron cambios.\n\nHaga clic en Cancelar para cerrar."/>
@@ -1373,6 +1378,7 @@
   <translation tag="No prints yet" es="Sin impresiones aún"/>
   <translation tag="No profiles available" es="No hay perfiles disponibles"/>
   <translation tag="No sensors detected" es="No se detectaron sensores"/>
+  <translation tag="No slot currently matches."/>
   <translation tag="No spool assigned" es="Sin bobina asignada"/>
   <translation tag="No spools found — tap to retry" es="No se encontraron bobinas — toque para reintentar"/>
   <translation tag="No tape detected in printer" es="No se detectó cinta en la impresora"/>
@@ -2414,6 +2420,7 @@
   <translation tag="Z:" es="Z:"/>
   <translation tag="Z: 0.000" es="Z: 0.000"/>
   <translation tag="\&quot;%s\&quot; failed to load" es="&quot;%s&quot; no se pudo cargar"/>
+  <translation tag="backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present."/>
   <translation tag="bed" es="cama"/>
   <translation tag="benchy.gcode"/>
   <translation tag="by Preston Brown" es="por Preston Brown"/>
@@ -2435,8 +2442,11 @@
   <translation tag="fans" es="ventiladores"/>
   <translation tag="heated bed" es="cama caliente"/>
   <translation tag="idle" es="inactivo"/>
+  <translation tag="is installed but its backup-spool switching is turned off, so no automatic swap will happen."/>
+  <translation tag="is installed, but its backup-spool setting could not be read - do not count on an automatic swap."/>
   <translation tag="layers" es="capas"/>
   <translation tag="left" es="restante"/>
+  <translation tag="matches."/>
   <translation tag="mm before clog" es="mm antes de obstrucción"/>
   <translation tag="needs" es="necesita"/>
   <translation tag="not detected" es="no detectado"/>

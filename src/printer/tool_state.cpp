@@ -418,6 +418,16 @@ void ToolState::update_from_status(const nlohmann::json& status) {
     }
 }
 
+int ToolState::extruder_count() const {
+    std::set<std::string> names;
+    for (const auto& t : tools_) {
+        if (t.extruder_name && !t.extruder_name->empty()) {
+            names.insert(*t.extruder_name);
+        }
+    }
+    return static_cast<int>(names.size());
+}
+
 const ToolInfo* ToolState::active_tool() const {
     if (active_tool_index_ < 0 || active_tool_index_ >= static_cast<int>(tools_.size())) {
         return nullptr;

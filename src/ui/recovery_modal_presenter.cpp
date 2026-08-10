@@ -57,15 +57,24 @@ std::string color_for_style(const std::string& style) {
     return "";
 }
 
-/// Title for a CRITICAL recovery modal. Preserves the per-source behavior:
-/// CFS faults read "Filament System Error", anything else the event title,
-/// falling back to "Printer Error".
+/// Title for a CRITICAL recovery modal: the event's own title, falling back to
+/// "Filament System Error" for an untitled CFS fault and "Printer Error"
+/// otherwise.
+///
+/// The CFS fallback exists because error_classify::classify() names no title for
+/// a key8xx code, so without it every CFS fault would read "Printer Error". It
+/// is only a fallback: AmsBackendCfs::classify_error() titles its runout event
+/// "Filament runout", and a runout must not be relabelled a generic system
+/// error. No CFS producer other than that one sets a title, so this changes
+/// nothing for the coded faults.
 /// NOTE: twin of modal_title_for() in gcode_error_router.cpp (the plain
 /// PresentAs::MODAL arm) — keep the CFS title rule in sync across both.
 const char* modal_title_for(const helix::ErrorEvent& e) {
+    if (!e.title.empty())
+        return e.title.c_str();
     if (e.source == helix::ErrorSource::CFS)
         return lv_tr("Filament System Error");
-    return e.title.empty() ? lv_tr("Printer Error") : e.title.c_str();
+    return lv_tr("Printer Error");
 }
 
 int nozzle_current_c() {

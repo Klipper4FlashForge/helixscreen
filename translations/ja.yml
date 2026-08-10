@@ -904,6 +904,11 @@ translations:
   Filament loaded: フィラメントを装填しました
   Filament operation failed: フィラメント操作に失敗しました
   Filament operation timed out: フィラメント操作がタイムアウトしました
+  Filament ran out - nothing at the toolhead and the print is paused.: ''
+  ? Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume.
+  : ''
+  Filament ran out at the toolhead: ''
+  Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: ''
   Filament runout: フィラメント切れ
   Filament runout and motion detection sensors: フィラメント切れとモーション検出センサー
   Filament saved: フィラメントを保存しました
@@ -1382,6 +1387,8 @@ translations:
   No Spools: スプールなし
   No USB printer detected: USB プリンターが検出されません
   No USB printers found: USBプリンターが見つかりません
+  ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
+  : ''
   No buffer data available: バッファーデータがありません
   No camera — use USB barcode scanner: カメラなし — USB バーコードスキャナーを使用してください
   No changes selected.\n\nClick Cancel to close.: 変更が選択されていません。\n\n「キャンセル」をクリックして閉じてください。
@@ -1422,6 +1429,7 @@ translations:
   No prints yet: 印刷履歴なし
   No profiles available: 利用可能なプロファイルがありません
   No sensors detected: センサーが検出されませんでした
+  No slot currently matches.: ''
   No spool assigned: スプール未割当
   No spools found — tap to retry: スプールが見つかりません — タップして再試行
   No tape detected in printer: プリンターにテープが検出されません
@@ -2534,6 +2542,8 @@ translations:
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
   \"%s\" failed to load: \"%s\" の読み込みに失敗しました
+  ? backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
+  : ''
   bed: ベッド
   # Source: print_status_panel.xml:242
   benchy.gcode: ''
@@ -2556,8 +2566,11 @@ translations:
   fans: ファン
   heated bed: ヒートベッド
   idle: アイドル
+  is installed but its backup-spool switching is turned off, so no automatic swap will happen.: ''
+  is installed, but its backup-spool setting could not be read - do not count on an automatic swap.: ''
   layers: レイヤー
   left: 残り
+  matches.: ''
   mm before clog: 詰まりまでの距離 (mm)
   needs: 必要
   not detected: 未検出

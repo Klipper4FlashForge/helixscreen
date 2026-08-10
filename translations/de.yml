@@ -1017,6 +1017,11 @@ translations:
   Filament loaded: Filament geladen
   Filament operation failed: Filament-Vorgang fehlgeschlagen
   Filament operation timed out: Filament-Vorgang Zeitüberschreitung
+  Filament ran out - nothing at the toolhead and the print is paused.: ''
+  ? Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume.
+  : ''
+  Filament ran out at the toolhead: ''
+  Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: ''
   Filament runout: Filament aufgebraucht
   Filament runout and motion detection sensors: Filament-Auslauf- und Bewegungserkennungssensoren
   Filament saved: Filament gespeichert
@@ -1547,6 +1552,8 @@ translations:
   No Spools: Keine Spulen
   No USB printer detected: Kein USB-Drucker erkannt
   No USB printers found: Keine USB-Drucker gefunden
+  ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
+  : ''
   No buffer data available: Keine Pufferdaten verfügbar
   No camera — use USB barcode scanner: Keine Kamera — USB-Barcode-Scanner verwenden
   No changes selected.\n\nClick Cancel to close.: Keine Änderungen ausgewählt.\n\nKlicken
@@ -1592,6 +1599,7 @@ translations:
   No prints yet: Noch keine Drucke
   No profiles available: Keine Profile verfügbar
   No sensors detected: Keine Sensoren erkannt
+  No slot currently matches.: ''
   No spool assigned: Keine Spule zugewiesen
   No spools found — tap to retry: Keine Spulen gefunden — tippen zum Wiederholen
   No tape detected in printer: Kein Band im Drucker erkannt
@@ -2852,6 +2860,8 @@ translations:
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
   \"%s\" failed to load: \"%s\" konnte nicht geladen werden
+  ? backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
+  : ''
   bed: Bett
   # Source: print_status_panel.xml:242
   benchy.gcode: ''
@@ -2874,8 +2884,11 @@ translations:
   fans: Lüfter
   heated bed: Heizbett
   idle: Leerlauf
+  is installed but its backup-spool switching is turned off, so no automatic swap will happen.: ''
+  is installed, but its backup-spool setting could not be read - do not count on an automatic swap.: ''
   layers: Schichten
   left: übrig
+  matches.: ''
   mm before clog: mm vor Verstopfung
   needs: benötigt
   not detected: nicht erkannt

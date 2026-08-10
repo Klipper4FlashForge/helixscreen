@@ -126,6 +126,21 @@ class Config {
     void init(const std::string& config_path);
 
     /**
+     * @brief The settings path init() will actually use for @p config_path
+     *
+     * Applies the HELIX_CONFIG_DIR override — the directory comes from the
+     * env var, the filename from @p config_path, so the
+     * settings.json / settings-test.json distinction survives. Pure: creates
+     * nothing and touches no state, so callers that only want to *report* the
+     * effective path (the --test banner) resolve it the same way init() does
+     * instead of printing the unresolved compile-time constant.
+     *
+     * @param config_path Default path, e.g. RuntimeConfig::TEST_CONFIG_PATH
+     * @return @p config_path when HELIX_CONFIG_DIR is unset or empty
+     */
+    static std::string resolve_path(const std::string& config_path);
+
+    /**
      * @brief Reset state set by init() for test isolation
      *
      * Empties the persistence path and the active-printer slug so

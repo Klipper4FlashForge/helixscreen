@@ -1021,6 +1021,11 @@ translations:
   Filament loaded: Filament chargé
   Filament operation failed: Échec de l'opération filament
   Filament operation timed out: Opération filament — délai dépassé
+  Filament ran out - nothing at the toolhead and the print is paused.: ''
+  ? Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume.
+  : ''
+  Filament ran out at the toolhead: ''
+  Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: ''
   Filament runout: Fin de filament
   Filament runout and motion detection sensors: Capteurs de fin de filament et de
     détection de mouvement
@@ -1554,6 +1559,8 @@ translations:
   No Spools: Aucune bobine
   No USB printer detected: Aucune imprimante USB détectée
   No USB printers found: Aucune imprimante USB trouvée
+  ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
+  : ''
   No buffer data available: Aucune donnée de tampon disponible
   No camera — use USB barcode scanner: Aucune caméra — utilisez un scanner de code-barres
     USB
@@ -1600,6 +1607,7 @@ translations:
   No prints yet: Aucune impression
   No profiles available: Aucun profil disponible
   No sensors detected: Aucun capteur détecté
+  No slot currently matches.: ''
   No spool assigned: Aucune bobine assignée
   No spools found — tap to retry: Aucune bobine trouvée — appuyez pour réessayer
   No tape detected in printer: Aucun ruban détecté dans limprimante
@@ -2880,6 +2888,8 @@ translations:
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
   \"%s\" failed to load: \"%s\" na pas pu se charger
+  ? backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
+  : ''
   bed: plateau
   # Source: print_status_panel.xml:242
   benchy.gcode: ''
@@ -2902,8 +2912,11 @@ translations:
   fans: ventilateurs
   heated bed: plateau chauffant
   idle: inactif
+  is installed but its backup-spool switching is turned off, so no automatic swap will happen.: ''
+  is installed, but its backup-spool setting could not be read - do not count on an automatic swap.: ''
   layers: couches
   left: restant
+  matches.: ''
   mm before clog: mm avant bouchon
   needs: nécessite
   not detected: non détecté

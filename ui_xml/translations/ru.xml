@@ -880,6 +880,10 @@
   <translation tag="Filament loaded" ru="Филамент загружен"/>
   <translation tag="Filament operation failed" ru="Операция с филаментом не удалась"/>
   <translation tag="Filament operation timed out" ru="Операция с филаментом — время ожидания истекло"/>
+  <translation tag="Filament ran out - nothing at the toolhead and the print is paused."/>
+  <translation tag="Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume."/>
+  <translation tag="Filament ran out at the toolhead"/>
+  <translation tag="Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume."/>
   <translation tag="Filament runout" ru="Окончание филамента"/>
   <translation tag="Filament runout and motion detection sensors" ru="Датчики окончания и движения филамента"/>
   <translation tag="Filament saved" ru="Филамент сохранён"/>
@@ -1333,6 +1337,7 @@
   <translation tag="No Spools" ru="Нет катушек"/>
   <translation tag="No USB printer detected" ru="USB-принтер не обнаружен"/>
   <translation tag="No USB printers found" ru="USB-принтеры не найдены"/>
+  <translation tag="No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own."/>
   <translation tag="No buffer data available" ru="Данные буфера недоступны"/>
   <translation tag="No camera — use USB barcode scanner" ru="Нет камеры — используйте USB сканер штрих-кодов"/>
   <translation tag="No changes selected.\n\nClick Cancel to close." ru="Изменения не выбраны.\n\nНажмите «Отмена», чтобы закрыть."/>
@@ -1373,6 +1378,7 @@
   <translation tag="No prints yet" ru="Нет печатей"/>
   <translation tag="No profiles available" ru="Профили недоступны"/>
   <translation tag="No sensors detected" ru="Датчики не обнаружены"/>
+  <translation tag="No slot currently matches."/>
   <translation tag="No spool assigned" ru="Катушка не назначена"/>
   <translation tag="No spools found — tap to retry" ru="Катушки не найдены — нажмите для повтора"/>
   <translation tag="No tape detected in printer" ru="В принтере не обнаружена лента"/>
@@ -2414,6 +2420,7 @@
   <translation tag="Z:" ru="Z:"/>
   <translation tag="Z: 0.000" ru="Z: 0.000"/>
   <translation tag="\&quot;%s\&quot; failed to load" ru="Не удалось загрузить «%s»"/>
+  <translation tag="backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present."/>
   <translation tag="bed" ru="стол"/>
   <translation tag="benchy.gcode"/>
   <translation tag="by Preston Brown" ru="от Preston Brown"/>
@@ -2435,8 +2442,11 @@
   <translation tag="fans" ru="вентиляторы"/>
   <translation tag="heated bed" ru="подогреваемый стол"/>
   <translation tag="idle" ru="простой"/>
+  <translation tag="is installed but its backup-spool switching is turned off, so no automatic swap will happen."/>
+  <translation tag="is installed, but its backup-spool setting could not be read - do not count on an automatic swap."/>
   <translation tag="layers" ru="слои"/>
   <translation tag="left" ru="осталось"/>
+  <translation tag="matches."/>
   <translation tag="mm before clog" ru="мм до засора"/>
   <translation tag="needs" ru="требуется"/>
   <translation tag="not detected" ru="не обнаружено"/>

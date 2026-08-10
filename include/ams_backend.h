@@ -8,7 +8,7 @@
  * @pattern Pure virtual interface + static create()/create_auto() factory methods
  * @threading Implementation-dependent; see concrete implementations
  *
- * @see ams_backend_happyhare.cpp, ams_backend_afc.cpp
+ * @see ams_backend_happy_hare.cpp, ams_backend_afc.cpp
  */
 
 #pragma once
@@ -238,12 +238,24 @@ class AmsBackend {
     }
 
     /**
-     * @brief Backend-specific error classification hook.
+     * @brief Channel A: backend-specific classification of one gcode-response
+     *        line.
      *
-     * Called by ErrorCenter before the generic classifier so domain-aware
-     * backends (AFC first, others later) can recognize their own error lines
-     * and attach accurate severity + recovery actions. Return nullopt to
-     * defer to the generic classifier; return an ErrorEvent to short-circuit it.
+     * Called from GcodeErrorRouter::process_line() (gcode_error_router.cpp),
+     * before the generic error_classify::classify(), so domain-aware backends
+     * can recognize their own error lines and attach accurate severity +
+     * recovery actions. Return nullopt to defer to the generic classifier;
+     * return an ErrorEvent to short-circuit it.
+     *
+     * @warning The router applies **no line filtering at all** — every response
+     *          line reaches every backend, `!!` or not. Each override must gate
+     *          itself. AFC and Happy Hare take only `!!` lines
+     *          (helix::is_bang_line); CFS deliberately takes only NON-`!!`
+     *          lines, because its give-up messages arrive via respond_info while
+     *          its coded faults belong to the generic key8xx path.
+     *
+     * See docs/devel/FILAMENT_MANAGEMENT.md § "Two error channels" for the
+     * per-backend gate and recovery table.
      *
      * @param raw_line  Unmodified gcode-response line to classify
      * @param ctx       Printer state at the time the line arrived
@@ -254,14 +266,53 @@ class AmsBackend {
         return std::nullopt;
     }
 
-    /// Current actionable fault for STATUS-driven backends (no `!!` line).
+    /// Channel B: the current actionable fault, derived from backend STATUS
+    /// rather than from a console line. Consulted only by AmsErrorBridge, and
+    /// only on the rising edge into AmsAction::ERROR — a backend that never
+    /// assigns that action can override this and still never be asked.
+    ///
     /// Returns nullopt when there is no actionable error, or when a bespoke
-    /// dialog owns the fault. `!!`-driven backends leave the default and use
-    /// classify_error() instead.
+    /// dialog owns the fault.
+    ///
+    /// The two channels are independent, not alternatives: AFC overrides BOTH
+    /// (its `!!` lands before AFC pauses, so the line and the status edge each
+    /// catch cases the other misses — #1171). Happy Hare and CFS are channel A
+    /// only; AD5X IFS and QIDI are channel B only.
     [[nodiscard]] virtual std::optional<helix::ErrorEvent> current_error() const {
         return std::nullopt;
     }
 
+  protected:
+    /**
+     * @brief The recovery buttons this backend offers for its current fault.
+     *
+     * The companion to classify_error() / current_error(): those decide *that*
+     * there is a fault and what to call it, this decides what the user can tap.
+     * Split out as its own hook because the action set is derived from live
+     * backend state (is the toolhead loaded, which lane is selected) and is
+     * therefore the same answer no matter which of the two entry points asked.
+     *
+     * @warning **The caller must already hold the backend's own mutex_.**
+     *          Both existing overrides read mutex-protected state directly and
+     *          take no lock of their own, and every call site is inside a
+     *          `std::lock_guard<std::mutex> lock(mutex_)` scope in the same
+     *          object. The mutexes are plain `std::mutex`, not recursive, so an
+     *          override that locks — or a caller that does not — deadlocks.
+     *          Overrides must document and preserve this.
+     *
+     * The base returns an EMPTY vector, and that is deliberate rather than a
+     * placeholder: `decide_presentation()` (gcode_error_router.cpp) keys off
+     * `recovery_actions.empty()` to choose MODAL vs MODAL_WITH_RECOVER, so any
+     * guessed generic default here would silently promote every non-overriding
+     * backend's plain error modal into a recovery prompt with buttons that
+     * backend never vetted. Empty preserves today's behaviour exactly: a backend
+     * offers recovery only by opting in.
+     */
+    [[nodiscard]] virtual std::vector<helix::RecoveryAction> build_recovery_actions() const {
+        return {};
+    }
+
+  public:
     /// One ordered phase in a backend's toolchange narration model.
     struct ToolchangePhase {
         std::string id;    ///< stable key matched from narration, e.g. "brush"

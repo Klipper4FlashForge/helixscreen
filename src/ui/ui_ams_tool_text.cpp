@@ -65,7 +65,11 @@ void init_ams_tool_text_observers() {
     auto& tools = ToolState::instance();
     s_tool_badge_observer = observe_int_sync<ToolState>(
         tools.get_tools_version_subject(), &tools, [](ToolState* ts, int /*version*/) {
-            const auto* tool = ts->is_multi_tool() ? ts->active_tool() : nullptr;
+            // Gated on physical extruders, not tool count: an AMS expands the
+            // tool list to one entry per filament slot, and annotating the one
+            // hotend those slots share with "0" says nothing. Only a printer
+            // with more than one nozzle needs to name which is which.
+            const auto* tool = ts->has_multiple_extruders() ? ts->active_tool() : nullptr;
             if (tool) {
                 // Index only ("0"), not the full tool name ("T0"). The badge is a
                 // disc overlaid on the nozzle glyph it annotates, so its diameter is

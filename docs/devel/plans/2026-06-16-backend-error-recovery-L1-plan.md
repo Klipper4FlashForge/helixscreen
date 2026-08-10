@@ -1,5 +1,32 @@
 # L1 — AFC Classification + Multi-Button Recovery Presenter Implementation Plan
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions. Status: SHIPPED.**
+>
+> Every task below is in `main`. The `- [ ]` boxes were never ticked and do **not** mean the
+> work is outstanding. Evidence: `AmsBackendAfc::classify_error()` and
+> `AmsBackendAfc::build_recovery_actions()` (`src/printer/ams_backend_afc.cpp`),
+> `build_recovery_prompt()` (`include/gcode_error_router.h`,
+> `src/ui/recovery_modal_presenter.cpp`), `helix::ui::ActionPromptModal`
+> (`src/ui/action_prompt_modal.cpp`), and `find_recovery` retired - it has zero hits in
+> `src/` and `include/`, exactly as Task 4 prescribed.
+>
+> **The shipped code has since moved past this plan in three ways. The snippets below are
+> stale; do not paste them.**
+> 1. `helix::RecoveryAction` now has a **fifth** field, `needs_hot_nozzle`
+>    (`include/error_event.h`). Every 4-element brace-init in this document is incomplete -
+>    see the correction on Task 2 (§3c).
+> 2. `build_recovery_actions()` is a **`protected virtual` on `AmsBackend`**
+>    (`include/ams_backend.h`, returns `{}` by default), not a private per-backend helper.
+>    AFC and Happy Hare `override` it.
+> 3. The `!!` guard, the prefix strip, and the case-insensitive substring test are shared
+>    helpers now, not per-backend lambdas: `helix::is_bang_line()` /
+>    `helix::strip_bang_prefix()` / `helix::make_ams_fault_event()` in
+>    `include/ams_fault_event.h`, and `helix::contains_ci()` in
+>    `include/operation_patterns.h`.
+>
+> Code line numbers cited below have drifted by 250-400 lines. Follow the **symbol**, not the
+> number, and verify every predicate against current code.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** AFC's toolhead jam (and lane/hub/any pausing AFC fault) surfaces a CRITICAL modal with smart, applicable recovery buttons (Resume / Unload / Eject / Recover), rendered by a generic presenter that turns any `ErrorEvent.recovery_actions[]` into buttons — replacing L0's single-button `find_recovery` special case.
@@ -218,6 +245,17 @@ std::vector<helix::RecoveryAction> build_recovery_actions() const;
 ```
 
 **3c.** Implement the two methods (place near the other query methods; both `const`, both lock `mutex_`):
+
+> **Correction (2026-08-09).** The `RecoveryAction` literals in this snippet are 4-tuples
+> `{label, gcode, log_tag, style}`. The shipped struct has a fifth field,
+> `bool needs_hot_nozzle` (`include/error_event.h`), and the presenter preheats and defers the
+> send when it is set - a cold nozzle otherwise fails the recovery exactly like the operation
+> that raised the error. The shipped AFC builder
+> (`AmsBackendAfc::build_recovery_actions()`, `src/printer/ams_backend_afc.cpp`) sets it
+> **true on Resume** (a resumed print extrudes on the next move) and **true on Unload**
+> (retracts back out through the melt zone), and leaves it false on Eject (lane-to-spool only)
+> and Recover (`AFC_RESET` runs lane motors to the hub). Copying the 4-tuple form below
+> silently reintroduces the cold-recovery failure.
 
 ```cpp
 std::vector<helix::RecoveryAction> AmsBackendAfc::build_recovery_actions() const {

@@ -11,9 +11,11 @@
 #include "action_prompt_manager.h"
 #include "afc_defaults.h"
 #include "ams_bypass_policy.h"
+#include "ams_fault_event.h"
 #include "config.h"
 #include "i_moonraker_api.h"
 #include "lvgl/src/others/translation/lv_translation.h"
+#include "operation_patterns.h" // helix::contains_ci
 #include "printer_discovery.h"
 #include "settings_manager.h"
 
@@ -694,11 +696,9 @@ std::optional<helix::ErrorEvent> AmsBackendAfc::current_error() const {
         return std::nullopt;
     }
 
-    helix::ErrorEvent e;
-    e.source = helix::ErrorSource::AFC;
-    e.severity = helix::ErrorSeverity::CRITICAL;
-    e.title = lv_tr("Filament System Error");
-    e.sticky = true;
+    helix::ErrorEvent e =
+        helix::make_ams_fault_event(helix::ErrorSource::AFC, lv_tr("Filament System Error"),
+                                    /*detail=*/"", build_recovery_actions());
 
     // AFC.message is a FIFO *peek* (_get_message(clear=False)) that
     // RESET_FAILURE does not pop, so it can still hold the text of an
@@ -719,7 +719,6 @@ std::optional<helix::ErrorEvent> AmsBackendAfc::current_error() const {
         e.detail = lv_tr("The filament system reported an error");
     }
 
-    e.recovery_actions = build_recovery_actions();
     return e;
 }
 
@@ -727,51 +726,28 @@ std::optional<helix::ErrorEvent>
 AmsBackendAfc::classify_error(const std::string& raw_line,
                               const helix::ClassifyContext& ctx) const {
     // Only `!!` emergency lines are candidates.
-    if (raw_line.size() < 2 || raw_line[0] != '!' || raw_line[1] != '!') {
+    if (!helix::is_bang_line(raw_line)) {
         return std::nullopt;
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
 
     // Strip the "!! " prefix for the detail text.
-    std::string detail =
-        (raw_line.size() > 3 && raw_line[2] == ' ') ? raw_line.substr(3) : raw_line.substr(2);
-
-    auto contains_ci = [](const std::string& hay, const char* needle) {
-        std::string h = hay;
-        std::string n = needle;
-        for (auto& c : h)
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        for (auto& c : n)
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        return h.find(n) != std::string::npos;
-    };
+    std::string detail = helix::strip_bang_prefix(raw_line);
 
     // 1) Toolhead jam / break (handle_toolhead_runout signature).
-    const bool is_jam = contains_ci(detail, "tool_end") &&
-                        (contains_ci(detail, "jam") || contains_ci(detail, "break") ||
-                         contains_ci(detail, "runout detected"));
+    const bool is_jam = helix::contains_ci(detail, "tool_end") &&
+                        (helix::contains_ci(detail, "jam") || helix::contains_ci(detail, "break") ||
+                         helix::contains_ci(detail, "runout detected"));
     if (is_jam) {
-        helix::ErrorEvent e;
-        e.source = helix::ErrorSource::AFC;
-        e.severity = helix::ErrorSeverity::CRITICAL;
-        e.title = lv_tr("Toolhead jam");
-        e.detail = detail;
-        e.sticky = true;
-        e.recovery_actions = build_recovery_actions();
-        return e;
+        return helix::make_ams_fault_event(helix::ErrorSource::AFC, lv_tr("Toolhead jam"), detail,
+                                           build_recovery_actions());
     }
 
     // 2) Catch-all: any pausing !! while AFC is in an error state.
     if (ctx.is_paused && error_state_) {
-        helix::ErrorEvent e;
-        e.source = helix::ErrorSource::AFC;
-        e.severity = helix::ErrorSeverity::CRITICAL;
-        e.title = lv_tr("Filament System Error");
-        e.detail = detail;
-        e.sticky = true;
-        e.recovery_actions = build_recovery_actions();
-        return e;
+        return helix::make_ams_fault_event(helix::ErrorSource::AFC, lv_tr("Filament System Error"),
+                                           detail, build_recovery_actions());
     }
 
     // 3) Not an AFC-owned fault — let the generic classifier handle it.

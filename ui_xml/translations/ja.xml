@@ -880,6 +880,10 @@
   <translation tag="Filament loaded" ja="フィラメントを装填しました"/>
   <translation tag="Filament operation failed" ja="フィラメント操作に失敗しました"/>
   <translation tag="Filament operation timed out" ja="フィラメント操作がタイムアウトしました"/>
+  <translation tag="Filament ran out - nothing at the toolhead and the print is paused."/>
+  <translation tag="Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume."/>
+  <translation tag="Filament ran out at the toolhead"/>
+  <translation tag="Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume."/>
   <translation tag="Filament runout" ja="フィラメント切れ"/>
   <translation tag="Filament runout and motion detection sensors" ja="フィラメント切れとモーション検出センサー"/>
   <translation tag="Filament saved" ja="フィラメントを保存しました"/>
@@ -1333,6 +1337,7 @@
   <translation tag="No Spools" ja="スプールなし"/>
   <translation tag="No USB printer detected" ja="USB プリンターが検出されません"/>
   <translation tag="No USB printers found" ja="USBプリンターが見つかりません"/>
+  <translation tag="No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own."/>
   <translation tag="No buffer data available" ja="バッファーデータがありません"/>
   <translation tag="No camera — use USB barcode scanner" ja="カメラなし — USB バーコードスキャナーを使用してください"/>
   <translation tag="No changes selected.\n\nClick Cancel to close." ja="変更が選択されていません。\n\n「キャンセル」をクリックして閉じてください。"/>
@@ -1373,6 +1378,7 @@
   <translation tag="No prints yet" ja="印刷履歴なし"/>
   <translation tag="No profiles available" ja="利用可能なプロファイルがありません"/>
   <translation tag="No sensors detected" ja="センサーが検出されませんでした"/>
+  <translation tag="No slot currently matches."/>
   <translation tag="No spool assigned" ja="スプール未割当"/>
   <translation tag="No spools found — tap to retry" ja="スプールが見つかりません — タップして再試行"/>
   <translation tag="No tape detected in printer" ja="プリンターにテープが検出されません"/>
@@ -2414,6 +2420,7 @@
   <translation tag="Z:" ja="Z:"/>
   <translation tag="Z: 0.000" ja="Z: 0.000"/>
   <translation tag="\&quot;%s\&quot; failed to load" ja="\&quot;%s\&quot; の読み込みに失敗しました"/>
+  <translation tag="backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present."/>
   <translation tag="bed" ja="ベッド"/>
   <translation tag="benchy.gcode"/>
   <translation tag="by Preston Brown" ja="by Preston Brown"/>
@@ -2435,8 +2442,11 @@
   <translation tag="fans" ja="ファン"/>
   <translation tag="heated bed" ja="ヒートベッド"/>
   <translation tag="idle" ja="アイドル"/>
+  <translation tag="is installed but its backup-spool switching is turned off, so no automatic swap will happen."/>
+  <translation tag="is installed, but its backup-spool setting could not be read - do not count on an automatic swap."/>
   <translation tag="layers" ja="レイヤー"/>
   <translation tag="left" ja="残り"/>
+  <translation tag="matches."/>
   <translation tag="mm before clog" ja="詰まりまでの距離 (mm)"/>
   <translation tag="needs" ja="必要"/>
   <translation tag="not detected" ja="未検出"/>

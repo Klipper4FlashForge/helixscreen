@@ -1,5 +1,15 @@
 # Collapse Micro XML Settings Variants — Implementation Plan
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions.**
+> **Status: SHIPPED.** The 41 `- [ ]` boxes were never ticked and do not mean the work is
+> outstanding. All three prescribed attributes live in
+> `lib/helix-xml/src/xml/parsers/lv_xml_obj_parser.c`, and the seven `ui_xml/micro/setting*.xml`
+> variants this plan deletes are already gone. `ui_xml/test_hidden_if.xml` was never created.
+>
+> Code line numbers and file paths below may have drifted. Follow the **symbol**, not
+> the number, and verify every predicate against current code before relying on
+> anything here.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Eliminate 7 duplicate `ui_xml/micro/` settings files by making setting row components responsive and adding an info icon for on-demand help text on small screens.

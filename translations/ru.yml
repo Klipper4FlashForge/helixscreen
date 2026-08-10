@@ -990,6 +990,11 @@ translations:
   Filament loaded: Филамент загружен
   Filament operation failed: Операция с филаментом не удалась
   Filament operation timed out: Операция с филаментом — время ожидания истекло
+  Filament ran out - nothing at the toolhead and the print is paused.: ''
+  ? Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume.
+  : ''
+  Filament ran out at the toolhead: ''
+  Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: ''
   Filament runout: Окончание филамента
   Filament runout and motion detection sensors: Датчики окончания и движения филамента
   Filament saved: Филамент сохранён
@@ -1516,6 +1521,8 @@ translations:
   No Spools: Нет катушек
   No USB printer detected: USB-принтер не обнаружен
   No USB printers found: USB-принтеры не найдены
+  ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
+  : ''
   No buffer data available: Данные буфера недоступны
   No camera — use USB barcode scanner: Нет камеры — используйте USB сканер штрих-кодов
   No changes selected.\n\nClick Cancel to close.: Изменения не выбраны.\n\nНажмите
@@ -1561,6 +1568,7 @@ translations:
   No prints yet: Нет печатей
   No profiles available: Профили недоступны
   No sensors detected: Датчики не обнаружены
+  No slot currently matches.: ''
   No spool assigned: Катушка не назначена
   No spools found — tap to retry: Катушки не найдены — нажмите для повтора
   No tape detected in printer: В принтере не обнаружена лента
@@ -2797,6 +2805,8 @@ translations:
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
   \"%s\" failed to load: Не удалось загрузить «%s»
+  ? backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
+  : ''
   bed: стол
   # Source: print_status_panel.xml:242
   benchy.gcode: ''
@@ -2819,8 +2829,11 @@ translations:
   fans: вентиляторы
   heated bed: подогреваемый стол
   idle: простой
+  is installed but its backup-spool switching is turned off, so no automatic swap will happen.: ''
+  is installed, but its backup-spool setting could not be read - do not count on an automatic swap.: ''
   layers: слои
   left: осталось
+  matches.: ''
   mm before clog: мм до засора
   needs: требуется
   not detected: не обнаружено

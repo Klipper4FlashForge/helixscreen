@@ -880,6 +880,10 @@
   <translation tag="Filament loaded" zh="耗材已加载"/>
   <translation tag="Filament operation failed" zh="耗材操作失败"/>
   <translation tag="Filament operation timed out" zh="耗材操作超时"/>
+  <translation tag="Filament ran out - nothing at the toolhead and the print is paused."/>
+  <translation tag="Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume."/>
+  <translation tag="Filament ran out at the toolhead"/>
+  <translation tag="Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume."/>
   <translation tag="Filament runout" zh="耗材用尽"/>
   <translation tag="Filament runout and motion detection sensors" zh="耗材用尽和运动检测传感器"/>
   <translation tag="Filament saved" zh="耗材已保存"/>
@@ -1333,6 +1337,7 @@
   <translation tag="No Spools" zh="无料盘"/>
   <translation tag="No USB printer detected" zh="未检测到 USB 打印机"/>
   <translation tag="No USB printers found" zh="未找到 USB 打印机"/>
+  <translation tag="No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own."/>
   <translation tag="No buffer data available" zh="无可用缓冲区数据"/>
   <translation tag="No camera — use USB barcode scanner" zh="无摄像头 — 请使用 USB 条码扫描器"/>
   <translation tag="No changes selected.\n\nClick Cancel to close." zh="未选择任何更改。\n\n点击取消以关闭。"/>
@@ -1373,6 +1378,7 @@
   <translation tag="No prints yet" zh="暂无打印记录"/>
   <translation tag="No profiles available" zh="无可用配置"/>
   <translation tag="No sensors detected" zh="未检测到传感器"/>
+  <translation tag="No slot currently matches."/>
   <translation tag="No spool assigned" zh="未分配料盘"/>
   <translation tag="No spools found — tap to retry" zh="未找到料盘 - 点击重试"/>
   <translation tag="No tape detected in printer" zh="打印机中未检测到标签带"/>
@@ -2414,6 +2420,7 @@
   <translation tag="Z:" zh="Z:"/>
   <translation tag="Z: 0.000" zh="Z: 0.000"/>
   <translation tag="\&quot;%s\&quot; failed to load" zh="\&quot;%s\&quot; 加载失败"/>
+  <translation tag="backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present."/>
   <translation tag="bed" zh="热床"/>
   <translation tag="benchy.gcode"/>
   <translation tag="by Preston Brown" zh="by Preston Brown"/>
@@ -2435,8 +2442,11 @@
   <translation tag="fans" zh="风扇"/>
   <translation tag="heated bed" zh="热床"/>
   <translation tag="idle" zh="空闲"/>
+  <translation tag="is installed but its backup-spool switching is turned off, so no automatic swap will happen."/>
+  <translation tag="is installed, but its backup-spool setting could not be read - do not count on an automatic swap."/>
   <translation tag="layers" zh="层"/>
   <translation tag="left" zh="剩余"/>
+  <translation tag="matches."/>
   <translation tag="mm before clog" zh="毫米后堵料"/>
   <translation tag="needs" zh="需要"/>
   <translation tag="not detected" zh="未检测到"/>

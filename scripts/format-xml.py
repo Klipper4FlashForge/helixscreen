@@ -273,14 +273,29 @@ def format_xml_file(content: str) -> str:
 
     # Get the original file to extract leading comments (before root element)
     # This preserves copyright and license comments
+    # A multi-line comment must be carried across lines: its opening line
+    # starts with "<!--" but does not close, so testing both delimiters on one
+    # line sent it to the root-element break below, deleting the comment AND
+    # cutting the prolog scan short. Continuation lines keep their original
+    # indentation — these comments are mostly aligned state tables.
     content_lines = content.split("\n")
+    in_comment = False
     for line in content_lines:
         stripped = line.strip()
-        if stripped.startswith("<!--") and stripped.endswith("-->"):
-            lines.append(stripped)
+        if in_comment:
+            lines.append(line.rstrip())
+            if "-->" in stripped:
+                in_comment = False
+            continue
+        if stripped.startswith("<!--"):
+            if stripped.endswith("-->"):
+                lines.append(stripped)
+            else:
+                lines.append(line.rstrip())
+                in_comment = True
         elif stripped.startswith("<?xml"):
             continue  # Skip XML declaration, we add our own
-        elif stripped.startswith("<") and not stripped.startswith("<!--"):
+        elif stripped.startswith("<"):
             break  # Hit the root element
 
     # Format the root element and all children

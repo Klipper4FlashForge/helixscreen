@@ -1,5 +1,30 @@
 # Happy Hare Error-Recovery + Narration Implementation Plan
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions. Status: SHIPPED.**
+>
+> All four tasks are in `main`. The `- [ ]` boxes were never ticked and do **not** mean the
+> work is outstanding. Evidence: `AmsBackendHappyHare::classify_error()` and
+> `::build_recovery_actions()` (`src/printer/ams_backend_happy_hare.cpp`,
+> declared `include/ams_backend_happy_hare.h`), `::toolchange_phase_template()`, and the
+> `AmsState::set_narration_phase()` call from the same file.
+>
+> **Two prescriptions below are wrong as written. Do not copy them:**
+> 1. **The `classify_error` gate in Task 1 Step 4 has its parentheses in the wrong place** -
+>    see the correction there. The plan's second arm fires while the print is not paused.
+> 2. The `RecoveryAction` literals are 4-tuples; the shipped struct has a fifth field,
+>    `needs_hot_nozzle` (`include/error_event.h`), and the shipped Happy Hare builder sets it
+>    true on Resume and Unload.
+>
+> Also stale: `build_recovery_actions()` is now a `protected virtual` on `AmsBackend`
+> (`include/ams_backend.h`) that Happy Hare `override`s, not a private helper; and the `!!`
+> guard, prefix strip, `contains_ci`, and the CRITICAL+sticky event construction are shared
+> helpers (`helix::is_bang_line` / `strip_bang_prefix` / `make_ams_fault_event` in
+> `include/ams_fault_event.h`, `helix::contains_ci` in `include/operation_patterns.h`), not
+> per-backend lambdas.
+>
+> Code line numbers cited below have drifted by 250-400 lines. Follow the **symbol**, not the
+> number, and verify every predicate against current code.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give the Happy Hare AMS backend actionable error-recovery dialogs and a labeled toolchange step bar, mirroring the AFC reference, entirely behind the existing `AmsBackend` virtuals.
@@ -21,7 +46,7 @@
 
 ### Task 1: Happy Hare error classification + recovery actions
 
-Mirrors `AmsBackendAfc::classify_error` (`src/printer/ams_backend_afc.cpp:383`) and `build_recovery_actions` (`:361`). Happy Hare's rich error text lives in the member `reason_for_pause_` (populated in `parse_mmu_state`), not the `!!` line, so classification reads that member like AFC reads `error_state_`.
+Mirrors `AmsBackendAfc::classify_error` and `AmsBackendAfc::build_recovery_actions` (both in `src/printer/ams_backend_afc.cpp` - the `:383` / `:361` line numbers this plan was written against are long gone; grep the symbols). Happy Hare's rich error text lives in the member `reason_for_pause_` (populated in `parse_mmu_state`), not the `!!` line, so classification reads that member like AFC reads `error_state_`.
 
 **Files:**
 - Modify: `include/ams_backend_happy_hare.h` (add two method decls + `build_recovery_actions` private helper)
@@ -124,6 +149,13 @@ Ensure `#include "error_event.h"` is present in the header (add if missing).
 
 In `src/printer/ams_backend_happy_hare.cpp` (add `#include <cctype>` if not present):
 
+> **Correction (2026-08-09).** The `RecoveryAction` literals below are 4-tuples. The shipped
+> struct has a fifth field, `bool needs_hot_nozzle` (`include/error_event.h`); the presenter
+> preheats and defers the send when it is set. The shipped Happy Hare builder sets it **true
+> on Resume** (a resumed print extrudes on the next move) and **true on Unload**
+> (`MMU_UNLOAD` pulls filament back out through the melt zone), and leaves it false on
+> `MMU_RECOVER` and `MMU_UNLOCK`, which only touch state.
+
 ```cpp
 std::vector<helix::RecoveryAction> AmsBackendHappyHare::build_recovery_actions() const {
     // Caller holds mutex_.
@@ -179,6 +211,7 @@ std::optional<helix::ErrorEvent> AmsBackendHappyHare::classify_error(
         contains_ci(detail, "encoder") || contains_ci(detail, "jam") ||
         contains_ci(detail, "manual intervention");
 
+    // WRONG AS WRITTEN - see the correction below this code block.
     if ((ctx.is_paused && hh_error_state) || (recognized && !reason_for_pause_.empty())) {
         helix::ErrorEvent e;
         e.source = helix::ErrorSource::HAPPY_HARE;
@@ -195,6 +228,25 @@ std::optional<helix::ErrorEvent> AmsBackendHappyHare::classify_error(
     return std::nullopt;
 }
 ```
+
+> ⚠️ **Correction (2026-08-09) - the gate above is a real behavioural bug, not a style nit.**
+>
+> As written, `(ctx.is_paused && hh_error_state) || (recognized && !reason_for_pause_.empty())`
+> makes the **second arm independent of pause state**. Happy Hare leaves `reason_for_pause_`
+> populated after a fault is cleared and the print resumed, so a later unrelated `!!` - while
+> printing normally - still matches "recognized text + non-empty reason" and raises a CRITICAL
+> sticky modal offering `RESUME` / `MMU_RECOVER` / `MMU_UNLOAD` against a running print.
+>
+> The shipped predicate (`AmsBackendHappyHare::classify_error()`,
+> `src/printer/ams_backend_happy_hare.cpp`) puts `ctx.is_paused` outside both arms:
+>
+> ```cpp
+> if (ctx.is_paused && (hh_error_state || (recognized && !reason_for_pause_.empty()))) {
+> ```
+>
+> Pause is the necessary condition; `hh_error_state` and the recognized-text fallback are the
+> two ways of confirming *which* fault. That also matches the AFC catch-all it says it mirrors
+> (`ctx.is_paused && error_state_`).
 
 - [ ] **Step 5: Run tests to verify they pass**
 

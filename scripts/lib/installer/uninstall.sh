@@ -195,6 +195,14 @@ uninstall() {
         remove_update_manager_section || true
     fi
 
+    # Drop the service-allowlist entry the install added. Nothing else prunes
+    # moonraker.asvc, so skipping this leaves helixscreen listed forever.
+    if type remove_moonraker_asvc >/dev/null 2>&1; then
+        local _asvc_conf
+        _asvc_conf=$(find_moonraker_conf 2>/dev/null || true)
+        [ -n "$_asvc_conf" ] && remove_moonraker_asvc "$_asvc_conf" || true
+    fi
+
     # Detect init system first
     detect_init_system
 

@@ -75,10 +75,10 @@ Runs on the K2's built-in screen and — unlike the K1 — **works with stock fi
 
 **What works:**
 - **Full CFS multi-material** — up to 4 units × 4 slots (16 colors): per-slot color, material type, and remaining filament length; per-unit temperature and humidity; load/unload
-- **Auto-refill / backup spool** switching and tool-to-slot color mapping
+- **Auto-refill / backup spool** switching, run by the CFS itself, and tool-to-slot color mapping. A runout always pauses the print first, and the box only swaps to another slot when auto-refill is on and that slot holds the exact same material *and* colour - otherwise the print stays paused
 - **CFS dryer and humidity monitoring** per unit
 - **Chamber heater** control (K2 Pro / Plus)
-- **AI print monitoring** available as a pre-print option, plus filament runout detection
+- **AI print monitoring** available as a pre-print option. Filament runout is detected and acted on by the printer's own firmware, which pauses the job; HelixScreen reports what the CFS decided and offers the recovery buttons
 
 **Requirements:** Stock firmware works out of the box. See [Installation → Creality K2 Series](../INSTALL.md#creality-k2-series).
 

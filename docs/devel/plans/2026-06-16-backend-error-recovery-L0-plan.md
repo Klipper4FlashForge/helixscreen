@@ -1,4 +1,24 @@
-# L0 — ErrorCenter Core (severity-classified surfacing) Implementation Plan
+# L0 - Error-Router Core (severity-classified surfacing) Implementation Plan
+
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions. Status: SHIPPED.**
+>
+> Every task below is in `main`. The `- [ ]` boxes were never ticked and do **not** mean the
+> work is outstanding. Evidence: `helix::ErrorEvent` / `helix::RecoveryAction`
+> (`include/error_event.h`), `error_classify::classify()`
+> (`include/error_classify.h`, `src/application/error_classify.cpp`),
+> `PrinterState::is_paused()` (`include/printer_state.h`), the
+> `AmsBackend::classify_error()` hook (`include/ams_backend.h`), and
+> `decide_presentation()` severity routing in `src/application/gcode_error_router.cpp`.
+>
+> **There is no class named `ErrorCenter` and there never was.** That was the design-time name
+> for the role; it shipped as `GcodeErrorRouter` (`src/application/gcode_error_router.cpp`,
+> which owns ingestion + classification) plus `RecoveryModalPresenter`
+> (`src/ui/recovery_modal_presenter.cpp`, which owns presentation - split out later by
+> `2026-06-18-ams-status-error-center-bridge-plan.md`). Read every "ErrorCenter" below as
+> "the router". Grepping for it finds nothing.
+>
+> Code line numbers cited below have drifted by hundreds of lines. Follow the **symbol**, not
+> the number, and verify every predicate against current code before relying on anything here.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -416,7 +436,7 @@ git commit -m "feat(printer-state): track pause_resume.is_paused"
 
 ## Task 4: Per-backend classify hook on AmsBackend (default only)
 
-L0 adds the seam; AFC's implementation is L1. ErrorCenter will consult the active backend before the generic classifier (Task 5).
+L0 adds the seam; AFC's implementation is L1. The router will consult the active backend before the generic classifier (Task 5). As shipped, that is `GcodeErrorRouter::process_line()` calling `backend->classify_error(line, ctx)` and falling through to `error_classify::classify(line, ctx)` (`src/application/gcode_error_router.cpp`).
 
 **Files:**
 - Modify: `include/ams_backend.h`
@@ -476,7 +496,7 @@ In `include/ams_backend.h`, add `#include "error_event.h"` and, alongside the ot
 
 ```cpp
 /// Backend-specific error classification. Default: no opinion (nullopt),
-/// so the generic classifier in ErrorCenter handles the line. Override in
+/// so the generic classifier in the router handles the line. Override in
 /// a backend (AFC first, L1) to recognize domain errors (toolhead jam) and
 /// attach severity + recovery actions.
 virtual std::optional<helix::ErrorEvent> classify_error(

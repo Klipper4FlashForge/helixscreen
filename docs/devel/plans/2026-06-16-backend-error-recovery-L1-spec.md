@@ -1,5 +1,10 @@
 # L1 — AFC Error Classification + Multi-Button Recovery Presenter — Design Spec
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions. Status: SHIPPED**, with
+> the divergences noted inline. The design below is what was agreed; `src/printer/ams_backend_afc.cpp`
+> and `src/ui/recovery_modal_presenter.cpp` are what exists. Verify predicates against the code
+> before acting on anything here.
+
 **Status:** Approved (brainstorm 2026-06-16) · **Author:** brainstormed w/ Preston
 **Builds on:** L0 (`2026-06-16-backend-error-recovery-source.md` §4.2, `-L0-plan.md`) — shipped + device-verified.
 **Scope:** The AFC adapter (first hand-tuned backend) + a generic multi-button recovery-modal presenter that renders arbitrary `ErrorEvent.recovery_actions[]`. Closes callouts **R1**, **R3**, and audits **E3**.
@@ -76,6 +81,11 @@ struct RecoveryAction {
 };
 ```
 
+> **Correction (2026-08-09).** The shipped struct (`include/error_event.h`) carries a fifth
+> field, `bool needs_hot_nozzle = false`, which the presenter uses to preheat and defer a
+> recovery that pushes filament through the nozzle. Any four-field literal built from this
+> snippet compiles and silently fires cold.
+
 `style` maps to `PromptButton.color` in the presenter (`"primary"`→primary, `"danger"`→`"error"`, `""`→default). No other model change. `decide_presentation()` is unchanged.
 
 ### 4.2 AFC classification — `AmsBackendAfc::classify_error()`
@@ -85,6 +95,15 @@ std::optional<helix::ErrorEvent> classify_error(
     const std::string& raw_line, const helix::ClassifyContext& ctx) const override;
 ```
 
+> **Correction (2026-08-09).** As shipped, `build_recovery_actions()` is a
+> `protected virtual` on `AmsBackend` (`include/ams_backend.h`, default `{}`) that AFC
+> overrides - not a private AFC helper. The `!!` guard and prefix strip are the shared
+> `helix::is_bang_line()` / `helix::strip_bang_prefix()` from `include/ams_fault_event.h`,
+> the substring test is `helix::contains_ci()` from `include/operation_patterns.h`, and the
+> CRITICAL+sticky `ErrorEvent` is built by `helix::make_ams_fault_event()`. Item 2 below,
+> the tailored lane/hub branch, was **never implemented** - AFC has only the jam branch and
+> the catch-all, so a lane or hub fault falls through to arm 3's generic title.
+
 Decision order (first match wins):
 1. **Toolhead jam/break** — `raw_line` matches the `handle_toolhead_runout` signature (e.g. contains `"tool_end"` + (`"jam"` or `"break"` or `"runout detected"`)). → title *"Toolhead jam"*, CRITICAL, source AFC, `detail` = full untruncated text, `recovery_actions = build_recovery_actions()`.
 2. **Lane / hub error** — recognizable markers (lane name + error, hub state error). → tailored title, same builder.
@@ -93,12 +112,21 @@ Decision order (first match wins):
 
 `build_recovery_actions() const` reads live state, pushes only applicable actions:
 
-| Condition | Button (style) | gcode | log_tag |
-|---|---|---|---|
-| always | **Resume** (primary) | `RESUME` | `afc::resume` |
-| `tool_start_sensor_ \|\| system_info_.filament_loaded` | **Unload** (neutral) | `TOOL_UNLOAD` | `afc::tool_unload` |
-| toolhead empty (above false) | **Eject** (neutral) | `LANE_UNLOAD LANE=<current_lane_name_>` | `afc::lane_unload` |
-| always | **Recover** (danger) | `AFC_RESET` | `afc::reset` |
+| Condition | Button (style) | gcode | log_tag | `needs_hot_nozzle` |
+|---|---|---|---|---|
+| always | **Resume** (primary) | `RESUME` | `afc::resume` | true |
+| `tool_start_sensor_ \|\| system_info_.filament_loaded` | **Unload** (neutral) | `TOOL_UNLOAD` | `afc::tool_unload` | true |
+| toolhead empty (above false) **and `!current_lane_name_.empty()`** | **Eject** (neutral) | `LANE_UNLOAD LANE=<current_lane_name_>` | `afc::lane_unload` | false |
+| always | **Recover** (danger) | `AFC_RESET` | `afc::reset` | false |
+
+> **Corrections (2026-08-09), against `AmsBackendAfc::build_recovery_actions()` in
+> `src/printer/ams_backend_afc.cpp`:**
+> - The Eject arm is `else if (!current_lane_name_.empty())`, not a bare else. An empty toolhead
+>   with no lane selected offers no Eject at all - the gcode would otherwise be
+>   `LANE_UNLOAD LANE=` with no lane name.
+> - `RecoveryAction` gained a fifth field, `needs_hot_nozzle` (`include/error_event.h`), added
+>   to the table above. The presenter preheats and defers the send when it is set; the two
+>   actions that push filament through the melt zone need it.
 
 Open item resolved in the plan: confirm whether AFC prefers a resume-specific macro over plain Klipper `RESUME`. `RESUME` is the safe default (always valid while paused). If AFC docs/source show a preferred resume entry point, use it.
 
