@@ -11,6 +11,7 @@
 #include "ui_utils.h"
 
 #include "app_globals.h"
+#include "layout_manager.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "panel_widget_manager.h"
 #include "printer_state.h"
@@ -547,16 +548,22 @@ void TempGraphOverlay::configure_control_strip() {
     if (chamber_strip_)
         lv_obj_add_flag(chamber_strip_, LV_OBJ_FLAG_HIDDEN);
 
-    if (mode_ == Mode::GraphOnly) {
-        // Graph takes full width — no right column
+    // In portrait the strip sits BELOW the graph (overlay_content flips to a
+    // column via bind_style_if on ui_is_portrait), so the graph keeps full
+    // width in every mode and this function must not fight the bound style —
+    // an imperative width outranks it.
+    const bool portrait = helix::is_portrait_layout(helix::LayoutManager::instance().type());
+
+    if (mode_ == Mode::GraphOnly || portrait) {
         if (graph_outer_)
             lv_obj_set_width(graph_outer_, lv_pct(100));
-        return;
+        if (mode_ == Mode::GraphOnly)
+            return;
+    } else {
+        // Landscape: graph gets 66% width with the control column beside it
+        if (graph_outer_)
+            lv_obj_set_width(graph_outer_, lv_pct(66));
     }
-
-    // Graph gets 66% width with control column visible
-    if (graph_outer_)
-        lv_obj_set_width(graph_outer_, lv_pct(66));
 
     // Determine which strip to show and heater type
     helix::HeaterType heater_type;

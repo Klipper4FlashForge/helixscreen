@@ -4,18 +4,34 @@
 <component>
   <!-- Unified Temperature Graph Overlay -->
   <!-- Shows all temperature sensors with toggle chips and optional heater controls -->
+  <!-- Portrait reflow via bind_style_if on ui_is_portrait (see advanced_panel.xml
+       for the reasoning): only container direction and child sizing differ, so
+       no variant file. Both orientations carry explicit styles because an
+       inline attribute would outrank a bound style; the row/column styles set
+       layout=flex alongside flex_flow because a style sets only what it names. -->
+  <styles>
+    <style name="tg_content_row" layout="flex" flex_flow="row"/>
+    <style name="tg_content_column" layout="flex" flex_flow="column"/>
+    <style name="tg_graph_landscape" width="66%" height="100%" flex_grow="0"/>
+    <style name="tg_graph_portrait" width="100%" flex_grow="1" min_height="240"/>
+    <style name="tg_strip_landscape" width="33%" height="100%"/>
+    <style name="tg_strip_portrait" width="100%" height="content"/>
+  </styles>
   <view name="temp_graph_overlay" extends="overlay_panel" title="Temperature" title_tag="Temperature">
     <!-- Content area: graph+chips left, controls right (side-by-side) -->
     <lv_obj name="overlay_content"
-            width="100%" flex_grow="1" style_pad_all="#space_lg" style_pad_top="0" scrollable="false"
-            style_border_opa="0" flex_flow="row" style_flex_main_place="space_between">
+            width="100%" flex_grow="1" style_pad_all="#space_lg" style_pad_top="0" style_border_opa="0"
+            style_flex_main_place="space_between" style_pad_gap="#space_md">
+      <bind_style_if name="tg_content_column" cond="ui_is_portrait"/>
+      <bind_style_if name="tg_content_row" cond="ui_is_portrait" invert="true"/>
       <!-- Disable content when printer not connected or klippy not ready -->
       <bind_state_if_not_eq subject="nav_buttons_enabled" state="disabled" ref_value="1"/>
 
       <!-- Left column: Chip row + Temperature Graph -->
       <lv_obj name="graph_outer_container"
-              width="66%" height="100%" style_pad_all="0" scrollable="false" style_border_opa="0" flex_flow="column"
-              style_pad_gap="0">
+              style_pad_all="0" scrollable="false" style_border_opa="0" flex_flow="column" style_pad_gap="0">
+        <bind_style_if name="tg_graph_portrait" cond="ui_is_portrait"/>
+        <bind_style_if name="tg_graph_landscape" cond="ui_is_portrait" invert="true"/>
         <!-- Chip row: wrapping series toggle chips -->
         <lv_obj name="chip_row"
                 width="100%" height="content" style_pad_all="0" style_pad_bottom="#space_xs" style_border_opa="0"
@@ -33,8 +49,10 @@
       <!-- Right Column: NOZZLE controls (shown in nozzle mode only)      -->
       <!-- ════════════════════════════════════════════════════════════════ -->
       <lv_obj name="nozzle_control_strip"
-              width="33%" height="100%" style_pad_all="0" scrollable="false" style_border_opa="0" flex_flow="column"
-              style_flex_main_place="start" style_flex_cross_place="center" style_pad_gap="#space_sm" hidden="true">
+              style_pad_all="0" scrollable="false" style_border_opa="0" flex_flow="column" style_flex_main_place="start"
+              style_flex_cross_place="center" style_pad_gap="#space_sm" hidden="true">
+        <bind_style_if name="tg_strip_portrait" cond="ui_is_portrait"/>
+        <bind_style_if name="tg_strip_landscape" cond="ui_is_portrait" invert="true"/>
         <!-- Current/Target Temperature Display Card with Icon and Status -->
         <ui_card name="nozzle_display_card"
                  width="100%" height="content" style_radius="0" flex_flow="column" style_flex_main_place="center"
@@ -95,8 +113,10 @@
       <!-- Right Column: BED controls (shown in bed mode only)            -->
       <!-- ════════════════════════════════════════════════════════════════ -->
       <lv_obj name="bed_control_strip"
-              width="33%" height="100%" style_pad_all="0" scrollable="false" style_border_opa="0" flex_flow="column"
-              style_flex_main_place="start" style_flex_cross_place="center" style_pad_gap="#space_sm" hidden="true">
+              style_pad_all="0" scrollable="false" style_border_opa="0" flex_flow="column" style_flex_main_place="start"
+              style_flex_cross_place="center" style_pad_gap="#space_sm" hidden="true">
+        <bind_style_if name="tg_strip_portrait" cond="ui_is_portrait"/>
+        <bind_style_if name="tg_strip_landscape" cond="ui_is_portrait" invert="true"/>
         <ui_card name="bed_display_card"
                  width="100%" height="content" style_radius="0" flex_flow="column" style_flex_main_place="center"
                  style_pad_gap="#space_xs" style_pad_all="#space_sm">
@@ -146,8 +166,10 @@
       <!-- Right Column: CHAMBER controls (shown in chamber mode only)    -->
       <!-- ════════════════════════════════════════════════════════════════ -->
       <lv_obj name="chamber_control_strip"
-              width="33%" height="100%" style_pad_all="0" scrollable="false" style_border_opa="0" flex_flow="column"
-              style_flex_main_place="start" style_flex_cross_place="center" style_pad_gap="#space_sm" hidden="true">
+              style_pad_all="0" scrollable="false" style_border_opa="0" flex_flow="column" style_flex_main_place="start"
+              style_flex_cross_place="center" style_pad_gap="#space_sm" hidden="true">
+        <bind_style_if name="tg_strip_portrait" cond="ui_is_portrait"/>
+        <bind_style_if name="tg_strip_landscape" cond="ui_is_portrait" invert="true"/>
         <ui_card name="chamber_display_card"
                  width="100%" height="content" style_radius="0" flex_flow="column" style_flex_main_place="center"
                  style_pad_gap="#space_xs" style_pad_all="#space_sm">
