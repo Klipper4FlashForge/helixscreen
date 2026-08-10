@@ -473,6 +473,7 @@ translations:
   Clear All Events: Clear All Events
   Clear Console?: Clear Console?
   Clear Spool: Clear Spool
+  Clear all spool failover assignments: Clear all spool failover assignments
   Clear failed: Clear failed
   Cleared from settings — system unpair failed, may need OS Bluetooth: Cleared from
     settings — system unpair failed, may need OS Bluetooth
@@ -1950,9 +1951,12 @@ translations:
   Resend write failed at chunk {}: Resend write failed at chunk {}
   Reset: Reset
   Reset CFS: Reset CFS
+  Reset Endless Spool: Reset Endless Spool
+  Reset Endless Spool?: Reset Endless Spool?
   Reset Home Screen?: Reset Home Screen?
   Reset Speed & Flow to 100%: Reset Speed & Flow to 100%
   Reset all settings and restart wizard: Reset all settings and restart wizard
+  Reset endless spool failed: Reset endless spool failed
   Reset failed: Reset failed
   Reset to Default: Reset to Default
   Reset to defaults: Reset to defaults
@@ -2442,6 +2446,7 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: This calibration
     uses the paper friction method to set your Z-offset.
   This cannot be undone.: This cannot be undone.
+  This clears every spool's failover assignment. The print will stop on runout until you set up failover again.: This clears every spool's failover assignment. The print will stop on runout until you set up failover again.
   This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
   : This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?

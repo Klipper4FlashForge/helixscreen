@@ -491,6 +491,7 @@ translations:
   Clear All Events: Cancella tutti gli eventi
   Clear Console?: Cancellare la console?
   Clear Spool: Rimuovi bobina
+  Clear all spool failover assignments: ''
   Clear failed: Cancellazione fallita
   Cleared from settings — system unpair failed, may need OS Bluetooth: Rimosso dalle
     impostazioni; disaccoppiamento di sistema fallito, potrebbe servire il Bluetooth
@@ -2002,10 +2003,13 @@ translations:
   Resend write failed at chunk {}: Reinvio scrittura fallito al chunk {}
   Reset: Ripristina
   Reset CFS: Ripristina CFS
+  Reset Endless Spool: ''
+  Reset Endless Spool?: ''
   Reset Home Screen?: Ripristinare la schermata iniziale?
   Reset Speed & Flow to 100%: Ripristina velocità e flusso al 100%
   Reset all settings and restart wizard: Ripristina tutte le impostazioni e riavvia
     procedura guidata
+  Reset endless spool failed: ''
   Reset failed: Reset fallito
   Reset to Default: Ripristina predefinito
   Reset to defaults: Ripristina predefiniti
@@ -2510,6 +2514,7 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: Questa calibrazione
     utilizza il metodo della frizione della carta per impostare lo Z-offset.
   This cannot be undone.: Questa azione non può essere annullata.
+  This clears every spool's failover assignment. The print will stop on runout until you set up failover again.: ''
   This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: Questo dispositivo non dispone di una connessione di rete cablata. Se disattivi il WiFi, potrà essere riattivato solo da questa schermata.
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
   : Questo dispositivo ha solo {} MB di RAM. La calibrazione della risonanza usa molta memoria e può causare un errore \"Timer Too Close\" nel firmware della stampante o un riavvio a metà test. Continuare comunque?

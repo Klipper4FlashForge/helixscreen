@@ -158,6 +158,8 @@ On systems that support **Endless Spool**, the context menu also includes:
 
 **The Creality CFS is different: there is nothing to pick.** Its auto-refill is managed entirely by the box's firmware, so the Backup Slot row appears **greyed out** and no backup arrows are drawn between the slots. The box decides for itself which slot can stand in, and it only accepts one holding the **exact same material and the exact same colour**. If nothing matches, or auto-refill is switched off, it does not swap at all: the print stays paused and HelixScreen tells you which of the two it was. Auto-refill itself can be turned on or off from the CFS device actions.
 
+> **Clearing every backup at once:** To remove all failover assignments in one step — back to "a runout just stops the print" — open the AMS Management overlay and tap **Reset Endless Spool**. See [AMS Management (Settings Overlay)](#ams-management-settings-overlay) below.
+
 > **Assigning tools:** Tool-to-slot mapping isn't set from the slot context menu — it's done from the **filament mapping card** that appears when you select a file to print. See [Tool Mapping](#tool-mapping) below.
 
 ### Editing Filament Properties
@@ -225,6 +227,7 @@ Tap **Settings** in the sidebar to open the AMS Management overlay with advanced
 - **Recover** — Attempt to recover from an error state
 - **Abort** — Cancel the current operation immediately
 - **Bypass Mode** — Toggle direct-feed mode (if supported by hardware)
+- **Reset Endless Spool** — Wipe every slot's backup assignment at once, so a runout stops the print until you set up failover again. Only appears on systems whose failover you can edit here (AFC, single-unit Happy Hare); hidden on CFS and AD5X, which manage it in firmware. Asks you to confirm before clearing. See [Endless Spool / Backup Slot](#slot-context-menu) above.
 - **System status** — Current system state and firmware version
 
 Below the top-level controls, **device-specific settings appear as expandable sections** that vary by hardware. Tap a section to open it; inside you'll find buttons, on/off toggles, and sliders for that group, and changes apply immediately.

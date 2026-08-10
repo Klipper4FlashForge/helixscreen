@@ -420,6 +420,7 @@
   <translation tag="Clear All Events" ru="Очистить все события"/>
   <translation tag="Clear Console?" ru="Очистить консоль?"/>
   <translation tag="Clear Spool" ru="Убрать катушку"/>
+  <translation tag="Clear all spool failover assignments"/>
   <translation tag="Clear failed" ru="Ошибка очистки"/>
   <translation tag="Cleared from settings — system unpair failed, may need OS Bluetooth" ru="Удалено из настроек; не удалось отменить сопряжение в системе, возможно нужен Bluetooth ОС"/>
   <translation tag="Clipboard unavailable - use SSH" ru="Буфер обмена недоступен - используйте SSH"/>
@@ -1752,9 +1753,12 @@
   <translation tag="Resend write failed at chunk {}" ru="Не удалось повторно отправить запись в блоке {}"/>
   <translation tag="Reset" ru="Сброс"/>
   <translation tag="Reset CFS" ru="Сброс CFS"/>
+  <translation tag="Reset Endless Spool"/>
+  <translation tag="Reset Endless Spool?"/>
   <translation tag="Reset Home Screen?" ru="Сбросить главный экран?"/>
   <translation tag="Reset Speed &amp; Flow to 100%" ru="Сбросить скорость и поток на 100%"/>
   <translation tag="Reset all settings and restart wizard" ru="Сбросить все настройки и перезапустить мастер"/>
+  <translation tag="Reset endless spool failed"/>
   <translation tag="Reset failed" ru="Ошибка сброса"/>
   <translation tag="Reset to Default" ru="Сбросить до умолчания"/>
   <translation tag="Reset to defaults" ru="Сбросить по умолчанию"/>
@@ -2162,6 +2166,7 @@
   <translation tag="These tools have no matching filament loaded:" ru="В этих инструментах нет подходящего филамента:"/>
   <translation tag="This calibration uses the paper friction method to set your Z-offset." ru="Эта калибровка использует метод трения бумаги об сопло для установки Z-смещения."/>
   <translation tag="This cannot be undone." ru="Это действие нельзя отменить."/>
+  <translation tag="This clears every spool&apos;s failover assignment. The print will stop on runout until you set up failover again."/>
   <translation tag="This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen." ru="У этого устройства нет проводного подключения к сети. Если выключить WiFi, включить его обратно можно будет только с этого экрана."/>
   <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?" ru="На этом устройстве всего {} МБ ОЗУ. Калибровка резонансов требует много памяти и может привести к тому, что прошивка принтера сообщит об ошибке \&quot;Timer Too Close\&quot; или перезапустится во время теста. Всё равно продолжить?"/>
   <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a \&quot;Timer Too Close\&quot; error. Continue anyway?" ru="На этом устройстве очень мало ОЗУ. Калибровка резонансов требует много памяти и может вызвать ошибку \&quot;Timer Too Close\&quot;. Всё равно продолжить?"/>

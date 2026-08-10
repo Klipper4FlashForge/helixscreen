@@ -487,6 +487,7 @@ translations:
   Clear All Events: Очистить все события
   Clear Console?: Очистить консоль?
   Clear Spool: Убрать катушку
+  Clear all spool failover assignments: ''
   Clear failed: Ошибка очистки
   Cleared from settings — system unpair failed, may need OS Bluetooth: Удалено из
     настроек; не удалось отменить сопряжение в системе, возможно нужен Bluetooth ОС
@@ -1979,9 +1980,12 @@ translations:
   Resend write failed at chunk {}: Не удалось повторно отправить запись в блоке {}
   Reset: Сброс
   Reset CFS: Сброс CFS
+  Reset Endless Spool: ''
+  Reset Endless Spool?: ''
   Reset Home Screen?: Сбросить главный экран?
   Reset Speed & Flow to 100%: Сбросить скорость и поток на 100%
   Reset all settings and restart wizard: Сбросить все настройки и перезапустить мастер
+  Reset endless spool failed: ''
   Reset failed: Ошибка сброса
   Reset to Default: Сбросить до умолчания
   Reset to defaults: Сбросить по умолчанию
@@ -2478,6 +2482,7 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: Эта калибровка
     использует метод трения бумаги об сопло для установки Z-смещения.
   This cannot be undone.: Это действие нельзя отменить.
+  This clears every spool's failover assignment. The print will stop on runout until you set up failover again.: ''
   This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: У этого устройства нет проводного подключения к сети. Если выключить WiFi, включить его обратно можно будет только с этого экрана.
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
   : На этом устройстве всего {} МБ ОЗУ. Калибровка резонансов требует много памяти и может

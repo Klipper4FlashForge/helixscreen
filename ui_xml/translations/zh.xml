@@ -420,6 +420,7 @@
   <translation tag="Clear All Events" zh="清除所有事件"/>
   <translation tag="Clear Console?" zh="清空控制台？"/>
   <translation tag="Clear Spool" zh="移除料盘"/>
+  <translation tag="Clear all spool failover assignments"/>
   <translation tag="Clear failed" zh="清除失败"/>
   <translation tag="Cleared from settings — system unpair failed, may need OS Bluetooth" zh="已从设置中清除；系统解除配对失败，可能需使用系统蓝牙设置"/>
   <translation tag="Clipboard unavailable - use SSH" zh="剪贴板不可用 - 请使用 SSH"/>
@@ -1752,9 +1753,12 @@
   <translation tag="Resend write failed at chunk {}" zh="区块 {} 重发写入失败"/>
   <translation tag="Reset" zh="重置"/>
   <translation tag="Reset CFS" zh="重置 CFS"/>
+  <translation tag="Reset Endless Spool"/>
+  <translation tag="Reset Endless Spool?"/>
   <translation tag="Reset Home Screen?" zh="重置主屏幕？"/>
   <translation tag="Reset Speed &amp; Flow to 100%" zh="重置速度和流量为 100%"/>
   <translation tag="Reset all settings and restart wizard" zh="重置所有设置并重新启动向导"/>
+  <translation tag="Reset endless spool failed"/>
   <translation tag="Reset failed" zh="重置失败"/>
   <translation tag="Reset to Default" zh="重置为默认"/>
   <translation tag="Reset to defaults" zh="重置为默认值"/>
@@ -2162,6 +2166,7 @@
   <translation tag="These tools have no matching filament loaded:" zh="以下工具未加载匹配的耗材："/>
   <translation tag="This calibration uses the paper friction method to set your Z-offset." zh="此校准使用纸张摩擦法设置 Z 偏移。"/>
   <translation tag="This cannot be undone." zh="此操作无法撤销。"/>
+  <translation tag="This clears every spool&apos;s failover assignment. The print will stop on runout until you set up failover again."/>
   <translation tag="This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen." zh="此设备没有有线网络连接。关闭 WiFi 后，只能在此界面重新开启。"/>
   <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?" zh="此设备仅有 {} MB 内存。共振校准会占用大量内存，可能导致打印机固件报告 \&quot;Timer Too Close\&quot; 错误或在测试中途重启。仍要继续吗？"/>
   <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a \&quot;Timer Too Close\&quot; error. Continue anyway?" zh="此设备内存极少。共振校准会占用大量内存，可能导致 \&quot;Timer Too Close\&quot; 错误。仍要继续吗？"/>

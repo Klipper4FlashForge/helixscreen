@@ -420,6 +420,7 @@
   <translation tag="Clear All Events" fr="Effacer tous les événements"/>
   <translation tag="Clear Console?" fr="Effacer la console ?"/>
   <translation tag="Clear Spool" fr="Retirer la bobine"/>
+  <translation tag="Clear all spool failover assignments"/>
   <translation tag="Clear failed" fr="Échec de l&apos;effacement"/>
   <translation tag="Cleared from settings — system unpair failed, may need OS Bluetooth" fr="Effacé des paramètres ; échec du désappairage système, utiliser le Bluetooth de l&apos;OS si besoin"/>
   <translation tag="Clipboard unavailable - use SSH" fr="Presse-papiers indisponible - utilisez SSH"/>
@@ -1752,9 +1753,12 @@
   <translation tag="Resend write failed at chunk {}" fr="Échec du renvoi de lécriture au bloc {}"/>
   <translation tag="Reset" fr="Réinitialiser"/>
   <translation tag="Reset CFS" fr="Réinitialiser le CFS"/>
+  <translation tag="Reset Endless Spool"/>
+  <translation tag="Reset Endless Spool?"/>
   <translation tag="Reset Home Screen?" fr="Réinitialiser l&apos;écran d&apos;accueil ?"/>
   <translation tag="Reset Speed &amp; Flow to 100%" fr="Réinitialiser vitesse &amp; débit à 100%"/>
   <translation tag="Reset all settings and restart wizard" fr="Réinitialiser tous les paramètres et redémarrer l&apos;assistant"/>
+  <translation tag="Reset endless spool failed"/>
   <translation tag="Reset failed" fr="Échec de la réinitialisation"/>
   <translation tag="Reset to Default" fr="Réinitialiser par défaut"/>
   <translation tag="Reset to defaults" fr="Réinitialiser par défaut"/>
@@ -2162,6 +2166,7 @@
   <translation tag="These tools have no matching filament loaded:" fr="Ces outils n&apos;ont pas de filament correspondant chargé :"/>
   <translation tag="This calibration uses the paper friction method to set your Z-offset." fr="Cette calibration utilise la méthode de friction du papier pour définir votre Z-offset."/>
   <translation tag="This cannot be undone." fr="Cette action est irréversible."/>
+  <translation tag="This clears every spool&apos;s failover assignment. The print will stop on runout until you set up failover again."/>
   <translation tag="This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen." fr="Cet appareil n&apos;a pas de connexion réseau filaire. Si vous désactivez le WiFi, il ne pourra être réactivé que depuis cet écran."/>
   <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?" fr="Cet appareil ne dispose que de {} Mo de RAM. La calibration de résonance est gourmande en mémoire et peut amener le firmware de l&apos;imprimante à signaler une erreur \&quot;Timer Too Close\&quot; ou à redémarrer en cours de test. Continuer quand même ?"/>
   <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a \&quot;Timer Too Close\&quot; error. Continue anyway?" fr="Cet appareil dispose de très peu de RAM. La calibration de résonance est gourmande en mémoire et peut provoquer une erreur \&quot;Timer Too Close\&quot;. Continuer quand même ?"/>

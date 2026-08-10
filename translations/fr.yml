@@ -502,6 +502,7 @@ translations:
   Clear All Events: Effacer tous les événements
   Clear Console?: Effacer la console ?
   Clear Spool: Retirer la bobine
+  Clear all spool failover assignments: ''
   Clear failed: Échec de l'effacement
   Cleared from settings — system unpair failed, may need OS Bluetooth: Effacé des
     paramètres ; échec du désappairage système, utiliser le Bluetooth de l'OS si besoin
@@ -2029,10 +2030,13 @@ translations:
   Resend write failed at chunk {}: Échec du renvoi de lécriture au bloc {}
   Reset: Réinitialiser
   Reset CFS: Réinitialiser le CFS
+  Reset Endless Spool: ''
+  Reset Endless Spool?: ''
   Reset Home Screen?: Réinitialiser l'écran d'accueil ?
   Reset Speed & Flow to 100%: Réinitialiser vitesse & débit à 100%
   Reset all settings and restart wizard: Réinitialiser tous les paramètres et redémarrer
     l'assistant
+  Reset endless spool failed: ''
   Reset failed: Échec de la réinitialisation
   Reset to Default: Réinitialiser par défaut
   Reset to defaults: Réinitialiser par défaut
@@ -2547,6 +2551,7 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: Cette calibration
     utilise la méthode de friction du papier pour définir votre Z-offset.
   This cannot be undone.: Cette action est irréversible.
+  This clears every spool's failover assignment. The print will stop on runout until you set up failover again.: ''
   This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: Cet appareil n'a pas de connexion réseau filaire. Si vous désactivez le WiFi, il ne pourra être réactivé que depuis cet écran.
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
   : Cet appareil ne dispose que de {} Mo de RAM. La calibration de résonance est gourmande

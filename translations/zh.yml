@@ -431,6 +431,7 @@ translations:
   Clear All Events: 清除所有事件
   Clear Console?: 清空控制台？
   Clear Spool: 移除料盘
+  Clear all spool failover assignments: ''
   Clear failed: 清除失败
   Cleared from settings — system unpair failed, may need OS Bluetooth: 已从设置中清除；系统解除配对失败，可能需使用系统蓝牙设置
   Clipboard unavailable - use SSH: 剪贴板不可用 - 请使用 SSH
@@ -1806,9 +1807,12 @@ translations:
   Resend write failed at chunk {}: 区块 {} 重发写入失败
   Reset: 重置
   Reset CFS: 重置 CFS
+  Reset Endless Spool: ''
+  Reset Endless Spool?: ''
   Reset Home Screen?: 重置主屏幕？
   Reset Speed & Flow to 100%: 重置速度和流量为 100%
   Reset all settings and restart wizard: 重置所有设置并重新启动向导
+  Reset endless spool failed: ''
   Reset failed: 重置失败
   Reset to Default: 重置为默认
   Reset to defaults: 重置为默认值
@@ -2245,6 +2249,7 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: 此校准使用纸张摩擦法设置
     Z 偏移。
   This cannot be undone.: 此操作无法撤销。
+  This clears every spool's failover assignment. The print will stop on runout until you set up failover again.: ''
   This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen.: 此设备没有有线网络连接。关闭 WiFi 后，只能在此界面重新开启。
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
   : 此设备仅有 {} MB 内存。共振校准会占用大量内存，可能导致打印机固件报告 \"Timer Too Close\" 错误或在测试中途重启。仍要继续吗？
