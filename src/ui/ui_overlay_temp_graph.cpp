@@ -11,7 +11,6 @@
 #include "ui_utils.h"
 
 #include "app_globals.h"
-#include "layout_manager.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "panel_widget_manager.h"
 #include "printer_state.h"
@@ -119,7 +118,13 @@ TempGraphOverlay::~TempGraphOverlay() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void TempGraphOverlay::init_subjects() {
-    init_subjects_guarded([]() {});
+    init_subjects_guarded([this]() {
+        // mode_ is set by open() before this first runs; seeding the subject
+        // with the current value avoids a transient wrong-mode frame between
+        // XML create and the first lv_subject_set_int in open().
+        UI_MANAGED_SUBJECT_INT(mode_subject_, static_cast<int>(mode_), "temp_graph_mode",
+                               subjects_);
+    });
 }
 
 void TempGraphOverlay::register_callbacks() {
@@ -137,7 +142,6 @@ lv_obj_t* TempGraphOverlay::create(lv_obj_t* parent) {
     bed_strip_ = lv_obj_find_by_name(overlay_root_, "bed_control_strip");
     chamber_strip_ = lv_obj_find_by_name(overlay_root_, "chamber_control_strip");
     extruder_selector_row_ = lv_obj_find_by_name(overlay_root_, "extruder_selector_row");
-    graph_outer_ = lv_obj_find_by_name(overlay_root_, "graph_outer_container");
 
     return overlay_root_;
 }
@@ -262,6 +266,15 @@ void TempGraphOverlay::open(Mode mode, lv_obj_t* parent_screen) {
 
         NavigationManager::instance().register_overlay_instance(cached_overlay_, this, true);
         spdlog::info("[TempGraphOverlay] Overlay created");
+    }
+
+    // Sync the declarative mode subject on every open. Idempotent on the first
+    // open (init_subjects already seeded it with mode_), but necessary for
+    // subsequent opens where the caller chose a different mode than last time.
+    // XML bindings (strip visibility via bind_flag_if_not_eq, graph_outer width
+    // via temp_graph_full_width subject_expr) refire and reflow the overlay.
+    if (are_subjects_initialized()) {
+        lv_subject_set_int(&mode_subject_, static_cast<int>(mode_));
     }
 
     if (cached_overlay_) {
@@ -540,32 +553,13 @@ void TempGraphOverlay::update_chip_style(size_t series_idx) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void TempGraphOverlay::configure_control_strip() {
-    // Hide all strips first
-    if (nozzle_strip_)
-        lv_obj_add_flag(nozzle_strip_, LV_OBJ_FLAG_HIDDEN);
-    if (bed_strip_)
-        lv_obj_add_flag(bed_strip_, LV_OBJ_FLAG_HIDDEN);
-    if (chamber_strip_)
-        lv_obj_add_flag(chamber_strip_, LV_OBJ_FLAG_HIDDEN);
+    // DECLARATIVE: strip visibility and graph_outer width are driven from XML
+    // by the temp_graph_mode subject (bind_flag_if_not_eq per strip; graph width
+    // via the temp_graph_full_width subject_expr + orthogonal bind_style_if
+    // pairs on graph_outer_container). This function is now the DATA half only:
+    // preset values, callback user_data, and the chamber-async-clamp that can't
+    // move to XML because it depends on the fetched chamber max_temp.
 
-    // In portrait the strip sits BELOW the graph (overlay_content flips to a
-    // column via bind_style_if on ui_is_portrait), so the graph keeps full
-    // width in every mode and this function must not fight the bound style —
-    // an imperative width outranks it.
-    const bool portrait = helix::is_portrait_layout(helix::LayoutManager::instance().type());
-
-    if (mode_ == Mode::GraphOnly || portrait) {
-        if (graph_outer_)
-            lv_obj_set_width(graph_outer_, lv_pct(100));
-        if (mode_ == Mode::GraphOnly)
-            return;
-    } else {
-        // Landscape: graph gets 66% width with the control column beside it
-        if (graph_outer_)
-            lv_obj_set_width(graph_outer_, lv_pct(66));
-    }
-
-    // Determine which strip to show and heater type
     helix::HeaterType heater_type;
     if (!mode_to_heater_type(mode_, heater_type))
         return;
@@ -587,7 +581,6 @@ void TempGraphOverlay::configure_control_strip() {
 
     if (!active_strip)
         return;
-    lv_obj_remove_flag(active_strip, LV_OBJ_FLAG_HIDDEN);
 
     // Get preset config from TemperatureService
     if (!temp_control_panel_)
