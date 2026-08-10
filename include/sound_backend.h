@@ -104,6 +104,17 @@ class SoundBackend {
         return 1.0f;
     }
 
+    /// Suspend audio output when no voice is active. The sequencer calls this
+    /// when it goes idle so backends that run a continuous render callback
+    /// (SDL on Android) stop their device instead of streaming silence — which
+    /// keeps the host AudioTrack churning and spamming the log (#1253).
+    /// Default: no-op (backends with no always-on device are unaffected).
+    virtual void suspend() {}
+
+    /// Resume audio output on the next note. Pairs with suspend(); the sequencer
+    /// calls this when transitioning idle -> active.
+    virtual void resume() {}
+
     /// Whether this backend supports direct audio rendering via set_render_source.
     /// Backends with real audio output (SDL, ALSA) return true.
     /// Frequency-only backends (PWM, M300) return false.
