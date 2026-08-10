@@ -818,6 +818,7 @@ translations:
   'Error: Verification failed': 'Ошибка: проверка не удалась'
   'Error: Wrong architecture': 'Ошибка: неверная архитектура'
   'Error: `unzip` not installed': 'Ошибка: `unzip` не установлен'
+  Errors only: ''
   Escalate to emergency stop if cancel doesn't respond: Эскалация до аварийной остановки,
     если отмена не отвечает
   Escalation Timeout: Тайм-аут эскалации
@@ -1356,6 +1357,7 @@ translations:
   'Lot # (optional)': 'Партия # (необязательно)'
   Lot/Batch Nr: Nr. партии/серии
   Low Memory: Мало памяти
+  Lowest notification level that interrupts with a toast: ''
   M to toggle: M для переключения
   'MAC:': 'MAC:'
   MACRO DEVICES: МАКРО-УСТРОЙСТВА
@@ -1636,6 +1638,7 @@ translations:
   'On': Вкл
   On and Off macros must be different: Макросы включения и выключения должны отличаться
   On your phone or computer, join the WiFi network \"{}\", then open http://{} in a browser to finish setup.: ''
+  On-screen Alerts: ''
   On/Off: Вкл/Выкл
   On/Off (state-aware): Вкл/Выкл (с отслеживанием)
   'On:': 'Вкл:'
@@ -2711,6 +2714,7 @@ translations:
   Warming Bed...: Прогрев стола...
   Warn: Предупреждение
   Warning: Предупреждение
+  Warnings & errors: ''
   Watch the belt under the strobe LED. Adjust frequency until the belt appears stationary — that is the resonant frequency.: Наблюдайте
     за ремнём под стробоскопическим LED. Регулируйте частоту, пока ремень не будет
     казаться неподвижным — это и есть резонансная частота.

@@ -742,6 +742,7 @@ translations:
   'Error: Verification failed': '错误: 验证失败'
   'Error: Wrong architecture': '错误: 架构错误'
   'Error: `unzip` not installed': '错误: 未安装 `unzip`'
+  Errors only: ''
   Escalate to emergency stop if cancel doesn't respond: 如果取消无响应则升级为紧急停止
   Escalation Timeout: 升级超时
   Est. Duration: 预计时长
@@ -1227,6 +1228,7 @@ translations:
   'Lot # (optional)': 批号（可选）
   Lot/Batch Nr: 批次号
   Low Memory: 内存不足
+  Lowest notification level that interrupts with a toast: ''
   M to toggle: 按 M 切换
   'MAC:': MAC：
   MACRO DEVICES: 宏设备
@@ -1490,6 +1492,7 @@ translations:
   'On': 开
   On and Off macros must be different: 开和关的宏必须不同
   On your phone or computer, join the WiFi network \"{}\", then open http://{} in a browser to finish setup.: ''
+  On-screen Alerts: ''
   On/Off: 开/关
   On/Off (state-aware): 开/关（状态跟踪）
   'On:': '开:'
@@ -2451,6 +2454,7 @@ translations:
   Warming Bed...: 正在预热热床...
   Warn: 警告
   Warning: 警告
+  Warnings & errors: ''
   Watch the belt under the strobe LED. Adjust frequency until the belt appears stationary — that is the resonant frequency.: 在频闪
     LED 下观察皮带。调整频率直到皮带看起来静止 — 那就是共振频率。
   Weak battery: 电池电量低

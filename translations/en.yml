@@ -800,6 +800,7 @@ translations:
   'Error: Verification failed': 'Error: Verification failed'
   'Error: Wrong architecture': 'Error: Wrong architecture'
   'Error: `unzip` not installed': 'Error: `unzip` not installed'
+  Errors only: Errors only
   Escalate to emergency stop if cancel doesn't respond: Escalate to emergency stop
     if cancel doesn't respond
   Escalation Timeout: Escalation Timeout
@@ -1331,6 +1332,7 @@ translations:
   'Lot # (optional)': 'Lot # (optional)'
   Lot/Batch Nr: Lot/Batch Nr
   Low Memory: Low Memory
+  Lowest notification level that interrupts with a toast: Lowest notification level that interrupts with a toast
   M to toggle: M to toggle
   'MAC:': 'MAC:'
   MACRO DEVICES: MACRO DEVICES
@@ -1609,6 +1611,7 @@ translations:
   'On': 'On'
   On and Off macros must be different: On and Off macros must be different
   On your phone or computer, join the WiFi network \"{}\", then open http://{} in a browser to finish setup.: On your phone or computer, join the WiFi network \"{}\", then open http://{} in a browser to finish setup.
+  On-screen Alerts: On-screen Alerts
   On/Off: On/Off
   On/Off (state-aware): On/Off (state-aware)
   'On:': 'On:'
@@ -2672,6 +2675,7 @@ translations:
   Warming Bed...: Warming Bed...
   Warn: Warn
   Warning: Warning
+  Warnings & errors: Warnings & errors
   Watch the belt under the strobe LED. Adjust frequency until the belt appears stationary — that is the resonant frequency.: Watch
     the belt under the strobe LED. Adjust frequency until the belt appears stationary
     — that is the resonant frequency.
