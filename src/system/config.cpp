@@ -1357,6 +1357,7 @@ json get_default_config(const std::string& moonraker_host, bool include_user_pre
                    {"input",
                     {{"scroll_throw", 25},
                      {"scroll_limit", 10},
+                     {"long_press_time", 500},
                      {"jitter_threshold", 5},
                      {"touch_device", ""},
                      {"calibration",
@@ -1843,6 +1844,7 @@ void Config::init(const std::string& config_path) {
     if (!data.contains("input")) {
         data["input"] = {{"scroll_throw", 25},
                          {"scroll_limit", 10},
+                         {"long_press_time", 500},
                          {"jitter_threshold", 5},
                          {"touch_device", ""},
                          {"calibration",
