@@ -14,6 +14,7 @@
 #include "display_settings_manager.h"
 #include "fault_surface_correlation.h"
 #include "helix-xml/src/xml/lv_xml.h"
+#include "panel_widget_manager.h"
 #include "runtime_config.h"
 #include "src/ui/panel_widgets/print_status_widget.h"
 #include "system_settings_manager.h"
@@ -296,6 +297,21 @@ void HelixTestFixture::reset_all() {
     // dozens of tests in a fast suite. A record left by an error-routing test
     // would silence AmsErrorBridge's fallback toast in an unrelated later one.
     helix::fault_surface_correlation::clear_for_test();
+
+    // PanelWidgetManager's panel_configs_ cache is a process-wide map keyed by
+    // panel_id. Once a test calls get_widget_config("home") — directly or
+    // indirectly (HomePanel::on_home_grid_long_press hits it at line 934 of
+    // ui_panel_home.cpp) — the cached PanelWidgetConfig carries the active
+    // printer's layout with loaded_=true, so later load() calls are no-ops.
+    // When a subsequent test stands up fresh printers and switches to one
+    // WITHOUT first calling clear_all_panel_configs(), get_widget_config()
+    // returns the stale entry and assertions against the new layout fail
+    // (test_panel_widget_manager.cpp:673 — "clear_all_panel_configs reloads
+    // after printer switch" — passed in isolation, failed in the unsharded
+    // suite after the home-grid lock-guard test primed the cache). Marking
+    // every entry dirty here makes the next get_widget_config() reload from
+    // Config::df() regardless of which printer a prior test left active.
+    helix::PanelWidgetManager::instance().clear_all_panel_configs();
 
     // NOTE: NavigationManager has no public reset API (clear_overlay_stack is
     // private; shutdown() is a one-way teardown for app exit). Add a reset
