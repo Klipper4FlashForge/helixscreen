@@ -49,8 +49,15 @@ bool SDLSoundBackend::initialize() {
     SDL_PauseAudioDevice(device_id_, 0); // Start playback
     initialized_ = true;
 
-    spdlog::info("[SDLSound] Audio initialized: {} Hz, {} samples buffer", sample_rate_,
-                 obtained.samples);
+    // Report which SDL audio driver is actually backing the device. The name
+    // is the only visible signal that the dummy driver is in use — a
+    // desktop run under SDL_VIDEODRIVER=dummy silently forces it via
+    // main()'s silence_audio_if_headless(), and without this line the log
+    // would still say "Audio initialized" right up until the user notices
+    // nothing is coming out of the speakers.
+    const char* driver_name = SDL_GetCurrentAudioDriver();
+    spdlog::info("[SDLSound] Audio initialized: {} Hz, {} samples buffer, driver '{}'",
+                 sample_rate_, obtained.samples, driver_name ? driver_name : "(unknown)");
     return true;
 }
 

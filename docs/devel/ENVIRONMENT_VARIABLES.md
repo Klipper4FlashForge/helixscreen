@@ -485,7 +485,10 @@ HELIX_HEADLESS=1 ./scripts/screenshot.sh helix-screen filament-panel filament
 
 The binary itself needs no HelixScreen-specific variable — `SDL_VIDEODRIVER=dummy`
 is enough, and the SDL backend falls back to the software renderer on its own
-when the accelerated one is unavailable. See `docs/devel/HELIXCTL.md`
+when the accelerated one is unavailable. Audio is silenced automatically too:
+`main()` watches for `SDL_VIDEODRIVER=dummy` and forces `SDL_AUDIODRIVER=dummy`
+(with `overwrite=0`, so exporting `SDL_AUDIODRIVER` yourself still wins — useful
+when you want to debug audio under a headless window). See `docs/devel/HELIXCTL.md`
 § "Running headless".
 
 ---
