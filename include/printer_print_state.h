@@ -6,6 +6,10 @@
 #include "async_lifetime_guard.h"
 #include "subject_managed_panel.h"
 
+#if defined(HELIX_PLATFORM_ESP32)
+#include "esp_psram_thumbnail.h"
+#endif
+
 #include <atomic>
 #include <lvgl.h>
 #include <memory>
@@ -138,6 +142,22 @@ class PrinterPrintState {
     lv_subject_t* get_print_thumbnail_path_subject() {
         return &print_thumbnail_path_;
     }
+
+#if defined(HELIX_PLATFORM_ESP32)
+    /// Bumped every time the PSRAM thumbnail below is replaced. ESP32 has no
+    /// disk thumbnail cache, so print_thumbnail_path_ stays empty there and
+    /// consumers observe this counter instead, then pull the shared_ptr.
+    lv_subject_t* get_print_psram_thumb_gen_subject() {
+        return &print_psram_thumb_gen_;
+    }
+
+    /// Current print's PSRAM-resident thumbnail, or nullptr when none is
+    /// loaded. UI thread only — the returned shared_ptr keeps the buffer alive
+    /// for as long as a widget's image src points at its descriptor.
+    [[nodiscard]] std::shared_ptr<helix::ui::EspPsramThumbnail> get_print_psram_thumbnail() const {
+        return print_psram_thumbnail_;
+    }
+#endif
 
     /**
      * @brief Image the print-thumbnail subject carries when there is no thumbnail
@@ -358,6 +378,21 @@ class PrinterPrintState {
      * @param path LVGL-compatible path (e.g., "A:/tmp/thumbnail_xxx.bin"), "" to clear
      */
     void set_print_thumbnail(const std::string& for_file, const std::string& path);
+
+#if defined(HELIX_PLATFORM_ESP32)
+    /**
+     * @brief Install the current print's PSRAM-resident thumbnail
+     *
+     * MAIN THREAD ONLY. Two reasons, both hard: the subject bump notifies
+     * observers that call LVGL widget APIs, and replacing the shared_ptr can
+     * drop the last reference to the previous thumbnail, whose destructor
+     * calls lv_image_cache_drop(). Background callers must marshal via
+     * tok.defer()/ui_queue_update() first.
+     *
+     * @param thumb New thumbnail (may be nullptr to clear)
+     */
+    void set_print_psram_thumbnail(std::shared_ptr<helix::ui::EspPsramThumbnail> thumb);
+#endif
 
     /**
      * @brief Set display-ready print filename for UI binding
@@ -599,6 +634,14 @@ class PrinterPrintState {
     lv_subject_t print_show_progress_{};    // Integer: 1 when active AND not starting
     lv_subject_t print_display_filename_{}; // String: clean filename
     lv_subject_t print_thumbnail_path_{};   // String: LVGL thumbnail path
+
+#if defined(HELIX_PLATFORM_ESP32)
+    // ESP32 thumbnail route (Task 11 R2): no disk cache on this platform, so
+    // the image lives in PSRAM behind a shared_ptr instead of at a path. The
+    // counter subject is what UI code observes; the pointer is what it reads.
+    lv_subject_t print_psram_thumb_gen_{}; // Integer: bumped on every install
+    std::shared_ptr<helix::ui::EspPsramThumbnail> print_psram_thumbnail_;
+#endif
 
     // Layer tracking subjects
     lv_subject_t print_layer_current_{}; // Current layer (0-based)

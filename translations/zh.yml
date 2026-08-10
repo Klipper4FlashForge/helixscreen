@@ -41,7 +41,17 @@ translations:
   0 = computed: 0 = 自动计算
   0 events queued: 0 个事件已排队
   0 slots: '{0} 个料仓'
+  # Source: calibration_pid_panel.xml:368
+  0.0000 J/K: ''
+  # Source: calibration_pid_panel.xml:374
+  0.000000 K/s/K: ''
+  # Source: calibration_pid_panel.xml:380
+  0.000000 W/K: ''
   0.4-2mm direct drive, 4-6mm bowden: 直驱 0.4-2mm，远程挤出 4-6mm
+  # Source: history_dashboard_panel.xml:83
+  0h: ''
+  # Source: history_dashboard_panel.xml:89, print_status_panel.xml:252, print_status_panel.xml:254
+  0m: ''
   0°: 0°
   1 day ago: 1天前
   1 event queued: 1 个事件排队中
@@ -88,6 +98,8 @@ translations:
   ABS: ABS
   ACCELEROMETERS: 加速度计
   ACE Moonraker bridge not found. Install ace_status.py for full support.: 未找到 ACE Moonraker 桥接。请安装 ace_status.py 以获得完整支持。
+  ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: 未找到
+    ACE Moonraker 桥接。请从 ValgACE 安装 ace_status.py 以获得完整支持。
   ACTIONS: 操作
   ADXL: ADXL
   AFC: AFC
@@ -161,6 +173,8 @@ translations:
   An error occurred during measurement.: 测量时发生错误。
   An error occurred during probing.: 探测过程中发生错误。
   An error occurred while loading filament.: 加载耗材时发生错误。
+  # Source: probe_accuracy_modal.xml:90
+  An error occurred.: ''
   An internal error occurred. The app continues running — please send a debug bundle from Settings > About if it repeats.: 发生了内部错误。应用程序继续运行
     — 如果反复出现，请从设置 > 关于发送调试捆绑包。
   An unexpected printer error occurred.: 发生了意外的打印机错误。
@@ -1134,6 +1148,8 @@ translations:
   'Klipper: ': 'Klipper: '
   Klippy Errors: Klippy 错误
   Klippy Shutdowns: Klippy 关闭次数
+  # Source: led_control_overlay.xml:31
+  LED: ''
   LED SELECTION: LED 选择
   LED Settings: LED 设置
   LED Strip: LED 灯带
@@ -1154,10 +1170,14 @@ translations:
   Language: 语言
   Language, theme, brightness, and sound: 语言、主题、亮度和声音
   Last: 最近
+  # Source: history_dashboard_panel.xml:114
+  Last 7 days: ''
   Last print cancelled: 上次打印已取消
   Last print failed: 上次打印失败
   Later: 稍后
   Layer: 层
+  # Source: print_status_panel.xml:234
+  Layer 0 / 0: ''
   Layer Height: 层高
   Layer Macro captures one frame per layer change. Best for most prints.: 层变化宏在每次层变化时捕获一帧。适合大多数打印。
   Layer mode captures one frame per layer change. Best for most prints.: 层模式在每次换层时捕获一帧。适用于大多数打印。
@@ -1430,6 +1450,7 @@ translations:
   Not found (use phone app): 未找到 (使用手机应用)
   'Not in your spools? Set it up': 不在您的料盘中？立即设置
   Not now: 暂不
+  Not yet available on this display: ''
   Not yet calibrated: 尚未校准
   Notes: 备注
   Notes (optional): 备注（可选）
@@ -1468,6 +1489,7 @@ translations:
   'Off:': '关:'
   'On': 开
   On and Off macros must be different: 开和关的宏必须不同
+  On your phone or computer, join the WiFi network \"{}\", then open http://{} in a browser to finish setup.: ''
   On/Off: 开/关
   On/Off (state-aware): 开/关（状态跟踪）
   'On:': '开:'
@@ -1688,6 +1710,8 @@ translations:
   Probing Bed...: 正在探测热床...
   Probing Failed: 探测失败
   Proceed: 继续
+  # Source: abort_progress_modal.xml:20
+  Processing...: ''
   Profile deleted: 配置文件已删除
   Profile name (e.g., default): 配置名称（例如：default）
   Profile renamed: 配置文件已重命名
@@ -1964,6 +1988,7 @@ translations:
   'Set ': '设置 '
   Set Active: 设为活动
   Set PIN: 设置 PIN
+  Set Up WiFi: ''
   ? 'Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt
     appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS:
     Strobe Light Tachometer, myStroboscope'
@@ -1997,6 +2022,9 @@ translations:
   Show text labels on icon-only home screen widgets: 在仅图标的主屏小组件上显示文字标签
   Show up/down buttons on long lists: 在长列表中显示上/下按钮
   Show whatever curves you last had visible on the full graph.: 显示您上次在完整图表上可见的曲线。
+  Showing loaded colors: ''
+  Showing sliced colors: ''
+  Showing the 50 newest files. See more in the printer's web UI.: ''
   Shutdown: 关机
   Shutdown / Reboot: 关机 / 重启
   Shutdown failed: 关机失败
@@ -2128,6 +2156,8 @@ translations:
   T%d has no filament loaded — this print will run out.: T%d 未加载耗材 —— 此次打印将会耗尽耗材。
   T%d needs filament in slot %d, which is empty — this print will run out.: T%d 需要
     %d 号料仓中的耗材，但该料仓为空 —— 此次打印将会耗尽耗材。
+  # Source: ams_current_tool.xml:38
+  T0: ''
   TD-1 filament color detection: TD-1 耗材颜色检测
   TEMPERATURE SENSORS: 温度传感器
   THEME COLORS: 主题颜色
@@ -2157,6 +2187,8 @@ translations:
   Temp °C (%d–%d): 温度 °C (%d–%d)
   Temperature: 温度
   Temperature Graph Config: 温度图表配置
+  # Source: calibration_pid_panel.xml:333
+  Temperature control has been optimized.: ''
   Temperatures: 温度
   Temperatures saved: 温度已保存
   Template: 模板
@@ -2372,6 +2404,7 @@ translations:
   Uptime: 运行时长
   Use Android native keyboard for text input: 使用 Android 原生键盘进行文本输入
   Use G10/G11 firmware retraction: 使用 G10/G11 固件回抽
+  Use Settings Instead: ''
   Use printer type to select image: 使用打印机类型选择图片
   VM Peak: 虚拟内存峰值
   VM Size: 虚拟内存大小
@@ -2512,6 +2545,8 @@ translations:
   ? backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
   : ''
   bed: 热床
+  # Source: print_status_panel.xml:242
+  benchy.gcode: ''
   by Preston Brown: by Preston Brown
   chamber heater: 腔体加热器
   complete: 完成

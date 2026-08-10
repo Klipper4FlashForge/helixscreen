@@ -117,7 +117,7 @@ enum class CfsSchema {
 /// CFS (Creality Filament System) backend — K1 + K2 series printers with RS-485 CFS units
 class AmsBackendCfs : public AmsSubscriptionBackend {
   public:
-    AmsBackendCfs(MoonrakerAPI* api, helix::MoonrakerClient* client);
+    AmsBackendCfs(IMoonrakerAPI* api, helix::IMoonrakerClient* client);
 
     /**
      * @brief Bare filament-sensor name CFS owns: "filament_sensor".

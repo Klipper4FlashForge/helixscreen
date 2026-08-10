@@ -32,9 +32,9 @@ inline constexpr int kContributorCount = sizeof(kContributors) / sizeof(kContrib
 #endif
 #include "format_utils.h"
 #include "helix_version.h"
+#include "i_moonraker_api.h"
 #include "logging_init.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
 #include "platform_info.h"
 #include "static_panel_registry.h"
 #include "system/update_checker.h"

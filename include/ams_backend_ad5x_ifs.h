@@ -87,7 +87,7 @@ class Ad5xIfsTestAccess;
 /// slot_to_port = slot + 1, port_to_slot = port - 1.
 class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
   public:
-    AmsBackendAd5xIfs(MoonrakerAPI* api, helix::MoonrakerClient* client);
+    AmsBackendAd5xIfs(IMoonrakerAPI* api, helix::IMoonrakerClient* client);
     ~AmsBackendAd5xIfs() override;
 
     static constexpr int NUM_PORTS = 4;

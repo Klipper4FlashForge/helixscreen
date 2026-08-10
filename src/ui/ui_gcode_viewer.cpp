@@ -1,6 +1,8 @@
 // Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#if HELIX_HAS_GCODE_VIEWER
+
 #include "ui_gcode_viewer.h"
 
 #include "ui_toast_manager.h"
@@ -2639,3 +2641,219 @@ extern "C" void ui_gcode_viewer_register(void) {
     lv_xml_register_widget("gcode_viewer", gcode_viewer_xml_create, gcode_viewer_xml_apply);
     spdlog::trace("[GCode Viewer] Registered <gcode_viewer> widget with LVGL XML system");
 }
+
+#else // !HELIX_HAS_GCODE_VIEWER
+
+// Compiled-out build (HELIX_HAS_GCODE_VIEWER=0): stub widget keeps XML layouts
+// parsing (unregistered tags corrupt sibling parenting); API is no-op.
+
+#include "ui_gcode_viewer.h"
+
+#include <spdlog/spdlog.h>
+
+#include <helix-xml/src/xml/lv_xml_parser.h>
+#include <helix-xml/src/xml/parsers/lv_xml_obj_parser.h>
+
+static void* gcode_viewer_xml_create(lv_xml_parser_state_t* state, const char** attrs) {
+    (void)attrs;
+    return (void*)lv_obj_create((lv_obj_t*)lv_xml_state_get_parent(state));
+}
+
+static void gcode_viewer_xml_apply(lv_xml_parser_state_t* state, const char** attrs) {
+    lv_xml_obj_apply(state, attrs);
+}
+
+extern "C" void ui_gcode_viewer_register(void) {
+    lv_xml_register_widget("gcode_viewer", gcode_viewer_xml_create, gcode_viewer_xml_apply);
+    spdlog::debug("[GCode Viewer] Compiled out (HELIX_HAS_GCODE_VIEWER=0); registered stub "
+                  "<gcode_viewer> widget");
+}
+
+// ---- C API stubs ----
+
+lv_obj_t* ui_gcode_viewer_create(lv_obj_t* parent) {
+    return parent ? lv_obj_create(parent) : nullptr;
+}
+
+void ui_gcode_viewer_load_file(lv_obj_t*, const char*) {}
+
+void ui_gcode_viewer_set_load_callback(lv_obj_t*, gcode_viewer_load_callback_t, void*) {}
+
+void ui_gcode_viewer_set_gcode_data(lv_obj_t*, void*) {}
+
+void ui_gcode_viewer_clear(lv_obj_t*) {}
+
+void ui_gcode_viewer_clear_all_active(void) {}
+
+void ui_gcode_viewer_set_clear_callback(lv_obj_t*, ui_gcode_viewer_clear_cb_t, void*) {}
+
+helix::GcodeViewerState ui_gcode_viewer_get_state(lv_obj_t*) {
+    return helix::GcodeViewerState::Empty;
+}
+
+bool ui_gcode_viewer_has_content(lv_obj_t*) {
+    return false;
+}
+
+void ui_gcode_viewer_set_paused(lv_obj_t*, bool) {}
+
+bool ui_gcode_viewer_is_paused(lv_obj_t*) {
+    return false;
+}
+
+void ui_gcode_viewer_force_redraw(lv_obj_t*) {}
+
+void ui_gcode_viewer_set_render_mode(lv_obj_t*, helix::GcodeViewerRenderMode) {}
+
+helix::GcodeViewerRenderMode ui_gcode_viewer_get_render_mode(lv_obj_t*) {
+    return helix::GcodeViewerRenderMode::Auto;
+}
+
+void ui_gcode_viewer_evaluate_render_mode(lv_obj_t*) {}
+
+bool ui_gcode_viewer_is_using_2d_mode(lv_obj_t*) {
+    return false;
+}
+
+void ui_gcode_viewer_disable_streaming(lv_obj_t*) {}
+
+void ui_gcode_viewer_set_show_supports(lv_obj_t*, bool) {}
+
+void ui_gcode_viewer_rotate(lv_obj_t*, float, float) {}
+
+void ui_gcode_viewer_pan(lv_obj_t*, float, float) {}
+
+void ui_gcode_viewer_zoom(lv_obj_t*, float) {}
+
+void ui_gcode_viewer_reset_camera(lv_obj_t*) {}
+
+void ui_gcode_viewer_set_view(lv_obj_t*, helix::GcodeViewerPresetView) {}
+
+void ui_gcode_viewer_set_camera_azimuth(lv_obj_t*, float) {}
+
+void ui_gcode_viewer_set_camera_elevation(lv_obj_t*, float) {}
+
+void ui_gcode_viewer_set_camera_zoom(lv_obj_t*, float) {}
+
+void ui_gcode_viewer_set_debug_colors(lv_obj_t*, bool) {}
+
+void ui_gcode_viewer_set_show_travels(lv_obj_t*, bool) {}
+
+void ui_gcode_viewer_set_show_extrusions(lv_obj_t*, bool) {}
+
+void ui_gcode_viewer_set_layer_range(lv_obj_t*, int, int) {}
+
+void ui_gcode_viewer_set_highlighted_object(lv_obj_t*, const char*) {}
+
+const char* ui_gcode_viewer_pick_object(lv_obj_t*, int, int) {
+    return nullptr;
+}
+
+void ui_gcode_viewer_set_extrusion_color(lv_obj_t*, lv_color_t) {}
+
+void ui_gcode_viewer_set_travel_color(lv_obj_t*, lv_color_t) {}
+
+void ui_gcode_viewer_use_filament_color(lv_obj_t*, bool) {}
+
+void ui_gcode_viewer_set_opacity(lv_obj_t*, lv_opa_t) {}
+
+void ui_gcode_viewer_set_brightness(lv_obj_t*, float) {}
+
+void ui_gcode_viewer_set_specular(lv_obj_t*, float, float) {}
+
+void ui_gcode_viewer_set_single_layer(lv_obj_t*, int) {}
+
+int ui_gcode_viewer_get_current_layer_start(lv_obj_t*) {
+    return 0;
+}
+
+int ui_gcode_viewer_get_current_layer_end(lv_obj_t*) {
+    return -1;
+}
+
+void ui_gcode_viewer_set_print_progress(lv_obj_t*, int) {}
+
+void ui_gcode_viewer_set_ghost_opacity(lv_obj_t*, lv_opa_t) {}
+
+void ui_gcode_viewer_set_ghost_mode(lv_obj_t*, int) {}
+
+void ui_gcode_viewer_set_ssao_enabled(lv_obj_t*, bool) {}
+
+bool ui_gcode_viewer_get_ssao_enabled(lv_obj_t*) {
+    return false;
+}
+
+void ui_gcode_viewer_set_content_offset_y(lv_obj_t*, float) {}
+
+int ui_gcode_viewer_get_max_layer(lv_obj_t*) {
+    return -1;
+}
+
+const char* ui_gcode_viewer_get_filament_color(lv_obj_t*) {
+    return nullptr;
+}
+
+const char* ui_gcode_viewer_get_filament_type(lv_obj_t*) {
+    return nullptr;
+}
+
+const char* ui_gcode_viewer_get_printer_model(lv_obj_t*) {
+    return nullptr;
+}
+
+float ui_gcode_viewer_get_estimated_time_minutes(lv_obj_t*) {
+    return 0.0f;
+}
+
+float ui_gcode_viewer_get_filament_weight_g(lv_obj_t*) {
+    return 0.0f;
+}
+
+float ui_gcode_viewer_get_filament_length_mm(lv_obj_t*) {
+    return 0.0f;
+}
+
+float ui_gcode_viewer_get_filament_cost(lv_obj_t*) {
+    return 0.0f;
+}
+
+float ui_gcode_viewer_get_nozzle_diameter_mm(lv_obj_t*) {
+    return 0.0f;
+}
+
+const char* ui_gcode_viewer_get_filename(lv_obj_t*) {
+    return nullptr;
+}
+
+int ui_gcode_viewer_get_layer_count(lv_obj_t*) {
+    return 0;
+}
+
+int ui_gcode_viewer_get_segments_rendered(lv_obj_t*) {
+    return 0;
+}
+
+// ---- C++ API stubs ----
+
+void ui_gcode_viewer_set_tool_colors(lv_obj_t*, const std::vector<uint32_t>&) {}
+
+bool ui_gcode_viewer_apply_ams_tool_colors(lv_obj_t*) {
+    return false;
+}
+
+void ui_gcode_viewer_set_highlighted_objects(lv_obj_t*, const std::unordered_set<std::string>&) {}
+
+void ui_gcode_viewer_set_excluded_objects(lv_obj_t*, const std::unordered_set<std::string>&) {}
+
+void ui_gcode_viewer_set_object_tap_callback(lv_obj_t*, gcode_viewer_object_tap_callback_t, void*) {
+}
+
+void ui_gcode_viewer_set_object_long_press_callback(lv_obj_t*,
+                                                    gcode_viewer_object_long_press_callback_t,
+                                                    void*) {}
+
+const helix::gcode::ParsedGCodeFile* ui_gcode_viewer_get_parsed_file(lv_obj_t*) {
+    return nullptr;
+}
+
+#endif // HELIX_HAS_GCODE_VIEWER

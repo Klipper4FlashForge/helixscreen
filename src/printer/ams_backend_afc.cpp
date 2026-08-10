@@ -13,8 +13,8 @@
 #include "ams_bypass_policy.h"
 #include "ams_fault_event.h"
 #include "config.h"
+#include "i_moonraker_api.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
 #include "operation_patterns.h" // helix::contains_ci
 #include "printer_discovery.h"
 #include "settings_manager.h"
@@ -182,7 +182,7 @@ void afc_state_translation_hints_() {
 // Construction / Destruction
 // ============================================================================
 
-AmsBackendAfc::AmsBackendAfc(MoonrakerAPI* api, MoonrakerClient* client)
+AmsBackendAfc::AmsBackendAfc(IMoonrakerAPI* api, IMoonrakerClient* client)
     : AmsSubscriptionBackend(api, client) {
     // Initialize system info with AFC defaults
     system_info_.type = AmsType::AFC;
@@ -1613,7 +1613,7 @@ AmsError AmsBackendAfc::dispatch_operation(std::string gcode, AmsAction action) 
     });
 
     if (!result) {
-        // The gcode never left: no MoonrakerAPI, or the send was refused. No ack
+        // The gcode never left: no IMoonrakerAPI, or the send was refused. No ack
         // will ever arrive, so undo the optimistic action instead of leaving the
         // UI busy until the stuck-action budget expires.
         spdlog::warn("[AMS AFC] Dispatch #{} failed to send ({}), reverting optimistic action",
@@ -3049,7 +3049,7 @@ const nlohmann::json& AmsBackendAfc::database_item_value(const nlohmann::json& r
     // payload: a payload is an arbitrary object, so "envelope or payload?" is
     // undecidable — the afc-install payload is {"version":…}, which carries no
     // "value" key to key off. Callers that route through
-    // MoonrakerAPI::database_get_item get the payload pre-unwrapped and must
+    // IMoonrakerAPI::database_get_item get the payload pre-unwrapped and must
     // not pass it here.
     const auto result = response.find("result");
     if (result == response.end() || !result->is_object())
@@ -4082,7 +4082,7 @@ AmsError AmsBackendAfc::execute_gcode_notify(const std::string& gcode,
                                              const std::string& success_msg,
                                              const std::string& error_prefix) {
     if (!api_) {
-        return AmsErrorHelper::not_connected("MoonrakerAPI not available");
+        return AmsErrorHelper::not_connected("IMoonrakerAPI not available");
     }
 
     spdlog::info("[AMS AFC] Executing G-code: {}", gcode);
@@ -4108,7 +4108,7 @@ AmsError AmsBackendAfc::execute_gcode_notify(const std::string& gcode,
                 spdlog::error("[AMS AFC] G-code failed: {} - {}", gcode, err.message);
             }
         },
-        MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+        IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
 
     return AmsErrorHelper::success();
 }
@@ -4851,7 +4851,7 @@ void AmsBackendAfc::dispatch_lane_unload(const std::string& lane_name) {
                 on_lane_unload_done();
             });
         },
-        MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+        IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
 }
 
 void AmsBackendAfc::on_lane_unload_done() {
@@ -5008,7 +5008,7 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
                 }
 
                 // Material (validate to prevent command injection)
-                if (!info.material.empty() && MoonrakerAPI::is_safe_gcode_param(info.material)) {
+                if (!info.material.empty() && IMoonrakerAPI::is_safe_gcode_param(info.material)) {
                     execute_gcode(
                         fmt::format("SET_MATERIAL LANE={} MATERIAL={}", lane_name, info.material));
                 } else if (!info.material.empty()) {
@@ -5191,13 +5191,13 @@ AmsError AmsBackendAfc::apply_endless_spool_backup(int slot_index, int backup_sl
 
     // Validate lane names to prevent command injection. Empty counts as unsafe:
     // `SET_RUNOUT LANE=` is a malformed command, not a no-op.
-    if (lane_name.empty() || !MoonrakerAPI::is_safe_gcode_param(lane_name)) {
+    if (lane_name.empty() || !IMoonrakerAPI::is_safe_gcode_param(lane_name)) {
         spdlog::warn("[AMS AFC] Unsafe lane name characters in endless spool config");
         return AmsError(AmsResult::MAPPING_ERROR, "Invalid lane name",
                         "Lane name contains invalid characters", "Check AFC configuration");
     }
     if (backup_slot >= 0 &&
-        (backup_lane_name.empty() || !MoonrakerAPI::is_safe_gcode_param(backup_lane_name))) {
+        (backup_lane_name.empty() || !IMoonrakerAPI::is_safe_gcode_param(backup_lane_name))) {
         spdlog::warn("[AMS AFC] Unsafe backup lane name characters");
         return AmsError(AmsResult::MAPPING_ERROR, "Invalid backup lane name",
                         "Backup lane name contains invalid characters", "Check AFC configuration");
@@ -5252,7 +5252,7 @@ void AmsBackendAfc::load_afc_configs() {
     }
 
     if (!api_) {
-        spdlog::warn("[AMS AFC] Cannot load configs: MoonrakerAPI is null");
+        spdlog::warn("[AMS AFC] Cannot load configs: IMoonrakerAPI is null");
         return;
     }
 

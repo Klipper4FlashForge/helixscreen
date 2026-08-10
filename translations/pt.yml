@@ -43,7 +43,17 @@ translations:
   0 = computed: 0 = calculado
   0 events queued: 0 eventos na fila
   0 slots: '{0} Slots'
+  # Source: calibration_pid_panel.xml:368
+  0.0000 J/K: ''
+  # Source: calibration_pid_panel.xml:374
+  0.000000 K/s/K: ''
+  # Source: calibration_pid_panel.xml:380
+  0.000000 W/K: ''
   0.4-2mm direct drive, 4-6mm bowden: 0.4-2mm direct drive, 4-6mm bowden
+  # Source: history_dashboard_panel.xml:83
+  0h: ''
+  # Source: history_dashboard_panel.xml:89, print_status_panel.xml:252, print_status_panel.xml:254
+  0m: ''
   0°: 0°
   1 day ago: há 1 dia
   1 event queued: 1 evento na fila
@@ -95,6 +105,9 @@ translations:
   ACCELEROMETERS: ACELERÔMETROS
   ACE Moonraker bridge not found. Install ace_status.py for full support.: Ponte
     ACE Moonraker não encontrada. Instale ace_status.py para suporte completo.
+  ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: Ponte
+    ACE do Moonraker não encontrada. Instale ace_status.py do ValgACE para suporte
+    completo.
   ACTIONS: AÇÕES
   ADXL: ADXL
   AFC: AFC
@@ -180,6 +193,8 @@ translations:
   An error occurred during measurement.: Ocorreu um erro durante a medição.
   An error occurred during probing.: Ocorreu um erro durante a sondagem.
   An error occurred while loading filament.: Ocorreu um erro ao carregar o filamento.
+  # Source: probe_accuracy_modal.xml:90
+  An error occurred.: ''
   An internal error occurred. The app continues running — please send a debug bundle from Settings > About if it repeats.: Ocorreu
     um erro interno. O aplicativo continua em execução — envie um pacote de depuração
     em Configurações > Sobre se isso se repetir.
@@ -1277,6 +1292,8 @@ translations:
   'Klipper: ': 'Klipper: '
   Klippy Errors: Erros do Klippy
   Klippy Shutdowns: Desligamentos do Klippy
+  # Source: led_control_overlay.xml:31
+  LED: ''
   LED SELECTION: SELEÇÃO DE LED
   LED Settings: Configurações de LED
   LED Strip: Fita de LED
@@ -1299,10 +1316,14 @@ translations:
   Language: Idioma
   Language, theme, brightness, and sound: Idioma, tema, brilho e som
   Last: Última
+  # Source: history_dashboard_panel.xml:114
+  Last 7 days: ''
   Last print cancelled: Última impressão cancelada
   Last print failed: Última impressão falhou
   Later: Depois
   Layer: Camada
+  # Source: print_status_panel.xml:234
+  Layer 0 / 0: ''
   Layer Height: Altura da Camada
   Layer Macro captures one frame per layer change. Best for most prints.: A Macro
     de Camada captura um quadro por mudança de camada. Melhor para a maioria das impressões.
@@ -1601,6 +1622,7 @@ translations:
   Not found (use phone app): Não encontrado (use o app do celular)
   Not in your spools? Set it up: Não está nos seus carretéis? Configure aqui
   Not now: Agora não
+  Not yet available on this display: ''
   Not yet calibrated: Ainda não calibrado
   Notes: Notas
   Notes (optional): Notas (opcional)
@@ -1639,6 +1661,7 @@ translations:
   'Off:': 'Desligado:'
   'On': Ligado
   On and Off macros must be different: Macros de Ligar e Desligar devem ser diferentes
+  On your phone or computer, join the WiFi network \"{}\", then open http://{} in a browser to finish setup.: ''
   On/Off: Liga/Desliga
   On/Off (state-aware): Ligar/Desligar (com estado)
   'On:': 'Ligado:'
@@ -1880,6 +1903,8 @@ translations:
   Probing Bed...: Sondando Mesa...
   Probing Failed: Sondagem Falhou
   Proceed: Prosseguir
+  # Source: abort_progress_modal.xml:20
+  Processing...: ''
   Profile deleted: Perfil excluído
   Profile name (e.g., default): 'Nome do perfil (ex.: padrão)'
   Profile renamed: Perfil renomeado
@@ -2190,6 +2215,7 @@ translations:
   'Set ': 'Definir '
   Set Active: Definir Ativo
   Set PIN: Definir PIN
+  Set Up WiFi: ''
   ? 'Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt
     appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS:
     Strobe Light Tachometer, myStroboscope'
@@ -2233,6 +2259,9 @@ translations:
   Show up/down buttons on long lists: Mostrar botões para cima/baixo em listas longas
   Show whatever curves you last had visible on the full graph.: Mostrar as curvas
     que estavam visíveis por último no gráfico completo.
+  Showing loaded colors: ''
+  Showing sliced colors: ''
+  Showing the 50 newest files. See more in the printer's web UI.: ''
   Shutdown: Desligar
   Shutdown / Reboot: Desligar / Reiniciar
   Shutdown failed: Falha ao desligar
@@ -2381,6 +2410,8 @@ translations:
     — esta impressão vai acabar.
   T%d needs filament in slot %d, which is empty — this print will run out.: T%d precisa
     de filamento no slot %d, que está vazio — esta impressão vai acabar.
+  # Source: ams_current_tool.xml:38
+  T0: ''
   TD-1 filament color detection: Detecção de cor de filamento TD-1
   TEMPERATURE SENSORS: SENSORES DE TEMPERATURA
   THEME COLORS: CORES DO TEMA
@@ -2411,6 +2442,8 @@ translations:
   Temp °C (%d–%d): Temp °C (%d–%d)
   Temperature: Temperatura
   Temperature Graph Config: Config do Gráfico de Temperatura
+  # Source: calibration_pid_panel.xml:333
+  Temperature control has been optimized.: ''
   Temperatures: Temperaturas
   Temperatures saved: Temperaturas salvas
   Template: Modelo
@@ -2679,6 +2712,7 @@ translations:
   Use Android native keyboard for text input: Usar teclado nativo do Android para
     entrada de texto
   Use G10/G11 firmware retraction: Usar retração de firmware G10/G11
+  Use Settings Instead: ''
   Use printer type to select image: Usar tipo de impressora para selecionar imagem
   VM Peak: Pico de VM
   VM Size: Tamanho de VM
@@ -2836,6 +2870,8 @@ translations:
   ? backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
   : ''
   bed: mesa
+  # Source: print_status_panel.xml:242
+  benchy.gcode: ''
   by Preston Brown: por Preston Brown
   chamber heater: aquecedor da câmara
   complete: concluído

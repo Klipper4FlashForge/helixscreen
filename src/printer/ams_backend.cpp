@@ -22,7 +22,7 @@
 #include "ams_backend_snapmaker.h"
 #include "ams_backend_toolchanger.h"
 #include "filament_database.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "printer_discovery.h"
 #include "runtime_config.h"
 
@@ -34,6 +34,35 @@
 #include <string_view>
 
 using namespace helix;
+
+namespace {
+// Task 15 R2: ACE (500ms REST poll) and AD5X IFS (5s whole-file HTTP poll)
+// are the only AMS backends that need a raw HTTP transport instead of the
+// WebSocket JSON-RPC channel every other backend rides. On ESP32 that
+// transport is the Task 10 HTTP lane (EspHttpLane) — a single dedicated
+// worker thread with a bounded, capped fetch model — still an evaluation arm
+// pending a real-hardware budget/latency measurement, so it's gated by
+// CONFIG_HELIX_AMS_HTTP_POLL_BACKENDS (default n). Flipping the flag is the
+// only delta between "unsupported on this screen" and a real backend.
+// Desktop always supports both (unconditional real HTTP stack).
+#if defined(ESP_PLATFORM)
+bool http_poll_ams_backends_supported() {
+    // A Kconfig bool set to 'n' (the default) is OMITTED from sdkconfig.h
+    // entirely, not defined as 0 — so this must be a preprocessor #if, not a
+    // runtime return of the macro's value (the latter fails to compile when
+    // off: the token is simply undeclared).
+#if CONFIG_HELIX_AMS_HTTP_POLL_BACKENDS
+    return true;
+#else
+    return false;
+#endif
+}
+#else
+constexpr bool http_poll_ams_backends_supported() {
+    return true;
+}
+#endif
+} // namespace
 
 // ============================================================================
 // Endless Spool - shared validation, reset loop and eligibility rule
@@ -225,7 +254,7 @@ static std::string to_lower(const std::string& s) {
 // notifications so the active-tool indicator follows the gcode (mock-side
 // proxy for production's printer.mmu.tool / toolchanger.tool_number).
 static std::unique_ptr<AmsBackendMock>
-create_mock_with_features(int gate_count, MoonrakerClient* mock_client = nullptr) {
+create_mock_with_features(int gate_count, IMoonrakerClient* mock_client = nullptr) {
     auto mock = std::make_unique<AmsBackendMock>(gate_count);
 
     // Find the moonraker mock to subscribe to. Caller may pass it explicitly;
@@ -233,7 +262,7 @@ create_mock_with_features(int gate_count, MoonrakerClient* mock_client = nullptr
     // AmsState init path calls AmsBackend::create(NONE, null, null) before the
     // factory hooks up specific backends, so the global is the only handle we
     // have at that point.
-    MoonrakerClient* mc_raw = mock_client ? mock_client : get_moonraker_client();
+    IMoonrakerClient* mc_raw = mock_client ? mock_client : get_moonraker_client();
     if (auto* mc = dynamic_cast<::MoonrakerClientMock*>(mc_raw)) {
         AmsBackendMock* mock_ptr = mock.get();
         mc->add_active_gcode_tool_observer([mock_ptr](int tool, uint32_t color) {
@@ -352,7 +381,7 @@ create_mock_with_features(int gate_count, MoonrakerClient* mock_client = nullptr
 }
 
 // Check if mock mode is requested and not explicitly disabled via HELIX_MOCK_AMS=none
-static std::unique_ptr<AmsBackend> try_create_mock(MoonrakerClient* mock_client = nullptr) {
+static std::unique_ptr<AmsBackend> try_create_mock(IMoonrakerClient* mock_client = nullptr) {
     const auto* config = get_runtime_config();
     if (!config->should_mock_ams()) {
         return nullptr;
@@ -494,8 +523,8 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type) {
     }
 }
 
-std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerAPI* api,
-                                               MoonrakerClient* client) {
+std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, IMoonrakerAPI* api,
+                                               IMoonrakerClient* client) {
 #ifdef HELIX_ENABLE_MOCKS
     if (auto mock = try_create_mock(client)) {
         return mock;
@@ -505,7 +534,7 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerA
     switch (detected_type) {
     case AmsType::HAPPY_HARE:
         if (!api || !client) {
-            spdlog::error("[AMS Backend] Happy Hare requires MoonrakerAPI and MoonrakerClient");
+            spdlog::error("[AMS Backend] Happy Hare requires IMoonrakerAPI and MoonrakerClient");
             return nullptr;
         }
         spdlog::debug("[AMS Backend] Creating Happy Hare backend");
@@ -513,7 +542,7 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerA
 
     case AmsType::AFC:
         if (!api || !client) {
-            spdlog::error("[AMS Backend] AFC requires MoonrakerAPI and MoonrakerClient");
+            spdlog::error("[AMS Backend] AFC requires IMoonrakerAPI and MoonrakerClient");
             return nullptr;
         }
         spdlog::debug("[AMS Backend] Creating AFC backend");
@@ -521,7 +550,11 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerA
 
     case AmsType::ACE:
         if (!api || !client) {
-            spdlog::error("[AMS Backend] ACE requires MoonrakerAPI and MoonrakerClient");
+            spdlog::error("[AMS Backend] ACE requires IMoonrakerAPI and MoonrakerClient");
+            return nullptr;
+        }
+        if (!http_poll_ams_backends_supported()) {
+            spdlog::info("[AMS Backend] AMS backend 'ACE' unsupported on this screen");
             return nullptr;
         }
         spdlog::debug("[AMS Backend] Creating ACE backend");
@@ -529,7 +562,7 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerA
 
     case AmsType::TOOL_CHANGER:
         if (!api || !client) {
-            spdlog::error("[AMS Backend] Tool changer requires MoonrakerAPI and MoonrakerClient");
+            spdlog::error("[AMS Backend] Tool changer requires IMoonrakerAPI and MoonrakerClient");
             return nullptr;
         }
         spdlog::debug("[AMS Backend] Creating Tool Changer backend");
@@ -539,7 +572,11 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerA
     case AmsType::AD5X_IFS:
 #if HELIX_HAS_IFS
         if (!api || !client) {
-            spdlog::error("[AMS Backend] AD5X IFS requires MoonrakerAPI and MoonrakerClient");
+            spdlog::error("[AMS Backend] AD5X IFS requires IMoonrakerAPI and MoonrakerClient");
+            return nullptr;
+        }
+        if (!http_poll_ams_backends_supported()) {
+            spdlog::info("[AMS Backend] AMS backend 'AD5X IFS' unsupported on this screen");
             return nullptr;
         }
         spdlog::debug("[AMS Backend] Creating AD5X IFS backend");
@@ -552,7 +589,7 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerA
     case AmsType::CFS:
 #if HELIX_HAS_CFS
         if (!api || !client) {
-            spdlog::error("[AMS Backend] CFS requires MoonrakerAPI and MoonrakerClient");
+            spdlog::error("[AMS Backend] CFS requires IMoonrakerAPI and MoonrakerClient");
             return nullptr;
         }
         spdlog::debug("[AMS Backend] Creating CFS backend");
@@ -564,7 +601,7 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerA
 
     case AmsType::SNAPMAKER:
         if (!api || !client) {
-            spdlog::error("[AMS Backend] Snapmaker requires MoonrakerAPI and MoonrakerClient");
+            spdlog::error("[AMS Backend] Snapmaker requires IMoonrakerAPI and MoonrakerClient");
             return nullptr;
         }
         spdlog::debug("[AMS Backend] Creating Snapmaker SnapSwap backend");
@@ -572,7 +609,7 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerA
 
     case AmsType::QIDI_BOX:
         if (!api || !client) {
-            spdlog::error("[AMS Backend] QIDI Box requires MoonrakerAPI and MoonrakerClient");
+            spdlog::error("[AMS Backend] QIDI Box requires IMoonrakerAPI and MoonrakerClient");
             return nullptr;
         }
         spdlog::debug("[AMS Backend] Creating QIDI Box backend (stub)");

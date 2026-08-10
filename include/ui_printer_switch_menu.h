@@ -52,11 +52,11 @@ class PrinterSwitchMenu : public ContextMenu {
 
     SwitchCallback switch_callback_;
 
-    static PrinterSwitchMenu* s_active_instance_;
     static bool s_callbacks_registered_;
 
+    /// The menu on screen as a PrinterSwitchMenu, or nullptr. Thin wrapper over
+    /// ContextMenu::active_as() that also logs the unexpected empty case.
     static PrinterSwitchMenu* get_active_instance();
-    static void on_backdrop_cb(lv_event_t* e);
     static void on_add_printer_cb(lv_event_t* e);
     static void on_printer_row_cb(lv_event_t* e);
 };

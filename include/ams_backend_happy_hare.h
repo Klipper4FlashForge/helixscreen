@@ -45,12 +45,12 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     /**
      * @brief Construct Happy Hare backend
      *
-     * @param api Pointer to MoonrakerAPI (for sending G-code commands)
-     * @param client Pointer to helix::MoonrakerClient (for subscribing to updates)
+     * @param api Pointer to IMoonrakerAPI (for sending G-code commands)
+     * @param client Pointer to helix::IMoonrakerClient (for subscribing to updates)
      *
      * @note Both pointers must remain valid for the lifetime of this backend.
      */
-    AmsBackendHappyHare(MoonrakerAPI* api, helix::MoonrakerClient* client);
+    AmsBackendHappyHare(IMoonrakerAPI* api, helix::IMoonrakerClient* client);
     ~AmsBackendHappyHare() override;
 
     /**

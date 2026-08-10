@@ -12,8 +12,8 @@
 #include "error_classify.h"
 #include "error_event.h"
 #include "fault_surface_correlation.h"
-#include "moonraker_api.h"
-#include "moonraker_client.h"
+#include "i_moonraker_api.h"
+#include "i_moonraker_client.h"
 #include "moonraker_error.h"
 #include "moonraker_types.h"
 #include "print_control_buttons.h"
@@ -54,7 +54,7 @@ constexpr uint32_t kRecoverToastMs = 15000;
 /// See present_recover_toast() for why this is heap-allocated with a timer
 /// reaper rather than parked on the router.
 struct RecoverToastCtx {
-    MoonrakerAPI* api = nullptr;
+    IMoonrakerAPI* api = nullptr;
     std::string gcode;
     std::string log_tag;
 };
@@ -109,7 +109,7 @@ double now_unix_seconds() {
 
 } // namespace
 
-GcodeErrorRouter::GcodeErrorRouter(MoonrakerAPI* api, MoonrakerClient* client,
+GcodeErrorRouter::GcodeErrorRouter(IMoonrakerAPI* api, IMoonrakerClient* client,
                                    helix::ui::RecoveryModalPresenter& presenter)
     : api_(api), client_(client), presenter_(presenter) {
     if (!client_) {
@@ -368,11 +368,11 @@ bool GcodeErrorRouter::present_recover_toast(const ErrorEvent& e) {
     const RecoveryAction& action = e.recovery_actions.front();
 
     if (how == RecoverDispatch::RECOVERY_SERVICE) {
-        MoonrakerAPI* api = api_;
+        IMoonrakerAPI* api = api_;
         ToastManager::instance().show_with_action(
             ToastSeverity::ERROR, truncate_for_toast(e.detail).c_str(), action.label.c_str(),
             [](void* ud) {
-                auto* a = static_cast<MoonrakerAPI*>(ud);
+                auto* a = static_cast<IMoonrakerAPI*>(ud);
                 if (!a)
                     return;
                 spdlog::info("[GcodeError] User tapped Recover for key298");
@@ -414,7 +414,7 @@ bool GcodeErrorRouter::present_recover_toast(const ErrorEvent& e) {
                         (std::string(lv_tr("Recovery failed: ")) + err.user_message()).c_str(),
                         6000);
                 },
-                MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+                IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
         },
         ctx, /*duration_ms=*/kRecoverToastMs);
 

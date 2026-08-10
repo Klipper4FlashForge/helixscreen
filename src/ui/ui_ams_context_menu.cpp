@@ -23,7 +23,6 @@ namespace helix::ui {
 
 // Static member initialization
 bool AmsContextMenu::callbacks_registered_ = false;
-AmsContextMenu* AmsContextMenu::s_active_instance_ = nullptr;
 
 // ============================================================================
 // Construction / Destruction
@@ -42,11 +41,6 @@ AmsContextMenu::AmsContextMenu() {
 }
 
 AmsContextMenu::~AmsContextMenu() {
-    // Clear active instance before base destructor calls hide()
-    if (s_active_instance_ == this) {
-        s_active_instance_ = nullptr;
-    }
-
     // Clean up subjects
     if (subject_initialized_ && lv_is_initialized()) {
         lv_subject_deinit(&slot_is_loaded_subject_);
@@ -66,10 +60,6 @@ AmsContextMenu::AmsContextMenu(AmsContextMenu&& other) noexcept
         slot_is_loaded_subject_ = other.slot_is_loaded_subject_;
         slot_can_load_subject_ = other.slot_can_load_subject_;
     }
-    // Update static instance
-    if (s_active_instance_ == &other) {
-        s_active_instance_ = this;
-    }
     other.backend_ = nullptr;
     other.total_slots_ = 0;
     other.tool_dropdown_ = nullptr;
@@ -79,12 +69,7 @@ AmsContextMenu::AmsContextMenu(AmsContextMenu&& other) noexcept
 
 AmsContextMenu& AmsContextMenu::operator=(AmsContextMenu&& other) noexcept {
     if (this != &other) {
-        // Clear our active instance before base hide()
-        if (s_active_instance_ == this) {
-            s_active_instance_ = nullptr;
-        }
-
-        // Let base class handle its state
+        // Let base class handle its state, including the active-menu registry
         ContextMenu::operator=(std::move(other));
 
         action_callback_ = std::move(other.action_callback_);
@@ -100,10 +85,6 @@ AmsContextMenu& AmsContextMenu::operator=(AmsContextMenu&& other) noexcept {
             slot_can_load_subject_ = other.slot_can_load_subject_;
         }
         subject_initialized_ = other.subject_initialized_;
-
-        if (s_active_instance_ == &other) {
-            s_active_instance_ = this;
-        }
 
         other.backend_ = nullptr;
         other.total_slots_ = 0;
@@ -139,14 +120,9 @@ bool AmsContextMenu::show_near_widget(lv_obj_t* parent, int slot_index, lv_obj_t
         total_slots_ = 0;
     }
 
-    // Set as active instance for static callbacks
-    s_active_instance_ = this;
-
-    // Base class handles: XML creation, on_created callback, positioning
+    // Base class handles: XML creation, on_created callback, positioning, and
+    // claiming the active-menu slot the static callbacks resolve through.
     bool result = ContextMenu::show_near_widget(parent, slot_index, near_widget);
-    if (!result) {
-        s_active_instance_ = nullptr;
-    }
 
     spdlog::debug("[AmsContextMenu] Shown for slot {}", slot_index);
     return result;
@@ -162,13 +138,10 @@ bool AmsContextMenu::show_for_external_spool(lv_obj_t* parent, lv_obj_t* anchor_
     total_slots_ = 0;
     external_spool_mode_ = true;
 
-    // Set as active instance for static callbacks
-    s_active_instance_ = this;
-
-    // Base class handles: XML creation, on_created callback, positioning
+    // Base class handles: XML creation, on_created callback, positioning, and
+    // claiming the active-menu slot the static callbacks resolve through.
     bool result = ContextMenu::show_near_widget(parent, -2, anchor_widget);
     if (!result) {
-        s_active_instance_ = nullptr;
         external_spool_mode_ = false;
     }
 
@@ -225,7 +198,10 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
 
         lv_obj_t* btn_scan_qr = lv_obj_find_by_name(menu_obj, "btn_scan_qr");
         if (btn_scan_qr && has_spoolman) {
+#if !defined(HELIX_PLATFORM_ESP32)
+            // No camera on the v1 Core+AMS cut — keep Scan QR hidden (default).
             lv_obj_clear_flag(btn_scan_qr, LV_OBJ_FLAG_HIDDEN);
+#endif
         }
 
         // No dropdowns for external spool
@@ -413,7 +389,10 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
     }
     lv_obj_t* btn_scan_qr = lv_obj_find_by_name(menu_obj, "btn_scan_qr");
     if (btn_scan_qr && has_spoolman) {
+#if !defined(HELIX_PLATFORM_ESP32)
+        // No camera on the v1 Core+AMS cut — keep Scan QR hidden (default).
         lv_obj_clear_flag(btn_scan_qr, LV_OBJ_FLAG_HIDDEN);
+#endif
     }
 
     // Configure dropdowns based on backend capabilities
@@ -428,9 +407,6 @@ void AmsContextMenu::dispatch_ams_action(MenuAction action) {
     int slot = get_item_index();
     ActionCallback callback_copy = action_callback_;
 
-    if (s_active_instance_ == this) {
-        s_active_instance_ = nullptr;
-    }
     hide();
 
     if (callback_copy) {
@@ -438,7 +414,7 @@ void AmsContextMenu::dispatch_ams_action(MenuAction action) {
     }
 }
 
-void AmsContextMenu::handle_backdrop_clicked() {
+void AmsContextMenu::on_backdrop_clicked() {
     spdlog::debug("[AmsContextMenu] Backdrop clicked");
     dispatch_ams_action(MenuAction::CANCELLED);
 }
@@ -579,7 +555,6 @@ void AmsContextMenu::register_callbacks() {
     }
 
     register_xml_callbacks({
-        {"ams_context_backdrop_cb", on_backdrop_cb},
         {"ams_context_load_cb", on_load_cb},
         {"ams_context_unload_cb", on_unload_cb},
         {"ams_context_gate_select_cb", on_gate_select_cb},
@@ -597,21 +572,15 @@ void AmsContextMenu::register_callbacks() {
 }
 
 // ============================================================================
-// Static Callbacks (Instance Lookup via Static Pointer)
+// Static Callbacks (Instance Lookup via ContextMenu::active())
 // ============================================================================
 
 AmsContextMenu* AmsContextMenu::get_active_instance() {
-    if (!s_active_instance_) {
+    auto* self = ContextMenu::active_as<AmsContextMenu>();
+    if (!self) {
         spdlog::warn("[AmsContextMenu] No active instance for event");
     }
-    return s_active_instance_;
-}
-
-void AmsContextMenu::on_backdrop_cb(lv_event_t* /*e*/) {
-    auto* self = get_active_instance();
-    if (self) {
-        self->handle_backdrop_clicked();
-    }
+    return self;
 }
 
 void AmsContextMenu::on_load_cb(lv_event_t* /*e*/) {

@@ -41,7 +41,12 @@
   <translation tag="0 = computed" de="0 = berechnet"/>
   <translation tag="0 events queued" de="0 Ereignisse in Warteschlange"/>
   <translation tag="0 slots" de="0 Slots"/>
+  <translation tag="0.0000 J/K"/>
+  <translation tag="0.000000 K/s/K"/>
+  <translation tag="0.000000 W/K"/>
   <translation tag="0.4-2mm direct drive, 4-6mm bowden" de="0,4-2mm Direct Drive, 4-6mm Bowden"/>
+  <translation tag="0h"/>
+  <translation tag="0m"/>
   <translation tag="0°" de="0°"/>
   <translation tag="1 day ago" de="vor 1 Tag"/>
   <translation tag="1 event queued" de="1 Ereignis in Warteschlange"/>
@@ -88,6 +93,7 @@
   <translation tag="ABS" de="ABS"/>
   <translation tag="ACCELEROMETERS" de="BESCHLEUNIGUNGSSENSOREN"/>
   <translation tag="ACE Moonraker bridge not found. Install ace_status.py for full support." de="ACE Moonraker-Bridge nicht gefunden. Installieren Sie ace_status.py für volle Unterstützung."/>
+  <translation tag="ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support." de="ACE-Moonraker-Brücke nicht gefunden. Installieren Sie ace_status.py von ValgACE für volle Unterstützung."/>
   <translation tag="ACTIONS" de="AKTIONEN"/>
   <translation tag="ADXL" de="ADXL"/>
   <translation tag="AFC" de="AFC"/>
@@ -161,6 +167,7 @@
   <translation tag="An error occurred during measurement." de="Während der Messung ist ein Fehler aufgetreten."/>
   <translation tag="An error occurred during probing." de="Beim Abtasten ist ein Fehler aufgetreten."/>
   <translation tag="An error occurred while loading filament." de="Beim Laden des Filaments ist ein Fehler aufgetreten."/>
+  <translation tag="An error occurred."/>
   <translation tag="An internal error occurred. The app continues running — please send a debug bundle from Settings &gt; About if it repeats." de="Ein interner Fehler ist aufgetreten. Die App läuft weiter – bitte senden Sie ein Debug-Paket über Einstellungen &gt; Über, falls er erneut auftritt."/>
   <translation tag="An unexpected printer error occurred." de="Ein unerwarteter Druckerfehler ist aufgetreten."/>
   <translation tag="An update is available" de="Eine Aktualisierung ist verfügbar"/>
@@ -1104,6 +1111,7 @@
   <translation tag="Klipper: " de="Klipper: "/>
   <translation tag="Klippy Errors" de="Klippy-Fehler"/>
   <translation tag="Klippy Shutdowns" de="Klippy-Abschaltungen"/>
+  <translation tag="LED"/>
   <translation tag="LED SELECTION" de="LED-AUSWAHL"/>
   <translation tag="LED Settings" de="LED-Einstellungen"/>
   <translation tag="LED Strip" de="LED-Streifen"/>
@@ -1124,10 +1132,12 @@
   <translation tag="Language" de="Sprache"/>
   <translation tag="Language, theme, brightness, and sound" de="Sprache, Thema, Helligkeit und Ton"/>
   <translation tag="Last" de="Letzte"/>
+  <translation tag="Last 7 days"/>
   <translation tag="Last print cancelled" de="Letzter Druck abgebrochen"/>
   <translation tag="Last print failed" de="Letzter Druck fehlgeschlagen"/>
   <translation tag="Later" de="Später"/>
   <translation tag="Layer" de="Schicht"/>
+  <translation tag="Layer 0 / 0"/>
   <translation tag="Layer Height" de="Schichthöhe"/>
   <translation tag="Layer Macro captures one frame per layer change. Best for most prints." de="Layer-Makro erfasst ein Bild pro Schichtwechsel. Am besten für die meisten Drucke."/>
   <translation tag="Layer mode captures one frame per layer change. Best for most prints." de="Schichtmodus nimmt ein Bild pro Schichtwechsel auf. Am besten für die meisten Drucke."/>
@@ -1395,6 +1405,7 @@
   <translation tag="Not found (use phone app)" de="Nicht gefunden (Telefon-App verwenden)"/>
   <translation tag="Not in your spools? Set it up" de="Nicht in Ihren Spulen? Einrichten"/>
   <translation tag="Not now" de="Nicht jetzt"/>
+  <translation tag="Not yet available on this display"/>
   <translation tag="Not yet calibrated" de="Noch nicht kalibriert"/>
   <translation tag="Notes" de="Notizen"/>
   <translation tag="Notes (optional)" de="Notizen (optional)"/>
@@ -1433,6 +1444,7 @@
   <translation tag="Off:" de="Aus:"/>
   <translation tag="On" de="Ein"/>
   <translation tag="On and Off macros must be different" de="Ein- und Aus-Makros müssen unterschiedlich sein"/>
+  <translation tag="On your phone or computer, join the WiFi network \&quot;{}\&quot;, then open http://{} in a browser to finish setup."/>
   <translation tag="On/Off" de="Ein/Aus"/>
   <translation tag="On/Off (state-aware)" de="Ein/Aus (zustandsbewusst)"/>
   <translation tag="On:" de="Ein:"/>
@@ -1645,6 +1657,7 @@
   <translation tag="Probing Bed..." de="Bett wird abgetastet..."/>
   <translation tag="Probing Failed" de="Abtasten fehlgeschlagen"/>
   <translation tag="Proceed" de="Fortfahren"/>
+  <translation tag="Processing..."/>
   <translation tag="Profile deleted" de="Profil gelöscht"/>
   <translation tag="Profile name (e.g., default)" de="Profilname (z.B. Standard)"/>
   <translation tag="Profile renamed" de="Profil umbenannt"/>
@@ -1915,6 +1928,7 @@
   <translation tag="Set " de="Setzen "/>
   <translation tag="Set Active" de="Aktiv setzen"/>
   <translation tag="Set PIN" de="PIN festlegen"/>
+  <translation tag="Set Up WiFi"/>
   <translation tag="Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope" de="Stellen Sie eine Stroboskop-App auf dem Telefon auf %.1f Hz ein und richten Sie sie auf den Riemen. Passen Sie an, bis der Riemen stillzustehen scheint.\n\nEmpfohlene Apps:\n  Android: Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope"/>
   <translation tag="Set local timezone for time display" de="Lokale Zeitzone für Zeitanzeige festlegen"/>
   <translation tag="Set logging verbosity for troubleshooting" de="Protokollierungsdetailgrad für Fehlerbehebung festlegen"/>
@@ -1943,6 +1957,9 @@
   <translation tag="Show text labels on icon-only home screen widgets" de="Textbeschriftungen auf Icon-Widgets des Startbildschirms anzeigen"/>
   <translation tag="Show up/down buttons on long lists" de="Hoch-/Runter-Schaltflächen bei langen Listen anzeigen"/>
   <translation tag="Show whatever curves you last had visible on the full graph." de="Zeigt die zuletzt im vollständigen Diagramm sichtbaren Kurven an."/>
+  <translation tag="Showing loaded colors"/>
+  <translation tag="Showing sliced colors"/>
+  <translation tag="Showing the 50 newest files. See more in the printer&apos;s web UI."/>
   <translation tag="Shutdown" de="Herunterfahren"/>
   <translation tag="Shutdown / Reboot" de="Herunterfahren / Neustart"/>
   <translation tag="Shutdown failed" de="Herunterfahren fehlgeschlagen"/>
@@ -2071,6 +2088,7 @@
   <translation tag="System detected" de="System erkannt"/>
   <translation tag="T%d has no filament loaded — this print will run out." de="Bei T%d ist kein Filament geladen — bei diesem Druck geht das Filament aus."/>
   <translation tag="T%d needs filament in slot %d, which is empty — this print will run out." de="T%d benötigt Filament in Slot %d, der leer ist — bei diesem Druck geht das Filament aus."/>
+  <translation tag="T0"/>
   <translation tag="TD-1 filament color detection" de="TD-1-Filamentfarberkennung"/>
   <translation tag="TEMPERATURE SENSORS" de="TEMPERATURSENSOREN"/>
   <translation tag="THEME COLORS" de="THEMENFARBEN"/>
@@ -2099,6 +2117,7 @@
   <translation tag="Temp °C (%d–%d)" de="Temp °C (%d–%d)"/>
   <translation tag="Temperature" de="Temperatur"/>
   <translation tag="Temperature Graph Config" de="Temperaturdiagramm-Konfiguration"/>
+  <translation tag="Temperature control has been optimized."/>
   <translation tag="Temperatures" de="Temperaturen"/>
   <translation tag="Temperatures saved" de="Temperaturen gespeichert"/>
   <translation tag="Template" de="Vorlage"/>
@@ -2284,6 +2303,7 @@
   <translation tag="Uptime" de="Betriebszeit"/>
   <translation tag="Use Android native keyboard for text input" de="Native Android-Tastatur für Texteingabe verwenden"/>
   <translation tag="Use G10/G11 firmware retraction" de="G10/G11-Firmware-Retraktion verwenden"/>
+  <translation tag="Use Settings Instead"/>
   <translation tag="Use printer type to select image" de="Druckertyp zur Bildauswahl verwenden"/>
   <translation tag="VM Peak" de="VM-Spitze"/>
   <translation tag="VM Size" de="VM-Größe"/>
@@ -2412,6 +2432,7 @@
   <translation tag="\&quot;%s\&quot; failed to load" de="\&quot;%s\&quot; konnte nicht geladen werden"/>
   <translation tag="backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present."/>
   <translation tag="bed" de="Bett"/>
+  <translation tag="benchy.gcode"/>
   <translation tag="by Preston Brown" de="von Preston Brown"/>
   <translation tag="chamber heater" de="Kammerheizung"/>
   <translation tag="complete" de="abgeschlossen"/>

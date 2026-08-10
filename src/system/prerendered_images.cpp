@@ -4,6 +4,7 @@
 #include "prerendered_images.h"
 
 #include "app_globals.h"
+#include "data_root_resolver.h"
 #include "lvgl_image_writer.h"
 #include "stb_image.h"
 #include "stb_image_resize.h"
@@ -19,7 +20,10 @@
 namespace helix {
 
 bool prerendered_exists(const std::string& path) {
-    return std::filesystem::exists(path);
+    // Callers pass a relative "assets/images/..." path. Resolve it against the
+    // asset root so the check works on firmware (bundle mounted at /assets ->
+    // /assets/assets/images/...); identity on desktop (asset_root ".").
+    return std::filesystem::exists(asset_path(path));
 }
 
 const char* get_splash_size_name(int screen_width) {
@@ -82,7 +86,7 @@ std::string get_prerendered_splash_3d_path(int screen_width, int screen_height, 
 
     if (prerendered_exists(path)) {
         spdlog::debug("[Prerendered] Using 3D splash: {}", path);
-        return "A:" + path;
+        return asset_component_uri(path);
     }
 
     // Fallback: try base "tiny" if tiny_alt not found (backward compat)
@@ -92,7 +96,7 @@ std::string get_prerendered_splash_3d_path(int screen_width, int screen_height, 
         path += "-tiny.bin";
         if (prerendered_exists(path)) {
             spdlog::debug("[Prerendered] Using 3D splash (tiny fallback): {}", path);
-            return "A:" + path;
+            return asset_component_uri(path);
         }
     }
 
@@ -111,11 +115,11 @@ std::string get_prerendered_splash_path(int screen_width) {
 
     if (prerendered_exists(path)) {
         spdlog::debug("[Prerendered] Using splash: {}", path);
-        return "A:" + path;
+        return asset_component_uri(path);
     }
 
     spdlog::debug("[Prerendered] Splash fallback to PNG ({}px screen)", screen_width);
-    return "A:assets/images/helixscreen-logo.png";
+    return asset_component_uri("assets/images/helixscreen-logo.png");
 }
 
 int get_printer_image_size(int screen_width) {
@@ -136,14 +140,14 @@ std::string get_prerendered_printer_path(const std::string& printer_name, int sc
 
     if (prerendered_exists(path)) {
         spdlog::debug("[Prerendered] Using printer image: {}", path);
-        return "A:" + path;
+        return asset_component_uri(path);
     }
 
     // Fall back to original PNG, but verify it exists
     std::string png_path = "assets/images/printers/" + printer_name + ".png";
     if (prerendered_exists(png_path)) {
         spdlog::trace("[Prerendered] Printer {} fallback to PNG (no {}px)", printer_name, size);
-        return "A:" + png_path;
+        return asset_component_uri(png_path);
     }
 
     // Neither prerendered nor PNG exists — fall back to generic
@@ -151,9 +155,9 @@ std::string get_prerendered_printer_path(const std::string& printer_name, int sc
     std::string generic_bin =
         "assets/images/printers/prerendered/generic-corexy-" + std::to_string(size) + ".bin";
     if (prerendered_exists(generic_bin)) {
-        return "A:" + generic_bin;
+        return asset_component_uri(generic_bin);
     }
-    return "A:assets/images/printers/generic-corexy.png";
+    return asset_component_uri("assets/images/printers/generic-corexy.png");
 }
 
 // =========================================================================

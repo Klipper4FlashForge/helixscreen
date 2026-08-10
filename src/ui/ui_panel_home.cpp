@@ -53,7 +53,7 @@ static void set_event_bubble_recursive(lv_obj_t* obj) {
 using helix::ui::clear_pressed_state_recursive;
 using helix::ui::disable_widget_clicks_recursive;
 
-HomePanel::HomePanel(PrinterState& printer_state, MoonrakerAPI* api)
+HomePanel::HomePanel(PrinterState& printer_state, IMoonrakerAPI* api)
     : PanelBase(printer_state, api) {
     // Subscribe to printer image changes for immediate refresh
     image_changed_observer_ = helix::ui::observe_int_sync<HomePanel>(

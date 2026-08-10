@@ -18,10 +18,12 @@
 
 #include "ams_bypass_policy.h"
 #include "app_globals.h"
+#include "data_root_resolver.h"
 #include "filament_database.h"
 #include "filament_display_name.h"
+#include "helix_psram_attr.h"
+#include "i_moonraker_api.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
 #include "observer_factory.h"
 #include "printer_discovery.h"
 #include "printer_state.h"
@@ -88,7 +90,9 @@ std::optional<helix::ToolTopology> build_ams_topology(AmsBackend* backend, int b
 } // namespace
 
 AmsState& AmsState::instance() {
-    static AmsState instance;
+    // ~9.5KB singleton: relocate to PSRAM on ESP to reclaim internal DRAM (it's
+    // app-state, first touched at runtime, never DMA/ISR). No-op elsewhere.
+    static HELIX_PSRAM_BSS AmsState instance;
     return instance;
 }
 
@@ -118,50 +122,50 @@ const char* AmsState::get_logo_path(const std::string& type_name) {
 
     // Map system names to logo paths
     // Note: All logos are 64x64 white-on-transparent PNGs
-    static const std::unordered_map<std::string, const char*> logo_map = {
+    static const std::unordered_map<std::string, std::string> logo_map = {
         // AFC (Armored Turtle) - has its own logo
-        {"afc", "A:assets/images/ams/afc_64.png"},
-        {"box turtle", "A:assets/images/ams/box_turtle_64.png"},
-        {"box_turtle", "A:assets/images/ams/box_turtle_64.png"},
-        {"boxturtle", "A:assets/images/ams/box_turtle_64.png"},
+        {"afc", asset_component_uri("assets/images/ams/afc_64.png")},
+        {"box turtle", asset_component_uri("assets/images/ams/box_turtle_64.png")},
+        {"box_turtle", asset_component_uri("assets/images/ams/box_turtle_64.png")},
+        {"boxturtle", asset_component_uri("assets/images/ams/box_turtle_64.png")},
 
         // Happy Hare - generic firmware, has its own logo
-        {"happy hare", "A:assets/images/ams/happy_hare_64.png"},
-        {"happy_hare", "A:assets/images/ams/happy_hare_64.png"},
-        {"happyhare", "A:assets/images/ams/happy_hare_64.png"},
+        {"happy hare", asset_component_uri("assets/images/ams/happy_hare_64.png")},
+        {"happy_hare", asset_component_uri("assets/images/ams/happy_hare_64.png")},
+        {"happyhare", asset_component_uri("assets/images/ams/happy_hare_64.png")},
 
         // Specific hardware types (when detected or configured)
-        {"ercf", "A:assets/images/ams/ercf_64.png"},
-        {"3ms", "A:assets/images/ams/3ms_64.png"},
-        {"tradrack", "A:assets/images/ams/tradrack_64.png"},
-        {"mmx", "A:assets/images/ams/mmx_64.png"},
-        {"night owl", "A:assets/images/ams/night_owl_64.png"},
-        {"night_owl", "A:assets/images/ams/night_owl_64.png"},
-        {"nightowl", "A:assets/images/ams/night_owl_64.png"},
-        {"quattro box", "A:assets/images/ams/quattro_box_64.png"},
-        {"quattro_box", "A:assets/images/ams/quattro_box_64.png"},
-        {"quattrobox", "A:assets/images/ams/quattro_box_64.png"},
-        {"btt vivid", "A:assets/images/ams/btt_vivid_64.png"},
-        {"btt_vivid", "A:assets/images/ams/btt_vivid_64.png"},
-        {"bttvivid", "A:assets/images/ams/btt_vivid_64.png"},
-        {"vivid", "A:assets/images/ams/btt_vivid_64.png"},
-        {"kms", "A:assets/images/ams/kms_64.png"},
+        {"ercf", asset_component_uri("assets/images/ams/ercf_64.png")},
+        {"3ms", asset_component_uri("assets/images/ams/3ms_64.png")},
+        {"tradrack", asset_component_uri("assets/images/ams/tradrack_64.png")},
+        {"mmx", asset_component_uri("assets/images/ams/mmx_64.png")},
+        {"night owl", asset_component_uri("assets/images/ams/night_owl_64.png")},
+        {"night_owl", asset_component_uri("assets/images/ams/night_owl_64.png")},
+        {"nightowl", asset_component_uri("assets/images/ams/night_owl_64.png")},
+        {"quattro box", asset_component_uri("assets/images/ams/quattro_box_64.png")},
+        {"quattro_box", asset_component_uri("assets/images/ams/quattro_box_64.png")},
+        {"quattrobox", asset_component_uri("assets/images/ams/quattro_box_64.png")},
+        {"btt vivid", asset_component_uri("assets/images/ams/btt_vivid_64.png")},
+        {"btt_vivid", asset_component_uri("assets/images/ams/btt_vivid_64.png")},
+        {"bttvivid", asset_component_uri("assets/images/ams/btt_vivid_64.png")},
+        {"vivid", asset_component_uri("assets/images/ams/btt_vivid_64.png")},
+        {"kms", asset_component_uri("assets/images/ams/kms_64.png")},
 
         // AFC unit types with no artwork of their own (Claymore is new in AFC
         // v1.2.0; the rest predate it). They fall back to the AFC mark:
         // wrong-but-related beats a blank slot, and the alternative is
         // silently rendering nothing.
-        {"htlf", "A:assets/images/ams/afc_64.png"},
-        {"open ams", "A:assets/images/ams/afc_64.png"},
-        {"open_ams", "A:assets/images/ams/afc_64.png"},
-        {"openams", "A:assets/images/ams/afc_64.png"},
-        {"claymore", "A:assets/images/ams/afc_64.png"},
-        {"emu", "A:assets/images/ams/afc_64.png"},
+        {"htlf", asset_component_uri("assets/images/ams/afc_64.png")},
+        {"open ams", asset_component_uri("assets/images/ams/afc_64.png")},
+        {"open_ams", asset_component_uri("assets/images/ams/afc_64.png")},
+        {"openams", asset_component_uri("assets/images/ams/afc_64.png")},
+        {"claymore", asset_component_uri("assets/images/ams/afc_64.png")},
+        {"emu", asset_component_uri("assets/images/ams/afc_64.png")},
     };
 
     auto it = logo_map.find(lower_name);
     if (it != logo_map.end()) {
-        return it->second;
+        return it->second.c_str();
     }
 
     // AFC names a unit by type AND instance — "Box_Turtle Turtle_1" — so the
@@ -173,7 +177,7 @@ const char* AmsState::get_logo_path(const std::string& type_name) {
     if (space_pos != std::string::npos && space_pos > 0) {
         it = logo_map.find(lower_name.substr(0, space_pos));
         if (it != logo_map.end()) {
-            return it->second;
+            return it->second.c_str();
         }
     }
     return nullptr;
@@ -646,7 +650,7 @@ void AmsState::deinit_subjects() {
     // drain notifies a freed observer list (#1165, #1146).
     async_lifetime_.invalidate();
 
-    // Clear dangling API pointer — the MoonrakerAPI is destroyed during teardown
+    // Clear dangling API pointer — the IMoonrakerAPI is destroyed during teardown
     // before AmsState re-initializes. Without this, sync_from_backend() would
     // dereference a freed pointer on the next init_subjects() cycle.
     api_ = nullptr;
@@ -668,12 +672,12 @@ void AmsState::deinit_subjects() {
 }
 
 void AmsState::init_backend_from_hardware(const helix::PrinterDiscovery& hardware,
-                                          MoonrakerAPI* api, MoonrakerClient* client) {
+                                          IMoonrakerAPI* api, IMoonrakerClient* client) {
     init_backends_from_hardware(hardware, api, client);
 }
 
 void AmsState::init_backends_from_hardware(const helix::PrinterDiscovery& hardware,
-                                           MoonrakerAPI* api, MoonrakerClient* client) {
+                                           IMoonrakerAPI* api, IMoonrakerClient* client) {
     const auto& systems = hardware.detected_ams_systems();
     if (systems.empty()) {
         spdlog::debug("[AMS State] No AMS systems detected, skipping");
@@ -913,7 +917,7 @@ bool AmsState::is_available() const {
     return primary && primary->get_type() != AmsType::NONE;
 }
 
-void AmsState::set_moonraker_api(MoonrakerAPI* api) {
+void AmsState::set_moonraker_api(IMoonrakerAPI* api) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     api_ = api;
     last_synced_spoolman_id_ = 0; // Reset tracking on API change
