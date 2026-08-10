@@ -152,23 +152,22 @@ TEST_CASE_METHOD(LVGLTestFixture,
 TEST_CASE_METHOD(LVGLTestFixture,
                  "TempGraphOverlay: init_subjects publishes nothing for the destructor to leak",
                  "[temp_graph_overlay]") {
-    // TempGraphOverlay::init_subjects() publishes exactly one subject:
-    // temp_graph_mode, added by the declarative-mode refactor (5d3d26796).
-    // Everything else the graph observes lives in TempGraphController, which the
-    // destructor drops with controller_.reset().
+    // TempGraphOverlay::init_subjects() is init_subjects_guarded([]() {}) - it
+    // registers no subjects at all. Everything the graph observes lives in
+    // TempGraphController, which the destructor drops with controller_.reset().
     //
-    // Asserting "the destructor did not crash" checks nothing. What IS checkable
-    // is that every subject the overlay publishes is also torn down: the count
-    // must rise by exactly one while the overlay is alive and return to the
-    // baseline after it dies. Add a second subject without deinit coverage and
-    // the post-scope check goes red.
+    // So there is no per-subject teardown to check here, and asserting "the
+    // destructor did not crash" checks nothing. What IS checkable is the premise:
+    // the overlay publishes zero subjects. If someone adds one, this goes red and
+    // the destructor coverage has to be written to match - the destructor cannot
+    // deinit a subject nobody wrote code to deinit.
     const size_t before = SubjectDebugRegistry::instance().list_all().size();
 
     {
         TempGraphOverlay overlay;
         overlay.init_subjects();
         REQUIRE(overlay.are_subjects_initialized());
-        REQUIRE(SubjectDebugRegistry::instance().list_all().size() == before + 1);
+        REQUIRE(SubjectDebugRegistry::instance().list_all().size() == before);
         // Destructor runs here.
     }
 
