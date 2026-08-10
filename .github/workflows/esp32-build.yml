@@ -31,9 +31,8 @@ jobs:
             test -f managed_components/jkent__frogfs/tools/mkfrogfs.py
             python3 ../../scripts/esp32_stage_assets.py
             python3 -m venv /tmp/esp32pack-venv
-            . /tmp/esp32pack-venv/bin/activate
-            pip install --quiet pyyaml
-            python3 ../../scripts/esp32_pack_assets.py
+            /tmp/esp32pack-venv/bin/pip install --quiet pyyaml
+            /tmp/esp32pack-venv/bin/python ../../scripts/esp32_pack_assets.py
             idf.py build
       - name: Size budget gate
         run: |
