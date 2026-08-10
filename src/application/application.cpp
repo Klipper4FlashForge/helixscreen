@@ -54,6 +54,7 @@
 #ifdef HELIX_ENABLE_REMOTE_CONTROL
 #include "remote_control_server.h"
 #endif
+#include "audio_settings_manager.h"
 #include "rpc_error_correlation.h"
 #include "screenshot.h"
 #include "sensor_state.h"
@@ -806,6 +807,11 @@ int Application::run(int argc, char** argv) {
     // to show sound settings even without a Klipper beeper output_pin.
     SoundManager::instance().initialize();
     SoundManager::instance().play("startup", SoundPriority::EVENT);
+
+    // Backend is now picked: seed the audio-device-available subject so the
+    // Display/Sound overlay's device-row binding resolves correctly. Subjects
+    // init before SoundManager, so the value is stale until this refresh.
+    AudioSettingsManager::instance().refresh_audio_device_available();
 
     // Show sound settings immediately if a local backend exists,
     // without waiting for hardware discovery / Klipper connection.
