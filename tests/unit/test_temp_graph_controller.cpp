@@ -464,6 +464,11 @@ TEST_CASE_METHOD(TempGraphControllerFixture,
     auto& ps = get_printer_state();
     auto& queue = helix::ui::UpdateQueue::instance();
 
+    // PrinterState is a process-global here and other cases discover tools into
+    // it, so reset to the pre-discovery state this case is about.
+    ps.init_extruders({});
+    queue.drain();
+
     // Given: a graph built BEFORE discovery — "extruder1" does not exist yet
     REQUIRE(ps.get_extruder_temp_subject("extruder1") == nullptr);
 

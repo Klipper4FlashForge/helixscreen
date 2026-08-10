@@ -339,14 +339,33 @@ void TempGraphController::setup_observers() {
         return;
     }
 
-    int unresolved = 0;
+    // Track the two discovery sources separately. Watching a source we have no
+    // series for is not just wasted work: reaching for
+    // TemperatureSensorManager::instance() constructs that singleton (and
+    // registers its subjects) on first touch, which shows up as a subject leak
+    // to any test measuring the registry around an unrelated graph.
+    int unresolved_extruder = 0;
+    int unresolved_sensor = 0;
+
+    // Auxiliary sensors are whatever does not route to the bed, chamber, or
+    // extruder subjects in attach_series_observers().
+    auto is_sensor_series = [](const std::string& n) {
+        return n != "heater_bed" && n.rfind("heater_generic", 0) != 0 &&
+               n.rfind("temperature_fan", 0) != 0 && n.rfind("extruder", 0) != 0;
+    };
+
     for (size_t i = 0; i < series_.size(); ++i) {
         // A provisional binding counts as unresolved: it is producing data, but
         // from a stand-in subject that discovery will replace.
         if (!attach_series_observers(i) || series_[i].provisional) {
-            ++unresolved;
+            if (is_sensor_series(series_[i].klipper_name)) {
+                ++unresolved_sensor;
+            } else {
+                ++unresolved_extruder;
+            }
         }
     }
+    const int unresolved = unresolved_extruder + unresolved_sensor;
 
     // A series whose subject did not exist yet has no observer and would sit
     // frozen on backfilled history for the whole session — the home temp_graph
@@ -359,25 +378,29 @@ void TempGraphController::setup_observers() {
         spdlog::debug("[TempGraphController] {} of {} series unresolved — watching discovery",
                       unresolved, series_.size());
 
-        if (auto* extruder_version = ps.get_extruder_version_subject()) {
-            discovery_observer_ = observe_int_sync<TempGraphController>(
-                extruder_version, this,
-                [token = lifetime_.token(), gen = generation_](TempGraphController* self, int) {
-                    if (token.expired() || gen != self->generation_)
-                        return;
-                    self->resolve_pending_series();
-                });
+        if (unresolved_extruder > 0) {
+            if (auto* extruder_version = ps.get_extruder_version_subject()) {
+                discovery_observer_ = observe_int_sync<TempGraphController>(
+                    extruder_version, this,
+                    [token = lifetime_.token(), gen = generation_](TempGraphController* self, int) {
+                        if (token.expired() || gen != self->generation_)
+                            return;
+                        self->resolve_pending_series();
+                    });
+            }
         }
 
-        auto& sensor_mgr = sensors::TemperatureSensorManager::instance();
-        if (auto* sensor_count = sensor_mgr.get_sensor_count_subject()) {
-            sensor_discovery_observer_ = observe_int_sync<TempGraphController>(
-                sensor_count, this,
-                [token = lifetime_.token(), gen = generation_](TempGraphController* self, int) {
-                    if (token.expired() || gen != self->generation_)
-                        return;
-                    self->resolve_pending_series();
-                });
+        if (unresolved_sensor > 0) {
+            auto& sensor_mgr = sensors::TemperatureSensorManager::instance();
+            if (auto* sensor_count = sensor_mgr.get_sensor_count_subject()) {
+                sensor_discovery_observer_ = observe_int_sync<TempGraphController>(
+                    sensor_count, this,
+                    [token = lifetime_.token(), gen = generation_](TempGraphController* self, int) {
+                        if (token.expired() || gen != self->generation_)
+                            return;
+                        self->resolve_pending_series();
+                    });
+            }
         }
     }
 
