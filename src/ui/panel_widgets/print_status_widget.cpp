@@ -10,6 +10,7 @@
 #include "ui_panel_print_select.h"
 #include "ui_panel_print_status.h"
 #include "ui_progress_arc.h"
+#include "ui_temperature_utils.h"
 #include "ui_update_queue.h"
 #include "ui_utils.h"
 
@@ -1979,9 +1980,8 @@ void PrintStatusWidget::DetailedFormatter::update_nozzle_text() {
     // String form kept for the (unused-by-XML but test-asserted) nozzle_text
     // subject, so test_print_status_widget_tool_override.cpp still verifies
     // the pinning + auto-mode dispatch.
-    int t = cd_to_c(temp_dd);
-    int tg = cd_to_c(tgt_dd);
-    snprintf(nozzle_text_buf_, sizeof(nozzle_text_buf_), "%d / %d°C", t, tg);
+    helix::ui::temperature::format_temperature_pair(cd_to_c(temp_dd), cd_to_c(tgt_dd),
+                                                    nozzle_text_buf_, sizeof(nozzle_text_buf_));
     lv_subject_copy_string(&nozzle_text_subject_, nozzle_text_buf_);
 }
 
