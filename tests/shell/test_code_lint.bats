@@ -133,6 +133,44 @@ setup() {
     [ "$status" -ne 0 ]  # non-zero == no inline decidegree conversion found
 }
 
+# --- Concrete Moonraker types must not leak outside the network layer (Plan 3) ---
+# Every consumer of the Moonraker network layer now depends on the interfaces
+# (helix::IMoonrakerClient, IMoonrakerAPI, and the ten IXxxAPI sub-API
+# interfaces in include/i_moonraker_sub_apis.h), not the concrete classes. The
+# concretes live behind MoonrakerManager, which owns them via
+# std::unique_ptr<helix::IMoonrakerClient> / std::unique_ptr<IMoonrakerAPI> and
+# constructs them in create_client()/create_api(). Naming a concrete type
+# outside the allowlist below reintroduces a hard dependency the interface
+# split was meant to remove (mock-parity, and — for the ESP32 port — a
+# non-libhv client swapped in behind the same interface).
+#
+# The allowlist covers the network-layer implementation files themselves
+# (moonraker_client, moonraker_manager, moonraker_api + its split translation
+# units, the ten sub-API pairs, moonraker_request_tracker,
+# moonraker_discovery_sequence) and *_mock.{h,cpp} (mocks legitimately inherit
+# the concretes). It intentionally has no bare "test_" entry: this lint only
+# scans src/ and include/, so a substring that broad would silently exempt any
+# non-test path containing "test_" (e.g. a hypothetical src/foo/test_helpers.cpp)
+# — narrower and cheaper to just not have it.
+#
+# Compile-time-only exceptions NOT covered by this lint (by design, not by
+# gap): a few consumers reference concrete-class static constexpr timeouts
+# (MoonrakerAdvancedAPI::PROBING_TIMEOUT_MS, ::LEVELING_TIMEOUT_MS,
+# MoonrakerJobAPI::CANCEL_TIMEOUT_MS) and the MoonrakerAdvancedAPI::MPCResult
+# qualified-name alias. These aren't runtime polymorphism — MPCResult is
+# actually defined on IAdvancedAPI with the concrete class providing a `using`
+# alias purely so old qualified references keep resolving (see
+# include/i_moonraker_sub_apis.h and include/moonraker_advanced_api.h). The
+# ten sub-API concrete class names are deliberately left out of the grep
+# pattern below rather than allowlisting each of those consumer files, which
+# would blur the "outside the network layer" invariant this test communicates.
+
+@test "no concrete Moonraker types outside the network layer (Plan 3: interfaces are the consumer contract)" {
+    local allowlist='moonraker_client|moonraker_manager|moonraker_api|moonraker_rest_api|moonraker_file_api|moonraker_file_transfer_api|moonraker_advanced_api|moonraker_history_api|moonraker_job_api|moonraker_motion_api|moonraker_queue_api|moonraker_spoolman_api|moonraker_timelapse_api|moonraker_request_tracker|moonraker_discovery_sequence|_mock'
+    run bash -c "grep -rlE 'helix::MoonrakerClient|\bMoonrakerAPI\b' src/ include/ | grep -v -E \"$allowlist\""
+    [ "$status" -ne 0 ]  # non-zero == no concrete-type reference found outside the allowlist
+}
+
 # --- switch_printer must invalidate every per-printer cache ---
 # Per-printer state lives under /printers/<id>/ and is reached via Config::df().
 # Any component that memoizes a df()-derived value serves the PREVIOUS printer's

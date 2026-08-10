@@ -208,6 +208,22 @@ class NavigationManager {
     lv_obj_t* get_panel_widget(helix::PanelId id) const;
 
     /**
+     * @brief Register a builder for panels that are instantiated lazily.
+     *
+     * On the ESP32 firmware only the home panel is built at boot (app_layout
+     * defers the rest — see build_deferred_panel). When navigation targets a
+     * panel whose widget slot is still null, switch_to_panel_impl() invokes this
+     * builder to construct it on first use. The builder must create the panel,
+     * call setup(), and register it via replace_panel_widget() +
+     * register_panel_instance() so the slot is filled before the switch shows it.
+     * Never set on desktop (all panels are resident), so the deferred path is
+     * inert there.
+     *
+     * @param builder Callable taking the panel id (int); empty to disable.
+     */
+    void set_deferred_panel_builder(std::function<void(int)> builder);
+
+    /**
      * @brief Re-key overlay maps: swap old_widget → new_widget for the same lifecycle.
      *
      * Used by hot-reload overlay rebuild. Touches overlay_instances_,
@@ -605,6 +621,22 @@ class NavigationManager {
 
     // C++ panel instances for lifecycle dispatch (on_activate/on_deactivate)
     std::array<PanelBase*, UI_PANEL_COUNT> panel_instances_ = {};
+
+    // Lazy panel builder (ESP32 deferred-panel bring-up). Empty on desktop.
+    // Invoked by switch_to_panel_impl() when a target panel's widget slot is
+    // still null, to build it on first navigation. See set_deferred_panel_builder().
+    std::function<void(int)> deferred_panel_builder_;
+    bool building_deferred_panel_ = false; // re-entrancy guard for the builder
+    // Outermost-transition guard for the ESP32 nav busy scrim (NavTransitionScrim
+    // in ui_nav_manager.cpp): switch_to_panel_impl can cascade into
+    // handle_active_panel_change, and only the outer one owns/tears down a scrim.
+    bool nav_scrim_active_ = false;
+
+    // If panel_id has no widget yet and a deferred builder is set, build it now
+    // (first-navigation lazy bring-up). No-op on desktop (builder unset) and for
+    // already-built panels. Guarded against re-entrancy. Called from both
+    // navigation choke points (switch_to_panel_impl + handle_active_panel_change).
+    void ensure_panel_built(int panel_id);
 
     // C++ overlay instances for lifecycle dispatch (on_activate/on_deactivate)
     std::unordered_map<lv_obj_t*, IPanelLifecycle*> overlay_instances_;

@@ -41,7 +41,12 @@
   <translation tag="0 = computed" zh="0 = 自动计算"/>
   <translation tag="0 events queued" zh="0 个事件已排队"/>
   <translation tag="0 slots" zh="{0} 个料仓"/>
+  <translation tag="0.0000 J/K"/>
+  <translation tag="0.000000 K/s/K"/>
+  <translation tag="0.000000 W/K"/>
   <translation tag="0.4-2mm direct drive, 4-6mm bowden" zh="直驱 0.4-2mm，远程挤出 4-6mm"/>
+  <translation tag="0h"/>
+  <translation tag="0m"/>
   <translation tag="0°" zh="0°"/>
   <translation tag="1 day ago" zh="1天前"/>
   <translation tag="1 event queued" zh="1 个事件排队中"/>
@@ -88,6 +93,7 @@
   <translation tag="ABS" zh="ABS"/>
   <translation tag="ACCELEROMETERS" zh="加速度计"/>
   <translation tag="ACE Moonraker bridge not found. Install ace_status.py for full support." zh="未找到 ACE Moonraker 桥接。请安装 ace_status.py 以获得完整支持。"/>
+  <translation tag="ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support." zh="未找到 ACE Moonraker 桥接。请从 ValgACE 安装 ace_status.py 以获得完整支持。"/>
   <translation tag="ACTIONS" zh="操作"/>
   <translation tag="ADXL" zh="ADXL"/>
   <translation tag="AFC" zh="AFC"/>
@@ -161,6 +167,7 @@
   <translation tag="An error occurred during measurement." zh="测量时发生错误。"/>
   <translation tag="An error occurred during probing." zh="探测过程中发生错误。"/>
   <translation tag="An error occurred while loading filament." zh="加载耗材时发生错误。"/>
+  <translation tag="An error occurred."/>
   <translation tag="An internal error occurred. The app continues running — please send a debug bundle from Settings &gt; About if it repeats." zh="发生了内部错误。应用程序继续运行 — 如果反复出现，请从设置 &gt; 关于发送调试捆绑包。"/>
   <translation tag="An unexpected printer error occurred." zh="发生了意外的打印机错误。"/>
   <translation tag="An update is available" zh="有可用更新"/>
@@ -873,6 +880,10 @@
   <translation tag="Filament loaded" zh="耗材已加载"/>
   <translation tag="Filament operation failed" zh="耗材操作失败"/>
   <translation tag="Filament operation timed out" zh="耗材操作超时"/>
+  <translation tag="Filament ran out - nothing at the toolhead and the print is paused."/>
+  <translation tag="Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume."/>
+  <translation tag="Filament ran out at the toolhead"/>
+  <translation tag="Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume."/>
   <translation tag="Filament runout" zh="耗材用尽"/>
   <translation tag="Filament runout and motion detection sensors" zh="耗材用尽和运动检测传感器"/>
   <translation tag="Filament saved" zh="耗材已保存"/>
@@ -1097,6 +1108,7 @@
   <translation tag="Klipper: " zh="Klipper: "/>
   <translation tag="Klippy Errors" zh="Klippy 错误"/>
   <translation tag="Klippy Shutdowns" zh="Klippy 关闭次数"/>
+  <translation tag="LED"/>
   <translation tag="LED SELECTION" zh="LED 选择"/>
   <translation tag="LED Settings" zh="LED 设置"/>
   <translation tag="LED Strip" zh="LED 灯带"/>
@@ -1117,10 +1129,12 @@
   <translation tag="Language" zh="语言"/>
   <translation tag="Language, theme, brightness, and sound" zh="语言、主题、亮度和声音"/>
   <translation tag="Last" zh="最近"/>
+  <translation tag="Last 7 days"/>
   <translation tag="Last print cancelled" zh="上次打印已取消"/>
   <translation tag="Last print failed" zh="上次打印失败"/>
   <translation tag="Later" zh="稍后"/>
   <translation tag="Layer" zh="层"/>
+  <translation tag="Layer 0 / 0"/>
   <translation tag="Layer Height" zh="层高"/>
   <translation tag="Layer Macro captures one frame per layer change. Best for most prints." zh="层变化宏在每次层变化时捕获一帧。适合大多数打印。"/>
   <translation tag="Layer mode captures one frame per layer change. Best for most prints." zh="层模式在每次换层时捕获一帧。适用于大多数打印。"/>
@@ -1323,6 +1337,7 @@
   <translation tag="No Spools" zh="无料盘"/>
   <translation tag="No USB printer detected" zh="未检测到 USB 打印机"/>
   <translation tag="No USB printers found" zh="未找到 USB 打印机"/>
+  <translation tag="No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own."/>
   <translation tag="No buffer data available" zh="无可用缓冲区数据"/>
   <translation tag="No camera — use USB barcode scanner" zh="无摄像头 — 请使用 USB 条码扫描器"/>
   <translation tag="No changes selected.\n\nClick Cancel to close." zh="未选择任何更改。\n\n点击取消以关闭。"/>
@@ -1363,6 +1378,7 @@
   <translation tag="No prints yet" zh="暂无打印记录"/>
   <translation tag="No profiles available" zh="无可用配置"/>
   <translation tag="No sensors detected" zh="未检测到传感器"/>
+  <translation tag="No slot currently matches."/>
   <translation tag="No spool assigned" zh="未分配料盘"/>
   <translation tag="No spools found — tap to retry" zh="未找到料盘 - 点击重试"/>
   <translation tag="No tape detected in printer" zh="打印机中未检测到标签带"/>
@@ -1384,6 +1400,7 @@
   <translation tag="Not found (use phone app)" zh="未找到 (使用手机应用)"/>
   <translation tag="Not in your spools? Set it up" zh="不在您的料盘中？立即设置"/>
   <translation tag="Not now" zh="暂不"/>
+  <translation tag="Not yet available on this display"/>
   <translation tag="Not yet calibrated" zh="尚未校准"/>
   <translation tag="Notes" zh="备注"/>
   <translation tag="Notes (optional)" zh="备注（可选）"/>
@@ -1422,6 +1439,7 @@
   <translation tag="Off:" zh="关:"/>
   <translation tag="On" zh="开"/>
   <translation tag="On and Off macros must be different" zh="开和关的宏必须不同"/>
+  <translation tag="On your phone or computer, join the WiFi network \&quot;{}\&quot;, then open http://{} in a browser to finish setup."/>
   <translation tag="On/Off" zh="开/关"/>
   <translation tag="On/Off (state-aware)" zh="开/关（状态跟踪）"/>
   <translation tag="On:" zh="开:"/>
@@ -1634,6 +1652,7 @@
   <translation tag="Probing Bed..." zh="正在探测热床..."/>
   <translation tag="Probing Failed" zh="探测失败"/>
   <translation tag="Proceed" zh="继续"/>
+  <translation tag="Processing..."/>
   <translation tag="Profile deleted" zh="配置文件已删除"/>
   <translation tag="Profile name (e.g., default)" zh="配置名称（例如：default）"/>
   <translation tag="Profile renamed" zh="配置文件已重命名"/>
@@ -1904,6 +1923,7 @@
   <translation tag="Set " zh="设置 "/>
   <translation tag="Set Active" zh="设为活动"/>
   <translation tag="Set PIN" zh="设置 PIN"/>
+  <translation tag="Set Up WiFi"/>
   <translation tag="Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope" zh="将手机频闪应用设置为 %.1f Hz 并对准皮带。调整直到皮带看起来静止不动。\n\n推荐应用:\n  Android: Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope"/>
   <translation tag="Set local timezone for time display" zh="设置本地时区以显示时间"/>
   <translation tag="Set logging verbosity for troubleshooting" zh="设置日志详细级别以便故障排除"/>
@@ -1932,6 +1952,9 @@
   <translation tag="Show text labels on icon-only home screen widgets" zh="在仅图标的主屏小组件上显示文字标签"/>
   <translation tag="Show up/down buttons on long lists" zh="在长列表中显示上/下按钮"/>
   <translation tag="Show whatever curves you last had visible on the full graph." zh="显示您上次在完整图表上可见的曲线。"/>
+  <translation tag="Showing loaded colors"/>
+  <translation tag="Showing sliced colors"/>
+  <translation tag="Showing the 50 newest files. See more in the printer&apos;s web UI."/>
   <translation tag="Shutdown" zh="关机"/>
   <translation tag="Shutdown / Reboot" zh="关机 / 重启"/>
   <translation tag="Shutdown failed" zh="关机失败"/>
@@ -2059,6 +2082,7 @@
   <translation tag="System detected" zh="检测到系统"/>
   <translation tag="T%d has no filament loaded — this print will run out." zh="T%d 未加载耗材 —— 此次打印将会耗尽耗材。"/>
   <translation tag="T%d needs filament in slot %d, which is empty — this print will run out." zh="T%d 需要 %d 号料仓中的耗材，但该料仓为空 —— 此次打印将会耗尽耗材。"/>
+  <translation tag="T0"/>
   <translation tag="TD-1 filament color detection" zh="TD-1 耗材颜色检测"/>
   <translation tag="TEMPERATURE SENSORS" zh="温度传感器"/>
   <translation tag="THEME COLORS" zh="主题颜色"/>
@@ -2087,6 +2111,7 @@
   <translation tag="Temp °C (%d–%d)" zh="温度 °C (%d–%d)"/>
   <translation tag="Temperature" zh="温度"/>
   <translation tag="Temperature Graph Config" zh="温度图表配置"/>
+  <translation tag="Temperature control has been optimized."/>
   <translation tag="Temperatures" zh="温度"/>
   <translation tag="Temperatures saved" zh="温度已保存"/>
   <translation tag="Template" zh="模板"/>
@@ -2270,6 +2295,7 @@
   <translation tag="Uptime" zh="运行时长"/>
   <translation tag="Use Android native keyboard for text input" zh="使用 Android 原生键盘进行文本输入"/>
   <translation tag="Use G10/G11 firmware retraction" zh="使用 G10/G11 固件回抽"/>
+  <translation tag="Use Settings Instead"/>
   <translation tag="Use printer type to select image" zh="使用打印机类型选择图片"/>
   <translation tag="VM Peak" zh="虚拟内存峰值"/>
   <translation tag="VM Size" zh="虚拟内存大小"/>
@@ -2394,7 +2420,9 @@
   <translation tag="Z:" zh="Z:"/>
   <translation tag="Z: 0.000" zh="Z: 0.000"/>
   <translation tag="\&quot;%s\&quot; failed to load" zh="\&quot;%s\&quot; 加载失败"/>
+  <translation tag="backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present."/>
   <translation tag="bed" zh="热床"/>
+  <translation tag="benchy.gcode"/>
   <translation tag="by Preston Brown" zh="by Preston Brown"/>
   <translation tag="chamber heater" zh="腔体加热器"/>
   <translation tag="complete" zh="完成"/>
@@ -2414,8 +2442,11 @@
   <translation tag="fans" zh="风扇"/>
   <translation tag="heated bed" zh="热床"/>
   <translation tag="idle" zh="空闲"/>
+  <translation tag="is installed but its backup-spool switching is turned off, so no automatic swap will happen."/>
+  <translation tag="is installed, but its backup-spool setting could not be read - do not count on an automatic swap."/>
   <translation tag="layers" zh="层"/>
   <translation tag="left" zh="剩余"/>
+  <translation tag="matches."/>
   <translation tag="mm before clog" zh="毫米后堵料"/>
   <translation tag="needs" zh="需要"/>
   <translation tag="not detected" zh="未检测到"/>

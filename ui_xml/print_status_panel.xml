@@ -351,11 +351,18 @@
                 width="100%" height="content" style_pad_left="#space_md" style_pad_right="#space_md"
                 style_pad_top="#space_xs" flex_flow="row" style_flex_main_place="space_between"
                 style_flex_cross_place="center" scrollable="false">
-          <!-- Filament Sensor Status (hidden if no sensors) -->
+          <!-- Filament Sensor Status — the no-AMS form of the runout glyph.
+               Stands down whenever ams_status_row is showing, which carries the
+               same glyph next to its lane number; without the ams_current_tool
+               term the row would render two filament icons on an AMS printer,
+               and without the "ge 0" term an AMS printer between lanes (no
+               active tool, so ams_status_row hides itself) would show no runout
+               state at all. -->
           <lv_obj name="filament_status_row"
                   width="content" height="content" style_pad_all="0" flex_flow="row" style_flex_cross_place="center"
                   style_pad_gap="#space_sm">
-            <bind_flag_if_eq subject="filament_sensor_count" flag="hidden" ref_value="0"/>
+            <bind_flag_if cond="filament_sensor_count eq 0 or (ams_slot_count gt 0 and ams_current_tool ge 0)"
+                          flag="hidden"/>
             <!-- Scoped to the active print's tools (lane truth) — see FIX B. -->
             <filament_sensor_indicator subject="filament_runout_scoped"/>
           </lv_obj>
@@ -372,7 +379,7 @@
                   width="content" height="content" style_pad_all="0" flex_flow="row" style_flex_cross_place="center"
                   style_pad_gap="#space_sm">
             <bind_flag_if_eq subject="ams_slot_count" flag="hidden" ref_value="0"/>
-            <ams_current_tool name="ams_current_tool_indicator"/>
+            <ams_current_tool name="ams_current_tool_indicator" runout_subject="filament_runout_scoped"/>
           </lv_obj>
         </lv_obj>
 

@@ -187,7 +187,7 @@ class DebugBundleCollector {
     static nlohmann::json moonraker_get(const std::string& base_url, const std::string& endpoint,
                                         int timeout_sec = 10);
 
-    /// Get the Moonraker HTTP base URL (from MoonrakerAPI if connected)
+    /// Get the Moonraker HTTP base URL (from IMoonrakerAPI if connected)
     static std::string get_moonraker_url();
 
     /// Fetch the tail of a log file from Moonraker using HTTP Range requests

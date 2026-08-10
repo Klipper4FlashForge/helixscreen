@@ -1,0 +1,25 @@
+name: esp32-build
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Apply submodule patches
+        run: make apply-patches
+      - name: Build firmware
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5
+          target: esp32s3
+          path: firmware/helixscreen-esp32
+      - name: Size budget gate
+        run: |
+          python3 scripts/check_esp32_size.py \
+            firmware/helixscreen-esp32/build/helixscreen_esp32.bin \
+            firmware/helixscreen-esp32/size_budget.json

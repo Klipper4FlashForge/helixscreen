@@ -2357,3 +2357,192 @@ TEST_CASE("FillUnsetOnly mirror does not overwrite user-locked fields",
         CHECK_FALSE(overrides[1].user_locked_material);
     }
 }
+
+// ============================================================================
+// #1250 — CFS runout surface (auto-refill give-up messages)
+//
+// The K2's runout path always pauses first (pause_on_runout on
+// [filament_switch_sensor filament_sensor]) and then runs
+// BOX_CHECK_MATERIAL_REFILL, which either swaps and resumes or gives up with a
+// respond_info line. Those give-up lines are the only runout signal HelixScreen
+// gets, and they arrive as `// `-prefixed responses, not `!!`.
+//
+// See docs/devel/printers/CREALITY_K2_SUPPORT.md § "Runout and auto-refill".
+// ============================================================================
+
+namespace {
+// Box payload with the runout latch (filament_useup) in a chosen state, so the
+// weak-hint fallback tier has real backend state to corroborate against.
+json make_runout_box(int filament_useup) {
+    json box = json::parse(R"({
+        "state": "connect",
+        "filament": 1,
+        "auto_refill": 1,
+        "enable": 1,
+        "map": {"T1A": "T1A", "T1B": "T1B", "T1C": "T1C", "T1D": "T1D"},
+        "T1": {
+            "state": "connect",
+            "filament": "None",
+            "temperature": "27",
+            "dry_and_humidity": "35",
+            "version": "1.1.3",
+            "sn": "SERIAL",
+            "mode": "0",
+            "vender": ["unknown", "unknown", "unknown", "unknown"],
+            "remain_len": ["100", "0", "46", "50"],
+            "color_value": ["0FFFFFF", "01A1A1A", "01A1A1A", "01A1A1A"],
+            "material_type": ["101001", "101001", "101001", "101001"],
+            "change_color_num": ["0", "0", "-1", "-1"]
+        }
+    })");
+    box["filament_useup"] = filament_useup;
+    return box;
+}
+
+helix::ClassifyContext paused_ctx() {
+    helix::ClassifyContext ctx;
+    ctx.is_paused = true;
+    return ctx;
+}
+} // namespace
+
+TEST_CASE("CFS runout: 'no identical supplies' raises one runout fault", "[ams][cfs][1250]") {
+    CfsRemapHelper backend;
+
+    auto ev = backend.classify_error("// no identical supplies", paused_ctx());
+    REQUIRE(ev.has_value());
+    CHECK(ev->source == helix::ErrorSource::CFS);
+    CHECK(ev->severity == helix::ErrorSeverity::CRITICAL);
+    CHECK(ev->sticky);
+    // Titled, so modal_title_for() does not relabel it "Filament System Error".
+    CHECK(ev->title == std::string("Filament runout"));
+    // The user is told the CFS found nothing to switch to, not just "error".
+    CHECK(ev->detail.find("no matching spool") != std::string::npos);
+    // Raw firmware wording is preserved for cross-channel dedup, `//` stripped.
+    CHECK(ev->raw_detail == "no identical supplies");
+
+    // Exactly the two vetted actions, in order.
+    REQUIRE(ev->recovery_actions.size() == 2);
+    CHECK(ev->recovery_actions[0].gcode == "RESUME");
+    CHECK(ev->recovery_actions[0].style == "primary");
+    // Resuming extrudes on the next move — a cold nozzle fails the same way the
+    // print did.
+    CHECK(ev->recovery_actions[0].needs_hot_nozzle);
+    // NOT BOX_ERROR_RESUME_PROCESS: that only drives the box half and leaves the
+    // job paused (it is reached FROM RESUME via RESUME_EXTERNAL_PROCESS).
+    CHECK(ev->recovery_actions[0].gcode != AmsBackendCfs::recover_gcode());
+
+    CHECK(ev->recovery_actions[1].gcode == AmsBackendCfs::reset_gcode());
+    CHECK(ev->recovery_actions[1].gcode == "BOX_ERROR_CLEAR");
+    // State only — must stay tappable on a cold nozzle.
+    CHECK_FALSE(ev->recovery_actions[1].needs_hot_nozzle);
+}
+
+TEST_CASE("CFS runout: 'disable material automatic refill' raises one runout fault",
+          "[ams][cfs][1250]") {
+    CfsRemapHelper backend;
+
+    auto ev = backend.classify_error("// disable material automatic refill", paused_ctx());
+    REQUIRE(ev.has_value());
+    CHECK(ev->source == helix::ErrorSource::CFS);
+    CHECK(ev->severity == helix::ErrorSeverity::CRITICAL);
+    CHECK(ev->title == std::string("Filament runout"));
+    // This branch must say WHY nothing happened — auto-refill is switched off.
+    CHECK(ev->detail.find("Auto-refill is off") != std::string::npos);
+    CHECK(ev->raw_detail == "disable material automatic refill");
+    REQUIRE(ev->recovery_actions.size() == 2);
+    CHECK(ev->recovery_actions[0].gcode == "RESUME");
+    CHECK(ev->recovery_actions[1].gcode == "BOX_ERROR_CLEAR");
+}
+
+TEST_CASE("CFS runout: matcher survives the sentence being reworded", "[ams][cfs][1250]") {
+    CfsRemapHelper backend;
+
+    // Fragment match, not whole-sentence: these are untranslated literals from
+    // one firmware build and the surrounding words are the least durable part.
+    SECTION("no-match branch, alternate phrasing") {
+        auto ev =
+            backend.classify_error("// There are no identical supplies available!", paused_ctx());
+        REQUIRE(ev.has_value());
+        CHECK(ev->detail.find("no matching spool") != std::string::npos);
+    }
+    SECTION("refill-off branch, alternate phrasing") {
+        auto ev = backend.classify_error("// Material automatic refill is disabled", paused_ctx());
+        REQUIRE(ev.has_value());
+        CHECK(ev->detail.find("Auto-refill is off") != std::string::npos);
+    }
+    SECTION("bare line with no // prefix still matches") {
+        auto ev = backend.classify_error("no identical supplies", paused_ctx());
+        REQUIRE(ev.has_value());
+        CHECK(ev->raw_detail == "no identical supplies");
+    }
+}
+
+TEST_CASE("CFS runout: weak-hint fallback needs the box latch AND a pause", "[ams][cfs][1250]") {
+    CfsRemapHelper backend;
+
+    // Wording neither matcher recognizes, but the line is about refilling.
+    const std::string line = "// material refill aborted";
+
+    SECTION("latch clear: not enough evidence, defer to the generic classifier") {
+        CfsTestAccess::handle_status(backend, make_cfs_notification(make_runout_box(0)));
+        CHECK_FALSE(backend.classify_error(line, paused_ctx()).has_value());
+    }
+
+    SECTION("latch set + paused: fires, surfacing the firmware's own words") {
+        CfsTestAccess::handle_status(backend, make_cfs_notification(make_runout_box(1)));
+        auto ev = backend.classify_error(line, paused_ctx());
+        REQUIRE(ev.has_value());
+        // Weaker evidence, so it must NOT claim which give-up path ran.
+        CHECK(ev->detail == "material refill aborted");
+        CHECK(ev->recovery_actions.size() == 2);
+    }
+
+    SECTION("latch set but not paused: still nothing") {
+        CfsTestAccess::handle_status(backend, make_cfs_notification(make_runout_box(1)));
+        helix::ClassifyContext idle_ctx;
+        idle_ctx.is_paused = false;
+        CHECK_FALSE(backend.classify_error(line, idle_ctx).has_value());
+    }
+}
+
+TEST_CASE("CFS runout: an unpaused give-up line is not a runout", "[ams][cfs][1250]") {
+    CfsRemapHelper backend;
+    helix::ClassifyContext idle_ctx; // is_paused = false
+
+    // The firmware pauses BEFORE running BOX_CHECK_MATERIAL_REFILL, so an
+    // unpaused occurrence is a human echoing the words or poking the macro.
+    CHECK_FALSE(backend.classify_error("// no identical supplies", idle_ctx).has_value());
+    CHECK_FALSE(
+        backend.classify_error("// disable material automatic refill", idle_ctx).has_value());
+}
+
+TEST_CASE("CFS runout: `!!` lines stay with the generic key8xx classifier", "[ams][cfs][1250]") {
+    CfsRemapHelper backend;
+    // The box latch is set, so nothing but the `!!` gate can be refusing these.
+    CfsTestAccess::handle_status(backend, make_cfs_notification(make_runout_box(1)));
+
+    // key840 keeps its existing generic decode + hardcoded "Reset CFS" action.
+    // Claiming it here would double-surface (a backend modal AND the generic one)
+    // or silently replace the coded decode.
+    CHECK_FALSE(
+        backend.classify_error(R"(!! {"code":"key840","values":[]})", paused_ctx()).has_value());
+
+    // Even a `!!` that happens to carry the give-up wording is refused — the
+    // inverted gate is unconditional, so the two channels cannot both claim it.
+    CHECK_FALSE(backend.classify_error("!! no identical supplies", paused_ctx()).has_value());
+    CHECK_FALSE(backend.classify_error("!! material refill aborted", paused_ctx()).has_value());
+}
+
+TEST_CASE("CFS runout: ordinary console chatter is ignored", "[ams][cfs][1250]") {
+    CfsRemapHelper backend;
+    CfsTestAccess::handle_status(backend, make_cfs_notification(make_runout_box(1)));
+
+    // A paused print with the latch set is the state most likely to produce a
+    // false positive, so that is the state these are checked in.
+    for (const char* line : {"ok", "// echo: busy", "// Klipper state: Ready",
+                             "// probe at 10.000,10.000 is z=0.100", ""}) {
+        CAPTURE(line);
+        CHECK_FALSE(backend.classify_error(line, paused_ctx()).has_value());
+    }
+}

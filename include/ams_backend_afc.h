@@ -154,12 +154,12 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /**
      * @brief Construct AFC backend
      *
-     * @param api Pointer to MoonrakerAPI (for sending G-code commands)
-     * @param client Pointer to helix::MoonrakerClient (for subscribing to updates)
+     * @param api Pointer to IMoonrakerAPI (for sending G-code commands)
+     * @param client Pointer to helix::IMoonrakerClient (for subscribing to updates)
      *
      * @note Both pointers must remain valid for the lifetime of this backend.
      */
-    AmsBackendAfc(MoonrakerAPI* api, helix::MoonrakerClient* client);
+    AmsBackendAfc(IMoonrakerAPI* api, helix::IMoonrakerClient* client);
     ~AmsBackendAfc() override;
 
     /**
@@ -486,6 +486,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcPerSlotLoadedHelper;
     friend class AfcCurrentErrorHelper;
     friend class AfcLaneDataClearHelper;
+    friend class AfcFaultEventCharHelper;
     friend class AfcFeatureLevelHelper;
     friend class AfcFixtureHelper;
     friend class AmsBackendAfcEndlessSpoolHelper;
@@ -793,7 +794,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
      * send_jsonrpc delivers the full JSON-RPC envelope, so the payload lives at
      * result.value. Strict about that shape: a payload is an arbitrary object,
      * so it cannot be told apart from an envelope in general. Replies obtained
-     * via MoonrakerAPI::database_get_item are already unwrapped and must not be
+     * via IMoonrakerAPI::database_get_item are already unwrapped and must not be
      * passed here.
      *
      * @return the payload, or a null json when absent
@@ -955,9 +956,10 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     [[nodiscard]] bool recovery_attribution_valid_unlocked() const;
 
     /// Build the applicable recovery actions for an AFC pause/jam, reading live
-    /// toolhead state. Caller holds mutex_. Offers Unload only when the toolhead
-    /// is loaded; Eject only when empty and a lane is selected.
-    [[nodiscard]] std::vector<helix::RecoveryAction> build_recovery_actions() const;
+    /// toolhead state. Caller holds mutex_ (the base declares that contract;
+    /// mutex_ is non-recursive, so this must not lock). Offers Unload only when
+    /// the toolhead is loaded; Eject only when empty and a lane is selected.
+    [[nodiscard]] std::vector<helix::RecoveryAction> build_recovery_actions() const override;
 
     /**
      * @brief Execute a G-code command with user-facing toast notifications

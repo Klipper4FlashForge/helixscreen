@@ -225,7 +225,10 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
 
         lv_obj_t* btn_scan_qr = lv_obj_find_by_name(menu_obj, "btn_scan_qr");
         if (btn_scan_qr && has_spoolman) {
+#if !defined(HELIX_PLATFORM_ESP32)
+            // No camera on the v1 Core+AMS cut — keep Scan QR hidden (default).
             lv_obj_clear_flag(btn_scan_qr, LV_OBJ_FLAG_HIDDEN);
+#endif
         }
 
         // No dropdowns for external spool
@@ -413,7 +416,10 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
     }
     lv_obj_t* btn_scan_qr = lv_obj_find_by_name(menu_obj, "btn_scan_qr");
     if (btn_scan_qr && has_spoolman) {
+#if !defined(HELIX_PLATFORM_ESP32)
+        // No camera on the v1 Core+AMS cut — keep Scan QR hidden (default).
         lv_obj_clear_flag(btn_scan_qr, LV_OBJ_FLAG_HIDDEN);
+#endif
     }
 
     // Configure dropdowns based on backend capabilities

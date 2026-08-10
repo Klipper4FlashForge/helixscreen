@@ -1,5 +1,16 @@
 # Macro Panel Edit Mode Implementation Plan
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions.**
+> **Status: SHIPPED.** The 48 `- [ ]` boxes were never ticked and do not mean the work is
+> outstanding. Evidence: the hidden-macros setting and the panel edit mode, covered by
+> `tests/unit/test_hidden_macros_settings.cpp` and
+> `tests/unit/test_ui_panel_macros_edit_mode.cpp` - not the `test_settings_manager.cpp` /
+> `test_xml_unregister_subject.cpp` files this plan names, which were never created.
+>
+> Code line numbers and file paths below may have drifted. Follow the **symbol**, not
+> the number, and verify every predicate against current code before relying on
+> anything here.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Long-press a macro to enter an edit mode where every macro has a visibility checkbox; a header Save button persists the hidden set per-printer to `settings.json`; rows are rendered declaratively via reactive `<repeat>` over a reclaim-on-close indexed subject pool.

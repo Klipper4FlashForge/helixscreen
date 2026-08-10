@@ -1,5 +1,21 @@
 # Backend Error-Recovery Overhaul — L2+ Handoff
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions.** This handoff describes a
+> moment in 2026-06-16 and its "NEXT / TODO / BLOCKED" markers are all expired:
+>
+> - **L2 shipped.** `GcodeNarrationRouter` + `AmsBackend::toolchange_phase_template()` + the
+>   `toolchange_step` subject + the template-driven bar in `src/ui/ui_ams_sidebar.cpp` all
+>   exist. S1 and S2 are closed. The row below still reads ⬜ NEXT.
+> - **The merge block is long resolved.** `feature/backend-error-recovery` is in `main`, and
+>   the worktree and branch it names are gone.
+> - **L3 (R2 / P1 / P2) was not re-verified** when this banner was written. Treat those three
+>   rows as unknown, not as TODO.
+> - **There is no class named `ErrorCenter`** (L0 row). It shipped as `GcodeErrorRouter`
+>   (`src/application/gcode_error_router.cpp`) plus `RecoveryModalPresenter`
+>   (`src/ui/recovery_modal_presenter.cpp`); grepping for `ErrorCenter` finds nothing.
+>
+> Verify against current code before acting on anything here.
+
 **Date:** 2026-06-16 · **Branch:** `feature/backend-error-recovery` (worktree `.worktrees/backend-error-recovery`)
 **Read first:** `2026-06-16-backend-error-recovery-source.md` (master spec + 12-callout registry), `-L1-spec.md`, `-L1-plan.md`, memory `project_afc_error_recovery_overhaul.md`.
 

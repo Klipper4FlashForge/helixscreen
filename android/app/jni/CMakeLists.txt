@@ -198,7 +198,29 @@ file(GLOB QUIRC_SOURCES "${PROJECT_ROOT}/lib/quirc/lib/*.c")
 
 add_library(main SHARED ${HELIX_SOURCES} ${FONT_SOURCES} ${TRANS_SOURCES} ${QUIRC_SOURCES})
 
+# Generated git-hash header, required by src/system/helix_version.cpp. Gradle
+# never runs the Makefile, so run the Makefile's own generator from here rather
+# than reimplementing it: the header's format and its only-rewrite-on-change
+# behaviour then have exactly one author. BUILD_DIR points at the CMake binary
+# dir so `make clean` and a Gradle build cannot pull the header out from under
+# each other, and that dir is searched ahead of ${PROJECT_ROOT}/build/generated
+# below, or a Makefile build's leftover copy would supply a hash from whenever
+# that build last ran. Configure-time only: the hash goes stale until the next
+# reconfigure, which is what "android-dev" used to say outright.
+set(HELIX_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+execute_process(
+    COMMAND "${CMAKE_COMMAND}" -E env "BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+            bash "${PROJECT_ROOT}/scripts/gen-git-hash.sh"
+    WORKING_DIRECTORY "${PROJECT_ROOT}"
+    RESULT_VARIABLE GIT_HASH_RESULT
+)
+if(NOT GIT_HASH_RESULT EQUAL 0)
+    message(FATAL_ERROR "gen-git-hash.sh failed (${GIT_HASH_RESULT}); "
+                        "src/system/helix_version.cpp cannot compile without it")
+endif()
+
 target_include_directories(main PRIVATE
+    "${HELIX_GENERATED_DIR}"            # For helix_git_hash.h (generated above)
     "${PROJECT_ROOT}/include"
     "${PROJECT_ROOT}"
     "${PROJECT_ROOT}/lib"                   # For lvgl/lvgl.h, spdlog/spdlog.h etc.
@@ -235,6 +257,13 @@ target_compile_definitions(main PRIVATE
     HELIX_PLATFORM_ANDROID
     HELIX_HAS_SOUND
     HELIX_HAS_TRACKER
+    # This build bypasses the Makefile, so its `?= 1` feature defaults do not
+    # apply here — an undefined macro in `#if` is 0 and silently selects the
+    # stub implementation.
+    HELIX_HAS_GCODE_VIEWER=1
+    HELIX_HAS_BED_MESH_3D=1
+    HELIX_HAS_PLUGINS=1
+    HELIX_HAS_TIMELAPSE_VIEWER=1
     ENABLE_GLES_3D
     $<$<CONFIG:Debug>:HELIX_ENABLE_MOCKS>
     LV_CONF_INCLUDE_SIMPLE
@@ -242,7 +271,6 @@ target_compile_definitions(main PRIVATE
     HELIX_VERSION_MAJOR=${HELIX_VERSION_MAJOR}
     HELIX_VERSION_MINOR=${HELIX_VERSION_MINOR}
     HELIX_VERSION_PATCH=${HELIX_VERSION_PATCH}
-    HELIX_GIT_SHA="android-dev"
 )
 
 target_compile_options(main PRIVATE

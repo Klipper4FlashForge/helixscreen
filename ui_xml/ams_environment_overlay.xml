@@ -1,6 +1,17 @@
 <?xml version="1.0"?>
 <!-- Copyright (C) 2025-2026 356C LLC -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!--
+  AMS Environment Overlay - Full environment detail and dryer controls.
+
+  Opened from the compact environment indicator on the AMS panel.
+  Landscape layout, identical shape with or without a humidity sensor:
+    - Top row: environment readout (left) | divider | dryer controls (right)
+    - The readout shows temperature always, humidity when a sensor is present,
+      and the drying countdown while drying.
+    - When a humidity sensor is present, a horizontal "Material Comfort" strip
+      appears below the row (full width, under the vertical divider).
+-->
 <component>
   <styles>
     <!-- Material Comfort list orientation. At Micro the card cannot afford a

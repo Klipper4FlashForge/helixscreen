@@ -1,5 +1,19 @@
 # L2 Toolchange Step/Phase Narration — Implementation Plan
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions. Status: SHIPPED.**
+>
+> Every task below is in `main`. The `- [ ]` boxes were never ticked and do **not** mean the
+> work is outstanding. Evidence: `GcodeNarrationRouter`
+> (`include/gcode_narration_router.h`, `src/application/gcode_narration_router.cpp`),
+> `AmsBackend::ToolchangePhase` + `toolchange_phase_template()` (`include/ams_backend.h`,
+> overridden by AFC and Happy Hare), the `toolchange_step` subject
+> (`include/ams_state.h`, `src/printer/ams_state.cpp`),
+> `AmsState::set_narration_phase()`, and the template-driven step bar in
+> `src/ui/ui_ams_sidebar.cpp`.
+>
+> Code line numbers cited below have drifted substantially. Follow the **symbol**, not the
+> number, and verify every predicate against current code before relying on anything here.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Drive the AMS sidebar toolchange step-bar from AFC's real `//` narration instead of a hardcoded `AmsAction`-based guess, fixing S1 (purge mislabeled "Feed") and S2 (brush/clean/cut/poop/kick steps missing).

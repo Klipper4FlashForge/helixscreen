@@ -13,7 +13,8 @@
     <lv_obj width="100%"
             height="content" style_pad_all="0" scrollable="false" flex_flow="row" style_flex_main_place="center"
             style_flex_cross_place="center" style_pad_gap="#space_xxs" clickable="false" event_bubble="true">
-      <icon name="thermistor_icon" src="thermometer" size="#icon_size" variant="secondary" clickable="false" event_bubble="true"/>
+      <icon name="thermistor_icon"
+            src="thermometer" size="#icon_size" variant="secondary" clickable="false" event_bubble="true"/>
       <text_body name="thermistor_temp" text="--°C" clickable="false" event_bubble="true"/>
     </lv_obj>
     <!-- Sensor name label -->
