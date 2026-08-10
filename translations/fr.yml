@@ -844,6 +844,7 @@ translations:
   'Error: Verification failed': 'Erreur : échec de la vérification'
   'Error: Wrong architecture': 'Erreur : mauvaise architecture'
   'Error: `unzip` not installed': 'Erreur : `unzip` non installé'
+  Errors only: ''
   Escalate to emergency stop if cancel doesn't respond: Escalader vers l'arrêt d'urgence
     si l'annulation ne répond pas
   Escalation Timeout: Délai d'escalade
@@ -1392,6 +1393,7 @@ translations:
   'Lot # (optional)': 'Lot # (facultatif)'
   Lot/Batch Nr: N° de lot
   Low Memory: Mémoire faible
+  Lowest notification level that interrupts with a toast: ''
   M to toggle: M pour basculer
   'MAC:': 'MAC :'
   MACRO DEVICES: APPAREILS MACRO
@@ -1677,6 +1679,7 @@ translations:
   'On': Allumé
   On and Off macros must be different: Les macros On et Off doivent être différentes
   On your phone or computer, join the WiFi network \"{}\", then open http://{} in a browser to finish setup.: ''
+  On-screen Alerts: ''
   On/Off: Marche/Arrêt
   On/Off (state-aware): On/Off (avec suivi d'état)
   'On:': 'Marche :'
@@ -2794,6 +2797,7 @@ translations:
   Warming Bed...: Préchauffage du plateau...
   Warn: Avertissement
   Warning: Avertissement
+  Warnings & errors: ''
   Watch the belt under the strobe LED. Adjust frequency until the belt appears stationary — that is the resonant frequency.: Observez
     la courroie sous la LED stroboscope. Ajustez la fréquence jusquà ce que la courroie
     paraisse immobile — cest la fréquence de résonance.

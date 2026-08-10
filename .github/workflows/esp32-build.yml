@@ -18,6 +18,22 @@ jobs:
           esp_idf_version: v5.5
           target: esp32s3
           path: firmware/helixscreen-esp32
+          # storage_frogfs.bin is a BUILD INPUT, not output: main/CMakeLists.txt
+          # FATAL_ERRORs if it is missing. But the packer needs jkent/frogfs's
+          # mkfrogfs.py, which the ESP-IDF component manager fetches during the
+          # first `idf.py reconfigure`. So: reconfigure once (expected to fail on
+          # the missing-image guard, AFTER populating managed_components/), stage
+          # + pack the frogfs image, then build for real. Runs inside the action's
+          # container (cwd = path).
+          command: |
+            set -e
+            idf.py reconfigure || true
+            test -f managed_components/jkent__frogfs/tools/mkfrogfs.py
+            python3 ../../scripts/esp32_stage_assets.py
+            python3 -m venv /tmp/esp32pack-venv
+            /tmp/esp32pack-venv/bin/pip install --quiet pyyaml
+            /tmp/esp32pack-venv/bin/python ../../scripts/esp32_pack_assets.py
+            idf.py build
       - name: Size budget gate
         run: |
           python3 scripts/check_esp32_size.py \
