@@ -11,6 +11,7 @@
 
 #include "ui_update_queue.h"
 
+#include "format_utils.h"
 #include "printer_state.h" // For enum definitions
 #include "state/subject_macros.h"
 #include "unit_conversions.h"
@@ -28,6 +29,7 @@ PrinterPrintState::PrinterPrintState() {
     std::memset(print_filename_buf_, 0, sizeof(print_filename_buf_));
     std::memset(print_display_filename_buf_, 0, sizeof(print_display_filename_buf_));
     std::memset(print_thumbnail_path_buf_, 0, sizeof(print_thumbnail_path_buf_));
+    std::memset(print_progress_text_buf_, 0, sizeof(print_progress_text_buf_));
     std::memset(print_state_buf_, 0, sizeof(print_state_buf_));
     std::memset(print_start_message_buf_, 0, sizeof(print_start_message_buf_));
     std::memset(print_start_time_left_buf_, 0, sizeof(print_start_time_left_buf_));
@@ -53,6 +55,8 @@ void PrinterPrintState::init_subjects(bool register_xml) {
 
     // Print progress subjects
     INIT_SUBJECT_INT(print_progress, 0, subjects_, register_xml);
+    INIT_SUBJECT_INT(print_progress_display, 0, subjects_, register_xml);
+    INIT_SUBJECT_STRING(print_progress_text, "0%", subjects_, register_xml);
     INIT_SUBJECT_STRING(print_filename, "", subjects_, register_xml);
     INIT_SUBJECT_STRING(print_state, "standby", subjects_, register_xml);
     INIT_SUBJECT_INT(print_state_enum, static_cast<int>(PrintJobState::STANDBY), subjects_,
@@ -192,6 +196,37 @@ lv_subject_t* PrinterPrintState::get_extruder_filament_used_subject(int extruder
     return it->second.subject.get();
 }
 
+void PrinterPrintState::publish_progress_display(int percent) {
+    if (progress_frozen_) {
+        return;
+    }
+    if (lv_subject_get_int(&print_progress_display_) != percent) {
+        lv_subject_set_int(&print_progress_display_, percent);
+    }
+    char buf[sizeof(print_progress_text_buf_)];
+    helix::format::format_percent(percent, buf, sizeof(buf));
+    if (strcmp(lv_subject_get_string(&print_progress_text_), buf) != 0) {
+        lv_subject_copy_string(&print_progress_text_, buf);
+    }
+}
+
+void PrinterPrintState::freeze_progress_display(bool complete) {
+    if (complete) {
+        // A finished print is 100% even when the last virtual_sdcard sample
+        // Moonraker sent was a fraction short.
+        progress_frozen_ = false;
+        publish_progress_display(100);
+    }
+    progress_frozen_ = true;
+    spdlog::debug("[PrinterPrintState] Progress display frozen at {}%",
+                  lv_subject_get_int(&print_progress_display_));
+}
+
+void PrinterPrintState::unfreeze_progress_display() {
+    progress_frozen_ = false;
+    publish_progress_display(0);
+}
+
 void PrinterPrintState::reset_for_new_print() {
     // Clear stale print PROGRESS data when starting a new print.
     // The preparing overlay covers the UI, so stale data isn't visible.
@@ -199,6 +234,7 @@ void PrinterPrintState::reset_for_new_print() {
     // Clearing filename triggers ActivePrintMediaManager to wipe the thumbnail we just set.
     // Filename is Moonraker's source of truth - it updates when the print actually starts.
     lv_subject_set_int(&print_progress_, 0);
+    unfreeze_progress_display();
     lv_subject_set_int(&print_layer_current_, 0);
     has_real_layer_data_ = false;
     // Commanded Z belongs to the print run, not the file — clear it. Do NOT
@@ -314,13 +350,16 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
                 if (new_state == PrintJobState::COMPLETE) {
                     spdlog::info("[PrinterPrintState] Print completed - setting outcome=COMPLETE");
                     lv_subject_set_int(&print_outcome_, static_cast<int>(PrintOutcome::COMPLETE));
+                    freeze_progress_display(true);
                 } else if (new_state == PrintJobState::CANCELLED) {
                     spdlog::debug(
                         "[PrinterPrintState] Print cancelled - setting outcome=CANCELLED");
                     lv_subject_set_int(&print_outcome_, static_cast<int>(PrintOutcome::CANCELLED));
+                    freeze_progress_display(false);
                 } else if (new_state == PrintJobState::ERROR) {
                     spdlog::info("[PrinterPrintState] Print error - setting outcome=ERROR");
                     lv_subject_set_int(&print_outcome_, static_cast<int>(PrintOutcome::ERROR));
+                    freeze_progress_display(false);
                 }
                 // Starting a NEW print: clear the previous outcome and slicer state
                 // (only when transitioning TO PRINTING from a non-PAUSED state)
@@ -330,6 +369,7 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
                         spdlog::info("[PrinterPrintState] New print starting - clearing outcome");
                         lv_subject_set_int(&print_outcome_, static_cast<int>(PrintOutcome::NONE));
                     }
+                    unfreeze_progress_display();
                     // Reset slicer progress for the new print
                     slicer_progress_ = 0.0;
                     slicer_progress_active_ = false;
@@ -652,6 +692,7 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
             current_progress != progress_pct) {
             lv_subject_set_int(&print_progress_, progress_pct);
         }
+        publish_progress_display(progress_pct);
     }
 
     // Per-extruder filament_used (from Klipper's extruder/extruder1/... objects).
@@ -762,6 +803,7 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
                     current_progress != progress_pct) {
                     lv_subject_set_int(&print_progress_, progress_pct);
                 }
+                publish_progress_display(progress_pct);
             }
 
             // virtual_sdcard.layer / layer_count are the FALLBACK source —
