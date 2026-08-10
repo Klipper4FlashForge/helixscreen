@@ -92,11 +92,15 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::parse_widget_array(const nlohma
             widget_config = item["config"];
         }
 
-        // Load grid placement coordinates (default to -1 = auto-place)
+        // Load grid placement coordinates (default to -1 = auto-place).
+        // A missing span takes the registry default, not 1: an entry written
+        // before the grid moved to half-cell tracks carries no spans at all,
+        // and one track is a quarter of the area the widget expects.
+        const auto* span_def = find_widget_def(id);
         int col = -1;
         int row_val = -1;
-        int colspan = 1;
-        int rowspan = 1;
+        int colspan = span_def ? span_def->colspan : 1;
+        int rowspan = span_def ? span_def->rowspan : 1;
         if (item.contains("col") && item["col"].is_number_integer()) {
             col = item["col"].get<int>();
         }

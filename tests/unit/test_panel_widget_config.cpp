@@ -1055,8 +1055,8 @@ TEST_CASE_METHOD(PanelWidgetConfigFixture, "PanelWidgetConfig: missing grid coor
     REQUIRE(power);
     REQUIRE(power->col == -1);
     REQUIRE(power->row == -1);
-    REQUIRE(power->colspan == 1);
-    REQUIRE(power->rowspan == 1);
+    REQUIRE(power->colspan == 2); // registry default for shutdown
+    REQUIRE(power->rowspan == 2);
     REQUIRE_FALSE(power->has_grid_position());
 }
 
