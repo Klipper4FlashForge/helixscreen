@@ -475,6 +475,38 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // often parks in the lane after an unload, leaving the silk sensor present, so
     // that path would leave the slot stuck LOADED. Caller MUST hold mutex_.
     void clear_head_loaded_after_unload_locked();
+    /// Is the toolhead empty, for the purpose of choosing between the heated
+    /// toolhead unload and a cold per-lane eject?
+    ///
+    /// Single source of truth for three sites that MUST agree —
+    /// do_unload_filament()'s router, its context-menu mirror
+    /// slot_unloads_to_toolhead(), and eject_lane()'s seated-lane refusal. If
+    /// they disagreed, "Unload" could route to eject_lane() only for eject_lane()
+    /// to refuse it with "Unload from toolhead first."
+    ///
+    /// The SWITCH pair is the authority when it has ever reported, never the
+    /// conflated head_filament_: parse_head_sensor() writes head_filament_ from
+    /// BOTH the switch AND ifs_motion_sensor, and the motion sensor is
+    /// device-confirmed to read filament_detected=false on a lane that is loaded
+    /// but idle (class-header NOTE). Claiming "empty" off that false negative
+    /// sends seated, un-cut filament to a cold eject, which grinds it (raza616
+    /// #981, bundle 5HR3HHS6). The opposite error - claiming loaded when empty -
+    /// only wastes a firmware no-op, so the predicate is deliberately biased
+    /// toward "loaded."
+    ///
+    /// On motion-only firmware head_switch_seen_ stays false and this falls back
+    /// to !head_filament_ - exactly the historical behaviour, no silent change.
+    ///
+    /// PROXY, not the firmware's own gate. cmd_IFS_REMOVE_CURRENT_PRUTOK
+    /// early-returns on get_extruder_sensor() (zmod_ifs.py:1149), which reads an
+    /// ADC - `temperature_sensor filamentValue`, result = value >= 0.72 when
+    /// value > 0.3, and True otherwise, i.e. a missing reading counts as loaded
+    /// (zmod_ifs.py:353-361). HelixScreen does not subscribe to `filamentValue`
+    /// anywhere. Subscribing to it is the proper fix and would make this
+    /// predicate exact; it needs a real AD5X to confirm the object is actually
+    /// published, and we have neither hardware nor an `ad5x` mock profile.
+    /// Caller MUST hold mutex_.
+    [[nodiscard]] bool head_empty_for_unload_routing_locked() const;
     // One-shot fetch of /mod_data/user.cfg. Parses the [zmod_ifs] section for
     // `filament_<NAME>: <TEMP>` entries — zmod's mechanism for user-defined
     // material types beyond the AD5X firmware whitelist (e.g., PLA+, RPLA,

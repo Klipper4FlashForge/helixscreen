@@ -125,6 +125,16 @@ class Ad5xIfsTestAccess {
         std::lock_guard<std::mutex> lock(b.mutex_);
         b.head_filament_ = detected;
     }
+    // Pin the toolhead SWITCH pair independently of the conflated head_filament_.
+    // Production latches these only in the switch branch of handle_status_update();
+    // tests need to express "switch says X while motion says Y", which is the
+    // whole point of the pair existing. `seen=false` models motion-only firmware
+    // that never publishes a switch sensor at all.
+    static void set_head_switch(AmsBackendAd5xIfs& b, bool seen, bool present) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        b.head_switch_seen_ = seen;
+        b.head_switch_present_ = present;
+    }
     // Flag GET_ZCOLOR SILENT unsupported so schedule_zcolor_query() early-returns
     // instead of spawning an HttpExecutor debounce task — keeps action dispatch
     // tests fully synchronous and thread-free (avoids the [slow] tag, L052).
@@ -9137,6 +9147,181 @@ TEST_CASE("AD5X IFS unload of the active slot via -1 (unload active) toolhead-cu
     REQUIRE(backend->unload_filament(-1).success());
     CHECK(backend->has_gcode("_IFS_REMOVE_CURRENT_PRUTOK"));
     CHECK_FALSE(backend->has_gcode_containing("IFS_F11"));
+}
+
+// ==========================================================================
+// The unload router's "is the toolhead empty" decision must come from the
+// toolhead SWITCH pair, not the conflated head_filament_.
+//
+// parse_head_sensor() writes head_filament_ from BOTH the switch sensor and
+// ifs_motion_sensor, and the motion sensor is device-confirmed to read
+// filament_detected=false on a lane that is loaded but idle. Believing that
+// false negative sends seated, un-cut filament to the cold IFS_F11 retract,
+// which grinds it (raza616 #981; 5HR3HHS6 is the same hazard by a different
+// route). The reverse error - calling a truly empty head "loaded" - only costs
+// a firmware no-op, so the predicate is biased toward "loaded" on purpose.
+// ==========================================================================
+
+TEST_CASE("AD5X IFS unload: switch says present, motion says absent -> heated cut, never a cold "
+          "eject (grinding regression)",
+          "[ams][ad5x_ifs][unload]") {
+    // THE regression this predicate exists for. The last frame to write
+    // head_filament_ came from ifs_motion_sensor on a loaded-but-idle lane, so
+    // head_filament_ is false while filament is physically at the nozzle. The
+    // switch sensor still says present, and it is the authority.
+    auto backend =
+        make_routing_backend(/*current_slot=*/2, /*seated_chan=*/0, /*head_loaded=*/false);
+    Ad5xIfsTestAccess::set_head_switch(*backend, /*seen=*/true, /*present=*/true);
+    REQUIRE_FALSE(Ad5xIfsTestAccess::head_filament(*backend)); // motion false-negative in place
+
+    // Label and dispatch must both say "heated toolhead unload".
+    CHECK(backend->slot_unloads_to_toolhead(2, /*loaded_hint=*/true));
+    CHECK(backend->slot_unloads_to_toolhead(2, /*loaded_hint=*/false));
+
+    REQUIRE(backend->unload_filament(2).success());
+    CHECK(backend->has_gcode("_IFS_REMOVE_CURRENT_PRUTOK"));
+    CHECK_FALSE(backend->has_gcode_containing("IFS_F11")); // the cold retract that grinds
+    CHECK_FALSE(backend->has_gcode_containing("IFS_F24"));
+}
+
+TEST_CASE("AD5X IFS unload: the motion false-negative arrives through the real sensor plumbing",
+          "[ams][ad5x_ifs][unload]") {
+    // Same regression, but reached the way a device reaches it: a switch frame
+    // says present, then a motion frame says absent and clobbers head_filament_
+    // through parse_head_sensor(). Nothing here pokes head_filament_ directly -
+    // if the conflation ever gets fixed at the source, this test stops proving
+    // anything but must still pass.
+    TestableAd5xIfsBackend backend;
+    Ad5xIfsTestAccess::set_running(backend, true);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+    Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
+
+    Ad5xIfsTestAccess::handle_status(backend, make_zmod_head_sensor(true));
+    REQUIRE(Ad5xIfsTestAccess::head_filament(backend));
+    Ad5xIfsTestAccess::handle_status(backend, make_motion_sensor(false));
+
+    // The conflation is real: head_filament_ now lies, the switch pair does not.
+    REQUIRE_FALSE(Ad5xIfsTestAccess::head_filament(backend));
+    REQUIRE(Ad5xIfsTestAccess::head_switch_seen(backend));
+    REQUIRE(Ad5xIfsTestAccess::head_switch_present(backend));
+
+    // Pin the active slot AFTER the frames — handle_status_update() recomputes
+    // current_slot from tool_map_/seated_chan_ on every sensor change.
+    Ad5xIfsTestAccess::set_current_slot(backend, 2, /*filament_loaded=*/true);
+
+    CHECK(backend.slot_unloads_to_toolhead(2, /*loaded_hint=*/true));
+    REQUIRE(backend.unload_filament(2).success());
+    CHECK(backend.has_gcode("_IFS_REMOVE_CURRENT_PRUTOK"));
+    CHECK_FALSE(backend.has_gcode_containing("IFS_F11"));
+}
+
+TEST_CASE("AD5X IFS unload: switch seen and absent -> cold eject even when motion says present "
+          "(7AC4SDEX)",
+          "[ams][ad5x_ifs][unload]") {
+    // Bundle 7AC4SDEX: head_switch_sensor empty, ifs_motion_sensor present.
+    // The filament is in the lane, not the toolhead, and
+    // _IFS_REMOVE_CURRENT_PRUTOK would early-return on the extruder sensor after
+    // homing ("homes and nothing happens"). Switch-absent is authoritative, so
+    // this must reach the cold retract regardless of what motion reports.
+    auto backend =
+        make_routing_backend(/*current_slot=*/2, /*seated_chan=*/0, /*head_loaded=*/true);
+    Ad5xIfsTestAccess::set_head_switch(*backend, /*seen=*/true, /*present=*/false);
+    REQUIRE(Ad5xIfsTestAccess::head_filament(*backend)); // motion says present; switch overrules
+
+    CHECK_FALSE(backend->slot_unloads_to_toolhead(2, /*loaded_hint=*/true));
+
+    REQUIRE(backend->unload_filament(2).success());
+    CHECK(backend->has_gcode("IFS_F24 PRUTOK=3"));
+    CHECK(backend->has_gcode_containing("IFS_F11 PRUTOK=3"));
+    CHECK(backend->has_gcode("IFS_F39 PRUTOK=3"));
+    CHECK_FALSE(backend->has_gcode_containing("REMOVE_CURRENT_PRUTOK"));
+}
+
+TEST_CASE("AD5X IFS unload: motion-only firmware (switch never seen) keeps the historical rule",
+          "[ams][ad5x_ifs][unload]") {
+    // No switch sensor is published at all, so there is no positive evidence to
+    // require and no behaviour to change: the routing must be exactly what
+    // head_filament_ said before this predicate existed. Both polarities, so a
+    // fallback that hardcoded either answer fails.
+    for (bool head : {true, false}) {
+        DYNAMIC_SECTION("head_filament_ = " << head) {
+            auto backend =
+                make_routing_backend(/*current_slot=*/2, /*seated_chan=*/0, /*head_loaded=*/head);
+            Ad5xIfsTestAccess::set_head_switch(*backend, /*seen=*/false, /*present=*/false);
+            REQUIRE_FALSE(Ad5xIfsTestAccess::head_switch_seen(*backend));
+
+            CHECK(backend->slot_unloads_to_toolhead(2, /*loaded_hint=*/true) == head);
+            CHECK(unload_routed_to_toolhead(*backend, 2) == head);
+        }
+    }
+}
+
+TEST_CASE("AD5X IFS unload: the slot-identity branches still win over the head predicate",
+          "[ams][ad5x_ifs][unload]") {
+    // The non-active-slot (#981 HKHZFYB2) and dropped-pointer (5HR3HHS6) guards
+    // run BEFORE the head test and are about which lane the user tapped, not
+    // about the toolhead. A switch that reads present must not promote either of
+    // them to a heated cut — that is the wrong-lane heat+cut both were added to
+    // stop. Conversely the unknown-origin recovery case (both authorities lost)
+    // must still cut.
+    SECTION("known active slot, tap a different lane -> cold eject") {
+        auto backend =
+            make_routing_backend(/*current_slot=*/2, /*seated_chan=*/0, /*head_loaded=*/true);
+        Ad5xIfsTestAccess::set_head_switch(*backend, /*seen=*/true, /*present=*/true);
+        CHECK_FALSE(backend->slot_unloads_to_toolhead(0, /*loaded_hint=*/true));
+        CHECK_FALSE(unload_routed_to_toolhead(*backend, 0));
+        CHECK(backend->has_gcode_containing("IFS_F11 PRUTOK=1"));
+    }
+    SECTION("pointer lost, seated known, tap a non-seated lane -> cold eject") {
+        auto backend =
+            make_routing_backend(/*current_slot=*/-1, /*seated_chan=*/2, /*head_loaded=*/true);
+        Ad5xIfsTestAccess::set_head_switch(*backend, /*seen=*/true, /*present=*/true);
+        CHECK_FALSE(backend->slot_unloads_to_toolhead(3, /*loaded_hint=*/true));
+        CHECK_FALSE(unload_routed_to_toolhead(*backend, 3));
+        CHECK(backend->has_gcode_containing("IFS_F11 PRUTOK=4"));
+    }
+    SECTION("pointer lost, nothing seated, switch present -> unknown-origin cut") {
+        auto backend =
+            make_routing_backend(/*current_slot=*/-1, /*seated_chan=*/0, /*head_loaded=*/false);
+        Ad5xIfsTestAccess::set_head_switch(*backend, /*seen=*/true, /*present=*/true);
+        CHECK(backend->slot_unloads_to_toolhead(2, /*loaded_hint=*/true));
+        CHECK(unload_routed_to_toolhead(*backend, 2));
+    }
+}
+
+TEST_CASE("AD5X IFS eject_lane's seated refusal uses the same head predicate as the router",
+          "[ams][ad5x_ifs][unload]") {
+    // The two must agree or they deadlock against each other: the router hands
+    // an empty-head unload to eject_lane(), and a refusal keyed on a different
+    // notion of "empty" would bounce it back with "Unload from toolhead first".
+    SECTION("switch present, motion false-negative -> a direct Eject tap is refused") {
+        auto backend =
+            make_routing_backend(/*current_slot=*/1, /*seated_chan=*/0, /*head_loaded=*/false);
+        Ad5xIfsTestAccess::set_head_switch(*backend, /*seen=*/true, /*present=*/true);
+
+        AmsError err = backend->eject_lane(1);
+        CHECK_FALSE(err.success());
+        CHECK(err.result == AmsResult::WRONG_STATE);
+        CHECK(err.user_msg == "Unload from toolhead first");
+        CHECK(backend->captured_gcodes.empty()); // no cold retract against seated filament
+    }
+    SECTION("switch absent, motion says present -> the router's eject is NOT bounced") {
+        auto backend =
+            make_routing_backend(/*current_slot=*/1, /*seated_chan=*/0, /*head_loaded=*/true);
+        Ad5xIfsTestAccess::set_head_switch(*backend, /*seen=*/true, /*present=*/false);
+
+        REQUIRE(backend->unload_filament(1).success());
+        CHECK(backend->has_gcode_containing("IFS_F11 PRUTOK=2"));
+    }
+    SECTION("motion-only firmware keeps the historical head_filament_ refusal") {
+        auto backend =
+            make_routing_backend(/*current_slot=*/1, /*seated_chan=*/0, /*head_loaded=*/true);
+        Ad5xIfsTestAccess::set_head_switch(*backend, /*seen=*/false, /*present=*/false);
+
+        AmsError err = backend->eject_lane(1);
+        CHECK_FALSE(err.success());
+        CHECK(err.result == AmsResult::WRONG_STATE);
+    }
 }
 
 TEST_CASE("AD5X IFS eject_lane maps each slot to its 1-based port", "[ams][ad5x_ifs]") {

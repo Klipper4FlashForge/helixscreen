@@ -2332,7 +2332,30 @@ IFS_F39 PRUTOK={port}                          # unclamp — filament is free to
 
   Resolution order: per-material entry → file's `default` entry → hardcoded **1000 / 1200** (`filament_eject_default_`). `filament_tube_length` is the PTFE-tube length from the IFS module to the extruder (zmod default 1000 mm) — users with non-stock tubes get the right distance automatically. (Field-confirmed on raza616: `LEN=1000` ran the full retract and ended free after `F39`; his PETG tube is 650.)
 
-- **Eject refuses the toolhead-loaded active lane.** If `system_info_.current_slot == slot_index && head_filament_`, `eject_lane()` returns `WRONG_STATE` ("Lane is loaded in toolhead / Unload from toolhead first") — a cold backward retract would fight the loaded filament. Unload it from the toolhead first.
+- **Eject refuses the toolhead-loaded active lane.** If `system_info_.current_slot == slot_index` and the toolhead is not empty, `eject_lane()` returns `WRONG_STATE` ("Lane is loaded in toolhead / Unload from toolhead first") — a cold backward retract would fight the loaded filament. Unload it from the toolhead first. "Not empty" is `!head_empty_for_unload_routing_locked()`, the same predicate the unload router uses (below), *not* a bare `head_filament_` — the two must agree or the router's empty-head eject gets bounced by this refusal.
+
+#### Unload routing: heated toolhead cut vs. cold lane eject
+
+`do_unload_filament()` picks between `_IFS_REMOVE_CURRENT_PRUTOK` (heat, cut, retract the seated lane) and `eject_lane()` (cold `IFS_F24`/`IFS_F11`/`IFS_F39` on one lane). `slot_unloads_to_toolhead()` mirrors the same decision for the context-menu label, and a unit test pins the two together across the whole authority matrix. Order matters — the slot-identity guards run *before* the head test:
+
+| # | Condition | Route | Why |
+|---|-----------|-------|-----|
+| 1 | Active slot known, tapped slot is neither it nor the IFS_STATUS-seated one | cold eject of the tapped lane | That lane's filament is in the lane, not the nozzle. Otherwise "unload channel 1" heats and backs out channel 3 (raza616 `HKHZFYB2`) |
+| 2 | Active pointer lost, seated channel known, tapped slot is not it | cold eject of the tapped lane | Chan is the seated authority; the alternative is a wrong-lane heat+cut (`5HR3HHS6`) |
+| 3 | Toolhead reads empty | cold eject (of the tapped slot, else the seated one, else the active one; hard error if none) | `_IFS_REMOVE_CURRENT_PRUTOK` early-returns on an empty extruder sensor, so the cut would home and do nothing (`7AC4SDEX`) |
+| 4 | otherwise | heated toolhead cut | Includes the unknown-origin recovery case (both authorities lost, head loaded) |
+
+**"Empty" for row 3 is the switch pair, not `head_filament_`** (`head_empty_for_unload_routing_locked()`):
+
+```
+head_switch_seen_ ? !head_switch_present_ : !head_filament_
+```
+
+Positive switch evidence is required to claim empty, because the errors are not symmetric. A false *empty* cold-ejects seated, un-cut filament and grinds it (raza616 #981). A false *loaded* only reaches a firmware no-op. `head_filament_`'s known failure mode — `parse_head_sensor()` also writes it from `ifs_motion_sensor`, which reads `filament_detected=false` on a loaded-but-idle lane — produces the dangerous direction, so it can no longer claim empty on its own. Motion-only firmware never sets `head_switch_seen_`, so it falls back to the historical `!head_filament_` unchanged.
+
+`can_unload_from_toolhead()` deliberately does **not** move onto the switch pair: it only decides whether the Unload affordance is offered, and its harmful direction is the opposite one (a false empty would hide the #995 recovery affordance for filament that is physically seated).
+
+> **The switch pair is a proxy for a sensor we do not read.** The firmware's actual gate is `get_extruder_sensor()` (`zmod_ifs.py:1149`), an ADC read of `temperature_sensor filamentValue` (`result = value >= 0.72` when `value > 0.3`, `True` otherwise — a missing reading counts as loaded, `zmod_ifs.py:353-361`). HelixScreen subscribes to it nowhere. Subscribing is the proper fix; it needs a real AD5X to confirm the object is published, and there is no AD5X in the fleet and no `ad5x` mock profile.
 
 #### External-change triggers (the gcode-response listener)
 

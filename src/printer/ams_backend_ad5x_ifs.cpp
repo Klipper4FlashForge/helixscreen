@@ -842,6 +842,16 @@ void AmsBackendAd5xIfs::parse_head_sensor(bool detected) {
     head_filament_ = detected;
 }
 
+bool AmsBackendAd5xIfs::head_empty_for_unload_routing_locked() const {
+    // Positive switch evidence is required to claim "empty". See the header for
+    // the full rationale, the error asymmetry, and the `filamentValue` ADC that
+    // is the firmware's actual predicate.
+    if (head_switch_seen_) {
+        return !head_switch_present_;
+    }
+    return !head_filament_;
+}
+
 void AmsBackendAd5xIfs::update_slot_from_state(int slot_index) {
     if (slot_index < 0 || slot_index >= NUM_PORTS)
         return;
@@ -1458,6 +1468,15 @@ bool AmsBackendAd5xIfs::can_unload_from_toolhead(int slot_index) const {
     // opposite negative-index convention here vs. unload_filament(), where
     // slot_index < 0 deliberately means "unload whatever is active." This is a
     // per-slot capability query, so a negative index is simply out of range.
+    //
+    // Deliberately still the conflated head_filament_, NOT the switch pair the
+    // unload router uses. This gate only decides whether the Unload affordance
+    // is OFFERED; slot_unloads_to_toolhead() / do_unload_filament() then decide
+    // heated-vs-cold, so a false "loaded" here cannot grind anything - it just
+    // reaches a router that routes it correctly. The error that would hurt is a
+    // false "empty", which hides the #995 recovery affordance while filament is
+    // physically seated, and head_filament_ is the more permissive of the two
+    // readings in exactly the case #995 is about (firmware dropped its pointer).
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (slot_index >= 0 && (system_info_.current_slot == slot_index ||
@@ -1563,7 +1582,7 @@ AmsError AmsBackendAd5xIfs::do_load_filament(int slot_index) {
 }
 
 AmsError AmsBackendAd5xIfs::do_unload_filament(int slot_index) {
-    bool head_loaded;
+    bool head_empty;
     int current_slot;
     int seated_slot; // 0-based slot of the IFS_STATUS-seated port (-1 = none)
     {
@@ -1575,7 +1594,11 @@ AmsError AmsBackendAd5xIfs::do_unload_filament(int slot_index) {
         // toolhead. The stamp is what stops the runout detector reading that as
         // an unattended runout (#1250).
         note_filament_op_dispatch_locked();
-        head_loaded = head_filament_;
+        // Snapshot the routing decision under the lock, then act unlocked (the
+        // eject/gcode paths re-acquire mutex_). NOT head_filament_ on its own:
+        // the motion sensor also writes it and false-negatives on a loaded-idle
+        // lane, and reading that as "empty" cold-ejects seated filament.
+        head_empty = head_empty_for_unload_routing_locked();
         current_slot = system_info_.current_slot;
         seated_slot = seated_chan_ > 0 ? seated_chan_ - 1 : -1;
     }
@@ -1628,8 +1651,9 @@ AmsError AmsBackendAd5xIfs::do_unload_filament(int slot_index) {
     // (zmod_ifs.py:1149), so ZMOD homes (_G28) and then does nothing: raza616's
     // "homes and nothing happens." The filament is still in the lane, not the
     // toolhead, so route to the cold per-lane retract instead of a guaranteed
-    // no-op (7AC4SDEX: head_switch_sensor empty, ifs_motion_sensor present).
-    if (!head_loaded) {
+    // no-op (7AC4SDEX: head_switch_sensor empty, ifs_motion_sensor present — the
+    // switch pair still calls that empty, so 7AC4SDEX keeps this branch).
+    if (head_empty) {
         // "Unload whatever is active" (slot_index < 0) needs a concrete lane for
         // the cold eject — resolve through the seated channel, then the active
         // slot. Passing -1 through to eject_lane() fails validate_slot_index()
@@ -1676,8 +1700,8 @@ AmsError AmsBackendAd5xIfs::do_unload_filament(int slot_index) {
     // the trash drop and leaves the nozzle hot. Verified against the device cfg
     // and ZMOD v1.7.1.
     spdlog::info("{} Unloading filament from toolhead (slot {}, current_slot {}, seated_slot {}, "
-                 "head_loaded {})",
-                 backend_log_tag(), slot_index, current_slot, seated_slot, head_loaded);
+                 "head_empty {})",
+                 backend_log_tag(), slot_index, current_slot, seated_slot, head_empty);
     // Finalize on the macro's own completion (its gcode ack). The synthesized
     // Retract phase has no sensor event, and the IFS_STATUS Chan==0 / GET_ZCOLOR
     // confirm can silently fail on native ZMOD — leaving the op stuck at Retract
@@ -1700,12 +1724,12 @@ AmsError AmsBackendAd5xIfs::do_unload_filament(int slot_index) {
 bool AmsBackendAd5xIfs::slot_unloads_to_toolhead(int slot_index, bool /*loaded_hint*/) const {
     int current_slot;
     int seated_slot;
-    bool head_loaded;
+    bool head_empty;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         current_slot = system_info_.current_slot;
         seated_slot = seated_chan_ > 0 ? seated_chan_ - 1 : -1;
-        head_loaded = head_filament_;
+        head_empty = head_empty_for_unload_routing_locked();
     }
     // MUST mirror unload_filament()'s eject-vs-toolhead routing so the context
     // menu labels and dispatches the action correctly (Eject vs Unload). Any
@@ -1718,7 +1742,7 @@ bool AmsBackendAd5xIfs::slot_unloads_to_toolhead(int slot_index, bool /*loaded_h
         return false; // cold lane eject (existing #981 guard)
     if (slot_index >= 0 && current_slot < 0 && seated_slot >= 0 && slot_index != seated_slot)
         return false; // firmware dropped pointer, seated known -> cold eject (5HR3HHS6)
-    if (!head_loaded)
+    if (head_empty)
         return false; // empty toolhead -> cold lane eject
     return true;      // heated toolhead unload (cut)
 }
@@ -1830,9 +1854,17 @@ AmsError AmsBackendAd5xIfs::eject_lane(int slot_index) {
 
         // Refuse to cold-eject the lane currently seated at the toolhead: the
         // backward retract would fight the loaded filament. Mirror AFC's wording
-        // so the UI surfaces a consistent message across backends. current_slot
-        // + head_filament_ are the same members unload_filament() reads.
-        if (system_info_.current_slot == slot_index && head_filament_) {
+        // so the UI surfaces a consistent message across backends.
+        //
+        // Shares head_empty_for_unload_routing_locked() with unload_filament()'s
+        // router by necessity, not tidiness: the router sends an empty-head
+        // unload HERE, so a refusal keyed on a different notion of "empty" could
+        // reject the very call it just routed, and tell the user to "unload from
+        // the toolhead first" for an unload that is already trying. Sharing the
+        // predicate also closes the direct-Eject-tap half of the grinding hazard:
+        // a motion-sensor false negative used to let head_filament_ read false on
+        // a seated lane and wave the cold retract straight through.
+        if (system_info_.current_slot == slot_index && !head_empty_for_unload_routing_locked()) {
             return AmsError(AmsResult::WRONG_STATE, "Lane is loaded in toolhead",
                             "Unload from toolhead first", "Use Unload before Eject");
         }
