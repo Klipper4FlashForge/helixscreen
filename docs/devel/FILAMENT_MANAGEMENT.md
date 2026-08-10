@@ -1190,14 +1190,89 @@ which matters because Happy Hare gives every ungrouped gate its own standalone i
 
 Anything that needs one successor per slot calls the projection and never re-derives it:
 `endless_spool_backup_edges(cfg, slot_count)` for a whole system,
-`endless_spool_backup_for(cfg, slot)` for one slot. Ordered groups project along their order;
-unordered groups point every member at the first *other* member, which reproduces the arrow
-set Happy Hare's backend used to compute inline with a `// Use first match` loop. Both entry
-points agree that the first group to give a slot a successor wins, so they cannot disagree on
-a hand-built config with two successors for one slot. The two production callers are
-`AmsPanel::update_endless_arrows_from_backend()` (`src/ui/ui_panel_ams.cpp`) and
+`endless_spool_backup_for(cfg, slot)` for one slot. Ordered groups project along their order.
+Unordered groups project onto a **ring**: `members[i] -> members[i+1]`, last back to first.
+Both entry points agree that the first group to give a slot a successor wins, so they cannot
+disagree on a hand-built config with two successors for one slot. The two production callers
+are `AmsPanel::update_endless_arrows_from_backend()` (`src/ui/ui_panel_ams.cpp`) and
 `AmsContextMenu::get_current_backup_for_slot()` (`src/ui/ui_ams_context_menu.cpp`), so the
 arrows and the dropdown cannot disagree about a Happy Hare group.
+
+**Why a ring and not "the first other member".** The projection originally pointed every
+member at the first *other* member, reproducing the arrow set Happy Hare's backend computed
+inline with a `// Use first match` loop. For a 4-gate group that draws 0->1, 1->0, 2->0, 3->0
+— a picture that says "gate 1 is everyone's backup", which is not what a clique means. A ring
+gives every member exactly one successor and visits the whole group, which is the closest a
+one-target-per-source edge view can get to "any member substitutes for any other".
+
+**What the arrow widget cannot express, and is not asked to.** `ui_endless_spool_arrows`
+(`src/ui/ui_endless_spool_arrows.cpp`) takes `backup_slots[source] = target`: one target per
+source, at most 16 slots, drawn as a directed dashed up-over-down line with an arrowhead at
+the target. It has no primitive for a pool — no bracket, no shared container, no undirected
+edge — so an N-member clique genuinely cannot be drawn as a clique, and drawing all N*(N-1)
+directed arrows would be unreadable at 480x272 even if it were correct. The ring is the honest
+fallback, not a claim to be the whole relation. The widget does now clamp its stacked route
+heights to the canvas: an N-member group projects to N mutually-overlapping arrows, and the
+unclamped height ladder used to walk past the bottom edge and draw the "vertical" segments
+inverted, outside the widget.
+
+### The status line
+
+Capabilities are only worth having if the user can see them. `endless_spool_status(caps)`
+(`src/printer/ams_endless_spool.cpp`) is the one place the enums become a sentence. It returns
+`{EndlessSpoolStatusKind kind, std::string text}`; `AmsState::sync_endless_spool_from_backend()`
+publishes those on two backend-neutral XML subjects, from `sync_from_backend()` — main thread,
+because the `EVENT_STATE_CHANGED` handler already marshals through `helix::ui::queue_update()`.
+
+| Subject | Type | Meaning |
+|---------|------|---------|
+| `ams_endless_state` | int, `EndlessSpoolStatusKind` | `Hidden` 0 / `On` 1 / `Off` 2 / `Unknown` 3 / `NeedsPlugin` 4. A UI contract — append, never renumber. `Hidden` is 0 so one `bind_flag_if_eq ref_value="0"` hides the row |
+| `ams_endless_text` | string | The translated sentence, possibly with an embedded newline. Bind to a `long_mode="wrap"` label |
+
+Wording rules, all pinned by tests in `test_ams_endless_spool.cpp`:
+
+- `Unsupported` renders **nothing**. Not "off": a printer with no such mechanism is not a
+  printer with the mechanism switched off, and the row disappears rather than asserting
+  something about a feature that does not exist.
+- `Unknown` is phrased as unknown. Only `Off` says "nothing will switch" — that is the whole
+  reason enablement is tri-state, and flattening `Unknown` to `Off` is a promise we cannot
+  keep.
+- `RequiresPlugin` names `provider` when the backend knows the package
+  ("Needs the lessWaste package to switch spools") and otherwise falls back to the restriction
+  text. **No backend populates `provider` in that state today**: AD5X cannot know whether the
+  user would install lessWaste or bambufy, so the generic
+  "No automatic backup-spool package is installed" is what actually renders on stock zMod.
+- A non-`None` restriction is appended on its own line, from
+  `endless_spool_restriction_text()` and never a second copy of that prose. "It will not
+  switch" and "and here is why you cannot change that from here" are two different facts.
+- A non-empty `provider` is attributed parenthetically ("… on runout (bambufy)"). A proper
+  noun needs no translation, so this costs no string.
+
+**Where it renders, and where it deliberately does not.** Two homes, one component
+(`ui_xml/components/ams_endless_status.xml`, registered in `src/xml_registration.cpp` ahead of
+`filament_panel.xml` because the AMS panel registers itself lazily). The component is entirely
+subject-driven and needs no C++ of its own.
+
+| Surface | Why |
+|---------|-----|
+| AMS panel, inside `slot_area` under the slots | It explains the arrows at the top of that same container. Growth is absorbed by `path_container`, which is `flex_grow="1"` and whose canvas scales. Note it goes in `slot_area`, not directly in `ams_unit_card` — the card has no `flex_flow`, so a second child there stacks *on top of* the slots |
+| Slot context menu, under `backup_dropdown_row` | Where the disabled-or-absent backup dropdown actually is, and the only surface a CFS user reaches at all: CFS hides the dropdown row entirely (no per-slot relation), so without this line tapping a slot said nothing about runout behaviour |
+
+**Not on the filament panel**, despite it being the obvious second home. Its `left_column` is a
+fixed height budget with `temp_graph_card` as the flexible remainder
+(`FilamentPanel::apply_left_column_sizing()`), so any row added to `spool_card` is paid for
+entirely by the temperature graph. Measured with a two-line status: 172 -> 76 px at LARGE,
+118 -> 30 px at MEDIUM; and at MICRO it does not fit at all (`spool_card` is 74 px there, 48 of
+it `ams_manage_row`).
+
+**Measured at 480x272 (MICRO).** Label width 259 px in the AMS card, 15 px per line. Every
+headline fits one line in all nine languages. Four of the five restriction texts need two lines
+in `ru` and `es`, two do in `fr`, two in `pt`, one in `de`; `en`, `it` and `zh` fit all five on
+one line, `ja` needs two for one. Worst total is therefore 3 lines / 45 px, which takes
+`path_canvas` from 112 to 97 px with `scroll_bottom` staying negative — nothing clips, because
+`long_mode="wrap"` cannot clip. The Russian `Unknown` headline was shortened to
+"Резервная катушка: состояние неизвестно" precisely to hold that 3-line ceiling; at its
+original length the worst case was 4 lines / 60 px and `path_canvas` fell to 82 px.
 
 ### What the base owns, what a backend supplies
 
@@ -2446,14 +2521,18 @@ On a raise: `runout_active_ = true`, `system_info_.filament_runout = true`, and 
 
 The `has_ifs_vars_` / `ifs_macro_confirmed_missing_` machinery already knew whether lessWaste or bambufy was installed, but only ever logged it at debug level. #1250 surfaces it, because "no plugin installed" is the answer the #1247 reporter needed: **stock zMod has no backup-spool switching at all**, so a runout stops the print until a human intervenes.
 
-| Getter / subject | Values |
-|------------------|--------|
+| Getter | Values |
+|--------|--------|
 | `AmsBackendAd5xIfs::get_plugin()` | `IfsPlugin::None` / `LessWaste` / `Bambufy`. `None` whenever `has_ifs_vars_` is false, so stale `less_waste_*` rows left behind by an uninstalled plugin never read as installed |
 | `AmsBackendAd5xIfs::plugin_backup_enabled()` | `std::optional<bool>` — `nullopt` means the macro dict never carried the key, which is **not** the same as off |
-| XML subject `ams_ifs_plugin` | int, matching `IfsPlugin` (0/1/2). Values are a UI contract — append, never renumber |
-| XML subject `ams_ifs_backup_enabled` | `BACKUP_UNKNOWN` (-1) / `BACKUP_OFF` (0) / `BACKUP_ON` (1). No plugin reports OFF: there is no mechanism, which is a definite answer |
+| `AmsBackendAd5xIfs::backup_state_locked()` | The same reading as a tri-state, `BACKUP_UNKNOWN` (-1) / `BACKUP_OFF` (0) / `BACKUP_ON` (1). Feeds both the runout warning log and `get_endless_spool_capabilities()`' `enabled` axis, so the number in the log and the sentence on screen cannot disagree. No plugin reports OFF: there is no mechanism, which is a definite answer |
 
-Both subjects are owned by `ams_backend_ad5x_ifs.cpp` (function-local statics, lazily registered on first publish and guarded on `lv_is_initialized()`, deinit self-registered with `StaticSubjectRegistry`) rather than by `AmsState`: they are AD5X-specific, and an XML binding outlives any one backend instance.
+**There are no AD5X-specific XML subjects.** `ams_ifs_plugin` and `ams_ifs_backup_enabled`
+existed for one release as this backend's own publication path and are gone: they never
+acquired a reader, and a per-firmware subject can only ever describe one printer's answer.
+The state reaches the UI through `get_endless_spool_capabilities()`, which `AmsState` turns
+into the backend-neutral `ams_endless_state` / `ams_endless_text` subjects for every backend
+— see [Endless Spool](#endless-spool-shared-model) § "The status line".
 
 **`variable_backup`.** `gcode_macro _ifs_vars`'s `get_status()` dict used to be reduced to a single "does the macro exist" bool at the `on_started()` probe and thrown away. It now flows into `parse_ifs_vars_macro_locked()`, which reads `variable_backup` (accepting the jinja int form and a bool). Note this object is **not** in the standing `objects.subscribe` set — the `on_started()` query and `recheck_ifs_vars_macro()` (fired on `notify_klippy_ready`) are the only two places it ever reaches us.
 
@@ -2605,9 +2684,10 @@ reporting filament present. It shares `backup_eligible_locked()` with
 `find_backup_slot_locked()`, so the runout detail text and the eligibility answer cannot
 drift apart.
 
-The `ams_ifs_plugin` and `ams_ifs_backup_enabled` XML subjects are unchanged - they remain
-AD5X's own main-thread publication path for the same state. `EndlessSpoolCapabilities` is the
-authority; the subjects are a view of it.
+These capabilities are the ONLY path this state takes to the UI. The AD5X-specific
+`ams_ifs_plugin` / `ams_ifs_backup_enabled` subjects have been retired in favour of
+`ams_endless_state` / `ams_endless_text`, which `AmsState` publishes from
+`get_endless_spool_capabilities()` for every backend.
 
 ### Open Issues & Debugging Notes
 

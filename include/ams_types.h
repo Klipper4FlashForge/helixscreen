@@ -1756,8 +1756,14 @@ endless_spool_config_from_groups(const std::vector<int>& group_ids);
  * renderer and by the single-successor dropdown; never re-derive it.
  *
  * Ordered group:   members[i] -> members[i+1]; the last member gets nothing.
- * Unordered group: every member -> the first OTHER member, which reproduces the
- *                  arrow set Happy Hare rendered before this refactor.
+ * Unordered group: a ring - members[i] -> members[i+1], last -> first. Every
+ *                  member gets exactly one successor and following the arrows
+ *                  visits the whole group, which is the closest a
+ *                  one-target-per-source edge view can get to "any member
+ *                  substitutes for any other". Pointing every member at the
+ *                  first other member instead (the pre-Phase-2 shape) drew an
+ *                  N-gate Happy Hare group as "slot 1 backs up everything",
+ *                  which a clique does not say.
  *
  * @param cfg        The relation.
  * @param slot_count Length of the returned vector.
@@ -1771,6 +1777,60 @@ endless_spool_config_from_groups(const std::vector<int>& group_ids);
  * @return Backup slot index, or -1 when the slot has none.
  */
 [[nodiscard]] int endless_spool_backup_for(const EndlessSpoolConfig& cfg, int slot);
+
+/**
+ * @brief What the endless-spool status line says, as a code the UI can bind to.
+ *
+ * Published on the `ams_endless_state` XML subject, so the numeric values are a
+ * UI contract - append, never renumber. `Hidden` is 0 so a single
+ * `bind_flag_if_eq ref_value="0"` hides the whole row, which is the only state
+ * where there is nothing truthful to say.
+ *
+ * The distinction that matters is Off vs Unknown: only Off justifies telling the
+ * user that nothing will switch. Unknown means we could not read the setting,
+ * and saying "off" there is a promise we cannot keep.
+ */
+enum class EndlessSpoolStatusKind : int {
+    Hidden = 0,     ///< Unsupported - render nothing.
+    On = 1,         ///< A runout will switch to a backup spool.
+    Off = 2,        ///< A runout will NOT switch. The print stops.
+    Unknown = 3,    ///< The backend could not tell us. Not the same as Off.
+    NeedsPlugin = 4 ///< The mechanism exists; its package is not installed.
+};
+
+/**
+ * @brief The endless-spool state as one bindable code plus one display string.
+ *
+ * Deliberately two fields and not four subjects: on a 480x272 panel there is
+ * one line of room, so the reason is folded into `text` behind a newline and the
+ * label wraps. `kind` exists separately because visibility (and any future icon
+ * or colour choice) must be expressible as an XML binding rather than a C++
+ * observer.
+ */
+struct EndlessSpoolStatus {
+    EndlessSpoolStatusKind kind = EndlessSpoolStatusKind::Hidden;
+    std::string text; ///< Empty iff kind == Hidden.
+};
+
+/**
+ * @brief Turn a backend's capabilities into the user-facing status line.
+ *
+ * The one place capability enums become a sentence. Pure: no backend, no mutex,
+ * no widgets - only `lv_tr()` and `provider`, so it is directly unit-testable
+ * against every corner of the capability struct.
+ *
+ * Wording rules this encodes:
+ *  - `Unsupported` says nothing at all rather than "off": a printer with no such
+ *    mechanism is not a printer with the mechanism switched off.
+ *  - `RequiresPlugin` names `provider` when the backend knows which package to
+ *    install, and otherwise falls back to the restriction text.
+ *  - A non-`None` restriction is appended on its own line, because "it will not
+ *    switch" and "and here is why you cannot change that from here" are two
+ *    different facts and the user needs both.
+ *  - A non-empty `provider` is appended parenthetically. A proper noun needs no
+ *    translation, so this costs no string.
+ */
+[[nodiscard]] EndlessSpoolStatus endless_spool_status(const EndlessSpoolCapabilities& caps);
 
 /**
  * @brief Capabilities for tool mapping feature

@@ -158,6 +158,13 @@
           <event_cb trigger="value_changed" callback="ams_context_backup_changed_cb"/>
         </lv_dropdown>
       </lv_obj>
+      <!-- Why the dropdown above is disabled, or why it is absent entirely.
+           This is where the greyed-control-with-no-explanation complaint lives:
+           CFS hides the backup row altogether (the firmware exposes no per-slot
+           relation), so without this line the user taps a slot and is told
+           nothing at all about runout behaviour. Self-hiding on
+           ams_endless_state == 0, so backends with no mechanism are unaffected. -->
+      <ams_endless_status name="endless_status"/>
     </lv_obj>
   </view>
 </component>

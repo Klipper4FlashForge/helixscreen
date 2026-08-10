@@ -215,6 +215,7 @@
   <translation tag="Back" zh="返回"/>
   <translation tag="Back to Results" zh="返回结果"/>
   <translation tag="Backtrace: {} frames" zh="回溯: {} 帧"/>
+  <translation tag="Backup spool switching state unknown" zh="备用料盘切换状态未知"/>
   <translation tag="Barcode Scanner" zh="条码扫描器"/>
   <translation tag="Base" zh="基准"/>
   <translation tag="Beacon auto-calibrate sent" zh="Beacon自动校准已发送"/>
@@ -1292,6 +1293,7 @@
   <translation tag="Name:" zh="名称:"/>
   <translation tag="Named actions in the LED control panel (long-press)." zh="LED 控制面板中的命名操作（长按）。"/>
   <translation tag="Needs adjustment" zh="需要调整"/>
+  <translation tag="Needs the {} package to switch spools" zh="切换料盘需要 {} 插件"/>
   <translation tag="Net Weight (g)" zh="净重（克）"/>
   <translation tag="Network" zh="网络"/>
   <translation tag="Network Address" zh="网络地址"/>
@@ -2056,6 +2058,7 @@
   <translation tag="Switch Printer" zh="切换打印机"/>
   <translation tag="Switch between light and dark themes" zh="切换浅色和深色主题"/>
   <translation tag="Switched to T{}" zh="已切换到 T{}"/>
+  <translation tag="Switches to a backup spool on runout" zh="耗材用尽时切换到备用料盘"/>
   <translation tag="Switching heater control to MPC. Klipper will restart." zh="正在将加热控制切换为 MPC。Klipper 将重启。"/>
   <translation tag="Switching to MPC requires a config change and Klipper restart." zh="切换到 MPC 需要修改配置并重启 Klipper。"/>
   <translation tag="Sync with Spoolman" zh="与 Spoolman 同步"/>
@@ -2110,6 +2113,7 @@
   <translation tag="Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining" zh="测试旋转: %d\xc2\xb0 (%d/%d) - 剩余%ds"/>
   <translation tag="Thanks! Anonymous usage data helps improve HelixScreen." zh="感谢！匿名使用数据有助于改进 HelixScreen。"/>
   <translation tag="Thanks! TOTALLY anonymous usage data helps improve HelixScreen." zh="感谢！完全匿名的使用数据有助于改进 HelixScreen。"/>
+  <translation tag="That slot cannot stand in for this one" zh="该槽位无法替代当前槽位"/>
   <translation tag="That tool is already loaded" zh="该工具已加载耗材"/>
   <translation tag="The HelixPrint plugin enables fast G-code modifications directly on your printer—like skipping bed mesh for quick reprints." zh="HelixPrint 插件可在打印机上直接进行快速 G-code 修改——例如跳过热床网格以快速重新打印。"/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." zh="为防止动画屏保干扰打印，已在此设备上将其关闭。您可以在设置 &gt; 显示中重新启用。"/>
@@ -2352,6 +2356,7 @@
   <translation tag="Widget Labels" zh="小组件标签"/>
   <translation tag="Width" zh="宽度"/>
   <translation tag="Wifi" zh="Wi-Fi"/>
+  <translation tag="Will not switch spools on runout" zh="耗材用尽时不会切换料盘"/>
   <translation tag="Wizard Error" zh="向导错误"/>
   <translation tag="Working..." zh="处理中..."/>
   <translation tag="Write failed at chunk {}" zh="区块 {} 写入失败"/>

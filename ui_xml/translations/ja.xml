@@ -215,6 +215,7 @@
   <translation tag="Back" ja="戻る"/>
   <translation tag="Back to Results" ja="結果に戻る"/>
   <translation tag="Backtrace: {} frames" ja="バックトレース: {} フレーム"/>
+  <translation tag="Backup spool switching state unknown" ja="バックアップスプール切り替えの状態は不明です"/>
   <translation tag="Barcode Scanner" ja="バーコードスキャナー"/>
   <translation tag="Base" ja="基準"/>
   <translation tag="Beacon auto-calibrate sent" ja="Beacon自動キャリブレーション送信済み"/>
@@ -1292,6 +1293,7 @@
   <translation tag="Name:" ja="名前:"/>
   <translation tag="Named actions in the LED control panel (long-press)." ja="LEDコントロールパネルの名前付きアクション（長押し）。"/>
   <translation tag="Needs adjustment" ja="調整が必要"/>
+  <translation tag="Needs the {} package to switch spools" ja="スプール切り替えには {} プラグインが必要です"/>
   <translation tag="Net Weight (g)" ja="正味重量（g）"/>
   <translation tag="Network" ja="ネットワーク"/>
   <translation tag="Network Address" ja="ネットワークアドレス"/>
@@ -2056,6 +2058,7 @@
   <translation tag="Switch Printer" ja="プリンターを切り替え"/>
   <translation tag="Switch between light and dark themes" ja="ライトテーマとダークテーマを切り替え"/>
   <translation tag="Switched to T{}" ja="T{} に切替えました"/>
+  <translation tag="Switches to a backup spool on runout" ja="フィラメント切れ時にバックアップスプールへ切り替えます"/>
   <translation tag="Switching heater control to MPC. Klipper will restart." ja="ヒーター制御をMPCに切り替えます。Klipperが再起動します。"/>
   <translation tag="Switching to MPC requires a config change and Klipper restart." ja="MPCへの切り替えには設定変更とKlipperの再起動が必要です。"/>
   <translation tag="Sync with Spoolman" ja="Spoolman と同期"/>
@@ -2110,6 +2113,7 @@
   <translation tag="Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining" ja="回転テスト: %d\xc2\xb0 (%d/%d) - %ds残り"/>
   <translation tag="Thanks! Anonymous usage data helps improve HelixScreen." ja="ご協力ありがとうございます！匿名の使用データが HelixScreen の改善に役立ちます。"/>
   <translation tag="Thanks! TOTALLY anonymous usage data helps improve HelixScreen." ja="ご協力ありがとうございます！完全匿名の使用データが HelixScreen の改善に役立ちます。"/>
+  <translation tag="That slot cannot stand in for this one" ja="そのスロットはこのスロットの代わりになりません"/>
   <translation tag="That tool is already loaded" ja="そのツールはすでに装填されています"/>
   <translation tag="The HelixPrint plugin enables fast G-code modifications directly on your printer—like skipping bed mesh for quick reprints." ja="HelixPrint プラグインは、クイック再印刷のためのベッドメッシュスキップなど、プリンター上で直接高速 G-code 修正を可能にします。"/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." ja="アニメーション付きスクリーンセーバーが印刷に干渉しないよう、このデバイスではオフになっています。設定 &gt; ディスプレイで再度有効にできます。"/>
@@ -2352,6 +2356,7 @@
   <translation tag="Widget Labels" ja="ウィジェットラベル"/>
   <translation tag="Width" ja="幅"/>
   <translation tag="Wifi" ja="Wi-Fi"/>
+  <translation tag="Will not switch spools on runout" ja="フィラメント切れ時にスプールを切り替えません"/>
   <translation tag="Wizard Error" ja="ウィザードエラー"/>
   <translation tag="Working..." ja="処理中..."/>
   <translation tag="Write failed at chunk {}" ja="チャンク {} で書き込みに失敗しました"/>

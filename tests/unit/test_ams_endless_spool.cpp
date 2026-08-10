@@ -167,11 +167,21 @@ TEST_CASE("Endless spool config models groups, not single successors",
         REQUIRE(cfg.groups.size() == 1);
         CHECK(cfg.groups[0].members == std::vector<int>{0, 1, 2, 3});
 
-        // Projection: every member falls back to the first OTHER member, which is
-        // exactly what the old in-backend "use first match" loop produced.
-        CHECK(endless_spool_backup_edges(cfg, 4) == std::vector<int>{1, 0, 0, 0});
+        // Projection: a ring. Every member gets exactly one successor and
+        // following the arrows visits all four gates, which is as close as a
+        // one-target-per-source edge view gets to "any gate substitutes for any
+        // other". The pre-Phase-2 shape was {1, 0, 0, 0} - which draws "gate 1
+        // is everyone's backup", a thing a clique does not say.
+        CHECK(endless_spool_backup_edges(cfg, 4) == std::vector<int>{1, 2, 3, 0});
         CHECK(endless_spool_backup_for(cfg, 0) == 1);
         CHECK(endless_spool_backup_for(cfg, 3) == 0);
+
+        // Every member is a successor of exactly one other member: no gate is
+        // privileged, and no gate is left out of the relation.
+        const auto edges = endless_spool_backup_edges(cfg, 4);
+        std::vector<int> targets = edges;
+        std::sort(targets.begin(), targets.end());
+        CHECK(targets == std::vector<int>{0, 1, 2, 3});
     }
 
     SECTION("a 3-member ordered group projects as a chain, tail terminates") {
@@ -196,7 +206,7 @@ TEST_CASE("Endless spool config models groups, not single successors",
         for (int slot = 0; slot < 6; ++slot) {
             CHECK(edges[static_cast<size_t>(slot)] == endless_spool_backup_for(cfg, slot));
         }
-        CHECK(edges == std::vector<int>{1, 2, -1, 4, 3, 3});
+        CHECK(edges == std::vector<int>{1, 2, -1, 4, 5, 3});
     }
 
     SECTION("out-of-range members are ignored, not written out of bounds") {
@@ -755,4 +765,248 @@ TEST_CASE("Availability has exactly one source of truth",
     }
 
     backend.stop();
+}
+
+// =============================================================================
+// The status line: capability enums -> one bindable code + one sentence
+//
+// This is what Phase 2 put on screen, so it is pinned hard. The strings are the
+// English source strings: lv_tr() is identity when no translation pack is loaded,
+// which is the state a unit-test binary runs in.
+// =============================================================================
+
+TEST_CASE("endless_spool_status turns capabilities into a status line",
+          "[ams][endless_spool][status][1250]") {
+    SECTION("Unsupported says nothing at all") {
+        // Not "off". A printer with no such mechanism is not a printer with the
+        // mechanism switched off, and the row must disappear rather than assert
+        // something about a feature that does not exist.
+        EndlessSpoolCapabilities caps; // default = Unsupported
+        const auto status = endless_spool_status(caps);
+
+        CHECK(status.kind == EndlessSpoolStatusKind::Hidden);
+        CHECK(static_cast<int>(status.kind) == 0); // 0 is what the XML hides on
+        CHECK(status.text.empty());
+    }
+
+    SECTION("Unsupported wins over a stale enable bit") {
+        // Belt and braces: a backend that reports Unsupported while its transport
+        // carrier still says enabled must not render "will switch".
+        EndlessSpoolCapabilities caps;
+        caps.enabled = EndlessSpoolEnabled::On;
+
+        CHECK(endless_spool_status(caps).kind == EndlessSpoolStatusKind::Hidden);
+        CHECK(endless_spool_status(caps).text.empty());
+    }
+
+    SECTION("On reads as 'it will switch'") {
+        EndlessSpoolCapabilities caps;
+        caps.availability = EndlessSpoolAvailability::Available;
+        caps.enabled = EndlessSpoolEnabled::On;
+        const auto status = endless_spool_status(caps);
+
+        CHECK(status.kind == EndlessSpoolStatusKind::On);
+        CHECK(status.text == "Switches to a backup spool on runout");
+    }
+
+    SECTION("Off reads as 'it will not switch' and never as unknown") {
+        EndlessSpoolCapabilities caps;
+        caps.availability = EndlessSpoolAvailability::Available;
+        caps.enabled = EndlessSpoolEnabled::Off;
+        const auto status = endless_spool_status(caps);
+
+        CHECK(status.kind == EndlessSpoolStatusKind::Off);
+        CHECK(status.text == "Will not switch spools on runout");
+    }
+
+    SECTION("Unknown is phrased as unknown, NOT as off") {
+        // The distinction the whole tri-state exists for. Saying "off" here is a
+        // promise we cannot keep: we simply never read the setting.
+        EndlessSpoolCapabilities caps;
+        caps.availability = EndlessSpoolAvailability::Available;
+        caps.enabled = EndlessSpoolEnabled::Unknown;
+        const auto status = endless_spool_status(caps);
+
+        CHECK(status.kind == EndlessSpoolStatusKind::Unknown);
+        CHECK(status.text == "Backup spool switching state unknown");
+        CHECK(status.text.find("not switch") == std::string::npos);
+        CHECK(status.kind != EndlessSpoolStatusKind::Off);
+    }
+
+    SECTION("a restriction reason is appended on its own line") {
+        // CFS with auto-refill ON: it will switch, and the firmware owns which
+        // spool. Both facts, one line each.
+        EndlessSpoolCapabilities caps;
+        caps.availability = EndlessSpoolAvailability::Available;
+        caps.enabled = EndlessSpoolEnabled::On;
+        caps.editability = EndlessSpoolEditability::ReadOnly;
+        caps.restriction = EndlessSpoolRestriction::FirmwareManaged;
+        const auto status = endless_spool_status(caps);
+
+        CHECK(status.kind == EndlessSpoolStatusKind::On);
+        CHECK(status.text == "Switches to a backup spool on runout\n"
+                             "The printer's firmware chooses the backup spool itself");
+        // The reason is exactly endless_spool_restriction_text(), never a second
+        // copy of the same prose.
+        CHECK(status.text.find(endless_spool_restriction_text(
+                  EndlessSpoolRestriction::FirmwareManaged)) != std::string::npos);
+    }
+
+    SECTION("CFS with auto-refill OFF is visibly different from CFS with it on") {
+        // The exact bug the Phase 1 refactor existed to make expressible: an
+        // enabled box and a disabled one used to render identically.
+        EndlessSpoolCapabilities on;
+        on.availability = EndlessSpoolAvailability::Available;
+        on.enabled = EndlessSpoolEnabled::On;
+        on.restriction = EndlessSpoolRestriction::FirmwareManaged;
+
+        EndlessSpoolCapabilities off = on;
+        off.enabled = EndlessSpoolEnabled::Off;
+
+        CHECK(endless_spool_status(on).text != endless_spool_status(off).text);
+        CHECK(endless_spool_status(on).kind != endless_spool_status(off).kind);
+    }
+
+    SECTION("RequiresPlugin with a provider names the package to install") {
+        EndlessSpoolCapabilities caps;
+        caps.availability = EndlessSpoolAvailability::RequiresPlugin;
+        caps.enabled = EndlessSpoolEnabled::Off;
+        caps.restriction = EndlessSpoolRestriction::PluginMissing;
+        caps.provider = "lessWaste";
+        const auto status = endless_spool_status(caps);
+
+        CHECK(status.kind == EndlessSpoolStatusKind::NeedsPlugin);
+        CHECK(status.text == "Needs the lessWaste package to switch spools");
+    }
+
+    SECTION("RequiresPlugin with no provider falls back to the restriction text") {
+        // This is the AD5X-on-stock-zMod shape: the backend genuinely cannot know
+        // whether the user would install lessWaste or bambufy, so `provider` is
+        // empty and the generic sentence is what renders.
+        EndlessSpoolCapabilities caps;
+        caps.availability = EndlessSpoolAvailability::RequiresPlugin;
+        caps.enabled = EndlessSpoolEnabled::Off;
+        caps.restriction = EndlessSpoolRestriction::PluginMissing;
+        const auto status = endless_spool_status(caps);
+
+        CHECK(status.kind == EndlessSpoolStatusKind::NeedsPlugin);
+        CHECK(status.text == "No automatic backup-spool package is installed");
+        CHECK(status.text.find("{}") == std::string::npos); // no unfilled placeholder
+    }
+
+    SECTION("a provider is attributed parenthetically when the feature is live") {
+        EndlessSpoolCapabilities caps;
+        caps.availability = EndlessSpoolAvailability::Available;
+        caps.enabled = EndlessSpoolEnabled::On;
+        caps.editability = EndlessSpoolEditability::ReadOnly;
+        caps.restriction = EndlessSpoolRestriction::PluginReadOnly;
+        caps.provider = "bambufy";
+        const auto status = endless_spool_status(caps);
+
+        CHECK(status.text == "Switches to a backup spool on runout (bambufy)\n"
+                             "Configured in the backup-spool package, not from here");
+    }
+
+    SECTION("every capability corner produces text iff it produces a visible kind") {
+        // No state may render an empty label while claiming to be visible, and no
+        // state may render text while claiming to be hidden.
+        for (auto avail :
+             {EndlessSpoolAvailability::Unsupported, EndlessSpoolAvailability::RequiresPlugin,
+              EndlessSpoolAvailability::Available}) {
+            for (auto en : {EndlessSpoolEnabled::Unknown, EndlessSpoolEnabled::Off,
+                            EndlessSpoolEnabled::On}) {
+                for (auto restr :
+                     {EndlessSpoolRestriction::None, EndlessSpoolRestriction::MultiUnit,
+                      EndlessSpoolRestriction::FirmwareManaged, EndlessSpoolRestriction::NotReady,
+                      EndlessSpoolRestriction::PluginMissing,
+                      EndlessSpoolRestriction::PluginReadOnly}) {
+                    for (const char* prov : {"", "lessWaste"}) {
+                        EndlessSpoolCapabilities caps;
+                        caps.availability = avail;
+                        caps.enabled = en;
+                        caps.restriction = restr;
+                        caps.provider = prov;
+                        const auto status = endless_spool_status(caps);
+
+                        const bool hidden = status.kind == EndlessSpoolStatusKind::Hidden;
+                        CHECK(hidden == status.text.empty());
+                        CHECK(status.text.find("{}") == std::string::npos);
+                        CHECK(status.text.size() < 384); // AmsState's buffer
+                    }
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("Every backend's real capabilities produce a sane status line",
+          "[ams][endless_spool][status][integration][1250]") {
+    // A pure function is only as good as whether its inputs match what it gets at
+    // runtime. These assert against the values the LIVE backends hold, not
+    // hand-built structs.
+    SECTION("Mock, editable and enabled") {
+        AmsBackendMock backend(4);
+        backend.set_operation_delay(0);
+        REQUIRE(backend.start());
+
+        const auto caps = backend.get_endless_spool_capabilities();
+        const auto status = endless_spool_status(caps);
+        REQUIRE(caps.available());
+        CHECK(status.kind == (caps.enabled == EndlessSpoolEnabled::On
+                                  ? EndlessSpoolStatusKind::On
+                                  : EndlessSpoolStatusKind::Off));
+        CHECK_FALSE(status.text.empty());
+        backend.stop();
+    }
+
+    SECTION("Mock with support switched off renders nothing") {
+        AmsBackendMock backend(4);
+        backend.set_operation_delay(0);
+        REQUIRE(backend.start());
+        backend.set_endless_spool_supported(false);
+
+        const auto status = endless_spool_status(backend.get_endless_spool_capabilities());
+        CHECK(status.kind == EndlessSpoolStatusKind::Hidden);
+        CHECK(status.text.empty());
+        backend.stop();
+    }
+
+    SECTION("Mock read-only reports the firmware-managed reason on its own line") {
+        AmsBackendMock backend(4);
+        backend.set_operation_delay(0);
+        REQUIRE(backend.start());
+        backend.set_endless_spool_editable(false);
+
+        const auto caps = backend.get_endless_spool_capabilities();
+        REQUIRE(caps.available());
+        REQUIRE_FALSE(caps.editable());
+        const auto status = endless_spool_status(caps);
+        CHECK(status.text.find('\n') != std::string::npos);
+        CHECK(status.text.find("firmware chooses") != std::string::npos);
+        backend.stop();
+    }
+
+    SECTION("AFC: available, on, no restriction, so exactly one line") {
+        AmsBackendAfc backend(nullptr, nullptr);
+        const auto caps = backend.get_endless_spool_capabilities();
+        REQUIRE(caps.enabled == EndlessSpoolEnabled::On);
+        REQUIRE(caps.restriction == EndlessSpoolRestriction::None);
+
+        const auto status = endless_spool_status(caps);
+        CHECK(status.kind == EndlessSpoolStatusKind::On);
+        CHECK(status.text == "Switches to a backup spool on runout");
+        CHECK(status.text.find('\n') == std::string::npos);
+    }
+
+    SECTION("Happy Hare before its registry initialises: Unknown, not Off") {
+        AmsBackendHappyHareEndlessSpoolHelper backend;
+        const auto caps = backend.get_endless_spool_capabilities();
+        REQUIRE(caps.restriction == EndlessSpoolRestriction::NotReady);
+        REQUIRE(caps.enabled == EndlessSpoolEnabled::Unknown);
+
+        const auto status = endless_spool_status(caps);
+        CHECK(status.kind == EndlessSpoolStatusKind::Unknown);
+        CHECK(status.text == "Backup spool switching state unknown\n"
+                             "Waiting for the filament system to report its state");
+    }
 }

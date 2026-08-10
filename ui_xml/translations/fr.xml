@@ -215,6 +215,7 @@
   <translation tag="Back" fr="Retour"/>
   <translation tag="Back to Results" fr="Retour aux résultats"/>
   <translation tag="Backtrace: {} frames" fr="Trace : {} frames"/>
+  <translation tag="Backup spool switching state unknown" fr="État du passage à la bobine de secours inconnu"/>
   <translation tag="Barcode Scanner" fr="Scanner de codes-barres"/>
   <translation tag="Base" fr="Référence"/>
   <translation tag="Beacon auto-calibrate sent" fr="Beacon auto-calibrage envoyé"/>
@@ -1292,6 +1293,7 @@
   <translation tag="Name:" fr="Nom :"/>
   <translation tag="Named actions in the LED control panel (long-press)." fr="Actions nommées dans le panneau de commande LED (appui long)."/>
   <translation tag="Needs adjustment" fr="Ajustement nécessaire"/>
+  <translation tag="Needs the {} package to switch spools" fr="Nécessite le plugin {} pour changer de bobine"/>
   <translation tag="Net Weight (g)" fr="Poids net (g)"/>
   <translation tag="Network" fr="Réseau"/>
   <translation tag="Network Address" fr="Adresse réseau"/>
@@ -2056,6 +2058,7 @@
   <translation tag="Switch Printer" fr="Changer d&apos;imprimante"/>
   <translation tag="Switch between light and dark themes" fr="Basculer entre les thèmes clair et sombre"/>
   <translation tag="Switched to T{}" fr="Basculé sur T{}"/>
+  <translation tag="Switches to a backup spool on runout" fr="Passe à une bobine de secours en fin de filament"/>
   <translation tag="Switching heater control to MPC. Klipper will restart." fr="Basculement du chauffage vers MPC. Klipper va redémarrer."/>
   <translation tag="Switching to MPC requires a config change and Klipper restart." fr="Le passage à MPC nécessite une modification de la config et un redémarrage de Klipper."/>
   <translation tag="Sync with Spoolman" fr="Synchroniser avec Spoolman"/>
@@ -2110,6 +2113,7 @@
   <translation tag="Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining" fr="Test de rotation : %d\xc2\xb0 (%d/%d) - %ds restantes"/>
   <translation tag="Thanks! Anonymous usage data helps improve HelixScreen." fr="Merci ! Les données d&apos;utilisation anonymes aident à améliorer HelixScreen."/>
   <translation tag="Thanks! TOTALLY anonymous usage data helps improve HelixScreen." fr="Merci ! Les données d&apos;utilisation TOTALEMENT anonymes aident à améliorer HelixScreen."/>
+  <translation tag="That slot cannot stand in for this one" fr="Cet emplacement ne peut pas remplacer celui-ci"/>
   <translation tag="That tool is already loaded" fr="Cet outil est déjà chargé"/>
   <translation tag="The HelixPrint plugin enables fast G-code modifications directly on your printer—like skipping bed mesh for quick reprints." fr="Le plugin HelixPrint permet des modifications rapides du G-code directement sur votre imprimante—comme ignorer le maillage du plateau pour des réimpressions rapides."/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." fr="L&apos;économiseur d&apos;écran animé a été désactivé sur cet appareil pour éviter qu&apos;il n&apos;interfère avec les impressions. Vous pouvez le réactiver dans Paramètres &gt; Affichage et son."/>
@@ -2352,6 +2356,7 @@
   <translation tag="Widget Labels" fr="Libellés des widgets"/>
   <translation tag="Width" fr="Largeur"/>
   <translation tag="Wifi" fr="Wi-Fi"/>
+  <translation tag="Will not switch spools on runout" fr="Ne changera pas de bobine en fin de filament"/>
   <translation tag="Wizard Error" fr="Erreur de l&apos;assistant"/>
   <translation tag="Working..." fr="En cours..."/>
   <translation tag="Write failed at chunk {}" fr="Échec de lécriture au bloc {}"/>

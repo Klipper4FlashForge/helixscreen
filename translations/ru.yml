@@ -240,6 +240,7 @@ translations:
   Back: Назад
   Back to Results: Назад к результатам
   'Backtrace: {} frames': 'Трассировка: {} кадров'
+  Backup spool switching state unknown: 'Резервная катушка: состояние неизвестно'
   Barcode Scanner: Сканер штрих-кодов
   Base: Опорный
   Beacon auto-calibrate sent: Beacon автокалибровка отправлена
@@ -1463,6 +1464,7 @@ translations:
   Named actions in the LED control panel (long-press).: Именованные действия в панели
     управления LED (долгое нажатие).
   Needs adjustment: Требуется регулировка
+  Needs the {} package to switch spools: 'Для смены катушки нужен плагин {}'
   Net Weight (g): Вес нетто (г)
   Network: Сеть
   Network Address: Сетевой адрес
@@ -2324,6 +2326,7 @@ translations:
   Switch Printer: Переключить принтер
   Switch between light and dark themes: Переключение между светлой и тёмной темами
   Switched to T{}: Переключено на T{}
+  Switches to a backup spool on runout: При обрыве переключится на резервную катушку
   Switching heater control to MPC. Klipper will restart.: Переключение управления
     нагревом на MPC. Klipper перезапустится.
   Switching to MPC requires a config change and Klipper restart.: Переход на MPC требует
@@ -2388,6 +2391,7 @@ translations:
     использования помогают улучшить HelixScreen.
   Thanks! TOTALLY anonymous usage data helps improve HelixScreen.: Спасибо! ПОЛНОСТЬЮ
     анонимные данные использования помогают улучшить HelixScreen.
+  That slot cannot stand in for this one: Этот слот не может заменить текущий
   That tool is already loaded: Этот инструмент уже загружен
   ? The HelixPrint plugin enables fast G-code modifications directly on your printer—like
     skipping bed mesh for quick reprints.
@@ -2712,6 +2716,7 @@ translations:
   Widget Labels: Подписи виджетов
   Width: Ширина
   Wifi: Wi-Fi
+  Will not switch spools on runout: При обрыве катушка не переключится
   Wizard Error: Ошибка мастера
   Working...: Выполнение...
   Write failed at chunk {}: Не удалось записать в блоке {}

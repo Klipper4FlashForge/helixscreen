@@ -208,7 +208,7 @@ Mostly unused by HelixScreen; `variable_backup` is the exception.
 
 | Variable | Purpose |
 |----------|---------|
-| `variable_backup` | Enable/disable automatic filament backup on runout. **Read by HelixScreen** (#1250): surfaced on the `ams_ifs_backup_enabled` subject and quoted in the runout dialog, so a user is told plainly whether the printer will switch spools by itself. Absent key = unknown, never reported as off. See `docs/devel/FILAMENT_MANAGEMENT.md` § "Auto-switchover plugin visibility" |
+| `variable_backup` | Enable/disable automatic filament backup on runout. **Read by HelixScreen** (#1250): quoted in the runout dialog (`build_runout_detail_locked()`) and mapped onto `EndlessSpoolCapabilities::enabled`, which reaches the AMS panel and slot context menu as the backend-neutral `ams_endless_state` / `ams_endless_text` subjects — so a user is told plainly whether the printer will switch spools by itself. Absent key = unknown, never reported as off. There is no AD5X-specific subject for this; the short-lived `ams_ifs_backup_enabled` was retired in favour of the cross-backend pair. See `docs/devel/FILAMENT_MANAGEMENT.md` § "Auto-switchover plugin visibility" and § "The status line" |
 | `variable_backup_filament_spent` | `[0,0,0,0]` — marks consumed backup slots |
 | `variable_is_virtual_mode` | Virtual channel mode active (>4 tools mapped to 4 ports) |
 | `variable_same_filament_purge` | Skip start purge if same filament in hotend |

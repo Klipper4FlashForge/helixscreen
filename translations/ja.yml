@@ -218,6 +218,7 @@ translations:
   Back: 戻る
   Back to Results: 結果に戻る
   'Backtrace: {} frames': 'バックトレース: {} フレーム'
+  Backup spool switching state unknown: バックアップスプール切り替えの状態は不明です
   Barcode Scanner: バーコードスキャナー
   Base: 基準
   Beacon auto-calibrate sent: Beacon自動キャリブレーション送信済み
@@ -1330,6 +1331,7 @@ translations:
   'Name:': '名前:'
   Named actions in the LED control panel (long-press).: LEDコントロールパネルの名前付きアクション（長押し）。
   Needs adjustment: 調整が必要
+  Needs the {} package to switch spools: 'スプール切り替えには {} プラグインが必要です'
   Net Weight (g): 正味重量（g）
   Network: ネットワーク
   Network Address: ネットワークアドレス
@@ -2119,6 +2121,7 @@ translations:
   Switch Printer: プリンターを切り替え
   Switch between light and dark themes: ライトテーマとダークテーマを切り替え
   Switched to T{}: T{} に切替えました
+  Switches to a backup spool on runout: フィラメント切れ時にバックアップスプールへ切り替えます
   Switching heater control to MPC. Klipper will restart.: ヒーター制御をMPCに切り替えます。Klipperが再起動します。
   Switching to MPC requires a config change and Klipper restart.: MPCへの切り替えには設定変更とKlipperの再起動が必要です。
   Sync with Spoolman: Spoolman と同期
@@ -2178,6 +2181,7 @@ translations:
     HelixScreen の改善に役立ちます。
   Thanks! TOTALLY anonymous usage data helps improve HelixScreen.: ご協力ありがとうございます！完全匿名の使用データが
     HelixScreen の改善に役立ちます。
+  That slot cannot stand in for this one: そのスロットはこのスロットの代わりになりません
   That tool is already loaded: そのツールはすでに装填されています
   ? The HelixPrint plugin enables fast G-code modifications directly on your printer—like
     skipping bed mesh for quick reprints.
@@ -2456,6 +2460,7 @@ translations:
   Widget Labels: ウィジェットラベル
   Width: 幅
   Wifi: Wi-Fi
+  Will not switch spools on runout: フィラメント切れ時にスプールを切り替えません
   Wizard Error: ウィザードエラー
   Working...: 処理中...
   Write failed at chunk {}: チャンク {} で書き込みに失敗しました

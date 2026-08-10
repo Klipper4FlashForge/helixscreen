@@ -570,9 +570,9 @@ class Ad5xIfsTestAccess {
         std::lock_guard<std::mutex> lock(b.mutex_);
         return b.parse_ifs_vars_macro_locked(macro_status);
     }
-    static int backup_subject_value(const AmsBackendAd5xIfs& b) {
+    static int backup_state(const AmsBackendAd5xIfs& b) {
         std::lock_guard<std::mutex> lock(b.mutex_);
-        return b.backup_subject_value_locked();
+        return b.backup_state_locked();
     }
 };
 
@@ -10202,7 +10202,7 @@ TEST_CASE("AD5X IFS plugin visibility: which plugin, and is backup on",
         REQUIRE(backend.get_plugin() == B::IfsPlugin::None);
         REQUIRE_FALSE(backend.plugin_backup_enabled().has_value());
         // No plugin means no mechanism at all - that is not "unknown".
-        REQUIRE(Ad5xIfsTestAccess::backup_subject_value(backend) == B::BACKUP_OFF);
+        REQUIRE(Ad5xIfsTestAccess::backup_state(backend) == B::BACKUP_OFF);
     }
 
     SECTION("lessWaste detected from its own save_variables") {
@@ -10214,7 +10214,7 @@ TEST_CASE("AD5X IFS plugin visibility: which plugin, and is backup on",
                                       json{{"less_waste_tools", json::array({1, 2, 3, 4})}});
         REQUIRE(backend.get_plugin() == B::IfsPlugin::LessWaste);
         // Nothing read yet -> unknown, NOT off.
-        REQUIRE(Ad5xIfsTestAccess::backup_subject_value(backend) == B::BACKUP_UNKNOWN);
+        REQUIRE(Ad5xIfsTestAccess::backup_state(backend) == B::BACKUP_UNKNOWN);
     }
 
     SECTION("bambufy detected from its own save_variables") {
@@ -10230,7 +10230,7 @@ TEST_CASE("AD5X IFS plugin visibility: which plugin, and is backup on",
         Ad5xIfsTestAccess::parse_vars(backend,
                                       json{{"less_waste_tools", json::array({1, 2, 3, 4})}});
         REQUIRE(backend.get_plugin() == B::IfsPlugin::None);
-        REQUIRE(Ad5xIfsTestAccess::backup_subject_value(backend) == B::BACKUP_OFF);
+        REQUIRE(Ad5xIfsTestAccess::backup_state(backend) == B::BACKUP_OFF);
     }
 
     SECTION("variable_backup is read from the macro dict, int or bool") {
@@ -10239,11 +10239,11 @@ TEST_CASE("AD5X IFS plugin visibility: which plugin, and is backup on",
 
         REQUIRE(Ad5xIfsTestAccess::parse_ifs_vars_macro(backend, json{{"variable_backup", 0}}));
         REQUIRE(backend.plugin_backup_enabled() == std::optional<bool>{false});
-        REQUIRE(Ad5xIfsTestAccess::backup_subject_value(backend) == B::BACKUP_OFF);
+        REQUIRE(Ad5xIfsTestAccess::backup_state(backend) == B::BACKUP_OFF);
 
         REQUIRE(Ad5xIfsTestAccess::parse_ifs_vars_macro(backend, json{{"variable_backup", 1}}));
         REQUIRE(backend.plugin_backup_enabled() == std::optional<bool>{true});
-        REQUIRE(Ad5xIfsTestAccess::backup_subject_value(backend) == B::BACKUP_ON);
+        REQUIRE(Ad5xIfsTestAccess::backup_state(backend) == B::BACKUP_ON);
 
         REQUIRE(Ad5xIfsTestAccess::parse_ifs_vars_macro(backend, json{{"variable_backup", false}}));
         REQUIRE(backend.plugin_backup_enabled() == std::optional<bool>{false});
@@ -10259,7 +10259,7 @@ TEST_CASE("AD5X IFS plugin visibility: which plugin, and is backup on",
         REQUIRE_FALSE(Ad5xIfsTestAccess::parse_ifs_vars_macro(
             backend, json{{"variable_tools", json::array({1, 2, 3, 4})}}));
         REQUIRE_FALSE(backend.plugin_backup_enabled().has_value());
-        REQUIRE(Ad5xIfsTestAccess::backup_subject_value(backend) == B::BACKUP_UNKNOWN);
+        REQUIRE(Ad5xIfsTestAccess::backup_state(backend) == B::BACKUP_UNKNOWN);
     }
 
     SECTION("an empty dict is Klipper's 'no such object' answer, not data") {

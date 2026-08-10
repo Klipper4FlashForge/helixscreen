@@ -96,20 +96,23 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
 
     /// Which auto-switchover macro package is driving the IFS, if any.
     ///
-    /// The numeric values are published verbatim on the `ams_ifs_plugin` XML
-    /// subject, so they are part of the UI contract - append, never renumber.
     /// `None` is the stock-zMod case and is the one that matters most to the
     /// user: with no plugin there is no backup-spool switching at all, so a
-    /// runout stops the print until a human intervenes (#1247).
+    /// runout stops the print until a human intervenes (#1247). That reaches the
+    /// UI through get_endless_spool_capabilities() - availability
+    /// `RequiresPlugin`, `provider` naming the package - not through any
+    /// AD5X-specific subject.
     enum class IfsPlugin : int {
         None = 0,      ///< Stock zMod - no _IFS_VARS macro, no auto switchover
         LessWaste = 1, ///< Hrybmo/lessWaste (`less_waste_*` save_variables)
         Bambufy = 2    ///< function3d/bambufy (`bambufy_*` save_variables)
     };
 
-    /// Published on the `ams_ifs_backup_enabled` XML subject. Tri-state because
-    /// "we could not read it" is a different answer from "it is off", and only
-    /// the latter justifies telling the user switchover will not happen.
+    /// The `variable_backup` reading as a tri-state, returned by
+    /// backup_state_locked(). Tri-state because "we could not read it" is a
+    /// different answer from "it is off", and only the latter justifies telling
+    /// the user switchover will not happen. Maps onto
+    /// helix::printer::EndlessSpoolEnabled in get_endless_spool_capabilities().
     static constexpr int BACKUP_UNKNOWN = -1;
     static constexpr int BACKUP_OFF = 0;
     static constexpr int BACKUP_ON = 1;
@@ -294,12 +297,11 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // === Endless spool ===
     //
     // The cross-backend view of what get_plugin() / plugin_backup_enabled()
-    // already know. `ams_ifs_plugin` / `ams_ifs_backup_enabled` stay as the XML
-    // publication path for the same state: they are AD5X-specific by design and
-    // already thread-correct (publish_plugin_subjects() runs main-thread only),
-    // and the cross-backend subjects that will replace them belong with the
-    // shared UI work, not here. Treat get_endless_spool_capabilities() as the
-    // authority; the subjects are a rendering detail.
+    // already know, and the ONLY path this state takes to the UI. The
+    // AD5X-specific `ams_ifs_plugin` / `ams_ifs_backup_enabled` subjects are
+    // gone: AmsState now publishes `ams_endless_state` / `ams_endless_text` from
+    // these capabilities for every backend, so a per-firmware subject could only
+    // ever have described one printer's answer.
 
     /**
      * @brief IFS auto-switchover as a shared capability.
@@ -808,9 +810,10 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     /// Caller must hold mutex_.
     bool parse_ifs_vars_macro_locked(const nlohmann::json& macro_status);
 
-    /// Value for the `ams_ifs_backup_enabled` subject (BACKUP_*). Caller holds
-    /// mutex_.
-    [[nodiscard]] int backup_subject_value_locked() const;
+    /// The `variable_backup` tri-state (BACKUP_*). Feeds both the runout warning
+    /// log and get_endless_spool_capabilities()' `enabled` axis, so the number in
+    /// the log and the sentence on screen cannot disagree. Caller holds mutex_.
+    [[nodiscard]] int backup_state_locked() const;
 
     // === Live load/unload progress phase tracker ===
     //

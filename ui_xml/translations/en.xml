@@ -215,6 +215,7 @@
   <translation tag="Back" en="Back"/>
   <translation tag="Back to Results" en="Back to Results"/>
   <translation tag="Backtrace: {} frames" en="Backtrace: {} frames"/>
+  <translation tag="Backup spool switching state unknown" en="Backup spool switching state unknown"/>
   <translation tag="Barcode Scanner" en="Barcode Scanner"/>
   <translation tag="Base" en="Base"/>
   <translation tag="Beacon auto-calibrate sent" en="Beacon auto-calibrate sent"/>
@@ -1292,6 +1293,7 @@
   <translation tag="Name:" en="Name:"/>
   <translation tag="Named actions in the LED control panel (long-press)." en="Named actions in the LED control panel (long-press)."/>
   <translation tag="Needs adjustment" en="Needs adjustment"/>
+  <translation tag="Needs the {} package to switch spools" en="Needs the {} package to switch spools"/>
   <translation tag="Net Weight (g)" en="Net Weight (g)"/>
   <translation tag="Network" en="Network"/>
   <translation tag="Network Address" en="Network Address"/>
@@ -2056,6 +2058,7 @@
   <translation tag="Switch Printer" en="Switch Printer"/>
   <translation tag="Switch between light and dark themes" en="Switch between light and dark themes"/>
   <translation tag="Switched to T{}" en="Switched to T{}"/>
+  <translation tag="Switches to a backup spool on runout" en="Switches to a backup spool on runout"/>
   <translation tag="Switching heater control to MPC. Klipper will restart." en="Switching heater control to MPC. Klipper will restart."/>
   <translation tag="Switching to MPC requires a config change and Klipper restart." en="Switching to MPC requires a config change and Klipper restart."/>
   <translation tag="Sync with Spoolman" en="Sync with Spoolman"/>
@@ -2110,6 +2113,7 @@
   <translation tag="Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining" en="Testing rotation: %d\xc2\xb0 (%d/%d) - %ds remaining"/>
   <translation tag="Thanks! Anonymous usage data helps improve HelixScreen." en="Thanks! Anonymous usage data helps improve HelixScreen."/>
   <translation tag="Thanks! TOTALLY anonymous usage data helps improve HelixScreen." en="Thanks! TOTALLY anonymous usage data helps improve HelixScreen."/>
+  <translation tag="That slot cannot stand in for this one" en="That slot cannot stand in for this one"/>
   <translation tag="That tool is already loaded" en="That tool is already loaded"/>
   <translation tag="The HelixPrint plugin enables fast G-code modifications directly on your printer—like skipping bed mesh for quick reprints." en="The HelixPrint plugin enables fast G-code modifications directly on your printer—like skipping bed mesh for quick reprints."/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." en="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display."/>
@@ -2352,6 +2356,7 @@
   <translation tag="Widget Labels" en="Widget Labels"/>
   <translation tag="Width" en="Width"/>
   <translation tag="Wifi" en="Wifi"/>
+  <translation tag="Will not switch spools on runout" en="Will not switch spools on runout"/>
   <translation tag="Wizard Error" en="Wizard Error"/>
   <translation tag="Working..." en="Working..."/>
   <translation tag="Write failed at chunk {}" en="Write failed at chunk {}"/>

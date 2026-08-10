@@ -46,6 +46,15 @@ namespace helix::ui {
  * @endcode
  */
 class AmsContextMenu : public ContextMenu {
+  public:
+    /// Answers "may slot `candidate` stand in for slot `slot`?"
+    ///
+    /// Always AmsBackend::is_endless_spool_backup_eligible() in production. Taken
+    /// as a parameter by the two pure functions below purely so they are testable
+    /// without a backend; the production call sites bind it to the virtual and to
+    /// nothing else.
+    using BackupEligibleFn = std::function<bool(int slot, int candidate)>;
+
     friend class ::AmsContextMenuTestAccess;
 
   public:
@@ -178,6 +187,10 @@ class AmsContextMenu : public ContextMenu {
     void populate_backup_dropdown();
     std::string build_tool_options() const;
     std::string build_backup_options() const;
+    /// backend_->is_endless_spool_backup_eligible() as a callable, or an
+    /// always-eligible stub when there is no backend (matching the old code,
+    /// which skipped every compatibility check in that case).
+    BackupEligibleFn backend_eligible_fn() const;
     int get_current_tool_for_slot() const;
     int get_current_backup_for_slot() const;
 
@@ -206,6 +219,31 @@ class AmsContextMenu : public ContextMenu {
     // @param has_relation Whether get_endless_spool_config() reported anything.
     static bool decide_show_backup_row(const helix::printer::EndlessSpoolCapabilities& caps,
                                        bool has_relation);
+
+    // Pure: the backup dropdown's option list, "(incompatible)"-tagged.
+    //
+    // The eligibility rule is the BACKEND's, reached through
+    // AmsBackend::is_endless_spool_backup_eligible(). This used to call
+    // filament::are_materials_compatible() directly, which meant AD5X IFS's
+    // stricter firmware rule (exact material AND exact colour AND port present)
+    // could never reach the label, and no backend had any say. The base virtual
+    // IS the old material-compatibility rule, so AFC / Happy Hare / CFS options
+    // are byte-identical to before.
+    //
+    // @param total_slots Number of slots to offer.
+    // @param item_index  The slot the menu is open on; skipped in the list.
+    // @param eligible    The backend's rule.
+    // @return Newline-separated dropdown options, starting with "None".
+    static std::string build_backup_options_for(int total_slots, int item_index,
+                                                const BackupEligibleFn& eligible);
+
+    // Pure: should the change-handler refuse this selection?
+    //
+    // Same rule as the option label, so a tagged option and a refused write can
+    // never disagree. "None" (backup < 0) is always allowed - clearing a backup
+    // needs no compatibility.
+    static bool decide_backup_refused(int item_index, int backup_slot,
+                                      const BackupEligibleFn& eligible);
 
     // Pure: selects the Unload button's operation for the open slot.
     //

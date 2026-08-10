@@ -217,6 +217,7 @@ translations:
   Back: 返回
   Back to Results: 返回结果
   'Backtrace: {} frames': '回溯: {} 帧'
+  Backup spool switching state unknown: 备用料盘切换状态未知
   Barcode Scanner: 条码扫描器
   Base: 基准
   Beacon auto-calibrate sent: Beacon自动校准已发送
@@ -1325,6 +1326,7 @@ translations:
   'Name:': '名称:'
   Named actions in the LED control panel (long-press).: LED 控制面板中的命名操作（长按）。
   Needs adjustment: 需要调整
+  Needs the {} package to switch spools: '切换料盘需要 {} 插件'
   Net Weight (g): 净重（克）
   Network: 网络
   Network Address: 网络地址
@@ -2111,6 +2113,7 @@ translations:
   Switch Printer: 切换打印机
   Switch between light and dark themes: 切换浅色和深色主题
   Switched to T{}: 已切换到 T{}
+  Switches to a backup spool on runout: 耗材用尽时切换到备用料盘
   Switching heater control to MPC. Klipper will restart.: 正在将加热控制切换为 MPC。Klipper 将重启。
   Switching to MPC requires a config change and Klipper restart.: 切换到 MPC 需要修改配置并重启
     Klipper。
@@ -2170,6 +2173,7 @@ translations:
   Thanks! Anonymous usage data helps improve HelixScreen.: 感谢！匿名使用数据有助于改进 HelixScreen。
   Thanks! TOTALLY anonymous usage data helps improve HelixScreen.: 感谢！完全匿名的使用数据有助于改进
     HelixScreen。
+  That slot cannot stand in for this one: 该槽位无法替代当前槽位
   That tool is already loaded: 该工具已加载耗材
   ? The HelixPrint plugin enables fast G-code modifications directly on your printer—like
     skipping bed mesh for quick reprints.
@@ -2447,6 +2451,7 @@ translations:
   Widget Labels: 小组件标签
   Width: 宽度
   Wifi: Wi-Fi
+  Will not switch spools on runout: 耗材用尽时不会切换料盘
   Wizard Error: 向导错误
   Working...: 处理中...
   Write failed at chunk {}: 区块 {} 写入失败

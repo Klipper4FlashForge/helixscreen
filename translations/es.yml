@@ -244,6 +244,7 @@ translations:
   Back: Volver
   Back to Results: Volver a resultados
   'Backtrace: {} frames': 'Traza inversa: {} marcos'
+  Backup spool switching state unknown: Estado del cambio a bobina de respaldo desconocido
   Barcode Scanner: Escáner de Código de Barras
   Base: Referencia
   Beacon auto-calibrate sent: Beacon auto-calibración enviada
@@ -1484,6 +1485,7 @@ translations:
   Named actions in the LED control panel (long-press).: Acciones con nombre en el
     panel de control LED (presión larga).
   Needs adjustment: Necesita ajuste
+  Needs the {} package to switch spools: 'Necesita el plugin {} para cambiar de bobina'
   Net Weight (g): Peso Neto (g)
   Network: Red
   Network Address: Dirección de Red
@@ -2356,6 +2358,7 @@ translations:
   Switch Printer: Cambiar Impresora
   Switch between light and dark themes: Cambiar entre temas claro y oscuro
   Switched to T{}: Cambiado a T{}
+  Switches to a backup spool on runout: Cambia a una bobina de respaldo al agotarse
   Switching heater control to MPC. Klipper will restart.: Cambiando control del calentador
     a MPC. Klipper se reiniciará.
   Switching to MPC requires a config change and Klipper restart.: Cambiar a MPC requiere
@@ -2420,6 +2423,7 @@ translations:
     uso anónimos ayudan a mejorar HelixScreen.
   Thanks! TOTALLY anonymous usage data helps improve HelixScreen.: ¡Gracias! Los datos
     de uso TOTALMENTE anónimos ayudan a mejorar HelixScreen.
+  That slot cannot stand in for this one: Esa ranura no puede sustituir a esta
   That tool is already loaded: Esa herramienta ya está cargada
   ? The HelixPrint plugin enables fast G-code modifications directly on your printer—like
     skipping bed mesh for quick reprints.
@@ -2758,6 +2762,7 @@ translations:
   Widget Labels: Etiquetas de Widgets
   Width: Ancho
   Wifi: Wifi
+  Will not switch spools on runout: No cambiará de bobina al agotarse
   Wizard Error: Error del asistente
   Working...: Procesando...
   Write failed at chunk {}: Error de escritura en el fragmento {}

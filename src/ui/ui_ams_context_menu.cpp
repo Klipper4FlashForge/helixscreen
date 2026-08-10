@@ -746,27 +746,32 @@ void AmsContextMenu::handle_backup_changed() {
         }
     }
 
-    // Validate material compatibility if a backup slot was selected
-    if (backup_slot >= 0 && get_item_index() >= 0) {
-        std::string current_material = backend_->get_slot_info(get_item_index()).material;
-        std::string backup_material = backend_->get_slot_info(backup_slot).material;
+    // Ask the BACKEND whether this pairing is allowed. Same rule that tagged the
+    // option "(incompatible)" in build_backup_options(), so the label and the
+    // refusal cannot disagree.
+    if (decide_backup_refused(get_item_index(), backup_slot, backend_eligible_fn())) {
+        const std::string current_material = backend_->get_slot_info(get_item_index()).material;
+        const std::string backup_material = backend_->get_slot_info(backup_slot).material;
+        spdlog::warn("[AmsContextMenu] Backend rejected backup slot {} for slot {} ({} / {})",
+                     backup_slot, get_item_index(), current_material, backup_material);
 
-        // Only check compatibility if both slots have materials set
+        // Name the materials only when they are in fact the problem. A backend
+        // with a stricter rule (AD5X IFS matches colour and port presence too)
+        // can refuse two slots holding the same material, and a message saying
+        // "PLA cannot use PLA as backup" would be nonsense.
+        std::string msg;
         if (!current_material.empty() && !backup_material.empty() &&
             !filament::are_materials_compatible(current_material, backup_material)) {
-            spdlog::warn("[AmsContextMenu] Incompatible backup: {} cannot use {} as backup",
-                         current_material, backup_material);
-
-            // Show toast error
-            std::string msg =
-                fmt::format(lv_tr("Incompatible materials: {} cannot use {} as backup"),
-                            current_material, backup_material);
-            ToastManager::instance().show(ToastSeverity::ERROR, msg.c_str());
-
-            // Reset dropdown to "None" (index 0)
-            lv_dropdown_set_selected(backup_dropdown_, 0);
-            return;
+            msg = fmt::format(lv_tr("Incompatible materials: {} cannot use {} as backup"),
+                              current_material, backup_material);
+        } else {
+            msg = lv_tr("That slot cannot stand in for this one");
         }
+        ToastManager::instance().show(ToastSeverity::ERROR, msg.c_str());
+
+        // Reset dropdown to "None" (index 0)
+        lv_dropdown_set_selected(backup_dropdown_, 0);
+        return;
     }
 
     spdlog::info("[AmsContextMenu] Backup slot changed for slot {}: backup {}", get_item_index(),
@@ -912,35 +917,49 @@ std::string AmsContextMenu::build_tool_options() const {
     return options;
 }
 
+AmsContextMenu::BackupEligibleFn AmsContextMenu::backend_eligible_fn() const {
+    AmsBackend* backend = backend_;
+    if (backend == nullptr) {
+        // No backend: tag nothing and refuse nothing. Matches the old code, which
+        // skipped every compatibility check when backend_ was null.
+        return [](int, int) { return true; };
+    }
+    return [backend](int slot, int candidate) {
+        return backend->is_endless_spool_backup_eligible(slot, candidate);
+    };
+}
+
 std::string AmsContextMenu::build_backup_options() const {
+    return build_backup_options_for(total_slots_, get_item_index(), backend_eligible_fn());
+}
+
+std::string AmsContextMenu::build_backup_options_for(int total_slots, int item_index,
+                                                     const BackupEligibleFn& eligible) {
     std::string options = lv_tr("None");
 
-    // Get current slot's material for compatibility checking
-    std::string current_material;
-    if (backend_ && get_item_index() >= 0) {
-        current_material = backend_->get_slot_info(get_item_index()).material;
-    }
-
-    // Add slot options Slot 1, Slot 2... based on total slots
-    // Skip the current slot (can't be backup for itself)
-    // Mark incompatible materials
-    for (int i = 0; i < total_slots_; ++i) {
-        if (i != get_item_index()) {
-            std::string slot_option = "\n" + fmt::format(lv_tr("Slot {}"), i + 1);
-
-            // Check material compatibility if we have a current material
-            if (backend_ && !current_material.empty()) {
-                std::string other_material = backend_->get_slot_info(i).material;
-                if (!other_material.empty() &&
-                    !filament::are_materials_compatible(current_material, other_material)) {
-                    slot_option += std::string(" ") + lv_tr("(incompatible)");
-                }
-            }
-
-            options += slot_option;
+    // Add slot options Slot 1, Slot 2... based on total slots.
+    // Skip the current slot (can't be backup for itself).
+    for (int i = 0; i < total_slots; ++i) {
+        if (i == item_index) {
+            continue;
+        }
+        options += "\n" + fmt::format(lv_tr("Slot {}"), i + 1);
+        // The base virtual is the old are_materials_compatible() rule, with an
+        // unknown material on either side counting as eligible, so nothing is
+        // tagged that was not tagged before on AFC / Happy Hare / CFS.
+        if (item_index >= 0 && eligible && !eligible(item_index, i)) {
+            options += std::string(" ") + lv_tr("(incompatible)");
         }
     }
     return options;
+}
+
+bool AmsContextMenu::decide_backup_refused(int item_index, int backup_slot,
+                                           const BackupEligibleFn& eligible) {
+    if (backup_slot < 0 || item_index < 0) {
+        return false; // "None" clears a backup; nothing to be compatible with.
+    }
+    return eligible && !eligible(item_index, backup_slot);
 }
 
 int AmsContextMenu::get_current_tool_for_slot() const {

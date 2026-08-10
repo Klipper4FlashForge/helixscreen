@@ -54,66 +54,6 @@ namespace {
            helix::PrintJobState::PAUSED;
 }
 
-/// XML subjects publishing the AD5X auto-switchover plugin situation.
-///
-/// Owned here rather than by AmsState because they are AD5X-specific and the
-/// backend is the only thing that can know the answer. Process-lifetime storage
-/// (a function-local static) because an XML binding outlives any one backend
-/// instance - backends are constructed and destroyed on every printer switch,
-/// and a subject whose storage died under a live observer is a use-after-free.
-struct Ad5xIfsPluginSubjects {
-    lv_subject_t plugin{}; ///< AmsBackendAd5xIfs::IfsPlugin as int
-    lv_subject_t backup{}; ///< BACKUP_UNKNOWN / BACKUP_OFF / BACKUP_ON
-    bool initialized = false;
-};
-
-Ad5xIfsPluginSubjects& plugin_subjects() {
-    static Ad5xIfsPluginSubjects s;
-    return s;
-}
-
-void deinit_plugin_subjects() {
-    auto& s = plugin_subjects();
-    if (!s.initialized) {
-        return;
-    }
-    lv_subject_deinit(&s.plugin);
-    lv_subject_deinit(&s.backup);
-    s.initialized = false;
-}
-
-/// Publish the plugin state. Main thread only - handle_status_update() is
-/// marshalled there by AmsSubscriptionBackend's token.defer(), and setting a
-/// subject fires observers that touch widgets.
-///
-/// MUST be called with mutex_ NOT held: an observer can call straight back into
-/// get_system_info(), which takes the same non-recursive mutex_.
-///
-/// Registration is lazy and guarded on lv_is_initialized() because ~200 AD5X
-/// unit tests construct this backend with no LVGL at all; the guard makes the
-/// publish a no-op there instead of a crash.
-void publish_plugin_subjects(int plugin_value, int backup_value) {
-    if (!lv_is_initialized()) {
-        return;
-    }
-    auto& s = plugin_subjects();
-    if (!s.initialized) {
-        lv_subject_init_int(&s.plugin, static_cast<int>(AmsBackendAd5xIfs::IfsPlugin::None));
-        lv_subject_init_int(&s.backup, AmsBackendAd5xIfs::BACKUP_UNKNOWN);
-        lv_xml_register_subject(nullptr, "ams_ifs_plugin", &s.plugin);
-        lv_xml_register_subject(nullptr, "ams_ifs_backup_enabled", &s.backup);
-        StaticSubjectRegistry::instance().register_deinit("Ad5xIfsPlugin",
-                                                          []() { deinit_plugin_subjects(); });
-        s.initialized = true;
-    }
-    if (lv_subject_get_int(&s.plugin) != plugin_value) {
-        lv_subject_set_int(&s.plugin, plugin_value);
-    }
-    if (lv_subject_get_int(&s.backup) != backup_value) {
-        lv_subject_set_int(&s.backup, backup_value);
-    }
-}
-
 /// Fallback purge for a runout recovery: 50 mm of fresh filament at 10 mm/s.
 /// Same numbers the filament panel's purge fallback uses
 /// (ui_panel_filament.cpp, ui_filament_runout_handler.cpp) - deliberately a
@@ -604,17 +544,12 @@ void AmsBackendAd5xIfs::handle_status_update(const json& notification) {
     // flip to ERROR with no EVENT_STATE_CHANGED to carry it to the UI.
     const bool runout_changed = evaluate_runout_locked();
 
-    // Snapshot the plugin publication under the lock; the actual subject writes
-    // happen after unlock (an observer can re-enter get_system_info()).
-    const int plugin_value = static_cast<int>(
-        has_ifs_vars_ ? (var_prefix_ == "bambufy" ? IfsPlugin::Bambufy : IfsPlugin::LessWaste)
-                      : IfsPlugin::None);
-    const int backup_value = backup_subject_value_locked();
-
     lock.unlock();
 
-    publish_plugin_subjects(plugin_value, backup_value);
-
+    // No AD5X-specific plugin subjects to publish: the auto-switchover state is
+    // now carried by the backend-neutral `ams_endless_state` / `ams_endless_text`
+    // subjects, which AmsState derives from get_endless_spool_capabilities() when
+    // it handles the EVENT_STATE_CHANGED below.
     if (state_changed || indet_toggled || runout_changed) {
         emit_event(EVENT_STATE_CHANGED);
     }
@@ -2113,7 +2048,7 @@ bool AmsBackendAd5xIfs::runout_active() const {
     return runout_active_;
 }
 
-int AmsBackendAd5xIfs::backup_subject_value_locked() const {
+int AmsBackendAd5xIfs::backup_state_locked() const {
     // No plugin means no backup mechanism at all - that is a definite OFF, not an
     // unknown, and it is the answer the #1247 reporter needed to see.
     if (!has_ifs_vars_) {
@@ -5349,7 +5284,7 @@ bool AmsBackendAd5xIfs::evaluate_runout_locked() {
                  backend_log_tag(),
                  std::chrono::duration_cast<std::chrono::seconds>(now - *head_empty_since_).count(),
                  runout_slot_, has_ifs_vars_ ? var_prefix_ : std::string("none"),
-                 backup_subject_value_locked());
+                 backup_state_locked());
     return true;
 }
 
@@ -5424,12 +5359,21 @@ helix::printer::EndlessSpoolCapabilities AmsBackendAd5xIfs::get_endless_spool_ca
 
     caps.availability = EndlessSpoolAvailability::Available;
     caps.provider = (var_prefix_ == "bambufy") ? "bambufy" : "lessWaste";
-    // nullopt stays Unknown. Flattening it to Off would tell the user no swap
+    // Mapped from backup_state_locked() rather than re-derived, so the tri-state
+    // the runout log reports and the tri-state the UI renders are one rule.
+    // nullopt stays Unknown: flattening it to Off would tell the user no swap
     // will happen when we simply never read the setting.
-    caps.enabled =
-        !ifs_backup_variable_.has_value()
-            ? EndlessSpoolEnabled::Unknown
-            : (*ifs_backup_variable_ ? EndlessSpoolEnabled::On : EndlessSpoolEnabled::Off);
+    switch (backup_state_locked()) {
+    case BACKUP_ON:
+        caps.enabled = EndlessSpoolEnabled::On;
+        break;
+    case BACKUP_OFF:
+        caps.enabled = EndlessSpoolEnabled::Off;
+        break;
+    default:
+        caps.enabled = EndlessSpoolEnabled::Unknown;
+        break;
+    }
     caps.editability = EndlessSpoolEditability::ReadOnly;
     caps.restriction = EndlessSpoolRestriction::PluginReadOnly;
     return caps;
