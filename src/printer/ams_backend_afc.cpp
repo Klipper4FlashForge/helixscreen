@@ -10,8 +10,12 @@
 
 #include "action_prompt_manager.h"
 #include "afc_defaults.h"
+#include "ams_bypass_policy.h"
+#include "ams_fault_event.h"
+#include "config.h"
+#include "i_moonraker_api.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "operation_patterns.h" // helix::contains_ci
 #include "printer_discovery.h"
 #include "settings_manager.h"
 
@@ -64,9 +68,10 @@ bool natural_less(const std::string& a, const std::string& b) {
 // Empty values are IGNORED rather than treated as a clear. That is deliberate and
 // differs from the color/material handling above: #808 is unimplemented, so we do
 // not know whether an unlinked lane will omit the key or publish "". Guessing
-// wrong in the clearing direction silently wipes a user's brand override — and on
-// the lane_data path nothing re-covers it, because parse_lane_data() does not call
-// apply_overrides(). Revisit once #808 ships and the real payload is observable.
+// wrong in the clearing direction wipes a brand nothing re-supplies. A user's
+// override is safe either way — both callers run apply_overrides() after this
+// reader (#1195 closed that gap on the lane_data path) — so the exposure is lanes
+// with no override at all. Revisit once #808 ships and the payload is observable.
 bool read_vendor(const nlohmann::json& src, std::string& out) {
     for (const char* key : {"vendor_name", "vendor", "brand"}) {
         auto it = src.find(key);
@@ -177,7 +182,7 @@ void afc_state_translation_hints_() {
 // Construction / Destruction
 // ============================================================================
 
-AmsBackendAfc::AmsBackendAfc(MoonrakerAPI* api, MoonrakerClient* client)
+AmsBackendAfc::AmsBackendAfc(IMoonrakerAPI* api, IMoonrakerClient* client)
     : AmsSubscriptionBackend(api, client) {
     // Initialize system info with AFC defaults
     system_info_.type = AmsType::AFC;
@@ -691,11 +696,9 @@ std::optional<helix::ErrorEvent> AmsBackendAfc::current_error() const {
         return std::nullopt;
     }
 
-    helix::ErrorEvent e;
-    e.source = helix::ErrorSource::AFC;
-    e.severity = helix::ErrorSeverity::CRITICAL;
-    e.title = lv_tr("Filament System Error");
-    e.sticky = true;
+    helix::ErrorEvent e =
+        helix::make_ams_fault_event(helix::ErrorSource::AFC, lv_tr("Filament System Error"),
+                                    /*detail=*/"", build_recovery_actions());
 
     // AFC.message is a FIFO *peek* (_get_message(clear=False)) that
     // RESET_FAILURE does not pop, so it can still hold the text of an
@@ -716,7 +719,6 @@ std::optional<helix::ErrorEvent> AmsBackendAfc::current_error() const {
         e.detail = lv_tr("The filament system reported an error");
     }
 
-    e.recovery_actions = build_recovery_actions();
     return e;
 }
 
@@ -724,51 +726,28 @@ std::optional<helix::ErrorEvent>
 AmsBackendAfc::classify_error(const std::string& raw_line,
                               const helix::ClassifyContext& ctx) const {
     // Only `!!` emergency lines are candidates.
-    if (raw_line.size() < 2 || raw_line[0] != '!' || raw_line[1] != '!') {
+    if (!helix::is_bang_line(raw_line)) {
         return std::nullopt;
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
 
     // Strip the "!! " prefix for the detail text.
-    std::string detail =
-        (raw_line.size() > 3 && raw_line[2] == ' ') ? raw_line.substr(3) : raw_line.substr(2);
-
-    auto contains_ci = [](const std::string& hay, const char* needle) {
-        std::string h = hay;
-        std::string n = needle;
-        for (auto& c : h)
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        for (auto& c : n)
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        return h.find(n) != std::string::npos;
-    };
+    std::string detail = helix::strip_bang_prefix(raw_line);
 
     // 1) Toolhead jam / break (handle_toolhead_runout signature).
-    const bool is_jam = contains_ci(detail, "tool_end") &&
-                        (contains_ci(detail, "jam") || contains_ci(detail, "break") ||
-                         contains_ci(detail, "runout detected"));
+    const bool is_jam = helix::contains_ci(detail, "tool_end") &&
+                        (helix::contains_ci(detail, "jam") || helix::contains_ci(detail, "break") ||
+                         helix::contains_ci(detail, "runout detected"));
     if (is_jam) {
-        helix::ErrorEvent e;
-        e.source = helix::ErrorSource::AFC;
-        e.severity = helix::ErrorSeverity::CRITICAL;
-        e.title = lv_tr("Toolhead jam");
-        e.detail = detail;
-        e.sticky = true;
-        e.recovery_actions = build_recovery_actions();
-        return e;
+        return helix::make_ams_fault_event(helix::ErrorSource::AFC, lv_tr("Toolhead jam"), detail,
+                                           build_recovery_actions());
     }
 
     // 2) Catch-all: any pausing !! while AFC is in an error state.
     if (ctx.is_paused && error_state_) {
-        helix::ErrorEvent e;
-        e.source = helix::ErrorSource::AFC;
-        e.severity = helix::ErrorSeverity::CRITICAL;
-        e.title = lv_tr("Filament System Error");
-        e.detail = detail;
-        e.sticky = true;
-        e.recovery_actions = build_recovery_actions();
-        return e;
+        return helix::make_ams_fault_event(helix::ErrorSource::AFC, lv_tr("Filament System Error"),
+                                           detail, build_recovery_actions());
     }
 
     // 3) Not an AFC-owned fault — let the generic classifier handle it.
@@ -1121,6 +1100,32 @@ void AmsBackendAfc::handle_status_update(const nlohmann::json& notification) {
             parse_afc_state(params["afc"], deferred_error_event, current_slot_set_by_afc_state,
                             afc_stated_unloaded);
             state_changed = true;
+        }
+
+        // Learn which prefix this firmware publishes lanes under, then fire the
+        // one-shot feature probe. The probe CANNOT read a status frame: the
+        // subscription is field-scoped (afc_stepper_fields in
+        // moonraker_discovery_sequence.cpp) and does not request
+        // filament_name/multi_color_hexes/initial_weight, so those keys never
+        // arrive here on any AFC version. Reading a frame reported "legacy" on a
+        // confirmed v1.2.0 BoxTurtle. Only an explicit unscoped
+        // printer.objects.query returns the whole lane object.
+        if (!feature_level_checked_ && lane_object_prefix_.empty()) {
+            for (auto it = params.begin(); it != params.end(); ++it) {
+                const std::string& k = it.key();
+                if (!it.value().is_object()) {
+                    continue;
+                }
+                if (k.rfind("AFC_stepper ", 0) == 0) {
+                    lane_object_prefix_ = "AFC_stepper ";
+                } else if (k.rfind("AFC_lane ", 0) == 0) {
+                    lane_object_prefix_ = "AFC_lane ";
+                } else {
+                    continue;
+                }
+                probe_feature_level(k);
+                break;
+            }
         }
 
         // Parse AFC_stepper lane objects for sensor states
@@ -1503,6 +1508,37 @@ uint64_t AmsBackendAfc::begin_dispatch_locked(AmsAction action) {
     return generation;
 }
 
+void AmsBackendAfc::on_home_confirmation_declined() {
+    // The confirmation modal is exclusive -- nothing else can begin a new
+    // dispatch while it's up -- so the pending dispatch is always the one
+    // that just prompted; that exclusivity is what makes this call correct,
+    // not the generation compare inside abandon_dispatch(). abandon_dispatch()
+    // takes an explicit generation to share its guard with dispatch_operation()'s
+    // own `if (!result)` failure path, which captures a real, independent
+    // value before this exclusivity window even opens. Here there is no such
+    // independent capture: the value handed in is dispatch_generation_ itself,
+    // so the compare is trivially true and abandon_dispatch() always proceeds
+    // when a dispatch is pending. Read it under mutex_ rather than as a bare
+    // member access (every write to dispatch_generation_ is mutex_-guarded,
+    // in begin_dispatch_locked()) so this stays race-free even though nothing
+    // can invalidate it today. abandon_dispatch() clears pending_dispatch_
+    // action_/operation_detail and resets action_start_time_ in addition to
+    // the action -> IDLE reset the base class's default performs; skip the
+    // base call entirely here since abandon_dispatch() already emits
+    // EVENT_STATE_CHANGED.
+    //
+    // If this hook ever gains a non-modal caller, this guard alone will not
+    // protect a genuinely newer dispatch from being abandoned -- that would
+    // need the generation captured at prompt time and threaded through here
+    // instead of re-read live.
+    uint64_t generation;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        generation = dispatch_generation_;
+    }
+    abandon_dispatch(generation);
+}
+
 void AmsBackendAfc::abandon_dispatch(uint64_t generation) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -1575,7 +1611,7 @@ AmsError AmsBackendAfc::dispatch_operation(std::string gcode, AmsAction action) 
     });
 
     if (!result) {
-        // The gcode never left: no MoonrakerAPI, or the send was refused. No ack
+        // The gcode never left: no IMoonrakerAPI, or the send was refused. No ack
         // will ever arrive, so undo the optimistic action instead of leaving the
         // UI busy until the stuck-action budget expires.
         spdlog::warn("[AMS AFC] Dispatch #{} failed to send ({}), reverting optimistic action",
@@ -2373,8 +2409,8 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
     // and version-independent, where lane_data is a DB snapshot that only refreshes
     // when AFC decides to push. Inert until #808 ships; harmless before then.
     //
-    // Unlike the lane_data path, apply_overrides() runs directly below, so a user's
-    // brand override still wins over whatever firmware reports.
+    // apply_overrides() runs directly below, so a user's brand override still wins
+    // over whatever firmware reports. The lane_data path does the same since #1195.
     read_vendor(data, slot.brand);
 
     // Re-supply the user's attached identity on top of firmware truth. This is
@@ -3011,7 +3047,7 @@ const nlohmann::json& AmsBackendAfc::database_item_value(const nlohmann::json& r
     // payload: a payload is an arbitrary object, so "envelope or payload?" is
     // undecidable — the afc-install payload is {"version":…}, which carries no
     // "value" key to key off. Callers that route through
-    // MoonrakerAPI::database_get_item get the payload pre-unwrapped and must
+    // IMoonrakerAPI::database_get_item get the payload pre-unwrapped and must
     // not pass it here.
     const auto result = response.find("result");
     if (result == response.end() || !result->is_object())
@@ -3043,6 +3079,93 @@ bool AmsBackendAfc::apply_afc_version_response(const nlohmann::json& response) {
                  "feature-detected)",
                  afc_version_);
     return true;
+}
+
+bool AmsBackendAfc::status_has_modern_fields(const nlohmann::json& lane_status) {
+    return lane_status.contains("filament_name") || lane_status.contains("multi_color_hexes") ||
+           lane_status.contains("initial_weight");
+}
+
+void AmsBackendAfc::probe_feature_level(const std::string& lane_object) {
+    // An explicit, UNSCOPED query — no "fields" key, so Moonraker returns the
+    // whole object. This is the only way to see the v1.2.0 keys: the standing
+    // subscription enumerates its fields and does not ask for them.
+    if (!client_ || feature_level_checked_) {
+        return;
+    }
+    nlohmann::json params = {{"objects", {{lane_object, nlohmann::json()}}}};
+
+    auto token = lifetime_.token();
+    client_->send_jsonrpc(
+        "printer.objects.query", params,
+        [this, token, lane_object](const nlohmann::json& response) {
+            token.defer("AmsBackendAfc::probe_feature_level", [this, response, lane_object]() {
+                const auto* result = response.contains("result") ? &response["result"] : nullptr;
+                if (!result || !result->contains("status") ||
+                    !(*result)["status"].contains(lane_object)) {
+                    spdlog::debug("[AMS AFC] Feature probe: no status for '{}'", lane_object);
+                    return;
+                }
+                std::lock_guard<std::mutex> lock(mutex_);
+                check_afc_feature_level((*result)["status"][lane_object]);
+            });
+        },
+        [](const MoonrakerError& err) {
+            spdlog::debug("[AMS AFC] Feature probe query failed: {}", err.message);
+        });
+}
+
+void AmsBackendAfc::check_afc_feature_level(const nlohmann::json& lane_status) {
+    // Runs once, on the COMPLETE object returned by probe_feature_level()'s
+    // explicit query — never on a status frame. See status_has_modern_fields().
+    if (feature_level_checked_) {
+        return;
+    }
+    feature_level_checked_ = true;
+
+    const bool modern = status_has_modern_fields(lane_status);
+
+    // Side effects only for a backend actually wired to a printer. An unwired
+    // one is a harness fixture replaying a synthetic payload — most such
+    // payloads carry none of the v1.2.0 keys and so read as legacy, which would
+    // mean a config write and an upgrade toast per fixture (126 of them across
+    // the [ams] suite) advising nobody to upgrade nothing.
+    if (!client_) {
+        spdlog::debug("[AMS AFC] Feature level probe: no client, advisory skipped");
+        return;
+    }
+
+    spdlog::info("[AMS AFC] Feature level: AFC {} the v1.2.0 lane fields",
+                 modern ? "publishes" : "does NOT publish");
+
+    auto* config = Config::get_instance();
+    if (!config) {
+        return;
+    }
+    constexpr const char* kNoticeShownKey = "/ams/afc_upgrade_notice_shown";
+
+    if (modern) {
+        // Re-arm, so a downgrade is reported again rather than silently accepted.
+        if (config->get<bool>(kNoticeShownKey, false)) {
+            config->set<bool>(kNoticeShownKey, false);
+            config->save();
+        }
+        return;
+    }
+
+    if (config->get<bool>(kNoticeShownKey, false)) {
+        return; // Already told them once; do not nag on every boot.
+    }
+    config->set<bool>(kNoticeShownKey, true);
+    config->save();
+
+    // Advisory, not an error — nothing is broken, some detail is just missing.
+    // Names the version for the user's benefit even though the trigger is
+    // capability: "1.2.0" is actionable, "your payload lacks filament_name" is not.
+    ui_notification_info_with_action(
+        lv_tr("AFC Update Available"),
+        lv_tr("Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools."),
+        "afc_message");
 }
 
 bool AmsBackendAfc::apply_lane_data_response(const nlohmann::json& response) {
@@ -3381,10 +3504,29 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
     }
     std::sort(new_lane_names.begin(), new_lane_names.end(), natural_less);
 
-    // Initialize lanes if this is the first time or count changed
-    if (!slots_.is_initialized() ||
-        static_cast<int>(new_lane_names.size()) != slots_.slot_count()) {
-        initialize_slots(new_lane_names);
+    // This payload is a supplement (colours, materials, spool ids), never the
+    // authority on WHICH lanes exist. Klipper's object list is. AFC empties the
+    // whole lane_data namespace at the start of every PREP (AFC.py
+    // delete_lane_data) and writes each lane's key back only as that lane's own
+    // prep finishes (AFC_BoxTurtle.py send_lane_data), which for a BoxTurtle
+    // means driving each lane motor in turn. The namespace is therefore
+    // partially populated for seconds on every boot, and query_lane_data() is
+    // one-shot and never retried. Resizing to match it once pinned a 4-lane
+    // BoxTurtle to a single slot for the whole session: initialize_slots()
+    // clears discovered_lane_names_, and the status handler only iterates slots
+    // that exist, so lanes 2-4 became permanently invisible.
+    //
+    // So: only ever bootstrap an empty registry, and prefer discovery when it
+    // has something to offer. Once the registry exists, leave its shape alone.
+    if (!slots_.is_initialized()) {
+        // By value: initialize_slots() clears discovered_lane_names_ on its way
+        // out, which would dangle a reference bound to it.
+        const std::vector<std::string> initial_lanes =
+            !discovered_lane_names_.empty() ? discovered_lane_names_ : new_lane_names;
+        if (initial_lanes.empty()) {
+            return; // Nothing names a lane yet; a later payload or discovery will.
+        }
+        initialize_slots(initial_lanes);
     }
 
     // Track whether any lane has tool_loaded — used to update filament_loaded
@@ -3938,7 +4080,7 @@ AmsError AmsBackendAfc::execute_gcode_notify(const std::string& gcode,
                                              const std::string& success_msg,
                                              const std::string& error_prefix) {
     if (!api_) {
-        return AmsErrorHelper::not_connected("MoonrakerAPI not available");
+        return AmsErrorHelper::not_connected("IMoonrakerAPI not available");
     }
 
     spdlog::info("[AMS AFC] Executing G-code: {}", gcode);
@@ -3964,7 +4106,7 @@ AmsError AmsBackendAfc::execute_gcode_notify(const std::string& gcode,
                 spdlog::error("[AMS AFC] G-code failed: {} - {}", gcode, err.message);
             }
         },
-        MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+        IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
 
     return AmsErrorHelper::success();
 }
@@ -4707,7 +4849,7 @@ void AmsBackendAfc::dispatch_lane_unload(const std::string& lane_name) {
                 on_lane_unload_done();
             });
         },
-        MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+        IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
 }
 
 void AmsBackendAfc::on_lane_unload_done() {
@@ -4864,7 +5006,7 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
                 }
 
                 // Material (validate to prevent command injection)
-                if (!info.material.empty() && MoonrakerAPI::is_safe_gcode_param(info.material)) {
+                if (!info.material.empty() && IMoonrakerAPI::is_safe_gcode_param(info.material)) {
                     execute_gcode(
                         fmt::format("SET_MATERIAL LANE={} MATERIAL={}", lane_name, info.material));
                 } else if (!info.material.empty()) {
@@ -4943,7 +5085,7 @@ AmsError AmsBackendAfc::enable_bypass() {
             return precondition;
         }
 
-        if (!system_info_.supports_bypass) {
+        if (!helix::bypass_available_for(system_info_.supports_bypass)) {
             return AmsError(AmsResult::WRONG_STATE, "Bypass not supported",
                             "This AFC system does not support bypass mode", "");
         }
@@ -5066,12 +5208,12 @@ AmsError AmsBackendAfc::set_endless_spool_backup(int slot_index, int backup_slot
     }
 
     // Validate lane names to prevent command injection
-    if (!MoonrakerAPI::is_safe_gcode_param(lane_name)) {
+    if (!IMoonrakerAPI::is_safe_gcode_param(lane_name)) {
         spdlog::warn("[AMS AFC] Unsafe lane name characters in endless spool config");
         return AmsError(AmsResult::MAPPING_ERROR, "Invalid lane name",
                         "Lane name contains invalid characters", "Check AFC configuration");
     }
-    if (backup_slot >= 0 && !MoonrakerAPI::is_safe_gcode_param(backup_lane_name)) {
+    if (backup_slot >= 0 && !IMoonrakerAPI::is_safe_gcode_param(backup_lane_name)) {
         spdlog::warn("[AMS AFC] Unsafe backup lane name characters");
         return AmsError(AmsResult::MAPPING_ERROR, "Invalid backup lane name",
                         "Backup lane name contains invalid characters", "Check AFC configuration");
@@ -5138,7 +5280,7 @@ void AmsBackendAfc::load_afc_configs() {
     }
 
     if (!api_) {
-        spdlog::warn("[AMS AFC] Cannot load configs: MoonrakerAPI is null");
+        spdlog::warn("[AMS AFC] Cannot load configs: IMoonrakerAPI is null");
         return;
     }
 

@@ -5,34 +5,42 @@
   <api>
     <prop name="size" type="string" default="#icon_size"/>
     <prop name="badge_subject" type="string" default="show_tool_badge"/>
+    <prop name="badge_size" type="string" default="#badge_size"/>
+    <prop name="badge_font" type="string" default="#font_xs"/>
   </api>
   <!--
     Nozzle Icon with Tool Badge
 
-    Shows a heater icon with an automatic tool badge (T0, T1, etc.)
+    Shows a heater icon with an automatic tool badge (0, 1, etc.)
     overlaid in the top-right corner when a multi-tool printer is detected.
 
     Binds to ToolState subjects:
     - show_tool_badge: 1 = show badge, 0 = hide (single-tool)
-    - tool_badge_text: Active tool name (e.g., "T0")
+    - tool_badge_text: Active tool INDEX (e.g., "0"), not the full name
+
+    badge_size/badge_font default to #badge_size and #font_xs, which are
+    breakpoint-scaled and assume a roomy icon (size="xl", 64px). The icon ladder
+    does NOT move with breakpoint - xs/sm/md/lg/xl are always 16/24/32/48/64 - so
+    a call site using a small icon must pass both, or the badge swallows the
+    glyph. Pass them together: a disc can never be smaller than the line height of
+    the font inside it. See #badge_size_on_sm_icon / #font_badge_compact in
+    globals.xml.
 
     The inner glyph is always named "nozzle_icon_glyph" (not the $size wrapper's
     own name) for C++ lookup — HeaterIconBinder::default_icon_name(Nozzle)
     searches for that name specifically, same as the bed/chamber heater_icon glyphs.
   -->
-  <view name="nozzle_icon" width="content" height="content"
-        style_pad_all="0" scrollable="false"
-        clickable="false" event_bubble="true">
-    <icon name="nozzle_icon_glyph" src="heater" size="$size" variant="secondary"
-          clickable="false" event_bubble="true"/>
-    <lv_obj name="tool_badge" align="top_right" x="-#space_xxs" y="#space_xxs"
-            width="#badge_size" height="#badge_size" style_radius="1000"
-            style_bg_color="#info" style_bg_opa="255" style_border_width="0"
-            style_pad_all="0" scrollable="false"
-            clickable="false" event_bubble="true">
+  <view name="nozzle_icon"
+        width="content" height="content" style_pad_all="0" scrollable="false" clickable="false" event_bubble="true">
+    <icon name="nozzle_icon_glyph" src="heater" size="$size" variant="secondary" clickable="false" event_bubble="true"/>
+    <lv_obj name="tool_badge"
+            width="$badge_size" height="$badge_size" align="top_right" x="-#space_xxs" y="#space_xxs"
+            style_radius="1000" style_bg_color="#info" style_bg_opa="255" style_border_width="0" style_pad_all="0"
+            scrollable="false" clickable="false" event_bubble="true">
       <bind_flag_if_eq subject="$badge_subject" flag="hidden" ref_value="0"/>
-      <text_tiny bind_text="tool_badge_text" style_text_color="#text" style_text_align="center"
-                 align="center" clickable="false" event_bubble="true"/>
+      <text_tiny bind_text="tool_badge_text"
+                 style_text_font="$badge_font" style_text_color="#text" style_text_align="center" align="center"
+                 clickable="false" event_bubble="true"/>
     </lv_obj>
   </view>
 </component>

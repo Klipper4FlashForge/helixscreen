@@ -1531,8 +1531,8 @@ TEST_CASE("get_platform_key returns a known platform", "[update_checker][platfor
     // here — AND a matching #elif in get_platform_key — silently bricks
     // in-app updates for that platform (falls through to "pi", so the device
     // downloads the Pi tarball and ends up with missing shared libs).
-    std::vector<std::string> known_platforms = {"pi", "pi32", "x86", "ad5m",        "k1",
-                                                "k2", "ad5x", "cc1", "snapmaker-u1"};
+    std::vector<std::string> known_platforms = {"pi", "pi32", "x86", "ad5m",  "k1",
+                                                "k2", "ad5x", "cc1", "esp32", "snapmaker-u1"};
     bool found = false;
     for (const auto& p : known_platforms) {
         if (platform == p) {
@@ -1584,8 +1584,8 @@ TEST_CASE("get_platform_display_name returns non-empty string for all known plat
     // Every key that get_platform_key() can return MUST have a display name.
     // Keep in sync with platform_canonical_model in debug_bundle_collector.cpp
     // (and UpdateChecker::get_platform_display_name once centralised).
-    std::vector<std::string> known_platforms = {"pi", "pi32", "x86", "ad5m",        "k1",
-                                                "k2", "ad5x", "cc1", "snapmaker-u1"};
+    std::vector<std::string> known_platforms = {"pi", "pi32", "x86", "ad5m",  "k1",
+                                                "k2", "ad5x", "cc1", "esp32", "snapmaker-u1"};
 
     for (const auto& key : known_platforms) {
         INFO("platform key: " << key);
@@ -1606,6 +1606,7 @@ TEST_CASE("get_platform_display_name returns correct strings for known platforms
     REQUIRE(UpdateChecker::get_platform_display_name("k2") == "Creality K2 Plus");
     REQUIRE(UpdateChecker::get_platform_display_name("cc1") == "Elegoo Centauri Carbon");
     REQUIRE(UpdateChecker::get_platform_display_name("snapmaker-u1") == "Snapmaker U1");
+    REQUIRE(UpdateChecker::get_platform_display_name("esp32") == "BTT K-Touch");
     // Unknown keys fall back to the key itself.
     REQUIRE(UpdateChecker::get_platform_display_name("unknown-platform") == "unknown-platform");
 }

@@ -3,10 +3,11 @@
 
 #include "ui_filament_product_edit_modal.h"
 
+#include "ui_toast_manager.h"
+
 #include "filament_catalog.h"
 #include "filament_database.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "ui_toast_manager.h"
 
 #include <spdlog/spdlog.h>
 
@@ -138,7 +139,8 @@ void FilamentProductEditModal::on_show() {
     // Title.
     lv_obj_t* title = find_widget("header_title");
     if (title) {
-        lv_label_set_text(title, mode_ == Mode::Add ? lv_tr("Add Filament") : lv_tr("Edit Filament"));
+        lv_label_set_text(title,
+                          mode_ == Mode::Add ? lv_tr("Add Filament") : lv_tr("Edit Filament"));
     }
 
     populate_fields();
@@ -224,8 +226,8 @@ void FilamentProductEditModal::register_keyboards() {
     if (!dialog_)
         return;
     static constexpr const char* fields[] = {
-        "field_id",     "field_brand",      "field_name",   "field_nozzle_min",
-        "field_nozzle", "field_nozzle_max", "field_bed",    "field_density",
+        "field_id",     "field_brand",      "field_name", "field_nozzle_min",
+        "field_nozzle", "field_nozzle_max", "field_bed",  "field_density",
     };
     for (const char* name : fields) {
         lv_obj_t* w = lv_obj_find_by_name(dialog_, name);
@@ -330,9 +332,9 @@ void FilamentProductEditModal::handle_secondary() {
         return;
     }
 
-    ToastManager::instance().show(ToastSeverity::SUCCESS,
-                                  is_builtin_ ? lv_tr("Defaults restored") : lv_tr("Filament deleted"),
-                                  2000);
+    ToastManager::instance().show(
+        ToastSeverity::SUCCESS,
+        is_builtin_ ? lv_tr("Defaults restored") : lv_tr("Filament deleted"), 2000);
     spdlog::info("[FilamentProductEditModal] removed overlay entry '{}'", edit_id_);
     if (on_saved_)
         on_saved_(std::string{}); // removed: nothing to focus

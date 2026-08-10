@@ -4,12 +4,11 @@
 #include "preset_materials.h"
 
 #include "filament_database.h"
+#include "helix-xml/src/xml/lv_xml.h"
+#include "lvgl/lvgl.h"
 #include "material_settings_manager.h"
 #include "static_subject_registry.h"
 #include "subject_debug_registry.h"
-
-#include "helix-xml/src/xml/lv_xml.h"
-#include "lvgl/lvgl.h"
 
 #include <spdlog/spdlog.h>
 
@@ -126,22 +125,20 @@ void init_subjects() {
         lv_subject_init_string(&s.name_subjects[i], s.name_bufs[i].data(), nullptr,
                                s.name_bufs[i].size(), s.name_bufs[i].data());
         lv_xml_register_subject(nullptr, kNameSubjects[i], &s.name_subjects[i]);
-        SubjectDebugRegistry::instance().register_subject(&s.name_subjects[i], kNameSubjects[i],
-                                                          LV_SUBJECT_TYPE_STRING, __FILE__,
-                                                          __LINE__);
+        SubjectDebugRegistry::instance().register_subject(
+            &s.name_subjects[i], kNameSubjects[i], LV_SUBJECT_TYPE_STRING, __FILE__, __LINE__);
 
         lv_subject_init_string(&s.temp_subjects[i], s.temp_bufs[i].data(), nullptr,
                                s.temp_bufs[i].size(), s.temp_bufs[i].data());
         lv_xml_register_subject(nullptr, kTempSubjects[i], &s.temp_subjects[i]);
-        SubjectDebugRegistry::instance().register_subject(&s.temp_subjects[i], kTempSubjects[i],
-                                                          LV_SUBJECT_TYPE_STRING, __FILE__,
-                                                          __LINE__);
+        SubjectDebugRegistry::instance().register_subject(
+            &s.temp_subjects[i], kTempSubjects[i], LV_SUBJECT_TYPE_STRING, __FILE__, __LINE__);
     }
 
     lv_subject_init_int(&s.count_subject, PRESET_COUNT);
     lv_xml_register_subject(nullptr, "preset_material_count", &s.count_subject);
-    SubjectDebugRegistry::instance().register_subject(
-        &s.count_subject, "preset_material_count", LV_SUBJECT_TYPE_INT, __FILE__, __LINE__);
+    SubjectDebugRegistry::instance().register_subject(&s.count_subject, "preset_material_count",
+                                                      LV_SUBJECT_TYPE_INT, __FILE__, __LINE__);
 
     s.ready = true;
 

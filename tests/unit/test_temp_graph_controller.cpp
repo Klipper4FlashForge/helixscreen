@@ -214,8 +214,8 @@ TEST_CASE_METHOD(TempGraphControllerFixture,
 }
 
 TEST_CASE_METHOD(TempGraphControllerFixture,
-                  "Chamber series with temperature_fan prefix resolves to chamber subjects",
-                  "[controller][temp_graph_controller][chamber]") {
+                 "Chamber series with temperature_fan prefix resolves to chamber subjects",
+                 "[controller][temp_graph_controller][chamber]") {
     auto& ps = get_printer_state();
 
     // Set chamber temp/target to known values
@@ -367,8 +367,8 @@ TEST_CASE_METHOD(TempGraphControllerFixture,
 //   2. The on_activate() "detach + release + async-delete" swap pattern
 
 TEST_CASE_METHOD(TempGraphControllerFixture,
-                  "Queued rebuild callback safely no-ops after synchronous destroy (#1117)",
-                  "[controller][temp_graph_controller][regression][uaf]") {
+                 "Queued rebuild callback safely no-ops after synchronous destroy (#1117)",
+                 "[controller][temp_graph_controller][regression][uaf]") {
     auto& ps = get_printer_state();
     auto* conn_subj = ps.get_printer_connection_state_subject();
     REQUIRE(conn_subj != nullptr);
@@ -406,8 +406,8 @@ TEST_CASE_METHOD(TempGraphControllerFixture,
 }
 
 TEST_CASE_METHOD(TempGraphControllerFixture,
-                  "Detach + release + deferred-delete race is safe (#1117)",
-                  "[controller][temp_graph_controller][regression][uaf]") {
+                 "Detach + release + deferred-delete race is safe (#1117)",
+                 "[controller][temp_graph_controller][regression][uaf]") {
     auto& ps = get_printer_state();
     auto* conn_subj = ps.get_printer_connection_state_subject();
     REQUIRE(conn_subj != nullptr);

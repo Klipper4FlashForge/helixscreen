@@ -256,9 +256,10 @@ std::vector<ToolMapping> FilamentMapper::compute_defaults(const std::vector<Gcod
     return mappings;
 }
 
-std::vector<uint32_t> FilamentMapper::resolve_display_colors(
-    const std::vector<GcodeToolInfo>& tools, const std::vector<ToolMapping>& mappings,
-    const std::vector<AvailableSlot>& slots) {
+std::vector<uint32_t>
+FilamentMapper::resolve_display_colors(const std::vector<GcodeToolInfo>& tools,
+                                       const std::vector<ToolMapping>& mappings,
+                                       const std::vector<AvailableSlot>& slots) {
     std::vector<uint32_t> colors;
     colors.reserve(mappings.size());
 
@@ -295,18 +296,19 @@ std::vector<ToolMapping> FilamentMapper::effective_mappings(const std::vector<Gc
     return use_current_assignments(tools, slots);
 }
 
-std::vector<uint32_t> FilamentMapper::effective_tool_colors(
-    const std::vector<GcodeToolInfo>& tools, const std::vector<AvailableSlot>& slots,
-    bool auto_color_map) {
+std::vector<uint32_t> FilamentMapper::effective_tool_colors(const std::vector<GcodeToolInfo>& tools,
+                                                            const std::vector<AvailableSlot>& slots,
+                                                            bool auto_color_map) {
     if (tools.empty()) {
         return {};
     }
     return effective_tool_colors(tools, effective_mappings(tools, slots, auto_color_map), slots);
 }
 
-std::vector<uint32_t> FilamentMapper::effective_tool_colors(
-    const std::vector<GcodeToolInfo>& tools, const std::vector<ToolMapping>& mappings,
-    const std::vector<AvailableSlot>& slots) {
+std::vector<uint32_t>
+FilamentMapper::effective_tool_colors(const std::vector<GcodeToolInfo>& tools,
+                                      const std::vector<ToolMapping>& mappings,
+                                      const std::vector<AvailableSlot>& slots) {
     if (tools.empty()) {
         return {};
     }

@@ -6,11 +6,11 @@
 <component>
   <!-- Dialog card -->
   <view name="ams_loading_error_modal"
-        extends="ui_dialog" width="70%" style_min_width="300" style_max_width="400" height="content" align="center" flex_flow="column" style_flex_main_place="start"
-        style_pad_gap="0">
+        extends="ui_dialog" width="70%" height="content" style_min_width="300" style_max_width="400" align="center"
+        flex_flow="column" style_flex_main_place="start" style_pad_gap="0">
     <!-- Header: danger icon + title + close. Close wired in C++ via wire_cancel_button("btn_close"). -->
-    <modal_header icon_src="alert_circle" icon_variant="danger"
-                  title="Loading Error" title_tag="Loading Error" hide_close="false"/>
+    <modal_header icon_src="alert_circle"
+                  icon_variant="danger" title="Loading Error" title_tag="Loading Error" hide_close="false"/>
     <!-- Horizontal divider -->
     <divider_horizontal/>
     <!-- Error message content -->

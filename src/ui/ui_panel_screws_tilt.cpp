@@ -11,11 +11,12 @@
 #include "ui_utils.h"
 
 #include "app_globals.h"
-#include "moonraker_api.h"
-#include "moonraker_client.h"
+#include "i_moonraker_api.h"
+#include "i_moonraker_client.h"
 #include "printer_state.h"
 #include "static_panel_registry.h"
 #include "theme_manager.h"
+#include "toolhead_homing.h"
 
 #include <spdlog/spdlog.h>
 
@@ -36,8 +37,8 @@ static lv_subject_t s_screws_tilt_state;
 
 // Forward declarations
 static void on_screws_tilt_row_clicked(lv_event_t* e);
-MoonrakerClient* get_moonraker_client();
-MoonrakerAPI* get_moonraker_api();
+IMoonrakerClient* get_moonraker_client();
+IMoonrakerAPI* get_moonraker_api();
 
 ScrewsTiltPanel& get_global_screws_tilt_panel() {
     if (!s_screws_tilt_panel) {
@@ -87,8 +88,8 @@ static void on_screws_tilt_row_clicked(lv_event_t* e) {
         }
 
         // Set client and API before creating UI
-        MoonrakerClient* client = get_moonraker_client();
-        MoonrakerAPI* api = get_moonraker_api();
+        IMoonrakerClient* client = get_moonraker_client();
+        IMoonrakerAPI* api = get_moonraker_api();
         panel.set_client(client, api);
 
         // Create the overlay UI
@@ -385,47 +386,26 @@ void ScrewsTiltPanel::start_probing() {
 
     spdlog::info("[ScrewsTilt] Starting probe #{}", probe_count_);
 
-    // Check homing state — auto-home if needed before probing
-    const char* homed = lv_subject_get_string(get_printer_state().get_homed_axes_subject());
-    bool all_homed = homed && std::string(homed).find("xyz") != std::string::npos;
-
-    if (all_homed) {
-        start_screws_tilt_command();
-    } else {
-        spdlog::info("[ScrewsTilt] Not fully homed (axes={}), sending G28 first",
-                     homed ? homed : "none");
-
-        auto token = lifetime_.token();
-        api_->execute_gcode(
-            "G28",
-            [this, token]() {
-                if (token.expired())
-                    return;
-                token.defer("ScrewsTilt::g28_done", [this]() {
-                    if (cleanup_called())
-                        return;
-                    if (state_ != State::PROBING)
-                        return;
-                    spdlog::info("[ScrewsTilt] G28 complete, starting screws tilt");
-                    start_screws_tilt_command();
-                });
-            },
-            [this, token](const MoonrakerError& err) {
-                if (token.expired())
-                    return;
-                std::string msg = (err.type == MoonrakerErrorType::TIMEOUT)
-                                      ? lv_tr("Homing timed out — printer may still be homing")
-                                      : std::string(lv_tr("Homing failed: ")) + err.message;
-                token.defer("ScrewsTilt::g28_error", [this, msg]() {
-                    if (cleanup_called())
-                        return;
-                    if (state_ != State::PROBING)
-                        return;
-                    on_screws_tilt_error(msg);
-                });
-            },
-            MoonrakerAPI::HOMING_TIMEOUT_MS);
-    }
+    ensure_homed_then(
+        api_, lifetime_,
+        [this]() {
+            if (cleanup_called())
+                return;
+            if (state_ != State::PROBING)
+                return;
+            spdlog::info("[ScrewsTilt] Proceeding to screws tilt");
+            start_screws_tilt_command();
+        },
+        [this](const MoonrakerError& err) {
+            if (cleanup_called())
+                return;
+            if (state_ != State::PROBING)
+                return;
+            std::string msg = (err.type == MoonrakerErrorType::TIMEOUT)
+                                  ? lv_tr("Homing timed out — printer may still be homing")
+                                  : std::string(lv_tr("Homing failed: ")) + err.message;
+            on_screws_tilt_error(msg);
+        });
 }
 
 void ScrewsTiltPanel::start_screws_tilt_command() {

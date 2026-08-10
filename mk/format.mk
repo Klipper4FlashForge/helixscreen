@@ -7,11 +7,23 @@
 # Python venv for XML formatter
 VENV_PYTHON := .venv/bin/python
 
+# ui_xml/translations/ is generator output (mk/translations.mk -> generate_translations.py),
+# rewritten on every build. Formatting it makes the tree go dirty on the next compile.
+# format-xml.py refuses these on its own (GENERATED_DIRS), but the xmllint fallback
+# below has no such guard, so prune them from the file list too.
+XML_FIND_PRUNE := -not -path "ui_xml/translations/*"
+
+# Resolve clang-format the same way scripts/quality-checks.sh does: the pinned
+# wheel in .venv (clang-format==18.1.8, requirements) wins over the system binary,
+# so a machine's Homebrew (newer) or distro (older 18.1.x) build cannot silently
+# reflow the tree differently from CI. $(CLANG_FORMAT) overrides both.
+CLANG_FORMAT ?= $(firstword $(wildcard .venv/bin/clang-format) clang-format)
+
 # Format all C/C++ and XML files
 format:
 	$(ECHO) "$(CYAN)$(BOLD)Formatting code and XML files...$(RESET)"
 	@FORMATTED_COUNT=0; \
-	if ! command -v clang-format >/dev/null 2>&1; then \
+	if ! command -v $(CLANG_FORMAT) >/dev/null 2>&1 && [ ! -x "$(CLANG_FORMAT)" ]; then \
 		echo "$(RED)✗ clang-format not found$(RESET)"; \
 		echo "  Install: $(YELLOW)brew install clang-format$(RESET) (macOS)"; \
 		echo "         $(YELLOW)sudo apt install clang-format$(RESET) (Debian/Ubuntu)"; \
@@ -23,7 +35,7 @@ format:
 	if [ -n "$$C_FILES" ]; then \
 		for file in $$C_FILES; do \
 			if [ -f "$$file" ]; then \
-				clang-format -i "$$file" && FORMATTED_COUNT=$$((FORMATTED_COUNT + 1)); \
+				$(CLANG_FORMAT) -i "$$file" && FORMATTED_COUNT=$$((FORMATTED_COUNT + 1)); \
 			fi; \
 		done; \
 		echo "$(GREEN)✓ Formatted $$FORMATTED_COUNT C/C++ files$(RESET)"; \
@@ -32,7 +44,7 @@ format:
 	fi; \
 	echo "$(CYAN)Formatting XML files...$(RESET)"; \
 	XML_COUNT=0; \
-	XML_FILES=$$(find ui_xml -type f -name "*.xml" 2>/dev/null || true); \
+	XML_FILES=$$(find ui_xml -type f -name "*.xml" $(XML_FIND_PRUNE) 2>/dev/null || true); \
 	if [ -n "$$XML_FILES" ]; then \
 		if [ -x "$(VENV_PYTHON)" ] && $(VENV_PYTHON) -c "import lxml" 2>/dev/null; then \
 			$(VENV_PYTHON) scripts/format-xml.py $$XML_FILES && \
@@ -64,7 +76,7 @@ format:
 format-staged:
 	$(ECHO) "$(CYAN)$(BOLD)Formatting staged files...$(RESET)"
 	@FORMATTED_COUNT=0; \
-	if ! command -v clang-format >/dev/null 2>&1; then \
+	if ! command -v $(CLANG_FORMAT) >/dev/null 2>&1 && [ ! -x "$(CLANG_FORMAT)" ]; then \
 		echo "$(RED)✗ clang-format not found$(RESET)"; \
 		exit 1; \
 	fi; \
@@ -73,12 +85,12 @@ format-staged:
 		echo "$(CYAN)Formatting staged C/C++ files...$(RESET)"; \
 		for file in $$STAGED_C_FILES; do \
 			if [ -f "$$file" ]; then \
-				clang-format -i "$$file" && git add "$$file" && FORMATTED_COUNT=$$((FORMATTED_COUNT + 1)); \
+				$(CLANG_FORMAT) -i "$$file" && git add "$$file" && FORMATTED_COUNT=$$((FORMATTED_COUNT + 1)); \
 				echo "  ✓ $$file"; \
 			fi; \
 		done; \
 	fi; \
-	STAGED_XML_FILES=$$(git diff --cached --name-only --diff-filter=ACM | grep '\.xml$$' || true); \
+	STAGED_XML_FILES=$$(git diff --cached --name-only --diff-filter=ACM | grep '\.xml$$' | grep -v '^ui_xml/translations/' || true); \
 	if [ -n "$$STAGED_XML_FILES" ]; then \
 		echo "$(CYAN)Formatting staged XML files...$(RESET)"; \
 		if [ -x "$(VENV_PYTHON)" ] && $(VENV_PYTHON) -c "import lxml" 2>/dev/null; then \

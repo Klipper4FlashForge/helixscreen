@@ -196,17 +196,25 @@ HELIX_VERSION := $(shell cat VERSION.txt 2>/dev/null || echo "0.0.0")
 HELIX_VERSION_MAJOR := $(word 1,$(subst ., ,$(HELIX_VERSION)))
 HELIX_VERSION_MINOR := $(word 2,$(subst ., ,$(HELIX_VERSION)))
 HELIX_VERSION_PATCH := $(word 3,$(subst ., ,$(HELIX_VERSION)))
-HELIX_GIT_HASH := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+# The short git hash is produced by scripts/gen-git-hash.sh into a generated
+# header, not read here: a make variable would be a second source of the same
+# value, free to drift from the one the binary actually reports.
 
 # Installer script filename (single source of truth for Makefile packaging + C++ extraction)
 INSTALLER_FILENAME := install.sh
 
-# Add version defines to compiler flags
+# Add version defines to compiler flags.
+#
+# HELIX_GIT_HASH is deliberately NOT here. Everything in this list lands on
+# every translation unit's command line, and ccache's direct mode hashes that
+# command line, so a value that changes every commit invalidates the whole
+# project's cache on every push. The rest only move at release, which is why
+# they are safe to keep global. The hash goes through a generated header that
+# reaches one object instead. See scripts/gen-git-hash.sh and $(GIT_HASH_H).
 VERSION_DEFINES := -DHELIX_VERSION=\"$(HELIX_VERSION)\" \
                    -DHELIX_VERSION_MAJOR=$(HELIX_VERSION_MAJOR) \
                    -DHELIX_VERSION_MINOR=$(HELIX_VERSION_MINOR) \
                    -DHELIX_VERSION_PATCH=$(HELIX_VERSION_PATCH) \
-                   -DHELIX_GIT_HASH=\"$(HELIX_GIT_HASH)\" \
                    -DINSTALLER_FILENAME=\"$(INSTALLER_FILENAME)\"
 CFLAGS += $(VERSION_DEFINES)
 CXXFLAGS += $(VERSION_DEFINES)
@@ -249,6 +257,24 @@ endif
 # Note: No DEPFLAGS for submodules - we don't track their internal dependencies
 SUBMODULE_CFLAGS := -std=c11 -O2 -g -D_GNU_SOURCE -w
 SUBMODULE_CXXFLAGS := -std=c++17 -O2 -g -w
+
+# XML create-cost profiling in lib/helix-xml (lv_xml.c). Counts component
+# creates and separates expat/SAX time from element-handler time, which is the
+# only way to tell parsing apart from widget building: XML_Parse drives the
+# handlers, so one timer around it measures both.
+#
+# Dev-build only, and OFF even there. It reads the clock on every element, which
+# distorts what it is measuring, and logs every 25 creates. Turn it on for a
+# measurement run, not for everyday work:
+#   make ENABLE_XML_PROFILE=yes
+#
+# make does not track compiler flags, so toggling this rebuilds nothing on its
+# own — delete the object too:
+#   rm -f build/obj/helix-xml/src/xml/lv_xml.o
+ENABLE_XML_PROFILE ?= no
+ifeq ($(ENABLE_XML_PROFILE),yes)
+    SUBMODULE_CFLAGS += -DLV_XML_PROFILE=1
+endif
 
 # Platform detection (needed early for conditional compilation)
 UNAME_S := $(shell uname -s)
@@ -920,9 +946,24 @@ CXXFLAGS += $(SOUND_CXXFLAGS) $(TRACKER_CXXFLAGS)
 HELIX_HAS_LABEL_PRINTER ?= 1
 HELIX_HAS_CFS ?= 1
 HELIX_HAS_IFS ?= 1
+# Compile-out gates for the 2D gcode renderer and the bed-mesh 3D renderer —
+# code AND their big runtime buffers (ESP32-class targets set these to 0).
+HELIX_HAS_GCODE_VIEWER ?= 1
+HELIX_HAS_BED_MESH_3D ?= 1
+# Compile-out gate for the dlopen()-based plugin system — no dynamic linking
+# on statically-linked embedded targets (ESP32-class).
+HELIX_HAS_PLUGINS ?= 1
+# Compile-out gate for the timelapse VIEWING UI (video list/download/playback).
+# Capture-control (settings, render, save-frames) is plain JSON-RPC and is NOT
+# gated — printers keep capturing timelapses even where the screen can't view them.
+HELIX_HAS_TIMELAPSE_VIEWER ?= 1
 CXXFLAGS += -DHELIX_HAS_LABEL_PRINTER=$(HELIX_HAS_LABEL_PRINTER) \
             -DHELIX_HAS_CFS=$(HELIX_HAS_CFS) \
-            -DHELIX_HAS_IFS=$(HELIX_HAS_IFS)
+            -DHELIX_HAS_IFS=$(HELIX_HAS_IFS) \
+            -DHELIX_HAS_GCODE_VIEWER=$(HELIX_HAS_GCODE_VIEWER) \
+            -DHELIX_HAS_BED_MESH_3D=$(HELIX_HAS_BED_MESH_3D) \
+            -DHELIX_HAS_PLUGINS=$(HELIX_HAS_PLUGINS) \
+            -DHELIX_HAS_TIMELAPSE_VIEWER=$(HELIX_HAS_TIMELAPSE_VIEWER)
 
 # Parallel build control
 # Auto-parallelizes builds: plain 'make' automatically uses -j$(NPROC).
@@ -1105,6 +1146,23 @@ CONTRIBUTORS_H := $(BUILD_DIR)/generated/contributors.h
 
 $(CONTRIBUTORS_H): CONTRIBUTORS.txt scripts/gen-contributors.sh
 	$(Q)BUILD_DIR=$(BUILD_DIR) ./scripts/gen-contributors.sh
+
+# Generated git-hash header. The generator runs every build (there is no single
+# file to depend on: HEAD, packed-refs and worktree .git indirection all move
+# independently) but rewrites the header only when the hash actually changes, so
+# an unchanged HEAD leaves helix_version.o alone.
+GIT_HASH_H := $(BUILD_DIR)/generated/helix_git_hash.h
+
+.PHONY: force-git-hash
+force-git-hash:
+
+$(GIT_HASH_H): force-git-hash
+	$(Q)BUILD_DIR=$(BUILD_DIR) ./scripts/gen-git-hash.sh
+
+# Named explicitly rather than left to the .d file: on a clean tree the header
+# does not exist yet, and the generic pattern rule would compile before it is
+# written. OBJ_DIR follows the sanitizer variants, so this covers those too.
+$(OBJ_DIR)/system/helix_version.o: $(GIT_HASH_H)
 
 # Refresh CONTRIBUTORS.txt from git history (respects .mailmap).
 # Unions primary authors (%aN) with Co-authored-by trailer names so pair- and

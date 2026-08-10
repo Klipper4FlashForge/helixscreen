@@ -18,6 +18,13 @@ ParamPrompter& prompter_slot() {
     return prompter;
 }
 
+/// Storage for the installed home-confirm prompter. Empty means "proceed
+/// immediately" -- see request_home_confirmation().
+HomeConfirmPrompter& home_confirm_prompter_slot() {
+    static HomeConfirmPrompter prompter;
+    return prompter;
+}
+
 void show_shared_param_modal(const std::string& macro_name, const helix::CachedMacroInfo& cached,
                              helix::MacroExecuteCallback on_execute) {
     if (cached.knowledge == helix::MacroParamKnowledge::KNOWN_PARAMS) {
@@ -68,6 +75,20 @@ bool dispatch_filament_macro(const std::string& macro_name, ParamPolicy policy,
         show_shared_param_modal(macro_name, cached, std::move(run));
     }
     return true;
+}
+
+void set_home_confirm_prompter(HomeConfirmPrompter prompter) {
+    home_confirm_prompter_slot() = std::move(prompter);
+}
+
+void request_home_confirmation(std::function<void()> on_confirm, std::function<void()> on_cancel) {
+    const HomeConfirmPrompter& prompter = home_confirm_prompter_slot();
+    if (!prompter) {
+        // No prompter installed: proceed exactly as before this seam existed.
+        on_confirm();
+        return;
+    }
+    prompter(std::move(on_confirm), std::move(on_cancel));
 }
 
 std::string filament_load_fallback_gcode() {

@@ -1,5 +1,14 @@
 # M117 Pre-Print Visibility Implementation Plan
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions.**
+> **Status: SHIPPED.** The 54 `- [ ]` boxes were never ticked and do not mean the work is
+> outstanding. Coverage landed in `tests/unit/test_display_message.cpp`, not the
+> `test_print_status_widget_m117.cpp` this plan names.
+>
+> Code line numbers and file paths below may have drifted. Follow the **symbol**, not
+> the number, and verify every predicate against current code before relying on
+> anything here.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make Klipper M117 messages (`display_status.message`) visible during pre-print (heating / QGL / purge) and on idle screens, and stop HelixScreen from destroying them.

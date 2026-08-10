@@ -58,7 +58,10 @@ if [ "$STAGED_ONLY" = true ]; then
     grep -E '\.(cpp|c|h|mm)$' | \
     grep -v '^lib/' | \
     grep -v '^assets/fonts/' | \
-    grep -v '^lv_conf\.h$' | \
+    grep -v 'lv_conf\.h$' | \
+    grep -v '^firmware/.*/fonts/' | \
+    grep -v '_compiled\.c$' | \
+    grep -v '^firmware/.*/simd/' | \
     grep -v '^node_modules/' | \
     grep -v '^build/' | \
     grep -v '/\.' || true)
@@ -727,11 +730,15 @@ fi
 echo ""
 
 # XML Formatting Check
+# ui_xml/translations/ is generator output (rewritten by every build), so it is
+# excluded from FORMATTING but not from the validation pass above - the generator
+# still has to emit well-formed XML. Same exclusion as mk/format.mk; format-xml.py
+# self-guards via GENERATED_DIRS, but the xmllint fallback below does not.
 echo "📐 Checking XML formatting..."
 if [ "$STAGED_ONLY" = true ]; then
-  XML_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep "\.xml$" || true)
+  XML_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep "\.xml$" | grep -v "^ui_xml/translations/" || true)
 else
-  XML_FILES=$(find ui_xml -name "*.xml" 2>/dev/null || true)
+  XML_FILES=$(find ui_xml -name "*.xml" -not -path "ui_xml/translations/*" 2>/dev/null || true)
 fi
 
 VENV_PYTHON=".venv/bin/python"
@@ -1056,7 +1063,7 @@ if [ -f "scripts/check_imperative_ui.py" ]; then
   # as deliberate pragmatism (the XML engine couldn't express it at the time), some
   # are plain mistakes — both are debt. The number may go DOWN (port a site, then
   # lower this baseline) but must never go up.
-  if python3 scripts/check_imperative_ui.py --max-allowed 387 --summary >/tmp/imperative_ui.out 2>&1; then
+  if python3 scripts/check_imperative_ui.py --max-allowed 384 --summary >/tmp/imperative_ui.out 2>&1; then
     section_time $SECTION_START
     echo ""
     tail -1 /tmp/imperative_ui.out

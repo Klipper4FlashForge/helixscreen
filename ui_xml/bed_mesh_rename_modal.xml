@@ -14,7 +14,8 @@
             style_pad_top="#space_lg" style_pad_bottom="#space_lg" flex_flow="column" style_flex_cross_place="center"
             style_pad_gap="#space_md">
       <!-- Title -->
-      <text_heading width="100%" text="Rename Mesh Profile" translation_tag="Rename Mesh Profile" style_text_align="center"/>
+      <text_heading width="100%"
+                    text="Rename Mesh Profile" translation_tag="Rename Mesh Profile" style_text_align="center"/>
       <!-- Current name display -->
       <lv_obj width="100%"
               height="content" flex_flow="row" style_flex_main_place="center" style_pad_all="0"
@@ -24,8 +25,8 @@
       </lv_obj>
       <!-- New name input -->
       <text_input name="rename_new_name_input"
-                  width="100%" height="#input_height" placeholder_text="New profile name" placeholder_tag="New profile name" translation_tag="New profile name"
-                  style_margin_top="#space_sm"/>
+                  width="100%" height="#input_height" placeholder_text="New profile name"
+                  placeholder_tag="New profile name" translation_tag="New profile name" style_margin_top="#space_sm"/>
       <!-- Status message (hidden by default) -->
       <text_small name="rename_status"
                   width="100%" text="" style_text_align="center" style_text_color="#danger" hidden="true"/>

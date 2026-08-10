@@ -7,7 +7,9 @@
   <consts>
     <!-- Step metadata (read by wizard orchestrator) -->
     <str name="step_title" value="Printer Setup: Connection" value_tag="Printer Setup: Connection"/>
-    <str name="step_subtitle" value="If Moonraker is local or your screen is attached to the printer directly, we'll connect automatically" value_tag="If Moonraker is local or your screen is attached to the printer directly, we'll connect automatically"/>
+    <str name="step_subtitle"
+         value="If Moonraker is local or your screen is attached to the printer directly, we'll connect automatically"
+         value_tag="If Moonraker is local or your screen is attached to the printer directly, we'll connect automatically"/>
     <int name="step_order" value="2"/>
   </consts>
   <view name="wizard_connection_root"
@@ -29,16 +31,19 @@
       </lv_obj>
 
       <!-- Separator (hidden with mDNS section) -->
-      <text_muted text="Or Enter Manually" translation_tag="Or Enter Manually" style_pad_all="0" style_pad_gap="0" hidden="true"/>
+      <text_muted text="Or Enter Manually"
+                  translation_tag="Or Enter Manually" style_pad_all="0" style_pad_gap="0" hidden="true"/>
 
       <!-- Horizontal input row: Network Address (left) and Port (right) -->
-      <lv_obj width="100%" height="content" scrollable="false" style_pad_all="0" style_pad_gap="#space_sm" flex_flow="row">
+      <lv_obj width="100%"
+              height="content" scrollable="false" style_pad_all="0" style_pad_gap="#space_sm" flex_flow="row">
         <!-- Left -->
         <lv_obj flex_grow="3"
                 style_pad_all="0" style_pad_gap="#space_xs" flex_flow="column" style_flex_main_place="start"
                 style_flex_cross_place="start">
           <text_body width="100%" text="Network Address" translation_tag="Network Address"/>
-          <text_input name="ip_input" width="100%" bind_text="connection_ip" placeholder_text="127.0.0.1" placeholder_tag="127.0.0.1"/>
+          <text_input name="ip_input"
+                      width="100%" bind_text="connection_ip" placeholder_text="127.0.0.1" placeholder_tag="127.0.0.1"/>
         </lv_obj>
         <!-- Right -->
         <lv_obj flex_grow="1"

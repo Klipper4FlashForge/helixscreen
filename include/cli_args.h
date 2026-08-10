@@ -39,9 +39,9 @@ struct CliArgs {
 
     // Wizard
     bool force_wizard = false;
-    int wizard_step = -1;         // -1 = not set
-    bool skip_wizard = false;     // --skip-wizard: suppress the first-run wizard
-                                  // (e.g. for screenshots/automation via helixctl)
+    int wizard_step = -1;     // -1 = not set
+    bool skip_wizard = false; // --skip-wizard: suppress the first-run wizard
+                              // (e.g. for screenshots/automation via helixctl)
 
     // Touch calibration
     bool calibrate_touch = false; ///< Force touch calibration on startup
@@ -80,11 +80,11 @@ struct CliArgs {
     int detect_port = 7125;
 
     // Remote control server
-    bool remote_control = false; // --remote: enable remote control server
-    std::string remote_socket;   // --remote-socket: override socket path
-    std::string remote_transport = "socket"; // --remote-transport: socket|http
+    bool remote_control = false;                // --remote: enable remote control server
+    std::string remote_socket;                  // --remote-socket: override socket path
+    std::string remote_transport = "socket";    // --remote-transport: socket|http
     std::string remote_http_bind = "127.0.0.1"; // --remote-http-bind: HTTP bind host
-    int remote_http_port = 7130;                 // --remote-http-port: HTTP TCP port
+    int remote_http_port = 7130;                // --remote-http-port: HTTP TCP port
 };
 
 /**

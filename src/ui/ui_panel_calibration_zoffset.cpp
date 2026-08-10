@@ -20,6 +20,7 @@
 #include "probe_sensor_manager.h"
 #include "probe_sensor_types.h"
 #include "static_panel_registry.h"
+#include "toolhead_homing.h"
 #include "z_offset_utils.h"
 
 #include <spdlog/spdlog.h>
@@ -455,7 +456,7 @@ void ZOffsetCalibrationPanel::arm_saving_timeout() {
 
 void ZOffsetCalibrationPanel::start_calibration() {
     if (!api_) {
-        spdlog::error("[ZOffsetCal] No MoonrakerAPI");
+        spdlog::error("[ZOffsetCal] No IMoonrakerAPI");
         on_calibration_result(false, "No printer connection");
         return;
     }
@@ -519,8 +520,7 @@ void ZOffsetCalibrationPanel::begin_probe_sequence() {
     auto strategy = ps.get_z_offset_calibration_strategy();
 
     // Check homing state (shared across all strategies)
-    const char* homed = lv_subject_get_string(ps.get_homed_axes_subject());
-    bool all_homed = homed && std::string(homed).find("xyz") != std::string::npos;
+    const bool all_homed = helix::toolhead_is_homed(ps);
 
     if (strategy == ZOffsetCalibrationStrategy::FIRMWARE_MANAGED) {
         // Manual Z calibrate: home, move to center, lower to Z0.1
@@ -573,8 +573,10 @@ void ZOffsetCalibrationPanel::begin_probe_sequence() {
         // Probe calibrate or endstop strategy
         std::string gcode;
         if (!all_homed) {
+            // Diagnostic-only re-fetch — all_homed above already decided the branch.
+            const char* homed_dbg = lv_subject_get_string(ps.get_homed_axes_subject());
             spdlog::info("[ZOffsetCal] Axes not homed (homed_axes='{}'), homing first",
-                         homed ? homed : "");
+                         homed_dbg ? homed_dbg : "");
             gcode = "G28\n";
         }
 
@@ -706,7 +708,7 @@ void ZOffsetCalibrationPanel::send_accept() {
 
         // Token + api captured on the main thread so the bg-thread ACCEPT callback never
         // touches `this` members (no bg-thread lifetime_.token()/api_ access). api_ (the
-        // MoonrakerAPI) outlives the panel; all `this` work is deferred to the main thread (L081).
+        // IMoonrakerAPI) outlives the panel; all `this` work is deferred to the main thread (L081).
         auto accept_token = lifetime_.token();
         api_->execute_gcode(
             "ACCEPT",

@@ -13,7 +13,7 @@ using namespace moonraker_internal;
 // MoonrakerJobAPI Implementation
 // ============================================================================
 
-MoonrakerJobAPI::MoonrakerJobAPI(helix::MoonrakerClient& client) : client_(client) {}
+MoonrakerJobAPI::MoonrakerJobAPI(helix::IMoonrakerClient& client) : client_(client) {}
 
 // ============================================================================
 // Job Control Operations
@@ -161,8 +161,7 @@ void MoonrakerJobAPI::start_modified_print(const std::string& original_filename,
         // The callback runs on the WebSocket background thread and only touches
         // spdlog + client_ (via start_print) — no LVGL/subject work here; the
         // caller's on_success/on_error handle their own thread bouncing.
-        [this, original_filename, temp_file_path, on_success,
-         on_error](const MoonrakerError& err) {
+        [this, original_filename, temp_file_path, on_success, on_error](const MoonrakerError& err) {
             spdlog::warn("[Moonraker API] helix_print plugin print_modified failed ({}); falling "
                          "back to direct printer.print.start on temp file '{}'. Job history will "
                          "show the temp filename (known degraded mode — update the helix_print "

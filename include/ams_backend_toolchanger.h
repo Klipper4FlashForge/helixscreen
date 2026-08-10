@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+class ToolChangerTestAccess;
+
 /**
  * @file ams_backend_toolchanger.h
  * @brief Physical tool changer backend implementation
@@ -50,13 +52,13 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
     /**
      * @brief Construct tool changer backend
      *
-     * @param api Pointer to MoonrakerAPI (for sending G-code commands)
-     * @param client Pointer to helix::MoonrakerClient (for subscribing to updates)
+     * @param api Pointer to IMoonrakerAPI (for sending G-code commands)
+     * @param client Pointer to helix::IMoonrakerClient (for subscribing to updates)
      *
      * @note Pointers must remain valid for the lifetime of this backend.
      * @note Call set_discovered_tools() before start() to set tool names.
      */
-    AmsBackendToolChanger(MoonrakerAPI* api, helix::MoonrakerClient* client);
+    AmsBackendToolChanger(IMoonrakerAPI* api, helix::IMoonrakerClient* client);
 
     /**
      * @brief Set discovered tool names from PrinterCapabilities
@@ -202,6 +204,7 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
   protected:
     // Allow test helper access to private members
     friend class ToolChangerCharHelper;
+    friend class ToolChangerTestAccess;
 
     // --- AmsSubscriptionBackend hooks ---
     AmsError additional_start_checks() override;
@@ -209,6 +212,15 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
     const char* backend_log_tag() const override {
         return "[AMS ToolChanger]";
     }
+
+    /// dispatch_operation() sets the optimistic action (begin_dispatch_locked)
+    /// BEFORE calling ensure_homed_then() -- on decline, the base class's
+    /// generic IDLE reset alone leaves pending_dispatch_action_ armed and
+    /// operation_detail stale, so route through abandon_dispatch() instead,
+    /// the same unwind dispatch_operation()'s own `if (!result)` net uses.
+    /// ToolChanger has no stuck-action watchdog at all, so this matters even
+    /// more here than on AFC.
+    void on_home_confirmation_declined() override;
 
   private:
     /**

@@ -1460,7 +1460,7 @@ DEPLOY_RSYNC_FLAGS := -avzz --delete --checksum
 # target's real state with dev-machine state — or worse, leaves a stale
 # crash_report.txt on a healthy device that triggers the "previously crashed"
 # modal on next boot. These are gitignored but gitignore doesn't affect rsync.
-DEPLOY_RUNTIME_EXCLUDES := --exclude='crash.txt' --exclude='crash_*.txt' --exclude='crash_report.txt' --exclude='.crash_restart_count' --exclude='telemetry_*.json' --exclude='tool_spools.json'
+DEPLOY_RUNTIME_EXCLUDES := --exclude='crash.txt' --exclude='crash_*.txt' --exclude='crash_report.txt' --exclude='.crash_restart_count' --exclude='telemetry_*.json' --exclude='tool_spools.json' --exclude='filament_slot_overrides.json'
 DEPLOY_ASSET_EXCLUDES := --exclude='test_gcodes' --exclude='gcode' --exclude='.DS_Store' --exclude='*.pyc' --exclude='settings*.json' --exclude='helixconfig*.json' --exclude='helixscreen.env' --exclude='.claude-recall' --exclude='._*' \
 	--exclude='assets/fonts/*.c' --exclude='assets/fonts/*.ttf' --exclude='assets/fonts/*.otf' --exclude='assets/fonts/.clang-format' \
 	--exclude='*.icns' --exclude='mdi-icon-metadata.json.gz' --exclude='moonraker-plugin/tests' \
@@ -2498,6 +2498,7 @@ define release-strip-pii
 	@rm -f $(1)/config/telemetry_device.json \
 	       $(1)/config/telemetry_queue.json \
 	       $(1)/config/tool_spools.json \
+	       $(1)/config/filament_slot_overrides.json \
 	       $(1)/config/crash_report.txt \
 	       $(1)/config/crash_history.json \
 	       $(1)/config/feedback_queue.json \

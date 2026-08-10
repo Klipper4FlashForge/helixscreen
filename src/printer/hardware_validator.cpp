@@ -415,7 +415,8 @@ size_t HardwareValidator::acknowledge_discovered_hardware(Config* config,
             if (name.empty()) {
                 continue;
             }
-            if (std::find(expected_list.begin(), expected_list.end(), name) != expected_list.end()) {
+            if (std::find(expected_list.begin(), expected_list.end(), name) !=
+                expected_list.end()) {
                 continue;
             }
             expected_list.push_back(name);
@@ -555,10 +556,9 @@ void HardwareValidator::validate_configured_hardware(Config* config,
         // Try new array format first
         std::vector<std::string> configured_leds =
             config->get_string_array(config->df() + helix::wizard::LED_SELECTED);
-        configured_leds.erase(
-            std::remove_if(configured_leds.begin(), configured_leds.end(),
-                           [](const std::string& n) { return n.empty(); }),
-            configured_leds.end());
+        configured_leds.erase(std::remove_if(configured_leds.begin(), configured_leds.end(),
+                                             [](const std::string& n) { return n.empty(); }),
+                              configured_leds.end());
 
         // Fall back to legacy single string
         if (configured_leds.empty()) {

@@ -43,7 +43,17 @@ translations:
   0 = computed: 0 = calculado
   0 events queued: 0 eventos na fila
   0 slots: '{0} Slots'
+  # Source: calibration_pid_panel.xml:368
+  0.0000 J/K: ''
+  # Source: calibration_pid_panel.xml:374
+  0.000000 K/s/K: ''
+  # Source: calibration_pid_panel.xml:380
+  0.000000 W/K: ''
   0.4-2mm direct drive, 4-6mm bowden: 0.4-2mm direct drive, 4-6mm bowden
+  # Source: history_dashboard_panel.xml:83
+  0h: ''
+  # Source: history_dashboard_panel.xml:89, print_status_panel.xml:252, print_status_panel.xml:254
+  0m: ''
   0°: 0°
   1 day ago: há 1 dia
   1 event queued: 1 evento na fila
@@ -95,9 +105,13 @@ translations:
   ACCELEROMETERS: ACELERÔMETROS
   ACE Moonraker bridge not found. Install ace_status.py for full support.: Ponte
     ACE Moonraker não encontrada. Instale ace_status.py para suporte completo.
+  ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: Ponte
+    ACE do Moonraker não encontrada. Instale ace_status.py do ValgACE para suporte
+    completo.
   ACTIONS: AÇÕES
   ADXL: ADXL
   AFC: AFC
+  AFC Update Available: Atualização do AFC Disponível
   AFC failure reset complete: Reinício de falha AFC concluído
   AFC failure reset failed: Falha ao reiniciar erro AFC
   AFC recovery complete: Recuperação AFC concluída
@@ -179,6 +193,8 @@ translations:
   An error occurred during measurement.: Ocorreu um erro durante a medição.
   An error occurred during probing.: Ocorreu um erro durante a sondagem.
   An error occurred while loading filament.: Ocorreu um erro ao carregar o filamento.
+  # Source: probe_accuracy_modal.xml:90
+  An error occurred.: ''
   An internal error occurred. The app continues running — please send a debug bundle from Settings > About if it repeats.: Ocorreu
     um erro interno. O aplicativo continua em execução — envie um pacote de depuração
     em Configurações > Sobre se isso se repetir.
@@ -317,8 +333,8 @@ translations:
   Bypass controlled by sensor: Bypass controlado por sensor
   Bypass disabled: Bypass desativado
   Bypass enabled: Bypass ativado
-  'Bypass failed: {}': 'Falha no bypass: {}'
-  'Bypass toggle failed: {}': 'Falha ao alternar bypass: {}'
+  Bypass failed: Falha no bypass
+  Bypass toggle failed: Falha ao alternar bypass
   C: C
   CALIBRATION: CALIBRAÇÃO
   CAPABILITIES: CAPACIDADES
@@ -427,6 +443,8 @@ translations:
     impressora
   Change PIN: Alterar PIN
   Change Printer Host: Alterar Host da Impressora
+  Change Tool: Trocar Ferramenta
+  Change Tool While Paused: Trocar Ferramenta com Impressão Pausada
   Changes apply immediately. Adjust during print for tuning.: Alterações aplicadas
     imediatamente. Ajuste durante a impressão para calibrar.
   Changes are temporary and reset on printer reboot: Alterações são temporárias e
@@ -437,9 +455,9 @@ translations:
   Check filament: Verificar filamento
   Check for Updates: Verificar Atualizações
   Check slot: Verificar slot
-  'Check slot failed: {}': 'Falha ao verificar slot: {}'
+  Check slot failed: Falha ao verificar slot
   Check slots: Verificar slots
-  'Check slots failed: {}': 'Falha ao verificar slots: {}'
+  Check slots failed: Falha ao verificar slots
   Check the filament path and try again.: Verifique o caminho do filamento e tente
     novamente.
   Check your heater's rating (typically 40-60W for hotends): Verifique a potência
@@ -475,7 +493,7 @@ translations:
   Clear All Events: Limpar Todos os Eventos
   Clear Console?: Limpar Console?
   Clear Spool: Remover bobina
-  'Clear failed: {}': 'Falha ao limpar: {}'
+  Clear failed: Falha ao limpar
   Cleared from settings — system unpair failed, may need OS Bluetooth: Removido das
     configurações; falha ao desemparelhar no sistema, pode ser necessário o Bluetooth
     do SO
@@ -747,7 +765,7 @@ translations:
   Eject: Ejetar
   Eject Distance: Distância de Ejeção
   Eject Velocity: Velocidade de Ejeção
-  'Eject failed: {}': 'Falha ao ejetar: {}'
+  Eject failed: Falha ao ejetar
   Eject needs [force_move] enabled in printer config: A ejeção precisa de [force_move]
     habilitado na configuração da impressora
   Ejecting: Ejetando
@@ -761,6 +779,7 @@ translations:
   Empty slots disable the associated functionality: Slots vazios desabilitam a funcionalidade
     associada
   Enable: Habilitar
+  Enable Bypass Controls: Habilitar Controles de Bypass
   Enable Monitoring: Habilitar Monitoramento
   Enable Retraction: Habilitar Retração
   Enable Timelapse: Habilitar Timelapse
@@ -984,8 +1003,12 @@ translations:
   'Filament load failed: {}': 'Falha ao carregar filamento: {}'
   Filament loaded: Filamento carregado
   Filament operation failed: Falha na operação de filamento
-  'Filament operation failed: {}': 'Falha na operação de filamento: {}'
   Filament operation timed out: Operação de filamento — tempo esgotado
+  Filament ran out - nothing at the toolhead and the print is paused.: ''
+  ? Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume.
+  : ''
+  Filament ran out at the toolhead: ''
+  Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: ''
   Filament runout: Fim de filamento
   Filament runout and motion detection sensors: Sensores de detecção de fim de filamento
     e movimento
@@ -1005,6 +1028,9 @@ translations:
   Finish: Finalizar
   Finishing up...: Finalizando...
   Firmware Restart: Reiniciar Firmware
+  Firmware reports no bypass. Enable if you feed filament straight to the extruder: O
+    firmware não indica bypass. Habilite se você alimenta o filamento diretamente ao
+    extrusor
   Firmware restarting...: Reiniciando firmware...
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
@@ -1117,7 +1143,9 @@ translations:
   Holding nozzle at {}°C to purge previous filament.: Mantendo o bico a {}°C para purgar
     o filamento anterior.
   Home: Início
+  Home & Continue: Fazer home e continuar
   Home failed: Homing falhou
+  Home printer first?: Fazer home da impressora primeiro?
   Home selector: Fazer home do seletor
   Homing AFC system...: Homing do sistema AFC...
   Homing X...: Posicionando X...
@@ -1261,6 +1289,8 @@ translations:
   'Klipper: ': 'Klipper: '
   Klippy Errors: Erros do Klippy
   Klippy Shutdowns: Desligamentos do Klippy
+  # Source: led_control_overlay.xml:31
+  LED: ''
   LED SELECTION: SELEÇÃO DE LED
   LED Settings: Configurações de LED
   LED Strip: Fita de LED
@@ -1283,10 +1313,14 @@ translations:
   Language: Idioma
   Language, theme, brightness, and sound: Idioma, tema, brilho e som
   Last: Última
+  # Source: history_dashboard_panel.xml:114
+  Last 7 days: ''
   Last print cancelled: Última impressão cancelada
   Last print failed: Última impressão falhou
   Later: Depois
   Layer: Camada
+  # Source: print_status_panel.xml:234
+  Layer 0 / 0: ''
   Layer Height: Altura da Camada
   Layer Macro captures one frame per layer change. Best for most prints.: A Macro
     de Camada captura um quadro por mudança de camada. Melhor para a maioria das impressões.
@@ -1355,7 +1389,7 @@ translations:
   'MCU: ': 'MCU: '
   MDI Icons: Ícones MDI
   MISSING CONFIGURED: CONFIGURAÇÃO FALTANDO
-  'MMU command failed: {}': 'Falha no comando MMU: {}'
+  MMU command failed: Falha no comando MMU
   MPC: MPC
   Machine Limits: Limites da Máquina
   Macro: Macro
@@ -1464,6 +1498,7 @@ translations:
   Must home axes first: Deve referenciar os eixos primeiro
   My Custom Theme: Meu Tema Personalizado
   My Panel: Meu Painel
+  My Printer: Minha Impressora
   NEWLY DISCOVERED: RECÉM DESCOBERTO
   Name: Nome
   Name (optional): Nome (opcional)
@@ -1511,6 +1546,8 @@ translations:
   No Spools: Sem Carretéis
   No USB printer detected: Nenhuma impressora USB detectada
   No USB printers found: Nenhuma impressora USB encontrada
+  ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
+  : ''
   No buffer data available: Nenhum dado de buffer disponível
   No camera — use USB barcode scanner: Sem câmera — use leitor de código de barras
     USB
@@ -1557,6 +1594,7 @@ translations:
   No prints yet: Sem impressões ainda
   No profiles available: Nenhum perfil disponível
   No sensors detected: Nenhum sensor detectado
+  No slot currently matches.: ''
   No spool assigned: Nenhuma bobina atribuída
   No spools found — tap to retry: Nenhuma bobina encontrada — toque para tentar novamente
   No tape detected in printer: Nenhuma fita detectada na impressora
@@ -1579,6 +1617,7 @@ translations:
   Not found (use phone app): Não encontrado (use o app do celular)
   Not in your spools? Set it up: Não está nos seus carretéis? Configure aqui
   Not now: Agora não
+  Not yet available on this display: ''
   Not yet calibrated: Ainda não calibrado
   Notes: Notas
   Notes (optional): Notas (opcional)
@@ -1617,6 +1656,7 @@ translations:
   'Off:': 'Desligado:'
   'On': Ligado
   On and Off macros must be different: Macros de Ligar e Desligar devem ser diferentes
+  On your phone or computer, join the WiFi network \"{}\", then open http://{} in a browser to finish setup.: ''
   On/Off: Liga/Desliga
   On/Off (state-aware): Ligar/Desligar (com estado)
   'On:': 'Ligado:'
@@ -1858,6 +1898,8 @@ translations:
   Probing Bed...: Sondando Mesa...
   Probing Failed: Sondagem Falhou
   Proceed: Prosseguir
+  # Source: abort_progress_modal.xml:20
+  Processing...: ''
   Profile deleted: Perfil excluído
   Profile name (e.g., default): 'Nome do perfil (ex.: padrão)'
   Profile renamed: Perfil renomeado
@@ -1966,7 +2008,7 @@ translations:
   Reset Speed & Flow to 100%: Resetar Velocidade & Fluxo para 100%
   Reset all settings and restart wizard: Resetar todas as configurações e reiniciar
     assistente
-  'Reset failed: {}': 'Falha ao redefinir: {}'
+  Reset failed: Falha ao redefinir
   Reset to Default: Restaurar Padrão
   Reset to defaults: Restaurar padrões
   Reset to original values: Restaurar valores originais
@@ -1996,7 +2038,7 @@ translations:
   Resume Print: Retomar Impressão
   Resume interrupted print?: Retomar impressão interrompida?
   Resume macro not configured: Macro de retomada não configurado
-  'Resume preparation failed: {}': 'Falha na preparação para retomar: {}'
+  Resume preparation failed: Falha na preparação para retomar
   Resuming...: Retomando...
   Retract: Retrair
   Retract Distance: Distância de Retração
@@ -2137,7 +2179,7 @@ translations:
   Select material to begin: Selecione o material para começar
   Select sensor: Selecionar sensor
   Select slot: Selecionar slot
-  'Select slot failed: {}': 'Falha ao selecionar slot: {}'
+  Select slot failed: Falha ao selecionar slot
   Select the heaters Klipper uses for your bed and hotend: Selecione os aquecedores
     que o Klipper usa para a mesa e o hotend
   Select which devices the home screen power button controls: Selecione quais dispositivos
@@ -2168,6 +2210,7 @@ translations:
   'Set ': 'Definir '
   Set Active: Definir Ativo
   Set PIN: Definir PIN
+  Set Up WiFi: ''
   ? 'Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt
     appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS:
     Strobe Light Tachometer, myStroboscope'
@@ -2211,6 +2254,9 @@ translations:
   Show up/down buttons on long lists: Mostrar botões para cima/baixo em listas longas
   Show whatever curves you last had visible on the full graph.: Mostrar as curvas
     que estavam visíveis por último no gráfico completo.
+  Showing loaded colors: ''
+  Showing sliced colors: ''
+  Showing the 50 newest files. See more in the printer's web UI.: ''
   Shutdown: Desligar
   Shutdown / Reboot: Desligar / Reiniciar
   Shutdown failed: Falha ao desligar
@@ -2358,6 +2404,8 @@ translations:
     — esta impressão vai acabar.
   T%d needs filament in slot %d, which is empty — this print will run out.: T%d precisa
     de filamento no slot %d, que está vazio — esta impressão vai acabar.
+  # Source: ams_current_tool.xml:38
+  T0: ''
   TD-1 filament color detection: Detecção de cor de filamento TD-1
   TEMPERATURE SENSORS: SENSORES DE TEMPERATURA
   THEME COLORS: CORES DO TEMA
@@ -2388,6 +2436,8 @@ translations:
   Temp °C (%d–%d): Temp °C (%d–%d)
   Temperature: Temperatura
   Temperature Graph Config: Config do Gráfico de Temperatura
+  # Source: calibration_pid_panel.xml:333
+  Temperature control has been optimized.: ''
   Temperatures: Temperaturas
   Temperatures saved: Temperaturas salvas
   Template: Modelo
@@ -2426,8 +2476,12 @@ translations:
     Quando a correia parecer parada (congelada), você encontrou a frequência de ressonância.\n\nUse
     os botões de frequência para varrer os valores até que a correia pareça parada,
     então trave a leitura.
+  ? The print is paused. Changing tools now moves the toolhead and swaps the filament at the nozzle. Resume the print once the change finishes.
+  : A impressão está pausada. Trocar a ferramenta agora move o cabeçote e troca o
+    filamento no bico. Retome a impressão assim que a troca terminar.
   The printer halted this print and cannot resume it. Restart from the beginning?: A
     impressora parou esta impressão e não pode retomá-la. Reiniciar do início?
+  The printer is not homed. Continuing will home all axes, moving the toolhead. Make sure the bed is clear.: A impressora não fez home. Continuar fará home em todos os eixos, movendo o cabeçote. Certifique-se de que a mesa esteja livre.
   The printer lost power during a print. It can resume where it left off.: A impressora
     perdeu energia durante uma impressão. Ela pode retomar de onde parou.
   The printer lost power during a print. The resumed layer may not line up exactly.: A impressora perdeu energia durante uma impressão. A camada retomada pode não se alinhar exatamente.
@@ -2543,6 +2597,7 @@ translations:
   Tool: Ferramenta
   Tool Changer: Trocador de Ferramentas
   'Tool change failed: {}': 'Falha ao trocar ferramenta: {}'
+  Tool mapping failed: Falha no mapeamento de ferramenta
   Tool swap: Troca de ferramenta
   'Tool {} → Lane {}: no filament loaded.': 'Ferramenta {} → Lane {}: nenhum filamento
     carregado.'
@@ -2615,7 +2670,6 @@ translations:
   Unknown error: Erro desconhecido
   Unload: Descarregar
   Unload Filament: Descarregar Filamento
-  'Unload failed: {}': 'Falha ao descarregar: {}'
   Unload macro not configured: Macro de descarga não configurado
   Unload may still be running — response timed out: A descarga pode ainda estar em
     execução — tempo esgotado
@@ -2640,6 +2694,8 @@ translations:
   Updates aren't available on this installation.: As atualizações não estão disponíveis
     nesta instalação.
   Updating Configuration...: Atualizando Configuração...
+  Upgrade to AFC 1.2.0 or newer for filament names and multi-color spools.: Atualize
+    para o AFC 1.2.0 ou mais recente para nomes de filamento e carretéis multicoloridos.
   Upload: Enviar
   Upload Debug Bundle: Enviar Bundle de Debug
   Upload Failed: Falha no Envio
@@ -2648,6 +2704,7 @@ translations:
   Use Android native keyboard for text input: Usar teclado nativo do Android para
     entrada de texto
   Use G10/G11 firmware retraction: Usar retração de firmware G10/G11
+  Use Settings Instead: ''
   Use printer type to select image: Usar tipo de impressora para selecionar imagem
   VM Peak: Pico de VM
   VM Size: Tamanho de VM
@@ -2800,7 +2857,11 @@ translations:
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
   \"%s\" failed to load: \"%s\" falhou ao carregar
+  ? backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
+  : ''
   bed: mesa
+  # Source: print_status_panel.xml:242
+  benchy.gcode: ''
   by Preston Brown: por Preston Brown
   chamber heater: aquecedor da câmara
   complete: concluído
@@ -2820,8 +2881,11 @@ translations:
   fans: ventoinhas
   heated bed: mesa aquecida
   idle: ocioso
+  is installed but its backup-spool switching is turned off, so no automatic swap will happen.: ''
+  is installed, but its backup-spool setting could not be read - do not count on an automatic swap.: ''
   layers: camadas
   left: restante
+  matches.: ''
   mm before clog: mm antes da obstrução
   needs: precisa
   not detected: não detectado

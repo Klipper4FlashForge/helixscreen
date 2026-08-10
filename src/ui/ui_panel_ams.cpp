@@ -26,6 +26,7 @@
 #include "ui_utils.h"
 
 #include "ams_backend.h"
+#include "data_root_resolver.h"
 #if HELIX_HAS_CFS
 #include "ams_backend_cfs.h"
 #endif
@@ -35,8 +36,8 @@
 #include "buffer_status_modal.h"
 #include "color_utils.h"
 #include "config.h"
+#include "i_moonraker_api.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
 #include "observer_factory.h"
 #include "printer_detector.h"
 #include "printer_state.h"
@@ -60,6 +61,12 @@ using namespace helix;
 
 // Default slot width for endless arrows canvas (when layout not yet computed)
 static constexpr int32_t DEFAULT_SLOT_WIDTH = 80;
+
+// Unit index handed to the shared ams_detail_* helpers, which take a unit to
+// scope to or -1 for "every unit". This panel is always the whole-system view:
+// the AMS Overview panel owns the per-unit presentation, via its own inline
+// detail view rather than through here.
+static constexpr int kAllUnits = -1;
 
 // Logo path mapping moved to AmsState::get_logo_path()
 
@@ -113,17 +120,24 @@ static void ensure_ams_widgets_registered() {
     // Register XML components
     // NOTE: Old AMS settings panels removed - Device Operations overlay is registered in
     // xml_registration.cpp
-    lv_xml_register_component_from_file("A:ui_xml/components/ams_unit_detail.xml");
-    lv_xml_register_component_from_file("A:ui_xml/components/ams_loaded_card.xml");
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/components/ams_unit_detail.xml").c_str());
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/components/ams_loaded_card.xml").c_str());
     // ams_environment_indicator registered above via ensure_ams_env_indicator_registered()
-    lv_xml_register_component_from_file("A:ui_xml/components/ams_sidebar.xml");
-    lv_xml_register_component_from_file("A:ui_xml/ams_panel.xml");
-    lv_xml_register_component_from_file("A:ui_xml/ams_context_menu.xml");
-    lv_xml_register_component_from_file("A:ui_xml/ams_selector_menu.xml");
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/components/ams_sidebar.xml").c_str());
+    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/ams_panel.xml").c_str());
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/ams_context_menu.xml").c_str());
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/ams_selector_menu.xml").c_str());
     // NOTE: spoolman_spool_item.xml and ams_edit_overlay.xml are registered
     // globally in xml_registration.cpp (needed by FilamentPanel without AMS lazy init)
-    lv_xml_register_component_from_file("A:ui_xml/ams_loading_error_modal.xml");
-    lv_xml_register_component_from_file("A:ui_xml/ams_environment_overlay.xml");
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/ams_loading_error_modal.xml").c_str());
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/ams_environment_overlay.xml").c_str());
     // NOTE: color_picker.xml is registered at startup in xml_registration.cpp
 
     s_ams_widgets_registered = true;
@@ -138,7 +152,8 @@ static void ensure_ams_widgets_registered() {
 // Construction
 // ============================================================================
 
-AmsPanel::AmsPanel(PrinterState& printer_state, MoonrakerAPI* api) : PanelBase(printer_state, api) {
+AmsPanel::AmsPanel(PrinterState& printer_state, IMoonrakerAPI* api)
+    : PanelBase(printer_state, api) {
     spdlog::debug("[AmsPanel] Constructed");
 }
 
@@ -296,10 +311,6 @@ void AmsPanel::init_subjects() {
         AmsState::instance().get_slot_count_subject(), this, [](AmsPanel* self, int new_count) {
             if (!self->panel_)
                 return;
-            // When scoped to a unit, on_activate() handles slot creation with correct offsets.
-            // Don't let the global slot count observer override that.
-            if (self->scoped_unit_index_ >= 0)
-                return;
             if (!self->slot_creation_pending_) {
                 self->slot_creation_pending_ = true;
                 self->lifetime_.defer("AmsPanel::create_slots", [self, new_count]() {
@@ -369,6 +380,14 @@ void AmsPanel::init_subjects() {
         },
         AmsState::instance().get_subjects_lifetime());
 
+    // Bypass support is not fixed at setup time. Happy Hare publishes has_bypass
+    // from the live mmu object, and our own default stands in as true until that
+    // first status lands, so the node has to be able to appear and disappear
+    // after the panel is built.
+    supports_bypass_observer_ = observe_int_sync<AmsPanel>(
+        AmsState::instance().get_supports_bypass_subject(), this,
+        [](AmsPanel* self, int /*supported*/) { self->update_bypass_spool_from_state(); });
+
     // UI module subjects are now encapsulated in their respective classes:
     // - helix::ui::AmsEditOverlay
     // - helix::ui::AmsColorPicker
@@ -391,8 +410,8 @@ void AmsPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
     // Use standard overlay panel setup (header bar, responsive padding)
     ui_overlay_panel_setup_standard(panel_, parent_screen_, "overlay_header", "overlay_content");
 
-    // Setup UI components
-    setup_system_header();
+    // Setup UI components. The system header needs no setup call: its logo and
+    // name are bound to the ams_system_logo / ams_system_name subjects.
     setup_slots();
     setup_path_canvas();
 
@@ -416,45 +435,16 @@ void AmsPanel::on_activate() {
     // Sync state when panel becomes visible
     AmsState::instance().sync_from_backend();
 
-    // Create/recreate slots based on scope
-    if (scoped_unit_index_ >= 0) {
-        // Scoped: show only this unit's slots
-        auto* backend = AmsState::instance().get_backend();
-        if (backend) {
-            AmsSystemInfo info = backend->get_system_info();
-            if (scoped_unit_index_ < static_cast<int>(info.units.size())) {
-                int unit_slots = info.units[scoped_unit_index_].slot_count;
-                spdlog::info("[{}] Scoped to unit {} with {} slots", get_name(), scoped_unit_index_,
-                             unit_slots);
-                create_slots(unit_slots);
-                setup_system_header();
-            }
-        }
-
-        // Hide elements that don't apply to a single-unit scoped view:
-        // path canvas (hub/bypass/toolhead routing), bypass toggle
-        lv_obj_t* path_container = lv_obj_find_by_name(panel_, "path_container");
-        if (path_container)
-            lv_obj_add_flag(path_container, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_t* bypass_row = lv_obj_find_by_name(panel_, "bypass_row");
-        if (bypass_row)
-            lv_obj_add_flag(bypass_row, LV_OBJ_FLAG_HIDDEN);
-        // Hide bypass spool holder in scoped view (bypass is system-level)
-        helix::ui::bypass_spool_destroy(bypass_widgets_);
-    } else {
-        // Non-scoped: show all system slots
-        int slot_count = lv_subject_get_int(AmsState::instance().get_slot_count_subject());
-        if (slot_count != current_slot_count_) {
-            create_slots(slot_count);
-        }
-        setup_system_header();
-
-        // Restore elements hidden by scoped view
-        lv_obj_t* path_container = lv_obj_find_by_name(panel_, "path_container");
-        if (path_container)
-            lv_obj_remove_flag(path_container, LV_OBJ_FLAG_HIDDEN);
-        // bypass_row visibility managed by bind_flag_if_eq on ams_supports_bypass subject
+    int slot_count = lv_subject_get_int(AmsState::instance().get_slot_count_subject());
+    if (slot_count != current_slot_count_) {
+        create_slots(slot_count);
     }
+
+    // path_container is shown unconditionally; bypass_row visibility is managed
+    // by bind_flag_if_eq on the ams_supports_bypass subject.
+    lv_obj_t* path_container = lv_obj_find_by_name(panel_, "path_container");
+    if (path_container)
+        lv_obj_remove_flag(path_container, LV_OBJ_FLAG_HIDDEN);
 
     // Re-read non-subject slot fields on reactivation. The MATERIAL label has no
     // backing subject (unlike color, which self-refreshes via sync_from_backend()
@@ -575,56 +565,9 @@ void AmsPanel::clear_panel_reference() {
     spdlog::debug("[AMS Panel] Cleared all widget references");
 }
 
-void AmsPanel::set_unit_scope(int unit_index) {
-    spdlog::info("[AmsPanel] Setting unit scope to {}", unit_index);
-    scoped_unit_index_ = unit_index;
-}
-
-void AmsPanel::clear_unit_scope() {
-    spdlog::debug("[AmsPanel] Clearing unit scope");
-    scoped_unit_index_ = -1;
-}
-
 // ============================================================================
 // Setup Helpers
 // ============================================================================
-
-void AmsPanel::setup_system_header() {
-    // System logo + name in header bar are declaratively bound to
-    // ams_system_logo / ams_system_name subjects (updated by AmsState::sync_from_backend).
-    //
-    // Only the scoped-unit case needs imperative override, since subjects
-    // hold system-level info, not per-unit info.
-    if (scoped_unit_index_ < 0) {
-        return;
-    }
-
-    AmsBackend* backend = AmsState::instance().get_backend();
-    if (!backend) {
-        return;
-    }
-
-    const auto& info = backend->get_system_info();
-    if (scoped_unit_index_ >= static_cast<int>(info.units.size())) {
-        return;
-    }
-
-    const AmsUnit& unit = info.units[scoped_unit_index_];
-
-    // Override header with unit-specific logo + name
-    lv_obj_t* system_logo = lv_obj_find_by_name(panel_, "system_logo");
-    if (system_logo) {
-        ams_draw::apply_logo(system_logo, unit, info);
-    }
-
-    lv_obj_t* name_label = lv_obj_find_by_name(panel_, "system_name_label");
-    if (name_label) {
-        std::string display_name = ams_draw::get_unit_display_name(unit, scoped_unit_index_);
-        lv_label_set_text(name_label, display_name.c_str());
-    }
-
-    spdlog::info("[{}] Scoped to unit {}: '{}'", get_name(), scoped_unit_index_, unit.name);
-}
 
 void AmsPanel::rebuild_backend_selector() {
     if (!panel_) {
@@ -718,9 +661,6 @@ void AmsPanel::on_backend_segment_selected(int index) {
         auto info = backend->get_system_info();
         create_slots(info.total_slots);
 
-        // Update system header (logo + name)
-        setup_system_header();
-
         // Update path visualization for this backend
         update_path_canvas_from_backend();
     }
@@ -751,14 +691,11 @@ void AmsPanel::create_slots(int count) {
 
     // Pre-show environment indicator so flex layout accounts for its width
     // when calculating slot sizes. Must happen BEFORE slot creation.
-    ams_detail_pre_show_env_indicator(detail_widgets_, scoped_unit_index_);
-
-    // Determine unit index for scoped views
-    int unit_index = scoped_unit_index_;
+    ams_detail_pre_show_env_indicator(detail_widgets_, kAllUnits);
 
     // Create new slots
     auto result = ams_detail_create_slots(detail_widgets_, slot_widgets_, MAX_VISIBLE_SLOTS,
-                                          unit_index, on_slot_clicked, this);
+                                          kAllUnits, on_slot_clicked, this);
 
     current_slot_count_ = result.slot_count;
 
@@ -791,15 +728,8 @@ void AmsPanel::setup_slot_path_observers(int slot_count) {
         return;
 
     auto& state = AmsState::instance();
-    int slot_offset = 0;
-    if (scoped_unit_index_ >= 0) {
-        AmsBackend* backend = state.get_backend();
-        if (backend) {
-            AmsSystemInfo info = backend->get_system_info();
-            if (scoped_unit_index_ < static_cast<int>(info.units.size()))
-                slot_offset = info.units[scoped_unit_index_].first_slot_global_index;
-        }
-    }
+    // This panel always shows every unit's slots, so global slot indices start at 0.
+    const int slot_offset = 0;
 
     // Coalesced redraw handler (same pattern as path_segment_observer_): re-runs
     // the full path setup (which re-reads every slot's live segment + color and
@@ -855,13 +785,13 @@ void AmsPanel::setup_path_canvas() {
     ui_filament_path_canvas_set_buffer_callback(path_canvas_, on_buffer_clicked, this);
 
     // Configure from backend using shared helper
-    ams_detail_setup_path_canvas(path_canvas_, slot_grid_, scoped_unit_index_, false);
+    ams_detail_setup_path_canvas(path_canvas_, slot_grid_, kAllUnits, false);
 
     spdlog::debug("[{}] Path canvas setup complete", get_name());
 }
 
 void AmsPanel::update_path_canvas_from_backend() {
-    ams_detail_setup_path_canvas(path_canvas_, slot_grid_, scoped_unit_index_, false);
+    ams_detail_setup_path_canvas(path_canvas_, slot_grid_, kAllUnits, false);
 }
 
 void AmsPanel::setup_bypass_spool() {
@@ -870,13 +800,13 @@ void AmsPanel::setup_bypass_spool() {
         return;
     }
 
-    // Check if bypass is supported
-    auto* backend = AmsState::instance().get_backend();
-    if (!backend || !backend->get_system_info().supports_bypass) {
-        spdlog::debug("[{}] Bypass not supported — skipping spool holder", get_name());
-        return;
-    }
-
+    // Built unconditionally, then shown or hidden by update_bypass_spool_from_state()
+    // via bypass_node_visible_for(). Skipping creation here instead would make the
+    // node's presence a one-shot decision taken before the backend has published
+    // its first status: a system whose bypass only becomes visible later (Happy
+    // Hare gates has_bypass on selector calibration) would keep the sidebar toggle
+    // and the Device Operations section, which are subject-bound, but never grow
+    // the spool back onto the path. AmsOverviewPanel already builds it this way.
     lv_obj_t* path_container = lv_obj_get_parent(path_canvas_);
     if (!path_container) {
         return;
@@ -1231,8 +1161,7 @@ void AmsPanel::handle_buffer_click() {
         return;
 
     auto info = backend->get_system_info();
-    int effective_unit = (scoped_unit_index_ >= 0) ? scoped_unit_index_ : 0;
-    BufferStatusModal::show_for(info, effective_unit);
+    BufferStatusModal::show_for(info, 0);
 }
 
 void AmsPanel::on_path_slot_clicked(int slot_index, void* user_data) {
@@ -1528,6 +1457,7 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
             break;
 
         case helix::ui::AmsContextMenu::MenuAction::SCAN_QR: {
+#if HELIX_HAS_CAMERA
             auto& scanner = helix::ui::get_qr_scanner_overlay();
             scanner.show(parent_screen_, slot, [this, slot](const SpoolInfo& spool) {
                 AmsBackend* be = AmsState::instance().get_backend();
@@ -1544,6 +1474,7 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
                 AmsState::instance().sync_from_backend();
                 spdlog::info("[AmsPanel] QR scan assigned spool #{} to slot {}", spool.id, slot);
             });
+#endif // HELIX_HAS_CAMERA
             break;
         }
 

@@ -457,7 +457,12 @@ infrastructure and publish to `lane_data`; AFC and Happy Hare each write
 `lane_data` via their own Klipper plugins. **HelixScreen never writes
 `lane_data` for the AFC or Happy Hare backends** — those plugins own their
 records, and HelixScreen's AFC/HH backends route user edits through G-code
-(`SET_COLOR`/`SET_MATERIAL`, `MMU_GATE_MAP`) only, so there is no clobber risk.
+(`SET_COLOR`/`SET_MATERIAL`, `MMU_GATE_MAP`) only. The reason is stronger than
+clobber risk: AFC deletes every key in the namespace on each Klipper boot
+(`AFC.py` `delete_lane_data()`) and rebuilds it lane by lane as PREP advances,
+so a record we wrote there would vanish on reboot, and a *read* landing in that
+window sees a partial namespace. Treat `lane_data` as neither durable nor
+atomic for AFC. User overrides go to a private namespace instead (#1158).
 (Earlier docs said HH reached Orca solely via the live `mmu` Klipper object.
 That is outdated: HH's `push_lane_data` now writes the namespace directly and
 Orca prefers it; the `mmu` object is the fallback.)
@@ -832,6 +837,38 @@ Per-slot error indicators and per-unit error badges, driven by `SlotInfo.error` 
 - Happy Hare: system-level error mapped to `current_slot` via `reason_for_pause`
 - Mock: `set_slot_error()` / `set_slot_buffer_health()` + pre-populated errors in AFC mode
 
+### Two error channels
+
+A backend fault reaches the user through one of **two independent channels**. They are not alternatives and not a fallback pair — they are fed by different transports, fire at different moments, and a backend may implement either, both, or neither. Getting this wrong is how a fault double-surfaces or vanishes.
+
+| | **Channel A — line driven** | **Channel B — status driven** |
+|---|---|---|
+| Hook | `AmsBackend::classify_error(raw_line, ctx)` | `AmsBackend::current_error()` |
+| Transport | Moonraker `notify_gcode_response` | Moonraker `notify_status_update` |
+| Dispatched from | `GcodeErrorRouter::process_line()`, `src/application/gcode_error_router.cpp:474` — **exactly once per line**, before the generic `error_classify::classify()` | `AmsErrorBridge::on_action_changed()`, `src/application/ams_error_bridge.cpp:68` — **only on the rising edge** into `AmsAction::ERROR` |
+| Pre-filtering | **None.** Every response line is handed to every backend. Each override gates itself | The `AmsAction::ERROR` edge is the entire gate. A backend that never assigns that action is never asked, even if it overrides the hook |
+| Presentation | `decide_presentation()` → toast / modal / `MODAL_WITH_RECOVER` | `RecoveryModalPresenter::present()` directly |
+| Returning `nullopt` | Defers to `error_classify::classify()` | Falls through to the bridge's last-resort toast (`surface_unhandled_error()`) |
+
+**Per-backend gates and recovery sets:**
+
+| Backend | Channel A gate | Channel B gate | Recovery actions (`build_recovery_actions()`) |
+|---------|----------------|----------------|-----------------------------------------------|
+| **AFC** | `is_bang_line()`, then a `tool_end` jam/break/runout signature, else any pausing `!!` while `error_state_` | `error_state_` set (the stuck-action latch returns `nullopt` — that fault is ours, not AFC's) | Resume (primary, hot) · Unload (hot) *or* Eject lane (cold) depending on `tool_start_sensor_` · AFC_RESET (danger) |
+| **Happy Hare** | `is_bang_line()`, then paused **and** (`AmsAction::ERROR` or a recognized cause in `reason_for_pause_`) | — | Backend-derived; title is "Filament runout" when the detail says runout |
+| **AD5X IFS** | — | `AmsAction::ERROR`, raised by `evaluate_runout_locked()` or by an operation timeout | Runout: Resume (primary, hot) · Purge `M83`+`G1 E` (hot) · `IFS_UNLOCK` (danger, cold). Timeout: `IFS_UNLOCK` alone. **No "Load slot N"** — every IFS load path self-homes into the part |
+| **CFS** | **inverted** — `is_bang_line()` returns `nullopt`, so `!!` `key8xx` codes stay with the generic classifier. Claims only paused `respond_info` lines matching the auto-refill give-up wording | — (never assigns `AmsAction::ERROR`) | Resume (primary, hot) · Reset CFS = `BOX_ERROR_CLEAR` (danger, cold) |
+| **QIDI Box** | — | stub | — (hardcodes a lone dismiss) |
+| **ACE**, **Tool changer**, **Snapmaker** | — | — | — (generic runout modal owns these; see below) |
+
+**Why CFS inverts the usual gate.** Creality's box reports coded faults as `!!` lines carrying a `key8xx` JSON payload, which `error_classify::classify()` already decodes into a CRITICAL event (and a "Reset CFS" button for `key840`). Claiming those in `classify_error()` would either duplicate that path or silently replace it. The runout give-up messages ride the *other* half of the same channel — plain `respond_info` output that no classifier looks at — so taking non-`!!` lines and only non-`!!` lines is what keeps the two from colliding.
+
+**Cross-channel dedup.** `fault_surface_correlation` (`src/application/fault_surface_correlation.cpp`, 3 s window, exact-string match) is the shared claim ledger. The router records every detail it surfaces; the bridge's fallback toast checks it before speaking. `RecoveryModalPresenter` separately dedups on `detail` **plus** the action set — the action set is part of the identity because AFC legitimately emits byte-identical text on both channels with different affordances (#1171). Backends should populate `ErrorEvent::raw_detail` with the firmware's untranslated wording when `detail` has been rewritten, or the ledger has nothing the other channel can match.
+
+**Who owns the runout surface.** Both channels compete with a third, older surface: the generic sensor-driven modal (`FilamentRunoutHandler` on the pause edge, `PrintStatusWidget` when idle), gated by `RuntimeConfig::should_show_runout_modal()`. The rule is **one surface per printer**: that predicate returns false exactly for the backends in the table above that raise their own runout fault (AFC, Happy Hare, AD5X IFS, CFS), and true for hub backends that raise nothing (ACE, QIDI Box) — which the old blanket "is it a hub AMS" test silenced with nothing put in its place (#1250).
+
+Note that for AFC, Happy Hare, AD5X IFS and CFS the generic surface is *also* structurally blind: each claims its own sensors through `owns_filament_sensor()`, so `PrinterHardware::is_ams_sensor()` hides them from the wizard's sensor picker, they never get a `FilamentSensorRole`, and `FilamentSensorManager::has_real_runout()` skips them. The suppression above is belt-and-braces for the configs where an AMS lane sensor *does* carry a role (AFC's `...eN_filament` naming is the case `has_real_runout()`'s lane-mapping branch exists for).
+
 ---
 
 ## Filament Op Dispatch: Which Surface Owns What
@@ -1125,17 +1162,37 @@ Happy Hare's `filament_pos` (0-8) maps to `PathSegment` via `path_segment_from_h
 
 | Feature | Supported | Editable |
 |---------|-----------|----------|
-| Endless Spool | Yes | Read-only (configured in `mmu_vars.cfg`) |
+| Endless Spool | Yes | Yes on a single-unit MMU, read-only on multi-unit |
 | Tool Mapping | Yes | Yes (via `MMU_TTG_MAP`) |
 | Bypass Mode | Yes | Yes (selector position -2) |
 | Spoolman | Yes | -- |
 | Auto-Heat on Load | No | UI manages preheat |
-| Dryer | No | -- |
+| Dryer | Yes | `MMU_HEATER` (see [Happy Hare Specifics](#happy-hare-specifics)) |
+| Lane Eject | Yes | `supports_lane_eject()` + `eject_lane()` |
+
+Happy Hare's endless spool is group-based and settable at runtime, not a config-file
+read: `set_endless_spool_backup()` builds a full `GROUPS=` array (one non-negative group
+id per gate) and sends `MMU_ENDLESS_SPOOL`. `get_endless_spool_capabilities()` reports
+`editable` only when `system_info_.units.size() <= 1`: `MMU_ENDLESS_SPOOL` has no `UNIT=`
+parameter and acts on the currently-selected unit, so a client cannot reliably target one
+unit's groups on a multi-unit (EMU) rig. `reset_endless_spool()` sends
+`MMU_ENDLESS_SPOOL ENABLE=1 RESET=1 QUIET=1`; the `ENABLE=1` is required because Happy
+Hare's handler early-returns on `RESET` while endless spool is disabled.
+
+`recovers_filament_on_resume()` is **not** overridden here (default `false`), so a Happy
+Hare runout gets the dialog with manual **Load** kept prominent, because Resume alone does not
+re-feed. `supports_per_tool_spool_assignment()` is not overridden either; it falls through
+to `is_tool_changer(get_type())`, which is false for an MMU.
 
 ### Reset vs Recover
 
 - **Reset** (`reset()`) sends `MMU_HOME` to home the selector. Used for general state reset.
 - **Recover** (`recover()`) sends `MMU_RECOVER` to attempt error recovery without full re-homing.
+- **Clear fault** (`clear_fault(slot_index)`) is a third, gate-scoped door onto the same command.
+  Happy Hare overrides the base default (which forwards to `cancel()`): `slot_index >= 0` sends
+  `MMU_RECOVER GATE=<n>`, and `slot_index < 0` (what both UI callers pass whenever nothing is
+  loaded, which is the state Reset is pressed in) drops the parameter and sends bare
+  `MMU_RECOVER`, re-syncing the whole selector.
 
 ---
 
@@ -1341,9 +1398,12 @@ the next session's stale error. (Verified against the add-on source on a live Bo
 empty**, bounded by a wall-clock deadline and by `kMessageDrainMaxClears` as a runaway guard
 (not as the expected stopping point); see `message_drain_budget_` / `message_drain_deadline_`.
 
-**`AFC.error_state` is not the error signal.** It stayed `false` for a whole session while
-`message` held an error. It drives only `error_segment_` and a `classify_error` catch-all.
-`message.type == "error"` is the real signal.
+**`AFC.error_state` is not the *detection* signal.** It stayed `false` for a whole session while
+`message` held an error, so `message.type == "error"` is what tells you a fault exists. But
+`error_state_` is far from inert: besides `error_segment_` and the `classify_error` catch-all, it
+is the entire gate on `AmsBackendAfc::current_error()`, which returns `nullopt` unless it is set.
+That is the whole status-driven fault channel for AFC; see
+§ [Two error channels](#two-error-channels).
 
 **The hub sensor cannot attribute a strand to a lane.** One sensor per unit, shared. When a
 strand is stuck past the hub, every lane on that unit looks identical — during a live failure
@@ -1351,6 +1411,20 @@ lanes 1 and 4 both read `prep=True load=True loaded_to_hub=True` and only lane 4
 actually in the hub. `AFC.current_lane` is the only attribution signal, and it is null after a
 Klipper crash mid-toolchange. **Software cannot determine this from sensors.** See
 `active_load_lane_` and `can_recover_lane_position()`.
+
+This is not a signal that is merely unwired. It does not exist. The full measured state during
+that failure:
+
+```
+lane1  prep=True  load=True  loaded_to_hub=True
+lane4  prep=True  load=True  loaded_to_hub=True
+AFC_hub Turtle_1.state = True   (one sensor, shared by all four lanes)
+AFC.current_lane = None
+```
+
+Console history pointed at lanes 1 and 2. The answer was lane 4, and only looking at the machine
+established it. Anything that claims to pick the stranded lane out of sensor data is guessing,
+and it will be wrong three times in four on a 4-lane unit.
 
 **A failed `AFC_LANE_RESET` names the wrong lane, it does not report a failure.**
 `cmd_AFC_LANE_RESET` retracts the named lane until the hub clears, bailing if *that lane's* own
@@ -1366,6 +1440,27 @@ The first two also mean **that lane has now been retracted past its own switch**
 its next load with "LOAD TRIGGER NOT TRIGGERED" until advanced forward again. The third means
 the retract ran the full bowden without clearing — most likely a snapped fragment in the hub,
 which no lane reset can ever clear.
+
+**A wrong lane guess is destructive, not free.** The retract loop runs until *that lane's* own
+switch opens, so the guess always ends with the lane pulled back behind its load sensor. In the
+observed instance a guess at lane 1 left it `load=False`; a forward lane move of 20 mm restored
+the switch (driven that night through BoxTurtle's `BT_LANE_MOVE` wrapper; the portable command
+is `LANE_MOVE`), after which `T0` loaded normally. Until that forward move the lane is unusable,
+and tapping the lane reset again only drags it further back.
+
+*Automatic sequential retry is therefore rejected, deliberately.* Walking the roster on the
+user's behalf leaves every lane it eliminates de-seated: four lanes tried, three working lanes
+broken, to reach an answer a person standing at the machine can read off it directly. Do not add
+it later as a convenience. The only defensible way to spend a guess is one at a time, with the
+resulting de-seat undone before the next.
+
+**When every lane on a hub has been eliminated, the hub holds a broken fragment.** Each
+wrong-lane diagnostic rules out one candidate. Once the whole roster routed to that hub has
+returned it, nothing on that unit owns the obstruction, no lane reset can ever clear it, and it
+comes out by hand. AFC reaches the same conclusion on the load path: `AFC.py` raises *"Hub not
+clear when trying to load. Please check that hub does not contain broken filament and is
+clear"*. This case is not exotic; it occurred twice in one evening on the `.112` rig. A recovery
+flow modelled only on "which lane is it" never terminates here.
 
 **`AFC_LANE_RESET`'s toolhead guard does not actually stop it.** In v1.2.0 (`a06f14d`) the
 hub-clear guard has a `return`; the toolhead guard does not:
@@ -1595,9 +1690,10 @@ to the int subject `afc_fault_segment` and returns the stripped text:
 | Path | Modal | Call site |
 |---|---|---|
 | `!!` -> `GcodeErrorRouter` -> `RecoveryModalPresenter` | `ActionPromptModal` | `recovery_modal_presenter.cpp` `present()` |
+| `AmsAction::ERROR` rising edge -> `AmsErrorBridge` -> `backend->current_error()` -> `RecoveryModalPresenter` | `ActionPromptModal` | same call site as the row above, reached with no `!!` line involved |
 | `printer.AFC.message` -> `AmsAction::ERROR` -> `AmsPanel` | `AmsLoadingErrorModal` | `ui_panel_ams.cpp` `show_loading_error_modal()` |
 
-Both can fire for the same fault. The graphic itself is `ui_xml/components/afc_fault_path.xml` —
+All three can fire for the same fault. The graphic itself is `ui_xml/components/afc_fault_path.xml` —
 four labelled checkpoints joined by the three **gaps** between them, all bound to
 `afc_fault_segment` alone; 0 (`PathSegment::NONE`) hides the whole component.
 
@@ -1636,8 +1732,8 @@ as useful as the template it feeds:
 
 | Operation | Phase ids, in order (opt = optional: stays Pending when never narrated) |
 |---|---|
-| `LOAD_SWAP` (toolchange) | `heat`, `cut` (opt), `unload`, `feed`, `poop` (opt), `kick` (opt), `brush` (opt), `load` |
-| `LOAD_FRESH` | `heat`, `feed`, `poop` (opt), `kick` (opt), `brush` (opt), `load` |
+| `LOAD_SWAP` (toolchange) | `heat`, `cut` (opt), `unload`, `feed`, `poop` (opt), `brush` (opt), `kick` (opt), `load` |
+| `LOAD_FRESH` | `heat`, `feed`, `poop` (opt), `brush` (opt), `kick` (opt), `load` |
 | `UNLOAD` | `heat`, `cut` (opt), `unload` |
 
 There is no `park` and no `clean` distinct from `brush` — AFC has exactly one purge macro and one
@@ -1740,7 +1836,7 @@ The device operations overlay exposes AFC maintenance actions:
 | Change Blade | `AFC_CHANGE_BLADE` | Initiate blade change procedure |
 | Park | `AFC_PARK` | Park the AFC system |
 | Clean Brush | `AFC_BRUSH` | Run nozzle cleaning brush cycle |
-| Reset Motor Timer | `AFC_RESET_MOTOR_TIME` | Reset motor run-time counter |
+| Reset Motor Timer | `AFC_RESET_MOTOR_TIME LANE={name}` | Reset motor run-time counter. The command is **per-lane**, so `execute_device_action("reset_motor")` loops every configured lane and sends one `AFC_RESET_MOTOR_TIME LANE=<name>` each, aborting on the first failure. No lanes configured is a `not_supported` error, not a silent success |
 
 #### LED Toggle
 
@@ -1775,6 +1871,39 @@ today — `reset()` after the usual busy-state preconditions, `recover()` skippi
 so it still works while the system is stuck. Neither homes the system; `AFC_HOME` is
 not sent by either.
 
+`can_recover_lane_position()` ends with `lane_name == active_load_lane_ &&
+recovery_attribution_valid_unlocked()`, so the targeted per-lane action is offered only when AFC
+itself names the lane. There is no all-lanes fallback: an unattributed strand deliberately offers
+nothing per lane, and the route out is the sidebar Reset, which dispatches `AFC_RESET` and lets
+AFC's own picker list the candidates. That picker's list is built from the firmware's view of its
+hardware and is a better answer than anything derivable from a shared hub sensor.
+
+**Known gaps in wrong-lane handling.** The wrong-lane diagnostic described under "Fields that do
+not mean what they say" is understood but only partly acted on. Each of the following is verified
+absent from `src/` and `include/`, and is recorded here so the reasoning is not re-derived:
+
+- **The diagnostic is not classified.** `AmsBackendAfc::classify_error()` has exactly two
+  AFC-owned branches: a toolhead-jam match, and a `ctx.is_paused && error_state_` catch-all
+  titled "Filament System Error". `"'<lane>' failed to reset to hub, load switch became false
+  during reset"` matches neither on its own. It therefore renders as the generic title when the
+  print happens to be paused and AFC is in an error state, and otherwise falls through to the
+  generic classifier untouched, since AFC raises it with `pause=False`. The one useful fact in
+  the line, the name of a lane now ruled out and de-seated, never reaches the user.
+- **There is no elimination set.** Nothing records which lanes have already returned the
+  diagnostic for the strand currently in a hub, so the broken-fragment conclusion cannot be
+  drawn and the UI keeps inviting another guess. Any such set has to be keyed per hub, because a
+  multi-unit machine has independent hubs, and it has to clear when that hub's sensor goes false
+  or one session's eliminations permanently suppress recovery for later strands.
+- **There is no re-seat action.** Nothing undoes the retract that a wrong guess causes.
+  `AmsBackend::clear_fault()` is bookkeeping and moves no filament, and
+  `recover_lane_position()` sends `AFC_LANE_RESET`, which retracts *toward* the hub, the opposite
+  direction from what a de-seated lane needs. The user is left to work the forward `LANE_MOVE`
+  out themselves. A re-seat would have to advance in bounded steps and stop the moment
+  `raw_load_state` returns true, never move a fixed distance, since overshoot pushes filament
+  back at a hub that is still blocked. `LANE_MOVE`'s printing guard is not an obstacle for the
+  common case: `AFC_functions.py`'s `is_printing()` compares `print_stats.state` against
+  `"printing"` only, so a paused print does not trip it and no `FORCE=1` is needed.
+
 ### Capabilities
 
 | Feature | Supported | Editable |
@@ -1785,18 +1914,39 @@ not sent by either.
 | Spoolman | Yes | -- |
 | Auto-Heat on Load | Yes | AFC uses `default_material_temps` from config |
 | Dryer | No | -- |
-| Device Actions | Yes | Calibration, Speed, Maintenance, LED/Modes |
+| Device Actions | Yes | Setup, Speed, Toolhead, Maintenance, Hub & Cutter, Tip Forming, Purge & Wipe (see [Device Operations Overlay](#device-operations-overlay)) |
 
-### AFC Version Differences
+`recovers_filament_on_resume()` is **not** overridden (default `false`), so an AFC runout
+gets the dialog with manual **Load** kept prominent, because Resume alone does not re-feed.
+`supports_per_tool_spool_assignment()` is not overridden either; it falls through to
+`is_tool_changer(get_type())`, which is false for AFC.
 
-| Feature | v1.0.0 | v1.0.32+ |
-|---------|--------|----------|
-| `AFC_stepper lane*` objects | Full sensor data | Same |
-| `lane_data` in Moonraker DB | Not available | Available (richer data) |
-| TD1 sensor support | No | Yes |
-| Auto-level during home | No | Yes |
+### AFC Version Reporting
 
-The backend detects the installed version by querying the `afc-install` database namespace and sets `has_lane_data_db_` for v1.0.32+. The version check uses `version_at_least()`.
+`afc_version_` is **display and diagnostics only. Never gate behavior on it.** AFC has no
+trustworthy version signal:
+
+- The `afc-install` database namespace has been an orphan since AFC's `7d20db7` (mid-2025),
+  so `detect_afc_version()` finds nothing on any current install.
+- `AFC_VERSION` is a hand-bumped literal that sat at `1.1.37` through the whole v1.2.0 release.
+- v1.2.0's own `get_status()` publishes no version key at all (upstream #807 is an open PR).
+- A live BoxTurtle reported `"1.0.0"` while running v1.1.0.
+
+Capabilities therefore come from **feature detection**, not comparison:
+
+| Hook | What it inspects |
+|------|------------------|
+| `AmsBackendAfc::status_has_modern_fields()` | `filament_name` / `multi_color_hexes` / `initial_weight` on a lane status. All three ship from one `if not save_to_file:` block in `AFC_lane.get_status()`, so any one proves the whole block. Only meaningful on a **complete** status object, the subscription's first baseline frame; every later frame is a delta where an absent key means "unchanged". |
+| `AmsBackendAfc::probe_feature_level()` | Queries one lane object directly (never a status frame) to obtain that baseline. |
+
+The `AFC` / `lane_data` database query follows the same rule: `on_started()` calls
+`query_lane_data()` **unconditionally**, because there is no reliable flag to gate on.
+AFC's `lane_data_enabled` reports whether Moonraker has the (now unused) `[lane_data]`
+section, not whether the namespace holds data; `send_lane_data()` writes regardless. A
+live BoxTurtle on 2026-07-26 had `lane_data_enabled=false` with a fully populated
+namespace. Lanes are initialized from `PrinterCapabilities` discovery first, so the query
+only ever supplements colours / materials / spool ids; a missing namespace just errors and
+the probe stays silent.
 
 ---
 
@@ -2031,7 +2181,7 @@ Stock zMod owns two Klipper objects — `zmod_ifs` and `zmod_color` — that hol
 | `save_variables.<prefix>_external` | Bypass / external mode flag | Stock: `zmod_color.get_printer_data_detail().indepMatlInfo` (lookup-only) |
 | `_IFS_VARS` gcode macro | Atomic writes of the above | Stock lacks this — can't persist UI-side changes |
 
-Prefix is `less_waste` (lessWaste / zmod) or `bambufy` (bambufy); the schema is identical. Auto-detected from whichever keys are present.
+Prefix is `less_waste` (the lessWaste plugin) or `bambufy` (the bambufy plugin); the schema is identical. Auto-detected from whichever keys are present. **Neither prefix comes from stock zMod** — the table above is the plugin-only column, and the `less_waste_*` plumbing first appeared in zMod v1.6.2 *via* the bambufy plugin framework, not in the firmware itself. A stock-zMod machine has no `save_variables` rows under either prefix.
 
 > **Upstream wishlist:** add `get_status()` to `zmod_ifs` and `zmod_color` in stock zMod. That would close the plugin gap entirely and let HelixScreen drop the `Adventurer5M.json` polling path. Until then, users without a plugin see a degraded UI (no per-port HUB presence, no live tool map, no bypass flag, no atomic color updates).
 
@@ -2097,12 +2247,58 @@ On native ZMOD (no lessWaste / bambufy plugin) the backend reconciles **two** in
 
 Tool mapping: array index = tool number (T0-T15), value = physical port (1-4, 5=unmapped).
 
+#### Unattended runout detection (#1250, reported as #1247)
+
+**The hole this fills.** `detect_load_unload_completion()` only reacts to a head-sensor transition while the action is `LOADING` or `UNLOADING`, and `check_action_timeout()` only runs during an operation phase. A head drop at `AmsAction::IDLE` with no phase tracking therefore produced **nothing at all** — the print sat paused with an empty toolhead and HelixScreen said nothing, while the reporter waited for a backup-spool switch that was never going to happen (no plugin installed).
+
+**The authority is the switch pair, never `head_filament_`.** `parse_head_sensor()` writes `head_filament_` from *both* the toolhead switch and `ifs_motion_sensor`, and the motion sensor is device-confirmed to read `filament_detected=false` on a lane that is loaded but idle. The detector uses `head_switch_seen_ && !head_switch_present_` — the same pair as the #1065 row 28 seated head-gate.
+
+**The predicate** (`evaluate_runout_locked()`, run from `handle_status_update()` right after `check_action_timeout()`), all of which must hold:
+
+| Condition | Why |
+|-----------|-----|
+| A genuine `head_switch_present_` **true → false edge** was seen (`head_empty_since_`) | An edge, not a level: a printer that boots into a paused job with an empty toolhead has no runout to report |
+| The edge was armed while nothing was in flight | `note_head_switch_reading_locked()` refuses to arm during a tracked op or a non-IDLE action |
+| Print state is **PAUSED** | A real runout stops the job. While PRINTING, the same empty head is the middle of a firmware `A_CHANGE_FILAMENT`. Klipper queues a `PAUSE` behind the running macro, so a swap cannot make the job read PAUSED with the head still empty |
+| `!phase_tracker_.active` **and** `action == IDLE` | The tracker covers load/unload; the action covers `do_change_tool()`, which sets `LOADING` without arming the tracker |
+| `now - last_filament_op_dispatch_ >= 30 s` | `eject_lane()` and `do_unload_filament()`'s three early returns leave the backend IDLE and armless — the dispatch stamp is the only thing that sees them |
+| The head has been empty for the confirm dwell | 30 s normally; **180 s** when a plugin with `variable_backup` on is installed, because that plugin's own switchover pauses, unloads and loads a replacement lane and must not be talked over |
+
+On a raise: `runout_active_ = true`, `system_info_.filament_runout = true`, and `system_info_.action = AmsAction::ERROR`. **ERROR is not decorative** — it is the only edge `AmsErrorBridge` watches, so it is the only route to `current_error()` and the recovery modal. `check_action_timeout()` early-returns on ERROR, so the fault cannot be re-timed-out on top of itself. It clears when filament returns to the switch, when the print leaves PAUSED (which is what dismisses the modal), or via `recover()` / `reset()` / `cancel()`.
+
+**Recovery actions** (`build_recovery_actions()` branches on `runout_active_`): `RESUME` (primary, hot), a plain `M83` + `G1 E50 F600` purge (hot), and `IFS_UNLOCK` (danger, cold-safe). The operation-timeout fault keeps its historical lone `IFS_UNLOCK`.
+
+> **There is deliberately NO "Load slot N" recovery button**, even though a runout is exactly when the user wants one. Every AD5X load path runs `INSERT_PRUTOK_IFS`, whose macro homes itself (this is what `filament_ops_self_home()` is about). On the loadcell-Z AD5X that `_G28` probes the nozzle **down into the part**; with a job owning the toolhead it trips ZMOD's `ZCONTROL_AUTO` and shuts Klipper down, recoverable only by a firmware restart (bundle `XWPBR2DX`, commit `329e731e9`). A runout state is PAUSED by construction, so the button would fire straight into that. `refuse_if_printing()` protects `load_filament()`; it does **not** protect a recovery button, which hands its gcode directly to `MoonrakerAPI::execute_gcode`, and the `_G28` is buried inside the macro where `reject_homing_during_active_print()` never sees it. The purge is a bare extruder move for the same reason — no homing, so it cannot reach the `_G28`. If a verified non-homing load-to-toolhead command ever turns up, that is the time to add the button.
+
+> **Unverified, flagged rather than assumed:** whether a firmware tool change can make the job read PAUSED with the head still empty. The reasoning above (Klipper queues `PAUSE` behind the running macro) is first-principles, not a device observation, and there is no AD5X in the fleet and no `ad5x` mock profile to test it on. If a false runout ever shows up mid-swap, the fix is to lengthen `kRunoutConfirmDelay` past a full swap (~2 min measured in bundle `NJB2U558`), not to loosen the PAUSED gate.
+
+#### Auto-switchover plugin visibility
+
+The `has_ifs_vars_` / `ifs_macro_confirmed_missing_` machinery already knew whether lessWaste or bambufy was installed, but only ever logged it at debug level. #1250 surfaces it, because "no plugin installed" is the answer the #1247 reporter needed: **stock zMod has no backup-spool switching at all**, so a runout stops the print until a human intervenes.
+
+| Getter / subject | Values |
+|------------------|--------|
+| `AmsBackendAd5xIfs::get_plugin()` | `IfsPlugin::None` / `LessWaste` / `Bambufy`. `None` whenever `has_ifs_vars_` is false, so stale `less_waste_*` rows left behind by an uninstalled plugin never read as installed |
+| `AmsBackendAd5xIfs::plugin_backup_enabled()` | `std::optional<bool>` — `nullopt` means the macro dict never carried the key, which is **not** the same as off |
+| XML subject `ams_ifs_plugin` | int, matching `IfsPlugin` (0/1/2). Values are a UI contract — append, never renumber |
+| XML subject `ams_ifs_backup_enabled` | `BACKUP_UNKNOWN` (-1) / `BACKUP_OFF` (0) / `BACKUP_ON` (1). No plugin reports OFF: there is no mechanism, which is a definite answer |
+
+Both subjects are owned by `ams_backend_ad5x_ifs.cpp` (function-local statics, lazily registered on first publish and guarded on `lv_is_initialized()`, deinit self-registered with `StaticSubjectRegistry`) rather than by `AmsState`: they are AD5X-specific, and an XML binding outlives any one backend instance.
+
+**`variable_backup`.** `gcode_macro _ifs_vars`'s `get_status()` dict used to be reduced to a single "does the macro exist" bool at the `on_started()` probe and thrown away. It now flows into `parse_ifs_vars_macro_locked()`, which reads `variable_backup` (accepting the jinja int form and a bool). Note this object is **not** in the standing `objects.subscribe` set — the `on_started()` query and `recheck_ifs_vars_macro()` (fired on `notify_klippy_ready`) are the only two places it ever reaches us.
+
+Per `printers/FLASHFORGE_AD5X_SUPPORT.md` § "lessWaste-Specific Variables" and the real variable dump in `printer-research/FLASHFORGE_AD5X_IFS_ANALYSIS.md` (`variable_backup: 0`), lessWaste ships the feature but defaults it **off**, and bambufy has no backup/failover at all. **Neither has been observed on a device by us.** Nothing branches on the value except the wording and the longer confirm delay.
+
+**The matching rule the hint text promises is strict and must stay strict**: a backup port qualifies only when its filament **type** and **colour** both equal the active spool's *and* its own port sensor reads filament present (`find_backup_slot_locked()`). Promising more than that is the #1247 misexpectation in a new costume.
+
+> **Follow-up, not implemented:** lessWaste emits `PAUSE REASON=` with one of `jam`, `broken`, `runout`, `empty`, `backup`, `loading` (`printers/FLASHFORGE_AD5X_SUPPORT.md`). That is a direct, unambiguous runout signal — but only on the plugin path, which is precisely the case the sensor-based detector above is *not* needed for. Parsing it would let the plugin path skip the dwell entirely.
+
 ### G-code Commands
 
 | Command | Action |
 |---------|--------|
 | `INSERT_PRUTOK_IFS PRUTOK={port}` | Load filament from port (looks up temp from config) |
-| `IFS_REMOVE_PRUTOK` | Toolhead unload — retract the currently-loaded filament |
+| `IFS_REMOVE_PRUTOK` | **Bare, with no `PRUTOK=`: a guaranteed no-op.** `cmd_IFS_REMOVE_PRUTOK` defaults `PRUTOK=0` and returns immediately on `prutok == 0` (`zmod_ifs.py:1113`). Given an explicit `PRUTOK=N` it forwards to the firmware's `_IFS_REMOVE_PRUTOK` macro for lane N, which is how `IFS_REMOVE_CURRENT_PRUTOK` calls it internally. HelixScreen never sends it, bare or otherwise |
 | `REMOVE_PRUTOK_IFS PRUTOK={port}` | Toolhead unload (heat + retract the currently-loaded filament). **Not** a per-port jog — `PRUTOK=N` does not eject an idle lane; see note below |
 | `IFS_F11 PRUTOK={port} LEN={mm} SPEED={s} CHECK=0` | Cold per-lane retract — reverse one idle lane's feed motor toward the spool; no heat, no presence guard. Used for idle-lane recovery (#996) |
 | `A_CHANGE_FILAMENT CHANNEL={port}` | Full tool change |
@@ -2110,11 +2306,11 @@ Tool mapping: array index = tool number (T0-T15), value = physical port (1-4, 5=
 | `IFS_UNLOCK` | Reset IFS driver state machine |
 | `_IFS_VARS key=value SHOW=0` | Persist color/type/tool/external changes |
 
-**Variable persistence**: Use `_IFS_VARS` macro (not raw `SAVE_VARIABLE`) to persist slot data. `_IFS_VARS` updates both in-memory gcode variables AND `save_variables` with the correct prefix (`less_waste_*` for lessWaste/zmod, `bambufy_*` for bambufy). `SHOW=0` suppresses the interactive dialog. Example: `_IFS_VARS colors="['FF0000', '00FF00']" SHOW=0`.
+**Variable persistence**: Use `_IFS_VARS` macro (not raw `SAVE_VARIABLE`) to persist slot data. `_IFS_VARS` updates both in-memory gcode variables AND `save_variables` with the correct prefix (`less_waste_*` for lessWaste, `bambufy_*` for bambufy). `SHOW=0` suppresses the interactive dialog. Example: `_IFS_VARS colors="['FF0000', '00FF00']" SHOW=0`. **The macro ships with those two plugins only** — stock zMod does not define `_IFS_VARS` at all, which is why HelixScreen cannot persist UI-side slot edits there (see the "Stock lacks this" row above).
 
 **Plugin compatibility**: HelixScreen auto-detects the variable prefix from whichever `save_variables` are present on the printer. Both lessWaste and bambufy use the same schema, just different prefixes.
 
-**Unload is toolhead-oriented, not per-lane**: Both `REMOVE_PRUTOK_IFS PRUTOK={port}` and `IFS_REMOVE_PRUTOK` run the toolhead unload sequence — they heat the hotend and retract whatever filament is currently loaded to the toolhead. The `PRUTOK={port}` argument does **not** select an idle lane to jog independently; observed on a real AD5X (native ZMOD), `REMOVE_PRUTOK_IFS PRUTOK=N` unloaded the currently-loaded filament (in a different slot) and ignored port N, and can error `No filament N in IFS` when IFS state disagrees with presence. A cold per-lane retract, by contrast, **is** available at the gcode layer via `IFS_F11 PRUTOK={n} LEN={mm} SPEED={s} CHECK=0` (core ZMOD — a thin wrapper over raw serial `F11 C{port}…` with no heating and, with `CHECK=0`, no presence guard). This is why HelixScreen keeps the currently-loaded slot unloadable after runout (#995); and #996 implements HelixScreen calling `IFS_F11` directly for idle-lane recovery (e.g. a snapped chunk stuck in a lane's feed path — no hot nozzle involved). See `printer-research/FLASHFORGE_AD5X_IFS_ANALYSIS.md` §12.
+**Unload is toolhead-oriented, not per-lane**: `REMOVE_PRUTOK_IFS PRUTOK={port}` runs the toolhead unload sequence — it heats the hotend and retracts whatever filament is currently loaded to the toolhead. The `PRUTOK={port}` argument does **not** select an idle lane to jog independently; observed on a real AD5X (native ZMOD), `REMOVE_PRUTOK_IFS PRUTOK=N` unloaded the currently-loaded filament (in a different slot) and ignored port N. (Bare `IFS_REMOVE_PRUTOK` is not a third way to do this: it is a firmware no-op, see the table above.) An older note here claimed the command "can error `No filament N in IFS`". **It cannot.** That string lives in `print_result()` on `RET_SILK` (`zmod_ifs.py:789`), which is reached only from the load paths; the error the unload chain actually raises is `"Failed to extract filament from extruder"` (`zmod_ifs.py:1140`), when the extruder sensor is still tripped after the retract. A cold per-lane retract, by contrast, **is** available at the gcode layer via `IFS_F11 PRUTOK={n} LEN={mm} SPEED={s} CHECK=0` (core ZMOD — a thin wrapper over raw serial `F11 C{port}…` with no heating and, with `CHECK=0`, no presence guard). This is why HelixScreen keeps the currently-loaded slot unloadable after runout (#995); and #996 implements HelixScreen calling `IFS_F11` directly for idle-lane recovery (e.g. a snapped chunk stuck in a lane's feed path — no hot nozzle involved). See `printer-research/FLASHFORGE_AD5X_IFS_ANALYSIS.md` §12.
 
 #### Per-lane eject (`eject_lane()`)
 
@@ -2192,6 +2388,8 @@ The raw IFS commands (`zmod_ifs.py` registrations + `docs/en/AD5X.md`). `F##` nu
 | Auto-Heat on Load | No | -- |
 | Dryer | No | -- |
 | Device Actions | No | -- |
+| Runout detection | Yes | Sensor-derived, HelixScreen-side — see "Unattended runout detection" above |
+| Backup-spool switchover | Firmware-only | lessWaste `variable_backup`; absent on stock zMod and on bambufy. HelixScreen reports the state, it does not perform the swap |
 
 ### Open Issues & Debugging Notes
 
@@ -2491,7 +2689,7 @@ The `AmsContextMenu` (`ui_ams_context_menu.h`) provides per-slot operations:
 |--------|-------------|------------|
 | **Load** | Load filament from this slot | When slot has filament and not at toolhead |
 | **Unload** | Unload filament from extruder | When filament is loaded to extruder |
-| **Eject** | Eject filament from hub back to spool (AFC only) | When hub-loaded but not at toolhead, and backend supports lane eject |
+| **Eject** | Eject filament from hub back to spool | When hub-loaded but not at toolhead, and `supports_lane_eject()` is true (AFC and Happy Hare) |
 | **Spool Info** | View/edit slot properties (color, material, brand) | When slot has filament |
 | **Spoolman** | Assign a Spoolman spool to this slot | Always |
 
@@ -2521,7 +2719,25 @@ The `AmsDeviceOperationsOverlay` (`ui_ams_device_operations_overlay.h`) consolid
 
 Each backend can expose dynamic device actions via `get_device_sections()` and `get_device_actions()`. The UI renders them as buttons, toggles, sliders, or dropdowns based on `ActionType`.
 
-AFC exposes four sections: **Calibration**, **Speed Settings**, **Maintenance**, and **LED & Modes**. See the [AFC-Specific Features](#afc-specific-features) section for details.
+The section lists live in `src/printer/afc_defaults.cpp` (`afc_default_sections()`) and
+`src/printer/hh_defaults.cpp` (`hh_default_sections()`):
+
+| Backend | Sections |
+|---------|----------|
+| AFC | **Setup**, **Speed Settings**, **Toolhead**, **Maintenance**, **Hub & Cutter**, **Tip Forming**, **Purge & Wipe** (7) |
+| Happy Hare | **Setup**, **Speed**, **Toolhead**, **Accessories**, **Maintenance** (5) |
+
+There is no separate "Calibration" or "LED & Modes" section on AFC. The calibration
+wizard, bowden length, LED toggles and quiet mode all live under **Setup**.
+`AmsBackendAfc::get_device_sections()` drops **Tip Forming** whenever
+`system_info_.tip_method != TipMethod::TIP_FORM`, which is the common case (the default
+capability set is `TipMethod::CUT`), so a stock Box Turtle shows six.
+
+Action counts are not fixed either. `afc_default_actions()` returns 26 static actions, and
+`AmsBackendAfc::get_device_actions()` then adds one **Hub Distance** slider per lane and,
+on a multi-extruder rig, swaps the single bowden / toolhead / toolhead-LED entries for
+per-extruder ones. See the [AFC-Specific Features](#afc-specific-features) section for
+details.
 
 ---
 
@@ -2532,6 +2748,16 @@ The `AmsBackendMock` simulates any of the supported backend types for UI develop
 ### Activation
 
 Mock mode is activated when `RuntimeConfig::should_mock_ams()` returns true (typically via the `--test` CLI flag). The factory method `AmsBackend::create()` automatically returns a mock backend in this case.
+
+Pass `--real-ams` alongside `--test` to opt back out and drive a real backend (e.g. `AmsBackendHappyHare`) against the mock Moonraker client instead of `AmsBackendMock`. This is what makes backend-specific chokepoints reachable under `--test` — for example `AmsSubscriptionBackend::ensure_homed_then()`'s "Home printer first?" confirmation, which `AmsBackendMock` never goes near since it doesn't inherit `AmsSubscriptionBackend`. The mock Moonraker client only simulates a minimal, static `mmu` status for Happy Hare (`moonraker_client_mock_objects.cpp`'s `get_mock_mmu_status()`: 4 gates, a mix of loaded/empty, no operation state machine) — it is a plumbing harness for exercising backend code paths, not a UI development tool. Use plain `--test` + `HELIX_MOCK_AMS` (below) for that.
+
+**`--real-ams` seeds Happy Hare only and does not compose with `HELIX_MOCK_AMS`.** The backend comes from mock hardware discovery, not from `HELIX_MOCK_AMS` — that variable is read inside `AmsBackend::create()`'s mock branch (`src/printer/ams_backend.cpp`), which `--real-ams` bypasses entirely. So `HELIX_MOCK_AMS=toolchanger` combined with `--real-ams` still swaps in a real `AmsBackendToolChanger`, but with zero seeded state — a silently empty panel, not a toolchanger simulation.
+
+The seed also dispatches from the main thread (inside an `UpdateQueue` drain), while production delivers the same `mmu` payload from the libhv WebSocket event-loop thread. A threading bug in a backend's `handle_status_update` will not reproduce under `--real-ams`.
+
+```bash
+./build/bin/helix-screen --test --real-ams -vv
+```
 
 ### Environment Variables
 
@@ -2622,7 +2848,7 @@ The mock backend exposes additional methods for unit testing:
 | `force_slot_status(slot, status)` | Force a specific slot status |
 | `set_has_hardware_bypass_sensor(bool)` | Toggle hardware vs virtual bypass sensor |
 | `set_endless_spool_supported(bool)` | Toggle endless spool support |
-| `set_endless_spool_editable(bool)` | Toggle AFC-style (editable) vs Happy Hare-style (read-only) |
+| `set_endless_spool_editable(bool)` | Toggle whether `set_endless_spool_backup()` is accepted or returns NOT_SUPPORTED |
 | `set_device_sections(sections)` | Set custom device sections for testing |
 | `set_device_actions(actions)` | Set custom device actions for testing |
 
@@ -2681,6 +2907,30 @@ Create `include/ams_backend_mysystem.h` and `src/printer/ams_backend_mysystem.cp
 - `get_device_sections()`, `get_device_actions()`, `execute_device_action()` -- Device-specific actions
 - `set_discovered_lanes()`, `set_discovered_tools()` -- Discovery configuration
 - `supports_auto_heat_on_load()` -- Auto-heat capability
+- `supports_lane_eject()` + `eject_lane()` -- Cold retract of a lane's filament back to the spool. Without the predicate the context menu never offers Eject, whatever `eject_lane()` does.
+- `has_per_slot_loaded_authority()` -- Return true only when the firmware reports load state **per slot**. Leave it false when your per-slot answer is derived from an aggregate "current slot" pointer, or a mid-toolchange null will drop the highlight.
+- `reset_button_label()` -- Sidebar Reset button text (default `"Reset"`; Happy Hare uses `"Home"`)
+
+**The error seam.** All optional, all defaulted to "nothing", and a backend that skips the
+whole group gets **no error dialog at all**, silently. Read § [Two error channels](#two-error-channels)
+before implementing any of them:
+
+- `classify_error()` -- Channel A: claim one gcode-response line and return an `ErrorEvent`. The router applies **no line filtering**, so every override must gate itself (AFC and Happy Hare take only `!!` lines via `helix::is_bang_line`; CFS deliberately takes only non-`!!` lines). Return `nullopt` to defer to the generic classifier.
+- `current_error()` -- Channel B: the current actionable fault derived from backend **status**, consulted only by `AmsErrorBridge` on the rising edge into `AmsAction::ERROR`. Independent of channel A, not an alternative to it: AFC overrides both.
+- `build_recovery_actions()` (protected) -- The buttons the user can tap for the current fault. **The caller already holds `mutex_`**, which is non-recursive: an override that locks deadlocks. The base returns an empty vector deliberately: `decide_presentation()` keys off `recovery_actions.empty()` to pick MODAL vs MODAL_WITH_RECOVER, so recovery is strictly opt-in.
+
+**The toolchange narration seam.** Also optional; leaving it empty falls back to the
+sidebar's legacy `AmsAction`-driven hardcoded step list, which is a valid choice:
+
+- `toolchange_phase_template(op)` -- The ordered phase list per `StepOperationType`. Order it by **first narration**, not by macro name: a phase whose line fires twice re-reports the earlier index, and the step bar has no notion of a repeated step.
+- `match_narration_phase()` -- Map a `//` narration body to a phase id. Loose substring needles are fine here; the text came from a macro's own `respond_info`.
+- `match_bare_narration_phase()` -- Map an **unprefixed** console line to a phase id. Must match anchored line shapes, never loose substrings. The open console carries user-controlled gcode filenames, so a `cut` needle fires on `haircut.gcode`.
+
+**Runout and spool-assignment routing.** Both default to something reasonable; override
+only if your hardware model diverges:
+
+- `recovers_filament_on_resume()` -- True when Resume itself re-feeds filament (Snapmaker U1 runs `AUTO_FEEDING` then `RESUME`). Such backends present Resume as the runout dialog's primary action and demote manual Load/Unload/Purge. Default false, which keeps Load prominent. That is correct for AFC, Happy Hare, and every basic runout sensor.
+- `supports_per_tool_spool_assignment()` -- Whether each tool owns its own spool assignment. Default is `is_tool_changer(get_type())`; no backend currently overrides it.
 
 ### 4. Wire into the Factory
 

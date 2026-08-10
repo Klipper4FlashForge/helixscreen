@@ -15,10 +15,9 @@
          the cap here - the mock's short text is what made the sweep look
          harmless. 140 at MICRO scrolls; 350 rendered off-screen did not. -->
     <lv_obj name="content_container"
-            width="100%" height="content" style_max_height="#dialog_content_max"
-            style_pad_left="#space_lg" style_pad_right="#space_lg"
-            style_pad_top="#space_lg" style_pad_bottom="#space_lg" flex_flow="column" style_flex_cross_place="center"
-            style_pad_gap="#space_md">
+            width="100%" height="content" style_max_height="#dialog_content_max" style_pad_left="#space_lg"
+            style_pad_right="#space_lg" style_pad_top="#space_lg" style_pad_bottom="#space_lg" flex_flow="column"
+            style_flex_cross_place="center" style_pad_gap="#space_md">
       <!-- Title with warning icon -->
       <lv_obj width="100%"
               height="content" flex_flow="row" style_pad_all="0" style_pad_gap="#space_sm"
@@ -31,8 +30,7 @@
               height="content" flex_flow="row" style_pad_all="0" style_pad_gap="#space_md"
               style_flex_cross_place="center">
         <!-- Left: crash details + status -->
-        <lv_obj flex_grow="1"
-                height="content" flex_flow="column" style_pad_all="0" style_pad_gap="#space_md">
+        <lv_obj height="content" flex_grow="1" flex_flow="column" style_pad_all="0" style_pad_gap="#space_md">
           <!-- Crash details -->
           <lv_obj width="100%"
                   height="content" flex_flow="column" style_pad_all="#space_sm" style_pad_gap="#space_xs"

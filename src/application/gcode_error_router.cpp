@@ -12,8 +12,8 @@
 #include "error_classify.h"
 #include "error_event.h"
 #include "fault_surface_correlation.h"
-#include "moonraker_api.h"
-#include "moonraker_client.h"
+#include "i_moonraker_api.h"
+#include "i_moonraker_client.h"
 #include "moonraker_error.h"
 #include "moonraker_types.h"
 #include "print_control_buttons.h"
@@ -54,7 +54,7 @@ constexpr uint32_t kRecoverToastMs = 15000;
 /// See present_recover_toast() for why this is heap-allocated with a timer
 /// reaper rather than parked on the router.
 struct RecoverToastCtx {
-    MoonrakerAPI* api = nullptr;
+    IMoonrakerAPI* api = nullptr;
     std::string gcode;
     std::string log_tag;
 };
@@ -69,16 +69,20 @@ std::string color_for_style(const std::string& style) {
     return ""; // neutral / theme default
 }
 
-/// Title for a plain CRITICAL modal (no recovery action). Preserves the prior
-/// per-source behavior: CFS faults read "Filament System Error", anything else
-/// the event's own title, falling back to "Printer Error". The classifier
-/// leaves title empty, so the choice is derived from the source here.
+/// Title for a plain CRITICAL modal (no recovery action): the event's own
+/// title, falling back to "Filament System Error" for an untitled CFS fault and
+/// "Printer Error" otherwise. error_classify::classify() leaves title empty for
+/// every key8xx code, which is what the CFS fallback is for; a backend that does
+/// name its fault (AmsBackendCfs::classify_error's "Filament runout") keeps that
+/// name rather than being relabelled a generic system error.
 /// NOTE: twin of modal_title_for() in recovery_modal_presenter.cpp (the
 /// MODAL_WITH_RECOVER arm) — keep the CFS title rule in sync across both.
 const char* modal_title_for(const ErrorEvent& e) {
+    if (!e.title.empty())
+        return e.title.c_str();
     if (e.source == ErrorSource::CFS)
         return lv_tr("Filament System Error");
-    return e.title.empty() ? lv_tr("Printer Error") : e.title.c_str();
+    return lv_tr("Printer Error");
 }
 
 /// Replay age gate: a latched `!!` older than this in the gcode_store is
@@ -105,7 +109,7 @@ double now_unix_seconds() {
 
 } // namespace
 
-GcodeErrorRouter::GcodeErrorRouter(MoonrakerAPI* api, MoonrakerClient* client,
+GcodeErrorRouter::GcodeErrorRouter(IMoonrakerAPI* api, IMoonrakerClient* client,
                                    helix::ui::RecoveryModalPresenter& presenter)
     : api_(api), client_(client), presenter_(presenter) {
     if (!client_) {
@@ -364,11 +368,11 @@ bool GcodeErrorRouter::present_recover_toast(const ErrorEvent& e) {
     const RecoveryAction& action = e.recovery_actions.front();
 
     if (how == RecoverDispatch::RECOVERY_SERVICE) {
-        MoonrakerAPI* api = api_;
+        IMoonrakerAPI* api = api_;
         ToastManager::instance().show_with_action(
             ToastSeverity::ERROR, truncate_for_toast(e.detail).c_str(), action.label.c_str(),
             [](void* ud) {
-                auto* a = static_cast<MoonrakerAPI*>(ud);
+                auto* a = static_cast<IMoonrakerAPI*>(ud);
                 if (!a)
                     return;
                 spdlog::info("[GcodeError] User tapped Recover for key298");
@@ -410,7 +414,7 @@ bool GcodeErrorRouter::present_recover_toast(const ErrorEvent& e) {
                         (std::string(lv_tr("Recovery failed: ")) + err.user_message()).c_str(),
                         6000);
                 },
-                MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+                IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
         },
         ctx, /*duration_ms=*/kRecoverToastMs);
 

@@ -117,7 +117,7 @@ enum class CfsSchema {
 /// CFS (Creality Filament System) backend — K1 + K2 series printers with RS-485 CFS units
 class AmsBackendCfs : public AmsSubscriptionBackend {
   public:
-    AmsBackendCfs(MoonrakerAPI* api, helix::MoonrakerClient* client);
+    AmsBackendCfs(IMoonrakerAPI* api, helix::IMoonrakerClient* client);
 
     /**
      * @brief Bare filament-sensor name CFS owns: "filament_sensor".
@@ -289,7 +289,27 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     static std::string reset_gcode();
     static std::string recover_gcode();
 
+    /// Recognize the CFS runout handler's give-up messages and turn them into a
+    /// CRITICAL runout fault with recovery buttons.
+    ///
+    /// Unlike AFC's and Happy Hare's overrides this deliberately claims
+    /// **non-`!!`** lines: the box announces that it will not swap spools with
+    /// `respond_info()`, which reaches us as a `// `-prefixed response. `!!`
+    /// lines are handed straight back so the generic classifier keeps owning
+    /// every `key8xx` code (including key840's "Reset CFS" action) exactly as
+    /// before — that separation is what stops a runout double-surfacing.
+    ///
+    /// See docs/devel/printers/CREALITY_K2_SUPPORT.md § "Runout and auto-refill"
+    /// for the firmware sequence these strings come from.
+    [[nodiscard]] std::optional<helix::ErrorEvent>
+    classify_error(const std::string& raw_line, const helix::ClassifyContext& ctx) const override;
+
   protected:
+    /// Recovery buttons for a CFS runout. **Caller must hold mutex_** (base
+    /// contract; this override takes no lock of its own and mutex_ is not
+    /// recursive).
+    [[nodiscard]] std::vector<helix::RecoveryAction> build_recovery_actions() const override;
+
     void handle_status_update(const nlohmann::json& notification) override;
     const char* backend_log_tag() const override {
         return "[AMS CFS]";
@@ -361,7 +381,9 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     /// UI told the user the load was idle.
     /// Marked virtual so test subclasses can capture the assembled load/swap/
     /// unload script (and the WITH/WITHOUT-material selection that produced it)
-    /// without a live Moonraker connection.
+    /// without a live Moonraker connection. Private -- test access to call the
+    /// real implementation directly goes through the ::CfsTestAccess friend
+    /// shim (tests/test_helpers/cfs_test_access.h), not a `using` declaration.
     virtual AmsError dispatch_action_script(std::string gcode);
 
     /// Undo the derived LOADED stamp, putting back whatever the last parse

@@ -59,9 +59,9 @@ class AmsPanel : public PanelBase {
     /**
      * @brief Construct AMS panel with dependencies
      * @param printer_state Reference to global helix::PrinterState
-     * @param api Pointer to MoonrakerAPI (may be nullptr)
+     * @param api Pointer to IMoonrakerAPI (may be nullptr)
      */
-    AmsPanel(helix::PrinterState& printer_state, MoonrakerAPI* api);
+    AmsPanel(helix::PrinterState& printer_state, IMoonrakerAPI* api);
     ~AmsPanel() override = default;
 
     // === PanelBase Interface ===
@@ -132,17 +132,6 @@ class AmsPanel : public PanelBase {
      */
     void clear_panel_reference();
 
-    /**
-     * @brief Scope detail view to show only one unit's slots
-     * @param unit_index Unit index to show (-1 = all units, default)
-     */
-    void set_unit_scope(int unit_index);
-
-    /**
-     * @brief Clear unit scope, showing all slots
-     */
-    void clear_unit_scope();
-
   private:
     // === Slot Management ===
 
@@ -190,6 +179,8 @@ class AmsPanel : public PanelBase {
     ObserverGuard print_state_observer_;    ///< Dismisses a stale error dialog when a print resumes
     ObserverGuard backend_count_observer_;  ///< For backend selector visibility
     ObserverGuard external_spool_observer_; ///< Reactive updates when external spool color changes
+    ObserverGuard
+        supports_bypass_observer_; ///< Bypass node appears/disappears with backend support
     helix::AsyncLifetimeGuard
         lifetime_; ///< Guards deferred callbacks from accessing destroyed panel
     bool backend_rebuild_pending_ = false; ///< Coalesces rapid backend count changes
@@ -198,7 +189,6 @@ class AmsPanel : public PanelBase {
 
     // === Dynamic Slot State ===
 
-    int scoped_unit_index_ = -1;    ///< Unit scope: -1 = all units, >=0 = specific unit
     int current_slot_count_ = 0;    ///< Number of slots currently created
     lv_obj_t* slot_grid_ = nullptr; ///< Container for dynamically created slots
 
@@ -229,7 +219,6 @@ class AmsPanel : public PanelBase {
 
     // === Setup Helpers ===
 
-    void setup_system_header();
     void setup_slots();
     void setup_path_canvas();
     void update_path_canvas_from_backend();

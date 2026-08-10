@@ -302,3 +302,82 @@ TEST_CASE_METHOD(ToolStateFixture,
     ts.clear_ams_topology();
     UpdateQueue::instance().drain();
 }
+
+// =============================================================================
+// extruder_count() vs tool_count(): the nozzle tool badge is gated on physical
+// hotends, so an AMS feeding one extruder must not make the nozzle icon claim
+// to be "tool 0".
+// =============================================================================
+
+namespace {
+/// Single-extruder printer — one hotend, no toolchanger.
+helix::PrinterDiscovery make_single_extruder_discovery() {
+    nlohmann::json objects = {"extruder", "heater_bed", "fan"};
+    helix::PrinterDiscovery disc;
+    disc.parse_objects(objects);
+    return disc;
+}
+} // namespace
+
+TEST_CASE_METHOD(ToolStateFixture,
+                 "A 4-slot AMS on a single-extruder printer reports 4 tools but 1 extruder",
+                 "[tool-state][ams][ams-topology][tool-badge]") {
+    auto& ts = helix::ToolState::instance();
+    auto disc = make_single_extruder_discovery();
+
+    ts.init_tools(disc);
+    UpdateQueue::instance().drain();
+    REQUIRE(ts.tool_count() == 1);
+    REQUIRE(ts.extruder_count() == 1);
+    REQUIRE_FALSE(ts.has_multiple_extruders());
+
+    // AMS advertises 4 filament slots — all feeding the one hotend.
+    helix::ToolTopology topo;
+    topo.tool_count = 4;
+    topo.active_tool = 0;
+    topo.tool_to_slot = {0, 1, 2, 3};
+    topo.tool_name_prefix = "T";
+    ts.set_ams_topology(topo);
+    UpdateQueue::instance().drain();
+
+    // is_multi_tool() flips — which is why it is the wrong badge predicate.
+    REQUIRE(ts.tool_count() == 4);
+    REQUIRE(ts.is_multi_tool());
+
+    // ...but there is still exactly one hotend, so no tool badge.
+    REQUIRE(ts.extruder_count() == 1);
+    REQUIRE_FALSE(ts.has_multiple_extruders());
+
+    ts.clear_ams_topology();
+    UpdateQueue::instance().drain();
+}
+
+TEST_CASE_METHOD(ToolStateFixture, "A real 4-extruder ToolChanger does report multiple extruders",
+                 "[tool-state][ams][ams-topology][tool-badge]") {
+    // Paired with the AMS case above: if has_multiple_extruders() were hardcoded
+    // false, or counted nothing, this fails — so the badge can still appear where
+    // it is meaningful.
+    auto& ts = helix::ToolState::instance();
+    auto disc = make_toolchanger_discovery();
+
+    ts.init_tools(disc);
+    UpdateQueue::instance().drain();
+    REQUIRE(ts.tool_count() == 4);
+    REQUIRE(ts.extruder_count() == 4);
+    REQUIRE(ts.has_multiple_extruders());
+
+    // Surviving the AMS rebuild matters — that is where the mapping was lost once.
+    helix::ToolTopology topo;
+    topo.tool_count = 4;
+    topo.active_tool = 0;
+    topo.tool_to_slot = {0, 1, 2, 3};
+    topo.tool_name_prefix = "T";
+    ts.set_ams_topology(topo);
+    UpdateQueue::instance().drain();
+
+    REQUIRE(ts.extruder_count() == 4);
+    REQUIRE(ts.has_multiple_extruders());
+
+    ts.clear_ams_topology();
+    UpdateQueue::instance().drain();
+}

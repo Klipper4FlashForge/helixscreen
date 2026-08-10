@@ -1,5 +1,10 @@
 # Spec: Status→Error-Center Bridge for AMS Backends
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions. Status: SHIPPED**, with the
+> §2 correction noted inline. `RecoveryModalPresenter`, `AmsErrorBridge`, and the
+> `AmsBackend::current_error()` virtual all exist. Verify predicates against current code
+> before acting on anything here.
+
 **Date:** 2026-06-18
 **Status:** Approved design, pre-plan
 **Builds on:** `2026-06-16-backend-error-recovery-*` (AFC reference), `2026-06-18-ams-error-recovery-analog-backends-spec.md` (Phase 1 = Happy Hare, shipped)
@@ -57,6 +62,16 @@ want the recovery modal (gcode `!!` and AMS `ERROR`); they MUST share one modal 
 // `!!`-driven backends (AFC/HH) leave this default and keep using classify_error().
 [[nodiscard]] virtual std::optional<helix::ErrorEvent> current_error() const { return std::nullopt; }
 ```
+
+> **Correction (2026-08-09).** The second comment line is no longer true. **AFC overrides
+> `current_error()`** (`include/ams_backend_afc.h`, `src/printer/ams_backend_afc.cpp`): an
+> `AmsAction::ERROR` edge with `error_state_` set now raises the recovery modal through the
+> bridge, without waiting for a `!!` line, because AFC can enter its error state from a status
+> frame alone. That override deliberately returns `nullopt` when `error_state_` is false, so
+> the stuck-action timeout latch - which drives the action to ERROR without AFC agreeing - keeps
+> its old toast instead of claiming a recovery set. **Happy Hare does leave the default** and
+> is still `classify_error()`-only. `AmsBackendQidi` and `AmsBackendAd5xIfs` override it as this
+> spec intended. So the split is per-backend, not "`!!`-driven vs status-driven".
 
 **No backend-type checks** in `RecoveryModalPresenter`, `GcodeErrorRouter`, or `AmsErrorBridge`. The
 backend owns its error semantics via `current_error()`. (Review gate, as for Phase 1.)

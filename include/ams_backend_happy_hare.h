@@ -45,12 +45,12 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     /**
      * @brief Construct Happy Hare backend
      *
-     * @param api Pointer to MoonrakerAPI (for sending G-code commands)
-     * @param client Pointer to helix::MoonrakerClient (for subscribing to updates)
+     * @param api Pointer to IMoonrakerAPI (for sending G-code commands)
+     * @param client Pointer to helix::IMoonrakerClient (for subscribing to updates)
      *
      * @note Both pointers must remain valid for the lifetime of this backend.
      */
-    AmsBackendHappyHare(MoonrakerAPI* api, helix::MoonrakerClient* client);
+    AmsBackendHappyHare(IMoonrakerAPI* api, helix::IMoonrakerClient* client);
     ~AmsBackendHappyHare() override;
 
     /**
@@ -250,6 +250,7 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     friend class HappyHareErrorStateHelper;
     friend class HappyHareCharHelper;
     friend class HHToolchangeTestHelper;
+    friend class HhFaultEventCharHelper;
 
     // --- AmsSubscriptionBackend hooks ---
     void on_started() override;
@@ -281,8 +282,10 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     // Locks mutex_ internally — call with no lock held.
     [[nodiscard]] std::string gates_suffix_for_unit(int unit) const;
 
-    // Build context-aware recovery actions from live MMU state. Caller holds mutex_.
-    [[nodiscard]] std::vector<helix::RecoveryAction> build_recovery_actions() const;
+    // Build context-aware recovery actions from live MMU state. Caller holds mutex_
+    // (the base declares that contract; mutex_ is non-recursive, so this must not
+    // lock).
+    [[nodiscard]] std::vector<helix::RecoveryAction> build_recovery_actions() const override;
 
     // Synthesize a toolchange step index from the current AmsAction and push it
     // to AmsState's step subject (deferred to the main thread). Happy Hare emits
@@ -408,6 +411,10 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     int num_units_{1};                      ///< Number of physical units (default 1)
     std::vector<int> per_unit_gate_counts_; ///< Per-unit gate counts for dissimilar multi-MMU (v4)
     int active_unit_{0};                    ///< Currently active MMU unit (v4)
+
+    /// Whether printer.mmu.has_bypass has been observed at least once, so the
+    /// resolved value gets logged even when it matches our optimistic default.
+    bool bypass_support_seen_{false};
 
     /// Last printer.mmu.gate_status array, raw Happy Hare values (-1 unknown,
     /// 0 empty, 1 available, 2 from_buffer). Kept because the array and the

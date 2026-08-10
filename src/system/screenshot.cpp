@@ -3,8 +3,9 @@
 
 #include "screenshot.h"
 
-#include "app_globals.h"
 #include "ui_error_reporting.h"
+
+#include "app_globals.h"
 
 #include <spdlog/spdlog.h>
 
@@ -205,9 +206,11 @@ bool capture_frame(CapturedFrame& out, lv_obj_t* crop_to) {
     std::vector<uint8_t> cropped(static_cast<size_t>(crop_w) * static_cast<size_t>(crop_h) * 4);
     for (int y = 0; y < crop_h; y++) {
         const uint8_t* src_row =
-            rgba.data() + (static_cast<size_t>(y0 + y) * static_cast<size_t>(width) +
-                          static_cast<size_t>(x0)) * 4;
-        uint8_t* dst_row = cropped.data() + static_cast<size_t>(y) * static_cast<size_t>(crop_w) * 4;
+            rgba.data() +
+            (static_cast<size_t>(y0 + y) * static_cast<size_t>(width) + static_cast<size_t>(x0)) *
+                4;
+        uint8_t* dst_row =
+            cropped.data() + static_cast<size_t>(y) * static_cast<size_t>(crop_w) * 4;
         std::memcpy(dst_row, src_row, static_cast<size_t>(crop_w) * 4);
     }
     out.rgba = std::move(cropped);

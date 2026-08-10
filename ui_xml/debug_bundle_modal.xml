@@ -14,10 +14,9 @@
          modal_dialog uses (140 at MICRO ... 800 at XXLARGE), bounded so the
          button row stays on screen at every breakpoint. -->
     <lv_obj name="content_container"
-            width="100%" height="content" style_max_height="#dialog_content_max"
-            scrollable="true" style_pad_left="#space_lg" style_pad_right="#space_lg"
-            style_pad_top="#space_lg" style_pad_bottom="#space_lg" flex_flow="column" style_flex_cross_place="center"
-            style_pad_gap="#space_md">
+            width="100%" height="content" style_max_height="#dialog_content_max" scrollable="true"
+            style_pad_left="#space_lg" style_pad_right="#space_lg" style_pad_top="#space_lg"
+            style_pad_bottom="#space_lg" flex_flow="column" style_flex_cross_place="center" style_pad_gap="#space_md">
 
       <!-- STATE 0: Consent -->
       <lv_obj name="consent_container"
@@ -45,8 +44,8 @@
         <!-- Optional user note -->
         <lv_textarea name="user_note_textarea"
                      width="100%" height="content" style_min_height="56" style_max_height="100"
-                     placeholder_text="Describe the issue (optional)" placeholder_tag="Describe the issue (optional)" one_line="false"
-                     style_pad_all="#space_sm" style_text_font="#font_small"/>
+                     placeholder_text="Describe the issue (optional)" placeholder_tag="Describe the issue (optional)"
+                     one_line="false" style_pad_all="#space_sm" style_text_font="#font_small"/>
       </lv_obj>
 
       <!-- STATE 1: Uploading -->
@@ -55,7 +54,7 @@
               style_flex_cross_place="center" style_flex_main_place="center">
         <bind_flag_if_not_eq subject="debug_bundle_state" flag="hidden" ref_value="1"/>
         <spinner size="lg" align="center"/>
-        <text_body bind_text="debug_bundle_status" width="100%" style_text_align="center"/>
+        <text_body width="100%" bind_text="debug_bundle_status" style_text_align="center"/>
       </lv_obj>
 
       <!-- STATE 2: Success -->
@@ -70,7 +69,8 @@
         <!-- Large share code display -->
         <lv_obj width="100%"
                 height="content" style_pad_all="#space_md" style_bg_opa="cover" style_bg_color="#card_bg"
-                style_radius="#border_radius" style_flex_main_place="center" style_flex_cross_place="center" flex_flow="row">
+                style_radius="#border_radius" style_flex_main_place="center" style_flex_cross_place="center"
+                flex_flow="row">
           <lv_label name="share_code_display"
                     bind_text="debug_bundle_share_code" style_text_font="noto_sans_bold_28" style_text_color="#primary"
                     style_text_align="center"/>

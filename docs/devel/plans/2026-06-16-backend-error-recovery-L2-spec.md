@@ -1,5 +1,10 @@
 # Backend Error-Recovery Overhaul — L2: Toolchange Step/Phase Narration (Spec)
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions. Status: SHIPPED** as
+> `GcodeNarrationRouter` + `AmsBackend::toolchange_phase_template()` + the `toolchange_step`
+> subject. Read for the design rationale; verify predicates and line numbers against current
+> code before acting on anything here.
+
 **Status:** Approved for planning · **Date:** 2026-06-16 · **Branch:** `feature/error-recovery-l2`
 **Read first:** `2026-06-16-backend-error-recovery-source.md` (master spec, §4.3), `-L2-handoff.md`, `-L1-spec.md` (adapter pattern to mirror), memory `project_afc_error_recovery_overhaul.md`.
 **Closes callouts:** **S1** (step shows "Feed filament" while actually purging) · **S2** (missing brush/clean/cut/poop/kick steps).

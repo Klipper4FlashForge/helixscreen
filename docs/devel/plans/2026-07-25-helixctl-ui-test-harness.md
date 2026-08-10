@@ -1,5 +1,11 @@
 # helixctl UI Test Harness Implementation Plan
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions. Status: SHIPPED.** The 76
+> `- [ ]` boxes were never ticked and do **not** mean the work is outstanding. Every prescribed
+> artifact exists: `tests/ui/helix/app.py`, `tests/ui/helix/goldens.py`, `tests/ui/conftest.py`,
+> `tests/ui/goldens/`, and all nine `tests/ui/test_*.py`. Verify against the tree before
+> following anything here.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build an out-of-process UI test harness that drives a live HelixScreen instance through `helix-screen ctl`, supporting both scripted verification and golden-screenshot regression.

@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "logging_init.h"
 
+#include <spdlog/pattern_formatter.h>
+
 #ifndef HELIX_WATCHDOG
 #include "hv/hlog.h"
 #endif
 #include "lvgl_assert_handler.h"
 #include "lvgl_log_handler.h"
+#include "platform_capabilities.h"
 #include "system/helix_paths.h"
 #ifndef HELIX_WATCHDOG
 #include "system/crash_error_log_sink.h"
@@ -171,21 +174,32 @@ std::shared_ptr<MonotonicRingSink> g_ring_sink;
 // be lower so the ring captures debug). Recorded for the bundle's log_meta.
 spdlog::level::level_enum g_effective_log_level = spdlog::level::warn;
 
-// Default ring capacity (messages). Tunable via HELIX_LOG_RING_LINES so a
-// constrained device can shrink it. ~2000 lines ≈ a few hundred KB at typical
-// line lengths — well within budget even on the 14 MB-diet AD5M.
-constexpr size_t kDefaultRingLines = 2000;
+// Floor ring capacity (messages), and the fallback when RAM detection fails.
+// Capacity otherwise scales with the device — see ring_capacity_for_ram(). This
+// is the historical fixed size, kept as the floor so the smallest boards (AD5M
+// at ~107 MB) keep exactly what they had: ~2000 lines ≈ 300 KB at typical line
+// lengths. Tunable in both directions via HELIX_LOG_RING_LINES.
+constexpr size_t kMinRingLines = 2000;
+
+/// Upper bound: past a few thousand lines a bundle reader is scrolling, not
+/// diagnosing, and the memory stops paying for itself.
+constexpr size_t kMaxRingLines = 20000;
+
+/// ~150 bytes per retained line (≈119 bytes of text plus std::string overhead,
+/// measured against real AD5X bundles), so 16 lines/MB budgets ~0.24% of RAM.
+constexpr size_t kRingLinesPerMb = 16;
 
 size_t resolve_ring_capacity() {
-    size_t lines = kDefaultRingLines;
+    // Explicit override always wins — a constrained board can pin it down and a
+    // developer chasing something can pin it up.
     if (const char* env = std::getenv("HELIX_LOG_RING_LINES")) {
         char* end = nullptr;
         unsigned long long v = std::strtoull(env, &end, 10);
         if (end != env && v > 0) {
-            lines = static_cast<size_t>(v);
+            return static_cast<size_t>(v);
         }
     }
-    return lines;
+    return ring_capacity_for_ram(PlatformCapabilities::detect().total_ram_mb);
 }
 
 // Whether the ring buffer captures DEBUG (the diagnostic win) or matches the
@@ -314,10 +328,35 @@ void add_system_sink(std::vector<spdlog::sink_ptr>& sinks, LogTarget target,
                 max_files = static_cast<size_t>(v);
             }
         }
-        auto sink =
-            std::make_shared<spdlog::sinks::rotating_file_sink_mt>(path, max_bytes, max_files);
-        sink->set_formatter(make_formatter(SinkKind::File));
-        sinks.push_back(std::move(sink));
+        try {
+            auto sink =
+                std::make_shared<spdlog::sinks::rotating_file_sink_mt>(path, max_bytes, max_files);
+            sink->set_formatter(make_formatter(SinkKind::File));
+            sinks.push_back(std::move(sink));
+        } catch (const spdlog::spdlog_ex& e) {
+            // rotating_file_sink_mt THROWS when the path cannot be opened —
+            // missing parent directory, read-only mount, full flash. That
+            // exception used to propagate out of init() and out of
+            // Application::run(), so a bad HELIX_LOG_FILE took the whole UI
+            // down. Logging is never worth refusing to boot over: degrade to
+            // whatever this platform would have picked on its own and say so.
+            // Matters now that platform hooks steer the log at firmware-owned
+            // directories that may not exist on every variant (#1249).
+            LogTarget fallback = detect_best_target();
+            spdlog::warn("[Logging] Cannot open log file '{}' ({}); falling back to {}", path,
+                         e.what(), log_target_name(fallback));
+            // Guard the recursion: detect_best_target() never returns File
+            // today, but a future platform branch that did would loop forever.
+            if (fallback != LogTarget::File) {
+                add_system_sink(sinks, fallback, "");
+            }
+            // Keep effective_destination()/effective_log_file_path() honest —
+            // the crash reporter and debug-bundle collector read the latter to
+            // find the live log, and a path with no sink behind it would send
+            // them at a file that does not exist.
+            g_effective_target = fallback;
+            g_effective_file_path.clear();
+        }
         break;
     }
 #ifdef HELIX_PLATFORM_ANDROID
@@ -616,6 +655,16 @@ void init(const LogConfig& config) {
                   log_target_name(effective_target), config.enable_console ? "yes" : "no");
 }
 
+size_t ring_capacity_for_ram(size_t total_ram_mb) {
+    // total_ram_mb == 0 means detection failed (non-Linux, unreadable
+    // /proc/meminfo); fall back to the historical size rather than guessing.
+    if (total_ram_mb == 0) {
+        return kMinRingLines;
+    }
+    const size_t scaled = total_ram_mb * kRingLinesPerMb;
+    return std::clamp(scaled, kMinRingLines, kMaxRingLines);
+}
+
 LogTarget parse_log_target(const std::string& str) {
     if (str == "journal")
         return LogTarget::Journal;
@@ -702,6 +751,52 @@ const char* log_target_name(LogTarget target) {
         return "android";
     }
     return "unknown";
+}
+
+bool is_valid_log_target(const std::string& str) {
+    return str == "auto" || str == "journal" || str == "syslog" || str == "file" ||
+           str == "console";
+}
+
+const char* log_target_accepted_values() {
+    return "auto, journal, syslog, file, console";
+}
+
+bool is_valid_log_level(const std::string& str) {
+    return str == "trace" || str == "debug" || str == "info" || str == "warn" || str == "error" ||
+           str == "critical" || str == "off";
+}
+
+const char* log_level_accepted_values() {
+    return "trace, debug, info, warn, error, critical, off";
+}
+
+std::string log_env_override(const char* var_name, bool (*validate)(const std::string&),
+                             const char* accepted_values) {
+    const char* raw = std::getenv(var_name);
+    if (raw == nullptr || raw[0] == '\0') {
+        return {};
+    }
+    std::string value(raw);
+    if (validate != nullptr && !validate(value)) {
+        // init_early() has already installed a console logger at warn, so this
+        // is visible even though the real sinks are not built yet.
+        spdlog::warn("[Logging] Ignoring invalid {}='{}' (accepted: {})", var_name, value,
+                     accepted_values != nullptr ? accepted_values : "");
+        return {};
+    }
+    return value;
+}
+
+std::string resolve_log_setting(const std::string& cli_value, const std::string& env_value,
+                                const std::string& config_value) {
+    if (!cli_value.empty()) {
+        return cli_value;
+    }
+    if (!env_value.empty()) {
+        return env_value;
+    }
+    return config_value;
 }
 
 spdlog::level::level_enum parse_level(const std::string& str,

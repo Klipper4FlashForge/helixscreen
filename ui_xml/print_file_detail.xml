@@ -172,8 +172,7 @@
              warning icon next to the header is bound to the
              empty_tools_warning subject (published from update_color_swatches
              whenever any used tool's AMS slot is empty). -->
-        <ui_card name="color_requirements_card"
-                 width="100%" style_pad_all="0" style_border_width="0" flex_flow="column">
+        <ui_card name="color_requirements_card" width="100%" style_pad_all="0" style_border_width="0" flex_flow="column">
           <bind_flag_if_eq subject="color_swatches_visible" flag="hidden" ref_value="0"/>
           <lv_obj width="100%"
                   height="content" style_pad_all="0" style_pad_gap="#space_xs" flex_flow="row"
@@ -206,8 +205,8 @@
                to the mapping shown below it. -->
           <lv_obj width="100%"
                   height="content" style_pad_all="0" style_pad_gap="#space_xs" flex_flow="row"
-                  style_flex_main_place="space_between" style_flex_cross_place="center"
-                  scrollable="false" clickable="false" event_bubble="true">
+                  style_flex_main_place="space_between" style_flex_cross_place="center" scrollable="false"
+                  clickable="false" event_bubble="true">
             <lv_obj width="content"
                     height="content" style_pad_all="0" style_pad_gap="#space_xs" flex_flow="row"
                     style_flex_cross_place="center" scrollable="false" clickable="false" event_bubble="true">
@@ -223,8 +222,7 @@
                     height="content" style_pad_all="0" style_pad_gap="#space_xs" flex_flow="row"
                     style_flex_cross_place="center" scrollable="false" clickable="false" event_bubble="true">
               <text_small name="sliced_colors_label"
-                          text="Sliced colors" translation_tag="Sliced colors"
-                          clickable="false" event_bubble="true"/>
+                          text="Sliced colors" translation_tag="Sliced colors" clickable="false" event_bubble="true"/>
               <ui_switch name="sliced_colors_toggle" size="small">
                 <bind_state_if_eq subject="detail_prefer_sliced_colors" state="checked" ref_value="1"/>
                 <event_cb trigger="value_changed" callback="on_toggle_sliced_colors"/>
@@ -241,8 +239,7 @@
         <!-- Wrapper: zero-gap so the spacer doesn't inherit the parent's pad_gap.
              Not scrollable — overflow here must be visible, not hidden behind a
              scrollbar. -->
-        <lv_obj width="100%" flex_grow="1" style_pad_all="0" style_pad_gap="0" flex_flow="column"
-                scrollable="false">
+        <lv_obj width="100%" flex_grow="1" style_pad_all="0" style_pad_gap="0" flex_flow="column" scrollable="false">
           <!-- Options card.
                Toggle rows are populated dynamically in C++ from the active
                printer's PrePrintOptionSet (see PrintSelectDetailView::
@@ -265,8 +262,8 @@
           <!-- Pushes the action buttons to the bottom of the column. Styling is
                stripped so it contributes flex growth only — a default lv_obj
                carries theme padding, background and border. -->
-          <lv_obj width="100%" height="0" flex_grow="1"
-                  style_pad_all="0" style_bg_opa="0" style_border_width="0" scrollable="false"/>
+          <lv_obj width="100%"
+                  height="0" flex_grow="1" style_pad_all="0" style_bg_opa="0" style_border_width="0" scrollable="false"/>
 
           <!-- Pre-print time estimate (bound to string subject) -->
           <text_small name="prep_time_estimate"

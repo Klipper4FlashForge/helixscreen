@@ -126,19 +126,52 @@ LIBHV_HEAD_CANDIDATE := $(GIT_COMMON_DIR)/modules/libhv/HEAD
 LVGL_HEAD := $(wildcard $(LVGL_HEAD_CANDIDATE))
 LIBHV_HEAD := $(wildcard $(LIBHV_HEAD_CANDIDATE))
 
-# Reset all patched files in LVGL submodule to upstream state
-reset-patches:
-	$(ECHO) "$(YELLOW)Resetting LVGL patches to upstream state...$(RESET)"
-	$(Q)for file in $(LVGL_PATCHED_FILES); do \
-		if ! git -C $(LVGL_DIR) diff --quiet $$file 2>/dev/null; then \
+# Restore one submodule's patched files to upstream state.
+#   $(1) submodule dir, $(2) file list (paths relative to it)
+#
+# Two cases, and the second is why a plain `git checkout` loop is not enough: a
+# patch that CREATES a file leaves that file untracked, where checkout fails with
+# "did not match any file(s) known to git". It has to be deleted instead, or the
+# re-apply then fails the other way with "already exists".
+define reset_submodule_patches
+	$(Q)for file in $(2); do \
+		if ! git -C $(1) ls-files --error-unmatch "$$file" >/dev/null 2>&1; then \
+			if [ -e "$(1)/$$file" ]; then \
+				echo "$(YELLOW)→ Removing (patch-created):$(RESET) $$file"; \
+				rm -f "$(1)/$$file"; \
+			else \
+				echo "$(DIM)  (absent) $$file$(RESET)"; \
+			fi; \
+		elif ! git -C $(1) diff --quiet "$$file" 2>/dev/null; then \
 			echo "$(YELLOW)→ Resetting:$(RESET) $$file"; \
-			git -C $(LVGL_DIR) checkout $$file; \
+			git -C $(1) checkout "$$file"; \
 		else \
 			echo "$(DIM)  (clean) $$file$(RESET)"; \
 		fi \
 	done
+endef
+
+# Reset all patched files in both submodules to upstream state.
+#
+# libhv used to be missing here, which made `make reapply-patches` unable to fix
+# the one thing it is advertised to fix. A tree carrying an older revision of a
+# libhv patch fails `git apply --check` on the newer one, and the recipe tells you
+# to run reapply-patches — which reset only LVGL, left the stale libhv hunks in
+# place, and failed identically next time. That is how the #1212 null-hloop guard
+# stayed out of a tree with no way to get it back short of editing by hand.
+#
+# Deliberately NOT reset: config.mk and hconfig.h. Both are dirty in a built tree
+# but neither is patched — libhv's own ./configure writes them, and the libhv
+# build regenerates them.
+reset-patches:
+	$(ECHO) "$(YELLOW)Resetting LVGL patches to upstream state...$(RESET)"
+	$(call reset_submodule_patches,$(LVGL_DIR),$(LVGL_PATCHED_FILES))
+	@# Not in LVGL_PATCHED_FILES: the backport patch creates it, so there is no
+	@# tracked version to compare against.
 	$(Q)rm -f $(LVGL_DIR)/src/misc/lv_check_arg.h
-	$(ECHO) "$(GREEN)✓ All LVGL patches reset$(RESET)"
+	$(ECHO) "$(YELLOW)Resetting libhv patches to upstream state...$(RESET)"
+	$(call reset_submodule_patches,$(LIBHV_DIR),$(LIBHV_PATCHED_FILES))
+	$(ECHO) "$(GREEN)✓ All patches reset$(RESET)"
 
 # Force reapply all patches (reset first, then apply)
 reapply-patches: reset-patches force-apply-patches
@@ -722,6 +755,7 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 			echo "$(GREEN)✓ DNS resolver fallback patch applied$(RESET)"; \
 		else \
 			echo "$(RED)✗ Cannot apply DNS resolver fallback patch (conflicts) — embedded DNS will be BROKEN$(RESET)"; \
+			exit 1; \
 		fi \
 	else \
 		echo "$(GREEN)✓ libhv DNS resolver fallback patch already applied$(RESET)"; \
@@ -731,6 +765,14 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	@# matching an old marker would report "already applied" and silently drop
 	@# the newer hunks, and libhv headers are -isystem so nothing rebuilds to
 	@# reveal it. The fix for that red line is `make reapply-patches`.
+	@#
+	@# A failed apply must `exit 1` rather than warn and carry on. The recipe
+	@# ends in `touch $@`, so a warning-only branch stamps the tree as fully
+	@# patched: the red line scrolls past once and every later build reports
+	@# "Nothing to be done for 'apply-patches'". That is how the #1212 null-hloop
+	@# guard sat missing from this tree for hours while `make test` — which skips
+	@# apply-patches entirely — kept building a binary that segfaulted on the
+	@# regression test written to catch exactly that.
 	$(Q)if ! grep -q "reconn_timer_id" "$(LIBHV_DIR)/evpp/TcpClient.h" 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying libhv TcpClient reconnect resilience patch...$(RESET)"; \
 		if git -C $(LIBHV_DIR) apply --check $(PATCH_DIR)/libhv-tcpclient-reconnect-resilience.patch 2>/dev/null; then \
@@ -738,6 +780,7 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 			echo "$(GREEN)✓ libhv TcpClient reconnect resilience patch applied$(RESET)"; \
 		else \
 			echo "$(RED)✗ Cannot apply TcpClient reconnect patch — run 'make reapply-patches'. Until then a pending auto-reconnect can fault in createsocket() during teardown (#1212)$(RESET)"; \
+			exit 1; \
 		fi \
 	else \
 		echo "$(GREEN)✓ libhv TcpClient reconnect resilience patch already applied$(RESET)"; \
@@ -749,6 +792,7 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 			echo "$(GREEN)✓ libhv WebSocket backoff patch applied$(RESET)"; \
 		else \
 			echo "$(RED)✗ Cannot apply WebSocket backoff patch (conflicts) — a failed WS upgrade will reconnect at 5Hz$(RESET)"; \
+			exit 1; \
 		fi \
 	else \
 		echo "$(GREEN)✓ libhv WebSocket backoff patch already applied$(RESET)"; \

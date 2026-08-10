@@ -99,7 +99,7 @@ bool orca_tables_available();
 /// access class so the mutator can't be mistaken for public API; the method is
 /// defined in filament_variants.cpp, where the tables live.
 class FilamentVariantsTestAccess {
-public:
+  public:
     /// Inject the Orca tables directly, bypassing the lazy asset load. Empty
     /// containers for both arguments restore lazy loading from
     /// assets/filaments.json on the next orca_match_type() call.

@@ -32,6 +32,23 @@ class AfcLaneDataClearHelper : public AmsBackendAfc {
         initialize_slots(names);
     }
 
+    /// Start from an arbitrary lane set, or from none at all (empty vector) to
+    /// exercise the pre-initialization path.
+    explicit AfcLaneDataClearHelper(const std::vector<std::string>& names)
+        : AmsBackendAfc(nullptr, nullptr) {
+        if (!names.empty()) {
+            initialize_slots(names);
+        }
+    }
+
+    [[nodiscard]] int slot_count() const {
+        return slots_.slot_count();
+    }
+
+    [[nodiscard]] std::string lane_name(int slot_index) const {
+        return slots_.name_of(slot_index);
+    }
+
     void feed_lane_data(const nlohmann::json& lane_data) {
         std::lock_guard<std::mutex> lock(mutex_);
         parse_lane_data(lane_data);
@@ -84,11 +101,9 @@ nlohmann::json lane_record(const nlohmann::json& spool_id) {
 
 /// A full two-lane payload.
 ///
-/// parse_lane_data() re-initializes the slot set whenever the payload's lane
-/// count differs from the registry's, because the DB record is a snapshot of
-/// WHICH LANES EXIST — only the fields inside a lane are deltas. Feeding a
-/// single lane therefore silently drops the other and resets seeded state, so
-/// every case here carries both.
+/// Every case here names both lanes so the payload matches the registry, which
+/// is what a settled system looks like. Partial payloads are their own subject,
+/// covered by the mid-repopulation cases at the bottom of this file.
 nlohmann::json both_lanes(const nlohmann::json& lane1,
                           const nlohmann::json& lane2 = nlohmann::json::object()) {
     return nlohmann::json{{"lane1", lane1}, {"lane2", lane2}};
@@ -252,4 +267,78 @@ TEST_CASE("AFC lane_data and status paths agree about the null clear", "[ams][af
 
     CHECK(via_db.spool_id(0) == via_status.spool_id(0));
     CHECK(via_db.spool_id(0) == 0);
+}
+
+// ============================================================================
+// Mid-repopulation payloads
+//
+// AFC empties the whole lane_data namespace at the start of every PREP
+// (AFC.py delete_lane_data) and writes each lane's key back only once that
+// lane's own prep finishes (AFC_BoxTurtle.py send_lane_data). BoxTurtle prep
+// drives each lane motor in turn, so the namespace sits partially populated for
+// seconds on every boot. query_lane_data() is one-shot and unretried, so a cold
+// boot that lands in that window used to redefine the lane set from whatever
+// had been written so far: a 4-lane BoxTurtle pinned to a single slot for the
+// rest of the session, with lanes 2-4 invisible because the status handler only
+// iterates slots that exist.
+//
+// Klipper's object list is the authority on which lanes exist. The database is
+// a supplement carrying colours, materials and spool ids.
+// ============================================================================
+
+TEST_CASE("AFC lane_data never resizes a registry that already exists",
+          "[ams][afc][lane-data-race]") {
+    AfcLaneDataClearHelper afc(std::vector<std::string>{"lane1", "lane2", "lane3", "lane4"});
+    REQUIRE(afc.slot_count() == 4);
+
+    SECTION("a payload holding only the first lane leaves all four standing") {
+        afc.feed_lane_data(nlohmann::json{{"lane1", lane_record(127)}});
+        CHECK(afc.slot_count() == 4);
+        CHECK(afc.lane_name(3) == "lane4");
+    }
+
+    SECTION("the lane the payload does carry is still updated") {
+        afc.feed_lane_data(nlohmann::json{{"lane1", lane_record(127)}});
+        CHECK(afc.spool_id(0) == 127);
+    }
+
+    SECTION("a lane absent from the payload keeps its own data") {
+        afc.set_spool_id(1, 99);
+        afc.feed_lane_data(nlohmann::json{{"lane1", lane_record(127)}});
+        CHECK(afc.spool_id(1) == 99);
+    }
+
+    SECTION("an empty namespace does not erase the registry") {
+        // The window opens with the delete, so an even earlier query returns {}.
+        afc.feed_lane_data(nlohmann::json::object());
+        CHECK(afc.slot_count() == 4);
+    }
+}
+
+TEST_CASE("AFC lane_data defers to Klipper discovery for the lane set",
+          "[ams][afc][lane-data-race]") {
+    // Ordering inside on_started() is not guaranteed to have built the registry
+    // first, so the deference has to hold on the uninitialized path too.
+    AfcLaneDataClearHelper afc{std::vector<std::string>{}};
+    REQUIRE(afc.slot_count() == 0);
+    afc.set_discovered_lanes({"lane1", "lane2", "lane3", "lane4"}, {});
+
+    afc.feed_lane_data(nlohmann::json{{"lane1", lane_record(127)}});
+
+    CHECK(afc.slot_count() == 4);
+    CHECK(afc.lane_name(3) == "lane4");
+    CHECK(afc.spool_id(0) == 127);
+}
+
+TEST_CASE("AFC lane_data still bootstraps when discovery found no lanes",
+          "[ams][afc][lane-data-race]") {
+    // Without AFC_stepper/AFC_lane objects to enumerate, the database is the
+    // only lane source there is, so deference must not become a refusal.
+    AfcLaneDataClearHelper afc{std::vector<std::string>{}};
+    REQUIRE(afc.slot_count() == 0);
+
+    afc.feed_lane_data(nlohmann::json{{"lane1", lane_record(1)}, {"lane2", lane_record(2)}});
+
+    CHECK(afc.slot_count() == 2);
+    CHECK(afc.lane_name(1) == "lane2");
 }

@@ -4,6 +4,7 @@
 #pragma once
 
 #include "ui_filament_mapping_card.h"
+#include "ui_observer_guard.h"
 #include "ui_pre_print_options_renderer.h"
 #include "ui_print_preparation_manager.h"
 
@@ -12,7 +13,6 @@
 #include "preflight_validator.h"
 #include "print_file_data.h" // For FileHistoryStatus
 #include "subject_managed_panel.h"
-#include "ui_observer_guard.h"
 
 #include <functional>
 #include <lvgl.h>
@@ -23,7 +23,7 @@
 #include <string>
 
 // Forward declarations
-class MoonrakerAPI;
+class IMoonrakerAPI;
 namespace helix {
 class PrinterState;
 }
@@ -138,10 +138,10 @@ class PrintSelectDetailView : public OverlayBase {
     /**
      * @brief Set dependencies for print preparation
      *
-     * @param api MoonrakerAPI for file operations
+     * @param api IMoonrakerAPI for file operations
      * @param printer_state PrinterState for capability detection
      */
-    void set_dependencies(MoonrakerAPI* api, PrinterState* printer_state);
+    void set_dependencies(IMoonrakerAPI* api, PrinterState* printer_state);
 
     /**
      * @brief Set callback for delete confirmation
@@ -504,7 +504,7 @@ class PrintSelectDetailView : public OverlayBase {
 
   private:
     // === Dependencies ===
-    MoonrakerAPI* api_ = nullptr;
+    IMoonrakerAPI* api_ = nullptr;
     PrinterState* printer_state_ = nullptr;
     lv_subject_t* visible_subject_ = nullptr;
 
@@ -651,7 +651,7 @@ class PrintSelectDetailView : public OverlayBase {
     // lane-matched) vs default/unmapped for sliced (the file's own palette).
     void apply_preview_colors();
 
-    void on_ams_state_changed();               // AMS slots_version observer handler
+    void on_ams_state_changed();                // AMS slots_version observer handler
     void refresh_preview_colors_and_mismatch(); // shared by card-edit + AMS observer
 
     /**

@@ -3,13 +3,13 @@
 #include "temperature_controller.h"
 
 #include "ui_error_reporting.h"
+#include "ui_temperature_utils.h"
 
 #include "filament_database.h"
+#include "i_moonraker_api.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
 #include "printer_state.h"
 #include "spdlog/spdlog.h"
-#include "ui_temperature_utils.h"
 
 #include <algorithm>
 #include <array>
@@ -21,7 +21,7 @@
 
 namespace helix {
 
-TemperatureController::TemperatureController(PrinterState& state, MoonrakerAPI* api)
+TemperatureController::TemperatureController(PrinterState& state, IMoonrakerAPI* api)
     : state_(state), api_(api) {
     // Keypad ceilings mirror temperature_service.cpp keypad_range fields.
     model_[idx(HeaterType::Nozzle)].keypad_max_default = 350.0f;
@@ -175,7 +175,8 @@ void TemperatureController::set_target(HeaterType type, double celsius, SendOpti
         const int actual_deci = lv_subject_get_int(state_.get_active_extruder_temp_subject());
         const double actual_deg =
             static_cast<double>(helix::ui::temperature::deci_to_degrees_f(actual_deci));
-        const double latched = static_cast<double>(state_.get_active_extruder_last_nonzero_target());
+        const double latched =
+            static_cast<double>(state_.get_active_extruder_last_nonzero_target());
         const double floor_deg = std::max({latched, actual_deg});
         if (celsius < floor_deg) {
             celsius = floor_deg;

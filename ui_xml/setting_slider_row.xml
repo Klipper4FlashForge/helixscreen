@@ -35,14 +35,12 @@
   <styles>
     <style name="label_enabled" text_color="#text"/>
     <style name="label_disabled" text_color="#text_subtle"/>
-    <style name="pad_standard" pad_left="#space_lg" pad_right="#space_lg"
-           pad_top="#space_lg" pad_bottom="#space_lg" pad_gap="#space_xs"/>
-    <style name="pad_micro" pad_left="#space_md" pad_right="#space_md"
-           pad_top="#space_lg" pad_bottom="#space_lg" pad_gap="#space_xs"/>
-    <style name="slider_standard" pad_top="#space_sm" pad_bottom="#space_sm"
-           margin_top="#space_xs"/>
-    <style name="slider_micro" pad_top="#space_xs" pad_bottom="#space_xs"
-           margin_top="0"/>
+    <style name="pad_standard"
+           pad_left="#space_lg" pad_right="#space_lg" pad_top="#space_lg" pad_bottom="#space_lg" pad_gap="#space_xs"/>
+    <style name="pad_micro"
+           pad_left="#space_md" pad_right="#space_md" pad_top="#space_lg" pad_bottom="#space_lg" pad_gap="#space_xs"/>
+    <style name="slider_standard" pad_top="#space_sm" pad_bottom="#space_sm" margin_top="#space_xs"/>
+    <style name="slider_micro" pad_top="#space_xs" pad_bottom="#space_xs" margin_top="0"/>
   </styles>
   <view name="slider_row"
         extends="lv_obj" width="100%" height="content" flex_flow="column" style_bg_opa="0" style_border_width="0"
@@ -63,13 +61,11 @@
           <bind_style name="label_disabled" subject="$disabled" ref_value="1"/>
         </text_body>
         <!-- Info icon: hidden if no description, hidden on medium+ -->
-        <lv_obj name="info_btn" width="content" height="content"
-                style_pad_all="2" style_bg_opa="0" style_border_width="0"
-                clickable="true" event_bubble="false" scrollable="false"
-                hidden_if_empty="$description">
+        <lv_obj name="info_btn"
+                width="content" height="content" style_pad_all="2" style_bg_opa="0" style_border_width="0"
+                clickable="true" event_bubble="false" scrollable="false" hidden_if_empty="$description">
           <bind_flag_if_gt subject="ui_breakpoint" flag="hidden" ref_value="1"/>
-          <icon src="info_outline" size="sm" variant="muted"
-                clickable="false" event_bubble="true"/>
+          <icon src="info_outline" size="sm" variant="muted" clickable="false" event_bubble="true"/>
           <event_cb trigger="clicked" callback="on_setting_info_clicked"/>
         </lv_obj>
       </lv_obj>
@@ -81,9 +77,9 @@
       <bind_flag_if_lt subject="ui_breakpoint" flag="hidden" ref_value="2"/>
     </text_small>
     <!-- Slider with optional min/max icons -->
-    <lv_obj name="slider_container" width="100%"
-            height="content" flex_flow="row" style_flex_cross_place="center" style_pad_left="0" style_pad_right="0"
-            style_pad_gap="#space_sm" scrollable="false">
+    <lv_obj name="slider_container"
+            width="100%" height="content" flex_flow="row" style_flex_cross_place="center" style_pad_left="0"
+            style_pad_right="0" style_pad_gap="#space_sm" scrollable="false">
       <bind_style_if_eq name="slider_micro" subject="ui_breakpoint" ref_value="0"/>
       <bind_style_if_ge name="slider_standard" subject="ui_breakpoint" ref_value="1"/>
       <icon name="min_icon" src="$min_icon" size="xs" variant="secondary"/>

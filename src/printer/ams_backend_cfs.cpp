@@ -5,12 +5,15 @@
 
 #include "ui_temperature_utils.h"
 
+#include "ams_fault_event.h"
 #include "ams_tool_map_sync.h"
 #include "filament_catalog.h"
 #include "filament_slot_override.h"
 #include "filament_slot_override_store.h"
 #include "json_utils.h"
+#include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_error.h"
+#include "operation_patterns.h" // helix::contains_ci
 #include "post_op_cooldown_manager.h"
 #include "printer_detector.h"
 
@@ -387,7 +390,7 @@ std::optional<AmsAlert> CfsErrorDecoder::decode(const std::string& key_code, int
 // AmsBackendCfs — Main CFS backend class
 // =============================================================================
 
-AmsBackendCfs::AmsBackendCfs(MoonrakerAPI* api, helix::MoonrakerClient* client)
+AmsBackendCfs::AmsBackendCfs(IMoonrakerAPI* api, helix::IMoonrakerClient* client)
     : AmsSubscriptionBackend(api, client) {
     system_info_.type = AmsType::CFS;
     system_info_.type_name = "CFS";
@@ -2204,7 +2207,7 @@ std::string AmsBackendCfs::swap_gcode(int idx, CfsMacroVariant variant) {
 
 AmsError AmsBackendCfs::dispatch_action_script(std::string gcode) {
     if (!api_) {
-        return AmsErrorHelper::not_connected("MoonrakerAPI not available");
+        return AmsErrorHelper::not_connected("IMoonrakerAPI not available");
     }
 
     auto on_complete = [this]() {
@@ -2249,75 +2252,24 @@ AmsError AmsBackendCfs::dispatch_action_script(std::string gcode) {
                 if (macro_variant_ == CfsMacroVariant::K2) {
                     api_->execute_gcode(
                         "BOX_RESTORE_FAN", []() {}, [](const MoonrakerError&) {},
-                        MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+                        IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
                 }
                 if (macro_variant_ != CfsMacroVariant::Fork) {
                     api_->execute_gcode(
                         "RESTORE_GCODE_STATE NAME=helix_cfs_load", []() {},
-                        [](const MoonrakerError&) {}, MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+                        [](const MoonrakerError&) {}, IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
                 }
             }
         });
     };
 
-    if (macro_variant_ == CfsMacroVariant::Fork) {
-        api_->execute_gcode(gcode, std::move(on_complete), std::move(on_error),
-                            MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
-        return AmsErrorHelper::success();
-    }
-
-    // Homing-then-execute — same pattern as ensure_homed_then but with our
-    // own completion callbacks that propagate to action-state cleanup.
-    if (!client_) {
-        api_->execute_gcode(gcode, std::move(on_complete), std::move(on_error),
-                            MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
-        return AmsErrorHelper::success();
-    }
-
-    auto gcode_copy = std::move(gcode);
-    client_->send_jsonrpc(
-        "printer.objects.query",
-        nlohmann::json{
-            {"objects", nlohmann::json{{"toolhead", nlohmann::json::array({"homed_axes"})}}}},
-        [this, token, gcode_copy, on_complete = std::move(on_complete),
-         on_error = on_error](const nlohmann::json& response) {
-            // L081 Mechanism C: defer member access (api_->execute_gcode dispatch)
-            // to main thread. The inner G28-completion lambda is itself invoked
-            // on a bg thread, so it also routes its api_ call through token.defer.
-            token.defer("AmsBackendCfs::homing_query_apply", [this, token, gcode_copy, on_complete,
-                                                              on_error, response]() {
-                bool needs_home = true;
-                if (response.contains("result") && response["result"].contains("status")) {
-                    const auto& status = response["result"]["status"];
-                    if (status.contains("toolhead") && status["toolhead"].contains("homed_axes") &&
-                        status["toolhead"]["homed_axes"].is_string()) {
-                        std::string axes = status["toolhead"]["homed_axes"].get<std::string>();
-                        needs_home = (axes.find("xyz") == std::string::npos);
-                    }
-                }
-
-                if (needs_home) {
-                    spdlog::info("[AMS CFS] Not homed, sending G28 before action script");
-                    api_->execute_gcode(
-                        "G28",
-                        [this, token, gcode_copy, on_complete, on_error]() {
-                            // L081 Mechanism C: defer member access (api_) to main.
-                            token.defer("AmsBackendCfs::g28_done", [this, gcode_copy, on_complete,
-                                                                    on_error]() {
-                                api_->execute_gcode(gcode_copy, on_complete, on_error,
-                                                    MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
-                            });
-                        },
-                        on_error, MoonrakerAPI::HOMING_TIMEOUT_MS);
-                } else {
-                    api_->execute_gcode(gcode_copy, on_complete, on_error,
-                                        MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
-                }
-            });
-        },
-        on_error);
-
-    return AmsErrorHelper::success();
+    // Homing, timeout, error plumbing and the Fork bypass all live in the base
+    // helper now. What stays here is CFS's own unwind: phase tracking, the K2
+    // fan restore, and RESTORE_GCODE_STATE.
+    return ensure_homed_then(std::move(gcode), std::move(on_complete), std::move(on_error),
+                             IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS,
+                             /*skip_homing=*/macro_variant_ == CfsMacroVariant::Fork,
+                             /*silent=*/false);
 }
 
 // ============================================================================
@@ -2446,6 +2398,117 @@ std::string AmsBackendCfs::reset_gcode() {
 
 std::string AmsBackendCfs::recover_gcode() {
     return "BOX_ERROR_RESUME_PROCESS";
+}
+
+// --- Error-center bridge ---
+
+std::vector<helix::RecoveryAction> AmsBackendCfs::build_recovery_actions() const {
+    // Caller holds mutex_.
+    std::vector<helix::RecoveryAction> actions;
+
+    // Primary: plain RESUME, deliberately NOT recover_gcode()'s
+    // BOX_ERROR_RESUME_PROCESS. That command only drives the box half of the
+    // recovery and leaves the job paused; the firmware reaches it FROM `RESUME`
+    // via RESUME_EXTERNAL_PROCESS (gcode_macro.cfg), and it early-returns unless
+    // the box is enabled AND print_stats.state is already 'paused'. RESUME is
+    // therefore the only button that both restarts the job and lets the box do
+    // its part. Resuming extrudes on the next move, so the hotend has to be up:
+    // the give-up path stops the print and idle_timeout or the post-op cooldown
+    // has usually taken the heater down by the time anyone taps this.
+    actions.push_back({lv_tr("Resume"), "RESUME", "cfs::resume", "primary",
+                       /*needs_hot_nozzle=*/true});
+
+    // Last resort. RESUME silently does nothing when the box latched an error or
+    // was disabled (the `enable != 0` half of BOX_ERROR_RESUME_PROCESS's guard),
+    // and this is the lever that clears that. Same label and gcode the generic
+    // classifier offers for key840 so the button reads the same wherever it
+    // appears; reset_gcode() rather than a second "BOX_ERROR_CLEAR" literal.
+    // Clears state only — no filament moves, so it stays tappable cold.
+    actions.push_back({lv_tr("Reset CFS"), reset_gcode(), "cfs::error_clear", "danger"});
+    return actions;
+}
+
+std::optional<helix::ErrorEvent>
+AmsBackendCfs::classify_error(const std::string& raw_line,
+                              const helix::ClassifyContext& ctx) const {
+    // `!!` lines are NOT ours. Every CFS fault Klipper broadcasts carries a
+    // key8xx code that error_classify::classify() already decodes (CRITICAL, and
+    // a "Reset CFS" action for key840). Claiming them here would either
+    // duplicate that or silently replace it. The give-up messages below arrive
+    // on the plain response channel instead, which no classifier looks at today.
+    if (helix::is_bang_line(raw_line)) {
+        return std::nullopt;
+    }
+
+    // The box only ever reaches these messages from its runout handler, and that
+    // handler runs behind a pause: [filament_switch_sensor filament_sensor] has
+    // pause_on_runout = true, so Klipper issues PAUSE first and only then runs
+    // runout_gcode -> BOX_CHECK_MATERIAL_REFILL (verified in the live K2 Plus
+    // config dump). Requiring PAUSED is what keeps a human echoing the same words
+    // into the console, or poking the macro by hand on an idle machine, from
+    // popping a runout modal.
+    if (!ctx.is_paused) {
+        return std::nullopt;
+    }
+
+    // Klipper's respond_info() emits "// <text>". Strip it for display; match on
+    // the remainder so a firmware that drops the prefix still hits.
+    std::string detail = raw_line;
+    if (detail.rfind("// ", 0) == 0) {
+        detail = detail.substr(3);
+    } else if (detail.rfind("//", 0) == 0) {
+        detail = detail.substr(2);
+    }
+
+    // The two give-up paths, matched on the distinctive fragment rather than the
+    // whole sentence. These are untranslated English literals emitted by one
+    // Creality firmware build, so the exact wording is the least durable part of
+    // this: matching a fragment survives the surrounding sentence being reworded
+    // ("no identical supplies" / "there are no identical supplies", "disable
+    // material automatic refill" / "material automatic refill is disabled").
+    const bool no_matching_spool = helix::contains_ci(detail, "identical suppl");
+    const bool refill_disabled =
+        helix::contains_ci(detail, "automatic refill") && helix::contains_ci(detail, "disab");
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // Fallback tier, for the day the wording changes out from under both matches
+    // above. It asks for far less of the string — only that the line is about
+    // refilling — and makes up the difference with machine state: the box itself
+    // says there is no filament at the gate (filament_useup / the flat schema's
+    // `runout`) and the job is paused. Weaker evidence, so it surfaces the
+    // firmware's own words rather than a claim about which give-up path ran.
+    const bool weak_refill_hint = !no_matching_spool && !refill_disabled &&
+                                  helix::contains_ci(detail, "refill") &&
+                                  system_info_.filament_runout;
+
+    if (!no_matching_spool && !refill_disabled && !weak_refill_hint) {
+        return std::nullopt;
+    }
+
+    std::string message;
+    if (no_matching_spool) {
+        message = lv_tr("Filament ran out and the CFS found no matching spool to switch to. "
+                        "Load a spool of the same material and color, then resume.");
+    } else if (refill_disabled) {
+        message = lv_tr("Filament ran out. Auto-refill is off, so the CFS will not switch "
+                        "spools on its own. Load filament, then resume.");
+    } else {
+        message = detail;
+    }
+
+    spdlog::warn("{} Runout: CFS declined to auto-refill ({}): {}", backend_log_tag(),
+                 no_matching_spool ? "no matching spool"
+                                   : (refill_disabled ? "auto-refill off" : "unrecognized wording"),
+                 detail);
+
+    helix::ErrorEvent e = helix::make_ams_fault_event(
+        helix::ErrorSource::CFS, lv_tr("Filament runout"), message, build_recovery_actions());
+    // The firmware's untranslated wording is the cross-channel dedup identity —
+    // make_ams_fault_event leaves raw_detail empty, and without it the router
+    // would record only the translated sentence, which nothing else can match.
+    e.raw_detail = detail;
+    return e;
 }
 
 // --- Capabilities ---

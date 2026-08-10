@@ -21,18 +21,18 @@
            footprint so the row does not shift between modes. -->
       <lv_obj name="lead_slot" width="content" height="content" clickable="false" event_bubble="true">
         <!-- code icon: shown when NOT editing -->
-        <icon name="macro_icon" src="code_tags" size="sm" variant="primary"
-              align="center" clickable="false" event_bubble="true">
+        <icon name="macro_icon"
+              src="code_tags" size="sm" variant="primary" align="center" clickable="false" event_bubble="true">
           <bind_flag_if_eq subject="macro_edit_mode" flag="hidden" ref_value="1"/>
         </icon>
         <!-- checkbox (outline box + light check overlaid): shown when editing -->
-        <lv_obj name="check_wrap" width="content" height="content" align="center"
-                clickable="false" event_bubble="true">
+        <lv_obj name="check_wrap" width="content" height="content" align="center" clickable="false" event_bubble="true">
           <bind_flag_if_eq subject="macro_edit_mode" flag="hidden" ref_value="0"/>
-          <icon name="chk_box" src="check_box_outline_blank" size="sm" variant="secondary"
-                align="center" clickable="false" event_bubble="true"/>
-          <icon name="chk_mark" src="check" size="xs" variant="secondary"
-                align="center" clickable="false" event_bubble="true">
+          <icon name="chk_box"
+                src="check_box_outline_blank" size="sm" variant="secondary" align="center" clickable="false"
+                event_bubble="true"/>
+          <icon name="chk_mark"
+                src="check" size="xs" variant="secondary" align="center" clickable="false" event_bubble="true">
             <bind_flag_if_eq subject="$visible_subject" flag="hidden" ref_value="0"/>
           </icon>
         </lv_obj>
@@ -40,8 +40,8 @@
       <!-- Text container: name + optional description -->
       <lv_obj flex_grow="1" flex_flow="column" style_pad_gap="#space_xs" scrollable="false" clickable="false">
         <text_body name="macro_label" bind_text="$name_subject"/>
-        <text_small name="macro_desc" bind_text="$desc_subject"
-                    style_text_color="#text_muted" long_mode="dots" width="100%">
+        <text_small name="macro_desc"
+                    width="100%" bind_text="$desc_subject" style_text_color="#text_muted" long_mode="dots">
           <bind_flag_if_eq subject="$desc_hidden_subject" flag="hidden" ref_value="1"/>
         </text_small>
       </lv_obj>

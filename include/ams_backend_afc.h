@@ -154,12 +154,12 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /**
      * @brief Construct AFC backend
      *
-     * @param api Pointer to MoonrakerAPI (for sending G-code commands)
-     * @param client Pointer to helix::MoonrakerClient (for subscribing to updates)
+     * @param api Pointer to IMoonrakerAPI (for sending G-code commands)
+     * @param client Pointer to helix::IMoonrakerClient (for subscribing to updates)
      *
      * @note Both pointers must remain valid for the lifetime of this backend.
      */
-    AmsBackendAfc(MoonrakerAPI* api, helix::MoonrakerClient* client);
+    AmsBackendAfc(IMoonrakerAPI* api, helix::IMoonrakerClient* client);
     ~AmsBackendAfc() override;
 
     /**
@@ -197,6 +197,27 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
         return true;
     }
     [[nodiscard]] SlotInfo get_slot_info(int slot_index) const override;
+
+    /**
+     * @brief Does this lane status payload prove AFC publishes the v1.2.0 field set?
+     *
+     * Feature detection, deliberately NOT a version comparison. AFC has no
+     * trustworthy version signal: the `afc-install` DB namespace has been an
+     * orphan since their 7d20db7, `AFC_VERSION` is a hand-bumped literal that sat
+     * at 1.1.37 through the whole v1.2.0 release, and v1.2.0's own get_status()
+     * publishes no version key at all (upstream #807 is still an open PR). A live
+     * BoxTurtle reported "1.0.0" while running v1.1.0.
+     *
+     * `filament_name`, `multi_color_hexes` and `initial_weight` are emitted
+     * together from one `if not save_to_file:` block in AFC_lane.get_status(), so
+     * any of them proves the whole block. Verified on one physical BoxTurtle
+     * across an upgrade: all three absent on v1.1.0, all three present on v1.2.0.
+     *
+     * @warning Only meaningful on a COMPLETE status object — the subscription's
+     * first baseline frame. Every later frame is a delta where an absent key
+     * means "unchanged", not "unsupported".
+     */
+    [[nodiscard]] static bool status_has_modern_fields(const nlohmann::json& lane_status);
 
     // Path visualization
     [[nodiscard]] PathTopology get_topology() const override;
@@ -465,6 +486,8 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcPerSlotLoadedHelper;
     friend class AfcCurrentErrorHelper;
     friend class AfcLaneDataClearHelper;
+    friend class AfcFaultEventCharHelper;
+    friend class AfcFeatureLevelHelper;
     friend class AfcFixtureHelper;
     friend class AmsBackendAfcEndlessSpoolHelper;
     friend class AmsBackendAfcMultiUnitHelper;
@@ -491,6 +514,13 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     const char* backend_log_tag() const override {
         return "[AMS AFC]";
     }
+
+    /// dispatch_operation() sets the optimistic action (begin_dispatch_locked)
+    /// BEFORE calling ensure_homed_then() -- on decline, the base class's
+    /// generic IDLE reset alone leaves pending_dispatch_action_ armed and
+    /// operation_detail stale, so route through abandon_dispatch() instead,
+    /// the same unwind dispatch_operation()'s own `if (!result)` net uses.
+    void on_home_confirmation_declined() override;
 
   private:
     // === User-attached slot identity (FilamentSlotOverrideStore) =============
@@ -764,7 +794,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
      * send_jsonrpc delivers the full JSON-RPC envelope, so the payload lives at
      * result.value. Strict about that shape: a payload is an arbitrary object,
      * so it cannot be told apart from an envelope in general. Replies obtained
-     * via MoonrakerAPI::database_get_item are already unwrapped and must not be
+     * via IMoonrakerAPI::database_get_item are already unwrapped and must not be
      * passed here.
      *
      * @return the payload, or a null json when absent
@@ -781,6 +811,14 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
      * @return true when a version string was found and applied
      */
     bool apply_afc_version_response(const nlohmann::json& response);
+
+    /// Issue the one-shot unscoped query that check_afc_feature_level() needs.
+    /// @param lane_object Full Klipper object name, e.g. "AFC_stepper lane1".
+    void probe_feature_level(const std::string& lane_object);
+
+    /// One-shot feature probe + upgrade advisory. Must be handed a COMPLETE lane
+    /// object (see probe_feature_level), never a status frame.
+    void check_afc_feature_level(const nlohmann::json& lane_status);
 
     /**
      * @brief Apply an AFC/lane_data database reply
@@ -918,9 +956,10 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     [[nodiscard]] bool recovery_attribution_valid_unlocked() const;
 
     /// Build the applicable recovery actions for an AFC pause/jam, reading live
-    /// toolhead state. Caller holds mutex_. Offers Unload only when the toolhead
-    /// is loaded; Eject only when empty and a lane is selected.
-    [[nodiscard]] std::vector<helix::RecoveryAction> build_recovery_actions() const;
+    /// toolhead state. Caller holds mutex_ (the base declares that contract;
+    /// mutex_ is non-recursive, so this must not lock). Offers Unload only when
+    /// the toolhead is loaded; Eject only when empty and a lane is selected.
+    [[nodiscard]] std::vector<helix::RecoveryAction> build_recovery_actions() const override;
 
     /**
      * @brief Execute a G-code command with user-facing toast notifications
@@ -960,6 +999,14 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // 7d20db7, #451, 2025-06-16), so this is either "unknown" or a value frozen
     // before that date. Detect capabilities from the data instead.
     std::string afc_version_{"unknown"};
+
+    /// Latch for the feature probe: it costs a query, so it runs exactly once.
+    bool feature_level_checked_{false};
+
+    /// "AFC_stepper " or "AFC_lane ", learned from the first status frame that
+    /// carries a lane. Only the prefix is learnable from a frame; the fields are
+    /// not, because the subscription is field-scoped.
+    std::string lane_object_prefix_;
 
     // Per-lane hub routing: lane_name → hub name ("direct" for direct lanes)
     std::unordered_map<std::string, std::string> lane_hub_routing_;

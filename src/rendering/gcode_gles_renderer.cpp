@@ -869,8 +869,7 @@ void GCodeGLESRenderer::upload_geometry(const RibbonGeometry& geom, std::vector<
             buf.resize(buf_bytes);
         }
 
-        geom.expand_strips(first_strip, strip_count,
-                           reinterpret_cast<PackedVertex*>(buf.data()));
+        geom.expand_strips(first_strip, strip_count, reinterpret_cast<PackedVertex*>(buf.data()));
 
         GLBufferHandle vbo_handle;
         glGenBuffers(1, &vbo_handle.id);

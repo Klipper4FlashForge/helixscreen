@@ -61,16 +61,14 @@
            ignore_layout="true" so the column does not reflow it. -->
       <ui_card name="thumbnail_section"
                height="100%" flex_grow="5" style_pad_all="0" style_margin_bottom="#space_md"
-               style_radius="#border_radius" style_clip_corner="true" flex_flow="column"
-               style_pad_gap="0">
+               style_radius="#border_radius" style_clip_corner="true" flex_flow="column" style_pad_gap="0">
 
         <!-- Clear area for the preview: whatever the column leaves above the strip.
              Percentage sizes resolve against a parent's CONTENT box, so the three
              100%-sized previews below fill exactly that area and inner_align scales
              the image into what is actually visible. -->
         <lv_obj name="preview_clear_area"
-                width="100%" flex_grow="1" style_pad_all="0"
-                style_bg_opa="0" style_border_width="0" scrollable="false">
+                width="100%" flex_grow="1" style_pad_all="0" style_bg_opa="0" style_border_width="0" scrollable="false">
 
           <!-- Pre-rendered gradient background (shown in thumbnail[0] and 2D[2] modes, hidden in 3D[1]) -->
           <!-- Also hidden while the exclude-object overhead map covers the thumbnail section. -->
@@ -104,10 +102,9 @@
 
         <!-- Objects list button: top-left corner, visible only when multi-object print -->
         <lv_obj name="btn_objects"
-                width="#icon_button_size_lg" height="#icon_button_size_lg" ignore_layout="true" align="top_left" style_translate_x="#space_md"
-                style_translate_y="#space_md"
-                style_bg_color="#card_bg" style_bg_opa="180" style_radius="#icon_button_radius_lg" clickable="true" style_pad_all="0"
-                scrollable="false">
+                width="#icon_button_size_lg" height="#icon_button_size_lg" ignore_layout="true" align="top_left"
+                style_translate_x="#space_md" style_translate_y="#space_md" style_bg_color="#card_bg" style_bg_opa="180"
+                style_radius="#icon_button_radius_lg" clickable="true" style_pad_all="0" scrollable="false">
           <bind_flag_if_eq subject="exclude_objects_available" flag="hidden" ref_value="0"/>
           <lv_label text="#icon_view_list" style_text_font="mdi_icons_24" style_text_color="#text_muted" align="center"/>
           <event_cb trigger="clicked" callback="on_print_status_objects"/>
@@ -116,10 +113,9 @@
         <!-- View mode toggle: switches between progress (ghost layers) and complete view -->
         <!-- Position shifts right when objects button is visible (managed in C++) -->
         <lv_obj name="btn_view_toggle"
-                width="#icon_button_size_lg" height="#icon_button_size_lg" ignore_layout="true" align="top_left" style_translate_x="#space_md"
-                style_translate_y="#space_md"
-                style_bg_color="#card_bg" style_bg_opa="180" style_radius="#icon_button_radius_lg" clickable="true" style_pad_all="0"
-                scrollable="false">
+                width="#icon_button_size_lg" height="#icon_button_size_lg" ignore_layout="true" align="top_left"
+                style_translate_x="#space_md" style_translate_y="#space_md" style_bg_color="#card_bg" style_bg_opa="180"
+                style_radius="#icon_button_radius_lg" clickable="true" style_pad_all="0" scrollable="false">
           <bind_flag_if_eq subject="gcode_viewer_mode" flag="hidden" ref_value="0"/>
           <lv_label name="btn_view_toggle_icon"
                     bind_text="view_toggle_icon" style_text_font="mdi_icons_24" style_text_color="#text_muted"
@@ -131,10 +127,10 @@
         <!-- Single derived subject show_complete_overlay = (outcome==COMPLETE && !dismissed). -->
         <!-- Two independent bind_flag observers on hidden raced at startup (L042). -->
         <lv_obj name="print_complete_overlay"
-                width="100%" height="100%" ignore_layout="true" align="top_mid" style_radius="0" style_pad_all="#space_lg"
-                style_pad_bottom="#metadata_clip_height" flex_flow="column" style_flex_main_place="center"
-                style_flex_cross_place="center" style_flex_track_place="center" style_pad_gap="#space_sm"
-                scrollable="false" clickable="true" hidden="true">
+                width="100%" height="100%" ignore_layout="true" align="top_mid" style_radius="0"
+                style_pad_all="#space_lg" style_pad_bottom="#metadata_clip_height" flex_flow="column"
+                style_flex_main_place="center" style_flex_cross_place="center" style_flex_track_place="center"
+                style_pad_gap="#space_sm" scrollable="false" clickable="true" hidden="true">
           <bind_flag_if_eq subject="show_complete_overlay" flag="hidden" ref_value="0"/>
           <event_cb trigger="clicked" callback="on_print_status_dismiss_overlay"/>
           <!-- Green success badge with checkmark (animated on appearance) -->
@@ -148,10 +144,10 @@
 
         <!-- PRINT CANCELLED OVERLAY: shown via show_cancelled_overlay (see COMPLETE above). -->
         <lv_obj name="print_cancelled_overlay"
-                width="100%" height="100%" ignore_layout="true" align="top_mid" style_radius="0" style_pad_all="#space_lg"
-                style_pad_bottom="#metadata_clip_height" flex_flow="column" style_flex_main_place="center"
-                style_flex_cross_place="center" style_flex_track_place="center" style_pad_gap="#space_sm"
-                scrollable="false" clickable="true" hidden="true">
+                width="100%" height="100%" ignore_layout="true" align="top_mid" style_radius="0"
+                style_pad_all="#space_lg" style_pad_bottom="#metadata_clip_height" flex_flow="column"
+                style_flex_main_place="center" style_flex_cross_place="center" style_flex_track_place="center"
+                style_pad_gap="#space_sm" scrollable="false" clickable="true" hidden="true">
           <bind_flag_if_eq subject="show_cancelled_overlay" flag="hidden" ref_value="0"/>
           <event_cb trigger="clicked" callback="on_print_status_dismiss_overlay"/>
           <!-- Orange warning badge with cancel icon (animated on appearance) -->
@@ -165,10 +161,10 @@
 
         <!-- PRINT ERROR OVERLAY: shown via show_error_overlay (see COMPLETE above). -->
         <lv_obj name="print_error_overlay"
-                width="100%" height="100%" ignore_layout="true" align="top_mid" style_radius="0" style_pad_all="#space_lg"
-                style_pad_bottom="#metadata_clip_height" flex_flow="column" style_flex_main_place="center"
-                style_flex_cross_place="center" style_flex_track_place="center" style_pad_gap="#space_sm"
-                scrollable="false" clickable="true" hidden="true">
+                width="100%" height="100%" ignore_layout="true" align="top_mid" style_radius="0"
+                style_pad_all="#space_lg" style_pad_bottom="#metadata_clip_height" flex_flow="column"
+                style_flex_main_place="center" style_flex_cross_place="center" style_flex_track_place="center"
+                style_pad_gap="#space_sm" scrollable="false" clickable="true" hidden="true">
           <bind_flag_if_eq subject="show_error_overlay" flag="hidden" ref_value="0"/>
           <event_cb trigger="clicked" callback="on_print_status_dismiss_overlay"/>
           <!-- Red danger badge with alert icon (animated on appearance) -->
@@ -188,10 +184,10 @@
         <!-- Title is static; reason is an optional second label hidden when         -->
         <!-- print_pause_reason_visible == 0 (set by recompute_paused_overlay_*).    -->
         <lv_obj name="print_paused_overlay"
-                width="100%" height="100%" ignore_layout="true" align="top_mid" style_radius="0" style_pad_all="#space_lg"
-                style_pad_bottom="#metadata_clip_height" flex_flow="column" style_flex_main_place="center"
-                style_flex_cross_place="center" style_flex_track_place="center" scrollable="false" clickable="false"
-                hidden="true">
+                width="100%" height="100%" ignore_layout="true" align="top_mid" style_radius="0"
+                style_pad_all="#space_lg" style_pad_bottom="#metadata_clip_height" flex_flow="column"
+                style_flex_main_place="center" style_flex_cross_place="center" style_flex_track_place="center"
+                scrollable="false" clickable="false" hidden="true">
           <bind_flag_if_eq subject="show_paused_overlay" flag="hidden" ref_value="0"/>
           <!-- ui_button styled container (variant="primary" applies bg + auto-contrast on  -->
           <!-- child labels). Two stacked labels inside: a title that's always shown and a  -->
@@ -220,8 +216,7 @@
              flex column, sitting flush under preview_clear_area. Grows when the
              optional M117 (display_message) row becomes visible; the column hands
              the difference straight back to the preview above. -->
-        <lv_obj name="metadata_clip"
-                width="100%" height="content" style_radius="0" style_pad_all="0" scrollable="false">
+        <lv_obj name="metadata_clip" width="100%" height="content" style_radius="0" style_pad_all="0" scrollable="false">
           <!-- Inner overlay with semi-transparent background and rounded corners -->
           <lv_obj name="metadata_overlay"
                   width="100%" height="content" align="bottom_mid" style_bg_opa="160" style_radius="#border_radius"
@@ -290,8 +285,7 @@
              covered and its own progress bar keeps its layout space. -->
         <lv_obj name="preparing_overlay"
                 width="100%" height="100%" ignore_layout="true" align="center" style_bg_color="#overlay_bg"
-                style_bg_opa="220"
-                style_radius="0" style_pad_all="#space_lg" flex_flow="column"
+                style_bg_opa="220" style_radius="0" style_pad_all="#space_lg" flex_flow="column"
                 style_flex_main_place="center" style_flex_cross_place="center" style_pad_gap="#space_md"
                 scrollable="false">
           <bind_flag_if_eq subject="preparing_visible" flag="hidden" ref_value="0"/>
@@ -318,8 +312,8 @@
                side and is unchanged. A hidden child leaves the flex pass entirely,
                size AND gap. -->
           <lv_obj name="preparing_strip_spacer"
-                  width="1" height="#metadata_clip_height" style_bg_opa="0" style_border_width="0"
-                  style_pad_all="0" scrollable="false">
+                  width="1" height="#metadata_clip_height" style_bg_opa="0" style_border_width="0" style_pad_all="0"
+                  scrollable="false">
             <bind_flag_if_lt subject="ui_breakpoint_v" flag="hidden" ref_value="3"/>
           </lv_obj>
         </lv_obj>
@@ -357,11 +351,18 @@
                 width="100%" height="content" style_pad_left="#space_md" style_pad_right="#space_md"
                 style_pad_top="#space_xs" flex_flow="row" style_flex_main_place="space_between"
                 style_flex_cross_place="center" scrollable="false">
-          <!-- Filament Sensor Status (hidden if no sensors) -->
+          <!-- Filament Sensor Status — the no-AMS form of the runout glyph.
+               Stands down whenever ams_status_row is showing, which carries the
+               same glyph next to its lane number; without the ams_current_tool
+               term the row would render two filament icons on an AMS printer,
+               and without the "ge 0" term an AMS printer between lanes (no
+               active tool, so ams_status_row hides itself) would show no runout
+               state at all. -->
           <lv_obj name="filament_status_row"
                   width="content" height="content" style_pad_all="0" flex_flow="row" style_flex_cross_place="center"
                   style_pad_gap="#space_sm">
-            <bind_flag_if_eq subject="filament_sensor_count" flag="hidden" ref_value="0"/>
+            <bind_flag_if cond="filament_sensor_count eq 0 or (ams_slot_count gt 0 and ams_current_tool ge 0)"
+                          flag="hidden"/>
             <!-- Scoped to the active print's tools (lane truth) — see FIX B. -->
             <filament_sensor_indicator subject="filament_runout_scoped"/>
           </lv_obj>
@@ -378,7 +379,7 @@
                   width="content" height="content" style_pad_all="0" flex_flow="row" style_flex_cross_place="center"
                   style_pad_gap="#space_sm">
             <bind_flag_if_eq subject="ams_slot_count" flag="hidden" ref_value="0"/>
-            <ams_current_tool name="ams_current_tool_indicator"/>
+            <ams_current_tool name="ams_current_tool_indicator" runout_subject="filament_runout_scoped"/>
           </lv_obj>
         </lv_obj>
 

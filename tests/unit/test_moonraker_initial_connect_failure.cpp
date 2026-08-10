@@ -106,6 +106,14 @@ TEST_CASE("A never-opened WebSocket escalates to CONNECTION_FAILED",
     // which address the app was dialing.
     CHECK(failure_message.find("19998") != std::string::npos);
 
+    // kDeadUrl is loopback, i.e. the printer HelixScreen is running on. Telling
+    // that user to "check that the printer is powered on and that this address
+    // is correct" is advice they cannot act on — the screen in their hand proves
+    // the printer is up, and 127.0.0.1 is not wrong. AD5X bundles TAU4PW4H /
+    // 865DXBQ7 are two boots of exactly this, with Moonraker simply not running.
+    CHECK(failure_message.find("this printer") != std::string::npos);
+    CHECK(failure_message.find("address is correct") == std::string::npos);
+
     // FAILED (not DISCONNECTED) is what PrinterStatusIcon renders as an error.
     CHECK(c.client_->get_connection_state() == ConnectionState::FAILED);
 

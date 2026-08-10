@@ -28,11 +28,11 @@
 #include "filament_op_router.h"
 #include "filament_op_slot_resolver.h"
 #include "filament_sensor_manager.h"
+#include "i_moonraker_api.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "macro_executor.h"
 #include "macro_param_cache.h"
 #include "material_settings_manager.h"
-#include "moonraker_api.h"
 #include "observer_factory.h"
 #include "post_op_cooldown_manager.h"
 #include "preset_materials.h"
@@ -45,6 +45,7 @@
 #include "temperature_service.h"
 #include "theme_manager.h"
 #include "tool_state.h"
+#include "toolhead_homing.h"
 
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
@@ -86,7 +87,7 @@ using helix::ui::get_filament_param_modal;
 // CONSTRUCTOR
 // ============================================================================
 
-FilamentPanel::FilamentPanel(PrinterState& printer_state, MoonrakerAPI* api)
+FilamentPanel::FilamentPanel(PrinterState& printer_state, IMoonrakerAPI* api)
     : PanelBase(printer_state, api) {
     // Initialize buffer contents with default values
     std::snprintf(temp_display_buf_, sizeof(temp_display_buf_), "%d / %d°C", nozzle_current_,
@@ -354,6 +355,10 @@ void FilamentPanel::deinit_subjects() {
     if (pending_preheat_op_ != PreheatOp::NONE) {
         pending_preheat_op_ = PreheatOp::NONE;
         pending_preheat_target_ = 0;
+        // Same leak this abandonment path guards against in cancel_pending_preheat().
+        if (AmsBackend* backend = AmsState::instance().get_backend()) {
+            backend->clear_home_preconfirmed();
+        }
         // Don't schedule delayed cooldown during teardown — just cool down immediately
         if (prior_nozzle_target_ == 0) {
             if (auto* c = get_temperature_controller()) {
@@ -1244,6 +1249,28 @@ void FilamentPanel::handle_load_button() {
     snapshot_prior_heater_target();
 
     if (!is_extrusion_allowed()) {
+        // Ask "home printer first?" BEFORE the preheat, not after: the
+        // physical G28 still fires later, inside
+        // AmsSubscriptionBackend::ensure_homed_then() right before the tier-1
+        // dispatch (unchanged) -- only the confirmation moves earlier, so a
+        // decline never wastes a preheat cycle (#1235-adjacent).
+        if (!helix::toolhead_is_homed(printer_state_)) {
+            spdlog::info("[{}] Toolhead not homed -- asking before starting preheat for load",
+                         get_name());
+            // FilamentPanel is an immortal singleton [L012] -- capturing
+            // [this] directly is safe with no AsyncLifetimeGuard token.
+            helix::ui::request_home_confirmation(
+                [this]() {
+                    if (AmsBackend* backend = AmsState::instance().get_backend()) {
+                        backend->arm_home_preconfirmed();
+                    }
+                    start_preheat_for_op(PreheatOp::LOAD);
+                },
+                [this]() {
+                    spdlog::info("[{}] User declined pre-load home; no heat commanded", get_name());
+                });
+            return;
+        }
         start_preheat_for_op(PreheatOp::LOAD);
         return;
     }
@@ -1358,7 +1385,7 @@ void FilamentPanel::execute_extrude() {
                 NOTIFY_ERROR(lv_tr("Extrude failed: {}"), error.user_message());
             }
         },
-        MoonrakerAPI::EXTRUSION_TIMEOUT_MS);
+        IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
 }
 
 void FilamentPanel::handle_purge_button() {
@@ -1481,7 +1508,7 @@ void FilamentPanel::execute_purge() {
                 NOTIFY_ERROR(lv_tr("Purge failed: {}"), error.user_message());
             }
         },
-        MoonrakerAPI::EXTRUSION_TIMEOUT_MS);
+        IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
 }
 
 void FilamentPanel::handle_retract_button() {
@@ -1544,7 +1571,7 @@ void FilamentPanel::execute_retract() {
                 NOTIFY_ERROR(lv_tr("Retract failed: {}"), error.user_message());
             }
         },
-        MoonrakerAPI::EXTRUSION_TIMEOUT_MS);
+        IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
 }
 
 // ============================================================================
@@ -2514,6 +2541,14 @@ void FilamentPanel::cancel_pending_preheat() {
     pending_preheat_op_ = PreheatOp::NONE;
     pending_preheat_target_ = 0;
 
+    // A confirmed-then-abandoned load must not leave home consent armed for a
+    // later, unrelated dispatch on this backend. Harmless no-op when nothing
+    // was armed (e.g. cancelling an UNLOAD/EXTRUDE/RETRACT/PURGE preheat,
+    // which never arms this).
+    if (AmsBackend* backend = AmsState::instance().get_backend()) {
+        backend->clear_home_preconfirmed();
+    }
+
     // Cancel any pending cooldown timer
     PostOpCooldownManager::instance().cancel();
 
@@ -2695,7 +2730,7 @@ void FilamentPanel::execute_load() {
                 NOTIFY_ERROR(lv_tr("Filament load failed: {}"), error.user_message());
             }
         },
-        MoonrakerAPI::EXTRUSION_TIMEOUT_MS);
+        IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
 }
 
 void FilamentPanel::execute_unload() {
@@ -2809,7 +2844,7 @@ void FilamentPanel::execute_unload() {
                 NOTIFY_ERROR(lv_tr("Filament unload failed: {}"), error.user_message());
             }
         },
-        MoonrakerAPI::EXTRUSION_TIMEOUT_MS);
+        IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
 }
 
 void FilamentPanel::run_filament_macro(const std::string& macro_name, const std::string& op_label,
@@ -2871,7 +2906,7 @@ void FilamentPanel::run_filament_macro(const std::string& macro_name, const std:
                 NOTIFY_ERROR(lv_tr("Macro failed: {}"), error.user_message());
             }
         },
-        MoonrakerAPI::EXTRUSION_TIMEOUT_MS);
+        IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
 }
 
 void FilamentPanel::show_load_warning() {

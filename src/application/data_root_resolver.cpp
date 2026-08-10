@@ -18,6 +18,11 @@ bool path_exists(const std::string& p) {
     return stat(p.c_str(), &st) == 0;
 }
 
+std::string& asset_root_storage() {
+    static std::string root = ".";
+    return root;
+}
+
 } // namespace
 
 bool is_valid_data_root(const std::string& dir) {
@@ -76,6 +81,26 @@ std::string get_data_dir() {
     return ".";
 }
 
+const std::string& asset_root() {
+    return asset_root_storage();
+}
+
+void set_asset_root(const std::string& root) {
+    asset_root_storage() = root.empty() ? "." : helix::paths::strip_trailing_slash(root);
+}
+
+std::string asset_path(const std::string& relpath) {
+    const std::string& root = asset_root_storage();
+    if (root == ".") {
+        return relpath;
+    }
+    return root + "/" + relpath;
+}
+
+std::string asset_component_uri(const std::string& relpath) {
+    return "A:" + asset_path(relpath);
+}
+
 std::string writable_path(const std::string& relpath) {
     return helix::paths::strip_trailing_slash(get_user_config_dir()) + "/" + relpath;
 }
@@ -84,7 +109,8 @@ std::string find_readable(const std::string& relpath) {
     std::string user = writable_path(relpath);
     if (path_exists(user))
         return user;
-    std::string seed = helix::paths::strip_trailing_slash(get_data_dir()) + "/assets/config/" + relpath;
+    std::string seed =
+        helix::paths::strip_trailing_slash(get_data_dir()) + "/assets/config/" + relpath;
     if (path_exists(seed))
         return seed;
     return user;

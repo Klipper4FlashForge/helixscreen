@@ -4,18 +4,15 @@
 <!-- Modal dialog for creating a new vendor in the spool wizard -->
 <component>
   <view name="create_vendor_modal"
-        extends="ui_dialog" width="80%" height="content" align="center"
-        flex_flow="column" style_flex_main_place="start" style_pad_gap="0">
+        extends="ui_dialog" width="80%" height="content" align="center" flex_flow="column" style_flex_main_place="start"
+        style_pad_gap="0">
     <!-- Form container -->
     <lv_obj name="form_container"
-            width="100%" height="content"
-            style_pad_left="#space_lg" style_pad_right="#space_lg"
-            style_pad_top="#space_lg" style_pad_bottom="#space_lg"
-            flex_flow="column" style_flex_cross_place="center"
+            width="100%" height="content" style_pad_left="#space_lg" style_pad_right="#space_lg"
+            style_pad_top="#space_lg" style_pad_bottom="#space_lg" flex_flow="column" style_flex_cross_place="center"
             style_pad_gap="#space_md">
       <!-- Title -->
-      <text_heading width="100%" text="Create New Vendor" translation_tag="Create New Vendor"
-                    style_text_align="center"/>
+      <text_heading width="100%" text="Create New Vendor" translation_tag="Create New Vendor" style_text_align="center"/>
       <!-- Vendor name input -->
       <lv_obj width="100%"
               height="content" flex_flow="column" style_pad_all="0" style_pad_gap="#space_xs" scrollable="false">
@@ -35,8 +32,8 @@
       </lv_obj>
     </lv_obj>
     <!-- Divider + button row -->
-    <modal_button_row
-        primary_text="Add Vendor" primary_callback="on_wizard_confirm_create_vendor"
-        secondary_text="Cancel" secondary_callback="on_wizard_cancel_create_vendor"/>
+    <modal_button_row primary_text="Add Vendor"
+                      primary_callback="on_wizard_confirm_create_vendor" secondary_text="Cancel"
+                      secondary_callback="on_wizard_cancel_create_vendor"/>
   </view>
 </component>

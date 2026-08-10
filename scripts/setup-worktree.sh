@@ -362,6 +362,35 @@ if [[ -d "$MAIN_OBJ" ]]; then
         NEW_COUNT=$(find "$WORKTREE_OBJ" -name "*.o" 2>/dev/null | wc -l | tr -d ' ')
         echo -e "  build/obj: ${GREEN}cloned $NEW_COUNT objects in $((CLONE_END - CLONE_START))s${RESET}"
 
+        # Drop objects whose source is uncommitted in the main tree.
+        #
+        # A cloned object was built from the main tree's WORKING copy. The
+        # worktree checks out the COMMITTED version, so for any path the main
+        # tree reports dirty the two disagree and the object describes code that
+        # is not in this worktree. The mtime sync leaves such a file fresh, which
+        # is usually enough to force a rebuild, but it is not enough on its own:
+        # the compiler cache can still answer the fresh compile with an object
+        # built elsewhere (base_dir collapses the worktree path, and
+        # `sloppiness = pch_defines` lets a differing PCH through). The failure is
+        # silent and lands at link time as an undefined reference, pointing at
+        # whichever worktree compiled first.
+        #
+        # Deleting the object removes the choice: that TU compiles here, now.
+        DIRTY_OBJS=0
+        while read -r src_rel; do
+            [[ -n "$src_rel" ]] || continue
+            case "$src_rel" in src/*.cpp | src/*.c) ;; *) continue ;; esac
+            obj_rel="${src_rel#src/}"
+            obj_rel="${obj_rel%.*}.o"
+            if [[ -f "$WORKTREE_OBJ/$obj_rel" ]]; then
+                rm -f "$WORKTREE_OBJ/$obj_rel"
+                DIRTY_OBJS=$((DIRTY_OBJS + 1))
+            fi
+        done < <(git -C "$MAIN_TREE" status --porcelain -- 'src/*.cpp' 'src/*.c' 2>/dev/null | sed 's/^...//')
+        if [[ "$DIRTY_OBJS" -gt 0 ]]; then
+            echo -e "  build/obj: ${YELLOW}dropped $DIRTY_OBJS object(s) whose source is uncommitted in the main tree${RESET}"
+        fi
+
         # Validate object file architecture — cross-compilation leaves wrong-arch .o files
         SAMPLE_OBJ=$(find "$WORKTREE_OBJ" -name "*.o" -print -quit 2>/dev/null)
         if [[ -n "$SAMPLE_OBJ" ]]; then

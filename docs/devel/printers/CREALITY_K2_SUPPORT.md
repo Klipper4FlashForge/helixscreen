@@ -250,9 +250,9 @@ Everything from here to "Disconnected Units" describes the **stock** schema. The
 | `filament` | int | Filament loaded flag (1 = loaded) |
 | `enable` | int | CFS enabled for printing |
 | `auto_refill` | int | Auto-refill (backup spool) enabled |
-| `filament_useup` | int | Filament use-up tracking enabled |
+| `filament_useup` | int | **Sticky latch, not an enable flag.** 1 = the box has reported its spool used up. Set by `BoxAction.send_data` on that report; cleared to 0 **only** by `BoxAction.extruder_extrude` on a successful extrude. It is *not* print-scoped — nothing resets it when a job ends, so it can read 1 indefinitely on an idle machine (confirmed live on a K2 Plus: `filament_useup: 1` with `print_stats.state: standby`). Treat a *transition* to 1 as the signal; the level alone means nothing. See [Runout and auto-refill](#runout-and-auto-refill). |
 | `map` | dict | Tool-to-slot mapping: `{"T1A": "T1A", "T1B": "T1B", ...}` |
-| `same_material` | array | Groups of slots with matching material for auto-refill |
+| `same_material` | array | Auto-refill equivalence groups. Each entry is `[material_type, color_value, [slot_ids], material_name]` — e.g. `[["101001", "01A1A1A", ["T1C", "T1D"], "PLA"]]` (live K2 Plus). Membership requires **exact string equality on BOTH `material_type` AND `color_value`**; slots whose either field is a sentinel (`-1`, `none`, `unknown`, `""`) are excluded. On the machine above, T1B carried the same `color_value` `01A1A1A` but `material_type: unknown`, and was left out of the group for that reason alone. |
 
 #### Per-Unit Fields (`T1`, `T2`, `T3`, `T4`)
 
@@ -540,7 +540,7 @@ These are the **stock K2** commands (`CfsMacroVariant::K2`). Two other dialects 
 | Command | Description |
 |---------|-------------|
 | `BOX_ENABLE_CFS_PRINT ENABLE={0\|1}` | Enable/disable CFS for printing |
-| `BOX_ENABLE_AUTO_REFILL` | Toggle auto-refill (backup spool switching) |
+| `BOX_ENABLE_AUTO_REFILL <PARAM>={0\|1}` | **Setter, not a toggle.** The handler reads an int via `gcmd.get_int`, so it sets auto-refill on or off rather than flipping it. **The parameter's spelling is not recoverable from the stripped binary** — `gcmd.get_int` takes the name as a Python string constant that Cython folded away. `src/printer/ams_backend_cfs.cpp` currently sends it bare with no argument; whether `gcmd.get_int` then throws, or the handler supplies a default, is untested. Do not "fix" the call site until someone can watch the response on a live box. |
 | `BOX_SET_BOX_MODE` | Set CFS operating mode |
 | `BOX_SET_TEMP` | Set extrusion temperature |
 | `BOX_SET_PRE_LOADING ADDR={n} NUM={n} ACTION=RUN` | Pre-load filament |
@@ -612,24 +612,68 @@ CFS errors are reported as JSON with `key8xx` codes:
 | `key831` | RS-485 communication timeout |
 | `key834` | Parameter error |
 | `key835`-`key838` | Extrusion blockages (connections, sensor, gear) |
+| `key839` | Extrusion abnormal (confirmed present in the binary; condition not determined) |
 | `key840` | Box state error |
 | `key841` | Cut sensor not detected |
 | `key843` | RFID read error |
 | `key844` | Pneumatic joint abnormal |
 | `key845` | Nozzle blocked |
-| `key847` | Empty printing, material enwind |
+| `key846` | Confirmed present in the binary; condition not determined |
+| `key847` | Empty printing, material enwind — **provenance uncertain**, see caveat below |
 | `key848` | Material break at connections |
 | `key849`-`key851` | Retraction errors |
+| `key852` | Confirmed present in the binary; condition not determined |
 | `key853` | Humidity sensor error |
 | `key855` | Cut position error |
-| `key856` | No cutter detected |
-| `key857` | Motor load error |
-| `key858` | EEPROM error |
-| `key859` | Measuring wheel error |
-| `key860` | Buffer error |
-| `key861` | Left RFID card error |
-| `key862` | Right RFID card error |
-| `key863`-`key865` | Retraction/extrusion completion errors |
+| `key856` | No cutter detected — **provenance uncertain** |
+| `key857` | Motor load error — **provenance uncertain** |
+| `key858` | EEPROM error — **provenance uncertain** |
+| `key859` | Measuring wheel error — **provenance uncertain** |
+| `key860` | Buffer error — **provenance uncertain** |
+| `key861` | Left RFID card error — **provenance uncertain** |
+| `key862` | Right RFID card error — **provenance uncertain** |
+| `key863`-`key865` | Retraction/extrusion completion errors — **provenance uncertain** |
+
+> **Provenance caveat.** The codes themselves are certain — every `keyNNN` string above was recovered from `box_wrapper.cpython-39.so`. What could **not** be determined from the stripped binary is *which condition raises which code* for `key847` and for the `key856`-`key865` block: Cython folded the raise sites into generated dispatch code with no recoverable mapping back to the calling method. Those descriptions are inference from Creality's user-facing error text and neighbouring codes, not from the raise site. Do not build behaviour that depends on a specific one of them meaning a specific thing until it has been observed on hardware. `key839`, `key846` and `key852` are listed because the strings exist; nothing at all is known about their conditions.
+
+### Runout and auto-refill
+
+Recovered from the stripped `box_wrapper.cpython-39.so` on a live K2 Plus, plus the plain-Python Klipper sources on the device. The config quotes below are from that machine's own `printer.cfg`, as dumped into `klippy.log`.
+
+**The firmware always pauses first. There is no pause-free hot swap.** The toolhead switch is a stock Klipper `filament_switch_sensor` with `pause_on_runout` set, so `runout_helper` issues the pause before anything CFS-specific runs:
+
+```ini
+[filament_switch_sensor filament_sensor]
+pause_on_runout = true
+switch_pin = ^!nozzle_mcu:PA11
+runout_gcode =
+	{% if printer.extruder.can_extrude|lower == 'true' %}
+	G91
+	G0 E30 F600
+	G90
+	{% endif %}
+	BOX_CHECK_MATERIAL_REFILL
+```
+
+`filament_switch_sensor.py` calls `pause_resume.send_pause_command()`, waits out `PAUSE_DELAY`, and only then runs `runout_gcode`: a 30 mm purge (skipped when the hotend is too cold to extrude — note the jinja guard, which the 30 mm push is entirely inside) followed by `BOX_CHECK_MATERIAL_REFILL`. The whole path is gated on the job being in the printing state at the moment the sensor edge is noted, i.e. before the pause. **Auto-refill therefore always operates on an already-paused print.**
+
+**Three outcomes, all of which leave the print paused:**
+
+| `auto_refill` | Matching slot in `same_material`? | What happens |
+|---------------|-----------------------------------|--------------|
+| on | yes | Cut → retrude → extrude → flush from the matching slot, then resume |
+| on | no | `respond_info("... no identical supplies ...")`, no swap, stays paused |
+| off | — | `respond_info("... disable material automatic refill ...")`, no swap, stays paused |
+
+The two give-up strings are what HelixScreen keys its CFS runout modal off (`AmsBackendCfs::classify_error`). They arrive as `respond_info` output — `// `-prefixed lines on the gcode-response channel, **not** `!!` — which is why that override inverts the usual `is_bang_line()` gate. They are untranslated English literals from one Creality build, so the matcher takes a distinctive fragment (`identical suppl`, `automatic refill` + `disab`) rather than the whole sentence, and falls back to "line mentions refill **and** `filament_useup` is set **and** the job is paused" if the wording changes entirely.
+
+> **Not verified by us:** the exact on-the-wire text of either message. `box_wrapper.cpython-39.so` is stripped, the strings were read out of it rather than out of source, and no runout occurred in the six days of `klippy.log` available from the live machine, so neither has been seen on the wire. If a K2 user reports the modal not appearing, the first thing to check is the literal wording in their `moonraker.log` gcode-response stream.
+
+**A second runout cannot re-trigger.** `check_material_refill` runs `SET_FILAMENT_SENSOR SENSOR=filament_sensor ENABLE=0` on **every** path, match or no match. The sensor stays disabled for the remainder of the job unless something re-enables it. (HelixScreen does not currently offer a re-enable button; a wrongly-timed re-enable would trip immediately if filament is not back at the gate.)
+
+**Resuming.** `BOX_ERROR_RESUME_PROCESS` early-returns unless box `enable != 0` **and** `print_stats.state == 'paused'`. It is reached from a plain `RESUME` via `RESUME_EXTERNAL_PROCESS` (`gcode_macro.cfg`), and it only does the box half of the recovery — it does not un-pause the job. **`RESUME` is the correct user-facing command**; sending `BOX_ERROR_RESUME_PROCESS` directly leaves the print paused. (`AmsBackendCfs::recover_gcode()` still returns the bare command for the programmatic `recover()` API; the recovery *button* sends `RESUME`.)
+
+**The generic Klipper runout warning is suppressed.** Creality edited `filament_switch_sensor.py` so the usual `key358` runout warning is not emitted whenever the box is enabled — the box's own error path is meant to be the only voice. That is why a CFS runout produces no `!!` line at all and the `respond_info` messages are the only signal available. (Read from the device's own `filament_switch_sensor.py`; not independently re-confirmed since — the six days of `klippy.log` available from the live K2 Plus contain no `key358` at all, which is consistent with the edit but proves nothing on its own, as no runout occurred in that window either.)
 
 ### Internal Classes (from Cython decompilation)
 

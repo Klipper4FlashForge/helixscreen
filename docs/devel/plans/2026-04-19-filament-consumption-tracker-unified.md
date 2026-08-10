@@ -1,5 +1,15 @@
 # Unified Filament Consumption Tracker — Implementation Plan
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions. Status: SHIPPED.** The 55
+> `- [ ]` boxes were never ticked and do **not** mean the work is outstanding. Evidence:
+> `FilamentConsumptionTracker` (`src/printer/filament_consumption_tracker.cpp`),
+> `IConsumptionSink` / `AmsSlotSink` / `ExternalSpoolSink` (`include/consumption_sink.h`,
+> `src/printer/consumption_sink.cpp`).
+>
+> Stale paths: `src/ui/ui_ams_edit_modal.cpp` is now `src/ui/ui_ams_edit_overlay.cpp`, and
+> `tests/unit/test_helpers.h` is now the `tests/test_helpers/` directory. Verify against the
+> tree before following anything here.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Extend `FilamentConsumptionTracker` to decrement `remaining_weight_g` per AMS slot during prints, for backends that don't self-report (Snapmaker, CFS, IFS, HappyHare, ACE, ToolChanger), while preserving the existing external-spool behavior.

@@ -1,5 +1,29 @@
 # Ghost Scroll Buttons Implementation Plan
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions. Status: the FEATURE
+> shipped; this DESIGN did not. Do not execute this plan - it would build a second,
+> parallel implementation of something the tree already has.**
+>
+> Not one symbol this plan prescribes exists. `ui_scroll_buttons.{h,cpp}`,
+> `helix::ui::attach_scroll_buttons()`, `ui_xml/scroll_buttons.xml`, the 3-state
+> `scroll_buttons_mode` on `InputSettingsManager`, and `tests/unit/test_ui_scroll_buttons.cpp`
+> are all zero-hit greps.
+>
+> What shipped instead:
+>
+> | This plan | Actual |
+> |---|---|
+> | `ui_xml/scroll_buttons.xml` | `ui_xml/components/page_scroll_gutter.xml` |
+> | `helix::ui::attach_scroll_buttons()` (opt-in, per call site) | `src/ui/page_scroll_auto_inject.cpp` (auto-injected from `NavigationManager`) + `src/ui/page_scroll_controller.cpp` + `include/page_scroll_math.h` |
+> | 3-state `scroll_buttons_mode` (Auto/On/Off) on `InputSettingsManager` | **boolean** `DisplaySettingsManager::get/set_page_scroll_buttons()` |
+> | Touch & Input settings overlay | Display & Sound overlay (`ui_xml/settings_display_sound_overlay.xml`, `src/ui/ui_settings_display_sound.cpp`) |
+> | `tests/unit/test_ui_scroll_buttons.cpp` | `test_page_scroll_auto_inject.cpp`, `test_page_scroll_controller.cpp`, `test_page_scroll_math.cpp`, `test_page_scroll_gutter_component.cpp`, `test_page_scroll_setting.cpp` |
+>
+> The two design decisions that were reversed are worth knowing: the setting became a boolean,
+> not Auto/On/Off, and attachment became automatic rather than per-call-site. Read the plan for
+> the LVGL floating-child and lifetime research it captured, which is still accurate. Do not
+> read it as a build order.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Reusable semi-transparent up/down page-scroll buttons overlaid on the right edge of scrollable views, controlled by a 3-state setting (Auto/On/Off, default Auto), per Phase 1a of `docs/devel/specs/2026-06-10-esp32-display-device-design.md`.

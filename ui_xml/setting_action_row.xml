@@ -21,10 +21,10 @@
   <styles>
     <style name="label_enabled" text_color="#text"/>
     <style name="label_disabled" text_color="#text_subtle"/>
-    <style name="pad_standard" pad_left="#space_lg" pad_right="#space_lg"
-           pad_top="#space_lg" pad_bottom="#space_lg" pad_gap="#space_sm"/>
-    <style name="pad_micro" pad_left="#space_md" pad_right="#space_md"
-           pad_top="#space_lg" pad_bottom="#space_lg" pad_gap="#space_sm"/>
+    <style name="pad_standard"
+           pad_left="#space_lg" pad_right="#space_lg" pad_top="#space_lg" pad_bottom="#space_lg" pad_gap="#space_sm"/>
+    <style name="pad_micro"
+           pad_left="#space_md" pad_right="#space_md" pad_top="#space_lg" pad_bottom="#space_lg" pad_gap="#space_sm"/>
   </styles>
   <!-- Root button - receives all bubbled click events -->
   <view name="action_row"
@@ -34,8 +34,7 @@
     <!-- Content container: clickable=false so clicks bubble to button -->
     <lv_obj width="100%"
             height="content" flex_flow="row" style_flex_main_place="start" style_flex_cross_place="center"
-            scrollable="false" clickable="false"
-            event_bubble="true">
+            scrollable="false" clickable="false" event_bubble="true">
       <bind_style_if_eq name="pad_micro" subject="ui_breakpoint" ref_value="0"/>
       <bind_style_if_ge name="pad_standard" subject="ui_breakpoint" ref_value="1"/>
       <!-- Left side: Icon -->
@@ -50,20 +49,17 @@
         </text_body>
         <!-- Description: hidden when breakpoint below description_min_bp (default 2) -->
         <text_small name="description"
-                    text="$description" translation_tag="$description_tag"
-                    bind_text="$bind_description">
+                    text="$description" translation_tag="$description_tag" bind_text="$bind_description">
           <bind_flag_if_lt subject="ui_breakpoint" flag="hidden" ref_value="$description_min_bp"/>
         </text_small>
       </lv_obj>
       <!-- Info icon: hidden if no description, hidden on medium+ -->
       <!-- event_bubble="false" prevents info tap from triggering row action -->
-      <lv_obj name="info_btn" width="content" height="content"
-              style_pad_all="2" style_bg_opa="0" style_border_width="0"
-              clickable="true" event_bubble="false" scrollable="false"
-              hidden_if_empty="$description">
+      <lv_obj name="info_btn"
+              width="content" height="content" style_pad_all="2" style_bg_opa="0" style_border_width="0"
+              clickable="true" event_bubble="false" scrollable="false" hidden_if_empty="$description">
         <bind_flag_if_ge subject="ui_breakpoint" flag="hidden" ref_value="$description_min_bp"/>
-        <icon src="info_outline" size="sm" variant="muted"
-              clickable="false" event_bubble="true"/>
+        <icon src="info_outline" size="sm" variant="muted" clickable="false" event_bubble="true"/>
         <event_cb trigger="clicked" callback="on_setting_info_clicked"/>
       </lv_obj>
       <!-- Right side: Chevron icon -->

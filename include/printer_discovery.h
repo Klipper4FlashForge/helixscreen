@@ -1293,7 +1293,7 @@ class PrinterDiscovery {
         // Air-quality penalty: names carrying a gas/particulate/humidity token
         // describe air quality, not chamber temperature.
         static const char* const kAirQualityTokens[] = {
-            "TVOC", "VOC", "CO2", "GAS",  "HUMIDITY",    "IAQ",
+            "TVOC", "VOC",  "CO2",  "GAS",         "HUMIDITY", "IAQ",
             "AQI",  "PM25", "PM10", "PARTICULATE", "PRESSURE"};
         for (const char* tok : kAirQualityTokens) {
             if (has_standalone_token(upper, tok)) {
@@ -1449,9 +1449,9 @@ class PrinterDiscovery {
 } // namespace helix
 
 // Forward declarations for init_subsystems_from_hardware (global scope)
-class MoonrakerAPI;
+class IMoonrakerAPI;
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 }
 
 namespace helix {
@@ -1463,10 +1463,10 @@ namespace helix {
  * based on discovered hardware.
  *
  * @param hardware Hardware discovery results
- * @param api MoonrakerAPI instance
+ * @param api IMoonrakerAPI instance
  * @param client MoonrakerClient instance
  */
-void init_subsystems_from_hardware(const PrinterDiscovery& hardware, MoonrakerAPI* api,
-                                   MoonrakerClient* client);
+void init_subsystems_from_hardware(const PrinterDiscovery& hardware, IMoonrakerAPI* api,
+                                   IMoonrakerClient* client);
 
 } // namespace helix

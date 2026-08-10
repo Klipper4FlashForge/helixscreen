@@ -3,11 +3,14 @@
 
 #include "ams_backend_happy_hare.h"
 
+#include "ams_bypass_policy.h"
+#include "ams_fault_event.h"
 #include "ams_state.h"
 #include "config.h"
 #include "hh_defaults.h"
 #include "humidity_sensor_types.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
+#include "operation_patterns.h" // helix::contains_ci
 
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
@@ -18,11 +21,21 @@
 
 using namespace helix;
 
+namespace {
+
+/// The two printer.mmu filament_pos values Happy Hare's own check_if_loaded()
+/// treats as "not loaded" (mmu.py FILAMENT_POS_UNKNOWN / FILAMENT_POS_UNLOADED).
+/// Every other position, including the intermediate ones, is refused.
+constexpr int kHappyHarePosUnknown = -1;
+constexpr int kHappyHarePosUnloaded = 0;
+
+} // namespace
+
 // ============================================================================
 // Construction / Destruction
 // ============================================================================
 
-AmsBackendHappyHare::AmsBackendHappyHare(MoonrakerAPI* api, MoonrakerClient* client)
+AmsBackendHappyHare::AmsBackendHappyHare(IMoonrakerAPI* api, IMoonrakerClient* client)
     : AmsSubscriptionBackend(api, client) {
     // Initialize system info with Happy Hare defaults
     system_info_.type = AmsType::HAPPY_HARE;
@@ -30,8 +43,12 @@ AmsBackendHappyHare::AmsBackendHappyHare(MoonrakerAPI* api, MoonrakerClient* cli
     system_info_.supports_endless_spool = true;
     system_info_.supports_tool_mapping = true;
     // Bypass support is determined at runtime from mmu.has_bypass status field.
-    // Default to true; will be updated when first status arrives.
-    system_info_.supports_bypass = true;
+    // Starts false so the bypass UI stays absent until the firmware confirms it:
+    // an optimistic default shows the toggle, the Device Operations section and
+    // the path node on every connect, then withdraws all three a moment later on
+    // any machine that has no bypass. A control arriving late reads as loading;
+    // one that appears and vanishes reads as a bug.
+    system_info_.supports_bypass = false;
     // Happy Hare bypass is always positional (selector moves to bypass position), never a sensor
     system_info_.has_hardware_bypass_sensor = false;
     // Default to TIP_FORM -- Happy Hare's default macro is _MMU_FORM_TIP.
@@ -464,9 +481,30 @@ void AmsBackendHappyHare::parse_mmu_state(const nlohmann::json& mmu_data) {
 
     // Parse has_bypass: printer.mmu.has_bypass
     // Not all MMU types support bypass (e.g., ERCF/Tradrack do, BoxTurtle does not)
+    //
+    // Logged at info rather than trace, and on every change rather than never:
+    // false here removes the entire bypass UI (sidebar toggle, Device Operations
+    // section, path node) and this flag is the sole reason. Happy Hare derives it
+    // from [mmu_machine] has_bypass, which defaults to 0 for mmu_vendor "Other",
+    // and on type-A selectors ANDs it with the calibrated bypass offset — so an
+    // owner with a physical bypass can legitimately see false and have no way to
+    // tell that from a bug in us.
     if (mmu_data.contains("has_bypass") && mmu_data["has_bypass"].is_boolean()) {
-        system_info_.supports_bypass = mmu_data["has_bypass"].get<bool>();
-        spdlog::trace("[AMS HappyHare] Bypass supported: {}", system_info_.supports_bypass);
+        const bool has_bypass = mmu_data["has_bypass"].get<bool>();
+        if (!bypass_support_seen_ || has_bypass != system_info_.supports_bypass) {
+            spdlog::info("[AMS HappyHare] Bypass supported: {}", has_bypass);
+            bypass_support_seen_ = true;
+        }
+        system_info_.supports_bypass = has_bypass;
+    } else if (!bypass_support_seen_) {
+        // Field absent entirely. Every Happy Hare we know of publishes it, so this
+        // is a fork or a version we have not seen; assume supported rather than
+        // silently removing a control the machine may well have. Deliberately not
+        // the same as the pre-status default, which is false so that a system
+        // without a bypass never flashes the UI up and then withdraws it.
+        bypass_support_seen_ = true;
+        system_info_.supports_bypass = true;
+        spdlog::warn("[AMS HappyHare] No has_bypass field in mmu status; assuming supported");
     }
 
     // Parse num_units if available (multi-unit Happy Hare setups)
@@ -1095,7 +1133,7 @@ std::optional<helix::ErrorEvent>
 AmsBackendHappyHare::classify_error(const std::string& raw_line,
                                     const helix::ClassifyContext& ctx) const {
     // Only `!!` emergency lines are candidates (matches AFC).
-    if (raw_line.size() < 2 || raw_line[0] != '!' || raw_line[1] != '!') {
+    if (!helix::is_bang_line(raw_line)) {
         return std::nullopt;
     }
 
@@ -1103,36 +1141,23 @@ AmsBackendHappyHare::classify_error(const std::string& raw_line,
 
     // Happy Hare reports the descriptive cause in reason_for_pause_; prefer it
     // over the terse !! line for the modal detail.
-    std::string bare =
-        (raw_line.size() > 3 && raw_line[2] == ' ') ? raw_line.substr(3) : raw_line.substr(2);
+    std::string bare = helix::strip_bang_prefix(raw_line);
     std::string detail = !reason_for_pause_.empty() ? reason_for_pause_ : bare;
-
-    auto contains_ci = [](const std::string& hay, const char* needle) {
-        std::string h = hay, n = needle;
-        for (auto& c : h)
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        for (auto& c : n)
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        return h.find(n) != std::string::npos;
-    };
 
     // A recognized MMU fault: a descriptive reason is present, OR the print is
     // paused while HH is in its ERROR action. Mirrors AFC's error_state_ gate.
     const bool hh_error_state = (system_info_.action == AmsAction::ERROR);
-    const bool recognized = contains_ci(detail, "runout") || contains_ci(detail, "clog") ||
-                            contains_ci(detail, "encoder") || contains_ci(detail, "jam") ||
-                            contains_ci(detail, "manual intervention");
+    const bool recognized =
+        helix::contains_ci(detail, "runout") || helix::contains_ci(detail, "clog") ||
+        helix::contains_ci(detail, "encoder") || helix::contains_ci(detail, "jam") ||
+        helix::contains_ci(detail, "manual intervention");
 
     if (ctx.is_paused && (hh_error_state || (recognized && !reason_for_pause_.empty()))) {
-        helix::ErrorEvent e;
-        e.source = helix::ErrorSource::HAPPY_HARE;
-        e.severity = helix::ErrorSeverity::CRITICAL;
-        e.title = contains_ci(detail, "runout") ? lv_tr("Filament runout")
-                                                : lv_tr("Filament System Error");
-        e.detail = detail;
-        e.sticky = true;
-        e.recovery_actions = build_recovery_actions();
-        return e;
+        return helix::make_ams_fault_event(helix::ErrorSource::HAPPY_HARE,
+                                           helix::contains_ci(detail, "runout")
+                                               ? lv_tr("Filament runout")
+                                               : lv_tr("Filament System Error"),
+                                           detail, build_recovery_actions());
     }
 
     // Not an HH-owned fault — let the generic classifier handle it.
@@ -2527,7 +2552,7 @@ AmsError AmsBackendHappyHare::set_slot_info(int slot_index, const SlotInfo& info
         }
 
         // Material (validate to prevent command injection)
-        if (!info.material.empty() && MoonrakerAPI::is_safe_gcode_param(info.material)) {
+        if (!info.material.empty() && IMoonrakerAPI::is_safe_gcode_param(info.material)) {
             cmd += fmt::format(" MATERIAL={}", info.material);
             has_changes = true;
         } else if (!info.material.empty()) {
@@ -2612,9 +2637,28 @@ AmsError AmsBackendHappyHare::enable_bypass() {
             return precondition;
         }
 
-        if (!system_info_.supports_bypass) {
+        if (!helix::bypass_available_for(system_info_.supports_bypass)) {
             return AmsError(AmsResult::WRONG_STATE, "Bypass not supported",
                             "This Happy Hare system does not support bypass mode", "");
+        }
+
+        // Twin of the AFC guard in AmsBackendAfc::enable_bypass(), and required
+        // for the same reason: allows_implicit_chaining() == false means the
+        // sidebar sends one command and lets the backend refuse, but
+        // execute_gcode() is fire-and-forget (returns success before Klipper
+        // answers), so a refused MMU_SELECT_BYPASS would report success and
+        // change nothing. Happy Hare's cmd_MMU_SELECT_BYPASS runs
+        // check_if_loaded() and answers only with a `!!` line, which reaches the
+        // user as a bare "Operation not possible. Filament is loaded" toast
+        // contradicting the success we already reported.
+        //
+        // Keyed on filament_pos rather than system_info_.filament_loaded because
+        // that flag is set solely from filament == "Loaded" — Happy Hare refuses
+        // at every position except UNLOADED and UNKNOWN, so an intermediate
+        // position (mid-bowden, mid-unload) has to refuse here too.
+        if (filament_pos_ != kHappyHarePosUnloaded && filament_pos_ != kHappyHarePosUnknown) {
+            return AmsError(AmsResult::WRONG_STATE, "Unload filament first",
+                            "Filament is still loaded. Unload it before enabling bypass.", "");
         }
     }
 

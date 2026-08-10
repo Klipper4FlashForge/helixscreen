@@ -1,5 +1,14 @@
 # Wizard Step Registry — Implementation Plan
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions.**
+> **Status: SHIPPED.** The 35 `- [ ]` boxes were never ticked and do not mean the work is
+> outstanding. Evidence: `include/wizard_step.h`, `include/wizard_step_logic.h`,
+> `src/system/wizard_step.cpp`, `src/system/wizard_step_logic.cpp`.
+>
+> Code line numbers and file paths below may have drifted. Follow the **symbol**, not
+> the number, and verify every predicate against current code before relying on
+> anything here.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the wizard's raw-`int` step indexing (45 branch sites, dual skip mechanism, no base class) with a `StepId`-named, registry-driven, per-step-skip architecture.

@@ -11,6 +11,9 @@ Formats LVGL XML component files with:
 - Smart attribute grouping on lines
 - Preservation of blank lines between logical sections
 
+Generator-owned XML (see GENERATED_DIRS) is skipped - those files are rewritten by
+`make`, so formatting them only makes the tree go dirty on the next build.
+
 Usage:
     ./scripts/format-xml.py ui_xml/*.xml           # Format files in-place
     ./scripts/format-xml.py --check ui_xml/*.xml   # Check without modifying
@@ -35,6 +38,24 @@ except ImportError:
 # Configuration
 LINE_WIDTH = 120
 INDENT = "  "  # 2 spaces
+
+# Directories whose XML is written by a generator, not by hand. Formatting these
+# starts a fight nobody wins: `make` regenerates them on every build (mk/translations.mk
+# -> generate_translations.py), which strips the wrapping this script adds, so a
+# formatted tree goes dirty on the next compile and `make format` re-wraps it right
+# back. The generator owns its output; run it, don't reformat it. Callers pass file
+# lists from `find ui_xml -name '*.xml'`, so the skip lives here rather than in each
+# of the three call sites (mk/format.mk format + format-staged, quality-checks.sh).
+GENERATED_DIRS = ("ui_xml/translations",)
+
+
+def is_generated(filepath: Path) -> bool:
+    """True if filepath lives under a generator-owned directory."""
+    posix = filepath.as_posix()
+    return any(
+        posix == d or posix.startswith(d + "/") or f"/{d}/" in posix
+        for d in GENERATED_DIRS
+    )
 
 # Attributes that should come first (in order)
 PRIORITY_ATTRS = ["name", "extends", "width", "height"]
@@ -252,14 +273,29 @@ def format_xml_file(content: str) -> str:
 
     # Get the original file to extract leading comments (before root element)
     # This preserves copyright and license comments
+    # A multi-line comment must be carried across lines: its opening line
+    # starts with "<!--" but does not close, so testing both delimiters on one
+    # line sent it to the root-element break below, deleting the comment AND
+    # cutting the prolog scan short. Continuation lines keep their original
+    # indentation — these comments are mostly aligned state tables.
     content_lines = content.split("\n")
+    in_comment = False
     for line in content_lines:
         stripped = line.strip()
-        if stripped.startswith("<!--") and stripped.endswith("-->"):
-            lines.append(stripped)
+        if in_comment:
+            lines.append(line.rstrip())
+            if "-->" in stripped:
+                in_comment = False
+            continue
+        if stripped.startswith("<!--"):
+            if stripped.endswith("-->"):
+                lines.append(stripped)
+            else:
+                lines.append(line.rstrip())
+                in_comment = True
         elif stripped.startswith("<?xml"):
             continue  # Skip XML declaration, we add our own
-        elif stripped.startswith("<") and not stripped.startswith("<!--"):
+        elif stripped.startswith("<"):
             break  # Hit the root element
 
     # Format the root element and all children
@@ -346,6 +382,11 @@ def main():
 
         if not filepath.suffix == ".xml":
             print(f"Skipping non-XML file: {filepath}", file=sys.stderr)
+            continue
+
+        if is_generated(filepath):
+            if not args.quiet:
+                print(f"Skipping generated file: {filepath}", file=sys.stderr)
             continue
 
         needs_format, diff_output = process_file(

@@ -3,12 +3,13 @@
 
 #pragma once
 
+#include "ui_observer_guard.h"
+
 #include "helix/xml/indexed_subject_pool.h"
 #include "lvgl.h"
 #include "macro_param_modal.h"
 #include "overlay_base.h"
 #include "subject_managed_panel.h"
-#include "ui_observer_guard.h"
 
 #include <memory>
 #include <set>
@@ -76,10 +77,11 @@ class MacrosPanel : public OverlayBase {
      * @brief XML event callbacks (registered globally via
      * lv_xml_register_event_cb). Route to the singleton via the global accessor.
      */
-    static void on_macro_row_clicked(lv_event_t* e);    ///< tap: toggle (edit) or run
+    static void on_macro_row_clicked(lv_event_t* e);     ///< tap: toggle (edit) or run
     static void on_macro_card_long_press(lv_event_t* e); ///< long-press: enter edit mode
     static void on_macros_edit_save(lv_event_t* e);      ///< header Save: persist + exit edit
-    static void on_macros_back_clicked(lv_event_t* e);   ///< header Back: exit edit mode, else pop overlay
+    static void
+    on_macros_back_clicked(lv_event_t* e); ///< header Back: exit edit mode, else pop overlay
 
   private:
     friend struct MacrosPanelTestAccess;
@@ -87,7 +89,7 @@ class MacrosPanel : public OverlayBase {
     // === Edit-mode model ===
     /**
      * @brief Refresh all_macros_ from the discovered hardware (sorted, incl.
-     * `_`-prefixed). No-op when no MoonrakerAPI is available (leaves the
+     * `_`-prefixed). No-op when no IMoonrakerAPI is available (leaves the
      * current list intact — used for both mock and reconnect timing).
      */
     void refresh_macros();
@@ -127,12 +129,12 @@ class MacrosPanel : public OverlayBase {
     static std::string prettify_macro_name(const std::string& name);
 
     // === State ===
-    std::vector<std::string> all_macros_;   ///< sorted discovered macros (incl. _*)
-    std::set<std::string> pending_hidden_;  ///< in-flight edit-mode hidden set
-    std::vector<std::string> displayed_;    ///< macros currently rendered (row order)
-    bool edit_mode_ = false;                ///< true while in edit mode
-    bool ui_alive_ = false;                 ///< true between create() and on_ui_destroyed()
-    lv_obj_t* scroll_container_ = nullptr;   ///< "macro_list" — reset to top on edit-mode transitions
+    std::vector<std::string> all_macros_;  ///< sorted discovered macros (incl. _*)
+    std::set<std::string> pending_hidden_; ///< in-flight edit-mode hidden set
+    std::vector<std::string> displayed_;   ///< macros currently rendered (row order)
+    bool edit_mode_ = false;               ///< true while in edit mode
+    bool ui_alive_ = false;                ///< true between create() and on_ui_destroyed()
+    lv_obj_t* scroll_container_ = nullptr; ///< "macro_list" — reset to top on edit-mode transitions
 
     // Flags
     bool callbacks_registered_ = false;
@@ -158,10 +160,10 @@ class MacrosPanel : public OverlayBase {
     // === Scalar subjects (registered in init_subjects; NOT reclaimed) ===
     SubjectManager subjects_;
     char status_buf_[64] = {};
-    lv_subject_t status_subject_{};              ///< "macros_status" (legacy, XML-bound)
-    lv_subject_t macro_row_count_{};             ///< "macro_row_count" (drives the repeat)
-    lv_subject_t macro_edit_mode_{};             ///< "macro_edit_mode" (0/1)
-    lv_subject_t macros_edit_save_hidden_{};     ///< "macros_edit_save_hidden" (1 = Save hidden)
+    lv_subject_t status_subject_{};          ///< "macros_status" (legacy, XML-bound)
+    lv_subject_t macro_row_count_{};         ///< "macro_row_count" (drives the repeat)
+    lv_subject_t macro_edit_mode_{};         ///< "macro_edit_mode" (0/1)
+    lv_subject_t macros_edit_save_hidden_{}; ///< "macros_edit_save_hidden" (1 = Save hidden)
 
     /// Re-runs rebuild_rows() once macros become available (late discovery /
     /// reconnect / printer switch). nav_buttons_enabled flips to 1 only after

@@ -757,6 +757,62 @@ CONF
     ! grep -q '# Added by HelixScreen installer' "$conf"
 }
 
+# The removal used to delete two comment lines by literal pattern while the
+# generator wrote five, so every install/uninstall cycle orphaned the other
+# three. Verified on a CC1: after install, uninstall, install, the
+# mainsail#2444 line appeared twice in moonraker.conf.
+@test "remove_update_manager_section: removes the whole generated comment block" {
+    local conf
+    conf=$(setup_moonraker_home)
+    create_moonraker_conf "$conf"
+    MOONRAKER_CONF_PATHS="$conf"
+
+    add_update_manager_section "$conf"
+    remove_update_manager_section
+
+    # Every line the generator emits must be gone, not just the two that
+    # were named explicitly.
+    refute grep -q 'HelixScreen Update Manager' "$conf"
+    refute grep -q 'Added by HelixScreen installer' "$conf"
+    refute grep -q 'type: web is used instead of type: zip' "$conf"
+    refute grep -q 'mainsail#2444' "$conf"
+    refute grep -q 'A systemd path unit handles service restart' "$conf"
+}
+
+# The real-world symptom: residue accumulates across cycles.
+@test "remove_update_manager_section: add/remove round-trip restores the file exactly" {
+    local conf
+    conf=$(setup_moonraker_home)
+    create_moonraker_conf "$conf"
+    MOONRAKER_CONF_PATHS="$conf"
+
+    cp "$conf" "$BATS_TEST_TMPDIR/original.conf"
+
+    # Three full cycles: any per-cycle residue compounds and shows up here.
+    add_update_manager_section "$conf"
+    remove_update_manager_section
+    add_update_manager_section "$conf"
+    remove_update_manager_section
+    add_update_manager_section "$conf"
+    remove_update_manager_section
+
+    diff -u "$BATS_TEST_TMPDIR/original.conf" "$conf"
+}
+
+@test "remove_update_manager_section: leaves an unrelated preceding comment alone" {
+    local conf
+    conf=$(setup_moonraker_home)
+    create_moonraker_conf "$conf"
+    MOONRAKER_CONF_PATHS="$conf"
+
+    printf '\n# operator note: do not delete this\n' >> "$conf"
+    add_update_manager_section "$conf"
+    remove_update_manager_section
+
+    grep -q '# operator note: do not delete this' "$conf"
+    refute grep -q '^\[update_manager helixscreen\]' "$conf"
+}
+
 # =============================================================================
 # ensure_moonraker_asvc
 # =============================================================================
@@ -822,6 +878,85 @@ CONF
     grep -q '^helixscreen$' "$printer_data/moonraker.asvc"
     # Original entry still there
     grep -q '^helixscreen-old$' "$printer_data/moonraker.asvc"
+}
+
+# =============================================================================
+# remove_moonraker_asvc
+#
+# ensure_moonraker_asvc had no removal counterpart, so uninstall left
+# helixscreen in the allowlist forever (observed on a CC1 running COSMOS).
+# =============================================================================
+
+@test "remove_moonraker_asvc: removes the helixscreen entry" {
+    local conf
+    conf=$(setup_moonraker_home)
+    create_moonraker_conf "$conf"
+
+    local printer_data
+    printer_data="$(dirname "$(dirname "$conf")")"
+    printf "klipper\nmoonraker\nhelixscreen\n" > "$printer_data/moonraker.asvc"
+
+    remove_moonraker_asvc "$conf"
+
+    refute grep -q '^helixscreen$' "$printer_data/moonraker.asvc"
+    # Everything else survives
+    grep -q '^klipper$' "$printer_data/moonraker.asvc"
+    grep -q '^moonraker$' "$printer_data/moonraker.asvc"
+}
+
+@test "remove_moonraker_asvc: add/remove round-trip restores the file exactly" {
+    local conf
+    conf=$(setup_moonraker_home)
+    create_moonraker_conf "$conf"
+
+    local printer_data
+    printer_data="$(dirname "$(dirname "$conf")")"
+    printf "klipper\nmoonraker\nKlipperScreen\n" > "$printer_data/moonraker.asvc"
+    cp "$printer_data/moonraker.asvc" "$BATS_TEST_TMPDIR/original.asvc"
+
+    ensure_moonraker_asvc "$conf"
+    remove_moonraker_asvc "$conf"
+
+    diff -u "$BATS_TEST_TMPDIR/original.asvc" "$printer_data/moonraker.asvc"
+}
+
+@test "remove_moonraker_asvc: does not touch partial-name entries" {
+    local conf
+    conf=$(setup_moonraker_home)
+    create_moonraker_conf "$conf"
+
+    local printer_data
+    printer_data="$(dirname "$(dirname "$conf")")"
+    printf "klipper\nhelixscreen-old\nhelixscreen\n" > "$printer_data/moonraker.asvc"
+
+    remove_moonraker_asvc "$conf"
+
+    refute grep -q '^helixscreen$' "$printer_data/moonraker.asvc"
+    grep -q '^helixscreen-old$' "$printer_data/moonraker.asvc"
+}
+
+@test "remove_moonraker_asvc: no asvc file returns 0" {
+    local conf
+    conf=$(setup_moonraker_home)
+    create_moonraker_conf "$conf"
+
+    run remove_moonraker_asvc "$conf"
+    [ "$status" -eq 0 ]
+}
+
+@test "remove_moonraker_asvc: entry absent is a no-op returning 0" {
+    local conf
+    conf=$(setup_moonraker_home)
+    create_moonraker_conf "$conf"
+
+    local printer_data
+    printer_data="$(dirname "$(dirname "$conf")")"
+    printf "klipper\nmoonraker\n" > "$printer_data/moonraker.asvc"
+    cp "$printer_data/moonraker.asvc" "$BATS_TEST_TMPDIR/original.asvc"
+
+    run remove_moonraker_asvc "$conf"
+    [ "$status" -eq 0 ]
+    diff -u "$BATS_TEST_TMPDIR/original.asvc" "$printer_data/moonraker.asvc"
 }
 
 # =============================================================================

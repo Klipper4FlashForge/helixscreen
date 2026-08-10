@@ -149,7 +149,11 @@ AFC, Happy Hare, Tool Changer, and Mock inherit the no-op
 `clear_slot_override` default from `AmsBackend`. They manage their own
 override semantics independently — AFC and Happy Hare write `lane_data`
 directly from their Klipper plugins, and HelixScreen does not touch those
-records.
+records. For AFC that is not merely etiquette: `AFC.py` `delete_lane_data()`
+wipes the whole namespace at the start of every PREP and refills it one lane at
+a time, so the namespace is non-durable across reboots *and* transiently
+incomplete during them. AFC/HH overrides go to a private namespace
+(`kOverrideNamespace`) — see prestonbrown/helixscreen#1158.
 
 ---
 

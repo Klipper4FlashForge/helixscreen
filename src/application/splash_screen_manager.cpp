@@ -30,7 +30,7 @@ bool pid_is_helix_splash(pid_t pid) {
     if (!f) {
         return false;
     }
-    char comm[64]  = {0};
+    char comm[64] = {0};
     bool got_line = (fgets(comm, sizeof(comm), f) != nullptr);
     fclose(f);
     if (!got_line) {
@@ -54,8 +54,8 @@ pid_t read_env_splash_pid() {
     if (p == nullptr || *p == '\0') {
         return 0;
     }
-    char*     end = nullptr;
-    long      v   = strtol(p, &end, 10);
+    char* end = nullptr;
+    long v = strtol(p, &end, 10);
     if (end == p || v <= 0) {
         return 0;
     }

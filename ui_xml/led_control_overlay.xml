@@ -13,8 +13,7 @@
   </styles>
   <!-- Component-local constants -->
   <px name="preset_swatch_size" value="40"/>
-  <view name="led_control_overlay"
-        extends="overlay_panel" title="$title" bg_color="#screen_bg">
+  <view name="led_control_overlay" extends="overlay_panel" title="$title" bg_color="#screen_bg">
     <!-- Scrollable content area -->
     <lv_obj name="content_area"
             width="100%" flex_grow="1" style_pad_all="#space_lg" style_pad_top="0" flex_flow="column"

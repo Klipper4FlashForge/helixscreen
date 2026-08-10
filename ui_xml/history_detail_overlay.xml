@@ -51,12 +51,11 @@
                     style_translate_y="#preview_offset_y"/>
           <!-- Metadata clip - content-sized, hides top rounded corners of inner overlay -->
           <lv_obj name="filename_clip"
-                  width="100%" height="content" style_radius="0" style_pad_all="0"
-                  align="bottom_mid" scrollable="false">
+                  width="100%" height="content" style_radius="0" style_pad_all="0" align="bottom_mid" scrollable="false">
             <lv_obj name="filename_overlay"
-                    width="100%" height="content" style_bg_opa="160" style_radius="#border_radius" style_pad_left="#space_sm"
-                    style_pad_right="#space_sm" style_pad_top="#space_md" style_pad_bottom="#space_sm"
-                    style_translate_y="-12" flex_flow="column" scrollable="false">
+                    width="100%" height="content" style_bg_opa="160" style_radius="#border_radius"
+                    style_pad_left="#space_sm" style_pad_right="#space_sm" style_pad_top="#space_md"
+                    style_pad_bottom="#space_sm" style_translate_y="-12" flex_flow="column" scrollable="false">
               <!-- Filename label (single line, truncated with ...) -->
               <text_body name="detail_filename"
                          width="100%" height="content" bind_text="history_detail_filename" long_mode="dots"/>
@@ -158,7 +157,8 @@
           </lv_obj>
           <!-- View Timelapse button -->
           <ui_button name="view_timelapse_btn"
-                     width="100%" height="#button_height_sm" text="View Timelapse" translation_tag="View Timelapse" variant="secondary">
+                     width="100%" height="#button_height_sm" text="View Timelapse" translation_tag="View Timelapse"
+                     variant="secondary">
             <event_cb trigger="clicked" callback="history_detail_view_timelapse"/>
           </ui_button>
         </lv_obj>

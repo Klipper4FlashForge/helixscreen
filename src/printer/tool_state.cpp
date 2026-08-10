@@ -15,9 +15,9 @@
 
 #include "ams_state.h"
 #include "data_root_resolver.h"
+#include "i_moonraker_api.h"
 #include "json_utils.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
 #include "printer_discovery.h"
 #include "state/subject_macros.h"
 #include "static_subject_registry.h"
@@ -418,6 +418,16 @@ void ToolState::update_from_status(const nlohmann::json& status) {
     }
 }
 
+int ToolState::extruder_count() const {
+    std::set<std::string> names;
+    for (const auto& t : tools_) {
+        if (t.extruder_name && !t.extruder_name->empty()) {
+            names.insert(*t.extruder_name);
+        }
+    }
+    return static_cast<int>(names.size());
+}
+
 const ToolInfo* ToolState::active_tool() const {
     if (active_tool_index_ < 0 || active_tool_index_ >= static_cast<int>(tools_.size())) {
         return nullptr;
@@ -447,7 +457,7 @@ std::string ToolState::tool_name_for_extruder(const std::string& extruder_name) 
     return {};
 }
 
-void ToolState::request_tool_change(int tool_index, MoonrakerAPI* api,
+void ToolState::request_tool_change(int tool_index, IMoonrakerAPI* api,
                                     std::function<void()> on_success,
                                     std::function<void(const std::string&)> on_error) {
     if (tool_index < 0 || tool_index >= static_cast<int>(tools_.size())) {
@@ -739,14 +749,14 @@ bool ToolState::load_spool_json() {
     }
 }
 
-void ToolState::save_spool_assignments_if_dirty(MoonrakerAPI* api) {
+void ToolState::save_spool_assignments_if_dirty(IMoonrakerAPI* api) {
     if (!spool_dirty_) {
         return;
     }
     save_spool_assignments(api);
 }
 
-void ToolState::save_spool_assignments(MoonrakerAPI* api) {
+void ToolState::save_spool_assignments(IMoonrakerAPI* api) {
     // Always save to local JSON (fast, reliable)
     save_spool_json();
     spool_dirty_ = false;
@@ -763,7 +773,7 @@ void ToolState::save_spool_assignments(MoonrakerAPI* api) {
     }
 }
 
-void ToolState::load_spool_assignments(MoonrakerAPI* api) {
+void ToolState::load_spool_assignments(IMoonrakerAPI* api) {
     if (spool_assignments_loaded_) {
         spdlog::debug("[ToolState] Spool assignments already loaded, skipping");
         return;

@@ -46,8 +46,9 @@
       </ui_button>
       <!-- Duplicate Button -->
       <ui_button name="btn_duplicate"
-                 width="100%" height="#button_height_sm" icon="content_copy" text="Duplicate" translation_tag="Duplicate"
-                 variant="ghost" clickable="true" focusable="false" style_flex_main_place="start">
+                 width="100%" height="#button_height_sm" icon="content_copy" text="Duplicate"
+                 translation_tag="Duplicate" variant="ghost" clickable="true" focusable="false"
+                 style_flex_main_place="start">
         <event_cb trigger="clicked" callback="spoolman_context_duplicate_cb"/>
       </ui_button>
       <!-- Divider before destructive action -->

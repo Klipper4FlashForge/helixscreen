@@ -12,9 +12,10 @@
 #include "belt_tension_calibrator.h"
 
 #include "app_globals.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "printer_state.h"
 #include "spdlog/spdlog.h"
+#include "toolhead_homing.h"
 
 #include <sstream>
 
@@ -28,7 +29,7 @@ BeltTensionCalibrator::BeltTensionCalibrator() : api_(nullptr) {
     spdlog::debug("[BeltTension] Created without API (test mode)");
 }
 
-BeltTensionCalibrator::BeltTensionCalibrator(MoonrakerAPI* api) : api_(api) {
+BeltTensionCalibrator::BeltTensionCalibrator(IMoonrakerAPI* api) : api_(api) {
     spdlog::debug("[BeltTension] Created with API");
 }
 
@@ -68,56 +69,6 @@ std::string BeltTensionCalibrator::belt_path_to_name(BeltPath path) {
     default:
         return "belt_path_a";
     }
-}
-
-// ============================================================================
-// ensure_homed_then() — must be called from main thread
-// ============================================================================
-
-void BeltTensionCalibrator::ensure_homed_then(std::function<void()> then,
-                                              BeltErrorCallback on_error) {
-    const char* homed = lv_subject_get_string(get_printer_state().get_homed_axes_subject());
-    bool all_homed = homed && std::string(homed).find("xyz") != std::string::npos;
-
-    if (all_homed) {
-        spdlog::debug("[BeltTension] Already homed, proceeding");
-        then();
-        return;
-    }
-
-    spdlog::info("[BeltTension] Not fully homed (axes={}), sending G28", homed ? homed : "none");
-
-    auto token = lifetime_.token();
-    api_->execute_gcode(
-        "G28",
-        [token, then = std::move(then)]() {
-            if (token.expired()) {
-                return;
-            }
-            spdlog::info("[BeltTension] G28 complete, proceeding");
-            then();
-        },
-        [this, token, on_error](const MoonrakerError& err) {
-            // BG THREAD: log + build local message, no `this` member access.
-            std::string msg;
-            if (err.type == MoonrakerErrorType::TIMEOUT) {
-                spdlog::warn("[BeltTension] G28 response timed out (may still be running)");
-                msg = "Homing timed out — printer may still be homing";
-            } else {
-                spdlog::error("[BeltTension] Homing failed: {}", err.message);
-                msg = "Homing failed: " + err.message;
-            }
-
-            // MAIN THREAD: mutate member + invoke caller-supplied callback.
-            token.defer("BeltTensionCalibrator::ensure_homed_g28_error",
-                        [this, on_error, msg = std::move(msg)]() {
-                            if (on_error) {
-                                on_error(msg);
-                            }
-                            state_.store(State::IDLE);
-                        });
-        },
-        MoonrakerAPI::HOMING_TIMEOUT_MS);
 }
 
 // ============================================================================
@@ -282,58 +233,68 @@ void BeltTensionCalibrator::test_path(BeltPath path, BeltProgressCallback on_pro
 
     auto token = lifetime_.token();
     ensure_homed_then(
+        api_, lifetime_,
         [this, token, path, on_progress, on_complete, on_error]() {
-            // ensure_homed_then's `then` may be invoked on main (already-homed
-            // fast path) or on bg (G28 success cb). Marshal to main before
-            // touching `this`.
-            token.defer("BeltTensionCalibrator::test_path_homed", [this, token, path, on_progress,
-                                                                   on_complete, on_error]() {
-                execute_resonance_test(
-                    path, on_progress,
-                    [this, token, path, on_complete](const BeltMeasurement& measurement) {
-                        // execute_resonance_test's on_complete is invoked
-                        // from process_csv_data, which now runs in a defer.
-                        // That means we are already on main thread here, but
-                        // defer again to keep the L081 detector quiet and
-                        // ensure invariant if upstream changes.
-                        token.defer("BeltTensionCalibrator::test_path_measurement",
-                                    [this, path, on_complete, measurement = measurement]() {
-                                        // Store result in appropriate slot
-                                        BeltMeasurement result = measurement;
-                                        result.path = path;
+            // ensure_homed_then() always lands `then` on the main thread
+            // (synchronously for the already-homed fast path, marshalled via
+            // `lifetime_` for the G28-then-continue path), so it is safe to
+            // touch `this` here directly.
+            execute_resonance_test(
+                path, on_progress,
+                [this, token, path, on_complete](const BeltMeasurement& measurement) {
+                    // execute_resonance_test's on_complete is invoked from
+                    // process_csv_data, which now runs in a defer. That means
+                    // we are already on main thread here, but defer again to
+                    // keep the L081 detector quiet and ensure invariant if
+                    // upstream changes.
+                    token.defer(
+                        "BeltTensionCalibrator::test_path_measurement",
+                        [this, path, on_complete, measurement = measurement]() {
+                            // Store result in appropriate slot
+                            BeltMeasurement result = measurement;
+                            result.path = path;
 
-                                        if (path == BeltPath::PATH_A || path == BeltPath::X_AXIS) {
-                                            results_.path_a = result;
-                                        } else {
-                                            results_.path_b = result;
-                                        }
+                            if (path == BeltPath::PATH_A || path == BeltPath::X_AXIS) {
+                                results_.path_a = result;
+                            } else {
+                                results_.path_b = result;
+                            }
 
-                                        // Update derived fields if both paths complete
-                                        if (results_.is_complete()) {
-                                            results_.frequency_delta =
-                                                std::abs(results_.path_a.peak_frequency -
-                                                         results_.path_b.peak_frequency);
-                                            results_.similarity_percent =
-                                                calculate_similarity(results_.path_a.freq_response,
-                                                                     results_.path_b.freq_response);
-                                            state_.store(State::RESULTS_READY);
-                                            spdlog::info("[BeltTension] Both paths complete: "
-                                                         "delta={:.1f} Hz, similarity={:.0f}%",
-                                                         results_.frequency_delta,
-                                                         results_.similarity_percent);
-                                        } else {
-                                            state_.store(State::IDLE);
-                                        }
+                            // Update derived fields if both paths complete
+                            if (results_.is_complete()) {
+                                results_.frequency_delta = std::abs(results_.path_a.peak_frequency -
+                                                                    results_.path_b.peak_frequency);
+                                results_.similarity_percent = calculate_similarity(
+                                    results_.path_a.freq_response, results_.path_b.freq_response);
+                                state_.store(State::RESULTS_READY);
+                                spdlog::info("[BeltTension] Both paths complete: "
+                                             "delta={:.1f} Hz, similarity={:.0f}%",
+                                             results_.frequency_delta, results_.similarity_percent);
+                            } else {
+                                state_.store(State::IDLE);
+                            }
 
-                                        if (on_complete) {
-                                            on_complete(result);
-                                        }
-                                    });
-                    },
-                    on_error);
-            });
+                            if (on_complete) {
+                                on_complete(result);
+                            }
+                        });
+                },
+                on_error);
         },
-        on_error);
+        [this, on_error](const MoonrakerError& err) {
+            std::string msg;
+            if (err.type == MoonrakerErrorType::TIMEOUT) {
+                spdlog::warn("[BeltTension] G28 response timed out (may still be running)");
+                msg = "Homing timed out — printer may still be homing";
+            } else {
+                spdlog::error("[BeltTension] Homing failed: {}", err.message);
+                msg = "Homing failed: " + err.message;
+            }
+            if (on_error) {
+                on_error(msg);
+            }
+            state_.store(State::IDLE);
+        });
 }
 
 // ============================================================================

@@ -1,6 +1,8 @@
 // Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#if HELIX_HAS_GCODE_VIEWER
+
 #include "gcode_layer_index.h"
 
 #include "gcode_color_metadata.h"
@@ -344,9 +346,8 @@ bool GCodeLayerIndex::build_from_file(const std::string& filepath) {
                     entry.z_height = z;
                     entry.byte_length = 0; // Will be filled when layer ends
                     entry.line_count = 0;  // Will be filled when layer ends
-                    entry.flags = absolute_extrusion
-                                      ? StreamingLayerEntry::FLAG_ABSOLUTE_EXTRUSION
-                                      : uint16_t{0};
+                    entry.flags = absolute_extrusion ? StreamingLayerEntry::FLAG_ABSOLUTE_EXTRUSION
+                                                     : uint16_t{0};
                     entry.start_x = current_x;
                     entry.start_y = current_y;
                     entry.start_z = current_seen_z;
@@ -521,3 +522,5 @@ float GCodeLayerIndex::get_layer_z(size_t layer_index) const {
 
 } // namespace gcode
 } // namespace helix
+
+#endif // HELIX_HAS_GCODE_VIEWER

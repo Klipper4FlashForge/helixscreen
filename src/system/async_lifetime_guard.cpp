@@ -231,8 +231,8 @@ void note_skipped(const char* tag) noexcept {
     // hot-path increment on the same slot cannot be clobbered.
     for (size_t i = 0; i < kMaxTrackedTags; ++i) {
         const char* expected = nullptr;
-        if (g_counters[i].tag.compare_exchange_strong(
-                expected, key, std::memory_order_acq_rel, std::memory_order_acquire)) {
+        if (g_counters[i].tag.compare_exchange_strong(expected, key, std::memory_order_acq_rel,
+                                                      std::memory_order_acquire)) {
             g_counters[i].count.fetch_add(1, std::memory_order_relaxed);
             return;
         }
@@ -254,8 +254,7 @@ SkipSnapshot take_snapshot() noexcept {
 
     // Drain the overflow bucket first so the per-tag loop below can early-exit
     // on empty slots without worrying about ordering vs. the overflow read.
-    uint64_t other =
-        g_counters[kMaxTrackedTags].count.exchange(0, std::memory_order_acq_rel);
+    uint64_t other = g_counters[kMaxTrackedTags].count.exchange(0, std::memory_order_acq_rel);
 
     // Coalesce slots that may hold the same tag (two threads can each CAS a
     // different free slot for the same first-sighting tag — see note_skipped).

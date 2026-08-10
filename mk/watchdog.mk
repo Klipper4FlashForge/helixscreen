@@ -86,10 +86,12 @@ $(BUILD_DIR)/watchdog/%.o: src/%.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) | $(BUILD
 # modules that can be linked into watchdog as extra objects.
 WATCHDOG_EXTRA_OBJS := $(BUILD_DIR)/watchdog/config.o \
                        $(BUILD_DIR)/watchdog/config_backup.o \
+                       $(BUILD_DIR)/watchdog/config_storage_file.o \
                        $(BUILD_DIR)/watchdog/backlight_backend.o \
                        $(BUILD_DIR)/watchdog/data_root_resolver.o \
                        $(BUILD_DIR)/watchdog/helix_paths.o \
                        $(BUILD_DIR)/watchdog/logging_init.o \
+                       $(BUILD_DIR)/watchdog/platform_capabilities.o \
                        $(BUILD_DIR)/watchdog/ui_notification_stub.o \
                        $(BUILD_DIR)/watchdog/drm_mode_matching.o \
                        $(BUILD_DIR)/watchdog/fbdev_size_helper.o \
@@ -104,6 +106,11 @@ $(BUILD_DIR)/watchdog/config.o: src/system/config.cpp $(LIBHV_LIB) $(LIBHV_JSON_
 
 # Compile config_backup for watchdog (config.cpp references it)
 $(BUILD_DIR)/watchdog/config_backup.o: src/system/config_backup.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) | $(BUILD_DIR)/watchdog
+	@echo "[CXX] $< (watchdog)"
+	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
+
+# Compile config_storage_file for watchdog (config.cpp's default ConfigStorage backend)
+$(BUILD_DIR)/watchdog/config_storage_file.o: src/system/config_storage_file.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) | $(BUILD_DIR)/watchdog
 	@echo "[CXX] $< (watchdog)"
 	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 
@@ -126,6 +133,11 @@ $(BUILD_DIR)/watchdog/helix_paths.o: src/system/helix_paths.cpp | $(BUILD_DIR)/w
 
 # Compile logging_init for watchdog
 $(BUILD_DIR)/watchdog/logging_init.o: src/system/logging_init.cpp $(LIBHV_LIB) $(LIBHV_JSON_HEADER) | $(BUILD_DIR)/watchdog
+	@echo "[CXX] $< (watchdog)"
+	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
+
+# logging_init sizes the debug ring from total RAM, so the watchdog links this too.
+$(BUILD_DIR)/watchdog/platform_capabilities.o: src/system/platform_capabilities.cpp | $(BUILD_DIR)/watchdog
 	@echo "[CXX] $< (watchdog)"
 	$(Q)$(CXX) $(WATCHDOG_CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 

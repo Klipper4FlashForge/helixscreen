@@ -8,12 +8,10 @@
   <styles>
     <style name="beta_accent" border_width="3" border_side="left" border_color="#warning"/>
   </styles>
-  <view extends="lv_obj" width="100%" height="content"
-        style_pad_all="0" scrollable="false">
+  <view extends="lv_obj" width="100%" height="content" style_pad_all="0" scrollable="false">
     <bind_flag_if_eq subject="show_beta_features" flag="hidden" ref_value="0"/>
     <bind_style name="beta_accent" subject="show_beta_features" ref_value="1"/>
     <!-- Floating BETA badge, top-right corner -->
-    <beta_badge floating="true" align="top_right"
-                style_translate_x="-48" style_translate_y="4"/>
+    <beta_badge floating="true" align="top_right" style_translate_x="-48" style_translate_y="4"/>
   </view>
 </component>

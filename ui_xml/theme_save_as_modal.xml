@@ -17,11 +17,12 @@
       <text_heading width="100%" text="Save Theme As" translation_tag="Save Theme As" style_text_align="center"/>
       <!-- Instructions -->
       <text_small width="100%"
-                  text="Enter a name for your custom theme:" translation_tag="Enter a name for your custom theme:" style_text_align="center" style_text_color="#text_muted"/>
+                  text="Enter a name for your custom theme:" translation_tag="Enter a name for your custom theme:"
+                  style_text_align="center" style_text_color="#text_muted"/>
       <!-- Theme name input -->
       <text_input name="theme_name_input"
-                  width="100%" height="#input_height" placeholder_text="My Custom Theme" placeholder_tag="My Custom Theme" translation_tag="My Custom Theme"
-                  style_margin_top="#space_sm"/>
+                  width="100%" height="#input_height" placeholder_text="My Custom Theme"
+                  placeholder_tag="My Custom Theme" translation_tag="My Custom Theme" style_margin_top="#space_sm"/>
       <!-- Status message (hidden by default) -->
       <text_small name="save_as_status"
                   width="100%" text="" style_text_align="center" style_text_color="#danger" hidden="true"/>

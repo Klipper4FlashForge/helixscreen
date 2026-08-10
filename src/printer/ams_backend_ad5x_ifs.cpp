@@ -6,15 +6,20 @@
 
 #include "ui_temperature_utils.h"
 
+#include "ams_fault_event.h"
 #include "ams_state.h"
+#include "app_globals.h"
 #include "config.h"
+#include "helix-xml/src/xml/lv_xml.h"
 #include "host_identity.h"
 #include "http_executor.h"
+#include "i_moonraker_api.h"
+#include "i_moonraker_client.h"
 #include "json_utils.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
-#include "moonraker_client.h"
 #include "post_op_cooldown_manager.h"
+#include "printer_state.h"
+#include "static_subject_registry.h"
 
 #include <spdlog/spdlog.h>
 
@@ -31,7 +36,96 @@
 
 using json = nlohmann::json;
 
-AmsBackendAd5xIfs::AmsBackendAd5xIfs(MoonrakerAPI* api, helix::MoonrakerClient* client)
+namespace {
+
+/// True when the printer's job state is PAUSED.
+///
+/// Reads the same subject handle_status_update() already uses to pick the
+/// Adventurer5M.json poll cadence, so there is one way this backend learns the
+/// print state. Null-safe: before PrinterState::init_subjects() (cold boot,
+/// non-LVGL unit tests) the accessor returns nullptr and we answer "not paused",
+/// which keeps the runout detector inert rather than guessing.
+[[nodiscard]] bool print_is_paused() {
+    auto* subj = get_printer_state().get_print_state_enum_subject();
+    if (!subj) {
+        return false;
+    }
+    return static_cast<helix::PrintJobState>(lv_subject_get_int(subj)) ==
+           helix::PrintJobState::PAUSED;
+}
+
+/// XML subjects publishing the AD5X auto-switchover plugin situation.
+///
+/// Owned here rather than by AmsState because they are AD5X-specific and the
+/// backend is the only thing that can know the answer. Process-lifetime storage
+/// (a function-local static) because an XML binding outlives any one backend
+/// instance - backends are constructed and destroyed on every printer switch,
+/// and a subject whose storage died under a live observer is a use-after-free.
+struct Ad5xIfsPluginSubjects {
+    lv_subject_t plugin{}; ///< AmsBackendAd5xIfs::IfsPlugin as int
+    lv_subject_t backup{}; ///< BACKUP_UNKNOWN / BACKUP_OFF / BACKUP_ON
+    bool initialized = false;
+};
+
+Ad5xIfsPluginSubjects& plugin_subjects() {
+    static Ad5xIfsPluginSubjects s;
+    return s;
+}
+
+void deinit_plugin_subjects() {
+    auto& s = plugin_subjects();
+    if (!s.initialized) {
+        return;
+    }
+    lv_subject_deinit(&s.plugin);
+    lv_subject_deinit(&s.backup);
+    s.initialized = false;
+}
+
+/// Publish the plugin state. Main thread only - handle_status_update() is
+/// marshalled there by AmsSubscriptionBackend's token.defer(), and setting a
+/// subject fires observers that touch widgets.
+///
+/// MUST be called with mutex_ NOT held: an observer can call straight back into
+/// get_system_info(), which takes the same non-recursive mutex_.
+///
+/// Registration is lazy and guarded on lv_is_initialized() because ~200 AD5X
+/// unit tests construct this backend with no LVGL at all; the guard makes the
+/// publish a no-op there instead of a crash.
+void publish_plugin_subjects(int plugin_value, int backup_value) {
+    if (!lv_is_initialized()) {
+        return;
+    }
+    auto& s = plugin_subjects();
+    if (!s.initialized) {
+        lv_subject_init_int(&s.plugin, static_cast<int>(AmsBackendAd5xIfs::IfsPlugin::None));
+        lv_subject_init_int(&s.backup, AmsBackendAd5xIfs::BACKUP_UNKNOWN);
+        lv_xml_register_subject(nullptr, "ams_ifs_plugin", &s.plugin);
+        lv_xml_register_subject(nullptr, "ams_ifs_backup_enabled", &s.backup);
+        StaticSubjectRegistry::instance().register_deinit("Ad5xIfsPlugin",
+                                                          []() { deinit_plugin_subjects(); });
+        s.initialized = true;
+    }
+    if (lv_subject_get_int(&s.plugin) != plugin_value) {
+        lv_subject_set_int(&s.plugin, plugin_value);
+    }
+    if (lv_subject_get_int(&s.backup) != backup_value) {
+        lv_subject_set_int(&s.backup, backup_value);
+    }
+}
+
+/// Fallback purge for a runout recovery: 50 mm of fresh filament at 10 mm/s.
+/// Same numbers the filament panel's purge fallback uses
+/// (ui_panel_filament.cpp, ui_filament_runout_handler.cpp) - deliberately a
+/// plain extruder move rather than zmod's `PURGE_FILAMENT` macro, because a bare
+/// `G1 E` needs no homing and cannot reach the loadcell `_G28` that shuts the
+/// AD5X down mid-job (see build_recovery_actions()).
+constexpr int kRunoutPurgeMm = 50;
+constexpr int kRunoutPurgeFeedrateMmMin = 10 * 60;
+
+} // namespace
+
+AmsBackendAd5xIfs::AmsBackendAd5xIfs(IMoonrakerAPI* api, helix::IMoonrakerClient* client)
     : AmsSubscriptionBackend(api, client) {
     // Fill tool map with UNMAPPED_PORT
     tool_map_.fill(UNMAPPED_PORT);
@@ -186,6 +280,10 @@ void AmsBackendAd5xIfs::on_started() {
                 // presence of its variables: lessWaste/bambufy's _IFS_VARS
                 // macro declares variable_colors / variable_tools / etc., so
                 // a real macro's get_status() returns a non-empty dict.
+                //
+                // Only the existence bool is extracted here; the dict itself
+                // survives into status_copy below and handle_status_update()
+                // reads its `variable_*` payload (parse_ifs_vars_macro_locked).
                 macro_exists = status.contains("gcode_macro _ifs_vars") &&
                                status["gcode_macro _ifs_vars"].is_object() &&
                                !status["gcode_macro _ifs_vars"].empty();
@@ -332,6 +430,18 @@ void AmsBackendAd5xIfs::handle_status_update(const json& notification) {
         }
     }
 
+    // The _IFS_VARS macro's own get_status() dict. on_started()'s probe used to
+    // reduce this whole payload to a single "does the macro exist" bool and
+    // throw the rest away; the plugin's live settings (notably `variable_backup`,
+    // the auto-switch-to-a-backup-spool toggle) are in here and are the only
+    // Moonraker-visible answer to "will this printer recover from a runout by
+    // itself?" (#1250, reported as #1247).
+    if (status->contains("gcode_macro _ifs_vars")) {
+        if (parse_ifs_vars_macro_locked((*status)["gcode_macro _ifs_vars"])) {
+            state_changed = true;
+        }
+    }
+
     // Parse per-port filament sensors
     // Leading space in sensor name is intentional — Klipper object naming convention
     for (int port = 1; port <= NUM_PORTS; ++port) {
@@ -424,7 +534,10 @@ void AmsBackendAd5xIfs::handle_status_update(const json& notification) {
             // Latch the SWITCH sensor's own authority, separate from the conflated
             // head_filament_ (which the motion sensor also writes, false-negating
             // while loaded-idle). Only the switch's reading can authoritatively say
-            // the head is empty for the #1065 row 28 head-gate.
+            // the head is empty for the #1065 row 28 head-gate and for the runout
+            // detector (#1250). Maintain the runout edge state BEFORE overwriting
+            // the latch - note_head_switch_reading_locked needs the previous value.
+            note_head_switch_reading_locked(detected);
             head_switch_seen_ = true;
             head_switch_present_ = detected;
             if (phase_tracker_.active && was != detected) {
@@ -480,9 +593,26 @@ void AmsBackendAd5xIfs::handle_status_update(const json& notification) {
     check_action_timeout();
     const bool indet_toggled = system_info_.operation_indeterminate != indet_before;
 
+    // Unattended-runout detector (#1250). Deliberately AFTER check_action_timeout:
+    // a timed-out operation owns the ERROR state, and the runout predicate
+    // requires action == IDLE so the two can never fight over it. Its own return
+    // value drives the emit below - the dwell means the raise usually lands on a
+    // status frame that changed nothing else, and without this the action would
+    // flip to ERROR with no EVENT_STATE_CHANGED to carry it to the UI.
+    const bool runout_changed = evaluate_runout_locked();
+
+    // Snapshot the plugin publication under the lock; the actual subject writes
+    // happen after unlock (an observer can re-enter get_system_info()).
+    const int plugin_value = static_cast<int>(
+        has_ifs_vars_ ? (var_prefix_ == "bambufy" ? IfsPlugin::Bambufy : IfsPlugin::LessWaste)
+                      : IfsPlugin::None);
+    const int backup_value = backup_subject_value_locked();
+
     lock.unlock();
 
-    if (state_changed || indet_toggled) {
+    publish_plugin_subjects(plugin_value, backup_value);
+
+    if (state_changed || indet_toggled || runout_changed) {
         emit_event(EVENT_STATE_CHANGED);
     }
 
@@ -496,13 +626,40 @@ void AmsBackendAd5xIfs::handle_status_update(const json& notification) {
     // on connected printers (raza/DIEHARDave report on v0.99.51) and made the
     // Mainsail/Fluidd console unusable. Piggybacking on notify_status_update
     // gives us sub-second cadence; rate-limit via steady_clock so the actual
-    // download fires no more often than kJsonPollInterval.
-    constexpr auto kJsonPollInterval = std::chrono::seconds(5);
+    // download fires no more often than the interval below.
+    //
+    // The interval slows to 30s while actively printing. FFMInfo carries only
+    // per-slot colour and material labels — cosmetic metadata — and measured
+    // against a real AD5X session the tight cadence earned nothing: 3902
+    // downloads produced 3 content changes, two of which were the first poll
+    // after boot establishing its baseline. Meanwhile each fetch is a loopback
+    // HTTP GET on a 2-core board that is simultaneously feeding the MCU step
+    // queue, and 'Timer too close' shutdowns are exactly what host starvation
+    // there looks like. PAUSED deliberately keeps the 5s cadence: a pause is
+    // when a user actually swaps a spool and relabels it.
+    bool printing_now = false;
+    if (auto* print_subj = get_printer_state().get_print_state_enum_subject()) {
+        printing_now = static_cast<helix::PrintJobState>(lv_subject_get_int(print_subj)) ==
+                       helix::PrintJobState::PRINTING;
+    }
+
     auto now = std::chrono::steady_clock::now();
-    if (now - last_json_poll_kick_ >= kJsonPollInterval) {
+    if (should_poll_json(printing_now, json_poll_was_printing_, now - last_json_poll_kick_)) {
         last_json_poll_kick_ = now;
         poll_adventurer_json();
     }
+    json_poll_was_printing_ = printing_now;
+}
+
+bool AmsBackendAd5xIfs::should_poll_json(bool printing_now, bool was_printing,
+                                         std::chrono::steady_clock::duration since_last) {
+    // printing->anything else: poll immediately rather than waiting out the slow
+    // interval, so the firmware's post-print FFMInfo revert is seen as promptly
+    // as it was before the backoff existed.
+    if (was_printing && !printing_now) {
+        return true;
+    }
+    return since_last >= (printing_now ? kJsonPollPrinting : kJsonPollIdle);
 }
 
 void AmsBackendAd5xIfs::parse_save_variables(const json& vars) {
@@ -1367,6 +1524,7 @@ AmsError AmsBackendAd5xIfs::do_load_filament(int slot_index) {
     int port = slot_index + 1;
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        note_filament_op_dispatch_locked();
         system_info_.action = AmsAction::HEATING;
         action_start_time_ = std::chrono::steady_clock::now();
         begin_phase_tracking_locked(/*is_unload=*/false);
@@ -1410,6 +1568,13 @@ AmsError AmsBackendAd5xIfs::do_unload_filament(int slot_index) {
     int seated_slot; // 0-based slot of the IFS_STATUS-seated port (-1 = none)
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        // Stamp here, at the top, and not in the heated-unload branch below:
+        // three of the four exits from this function route to eject_lane()
+        // without ever touching phase_tracker_ or system_info_.action, so the
+        // backend stays IDLE through an operation that legitimately empties the
+        // toolhead. The stamp is what stops the runout detector reading that as
+        // an unattended runout (#1250).
+        note_filament_op_dispatch_locked();
         head_loaded = head_filament_;
         current_slot = system_info_.current_slot;
         seated_slot = seated_chan_ > 0 ? seated_chan_ - 1 : -1;
@@ -1620,9 +1785,24 @@ AmsError AmsBackendAd5xIfs::do_change_tool(int tool_number) {
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        note_filament_op_dispatch_locked();
         system_info_.action = AmsAction::LOADING;
         action_start_time_ = std::chrono::steady_clock::now();
     }
+    // Publish LOADING immediately, matching do_load_filament/do_unload_filament.
+    // A tool change is a full swap - it drops the head sensor partway through -
+    // and until this emit existed nothing told the UI (or the runout detector's
+    // "is an operation in flight" gate) that the busy state had begun until the
+    // next ~1.4 s status frame.
+    //
+    // A_CHANGE_FILAMENT deliberately does NOT arm the phase tracker. The tracker
+    // is finalized either by a macro-completion callback (load/unload both
+    // install one) or by the ERROR timeout, and this call site has neither;
+    // arming it here would make detect_load_unload_completion() early-return on
+    // the head rise that currently snaps the action back to IDLE, so a tool
+    // change would hang busy until the 90 s budget flipped it to ERROR. The
+    // LOADING action above is what the runout gate keys on instead.
+    emit_event(EVENT_STATE_CHANGED);
     spdlog::info("{} Changing to tool T{} (port {})", backend_log_tag(), tool_number, port);
     return ensure_homed_then("A_CHANGE_FILAMENT CHANNEL=" + std::to_string(port));
 }
@@ -1638,6 +1818,11 @@ AmsError AmsBackendAd5xIfs::eject_lane(int slot_index) {
         if (!precondition) {
             return precondition;
         }
+
+        // A cold lane eject leaves system_info_.action IDLE, so it is invisible
+        // to every "is something in flight" test the runout detector could make.
+        // The dispatch stamp is that test (#1250).
+        note_filament_op_dispatch_locked();
 
         if (!validate_slot_index(slot_index)) {
             return AmsErrorHelper::invalid_slot(slot_index, NUM_PORTS - 1);
@@ -1742,6 +1927,7 @@ AmsError AmsBackendAd5xIfs::recover() {
             system_info_.action = AmsAction::IDLE;
             system_info_.operation_detail.clear();
         }
+        clear_runout_locked("recover()");
     }
 
     auto err = check_preconditions();
@@ -1763,6 +1949,7 @@ AmsError AmsBackendAd5xIfs::reset() {
             system_info_.action = AmsAction::IDLE;
             system_info_.operation_detail.clear();
         }
+        clear_runout_locked("reset()");
     }
 
     auto err = check_preconditions();
@@ -1784,6 +1971,7 @@ AmsError AmsBackendAd5xIfs::cancel() {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         system_info_.action = AmsAction::IDLE;
+        clear_runout_locked("cancel()");
         // Tear down any in-flight phase tracking + clear the step index so the
         // tracker resets to "no active step" on an explicit cancel.
         if (phase_tracker_.active) {
@@ -1798,22 +1986,136 @@ AmsError AmsBackendAd5xIfs::cancel() {
 
 // --- Error-center bridge ---
 
+std::vector<helix::RecoveryAction> AmsBackendAd5xIfs::build_recovery_actions() const {
+    // Caller holds mutex_.
+    if (!runout_active_) {
+        // Operation-timeout fault. IFS_UNLOCK releases the firmware's operation
+        // lock; it moves no filament, so it stays tappable on a cold nozzle
+        // (needs_hot_nozzle defaults false).
+        return {{lv_tr("Recover"), "IFS_UNLOCK", "ifs::unlock", "primary"}};
+    }
+
+    // Unattended runout. The print is paused with an empty toolhead and the user
+    // has to put filament back before anything else is worth offering.
+    std::vector<helix::RecoveryAction> actions;
+
+    // Primary: carry on once filament is back at the nozzle. Resuming extrudes on
+    // the very next move, so the hotend has to be up - the post-op cooldown or
+    // idle_timeout has usually taken it down by the time anyone taps this.
+    actions.push_back({lv_tr("Resume"), "RESUME", "ifs::resume", "primary",
+                       /*needs_hot_nozzle=*/true});
+
+    // Clear the tail of the old spool and prime with the new one. A bare
+    // `M83` + `G1 E` and NOT zmod's PURGE_FILAMENT macro: this is a pure
+    // extruder move, so it needs no homing (see the no-Load note below) and it
+    // works on stock zMod as well as on either plugin. Obviously hot-only.
+    actions.push_back({lv_tr("Purge"),
+                       "M83\nG1 E" + std::to_string(kRunoutPurgeMm) + " F" +
+                           std::to_string(kRunoutPurgeFeedrateMmMin),
+                       "ifs::purge", "",
+                       /*needs_hot_nozzle=*/true});
+
+    // NO "Load slot N" button, deliberately, even though a runout is exactly when
+    // the user wants one. Every load path this backend has runs
+    // INSERT_PRUTOK_IFS, whose macro homes itself before feeding
+    // (filament_ops_self_home() and its comment). On the loadcell-Z AD5X that
+    // `_G28` probes the nozzle DOWN into the part; with a job owning the toolhead
+    // it trips ZMOD's ZCONTROL_AUTO and shuts Klipper down, recoverable only by a
+    // firmware restart (bundle XWPBR2DX, commit 329e731e9). A runout state is
+    // PAUSED by construction, so the button would fire straight into that.
+    // refuse_if_printing() protects load_filament(); it does NOT protect a
+    // recovery button, which hands its gcode directly to
+    // IMoonrakerAPI::execute_gcode, and the `_G28` is buried inside the macro
+    // where reject_homing_during_active_print() never sees it. Until there is a
+    // verified non-homing load-to-toolhead command, the safe answer is to say so
+    // in the detail text and let the user load from the AMS panel after the job
+    // is cancelled or the print is resumed.
+
+    // Last resort: release the firmware's clamps if the IFS wedged. State only.
+    actions.push_back({lv_tr("Recover"), "IFS_UNLOCK", "ifs::unlock", "danger"});
+    return actions;
+}
+
 std::optional<helix::ErrorEvent> AmsBackendAd5xIfs::current_error() const {
     std::lock_guard<std::mutex> lock(mutex_);
     if (system_info_.action != AmsAction::ERROR)
         return std::nullopt;
-    helix::ErrorEvent e;
-    e.source = helix::ErrorSource::IFS;
-    e.severity = helix::ErrorSeverity::CRITICAL;
-    e.title = lv_tr("Filament System Error");
-    e.detail = system_info_.operation_detail.empty()
-                   ? std::string(lv_tr("Filament operation failed"))
-                   : system_info_.operation_detail;
-    e.sticky = true;
-    // IFS_UNLOCK releases the firmware's operation lock; it moves no filament,
-    // so it stays tappable on a cold nozzle (needs_hot_nozzle defaults false).
-    e.recovery_actions = {{lv_tr("Recover"), "IFS_UNLOCK", "ifs::unlock", "primary"}};
-    return e;
+    if (runout_active_) {
+        // Title mirrors Happy Hare's runout wording so the two backends read the
+        // same on screen. operation_detail carries build_runout_detail_locked()'s
+        // text, including the plugin sentence.
+        return helix::make_ams_fault_event(
+            helix::ErrorSource::IFS, lv_tr("Filament runout"),
+            system_info_.operation_detail.empty()
+                ? std::string(lv_tr("Filament ran out at the toolhead"))
+                : system_info_.operation_detail,
+            build_recovery_actions());
+    }
+    return helix::make_ams_fault_event(helix::ErrorSource::IFS, lv_tr("Filament System Error"),
+                                       system_info_.operation_detail.empty()
+                                           ? std::string(lv_tr("Filament operation failed"))
+                                           : system_info_.operation_detail,
+                                       build_recovery_actions());
+}
+
+// --- Plugin visibility (lessWaste / bambufy auto switchover) ---
+
+AmsBackendAd5xIfs::IfsPlugin AmsBackendAd5xIfs::get_plugin() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!has_ifs_vars_) {
+        return IfsPlugin::None;
+    }
+    return var_prefix_ == "bambufy" ? IfsPlugin::Bambufy : IfsPlugin::LessWaste;
+}
+
+std::optional<bool> AmsBackendAd5xIfs::plugin_backup_enabled() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return ifs_backup_variable_;
+}
+
+bool AmsBackendAd5xIfs::runout_active() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return runout_active_;
+}
+
+int AmsBackendAd5xIfs::backup_subject_value_locked() const {
+    // No plugin means no backup mechanism at all - that is a definite OFF, not an
+    // unknown, and it is the answer the #1247 reporter needed to see.
+    if (!has_ifs_vars_) {
+        return BACKUP_OFF;
+    }
+    if (!ifs_backup_variable_.has_value()) {
+        return BACKUP_UNKNOWN;
+    }
+    return *ifs_backup_variable_ ? BACKUP_ON : BACKUP_OFF;
+}
+
+bool AmsBackendAd5xIfs::parse_ifs_vars_macro_locked(const json& macro_status) {
+    // Klipper returns `{}` for an object that does not exist, so an empty dict is
+    // the "no macro" answer and carries nothing to read.
+    if (!macro_status.is_object() || macro_status.empty()) {
+        return false;
+    }
+    // lessWaste's runout backup toggle. Accepts the jinja int form the variable
+    // dump shows (`variable_backup: 0`) and a bool, since neither plugin's schema
+    // is pinned by anything we control.
+    const auto it = macro_status.find("variable_backup");
+    if (it == macro_status.end()) {
+        return false;
+    }
+    std::optional<bool> parsed;
+    if (it->is_boolean()) {
+        parsed = it->get<bool>();
+    } else if (it->is_number_integer()) {
+        parsed = it->get<int>() != 0;
+    }
+    if (!parsed.has_value() || parsed == ifs_backup_variable_) {
+        return false;
+    }
+    ifs_backup_variable_ = parsed;
+    spdlog::info("{} _IFS_VARS variable_backup = {} (automatic backup-spool switching on runout)",
+                 backend_log_tag(), *parsed ? "on" : "off");
+    return true;
 }
 
 // --- Backend-driven operation step model ---
@@ -2831,47 +3133,61 @@ void AmsBackendAd5xIfs::poll_adventurer_json() {
     }
 
     auto token = lifetime_.token();
-    api_->transfers().download_file(
-        "config", "Adventurer5M.json",
-        [this, token](const std::string& content) {
-            // MAIN THREAD: clear in-flight gate AND apply the parse together
-            // so we never touch member state on the bg thread. The gate may
-            // stay "true" for one extra UpdateQueue tick — harmless coalescing.
-            token.defer("Ad5xIfsBackend::poll_json_apply", [this, content]() mutable {
-                json_poll_in_flight_.store(false);
+    auto on_content = [this, token](const std::string& content) {
+        // MAIN THREAD: clear in-flight gate AND apply the parse together
+        // so we never touch member state on the bg thread. The gate may
+        // stay "true" for one extra UpdateQueue tick — harmless coalescing.
+        token.defer("Ad5xIfsBackend::poll_json_apply", [this, content]() mutable {
+            json_poll_in_flight_.store(false);
 
-                if (!note_json_content(content)) {
-                    spdlog::trace("{} Adventurer5M.json unchanged ({} bytes), "
-                                  "skipping GET_ZCOLOR",
-                                  backend_log_tag(), content.size());
-                    return;
-                }
-
-                spdlog::debug("{} Adventurer5M.json changed ({} bytes), parsing + "
-                              "scheduling GET_ZCOLOR",
+            if (!note_json_content(content)) {
+                spdlog::trace("{} Adventurer5M.json unchanged ({} bytes), "
+                              "skipping GET_ZCOLOR",
                               backend_log_tag(), content.size());
-                parse_adventurer_json(content);
-                schedule_zcolor_query("json_poll");
-            });
-        },
-        [this, token](const MoonrakerError& err) {
-            // MAIN THREAD: clearing the gate + atomic + log lives in the defer
-            // so no member access happens on the bg thread.
-            if (err.type == MoonrakerErrorType::FILE_NOT_FOUND || err.code == 404) {
-                token.defer("Ad5xIfsBackend::poll_json_404", [this]() {
-                    json_poll_in_flight_.store(false);
-                    json_poll_supported_.store(false);
-                    spdlog::info("{} Adventurer5M.json poll: file not found, disabling poll",
-                                 backend_log_tag());
-                });
-            } else {
-                token.defer("Ad5xIfsBackend::poll_json_err", [this, msg = err.message]() {
-                    json_poll_in_flight_.store(false);
-                    spdlog::debug("{} Adventurer5M.json poll failed (will retry): {}",
-                                  backend_log_tag(), msg);
-                });
+                return;
             }
+
+            spdlog::debug("{} Adventurer5M.json changed ({} bytes), parsing + "
+                          "scheduling GET_ZCOLOR",
+                          backend_log_tag(), content.size());
+            parse_adventurer_json(content);
+            schedule_zcolor_query("json_poll");
         });
+    };
+    auto on_error = [this, token](const MoonrakerError& err) {
+        // MAIN THREAD: clearing the gate + atomic + log lives in the defer
+        // so no member access happens on the bg thread.
+        if (err.type == MoonrakerErrorType::FILE_NOT_FOUND || err.code == 404) {
+            token.defer("Ad5xIfsBackend::poll_json_404", [this]() {
+                json_poll_in_flight_.store(false);
+                json_poll_supported_.store(false);
+                spdlog::info("{} Adventurer5M.json poll: file not found, disabling poll",
+                             backend_log_tag());
+            });
+        } else {
+            token.defer("Ad5xIfsBackend::poll_json_err", [this, msg = err.message]() {
+                json_poll_in_flight_.store(false);
+                spdlog::debug("{} Adventurer5M.json poll failed (will retry): {}",
+                              backend_log_tag(), msg);
+            });
+        }
+    };
+
+#if defined(ESP_PLATFORM)
+    // Task 15 R2 evaluation arm (CONFIG_HELIX_AMS_HTTP_POLL_BACKENDS):
+    // download_file() is a hard stub on ESP32 (Task 10's HTTP lane only
+    // supports bounded fetches — see esp_rest_api.cpp). Adventurer5M.json is
+    // a small generated config; kAdventurerJsonPollCapBytes is generous
+    // enough a real file rarely hits it, and download_file_partial fails
+    // loud on an over-cap response rather than silently truncating (see
+    // esp_http_lane.cpp) — same graceful degrade as any other poll failure
+    // handled by on_error above.
+    static constexpr size_t kAdventurerJsonPollCapBytes = 32 * 1024;
+    api_->transfers().download_file_partial("config", "Adventurer5M.json",
+                                            kAdventurerJsonPollCapBytes, on_content, on_error);
+#else
+    api_->transfers().download_file("config", "Adventurer5M.json", on_content, on_error);
+#endif
 }
 
 bool AmsBackendAd5xIfs::on_gcode_response_line(const std::string& line) {
@@ -3444,31 +3760,46 @@ void AmsBackendAd5xIfs::recheck_ifs_vars_macro() {
             // (Klipper returns `{}` for missing objects), require a non-empty
             // variables dict.
             bool macro_exists = false;
+            json macro_status;
             if (response.contains("result") && response["result"].contains("status")) {
                 const auto& status = response["result"]["status"];
                 macro_exists = status.contains("gcode_macro _ifs_vars") &&
                                status["gcode_macro _ifs_vars"].is_object() &&
                                !status["gcode_macro _ifs_vars"].empty();
-            }
-            token.defer("Ad5xIfsBackend::recheck_macro_apply", [this, macro_exists]() {
-                std::lock_guard<std::mutex> lock(mutex_);
+                // Keep the dict, not just the existence bool: `gcode_macro
+                // _ifs_vars` is NOT in the standing objects.subscribe set, so the
+                // initial on_started() query and this recheck are the only two
+                // places variable_backup ever reaches us (#1250).
                 if (macro_exists) {
-                    if (ifs_macro_confirmed_missing_) {
-                        spdlog::info("{} _IFS_VARS macro now present (post FIRMWARE_RESTART) — "
-                                     "re-enabling save_variables tool-mapping reads",
-                                     backend_log_tag());
-                        ifs_macro_confirmed_missing_ = false;
-                    }
-                } else {
-                    if (!ifs_macro_confirmed_missing_ || has_ifs_vars_) {
-                        spdlog::warn("{} _IFS_VARS macro no longer present (post "
-                                     "FIRMWARE_RESTART) — disabling _IFS_VARS writes",
-                                     backend_log_tag());
-                    }
-                    ifs_macro_confirmed_missing_ = true;
-                    has_ifs_vars_ = false;
+                    macro_status = status["gcode_macro _ifs_vars"];
                 }
-            });
+            }
+            token.defer("Ad5xIfsBackend::recheck_macro_apply",
+                        [this, macro_exists, macro_status = std::move(macro_status)]() {
+                            std::lock_guard<std::mutex> lock(mutex_);
+                            if (macro_exists) {
+                                parse_ifs_vars_macro_locked(macro_status);
+                                if (ifs_macro_confirmed_missing_) {
+                                    spdlog::info(
+                                        "{} _IFS_VARS macro now present (post FIRMWARE_RESTART) — "
+                                        "re-enabling save_variables tool-mapping reads",
+                                        backend_log_tag());
+                                    ifs_macro_confirmed_missing_ = false;
+                                }
+                            } else {
+                                if (!ifs_macro_confirmed_missing_ || has_ifs_vars_) {
+                                    spdlog::warn("{} _IFS_VARS macro no longer present (post "
+                                                 "FIRMWARE_RESTART) — disabling _IFS_VARS writes",
+                                                 backend_log_tag());
+                                }
+                                ifs_macro_confirmed_missing_ = true;
+                                has_ifs_vars_ = false;
+                                // The plugin went away with the macro; a remembered
+                                // variable_backup would be a claim about software that is
+                                // no longer installed.
+                                ifs_backup_variable_.reset();
+                            }
+                        });
         });
 }
 
@@ -3595,7 +3926,7 @@ void AmsBackendAd5xIfs::query_zcolor_silent() {
     // parse_zcolor_silent. Clean JSON (not a prompt dialog), so it works even on
     // old zmod where GET_ZCOLOR degrades to a prompt-fallback. Routed through the
     // backend's fire-and-forget execute_gcode() rather than the callback-taking
-    // MoonrakerAPI overload.
+    // IMoonrakerAPI overload.
     execute_gcode("IFS_STATUS");
 
     if (!silent) {
@@ -4863,6 +5194,238 @@ void AmsBackendAd5xIfs::detect_load_unload_completion(bool head_detected) {
     }
 }
 
+// === Unattended runout detection (#1250, reported as #1247) ===
+
+void AmsBackendAd5xIfs::note_head_switch_reading_locked(bool detected) {
+    // Reads the PREVIOUS latch values; handle_status_update calls this before it
+    // overwrites head_switch_seen_ / head_switch_present_.
+    const bool was_seen = head_switch_seen_;
+    const bool was_present = head_switch_present_;
+
+    if (detected) {
+        head_empty_since_.reset();
+        if (runout_active_) {
+            clear_runout_locked("filament detected at the toolhead again");
+        }
+        return;
+    }
+
+    // Arm on a genuine present->absent EDGE only, and only when nothing is in
+    // flight. A level test would invent a runout on a printer that booted into a
+    // paused job with an empty toolhead, and arming during an operation would
+    // attribute that operation's own head drop (a cut, a swap's implicit unload)
+    // to a runout.
+    if (!was_seen || !was_present) {
+        return;
+    }
+    if (phase_tracker_.active || system_info_.action != AmsAction::IDLE) {
+        return;
+    }
+    head_empty_since_ = std::chrono::steady_clock::now();
+    spdlog::debug("{} Toolhead switch cleared while idle - runout candidate armed",
+                  backend_log_tag());
+}
+
+void AmsBackendAd5xIfs::note_filament_op_dispatch_locked() {
+    last_filament_op_dispatch_ = std::chrono::steady_clock::now();
+    // Any candidate armed before this dispatch is now unattributable - the
+    // operation about to run is a perfectly good explanation for an empty head.
+    head_empty_since_.reset();
+}
+
+std::chrono::seconds AmsBackendAd5xIfs::runout_confirm_delay_locked() const {
+    // lessWaste's own backup switchover pauses the print, unloads the spent lane
+    // and loads a matching one - minutes during which the toolhead is legitimately
+    // empty on a paused job. Wait it out rather than talking over the recovery the
+    // printer is already performing.
+    if (has_ifs_vars_ && ifs_backup_variable_.value_or(false)) {
+        return kRunoutConfirmDelayWithBackup;
+    }
+    return kRunoutConfirmDelay;
+}
+
+bool AmsBackendAd5xIfs::evaluate_runout_locked() {
+    const bool paused = print_is_paused();
+
+    if (runout_active_) {
+        // The user resumed, cancelled, or started another job: whatever they did,
+        // the paused-with-an-empty-head condition this fault describes is over.
+        // Dropping the action back to IDLE is what makes AmsErrorBridge dismiss
+        // the recovery modal (it watches the falling edge out of ERROR).
+        if (!paused) {
+            clear_runout_locked("print is no longer paused");
+            return true;
+        }
+        return false;
+    }
+
+    if (!head_empty_since_.has_value()) {
+        return false;
+    }
+    // The SWITCH pair is the authority, never head_filament_ - the motion sensor
+    // also writes head_filament_ and reads false on a loaded-but-idle lane.
+    if (!head_switch_seen_ || head_switch_present_) {
+        head_empty_since_.reset();
+        return false;
+    }
+    // A runout that matters stops the job. While PRINTING the same empty head is
+    // the middle of a firmware tool change (A_CHANGE_FILAMENT drops the head
+    // sensor partway through), which is exactly the false positive this gate
+    // exists to avoid; Klipper queues a PAUSE behind the running macro, so a swap
+    // cannot make the job read PAUSED with the head still empty.
+    if (!paused) {
+        return false;
+    }
+    // Nothing of ours in flight. phase_tracker_ covers load/unload;
+    // action != IDLE additionally covers do_change_tool(), which sets LOADING
+    // without arming the tracker.
+    if (phase_tracker_.active || system_info_.action != AmsAction::IDLE) {
+        return false;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    // eject_lane() and do_unload_filament()'s three early returns leave the
+    // backend IDLE and armless, so neither test above sees them. The dispatch
+    // stamp does.
+    if (now - last_filament_op_dispatch_ < kRunoutOpSuppression) {
+        return false;
+    }
+    if (now - *head_empty_since_ < runout_confirm_delay_locked()) {
+        return false;
+    }
+
+    // Which lane ran out. The firmware routinely drops its active pointer on a
+    // runout (#995 "Extruder: None"), so fall through every seated authority we
+    // have rather than reporting -1.
+    runout_slot_ = -1;
+    if (system_info_.current_slot >= 0) {
+        runout_slot_ = system_info_.current_slot;
+    } else if (seated_chan_ > 0) {
+        runout_slot_ = seated_chan_ - 1;
+    } else if (ffm_channel_ > 0) {
+        runout_slot_ = ffm_channel_ - 1;
+    } else if (persisted_seated_slot_.has_value()) {
+        runout_slot_ = *persisted_seated_slot_;
+    }
+
+    runout_active_ = true;
+    // The cross-backend flag. AmsState gates its runout indicator on
+    // (filament_runout && paused), and we only ever raise while paused, so the
+    // gate is a no-op here rather than a second condition to satisfy.
+    system_info_.filament_runout = true;
+    // AmsAction::ERROR is the only edge AmsErrorBridge watches, so it is the only
+    // way current_error() ever gets consulted. check_action_timeout() ignores
+    // ERROR, so this cannot be re-timed out on top of itself.
+    system_info_.action = AmsAction::ERROR;
+    system_info_.operation_indeterminate = false;
+    set_operation_detail_locked(build_runout_detail_locked());
+    spdlog::warn("{} Filament runout: toolhead switch empty for {}s on a paused print "
+                 "(lane {}, plugin={}, backup={})",
+                 backend_log_tag(),
+                 std::chrono::duration_cast<std::chrono::seconds>(now - *head_empty_since_).count(),
+                 runout_slot_, has_ifs_vars_ ? var_prefix_ : std::string("none"),
+                 backup_subject_value_locked());
+    return true;
+}
+
+void AmsBackendAd5xIfs::clear_runout_locked(const char* why) {
+    head_empty_since_.reset();
+    if (!runout_active_) {
+        // Not latched, but still clear the cross-backend flag: AmsState reads it
+        // on every sync and a stale true would keep the unit-card warning icon lit
+        // for a fault that is over.
+        system_info_.filament_runout = false;
+        return;
+    }
+    spdlog::info("{} Filament runout cleared ({})", backend_log_tag(), why);
+    runout_active_ = false;
+    runout_slot_ = -1;
+    system_info_.filament_runout = false;
+    if (system_info_.action == AmsAction::ERROR) {
+        system_info_.action = AmsAction::IDLE;
+        system_info_.operation_detail.clear();
+    }
+}
+
+int AmsBackendAd5xIfs::find_backup_slot_locked(int runout_slot) const {
+    if (runout_slot < 0 || runout_slot >= NUM_PORTS) {
+        return -1;
+    }
+    const auto src = static_cast<size_t>(runout_slot);
+    if (materials_[src].empty() || colors_[src].empty()) {
+        return -1; // Nothing to match against; claim nothing.
+    }
+    const auto lower = [](std::string s) {
+        std::transform(s.begin(), s.end(), s.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return s;
+    };
+    const std::string want_material = lower(materials_[src]);
+    const std::string want_color = lower(colors_[src]);
+    for (int i = 0; i < NUM_PORTS; ++i) {
+        if (i == runout_slot) {
+            continue;
+        }
+        const auto idx = static_cast<size_t>(i);
+        // All three conditions, no partial credit: this is the rule the hint text
+        // states, and lessWaste's own switchover is type+colour matched. Offering
+        // a "close enough" lane would print the wrong colour.
+        if (!port_presence_[idx]) {
+            continue;
+        }
+        if (lower(materials_[idx]) != want_material) {
+            continue;
+        }
+        if (lower(colors_[idx]) != want_color) {
+            continue;
+        }
+        return i;
+    }
+    return -1;
+}
+
+std::string AmsBackendAd5xIfs::build_runout_detail_locked() const {
+    std::string detail =
+        lv_tr("Filament ran out - nothing at the toolhead and the print is paused.");
+    detail += " ";
+
+    if (!has_ifs_vars_) {
+        // The #1247 misexpectation, answered head-on: stock zMod has no
+        // switchover mechanism at all, so nothing is going to happen by itself.
+        detail += lv_tr("No auto-switchover plugin (lessWaste or bambufy) is installed, so this "
+                        "printer will not change to a backup spool on its own.");
+        return detail;
+    }
+
+    const std::string plugin_name = (var_prefix_ == "bambufy") ? "bambufy" : "lessWaste";
+    if (!ifs_backup_variable_.has_value()) {
+        detail += plugin_name + " ";
+        detail += lv_tr("is installed, but its backup-spool setting could not be read - do not "
+                        "count on an automatic swap.");
+        return detail;
+    }
+    if (!*ifs_backup_variable_) {
+        detail += plugin_name + " ";
+        detail += lv_tr("is installed but its backup-spool switching is turned off, so no "
+                        "automatic swap will happen.");
+        return detail;
+    }
+
+    detail += plugin_name + " ";
+    detail += lv_tr("backup-spool switching is on. It only switches to a port whose filament type "
+                    "AND colour both match the active spool and whose own port sensor reads "
+                    "filament present.");
+    const int backup = find_backup_slot_locked(runout_slot_);
+    detail += " ";
+    if (backup >= 0) {
+        detail += lv_tr("Slot");
+        detail += " " + std::to_string(backup + 1) + " ";
+        detail += lv_tr("matches.");
+    } else {
+        detail += lv_tr("No slot currently matches.");
+    }
+    return detail;
+}
+
 int AmsBackendAd5xIfs::find_first_tool_for_port(int port_1based) const {
     for (int t = 0; t < TOOL_MAP_SIZE; ++t) {
         if (tool_map_[static_cast<size_t>(t)] == port_1based) {
@@ -4951,6 +5514,22 @@ bool AmsBackendAd5xIfs::validate_slot_index(int slot_index) const {
 }
 
 // ensure_homed_then() provided by AmsSubscriptionBackend
+
+void AmsBackendAd5xIfs::on_home_confirmation_declined() {
+    // load_filament()/unload_filament() arm HEATING + begin_phase_tracking_locked()
+    // before ever reaching ensure_homed_then(); undo that half here, then let the
+    // base implementation reset the action to IDLE and emit. Without this the
+    // phase tracker stays active, apply_phase_action_locked() has no `!= IDLE`
+    // guard, and the next extruder-temp frame flips IDLE -> HEATING again with a
+    // fresh action_start_time_ -- 300s later check_action_timeout() latches ERROR
+    // on an operation the user already declined.
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        end_phase_tracking_locked();
+        set_operation_detail_locked("");
+    }
+    AmsSubscriptionBackend::on_home_confirmation_declined();
+}
 
 void AmsBackendAd5xIfs::check_action_timeout() {
     // Indeterminate ("Working…") detector (#1065 row 14). While a phase-tracked

@@ -12,13 +12,14 @@
 #include "ui_update_queue.h"
 
 #include "app_globals.h"
+#include "i_moonraker_api.h"
+#include "i_moonraker_client.h"
 #include "moonraker_advanced_api.h"
-#include "moonraker_api.h"
-#include "moonraker_client.h"
 #include "printer_state.h"
 #include "probe_sensor_manager.h"
 #include "probe_sensor_types.h"
 #include "static_panel_registry.h"
+#include "toolhead_homing.h"
 
 #include <spdlog/spdlog.h>
 
@@ -39,8 +40,8 @@ static std::unique_ptr<ProbeOverlay> g_probe_overlay;
 
 // Forward declarations
 static void on_probe_row_clicked(lv_event_t* e);
-MoonrakerAPI* get_moonraker_api();
-MoonrakerClient* get_moonraker_client();
+IMoonrakerAPI* get_moonraker_api();
+IMoonrakerClient* get_moonraker_client();
 
 ProbeOverlay& get_global_probe_overlay() {
     if (!g_probe_overlay) {
@@ -80,7 +81,7 @@ static void on_probe_row_clicked(lv_event_t* e) {
     if (!overlay.get_root()) {
         spdlog::debug("[Probe] Creating probe overlay...");
 
-        MoonrakerAPI* api = get_moonraker_api();
+        IMoonrakerAPI* api = get_moonraker_api();
         overlay.set_api(api);
 
         lv_obj_t* screen = lv_display_get_screen_active(nullptr);
@@ -100,7 +101,7 @@ static void on_probe_row_clicked(lv_event_t* e) {
 
 // Helper to send a GCode command via MoonrakerClient
 static void send_probe_gcode(const char* gcode, const char* label) {
-    MoonrakerClient* client = get_moonraker_client();
+    IMoonrakerClient* client = get_moonraker_client();
     if (!client) {
         spdlog::error("[Probe] No client for {} command", label);
         return;
@@ -412,7 +413,7 @@ void ProbeOverlay::cleanup() {
     spdlog::trace("[Probe] Cleanup");
 }
 
-void ProbeOverlay::set_api(MoonrakerAPI* api) {
+void ProbeOverlay::set_api(IMoonrakerAPI* api) {
     api_ = api;
 }
 
@@ -569,8 +570,7 @@ void ProbeOverlay::handle_probe_accuracy() {
 
     // Check homing state — PROBE_ACCURACY requires all axes homed
     PrinterState& ps = get_printer_state();
-    const char* homed = lv_subject_get_string(ps.get_homed_axes_subject());
-    bool all_homed = homed && std::string(homed).find("xyz") != std::string::npos;
+    const bool all_homed = helix::toolhead_is_homed(ps);
 
     // PROBE_ACCURACY defaults to 10 samples (not the [probe] config's samples= which is for
     // regular probing). We pass SAMPLES= explicitly so progress tracking matches.
@@ -578,7 +578,10 @@ void ProbeOverlay::handle_probe_accuracy() {
 
     std::string gcode;
     if (!all_homed) {
-        spdlog::info("[Probe] Axes not homed (homed_axes='{}'), homing first", homed ? homed : "");
+        // Diagnostic-only re-fetch — all_homed above already decided the branch.
+        const char* homed_dbg = lv_subject_get_string(ps.get_homed_axes_subject());
+        spdlog::info("[Probe] Axes not homed (homed_axes='{}'), homing first",
+                     homed_dbg ? homed_dbg : "");
         gcode = "G28\n";
     }
 
@@ -799,6 +802,12 @@ void ProbeOverlay::handle_accuracy_estop() {
 void ProbeOverlay::handle_zoffset_cal() {
     spdlog::debug("[Probe] Z-Offset calibration requested");
 
+#if defined(HELIX_PLATFORM_ESP32)
+    // Secondary entry to Z-Offset calibration (excluded, null-vtable stub on v1).
+    helix::ui::show_feature_unavailable_toast();
+    return;
+#endif
+
     auto& overlay = get_global_zoffset_cal_panel();
 
     // Lazy-create z-offset overlay
@@ -813,6 +822,12 @@ void ProbeOverlay::handle_zoffset_cal() {
 
 void ProbeOverlay::handle_bed_mesh() {
     spdlog::debug("[Probe] Bed mesh requested");
+
+#if defined(HELIX_PLATFORM_ESP32)
+    // Secondary entry to bed-mesh calibration (excluded, null-vtable stub on v1).
+    helix::ui::show_feature_unavailable_toast();
+    return;
+#endif
 
     auto& panel = get_global_bed_mesh_panel();
 

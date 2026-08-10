@@ -60,6 +60,81 @@
 #include <time.h>
 #endif
 
+#ifdef __ANDROID__
+#include <SDL_system.h>
+#include <jni.h>
+
+// ---------------------------------------------------------------------------
+// JNI bridge to HelixActivity's window flags (#1245)
+//
+// Mirrors android_set_navbar_always_visible() in display_settings_manager.cpp —
+// same guard shape, same ExceptionClear() on every failure path, same
+// DeleteLocalRef discipline. It lives HERE rather than being exported from
+// display_settings_manager.h because DisplayManager is the only caller: which
+// mechanism cuts the panel is display-output policy, not a persisted setting.
+// Putting an Android-only declaration in the settings header to reach it would
+// file the API under the wrong owner. There is exactly one copy of each helper.
+//
+// Note we do NOT use SDL_EnableScreenSaver()/SDL_DisableScreenSaver(), which
+// reach the same window flag via COMMAND_SET_KEEP_SCREEN_ON: they early-return
+// when SDL's cached suspend_screensaver already matches, so a re-assert after
+// Android recreates the window is silently dropped. HelixActivity keeps the
+// desired state in a static and re-applies it from onResume(), which is the
+// behaviour we actually need.
+// ---------------------------------------------------------------------------
+
+/// Ask HelixActivity to add/clear FLAG_KEEP_SCREEN_ON (applied on the UI thread).
+static void android_set_keep_screen_on(bool keep_on) {
+    JNIEnv* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
+    if (!env)
+        return;
+
+    jclass cls = env->FindClass("org/helixscreen/app/HelixActivity");
+    if (!cls) {
+        env->ExceptionClear();
+        return;
+    }
+
+    jmethodID method = env->GetStaticMethodID(cls, "setKeepScreenOn", "(Z)V");
+    if (!method) {
+        env->DeleteLocalRef(cls);
+        env->ExceptionClear();
+        return;
+    }
+
+    env->CallStaticVoidMethod(cls, method, static_cast<jboolean>(keep_on));
+    env->DeleteLocalRef(cls);
+}
+
+/// Read HelixActivity's onResume counter. Returns 0 when the bridge is
+/// unavailable; both the sleep-entry capture and the idle poll go through this
+/// same function, so a bridge that is uniformly broken reads 0 == 0 and simply
+/// never self-wakes. A bridge that breaks *between* the two reads costs one
+/// spurious wake, which is the harmless direction (the panel is already lit).
+static int android_get_resume_seq() {
+    JNIEnv* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
+    if (!env)
+        return 0;
+
+    jclass cls = env->FindClass("org/helixscreen/app/HelixActivity");
+    if (!cls) {
+        env->ExceptionClear();
+        return 0;
+    }
+
+    jmethodID method = env->GetStaticMethodID(cls, "getResumeSeq", "()I");
+    if (!method) {
+        env->DeleteLocalRef(cls);
+        env->ExceptionClear();
+        return 0;
+    }
+
+    jint seq = env->CallStaticIntMethod(cls, method);
+    env->DeleteLocalRef(cls);
+    return static_cast<int>(seq);
+}
+#endif // __ANDROID__
+
 using namespace helix;
 
 // Static instance pointer for global access (e.g., from print_completion)
@@ -123,8 +198,12 @@ bool DisplayManager::init(const Config& config) {
         spdlog::error("[DisplayManager] No display backend available");
         TelemetryManager::instance().record_error("display", "init_failed",
                                                   "no display backend available");
-        lv_xml_deinit();
+        // lv_deinit() first, then lv_xml_deinit() — the teardown order shutdown()
+        // documents. Nothing is registered yet on this path, so either order works
+        // today; keeping one order everywhere is what stops the shutdown ordering
+        // bug from being reintroduced by copying this block.
         lv_deinit();
+        lv_xml_deinit();
         return false;
     }
 
@@ -211,8 +290,9 @@ bool DisplayManager::init(const Config& config) {
         TelemetryManager::instance().record_error("display", "init_failed",
                                                   "all display backends exhausted");
         m_backend.reset();
-        lv_xml_deinit();
+        // Same teardown order as above and as shutdown().
         lv_deinit();
+        lv_xml_deinit();
         return false;
     }
 
@@ -341,8 +421,13 @@ bool DisplayManager::init(const Config& config) {
                                 suggestions, 30000);
 
             m_backend.reset();
-            lv_xml_deinit();
+            // Order matters here, unlike the two paths above: ui_show_fatal_error()
+            // has just built and shown a widget tree. Freeing the component scopes
+            // first would free styles those widgets still point at, and lv_deinit()
+            // runs layout passes while tearing them down — the use-after-free
+            // shutdown() hit. Destroy the widgets first, then the scopes.
             lv_deinit();
+            lv_xml_deinit();
             return false;
         }
 #else
@@ -577,6 +662,12 @@ void DisplayManager::shutdown() {
     m_sleep_overlay = nullptr;
     m_use_hardware_blank = false;
     m_use_power_off = false;
+    // Back to the startup truth (#1245): SDL re-asserts FLAG_KEEP_SCREEN_ON the
+    // next time it initializes video, so a re-init must not think we still owe
+    // Android a release.
+    m_last_sleep_mechanism = SleepMechanism::SoftwareOverlay;
+    m_keep_screen_on = true;
+    m_resume_seq_at_sleep = 0;
 
     // Release backends
     m_backlight.reset();
@@ -592,13 +683,29 @@ void DisplayManager::shutdown() {
     lv_sdl_quit();
 #endif
 
-    // Deinitialize helix-xml engine before LVGL (frees component scopes, fonts, etc.)
-    lv_xml_deinit();
-
-    // Deinitialize LVGL (guard against static destruction order issues)
+    // Deinitialize LVGL FIRST, then the helix-xml engine.
+    //
+    // A component scope owns the styles its instances use: component_scope_free()
+    // clears scope->style_ll, freeing every lv_style_t in it. Widgets keep raw
+    // pointers to those styles, so freeing the scopes while the widget tree is
+    // still standing leaves live objects pointing at reclaimed style memory —
+    // and lv_deinit()'s own teardown runs layouts as it goes, so a flex pass
+    // reads a freed style before the object is deleted (heap-use-after-free in
+    // get_prop_core, via lv_obj_get_style_flex_grow).
+    //
+    // The reverse order is safe: lv_deinit() only needs the widget tree and its
+    // own allocator, neither of which the XML engine owns, and lv_free() here is
+    // plain free() (LV_USE_STDLIB_MALLOC = clib), so releasing scopes afterwards
+    // needs nothing from LVGL. The <subject_expr> observers detached below are
+    // attached to app-owned subjects, not objects, so lv_deinit() leaves them
+    // alone for lv_xml_deinit() to remove — which is why theme_manager_deinit()
+    // must run after all of this (see Application::shutdown()).
     if (lv_is_initialized()) {
         lv_deinit();
     }
+
+    // Frees component scopes, their styles, fonts and <subject_expr> observers.
+    lv_xml_deinit();
 
     m_width = 0;
     m_height = 0;
@@ -628,11 +735,11 @@ void DisplayManager::rebuild_input_after_backend_swap() {
     // mirroring init()'s input setup so scroll/long-press/sleep-wrapper/keyboard
     // behavior is preserved.
     if (m_pointer) {
-        lv_indev_delete(m_pointer);
+        lv_indev_delete(m_pointer); // NOTE: swap, not shutdown
         m_pointer = nullptr;
     }
     if (m_keyboard) {
-        lv_indev_delete(m_keyboard);
+        lv_indev_delete(m_keyboard); // NOTE: swap, not shutdown
         m_keyboard = nullptr;
     }
     // The saved read callback belonged to the deleted pointer; drop it so the
@@ -705,44 +812,95 @@ void DisplayManager::enter_sleep(int timeout_sec) {
     }
 #endif
     m_display_sleeping = true;
-    const char* method;
-    if (m_use_hardware_blank) {
+
+    SleepMechanism mechanism =
+        select_sleep_mechanism(platform_is_android(), m_use_hardware_blank,
+                               m_use_power_off && m_backend != nullptr, timeout_sec);
+
+    switch (mechanism) {
+    case SleepMechanism::HardwareBlank:
         if (m_backend) {
             m_backend->blank_display();
         }
-        method = "hardware blank";
-    } else if (m_use_power_off && m_backend && m_backend->power_off()) {
+        break;
+
+    case SleepMechanism::PanelPowerOff:
         // Real panel power-off (fbdev FB_BLANK_POWERDOWN / DRM DPMS off) for
         // HDMI/fbdev devices with no hardware backlight blank (#1049). The panel
         // is actually powered down, so no software overlay is needed. wake_display()
         // restores power BEFORE lv_refr_now() to honor the #303 wake-race.
+        if (m_backend->power_off()) {
+            // Neutralize the flush so the next page-flip can't re-assert DPMS-on
+            // and relight the panel on the home screen. Without this, stopping the
+            // screensaver above (or any later Klipper-driven invalidation) renders
+            // a frame whose DRM commit turns the connector back ON — the
+            // user-reported regression where an idle HDMI panel "comes back on at
+            // the home screen".
+            suppress_flush_for_sleep();
+        } else {
+            // The capability probe disagreed with reality; degrade to the overlay
+            // rather than leaving a lit panel with no visual sleep at all.
+            mechanism = SleepMechanism::SoftwareOverlay;
+            create_sleep_overlay();
+        }
+        break;
+
+    case SleepMechanism::HostSleep:
+        // Android (#1245): no backlight sysfs and no backend blank/power-off, so
+        // the only way to genuinely darken the panel is to stop asserting
+        // FLAG_KEEP_SCREEN_ON and let Android's own display timeout run. Painting
+        // a black overlay instead (what we used to do) left the panel fully lit
+        // and blocked the device from ever sleeping. Deliberately no overlay: the
+        // OS is about to power the panel, and the app gets paused with it.
         //
-        // Neutralize the flush so the next page-flip can't re-assert DPMS-on and
-        // relight the panel on the home screen. Without this, stopping the
-        // screensaver above (or any later Klipper-driven invalidation) renders a
-        // frame whose DRM commit turns the connector back ON — the user-reported
-        // regression where an idle HDMI panel "comes back on at the home screen".
-        suppress_flush_for_sleep();
-        method = "panel power-off";
-    } else {
+        // Remember the resume counter so the pause/resume round trip that follows
+        // can be told apart from "still waiting for Android's timeout".
+#ifdef __ANDROID__
+        m_resume_seq_at_sleep = android_get_resume_seq();
+#endif
+        set_keep_screen_on(false);
+        break;
+
+    case SleepMechanism::SoftwareOverlay:
         // Software overlay path: do NOT call FBIOBLANK — the overlay alone is
         // sufficient and FBIOBLANK can cause a race condition on wake where the
         // framebuffer isn't ready before LVGL renders, leaving a black screen
         // even after the overlay is removed (#303).
         create_sleep_overlay();
-        method = "software overlay";
+        break;
     }
+    m_last_sleep_mechanism = mechanism;
 
     if (m_backlight && m_backlight->is_available() && m_sleep_backlight_off) {
         m_backlight->set_brightness(0);
     }
-    spdlog::info("[DisplayManager] Display sleeping ({}{}) after {}s", method,
+    spdlog::info("[DisplayManager] Display sleeping ({}{}) after {}s",
+                 sleep_mechanism_name(mechanism),
                  m_sleep_backlight_off ? "" : ", backlight kept on", timeout_sec);
 
     // Notify subscribers (camera stream, etc.) to suspend background work
     for (auto& cb : m_sleep_callbacks) {
         cb(true);
     }
+}
+
+// ============================================================================
+// Host keep-screen-on (Android, #1245)
+// ============================================================================
+
+void DisplayManager::set_keep_screen_on(bool keep_on) {
+#ifdef __ANDROID__
+    if (m_keep_screen_on == keep_on) {
+        return; // transition-guarded: don't cross JNI to re-say the same thing
+    }
+    m_keep_screen_on = keep_on;
+    android_set_keep_screen_on(keep_on);
+    spdlog::info("[DisplayManager] Android keep-screen-on: {}", keep_on);
+#else
+    // Nothing else runs a display timeout behind our back — we own the panel on
+    // every non-Android target, so the flag has no meaning and stays asserted.
+    (void)keep_on;
+#endif
 }
 
 // ============================================================================
@@ -893,11 +1051,34 @@ void DisplayManager::check_display_sleep() {
     // Check for activity (touch detected within last 500ms)
     bool activity_detected = (inactive_ms < 500);
 
+    // Android host sleep (#1245): Android pauses the app when it powers the panel
+    // down and resumes it when the panel comes back, and neither transition is a
+    // touch — so the activity check below never fires and the display would stay
+    // logically asleep with keep-screen-on still cleared, re-sleeping forever and
+    // never resuming the sleep callbacks. This function only runs while
+    // foregrounded (the run loop short-circuits on m_backgrounded), so a bumped
+    // resume counter means the panel is on again.
+    //
+    // The awake case is the matching invariant: the host must never be left free
+    // to sleep while we consider the display awake, whatever path cleared
+    // m_display_sleeping. set_keep_screen_on() is transition-guarded, so an awake
+    // tick costs one member compare.
+    bool resumed_from_host_sleep = false;
+    if (!m_display_sleeping) {
+        set_keep_screen_on(true);
+    }
+#ifdef __ANDROID__
+    else if (m_last_sleep_mechanism == SleepMechanism::HostSleep) {
+        resumed_from_host_sleep =
+            host_sleep_needs_wake(true, m_resume_seq_at_sleep, android_get_resume_seq());
+    }
+#endif
+
     if (m_display_sleeping) {
         // Wake via sleep_aware_read_cb (embedded) or LVGL activity detection (SDL).
         // On SDL, the sleep-aware wrapper isn't installed because it breaks SDL's
         // mouse device identification, so we fall back to LVGL activity tracking.
-        if (m_wake_requested || activity_detected) {
+        if (m_wake_requested || activity_detected || resumed_from_host_sleep) {
             m_wake_requested = false;
             wake_display();
         }
@@ -980,6 +1161,12 @@ void DisplayManager::check_display_sleep() {
 }
 
 void DisplayManager::restore_display_output() {
+    // Re-assert the host's keep-screen-on request first (#1245). Unconditional and
+    // transition-guarded: if enter_sleep() handed the panel to Android we take it
+    // back here, and on every other path (including all non-Android targets) this
+    // is a no-op because the flag was never released.
+    set_keep_screen_on(true);
+
     // Undo whatever enter_sleep() did to the panel output, mirroring its branches.
     // This must run BEFORE the post-wake lv_refr_now() (#303 wake-race).
     if (m_use_hardware_blank) {
@@ -1108,6 +1295,7 @@ void DisplayManager::preview_screensaver(int type) {
 void DisplayManager::ensure_display_on() {
     // Force display awake at startup regardless of previous state
     restore_flush_after_sleep(); // defensive: never start up with flush suppressed
+    set_keep_screen_on(true);    // #1245: never inherit a released host sleep lock
     m_display_sleeping = false;
     m_display_dimmed = false;
 
@@ -1225,11 +1413,22 @@ void DisplayManager::enable_affine_calibration() {
 // ============================================================================
 
 void DisplayManager::disable_input_briefly() {
-    // Disable all pointer input devices
+    // Disable all pointer input devices, and cancel whatever press is already
+    // in flight on each.
+    //
+    // lv_indev_enable(false) is a pure flag write: pr_timestamp, long_pr_sent
+    // and pointer.act_obj all survive the blackout, so a finger still on the
+    // glass when input comes back keeps counting toward LV_EVENT_LONG_PRESSED
+    // from the ORIGINAL touch-down. On the wake touch that means a long-press
+    // gesture the user never made — home-grid edit mode opening behind the lock
+    // screen (#1245). lv_indev_reset() is what actually discards that state, and
+    // it lands even while the device is disabled: lv_indev_read() runs the reset
+    // query handler before it checks the enabled flag.
     lv_indev_t* indev = lv_indev_get_next(nullptr);
     while (indev) {
         if (lv_indev_get_type(indev) == LV_INDEV_TYPE_POINTER) {
             lv_indev_enable(indev, false);
+            lv_indev_reset(indev, nullptr);
         }
         indev = lv_indev_get_next(indev);
     }

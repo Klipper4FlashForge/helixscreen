@@ -18,8 +18,7 @@ struct AxisMove {
     // (which would serialize in scientific notation) never flushes.
     static constexpr double kEpsilonMm = 1e-6;
     bool any() const {
-        return std::abs(dx) > kEpsilonMm || std::abs(dy) > kEpsilonMm ||
-               std::abs(dz) > kEpsilonMm;
+        return std::abs(dx) > kEpsilonMm || std::abs(dy) > kEpsilonMm || std::abs(dz) > kEpsilonMm;
     }
 };
 

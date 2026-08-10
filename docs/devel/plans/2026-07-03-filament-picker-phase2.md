@@ -1,5 +1,18 @@
 # Filament Picker (Phase 2) Implementation Plan
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions. Status: SHIPPED, all eight
+> tasks.** The 49 `- [ ]` boxes were never ticked and do **not** mean the work is outstanding.
+> Evidence: `FilamentCatalogPickerModal` (`include/ui_filament_catalog_picker.h`,
+> `src/ui/ui_filament_catalog_picker.cpp`, `tests/unit/test_filament_picker_modal.cpp`),
+> `MaterialSettingsManager::PresetFilament` / `set_preset_filament()`
+> (`include/material_settings_manager.h`), and Task 8's **deletions** are done -
+> `ui_material_picker_menu`, `material_picker_menu.xml` and `filament_preset_edit_modal.xml`
+> are all zero-hit greps because the plan removed them, not because it was skipped.
+>
+> Task 6 carried a config migration. **Re-running this plan would re-run a destructive
+> migration against an already-migrated config.** Do not execute it. Task 5 also names
+> `ui_ams_edit_modal.cpp`, which is now `src/ui/ui_ams_edit_overlay.cpp`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let a non-Spoolman user pick a specific branded filament from the offline `FilamentCatalog` (via a Vendor→Type→product modal) and have it flow into an AMS slot and into a filament-panel preset.

@@ -121,15 +121,19 @@
       <centered_column name="empty_state" flex_grow="1" style_pad_all="#space_xl" hidden="true">
         <bind_flag_if_not_eq subject="history_has_jobs" flag="hidden" ref_value="0"/>
         <icon src="clock" size="xl" variant="secondary"/>
-        <text_muted width="100%" text="No print history yet" translation_tag="No print history yet" style_text_align="center"/>
-        <text_small width="100%" text="Your completed prints will appear here" translation_tag="Your completed prints will appear here" style_text_align="center"/>
+        <text_muted width="100%"
+                    text="No print history yet" translation_tag="No print history yet" style_text_align="center"/>
+        <text_small width="100%"
+                    text="Your completed prints will appear here"
+                    translation_tag="Your completed prints will appear here" style_text_align="center"/>
       </centered_column>
       <!-- Flex shim to push button to bottom (hidden when empty state is shown) -->
       <lv_obj name="flex_shim" width="100%" style_pad_all="0" flex_grow="1" scrollable="false">
         <bind_flag_if_eq subject="history_has_jobs" flag="hidden" ref_value="0"/>
       </lv_obj>
       <!-- View Full History Button (at bottom) -->
-      <ui_button name="btn_view_history" width="100%" icon="list" text="View Full History" translation_tag="View Full History">
+      <ui_button name="btn_view_history"
+                 width="100%" icon="list" text="View Full History" translation_tag="View Full History">
         <event_cb trigger="clicked" callback="history_view_full_clicked"/>
       </ui_button>
     </lv_obj>

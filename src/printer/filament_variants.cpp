@@ -4,13 +4,14 @@
 
 #include "filament_database.h"
 
+#include <spdlog/spdlog.h>
+
 #include <algorithm>
 #include <cctype>
 #include <fstream>
 #include <mutex>
 
 #include "hv/json.hpp"
-#include <spdlog/spdlog.h>
 
 namespace filament {
 
@@ -191,15 +192,13 @@ void load_orca_tables_locked() {
             auto doc = nlohmann::json::parse(f);
             if (!doc.is_object())
                 continue;
-            if (auto it = doc.find("orca_library_types");
-                it != doc.end() && it->is_array()) {
+            if (auto it = doc.find("orca_library_types"); it != doc.end() && it->is_array()) {
                 for (const auto& t : *it) {
                     if (t.is_string())
                         g_orca_library_types.insert(t.get<std::string>());
                 }
             }
-            if (auto it = doc.find("orca_type_overrides");
-                it != doc.end() && it->is_object()) {
+            if (auto it = doc.find("orca_type_overrides"); it != doc.end() && it->is_object()) {
                 for (const auto& [k, v] : it->items()) {
                     if (v.is_string())
                         g_orca_overrides[k] = v.get<std::string>();

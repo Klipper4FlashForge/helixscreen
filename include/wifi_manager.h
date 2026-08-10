@@ -8,6 +8,7 @@
 #include "wifi_backend.h"
 #include "wifi_scan_scheduler.h"
 
+#include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <memory>
@@ -315,7 +316,7 @@ class WiFiManager {
     /// Expires the backend-swap callback deferred out of the NetworkManager init
     /// worker thread. Declared after `backend_` so reverse-order member
     /// destruction expires the guard before the backend that callback touches.
-    /// Like MoonrakerAPI, this class has no deinit_subjects() — it owns no
+    /// Like IMoonrakerAPI, this class has no deinit_subjects() — it owns no
     /// subjects — so the destructor really is the only teardown point, and the
     /// guard's own dtor covers it (#1165).
     helix::AsyncLifetimeGuard async_lifetime_;
@@ -410,6 +411,21 @@ class WiFiManager {
     // real sysfs/proc probe; tests inject a stub via WiFiManagerTestAccess.
     static std::function<bool()> os_link_probe_;
     static bool os_link_up();
+
+    // A scan trigger that fails immediately after WE tore the association down
+    // is our own doing, not a fault the user can act on. Forgetting the
+    // connected network disassociates, and start_scan() runs again right after,
+    // so wpa_supplicant answers FAIL while the link is mid-teardown and
+    // os_link_up() is legitimately false — bundle TAU4PW4H shows "WiFi scan
+    // failed. Try again." 48 ms after the user's own Forget tap. Suppress the
+    // toast for a short window after any association change we initiated; the
+    // periodic timer (10 s base) surfaces a genuinely broken scan on its next
+    // tick. Main-thread only: connect/forget/disconnect and start_scan() are
+    // all UI-initiated, as is the scan timer callback.
+    static constexpr auto kAssociationGrace = std::chrono::seconds(5);
+    std::chrono::steady_clock::time_point last_association_change_{};
+    void mark_association_change();
+    bool in_association_grace() const;
 
     // Drives the backend radio change. Blocking, and safe to call from any
     // thread — it touches only backend_, which the destructor barrier below

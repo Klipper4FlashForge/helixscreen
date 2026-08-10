@@ -1843,6 +1843,77 @@ TEST_CASE("Happy Hare v3 data with no v4 fields works normally", "[ams][happy_ha
     REQUIRE(slot2.status == SlotStatus::LOADED);
 }
 
+// --- has_bypass: the single flag behind the whole bypass UI ---
+
+// printer.mmu.has_bypass gates the sidebar toggle, the Device Operations bypass
+// section and the bypass node on the filament path. Happy Hare defaults it to 0
+// for mmu_vendor "Other" (which is what a Qidi Box under HH reports) and on
+// type-A selectors ANDs it with the calibrated bypass offset, so it is both
+// legitimately false on real hardware and able to turn true later.
+TEST_CASE("Happy Hare has_bypass drives supports_bypass", "[ams][happy_hare][bypass]") {
+    auto base_mmu = []() {
+        return nlohmann::json{{"gate", 0},
+                              {"tool", 0},
+                              {"filament", "Loaded"},
+                              {"action", "Idle"},
+                              {"filament_pos", 8},
+                              {"gate_status", {1, 0, 2, 1}},
+                              {"gate_material", {"PLA", "PETG", "ABS", "TPU"}},
+                              {"ttg_map", {0, 1, 2, 3}}};
+    };
+
+    SECTION("stays off until the firmware confirms, so the UI never flickers") {
+        AmsBackendHappyHareTestHelper helper;
+        REQUIRE(helper.get_system_info().supports_bypass == false);
+
+        nlohmann::json mmu = base_mmu();
+        mmu["has_bypass"] = false;
+        helper.test_parse_mmu_state(mmu);
+
+        REQUIRE(helper.get_system_info().supports_bypass == false);
+    }
+
+    SECTION("firmware true turns it on") {
+        AmsBackendHappyHareTestHelper helper;
+
+        nlohmann::json mmu = base_mmu();
+        mmu["has_bypass"] = true;
+        helper.test_parse_mmu_state(mmu);
+
+        REQUIRE(helper.get_system_info().supports_bypass == true);
+    }
+
+    SECTION("absent field assumes supported rather than removing the control") {
+        AmsBackendHappyHareTestHelper helper;
+        helper.test_parse_mmu_state(base_mmu());
+
+        REQUIRE(helper.get_system_info().supports_bypass == true);
+    }
+
+    SECTION("turns back on when the selector is calibrated mid-session") {
+        AmsBackendHappyHareTestHelper helper;
+
+        nlohmann::json mmu = base_mmu();
+        mmu["has_bypass"] = false;
+        helper.test_parse_mmu_state(mmu);
+        REQUIRE(helper.get_system_info().supports_bypass == false);
+
+        mmu["has_bypass"] = true;
+        helper.test_parse_mmu_state(mmu);
+        REQUIRE(helper.get_system_info().supports_bypass == true);
+    }
+
+    SECTION("a non-boolean value is ignored rather than coerced") {
+        AmsBackendHappyHareTestHelper helper;
+
+        nlohmann::json mmu = base_mmu();
+        mmu["has_bypass"] = nullptr;
+        helper.test_parse_mmu_state(mmu);
+
+        REQUIRE(helper.get_system_info().supports_bypass == true);
+    }
+}
+
 // --- v3+v4 mixed: some v4 fields with v3 base ---
 
 TEST_CASE("Happy Hare mixed v3/v4 data parses both correctly", "[ams][happy_hare][v4][compat]") {
@@ -3615,4 +3686,77 @@ TEST_CASE("HappyHare clear_slot_override drops the retained identity",
     const SlotInfo after = helper.get_slot_info(0);
     CHECK(after.brand.empty());
     CHECK(after.spoolman_id == 0);
+}
+
+// ============================================================================
+// Bypass: Happy Hare has to answer for itself, same as AFC (#1229)
+// ============================================================================
+//
+// The twin of "AFC enable_bypass refuses while filament is at the toolhead" in
+// test_ams_backend_afc.cpp. allows_implicit_chaining() == false means the
+// sidebar sends one command and lets the backend refuse; execute_gcode() is
+// fire-and-forget (returns success before Klipper answers), so without this
+// precondition MMU_SELECT_BYPASS reports success and changes nothing.
+//
+// Happy Hare's own cmd_MMU_SELECT_BYPASS runs check_if_loaded(), which refuses
+// unless filament_pos is UNLOADED (0) or UNKNOWN (-1) and answers only with a
+// `!!` line. Mirroring that exact predicate — rather than system_info_
+// .filament_loaded, which is set solely from filament == "Loaded" — is what
+// makes an intermediate position refuse here instead of silently no-opping.
+
+TEST_CASE("Happy Hare enable_bypass refuses unless the filament is parked",
+          "[ams][happy_hare][bypass][1229]") {
+    auto mmu_at = [](int filament_pos, const char* filament_state) {
+        return nlohmann::json{{"gate", 0},
+                              {"tool", 0},
+                              {"filament", filament_state},
+                              {"action", "Idle"},
+                              {"has_bypass", true},
+                              {"filament_pos", filament_pos},
+                              {"gate_status", {1, 0, 2, 1}},
+                              {"ttg_map", {0, 1, 2, 3}}};
+    };
+
+    SECTION("loaded to the nozzle refuses and sends nothing") {
+        AmsBackendHappyHareTestHelper helper;
+        helper.set_running(true);
+        helper.initialize_test_gates(4);
+        helper.test_parse_mmu_state(mmu_at(10, "Loaded")); // FILAMENT_POS_LOADED
+        helper.clear_captured_gcodes();
+
+        AmsError err = helper.enable_bypass();
+
+        REQUIRE(err.result == AmsResult::WRONG_STATE);
+        REQUIRE_FALSE(err.user_msg.empty());
+        REQUIRE(helper.captured_gcodes.empty());
+    }
+
+    // The case system_info_.filament_loaded would miss: mid-bowden is not
+    // "Loaded", but Happy Hare still refuses, so we must too.
+    SECTION("mid-bowden refuses even though filament is not 'Loaded'") {
+        AmsBackendHappyHareTestHelper helper;
+        helper.set_running(true);
+        helper.initialize_test_gates(4);
+        helper.test_parse_mmu_state(mmu_at(3, "Unloading")); // FILAMENT_POS_IN_BOWDEN
+        helper.clear_captured_gcodes();
+
+        AmsError err = helper.enable_bypass();
+
+        REQUIRE(err.result == AmsResult::WRONG_STATE);
+        REQUIRE(helper.captured_gcodes.empty());
+    }
+
+    SECTION("parked at the gate sends MMU_SELECT_BYPASS") {
+        AmsBackendHappyHareTestHelper helper;
+        helper.set_running(true);
+        helper.initialize_test_gates(4);
+        helper.test_parse_mmu_state(mmu_at(0, "Unloaded")); // FILAMENT_POS_UNLOADED
+        helper.clear_captured_gcodes();
+
+        AmsError err = helper.enable_bypass();
+
+        REQUIRE(err.result == AmsResult::SUCCESS);
+        REQUIRE(std::find(helper.captured_gcodes.begin(), helper.captured_gcodes.end(),
+                          "MMU_SELECT_BYPASS") != helper.captured_gcodes.end());
+    }
 }

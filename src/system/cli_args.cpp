@@ -4,7 +4,9 @@
 #include "cli_args.h"
 
 #include "app_globals.h"
+#include "config.h"
 #include "helix_version.h"
+#include "logging_init.h"
 #include "runtime_config.h"
 #include "theme_manager.h"
 
@@ -62,7 +64,10 @@ void print_test_mode_banner() {
     if (config.disable_mock_ams)
         printf("  Mock AMS DISABLED (runout modal enabled)\n");
 
-    printf("  Config: %s\n", RuntimeConfig::TEST_CONFIG_PATH);
+    // Resolved, not the raw constant: with HELIX_CONFIG_DIR set the app reads
+    // and writes the override path, and a banner naming config/ instead sends
+    // you editing a file the run never touches.
+    printf("  Config: %s\n", Config::resolve_path(RuntimeConfig::TEST_CONFIG_PATH).c_str());
 
     printf("\n");
 }
@@ -139,6 +144,7 @@ static void print_help(const char* program_name) {
     printf("    --real-ethernet    Use real Ethernet hardware (requires --test)\n");
     printf("    --real-moonraker   Connect to real printer (requires --test)\n");
     printf("    --real-files       Use real files from printer (requires --test)\n");
+    printf("    --real-ams         Use real AMS backend (requires --test)\n");
     printf("    --real-sensors     Use real sensor data (requires --test)\n");
     printf("    --disconnected     Simulate disconnected state (requires --test)\n");
     printf("    --no-ams           Don't create mock AMS (enables runout modal testing)\n");
@@ -446,6 +452,8 @@ bool parse_cli_args(int argc, char** argv, CliArgs& args, int& screen_width, int
             config.use_real_moonraker = true;
         } else if (strcmp(argv[i], "--real-files") == 0) {
             config.use_real_files = true;
+        } else if (strcmp(argv[i], "--real-ams") == 0) {
+            config.use_real_ams = true;
         } else if (strcmp(argv[i], "--real-sensors") == 0) {
             config.use_real_sensors = true;
         } else if (strcmp(argv[i], "--disconnected") == 0) {
@@ -663,11 +671,11 @@ bool parse_cli_args(int argc, char** argv, CliArgs& args, int& screen_width, int
                 return false;
             }
             g_log_dest_cli = value;
-            if (g_log_dest_cli != "auto" && g_log_dest_cli != "journal" &&
-                g_log_dest_cli != "syslog" && g_log_dest_cli != "file" &&
-                g_log_dest_cli != "console") {
+            // Shared with the HELIX_LOG_DEST reader in Application::init_logging()
+            // so the accepted set cannot drift between the flag and the env var.
+            if (!helix::logging::is_valid_log_target(g_log_dest_cli)) {
                 printf("Error: invalid --log-dest value: %s\n", g_log_dest_cli.c_str());
-                printf("Valid values: auto, journal, syslog, file, console\n");
+                printf("Valid values: %s\n", helix::logging::log_target_accepted_values());
                 return false;
             }
         } else if (strcmp(argv[i], "--log-file") == 0 || strncmp(argv[i], "--log-file=", 11) == 0) {
@@ -691,12 +699,10 @@ bool parse_cli_args(int argc, char** argv, CliArgs& args, int& screen_width, int
                 return false;
             }
             g_log_level_cli = value;
-            if (g_log_level_cli != "trace" && g_log_level_cli != "debug" &&
-                g_log_level_cli != "info" && g_log_level_cli != "warn" &&
-                g_log_level_cli != "error" && g_log_level_cli != "critical" &&
-                g_log_level_cli != "off") {
+            // Shared with the HELIX_LOG_LEVEL reader in Application::init_logging().
+            if (!helix::logging::is_valid_log_level(g_log_level_cli)) {
                 printf("Error: invalid --log-level value: %s\n", g_log_level_cli.c_str());
-                printf("Valid values: trace, debug, info, warn, error, critical, off\n");
+                printf("Valid values: %s\n", helix::logging::log_level_accepted_values());
                 return false;
             }
         }
@@ -718,7 +724,7 @@ bool parse_cli_args(int argc, char** argv, CliArgs& args, int& screen_width, int
 
     // Validate test mode flags
     if ((config.use_real_wifi || config.use_real_ethernet || config.use_real_moonraker ||
-         config.use_real_files || config.use_real_sensors) &&
+         config.use_real_files || config.use_real_ams || config.use_real_sensors) &&
         !config.test_mode) {
         printf("Error: --real-* flags require --test mode\n");
         printf("Use --help for more information\n");

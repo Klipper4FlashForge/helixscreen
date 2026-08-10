@@ -22,6 +22,8 @@
 #include "ui_update_queue.h"
 
 #include "../test_fixtures.h"
+#include "config.h"
+#include "host_identity.h"
 
 #include <lvgl.h>
 #include <string>
@@ -110,4 +112,61 @@ TEST_CASE_METHOD(ConnFailedFixture, "Connection-failed prompt can be dismissed w
 
     // Dismissing must not leave the host modal (or anything else) behind.
     CHECK(Modal::get_top() == nullptr);
+}
+
+TEST_CASE_METHOD(ConnFailedFixture,
+                 "Connection-failed prompt drops Change Address when the printer IS this machine",
+                 "[modal][connection][change_host]") {
+    // AD5X bundles TAU4PW4H / 865DXBQ7: HelixScreen runs ON the printer, dials
+    // 127.0.0.1:7125, and gets an instant refusal because Moonraker never
+    // started. "Change Address" there sends the user to edit an address that is
+    // already correct, and the body text told them to check that the printer was
+    // powered on — while they were holding its screen.
+    Config* cfg = Config::get_instance();
+    REQUIRE(cfg != nullptr);
+    const std::string key = cfg->df() + "moonraker_host";
+    const std::string prev = cfg->get<std::string>(key, "");
+    cfg->set<std::string>(key, "127.0.0.1");
+    helix::invalidate_host_identity_cache();
+
+    helix::ui::show_connection_failed_modal("Connection Failed",
+                                            "Moonraker is not responding at 127.0.0.1:7125.");
+    UpdateQueue::instance().drain();
+
+    lv_obj_t* dialog = Modal::get_top();
+    REQUIRE(dialog != nullptr);
+
+    // Single acknowledgement, no address-editing action.
+    const char* primary_text = static_cast<const char*>(
+        lv_subject_get_pointer(helix::ui::modal_get_primary_text_subject()));
+    REQUIRE(primary_text != nullptr);
+    CHECK(std::string(primary_text).find("Change Address") == std::string::npos);
+
+    cfg->set<std::string>(key, prev);
+    helix::invalidate_host_identity_cache();
+}
+
+TEST_CASE_METHOD(ConnFailedFixture, "An unconfigured host still offers Change Address",
+                 "[modal][connection][change_host]") {
+    // The guard above must key off a host we positively identified as local. An
+    // empty host is the case where changing the address is precisely the fix, so
+    // it must not be swept in by a "localhost" default.
+    Config* cfg = Config::get_instance();
+    REQUIRE(cfg != nullptr);
+    const std::string key = cfg->df() + "moonraker_host";
+    const std::string prev = cfg->get<std::string>(key, "");
+    cfg->set<std::string>(key, std::string(""));
+    helix::invalidate_host_identity_cache();
+
+    helix::ui::show_connection_failed_modal("Connection Failed", "Unable to reach printer.");
+    UpdateQueue::instance().drain();
+    REQUIRE(Modal::get_top() != nullptr);
+
+    const char* primary_text = static_cast<const char*>(
+        lv_subject_get_pointer(helix::ui::modal_get_primary_text_subject()));
+    REQUIRE(primary_text != nullptr);
+    CHECK(std::string(primary_text).find("Change Address") != std::string::npos);
+
+    cfg->set<std::string>(key, prev);
+    helix::invalidate_host_identity_cache();
 }

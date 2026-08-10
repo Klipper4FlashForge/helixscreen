@@ -17,6 +17,7 @@
 #include "ams_state.h"
 #include "app_constants.h"
 #include "app_globals.h"
+#include "data_root_resolver.h"
 #include "filament_op_dispatch.h"
 #include "filament_op_router.h"
 #include "filament_sensor_manager.h"
@@ -45,6 +46,19 @@
 #include <string_view>
 #include <unordered_set>
 
+namespace {
+// Resolved bundle path for the benchy placeholder thumbnail. Static so
+// lv_image_set_src / the idle-thumb subject can hold the pointer (it outlives
+// the widget). Identity on desktop (asset_root "."); absolute
+// (A:/assets/assets/images/...) on firmware, where a raw "A:assets/images/..."
+// literal misses the mount and lv_image_set_src fails to open it.
+const char* benchy_thumb_path() {
+    static const std::string p =
+        helix::asset_component_uri("assets/images/benchy_thumbnail_white.png");
+    return p.c_str();
+}
+} // namespace
+
 namespace helix {
 void register_print_status_widget() {
     register_widget_factory(
@@ -59,6 +73,8 @@ void register_print_status_widget() {
     lv_xml_register_event_cb(nullptr, "library_queue_cb", PrintStatusWidget::library_queue_cb);
     lv_xml_register_event_cb(nullptr, "print_status_picker_backdrop_cb",
                              PrintStatusWidget::print_status_picker_backdrop_cb);
+    lv_xml_register_event_cb(nullptr, "print_status_picker_done_cb",
+                             PrintStatusWidget::print_status_picker_done_cb);
     lv_xml_register_event_cb(nullptr, "print_status_nozzle_picker_backdrop_cb",
                              PrintStatusWidget::print_status_nozzle_picker_backdrop_cb);
     lv_xml_register_event_cb(nullptr, "print_status_nozzle_chevron_cb",
@@ -130,6 +146,10 @@ void PrintStatusWidget::init_static_subjects() {
     lv_xml_register_subject(nullptr, "print_status_view", &view_subject_);
     // Default to benchy; reset_print_card_to_idle replaces with last-print
     // thumbnail when history loads.
+    // Resolve the benchy default to its bundle-absolute path before the subject
+    // captures it (a raw "A:assets/images/..." literal misses the /assets mount
+    // on firmware and lv_image_set_src can't open it).
+    snprintf(idle_thumb_path_buf_, sizeof(idle_thumb_path_buf_), "%s", benchy_thumb_path());
     lv_subject_init_string(&idle_thumb_path_subject_, idle_thumb_path_buf_, nullptr,
                            sizeof(idle_thumb_path_buf_), idle_thumb_path_buf_);
     lv_xml_register_subject(nullptr, "print_status_idle_thumb_path", &idle_thumb_path_subject_);
@@ -211,6 +231,7 @@ PrintStatusWidget::~PrintStatusWidget() {
 }
 
 void PrintStatusWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
+    using helix::ui::observe_int_immediate;
     using helix::ui::observe_int_sync;
     using helix::ui::observe_print_state;
     using helix::ui::observe_string_immediate;
@@ -293,6 +314,24 @@ void PrintStatusWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
         },
         printer_state_.get_subjects_lifetime());
 
+#if defined(HELIX_PLATFORM_ESP32)
+    // ESP32 has no disk thumbnail cache, so print_thumbnail_path stays empty and
+    // the image arrives as a PSRAM buffer instead. Observe the generation counter
+    // ActivePrintMediaManager bumps when it installs one. observe_int_immediate
+    // for the same reason as the path observer above: the handler only does
+    // lv_image_set_src plus a shared_ptr swap (no observer lifecycle changes, no
+    // widget destruction), and the setter always runs on the UI thread — so the
+    // extra deferral would only add a frame and a stale-read window.
+    print_psram_thumb_observer_ = observe_int_immediate<PrintStatusWidget>(
+        printer_state_.get_print_psram_thumb_gen_subject(), this,
+        [](PrintStatusWidget* self, int /*gen*/) {
+            if (!self->widget_obj_)
+                return;
+            self->apply_esp_psram_thumbnail();
+        },
+        printer_state_.get_subjects_lifetime());
+#endif
+
     auto& fsm = helix::FilamentSensorManager::instance();
     filament_runout_observer_ = observe_int_sync<PrintStatusWidget>(
         fsm.get_any_runout_subject(), this, [](PrintStatusWidget* self, int any_runout) {
@@ -366,6 +405,14 @@ void PrintStatusWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
             lv_subject_get_int(printer_state_.get_print_state_enum_subject()));
         if (state == PrintJobState::PRINTING || state == PrintJobState::PAUSED) {
             on_print_state_changed(state);
+#if defined(HELIX_PLATFORM_ESP32)
+            // Widget instances are recycled across page rebuilds, so a fresh
+            // attach lands on a print that already has its thumbnail loaded and
+            // no further generation bump coming. Re-apply from the held buffer;
+            // on other platforms the print_thumbnail_path observer's initial
+            // notification covers this.
+            apply_esp_psram_thumbnail();
+#endif
         } else {
             // Defer the initial idle reset: synchronous reset_print_card_to_idle
             // cascades lv_image_set_src → update_align → lv_obj_update_layout up
@@ -425,6 +472,20 @@ void PrintStatusWidget::detach() {
     // Release observers
     print_state_observer_.reset();
     print_thumbnail_path_observer_.reset();
+#if defined(HELIX_PLATFORM_ESP32)
+    print_psram_thumb_observer_.reset();
+    // detach() is main-thread, which EspPsramThumbnail's destructor requires.
+    // Stop the image pointing at the descriptor before releasing: instances are
+    // recycled, so the lv_image outlives this detach, and for a variable source
+    // lv_image stores the raw pointer (it only strdups paths). Ours can be the
+    // last reference — PrinterState drops its own on the next filename change.
+    if (esp_thumbnail_ && print_card_active_thumb_ &&
+        lv_image_get_src(print_card_active_thumb_) == esp_thumbnail_->dsc()) {
+        lv_image_set_src(print_card_active_thumb_,
+                         helix::PrinterPrintState::kNoThumbnailPlaceholder);
+    }
+    esp_thumbnail_.reset();
+#endif
     filament_runout_observer_.reset();
     job_queue_count_observer_.reset();
     connection_observer_.reset();
@@ -754,6 +815,26 @@ void PrintStatusWidget::on_print_thumbnail_path_changed(const char* path) {
     defer_apply_active_thumbnail(path);
 }
 
+#if defined(HELIX_PLATFORM_ESP32)
+void PrintStatusWidget::apply_esp_psram_thumbnail() {
+    if (!widget_obj_ || !print_card_active_thumb_) {
+        return;
+    }
+    auto thumb = printer_state_.get_print_psram_thumbnail();
+    if (!thumb) {
+        return;
+    }
+    // `previous` keeps the outgoing buffer alive until after the widget stops
+    // pointing at it — otherwise the last release could free the descriptor the
+    // widget's src still names. Both releases happen here, on the main thread,
+    // which is what EspPsramThumbnail's destructor requires.
+    auto previous = std::move(esp_thumbnail_);
+    esp_thumbnail_ = std::move(thumb);
+    lv_image_set_src(print_card_active_thumb_, esp_thumbnail_->dsc());
+    spdlog::info("[PrintStatusWidget] Active print PSRAM thumbnail applied");
+}
+#endif
+
 std::string PrintStatusWidget::get_last_print_thumbnail_path() const {
     auto* history = get_print_history_manager();
     if (!history || !history->is_loaded()) {
@@ -901,7 +982,7 @@ void PrintStatusWidget::reset_print_card_to_idle() {
     // Try to show the last printed file's thumbnail instead of benchy
     std::string thumb_rel_path = get_last_print_thumbnail_path();
     if (thumb_rel_path.empty()) {
-        set_thumb_on_widgets("A:assets/images/benchy_thumbnail_white.png");
+        set_thumb_on_widgets(benchy_thumb_path());
         spdlog::debug("[PrintStatusWidget] Idle thumbnail: benchy (no history)");
         return;
     }
@@ -931,7 +1012,7 @@ void PrintStatusWidget::reset_print_card_to_idle() {
     }
 
     // Set benchy as placeholder while we fetch
-    set_thumb_on_widgets("A:assets/images/benchy_thumbnail_white.png");
+    set_thumb_on_widgets(benchy_thumb_path());
 
     auto* api = get_moonraker_api();
     if (!api) {
@@ -1192,7 +1273,7 @@ void PrintStatusWidget::dispatch_load() {
                 spdlog::error("[PrintStatusWidget] Load fallback failed: {}", err.message);
                 NOTIFY_ERROR(lv_tr("Failed to load filament: {}"), err.user_message());
             },
-            MoonrakerAPI::EXTRUSION_TIMEOUT_MS);
+            IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
         return;
     }
     }
@@ -1541,6 +1622,16 @@ void PrintStatusWidget::dismiss_configure_picker() {
 
 void PrintStatusWidget::print_status_picker_backdrop_cb(lv_event_t* e) {
     LVGL_SAFE_EVENT_CB_BEGIN("[PrintStatusWidget] print_status_picker_backdrop_cb");
+    (void)e;
+    if (s_active_picker_) {
+        s_active_picker_->apply_picker_state();
+        s_active_picker_->dismiss_configure_picker();
+    }
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+void PrintStatusWidget::print_status_picker_done_cb(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[PrintStatusWidget] print_status_picker_done_cb");
     (void)e;
     if (s_active_picker_) {
         s_active_picker_->apply_picker_state();
