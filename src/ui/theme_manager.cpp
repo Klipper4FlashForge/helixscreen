@@ -1182,6 +1182,36 @@ void theme_manager_register_responsive_spacing(lv_display_t* display) {
                   nav_width, gap, widths.transient, widths.destination);
 }
 
+void theme_manager_refresh_orientation(lv_display_t* display) {
+    // ui_is_portrait is consumed by XML for visual layout (flex flow, strip
+    // stacking, <if cond="ui_is_portrait eq 1">). Those decisions must follow a
+    // --layout override, so the source of truth is LayoutManager::type() once it
+    // is initialized. Before Phase 8b LayoutManager carries only its default
+    // STANDARD; detect_layout_type() gives the right physical answer, using the
+    // caller's display when provided so a non-default display (tests, a
+    // specific refresh target) is not confused with the default. See #1255.
+    lv_subject_t* portrait_subject = lv_xml_get_subject(nullptr, "ui_is_portrait");
+    if (!portrait_subject) {
+        return;
+    }
+
+    int is_portrait;
+    if (LayoutManager::instance().is_initialized()) {
+        is_portrait = is_portrait_layout(LayoutManager::instance().type()) ? 1 : 0;
+    } else {
+        lv_display_t* disp = display ? display : lv_display_get_default();
+        if (!disp) {
+            return;
+        }
+        is_portrait =
+            is_portrait_layout(detect_layout_type(lv_display_get_horizontal_resolution(disp),
+                                                  lv_display_get_vertical_resolution(disp)))
+                ? 1
+                : 0;
+    }
+    lv_subject_set_int(portrait_subject, is_portrait);
+}
+
 void theme_manager_refresh_layout_constants(lv_display_t* display) {
     int32_t hor_res = lv_display_get_horizontal_resolution(display);
     int32_t ver_res = lv_display_get_vertical_resolution(display);
@@ -1236,14 +1266,12 @@ void theme_manager_refresh_layout_constants(lv_display_t* display) {
                            to_int(breakpoint_for(responsive_vertical_dimension(display))));
     }
 
-    // Portrait subject follows the same axis swap -- update it alongside
-    // ui_breakpoint/ui_breakpoint_v so a rotation can never leave ui_is_portrait
-    // disagreeing with the axes it just repointed.
-    lv_subject_t* portrait_subject = lv_xml_get_subject(nullptr, "ui_is_portrait");
-    if (portrait_subject) {
-        lv_subject_set_int(portrait_subject,
-                           is_portrait_layout(detect_layout_type(hor_res, ver_res)) ? 1 : 0);
-    }
+    // Orientation follows the same axis swap. theme_manager_refresh_orientation
+    // consults LayoutManager (override-aware) when it is up, falling back to
+    // detect_layout_type() on the early-startup probe path; either way a
+    // rotation cannot leave ui_is_portrait disagreeing with the axes it just
+    // repointed (#1255).
+    theme_manager_refresh_orientation(display);
 
     // Type has to follow the breakpoint too. The px tokens above moved the
     // boxes; without the two calls below the fonts stayed sized for the startup
@@ -1745,12 +1773,12 @@ void theme_manager_init(lv_display_t* display, bool use_dark_mode_param) {
                       vert_res);
     }
 
-    // Registered alongside ui_breakpoint/ui_breakpoint_v so the three can never
-    // disagree about what orientation the app believes it is in. Derived from
-    // the same detect_layout_type()/is_portrait_layout() pair
-    // compute_overlay_widths()/compute_overlay_heights() already use in this
-    // file -- not LayoutManager::instance(), which has not been init()'d yet
-    // this early in startup.
+    // Startup SEED only. LayoutManager (Phase 8b) is not initialized yet, so
+    // the override-aware value cannot be computed here; detect_layout_type() of
+    // the live display gives the right physical answer, and Application
+    // republishes via theme_manager_refresh_orientation() once LayoutManager
+    // resolves any --layout override (#1255). The rotation path
+    // (theme_manager_refresh_layout_constants) goes through the same helper.
     {
         int32_t hor_res = lv_display_get_horizontal_resolution(display);
         int32_t ver_res = lv_display_get_vertical_resolution(display);

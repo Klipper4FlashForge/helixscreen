@@ -1429,8 +1429,12 @@ bool Application::init_display() {
         const int h = dm->height();
         auto& layout = helix::LayoutManager::instance();
 
-        theme_manager_refresh_layout_constants(disp);
+        // LayoutManager first: theme_manager_refresh_layout_constants() now
+        // derives ui_is_portrait from LayoutManager::type() (override-aware),
+        // so the type must reflect the new geometry before refresh reads it.
+        // #1255.
         layout.init(w, h);
+        theme_manager_refresh_layout_constants(disp);
 
         // Overlays cache their root widget across show/hide cycles, so the
         // width applied at push time goes stale when the canvas changes size
@@ -1628,6 +1632,11 @@ void Application::run_rotation_probe_and_layout() {
         }
     }
     layout_mgr.init(m_screen_width, m_screen_height);
+    // LayoutManager just resolved any --layout override. Republish
+    // ui_is_portrait from it so XML visual decisions match the C++ ones; the
+    // startup seed (theme_manager_init) and the rotation-probe refresh both ran
+    // before this point and could only see detect_layout_type(). #1255.
+    theme_manager_refresh_orientation();
     spdlog::info("[Application] Layout: {} ({})", layout_mgr.name(),
                  layout_mgr.is_standard() ? "default" : "override");
 }
