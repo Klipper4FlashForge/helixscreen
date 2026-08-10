@@ -202,11 +202,13 @@ Two major IFS macro packages exist for ZMOD. Both use the same `save_variables` 
 
 Both packages use **1-based port numbering** for hardware (ports 1-4) and define the same G-code commands (`IFS_F10`, `IFS_F11`, `IFS_F24`, `IFS_F39`, `SET_EXTRUDER_SLOT`).
 
-### lessWaste-Specific Variables (Not Yet Used by HelixScreen)
+### lessWaste-Specific Variables
+
+Mostly unused by HelixScreen; `variable_backup` is the exception.
 
 | Variable | Purpose |
 |----------|---------|
-| `variable_backup` | Enable/disable automatic filament backup on runout |
+| `variable_backup` | Enable/disable automatic filament backup on runout. **Read by HelixScreen** (#1250): surfaced on the `ams_ifs_backup_enabled` subject and quoted in the runout dialog, so a user is told plainly whether the printer will switch spools by itself. Absent key = unknown, never reported as off. See `docs/devel/FILAMENT_MANAGEMENT.md` § "Auto-switchover plugin visibility" |
 | `variable_backup_filament_spent` | `[0,0,0,0]` — marks consumed backup slots |
 | `variable_is_virtual_mode` | Virtual channel mode active (>4 tools mapped to 4 ports) |
 | `variable_same_filament_purge` | Skip start purge if same filament in hotend |
@@ -223,8 +225,8 @@ Zmod has an option to rename slots from 0-indexed (0,1,2,3) to 1-indexed (1,2,3,
 
 ### Future Enhancements
 
-- Parse `PAUSE REASON=` for specific filament error UI (jam, runout, empty)
-- Display backup/failover status from lessWaste's `backup_filament_spent`
+- Parse `PAUSE REASON=` for specific filament error UI (jam, runout, empty). Would let the plugin path skip the sensor-derived runout detector's confirm dwell entirely — see `docs/devel/FILAMENT_MANAGEMENT.md` § "Unattended runout detection"
+- Display which slot lessWaste's `backup_filament_spent` has already consumed (`variable_backup` itself is read as of #1250)
 - Support virtual channel visualization (>4 tools mapped to 4 physical ports)
 - Expose `same_filament_purge` toggle in settings
 

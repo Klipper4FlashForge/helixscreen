@@ -35,6 +35,7 @@
 #include "ui_text_input.h"
 #include "ui_z_offset_indicator.h"
 
+#include "boot_yield.h"
 #include "layout_manager.h"
 #include "page_scroll_auto_inject.h"
 #include "static_subject_registry.h"
@@ -285,6 +286,14 @@ static void register_xml(const char* filename) {
     std::string path = "A:" + lm.resolve_xml_path(filename);
     if (lv_xml_register_component_from_file(path.c_str()) != LV_RESULT_OK) {
         spdlog::error("[XML Registration] Failed to register: {}", path);
+    }
+    // Registering ~300 component templates back-to-back (each a frogfs
+    // decompress + expat parse) is a multi-second stretch that starves the idle
+    // task on ESP; yield every few components so the Task WDT never fires.
+    // No-op on desktop (see boot_yield.h).
+    static int s_reg_count = 0;
+    if ((++s_reg_count & 0x0F) == 0) {
+        HELIX_BOOT_YIELD();
     }
 }
 

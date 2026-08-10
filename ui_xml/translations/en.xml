@@ -41,7 +41,12 @@
   <translation tag="0 = computed" en="0 = computed"/>
   <translation tag="0 events queued" en="0 events queued"/>
   <translation tag="0 slots" en="0 slots"/>
+  <translation tag="0.0000 J/K" en="0.0000 J/K"/>
+  <translation tag="0.000000 K/s/K" en="0.000000 K/s/K"/>
+  <translation tag="0.000000 W/K" en="0.000000 W/K"/>
   <translation tag="0.4-2mm direct drive, 4-6mm bowden" en="0.4-2mm direct drive, 4-6mm bowden"/>
+  <translation tag="0h" en="0h"/>
+  <translation tag="0m" en="0m"/>
   <translation tag="0°" en="0°"/>
   <translation tag="1 day ago" en="1 day ago"/>
   <translation tag="1 event queued" en="1 event queued"/>
@@ -88,6 +93,7 @@
   <translation tag="ABS" en="ABS"/>
   <translation tag="ACCELEROMETERS" en="ACCELEROMETERS"/>
   <translation tag="ACE Moonraker bridge not found. Install ace_status.py for full support." en="ACE Moonraker bridge not found. Install ace_status.py for full support."/>
+  <translation tag="ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support." en="ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support."/>
   <translation tag="ACTIONS" en="ACTIONS"/>
   <translation tag="ADXL" en="ADXL"/>
   <translation tag="AFC" en="AFC"/>
@@ -161,6 +167,7 @@
   <translation tag="An error occurred during measurement." en="An error occurred during measurement."/>
   <translation tag="An error occurred during probing." en="An error occurred during probing."/>
   <translation tag="An error occurred while loading filament." en="An error occurred while loading filament."/>
+  <translation tag="An error occurred." en="An error occurred."/>
   <translation tag="An internal error occurred. The app continues running — please send a debug bundle from Settings &gt; About if it repeats." en="An internal error occurred. The app continues running — please send a debug bundle from Settings &gt; About if it repeats."/>
   <translation tag="An unexpected printer error occurred." en="An unexpected printer error occurred."/>
   <translation tag="An update is available" en="An update is available"/>
@@ -285,9 +292,7 @@
   <translation tag="Bypass disabled" en="Bypass disabled"/>
   <translation tag="Bypass enabled" en="Bypass enabled"/>
   <translation tag="Bypass failed" en="Bypass failed"/>
-  <translation tag="Bypass failed: {}" en="Bypass failed: {}"/>
   <translation tag="Bypass toggle failed" en="Bypass toggle failed"/>
-  <translation tag="Bypass toggle failed: {}" en="Bypass toggle failed: {}"/>
   <translation tag="C" en="C"/>
   <translation tag="CALIBRATION" en="CALIBRATION"/>
   <translation tag="CAPABILITIES" en="CAPABILITIES"/>
@@ -382,10 +387,8 @@
   <translation tag="Check for Updates" en="Check for Updates"/>
   <translation tag="Check slot" en="Check slot"/>
   <translation tag="Check slot failed" en="Check slot failed"/>
-  <translation tag="Check slot failed: {}" en="Check slot failed: {}"/>
   <translation tag="Check slots" en="Check slots"/>
   <translation tag="Check slots failed" en="Check slots failed"/>
-  <translation tag="Check slots failed: {}" en="Check slots failed: {}"/>
   <translation tag="Check the filament path and try again." en="Check the filament path and try again."/>
   <translation tag="Check your heater&apos;s rating (typically 40-60W for hotends)" en="Check your heater&apos;s rating (typically 40-60W for hotends)"/>
   <translation tag="Checking" en="Checking"/>
@@ -416,7 +419,6 @@
   <translation tag="Clear Console?" en="Clear Console?"/>
   <translation tag="Clear Spool" en="Clear Spool"/>
   <translation tag="Clear failed" en="Clear failed"/>
-  <translation tag="Clear failed: {}" en="Clear failed: {}"/>
   <translation tag="Cleared from settings — system unpair failed, may need OS Bluetooth" en="Cleared from settings — system unpair failed, may need OS Bluetooth"/>
   <translation tag="Clipboard unavailable - use SSH" en="Clipboard unavailable - use SSH"/>
   <translation tag="Clog Detection" en="Clog Detection"/>
@@ -661,7 +663,6 @@
   <translation tag="Eject Distance" en="Eject Distance"/>
   <translation tag="Eject Velocity" en="Eject Velocity"/>
   <translation tag="Eject failed" en="Eject failed"/>
-  <translation tag="Eject failed: {}" en="Eject failed: {}"/>
   <translation tag="Eject needs [force_move] enabled in printer config" en="Eject needs [force_move] enabled in printer config"/>
   <translation tag="Ejecting" en="Ejecting"/>
   <translation tag="Elegoo Centauri Carbon" en="Elegoo Centauri Carbon"/>
@@ -878,8 +879,11 @@
   <translation tag="Filament load failed: {}" en="Filament load failed: {}"/>
   <translation tag="Filament loaded" en="Filament loaded"/>
   <translation tag="Filament operation failed" en="Filament operation failed"/>
-  <translation tag="Filament operation failed: {}" en="Filament operation failed: {}"/>
   <translation tag="Filament operation timed out" en="Filament operation timed out"/>
+  <translation tag="Filament ran out - nothing at the toolhead and the print is paused." en="Filament ran out - nothing at the toolhead and the print is paused."/>
+  <translation tag="Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume." en="Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume."/>
+  <translation tag="Filament ran out at the toolhead" en="Filament ran out at the toolhead"/>
+  <translation tag="Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume." en="Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume."/>
   <translation tag="Filament runout" en="Filament runout"/>
   <translation tag="Filament runout and motion detection sensors" en="Filament runout and motion detection sensors"/>
   <translation tag="Filament saved" en="Filament saved"/>
@@ -1104,6 +1108,7 @@
   <translation tag="Klipper: " en="Klipper: "/>
   <translation tag="Klippy Errors" en="Klippy Errors"/>
   <translation tag="Klippy Shutdowns" en="Klippy Shutdowns"/>
+  <translation tag="LED" en="LED"/>
   <translation tag="LED SELECTION" en="LED SELECTION"/>
   <translation tag="LED Settings" en="LED Settings"/>
   <translation tag="LED Strip" en="LED Strip"/>
@@ -1124,10 +1129,12 @@
   <translation tag="Language" en="Language"/>
   <translation tag="Language, theme, brightness, and sound" en="Language, theme, brightness, and sound"/>
   <translation tag="Last" en="Last"/>
+  <translation tag="Last 7 days" en="Last 7 days"/>
   <translation tag="Last print cancelled" en="Last print cancelled"/>
   <translation tag="Last print failed" en="Last print failed"/>
   <translation tag="Later" en="Later"/>
   <translation tag="Layer" en="Layer"/>
+  <translation tag="Layer 0 / 0" en="Layer 0 / 0"/>
   <translation tag="Layer Height" en="Layer Height"/>
   <translation tag="Layer Macro captures one frame per layer change. Best for most prints." en="Layer Macro captures one frame per layer change. Best for most prints."/>
   <translation tag="Layer mode captures one frame per layer change. Best for most prints." en="Layer mode captures one frame per layer change. Best for most prints."/>
@@ -1190,7 +1197,6 @@
   <translation tag="MDI Icons" en="MDI Icons"/>
   <translation tag="MISSING CONFIGURED" en="MISSING CONFIGURED"/>
   <translation tag="MMU command failed" en="MMU command failed"/>
-  <translation tag="MMU command failed: {}" en="MMU command failed: {}"/>
   <translation tag="MPC" en="MPC"/>
   <translation tag="Machine Limits" en="Machine Limits"/>
   <translation tag="Macro" en="Macro"/>
@@ -1331,6 +1337,7 @@
   <translation tag="No Spools" en="No Spools"/>
   <translation tag="No USB printer detected" en="No USB printer detected"/>
   <translation tag="No USB printers found" en="No USB printers found"/>
+  <translation tag="No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own." en="No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own."/>
   <translation tag="No buffer data available" en="No buffer data available"/>
   <translation tag="No camera — use USB barcode scanner" en="No camera — use USB barcode scanner"/>
   <translation tag="No changes selected.\n\nClick Cancel to close." en="No changes selected.\n\nClick Cancel to close."/>
@@ -1371,6 +1378,7 @@
   <translation tag="No prints yet" en="No prints yet"/>
   <translation tag="No profiles available" en="No profiles available"/>
   <translation tag="No sensors detected" en="No sensors detected"/>
+  <translation tag="No slot currently matches." en="No slot currently matches."/>
   <translation tag="No spool assigned" en="No spool assigned"/>
   <translation tag="No spools found — tap to retry" en="No spools found — tap to retry"/>
   <translation tag="No tape detected in printer" en="No tape detected in printer"/>
@@ -1392,6 +1400,7 @@
   <translation tag="Not found (use phone app)" en="Not found (use phone app)"/>
   <translation tag="Not in your spools? Set it up" en="Not in your spools? Set it up"/>
   <translation tag="Not now" en="Not now"/>
+  <translation tag="Not yet available on this display" en="Not yet available on this display"/>
   <translation tag="Not yet calibrated" en="Not yet calibrated"/>
   <translation tag="Notes" en="Notes"/>
   <translation tag="Notes (optional)" en="Notes (optional)"/>
@@ -1430,6 +1439,7 @@
   <translation tag="Off:" en="Off:"/>
   <translation tag="On" en="On"/>
   <translation tag="On and Off macros must be different" en="On and Off macros must be different"/>
+  <translation tag="On your phone or computer, join the WiFi network \&quot;{}\&quot;, then open http://{} in a browser to finish setup." en="On your phone or computer, join the WiFi network \&quot;{}\&quot;, then open http://{} in a browser to finish setup."/>
   <translation tag="On/Off" en="On/Off"/>
   <translation tag="On/Off (state-aware)" en="On/Off (state-aware)"/>
   <translation tag="On:" en="On:"/>
@@ -1642,6 +1652,7 @@
   <translation tag="Probing Bed..." en="Probing Bed..."/>
   <translation tag="Probing Failed" en="Probing Failed"/>
   <translation tag="Proceed" en="Proceed"/>
+  <translation tag="Processing..." en="Processing..."/>
   <translation tag="Profile deleted" en="Profile deleted"/>
   <translation tag="Profile name (e.g., default)" en="Profile name (e.g., default)"/>
   <translation tag="Profile renamed" en="Profile renamed"/>
@@ -1740,7 +1751,6 @@
   <translation tag="Reset Speed &amp; Flow to 100%" en="Reset Speed &amp; Flow to 100%"/>
   <translation tag="Reset all settings and restart wizard" en="Reset all settings and restart wizard"/>
   <translation tag="Reset failed" en="Reset failed"/>
-  <translation tag="Reset failed: {}" en="Reset failed: {}"/>
   <translation tag="Reset to Default" en="Reset to Default"/>
   <translation tag="Reset to defaults" en="Reset to defaults"/>
   <translation tag="Reset to original values" en="Reset to original values"/>
@@ -1771,7 +1781,6 @@
   <translation tag="Resume interrupted print?" en="Resume interrupted print?"/>
   <translation tag="Resume macro not configured" en="Resume macro not configured"/>
   <translation tag="Resume preparation failed" en="Resume preparation failed"/>
-  <translation tag="Resume preparation failed: {}" en="Resume preparation failed: {}"/>
   <translation tag="Resuming..." en="Resuming..."/>
   <translation tag="Retract" en="Retract"/>
   <translation tag="Retract Distance" en="Retract Distance"/>
@@ -1889,7 +1898,6 @@
   <translation tag="Select sensor" en="Select sensor"/>
   <translation tag="Select slot" en="Select slot"/>
   <translation tag="Select slot failed" en="Select slot failed"/>
-  <translation tag="Select slot failed: {}" en="Select slot failed: {}"/>
   <translation tag="Select the heaters Klipper uses for your bed and hotend" en="Select the heaters Klipper uses for your bed and hotend"/>
   <translation tag="Select which devices the home screen power button controls" en="Select which devices the home screen power button controls"/>
   <translation tag="Select which sensor triggers pause on filament runout" en="Select which sensor triggers pause on filament runout"/>
@@ -1915,6 +1923,7 @@
   <translation tag="Set " en="Set "/>
   <translation tag="Set Active" en="Set Active"/>
   <translation tag="Set PIN" en="Set PIN"/>
+  <translation tag="Set Up WiFi" en="Set Up WiFi"/>
   <translation tag="Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope" en="Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope"/>
   <translation tag="Set local timezone for time display" en="Set local timezone for time display"/>
   <translation tag="Set logging verbosity for troubleshooting" en="Set logging verbosity for troubleshooting"/>
@@ -1943,6 +1952,9 @@
   <translation tag="Show text labels on icon-only home screen widgets" en="Show text labels on icon-only home screen widgets"/>
   <translation tag="Show up/down buttons on long lists" en="Show up/down buttons on long lists"/>
   <translation tag="Show whatever curves you last had visible on the full graph." en="Show whatever curves you last had visible on the full graph."/>
+  <translation tag="Showing loaded colors" en="Showing loaded colors"/>
+  <translation tag="Showing sliced colors" en="Showing sliced colors"/>
+  <translation tag="Showing the 50 newest files. See more in the printer&apos;s web UI." en="Showing the 50 newest files. See more in the printer&apos;s web UI."/>
   <translation tag="Shutdown" en="Shutdown"/>
   <translation tag="Shutdown / Reboot" en="Shutdown / Reboot"/>
   <translation tag="Shutdown failed" en="Shutdown failed"/>
@@ -2070,6 +2082,7 @@
   <translation tag="System detected" en="System detected"/>
   <translation tag="T%d has no filament loaded — this print will run out." en="T%d has no filament loaded — this print will run out."/>
   <translation tag="T%d needs filament in slot %d, which is empty — this print will run out." en="T%d needs filament in slot %d, which is empty — this print will run out."/>
+  <translation tag="T0" en="T0"/>
   <translation tag="TD-1 filament color detection" en="TD-1 filament color detection"/>
   <translation tag="TEMPERATURE SENSORS" en="TEMPERATURE SENSORS"/>
   <translation tag="THEME COLORS" en="THEME COLORS"/>
@@ -2098,6 +2111,7 @@
   <translation tag="Temp °C (%d–%d)" en="Temp °C (%d–%d)"/>
   <translation tag="Temperature" en="Temperature"/>
   <translation tag="Temperature Graph Config" en="Temperature Graph Config"/>
+  <translation tag="Temperature control has been optimized." en="Temperature control has been optimized."/>
   <translation tag="Temperatures" en="Temperatures"/>
   <translation tag="Temperatures saved" en="Temperatures saved"/>
   <translation tag="Template" en="Template"/>
@@ -2251,7 +2265,6 @@
   <translation tag="Unknown error" en="Unknown error"/>
   <translation tag="Unload" en="Unload"/>
   <translation tag="Unload Filament" en="Unload Filament"/>
-  <translation tag="Unload failed: {}" en="Unload failed: {}"/>
   <translation tag="Unload macro not configured" en="Unload macro not configured"/>
   <translation tag="Unload may still be running — response timed out" en="Unload may still be running — response timed out"/>
   <translation tag="Unloading" en="Unloading"/>
@@ -2282,6 +2295,7 @@
   <translation tag="Uptime" en="Uptime"/>
   <translation tag="Use Android native keyboard for text input" en="Use Android native keyboard for text input"/>
   <translation tag="Use G10/G11 firmware retraction" en="Use G10/G11 firmware retraction"/>
+  <translation tag="Use Settings Instead" en="Use Settings Instead"/>
   <translation tag="Use printer type to select image" en="Use printer type to select image"/>
   <translation tag="VM Peak" en="VM Peak"/>
   <translation tag="VM Size" en="VM Size"/>
@@ -2406,7 +2420,9 @@
   <translation tag="Z:" en="Z:"/>
   <translation tag="Z: 0.000" en="Z: 0.000"/>
   <translation tag="\&quot;%s\&quot; failed to load" en="\&quot;%s\&quot; failed to load"/>
+  <translation tag="backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present." en="backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present."/>
   <translation tag="bed" en="bed"/>
+  <translation tag="benchy.gcode" en="benchy.gcode"/>
   <translation tag="by Preston Brown" en="by Preston Brown"/>
   <translation tag="chamber heater" en="chamber heater"/>
   <translation tag="complete" en="complete"/>
@@ -2426,8 +2442,11 @@
   <translation tag="fans" en="fans"/>
   <translation tag="heated bed" en="heated bed"/>
   <translation tag="idle" en="idle"/>
+  <translation tag="is installed but its backup-spool switching is turned off, so no automatic swap will happen." en="is installed but its backup-spool switching is turned off, so no automatic swap will happen."/>
+  <translation tag="is installed, but its backup-spool setting could not be read - do not count on an automatic swap." en="is installed, but its backup-spool setting could not be read - do not count on an automatic swap."/>
   <translation tag="layers" en="layers"/>
   <translation tag="left" en="left"/>
+  <translation tag="matches." en="matches."/>
   <translation tag="mm before clog" en="mm before clog"/>
   <translation tag="needs" en="needs"/>
   <translation tag="not detected" en="not detected"/>

@@ -109,7 +109,7 @@ class CameraStream {
      * @brief Configure stream URLs from printer state.
      *
      * Reads webcam URLs from PrinterState and resolves relative URLs via
-     * MoonrakerAPI. Flip/rotation must be set separately by the caller.
+     * IMoonrakerAPI. Flip/rotation must be set separately by the caller.
      *
      * @param[out] stream_url Resolved stream URL (empty if no webcam)
      * @param[out] snapshot_url Resolved snapshot URL (empty if no webcam)
@@ -174,6 +174,8 @@ class CameraStream {
     ScaledSize compute_scaled_size(int src_w, int src_h) const;
 
   private:
+    friend class CameraStreamTestAccess;
+
     int process_stream_data();
     void stream_thread_func();
     void snapshot_poll_loop();

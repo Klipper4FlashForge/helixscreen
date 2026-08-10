@@ -41,7 +41,17 @@ translations:
   0 = computed: 0 = computed
   0 events queued: 0 events queued
   0 slots: 0 slots
+  # Source: calibration_pid_panel.xml:368
+  0.0000 J/K: 0.0000 J/K
+  # Source: calibration_pid_panel.xml:374
+  0.000000 K/s/K: 0.000000 K/s/K
+  # Source: calibration_pid_panel.xml:380
+  0.000000 W/K: 0.000000 W/K
   0.4-2mm direct drive, 4-6mm bowden: 0.4-2mm direct drive, 4-6mm bowden
+  # Source: history_dashboard_panel.xml:83
+  0h: 0h
+  # Source: history_dashboard_panel.xml:89, print_status_panel.xml:252, print_status_panel.xml:254
+  0m: 0m
   0°: 0°
   1 day ago: 1 day ago
   1 event queued: 1 event queued
@@ -89,6 +99,8 @@ translations:
   ABS: ABS
   ACCELEROMETERS: ACCELEROMETERS
   ACE Moonraker bridge not found. Install ace_status.py for full support.: ACE Moonraker bridge not found. Install ace_status.py for full support.
+  ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: ACE
+    Moonraker bridge not found. Install ace_status.py from ValgACE for full support.
   ACTIONS: ACTIONS
   ADXL: ADXL
   AFC: AFC
@@ -172,6 +184,8 @@ translations:
   An error occurred during measurement.: An error occurred during measurement.
   An error occurred during probing.: An error occurred during probing.
   An error occurred while loading filament.: An error occurred while loading filament.
+  # Source: probe_accuracy_modal.xml:90
+  An error occurred.: An error occurred.
   An internal error occurred. The app continues running — please send a debug bundle from Settings > About if it repeats.: An
     internal error occurred. The app continues running — please send a debug bundle
     from Settings > About if it repeats.
@@ -307,9 +321,7 @@ translations:
   Bypass disabled: Bypass disabled
   Bypass enabled: Bypass enabled
   Bypass failed: Bypass failed
-  'Bypass failed: {}': 'Bypass failed: {}'
   Bypass toggle failed: Bypass toggle failed
-  'Bypass toggle failed: {}': 'Bypass toggle failed: {}'
   C: C
   CALIBRATION: CALIBRATION
   CAPABILITIES: CAPABILITIES
@@ -423,10 +435,8 @@ translations:
   Check for Updates: Check for Updates
   Check slot: Check slot
   Check slot failed: Check slot failed
-  'Check slot failed: {}': 'Check slot failed: {}'
   Check slots: Check slots
   Check slots failed: Check slots failed
-  'Check slots failed: {}': 'Check slots failed: {}'
   Check the filament path and try again.: Check the filament path and try again.
   Check your heater's rating (typically 40-60W for hotends): Check your heater's rating
     (typically 40-60W for hotends)
@@ -462,7 +472,6 @@ translations:
   Clear Console?: Clear Console?
   Clear Spool: Clear Spool
   Clear failed: Clear failed
-  'Clear failed: {}': 'Clear failed: {}'
   Cleared from settings — system unpair failed, may need OS Bluetooth: Cleared from
     settings — system unpair failed, may need OS Bluetooth
   Clipboard unavailable - use SSH: Clipboard unavailable - use SSH
@@ -726,7 +735,6 @@ translations:
   Eject Distance: Eject Distance
   Eject Velocity: Eject Velocity
   Eject failed: Eject failed
-  'Eject failed: {}': 'Eject failed: {}'
   Eject needs [force_move] enabled in printer config: Eject needs [force_move] enabled
     in printer config
   Ejecting: Ejecting
@@ -960,8 +968,12 @@ translations:
   'Filament load failed: {}': 'Filament load failed: {}'
   Filament loaded: Filament loaded
   Filament operation failed: Filament operation failed
-  'Filament operation failed: {}': 'Filament operation failed: {}'
   Filament operation timed out: Filament operation timed out
+  Filament ran out - nothing at the toolhead and the print is paused.: Filament ran out - nothing at the toolhead and the print is paused.
+  ? Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume.
+  : Filament ran out and the CFS found no matching spool to switch to. Load a spool of the same material and color, then resume.
+  Filament ran out at the toolhead: Filament ran out at the toolhead
+  Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.: Filament ran out. Auto-refill is off, so the CFS will not switch spools on its own. Load filament, then resume.
   Filament runout: Filament runout
   Filament runout and motion detection sensors: Filament runout and motion detection
     sensors
@@ -1231,6 +1243,8 @@ translations:
   'Klipper: ': 'Klipper: '
   Klippy Errors: Klippy Errors
   Klippy Shutdowns: Klippy Shutdowns
+  # Source: led_control_overlay.xml:31
+  LED: LED
   LED SELECTION: LED SELECTION
   LED Settings: LED Settings
   LED Strip: LED Strip
@@ -1252,10 +1266,14 @@ translations:
   Language: Language
   Language, theme, brightness, and sound: Language, theme, brightness, and sound
   Last: Last
+  # Source: history_dashboard_panel.xml:114
+  Last 7 days: Last 7 days
   Last print cancelled: Last print cancelled
   Last print failed: Last print failed
   Later: Later
   Layer: Layer
+  # Source: print_status_panel.xml:234
+  Layer 0 / 0: Layer 0 / 0
   Layer Height: Layer Height
   Layer Macro captures one frame per layer change. Best for most prints.: Layer Macro
     captures one frame per layer change. Best for most prints.
@@ -1324,7 +1342,6 @@ translations:
   MDI Icons: MDI Icons
   MISSING CONFIGURED: MISSING CONFIGURED
   MMU command failed: MMU command failed
-  'MMU command failed: {}': 'MMU command failed: {}'
   MPC: MPC
   Machine Limits: Machine Limits
   Macro: Macro
@@ -1478,6 +1495,8 @@ translations:
   No Spools: No Spools
   No USB printer detected: No USB printer detected
   No USB printers found: No USB printers found
+  ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
+  : No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
   No buffer data available: No buffer data available
   No camera — use USB barcode scanner: No camera — use USB barcode scanner
   No changes selected.\n\nClick Cancel to close.: No changes selected.\n\nClick Cancel
@@ -1522,6 +1541,7 @@ translations:
   No prints yet: No prints yet
   No profiles available: No profiles available
   No sensors detected: No sensors detected
+  No slot currently matches.: No slot currently matches.
   No spool assigned: No spool assigned
   No spools found — tap to retry: No spools found — tap to retry
   No tape detected in printer: No tape detected in printer
@@ -1544,6 +1564,7 @@ translations:
   Not found (use phone app): Not found (use phone app)
   Not in your spools? Set it up: Not in your spools? Set it up
   Not now: Not now
+  Not yet available on this display: Not yet available on this display
   Not yet calibrated: Not yet calibrated
   Notes: Notes
   Notes (optional): Notes (optional)
@@ -1582,6 +1603,7 @@ translations:
   'Off:': 'Off:'
   'On': 'On'
   On and Off macros must be different: On and Off macros must be different
+  On your phone or computer, join the WiFi network \"{}\", then open http://{} in a browser to finish setup.: On your phone or computer, join the WiFi network \"{}\", then open http://{} in a browser to finish setup.
   On/Off: On/Off
   On/Off (state-aware): On/Off (state-aware)
   'On:': 'On:'
@@ -1818,6 +1840,8 @@ translations:
   Probing Bed...: Probing Bed...
   Probing Failed: Probing Failed
   Proceed: Proceed
+  # Source: abort_progress_modal.xml:20
+  Processing...: Processing...
   Profile deleted: Profile deleted
   Profile name (e.g., default): Profile name (e.g., default)
   Profile renamed: Profile renamed
@@ -1925,7 +1949,6 @@ translations:
   Reset Speed & Flow to 100%: Reset Speed & Flow to 100%
   Reset all settings and restart wizard: Reset all settings and restart wizard
   Reset failed: Reset failed
-  'Reset failed: {}': 'Reset failed: {}'
   Reset to Default: Reset to Default
   Reset to defaults: Reset to defaults
   Reset to original values: Reset to original values
@@ -1956,7 +1979,6 @@ translations:
   Resume interrupted print?: Resume interrupted print?
   Resume macro not configured: Resume macro not configured
   Resume preparation failed: Resume preparation failed
-  'Resume preparation failed: {}': 'Resume preparation failed: {}'
   Resuming...: Resuming...
   Retract: Retract
   Retract Distance: Retract Distance
@@ -2094,7 +2116,6 @@ translations:
   Select sensor: Select sensor
   Select slot: Select slot
   Select slot failed: Select slot failed
-  'Select slot failed: {}': 'Select slot failed: {}'
   Select the heaters Klipper uses for your bed and hotend: Select the heaters Klipper
     uses for your bed and hotend
   Select which devices the home screen power button controls: Select which devices
@@ -2125,6 +2146,7 @@ translations:
   'Set ': 'Set '
   Set Active: Set Active
   Set PIN: Set PIN
+  Set Up WiFi: Set Up WiFi
   ? 'Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt
     appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS:
     Strobe Light Tachometer, myStroboscope'
@@ -2163,6 +2185,10 @@ translations:
   Show up/down buttons on long lists: Show up/down buttons on long lists
   Show whatever curves you last had visible on the full graph.: Show whatever curves
     you last had visible on the full graph.
+  Showing loaded colors: Showing loaded colors
+  Showing sliced colors: Showing sliced colors
+  Showing the 50 newest files. See more in the printer's web UI.: Showing the 50
+    newest files. See more in the printer's web UI.
   Shutdown: Shutdown
   Shutdown / Reboot: Shutdown / Reboot
   Shutdown failed: Shutdown failed
@@ -2305,6 +2331,8 @@ translations:
     — this print will run out.
   T%d needs filament in slot %d, which is empty — this print will run out.: T%d needs
     filament in slot %d, which is empty — this print will run out.
+  # Source: ams_current_tool.xml:38
+  T0: T0
   TD-1 filament color detection: TD-1 filament color detection
   TEMPERATURE SENSORS: TEMPERATURE SENSORS
   THEME COLORS: THEME COLORS
@@ -2335,6 +2363,8 @@ translations:
   Temp °C (%d–%d): Temp °C (%d–%d)
   Temperature: Temperature
   Temperature Graph Config: Temperature Graph Config
+  # Source: calibration_pid_panel.xml:333
+  Temperature control has been optimized.: Temperature control has been optimized.
   Temperatures: Temperatures
   Temperatures saved: Temperatures saved
   Template: Template
@@ -2553,7 +2583,6 @@ translations:
   Unknown error: Unknown error
   Unload: Unload
   Unload Filament: Unload Filament
-  'Unload failed: {}': 'Unload failed: {}'
   Unload macro not configured: Unload macro not configured
   Unload may still be running — response timed out: Unload may still be running —
     response timed out
@@ -2586,6 +2615,7 @@ translations:
   Use Android native keyboard for text input: Use Android native keyboard for text
     input
   Use G10/G11 firmware retraction: Use G10/G11 firmware retraction
+  Use Settings Instead: Use Settings Instead
   Use printer type to select image: Use printer type to select image
   VM Peak: VM Peak
   VM Size: VM Size
@@ -2737,7 +2767,11 @@ translations:
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
   \"%s\" failed to load: \"%s\" failed to load
+  ? backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
+  : backup-spool switching is on. It only switches to a port whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
   bed: bed
+  # Source: print_status_panel.xml:242
+  benchy.gcode: benchy.gcode
   by Preston Brown: by Preston Brown
   chamber heater: chamber heater
   complete: complete
@@ -2757,8 +2791,11 @@ translations:
   fans: fans
   heated bed: heated bed
   idle: idle
+  is installed but its backup-spool switching is turned off, so no automatic swap will happen.: is installed but its backup-spool switching is turned off, so no automatic swap will happen.
+  is installed, but its backup-spool setting could not be read - do not count on an automatic swap.: is installed, but its backup-spool setting could not be read - do not count on an automatic swap.
   layers: layers
   left: left
+  matches.: matches.
   mm before clog: mm before clog
   needs: needs
   not detected: not detected

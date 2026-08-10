@@ -17,8 +17,8 @@
 #include "app_constants.h"
 #include "app_globals.h"
 #include "error_event.h"
+#include "i_moonraker_api.h"
 #include "lvgl.h"
-#include "moonraker_api.h"
 #include "moonraker_error.h"
 #include "moonraker_types.h"
 #include "printer_state.h"
@@ -39,7 +39,7 @@ constexpr uint32_t PREHEAT_POLL_MS = 250;
 /// How long to wait for the nozzle before giving up. Same 300s budget the AFC
 /// and AD5X backends give their own heating phases (HEATING_TIMEOUT_SECONDS),
 /// so a recovery preheat abandons a dead heater on the same schedule the
-/// backends do. MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS is numerically identical
+/// backends do. IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS is numerically identical
 /// but means "how long may an RPC take"; this is a physical heating budget.
 constexpr uint32_t PREHEAT_TIMEOUT_MS = 300000;
 
@@ -57,15 +57,24 @@ std::string color_for_style(const std::string& style) {
     return "";
 }
 
-/// Title for a CRITICAL recovery modal. Preserves the per-source behavior:
-/// CFS faults read "Filament System Error", anything else the event title,
-/// falling back to "Printer Error".
+/// Title for a CRITICAL recovery modal: the event's own title, falling back to
+/// "Filament System Error" for an untitled CFS fault and "Printer Error"
+/// otherwise.
+///
+/// The CFS fallback exists because error_classify::classify() names no title for
+/// a key8xx code, so without it every CFS fault would read "Printer Error". It
+/// is only a fallback: AmsBackendCfs::classify_error() titles its runout event
+/// "Filament runout", and a runout must not be relabelled a generic system
+/// error. No CFS producer other than that one sets a title, so this changes
+/// nothing for the coded faults.
 /// NOTE: twin of modal_title_for() in gcode_error_router.cpp (the plain
 /// PresentAs::MODAL arm) — keep the CFS title rule in sync across both.
 const char* modal_title_for(const helix::ErrorEvent& e) {
+    if (!e.title.empty())
+        return e.title.c_str();
     if (e.source == helix::ErrorSource::CFS)
         return lv_tr("Filament System Error");
-    return e.title.empty() ? lv_tr("Printer Error") : e.title.c_str();
+    return lv_tr("Printer Error");
 }
 
 int nozzle_current_c() {
@@ -77,7 +86,7 @@ int nozzle_current_c() {
 
 namespace helix::ui {
 
-RecoveryModalPresenter::RecoveryModalPresenter(MoonrakerAPI* api)
+RecoveryModalPresenter::RecoveryModalPresenter(IMoonrakerAPI* api)
     : api_(api), preheat_budget_ms_(PREHEAT_TIMEOUT_MS) {}
 
 RecoveryModalPresenter::~RecoveryModalPresenter() {
@@ -217,7 +226,7 @@ void RecoveryModalPresenter::dispatch_recovery(const std::string& gcode, const s
             ToastManager::instance().show(ToastSeverity::ERROR,
                                           ("Recovery failed: " + err.user_message()).c_str(), 6000);
         },
-        MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+        IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
 }
 
 bool RecoveryModalPresenter::nozzle_ready_for_extrusion() const {

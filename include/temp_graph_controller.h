@@ -186,6 +186,9 @@ class TempGraphController {
         int series_id = -1;
         bool show_target = false;
         bool is_dynamic = false;
+        /// Bound to a stand-in subject because the real one is not discovered
+        /// yet; must be re-resolved once discovery publishes the real one.
+        bool provisional = false;
         int64_t last_update_ms = 0; ///< Throttle graph updates to 1Hz per series
         ObserverGuard temp_obs;
         ObserverGuard target_obs;
@@ -195,8 +198,30 @@ class TempGraphController {
     void create_graph();
     void setup_series();
     void setup_observers();
+    void setup_connection_observer();
     void backfill_history();
     void apply_auto_range();
+
+    /**
+     * @brief Attach temp/target observers for one series
+     * @return true if the temperature subject resolved (series is live)
+     *
+     * Extruder and sensor subjects are plain map lookups that return nullptr
+     * until discovery creates them, so a graph built before the WebSocket
+     * connects resolves nothing and never samples.
+     */
+    bool attach_series_observers(size_t i);
+
+    /**
+     * @brief Retry the series that had no subject when the graph was built
+     *
+     * Fired by the discovery version subjects. Attaches only what is still
+     * unresolved, then re-backfills so the newly reachable history appears at
+     * once instead of redrawing one live sample at a time. Deliberately NOT a
+     * rebuild(): tearing the graph down here would destroy widgets from inside
+     * a queued observer callback.
+     */
+    void resolve_pending_series();
 
     TempGraphControllerConfig config_;
     lv_obj_t* container_ = nullptr;
@@ -204,6 +229,9 @@ class TempGraphController {
 
     std::vector<SeriesState> series_;
     ObserverGuard connection_observer_;
+    /// Installed only while some series is unresolved; retries on discovery.
+    ObserverGuard discovery_observer_;
+    ObserverGuard sensor_discovery_observer_;
 
     AsyncLifetimeGuard lifetime_;
     uint32_t generation_ = 0;

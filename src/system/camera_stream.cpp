@@ -8,7 +8,7 @@
 
 #include "app_globals.h"
 #include "hv/requests.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "printer_state.h"
 #include "spdlog/spdlog.h"
 #include "stb_image.h"
@@ -25,6 +25,25 @@ static constexpr int kTJFLAG_FASTDCT = 2048;
 
 namespace helix {
 
+namespace {
+
+/// Runs a callable when the enclosing scope unwinds, on every path including
+/// exceptions. Local to this file — nothing else in the tree needs one yet.
+template <typename F> class ScopeExit {
+  public:
+    explicit ScopeExit(F fn) : fn_(std::move(fn)) {}
+    ~ScopeExit() {
+        fn_();
+    }
+    ScopeExit(const ScopeExit&) = delete;
+    ScopeExit& operator=(const ScopeExit&) = delete;
+
+  private:
+    F fn_;
+};
+
+} // namespace
+
 // ============================================================================
 // Construction / Destruction
 // ============================================================================
@@ -32,7 +51,16 @@ namespace helix {
 CameraStream::CameraStream() {
     // Try to load libturbojpeg at runtime for SIMD-accelerated JPEG decode.
     // Falls back to stb_image (scalar) if the library isn't installed.
-    tj_lib_ = dlopen("libturbojpeg.so.0", RTLD_LAZY);
+    // Versioned soname first — that is what every Linux target installs, so
+    // nothing about their resolution changes. The unversioned name is the
+    // Android case: the APK packager only accepts plain lib*.so, so the copy we
+    // build into the APK is libturbojpeg.so (prestonbrown/helixscreen#1245).
+    for (const char* soname : {"libturbojpeg.so.0", "libturbojpeg.so"}) {
+        tj_lib_ = dlopen(soname, RTLD_LAZY);
+        if (tj_lib_) {
+            break;
+        }
+    }
     if (tj_lib_) {
         auto fn_init = reinterpret_cast<TjInitDecompress_t>(dlsym(tj_lib_, "tjInitDecompress"));
         fn_decompress_header_ =
@@ -108,7 +136,10 @@ bool CameraStream::configure_from_printer(std::string& stream_url, std::string& 
 
 void CameraStream::start(const std::string& stream_url, const std::string& snapshot_url,
                          FrameCallback on_frame, ErrorCallback on_error) {
-    if (running_.load()) {
+    // A worker that exited on its own leaves running_ false but the std::thread
+    // object still joinable — and assigning a fresh thread over a joinable one
+    // is std::terminate. Reap it before rebuilding any state.
+    if (running_.load() || stream_thread_.joinable()) {
         stop();
     }
 
@@ -151,6 +182,12 @@ void CameraStream::stop() {
             req->Cancel();
         }
     }
+
+    // Snapshot before the join below clears joinability. The worker clears
+    // running_ itself on every exit path, so `was_running` alone no longer
+    // proves there is state to reclaim — a worker that gave up on its own
+    // still leaves draw buffers and callbacks behind.
+    bool had_thread = stream_thread_.joinable();
 
     // Join the stream thread with periodic re-cancellation. Use a helper
     // thread for timed join — destroying a joinable std::thread is fatal.
@@ -208,7 +245,7 @@ void CameraStream::stop() {
         } // end if (helper_spawned)
     }
 
-    if (was_running) {
+    if (was_running || had_thread) {
         if (thread_joined) {
             // Thread exited — safe to free everything
             free_buffers();
@@ -275,6 +312,18 @@ void CameraStream::stream_thread_func() {
     // Capture a lifetime token so exception handlers can check
     // object validity even after CameraStream may be destroyed
     auto thread_token = lifetime_.token();
+
+    // running_ means "the worker is alive", so it has to be cleared wherever
+    // the worker actually stops — not only in stop(). The body below exits on
+    // its own in several ways (failure budget exhausted with no snapshot URL
+    // to fall back to, std::bad_alloc, any other exception), and leaving the
+    // flag set on those paths makes the camera permanently unrevivable:
+    // CameraWidget::start_stream() skips the restart while is_running() is
+    // true, so the feed stays dead until the user switches tabs (#1245).
+    // Scope-level so no future early return can regress it; it fires after
+    // the snapshot fallback below, which needs the flag to stay set while it
+    // is legitimately polling.
+    ScopeExit clear_running([this] { running_.store(false); });
 
     try {
         spdlog::debug("[CameraStream] Stream thread started for {}", stream_url_);

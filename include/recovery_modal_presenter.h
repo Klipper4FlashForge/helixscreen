@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-class MoonrakerAPI;
+class IMoonrakerAPI;
 
 // Forward declaration so the presenter can grant white-box test access.
 struct RecoveryModalPresenterTestAccess;
@@ -40,7 +40,7 @@ namespace helix::ui {
 /// cancels the timer.
 class RecoveryModalPresenter {
   public:
-    explicit RecoveryModalPresenter(MoonrakerAPI* api);
+    explicit RecoveryModalPresenter(IMoonrakerAPI* api);
     ~RecoveryModalPresenter();
 
     RecoveryModalPresenter(const RecoveryModalPresenter&) = delete;
@@ -94,7 +94,7 @@ class RecoveryModalPresenter {
 
     static void preheat_timer_cb(lv_timer_t* timer);
 
-    MoonrakerAPI* api_;
+    IMoonrakerAPI* api_;
     std::unique_ptr<helix::ui::ActionPromptModal> modal_;
     std::string shown_detail_;
     std::vector<helix::RecoveryAction> active_actions_;

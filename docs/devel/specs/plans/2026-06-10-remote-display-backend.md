@@ -1,5 +1,13 @@
 # Remote Display Backend (RFB Server) Implementation Plan — Phase 1b
 
+> 🚧 **Work in flight (as of 2026-08-09) - coordinate before executing.**
+>
+> Unchecked boxes here do NOT mean "not started". This is the host-side half of the ESP32
+> display work, whose device-side sources live in the untracked `firmware/` directory with
+> the active branch at `esp32/port-4-app`. A grep of the tracked tree finds none of the
+> `rfb_*` symbols this plan prescribes and will wrongly suggest nothing has happened. Check
+> the branch before concluding anything, and ask before picking up a task.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A fourth display backend (`DisplayBackendType::REMOTE`) that renders HelixScreen headless and serves the screen to one client over an RFB (VNC) 3.8 protocol subset, with touch coming back as pointer events — per Phase 1b of `docs/devel/specs/2026-06-10-esp32-display-device-design.md`.

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025-2026 356C LLC
 
+#include "lvgl_test_fixture.h"
 #include "touch_calibration.h"
 #include "touch_calibration_panel.h"
 #include "touch_calibration_wrapper.h"
 
 #include "../catch_amalgamated.hpp"
-#include "lvgl_test_fixture.h"
 
 using Catch::Approx;
 using namespace helix;

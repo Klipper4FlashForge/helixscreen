@@ -376,9 +376,9 @@ void ams_detail_update_tray(AmsDetailWidgets& w) {
         tray_height = 20;
 
     // 3D depth matching spool oblique projection (ELLIPSE_RATIO = 0.45)
-    int32_t depth = std::max(tray_height * DEPTH_PCT / 100, MIN_DEPTH_PX);
+    int32_t depth = std::max<int32_t>(tray_height * DEPTH_PCT / 100, MIN_DEPTH_PX);
     int32_t dx = depth;
-    int32_t dy = std::max(depth * DY_PCT / 100, MIN_DY_PX);
+    int32_t dy = std::max<int32_t>(depth * DY_PCT / 100, MIN_DY_PX);
 
     // Update shared draw data
     s_tray_box.tray_height = tray_height;

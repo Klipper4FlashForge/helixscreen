@@ -26,6 +26,7 @@
 #include "ui_utils.h"
 
 #include "ams_backend.h"
+#include "data_root_resolver.h"
 #if HELIX_HAS_CFS
 #include "ams_backend_cfs.h"
 #endif
@@ -35,8 +36,8 @@
 #include "buffer_status_modal.h"
 #include "color_utils.h"
 #include "config.h"
+#include "i_moonraker_api.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
 #include "observer_factory.h"
 #include "printer_detector.h"
 #include "printer_state.h"
@@ -119,17 +120,24 @@ static void ensure_ams_widgets_registered() {
     // Register XML components
     // NOTE: Old AMS settings panels removed - Device Operations overlay is registered in
     // xml_registration.cpp
-    lv_xml_register_component_from_file("A:ui_xml/components/ams_unit_detail.xml");
-    lv_xml_register_component_from_file("A:ui_xml/components/ams_loaded_card.xml");
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/components/ams_unit_detail.xml").c_str());
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/components/ams_loaded_card.xml").c_str());
     // ams_environment_indicator registered above via ensure_ams_env_indicator_registered()
-    lv_xml_register_component_from_file("A:ui_xml/components/ams_sidebar.xml");
-    lv_xml_register_component_from_file("A:ui_xml/ams_panel.xml");
-    lv_xml_register_component_from_file("A:ui_xml/ams_context_menu.xml");
-    lv_xml_register_component_from_file("A:ui_xml/ams_selector_menu.xml");
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/components/ams_sidebar.xml").c_str());
+    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/ams_panel.xml").c_str());
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/ams_context_menu.xml").c_str());
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/ams_selector_menu.xml").c_str());
     // NOTE: spoolman_spool_item.xml and ams_edit_overlay.xml are registered
     // globally in xml_registration.cpp (needed by FilamentPanel without AMS lazy init)
-    lv_xml_register_component_from_file("A:ui_xml/ams_loading_error_modal.xml");
-    lv_xml_register_component_from_file("A:ui_xml/ams_environment_overlay.xml");
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/ams_loading_error_modal.xml").c_str());
+    lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/ams_environment_overlay.xml").c_str());
     // NOTE: color_picker.xml is registered at startup in xml_registration.cpp
 
     s_ams_widgets_registered = true;
@@ -144,7 +152,8 @@ static void ensure_ams_widgets_registered() {
 // Construction
 // ============================================================================
 
-AmsPanel::AmsPanel(PrinterState& printer_state, MoonrakerAPI* api) : PanelBase(printer_state, api) {
+AmsPanel::AmsPanel(PrinterState& printer_state, IMoonrakerAPI* api)
+    : PanelBase(printer_state, api) {
     spdlog::debug("[AmsPanel] Constructed");
 }
 
@@ -1448,6 +1457,7 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
             break;
 
         case helix::ui::AmsContextMenu::MenuAction::SCAN_QR: {
+#if HELIX_HAS_CAMERA
             auto& scanner = helix::ui::get_qr_scanner_overlay();
             scanner.show(parent_screen_, slot, [this, slot](const SpoolInfo& spool) {
                 AmsBackend* be = AmsState::instance().get_backend();
@@ -1464,6 +1474,7 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
                 AmsState::instance().sync_from_backend();
                 spdlog::info("[AmsPanel] QR scan assigned spool #{} to slot {}", spool.id, slot);
             });
+#endif // HELIX_HAS_CAMERA
             break;
         }
 

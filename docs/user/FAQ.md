@@ -266,7 +266,7 @@ Labels include spool name, material, color swatch, temperatures, and a QR code. 
 
 **Yes.** Full multi-material support is available for:
 - **Happy Hare** — MMU2, ERCF, 3MS, Tradrack
-- **AFC-Klipper** — Box Turtle with full data parsing, 11 device actions, per-lane reset, and mock mode
+- **AFC-Klipper** — Box Turtle, OpenAMS and ViViD, with full lane data, a live step bar during tool changes, and more than 25 device settings and actions grouped into their own sections
 - **ACE** (Anycubic ACE Pro) — supported on native Anycubic firmware (the `filament_hub` Klipper object, e.g. Kobra on Rinkhals) and on the community ValgACE/BunnyACE/DuckACE Klipper drivers
 - **Tool changers** — supported
 

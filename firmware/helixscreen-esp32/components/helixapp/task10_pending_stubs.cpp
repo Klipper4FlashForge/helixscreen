@@ -1,0 +1,193 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// TEMPORARY link stubs for Moonraker sub-APIs NOT covered by Task 10's HTTP
+// lane. Each symbol here is referenced by a kept app TU but defined in a
+// source file excluded from this component (see app_srcs.txt "EXCLUDED, and
+// why"). Bodies log + surface the failure through the API's ErrorCallback:
+// a stray user action (e.g. tapping a temp preset) must fail gracefully, NOT
+// abort/reset the board in the user's hands.
+//
+// Task 10 (esp32p4-task-10-report.md) moved MoonrakerRestAPI and
+// MoonrakerFileTransferAPI OUT of this file and into helixnet/esp_rest_api.cpp
+// — that's their real home now (download_file_partial is genuinely
+// implemented there; every other method on those two classes is an asserting
+// stub, per Task 10's R1 enumeration: none of them are reachable from the v1
+// print-select thumbnail/metadata surface). What's LEFT here is out of Task
+// 10's scope entirely:
+//   - Group A (MoonrakerAPI facade controls below): the printer command
+//     surface (set_temperature, execute_gcode, restart_*, etc.) — a later
+//     Stage C/D task (print/settings HTTP, or JSON-RPC if that's how these
+//     route on ESP) owns making these real.
+//   - MoonrakerTimelapseAPI: timelapse viewer is excluded from the v1
+//     Core+AMS cut (HELIX_HAS_TIMELAPSE_VIEWER=0) — no reachable UI calls it.
+//
+// Symbols are added here exactly as the linker demands them; each carries the
+// excluded source file it comes from. The full inventory is mirrored in
+// esp32p4-task-5-report.md.
+
+#include "esp_log.h"
+#include "moonraker_api.h"
+#include "moonraker_timelapse_api.h"
+
+#include <functional>
+#include <string>
+
+namespace {
+// Non-fatal: log the call and return. Every Moonraker ErrorCallback in this file
+// is std::function<void(const MoonrakerError&)>, so callers that carry one route
+// through task10_unimplemented_err() below to surface failure to the UI.
+[[maybe_unused]] void task10_unimplemented(const char* sym) {
+    ESP_LOGE("helixapp", "task10 stub: %s", sym);
+}
+
+// Same log, then invoke the API's error callback so the UI reports "feature
+// unavailable" instead of hanging on a response that will never arrive. Does NOT
+// call any SuccessCallback — that would signal a false success.
+[[maybe_unused]] void
+task10_unimplemented_err(const char* sym, const std::function<void(const MoonrakerError&)>& err) {
+    task10_unimplemented(sym);
+    if (err) {
+        MoonrakerError e;
+        e.type = MoonrakerErrorType::VALIDATION_ERROR;
+        e.method = sym; // sym identifies the unavailable call; message left empty to save flash
+        err(e);
+    }
+}
+} // namespace
+
+// ===========================================================================
+// GROUP A — Moonraker HTTP/transport surface deferred to Task 10.
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// MoonrakerAPI facade control methods.
+// Real definitions live in the EXCLUDED src/api/moonraker_api_controls.cpp
+// (one of the 5 hv/requests.h HTTP TUs). moonraker_api.cpp (KEPT) declares the
+// facade; these command entry points are only reachable through user actions
+// that cannot occur on the idle Stage-A bring-up build, so log + error-callback
+// if called. The parameter typedefs (SuccessCallback, ErrorCallback,
+// PowerDevicesCallback, SensorsCallback) resolve in MoonrakerAPI's inherited
+// scope, guaranteeing the definitions mangle identically to the header
+// declarations.
+// ---------------------------------------------------------------------------
+
+void MoonrakerAPI::set_temperature(const std::string&, double, SuccessCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerAPI::set_temperature", err);
+}
+
+void MoonrakerAPI::set_fan_speed(const std::string&, double, SuccessCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerAPI::set_fan_speed", err);
+}
+
+void MoonrakerAPI::get_power_devices(PowerDevicesCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerAPI::get_power_devices", err);
+}
+
+void MoonrakerAPI::set_device_power(const std::string&, const std::string&, SuccessCallback,
+                                    ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerAPI::set_device_power", err);
+}
+
+void MoonrakerAPI::get_sensors(SensorsCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerAPI::get_sensors", err);
+}
+
+void MoonrakerAPI::execute_gcode(const std::string&, SuccessCallback, ErrorCallback err, uint32_t,
+                                 bool, SuccessCallback) {
+    task10_unimplemented_err("MoonrakerAPI::execute_gcode", err);
+}
+
+void MoonrakerAPI::exclude_object(const std::string&, SuccessCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerAPI::exclude_object", err);
+}
+
+void MoonrakerAPI::emergency_stop(SuccessCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerAPI::emergency_stop", err);
+}
+
+void MoonrakerAPI::restart_firmware(SuccessCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerAPI::restart_firmware", err);
+}
+
+void MoonrakerAPI::restart_klipper(SuccessCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerAPI::restart_klipper", err);
+}
+
+void MoonrakerAPI::restart_service(const std::string&, SuccessCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerAPI::restart_service", err);
+}
+
+void MoonrakerAPI::restart_moonraker(SuccessCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerAPI::restart_moonraker", err);
+}
+
+void MoonrakerAPI::machine_shutdown(SuccessCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerAPI::machine_shutdown", err);
+}
+
+void MoonrakerAPI::machine_reboot(SuccessCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerAPI::machine_reboot", err);
+}
+
+void MoonrakerAPI::update_safety_limits_from_printer(SuccessCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerAPI::update_safety_limits_from_printer", err);
+}
+
+// ---------------------------------------------------------------------------
+// MoonrakerTimelapseAPI (timelapse_api_ member).
+// moonraker_api.cpp (KEPT) constructs it as a std::unique_ptr member via
+// make_unique and destroys it in ~MoonrakerAPI. Because the class OVERRIDES
+// its interface's pure virtuals, a bare ctor stub is NOT enough: the ctor emits
+// a reference to the class vtable, whose key function (the out-of-line dtor) and
+// every virtual slot live in the EXCLUDED src/api/moonraker_timelapse_api.cpp.
+// So we must define ctor + dtor + ALL virtuals here to let the compiler emit
+// the vtable in this TU with every slot resolved.
+//
+//   ctor : real no-op — runs during MoonrakerAPI construction on boot. Only
+//          initializes the two reference members (client_, http_base_url_).
+//   dtor : real no-op — runs during MoonrakerAPI destruction on shutdown.
+//   virtuals : log-only if called — the timelapse viewer is excluded from the
+//              v1 Core+AMS cut (HELIX_HAS_TIMELAPSE_VIEWER=0), so there is no
+//              reachable UI path to any of these on the ESP32 build.
+//
+// Callback-parameter typedefs resolve in the class's inherited scope.
+// ---------------------------------------------------------------------------
+
+// --- MoonrakerTimelapseAPI (src/api/moonraker_timelapse_api.cpp) ---
+MoonrakerTimelapseAPI::MoonrakerTimelapseAPI(helix::IMoonrakerClient& client,
+                                             const std::string& http_base_url)
+    : client_(client), http_base_url_(http_base_url) {}
+
+MoonrakerTimelapseAPI::~MoonrakerTimelapseAPI() {}
+
+void MoonrakerTimelapseAPI::get_timelapse_settings(TimelapseSettingsCallback, ErrorCallback) {
+    task10_unimplemented("MoonrakerTimelapseAPI::get_timelapse_settings");
+}
+
+void MoonrakerTimelapseAPI::set_timelapse_settings(const TimelapseSettings&, SuccessCallback,
+                                                   ErrorCallback) {
+    task10_unimplemented("MoonrakerTimelapseAPI::set_timelapse_settings");
+}
+
+void MoonrakerTimelapseAPI::set_timelapse_enabled(bool, SuccessCallback, ErrorCallback) {
+    task10_unimplemented("MoonrakerTimelapseAPI::set_timelapse_enabled");
+}
+
+void MoonrakerTimelapseAPI::render_timelapse(SuccessCallback, ErrorCallback) {
+    task10_unimplemented("MoonrakerTimelapseAPI::render_timelapse");
+}
+
+void MoonrakerTimelapseAPI::save_timelapse_frames(SuccessCallback, ErrorCallback) {
+    task10_unimplemented("MoonrakerTimelapseAPI::save_timelapse_frames");
+}
+
+void MoonrakerTimelapseAPI::get_last_frame_info(std::function<void(const LastFrameInfo&)>,
+                                                ErrorCallback) {
+    task10_unimplemented("MoonrakerTimelapseAPI::get_last_frame_info");
+}
+
+void MoonrakerTimelapseAPI::get_webcam_list(WebcamListCallback, ErrorCallback) {
+    task10_unimplemented("MoonrakerTimelapseAPI::get_webcam_list");
+}
+
+// (further symbols appended here as later tasks' link passes demand them)

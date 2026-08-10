@@ -1,5 +1,13 @@
 # Snake Game Rebuild Implementation Plan
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions.**
+> **Status: SHIPPED.** The 30 `- [ ]` boxes were never ticked and do not mean the work is
+> outstanding.
+>
+> Code line numbers and file paths below may have drifted. Follow the **symbol**, not
+> the number, and verify every predicate against current code before relying on
+> anything here.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Rebuild the snake game easter egg for smooth interpolated animation, responsive adaptive input (D-pad on resistive/SDL, swipe on capacitive), and enhanced visual effects.

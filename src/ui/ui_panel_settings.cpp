@@ -59,11 +59,11 @@
 #include "format_utils.h"
 #include "hardware_validator.h"
 #include "helix_version.h"
+#include "i_moonraker_api.h"
+#include "i_moonraker_client.h"
 #include "input_settings_manager.h"
 #include "led/led_controller.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
-#include "moonraker_client.h"
 #include "moonraker_manager.h"
 #include "observer_factory.h"
 #include "platform_info.h"
@@ -93,7 +93,7 @@ using namespace helix;
 // CONSTRUCTOR
 // ============================================================================
 
-SettingsPanel::SettingsPanel(PrinterState& printer_state, MoonrakerAPI* api)
+SettingsPanel::SettingsPanel(PrinterState& printer_state, IMoonrakerAPI* api)
     : PanelBase(printer_state, api) {
     spdlog::trace("[{}] Constructor", get_name());
 }
@@ -325,7 +325,12 @@ void SettingsPanel::init_subjects() {
     // Platform visibility subjects — hidden on Android where OS manages these
     bool on_android = helix::is_android_platform();
 
-    lv_subject_init_int(&show_network_settings_subject_, on_android ? 0 : 1);
+    // Task 13: un-hidden on ESP32 now that WifiBackend over esp_wifi
+    // (wifi_backend_esp.cpp) backs wifi_manager.h for real — Ethernet stays
+    // out of scope (ethernet_manager.h still resolves to the
+    // helixapp_platform_stubs.cpp seam; no ESP32 wired-network HIL exists).
+    bool show_network_settings = !on_android;
+    lv_subject_init_int(&show_network_settings_subject_, show_network_settings ? 1 : 0);
     subjects_.register_subject(&show_network_settings_subject_);
     lv_xml_register_subject(nullptr, "show_network_settings", &show_network_settings_subject_);
 
@@ -960,7 +965,7 @@ void SettingsPanel::handle_spoolman_settings_clicked() {
         overlay.init_subjects();
         overlay.register_callbacks();
     }
-    MoonrakerAPI* api = get_moonraker_api();
+    IMoonrakerAPI* api = get_moonraker_api();
     if (api) {
         overlay.set_api(api);
     }
@@ -1120,6 +1125,7 @@ void SettingsPanel::handle_factory_reset_clicked() {
 }
 
 void SettingsPanel::handle_plugins_clicked() {
+#if HELIX_HAS_PLUGINS
     spdlog::debug("[{}] Plugins clicked - opening overlay", get_name());
 
     auto& overlay = get_settings_plugins_overlay();
@@ -1135,6 +1141,11 @@ void SettingsPanel::handle_plugins_clicked() {
         NavigationManager::instance().register_overlay_instance(overlay.get_root(), &overlay);
         NavigationManager::instance().push_overlay(overlay.get_root());
     }
+#else
+    // Plugin system compiled out (HELIX_HAS_PLUGINS=0) — row_plugins stays in the
+    // XML layout (see CLAUDE.md gcode_viewer precedent) but the click is inert.
+    spdlog::debug("[{}] Plugins clicked - plugin system compiled out, ignoring", get_name());
+#endif
 }
 
 void SettingsPanel::perform_factory_reset() {

@@ -11,6 +11,9 @@
 
 #include "async_lifetime_guard.h"
 #include "panel_widget.h"
+#if defined(HELIX_PLATFORM_ESP32)
+#include "esp_psram_thumbnail.h"
+#endif
 #include "print_history_manager.h"
 #include "subject_managed_panel.h"
 
@@ -302,6 +305,14 @@ class PrintStatusWidget : public PanelWidget {
     // Observers (RAII cleanup via ObserverGuard)
     ObserverGuard print_state_observer_;
     ObserverGuard print_thumbnail_path_observer_;
+#if defined(HELIX_PLATFORM_ESP32)
+    ObserverGuard print_psram_thumb_observer_; ///< Ditto, via the PSRAM generation counter
+    /// PSRAM-resident thumbnail currently shown in print_card_active_thumb_.
+    /// There is no cache file on this platform, so this shared_ptr is what keeps
+    /// the image src's buffer alive. Main-thread only (its destructor drops the
+    /// LVGL image cache entry).
+    std::shared_ptr<helix::ui::EspPsramThumbnail> esp_thumbnail_;
+#endif
     ObserverGuard filament_runout_observer_;
     ObserverGuard job_queue_count_observer_;
     ObserverGuard connection_observer_;
@@ -445,6 +456,14 @@ class PrintStatusWidget : public PanelWidget {
     void handle_print_card_clicked();
     void on_print_state_changed(PrintJobState state);
     void on_print_thumbnail_path_changed(const char* path);
+#if defined(HELIX_PLATFORM_ESP32)
+    /// Pull the current PSRAM thumbnail from PrinterState, hold a reference,
+    /// and point print_card_active_thumb_ at its descriptor. Main thread only;
+    /// no-op when the widget is unattached or nothing has been fetched yet.
+    /// Called from the generation observer AND from attach(), because widget
+    /// instances are recycled and a fresh attach must re-apply the image.
+    void apply_esp_psram_thumbnail();
+#endif
     void reset_print_card_to_idle();
     // Publish one resolved idle thumbnail everywhere it is shown: the two
     // imperative Library-mode thumbs and idle_thumb_path_subject_, which the

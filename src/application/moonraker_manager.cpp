@@ -23,6 +23,7 @@
 #include "app_constants.h"
 #include "app_globals.h"
 #include "config.h"
+#include "i_moonraker_client.h"
 #include "macro_modification_manager.h"
 #include "moonraker_api.h"
 #include "moonraker_client.h"
@@ -46,6 +47,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <cassert>
 #include <cstdlib>
 #include <vector>
 
@@ -186,7 +188,7 @@ int MoonrakerManager::connect(const std::string& websocket_url, const std::strin
     // Connect client - on_connected triggers printer discovery which subscribes to status updates
     // CRITICAL: Without discover_printer(), we never call printer.objects.subscribe,
     // so we never receive notify_status_update messages (print_stats, temperatures, etc.)
-    MoonrakerClient* client = m_client.get();
+    IMoonrakerClient* client = m_client.get();
     MoonrakerAPI* api = m_api.get();
     helix::MacroModificationManager* macro_mgr = m_macro_analysis.get();
     // Raw pointers remain valid because shutdown() destroys client first,
@@ -304,6 +306,13 @@ size_t MoonrakerManager::pending_notification_count() const {
 void MoonrakerManager::create_client(const RuntimeConfig& runtime_config) {
     spdlog::debug("[MoonrakerManager] Creating Moonraker client...");
 
+#if defined(ESP_PLATFORM)
+    // Embedded firmware: platform-provided client over esp_websocket_client.
+    // HELIX_ENABLE_MOCKS is never defined for ESP32 targets, so there is no
+    // separate mock arm to consider here.
+    spdlog::debug("[MoonrakerManager] Creating platform (ESP32) client");
+    m_client = helix::create_platform_moonraker_client();
+#else
 #ifdef HELIX_ENABLE_MOCKS
     if (runtime_config.should_mock_moonraker()) {
         double speedup = runtime_config.sim_speedup;
@@ -385,6 +394,7 @@ void MoonrakerManager::create_client(const RuntimeConfig& runtime_config) {
 #ifdef HELIX_ENABLE_MOCKS
     }
 #endif
+#endif // defined(ESP_PLATFORM)
 
     // Register with app_globals
     set_moonraker_client(m_client.get());
@@ -559,7 +569,16 @@ void MoonrakerManager::create_api(const RuntimeConfig& runtime_config) {
 #ifdef HELIX_ENABLE_MOCKS
     if (runtime_config.should_use_test_files()) {
         spdlog::debug("[MoonrakerManager] Creating MOCK API (local file transfers)");
-        auto mock_api = std::make_unique<MoonrakerAPIMock>(*m_client, get_printer_state());
+        // MoonrakerAPIMock (and its sub-mocks) predate the IMoonrakerClient
+        // split and still take a concrete helix::MoonrakerClient&. On non-ESP
+        // builds create_client() only ever constructs helix::MoonrakerClient
+        // (real) or MoonrakerClientMock (its subclass) into m_client — the
+        // ESP_PLATFORM factory arm above is the only path that would produce a
+        // bare platform IMoonrakerClient, and HELIX_ENABLE_MOCKS never
+        // coexists with an ESP32 build — so this downcast is safe here.
+        auto* concrete_client = dynamic_cast<MoonrakerClient*>(m_client.get());
+        assert(concrete_client && "m_client must be a concrete MoonrakerClient for the mock API");
+        auto mock_api = std::make_unique<MoonrakerAPIMock>(*concrete_client, get_printer_state());
 
         // Check HELIX_MOCK_SPOOLMAN env var
         const char* spoolman_env = std::getenv("HELIX_MOCK_SPOOLMAN");

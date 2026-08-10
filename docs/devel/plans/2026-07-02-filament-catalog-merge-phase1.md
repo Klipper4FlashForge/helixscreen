@@ -1,5 +1,14 @@
 # Filament Catalog Merge — Phase 1 Implementation Plan
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions.**
+> **Status: SHIPPED.** The 45 `- [ ]` boxes were never ticked and do not mean the work is
+> outstanding. Evidence: `FilamentCatalog` across `src/` and `include/`, and the prescribed
+> removal is done too - `CfsMaterialInfo` is a zero-hit grep because this plan deleted it.
+>
+> Code line numbers and file paths below may have drifted. Follow the **symbol**, not
+> the number, and verify every predicate against current code before relying on
+> anything here.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Merge the CFS branded-filament table and the generic material-type database into one Orca-sourced, on-demand-loaded filament catalog, keeping the CFS decode path working with richer data.

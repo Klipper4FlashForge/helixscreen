@@ -14,6 +14,8 @@
 #include <string>
 #include <vector>
 
+struct HomePanelTestAccess; // test-only friend (tests/test_helpers/)
+
 /**
  * @brief Home panel - Main dashboard showing printer status and quick actions
  *
@@ -25,7 +27,7 @@
 
 class HomePanel : public PanelBase {
   public:
-    HomePanel(helix::PrinterState& printer_state, MoonrakerAPI* api);
+    HomePanel(helix::PrinterState& printer_state, IMoonrakerAPI* api);
     ~HomePanel() override;
 
     void init_subjects() override;
@@ -132,6 +134,8 @@ class HomePanel : public PanelBase {
     static void on_home_grid_clicked(lv_event_t* e);
     static void on_home_grid_pressing(lv_event_t* e);
     static void on_home_grid_released(lv_event_t* e);
+
+    friend struct ::HomePanelTestAccess;
 };
 
 // Global instance accessor (needed by main.cpp)

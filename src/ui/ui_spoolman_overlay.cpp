@@ -24,7 +24,7 @@
 #include "ams_state.h"
 #include "http_executor.h"
 #include "hv/requests.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "moonraker_config_manager.h"
 #include "runtime_config.h"
 #include "settings_manager.h"
@@ -771,7 +771,14 @@ void SpoolmanOverlay::resolve_spoolman_target(SpoolmanTargetCallback on_done) {
                 }
             }
 
+            // Two different questions, and on most firmwares one file answers both.
+            // `primary` is the file that can PROVE the config root is addressable,
+            // because it carries a section list to verify downloaded content against.
+            // `root` is the file we may WRITE to. COSMOS splits them: its root holds
+            // nothing but includes, and [server] sits in a vendor directory the
+            // firmware replaces on upgrade (#1242).
             int primary = helix::MoonrakerConfigManager::select_primary_config_index(files);
+            int root = helix::MoonrakerConfigManager::select_root_config_index(files);
 
             // Which loaded files already define [spoolman]? This counts a helixscreen.conf
             // pulled in by an [include] from an earlier run exactly like a natively
@@ -803,23 +810,34 @@ void SpoolmanOverlay::resolve_spoolman_target(SpoolmanTargetCallback on_done) {
                 info = helix::MoonrakerConfigManager::resolve_config_upload_location(config_file,
                                                                                      data_path);
                 path_authoritative = true;
-            } else if (primary >= 0) {
+            } else if (root >= 0) {
+                // Derive the config root from the root config, never from the [server]
+                // file: on COSMOS the latter would put helixscreen.conf inside the
+                // vendor directory.
                 info = helix::MoonrakerConfigManager::config_path_from_relative(
-                    files[static_cast<size_t>(primary)].filename);
+                    files[static_cast<size_t>(root)].filename);
             } else {
                 info.error = "Moonraker did not report which configuration files it loaded, "
                              "so HelixScreen cannot tell where [spoolman] belongs.";
             }
 
             bool in_place = (defining.size() == 1);
-            std::string target_path;
+            std::string target_path; // what we edit
+            std::string verify_path; // what we download to prove reachability
             std::vector<std::string> required;
             if (in_place) {
+                // The file already defining [spoolman] is both, and it necessarily
+                // has a section list to verify against.
                 target_path = files[defining[0]].filename;
+                verify_path = target_path;
                 required = files[defining[0]].sections;
-            } else if (primary >= 0) {
-                target_path = files[static_cast<size_t>(primary)].filename;
-                required = files[static_cast<size_t>(primary)].sections;
+            } else {
+                if (root >= 0)
+                    target_path = files[static_cast<size_t>(root)].filename;
+                if (primary >= 0) {
+                    verify_path = files[static_cast<size_t>(primary)].filename;
+                    required = files[static_cast<size_t>(primary)].sections;
+                }
             }
 
             // The file we intend to touch must itself be addressable through the file
@@ -830,8 +848,8 @@ void SpoolmanOverlay::resolve_spoolman_target(SpoolmanTargetCallback on_done) {
 
             // === MAIN THREAD: apply the resolution, then verify by content ===
             token.defer("SpoolmanOverlay::resolve_target", [this, info, target_info, target_path,
-                                                            required, in_place, path_authoritative,
-                                                            on_done]() {
+                                                            verify_path, required, in_place,
+                                                            path_authoritative, on_done]() {
                 SpoolmanConfigTarget res;
 
                 if (!info.uploadable) {
@@ -863,7 +881,7 @@ void SpoolmanOverlay::resolve_spoolman_target(SpoolmanTargetCallback on_done) {
                     return;
                 }
 
-                if (required.empty()) {
+                if (required.empty() || verify_path.empty()) {
                     res.status = SpoolmanConfigTarget::Status::Unreachable;
                     res.detail = "Moonraker reported config file '" + info.config_filename +
                                  "' with no section list, so HelixScreen cannot confirm it "
@@ -872,7 +890,11 @@ void SpoolmanOverlay::resolve_spoolman_target(SpoolmanTargetCallback on_done) {
                     return;
                 }
 
-                verify_config_reachable(target_path, required, in_place, on_done);
+                // Proving the [server] file is addressable proves the config root
+                // maps correctly, and the write target sits under that same root.
+                // Only the in-place path needs the target's own content, and there
+                // verify_path is the target.
+                verify_config_reachable(verify_path, required, in_place, on_done);
             });
         },
         [this, token, on_done](const MoonrakerError& err) {

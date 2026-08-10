@@ -89,6 +89,11 @@ fi
 unset _helix_env_file
 
 # Resolve debug/logging settings: CLI flags > env vars (incl. env file) > defaults
+#
+# HAND-COPIED from helix-launcher.sh, and deliberately WITHOUT the
+# platform-hook sourcing that precedes these lines in the real script. Only the
+# env-file precedence is under test here. Hook-exported HELIX_LOG_* ordering is
+# covered against the real launcher in test_helix_launcher_e2e.bats.
 DEBUG_MODE="${CLI_DEBUG:-${HELIX_DEBUG:-0}}"
 LOG_DEST="${CLI_LOG_DEST:-${HELIX_LOG_DEST:-auto}}"
 LOG_FILE="${CLI_LOG_FILE:-${HELIX_LOG_FILE:-}}"

@@ -1,5 +1,26 @@
 # AMS Status→Error-Center Bridge Implementation Plan
 
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions. Status: SHIPPED.**
+>
+> All four tasks are in `main`. The `- [ ]` boxes were never ticked and do **not** mean the
+> work is outstanding. Evidence: `RecoveryModalPresenter`
+> (`include/recovery_modal_presenter.h`, `src/ui/recovery_modal_presenter.cpp`),
+> `AmsErrorBridge` (`include/ams_error_bridge.h`, `src/application/ams_error_bridge.cpp`),
+> the `AmsBackend::current_error()` virtual (`include/ams_backend.h`), and both
+> ships-blind consumers: `AmsBackendAd5xIfs::current_error()`
+> (`src/printer/ams_backend_ad5x_ifs.cpp`) and `AmsBackendQidi::current_error()`
+> (`src/printer/ams_backend_qidi.cpp`).
+>
+> **One prescription has since been overtaken:** the spec's claim that "`!!`-driven backends
+> (AFC/HH) leave this default" no longer holds - **AFC overrides `current_error()`**
+> (`include/ams_backend_afc.h`, `src/printer/ams_backend_afc.cpp`) so an
+> `AmsAction::ERROR` edge with `error_state_` set raises the same recovery modal without
+> waiting for a `!!` line. Happy Hare still leaves the default. See the correction in
+> `2026-06-18-ams-status-error-center-bridge-spec.md` §2.
+>
+> "ErrorCenter" in the title is the design-time name for the router; no such class exists.
+> Verify predicates and line numbers against current code before acting on anything here.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Route status-driven AMS faults (`AmsAction::ERROR`) into the same unified recovery modal the gcode `!!` path uses, via a shared presenter + a dedicated AMS trigger, with IFS and QIDI as the first consumers.

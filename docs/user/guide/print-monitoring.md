@@ -53,7 +53,7 @@ Below the rows, a short explanation calls out the first blocking problem, for ex
 
 ## Filament Runout During a Print
 
-If the runout sensor stops detecting filament while a print is running, HelixScreen pauses the print and shows the **Filament Runout** modal so you can recover without dropping to the console.
+When the runout sensor stops detecting filament during a print, **the printer's own firmware pauses the job** - that happens before HelixScreen is involved at all. HelixScreen notices the pause and shows the **Filament Runout** modal so you can recover without dropping to the console.
 
 ![Filament runout modal](../../images/user/runout-modal.png)
 
@@ -64,7 +64,13 @@ If the runout sensor stops detecting filament while a print is running, HelixScr
 | **Purge** | Extrudes a little filament to clear the old color or confirm flow. |
 | **Close** | Dismisses the modal — resume the print from the status screen once filament is loaded. |
 
-On tool-changer and single-extruder printers (and any AMS in bypass), this same modal handles the recovery; hub-topology AMS systems that manage their own swaps suppress it.
+This modal is what handles the recovery on tool-changer and single-extruder printers, on any multi-filament system running from an external spool (bypass), and on the Anycubic ACE and QIDI Box - those two report nothing of their own when filament runs out.
+
+Systems that *do* raise their own runout alert show that alert instead, so one runout never produces two dialogs. What actually happens next differs by system:
+
+- **AFC (Box Turtle) and Happy Hare** can switch to a backup slot, if you configured one and it holds compatible filament. Otherwise their alert offers the recovery buttons.
+- **Creality CFS** always pauses the print first. The box only swaps spools when auto-refill is switched on *and* another slot holds the exact same material **and** colour. If either condition is missing it says so and the print simply stays paused until you load filament and resume.
+- **FlashForge AD5X IFS** does not switch spools at all on stock firmware. Its alert tells you filament ran out and offers Resume, Purge, and an IFS reset.
 
 ---
 

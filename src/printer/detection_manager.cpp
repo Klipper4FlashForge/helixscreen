@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "detection_manager.h"
 
-#include "moonraker_client.h"
+#include "i_moonraker_client.h"
 #include "u1_stock_detection_source.h"
 
 #include <spdlog/spdlog.h>
@@ -15,7 +15,7 @@ DetectionManager& DetectionManager::instance() {
     return s_instance;
 }
 
-void DetectionManager::init(helix::MoonrakerClient* client, helix::PrinterState* state) {
+void DetectionManager::init(helix::IMoonrakerClient* client, helix::PrinterState* state) {
     client_ = client;
     state_ = state;
     // Do NOT probe here: init() runs during Application::init_panel_subjects, before

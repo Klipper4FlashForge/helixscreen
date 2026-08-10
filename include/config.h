@@ -13,10 +13,12 @@
 
 #pragma once
 
+#include "config_storage.h"
 #include "json_fwd.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -63,8 +65,19 @@ class Config {
   private:
     static Config* instance;
     std::string path;
-    std::string active_printer_id_; ///< Currently active printer slug ID
-    bool read_only_mode_ = false;   ///< Config directory is on a read-only filesystem
+    std::string active_printer_id_;          ///< Currently active printer slug ID
+    bool read_only_mode_ = false;            ///< Config directory is on a read-only filesystem
+    std::unique_ptr<ConfigStorage> storage_; ///< Document-level persistence backend
+    /// True when storage_ was auto-created from `path` rather than injected by
+    /// set_storage(). Only an auto-created backend may be rebuilt when `path`
+    /// moves — an injected one is the caller's, and its target is not `path`.
+    bool storage_is_default_ = false;
+
+    /// Point storage_ at `path`, rebuilding a stale auto-created backend.
+    /// `path` moves whenever init() runs against a different file (printer
+    /// switch, and every test that re-points the singleton); without this the
+    /// first backend keeps writing to the original file forever.
+    void ensure_storage();
 
     /**
      * @brief Point active_printer_id_ at a printer that actually exists
@@ -113,6 +126,21 @@ class Config {
     void init(const std::string& config_path);
 
     /**
+     * @brief The settings path init() will actually use for @p config_path
+     *
+     * Applies the HELIX_CONFIG_DIR override — the directory comes from the
+     * env var, the filename from @p config_path, so the
+     * settings.json / settings-test.json distinction survives. Pure: creates
+     * nothing and touches no state, so callers that only want to *report* the
+     * effective path (the --test banner) resolve it the same way init() does
+     * instead of printing the unresolved compile-time constant.
+     *
+     * @param config_path Default path, e.g. RuntimeConfig::TEST_CONFIG_PATH
+     * @return @p config_path when HELIX_CONFIG_DIR is unset or empty
+     */
+    static std::string resolve_path(const std::string& config_path);
+
+    /**
      * @brief Reset state set by init() for test isolation
      *
      * Empties the persistence path and the active-printer slug so
@@ -128,6 +156,19 @@ class Config {
     void clear_path() {
         path.clear();
         active_printer_id_.clear();
+        storage_.reset();
+        storage_is_default_ = false;
+    }
+
+    /**
+     * @brief Inject a persistence backend (call BEFORE init()).
+     *
+     * Default when unset: make_file_config_storage(resolved path). Embedded
+     * targets substitute NVS/LittleFS; tests substitute an in-memory mock.
+     */
+    void set_storage(std::unique_ptr<ConfigStorage> storage) {
+        storage_ = std::move(storage);
+        storage_is_default_ = false;
     }
 
     /**

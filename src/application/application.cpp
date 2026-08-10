@@ -1245,10 +1245,27 @@ bool Application::init_logging() {
 
     LogConfig log_config;
 
-    // Resolve log level with precedence: --log-level > -v flags > config file > defaults
+    // HELIX_LOG_* is read HERE, not only translated by scripts/helix-launcher.sh
+    // into --log-dest/--log-file/--log-level. The launcher is not always in the
+    // picture: a systemd unit with Environment=, a hand-run binary over SSH, and
+    // third-party init scripts (ZMOD ships its own fork of ours) all start
+    // helix-screen directly, and until now every HELIX_LOG_* they exported was
+    // silently ignored — the variables looked configurable and were not (#1249).
+    // The launcher's flags still win, because a CLI flag outranks the env below.
+    const std::string env_log_dest =
+        log_env_override("HELIX_LOG_DEST", &is_valid_log_target, log_target_accepted_values());
+    const std::string env_log_level =
+        log_env_override("HELIX_LOG_LEVEL", &is_valid_log_level, log_level_accepted_values());
+    // No validity predicate for a path: any string is a candidate, and an
+    // unopenable one degrades to the platform's normal sink inside init().
+    const std::string env_log_file = log_env_override("HELIX_LOG_FILE", nullptr, nullptr);
+
+    // Resolve log level: --log-level > HELIX_LOG_LEVEL > -v flags > config file > defaults
     std::string config_level = m_config->get<std::string>("/log_level", "");
     if (!g_log_level_cli.empty()) {
         log_config.level = parse_level(g_log_level_cli, spdlog::level::warn);
+    } else if (!env_log_level.empty()) {
+        log_config.level = parse_level(env_log_level, spdlog::level::warn);
     } else {
         log_config.level =
             resolve_log_level(m_args.verbosity, config_level, get_runtime_config()->test_mode);
@@ -1259,25 +1276,31 @@ bool Application::init_logging() {
     // tee run.log` on any box with a systemd journal socket produces no output at
     // all — auto-detection picks the Journal target, whose console gate is
     // isatty(stdout). A bare run with no flag keeps the journal-only behavior.
-    log_config.force_console = m_args.verbosity > 0 || !g_log_level_cli.empty();
+    //
+    // HELIX_LOG_LEVEL counts as explicit for the same reason the flag does: the
+    // launcher already turns that variable into --log-level=, so it has ALWAYS
+    // set force_console on a launcher-started device. Treating the direct-env
+    // path differently would make the same helixscreen.env behave one way under
+    // the launcher and another under systemd/a forked init script, which is the
+    // exact inconsistency this block exists to remove. The blast radius is
+    // bounded: force_console only adds a sink for a PIPE — should_add_console()
+    // still refuses a regular file or socket, which is where the daemon
+    // double-log (the Snapmaker U1 tmpfs blowout) came from.
+    log_config.force_console =
+        m_args.verbosity > 0 || !g_log_level_cli.empty() || !env_log_level.empty();
 
     // --test always gets a console sink, whatever stdout is (pipe, file, socket).
     // Read here rather than inside logging_init.cpp because that TU is linked into
     // the watchdog build, which does not link runtime_config.o.
     log_config.test_mode = get_runtime_config()->test_mode;
 
-    // Resolve log destination: CLI > config > auto
-    std::string log_dest_str = g_log_dest_cli;
-    if (log_dest_str.empty()) {
-        log_dest_str = m_config->get<std::string>("/log_dest", "auto");
-    }
-    log_config.target = parse_log_target(log_dest_str);
+    // Resolve log destination: CLI > HELIX_LOG_DEST > config > auto
+    log_config.target = parse_log_target(resolve_log_setting(
+        g_log_dest_cli, env_log_dest, m_config->get<std::string>("/log_dest", "auto")));
 
-    // Resolve log file path: CLI > config
-    log_config.file_path = g_log_file_cli;
-    if (log_config.file_path.empty()) {
-        log_config.file_path = m_config->get<std::string>("/log_path", "");
-    }
+    // Resolve log file path: CLI > HELIX_LOG_FILE > config
+    log_config.file_path = resolve_log_setting(g_log_file_cli, env_log_file,
+                                               m_config->get<std::string>("/log_path", ""));
 
     init(log_config);
 
@@ -1406,8 +1429,12 @@ bool Application::init_display() {
         const int h = dm->height();
         auto& layout = helix::LayoutManager::instance();
 
-        theme_manager_refresh_layout_constants(disp);
+        // LayoutManager first: theme_manager_refresh_layout_constants() now
+        // derives ui_is_portrait from LayoutManager::type() (override-aware),
+        // so the type must reflect the new geometry before refresh reads it.
+        // #1255.
         layout.init(w, h);
+        theme_manager_refresh_layout_constants(disp);
 
         // Overlays cache their root widget across show/hide cycles, so the
         // width applied at push time goes stale when the canvas changes size
@@ -1473,7 +1500,8 @@ bool Application::init_theme() {
 
     // Register globals.xml first (required for theme constants, fonts, spacing tokens)
     // Note: fonts must be registered before this (done in init_assets phase)
-    lv_result_t globals_result = lv_xml_register_component_from_file("A:ui_xml/globals.xml");
+    lv_result_t globals_result = lv_xml_register_component_from_file(
+        helix::asset_component_uri("ui_xml/globals.xml").c_str());
     if (globals_result != LV_RESULT_OK) {
         spdlog::error("[Application] FATAL: Failed to load globals.xml - "
                       "all XML constants (fonts, colors, spacing) will be missing. "
@@ -1604,6 +1632,11 @@ void Application::run_rotation_probe_and_layout() {
         }
     }
     layout_mgr.init(m_screen_width, m_screen_height);
+    // LayoutManager just resolved any --layout override. Republish
+    // ui_is_portrait from it so XML visual decisions match the C++ ones; the
+    // startup seed (theme_manager_init) and the rotation-probe refresh both ran
+    // before this point and could only see detect_layout_type(). #1255.
+    theme_manager_refresh_orientation();
     spdlog::info("[Application] Layout: {} ({})", layout_mgr.name(),
                  layout_mgr.is_standard() ? "default" : "override");
 }
@@ -1797,7 +1830,7 @@ bool Application::init_panel_subjects() {
     spdlog::debug("[Application] TemperatureHistoryManager created");
 
     // Initialize PerformanceState subjects and wire the data source.
-    // Must happen after MoonrakerAPI is up (m_moonraker->api() is valid here)
+    // Must happen after IMoonrakerAPI is up (m_moonraker->api() is valid here)
     // and before XML panels are created so subjects exist when bindings resolve.
     helix::perf::PerformanceState::instance().init_subjects();
     if (get_runtime_config()->should_mock_moonraker()) {
@@ -1979,6 +2012,7 @@ bool Application::init_moonraker() {
 }
 
 bool Application::init_plugins() {
+#if HELIX_HAS_PLUGINS
     spdlog::debug("[Application] Initializing plugin system");
 
     m_plugin_manager = std::make_unique<helix::plugin::PluginManager>();
@@ -2055,6 +2089,10 @@ bool Application::init_plugins() {
 
     helix::MemoryMonitor::log_now("after_plugins_loaded");
     return all_loaded;
+#else
+    spdlog::debug("[Application] Plugin system compiled out (HELIX_HAS_PLUGINS=0)");
+    return true;
+#endif
 }
 
 bool Application::run_wizard() {
@@ -2352,7 +2390,7 @@ bool show_demo_overlay(const std::string& name) {
 
 void Application::reapply_hardware_roles() {
     m_async_lifetime.defer("Application::reapply_hardware_roles", [this]() {
-        MoonrakerAPI* api = m_moonraker ? m_moonraker->api() : nullptr;
+        IMoonrakerAPI* api = m_moonraker ? m_moonraker->api() : nullptr;
         if (!api) {
             return;
         }
@@ -2464,8 +2502,8 @@ void Application::prompt_deferred_hardware_setup(std::vector<helix::wizard::Step
 }
 
 void Application::setup_discovery_callbacks() {
-    MoonrakerClient* client = m_moonraker->client();
-    MoonrakerAPI* api = m_moonraker->api();
+    IMoonrakerClient* client = m_moonraker->client();
+    IMoonrakerAPI* api = m_moonraker->api();
 
     Application* app = this;
 
@@ -2908,7 +2946,7 @@ void Application::setup_discovery_callbacks() {
             // min_extrude_temp, max_temp, etc.) — runs for ALL discovery completions
             // (normal startup AND post-wizard) so we don't duplicate this in callers
             if (api) {
-                MoonrakerAPI* api_ptr = api;
+                IMoonrakerAPI* api_ptr = api;
                 api_ptr->update_safety_limits_from_printer(
                     [api_ptr]() {
                         const auto& limits = api_ptr->get_safety_limits();
@@ -3015,7 +3053,7 @@ void Application::setup_discovery_callbacks() {
             // This ensures the filament panel shows the correct spool on startup,
             // even if the active spool was changed via Spoolman's web UI or another client
             {
-                MoonrakerAPI* api_for_spool = api;
+                IMoonrakerAPI* api_for_spool = api;
                 api_for_spool->spoolman().get_spoolman_status(
                     [api_for_spool, sync_external_spool](bool connected, int active_spool_id) {
                         if (!connected || active_spool_id <= 0) {
@@ -3064,7 +3102,7 @@ void Application::setup_discovery_callbacks() {
             // Listen for Moonraker active spool changes (user changes spool in
             // Spoolman web UI or another client while HelixScreen is running)
             {
-                MoonrakerAPI* api_for_notify = api;
+                IMoonrakerAPI* api_for_notify = api;
                 client->register_method_callback(
                     "notify_active_spool_set", "external_spool_sync",
                     [api_for_notify, sync_external_spool](const nlohmann::json& data) {
@@ -3122,7 +3160,7 @@ void Application::setup_discovery_callbacks() {
             // (e.g., PROBE_CALIBRATE started from Mainsail or console before HelixScreen launched)
             // Deferred one tick: status updates from the subscription response are queued
             // via ui_queue_update and may not have landed yet at this point.
-            MoonrakerAPI* api_ptr_zoffset = api;
+            IMoonrakerAPI* api_ptr_zoffset = api;
             lv_obj_t* screen = app->m_screen;
             helix::ui::queue_update([api_ptr_zoffset, screen]() {
                 auto& ps = get_printer_state();
@@ -3184,7 +3222,7 @@ bool Application::connect_moonraker() {
     // Discovery callbacks are already registered (setup_discovery_callbacks in init_moonraker)
 
     // Set HTTP base URL for API
-    MoonrakerAPI* api = m_moonraker->api();
+    IMoonrakerAPI* api = m_moonraker->api();
     api->set_http_base_url(http_base_url);
 
     // Connect
@@ -3222,8 +3260,8 @@ lv_obj_t* Application::create_overlay_panel(lv_obj_t* screen, const char* compon
 }
 
 void Application::init_action_prompt() {
-    MoonrakerClient* client = m_moonraker->client();
-    MoonrakerAPI* api = m_moonraker->api();
+    IMoonrakerClient* client = m_moonraker->client();
+    IMoonrakerAPI* api = m_moonraker->api();
 
     if (!client) {
         spdlog::warn("[Application] Cannot init action prompt - no client");
@@ -3252,7 +3290,7 @@ void Application::init_action_prompt() {
                 [gcode](const MoonrakerError& err) {
                     spdlog::error("[ActionPrompt] Gcode execution failed: {}", err.message);
                 },
-                MoonrakerAPI::MACRO_TIMEOUT_MS);
+                IMoonrakerAPI::MACRO_TIMEOUT_MS);
         });
     }
 
@@ -3854,15 +3892,23 @@ void Application::on_enter_background() {
     m_backgrounded = true;
     spdlog::info("[Application] Pausing for background");
 
-    // 1. Disconnect WebSocket (stops all status updates and reconnect timer)
+    // 1. Suspend the visible panel/overlay lifecycle (same hook the screensaver
+    //    uses). on_deactivate() stops per-panel timers, camera streams and
+    //    graph refreshes that would otherwise keep running against an LVGL
+    //    thread Android has frozen. It runs FIRST, while the socket is still
+    //    up and rendering is still enabled, so teardown that talks to Moonraker
+    //    or touches widgets behaves exactly as it does on the sleep path.
+    NavigationManager::instance().suspend_active();
+
+    // 2. Disconnect WebSocket (stops all status updates and reconnect timer)
     if (m_moonraker) {
         m_moonraker->client()->disconnect();
     }
 
-    // 2. Mute sound
+    // 3. Mute sound
     SoundManager::instance().shutdown();
 
-    // 3. Suppress rendering — save CPU/GPU
+    // 4. Suppress rendering — save CPU/GPU
     lv_display_enable_invalidation(nullptr, false);
 
     spdlog::info("[Application] Background pause complete");
@@ -3885,7 +3931,25 @@ void Application::on_enter_foreground() {
         m_moonraker->client()->force_reconnect();
     }
 
-    // 4. Force full display redraw — EGL surface may have been destroyed and
+    // 4. Resume the visible panel/overlay lifecycle. Repainting alone only
+    //    re-draws whatever the widgets already hold — on_activate() is what
+    //    re-seeds subjects, re-binds observers, reloads content and restarts
+    //    timers (that asymmetry is why a tab round-trip un-sticks a stale panel
+    //    and a resume did not; prestonbrown/helixscreen#1245). It runs AFTER
+    //    force_reconnect() so requests issued from on_activate() meet a socket
+    //    that is already reconnecting rather than a definitively dead one, and
+    //    BEFORE the repaint below so the forced frame paints the re-seeded UI
+    //    instead of the stale one.
+    NavigationManager::instance().resume_active();
+
+    // 5. Reset LVGL's activity timestamp. Inactivity is measured off the tick,
+    //    which keeps advancing while Android has us paused, so the first
+    //    check_display_sleep() after resume would otherwise see the whole
+    //    backgrounded interval as idle and drop straight back into sleep or the
+    //    screensaver. Same idiom as DisplayManager::wake_display().
+    lv_display_trigger_activity(nullptr);
+
+    // 6. Force full display redraw — EGL surface may have been destroyed and
     //    recreated by Android while backgrounded.  Use invalidate_all_recursive
     //    (same as post-splash handoff) because partial-render mode won't
     //    propagate a single lv_obj_invalidate() to all descendants.

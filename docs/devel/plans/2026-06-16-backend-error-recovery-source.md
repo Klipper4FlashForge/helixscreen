@@ -1,8 +1,26 @@
 # Backend-Agnostic Error Surfacing & Recovery — Design Spec
 
-**Status:** Draft for review · **Date:** 2026-06-16 · **Author:** brainstormed w/ Preston
+**Status:** Historical record - **implemented** (L0/L1/L2 + the Happy Hare and status-bridge
+follow-ons). Originally "Draft for review". · **Date:** 2026-06-16 · **Author:** brainstormed w/ Preston
 **Origin:** Voron / Box Turtle AFC 2-color print failure (192.168.1.112), 2026-06-15.
 **Scope:** ALL filament backends + non-AMS Klipper error sources. AFC is the first adapter, not the whole feature.
+
+> ⚠️ **Historical record (verified 2026-08-09) - not instructions.** This is the master design
+> spec the L0/L1/L2/L4 plans were cut from, and that work is in `main`. Read it for the
+> motivation and the callout registry, not as a build order.
+>
+> **Naming: there is no class named `ErrorCenter`.** It was the design-time name for the role
+> and it never became a symbol. What shipped is `GcodeErrorRouter`
+> (`src/application/gcode_error_router.cpp` - owns the `notify_gcode_response` subscription,
+> dedup, and classification) plus `RecoveryModalPresenter`
+> (`src/ui/recovery_modal_presenter.cpp` - owns the single `ActionPromptModal`), with a second
+> ingest trigger in `AmsErrorBridge` (`src/application/ams_error_bridge.cpp`) for
+> status-driven backends. The classifier registry described in §4.1 shipped as the single
+> `AmsBackend::classify_error()` virtual on the *active* backend, not a registry of adapters:
+> `GcodeErrorRouter::process_line()` asks `AmsState::instance().get_backend()` first and falls
+> back to `error_classify::classify()`. Read "ErrorCenter" below as "the router".
+>
+> Verify predicates and line numbers against current code before acting on anything here.
 
 ---
 
