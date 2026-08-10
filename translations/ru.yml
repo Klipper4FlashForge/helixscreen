@@ -375,6 +375,7 @@ translations:
   Cancel Print: Отменить печать
   Cancel macro not configured: Макрос отмены не настроен
   Cancelled: Отменено
+  Cannot be changed from here on a multi-unit MMU: Нельзя изменить здесь на MMU с несколькими блоками
   'Cannot control timelapse: printer not connected': 'Невозможно управлять таймлапсом:
     принтер не подключён'
   'Cannot delete file: printer not connected': 'Невозможно удалить файл: принтер не
@@ -520,6 +521,7 @@ translations:
     макросы
   Configure timelapse recording: Настроить запись таймлапса
   Configure your printer's cooling fans: Настройте вентиляторы охлаждения принтера
+  Configured in the backup-spool package, not from here: Настраивается в плагине резервной катушки, не здесь
   Configuring Moonraker...: Настройка Moonraker...
   Confirm PIN: Подтвердите PIN
   Confirm before running macros: Подтверждать перед запуском макросов
@@ -1503,6 +1505,7 @@ translations:
   No USB printers found: USB-принтеры не найдены
   ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
   : ''
+  No automatic backup-spool package is installed: Плагин автоматической резервной катушки не установлен
   No buffer data available: Данные буфера недоступны
   No camera — use USB barcode scanner: Нет камеры — используйте USB сканер штрих-кодов
   No changes selected.\n\nClick Cancel to close.: Изменения не выбраны.\n\nНажмите
@@ -2416,6 +2419,7 @@ translations:
   The printer lost power while printing {}. The resumed layer may not line up exactly.: Принтер потерял питание при печати {}. Возобновлённый слой может не совпасть точно.
   The printer rejected the filament configuration. The print was not started.: Принтер
     отклонил конфигурацию филамента. Печать не была запущена.
+  The printer's firmware chooses the backup spool itself: Прошивка принтера сама выбирает резервную катушку
   The runout sensor indicates no filament is loaded. Start print anyway?: Датчик окончания
     филамента показывает, что филамент не загружен. Всё равно начать печать?
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: Датчик
@@ -2665,6 +2669,7 @@ translations:
   Waiting for Moonraker...: Ожидание Moonraker...
   Waiting for bed to reach temperature for accurate calibration.: Ожидание нагрева
     стола для точной калибровки.
+  Waiting for the filament system to report its state: Ожидание состояния системы филамента
   Warm Bed: Прогреть стол
   Warming Bed...: Прогрев стола...
   Warn: Предупреждение

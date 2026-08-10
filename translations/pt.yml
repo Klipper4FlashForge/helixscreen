@@ -381,6 +381,7 @@ translations:
   Cancel Print: Cancelar Impressão
   Cancel macro not configured: Macro de cancelar não configurado
   Cancelled: Cancelado
+  Cannot be changed from here on a multi-unit MMU: Não pode ser alterado aqui em um MMU de várias unidades
   'Cannot control timelapse: printer not connected': 'Não é possível controlar timelapse:
     impressora não conectada'
   'Cannot delete file: printer not connected': 'Não é possível excluir arquivo: impressora
@@ -530,6 +531,7 @@ translations:
   Configure timelapse recording: Configurar gravação de timelapse
   Configure your printer's cooling fans: Configure as ventoinhas de resfriamento da
     sua impressora
+  Configured in the backup-spool package, not from here: Configurado no plugin de carretel de reserva, não aqui
   Configuring Moonraker...: Configurando Moonraker...
   Confirm PIN: Confirmar PIN
   Confirm before running macros: Confirmar antes de executar macros
@@ -1527,6 +1529,7 @@ translations:
   No USB printers found: Nenhuma impressora USB encontrada
   ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
   : ''
+  No automatic backup-spool package is installed: Nenhum plugin de carretel de reserva automático instalado
   No buffer data available: Nenhum dado de buffer disponível
   No camera — use USB barcode scanner: Sem câmera — use leitor de código de barras
     USB
@@ -2457,6 +2460,7 @@ translations:
   The printer lost power while printing {}. The resumed layer may not line up exactly.: A impressora perdeu energia ao imprimir {}. A camada retomada pode não se alinhar exatamente.
   The printer rejected the filament configuration. The print was not started.: A impressora
     rejeitou a configuração do filamento. A impressão não foi iniciada.
+  The printer's firmware chooses the backup spool itself: O firmware da impressora escolhe o carretel de reserva
   The runout sensor indicates no filament is loaded. Start print anyway?: O sensor
     de fim de filamento indica que não há filamento carregado. Iniciar a impressão
     mesmo assim?
@@ -2714,6 +2718,7 @@ translations:
   Waiting for Moonraker...: Aguardando Moonraker...
   Waiting for bed to reach temperature for accurate calibration.: Aguardando a mesa
     atingir a temperatura para calibração precisa.
+  Waiting for the filament system to report its state: Aguardando o sistema de filamento informar seu estado
   Warm Bed: Aquecer Mesa
   Warming Bed...: Aquecendo Mesa...
   Warn: Aviso

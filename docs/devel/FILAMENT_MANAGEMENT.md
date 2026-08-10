@@ -59,7 +59,8 @@ HelixScreen uses a backend abstraction layer to support multiple multi-filament 
 | `include/ams_backend_ad5x_ifs.h` | FlashForge AD5X IFS (Intelligent Filament Switching) |
 | `include/ams_backend_cfs.h` | Creality Filament System (K2 series, RS-485) |
 | `include/ams_backend_mock.h` | Mock backend for development and testing |
-| `src/printer/ams_backend.cpp` | Factory method implementations |
+| `src/printer/ams_backend.cpp` | Factory methods, plus the shared endless-spool validation / reset / eligibility base |
+| `src/printer/ams_endless_spool.cpp` | Backend-agnostic endless-spool model: restriction text, group builders, the one group-to-edge projection ([§ Endless Spool](#endless-spool-shared-model)) |
 | `include/printer_discovery.h` | Hardware detection from Klipper object list |
 | `include/tool_state.h` | Tool abstraction: `ToolInfo`, `ToolState` singleton, tool-backend mapping |
 | `include/printer_temperature_state.h` | `ExtruderInfo` struct, multi-extruder dynamic subjects |
@@ -1118,6 +1119,153 @@ Helper functions: `is_tool_changer()` and `is_filament_system()` distinguish bet
 
 ---
 
+## Endless Spool (shared model)
+
+Every backend means the same thing by "endless spool" - when a slot runs dry mid-print,
+something switches to another slot that can stand in for it - but each firmware answers a
+different set of questions about it. The shared model is three things:
+
+| Piece | Where |
+|-------|-------|
+| `EndlessSpoolCapabilities` - what a backend can do, on three axes | `include/ams_types.h` § "Endless Spool Types" |
+| `EndlessSpoolConfig` / `EndlessSpoolGroup` - the relation itself | same |
+| Restriction text, the two config builders, the one projection | `src/printer/ams_endless_spool.cpp` |
+
+Nothing in `ams_endless_spool.cpp` touches a backend, a mutex or LVGL, so it is directly
+unit-testable (`tests/unit/test_ams_endless_spool.cpp`).
+
+### Three axes, not one bool
+
+| Axis | Type | Values |
+|------|------|--------|
+| Availability | `EndlessSpoolAvailability` | `Unsupported` / `RequiresPlugin` / `Available` |
+| Enablement | `EndlessSpoolEnabled` | `Unknown` / `Off` / `On` |
+| Editability | `EndlessSpoolEditability` | `ReadOnly` / `PerSlot` / `Group` |
+
+The axes are independent because real backends occupy the corners. CFS is
+available-and-read-only whether auto-refill is on or off, so a single `supported` bool
+rendered both states identically. AD5X on stock zMod has the mechanism but not the package
+that implements it, which is `RequiresPlugin` and is the answer to
+[#1247](https://github.com/prestonbrown/helixscreen/issues/1247) - installing lessWaste or
+bambufy is what turns it on, and that is something the user can act on. `Unknown` is not
+`Off`: only `Off` justifies telling the user that no automatic switchover will happen.
+
+Editability carries a shape, not just a yes/no, because the write shape matters to the UI: a
+`PerSlot` write touches one slot (AFC `SET_RUNOUT`), while a `Group` write can move other
+slots' relations as a side effect because the transport rewrites the whole partition (Happy
+Hare `GROUPS=<csv>`).
+
+`EndlessSpoolRestriction` says **why** editing is restricted, as an enum: `None`,
+`MultiUnit`, `FirmwareManaged`, `NotReady`, `PluginMissing`, `PluginReadOnly`. Display text
+comes from `endless_spool_restriction_text()`, which is the only place `lv_tr()` is involved.
+The struct's one free-text field is `provider`, the proper noun of the package implementing
+the feature (`"lessWaste"`, `"bambufy"`), empty when the backend or firmware implements it
+natively - a product name is never translated, which is why it is allowed to be free text.
+`available()` and `editable()` are the convenience predicates callers use; `editable()`
+implies `available()`.
+
+This replaced `{bool supported; bool editable; std::string description;}`, where
+`description` was never displayed yet carried load-bearing state as untranslated English
+("Auto-refill enabled", "...read-only on multi-unit") that no UI could safely show in any
+language but ours.
+
+### Groups, and the single projection
+
+`get_endless_spool_config()` returns **one** `EndlessSpoolConfig` for the whole system,
+holding `std::vector<EndlessSpoolGroup>`. A group has `id` (the backend's own group number,
+or -1 for one we synthesised), `members` (global slot indices) and `ordered`:
+
+- `ordered = true` - `members[i]` hands off to `members[i+1]`; the last member has no
+  successor. An AFC `SET_RUNOUT` edge is a two-member ordered group. Overlapping ordered
+  groups are legal: AFC permits 0->2 and 1->2, which is two pairs sharing slot 2.
+- `ordered = false` - any member substitutes for any other. Happy Hare's gate group is one
+  undirected group of arbitrary size, and an unordered relation is a partition.
+
+Two builders construct it. `endless_spool_config_from_edges(edges)` takes per-slot directed
+backups (`-1` or a self-edge is skipped) and emits one two-member ordered group per edge.
+`endless_spool_config_from_groups(group_ids)` takes per-slot group ids - Happy Hare's shape -
+and emits one unordered group per id, dropping any group with fewer than two members: a group
+of one backs nothing up, and emitting it would make "is grouped" and "has a backup" disagree,
+which matters because Happy Hare gives every ungrouped gate its own standalone id.
+
+Anything that needs one successor per slot calls the projection and never re-derives it:
+`endless_spool_backup_edges(cfg, slot_count)` for a whole system,
+`endless_spool_backup_for(cfg, slot)` for one slot. Ordered groups project along their order;
+unordered groups point every member at the first *other* member, which reproduces the arrow
+set Happy Hare's backend used to compute inline with a `// Use first match` loop. Both entry
+points agree that the first group to give a slot a successor wins, so they cannot disagree on
+a hand-built config with two successors for one slot. The two production callers are
+`AmsPanel::update_endless_arrows_from_backend()` (`src/ui/ui_panel_ams.cpp`) and
+`AmsContextMenu::get_current_backup_for_slot()` (`src/ui/ui_ams_context_menu.cpp`), so the
+arrows and the dropdown cannot disagree about a Happy Hare group.
+
+### What the base owns, what a backend supplies
+
+`AmsBackend::set_endless_spool_backup()` is **deliberately not virtual**
+(`src/printer/ams_backend.cpp` § "Endless Spool - shared validation"). It owns every
+rejection, in order: feature unavailable; feature read-only (carrying the translated
+restriction reason); `endless_spool_slot_count() <= 0`, reported as `NotReady`; `slot_index`
+out of range; `backup_slot` out of range; `backup_slot == slot_index`. Three backends used to
+write those same guards with three different phrasings of the self-backup error.
+
+A backend supplies only these:
+
+| Hook | Responsibility |
+|------|----------------|
+| `apply_endless_spool_backup(slot, backup)` (protected virtual) | Transport only. Reached **after** the base accepted the write, so it must not re-check availability, editability, ranges or self-backup - and must not update a local mirror of the mapping before its transport has accepted the command. |
+| `endless_spool_slot_count()` (protected virtual) | How many slots the relation spans; drives range validation and the reset loop. Default `get_system_info().total_slots`. Override when the transport's slot space differs, or to report 0 while not ready. |
+| `is_endless_spool_backup_eligible(slot, backup)` | Is this pairing acceptable? Base default is the material-compatibility test the AMS context menu has always applied (`filament::are_materials_compatible()`, with an unknown material on either side counting as eligible rather than blocking a slot the user simply has not labelled). AD5X IFS overrides it with the rule its firmware actually enforces - exact material **and** exact colour **and** the port reporting filament present - sharing `backup_eligible_locked()` with `find_backup_slot_locked()` so its runout hint text and its eligibility answer cannot diverge. |
+
+`reset_endless_spool()` has a real base implementation: walk
+`set_endless_spool_backup(slot, -1)` over every slot, continue past failures so it clears as
+many as it can, return the first error. That loop was AFC's private implementation; AFC
+deleted its copy and every editable backend gets it now. Happy Hare overrides it because its
+firmware has an actual primitive.
+
+`get_endless_spool_capabilities()` and `get_endless_spool_config()` overrides take the
+backend's own `mutex_`, so callers must not hold it. `set_endless_spool_backup()` holds no
+lock and hands off to the hook with no lock held.
+
+### `endless_spool_enabled` is a carrier, not a second answer
+
+`AmsSystemInfo::endless_spool_enabled` is the ENABLE axis only. It exists because the
+WebSocket parse builds an `AmsSystemInfo` off the main thread and commits it under the
+backend mutex, so the parsed bit needs a home in that struct: CFS `box.auto_refill` (stock) /
+`box.runout_swap_enabled` (flat fork), Happy Hare `mmu.endless_spool_enabled`, AD5X
+`variable_backup` from the `_ifs_vars` macro's status dict.
+`get_endless_spool_capabilities()` is the single source of truth for all three axes and
+**derives** `caps.enabled` rather than answering independently, so the two cannot diverge.
+Read the capabilities, not the field.
+
+CFS, Happy Hare and the mock read the field directly. Two backends are one step removed and
+say so at the site: AD5X IFS keeps a `std::optional<bool>` (`ifs_backup_variable_`) as its
+source of truth because a plain bool cannot express `Unknown`, and mirrors it into the field
+so `get_system_info()` agrees; AFC has no enable bit to read at all and reports `On`
+unconditionally, its field seeded once from `afc_default_capabilities()`.
+
+The field replaced `AmsSystemInfo::supports_endless_spool`, which answered the *availability*
+question a second time and provably disagreed with `get_endless_spool_capabilities()` on CFS
+whenever auto-refill was off.
+
+### Per-backend state
+
+| Backend | Availability | `enabled` derived from | Editability | Restriction | Per-slot relation? |
+|---------|--------------|------------------------|-------------|-------------|--------------------|
+| AFC | `Available` | Hardcoded `On` - a lane either names a runout lane or it does not, so there is no on/off switch to read | `PerSlot` (`SET_RUNOUT LANE= RUNOUT=`) | `None` | Yes - `endless_spool_config_from_edges(slots_.backup_edges())` |
+| Happy Hare | `Available` | `mmu.endless_spool_enabled`; forced to `Unknown` before `slots_` is initialised | `Group` on a single unit, `ReadOnly` otherwise | `None`; `MultiUnit` on a multi-unit rig; `NotReady` before the registry initialises | Yes - `endless_spool_config_from_groups()` over each gate's `endless_spool_group` |
+| CFS | `Available` | `box.auto_refill` / `box.runout_swap_enabled` | `ReadOnly` | `FirmwareManaged` | **No, deliberately** - see below |
+| AD5X IFS | `RequiresPlugin` on stock zMod, `Available` once `_IFS_VARS` answers | `Off` while no plugin is installed; otherwise `variable_backup`, with a genuine `Unknown` when it was never read | `ReadOnly` | `PluginMissing` / `PluginReadOnly` | No |
+| ACE, QIDI Box, Snapmaker U1, Tool Changer | `Unsupported` (base default; no override at all) | -- | `ReadOnly` | `None` | No |
+| Mock | `set_endless_spool_supported()` | `system_info_.endless_spool_enabled` | `PerSlot` when `set_endless_spool_editable(true)`, else `ReadOnly` | `FirmwareManaged` when read-only | Yes - edges from its `SlotRegistry` |
+
+CFS, and AD5X IFS once its plugin is present, report `Available` while leaving
+`get_endless_spool_config()` unoverridden. That is the truthful answer, not an omission: the
+firmware picks the backup itself and exposes no per-slot mapping to read, so the base's empty
+relation is correct, and it is what keeps the context menu from drawing a dropdown that could
+only ever read "None" (see [Context Menu Actions](#context-menu-actions)).
+
+---
+
 ## Happy Hare (MMU)
 
 Happy Hare is a Klipper add-on for ERCF, Tradrack, and other selector-based multi-filament systems.
@@ -1162,7 +1310,7 @@ Happy Hare's `filament_pos` (0-8) maps to `PathSegment` via `path_segment_from_h
 
 | Feature | Supported | Editable |
 |---------|-----------|----------|
-| Endless Spool | Yes | Yes on a single-unit MMU, read-only on multi-unit |
+| Endless Spool | `Available` | `Group` on a single-unit MMU; `ReadOnly` + `MultiUnit` on multi-unit, `ReadOnly` + `NotReady` before the gate registry initialises (see [Endless Spool](#endless-spool-shared-model)) |
 | Tool Mapping | Yes | Yes (via `MMU_TTG_MAP`) |
 | Bypass Mode | Yes | Yes (selector position -2) |
 | Spoolman | Yes | -- |
@@ -1171,13 +1319,35 @@ Happy Hare's `filament_pos` (0-8) maps to `PathSegment` via `path_segment_from_h
 | Lane Eject | Yes | `supports_lane_eject()` + `eject_lane()` |
 
 Happy Hare's endless spool is group-based and settable at runtime, not a config-file
-read: `set_endless_spool_backup()` builds a full `GROUPS=` array (one non-negative group
-id per gate) and sends `MMU_ENDLESS_SPOOL`. `get_endless_spool_capabilities()` reports
-`editable` only when `system_info_.units.size() <= 1`: `MMU_ENDLESS_SPOOL` has no `UNIT=`
-parameter and acts on the currently-selected unit, so a client cannot reliably target one
-unit's groups on a multi-unit (EMU) rig. `reset_endless_spool()` sends
-`MMU_ENDLESS_SPOOL ENABLE=1 RESET=1 QUIET=1`; the `ENABLE=1` is required because Happy
-Hare's handler early-returns on `RESET` while endless spool is disabled.
+read: `apply_endless_spool_backup()` builds a full `GROUPS=` array (one non-negative group
+id per gate) and sends `MMU_ENDLESS_SPOOL QUIET=1 GROUPS=<csv>`.
+`get_endless_spool_capabilities()` reports `Group` editability only when
+`system_info_.units.size() <= 1`: `MMU_ENDLESS_SPOOL` has no `UNIT=` parameter and acts on
+the currently-selected unit, so a client cannot reliably target one unit's groups on a
+multi-unit (EMU) rig. `get_endless_spool_config()` returns the gate group as one unordered
+`EndlessSpoolGroup` per group id; flattening it to per-slot arrows is the renderer's job
+(see [Endless Spool](#endless-spool-shared-model)).
+
+**`ENABLE=` on edit vs on reset.** An edit sends **no** `ENABLE=`, and
+`apply_endless_spool_backup()` refuses with `WRONG_STATE` when
+`mmu.endless_spool_enabled` is false: `cmd_MMU_ENDLESS_SPOOL` ignores `GROUPS` while the
+feature is off, so the write would fail silently. An unconditional `ENABLE=1` is not the
+fix - it turns the feature **on**, persistently via `mmu_state_enable_endless_spool`, as a
+side effect of setting one backup gate. `reset_endless_spool()` does keep
+`MMU_ENDLESS_SPOOL ENABLE=1 RESET=1 QUIET=1`, because the handler early-returns before
+honouring `RESET` while disabled, and `_reset_endless_spool()` then assigns *and* persists
+`default_endless_spool_enabled` over the momentary enable - so there it is not a lasting
+side effect.
+
+`endless_spool_enabled` is in the `mmu` subscription field list
+(`src/api/moonraker_discovery_sequence.cpp`) alongside `endless_spool_groups`. Happy Hare
+publishes the bit under two keys, `endless_spool_enabled` and `endless_spool`, both tagged
+DEPRECATED in `mmu.py`'s `get_status()` with no replacement shipped, so the parse reads the
+newer spelling and falls back to the older one; if a future Happy Hare drops both, the flag
+keeps its last value instead of silently flipping to off. It lands in
+`AmsSystemInfo::endless_spool_enabled`, which is what `caps.enabled` is derived from. Before
+the first frame the flag is still false, which is why the uninitialised-registry branch
+reports `Unknown` + `NotReady` rather than `Off`.
 
 `recovers_filament_on_resume()` is **not** overridden here (default `false`), so a Happy
 Hare runout gets the dialog with manual **Load** kept prominent, because Resume alone does not
@@ -1908,7 +2078,7 @@ absent from `src/` and `include/`, and is recorded here so the reasoning is not 
 
 | Feature | Supported | Editable |
 |---------|-----------|----------|
-| Endless Spool | Yes | Yes (per-slot via `SET_RUNOUT`) |
+| Endless Spool | `Available`, always `On` | `PerSlot` via `SET_RUNOUT` (see [Endless Spool](#endless-spool-shared-model)) |
 | Tool Mapping | Yes | Yes (via `SET_MAP`) |
 | Bypass Mode | Yes | Hardware sensor (auto-detect on Box Turtle) |
 | Spoolman | Yes | -- |
@@ -2050,7 +2220,7 @@ These belong to ValgACE's Moonraker component (`ace_status.py`) and are used **o
 
 | Feature | Supported | Editable |
 |---------|-----------|----------|
-| Endless Spool | No | -- |
+| Endless Spool | `Unsupported` | No override; inherits the base default |
 | Tool Mapping | No | Fixed 1:1 mapping |
 | Bypass Mode | No | -- |
 | Spoolman | No | -- |
@@ -2128,7 +2298,7 @@ Klipper object `toolchanger` in `printer.objects.list` sets `AmsType::TOOL_CHANG
 
 | Feature | Supported | Editable |
 |---------|-----------|----------|
-| Endless Spool | No | -- |
+| Endless Spool | `Unsupported` | No override; inherits the base default |
 | Tool Mapping | No | Fixed (tools ARE slots) |
 | Bypass Mode | No | Not applicable |
 | Spoolman | No | -- |
@@ -2404,7 +2574,7 @@ The raw IFS commands (`zmod_ifs.py` registrations + `docs/en/AD5X.md`). `F##` nu
 
 | Feature | Supported | Editable |
 |---------|-----------|----------|
-| Endless Spool | No | -- |
+| Endless Spool | `RequiresPlugin` on stock zMod, `Available` with lessWaste/bambufy | `ReadOnly` always (`PluginMissing` / `PluginReadOnly`) - see below |
 | Tool Mapping | Yes | Yes (16 tools → 4 ports) |
 | Bypass Mode | Yes | Via `less_waste_external` |
 | Spoolman | Optional | Works if configured |
@@ -2412,7 +2582,32 @@ The raw IFS commands (`zmod_ifs.py` registrations + `docs/en/AD5X.md`). `F##` nu
 | Dryer | No | -- |
 | Device Actions | No | -- |
 | Runout detection | Yes | Sensor-derived, HelixScreen-side — see "Unattended runout detection" above |
-| Backup-spool switchover | Firmware-only | lessWaste `variable_backup`; absent on stock zMod and on bambufy. HelixScreen reports the state, it does not perform the swap |
+| Backup-spool switchover | Firmware-only | `variable_backup` on the `_ifs_vars` macro, read the same way whichever plugin is detected. HelixScreen reports the state, it does not perform the swap |
+
+**Endless spool on IFS is read-only on purpose.** `get_endless_spool_capabilities()` reports
+`RequiresPlugin` + `PluginMissing` while `has_ifs_vars_` is false, because stock zMod has no
+switchover mechanism at all and installing lessWaste or bambufy is what turns it on - that is
+the [#1247](https://github.com/prestonbrown/helixscreen/issues/1247) answer, and it is the
+whole reason availability is three-valued. Once `_IFS_VARS` answers, availability becomes
+`Available`, `provider` names the plugin (`"lessWaste"` or `"bambufy"`, from the detected
+variable prefix), and `enabled` mirrors `variable_backup` - including a genuine `Unknown` when
+the key was never read, since flattening that to `Off` would promise the user that no swap
+will happen when we simply did not read the setting. Editability stays `ReadOnly` +
+`PluginReadOnly`: `backup` is never written. The only write path would be
+`write_ifs_var("backup", …)`, which is a bare `_IFS_VARS` G-code whose failure surfaces
+only as the console "Unknown command" latch that demotes `has_ifs_vars_` for the session -
+not something to drive a user-facing toggle from.
+
+There is no per-slot relation either, so no backup dropdown appears. What the plugin *will*
+switch to is answered instead by `is_endless_spool_backup_eligible()`, which IFS overrides
+with the rule the firmware enforces: exact material **and** exact colour **and** the port
+reporting filament present. It shares `backup_eligible_locked()` with
+`find_backup_slot_locked()`, so the runout detail text and the eligibility answer cannot
+drift apart.
+
+The `ams_ifs_plugin` and `ams_ifs_backup_enabled` XML subjects are unchanged - they remain
+AD5X's own main-thread publication path for the same state. `EndlessSpoolCapabilities` is the
+authority; the subjects are a view of it.
 
 ### Open Issues & Debugging Notes
 
@@ -2510,6 +2705,25 @@ The K1 envelope is intentionally shorter — `BOX_SAVE_FAN` / `BOX_RESTORE_FAN` 
 
 `AmsBackendCfs::macro_variant_` is latched in the constructor by querying `PrinterDetector::is_creality_k1()`. All member operations (`load_filament`, `unload_filament`, `change_tool`) thread `macro_variant_` into the gcode helpers. Static call sites without an explicit variant default to `K2` to preserve existing test behavior.
 
+### Endless spool (auto-refill)
+
+CFS reports `Available` + `ReadOnly` + `FirmwareManaged`, with `enabled` from
+`box.auto_refill` (stock) or `box.runout_swap_enabled` (flat fork) via
+`AmsSystemInfo::endless_spool_enabled`. On and off are therefore distinguishable, which the
+old two-bool struct could not express - it hardcoded `supported = true` and buried the real
+state in an untranslated `description`.
+
+`AmsBackendCfs` deliberately does **not** override `get_endless_spool_config()`. The box picks
+the refill spool itself from its own `same_material` groups and exposes no per-slot mapping to
+read, so the base's empty relation is the truthful answer, and it is what keeps the context
+menu from drawing a backup dropdown that could only ever read "None". `box.same_material` is
+parsed for one purpose only - a material-code-to-name lookup used when resolving a slot's
+material name - and is not wired to endless spool.
+
+The user-facing on/off control is the `toggle_auto_refill` device action, which emits
+`BOX_ENABLE_AUTO_REFILL`; it is not an endless-spool *edit* in the
+`set_endless_spool_backup()` sense, which is why editability stays `ReadOnly`.
+
 ### Known limitations on K1
 
 - `BOX_MODIFY_TN` (tool remap) and `BOX_MODIFY_TN_DATA` (color sync) are emitted with the same syntax on K1 — neither has been field-validated.
@@ -2588,7 +2802,7 @@ Spools identify via MIFARE Classic RFID tags. Data lives in sector 1 block 0. Th
 
 | Feature | Expected | Notes |
 |---------|----------|-------|
-| Endless Spool | Yes (auto-backup-spool) | Advertised by QIDI |
+| Endless Spool | Yes (auto-backup-spool) | Advertised by QIDI. The stub reports `Unsupported` today - it does not override `get_endless_spool_capabilities()`. Expect `FirmwareManaged` read-only if it turns out to work like AD5X IFS |
 | Tool Mapping | Likely via `save_variables` | Matches AD5X IFS shape |
 | Bypass Mode | Unknown | Need hardware inspection |
 | Spoolman | Optional | Works through standard Moonraker `[spoolman]` |
@@ -2721,7 +2935,25 @@ The context menu also includes inline dropdowns for:
 - **Tool Mapping**: Assign which tool number maps to this slot (if backend supports it)
 - **Endless Spool Backup**: Set backup slot for runout (if backend supports it)
 
-These dropdowns are populated from `backend->get_tool_mapping()` and `backend->get_endless_spool_config()`.
+The tool dropdown is populated from `backend->get_tool_mapping()`.
+
+The backup dropdown is populated from `backend->get_endless_spool_config()`, which is a
+*group* relation, projected to this slot's single successor with
+`helix::printer::endless_spool_backup_for()` - the same projection the panel's arrow renderer
+uses (see [Endless Spool](#endless-spool-shared-model)). Its row visibility is the pure
+predicate `AmsContextMenu::decide_show_backup_row(caps, has_relation)`:
+
+- Not `available()` - hidden.
+- `editable()` - shown, because there is something to write even before anything is set.
+- Read-only **and** there is a relation to display - shown, but the dropdown gets
+  `LV_STATE_DISABLED`.
+- Read-only with no relation - hidden. This is the CFS and AD5X IFS case: the firmware picks
+  the backup and publishes no mapping, so a visible dropdown could only ever read "None".
+
+The "(incompatible)" suffix on backup options still comes from
+`filament::are_materials_compatible()` directly in `build_backup_options()`; it does not yet
+route through `AmsBackend::is_endless_spool_backup_eligible()`, so a backend that tightens the
+rule (AD5X IFS) does not yet tighten this label.
 
 ---
 
@@ -2844,7 +3076,11 @@ HELIX_MOCK_AMS=ifs ./build/bin/helix-screen --test
 - Reports `AmsType::AD5X_IFS` with type name "AD5X IFS"
 - Uses `PathTopology::LINEAR`
 - 4 slots with bypass support
-- Tool mapping enabled, endless spool disabled
+- Tool mapping enabled; endless spool `Unsupported` - the scenario clears
+  `endless_spool_supported_` / `endless_spool_editable_`, not just
+  `system_info_.endless_spool_enabled`. Clearing only the bit left the mock AD5X with an
+  editable backup dropdown and endless-spool arrows the real backend does not have. The
+  Snapmaker scenario clears the same pair for the same reason.
 
 ### Mock Realistic Mode
 
@@ -2870,8 +3106,8 @@ The mock backend exposes additional methods for unit testing:
 | `set_operation_delay(ms)` | Set simulated operation delay |
 | `force_slot_status(slot, status)` | Force a specific slot status |
 | `set_has_hardware_bypass_sensor(bool)` | Toggle hardware vs virtual bypass sensor |
-| `set_endless_spool_supported(bool)` | Toggle endless spool support |
-| `set_endless_spool_editable(bool)` | Toggle whether `set_endless_spool_backup()` is accepted or returns NOT_SUPPORTED |
+| `set_endless_spool_supported(bool)` | Availability: `Available` vs `Unsupported`. Also sets `system_info_.endless_spool_enabled`, which is what `caps.enabled` reads |
+| `set_endless_spool_editable(bool)` | Editability: `PerSlot` vs `ReadOnly` + `FirmwareManaged` (the shape CFS and a multi-unit MMU have). When read-only, `set_endless_spool_backup()` is rejected by the base with the translated restriction reason, not by the mock |
 | `set_device_sections(sections)` | Set custom device sections for testing |
 | `set_device_actions(actions)` | Set custom device actions for testing |
 
@@ -2925,7 +3161,7 @@ Create `include/ams_backend_mysystem.h` and `src/printer/ams_backend_mysystem.cp
 - `clear_fault()` -- Clear a latched fault, bookkeeping only (default: forwards to `cancel()`)
 - `recover_lane_position()` -- Physical retract of a stranded lane (default: NOT_SUPPORTED)
 - `get_dryer_info()`, `start_drying()`, `stop_drying()`, `update_drying()` -- Dryer control
-- `get_endless_spool_capabilities()`, `get_endless_spool_config()`, `set_endless_spool_backup()` -- Endless spool
+- `get_endless_spool_capabilities()`, `get_endless_spool_config()` -- Endless spool state. `set_endless_spool_backup()` is **not** an override point: it is non-virtual and owns every rejection. Supply `apply_endless_spool_backup()` (protected, transport only), `endless_spool_slot_count()` (protected, only if `total_slots` is wrong for you), and `is_endless_spool_backup_eligible()` (only to tighten the default material-compatibility rule). `reset_endless_spool()` already works for any editable backend by looping the setter with -1 - override it only if your firmware has a real reset primitive. See § [Endless Spool](#endless-spool-shared-model).
 - `get_tool_mapping_capabilities()`, `get_tool_mapping()` -- Tool mapping
 - `get_device_sections()`, `get_device_actions()`, `execute_device_action()` -- Device-specific actions
 - `set_discovered_lanes()`, `set_discovered_tools()` -- Discovery configuration

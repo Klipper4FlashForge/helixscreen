@@ -35,6 +35,110 @@
 
 using namespace helix;
 
+// ============================================================================
+// Endless Spool - shared validation, reset loop and eligibility rule
+// ============================================================================
+
+namespace {
+
+/// The one self-backup rejection. Three backends used to phrase this three
+/// different ways for the same condition.
+AmsError endless_spool_self_backup_error(int slot_index) {
+    return AmsError(AmsResult::INVALID_SLOT,
+                    "Slot " + std::to_string(slot_index) +
+                        " cannot be its own endless spool backup",
+                    "A slot cannot back itself up", "Select a different backup slot", slot_index);
+}
+
+/// The one read-only rejection, carrying the backend's translated reason.
+AmsError endless_spool_read_only_error(helix::printer::EndlessSpoolRestriction restriction) {
+    std::string reason = helix::printer::endless_spool_restriction_text(restriction);
+    return AmsError(AmsResult::NOT_SUPPORTED,
+                    "Endless spool is read-only on this backend" +
+                        (reason.empty() ? std::string() : " (" + reason + ")"),
+                    reason.empty() ? std::string("Endless spool cannot be changed here") : reason,
+                    "");
+}
+
+} // namespace
+
+int AmsBackend::endless_spool_slot_count() const {
+    return get_system_info().total_slots;
+}
+
+AmsError AmsBackend::set_endless_spool_backup(int slot_index, int backup_slot) {
+    const auto caps = get_endless_spool_capabilities();
+    if (!caps.available()) {
+        return AmsErrorHelper::not_supported("Endless spool");
+    }
+    if (!caps.editable()) {
+        return endless_spool_read_only_error(caps.restriction);
+    }
+
+    const int slot_count = endless_spool_slot_count();
+    if (slot_count <= 0) {
+        return endless_spool_read_only_error(helix::printer::EndlessSpoolRestriction::NotReady);
+    }
+    const int max_slot = slot_count - 1;
+
+    if (slot_index < 0 || slot_index > max_slot) {
+        return AmsErrorHelper::invalid_slot(slot_index, max_slot);
+    }
+    if (backup_slot != -1) {
+        if (backup_slot < 0 || backup_slot > max_slot) {
+            return AmsErrorHelper::invalid_slot(backup_slot, max_slot);
+        }
+        if (backup_slot == slot_index) {
+            return endless_spool_self_backup_error(slot_index);
+        }
+    }
+
+    return apply_endless_spool_backup(slot_index, backup_slot);
+}
+
+AmsError AmsBackend::reset_endless_spool() {
+    const auto caps = get_endless_spool_capabilities();
+    if (!caps.available()) {
+        return AmsErrorHelper::not_supported("Reset endless spool");
+    }
+    if (!caps.editable()) {
+        return endless_spool_read_only_error(caps.restriction);
+    }
+
+    const int slot_count = endless_spool_slot_count();
+    spdlog::info("[AMS Backend] Clearing endless spool backups for {} slots", slot_count);
+
+    // Continue past failures so as many slots as possible end up cleared, and
+    // report the first error.
+    AmsError first_error = AmsErrorHelper::success();
+    for (int slot = 0; slot < slot_count; ++slot) {
+        AmsError result = set_endless_spool_backup(slot, -1);
+        if (!result.success()) {
+            spdlog::error("[AMS Backend] Failed to clear endless spool backup for slot {}: {}",
+                          slot, result.technical_msg);
+            if (first_error.success()) {
+                first_error = result;
+            }
+        }
+    }
+    return first_error;
+}
+
+bool AmsBackend::is_endless_spool_backup_eligible(int slot_index, int backup_slot) const {
+    if (slot_index < 0 || backup_slot < 0 || slot_index == backup_slot) {
+        return false;
+    }
+    // Today's UI rule, moved behind a virtual so backends can tighten it: an
+    // unknown material on either side is treated as eligible rather than
+    // blocking a slot the user has simply not labelled yet.
+    const std::string material = get_slot_info(slot_index).material;
+    const std::string backup_material = get_slot_info(backup_slot).material;
+    if (material.empty() || backup_material.empty()) {
+        return true;
+    }
+    return filament::are_materials_compatible(material, backup_material);
+}
+
 lv_subject_t* AmsBackend::get_operation_step_index_subject(StepOperationType op) {
     // Narration-capable backends drive their step index through the
     // GcodeNarrationRouter, which writes AmsState's toolchange_step subject.

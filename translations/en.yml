@@ -365,6 +365,7 @@ translations:
   Cancel Print: Cancel Print
   Cancel macro not configured: Cancel macro not configured
   Cancelled: Cancelled
+  Cannot be changed from here on a multi-unit MMU: Cannot be changed from here on a multi-unit MMU
   'Cannot control timelapse: printer not connected': 'Cannot control timelapse: printer
     not connected'
   'Cannot delete file: printer not connected': 'Cannot delete file: printer not connected'
@@ -505,6 +506,7 @@ translations:
     macros
   Configure timelapse recording: Configure timelapse recording
   Configure your printer's cooling fans: Configure your printer's cooling fans
+  Configured in the backup-spool package, not from here: Configured in the backup-spool package, not from here
   Configuring Moonraker...: Configuring Moonraker...
   Confirm PIN: Confirm PIN
   Confirm before running macros: Confirm before running macros
@@ -1477,6 +1479,7 @@ translations:
   No USB printers found: No USB printers found
   ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
   : No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
+  No automatic backup-spool package is installed: No automatic backup-spool package is installed
   No buffer data available: No buffer data available
   No camera — use USB barcode scanner: No camera — use USB barcode scanner
   No changes selected.\n\nClick Cancel to close.: No changes selected.\n\nClick Cancel
@@ -2381,6 +2384,7 @@ translations:
   The printer lost power while printing {}. The resumed layer may not line up exactly.: The printer lost power while printing {}. The resumed layer may not line up exactly.
   The printer rejected the filament configuration. The print was not started.: The
     printer rejected the filament configuration. The print was not started.
+  The printer's firmware chooses the backup spool itself: The printer's firmware chooses the backup spool itself
   The runout sensor indicates no filament is loaded. Start print anyway?: The runout
     sensor indicates no filament is loaded. Start print anyway?
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: The
@@ -2625,6 +2629,7 @@ translations:
   Waiting for Moonraker...: Waiting for Moonraker...
   Waiting for bed to reach temperature for accurate calibration.: Waiting for bed
     to reach temperature for accurate calibration.
+  Waiting for the filament system to report its state: Waiting for the filament system to report its state
   Warm Bed: Warm Bed
   Warming Bed...: Warming Bed...
   Warn: Warn

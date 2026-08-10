@@ -41,7 +41,66 @@ class AmsContextMenuTestAccess {
         return AmsContextMenu::decide_unload_enabled(system_busy, mode, print_active,
                                                      cold_ops_print_gated);
     }
+
+    static bool decide_show_backup_row(const helix::printer::EndlessSpoolCapabilities& caps,
+                                       bool has_relation) {
+        return AmsContextMenu::decide_show_backup_row(caps, has_relation);
+    }
 };
+
+// The backup dropdown had no test at all, and CFS is what exposed the gap: it
+// reports the feature as available and read-only but has no per-slot relation of
+// any kind, so the row rendered with a permanently empty value.
+TEST_CASE("AmsContextMenu::decide_show_backup_row needs a relation, not just availability",
+          "[ams][context_menu][endless_spool]") {
+    using namespace helix::printer;
+
+    const EndlessSpoolCapabilities unsupported;
+
+    EndlessSpoolCapabilities afc{.availability = EndlessSpoolAvailability::Available,
+                                 .enabled = EndlessSpoolEnabled::On,
+                                 .editability = EndlessSpoolEditability::PerSlot};
+
+    EndlessSpoolCapabilities hh_multi_unit{.availability = EndlessSpoolAvailability::Available,
+                                           .enabled = EndlessSpoolEnabled::On,
+                                           .editability = EndlessSpoolEditability::ReadOnly,
+                                           .restriction = EndlessSpoolRestriction::MultiUnit};
+
+    EndlessSpoolCapabilities cfs{.availability = EndlessSpoolAvailability::Available,
+                                 .enabled = EndlessSpoolEnabled::On,
+                                 .editability = EndlessSpoolEditability::ReadOnly,
+                                 .restriction = EndlessSpoolRestriction::FirmwareManaged};
+
+    EndlessSpoolCapabilities ad5x_stock{.availability = EndlessSpoolAvailability::RequiresPlugin,
+                                        .enabled = EndlessSpoolEnabled::Off,
+                                        .editability = EndlessSpoolEditability::ReadOnly,
+                                        .restriction = EndlessSpoolRestriction::PluginMissing};
+
+    SECTION("no such feature: never") {
+        CHECK_FALSE(AmsContextMenuTestAccess::decide_show_backup_row(unsupported, false));
+        CHECK_FALSE(AmsContextMenuTestAccess::decide_show_backup_row(unsupported, true));
+    }
+
+    SECTION("plugin not installed: never - there is nothing to configure yet") {
+        CHECK_FALSE(AmsContextMenuTestAccess::decide_show_backup_row(ad5x_stock, false));
+        CHECK_FALSE(AmsContextMenuTestAccess::decide_show_backup_row(ad5x_stock, true));
+    }
+
+    SECTION("editable: always, even before anything is configured") {
+        CHECK(AmsContextMenuTestAccess::decide_show_backup_row(afc, false));
+        CHECK(AmsContextMenuTestAccess::decide_show_backup_row(afc, true));
+    }
+
+    SECTION("read-only WITH a relation: shown, so the user can see it") {
+        CHECK(AmsContextMenuTestAccess::decide_show_backup_row(hh_multi_unit, true));
+    }
+
+    SECTION("read-only with NO relation: hidden - this is the CFS fix") {
+        // Showing it produced a dropdown stuck on "None" that could never be
+        // told apart from "no backup configured".
+        CHECK_FALSE(AmsContextMenuTestAccess::decide_show_backup_row(cfs, false));
+    }
+}
 
 // "Clear Spool" was revealed only when `!slot_has_filament`, so it vanished the
 // moment a new spool went into the lane — precisely when a stale assignment is

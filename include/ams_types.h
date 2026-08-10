@@ -1179,7 +1179,22 @@ struct AmsSystemInfo {
     int total_slots = 0;        ///< Sum of all slots across units
 
     // Capability flags
-    bool supports_endless_spool = false;
+    /// Is endless spool switched ON? The ENABLE axis only - it says nothing
+    /// about whether the printer HAS the feature.
+    ///
+    /// This is the transport-parsed carrier for the enable bit (CFS
+    /// `auto_refill` / `runout_swap_enabled`, Happy Hare `endless_spool_enabled`,
+    /// AD5X `variable_backup`): the WebSocket parse builds an AmsSystemInfo off
+    /// the main thread and commits it under the backend mutex, so the bit needs
+    /// a home in this struct. It replaced `supports_endless_spool`, which
+    /// answered the *availability* question a second time and provably disagreed
+    /// with get_endless_spool_capabilities() (CFS whenever auto-refill was off).
+    ///
+    /// **`AmsBackend::get_endless_spool_capabilities()` is the single source of
+    /// truth for every axis, and it DERIVES `EndlessSpoolCapabilities::enabled`
+    /// from this field** rather than answering independently, so the two cannot
+    /// diverge. Read the capabilities, not this.
+    bool endless_spool_enabled = false;
     bool supports_tool_mapping = false;
     bool supports_bypass = false;            ///< Has bypass selector position
     bool has_hardware_bypass_sensor = false; ///< true=auto-detect sensor, false=virtual/manual
@@ -1565,32 +1580,197 @@ inline std::vector<DryingPreset> get_default_drying_presets() {
 namespace helix::printer {
 
 /**
- * @brief Capabilities for endless spool feature
+ * @brief Does the endless-spool mechanism exist on this printer at all?
  *
- * Describes whether endless spool is supported and whether the UI can modify
- * the configuration. Different backends have different capabilities:
- * - AFC: Fully editable, per-slot backup configuration
- * - Happy Hare: Read-only, group-based (configured via mmu_vars.cfg)
- * - Mock: Configurable for testing both modes
+ * Three states rather than a bool because "the printer could do this but the
+ * package that implements it is not installed" is the answer that explains a
+ * runout which stopped a print, and it is the only one the user can act on
+ * (AD5X on stock zMod, prestonbrown/helixscreen#1247).
  */
-struct EndlessSpoolCapabilities {
-    bool supported = false; ///< Does backend support endless spool?
-    bool editable = false;  ///< Can UI modify configuration?
-    std::string
-        description; ///< Human-readable description (e.g., "Per-slot backup", "Group-based")
+enum class EndlessSpoolAvailability : int {
+    Unsupported = 0,    ///< No such feature. Offer nothing.
+    RequiresPlugin = 1, ///< Mechanism exists; its optional package is absent.
+    Available = 2       ///< Present and usable.
 };
 
 /**
- * @brief Configuration for a single slot's endless spool backup
+ * @brief Is endless spool switched on right now?
  *
- * Represents which slot will be used as a backup when the primary slot runs out.
- * This provides a unified view regardless of backend (AFC's runout_lane or
- * Happy Hare's endless_spool_groups).
+ * Tri-state on purpose: "we could not read it" is a different answer from "it
+ * is off", and only the latter justifies telling the user that no automatic
+ * switchover will happen. AD5X genuinely needs Unknown - the plugin's
+ * `variable_backup` reaches us only through a macro `get_status()` dict that
+ * older plugin versions do not declare, and the `_IFS_VARS` unknown-command
+ * latch can leave us with no reading at all.
+ */
+enum class EndlessSpoolEnabled : int {
+    Unknown = -1, ///< Not readable from this backend / not read yet.
+    Off = 0,
+    On = 1
+};
+
+/**
+ * @brief What the UI may change, and in what shape.
+ *
+ * The shape matters to the UI, not just the yes/no: a PerSlot write touches one
+ * slot, a Group write can move other slots' relations as a side effect because
+ * the transport rewrites the whole partition (Happy Hare `GROUPS=<csv>`).
+ */
+enum class EndlessSpoolEditability : int {
+    ReadOnly = 0, ///< Display only.
+    PerSlot = 1,  ///< One named successor per slot (AFC `SET_RUNOUT`).
+    Group = 2     ///< Membership of an undirected group (Happy Hare `GROUPS=`).
+};
+
+/**
+ * @brief Why editing is restricted.
+ *
+ * An enum, not prose. The old `description` field carried load-bearing state as
+ * untranslated English ("Auto-refill enabled", "...read-only on multi-unit"),
+ * which no UI could safely display in any language but ours. Display text comes
+ * from endless_spool_restriction_text(), which is where lv_tr() lives.
+ */
+enum class EndlessSpoolRestriction : int {
+    None = 0,
+    /// The write command cannot target a unit (Happy Hare's
+    /// `MMU_ENDLESS_SPOOL` has no `UNIT=` and acts on the selected unit), so it
+    /// is unsafe on a multi-unit rig.
+    MultiUnit,
+    /// The firmware chooses the backup itself and exposes nothing to configure
+    /// (Creality CFS auto-refill; the AD5X plugin's type+colour match).
+    FirmwareManaged,
+    /// The backend has not received enough state to answer yet.
+    NotReady,
+    /// No auto-switchover package is installed.
+    PluginMissing,
+    /// A package is installed but exposes no write path we can drive.
+    PluginReadOnly
+};
+
+/**
+ * @brief The restriction reason as display text, translated.
+ *
+ * Returns an empty string for EndlessSpoolRestriction::None. Defined in
+ * src/printer/ams_endless_spool.cpp so ams_types.h stays free of lv_tr().
+ */
+[[nodiscard]] std::string endless_spool_restriction_text(EndlessSpoolRestriction restriction);
+
+/**
+ * @brief What a backend can do about endless spool, on three independent axes.
+ *
+ * Availability, enablement and editability are genuinely orthogonal and the old
+ * two-bool struct could not hold them: CFS is available-and-read-only whether
+ * auto-refill is on or off, so `supported=true` rendered both states
+ * identically. Every field is either an enum or a proper noun - nothing here is
+ * translatable prose, so nothing here can leak English into the UI.
+ */
+struct EndlessSpoolCapabilities {
+    EndlessSpoolAvailability availability = EndlessSpoolAvailability::Unsupported;
+    EndlessSpoolEnabled enabled = EndlessSpoolEnabled::Unknown;
+    EndlessSpoolEditability editability = EndlessSpoolEditability::ReadOnly;
+    EndlessSpoolRestriction restriction = EndlessSpoolRestriction::None;
+
+    /// Proper noun of the package implementing the feature ("lessWaste",
+    /// "bambufy"); empty when the backend or firmware implements it natively.
+    /// A product name is never translated, which is why this is the one
+    /// free-text field left on the struct.
+    std::string provider;
+
+    /// The feature exists and is usable. Replaces the old `supported` bool.
+    [[nodiscard]] bool available() const {
+        return availability == EndlessSpoolAvailability::Available;
+    }
+
+    /// The UI may write. Replaces the old `editable` bool.
+    [[nodiscard]] bool editable() const {
+        return available() && editability != EndlessSpoolEditability::ReadOnly;
+    }
+};
+
+/**
+ * @brief One endless-spool group: slots that stand in for each other.
+ *
+ * @see EndlessSpoolConfig for why the shared model is groups and not edges.
+ */
+struct EndlessSpoolGroup {
+    /// The backend's own group id when it has one (a Happy Hare group number),
+    /// otherwise -1 for a group we synthesised from directed edges.
+    int id = -1;
+
+    /// Global slot indices. For an `ordered` group this IS the succession
+    /// order; otherwise it is ascending and carries no order.
+    std::vector<int> members;
+
+    /// true  - members[i] hands off to members[i+1]; the last member has no
+    ///         successor. AFC's `SET_RUNOUT` edge and the AD5X firmware match
+    ///         are directed, and become two-member ordered groups.
+    /// false - any member substitutes for any other. Happy Hare's gate group is
+    ///         an undirected clique of arbitrary size.
+    bool ordered = false;
+};
+
+/**
+ * @brief The whole system's endless-spool relation.
+ *
+ * Membership, not a single successor. A Happy Hare 4-gate group is ONE entry
+ * here rather than four arbitrary arrows, which is what the old per-slot
+ * `{slot_index, backup_slot}` vector forced the backend to invent (its
+ * `// Use first match` loop). Projection down to one-successor-per-slot is a
+ * rendering concern and lives in exactly one place -
+ * endless_spool_backup_edges() / endless_spool_backup_for().
+ *
+ * Overlapping groups are legal when `ordered`: AFC permits 0->2 and 1->2, which
+ * is two ordered pairs sharing slot 2. An unordered relation is a partition.
  */
 struct EndlessSpoolConfig {
-    int slot_index = 0;   ///< Slot this config applies to
-    int backup_slot = -1; ///< Backup slot index (-1 = no backup)
+    std::vector<EndlessSpoolGroup> groups;
+
+    [[nodiscard]] bool empty() const {
+        return groups.empty();
+    }
 };
+
+/**
+ * @brief Build a config from per-slot directed backup edges.
+ *
+ * @param edges edges[slot] = backup slot, or -1 for none.
+ * @return One two-member ordered group per non-empty edge.
+ */
+[[nodiscard]] EndlessSpoolConfig endless_spool_config_from_edges(const std::vector<int>& edges);
+
+/**
+ * @brief Build a config from per-slot group ids (Happy Hare's shape).
+ *
+ * @param group_ids group_ids[slot] = group number, or negative for ungrouped.
+ * @return One unordered group per id that has at least two members. A lone
+ *         member is dropped: a group of one backs nothing up, and emitting it
+ *         would make "grouped" and "has a backup" disagree.
+ */
+[[nodiscard]] EndlessSpoolConfig
+endless_spool_config_from_groups(const std::vector<int>& group_ids);
+
+/**
+ * @brief Project a group relation onto one successor per slot.
+ *
+ * The single group-to-edge projection in the codebase. Used by the arrow
+ * renderer and by the single-successor dropdown; never re-derive it.
+ *
+ * Ordered group:   members[i] -> members[i+1]; the last member gets nothing.
+ * Unordered group: every member -> the first OTHER member, which reproduces the
+ *                  arrow set Happy Hare rendered before this refactor.
+ *
+ * @param cfg        The relation.
+ * @param slot_count Length of the returned vector.
+ * @return edges[slot] = successor slot, or -1. Out-of-range members ignored.
+ */
+[[nodiscard]] std::vector<int> endless_spool_backup_edges(const EndlessSpoolConfig& cfg,
+                                                          int slot_count);
+
+/**
+ * @brief The single successor of one slot under the same projection.
+ * @return Backup slot index, or -1 when the slot has none.
+ */
+[[nodiscard]] int endless_spool_backup_for(const EndlessSpoolConfig& cfg, int slot);
 
 /**
  * @brief Capabilities for tool mapping feature

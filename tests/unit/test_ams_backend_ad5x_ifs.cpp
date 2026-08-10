@@ -8,6 +8,7 @@
 #include "ams_step_operation.h"
 #include "ams_types.h"
 #include "app_globals.h"
+#include "filament_database.h"
 #include "filament_op_router.h"
 #include "filament_slot_override.h"
 #include "filament_slot_override_store.h"
@@ -934,7 +935,8 @@ TEST_CASE("AD5X IFS get_system_info", "[ams][ad5x_ifs]") {
     REQUIRE(sys.units[0].slots.size() == 4);
     REQUIRE(sys.supports_bypass);
     REQUIRE(sys.supports_tool_mapping);
-    REQUIRE_FALSE(sys.supports_endless_spool);
+    // The ENABLE bit; AVAILABILITY lives in get_endless_spool_capabilities().
+    REQUIRE_FALSE(sys.endless_spool_enabled);
     REQUIRE_FALSE(sys.supports_purge);
 
     // IFS tool mapping: 16 entries (tool→slot), first 4 mapped, rest unmapped
@@ -10310,5 +10312,127 @@ TEST_CASE("AD5X IFS runout: backup-slot match needs type AND colour AND presence
 
     SECTION("the ran-out lane never matches itself") {
         REQUIRE(Ad5xIfsTestAccess::find_backup_slot(backend, 0) != 0);
+    }
+}
+
+// ==========================================================================
+// Endless spool: the shared abstraction over the plugin state
+// ==========================================================================
+
+TEST_CASE("AD5X IFS endless spool capabilities", "[ams][ad5x_ifs][endless_spool][1250]") {
+    using namespace helix::printer;
+
+    SECTION("stock zMod: RequiresPlugin, not Unsupported") {
+        // The #1247 misexpectation. "Unsupported" would be wrong: installing
+        // lessWaste or bambufy is exactly what turns this on, and that is the one
+        // thing the user can do about a runout that stopped the print.
+        AmsBackendAd5xIfs backend(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_has_ifs_vars(backend, false);
+
+        auto caps = backend.get_endless_spool_capabilities();
+        REQUIRE(caps.availability == EndlessSpoolAvailability::RequiresPlugin);
+        REQUIRE(caps.availability != EndlessSpoolAvailability::Unsupported);
+        REQUIRE(caps.enabled == EndlessSpoolEnabled::Off);
+        REQUIRE(caps.restriction == EndlessSpoolRestriction::PluginMissing);
+        REQUIRE(caps.provider.empty());
+        REQUIRE_FALSE(caps.available());
+        REQUIRE_FALSE(caps.editable());
+    }
+
+    SECTION("plugin installed but variable_backup unreadable: Unknown, never Off") {
+        AmsBackendAd5xIfs backend(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
+        Ad5xIfsTestAccess::set_var_prefix(backend, "less_waste");
+        REQUIRE_FALSE(backend.plugin_backup_enabled().has_value());
+
+        auto caps = backend.get_endless_spool_capabilities();
+        REQUIRE(caps.availability == EndlessSpoolAvailability::Available);
+        REQUIRE(caps.enabled == EndlessSpoolEnabled::Unknown);
+        REQUIRE(caps.enabled != EndlessSpoolEnabled::Off);
+        REQUIRE(caps.provider == "lessWaste");
+    }
+
+    SECTION("variable_backup on/off maps to On/Off, and names the provider") {
+        AmsBackendAd5xIfs backend(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
+        Ad5xIfsTestAccess::set_var_prefix(backend, "bambufy");
+
+        Ad5xIfsTestAccess::parse_ifs_vars_macro(backend, json{{"variable_backup", 1}});
+        REQUIRE(backend.get_endless_spool_capabilities().enabled == EndlessSpoolEnabled::On);
+        REQUIRE(backend.get_endless_spool_capabilities().provider == "bambufy");
+
+        Ad5xIfsTestAccess::parse_ifs_vars_macro(backend, json{{"variable_backup", 0}});
+        REQUIRE(backend.get_endless_spool_capabilities().enabled == EndlessSpoolEnabled::Off);
+    }
+
+    SECTION("read-only even with a plugin, and writes are refused") {
+        // `backup` is never written today and write_ifs_var() rides the _IFS_VARS
+        // unknown-command latch, so an editable toggle would silently stop working.
+        AmsBackendAd5xIfs backend(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
+        Ad5xIfsTestAccess::parse_ifs_vars_macro(backend, json{{"variable_backup", 1}});
+
+        auto caps = backend.get_endless_spool_capabilities();
+        REQUIRE(caps.editability == EndlessSpoolEditability::ReadOnly);
+        REQUIRE(caps.restriction == EndlessSpoolRestriction::PluginReadOnly);
+
+        auto result = backend.set_endless_spool_backup(0, 1);
+        REQUIRE_FALSE(result.success());
+        REQUIRE(result.result == AmsResult::NOT_SUPPORTED);
+        REQUIRE(result.user_msg ==
+                endless_spool_restriction_text(EndlessSpoolRestriction::PluginReadOnly));
+        REQUIRE_FALSE(backend.reset_endless_spool().success());
+    }
+
+    SECTION("no per-slot relation: the firmware computes the match at runout time") {
+        AmsBackendAd5xIfs backend(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
+        Ad5xIfsTestAccess::parse_ifs_vars_macro(backend, json{{"variable_backup", 1}});
+        seed_standard_colors(backend);
+
+        REQUIRE(backend.get_endless_spool_config().empty());
+    }
+}
+
+TEST_CASE("AD5X IFS overrides the eligibility rule with type+colour+presence",
+          "[ams][ad5x_ifs][endless_spool][eligibility][1250]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    // Lane 0: PLA / FF0000, present.
+    Ad5xIfsTestAccess::set_port_presence(backend, 0, true);
+    Ad5xIfsTestAccess::set_material(backend, 0, "PLA");
+    Ad5xIfsTestAccess::set_color(backend, 0, "FF0000");
+
+    SECTION("the generic material-compatibility default would say yes; AD5X says no") {
+        // Same material, different colour. filament::are_materials_compatible()
+        // (the AmsBackend default) accepts this; AD5X must not, because the
+        // firmware's own switchover is colour-matched too.
+        Ad5xIfsTestAccess::set_port_presence(backend, 2, true);
+        Ad5xIfsTestAccess::set_material(backend, 2, "PLA");
+        Ad5xIfsTestAccess::set_color(backend, 2, "00FF00");
+
+        REQUIRE(filament::are_materials_compatible("PLA", "PLA"));
+        REQUIRE_FALSE(backend.is_endless_spool_backup_eligible(0, 2));
+    }
+
+    SECTION("an absent port is not eligible even on an exact match") {
+        Ad5xIfsTestAccess::set_material(backend, 2, "PLA");
+        Ad5xIfsTestAccess::set_color(backend, 2, "FF0000");
+        Ad5xIfsTestAccess::set_port_presence(backend, 2, false);
+        REQUIRE_FALSE(backend.is_endless_spool_backup_eligible(0, 2));
+    }
+
+    SECTION("exact type + colour + presence is eligible, case-insensitively") {
+        Ad5xIfsTestAccess::set_port_presence(backend, 2, true);
+        Ad5xIfsTestAccess::set_material(backend, 2, "pla");
+        Ad5xIfsTestAccess::set_color(backend, 2, "ff0000");
+        REQUIRE(backend.is_endless_spool_backup_eligible(0, 2));
+        // And it is the same rule the firmware-match scan uses.
+        REQUIRE(Ad5xIfsTestAccess::find_backup_slot(backend, 0) == 2);
+    }
+
+    SECTION("self and out-of-range are never eligible") {
+        REQUIRE_FALSE(backend.is_endless_spool_backup_eligible(0, 0));
+        REQUIRE_FALSE(backend.is_endless_spool_backup_eligible(0, AmsBackendAd5xIfs::NUM_PORTS));
+        REQUIRE_FALSE(backend.is_endless_spool_backup_eligible(-1, 0));
     }
 }

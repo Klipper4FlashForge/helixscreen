@@ -337,6 +337,7 @@ translations:
   Cancel Print: 取消打印
   Cancel macro not configured: 取消宏未配置
   Cancelled: 已取消
+  Cannot be changed from here on a multi-unit MMU: 多单元 MMU 无法在此处更改
   'Cannot control timelapse: printer not connected': '无法控制延时摄影: 打印机未连接'
   'Cannot delete file: printer not connected': '无法删除文件: 打印机未连接'
   'Cannot modify G-code: no temp directory available': '无法修改 G-code: 无可用临时目录'
@@ -458,6 +459,7 @@ translations:
   Configure quick buttons and standard macros: 配置快捷按钮和标准宏
   Configure timelapse recording: 配置延时录像
   Configure your printer's cooling fans: 配置打印机的冷却风扇
+  Configured in the backup-spool package, not from here: 在备用料盘插件中配置，而非此处
   Configuring Moonraker...: 正在配置 Moonraker...
   Confirm PIN: 确认 PIN 码
   Confirm before running macros: 运行宏前进行确认
@@ -1363,6 +1365,7 @@ translations:
   No USB printers found: 未找到 USB 打印机
   ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
   : ''
+  No automatic backup-spool package is installed: 未安装自动备用料盘插件
   No buffer data available: 无可用缓冲区数据
   No camera — use USB barcode scanner: 无摄像头 — 请使用 USB 条码扫描器
   No changes selected.\n\nClick Cancel to close.: 未选择任何更改。\n\n点击取消以关闭。
@@ -2190,6 +2193,7 @@ translations:
   The printer lost power while printing {}. Resume where it left off?: 打印机在打印 {} 时断电。是否从中断处继续？
   The printer lost power while printing {}. The resumed layer may not line up exactly.: 打印机在打印 {} 时断电。恢复后的层可能无法完全对准。
   The printer rejected the filament configuration. The print was not started.: 打印机拒绝了该耗材配置。打印未启动。
+  The printer's firmware chooses the backup spool itself: 备用料盘由打印机固件自行选择
   The runout sensor indicates no filament is loaded. Start print anyway?: 断料传感器显示未装载耗材。仍要开始打印吗？
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: 工具头传感器显示耗材已装载。仍要继续装载吗？
   The toolhead sensor indicates no filament is present. Proceed with unload anyway?: 工具头传感器显示无耗材。仍要继续卸载吗？
@@ -2405,6 +2409,7 @@ translations:
   Wait for the current filament operation to finish: 请等待当前耗材操作完成
   Waiting for Moonraker...: 正在等待 Moonraker...
   Waiting for bed to reach temperature for accurate calibration.: 等待热床达到温度以进行精确校准。
+  Waiting for the filament system to report its state: 正在等待耗材系统报告状态
   Warm Bed: 预热热床
   Warming Bed...: 正在预热热床...
   Warn: 警告

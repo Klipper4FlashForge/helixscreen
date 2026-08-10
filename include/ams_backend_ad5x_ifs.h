@@ -291,6 +291,51 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     /// operation-timeout backstop also produces.
     [[nodiscard]] bool runout_active() const;
 
+    // === Endless spool ===
+    //
+    // The cross-backend view of what get_plugin() / plugin_backup_enabled()
+    // already know. `ams_ifs_plugin` / `ams_ifs_backup_enabled` stay as the XML
+    // publication path for the same state: they are AD5X-specific by design and
+    // already thread-correct (publish_plugin_subjects() runs main-thread only),
+    // and the cross-backend subjects that will replace them belong with the
+    // shared UI work, not here. Treat get_endless_spool_capabilities() as the
+    // authority; the subjects are a rendering detail.
+
+    /**
+     * @brief IFS auto-switchover as a shared capability.
+     *
+     * RequiresPlugin with no `_IFS_VARS` macro - stock zMod has no switchover
+     * mechanism at all, and that is the answer the user can act on (#1247).
+     * Otherwise Available, `provider` naming lessWaste or bambufy, `enabled`
+     * mirroring `variable_backup` including its genuine Unknown.
+     *
+     * Deliberately **read-only** rather than editable: `backup` is never written
+     * today, and `write_ifs_var()` rides the same `_IFS_VARS` unknown-command
+     * latch that has already been seen to drop out from under us mid-session -
+     * an editable toggle would silently stop working with no way to tell.
+     *
+     * get_endless_spool_config() is deliberately NOT overridden either: the
+     * firmware computes the match at runout time (find_backup_slot_locked) and
+     * stores no per-slot relation, so the base's empty relation is the honest
+     * answer. is_endless_spool_backup_eligible() is where the rule is exposed.
+     *
+     * @note Takes `mutex_`; callers must NOT hold it.
+     */
+    [[nodiscard]] helix::printer::EndlessSpoolCapabilities
+    get_endless_spool_capabilities() const override;
+
+    /**
+     * @brief The AD5X switchover rule, not the generic material-compatibility one.
+     *
+     * Exact material AND exact colour AND the port reporting filament present -
+     * the same three conditions find_backup_slot_locked() applies, sharing one
+     * implementation so the advertised rule and the enforced rule cannot drift.
+     *
+     * @note Takes `mutex_`; callers must NOT hold it.
+     */
+    [[nodiscard]] bool is_endless_spool_backup_eligible(int slot_index,
+                                                        int backup_slot) const override;
+
   protected:
     /// The recovery buttons for whichever fault is currently latched.
     ///
@@ -744,6 +789,12 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     /// promises, and promising more than the plugin delivers is the #1247
     /// misexpectation. Caller must hold mutex_.
     [[nodiscard]] int find_backup_slot_locked(int runout_slot) const;
+
+    /// The single-pair form of find_backup_slot_locked()'s rule: could
+    /// @p candidate stand in for @p slot? Both that scan and the public
+    /// is_endless_spool_backup_eligible() run through here, so what the UI would
+    /// offer and what the firmware would pick cannot diverge. Caller holds mutex_.
+    [[nodiscard]] bool backup_eligible_locked(int slot, int candidate) const;
 
     /// How long the toolhead must read authoritatively empty, while paused and
     /// idle, before the fault is raised. Longer when a plugin with backup

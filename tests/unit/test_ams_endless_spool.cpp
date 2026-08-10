@@ -2,225 +2,382 @@
 
 /**
  * @file test_ams_endless_spool.cpp
- * @brief TDD tests for unified endless spool abstraction
+ * @brief The shared endless-spool abstraction: types, projection, base-class
+ *        validation/reset, per-backend capability states and eligibility.
  *
- * Tests for Phase 0: Unified Endless Spool Abstraction
- * - EndlessSpoolCapabilities struct
- * - EndlessSpoolConfig struct
- * - get_endless_spool_capabilities() virtual method
- * - get_endless_spool_config() virtual method
- * - set_endless_spool_backup() virtual method
- * - Backend-specific implementations (AFC, Happy Hare, Mock)
+ * The pure model (helix::printer::EndlessSpool*) is tested without any backend;
+ * the backend sections then pin the ONE capability state each backend reports and
+ * the ONE place its guards now live (AmsBackend::set_endless_spool_backup).
  */
 
+#include "ams_backend_afc.h"
+#include "ams_backend_happy_hare.h"
 #include "ams_backend_mock.h"
 #include "ams_types.h"
+#include "filament_database.h"
 
 #include <algorithm>
 
 #include "../catch_amalgamated.hpp"
 
-// Uncomment these as implementations are added:
-#include "ams_backend_afc.h"
-#include "ams_backend_happy_hare.h"
-
 using namespace helix;
 using namespace helix::printer;
 
 // =============================================================================
-// Type Tests - EndlessSpoolCapabilities and EndlessSpoolConfig
+// Capability type - the three axes must be independently expressible
 // =============================================================================
 
-TEST_CASE("EndlessSpoolCapabilities struct exists and has required fields",
+TEST_CASE("EndlessSpoolCapabilities separates availability, enablement and editability",
           "[ams][endless_spool][types]") {
-    SECTION("default construction") {
+    SECTION("default construction is 'no such feature'") {
         EndlessSpoolCapabilities caps;
 
-        // Default should be not supported
-        CHECK(caps.supported == false);
-        CHECK(caps.editable == false);
-        CHECK(caps.description.empty());
+        CHECK(caps.availability == EndlessSpoolAvailability::Unsupported);
+        CHECK(caps.enabled == EndlessSpoolEnabled::Unknown);
+        CHECK(caps.editability == EndlessSpoolEditability::ReadOnly);
+        CHECK(caps.restriction == EndlessSpoolRestriction::None);
+        CHECK(caps.provider.empty());
+        CHECK_FALSE(caps.available());
+        CHECK_FALSE(caps.editable());
     }
 
-    SECTION("can construct with values") {
-        EndlessSpoolCapabilities caps{true, true, "Per-slot backup"};
+    SECTION("available-but-off is distinguishable from available-and-on") {
+        // The state CFS could not express: the old struct hardcoded
+        // supported=true and buried on/off in a free-text description.
+        EndlessSpoolCapabilities off{.availability = EndlessSpoolAvailability::Available,
+                                     .enabled = EndlessSpoolEnabled::Off,
+                                     .editability = EndlessSpoolEditability::ReadOnly,
+                                     .restriction = EndlessSpoolRestriction::FirmwareManaged};
+        EndlessSpoolCapabilities on = off;
+        on.enabled = EndlessSpoolEnabled::On;
 
-        CHECK(caps.supported == true);
-        CHECK(caps.editable == true);
-        CHECK(caps.description == "Per-slot backup");
+        CHECK(off.available());
+        CHECK(on.available());
+        CHECK(off.enabled != on.enabled);
     }
 
-    SECTION("read-only capabilities") {
-        EndlessSpoolCapabilities caps{true, false, "Group-based"};
+    SECTION("unknown enablement is not off") {
+        EndlessSpoolCapabilities caps{.availability = EndlessSpoolAvailability::Available,
+                                      .enabled = EndlessSpoolEnabled::Unknown};
+        CHECK(caps.enabled != EndlessSpoolEnabled::Off);
+        CHECK(static_cast<int>(EndlessSpoolEnabled::Unknown) < 0);
+    }
 
-        CHECK(caps.supported == true);
-        CHECK(caps.editable == false);
-        CHECK(caps.description == "Group-based");
+    SECTION("requires-plugin is available()==false but not Unsupported") {
+        EndlessSpoolCapabilities caps{.availability = EndlessSpoolAvailability::RequiresPlugin,
+                                      .enabled = EndlessSpoolEnabled::Off,
+                                      .editability = EndlessSpoolEditability::ReadOnly,
+                                      .restriction = EndlessSpoolRestriction::PluginMissing};
+        CHECK_FALSE(caps.available());
+        CHECK(caps.availability != EndlessSpoolAvailability::Unsupported);
+    }
+
+    SECTION("editable() requires both availability and a writable shape") {
+        EndlessSpoolCapabilities per_slot{.availability = EndlessSpoolAvailability::Available,
+                                          .enabled = EndlessSpoolEnabled::On,
+                                          .editability = EndlessSpoolEditability::PerSlot};
+        CHECK(per_slot.editable());
+
+        EndlessSpoolCapabilities group = per_slot;
+        group.editability = EndlessSpoolEditability::Group;
+        CHECK(group.editable());
+
+        // Editable shape but the feature is not there: still not editable.
+        EndlessSpoolCapabilities absent = per_slot;
+        absent.availability = EndlessSpoolAvailability::RequiresPlugin;
+        CHECK_FALSE(absent.editable());
     }
 }
 
-TEST_CASE("EndlessSpoolConfig struct exists and has required fields",
-          "[ams][endless_spool][types]") {
-    SECTION("default construction") {
-        EndlessSpoolConfig config;
+TEST_CASE("Every restriction reason yields display text", "[ams][endless_spool][types][i18n]") {
+    // No raw English may live in the capability struct; the reason is an enum and
+    // this function is the single translation point. A missing case here would
+    // ship a blank explanation to the user.
+    for (auto restriction :
+         {EndlessSpoolRestriction::MultiUnit, EndlessSpoolRestriction::FirmwareManaged,
+          EndlessSpoolRestriction::NotReady, EndlessSpoolRestriction::PluginMissing,
+          EndlessSpoolRestriction::PluginReadOnly}) {
+        CHECK_FALSE(endless_spool_restriction_text(restriction).empty());
+    }
+    CHECK(endless_spool_restriction_text(EndlessSpoolRestriction::None).empty());
+}
 
-        CHECK(config.slot_index == 0);
-        CHECK(config.backup_slot == -1); // -1 = no backup
+// =============================================================================
+// Group model + the single group-to-edge projection
+// =============================================================================
+
+TEST_CASE("Endless spool config models groups, not single successors",
+          "[ams][endless_spool][types][projection]") {
+    SECTION("directed edges become ordered two-member groups") {
+        // AFC's shape: lane 0 -> lane 2, lane 1 has none, lane 3 -> lane 0.
+        auto cfg = endless_spool_config_from_edges({2, -1, -1, 0});
+
+        REQUIRE(cfg.groups.size() == 2);
+        CHECK(cfg.groups[0].ordered);
+        CHECK(cfg.groups[0].members == std::vector<int>{0, 2});
+        CHECK(cfg.groups[1].members == std::vector<int>{3, 0});
     }
 
-    SECTION("can construct with values") {
-        EndlessSpoolConfig config{2, 5};
-
-        CHECK(config.slot_index == 2);
-        CHECK(config.backup_slot == 5);
+    SECTION("a self-edge is not a group") {
+        auto cfg = endless_spool_config_from_edges({0, -1});
+        CHECK(cfg.empty());
     }
 
-    SECTION("no backup configured") {
-        EndlessSpoolConfig config{0, -1};
+    SECTION("two lanes pointing at the same backup stay two groups") {
+        // AFC permits 0->2 and 1->2. An 'ordered chain' model would lose one.
+        auto cfg = endless_spool_config_from_edges({2, 2, -1});
+        REQUIRE(cfg.groups.size() == 2);
+        auto edges = endless_spool_backup_edges(cfg, 3);
+        CHECK(edges == std::vector<int>{2, 2, -1});
+    }
 
-        CHECK(config.slot_index == 0);
-        CHECK(config.backup_slot == -1);
+    SECTION("group ids become one unordered group each") {
+        // Happy Hare's shape: gates 0,1 in group 0; gates 2,3 in group 1.
+        auto cfg = endless_spool_config_from_groups({0, 0, 1, 1});
+
+        REQUIRE(cfg.groups.size() == 2);
+        CHECK_FALSE(cfg.groups[0].ordered);
+        CHECK(cfg.groups[0].id == 0);
+        CHECK(cfg.groups[0].members == std::vector<int>{0, 1});
+        CHECK(cfg.groups[1].id == 1);
+        CHECK(cfg.groups[1].members == std::vector<int>{2, 3});
+    }
+
+    SECTION("a group of one is dropped - it backs nothing up") {
+        // This is the shape Happy Hare hands us for an ungrouped MMU: every gate
+        // gets its own standalone id.
+        auto cfg = endless_spool_config_from_groups({0, 1, 2, 3});
+        CHECK(cfg.empty());
+        CHECK(endless_spool_backup_edges(cfg, 4) == std::vector<int>{-1, -1, -1, -1});
+    }
+
+    SECTION("ungrouped gates (-1) are excluded") {
+        auto cfg = endless_spool_config_from_groups({-1, -1, 5, 5});
+        REQUIRE(cfg.groups.size() == 1);
+        CHECK(cfg.groups[0].members == std::vector<int>{2, 3});
+        CHECK(endless_spool_backup_edges(cfg, 4) == std::vector<int>{-1, -1, 3, 2});
+    }
+
+    SECTION("a 3+ member group survives as ONE group") {
+        // The whole point of decision (a): a 4-gate Happy Hare group must not be
+        // stored as four arbitrary arrows. It is one group; the arrows are a
+        // projection of it.
+        auto cfg = endless_spool_config_from_groups({7, 7, 7, 7});
+
+        REQUIRE(cfg.groups.size() == 1);
+        CHECK(cfg.groups[0].members == std::vector<int>{0, 1, 2, 3});
+
+        // Projection: every member falls back to the first OTHER member, which is
+        // exactly what the old in-backend "use first match" loop produced.
+        CHECK(endless_spool_backup_edges(cfg, 4) == std::vector<int>{1, 0, 0, 0});
+        CHECK(endless_spool_backup_for(cfg, 0) == 1);
+        CHECK(endless_spool_backup_for(cfg, 3) == 0);
+    }
+
+    SECTION("a 3-member ordered group projects as a chain, tail terminates") {
+        EndlessSpoolConfig cfg;
+        cfg.groups.push_back({.id = -1, .members = {0, 1, 2}, .ordered = true});
+
+        CHECK(endless_spool_backup_edges(cfg, 3) == std::vector<int>{1, 2, -1});
+        CHECK(endless_spool_backup_for(cfg, 0) == 1);
+        CHECK(endless_spool_backup_for(cfg, 1) == 2);
+        CHECK(endless_spool_backup_for(cfg, 2) == -1);
+    }
+
+    SECTION("backup_for and backup_edges never disagree") {
+        // Both entry points, one rule. Includes an overlapping-ordered-group case
+        // (slot 1 is a tail in one group and a head in another).
+        EndlessSpoolConfig cfg;
+        cfg.groups.push_back({.id = -1, .members = {0, 1}, .ordered = true});
+        cfg.groups.push_back({.id = -1, .members = {1, 2}, .ordered = true});
+        cfg.groups.push_back({.id = 9, .members = {3, 4, 5}, .ordered = false});
+
+        const auto edges = endless_spool_backup_edges(cfg, 6);
+        for (int slot = 0; slot < 6; ++slot) {
+            CHECK(edges[static_cast<size_t>(slot)] == endless_spool_backup_for(cfg, slot));
+        }
+        CHECK(edges == std::vector<int>{1, 2, -1, 4, 3, 3});
+    }
+
+    SECTION("out-of-range members are ignored, not written out of bounds") {
+        EndlessSpoolConfig cfg;
+        cfg.groups.push_back({.id = -1, .members = {9, 10}, .ordered = true});
+        CHECK(endless_spool_backup_edges(cfg, 2) == std::vector<int>{-1, -1});
+        CHECK(endless_spool_backup_for(cfg, -1) == -1);
+        CHECK(endless_spool_backup_edges(cfg, 0).empty());
     }
 }
 
 // =============================================================================
-// Base Class Interface Tests
+// Base class: one set of guards, one reset loop, one eligibility default
 // =============================================================================
 
-TEST_CASE("AmsBackend base class has endless spool virtual methods",
-          "[ams][endless_spool][interface]") {
-    // This test verifies the interface exists by using the mock
+TEST_CASE("Base class owns endless spool validation", "[ams][endless_spool][interface]") {
     AmsBackendMock backend(4);
     backend.set_operation_delay(0);
     REQUIRE(backend.start());
 
-    SECTION("get_endless_spool_capabilities returns valid struct") {
+    SECTION("mock defaults to available, on, per-slot editable") {
         auto caps = backend.get_endless_spool_capabilities();
 
-        // Mock should return supported=true, editable=true by default
-        CHECK(caps.supported == true);
-        CHECK(caps.editable == true);
+        CHECK(caps.availability == EndlessSpoolAvailability::Available);
+        CHECK(caps.enabled == EndlessSpoolEnabled::On);
+        CHECK(caps.editability == EndlessSpoolEditability::PerSlot);
+        CHECK(caps.editable());
     }
 
-    SECTION("get_endless_spool_config returns vector of configs") {
-        auto configs = backend.get_endless_spool_config();
+    SECTION("a successful write yields a relation") {
+        auto result = backend.set_endless_spool_backup(0, 2);
+        REQUIRE(result);
+        CHECK(result.technical_msg.empty());
 
-        // Mock with 4 slots should return 4 configs
-        REQUIRE(configs.size() == 4);
+        auto cfg = backend.get_endless_spool_config();
+        CHECK(endless_spool_backup_for(cfg, 0) == 2);
+        CHECK(endless_spool_backup_for(cfg, 1) == -1);
+    }
 
-        // Each config should have correct slot index
-        for (size_t i = 0; i < configs.size(); ++i) {
-            CHECK(configs[i].slot_index == static_cast<int>(i));
+    SECTION("rejection 1 of 3: source slot out of range") {
+        for (int bad : {99, -1, -2}) {
+            auto result = backend.set_endless_spool_backup(bad, 2);
+            CHECK_FALSE(result);
+            CHECK(result.result == AmsResult::INVALID_SLOT);
         }
     }
 
-    SECTION("set_endless_spool_backup returns AmsError") {
-        auto result = backend.set_endless_spool_backup(0, 2);
+    SECTION("rejection 2 of 3: backup slot out of range (but -1 is legal)") {
+        auto too_high = backend.set_endless_spool_backup(0, 99);
+        CHECK_FALSE(too_high);
+        CHECK(too_high.result == AmsResult::INVALID_SLOT);
 
-        // Mock should succeed
-        CHECK(result);
-        CHECK(result.technical_msg.empty());
+        auto negative = backend.set_endless_spool_backup(0, -2);
+        CHECK_FALSE(negative);
+        CHECK(negative.result == AmsResult::INVALID_SLOT);
+
+        CHECK(backend.set_endless_spool_backup(0, -1));
     }
 
-    backend.stop();
-}
-
-// =============================================================================
-// Mock Backend Tests
-// =============================================================================
-
-TEST_CASE("Mock backend endless spool - configurable behavior", "[ams][endless_spool][mock]") {
-    AmsBackendMock backend(4);
-    backend.set_operation_delay(0);
-    REQUIRE(backend.start());
-
-    SECTION("default capabilities are editable") {
-        auto caps = backend.get_endless_spool_capabilities();
-
-        CHECK(caps.supported == true);
-        CHECK(caps.editable == true);
-        CHECK_FALSE(caps.description.empty());
+    SECTION("rejection 3 of 3: a slot cannot back itself up") {
+        auto result = backend.set_endless_spool_backup(2, 2);
+        CHECK_FALSE(result);
+        CHECK(result.result == AmsResult::INVALID_SLOT);
+        // One wording, from AmsBackend - three backends used to phrase this
+        // three different ways.
+        CHECK(result.technical_msg.find("its own endless spool backup") != std::string::npos);
     }
 
-    SECTION("can configure as read-only (Happy Hare mode)") {
+    SECTION("the hook is never reached for a rejected write") {
+        REQUIRE(backend.set_endless_spool_backup(1, 3));
+        REQUIRE_FALSE(backend.set_endless_spool_backup(1, 1));
+        // Still the accepted value: a rejected write must not mutate anything.
+        CHECK(endless_spool_backup_for(backend.get_endless_spool_config(), 1) == 3);
+    }
+
+    SECTION("read-only backends are refused with the restriction reason") {
         backend.set_endless_spool_editable(false);
-
         auto caps = backend.get_endless_spool_capabilities();
-        CHECK(caps.supported == true);
-        CHECK(caps.editable == false);
+        REQUIRE(caps.available());
+        REQUIRE_FALSE(caps.editable());
+
+        auto result = backend.set_endless_spool_backup(0, 2);
+        CHECK_FALSE(result);
+        CHECK(result.result == AmsResult::NOT_SUPPORTED);
+        CHECK(result.user_msg == endless_spool_restriction_text(caps.restriction));
     }
 
-    SECTION("can disable endless spool support entirely") {
+    SECTION("unavailable backends are refused") {
         backend.set_endless_spool_supported(false);
-
         auto caps = backend.get_endless_spool_capabilities();
-        CHECK(caps.supported == false);
-        CHECK(caps.editable == false);
-    }
-
-    SECTION("set_endless_spool_backup updates config") {
-        auto result = backend.set_endless_spool_backup(0, 2);
-        REQUIRE(result);
-
-        auto configs = backend.get_endless_spool_config();
-        REQUIRE(configs.size() >= 1);
-        CHECK(configs[0].backup_slot == 2);
-    }
-
-    SECTION("set_endless_spool_backup with -1 removes backup") {
-        // First set a backup
-        backend.set_endless_spool_backup(0, 2);
-
-        // Then remove it
-        auto result = backend.set_endless_spool_backup(0, -1);
-        REQUIRE(result);
-
-        auto configs = backend.get_endless_spool_config();
-        CHECK(configs[0].backup_slot == -1);
-    }
-
-    SECTION("set_endless_spool_backup returns error when read-only") {
-        backend.set_endless_spool_editable(false);
+        CHECK(caps.availability == EndlessSpoolAvailability::Unsupported);
+        CHECK_FALSE(caps.editable());
 
         auto result = backend.set_endless_spool_backup(0, 2);
-
         CHECK_FALSE(result);
         CHECK(result.result == AmsResult::NOT_SUPPORTED);
     }
 
-    SECTION("set_endless_spool_backup validates slot indices") {
-        // Invalid source slot (too high)
-        auto result1 = backend.set_endless_spool_backup(99, 2);
-        CHECK_FALSE(result1);
-        CHECK(result1.result == AmsResult::INVALID_SLOT);
+    backend.stop();
+}
 
-        // Invalid backup slot (too high, but -1 is valid for "no backup")
-        auto result2 = backend.set_endless_spool_backup(0, 99);
-        CHECK_FALSE(result2);
-        CHECK(result2.result == AmsResult::INVALID_SLOT);
+TEST_CASE("Base reset loop clears every slot", "[ams][endless_spool][interface]") {
+    AmsBackendMock backend(4);
+    backend.set_operation_delay(0);
+    REQUIRE(backend.start());
 
-        // Negative source slot (invalid)
-        auto result3 = backend.set_endless_spool_backup(-1, 2);
-        CHECK_FALSE(result3);
-        CHECK(result3.result == AmsResult::INVALID_SLOT);
+    SECTION("clears all backups") {
+        REQUIRE(backend.set_endless_spool_backup(0, 1));
+        REQUIRE(backend.set_endless_spool_backup(2, 3));
+        REQUIRE_FALSE(backend.get_endless_spool_config().empty());
 
-        // Negative backup slot other than -1 (invalid)
-        auto result4 = backend.set_endless_spool_backup(0, -2);
-        CHECK_FALSE(result4);
-        CHECK(result4.result == AmsResult::INVALID_SLOT);
+        // The mock never implemented reset and used to return NOT_SUPPORTED
+        // while advertising editable=true. It inherits a working one now.
+        auto result = backend.reset_endless_spool();
+        CHECK(result);
+        CHECK(backend.get_endless_spool_config().empty());
+    }
+
+    SECTION("read-only backends refuse reset instead of half-clearing") {
+        REQUIRE(backend.set_endless_spool_backup(0, 1));
+        backend.set_endless_spool_editable(false);
+
+        auto result = backend.reset_endless_spool();
+        CHECK_FALSE(result);
+        CHECK(result.result == AmsResult::NOT_SUPPORTED);
+        // Nothing was cleared.
+        CHECK(endless_spool_backup_for(backend.get_endless_spool_config(), 0) == 1);
+    }
+
+    SECTION("unavailable backends refuse reset") {
+        backend.set_endless_spool_supported(false);
+        auto result = backend.reset_endless_spool();
+        CHECK_FALSE(result);
+        CHECK(result.result == AmsResult::NOT_SUPPORTED);
+    }
+
+    backend.stop();
+}
+
+TEST_CASE("Default backup eligibility is material compatibility",
+          "[ams][endless_spool][eligibility]") {
+    AmsBackendMock backend(4);
+    backend.set_operation_delay(0);
+    REQUIRE(backend.start());
+
+    // The mock's default slots carry materials; find a same-material pair and a
+    // cross-material pair from what the backend actually reports rather than
+    // hardcoding the fixture's data.
+    const std::string m0 = backend.get_slot_info(0).material;
+    REQUIRE_FALSE(m0.empty());
+
+    SECTION("a slot is never its own backup, whatever the material") {
+        CHECK_FALSE(backend.is_endless_spool_backup_eligible(0, 0));
+    }
+
+    SECTION("out-of-range indices are not eligible") {
+        CHECK_FALSE(backend.is_endless_spool_backup_eligible(-1, 0));
+        CHECK_FALSE(backend.is_endless_spool_backup_eligible(0, -1));
+    }
+
+    SECTION("identical materials are eligible") {
+        // Same slot's material against a sibling we force to match by asking the
+        // compatibility helper directly, so this asserts the wiring, not the
+        // fixture's colour choices.
+        for (int other = 1; other < 4; ++other) {
+            const std::string mo = backend.get_slot_info(other).material;
+            if (mo.empty()) {
+                continue;
+            }
+            CHECK(backend.is_endless_spool_backup_eligible(0, other) ==
+                  filament::are_materials_compatible(m0, mo));
+        }
     }
 
     backend.stop();
 }
 
 // =============================================================================
-// AFC Backend Tests - DISABLED until AFC backend is implemented
+// AFC - PerSlot, always enabled, SET_RUNOUT transport
 // =============================================================================
-// These tests will be enabled when ams_backend_afc.h is implemented with
-// endless spool support. Currently marked as [.disabled] to skip.
 
-#if 1 // AFC implementation pending - enable when ready
-// Helper class to test AFC without real Moonraker connection
 class AmsBackendAfcEndlessSpoolHelper : public AmsBackendAfc {
   public:
     AmsBackendAfcEndlessSpoolHelper() : AmsBackendAfc(nullptr, nullptr) {}
@@ -254,15 +411,11 @@ class AmsBackendAfcEndlessSpoolHelper : public AmsBackendAfc {
 
     // G-code capture for verification
     std::vector<std::string> captured_gcodes;
+    AmsError gcode_result = AmsErrorHelper::success();
 
     AmsError execute_gcode(const std::string& gcode) override {
         captured_gcodes.push_back(gcode);
-        return AmsErrorHelper::success();
-    }
-
-    bool has_gcode(const std::string& expected) const {
-        return std::find(captured_gcodes.begin(), captured_gcodes.end(), expected) !=
-               captured_gcodes.end();
+        return gcode_result;
     }
 
     bool has_gcode_containing(const std::string& substring) const {
@@ -276,65 +429,76 @@ class AmsBackendAfcEndlessSpoolHelper : public AmsBackendAfc {
     }
 };
 
-TEST_CASE("AFC backend endless spool - full implementation", "[ams][endless_spool][afc]") {
+TEST_CASE("AFC endless spool - per-slot, always on", "[ams][endless_spool][afc]") {
     AmsBackendAfcEndlessSpoolHelper helper;
     helper.initialize_test_lanes(4);
 
-    SECTION("capabilities show editable=true") {
+    SECTION("capability state") {
         auto caps = helper.get_endless_spool_capabilities();
 
-        CHECK(caps.supported == true);
-        CHECK(caps.editable == true);
-        CHECK(caps.description.find("AFC") != std::string::npos);
+        CHECK(caps.availability == EndlessSpoolAvailability::Available);
+        // AFC has no on/off switch - a lane names a runout lane or it does not.
+        CHECK(caps.enabled == EndlessSpoolEnabled::On);
+        CHECK(caps.editability == EndlessSpoolEditability::PerSlot);
+        CHECK(caps.restriction == EndlessSpoolRestriction::None);
+        CHECK(caps.editable());
     }
 
-    SECTION("get_endless_spool_config returns all lanes") {
-        auto configs = helper.get_endless_spool_config();
-
-        REQUIRE(configs.size() == 4);
-        for (int i = 0; i < 4; ++i) {
-            CHECK(configs[i].slot_index == i);
-            CHECK(configs[i].backup_slot == -1); // No backup by default
-        }
+    SECTION("no lanes configured means an empty relation") {
+        CHECK(helper.get_endless_spool_config().empty());
     }
 
-    SECTION("set_endless_spool_backup sends SET_RUNOUT G-code") {
+    SECTION("set sends SET_RUNOUT and records the edge") {
         auto result = helper.set_endless_spool_backup(0, 2);
 
         REQUIRE(result);
-        // AFC command: SET_RUNOUT LANE=lane1 RUNOUT=lane3
         CHECK(helper.has_gcode_containing("SET_RUNOUT"));
         CHECK(helper.has_gcode_containing("LANE=lane1"));
         CHECK(helper.has_gcode_containing("RUNOUT=lane3"));
+        CHECK(endless_spool_backup_for(helper.get_endless_spool_config(), 0) == 2);
     }
 
-    SECTION("set_endless_spool_backup with -1 disables backup") {
+    SECTION("clearing sends RUNOUT=NONE") {
+        REQUIRE(helper.set_endless_spool_backup(0, 2));
+        helper.clear_gcodes();
+
         auto result = helper.set_endless_spool_backup(0, -1);
-
         REQUIRE(result);
-        // Should send command to disable runout for this lane
-        CHECK(helper.has_gcode_containing("SET_RUNOUT"));
-        CHECK(helper.has_gcode_containing("LANE=lane1"));
-        // Might send RUNOUT_LANE= (empty) or a specific disable command
+        CHECK(helper.has_gcode_containing("SET_RUNOUT LANE=lane1 RUNOUT=NONE"));
+        CHECK(endless_spool_backup_for(helper.get_endless_spool_config(), 0) == -1);
     }
 
-    SECTION("config updates after set_endless_spool_backup") {
-        helper.set_endless_spool_backup(1, 3);
+    SECTION("a rejected G-code leaves the registry alone") {
+        // The registry used to be written BEFORE the send, so a printer that
+        // refused the command left the UI drawing an arrow the hardware never had.
+        helper.gcode_result = AmsErrorHelper::command_failed("SET_RUNOUT", "unknown command");
 
-        auto configs = helper.get_endless_spool_config();
-        CHECK(configs[1].backup_slot == 3);
+        auto result = helper.set_endless_spool_backup(1, 3);
+        CHECK_FALSE(result);
+        CHECK(helper.get_endless_spool_config().empty());
+        CHECK(endless_spool_backup_for(helper.get_endless_spool_config(), 1) == -1);
+    }
+
+    SECTION("reset comes from the base and clears every lane") {
+        REQUIRE(helper.set_endless_spool_backup(0, 1));
+        REQUIRE(helper.set_endless_spool_backup(2, 3));
+        helper.clear_gcodes();
+
+        auto result = helper.reset_endless_spool();
+        CHECK(result);
+        CHECK(helper.get_endless_spool_config().empty());
+        // One SET_RUNOUT ... RUNOUT=NONE per lane.
+        CHECK(helper.captured_gcodes.size() == 4);
+        CHECK(std::all_of(
+            helper.captured_gcodes.begin(), helper.captured_gcodes.end(),
+            [](const std::string& gc) { return gc.find("RUNOUT=NONE") != std::string::npos; }));
     }
 }
-#endif // AFC implementation pending
 
 // =============================================================================
-// Happy Hare Backend Tests - DISABLED until Happy Hare backend is implemented
+// Happy Hare - Group editing, gated on the ENABLE bit
 // =============================================================================
-// These tests will be enabled when ams_backend_happy_hare.h is implemented with
-// endless spool support. Currently marked as [.disabled] to skip.
 
-#if 1 // Happy Hare implementation enabled
-// Helper class to test Happy Hare without real Moonraker connection
 class AmsBackendHappyHareEndlessSpoolHelper : public AmsBackendHappyHare {
   public:
     AmsBackendHappyHareEndlessSpoolHelper() : AmsBackendHappyHare(nullptr, nullptr) {}
@@ -342,6 +506,9 @@ class AmsBackendHappyHareEndlessSpoolHelper : public AmsBackendHappyHare {
     void initialize_test_gates(int count) {
         system_info_.units.clear();
         system_info_.total_slots = count;
+        // Happy Hare's endless spool must be ON for GROUPS= to be honoured; the
+        // real backend reads this from mmu.endless_spool_enabled.
+        system_info_.endless_spool_enabled = true;
 
         AmsUnit unit;
         unit.unit_index = 0;
@@ -386,91 +553,150 @@ class AmsBackendHappyHareEndlessSpoolHelper : public AmsBackendHappyHare {
         }
     }
 
+    void set_enabled(bool enabled) {
+        system_info_.endless_spool_enabled = enabled;
+    }
+
+    void add_second_unit() {
+        AmsUnit unit;
+        unit.unit_index = 1;
+        unit.name = "MMU Unit 2";
+        unit.slot_count = 4;
+        unit.first_slot_global_index = 4;
+        system_info_.units.push_back(unit);
+    }
+
     // Capture G-code instead of dispatching to a (null) Moonraker API.
     std::vector<std::string> captured_gcodes;
     AmsError execute_gcode(const std::string& gcode) override {
         captured_gcodes.push_back(gcode);
         return AmsErrorHelper::success();
     }
+    bool has_gcode(const std::string& expected) const {
+        return std::find(captured_gcodes.begin(), captured_gcodes.end(), expected) !=
+               captured_gcodes.end();
+    }
 };
 
-TEST_CASE("Happy Hare backend endless spool - editable implementation",
-          "[ams][endless_spool][happy_hare]") {
+TEST_CASE("Happy Hare endless spool - group editing", "[ams][endless_spool][happy_hare]") {
     AmsBackendHappyHareEndlessSpoolHelper helper;
     helper.initialize_test_gates(4);
 
-    SECTION("capabilities show editable=true on single-unit") {
+    SECTION("capability state on a single unit with the feature on") {
         auto caps = helper.get_endless_spool_capabilities();
 
-        CHECK(caps.supported == true);
-        CHECK(caps.editable == true); // Runtime-editable via MMU_ENDLESS_SPOOL on single-unit
-        // Check description contains "group" (case-insensitive via separate checks)
-        CHECK((caps.description.find("group") != std::string::npos ||
-               caps.description.find("Group") != std::string::npos));
+        CHECK(caps.availability == EndlessSpoolAvailability::Available);
+        CHECK(caps.enabled == EndlessSpoolEnabled::On);
+        // A write rewrites the whole gate->group array, so this is Group, not
+        // PerSlot: editing one gate can move another gate's relation.
+        CHECK(caps.editability == EndlessSpoolEditability::Group);
+        CHECK(caps.restriction == EndlessSpoolRestriction::None);
     }
 
-    SECTION("get_endless_spool_config converts groups to slot mapping") {
-        // Set up groups: slots 0,1 in group 0; slots 2,3 in group 1
+    SECTION("the ENABLE bit is reported, not silently forced") {
+        helper.set_enabled(false);
+        auto caps = helper.get_endless_spool_capabilities();
+
+        CHECK(caps.available());
+        CHECK(caps.enabled == EndlessSpoolEnabled::Off);
+        // Still Group-editable as a shape; the transport is what refuses.
+        CHECK(caps.editability == EndlessSpoolEditability::Group);
+    }
+
+    SECTION("multi-unit is read-only with the MultiUnit reason") {
+        helper.add_second_unit();
+        auto caps = helper.get_endless_spool_capabilities();
+
+        CHECK(caps.available());
+        CHECK(caps.editability == EndlessSpoolEditability::ReadOnly);
+        CHECK(caps.restriction == EndlessSpoolRestriction::MultiUnit);
+
+        auto result = helper.set_endless_spool_backup(0, 2);
+        CHECK_FALSE(result);
+        CHECK(result.result == AmsResult::NOT_SUPPORTED);
+        CHECK(helper.captured_gcodes.empty());
+    }
+
+    SECTION("groups arrive as groups, and project to the same arrows as before") {
         helper.set_endless_spool_groups({0, 0, 1, 1});
+        auto cfg = helper.get_endless_spool_config();
 
-        auto configs = helper.get_endless_spool_config();
-
-        REQUIRE(configs.size() == 4);
-
-        // Slot 0 -> backup is slot 1 (same group)
-        CHECK(configs[0].slot_index == 0);
-        CHECK(configs[0].backup_slot == 1);
-
-        // Slot 1 -> backup is slot 0 (same group)
-        CHECK(configs[1].slot_index == 1);
-        CHECK(configs[1].backup_slot == 0);
-
-        // Slot 2 -> backup is slot 3 (same group)
-        CHECK(configs[2].slot_index == 2);
-        CHECK(configs[2].backup_slot == 3);
-
-        // Slot 3 -> backup is slot 2 (same group)
-        CHECK(configs[3].slot_index == 3);
-        CHECK(configs[3].backup_slot == 2);
+        REQUIRE(cfg.groups.size() == 2);
+        CHECK(cfg.groups[0].members == std::vector<int>{0, 1});
+        CHECK(cfg.groups[1].members == std::vector<int>{2, 3});
+        CHECK(endless_spool_backup_edges(cfg, 4) == std::vector<int>{1, 0, 3, 2});
     }
 
-    SECTION("slots with group -1 have no backup") {
+    SECTION("ungrouped gates have no backup") {
         helper.set_endless_spool_groups({-1, -1, 0, 0});
-
-        auto configs = helper.get_endless_spool_config();
-
-        CHECK(configs[0].backup_slot == -1); // No group
-        CHECK(configs[1].backup_slot == -1); // No group
-        CHECK(configs[2].backup_slot == 3);  // Group 0
-        CHECK(configs[3].backup_slot == 2);  // Group 0
+        auto cfg = helper.get_endless_spool_config();
+        CHECK(endless_spool_backup_edges(cfg, 4) == std::vector<int>{-1, -1, 3, 2});
     }
 
-    SECTION("single slot in group has no backup") {
-        helper.set_endless_spool_groups({0, 1, 2, 3}); // Each slot alone in group
-
-        auto configs = helper.get_endless_spool_config();
-
-        // All should have no backup since they're alone in their groups
-        for (const auto& config : configs) {
-            CHECK(config.backup_slot == -1);
-        }
+    SECTION("a gate alone in its group has no backup") {
+        helper.set_endless_spool_groups({0, 1, 2, 3});
+        CHECK(helper.get_endless_spool_config().empty());
     }
 
-    SECTION("set_endless_spool_backup sends MMU_ENDLESS_SPOOL GROUPS") {
+    SECTION("one 4-gate group is ONE group, not four arrows in the model") {
+        helper.set_endless_spool_groups({2, 2, 2, 2});
+        auto cfg = helper.get_endless_spool_config();
+
+        REQUIRE(cfg.groups.size() == 1);
+        CHECK(cfg.groups[0].id == 2);
+        CHECK(cfg.groups[0].members.size() == 4);
+        CHECK_FALSE(cfg.groups[0].ordered);
+    }
+
+    SECTION("set sends GROUPS without ENABLE=") {
         // Gates start ungrouped -> standalone ids 0,1,2,3; joining gate 0 to gate
-        // 2's group yields 2,1,2,3. ENABLE=1 is required for HH to apply GROUPS.
+        // 2's group yields 2,1,2,3.
         auto result = helper.set_endless_spool_backup(0, 2);
 
         CHECK(result.success());
-        REQUIRE(std::find(helper.captured_gcodes.begin(), helper.captured_gcodes.end(),
-                          "MMU_ENDLESS_SPOOL ENABLE=1 QUIET=1 GROUPS=2,1,2,3") !=
-                helper.captured_gcodes.end());
+        CHECK(helper.has_gcode("MMU_ENDLESS_SPOOL QUIET=1 GROUPS=2,1,2,3"));
+        // ENABLE=1 on an edit persisted mmu_state_enable_endless_spool, turning
+        // the feature on as a side effect of setting one backup gate.
+        CHECK_FALSE(helper.has_gcode("MMU_ENDLESS_SPOOL ENABLE=1 QUIET=1 GROUPS=2,1,2,3"));
+        for (const auto& gc : helper.captured_gcodes) {
+            CHECK(gc.find("ENABLE=") == std::string::npos);
+        }
+    }
+
+    SECTION("editing while endless spool is off is refused, not silently enabled") {
+        helper.set_enabled(false);
+
+        auto result = helper.set_endless_spool_backup(0, 2);
+        CHECK_FALSE(result);
+        CHECK(result.result == AmsResult::WRONG_STATE);
+        CHECK(helper.captured_gcodes.empty());
+    }
+
+    SECTION("reset keeps the firmware primitive, including its required ENABLE=1") {
+        // Required, and NOT a lasting side effect: cmd_MMU_ENDLESS_SPOOL
+        // early-returns before honouring RESET while disabled, and
+        // _reset_endless_spool() then persists default_endless_spool_enabled over
+        // the momentary enable.
+        auto result = helper.reset_endless_spool();
+        CHECK(result);
+        CHECK(helper.has_gcode("MMU_ENDLESS_SPOOL ENABLE=1 RESET=1 QUIET=1"));
+        CHECK(helper.captured_gcodes.size() == 1);
+    }
+
+    SECTION("uninitialised registry is NotReady, not editable") {
+        AmsBackendHappyHareEndlessSpoolHelper fresh;
+        auto caps = fresh.get_endless_spool_capabilities();
+
+        CHECK(caps.available());
+        CHECK(caps.editability == EndlessSpoolEditability::ReadOnly);
+        CHECK(caps.restriction == EndlessSpoolRestriction::NotReady);
+        CHECK(caps.enabled == EndlessSpoolEnabled::Unknown);
+        CHECK(fresh.get_endless_spool_config().empty());
     }
 }
-#endif // Happy Hare implementation enabled
 
 // =============================================================================
-// Edge Cases and Integration
+// Chains, cycles, and the retired flag
 // =============================================================================
 
 TEST_CASE("Endless spool edge cases", "[ams][endless_spool][edge]") {
@@ -478,55 +704,54 @@ TEST_CASE("Endless spool edge cases", "[ams][endless_spool][edge]") {
     backend.set_operation_delay(0);
     REQUIRE(backend.start());
 
-    SECTION("cannot set slot as its own backup") {
-        auto result = backend.set_endless_spool_backup(0, 0);
-
-        CHECK_FALSE(result);
-        CHECK(result.result == AmsResult::INVALID_SLOT);
-    }
-
     SECTION("circular backup is allowed (A->B, B->A)") {
-        auto result1 = backend.set_endless_spool_backup(0, 1);
-        auto result2 = backend.set_endless_spool_backup(1, 0);
+        CHECK(backend.set_endless_spool_backup(0, 1));
+        CHECK(backend.set_endless_spool_backup(1, 0));
 
-        CHECK(result1);
-        CHECK(result2);
-
-        auto configs = backend.get_endless_spool_config();
-        CHECK(configs[0].backup_slot == 1);
-        CHECK(configs[1].backup_slot == 0);
+        auto cfg = backend.get_endless_spool_config();
+        CHECK(endless_spool_backup_for(cfg, 0) == 1);
+        CHECK(endless_spool_backup_for(cfg, 1) == 0);
     }
 
     SECTION("chain backup is allowed (A->B->C)") {
         backend.set_endless_spool_backup(0, 1);
         backend.set_endless_spool_backup(1, 2);
 
-        auto configs = backend.get_endless_spool_config();
-        CHECK(configs[0].backup_slot == 1);
-        CHECK(configs[1].backup_slot == 2);
-        CHECK(configs[2].backup_slot == -1);
+        auto cfg = backend.get_endless_spool_config();
+        CHECK(endless_spool_backup_for(cfg, 0) == 1);
+        CHECK(endless_spool_backup_for(cfg, 1) == 2);
+        CHECK(endless_spool_backup_for(cfg, 2) == -1);
     }
 
     backend.stop();
 }
 
-TEST_CASE("Endless spool with system_info integration", "[ams][endless_spool][integration]") {
+TEST_CASE("Availability has exactly one source of truth",
+          "[ams][endless_spool][integration][1250]") {
     AmsBackendMock backend(4);
     backend.set_operation_delay(0);
     REQUIRE(backend.start());
 
-    SECTION("system_info.supports_endless_spool reflects capabilities") {
-        auto caps = backend.get_endless_spool_capabilities();
+    SECTION("AmsSystemInfo carries the ENABLE bit only, and caps derive from it") {
+        // AmsSystemInfo::supports_endless_spool used to answer the availability
+        // question a second time and could disagree with the capabilities. There
+        // is no such field any more; what remains is the enable bit, and
+        // get_endless_spool_capabilities() reads it rather than answering itself.
         auto info = backend.get_system_info();
+        auto caps = backend.get_endless_spool_capabilities();
 
-        CHECK(info.supports_endless_spool == caps.supported);
+        CHECK((caps.enabled == EndlessSpoolEnabled::On) == info.endless_spool_enabled);
     }
 
-    SECTION("disabling support updates system_info") {
+    SECTION("turning support off cannot leave a stale 'available' anywhere") {
         backend.set_endless_spool_supported(false);
 
         auto info = backend.get_system_info();
-        CHECK(info.supports_endless_spool == false);
+        auto caps = backend.get_endless_spool_capabilities();
+
+        CHECK_FALSE(caps.available());
+        CHECK_FALSE(info.endless_spool_enabled);
+        CHECK((caps.enabled == EndlessSpoolEnabled::On) == info.endless_spool_enabled);
     }
 
     backend.stop();

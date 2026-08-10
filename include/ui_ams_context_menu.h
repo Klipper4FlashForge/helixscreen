@@ -192,6 +192,21 @@ class AmsContextMenu : public ContextMenu {
     // write at the previous spool. An empty lane's stale metadata is cosmetic.
     static bool should_show_clear_spool(const SlotInfo& slot);
 
+    // Pure: should the endless-spool backup row be shown at all?
+    //
+    // Availability alone is not enough. A read-only backend still earns the row
+    // (greyed out) so the user can SEE the backup the firmware is using - but
+    // only when the backend actually reports a per-slot relation to show. CFS is
+    // available and read-only with no per-slot mapping whatsoever (the box picks
+    // the refill spool from its own material groups), and it used to reach here
+    // with an empty config: the dropdown then read "None" forever, which is
+    // indistinguishable from "no backup configured".
+    //
+    // @param caps         The backend's capabilities.
+    // @param has_relation Whether get_endless_spool_config() reported anything.
+    static bool decide_show_backup_row(const helix::printer::EndlessSpoolCapabilities& caps,
+                                       bool has_relation);
+
     // Pure: selects the Unload button's operation for the open slot.
     //
     // Order encodes a deliberate priority ruling (see call site in on_created()):

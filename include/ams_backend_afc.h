@@ -362,34 +362,25 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /**
      * @brief Get endless spool capabilities for AFC
      *
-     * AFC supports per-slot backup configuration via SET_RUNOUT G-code.
+     * Available, always enabled (AFC has no on/off switch - a lane either names
+     * a runout lane or it does not), and PerSlot editable via `SET_RUNOUT`.
      *
-     * @return Capabilities with supported=true, editable=true
+     * @note Holds no lock: every field is a constant for this backend.
      */
     [[nodiscard]] helix::printer::EndlessSpoolCapabilities
     get_endless_spool_capabilities() const override;
 
     /**
-     * @brief Get endless spool configuration for all lanes
+     * @brief Get the endless spool relation for all lanes
      *
-     * Returns the backup slot configuration for each lane.
+     * AFC's `runout_lane` is a directed lane->lane edge held in the
+     * SlotRegistry, so this is `endless_spool_config_from_edges()` over
+     * `slots_.backup_edges()` - one ordered two-member group per configured
+     * lane.
      *
-     * @return Vector of configs, one per lane
+     * @note Takes `mutex_`; callers must NOT hold it.
      */
-    [[nodiscard]] std::vector<helix::printer::EndlessSpoolConfig>
-    get_endless_spool_config() const override;
-
-    /**
-     * @brief Set backup slot for endless spool
-     *
-     * Sends SET_RUNOUT G-code to configure which lane will be used as backup
-     * when the specified lane runs out of filament.
-     *
-     * @param slot_index Source lane (0 to slots_.slot_count()-1)
-     * @param backup_slot Backup lane (-1 to disable)
-     * @return AmsError with result
-     */
-    AmsError set_endless_spool_backup(int slot_index, int backup_slot) override;
+    [[nodiscard]] helix::printer::EndlessSpoolConfig get_endless_spool_config() const override;
 
     /**
      * @brief Reset all tool mappings to defaults
@@ -400,16 +391,6 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
      * @return AmsError with result
      */
     AmsError reset_tool_mappings() override;
-
-    /**
-     * @brief Reset all endless spool backup mappings
-     *
-     * Iterates through all lanes and sets each backup to -1 (disabled)
-     * via SET_RUNOUT G-code commands.
-     *
-     * @return AmsError with result
-     */
-    AmsError reset_endless_spool() override;
 
     // Tool Mapping support
     /**
@@ -481,6 +462,20 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
                                    const std::any& value = {}) override;
 
   protected:
+    /**
+     * @brief Transport for one endless-spool edge: `SET_RUNOUT LANE=x RUNOUT=y`.
+     *
+     * Ranges, self-backup and editability are already settled by
+     * AmsBackend::set_endless_spool_backup(). This resolves the two lane names,
+     * screens them for G-code injection, sends, and only then mirrors the edge
+     * into the SlotRegistry - the old order updated the registry first, so a
+     * rejected write left the registry claiming a backup the printer never got.
+     *
+     * @note Takes `mutex_` twice (name lookup, then the post-send mirror) and
+     *       holds it across neither the injection check nor the G-code send.
+     */
+    AmsError apply_endless_spool_backup(int slot_index, int backup_slot) override;
+
     // Allow test helper access to private members
     friend class AmsBackendAfcTestHelper;
     friend class AfcPerSlotLoadedHelper;

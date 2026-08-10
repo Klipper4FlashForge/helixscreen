@@ -144,7 +144,10 @@ AmsBackendAd5xIfs::AmsBackendAd5xIfs(MoonrakerAPI* api, helix::MoonrakerClient* 
     system_info_.total_slots = NUM_PORTS;
     system_info_.supports_bypass = true;
     system_info_.supports_tool_mapping = true;
-    system_info_.supports_endless_spool = false;
+    // The ENABLE bit only; AVAILABILITY comes from
+    // get_endless_spool_capabilities(), which reads the _IFS_VARS latch. False
+    // until a plugin's variable_backup is actually seen.
+    system_info_.endless_spool_enabled = false;
     system_info_.supports_purge = false;
 }
 
@@ -1408,7 +1411,7 @@ AmsSystemInfo AmsBackendAd5xIfs::get_system_info() const {
     info.operation_indeterminate = system_info_.operation_indeterminate;
     info.supports_bypass = system_info_.supports_bypass;
     info.supports_tool_mapping = system_info_.supports_tool_mapping;
-    info.supports_endless_spool = system_info_.supports_endless_spool;
+    info.endless_spool_enabled = system_info_.endless_spool_enabled;
     info.supports_purge = system_info_.supports_purge;
 
     // Replace registry's tool map with IFS-specific 16-entry mapping
@@ -2145,6 +2148,10 @@ bool AmsBackendAd5xIfs::parse_ifs_vars_macro_locked(const json& macro_status) {
         return false;
     }
     ifs_backup_variable_ = parsed;
+    // Mirror into the snapshot so get_system_info() agrees with the capabilities.
+    // ifs_backup_variable_ stays the source of truth - it can be nullopt, which
+    // the bool cannot express and which caps.enabled reports as Unknown.
+    system_info_.endless_spool_enabled = *parsed;
     spdlog::info("{} _IFS_VARS variable_backup = {} (automatic backup-spool switching on runout)",
                  backend_log_tag(), *parsed ? "on" : "off");
     return true;
@@ -3816,6 +3823,7 @@ void AmsBackendAd5xIfs::recheck_ifs_vars_macro() {
                                 // variable_backup would be a claim about software that is
                                 // no longer installed.
                                 ifs_backup_variable_.reset();
+                                system_info_.endless_spool_enabled = false;
                             }
                         });
         });
@@ -5364,41 +5372,67 @@ void AmsBackendAd5xIfs::clear_runout_locked(const char* why) {
     }
 }
 
-int AmsBackendAd5xIfs::find_backup_slot_locked(int runout_slot) const {
-    if (runout_slot < 0 || runout_slot >= NUM_PORTS) {
-        return -1;
+bool AmsBackendAd5xIfs::backup_eligible_locked(int slot, int candidate) const {
+    if (slot < 0 || slot >= NUM_PORTS || candidate < 0 || candidate >= NUM_PORTS ||
+        slot == candidate) {
+        return false;
     }
-    const auto src = static_cast<size_t>(runout_slot);
+    const auto src = static_cast<size_t>(slot);
     if (materials_[src].empty() || colors_[src].empty()) {
-        return -1; // Nothing to match against; claim nothing.
+        return false; // Nothing to match against; claim nothing.
     }
     const auto lower = [](std::string s) {
         std::transform(s.begin(), s.end(), s.begin(),
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         return s;
     };
-    const std::string want_material = lower(materials_[src]);
-    const std::string want_color = lower(colors_[src]);
+    const auto idx = static_cast<size_t>(candidate);
+    // All three conditions, no partial credit: this is the rule the hint text
+    // states, and lessWaste's own switchover is type+colour matched. Offering
+    // a "close enough" lane would print the wrong colour.
+    return port_presence_[idx] && lower(materials_[idx]) == lower(materials_[src]) &&
+           lower(colors_[idx]) == lower(colors_[src]);
+}
+
+int AmsBackendAd5xIfs::find_backup_slot_locked(int runout_slot) const {
     for (int i = 0; i < NUM_PORTS; ++i) {
-        if (i == runout_slot) {
-            continue;
+        if (backup_eligible_locked(runout_slot, i)) {
+            return i;
         }
-        const auto idx = static_cast<size_t>(i);
-        // All three conditions, no partial credit: this is the rule the hint text
-        // states, and lessWaste's own switchover is type+colour matched. Offering
-        // a "close enough" lane would print the wrong colour.
-        if (!port_presence_[idx]) {
-            continue;
-        }
-        if (lower(materials_[idx]) != want_material) {
-            continue;
-        }
-        if (lower(colors_[idx]) != want_color) {
-            continue;
-        }
-        return i;
     }
     return -1;
+}
+
+bool AmsBackendAd5xIfs::is_endless_spool_backup_eligible(int slot_index, int backup_slot) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return backup_eligible_locked(slot_index, backup_slot);
+}
+
+helix::printer::EndlessSpoolCapabilities AmsBackendAd5xIfs::get_endless_spool_capabilities() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    using namespace helix::printer;
+
+    EndlessSpoolCapabilities caps;
+    if (!has_ifs_vars_) {
+        // Stock zMod. Not "unsupported": installing lessWaste or bambufy turns it
+        // on, and saying so is the whole point of separating these two states.
+        caps.availability = EndlessSpoolAvailability::RequiresPlugin;
+        caps.enabled = EndlessSpoolEnabled::Off;
+        caps.restriction = EndlessSpoolRestriction::PluginMissing;
+        return caps;
+    }
+
+    caps.availability = EndlessSpoolAvailability::Available;
+    caps.provider = (var_prefix_ == "bambufy") ? "bambufy" : "lessWaste";
+    // nullopt stays Unknown. Flattening it to Off would tell the user no swap
+    // will happen when we simply never read the setting.
+    caps.enabled =
+        !ifs_backup_variable_.has_value()
+            ? EndlessSpoolEnabled::Unknown
+            : (*ifs_backup_variable_ ? EndlessSpoolEnabled::On : EndlessSpoolEnabled::Off);
+    caps.editability = EndlessSpoolEditability::ReadOnly;
+    caps.restriction = EndlessSpoolRestriction::PluginReadOnly;
+    return caps;
 }
 
 std::string AmsBackendAd5xIfs::build_runout_detail_locked() const {

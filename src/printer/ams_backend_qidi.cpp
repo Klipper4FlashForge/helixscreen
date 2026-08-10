@@ -184,7 +184,6 @@ AmsBackendQidi::AmsBackendQidi(MoonrakerAPI* api, helix::MoonrakerClient* client
     system_info_.total_slots = NUM_SLOTS;
     system_info_.supports_bypass = false;
     system_info_.supports_tool_mapping = true;
-    system_info_.supports_endless_spool = false;
     system_info_.supports_purge = false;
     system_info_.tip_method = TipMethod::CUT;
 

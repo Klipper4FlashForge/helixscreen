@@ -387,6 +387,7 @@ translations:
   Cancel Print: Annuler l'impression
   Cancel macro not configured: Macro d'annulation non configurée
   Cancelled: Annulé
+  Cannot be changed from here on a multi-unit MMU: Non modifiable ici sur un MMU multi-unités
   'Cannot control timelapse: printer not connected': 'Impossible de contrôler le timelapse
     : imprimante non connectée'
   'Cannot delete file: printer not connected': 'Impossible de supprimer le fichier
@@ -536,6 +537,7 @@ translations:
   Configure timelapse recording: Configurer l'enregistrement timelapse
   Configure your printer's cooling fans: Configurer les ventilateurs de refroidissement
     de votre imprimante
+  Configured in the backup-spool package, not from here: Se configure dans le plugin de bobine de secours, pas ici
   Configuring Moonraker...: Configuration de Moonraker...
   Confirm PIN: Confirmer le code PIN
   Confirm before running macros: Confirmer avant d'exécuter les macros
@@ -1540,6 +1542,7 @@ translations:
   No USB printers found: Aucune imprimante USB trouvée
   ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
   : ''
+  No automatic backup-spool package is installed: Aucun plugin de bobine de secours automatique installé
   No buffer data available: Aucune donnée de tampon disponible
   No camera — use USB barcode scanner: Aucune caméra — utilisez un scanner de code-barres
     USB
@@ -2481,6 +2484,7 @@ translations:
   The printer lost power while printing {}. The resumed layer may not line up exactly.: L'imprimante a été mise hors tension pendant l'impression de {}. La couche reprise peut ne pas s'aligner exactement.
   The printer rejected the filament configuration. The print was not started.: L'imprimante
     a rejeté la configuration du filament. L'impression n'a pas été démarrée.
+  The printer's firmware chooses the backup spool itself: Le firmware de l'imprimante choisit lui-même la bobine de secours
   The runout sensor indicates no filament is loaded. Start print anyway?: Le capteur
     de fin de filament indique qu'aucun filament n'est chargé. Démarrer l'impression
     quand même ?
@@ -2742,6 +2746,7 @@ translations:
   Waiting for Moonraker...: En attente de Moonraker...
   Waiting for bed to reach temperature for accurate calibration.: En attente que le
     plateau atteigne la température pour une calibration précise.
+  Waiting for the filament system to report its state: En attente de l'état du système de filament
   Warm Bed: Préchauffer le plateau
   Warming Bed...: Préchauffage du plateau...
   Warn: Avertissement

@@ -379,6 +379,7 @@ translations:
   Cancel Print: Annulla stampa
   Cancel macro not configured: Macro annullamento non configurata
   Cancelled: Annullato
+  Cannot be changed from here on a multi-unit MMU: Non modificabile da qui su un MMU multi-unità
   'Cannot control timelapse: printer not connected': 'Impossibile controllare timelapse:
     stampante non connessa'
   'Cannot delete file: printer not connected': 'Impossibile eliminare file: stampante
@@ -526,6 +527,7 @@ translations:
   Configure timelapse recording: Configura registrazione timelapse
   Configure your printer's cooling fans: Configura le ventole di raffreddamento della
     stampante
+  Configured in the backup-spool package, not from here: Si configura nel plugin della bobina di riserva, non da qui
   Configuring Moonraker...: Configurazione Moonraker...
   Confirm PIN: Conferma PIN
   Confirm before running macros: Conferma prima di eseguire le macro
@@ -1523,6 +1525,7 @@ translations:
   No USB printers found: Nessuna stampante USB trovata
   ? No auto-switchover plugin (lessWaste or bambufy) is installed, so this printer will not change to a backup spool on its own.
   : ''
+  No automatic backup-spool package is installed: Nessun plugin per bobina di riserva automatica installato
   No buffer data available: Nessun dato buffer disponibile
   No camera — use USB barcode scanner: Nessuna telecamera — usa scanner USB per codici
     a barre
@@ -2448,6 +2451,7 @@ translations:
   The printer rejected the filament configuration. The print was not started.: La
     stampante ha rifiutato la configurazione del filamento. La stampa non è stata
     avviata.
+  The printer's firmware chooses the backup spool itself: Il firmware della stampante sceglie la bobina di riserva
   The runout sensor indicates no filament is loaded. Start print anyway?: Il sensore
     di esaurimento indica che nessun filamento è caricato. Avviare comunque la stampa?
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: Il
@@ -2703,6 +2707,7 @@ translations:
   Waiting for Moonraker...: In attesa di Moonraker...
   Waiting for bed to reach temperature for accurate calibration.: In attesa che il
     piano raggiunga la temperatura per una calibrazione precisa.
+  Waiting for the filament system to report its state: In attesa dello stato del sistema filamento
   Warm Bed: Preriscalda piano
   Warming Bed...: Preriscaldamento piano...
   Warn: Avviso

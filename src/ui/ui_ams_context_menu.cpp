@@ -821,20 +821,25 @@ void AmsContextMenu::configure_dropdowns() {
     // }
     (void)tool_row;
 
-    // Configure endless spool dropdown
+    // Configure endless spool dropdown — see decide_show_backup_row().
     if (backend_) {
         auto es_caps = backend_->get_endless_spool_capabilities();
-        if (es_caps.supported) {
+        const bool has_relation = !backend_->get_endless_spool_config().empty();
+        if (decide_show_backup_row(es_caps, has_relation)) {
             populate_backup_dropdown();
             if (backup_row) {
                 lv_obj_remove_flag(backup_row, LV_OBJ_FLAG_HIDDEN);
             }
             // Disable dropdown if not editable
-            if (backup_dropdown_ && !es_caps.editable) {
+            if (backup_dropdown_ && !es_caps.editable()) {
                 lv_obj_add_state(backup_dropdown_, LV_STATE_DISABLED);
             }
             show_any_dropdown = true;
-            spdlog::debug("[AmsContextMenu] Endless spool enabled (editable={})", es_caps.editable);
+            spdlog::debug("[AmsContextMenu] Endless spool row shown (editable={})",
+                          es_caps.editable());
+        } else if (es_caps.available()) {
+            spdlog::debug("[AmsContextMenu] Endless spool available but has no per-slot "
+                          "relation to show - row stays hidden");
         }
     }
 
@@ -842,6 +847,15 @@ void AmsContextMenu::configure_dropdowns() {
     if (divider && show_any_dropdown) {
         lv_obj_remove_flag(divider, LV_OBJ_FLAG_HIDDEN);
     }
+}
+
+bool AmsContextMenu::decide_show_backup_row(const helix::printer::EndlessSpoolCapabilities& caps,
+                                            bool has_relation) {
+    if (!caps.available()) {
+        return false;
+    }
+    // Editable implies there is something to write even before anything is set.
+    return caps.editable() || has_relation;
 }
 
 void AmsContextMenu::populate_tool_dropdown() {
@@ -949,13 +963,12 @@ int AmsContextMenu::get_current_backup_for_slot() const {
         return -1;
     }
 
-    auto configs = backend_->get_endless_spool_config();
-    for (const auto& config : configs) {
-        if (config.slot_index == get_item_index()) {
-            return config.backup_slot;
-        }
-    }
-    return -1; // No backup configured
+    // One shared projection for the group relation — see
+    // helix::printer::endless_spool_backup_for(). A backend with no per-slot
+    // relation at all (CFS) yields -1 here, which is why configure_dropdowns()
+    // hides the row rather than rendering a permanent "None".
+    return helix::printer::endless_spool_backup_for(backend_->get_endless_spool_config(),
+                                                    get_item_index());
 }
 
 } // namespace helix::ui
