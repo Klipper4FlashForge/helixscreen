@@ -159,6 +159,7 @@ translations:
   All axes homed: 所有轴已归位
   All fields are required: 所有字段均为必填项
   All plugins loaded successfully: 所有插件加载成功
+  Allow Home Screen Editing: ''
   Allow cold load/unload: 允许冷态加载/卸载
   Allow display to sleep during active prints: 打印时允许屏幕休眠
   Allwinner: Allwinner
@@ -1054,6 +1055,8 @@ translations:
   Hotend Heater: 热端加热器
   How Z-axis movement is displayed: Z 轴移动的显示方式
   How far filament is pushed back into the box on eject (mm): 弹出时耗材被推回料盒的距离（mm）
+  ? How long to hold before a press counts as a long-press, in ms (raise if edit mode or other long-press actions trigger by accident)
+  : ''
   How many labels to print: 打印多少张标签
   How the toolhead icon appears: 工具头图标的显示方式
   Hub: 集线器
@@ -1222,6 +1225,8 @@ translations:
   Locked during print: 打印期间锁定
   Log Level: 日志级别
   Logs: 日志
+  Long Press Time: ''
+  Long-press the home grid to rearrange widgets (turn off if it triggers by accident): ''
   Longest Disconnect: 最长断开时长
   Loosen Path A belt.: 松开路径A的皮带。
   Loosen Path B belt.: 松开路径B的皮带。

@@ -174,6 +174,7 @@ translations:
   All axes homed: Todos os eixos referenciados
   All fields are required: Todos os campos são obrigatórios
   All plugins loaded successfully: Todos os plugins carregados com sucesso
+  Allow Home Screen Editing: ''
   Allow cold load/unload: Permitir carregar/descarregar a frio
   Allow display to sleep during active prints: Permitir suspensão da tela durante
     impressões
@@ -1176,6 +1177,8 @@ translations:
   How Z-axis movement is displayed: Como o movimento do eixo Z é exibido
   How far filament is pushed back into the box on eject (mm): Quão longe o filamento
     é empurrado de volta para a caixa na ejeção (mm)
+  ? How long to hold before a press counts as a long-press, in ms (raise if edit mode or other long-press actions trigger by accident)
+  : ''
   How many labels to print: Quantas etiquetas imprimir
   How the toolhead icon appears: Como o ícone do cabeçote aparece
   Hub: Hub
@@ -1373,6 +1376,8 @@ translations:
   Locked during print: Bloqueado durante impressão
   Log Level: Nível de log
   Logs: Registros
+  Long Press Time: ''
+  Long-press the home grid to rearrange widgets (turn off if it triggers by accident): ''
   Longest Disconnect: Maior Desconexão
   Loosen Path A belt.: Afrouxar a correia do Caminho A.
   Loosen Path B belt.: Afrouxar a correia do Caminho B.
