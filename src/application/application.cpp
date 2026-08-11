@@ -3240,6 +3240,21 @@ bool Application::connect_moonraker() {
         return false;
     }
 
+    // Reconnect the WebSocket when the display wakes from sleep. The app
+    // background/foreground path (on_enter_foreground) already force-reconnects,
+    // but on Android the SDL background/foreground event pair is unreliable for
+    // the display-off/on round trip — the Activity may not get a clean
+    // onPause/onResume, so m_backgrounded never flips and the reconnect is
+    // skipped. This sleep callback closes that gap (#1245).
+    if (auto* dm = DisplayManager::instance()) {
+        dm->register_sleep_callback([this](bool sleeping) {
+            if (!sleeping && m_moonraker && m_moonraker->client()) {
+                spdlog::info("[Application] Display woke — reconnecting WebSocket");
+                m_moonraker->client()->force_reconnect();
+            }
+        });
+    }
+
     // Start auto-discovery (client handles this internally after connect)
 
     // Initialize print start collector (monitors PRINT_START macro progress)
