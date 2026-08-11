@@ -1144,11 +1144,11 @@ unit-testable (`tests/unit/test_ams_endless_spool.cpp`).
 
 The axes are independent because real backends occupy the corners. CFS is
 available-and-read-only whether auto-refill is on or off, so a single `supported` bool
-rendered both states identically. AD5X on stock zMod has the mechanism but not the package
-that implements it, which is `RequiresPlugin` and is the answer to
-[#1247](https://github.com/prestonbrown/helixscreen/issues/1247) - installing lessWaste or
-bambufy is what turns it on, and that is something the user can act on. `Unknown` is not
-`Off`: only `Off` justifies telling the user that no automatic switchover will happen.
+rendered both states identically. `RequiresPlugin` is retained in the enum for a future
+backend whose package genuinely can be missing; no backend currently uses it, since the
+AD5X stock-zMod path moved to `Available`/`FirmwareManaged` once source-read of
+`ANALOG_PRUTOK` established that switchover is always-on there. `Unknown` is not `Off`: only
+`Off` justifies telling the user that no automatic switchover will happen.
 
 Editability carries a shape, not just a yes/no, because the write shape matters to the UI: a
 `PerSlot` write touches one slot (AFC `SET_RUNOUT`), while a `Group` write can move other
@@ -1329,15 +1329,15 @@ whenever auto-refill was off.
 | AFC | `Available` | Hardcoded `On` - a lane either names a runout lane or it does not, so there is no on/off switch to read | `PerSlot` (`SET_RUNOUT LANE= RUNOUT=`) | `None` | Yes - `endless_spool_config_from_edges(slots_.backup_edges())` |
 | Happy Hare | `Available` | `mmu.endless_spool_enabled`; forced to `Unknown` before `slots_` is initialised | `Group` on a single unit, `ReadOnly` otherwise | `None`; `MultiUnit` on a multi-unit rig; `NotReady` before the registry initialises | Yes - `endless_spool_config_from_groups()` over each gate's `endless_spool_group` |
 | CFS | `Available` | `box.auto_refill` / `box.runout_swap_enabled` | `ReadOnly` | `FirmwareManaged` | **No, deliberately** - see below |
-| AD5X IFS | `RequiresPlugin` on stock zMod, `Available` once `_IFS_VARS` answers | `Off` while no plugin is installed; otherwise `variable_backup`, with a genuine `Unknown` when it was never read | `ReadOnly` | `PluginMissing` / `PluginReadOnly` | No |
+| AD5X IFS | `Available` in all three modes (stock zMod, bambufy, lessWaste) | stock zMod: always `On` (ANALOG_PRUTOK has no toggle); plugin path: `variable_backup`, with a genuine `Unknown` when it was never read | `ReadOnly` | `FirmwareManaged` on stock zMod; `PluginReadOnly` on the plugin path | No |
 | ACE, QIDI Box, Snapmaker U1, Tool Changer | `Unsupported` (base default; no override at all) | -- | `ReadOnly` | `None` | No |
 | Mock | `set_endless_spool_supported()` | `system_info_.endless_spool_enabled` | `PerSlot` when `set_endless_spool_editable(true)`, else `ReadOnly` | `FirmwareManaged` when read-only | Yes - edges from its `SlotRegistry` |
 
-CFS, and AD5X IFS once its plugin is present, report `Available` while leaving
-`get_endless_spool_config()` unoverridden. That is the truthful answer, not an omission: the
-firmware picks the backup itself and exposes no per-slot mapping to read, so the base's empty
-relation is correct, and it is what keeps the context menu from drawing a dropdown that could
-only ever read "None" (see [Context Menu Actions](#context-menu-actions)).
+CFS, and AD5X IFS in every mode (stock zMod, bambufy, lessWaste), report `Available` while
+leaving `get_endless_spool_config()` unoverridden. That is the truthful answer, not an
+omission: the firmware picks the backup itself and exposes no per-slot mapping to read, so
+the base's empty relation is correct, and it is what keeps the context menu from drawing a
+dropdown that could only ever read "None" (see [Context Menu Actions](#context-menu-actions)).
 
 ---
 
@@ -2519,13 +2519,33 @@ On a raise: `runout_active_ = true`, `system_info_.filament_runout = true`, and 
 
 #### Auto-switchover plugin visibility
 
-The `has_ifs_vars_` / `ifs_macro_confirmed_missing_` machinery already knew whether lessWaste or bambufy was installed, but only ever logged it at debug level. #1250 surfaces it, because "no plugin installed" is the answer the #1247 reporter needed: **stock zMod has no backup-spool switching at all**, so a runout stops the print until a human intervenes.
+The `has_ifs_vars_` / `ifs_macro_confirmed_missing_` machinery distinguishes stock zMod from
+the lessWaste / bambufy plugin path. #1250 surfaces it because the user needs to know which
+system will handle a runout.
+
+**All three modes have automatic slot-to-slot switchover** — verified from source
+(`zmod_ifs.py:cmd_ANALOG_PRUTOK`, `bambufy.cfg:_RUNOUT_HEAD`, `lesswaste_src.cfg:_RUNOUT_HEAD`)
+and corroborated on-device by raza616 and ninjamida. The original #1247 claim that "stock zMod
+has no backup-spool switching at all" was wrong; zmod's own user-facing name for it is
+**"Infinite Spool Mode"**.
+
+| Mode | Trigger | Enable flag | Default |
+|------|---------|-------------|---------|
+| Stock zMod (`!has_ifs_vars_`) | `head_switch_sensor` runout_gcode calls `ANALOG_PRUTOK` (`ad5x_display_off.cfg:39-44`) | none — always on | on |
+| bambufy | `_RUNOUT_HEAD` (plugin overrides the sensor's runout_gcode) | `variable_backup` (`bambufy.cfg:_IFS_VARS`) | **on** (`variable_backup: 1`) |
+| lessWaste | `_RUNOUT_HEAD` (same shape; lessWaste is a fork of bambufy V1.2.10) | `variable_backup` (`lesswaste_src.cfg:969`) | off (`variable_backup: 0`) |
+
+The match rule is identical across all three: same `ffmType` AND same `ffmColor` AND the
+candidate port's presence sensor reads filament. None of the three disables switchover in
+multicolor — a report that "bambufy doesn't support multicolor" describes the *de facto*
+outcome of multicolor prints typically loading one spool per colour (so no same-colour backup
+exists), not a code restriction.
 
 | Getter | Values |
 |--------|--------|
 | `AmsBackendAd5xIfs::get_plugin()` | `IfsPlugin::None` / `LessWaste` / `Bambufy`. `None` whenever `has_ifs_vars_` is false, so stale `less_waste_*` rows left behind by an uninstalled plugin never read as installed |
-| `AmsBackendAd5xIfs::plugin_backup_enabled()` | `std::optional<bool>` — `nullopt` means the macro dict never carried the key, which is **not** the same as off |
-| `AmsBackendAd5xIfs::backup_state_locked()` | The same reading as a tri-state, `BACKUP_UNKNOWN` (-1) / `BACKUP_OFF` (0) / `BACKUP_ON` (1). Feeds both the runout warning log and `get_endless_spool_capabilities()`' `enabled` axis, so the number in the log and the sentence on screen cannot disagree. No plugin reports OFF: there is no mechanism, which is a definite answer |
+| `AmsBackendAd5xIfs::plugin_backup_enabled()` | `std::optional<bool>` — `nullopt` means the macro dict never carried the key (or no plugin is installed), which is **not** the same as off |
+| `AmsBackendAd5xIfs::backup_state_locked()` | The live switchover state as a tri-state, `BACKUP_UNKNOWN` (-1) / `BACKUP_OFF` (0) / `BACKUP_ON` (1). Stock zMod reports `BACKUP_ON` (ANALOG_PRUTOK is always-on); the plugin path mirrors `variable_backup` with `BACKUP_UNKNOWN` when the key was never read. Feeds both the runout warning log and `get_endless_spool_capabilities()`' `enabled` axis, so the number in the log and the sentence on screen cannot disagree |
 
 **There are no AD5X-specific XML subjects.** `ams_ifs_plugin` and `ams_ifs_backup_enabled`
 existed for one release as this backend's own publication path and are gone: they never
@@ -2536,11 +2556,16 @@ into the backend-neutral `ams_endless_state` / `ams_endless_text` subjects for e
 
 **`variable_backup`.** `gcode_macro _ifs_vars`'s `get_status()` dict used to be reduced to a single "does the macro exist" bool at the `on_started()` probe and thrown away. It now flows into `parse_ifs_vars_macro_locked()`, which reads `variable_backup` (accepting the jinja int form and a bool). Note this object is **not** in the standing `objects.subscribe` set — the `on_started()` query and `recheck_ifs_vars_macro()` (fired on `notify_klippy_ready`) are the only two places it ever reaches us.
 
-Per `printers/FLASHFORGE_AD5X_SUPPORT.md` § "lessWaste-Specific Variables" and the real variable dump in `printer-research/FLASHFORGE_AD5X_IFS_ANALYSIS.md` (`variable_backup: 0`), lessWaste ships the feature but defaults it **off**, and bambufy has no backup/failover at all. **Neither has been observed on a device by us.** Nothing branches on the value except the wording and the longer confirm delay.
+Per `printers/FLASHFORGE_AD5X_SUPPORT.md` § "lessWaste-Specific Variables" and the source
+variable dumps in `printer-research/FLASHFORGE_AD5X_IFS_ANALYSIS.md`, lessWaste ships
+`variable_backup` defaulting **off** (`lesswaste_src.cfg:969`) and bambufy ships it defaulting
+**on** (`bambufy.cfg:_IFS_VARS`). **Neither has been observed on a device by us** — the
+defaults are source-reads, not device observations. Nothing branches on the value except the
+wording, the runout-warning log, and the longer confirm delay.
 
-**The matching rule the hint text promises is strict and must stay strict**: a backup port qualifies only when its filament **type** and **colour** both equal the active spool's *and* its own port sensor reads filament present (`find_backup_slot_locked()`). Promising more than that is the #1247 misexpectation in a new costume.
+**The matching rule the hint text promises is strict and must stay strict**: a backup port qualifies only when its filament **type** and **colour** both equal the active spool's *and* its own port sensor reads filament present (`find_backup_slot_locked()`). This mirrors exactly what `ANALOG_PRUTOK` (`zmod_ifs.py:663-667`) and `_RUNOUT_HEAD` enforce on the device.
 
-> **Follow-up, not implemented:** lessWaste emits `PAUSE REASON=` with one of `jam`, `broken`, `runout`, `empty`, `backup`, `loading` (`printers/FLASHFORGE_AD5X_SUPPORT.md`). That is a direct, unambiguous runout signal — but only on the plugin path, which is precisely the case the sensor-based detector above is *not* needed for. Parsing it would let the plugin path skip the dwell entirely.
+> **PAUSE-reason follow-up, not implemented:** bambufy and lessWaste both emit `PAUSE REASON=` with one of `jam`, `broken`, `runout`, `empty`, `backup`, `loading`, `nobackup` (the last on a backup-enabled runout with no same-type+colour match — bambufy-only; verified from `bambufy.cfg:149`). That is a direct, unambiguous runout signal — but only on the plugin path, which is precisely the case the sensor-based detector above is *not* needed for. Parsing it would let the plugin path skip the dwell entirely.
 
 ### G-code Commands
 
@@ -2653,7 +2678,7 @@ The raw IFS commands (`zmod_ifs.py` registrations + `docs/en/AD5X.md`). `F##` nu
 
 | Feature | Supported | Editable |
 |---------|-----------|----------|
-| Endless Spool | `RequiresPlugin` on stock zMod, `Available` with lessWaste/bambufy | `ReadOnly` always (`PluginMissing` / `PluginReadOnly`) - see below |
+| Endless Spool | `Available` in every mode (stock zMod `FirmwareManaged` / plugin `PluginReadOnly`) | `ReadOnly` always - see below |
 | Tool Mapping | Yes | Yes (16 tools → 4 ports) |
 | Bypass Mode | Yes | Via `less_waste_external` |
 | Spoolman | Optional | Works if configured |
@@ -2663,19 +2688,20 @@ The raw IFS commands (`zmod_ifs.py` registrations + `docs/en/AD5X.md`). `F##` nu
 | Runout detection | Yes | Sensor-derived, HelixScreen-side — see "Unattended runout detection" above |
 | Backup-spool switchover | Firmware-only | `variable_backup` on the `_ifs_vars` macro, read the same way whichever plugin is detected. HelixScreen reports the state, it does not perform the swap |
 
-**Endless spool on IFS is read-only on purpose.** `get_endless_spool_capabilities()` reports
-`RequiresPlugin` + `PluginMissing` while `has_ifs_vars_` is false, because stock zMod has no
-switchover mechanism at all and installing lessWaste or bambufy is what turns it on - that is
-the [#1247](https://github.com/prestonbrown/helixscreen/issues/1247) answer, and it is the
-whole reason availability is three-valued. Once `_IFS_VARS` answers, availability becomes
-`Available`, `provider` names the plugin (`"lessWaste"` or `"bambufy"`, from the detected
-variable prefix), and `enabled` mirrors `variable_backup` - including a genuine `Unknown` when
-the key was never read, since flattening that to `Off` would promise the user that no swap
-will happen when we simply did not read the setting. Editability stays `ReadOnly` +
-`PluginReadOnly`: `backup` is never written. The only write path would be
-`write_ifs_var("backup", …)`, which is a bare `_IFS_VARS` G-code whose failure surfaces
-only as the console "Unknown command" latch that demotes `has_ifs_vars_` for the session -
-not something to drive a user-facing toggle from.
+**Endless spool on IFS is read-only on purpose.** `get_endless_spool_capabilities()`
+reports `Available` + `FirmwareManaged` + `provider="zmod"` + `enabled=On` while
+`has_ifs_vars_` is false, because stock zMod's `ANALOG_PRUTOK` runs always-on with no toggle
+- the [#1247](https://github.com/prestonbrown/helixscreen/issues/1247) reporter's original
+misexpectation ("stock zMod has no switchover") was refuted by a source read of
+`zmod_ifs.py:cmd_ANALOG_PRUTOK` plus on-device confirmation from raza616. Once `_IFS_VARS`
+answers, availability stays `Available`, `provider` names the plugin (`"lessWaste"` or
+`"bambufy"`, from the detected variable prefix), `restriction` becomes `PluginReadOnly`, and
+`enabled` mirrors `variable_backup` - including a genuine `Unknown` when the key was never
+read, since flattening that to `Off` would promise the user that no swap will happen when we
+simply did not read the setting. Editability stays `ReadOnly` + `PluginReadOnly`: `backup` is
+never written. The only write path would be `write_ifs_var("backup", …)`, which is a bare
+`_IFS_VARS` G-code whose failure surfaces only as the console "Unknown command" latch that
+demotes `has_ifs_vars_` for the session - not something to drive a user-facing toggle from.
 
 There is no per-slot relation either, so no backup dropdown appears. What the plugin *will*
 switch to is answered instead by `is_endless_spool_backup_eligible()`, which IFS overrides

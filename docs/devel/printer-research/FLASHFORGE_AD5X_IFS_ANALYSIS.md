@@ -236,17 +236,36 @@ Available from `save_variables`:
 
 ## 9. Macro Packages: bambufy vs lessWaste
 
-Two IFS macro packages exist for ZMOD. Both use the same `save_variables` schema.
+Two IFS macro packages exist for ZMOD. Both use the same `save_variables` schema, and both
+include automatic backup/failover (`variable_backup`). Stock zMod also has its own switchover
+**before any plugin is loaded** — `ANALOG_PRUTOK` (`zmod_ifs.py:cmd_ANALOG_PRUTOK`), wired
+to `head_switch_sensor`'s `runout_gcode` in `ad5x_display_off.cfg:39-44`. zmod's user-facing
+name for it is **"Infinite Spool Mode"**. The match rule is identical across all three paths
+(stock zMod, bambufy, lessWaste): exact material AND exact colour AND port-present.
+
+### Stock zMod (no plugin)
+- `ANALOG_PRUTOK` runs always-on; no toggle. Confirmed from zmod 1.7.1 source and on-device
+  by raza616.
 
 ### bambufy (Original)
 - **Repo**: [function3d/bambufy](https://github.com/function3d/bambufy)
-- Stock IFS macro package, 4 tools (T0-T3), basic load/unload/purge
+- IFS macro package, 4 tools (T0-T3)
+- **Backup/failover**: `variable_backup` (**default on** = `1`); `_RUNOUT_HEAD` performs the
+  slot swap. Same type+colour+present match as stock zMod.
+- Overrides stock `head_switch_sensor` runout_gcode with its own `_RUNOUT_HEAD` (the only
+  sensible design — running both paths in parallel would double-handle every runout).
+- `PAUSE REASON` values emitted: `jam`, `broken`, `runout`, `empty`, `backup`, `nobackup`,
+  `loading` (`nobackup` is bambufy-only — `bambufy.cfg:149`, on a backup-enabled runout with
+  no same-type+colour match).
 
 ### lessWaste (Enhanced Fork)
 - **Repo**: [Hrybmo/lessWaste](https://github.com/Hrybmo/lesswaste)
 - Based on bambufy V1.2.10, adds significant features:
   - **16 virtual tools** (T0-T15) mapped to 4 physical ports via `variable_tools`
-  - **Backup/failover**: `variable_backup` + `variable_backup_filament_spent` — auto-switch to matching color/type on runout
+  - **Backup/failover**: `variable_backup` (**default off** = `0`); same `_RUNOUT_HEAD` shape
+    as bambufy. There is **no** `variable_backup_filament_spent` in source
+    (`lesswaste_src.cfg` 1995 lines, zero matches) — "consumed" slots are inferred from
+    `filament_detected == false` on the port sensor, not tracked in a variable.
   - **Virtual channel mode**: `variable_is_virtual_mode` — allows more slicer tools than physical slots
   - **Purge control**: in-tower (`_NOPOOP`) or out-the-back, configurable flush volumes
   - **Same-filament purge skip**: `variable_same_filament_purge`
@@ -287,7 +306,6 @@ variable_line_purge: 0
 variable_backup: 0
 variable_types: ['PLA','PLA','PLA','PLA', ...]  # 16 entries
 variable_colors: ['000000','000000','000000','000000', ...]  # 16 entries
-variable_backup_filament_spent: [0,0,0,0]
 variable_start: 0
 variable_sbros_trash_speed: 4000
 variable_info_dialog: 1
