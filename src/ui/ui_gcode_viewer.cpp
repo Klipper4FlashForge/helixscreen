@@ -738,8 +738,12 @@ static void gcode_viewer_draw_cb(lv_event_t* e) {
     // the viewer actually has something to show, avoiding a gray flash.
     if (!st->first_frame_fired_ && st->first_frame_callback) {
         bool frame_complete = true;
+#ifdef ENABLE_3D_RENDERER
+        // is_uploading() (VBO upload in progress) exists only on GCode3DRenderer;
+        // the non-GLES base GCodeRenderer has no such concept.
         if (st->renderer_ && st->renderer_->is_uploading())
             frame_complete = false;
+#endif
         if (frame_complete) {
             st->first_frame_fired_ = true;
             st->first_frame_callback(obj, st->first_frame_callback_user_data, true);
@@ -1394,9 +1398,9 @@ static void ui_gcode_viewer_load_file_async(lv_obj_t* obj, const char* file_path
 
     spdlog::info("[GCode Viewer] Loading file async: {}", file_path);
     st->viewer_state = GcodeViewerState::Loading;
-    st->first_render = true;       // Reset for new file
+    st->first_render = true;        // Reset for new file
     st->first_frame_fired_ = false; // Reset first-frame callback for new file
-    st->budget_forced_2d_ = false; // Reset budget 2D override for new file
+    st->budget_forced_2d_ = false;  // Reset budget 2D override for new file
 
     // Bump generation so any in-flight async callbacks from a prior load are rejected
     const uint64_t gen = st->bump_generation();
@@ -1918,9 +1922,8 @@ void ui_gcode_viewer_set_load_callback(lv_obj_t* obj, gcode_viewer_load_callback
     spdlog::debug("[GCode Viewer] Load callback registered");
 }
 
-void ui_gcode_viewer_set_first_frame_callback(lv_obj_t* obj,
-                                               gcode_viewer_load_callback_t callback,
-                                               void* user_data) {
+void ui_gcode_viewer_set_first_frame_callback(lv_obj_t* obj, gcode_viewer_load_callback_t callback,
+                                              void* user_data) {
     gcode_viewer_state_t* st = get_state(obj);
     if (!st) {
         return;
