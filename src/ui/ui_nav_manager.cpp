@@ -2229,6 +2229,19 @@ bool NavigationManager::go_back() {
                 }
                 mgr.active_panel_ = static_cast<PanelId>(i);
                 lv_subject_set_int(&mgr.active_panel_subject_, i);
+                // Synchronously re-activate the main panel so live resources
+                // (camera stream, timers) restart immediately. The overlay
+                // close animation callback also activates it, but on Android
+                // the overlay widget can be freed before the animation
+                // completes — the callback bails at the lv_obj_is_valid check
+                // and never reaches on_activate(), leaving the camera dead
+                // until a tab switch (#1245). Double-activation is safe:
+                // CameraWidget::start_stream no-ops if already running.
+                if (mgr.panel_instances_[i]) {
+                    spdlog::trace("[NavigationManager] Re-activating main panel {}",
+                                  static_cast<int>(i));
+                    mgr.panel_instances_[i]->on_activate();
+                }
                 break;
             }
         }
