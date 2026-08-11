@@ -3,10 +3,21 @@
 # Every src/**/*.cpp|.c NOT compiled by the firmware (i.e. not in
 # app_srcs.txt) must appear here, or scripts/check_esp32_app_srcs.py
 # fails. A path ending in '/' excludes a whole directory recursively.
-# Add a trailing '# reason' so the next person knows why.
 #
-# Regenerate with: python3 scripts/check_esp32_app_srcs.py --write-exclusions --force
-# (then re-annotate reasons by hand).
+# THE BLANKET RULE. Everything in this file is out for one reason: it is not
+# part of the v1 Core+AMS cut (camera, label printer, gcode/bed-mesh 3D,
+# plugins, timelapse viewer, screensaver, calibration panels, sound, desktop
+# mocks, the Linux platform backends, the concrete libhv client). An entry
+# carrying only the default '# not in the v1 Core+AMS cut' note is covered by
+# that rule and needs nothing more — writing 200 restatements of it would bury
+# the entries that DO have something specific to say. Add a specific trailing
+# '# reason' when, and only when, the real reason differs from the blanket
+# rule (a link constraint, a conditional CMake arm, an ESP-side replacement).
+#
+# Extend with:
+#   python3 scripts/check_esp32_app_srcs.py --write-exclusions --force
+# --force MERGES — existing entries and their hand-written reasons are kept,
+# only newly-undecided files are added. Delete this file first for a re-seed.
 
 # --- whole directories excluded ---
 src/bluetooth/  # all 9 src/ files beneath
@@ -84,7 +95,7 @@ src/plugin/plugin_manager.cpp  # not in the v1 Core+AMS cut
 src/plugin/plugin_registry.cpp  # not in the v1 Core+AMS cut
 src/print/thumbnail_processor.cpp  # not in the v1 Core+AMS cut
 src/print/timelapse_thumbnailer.cpp  # not in the v1 Core+AMS cut
-src/printer/ams_backend_mock.cpp  # not in the v1 Core+AMS cut
+src/printer/ams_backend_mock.cpp  # NOT the blanket rule: this one IS compiled, but only on the CONFIG_HELIX_MOCK_PRINTER arm (MOCK_SRCS in CMakeLists.txt), never in the default build
 src/printer/detection_manager.cpp  # not in the v1 Core+AMS cut
 src/printer/macro_fan_analyzer.cpp  # not in the v1 Core+AMS cut
 src/printer/macro_manager.cpp  # not in the v1 Core+AMS cut
