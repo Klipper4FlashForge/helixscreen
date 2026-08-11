@@ -17,7 +17,7 @@ No LVGL — raw esp_lcd + raw I²C so failures point at exactly one layer.
 ## Build & flash
 
 ```bash
-. ~/esp/esp-idf/export.sh
+. ~/Code/esp-idf/export.sh
 cd firmware/ktouch-probe
 idf.py set-target esp32s3
 idf.py build

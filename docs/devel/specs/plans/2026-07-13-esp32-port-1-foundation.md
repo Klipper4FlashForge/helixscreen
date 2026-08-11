@@ -6,7 +6,7 @@
 
 **Architecture:** Seams-first hybrid (approved spec `docs/devel/specs/2026-07-13-esp32-native-port-design.md`). This plan is firmware-tree only — no main-tree changes. The audit tree `firmware/native-audit/` is a frozen reference; specific proven files are copied from it deliberately, never symlinked.
 
-**Tech Stack:** ESP-IDF v5.5 (`~/esp/esp-idf`, `source export.sh`), LVGL 9.5 (repo submodule + patches, unmodified), `lib/helix-xml` (unmodified), `esp_lcd` RGB panel, `esp_lcd_touch_gt911` managed component, GitHub Actions + `espressif/idf:release-v5.5` docker.
+**Tech Stack:** ESP-IDF v5.5 (`~/Code/esp-idf`, `source export.sh`), LVGL 9.5 (repo submodule + patches, unmodified), `lib/helix-xml` (unmodified), `esp_lcd` RGB panel, `esp_lcd_touch_gt911` managed component, GitHub Actions + `espressif/idf:release-v5.5` docker.
 
 ## Program sequence (this is Plan 1 of 5)
 
@@ -173,7 +173,7 @@ void app_main(void) {
 - [ ] **Step 2: Build**
 
 ```bash
-bash -c 'source ~/esp/esp-idf/export.sh && cd firmware/helixscreen-esp32 && idf.py build'
+bash -c 'source ~/Code/esp-idf/export.sh && cd firmware/helixscreen-esp32 && idf.py build'
 ```
 (run_in_background; verify via the output file, not exit code of a piped tail — check for `Generated .../helixscreen_esp32.bin`.)
 Expected: build succeeds; `check_sizes.py` reports the app fits `ota_0` (0x600000).
@@ -181,7 +181,7 @@ Expected: build succeeds; `check_sizes.py` reports the app fits `ota_0` (0x60000
 - [ ] **Step 3: Flash + serial-verify boot partition marker (HIL)**
 
 ```bash
-bash -c 'source ~/esp/esp-idf/export.sh && cd firmware/helixscreen-esp32 && sg dialout -c "idf.py -p /dev/ttyUSB0 -b 460800 flash"'
+bash -c 'source ~/Code/esp-idf/export.sh && cd firmware/helixscreen-esp32 && sg dialout -c "idf.py -p /dev/ttyUSB0 -b 460800 flash"'
 python firmware/native-audit/capture_serial.py --port /dev/ttyUSB0 --baud 115200 --seconds 15 --out /tmp/plan1-task1.log
 grep -a "booting from partition 'ota_0'" /tmp/plan1-task1.log
 ```

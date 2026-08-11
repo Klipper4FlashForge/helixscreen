@@ -56,7 +56,7 @@ def build(round_no: int) -> str:
     log = AUDIT / f"build/link_loop_round{round_no}.log"
     p = subprocess.run(
         ["bash", "-c",
-         f"source ~/esp/esp-idf/export.sh >/dev/null 2>&1 && cd {AUDIT} && idf.py build"],
+         f"source ~/Code/esp-idf/export.sh >/dev/null 2>&1 && cd {AUDIT} && idf.py build"],
         capture_output=True, text=True)
     log.write_text(p.stdout + p.stderr)
     if p.returncode == 0:
