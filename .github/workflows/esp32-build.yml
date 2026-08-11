@@ -15,7 +15,7 @@ jobs:
       - name: Build firmware
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v5.5
+          esp_idf_version: v5.5.4
           target: esp32s3
           path: firmware/helixscreen-esp32
           # storage_frogfs.bin is a BUILD INPUT, not output: main/CMakeLists.txt
