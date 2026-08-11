@@ -514,9 +514,11 @@ Located in the `input` section:
   "input": {
     "scroll_throw": 25,
     "scroll_limit": 10,
+    "long_press_time": 500,
     "jitter_threshold": 5,
     "scroll_guard": false,
     "scroll_guard_cooldown_ms": 80,
+    "home_edit_mode_enabled": true,
     "touch_device": "",
     "device_blacklist": [],
     "force_calibration": false,
@@ -525,7 +527,7 @@ Located in the `input` section:
       "a": 1.0,
       "b": 0.0,
       "c": 0.0,
-      "d": 0.0,
+      "d": 1.0,
       "e": 1.0,
       "f": 0.0
     }
@@ -553,6 +555,17 @@ Located in the `input` section:
 - **Higher** = more deliberate gesture required. Reduces accidental scrolls when you meant to tap, but makes short-travel scrolls feel unresponsive.
 
 Matches LVGL's native default of 10.
+
+### `long_press_time`
+**Type:** integer
+**Default:** `500`
+**Range:** `300` - `1500` (UI-clamped)
+**Description:** How long (in milliseconds) a finger must hold before a press registers as a long-press. Governs every long-press in the app — home-screen Edit Mode entry, file-card delete, macro edit mode, and others. Raise this if long-press actions trigger when a finger simply rests on the glass (common on a tablet lying flat). Applied live — no restart needed.
+
+### `home_edit_mode_enabled`
+**Type:** boolean
+**Default:** `true`
+**Description:** Whether a long-press on the home grid enters Edit Mode (the drag-and-drop layout editor). When `false`, the long-press is suppressed entirely. Turn off if Edit Mode triggers by accident and you don't need to rearrange widgets, or pair with a higher `long_press_time` to make accidental entry harder while keeping the feature available. Applied live — no restart needed.
 
 ### `touch_device`
 **Type:** string

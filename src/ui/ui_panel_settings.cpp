@@ -265,6 +265,13 @@ static void on_long_press_time_changed(lv_event_t* e) {
     // No restart prompt — set_long_press_time live-applies via lv_indev_set_long_press_time.
 }
 
+static void on_home_edit_mode_changed(lv_event_t* e) {
+    lv_obj_t* toggle = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
+    InputSettingsManager::instance().set_home_edit_mode_enabled(
+        lv_obj_has_state(toggle, LV_STATE_CHECKED));
+    // No restart prompt — should_suppress_edit_mode checks this live.
+}
+
 static void on_scroll_guard_changed(lv_event_t* e) {
     lv_obj_t* toggle = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
     InputSettingsManager::instance().set_scroll_guard(lv_obj_has_state(toggle, LV_STATE_CHECKED));
@@ -391,6 +398,7 @@ void SettingsPanel::init_subjects() {
         {"on_jitter_threshold_changed", on_jitter_threshold_changed},
         {"on_scroll_limit_changed", on_scroll_limit_changed},
         {"on_long_press_time_changed", on_long_press_time_changed},
+        {"on_home_edit_mode_changed", on_home_edit_mode_changed},
         {"on_scroll_guard_changed", on_scroll_guard_changed},
 
         // Toggle switches
@@ -1571,6 +1579,7 @@ void register_settings_panel_callbacks() {
         {"on_jitter_threshold_changed", on_jitter_threshold_changed},
         {"on_scroll_limit_changed", on_scroll_limit_changed},
         {"on_long_press_time_changed", on_long_press_time_changed},
+        {"on_home_edit_mode_changed", on_home_edit_mode_changed},
         {"on_scroll_guard_changed", on_scroll_guard_changed},
         // Action row callbacks used in settings_panel.xml
         {"on_printers_clicked", SettingsPanel::on_printers_clicked},

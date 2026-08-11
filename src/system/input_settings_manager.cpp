@@ -69,6 +69,12 @@ void InputSettingsManager::init_subjects() {
     UI_MANAGED_SUBJECT_INT(debug_touches_subject_, debug_touches ? 1 : 0, "settings_debug_touches",
                            subjects_);
 
+    // Home-screen edit mode enabled (default: true). When false the long-press
+    // that enters grid edit mode is suppressed entirely (#1245).
+    bool home_edit_mode = config->get<bool>("/input/home_edit_mode_enabled", true);
+    UI_MANAGED_SUBJECT_INT(home_edit_mode_enabled_subject_, home_edit_mode ? 1 : 0,
+                           "settings_home_edit_mode_enabled", subjects_);
+
     subjects_initialized_ = true;
 
     // Self-register cleanup with StaticSubjectRegistry
@@ -218,4 +224,19 @@ void InputSettingsManager::set_debug_touches(bool enabled) {
     config->set<bool>("/input/debug_touches", enabled);
     config->save();
     // No restart_pending_ — change takes effect immediately.
+}
+
+bool InputSettingsManager::get_home_edit_mode_enabled() const {
+    return lv_subject_get_int(const_cast<lv_subject_t*>(&home_edit_mode_enabled_subject_)) != 0;
+}
+
+void InputSettingsManager::set_home_edit_mode_enabled(bool enabled) {
+    spdlog::info("[InputSettingsManager] set_home_edit_mode_enabled({}) [live]", enabled);
+
+    lv_subject_set_int(&home_edit_mode_enabled_subject_, enabled ? 1 : 0);
+
+    Config* config = Config::get_instance();
+    config->set<bool>("/input/home_edit_mode_enabled", enabled);
+    config->save();
+    // No restart_pending_ — should_suppress_edit_mode checks this live.
 }
