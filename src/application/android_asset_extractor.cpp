@@ -198,6 +198,22 @@ static std::vector<std::string> read_manifest(AAssetManager* mgr) {
     return dirs;
 }
 
+// Read a small text asset from the APK root (BUILD_STAMP, etc.). Returns an
+// empty string if the asset is absent or short-reads; callers treat that as
+// "not present" and fall through to extraction.
+static std::string read_asset_text(AAssetManager* mgr, const char* name) {
+    AAsset* asset = AAssetManager_open(mgr, name, AASSET_MODE_BUFFER);
+    if (!asset)
+        return {};
+    off_t size = AAsset_getLength(asset);
+    std::string content(static_cast<size_t>(size), '\0');
+    int bytes_read = AAsset_read(asset, content.data(), size);
+    AAsset_close(asset);
+    if (bytes_read != size)
+        return {};
+    return content;
+}
+
 void android_extract_assets_if_needed() {
     const char* internal_path = SDL_AndroidGetInternalStoragePath();
     if (!internal_path) {
@@ -208,28 +224,41 @@ void android_extract_assets_if_needed() {
     std::string target_dir = std::string(internal_path) + "/data";
     spdlog::info("[AndroidAssets] Target directory: {}", target_dir);
 
-    // Check version marker to skip extraction if already current
-    fs::path version_file = fs::path(target_dir) / "VERSION";
-    std::string current_version = helix_version();
-    if (fs::exists(version_file)) {
-        std::ifstream ifs(version_file);
-        std::string existing;
-        std::getline(ifs, existing);
-        if (existing == current_version) {
-            spdlog::info("[AndroidAssets] Assets already at version {}, skipping", current_version);
-            setenv("HELIX_DATA_DIR", target_dir.c_str(), 1);
-            return;
-        }
-        spdlog::info("[AndroidAssets] Version mismatch: have '{}', need '{}'", existing,
-                     current_version);
-    }
-
     AAssetManager* mgr = get_asset_manager();
     if (!mgr) {
         spdlog::error("[AndroidAssets] Could not get AAssetManager, app will lack UI resources");
         setenv("HELIX_DATA_DIR", target_dir.c_str(), 1);
         return;
     }
+
+    // Per-build stamp gate: Gradle writes BUILD_STAMP into the APK assets on
+    // every build (scripts/gen-git-hash.sh cannot help here — its header is
+    // regenerated at CMake *configure* time, not build time, so the hash goes
+    // stale across same-version dev rebuilds). Comparing the APK stamp to the
+    // one written at the end of the last extraction makes every install
+    // re-extract, so iterating on XML/assets on a connected device always
+    // picks up edits, while a stable install still skips the copy at launch.
+    // The version-number gate this replaces silently served stale XML for
+    // same-version dev rebuilds.
+    std::string apk_stamp = read_asset_text(mgr, "BUILD_STAMP");
+    while (!apk_stamp.empty() &&
+           (apk_stamp.back() == '\n' || apk_stamp.back() == '\r' || apk_stamp.back() == ' '))
+        apk_stamp.pop_back();
+
+    fs::path stamp_file = fs::path(target_dir) / "BUILD_STAMP";
+    std::string disk_stamp;
+    if (fs::exists(stamp_file)) {
+        std::ifstream ifs(stamp_file);
+        std::getline(ifs, disk_stamp);
+    }
+
+    if (!apk_stamp.empty() && apk_stamp == disk_stamp) {
+        spdlog::info("[AndroidAssets] Build stamp matches ({}), skipping extraction", disk_stamp);
+        setenv("HELIX_DATA_DIR", target_dir.c_str(), 1);
+        return;
+    }
+    spdlog::info("[AndroidAssets] Build stamp differs: apk='{}' disk='{}' - re-extracting",
+                 apk_stamp, disk_stamp);
 
     // Remove pre-split stale seeds under {target_dir}/config/. Before bfeba7c26
     // these paths held the shipped RO seeds; after the split they moved to
@@ -271,14 +300,16 @@ void android_extract_assets_if_needed() {
     spdlog::info("[AndroidAssets] Total: {} files extracted across {} dirs to '{}'", total,
                  manifest.size(), target_dir);
 
-    // Write version marker
+    // Write markers: VERSION (informational) and BUILD_STAMP (the gate).
     {
         std::error_code ec;
         fs::create_directories(target_dir, ec);
-        std::ofstream ofs(version_file, std::ios::trunc);
-        if (ofs) {
-            ofs << current_version;
-        }
+        std::ofstream vofs(fs::path(target_dir) / "VERSION", std::ios::trunc);
+        if (vofs)
+            vofs << helix_version();
+        std::ofstream sofs(stamp_file, std::ios::trunc);
+        if (sofs)
+            sofs << apk_stamp;
     }
 
     // Set HELIX_DATA_DIR so ensure_project_root_cwd() chdir's here

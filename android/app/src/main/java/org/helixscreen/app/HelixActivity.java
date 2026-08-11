@@ -115,6 +115,15 @@ public class HelixActivity extends SDLActivity {
     protected String[] getLibraries() {
         return new String[]{
             "SDL2",
+            // Preloaded so the native side can dlopen("libturbojpeg.so")
+            // (prestonbrown/helixscreen#1245). From API 24 the linker namespace
+            // model no longer resolves a bare dlopen() against an APK-bundled
+            // .so by basename, so libturbojpeg must be entered through the
+            // framework load list (SDLActivity calls System.loadLibrary for each
+            // entry here). Without it the camera silently falls back to scalar
+            // stb_image decode. Listed before "main" because CameraStream
+            // constructs on the native thread after libmain loads.
+            "turbojpeg",
             "main"
         };
     }

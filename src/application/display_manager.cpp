@@ -439,10 +439,12 @@ bool DisplayManager::init(const Config& config) {
     // Configure scroll behavior and sleep-aware wrapper
     if (m_pointer) {
         configure_scroll(config.scroll_throw, config.scroll_limit);
-        // Lengthen the long-press timeout from LVGL's 400ms default so
-        // mode-switching holds (home-screen edit mode) are deliberate, not
-        // twitchy. See AppConstants::Input::LONG_PRESS_MS.
-        lv_indev_set_long_press_time(m_pointer, AppConstants::Input::LONG_PRESS_MS);
+        // Long-press threshold — user-configurable global setting (#1245), default
+        // AppConstants::Input::LONG_PRESS_MS. Applied here and on backend swap;
+        // InputSettingsManager::set_long_press_time live-applies changes.
+        const int long_press_ms = helix::Config::get_instance()->get<int>(
+            "/input/long_press_time", static_cast<int>(AppConstants::Input::LONG_PRESS_MS));
+        lv_indev_set_long_press_time(m_pointer, long_press_ms);
 #ifndef HELIX_DISPLAY_SDL
         // Only install on embedded - SDL's event handler identifies the mouse device
         // by checking if read_cb == sdl_mouse_read, which our wrapper breaks.
@@ -749,7 +751,9 @@ void DisplayManager::rebuild_input_after_backend_swap() {
     m_pointer = m_backend->create_input_pointer();
     if (m_pointer) {
         configure_scroll(m_scroll_throw, m_scroll_limit);
-        lv_indev_set_long_press_time(m_pointer, AppConstants::Input::LONG_PRESS_MS);
+        const int long_press_ms = helix::Config::get_instance()->get<int>(
+            "/input/long_press_time", static_cast<int>(AppConstants::Input::LONG_PRESS_MS));
+        lv_indev_set_long_press_time(m_pointer, long_press_ms);
 #ifndef HELIX_DISPLAY_SDL
         install_sleep_aware_input_wrapper();
 #endif
