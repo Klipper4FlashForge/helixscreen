@@ -72,6 +72,11 @@ public class HelixActivity extends SDLActivity {
      * by computing luminance of the screen_bg color.
      */
     private static volatile boolean sLightAppearance = false;
+    // Window background color set from C++ (theme manager). Used for the
+    // navigation bar: Samsung One UI ignores Color.TRANSPARENT in 3-button
+    // mode and substitutes a system-theme scrim, but it DOES respect a solid
+    // color. Using the app's own background makes the navbar match the theme.
+    private static volatile int sWindowBgColor = Color.BLACK;
 
     /**
      * Desired FLAG_KEEP_SCREEN_ON state (issue #1245).
@@ -195,12 +200,13 @@ public class HelixActivity extends SDLActivity {
         controller.setSystemBarsAppearance(
                 sLightAppearance ? lightMask : 0, lightMask);
 
-        // Transparent bars — disable Android's default contrast scrim
-        // (API 29+ adds a white scrim behind the nav bar when enforced).
-        // NOTE: in 3-button nav mode Samsung One UI ignores both of these
-        // and forces a scrim that follows the SYSTEM light/dark theme.
-        // Gesture nav mode honors the request.
-        window.setNavigationBarColor(Color.TRANSPARENT);
+        // Solid navbar color: Samsung One UI ignores Color.TRANSPARENT in
+        // 3-button mode and forces a system-theme scrim, but it respects a
+        // solid color. Using the app's own background makes the navbar match
+        // the theme (dark in dark mode, light in light mode). Gesture-nav
+        // mode also works fine — the solid color shows only at the thin
+        // gesture-pill area.
+        window.setNavigationBarColor(sWindowBgColor | 0xFF000000);
         window.setStatusBarColor(Color.TRANSPARENT);
         window.setNavigationBarContrastEnforced(false);
         window.setStatusBarContrastEnforced(false);
@@ -229,7 +235,7 @@ public class HelixActivity extends SDLActivity {
         window.getDecorView().setSystemUiVisibility(flags);
 
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-        window.setNavigationBarColor(Color.TRANSPARENT);
+        window.setNavigationBarColor(sWindowBgColor | 0xFF000000);
         window.setStatusBarColor(Color.TRANSPARENT);
     }
 
@@ -339,22 +345,15 @@ public class HelixActivity extends SDLActivity {
                 });
             }
 
-            // When the user pinned the nav bar, inset the SDL surface so LVGL
-            // doesn't render behind it (otherwise the bar overlays widgets,
-            // especially on Fold 7 inner display where the bar can sit on the
-            // side in landscape). With targetSdk 35 + edge-to-edge enforced,
-            // setDecorFitsSystemWindows(true) is a no-op — we have to pad the
-            // content view manually from the navbar insets.
+            // Let the SDL surface fill the entire screen — the Android soft
+            // buttons float over the content and auto-hide after
+            // NAV_HIDE_TIMEOUT_MS. Padding the surface inset the LVGL display,
+            // making fullscreen overlays (camera, etc.) smaller than the
+            // physical screen and visibly right-justified. The auto-hide
+            // timer above re-hides the buttons so the overlap is temporary.
             View content = findViewById(android.R.id.content);
             if (content != null) {
-                if (sNavBarAlwaysVisible && navVisibleNow) {
-                    android.graphics.Insets navIns =
-                            insets.getInsets(WindowInsets.Type.navigationBars());
-                    content.setPadding(navIns.left, navIns.top,
-                                       navIns.right, navIns.bottom);
-                } else {
-                    content.setPadding(0, 0, 0, 0);
-                }
+                content.setPadding(0, 0, 0, 0);
             }
             return v.onApplyWindowInsets(insets);
         });
@@ -530,6 +529,7 @@ public class HelixActivity extends SDLActivity {
         int b = argb & 0xFF;
         double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
         sLightAppearance = lum > 0.5;
+        sWindowBgColor = argb;
 
         activity.runOnUiThread(new Runnable() {
             @Override

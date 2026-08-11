@@ -82,10 +82,17 @@ android {
 
 // Copy project assets into APK assets directory, preserving directory structure.
 // The asset extractor on Android reads these and copies them to internal storage.
+// Exclude runtime artifacts (crash dumps, telemetry, spool state) that are
+// created at runtime and must never ship — they cause stale crash dialogs.
 task copyAssets(type: Copy) {
     from('../../ui_xml') { into 'ui_xml' }
     from('../../assets') { into 'assets' }
-    from('../../config') { into 'config' }
+    from('../../config') {
+        into 'config'
+        exclude 'crash*.txt', 'crash.txt', 'crash_history.json',
+                '.crash_restart_count', 'tool_spools.json',
+                'telemetry_device.json', 'telemetry_queue.json'
+    }
     into 'src/main/assets'
 }
 

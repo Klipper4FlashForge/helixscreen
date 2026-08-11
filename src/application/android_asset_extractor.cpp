@@ -140,6 +140,20 @@ static int extract_asset_dir(AAssetManager* mgr, const std::string& asset_path,
             continue;
         }
 
+        // Defense-in-depth: never extract runtime artifacts even if they
+        // somehow made it into the APK (copyAssets excludes them, but a
+        // stale local file could slip through). Crash dumps cause stale
+        // crash dialogs; telemetry/spool state is user-owned.
+        if (asset_path == "config") {
+            std::string fname(filename);
+            if (fname.rfind("crash", 0) == 0 || fname == ".crash_restart_count" ||
+                fname == "tool_spools.json" || fname == "telemetry_device.json" ||
+                fname == "telemetry_queue.json" || fname == "crash_history.json") {
+                spdlog::debug("[AndroidAssets] Skipping runtime artifact {}", fname);
+                continue;
+            }
+        }
+
         AAsset* asset = AAssetManager_open(mgr, asset_file.c_str(), AASSET_MODE_STREAMING);
         if (!asset) {
             spdlog::warn("[AndroidAssets] Could not open asset '{}'", asset_file);
