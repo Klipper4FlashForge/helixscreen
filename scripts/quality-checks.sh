@@ -713,6 +713,22 @@ else
   echo "⚠️  check_responsive_token_scope.py not found — skipping"
 fi
 
+# ESP32 firmware app_srcs manifest drift. The manifest is a hand-maintained
+# subset of src/ (v1 Core+AMS cut); a new src/ file that misses it breaks the
+# firmware link ~25 min into esp32-build CI. This makes the drift loud here.
+# Skips cleanly when the firmware tree is absent (e.g. a shallow checkout).
+if [ -f "firmware/helixscreen-esp32/components/helixapp/app_srcs.txt" ] && \
+   [ -f "scripts/check_esp32_app_srcs.py" ]; then
+  if python3 scripts/check_esp32_app_srcs.py >/tmp/esp32_app_srcs.out 2>&1; then
+    echo "✅ ESP32 app_srcs manifest covers src/ (no drift)"
+  else
+    cat /tmp/esp32_app_srcs.out
+    EXIT_CODE=1
+  fi
+else
+  echo "⚠️  esp32 app_srcs manifest or gate not found — skipping"
+fi
+
 echo ""
 
 # ====================================================================
