@@ -637,4 +637,46 @@ public class HelixActivity extends SDLActivity {
             if (conn != null) conn.disconnect();
         }
     }
+
+    /**
+     * HTTPS POST with a raw binary body — for gzip-compressed payloads where
+     * round-tripping bytes through a Java String would corrupt them (debug
+     * bundle upload). Same STATUS\nBODY / 0\nERROR contract as httpsPost.
+     */
+    public static String httpsPostBinary(String url, byte[] body, String contentType,
+                                         String contentEncoding, String userAgent,
+                                         String apiKey, int timeoutSec) {
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URL(url).openConnection();
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(timeoutSec * 1000);
+            conn.setReadTimeout(timeoutSec * 1000);
+            conn.setRequestProperty("Content-Type", contentType);
+            if (contentEncoding != null && !contentEncoding.isEmpty())
+                conn.setRequestProperty("Content-Encoding", contentEncoding);
+            conn.setRequestProperty("User-Agent", userAgent);
+            conn.setRequestProperty("X-API-Key", apiKey);
+            conn.setFixedLengthStreamingMode(body.length);
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body);
+            }
+            int status = conn.getResponseCode();
+            String responseBody = "";
+            try (Scanner s = new Scanner(
+                    status >= 200 && status < 400
+                        ? conn.getInputStream() : conn.getErrorStream(),
+                    "UTF-8")) {
+                s.useDelimiter("\\A");
+                if (s.hasNext()) responseBody = s.next();
+            }
+            return status + "\n" + responseBody;
+        } catch (Exception e) {
+            Log.w("HelixHTTPS", "POST binary failed: " + e.getMessage());
+            return "0\n" + e.getMessage();
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
 }

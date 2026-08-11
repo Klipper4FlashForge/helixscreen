@@ -20,6 +20,9 @@
 #include "system/moonraker_local_probe.h"
 #include "system/telemetry_manager.h"
 #include "system/update_checker.h"
+#ifdef __ANDROID__
+#include "system/http_android.h"
+#endif
 
 #include <spdlog/spdlog.h>
 
@@ -1487,23 +1490,41 @@ void DebugBundleCollector::upload_async(const BundleOptions& options, ResultCall
             spdlog::info("[DebugBundle] Uploading {} bytes (compressed from {})...",
                          compressed.size(), json_str.size());
 
+            std::string ua = std::string("HelixScreen/") + HELIX_VERSION;
+            int status;
+            std::string response_body;
+
+#ifdef __ANDROID__
+            // libhv is built without SSL on Android (no NDK OpenSSL), so route
+            // the gzip-compressed bundle through the platform TLS stack via JNI.
+            // The binary bridge avoids corrupting gzip bytes through a Java
+            // String — the existing httpsPost takes String body and would
+            // mangle arbitrary binary. Same pattern as update_checker and
+            // crash_reporter.
+            auto [s, body] = helix::android::https_post_binary(
+                WORKER_URL, compressed, "application/json", "gzip", ua, INGEST_API_KEY, 30);
+            status = s;
+            response_body = body;
+#else
             auto req = std::make_shared<HttpRequest>();
             req->method = HTTP_POST;
             req->url = WORKER_URL;
             req->timeout = 30;
             req->headers["Content-Type"] = "application/json";
             req->headers["Content-Encoding"] = "gzip";
-            req->headers["User-Agent"] = std::string("HelixScreen/") + HELIX_VERSION;
+            req->headers["User-Agent"] = ua;
             req->headers["X-API-Key"] = INGEST_API_KEY;
             req->body.assign(reinterpret_cast<const char*>(compressed.data()), compressed.size());
 
             auto resp = requests::request(req);
-            int status = resp ? static_cast<int>(resp->status_code) : 0;
+            status = resp ? static_cast<int>(resp->status_code) : 0;
+            response_body = resp ? resp->body : "";
+#endif
 
-            if (resp && status >= 200 && status < 300) {
+            if (status >= 200 && status < 300) {
                 // Parse share_code from response
                 try {
-                    json resp_json = json::parse(resp->body);
+                    json resp_json = json::parse(response_body);
                     if (resp_json.contains("share_code")) {
                         result.share_code = resp_json["share_code"].get<std::string>();
                     }
@@ -1514,8 +1535,9 @@ void DebugBundleCollector::upload_async(const BundleOptions& options, ResultCall
                 spdlog::info("[DebugBundle] Upload successful (HTTP {}), share_code: {}", status,
                              result.share_code);
             } else {
-                result.error_message = "HTTP " + std::to_string(status) +
-                                       (resp ? ": " + resp->body.substr(0, 200) : ": no response");
+                result.error_message =
+                    "HTTP " + std::to_string(status) +
+                    (response_body.empty() ? ": no response" : ": " + response_body.substr(0, 200));
                 spdlog::warn("[DebugBundle] Upload failed: {}", result.error_message);
             }
         } catch (const std::exception& e) {
