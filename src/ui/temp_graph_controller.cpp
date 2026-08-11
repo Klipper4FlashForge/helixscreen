@@ -187,15 +187,14 @@ void TempGraphController::refresh_from_history() {
 }
 
 void TempGraphController::refresh_all_from_history() {
-    // Copy the registry first: backfill_history() itself never mutates the
-    // registry, but keep this defensive against reentrancy during teardown.
     auto snapshot = live_controllers();
+    spdlog::debug("[TempGraphController] refresh_all_from_history: {} live controllers",
+                  snapshot.size());
     for (auto* c : snapshot) {
         if (c) {
             c->refresh_from_history();
         }
     }
-    spdlog::debug("[TempGraphController] Refreshed {} live graph(s) from history", snapshot.size());
 }
 
 void TempGraphController::rebuild() {
@@ -208,18 +207,15 @@ void TempGraphController::rebuild() {
         return;
     }
 
-    // Debounce rapid rebuilds — reconnect flapping (e.g., Klipper error state)
-    // can trigger dozens of rebuilds per second, racing with the LVGL render cycle
-    auto now = std::chrono::steady_clock::now();
-    if (now - last_rebuild_time_ < REBUILD_DEBOUNCE) {
-        spdlog::debug("[TempGraphController] Rebuild debounced (too soon after previous)");
-        return;
-    }
-    last_rebuild_time_ = now;
-
     crash_handler::breadcrumb::note("tgc", "rebuild", static_cast<long>(generation_ + 1));
 
     detach();
+    // detach() set tearing_down_ to guard the old generation's deferred
+    // callbacks. We're building a NEW generation now — clear the flag so
+    // setup_observers() proceeds. Without this, every reconnect leaves the
+    // graph with zero observers and temps freeze permanently (#1245).
+    tearing_down_ = false;
+
     series_.clear();
 
     if (graph_) {
@@ -229,6 +225,7 @@ void TempGraphController::rebuild() {
 
     ++generation_;
     y_axis_max_ = 100.0f;
+    has_chart_data_ = false;
 
     create_graph();
     if (!graph_) {
@@ -242,6 +239,50 @@ void TempGraphController::rebuild() {
     apply_auto_range();
 
     spdlog::debug("[TempGraphController] Rebuilt with {} series", series_.size());
+}
+
+void TempGraphController::reattach_observers() {
+    if (tearing_down_ || !graph_)
+        return;
+
+    spdlog::debug("[TempGraphController] Re-attaching observers (preserving chart data)");
+
+    // Expire all old tokens and drain pending callbacks so stale observers
+    // don't fire during re-attachment.
+    lifetime_.invalidate();
+    {
+        auto freeze =
+            helix::ui::UpdateQueue::instance().scoped_freeze("TempGraphController::reattach");
+        helix::ui::UpdateQueue::instance().drain();
+
+        connection_observer_.reset();
+        discovery_observer_.reset();
+        sensor_discovery_observer_.reset();
+        for (auto& s : series_) {
+            s.temp_obs.reset();
+            s.target_obs.reset();
+        }
+    }
+
+    // New generation — new tokens for the fresh observers.
+    ++generation_;
+
+    // Reset each series' SubjectLifetime so subject lookups rebind to the
+    // CURRENT subjects. Extruder/sensor subjects may have been recreated
+    // during reconnect discovery — without this, the lookup returns the
+    // old (dead) subject and the observer silently never fires (#1245).
+    for (auto& s : series_) {
+        s.lifetime = SubjectLifetime{};
+    }
+
+    // Suppress the sync fire from observe_int_sync during setup. The sync
+    // fire would push stale subject values (from before the reconnect) onto
+    // the chart, creating phantom spikes. The observers will fire normally
+    // on the next real subject change when fresh data arrives (#1245).
+    bool was_paused = paused_;
+    paused_ = true;
+    setup_observers();
+    paused_ = was_paused;
 }
 
 int TempGraphController::series_id_for(const std::string& klipper_name) const {
@@ -575,44 +616,38 @@ bool TempGraphController::attach_series_observers(size_t i) {
 void TempGraphController::setup_connection_observer() {
     auto& ps = get_printer_state();
 
-    // Observe printer connection state to clear chart on disconnect and rebuild on
-    // REconnect. Only react to actual state changes, and only rebuild after a real
-    // disconnect (not the initial connect at startup which would wipe backfilled history).
+    // On reconnect, re-attach observers WITHOUT rebuilding the chart.
+    // This refreshes observer bindings to current subjects (in case the
+    // printer's sensor configuration changed) while preserving existing
+    // chart data, chip visibility, and X-axis timestamps.
     //
-    // Capture `conn_gen` by value and check it WITHOUT dereferencing `self` — if a
-    // queued callback fires after the controller is freed, `self` is dangling and
-    // `self->generation_` would UAF (#1117). The conn_token check (via shared_ptr
-    // to the generation atomic) is the real safety net; conn_gen is a secondary
-    // guard that catches rebuild-induced generation bumps without touching `self`.
+    // Transition detection: observe_int_sync fires once synchronously with the
+    // current value when attached. Without tracking the previous state, every
+    // re-attach would create a new observer that sync-fires CONNECTED and
+    // triggers another re-attach — an infinite loop. By tracking prev_state,
+    // only ACTUAL state changes (disconnect → reconnect) trigger re-attach.
+    // This ensures ALL controllers re-attach, not just the first one (#1245).
     auto* conn_subj = ps.get_printer_connection_state_subject();
     if (conn_subj) {
         auto conn_token = lifetime_.token();
         uint32_t conn_gen = generation_;
         auto prev_state = std::make_shared<int>(lv_subject_get_int(conn_subj));
-        auto was_disconnected = std::make_shared<bool>(false);
         connection_observer_ = observe_int_sync<TempGraphController>(
             conn_subj, this,
-            [conn_token, conn_gen, prev_state, was_disconnected](TempGraphController* self,
-                                                                 int state) {
+            [conn_token, conn_gen, prev_state](TempGraphController* self, int state) {
                 if (conn_token.expired())
                     return;
-                // Don't deref `self` until after the token check passes — the
-                // token is the authoritative lifetime signal, self->generation_
-                // is only safe to read once we know `self` is still alive.
                 if (conn_gen != self->generation_)
                     return;
                 if (state == *prev_state)
                     return;
                 *prev_state = state;
-                if (state == 0) { // Disconnected
-                    *was_disconnected = true;
-                    spdlog::debug("[TempGraphController] Disconnected, clearing chart");
-                    if (self->graph_) {
-                        ui_temp_graph_clear(self->graph_);
-                    }
-                } else if (state == 2 && *was_disconnected) { // Reconnected
-                    spdlog::debug("[TempGraphController] Reconnected, rebuilding");
-                    self->rebuild();
+                if (state == 0) {
+                    spdlog::debug("[TempGraphController] Connection lost — graph paused");
+                } else if (state == 2) {
+                    spdlog::debug(
+                        "[TempGraphController] Connection restored — re-attaching observers");
+                    self->reattach_observers();
                 }
             });
     }
@@ -627,17 +662,9 @@ void TempGraphController::backfill_history() {
     if (!graph_ || !history_mgr)
         return;
 
-    // Only fetch samples that fit in the chart buffer to avoid pushing
-    // thousands of points through the circular buffer (wastes CPU and
-    // corrupts X-axis timestamp tracking)
     int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                          std::chrono::system_clock::now().time_since_epoch())
                          .count();
-    // Fetch the full display window of history, then decimate to the chart's
-    // point budget. History is stored at Klipper's ~1 Hz rate, but the chart
-    // holds far fewer points (one per SAMPLE_INTERVAL_SEC) — pushing the raw
-    // 1 Hz stream would overflow the shift-mode buffer and show only the most
-    // recent point_count seconds instead of the whole window (#979).
     int64_t cutoff_ms = now_ms - static_cast<int64_t>(config_.point_count) *
                                      UI_TEMP_GRAPH_SAMPLE_INTERVAL_SEC * 1000;
 
@@ -676,14 +703,16 @@ void TempGraphController::backfill_history() {
         ui_temp_graph_set_series_data_with_targets(graph_, s.series_id, temps.data(),
                                                    targets.data(), static_cast<int>(kept.size()));
 
-        // Populate X-axis timestamp tracking directly. We deliberately do NOT call
-        // update_series_with_time here: that would push another sample onto the
-        // chart (duplicating the last historical sample) and call push_target_sample
-        // which would corrupt the just-replayed target buffer with the staged
-        // meta->target_temp at position N. set_axis_timestamps is side-effect-free.
-        const auto& last = samples[kept.back()];
         const auto& first = samples[kept.front()];
-        ui_temp_graph_set_axis_timestamps(graph_, first.timestamp_ms, last.timestamp_ms,
+        const auto& last = samples[kept.back()];
+
+        spdlog::trace("[TempGraphController] backfill '{}': {} → {} points, "
+                      "{:.1f}C → {:.1f}C, {:.1f} min",
+                      s.klipper_name, samples.size(), kept.size(),
+                      deci_to_degrees_f(first.temp_deci), deci_to_degrees_f(last.temp_deci),
+                      (last.timestamp_ms - first.timestamp_ms) / 60000.0f);
+
+        ui_temp_graph_set_axis_timestamps(graph_, first.timestamp_ms, now_ms,
                                           static_cast<int>(kept.size()));
 
         // Stage the latest target for the accent tick + next-sample push.
@@ -694,6 +723,8 @@ void TempGraphController::backfill_history() {
             // the off-period gap via the segmenter.
             ui_temp_graph_set_current_target(graph_, s.series_id, target_deg, true);
         }
+
+        has_chart_data_ = true;
     }
 }
 

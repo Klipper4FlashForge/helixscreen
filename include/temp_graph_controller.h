@@ -155,6 +155,16 @@ class TempGraphController {
     void rebuild();
 
     /**
+     * @brief Re-attach observers to current subjects WITHOUT destroying the chart
+     *
+     * Called on reconnect. Preserves the graph widget, series data, and chip
+     * visibility — only detaches old observers and re-attaches fresh ones to
+     * whatever subjects are currently live. Avoids the rebuild's chart flash,
+     * data loss, and triple-rebuild across controller instances (#1245).
+     */
+    void reattach_observers();
+
+    /**
      * @brief Detach all observers and invalidate lifetime tokens
      *
      * Used before deferred destruction (prevents observer removal on freed
@@ -237,11 +247,10 @@ class TempGraphController {
     uint32_t generation_ = 0;
     bool paused_ = false;
     bool tearing_down_ = false; ///< Set by detach(); guards rebuild()/setup_observers()
+    /// True after backfill_history() finds data. Prevents refresh_from_history()
+    /// from clearing live chart data with a stale re-backfill on reconnect.
+    bool has_chart_data_ = false;
     float y_axis_max_ = 100.0f;
-
-    /// Debounce rapid rebuilds (e.g., reconnect flapping in Klipper error state)
-    std::chrono::steady_clock::time_point last_rebuild_time_{};
-    static constexpr auto REBUILD_DEBOUNCE = std::chrono::seconds(2);
 };
 
 } // namespace helix

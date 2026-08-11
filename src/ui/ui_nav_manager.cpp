@@ -809,6 +809,14 @@ void NavigationManager::handle_connection_state_change(int state) {
     previous_connection_state_ = state;
 }
 
+void NavigationManager::mark_disconnect_expected() {
+    // Set previous_connection_state_ to DISCONNECTED so that when the
+    // DISCONNECTED notification fires (queued by disconnect(), drained on
+    // resume), the was_connected check is false and the overlay stack is
+    // not cleared (#1245).
+    previous_connection_state_ = static_cast<int>(ConnectionState::DISCONNECTED);
+}
+
 void NavigationManager::handle_klippy_state_change(int state) {
     bool was_ready = (previous_klippy_state_ == static_cast<int>(KlippyState::READY));
     bool is_ready = (state == static_cast<int>(KlippyState::READY));

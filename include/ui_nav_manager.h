@@ -466,6 +466,15 @@ class NavigationManager {
     bool take_backdrop_keyboard_dismiss();
 
     /**
+     * @brief Mark that the next DISCONNECTED is expected (e.g. app backgrounding)
+     *
+     * Sets previous_connection_state_ so that when the DISCONNECTED notification
+     * fires (queued by disconnect(), drained on resume), the was_connected check
+     * is false and the overlay stack is not cleared (#1245).
+     */
+    void mark_disconnect_expected();
+
+    /**
      * @brief Shutdown navigation system during application exit
      *
      * Deactivates current overlay/panel and clears all registries.

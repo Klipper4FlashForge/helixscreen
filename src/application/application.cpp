@@ -3249,7 +3249,19 @@ bool Application::connect_moonraker() {
     if (auto* dm = DisplayManager::instance()) {
         dm->register_sleep_callback([this](bool sleeping) {
             if (!sleeping && m_moonraker && m_moonraker->client()) {
+                // Debounce: on_enter_foreground() may have already called
+                // force_reconnect for the same wake event. Skip if it ran
+                // within the last 5 seconds — the second call would bump
+                // the connection generation and make the first discovery's
+                // subscription stale (#1245).
+                auto now = std::chrono::steady_clock::now();
+                if (now - m_last_force_reconnect < std::chrono::seconds(5)) {
+                    spdlog::debug("[Application] Display woke — skipping reconnect (debounced, "
+                                  "on_enter_foreground ran recently)");
+                    return;
+                }
                 spdlog::info("[Application] Display woke — reconnecting WebSocket");
+                m_last_force_reconnect = now;
                 m_moonraker->client()->force_reconnect();
             }
         });
@@ -3923,6 +3935,10 @@ void Application::on_enter_background() {
 
     // 2. Disconnect WebSocket (stops all status updates and reconnect timer)
     if (m_moonraker) {
+        // Mark the disconnect as expected so the DISCONNECTED notification
+        // (queued here, drained on resume) doesn't clear the overlay stack
+        // and bounce the user to home (#1245).
+        NavigationManager::instance().mark_disconnect_expected();
         m_moonraker->client()->disconnect();
     }
 
@@ -3949,6 +3965,7 @@ void Application::on_enter_foreground() {
 
     // 3. Reconnect WebSocket (triggers discovery + full state refresh)
     if (m_moonraker && m_moonraker->client()) {
+        m_last_force_reconnect = std::chrono::steady_clock::now();
         m_moonraker->client()->force_reconnect();
     }
 

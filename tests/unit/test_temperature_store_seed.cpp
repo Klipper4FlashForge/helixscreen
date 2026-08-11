@@ -151,10 +151,10 @@ TEST_CASE_METHOD(TempStoreSeedTestFixture, "seed_from_store fills empty history"
 }
 
 // ============================================================================
-// seed_from_store — merge with an existing out-of-order (newer) live sample
+// seed_from_store — replaces existing samples (no merge)
 // ============================================================================
 
-TEST_CASE_METHOD(TempStoreSeedTestFixture, "seed_from_store merges with existing samples",
+TEST_CASE_METHOD(TempStoreSeedTestFixture, "seed_from_store replaces existing samples",
                  "[temp][seed]") {
     // A live sample already recorded for "extruder" that is NEWER than the
     // seed range — simulates the fetch returning after a live sample landed.
@@ -163,22 +163,15 @@ TEST_CASE_METHOD(TempStoreSeedTestFixture, "seed_from_store merges with existing
                                                             live_ts));
 
     TemperatureStore store;
-    store["extruder"].temperatures = {100.0f, 101.0f, 102.0f}; // 3 older samples
+    store["extruder"].temperatures = {100.0f, 101.0f, 102.0f}; // 3 store samples
     manager_->seed_from_store(store, kNow);
 
     auto s = manager_->get_samples_since("extruder", 0);
-    REQUIRE(s.size() == 4);
-
-    // Strictly time-ordered oldest-first (no inversion despite late insert).
-    for (size_t i = 1; i < s.size(); ++i) {
-        REQUIRE(s[i].timestamp_ms > s[i - 1].timestamp_ms);
-    }
-
-    // Seed samples occupy the older slots; the live sample is newest.
+    // Seed REPLACES — the live sample is gone, only the 3 store samples remain.
+    REQUIRE(s.size() == 3);
     REQUIRE(s.front().timestamp_ms == kNow - 2000);
-    REQUIRE(s[2].timestamp_ms == kNow);        // newest seed sample
-    REQUIRE(s.back().timestamp_ms == live_ts); // live sample stays newest
-    REQUIRE(s.back().temp_deci == 2100);
+    REQUIRE(s.back().timestamp_ms == kNow);
+    REQUIRE(s.back().temp_deci == 1020); // 102.0 -> 1020
 }
 
 // ============================================================================

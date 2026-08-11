@@ -953,10 +953,10 @@ static void draw_x_axis_labels_cb(lv_event_t* e) {
     label_dsc.align = LV_TEXT_ALIGN_CENTER;
     label_dsc.opa = lv_obj_get_style_text_opa(chart, LV_PART_MAIN); // Use chart's text opacity
 
-    // The chart has a fixed number of points (1200 by default = 20 minutes at 1 sample/sec)
-    // Each data point represents 1 second, so the total time span is fixed
+    // The chart has point_count points at SAMPLE_INTERVAL_SEC apart.
+    // 400 points × 3 s = 20 min display window (#979).
     int64_t total_display_time_ms =
-        static_cast<int64_t>(graph->point_count) * 1000; // 20 min = 1,200,000 ms
+        static_cast<int64_t>(graph->point_count) * UI_TEMP_GRAPH_SAMPLE_INTERVAL_SEC * 1000;
 
     // The "now" time is always at the rightmost edge
     int64_t latest_ms = graph->latest_point_time_ms;
@@ -976,7 +976,7 @@ static void draw_x_axis_labels_cb(lv_event_t* e) {
     int32_t label_y = coords.y2 - pad_bottom + space_xs;
 
     // Determine label interval based on total display time (fixed)
-    // For 20 minutes (1200s), show labels every 5 minutes
+    // For 20 minutes, show labels every 5 minutes
     int64_t label_interval_ms = 5 * 60 * 1000; // 5 minutes default
     if (total_display_time_ms < 2 * 60 * 1000) {
         label_interval_ms = 30 * 1000; // 30 seconds for < 2 min
@@ -1112,10 +1112,35 @@ static void draw_grid_lines_cb(lv_event_t* e) {
         lv_draw_line(layer, &line_dsc);
     }
 
-    // Draw vertical grid lines (10 lines = 9 divisions)
-    constexpr int V_DIVISIONS = 10;
-    for (int i = 0; i <= V_DIVISIONS; i++) {
-        int32_t x = content_x1 + (content_width * i) / V_DIVISIONS;
+    // Draw vertical grid lines at TIME-BASED positions matching the X-axis
+    // labels (every label_interval_ms). This ensures grid lines and time labels
+    // are always aligned, so data points line up with the grid (#1245).
+    int64_t total_display_time_ms =
+        static_cast<int64_t>(graph->point_count) * UI_TEMP_GRAPH_SAMPLE_INTERVAL_SEC * 1000;
+    int64_t latest_ms = graph->latest_point_time_ms;
+    int64_t leftmost_ms = latest_ms - total_display_time_ms;
+
+    int64_t label_interval_ms = 5 * 60 * 1000; // 5 minutes (matches X-axis labels)
+    if (total_display_time_ms < 2 * 60 * 1000) {
+        label_interval_ms = 30 * 1000;
+    } else if (total_display_time_ms < 10 * 60 * 1000) {
+        label_interval_ms = 2 * 60 * 1000;
+    }
+
+    int64_t first_line_ms = (leftmost_ms / label_interval_ms) * label_interval_ms;
+    if (first_line_ms < leftmost_ms) {
+        first_line_ms += label_interval_ms;
+    }
+
+    for (int64_t line_time_ms = first_line_ms; line_time_ms <= latest_ms;
+         line_time_ms += label_interval_ms) {
+        int64_t time_offset = line_time_ms - leftmost_ms;
+        int32_t x = content_x1 +
+                    static_cast<int32_t>((time_offset * content_width) / total_display_time_ms);
+
+        if (x < content_x1 || x > content_x2)
+            continue;
+
         line_dsc.p1.x = x;
         line_dsc.p1.y = content_y1;
         line_dsc.p2.x = x;
@@ -1691,9 +1716,9 @@ void ui_temp_graph_update_series_with_time(ui_temp_graph_t* graph, int series_id
     } else if (graph->visible_point_count > graph->point_count) {
         // Buffer is full, oldest point scrolled off
         // First visible point is now: latest - (point_count - 1) samples back
-        // At 1 sample/sec, that's (point_count - 1) seconds before latest
-        graph->first_point_time_ms =
-            timestamp_ms - static_cast<int64_t>(graph->point_count - 1) * 1000;
+        // At one sample per SAMPLE_INTERVAL_SEC, that's (point_count - 1) × interval
+        graph->first_point_time_ms = timestamp_ms - static_cast<int64_t>(graph->point_count - 1) *
+                                                        UI_TEMP_GRAPH_SAMPLE_INTERVAL_SEC * 1000;
     }
 
     // Add point to series (shifts old data left, stored as deci-degrees)
@@ -1817,9 +1842,9 @@ void ui_temp_graph_set_axis_timestamps(ui_temp_graph_t* graph, int64_t first_ts_
 
     if (count >= graph->point_count) {
         // Buffer is full; left edge is one full period before the right edge.
-        // Matches update_series_with_time's full-buffer fallback (1 sample/sec).
-        graph->first_point_time_ms =
-            last_ts_ms - static_cast<int64_t>(graph->point_count - 1) * 1000;
+        // Matches update_series_with_time's full-buffer fallback.
+        graph->first_point_time_ms = last_ts_ms - static_cast<int64_t>(graph->point_count - 1) *
+                                                      UI_TEMP_GRAPH_SAMPLE_INTERVAL_SEC * 1000;
     } else {
         graph->first_point_time_ms = first_ts_ms;
     }

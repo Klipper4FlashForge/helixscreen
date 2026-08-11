@@ -161,8 +161,31 @@ void TempGraphOverlay::on_activate() {
     bed_icon_binder_.bind(overlay_root_, *printer_state_, helix::HeaterType::Bed);
     chamber_icon_binder_.bind(overlay_root_, *printer_state_, helix::HeaterType::Chamber);
 
-    // Discover series metadata (populates series_ with display info)
+    // Discover series metadata. On re-activation (resume from background,
+    // tab switch back), preserve the user's chip-toggle visibility instead
+    // of resetting to defaults — apply_default_visibility() is only called
+    // the first time.
+    bool is_reactivation = !series_.empty();
+    std::vector<std::pair<std::string, bool>> saved_visibility;
+    if (is_reactivation) {
+        for (const auto& s : series_)
+            saved_visibility.emplace_back(s.klipper_name, s.visible);
+    }
+
     discover_series();
+
+    if (!is_reactivation) {
+        apply_default_visibility();
+    } else {
+        for (auto& s : series_) {
+            for (const auto& [name, vis] : saved_visibility) {
+                if (name == s.klipper_name) {
+                    s.visible = vis;
+                    break;
+                }
+            }
+        }
+    }
 
     // Build TempGraphSeriesSpec vector from discovered series
     std::vector<helix::TempGraphSeriesSpec> specs;
