@@ -74,8 +74,8 @@ TEST_CASE("operation_patterns - contains_ci utility", "[operation_patterns][stri
         REQUIRE_FALSE(contains_ci("BED_MESH_CALIBRATE", "QGL"));
     }
 
-    SECTION("Empty needle always matches") {
-        REQUIRE(contains_ci("anything", ""));
+    SECTION("Empty needle does not match (guarded foot-gun)") {
+        REQUIRE_FALSE(contains_ci("anything", ""));
     }
 
     SECTION("Empty haystack doesn't match non-empty needle") {

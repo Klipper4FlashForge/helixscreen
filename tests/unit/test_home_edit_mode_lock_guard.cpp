@@ -26,12 +26,30 @@
 #include "ui_panel_home.h"
 
 #include "../test_helpers/home_panel_test_access.h"
+#include "config.h"
+#include "input_settings_manager.h"
 #include "lock_manager.h"
 #include "lvgl_test_fixture.h"
 
 #include "../catch_amalgamated.hpp"
 
 namespace {
+
+/// Stands up the InputSettingsManager subjects so the long-press handler reads
+/// the documented defaults (home_edit_mode_enabled = true) instead of a zeroed
+/// subject. LVGLTestFixture does not initialize this manager, so without this
+/// guard the test would depend on a co-tenant test having leaked an init — it
+/// passed only by shard-ordering luck and failed in isolation.
+class ScopedInputSettings {
+  public:
+    ScopedInputSettings() {
+        helix::Config::get_instance();
+        helix::InputSettingsManager::instance().init_subjects();
+    }
+    ~ScopedInputSettings() {
+        helix::InputSettingsManager::instance().deinit_subjects();
+    }
+};
 
 /// Restores the LockManager to "no PIN, unlocked" however the test exits — it
 /// is a process-wide singleton that persists its PIN to Config, so a leaked
@@ -65,6 +83,7 @@ class ScopedHomePanelPage {
 
 TEST_CASE_METHOD(LVGLTestFixture, "home-grid long press is ignored while the screen is locked",
                  "[home][grid_edit][edit_mode][lock][1245]") {
+    ScopedInputSettings input_settings;
     ScopedLockState lock_state;
     auto& lock = helix::LockManager::instance();
     lock.remove_pin(); // known-clean starting point
