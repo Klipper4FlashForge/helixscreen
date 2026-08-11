@@ -129,6 +129,17 @@ static int extract_asset_dir(AAssetManager* mgr, const std::string& asset_path,
             asset_path.empty() ? std::string(filename) : asset_path + "/" + filename;
         std::string target_file = target_path + "/" + filename;
 
+        // Preserve user-owned state. settings.json holds the user's printer
+        // host, preferences, and customizations. The APK ships a default, but
+        // overwriting it on every extraction wipes the user's config on every
+        // upgrade (#1245). Skip it when it already exists — first install
+        // still gets the shipped default.
+        if (asset_path == "config" && std::string(filename) == "settings.json" &&
+            fs::exists(target_file)) {
+            spdlog::info("[AndroidAssets] Preserving existing {}", target_file);
+            continue;
+        }
+
         AAsset* asset = AAssetManager_open(mgr, asset_file.c_str(), AASSET_MODE_STREAMING);
         if (!asset) {
             spdlog::warn("[AndroidAssets] Could not open asset '{}'", asset_file);
