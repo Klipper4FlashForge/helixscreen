@@ -271,6 +271,9 @@ class GCodeViewerState {
     void* object_long_press_user_data{nullptr};
     gcode_viewer_load_callback_t load_callback{nullptr};
     void* load_callback_user_data{nullptr};
+    gcode_viewer_load_callback_t first_frame_callback{nullptr};
+    void* first_frame_callback_user_data{nullptr};
+    bool first_frame_fired_{false};
     ui_gcode_viewer_clear_cb_t clear_callback{nullptr};
     void* clear_callback_user_data{nullptr};
 
@@ -727,6 +730,20 @@ static void gcode_viewer_draw_cb(lv_event_t* e) {
                 obj, [](void* data) { lv_obj_invalidate(static_cast<lv_obj_t*>(data)); }, obj);
         }
 #endif
+    }
+
+    // Fire the one-shot first-frame callback once the viewer has produced real
+    // pixels (not during VBO upload, not on a skipped/failed frame). Callers
+    // (e.g. PrintSelectDetailView) use this to defer hiding the thumbnail until
+    // the viewer actually has something to show, avoiding a gray flash.
+    if (!st->first_frame_fired_ && st->first_frame_callback) {
+        bool frame_complete = true;
+        if (st->renderer_ && st->renderer_->is_uploading())
+            frame_complete = false;
+        if (frame_complete) {
+            st->first_frame_fired_ = true;
+            st->first_frame_callback(obj, st->first_frame_callback_user_data, true);
+        }
     }
 
     auto render_end = std::chrono::high_resolution_clock::now();
@@ -1378,6 +1395,7 @@ static void ui_gcode_viewer_load_file_async(lv_obj_t* obj, const char* file_path
     spdlog::info("[GCode Viewer] Loading file async: {}", file_path);
     st->viewer_state = GcodeViewerState::Loading;
     st->first_render = true;       // Reset for new file
+    st->first_frame_fired_ = false; // Reset first-frame callback for new file
     st->budget_forced_2d_ = false; // Reset budget 2D override for new file
 
     // Bump generation so any in-flight async callbacks from a prior load are rejected
@@ -1898,6 +1916,19 @@ void ui_gcode_viewer_set_load_callback(lv_obj_t* obj, gcode_viewer_load_callback
     st->load_callback = callback;
     st->load_callback_user_data = user_data;
     spdlog::debug("[GCode Viewer] Load callback registered");
+}
+
+void ui_gcode_viewer_set_first_frame_callback(lv_obj_t* obj,
+                                               gcode_viewer_load_callback_t callback,
+                                               void* user_data) {
+    gcode_viewer_state_t* st = get_state(obj);
+    if (!st) {
+        return;
+    }
+
+    st->first_frame_callback = callback;
+    st->first_frame_callback_user_data = user_data;
+    st->first_frame_fired_ = false;
 }
 
 void ui_gcode_viewer_clear(lv_obj_t* obj) {
@@ -2678,6 +2709,8 @@ lv_obj_t* ui_gcode_viewer_create(lv_obj_t* parent) {
 void ui_gcode_viewer_load_file(lv_obj_t*, const char*) {}
 
 void ui_gcode_viewer_set_load_callback(lv_obj_t*, gcode_viewer_load_callback_t, void*) {}
+
+void ui_gcode_viewer_set_first_frame_callback(lv_obj_t*, gcode_viewer_load_callback_t, void*) {}
 
 void ui_gcode_viewer_set_gcode_data(lv_obj_t*, void*) {}
 

@@ -120,6 +120,22 @@ void ui_gcode_viewer_set_load_callback(lv_obj_t* obj, gcode_viewer_load_callback
                                        void* user_data);
 
 /**
+ * @brief Register a one-shot callback that fires when the viewer produces its
+ *        first complete rendered frame (after VBO upload / parse, not on a
+ *        skipped or failed frame).
+ *
+ * Callers that overlay a thumbnail behind the viewer use this to defer hiding
+ * the thumbnail until the viewer actually has pixels to show, avoiding a gray
+ * flash during the load-to-render gap.
+ *
+ * @param obj       Viewer widget
+ * @param callback  Fires once with success=true when the first frame renders
+ * @param user_data Passed through to the callback
+ */
+void ui_gcode_viewer_set_first_frame_callback(lv_obj_t* obj, gcode_viewer_load_callback_t callback,
+                                               void* user_data);
+
+/**
  * @brief Clear loaded G-code
  * @param obj Viewer widget
  *

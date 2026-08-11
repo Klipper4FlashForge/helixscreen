@@ -540,6 +540,10 @@ class PrintSelectDetailView : public OverlayBase {
     lv_subject_t detail_gcode_viewer_mode_{};
     // G-code loading indicator (0=hidden, 1=visible)
     lv_subject_t detail_gcode_loading_{};
+    // 1 = the gcode viewer has rendered its first real frame. The thumbnail
+    // (which sits on top of the viewer in z-order) stays visible until this
+    // flips, covering the gray viewer during the load-to-render gap.
+    lv_subject_t detail_viewer_first_frame_{};
     // 1 = show slicer-intended colors instead of loaded AMS slot colors.
     // View-local, resets to 0 (actual) on every show().
     lv_subject_t detail_prefer_sliced_colors_{};
