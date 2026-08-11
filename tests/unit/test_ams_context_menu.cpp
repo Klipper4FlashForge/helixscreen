@@ -87,10 +87,21 @@ TEST_CASE("AmsContextMenu::decide_show_backup_row needs a relation, not just ava
                                  .editability = EndlessSpoolEditability::ReadOnly,
                                  .restriction = EndlessSpoolRestriction::FirmwareManaged};
 
-    EndlessSpoolCapabilities ad5x_stock{.availability = EndlessSpoolAvailability::RequiresPlugin,
-                                        .enabled = EndlessSpoolEnabled::Off,
+    EndlessSpoolCapabilities ad5x_stock{.availability = EndlessSpoolAvailability::Available,
+                                        .enabled = EndlessSpoolEnabled::On,
                                         .editability = EndlessSpoolEditability::ReadOnly,
-                                        .restriction = EndlessSpoolRestriction::PluginMissing};
+                                        .restriction = EndlessSpoolRestriction::FirmwareManaged,
+                                        .provider = "zmod"};
+
+    // No real backend currently reports RequiresPlugin — AD5X stock zMod moved
+    // to Available/FirmwareManaged once source read of ANALOG_PRUTOK landed.
+    // Kept as a synthetic so the rendering path stays covered for any future
+    // backend whose package genuinely can be missing.
+    EndlessSpoolCapabilities synthetic_plugin_missing{
+        .availability = EndlessSpoolAvailability::RequiresPlugin,
+        .enabled = EndlessSpoolEnabled::Off,
+        .editability = EndlessSpoolEditability::ReadOnly,
+        .restriction = EndlessSpoolRestriction::PluginMissing};
 
     SECTION("no such feature: never") {
         CHECK_FALSE(AmsContextMenuTestAccess::decide_show_backup_row(unsupported, false));
@@ -98,8 +109,15 @@ TEST_CASE("AmsContextMenu::decide_show_backup_row needs a relation, not just ava
     }
 
     SECTION("plugin not installed: never - there is nothing to configure yet") {
+        CHECK_FALSE(
+            AmsContextMenuTestAccess::decide_show_backup_row(synthetic_plugin_missing, false));
+        CHECK_FALSE(
+            AmsContextMenuTestAccess::decide_show_backup_row(synthetic_plugin_missing, true));
+    }
+
+    SECTION("AD5X stock zMod: same shape as CFS, hides when no relation") {
+        // FirmwareManaged + ReadOnly + no per-slot relation -> the CFS rule.
         CHECK_FALSE(AmsContextMenuTestAccess::decide_show_backup_row(ad5x_stock, false));
-        CHECK_FALSE(AmsContextMenuTestAccess::decide_show_backup_row(ad5x_stock, true));
     }
 
     SECTION("editable: always, even before anything is configured") {

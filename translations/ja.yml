@@ -1086,6 +1086,7 @@ translations:
   Include Klipper/Moonraker logs: Klipper/Moonrakerのログを含める
   'Incompatible materials: {} cannot use {} as backup': '非対応の素材: {} は {} をバックアップとして使用できません'
   Indexing G-code...: G-codeをインデックス中...
+  Infinite Spool Mode: ''
   Info: 情報
   Initialized: 初期化済み
   Initializing...: 初期化中...
@@ -2634,6 +2635,8 @@ translations:
   v%s available: v%s が利用可能です
   v{} installed! Restarting...: v{} をインストールしました！再起動中...
   v{} is available. Tap to update.: v{} が利用可能です。タップして更新してください。
+  ? will switch to a slot whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
+  : ''
   you have: 現在は
   '{} LED strips available': '{} 個の LED ストリップが利用可能です'
   '{} axis homed': '{} 軸がホーミング済み'

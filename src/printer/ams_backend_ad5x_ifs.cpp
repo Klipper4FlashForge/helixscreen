@@ -2049,10 +2049,11 @@ bool AmsBackendAd5xIfs::runout_active() const {
 }
 
 int AmsBackendAd5xIfs::backup_state_locked() const {
-    // No plugin means no backup mechanism at all - that is a definite OFF, not an
-    // unknown, and it is the answer the #1247 reporter needed to see.
+    // Stock zMod's ANALOG_PRUTOK is always-on — there is no toggle, so this is
+    // a definite ON, not Unknown. The runout log already includes `plugin=none`
+    // for context, so `backup=1` on that line reads correctly.
     if (!has_ifs_vars_) {
-        return BACKUP_OFF;
+        return BACKUP_ON;
     }
     if (!ifs_backup_variable_.has_value()) {
         return BACKUP_UNKNOWN;
@@ -5209,11 +5210,14 @@ void AmsBackendAd5xIfs::note_filament_op_dispatch_locked() {
 }
 
 std::chrono::seconds AmsBackendAd5xIfs::runout_confirm_delay_locked() const {
-    // lessWaste's own backup switchover pauses the print, unloads the spent lane
-    // and loads a matching one - minutes during which the toolhead is legitimately
-    // empty on a paused job. Wait it out rather than talking over the recovery the
-    // printer is already performing.
-    if (has_ifs_vars_ && ifs_backup_variable_.value_or(false)) {
+    // Any of the three switchover paths — stock zMod's ANALOG_PRUTOK,
+    // lessWaste's _RUNOUT_HEAD, bambufy's _RUNOUT_HEAD — pauses the print,
+    // unloads the spent lane and loads a matching one. Minutes during which the
+    // toolhead is legitimately empty on a paused job. Wait it out rather than
+    // talking over the recovery the printer is already performing. Stock zMod
+    // is always-on (no toggle), so the !has_ifs_vars_ path always qualifies;
+    // plugins qualify only when variable_backup reads true.
+    if (!has_ifs_vars_ || ifs_backup_variable_.value_or(false)) {
         return kRunoutConfirmDelayWithBackup;
     }
     return kRunoutConfirmDelay;
@@ -5363,11 +5367,18 @@ helix::printer::EndlessSpoolCapabilities AmsBackendAd5xIfs::get_endless_spool_ca
 
     EndlessSpoolCapabilities caps;
     if (!has_ifs_vars_) {
-        // Stock zMod. Not "unsupported": installing lessWaste or bambufy turns it
-        // on, and saying so is the whole point of separating these two states.
-        caps.availability = EndlessSpoolAvailability::RequiresPlugin;
-        caps.enabled = EndlessSpoolEnabled::Off;
-        caps.restriction = EndlessSpoolRestriction::PluginMissing;
+        // Stock zMod's "Infinite Spool Mode" — `ANALOG_PRUTOK`
+        // (zmod_ifs.py:cmd_ANALOG_PRUTOK), wired to head_switch_sensor's
+        // runout_gcode in ad5x_display_off.cfg. No enable flag — it fires
+        // unconditionally on head runout and switches to a slot whose ffmType
+        // AND ffmColor both match AND whose port sensor reads present. There is
+        // nothing for HelixScreen to write, so FirmwareManaged + ReadOnly.
+        // Confirmed from zmod 1.7.1 source + corroborated on-device (raza616).
+        caps.availability = EndlessSpoolAvailability::Available;
+        caps.provider = "zmod";
+        caps.enabled = EndlessSpoolEnabled::On;
+        caps.editability = EndlessSpoolEditability::ReadOnly;
+        caps.restriction = EndlessSpoolRestriction::FirmwareManaged;
         return caps;
     }
 
@@ -5398,11 +5409,28 @@ std::string AmsBackendAd5xIfs::build_runout_detail_locked() const {
         lv_tr("Filament ran out - nothing at the toolhead and the print is paused.");
     detail += " ";
 
+    // The "what will switch" suffix is identical across all three modes because
+    // the firmware-side rule is identical: ANALOG_PRUTOK (stock zMod) and
+    // _RUNOUT_HEAD (lessWaste/bambufy) both require exact material AND exact
+    // colour AND port-present. Only the subject of the sentence differs.
+    const auto append_switchover_rule = [&](const std::string& who) {
+        detail += who + " ";
+        detail += lv_tr("will switch to a slot whose filament type AND colour both match "
+                        "the active spool and whose own port sensor reads filament present.");
+        const int backup = find_backup_slot_locked(runout_slot_);
+        detail += " ";
+        if (backup >= 0) {
+            detail += lv_tr("Slot");
+            detail += " " + std::to_string(backup + 1) + " ";
+            detail += lv_tr("matches.");
+        } else {
+            detail += lv_tr("No slot currently matches.");
+        }
+    };
+
     if (!has_ifs_vars_) {
-        // The #1247 misexpectation, answered head-on: stock zMod has no
-        // switchover mechanism at all, so nothing is going to happen by itself.
-        detail += lv_tr("No auto-switchover plugin (lessWaste or bambufy) is installed, so this "
-                        "printer will not change to a backup spool on its own.");
+        // Stock zMod "Infinite Spool Mode" (ANALOG_PRUTOK) — always on, no toggle.
+        append_switchover_rule(lv_tr("Infinite Spool Mode"));
         return detail;
     }
 
@@ -5420,19 +5448,7 @@ std::string AmsBackendAd5xIfs::build_runout_detail_locked() const {
         return detail;
     }
 
-    detail += plugin_name + " ";
-    detail += lv_tr("backup-spool switching is on. It only switches to a port whose filament type "
-                    "AND colour both match the active spool and whose own port sensor reads "
-                    "filament present.");
-    const int backup = find_backup_slot_locked(runout_slot_);
-    detail += " ";
-    if (backup >= 0) {
-        detail += lv_tr("Slot");
-        detail += " " + std::to_string(backup + 1) + " ";
-        detail += lv_tr("matches.");
-    } else {
-        detail += lv_tr("No slot currently matches.");
-    }
+    append_switchover_rule(plugin_name);
     return detail;
 }
 

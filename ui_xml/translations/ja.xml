@@ -1050,6 +1050,7 @@
   <translation tag="Include Klipper/Moonraker logs" ja="Klipper/Moonrakerのログを含める"/>
   <translation tag="Incompatible materials: {} cannot use {} as backup" ja="非対応の素材: {} は {} をバックアップとして使用できません"/>
   <translation tag="Indexing G-code..." ja="G-codeをインデックス中..."/>
+  <translation tag="Infinite Spool Mode"/>
   <translation tag="Info" ja="情報"/>
   <translation tag="Initialized" ja="初期化済み"/>
   <translation tag="Initializing..." ja="初期化中..."/>
@@ -2509,6 +2510,7 @@
   <translation tag="v%s available" ja="v%s が利用可能です"/>
   <translation tag="v{} installed! Restarting..." ja="v{} をインストールしました！再起動中..."/>
   <translation tag="v{} is available. Tap to update." ja="v{} が利用可能です。タップして更新してください。"/>
+  <translation tag="will switch to a slot whose filament type AND colour both match the active spool and whose own port sensor reads filament present."/>
   <translation tag="you have" ja="現在は"/>
   <translation tag="{} LED strips available" ja="{} 個の LED ストリップが利用可能です"/>
   <translation tag="{} axis homed" ja="{} 軸がホーミング済み"/>

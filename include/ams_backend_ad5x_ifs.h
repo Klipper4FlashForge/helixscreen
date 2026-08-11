@@ -96,23 +96,26 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
 
     /// Which auto-switchover macro package is driving the IFS, if any.
     ///
-    /// `None` is the stock-zMod case and is the one that matters most to the
-    /// user: with no plugin there is no backup-spool switching at all, so a
-    /// runout stops the print until a human intervenes (#1247). That reaches the
-    /// UI through get_endless_spool_capabilities() - availability
-    /// `RequiresPlugin`, `provider` naming the package - not through any
-    /// AD5X-specific subject.
+    /// `None` is stock zMod, whose own `ANALOG_PRUTOK` (zmod_ifs.py) handles
+    /// runout-triggered switchover with no plugin required — zmod's user-facing
+    /// name is "Infinite Spool Mode". `get_endless_spool_capabilities()`
+    /// reports it as `Available`/`FirmwareManaged`/`provider="zmod"`/always-on,
+    /// NOT through any AD5X-specific subject. `LessWaste`/`Bambufy` add a
+    /// `variable_backup` toggle (default off / on respectively) on top of the
+    /// same type+colour+present rule, surfaced as `PluginReadOnly`.
     enum class IfsPlugin : int {
-        None = 0,      ///< Stock zMod - no _IFS_VARS macro, no auto switchover
+        None = 0,      ///< Stock zMod - no _IFS_VARS macro; ANALOG_PRUTOK runs switchover
         LessWaste = 1, ///< Hrybmo/lessWaste (`less_waste_*` save_variables)
         Bambufy = 2    ///< function3d/bambufy (`bambufy_*` save_variables)
     };
 
-    /// The `variable_backup` reading as a tri-state, returned by
-    /// backup_state_locked(). Tri-state because "we could not read it" is a
-    /// different answer from "it is off", and only the latter justifies telling
-    /// the user switchover will not happen. Maps onto
-    /// helix::printer::EndlessSpoolEnabled in get_endless_spool_capabilities().
+    /// The live switchover state as a tri-state, returned by
+    /// backup_state_locked(). Stock zMod is always ON (ANALOG_PRUTOK has no
+    /// toggle); the plugin path is the variable_backup value, with UNKNOWN
+    /// covering "macro exists but the key was never carried" — and only a
+    /// definite OFF justifies telling the user switchover will not happen.
+    /// Maps onto helix::printer::EndlessSpoolEnabled in
+    /// get_endless_spool_capabilities().
     static constexpr int BACKUP_UNKNOWN = -1;
     static constexpr int BACKUP_OFF = 0;
     static constexpr int BACKUP_ON = 1;
@@ -283,10 +286,13 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     /// "installed", which is exactly what the latch exists to prevent.
     [[nodiscard]] IfsPlugin get_plugin() const;
 
-    /// The plugin's `variable_backup` setting, or nullopt when the macro's
-    /// get_status() dict never carried the key (no plugin, or a version that
-    /// does not declare it). nullopt means UNKNOWN and must never be reported
-    /// as "off" - see BACKUP_UNKNOWN.
+    /// The plugin's `variable_backup` setting, or nullopt when there is no
+    /// plugin (stock zMod) or the macro's get_status() dict never carried the
+    /// key (a version that does not declare it). Distinct from
+    /// backup_state_locked(): stock zMod returns nullopt here but backup_state
+    /// reports ON, because ANALOG_PRUTOK is always-on regardless of any plugin.
+    /// nullopt means UNKNOWN for the plugin path and must never be reported as
+    /// "off" - see BACKUP_UNKNOWN.
     [[nodiscard]] std::optional<bool> plugin_backup_enabled() const;
 
     /// True while the backend is holding an unattended-runout fault (see
@@ -306,10 +312,15 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     /**
      * @brief IFS auto-switchover as a shared capability.
      *
-     * RequiresPlugin with no `_IFS_VARS` macro - stock zMod has no switchover
-     * mechanism at all, and that is the answer the user can act on (#1247).
-     * Otherwise Available, `provider` naming lessWaste or bambufy, `enabled`
-     * mirroring `variable_backup` including its genuine Unknown.
+     * Three modes, all `Available` — switchover exists in stock zMod too:
+     *   - stock zMod (`!has_ifs_vars_`): `ANALOG_PRUTOK` runs unconditionally
+     *     on head runout. `FirmwareManaged` / `provider="zmod"` / always-on.
+     *   - bambufy: `variable_backup` (default on) gates `_RUNOUT_HEAD`.
+     *     `PluginReadOnly` / `provider="bambufy"`.
+     *   - lessWaste: `variable_backup` (default off) gates `_RUNOUT_HEAD`.
+     *     `PluginReadOnly` / `provider="lessWaste"`.
+     * `enabled` mirrors `variable_backup` including its genuine Unknown on the
+     * two plugin paths; stock zMod has no toggle, so it reports a definite On.
      *
      * Deliberately **read-only** rather than editable: `backup` is never written
      * today, and `write_ifs_var()` rides the same `_IFS_VARS` unknown-command

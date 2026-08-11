@@ -10134,13 +10134,21 @@ TEST_CASE_METHOD(Ad5xRunoutFixture, "AD5X IFS runout: detail text names the plug
         return Ad5xIfsTestAccess::operation_detail(b);
     };
 
-    SECTION("no plugin: say plainly that no backup switch will happen (#1247)") {
+    SECTION("stock zMod: Infinite Spool Mode names the rule, no plugin mention") {
+        // Source-verified: ANALOG_PRUTOK (zmod_ifs.py:cmd_ANALOG_PRUTOK) runs
+        // always-on on head runout. The detail must name the feature and state
+        // the type+colour+present match — NOT claim no switchover will happen.
         AmsBackendAd5xIfs backend(nullptr, nullptr);
         Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
         const std::string detail = raise(backend);
-        CHECK(detail.find("lessWaste") != std::string::npos);
-        CHECK(detail.find("bambufy") != std::string::npos);
-        CHECK(detail.find("will not change to a backup spool") != std::string::npos);
+        CHECK(detail.find("Infinite Spool Mode") != std::string::npos);
+        // The retired string is gone.
+        CHECK(detail.find("will not change to a backup spool") == std::string::npos);
+        CHECK(detail.find("No auto-switchover plugin") == std::string::npos);
+        // The same type+colour+present rule the plugin path promises.
+        CHECK(detail.find("type") != std::string::npos);
+        CHECK(detail.find("colour") != std::string::npos);
+        CHECK(detail.find("port sensor") != std::string::npos);
     }
 
     SECTION("plugin installed, backup off") {
@@ -10170,39 +10178,52 @@ TEST_CASE_METHOD(Ad5xRunoutFixture, "AD5X IFS runout: detail text names the plug
 }
 
 TEST_CASE_METHOD(Ad5xRunoutFixture,
-                 "AD5X IFS runout: the backup-capable confirm delay outlasts a plugin swap",
+                 "AD5X IFS runout: any switchover path buys the longer confirm delay",
                  "[ams][ad5x_ifs][runout][1250]") {
-    // lessWaste's own switchover pauses, unloads and loads a replacement lane.
-    // Declaring a runout 30 s into that would talk over a recovery already under
-    // way, so a backup-enabled plugin buys a much longer window.
+    // Three switchover paths now qualify for the longer dwell: stock zMod's
+    // ANALOG_PRUTOK (always-on), bambufy/lessWaste with variable_backup on.
+    // The short delay survives only when a plugin is installed AND backup is
+    // definitively off (or was never read).
     AmsBackendAd5xIfs backend(nullptr, nullptr);
     Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
-    const auto plain = Ad5xIfsTestAccess::runout_confirm_delay(backend);
 
-    Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
-    Ad5xIfsTestAccess::parse_ifs_vars_macro(backend, json{{"variable_backup", 1}});
-    const auto with_backup = Ad5xIfsTestAccess::runout_confirm_delay(backend);
-    REQUIRE(with_backup > plain);
+    SECTION("stock zMod (always-on ANALOG_PRUTOK) gets the longer dwell") {
+        const auto delay = Ad5xIfsTestAccess::runout_confirm_delay(backend);
+        // Compare against a plugin-with-backup-off baseline, which stays short.
+        AmsBackendAd5xIfs plugin_off(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_zcolor_supported(plugin_off, false);
+        Ad5xIfsTestAccess::set_has_ifs_vars(plugin_off, true);
+        Ad5xIfsTestAccess::parse_ifs_vars_macro(plugin_off, json{{"variable_backup", 0}});
+        const auto short_delay = Ad5xIfsTestAccess::runout_confirm_delay(plugin_off);
+        REQUIRE(delay > short_delay);
+    }
 
-    set_print_state(helix::PrintJobState::PAUSED);
-    seat_then_drop_head(backend);
-    // Long enough for the plain delay, nowhere near the backup one.
-    Ad5xIfsTestAccess::age_head_empty(backend, plain + std::chrono::seconds(5));
-    REQUIRE_FALSE(Ad5xIfsTestAccess::evaluate_runout(backend));
-    Ad5xIfsTestAccess::age_head_empty(backend, with_backup + std::chrono::seconds(5));
-    REQUIRE(Ad5xIfsTestAccess::evaluate_runout(backend));
+    SECTION("plugin with backup on gets the longer dwell (unchanged)") {
+        // Baseline is the SAME plugin with backup OFF; that is the only config
+        // that still gets the short delay under the new matrix (stock zMod
+        // always-on now also qualifies for the long delay).
+        Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
+        Ad5xIfsTestAccess::set_var_prefix(backend, "less_waste");
+        Ad5xIfsTestAccess::parse_ifs_vars_macro(backend, json{{"variable_backup", 0}});
+        const auto plain = Ad5xIfsTestAccess::runout_confirm_delay(backend);
+
+        Ad5xIfsTestAccess::parse_ifs_vars_macro(backend, json{{"variable_backup", 1}});
+        const auto with_backup = Ad5xIfsTestAccess::runout_confirm_delay(backend);
+        REQUIRE(with_backup > plain);
+    }
 }
 
 TEST_CASE("AD5X IFS plugin visibility: which plugin, and is backup on",
           "[ams][ad5x_ifs][runout][1250]") {
     using B = AmsBackendAd5xIfs;
 
-    SECTION("stock zMod: no plugin, and backup is a definite OFF") {
+    SECTION("stock zMod: no plugin, switchover is a definite ON (ANALOG_PRUTOK)") {
         B backend(nullptr, nullptr);
         REQUIRE(backend.get_plugin() == B::IfsPlugin::None);
+        // No plugin -> plugin_backup_enabled() is nullopt (no flag to read), but
+        // backup_state_locked() is ON: stock zMod's ANALOG_PRUTOK is always-on.
         REQUIRE_FALSE(backend.plugin_backup_enabled().has_value());
-        // No plugin means no mechanism at all - that is not "unknown".
-        REQUIRE(Ad5xIfsTestAccess::backup_state(backend) == B::BACKUP_OFF);
+        REQUIRE(Ad5xIfsTestAccess::backup_state(backend) == B::BACKUP_ON);
     }
 
     SECTION("lessWaste detected from its own save_variables") {
@@ -10230,7 +10251,8 @@ TEST_CASE("AD5X IFS plugin visibility: which plugin, and is backup on",
         Ad5xIfsTestAccess::parse_vars(backend,
                                       json{{"less_waste_tools", json::array({1, 2, 3, 4})}});
         REQUIRE(backend.get_plugin() == B::IfsPlugin::None);
-        REQUIRE(Ad5xIfsTestAccess::backup_state(backend) == B::BACKUP_OFF);
+        // Treated as stock zMod -> ANALOG_PRUTOK always-on.
+        REQUIRE(Ad5xIfsTestAccess::backup_state(backend) == B::BACKUP_ON);
     }
 
     SECTION("variable_backup is read from the macro dict, int or bool") {
@@ -10322,20 +10344,25 @@ TEST_CASE("AD5X IFS runout: backup-slot match needs type AND colour AND presence
 TEST_CASE("AD5X IFS endless spool capabilities", "[ams][ad5x_ifs][endless_spool][1250]") {
     using namespace helix::printer;
 
-    SECTION("stock zMod: RequiresPlugin, not Unsupported") {
-        // The #1247 misexpectation. "Unsupported" would be wrong: installing
-        // lessWaste or bambufy is exactly what turns this on, and that is the one
-        // thing the user can do about a runout that stopped the print.
+    SECTION("stock zMod: Available + FirmwareManaged, ANALOG_PRUTOK always-on") {
+        // The matrix that source read of zmod_ifs.py:cmd_ANALOG_PRUTOK +
+        // ad5x_display_off.cfg:39-44 established (corroborated on-device by
+        // raza616). Stock zMod has its own switchover — "Infinite Spool Mode" —
+        // with no toggle. That is Available/FirmwareManaged/provider="zmod",
+        // not RequiresPlugin/PluginMissing.
         AmsBackendAd5xIfs backend(nullptr, nullptr);
         Ad5xIfsTestAccess::set_has_ifs_vars(backend, false);
 
         auto caps = backend.get_endless_spool_capabilities();
-        REQUIRE(caps.availability == EndlessSpoolAvailability::RequiresPlugin);
+        REQUIRE(caps.availability == EndlessSpoolAvailability::Available);
+        REQUIRE(caps.availability != EndlessSpoolAvailability::RequiresPlugin);
         REQUIRE(caps.availability != EndlessSpoolAvailability::Unsupported);
-        REQUIRE(caps.enabled == EndlessSpoolEnabled::Off);
-        REQUIRE(caps.restriction == EndlessSpoolRestriction::PluginMissing);
-        REQUIRE(caps.provider.empty());
-        REQUIRE_FALSE(caps.available());
+        REQUIRE(caps.enabled == EndlessSpoolEnabled::On);
+        REQUIRE(caps.enabled != EndlessSpoolEnabled::Off);
+        REQUIRE(caps.editability == EndlessSpoolEditability::ReadOnly);
+        REQUIRE(caps.restriction == EndlessSpoolRestriction::FirmwareManaged);
+        REQUIRE(caps.provider == "zmod");
+        REQUIRE(caps.available());
         REQUIRE_FALSE(caps.editable());
     }
 

@@ -1583,9 +1583,11 @@ namespace helix::printer {
  * @brief Does the endless-spool mechanism exist on this printer at all?
  *
  * Three states rather than a bool because "the printer could do this but the
- * package that implements it is not installed" is the answer that explains a
- * runout which stopped a print, and it is the only one the user can act on
- * (AD5X on stock zMod, prestonbrown/helixscreen#1247).
+ * optional package that exposes the live toggle is not installed" is a real
+ * answer on plugin-gated backends. No backend currently uses `RequiresPlugin`
+ * (AD5X stock zMod's `ANALOG_PRUTOK` switchover is always-on, reported as
+ * `Available`/`FirmwareManaged`); the value is retained for a future backend
+ * whose package genuinely can be missing.
  */
 enum class EndlessSpoolAvailability : int {
     Unsupported = 0,    ///< No such feature. Offer nothing.
@@ -1637,7 +1639,8 @@ enum class EndlessSpoolRestriction : int {
     /// is unsafe on a multi-unit rig.
     MultiUnit,
     /// The firmware chooses the backup itself and exposes nothing to configure
-    /// (Creality CFS auto-refill; the AD5X plugin's type+colour match).
+    /// (Creality CFS auto-refill; stock zMod's `ANALOG_PRUTOK`; the AD5X
+    /// plugin's type+colour match when backup is on).
     FirmwareManaged,
     /// The backend has not received enough state to answer yet.
     NotReady,

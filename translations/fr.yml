@@ -1221,6 +1221,7 @@ translations:
   'Incompatible materials: {} cannot use {} as backup': 'Matériaux incompatibles :
     {} ne peut pas utiliser {} comme secours'
   Indexing G-code...: Indexation du G-code...
+  Infinite Spool Mode: ''
   Info: Info
   Initialized: Initialisé
   Initializing...: Initialisation...
@@ -2994,6 +2995,8 @@ translations:
   v%s available: v%s disponible
   v{} installed! Restarting...: v{} installée ! Redémarrage...
   v{} is available. Tap to update.: v{} est disponible. Appuyez pour mettre à jour.
+  ? will switch to a slot whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
+  : ''
   you have: vous avez
   '{} LED strips available': '{} bandeaux LED disponibles'
   '{} axis homed': Axe {} référencé

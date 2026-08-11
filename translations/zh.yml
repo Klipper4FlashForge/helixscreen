@@ -1081,6 +1081,7 @@ translations:
   Include Klipper/Moonraker logs: 包含 Klipper/Moonraker 日志
   'Incompatible materials: {} cannot use {} as backup': '材料不兼容: {} 无法使用 {} 作为备用'
   Indexing G-code...: 正在索引 G-code...
+  Infinite Spool Mode: ''
   Info: 信息
   Initialized: 已初始化
   Initializing...: 初始化中...
@@ -2624,6 +2625,8 @@ translations:
   v%s available: v%s 可用
   v{} installed! Restarting...: 已安装 v{}！正在重启...
   v{} is available. Tap to update.: v{} 可用。点击以更新。
+  ? will switch to a slot whose filament type AND colour both match the active spool and whose own port sensor reads filament present.
+  : ''
   you have: 您有
   '{} LED strips available': '{} 条 LED 灯带可用'
   '{} axis homed': '{} 轴已归位'
