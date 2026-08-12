@@ -46,7 +46,7 @@ using namespace helix::ui;
 // NEVER the empty string: ActivePrintMediaManager publishes an explicit
 // placeholder so no consumer has to carry its own empty-path branch (a "" src is
 // classified LV_IMAGE_SRC_VARIABLE by LVGL and dereferenced as a descriptor).
-static const std::string kNoThumb = helix::ActivePrintMediaManager::kNoThumbnailPlaceholder;
+static const std::string kNoThumb = helix::ActivePrintMediaManager::no_thumbnail_placeholder();
 
 // ============================================================================
 // Test Fixture for ActivePrintMediaManager tests
