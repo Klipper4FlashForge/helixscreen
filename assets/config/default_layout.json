@@ -37,7 +37,7 @@
         "xxlarge": {
           "col": 0,
           "row": 0,
-          "colspan": 8,
+          "colspan": 6,
           "rowspan": 6
         },
         "xlarge": {
@@ -82,7 +82,7 @@
           "rowspan": 2
         },
         "xxlarge": {
-          "col": 20,
+          "col": 14,
           "row": 0,
           "colspan": 2,
           "rowspan": 2
@@ -129,7 +129,7 @@
           "rowspan": 2
         },
         "xxlarge": {
-          "col": 20,
+          "col": 14,
           "row": 2,
           "colspan": 2,
           "rowspan": 2
@@ -176,7 +176,7 @@
           "rowspan": 2
         },
         "xxlarge": {
-          "col": 22,
+          "col": 16,
           "row": 0,
           "colspan": 2,
           "rowspan": 2
@@ -223,7 +223,7 @@
           "rowspan": 2
         },
         "xxlarge": {
-          "col": 20,
+          "col": 14,
           "row": 4,
           "colspan": 2,
           "rowspan": 2
@@ -270,7 +270,7 @@
           "rowspan": 2
         },
         "xxlarge": {
-          "col": 22,
+          "col": 16,
           "row": 2,
           "colspan": 2,
           "rowspan": 2
@@ -317,7 +317,7 @@
           "rowspan": 2
         },
         "xxlarge": {
-          "col": 22,
+          "col": 16,
           "row": 4,
           "colspan": 2,
           "rowspan": 2
@@ -367,9 +367,9 @@
           "rowspan": 4
         },
         "xxlarge": {
-          "col": 8,
+          "col": 6,
           "row": 0,
-          "colspan": 12,
+          "colspan": 8,
           "rowspan": 6
         },
         "xlarge": {
@@ -398,8 +398,8 @@
         "xxlarge": {
           "col": 0,
           "row": 6,
-          "colspan": 24,
-          "rowspan": 6
+          "colspan": 18,
+          "rowspan": 4
         },
         "xlarge": {
           "col": 8,
@@ -426,8 +426,8 @@
         },
         "xxlarge": {
           "col": 0,
-          "row": 12,
-          "colspan": 24,
+          "row": 10,
+          "colspan": 18,
           "rowspan": 2
         },
         "xlarge": {

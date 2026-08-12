@@ -286,12 +286,13 @@ TEST_CASE("build_default_grid only sets positions for anchor widgets", "[grid]")
     CHECK(print_status->rowspan >= 2);
     CHECK(print_status->has_grid_position());
 
+    // tips is switched off on the 480-class tiers this runs at (the breakpoint
+    // subject is zero-initialised to Micro here), and a disabled widget is
+    // unplaced. Naming it is the point: it used to be one of five hardcoded
+    // anchors, and this assertion is what noticed the shipped table changed.
     REQUIRE(tips != nullptr);
-    CHECK(tips->col >= 0);
-    CHECK(tips->row >= 0);
-    CHECK(tips->colspan >= 1);
-    CHECK(tips->rowspan >= 1);
-    CHECK(tips->has_grid_position());
+    CHECK_FALSE(tips->enabled);
+    CHECK_FALSE(tips->has_grid_position());
 
     REQUIRE(temperature != nullptr);
     CHECK(temperature->has_grid_position());
@@ -299,16 +300,22 @@ TEST_CASE("build_default_grid only sets positions for anchor widgets", "[grid]")
     REQUIRE(bed_temperature != nullptr);
     CHECK(bed_temperature->has_grid_position());
 
-    // All non-anchor entries must have col=-1, row=-1 (auto-place)
+    // Positions are all-or-nothing. Which widgets the shipped table anchors is
+    // the table's business and changes per tier, but no entry may come back
+    // half-placed: a col with no row (or either one set on a widget that
+    // reports no grid position) would be placed by one code path and
+    // auto-placed by another.
     for (const auto& e : entries) {
-        if (e.id == "printer_image" || e.id == "print_status" || e.id == "tips" ||
-            e.id == "temperature" || e.id == "bed_temperature") {
-            continue;
+        INFO("Widget '" << e.id << "' col=" << e.col << " row=" << e.row);
+        if (e.has_grid_position()) {
+            CHECK(e.col >= 0);
+            CHECK(e.row >= 0);
+            CHECK(e.colspan >= 1);
+            CHECK(e.rowspan >= 1);
+        } else {
+            CHECK(e.col == -1);
+            CHECK(e.row == -1);
         }
-        INFO("Widget '" << e.id << "' should be auto-place (col=-1, row=-1)");
-        CHECK(e.col == -1);
-        CHECK(e.row == -1);
-        CHECK_FALSE(e.has_grid_position());
     }
 }
 

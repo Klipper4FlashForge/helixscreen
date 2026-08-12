@@ -497,6 +497,8 @@ const TokenEntry k_token_table[] = {
     {"px", "nav_width_small", "76"},
     {"px", "nav_width_medium", "104"},
     {"px", "nav_width_large", "132"},
+    {"px", "nav_width_xlarge", "148"},
+    {"px", "nav_width_xxlarge", "176"},
     {"color", "step_pending_light", "#9E9E9E"},
     {"color", "step_pending_dark", "#757575"},
     {"color", "step_active_light", "#2196F3"},

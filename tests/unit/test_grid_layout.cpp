@@ -363,11 +363,15 @@ TEST_CASE("GridLayout dimensions: out-of-range breakpoints clamp to the array bo
     CHECK(below.cols == micro.cols);
     CHECK(below.rows == micro.rows);
 
+    // The clamp lands on the LAST tier in GRID_CELL, which is XXLarge now that
+    // the table carries a rung for it. It used to land on XLarge because the
+    // table was one short — the bug that made a 1080p panel draw a 720p-sized
+    // grid — so pinning XLarge here would re-encode it.
     auto above = GridLayout::get_dimensions(
         static_cast<UiBreakpoint>(GridLayout::NUM_BREAKPOINTS + 3), kW, kH);
-    auto xlarge = GridLayout::get_dimensions(UiBreakpoint::XLarge, kW, kH);
-    CHECK(above.cols == xlarge.cols);
-    CHECK(above.rows == xlarge.rows);
+    auto top = GridLayout::get_dimensions(UiBreakpoint::XXLarge, kW, kH);
+    CHECK(above.cols == top.cols);
+    CHECK(above.rows == top.rows);
 }
 
 // =============================================================================
