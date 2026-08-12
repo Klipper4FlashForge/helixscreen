@@ -191,6 +191,20 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     // esp_timer trampoline → instance housekeeping (timeouts + FAILED).
     static void housekeeping_trampoline(void* arg);
 
+    // Arm a deferred reconnect intent at the current backoff step and advance
+    // the ladder for the next one. Shared by on_ws_disconnected() and the
+    // failed-start path in execute_reconnect() so both walk the same ladder
+    // instead of each carrying its own copy of the backoff math.
+    void arm_reconnect_intent();
+
+    // Stop and restart the existing transport handle: THE single execution
+    // point for a reconnect. Both the deferred auto-reconnect intent drained by
+    // process_timeouts() and the manual force_reconnect() route through it, so
+    // a failed start is handled identically in both. Must never run on the
+    // websocket task — esp_websocket_client_stop() refuses to stop a client
+    // from its own task and returns ESP_FAIL without stopping anything.
+    void execute_reconnect();
+
     void set_state(ConnectionState next);
     void emit_event(MoonrakerEventType type, const std::string& message, bool is_error,
                     const std::string& details = "");
