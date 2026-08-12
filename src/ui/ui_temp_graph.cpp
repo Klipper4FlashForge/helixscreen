@@ -6,6 +6,8 @@
 #include "ui_format_utils.h"
 
 #include "system/crash_handler.h"
+#include "temp_graph_internal.h"
+#include "temp_graph_tooltip.h"
 #include "theme_manager.h"
 
 #include <spdlog/spdlog.h>
@@ -19,6 +21,10 @@
 #include <utility>
 #include <vector>
 
+using helix::temp_graph_internal::temp_graph_compute_geometry;
+using helix::temp_graph_internal::temp_graph_geometry_t;
+using helix::temp_graph_internal::temp_graph_time_axis;
+using helix::temp_graph_internal::temp_graph_time_axis_t;
 using helix::ui::format_time;
 
 // Internal scale factor: store deci-degrees (×10) in the LVGL chart for 0.1°C precision.
@@ -266,18 +272,10 @@ static void mask_overrange_end_cb(lv_event_t* e) {
     it->second.clear();
 }
 
-// Geometry of the chart's content rect (inside padding) plus the deci-degree
-// Y range. Returns false when the chart is too small or the range is degenerate.
-// Computed from the chart object directly (no draw context) so it is valid from
-// both the draw callback and the out-of-render-pass async recompute.
-struct gradient_geometry_t {
-    int32_t cx1, cy1; // content top-left (absolute display coords)
-    int32_t cw, ch;   // content width / height
-    int32_t y_min, y_max;
-    uint32_t point_count;
-};
+// See temp_graph_internal.h for the doc comment — shared with the hit test.
+namespace helix::temp_graph_internal {
 
-static bool gradient_compute_geometry(ui_temp_graph_t* graph, gradient_geometry_t* g) {
+bool temp_graph_compute_geometry(ui_temp_graph_t* graph, temp_graph_geometry_t* g) {
     lv_obj_t* chart = graph->chart;
     if (!chart)
         return false;
@@ -318,10 +316,12 @@ static bool gradient_compute_geometry(ui_temp_graph_t* graph, gradient_geometry_
     return true;
 }
 
+} // namespace helix::temp_graph_internal
+
 // Render the per-column gradient fill for every visible series into `target`,
 // with column 0 at x_off and the chart floor at y_off + ch (content-relative
 // when drawing to the cache buffer, absolute when drawing to the event layer).
-static void gradient_render_columns(ui_temp_graph_t* graph, const gradient_geometry_t& g,
+static void gradient_render_columns(ui_temp_graph_t* graph, const temp_graph_geometry_t& g,
                                     lv_layer_t* target, int32_t x_off, int32_t y_off) {
     int32_t cw = g.cw;
     int32_t ch = g.ch;
@@ -425,7 +425,7 @@ static void gradient_render_columns(ui_temp_graph_t* graph, const gradient_geome
 // viewport size. Returns true when a usable buffer is available. A size change
 // reallocates the buffer and marks the cache dirty (cached pixels no longer map
 // to the new geometry). Must run OUTSIDE the render pass.
-static bool gradient_ensure_cache_buf(ui_temp_graph_t* graph, const gradient_geometry_t& g) {
+static bool gradient_ensure_cache_buf(ui_temp_graph_t* graph, const temp_graph_geometry_t& g) {
     if (!graph->chart)
         return false;
 
@@ -476,8 +476,8 @@ static void gradient_recompute_async(void* arg) {
     if (!(graph->features & TEMP_GRAPH_FEATURE_GRADIENTS))
         return;
 
-    gradient_geometry_t g;
-    if (!gradient_compute_geometry(graph, &g))
+    temp_graph_geometry_t g;
+    if (!temp_graph_compute_geometry(graph, &g))
         return;
     if (!gradient_ensure_cache_buf(graph, g))
         return;
@@ -526,8 +526,8 @@ static void draw_gradient_cb(lv_event_t* e) {
     if (!event_layer)
         return;
 
-    gradient_geometry_t g;
-    if (!gradient_compute_geometry(graph, &g))
+    temp_graph_geometry_t g;
+    if (!temp_graph_compute_geometry(graph, &g))
         return;
 
     // Fast path: the cached buffer is valid for the current viewport and clean.
@@ -777,19 +777,12 @@ static temp_graph_plot_area_t temp_graph_plot_area(lv_obj_t* chart) {
     return a;
 }
 
-// The time span the chart currently represents, plus the tick cadence shared by
-// the X-axis labels and the vertical grid lines. Both used to derive this
-// independently; keeping one source is what actually guarantees a grid line
-// under every label.
-struct temp_graph_time_axis_t {
-    int64_t latest_ms;   ///< Time at the right edge
-    int64_t leftmost_ms; ///< Time at the left edge
-    int64_t total_ms;    ///< Full window width in ms
-    int64_t interval_ms; ///< Spacing between labels / grid lines
-    int64_t first_ms;    ///< First tick at or after the left edge
-};
+// Both used to derive this independently; keeping one source is what actually
+// guarantees a grid line under every label. See temp_graph_internal.h for the
+// struct's doc comment — shared with the hit test.
+namespace helix::temp_graph_internal {
 
-static temp_graph_time_axis_t temp_graph_time_axis(const ui_temp_graph_t* graph) {
+temp_graph_time_axis_t temp_graph_time_axis(const ui_temp_graph_t* graph) {
     temp_graph_time_axis_t t;
     t.total_ms =
         static_cast<int64_t>(graph->point_count) * UI_TEMP_GRAPH_SAMPLE_INTERVAL_SEC * 1000;
@@ -810,6 +803,8 @@ static temp_graph_time_axis_t temp_graph_time_axis(const ui_temp_graph_t* graph)
     }
     return t;
 }
+
+} // namespace helix::temp_graph_internal
 
 // Draw target lines: time-varying step trace (TARGET_HISTORY on, default) or
 // a single horizontal dashed line at the current setpoint (TARGET_HISTORY off).
@@ -1429,6 +1424,14 @@ ui_temp_graph_t* ui_temp_graph_create(lv_obj_t* parent) {
     // Register legend draw callback (renders color-coded series chips in upper-left)
     lv_obj_add_event_cb(graph->chart, draw_legend_cb, LV_EVENT_DRAW_POST, graph);
 
+    // Register tap-to-caption draw callback. Registered unconditionally (like the
+    // other draw callbacks above) rather than gated on tooltip-enabled: it no-ops
+    // whenever nothing is pinned, and nothing can be pinned while the tooltip is
+    // disabled, so there is no behavior difference — only one fewer add/remove
+    // pair to keep in sync with ui_temp_graph_set_tooltip_enabled.
+    lv_obj_add_event_cb(graph->chart, helix::temp_graph_internal::temp_graph_tooltip_draw_cb,
+                        LV_EVENT_DRAW_POST, graph);
+
     // Subscribe to theme changes for live color updates
     lv_subject_t* theme_subject = theme_manager_get_changed_subject();
     if (theme_subject) {
@@ -1448,6 +1451,9 @@ ui_temp_graph_t* ui_temp_graph_create(lv_obj_t* parent) {
 void ui_temp_graph_destroy(ui_temp_graph_t* graph) {
     if (!graph)
         return;
+
+    // Unconditional — runs regardless of which teardown branch below fires.
+    helix::temp_graph_internal::temp_graph_tooltip_destroy(graph);
 
     // Transfer ownership to RAII wrapper - automatic cleanup
     std::unique_ptr<ui_temp_graph_t> graph_ptr(graph);
@@ -1486,6 +1492,9 @@ void ui_temp_graph_destroy(ui_temp_graph_t* graph) {
         lv_obj_remove_event_cb(chart, draw_y_axis_labels_cb);
         lv_obj_remove_event_cb(chart, draw_target_lines_cb);
         lv_obj_remove_event_cb(chart, draw_legend_cb);
+        // temp_graph_tooltip_draw_cb and tooltip_press_cb are severed by
+        // temp_graph_tooltip_destroy(), called unconditionally above — before this
+        // block runs — so both are already gone here.
         lv_obj_set_user_data(chart, nullptr);
 
         // Theme observer's user_data points at `graph`; auto-removal does not fire
@@ -1644,6 +1653,8 @@ void ui_temp_graph_remove_series(ui_temp_graph_t* graph, int series_id) {
     // Removing a series drops its gradient band.
     mark_gradient_cache_dirty(graph);
 
+    helix::temp_graph_internal::temp_graph_tooltip_on_series_hidden(graph, series_id);
+
     spdlog::trace("[TempGraph] Removed series {} ({} series remaining)", series_id,
                   graph->series_count);
 }
@@ -1663,6 +1674,10 @@ void ui_temp_graph_show_series(ui_temp_graph_t* graph, int series_id, bool visib
 
     // Visibility change adds/removes a series' gradient band.
     mark_gradient_cache_dirty(graph);
+
+    if (!visible) {
+        helix::temp_graph_internal::temp_graph_tooltip_on_series_hidden(graph, series_id);
+    }
 
     lv_obj_invalidate(graph->chart);
     spdlog::trace("[TempGraph] Series {} '{}' {}", series_id, meta->name,
@@ -1698,6 +1713,8 @@ void ui_temp_graph_update_series(ui_temp_graph_t* graph, int series_id, float te
     // Add point to series (shifts old data left, stored as deci-degrees)
     lv_chart_set_next_value(graph->chart, meta->chart_series,
                             static_cast<int32_t>(temp * TEMP_SCALE));
+
+    helix::temp_graph_internal::temp_graph_tooltip_on_sample_pushed(graph, series_id);
 
     // Mirror the push into the parallel target buffer.
     push_target_sample(graph, meta);
@@ -1755,6 +1772,8 @@ void ui_temp_graph_update_series_with_time(ui_temp_graph_t* graph, int series_id
     // Add point to series (shifts old data left, stored as deci-degrees)
     lv_chart_set_next_value(graph->chart, meta->chart_series,
                             static_cast<int32_t>(temp * TEMP_SCALE));
+
+    helix::temp_graph_internal::temp_graph_tooltip_on_sample_pushed(graph, series_id);
 
     // Mirror the push into the parallel target buffer.
     push_target_sample(graph, meta);

@@ -114,6 +114,19 @@ std::string format_short_date(time_t timestamp);
  */
 std::string format_time(const struct tm* tm_info);
 
+/**
+ * @brief Format time including seconds, honoring the 12H/24H setting
+ *
+ * Same shape as format_time() with a :SS field appended. The temperature
+ * graph caption needs this because samples are 3s apart, so minute
+ * resolution cannot distinguish adjacent points.
+ * Examples: "2:30:06 PM" (12H) or "14:30:06" (24H)
+ *
+ * @param tm_info Pointer to tm struct with time to format
+ * @return Formatted time string, or helix::format::UNAVAILABLE if tm_info is null
+ */
+std::string format_time_with_seconds(const struct tm* tm_info);
+
 // get_time_format_string() is intentionally NOT public. Use format_time()
 // which handles POSIX-safe formatting and leading-zero stripping.
 
