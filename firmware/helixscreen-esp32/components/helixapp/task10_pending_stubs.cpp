@@ -27,10 +27,12 @@
 
 #include "esp_log.h"
 #include "moonraker_api.h"
+#include "moonraker_spoolman_api.h"
 #include "moonraker_timelapse_api.h"
 
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace {
 // Non-fatal: log the call and return. Every Moonraker ErrorCallback in this file
@@ -136,6 +138,120 @@ void MoonrakerTimelapseAPI::get_last_frame_info(std::function<void(const LastFra
 
 void MoonrakerTimelapseAPI::get_webcam_list(WebcamListCallback, ErrorCallback) {
     task10_unimplemented("MoonrakerTimelapseAPI::get_webcam_list");
+}
+
+// ---------------------------------------------------------------------------
+// MoonrakerSpoolmanAPI (spoolman_api_ member).
+//
+// Same shape as MoonrakerTimelapseAPI above, and for the same reason:
+// moonraker_api.cpp (KEPT) owns it as a unique_ptr member, so the ctor is
+// referenced on boot and emits the vtable in THIS TU — which means every
+// ISpoolmanAPI slot must be defined here, not just the ctor.
+//
+// Spoolman itself is out of the v1 Core+AMS cut as of 2026-08-12 (see
+// app_srcs_excluded.txt): `printer_has_spoolman` is only ever written by the
+// second server.info discovery call, which the ESP client does not make, so
+// every UI entry point is permanently hidden. If discovery is restored these
+// stubs must go back to the real src/api/moonraker_spoolman_api.cpp.
+//
+// Bodies route through the ErrorCallback so a call that somehow arrives fails
+// visibly instead of hanging on a response that will never come.
+// ---------------------------------------------------------------------------
+
+MoonrakerSpoolmanAPI::MoonrakerSpoolmanAPI(helix::IMoonrakerClient& client) : client_(client) {}
+
+void MoonrakerSpoolmanAPI::get_spoolman_status(std::function<void(bool, int)>, ErrorCallback err,
+                                               bool) {
+    task10_unimplemented_err("MoonrakerSpoolmanAPI::get_spoolman_status", err);
+}
+
+void MoonrakerSpoolmanAPI::get_spoolman_spools(helix::SpoolListCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerSpoolmanAPI::get_spoolman_spools", err);
+}
+
+void MoonrakerSpoolmanAPI::get_spoolman_spool(int, helix::SpoolCallback, ErrorCallback err, bool) {
+    task10_unimplemented_err("MoonrakerSpoolmanAPI::get_spoolman_spool", err);
+}
+
+void MoonrakerSpoolmanAPI::set_active_spool(int, SuccessCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerSpoolmanAPI::set_active_spool", err);
+}
+
+void MoonrakerSpoolmanAPI::get_spool_usage_history(
+    int, std::function<void(const std::vector<FilamentUsageRecord>&)>, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerSpoolmanAPI::get_spool_usage_history", err);
+}
+
+void MoonrakerSpoolmanAPI::update_spoolman_spool_weight(int, double, SuccessCallback,
+                                                        ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerSpoolmanAPI::update_spoolman_spool_weight", err);
+}
+
+void MoonrakerSpoolmanAPI::update_spoolman_spool(int, const nlohmann::json&, SuccessCallback,
+                                                 ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerSpoolmanAPI::update_spoolman_spool", err);
+}
+
+void MoonrakerSpoolmanAPI::update_spoolman_filament(int, const nlohmann::json&, SuccessCallback,
+                                                    ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerSpoolmanAPI::update_spoolman_filament", err);
+}
+
+void MoonrakerSpoolmanAPI::update_spoolman_filament_color(int, const std::string&, SuccessCallback,
+                                                          ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerSpoolmanAPI::update_spoolman_filament_color", err);
+}
+
+void MoonrakerSpoolmanAPI::get_spoolman_vendors(helix::VendorListCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerSpoolmanAPI::get_spoolman_vendors", err);
+}
+
+void MoonrakerSpoolmanAPI::get_spoolman_filaments(helix::FilamentListCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerSpoolmanAPI::get_spoolman_filaments", err);
+}
+
+void MoonrakerSpoolmanAPI::get_spoolman_filaments(int, helix::FilamentListCallback,
+                                                  ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerSpoolmanAPI::get_spoolman_filaments(vendor)", err);
+}
+
+void MoonrakerSpoolmanAPI::create_spoolman_vendor(const nlohmann::json&,
+                                                  helix::VendorCreateCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerSpoolmanAPI::create_spoolman_vendor", err);
+}
+
+void MoonrakerSpoolmanAPI::create_spoolman_filament(const nlohmann::json&,
+                                                    helix::FilamentCreateCallback,
+                                                    ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerSpoolmanAPI::create_spoolman_filament", err);
+}
+
+void MoonrakerSpoolmanAPI::create_spoolman_spool(const nlohmann::json&, helix::SpoolCreateCallback,
+                                                 ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerSpoolmanAPI::create_spoolman_spool", err);
+}
+
+void MoonrakerSpoolmanAPI::delete_spoolman_spool(int, SuccessCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerSpoolmanAPI::delete_spoolman_spool", err);
+}
+
+void MoonrakerSpoolmanAPI::delete_spoolman_vendor(int, SuccessCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerSpoolmanAPI::delete_spoolman_vendor", err);
+}
+
+void MoonrakerSpoolmanAPI::delete_spoolman_filament(int, SuccessCallback, ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerSpoolmanAPI::delete_spoolman_filament", err);
+}
+
+void MoonrakerSpoolmanAPI::get_spoolman_external_vendors(helix::VendorListCallback,
+                                                         ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerSpoolmanAPI::get_spoolman_external_vendors", err);
+}
+
+void MoonrakerSpoolmanAPI::get_spoolman_external_filaments(const std::string&,
+                                                           helix::FilamentListCallback,
+                                                           ErrorCallback err) {
+    task10_unimplemented_err("MoonrakerSpoolmanAPI::get_spoolman_external_filaments", err);
 }
 
 // (further symbols appended here as later tasks' link passes demand them)

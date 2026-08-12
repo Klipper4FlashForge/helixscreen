@@ -39,6 +39,8 @@
 // cannot supply. They are resolved by adding their portable, platform-free real
 // .cpp files to app_srcs.txt instead. See the report for details.
 
+#include "ui_overlay_timelapse_install.h"
+#include "ui_overlay_timelapse_settings.h"
 #include "ui_overlay_timelapse_videos.h"
 #include "ui_panel_bed_mesh.h"
 #include "ui_panel_belt_tension.h"
@@ -48,9 +50,11 @@
 #include "ui_panel_screws_tilt.h"
 #include "ui_toast_manager.h"
 
+#include "color_sensor_manager.h"
 #include "esp_attr.h"
 #include "esp_log.h"
 #include "shaper_csv_parser.h"
+#include "timelapse_state.h"
 
 // ===========================================================================
 // Global-scope panel / overlay instance accessors (raw-storage references).
@@ -83,6 +87,73 @@ TimelapseVideosOverlay& get_global_timelapse_videos() {
 // src/ui/ui_overlay_timelapse_videos.cpp
 void init_global_timelapse_videos(IMoonrakerAPI*) {}
 void open_timelapse_videos() {}
+
+// ===========================================================================
+// Timelapse install + settings overlays and TimelapseState (dropped
+// 2026-08-12; see app_srcs_excluded.txt for the scope decision).
+//
+// SCOPE DECISION, not a cleanup. `printer_has_timelapse` and
+// `printer_has_webcam` are only written by the second server.info discovery
+// call that the ESP client skips, so the Advanced "Timelapse Videos" row, the
+// "Setup Timelapse" row (additionally gated on printer_has_webcam) and the
+// Printing-settings entry are all permanently hidden. Both subjects are still
+// registered for real by the KEPT printer_capabilities_state.cpp.
+//
+// These two CANNOT be raw storage like the panels above: subject_initializer
+// .cpp calls init_subjects() on both unconditionally at boot, and that is a
+// pure virtual — raw storage would fault (LoadProhibited) on every boot. So
+// each accessor constructs a real object, which requires defining the ctor and
+// every OverlayBase override so the vtable emits here with all slots filled.
+// Neither real init_subjects() registers an XML subject (settings does
+// nothing; install registers one event_cb for XML that is never created), so
+// the no-op bodies leave no binding unsatisfied.
+//
+// src/ui/ui_overlay_timelapse_install.cpp
+TimelapseInstallOverlay::TimelapseInstallOverlay(IMoonrakerAPI* api) : api_(api) {}
+void TimelapseInstallOverlay::init_subjects() {}
+lv_obj_t* TimelapseInstallOverlay::create(lv_obj_t*) {
+    return nullptr;
+}
+void TimelapseInstallOverlay::on_activate() {}
+void TimelapseInstallOverlay::on_deactivate() {}
+void TimelapseInstallOverlay::cleanup() {}
+
+TimelapseInstallOverlay& get_global_timelapse_install() {
+    static TimelapseInstallOverlay overlay(nullptr);
+    return overlay;
+}
+void init_global_timelapse_install(IMoonrakerAPI*) {}
+void open_timelapse_install() {}
+
+// src/ui/ui_overlay_timelapse_settings.cpp
+TimelapseSettingsOverlay::TimelapseSettingsOverlay(IMoonrakerAPI* api) : api_(api) {}
+void TimelapseSettingsOverlay::init_subjects() {}
+lv_obj_t* TimelapseSettingsOverlay::create(lv_obj_t*) {
+    return nullptr;
+}
+void TimelapseSettingsOverlay::on_activate() {}
+void TimelapseSettingsOverlay::on_deactivate() {}
+void TimelapseSettingsOverlay::cleanup() {}
+
+TimelapseSettingsOverlay& get_global_timelapse_settings() {
+    static TimelapseSettingsOverlay overlay(nullptr);
+    return overlay;
+}
+void init_global_timelapse_settings(IMoonrakerAPI*) {}
+void open_timelapse_settings() {}
+
+// src/printer/timelapse_state.cpp — the four subjects it registers are bound
+// only by timelapse_videos_overlay.xml, whose overlay is already excluded and
+// never created, so a no-op init_subjects() orphans nothing. Plain class (no
+// virtuals) with a defaulted private ctor, so instance() can build a real one.
+namespace helix {
+TimelapseState& TimelapseState::instance() {
+    static TimelapseState state;
+    return state;
+}
+void TimelapseState::init_subjects(bool) {}
+void TimelapseState::reset() {}
+} // namespace helix
 
 // ===========================================================================
 // PIDCalibrationPanel member methods (src/ui/ui_panel_calibration_pid.cpp).
@@ -148,6 +219,67 @@ void init_zoffset_row_handler() {
     lv_xml_register_event_cb(nullptr, "on_zoffset_row_clicked", esp32_staged_feature_row_cb);
 }
 void init_zoffset_event_callbacks() {}
+
+// ===========================================================================
+// ColorSensorManager (src/sensors/color_sensor_manager.cpp).
+//
+// The TD-1 colour sensor stack is dead on EVERY platform, not just this one:
+// `sensors_` is only ever filled by discover_from_moonraker(), whose sole
+// caller is SensorRegistry::discover_all() — and nothing in the tree calls
+// that (sensor_registry.cpp is not compiled anywhere). So the shipped
+// behaviour is a permanently empty sensor list, which is exactly what these
+// stubs reproduce.
+//
+// Unlike the panel accessors above, this one CANNOT be raw storage:
+// printer_state.cpp calls update_from_status() on the returned reference for
+// every status frame, and that is a virtual dispatch through the vptr. So
+// instance() constructs a real object, which means defining the ctor/dtor and
+// every ISensorManager override so the vtable emits here with all slots filled.
+// ===========================================================================
+
+namespace helix::sensors {
+
+ColorSensorManager::ColorSensorManager() = default;
+ColorSensorManager::~ColorSensorManager() = default;
+
+ColorSensorManager& ColorSensorManager::instance() {
+    static ColorSensorManager mgr;
+    return mgr;
+}
+
+// sensors_overlay.xml binds `color_sensor_count` to hide the Color Sensors
+// section, so the subjects must exist even though nothing ever fills them.
+// Registering all three keeps the zero-sensor state identical to the real
+// manager's; without this the overlay logs "No subject was found" on open.
+void ColorSensorManager::init_subjects() {
+    if (subjects_initialized_) {
+        return;
+    }
+    UI_MANAGED_SUBJECT_STRING_N(color_hex_, color_hex_buf_.data(), COLOR_HEX_BUF_SIZE, "",
+                                "filament_color_hex", subjects_);
+    UI_MANAGED_SUBJECT_INT(td_value_, -1, "filament_td_value", subjects_);
+    UI_MANAGED_SUBJECT_INT(sensor_count_, 0, "color_sensor_count", subjects_);
+    subjects_initialized_ = true;
+}
+
+std::string ColorSensorManager::category_name() const {
+    return "color";
+}
+void ColorSensorManager::discover_from_moonraker(const nlohmann::json&) {}
+void ColorSensorManager::update_from_status(const nlohmann::json&) {}
+void ColorSensorManager::load_config(const nlohmann::json&) {}
+nlohmann::json ColorSensorManager::save_config() const {
+    return nlohmann::json::object();
+}
+
+std::vector<ColorSensorConfig> ColorSensorManager::get_sensors() const {
+    return {};
+}
+size_t ColorSensorManager::sensor_count() const {
+    return 0;
+}
+
+} // namespace helix::sensors
 
 // parse_shaper_csv IS genuinely helix::calibration-namespaced (called qualified
 // from moonraker_advanced_api.cpp).

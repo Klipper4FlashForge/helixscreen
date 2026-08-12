@@ -58,6 +58,7 @@ src/api/moonraker_discovery_sequence.cpp  # not in the v1 Core+AMS cut
 src/api/moonraker_file_transfer_api.cpp  # not in the v1 Core+AMS cut
 src/api/moonraker_request_tracker.cpp  # not in the v1 Core+AMS cut
 src/api/moonraker_rest_api.cpp  # not in the v1 Core+AMS cut
+src/api/moonraker_spoolman_api.cpp  # scope decision 2026-08-12: unreachable while ESP discovery omits server.info#2; re-adding requires restoring these TUs + verifying flash budget; until then the UI entry points fail with an error toast
 src/api/moonraker_timelapse_api.cpp  # not in the v1 Core+AMS cut
 src/api/touch_calibration_wrapper.cpp  # not in the v1 Core+AMS cut
 src/api/usb_backend.cpp  # not in the v1 Core+AMS cut
@@ -101,6 +102,9 @@ src/printer/macro_fan_analyzer.cpp  # not in the v1 Core+AMS cut
 src/printer/macro_manager.cpp  # not in the v1 Core+AMS cut
 src/printer/printer_discovery.cpp  # not in the v1 Core+AMS cut
 src/printer/screws_tilt_share_text.cpp  # not in the v1 Core+AMS cut
+src/printer/spoolman_manager.cpp  # scope decision 2026-08-12: unreachable while ESP discovery omits server.info#2; re-adding requires restoring these TUs + verifying flash budget; until then the UI entry points fail with an error toast
+src/printer/spoolman_types.cpp  # scope decision 2026-08-12: unreachable while ESP discovery omits server.info#2; re-adding requires restoring these TUs + verifying flash budget; until then the UI entry points fail with an error toast
+src/printer/timelapse_state.cpp  # scope decision 2026-08-12: unreachable while ESP discovery omits server.info#2; re-adding requires restoring these TUs + verifying flash budget
 src/printer/u1_stock_detection_source.cpp  # not in the v1 Core+AMS cut
 src/rendering/bed_mesh_buffer.cpp  # not in the v1 Core+AMS cut
 src/rendering/bed_mesh_coordinate_transform.cpp  # not in the v1 Core+AMS cut
@@ -125,7 +129,9 @@ src/rendering/gcode_renderer.cpp  # not in the v1 Core+AMS cut
 src/rendering/gcode_streaming_config.cpp  # not in the v1 Core+AMS cut
 src/rendering/gcode_streaming_controller.cpp  # not in the v1 Core+AMS cut
 src/rendering/geometry_budget_manager.cpp  # not in the v1 Core+AMS cut
+src/sensors/color_sensor_manager.cpp  # dead on all platforms — audit 2026-08-12; tree-wide deletion is a separate desktop-scope decision
 src/sensors/sensor_registry.cpp  # not in the v1 Core+AMS cut
+src/spoolman/spoolman_slot_saver.cpp  # scope decision 2026-08-12: unreachable while ESP discovery omits server.info#2; re-adding requires restoring these TUs + verifying flash budget; until then the UI entry points fail with an error toast
 src/system/alsa_sound_backend.cpp  # not in the v1 Core+AMS cut
 src/system/bluetooth_loader.cpp  # not in the v1 Core+AMS cut
 src/system/brother_pt_bt_printer.cpp  # not in the v1 Core+AMS cut
@@ -206,6 +212,8 @@ src/ui/ui_icon_loader.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_image_helpers.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_multiselect.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_overlay_qr_scanner.cpp  # not in the v1 Core+AMS cut
+src/ui/ui_overlay_timelapse_install.cpp  # scope decision 2026-08-12: unreachable while ESP discovery omits server.info#2; re-adding requires restoring these TUs + verifying flash budget
+src/ui/ui_overlay_timelapse_settings.cpp  # scope decision 2026-08-12: unreachable while ESP discovery omits server.info#2; re-adding requires restoring these TUs + verifying flash budget
 src/ui/ui_overlay_timelapse_videos.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_panel_bed_mesh.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_panel_belt_tension.cpp  # not in the v1 Core+AMS cut
@@ -217,6 +225,7 @@ src/ui/ui_panel_input_shaper.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_panel_memory_stats.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_panel_notification_history.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_panel_screws_tilt.cpp  # not in the v1 Core+AMS cut
+src/ui/ui_panel_spoolman.cpp  # scope decision 2026-08-12: unreachable while ESP discovery omits server.info#2; re-adding requires restoring these TUs + verifying flash budget; until then the UI entry points fail with an error toast
 src/ui/ui_panel_step_test.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_panel_test.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_print_cancel_modal.cpp  # not in the v1 Core+AMS cut
@@ -225,6 +234,9 @@ src/ui/ui_screensaver.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_screws_tilt_share_modal.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_settings_barcode_scanner.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_settings_label_printer.cpp  # not in the v1 Core+AMS cut
+src/ui/ui_spoolman_context_menu.cpp  # scope decision 2026-08-12: unreachable while ESP discovery omits server.info#2; re-adding requires restoring these TUs + verifying flash budget; until then the UI entry points fail with an error toast
+src/ui/ui_spoolman_edit_modal.cpp  # scope decision 2026-08-12: unreachable while ESP discovery omits server.info#2; re-adding requires restoring these TUs + verifying flash budget; until then the UI entry points fail with an error toast
+src/ui/ui_spoolman_list_view.cpp  # scope decision 2026-08-12: unreachable while ESP discovery omits server.info#2; re-adding requires restoring these TUs + verifying flash budget; until then the UI entry points fail with an error toast
 src/ui/ui_spoolman_overlay.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_spoolman_setup.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_wizard_ams_identify.cpp  # not in the v1 Core+AMS cut
