@@ -20,6 +20,7 @@ extern "C" void lv_xml_component_init(void);
 #include <set>
 #include <string>
 #include <unistd.h>
+#include <vector>
 
 #include "../catch_amalgamated.hpp"
 
@@ -540,11 +541,18 @@ TEST_CASE("default_layout: anchor placements default col/row/span values when om
 
     auto* pi = find_entry(entries, "printer_image");
     REQUIRE(pi);
-    // col from JSON, row/colspan/rowspan use .value() defaults (0, 1, 1)
+    const auto* def = helix::find_widget_def("printer_image");
+    REQUIRE(def);
+    // col comes from the JSON; row falls back to 0. An omitted span takes the
+    // registry span rather than one track — one track is a quarter of the area
+    // the widget declares as its minimum, so defaulting to it would render an
+    // anchored widget at a size it is not allowed to have.
     CHECK(pi->col == 1);
     CHECK(pi->row == 0);
-    CHECK(pi->colspan == 1);
-    CHECK(pi->rowspan == 1);
+    CHECK(pi->colspan == def->colspan);
+    CHECK(pi->rowspan == def->rowspan);
+    CHECK(pi->colspan > 1);
+    CHECK(pi->rowspan > 1);
 }
 
 TEST_CASE("default_layout: custom anchor positions from JSON override hardcoded defaults",
@@ -748,10 +756,12 @@ TEST_CASE("default_layout: bed_temperature enabled at medium breakpoint without 
 // subject of the AmsState *process singleton*, registered into the global XML
 // scope. AMS tests (LVGLUITestFixture + AmsState::init_subjects(true)) drive
 // slot discovery, setting it >0, and it never returns to 0 on its own — so it
-// leaks into later tests. The "without AMS" tests above read this global subject
-// via build_default_grid() and assume it is 0/absent; a leaked value silently
-// flips bed_temperature off, failing only in the full single-process suite
-// (passes in isolation / sharded runs).
+// leaks into later tests. Tests above read this global subject via
+// build_default_grid() and assume it is 0/absent; a leaked value silently swaps
+// the filament widget for the AMS widget, failing only in the full
+// single-process suite (passes in isolation / sharded runs). bed_temperature
+// used to be gated on the same subject and is no longer, but the filament/AMS
+// swap keeps the leak load-bearing.
 //
 // HelixTestFixture::reset_all() — run on every fixture test's ctor + dtor — must
 // clear it so leakers clean up after themselves. FAILS before the reset_all fix
@@ -930,6 +940,82 @@ TEST_CASE("default_layout: portrait keeps tips enabled", "[default_layout][portr
     }
 }
 
+namespace {
+
+/// Track budget for one breakpoint, from GridLayout's square-cell sizing on the
+/// measured content boxes pinned in test_grid_square_cells.cpp kMeasured. Both
+/// axes matter: the square-cell model derives rows and columns independently,
+/// so a table authored by scaling one axis does not automatically fit the other.
+struct TrackBudget {
+    int cols;
+    int rows;
+};
+
+const std::map<std::string, TrackBudget> kPortraitBudget = {
+    {"micro", {8, 12}},
+    {"tiny", {8, 10}},
+    {"small", {10, 10}},
+    {"medium", {8, 12}},
+    {"large", {10, 14}},
+    {"xlarge", {10, 16}},
+    // No measured xxlarge panel exists; it falls through to xlarge in the
+    // placement chain, so hold it to the same budget rather than invent one.
+    {"xxlarge", {10, 16}},
+};
+
+const std::map<std::string, TrackBudget> kLandscapeBudget = {
+    {"micro", {12, 8}},  {"tiny", {10, 8}},   {"small", {10, 10}},
+    {"medium", {12, 8}}, {"large", {16, 10}}, {"xlarge", {16, 10}},
+};
+
+struct AnchorRect {
+    std::string id;
+    int col;
+    int row;
+    int colspan;
+    int rowspan;
+};
+
+bool anchors_overlap(const AnchorRect& a, const AnchorRect& b) {
+    return a.col < b.col + b.colspan && b.col < a.col + a.colspan && a.row < b.row + b.rowspan &&
+           b.row < a.row + a.rowspan;
+}
+
+/// Every anchor must fit the breakpoint on BOTH axes and must not overlap a
+/// sibling. Running off either axis is not cosmetic: panel_widget_manager
+/// clamps the span, pushes the origin back to fit, and the widget then collides
+/// with the neighbour it was authored beside. grid.place() fails and the widget
+/// falls through to auto-place at the registry span, so the anchor is silently
+/// decoration and the log carries only a warning.
+void check_anchor_table(const nlohmann::json& anchors, const std::string& bp_name,
+                        const TrackBudget& budget, bool require_bp) {
+    std::vector<AnchorRect> placed;
+    for (const auto& anchor : anchors) {
+        const std::string id = anchor.value("id", std::string{});
+        INFO("anchor " << id << " bp " << bp_name);
+        REQUIRE(anchor.contains("placements"));
+        const auto& placements = anchor["placements"];
+        if (!placements.contains(bp_name)) {
+            REQUIRE_FALSE(require_bp);
+            continue;
+        }
+        const auto& p = placements[bp_name];
+        const AnchorRect r{id, p.value("col", 0), p.value("row", 0), p.value("colspan", 1),
+                           p.value("rowspan", 1)};
+        CHECK(r.col >= 0);
+        CHECK(r.row >= 0);
+        CHECK(r.col + r.colspan <= budget.cols);
+        CHECK(r.row + r.rowspan <= budget.rows);
+        for (const auto& other : placed) {
+            INFO("overlaps anchor " << other.id);
+            CHECK_FALSE(anchors_overlap(r, other));
+        }
+        placed.push_back(r);
+    }
+}
+
+} // namespace
+
 // The shipped table itself, not a synthetic one: every portrait anchor has to
 // fit the narrowest grid its breakpoint can produce, or it silently falls
 // through to auto-place and the anchor is decoration.
@@ -946,61 +1032,42 @@ TEST_CASE("default_layout: the shipped portrait anchors fit a portrait grid",
     REQUIRE(portrait.is_array());
     REQUIRE_FALSE(portrait.empty());
 
-    // Track budget per portrait breakpoint, from GridLayout's square-cell
-    // sizing on measured content boxes (see test_grid_square_cells.cpp).
-    const std::map<std::string, int> max_cols = {
-        {"micro", 8},  {"tiny", 8},    {"small", 10},   {"medium", 8},
-        {"large", 10}, {"xlarge", 10}, {"xxlarge", 10},
-    };
-
+    // Every anchor names a real widget, and every tier it mentions is one the
+    // budget table knows — a typo'd tier would otherwise go unchecked.
     for (const auto& anchor : portrait) {
-        std::string id = anchor.value("id", std::string{});
+        const std::string id = anchor.value("id", std::string{});
         INFO("anchor " << id);
         REQUIRE(helix::find_widget_def(id) != nullptr);
         REQUIRE(anchor.contains("placements"));
         for (auto it = anchor["placements"].begin(); it != anchor["placements"].end(); ++it) {
-            auto budget = max_cols.find(it.key());
             INFO("anchor " << id << " breakpoint " << it.key());
-            REQUIRE(budget != max_cols.end());
-            int col = it.value().value("col", 0);
-            int colspan = it.value().value("colspan", 1);
-            CHECK(col >= 0);
-            CHECK(col + colspan <= budget->second);
+            CHECK(kPortraitBudget.count(it.key()) == 1);
         }
+    }
+
+    for (const auto& [bp_name, budget] : kPortraitBudget) {
+        check_anchor_table(portrait, bp_name, budget, /*require_bp=*/false);
     }
 }
 
-// The shipped landscape anchors must tile each breakpoint's grid: every anchor
-// fits within the column budget AND the widest one reaches the right edge.
-// Col counts are measured from the real content box per geometry — see
-// test_grid_square_cells.cpp kMeasured. micro/tiny/small/medium are all
-// distinct and must each have their own key.
-TEST_CASE("default_layout: the shipped landscape anchors tile their grid",
+// The shipped landscape anchors must fit each breakpoint's grid on both axes
+// without overlapping. Track counts are measured from the real content box per
+// geometry — see test_grid_square_cells.cpp kMeasured. micro/tiny/small/medium
+// are all distinct and must each have their own key.
+//
+// Note: this does NOT assert that the anchors tile the grid edge to edge. They
+// currently do not (micro reaches 8 of 12 columns), and whether the shipped
+// tables should fill the width is an open layout question, not a correctness
+// one — see the ledger's default-layout discussion item.
+TEST_CASE("default_layout: the shipped landscape anchors fit their grid",
           "[default_layout][shipped]") {
-    const std::map<std::string, int> cols = {
-        {"micro", 12}, {"tiny", 10}, {"small", 10}, {"medium", 12}, {"large", 16}, {"xlarge", 16},
-    };
-
     std::string path = helix::find_readable("default_layout.json");
     std::ifstream in(path);
     REQUIRE(in.is_open());
     nlohmann::json layout = nlohmann::json::parse(in);
     REQUIRE(layout.contains("anchors"));
 
-    for (const auto& [bp_name, budget] : cols) {
-        int widest_right_edge = 0;
-        for (const auto& anchor : layout["anchors"]) {
-            REQUIRE(anchor.contains("placements"));
-            INFO("anchor " << anchor.value("id", std::string{}) << " bp " << bp_name);
-            REQUIRE(anchor["placements"].contains(bp_name));
-            const auto& p = anchor["placements"][bp_name];
-            const int col = p.value("col", 0);
-            const int colspan = p.value("colspan", 1);
-            CHECK(col >= 0);
-            CHECK(col + colspan <= budget);
-            widest_right_edge = std::max(widest_right_edge, col + colspan);
-        }
-        INFO("bp " << bp_name);
-        CHECK(widest_right_edge <= budget); // anchors fit within the grid
+    for (const auto& [bp_name, budget] : kLandscapeBudget) {
+        check_anchor_table(layout["anchors"], bp_name, budget, /*require_bp=*/true);
     }
 }

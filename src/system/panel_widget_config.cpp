@@ -595,7 +595,8 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
                 if (!anchor.is_object())
                     continue;
                 std::string id = helix::json_util::safe_string(anchor, "id");
-                if (id.empty() || !find_widget_def(id))
+                const auto* def = id.empty() ? nullptr : find_widget_def(id);
+                if (!def)
                     continue;
 
                 auto placements_it = anchor.find("placements");
@@ -633,10 +634,15 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
                     if (p_it == placements.end() || !p_it->is_object())
                         continue;
                     const nlohmann::json& p = *p_it;
+                    // A placement that omits a span takes the registry span, not
+                    // one track: one track is a quarter of the area every
+                    // widget now declares as its minimum, and this file is
+                    // runtime-editable, so a hand-authored placement can leave
+                    // the spans out. Matches parse_widget_array().
                     anchors.push_back({id, helix::json_util::safe_int(p, "col", 0),
                                        helix::json_util::safe_int(p, "row", 0),
-                                       helix::json_util::safe_int(p, "colspan", 1),
-                                       helix::json_util::safe_int(p, "rowspan", 1)});
+                                       helix::json_util::safe_int(p, "colspan", def->colspan),
+                                       helix::json_util::safe_int(p, "rowspan", def->rowspan)});
                 }
             }
             spdlog::debug(

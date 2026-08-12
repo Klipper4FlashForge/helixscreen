@@ -58,7 +58,7 @@
     }
   ],
   "variants": {
-    "_comment": "PORTRAIT. Same layout doubled — full-width bands stacked top to bottom.",
+    "_comment": "PORTRAIT. Bands stacked top to bottom. Spans are authored per tier against the square-cell track counts, which derive each axis independently — they are not the landscape values doubled, and they do not all reach the right edge.",
     "portrait": [
       {
         "id": "printer_image",
@@ -76,7 +76,7 @@
         "id": "print_status",
         "placements": {
           "micro":   { "col": 0, "row": 4, "colspan": 4, "rowspan": 4 },
-          "tiny":    { "col": 0, "row": 6, "colspan": 4, "rowspan": 6 },
+          "tiny":    { "col": 0, "row": 6, "colspan": 4, "rowspan": 4 },
           "small":   { "col": 0, "row": 4, "colspan": 4, "rowspan": 4 },
           "medium":  { "col": 0, "row": 4, "colspan": 6, "rowspan": 4 },
           "large":   { "col": 0, "row": 4, "colspan": 6, "rowspan": 4 },
