@@ -1230,6 +1230,98 @@ static void migrate_v20_to_v21(json& config) {
     collapse_scanner_to_root(config);
 }
 
+/// Migration v21->v22: unplace every saved home layout.
+///
+/// Saved col/row/colspan/rowspan are counts of cells in a grid whose track
+/// count and cell size both changed, so the numbers no longer name anything.
+/// This runs at config load — before Application settles the screen size and
+/// long before LayoutManager::init() — so there is no resolution here to
+/// rescale against, and no resolution is stored in settings.json either. The
+/// coordinates are cleared and the two-pass placement engine seats everything
+/// on whatever grid the panel actually turns out to have, which is the path
+/// every never-positioned widget already takes on every boot.
+///
+/// Intent is read before the coordinates are blanked: an entry that is disabled
+/// AND holds real coordinates was removed with the trash button, which leaves
+/// the position intact. One that is disabled at -1 was auto-disabled by the
+/// placement engine or was never added, so the key is dropped and the
+/// registry's default_enabled decides.
+///
+/// Iterates every printer profile, not just the active one — the shipped
+/// config/settings.json already carries two.
+static void migrate_v21_to_v22(json& config) {
+    // A row count in cells of the grid that just changed.
+    if (config.contains("ui") && config["ui"].is_object()) {
+        config["ui"].erase("cached_grid");
+    }
+
+    if (!config.contains("printers") || !config["printers"].is_object()) {
+        return;
+    }
+
+    int unplaced = 0;
+    int profiles = 0;
+
+    auto unplace_array = [&unplaced](json& widgets) {
+        if (!widgets.is_array()) {
+            return;
+        }
+        for (auto& entry : widgets) {
+            if (!entry.is_object()) {
+                continue;
+            }
+            const bool enabled =
+                entry.contains("enabled") && entry["enabled"].is_boolean() && entry["enabled"];
+            const int col = (entry.contains("col") && entry["col"].is_number_integer())
+                                ? entry["col"].get<int>()
+                                : -1;
+            if (!enabled && col < 0) {
+                entry.erase("enabled");
+            }
+            entry["col"] = -1;
+            entry["row"] = -1;
+            entry.erase("colspan");
+            entry.erase("rowspan");
+            ++unplaced;
+        }
+    };
+
+    for (auto& printer : config["printers"]) {
+        if (!printer.is_object() || !printer.contains("panel_widgets") ||
+            !printer["panel_widgets"].is_object()) {
+            continue;
+        }
+        ++profiles;
+        for (auto& panel : printer["panel_widgets"]) {
+            // Legacy flat array: lift it into the page shape as well. Left as an
+            // array, PanelWidgetConfig::load() would find no entry with a grid
+            // position, read the config as pre-grid and replace it wholesale
+            // with the registry defaults, discarding every deliberate hide.
+            if (panel.is_array()) {
+                json widgets = panel;
+                unplace_array(widgets);
+                panel = json{{"main_page_index", 0},
+                             {"next_page_id", 1},
+                             {"pages", json::array({json{{"id", "main"}, {"widgets", widgets}}})}};
+                continue;
+            }
+            if (!panel.is_object() || !panel.contains("pages") || !panel["pages"].is_array()) {
+                continue;
+            }
+            for (auto& page : panel["pages"]) {
+                if (page.is_object() && page.contains("widgets")) {
+                    unplace_array(page["widgets"]);
+                }
+            }
+        }
+    }
+
+    if (unplaced > 0) {
+        spdlog::info("[Config] Migration v22: unplaced {} widget(s) across {} printer profile(s)",
+                     unplaced, profiles);
+    }
+}
+
 /// Lift a legacy root-level "preset" marker into the active printer's node.
 ///
 /// The marker predates multi-printer support and stayed at the config root while
@@ -1335,6 +1427,8 @@ static void run_versioned_migrations(json& config, const std::string& config_pat
         migrate_v19_to_v20(config);
     if (version < 21)
         migrate_v20_to_v21(config);
+    if (version < 22)
+        migrate_v21_to_v22(config);
 
     config["config_version"] = CURRENT_CONFIG_VERSION;
 }
