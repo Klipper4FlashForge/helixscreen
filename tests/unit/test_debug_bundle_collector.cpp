@@ -1219,8 +1219,39 @@ TEST_CASE("DebugBundleCollector: condense_klipper_log elides every config dump i
     REQUIRE(count_lines_with(out, "config dump") == 2);
 }
 
+TEST_CASE("DebugBundleCollector: config-dump elision handles a real AD5X-sized dump",
+          "[debug-bundle][klippy]") {
+    // Measured, not guessed: Vger1700's printer.log carries a 6668-line config
+    // dump, 66% of a 10052-line file. An earlier positional bound of 5000 was
+    // written against an assumed ~1300 and would have skipped this entirely
+    // whenever the fetch cut into the first 1668 lines of the dump.
+    std::string raw = config_dump(6666, /*with_header=*/false) + "Stats 83.0: sysload=0.3\n" +
+                      "MCU 'mcu' shutdown: Timer too close\n";
+
+    auto out = helix::DebugBundleCollector::condense_klipper_log(raw);
+
+    REQUIRE(count_lines_with(out, "cfg_key_") == 0);
+    REQUIRE(count_lines_with(out, "Timer too close") == 1);
+}
+
 TEST_CASE("DebugBundleCollector: config-dump elision does not eat unrelated content",
           "[debug-bundle][klippy]") {
+    SECTION("an orphan terminator after runtime output is left alone") {
+        // Position alone cannot separate "cut-off dump" from "stray rule line":
+        // a real dump is 6668 lines, so any bound generous enough to cover one
+        // is also generous enough to swallow thousands of real log lines. What
+        // actually separates them is that Klipper's config dump contains no
+        // runtime "Stats " line, and a live log is saturated with them.
+        std::string raw = stats_lines(30) + "MCU 'mcu' shutdown: Timer too close\n" +
+                          "=======================\n" + "after\n";
+
+        auto out = helix::DebugBundleCollector::condense_klipper_log(raw);
+
+        REQUIRE(count_lines_with(out, "Timer too close") == 1);
+        REQUIRE(count_lines_with(out, "after") == 1);
+        REQUIRE(count_lines_with(out, "config dump") == 0);
+    }
+
     SECTION("an orphan terminator deep in the window is left alone") {
         // The head-truncated rule drops everything BEFORE the terminator, so it
         // must only fire near the start of the window. A bare '=' rule line

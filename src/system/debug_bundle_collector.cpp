@@ -1120,12 +1120,20 @@ static std::string line_shape(const std::string& line) {
 static constexpr const char* kKlipperConfigHeader = "===== Config file =====";
 static constexpr const char* kKlipperConfigFooter = "=======================";
 
-/// How far into the window a lone footer may sit and still be read as the tail
-/// of a config dump the Range fetch cut through. A full AD5X+ZMOD dump is ~1300
-/// lines; 5000 covers a pathological config while staying far short of the
-/// ~40k-line window a 4 MiB fetch produces, so a stray rule line deep in the log
-/// can never take the events before it with it.
-static constexpr size_t kOrphanFooterMaxIndex = 5000;
+/// Klipper's per-second runtime stats line. Used as the discriminator for an
+/// orphan footer: the config dump contains no line starting with "Stats " (the
+/// dump indents every continuation with a tab, and config keys are lowercase),
+/// while a live log window is saturated with them. Measured on Vger1700's
+/// printer.log: 0 before the footer, 3284 after.
+static constexpr const char* kKlipperStatsPrefix = "Stats ";
+
+/// Positional backstop for a lone footer, used alongside the "no Stats yet"
+/// rule above. Deliberately generous: a real AD5X+ZMOD dump is 6668 lines, not
+/// the ~1300 this was first written against, so a tight bound silently skips
+/// the elision whenever the fetch cuts near the top of a dump. The Stats rule
+/// is what actually prevents over-reach; this only caps the damage in a window
+/// that somehow contains no runtime output at all.
+static constexpr size_t kOrphanFooterMaxIndex = 25000;
 
 /// Drop Klipper's config dump(s) from a raw log window, in place.
 ///
@@ -1151,6 +1159,7 @@ static void strip_klipper_config_dumps(std::vector<std::string>& lines) {
 
     size_t header_at = std::string::npos; // index of an open, unterminated header
     size_t dumps_closed = 0;
+    bool runtime_output_seen = false; // a "Stats " line means we are past any dump
     auto note_elision = [&out](size_t count) {
         if (count == 0)
             return;
@@ -1174,18 +1183,24 @@ static void strip_klipper_config_dumps(std::vector<std::string>& lines) {
             continue;
         }
 
-        // Orphan footer: only the head of the window can hold one, and only
-        // because the byte-range fetch cut the header off mid-dump. Everything
-        // before it is therefore config body. Requiring that no dump has closed
-        // yet keeps this strictly a head-of-window rule, so it can never reach
-        // back across a real event.
-        if (line == kKlipperConfigFooter && dumps_closed == 0 && i <= kOrphanFooterMaxIndex) {
+        // Orphan footer: the byte-range fetch cut the header off mid-dump, so
+        // everything before it is config body and goes with it. Three conditions
+        // keep that from reaching across real content:
+        //   - no dump has closed yet, so this stays a head-of-window rule;
+        //   - no runtime "Stats " line has been seen, which is what actually
+        //     distinguishes a cut-off dump from a stray rule line in a live log;
+        //   - a generous positional backstop for a window with no runtime output.
+        if (line == kKlipperConfigFooter && dumps_closed == 0 && !runtime_output_seen &&
+            i <= kOrphanFooterMaxIndex) {
             out.clear();
             note_elision(i + 1);
             ++dumps_closed;
             continue;
         }
 
+        if (!runtime_output_seen && line.rfind(kKlipperStatsPrefix, 0) == 0) {
+            runtime_output_seen = true;
+        }
         out.push_back(line);
     }
 
