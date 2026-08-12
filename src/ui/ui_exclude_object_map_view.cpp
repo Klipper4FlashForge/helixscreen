@@ -5,6 +5,7 @@
 #include "ui_update_queue.h"
 #include "ui_utils.h"
 
+#include "bed_dimensions.h"
 #include "observer_factory.h"
 #include "printer_excluded_objects_state.h"
 #include "theme_manager.h"
@@ -64,8 +65,9 @@ void ExcludeObjectMapView::create(lv_obj_t* parent, helix::PrinterExcludedObject
     state_ = state;
     exclude_manager_ = exclude_manager;
     parsed_file_ = std::move(parsed_file);
-    bed_w_mm_ = (bed_w_mm > 0.0f) ? bed_w_mm : 235.0f;
-    bed_h_mm_ = (bed_h_mm > 0.0f) ? bed_h_mm : 235.0f;
+    const auto bed = helix::bed_dimensions_from_volume(0.0f, bed_w_mm, 0.0f, bed_h_mm);
+    bed_w_mm_ = bed.w_mm;
+    bed_h_mm_ = bed.h_mm;
 
     // Register XML event callback once (idempotent — registration only takes
     // effect the first time; subsequent calls are harmless no-ops).
