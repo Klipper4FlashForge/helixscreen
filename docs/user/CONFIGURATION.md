@@ -670,7 +670,7 @@ Located in the `printer` section:
   "printer": {
     "name": "Unnamed Printer",
     "type": "Unknown",
-    "moonraker_host": "192.168.1.112",
+    "moonraker_host": "192.168.1.100",
     "moonraker_port": 7125,
     "moonraker_api_key": false,
     "heaters": {
@@ -920,7 +920,7 @@ Connection settings are in the `printer` section:
 ```json
 {
   "printer": {
-    "moonraker_host": "192.168.1.112",
+    "moonraker_host": "192.168.1.100",
     "moonraker_port": 7125,
     "moonraker_api_key": false,
     "moonraker_connection_timeout_ms": 10000,
@@ -935,7 +935,7 @@ Connection settings are in the `printer` section:
 
 ### `moonraker_host`
 **Type:** string
-**Default:** `"192.168.1.112"` (template default, usually `"localhost"`)
+**Default:** `"127.0.0.1"` (the value in `config/settings.json.template`)
 **Description:** Moonraker hostname or IP address.
 
 ### `moonraker_port`
@@ -1689,7 +1689,7 @@ HelixScreen accepts command-line options for overriding configuration and debugg
 
 | Option | Description |
 |--------|-------------|
-| `--moonraker <url>` | Override Moonraker URL (e.g., `ws://192.168.1.112:7125`) |
+| `--moonraker <url>` | Override Moonraker URL (e.g., `ws://192.168.1.100:7125`) |
 
 ### Logging Options
 
