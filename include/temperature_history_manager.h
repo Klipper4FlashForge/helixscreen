@@ -201,11 +201,15 @@ class TemperatureHistoryManager {
      * Temperatures/targets are converted to decidegrees (×10). Powers are
      * ignored (TempSample has no power field).
      *
-     * Seed samples are merged with any samples already recorded for a sensor,
-     * sorted by timestamp, de-duplicated on exact-timestamp collisions, and the
-     * newest HISTORY_SIZE are kept. This bypasses the SAMPLE_INTERVAL_MS write
-     * throttle and is race-safe against a live sample that may already have been
-     * appended before the async fetch returned.
+     * The store is authoritative inside its own window: local samples older than
+     * the oldest store sample are kept as a prefix, and anything the window
+     * covers is superseded. That keeps history a restarted Klipper no longer has
+     * while still discarding the near-duplicate pairs a plain merge produced
+     * (a live wall-clock sample next to the synthetic 1 Hz grid). Store values
+     * pass the same sanity filter as live samples, and the newest HISTORY_SIZE
+     * are kept. This bypasses the SAMPLE_INTERVAL_MS write throttle and is
+     * race-safe against a live sample that may already have been appended before
+     * the async fetch returned.
      *
      * @param store Per-sensor history keyed by Klipper object name
      * @param now_ms Wall-clock timestamp (Unix ms) for the newest seeded sample.

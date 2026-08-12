@@ -127,6 +127,10 @@ TempGraphController::TempGraphController(lv_obj_t* container,
 void TempGraphController::detach() {
     tearing_down_ = true;
     lifetime_.invalidate();
+    // The deferred clear queued by reattach_observers() is generation-guarded,
+    // so invalidate() above just cancelled it. Clear here or a later rebuild()
+    // would come up with the suppression still latched and never sample again.
+    suppress_attach_fire_ = false;
 
     {
         auto freeze =
@@ -199,8 +203,9 @@ void TempGraphController::refresh_all_from_history() {
 
 void TempGraphController::rebuild() {
     // Guard against stale container — if the parent widget was deleted while a
-    // deferred reconnect observer callback was queued, container_ is dangling.
-    // lv_obj_is_valid() is O(n) but acceptable here (rebuild is debounced to 2s).
+    // deferred observer callback was queued, container_ is dangling.
+    // lv_obj_is_valid() is O(n) but acceptable here: rebuild() is the full-reset
+    // path, not something any hot loop reaches.
     if (tearing_down_ || !container_ || !lv_obj_is_valid(container_)) {
         spdlog::warn("[TempGraphController] Rebuild skipped — tearing down or container freed");
         container_ = nullptr;
@@ -225,7 +230,6 @@ void TempGraphController::rebuild() {
 
     ++generation_;
     y_axis_max_ = 100.0f;
-    has_chart_data_ = false;
 
     create_graph();
     if (!graph_) {
@@ -247,21 +251,25 @@ void TempGraphController::reattach_observers() {
 
     spdlog::debug("[TempGraphController] Re-attaching observers (preserving chart data)");
 
-    // Expire all old tokens and drain pending callbacks so stale observers
-    // don't fire during re-attachment.
+    // Expire all old tokens so any handler already queued by the old observers
+    // returns instead of touching the series we are about to rebind.
+    //
+    // No freeze/drain pair here, unlike detach(): reattach_observers() is only
+    // reachable from the connection observer, which runs inside
+    // UpdateQueue::process_pending(). process_pending() has already swapped
+    // pending_ into a local queue, so a nested drain() cannot see (let alone
+    // flush) the stale callbacks — it would only re-enter the queue for
+    // unrelated work, which is exactly the re-entrancy #696 warns about.
+    // ObserverGuard::reset() below frees each observer context, expiring the
+    // weak_alive token that the already-queued handlers check, so they drop
+    // themselves without any drain.
     lifetime_.invalidate();
-    {
-        auto freeze =
-            helix::ui::UpdateQueue::instance().scoped_freeze("TempGraphController::reattach");
-        helix::ui::UpdateQueue::instance().drain();
-
-        connection_observer_.reset();
-        discovery_observer_.reset();
-        sensor_discovery_observer_.reset();
-        for (auto& s : series_) {
-            s.temp_obs.reset();
-            s.target_obs.reset();
-        }
+    connection_observer_.reset();
+    discovery_observer_.reset();
+    sensor_discovery_observer_.reset();
+    for (auto& s : series_) {
+        s.temp_obs.reset();
+        s.target_obs.reset();
     }
 
     // New generation — new tokens for the fresh observers.
@@ -275,14 +283,23 @@ void TempGraphController::reattach_observers() {
         s.lifetime = SubjectLifetime{};
     }
 
-    // Suppress the sync fire from observe_int_sync during setup. The sync
-    // fire would push stale subject values (from before the reconnect) onto
-    // the chart, creating phantom spikes. The observers will fire normally
-    // on the next real subject change when fresh data arrives (#1245).
-    bool was_paused = paused_;
-    paused_ = true;
+    // Suppress the attach-time fire from observe_int_sync. Those fires push the
+    // subject's PRE-reconnect value, and the live handler stamps it with a
+    // fresh `now` — a phantom spike bridging the whole disconnect gap (#1245).
+    //
+    // The suppression cannot be scoped to this function: observe_int_sync's
+    // LVGL callback only *queues* the handler (observer_factory.h:344), so the
+    // attach-time fires have not run yet when setup_observers() returns.
+    // Restoring the flag inline here would restore it before a single one of
+    // them executed — the no-op this replaces. Instead, clear it from a
+    // callback queued right after them. UpdateQueue's pending_ is a FIFO, and
+    // process_pending() drains it in order, so the clear is guaranteed to run
+    // after every attach-time fire has been dropped and before any sample that
+    // arrives on a later tick.
+    suppress_attach_fire_ = true;
     setup_observers();
-    paused_ = was_paused;
+    lifetime_.defer("TempGraphController::clear_attach_suppression",
+                    [this]() { suppress_attach_fire_ = false; });
 }
 
 int TempGraphController::series_id_for(const std::string& klipper_name) const {
@@ -532,7 +549,7 @@ bool TempGraphController::attach_series_observers(size_t i) {
                 [token, gen, idx](TempGraphController* self, int temp_deci) {
                     if (token.expired() || gen != self->generation_)
                         return;
-                    if (self->paused_ || !self->graph_)
+                    if (self->paused_ || self->suppress_attach_fire_ || !self->graph_)
                         return;
 
                     auto& si = self->series_[idx];
@@ -723,8 +740,6 @@ void TempGraphController::backfill_history() {
             // the off-period gap via the segmenter.
             ui_temp_graph_set_current_target(graph_, s.series_id, target_deg, true);
         }
-
-        has_chart_data_ = true;
     }
 }
 

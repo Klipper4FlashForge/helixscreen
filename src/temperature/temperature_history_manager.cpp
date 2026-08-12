@@ -9,8 +9,17 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <vector>
 
 using namespace helix;
+
+namespace {
+/// Upper bound for a plausible temperature reading, in deci-degrees (400°C).
+/// Anything at or below 0 is Klipper's "no data" / disconnect / inactive-tool
+/// placeholder. Shared by the live recorder and the store seed so a sample can
+/// never enter the history through one door that the other would have rejected.
+constexpr int kMaxValidTempDeci = 4000;
+} // namespace
 
 // ============================================================================
 // Construction / Destruction
@@ -202,7 +211,6 @@ bool TemperatureHistoryManager::add_sample_internal(const std::string& heater_na
     // recorder, and is replayed later, so it must be rejected at this boundary —
     // the single source feeding every consumer (overlay, mini graph, panel).
     // Upper bound rejects obviously-bogus spikes (deci-degrees; 4000 = 400°C).
-    constexpr int kMaxValidTempDeci = 4000;
     if (temp_deci <= 0 || temp_deci > kMaxValidTempDeci) {
         spdlog::debug("[TempHistory] dropping invalid sample for '{}': {} deci-°C", heater_name,
                       temp_deci);
@@ -255,42 +263,87 @@ void TemperatureHistoryManager::seed_from_store(const TemperatureStore& store, i
             continue;
         }
 
-        // Replace history entirely with Moonraker's authoritative store data.
-        // No merge — live samples that arrived during the RPC flight are
-        // superseded; the next live update will append naturally. Merging
-        // caused near-duplicate timestamps (live real-time vs seed synthetic)
-        // that produced phantom spikes on the chart (#1245).
-        size_t count = std::min(n, static_cast<size_t>(HISTORY_SIZE));
-        size_t offset =
-            n > static_cast<size_t>(HISTORY_SIZE) ? n - static_cast<size_t>(HISTORY_SIZE) : 0;
-        HeaterHistory& hh = heaters_[key];
-        for (size_t i = 0; i < count; ++i) {
-            hh.samples[i].temp_deci =
-                static_cast<int>(std::lround(series.temperatures[offset + i] * 10.0f));
-            hh.samples[i].target_deci =
-                ((offset + i) < series.targets.size())
-                    ? static_cast<int>(std::lround(series.targets[offset + i] * 10.0f))
-                    : 0;
-            hh.samples[i].timestamp_ms =
-                now_ms - static_cast<int64_t>(n - 1 - (offset + i)) * SAMPLE_INTERVAL_MS;
-        }
-        hh.count = static_cast<int>(count);
-        hh.write_index = static_cast<int>(count) % HISTORY_SIZE;
-        hh.last_sample_ms = count > 0 ? hh.samples[count - 1].timestamp_ms : 0;
+        // Moonraker's store is a bare array with no timestamps, so it is
+        // reconstructed as an even 1 Hz run ending at now_ms.
+        const int64_t store_oldest_ms = now_ms - static_cast<int64_t>(n - 1) * SAMPLE_INTERVAL_MS;
 
-        spdlog::debug("[TempHistory] seeded '{}': {} samples (newest ts {})", key, hh.count,
-                      hh.last_sample_ms);
-        if (hh.count > 0) {
-            int64_t newest = hh.last_sample_ms;
-            int64_t oldest = hh.samples[0].timestamp_ms;
-            if (hh.count > 1)
-                oldest = hh.samples[0].timestamp_ms;
-            spdlog::debug("[TempHistory] seeded '{}' detail: count={} oldest_ts={} newest_ts={} "
-                          "span_min={:.1f} first_temp={:.1f}C last_temp={:.1f}C",
-                          key, hh.count, oldest, newest, (newest - oldest) / 60000.0f,
-                          hh.samples[0].temp_deci / 10.0f,
-                          hh.samples[static_cast<size_t>(hh.count - 1)].temp_deci / 10.0f);
+        HeaterHistory& hh = heaters_[key];
+
+        // Merge on a window boundary, not a blanket replace. Two properties
+        // have to hold simultaneously:
+        //
+        //  - No near-duplicate timestamps. Live samples recorded while the RPC
+        //    was in flight sit at real wall-clock times a few hundred ms off
+        //    the synthetic store grid; interleaving the two draws a phantom
+        //    spike (#1245). So every local sample the store window covers is
+        //    dropped — inside its own window the store is authoritative.
+        //  - No loss of history the store does not have. Seeding re-runs on
+        //    every discovery, and a restarted Klipper returns only a few
+        //    seconds of store data; a blanket replace collapsed a 20-minute
+        //    graph to seconds. Local samples strictly OLDER than the store
+        //    window survive and are kept as the prefix.
+        //
+        // Both halves are chronological, so the merged result is strictly
+        // increasing by construction.
+        std::vector<TempSample> merged;
+        merged.reserve(static_cast<size_t>(hh.count) + n);
+
+        const int existing = std::min(hh.count, HISTORY_SIZE);
+        const int oldest_index = (hh.count < HISTORY_SIZE) ? 0 : hh.write_index;
+        for (int i = 0; i < existing; ++i) {
+            const TempSample& s =
+                hh.samples[static_cast<size_t>((oldest_index + i) % HISTORY_SIZE)];
+            if (s.timestamp_ms < store_oldest_ms) {
+                merged.push_back(s);
+            }
         }
+        const size_t local_kept = merged.size();
+
+        for (size_t i = 0; i < n; ++i) {
+            // Same sanity filter add_sample_internal() applies to live samples.
+            // The store replays 0.0 for anything that was offline or not yet
+            // reporting, and a seeded 0 draws a solid vertical drop to the
+            // chart's 0°C floor exactly like a live one would.
+            const int temp_deci = static_cast<int>(std::lround(series.temperatures[i] * 10.0f));
+            if (temp_deci <= 0 || temp_deci > kMaxValidTempDeci) {
+                continue;
+            }
+            TempSample s;
+            s.temp_deci = temp_deci;
+            s.target_deci = (i < series.targets.size())
+                                ? static_cast<int>(std::lround(series.targets[i] * 10.0f))
+                                : 0;
+            s.timestamp_ms = now_ms - static_cast<int64_t>(n - 1 - i) * SAMPLE_INTERVAL_MS;
+            merged.push_back(s);
+        }
+        const size_t store_added = merged.size() - local_kept;
+
+        if (merged.empty()) {
+            // Every store value failed the sanity filter and there was nothing
+            // local to keep. Leave the bucket exactly as it was.
+            spdlog::debug("[TempHistory] seed '{}': all {} store samples rejected, history "
+                          "left untouched",
+                          key, n);
+            continue;
+        }
+
+        // Keep the newest HISTORY_SIZE.
+        const size_t keep = std::min(merged.size(), static_cast<size_t>(HISTORY_SIZE));
+        const size_t start = merged.size() - keep;
+        for (size_t i = 0; i < keep; ++i) {
+            hh.samples[i] = merged[start + i];
+        }
+        hh.count = static_cast<int>(keep);
+        hh.write_index = static_cast<int>(keep) % HISTORY_SIZE;
+        hh.last_sample_ms = hh.samples[keep - 1].timestamp_ms;
+
+        spdlog::debug("[TempHistory] seeded '{}': {} samples ({} local kept + {} from store, "
+                      "{} trimmed), span_min={:.1f} oldest_ts={} newest_ts={} "
+                      "first_temp={:.1f}C last_temp={:.1f}C",
+                      key, hh.count, local_kept, store_added, merged.size() - keep,
+                      (hh.last_sample_ms - hh.samples[0].timestamp_ms) / 60000.0f,
+                      hh.samples[0].timestamp_ms, hh.last_sample_ms,
+                      hh.samples[0].temp_deci / 10.0f, hh.samples[keep - 1].temp_deci / 10.0f);
         ++keys_seeded;
     }
 

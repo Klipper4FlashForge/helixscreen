@@ -133,6 +133,13 @@ class TempGraphController {
      * seeded pulls it in, matching how on-demand overlays backfill fresh on
      * each open. Safe no-op when the history manager is unavailable or empty.
      * See refresh_all_from_history() for the seed-time broadcast (#1124).
+     *
+     * Deliberately NOT gated on "the chart already has data": the two callers
+     * that matter both need it to run on an already-populated chart — resume()
+     * pulls in what accumulated while backgrounded, and the post-seed broadcast
+     * pushes newly seeded store history into graphs that backfilled earlier.
+     * A series whose history is empty is skipped individually inside
+     * backfill_history(), so a re-backfill never blanks live data.
      */
     void refresh_from_history();
 
@@ -149,8 +156,13 @@ class TempGraphController {
     /**
      * @brief Tear down and recreate the graph from scratch
      *
-     * Called on reconnect to re-resolve subjects (which may have been
-     * recreated by printer state reinitialization).
+     * @note NO production caller. Reconnect goes through reattach_observers()
+     *       instead (#1245) — rebuilding flashes the chart, drops the series
+     *       data, and fires once per live controller. This remains as the
+     *       full-reset path exercised by tests/unit/test_temp_graph_controller.cpp
+     *       (it is what pins the tearing_down_ / generation_ interlock against
+     *       the deferred-delete race of #1117). Do not wire it back into the
+     *       connection observer.
      */
     void rebuild();
 
@@ -247,9 +259,22 @@ class TempGraphController {
     uint32_t generation_ = 0;
     bool paused_ = false;
     bool tearing_down_ = false; ///< Set by detach(); guards rebuild()/setup_observers()
-    /// True after backfill_history() finds data. Prevents refresh_from_history()
-    /// from clearing live chart data with a stale re-backfill on reconnect.
-    bool has_chart_data_ = false;
+    /**
+     * @brief Drops the attach-time sample push while reattach_observers() runs.
+     *
+     * observe_int_sync() attaches with lv_subject_add_observer_obj(), which
+     * fires the observer once immediately — but that fire only *queues* the
+     * handler (observer_factory.h), so it lands in UpdateQueue and runs on a
+     * later process_pending tick. On reconnect the subjects still hold their
+     * pre-disconnect values, so that deferred fire would stamp a stale
+     * temperature with a fresh `now` timestamp: the phantom spike of #1245.
+     *
+     * Set before setup_observers() and cleared by a lifetime_.defer() queued
+     * immediately after it. UpdateQueue is FIFO, so the clear runs behind every
+     * attach-time fire and ahead of any genuinely new sample. detach() clears
+     * it unconditionally so a rebuild() cannot inherit a stuck suppression.
+     */
+    bool suppress_attach_fire_ = false;
     float y_axis_max_ = 100.0f;
 };
 

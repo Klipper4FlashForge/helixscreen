@@ -740,6 +740,77 @@ static void draw_legend_cb(lv_event_t* e) {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared plot geometry — one definition for every draw hook
+// ─────────────────────────────────────────────────────────────────────────────
+
+// The chart's plot rectangle in absolute screen coordinates: the area inside
+// the widget's padding that every hook interpolates data positions across.
+//
+// `width` is deliberately the x2 - x1 SPAN, not lv_obj_get_content_width().
+// Those differ by one pixel (plus borders) because lv_area coordinates are
+// inclusive, and interpolating `content_x1 + offset * width / total` is only
+// exact when width is the span — offset == total then lands precisely on
+// content_x2. The X-axis labels used to compute their own width the other way,
+// which is why the grid lines and the times they were supposed to be aligned
+// with sat 1-2px apart (#1245).
+struct temp_graph_plot_area_t {
+    int32_t x1;
+    int32_t x2;
+    int32_t y1;
+    int32_t y2;
+    int32_t width;
+    int32_t height;
+};
+
+static temp_graph_plot_area_t temp_graph_plot_area(lv_obj_t* chart) {
+    lv_area_t coords;
+    lv_obj_get_coords(chart, &coords);
+
+    temp_graph_plot_area_t a;
+    a.x1 = coords.x1 + lv_obj_get_style_pad_left(chart, LV_PART_MAIN);
+    a.x2 = coords.x2 - lv_obj_get_style_pad_right(chart, LV_PART_MAIN);
+    a.y1 = coords.y1 + lv_obj_get_style_pad_top(chart, LV_PART_MAIN);
+    a.y2 = coords.y2 - lv_obj_get_style_pad_bottom(chart, LV_PART_MAIN);
+    a.width = a.x2 - a.x1;
+    a.height = a.y2 - a.y1;
+    return a;
+}
+
+// The time span the chart currently represents, plus the tick cadence shared by
+// the X-axis labels and the vertical grid lines. Both used to derive this
+// independently; keeping one source is what actually guarantees a grid line
+// under every label.
+struct temp_graph_time_axis_t {
+    int64_t latest_ms;   ///< Time at the right edge
+    int64_t leftmost_ms; ///< Time at the left edge
+    int64_t total_ms;    ///< Full window width in ms
+    int64_t interval_ms; ///< Spacing between labels / grid lines
+    int64_t first_ms;    ///< First tick at or after the left edge
+};
+
+static temp_graph_time_axis_t temp_graph_time_axis(const ui_temp_graph_t* graph) {
+    temp_graph_time_axis_t t;
+    t.total_ms =
+        static_cast<int64_t>(graph->point_count) * UI_TEMP_GRAPH_SAMPLE_INTERVAL_SEC * 1000;
+    t.latest_ms = graph->latest_point_time_ms;
+    t.leftmost_ms = t.latest_ms - t.total_ms;
+
+    // 400 points x 3 s = a 20 min window, labelled every 5 min (#979).
+    t.interval_ms = 5 * 60 * 1000;
+    if (t.total_ms < 2 * 60 * 1000) {
+        t.interval_ms = 30 * 1000;
+    } else if (t.total_ms < 10 * 60 * 1000) {
+        t.interval_ms = 2 * 60 * 1000;
+    }
+
+    t.first_ms = (t.leftmost_ms / t.interval_ms) * t.interval_ms;
+    if (t.first_ms < t.leftmost_ms) {
+        t.first_ms += t.interval_ms;
+    }
+    return t;
+}
+
 // Draw target lines: time-varying step trace (TARGET_HISTORY on, default) or
 // a single horizontal dashed line at the current setpoint (TARGET_HISTORY off).
 // Constrained to the content area — LVGL's built-in cursor drawing extends
@@ -759,20 +830,13 @@ static void draw_target_lines_cb(lv_event_t* e) {
         return;
 
     // Content area (inside padding)
-    lv_area_t obj_coords;
-    lv_obj_get_coords(chart, &obj_coords);
-
-    int32_t pad_left = lv_obj_get_style_pad_left(chart, LV_PART_MAIN);
-    int32_t pad_right = lv_obj_get_style_pad_right(chart, LV_PART_MAIN);
-    int32_t pad_top = lv_obj_get_style_pad_top(chart, LV_PART_MAIN);
-    int32_t pad_bottom = lv_obj_get_style_pad_bottom(chart, LV_PART_MAIN);
-
-    int32_t cx1 = obj_coords.x1 + pad_left;
-    int32_t cx2 = obj_coords.x2 - pad_right;
-    int32_t cy1 = obj_coords.y1 + pad_top;
-    int32_t cy2 = obj_coords.y2 - pad_bottom;
-    int32_t chart_width = cx2 - cx1;
-    int32_t chart_height = cy2 - cy1;
+    const temp_graph_plot_area_t plot = temp_graph_plot_area(chart);
+    const int32_t cx1 = plot.x1;
+    const int32_t cx2 = plot.x2;
+    const int32_t cy1 = plot.y1;
+    const int32_t cy2 = plot.y2;
+    const int32_t chart_width = plot.width;
+    const int32_t chart_height = plot.height;
     if (chart_height <= 0 || chart_width <= 0)
         return;
 
@@ -932,16 +996,14 @@ static void draw_x_axis_labels_cb(lv_event_t* e) {
                   graph->visible_point_count, graph->first_point_time_ms,
                   graph->latest_point_time_ms);
 
-    // Get chart bounds
+    // Content area (inside padding) — shared with the grid callback so labels
+    // and grid lines land on the same pixel.
     lv_area_t coords;
     lv_obj_get_coords(chart, &coords);
-    int32_t content_width = lv_obj_get_content_width(chart);
-
-    // Calculate content area (inside padding)
-    int32_t pad_left = lv_obj_get_style_pad_left(chart, LV_PART_MAIN);
-    int32_t pad_right = lv_obj_get_style_pad_right(chart, LV_PART_MAIN);
-    int32_t content_x1 = coords.x1 + pad_left;
-    int32_t content_x2 = coords.x2 - pad_right;
+    const temp_graph_plot_area_t plot = temp_graph_plot_area(chart);
+    const int32_t content_width = plot.width;
+    const int32_t content_x1 = plot.x1;
+    const int32_t content_x2 = plot.x2;
 
     // Setup label descriptor - match Y-axis label style exactly
     // Y-axis labels use configurable font and get their color from LVGL's theme default
@@ -953,17 +1015,11 @@ static void draw_x_axis_labels_cb(lv_event_t* e) {
     label_dsc.align = LV_TEXT_ALIGN_CENTER;
     label_dsc.opa = lv_obj_get_style_text_opa(chart, LV_PART_MAIN); // Use chart's text opacity
 
-    // The chart has point_count points at SAMPLE_INTERVAL_SEC apart.
-    // 400 points × 3 s = 20 min display window (#979).
-    int64_t total_display_time_ms =
-        static_cast<int64_t>(graph->point_count) * UI_TEMP_GRAPH_SAMPLE_INTERVAL_SEC * 1000;
-
-    // The "now" time is always at the rightmost edge
-    int64_t latest_ms = graph->latest_point_time_ms;
-
-    // Calculate what time corresponds to the leftmost edge of the graph
-    // This is "now - total_display_time"
-    int64_t leftmost_ms = latest_ms - total_display_time_ms;
+    // Time axis — shared with the grid callback (see temp_graph_time_axis).
+    const temp_graph_time_axis_t axis = temp_graph_time_axis(graph);
+    const int64_t total_display_time_ms = axis.total_ms;
+    const int64_t latest_ms = axis.latest_ms;
+    const int64_t leftmost_ms = axis.leftmost_ms;
 
     // Label positioning: Y is aligned with bottom Y-axis label (0° baseline)
     // The Y-axis labels use space_between layout, with 0° at the chart content bottom
@@ -975,26 +1031,14 @@ static void draw_x_axis_labels_cb(lv_event_t* e) {
     // Position below chart content with responsive gap
     int32_t label_y = coords.y2 - pad_bottom + space_xs;
 
-    // Determine label interval based on total display time (fixed)
-    // For 20 minutes, show labels every 5 minutes
-    int64_t label_interval_ms = 5 * 60 * 1000; // 5 minutes default
-    if (total_display_time_ms < 2 * 60 * 1000) {
-        label_interval_ms = 30 * 1000; // 30 seconds for < 2 min
-    } else if (total_display_time_ms < 10 * 60 * 1000) {
-        label_interval_ms = 2 * 60 * 1000; // 2 minutes for < 10 min
-    }
+    const int64_t label_interval_ms = axis.interval_ms;
 
     // Track previous label to skip duplicates
     char prev_label[12] = ""; // Sized for 12H format: "12:30 PM"
 
-    // Draw labels at regular time intervals
-    // Start from the first time that's on a nice boundary after the left edge
-    int64_t first_label_ms = (leftmost_ms / label_interval_ms) * label_interval_ms;
-    if (first_label_ms < leftmost_ms) {
-        first_label_ms += label_interval_ms;
-    }
-
-    for (int64_t label_time_ms = first_label_ms; label_time_ms <= latest_ms;
+    // Draw labels at regular time intervals, starting from the first tick on a
+    // nice boundary at or after the left edge.
+    for (int64_t label_time_ms = axis.first_ms; label_time_ms <= latest_ms;
          label_time_ms += label_interval_ms) {
         // Calculate X position for this time
         // Position is proportional: (time - leftmost) / total_display_time * width
@@ -1073,22 +1117,16 @@ static void draw_grid_lines_cb(lv_event_t* e) {
         return;
     }
 
-    // Get chart bounds
-    lv_area_t coords;
-    lv_obj_get_coords(chart, &coords);
-
-    // Calculate content area (where data is drawn, excluding label areas)
-    int32_t pad_top = lv_obj_get_style_pad_top(chart, LV_PART_MAIN);
-    int32_t pad_left = lv_obj_get_style_pad_left(chart, LV_PART_MAIN);
-    int32_t pad_right = lv_obj_get_style_pad_right(chart, LV_PART_MAIN);
-    int32_t pad_bottom = lv_obj_get_style_pad_bottom(chart, LV_PART_MAIN);
-
-    int32_t content_x1 = coords.x1 + pad_left;
-    int32_t content_x2 = coords.x2 - pad_right;
-    int32_t content_y1 = coords.y1 + pad_top;
-    int32_t content_y2 = coords.y2 - pad_bottom;
-    int32_t content_width = content_x2 - content_x1;
-    int32_t content_height = content_y2 - content_y1;
+    // Content area (where data is drawn, excluding label areas) — shared with
+    // the X-axis label callback so the vertical lines and the times they mark
+    // land on the same pixel.
+    const temp_graph_plot_area_t plot = temp_graph_plot_area(chart);
+    const int32_t content_x1 = plot.x1;
+    const int32_t content_x2 = plot.x2;
+    const int32_t content_y1 = plot.y1;
+    const int32_t content_y2 = plot.y2;
+    const int32_t content_width = plot.width;
+    const int32_t content_height = plot.height;
 
     if (content_width <= 0 || content_height <= 0) {
         return; // Chart not laid out yet
@@ -1112,31 +1150,24 @@ static void draw_grid_lines_cb(lv_event_t* e) {
         lv_draw_line(layer, &line_dsc);
     }
 
-    // Draw vertical grid lines at TIME-BASED positions matching the X-axis
-    // labels (every label_interval_ms). This ensures grid lines and time labels
-    // are always aligned, so data points line up with the grid (#1245).
-    int64_t total_display_time_ms =
-        static_cast<int64_t>(graph->point_count) * UI_TEMP_GRAPH_SAMPLE_INTERVAL_SEC * 1000;
-    int64_t latest_ms = graph->latest_point_time_ms;
-    int64_t leftmost_ms = latest_ms - total_display_time_ms;
-
-    int64_t label_interval_ms = 5 * 60 * 1000; // 5 minutes (matches X-axis labels)
-    if (total_display_time_ms < 2 * 60 * 1000) {
-        label_interval_ms = 30 * 1000;
-    } else if (total_display_time_ms < 10 * 60 * 1000) {
-        label_interval_ms = 2 * 60 * 1000;
+    // Vertical grid lines sit at TIME-BASED positions from the same axis the
+    // X-axis labels use, so a line lands under every label (#1245).
+    //
+    // Nothing plotted yet means latest_point_time_ms is still 0, and the ticks
+    // would be walked from the Unix epoch — the same reason the label callback
+    // bails above. Skip the vertical lines; the horizontal ones above are
+    // time-independent and still draw.
+    if (graph->visible_point_count == 0) {
+        return;
     }
 
-    int64_t first_line_ms = (leftmost_ms / label_interval_ms) * label_interval_ms;
-    if (first_line_ms < leftmost_ms) {
-        first_line_ms += label_interval_ms;
-    }
+    const temp_graph_time_axis_t axis = temp_graph_time_axis(graph);
 
-    for (int64_t line_time_ms = first_line_ms; line_time_ms <= latest_ms;
-         line_time_ms += label_interval_ms) {
-        int64_t time_offset = line_time_ms - leftmost_ms;
-        int32_t x = content_x1 +
-                    static_cast<int32_t>((time_offset * content_width) / total_display_time_ms);
+    for (int64_t line_time_ms = axis.first_ms; line_time_ms <= axis.latest_ms;
+         line_time_ms += axis.interval_ms) {
+        int64_t time_offset = line_time_ms - axis.leftmost_ms;
+        int32_t x =
+            content_x1 + static_cast<int32_t>((time_offset * content_width) / axis.total_ms);
 
         if (x < content_x1 || x > content_x2)
             continue;
