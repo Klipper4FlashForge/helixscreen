@@ -31,7 +31,22 @@ jobs:
         # pin is a no-op today and stops the drift from here on.
         uses: espressif/esp-idf-ci-action@9d38657f3d789ca759b2b37aaf5ceffbc42c4f0d
         with:
-          esp_idf_version: v5.5.4
+          # v5.5.4 emits C++ exception unwind tables roughly five times larger
+          # than every neighbouring release, and that alone is why this job has
+          # been red. Measured on one tree with one sdkconfig and one compiler
+          # (xtensa-esp-elf 14.2.0, byte-identical between the two containers),
+          # varying only the IDF container:
+          #
+          #   idf:v5.5.4   .bin 8,339,984   .eh_frame 2,080,192   overflows ota_0
+          #   idf:v5.5.5   .bin 6,685,696   .eh_frame   416,508   fits, 2% free
+          #
+          # The +1,663,688 B of .eh_frame is the entire overflow to within 12 KB.
+          # The app itself grew ~44 KB across the 43 commits in that window, so
+          # the "flash bloat" this job reported was never the firmware. Note the
+          # local dev toolchain has been on a good v5.5 build all along, which is
+          # why it fit locally and failed here for weeks with nobody able to see
+          # the difference. Keep both pinned, and re-measure before moving this.
+          esp_idf_version: v5.5.5
           target: esp32s3
           path: firmware/helixscreen-esp32
           # storage_frogfs.bin is a BUILD INPUT, not output: main/CMakeLists.txt
