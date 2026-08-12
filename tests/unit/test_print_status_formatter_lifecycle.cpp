@@ -48,6 +48,13 @@ TEST_CASE_METHOD(HelixTestFixture, "Re-created DetailedFormatter keeps its XML s
     lv_subject_t* layer_text = lv_xml_get_subject(nullptr, "print_status_layer_text");
     REQUIRE(layer_text != nullptr);
 
+    // The shared formatter prefixes "~" to a layer count it had to guess from
+    // the progress fraction. Writing the subjects directly below bypasses the
+    // setter that records real layer data, so state the precondition here
+    // rather than assert whichever marker happens to fall out.
+    PrinterPrintStateTestAccess::set_has_real_layer_data(
+        PrinterStateTestAccess::get_print_state(ps), true);
+
     // ...and it is the live formatter's subject, not an orphaned record.
     lv_subject_set_int(ps.get_print_layer_current_subject(), 7);
     lv_subject_set_int(ps.get_print_layer_total_subject(), 9);
