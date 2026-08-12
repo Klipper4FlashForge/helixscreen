@@ -127,12 +127,13 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     static constexpr size_t kMaxPendingRequests = 64;
     static constexpr uint32_t kDefaultRequestTimeoutMs = 60000;
     // The two bounds below both exist for one reason: no transport call may
-    // stall the LVGL thread long enough for the screen to look dead. These are
-    // yielding blocks, so the idle task still runs and the task watchdog —
-    // idle-only here, and CONFIG_ESP_TASK_WDT_PANIC is off — never fires; the
-    // symptom is a frozen UI, not a reboot. kUiStallBudgetMs is the ceiling
-    // both are held to, chosen under CONFIG_ESP_TASK_WDT_TIMEOUT_S=5 so a stall
-    // stays off the watchdog's radar as well.
+    // stall the LVGL thread long enough for the screen to look dead. The task
+    // watchdog is NOT the constraint — it watches the idle tasks only and
+    // CONFIG_ESP_TASK_WDT_PANIC is off, so it neither fires for a stalled LVGL
+    // thread nor reboots if it did. The whole cost is a frozen screen. 3s is a
+    // UX judgement: long enough that an ordinary LAN operation never trips it,
+    // short enough that a tap on an unreachable printer reads as slow rather
+    // than crashed.
     static constexpr uint32_t kUiStallBudgetMs = 3000;
 
     // How long esp_websocket_client_send_text() may block the CALLING task
@@ -150,13 +151,18 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     // LVGL thread inherits the connect budget as a freeze. ChangeHostModal is
     // exactly that path: its connect() tears down the previous probe's client
     // while that one is still mid-connect to a bad address, which at the
-    // configured 10s left the modal unresponsive for ten seconds. Capping the
-    // transport's own budget bounds every such stop() without needing to move
-    // the call off the LVGL thread.
+    // configured 10s left the modal unresponsive for ten seconds.
+    //
+    // What this cap does and does NOT bound: network_timeout_ms reaches
+    // esp-tls as cfg.timeout_ms, which governs the TCP connect and the TLS
+    // handshake — i.e. everything AFTER the host is resolved. Resolution
+    // itself happens first, in a bare getaddrinfo() that takes no timeout
+    // (esp-tls/esp_tls.c:239) and is bounded only by lwIP's own DNS settings.
+    // moonraker_host is routinely a hostname (.local mDNS names are the norm
+    // on MainsailOS/Fluidd), so a stop() issued while a slow or failing
+    // resolution is in progress can still exceed this cap by the DNS time.
+    // The cap is a real improvement for the address case, not a guarantee.
     static constexpr uint32_t kMaxNetworkTimeoutMs = kUiStallBudgetMs;
-    static_assert(kUiStallBudgetMs < 5000,
-                  "a UI-thread transport stall must stay under "
-                  "CONFIG_ESP_TASK_WDT_TIMEOUT_S (5s) — see sdkconfig.defaults");
     // How long RECONNECTING persists before the informational FAILED transition.
     static constexpr int64_t kReconnectingToFailedUs = 60LL * 1000 * 1000;
     // Period of the owned esp_timer that drives timeout + FAILED bookkeeping.

@@ -102,10 +102,30 @@ int EspMoonrakerClient::connect(const char* url, std::function<void()> on_connec
 
     // A prior connect()/probe may have left a live client or a pending
     // reconnect intent. Start clean.
+    //
+    // Invariant: ws_ may only be destroyed while no housekeeping pass is in
+    // flight. process_timeouts() runs on the ESP_TIMER_TASK as well as on the
+    // LVGL pump, and its execute_reconnect() path dereferences ws_ across a
+    // stop()/start() pair — freeing the handle underneath a timer-task pass is
+    // a UAF on the transport. The LVGL-side pump cannot race us (same thread as
+    // connect()), so quiescing the timer is what closes the window. Same shape
+    // as the dtor: stop the timer so no further tick can begin, then spin until
+    // the current one (if any) clears the flag. The stop is what bounds the
+    // spin — esp_timer_delete()/esp_timer_stop() prevent future dispatches but
+    // do not join a callback already running.
     if (ws_) {
+        if (housekeeping_timer_) {
+            esp_timer_stop(housekeeping_timer_);
+        }
+        while (timer_in_flight_.load()) {
+            vTaskDelay(1);
+        }
         esp_websocket_client_stop(ws_);
         esp_websocket_client_destroy(ws_);
         ws_ = nullptr;
+        if (housekeeping_timer_) {
+            esp_timer_start_periodic(housekeeping_timer_, kHousekeepingPeriodUs);
+        }
     }
 
     // R3: this is a new connection attempt — bump the generation so any
@@ -134,9 +154,17 @@ int EspMoonrakerClient::connect(const char* url, std::function<void()> on_connec
     // Bounds the per-DATA-event chunk, not the message; we reassemble.
     cfg.buffer_size = 32768;
     // Capped so a stop() from the LVGL thread can never wait out a full
-    // unreachable-host connect attempt — see kMaxNetworkTimeoutMs.
+    // unreachable-host connect attempt — see kMaxNetworkTimeoutMs (which also
+    // documents what the cap does not cover: DNS resolution ahead of it).
     cfg.network_timeout_ms =
         static_cast<int>(std::min(connection_timeout_ms_, kMaxNetworkTimeoutMs));
+    if (connection_timeout_ms_ > kMaxNetworkTimeoutMs) {
+        // Say so once per connect: otherwise a user who configured 8s and sees
+        // a probe fail on a slow link has nothing in the log explaining why the
+        // transport gave up early.
+        ESP_LOGI(TAG, "network timeout capped to %ums (configured %ums) to bound UI-thread stalls",
+                 kMaxNetworkTimeoutMs, connection_timeout_ms_);
+    }
     cfg.ping_interval_sec = 10;
     // Defect 1 (Task 9 confirm soak): we never set this, so the component
     // defaulted to its own WEBSOCKET_PINGPONG_TIMEOUT_SEC = 120s — LONGER
