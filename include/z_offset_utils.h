@@ -64,9 +64,12 @@ AdjustResult adjust(IMoonrakerAPI* api, PrinterState* ps, double current_offset_
 /// @param strategy      Calibration strategy determining command sequence
 /// @param on_success    Called after SAVE_CONFIG succeeds (Klipper will restart)
 /// @param on_error      Called with user-facing message on any failure
+/// @param ps            When non-null, cleared via clear_pending_z_offset_delta()
+///                      once the save actually succeeds (either success path).
 void apply_and_save(IMoonrakerAPI* api, ZOffsetCalibrationStrategy strategy,
                     std::function<void()> on_success,
-                    std::function<void(const std::string& error)> on_error);
+                    std::function<void(const std::string& error)> on_error,
+                    PrinterState* ps = nullptr);
 
 /// Tracks Klipper restart activity observed while a SAVE_CONFIG is in flight.
 ///

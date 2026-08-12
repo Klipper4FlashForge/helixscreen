@@ -60,7 +60,21 @@ void format_offset_compact(int microns, char* buf, size_t buf_size) {
 
 void apply_and_save(IMoonrakerAPI* api, ZOffsetCalibrationStrategy strategy,
                     std::function<void()> on_success,
-                    std::function<void(const std::string& error)> on_error) {
+                    std::function<void(const std::string& error)> on_error, PrinterState* ps) {
+    // Both success paths below (the FIRMWARE_MANAGED early return and the
+    // APPLY -> SAVE_CONFIG chain) funnel through this wrapper, so the pending
+    // Z-offset delta is cleared exactly once, wherever the save actually
+    // completed — including firmware-managed printers, where the offset is
+    // genuinely persisted even though HelixScreen sent nothing.
+    auto on_saved = [ps, on_success = std::move(on_success)]() {
+        if (ps) {
+            ps->clear_pending_z_offset_delta();
+        }
+        if (on_success) {
+            on_success();
+        }
+    };
+
     if (!api) {
         spdlog::error("[ZOffsetUtils] apply_and_save called with null API");
         if (on_error)
@@ -71,8 +85,7 @@ void apply_and_save(IMoonrakerAPI* api, ZOffsetCalibrationStrategy strategy,
     if (strategy == ZOffsetCalibrationStrategy::FIRMWARE_MANAGED) {
         // Firmware/macros handle persistence — nothing for us to do
         spdlog::debug("[ZOffsetUtils] apply_and_save: firmware_managed strategy — auto-saved");
-        if (on_success)
-            on_success();
+        on_saved();
         return;
     }
 
@@ -88,7 +101,7 @@ void apply_and_save(IMoonrakerAPI* api, ZOffsetCalibrationStrategy strategy,
 
     api->execute_gcode(
         apply_cmd,
-        [api, apply_cmd, on_success, on_error]() {
+        [api, apply_cmd, on_saved, on_error]() {
             spdlog::info("[ZOffsetUtils] {} success, executing SAVE_CONFIG", apply_cmd);
 
             // Suppress disconnect modal — SAVE_CONFIG triggers a Klipper restart
@@ -96,10 +109,9 @@ void apply_and_save(IMoonrakerAPI* api, ZOffsetCalibrationStrategy strategy,
 
             api->execute_gcode(
                 "SAVE_CONFIG",
-                [on_success]() {
+                [on_saved]() {
                     spdlog::info("[ZOffsetUtils] SAVE_CONFIG success — Klipper restarting");
-                    if (on_success)
-                        on_success();
+                    on_saved();
                 },
                 [on_error](const MoonrakerError& err) {
                     std::string msg = fmt::format(

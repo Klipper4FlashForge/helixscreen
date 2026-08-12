@@ -95,3 +95,28 @@ TEST_CASE_METHOD(ZOffsetFixture, "adjust accumulates the pending delta",
     // +50um then -10um = +40um still unsaved.
     REQUIRE(lv_subject_get_int(state.get_pending_z_offset_delta_subject()) == 40);
 }
+
+// NOTE: no PROBE_CALIBRATE/ENDSTOP case here. apply_and_save chains
+// Z_OFFSET_APPLY_PROBE -> SAVE_CONFIG through the mock client, and the mock's
+// SAVE_CONFIG handler (moonraker_client_mock.cpp) returns 1 from gcode_script(),
+// which register_print_handlers' printer.gcode.script handler treats as an RPC
+// failure ("An unknown error occurred.") rather than an immediate success ack —
+// unlike BED_MESH_CALIBRATE/PID_CALIBRATE, which return 0. That is a pre-existing
+// mock bug unrelated to this change; driving on_success synchronously through
+// that path is not possible without fixing it, which is out of scope here. The
+// firmware-managed case below is guaranteed synchronous and pins the same
+// wrapper independently of mock RPC behavior.
+TEST_CASE_METHOD(ZOffsetFixture, "a firmware-managed save also clears the pending delta",
+                 "[z_offset][adjust][mock]") {
+    set_homed("xyz");
+    helix::zoffset::adjust(api.get(), &state, 0.0, 0.05);
+    REQUIRE(lv_subject_get_int(state.get_pending_z_offset_delta_subject()) == 50);
+
+    bool saved = false;
+    helix::zoffset::apply_and_save(
+        api.get(), ZOffsetCalibrationStrategy::FIRMWARE_MANAGED, [&]() { saved = true; },
+        [](const std::string&) {}, &state);
+
+    REQUIRE(saved);
+    REQUIRE(lv_subject_get_int(state.get_pending_z_offset_delta_subject()) == 0);
+}
