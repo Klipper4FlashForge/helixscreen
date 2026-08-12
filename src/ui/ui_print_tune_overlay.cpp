@@ -16,6 +16,7 @@
 #include "observer_factory.h"
 #include "printer_state.h"
 #include "static_panel_registry.h"
+#include "tune_controller.h"
 #include "z_offset_utils.h"
 
 #include <spdlog/spdlog.h>
@@ -405,54 +406,23 @@ void PrintTuneOverlay::update_actual_flow_display() {
 // ============================================================================
 
 void PrintTuneOverlay::handle_speed_adjust(int delta) {
-    speed_percent_ = std::clamp(speed_percent_ + delta, 50, 200);
+    speed_percent_ = helix::tune::clamp_speed_percent(speed_percent_ + delta);
     update_display();
-
-    if (api_) {
-        int value = speed_percent_;
-        std::string gcode = "M220 S" + std::to_string(value);
-        api_->execute_gcode(
-            gcode, [value]() { spdlog::debug("[PrintTuneOverlay] Speed set to {}%", value); },
-            [](const MoonrakerError& err) {
-                spdlog::error("[PrintTuneOverlay] Failed to set speed: {}", err.message);
-                NOTIFY_ERROR(lv_tr("Failed to set print speed: {}"), err.user_message());
-            });
-    }
+    helix::tune::set_speed_percent(api_, speed_percent_);
 }
 
 void PrintTuneOverlay::handle_flow_adjust(int delta) {
-    flow_percent_ = std::clamp(flow_percent_ + delta, 75, 125);
+    flow_percent_ = helix::tune::clamp_flow_percent(flow_percent_ + delta);
     update_display();
-
-    if (api_) {
-        int value = flow_percent_;
-        std::string gcode = "M221 S" + std::to_string(value);
-        api_->execute_gcode(
-            gcode, [value]() { spdlog::debug("[PrintTuneOverlay] Flow set to {}%", value); },
-            [](const MoonrakerError& err) {
-                spdlog::error("[PrintTuneOverlay] Failed to set flow: {}", err.message);
-                NOTIFY_ERROR(lv_tr("Failed to set flow rate: {}"), err.user_message());
-            });
-    }
+    helix::tune::set_flow_percent(api_, flow_percent_);
 }
 
 void PrintTuneOverlay::handle_reset() {
     speed_percent_ = 100;
     flow_percent_ = 100;
     update_display();
-
-    if (api_) {
-        api_->execute_gcode(
-            "M220 S100", []() { spdlog::debug("[PrintTuneOverlay] Speed reset to 100%"); },
-            [](const MoonrakerError& err) {
-                NOTIFY_ERROR(lv_tr("Failed to reset speed: {}"), err.user_message());
-            });
-        api_->execute_gcode(
-            "M221 S100", []() { spdlog::debug("[PrintTuneOverlay] Flow reset to 100%"); },
-            [](const MoonrakerError& err) {
-                NOTIFY_ERROR(lv_tr("Failed to reset flow: {}"), err.user_message());
-            });
-    }
+    helix::tune::set_speed_percent(api_, 100);
+    helix::tune::set_flow_percent(api_, 100);
 }
 
 void PrintTuneOverlay::handle_z_offset_changed(double delta) {
