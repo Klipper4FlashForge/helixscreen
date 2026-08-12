@@ -175,7 +175,6 @@ src/printer/timelapse_state.cpp
 src/printer/toolhead_homing.cpp
 src/printer/tool_state.cpp
 src/sensors/accel_sensor_manager.cpp
-src/sensors/color_sensor_manager.cpp
 src/sensors/humidity_sensor_manager.cpp
 src/sensors/probe_sensor_manager.cpp
 src/sensors/temperature_sensor_manager.cpp
