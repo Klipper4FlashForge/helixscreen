@@ -5,8 +5,6 @@
 
 #include "temp_graph_internal.h"
 
-#include <spdlog/spdlog.h>
-
 #include <cstdint>
 #include <limits>
 

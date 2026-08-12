@@ -148,12 +148,11 @@ TEST_CASE_METHOD(TooltipTestFixture, "empty leading slots are never candidates",
     temp_graph_geometry_t geo{};
     REQUIRE(temp_graph_compute_geometry(g, &geo));
 
-    // Tap over the far left of the plot, at the same height as the real data.
-    lv_point_t real = point_pos(g, id, g->point_count - 1);
-    auto hit = tooltip_hit_test(g, geo.cx1 + 2, real.y);
-    if (hit.has_value()) {
-        CHECK(hit->logical_index >= g->point_count - 3);
-    }
+    // A broken impl that forgot to skip POINT_NONE would place those slots at the
+    // TOP-LEFT of the plot: LV_CHART_POINT_NONE is INT32_MAX, and lv_map clamps it
+    // to max_out, giving py = floor_y - ch = cy1. Tap exactly there: the real samples
+    // are all at the far right, so a correct impl finds nothing within the radius.
+    REQUIRE_FALSE(tooltip_hit_test(g, geo.cx1 + 2, geo.cy1).has_value());
 
     ui_temp_graph_destroy(g);
 }
