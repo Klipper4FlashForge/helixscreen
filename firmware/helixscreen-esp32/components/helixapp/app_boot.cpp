@@ -957,6 +957,35 @@ extern "C" void app_boot_tick(void) {
         ESP_LOGI(TAG, "[heap:steady-60s] internal free=%u | psram free=%u",
                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+
+        // Stack headroom for the two IDF-owned tasks that run our code but that
+        // we never sized deliberately: "sys_evt" carries wifi_event_handler
+        // (-> on_got_ip / on_scan_done) and "esp_timer" carries
+        // housekeeping_trampoline (-> process_timeouts -> execute_reconnect).
+        // uxTaskGetStackHighWaterMark reports the MINIMUM free bytes each has
+        // ever had since boot, so sampling once at steady state covers the
+        // whole boot + connect + discovery burst. Without this the only
+        // overflow signal is the canary, which reboots without saying which
+        // task died. Same one-shot, non-loop discipline as the heap numbers
+        // above; the sizes are set in sdkconfig.defaults.
+        struct {
+            const char* name;
+            unsigned configured;
+        } const watched[] = {
+            {"sys_evt", (unsigned)CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE},
+            {"esp_timer", (unsigned)CONFIG_ESP_TIMER_TASK_STACK_SIZE},
+        };
+        for (const auto& t : watched) {
+            TaskHandle_t h = xTaskGetHandle(t.name);
+            if (h) {
+                ESP_LOGI(TAG, "[stack:steady-60s] %s free=%u of %u", t.name,
+                         (unsigned)uxTaskGetStackHighWaterMark(h), t.configured);
+            } else {
+                // Not fatal: the name is an IDF implementation detail and a
+                // rename would only cost us the telemetry, not the boot.
+                ESP_LOGW(TAG, "[stack:steady-60s] task '%s' not found", t.name);
+            }
+        }
     }
 #if CONFIG_HELIX_MOCK_PRINTER
     // ~1 Hz synthetic temperature push. tick fires every render iteration
