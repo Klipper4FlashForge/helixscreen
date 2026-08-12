@@ -33,6 +33,19 @@ void format_offset_compact(int microns, char* buf, size_t buf_size);
 inline constexpr double kZOffsetMinMm = -2.0;
 inline constexpr double kZOffsetMaxMm = 2.0;
 
+/// Z baby-step increments, largest first. Index 2 (0.01mm) is the default.
+inline constexpr double kZStepAmountsMm[] = {0.05, 0.025, 0.01, 0.005};
+inline constexpr int kZStepDefaultIndex = 2;
+
+/// Read the user's last-chosen step index from Config, clamped to a valid
+/// index. Out-of-range or unset returns kZStepDefaultIndex.
+int persisted_step_index();
+
+/// Persist the chosen step index (per-printer). Out-of-range values are
+/// stored as kZStepDefaultIndex rather than the bad value, so a rejected
+/// write can never leave a stale-but-valid index looking current.
+void set_persisted_step_index(int idx);
+
 struct AdjustResult {
     double applied_delta_mm; ///< delta actually applied after clamping
     double new_offset_mm;    ///< resulting offset, rounded to the micron

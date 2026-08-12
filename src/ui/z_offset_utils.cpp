@@ -6,6 +6,7 @@
 #include "ui_error_reporting.h"
 #include "ui_toast_manager.h"
 
+#include "config.h"
 #include "i_moonraker_api.h"
 
 #include <spdlog/fmt/fmt.h>
@@ -129,6 +130,31 @@ void apply_and_save(IMoonrakerAPI* api, ZOffsetCalibrationStrategy strategy,
             if (on_error)
                 on_error(msg);
         });
+}
+
+int persisted_step_index() {
+    Config* config = Config::get_instance();
+    if (!config) {
+        return kZStepDefaultIndex;
+    }
+    int idx = config->get<int>(config->df() + "z_offset/step_index", kZStepDefaultIndex);
+    if (idx < 0 || idx >= static_cast<int>(std::size(kZStepAmountsMm))) {
+        return kZStepDefaultIndex;
+    }
+    return idx;
+}
+
+void set_persisted_step_index(int idx) {
+    if (idx < 0 || idx >= static_cast<int>(std::size(kZStepAmountsMm))) {
+        spdlog::warn("[zoffset] out-of-range step index {} — persisting default instead", idx);
+        idx = kZStepDefaultIndex;
+    }
+    Config* config = Config::get_instance();
+    if (!config) {
+        return;
+    }
+    config->set<int>(config->df() + "z_offset/step_index", idx);
+    config->save();
 }
 
 bool should_extend_save_timeout(bool restart_latched, unsigned extensions_used,

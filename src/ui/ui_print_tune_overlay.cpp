@@ -196,10 +196,17 @@ void PrintTuneOverlay::init_subjects_internal() {
                               "tune_z_farther_icon", subjects_);
 
     // Z-offset step amount boolean subjects (L040: one per button for bind_style radio pattern)
-    UI_MANAGED_SUBJECT_INT(z_step_active_subjects_[0], 0, "z_step_0_active", subjects_);
-    UI_MANAGED_SUBJECT_INT(z_step_active_subjects_[1], 0, "z_step_1_active", subjects_);
-    UI_MANAGED_SUBJECT_INT(z_step_active_subjects_[2], 1, "z_step_2_active", subjects_); // default
-    UI_MANAGED_SUBJECT_INT(z_step_active_subjects_[3], 0, "z_step_3_active", subjects_);
+    // Seed from the last-persisted choice rather than a hardcoded default so
+    // the panel reopens on the same step the user left it on.
+    selected_z_step_idx_ = helix::zoffset::persisted_step_index();
+    UI_MANAGED_SUBJECT_INT(z_step_active_subjects_[0], selected_z_step_idx_ == 0 ? 1 : 0,
+                           "z_step_0_active", subjects_);
+    UI_MANAGED_SUBJECT_INT(z_step_active_subjects_[1], selected_z_step_idx_ == 1 ? 1 : 0,
+                           "z_step_1_active", subjects_);
+    UI_MANAGED_SUBJECT_INT(z_step_active_subjects_[2], selected_z_step_idx_ == 2 ? 1 : 0,
+                           "z_step_2_active", subjects_);
+    UI_MANAGED_SUBJECT_INT(z_step_active_subjects_[3], selected_z_step_idx_ == 3 ? 1 : 0,
+                           "z_step_3_active", subjects_);
 
     // Register XML event callbacks
     register_xml_callbacks({
@@ -447,22 +454,24 @@ void PrintTuneOverlay::handle_z_offset_changed(double delta) {
 }
 
 void PrintTuneOverlay::handle_z_step_select(int idx) {
-    if (idx < 0 || idx >= static_cast<int>(std::size(Z_STEP_AMOUNTS))) {
+    if (idx < 0 || idx >= static_cast<int>(std::size(helix::zoffset::kZStepAmountsMm))) {
         spdlog::warn("[PrintTuneOverlay] Invalid step index: {}", idx);
         return;
     }
     selected_z_step_idx_ = idx;
+    helix::zoffset::set_persisted_step_index(idx);
 
     // Update boolean subjects (only one active at a time, like filament panel)
-    for (int i = 0; i < static_cast<int>(std::size(Z_STEP_AMOUNTS)); i++) {
+    for (int i = 0; i < static_cast<int>(std::size(helix::zoffset::kZStepAmountsMm)); i++) {
         lv_subject_set_int(&z_step_active_subjects_[i], i == idx ? 1 : 0);
     }
 
-    spdlog::debug("[PrintTuneOverlay] Z-offset step selected: {}mm", Z_STEP_AMOUNTS[idx]);
+    spdlog::debug("[PrintTuneOverlay] Z-offset step selected: {}mm",
+                  helix::zoffset::kZStepAmountsMm[idx]);
 }
 
 void PrintTuneOverlay::handle_z_adjust(int direction) {
-    double amount = Z_STEP_AMOUNTS[selected_z_step_idx_];
+    double amount = helix::zoffset::kZStepAmountsMm[selected_z_step_idx_];
     handle_z_offset_changed(direction * amount);
 }
 

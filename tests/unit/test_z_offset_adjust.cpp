@@ -120,3 +120,17 @@ TEST_CASE_METHOD(ZOffsetFixture, "a firmware-managed save also clears the pendin
     REQUIRE(saved);
     REQUIRE(lv_subject_get_int(state.get_pending_z_offset_delta_subject()) == 0);
 }
+
+TEST_CASE_METHOD(LVGLTestFixture, "the z step index round-trips through Config",
+                 "[z_offset][step]") {
+    helix::zoffset::set_persisted_step_index(3);
+    REQUIRE(helix::zoffset::persisted_step_index() == 3);
+
+    // Out-of-range values must fall back to the default rather than index a
+    // kZStepAmountsMm entry that does not exist.
+    helix::zoffset::set_persisted_step_index(99);
+    REQUIRE(helix::zoffset::persisted_step_index() == 2);
+
+    helix::zoffset::set_persisted_step_index(-1);
+    REQUIRE(helix::zoffset::persisted_step_index() == 2);
+}

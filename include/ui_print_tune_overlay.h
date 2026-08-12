@@ -9,6 +9,7 @@
 #include "observer_factory.h"
 #include "overlay_base.h"
 #include "subject_managed_panel.h"
+#include "z_offset_utils.h"
 
 // Forward declarations
 class IMoonrakerAPI;
@@ -224,12 +225,11 @@ class PrintTuneOverlay : public OverlayBase {
     // === State ===
     //
 
-    static constexpr double Z_STEP_AMOUNTS[] = {0.05, 0.025, 0.01, 0.005};
-    static constexpr int Z_STEP_DEFAULT = 2; ///< Default step: 0.01mm
-    // Z-offset clamp lives in helix::zoffset::kZOffsetMinMm/kZOffsetMaxMm (z_offset_utils.h)
+    // Z-offset step table and clamp live in helix::zoffset (z_offset_utils.h):
+    // kZStepAmountsMm/kZStepDefaultIndex and kZOffsetMinMm/kZOffsetMaxMm.
 
     double current_z_offset_ = 0.0;
-    int selected_z_step_idx_ = Z_STEP_DEFAULT;
+    int selected_z_step_idx_ = helix::zoffset::kZStepDefaultIndex;
     int speed_percent_ = 100;
     int flow_percent_ = 100;
 
