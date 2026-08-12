@@ -143,16 +143,65 @@ SpoolmanOverlay& get_spoolman_overlay() {
 // orphaned by this removal. If discovery is ever restored, these stubs must be
 // replaced by re-adding the eight src/ TUs — see app_srcs_excluded.txt.
 //
-// SpoolmanManager and SpoolmanPanel have no virtual call reaching them from
-// kept code, so raw storage is safe here (and fails CLOSED: a new call site
-// becomes a link error rather than a null-vtable fault). SpoolmanSlotSaver is
-// constructed by value in ui_ams_edit_overlay.cpp, so it needs a real ctor.
+// SpoolmanManager has no virtual call reaching it from kept code, so raw
+// storage is safe there (and fails CLOSED: a new call site becomes a link
+// error rather than a null-vtable fault). SpoolmanSlotSaver is constructed by
+// value in ui_ams_edit_overlay.cpp, so it needs a real ctor.
+//
+// SpoolmanPanel CANNOT be raw storage: two kept call sites
+// (ui_panel_advanced.cpp handle_spoolman_clicked, ui_printer_manager_overlay
+// .cpp on_chip_spoolman_clicked) hand it to lazy_create_and_push_overlay,
+// which dispatches init_subjects(), register_callbacks() and create() on it.
+// Those are virtual, so raw storage would fault (LoadProhibited) the moment
+// the capability gate that hides both rows is lifted. So the accessor
+// constructs a real object, which requires defining the ctor and every
+// OverlayBase override here so the vtable emits with all slots filled — plus
+// the ctors/dtors/virtuals of the three excluded member classes it aggregates
+// (list view, context menu, edit modal), which live in dropped TUs.
+//
+// create() returns nullptr, which lazy_create_and_push_overlay already handles:
+// it logs and raises the "Failed to open Spoolman" toast, so a tap that gets
+// past the gate produces a visible error instead of a panic. The real
+// init_subjects() registers only spoolman_panel_state / spoolman_header_title,
+// both bound solely by spoolman_panel.xml — an overlay that is never created
+// here — so the no-op body leaves no binding unsatisfied.
 
 // src/ui/ui_panel_spoolman.cpp (DEFINE_GLOBAL_PANEL)
-SpoolmanPanel& get_global_spoolman_panel() {
-    alignas(SpoolmanPanel) EXT_RAM_BSS_ATTR static unsigned char storage[sizeof(SpoolmanPanel)];
-    return *reinterpret_cast<SpoolmanPanel*>(storage);
+SpoolmanPanel::SpoolmanPanel() = default;
+SpoolmanPanel::~SpoolmanPanel() = default;
+void SpoolmanPanel::init_subjects() {}
+void SpoolmanPanel::register_callbacks() {}
+lv_obj_t* SpoolmanPanel::create(lv_obj_t*) {
+    return nullptr;
 }
+void SpoolmanPanel::on_activate() {}
+void SpoolmanPanel::on_deactivate() {}
+
+SpoolmanPanel& get_global_spoolman_panel() {
+    static SpoolmanPanel panel;
+    return panel;
+}
+
+// Member subobjects of SpoolmanPanel whose own TUs are dropped. Constructing
+// the panel above requires their ctors/dtors, and defining their out-of-line
+// virtuals here is what makes their vtables emit complete too.
+
+// src/ui/ui_spoolman_list_view.cpp
+namespace helix::ui {
+SpoolmanListView::~SpoolmanListView() = default;
+
+// src/ui/ui_spoolman_context_menu.cpp
+SpoolmanContextMenu::SpoolmanContextMenu() = default;
+SpoolmanContextMenu::~SpoolmanContextMenu() = default;
+void SpoolmanContextMenu::on_created(lv_obj_t*) {}
+void SpoolmanContextMenu::on_backdrop_clicked() {}
+
+// src/ui/ui_spoolman_edit_modal.cpp
+SpoolEditModal::SpoolEditModal() = default;
+SpoolEditModal::~SpoolEditModal() = default;
+void SpoolEditModal::on_show() {}
+void SpoolEditModal::on_hide() {}
+} // namespace helix::ui
 
 // src/printer/spoolman_types.cpp — no spools exist, so nothing survives a filter.
 std::vector<SpoolInfo> filter_spools(const std::vector<SpoolInfo>&, const std::string&) {

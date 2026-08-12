@@ -630,7 +630,11 @@
     extern lv_font_t mdi_icons_64; /* non-const: runtime-populated from .bin (moved_fonts_shim.c) */
 
 /*Always set a default font*/
-#define LV_FONT_DEFAULT &lv_font_montserrat_14  /* audit: repo uses noto_sans_14 */
+/* Repointing this: noto_sans_18 is the ONLY Helix face compiled into the image
+ * (helixcore/CMakeLists.txt HELIX_FONT_SRCS). Every other face is a zero-init
+ * shim symbol in moved_fonts_shim.c, filled from a .bin at boot, so none of
+ * them is a legal compile-time default. */
+#define LV_FONT_DEFAULT &lv_font_montserrat_14
 
 /*Enable handling large font and/or fonts with a lot of characters.
  *The limit depends on the font size, font face and bpp.
