@@ -29,6 +29,7 @@
 #include "ui_update_queue.h"
 
 #include "../lvgl_ui_test_fixture.h"
+#include "../test_helpers/navigation_manager_test_access.h"
 #include "../test_helpers/update_queue_test_access.h"
 #include "app_globals.h"
 #include "connection_state.h"
@@ -249,6 +250,92 @@ TEST_CASE_METHOD(OverlayActivationFixture,
     REQUIRE(nav.is_panel_in_stack(home_widget_));
     REQUIRE_FALSE(lv_obj_has_flag(home_widget_, LV_OBJ_FLAG_HIDDEN));
     REQUIRE(lv_obj_has_flag(controls_widget_, LV_OBJ_FLAG_HIDDEN));
+}
+
+// ============================================================================
+// Navbar close path — the other way an overlay goes away
+// ============================================================================
+
+TEST_CASE_METHOD(OverlayActivationFixture,
+                 "Navbar tap onto the already-active panel re-activates it",
+                 "[navigation][overlay][lifecycle]") {
+    auto& nav = NavigationManager::instance();
+
+    open_overlay();
+    REQUIRE(nav.has_open_overlays());
+    // Premise: push_overlay() deactivated the panel underneath, and left
+    // active_panel_ pointing at it. That is the state the navbar path inherits.
+    REQUIRE(home_panel_.deactivates == 1);
+    REQUIRE(nav.get_active() == PanelId::Home);
+
+    home_panel_.activates = 0;
+    home_panel_.visible_on_last_activate = false;
+
+    // Tap the navbar button for the panel we are ALREADY on. The handler's
+    // "already here, do nothing" guard does not fire while an overlay is open,
+    // so this reaches switch_to_panel_impl — which clears the overlay, un-hides
+    // the panel, then calls set_active(Home). set_active short-circuits on
+    // panel_id == active_panel_, so nothing else is left to re-activate it.
+    NavigationManagerTestAccess::switch_to_panel(nav, PanelId::Home);
+    drain();
+
+    REQUIRE_FALSE(nav.has_open_overlays());
+    REQUIRE_FALSE(lv_obj_has_flag(home_widget_, LV_OBJ_FLAG_HIDDEN));
+
+    // The panel is back on screen, so it must have been told it is active
+    // again. Without this, it stays visible-but-deactivated forever and
+    // anything on_activate() restarts — CameraWidget::start_stream() — never
+    // runs, so the widget renders blank until the user visits another panel
+    // and comes back.
+    REQUIRE(home_panel_.activates == 1);
+    REQUIRE(home_panel_.visible_on_last_activate);
+}
+
+TEST_CASE_METHOD(OverlayActivationFixture,
+                 "Navbar tap onto a different panel activates only the target",
+                 "[navigation][overlay][lifecycle]") {
+    auto& nav = NavigationManager::instance();
+
+    open_overlay();
+    home_panel_.activates = 0;
+    controls_panel_.activates = 0;
+
+    // The panel id genuinely changes here, so set_active() does the activation
+    // itself. Re-activating the restored panel must not double up on that.
+    NavigationManagerTestAccess::switch_to_panel(nav, PanelId::Controls);
+    drain();
+
+    REQUIRE(nav.get_active() == PanelId::Controls);
+    REQUIRE(controls_panel_.activates == 1);
+    REQUIRE(home_panel_.activates == 0);
+    REQUIRE_FALSE(nav.has_open_overlays());
+}
+
+TEST_CASE_METHOD(OverlayActivationFixture,
+                 "Navbar tap does not re-activate a panel set_active already activated",
+                 "[navigation][overlay][lifecycle]") {
+    auto& nav = NavigationManager::instance();
+
+    open_overlay();
+
+    // The connection-change shape: set_active() runs while an overlay is still
+    // up. It rebases the stack and activates Controls underneath the overlay,
+    // so by the time the overlay goes away Controls is already active.
+    nav.set_active(PanelId::Controls);
+    drain();
+    REQUIRE(controls_panel_.activates == 1);
+    REQUIRE(nav.has_open_overlays());
+
+    // Now tap the navbar button for Controls — the panel we are already on.
+    // The re-activation is NOT owed here; paying it anyway would activate
+    // Controls twice for one close, which is what tripped PrintSelectPanel's
+    // Print-Last counter and double-started FirstRunTour before.
+    NavigationManagerTestAccess::switch_to_panel(nav, PanelId::Controls);
+    drain();
+
+    REQUIRE_FALSE(nav.has_open_overlays());
+    REQUIRE_FALSE(lv_obj_has_flag(controls_widget_, LV_OBJ_FLAG_HIDDEN));
+    REQUIRE(controls_panel_.activates == 1);
 }
 
 // ============================================================================

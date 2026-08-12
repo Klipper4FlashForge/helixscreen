@@ -345,6 +345,7 @@ void NavigationManager::activate_restored_target() {
 
     if (panel_stack_.size() == 1) {
         // Back to main panel - activate it
+        main_panel_deactivated_for_overlay_ = false;
         if (panel_instances_[static_cast<int>(active_panel_)]) {
             spdlog::trace("[NavigationManager] Activating main panel {} after overlay closed",
                           static_cast<int>(active_panel_));
@@ -1144,7 +1145,23 @@ void NavigationManager::switch_to_panel_impl(int panel_id) {
                       panel_stack_.size());
     }
 
+    // Opening an overlay never moved active_panel_ — push_overlay() only calls
+    // on_deactivate() on the panel underneath. So a navbar tap onto the panel
+    // we are already on lands here with that panel deactivated, and set_active()
+    // below short-circuits on panel_id == active_panel_ without activating
+    // anything. Re-activate it through the same latch go_back() uses, or the
+    // panel stays visible-but-deactivated and everything on_activate() restarts
+    // (CameraWidget::start_stream) never runs again.
+    const bool activation_owed =
+        (static_cast<PanelId>(panel_id) == active_panel_) && main_panel_deactivated_for_overlay_;
+
     set_active((PanelId)panel_id);
+
+    if (activation_owed) {
+        restore_activation_pending_ = true;
+        activate_restored_target();
+    }
+
     SoundManager::instance().play("nav_forward");
 
     auto switch_elapsed = std::chrono::steady_clock::now() - switch_start;
@@ -1371,7 +1388,10 @@ void NavigationManager::set_active(PanelId panel_id) {
         crash_handler::breadcrumb::note("nav", name ? name : "", static_cast<long>(panel_id));
     }
 
-    // Call on_activate() AFTER state update
+    // Call on_activate() AFTER state update. This runs even when an overlay is
+    // still covering the panel (the connection-change path), so it settles the
+    // activation debt switch_to_panel_impl() would otherwise pay later.
+    main_panel_deactivated_for_overlay_ = false;
     if (panel_instances_[static_cast<int>(panel_id)]) {
         spdlog::trace("[NavigationManager] Calling on_activate() for panel {}",
                       static_cast<int>(panel_id));
@@ -1893,6 +1913,7 @@ void NavigationManager::push_overlay(lv_obj_t* overlay_panel, bool hide_previous
         // Lifecycle: Deactivate what's currently visible before showing new overlay
         if (is_first_overlay) {
             // Deactivate main panel when first overlay covers it
+            mgr.main_panel_deactivated_for_overlay_ = true;
             if (mgr.panel_instances_[static_cast<int>(mgr.active_panel_)]) {
                 spdlog::trace("[NavigationManager] Deactivating main panel {} for overlay",
                               static_cast<int>(mgr.active_panel_));
@@ -2009,6 +2030,7 @@ void NavigationManager::push_overlay_zoom_from(lv_obj_t* overlay_panel, lv_area_
 
         // Lifecycle: Deactivate what's currently visible
         if (is_first_overlay) {
+            mgr.main_panel_deactivated_for_overlay_ = true;
             if (mgr.panel_instances_[static_cast<int>(mgr.active_panel_)]) {
                 mgr.panel_instances_[static_cast<int>(mgr.active_panel_)]->on_deactivate();
             }
@@ -2439,6 +2461,7 @@ void NavigationManager::deinit_subjects() {
     previous_klippy_state_ = -1;
     disconnect_expected_ = false;
     restore_activation_pending_ = false;
+    main_panel_deactivated_for_overlay_ = false;
 
     // Allow re-initialization after soft restart (shutdown() sets this to true)
     shutting_down_ = false;
