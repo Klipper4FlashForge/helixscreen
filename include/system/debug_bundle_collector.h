@@ -105,11 +105,10 @@ class DebugBundleCollector {
     /// from the daemons' own argv (see candidate_log_paths()), so an unknown
     /// platform layout returns empty rather than a guess.
     static std::string collect_local_log_tail(const std::string& log_name, int num_lines,
-                                              bool condense_klipper = false);
-    /// moonraker.log is small — a real 22-hour AD5X log was 2833 lines / 198 KB,
-    /// so the old 2000-line cap discarded the oldest 30% of a file that fits the
-    /// 512 KiB byte budget several times over. Cap high enough that the byte
-    /// budget is what binds.
+                                              int condense_max_repeats = 0);
+    /// Line cap for moonraker.log. Deliberately far above what the byte budget
+    /// yields (a 2 MiB condensed window measured 4319 lines) so kMoonrakerTailBytes
+    /// is what binds, not an arbitrary line count.
     static std::string collect_moonraker_log_tail(int num_lines = 8000);
 
     /// Read crash_report.txt from config_dir (persists after crash.txt consumed)
@@ -145,6 +144,28 @@ class DebugBundleCollector {
 
     /// Filter a Klipper object list to filament-related objects (public for testing)
     static nlohmann::json filter_filament_objects(const nlohmann::json& object_list);
+
+    /// Shape-collapse threshold for klippy.log. Tuned against Klipper's
+    /// per-second Stats line and ZMOD's 4-line toolhead dump.
+    static constexpr int kKlipperCondenseMaxRepeats = 40;
+
+    /// Shape-collapse threshold for moonraker.log. Higher than Klipper's because
+    /// moonraker's most valuable repeated block is proc_stats._handle_shutdown()'s
+    /// ~30 host-CPU samples, and shutdowns cluster: with 40, a second shutdown in
+    /// the window starves the first one's block down to 10 samples (measured on
+    /// Vger1700's moonraker.log.2026-08-11, which had two 102 lines apart). 100
+    /// keeps every block whole while still collapsing the log_request() padding
+    /// that dominates a busy file.
+    static constexpr int kMoonrakerCondenseMaxRepeats = 100;
+
+    /// Byte window fetched for moonraker.log. Raised from the 512 KiB default
+    /// because condensing shrinks the payload afterwards, so a bigger fetch buys
+    /// history rather than bundle size: on a real 1524 KiB moonraker.log, 512 KiB
+    /// reached 7656 lines and shipped 167 KB, while 2 MiB reached all 23862 and
+    /// shipped 240 KB. moonraker.log is also the log that SURVIVES the events
+    /// klippy.log does not — it lives outside the Klipper tree, so a rollback or
+    /// reinstall leaves it intact (bundle LYGVE39Y).
+    static constexpr int kMoonrakerTailBytes = 2 * 1024 * 1024;
 
     /// Collapse repeating noise in a raw klippy.log tail (public for testing).
     ///
@@ -207,10 +228,15 @@ class DebugBundleCollector {
     /// Get the Moonraker HTTP base URL (from IMoonrakerAPI if connected)
     static std::string get_moonraker_url();
 
-    /// Fetch the tail of a log file from Moonraker using HTTP Range requests
+    /// Fetch the tail of a log file from Moonraker using HTTP Range requests.
+    ///
+    /// `condense_max_repeats` of 0 ships the window verbatim; anything positive
+    /// runs it through condense_klipper_log() at that threshold. The condenser is
+    /// shape-based, not Klipper-specific, so moonraker.log uses it too — with its
+    /// own threshold, see kMoonrakerCondenseMaxRepeats.
     static std::string fetch_log_tail(const std::string& base_url, const std::string& endpoint,
                                       int num_lines, int tail_bytes = 524288,
-                                      bool condense_klipper = false);
+                                      int condense_max_repeats = 0);
 
     /// Check if a key name matches a sensitive pattern
     static bool is_sensitive_key(const std::string& key);

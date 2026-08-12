@@ -1146,6 +1146,56 @@ TEST_CASE("DebugBundleCollector: log_tail ships the whole ring, not the 2000-lin
 }
 
 // ============================================================================
+// condense_klipper_log — threshold tuning for moonraker.log
+// ============================================================================
+
+TEST_CASE("DebugBundleCollector: condense threshold preserves EVERY proc_stats shutdown block",
+          "[debug-bundle][klippy]") {
+    // moonraker.log's most valuable repeated block is proc_stats._handle_shutdown(),
+    // which dumps ~30 "System Time: ... Usage: ..." samples on each Klippy
+    // shutdown. Those samples are the only host-CPU record we get for the moment
+    // of a crash.
+    //
+    // The catch: shape-collapse keeps the most RECENT occurrences, and shutdowns
+    // come in clusters — Vger1700's incident day had two, 102 lines apart. With
+    // Klipper's max_repeats=40 the SECOND (uninteresting) block keeps all 30
+    // samples while the FIRST (the actual incident) is thinned to 10. Measured
+    // on his real moonraker.log.2026-08-11.
+    auto proc_stats_block = [](int base) {
+        std::string s;
+        for (int i = 0; i < 30; ++i)
+            s += "System Time: " + std::to_string(base + i) + ".05, Usage: 4.1%, Memory: None\n";
+        return s;
+    };
+    const std::string incident = proc_stats_block(1786462400);
+    const std::string later = proc_stats_block(1786462600);
+    std::string raw = incident + "Klippy has shutdown\n" + std::string(120, 'x') + "\n" + later +
+                      "Klippy has shutdown\n";
+
+    auto count_block = [](const std::string& hay, const std::string& epoch_prefix) {
+        return count_lines_with(hay, "System Time: " + epoch_prefix);
+    };
+
+    SECTION("Klipper's threshold silently thins the incident block") {
+        // Not a defect in the Klipper path — klippy.log has no equivalent block,
+        // and this is exactly why moonraker.log cannot inherit the same number.
+        auto out = helix::DebugBundleCollector::condense_klipper_log(
+            raw, helix::DebugBundleCollector::kKlipperCondenseMaxRepeats, /*tail_lines=*/0);
+        REQUIRE(count_block(out, "17864624") < 30); // incident sacrificed
+        REQUIRE(count_block(out, "17864626") == 30);
+    }
+
+    SECTION("the moonraker threshold keeps both blocks whole") {
+        // Reads the shipping constant, not a copy of it: dropping
+        // kMoonrakerCondenseMaxRepeats back toward Klipper's value fails here.
+        auto out = helix::DebugBundleCollector::condense_klipper_log(
+            raw, helix::DebugBundleCollector::kMoonrakerCondenseMaxRepeats, /*tail_lines=*/0);
+        REQUIRE(count_block(out, "17864624") == 30);
+        REQUIRE(count_block(out, "17864626") == 30);
+    }
+}
+
+// ============================================================================
 // condense_klipper_log — Klipper config-dump elision
 // ============================================================================
 

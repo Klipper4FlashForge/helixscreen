@@ -1278,7 +1278,7 @@ std::string DebugBundleCollector::condense_klipper_log(const std::string& raw, i
 
 std::string DebugBundleCollector::fetch_log_tail(const std::string& base_url,
                                                  const std::string& endpoint, int num_lines,
-                                                 int tail_bytes, bool condense_klipper) {
+                                                 int tail_bytes, int condense_max_repeats) {
     try {
         auto req = std::make_shared<HttpRequest>();
         req->method = HTTP_GET;
@@ -1334,9 +1334,9 @@ std::string DebugBundleCollector::fetch_log_tail(const std::string& base_url,
 
         // Condense BEFORE the num_lines cap: the whole point is to spend the
         // line budget on events rather than on Klipper's per-second Stats spam.
-        if (condense_klipper) {
+        if (condense_max_repeats > 0) {
             size_t raw_bytes = body.size();
-            body = condense_klipper_log(body);
+            body = condense_klipper_log(body, condense_max_repeats);
             spdlog::debug("[DebugBundle] Condensed {} to {} bytes from {}", raw_bytes, body.size(),
                           endpoint);
         }
@@ -1375,7 +1375,7 @@ std::string DebugBundleCollector::fetch_log_tail(const std::string& base_url,
 // refused, while both files sat on the local disk the whole time. moonraker.log
 // in particular is the one artefact that would say why Moonraker stopped.
 std::string DebugBundleCollector::collect_local_log_tail(const std::string& log_name, int num_lines,
-                                                         bool condense_klipper) {
+                                                         int condense_max_repeats) {
     std::string host;
     uint16_t port = 7125;
     if (!helix::diag::split_host_port(get_moonraker_url(), host, port))
@@ -1400,13 +1400,13 @@ std::string DebugBundleCollector::collect_local_log_tail(const std::string& log_
                  paths.size());
     // Defaults, as at the HTTP call site: the second parameter is stats_context,
     // not a line count.
-    return condense_klipper ? condense_klipper_log(body) : body;
+    return condense_max_repeats > 0 ? condense_klipper_log(body, condense_max_repeats) : body;
 }
 
 std::string DebugBundleCollector::collect_klipper_log_tail(int num_lines) {
     std::string base_url = get_moonraker_url();
     if (base_url.empty())
-        return collect_local_log_tail("klippy.log", num_lines, /*condense_klipper=*/true);
+        return collect_local_log_tail("klippy.log", num_lines, kKlipperCondenseMaxRepeats);
     // 4 MiB of raw klippy.log is ~80 minutes of Klipper's 1-Stats-line-per-second
     // output, versus ~10 minutes for the old 512 KiB tail. condense_klipper_log()
     // then strips the Stats padding, so the retained payload stays in the same
@@ -1414,19 +1414,33 @@ std::string DebugBundleCollector::collect_klipper_log_tail(int num_lines) {
     // (bundle UJCCQP6S: 615 of 635 captured lines were Stats, and the MCU
     // shutdown being investigated had scrolled off hours earlier).
     auto body = fetch_log_tail(base_url, "/server/files/klippy.log", num_lines,
-                               /*tail_bytes=*/4 * 1024 * 1024, /*condense_klipper=*/true);
+                               /*tail_bytes=*/4 * 1024 * 1024, kKlipperCondenseMaxRepeats);
     if (body.empty())
-        body = collect_local_log_tail("klippy.log", num_lines, /*condense_klipper=*/true);
+        body = collect_local_log_tail("klippy.log", num_lines, kKlipperCondenseMaxRepeats);
     return body;
 }
 
 std::string DebugBundleCollector::collect_moonraker_log_tail(int num_lines) {
+    // moonraker.log used to ship raw against a 512 KiB window. Both were wrong in
+    // the same direction: the condenser is shape-based rather than Klipper-specific,
+    // so it collapses moonraker's log_request() padding just as well (1524 KiB of a
+    // real file down to 240 KiB), and once the payload shrinks a bigger fetch costs
+    // little. Measured on Vger1700's logs, 512 KiB reached 7656 lines for 167 KB
+    // shipped; 2 MiB reached all 23862 for 240 KB.
+    //
+    // This matters more than the klippy budget does. moonraker.log carries the only
+    // record of the gcode queue stalling (klippy_connection.wait() pending ages) and
+    // the only host-CPU trace across a shutdown (proc_stats), it timestamps in wall
+    // clock rather than uptime seconds, it sees every client rather than just us,
+    // and it outlives the Klipper tree: on LYGVE39Y a rollback to Klipper 12 took
+    // klippy.log with it while moonraker.log kept the whole incident.
     std::string base_url = get_moonraker_url();
     if (base_url.empty())
-        return collect_local_log_tail("moonraker.log", num_lines);
-    auto body = fetch_log_tail(base_url, "/server/files/moonraker.log", num_lines);
+        return collect_local_log_tail("moonraker.log", num_lines, kMoonrakerCondenseMaxRepeats);
+    auto body = fetch_log_tail(base_url, "/server/files/moonraker.log", num_lines,
+                               kMoonrakerTailBytes, kMoonrakerCondenseMaxRepeats);
     if (body.empty())
-        body = collect_local_log_tail("moonraker.log", num_lines);
+        body = collect_local_log_tail("moonraker.log", num_lines, kMoonrakerCondenseMaxRepeats);
     return body;
 }
 
