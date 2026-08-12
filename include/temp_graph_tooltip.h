@@ -35,6 +35,25 @@ struct TempGraphHit {
 };
 
 /**
+ * Target in effect at a chart sample, in deci-degrees. 0 = heater off / none.
+ *
+ * The two buffers are indexed differently and nothing else in the codebase says
+ * so. The chart is circular via start_point; target_deci_buf is linear, oldest
+ * at [0], target_head valid entries, shift-left on overflow. push_target_sample
+ * appends one entry per sample, so the buffer always holds the newest
+ * target_head samples and they align with the LAST target_head chart slots:
+ * chart logical index i maps to target_deci_buf[i - (point_count - target_head)].
+ *
+ * Earlier chart slots have no target entry and return 0. They hold
+ * LV_CHART_POINT_NONE in array mode, or synthetic copies of the first reading
+ * in push mode (which backfills the whole buffer on the first value).
+ *
+ * Getting this wrong is silently wrong by up to a full window for the first 20
+ * minutes after launch, then quietly correct once the buffer fills.
+ */
+int16_t target_deci_at(const ui_temp_series_meta_t* meta, int point_count, int logical_index);
+
+/**
  * Resolve a tap in absolute display coordinates to the nearest plotted sample.
  *
  * Considers only visible series and non-LV_CHART_POINT_NONE slots. Ties break

@@ -10,6 +10,18 @@
 
 namespace helix::temp_graph_internal {
 
+int16_t target_deci_at(const ui_temp_series_meta_t* meta, int point_count, int logical_index) {
+    if (!meta || !meta->target_deci_buf || meta->target_head <= 0) {
+        return 0;
+    }
+    const int lead = point_count - meta->target_head; // chart slots with no target entry
+    const int t_idx = logical_index - lead;
+    if (t_idx < 0 || t_idx >= meta->target_head) {
+        return 0;
+    }
+    return meta->target_deci_buf[t_idx];
+}
+
 std::optional<TempGraphHit> tooltip_hit_test(ui_temp_graph_t* graph, int32_t x, int32_t y) {
     if (!ui_temp_graph_is_valid(graph)) {
         return std::nullopt;
@@ -65,7 +77,7 @@ std::optional<TempGraphHit> tooltip_hit_test(ui_temp_graph_t* graph, int32_t x, 
             best.series_id = meta->id;
             best.logical_index = i;
             best.deci_temp = v;
-            best.deci_target = 0; // populated in Task 3
+            best.deci_target = target_deci_at(meta, pc, i);
             // True sample time, not the axis-label mapping. The axis spreads
             // total_ms (= pc * 3s) across pc-1 gaps, so the two differ by under
             // one sample interval; the caption describes an actual sample.

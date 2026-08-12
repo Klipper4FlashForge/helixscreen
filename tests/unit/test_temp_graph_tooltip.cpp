@@ -156,3 +156,67 @@ TEST_CASE_METHOD(TooltipTestFixture, "empty leading slots are never candidates",
 
     ui_temp_graph_destroy(g);
 }
+
+using helix::temp_graph_internal::target_deci_at;
+
+TEST_CASE_METHOD(TooltipTestFixture, "target lookup handles a partially filled buffer",
+                 "[ui][tooltip][target]") {
+    ui_temp_graph_t* g = make_graph();
+    int id = ui_temp_graph_add_series(g, "Nozzle", lv_color_hex(0xFF4444));
+
+    // 5 samples, each with a DIFFERENT target, so an off-by-N is visible.
+    for (int i = 0; i < 5; i++) {
+        ui_temp_graph_set_current_target(g, id, 200.0f + i, true);
+        ui_temp_graph_update_series_with_time(g, id, 150.0f + i, 1000000000000LL + i * 3000);
+    }
+
+    const ui_temp_series_meta_t* meta = &g->series_meta[id];
+    REQUIRE(meta->target_head == 5);
+    const int pc = g->point_count;
+
+    // Newest chart slot must report the newest target (204.0 -> 2040).
+    CHECK(target_deci_at(meta, pc, pc - 1) == 2040);
+    // Oldest real sample must report the oldest target (200.0 -> 2000).
+    CHECK(target_deci_at(meta, pc, pc - 5) == 2000);
+    // A slot before any data has no target.
+    CHECK(target_deci_at(meta, pc, pc - 6) == 0);
+    CHECK(target_deci_at(meta, pc, 0) == 0);
+
+    ui_temp_graph_destroy(g);
+}
+
+TEST_CASE_METHOD(TooltipTestFixture, "target lookup is null-safe", "[ui][tooltip][target]") {
+    CHECK(target_deci_at(nullptr, 400, 10) == 0);
+}
+
+TEST_CASE_METHOD(TooltipTestFixture, "hit reports the target at that sample",
+                 "[ui][tooltip][target]") {
+    ui_temp_graph_t* g = make_graph();
+    int id = ui_temp_graph_add_series(g, "Nozzle", lv_color_hex(0xFF4444));
+    for (int i = 0; i < 5; i++) {
+        ui_temp_graph_set_current_target(g, id, 200.0f + i, true);
+        ui_temp_graph_update_series_with_time(g, id, 150.0f + i, 1000000000000LL + i * 3000);
+    }
+    lv_point_t p = point_pos(g, id, g->point_count - 1);
+
+    auto hit = tooltip_hit_test(g, p.x, p.y);
+    REQUIRE(hit.has_value());
+    CHECK(hit->deci_target == 2040);
+
+    ui_temp_graph_destroy(g);
+}
+
+TEST_CASE_METHOD(TooltipTestFixture, "heater off reports no target", "[ui][tooltip][target]") {
+    ui_temp_graph_t* g = make_graph();
+    int id = ui_temp_graph_add_series(g, "MCU", lv_color_hex(0x4444FF));
+    for (int i = 0; i < 5; i++) {
+        ui_temp_graph_update_series_with_time(g, id, 40.0f, 1000000000000LL + i * 3000);
+    }
+    lv_point_t p = point_pos(g, id, g->point_count - 1);
+
+    auto hit = tooltip_hit_test(g, p.x, p.y);
+    REQUIRE(hit.has_value());
+    CHECK(hit->deci_target == 0);
+
+    ui_temp_graph_destroy(g);
+}
