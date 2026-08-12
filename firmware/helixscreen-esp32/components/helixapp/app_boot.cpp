@@ -66,6 +66,8 @@
 #include "freertos/task.h"
 #include "helix_sparkline.h"
 #include "i_moonraker_client.h"
+#include "job_queue_state.h"
+#include "led/led_controller.h"
 #include "moonraker_api.h" // complete MoonrakerAPI : IMoonrakerAPI for the init_panels upcast
 #include "moonraker_manager.h"
 #include "moonraker_types.h" // FileInfo/FileMetadata/ThumbnailInfo/resolve_thumbnail_path — HTTP HIL probe
@@ -754,6 +756,15 @@ extern "C" void app_boot_ui(void) {
     static SubjectInitializer subjects;
     subjects.init_core_and_state();
 
+    // Bring LedController up with no API yet so its `led_controllable` and
+    // `led_command_in_flight` subjects are registered for XML before the
+    // home/print-status panels instantiate in build_shell() — print_status_panel
+    // and panel_widget_led bind both. Registration is scope-sensitive, so this
+    // has to sit exactly here, matching desktop (application.cpp, same call and
+    // same phase). init() is idempotent on the subject path and overwrites
+    // api_/client_, so a later init(api, client) still binds the real API.
+    helix::led::LedController::instance().init(nullptr, nullptr);
+
     // Phase 9: MoonrakerManager — ESP factory arm builds EspMoonrakerClient +
     // the real MoonrakerAPI over it. init() creates client + API; it does NOT
     // connect (WiFi is Task 13). In mock builds the client stays idle and the
@@ -773,6 +784,15 @@ extern "C" void app_boot_ui(void) {
     // Phase 10: panel subjects, now that the API pointer exists.
     subjects.init_panels(manager.api(), rc);
     subjects.init_post(rc);
+
+    // Job queue state — owns the `job_queue_count` subject the home panel's
+    // queue widget binds, so it must construct before build_shell(). Mirrors
+    // desktop's Application::init_moonraker() (construct, init_subjects, publish
+    // through the global accessor). Function-static like the manager above: it
+    // lives for the process and is never destroyed on this platform.
+    static JobQueueState job_queue(manager.api(), manager.client());
+    job_queue.init_subjects();
+    set_job_queue_state(&job_queue);
     log_heap_milestone("subjects-up");
 
     // Global software keyboard — one shared lv_keyboard, hidden until a
