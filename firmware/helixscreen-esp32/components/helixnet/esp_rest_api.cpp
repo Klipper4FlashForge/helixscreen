@@ -262,7 +262,7 @@ void MoonrakerFileTransferAPI::download_file_partial(const std::string& root,
 
     if (!queued) {
         esp_report_error(on_error, MoonrakerErrorType::UNKNOWN, "download_file_partial",
-                         "HTTP lane queue full — try again");
+                         "HTTP request could not be queued — try again");
     }
 }
 
@@ -377,7 +377,7 @@ void MoonrakerRestAPI::call_rest_get(const std::string& endpoint, RestCallback o
     if (!queued && on_complete) {
         RestResponse resp;
         resp.success = false;
-        resp.error = "HTTP lane queue full — try again";
+        resp.error = "HTTP request could not be queued — try again";
         on_complete(resp);
     }
 }
