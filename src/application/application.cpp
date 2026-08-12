@@ -1369,6 +1369,39 @@ bool Application::init_display() {
     m_screen_width = m_display->width();
     m_screen_height = m_display->height();
 
+    // Reconnect the WebSocket when the display wakes from sleep. The app
+    // background/foreground path (on_enter_foreground) already force-reconnects,
+    // but on Android the SDL background/foreground event pair is unreliable for
+    // the display-off/on round trip — the Activity may not get a clean
+    // onPause/onResume, so m_backgrounded never flips and the reconnect is
+    // skipped. This sleep callback closes that gap (#1245).
+    //
+    // Registered here, alongside the DisplayManager that owns the callback list,
+    // rather than in connect_moonraker(): that runs again on every printer
+    // switch, and register_sleep_callback() only appends — there is no
+    // unregister — so each switch would stack another copy and fire one extra
+    // force_reconnect() per wake. init_display() runs once per process, and the
+    // captured `this` owns m_display, so the callback list cannot outlive it.
+    // m_moonraker is read lazily at wake time and need not exist yet.
+    m_display->register_sleep_callback([this](bool sleeping) {
+        if (!sleeping && m_moonraker && m_moonraker->client()) {
+            // Debounce: on_enter_foreground() may have already called
+            // force_reconnect for the same wake event. Skip if it ran
+            // within the last 5 seconds — the second call would bump
+            // the connection generation and make the first discovery's
+            // subscription stale (#1245).
+            auto now = std::chrono::steady_clock::now();
+            if (now - m_last_force_reconnect < std::chrono::seconds(5)) {
+                spdlog::debug("[Application] Display woke — skipping reconnect (debounced, "
+                              "on_enter_foreground ran recently)");
+                return;
+            }
+            spdlog::info("[Application] Display woke — reconnecting WebSocket");
+            m_last_force_reconnect = now;
+            m_moonraker->client()->force_reconnect();
+        }
+    });
+
 #ifdef __ANDROID__
     {
         float ddpi = 0, hdpi = 0, vdpi = 0;
@@ -3225,7 +3258,10 @@ bool Application::connect_moonraker() {
         http_base_url = "http://" + host + ":" + std::to_string(port);
     }
 
-    // Discovery callbacks are already registered (setup_discovery_callbacks in init_moonraker)
+    // Discovery callbacks are already registered (setup_discovery_callbacks in init_moonraker).
+    // The display-wake reconnect callback is registered once in init_display(), not here —
+    // connect_moonraker() re-runs on every printer switch and DisplayManager has no
+    // unregister path.
 
     // Set HTTP base URL for API
     IMoonrakerAPI* api = m_moonraker->api();
@@ -3238,33 +3274,6 @@ bool Application::connect_moonraker() {
     if (result != 0) {
         spdlog::error("[Application] Failed to initiate connection (code {})", result);
         return false;
-    }
-
-    // Reconnect the WebSocket when the display wakes from sleep. The app
-    // background/foreground path (on_enter_foreground) already force-reconnects,
-    // but on Android the SDL background/foreground event pair is unreliable for
-    // the display-off/on round trip — the Activity may not get a clean
-    // onPause/onResume, so m_backgrounded never flips and the reconnect is
-    // skipped. This sleep callback closes that gap (#1245).
-    if (auto* dm = DisplayManager::instance()) {
-        dm->register_sleep_callback([this](bool sleeping) {
-            if (!sleeping && m_moonraker && m_moonraker->client()) {
-                // Debounce: on_enter_foreground() may have already called
-                // force_reconnect for the same wake event. Skip if it ran
-                // within the last 5 seconds — the second call would bump
-                // the connection generation and make the first discovery's
-                // subscription stale (#1245).
-                auto now = std::chrono::steady_clock::now();
-                if (now - m_last_force_reconnect < std::chrono::seconds(5)) {
-                    spdlog::debug("[Application] Display woke — skipping reconnect (debounced, "
-                                  "on_enter_foreground ran recently)");
-                    return;
-                }
-                spdlog::info("[Application] Display woke — reconnecting WebSocket");
-                m_last_force_reconnect = now;
-                m_moonraker->client()->force_reconnect();
-            }
-        });
     }
 
     // Start auto-discovery (client handles this internally after connect)

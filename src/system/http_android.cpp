@@ -9,8 +9,77 @@
 
 #include <SDL.h>
 #include <jni.h>
+#include <mutex>
 
 namespace helix::android {
+
+namespace {
+
+/// Resolve org/helixscreen/app/HelixActivity as a process-lifetime global ref.
+///
+/// FindClass() is not usable here. Both callers run on natively created threads
+/// (UpdateChecker's std::thread, the debug-bundle upload on HttpExecutor::slow),
+/// and SDL attaches those with AttachCurrentThread(vm, &env, NULL) — no class
+/// loader, no Java frames on the stack. ART then resolves FindClass through the
+/// *system* class loader, which has no visibility into the APK's dex, so an app
+/// class is simply not found and every request fails as HTTP 0.
+///
+/// Deriving the class from the live Activity object sidesteps class loading
+/// entirely: SDL_AndroidGetActivity() calls a static method on a jclass SDL
+/// cached during JNI_OnLoad, and GetObjectClass() on the result needs no loader.
+/// HelixActivity extends SDLActivity, so the Context SDL hands back *is* our
+/// activity. The result is cached as a global ref because a local one is only
+/// valid for the frame that created it.
+jclass helix_activity_class(JNIEnv* env) {
+    static std::mutex mutex;
+    static jclass cached = nullptr;
+
+    std::lock_guard<std::mutex> lock(mutex);
+    if (cached) {
+        return cached;
+    }
+
+    if (jobject activity = static_cast<jobject>(SDL_AndroidGetActivity())) {
+        if (jclass local = env->GetObjectClass(activity)) {
+            cached = static_cast<jclass>(env->NewGlobalRef(local));
+            env->DeleteLocalRef(local);
+        }
+        env->DeleteLocalRef(activity);
+    }
+
+    if (!cached) {
+        // No Activity yet (or SDL not initialized). FindClass still works from
+        // the SDL main thread, which does have Java frames, so it is worth one
+        // attempt before giving up.
+        if (jclass local = env->FindClass("org/helixscreen/app/HelixActivity")) {
+            cached = static_cast<jclass>(env->NewGlobalRef(local));
+            env->DeleteLocalRef(local);
+        } else {
+            env->ExceptionClear();
+        }
+    }
+
+    if (!cached) {
+        spdlog::error("[http_android] Failed to resolve HelixActivity class");
+    }
+    return cached;
+}
+
+/// Copy a Java string into a std::string, tolerating an allocation failure.
+/// GetStringUTFChars returns null (with OutOfMemoryError pending) under memory
+/// pressure, and constructing a std::string from that dereferences null.
+bool jstring_to_string(JNIEnv* env, jstring value, std::string& out) {
+    const char* chars = env->GetStringUTFChars(value, nullptr);
+    if (!chars) {
+        env->ExceptionClear();
+        return false;
+    }
+    out.assign(chars);
+    env->ReleaseStringUTFChars(value, chars);
+    return true;
+}
+
+} // namespace
 
 std::pair<int, std::string> https_get(const std::string& url, const std::string& user_agent,
                                       const std::string& accept, int timeout_sec) {
@@ -22,10 +91,8 @@ std::pair<int, std::string> https_get(const std::string& url, const std::string&
         return {0, "JNI env unavailable"};
     }
 
-    jclass cls = env->FindClass("org/helixscreen/app/HelixActivity");
+    jclass cls = helix_activity_class(env);
     if (!cls) {
-        spdlog::error("[http_android] Failed to find HelixActivity class");
-        env->ExceptionClear();
         return {0, "HelixActivity class not found"};
     }
 
@@ -34,7 +101,6 @@ std::pair<int, std::string> https_get(const std::string& url, const std::string&
         "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;");
     if (!method) {
         spdlog::error("[http_android] Failed to find httpsGet method");
-        env->DeleteLocalRef(cls);
         env->ExceptionClear();
         return {0, "httpsGet method not found"};
     }
@@ -50,7 +116,6 @@ std::pair<int, std::string> https_get(const std::string& url, const std::string&
             env->DeleteLocalRef(j_ua);
         if (j_accept)
             env->DeleteLocalRef(j_accept);
-        env->DeleteLocalRef(cls);
         env->ExceptionClear();
         return {0, "JNI string allocation failed"};
     }
@@ -61,17 +126,19 @@ std::pair<int, std::string> https_get(const std::string& url, const std::string&
     env->DeleteLocalRef(j_url);
     env->DeleteLocalRef(j_ua);
     env->DeleteLocalRef(j_accept);
-    env->DeleteLocalRef(cls);
 
     if (!j_result || env->ExceptionCheck()) {
         env->ExceptionClear();
         return {0, "JNI call failed"};
     }
 
-    const char* result_cstr = env->GetStringUTFChars(j_result, nullptr);
-    std::string result(result_cstr);
-    env->ReleaseStringUTFChars(j_result, result_cstr);
+    std::string result;
+    bool converted = jstring_to_string(env, j_result, result);
     env->DeleteLocalRef(j_result);
+    if (!converted) {
+        spdlog::error("[http_android] Could not read httpsGet result string");
+        return {0, "JNI string conversion failed"};
+    }
 
     // Java side returns "STATUS\nBODY" or "0\nERROR".
     auto newline = result.find('\n');
@@ -97,10 +164,8 @@ https_post_binary(const std::string& url, const std::vector<unsigned char>& body
         return {0, "JNI env unavailable"};
     }
 
-    jclass cls = env->FindClass("org/helixscreen/app/HelixActivity");
+    jclass cls = helix_activity_class(env);
     if (!cls) {
-        spdlog::error("[http_android] Failed to find HelixActivity class");
-        env->ExceptionClear();
         return {0, "HelixActivity class not found"};
     }
 
@@ -110,7 +175,6 @@ https_post_binary(const std::string& url, const std::vector<unsigned char>& body
                                "Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;");
     if (!method) {
         spdlog::error("[http_android] Failed to find httpsPostBinary method");
-        env->DeleteLocalRef(cls);
         env->ExceptionClear();
         return {0, "httpsPostBinary method not found"};
     }
@@ -136,7 +200,6 @@ https_post_binary(const std::string& url, const std::vector<unsigned char>& body
             env->DeleteLocalRef(j_ua);
         if (j_key)
             env->DeleteLocalRef(j_key);
-        env->DeleteLocalRef(cls);
         env->ExceptionClear();
         return {0, "JNI allocation failed"};
     }
@@ -154,17 +217,19 @@ https_post_binary(const std::string& url, const std::vector<unsigned char>& body
     env->DeleteLocalRef(j_ce);
     env->DeleteLocalRef(j_ua);
     env->DeleteLocalRef(j_key);
-    env->DeleteLocalRef(cls);
 
     if (!j_result || env->ExceptionCheck()) {
         env->ExceptionClear();
         return {0, "JNI call failed"};
     }
 
-    const char* result_cstr = env->GetStringUTFChars(j_result, nullptr);
-    std::string result(result_cstr);
-    env->ReleaseStringUTFChars(j_result, result_cstr);
+    std::string result;
+    bool converted = jstring_to_string(env, j_result, result);
     env->DeleteLocalRef(j_result);
+    if (!converted) {
+        spdlog::error("[http_android] Could not read httpsPostBinary result string");
+        return {0, "JNI string conversion failed"};
+    }
 
     auto newline = result.find('\n');
     if (newline == std::string::npos)
