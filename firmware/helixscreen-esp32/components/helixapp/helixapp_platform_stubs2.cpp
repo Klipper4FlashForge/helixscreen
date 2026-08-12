@@ -234,8 +234,17 @@ bool CameraStream::configure_from_printer(std::string&, std::string&) {
 #endif // HELIX_HAS_CAMERA
 
 // --- DebugBundleCollector (libhv HTTPS upload of diagnostics) ----------------
-// The result callback is never invoked.
-void DebugBundleCollector::upload_async(const BundleOptions&, ResultCallback) {}
+// Reports failure rather than returning silently: the debug-bundle modal shows
+// a progress state with no buttons while it waits for this callback, so never
+// invoking it strands the user there with no way out but a reboot.
+void DebugBundleCollector::upload_async(const BundleOptions&, ResultCallback callback) {
+    if (callback) {
+        BundleResult result;
+        result.success = false;
+        result.error_message = "Debug bundle upload is not available on this device";
+        callback(result);
+    }
+}
 
 // --- host identity cache (getifaddrs/gethostname; see round 1) ---------------
 void invalidate_host_identity_cache() {}
