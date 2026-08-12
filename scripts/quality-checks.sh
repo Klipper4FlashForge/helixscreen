@@ -729,6 +729,21 @@ else
   echo "⚠️  esp32 app_srcs manifest or gate not found — skipping"
 fi
 
+# A printer_database.json entry naming an image that does not exist is silent at
+# runtime: the lookup falls through to generic-corexy and logs nothing above debug,
+# so a bed-slinger just quietly shows a CoreXY frame. Twenty entries had drifted
+# that way before anyone noticed.
+if [ -f "assets/config/printer_database.json" ] && [ -f "scripts/check_printer_images.py" ]; then
+  if python3 scripts/check_printer_images.py >/tmp/printer_images.out 2>&1; then
+    cat /tmp/printer_images.out
+  else
+    cat /tmp/printer_images.out
+    EXIT_CODE=1
+  fi
+else
+  echo "⚠️  printer database or image gate not found — skipping"
+fi
+
 echo ""
 
 # ====================================================================
