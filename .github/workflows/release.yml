@@ -57,7 +57,13 @@ jobs:
     # cache budget and get evicted LRU — so builds run near-cold every time.
     # 120 is margin, not a fix; the durable fix is cache survival (or splitting
     # the Pi build). Other platforms finish in ~35-47 min and never approach it.
-    timeout-minutes: 120
+    #
+    # Raised to 180 after v0.99.110: a cold pi-both now runs ~115-125 min, so 120
+    # failed even when the runner survived. The cache-survival half is handled in
+    # ccache-warm.yml (which needed its own, larger budget to ever succeed), but
+    # this job must still tolerate a cold build whenever that cache is missing or
+    # has been evicted, rather than turning a slow build into a failed release.
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:

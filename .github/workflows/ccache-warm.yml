@@ -46,7 +46,14 @@ jobs:
     # Upstream only — forks neither release nor share this repo's cache budget.
     if: github.repository == 'prestonbrown/helixscreen'
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    # This job is the one that MUST tolerate a fully cold build, because a cold
+    # build is the only kind it ever does: its whole purpose is to produce the
+    # cache that makes later builds warm. 120 was copied from the release job,
+    # where it sizes a warm build, and that made pi unwarmable — a cold pi-both
+    # takes ~115-125 min, so the warm leg died every run, no ccache-release-pi
+    # was ever saved, and the release then had to build pi cold too and hit its
+    # own ceiling. Sizing this for the cold case is what breaks that loop.
+    timeout-minutes: 210
     strategy:
       fail-fast: false
       matrix:
