@@ -116,6 +116,23 @@ jobs:
         sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
         df -h /
 
+    # What actually failed every pi leg of v0.99.110 was the OOM killer, not the
+    # clock: exit 137 roughly two minutes after helix-splash and helix-watchdog
+    # link, i.e. during the main helix-screen link, which pi-both performs twice
+    # (one per display variant). It fit on v0.99.108 at ~82 min and no longer
+    # does. A warm ccache does NOT avoid this — the link still runs — so the
+    # cache work in ccache-warm.yml could not have fixed it alone. -j is not the
+    # lever either: the spike is one ld process. Swap lets the link page rather
+    # than be killed, and costs wall time only when the peak is exceeded.
+    - name: Add swap for the link peak
+      run: |
+        free -h
+        sudo fallocate -l 16G /swapfile-helix || sudo dd if=/dev/zero of=/swapfile-helix bs=1M count=16384
+        sudo chmod 600 /swapfile-helix
+        sudo mkswap /swapfile-helix
+        sudo swapon /swapfile-helix
+        free -h
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v4
 
