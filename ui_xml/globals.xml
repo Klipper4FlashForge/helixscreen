@@ -31,7 +31,13 @@
 
          CRITICAL: Base constants (space_xxs, space_xs, etc.) are registered at
          runtime by ui_theme.cpp - do NOT define them here or responsive overrides
-         will be silently ignored due to LVGL's lv_xml_register_const() behavior. -->
+         will be silently ignored due to LVGL's lv_xml_register_const() behavior.
+
+         The same ordering applies to <style> elements: globals.xml is parsed
+         BEFORE theme_manager_init() registers the base #space_*/#color consts,
+         so a style here that references one registers EMPTY (property silently
+         skipped). Define such styles in the consuming component's own <styles>
+         block instead - components are parsed after theme init. -->
     <!-- space_xxs: Tiny spacing (keypad rows, compact icon gaps) -->
     <px name="space_xxs_tiny" value="1"/>
     <px name="space_xxs_small" value="2"/>
