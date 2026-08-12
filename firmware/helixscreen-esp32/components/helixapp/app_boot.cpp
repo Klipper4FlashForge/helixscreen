@@ -676,6 +676,15 @@ extern "C" void helix_boot_yield(void) {
     vTaskDelay(1);
 }
 
+// Set by main/ during display bring-up, which probes the GT911 before this
+// runs. Defaults to true so any build that never reports stays silent rather
+// than warning about touch it never checked.
+static bool s_touch_available = true;
+
+extern "C" void app_boot_set_touch_available(bool available) {
+    s_touch_available = available;
+}
+
 extern "C" void app_boot_ui(void) {
     log_heap_milestone("boot-ui-start");
 
@@ -855,6 +864,16 @@ extern "C" void app_boot_ui(void) {
     helix::ui::notification_manager_init();
     ToastManager::instance().init();
 
+    // A touch controller that failed to probe no longer aborts boot, so the
+    // only thing telling the user why the panel is unresponsive is this
+    // warning. Enqueued immediately before the drain below so it goes out
+    // through the same toast path as the pre-UI backend warnings.
+    if (!s_touch_available) {
+        helix::PendingStartupWarnings::instance().enqueue(
+            helix::PendingStartupWarnings::Severity::ERROR,
+            "Touchscreen not detected - display only");
+    }
+
     // init() does NOT drain the queue: warnings enqueued during pre-UI boot
     // (display/asset backends) stay stranded unless drained explicitly.
     helix::PendingStartupWarnings::instance().drain(
@@ -957,6 +976,35 @@ extern "C" void app_boot_tick(void) {
         ESP_LOGI(TAG, "[heap:steady-60s] internal free=%u | psram free=%u",
                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+
+        // Stack headroom for the two IDF-owned tasks that run our code but that
+        // we never sized deliberately: "sys_evt" carries wifi_event_handler
+        // (-> on_got_ip / on_scan_done) and "esp_timer" carries
+        // housekeeping_trampoline (-> process_timeouts -> execute_reconnect).
+        // uxTaskGetStackHighWaterMark reports the MINIMUM free bytes each has
+        // ever had since boot, so sampling once at steady state covers the
+        // whole boot + connect + discovery burst. Without this the only
+        // overflow signal is the canary, which reboots without saying which
+        // task died. Same one-shot, non-loop discipline as the heap numbers
+        // above; the sizes are set in sdkconfig.defaults.
+        struct {
+            const char* name;
+            unsigned configured;
+        } const watched[] = {
+            {"sys_evt", (unsigned)CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE},
+            {"esp_timer", (unsigned)CONFIG_ESP_TIMER_TASK_STACK_SIZE},
+        };
+        for (const auto& t : watched) {
+            TaskHandle_t h = xTaskGetHandle(t.name);
+            if (h) {
+                ESP_LOGI(TAG, "[stack:steady-60s] %s free=%u of %u", t.name,
+                         (unsigned)uxTaskGetStackHighWaterMark(h), t.configured);
+            } else {
+                // Not fatal: the name is an IDF implementation detail and a
+                // rename would only cost us the telemetry, not the boot.
+                ESP_LOGW(TAG, "[stack:steady-60s] task '%s' not found", t.name);
+            }
+        }
     }
 #if CONFIG_HELIX_MOCK_PRINTER
     // ~1 Hz synthetic temperature push. tick fires every render iteration

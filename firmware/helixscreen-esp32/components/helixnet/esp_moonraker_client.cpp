@@ -8,6 +8,7 @@
 #include "freertos/task.h"
 #include "helix_version.h" // HELIX_VERSION for server.connection.identify
 
+#include <algorithm>
 #include <utility>
 #include <vector>
 
@@ -101,10 +102,35 @@ int EspMoonrakerClient::connect(const char* url, std::function<void()> on_connec
 
     // A prior connect()/probe may have left a live client or a pending
     // reconnect intent. Start clean.
+    //
+    // Invariant: ws_ may only be destroyed while no housekeeping pass is in
+    // flight. process_timeouts() runs on the ESP_TIMER_TASK as well as on the
+    // LVGL pump, and its execute_reconnect() path dereferences ws_ across a
+    // stop()/start() pair — freeing the handle underneath a timer-task pass is
+    // a UAF on the transport. The LVGL-side pump cannot race us (same thread as
+    // connect()), so quiescing the timer is what closes the window. Same shape
+    // as the dtor: stop the timer so no further tick can begin, then spin until
+    // the current one (if any) clears the flag. The stop is what bounds the
+    // spin — esp_timer_delete()/esp_timer_stop() prevent future dispatches but
+    // do not join a callback already running.
     if (ws_) {
-        esp_websocket_client_stop(ws_);
-        esp_websocket_client_destroy(ws_);
-        ws_ = nullptr;
+        if (housekeeping_timer_) {
+            esp_timer_stop(housekeeping_timer_);
+        }
+        while (timer_in_flight_.load()) {
+            vTaskDelay(1);
+        }
+        esp_websocket_client_handle_t old_ws = ws_.exchange(nullptr);
+        esp_websocket_client_stop(old_ws);
+        esp_websocket_client_destroy(old_ws);
+        if (housekeeping_timer_) {
+            // A silent restart failure would kill the housekeeping heartbeat:
+            // no reconnects, no request timeouts, ever again.
+            esp_err_t err = esp_timer_start_periodic(housekeeping_timer_, kHousekeepingPeriodUs);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "failed to restart housekeeping timer: %s", esp_err_to_name(err));
+            }
+        }
     }
 
     // R3: this is a new connection attempt — bump the generation so any
@@ -132,7 +158,18 @@ int EspMoonrakerClient::connect(const char* url, std::function<void()> on_connec
     cfg.task_stack = kWsTaskStackBytes;
     // Bounds the per-DATA-event chunk, not the message; we reassemble.
     cfg.buffer_size = 32768;
-    cfg.network_timeout_ms = static_cast<int>(connection_timeout_ms_);
+    // Capped so a stop() from the LVGL thread can never wait out a full
+    // unreachable-host connect attempt — see kMaxNetworkTimeoutMs (which also
+    // documents what the cap does not cover: DNS resolution ahead of it).
+    cfg.network_timeout_ms =
+        static_cast<int>(std::min(connection_timeout_ms_, kMaxNetworkTimeoutMs));
+    if (connection_timeout_ms_ > kMaxNetworkTimeoutMs) {
+        // Say so once per connect: otherwise a user who configured 8s and sees
+        // a probe fail on a slow link has nothing in the log explaining why the
+        // transport gave up early.
+        ESP_LOGI(TAG, "network timeout capped to %ums (configured %ums) to bound UI-thread stalls",
+                 kMaxNetworkTimeoutMs, connection_timeout_ms_);
+    }
     cfg.ping_interval_sec = 10;
     // Defect 1 (Task 9 confirm soak): we never set this, so the component
     // defaulted to its own WEBSOCKET_PINGPONG_TIMEOUT_SEC = 120s — LONGER
@@ -192,7 +229,64 @@ void EspMoonrakerClient::disconnect() {
 }
 
 bool EspMoonrakerClient::is_connected() const {
-    return ws_ && esp_websocket_client_is_connected(ws_);
+    // Single load: two separate reads of ws_ could straddle a concurrent
+    // exchange(nullptr) in connect().
+    esp_websocket_client_handle_t ws = ws_;
+    return ws && esp_websocket_client_is_connected(ws);
+}
+
+void EspMoonrakerClient::arm_reconnect_intent() {
+    const int delay_ms = next_reconnect_delay_ms_;
+    reconnect_deadline_us_.store(now_us() + static_cast<int64_t>(delay_ms) * 1000);
+    reconnect_generation_.store(connection_generation_.load());
+    reconnect_pending_.store(true);
+    // Manual exponential backoff: this attempt uses delay_ms; double up to the
+    // cap for the NEXT one.
+    next_reconnect_delay_ms_ = helix::next_backoff_delay_ms(delay_ms, reconnect_max_delay_ms_);
+}
+
+void EspMoonrakerClient::execute_reconnect() {
+    if (!ws_) {
+        return;
+    }
+
+    // R3: this is a new connection attempt — bump the generation and force-clear
+    // the in-flight guard, same as connect() (see discovery_in_flight_).
+    connection_generation_.fetch_add(1);
+    discovery_in_flight_.store(false);
+
+    // F5 ordering: hold auto-reconnect off across the teardown so a DISCONNECTED
+    // event the stop() below emits cannot arm a second intent on top of the
+    // attempt being executed right here.
+    auto_reconnect_.store(false);
+
+    // cfg.disable_auto_reconnect means the component's own abort path already
+    // cleared client->run and let the websocket task exit, so by the time a
+    // deferred intent drains, stop() usually returns ESP_FAIL ("Client was not
+    // started"). That is the ordinary case here and must not abort the restart —
+    // only a failed start() leaves nothing running at all.
+    const esp_err_t stop_err = esp_websocket_client_stop(ws_);
+    if (stop_err != ESP_OK) {
+        ESP_LOGD(TAG, "reconnect: stop returned %s (already stopped is normal here)",
+                 esp_err_to_name(stop_err));
+    }
+    // Drop any intent the stop above armed, then re-arm auto-reconnect for the
+    // connection we are about to start.
+    reconnect_pending_.store(false);
+    auto_reconnect_.store(true);
+
+    const esp_err_t start_err = esp_websocket_client_start(ws_);
+    if (start_err != ESP_OK) {
+        // Discarding this return was a dead end: nothing is running and no
+        // disconnect event will ever arrive to schedule another try, so the
+        // device stayed offline until a power cycle. Behave like a disconnect
+        // instead — FAILED plus a fresh intent on the same backoff ladder, so
+        // the next tick retries and keeps retrying.
+        ESP_LOGE(TAG, "reconnect: start failed (%s) — retrying in %dms", esp_err_to_name(start_err),
+                 next_reconnect_delay_ms_);
+        set_state(ConnectionState::FAILED);
+        arm_reconnect_intent();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -345,13 +439,7 @@ void EspMoonrakerClient::on_ws_disconnected() {
         // of the spinlock_acquire assert (Plan 3 finding F8). The actual
         // reconnect executes later from process_timeouts() (housekeeping
         // esp_timer + main-thread app_boot_tick pump — never this task).
-        const int delay_ms = next_reconnect_delay_ms_;
-        reconnect_deadline_us_.store(now_us() + static_cast<int64_t>(delay_ms) * 1000);
-        reconnect_generation_.store(connection_generation_.load());
-        reconnect_pending_.store(true);
-        // Manual exponential backoff: this attempt uses delay_ms; double up to
-        // the cap for the NEXT one.
-        next_reconnect_delay_ms_ = helix::next_backoff_delay_ms(delay_ms, reconnect_max_delay_ms_);
+        arm_reconnect_intent();
         set_state(ConnectionState::RECONNECTING);
     } else {
         // Reconnection suspended (probe flow): report a terminal DISCONNECTED
@@ -636,8 +724,8 @@ void EspMoonrakerClient::process_timeouts() {
     // on_ws_disconnected(). process_timeouts() is driven from the
     // housekeeping esp_timer (ESP_TIMER_TASK) and the main-thread
     // app_boot_tick pump — NEVER the websocket task — so the stop()/start()
-    // below cannot race the websocket task's own event dispatch, unlike the
-    // component's built-in auto-reconnect this replaces.
+    // execute_reconnect() performs cannot race the websocket task's own event
+    // dispatch, unlike the component's built-in auto-reconnect this replaces.
     //
     // The claim itself MUST still be atomic across those two pump contexts:
     // a plain load()-then-store(false) lets both tasks observe pending==true
@@ -655,11 +743,8 @@ void EspMoonrakerClient::process_timeouts() {
         // whatever the manual path already did.
         const bool current = (reconnect_generation_.load() == connection_generation_.load());
         if (current && auto_reconnect_.load() && ws_) {
-            connection_generation_.fetch_add(1);
-            discovery_in_flight_.store(false);
             ESP_LOGI(TAG, "auto-reconnect: restarting transport");
-            esp_websocket_client_stop(ws_);
-            esp_websocket_client_start(ws_);
+            execute_reconnect();
         }
     }
 }
@@ -674,7 +759,7 @@ int EspMoonrakerClient::send_envelope(const json& envelope) {
     }
     std::string payload = envelope.dump();
     int sent = esp_websocket_client_send_text(ws_, payload.data(), static_cast<int>(payload.size()),
-                                              pdMS_TO_TICKS(connection_timeout_ms_));
+                                              pdMS_TO_TICKS(kSendTimeoutMs));
     return sent;
 }
 
@@ -1546,23 +1631,17 @@ void EspMoonrakerClient::force_reconnect() {
     if (!ws_) {
         return;
     }
-    // F5 ordering: disarm before stop() so a synchronous DISCONNECTED event
-    // can't schedule a redundant auto-reconnect intent on top of this manual
-    // one; drop anything already scheduled too.
+    // F5 ordering: disarm before the stop inside execute_reconnect() so a
+    // DISCONNECTED event it emits can't schedule a redundant auto-reconnect
+    // intent on top of this manual one; drop anything already scheduled too.
     auto_reconnect_.store(false);
     reconnect_pending_.store(false);
 
+    // A manual reconnect restarts the ladder from the shortest delay.
     next_reconnect_delay_ms_ = reconnect_min_delay_ms_;
-    esp_websocket_client_stop(ws_);
 
-    // R3: new connection attempt — bump the generation and force-clear the
-    // in-flight guard, same as connect() (see discovery_in_flight_ comment).
-    connection_generation_.fetch_add(1);
-    discovery_in_flight_.store(false);
-
-    auto_reconnect_.store(true);
     set_state(ConnectionState::CONNECTING);
-    esp_websocket_client_start(ws_);
+    execute_reconnect();
 }
 
 // ---------------------------------------------------------------------------

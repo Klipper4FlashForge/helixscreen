@@ -81,6 +81,29 @@ TEST_CASE("BoundedSlotCounter::release() never underflows below zero", "[esp32][
     REQUIRE_FALSE(slots.try_acquire());
 }
 
+TEST_CASE("A submission abandoned after try_acquire() must give its slot back", "[esp32][http]") {
+    // submit_get() acquires a slot before it knows whether the worker pthread
+    // exists. When the spawn fails it abandons the submission, and the worker
+    // that would normally release() the slot never runs — so submit_get() has
+    // to release it itself. Without that, max_depth consecutive spawn failures
+    // wedge the lane at "queue full" for the rest of the session even after
+    // the condition that blocked the spawn has cleared.
+    constexpr size_t kDepth = 8; // EspHttpLane::kQueueDepth, as a literal — see below
+    BoundedSlotCounter slots(kDepth);
+
+    for (size_t attempt = 0; attempt < kDepth * 3; ++attempt) {
+        REQUIRE(slots.try_acquire()); // never rejects: every prior attempt gave its slot back
+        slots.release();              // the abandon path
+        REQUIRE(slots.in_flight() == 0);
+    }
+
+    // The lane is still fully available afterward — nothing leaked.
+    for (size_t i = 0; i < kDepth; ++i) {
+        REQUIRE(slots.try_acquire());
+    }
+    REQUIRE_FALSE(slots.try_acquire());
+}
+
 TEST_CASE("BoundedSlotCounter::max_depth() reports the configured depth", "[esp32][http]") {
     // 8 matches EspHttpLane::kQueueDepth (esp_http_lane.h) — kept as a literal
     // here since that header pulls no ESP-IDF includes but is still the

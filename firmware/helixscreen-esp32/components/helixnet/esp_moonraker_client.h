@@ -126,6 +126,43 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     // the error callback fires synchronously with a CONNECTION_LOST error.
     static constexpr size_t kMaxPendingRequests = 64;
     static constexpr uint32_t kDefaultRequestTimeoutMs = 60000;
+    // The two bounds below both exist for one reason: no transport call may
+    // stall the LVGL thread long enough for the screen to look dead. The task
+    // watchdog is NOT the constraint — it watches the idle tasks only and
+    // CONFIG_ESP_TASK_WDT_PANIC is off, so it neither fires for a stalled LVGL
+    // thread nor reboots if it did. The whole cost is a frozen screen. 3s is a
+    // UX judgement: long enough that an ordinary LAN operation never trips it,
+    // short enough that a tap on an unreachable printer reads as slow rather
+    // than crashed.
+    static constexpr uint32_t kUiStallBudgetMs = 3000;
+
+    // How long esp_websocket_client_send_text() may block the CALLING task
+    // waiting for the transport lock and the socket write. Every UI event
+    // handler that issues a gcode or JSON-RPC reaches this on the LVGL thread.
+    // Deliberately NOT connection_timeout_ms_, which
+    // MoonrakerManager::configure_timeouts() sets to 10s from
+    // moonraker_connection_timeout_ms.
+    static constexpr uint32_t kSendTimeoutMs = kUiStallBudgetMs;
+
+    // Ceiling applied to cfg.network_timeout_ms in connect(). The websocket
+    // task spends that budget inside esp_transport_connect() when the address
+    // is unreachable, and esp_websocket_client_stop() waits on STOPPED_BIT with
+    // portMAX_DELAY for the task to come back — so a stop() issued from the
+    // LVGL thread inherits the connect budget as a freeze. ChangeHostModal is
+    // exactly that path: its connect() tears down the previous probe's client
+    // while that one is still mid-connect to a bad address, which at the
+    // configured 10s left the modal unresponsive for ten seconds.
+    //
+    // What this cap does and does NOT bound: network_timeout_ms reaches
+    // esp-tls as cfg.timeout_ms, which governs the TCP connect and the TLS
+    // handshake — i.e. everything AFTER the host is resolved. Resolution
+    // itself happens first, in a bare getaddrinfo() that takes no timeout
+    // (esp-tls/esp_tls.c:239) and is bounded only by lwIP's own DNS settings.
+    // moonraker_host is routinely a hostname (.local mDNS names are the norm
+    // on MainsailOS/Fluidd), so a stop() issued while a slow or failing
+    // resolution is in progress can still exceed this cap by the DNS time.
+    // The cap is a real improvement for the address case, not a guarantee.
+    static constexpr uint32_t kMaxNetworkTimeoutMs = kUiStallBudgetMs;
     // How long RECONNECTING persists before the informational FAILED transition.
     static constexpr int64_t kReconnectingToFailedUs = 60LL * 1000 * 1000;
     // Period of the owned esp_timer that drives timeout + FAILED bookkeeping.
@@ -177,6 +214,20 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     // esp_timer trampoline → instance housekeeping (timeouts + FAILED).
     static void housekeeping_trampoline(void* arg);
 
+    // Arm a deferred reconnect intent at the current backoff step and advance
+    // the ladder for the next one. Shared by on_ws_disconnected() and the
+    // failed-start path in execute_reconnect() so both walk the same ladder
+    // instead of each carrying its own copy of the backoff math.
+    void arm_reconnect_intent();
+
+    // Stop and restart the existing transport handle: THE single execution
+    // point for a reconnect. Both the deferred auto-reconnect intent drained by
+    // process_timeouts() and the manual force_reconnect() route through it, so
+    // a failed start is handled identically in both. Must never run on the
+    // websocket task — esp_websocket_client_stop() refuses to stop a client
+    // from its own task and returns ESP_FAIL without stopping anything.
+    void execute_reconnect();
+
     void set_state(ConnectionState next);
     void emit_event(MoonrakerEventType type, const std::string& message, bool is_error,
                     const std::string& details = "");
@@ -208,7 +259,13 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     void discovery_fail(const DiscoveryFail& fail, MoonrakerEventType ev, const std::string& reason,
                         uint64_t generation);
 
-    esp_websocket_client_handle_t ws_ = nullptr;
+    // Written on the LVGL thread (connect()/destructor), read on the
+    // ESP_TIMER_TASK housekeeping path. Atomic so the timer-task null checks
+    // carry a real happens-before edge on the dual-core S3 — the quiesce in
+    // connect() closes the reachable race window, but the esp_timer dispatch
+    // handoff (list-unlock before callback entry) leaves a residual sliver
+    // where a stale pass can start; it must observe the fresh nullptr.
+    std::atomic<esp_websocket_client_handle_t> ws_{nullptr};
     esp_timer_handle_t housekeeping_timer_ = nullptr;
     std::string url_;
 
@@ -278,6 +335,12 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     std::map<uint64_t, Pending> pending_;
     std::atomic<uint64_t> next_request_id_{0};
     uint32_t default_request_timeout_ms_ = kDefaultRequestTimeoutMs;
+    // Feeds cfg.network_timeout_ms only — the transport's per-operation budget,
+    // spent on the websocket task — and is capped at kMaxNetworkTimeoutMs on
+    // the way in. MoonrakerManager::configure_timeouts() overwrites this from
+    // moonraker_connection_timeout_ms at init, so the value here is only the
+    // pre-configuration default. The UI-thread send wait is bounded separately
+    // by kSendTimeoutMs.
     uint32_t connection_timeout_ms_ = 10000;
 
     // Callback maps.
