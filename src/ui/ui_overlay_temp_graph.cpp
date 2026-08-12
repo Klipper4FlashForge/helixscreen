@@ -16,6 +16,7 @@
 #include "printer_state.h"
 #include "printer_temperature_state.h"
 #include "static_panel_registry.h"
+#include "temp_graph_tooltip.h"
 #include "temperature_controller.h"
 #include "temperature_sensor_manager.h"
 #include "temperature_sensor_types.h"
@@ -217,6 +218,14 @@ void TempGraphOverlay::on_activate() {
         }
     }
 
+    // Tap-to-caption is opt-in per graph instance (temp_graph_tooltip.h): only
+    // this full-screen overlay enables it. The home-panel mini graph already
+    // uses a tap to OPEN this overlay (temp_graph_widget.cpp), so enabling the
+    // tooltip there would collide with that gesture.
+    if (controller_ && controller_->is_valid()) {
+        ui_temp_graph_set_tooltip_enabled(controller_->graph(), true);
+    }
+
     // Map series IDs back from controller
     if (controller_ && controller_->is_valid()) {
         for (auto& s : series_) {
@@ -260,6 +269,12 @@ void TempGraphOverlay::on_deactivate() {
     nozzle_icon_binder_.unbind();
     bed_icon_binder_.unbind();
     chamber_icon_binder_.unbind();
+
+    // Clear any pinned caption before the controller (and its graph) are torn
+    // down below.
+    if (controller_ && controller_->is_valid()) {
+        helix::temp_graph_internal::temp_graph_tooltip_clear(controller_->graph());
+    }
 
     // Destroy controller (tears down observers, destroys graph)
     controller_.reset();
