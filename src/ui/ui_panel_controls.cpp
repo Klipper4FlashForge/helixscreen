@@ -179,13 +179,10 @@ void ControlsPanel::init_subjects() {
     UI_MANAGED_SUBJECT_STRING(controls_pos_z_subject_, controls_pos_z_buf_, "   —   mm",
                               "controls_pos_z", subjects_);
 
-    // Speed/Flow override display subjects
+    // Speed override display subject
     std::strcpy(speed_override_buf_, "100%");
-    std::strcpy(flow_override_buf_, "100%");
     UI_MANAGED_SUBJECT_STRING(speed_override_subject_, speed_override_buf_, "100%",
                               "controls_speed_pct", subjects_);
-    UI_MANAGED_SUBJECT_STRING(flow_override_subject_, flow_override_buf_, "100%",
-                              "controls_flow_pct", subjects_);
 
     // Macro buttons 3 & 4 visibility and names
     UI_MANAGED_SUBJECT_INT(macro_3_visible_, 0, "macro_3_visible", subjects_);
@@ -267,12 +264,6 @@ void ControlsPanel::init_subjects() {
 
         // Quick Actions: Macro buttons (unified callback with user_data index)
         {"on_controls_macro", on_macro},
-
-        // Speed/Flow override buttons
-        {"on_controls_speed_up", on_speed_up},
-        {"on_controls_speed_down", on_speed_down},
-        {"on_controls_flow_up", on_flow_up},
-        {"on_controls_flow_down", on_flow_down},
 
         // Cooling: Fan slider
         {"on_controls_fan_slider", on_fan_slider_changed},
@@ -1543,119 +1534,6 @@ void ControlsPanel::update_speed_display() {
     lv_subject_copy_string(&speed_override_subject_, speed_override_buf_);
 }
 
-void ControlsPanel::update_flow_display() {
-    // Flow factor is stored as percentage (100 = 100%)
-    int flow_pct = 100;
-    // Note: PrinterState may need a get_extrude_factor_subject() method
-    // For now, we'll initialize to 100% and update when that's available
-    helix::format::format_percent(flow_pct, flow_override_buf_, sizeof(flow_override_buf_));
-    lv_subject_copy_string(&flow_override_subject_, flow_override_buf_);
-}
-
-void ControlsPanel::handle_speed_up() {
-    if (!api_) {
-        NOTIFY_ERROR(lv_tr("No printer connection"));
-        return;
-    }
-
-    int current = 100;
-    if (auto* speed_subj = printer_state_.get_speed_factor_subject()) {
-        current = lv_subject_get_int(speed_subj);
-    }
-
-    int new_speed = std::min(current + 10, 200); // Cap at 200%
-    spdlog::debug("[{}] Speed up: {} → {}", get_name(), current, new_speed);
-
-    char gcode[32];
-    std::snprintf(gcode, sizeof(gcode), "M220 S%d", new_speed);
-    api_->execute_gcode(
-        gcode, []() { /* Silent success */ },
-        [](const MoonrakerError& err) {
-            NOTIFY_ERROR(lv_tr("Speed change failed: {}"), err.user_message());
-        });
-}
-
-void ControlsPanel::handle_speed_down() {
-    if (!api_) {
-        NOTIFY_ERROR(lv_tr("No printer connection"));
-        return;
-    }
-
-    int current = 100;
-    if (auto* speed_subj = printer_state_.get_speed_factor_subject()) {
-        current = lv_subject_get_int(speed_subj);
-    }
-
-    int new_speed = std::max(current - 10, 10); // Floor at 10%
-    spdlog::debug("[{}] Speed down: {} → {}", get_name(), current, new_speed);
-
-    char gcode[32];
-    std::snprintf(gcode, sizeof(gcode), "M220 S%d", new_speed);
-    api_->execute_gcode(
-        gcode, []() { /* Silent success */ },
-        [](const MoonrakerError& err) {
-            NOTIFY_ERROR(lv_tr("Speed change failed: {}"), err.user_message());
-        });
-}
-
-void ControlsPanel::handle_flow_up() {
-    if (!api_) {
-        NOTIFY_ERROR(lv_tr("No printer connection"));
-        return;
-    }
-
-    // For now, track locally; ideally this would come from PrinterState
-    static int current_flow = 100;
-    int new_flow = std::min(current_flow + 5, 150); // Cap at 150%
-    spdlog::debug("[{}] Flow up: {} → {}", get_name(), current_flow, new_flow);
-    current_flow = new_flow;
-
-    char gcode[32];
-    std::snprintf(gcode, sizeof(gcode), "M221 S%d", new_flow);
-    auto tok = lifetime_.token();
-    api_->execute_gcode(
-        gcode,
-        [this, tok, new_flow]() {
-            tok.defer("ControlsPanel::flow_display_update", [this, new_flow]() {
-                helix::format::format_percent(new_flow, flow_override_buf_,
-                                              sizeof(flow_override_buf_));
-                lv_subject_copy_string(&flow_override_subject_, flow_override_buf_);
-            });
-        },
-        [](const MoonrakerError& err) {
-            NOTIFY_ERROR(lv_tr("Flow change failed: {}"), err.user_message());
-        });
-}
-
-void ControlsPanel::handle_flow_down() {
-    if (!api_) {
-        NOTIFY_ERROR(lv_tr("No printer connection"));
-        return;
-    }
-
-    // For now, track locally; ideally this would come from PrinterState
-    static int current_flow = 100;
-    int new_flow = std::max(current_flow - 5, 50); // Floor at 50%
-    spdlog::debug("[{}] Flow down: {} → {}", get_name(), current_flow, new_flow);
-    current_flow = new_flow;
-
-    char gcode[32];
-    std::snprintf(gcode, sizeof(gcode), "M221 S%d", new_flow);
-    auto tok = lifetime_.token();
-    api_->execute_gcode(
-        gcode,
-        [this, tok, new_flow]() {
-            tok.defer("ControlsPanel::flow_display_update", [this, new_flow]() {
-                helix::format::format_percent(new_flow, flow_override_buf_,
-                                              sizeof(flow_override_buf_));
-                lv_subject_copy_string(&flow_override_subject_, flow_override_buf_);
-            });
-        },
-        [](const MoonrakerError& err) {
-            NOTIFY_ERROR(lv_tr("Flow change failed: {}"), err.user_message());
-        });
-}
-
 // ============================================================================
 // FAN SLIDER HANDLER
 // ============================================================================
@@ -1819,10 +1697,6 @@ void ControlsPanel::on_macro(lv_event_t* e) {
     LVGL_SAFE_EVENT_CB_END();
 }
 
-PANEL_TRAMPOLINE(ControlsPanel, get_global_controls_panel, speed_up)
-PANEL_TRAMPOLINE(ControlsPanel, get_global_controls_panel, speed_down)
-PANEL_TRAMPOLINE(ControlsPanel, get_global_controls_panel, flow_up)
-PANEL_TRAMPOLINE(ControlsPanel, get_global_controls_panel, flow_down)
 PANEL_TRAMPOLINE(ControlsPanel, get_global_controls_panel, zoffset_tune)
 
 // Cannot use macro - has extra logic to extract slider value
