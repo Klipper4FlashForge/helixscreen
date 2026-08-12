@@ -1068,6 +1068,7 @@
   <translation tag="Insert filament before resuming" en="Insert filament before resuming"/>
   <translation tag="Install" en="Install"/>
   <translation tag="Install HelixPrint Plugin" en="Install HelixPrint Plugin"/>
+  <translation tag="Install Older Version?" en="Install Older Version?"/>
   <translation tag="Install Plugin" en="Install Plugin"/>
   <translation tag="Install Root" en="Install Root"/>
   <translation tag="Install Update" en="Install Update"/>
@@ -2087,6 +2088,7 @@
   <translation tag="Surfaces inherit app background tokens for light and dark modes." en="Surfaces inherit app background tokens for light and dark modes."/>
   <translation tag="Switch Printer" en="Switch Printer"/>
   <translation tag="Switch between light and dark themes" en="Switch between light and dark themes"/>
+  <translation tag="Switch to v%s" en="Switch to v%s"/>
   <translation tag="Switched to T{}" en="Switched to T{}"/>
   <translation tag="Switches to a backup spool on runout" en="Switches to a backup spool on runout"/>
   <translation tag="Switching heater control to MPC. Klipper will restart." en="Switching heater control to MPC. Klipper will restart."/>
@@ -2175,6 +2177,7 @@
   <translation tag="These tools have no matching filament loaded:" en="These tools have no matching filament loaded:"/>
   <translation tag="This calibration uses the paper friction method to set your Z-offset." en="This calibration uses the paper friction method to set your Z-offset."/>
   <translation tag="This cannot be undone." en="This cannot be undone."/>
+  <translation tag="This channel offers v{}, older than the installed v{}. Anything added since then will be removed." en="This channel offers v{}, older than the installed v{}. Anything added since then will be removed."/>
   <translation tag="This clears every spool&apos;s failover assignment. The print will stop on runout until you set up failover again." en="This clears every spool&apos;s failover assignment. The print will stop on runout until you set up failover again."/>
   <translation tag="This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen." en="This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen."/>
   <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?" en="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?"/>

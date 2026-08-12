@@ -2155,3 +2155,63 @@ TEST_CASE("repair_release_info: an unwritable install dir fails softly",
     REQUIRE(chmod(tmp.c_str(), 0755) == 0);
     remove_dir(tmp);
 }
+
+// ============================================================================
+// Channel version relation (drives the downgrade path)
+// ============================================================================
+//
+// compare_channel_version() replaced a strict `latest > current` test. That
+// rule was correct while every install tracked one ever-advancing line, and
+// wrong the moment channels became user-selectable: someone who ran the devel
+// track and switched back to stable is AHEAD of the channel they now want, so
+// "offer only if newer" reports "Already up to date" forever and leaves them
+// with no way back short of a manual reinstall.
+
+TEST_CASE("compare_channel_version: channel ahead is an ordinary update",
+          "[update_checker][version][channel]") {
+    CHECK(compare_channel_version("1.0.0", "1.1.0") == ChannelVersionRelation::Newer);
+    CHECK(compare_channel_version("1.0.0", "1.0.1") == ChannelVersionRelation::Newer);
+    CHECK(compare_channel_version("1.0.0", "2.0.0") == ChannelVersionRelation::Newer);
+    CHECK(compare_channel_version("0.99.111", "1.0.0") == ChannelVersionRelation::Newer);
+}
+
+TEST_CASE("compare_channel_version: channel behind is reported, not swallowed",
+          "[update_checker][version][channel]") {
+    // The devel-to-stable switch: installed 1.1.x, stable serves 1.0.x.
+    CHECK(compare_channel_version("1.1.0", "1.0.4") == ChannelVersionRelation::Older);
+    CHECK(compare_channel_version("2.0.0", "1.9.9") == ChannelVersionRelation::Older);
+    CHECK(compare_channel_version("1.0.1", "1.0.0") == ChannelVersionRelation::Older);
+}
+
+TEST_CASE("compare_channel_version: equal versions are Same, not Newer or Older",
+          "[update_checker][version][channel]") {
+    CHECK(compare_channel_version("1.0.0", "1.0.0") == ChannelVersionRelation::Same);
+    CHECK(compare_channel_version("2.5.3", "2.5.3") == ChannelVersionRelation::Same);
+}
+
+TEST_CASE("compare_channel_version: unparseable versions do nothing",
+          "[update_checker][version][channel]") {
+    // Must not be reported as Older -- a garbled manifest would otherwise offer
+    // the whole fleet a "switch" to a version that does not exist.
+    CHECK(compare_channel_version("1.0.0", "") == ChannelVersionRelation::Unknown);
+    CHECK(compare_channel_version("", "1.0.0") == ChannelVersionRelation::Unknown);
+    CHECK(compare_channel_version("1.0.0", "not-a-version") == ChannelVersionRelation::Unknown);
+}
+
+TEST_CASE("compare_channel_version: prerelease suffixes are still discarded",
+          "[update_checker][version][channel]") {
+    // Pins the constraint that forced the release pipeline off suffix-derived
+    // channels: Version carries only major/minor/patch, so two devel builds of
+    // the same x.y.z are indistinguishable here. Releases route by the
+    // RELEASE_CHANNEL file and use plain monotonic versions instead.
+    CHECK(compare_channel_version("1.1.0-dev1", "1.1.0-dev2") == ChannelVersionRelation::Same);
+    CHECK(compare_channel_version("1.1.0", "1.1.0-rc.1") == ChannelVersionRelation::Same);
+}
+
+TEST_CASE("ReleaseInfo::is_downgrade defaults to false", "[update_checker][channel]") {
+    // Every construction site that does not explicitly mark a downgrade must
+    // produce a normal update, or the install path starts asking for
+    // confirmation on ordinary upgrades.
+    UpdateChecker::ReleaseInfo info;
+    CHECK_FALSE(info.is_downgrade);
+}

@@ -106,6 +106,45 @@ The Update Channel dropdown is gated behind **beta features** (7-tap version eas
 
 Options string: `"Stable\nBeta\nDev"`
 
+### Switching Channels (and moving backward)
+
+Changing the dropdown calls `UpdateChecker::on_channel_changed()`, which drops the
+cached result, re-snapshots the config for the debug bundle's off-thread reader,
+**clears the rate-limit clock**, and starts a fresh check. The rate-limit reset is
+load-bearing: the limiter predates user-switchable channels, so without it the
+check returns the previous channel's verdict and the About row keeps advertising a
+version the newly selected channel does not serve.
+
+The check is a three-way comparison (`compare_channel_version()`), not the old
+strict `latest > current`:
+
+| Relation | Result |
+|----------|--------|
+| Channel is **ahead** | `UpdateAvailable`, `is_downgrade = false` — ordinary update |
+| Channel is **behind** | `UpdateAvailable`, `is_downgrade = true` — offered, never auto-notified |
+| **Same** or unparseable | `UpToDate` |
+
+`Older` has to be actionable because channels are user-selectable. Someone who ran
+the devel track and switched back to stable is *ahead* of the channel they now
+want; under "offer only if newer" the check reports "Already up to date" forever
+and there is no way back short of a manual reinstall.
+
+A downgrade is deliberately quieter than an update:
+
+- The auto-check **never** raises it unprompted (a transient bad manifest would
+  otherwise push a "go back" prompt to the whole fleet at once).
+- The About row reads *"Switch to vX"*, not *"vX available"*.
+- Tapping install shows a confirmation naming both versions before anything
+  downloads.
+
+**Config compatibility.** An older build loading a config written by a newer one
+leaves it entirely alone — `run_versioned_migrations()` returns early when
+`config_version > CURRENT_CONFIG_VERSION` rather than stamping it down. Migration
+gates are all `version < N` so none would fire anyway; the damage was the
+unconditional stamp, which made the newer build re-run already-applied migrations
+on its next boot. Unknown keys survive because `Config::save()` serializes the
+whole in-memory document. Pinned by `tests/unit/test_config_migration_future.cpp`.
+
 ### Dev Channel Custom URL
 
 The dev channel supports an explicit URL override via config:

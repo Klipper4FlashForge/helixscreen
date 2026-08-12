@@ -1068,6 +1068,7 @@
   <translation tag="Insert filament before resuming" zh="恢复前请插入耗材"/>
   <translation tag="Install" zh="安装"/>
   <translation tag="Install HelixPrint Plugin" zh="安装 HelixPrint 插件"/>
+  <translation tag="Install Older Version?"/>
   <translation tag="Install Plugin" zh="安装插件"/>
   <translation tag="Install Root" zh="安装根目录"/>
   <translation tag="Install Update" zh="安装更新"/>
@@ -2087,6 +2088,7 @@
   <translation tag="Surfaces inherit app background tokens for light and dark modes." zh="表面继承应用背景色用于浅色和深色模式。"/>
   <translation tag="Switch Printer" zh="切换打印机"/>
   <translation tag="Switch between light and dark themes" zh="切换浅色和深色主题"/>
+  <translation tag="Switch to v%s"/>
   <translation tag="Switched to T{}" zh="已切换到 T{}"/>
   <translation tag="Switches to a backup spool on runout" zh="耗材用尽时切换到备用料盘"/>
   <translation tag="Switching heater control to MPC. Klipper will restart." zh="正在将加热控制切换为 MPC。Klipper 将重启。"/>
@@ -2175,6 +2177,7 @@
   <translation tag="These tools have no matching filament loaded:" zh="以下工具未加载匹配的耗材："/>
   <translation tag="This calibration uses the paper friction method to set your Z-offset." zh="此校准使用纸张摩擦法设置 Z 偏移。"/>
   <translation tag="This cannot be undone." zh="此操作无法撤销。"/>
+  <translation tag="This channel offers v{}, older than the installed v{}. Anything added since then will be removed."/>
   <translation tag="This clears every spool&apos;s failover assignment. The print will stop on runout until you set up failover again."/>
   <translation tag="This device has no wired network connection. If you turn WiFi off, it can only be turned back on from this screen." zh="此设备没有有线网络连接。关闭 WiFi 后，只能在此界面重新开启。"/>
   <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?" zh="此设备仅有 {} MB 内存。共振校准会占用大量内存，可能导致打印机固件报告 \&quot;Timer Too Close\&quot; 错误或在测试中途重启。仍要继续吗？"/>
