@@ -9,80 +9,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.99.110] - 2026-08-11
 
-**0.99.109 was tagged but never shipped.** A compile error in its own release commit broke
-every device cross-build and macOS, so no artifacts were published. 0.99.110 supersedes it and
-contains everything 0.99.109 added, plus the fixes below. If you are on 0.99.108, this is your
-next upgrade.
-
-### Fixed
-
-- **The Android APK shipped the packager's own configuration** - a working `settings.json` with a
-  real printer address, an active printer and `wizard_completed=true` was being packaged, so a
-  fresh install skipped first-run setup and pointed itself at someone else's network. Crash dumps
-  excluded in 0.99.109 were still shipping too, because the packaging step only ever added files
-  and never removed what an earlier build had left behind. Nothing needs a shipped seed: defaults
-  are synthesized when the file is absent. No private data ever reached the git repository, only
-  built APKs.
-- **Android background network calls silently failed** - debug-bundle uploads and update checks
-  resolved their Java bridge in a way that cannot see the app's own classes from a background
-  thread, so both failed as "HTTP 0" with no diagnosis. A bodyless HTTP error also erased the real
-  status code, making an expired key and a dead network look identical.
-- **Closing an overlay could leave two panels on screen at once** - the restored panel was
-  activated before it was made visible again, and by up to three different code paths, so a panel
-  whose activation navigates elsewhere corrupted the panel stack. The double activation also
-  tripped Print Last's retry counter and could start two first-run tours.
-- **A dismissed AMS recovery modal came back** - any later cosmetic update to the same fault
-  re-opened the dialog the user had just answered, and after a recovery tap it put live buttons
-  over an in-flight preheat. A genuinely new fault still re-presents.
-- **Reset Endless Spool reported success without doing anything** - on a system that had not yet
-  reported its slot count, the confirmation was accepted and nothing was cleared. It now refuses,
-  and a successful reset says so instead of looking identical to a no-op.
-- **The temperature graph on reconnect** - resuming drew a phantom spike bridging the whole gap,
-  chip toggles reset themselves, and a Klipper restart collapsed a 20 minute graph to a few
-  seconds. Grid lines and time labels now line up.
-- **The G-code preview dropped its thumbnail too early on every non-GPU device**, leaving a grey
-  gap while "Building preview" was still running.
-- **Two Japanese characters rendered blank** in the new AD5X spool-switchover strings.
-- **Debug bundles dropped the incident itself** from `klipper_log` and `log_tail`.
-
-### Internal
-
-- The ESP32 source manifest gate accepted lines the firmware build then silently discarded, so it
-  could pass while the build broke. It now enforces exactly what the build consumes, and detects
-  stale and duplicated entries.
-- The home-screen edit-mode toggle and long-press slider shipped in 0.99.109 with no tests;
-  deleting either check failed nothing. Both are now covered, along with the reconnect and
-  endless-spool fixes above.
-
-## [0.99.109] - 2026-08-10
+**Upgrading from 0.99.108?** This is your next release. 0.99.109 was tagged but never
+published: a compile error in its own release commit broke every device cross-build and
+macOS, so no artifacts were ever produced. Everything 0.99.109 would have delivered is
+included below, together with the fixes found while tracking that failure down.
 
 ### Added
 
-- **Native ESP32-S3 firmware target — ALPHA, not for daily use (K-Touch and similar panels)** - a first-booting, highly experimental port: HelixScreen now builds and runs as firmware on ESP32-S3 display hardware (e.g. the BTT K-Touch), not only as a Linux/SDL app. A packed, compressed asset container fits all nine languages and every printer image into a 2 MB storage partition; RLE medium-tier fonts fit the 6.875 MB OTA slot; and a real `EspMoonrakerClient` over `esp_websocket_client` drives live discovery, status and bed-mesh callbacks over WiFi, with first-boot SoftAP captive-portal provisioning and A/B OTA. Ships as a v1 Core+AMS cut: home-only boot with heavy panels deferred to first navigation, draw buffers sized to internal DRAM, and a beam-paced presenter for tear-free scan-out. Camera/QR and the 2D-gcode and bed-mesh-3D renderers are compile-gated out. Expect rough edges, missing features and known instability — this is for developers and early testers only. The Linux, Pi and Android targets are unchanged and remain production-quality.
+- **Native ESP32-S3 firmware target - ALPHA, not for daily use (K-Touch and similar panels)** - a first-booting, highly experimental port: HelixScreen now builds and runs as firmware on ESP32-S3 display hardware (e.g. the BTT K-Touch), not only as a Linux/SDL app. A packed, compressed asset container fits all nine languages and every printer image into a 2 MB storage partition; RLE medium-tier fonts fit the 6.875 MB OTA slot; and a real `EspMoonrakerClient` over `esp_websocket_client` drives live discovery, status and bed-mesh callbacks over WiFi, with first-boot SoftAP captive-portal provisioning and A/B OTA. Ships as a v1 Core+AMS cut: home-only boot with heavy panels deferred to first navigation, draw buffers sized to internal DRAM, and a beam-paced presenter for tear-free scan-out. Camera/QR and the 2D-gcode and bed-mesh-3D renderers are compile-gated out. Expect rough edges, missing features and known instability - this is for developers and early testers only. The Linux, Pi and Android targets are unchanged and remain production-quality.
 - **Home-screen edit mode can be disabled (#1245)** - a Touch & Input setting, defaulting on, so a resting finger on a wall-mounted tablet never rearranges widgets. The same global long-press time that gates edit mode is now configurable too.
 - **Minimum toast severity (#1213)** - filter non-critical toasts down to a chosen level.
-- **Reset Endless Spool from the device operations overlay** - a direct action for Happy Hare setups that need a lane-map reset.
+- **Reset Endless Spool from the device operations overlay** - a direct action for Happy Hare setups that need a lane-map reset. It asks first, and now tells you when it worked.
 - **AMS says whether the printer will swap spools by itself** - a runout on a multi-lane backend tells you "switching to lane 4" rather than leaving you to discover it.
 - **Temperature graph above its controls in portrait** - the graph stacks on top of the control strip on a tall screen.
 
 ### Fixed
 
+- **The Android APK shipped the packager's own configuration** - a working `settings.json` with a real printer address, an active printer and `wizard_completed=true` was being packaged, so a fresh install skipped first-run setup and pointed itself at someone else's network. Crash dumps excluded in the previous release were still shipping too, because the packaging step only ever added files and never removed what an earlier build had left behind. Nothing needs a shipped seed: defaults are synthesized when the file is absent. No private data ever reached the git repository, only built APKs.
+- **Android background network calls silently failed** - debug-bundle uploads and update checks resolved their Java bridge in a way that cannot see the app's own classes from a background thread, so both failed as "HTTP 0" with no diagnosis. A bodyless HTTP error also erased the real status code, making an expired key and a dead network look identical.
 - **AD5X cold-ejected a seated filament the motion sensor mis-read as empty** - the IFS motion sensor reads false while a lane is loaded but idle, so gating ejection on it alone ejected filament that was happily loaded. The gate now requires the head-switch edge that only a real unload raises.
-- **The AMS recovery modal went stale mid-error** - re-presents when the underlying fault detail changes.
+- **The AMS recovery modal went stale mid-error, and then came back after you dismissed it** - it now re-presents when the underlying fault genuinely changes, but a dialog you have answered stays answered. Previously any later cosmetic update to the same fault re-opened it, and after a recovery tap it put live buttons over an in-flight preheat.
+- **Reset Endless Spool reported success without doing anything** - on a system that had not yet reported its slot count, the confirmation was accepted and nothing was cleared. It now refuses instead.
+- **Closing an overlay could leave two panels on screen at once** - the restored panel was activated before it was made visible again, and by up to three different code paths, so a panel whose activation navigates elsewhere corrupted the panel stack. The double activation also tripped Print Last's retry counter and could start two first-run tours. This also fixes the camera feed staying dead until a tab switch (#1245).
+- **The temperature graph on reconnect** - resuming drew a phantom spike bridging the whole gap, chip toggles reset themselves, and a Klipper restart collapsed a 20 minute graph to a few seconds. Grid lines and time labels now line up. The graph also rebuilds its series when discovery adds an extruder.
+- **The G-code preview dropped its thumbnail too early on every non-GPU device**, leaving a grey gap while "Building preview" was still running.
+- **Two Japanese characters rendered blank** in the new AD5X spool-switchover strings.
+- **Debug bundles dropped the incident itself** from `klipper_log` and `log_tail`.
 - **The print-status bar could disagree with the progress text** - one source and one formatter now feed the bar, progress text, filament, duration and layer strings.
 - **The print-status thumbnail could apply during a mid-teardown relayout** - now guarded.
-- **The temperature graph did not rebuild its series when discovery added an extruder**.
 - **Portrait detection disagreed with the layout override (#1255)**.
 - **The BETA badge overlapped row controls (#1244)** - a gutter is now reserved.
-- **The camera did not re-activate the main panel when an overlay closed (#1245)**.
-- **Android batch (#1245, #1253)** - reconnect WebSocket on display wake, keep user settings across APK upgrades, preload libturbojpeg on API 24+, close the SDL audio device at idle, and upload debug bundles via a JNI HTTPS bridge.
-- **Two tests passed only by shard-ordering luck** - corrected (no user impact; honest disclosure).
+- **Android (#1245, #1253)** - reconnect WebSocket on display wake, keep user settings across APK upgrades, preload libturbojpeg on API 24+, and close the SDL audio device at idle.
 
 ### Changed
 
 - **Splash version label moved to the upper-left**.
 - **Temperatures drop the decimal at 100 °C and above**.
 - **Context menus share one component and gained an explicit close button** - all eleven menus are now one card rather than eleven per-menu copies.
+
+### Internal
+
+- The ESP32 source manifest gate accepted lines the firmware build then silently discarded, so it could pass while the build broke. It now enforces exactly what the build consumes, and detects stale and duplicated entries.
+- The home-screen edit-mode toggle and long-press slider shipped with no tests; deleting either check failed nothing. Both are now covered, along with the reconnect and endless-spool fixes above.
+- Three tests were found asserting the wrong thing or passing only by shard ordering: one encoded the endless-spool bug above, one had been reduced to a tautology that no longer exercised the runout confirm delay, and two depended on state a co-tenant test happened to leave behind. All corrected. No user impact; disclosed for the record.
+
+## [0.99.109] - 2026-08-10 [WITHDRAWN]
+
+Tagged but never published. A compile error in the release commit itself broke all nine device
+cross-builds and macOS, so no artifacts were released and no one could install this version.
+Its entire contents ship in 0.99.110 above.
 
 ## [0.99.108] - 2026-08-09
 
@@ -5019,7 +4994,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
-[0.99.110]: https://github.com/prestonbrown/helixscreen/compare/v0.99.109...v0.99.110
+[0.99.110]: https://github.com/prestonbrown/helixscreen/compare/v0.99.108...v0.99.110
 [0.99.109]: https://github.com/prestonbrown/helixscreen/compare/v0.99.108...v0.99.109
 [0.99.108]: https://github.com/prestonbrown/helixscreen/compare/v0.99.107...v0.99.108
 [0.99.107]: https://github.com/prestonbrown/helixscreen/compare/v0.99.106...v0.99.107
