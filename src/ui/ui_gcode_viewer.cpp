@@ -738,15 +738,41 @@ static void gcode_viewer_draw_cb(lv_event_t* e) {
     // the viewer actually has something to show, avoiding a gray flash.
     if (!st->first_frame_fired_ && st->first_frame_callback) {
         bool frame_complete = true;
+        if (st->is_using_2d_mode()) {
+            // The 2D renderer paints progressively — the ghost and solid caches
+            // finish over several frames, which is exactly when the "Building
+            // preview: N%" label is up. Reporting completion here drops the
+            // thumbnail onto a half-drawn view, the gray gap this callback
+            // exists to prevent. This is every non-GLES device, plus GLES once
+            // budget_forced_2d_ flips.
+            if (st->layer_renderer_2d_ && (st->layer_renderer_2d_->needs_more_frames() ||
+                                           st->layer_renderer_2d_->is_ghost_build_running())) {
+                frame_complete = false;
+            }
+        } else {
 #ifdef ENABLE_3D_RENDERER
-        // is_uploading() (VBO upload in progress) exists only on GCode3DRenderer;
-        // the non-GLES base GCodeRenderer has no such concept.
-        if (st->renderer_ && st->renderer_->is_uploading())
-            frame_complete = false;
+            // is_uploading() (VBO upload in progress) exists only on GCode3DRenderer;
+            // the non-GLES base GCodeRenderer has no such concept.
+            if (st->renderer_ && st->renderer_->is_uploading())
+                frame_complete = false;
 #endif
+        }
         if (frame_complete) {
             st->first_frame_fired_ = true;
-            st->first_frame_callback(obj, st->first_frame_callback_user_data, true);
+            // Defer the callback out of the draw pass. It drives subject writes
+            // that hide widgets (bind_flag_if_eq → lv_obj_invalidate +
+            // mark_layout_as_dirty), and LVGL rejects invalidation while a
+            // render is in progress: lv_refr.c asserts and lv_inv_area returns
+            // without marking the area, so stale thumbnail pixels stay painted
+            // over the viewer. Resolve state at callback time so a viewer torn
+            // down in between (which clears first_frame_callback) is a no-op.
+            helix::ui::queue_widget_update(obj, [](lv_obj_t* viewer) {
+                auto* state = get_state(viewer);
+                if (!state || !state->first_frame_callback) {
+                    return;
+                }
+                state->first_frame_callback(viewer, state->first_frame_callback_user_data, true);
+            });
         }
     }
 

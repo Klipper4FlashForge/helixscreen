@@ -574,9 +574,14 @@ void PrintSelectDetailView::on_deactivate() {
 void PrintSelectDetailView::cleanup() {
     spdlog::debug("[DetailView] cleanup()");
 
-    // Pause viewer before subject cleanup to avoid rendering with freed subjects
+    // Pause viewer before subject cleanup to avoid rendering with freed subjects.
+    // Drop the first-frame callback too: it captures `this` and writes
+    // detail_viewer_first_frame_, which subjects_.deinit_all() below destroys.
+    // The viewer outlives this object on some teardown paths, and paused
+    // rendering is not a guarantee — unpausing anywhere else would resurrect it.
     if (gcode_viewer_) {
         ui_gcode_viewer_set_paused(gcode_viewer_, true);
+        ui_gcode_viewer_set_first_frame_callback(gcode_viewer_, nullptr, nullptr);
     }
 
     // Expire all outstanding async tokens
@@ -927,6 +932,15 @@ void PrintSelectDetailView::show_gcode_viewer(bool show) {
         mode = is_2d ? 2 : 1;
     }
     lv_subject_set_int(&detail_gcode_viewer_mode_, mode);
+
+    // Returning to thumbnail mode must also drop the first-frame latch — that
+    // latch is what keeps the thumbnail hidden once the viewer has painted
+    // (print_file_detail.xml binds detail_viewer_first_frame). Leaving it set
+    // while hiding the viewer (the memory-pressure clear callback does exactly
+    // that, mid-view) hides BOTH layers and the preview goes blank.
+    if (mode == 0) {
+        lv_subject_set_int(&detail_viewer_first_frame_, 0);
+    }
 
     // The 3D render is the preview when the viewer is active, so the
     // no-thumbnail placeholder glyph must not sit on top of it. (When the

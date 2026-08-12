@@ -128,12 +128,19 @@ void ui_gcode_viewer_set_load_callback(lv_obj_t* obj, gcode_viewer_load_callback
  * the thumbnail until the viewer actually has pixels to show, avoiding a gray
  * flash during the load-to-render gap.
  *
+ * The callback is invoked deferred (UpdateQueue), not inside the draw pass, so
+ * it may safely write subjects and hide widgets. Pass a null callback to
+ * unregister — required from any teardown that outlives the viewer widget, or
+ * the stored user_data pointer and whatever it owns (subjects, `this`) are
+ * dangling by the time the next frame renders.
+ *
  * @param obj       Viewer widget
- * @param callback  Fires once with success=true when the first frame renders
+ * @param callback  Fires once with success=true when the first frame renders,
+ *                  or nullptr to unregister
  * @param user_data Passed through to the callback
  */
 void ui_gcode_viewer_set_first_frame_callback(lv_obj_t* obj, gcode_viewer_load_callback_t callback,
-                                               void* user_data);
+                                              void* user_data);
 
 /**
  * @brief Clear loaded G-code
