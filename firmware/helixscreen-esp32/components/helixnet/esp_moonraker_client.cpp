@@ -674,7 +674,7 @@ int EspMoonrakerClient::send_envelope(const json& envelope) {
     }
     std::string payload = envelope.dump();
     int sent = esp_websocket_client_send_text(ws_, payload.data(), static_cast<int>(payload.size()),
-                                              pdMS_TO_TICKS(connection_timeout_ms_));
+                                              pdMS_TO_TICKS(kSendTimeoutMs));
     return sent;
 }
 
