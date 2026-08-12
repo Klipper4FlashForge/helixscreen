@@ -1,3 +1,4 @@
+// Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Exercises the preset-reassignment logic formerly driven through
@@ -21,8 +22,9 @@
 // mirrored here at the same level test_material_settings_manager.cpp and
 // test_preset_filament_persistence.cpp already exercise it.
 
-#include "material_settings_manager.h"
 #include "ui_panel_filament.h"
+
+#include "material_settings_manager.h"
 
 #include "../catch_amalgamated.hpp"
 
