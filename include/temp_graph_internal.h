@@ -51,4 +51,20 @@ std::vector<std::pair<int, int>> segment_target_buf(const int16_t* buf, int coun
 /// Runs of equal target value within [from, to).
 std::vector<std::pair<int, int>> coalesce_target_runs(const int16_t* buf, int from, int to);
 
+/**
+ * Resolve a series `id` (the monotonically increasing handle returned by
+ * ui_temp_graph_add_series, never reused) to its current slot in
+ * graph->series_meta (the first free array position at add time, reused
+ * after a remove). The two diverge after any remove-then-add, so callers
+ * must never index series_meta by id directly.
+ *
+ * Declared here (not temp_graph_tooltip.h) so unit tests can exercise the
+ * id/slot divergence case directly, per this header's own doc comment above.
+ * ui_temp_graph.cpp has an equivalent, file-local find_series() with no
+ * external linkage; this is temp_graph_tooltip.cpp's counterpart.
+ *
+ * @return nullptr when no live slot carries that id.
+ */
+const ui_temp_series_meta_t* find_meta_by_id(const ui_temp_graph_t* graph, int id);
+
 } // namespace helix::temp_graph_internal

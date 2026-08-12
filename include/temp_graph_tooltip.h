@@ -84,8 +84,17 @@ void temp_graph_tooltip_on_sample_pushed(ui_temp_graph_t* graph, int series_id);
 /// Called when `series_id` is hidden. Dismisses the caption if it was pinned there.
 void temp_graph_tooltip_on_series_hidden(ui_temp_graph_t* graph, int series_id);
 
-/// Free tooltip state. Called from ui_temp_graph_destroy.
+/// Sever both the press and draw callbacks and free tooltip state. Real
+/// teardown only - called from ui_temp_graph_destroy. Do NOT call this to
+/// implement a disable: draw_cb is registered once, unconditionally, at graph
+/// creation (never re-added on enable), so severing it here would leave a
+/// re-enabled graph pinning state on tap but drawing nothing.
 void temp_graph_tooltip_destroy(ui_temp_graph_t* graph);
+
+/// Free tooltip state (the pin) without touching either chart callback. Used
+/// by ui_temp_graph_set_tooltip_enabled's disable branch, which severs
+/// press_cb itself and must leave draw_cb registered for a later re-enable.
+void temp_graph_tooltip_free_state(ui_temp_graph_t* graph);
 
 /// Placement of the caption box for a point at (px, py), clamped inside the plot
 /// and flipped below the point when it sits in the top third. Pure, so the

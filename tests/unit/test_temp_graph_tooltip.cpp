@@ -8,8 +8,11 @@
 #include "../ui_test_utils.h"
 #include "lvgl/lvgl.h"
 
+#include <cstring>
+
 #include "../catch_amalgamated.hpp"
 
+using helix::temp_graph_internal::find_meta_by_id;
 using helix::temp_graph_internal::temp_graph_compute_geometry;
 using helix::temp_graph_internal::temp_graph_geometry_t;
 using helix::temp_graph_internal::temp_graph_tooltip_box_area;
@@ -331,6 +334,46 @@ TEST_CASE_METHOD(TooltipTestFixture, "disabling clears the pin", "[ui][tooltip][
     ui_temp_graph_destroy(g);
 }
 
+// temp_graph_tooltip_draw_cb is registered exactly once, unconditionally, at
+// graph creation (ui_temp_graph.cpp) and is never re-added on enable. A
+// disable must therefore leave it in place (only real teardown may sever it),
+// or a re-enabled graph pins state on tap but draws nothing. This checks both
+// directions at once: draw_cb must survive the disable, and enabling again
+// must not have doubled it up.
+TEST_CASE_METHOD(TooltipTestFixture, "re-enabling after a disable still draws a new pin",
+                 "[ui][tooltip][lifecycle]") {
+    ui_temp_graph_t* g = make_graph();
+    ui_temp_graph_set_tooltip_enabled(g, true);
+    int id = ui_temp_graph_add_series(g, "Nozzle", lv_color_hex(0xFF4444));
+    for (int i = 0; i < 5; i++) {
+        ui_temp_graph_update_series_with_time(g, id, 150.0f, 1000000000000LL + i * 3000);
+    }
+    lv_point_t p = point_pos(g, id, g->point_count - 1);
+    temp_graph_tooltip_pin(g, *tooltip_hit_test(g, p.x, p.y));
+    REQUIRE(temp_graph_tooltip_pinned(g) != nullptr);
+
+    ui_temp_graph_set_tooltip_enabled(g, false);
+    REQUIRE(temp_graph_tooltip_pinned(g) == nullptr);
+
+    ui_temp_graph_set_tooltip_enabled(g, true);
+    auto hit = tooltip_hit_test(g, p.x, p.y);
+    REQUIRE(hit.has_value());
+    temp_graph_tooltip_pin(g, *hit);
+    REQUIRE(temp_graph_tooltip_pinned(g) != nullptr);
+
+    int draw_cb_count = 0;
+    const uint32_t count = lv_obj_get_event_count(g->chart);
+    for (uint32_t i = 0; i < count; i++) {
+        lv_event_dsc_t* dsc = lv_obj_get_event_dsc(g->chart, i);
+        if (lv_event_dsc_get_cb(dsc) == helix::temp_graph_internal::temp_graph_tooltip_draw_cb) {
+            draw_cb_count++;
+        }
+    }
+    CHECK(draw_cb_count == 1);
+
+    ui_temp_graph_destroy(g);
+}
+
 TEST_CASE_METHOD(TooltipTestFixture, "removing the pinned series dismisses it",
                  "[ui][tooltip][lifecycle]") {
     ui_temp_graph_t* g = make_graph();
@@ -346,6 +389,62 @@ TEST_CASE_METHOD(TooltipTestFixture, "removing the pinned series dismisses it",
     ui_temp_graph_remove_series(g, a);
     CHECK(temp_graph_tooltip_pinned(g) == nullptr);
 
+    ui_temp_graph_destroy(g);
+}
+
+// series_meta is indexed by SLOT (first free array position at add time), not
+// by `id` (ui_temp_graph_add_series's return value, next_series_id++, never
+// reused). Remove-then-add recycles the slot but not the id, so after this
+// sequence: a=id0/slot0, b=id1/slot1, remove a (frees slot0), c=id2/slot0 -
+// c's id (2) and slot (0) diverge. temp_graph_tooltip_draw_cb resolves a pin
+// through find_meta_by_id, exactly like this test does; the bug it replaces
+// (series_meta[pin->series_id], i.e. series_meta[2]) would land on an
+// untouched slot - never populated, so a silently blank caption - which the
+// assertions below confirm directly since a caption's actual pixels aren't
+// observable from a headless unit test (see report for why the end-to-end
+// draw path isn't exercised here).
+TEST_CASE_METHOD(TooltipTestFixture, "pinned caption resolves the correct series after slot reuse",
+                 "[ui][tooltip][lifecycle]") {
+    ui_temp_graph_t* g = make_graph();
+    ui_temp_graph_set_tooltip_enabled(g, true);
+    int a = ui_temp_graph_add_series(g, "Nozzle", lv_color_hex(0xFF4444));  // id 0, slot 0
+    int b = ui_temp_graph_add_series(g, "Bed", lv_color_hex(0x44FF44));     // id 1, slot 1
+    ui_temp_graph_remove_series(g, a);                                      // frees slot 0
+    int c = ui_temp_graph_add_series(g, "Chamber", lv_color_hex(0x4444FF)); // reuses slot 0, id 2
+    REQUIRE(c != a);
+    // id (c) and slot (0, the one `a` vacated) really do diverge here.
+    REQUIRE(c != 0);
+    REQUIRE(&g->series_meta[0] == find_meta_by_id(g, c));
+
+    for (int i = 0; i < 5; i++) {
+        int64_t ts = 1000000000000LL + i * 3000;
+        ui_temp_graph_update_series_with_time(g, b, 60.0f, ts);
+        ui_temp_graph_update_series_with_time(g, c, 210.0f, ts);
+    }
+    // point_pos indexes series_meta by SLOT, not id - slot 0 is now `c`'s.
+    lv_point_t p = point_pos(g, /*slot=*/0, g->point_count - 1);
+    auto hit = tooltip_hit_test(g, p.x, p.y);
+    REQUIRE(hit.has_value());
+    REQUIRE(hit->series_id == c); // hit_test already resolves by id correctly
+    temp_graph_tooltip_pin(g, *hit);
+
+    const auto* pin = temp_graph_tooltip_pinned(g);
+    REQUIRE(pin != nullptr);
+    REQUIRE(pin->series_id == c);
+
+    const ui_temp_series_meta_t* meta = find_meta_by_id(g, pin->series_id);
+    REQUIRE(meta != nullptr);
+    CHECK(std::strcmp(meta->name, "Chamber") == 0);
+    CHECK(meta->chart_series != nullptr);
+    CHECK(meta->visible);
+
+    // The slot the OLD (buggy) code would have indexed into instead
+    // (series_meta[pin->series_id] == series_meta[2]) was never populated.
+    REQUIRE(pin->series_id < UI_TEMP_GRAPH_MAX_SERIES);
+    CHECK(g->series_meta[pin->series_id].chart_series == nullptr);
+    CHECK_FALSE(g->series_meta[pin->series_id].visible);
+
+    (void)b;
     ui_temp_graph_destroy(g);
 }
 

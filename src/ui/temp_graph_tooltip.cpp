@@ -26,6 +26,19 @@ struct temp_graph_tooltip_t {
 
 namespace helix::temp_graph_internal {
 
+// See doc comment in temp_graph_internal.h.
+const ui_temp_series_meta_t* find_meta_by_id(const ui_temp_graph_t* graph, int id) {
+    if (!graph) {
+        return nullptr;
+    }
+    for (int i = 0; i < UI_TEMP_GRAPH_MAX_SERIES; i++) {
+        if (graph->series_meta[i].chart_series && graph->series_meta[i].id == id) {
+            return &graph->series_meta[i];
+        }
+    }
+    return nullptr;
+}
+
 int16_t target_deci_at(const ui_temp_series_meta_t* meta, int point_count, int logical_index) {
     if (!meta || !meta->target_deci_buf || meta->target_head <= 0) {
         return 0;
@@ -161,8 +174,8 @@ void temp_graph_tooltip_draw_cb(lv_event_t* e) {
     if (!temp_graph_compute_geometry(graph, &geo)) {
         return;
     }
-    const ui_temp_series_meta_t* meta = &graph->series_meta[pin->series_id];
-    if (!meta->chart_series || !meta->visible) {
+    const ui_temp_series_meta_t* meta = find_meta_by_id(graph, pin->series_id);
+    if (!meta || !meta->visible) {
         return;
     }
 
@@ -171,6 +184,15 @@ void temp_graph_tooltip_draw_cb(lv_event_t* e) {
     const int32_t py = (geo.cy1 + geo.ch) - lv_map(pin->deci_temp, geo.y_min, geo.y_max, 0, geo.ch);
 
     // Line 1: "<name>   <temp>"   Line 2: "<time>   [<target>]"
+    // `static`, not stack: lv_draw_label_dsc_t::text (ld.text, set below) is a
+    // pointer LVGL keeps alive into a deferred draw task, so a stack buffer
+    // would be a use-after-free once this function returns. That makes these
+    // buffers per-translation-unit, not per-graph-instance - two graphs both
+    // rendering a pin in the same draw pass would have the second overwrite
+    // the first's text before either is actually drawn. Only the full-screen
+    // overlay enables the tooltip today (see temp_graph_tooltip.h), so only
+    // one graph can have a pin at a time; this would need revisiting if that
+    // changes.
     static char l1_name[32];
     static char l1_temp[16];
     static char l2_time[16];
@@ -375,6 +397,14 @@ void temp_graph_tooltip_destroy(ui_temp_graph_t* graph) {
     graph->tooltip = nullptr;
 }
 
+void temp_graph_tooltip_free_state(ui_temp_graph_t* graph) {
+    if (!graph || !graph->tooltip) {
+        return;
+    }
+    delete graph->tooltip;
+    graph->tooltip = nullptr;
+}
+
 } // namespace helix::temp_graph_internal
 
 void ui_temp_graph_set_tooltip_enabled(ui_temp_graph_t* graph, bool enabled) {
@@ -398,11 +428,17 @@ void ui_temp_graph_set_tooltip_enabled(ui_temp_graph_t* graph, bool enabled) {
         lv_obj_add_event_cb(graph->chart, helix::temp_graph_internal::tooltip_press_cb,
                             LV_EVENT_CLICKED, graph);
     } else {
+        // temp_graph_tooltip_destroy is NOT used here: it also severs
+        // draw_cb, which is registered exactly once, unconditionally, at
+        // graph creation and never re-added on enable. Severing it on
+        // disable would leave a later re-enable pinning state on tap but
+        // drawing nothing. Sever press_cb (below) and free the pin state
+        // only; draw_cb stays registered and simply no-ops with no pin.
         helix::temp_graph_internal::temp_graph_tooltip_clear(graph);
         lv_obj_remove_event_cb_with_user_data(graph->chart,
                                               helix::temp_graph_internal::tooltip_press_cb, graph);
         lv_obj_remove_flag(graph->chart, LV_OBJ_FLAG_CLICKABLE);
-        helix::temp_graph_internal::temp_graph_tooltip_destroy(graph);
+        helix::temp_graph_internal::temp_graph_tooltip_free_state(graph);
     }
 }
 
