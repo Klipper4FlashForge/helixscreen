@@ -58,6 +58,7 @@ bool provisioning_run_portal() {
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "esp_wifi_default.h"
 #include "freertos/FreeRTOS.h"
@@ -102,6 +103,14 @@ constexpr int kDnsRecvTimeoutMs = 250; // bounds how often the poll loop re-chec
 // resolution is the normal case, not the exception (review MEDIUM-1).
 constexpr int kSaveJoinTimeoutMs = 40000;
 constexpr int kSavePollMs = 200;
+
+// Ceiling on how long the portal keeps the net thread parked. Nothing else
+// ends an unattended session: the dismiss flag needs a touch and s_join_succeeded
+// needs someone to submit the form, so without this the thread waits forever and
+// the bounded startup wait in app_boot.cpp never gets to run. Sized for a human
+// doing the whole flow by hand — find the SSID, switch networks, type a
+// password — not for the happy path.
+constexpr uint64_t kPortalMaxUs = 10ULL * 60 * 1'000'000; // 10 min
 
 // ---------------------------------------------------------------------------
 // Cross-thread state. Process-lifetime, deliberately never torn down — same
@@ -736,8 +745,24 @@ bool provisioning_run_portal() {
     // with nothing to unblock this loop. Checking wifi->is_connected()
     // directly closes that window regardless of handler timing, and also
     // covers a concurrent Settings > Network join finishing first.
+    //
+    // The deadline is real elapsed time rather than a per-iteration accumulator
+    // because dns_pump_once() returns as soon as a query arrives, well short of
+    // its kDnsRecvTimeoutMs ceiling. Counting iterations would therefore run the
+    // clock fast precisely while a client is talking to the portal — the case
+    // that most needs the full window.
+    const uint64_t portal_deadline_us = static_cast<uint64_t>(esp_timer_get_time()) + kPortalMaxUs;
+    bool portal_expired = false;
     while (!s_dismiss_requested.load() && !s_join_succeeded.load() && !wifi->is_connected()) {
+        if (static_cast<uint64_t>(esp_timer_get_time()) >= portal_deadline_us) {
+            portal_expired = true;
+            break;
+        }
         dns_pump_once(dns_sock, ip_info.ip.addr);
+    }
+    if (portal_expired) {
+        ESP_LOGI(TAG, "portal: no one provisioned within %llu s — closing",
+                 (unsigned long long)(kPortalMaxUs / 1'000'000));
     }
 
     close(dns_sock);
@@ -748,8 +773,10 @@ bool provisioning_run_portal() {
     esp_wifi_set_mode(WIFI_MODE_STA);
 
     bool joined = s_join_succeeded.load() || wifi->is_connected();
-    if (joined) {
-        hide_instructions_modal(); // dismiss path already hid it via on_modal_deleted
+    if (joined || portal_expired) {
+        // Dismiss path already hid it via on_modal_deleted; the expiry path has
+        // nobody to hide it, and leaving it up would outlive the AP it points at.
+        hide_instructions_modal();
     }
     ESP_LOGI(TAG, "portal: closed (%s)", joined ? "joined" : "dismissed");
     return joined;
