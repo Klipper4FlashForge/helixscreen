@@ -2155,6 +2155,20 @@ std::string Config::get_path() {
     return path;
 }
 
+void Config::log_type_mismatch(const std::string& json_ptr, const char* stored_type,
+                               const char* expected_type, const char* detail) {
+    // warn, not debug: the user's setting was silently discarded, and the only
+    // way they can act on it is by seeing which key and which type to correct.
+    spdlog::warn("[Config] '{}' is stored as {} but must be a {} - ignoring it and using the "
+                 "built-in default ({})",
+                 json_ptr, stored_type, expected_type, detail);
+}
+
+void Config::log_set_failed(const std::string& json_ptr, const char* detail) {
+    spdlog::warn("[Config] Could not store '{}' - the setting will not persist ({})", json_ptr,
+                 detail);
+}
+
 json& Config::get_json(const std::string& json_path) {
     return data[json::json_pointer(json_path)];
 }
