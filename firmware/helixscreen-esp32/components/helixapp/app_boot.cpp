@@ -548,6 +548,15 @@ void kick_moonraker_connect_once() {
     helix::Config* config = helix::Config::get_instance();
     std::string host = config->get<std::string>(config->df() + "moonraker_host", "");
     int port = config->get<int>(config->df() + "moonraker_port", 7125);
+    // No host yet (empty Kconfig seed, nothing saved in Settings): connecting to
+    // "ws://:7125/websocket" would hand the websocket client an unresolvable URL
+    // and spin the auto-reconnect loop forever. Leave the not-ready UI up
+    // instead; ChangeHostModal connects directly once a host is entered, so no
+    // reboot is needed. Logged once — the one-shot latch above is already taken.
+    if (host.empty()) {
+        ESP_LOGI(TAG, "app_net: no Moonraker host configured — set it in Settings");
+        return;
+    }
     std::string ws_url = "ws://" + host + ":" + std::to_string(port) + "/websocket";
     std::string http_base = ws_to_http_base(ws_url);
     ESP_LOGI(TAG, "app: connecting Moonraker (%s)", ws_url.c_str());
@@ -691,13 +700,21 @@ extern "C" void app_boot_ui(void) {
     // reads Config) means the Settings > System > Host row and the real
     // connect path (app_net_start(), below) both see a consistent value from
     // their very first read.
+    // The Kconfig URL is empty in the committed tree (a bench address is
+    // site-local, supplied through sdkconfig.local), so skip the seed entirely
+    // rather than writing a blank host every boot — a blank host would build
+    // "ws://:7125/websocket" and feed the reconnect churn loop forever.
     if (config->get<std::string>(config->df() + "moonraker_host", "").empty()) {
         HostPort seed = parse_moonraker_kconfig_url(CONFIG_HELIX_HIL_MOONRAKER_URL);
-        config->set(config->df() + "moonraker_host", seed.host);
-        config->set(config->df() + "moonraker_port", seed.port);
-        config->save();
-        ESP_LOGI(TAG, "app_boot: seeded first-boot Moonraker host from Kconfig default (%s:%d)",
-                 seed.host.c_str(), seed.port);
+        if (seed.host.empty()) {
+            ESP_LOGI(TAG, "app_boot: no Moonraker host configured — set it in Settings");
+        } else {
+            config->set(config->df() + "moonraker_host", seed.host);
+            config->set(config->df() + "moonraker_port", seed.port);
+            config->save();
+            ESP_LOGI(TAG, "app_boot: seeded first-boot Moonraker host from Kconfig default (%s:%d)",
+                     seed.host.c_str(), seed.port);
+        }
     }
 
     // Phase 2: RuntimeConfig from build config (no CLI). g_runtime_config is a
