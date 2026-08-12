@@ -172,7 +172,19 @@ void temp_graph_tooltip_on_series_hidden(ui_temp_graph_t* graph, int series_id) 
 }
 
 void temp_graph_tooltip_destroy(ui_temp_graph_t* graph) {
-    if (!graph || !graph->tooltip) {
+    if (!graph) {
+        return;
+    }
+    // Sever the press callback before the chart's deferred deletion. The chart
+    // outlives `graph` by one async tick (lv_obj_delete_async in
+    // ui_temp_graph_destroy), so a CLICKED landing in that window would fire
+    // tooltip_press_cb with a freed graph. Unconditional: remove_event_cb is a
+    // no-op when the tooltip was never enabled. Mirrors the severance block in
+    // ui_temp_graph_destroy, which exists for exactly this reason.
+    if (graph->chart) {
+        lv_obj_remove_event_cb(graph->chart, tooltip_press_cb);
+    }
+    if (!graph->tooltip) {
         return;
     }
     delete graph->tooltip;

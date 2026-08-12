@@ -329,3 +329,54 @@ TEST_CASE_METHOD(TooltipTestFixture, "disabling clears the pin", "[ui][tooltip][
 
     ui_temp_graph_destroy(g);
 }
+
+TEST_CASE_METHOD(TooltipTestFixture, "removing the pinned series dismisses it",
+                 "[ui][tooltip][lifecycle]") {
+    ui_temp_graph_t* g = make_graph();
+    ui_temp_graph_set_tooltip_enabled(g, true);
+    int a = ui_temp_graph_add_series(g, "Nozzle", lv_color_hex(0xFF4444));
+    for (int i = 0; i < 5; i++) {
+        ui_temp_graph_update_series_with_time(g, a, 200.0f, 1000000000000LL + i * 3000);
+    }
+    lv_point_t p = point_pos(g, a, g->point_count - 1);
+    temp_graph_tooltip_pin(g, *tooltip_hit_test(g, p.x, p.y));
+    REQUIRE(temp_graph_tooltip_pinned(g) != nullptr);
+
+    ui_temp_graph_remove_series(g, a);
+    CHECK(temp_graph_tooltip_pinned(g) == nullptr);
+
+    ui_temp_graph_destroy(g);
+}
+
+// UAF regression (fix round 1 review): ui_temp_graph_destroy defers the chart's
+// actual deletion via lv_obj_delete_async (L081 — see "destroy defers chart
+// deletion" in test_temp_graph.cpp), so the chart stays alive, hidden, for one
+// async tick after `g` is freed. Before this fix, tooltip_press_cb stayed
+// registered on the chart with the now-freed `g` as its event user_data during
+// that window; a CLICKED landing there would dereference freed memory.
+//
+// Rather than actually firing the stale callback — a real UAF read that may or
+// may not crash depending on allocator/heap state without ASAN, i.e. a flaky
+// assertion either way — this asserts the invariant directly: no event
+// descriptor on the still-alive chart may carry the freed `g` pointer as its
+// user_data. That is exactly, and only, what temp_graph_tooltip_destroy's
+// severance call must guarantee.
+TEST_CASE_METHOD(TooltipTestFixture, "destroy severs the press callback before chart deletion",
+                 "[ui][tooltip][lifecycle][crash]") {
+    ui_temp_graph_t* g = make_graph();
+    ui_temp_graph_set_tooltip_enabled(g, true);
+    int id = ui_temp_graph_add_series(g, "Nozzle", lv_color_hex(0xFF4444));
+    ui_temp_graph_update_series_with_time(g, id, 150.0f, 1000000000000LL);
+    lv_point_t p = point_pos(g, id, g->point_count - 1);
+    temp_graph_tooltip_pin(g, *tooltip_hit_test(g, p.x, p.y));
+    REQUIRE(temp_graph_tooltip_pinned(g) != nullptr);
+
+    lv_obj_t* chart = g->chart; // captured before destroy frees `g`
+    ui_temp_graph_destroy(g);
+
+    const uint32_t count = lv_obj_get_event_count(chart);
+    for (uint32_t i = 0; i < count; i++) {
+        lv_event_dsc_t* dsc = lv_obj_get_event_dsc(chart, i);
+        CHECK(lv_event_dsc_get_user_data(dsc) != static_cast<void*>(g));
+    }
+}
