@@ -9,5 +9,9 @@
 // registered and the board runs display-only rather than resetting.
 bool touch_input_init(void);
 
-// Whether touch_input_init() registered a working pointer indev.
+// Whether touch_input_init() registered a working pointer indev. The main/-side
+// query for any future consumer; the boot warning path gets the value pushed
+// down via app_boot_set_touch_available() instead (main depends on helixapp,
+// never the reverse). No extern "C" guard, like its main/ siblings — include
+// from C only.
 bool touch_input_available(void);

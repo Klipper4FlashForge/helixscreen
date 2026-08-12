@@ -27,6 +27,7 @@ static void indev_read(lv_indev_t* indev, lv_indev_data_t* data) {
 }
 
 bool touch_input_init(void) {
+    s_available = false;
     i2c_master_bus_config_t bus_cfg = {
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .i2c_port = 0,
