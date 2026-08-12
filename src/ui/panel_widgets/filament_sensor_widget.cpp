@@ -6,7 +6,11 @@
 #include "ui_event_safety.h"
 #include "ui_settings_sensors.h"
 
+#include "ams_backend.h"
+#include "ams_state.h"
 #include "app_globals.h"
+#include "filament_op_dispatch.h"
+#include "filament_op_execute.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "observer_factory.h"
 #include "panel_widget_registry.h"
@@ -165,7 +169,70 @@ void FilamentSensorWidget::show_tap_modal(bool status_only) {
     const char* message = status_only ? lv_tr("Filament controls are unavailable while printing.")
                                       : lv_tr("Load or unload filament.");
     const char* attrs[] = {"title", lv_tr("Filament"), "message", message, nullptr};
+
+    if (!status_only) {
+        // RunoutGuidanceModal retains these callbacks past dismissal (its own
+        // header says so) and this widget is recycled across grid rebuilds, so
+        // a bare `this` would be a use-after-free the next time the modal fires.
+        // Main-thread only (button press) — a plain expired() check is correct
+        // here; the L081 ban on bare expired() is for background threads.
+        auto token = lifetime_.token();
+        tap_modal_.set_on_load_filament([this, token]() {
+            if (token.expired()) {
+                return;
+            }
+            dispatch_load();
+        });
+        tap_modal_.set_on_unload_filament([this, token]() {
+            if (token.expired()) {
+                return;
+            }
+            dispatch_unload();
+        });
+        tap_modal_.set_on_purge([this, token]() {
+            if (token.expired()) {
+                return;
+            }
+            dispatch_purge();
+        });
+    }
+    // When status_only, the manual row is hidden by XML and the callbacks are
+    // left unset — RunoutGuidanceModal::on_ok() and its siblings null-check
+    // before invoking, so a stray synthesized event on the hidden row is a
+    // no-op rather than reaching a stale dispatch.
+
     tap_modal_.show(parent_screen_, attrs);
+}
+
+void FilamentSensorWidget::dispatch_load() {
+    AmsBackend* backend = AmsState::instance().get_backend();
+    // No slot picker on this tile either — mirrors PrintStatusWidget::dispatch_load().
+    const int slot = backend ? backend->get_current_slot() : -1;
+    helix::ui::execute_filament_load(backend, slot, "[FilamentSensorWidget]");
+}
+
+void FilamentSensorWidget::dispatch_unload() {
+    AmsBackend* backend = AmsState::instance().get_backend();
+    const int slot = backend ? backend->get_current_slot() : -1;
+
+    // unload_target_is_loaded()'s is_current_slot arm is what makes this
+    // reachable during a runout: the lane's own sensor clears while filament
+    // is still at the head (#995), and #1199 deliberately keeps Unload
+    // reachable there. Do not answer "is it loaded" any other way here - see
+    // the doc comment on unload_target_is_loaded() for why that divergence is
+    // exactly what it exists to prevent.
+    bool loaded = false;
+    if (backend && slot >= 0) {
+        loaded = helix::ui::unload_target_is_loaded(backend->slot_is_actively_loaded(slot),
+                                                    backend->slot_has_filament_at_toolhead(slot),
+                                                    /*is_current_slot=*/true);
+    }
+
+    helix::ui::execute_filament_unload(backend, slot, loaded, "[FilamentSensorWidget]");
+}
+
+void FilamentSensorWidget::dispatch_purge() {
+    helix::ui::execute_filament_purge("[FilamentSensorWidget]");
 }
 
 void FilamentSensorWidget::rebind_source() {

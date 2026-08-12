@@ -53,6 +53,15 @@ class FilamentSensorWidget : public PanelWidget {
     void open_sensor_settings();
     void rebind_source();
 
+    /// Load/unload/purge dispatch, reached from tap_modal_'s callbacks (wired
+    /// only when show_tap_modal(status_only=false) is used). Thin calls into
+    /// helix::ui::execute_filament_{load,unload,purge}() — see
+    /// filament_op_execute.h. Each one resolving its own backend/slot mirrors
+    /// PrintStatusWidget::dispatch_load(): this tile has no slot picker either.
+    void dispatch_load();
+    void dispatch_unload();
+    void dispatch_purge();
+
     lv_obj_t* widget_obj_ = nullptr;
     lv_obj_t* parent_screen_ = nullptr;
 
