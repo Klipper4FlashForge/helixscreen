@@ -33,21 +33,25 @@
 #         real, and MoonrakerAPI drives it through the IMoonrakerClient
 #         interface (send_jsonrpc), so the command layer is portable.
 #   +1    generated token table (src/generated/theme_token_table.cpp).
-#   = 431 source files.
+#   +1    src/api/moonraker_api_controls.cpp, un-stubbed once its HTTP half was
+#         split into moonraker_api_power.cpp (E-STOP and temperature control were
+#         no-ops on-device until then).
+#   = 432 source files.
 #
 # EXCLUDED, and why (NOT in the list below):
 #   Moonraker transport/HTTP:
 #     src/api/moonraker_client.cpp          concrete libhv WebSocket client;
 #                                           helixnet's EspMoonrakerClient replaces it
 #     src/api/moonraker_request_tracker.cpp calls hv::WebSocketClient::send directly
-#     src/api/moonraker_api_controls.cpp    ) the 5 hv/requests.h HTTP TUs — Task 10.
+#     src/api/moonraker_api_power.cpp      ) the 5 hv/requests.h HTTP TUs — Task 10.
 #     src/api/moonraker_discovery_sequence.cpp ) methods they define are stubbed in
 #     src/api/moonraker_rest_api.cpp        ) task10_pending_stubs.cpp (abort-if-called,
 #     src/api/moonraker_file_transfer_api.cpp ) REMOVE IN TASK 10).
 #     src/api/moonraker_timelapse_api.cpp   )
-#     (IMoonrakerAPI::is_safe_gcode_param() was pulled out of moonraker_api_controls.cpp
-#     into the HTTP-free src/api/moonraker_api_validation.cpp — kept below, AFC/HappyHare
-#     need the real validator pre-Task-10, not the reject-everything stub.)
+#     (moonraker_api_controls.cpp is KEPT below: its two device_power REST calls
+#     moved into moonraker_api_power.cpp above, leaving the E-STOP / temperature /
+#     fan / restart command surface HTTP-free. IMoonrakerAPI::is_safe_gcode_param()
+#     had already been split the same way into src/api/moonraker_api_validation.cpp.)
 #   Platform seams (no ESP backend yet; provided by helixapp_platform_stubs.cpp,
 #   same as the audit): src/api/{usb,ethernet}_manager + *_backend*
 #     (wifi_manager/wifi_backend moved OUT of this list in Task 13 — real,
@@ -487,6 +491,7 @@ src/api/wifi_scan_scheduler.cpp
 src/api/wifi_backend.cpp
 src/api/moonraker_api.cpp
 src/api/moonraker_api_config.cpp
+src/api/moonraker_api_controls.cpp
 src/api/moonraker_api_led.cpp
 src/api/moonraker_api_print.cpp
 src/api/moonraker_gcode_guards.cpp

@@ -60,24 +60,17 @@ task10_unimplemented_err(const char* sym, const std::function<void(const Moonrak
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
-// MoonrakerAPI facade control methods.
-// Real definitions live in the EXCLUDED src/api/moonraker_api_controls.cpp
-// (one of the 5 hv/requests.h HTTP TUs). moonraker_api.cpp (KEPT) declares the
-// facade; these command entry points are only reachable through user actions
-// that cannot occur on the idle Stage-A bring-up build, so log + error-callback
-// if called. The parameter typedefs (SuccessCallback, ErrorCallback,
-// PowerDevicesCallback, SensorsCallback) resolve in MoonrakerAPI's inherited
-// scope, guaranteeing the definitions mangle identically to the header
-// declarations.
+// MoonrakerAPI power-device methods.
+// The rest of the control surface (E-STOP, temperature, fan, gcode, restart)
+// now compiles for real: src/api/moonraker_api_controls.cpp is in the manifest
+// since its two HTTP calls were split into the EXCLUDED
+// src/api/moonraker_api_power.cpp (one of the 5 hv/requests.h TUs). Only these
+// two remain stubbed — Moonraker's device_power endpoints are REST-only, so
+// they need an esp_http_client port rather than a send_jsonrpc call. The
+// parameter typedefs (SuccessCallback, ErrorCallback, PowerDevicesCallback)
+// resolve in MoonrakerAPI's inherited scope, guaranteeing the definitions
+// mangle identically to the header declarations.
 // ---------------------------------------------------------------------------
-
-void MoonrakerAPI::set_temperature(const std::string&, double, SuccessCallback, ErrorCallback err) {
-    task10_unimplemented_err("MoonrakerAPI::set_temperature", err);
-}
-
-void MoonrakerAPI::set_fan_speed(const std::string&, double, SuccessCallback, ErrorCallback err) {
-    task10_unimplemented_err("MoonrakerAPI::set_fan_speed", err);
-}
 
 void MoonrakerAPI::get_power_devices(PowerDevicesCallback, ErrorCallback err) {
     task10_unimplemented_err("MoonrakerAPI::get_power_devices", err);
@@ -86,51 +79,6 @@ void MoonrakerAPI::get_power_devices(PowerDevicesCallback, ErrorCallback err) {
 void MoonrakerAPI::set_device_power(const std::string&, const std::string&, SuccessCallback,
                                     ErrorCallback err) {
     task10_unimplemented_err("MoonrakerAPI::set_device_power", err);
-}
-
-void MoonrakerAPI::get_sensors(SensorsCallback, ErrorCallback err) {
-    task10_unimplemented_err("MoonrakerAPI::get_sensors", err);
-}
-
-void MoonrakerAPI::execute_gcode(const std::string&, SuccessCallback, ErrorCallback err, uint32_t,
-                                 bool, SuccessCallback) {
-    task10_unimplemented_err("MoonrakerAPI::execute_gcode", err);
-}
-
-void MoonrakerAPI::exclude_object(const std::string&, SuccessCallback, ErrorCallback err) {
-    task10_unimplemented_err("MoonrakerAPI::exclude_object", err);
-}
-
-void MoonrakerAPI::emergency_stop(SuccessCallback, ErrorCallback err) {
-    task10_unimplemented_err("MoonrakerAPI::emergency_stop", err);
-}
-
-void MoonrakerAPI::restart_firmware(SuccessCallback, ErrorCallback err) {
-    task10_unimplemented_err("MoonrakerAPI::restart_firmware", err);
-}
-
-void MoonrakerAPI::restart_klipper(SuccessCallback, ErrorCallback err) {
-    task10_unimplemented_err("MoonrakerAPI::restart_klipper", err);
-}
-
-void MoonrakerAPI::restart_service(const std::string&, SuccessCallback, ErrorCallback err) {
-    task10_unimplemented_err("MoonrakerAPI::restart_service", err);
-}
-
-void MoonrakerAPI::restart_moonraker(SuccessCallback, ErrorCallback err) {
-    task10_unimplemented_err("MoonrakerAPI::restart_moonraker", err);
-}
-
-void MoonrakerAPI::machine_shutdown(SuccessCallback, ErrorCallback err) {
-    task10_unimplemented_err("MoonrakerAPI::machine_shutdown", err);
-}
-
-void MoonrakerAPI::machine_reboot(SuccessCallback, ErrorCallback err) {
-    task10_unimplemented_err("MoonrakerAPI::machine_reboot", err);
-}
-
-void MoonrakerAPI::update_safety_limits_from_printer(SuccessCallback, ErrorCallback err) {
-    task10_unimplemented_err("MoonrakerAPI::update_safety_limits_from_printer", err);
 }
 
 // ---------------------------------------------------------------------------
