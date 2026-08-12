@@ -19,9 +19,11 @@ BedDimensions bed_dimensions_from_volume(float x_min, float x_max, float y_min, 
 BedDimensions bed_dimensions(IMoonrakerAPI* api, const PrinterState* ps) {
     if (api) {
         const auto& vol = api->hardware().build_volume();
-        auto d = bed_dimensions_from_volume(vol.x_min, vol.x_max, vol.y_min, vol.y_max);
-        if (d.w_mm != kDefaultBedSizeMm || d.h_mm != kDefaultBedSizeMm) {
-            return d;
+        // Gate on the raw extent, not the derived w_mm/h_mm — a bed that
+        // genuinely measures 235x235 (Ender 3, Voron 0, ...) would otherwise
+        // be indistinguishable from "no data" and lose its real origin.
+        if (vol.x_max > vol.x_min && vol.y_max > vol.y_min) {
+            return bed_dimensions_from_volume(vol.x_min, vol.x_max, vol.y_min, vol.y_max);
         }
     }
     if (ps) {
