@@ -723,10 +723,13 @@ void AmsDeviceOperationsOverlay::on_reset_endless_spool_clicked(lv_event_t* e) {
     // The reset wipes ALL failover config, so it needs a confirmation, not a
     // bare tap. on_confirm re-fetches the backend so it cannot dangle if the
     // panel/backend changed while the dialog was open, and dismisses the dialog
-    // itself (a custom on_confirm replaces the default close handler). Error
-    // feedback comes from notify_ams_error; success is silent because the
-    // capability/status subjects already reflect the cleared state after
-    // refresh().
+    // itself (a custom on_confirm replaces the default close handler).
+    //
+    // Both outcomes are announced. refresh() only re-derives
+    // can_reset_endless_spool_subject_ from editable(), which a reset does not
+    // change, and this overlay renders no endless-spool assignments at all (the
+    // backup arrows live on AmsPanel and are not refreshed from here) — so
+    // without a toast, wiping every spool's failover looks exactly like a no-op.
     helix::ui::modal_show_confirmation(
         lv_tr("Reset Endless Spool?"),
         lv_tr("This clears every spool's failover assignment. The print will stop on runout "
@@ -738,6 +741,8 @@ void AmsDeviceOperationsOverlay::on_reset_endless_spool_clicked(lv_event_t* e) {
                 AmsError result = b->reset_endless_spool();
                 if (!result.success()) {
                     helix::ui::notify_ams_error(result, lv_tr("Reset endless spool failed"));
+                } else {
+                    NOTIFY_INFO("{}", lv_tr("Endless spool failover cleared for every slot"));
                 }
                 get_ams_device_operations_overlay().refresh();
             }

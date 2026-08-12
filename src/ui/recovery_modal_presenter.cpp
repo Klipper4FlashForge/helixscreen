@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 
 namespace {
 
@@ -87,13 +88,63 @@ bool same_actions(const std::vector<helix::RecoveryAction>& a,
     }
     return true;
 }
+
+/// The prompt modal, plus a report of every hide that runs its on_hide() hook.
+/// ActionPromptModal's dismiss affordance (an action with empty gcode) closes
+/// the dialog without calling the gcode callback, so this hook is the presenter's
+/// only sight of the user saying "I've read it" — and it covers the backdrop tap
+/// and ESC the same way.
+class HideReportingPromptModal : public helix::ui::ActionPromptModal {
+  public:
+    void set_hidden_callback(std::function<void()> cb) {
+        on_hidden_ = std::move(cb);
+    }
+
+  protected:
+    void on_hide() override {
+        helix::ui::ActionPromptModal::on_hide();
+        if (on_hidden_) {
+            on_hidden_();
+        }
+    }
+
+  private:
+    std::function<void()> on_hidden_;
+};
 } // namespace
+
+void RecoveryModalPresenter::mark_handled() {
+    if (shown_detail_.empty()) {
+        return;
+    }
+    handled_detail_ = shown_detail_;
+    handled_actions_ = active_actions_;
+}
+
+void RecoveryModalPresenter::forget_handled_fault() {
+    handled_detail_.clear();
+    handled_actions_.clear();
+}
+
+void RecoveryModalPresenter::on_modal_hidden() {
+    if (suppress_hide_notice_) {
+        return;
+    }
+    // Nobody in this class asked for that hide, so the user closed it.
+    mark_handled();
+}
 
 void RecoveryModalPresenter::dismiss() {
     if (modal_ && modal_->is_visible()) {
+        suppress_hide_notice_ = true;
         modal_->hide();
+        suppress_hide_notice_ = false;
     }
     shown_detail_.clear();
+    // The episode is over (the AMS action left ERROR, or a caller explicitly
+    // took the dialog down). Whatever the user answered applied to that episode
+    // only; the same fault raised again later is news.
+    forget_handled_fault();
 }
 
 void RecoveryModalPresenter::present(const helix::ErrorEvent& e) {
@@ -116,10 +167,34 @@ void RecoveryModalPresenter::present(const helix::ErrorEvent& e) {
         return;
     }
 
-    if (!modal_) {
-        modal_ = std::make_unique<helix::ui::ActionPromptModal>();
-        modal_->set_gcode_callback([this](const std::string& gcode) { on_recovery_tapped(gcode); });
+    // The user already answered this exact fault — closed the dialog, or tapped
+    // one of these very buttons — and the backend is merely re-notifying it.
+    // AmsState::recompute_action_detail() fires on any strcmp difference in
+    // operation_detail, so a fault that is still latched re-reaches us on every
+    // cosmetic wording change; without this the dismissed dialog pops straight
+    // back up, and after a recovery tap it would put live buttons over the
+    // preheat that tap started (a second tap re-arms and re-dispatches it).
+    //
+    // The action set is part of the identity here for the same reason it is
+    // above: a genuinely richer set of affordances for the same text is a new
+    // offer, not a re-notification.
+    if (!handled_detail_.empty() && e.detail == handled_detail_ &&
+        same_actions(handled_actions_, e.recovery_actions)) {
+        spdlog::debug("[RecoveryModalPresenter] Skipping fault the user already answered: {}",
+                      e.detail);
+        return;
     }
+
+    if (!modal_) {
+        auto modal = std::make_unique<HideReportingPromptModal>();
+        modal->set_gcode_callback([this](const std::string& gcode) { on_recovery_tapped(gcode); });
+        modal->set_hidden_callback([this]() { on_modal_hidden(); });
+        modal_ = std::move(modal);
+    }
+
+    // Anything we are about to put on screen is new to the user, so the previous
+    // answer stops applying.
+    forget_handled_fault();
 
     active_actions_ = e.recovery_actions;
     shown_detail_ = e.detail;
@@ -149,7 +224,12 @@ void RecoveryModalPresenter::present(const helix::ErrorEvent& e) {
     prompt.severity = "error";
 
     lv_obj_t* screen = lv_screen_active();
-    if (!screen || !modal_->show_prompt(screen, prompt)) {
+    // Replacing visible content makes Modal::show() hide the old dialog first.
+    // That hide is ours, not the user's, so keep it out of on_modal_hidden().
+    suppress_hide_notice_ = true;
+    const bool shown = screen && modal_->show_prompt(screen, prompt);
+    suppress_hide_notice_ = false;
+    if (!shown) {
         spdlog::warn("[RecoveryModal] show_prompt failed; falling back to alert");
         shown_detail_.clear();
         ui_notification_error(modal_title_for(e), e.detail.c_str(), /*modal=*/true);
@@ -168,7 +248,13 @@ void RecoveryModalPresenter::on_recovery_tapped(const std::string& gcode) {
     const std::string tag = action ? action->log_tag : "RecoveryModalPresenter::recovery";
     const std::string label = action ? action->label : gcode;
 
-    shown_detail_.clear(); // user acted; allow re-show on a new fault
+    // The user answered this fault, so it must not come back on its own. A
+    // re-present here is worse than a stale dialog: the tap may have started a
+    // preheat (the modal closes on the tap, so the toast is the only sign of
+    // it), and tapping the re-presented buttons would clear_preheat() and
+    // re-arm the whole recovery on top of the one already in flight.
+    mark_handled();
+    shown_detail_.clear(); // allow re-show on a genuinely different fault
     spdlog::info("[RecoveryModal] User tapped recovery: {} ({})", tag, gcode);
 
     if (!api_) {

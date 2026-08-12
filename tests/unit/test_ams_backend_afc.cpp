@@ -1552,13 +1552,19 @@ TEST_CASE("AFC reset_endless_spool clears all slots", "[ams][afc][endless_spool]
     REQUIRE(helper.has_gcode("SET_RUNOUT LANE=lane4 RUNOUT=NONE"));
 }
 
-TEST_CASE("AFC reset_endless_spool with zero slots is no-op", "[ams][afc][endless_spool][reset]") {
+TEST_CASE("AFC reset_endless_spool with no lanes yet refuses instead of silently succeeding",
+          "[ams][afc][endless_spool][reset]") {
     AmsBackendAfcTestHelper helper;
-    // Don't initialize any lanes or configs
+    // Don't initialize any lanes or configs — AFC always advertises the mapping as
+    // editable, so without a slot-count guard the loop is skipped and the caller is
+    // told the wipe succeeded. The UI confirms a destructive warning before calling
+    // this, so a silent no-op is worse than a refusal.
 
     auto result = helper.reset_endless_spool();
 
-    REQUIRE(result.success());
+    REQUIRE_FALSE(result.success());
+    REQUIRE(result.result == AmsResult::NOT_SUPPORTED);
+    REQUIRE_FALSE(result.user_msg.empty());
     REQUIRE(helper.captured_gcodes.empty());
 }
 

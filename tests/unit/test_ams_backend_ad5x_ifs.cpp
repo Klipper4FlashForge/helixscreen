@@ -10213,6 +10213,76 @@ TEST_CASE_METHOD(Ad5xRunoutFixture,
     }
 }
 
+// The matrix above only pins what runout_confirm_delay_locked() RETURNS. Nothing
+// there reaches evaluate_runout_locked(), and every other runout test ages the
+// candidate by 600s — past both thresholds — so a predicate that ignored
+// runout_confirm_delay_locked() and hardcoded either constant would sail through
+// the whole file. This drives the real predicate on both sides of each config's
+// own dwell.
+TEST_CASE_METHOD(Ad5xRunoutFixture,
+                 "AD5X IFS runout: the predicate honours the per-config confirm delay",
+                 "[ams][ad5x_ifs][runout][1250]") {
+    // Probe ages are DERIVED from the backend's own runout_confirm_delay()
+    // rather than written down, so this asserts the wiring rather than a
+    // number: a predicate hardcoding the short constant fires early on a
+    // long-dwell config, and one hardcoding the long constant never fires on a
+    // short-dwell config. Either way a REQUIRE below goes red.
+    constexpr auto kSlack = std::chrono::seconds(5);
+    auto dwell_is_load_bearing = [this, kSlack](AmsBackendAd5xIfs& b) {
+        set_print_state(helix::PrintJobState::PAUSED);
+        seat_then_drop_head(b);
+        REQUIRE(Ad5xIfsTestAccess::head_empty_armed(b));
+
+        const auto dwell = Ad5xIfsTestAccess::runout_confirm_delay(b);
+        REQUIRE(dwell > kSlack); // the two probes have to straddle it
+
+        // Just short of the dwell: armed, paused, idle — everything else holds.
+        // A too-short threshold raises here.
+        Ad5xIfsTestAccess::age_head_empty(b, dwell - kSlack);
+        REQUIRE_FALSE(Ad5xIfsTestAccess::evaluate_runout(b));
+        REQUIRE_FALSE(Ad5xIfsTestAccess::runout_active(b));
+        REQUIRE(Ad5xIfsTestAccess::action(b) == AmsAction::IDLE);
+        // The failed probe must leave the candidate armed, or the second probe
+        // would be testing nothing.
+        REQUIRE(Ad5xIfsTestAccess::head_empty_armed(b));
+
+        // Just past it. A too-long threshold fails to raise here.
+        Ad5xIfsTestAccess::age_head_empty(b, dwell + kSlack);
+        REQUIRE(Ad5xIfsTestAccess::evaluate_runout(b));
+        REQUIRE(Ad5xIfsTestAccess::runout_active(b));
+        REQUIRE(Ad5xIfsTestAccess::action(b) == AmsAction::ERROR);
+        return dwell;
+    };
+
+    // Stock zMod: no plugin, ANALOG_PRUTOK always-on -> the long dwell.
+    AmsBackendAd5xIfs stock(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_zcolor_supported(stock, false);
+    const auto stock_dwell = dwell_is_load_bearing(stock);
+
+    // Plugin installed with backup definitively OFF -> the short dwell. This is
+    // the only config that still gets it.
+    AmsBackendAd5xIfs backup_off(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_zcolor_supported(backup_off, false);
+    Ad5xIfsTestAccess::set_has_ifs_vars(backup_off, true);
+    Ad5xIfsTestAccess::set_var_prefix(backup_off, "less_waste");
+    Ad5xIfsTestAccess::parse_ifs_vars_macro(backup_off, json{{"variable_backup", 0}});
+    const auto backup_off_dwell = dwell_is_load_bearing(backup_off);
+
+    // Plugin installed with backup ON -> back to the long dwell.
+    AmsBackendAd5xIfs backup_on(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_zcolor_supported(backup_on, false);
+    Ad5xIfsTestAccess::set_has_ifs_vars(backup_on, true);
+    Ad5xIfsTestAccess::set_var_prefix(backup_on, "bambufy");
+    Ad5xIfsTestAccess::parse_ifs_vars_macro(backup_on, json{{"variable_backup", 1}});
+    const auto backup_on_dwell = dwell_is_load_bearing(backup_on);
+
+    // Without this the three probes above could all be straddling one shared
+    // number, and "honours the per-config delay" would mean nothing.
+    CHECK(backup_off_dwell < stock_dwell);
+    CHECK(backup_off_dwell < backup_on_dwell);
+    CHECK(stock_dwell == backup_on_dwell);
+}
+
 TEST_CASE("AD5X IFS plugin visibility: which plugin, and is backup on",
           "[ams][ad5x_ifs][runout][1250]") {
     using B = AmsBackendAd5xIfs;

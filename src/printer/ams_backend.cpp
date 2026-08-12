@@ -134,7 +134,14 @@ AmsError AmsBackend::reset_endless_spool() {
         return endless_spool_read_only_error(caps.restriction);
     }
 
+    // Same guard as set_endless_spool_backup(): a backend that is editable() but
+    // has not yet reported total_slots would otherwise skip the loop entirely and
+    // hand back success() — the user confirms a destructive warning, nothing is
+    // cleared, and nothing says so.
     const int slot_count = endless_spool_slot_count();
+    if (slot_count <= 0) {
+        return endless_spool_read_only_error(helix::printer::EndlessSpoolRestriction::NotReady);
+    }
     spdlog::info("[AMS Backend] Clearing endless spool backups for {} slots", slot_count);
 
     // Continue past failures so as many slots as possible end up cleared, and

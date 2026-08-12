@@ -692,6 +692,7 @@
   <translation tag="Enabled" fr="Activé"/>
   <translation tag="Encoder" fr="Encodeur"/>
   <translation tag="Ended" fr="Terminé"/>
+  <translation tag="Endless spool failover cleared for every slot"/>
   <translation tag="Enhanced {} operation in PRINT_START" fr="{} opération améliorée dans PRINT_START"/>
   <translation tag="Enhanced {} operations in PRINT_START" fr="{} opérations améliorées dans PRINT_START"/>
   <translation tag="Enhancement Complete!" fr="Amélioration terminée !"/>

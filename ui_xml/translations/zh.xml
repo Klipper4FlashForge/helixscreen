@@ -692,6 +692,7 @@
   <translation tag="Enabled" zh="已启用"/>
   <translation tag="Encoder" zh="编码器"/>
   <translation tag="Ended" zh="已结束"/>
+  <translation tag="Endless spool failover cleared for every slot"/>
   <translation tag="Enhanced {} operation in PRINT_START" zh="增强了 PRINT_START 中的 {} 项操作"/>
   <translation tag="Enhanced {} operations in PRINT_START" zh="增强了 PRINT_START 中的 {} 项操作"/>
   <translation tag="Enhancement Complete!" zh="增强完成！"/>

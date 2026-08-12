@@ -53,6 +53,11 @@ void AmsErrorBridge::on_action_changed(int action) {
         // path this cancel exists for.
         PostOpCooldownManager::instance().cancel();
 
+        // A new fault episode opens here. Anything the user dismissed or acted
+        // on during an earlier one stops suppressing, so a fault identical to a
+        // previously answered one is shown again instead of being swallowed.
+        presenter_.forget_handled_fault();
+
         auto* backend = AmsState::instance().get_backend();
 
         // Snapshot what the backend was doing. AFC's local action timeout
@@ -110,7 +115,13 @@ void AmsErrorBridge::on_detail_changed(const char* /*detail*/) {
         // the existing modal and let the falling-edge dismiss handle it.
         return;
     }
-    spdlog::debug("[AmsErrorBridge] re-presenting changed error mid-episode: {}", ev->detail);
+    spdlog::debug("[AmsErrorBridge] re-consulting error on detail change mid-episode: {}",
+                  ev->detail);
+    // present() decides whether this is actually new. It suppresses both a fault
+    // already on screen and one the user has answered this episode — the latter
+    // matters here because a dismiss-only event's single {"OK",""} action closes
+    // the modal without any callback, so every subsequent detail change would
+    // otherwise pop the identical dialog straight back up.
     presenter_.present(*ev);
     // presented_ stays true: this is the same ERROR episode, and the falling-edge
     // dismiss in on_action_changed still fires when action exits ERROR.

@@ -21,6 +21,21 @@ struct RecoveryModalPresenterTestAccess {
     static bool preheating(const helix::ui::RecoveryModalPresenter& p) {
         return p.preheat_timer_ != nullptr;
     }
+    /// The user closing the modal with a dismiss-only button. That is exactly
+    /// what ActionPromptModal::handle_button_click does for an action whose
+    /// gcode is empty (#1172): hide, run no callback — which is why the
+    /// presenter cannot see it through set_gcode_callback and has to learn it
+    /// from the modal's own on_hide(). Backdrop taps and ESC take the same path.
+    static void user_dismiss(helix::ui::RecoveryModalPresenter& p) {
+        if (p.modal_) {
+            p.modal_->hide();
+        }
+    }
+    /// The fault the user has already answered, which present() refuses to put
+    /// back on screen. Empty when there is none.
+    static const std::string& handled_detail(const helix::ui::RecoveryModalPresenter& p) {
+        return p.handled_detail_;
+    }
     /// Shrink the nozzle-reaches-target budget so the give-up path is reachable
     /// without running 300s of LVGL ticks.
     static void set_preheat_budget_ms(helix::ui::RecoveryModalPresenter& p, uint32_t ms) {

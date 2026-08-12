@@ -807,6 +807,7 @@ translations:
   Enabled: Activé
   Encoder: Encodeur
   Ended: Terminé
+  Endless spool failover cleared for every slot: ''
   Enhanced {} operation in PRINT_START: '{} opération améliorée dans PRINT_START'
   Enhanced {} operations in PRINT_START: '{} opérations améliorées dans PRINT_START'
   Enhancement Complete!: Amélioration terminée !

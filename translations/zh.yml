@@ -710,6 +710,7 @@ translations:
   Enabled: 已启用
   Encoder: 编码器
   Ended: 已结束
+  Endless spool failover cleared for every slot: ''
   Enhanced {} operation in PRINT_START: 增强了 PRINT_START 中的 {} 项操作
   Enhanced {} operations in PRINT_START: 增强了 PRINT_START 中的 {} 项操作
   Enhancement Complete!: 增强完成！

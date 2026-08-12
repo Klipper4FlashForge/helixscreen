@@ -652,3 +652,201 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
     ams.set_backend(nullptr);
 }
+
+// ============================================================================
+// A dismissal has to stick for the rest of the ERROR episode.
+//
+// The detail observer above re-consults current_error() on every
+// ams_action_detail change, and AmsState::recompute_action_detail() notifies on
+// any strcmp difference — so a latched fault re-reaches present() on every
+// cosmetic wording change the backend makes. Meanwhile a dismiss-only event
+// carries a single {"OK", ""} action, and ActionPromptModal treats an empty
+// gcode as "close, send nothing": the tap never reaches the presenter's gcode
+// callback. With the presenter's only dedup keyed on the modal still being
+// visible, the dialog the user just closed came straight back.
+// ============================================================================
+
+namespace {
+/// The uncoded-`!!` shape from error_classify: one action whose empty gcode is
+/// the dismiss spelling (#1172).
+helix::ErrorEvent dismiss_only_event(std::string detail) {
+    helix::ErrorEvent e;
+    e.source = helix::ErrorSource::IFS;
+    e.severity = helix::ErrorSeverity::CRITICAL;
+    e.detail = std::move(detail);
+    e.recovery_actions = {{"OK", "", "error_classify::dismiss"}};
+    return e;
+}
+
+/// Rising edge into ERROR with @p e latched on the backend, presented.
+void raise_error(LVGLUITestFixture& fx, ErrorReportingBackend& backend,
+                 const helix::ErrorEvent& e) {
+    backend.set_error(e);
+    backend.set_operation_detail(e.detail);
+    AmsState::instance().set_action(AmsAction::ERROR);
+    helix::ui::UpdateQueue::instance().drain();
+    fx.process_lvgl(20);
+}
+
+/// The backend re-notifying the SAME latched fault: operation_detail moves, so
+/// AmsState re-publishes ams_action_detail and the bridge re-consults
+/// current_error(), which still answers the same event.
+void churn_detail(LVGLUITestFixture& fx, const char* cosmetic) {
+    AmsState::instance().set_action_detail(cosmetic);
+    helix::ui::UpdateQueue::instance().drain();
+    fx.process_lvgl(20);
+}
+} // namespace
+
+TEST_CASE_METHOD(LVGLUITestFixture, "AmsErrorBridge does not re-present a fault the user dismissed",
+                 "[error-center][ams-bridge]") {
+    auto& ams = AmsState::instance();
+    ams.init_subjects(true);
+    auto backend = std::make_unique<ErrorReportingBackend>(4);
+    auto* raw = backend.get();
+    ams.set_backend(std::move(backend));
+
+    park_action_idle(*this);
+
+    helix::ui::RecoveryModalPresenter presenter(nullptr);
+    helix::AmsErrorBridge bridge(presenter);
+    bridge.start();
+
+    const auto fault = dismiss_only_event("IFS unload timed out");
+    raise_error(*this, *raw, fault);
+    REQUIRE(presenter.is_visible());
+
+    // The user taps OK. No gcode callback fires; the modal just closes.
+    RecoveryModalPresenterTestAccess::user_dismiss(presenter);
+    process_lvgl(20);
+    REQUIRE_FALSE(presenter.is_visible());
+    REQUIRE(RecoveryModalPresenterTestAccess::handled_detail(presenter) == fault.detail);
+
+    // The fault is still latched and the backend keeps re-narrating it. None of
+    // these may put the dismissed dialog back on screen.
+    churn_detail(*this, "IFS unload timed out ");
+    CHECK_FALSE(presenter.is_visible());
+    churn_detail(*this, "IFS unload timed out (retrying)");
+    CHECK_FALSE(presenter.is_visible());
+
+    ams.set_backend(nullptr);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "AmsErrorBridge still presents a NEW fault after the user dismissed the first",
+                 "[error-center][ams-bridge]") {
+    // The other half of the boundary: the suppression is keyed on the fault the
+    // user actually answered, so a different fault arriving mid-episode is still
+    // news and must reach the screen.
+    auto& ams = AmsState::instance();
+    ams.init_subjects(true);
+    auto backend = std::make_unique<ErrorReportingBackend>(4);
+    auto* raw = backend.get();
+    ams.set_backend(std::move(backend));
+
+    park_action_idle(*this);
+
+    helix::ui::RecoveryModalPresenter presenter(nullptr);
+    helix::AmsErrorBridge bridge(presenter);
+    bridge.start();
+
+    raise_error(*this, *raw, dismiss_only_event("IFS unload timed out"));
+    REQUIRE(presenter.is_visible());
+    RecoveryModalPresenterTestAccess::user_dismiss(presenter);
+    process_lvgl(20);
+    REQUIRE_FALSE(presenter.is_visible());
+
+    // A genuinely different fault the user has never seen.
+    const auto second = dismiss_only_event("IFS load failed at extruder");
+    raw->set_error(second);
+    churn_detail(*this, second.detail.c_str());
+
+    CHECK(presenter.is_visible());
+    CHECK(RecoveryModalPresenterTestAccess::shown_detail(presenter) == second.detail);
+    // Showing something new retires the earlier answer.
+    CHECK(RecoveryModalPresenterTestAccess::handled_detail(presenter).empty());
+
+    presenter.dismiss();
+    process_lvgl(20);
+    ams.set_backend(nullptr);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "AmsErrorBridge does not re-offer a recovery the user already tapped",
+                 "[error-center][ams-bridge]") {
+    // The worse variant. The modal closes on the tap and the recovery may still
+    // be in flight (begin_preheat's toast is the only sign of it). A re-present
+    // puts live buttons back over it, and a second tap would clear_preheat() and
+    // re-arm the whole recovery on top of the one already running.
+    auto& ams = AmsState::instance();
+    ams.init_subjects(true);
+    auto backend = std::make_unique<ErrorReportingBackend>(4);
+    auto* raw = backend.get();
+    ams.set_backend(std::move(backend));
+
+    park_action_idle(*this);
+
+    helix::ui::RecoveryModalPresenter presenter(nullptr);
+    helix::AmsErrorBridge bridge(presenter);
+    bridge.start();
+
+    helix::ErrorEvent fault;
+    fault.source = helix::ErrorSource::IFS;
+    fault.severity = helix::ErrorSeverity::CRITICAL;
+    fault.detail = "IFS jam at lane 2";
+    fault.recovery_actions = {{"Recover", "IFS_UNLOCK", "ifs::unlock", "primary"}};
+    raise_error(*this, *raw, fault);
+    REQUIRE(presenter.is_visible());
+
+    // handle_button_click: run the callback, then close.
+    RecoveryModalPresenterTestAccess::tap(presenter, "IFS_UNLOCK");
+    RecoveryModalPresenterTestAccess::user_dismiss(presenter);
+    process_lvgl(20);
+    REQUIRE_FALSE(presenter.is_visible());
+
+    churn_detail(*this, "IFS jam at lane 2 (recovering)");
+    CHECK_FALSE(presenter.is_visible());
+
+    ams.set_backend(nullptr);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "AmsErrorBridge presents again when the same fault opens a NEW ERROR episode",
+                 "[error-center][ams-bridge]") {
+    // The suppression is scoped to one episode, not forever. A fault the user
+    // dismissed, that clears and then recurs, is new information.
+    auto& ams = AmsState::instance();
+    ams.init_subjects(true);
+    auto backend = std::make_unique<ErrorReportingBackend>(4);
+    auto* raw = backend.get();
+    ams.set_backend(std::move(backend));
+
+    park_action_idle(*this);
+
+    helix::ui::RecoveryModalPresenter presenter(nullptr);
+    helix::AmsErrorBridge bridge(presenter);
+    bridge.start();
+
+    const auto fault = dismiss_only_event("IFS unload timed out");
+    raise_error(*this, *raw, fault);
+    REQUIRE(presenter.is_visible());
+    RecoveryModalPresenterTestAccess::user_dismiss(presenter);
+    process_lvgl(20);
+    REQUIRE_FALSE(presenter.is_visible());
+
+    // Episode ends.
+    raw->set_error(std::nullopt);
+    ams.set_action(AmsAction::IDLE);
+    helix::ui::UpdateQueue::instance().drain();
+    process_lvgl(20);
+    REQUIRE(RecoveryModalPresenterTestAccess::handled_detail(presenter).empty());
+
+    // Same fault, new episode.
+    raise_error(*this, *raw, fault);
+    CHECK(presenter.is_visible());
+    CHECK(RecoveryModalPresenterTestAccess::shown_detail(presenter) == fault.detail);
+
+    presenter.dismiss();
+    process_lvgl(20);
+    ams.set_backend(nullptr);
+}
