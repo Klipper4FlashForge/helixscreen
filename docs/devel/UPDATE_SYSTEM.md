@@ -123,11 +123,32 @@ When `dev_url` is set, the checker fetches `{dev_url}/manifest.json` directly in
 
 ### How CI Determines Upload Channels
 
-In the release workflow (`.github/workflows/release.yml`):
-- **Stable tags** (`v0.9.5`): uploaded to `stable` + `dev` channels
-- **Prerelease tags** (`v1.0.0-beta.1`): uploaded to `beta` + `dev` channels
+The channel is declared by the **`RELEASE_CHANNEL` file at the repo root**, on the
+branch being tagged. `scripts/release-channel.sh` reads it and the release workflow
+consumes its output; nothing is inferred from the tag string.
 
-This means the dev channel always has the newest build regardless of stability.
+| `RELEASE_CHANNEL` | R2 channels | GitHub release | Docs deploy |
+|-------------------|-------------|----------------|-------------|
+| `stable` | `stable` | full release | yes |
+| `beta` | `beta` + `dev` | prerelease | no |
+| `dev` | `dev` | prerelease | no |
+
+Each maintenance line carries its own value, so cutting a release is just tagging
+the right branch (`release/1.0` holds `stable`, `main` holds `beta`).
+
+**Why not derive it from the tag.** The old rule was "tag contains a hyphen ->
+prerelease", which forced every devel build to carry a `-devN` suffix. But
+`helix::version::Version` (`include/version.h`) parses major/minor/patch and
+**discards the prerelease suffix**, so `v1.1.0-dev1` and `v1.1.0-dev2` compare
+EQUAL — `is_update_available()` returns false and the devel channel goes silent
+after the first install. Declaring the channel out-of-band lets the devel track use
+plain monotonic versions (`1.1.0`, `1.1.1`, ...) that the updater actually orders.
+
+**Stable does not publish to `dev`.** The `dev` channel follows the devel line
+alone so its manifest only ever moves forward; a `1.0.x` hotfix publishing to `dev`
+would strand everyone already on `1.1.x`. The workflow enforces this with a
+pre-upload guard that refuses to move any channel manifest backward (override with
+the `ALLOW_CHANNEL_DOWNGRADE` repository variable).
 
 ---
 
