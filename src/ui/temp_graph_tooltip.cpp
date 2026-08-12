@@ -85,9 +85,35 @@ std::optional<TempGraphHit> tooltip_hit_test(ui_temp_graph_t* graph, int32_t x, 
         // the newest sample; leading logical slots stay POINT_NONE until full.
         const uint32_t sp = lv_chart_get_x_start_point(graph->chart, meta->chart_series);
 
+        // Record a candidate at squared distance `d2`, attributed to sample `idx`.
+        // Strict < preserves the documented tie-break (lowest series, then lowest
+        // logical index) because both loops below run in ascending order.
+        auto consider = [&](int64_t d2, int32_t idx, int32_t val) {
+            if (d2 >= best_d2) {
+                return;
+            }
+            best_d2 = d2;
+            best.series_id = meta->id;
+            best.logical_index = idx;
+            best.deci_temp = val;
+            best.deci_target = target_deci_at(meta, pc, idx);
+            // True sample time, not the axis-label mapping. The axis spreads
+            // total_ms (= pc * 3s) across pc-1 gaps, so the two differ by under
+            // one sample interval; the caption describes an actual sample.
+            best.timestamp_ms = axis.latest_ms - static_cast<int64_t>(pc - 1 - idx) *
+                                                     UI_TEMP_GRAPH_SAMPLE_INTERVAL_SEC * 1000;
+            found = true;
+        };
+
+        int32_t prev_i = -1;
+        int32_t prev_px = 0;
+        int32_t prev_py = 0;
+        int32_t prev_v = 0;
+
         for (int32_t i = 0; i < pc; i++) {
             const int32_t v = y_data[(sp + i) % pc];
             if (v == LV_CHART_POINT_NONE) {
+                prev_i = -1; // a gap breaks the drawn line, so no segment spans it
                 continue;
             }
             // Same forward mapping the gradient walk draws with. Deriving this
@@ -95,24 +121,46 @@ std::optional<TempGraphHit> tooltip_hit_test(ui_temp_graph_t* graph, int32_t x, 
             const int32_t px = geo.cx1 + i * (geo.cw - 1) / (pc - 1);
             const int32_t py = floor_y - lv_map(v, geo.y_min, geo.y_max, 0, geo.ch);
 
+            // The sample itself.
             const int64_t dx = px - x;
             const int64_t dy = py - y;
-            const int64_t d2 = dx * dx + dy * dy;
-            if (d2 >= best_d2) {
-                continue;
+            consider(dx * dx + dy * dy, i, v);
+
+            // The drawn segment from the previous adjacent sample to this one.
+            // Testing samples alone makes the line feel dead exactly where it is
+            // most interesting: on a steep run (a heater ramp) consecutive samples
+            // are far apart vertically, so a tap landing squarely on the visible
+            // line can be well outside the radius of BOTH endpoints. The hit is
+            // attributed to the nearer endpoint, since the caption must describe a
+            // real sample rather than an interpolated point.
+            if (prev_i == i - 1) {
+                const int64_t abx = px - prev_px;
+                const int64_t aby = py - prev_py;
+                const int64_t ab2 = abx * abx + aby * aby;
+                if (ab2 > 0) {
+                    int64_t t = (x - prev_px) * abx + (y - prev_py) * aby;
+                    if (t < 0) {
+                        t = 0;
+                    } else if (t > ab2) {
+                        t = ab2;
+                    }
+                    // Closest point on the segment, in integer math. The division
+                    // truncates by at most a pixel, which is immaterial against a
+                    // 28px radius.
+                    const int64_t cx = prev_px + (abx * t) / ab2;
+                    const int64_t cy = prev_py + (aby * t) / ab2;
+                    const int64_t sdx = cx - x;
+                    const int64_t sdy = cy - y;
+                    const bool nearer_is_prev = (t * 2 <= ab2);
+                    consider(sdx * sdx + sdy * sdy, nearer_is_prev ? prev_i : i,
+                             nearer_is_prev ? prev_v : v);
+                }
             }
 
-            best_d2 = d2;
-            best.series_id = meta->id;
-            best.logical_index = i;
-            best.deci_temp = v;
-            best.deci_target = target_deci_at(meta, pc, i);
-            // True sample time, not the axis-label mapping. The axis spreads
-            // total_ms (= pc * 3s) across pc-1 gaps, so the two differ by under
-            // one sample interval; the caption describes an actual sample.
-            best.timestamp_ms = axis.latest_ms - static_cast<int64_t>(pc - 1 - i) *
-                                                     UI_TEMP_GRAPH_SAMPLE_INTERVAL_SEC * 1000;
-            found = true;
+            prev_i = i;
+            prev_px = px;
+            prev_py = py;
+            prev_v = v;
         }
     }
 

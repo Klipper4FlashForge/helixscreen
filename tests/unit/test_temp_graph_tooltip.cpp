@@ -103,6 +103,73 @@ TEST_CASE_METHOD(TooltipTestFixture, "hit test misses beyond the radius", "[ui][
     ui_temp_graph_destroy(g);
 }
 
+// Distance is measured to the drawn LINE, not only to the sample points. On a
+// steep run (a heater ramp) consecutive samples are far apart vertically, so a
+// tap landing squarely on the visible line can be outside the radius of BOTH
+// endpoints. The two REQUIRE(far(...)) lines below are what give this test its
+// teeth: they assert the tap is in exactly the region point-only hit testing
+// cannot serve, so reverting to sample-only distance turns the final
+// REQUIRE(hit.has_value()) red.
+TEST_CASE_METHOD(TooltipTestFixture, "tap on a steep segment between samples still hits",
+                 "[ui][tooltip]") {
+    ui_temp_graph_t* g = make_graph();
+    int id = ui_temp_graph_add_series(g, "Nozzle", lv_color_hex(0xFF4444));
+    // Alternating extremes make each drawn segment nearly vertical: adjacent
+    // samples sit ~1.5px apart in x (600px / 399 gaps) but ~280px apart in y.
+    for (int i = 0; i < 10; i++) {
+        ui_temp_graph_update_series_with_time(g, id, (i % 2) ? 290.0f : 10.0f,
+                                              1000000000000LL + i * 3000);
+    }
+    const int last = g->point_count - 1;
+    const lv_point_t a = point_pos(g, id, last - 1);
+    const lv_point_t b = point_pos(g, id, last);
+
+    const int32_t mx = (a.x + b.x) / 2;
+    const int32_t my = (a.y + b.y) / 2;
+
+    constexpr int64_t r2 =
+        static_cast<int64_t>(TEMP_GRAPH_TOOLTIP_HIT_RADIUS_PX) * TEMP_GRAPH_TOOLTIP_HIT_RADIUS_PX;
+    auto far_from = [&](lv_point_t p) {
+        const int64_t dx = p.x - mx;
+        const int64_t dy = p.y - my;
+        return dx * dx + dy * dy > r2;
+    };
+    REQUIRE(far_from(a));
+    REQUIRE(far_from(b));
+
+    auto hit = tooltip_hit_test(g, mx, my);
+    REQUIRE(hit.has_value());
+    CHECK(hit->series_id == id);
+    // Attributed to a real sample, never an interpolated point.
+    CHECK((hit->logical_index == last || hit->logical_index == last - 1));
+
+    ui_temp_graph_destroy(g);
+}
+
+// A gap breaks the drawn line, so no segment may span one: the midpoint between
+// a sample and a POINT_NONE slot is not on anything the user can see.
+TEST_CASE_METHOD(TooltipTestFixture, "no segment spans a POINT_NONE gap", "[ui][tooltip]") {
+    ui_temp_graph_t* g = make_graph();
+    int id = ui_temp_graph_add_series(g, "Nozzle", lv_color_hex(0xFF4444));
+    // Array mode clears to POINT_NONE, then writes exactly `count` points, so
+    // slot pc-3 is real and pc-4 is a gap.
+    float temps[3] = {10.0f, 290.0f, 10.0f};
+    ui_temp_graph_set_series_data(g, id, temps, 3);
+
+    temp_graph_geometry_t geo{};
+    REQUIRE(temp_graph_compute_geometry(g, &geo));
+    const int oldest_real = g->point_count - 3;
+    const lv_point_t first = point_pos(g, id, oldest_real);
+
+    // Halfway between the oldest real sample and the plot's left edge at the
+    // same height: over the gap, well away from any drawn line.
+    const int32_t mx = (geo.cx1 + first.x) / 2;
+    REQUIRE(first.x - mx > TEMP_GRAPH_TOOLTIP_HIT_RADIUS_PX);
+    REQUIRE_FALSE(tooltip_hit_test(g, mx, first.y).has_value());
+
+    ui_temp_graph_destroy(g);
+}
+
 TEST_CASE_METHOD(TooltipTestFixture, "hit test picks the nearest of two series", "[ui][tooltip]") {
     ui_temp_graph_t* g = make_graph();
     int hot = ui_temp_graph_add_series(g, "Nozzle", lv_color_hex(0xFF4444));

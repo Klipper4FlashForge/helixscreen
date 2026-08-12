@@ -56,7 +56,18 @@ struct TempGraphHit {
 int16_t target_deci_at(const ui_temp_series_meta_t* meta, int point_count, int logical_index);
 
 /**
- * Resolve a tap in absolute display coordinates to the nearest plotted sample.
+ * Resolve a tap in absolute display coordinates to a plotted sample.
+ *
+ * Distance is measured to the drawn LINE, not only to the sample points: each
+ * sample is tested, and so is the segment joining it to the previous adjacent
+ * sample. On a steep run (a heater ramp) consecutive samples are far apart
+ * vertically, so a tap landing squarely on the visible line can be outside the
+ * radius of both endpoints; measuring against samples alone made the line feel
+ * dead exactly where it is most interesting to inspect.
+ *
+ * A segment hit is attributed to its NEARER endpoint, because the caption must
+ * describe a real sample rather than an interpolated point. A gap
+ * (LV_CHART_POINT_NONE) breaks the line, so no segment spans one.
  *
  * Considers only visible series and non-LV_CHART_POINT_NONE slots. Ties break
  * to the lowest series index, then the lowest logical index, so results are
