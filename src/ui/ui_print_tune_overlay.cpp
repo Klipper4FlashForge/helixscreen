@@ -426,70 +426,23 @@ void PrintTuneOverlay::handle_reset() {
 }
 
 void PrintTuneOverlay::handle_z_offset_changed(double delta) {
-    // Clamp to safe range to prevent accidental bed crashes or huge offsets
-    double new_offset = current_z_offset_ + delta;
-    if (new_offset < Z_OFFSET_MIN || new_offset > Z_OFFSET_MAX) {
-        spdlog::warn("[PrintTuneOverlay] Z-offset {:.3f}mm clamped to [{}, {}]", new_offset,
-                     Z_OFFSET_MIN, Z_OFFSET_MAX);
-        new_offset = std::clamp(new_offset, Z_OFFSET_MIN, Z_OFFSET_MAX);
-        delta = new_offset - current_z_offset_;
-        if (std::abs(delta) < 0.0005)
-            return; // Already at limit
+    const auto r = helix::zoffset::adjust(api_, printer_state_, current_z_offset_, delta);
+    if (r.applied_delta_mm == 0.0 && !r.sent) {
+        return; // already at the limit
     }
+    current_z_offset_ = r.new_offset_mm;
 
-    // Round to nearest micron to prevent floating-point drift from repeated additions
-    current_z_offset_ = std::round(new_offset * 1000.0) / 1000.0;
     helix::format::format_distance_mm(current_z_offset_, 3, tune_z_offset_buf_,
                                       sizeof(tune_z_offset_buf_));
     lv_subject_copy_string(&tune_z_offset_subject_, tune_z_offset_buf_);
 
-    // Track pending delta for "unsaved adjustment" notification in Controls panel
-    if (printer_state_) {
-        int delta_microns = static_cast<int>(std::lround(delta * 1000.0));
-        printer_state_->add_pending_z_offset_delta(delta_microns);
-
-        // Immediately update the gcode_z_offset subject so Controls panel reflects the change
-        // (otherwise it waits for Moonraker to broadcast the status update)
-        int current_microns = static_cast<int>(std::lround(current_z_offset_ * 1000.0));
-        if (auto* subj = printer_state_->get_gcode_z_offset_subject()) {
-            lv_subject_set_int(subj, current_microns);
-        }
-    }
-
-    spdlog::debug("[PrintTuneOverlay] Z-offset adjust: {:+.3f}mm (total: {:.3f}mm)", delta,
-                  current_z_offset_);
-
-    // Update the visual indicator
     if (tune_panel_) {
         lv_obj_t* indicator = lv_obj_find_by_name(tune_panel_, "z_offset_indicator");
         if (indicator) {
-            int microns = static_cast<int>(current_z_offset_ * 1000.0);
-            ui_z_offset_indicator_set_value(indicator, microns);
-            ui_z_offset_indicator_flash_direction(indicator, delta > 0 ? 1 : -1);
+            ui_z_offset_indicator_set_value(indicator,
+                                            static_cast<int>(current_z_offset_ * 1000.0));
+            ui_z_offset_indicator_flash_direction(indicator, r.applied_delta_mm > 0 ? 1 : -1);
         }
-    }
-
-    // Send SET_GCODE_OFFSET Z_ADJUST command to Klipper.
-    // MOVE=1 makes the toolhead physically move to the new offset immediately,
-    // which is essential for baby stepping during a print. Without it, the offset
-    // only takes effect on the next Z move in gcode. Only add MOVE=1 when all
-    // axes are homed (matching Mainsail behavior) to avoid Klipper errors.
-    if (api_) {
-        bool all_homed = false;
-        if (printer_state_) {
-            const char* axes = lv_subject_get_string(printer_state_->get_homed_axes_subject());
-            all_homed = axes && strchr(axes, 'x') && strchr(axes, 'y') && strchr(axes, 'z');
-        }
-
-        char gcode[96];
-        std::snprintf(gcode, sizeof(gcode), "SET_GCODE_OFFSET Z_ADJUST=%.3f%s", delta,
-                      all_homed ? " MOVE=1" : "");
-        api_->execute_gcode(
-            gcode, [delta]() { spdlog::debug("[PrintTuneOverlay] Z adjusted {:+.3f}mm", delta); },
-            [](const MoonrakerError& err) {
-                spdlog::error("[PrintTuneOverlay] Z-offset adjust failed: {}", err.message);
-                NOTIFY_ERROR(lv_tr("Z-offset failed: {}"), err.user_message());
-            });
     }
 }
 

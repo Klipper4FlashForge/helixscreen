@@ -10,6 +10,10 @@
 
 class IMoonrakerAPI;
 
+namespace helix {
+class PrinterState;
+} // namespace helix
+
 namespace helix::zoffset {
 
 /// Returns true and shows toast if strategy auto-persists (FIRMWARE_MANAGED).
@@ -24,6 +28,32 @@ void format_offset(int microns, char* buf, size_t buf_size);
 
 /// Compact variant: drops leading zero for |value| < 1.0 → "+.050mm".
 void format_offset_compact(int microns, char* buf, size_t buf_size);
+
+/// Safe clamp for a baby-stepped Z offset, in millimetres.
+inline constexpr double kZOffsetMinMm = -2.0;
+inline constexpr double kZOffsetMaxMm = 2.0;
+
+struct AdjustResult {
+    double applied_delta_mm; ///< delta actually applied after clamping
+    double new_offset_mm;    ///< resulting offset, rounded to the micron
+    bool sent;               ///< false when clamped to a no-op or api was null
+};
+
+/// Apply a Z baby-step: clamp to +/-2mm, round to the micron, accumulate the
+/// pending delta, optimistically publish gcode_z_offset, and send
+/// SET_GCODE_OFFSET Z_ADJUST.
+///
+/// MOVE=1 is appended only when x, y and z are all homed — it makes the toolhead
+/// move immediately, which is the point of baby-stepping during a print, but
+/// Klipper errors on it when the axes are not homed. A null `ps` is treated as
+/// not homed.
+///
+/// The caller owns any UI mirror of the offset and should update it from
+/// `AdjustResult::new_offset_mm` rather than tracking its own running total.
+///
+/// @warning Main thread only — reads and writes LVGL subjects.
+AdjustResult adjust(IMoonrakerAPI* api, PrinterState* ps, double current_offset_mm,
+                    double delta_mm);
 
 /// Execute strategy-aware save sequence:
 ///   PROBE_CALIBRATE -> Z_OFFSET_APPLY_PROBE -> SAVE_CONFIG

@@ -3,6 +3,7 @@
 #include "z_offset_utils.h"
 
 #include "ui_emergency_stop.h"
+#include "ui_error_reporting.h"
 #include "ui_toast_manager.h"
 
 #include "i_moonraker_api.h"
@@ -10,7 +11,10 @@
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <lvgl.h>
 
 namespace helix::zoffset {
@@ -121,6 +125,54 @@ bool should_extend_save_timeout(bool restart_latched, unsigned extensions_used,
     // that never restarted Klipper and still has not completed is a real hang
     // and must be reported.
     return restart_latched && extensions_used < max_extensions;
+}
+
+AdjustResult adjust(IMoonrakerAPI* api, PrinterState* ps, double current_offset_mm,
+                    double delta_mm) {
+    double new_offset = current_offset_mm + delta_mm;
+    if (new_offset < kZOffsetMinMm || new_offset > kZOffsetMaxMm) {
+        spdlog::warn("[zoffset] {:.3f}mm clamped to [{}, {}]", new_offset, kZOffsetMinMm,
+                     kZOffsetMaxMm);
+        new_offset = std::clamp(new_offset, kZOffsetMinMm, kZOffsetMaxMm);
+        delta_mm = new_offset - current_offset_mm;
+        if (std::abs(delta_mm) < 0.0005) {
+            return AdjustResult{0.0, current_offset_mm, false};
+        }
+    }
+
+    // Round to the micron so repeated additions cannot drift.
+    new_offset = std::round(new_offset * 1000.0) / 1000.0;
+
+    if (ps) {
+        ps->add_pending_z_offset_delta(static_cast<int>(std::lround(delta_mm * 1000.0)));
+        // Publish immediately rather than waiting for Moonraker to broadcast.
+        if (auto* subj = ps->get_gcode_z_offset_subject()) {
+            lv_subject_set_int(subj, static_cast<int>(std::lround(new_offset * 1000.0)));
+        }
+    }
+
+    if (!api) {
+        return AdjustResult{delta_mm, new_offset, false};
+    }
+
+    bool all_homed = false;
+    if (ps) {
+        const char* axes = lv_subject_get_string(ps->get_homed_axes_subject());
+        all_homed = axes && strchr(axes, 'x') && strchr(axes, 'y') && strchr(axes, 'z');
+    }
+
+    char gcode[96];
+    std::snprintf(gcode, sizeof(gcode), "SET_GCODE_OFFSET Z_ADJUST=%.3f%s", delta_mm,
+                  all_homed ? " MOVE=1" : "");
+    const double sent_delta = delta_mm;
+    api->execute_gcode(
+        gcode, [sent_delta]() { spdlog::debug("[zoffset] adjusted {:+.3f}mm", sent_delta); },
+        [](const MoonrakerError& err) {
+            spdlog::error("[zoffset] adjust failed: {}", err.message);
+            NOTIFY_ERROR(lv_tr("Z-offset failed: {}"), err.user_message());
+        });
+
+    return AdjustResult{delta_mm, new_offset, true};
 }
 
 } // namespace helix::zoffset
