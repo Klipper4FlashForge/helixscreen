@@ -94,13 +94,19 @@ std::string format_file_size(size_t bytes) {
     return std::string(buf);
 }
 
-static const char* get_time_format_string() {
+// with_seconds selects the :SS-bearing variant of the same pattern. The
+// 12H/24H decision itself lives here only, so format_time() and
+// format_time_with_seconds() can't drift apart on which setting wins.
+static const char* get_time_format_string(bool with_seconds = false) {
     TimeFormat format = DisplaySettingsManager::instance().get_time_format();
     // %I = hour (01-12, zero-padded) — POSIX standard, works on musl and glibc.
     // Callers strip the leading zero for cleaner display.
     // NOTE: %l (space-padded hour) is a GNU extension NOT supported by musl libc,
     // which produces empty strings on K1C (MIPS/musl) and other musl-based targets.
-    return (format == TimeFormat::HOUR_12) ? "%I:%M %p" : "%H:%M";
+    if (format == TimeFormat::HOUR_12) {
+        return with_seconds ? "%I:%M:%S %p" : "%I:%M %p";
+    }
+    return with_seconds ? "%H:%M:%S" : "%H:%M";
 }
 
 std::string format_time(const struct tm* tm_info) {
@@ -114,6 +120,23 @@ std::string format_time(const struct tm* tm_info) {
     std::string result(buf);
     // Strip leading zero only for 12H format (%I produces "01"-"12")
     // 24H "08:30" should keep the zero
+    if (DisplaySettingsManager::instance().get_time_format() == TimeFormat::HOUR_12 &&
+        !result.empty() && result[0] == '0') {
+        result.erase(0, 1);
+    }
+    return result;
+}
+
+std::string format_time_with_seconds(const struct tm* tm_info) {
+    if (!tm_info) {
+        return helix::format::UNAVAILABLE;
+    }
+
+    char buf[16];
+    strftime(buf, sizeof(buf), get_time_format_string(/*with_seconds=*/true), tm_info);
+
+    std::string result(buf);
+    // Same leading-zero strip as format_time() — only 12H's %I needs it.
     if (DisplaySettingsManager::instance().get_time_format() == TimeFormat::HOUR_12 &&
         !result.empty() && result[0] == '0') {
         result.erase(0, 1);
