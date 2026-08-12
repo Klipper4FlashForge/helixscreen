@@ -73,7 +73,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini bar mode: width bands pick bar wid
     REQUIRE_FALSE(lv_obj_has_flag(label, LV_OBJ_FLAG_HIDDEN));
     REQUIRE(std::string(lv_label_get_text(label)) == "+2");
 
-    // Medium band: 100 <= width_px < W_NORMAL -> 10px bars, all 8 slots shown
+    // Medium band: 100 <= width_px < w_normal() -> 10px bars, all 8 slots shown
     // (the old <150 branch's min(max_visible, 8) was a no-op; removing it
     // must not change this — max_visible was already clamped to 8).
     ui_ams_mini_status_set_width(w, 110);
@@ -86,23 +86,23 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini bar mode: width bands pick bar wid
     lv_obj_delete(w);
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini mode dispatch: width_px vs W_NORMAL boundary",
+TEST_CASE_METHOD(LVGLUITestFixture, "ams_mini mode dispatch: width_px vs w_normal() boundary",
                  "[ui][ams_mini][widget_size]") {
     ui_ams_mini_status_init();
     lv_obj_t* w = ui_ams_mini_status_create(test_screen(), 60);
     helix::ui::UpdateQueue::instance().drain();
     fill_slots(w, 2);
 
-    // Just below W_NORMAL: bar view.
-    ui_ams_mini_status_set_width(w, helix::widget_size::W_NORMAL - 1);
+    // Just below w_normal(): bar view.
+    ui_ams_mini_status_set_width(w, helix::widget_size::w_normal() - 1);
     helix::ui::UpdateQueue::instance().drain();
     REQUIRE(UITest::find_by_name(w, "ams_spools_container") == nullptr);
     lv_obj_t* bars = UITest::find_by_name(w, "ams_bars_container");
     REQUIRE(bars != nullptr);
     REQUIRE_FALSE(lv_obj_has_flag(bars, LV_OBJ_FLAG_HIDDEN));
 
-    // At W_NORMAL: spool view.
-    ui_ams_mini_status_set_width(w, helix::widget_size::W_NORMAL);
+    // At w_normal(): spool view.
+    ui_ams_mini_status_set_width(w, helix::widget_size::w_normal());
     helix::ui::UpdateQueue::instance().drain();
     lv_obj_t* spools = UITest::find_by_name(w, "ams_spools_container");
     REQUIRE(spools != nullptr);

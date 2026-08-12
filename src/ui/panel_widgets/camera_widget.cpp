@@ -261,7 +261,7 @@ void CameraWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int width_p
     // (LV_IMAGE_ALIGN_COVER), so extra height alone never earns the widget
     // a stream it wouldn't otherwise get — only a second column does, same
     // as fan_stack's row layout.
-    compact_ = (width_px < widget_size::W_NORMAL);
+    compact_ = (width_px < widget_size::w_normal());
 
     // Ensure scale-to-cover after any resize
     if (camera_image_) {

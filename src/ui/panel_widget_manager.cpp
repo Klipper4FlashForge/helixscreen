@@ -711,17 +711,33 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
             const auto fitted = clamp_to_grid(entry.col, entry.row, entry.colspan, entry.rowspan,
                                               grid.cols(), grid.rows());
 
-            // A merge candidate must be one whole cell AND sit on a cell
-            // boundary. Widgets whose registry def supports half-cell
-            // resolution snap on a single track (GridEditMode::snap_step_for),
-            // so a user can drop one on an odd track; dividing that position
-            // into cell coordinates would truncate and lay the card half a cell
-            // away from the widget it belongs to. Off-boundary widgets take the
-            // multi-cell path: they block merges through the cells they touch
-            // and keep their own background.
-            const bool cell_aligned = fitted.col % TPC == 0 && fitted.row % TPC == 0;
-            if (cell_aligned && fitted.colspan == TPC && fitted.rowspan == TPC) {
-                single_cells.insert({fitted.col / TPC, fitted.row / TPC});
+            // Whether a widget wants the shared card is a property of the
+            // widget, not of its size — `merges_into_card` in the registry. It
+            // used to be inferred from "is this exactly one cell", which
+            // conflated wanting a card with being small and was wrong both
+            // ways: a 2x1 fan_stack paints nothing of its own and got no
+            // background, while a one-cell ams brings its own and got two.
+            //
+            // Geometry still has a say, but only about arithmetic. The
+            // footprint must be a whole number of cells sitting on cell
+            // boundaries, because the merge works in cell coordinates. Widgets
+            // whose registry def supports half-cell resolution snap on a single
+            // track (GridEditMode::snap_step_for), so a user can drop one on an
+            // odd track; dividing that position into cells would truncate and
+            // lay the card half a cell from the widget it belongs to.
+            //
+            // Anything excluded takes the multi-cell path: it blocks merges
+            // through the cells it touches, and it is on its own for a
+            // background.
+            const auto* def = find_widget_def(entry.id);
+            const bool cell_aligned = fitted.col % TPC == 0 && fitted.row % TPC == 0 &&
+                                      fitted.colspan % TPC == 0 && fitted.rowspan % TPC == 0;
+            if (def && def->merges_into_card && cell_aligned) {
+                for (int r = fitted.row / TPC; r < (fitted.row + fitted.rowspan) / TPC; r++) {
+                    for (int c = fitted.col / TPC; c < (fitted.col + fitted.colspan) / TPC; c++) {
+                        single_cells.insert({c, r});
+                    }
+                }
             } else {
                 // Mark every cell this widget touches, rounding a partial cell
                 // up at both edges so a half-cell overhang still blocks.
@@ -777,7 +793,21 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                 max_row_card = std::max(max_row_card, r);
             }
 
-            // All cells in bounding box except those occupied by larger widgets
+            // Cover the component's bounding box, minus any cell a non-merging
+            // widget sits in, then split what is left into maximal rectangles.
+            //
+            // Both halves of that matter. Running the bounding box straight
+            // over a non-merging widget makes the card butt against that
+            // widget's own card with no gutter, and two abutting Card surfaces
+            // read as one continuous slab — a readout block and the graph below
+            // it stop looking like separate things. Carving the cells out is
+            // what keeps the gutter.
+            //
+            // Every emitted piece is still a rectangle. The ragged look this
+            // used to have came from carving a hole in the MIDDLE of a run:
+            // ams sat one cell into the readout row while painting its own
+            // card, which split that row into three pieces of differing
+            // heights. It merges now, so a carve-out only ever trims an edge.
             std::unordered_set<std::pair<int, int>, CellHash> remaining;
             for (int r = min_row; r <= max_row_card; r++) {
                 for (int c = min_col; c <= max_col; c++) {
@@ -787,10 +817,8 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                 }
             }
 
-            // Decompose into maximal rectangles (greedy). Picks the top-left
-            // remaining cell, extends right then down, and removes covered cells.
             while (!remaining.empty()) {
-                // Find top-left cell (min row, then min col)
+                // Top-left of what is left: min row, then min col.
                 auto top_left = *std::min_element(
                     remaining.begin(), remaining.end(), [](const auto& a, const auto& b) {
                         return a.second < b.second || (a.second == b.second && a.first < b.first);
@@ -799,13 +827,13 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                 int start_col = top_left.first;
                 int start_row = top_left.second;
 
-                // Extend right as far as possible
                 int end_col = start_col;
                 while (remaining.count({end_col + 1, start_row})) {
                     end_col++;
                 }
 
-                // Extend down as far as all columns in the run are present
+                // Extend down only while every column in the run is present, so
+                // the result is always a full rectangle.
                 int end_row = start_row;
                 for (;;) {
                     bool can_extend = true;
@@ -815,12 +843,12 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
                             break;
                         }
                     }
-                    if (!can_extend)
+                    if (!can_extend) {
                         break;
+                    }
                     end_row++;
                 }
 
-                // Remove covered cells
                 for (int r = start_row; r <= end_row; r++) {
                     for (int c = start_col; c <= end_col; c++) {
                         remaining.erase({c, r});

@@ -243,7 +243,7 @@ void TempStackWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int /*wi
         return;
 
     // Determine size tier based on vertical space
-    const char* size = (height_px >= widget_size::H_TALL) ? "sm" : "xs";
+    const char* size = (height_px >= widget_size::h_tall()) ? "sm" : "xs";
 
     // Get text font for this size tier
     const char* font_token = theme_manager_size_to_font_token(size, "xs");
@@ -252,7 +252,8 @@ void TempStackWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int /*wi
         return;
 
     // Icon font: xs=16px, sm=24px
-    const lv_font_t* icon_font = (height_px >= widget_size::H_TALL) ? &mdi_icons_24 : &mdi_icons_16;
+    const lv_font_t* icon_font =
+        (height_px >= widget_size::h_tall()) ? &mdi_icons_24 : &mdi_icons_16;
 
     // Update temp_display fonts and icon fonts in all rows
     const char* row_names[] = {"temp_stack_nozzle_row", "temp_stack_bed_row",

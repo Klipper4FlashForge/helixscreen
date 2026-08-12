@@ -43,6 +43,26 @@ struct PanelWidgetDef {
     bool supports_half_col = false;
     bool supports_half_row = false;
 
+    /// True when this widget wants the home panel's shared card background
+    /// drawn behind it, fused with its neighbours'.
+    ///
+    /// Most home widgets paint nothing — `extends="lv_obj"` inherits
+    /// StyleRole::ObjBase, which is fully transparent — and would render on the
+    /// bare panel background without this. The exceptions are the few that
+    /// bring their own surface: print_status and camera extend ui_card,
+    /// nozzle_temps hand-rolls one, and ams nests a card in its spool view.
+    /// Fusing behind those would stack two cards and show a box inside a box.
+    ///
+    /// printer_image and tips opt out for looks rather than duplication: the
+    /// printer render is meant to float on the panel background and tips is a
+    /// left accent rule, not a tile.
+    ///
+    /// This used to be inferred from the span — a widget exactly one cell
+    /// square merged, anything else was assumed to paint its own background.
+    /// That conflated two unrelated questions and was wrong in both directions:
+    /// a 2x1 fan_stack got no background at all, and a one-cell ams got two.
+    bool merges_into_card = true;
+
     WidgetFactory factory = nullptr;       // nullptr = pure XML or externally managed
     SubjectInitFn init_subjects = nullptr; // Called once before XML creation
 

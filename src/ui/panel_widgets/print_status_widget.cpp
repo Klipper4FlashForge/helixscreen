@@ -538,9 +538,9 @@ void PrintStatusWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int wi
     // this band, not the raw pixel count, which wouldn't mean anything to a ref_value
     // comparison.
     int width_band;
-    if (width_px < widget_size::W_NORMAL) {
+    if (width_px < widget_size::w_normal()) {
         width_band = 0; // compact
-    } else if (width_px < widget_size::W_WIDE) {
+    } else if (width_px < widget_size::w_wide()) {
         width_band = 1; // normal
     } else {
         width_band = 2; // wide
@@ -572,7 +572,7 @@ void PrintStatusWidget::on_size_changed(int /*colspan*/, int /*rowspan*/, int wi
 
     // Normal band + tall enough: column layout (thumbnail on top, info below)
     // Compact or wide band: row layout (thumbnail left, info right)
-    bool use_column = (width_band == 1 && height_px >= widget_size::H_TALL);
+    bool use_column = (width_band == 1 && height_px >= widget_size::h_tall());
     if (use_column == is_column_) {
         return;
     }

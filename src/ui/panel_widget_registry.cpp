@@ -76,9 +76,9 @@ constexpr int BAND_COLSPAN = GridLayout::MAX_TRACKS;
 
 // clang-format off
 static std::vector<PanelWidgetDef> s_widget_defs = {
-    //                                                                                                                                          hint                                en  col row min_c min_r max_c max_r  multi  half_c half_r
-    {"printer_image",    "Printer Image",    "rotate_3d",        "3D printer visualization",                     "Printer Image",    nullptr,              nullptr,                               true,  4, 4, 2, 2, 8, 6},
-    {"print_status",     "Print Status",     "printer_3d",       "Print progress and file selection",            "Print Status",     nullptr,              nullptr,                               true,  4, 4, 4, 2, BAND_COLSPAN, 6},
+    //                                                                                                                                          hint                                en  col row min_c min_r max_c max_r  multi  half_c half_r merges_card
+    {"printer_image",    "Printer Image",    "rotate_3d",        "3D printer visualization",                     "Printer Image",    nullptr,              nullptr,                               true,  4, 4, 2, 2, 8, 6, false, false, false, false},
+    {"print_status",     "Print Status",     "printer_3d",       "Print progress and file selection",            "Print Status",     nullptr,              nullptr,                               true,  4, 4, 4, 2, BAND_COLSPAN, 6, false, false, false, false},
     {"shutdown",         "Shutdown/Reboot",   "power",            "Shutdown or reboot the printer host",          "Shutdown/Reboot",  nullptr,              nullptr,                               false, 2, 2, 2, 2, 2, 2, false, true, false},
     {"lock",             "Lock Screen",       "lock",             "PIN-protected screen lock",                    "Lock Screen",      nullptr,              nullptr,                               false, 2, 2, 2, 2, 2, 2, false, true, false},
     {"power_device",     "Power",            "power_cycle",      "Toggle Moonraker power devices",               "Power",            "power_device_count", "Requires Moonraker power device",     false, 2, 2, 2, 2, 2, 2, true},
@@ -90,12 +90,12 @@ static std::vector<PanelWidgetDef> s_widget_defs = {
     {"fan_stack",        "Fan Speeds",        "fan",              "Part, hotend, and auxiliary fan speeds",        "Fan Speeds",       nullptr,              nullptr,                               true,  2, 2, 2, 2, 6, 4, true},
     {"fan",              "Fan",               "fan",              "Monitor a single fan speed",                   "Fan",              nullptr,              nullptr,                               false, 2, 2, 2, 2, 4, 2, true},
     {"temperature",      "Nozzle Temperature","thermometer",      "Monitor and set nozzle temperature",           "Nozzle Temperature", nullptr,            nullptr,                               true,  2, 2, 2, 2, 4, 4},
-    {"nozzle_temps",     "Nozzle Temperatures","thermometer",      "All extruder temperatures with progress bars",  "Nozzle Temperatures", nullptr,           nullptr,                               false, 2, 4, 2, 2, 4, 6},
+    {"nozzle_temps",     "Nozzle Temperatures","thermometer",      "All extruder temperatures with progress bars",  "Nozzle Temperatures", nullptr,           nullptr,                               false, 2, 4, 2, 2, 4, 6, false, false, false, false},
     {"bed_temperature",  "Bed Temperature",   "radiator",         "Monitor and set bed temperature",              "Bed Temperature",    nullptr,            nullptr,                               true, 2, 2, 2, 2, 4, 4},
     {"chamber_temperature", "Chamber Temperature", "fridge_industrial", "Monitor and set chamber temperature",       "Chamber Temperature", "printer_has_chamber", "No chamber temperature sensor detected", false, 2, 2, 2, 2, 4, 4},
     {"temp_stack",       "Temperatures",      "thermometer",      "Nozzle, bed, and chamber temps stacked",       "Temperatures",     nullptr,              nullptr,                               false, 2, 2, 2, 2, 6, 4},
     {"thermistor",       "Temperature Sensors", "thermometer",    "Monitor temperature sensors (single or carousel)", "Temperature Sensors", "temp_sensor_count", "No temperature sensors detected", false, 2, 2, 2, 2, 4, 2, true},
-    {"temp_graph",       "Temperature Graph", "chart_line",       "Live temperature graph with configurable sensors", "Temperature Graph", nullptr,         nullptr,                               false, 4, 4, 2, 2, BAND_COLSPAN, 8, true},
+    {"temp_graph",       "Temperature Graph", "chart_line",       "Live temperature graph with configurable sensors", "Temperature Graph", nullptr,         nullptr,                               false, 4, 4, 2, 2, BAND_COLSPAN, 8, true, false, false, false},
     {"preheat",          "Preheat",           "heat_wave",        "Quick preheat with material selection",        "Preheat",            nullptr,            nullptr,                               false, 6, 2, 4, 2, 8, 2},
     {"ams",              "Multi-Filament System Status",        "filament",         "Multi-Filament System spool status and control",      "AMS Status",       "ams_slot_count",     "Requires Multi-Filament System or MMU hardware",        false, 2, 2, 2, 2, 8, 4},
     {"active_spool",     "Active Spool",      "inventory",  "Currently loaded spool info",                  "Active Spool",     nullptr,                  nullptr,                           false, 2, 2, 2, 2, 8, 4},
@@ -108,13 +108,13 @@ static std::vector<PanelWidgetDef> s_widget_defs = {
     {"clock",            "Digital Clock",     "clock",            "Current time and date",                       "Digital Clock",    nullptr,              nullptr,                               false, 4, 2, 2, 2, 6, 6, false, true, true},
     {"control_buttons",  "Print Controls",    "pause",            "Pause/resume and stop the active print",       "Print Controls",   nullptr,              nullptr,                               false, 4, 2, 4, 2, 4, 2},
     {"job_queue",        "Job Queue",         "progress_clock",   "Queued print jobs",                           "Job Queue",        nullptr,              nullptr,                               false, 4, 4, 4, 2, 8, 6},
-    //                                                                                                                                          hint                                en  col row min_c min_r max_c max_r  multi  half_c half_r
-    {"tips",             "Tips",              "help_circle",      "Rotating tips and helpful information",        "Tips",             nullptr,              nullptr,                               true,  8, 4, 4, 2, BAND_COLSPAN, 4},
+    //                                                                                                                                          hint                                en  col row min_c min_r max_c max_r  multi  half_c half_r merges_card
+    {"tips",             "Tips",              "help_circle",      "Rotating tips and helpful information",        "Tips",             nullptr,              nullptr,                               true,  8, 4, 4, 2, BAND_COLSPAN, 4, false, false, false, false},
     {"clog_detection",   "Clog Detection",    "water",            "Filament clog/flow detection meter",           "Clog Detection",   "clog_meter_mode",    "Requires clog detection hardware",    false, 2, 2, 2, 2, 4, 4},
     {"print_stats",      "Print Stats",       "printer_3d",       "Print history statistics",                     "Print Stats",      nullptr,              nullptr,                               false, 4, 4, 4, 2, 6, 4},
     {"gcode_console",    "GCode Console",     "console",          "Open G-code command console",                  "GCode Console",    nullptr,              nullptr,                               false, 2, 2, 2, 2, 2, 2},
 #if HELIX_HAS_CAMERA
-    {"camera",           "Camera",            "video",            "Live webcam feed",                             "Camera",           nullptr,              nullptr,                               false, 4, 4, 2, 2, 8, 6},
+    {"camera",           "Camera",            "video",            "Live webcam feed",                             "Camera",           nullptr,              nullptr,                               false, 4, 4, 2, 2, 8, 6, false, false, false, false},
 #endif
     {"notifications",    "Notifications",     "notifications",    "Pending alerts and system messages",           "Notifications",    nullptr,              nullptr,                               true,  2, 2, 2, 2, 4, 2},
 };

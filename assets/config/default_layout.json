@@ -397,7 +397,7 @@
         },
         "xxlarge": {
           "col": 0,
-          "row": 6,
+          "row": 8,
           "colspan": 18,
           "rowspan": 4
         },
@@ -426,7 +426,7 @@
         },
         "xxlarge": {
           "col": 0,
-          "row": 10,
+          "row": 6,
           "colspan": 18,
           "rowspan": 2
         },
@@ -445,7 +445,78 @@
       "_comment": "ULTRAWIDE (1480x320 -> 36x8 tracks, 1920x440 -> 46x10). Printer image, print status and the temperature graph run left to right with the small readouts blocked at the right edge, tips as a footer band. Only tiny and small are authored: micro falls back to tiny, and every shipping ultrawide panel has a narrow axis of 320 or 440.",
       "anchors": [
         {
+          "id": "printer_image",
+          "placements": {
+            "tiny": {
+              "col": 0,
+              "row": 0,
+              "colspan": 8,
+              "rowspan": 4
+            },
+            "small": {
+              "col": 0,
+              "row": 0,
+              "colspan": 8,
+              "rowspan": 4
+            }
+          }
+        },
+        {
+          "id": "print_status",
+          "config": {
+            "layout_style": "detailed"
+          },
+          "placements": {
+            "tiny": {
+              "col": 8,
+              "row": 0,
+              "colspan": 14,
+              "rowspan": 4
+            },
+            "small": {
+              "col": 8,
+              "row": 0,
+              "colspan": 16,
+              "rowspan": 4
+            }
+          }
+        },
+        {
           "id": "temperature",
+          "placements": {
+            "tiny": {
+              "col": 28,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "small": {
+              "col": 36,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            }
+          }
+        },
+        {
+          "id": "bed_temperature",
+          "placements": {
+            "tiny": {
+              "col": 30,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            },
+            "small": {
+              "col": 38,
+              "row": 0,
+              "colspan": 2,
+              "rowspan": 2
+            }
+          }
+        },
+        {
+          "id": "fan_stack",
           "placements": {
             "tiny": {
               "col": 32,
@@ -454,7 +525,7 @@
               "rowspan": 2
             },
             "small": {
-              "col": 42,
+              "col": 40,
               "row": 0,
               "colspan": 2,
               "rowspan": 2
@@ -479,16 +550,16 @@
           }
         },
         {
-          "id": "bed_temperature",
+          "id": "filament",
           "placements": {
             "tiny": {
-              "col": 32,
+              "col": 28,
               "row": 2,
               "colspan": 2,
               "rowspan": 2
             },
             "small": {
-              "col": 42,
+              "col": 36,
               "row": 2,
               "colspan": 2,
               "rowspan": 2
@@ -499,48 +570,14 @@
           "id": "led",
           "placements": {
             "tiny": {
-              "col": 34,
+              "col": 30,
               "row": 2,
-              "colspan": 2,
-              "rowspan": 2
-            },
-            "small": {
-              "col": 44,
-              "row": 2,
-              "colspan": 2,
-              "rowspan": 2
-            }
-          }
-        },
-        {
-          "id": "fan_stack",
-          "placements": {
-            "tiny": {
-              "col": 32,
-              "row": 4,
               "colspan": 2,
               "rowspan": 2
             },
             "small": {
               "col": 42,
-              "row": 4,
-              "colspan": 2,
-              "rowspan": 2
-            }
-          }
-        },
-        {
-          "id": "filament",
-          "placements": {
-            "tiny": {
-              "col": 34,
-              "row": 4,
-              "colspan": 2,
-              "rowspan": 2
-            },
-            "small": {
-              "col": 44,
-              "row": 4,
+              "row": 0,
               "colspan": 2,
               "rowspan": 2
             }
@@ -551,13 +588,13 @@
           "placements": {
             "tiny": {
               "col": 32,
-              "row": 6,
+              "row": 2,
               "colspan": 2,
               "rowspan": 2
             },
             "small": {
-              "col": 42,
-              "row": 6,
+              "col": 38,
+              "row": 2,
               "colspan": 2,
               "rowspan": 2
             }
@@ -568,69 +605,15 @@
           "placements": {
             "tiny": {
               "col": 34,
-              "row": 6,
+              "row": 2,
               "colspan": 2,
               "rowspan": 2
             },
             "small": {
-              "col": 44,
-              "row": 6,
+              "col": 40,
+              "row": 2,
               "colspan": 2,
               "rowspan": 2
-            }
-          }
-        },
-        {
-          "id": "printer_image",
-          "placements": {
-            "tiny": {
-              "col": 0,
-              "row": 0,
-              "colspan": 8,
-              "rowspan": 6
-            },
-            "small": {
-              "col": 0,
-              "row": 0,
-              "colspan": 8,
-              "rowspan": 6
-            }
-          }
-        },
-        {
-          "id": "print_status",
-          "config": {
-            "layout_style": "detailed"
-          },
-          "placements": {
-            "tiny": {
-              "col": 8,
-              "row": 0,
-              "colspan": 14,
-              "rowspan": 6
-            },
-            "small": {
-              "col": 8,
-              "row": 0,
-              "colspan": 16,
-              "rowspan": 6
-            }
-          }
-        },
-        {
-          "id": "temp_graph",
-          "placements": {
-            "tiny": {
-              "col": 22,
-              "row": 0,
-              "colspan": 10,
-              "rowspan": 6
-            },
-            "small": {
-              "col": 24,
-              "row": 0,
-              "colspan": 18,
-              "rowspan": 6
             }
           }
         },
@@ -639,14 +622,31 @@
           "placements": {
             "tiny": {
               "col": 0,
+              "row": 4,
+              "colspan": 36,
+              "rowspan": 2
+            },
+            "small": {
+              "col": 0,
+              "row": 4,
+              "colspan": 46,
+              "rowspan": 2
+            }
+          }
+        },
+        {
+          "id": "temp_graph",
+          "placements": {
+            "tiny": {
+              "col": 0,
               "row": 6,
-              "colspan": 32,
+              "colspan": 36,
               "rowspan": 2
             },
             "small": {
               "col": 0,
               "row": 6,
-              "colspan": 42,
+              "colspan": 46,
               "rowspan": 4
             }
           }
@@ -656,7 +656,7 @@
           "placements": {
             "small": {
               "col": 42,
-              "row": 8,
+              "row": 2,
               "colspan": 2,
               "rowspan": 2
             }
@@ -667,7 +667,7 @@
           "placements": {
             "small": {
               "col": 44,
-              "row": 8,
+              "row": 2,
               "colspan": 2,
               "rowspan": 2
             }

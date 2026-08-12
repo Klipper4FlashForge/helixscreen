@@ -106,7 +106,7 @@ void ui_ams_mini_status_refresh(lv_obj_t* obj);
 /**
  * @brief Set the available pixel width, for responsive sizing / mode selection.
  *
- * width_px >= W_NORMAL (include/panel_widget_size.h) selects the wide spool
+ * width_px >= w_normal() (include/panel_widget_size.h) selects the wide spool
  * view; narrower widths keep the compact bar view. Also drives the bar-width
  * band and the spool count within the wide view.
  *
