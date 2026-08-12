@@ -422,3 +422,32 @@ TEST_CASE("caption clamps inside the plot horizontally", "[ui][tooltip][layout]"
     lv_area_t left = temp_graph_tooltip_box_area(geo, 102, 200, 120, 34);
     CHECK(left.x1 >= 100);
 }
+
+// A long series name (meta->name is char[32], up to 31 characters) can measure
+// wider than the plot on a 480x272 panel (~330px of content area). Both edges
+// must hold at once — the original clamp-order bug satisfied the left edge
+// while blowing past the right, so a one-sided assertion would have missed it.
+TEST_CASE("caption shrinks to fit when wider than the plot", "[ui][tooltip][layout]") {
+    helix::temp_graph_internal::temp_graph_geometry_t geo{};
+    geo.cx1 = 100;
+    geo.cy1 = 50;
+    geo.cw = 400;
+    geo.ch = 200;
+
+    lv_area_t a = temp_graph_tooltip_box_area(geo, 300, 200, 450, 34);
+    CHECK(a.x1 >= geo.cx1);
+    CHECK(a.x2 <= geo.cx1 + geo.cw);
+}
+
+// Same defect, vertical axis.
+TEST_CASE("caption shrinks to fit when taller than the plot", "[ui][tooltip][layout]") {
+    helix::temp_graph_internal::temp_graph_geometry_t geo{};
+    geo.cx1 = 100;
+    geo.cy1 = 50;
+    geo.cw = 400;
+    geo.ch = 200;
+
+    lv_area_t a = temp_graph_tooltip_box_area(geo, 300, 200, 120, 250);
+    CHECK(a.y1 >= geo.cy1);
+    CHECK(a.y2 <= geo.cy1 + geo.ch);
+}

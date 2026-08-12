@@ -116,30 +116,34 @@ lv_area_t temp_graph_tooltip_box_area(const temp_graph_geometry_t& geo, int32_t 
     const int32_t plot_x2 = geo.cx1 + geo.cw;
     const int32_t plot_y2 = geo.cy1 + geo.ch;
 
+    // Clamp to the plot BEFORE positioning. If the box is wider or taller than
+    // the plot, no placement can satisfy both edges at once, so shrink it and
+    // let the text clip rather than letting the box hang outside the chart.
+    // With the shrink applied first, the two "pull back inside" adjustments
+    // below can no longer undo each other, so their order doesn't matter.
+    const int32_t w = LV_MIN(box_w, geo.cw);
+    const int32_t h = LV_MIN(box_h, geo.ch);
+
     lv_area_t a;
-    a.x1 = px - box_w / 2;
-    a.x2 = a.x1 + box_w;
-    if (a.x2 > plot_x2) {
-        a.x1 -= (a.x2 - plot_x2);
-        a.x2 = plot_x2;
+    a.x1 = px - w / 2;
+    if (a.x1 + w > plot_x2) {
+        a.x1 = plot_x2 - w;
     }
     if (a.x1 < geo.cx1) {
         a.x1 = geo.cx1;
-        a.x2 = a.x1 + box_w;
     }
+    a.x2 = a.x1 + w;
 
     // Flip below when the point sits in the top third of the plot.
     const bool below = py < geo.cy1 + geo.ch / 3;
-    a.y1 = below ? (py + GAP) : (py - GAP - box_h);
-    a.y2 = a.y1 + box_h;
-    if (a.y2 > plot_y2) {
-        a.y1 -= (a.y2 - plot_y2);
-        a.y2 = plot_y2;
+    a.y1 = below ? (py + GAP) : (py - GAP - h);
+    if (a.y1 + h > plot_y2) {
+        a.y1 = plot_y2 - h;
     }
     if (a.y1 < geo.cy1) {
         a.y1 = geo.cy1;
-        a.y2 = a.y1 + box_h;
     }
+    a.y2 = a.y1 + h;
     return a;
 }
 
