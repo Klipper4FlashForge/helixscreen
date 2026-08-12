@@ -559,6 +559,33 @@ const char* choose_breakpoint_key(const nlohmann::json& by_bp, UiBreakpoint brea
     return nullptr;
 }
 
+/// Read a table's `disabled` map — `{ "<breakpoint>": ["id", ...] }` — into `out`.
+///
+/// The base table and every variant carry the same optional key, so both go
+/// through this rather than the variant branch owning a private copy. `table` is
+/// the object holding `anchors`: the top-level document for the base table, the
+/// variant object otherwise.
+void collect_disabled(const nlohmann::json& table, UiBreakpoint breakpoint,
+                      std::set<std::string>& out) {
+    auto d = table.find("disabled");
+    if (d == table.end() || !d->is_object()) {
+        return;
+    }
+    const char* key = choose_breakpoint_key(*d, breakpoint);
+    if (!key) {
+        return;
+    }
+    const auto& ids = (*d)[key];
+    if (!ids.is_array()) {
+        return;
+    }
+    for (const auto& id : ids) {
+        if (id.is_string()) {
+            out.insert(id.get<std::string>());
+        }
+    }
+}
+
 } // namespace
 
 std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
@@ -649,22 +676,20 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
                     anchor_list = &*va;
                     variant_used = dir;
 
-                    auto vd = v->find("disabled");
-                    if (vd != v->end() && vd->is_object()) {
-                        if (const char* key = choose_breakpoint_key(*vd, breakpoint)) {
-                            const auto& ids = (*vd)[key];
-                            if (ids.is_array()) {
-                                for (const auto& id : ids) {
-                                    if (id.is_string()) {
-                                        disabled_ids.insert(id.get<std::string>());
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    collect_disabled(*v, breakpoint, disabled_ids);
                     break;
                 }
             }
+            // Whichever table won owns the disable list. Without the base case a
+            // landscape tier could never switch a widget off: LayoutType
+            // STANDARD has an empty variant chain, so no variant object is ever
+            // consulted, and leaving a widget out of the anchors does not
+            // disable it — parse_widget_array() appends it at its registry
+            // default_enabled.
+            if (variant_used == "base") {
+                collect_disabled(layout, breakpoint, disabled_ids);
+            }
+
             for (const auto& anchor : *anchor_list) {
                 if (!anchor.is_object())
                     continue;

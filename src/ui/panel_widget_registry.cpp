@@ -3,6 +3,8 @@
 
 #include "panel_widget_registry.h"
 
+#include "grid_layout.h"
+
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -62,11 +64,21 @@ void register_camera_widget();
 // nearly the same number of pixels on every panel and these numbers are authored
 // once for all of them. tests/unit/test_registry_span_bands.cpp pins the pixel
 // band each span lands in, per shipping geometry.
+
+// Max colspan for a band-shaped widget — one that reads as a full-width strip
+// rather than a tile. There is no width that is wrong for these, and any finite
+// cap makes a full-width default layout unauthorable on the wider grids: large
+// and xlarge are 16 tracks, xxlarge reaches 26 at 1080p, and an ultrawide panel
+// reaches 46. MAX_TRACKS is the widest grid the layout engine will ever build,
+// so this is "uncapped" spelled in the same units. The cap still bounds the
+// edit-mode resize handle, which is its real job.
+constexpr int BAND_COLSPAN = GridLayout::MAX_TRACKS;
+
 // clang-format off
 static std::vector<PanelWidgetDef> s_widget_defs = {
     //                                                                                                                                          hint                                en  col row min_c min_r max_c max_r  multi  half_c half_r
     {"printer_image",    "Printer Image",    "rotate_3d",        "3D printer visualization",                     "Printer Image",    nullptr,              nullptr,                               true,  4, 4, 2, 2, 8, 6},
-    {"print_status",     "Print Status",     "printer_3d",       "Print progress and file selection",            "Print Status",     nullptr,              nullptr,                               true,  4, 4, 4, 2, 12, 6},
+    {"print_status",     "Print Status",     "printer_3d",       "Print progress and file selection",            "Print Status",     nullptr,              nullptr,                               true,  4, 4, 4, 2, BAND_COLSPAN, 6},
     {"shutdown",         "Shutdown/Reboot",   "power",            "Shutdown or reboot the printer host",          "Shutdown/Reboot",  nullptr,              nullptr,                               false, 2, 2, 2, 2, 2, 2, false, true, false},
     {"lock",             "Lock Screen",       "lock",             "PIN-protected screen lock",                    "Lock Screen",      nullptr,              nullptr,                               false, 2, 2, 2, 2, 2, 2, false, true, false},
     {"power_device",     "Power",            "power_cycle",      "Toggle Moonraker power devices",               "Power",            "power_device_count", "Requires Moonraker power device",     false, 2, 2, 2, 2, 2, 2, true},
@@ -83,7 +95,7 @@ static std::vector<PanelWidgetDef> s_widget_defs = {
     {"chamber_temperature", "Chamber Temperature", "fridge_industrial", "Monitor and set chamber temperature",       "Chamber Temperature", "printer_has_chamber", "No chamber temperature sensor detected", false, 2, 2, 2, 2, 4, 4},
     {"temp_stack",       "Temperatures",      "thermometer",      "Nozzle, bed, and chamber temps stacked",       "Temperatures",     nullptr,              nullptr,                               false, 2, 2, 2, 2, 6, 4},
     {"thermistor",       "Temperature Sensors", "thermometer",    "Monitor temperature sensors (single or carousel)", "Temperature Sensors", "temp_sensor_count", "No temperature sensors detected", false, 2, 2, 2, 2, 4, 2, true},
-    {"temp_graph",       "Temperature Graph", "chart_line",       "Live temperature graph with configurable sensors", "Temperature Graph", nullptr,         nullptr,                               false, 4, 4, 2, 2, 12, 8, true},
+    {"temp_graph",       "Temperature Graph", "chart_line",       "Live temperature graph with configurable sensors", "Temperature Graph", nullptr,         nullptr,                               false, 4, 4, 2, 2, BAND_COLSPAN, 8, true},
     {"preheat",          "Preheat",           "heat_wave",        "Quick preheat with material selection",        "Preheat",            nullptr,            nullptr,                               false, 6, 2, 4, 2, 8, 2},
     {"ams",              "Multi-Filament System Status",        "filament",         "Multi-Filament System spool status and control",      "AMS Status",       "ams_slot_count",     "Requires Multi-Filament System or MMU hardware",        false, 2, 2, 2, 2, 8, 4},
     {"active_spool",     "Active Spool",      "inventory",  "Currently loaded spool info",                  "Active Spool",     nullptr,                  nullptr,                           false, 2, 2, 2, 2, 8, 4},
@@ -97,7 +109,7 @@ static std::vector<PanelWidgetDef> s_widget_defs = {
     {"control_buttons",  "Print Controls",    "pause",            "Pause/resume and stop the active print",       "Print Controls",   nullptr,              nullptr,                               false, 4, 2, 4, 2, 4, 2},
     {"job_queue",        "Job Queue",         "progress_clock",   "Queued print jobs",                           "Job Queue",        nullptr,              nullptr,                               false, 4, 4, 4, 2, 8, 6},
     //                                                                                                                                          hint                                en  col row min_c min_r max_c max_r  multi  half_c half_r
-    {"tips",             "Tips",              "help_circle",      "Rotating tips and helpful information",        "Tips",             nullptr,              nullptr,                               true,  8, 4, 4, 2, 12, 4},
+    {"tips",             "Tips",              "help_circle",      "Rotating tips and helpful information",        "Tips",             nullptr,              nullptr,                               true,  8, 4, 4, 2, BAND_COLSPAN, 4},
     {"clog_detection",   "Clog Detection",    "water",            "Filament clog/flow detection meter",           "Clog Detection",   "clog_meter_mode",    "Requires clog detection hardware",    false, 2, 2, 2, 2, 4, 4},
     {"print_stats",      "Print Stats",       "printer_3d",       "Print history statistics",                     "Print Stats",      nullptr,              nullptr,                               false, 4, 4, 4, 2, 6, 4},
     {"gcode_console",    "GCode Console",     "console",          "Open G-code command console",                  "GCode Console",    nullptr,              nullptr,                               false, 2, 2, 2, 2, 2, 2},

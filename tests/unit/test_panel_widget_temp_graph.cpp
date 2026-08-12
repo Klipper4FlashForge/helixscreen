@@ -5,6 +5,7 @@
 #include "../../include/ui_temp_graph.h"
 #include "../../src/ui/panel_widgets/temp_graph_widget.h"
 #include "../ui_test_utils.h"
+#include "grid_layout.h"
 #include "lvgl/lvgl.h"
 #include "panel_widget_registry.h"
 #include "panel_widget_size.h"
@@ -204,7 +205,9 @@ TEST_CASE("TempGraphWidget: registered in widget registry", "[temp_graph][panel_
     REQUIRE(def->rowspan == 4);
     REQUIRE(def->min_colspan == 2);
     REQUIRE(def->min_rowspan == 2);
-    REQUIRE(def->max_colspan == 12);
+    // A band widget: capped only by the widest grid the engine builds, so a
+    // default layout can run it the full width of an ultrawide or 4K panel.
+    REQUIRE(def->max_colspan == GridLayout::MAX_TRACKS);
     REQUIRE(def->max_rowspan == 8);
     REQUIRE(def->hardware_gate_subject == nullptr);
 }

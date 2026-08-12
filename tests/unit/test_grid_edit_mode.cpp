@@ -227,12 +227,15 @@ TEST_CASE("GridEditMode: clamp_span unknown widget returns at least one track",
 }
 
 TEST_CASE("GridEditMode: clamp_span tips widget respects range", "[grid_edit][resize]") {
-    // tips: colspan default=8, min=4, max=12; rowspan default=4, min=2, max=4 tracks
+    // tips: colspan default=8, min=4; rowspan default=4, min=2, max=4 tracks.
+    // It is a band widget, so max_colspan is MAX_TRACKS — the input has to clear
+    // the widest grid the engine will ever build for the clamp to bite.
     const auto* def = find_widget_def("tips");
     REQUIRE(def != nullptr);
     REQUIRE(def->is_scalable());
+    REQUIRE(def->effective_max_colspan() == GridLayout::MAX_TRACKS);
 
-    auto [c, r] = GridEditMode::clamp_span("tips", 20, 10);
+    auto [c, r] = GridEditMode::clamp_span("tips", GridLayout::MAX_TRACKS + 8, 10);
     CHECK(c == def->effective_max_colspan());
     CHECK(r == def->effective_max_rowspan());
 
@@ -1318,14 +1321,20 @@ TEST_CASE("clamp_span: non-scalable widget stays fixed", "[grid_edit][sizing]") 
 }
 
 TEST_CASE("clamp_span: asymmetric constraints", "[grid_edit][sizing]") {
-    // "tips" is 8x4 tracks, min 4x2, max 12x4 — wide and moderately tall.
+    // "tips" is 8x4 tracks, min 4x2. The asymmetry is the point: it is a band
+    // widget, so the colspan is capped only by the widest grid the engine
+    // builds, while the rowspan stays pinned at 4 tracks.
     auto [c1, r1] = GridEditMode::clamp_span("tips", 1, 1);
     CHECK(c1 == 4); // Clamped to min_colspan
     CHECK(r1 == 2); // Clamped to min_rowspan
 
     auto [c2, r2] = GridEditMode::clamp_span("tips", 12, 6);
-    CHECK(c2 == 12); // At max_colspan
+    CHECK(c2 == 12); // Well inside max_colspan, passed through
     CHECK(r2 == 4);  // Clamped to max_rowspan
+
+    auto [c3, r3] = GridEditMode::clamp_span("tips", GridLayout::MAX_TRACKS + 8, 6);
+    CHECK(c3 == GridLayout::MAX_TRACKS); // Clamped to max_colspan
+    CHECK(r3 == 4);
 }
 
 TEST_CASE("All registered widgets have valid sizing constraints", "[grid_edit][sizing]") {
