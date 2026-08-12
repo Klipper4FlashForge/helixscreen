@@ -383,9 +383,19 @@ jobs:
   # Inert until the PLAY_SERVICE_ACCOUNT_JSON secret is configured. See
   # docs/devel/ANDROID_PLAY_STORE.md for one-time setup (service account,
   # first manual upload, Play App Signing enrollment).
+  # Gated on `release`, not just `build-android`, and that ordering is load-bearing:
+  # a Play Store versionCode can never be reused or lowered. v0.99.109 and v0.99.110
+  # both published here while their GitHub releases never materialised (109 died on a
+  # non-GLES compile error that Android, being a GLES build, never hit; 110 lost its
+  # Raspberry Pi link to the OOM killer). That burned versionCodes 10009 and 10010 on
+  # builds nobody could download, and made both tags impossible to re-cut — the only
+  # way forward was to skip a version. Depending on `release` (which itself needs the
+  # full build-platforms matrix) means Play only ever receives a version that users
+  # can also download from GitHub. If a platform build fails, this job is skipped and
+  # the version number stays free to re-cut.
   publish-android:
     name: Publish to Play Store (internal)
-    needs: [build-android]
+    needs: [build-android, release]
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
