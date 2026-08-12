@@ -276,6 +276,10 @@ class PrintStatusWidget : public PanelWidget {
     // Resolved thumbnail path for the detailed-idle hero; written by
     // reset_print_card_to_idle alongside the lv_image_set_src calls on the
     // Library-mode thumbs, so all three idle thumbnails share the same source.
+    // The initializer here is never observed — init_static_subjects()
+    // overwrites the buffer with the asset-root-resolved benchy path before
+    // lv_subject_init_string publishes it. A static array needs a constant
+    // initializer, so the accessor cannot be called from this line.
     static inline char idle_thumb_path_buf_[512] = "A:assets/images/benchy_thumbnail_white.png";
     static inline lv_subject_t idle_thumb_path_subject_{};
     // Single subject driving visibility of all five card-body siblings:

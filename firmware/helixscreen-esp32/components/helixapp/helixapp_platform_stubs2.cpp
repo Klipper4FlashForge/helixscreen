@@ -544,10 +544,10 @@ EthernetManager::~EthernetManager() = default;
 void EthernetManager::get_info_async(std::function<void(const EthernetInfo&)>) {}
 
 // --- app_globals, fourth batch ------------------------------------------------
-// Both accessors document "may be nullptr if not initialized" — the honest
-// slice answer. Constructing the real JobQueueState (its .cpp IS in the
-// slice) at static-init time would run subject registration before LVGL
-// init, so the nullptr contract is used instead.
+// Process-global storage for both accessors (get returns what set stored),
+// same shape as the MoonrakerManager pair in helixapp_platform_stubs.cpp.
+// app_boot.cpp Phase 10 constructs the real JobQueueState — well after LVGL
+// init, so its subject registration is safe there — and publishes it here.
 static helix::IMoonrakerClient* g_moonraker_client = nullptr;
 helix::IMoonrakerClient* get_moonraker_client() {
     return g_moonraker_client;
@@ -555,8 +555,12 @@ helix::IMoonrakerClient* get_moonraker_client() {
 void set_moonraker_client(helix::IMoonrakerClient* client) {
     g_moonraker_client = client;
 }
+static JobQueueState* g_job_queue_state = nullptr;
 JobQueueState* get_job_queue_state() {
-    return nullptr;
+    return g_job_queue_state;
+}
+void set_job_queue_state(JobQueueState* state) {
+    g_job_queue_state = state;
 }
 std::string app_get_install_root() {
     return std::string("/littlefs");

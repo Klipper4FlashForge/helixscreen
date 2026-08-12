@@ -120,7 +120,8 @@ void ActivePrintMediaManager::clear_thumbnail_source() {
 
 void ActivePrintMediaManager::publish_thumbnail(const std::string& for_file,
                                                 const std::string& path) {
-    assert(!path.empty() && "never publish an empty thumbnail path - use kNoThumbnailPlaceholder");
+    assert(!path.empty() &&
+           "never publish an empty thumbnail path - use no_thumbnail_placeholder()");
     printer_state_.set_print_thumbnail(for_file, path);
 }
 
@@ -133,7 +134,7 @@ void ActivePrintMediaManager::set_thumbnail_path(const std::string& for_file,
     // here — the latter may still name the PREVIOUS print.
     // An empty path is the caller saying "no pre-extracted thumbnail"; that is
     // published as the placeholder, never as "".
-    publish_thumbnail(for_file, path.empty() ? kNoThumbnailPlaceholder : path);
+    publish_thumbnail(for_file, path.empty() ? no_thumbnail_placeholder() : path);
     // A pre-extracted thumbnail (USB / embedded G-code) skips the fetch, but it
     // is NOT a completed load: recovery stays armed.
     thumbnail_origin_ = path.empty() ? ThumbnailOrigin::None : ThumbnailOrigin::PreSet;
@@ -147,7 +148,7 @@ bool ActivePrintMediaManager::has_thumbnail_for(const std::string& filename) {
     // empty string is never published. It must NOT read as a thumbnail here, or
     // the clear below would make load_thumbnail_for_file() skip its own fetch
     // and every print would stop at the placeholder.
-    return current && current[0] != '\0' && strcmp(current, kNoThumbnailPlaceholder) != 0 &&
+    return current && current[0] != '\0' && strcmp(current, no_thumbnail_placeholder()) != 0 &&
            !filename.empty() && printer_state_.get_print_thumbnail_file() == filename;
 }
 
@@ -212,7 +213,7 @@ void ActivePrintMediaManager::process_filename(const char* raw_filename) {
         if (!preset_for_this_file) {
             // The clear belongs to the file we are about to load for: "nothing
             // yet for effective_filename", not "nothing for the previous print".
-            publish_thumbnail(effective_filename, kNoThumbnailPlaceholder);
+            publish_thumbnail(effective_filename, no_thumbnail_placeholder());
 #if defined(HELIX_PLATFORM_ESP32)
             // Same clear for the PSRAM slot: on ESP32 the image lives in a
             // PSRAM buffer rather than at a path, and a stale buffer would
@@ -405,7 +406,7 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
                 // decode them into a PSRAM-backed lv_image_dsc_t instead of a
                 // cache file — same shape as the print-select card fetch in
                 // ui_panel_print_select.cpp. print_thumbnail_path_ carries the
-                // shared kNoThumbnailPlaceholder (benchy) on this platform; the
+                // shared no_thumbnail_placeholder() (benchy) on this platform; the
                 // real image arrives via print_psram_thumb_gen, whose observer
                 // replaces the placeholder src with the PSRAM descriptor.
                 //
@@ -828,7 +829,7 @@ void ActivePrintMediaManager::clear_print_info() {
     lifetime_.defer("ActivePrintMediaManager::clear_print_info", [this]() {
         // Everything for the previous print is being dropped, including the
         // identity — there is no file this clear is "for".
-        publish_thumbnail("", kNoThumbnailPlaceholder);
+        publish_thumbnail("", no_thumbnail_placeholder());
 #if defined(HELIX_PLATFORM_ESP32)
         // Releases the PSRAM buffer once the UI widgets have dropped their
         // own references; this deferred body runs on the main thread, which

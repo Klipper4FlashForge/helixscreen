@@ -37,18 +37,22 @@
 #include "ui_card.h"
 #include "ui_component_header_bar.h"
 #include "ui_dialog.h"
+#include "ui_emergency_stop.h"
 #include "ui_gcode_viewer.h"
 #include "ui_gradient_canvas.h"
 #include "ui_icon.h"
 #include "ui_keyboard_manager.h"
 #include "ui_nav_manager.h"
+#include "ui_notification_manager.h"
 #include "ui_panel_home.h"
 #include "ui_severity_card.h"
 #include "ui_status_pill.h"
 #include "ui_switch.h"
 #include "ui_temp_display.h"
+#include "ui_toast_manager.h"
 #include "ui_update_queue.h"
 
+#include "abort_manager.h"
 #include "ams_state.h"
 #include "app_globals.h"
 #include "asset_manager.h"
@@ -64,14 +68,18 @@
 #include "freertos/task.h"
 #include "helix_sparkline.h"
 #include "i_moonraker_client.h"
+#include "job_queue_state.h"
+#include "led/led_controller.h"
 #include "moonraker_api.h" // complete MoonrakerAPI : IMoonrakerAPI for the init_panels upcast
 #include "moonraker_manager.h"
 #include "moonraker_types.h" // FileInfo/FileMetadata/ThumbnailInfo/resolve_thumbnail_path — HTTP HIL probe
 #include "panel_factory.h"
+#include "pending_startup_warnings.h"
 #include "printer_discovery.h" // helix::PrinterDiscovery + init_subsystems (discovery callback args)
 #include "printer_fan_state.h" // helix::FanRoleConfig for the non-mock fan-role resolve
 #include "printer_state.h"
 #include "runtime_config.h"
+#include "safety_settings_manager.h"
 #include "sdkconfig.h"
 #include "setting_group.h"
 #include "src/xml/lv_xml.h"
@@ -543,6 +551,15 @@ void kick_moonraker_connect_once() {
     helix::Config* config = helix::Config::get_instance();
     std::string host = config->get<std::string>(config->df() + "moonraker_host", "");
     int port = config->get<int>(config->df() + "moonraker_port", 7125);
+    // No host yet (empty Kconfig seed, nothing saved in Settings): connecting to
+    // "ws://:7125/websocket" would hand the websocket client an unresolvable URL
+    // and spin the auto-reconnect loop forever. Leave the not-ready UI up
+    // instead; ChangeHostModal connects directly once a host is entered, so no
+    // reboot is needed. Logged once — the one-shot latch above is already taken.
+    if (host.empty()) {
+        ESP_LOGI(TAG, "app_net: no Moonraker host configured — set it in Settings");
+        return;
+    }
     std::string ws_url = "ws://" + host + ":" + std::to_string(port) + "/websocket";
     std::string http_base = ws_to_http_base(ws_url);
     ESP_LOGI(TAG, "app: connecting Moonraker (%s)", ws_url.c_str());
@@ -686,13 +703,21 @@ extern "C" void app_boot_ui(void) {
     // reads Config) means the Settings > System > Host row and the real
     // connect path (app_net_start(), below) both see a consistent value from
     // their very first read.
+    // The Kconfig URL is empty in the committed tree (a bench address is
+    // site-local, supplied through sdkconfig.local), so skip the seed entirely
+    // rather than writing a blank host every boot — a blank host would build
+    // "ws://:7125/websocket" and feed the reconnect churn loop forever.
     if (config->get<std::string>(config->df() + "moonraker_host", "").empty()) {
         HostPort seed = parse_moonraker_kconfig_url(CONFIG_HELIX_HIL_MOONRAKER_URL);
-        config->set(config->df() + "moonraker_host", seed.host);
-        config->set(config->df() + "moonraker_port", seed.port);
-        config->save();
-        ESP_LOGI(TAG, "app_boot: seeded first-boot Moonraker host from Kconfig default (%s:%d)",
-                 seed.host.c_str(), seed.port);
+        if (seed.host.empty()) {
+            ESP_LOGI(TAG, "app_boot: no Moonraker host configured — set it in Settings");
+        } else {
+            config->set(config->df() + "moonraker_host", seed.host);
+            config->set(config->df() + "moonraker_port", seed.port);
+            config->save();
+            ESP_LOGI(TAG, "app_boot: seeded first-boot Moonraker host from Kconfig default (%s:%d)",
+                     seed.host.c_str(), seed.port);
+        }
     }
 
     // Phase 2: RuntimeConfig from build config (no CLI). g_runtime_config is a
@@ -751,6 +776,18 @@ extern "C" void app_boot_ui(void) {
     static SubjectInitializer subjects;
     subjects.init_core_and_state();
 
+    // Bring LedController up with no API yet so its `led_controllable` and
+    // `led_command_in_flight` subjects are registered for XML before the
+    // home/print-status panels instantiate in build_shell() — print_status_panel
+    // and panel_widget_led bind both. Registration is scope-sensitive, so this
+    // has to sit exactly here, matching desktop (application.cpp, same call and
+    // same phase). This is the only LedController::init() the ESP image ever
+    // makes: the re-init that binds a real API lives in printer_discovery.cpp,
+    // which is excluded from the image, and setup_discovery_callbacks_esp()
+    // below does not wire LED. api_/client_ therefore stay null for the life of
+    // the process — the call registers subjects, it does not enable LED control.
+    helix::led::LedController::instance().init(nullptr, nullptr);
+
     // Phase 9: MoonrakerManager — ESP factory arm builds EspMoonrakerClient +
     // the real MoonrakerAPI over it. init() creates client + API; it does NOT
     // connect (WiFi is Task 13). In mock builds the client stays idle and the
@@ -770,6 +807,32 @@ extern "C" void app_boot_ui(void) {
     // Phase 10: panel subjects, now that the API pointer exists.
     subjects.init_panels(manager.api(), rc);
     subjects.init_post(rc);
+
+    // E-STOP and smart print cancellation. Mirrors desktop's
+    // Application::init_panel_subjects() (application.cpp, same order). Both
+    // singletons had their subjects registered by init_panels() above but their
+    // API/PrinterState pointers left null, because the desktop-only
+    // application.cpp is the tree's sole init() call site — so every
+    // emergency_stop() bailed out at the `!api_` guard and the estop_visible
+    // subject, which nine XML files bind as a visibility flag, never left 0.
+    // create() installs observers on print/klippy state and early-returns unless
+    // init() has run and subjects exist, so this ordering is required, and all of
+    // it must precede build_shell() below.
+    EmergencyStopOverlay::instance().init(get_printer_state(), manager.api());
+    EmergencyStopOverlay::instance().create();
+    EmergencyStopOverlay::instance().set_require_confirmation(
+        helix::SafetySettingsManager::instance().get_estop_require_confirmation());
+
+    helix::AbortManager::instance().init(manager.api(), &get_printer_state());
+
+    // Job queue state — owns the `job_queue_count` subject the home panel's
+    // queue widget binds, so it must construct before build_shell(). Mirrors
+    // desktop's Application::init_moonraker() (construct, init_subjects, publish
+    // through the global accessor). Function-static like the manager above: it
+    // lives for the process and is never destroyed on this platform.
+    static JobQueueState job_queue(manager.api(), manager.client());
+    job_queue.init_subjects();
+    set_job_queue_state(&job_queue);
     log_heap_milestone("subjects-up");
 
     // Global software keyboard — one shared lv_keyboard, hidden until a
@@ -781,6 +844,38 @@ extern "C" void app_boot_ui(void) {
     // depend on it. show() move-foregrounds itself, so creating it before
     // build_shell() below is z-order safe.
     KeyboardManager::instance().init(lv_screen_active());
+
+    // Notification + toast systems. Mirrors desktop's Application::init_ui()
+    // (application.cpp: notification_manager_init(), ToastManager::init(), then
+    // the startup-warning drain). Neither needs a parent widget — the toast
+    // stack is created lazily on first show() — but both must run before any
+    // panel can raise a message, i.e. before build_shell() below. Without them
+    // every ToastManager::show() on the device is silently dropped, which is
+    // how error feedback (failed gcode, connection loss, E-STOP) went missing.
+    helix::ui::notification_manager_init();
+    ToastManager::instance().init();
+
+    // init() does NOT drain the queue: warnings enqueued during pre-UI boot
+    // (display/asset backends) stay stranded unless drained explicitly.
+    helix::PendingStartupWarnings::instance().drain(
+        [](helix::PendingStartupWarnings::Severity sev, const std::string& msg) {
+            ToastSeverity toast_sev = ToastSeverity::INFO;
+            switch (sev) {
+            case helix::PendingStartupWarnings::Severity::INFO:
+                toast_sev = ToastSeverity::INFO;
+                break;
+            case helix::PendingStartupWarnings::Severity::SUCCESS:
+                toast_sev = ToastSeverity::SUCCESS;
+                break;
+            case helix::PendingStartupWarnings::Severity::WARNING:
+                toast_sev = ToastSeverity::WARNING;
+                break;
+            case helix::PendingStartupWarnings::Severity::ERROR:
+                toast_sev = ToastSeverity::ERROR;
+                break;
+            }
+            ToastManager::instance().show(toast_sev, msg.c_str(), 8000);
+        });
 
 #if CONFIG_HELIX_MOCK_PRINTER
     // Before the shell builds: seed READY/CONNECTED + the printer identity so the
