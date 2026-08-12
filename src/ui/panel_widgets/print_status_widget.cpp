@@ -21,6 +21,7 @@
 #include "app_globals.h"
 #include "data_root_resolver.h"
 #include "filament_op_dispatch.h"
+#include "filament_op_execute.h"
 #include "filament_op_router.h"
 #include "filament_sensor_manager.h"
 #include "format_utils.h"
@@ -1190,87 +1191,7 @@ void PrintStatusWidget::dispatch_load() {
     // a print job — the backend's own active slot is the only target available,
     // and this dialog has no slot picker.
     const int slot = backend ? backend->get_current_slot() : -1;
-
-    AmsSystemInfo sys;
-    helix::ui::BackendCaps caps;
-    if (backend) {
-        sys = backend->get_system_info();
-        caps.present = true;
-        caps.requires_slot_selection_for_load = backend->requires_slot_selection_for_load();
-        caps.needs_unload_before_load = backend->needs_unload_before_load(sys, slot);
-        caps.is_tool_changer = backend->get_type() == AmsType::TOOL_CHANGER;
-    }
-
-    const auto& load_info = StandardMacros::instance().get(StandardMacroSlot::LoadFilament);
-    const helix::ui::FilamentOpPlan plan =
-        helix::ui::plan_load(sys, caps, slot, !load_info.is_empty());
-
-    switch (plan.tier) {
-    case helix::ui::FilamentTier::AmsBackend: {
-        spdlog::info("[PrintStatusWidget] Idle runout load via AMS backend (slot {})", slot);
-        AmsError err = (plan.ams_call == helix::ui::AmsCall::ChangeTool)
-                           ? backend->change_tool(plan.ams_arg)
-                           : backend->load_filament(plan.ams_arg);
-        if (!err.success()) {
-            spdlog::error("[PrintStatusWidget] Load filament failed: {}", err.technical_msg);
-            helix::ui::notify_ams_error(err);
-        }
-        return;
-    }
-
-    case helix::ui::FilamentTier::Refused:
-        // Never navigate: PanelId::Filament was the old behaviour and it tore
-        // the dialog out from under the user. Say what happened and stay put.
-        if (plan.refusal == helix::ui::FilamentRefusal::AlreadyMounted) {
-            spdlog::info("[PrintStatusWidget] Load refused — tool {} already mounted", slot);
-            NOTIFY_INFO(lv_tr("That tool is already loaded"));
-        } else {
-            spdlog::info("[PrintStatusWidget] Load refused — no slot resolved");
-            NOTIFY_WARNING(lv_tr("Select a filament slot to load"));
-        }
-        return;
-
-    case helix::ui::FilamentTier::Macro: {
-        auto* api = get_moonraker_api();
-        if (!api) {
-            return;
-        }
-        const std::string macro_name = load_info.get_macro();
-        spdlog::info("[PrintStatusWidget] Idle runout load via StandardMacros: {}", macro_name);
-        // ParamPolicy::Suppress runs the callback synchronously, so nothing here
-        // outlives this call and no token capture is needed inside it.
-        helix::ui::dispatch_filament_macro(
-            macro_name, helix::ui::ParamPolicy::Suppress,
-            [api](const helix::MacroParamResult& result) {
-                StandardMacros::instance().execute(
-                    StandardMacroSlot::LoadFilament, api, result.params,
-                    []() { spdlog::info("[PrintStatusWidget] Load filament started"); },
-                    [](const MoonrakerError& err) {
-                        spdlog::error("[PrintStatusWidget] Failed to load filament: {}",
-                                      err.message);
-                        NOTIFY_ERROR(lv_tr("Failed to load filament: {}"), err.user_message());
-                    });
-            });
-        return;
-    }
-
-    case helix::ui::FilamentTier::RawGcode: {
-        auto* api = get_moonraker_api();
-        if (!api) {
-            return;
-        }
-        spdlog::info("[PrintStatusWidget] No backend and no load macro — raw gcode fallback");
-        api->execute_gcode(
-            helix::ui::filament_load_fallback_gcode(),
-            []() { spdlog::info("[PrintStatusWidget] Load fallback gcode sent"); },
-            [](const MoonrakerError& err) {
-                spdlog::error("[PrintStatusWidget] Load fallback failed: {}", err.message);
-                NOTIFY_ERROR(lv_tr("Failed to load filament: {}"), err.user_message());
-            },
-            IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
-        return;
-    }
-    }
+    helix::ui::execute_filament_load(backend, slot, "[PrintStatusWidget]");
 }
 
 // ============================================================================
