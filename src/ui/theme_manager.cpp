@@ -104,6 +104,8 @@ int32_t responsive_vertical_dimension(lv_display_t* display) {
 #include <vector>
 
 #ifdef __ANDROID__
+#include "system/android_jni.h"
+
 #include <SDL_system.h>
 #include <jni.h>
 
@@ -114,15 +116,13 @@ static void android_set_window_bg_color(lv_color_t color) {
     if (!env)
         return;
 
-    jclass cls = env->FindClass("org/helixscreen/app/HelixActivity");
-    if (!cls) {
-        env->ExceptionClear();
+    // Cached global ref owned by helix_activity_class() — never released here.
+    jclass cls = helix::android::helix_activity_class(env);
+    if (!cls)
         return;
-    }
 
     jmethodID method = env->GetStaticMethodID(cls, "setWindowBackgroundColor", "(I)V");
     if (!method) {
-        env->DeleteLocalRef(cls);
         env->ExceptionClear();
         return;
     }
@@ -131,7 +131,6 @@ static void android_set_window_bg_color(lv_color_t color) {
     uint32_t rgb = lv_color_to_u32(color);
     jint argb = static_cast<jint>(0xFF000000u | rgb);
     env->CallStaticVoidMethod(cls, method, argb);
-    env->DeleteLocalRef(cls);
 }
 #endif // __ANDROID__
 

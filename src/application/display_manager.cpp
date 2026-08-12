@@ -61,6 +61,8 @@
 #endif
 
 #ifdef __ANDROID__
+#include "system/android_jni.h"
+
 #include <SDL_system.h>
 #include <jni.h>
 
@@ -68,10 +70,11 @@
 // JNI bridge to HelixActivity's window flags (#1245)
 //
 // Mirrors android_set_navbar_always_visible() in display_settings_manager.cpp —
-// same guard shape, same ExceptionClear() on every failure path, same
-// DeleteLocalRef discipline. It lives HERE rather than being exported from
-// display_settings_manager.h because DisplayManager is the only caller: which
-// mechanism cuts the panel is display-output policy, not a persisted setting.
+// same guard shape, same ExceptionClear() on every failure path, and the same
+// shared helix_activity_class() for class resolution. It lives HERE rather than
+// being exported from display_settings_manager.h because DisplayManager is the
+// only caller: which mechanism cuts the panel is display-output policy, not a
+// persisted setting.
 // Putting an Android-only declaration in the settings header to reach it would
 // file the API under the wrong owner. There is exactly one copy of each helper.
 //
@@ -89,21 +92,18 @@ static void android_set_keep_screen_on(bool keep_on) {
     if (!env)
         return;
 
-    jclass cls = env->FindClass("org/helixscreen/app/HelixActivity");
-    if (!cls) {
-        env->ExceptionClear();
+    // Cached global ref owned by helix_activity_class() — never released here.
+    jclass cls = helix::android::helix_activity_class(env);
+    if (!cls)
         return;
-    }
 
     jmethodID method = env->GetStaticMethodID(cls, "setKeepScreenOn", "(Z)V");
     if (!method) {
-        env->DeleteLocalRef(cls);
         env->ExceptionClear();
         return;
     }
 
     env->CallStaticVoidMethod(cls, method, static_cast<jboolean>(keep_on));
-    env->DeleteLocalRef(cls);
 }
 
 /// Read HelixActivity's onResume counter. Returns 0 when the bridge is
@@ -116,21 +116,17 @@ static int android_get_resume_seq() {
     if (!env)
         return 0;
 
-    jclass cls = env->FindClass("org/helixscreen/app/HelixActivity");
-    if (!cls) {
-        env->ExceptionClear();
+    jclass cls = helix::android::helix_activity_class(env);
+    if (!cls)
         return 0;
-    }
 
     jmethodID method = env->GetStaticMethodID(cls, "getResumeSeq", "()I");
     if (!method) {
-        env->DeleteLocalRef(cls);
         env->ExceptionClear();
         return 0;
     }
 
     jint seq = env->CallStaticIntMethod(cls, method);
-    env->DeleteLocalRef(cls);
     return static_cast<int>(seq);
 }
 #endif // __ANDROID__

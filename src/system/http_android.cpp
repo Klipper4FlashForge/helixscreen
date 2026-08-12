@@ -5,65 +5,16 @@
 
 #include "system/http_android.h"
 
+#include "system/android_jni.h"
+
 #include <spdlog/spdlog.h>
 
 #include <SDL.h>
 #include <jni.h>
-#include <mutex>
 
 namespace helix::android {
 
 namespace {
-
-/// Resolve org/helixscreen/app/HelixActivity as a process-lifetime global ref.
-///
-/// FindClass() is not usable here. Both callers run on natively created threads
-/// (UpdateChecker's std::thread, the debug-bundle upload on HttpExecutor::slow),
-/// and SDL attaches those with AttachCurrentThread(vm, &env, NULL) — no class
-/// loader, no Java frames on the stack. ART then resolves FindClass through the
-/// *system* class loader, which has no visibility into the APK's dex, so an app
-/// class is simply not found and every request fails as HTTP 0.
-///
-/// Deriving the class from the live Activity object sidesteps class loading
-/// entirely: SDL_AndroidGetActivity() calls a static method on a jclass SDL
-/// cached during JNI_OnLoad, and GetObjectClass() on the result needs no loader.
-/// HelixActivity extends SDLActivity, so the Context SDL hands back *is* our
-/// activity. The result is cached as a global ref because a local one is only
-/// valid for the frame that created it.
-jclass helix_activity_class(JNIEnv* env) {
-    static std::mutex mutex;
-    static jclass cached = nullptr;
-
-    std::lock_guard<std::mutex> lock(mutex);
-    if (cached) {
-        return cached;
-    }
-
-    if (jobject activity = static_cast<jobject>(SDL_AndroidGetActivity())) {
-        if (jclass local = env->GetObjectClass(activity)) {
-            cached = static_cast<jclass>(env->NewGlobalRef(local));
-            env->DeleteLocalRef(local);
-        }
-        env->DeleteLocalRef(activity);
-    }
-
-    if (!cached) {
-        // No Activity yet (or SDL not initialized). FindClass still works from
-        // the SDL main thread, which does have Java frames, so it is worth one
-        // attempt before giving up.
-        if (jclass local = env->FindClass("org/helixscreen/app/HelixActivity")) {
-            cached = static_cast<jclass>(env->NewGlobalRef(local));
-            env->DeleteLocalRef(local);
-        } else {
-            env->ExceptionClear();
-        }
-    }
-
-    if (!cached) {
-        spdlog::error("[http_android] Failed to resolve HelixActivity class");
-    }
-    return cached;
-}
 
 /// Copy a Java string into a std::string, tolerating an allocation failure.
 /// GetStringUTFChars returns null (with OutOfMemoryError pending) under memory
