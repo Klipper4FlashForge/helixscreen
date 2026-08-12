@@ -1923,6 +1923,7 @@ TEST_CASE("preset seeds: placed widgets fit the medium grid", "[panel_widget_con
         nlohmann::json seed = nlohmann::json::parse(in);
         REQUIRE(seed.contains("pages"));
         for (const auto& page : seed["pages"]) {
+            REQUIRE(page.contains("widgets"));
             for (const auto& w : page["widgets"]) {
                 int col = w.value("col", -1);
                 int row = w.value("row", -1);
@@ -1941,6 +1942,14 @@ TEST_CASE("preset seeds: placed widgets do not overlap", "[panel_widget_config][
         std::ifstream in(find_readable(std::string("panel_widgets/") + preset + "/home.json"));
         REQUIRE(in.is_open());
         nlohmann::json seed = nlohmann::json::parse(in);
+        INFO("preset " << preset);
+        // Guarded rather than seed["pages"][0]["widgets"]: const operator[] on a
+        // missing key is only JSON_ASSERT-guarded, so under NDEBUG a renamed or
+        // truncated preset dereferences end() instead of failing the test.
+        REQUIRE(seed.contains("pages"));
+        REQUIRE(seed["pages"].is_array());
+        REQUIRE_FALSE(seed["pages"].empty());
+        REQUIRE(seed["pages"][0].contains("widgets"));
         struct Rect {
             int col, row, colspan, rowspan;
         };
