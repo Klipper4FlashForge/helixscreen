@@ -3,6 +3,7 @@
 // Link stubs, round 2 — platform-bound singletons/utilities demanded by the
 // slice link. One row each in the audit categorization table.
 
+#include "ui_panel_spoolman.h"
 #include "ui_spoolman_overlay.h"
 
 #include "app_globals.h"
@@ -10,7 +11,9 @@
 #include "bt_print_utils.h"
 #include "camera_stream.h"
 #include "display_manager.h"
+#include "esp_attr.h"
 #include "ethernet_manager.h"
+#include "filament_display_name.h"
 #include "gcode_data_source.h"
 #include "host_identity.h"
 #include "hv/WebSocketClient.h"
@@ -21,6 +24,9 @@
 #include "platform_info.h"
 #include "plugin_manager.h"
 #include "snapshot_qr_scanner.h"
+#include "spoolman_manager.h"
+#include "spoolman_slot_saver.h"
+#include "spoolman_types.h"
 #include "system/crash_handler.h"
 #include "system/debug_bundle_collector.h"
 #include "system/telemetry_manager.h"
@@ -30,6 +36,7 @@
 #include "wifi_manager.h"
 
 #include <cstdio>
+#include <optional>
 #include <string>
 #include <sys/types.h>
 #include <vector>
@@ -125,6 +132,70 @@ SpoolmanOverlay& get_spoolman_overlay() {
     return overlay;
 }
 } // namespace ui
+} // namespace helix
+
+// --- Spoolman proper (8 TUs, dropped 2026-08-12) -----------------------------
+// SCOPE DECISION, not a cleanup. Spoolman is unreachable on this build only
+// because the ESP client skips the second server.info discovery call
+// (helixnet/esp_moonraker_client.cpp), so `printer_has_spoolman` is never set
+// and every XML entry row stays hidden. The subject itself is still registered
+// for real by the KEPT printer_capabilities_state.cpp, so no XML binding is
+// orphaned by this removal. If discovery is ever restored, these stubs must be
+// replaced by re-adding the eight src/ TUs — see app_srcs_excluded.txt.
+//
+// SpoolmanManager and SpoolmanPanel have no virtual call reaching them from
+// kept code, so raw storage is safe here (and fails CLOSED: a new call site
+// becomes a link error rather than a null-vtable fault). SpoolmanSlotSaver is
+// constructed by value in ui_ams_edit_overlay.cpp, so it needs a real ctor.
+
+// src/ui/ui_panel_spoolman.cpp (DEFINE_GLOBAL_PANEL)
+SpoolmanPanel& get_global_spoolman_panel() {
+    alignas(SpoolmanPanel) EXT_RAM_BSS_ATTR static unsigned char storage[sizeof(SpoolmanPanel)];
+    return *reinterpret_cast<SpoolmanPanel*>(storage);
+}
+
+// src/printer/spoolman_types.cpp — no spools exist, so nothing survives a filter.
+std::vector<SpoolInfo> filter_spools(const std::vector<SpoolInfo>&, const std::string&) {
+    return {};
+}
+
+// src/printer/spoolman_manager.cpp — the real init_subjects() registers only
+// observers (no XML subjects), so a no-op leaves no binding unsatisfied.
+SpoolmanManager& SpoolmanManager::instance() {
+    alignas(SpoolmanManager) EXT_RAM_BSS_ATTR static unsigned char storage[sizeof(SpoolmanManager)];
+    return *reinterpret_cast<SpoolmanManager*>(storage);
+}
+void SpoolmanManager::init_subjects() {}
+void SpoolmanManager::set_api(IMoonrakerAPI*) {}
+void SpoolmanManager::start_spoolman_polling() {}
+void SpoolmanManager::stop_spoolman_polling() {}
+std::optional<helix::SpoolIdentity> SpoolmanManager::find_identity(int) {
+    return std::nullopt;
+}
+
+// src/spoolman/spoolman_slot_saver.cpp — the AMS edit overlay compiles calls to
+// these, but reaches them only from the Spoolman-gated save path. "No change"
+// and "not complete" are the answers that make that path a no-op if entered.
+namespace helix {
+SpoolmanSlotSaver::SpoolmanSlotSaver(IMoonrakerAPI* api) : api_(api) {}
+
+ChangeSet SpoolmanSlotSaver::detect_changes(const SlotInfo&, const SlotInfo&) {
+    return ChangeSet{};
+}
+bool SpoolmanSlotSaver::is_filament_complete(const SlotInfo&) {
+    return false;
+}
+void SpoolmanSlotSaver::build_spool_patches(const SpoolInfo&, const SpoolInfo&, nlohmann::json&,
+                                            nlohmann::json&) {}
+
+// Reports failure rather than silently succeeding — a caller that got here
+// must not believe it persisted anything to Spoolman.
+void SpoolmanSlotSaver::save(const SlotInfo&, const SlotInfo&, LinkIntent,
+                             CompletionCallback on_complete) {
+    if (on_complete) {
+        on_complete(SaveResult{});
+    }
+}
 } // namespace helix
 
 // --- process-spawn stubs newlib lacks ----------------------------------------

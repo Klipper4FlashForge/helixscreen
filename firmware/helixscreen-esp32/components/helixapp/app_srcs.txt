@@ -168,8 +168,6 @@ src/printer/slot_registry.cpp
 src/printer/snapmaker_resume.cpp
 src/printer/plr_backend.cpp
 src/printer/plr_offer.cpp
-src/printer/spoolman_manager.cpp
-src/printer/spoolman_types.cpp
 src/printer/standard_macros.cpp
 src/printer/timelapse_state.cpp
 src/printer/toolhead_homing.cpp
@@ -179,7 +177,6 @@ src/sensors/humidity_sensor_manager.cpp
 src/sensors/probe_sensor_manager.cpp
 src/sensors/temperature_sensor_manager.cpp
 src/sensors/width_sensor_manager.cpp
-src/spoolman/spoolman_slot_saver.cpp
 src/system/alsa_device_enum.cpp
 src/system/async_lifetime_guard.cpp
 src/system/audio_settings_manager.cpp
@@ -396,7 +393,6 @@ src/ui/ui_panel_print_status.cpp
 src/ui/ui_panel_settings.cpp
 src/ui/ui_plr_offer_controller.cpp
 src/ui/ui_plr_prompt.cpp
-src/ui/ui_panel_spoolman.cpp
 src/ui/ui_pin_entry_modal.cpp
 src/ui/ui_pin_utils.cpp
 src/ui/ui_plugin_install_modal.cpp
@@ -449,9 +445,6 @@ src/ui/ui_split_button.cpp
 src/ui/ui_spool_canvas.cpp
 src/ui/ui_spool_drawing.cpp
 src/ui/ui_spool_wizard.cpp
-src/ui/ui_spoolman_context_menu.cpp
-src/ui/ui_spoolman_edit_modal.cpp
-src/ui/ui_spoolman_list_view.cpp
 src/ui/ui_status_pill.cpp
 src/ui/ui_step_progress.cpp
 src/ui/ui_subscription_guard.cpp
@@ -511,7 +504,6 @@ src/api/moonraker_history_api.cpp
 src/api/moonraker_job_api.cpp
 src/api/moonraker_motion_api.cpp
 src/api/moonraker_queue_api.cpp
-src/api/moonraker_spoolman_api.cpp
 src/api/rpc_error_correlation.cpp
 src/application/moonraker_manager.cpp
 src/generated/theme_token_table.cpp
