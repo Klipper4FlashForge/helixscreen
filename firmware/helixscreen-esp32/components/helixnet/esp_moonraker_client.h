@@ -126,19 +126,36 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     // the error callback fires synchronously with a CONNECTION_LOST error.
     static constexpr size_t kMaxPendingRequests = 64;
     static constexpr uint32_t kDefaultRequestTimeoutMs = 60000;
+    // The two bounds below both exist for one reason: no transport call may
+    // stall the LVGL thread long enough for the screen to look dead. These are
+    // yielding blocks, so the idle task still runs and the task watchdog —
+    // idle-only here, and CONFIG_ESP_TASK_WDT_PANIC is off — never fires; the
+    // symptom is a frozen UI, not a reboot. kUiStallBudgetMs is the ceiling
+    // both are held to, chosen under CONFIG_ESP_TASK_WDT_TIMEOUT_S=5 so a stall
+    // stays off the watchdog's radar as well.
+    static constexpr uint32_t kUiStallBudgetMs = 3000;
+
     // How long esp_websocket_client_send_text() may block the CALLING task
     // waiting for the transport lock and the socket write. Every UI event
-    // handler that issues a gcode or JSON-RPC reaches this on the LVGL thread,
-    // so it must stay comfortably under CONFIG_ESP_TASK_WDT_TIMEOUT_S=5
-    // (sdkconfig.defaults) or a printer that stops reading trips the task
-    // watchdog and panics the board. Deliberately NOT connection_timeout_ms_:
-    // that value is the transport's network_timeout_ms, which is spent on the
-    // websocket task and may legitimately be long enough to tolerate a slow
-    // TCP connect. Bounding the two separately keeps slow-network tolerance
-    // without paying for it in UI-thread freeze.
-    static constexpr uint32_t kSendTimeoutMs = 3000;
-    static_assert(kSendTimeoutMs < 5000,
-                  "the send wait blocks the LVGL thread and must stay under "
+    // handler that issues a gcode or JSON-RPC reaches this on the LVGL thread.
+    // Deliberately NOT connection_timeout_ms_, which
+    // MoonrakerManager::configure_timeouts() sets to 10s from
+    // moonraker_connection_timeout_ms.
+    static constexpr uint32_t kSendTimeoutMs = kUiStallBudgetMs;
+
+    // Ceiling applied to cfg.network_timeout_ms in connect(). The websocket
+    // task spends that budget inside esp_transport_connect() when the address
+    // is unreachable, and esp_websocket_client_stop() waits on STOPPED_BIT with
+    // portMAX_DELAY for the task to come back — so a stop() issued from the
+    // LVGL thread inherits the connect budget as a freeze. ChangeHostModal is
+    // exactly that path: its connect() tears down the previous probe's client
+    // while that one is still mid-connect to a bad address, which at the
+    // configured 10s left the modal unresponsive for ten seconds. Capping the
+    // transport's own budget bounds every such stop() without needing to move
+    // the call off the LVGL thread.
+    static constexpr uint32_t kMaxNetworkTimeoutMs = kUiStallBudgetMs;
+    static_assert(kUiStallBudgetMs < 5000,
+                  "a UI-thread transport stall must stay under "
                   "CONFIG_ESP_TASK_WDT_TIMEOUT_S (5s) — see sdkconfig.defaults");
     // How long RECONNECTING persists before the informational FAILED transition.
     static constexpr int64_t kReconnectingToFailedUs = 60LL * 1000 * 1000;
@@ -307,10 +324,11 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     std::atomic<uint64_t> next_request_id_{0};
     uint32_t default_request_timeout_ms_ = kDefaultRequestTimeoutMs;
     // Feeds cfg.network_timeout_ms only — the transport's per-operation budget,
-    // spent on the websocket task. MoonrakerManager::configure_timeouts()
-    // overwrites this from moonraker_connection_timeout_ms at init, so the
-    // value here is only the pre-configuration default. The UI-thread send
-    // wait is bounded separately by kSendTimeoutMs.
+    // spent on the websocket task — and is capped at kMaxNetworkTimeoutMs on
+    // the way in. MoonrakerManager::configure_timeouts() overwrites this from
+    // moonraker_connection_timeout_ms at init, so the value here is only the
+    // pre-configuration default. The UI-thread send wait is bounded separately
+    // by kSendTimeoutMs.
     uint32_t connection_timeout_ms_ = 10000;
 
     // Callback maps.

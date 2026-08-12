@@ -8,6 +8,7 @@
 #include "freertos/task.h"
 #include "helix_version.h" // HELIX_VERSION for server.connection.identify
 
+#include <algorithm>
 #include <utility>
 #include <vector>
 
@@ -132,7 +133,10 @@ int EspMoonrakerClient::connect(const char* url, std::function<void()> on_connec
     cfg.task_stack = kWsTaskStackBytes;
     // Bounds the per-DATA-event chunk, not the message; we reassemble.
     cfg.buffer_size = 32768;
-    cfg.network_timeout_ms = static_cast<int>(connection_timeout_ms_);
+    // Capped so a stop() from the LVGL thread can never wait out a full
+    // unreachable-host connect attempt — see kMaxNetworkTimeoutMs.
+    cfg.network_timeout_ms =
+        static_cast<int>(std::min(connection_timeout_ms_, kMaxNetworkTimeoutMs));
     cfg.ping_interval_sec = 10;
     // Defect 1 (Task 9 confirm soak): we never set this, so the component
     // defaulted to its own WEBSOCKET_PINGPONG_TIMEOUT_SEC = 120s — LONGER
