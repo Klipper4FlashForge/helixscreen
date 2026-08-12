@@ -104,6 +104,7 @@ src/printer/printer_discovery.cpp  # not in the v1 Core+AMS cut
 src/printer/screws_tilt_share_text.cpp  # not in the v1 Core+AMS cut
 src/printer/spoolman_manager.cpp  # scope decision 2026-08-12: unreachable while ESP discovery omits server.info#2; re-adding requires restoring these TUs + verifying flash budget
 src/printer/spoolman_types.cpp  # scope decision 2026-08-12: unreachable while ESP discovery omits server.info#2; re-adding requires restoring these TUs + verifying flash budget
+src/printer/timelapse_state.cpp  # scope decision 2026-08-12: unreachable while ESP discovery omits server.info#2; re-adding requires restoring these TUs + verifying flash budget
 src/printer/u1_stock_detection_source.cpp  # not in the v1 Core+AMS cut
 src/rendering/bed_mesh_buffer.cpp  # not in the v1 Core+AMS cut
 src/rendering/bed_mesh_coordinate_transform.cpp  # not in the v1 Core+AMS cut
@@ -211,6 +212,8 @@ src/ui/ui_icon_loader.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_image_helpers.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_multiselect.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_overlay_qr_scanner.cpp  # not in the v1 Core+AMS cut
+src/ui/ui_overlay_timelapse_install.cpp  # scope decision 2026-08-12: unreachable while ESP discovery omits server.info#2; re-adding requires restoring these TUs + verifying flash budget
+src/ui/ui_overlay_timelapse_settings.cpp  # scope decision 2026-08-12: unreachable while ESP discovery omits server.info#2; re-adding requires restoring these TUs + verifying flash budget
 src/ui/ui_overlay_timelapse_videos.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_panel_bed_mesh.cpp  # not in the v1 Core+AMS cut
 src/ui/ui_panel_belt_tension.cpp  # not in the v1 Core+AMS cut

@@ -169,7 +169,6 @@ src/printer/snapmaker_resume.cpp
 src/printer/plr_backend.cpp
 src/printer/plr_offer.cpp
 src/printer/standard_macros.cpp
-src/printer/timelapse_state.cpp
 src/printer/toolhead_homing.cpp
 src/printer/tool_state.cpp
 src/sensors/accel_sensor_manager.cpp
@@ -372,8 +371,6 @@ src/ui/ui_overlay_performance.cpp
 src/ui/ui_overlay_printer_image.cpp
 src/ui/ui_overlay_retraction_settings.cpp
 src/ui/ui_overlay_temp_graph.cpp
-src/ui/ui_overlay_timelapse_install.cpp
-src/ui/ui_overlay_timelapse_settings.cpp
 src/ui/ui_panel_advanced.cpp
 src/ui/ui_panel_ams.cpp
 src/ui/ui_panel_ams_overview.cpp

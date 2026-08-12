@@ -39,6 +39,8 @@
 // cannot supply. They are resolved by adding their portable, platform-free real
 // .cpp files to app_srcs.txt instead. See the report for details.
 
+#include "ui_overlay_timelapse_install.h"
+#include "ui_overlay_timelapse_settings.h"
 #include "ui_overlay_timelapse_videos.h"
 #include "ui_panel_bed_mesh.h"
 #include "ui_panel_belt_tension.h"
@@ -52,6 +54,7 @@
 #include "esp_attr.h"
 #include "esp_log.h"
 #include "shaper_csv_parser.h"
+#include "timelapse_state.h"
 
 // ===========================================================================
 // Global-scope panel / overlay instance accessors (raw-storage references).
@@ -84,6 +87,73 @@ TimelapseVideosOverlay& get_global_timelapse_videos() {
 // src/ui/ui_overlay_timelapse_videos.cpp
 void init_global_timelapse_videos(IMoonrakerAPI*) {}
 void open_timelapse_videos() {}
+
+// ===========================================================================
+// Timelapse install + settings overlays and TimelapseState (dropped
+// 2026-08-12; see app_srcs_excluded.txt for the scope decision).
+//
+// SCOPE DECISION, not a cleanup. `printer_has_timelapse` and
+// `printer_has_webcam` are only written by the second server.info discovery
+// call that the ESP client skips, so the Advanced "Timelapse Videos" row, the
+// "Setup Timelapse" row (additionally gated on printer_has_webcam) and the
+// Printing-settings entry are all permanently hidden. Both subjects are still
+// registered for real by the KEPT printer_capabilities_state.cpp.
+//
+// These two CANNOT be raw storage like the panels above: subject_initializer
+// .cpp calls init_subjects() on both unconditionally at boot, and that is a
+// pure virtual — raw storage would fault (LoadProhibited) on every boot. So
+// each accessor constructs a real object, which requires defining the ctor and
+// every OverlayBase override so the vtable emits here with all slots filled.
+// Neither real init_subjects() registers an XML subject (settings does
+// nothing; install registers one event_cb for XML that is never created), so
+// the no-op bodies leave no binding unsatisfied.
+//
+// src/ui/ui_overlay_timelapse_install.cpp
+TimelapseInstallOverlay::TimelapseInstallOverlay(IMoonrakerAPI* api) : api_(api) {}
+void TimelapseInstallOverlay::init_subjects() {}
+lv_obj_t* TimelapseInstallOverlay::create(lv_obj_t*) {
+    return nullptr;
+}
+void TimelapseInstallOverlay::on_activate() {}
+void TimelapseInstallOverlay::on_deactivate() {}
+void TimelapseInstallOverlay::cleanup() {}
+
+TimelapseInstallOverlay& get_global_timelapse_install() {
+    static TimelapseInstallOverlay overlay(nullptr);
+    return overlay;
+}
+void init_global_timelapse_install(IMoonrakerAPI*) {}
+void open_timelapse_install() {}
+
+// src/ui/ui_overlay_timelapse_settings.cpp
+TimelapseSettingsOverlay::TimelapseSettingsOverlay(IMoonrakerAPI* api) : api_(api) {}
+void TimelapseSettingsOverlay::init_subjects() {}
+lv_obj_t* TimelapseSettingsOverlay::create(lv_obj_t*) {
+    return nullptr;
+}
+void TimelapseSettingsOverlay::on_activate() {}
+void TimelapseSettingsOverlay::on_deactivate() {}
+void TimelapseSettingsOverlay::cleanup() {}
+
+TimelapseSettingsOverlay& get_global_timelapse_settings() {
+    static TimelapseSettingsOverlay overlay(nullptr);
+    return overlay;
+}
+void init_global_timelapse_settings(IMoonrakerAPI*) {}
+void open_timelapse_settings() {}
+
+// src/printer/timelapse_state.cpp — the four subjects it registers are bound
+// only by timelapse_videos_overlay.xml, whose overlay is already excluded and
+// never created, so a no-op init_subjects() orphans nothing. Plain class (no
+// virtuals) with a defaulted private ctor, so instance() can build a real one.
+namespace helix {
+TimelapseState& TimelapseState::instance() {
+    static TimelapseState state;
+    return state;
+}
+void TimelapseState::init_subjects(bool) {}
+void TimelapseState::reset() {}
+} // namespace helix
 
 // ===========================================================================
 // PIDCalibrationPanel member methods (src/ui/ui_panel_calibration_pid.cpp).
