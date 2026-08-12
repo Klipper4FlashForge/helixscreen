@@ -7,6 +7,7 @@
 #include "ui_settings_sensors.h"
 
 #include "app_globals.h"
+#include "lvgl/src/others/translation/lv_translation.h"
 #include "observer_factory.h"
 #include "panel_widget_registry.h"
 #include "printer_state.h"
@@ -76,8 +77,6 @@ void FilamentSensorWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen)
     parent_screen_ = parent_screen;
     lv_obj_set_user_data(widget_obj_, this);
 
-    lv_obj_add_event_cb(widget_obj_, clicked_cb, LV_EVENT_CLICKED, this);
-
     // Instances are recycled across grid rebuilds, so the source binding must be
     // (re)established here, not only in set_config().
     rebind_source();
@@ -110,7 +109,13 @@ bool FilamentSensorWidget::on_edit_configure() {
 
 void FilamentSensorWidget::clicked_cb(lv_event_t* e) {
     LVGL_SAFE_EVENT_CB_BEGIN("[FilamentSensorWidget] clicked_cb");
-    auto* self = static_cast<FilamentSensorWidget*>(lv_event_get_user_data(e));
+    // Sole registration is the XML <event_cb> on the tile's root, which LVGL's
+    // XML engine dispatches with user_data=NULL - recover the instance via
+    // widget_obj_'s own user_data (set in attach()) instead. No parallel
+    // lv_obj_add_event_cb() here: the root has no clickable child to target,
+    // unlike MotionWidget's motion_button, so a second registration on the
+    // same object would only double-dispatch every tap.
+    auto* self = panel_widget_from_event<FilamentSensorWidget>(e);
     if (self) {
         self->record_interaction();
         self->handle_click();
@@ -157,9 +162,9 @@ void FilamentSensorWidget::show_tap_modal(bool status_only) {
     // The manual row is hidden mid-print by the XML gate, so the default
     // "What would you like to do?" copy - and a plain "Load or unload" - both
     // read as offers the dialog is not making. Say what is actually true.
-    const char* message = status_only ? "Filament controls are unavailable while printing."
-                                      : "Load or unload filament.";
-    const char* attrs[] = {"title", "Filament", "message", message, nullptr};
+    const char* message = status_only ? lv_tr("Filament controls are unavailable while printing.")
+                                      : lv_tr("Load or unload filament.");
+    const char* attrs[] = {"title", lv_tr("Filament"), "message", message, nullptr};
     tap_modal_.show(parent_screen_, attrs);
 }
 
