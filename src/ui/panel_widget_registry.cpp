@@ -66,7 +66,7 @@ void register_camera_widget();
 static std::vector<PanelWidgetDef> s_widget_defs = {
     //                                                                                                                                          hint                                en  col row min_c min_r max_c max_r  multi  half_c half_r
     {"printer_image",    "Printer Image",    "rotate_3d",        "3D printer visualization",                     "Printer Image",    nullptr,              nullptr,                               true,  4, 4, 2, 2, 8, 6},
-    {"print_status",     "Print Status",     "printer_3d",       "Print progress and file selection",            "Print Status",     nullptr,              nullptr,                               true,  4, 4, 4, 2, 8, 6},
+    {"print_status",     "Print Status",     "printer_3d",       "Print progress and file selection",            "Print Status",     nullptr,              nullptr,                               true,  4, 4, 4, 2, 12, 6},
     {"shutdown",         "Shutdown/Reboot",   "power",            "Shutdown or reboot the printer host",          "Shutdown/Reboot",  nullptr,              nullptr,                               false, 2, 2, 2, 2, 2, 2, false, true, false},
     {"lock",             "Lock Screen",       "lock",             "PIN-protected screen lock",                    "Lock Screen",      nullptr,              nullptr,                               false, 2, 2, 2, 2, 2, 2, false, true, false},
     {"power_device",     "Power",            "power_cycle",      "Toggle Moonraker power devices",               "Power",            "power_device_count", "Requires Moonraker power device",     false, 2, 2, 2, 2, 2, 2, true},

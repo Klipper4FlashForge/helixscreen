@@ -1028,7 +1028,11 @@ TEST_CASE("default_layout: the shipped portrait anchors fit a portrait grid",
 
     REQUIRE(layout.contains("variants"));
     REQUIRE(layout["variants"].contains("portrait"));
-    const auto& portrait = layout["variants"]["portrait"];
+    // A variant is either a bare anchor array or an object carrying "anchors"
+    // plus optional "disabled". The loader accepts both, so this does too.
+    const auto& portrait_node = layout["variants"]["portrait"];
+    const nlohmann::json& portrait =
+        portrait_node.is_object() ? portrait_node.at("anchors") : portrait_node;
     REQUIRE(portrait.is_array());
     REQUIRE_FALSE(portrait.empty());
 
@@ -1037,17 +1041,139 @@ TEST_CASE("default_layout: the shipped portrait anchors fit a portrait grid",
     for (const auto& anchor : portrait) {
         const std::string id = anchor.value("id", std::string{});
         INFO("anchor " << id);
-        REQUIRE(helix::find_widget_def(id) != nullptr);
+        const auto* def = helix::find_widget_def(id);
+        REQUIRE(def != nullptr);
         REQUIRE(anchor.contains("placements"));
         for (auto it = anchor["placements"].begin(); it != anchor["placements"].end(); ++it) {
             INFO("anchor " << id << " breakpoint " << it.key());
             CHECK(kPortraitBudget.count(it.key()) == 1);
+            // A span past the widget's registry maximum is not a layout the grid
+            // can honour — grid_edit_mode would clamp it the moment the user
+            // touched it, and nothing else checks the shipped table against the
+            // registry. A print_status colspan of 10 against a max of 8 reached a
+            // draft of this table by exactly this gap.
+            CHECK(it.value().value("colspan", def->colspan) <= def->effective_max_colspan());
+            CHECK(it.value().value("rowspan", def->rowspan) <= def->effective_max_rowspan());
         }
     }
 
     for (const auto& [bp_name, budget] : kPortraitBudget) {
         check_anchor_table(portrait, bp_name, budget, /*require_bp=*/false);
     }
+}
+
+// A variant's "disabled" list is the only way to say "not on this tier". Leaving
+// a widget out of the anchors does NOT switch it off: parse_widget_array()
+// appends every registry widget that is absent, at its default_enabled, and the
+// placement engine then seats it wherever it fits.
+TEST_CASE("default_layout: a variant disables a widget per breakpoint",
+          "[default_layout][portrait]") {
+    TempCwdGuard guard;
+    guard.write_layout(R"({
+        "anchors": [],
+        "variants": {
+            "portrait": {
+                "anchors": [
+                    { "id": "printer_image",
+                      "placements": { "tiny": { "col": 0, "row": 0, "colspan": 4, "rowspan": 4 } } }
+                ],
+                "disabled": { "tiny": ["tips"] }
+            }
+        }
+    })");
+
+    LayoutTypeGuard portrait(480, 800);
+    auto entries = PanelWidgetConfig::build_default_grid();
+
+    // tips is default_enabled in the registry, so only the disabled list can
+    // switch it off — and it must be unplaced, not merely hidden in place.
+    auto* tips = find_entry(entries, "tips");
+    REQUIRE(tips);
+    CHECK_FALSE(tips->enabled);
+    CHECK(tips->col == -1);
+    CHECK(tips->row == -1);
+
+    // Everything else the variant did not name is untouched.
+    auto* pi = find_entry(entries, "printer_image");
+    REQUIRE(pi);
+    CHECK(pi->enabled);
+}
+
+// The legacy bare-array variant shape must keep working — shipped copies of
+// default_layout.json predate the object form and the file is runtime-editable.
+TEST_CASE("default_layout: a variant accepts both the array and object shapes",
+          "[default_layout][portrait]") {
+    const char* as_array = R"({
+        "anchors": [],
+        "variants": { "portrait": [
+            { "id": "printer_image",
+              "placements": { "tiny": { "col": 1, "row": 2, "colspan": 4, "rowspan": 4 } } }
+        ] }
+    })";
+    const char* as_object = R"({
+        "anchors": [],
+        "variants": { "portrait": { "anchors": [
+            { "id": "printer_image",
+              "placements": { "tiny": { "col": 1, "row": 2, "colspan": 4, "rowspan": 4 } } }
+        ] } }
+    })";
+
+    for (const char* doc : {as_array, as_object}) {
+        TempCwdGuard guard;
+        guard.write_layout(doc);
+        LayoutTypeGuard portrait(480, 800);
+        auto entries = PanelWidgetConfig::build_default_grid();
+        auto* pi = find_entry(entries, "printer_image");
+        REQUIRE(pi);
+        CHECK(pi->col == 1);
+        CHECK(pi->row == 2);
+        CHECK(pi->colspan == 4);
+    }
+}
+
+// An anchor may carry per-widget config, which is how portrait ships
+// print_status in its Detailed layout without a C++ branch per widget.
+TEST_CASE("default_layout: an anchor carries per-widget config", "[default_layout][portrait]") {
+    TempCwdGuard guard;
+    guard.write_layout(R"({
+        "anchors": [],
+        "variants": { "portrait": { "anchors": [
+            { "id": "print_status",
+              "config": { "layout_style": "detailed" },
+              "placements": { "tiny": { "col": 0, "row": 0, "colspan": 8, "rowspan": 4 } } }
+        ] } }
+    })");
+
+    LayoutTypeGuard portrait(480, 800);
+    auto entries = PanelWidgetConfig::build_default_grid();
+    auto* ps = find_entry(entries, "print_status");
+    REQUIRE(ps);
+    REQUIRE(ps->config.is_object());
+    CHECK(ps->config.value("layout_style", std::string{}) == "detailed");
+}
+
+// The shipped portrait table must actually ship Detailed — the whole reason the
+// anchor config plumbing exists. Library clips its last action row at every
+// measured geometry.
+TEST_CASE("default_layout: the shipped portrait print_status is Detailed",
+          "[default_layout][portrait][shipped]") {
+    std::string path = helix::find_readable("default_layout.json");
+    std::ifstream in(path);
+    REQUIRE(in.is_open());
+    nlohmann::json layout = nlohmann::json::parse(in);
+
+    const auto& node = layout["variants"]["portrait"];
+    const nlohmann::json& anchors = node.is_object() ? node.at("anchors") : node;
+    bool seen = false;
+    for (const auto& a : anchors) {
+        if (a.value("id", std::string{}) != "print_status") {
+            continue;
+        }
+        seen = true;
+        REQUIRE(a.contains("config"));
+        CHECK(a["config"].value("layout_style", std::string{}) == "detailed");
+    }
+    CHECK(seen);
 }
 
 // The shipped landscape anchors must fit each breakpoint's grid on both axes
